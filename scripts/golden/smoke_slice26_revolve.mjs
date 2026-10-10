@@ -363,7 +363,7 @@ function rFace() {
     params: { radius: 5, segments: 32 },
   });
   check('commit Profile is Profile-only', prof.ok && prof.run === false && countMakeRevolve(prof.buffer) === 0);
-  check('commit Profile has markers', hasContourProfileBlock(prof.buffer));
+  check('commit Profile is a named contour', /@contour id=c1/.test(prof.buffer) && !hasContourProfileBlock(prof.buffer));
   check('commit Profile has no Extrude', countMakeExtrude(prof.buffer) === 0);
 
   const ext = composeContourCommit(starter, {
@@ -385,9 +385,9 @@ function rFace() {
     params: { radius: 5, segments: 32 },
     revolve: { angle: 360, axis: 'v', sense: 'positive' },
   });
-  check('Revolve after Profile strips profile block', thenRev.ok && !hasContourProfileBlock(thenRev.buffer));
+  check('Revolve after Profile leaves the named contour', thenRev.ok && !hasContourProfileBlock(thenRev.buffer) && /@contour id=c1/.test(thenRev.buffer));
   check('Revolve after Profile has one solid', countMakeRevolve(thenRev.buffer) === 1);
-  check('Revolve after Profile one xs', countMakeCrossSection(thenRev.buffer) === 1);
+  check('Revolve after Profile keeps the contour and its own profile', countMakeCrossSection(thenRev.buffer) === 2);
 
   // Extrude then Revolve: replace extrude block (no stack).
   const thenFromExt = composeContourRevolve(ext.buffer, {

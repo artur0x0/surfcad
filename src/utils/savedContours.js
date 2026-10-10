@@ -19,6 +19,7 @@ import {
   writeLoftSelected,
 } from './contourMode.js';
 import { parseSolveContour } from './contourScript.js';
+import { contourStatements } from './namedContour.js';
 
 function splitArgs(src) {
   const args = [];
@@ -225,7 +226,11 @@ function contourLabel(name, tool, params) {
 
 /**
  * Script-backed saved contours, oldest first. The last entry is the most
- * recently generated makeCrossSection.
+ * recently generated named contour.
+ *
+ * Identity is the `@contour id=` marker, or the binding name when a
+ * hand-written call has no marker. It is never a character offset.
+ * An unbound `makeCrossSection` is not a contour.
  *
  * @returns {Array<{ id: string, name: string, tool: string, params: object, plane: object|null, host: boolean, label: string }>}
  */
@@ -233,23 +238,19 @@ export function listSavedContours(buffer) {
   const text = String(buffer || '');
   if (!text.trim()) return [];
   const planes = indexPlanes(text);
-  const calls = findCalls(text, 'makeCrossSection');
   const out = [];
-  for (const call of calls) {
-    const profile = parseProfile(call.args[1] || '');
+  for (const stmt of contourStatements(text)) {
+    const profile = parseProfile(stmt.profileExpr);
     if (!profile) continue;
-    const before = text.slice(Math.max(0, call.start - 96), call.start);
-    const bind = before.match(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*$/);
-    const name = bind ? bind[1] : `xs${out.length + 1}`;
-    const resolved = resolvePlaneExpr(call.args[0] || '', planes, call.start);
+    const resolved = resolvePlaneExpr(stmt.planeExpr, planes, stmt.start);
     out.push({
-      id: `${name}@${call.start}`,
-      name,
+      id: stmt.id,
+      name: stmt.name,
       tool: profile.tool,
       params: profile.params,
       plane: resolved.plane,
       host: resolved.host,
-      label: contourLabel(name, profile.tool, profile.params),
+      label: contourLabel(stmt.name, profile.tool, profile.params),
     });
   }
   return out;

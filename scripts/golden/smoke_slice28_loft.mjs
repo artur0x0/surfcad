@@ -595,7 +595,7 @@ function xyExtent(cs) {
     params: { radius: 5, segments: 32 },
   });
   check('commit Profile is Profile-only', prof.ok && prof.run === false && countMakeLoft(prof.buffer) === 0);
-  check('commit Profile has markers', hasContourProfileBlock(prof.buffer));
+  check('commit Profile is a named contour', /@contour id=c1/.test(prof.buffer) && !hasContourProfileBlock(prof.buffer));
   check('commit Profile has no Extrude', countMakeExtrude(prof.buffer) === 0);
 
   const ext = composeContourCommit(starter, {
@@ -634,7 +634,7 @@ function xyExtent(cs) {
     face,
     loft: { profiles: defaultLoftProfiles() },
   });
-  check('Loft after Profile strips profile block', thenLoft.ok && !hasContourProfileBlock(thenLoft.buffer));
+  check('Loft after Profile leaves the named contour', thenLoft.ok && !hasContourProfileBlock(thenLoft.buffer) && /@contour id=c1/.test(thenLoft.buffer));
   check('Loft after Profile has one solid', countMakeLoft(thenLoft.buffer) === 1);
 
   const fromExt = composeContourLoft(ext.buffer, {

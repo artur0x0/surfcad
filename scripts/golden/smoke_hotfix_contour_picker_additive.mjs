@@ -87,7 +87,8 @@ function extrude(buffer, radius = 5) {
   const saved = listSavedContours(profile.buffer);
   check('profile contour is listed', saved.length === 1, `n=${saved.length}`);
   check('listed contour is the circle', saved[0] && saved[0].tool === 'circle' && saved[0].params.radius === 5);
-  check('label names the binding', /xs · circle r5/.test(saved[0]?.label || ''));
+  check('label names the binding', /c1 · circle r5/.test(saved[0]?.label || ''));
+  check('id is the marker, not an offset', saved[0]?.id === 'c1' && !String(saved[0]?.id).includes('@'));
   const rings = savedContourRings(saved[0], defaultTopPlaneFrame([0, 0, 10]));
   check('host-plane ghost has a closed ring', rings.length >= 1 && rings[0].length >= 4);
 
