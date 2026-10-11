@@ -256,9 +256,16 @@ try {
   };
   await drawStation(0, null);
   await drawStation(1, 'side');
-  const offset = page.locator('[data-popup-number="loft-offset-1"]');
-  await offset.fill('0');
-  await offset.blur();
+  // Set the station offset without focusing the field. A focused length
+  // field on a phone replaces the card with the one-field editor and hides Confirm.
+  await page.evaluate(() => {
+    const input = document.querySelector('[data-popup-number="loft-offset-1"]');
+    const proto = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+    const tracker = input._valueTracker;
+    if (tracker) tracker.setValue('20');
+    proto.set.call(input, '0');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
 
   const cardShot = join(SHOT_DIR, 'loft-card-elbow-390.png');
   await page.screenshot({ path: cardShot });

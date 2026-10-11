@@ -94,7 +94,7 @@ function ContourSlot({
 /**
  * Extrude, Revolve, Loft, and Sweep. Slots name saved contours.
  * The contour editor is a separate card, opened by New contour.
- * fullLeft stays off: the helper rail is still in the pane.
+ * The helper rail stays in the pane, so this card stays centered between the rails.
  */
 const FeatureSlotCard = ({
   card,

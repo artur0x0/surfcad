@@ -105,8 +105,11 @@ console.log('feature sheet card — source');
     && /font-size: 16px/.test(css));
   check('contour pilot uses the shell; the rail X is the same cancel; game mounts no card',
     /<FeatureSheet\b/.test(chip)
-    && /onCancel=\{exitContourMode\}/.test(view)
-    && /contourMode && mode !== 'game'/.test(view));
+    && /<FeatureSheet\b/.test(read('src/components/FeatureSlotCard.jsx'))
+    && /onCancel=\{cancelContourEditor\}/.test(view)
+    && /exitContourMode\(back \? 'slot' : undefined\)/.test(view)
+    && /onCancel=\{closeFeatureSlots\}/.test(view)
+    && /contourMode && contourPlaneOpen && !contourMode.gesture && mode !== 'game'/.test(view));
   const fillet = read('src/components/FilletModeChip.jsx');
   check('fillet and chamfer use the shell; Confirm saves; X cancels; game mounts no card',
     /<FeatureSheet\b/.test(fillet)
@@ -225,6 +228,7 @@ console.log('feature sheet card — source');
     && !/\bfullLeft\b/.test(read('src/components/sheetMetal/SmControls.jsx'))
     && !/\bfullLeft\b/.test(read('src/components/sheetMetal/SheetMetalPicker.jsx'))
     && !/\bfullLeft\b/.test(read('src/components/ContourModeChip.jsx'))
+    && !/\bfullLeft\b/.test(read('src/components/FeatureSlotCard.jsx'))
     && !/\bfullLeft\b/.test(read('src/components/HelperParamModal.jsx')));
   check('helper sheets use the card in CAD; game keeps the old sheet and does not slide',
     /<FeatureSheet\b/.test(helper)

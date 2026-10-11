@@ -65,7 +65,8 @@ console.log('overlay visibility — source');
   check(
     'enterContourMode holds and exitContourMode releases',
     /const enterContourMode = useCallback\(\(\{ entry \} = \{\}\) => \{\s*holdContourOverlays\(overlayVis, entry\)/.test(view)
-      && /const exitContourMode = useCallback\(\(\) => \{\s*releaseContourOverlays\(overlayVis\)/.test(view),
+      && /const exitContourMode = useCallback\(\(reason\) => \{[\s\S]{0,420}releaseContourOverlays\(overlayVis\)/.test(view)
+      && /const openFeatureSlots = useCallback\(\(entry\) => \{[\s\S]{0,500}holdContourOverlays\(overlayVis, entry\)/.test(view),
   );
   check(
     'rail taps go through choose',
@@ -83,7 +84,9 @@ console.log('overlay visibility — source');
   );
   check(
     'X and Esc share exitContourMode',
-    /onCancel=\{exitContourMode\}/.test(view)
+    /onCancel=\{cancelContourEditor\}/.test(view)
+      && /onCancel=\{closeFeatureSlots\}/.test(view)
+      && /releaseContourOverlays\(overlayVis\)/.test(view)
       && /if \(event\.key !== 'Escape'\) return/.test(read('src/components/FeatureSheet.jsx')),
   );
   check(
