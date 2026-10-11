@@ -2,10 +2,11 @@
 /**
  * 90° elbow loft built from the Loft card.
  *
- * Station 1 stays on the card's XY plane (offset 0). Station 2 picks a
- * saved workplane whose normal is +X. Confirm emits each frame and
- * placeInFrame. The solid must be a manifold with positive volume and no
- * self-intersection. The offset-only path still emits offsetPlaneFrame.
+ * Station 1 is a new contour on the default plane (offset 0). Station 2 is
+ * a new contour on the saved side workplane, offset 0, because the contour
+ * owns that frame. Confirm writes makeLoft by those names. The solid must
+ * be a manifold with positive volume and no self-intersection. The
+ * offset-only path still emits offsetPlaneFrame.
  *
  * Screenshots (390px) go to GOLDEN_SHOT_DIR or os.tmpdir() only.
  */
@@ -215,7 +216,7 @@ try {
 
   const planesBefore = await page.locator('[data-overlay-toggle="plane"]').getAttribute('aria-pressed').catch(() => null);
   await page.locator('button[aria-label^="Insert Loft"]').click();
-  await page.locator('[data-contour-chip]').waitFor({ timeout: 8000 });
+  await page.locator('[data-feature-slot-card="makeLoft"]').waitFor({ timeout: 8000 });
   await page.waitForTimeout(400);
   const planesAfter = await page.locator('[data-overlay-toggle="plane"]').getAttribute('aria-pressed').catch(() => null);
   check(
@@ -223,60 +224,55 @@ try {
     planesBefore !== 'true' && planesAfter === 'true',
     `before=${planesBefore} after=${planesAfter}`,
   );
-
-  await page.locator('[data-loft-station-plane]').waitFor({ timeout: 8000 });
   check(
-    'station 1 starts on offset',
-    (await page.locator('[data-loft-station-plane]').getAttribute('data-loft-station-plane')) === 'offset',
+    'loft card is titled Loft',
+    (await page.locator('[data-feature-card-title]').innerText()).trim() === 'Loft',
   );
+
+  const drawStation = async (index, workplane) => {
+    await page.locator(`[data-new-contour-role="station"][data-new-contour-index="${index}"]`).click();
+    await page.locator('[data-contour-chip]').waitFor({ timeout: 8000 });
+    if (workplane) {
+      const picked = await page.evaluate((name) => {
+        const sel = document.querySelector('[aria-label="Pick a saved workplane"]');
+        if (!sel) return { ok: false, reason: 'no select' };
+        const option = [...sel.options].find((o) => o.textContent.trim() === name);
+        if (!option) {
+          return { ok: false, reason: 'options ' + [...sel.options].map((o) => o.textContent.trim()).join('|') };
+        }
+        sel.value = option.value;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        return { ok: true, value: sel.value };
+      }, workplane);
+      check(`station ${index + 1} workplane is ${workplane}`, picked.ok, picked.reason || '');
+    }
+    await page.locator('[data-feature-card-confirm]').click();
+    await page.waitForFunction(() => (
+      document.querySelector('.viewport-shell')?.getAttribute('data-contour-face-aim') === 'done'
+      && !document.querySelector('[data-contour-chip]')
+    ), null, { timeout: 8000 });
+    await page.locator('[data-contour-confirm]').click();
+    await page.locator('[data-feature-slot-card="makeLoft"]').waitFor({ timeout: 8000 });
+  };
+  await drawStation(0, null);
+  await drawStation(1, 'side');
+  // Set the station offset without focusing the field. A focused length
+  // field on a phone replaces the card with the one-field editor and hides Confirm.
   await page.evaluate(() => {
-    const body = document.querySelector('[data-feature-sheet-body]');
-    const p2 = [...document.querySelectorAll('button')].find((el) => el.textContent.trim() === 'P2');
-    if (body && p2) {
-      const top = p2.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop;
-      body.scrollTop = Math.max(0, top - 24);
-    }
-    p2?.click();
+    const input = document.querySelector('[data-popup-number="loft-offset-1"]');
+    const proto = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+    const tracker = input._valueTracker;
+    if (tracker) tracker.setValue('20');
+    proto.set.call(input, '0');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  await page.waitForFunction(() => {
-    const buttons = [...document.querySelectorAll('button')];
-    const p2 = buttons.find((el) => el.textContent.trim() === 'P2');
-    return p2 && p2.getAttribute('aria-pressed') === 'true';
-  }, null, { timeout: 8000 });
-  const picked = await page.evaluate(() => {
-    const body = document.querySelector('[data-feature-sheet-body]');
-    const sel = document.querySelector('[aria-label="Station workplane"]');
-    if (!sel) return { ok: false, reason: 'no select' };
-    if (body) {
-      const top = sel.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop;
-      body.scrollTop = Math.max(0, top - 24);
-    }
-    const option = [...sel.options].find((o) => o.textContent.trim() === 'side');
-    if (!option) {
-      return { ok: false, reason: 'options ' + [...sel.options].map((o) => o.textContent.trim()).join('|') };
-    }
-    sel.value = option.value;
-    sel.dispatchEvent(new Event('change', { bubbles: true }));
-    return { ok: true, value: sel.value };
-  });
-  check('station workplane select chose side', picked.ok, picked.reason || '');
-  await page.waitForFunction(() => {
-    const el = document.querySelector('[data-loft-station-plane]');
-    return el && el.getAttribute('data-loft-station-plane') === 'workplane';
-  }, null, { timeout: 8000 });
-  check('station 2 is the side workplane', true);
 
   const cardShot = join(SHOT_DIR, 'loft-card-elbow-390.png');
   await page.screenshot({ path: cardShot });
   check('390 card screenshot written', existsSync(cardShot), cardShot);
 
-  await page.locator('[data-feature-card-confirm]').click();
-  await page.waitForFunction(() => (
-    document.querySelector('.viewport-shell')?.getAttribute('data-contour-face-aim') === 'done'
-    && !document.querySelector('[data-contour-chip]')
-  ), null, { timeout: 8000 });
   const rendersBefore = await page.evaluate(() => window.__VIEWPORT__?._renderCount || 0);
-  await page.locator('[data-contour-confirm]').click();
+  await page.locator('[data-feature-card-confirm]').click();
   try {
     await page.waitForFunction((before) => {
       const text = (window.monaco?.editor?.getModels?.() || []).map((m) => m.getValue()).join('\n');

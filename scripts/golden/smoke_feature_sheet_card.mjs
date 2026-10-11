@@ -105,8 +105,11 @@ console.log('feature sheet card — source');
     && /font-size: 16px/.test(css));
   check('contour pilot uses the shell; the rail X is the same cancel; game mounts no card',
     /<FeatureSheet\b/.test(chip)
-    && /onCancel=\{exitContourMode\}/.test(view)
-    && /contourMode && mode !== 'game'/.test(view));
+    && /<FeatureSheet\b/.test(read('src/components/FeatureSlotCard.jsx'))
+    && /onCancel=\{cancelContourEditor\}/.test(view)
+    && /exitContourMode\(back \? 'slot' : undefined\)/.test(view)
+    && /onCancel=\{closeFeatureSlots\}/.test(view)
+    && /contourMode && contourPlaneOpen && !contourMode.gesture && mode !== 'game'/.test(view));
   const fillet = read('src/components/FilletModeChip.jsx');
   check('fillet and chamfer use the shell; Confirm saves; X cancels; game mounts no card',
     /<FeatureSheet\b/.test(fillet)
@@ -225,6 +228,7 @@ console.log('feature sheet card — source');
     && !/\bfullLeft\b/.test(read('src/components/sheetMetal/SmControls.jsx'))
     && !/\bfullLeft\b/.test(read('src/components/sheetMetal/SheetMetalPicker.jsx'))
     && !/\bfullLeft\b/.test(read('src/components/ContourModeChip.jsx'))
+    && !/\bfullLeft\b/.test(read('src/components/FeatureSlotCard.jsx'))
     && !/\bfullLeft\b/.test(read('src/components/HelperParamModal.jsx')));
   check('helper sheets use the card in CAD; game keeps the old sheet and does not slide',
     /<FeatureSheet\b/.test(helper)
@@ -368,6 +372,8 @@ import {
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 import { applyTrackballFeel } from './src/utils/trackballFeel.js';
 import ContourModeChip from './src/components/ContourModeChip.jsx';
+import FeatureSlotCard from './src/components/FeatureSlotCard.jsx';
+import { emptyFeatureSlotCard } from './src/utils/featureSlotCard.js';
 import FilletModeChip from './src/components/FilletModeChip.jsx';
 import ShellModeChip from './src/components/ShellModeChip.jsx';
 import DraftModeChip from './src/components/DraftModeChip.jsx';
@@ -676,6 +682,21 @@ function Stage() {
           refuseTitle="Face not supported"
           onCancel={() => setCardOpen(false)}
         />
+      ) : cardOpen && (entry === 'makeExtrude' || entry === 'makeLoft' || entry === 'makeRevolve' || entry === 'makeSweep') ? (
+        <FeatureSlotCard
+          card={emptyFeatureSlotCard(entry)}
+          contours={[{ id: 'c1', name: 'c1', tool: 'circle', label: 'c1 · circle r5' }]}
+          compact={compact}
+          lengthMm={100}
+          onCancel={() => setCardOpen(false)}
+          onConfirm={() => {}}
+          onPick={() => {}}
+          onHover={() => {}}
+          onNew={() => {}}
+          onOffset={() => {}}
+          onCombine={() => {}}
+          onMerge={() => {}}
+        />
       ) : cardOpen ? (
         <ContourModeChip
           tool="circle"
@@ -693,6 +714,7 @@ function Stage() {
       <div data-harness="" style={{ position: 'absolute', left: 0, top: 0, opacity: 0, pointerEvents: 'none' }}>
         <button type="button" data-harness-entry="crossSection" onClick={() => { setPanel('contour'); setEntry('crossSection'); }}>circle</button>
         <button type="button" data-harness-entry="makeExtrude" onClick={() => { setPanel('contour'); setEntry('makeExtrude'); }}>extrude</button>
+        <button type="button" data-harness-entry="makeLoft" onClick={() => { setPanel('contour'); setEntry('makeLoft'); }}>loft</button>
         <button type="button" data-harness-panel="fillet" onClick={() => setPanel('fillet')}>fillet</button>
         <button type="button" data-harness-panel="shell" onClick={() => setPanel('shell')}>shell</button>
         <button type="button" data-harness-panel="draft" onClick={() => setPanel('draft')}>draft</button>
@@ -832,7 +854,7 @@ html, body, #root { margin: 0; height: 100%; background: #111; }
         return card
           && card.getAttribute('data-feature-card-compact') === (phone ? '1' : '0')
           && title
-          && (next === 'makeExtrude' ? title.textContent.trim() === 'Extrude' : title.textContent.trim() === 'Contour');
+          && title.textContent.trim() === ({ makeExtrude: 'Extrude', makeLoft: 'Loft', makeRevolve: 'Revolve', makeSweep: 'Sweep' }[next] || 'Contour');
       }, { entry, compact }, { timeout: 5000 });
       await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     };
@@ -1012,8 +1034,8 @@ html, body, #root { margin: 0; height: 100%; background: #111; }
     check('extrude card title is Extrude',
       extrudeHeading.title === 'Extrude',
       JSON.stringify(extrudeHeading));
-    check('extrude card subtitle shows the profile shape',
-      extrudeHeading.subtitle.includes('Circle') && extrudeHeading.subtitle.includes('default +Z top'),
+    check('extrude card subtitle names a contour',
+      /contour/i.test(extrudeHeading.subtitle) && !/Circle/.test(extrudeHeading.subtitle),
       JSON.stringify(extrudeHeading));
     await parkAndShoot('feature-sheet-extrude-390-before.png', { slide: false });
     await parkAndShoot('feature-sheet-extrude-390-after.png', { slide: true });
@@ -1031,7 +1053,8 @@ html, body, #root { margin: 0; height: 100%; background: #111; }
       const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--modal-vvh'));
       return v > 0 && v <= 340;
     });
-    await page.locator('[data-popup-number="extrude-distance"], [data-popup-number="radius"]').first().focus();
+    await show('makeLoft', true);
+    await page.locator('[data-popup-number="loft-offset"]').first().focus();
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const focused = await page.evaluate(() => {
       const el = document.activeElement;

@@ -187,6 +187,13 @@ function parseProfile(expr) {
       params: { width, height, centered: m[3] === 'true' },
     };
   }
+  if (/\btype\s*:\s*['"]path['"]/.test(t)) {
+    const pairs = [...t.matchAll(/\[\s*([-+.\deE]+)\s*,\s*([-+.\deE]+)\s*\]/g)];
+    if (pairs.length < 2) return null;
+    const points = pairs.map((hit) => [Number(hit[1]), Number(hit[2])]);
+    if (points.some((p) => !Number.isFinite(p[0]) || !Number.isFinite(p[1]))) return null;
+    return { tool: 'path', params: { points, closed: /\bclosed\s*:\s*true/.test(t) } };
+  }
   if (/^solveContour\s*\(/.test(t)) {
     try {
       const contour = parseSolveContour(t);
@@ -216,6 +223,10 @@ function parseProfile(expr) {
 }
 
 function contourLabel(name, tool, params) {
+  if (tool === 'path') {
+    const n = Array.isArray(params.points) ? params.points.length : 0;
+    return `${name} · path ${n} pt${n === 1 ? '' : 's'}`;
+  }
   if (tool === 'circle') return `${name} · circle r${params.radius}`;
   if (tool === 'rectangle') {
     return `${name} · rect ${params.width}×${params.height}`;
@@ -269,6 +280,16 @@ export function savedContourRings(contour, hostPlane = null) {
   if (!contour) return [];
   const plane = contour.plane || hostPlane;
   if (!plane?.center || !plane?.x || !plane?.y) return [];
+  if (contour.tool === 'path') {
+    const pts = contour.params?.points;
+    if (!Array.isArray(pts) || pts.length < 2) return [];
+    const ring = pts.map(([u, v]) => [
+      plane.center[0] + u * plane.x[0] + v * plane.y[0],
+      plane.center[1] + u * plane.x[1] + v * plane.y[1],
+      plane.center[2] + u * plane.x[2] + v * plane.y[2],
+    ]);
+    return [ring];
+  }
   try {
     const built = buildProfileFromParams(toolToProfileParams(contour.tool, contour.params));
     return contoursToWorldRings(plane, built.contours);

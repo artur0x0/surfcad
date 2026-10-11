@@ -200,8 +200,9 @@ export function emitPathProfileExpr(points, closed) {
   return `{ type: 'path', closed: ${closed ? 'true' : 'false'}, points: [${pts.join(', ')}] }`;
 }
 
-function emitSweepLocalExpr(profile, path) {
-  return `${path}.contours[0].map(([u, v]) => { const wx = ${path}.plane.center[0] + u * ${path}.plane.x[0] + v * ${path}.plane.y[0]; const wy = ${path}.plane.center[1] + u * ${path}.plane.x[1] + v * ${path}.plane.y[1]; const wz = ${path}.plane.center[2] + u * ${path}.plane.x[2] + v * ${path}.plane.y[2]; const dx = wx - ${profile}.plane.center[0]; const dy = wy - ${profile}.plane.center[1]; const dz = wz - ${profile}.plane.center[2]; return [dx * ${profile}.plane.x[0] + dy * ${profile}.plane.x[1] + dz * ${profile}.plane.x[2], dx * ${profile}.plane.y[0] + dy * ${profile}.plane.y[1] + dz * ${profile}.plane.y[2], dx * ${profile}.plane.normal[0] + dy * ${profile}.plane.normal[1] + dz * ${profile}.plane.normal[2]]; })`;
+function emitSweepLocalExpr(profile, path, reverse) {
+  const ring = reverse ? `${path}.contours[0].slice().reverse()` : `${path}.contours[0]`;
+  return `${ring}.map(([u, v]) => { const wx = ${path}.plane.center[0] + u * ${path}.plane.x[0] + v * ${path}.plane.y[0]; const wy = ${path}.plane.center[1] + u * ${path}.plane.x[1] + v * ${path}.plane.y[1]; const wz = ${path}.plane.center[2] + u * ${path}.plane.x[2] + v * ${path}.plane.y[2]; const dx = wx - ${profile}.plane.center[0]; const dy = wy - ${profile}.plane.center[1]; const dz = wz - ${profile}.plane.center[2]; return [dx * ${profile}.plane.x[0] + dy * ${profile}.plane.x[1] + dz * ${profile}.plane.x[2], dx * ${profile}.plane.y[0] + dy * ${profile}.plane.y[1] + dz * ${profile}.plane.y[2], dx * ${profile}.plane.normal[0] + dy * ${profile}.plane.normal[1] + dz * ${profile}.plane.normal[2]]; })`;
 }
 
 export function emitSweepReferenceLines({
@@ -213,10 +214,13 @@ export function emitSweepReferenceLines({
   localName,
   sweptName,
   partLine,
+  reverse = false,
+  closed = null,
 }) {
+  const closedExpr = typeof closed === 'boolean' ? (closed ? 'true' : 'false') : `!!${path}.profile.closed`;
   return blockLines(begin, end, featureId, [
-    `const ${localName} = ${emitSweepLocalExpr(profile, path)};`,
-    `const ${sweptName} = sweepPoints(new CrossSection(${profile}.contours), ${localName}, { closed: !!${path}.profile.closed, initialNormal: [1, 0, 0] });`,
+    `const ${localName} = ${emitSweepLocalExpr(profile, path, reverse)};`,
+    `const ${sweptName} = sweepPoints(new CrossSection(${profile}.contours), ${localName}, { closed: ${closedExpr}, initialNormal: [1, 0, 0] });`,
     `if (!(${sweptName}.volume() > 1e-8)) throw new Error('sweep: result is EMPTY (volume 0) — check profile area and path');`,
     partLine(`placeInFrame(${profile}.plane, ${sweptName})`),
   ]);
@@ -226,7 +230,9 @@ export function emitSweepReferenceLines({
 export function parseSweepReferences(block) {
   const text = String(block || '');
   const profile = text.match(/new CrossSection\(\s*([A-Za-z_$][\w$]*)\.contours\s*\)/);
-  const path = text.match(/!!\s*([A-Za-z_$][\w$]*)\.profile\.closed/);
-  if (!profile || !path) return null;
-  return { profile: profile[1], path: path[1] };
+  const closedRef = text.match(/!!\s*([A-Za-z_$][\w$]*)\.profile\.closed/);
+  const ring = text.match(/([A-Za-z_$][\w$]*)\.contours\[0\]/);
+  const pathName = closedRef?.[1] || ring?.[1];
+  if (!profile || !pathName) return null;
+  return { profile: profile[1], path: pathName };
 }
