@@ -134,40 +134,27 @@ async function editorScript(page) {
 
 async function meshSpan(page) {
   return page.evaluate(() => {
-    const mesh = window.__VIEWPORT__?.getCurrentMeshData?.();
-    const vp = mesh?.vertProperties;
-    if (!vp || !vp.length) return null;
-    const np = mesh.numProp || 3;
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
-    let minZ = Infinity;
-    let maxZ = -Infinity;
-    for (let i = 0; i + 2 < vp.length; i += np) {
-      const x = Number(vp[i]);
-      const y = Number(vp[i + 1]);
-      const z = Number(vp[i + 2]);
-      if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
-      if (y < minY) minY = y;
-      if (y > maxY) maxY = y;
-      if (z < minZ) minZ = z;
-      if (z > maxZ) maxZ = z;
-    }
-    return { dx: maxX - minX, dy: maxY - minY, dz: maxZ - minZ };
+    const result = window.__MANIFOLD_CONTEXT__?.lastResult;
+    const box = result?.boundingBox;
+    if (!box?.min || !box?.max) return null;
+    return {
+      dx: box.max[0] - box.min[0],
+      dy: box.max[1] - box.min[1],
+      dz: box.max[2] - box.min[2],
+      volume: result.volume,
+    };
   });
 }
 
 async function setNumber(page, selector, value) {
-  await page.evaluate((sel, next) => {
-    const input = document.querySelector(sel);
+  await page.evaluate((arg) => {
+    const input = document.querySelector(arg.selector);
     const proto = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
     const tracker = input._valueTracker;
     if (tracker) tracker.setValue(String(input.value));
-    proto.set.call(input, next);
+    proto.set.call(input, arg.value);
     input.dispatchEvent(new Event('input', { bubbles: true }));
-  }, selector, value);
+  }, { selector, value });
 }
 
 async function boot(page) {
@@ -197,7 +184,56 @@ async function boot(page) {
   await page.waitForFunction(() => (window.__VIEWPORT__.stageVerifyFraming?.().tris || 0) > 10, null, { timeout: 30000 });
   await page.evaluate(() => window.__VIEWPORT__.stageFit({ az: 28, el: 18, margin: 1.02 }));
   await page.waitForTimeout(200);
+  // The CAD strip lists features only after a part is selected. A fresh
+  // session lists joints until that row is clicked.
+  await ensurePartSelected(page);
+  await page.evaluate((src) => {
+    const model = window.monaco.editor.getModels()[0];
+    model.setValue(src);
+  }, SCRIPT);
+  await page.waitForFunction(() => {
+    const model = window.monaco?.editor?.getModels?.()?.[0];
+    return !!model && model.getValue().includes('makeLoft(');
+  }, null, { timeout: 8000 });
+  const again = await page.evaluate(async (src) => window.__VIEWPORT__.executeScript(src), SCRIPT);
+  if (again?.error) throw new Error(again.error);
+  await page.waitForFunction(() => (window.__VIEWPORT__.stageVerifyFraming?.().tris || 0) > 10, null, { timeout: 30000 });
   await page.locator('[data-cad-feature-strip] [data-contour-id="c1"]').waitFor({ timeout: 8000 });
+}
+
+async function ensurePartSelected(page) {
+  // Signed-out boot has no assembly, so the strip lists joints. Run seeds
+  // Part (1) from the editor. Clicking that row selects it, and the strip
+  // then lists this part's features.
+  if (await page.locator('[data-part-row]').count() === 0) {
+    const clicked = await page.evaluate(() => {
+      const btn = document.querySelector('[data-cad-run]');
+      if (!btn) return false;
+      btn.click();
+      return true;
+    });
+    if (!clicked) throw new Error('Run is not in the page, so no part can be selected');
+    await page.waitForFunction(() => document.querySelectorAll('[data-part-row]').length > 0, null, { timeout: 20000 });
+  }
+  const partsBtn = page.locator('[data-stage-btn="parts"]');
+  const phone = await partsBtn.isVisible().catch(() => false);
+  if (phone) {
+    await partsBtn.click();
+    await page.waitForFunction(() => (
+      document.querySelector('[data-mobile-stage]')?.getAttribute('data-mobile-stage') === 'parts'
+    ), null, { timeout: 8000 });
+  }
+  const row = page.locator('[data-part-row]').first();
+  await row.waitFor({ state: 'visible', timeout: 8000 });
+  // The row's center is the thumbnail. Dispatch the click on the row so the
+  // select handler runs on desktop and on the phone.
+  await page.evaluate(() => {
+    document.querySelector('[data-part-row]')?.click();
+  });
+  await page.waitForFunction(() => (
+    document.querySelector('[data-part-row]')?.getAttribute('data-part-selected') === 'true'
+  ), null, { timeout: 8000 });
+  if (phone) await page.locator('[data-stage-btn="cad"]').click();
 }
 
 async function runSize(browser, label, contextOptions) {
@@ -260,20 +296,12 @@ async function runSize(browser, label, contextOptions) {
   check(`${label} Extrude and Loft still name c1`,
     /makeExtrude\(c1\.contours, 8\)/.test(saved) && /makeLoft\(\[c1,/.test(saved));
   check(`${label} the other contour stays`, /profileCircle\(3, 16\)/.test(saved));
-  await page.waitForFunction((prevDx) => {
-    const mesh = window.__VIEWPORT__?.getCurrentMeshData?.();
-    const vp = mesh?.vertProperties;
-    if (!vp || !vp.length) return false;
-    const np = mesh.numProp || 3;
-    let minX = Infinity;
-    let maxX = -Infinity;
-    for (let i = 0; i + 2 < vp.length; i += np) {
-      const x = Number(vp[i]);
-      if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
-    }
-    return (maxX - minX) > prevDx + 8;
-  }, before.dx, { timeout: 30000 });
+  await page.evaluate((dx) => { window.__PREV_DX = dx; }, before.dx);
+  await page.waitForFunction(() => {
+    const box = window.__MANIFOLD_CONTEXT__?.lastResult?.boundingBox;
+    if (!box?.min || !box?.max) return false;
+    return (box.max[0] - box.min[0]) > window.__PREV_DX + 8;
+  }, null, { timeout: 30000 });
   const after = await meshSpan(page);
   check(`${label} both solids change the mesh`, !!after && after.dx > before.dx + 8,
     `before ${before.dx.toFixed(2)} after ${after ? after.dx.toFixed(2) : 'none'}`);

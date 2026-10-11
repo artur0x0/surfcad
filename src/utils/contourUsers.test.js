@@ -111,6 +111,15 @@ test('saving rewrites the contour by id and leaves the feature blocks', () => {
   assert.equal(blockRegion(saved.buffer, 'extrude'), blockRegion(before, 'extrude'));
   assert.equal(blockRegion(saved.buffer, 'loft'), blockRegion(before, 'loft'));
   assert.match(saved.buffer, /profileCircle\(3, 16\)/);
+  const viaPayload = saveEditedContour(before, {
+    contourId: 'c1',
+    contourName: 'c1',
+    tool: 'circle',
+    params: { radius: 18, segments: 24 },
+    face: FACE,
+  });
+  assert.equal(viaPayload.ok, true, viaPayload.message);
+  assert.match(viaPayload.buffer, /profileCircle\(18, 24\)/);
 });
 
 test('renaming in the editor updates every reference and keeps the id', () => {

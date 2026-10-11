@@ -154,10 +154,11 @@ function pathPoints(params) {
  * @returns {{ ok: true, buffer: string, id: string, name: string, run: true } | { ok: false, message: string }}
  */
 export function saveEditedContour(buffer, spec = {}) {
-  const id = spec.id ? String(spec.id) : '';
+  // The contour editor commit payload names these contourId and contourName.
+  const id = String(spec.contourId || spec.id || '');
   const stmt = contourStatements(buffer).find((row) => row.id === id);
   if (!stmt) return { ok: false, message: 'No contour with that id.' };
-  const editorName = String(spec.name || stmt.name).trim();
+  const editorName = String(spec.contourName || spec.name || stmt.name).trim();
   if (editorName !== stmt.name) {
     const gate = renameNamedContour(buffer, id, editorName);
     if (!gate.ok) return gate;
