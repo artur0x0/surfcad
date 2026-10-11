@@ -270,8 +270,13 @@ try {
   await page.screenshot({ path: cardShot });
   check('390 card screenshot written', existsSync(cardShot), cardShot);
 
-  const rendersBefore = await page.evaluate(() => window.__VIEWPORT__?._renderCount || 0);
   await page.locator('[data-feature-card-confirm]').click();
+  await page.waitForFunction(() => (
+    document.querySelector('.viewport-shell')?.getAttribute('data-contour-face-aim') === 'done'
+    && !document.querySelector('[data-contour-chip]')
+  ), null, { timeout: 8000 });
+  const rendersBefore = await page.evaluate(() => window.__VIEWPORT__?._renderCount || 0);
+  await page.locator('[data-contour-confirm]').click();
   try {
     await page.waitForFunction((before) => {
       const text = (window.monaco?.editor?.getModels?.() || []).map((m) => m.getValue()).join('\n');
