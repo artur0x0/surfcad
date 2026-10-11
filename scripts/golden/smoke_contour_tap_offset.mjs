@@ -224,37 +224,53 @@ async function placeSet(page, label, spots) {
   }
 }
 
+async function ensurePolyline(page) {
+  const sketch = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch());
+  if (sketch.tool === 'polyline') return sketch;
+  await page.locator('[data-contour-tool="polyline"]').click();
+  await page.waitForFunction(() => window.__VIEWPORT__.stageContourSketch().tool === 'polyline', null, { timeout: 4000 });
+  return page.evaluate(() => window.__VIEWPORT__.stageContourSketch());
+}
+
 async function undoToEmpty(page, label) {
   for (let i = 0; i < 20; i += 1) {
     const sketch = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch());
-    if ((sketch.points || 0) === 0 && (sketch.undoDepth || 0) === 0 && !sketch.planeCard) {
-      check(`${label} points cleared`, sketch.tool === 'polyline', JSON.stringify(sketch));
-      return true;
-    }
+    // Stop on an empty polyline. One more Back restores the circle baseline
+    // that Start drawing seeded, and the taps after that would not place points.
+    if ((sketch.points || 0) === 0 && sketch.tool === 'polyline' && !sketch.planeCard) break;
     if (sketch.planeCard) {
       check(`${label} points cleared`, false, 'plane card opened early');
       return false;
     }
+    if ((sketch.points || 0) === 0) break;
     const before = sketch.points;
     await page.locator('[data-contour-back]').click();
-    await page.waitForFunction((n) => {
-      const next = window.__VIEWPORT__.stageContourSketch();
-      return next.points < n || (next.points === 0 && next.undoDepth === 0);
-    }, before, { timeout: 4000 });
+    await page.waitForFunction((n) => window.__VIEWPORT__.stageContourSketch().points < n, before, { timeout: 4000 });
   }
-  check(`${label} points cleared`, false, 'undo did not empty the sketch');
-  return false;
+  const sketch = await ensurePolyline(page);
+  check(`${label} points cleared`, sketch.points === 0 && sketch.tool === 'polyline' && !sketch.planeCard, JSON.stringify(sketch));
+  return sketch.points === 0 && sketch.tool === 'polyline' && !sketch.planeCard;
 }
 
 async function openPlaneCard(page, label) {
-  const sketch = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch());
-  if (!sketch.planeCard) {
+  for (let i = 0; i < 8; i += 1) {
+    const sketch = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch());
+    if (sketch.planeCard) break;
+    if ((sketch.points || 0) > 0) {
+      check(`${label} plane card is open`, false, `points still placed ${JSON.stringify(sketch)}`);
+      return;
+    }
+    const before = { depth: sketch.undoDepth || 0, tool: sketch.tool || '' };
     await page.locator('[data-contour-back]').click();
+    await page.waitForFunction((prev) => {
+      const next = window.__VIEWPORT__.stageContourSketch();
+      return next.planeCard || next.undoDepth < prev.depth || next.tool !== prev.tool;
+    }, before, { timeout: 4000 });
   }
   await page.locator('[data-feature-card]').waitFor({ timeout: 4000 });
   await page.waitForTimeout(900);
-  const open = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch());
-  check(`${label} plane card is open`, !!open.planeCard && open.tool === 'polyline', JSON.stringify(open));
+  const open = await ensurePolyline(page);
+  check(`${label} plane card is open`, !!open.planeCard && open.tool === 'polyline' && open.points === 0, JSON.stringify(open));
 }
 
 async function clearWithTool(page, label) {

@@ -1170,6 +1170,8 @@ const Viewport = forwardRef(({
   const sketchHistRef = useRef(emptySketchHistory());
   const applyingSketchUndoRef = useRef(false);
   const faceSketchFinishRef = useRef(() => {});
+  const onFaceSelectedRef = useRef(null);
+  onFaceSelectedRef.current = onFaceSelected;
   const requestFaceSketchAim = (normal) => {
     if (!Array.isArray(normal) || normal.length < 3) return;
     faceSketchNormalRef.current = [Number(normal[0]), Number(normal[1]), Number(normal[2])];
@@ -4484,6 +4486,8 @@ const Viewport = forwardRef(({
   // Start drawing: look along the sketch-plane normal. A highlighted face
   // is framed; any other plane frames the part. The highlight drops when
   // the tween ends. The plane card has already dropped its slide snapshot.
+  // onFaceSelected is a ref. A fresh callback identity must not re-run this
+  // effect: the highlight is already cleared, and the second aim frames the part.
   useEffect(() => {
     if (!faceSketchNonce) return undefined;
     const state = contourModeRef.current;
@@ -4497,7 +4501,7 @@ const Viewport = forwardRef(({
     if (!box) {
       clearHighlight();
       setSelectedFace(null);
-      onFaceSelected?.(null);
+      onFaceSelectedRef.current?.(null);
       setContourFaceAim('done');
       return undefined;
     }
@@ -4508,7 +4512,7 @@ const Viewport = forwardRef(({
     }
     if (faceSketchRef.current?.isAnimating()) setContourFaceAim('run');
     return undefined;
-  }, [faceSketchNonce, clearHighlight, onFaceSelected]);
+  }, [faceSketchNonce, clearHighlight]);
 
   // Drawing undo. The plane card is not a step. Start drawing seeds the
   // accepted plane as the baseline. Later tool, profile, plane, and
