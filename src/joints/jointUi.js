@@ -31,13 +31,14 @@ export const JOINT_TYPE_LABEL = Object.freeze({
   angle: 'Angle',
   symmetric: 'Symmetric',
   fixed: 'Fixed',
+  parallel: 'Parallel',
 });
 
 /** The shared pick-and-apply steps. `component` records which UI shipped. */
 export const STICKY_PICK_CONTRACT = Object.freeze({
   component: 'StickyPickApply',
   picks: Object.freeze([1, 2]),
-  kinds: Object.freeze(['face', 'edge', 'point']),
+  kinds: Object.freeze(['face', 'edge', 'point', 'plane']),
   then: 'suggested property',
   confirm: 'Confirm',
 });
@@ -92,7 +93,7 @@ export function shouldArmJointPick({
   if (!jointPicking) return false;
   if (appMode === 'game' || featureSession) return false;
   if (kind === 'body') return false;
-  return kind === 'face' || kind === 'edge' || kind === 'point';
+  return kind === 'face' || kind === 'edge' || kind === 'point' || kind === 'plane';
 }
 
 /** Parallel planar faces farther apart than this suggest distance, not coincident. */
@@ -135,8 +136,15 @@ export function planarGapMm(picks) {
   );
 }
 
+function planePick(pick) {
+  return pick?.kind === 'plane';
+}
+
+/** A planar face, or a plane. Both carry a point and a normal. */
 function planarFace(pick) {
-  return !!(pick && pick.kind === 'face' && pick.planar !== false && !pick.axis);
+  if (!pick || pick.axis) return false;
+  if (planePick(pick)) return true;
+  return pick.kind === 'face' && pick.planar !== false;
 }
 
 /** Picks in first-seen part order. Later taps on a part stay in that group. */
@@ -177,12 +185,24 @@ export function jointPickCap(picks) {
   return 2;
 }
 
-/** Highlight key. Two faces on one part stay distinct. */
-export function jointHighlightSlot(partId, at) {
+/**
+ * Highlight key. Two faces on one part stay distinct. Two origin planes
+ * share a point, so a plane id keeps them apart.
+ */
+export function jointHighlightSlot(partId, at, planeId = '') {
   const id = String(partId || '');
+  if (planeId) return `${id}#${planeId}`;
   if (!Array.isArray(at) || at.length < 3) return id;
   const q = (n) => (Math.round((Number(n) || 0) * 100) / 100).toFixed(2);
   return `${id}@${q(at[0])},${q(at[1])},${q(at[2])}`;
+}
+
+export function jointPickSlot(pick) {
+  return jointHighlightSlot(
+    pick?.partId || pick?.surfId,
+    pick?.key?.at,
+    pick?.kind === 'plane' ? (pick?.key?.id || '') : '',
+  );
 }
 
 export function typeFits(type, picks) {
@@ -200,7 +220,7 @@ export function typeFits(type, picks) {
   if (type === 'concentric') return roundPick(pair[0]) && roundPick(pair[1]);
   if (type === 'angle') {
     return pair.every((pick) => (
-      pick.kind === 'face' || pick.kind === 'edge' || pick.kind === 'axis'
+      pick.kind === 'face' || pick.kind === 'edge' || pick.kind === 'axis' || pick.kind === 'plane'
     ));
   }
   return false;
@@ -215,6 +235,10 @@ export function suggestJointType(picks) {
   if (typeFits('symmetric', picks)) return 'symmetric';
   if (typeFits('concentric', picks)) return 'concentric';
   const pair = pairOf(picks);
+  if (pair && pair.some(planePick) && typeFits('coincident', picks)) {
+    if (parallelPlanar(pair) && planarGapMm(pair) > DISTANCE_SUGGEST_MM) return 'parallel';
+    return 'coincident';
+  }
   if (
     typeFits('distance', picks)
     && pair
@@ -229,6 +253,9 @@ export function suggestJointType(picks) {
 
 function samePick(a, b) {
   if (!a || !b || a.surfId !== b.surfId) return false;
+  if (a.kind === 'plane' || b.kind === 'plane') {
+    return a.kind === 'plane' && b.kind === 'plane' && !!a.key?.id && a.key.id === b.key?.id;
+  }
   const aa = a.key?.at;
   const bb = b.key?.at;
   if (!Array.isArray(aa) || !Array.isArray(bb)) return false;
@@ -343,6 +370,7 @@ function kindWord(pick) {
   if (pick.kind === 'edge') return 'line';
   if (pick.kind === 'axis') return 'axis';
   if (pick.kind === 'point') return 'point';
+  if (pick.kind === 'plane') return 'plane';
   return 'face';
 }
 
@@ -406,6 +434,7 @@ export function mintJointIdentity(type, joints, mint = mintSurfId) {
 }
 
 function storedKind(pick, type) {
+  if (pick.kind === 'plane') return 'plane';
   if (type === 'concentric' || pick.kind === 'axis' || pick.axis) return 'axis';
   if (pick.kind === 'edge') return 'edge';
   return 'face';
@@ -467,8 +496,10 @@ export function jointConfirmDisabled({ card, locked = false } = {}) {
 
 export function draftFromPicks(previous, picks, { joints = [] } = {}) {
   const suggested = suggestJointType(picks);
+  const parallel = suggested === 'parallel';
+  const suggestedType = parallel ? 'angle' : suggested;
   const keepType = previous?.userPickedType && typeFits(previous.type, picks);
-  const type = keepType ? previous.type : suggested;
+  const type = keepType ? previous.type : suggestedType;
   const identity = previous?.id
     ? { id: previous.id, name: previous.name }
     : (type ? mintJointIdentity(type, joints) : { id: null, name: '' });
@@ -481,9 +512,11 @@ export function draftFromPicks(previous, picks, { joints = [] } = {}) {
     suggested,
     userPickedType: !!keepType,
     userNamed: !!previous?.userNamed,
-    valueMm: Number.isFinite(Number(previous?.valueMm))
-      ? Number(previous.valueMm)
-      : (type === 'distance' ? planarGapMm(picks) : previous?.valueMm),
+    valueMm: (!keepType && parallel)
+      ? 0
+      : (Number.isFinite(Number(previous?.valueMm))
+        ? Number(previous.valueMm)
+        : (type === 'distance' ? planarGapMm(picks) : previous?.valueMm)),
     sense: previous?.sense === -1 ? -1 : 1,
     opposed: previous?.opposed !== false,
     note: previous?.note || '',
@@ -533,7 +566,7 @@ export function jointHighlightEntries(card, doc, catalogs) {
   const parts = doc?.parts || [];
   const out = [];
   for (const pick of card?.picks || []) {
-    if (!pick?.key || pick.kind === 'axis' || pick.kind === 'edge') continue;
+    if (!pick?.key || pick.kind === 'axis' || pick.kind === 'edge' || pick.kind === 'plane') continue;
     const part = parts.find((row) => row?.surfId === pick.surfId);
     const faces = catalogs?.[pick.surfId]?.faces;
     if (!part || !Array.isArray(faces)) continue;

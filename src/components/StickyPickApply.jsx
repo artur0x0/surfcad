@@ -75,16 +75,18 @@ const StickyPickApply = ({
         {properties.length > 0 && (
           <div className="flex flex-wrap gap-1" role="group" aria-label="Property">
             {properties.map((item) => {
-              const on = item.id === property;
+              const on = !item.action && item.id === property;
               return (
                 <button
                   key={item.id}
                   type="button"
-                  aria-pressed={on}
+                  aria-pressed={item.action ? undefined : on}
+                  disabled={!!item.disabled}
                   data-sticky-property={item.id}
                   data-contour-icon={item.icon || undefined}
+                  {...(item.attrs || {})}
                   onClick={() => onProperty?.(item.id)}
-                  className={`rounded px-2 py-1 text-[13px] ${
+                  className={`rounded px-2 py-1 text-[13px] disabled:opacity-40 ${
                     on ? 'bg-cyan-600 text-white' : 'border border-cyan-700/70 bg-cyan-950/80 text-cyan-100'
                   }`}
                 >

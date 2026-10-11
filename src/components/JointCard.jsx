@@ -48,6 +48,23 @@ export default function JointCard({
   const angle = card.type === 'angle';
   const anglePair = planarAnglePair(card.picks);
   const asking = !!card.partChange;
+  const properties = [
+    ...PROPERTIES,
+    {
+      id: 'parallel',
+      label: 'Parallel',
+      action: true,
+      disabled: !anglePair || asking,
+      attrs: { 'data-joint-parallel': '' },
+    },
+    {
+      id: 'perpendicular',
+      label: 'Perpendicular',
+      action: true,
+      disabled: !anglePair || asking,
+      attrs: { 'data-joint-perpendicular': '' },
+    },
+  ];
   const suggestion = card.suggested ? JOINT_TYPE_LABEL[card.suggested] : '';
   const note = [suggestion ? `Suggested: ${suggestion}` : '', card.note || ''].filter(Boolean).join(' ');
   return (
@@ -56,9 +73,19 @@ export default function JointCard({
       subtitle={jointSubtitle(card.picks)}
       picks={picks}
       max={jointPickCap(card.picks)}
-      properties={PROPERTIES}
+      properties={properties}
       property={card.type || ''}
-      onProperty={(id) => set({ type: id, userPickedType: true })}
+      onProperty={(id) => {
+        if (id === 'parallel') {
+          onQuickAngle?.(0);
+          return;
+        }
+        if (id === 'perpendicular') {
+          onQuickAngle?.(90);
+          return;
+        }
+        set({ type: id, userPickedType: true });
+      }}
       onRemovePick={(pick) => {
         const next = (card.picks || []).filter((row, index) => stickyJointPick(row, index).id !== pick.id);
         set({ picks: next });
@@ -133,26 +160,6 @@ export default function JointCard({
             className="min-h-[36px] rounded border border-cyan-700/70 bg-cyan-950/80 px-2 text-white"
           />
         </label>
-        <div className="flex flex-wrap gap-1">
-          <button
-            type="button"
-            data-joint-parallel=""
-            disabled={!anglePair || asking}
-            onClick={() => onQuickAngle?.(0)}
-            className="rounded-md border border-cyan-700/70 bg-cyan-950/80 px-2 py-1 text-[12px] text-cyan-100 disabled:opacity-40"
-          >
-            Parallel
-          </button>
-          <button
-            type="button"
-            data-joint-perpendicular=""
-            disabled={!anglePair || asking}
-            onClick={() => onQuickAngle?.(90)}
-            className="rounded-md border border-cyan-700/70 bg-cyan-950/80 px-2 py-1 text-[12px] text-cyan-100 disabled:opacity-40"
-          >
-            Perpendicular
-          </button>
-        </div>
         {card.picks?.length === 1 && (
           <button
             type="button"

@@ -102,8 +102,8 @@ Desktop specifics:
   from Joints (Lucide `Blocks`, `data-joints-button`), the last button in
   Move. While it is open the parts shift up like every other feature card.
   Add writes the joint, clears the picks, and leaves the card open. X exits.
-  Picks group by part in any order. Parallel and Perpendicular write an
-  angle joint at 0° or 90° in one tap. Two faces on each part suggest
+  Picks group by part in any order. Parallel and Perpendicular sit in the
+  same type-button group and write an angle joint at 0° or 90° in one tap. Two faces on each part suggest
   symmetric. A third part asks **Change one of the parts?**
   A tap with nothing selected selects the part. Joint picking starts
   only while that card is open. Face picks stay highlighted until Add or X.

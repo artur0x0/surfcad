@@ -121,7 +121,7 @@ import {
   dismissJointEdit,
   jointHighlightEntries,
   draftFromPicks,
-  jointHighlightSlot,
+  jointPickSlot,
   quickAngleCard,
   resolvePartChange,
   emptyClickCadSelection,
@@ -863,7 +863,7 @@ const App = () => {
   const viewportRef = useRef(null);
 
   const jointEditHighlightKey = jointCard?.mode === 'edit'
-    ? `${jointCard.id}|${(jointCard.picks || []).map((pick) => jointHighlightSlot(pick.partId || pick.surfId, pick.key?.at)).join(';')}`
+    ? `${jointCard.id}|${(jointCard.picks || []).map((pick) => jointPickSlot(pick)).join(';')}`
     : '';
   useEffect(() => {
     if (!jointEditHighlightKey) return undefined;
@@ -872,6 +872,7 @@ const App = () => {
       parts: doc?.parts,
       runs: partRunsRef.current,
       leftovers: partLeftoversRef.current,
+      scripts: partScriptsRef.current,
     });
     const entries = jointHighlightEntries(jointCardRef.current, doc, catalogs);
     viewportRef.current?.showJointPickHighlights?.(entries);
@@ -2001,6 +2002,7 @@ const App = () => {
             parts: doc.parts,
             runs,
             leftovers: partLeftoversRef.current,
+            scripts,
           });
         } catch (err) {
           console.warn('[App] joint re-resolve failed', err?.message || err);
@@ -6105,12 +6107,12 @@ const App = () => {
     const pending = cur.partChange.pick;
     const before = jointPicksRef.current || [];
     const nextPicks = resolvePartChange(before, pending, action);
-    const kept = new Set(nextPicks.map((row) => jointHighlightSlot(row.partId, row.key?.at)));
+    const kept = new Set(nextPicks.map((row) => jointPickSlot(row)));
     if (action === 'discard') {
-      viewportRef.current?.clearJointHighlights?.(jointHighlightSlot(pending?.partId, pending?.key?.at));
+      viewportRef.current?.clearJointHighlights?.(jointPickSlot(pending));
     }
     for (const row of before) {
-      const slot = jointHighlightSlot(row.partId, row.key?.at);
+      const slot = jointPickSlot(row);
       if (!kept.has(slot)) viewportRef.current?.clearJointHighlights?.(slot);
     }
     jointPicksRef.current = nextPicks;
@@ -6152,9 +6154,9 @@ const App = () => {
     const doc = assemblyRef.current;
     if (!next) return;
     if (Array.isArray(next.picks)) {
-      const kept = new Set(next.picks.map((pick) => jointHighlightSlot(pick?.partId, pick?.key?.at)));
+      const kept = new Set(next.picks.map((pick) => jointPickSlot(pick)));
       for (const pick of jointPicksRef.current || []) {
-        const slot = jointHighlightSlot(pick?.partId, pick?.key?.at);
+        const slot = jointPickSlot(pick);
         if (!kept.has(slot)) viewportRef.current?.clearJointHighlights?.(slot);
       }
       jointPicksRef.current = next.picks;

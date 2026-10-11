@@ -36,7 +36,7 @@ const ZERO = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
 /** Local point and direction a joint equation actually constrains. */
 export function localFrame(ref, type) {
   if (!ref || type === 'fixed') return null;
-  if (ref.kind === 'face' && ref.key?.at && ref.key?.n) {
+  if ((ref.kind === 'face' || ref.kind === 'plane') && ref.key?.at && ref.key?.n) {
     return { at: ref.key.at.slice(), dir: unit3(ref.key.n) };
   }
   if (ref.kind === 'axis' && ref.key?.at && ref.key?.dir) {
