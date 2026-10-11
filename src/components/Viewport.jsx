@@ -120,6 +120,7 @@ import {
   addFeatureStation,
   assignFeatureSlot,
   emptyFeatureSlotCard,
+  featureSlotCardFromEdit,
   featureSlotCommitPayload,
   featureSlotGhostId,
   featureSlotReady,
@@ -436,7 +437,7 @@ import {
   triangleGroupStats,
 } from '../utils/measurePicks';
 import { fitView, meshWorldBox, unionWorldBox, VIEW_PRESETS, VIEW_SNAP_MARGIN } from '../utils/viewCamera';
-import { listFeatureSheetTargets } from '../utils/featureSheetWriteback';
+import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
 import {
   boxCornerPoints,
   createSheetCameraSession,
@@ -3215,7 +3216,7 @@ const Viewport = forwardRef(({
     closeFeatureSlots,
   ]);
 
-  const openFeatureSlots = useCallback((entry) => {
+  const openFeatureSlots = useCallback((entry, seeded = null) => {
     if (!isSolidContourEntry(entry) || mode === 'game') return;
     slotReturnRef.current = null;
     if (contourModeRef.current) exitContourMode();
@@ -3248,7 +3249,7 @@ const Viewport = forwardRef(({
     setSheetMetalMode(null);
     setSheetMetalPicker(null);
     setHelperCardOpen(false);
-    const next = emptyFeatureSlotCard(entry);
+    const next = seeded?.kind === entry ? seeded : emptyFeatureSlotCard(entry);
     featureSlotsRef.current = next;
     setFeatureSlots(next);
     setSlotHoverId(null);
@@ -3277,6 +3278,10 @@ const Viewport = forwardRef(({
   }, [exitContourMode]);
 
   const enterContourMode = useCallback(({ entry } = {}) => {
+    if (isSolidContourEntry(entry) && mode !== 'game') {
+      openFeatureSlots(entry);
+      return;
+    }
     holdContourOverlays(overlayVis, entry);
     feaCloseRef.current();
     exitPaintModeRef.current();
@@ -3339,7 +3344,7 @@ const Viewport = forwardRef(({
     // Soft-fail / refuse only — no informational toast on successful feature UI open.
     if (next.enterRefuse) showContourToast(next.enterRefuse);
     applyContourPartGhost(true);
-  }, [selectedFace, selectedPlaneId, armedContourId, applyContourPartGhost, clearFilletBlendPreview, clearEdgeHover, clearEdgeHighlight, getHelperBuffer, currentScript]);
+  }, [mode, openFeatureSlots, selectedFace, selectedPlaneId, armedContourId, applyContourPartGhost, clearFilletBlendPreview, clearEdgeHover, clearEdgeHighlight, getHelperBuffer, currentScript]);
 
   const beginNewContour = useCallback((slot) => {
     if (!featureSlotsRef.current || !slot) return;
@@ -10011,6 +10016,21 @@ const Viewport = forwardRef(({
     const dialog = creationDialogFor(feature?.kind);
     if (!dialog) return false;
     const text = typeof script === 'string' ? script : '';
+    if (mode !== 'game' && isSolidContourEntry(dialog.entry)) {
+      const session0 = openFeatureEdit(text, feature);
+      const block = session0.block || featureBlockText(text, feature);
+      featureEditRef.current = null;
+      setHelperEdit(null);
+      setFeatureEditBanner('');
+      openFeatureSlots(dialog.entry, featureSlotCardFromEdit({
+        ...(session0.ok ? session0 : { fields: {} }),
+        entry: dialog.entry,
+        kind: feature.kind,
+        feature: session0.feature || feature,
+        block,
+      }, listSavedContours(text)));
+      return true;
+    }
     const session0 = openFeatureEdit(text, feature);
     if (!session0.ok) {
       showContourToast(session0.message || 'Could not open that feature.');
@@ -11265,7 +11285,7 @@ const Viewport = forwardRef(({
       )}
 
       {/* Plane card. Start drawing accepts the plane and leaves the rail up. */}
-      {contourMode && contourPlaneOpen && !contourMode.gesture && mode !== 'game' && (
+      {contourMode && contourPlaneOpen && !contourMode.gesture && mode !== 'game' && !isSolidContourEntry(contourMode.entry) && (
         <ContourModeChip
           tool={contourMode.tool}
           entry={contourMode.entry}

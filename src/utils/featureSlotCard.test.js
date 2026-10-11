@@ -4,6 +4,7 @@ import {
   assignFeatureSlot,
   contoursForSlot,
   emptyFeatureSlotCard,
+  featureSlotCardFromEdit,
   featureSlotCommitPayload,
   featureSlotReady,
   setFeatureStationOffset,
@@ -15,6 +16,10 @@ import {
   composeContourRevolve,
   composeContourSweep,
   composePathContour,
+  listContourExtrudeBlocks,
+  listContourLoftBlocks,
+  listContourRevolveBlocks,
+  listContourSweepBlocks,
   REVOLVE_SEGMENTS,
 } from './contourMode.js';
 import { listSavedContours } from './savedContours.js';
@@ -130,6 +135,135 @@ test('a sweep confirm names an existing path and does not need edges', () => {
   assert.match(wrote.buffer, /type: 'path', closed: true/);
   assert.equal((wrote.buffer.match(/type: 'path'/g) || []).length, 1);
   assert.equal(before.includes("type: 'path'"), true);
+});
+
+test('reopening a named extrude fills the slot and keeps the block id', () => {
+  const profile = composeContourProfile(STARTER, {
+    face: FACE,
+    tool: 'rectangle',
+    params: { width: 12, height: 8, centered: true },
+  });
+  const wrote = composeContourExtrude(profile.buffer, {
+    ...featureSlotCommitPayload({
+      ...assignFeatureSlot(emptyFeatureSlotCard('makeExtrude'), { role: 'profile', index: 0 }, {
+        id: 'c1', name: 'c1', label: 'c1', plane: FACE.planeFrame,
+      }),
+      combine: 'subtract',
+      extrude: { distance: 18, sense: 'both', direction: 'normal' },
+    }),
+  });
+  assert.equal(wrote.ok, true, wrote.message);
+  const block = listContourExtrudeBlocks(wrote.buffer)[0].text;
+  const card = featureSlotCardFromEdit({
+    entry: 'makeExtrude',
+    block,
+    feature: { id: 'extrude-0' },
+  }, listSavedContours(wrote.buffer));
+  assert.equal(card.featureId, 'extrude1');
+  assert.equal(card.profile.contourName, 'c1');
+  assert.equal(card.extrude.distance, 18);
+  assert.equal(card.extrude.sense, 'both');
+  assert.equal(card.combine, 'subtract');
+  assert.equal(card.merge, true);
+  const again = composeContourExtrude(wrote.buffer, featureSlotCommitPayload(card));
+  assert.equal(again.ok, true, again.message);
+  assert.equal((again.buffer.match(/makeExtrude\(/g) || []).length, 1);
+  assert.match(again.buffer, /id=extrude1/);
+});
+
+test('an inline extrude with no contour name stays on Pick a contour', () => {
+  const block = [
+    '// --- contour-mode extrude begin id=extrude1 ---',
+    'part = part.add(placeInFrame(plane, makeExtrude(profileCircle(4, 16).contours, 12), [0, 0, 0]));',
+    '// --- contour-mode extrude end id=extrude1 ---',
+  ].join('\n');
+  const card = featureSlotCardFromEdit({
+    entry: 'makeExtrude',
+    kind: 'extrude',
+    block,
+    fields: { distance: 12, sense: 'positive' },
+    feature: { id: 'extrude-0' },
+  }, [{ id: 'c1', name: 'c1', label: 'c1 · circle' }]);
+  assert.equal(card.profile, null);
+  assert.equal(card.featureId, 'extrude1');
+  assert.equal(card.extrude.distance, 12);
+  const missing = featureSlotCardFromEdit({
+    entry: 'makeExtrude',
+    block: 'makeExtrude(c1.contours, 8)',
+    feature: { id: 'extrude-0' },
+  }, [{ id: 'c1', name: 'c1', label: 'c1 · 4 pts' }]);
+  assert.equal(missing.featureId, null);
+  assert.equal(missing.profile.contourName, 'c1');
+  assert.equal(missing.profile.label, 'c1 · 4 pts');
+});
+
+test('reopening loft and sweep fills named slots when the profile parser cannot', () => {
+  const a = composeContourProfile(STARTER, { face: FACE, tool: 'circle', params: { radius: 5, segments: 16 } });
+  const b = composeContourProfile(a.buffer, { face: SIDE, tool: 'circle', params: { radius: 4, segments: 16 } });
+  let loft = emptyFeatureSlotCard('makeLoft');
+  loft = assignFeatureSlot(loft, { role: 'station', index: 0 }, { id: 'c1', name: 'c1', label: 'c1' });
+  loft = assignFeatureSlot(loft, { role: 'station', index: 1 }, { id: 'c2', name: 'c2', label: 'c2' });
+  loft = setFeatureStationOffset(loft, 1, 20);
+  const wrote = composeContourLoft(b.buffer, featureSlotCommitPayload(loft));
+  assert.equal(wrote.ok, true, wrote.message);
+  const card = featureSlotCardFromEdit({
+    entry: 'makeLoft',
+    block: listContourLoftBlocks(wrote.buffer)[0].text,
+  }, listSavedContours(wrote.buffer));
+  assert.equal(card.stations.length, 2);
+  assert.equal(card.stations[0].contourName, 'c1');
+  assert.equal(card.stations[1].contourName, 'c2');
+  assert.equal(card.stations[1].offset, 20);
+  assert.equal(card.featureId, 'loft1');
+
+  const profile = composeContourProfile(STARTER, { face: FACE, tool: 'circle', params: { radius: 3, segments: 16 } });
+  const path = composePathContour(profile.buffer, { face: FACE, tool: 'circle', params: { radius: 8, segments: 16 } });
+  const sweep = {
+    ...assignFeatureSlot(
+      assignFeatureSlot(emptyFeatureSlotCard('makeSweep'), { role: 'profile', index: 0 }, { id: 'c1', name: 'c1', label: 'c1' }),
+      { role: 'path', index: 0 },
+      { id: path.contourName, name: path.contourName, label: path.contourName, params: { closed: true } },
+    ),
+    sweep: { reverse: true, closed: false },
+    merge: false,
+  };
+  const swept = composeContourSweep(path.buffer, featureSlotCommitPayload(sweep));
+  assert.equal(swept.ok, true, swept.message);
+  const again = featureSlotCardFromEdit({
+    entry: 'makeSweep',
+    block: listContourSweepBlocks(swept.buffer)[0].text,
+  }, listSavedContours(swept.buffer));
+  assert.equal(again.profile.contourName, 'c1');
+  assert.equal(again.path.contourName, path.contourName);
+  assert.equal(again.sweep.reverse, true);
+  assert.equal(again.sweep.closed, false);
+  assert.equal(again.merge, false);
+  assert.equal(again.featureId, 'sweep1');
+});
+
+test('reopening a revolve keeps axis, segments, and sense', () => {
+  const profile = composeContourProfile(STARTER, {
+    face: FACE,
+    tool: 'circle',
+    params: { radius: 8, segments: 16 },
+  });
+  const wrote = composeContourRevolve(profile.buffer, featureSlotCommitPayload({
+    ...assignFeatureSlot(emptyFeatureSlotCard('makeRevolve'), { role: 'profile', index: 0 }, {
+      id: 'c1', name: 'c1', label: 'c1', plane: FACE.planeFrame,
+    }),
+    revolve: { angle: 180, axis: 'u', sense: 'negative', segments: 24 },
+  }));
+  assert.equal(wrote.ok, true, wrote.message);
+  const card = featureSlotCardFromEdit({
+    entry: 'makeRevolve',
+    block: listContourRevolveBlocks(wrote.buffer)[0].text,
+  }, listSavedContours(wrote.buffer));
+  assert.equal(card.profile.contourName, 'c1');
+  assert.equal(card.revolve.angle, 180);
+  assert.equal(card.revolve.segments, 24);
+  assert.equal(card.revolve.sense, 'negative');
+  assert.equal(card.revolve.axis, 'u');
+  assert.equal(card.featureId, 'revolve1');
 });
 
 test('revolve confirm writes the card angle, segments, and sense', () => {

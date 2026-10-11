@@ -82,6 +82,7 @@
         "golden:loft-by-reference": "node scripts/golden/smoke_loft_by_reference.mjs",
         "golden:solids-by-reference": "node scripts/golden/smoke_solids_by_reference.mjs",
         "golden:feature-slots": "node scripts/golden/smoke_feature_slots.mjs",
+        "golden:feature-slot-open": "node scripts/golden/smoke_feature_slot_open.mjs",
         "golden:contour-edit": "node scripts/golden/smoke_contour_edit.mjs",
         "golden:contour-delete": "node scripts/golden/smoke_contour_delete.mjs",
         "golden:sheet-contour-delete": "node scripts/golden/smoke_sheet_contour_delete.mjs",
