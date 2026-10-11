@@ -664,8 +664,8 @@ export function isolateLoftStationParams(prof = {}) {
   };
 }
 
-/** Emit profileCircle / profileRectangle / profilePolygon from Slice 21 params. */
-function emitProfileExprFromParams(p) {
+/** Emit profileCircle / profileRectangle / profilePolygon / solveContour from Slice 21 params. */
+export function emitProfileExprFromParams(p) {
   if (p.contour) return emitSolveContour(p.contour);
   const type = str(p.profileType, 'circle');
   if (type === 'rectangle') {

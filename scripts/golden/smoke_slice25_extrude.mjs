@@ -268,7 +268,7 @@ function rFace() {
     params: { radius: 5, segments: 32 },
   });
   check('commit Profile is Profile-only', prof.ok && prof.run === false && countMakeExtrude(prof.buffer) === 0);
-  check('commit Profile has markers', hasContourProfileBlock(prof.buffer));
+  check('commit Profile is a named contour', /@contour id=c1/.test(prof.buffer) && !hasContourProfileBlock(prof.buffer));
 
   const rev = composeContourCommit(starter, {
     entry: 'makeRevolve',
@@ -286,9 +286,9 @@ function rFace() {
     params: { radius: 5, segments: 32 },
     extrude: { distance: 10, direction: 'normal', sense: 'positive' },
   });
-  check('Extrude after Profile strips profile block', thenExt.ok && !hasContourProfileBlock(thenExt.buffer));
+  check('Extrude after Profile leaves the named contour', thenExt.ok && !hasContourProfileBlock(thenExt.buffer) && /@contour id=c1/.test(thenExt.buffer));
   check('Extrude after Profile has one solid', countMakeExtrude(thenExt.buffer) === 1);
-  check('Extrude after Profile one xs', countMakeCrossSection(thenExt.buffer) === 1);
+  check('Extrude after Profile keeps the contour and its own profile', countMakeCrossSection(thenExt.buffer) === 2);
 }
 
 // ── Replaced one-shot Xform stub ───────────────────────────────

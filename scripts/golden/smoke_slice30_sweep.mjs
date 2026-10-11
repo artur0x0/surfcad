@@ -234,12 +234,11 @@ function sweepPayload(extra = {}) {
     params: { radius: 5, segments: 32 },
   });
   check('Profile Confirm stays profile-only', profile.ok && profile.run === false);
-  check('Profile Confirm has profile block', hasContourProfileBlock(profile.buffer));
-  check('Profile owned region has no sweepPoints',
-    !/sweepPoints\s*\(/.test(profile.buffer.slice(
-      profile.buffer.indexOf('contour-mode profile begin'),
-      profile.buffer.indexOf('contour-mode profile end'),
-    )));
+  check('Profile Confirm writes a named contour', /@contour id=c1/.test(profile.buffer) && !hasContourProfileBlock(profile.buffer));
+  check('Profile Confirm leaves the sweep', hasContourSweepBlock(profile.buffer));
+  check('named contour is not the sweep path', !/sweepPoints\s*\(/.test(
+    (profile.buffer.match(/const c1 = makeCrossSection\([\s\S]*?\/\/ @contour id=c1/) || [''])[0],
+  ));
 
   check('pickFilletStrategy is sweep', pickFilletStrategy() === 'sweep');
   check('resolveFilletStrategy(auto) is sweep', resolveFilletStrategy('auto') === 'sweep');

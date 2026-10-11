@@ -151,6 +151,7 @@ console.log('confirm writes the dimension and stays');
     params: saved.state.params,
   });
   check('profile block is written', block.ok && block.written && /solveContour\(/.test(block.buffer), block.message || '');
+  check('the write is a named contour', /const c1 = makeCrossSection\(/.test(block.buffer) && /@contour id=c1/.test(block.buffer));
   check('the block is the profile, not a solid', !/makeExtrude|makeRevolve|makeLoft/.test(block.buffer));
 
   const ext = composeContourExtrude('let part = Manifold.cube([20, 20, 20], true);', {
@@ -168,7 +169,16 @@ console.log('confirm writes the dimension and stays');
       params: saved.state.params,
       loft: null,
     });
-    check('dimension replaces the profile inside extrude', patched.ok && patched.written && /solveContour\(/.test(patched.buffer));
+    const extrudeRegion = patched.buffer.slice(
+      patched.buffer.indexOf('contour-mode extrude begin'),
+      patched.buffer.indexOf('contour-mode extrude end'),
+    );
+    check('dimension writes a named contour beside the extrude',
+      patched.ok && patched.written && /@contour id=c1/.test(patched.buffer) && /solveContour\(/.test(patched.buffer));
+    check('extrude block is not rewritten', extrudeRegion === ext.buffer.slice(
+      ext.buffer.indexOf('contour-mode extrude begin'),
+      ext.buffer.indexOf('contour-mode extrude end'),
+    ));
     check('extrude distance stays', /makeExtrude\([^)]*12\)/.test(patched.buffer), patched.buffer);
     check('still one extrude', (patched.buffer.match(/makeExtrude\s*\(/g) || []).length === 1);
   }

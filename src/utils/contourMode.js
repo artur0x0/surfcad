@@ -34,6 +34,7 @@ import {
 } from './crossSectionSubstrate.js';
 import {
   composeHelperInsert,
+  emitProfileExprFromParams,
   solidCombineOp,
   solidMergeOn,
   CONTOUR_PROFILE_BEGIN,
@@ -55,6 +56,7 @@ import {
   offsetPlaneFrame,
 } from './makeLoft.js';
 import { assembleSweepPath } from './edgeSweepPath.js';
+import { upsertNamedContour } from './namedContour.js';
 import {
   commitArc,
   commitConstraint,
@@ -1436,61 +1438,50 @@ export function stripContourProfileBlock(buffer) {
 }
 
 /**
- * Confirm → insert or replace in-mode Profile (makeCrossSection).
- * Never emits makeExtrude / makeRevolve / loft.
+ * Confirm → insert or rewrite one named contour.
+ * The contour owns its frame. A new confirm appends c1, c2, ….
+ * The same `contourId` rewrites that statement and keeps the id.
+ * Never emits makeExtrude / makeRevolve / loft, and does not wrap a
+ * profile-marker block.
  *
- * @returns {{ ok: true, buffer: string } | { ok: false, message: string }}
+ * No face means the default +Z frame at the origin. The viewport passes
+ * the part-top face, so a real Confirm owns that plane.
+ *
+ * @returns {{ ok: true, buffer: string, contourId: string, contourName: string } | { ok: false, message: string }}
  */
-export function composeContourProfile(buffer, { face = null, tool = 'circle', params = {} } = {}) {
+export function composeContourProfile(buffer, {
+  face = null,
+  tool = 'circle',
+  params = {},
+  contourId = null,
+  contourName = null,
+} = {}) {
   const gate = validateContourProfile(tool, params);
   if (!gate.ok) return gate;
 
   const planar = face && face.type === 'planar' ? face : null;
-  const stripped = stripContourProfileBlock(buffer);
-  const profileParams = {
-    ...toolToProfileParams(tool, params),
-    body: params.body || 'part',
-    _contourMode: true,
-    // Same literal frame the live preview draws on, so Confirm lands on the
-    // picked face and listSavedContours can read the plane back out.
-    _contourPlane: planar ? planeFromContourFace(planar) : null,
-  };
-  const composed = composeHelperInsert(
-    stripped,
-    'crossSection',
-    null,
-    profileParams,
-    planar,
-    null,
-  );
-  if (typeof composed !== 'string') {
-    return {
-      ok: false,
-      message: 'Could not compose Profile — need a part and a planar workplane.',
-    };
+  const saved = upsertNamedContour(buffer, {
+    id: contourId,
+    name: contourName,
+    frame: planeFromContourFace(planar),
+    profileExpr: emitProfileExprFromParams(toolToProfileParams(tool, params)),
+  });
+  if (!saved.ok) return saved;
+  if (/makeExtrude\s*\(|makeRevolve\s*\(|makeLoft\s*\(|\bsweepPoints\s*\(/.test(saved.statement || '')) {
+    return { ok: false, message: CONTOUR_NO_SOLID };
   }
-  // Only the contour block is this composer's responsibility. Pre-existing
-  // makeExtrude / makeRevolve / loft in the user's script must not block Confirm.
-  const owned = contourProfileOwnedRegion(composed);
-  if (/makeExtrude\s*\(|makeRevolve\s*\(|makeLoft\s*\(|\bloft\s*\(|\bsweepPoints\s*\(|\bsweep\s*\(/.test(owned)) {
-    return {
-      ok: false,
-      message: CONTOUR_NO_SOLID,
-    };
-  }
-  if (!/makeCrossSection\s*\(/.test(composed)) {
+  if (!/makeCrossSection\s*\(/.test(saved.statement || '')) {
     return {
       ok: false,
       message: 'composeContourProfile: makeCrossSection missing — refusing silent no-op.',
     };
   }
-  if (!hasContourProfileBlock(composed)) {
-    return {
-      ok: false,
-      message: 'composeContourProfile: contour-mode markers missing — refusing unscoped insert.',
-    };
-  }
-  return { ok: true, buffer: composed };
+  return {
+    ok: true,
+    buffer: saved.buffer,
+    contourId: saved.id,
+    contourName: saved.name,
+  };
 }
 
 export function countMakeCrossSection(buffer) {

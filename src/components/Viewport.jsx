@@ -111,6 +111,7 @@ import {
   withAutoPickedContour,
 } from '../utils/savedContours';
 import { shouldClearViewportScript } from '../utils/helperPaletteSnippets';
+import { mintContourIdentity } from '../utils/namedContour';
 import {
   blockGeomKey,
   blockParamsPending,
@@ -3201,6 +3202,8 @@ const Viewport = forwardRef(({
       combine: loftState.combine === 'subtract' ? 'subtract' : 'add',
       // Merge bodies is an Add option; Subtract always cuts.
       merge: loftState.combine === 'subtract' ? true : loftState.merge !== false,
+      contourId: loftState.contourId || null,
+      contourName: loftState.contourName || null,
     });
     if (ok) {
       exitContourMode();
@@ -6629,10 +6632,19 @@ const Viewport = forwardRef(({
   }, []);
 
   const saveContourBlock = useCallback((state) => {
-    if (!state?.params?.contour) return false;
+    if (!state?.params?.contour) return state;
+    // Feature edit of an old inline profile still rewrites that feature
+    // on the rail Confirm. Pointer-up must not insert a second contour.
+    if (featureEditRef.current?.dialog === 'contour') return state;
+    const buf = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
+    const minted = state.contourId ? null : mintContourIdentity(buf);
+    const contourId = state.contourId || minted.id;
+    const contourName = state.contourName || minted.name;
     const commitFace = activeContourFace(state, modelBoundsRef.current);
     const ok = onCommitContourProfile?.({
       contourBlock: true,
+      contourId,
+      contourName,
       partId: activePartIdRef.current,
       face: state.planeFace || commitFace,
       tool: state.tool,
@@ -6640,9 +6652,9 @@ const Viewport = forwardRef(({
       entry: state.entry,
       loft: state.loft,
     });
-    if (ok === false) return false;
-    return true;
-  }, [onCommitContourProfile]);
+    if (ok === false) return null;
+    return { ...state, contourId, contourName };
+  }, [getHelperBuffer, onCommitContourProfile]);
 
   /** Unpromoted draft: write the dragged UV once, on release. No script write. */
   const commitPolylinePointDrag = useCallback((uv, index) => {
@@ -6662,10 +6674,18 @@ const Viewport = forwardRef(({
     if (!prev || !spec) return;
     const next = applyDraggedContour(prev, spec);
     const buf = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
-    if (planContourDragRelease({ buffer: buf, entry: next.entry, moved: true }).write) {
-      saveContourBlock(next);
+    const plan = planContourDragRelease({
+      buffer: buf,
+      entry: next.entry,
+      moved: true,
+      contourId: next.contourId,
+    });
+    if (!plan.write) {
+      setContourMode(next);
+      return;
     }
-    setContourMode(next);
+    const stored = saveContourBlock(next);
+    setContourMode(stored || next);
   }, [getHelperBuffer, saveContourBlock]);
 
   const showDraggedContour = useCallback((plane, spec) => {
@@ -10339,8 +10359,8 @@ const Viewport = forwardRef(({
               showContourToast(result.error);
               return;
             }
-            saveContourBlock(result.state);
-            setContourMode(result.state);
+            const stored = saveContourBlock(result.state);
+            setContourMode(stored || result.state);
           }}
         />
       )}
@@ -10385,8 +10405,8 @@ const Viewport = forwardRef(({
               picks: [],
               dimensionLive: null,
             };
-            saveContourBlock(next);
-            setContourMode(next);
+            const stored = saveContourBlock(next);
+            setContourMode(stored || next);
           }}
           onLive={(draft) => {
             const prev = contourModeRef.current;
@@ -10420,8 +10440,8 @@ const Viewport = forwardRef(({
                 dimensionLive: null,
               }
               : { ...result.state, dimensionEdit: null, constraintEdit: null };
-            saveContourBlock(next);
-            setContourMode(next);
+            const stored = saveContourBlock(next);
+            setContourMode(stored || next);
           }}
         />
       )}

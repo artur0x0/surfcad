@@ -41,7 +41,6 @@ import {
   composeContourProfile,
   stripContourProfileBlock,
   hasContourProfileBlock,
-  contourProfileOwnedRegion,
   countMakeCrossSection,
   countMakeExtrude,
 } from '../../src/utils/contourMode.js';
@@ -184,20 +183,22 @@ function rFace() {
   check('compose ok', first.ok && typeof first.buffer === 'string');
   check('has makeCrossSection', /makeCrossSection\s*\(/.test(first.buffer));
   check('has profileCircle', /profileCircle\s*\(/.test(first.buffer));
-  // A picked planar face emits a LITERAL plane frame, not workplaneFromFace:
-  // the host query is opaque to listSavedContours, which then ghosted the
-  // profile on the default +Z top instead of the face the user picked.
+  // The contour owns a literal frame. A host query is not a plane the
+  // parser can read back, and a separate `const fr` is not the contour.
   check('no host workplane query for a picked face', !/workplaneFromFace/.test(first.buffer));
-  check('picked face emits literal frame on the pick',
-    /const fr = \{ center: \[0, 0, 10\], normal: \[0, 0, 1\]/.test(first.buffer));
+  check('picked face is inlined on the contour',
+    /const c1 = makeCrossSection\(\{ center: \[0, 0, 10\], normal: \[0, 0, 1\]/.test(first.buffer));
+  check('contour marker id is c1', /\/\/ @contour id=c1/.test(first.buffer));
+  check('no profile-marker block', !hasContourProfileBlock(first.buffer));
   {
     const read = listSavedContours(first.buffer);
+    const shifted = listSavedContours(`// moved\n${first.buffer}`);
     check('picked-face profile reads back with its plane',
-      read.length === 1 && read[0].host === false
+      read.length === 1 && read[0].id === 'c1' && read[0].name === 'c1' && read[0].host === false
       && Math.abs(read[0].plane.center[2] - 10) < 1e-9
       && Math.abs(read[0].plane.normal[2] - 1) < 1e-9);
+    check('id ignores a character offset', shifted[0]?.id === 'c1' && !String(read[0]?.id).includes('@'));
   }
-  check('has contour markers', hasContourProfileBlock(first.buffer));
   check('one makeCrossSection', countMakeCrossSection(first.buffer) === 1);
   check('zero makeExtrude', countMakeExtrude(first.buffer) === 0);
   check('no makeRevolve', !/makeRevolve\s*\(/.test(first.buffer));
@@ -209,12 +210,23 @@ function rFace() {
     tool: 'rectangle',
     params: { width: 16, height: 8, centered: true },
   });
-  check('update ok', second.ok);
-  check('update still one makeCrossSection', countMakeCrossSection(second.buffer) === 1);
-  check('update uses profileRectangle', /profileRectangle\s*\(/.test(second.buffer));
-  check('update dropped circle', !/profileCircle\s*\(/.test(second.buffer));
-  check('update still zero Extrude', countMakeExtrude(second.buffer) === 0);
-  check('update keeps one return', (second.buffer.match(/\breturn\s+part\s*;/g) || []).length === 1);
+  check('second confirm appends', second.ok && countMakeCrossSection(second.buffer) === 2);
+  check('second confirm keeps the circle and adds a rectangle',
+    /profileCircle\s*\(/.test(second.buffer) && /profileRectangle\s*\(/.test(second.buffer));
+  check('names are c1 and c2', /@contour id=c1/.test(second.buffer) && /@contour id=c2/.test(second.buffer));
+  const rewritten = composeContourProfile(second.buffer, {
+    face,
+    tool: 'polygon',
+    params: { polygonPreset: 'hexagon', radius: 7 },
+    contourId: 'c1',
+    contourName: 'c1',
+  });
+  check('same id rewrites c1 only', rewritten.ok && countMakeCrossSection(rewritten.buffer) === 2);
+  check('c1 dropped the circle', !/profileCircle\s*\(/.test(rewritten.buffer));
+  check('c2 rectangle remains', /profileRectangle\s*\(/.test(rewritten.buffer));
+  check('id c1 stays on the binding', /const c1 = makeCrossSection\(/.test(rewritten.buffer) && /@contour id=c1/.test(rewritten.buffer));
+  check('rewrite still zero Extrude', countMakeExtrude(rewritten.buffer) === 0);
+  check('rewrite keeps one return', (rewritten.buffer.match(/\breturn\s+part\s*;/g) || []).length === 1);
 
   const poly = composeContourProfile(starter, {
     face,
@@ -238,7 +250,9 @@ function rFace() {
     tool: 'circle',
     params: { radius: 3, segments: 16 },
   });
-  check('default +Z compose ok', defPlane.ok && /facesByNormal/.test(defPlane.buffer));
+  check('default +Z compose owns a literal frame',
+    defPlane.ok && /const c1 = makeCrossSection\(\{ center: \[0, 0, 0\], normal: \[0, 0, 1\]/.test(defPlane.buffer)
+    && !/facesByNormal/.test(defPlane.buffer));
 
   const refuse = composeContourProfile(starter, {
     face,
@@ -248,8 +262,8 @@ function rFace() {
   check('compose refuses bad radius', !refuse.ok && /radius/i.test(refuse.message || ''));
 
   const stripped = stripContourProfileBlock(first.buffer);
-  check('strip removes markers', !hasContourProfileBlock(stripped));
-  check('strip removes makeCrossSection', countMakeCrossSection(stripped) === 0);
+  check('a named contour is not a profile-marker block', !hasContourProfileBlock(first.buffer));
+  check('strip leaves the named contour', stripped === first.buffer && countMakeCrossSection(stripped) === 1);
   check('strip keeps part', /Manifold\.cube/.test(stripped));
 
   check('NO_SOLID copy present', /Extrude/.test(CONTOUR_NO_SOLID));
@@ -264,11 +278,11 @@ function rFace() {
     tool: 'circle',
     params: { radius: 5, segments: 32 },
   });
-  const emitted = contourProfileOwnedRegion(ontoSolid.buffer || '');
   check('compose onto existing Extrude is ok', ontoSolid.ok === true);
-  check('compose onto Extrude keeps profile block', hasContourProfileBlock(ontoSolid.buffer || ''));
-  check('emitted region has no solid call',
-    emitted.length > 0 && !/makeExtrude\s*\(|makeRevolve\s*\(|\bloft\s*\(/.test(emitted));
+  check('compose onto Extrude adds a named contour', /@contour id=c1/.test(ontoSolid.buffer || '') && !hasContourProfileBlock(ontoSolid.buffer || ''));
+  const contourLine = (ontoSolid.buffer.match(/const c1 = .*/) || [''])[0];
+  check('named contour line has no solid call',
+    /makeCrossSection\(/.test(contourLine) && !/makeExtrude|makeRevolve|makeLoft|sweepPoints/.test(contourLine));
   check('existing Extrude still in buffer', countMakeExtrude(ontoSolid.buffer) === 1);
 }
 

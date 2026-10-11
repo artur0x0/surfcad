@@ -151,10 +151,11 @@ export function applyDraggedContour(state, spec) {
 }
 
 /**
- * A drag writes the script only on release, and only when a contour block
- * is already there. A move never writes. Drafting before the first Confirm
- * does not insert a block.
+ * A drag writes the script only on release, and only when that named
+ * contour is already in the script. A move never writes. Drafting before
+ * the first Confirm does not insert a contour. A feature block is not
+ * the contour, so a missing id does not write.
  */
-export function planContourDragRelease({ buffer = '', entry = '', moved = false } = {}) {
-  return { write: !!(moved && contourBlockReady(buffer, entry)) };
+export function planContourDragRelease({ buffer = '', entry = '', moved = false, contourId = null } = {}) {
+  return { write: !!(moved && contourId && contourBlockReady(buffer, entry, 0, contourId)) };
 }
