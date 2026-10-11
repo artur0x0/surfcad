@@ -4696,7 +4696,8 @@ function profilePolygon(points) {
 /**
  * makeCrossSection(plane, profile) → reusable { kind, plane, profile, contours }.
  * plane: workplaneFromFace frame. profile: profileCircle/Rectangle/Polygon result,
- * or { type, ... }, or bare contours / point list (same rules as makeExtrude).
+ * or { type, ... }, a { type:'path', points, closed } wire (two or more [u,v],
+ * zero area allowed), or bare contours / point list (same rules as makeExtrude).
  * Does NOT extrude/sweep — substrate only for later slices.
  */
 function makeCrossSection(plane, profile) {
@@ -4722,6 +4723,25 @@ function makeCrossSection(plane, profile) {
     const built = profilePolygon(profile.points);
     desc = { type: 'polygon', points: built.points };
     contours = built.contours;
+  } else if (profile && typeof profile === 'object' && profile.type === 'path' && Array.isArray(profile.points)) {
+    // Open sweep wire. Two points and zero area are legal. Do not close,
+    // reverse, or run the closed-loop area check.
+    if (profile.points.length < 2) {
+      throw new Error('makeCrossSection: a path needs at least 2 points');
+    }
+    const pts = profile.points.map(v => {
+      if (!Array.isArray(v) || v.length < 2) {
+        throw new Error('makeCrossSection: path points must be finite [u, v]');
+      }
+      const u = Number(v[0]);
+      const vv = Number(v[1]);
+      if (!Number.isFinite(u) || !Number.isFinite(vv)) {
+        throw new Error('makeCrossSection: path points must be finite [u, v]');
+      }
+      return [u, vv];
+    });
+    desc = { type: 'path', closed: !!profile.closed, points: pts };
+    contours = [pts];
   } else if (Array.isArray(profile)) {
     // bare point list or contours array — reuse C8 normalizer shape rules
     const cleaned = _c8NormalizeContours(profile);
@@ -4730,7 +4750,7 @@ function makeCrossSection(plane, profile) {
   } else {
     throw new Error(
       'makeCrossSection: profile must be profileCircle/profileRectangle/profilePolygon, '
-      + 'solveContour, a { type } descriptor, or a contours / point list'
+      + 'solveContour, a { type } descriptor, a { type: \'path\' } wire, or a contours / point list'
     );
   }
   return {

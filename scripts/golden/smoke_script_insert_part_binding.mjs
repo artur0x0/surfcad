@@ -127,7 +127,7 @@ console.log('script-insert part-binding');
   }
 }
 
-// ── Host cube: Second Confirm still replaces one additive block ─
+// ── Host cube: no id appends; the same id rewrites ─────────────
 {
   const starter = 'let part = Manifold.cube([40, 30, 20], true);\nreturn part;\n';
   const first = extrude(starter, {
@@ -142,14 +142,24 @@ console.log('script-insert part-binding');
     params: { radius: 7, segments: 24 },
     extrude: { distance: 8, direction: 'normal', sense: 'positive' },
   });
-  check('host Second Confirm ok', second.ok === true, second.message || '');
-  check('host Second Confirm still one extrude block',
-    (second.buffer.match(/contour-mode extrude begin/g) || []).length === 1);
-  check('host Second Confirm still one part.add',
-    (second.buffer.match(/part\s*=\s*part\.add\(\s*placeInFrame\s*\(/g) || []).length === 1);
-  check('host Second Confirm replaces radius',
-    /profileCircle\(7/.test(second.buffer) && !/profileCircle\(5/.test(second.buffer));
+  check('host confirm with no id ok', second.ok === true, second.message || '');
+  check('host confirm with no id appends a second block',
+    (second.buffer.match(/contour-mode extrude begin/g) || []).length === 2);
+  check('host confirm with no id adds a second part.add',
+    (second.buffer.match(/part\s*=\s*part\.add\(\s*placeInFrame\s*\(/g) || []).length === 2);
+  check('host confirm with no id keeps both radii',
+    /profileCircle\(7/.test(second.buffer) && /profileCircle\(5/.test(second.buffer));
   check('host cube survives', /Manifold\.cube\(/.test(second.buffer));
+  const rewritten = composeContourExtrude(first.buffer, {
+    face: faceTop,
+    tool: 'circle',
+    params: { radius: 7, segments: 24 },
+    extrude: { distance: 8, direction: 'normal', sense: 'positive' },
+    featureId: first.featureId,
+  });
+  check('host same id rewrites one block', rewritten.ok
+    && (rewritten.buffer.match(/contour-mode extrude begin/g) || []).length === 1
+    && /profileCircle\(7/.test(rewritten.buffer) && !/profileCircle\(5/.test(rewritten.buffer));
 }
 
 // ── Binding discovery + caret clamp (no TDZ insert-before-decl) ─

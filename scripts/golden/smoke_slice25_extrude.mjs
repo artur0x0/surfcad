@@ -4,7 +4,7 @@
  * - Extrude enters contour mode (Slice 24 shell)
  * - live solid preview payload (distance / direction / sense)
  * - Confirm composes profile + makeExtrude + placeInFrame (replace part)
- * - second Confirm replaces the same marked block (no duplicate stack)
+ * - the same feature id rewrites that block; a confirm with no id appends
  * - Profile Confirm stays Profile-only; Revolve Confirm is Slice 26 (solid)
  * - one-shot Xform Extrude stub replaced (no hardcoded plate)
  * - #30 fillet Strategy default remains sweep
@@ -12,8 +12,6 @@
 import {
   composeHelperInsert,
   HELPER_PALETTE_ITEMS,
-  CONTOUR_EXTRUDE_BEGIN,
-  CONTOUR_EXTRUDE_END,
 } from '../../src/utils/helperPaletteSnippets.js';
 import {
   resolveFaceModal,
@@ -173,7 +171,8 @@ function rFace() {
     && /part\s*=\s*part\.add\(\s*placeInFrame\s*\(/.test(first.buffer)
     && !/placeOnFace\s*\(/.test(first.buffer));
   check('has extrude markers', hasContourExtrudeBlock(first.buffer));
-  check('markers wrap solid', first.buffer.includes(CONTOUR_EXTRUDE_BEGIN) && first.buffer.includes(CONTOUR_EXTRUDE_END));
+  check('markers carry extrude1', /contour-mode extrude begin id=extrude1/.test(first.buffer)
+    && /contour-mode extrude end id=extrude1/.test(first.buffer));
   check('one makeCrossSection', countMakeCrossSection(first.buffer) === 1);
   check('one makeExtrude', countMakeExtrude(first.buffer) === 1);
   check('no makeRevolve', !/makeRevolve\s*\(/.test(first.buffer));
@@ -182,14 +181,16 @@ function rFace() {
   check('w offset 0 for Out', /placeInFrame\([^,]+, makeExtrude\([^,]+, 10\), \[0, 0, 0\]\)/.test(first.buffer));
 
   const owned = contourExtrudeOwnedRegion(first.buffer);
-  check('owned region has profile + solid',
-    /makeCrossSection/.test(owned) && /makeExtrude/.test(owned) && /placeInFrame/.test(owned));
+  check('owned region names the contour',
+    !/makeCrossSection/.test(owned) && /makeExtrude/.test(owned) && /placeInFrame/.test(owned)
+    && /c1\.contours/.test(owned));
 
   const second = composeContourExtrude(first.buffer, {
     face,
     tool: 'rectangle',
     params: { width: 16, height: 8, centered: true },
     extrude: { distance: 6, direction: 'normal', sense: 'negative' },
+    featureId: first.featureId,
   });
   check('update ok', second.ok);
   check('update still one makeCrossSection', countMakeCrossSection(second.buffer) === 1);
@@ -199,6 +200,15 @@ function rFace() {
   check('update sense In uses -6', /placeInFrame\([^,]+, makeExtrude\([^,]+, 6\), \[0, 0, -6\]\)/.test(second.buffer));
   check('update keeps one return', (second.buffer.match(/\breturn\s+part\s*;/g) || []).length === 1);
   check('update still one extrude block', (second.buffer.match(/contour-mode extrude begin/g) || []).length === 1);
+  const appended = composeContourExtrude(first.buffer, {
+    face,
+    tool: 'rectangle',
+    params: { width: 16, height: 8, centered: true },
+    extrude: { distance: 6, direction: 'normal', sense: 'negative' },
+  });
+  check('confirm with no id appends extrude2', appended.ok && appended.featureId === 'extrude2'
+    && /id=extrude1/.test(appended.buffer) && /profileCircle/.test(appended.buffer)
+    && /profileRectangle/.test(appended.buffer));
 
   const both = composeContourExtrude(starter, {
     face,
@@ -244,7 +254,7 @@ function rFace() {
   const stripped = stripContourExtrudeBlock(first.buffer);
   check('strip removes extrude markers', !hasContourExtrudeBlock(stripped));
   check('strip removes makeExtrude', countMakeExtrude(stripped) === 0);
-  check('strip removes makeCrossSection', countMakeCrossSection(stripped) === 0);
+  check('strip leaves the named contour', countMakeCrossSection(stripped) === 1 && /@contour id=c1/.test(stripped));
   check('strip keeps part', /Manifold\.cube/.test(stripped));
   check('Back-equivalent has no orphan Extrude', countMakeExtrude(stripped) === 0);
 }

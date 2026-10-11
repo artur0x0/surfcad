@@ -12,15 +12,16 @@
  * Slice 22: sweepPath ordered wire from edge selection (makeSweepPath).
  * Slice 23: filletAlongPath — sweep fillet wedge along Path; Fillet Strategy=sweep (default) | planar.
  * Slice 24: contour-mode Profile region (markers + custom polyline points).
- * Slice 25/hotfix: Extrude Confirm wraps profile + makeExtrude / placeInFrame
- * in extrude markers. When `part` already exists, Confirm unions
- * (`part = part.add(placeInFrame(...))`); an empty script still uses
- * `let part = placeInFrame(...)`.
+ * Slice 25/hotfix: Extrude Confirm names a contour and writes makeExtrude
+ * by that name inside an id-marked extrude block. When `part` already
+ * exists, Confirm unions (`part = part.add(placeInFrame(...))`); an empty
+ * script still uses `let part = placeInFrame(...)`.
  * Script-insert part-binding: locate the live `part` decl/assign, insert AFTER
  * it (never in the TDZ), and prefer `part = …` / `part.add` over a second
  * `let part`. Founding Contour solids are kept so Extrude-on-Extrude stacks.
- * Slice 26/hotfix: Revolve Confirm wraps profile + makeRevolve / placeInFrame
- * in revolve markers (same additive rule when `part` already exists).
+ * Slice 26/hotfix: Revolve Confirm names a contour and writes makeRevolve
+ * of that contour inside an id-marked revolve block (additive when `part`
+ * already exists).
  * Slice 27: Fillet-in-mode Accept wraps makeSweepPath + filletAlongPath in fillet markers
  * (one pair per contiguous component when the edge pick is disconnected).
  * Disjoint corners resolve every edge before the first blend: a fillet boolean
@@ -31,8 +32,9 @@
  * Extrude, Revolve, Sweep, and Loft live in Advanced on the game rail. The CAD
  * rail promotes that set into Model (paletteRailSections) and does not repeat
  * them under Advanced. Draft stays in Transforms.
- * Slice 30: Sweep Confirm wraps makeCrossSection + makeSweepPath + sweepPoints
- * / placeInFrame in sweep markers (additive when `part` already exists).
+ * Slice 30: Sweep Confirm names a profile contour and a path contour, then
+ * writes sweepPoints inside an id-marked sweep block (additive when `part`
+ * already exists).
  *
  * Slice A: every left-rail insertable that creates a feature wraps begin/end
  * markers (primitives, polish, moves, one-shot Model fallbacks) so FeatureStrip
@@ -63,11 +65,19 @@ import {
 } from './faceFeaturePlacement.js';
 import { resolveFilletStrategy } from './filletAlongPath.js';
 import { BLOCK_POSE_PARAMS, blockSpec, blockSolidExpression } from './blockSolid.js';
-import { splitEdgePathComponents } from './edgeSweepPath.js';
+import { assembleSweepPath, splitEdgePathComponents } from './edgeSweepPath.js';
 import { planeFrameFromFaceData } from './crossSectionSubstrate.js';
 import { emitSolveContour } from './contourScript.js';
 import { findFeatureBlocks, isMarkerLine, mintBlockId } from './featureBlockId.js';
 import { emitLoftReferenceLines } from './loftReference.js';
+import {
+  emitExtrudeReferenceLines,
+  emitPathProfileExpr,
+  emitRevolveReferenceLines,
+  emitSweepReferenceLines,
+  projectPathUv,
+  sweepPathFrame,
+} from './solidReference.js';
 
 /** Slice 24 — in-mode Profile region so Confirm can replace without appending. */
 export const CONTOUR_PROFILE_BEGIN = '// --- contour-mode profile begin ---';
@@ -777,27 +787,6 @@ function loftReferencePlaceIndex(frames, offsets) {
   return best;
 }
 
-/** Compact `cu*u + cv*v + add` for contour-mode Revolve remapping. */
-function emitUvCombo(uName, vName, cu, cv, add) {
-  const parts = [];
-  const pushTerm = (c, name) => {
-    const n = +Number(c).toFixed(6);
-    if (Math.abs(n) < 1e-12) return;
-    if (n === 1) parts.push(name);
-    else if (n === -1) parts.push(`-${name}`);
-    else parts.push(`${n} * ${name}`);
-  };
-  pushTerm(cu, uName);
-  pushTerm(cv, vName);
-  let expr = '0';
-  if (parts.length === 1) expr = parts[0];
-  else if (parts.length > 1) expr = parts.join(' + ').replace(/ \+ -/g, ' - ');
-  const s = +Number(add).toFixed(4);
-  if (s === 0) return expr;
-  if (s > 0) return `${expr} + ${s}`;
-  return `${expr} - ${-s}`;
-}
-
 /** Compact `[x, y, z]` for a composed PlaneFrame literal. */
 function emitVec3Literal(v, fallback = [0, 0, 0]) {
   const src = Array.isArray(v) && v.length >= 3 ? v : fallback;
@@ -901,52 +890,6 @@ export function emitPartPlace(names, expr, partDeclared, additive, op = 'add', m
     return `part = part.add(${expr});`;
   }
   return emitPartReplace(names, expr, partDeclared);
-}
-
-/**
- * World point → plane-frame UVW. Sweep runs in that frame so placeInFrame
- * maps the solid back without a second host transform.
- */
-function emitWorldToFrameExpr(pt, plane) {
-  const dx = `(${pt}[0] - ${plane}.center[0])`;
-  const dy = `(${pt}[1] - ${plane}.center[1])`;
-  const dz = `(${pt}[2] - ${plane}.center[2])`;
-  const axis = (name) => `${dx} * ${plane}.${name}[0] + ${dy} * ${plane}.${name}[1] + ${dz} * ${plane}.${name}[2]`;
-  return `[${axis('x')}, ${axis('y')}, ${axis('normal')}]`;
-}
-
-/** sweepPoints in the plane frame, then frame-only placeInFrame replace. */
-function emitSweepSolidTail(names, xs, path, partDeclared, additive = false, op = 'add', merge = true) {
-  const local = allocateUniqueName(names, 'sweepLocal');
-  const swept = allocateUniqueName(names, 'swept');
-  return [
-    `const ${local} = ${path}.points.map((pt) => ${emitWorldToFrameExpr('pt', `${xs}.plane`)});`,
-    `const ${swept} = sweepPoints(new CrossSection(${xs}.contours), ${local}, { closed: !!${path}.closed, initialNormal: [1, 0, 0] });`,
-    `if (!(${swept}.volume() > 1e-8)) throw new Error('sweep: result is EMPTY (volume 0) — check profile area and path');`,
-    emitPartPlace(names, `placeInFrame(${xs}.plane, ${swept})`, partDeclared, additive, op, merge),
-  ];
-}
-
-/** placeInFrame frame: local X=radial, Y=plane normal, Z=in-plane axis. */
-function emitRevolvePlaceFrame(xs, rU, rV, aU, aV) {
-  const rad = emitPlaneVecCombo(xs, rU, rV);
-  const axi = emitPlaneVecCombo(xs, aU, aV);
-  // Identity remap: axis through the workplane origin (no min-radial shift).
-  return `{ center: ${xs}.plane.center, x: ${rad}, y: ${xs}.plane.normal, normal: ${axi} }`;
-}
-
-function emitPlaneVecCombo(xs, cu, cv) {
-  const u = +Number(cu).toFixed(6);
-  const v = +Number(cv).toFixed(6);
-  if (Math.abs(v) < 1e-12 && Math.abs(u - 1) < 1e-12) return `${xs}.plane.x`;
-  if (Math.abs(v) < 1e-12 && Math.abs(u + 1) < 1e-12) return `[-${xs}.plane.x[0], -${xs}.plane.x[1], -${xs}.plane.x[2]]`;
-  if (Math.abs(u) < 1e-12 && Math.abs(v - 1) < 1e-12) return `${xs}.plane.y`;
-  if (Math.abs(u) < 1e-12 && Math.abs(v + 1) < 1e-12) return `[-${xs}.plane.y[0], -${xs}.plane.y[1], -${xs}.plane.y[2]]`;
-  return `[
-    (${u}) * ${xs}.plane.x[0] + (${v}) * ${xs}.plane.y[0],
-    (${u}) * ${xs}.plane.x[1] + (${v}) * ${xs}.plane.y[1],
-    (${u}) * ${xs}.plane.x[2] + (${v}) * ${xs}.plane.y[2],
-  ]`;
 }
 
 /**
@@ -1691,24 +1634,32 @@ export const HELPER_PALETTE_ITEMS = [
         }));
       } else if (p._contourRevolve) {
         const rev = p._contourRevolve;
-        const angle = num(rev.angle, 360);
-        const segs = Math.max(3, Math.round(num(rev.segments, 96)));
-        const startDeg = num(rev.startDeg, 0);
-        const rU = num(rev.rU, 1);
-        const rV = num(rev.rV, 0);
-        const aU = num(rev.aU, 0);
-        const aV = num(rev.aV, 1);
-        const mapped = `${xs}.contours.map((ring) => ring.map(([u, v]) => [${emitUvCombo('u', 'v', rU, rV, 0)}, ${emitUvCombo('u', 'v', aU, aV, 0)}]))`;
-        let solidExpr = `makeRevolve(${mapped}, ${segs}, ${+Number(angle).toFixed(4)})`;
-        if (Math.abs(startDeg) > 1e-9) {
-          solidExpr = `${solidExpr}.rotate([0, 0, ${+Number(startDeg).toFixed(4)}])`;
-        }
-        const frame = emitRevolvePlaceFrame(xs, rU, rV, aU, aV);
-        lines.push(CONTOUR_REVOLVE_BEGIN);
-        lines.push(...wp.lines);
-        lines.push(profileLine);
-        lines.push(emitPartPlace(names, `placeInFrame(${frame}, ${solidExpr})`, partDeclared, partDeclared, solidCombineOp(p._contourRevolve), solidMergeOn(p._contourRevolve)));
-        lines.push(CONTOUR_REVOLVE_END);
+        const name = takeContourName(names);
+        const featureId = mintBlockId(findFeatureBlocks(buffer, CONTOUR_REVOLVE_BEGIN, CONTOUR_REVOLVE_END), 'revolve');
+        lines.push(
+          `const ${name} = makeCrossSection(${emitPlaneFrameLiteral(rev.plane)}, ${profileExpr}); // @contour id=${name}`,
+        );
+        lines.push(...emitRevolveReferenceLines({
+          begin: CONTOUR_REVOLVE_BEGIN,
+          end: CONTOUR_REVOLVE_END,
+          featureId,
+          contour: name,
+          rU: num(rev.rU, 1),
+          rV: num(rev.rV, 0),
+          aU: num(rev.aU, 0),
+          aV: num(rev.aV, 1),
+          segments: Math.max(3, Math.round(num(rev.segments, 96))),
+          angle: num(rev.angle, 360),
+          startDeg: num(rev.startDeg, 0),
+          partLine: (expr) => emitPartPlace(
+            names,
+            expr,
+            partDeclared,
+            partDeclared,
+            solidCombineOp(p._contourRevolve),
+            solidMergeOn(p._contourRevolve),
+          ),
+        }));
       } else if (p._contourExtrude) {
         const ext = p._contourExtrude;
         const distance = num(ext.distance, 10);
@@ -1717,31 +1668,61 @@ export const HELPER_PALETTE_ITEMS = [
         if (sense === 'negative') w = -distance;
         else if (sense === 'both') w = -distance / 2;
         w = +Number(w).toFixed(4);
-        lines.push(CONTOUR_EXTRUDE_BEGIN);
-        lines.push(...wp.lines);
-        lines.push(profileLine);
-        lines.push(emitPartPlace(
-          names,
-          `placeInFrame(${xs}.plane, makeExtrude(${xs}.contours, ${distance}), [0, 0, ${w}])`,
-          partDeclared,
-          partDeclared,
-          solidCombineOp(p._contourExtrude),
-          solidMergeOn(p._contourExtrude),
-        ));
-        lines.push(CONTOUR_EXTRUDE_END);
+        const name = takeContourName(names);
+        const featureId = mintBlockId(findFeatureBlocks(buffer, CONTOUR_EXTRUDE_BEGIN, CONTOUR_EXTRUDE_END), 'extrude');
+        lines.push(
+          `const ${name} = makeCrossSection(${emitPlaneFrameLiteral(ext.plane)}, ${profileExpr}); // @contour id=${name}`,
+        );
+        lines.push(...emitExtrudeReferenceLines({
+          begin: CONTOUR_EXTRUDE_BEGIN,
+          end: CONTOUR_EXTRUDE_END,
+          featureId,
+          contour: name,
+          distance,
+          w,
+          partLine: (expr) => emitPartPlace(
+            names,
+            expr,
+            partDeclared,
+            partDeclared,
+            solidCombineOp(p._contourExtrude),
+            solidMergeOn(p._contourExtrude),
+          ),
+        }));
       } else if (p._contourSweep) {
         const sw = p._contourSweep;
-        const edge = emitSelectedEdgeLiteralLines(body, edgeCtx || [], names, allocateUniqueName);
-        if (!edge.ok) return null;
-        const path = allocateUniqueName(names, 'path');
-        const opts = sw.reverse ? ', { reverse: true }' : '';
-        lines.push(CONTOUR_SWEEP_BEGIN);
-        lines.push(...wp.lines);
-        lines.push(profileLine);
-        lines.push(...edge.lines);
-        lines.push(`const ${path} = makeSweepPath(${edge.edgesExpr}${opts}); // edge→sweep path`);
-        lines.push(...emitSweepSolidTail(names, xs, path, partDeclared, partDeclared, solidCombineOp(p._contourSweep), solidMergeOn(p._contourSweep)));
-        lines.push(CONTOUR_SWEEP_END);
+        const ordered = assembleSweepPath(edgeCtx || [], { reverse: !!sw.reverse });
+        if (!ordered.ok) return null;
+        const frame = sweepPathFrame(ordered.value.points);
+        if (!frame) return null;
+        const profileName = takeContourName(names);
+        const pathName = takeContourName(names);
+        const featureId = mintBlockId(findFeatureBlocks(buffer, CONTOUR_SWEEP_BEGIN, CONTOUR_SWEEP_END), 'sweep');
+        const localName = allocateUniqueName(names, 'sweepLocal');
+        const sweptName = allocateUniqueName(names, 'swept');
+        lines.push(
+          `const ${profileName} = makeCrossSection(${emitPlaneFrameLiteral(sw.plane)}, ${profileExpr}); // @contour id=${profileName}`,
+        );
+        lines.push(
+          `const ${pathName} = makeCrossSection(${emitPlaneFrameLiteral(frame)}, ${emitPathProfileExpr(projectPathUv(ordered.value.points, frame), !!ordered.value.closed)}); // @contour id=${pathName}`,
+        );
+        lines.push(...emitSweepReferenceLines({
+          begin: CONTOUR_SWEEP_BEGIN,
+          end: CONTOUR_SWEEP_END,
+          featureId,
+          profile: profileName,
+          path: pathName,
+          localName,
+          sweptName,
+          partLine: (expr) => emitPartPlace(
+            names,
+            expr,
+            partDeclared,
+            partDeclared,
+            solidCombineOp(p._contourSweep),
+            solidMergeOn(p._contourSweep),
+          ),
+        }));
       } else if (p._contourMode) {
         // Slice 24: wrap in-mode Profile so Confirm replaces the region (no Extrude).
         lines.push(CONTOUR_PROFILE_BEGIN);
@@ -2336,7 +2317,7 @@ export const HELPER_PALETTE_ITEMS = [
     id: 'makeExtrude',
     label: 'Extrude',
     group: 'Advanced',
-    title: 'Extrude — contour mode (profile + makeExtrude). Confirm adds or subtracts when part already exists.',
+    title: 'Extrude — named contour and makeExtrude. Confirm adds or subtracts when part already exists.',
     bodyBase: 'extrude',
     params: [
       { name: 'height', type: 'number', default: 10, label: 'Height', min: 0.1, step: 1 },
@@ -2345,18 +2326,23 @@ export const HELPER_PALETTE_ITEMS = [
     ],
     // UI always enters contour mode (Slice 24/25). This build is only the
     // sequential-compose / golden fallback — not a one-shot hardcoded plate.
-    build: (empty, p, names) => {
+    build: (empty, p, names, buffer) => {
       const h = num(p.height, 10);
-      const xs = allocateUniqueName(names, 'xs');
-      const extrude = allocateUniqueName(names, 'extrude');
-      const lines = wrapFeatureBlock(CONTOUR_EXTRUDE_BEGIN, CONTOUR_EXTRUDE_END, [
-        `const ${xs} = makeCrossSection({ center: [0, 0, 0], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] }, profileRectangle(40, 30, true));`,
-        `let ${extrude} = makeExtrude(${xs}.contours, ${h});`,
-        // Append, never replace — same rule this entry's contour-mode Confirm
-        // already follows. The one-shot path used to overwrite `part`, which
-        // stranded the previous solid as dead code.
-        emitPartPlace(names, extrude, !empty && names.has('part'), true, solidCombineOp(p), solidMergeOn(p)),
-      ]);
+      const contour = takeContourName(names);
+      const plane = emitPlaneFrameLiteral({ center: [0, 0, 0], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] });
+      const featureId = mintBlockId(findFeatureBlocks(buffer || '', CONTOUR_EXTRUDE_BEGIN, CONTOUR_EXTRUDE_END), 'extrude');
+      const lines = [
+        `const ${contour} = makeCrossSection(${plane}, profileRectangle(40, 30, true)); // @contour id=${contour}`,
+        ...emitExtrudeReferenceLines({
+          begin: CONTOUR_EXTRUDE_BEGIN,
+          end: CONTOUR_EXTRUDE_END,
+          featureId,
+          contour,
+          distance: h,
+          w: 0,
+          partLine: (expr) => emitPartPlace(names, expr, !empty && names.has('part'), true, solidCombineOp(p), solidMergeOn(p)),
+        }),
+      ];
       return withReturn(lines, empty);
     },
   },
@@ -2364,22 +2350,35 @@ export const HELPER_PALETTE_ITEMS = [
     id: 'makeRevolve',
     label: 'Revolve',
     group: 'Advanced',
-    title: 'Revolve — contour mode (profile + makeRevolve). Confirm adds or subtracts when part already exists.',
+    title: 'Revolve — named contour and makeRevolve. Confirm adds or subtracts when part already exists.',
     bodyBase: 'revolve',
     params: [
       { name: 'segments', type: 'number', default: 64, label: 'Segments', min: 3, step: 1 },
       SOLID_COMBINE_PARAM,
       SOLID_MERGE_PARAM,
     ],
-    build: (empty, p, names) => {
-      const revolve = allocateUniqueName(names, 'revolve');
+    build: (empty, p, names, buffer) => {
       const seg = Math.max(3, Math.round(num(p.segments, 64)));
-      const lines = wrapFeatureBlock(CONTOUR_REVOLVE_BEGIN, CONTOUR_REVOLVE_END, [
-        `let ${revolve} = makeRevolve([`,
-        '  [[8, 0], [25, 0], [25, 6], [12, 6], [12, 40], [8, 40]]',
-        `], ${seg});`,
-        emitPartPlace(names, revolve, !empty && names.has('part'), true, solidCombineOp(p), solidMergeOn(p)),
-      ]);
+      const contour = takeContourName(names);
+      const plane = emitPlaneFrameLiteral({ center: [0, 0, 0], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] });
+      const featureId = mintBlockId(findFeatureBlocks(buffer || '', CONTOUR_REVOLVE_BEGIN, CONTOUR_REVOLVE_END), 'revolve');
+      const lines = [
+        `const ${contour} = makeCrossSection(${plane}, profilePolygon([[8, 0], [25, 0], [25, 6], [12, 6], [12, 40], [8, 40]])); // @contour id=${contour}`,
+        ...emitRevolveReferenceLines({
+          begin: CONTOUR_REVOLVE_BEGIN,
+          end: CONTOUR_REVOLVE_END,
+          featureId,
+          contour,
+          rU: 1,
+          rV: 0,
+          aU: 0,
+          aV: 1,
+          segments: seg,
+          angle: 360,
+          startDeg: 0,
+          partLine: (expr) => emitPartPlace(names, expr, !empty && names.has('part'), true, solidCombineOp(p), solidMergeOn(p)),
+        }),
+      ];
       return withReturn(lines, empty);
     },
   },
@@ -2387,24 +2386,37 @@ export const HELPER_PALETTE_ITEMS = [
     id: 'makeSweep',
     label: 'Sweep',
     group: 'Advanced',
-    title: 'Sweep — contour mode (profile + path + sweepPoints). Confirm adds or subtracts when part already exists.',
+    title: 'Sweep — named profile and path contours. Confirm adds or subtracts when part already exists.',
     bodyBase: 'swept',
     params: [SOLID_COMBINE_PARAM],
     // UI always enters contour mode (Slice 30). This build is the sequential /
     // golden fallback — circle profile swept along a straight +Z edge.
-    build: (empty, p, names) => {
+    build: (empty, p, names, buffer) => {
       const partDeclared = names.has('part');
-      const xs = allocateUniqueName(names, 'xs');
-      const edges = allocateUniqueName(names, 'selEdges');
-      const path = allocateUniqueName(names, 'path');
-      const lines = wrapFeatureBlock(CONTOUR_SWEEP_BEGIN, CONTOUR_SWEEP_END, [
-        `const ${xs} = makeCrossSection({ center: [0, 0, 0], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] }, profileCircle(2, 16));`,
-        `const ${edges} = [{ a: 0, b: 1, va: [0, 0, 0], vb: [0, 0, 20], length: 20, key: 'sweep-fallback' }];`,
-        `const ${path} = makeSweepPath(${edges}); // edge→sweep path`,
+      const profile = takeContourName(names);
+      const path = takeContourName(names);
+      const xy = emitPlaneFrameLiteral({ center: [0, 0, 0], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] });
+      const world = [[0, 0, 0], [0, 0, 20]];
+      const frame = sweepPathFrame(world);
+      const featureId = mintBlockId(findFeatureBlocks(buffer || '', CONTOUR_SWEEP_BEGIN, CONTOUR_SWEEP_END), 'sweep');
+      const localName = allocateUniqueName(names, 'sweepLocal');
+      const sweptName = allocateUniqueName(names, 'swept');
+      const lines = [
+        `const ${profile} = makeCrossSection(${xy}, profileCircle(2, 16)); // @contour id=${profile}`,
+        `const ${path} = makeCrossSection(${emitPlaneFrameLiteral(frame)}, ${emitPathProfileExpr(projectPathUv(world, frame), false)}); // @contour id=${path}`,
         // Fallback stays a replace when Mode is Add (contour Confirm is the
         // additive path). Subtract still cuts the sweep out of the host.
-        ...emitSweepSolidTail(names, xs, path, partDeclared, false, solidCombineOp(p)),
-      ]);
+        ...emitSweepReferenceLines({
+          begin: CONTOUR_SWEEP_BEGIN,
+          end: CONTOUR_SWEEP_END,
+          featureId,
+          profile,
+          path,
+          localName,
+          sweptName,
+          partLine: (expr) => emitPartPlace(names, expr, partDeclared, false, solidCombineOp(p)),
+        }),
+      ];
       return withReturn(lines, empty);
     },
   },

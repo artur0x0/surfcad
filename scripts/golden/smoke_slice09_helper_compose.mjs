@@ -122,7 +122,10 @@ function stubRunner(source) {
       plane: plane && plane.center ? plane : {
         center: [0, 0, 0], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0],
       },
-      contours: (profile && profile.contours) || [[[1, 0], [0, 1], [-1, 0]]],
+      profile,
+      contours: (profile && profile.contours)
+        || (profile && profile.points ? [profile.points] : null)
+        || [[[1, 0], [0, 1], [-1, 0]]],
     }),
     makeSweepPath: () => ({ kind: 'sweepPath', closed: false, points: [[0,0,0],[1,0,0]], length: 1, edgeCount: 1 }),
     CrossSection: function CrossSection() { return {}; },

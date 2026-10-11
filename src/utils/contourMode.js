@@ -6,15 +6,16 @@
  * (its own edge-pick mode — not a contour entry).
  * Slice 24: enter mode, ghost the part, swap the left rail, pick a workplane,
  * draw circle/rect/polygon/(cheap polyline), live makeCrossSection preview.
- * Slice 25: Extrude entry Confirm commits profile + makeExtrude solid (live
- * solid preview; second Confirm updates the same marked block).
- * Slice 26: Revolve entry Confirm commits profile + makeRevolve solid (live
- * solid preview; axis on the profile plane). Profile stays Profile-only.
+ * Slice 25: Extrude entry Confirm names a contour and commits makeExtrude
+ * by that name. Distance and the sense shift stay in the block. The block
+ * id is on the marker, so several extrudes can coexist.
+ * Slice 26: Revolve entry Confirm names a contour and commits makeRevolve
+ * of that contour. The remap, segments, angle, and rotate stay in the block.
  * Slice 28: Loft entry Confirm names each contour and commits makeLoft by
  * those names. A station stores only an optional offset along the contour
  * normal. The block id is on the marker, so several lofts can coexist.
- * Slice 30: Sweep entry Confirm commits profile + makeSweepPath + sweepPoints
- * (path in the plane frame, placeInFrame replace; live station preview).
+ * Slice 30: Sweep entry Confirm names a profile contour and a path contour,
+ * then commits sweepPoints of those names. Reverse is baked into the path.
  *
  * Reuses Slice 21: workplaneFromFace / makeCrossSection / profile* substrate.
  * Reuses Slice 22: makeSweepPath / assembleSweepPath.
@@ -34,6 +35,7 @@ import {
   planeFrameFromFaceData,
 } from './crossSectionSubstrate.js';
 import {
+  allocateUniqueName,
   composeHelperInsert,
   declaredNames,
   emitPartPlace,
@@ -69,6 +71,17 @@ import {
   emitLoftReferenceLines,
   parseLoftReferences,
 } from './loftReference.js';
+import {
+  emitExtrudeReferenceLines,
+  emitPathProfileExpr,
+  emitRevolveReferenceLines,
+  emitSweepReferenceLines,
+  parseExtrudeReference,
+  parseRevolveReference,
+  parseSweepReferences,
+  projectPathUv,
+  sweepPathFrame,
+} from './solidReference.js';
 import {
   commitArc,
   commitConstraint,
@@ -1545,48 +1558,149 @@ function advancedPlaceError(owned, prior, label, combine = 'add') {
   return null;
 }
 
-function markersUnbalanced(text, begin, end) {
-  const i = text.lastIndexOf(begin);
-  const j = text.indexOf(end, i < 0 ? 0 : i);
-  if (text.includes(begin) && i < 0) return true;
-  if (i >= 0 && j < 0) return true;
-  if (i < 0 && text.includes(end)) return true;
-  return false;
+function _validFeatureId(id) {
+  return id && /^[A-Za-z_$][\w$]*$/.test(String(id)) ? String(id) : null;
 }
 
-export function hasContourExtrudeBlock(buffer) {
-  const t = String(buffer || '');
-  return t.includes(CONTOUR_EXTRUDE_BEGIN) && t.includes(CONTOUR_EXTRUDE_END);
+function _resolveFeatureId(blocks, requested, prefix) {
+  const requestedId = _validFeatureId(requested);
+  const existing = requestedId ? blocks.find((b) => b.id === requestedId) : null;
+  const finalId = existing ? existing.id : (requestedId || mintBlockId(blocks, prefix));
+  return { existing, finalId };
 }
 
-export function contourExtrudeOwnedRegion(buffer) {
+/** A founding `let part` block still owns the declaration when it is rewritten. */
+function _placeHost(buffer, existing) {
+  const prior = scriptHasPriorSolid(buffer);
+  const founding = !!(existing && /(?:let|const|var)\s+part\s*=/.test(existing.text));
+  return prior && !founding;
+}
+
+function _ownedFromList(blocks, id) {
+  if (id) return blocks.find((b) => b.id === id)?.text || '';
+  return blocks.length === 1 ? blocks[0].text : '';
+}
+
+function _stripFromList(buffer, blocks, id) {
+  const hit = id
+    ? blocks.find((b) => b.id === id)
+    : (blocks.length === 1 ? blocks[0] : null);
+  if (!hit) return String(buffer || '');
   const text = String(buffer || '');
-  const i = text.lastIndexOf(CONTOUR_EXTRUDE_BEGIN);
-  if (i < 0) return '';
-  const j = text.indexOf(CONTOUR_EXTRUDE_END, i);
-  if (j < 0) return '';
-  return text.slice(i, j + CONTOUR_EXTRUDE_END.length);
-}
-
-export function stripContourExtrudeBlock(buffer) {
-  const text = String(buffer || '');
-  const i = text.lastIndexOf(CONTOUR_EXTRUDE_BEGIN);
-  if (i < 0) return text;
-  const j = text.indexOf(CONTOUR_EXTRUDE_END, i);
-  if (j < 0) return text;
-  const after = text.slice(j + CONTOUR_EXTRUDE_END.length).replace(/^\r?\n/, '');
-  const before = text.slice(0, i).replace(/\s+$/, '');
+  const after = text.slice(hit.end).replace(/^\r?\n/, '');
+  const before = text.slice(0, hit.start).replace(/\s+$/, '');
   if (before && after) return `${before}\n${after}`;
   return before || after;
 }
 
+function _planContourStep({ buffer, requestedName, requestedContour, priorName, frame, profileExpr }) {
+  if (requestedName || requestedContour) {
+    const stmt = contourStatements(buffer).find((s) => (
+      (requestedName && (s.name === requestedName || s.id === requestedName))
+      || (requestedContour && s.id === requestedContour)
+    ));
+    if (stmt) {
+      return {
+        name: stmt.name,
+        frame: _frameFromPlaneExpr(stmt.planeExpr) || frame,
+        action: 'keep',
+      };
+    }
+  }
+  const prev = !requestedName && !requestedContour ? priorName : null;
+  if (prev) {
+    const stmt = contourStatements(buffer).find((s) => s.name === prev || s.id === prev);
+    return {
+      name: prev,
+      frame,
+      action: 'upsert',
+      id: stmt?.id || prev,
+      profileExpr,
+    };
+  }
+  return {
+    name: requestedName,
+    frame,
+    action: 'mint',
+    id: requestedContour,
+    profileExpr,
+  };
+}
+
+function _commitContourPlan(buffer, planned, finalId, listFn) {
+  let next = buffer;
+  for (const step of planned) {
+    if (step.action !== 'upsert') continue;
+    const saved = upsertNamedContour(next, {
+      id: step.id,
+      name: step.name,
+      frame: step.frame,
+      profileExpr: step.profileExpr,
+    });
+    if (!saved.ok) return saved;
+    step.name = saved.name;
+    next = saved.buffer;
+  }
+  for (const step of planned) {
+    if (step.action !== 'mint') continue;
+    const block = listFn(next).find((b) => b.id === finalId);
+    const saved = upsertNamedContour(next, {
+      id: step.id || null,
+      name: step.name || null,
+      frame: step.frame,
+      profileExpr: step.profileExpr,
+      ...(block ? { at: block.start } : {}),
+    });
+    if (!saved.ok) return saved;
+    step.name = saved.name;
+    next = saved.buffer;
+  }
+  return { ok: true, buffer: next };
+}
+
+function _writeFeatureBlock(buffer, finalId, listFn, body) {
+  const block = listFn(buffer).find((b) => b.id === finalId);
+  if (!block) return _insertBeforeReturn(buffer, body);
+  let head = buffer.slice(0, block.start);
+  let rest = buffer.slice(block.end);
+  if (head && !head.endsWith('\n')) head = `${head}\n`;
+  if (rest && !rest.startsWith('\n')) rest = `\n${rest}`;
+  let next = `${head}${body}${rest}`;
+  if (!/\n?return\s+part\s*;\s*$/.test(next)) {
+    next = `${next.replace(/\s*$/, '')}\nreturn part;\n`;
+  }
+  return next;
+}
+
+function _namesBeside(buffer, block) {
+  if (!block) return declaredNames(buffer);
+  return declaredNames(buffer.slice(0, block.start) + buffer.slice(block.end));
+}
+
+export function listContourExtrudeBlocks(buffer) {
+  return findFeatureBlocks(buffer, CONTOUR_EXTRUDE_BEGIN, CONTOUR_EXTRUDE_END);
+}
+
+export function hasContourExtrudeBlock(buffer) {
+  return listContourExtrudeBlocks(buffer).length > 0;
+}
+
+/** The block with this id. With no id, the only block, or empty when several exist. */
+export function contourExtrudeOwnedRegion(buffer, id = null) {
+  return _ownedFromList(listContourExtrudeBlocks(buffer), id);
+}
+
+export function stripContourExtrudeBlock(buffer, id = null) {
+  return _stripFromList(buffer, listContourExtrudeBlocks(buffer), id);
+}
+
 /**
- * Confirm → insert or replace in-mode Extrude (profile + makeExtrude + placeInFrame).
+ * Confirm → an extrude block that names a contour.
+ * Distance and the sense shift stay in the block. The contour keeps its frame.
+ * A new confirm appends extrude2. The same featureId rewrites that block.
  * Empty buffer: `let part = placeInFrame`. Existing part: union via `part.add`.
- * Second Confirm updates an additive block (host outside markers). A founding
- * `let part` Extrude is kept so Extrude-on-Extrude stacks instead of TDZ/wipe.
  *
- * @returns {{ ok: true, buffer: string, run: true } | { ok: false, message: string }}
+ * @returns {{ ok: true, buffer: string, run: true, featureId: string, contours: Array<{ name: string }> } | { ok: false, message: string }}
  */
 export function composeContourExtrude(buffer, {
   face = null,
@@ -1595,6 +1709,9 @@ export function composeContourExtrude(buffer, {
   extrude = {},
   combine,
   merge,
+  featureId = null,
+  contourId = null,
+  contourName = null,
 } = {}) {
   const gate = validateContourProfile(tool, params);
   if (!gate.ok) return gate;
@@ -1607,47 +1724,49 @@ export function composeContourExtrude(buffer, {
   if (!axis.ok) return axis;
 
   const text = String(buffer || '');
-  if (markersUnbalanced(text, CONTOUR_EXTRUDE_BEGIN, CONTOUR_EXTRUDE_END)) {
+  if (!featureMarkersBalanced(text, CONTOUR_EXTRUDE_BEGIN, CONTOUR_EXTRUDE_END)) {
     return {
       ok: false,
       message: 'composeContourExtrude: unbalanced extrude markers — refusing silent no-op.',
     };
   }
 
-  const planar = face && face.type === 'planar' ? face : null;
   const stripped = stripContourSiblingBlocks(buffer);
+  const blocks = listContourExtrudeBlocks(stripped);
+  const { existing, finalId } = _resolveFeatureId(blocks, featureId, 'extrude');
+  const prior = existing ? parseExtrudeReference(existing.text) : null;
+  const step = _planContourStep({
+    buffer: stripped,
+    requestedName: contourName || extrude.contourName || null,
+    requestedContour: contourId || extrude.contourId || null,
+    priorName: prior?.name || null,
+    frame: plane,
+    profileExpr: emitProfileExprFromParams(toolToProfileParams(tool, params)),
+  });
+  const committed = _commitContourPlan(stripped, [step], finalId, listContourExtrudeBlocks);
+  if (!committed.ok) return committed;
+
+  const host = _placeHost(stripped, existing);
   const combineOp = solidCombineOp(combine ?? extrude?.combine);
-  const profileParams = {
-    ...toolToProfileParams(tool, params),
-    body: params.body || 'part',
-    _contourExtrude: {
-      ...extGate.normalized,
-      plane,
-      combine: combineOp,
-      merge: solidMergeOn(merge ?? extrude?.merge),
-    },
-  };
-  const composed = composeHelperInsert(
-    stripped,
-    'crossSection',
-    null,
-    profileParams,
-    planar,
-    null,
-  );
-  if (typeof composed !== 'string') {
-    return {
-      ok: false,
-      message: 'Could not compose Extrude — need a part and a planar workplane.',
-    };
-  }
-  const owned = contourExtrudeOwnedRegion(composed);
-  if (!/makeCrossSection\s*\(/.test(owned)) {
-    return {
-      ok: false,
-      message: 'composeContourExtrude: makeCrossSection missing — refusing silent no-op.',
-    };
-  }
+  const names = _namesBeside(committed.buffer, listContourExtrudeBlocks(committed.buffer).find((b) => b.id === finalId));
+  const lines = emitExtrudeReferenceLines({
+    begin: CONTOUR_EXTRUDE_BEGIN,
+    end: CONTOUR_EXTRUDE_END,
+    featureId: finalId,
+    contour: step.name,
+    distance: extGate.normalized.distance,
+    w: extrudeWOffset(extGate.normalized.distance, extGate.normalized.sense),
+    partLine: (expr) => emitPartPlace(
+      names,
+      expr,
+      host,
+      host,
+      combineOp,
+      solidMergeOn(merge ?? extrude?.merge),
+    ),
+  });
+  const next = _writeFeatureBlock(committed.buffer, finalId, listContourExtrudeBlocks, lines.join('\n'));
+  const owned = contourExtrudeOwnedRegion(next, finalId);
   if (!/makeExtrude\s*\(/.test(owned)) {
     return {
       ok: false,
@@ -1660,9 +1779,9 @@ export function composeContourExtrude(buffer, {
       message: 'composeContourExtrude: placeInFrame missing — refusing unscoped insert.',
     };
   }
-  const placeErr = advancedPlaceError(owned, scriptHasPriorSolid(stripped), 'composeContourExtrude', combineOp);
+  const placeErr = advancedPlaceError(owned, host, 'composeContourExtrude', combineOp);
   if (placeErr) return { ok: false, message: placeErr };
-  if (!hasContourExtrudeBlock(composed)) {
+  if (!owned.includes(`id=${finalId}`)) {
     return {
       ok: false,
       message: 'composeContourExtrude: contour-mode extrude markers missing — refusing unscoped insert.',
@@ -1674,47 +1793,51 @@ export function composeContourExtrude(buffer, {
       message: 'composeContourExtrude: unexpected Revolve/Loft/Sweep in the Extrude block.',
     };
   }
-  if (isBufferEmpty(String(buffer || '')) && /Manifold\.cube\s*\(/.test(composed)) {
+  if (/makeCrossSection\s*\(/.test(owned)) {
+    return {
+      ok: false,
+      message: 'composeContourExtrude: an extrude block names a contour — refusing an inline profile.',
+    };
+  }
+  if (isBufferEmpty(String(buffer || '')) && /Manifold\.cube\s*\(/.test(next)) {
     return {
       ok: false,
       message: 'composeContourExtrude: unexpected starter box on empty buffer — refusing extra solid.',
     };
   }
-  return { ok: true, buffer: composed, run: true };
+  return {
+    ok: true,
+    buffer: next,
+    run: true,
+    featureId: finalId,
+    contours: [{ name: step.name }],
+  };
+}
+
+export function listContourRevolveBlocks(buffer) {
+  return findFeatureBlocks(buffer, CONTOUR_REVOLVE_BEGIN, CONTOUR_REVOLVE_END);
 }
 
 export function hasContourRevolveBlock(buffer) {
-  const t = String(buffer || '');
-  return t.includes(CONTOUR_REVOLVE_BEGIN) && t.includes(CONTOUR_REVOLVE_END);
+  return listContourRevolveBlocks(buffer).length > 0;
 }
 
-export function contourRevolveOwnedRegion(buffer) {
-  const text = String(buffer || '');
-  const i = text.lastIndexOf(CONTOUR_REVOLVE_BEGIN);
-  if (i < 0) return '';
-  const j = text.indexOf(CONTOUR_REVOLVE_END, i);
-  if (j < 0) return '';
-  return text.slice(i, j + CONTOUR_REVOLVE_END.length);
+/** The block with this id. With no id, the only block, or empty when several exist. */
+export function contourRevolveOwnedRegion(buffer, id = null) {
+  return _ownedFromList(listContourRevolveBlocks(buffer), id);
 }
 
-export function stripContourRevolveBlock(buffer) {
-  const text = String(buffer || '');
-  const i = text.lastIndexOf(CONTOUR_REVOLVE_BEGIN);
-  if (i < 0) return text;
-  const j = text.indexOf(CONTOUR_REVOLVE_END, i);
-  if (j < 0) return text;
-  const after = text.slice(j + CONTOUR_REVOLVE_END.length).replace(/^\r?\n/, '');
-  const before = text.slice(0, i).replace(/\s+$/, '');
-  if (before && after) return `${before}\n${after}`;
-  return before || after;
+export function stripContourRevolveBlock(buffer, id = null) {
+  return _stripFromList(buffer, listContourRevolveBlocks(buffer), id);
 }
 
 /**
- * Confirm → insert or replace in-mode Revolve (profile + makeRevolve + placeInFrame).
+ * Confirm → a revolve block that names a contour.
+ * The remap, segments, angle, and optional rotate stay in the block.
+ * A new confirm appends revolve2. The same featureId rewrites that block.
  * Empty buffer: `let part = placeInFrame`. Existing part: union via `part.add`.
- * Second Confirm updates an additive block; founding `let part` solids stack.
  *
- * @returns {{ ok: true, buffer: string, run: true } | { ok: false, message: string }}
+ * @returns {{ ok: true, buffer: string, run: true, featureId: string, contours: Array<{ name: string }> } | { ok: false, message: string }}
  */
 export function composeContourRevolve(buffer, {
   face = null,
@@ -1723,6 +1846,9 @@ export function composeContourRevolve(buffer, {
   revolve = {},
   combine,
   merge,
+  featureId = null,
+  contourId = null,
+  contourName = null,
 } = {}) {
   const gate = validateContourProfile(tool, params);
   if (!gate.ok) return gate;
@@ -1744,53 +1870,54 @@ export function composeContourRevolve(buffer, {
   if (!mapped.ok) return mapped;
 
   const text = String(buffer || '');
-  if (markersUnbalanced(text, CONTOUR_REVOLVE_BEGIN, CONTOUR_REVOLVE_END)) {
+  if (!featureMarkersBalanced(text, CONTOUR_REVOLVE_BEGIN, CONTOUR_REVOLVE_END)) {
     return {
       ok: false,
       message: 'composeContourRevolve: unbalanced revolve markers — refusing silent no-op.',
     };
   }
 
-  const planar = face && face.type === 'planar' ? face : null;
   const stripped = stripContourSiblingBlocks(buffer);
+  const blocks = listContourRevolveBlocks(stripped);
+  const { existing, finalId } = _resolveFeatureId(blocks, featureId, 'revolve');
+  const prior = existing ? parseRevolveReference(existing.text) : null;
+  const step = _planContourStep({
+    buffer: stripped,
+    requestedName: contourName || revolve.contourName || null,
+    requestedContour: contourId || revolve.contourId || null,
+    priorName: prior?.name || null,
+    frame: plane,
+    profileExpr: emitProfileExprFromParams(toolToProfileParams(tool, params)),
+  });
+  const committed = _commitContourPlan(stripped, [step], finalId, listContourRevolveBlocks);
+  if (!committed.ok) return committed;
+
+  const host = _placeHost(stripped, existing);
   const combineOp = solidCombineOp(combine ?? revolve?.combine);
-  const profileParams = {
-    ...toolToProfileParams(tool, params),
-    body: params.body || 'part',
-    _contourRevolve: {
-      ...revGate.normalized,
-      segments: REVOLVE_SEGMENTS,
-      startDeg: revolveStartDeg(revGate.normalized.angle, revGate.normalized.sense),
-      rU: mapped.rU,
-      rV: mapped.rV,
-      aU: mapped.aU,
-      aV: mapped.aV,
-      plane,
-      combine: combineOp,
-      merge: solidMergeOn(merge ?? revolve?.merge),
-    },
-  };
-  const composed = composeHelperInsert(
-    stripped,
-    'crossSection',
-    null,
-    profileParams,
-    planar,
-    null,
-  );
-  if (typeof composed !== 'string') {
-    return {
-      ok: false,
-      message: 'Could not compose Revolve — need a part and a planar workplane.',
-    };
-  }
-  const owned = contourRevolveOwnedRegion(composed);
-  if (!/makeCrossSection\s*\(/.test(owned)) {
-    return {
-      ok: false,
-      message: 'composeContourRevolve: makeCrossSection missing — refusing silent no-op.',
-    };
-  }
+  const names = _namesBeside(committed.buffer, listContourRevolveBlocks(committed.buffer).find((b) => b.id === finalId));
+  const lines = emitRevolveReferenceLines({
+    begin: CONTOUR_REVOLVE_BEGIN,
+    end: CONTOUR_REVOLVE_END,
+    featureId: finalId,
+    contour: step.name,
+    rU: mapped.rU,
+    rV: mapped.rV,
+    aU: mapped.aU,
+    aV: mapped.aV,
+    segments: REVOLVE_SEGMENTS,
+    angle: revGate.normalized.angle,
+    startDeg: revolveStartDeg(revGate.normalized.angle, revGate.normalized.sense),
+    partLine: (expr) => emitPartPlace(
+      names,
+      expr,
+      host,
+      host,
+      combineOp,
+      solidMergeOn(merge ?? revolve?.merge),
+    ),
+  });
+  const next = _writeFeatureBlock(committed.buffer, finalId, listContourRevolveBlocks, lines.join('\n'));
+  const owned = contourRevolveOwnedRegion(next, finalId);
   if (!/makeRevolve\s*\(/.test(owned)) {
     return {
       ok: false,
@@ -1803,9 +1930,9 @@ export function composeContourRevolve(buffer, {
       message: 'composeContourRevolve: placeInFrame missing — refusing unscoped insert.',
     };
   }
-  const placeErr = advancedPlaceError(owned, scriptHasPriorSolid(stripped), 'composeContourRevolve', combineOp);
+  const placeErr = advancedPlaceError(owned, host, 'composeContourRevolve', combineOp);
   if (placeErr) return { ok: false, message: placeErr };
-  if (!hasContourRevolveBlock(composed)) {
+  if (!owned.includes(`id=${finalId}`)) {
     return {
       ok: false,
       message: 'composeContourRevolve: contour-mode revolve markers missing — refusing unscoped insert.',
@@ -1817,13 +1944,25 @@ export function composeContourRevolve(buffer, {
       message: 'composeContourRevolve: unexpected Extrude/Loft/Sweep in the Revolve block.',
     };
   }
-  if (isBufferEmpty(String(buffer || '')) && /Manifold\.cube\s*\(/.test(composed)) {
+  if (/makeCrossSection\s*\(/.test(owned)) {
+    return {
+      ok: false,
+      message: 'composeContourRevolve: a revolve block names a contour — refusing an inline profile.',
+    };
+  }
+  if (isBufferEmpty(String(buffer || '')) && /Manifold\.cube\s*\(/.test(next)) {
     return {
       ok: false,
       message: 'composeContourRevolve: unexpected starter box on empty buffer — refusing extra solid.',
     };
   }
-  return { ok: true, buffer: composed, run: true };
+  return {
+    ok: true,
+    buffer: next,
+    run: true,
+    featureId: finalId,
+    contours: [{ name: step.name }],
+  };
 }
 
 export function listContourLoftBlocks(buffer) {
@@ -1854,40 +1993,9 @@ export function stripContourLoftBlock(buffer, id = null) {
   return before || after;
 }
 
-/**
- * Drop an Advanced solid marker block only when the live `part` binding survives.
- * Founding `let part = placeInFrame(…)` blocks are kept so a later Extrude /
- * Revolve / Loft / Sweep Confirm can union onto them (stack) instead of
- * wiping the solid or inserting `part = part.add` before a new `let part` (TDZ).
- * Additive blocks (`part = part.add(…)`) on a host outside the markers still
- * strip so Second Confirm updates the same feature region.
- */
-function stripReplaceableContourSolid(buffer, ownedRegion, stripFn) {
-  const owned = ownedRegion(buffer);
-  if (!owned) return buffer;
-  const candidate = stripFn(buffer);
-  if (scriptHasPriorSolid(candidate)) return candidate;
-  // Stripping would drop the only part binding — keep the founding block.
-  if (/(?:let|const|var)\s+part\s*=/.test(owned)) return buffer;
-  return candidate;
-}
-
 function stripContourSiblingBlocks(buffer) {
-  const withoutProfile = stripContourProfileBlock(buffer);
-  // Loft blocks stay. A new loft appends; the same id rewrites that block.
-  return stripReplaceableContourSolid(
-    stripReplaceableContourSolid(
-      stripReplaceableContourSolid(
-        withoutProfile,
-        contourExtrudeOwnedRegion,
-        stripContourExtrudeBlock,
-      ),
-      contourRevolveOwnedRegion,
-      stripContourRevolveBlock,
-    ),
-    contourSweepOwnedRegion,
-    stripContourSweepBlock,
-  );
+  // Feature blocks stay. A new confirm appends; the same id rewrites that block.
+  return stripContourProfileBlock(buffer);
 }
 
 function _loftFramesParallel(frames) {
@@ -2161,39 +2269,30 @@ export function countSweepPoints(buffer) {
   return m ? m.length : 0;
 }
 
+export function listContourSweepBlocks(buffer) {
+  return findFeatureBlocks(buffer, CONTOUR_SWEEP_BEGIN, CONTOUR_SWEEP_END);
+}
+
 export function hasContourSweepBlock(buffer) {
-  const t = String(buffer || '');
-  return t.includes(CONTOUR_SWEEP_BEGIN) && t.includes(CONTOUR_SWEEP_END);
+  return listContourSweepBlocks(buffer).length > 0;
 }
 
-export function contourSweepOwnedRegion(buffer) {
-  const text = String(buffer || '');
-  const i = text.lastIndexOf(CONTOUR_SWEEP_BEGIN);
-  if (i < 0) return '';
-  const j = text.indexOf(CONTOUR_SWEEP_END, i);
-  if (j < 0) return '';
-  return text.slice(i, j + CONTOUR_SWEEP_END.length);
+/** The block with this id. With no id, the only block, or empty when several exist. */
+export function contourSweepOwnedRegion(buffer, id = null) {
+  return _ownedFromList(listContourSweepBlocks(buffer), id);
 }
 
-export function stripContourSweepBlock(buffer) {
-  const text = String(buffer || '');
-  const i = text.lastIndexOf(CONTOUR_SWEEP_BEGIN);
-  if (i < 0) return text;
-  const j = text.indexOf(CONTOUR_SWEEP_END, i);
-  if (j < 0) return text;
-  const after = text.slice(j + CONTOUR_SWEEP_END.length).replace(/^\r?\n/, '');
-  const before = text.slice(0, i).replace(/\s+$/, '');
-  if (before && after) return `${before}\n${after}`;
-  return before || after;
+export function stripContourSweepBlock(buffer, id = null) {
+  return _stripFromList(buffer, listContourSweepBlocks(buffer), id);
 }
 
 /**
- * Confirm → insert or replace in-mode Sweep
- * (makeCrossSection + makeSweepPath + sweepPoints + placeInFrame).
+ * Confirm → a sweep block that names a profile contour and a path contour.
+ * Reverse is baked into the path contour. The block rebuilds the wire.
+ * A new confirm appends sweep2. The same featureId rewrites that block.
  * Empty buffer: `let part = placeInFrame`. Existing part: union via `part.add`.
- * Second Confirm updates an additive block; founding `let part` solids stack.
  *
- * @returns {{ ok: true, buffer: string, run: true } | { ok: false, message: string }}
+ * @returns {{ ok: true, buffer: string, run: true, featureId: string, contours: Array<{ name: string, role: string }> } | { ok: false, message: string }}
  */
 export function composeContourSweep(buffer, {
   face = null,
@@ -2203,60 +2302,79 @@ export function composeContourSweep(buffer, {
   sweep = {},
   combine,
   merge,
+  featureId = null,
+  contourId = null,
+  contourName = null,
+  pathContourId = null,
+  pathContourName = null,
 } = {}) {
   const gate = validateContourProfile(tool, params);
   if (!gate.ok) return gate;
   const pathGate = validateSweepPath(edges, sweep);
   if (!pathGate.ok) return pathGate;
 
+  const pathFrame = sweepPathFrame(pathGate.path.points);
+  if (!pathFrame) {
+    return { ok: false, message: 'composeContourSweep: path has no direction.' };
+  }
+  const pathUv = projectPathUv(pathGate.path.points, pathFrame);
   const plane = planeFromContourFace(face);
   const text = String(buffer || '');
-  if (markersUnbalanced(text, CONTOUR_SWEEP_BEGIN, CONTOUR_SWEEP_END)) {
+  if (!featureMarkersBalanced(text, CONTOUR_SWEEP_BEGIN, CONTOUR_SWEEP_END)) {
     return {
       ok: false,
       message: 'composeContourSweep: unbalanced sweep markers — refusing silent no-op.',
     };
   }
 
-  const planar = face && face.type === 'planar' ? face : null;
   const stripped = stripContourSiblingBlocks(buffer);
-  const profileParams = {
-    ...toolToProfileParams(tool, params),
-    body: params.body || 'part',
-    _contourSweep: {
-      plane,
-      reverse: pathGate.normalized.reverse,
-      combine: solidCombineOp(combine ?? sweep?.combine),
-      merge: solidMergeOn(merge ?? sweep?.merge),
-    },
-  };
-  const composed = composeHelperInsert(
-    stripped,
-    'crossSection',
-    null,
-    profileParams,
-    planar,
-    edges,
-  );
-  if (typeof composed !== 'string') {
-    return {
-      ok: false,
-      message: 'Could not compose Sweep — need a profile and a contiguous path.',
-    };
-  }
-  const owned = contourSweepOwnedRegion(composed);
-  if (!/makeCrossSection\s*\(/.test(owned)) {
-    return {
-      ok: false,
-      message: 'composeContourSweep: makeCrossSection missing — refusing silent no-op.',
-    };
-  }
-  if (!/makeSweepPath\s*\(/.test(owned)) {
-    return {
-      ok: false,
-      message: 'composeContourSweep: makeSweepPath missing — refusing silent no-op.',
-    };
-  }
+  const blocks = listContourSweepBlocks(stripped);
+  const { existing, finalId } = _resolveFeatureId(blocks, featureId, 'sweep');
+  const prior = existing ? parseSweepReferences(existing.text) : null;
+  const profileStep = _planContourStep({
+    buffer: stripped,
+    requestedName: contourName || sweep.contourName || null,
+    requestedContour: contourId || sweep.contourId || null,
+    priorName: prior?.profile || null,
+    frame: plane,
+    profileExpr: emitProfileExprFromParams(toolToProfileParams(tool, params)),
+  });
+  const pathStep = _planContourStep({
+    buffer: stripped,
+    requestedName: pathContourName || sweep.pathContourName || null,
+    requestedContour: pathContourId || sweep.pathContourId || null,
+    priorName: prior?.path || null,
+    frame: pathFrame,
+    profileExpr: emitPathProfileExpr(pathUv, !!pathGate.path.closed),
+  });
+  const committed = _commitContourPlan(stripped, [profileStep, pathStep], finalId, listContourSweepBlocks);
+  if (!committed.ok) return committed;
+
+  const host = _placeHost(stripped, existing);
+  const combineOp = solidCombineOp(combine ?? sweep?.combine);
+  const block = listContourSweepBlocks(committed.buffer).find((b) => b.id === finalId);
+  const names = _namesBeside(committed.buffer, block);
+  const localName = allocateUniqueName(names, 'sweepLocal');
+  const sweptName = allocateUniqueName(names, 'swept');
+  const lines = emitSweepReferenceLines({
+    begin: CONTOUR_SWEEP_BEGIN,
+    end: CONTOUR_SWEEP_END,
+    featureId: finalId,
+    profile: profileStep.name,
+    path: pathStep.name,
+    localName,
+    sweptName,
+    partLine: (expr) => emitPartPlace(
+      names,
+      expr,
+      host,
+      host,
+      combineOp,
+      solidMergeOn(merge ?? sweep?.merge),
+    ),
+  });
+  const next = _writeFeatureBlock(committed.buffer, finalId, listContourSweepBlocks, lines.join('\n'));
+  const owned = contourSweepOwnedRegion(next, finalId);
   if (!/sweepPoints\s*\(/.test(owned)) {
     return {
       ok: false,
@@ -2269,33 +2387,58 @@ export function composeContourSweep(buffer, {
       message: 'composeContourSweep: placeInFrame missing — refusing unscoped insert.',
     };
   }
-  const placeErr = advancedPlaceError(owned, scriptHasPriorSolid(stripped), 'composeContourSweep', solidCombineOp(combine ?? sweep?.combine));
+  const placeErr = advancedPlaceError(owned, host, 'composeContourSweep', combineOp);
   if (placeErr) return { ok: false, message: placeErr };
-  if (!hasContourSweepBlock(composed)) {
+  if (!owned.includes(`id=${finalId}`)) {
     return {
       ok: false,
       message: 'composeContourSweep: contour-mode sweep markers missing — refusing unscoped insert.',
     };
   }
-  if (/makeExtrude\s*\(|makeRevolve\s*\(|makeLoft\s*\(|\bloft\s*\(/.test(owned)) {
+  if (/makeExtrude\s*\(|makeRevolve\s*\(|makeLoft\s*\(|\bloft\s*\(|makeSweepPath\s*\(/.test(owned)) {
     return {
       ok: false,
-      message: 'composeContourSweep: unexpected Extrude/Revolve/Loft in the Sweep block.',
+      message: 'composeContourSweep: unexpected solid or makeSweepPath in the Sweep block.',
     };
   }
-  if (isBufferEmpty(String(buffer || '')) && /Manifold\.cube\s*\(/.test(composed)) {
+  if (/makeCrossSection\s*\(/.test(owned)) {
+    return {
+      ok: false,
+      message: 'composeContourSweep: a sweep block names contours — refusing an inline profile.',
+    };
+  }
+  if (isBufferEmpty(String(buffer || '')) && /Manifold\.cube\s*\(/.test(next)) {
     return {
       ok: false,
       message: 'composeContourSweep: unexpected starter box on empty buffer — refusing extra solid.',
     };
   }
-  if (pathGate.normalized.reverse && !/reverse:\s*true/.test(owned)) {
-    return {
-      ok: false,
-      message: 'composeContourSweep: reverse flag missing — refusing silent no-op.',
-    };
+  if (pathGate.normalized.reverse && pathStep.action !== 'keep') {
+    const stmt = contourStatements(next).find((s) => s.name === pathStep.name);
+    const origin = _frameFromPlaneExpr(stmt?.planeExpr)?.center;
+    const want = pathFrame.center;
+    const drifted = !origin || !want || Math.hypot(
+      origin[0] - want[0],
+      origin[1] - want[1],
+      origin[2] - want[2],
+    ) > 1e-3;
+    if (drifted) {
+      return {
+        ok: false,
+        message: 'composeContourSweep: reverse was not baked into the path contour.',
+      };
+    }
   }
-  return { ok: true, buffer: composed, run: true };
+  return {
+    ok: true,
+    buffer: next,
+    run: true,
+    featureId: finalId,
+    contours: [
+      { name: profileStep.name, role: 'profile' },
+      { name: pathStep.name, role: 'path' },
+    ],
+  };
 }
 
 /**
