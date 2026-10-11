@@ -77,6 +77,7 @@ import {
   WORKPLANE_END,
 } from './helperPaletteSnippets.js';
 import { SHEET_METAL_BEGIN, SHEET_METAL_END } from './sheetMetal/sheetMetalScript.js';
+import { findFeatureBlocks } from './featureBlockId.js';
 
 /** externalBody() inside a block = a cross-part copy (see externalCopy.js). */
 const EXTERNAL_COPY_CALL = /\bexternalBody\s*\(/;
@@ -141,19 +142,14 @@ export function parseFeatureMarkers(script) {
 
   const hits = [];
   for (const def of FEATURE_MARKER_KINDS) {
-    let from = 0;
-    while (from < script.length) {
-      const i = script.indexOf(def.begin, from);
-      if (i < 0) break;
-      const j = script.indexOf(def.end, i + def.begin.length);
-      if (j < 0) break;
+    for (const block of findFeatureBlocks(script, def.begin, def.end)) {
       hits.push({
         kind: def.kind,
         label: def.label,
-        startOffset: i,
-        endOffset: j + def.end.length,
+        markerId: block.id,
+        startOffset: block.start,
+        endOffset: block.end,
       });
-      from = j + def.end.length;
     }
   }
 
@@ -170,7 +166,7 @@ export function parseFeatureMarkers(script) {
       ? `${h.label} ${typeIndex}`
       : h.label;
     return {
-      id: `${h.kind}-${index}`,
+      id: h.markerId || `${h.kind}-${index}`,
       kind: h.kind,
       label: h.label,
       chipLabel,

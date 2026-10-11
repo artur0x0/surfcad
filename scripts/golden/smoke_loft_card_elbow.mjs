@@ -105,7 +105,7 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
   check('card emits makeLoft and placeInFrame', /makeLoft\s*\(/.test(script) && /placeInFrame\s*\(/.test(script));
   check(
     'placement frame is the first station, not a +20 offset',
-    /let\s+part\s*=\s*placeInFrame\(\s*fr\s*,/.test(script) && !/placeInFrame\([^)]*\[\s*0,\s*0,\s*20\s*\]/.test(script),
+    /let\s+part\s*=\s*placeInFrame\(\s*c1\.plane\s*,/.test(script) && !/\[\s*0,\s*0,\s*20\s*\]/.test(script),
     script,
   );
   if (elbow.ok) {
@@ -270,8 +270,13 @@ try {
   await page.screenshot({ path: cardShot });
   check('390 card screenshot written', existsSync(cardShot), cardShot);
 
-  const rendersBefore = await page.evaluate(() => window.__VIEWPORT__?._renderCount || 0);
   await page.locator('[data-feature-card-confirm]').click();
+  await page.waitForFunction(() => (
+    document.querySelector('.viewport-shell')?.getAttribute('data-contour-face-aim') === 'done'
+    && !document.querySelector('[data-contour-chip]')
+  ), null, { timeout: 8000 });
+  const rendersBefore = await page.evaluate(() => window.__VIEWPORT__?._renderCount || 0);
+  await page.locator('[data-contour-confirm]').click();
   try {
     await page.waitForFunction((before) => {
       const text = (window.monaco?.editor?.getModels?.() || []).map((m) => m.getValue()).join('\n');
