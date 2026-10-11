@@ -9,7 +9,7 @@
  *
  * 390 and 1280. Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir().
  */
-/* global document, indexedDB, localStorage, sessionStorage, window, Event */
+/* global document, indexedDB, localStorage, sessionStorage, window, Event, Node */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -325,6 +325,25 @@ const HOUSING_SIDE = [[95, 0, 20], [95, 4, 20], [95, 0, 24], [95, -4, 22]];
 async function runView(browser, vp) {
   const { context, page, errors } = await boot(browser, vp);
   await openCard(page);
+  const grouped = await page.evaluate(() => {
+    const parallel = document.querySelector('[data-joint-parallel]');
+    const perpendicular = document.querySelector('[data-joint-perpendicular]');
+    const coincident = document.querySelector('[data-sticky-property="coincident"]');
+    const fixed = document.querySelector('[data-sticky-property="fixed"]');
+    const name = document.querySelector('[data-joint-name]');
+    if (!parallel || !perpendicular || !coincident || !fixed || !name) return false;
+    const group = coincident.parentElement;
+    const same = parallel.parentElement === group
+      && perpendicular.parentElement === group
+      && fixed.parentElement === group
+      && group.getAttribute('role') === 'group';
+    const nameAfter = (group.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    return same && nameAfter;
+  });
+  check(`${vp.name} Parallel and Perpendicular share the type-button group`, grouped);
+  const groupShot = join(SHOT_DIR, `joints-type-group-${vp.name}.png`);
+  await page.screenshot({ path: groupShot });
+  check(`${vp.name} type-group shot saved outside artifacts`, existsSync(groupShot) && !groupShot.startsWith('/opt/cursor/artifacts'), groupShot);
   await look(page, 24);
 
   const housingFirst = await pickUntil(page, HOUSING_TOP, (state) => state.n >= 1 && state.subtitle.includes('Housing'));

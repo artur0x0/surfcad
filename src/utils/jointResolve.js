@@ -15,6 +15,8 @@ import {
   faceFingerprints,
   matchFaceKeys,
 } from './faceColorMatch.js';
+import { dropPlanarFins } from './planarSeam.js';
+import { triangleSources } from './partSolidCache.js';
 
 const NORMAL_COS = Math.cos((FACE_MATCH_NORMAL_DEG * Math.PI) / 180);
 const AT_MM = FACE_MATCH_AT_MM;
@@ -228,11 +230,19 @@ export function fitJointAxis(positions, indices, tris) {
   return fitPatchAxis(positions, indices, tris);
 }
 
-/** Face fingerprints, and cylinder axes when a patch fits. Null when the mesh has none. */
+/**
+ * Face fingerprints, and cylinder axes when a patch fits. Null when the mesh has none.
+ *
+ * The graph is the one a pick uses. Planar fins are dropped, and each triangle
+ * keeps the Manifold run it came from. Sheet metal is a union of flange boxes
+ * and bend zones, and face ids restart inside each of those solids. A bend
+ * and a flange that share an edge and a reused id stay separate faces. Without
+ * the run id they become one face, and Confirm says the face was not found.
+ */
 export function catalogFromMeshData(mesh) {
   const src = mesh?.vertProperties;
-  const indices = mesh?.triVerts;
-  if (!src || !indices || !indices.length) return null;
+  const rawIndex = mesh?.triVerts;
+  if (!src || !rawIndex || !rawIndex.length) return null;
   const np = mesh.numProp || 3;
   const nVert = Math.floor(src.length / np);
   const positions = new Float32Array(nVert * 3);
@@ -241,13 +251,20 @@ export function catalogFromMeshData(mesh) {
     positions[i * 3 + 1] = src[i * np + 1];
     positions[i * 3 + 2] = src[i * np + 2];
   }
+  const indicesIn = rawIndex instanceof Uint32Array ? rawIndex : Uint32Array.from(rawIndex);
+  const rawFaces = mesh.faceID || mesh.faceIDs || null;
+  const fin = dropPlanarFins(positions, indicesIn, rawFaces);
+  const indices = fin.indices;
+  const nKept = Math.floor(indices.length / 3);
+  const triSource = triangleSources(mesh, fin.keep, nKept);
   const graph = buildPartGraphPatches({
     positions,
     indices,
-    faceIDs: mesh.faceID || mesh.faceIDs || null,
-    triSource: mesh.triSource || null,
+    faceIDs: fin.faceIDs && fin.faceIDs.length ? fin.faceIDs : null,
+    triSource,
+    featureTessellation: mesh.featureTessellation || null,
   });
-  const faces = faceFingerprints(graph, mesh.triSource || null, { positions, indices });
+  const faces = faceFingerprints(graph, triSource, { positions, indices });
   if (!faces.length) return null;
   const axes = [];
   const patches = graph?.patches || [];
