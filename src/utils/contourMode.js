@@ -61,7 +61,12 @@ import {
   offsetPlaneFrame,
 } from './makeLoft.js';
 import { assembleSweepPath } from './edgeSweepPath.js';
-import { contourStatements, upsertNamedContour } from './namedContour.js';
+import {
+  contourStatements,
+  findReturnPartIndex,
+  insertBeforeScriptReturn,
+  upsertNamedContour,
+} from './namedContour.js';
 import {
   featureMarkersBalanced,
   findFeatureBlocks,
@@ -1666,7 +1671,7 @@ function _writeFeatureBlock(buffer, finalId, listFn, body) {
   if (head && !head.endsWith('\n')) head = `${head}\n`;
   if (rest && !rest.startsWith('\n')) rest = `\n${rest}`;
   let next = `${head}${body}${rest}`;
-  if (!/\n?return\s+part\s*;\s*$/.test(next)) {
+  if (findReturnPartIndex(next) < 0) {
     next = `${next.replace(/\s*$/, '')}\nreturn part;\n`;
   }
   return next;
@@ -2064,14 +2069,7 @@ function _frameFromPlaneExpr(expr) {
 }
 
 function _insertBeforeReturn(buffer, blockText) {
-  const text = String(buffer || '').replace(/\s*$/, '');
-  const chunk = blockText.endsWith('\n') ? blockText : `${blockText}\n`;
-  const ret = text.match(/\n?return\s+part\s*;$/);
-  if (ret) {
-    const head = text.slice(0, text.length - ret[0].length).replace(/\s*$/, '');
-    return `${head ? `${head}\n` : ''}${chunk}return part;\n`;
-  }
-  return `${text ? `${text}\n` : ''}${chunk}return part;\n`;
+  return insertBeforeScriptReturn(buffer, blockText, { ensureReturn: true });
 }
 
 /**
@@ -2243,7 +2241,7 @@ export function composeContourLoft(buffer, {
     if (head && !head.endsWith('\n')) head = `${head}\n`;
     if (rest && !rest.startsWith('\n')) rest = `\n${rest}`;
     next = `${head}${body}${rest}`;
-    if (!/\n?return\s+part\s*;\s*$/.test(next)) {
+    if (findReturnPartIndex(next) < 0) {
       next = `${next.replace(/\s*$/, '')}\nreturn part;\n`;
     }
   } else {
