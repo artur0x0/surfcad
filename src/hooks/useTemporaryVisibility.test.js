@@ -3,8 +3,10 @@ import test from 'node:test';
 import {
   createTemporaryVisibility,
   holdContourOverlays,
+  holdJointPlanes,
   overlayKeysForContourEntry,
   releaseContourOverlays,
+  releaseJointPlanes,
 } from './useTemporaryVisibility.js';
 
 function harness(initial = { planes: false, contours: false }) {
@@ -79,6 +81,26 @@ test('workplane holds planes only and leaves a sketch choice alone', () => {
   releaseContourOverlays(api);
   assert.equal(state.planes, false);
   assert.equal(state.contours, true);
+});
+
+test('the joints card holds planes and restores them when it closes', () => {
+  const { state, api } = harness();
+  holdJointPlanes(api);
+  assert.equal(state.planes, true);
+  assert.equal(state.contours, false);
+  assert.equal(api.isHeld('planes'), true);
+  releaseJointPlanes(api);
+  assert.equal(state.planes, false);
+  assert.equal(api.isHeld('planes'), false);
+});
+
+test('a plane toggle during the joints card stays after the card closes', () => {
+  const { state, api } = harness();
+  holdJointPlanes(api);
+  api.choose('planes', false);
+  assert.equal(state.planes, false);
+  releaseJointPlanes(api);
+  assert.equal(state.planes, false);
 });
 
 test('a second begin does not replace the remembered value', () => {

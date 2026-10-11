@@ -114,7 +114,7 @@ The second part is a legacy row: no `id`. The third part is a link to another as
 
 `part` is a whole-part color. A face entry wins on that face. `src` and `ord` are omitted on a primitive face. `src` is the fillet or chamfer call, stored as `-(index + 1)`. `ord` is that fillet's patch index. Hex is lowercase `#rrggbb`. Unknown keys are rejected.
 
-`joints` is optional. It is omitted when empty. A joint names parts by surf id. It stores a face, edge, or axis fingerprint in the part frame. It does not store script text, and it does not change a part's origin. Status (`ok`, `broken`, `conflict`) is computed on load and is not a field.
+`joints` is optional. It is omitted when empty. A joint names parts by surf id. It stores a face, edge, or axis fingerprint in the part frame, or a plane (`kind: "plane"`, `key: { id, at, n }`). The plane id is `origin:xy`, `origin:yz`, `origin:zx`, `workplane:<name>`, or `contour:<id>`. It does not store script text, and it does not change a part's origin. Status (`ok`, `broken`, `conflict`) is computed on load and is not a field.
 
 ```json
 "joints": [

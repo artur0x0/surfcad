@@ -101,6 +101,52 @@ test('validateSurfJson names the schema problems', () => {
   })])).errors, 'position must equal placement.t');
 });
 
+test('a plane reference round-trips by its stable id', () => {
+  const plane = {
+    part: A,
+    kind: 'plane',
+    key: { id: 'origin:xy', at: [0, 0, 0], n: [0, 0, 1] },
+  };
+  const joint = { ...coincident(), a: plane, b: faceRef(B, FACE_B) };
+  const raw = surf(twoParts(), { joints: [joint] });
+  assert.equal(validateSurfJson(raw).errors.length, 0);
+  const doc = parseSurfJson(raw);
+  assert.equal(doc.joints[0].a.kind, 'plane');
+  assert.equal(doc.joints[0].a.key.id, 'origin:xy');
+  assert.deepEqual(doc.joints[0].a.key.n, [0, 0, 1]);
+  const symmetric = {
+    id: J,
+    name: 'Symmetric 1',
+    type: 'symmetric',
+    a: plane,
+    a2: faceRef(A, FACE),
+    b: faceRef(B, FACE_B),
+    b2: faceRef(B, { at: [0, 0, 4], n: [0, 0, 1], area: 40 }),
+  };
+  assert.equal(validateSurfJson(surf(twoParts(), { joints: [symmetric] })).errors.length, 0);
+  has(errorsOf({
+    joints: [{
+      ...joint,
+      a: { part: A, kind: 'plane', key: { at: [0, 0, 0], n: [0, 0, 1] } },
+    }],
+  }), 'id must be a plane id');
+  has(errorsOf({
+    joints: [{
+      ...joint,
+      a: { part: A, kind: 'plane', key: { id: 'origin:xy', at: [0, 0, 0], n: [0, 0, 2] } },
+    }],
+  }), 'n must be a unit direction');
+  has(errorsOf({
+    joints: [{
+      id: J,
+      name: 'Concentric 1',
+      type: 'concentric',
+      a: plane,
+      b: { part: B, kind: 'axis', key: { at: [0, 0, 0], dir: [0, 0, 1], radius: 1 } },
+    }],
+  }), 'concentric does not fit these references');
+});
+
 test('a symmetric joint stores two faces on each part', () => {
   const joint = {
     id: J,

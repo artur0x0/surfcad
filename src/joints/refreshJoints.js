@@ -29,6 +29,22 @@ function poseClose(a, b) {
   return Math.abs(Math.abs(dot) - 1) < 1e-8;
 }
 
+/** Solve copy. A plane uses the frame that id resolves to now. The file keeps the stored key. */
+function withLivePlanes(joint, catalogs) {
+  const live = (ref) => {
+    if (!ref || ref.kind !== 'plane') return ref;
+    const hit = resolveReference(ref, catalogs?.[ref.part]);
+    if (hit.status === 'ok' && hit.key) return { ...ref, key: hit.key };
+    return ref;
+  };
+  const next = { ...joint };
+  if (next.a) next.a = live(next.a);
+  if (next.a2) next.a2 = live(next.a2);
+  if (next.b) next.b = live(next.b);
+  if (next.b2) next.b2 = live(next.b2);
+  return next;
+}
+
 function classifyJoint(doc, joint, catalogs) {
   if (joint?.type === 'fixed') {
     const surfId = joint.a?.part;
@@ -99,7 +115,7 @@ export function refreshAssemblyJoints({ doc, catalogs = {}, locked = false } = {
     const outcome = classifyJoint(doc, joint, catalogs);
     statuses[joint.id] = outcome.status;
     if (outcome.message) messages[joint.id] = outcome.message;
-    if (outcome.status === 'ok') active.push(joint);
+    if (outcome.status === 'ok') active.push(withLivePlanes(joint, catalogs));
   }
   if (!active.length) {
     return { ok: true, doc, statuses, messages, message: null, changed: false };

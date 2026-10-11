@@ -161,6 +161,7 @@
         "golden:joints-page-scroll": "node scripts/golden/smoke_joints_page_scroll.mjs",
         "golden:joints-card": "node scripts/golden/smoke_joints_card.mjs",
         "golden:joints-types": "node scripts/golden/smoke_joints_types.mjs",
+        "golden:joints-planes": "node scripts/golden/smoke_joints_planes.mjs",
         "golden:joints-reopen": "node scripts/golden/smoke_joints_reopen.mjs",
         "golden:assembly-open-spinner": "node scripts/golden/smoke_assembly_open_spinner.mjs",
         "golden:assembly-open-clears": "node scripts/golden/smoke_assembly_open_clears.mjs",

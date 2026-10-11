@@ -10,6 +10,8 @@
  * Contour tools hold the keys they pick (holdContourOverlays) and
  * release them on the close path (releaseContourOverlays): Confirm, X,
  * Esc, and opening another tool all leave through exitContourMode.
+ * The joints card holds planes the same way (holdJointPlanes) and
+ * releases them when the card closes.
  */
 import { useRef } from 'react';
 
@@ -90,6 +92,17 @@ export function holdContourOverlays(api, entry) {
 export function releaseContourOverlays(api) {
   if (!api) return;
   for (const key of OVERLAY_TOGGLE_KEYS) api.end(key);
+}
+
+/** Joints card: planes on while it is open. Close restores the baseline. */
+export function holdJointPlanes(api) {
+  if (!api) return;
+  api.begin('planes');
+}
+
+export function releaseJointPlanes(api) {
+  if (!api) return;
+  api.end('planes');
 }
 
 export function useTemporaryVisibility(toggles) {

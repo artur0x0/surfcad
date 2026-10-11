@@ -187,9 +187,12 @@ import ContourGestureCard from './ContourGestureCard';
 import ContourTags from './ContourTags';
 import {
   holdContourOverlays,
+  holdJointPlanes,
   releaseContourOverlays,
+  releaseJointPlanes,
   useTemporaryVisibility,
 } from '../hooks/useTemporaryVisibility';
+import { planeReferenceKey, planesForJointOverlay } from '../utils/jointPlanes';
 import { buildSweepPathPreview } from '../utils/edgeSweepPath';
 import {
   buildFilletBlendPreview,
@@ -1105,6 +1108,11 @@ const Viewport = forwardRef(({
   });
   const onShowPlanesChange = (next) => overlayVis.choose('planes', next);
   const onShowContoursChange = (next) => overlayVis.choose('contours', next);
+  useEffect(() => {
+    if (!jointPicking) return undefined;
+    holdJointPlanes(overlayVis);
+    return () => releaseJointPlanes(overlayVis);
+  }, [jointPicking, overlayVis]);
   const edgeModeToastShownRef = useRef(false);
   const edgeModeToastTimerRef = useRef(null);
   const [edgeModeToast, setEdgeModeToast] = useState(null);
@@ -2648,7 +2656,10 @@ const Viewport = forwardRef(({
         if (!plane?.center || !plane?.x || !plane?.y || !plane?.normal) continue;
         const size = 48;
         const geom = new PlaneGeometry(size, size);
-        const selected = entry.editor && p.id === entry.selectedId;
+        const jointId = p.jointPlaneId || p.id;
+        const picked = entry.jointPlaneIds instanceof Set
+          && entry.jointPlaneIds.has(`${entry.partId}:${jointId}`);
+        const selected = picked || (entry.editor && p.id === entry.selectedId);
         // Same translucent recipe as the tool previews, amber when active.
         const mat = makePreviewSkinMaterial(selected
           ? { color: PREVIEW_COLORS.selected, opacity: PREVIEW_OPACITY.selected }
@@ -2664,7 +2675,13 @@ const Viewport = forwardRef(({
         quad.quaternion.copy(q);
         quad.renderOrder = 7;
         quad.frustumCulled = false;
-        quad.userData = { planeId: p.id, plane, kind: 'constructionPlane', partId: entry.partId };
+        quad.userData = {
+          planeId: p.id,
+          jointPlaneId: p.jointPlaneId || p.id,
+          plane,
+          kind: 'constructionPlane',
+          partId: entry.partId,
+        };
         group.add(quad);
       }
       if (!group.children.length) continue;
@@ -3835,13 +3852,35 @@ const Viewport = forwardRef(({
     sceneReady,
   ]);
 
+  const jointPlanePickKey = (jointCard?.picks || [])
+    .filter((pick) => pick?.kind === 'plane' && pick.key?.id)
+    .map((pick) => `${pick.partId}:${pick.key.id}`)
+    .join('|');
+
   useEffect(() => {
     if (!showPlanes) {
       clearConstructionPlanes();
       return;
     }
-    paintConstructionPlanes(partOverlayEntries().map((entry) => ({ ...entry, selectedId: selectedPlaneId })));
-  }, [selectedPlaneId, showPlanes, paintConstructionPlanes, clearConstructionPlanes, partOverlayEntries, meshEpoch, overlayEpoch, sceneReady]);
+    const picked = new Set(jointPlanePickKey ? jointPlanePickKey.split('|') : []);
+    paintConstructionPlanes(partOverlayEntries().map((entry) => ({
+      ...entry,
+      planes: planesForJointOverlay(entry, jointPicking),
+      selectedId: selectedPlaneId,
+      jointPlaneIds: picked,
+    })));
+  }, [
+    selectedPlaneId,
+    showPlanes,
+    jointPicking,
+    jointPlanePickKey,
+    paintConstructionPlanes,
+    clearConstructionPlanes,
+    partOverlayEntries,
+    meshEpoch,
+    overlayEpoch,
+    sceneReady,
+  ]);
 
   useEffect(() => () => {
     clearConstructionPlanes();
@@ -7118,10 +7157,12 @@ const Viewport = forwardRef(({
     }
     // Only the editor part's planes are pickable: another part's plane is in
     // that part's frame and would edit the wrong script.
-    const planeHits = (showPlanesRef.current && constructionPlaneRef.current)
+    const planeHitsAll = (showPlanesRef.current && constructionPlaneRef.current)
       ? raycasterRef.current.intersectObject(constructionPlaneRef.current, true)
-        .filter((hit) => (overlayHitPartId(hit.object) ?? null) === (editorOverlayPartIdRef.current ?? null))
       : [];
+    const planeHits = jointPickingRef.current
+      ? planeHitsAll
+      : planeHitsAll.filter((hit) => (overlayHitPartId(hit.object) ?? null) === (editorOverlayPartIdRef.current ?? null));
     const partChoiceHit = resolvePartPick(collectPartHits());
     const planeD = planeHits[0]?.distance ?? Infinity;
     const solidD = partChoiceHit.hit?.distance ?? Infinity;
@@ -7132,6 +7173,20 @@ const Viewport = forwardRef(({
         ? planeHits[0].object.userData
         : planeHits[0].object.parent?.userData;
       if (ud?.plane) {
+        if (jointPickingRef.current) {
+          const partId = ud.partId || overlayHitPartId(planeHits[0].object);
+          const key = planeReferenceKey(ud.jointPlaneId || ud.planeId, ud.plane);
+          if (partId && key) {
+            onJointPickRef.current?.({
+              partId,
+              kind: 'plane',
+              planar: true,
+              axis: false,
+              key,
+            });
+          }
+          return;
+        }
         setSelectedPlaneId(ud.planeId || null);
         setContourMode((prev) => {
           if (!prev) return prev;

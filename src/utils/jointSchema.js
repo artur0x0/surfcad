@@ -1,9 +1,10 @@
 /**
  * Assembly joints and the rigid placement on a part row.
  *
- * A joint names parts by surf id and stores a face, edge, or axis
- * fingerprint in the part frame. It never stores script text. Status
- * (ok, broken, conflict) is computed later and is not a file field.
+ * A joint names parts by surf id and stores a face, edge, axis, or
+ * plane in the part frame. A plane key is a stable id plus a point and
+ * a unit normal. It never stores script text. Status (ok, broken,
+ * conflict) is computed later and is not a file field.
  *
  * `position` stays the translation. `placement` is `{ t, q }` with a
  * unit quaternion, vector part first. Version stays 1.
@@ -21,8 +22,9 @@ const REF_KEYS = new Set(['part', 'kind', 'key']);
 const FACE_FIELDS = new Set(['at', 'n', 'area', 'src', 'ord']);
 const AXIS_FIELDS = new Set(['at', 'dir', 'radius']);
 const EDGE_FIELDS = new Set(['at', 'dir', 'length', 'faces']);
+const PLANE_FIELDS = new Set(['id', 'at', 'n']);
 const PLACEMENT_KEYS = new Set(['t', 'q']);
-const REF_KINDS = new Set(['face', 'edge', 'axis']);
+const REF_KINDS = new Set(['face', 'edge', 'axis', 'plane']);
 
 function isVec3(value) {
   return Array.isArray(value)
@@ -167,22 +169,50 @@ function copyEdgeKey(key) {
   };
 }
 
+function planeKeyErrors(key, at) {
+  const errors = [];
+  if (!key || typeof key !== 'object' || Array.isArray(key)) {
+    errors.push(`${at} must be an object`);
+    return errors;
+  }
+  for (const k of Object.keys(key)) {
+    if (!PLANE_FIELDS.has(k)) errors.push(`${at} unknown key "${k}"`);
+  }
+  if (typeof key.id !== 'string' || !key.id || /\s/.test(key.id)) {
+    errors.push(`${at}.id must be a plane id`);
+  }
+  if (!isVec3(key.at)) errors.push(`${at}.at must be [x, y, z] numbers`);
+  if (!isVec3(key.n)) errors.push(`${at}.n must be [x, y, z] numbers`);
+  else if (!nearlyUnitDir(key.n)) errors.push(`${at}.n must be a unit direction`);
+  return errors;
+}
+
+function copyPlaneKey(key) {
+  return { id: String(key.id), at: copyVec3(key.at), n: unitDir(key.n) };
+}
+
 function keyErrors(kind, key, at) {
   if (kind === 'face') return faceKeyErrors(key, at);
   if (kind === 'axis') return axisKeyErrors(key, at);
   if (kind === 'edge') return edgeKeyErrors(key, at);
+  if (kind === 'plane') return planeKeyErrors(key, at);
   return [`${at} has no key for this kind`];
 }
 
 function copyKey(kind, key) {
   if (kind === 'face') return copyFaceKey(key);
   if (kind === 'axis') return copyAxisKey(key);
+  if (kind === 'plane') return copyPlaneKey(key);
   return copyEdgeKey(key);
+}
+
+function planarKind(kind) {
+  return kind === 'face' || kind === 'plane';
 }
 
 function kindsOk(type, aKind, bKind) {
   if (type === 'coincident' || type === 'distance' || type === 'symmetric') {
-    return aKind === 'face' && bKind === 'face';
+    return planarKind(aKind) && planarKind(bKind);
   }
   if (type === 'concentric') {
     return (aKind === 'axis' || aKind === 'edge') && (bKind === 'axis' || bKind === 'edge');
@@ -214,7 +244,7 @@ function referenceErrors(ref, at, { geometry }) {
     if (ref.key !== undefined) errors.push(`${at}.key is omitted on a fixed joint`);
     return errors;
   }
-  if (!REF_KINDS.has(ref.kind)) errors.push(`${at}.kind must be face, edge, or axis`);
+  if (!REF_KINDS.has(ref.kind)) errors.push(`${at}.kind must be face, edge, axis, or plane`);
   else errors.push(...keyErrors(ref.kind, ref.key, `${at}.key`));
   return errors;
 }
@@ -303,7 +333,7 @@ export function assemblyJointErrors(joints, liveIds) {
       errors.push(...referenceErrors(joint.a2, `${at}.a2`, { geometry: true }));
       errors.push(...referenceErrors(joint.b2, `${at}.b2`, { geometry: true }));
       const faces = [joint.a, joint.a2, joint.b, joint.b2];
-      if (faces.some((ref) => ref && REF_KINDS.has(ref.kind) && ref.kind !== 'face')) {
+      if (faces.some((ref) => ref && REF_KINDS.has(ref.kind) && !planarKind(ref.kind))) {
         errors.push(`${at} symmetric does not fit these references`);
       }
       if (isSurfId(joint.a?.part) && isSurfId(joint.a2?.part) && joint.a.part !== joint.a2.part) {

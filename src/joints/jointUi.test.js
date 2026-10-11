@@ -87,6 +87,44 @@ function docWith(joints) {
   };
 }
 
+test('a plane suggests coincident, or parallel when the gap is open', () => {
+  const plane = (surfId, name, id, at, n) => ({
+    partId: name,
+    surfId,
+    partName: name,
+    kind: 'plane',
+    planar: true,
+    axis: false,
+    key: { id, at, n },
+  });
+  const near = [
+    plane(A, 'Shaft', 'origin:xy', [0, 0, 0], [0, 0, 1]),
+    face(B, 'Housing', [0, 0, 1], [0, 0, 1]),
+  ];
+  assert.equal(suggestJointType(near), 'coincident');
+  const offset = [
+    plane(A, 'Shaft', 'origin:xy', [0, 0, 0], [0, 0, 1]),
+    face(B, 'Housing', [0, 0, 12], [0, 0, 1]),
+  ];
+  assert.equal(suggestJointType(offset), 'parallel');
+  const tilted = [
+    plane(A, 'Shaft', 'workplane:deck', [0, 0, 0], [0, 0, 1]),
+    face(B, 'Housing', [0, 0, 0], [1, 0, 0]),
+  ];
+  assert.equal(suggestJointType(tilted), 'coincident');
+  const drafted = draftFromPicks(null, offset, { joints: [] });
+  assert.equal(drafted.suggested, 'parallel');
+  assert.equal(drafted.type, 'angle');
+  assert.equal(drafted.valueMm, 0);
+  assert.equal(typeFits('angle', offset), true);
+  assert.ok(planarAnglePair(offset));
+  const both = acceptJointPick([], plane(A, 'Shaft', 'origin:xy', [0, 0, 0], [0, 0, 1]));
+  const yz = acceptJointPick(both.picks, plane(A, 'Shaft', 'origin:yz', [0, 0, 0], [1, 0, 0]));
+  assert.equal(yz.picks.length, 2);
+  assert.equal(yz.picks[0].key.id, 'origin:xy');
+  assert.equal(yz.picks[1].key.id, 'origin:yz');
+});
+
 test('two planar faces suggest coincident and two axes suggest concentric', () => {
   const faces = [face(A, 'Shaft', [0, 0, 1], [0, 0, 1]), face(B, 'Housing', [0, 0, -1], [0, 0, -1])];
   assert.equal(suggestJointType(faces), 'coincident');

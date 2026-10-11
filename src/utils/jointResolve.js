@@ -4,8 +4,9 @@
  * A face uses matchFaceKeys and the paint tolerances. An axis matches
  * direction within 8° (unsigned), point-to-axis within 1 mm, and radius
  * within ±25%. An edge matches midpoint, direction, length, and both
- * adjacent face keys. Two candidates or none are broken. The confirmed
- * key is not rewritten.
+ * adjacent face keys. A plane matches its stable id. Two candidates or
+ * none are broken. The confirmed key is not rewritten. A plane that is
+ * still in the script is solved from that plane's current frame.
  */
 import { buildPartGraphPatches } from './partGraphPatches.js';
 import {
@@ -15,14 +16,15 @@ import {
   faceFingerprints,
   matchFaceKeys,
 } from './faceColorMatch.js';
+import { jointPlanesFromScript } from './jointPlanes.js';
 import { dropPlanarFins } from './planarSeam.js';
 import { triangleSources } from './partSolidCache.js';
 
 const NORMAL_COS = Math.cos((FACE_MATCH_NORMAL_DEG * Math.PI) / 180);
 const AT_MM = FACE_MATCH_AT_MM;
 
-const KIND_NOUN = { face: 'face', axis: 'axis', edge: 'edge' };
-const KIND_TITLE = { face: 'Face', axis: 'Axis', edge: 'Edge' };
+const KIND_NOUN = { face: 'face', axis: 'axis', edge: 'edge', plane: 'plane' };
+const KIND_TITLE = { face: 'Face', axis: 'Axis', edge: 'Edge', plane: 'Plane' };
 
 function dot(a, b) {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -128,13 +130,42 @@ export function matchJointEdge(edges, key) {
 }
 
 /**
- * One reference. `catalog.faces` / `axes` / `edges` omitted means this
- * run did not supply that kind, so the confirmed key stays in the solve.
- * A present array that misses is broken.
+ * One plane id against the part's planes. Geometry is not a fingerprint:
+ * the hit carries the plane's current point and normal. An omitted list
+ * leaves the confirmed key in the solve. A present list that misses is broken.
+ */
+export function matchJointPlane(planes, key) {
+  if (!Array.isArray(planes)) return { status: 'unresolved' };
+  const id = typeof key?.id === 'string' ? key.id : '';
+  if (!id) return { status: 'missing' };
+  const hits = [];
+  for (const plane of planes) {
+    if (plane?.id !== id) continue;
+    const n = unit(plane.n);
+    const at = plane.at;
+    if (!n || !Array.isArray(at) || at.length < 3) continue;
+    hits.push({
+      id,
+      at: [Number(at[0]) || 0, Number(at[1]) || 0, Number(at[2]) || 0],
+      n,
+    });
+    if (hits.length > 1) break;
+  }
+  if (hits.length === 1) return { status: 'ok', key: hits[0] };
+  if (hits.length > 1) return { status: 'ambiguous' };
+  return { status: 'missing' };
+}
+
+/**
+ * One reference. `catalog.faces` / `axes` / `edges` / `planes` omitted
+ * means this run did not supply that kind, so the confirmed key stays
+ * in the solve. A present array that misses is broken. A plane is read
+ * even when the mesh catalog is unresolved.
  */
 export function resolveReference(ref, catalog) {
   if (!ref) return { status: 'missing' };
   if (catalog?.failed) return { status: 'failed' };
+  if (ref.kind === 'plane') return matchJointPlane(catalog?.planes, ref.key);
   if (!catalog || catalog.unresolved) return { status: 'unresolved' };
   if (ref.kind === 'face') return matchJointFace(catalog.faces, ref.key);
   if (ref.kind === 'axis') return matchJointAxis(catalog.axes, ref.key);
@@ -281,8 +312,11 @@ export function catalogFromMeshData(mesh) {
  * Catalogs for a refresh. A failed run is marked failed and its leftover
  * mesh is not read. A hidden part uses the cached solid. A mesh that yields
  * no fingerprints stays unresolved so the confirmed key is not dropped.
+ * Planes come from the part script: origins always, plus workplanes and
+ * sketch planes. They stay on an unresolved mesh so a plane joint can
+ * still resolve.
  */
-export function catalogsFromRuns({ parts, runs, leftovers } = {}) {
+export function catalogsFromRuns({ parts, runs, leftovers, scripts } = {}) {
   const catalogs = {};
   for (const part of parts || []) {
     const sid = part?.surfId;
@@ -300,13 +334,14 @@ export function catalogsFromRuns({ parts, runs, leftovers } = {}) {
       continue;
     }
     const hidden = part.visible === false;
+    const planes = jointPlanesFromScript(scripts?.[part.id]);
     const mesh = hidden ? leftovers?.[part.id] : (run?.ok ? run.mesh : null);
     const built = catalogFromMeshData(mesh);
     if (!built) {
-      catalogs[sid] = { unresolved: true, hidden };
+      catalogs[sid] = { unresolved: true, hidden, planes };
       continue;
     }
-    catalogs[sid] = { ...built, hidden };
+    catalogs[sid] = { ...built, hidden, planes };
   }
   return catalogs;
 }
