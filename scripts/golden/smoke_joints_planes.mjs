@@ -41,7 +41,7 @@ const DOC = {
 };
 const shaftScript = (id) => `// @surf-id ${id}\nlet part = Manifold.cube([30, 30, 30], true);\nreturn part;\n`;
 const housingScript = (id) => `// @surf-id ${id}
-const deck = { center: [0, 36, 0], normal: [0, 1, 0], x: [1, 0, 0], y: [0, 0, 1] };
+const deck = { center: [0, -36, 0], normal: [0, 1, 0], x: [1, 0, 0], y: [0, 0, 1] };
 let part = Manifold.cube([30, 30, 30], true);
 return part;
 `;
@@ -281,10 +281,12 @@ async function chipRows(page) {
   });
 }
 
-const ORIGIN = [[20, 0, 0], [0, 20, 0], [-20, 0, 0], [18, 8, 0], [8, 18, 0]];
-const HOUSING_TOP = [[80, 0, 15], [84, 0, 15], [76, 2, 15], [80, -4, 15]];
-const WORKPLANE = [[100, 36, 0], [80, 36, 20], [60, 36, 0], [90, 36, 12], [70, 36, -10]];
-const SHAFT_TOP = [[0, 0, 15], [4, 0, 15], [-4, 2, 15], [0, 6, 15]];
+// Off the other origin planes, and on the camera side of them, so the
+// ray hits this quad or this face instead of a plane through the middle.
+const ORIGIN = [[20, -8, 0], [22, -6, 0], [18, -10, 0], [16, -8, 0]];
+const HOUSING_TOP = [[88, -8, 15], [86, -6, 15], [90, -10, 15], [84, -4, 15]];
+const WORKPLANE = [[80, -36, 8], [90, -36, 6], [70, -36, 4], [88, -36, 12], [72, -36, -8]];
+const SHAFT_TOP = [[8, -6, 15], [6, -8, 15], [10, -4, 15], [4, -10, 15]];
 
 async function runView(browser, vp) {
   const { context, page, errors } = await boot(browser, vp);
