@@ -10726,6 +10726,9 @@ const Viewport = forwardRef(({
           }}
           onNew={beginNewContour}
           onOffset={(index, offset) => setFeatureSlots((prev) => setFeatureStationOffset(prev, index, offset))}
+          onExtrudeChange={(extrude) => setFeatureSlots((prev) => (prev ? { ...prev, extrude } : prev))}
+          onRevolveChange={(revolve) => setFeatureSlots((prev) => (prev ? { ...prev, revolve } : prev))}
+          onSweepChange={(sweep) => setFeatureSlots((prev) => (prev ? { ...prev, sweep } : prev))}
           onAddStation={() => setFeatureSlots((prev) => addFeatureStation(prev))}
           onRemoveStation={(index) => setFeatureSlots((prev) => removeFeatureStation(prev, index))}
           onCombine={(combine) => setFeatureSlots((prev) => (

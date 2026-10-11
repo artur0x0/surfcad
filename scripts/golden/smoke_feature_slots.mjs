@@ -6,11 +6,12 @@
  * from the saved-contour list (the ghost id follows the hover). New contour
  * opens the plane card. X returns with c1 still in the slot. The rail
  * checkmark saves the next contour and returns to the same card with that
- * slot filled. Subtract survives the round trip. Confirm writes the extrude.
+ * slot filled. Subtract and the edited distance survive the round trip.
+ * Confirm writes that distance into the extrude block.
  *
  * Screenshots at 390 and 1280 go to GOLDEN_SHOT_DIR or os.tmpdir().
  */
-/* global document, window */
+/* global document, window, Event */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -127,9 +128,21 @@ async function runSize(browser, label, contextOptions) {
   await card.waitFor({ timeout: 8000 });
   const title = (await page.locator('[data-feature-card-title]').innerText()).trim();
   check(`${label} card is titled Extrude`, title === 'Extrude', title);
-  check(`${label} card has no radius or distance field`,
+  check(`${label} card has the distance slider and no contour radius`,
     await page.locator('[data-popup-number="radius"]').count() === 0
-    && await page.locator('[data-popup-number="extrude-distance"]').count() === 0);
+    && await page.locator('[data-popup-number="extrude-distance"]').count() === 1
+    && await page.locator('[data-extrude-sense="negative"]').count() === 1);
+  await page.evaluate(() => {
+    const input = document.querySelector('[data-popup-number="extrude-distance"]');
+    const proto = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+    const tracker = input._valueTracker;
+    if (tracker) tracker.setValue(String(input.value));
+    proto.set.call(input, '25');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.waitForFunction(() => (
+    document.querySelector('[data-popup-number="extrude-distance"]')?.value === '25'
+  ), null, { timeout: 4000 });
 
   const row = page.locator('[data-slot-role="profile"] [data-slot-pick="c1"]');
   await row.hover();
@@ -155,6 +168,8 @@ async function runSize(browser, label, contextOptions) {
   check(`${label} X leaves the slot on c1`, afterX === 'c1', afterX || '');
   check(`${label} X keeps Subtract`,
     (await page.locator('[data-contour-combine="subtract"]').getAttribute('aria-pressed')) === 'true');
+  check(`${label} X keeps the edited distance`,
+    await page.locator('[data-popup-number="extrude-distance"]').inputValue() === '25');
 
   await page.locator('[data-new-contour-role="profile"]').click();
   await page.locator('[data-contour-chip]').waitFor({ timeout: 8000 });
@@ -171,12 +186,14 @@ async function runSize(browser, label, contextOptions) {
     (await page.locator('[data-feature-card-title]').innerText()).trim() === 'Extrude');
   check(`${label} Subtract survived the round trip`,
     (await page.locator('[data-contour-combine="subtract"]').getAttribute('aria-pressed')) === 'true');
+  check(`${label} distance survived the round trip`,
+    await page.locator('[data-popup-number="extrude-distance"]').inputValue() === '25');
   await page.screenshot({ path: join(SHOT_DIR, `feature-slots-${label}.png`) });
 
   await page.locator('[data-feature-card-confirm]').click();
   await page.waitForFunction(() => !document.querySelector('[data-feature-slot-card]'), null, { timeout: 15000 });
   const script = await editorScript(page);
-  check(`${label} Confirm names the new contour`, new RegExp(`makeExtrude\\(${filled}\\.contours`).test(script), filled);
+  check(`${label} Confirm names the new contour`, new RegExp(`makeExtrude\\(${filled}\\.contours, 25\\)`).test(script), filled);
   check(`${label} c1 stays in the script`, /@contour id=c1\b/.test(script));
   check(`${label} no page errors`, errors.length === 0, errors.join(' | '));
   await context.close();

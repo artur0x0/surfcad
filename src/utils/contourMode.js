@@ -1855,6 +1855,13 @@ export function composeContourRevolve(buffer, {
 
   const revGate = validateRevolveParams({ ...defaultRevolveParams(), ...revolve });
   if (!revGate.ok) return revGate;
+  const segRaw = revolve?.segments;
+  const segments = segRaw == null || segRaw === ''
+    ? REVOLVE_SEGMENTS
+    : Math.round(Number(segRaw));
+  if (!(segments >= 3) || !Number.isFinite(segments)) {
+    return { ok: false, message: 'makeRevolve: segments must be an integer ≥ 3' };
+  }
 
   const plane = planeFromContourFace(face);
   const axis = resolveRevolveAxis(plane, revGate.normalized.axis);
@@ -1904,7 +1911,7 @@ export function composeContourRevolve(buffer, {
     rV: mapped.rV,
     aU: mapped.aU,
     aV: mapped.aV,
-    segments: REVOLVE_SEGMENTS,
+    segments,
     angle: revGate.normalized.angle,
     startDeg: revolveStartDeg(revGate.normalized.angle, revGate.normalized.sense),
     partLine: (expr) => emitPartPlace(
@@ -2349,6 +2356,7 @@ export function composeContourSweep(buffer, {
     if (!pathFrame?.x) {
       return { ok: false, message: 'composeContourSweep: path has no direction.' };
     }
+    // The named path stays as written. Reverse and closed are feature data.
     pathUv = [[0, 0], [1, 0]];
     pathGate = {
       ok: true,
@@ -2410,6 +2418,8 @@ export function composeContourSweep(buffer, {
     path: pathStep.name,
     localName,
     sweptName,
+    reverse: !!(pathStmt && normalizeSweepParams(sweep).reverse),
+    closed: pathStmt && typeof sweep.closed === 'boolean' ? !!sweep.closed : null,
     partLine: (expr) => emitPartPlace(
       names,
       expr,

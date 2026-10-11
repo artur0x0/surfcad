@@ -1,5 +1,5 @@
 import React from 'react';
-import { LengthNumberField } from './controls/popupUI';
+import { LengthNumberField, NumberField } from './controls/popupUI';
 import FeatureSheet from './FeatureSheet';
 import { partLengthMm } from '../utils/sliderRange';
 import {
@@ -91,9 +91,47 @@ function ContourSlot({
   );
 }
 
+function typedNumber(raw, fallback) {
+  if (raw === '' || raw === '-' || raw === '.') return raw;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function SenseRow({ value, onChange, attr }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[11px] uppercase tracking-wide text-cyan-200/80">Sense</span>
+      <div className="flex rounded border border-cyan-700/70 overflow-hidden">
+        {[
+          { id: 'positive', label: 'Out' },
+          { id: 'negative', label: 'In' },
+          { id: 'both', label: 'Both' },
+        ].map((opt) => {
+          const active = (value || 'positive') === opt.id;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => onChange?.(opt.id)}
+              className={`flex-1 px-2 py-1 text-[13px] ${
+                active ? 'bg-cyan-600 text-white' : 'bg-cyan-950/80 text-cyan-100'
+              }`}
+              aria-pressed={active}
+              {...{ [attr]: opt.id }}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Extrude, Revolve, Loft, and Sweep. Slots name saved contours.
  * The contour editor is a separate card, opened by New contour.
+ * Distance, angle, axis, segments, sense, reverse, and closed stay here.
  * The helper rail stays in the pane, so this card stays centered between the rails.
  */
 const FeatureSlotCard = ({
@@ -106,6 +144,9 @@ const FeatureSlotCard = ({
   onHover,
   onNew,
   onOffset,
+  onExtrudeChange,
+  onRevolveChange,
+  onSweepChange,
   onAddStation,
   onRemoveStation,
   onCombine,
@@ -119,7 +160,12 @@ const FeatureSlotCard = ({
   const sweep = card.kind === 'makeSweep';
   const ready = featureSlotReady(card);
   const combineOp = card.combine === 'subtract' ? 'subtract' : 'add';
+  const extrude = card.kind === 'makeExtrude';
+  const revolve = card.kind === 'makeRevolve';
   const L = partLengthMm(lengthMm);
+  const extrudeParams = card.extrude || {};
+  const revolveParams = card.revolve || {};
+  const sweepParams = card.sweep || {};
   const subtitle = loft
     ? 'Stations name contours'
     : sweep
@@ -237,6 +283,100 @@ const FeatureSlotCard = ({
               onHover={onHover}
               onPick={(row) => onPick?.({ role: 'path', index: 0 }, row)}
               onNew={() => onNew?.({ role: 'path', index: 0 })}
+            />
+            <label className="mt-1 flex items-center gap-2 text-[13px] text-cyan-100">
+              <input
+                type="checkbox"
+                checked={!!sweepParams.reverse}
+                onChange={(e) => onSweepChange?.({ ...sweepParams, reverse: e.target.checked })}
+                data-sweep-reverse={sweepParams.reverse ? 'on' : 'off'}
+                className="h-3.5 w-3.5 accent-cyan-400"
+              />
+              Reverse path
+            </label>
+            <label className="flex items-center gap-2 text-[13px] text-cyan-100">
+              <input
+                type="checkbox"
+                checked={!!sweepParams.closed}
+                onChange={(e) => onSweepChange?.({ ...sweepParams, closed: e.target.checked })}
+                data-sweep-closed={sweepParams.closed ? 'on' : 'off'}
+                className="h-3.5 w-3.5 accent-cyan-400"
+              />
+              Closed path
+            </label>
+          </div>
+        )}
+        {extrude && (
+          <div className="pt-1.5 border-t border-cyan-700/50 flex flex-col gap-1.5 font-sans">
+            <div className="text-[11px] uppercase tracking-wide text-cyan-200/80">Extrude</div>
+            <LengthNumberField
+              id="extrude-distance"
+              label="Distance"
+              accent={ACCENT}
+              valueMm={extrudeParams.distance}
+              onChangeMm={(v) => onExtrudeChange?.({
+                ...extrudeParams,
+                distance: typedNumber(v, extrudeParams.distance),
+              })}
+              minMm={0.1}
+              maxMm={L}
+            />
+            <SenseRow
+              attr="data-extrude-sense"
+              value={extrudeParams.sense}
+              onChange={(sense) => onExtrudeChange?.({ ...extrudeParams, sense })}
+            />
+          </div>
+        )}
+        {revolve && (
+          <div className="pt-1.5 border-t border-cyan-700/50 flex flex-col gap-1.5 font-sans">
+            <div className="text-[11px] uppercase tracking-wide text-cyan-200/80">Revolve</div>
+            <NumberField
+              id="revolve-angle"
+              label="Angle"
+              accent={ACCENT}
+              value={revolveParams.angle}
+              onChange={(v) => onRevolveChange?.({
+                ...revolveParams,
+                angle: typedNumber(v, revolveParams.angle),
+              })}
+              min={0.1}
+              max={360}
+              step={1}
+            />
+            <label className="flex flex-col gap-0.5">
+              <span className="text-[11px] uppercase tracking-wide text-cyan-200/80">Axis</span>
+              <select
+                value={revolveParams.axis || 'v'}
+                onChange={(e) => onRevolveChange?.({ ...revolveParams, axis: e.target.value })}
+                className="rounded border border-cyan-700/70 bg-cyan-950/80 px-2.5 py-1 text-[13px] text-white"
+                aria-label="Axis"
+                data-revolve-axis=""
+              >
+                <option value="v">along V</option>
+                <option value="u">along U</option>
+                <option value="x">+X</option>
+                <option value="y">+Y</option>
+                <option value="z">+Z</option>
+              </select>
+            </label>
+            <NumberField
+              id="revolve-segments"
+              label="Segments"
+              accent={ACCENT}
+              value={revolveParams.segments}
+              onChange={(v) => onRevolveChange?.({
+                ...revolveParams,
+                segments: typedNumber(v, revolveParams.segments),
+              })}
+              min={3}
+              max={256}
+              step={1}
+            />
+            <SenseRow
+              attr="data-revolve-sense"
+              value={revolveParams.sense}
+              onChange={(sense) => onRevolveChange?.({ ...revolveParams, sense })}
             />
           </div>
         )}

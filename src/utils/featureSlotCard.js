@@ -1,7 +1,9 @@
 /**
- * Feature cards name saved contours. They do not carry a profile tool,
- * a size, or a solid dimension. A Loft station keeps an optional offset
- * along that contour's normal. Sweep has a profile slot and a path slot.
+ * Feature cards name saved contours. They do not carry a profile tool
+ * or a contour size. The feature's own parameters stay on the card:
+ * extrude distance and sense, revolve angle, axis, segments, and sense,
+ * sweep reverse and closed, and a loft station's offset along the
+ * contour normal. Sweep has a profile slot and a path slot.
  */
 
 import {
@@ -10,6 +12,7 @@ import {
   defaultRevolveParams,
   isLoftEntry,
   isSweepEntry,
+  REVOLVE_SEGMENTS,
 } from './contourMode.js';
 
 export const FEATURE_SLOT_TITLE = {
@@ -33,16 +36,40 @@ export function emptyFeatureSlotCard(kind) {
       stations: [blankStation('p0', 0), blankStation('p1', 20)],
     };
   }
-  if (kind === 'makeSweep') return { ...base, profile: null, path: null };
-  return { ...base, profile: null };
+  if (kind === 'makeSweep') {
+    return { ...base, profile: null, path: null, sweep: { reverse: false, closed: false } };
+  }
+  if (kind === 'makeRevolve') {
+    return {
+      ...base,
+      profile: null,
+      revolve: { ...defaultRevolveParams(), segments: REVOLVE_SEGMENTS },
+    };
+  }
+  return { ...base, profile: null, extrude: { ...defaultExtrudeParams() } };
 }
 
 function refOf(contour) {
-  if (!contour?.name) return { contourId: null, contourName: null, label: '' };
+  if (!contour?.name) return { contourId: null, contourName: null, label: '', plane: null };
   return {
     contourId: contour.id || contour.name,
     contourName: contour.name,
     label: contour.label || contour.name,
+    plane: contour.plane || null,
+  };
+}
+
+function faceOf(ref) {
+  const plane = ref?.plane;
+  if (!plane?.center || !plane?.normal || !plane?.x || !plane?.y) return null;
+  return {
+    type: 'planar',
+    planeFrame: {
+      center: plane.center.slice(),
+      normal: plane.normal.slice(),
+      x: plane.x.slice(),
+      y: plane.y.slice(),
+    },
   };
 }
 
@@ -61,7 +88,14 @@ export function assignFeatureSlot(card, slot, contour) {
     return { ...card, stations };
   }
   if (slot.role === 'path') {
-    return { ...card, path: named(ref) ? ref : null };
+    const closed = typeof contour?.params?.closed === 'boolean'
+      ? contour.params.closed
+      : !!card.sweep?.closed;
+    return {
+      ...card,
+      path: named(ref) ? ref : null,
+      sweep: { reverse: !!card.sweep?.reverse, closed },
+    };
   }
   return { ...card, profile: named(ref) ? ref : null };
 }
@@ -91,6 +125,11 @@ export function removeFeatureStation(card, index) {
   };
 }
 
+function positive(value, max = Infinity) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 && n <= max;
+}
+
 export function featureSlotReady(card) {
   if (!card) return false;
   if (isLoftEntry(card.kind)) {
@@ -99,7 +138,14 @@ export function featureSlotReady(card) {
     ));
   }
   if (isSweepEntry(card.kind)) return named(card.profile) && named(card.path);
-  return named(card.profile);
+  if (card.kind === 'makeRevolve') {
+    const segments = Number(card.revolve?.segments);
+    return named(card.profile)
+      && positive(card.revolve?.angle, 360)
+      && Number.isFinite(segments)
+      && segments >= 3;
+  }
+  return named(card.profile) && positive(card.extrude?.distance);
 }
 
 /** Hover wins. Otherwise the filled profile (or the first filled station) stays lit. */
@@ -121,9 +167,8 @@ export function contoursForSlot(contours, role) {
 }
 
 /**
- * Confirm payload. Names that already exist are kept. Distance, angle,
- * axis, and sense stay at the composer defaults because those fields
- * are not on the card.
+ * Confirm payload. Names that already exist are kept. Distance, sense,
+ * angle, axis, segments, reverse, and closed come from the card.
  */
 export function featureSlotCommitPayload(card) {
   const combine = card.combine === 'subtract' ? 'subtract' : 'add';
@@ -134,33 +179,33 @@ export function featureSlotCommitPayload(card) {
     return {
       entry: 'makeExtrude',
       ...circle,
-      face: null,
+      face: faceOf(card.profile),
       combine,
       merge,
       featureId,
       contourId: card.profile.contourId,
       contourName: card.profile.contourName,
-      extrude: { ...defaultExtrudeParams() },
+      extrude: { ...defaultExtrudeParams(), ...card.extrude },
     };
   }
   if (card.kind === 'makeRevolve') {
     return {
       entry: 'makeRevolve',
       ...circle,
-      face: null,
+      face: faceOf(card.profile),
       combine,
       merge,
       featureId,
       contourId: card.profile.contourId,
       contourName: card.profile.contourName,
-      revolve: { ...defaultRevolveParams() },
+      revolve: { ...defaultRevolveParams(), segments: REVOLVE_SEGMENTS, ...card.revolve },
     };
   }
   if (card.kind === 'makeSweep') {
     return {
       entry: 'makeSweep',
       ...circle,
-      face: null,
+      face: faceOf(card.profile),
       combine,
       merge,
       featureId,
@@ -168,7 +213,10 @@ export function featureSlotCommitPayload(card) {
       contourName: card.profile.contourName,
       pathContourId: card.path.contourId,
       pathContourName: card.path.contourName,
-      sweep: { reverse: false },
+      sweep: {
+        reverse: !!card.sweep?.reverse,
+        closed: !!card.sweep?.closed,
+      },
       edges: [],
     };
   }
