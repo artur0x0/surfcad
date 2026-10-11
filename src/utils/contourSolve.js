@@ -6,12 +6,17 @@
  * pack a rigid body. Nothing here reads the display unit; a length on a
  * contour is already millimetres.
  *
+ * A `refs` entry is fixed geometry in this same UV frame. It is not a
+ * degree of freedom and it is not tessellated into the profile.
+ *
  * `solveContour` is the script helper. `analyzeContour` is the same solve
  * plus per-entity status and the nullspace, for the viewport. Neither throws
  * on an under-defined contour or on a conflict. A conflict comes back as
  * status `conflict` with the least-squares shape. A repeated constraint is
  * a warning, not an error and not a red state.
  */
+
+import { referenceGeomLive } from './contourRef.js';
 
 export const CONTOUR_POINT_CAP = 128;
 
@@ -70,7 +75,74 @@ function cloneSpec(spec) {
   });
   const dimensions = (spec.dimensions || []).map((d) => copyItem(d, 'dimension'));
   const constraints = (spec.constraints || []).map((c) => copyItem(c, 'constraint'));
-  return { points, lines, arcs, dimensions, constraints };
+  const refs = (spec.refs || []).map(copyRef);
+  return { points, lines, arcs, dimensions, constraints, refs };
+}
+
+function uv2(uv, what) {
+  if (!Array.isArray(uv) || uv.length < 2) fail(`${what} must be [u, v]`);
+  return [num(uv[0], `${what} u`), num(uv[1], `${what} v`)];
+}
+
+function copyGeom(geom) {
+  if (!geom || typeof geom !== 'object') fail('a reference geom must be an object');
+  if (geom.kind === 'point') return { kind: 'point', at: uv2(geom.at, 'reference point') };
+  if (geom.kind === 'line') {
+    return { kind: 'line', a: uv2(geom.a, 'reference line'), b: uv2(geom.b, 'reference line') };
+  }
+  if (geom.kind === 'polyline') {
+    if (!Array.isArray(geom.points) || geom.points.length < 2) {
+      fail('a polyline reference needs at least 2 points');
+    }
+    return {
+      kind: 'polyline',
+      points: geom.points.map((p, i) => uv2(p, `polyline reference ${i}`)),
+    };
+  }
+  if (geom.kind === 'arc') {
+    const arc = {
+      kind: 'arc',
+      center: uv2(geom.center, 'reference arc'),
+      radius: num(geom.radius, 'reference arc radius'),
+      sweep: geom.sweep === 'cw' ? 'cw' : 'ccw',
+    };
+    if (!(arc.radius > 0)) fail('a reference arc radius must be > 0');
+    if (geom.full) arc.full = true;
+    else {
+      if (geom.start != null) arc.start = num(geom.start, 'reference arc start');
+      if (geom.end != null) arc.end = num(geom.end, 'reference arc end');
+    }
+    return arc;
+  }
+  fail(`unknown reference geom ${geom.kind}`);
+}
+
+function copyRef(ref) {
+  if (!ref?.id || !ref.kind) fail('a reference needs an id and a kind');
+  if (ref.kind !== 'edge' && ref.kind !== 'vertex' && ref.kind !== 'face') {
+    fail(`unknown reference ${ref.kind}`);
+  }
+  const copy = { id: String(ref.id), kind: String(ref.kind) };
+  if (ref.faceA != null) copy.faceA = num(ref.faceA, 'faceA');
+  if (ref.faceB != null) copy.faceB = num(ref.faceB, 'faceB');
+  if (ref.faceId != null) copy.faceId = num(ref.faceId, 'faceId');
+  if (ref.end != null) copy.end = Math.round(num(ref.end, 'end'));
+  if (Array.isArray(ref.mid)) {
+    if (ref.mid.length < 3) fail('a reference midpoint must be [x, y, z]');
+    copy.mid = [0, 1, 2].map((i) => num(ref.mid[i], `mid ${i}`));
+  }
+  if (ref.boundary) {
+    const b = ref.boundary;
+    if (!Array.isArray(b.mid) || b.mid.length < 3) fail('a face boundary needs a midpoint');
+    copy.boundary = {
+      faceA: num(b.faceA, 'boundary faceA'),
+      faceB: num(b.faceB, 'boundary faceB'),
+      mid: [0, 1, 2].map((i) => num(b.mid[i], `boundary mid ${i}`)),
+    };
+  }
+  if (ref.broken) copy.broken = true;
+  if (ref.geom) copy.geom = copyGeom(ref.geom);
+  return copy;
 }
 
 function copyItem(item, label) {
@@ -502,11 +574,15 @@ function validateGraph(model) {
   for (const con of model.constraints) {
     if (!CONSTRAINT_KINDS.has(con.kind)) fail(`unknown constraint ${con.kind}`);
   }
-  return { points, lines, arcs };
+  const refs = indexById(model.refs || []);
+  for (const id of refs.keys()) {
+    if (points.has(id) || lines.has(id) || arcs.has(id)) fail(`duplicate id ${id}`);
+  }
+  return { points, lines, arcs, refs };
 }
 
 function compile(model) {
-  const { points, lines, arcs } = validateGraph(model);
+  const { points, lines, arcs, refs } = validateGraph(model);
   const pointList = model.points;
   const arcList = model.arcs;
   const pIndex = new Map(pointList.map((p, i) => [p.id, i]));
@@ -550,14 +626,180 @@ function compile(model) {
   const arcOf = (id) => requireId(arcs, id, 'arc');
   const pointOf = (id) => requireId(points, id, 'point');
 
+  const live = new Map();
+  const brokenRefs = [];
+  for (const ref of model.refs || []) {
+    const geom = ref.broken ? null : referenceGeomLive(ref.geom);
+    if (!geom) brokenRefs.push(ref.id);
+    else live.set(ref.id, geom);
+  }
+  const namedIds = (item) => {
+    const ids = [];
+    if (Array.isArray(item.items)) ids.push(...item.items);
+    for (const key of ['a', 'b', 'edge', 'point', 'arc']) {
+      if (item[key]) ids.push(item[key]);
+    }
+    return ids;
+  };
+  // Two references are both fixed. A broken reference adds nothing.
+  const skipItem = (item) => {
+    const refIds = namedIds(item).filter((id) => refs.has(id));
+    if (refIds.length >= 2) fail('a constraint cannot join two references');
+    return refIds.some((id) => !live.has(id));
+  };
+  const segDist = (p, a, b) => {
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1e-18) return Math.hypot(p[0] - a[0], p[1] - a[1]);
+    let t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+  };
+  const chainDist = (p, pts) => {
+    let best = Infinity;
+    for (let i = 1; i < pts.length; i += 1) best = Math.min(best, segDist(p, pts[i - 1], pts[i]));
+    return best;
+  };
+  const fixedDir = (geom) => [geom.b[0] - geom.a[0], geom.b[1] - geom.a[1], geom.a, geom.b];
+
+  function sketchPoint(id) {
+    if (!points.has(id) || lines.has(id) || arcs.has(id) || refs.has(id)) return null;
+    return id;
+  }
+
+  function compileDistanceRef(dim) {
+    const aLive = live.get(dim.a);
+    const bLive = live.get(dim.b);
+    const geom = aLive || bLive;
+    const other = aLive ? dim.b : dim.a;
+    if (geom.kind === 'point' && sketchPoint(other)) {
+      push(dim.id, 1, (x) => {
+        const p = xy(x, other);
+        return Math.hypot(p[0] - geom.at[0], p[1] - geom.at[1]) - dim.value;
+      });
+      return;
+    }
+    if (geom.kind === 'line' && lines.has(other)) {
+      const line = lines.get(other);
+      const dir = fixedDir(geom);
+      push(dim.id, DEG, (x) => unitCross(lineDir(x, line), dir));
+      push(dim.id, 1, (x) => signedDistPointLine(xy(x, line.a), geom.a, dir) - dim.value);
+      return;
+    }
+    if (geom.kind === 'line' && sketchPoint(other)) {
+      push(dim.id, 1, (x) => signedDistPointLine(xy(x, other), geom.a, fixedDir(geom)) - dim.value);
+      return;
+    }
+    if (geom.kind === 'polyline' && sketchPoint(other)) {
+      push(dim.id, 1, (x) => chainDist(xy(x, other), geom.points) - Math.abs(dim.value));
+      return;
+    }
+    if (geom.kind === 'arc' && sketchPoint(other)) {
+      push(dim.id, 1, (x) => {
+        const p = xy(x, other);
+        return Math.hypot(p[0] - geom.center[0], p[1] - geom.center[1]) - geom.radius - dim.value;
+      });
+      return;
+    }
+    fail('distance to that reference is not supported');
+  }
+
+  function compileOffsetRef(dim) {
+    const edge = live.get(dim.edge);
+    const pointRef = live.get(dim.point);
+    if (edge?.kind === 'line' && sketchPoint(dim.point)) {
+      push(dim.id, 1, (x) => signedDistPointLine(xy(x, dim.point), edge.a, fixedDir(edge)) - dim.value);
+      return;
+    }
+    if (pointRef?.kind === 'point' && lines.has(dim.edge)) {
+      const line = lines.get(dim.edge);
+      push(dim.id, 1, (x) => {
+        const d = lineDir(x, line);
+        return signedDistPointLine(pointRef.at, d[2], d) - dim.value;
+      });
+      return;
+    }
+    fail('offset needs a line reference or a point reference');
+  }
+
+  function compileParallelRef(con, items) {
+    const geom = live.get(items[0]) || live.get(items[1]);
+    const other = live.has(items[0]) ? items[1] : items[0];
+    if (geom.kind !== 'line' || !lines.has(other)) fail(`${con.kind} needs a line reference`);
+    const line = lines.get(other);
+    const dir = fixedDir(geom);
+    push(con.id, DEG, (x) => {
+      const d = lineDir(x, line);
+      return con.kind === 'parallel' ? unitCross(d, dir) : unitDot(d, dir);
+    });
+  }
+
+  function compileCoincidentRef(con, items) {
+    const geom = live.get(items[0]) || live.get(items[1]);
+    const other = live.has(items[0]) ? items[1] : items[0];
+    if (!sketchPoint(other)) fail('coincident needs a sketch point and a reference');
+    if (geom.kind === 'point') {
+      push(con.id, 1, (x) => xy(x, other)[0] - geom.at[0]);
+      push(con.id, 1, (x) => xy(x, other)[1] - geom.at[1]);
+      return;
+    }
+    if (geom.kind === 'line') {
+      push(con.id, 1, (x) => segDist(xy(x, other), geom.a, geom.b));
+      return;
+    }
+    if (geom.kind === 'polyline') {
+      push(con.id, 1, (x) => chainDist(xy(x, other), geom.points));
+      return;
+    }
+    if (geom.kind === 'arc') {
+      push(con.id, 1, (x) => {
+        const p = xy(x, other);
+        return Math.hypot(p[0] - geom.center[0], p[1] - geom.center[1]) - geom.radius;
+      });
+      return;
+    }
+    fail('coincident needs a sketch point and a reference');
+  }
+
+  function compileTangentRef(con, items) {
+    const geom = live.get(items[0]) || live.get(items[1]);
+    const other = live.has(items[0]) ? items[1] : items[0];
+    if (geom.kind !== 'arc') fail('tangent needs an arc reference');
+    const side = con.side || 1;
+    if (lines.has(other)) {
+      const line = lines.get(other);
+      push(con.id, 1, (x) => {
+        const d = lineDir(x, line);
+        return signedDistPointLine(geom.center, d[2], d) - side * geom.radius;
+      });
+      return;
+    }
+    if (arcs.has(other)) {
+      const arc = arcs.get(other);
+      push(con.id, 1, (x) => {
+        const c = xy(x, arc.center);
+        const dist = Math.hypot(c[0] - geom.center[0], c[1] - geom.center[1]);
+        const radius = rad(x, arc.id);
+        const target = side < 0 ? Math.abs(radius - geom.radius) : radius + geom.radius;
+        return dist - target;
+      });
+      return;
+    }
+    fail('tangent needs an arc reference');
+  }
+
   for (const dim of model.dimensions) {
+    if (skipItem(dim)) continue;
     if (dim.kind === 'length') {
+      if (refs.has(dim.edge)) fail('length stays on a sketch line');
       const line = lineOf(dim.edge);
       push(dim.id, 1, (x) => {
         const d = lineDir(x, line);
         return Math.hypot(d[0], d[1]) - dim.value;
       });
     } else if (dim.kind === 'angle') {
+      if (refs.has(dim.a) || refs.has(dim.b)) fail('angle stays on the sketch');
       const a = lineOf(dim.a);
       const b = lineOf(dim.b);
       const sense = dim.sense || 1;
@@ -572,6 +814,10 @@ function compile(model) {
         return Math.atan2(sense * cross, dot) - dim.value * DEG;
       });
     } else if (dim.kind === 'distance') {
+      if (refs.has(dim.a) || refs.has(dim.b)) {
+        compileDistanceRef(dim);
+        continue;
+      }
       // Two points: the first pick stays put and the second takes the distance.
       // Two lines stay the parallel gap they already were.
       if (points.has(dim.a) && points.has(dim.b) && !lines.has(dim.a) && !lines.has(dim.b)) {
@@ -594,6 +840,10 @@ function compile(model) {
         });
       }
     } else if (dim.kind === 'offset') {
+      if (refs.has(dim.edge) || refs.has(dim.point)) {
+        compileOffsetRef(dim);
+        continue;
+      }
       const line = lineOf(dim.edge);
       pointOf(dim.point);
       push(dim.id, 1, (x) => {
@@ -601,13 +851,19 @@ function compile(model) {
         return signedDistPointLine(xy(x, dim.point), d[2], d) - dim.value;
       });
     } else if (dim.kind === 'radius') {
+      if (refs.has(dim.arc)) fail('a reference arc keeps its radius');
       arcOf(dim.arc);
       push(dim.id, 1, (x) => rad(x, dim.arc) - dim.value);
     }
   }
 
   for (const con of model.constraints) {
+    if (skipItem(con)) continue;
     const items = con.items || [];
+    if ((con.kind === 'horizontal' || con.kind === 'vertical' || con.kind === 'equal' || con.kind === 'fix')
+      && items.some((id) => refs.has(id))) {
+      fail(`${con.kind} stays on the sketch`);
+    }
     if (con.kind === 'horizontal' || con.kind === 'vertical') {
       if (items.length !== 1) fail(`${con.kind} needs one line`);
       const line = lineOf(items[0]);
@@ -617,6 +873,10 @@ function compile(model) {
       });
     } else if (con.kind === 'parallel' || con.kind === 'perpendicular') {
       if (items.length !== 2) fail(`${con.kind} needs two lines`);
+      if (refs.has(items[0]) || refs.has(items[1])) {
+        compileParallelRef(con, items);
+        continue;
+      }
       const a = lineOf(items[0]);
       const b = lineOf(items[1]);
       push(con.id, DEG, (x) => {
@@ -643,6 +903,10 @@ function compile(model) {
       }
     } else if (con.kind === 'coincident') {
       if (items.length !== 2) fail('coincident needs two items');
+      if (refs.has(items[0]) || refs.has(items[1])) {
+        compileCoincidentRef(con, items);
+        continue;
+      }
       const a = items[0];
       const b = items[1];
       if (points.has(a) && points.has(b)) {
@@ -677,6 +941,10 @@ function compile(model) {
       }
     } else if (con.kind === 'tangent') {
       if (items.length !== 2) fail('tangent needs two items');
+      if (refs.has(items[0]) || refs.has(items[1])) {
+        compileTangentRef(con, items);
+        continue;
+      }
       const line = lines.get(items[0]) || lines.get(items[1]);
       const arc = arcs.get(items[0]) || arcs.get(items[1]);
       const otherArc = [items[0], items[1]].map((id) => arcs.get(id)).filter(Boolean);
@@ -762,7 +1030,7 @@ function compile(model) {
   arcList.forEach((a, i) => {
     x0[pointList.length * 2 + i] = a.radius;
   });
-  return { n, m, scale, residualAll, residual, groups, eqs, x0, pIndex, rIndex };
+  return { n, m, scale, residualAll, residual, groups, eqs, x0, pIndex, rIndex, brokenRefs };
 }
 
 function scaledInf(r, scale, m) {
@@ -1344,6 +1612,8 @@ function assembleResult(model, sys, solved, fact, conflict, repeated) {
     arcs,
     dimensions: model.dimensions.map((d) => ({ ...d })),
     constraints: model.constraints.map((c) => ({ ...c, items: c.items ? [...c.items] : undefined })),
+    refs: (model.refs || []).map((ref) => copyRef(ref)),
+    broken: sys.brokenRefs || [],
     dof: fact.dof,
     status,
     conflict,

@@ -4707,7 +4707,8 @@ function makeCrossSection(plane, profile) {
   if (profile && typeof profile === 'object' && profile.type && Array.isArray(profile.contours)) {
     desc = { type: profile.type };
     for (const k of Object.keys(profile)) {
-      if (k === 'contours') continue;
+      // References stay on the contour statement. They are not profile rings.
+      if (k === 'contours' || k === 'refs') continue;
       desc[k] = profile[k];
     }
     contours = profile.contours.map(loop => _xsNormalizeLoop(loop, 'makeCrossSection'));
@@ -8173,7 +8174,7 @@ function _featureTessellation(runOriginalID) {
 
 /**
  * solveContour(spec) → a contour profile in plane UV.
- * spec is `{ points, lines, arcs, dimensions, constraints }`. Lengths are
+ * spec is `{ points, lines, arcs, dimensions, constraints, refs }`. Lengths are
  * millimetres and angles are degrees. Dimension names are strings on the
  * dimension; they are not script bindings. An under-defined contour solves
  * and reports status `under`. A conflict does not throw: status is
