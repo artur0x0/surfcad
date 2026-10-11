@@ -3,9 +3,14 @@
  * Dimension a sketch point to a part edge, then constrain a sketch line
  * parallel to a part edge. References draw dashed under the sketch.
  *
+ * Picks are finger taps: a touch pointer down, a few pixels of movement,
+ * then up, while the sketch-normal camera is still aimed. A mouse click
+ * after an angled fit does not catch the orbit that used to carry part
+ * edges off the finger.
+ *
  * Screenshots at 390 and 1280 go to GOLDEN_SHOT_DIR or os.tmpdir().
  */
-/* global document, window, MouseEvent */
+/* global document, window */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -90,7 +95,21 @@ async function clickSel(page, selector) {
   if (!clicked) throw new Error(`missing ${selector}`);
 }
 
-async function clickWorld(page, world) {
+async function viewAlign(page) {
+  const cam = await page.evaluate(() => window.__VIEWPORT__.stageCamera());
+  if (!cam?.position || !cam?.target) return null;
+  const d = [
+    cam.position[0] - cam.target[0],
+    cam.position[1] - cam.target[1],
+    cam.position[2] - cam.target[2],
+  ];
+  const len = Math.hypot(d[0], d[1], d[2]);
+  if (!(len > 1e-9)) return null;
+  return d[2] / len;
+}
+
+/** Finger tap. Moves a few pixels so a rotate-on-pointerdown cannot hide. */
+async function touchWorld(page, client, world) {
   const pt = await page.evaluate((w) => {
     const p = window.__VIEWPORT__.project(w[0], w[1], w[2]);
     if (!p || p.behind) return { error: `off screen ${JSON.stringify(w)}` };
@@ -103,13 +122,18 @@ async function clickWorld(page, world) {
     };
   }, world);
   if (pt.error) throw new Error(pt.error);
-  if (pt.blocked) throw new Error(`click covered by ${pt.blocked} at ${Math.round(pt.x)},${Math.round(pt.y)}`);
-  await page.evaluate(({ x, y }) => {
-    const canvas = document.querySelector('.viewport-shell > canvas');
-    const opts = { clientX: x, clientY: y, button: 0, bubbles: true, cancelable: true };
-    canvas.dispatchEvent(new MouseEvent('mousedown', opts));
-    canvas.dispatchEvent(new MouseEvent('mouseup', opts));
-  }, pt);
+  if (pt.blocked) throw new Error(`tap covered by ${pt.blocked} at ${Math.round(pt.x)},${Math.round(pt.y)}`);
+  // Stay on the canvas. The phone silhouette can sit a few pixels from the edge.
+  const dx = pt.x < 24 ? 0 : 6;
+  const dy = pt.y < 24 ? 0 : 4;
+  const start = { x: pt.x, y: pt.y, id: 1 };
+  const moved = { x: pt.x + dx, y: pt.y + dy, id: 1 };
+  await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [start] });
+  await page.waitForTimeout(40);
+  await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [moved] });
+  await page.waitForTimeout(70);
+  await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.waitForTimeout(40);
   return pt;
 }
 
@@ -156,52 +180,66 @@ async function boot(page) {
 }
 
 async function runSize(browser, label, contextOptions) {
-  const context = await browser.newContext({ ...contextOptions, deviceScaleFactor: 1 });
+  const context = await browser.newContext({
+    ...contextOptions,
+    hasTouch: true,
+    deviceScaleFactor: 1,
+  });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (err) => errors.push(String(err).slice(0, 400)));
-  await boot(page);
-  await clickSel(page, '[data-cad-feature-strip] [data-contour-id="c1"]');
-  await page.locator('[data-contour-edit]').waitFor({ timeout: 8000 });
-  await page.waitForTimeout(400);
-  await page.evaluate(() => window.__VIEWPORT__.stageFit({ az: 20, el: 70, margin: 1.2 }));
-  await page.waitForTimeout(200);
-  await clickSel(page, '[data-contour-tool="dimension"]');
-  await page.locator('[data-contour-card="dimension"]').waitFor({ timeout: 8000 });
-  await page.waitForTimeout(700);
+  let client = null;
+  try {
+    await boot(page);
+    await clickSel(page, '[data-cad-feature-strip] [data-contour-id="c1"]');
+    await page.locator('[data-contour-edit]').waitFor({ timeout: 8000 });
+    await page.waitForFunction(() => (
+      document.querySelector('.viewport-shell')?.getAttribute('data-contour-face-aim') === 'done'
+    ), null, { timeout: 8000 });
+    const aimed = await viewAlign(page);
+    check(`${label} sketch-normal camera looks along +Z`, aimed != null && aimed > 0.98, String(aimed));
+    await clickSel(page, '[data-contour-tool="dimension"]');
+    await page.locator('[data-contour-card="dimension"]').waitFor({ timeout: 8000 });
+    await page.waitForTimeout(700);
+    client = await context.newCDPSession(page);
 
-  await clickWorld(page, [8, 6, 10]);
-  await clickWorld(page, [0, 15, 10]);
-  await page.waitForFunction(() => {
-    const card = document.querySelector('[data-contour-card="dimension"]');
-    return card && card.innerText.includes('Distance');
-  }, null, { timeout: 8000 });
-  check(`${label} a sketch point and a part edge offer distance`, true);
-  await clickSel(page, '[data-contour-card="dimension"] [data-feature-card-confirm]');
-  await page.waitForFunction(() => document.querySelector('[data-contour-tag]'), null, { timeout: 8000 });
+    await touchWorld(page, client, [8, 6, 10]);
+    await touchWorld(page, client, [0, 15, 10]);
+    const still = await viewAlign(page);
+    check(`${label} the tap leaves the sketch-normal camera`, still != null && still > 0.98, String(still));
+    await page.waitForFunction(() => {
+      const card = document.querySelector('[data-contour-card="dimension"]');
+      return card && card.innerText.includes('Distance');
+    }, null, { timeout: 8000 });
+    check(`${label} a sketch point and a part edge offer distance`, true);
+    await clickSel(page, '[data-contour-card="dimension"] [data-feature-card-confirm]');
+    await page.waitForFunction(() => document.querySelector('[data-contour-tag]'), null, { timeout: 8000 });
 
-  await clickSel(page, '[data-contour-tool="constraints"]');
-  await page.locator('[data-contour-card="constraint"]').waitFor({ timeout: 8000 });
-  await page.waitForTimeout(500);
-  await clickWorld(page, [0, 6, 10]);
-  await clickWorld(page, [-6, 15, 10]);
-  await page.waitForFunction(() => {
-    const card = document.querySelector('[data-contour-card="constraint"]');
-    return card && /Parallel/i.test(card.innerText);
-  }, null, { timeout: 8000 });
-  check(`${label} a sketch line and a part edge offer parallel`, true);
-  await clickSel(page, '[data-contour-card="constraint"] [data-feature-card-confirm]');
-  await page.waitForFunction(() => document.querySelector('[data-contour-tag]'), null, { timeout: 8000 });
-  await page.screenshot({ path: join(SHOT_DIR, `contour-refs-${label}.png`) });
+    await clickSel(page, '[data-contour-tool="constraints"]');
+    await page.locator('[data-contour-card="constraint"]').waitFor({ timeout: 8000 });
+    await page.waitForTimeout(500);
+    await touchWorld(page, client, [0, 6, 10]);
+    await touchWorld(page, client, [-6, 15, 10]);
+    await page.waitForFunction(() => {
+      const card = document.querySelector('[data-contour-card="constraint"]');
+      return card && /Parallel/i.test(card.innerText);
+    }, null, { timeout: 8000 });
+    check(`${label} a sketch line and a part edge offer parallel`, true);
+    await clickSel(page, '[data-contour-card="constraint"] [data-feature-card-confirm]');
+    await page.waitForFunction(() => document.querySelector('[data-contour-tag]'), null, { timeout: 8000 });
+    await page.screenshot({ path: join(SHOT_DIR, `contour-refs-${label}.png`) });
 
-  await clickSel(page, '[data-contour-confirm]');
-  await page.waitForFunction(() => !document.querySelector('[data-contour-edit]'), null, { timeout: 15000 });
-  const saved = await editorScript(page);
-  check(`${label} the statement stores the reference`, /refs:/.test(saved) && /kind: 'edge'/.test(saved), saved.slice(0, 500));
-  check(`${label} the dimension is a distance to that reference`, /kind: 'distance'/.test(saved) && /b: 'r0'/.test(saved));
-  check(`${label} the constraint is parallel to that reference`, /kind: 'parallel'/.test(saved) && /'e2'/.test(saved) && /'r0'/.test(saved));
-  check(`${label} no page error`, errors.length === 0, errors.join(' | '));
-  await context.close();
+    await clickSel(page, '[data-contour-confirm]');
+    await page.waitForFunction(() => !document.querySelector('[data-contour-edit]'), null, { timeout: 15000 });
+    const saved = await editorScript(page);
+    check(`${label} the statement stores the reference`, /refs:/.test(saved) && /kind: 'edge'/.test(saved), saved.slice(0, 500));
+    check(`${label} the dimension is a distance to that reference`, /kind: 'distance'/.test(saved) && /b: 'r0'/.test(saved));
+    check(`${label} the constraint is parallel to that reference`, /kind: 'parallel'/.test(saved) && /'e2'/.test(saved) && /'r0'/.test(saved));
+    check(`${label} no page error`, errors.length === 0, errors.join(' | '));
+  } finally {
+    if (client) await client.detach().catch(() => {});
+    await context.close();
+  }
 }
 
 const browser = await chromium.launch({

@@ -1198,6 +1198,14 @@ const Viewport = forwardRef(({
   const polylinePointDragRef = useRef(null);
   /** TrackballControls noRotate/noPan saved while a point handle is grabbed. */
   const polylineControlsLockRef = useRef(null);
+  /**
+   * A contour gesture tap must not orbit. Trackball starts a one-finger
+   * rotate on pointerdown, and a phone finger moves a few pixels before
+   * mouseup. Part edges sit on the silhouette, so that rotate swings them
+   * off the finger and the 12px pick misses. noRotate stays on until the
+   * finger leaves the tap slop; a real drag orbits from there.
+   */
+  const tapOrbitHoldRef = useRef(null);
   const extrudePreviewRef = useRef(null);
   const revolvePreviewRef = useRef(null);
   const loftPreviewRef = useRef(null);
@@ -8291,6 +8299,55 @@ const Viewport = forwardRef(({
         endPolylinePointDrag(event);
       }
     };
+    const releaseTapOrbitHold = () => {
+      const hold = tapOrbitHoldRef.current;
+      if (!hold) return;
+      tapOrbitHoldRef.current = null;
+      const controls = controlsRef.current;
+      if (!controls) return;
+      // Touch rotate records a delta even while noRotate is set, and the
+      // next update() would apply it. A zero-speed update consumes that
+      // delta. onTouchEnd also clears it, after this listener.
+      if (hold.pointerType === 'touch') {
+        const speed = controls.rotateSpeed;
+        controls.rotateSpeed = 0;
+        controls.noRotate = false;
+        try {
+          controls.update();
+        } finally {
+          controls.rotateSpeed = speed;
+          controls.noRotate = hold.noRotate;
+        }
+        return;
+      }
+      controls.noRotate = hold.noRotate;
+    };
+    // Capture so this runs before TrackballControls records the gesture.
+    const onTapOrbitDown = (event) => {
+      if (event.button != null && event.button !== 0) return;
+      if (!contourModeRef.current?.gesture) return;
+      if (tapOrbitHoldRef.current && event.pointerId !== tapOrbitHoldRef.current.pointerId) {
+        releaseTapOrbitHold();
+        return;
+      }
+      const controls = controlsRef.current;
+      if (!controls || tapOrbitHoldRef.current) return;
+      tapOrbitHoldRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+        pointerId: event.pointerId,
+        pointerType: event.pointerType,
+        noRotate: controls.noRotate,
+      };
+      controls.noRotate = true;
+    };
+    const onTapOrbitMove = (event) => {
+      const hold = tapOrbitHoldRef.current;
+      if (!hold || event.pointerId !== hold.pointerId) return;
+      const moved = Math.hypot(event.clientX - hold.x, event.clientY - hold.y);
+      if (moved <= SKETCH_HIT_PX) return;
+      releaseTapOrbitHold();
+    };
     const onTouchDown = (event) => {
       if (event.pointerType !== 'touch') return;
       beginPolylinePointDrag(event, { touch: true });
@@ -8300,6 +8357,8 @@ const Viewport = forwardRef(({
       handleMouseMove(event);
     };
     const onTouchUp = (event) => {
+      const hold = tapOrbitHoldRef.current;
+      if (!hold || event.pointerId === hold.pointerId) releaseTapOrbitHold();
       if (!polylinePointDragRef.current?.touch) return;
       endPolylinePointDrag(event);
     };
@@ -8312,6 +8371,8 @@ const Viewport = forwardRef(({
     canvas.addEventListener('mouseup', handleMouseUp);
     canvas.addEventListener('dblclick', onDblClick);
     canvas.addEventListener('contextmenu', onContextMenu);
+    canvas.addEventListener('pointerdown', onTapOrbitDown, { capture: true });
+    canvas.addEventListener('pointermove', onTapOrbitMove, { capture: true });
     canvas.addEventListener('pointerdown', onTouchDown, { passive: false });
     canvas.addEventListener('pointermove', onTouchMove);
     canvas.addEventListener('pointerup', onTouchUp);
@@ -8321,11 +8382,14 @@ const Viewport = forwardRef(({
     window.addEventListener('pointercancel', onTouchUp);
 
     return () => {
+      releaseTapOrbitHold();
       canvas.removeEventListener('mousedown', handleMouseDown);
       canvas.removeEventListener('mousemove', handleMouseMove);
       canvas.removeEventListener('mouseup', handleMouseUp);
       canvas.removeEventListener('dblclick', onDblClick);
       canvas.removeEventListener('contextmenu', onContextMenu);
+      canvas.removeEventListener('pointerdown', onTapOrbitDown, { capture: true });
+      canvas.removeEventListener('pointermove', onTapOrbitMove, { capture: true });
       canvas.removeEventListener('pointerdown', onTouchDown);
       canvas.removeEventListener('pointermove', onTouchMove);
       canvas.removeEventListener('pointerup', onTouchUp);
