@@ -1172,8 +1172,11 @@ const Viewport = forwardRef(({
   const faceSketchFinishRef = useRef(() => {});
   const onFaceSelectedRef = useRef(null);
   onFaceSelectedRef.current = onFaceSelected;
-  const requestFaceSketchAim = (normal) => {
+  /** Explicit Normal to sketch aims even while the plane card is open. */
+  const faceSketchForceRef = useRef(false);
+  const requestFaceSketchAim = (normal, { force = false } = {}) => {
     if (!Array.isArray(normal) || normal.length < 3) return;
+    faceSketchForceRef.current = !!force;
     faceSketchNormalRef.current = [Number(normal[0]), Number(normal[1]), Number(normal[2])];
     setFaceSketchNonce((n) => n + 1);
   };
@@ -1209,6 +1212,13 @@ const Viewport = forwardRef(({
    * finger leaves the tap slop; a real drag orbits from there.
    */
   const tapOrbitHoldRef = useRef(null);
+  /**
+   * Pointerdown on a sketch drag handle. Rotate and pan stay off for the
+   * whole gesture (not only until tap slop) and come back on release.
+   * A compatibility mousemove after a finger lift must not grab them again.
+   */
+  const sketchDragHoldRef = useRef(null);
+  const sketchHoverMuteRef = useRef(0);
   const extrudePreviewRef = useRef(null);
   const revolvePreviewRef = useRef(null);
   const loftPreviewRef = useRef(null);
@@ -3024,11 +3034,12 @@ const Viewport = forwardRef(({
     if (polylinePointHoverRef.current === index) return;
     polylinePointHoverRef.current = index;
     const controls = controlsRef.current;
-    if (index >= 0 && controls && !polylineControlsLockRef.current) {
+    if (index >= 0 && controls && !polylineControlsLockRef.current
+      && performance.now() >= sketchHoverMuteRef.current) {
       polylineControlsLockRef.current = { noRotate: controls.noRotate, noPan: controls.noPan };
       controls.noRotate = true;
       controls.noPan = true;
-    } else if (index < 0 && !polylinePointDragRef.current) {
+    } else if (index < 0 && !polylinePointDragRef.current && !sketchDragHoldRef.current) {
       unlockOrbitForPointDrag();
     }
     if (canvasRef.current) {
@@ -4492,7 +4503,10 @@ const Viewport = forwardRef(({
     if (!faceSketchNonce) return undefined;
     const state = contourModeRef.current;
     const normal = faceSketchNormalRef.current;
-    if (!state || !normal || contourPlaneOpenRef.current) return undefined;
+    const force = faceSketchForceRef.current;
+    faceSketchForceRef.current = false;
+    if (!state || !normal) return undefined;
+    if (contourPlaneOpenRef.current && !force) return undefined;
     const meshes = highlightMeshRef.current;
     const list = Array.isArray(meshes) ? meshes.filter(Boolean) : (meshes ? [meshes] : []);
     const faceMeshes = list.filter((mesh) => mesh.name === 'highlight');
@@ -7237,8 +7251,9 @@ const Viewport = forwardRef(({
       if (drag.pointId && drag.lastSpec) commitPromotedPointDrag(drag.lastSpec);
       else if (drag.lastUv) commitPolylinePointDrag(drag.lastUv, drag.index);
     }
-    // A release outside the canvas has no meaningful hover.
-    const stillOver = event
+    // A finger has no hover after lift. A mouse cursor still on the handle keeps the grab.
+    if (drag.touch) sketchHoverMuteRef.current = performance.now() + 700;
+    const stillOver = !drag.touch && event
       && pickPolylinePointAtClient(event.clientX, event.clientY) === drag.index;
     setPolylinePointHover(stillOver ? drag.index : -1);
     paintPolylineHandleStates();
@@ -7301,7 +7316,10 @@ const Viewport = forwardRef(({
     }
 
     // Teach the grab: handles grow and warm as the cursor reaches them.
-    if (contourModeRef.current?.tool === 'polyline' && pickModeRef.current !== 'edge') {
+    // The mouse events a browser synthesizes after touch must not re-lock orbit.
+    if (performance.now() < sketchHoverMuteRef.current) {
+      if (polylinePointHoverRef.current !== -1) setPolylinePointHover(-1);
+    } else if (contourModeRef.current?.tool === 'polyline' && pickModeRef.current !== 'edge') {
       setPolylinePointHover(pickPolylinePointAtClient(event.clientX, event.clientY));
     } else if (polylinePointHoverRef.current !== -1) {
       setPolylinePointHover(-1);
@@ -8309,39 +8327,79 @@ const Viewport = forwardRef(({
         endPolylinePointDrag(event);
       }
     };
+    // Touch rotate records a delta even while noRotate is set, and the
+    // next update() would apply it. A zero-speed update consumes that
+    // delta. onTouchEnd also clears it, after this listener.
+    const settleTouchRotate = (controls, noRotateAfter) => {
+      const speed = controls.rotateSpeed;
+      controls.rotateSpeed = 0;
+      controls.noRotate = false;
+      try {
+        controls.update();
+      } finally {
+        controls.rotateSpeed = speed;
+        controls.noRotate = noRotateAfter;
+      }
+    };
     const releaseTapOrbitHold = () => {
       const hold = tapOrbitHoldRef.current;
       if (!hold) return;
       tapOrbitHoldRef.current = null;
       const controls = controlsRef.current;
       if (!controls) return;
-      // Touch rotate records a delta even while noRotate is set, and the
-      // next update() would apply it. A zero-speed update consumes that
-      // delta. onTouchEnd also clears it, after this listener.
       if (hold.pointerType === 'touch') {
-        const speed = controls.rotateSpeed;
-        controls.rotateSpeed = 0;
-        controls.noRotate = false;
-        try {
-          controls.update();
-        } finally {
-          controls.rotateSpeed = speed;
-          controls.noRotate = hold.noRotate;
-        }
+        settleTouchRotate(controls, hold.noRotate);
         return;
       }
       controls.noRotate = hold.noRotate;
     };
+    const pointerHitsSketchDrag = (event) => {
+      if (event.button != null && event.button !== 0 && event.button !== 2) return false;
+      const state = contourModeRef.current;
+      if (!state || state.tool !== 'polyline' || state.gesture) return false;
+      if (pickModeRef.current === 'edge') return false;
+      return pickPolylinePointAtClient(event.clientX, event.clientY) >= 0;
+    };
+    const releaseSketchDragHold = (event) => {
+      const hold = sketchDragHoldRef.current;
+      if (!hold) return;
+      if (event && event.pointerId != null && event.pointerId !== hold.pointerId) return;
+      sketchDragHoldRef.current = null;
+      const controls = controlsRef.current;
+      if (controls && hold.pointerType === 'touch') settleTouchRotate(controls, true);
+      // The point drag's own mouseup still owns the hover lock.
+      if (polylinePointDragRef.current) return;
+      if (hold.pointerType !== 'touch' && polylinePointHoverRef.current >= 0) return;
+      unlockOrbitForPointDrag();
+    };
     // Capture so this runs before TrackballControls records the gesture.
     const onTapOrbitDown = (event) => {
+      if (event.button != null && event.button !== 0 && event.button !== 2) return;
+      const controls = controlsRef.current;
+      if (!controls) return;
+      // A sketch handle owns the whole drag. Dimension/Constrain keep the tap slop.
+      if (pointerHitsSketchDrag(event)) {
+        if (sketchDragHoldRef.current && event.pointerId !== sketchDragHoldRef.current.pointerId) {
+          releaseSketchDragHold();
+        }
+        if (!polylineControlsLockRef.current) {
+          polylineControlsLockRef.current = { noRotate: controls.noRotate, noPan: controls.noPan };
+        }
+        controls.noRotate = true;
+        controls.noPan = true;
+        sketchDragHoldRef.current = {
+          pointerId: event.pointerId,
+          pointerType: event.pointerType,
+        };
+        return;
+      }
       if (event.button != null && event.button !== 0) return;
       if (!contourModeRef.current?.gesture) return;
       if (tapOrbitHoldRef.current && event.pointerId !== tapOrbitHoldRef.current.pointerId) {
         releaseTapOrbitHold();
         return;
       }
-      const controls = controlsRef.current;
-      if (!controls || tapOrbitHoldRef.current) return;
+      if (tapOrbitHoldRef.current) return;
       tapOrbitHoldRef.current = {
         x: event.clientX,
         y: event.clientY,
@@ -8352,6 +8410,8 @@ const Viewport = forwardRef(({
       controls.noRotate = true;
     };
     const onTapOrbitMove = (event) => {
+      const drag = sketchDragHoldRef.current;
+      if (drag && event.pointerId === drag.pointerId) return;
       const hold = tapOrbitHoldRef.current;
       if (!hold || event.pointerId !== hold.pointerId) return;
       const moved = Math.hypot(event.clientX - hold.x, event.clientY - hold.y);
@@ -8369,7 +8429,8 @@ const Viewport = forwardRef(({
     const onTouchUp = (event) => {
       const hold = tapOrbitHoldRef.current;
       if (!hold || event.pointerId === hold.pointerId) releaseTapOrbitHold();
-      if (!polylinePointDragRef.current?.touch) return;
+      releaseSketchDragHold(event);
+      if (event.pointerType !== 'touch' || !polylinePointDragRef.current?.touch) return;
       endPolylinePointDrag(event);
     };
 
@@ -8393,6 +8454,7 @@ const Viewport = forwardRef(({
 
     return () => {
       releaseTapOrbitHold();
+      releaseSketchDragHold();
       canvas.removeEventListener('mousedown', handleMouseDown);
       canvas.removeEventListener('mousemove', handleMouseMove);
       canvas.removeEventListener('mouseup', handleMouseUp);
@@ -8408,7 +8470,7 @@ const Viewport = forwardRef(({
       window.removeEventListener('pointerup', onTouchUp);
       window.removeEventListener('pointercancel', onTouchUp);
     };
-  }, [handleMouseDown, handleMouseMove, handleMouseUp, endPolylinePointDrag, beginPolylinePointDrag]);
+  }, [handleMouseDown, handleMouseMove, handleMouseUp, endPolylinePointDrag, beginPolylinePointDrag, pickPolylinePointAtClient, unlockOrbitForPointDrag]);
 
   // Click / toast timer cleanup effect
   useEffect(() => {
@@ -8784,6 +8846,7 @@ const Viewport = forwardRef(({
             const pe = cam.projectionMatrix?.elements || null;
             return {
               position: cam.position.toArray(),
+              quaternion: cam.quaternion.toArray(),
               up: cam.up.toArray(),
               target: ctl ? ctl.target.toArray() : null,
               near: cam.near, far: cam.far, fov: cam.fov, aspect: cam.aspect,
@@ -9198,6 +9261,17 @@ const Viewport = forwardRef(({
   // Zoom to fit every visible part (keeps the current orbit direction).
   // Hidden rows are not in the scene, so they are not in the box. One
   // visible part is that part's own box.
+  const handleNormalToSketch = useCallback(() => {
+    const state = contourModeRef.current;
+    if (!state) return;
+    const plane = selectedLoftDrawFrame(state) || contourWorkplane(state, modelBoundsRef.current);
+    const normal = plane?.normal;
+    if (!Array.isArray(normal)) return;
+    holdSheetSlide();
+    setContourFaceAim('');
+    requestFaceSketchAim(normal, { force: true });
+  }, []);
+
   const handleZoomToFit = useCallback(() => {
     if (!cameraRef.current) return;
     const meshes = [];
@@ -11071,6 +11145,7 @@ const Viewport = forwardRef(({
           onToggle={handleCrossSectionToggle}
           onPlaneChange={handlePlaneChange}
           onZoomToFit={handleZoomToFit}
+          onNormalToSketch={contourMode ? handleNormalToSketch : null}
           onSnapView={handleViewSnap}
           bounds={modelBounds}
           measurementEnabled={measurementEnabled}
