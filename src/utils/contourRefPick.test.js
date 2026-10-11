@@ -6,6 +6,7 @@ import { suggestContourConstraint, suggestContourDimension, toggleContourPick } 
 import { CONTOUR_PICK_COLOR } from './contourStatus.js';
 import { dimensionEndpoints } from './contourDimensionDraw.js';
 import {
+  CONTOUR_REF_BROKEN_COLOR,
   CONTOUR_REF_COLOR,
   edgeHit,
   faceOutlineHit,
@@ -209,6 +210,17 @@ test('a picked reference is dashed in the picked colour, and the face loop stays
   assert.equal(loop.color, CONTOUR_REF_COLOR);
   assert.ok(loop.uvs.length >= 4);
   assert.equal(bound.color, CONTOUR_PICK_COLOR);
+  const broken = referencePaintSegments({
+    refs: [{
+      id: 'r2',
+      kind: 'edge',
+      broken: true,
+      geom: { kind: 'line', a: [0, 0], b: [4, 0] },
+    }],
+  }, [{ kind: 'ref', id: 'r2' }]);
+  assert.equal(broken[0].color, CONTOUR_REF_BROKEN_COLOR);
+  assert.equal(broken[0].broken, true);
+  assert.equal(broken[0].picked, false);
 });
 
 test('a polyline reference refuses parallel', () => {

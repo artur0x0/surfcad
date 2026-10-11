@@ -195,6 +195,7 @@ import {
   referencePickAllowed,
   vertexHit,
 } from '../utils/contourRefPick';
+import { resolveContourScript } from '../utils/contourRefResolve';
 import { beginConstraintEdit, beginDimensionEdit } from '../utils/contourGesture';
 import { localPoint, worldPoint } from '../utils/partPose';
 import {
@@ -870,6 +871,8 @@ const Viewport = forwardRef(({
   /** A palette tap is opening a sheet or mode (App: edit the picked part). */
   onFeatureOpen = null,
   onCommitContourProfile = null,
+  /** A successful reference match rewrites geom in the contour statement. */
+  onContourRefsResolved = null,
   onDeleteContour = null,
   onCommitFillet = null,
   onCommitFeatureEdit = null,
@@ -1747,6 +1750,8 @@ const Viewport = forwardRef(({
   getBooleanContextRef.current = getBooleanContext;
   const onRunOutcomeRef = useRef(null);
   onRunOutcomeRef.current = onRunOutcome;
+  const onContourRefsResolvedRef = useRef(null);
+  onContourRefsResolvedRef.current = onContourRefsResolved;
   featureSessionRef.current = !!(
     contourMode || filletMode || shellMode || draftMode || cutMode
     || booleanMode || moveMode || moveFaceMode || deleteFaceMode
@@ -2926,7 +2931,7 @@ const Viewport = forwardRef(({
       }
       const line = makeSketchLine(pos, {
         color: seg.picked ? CONTOUR_PICK_COLOR : (seg.color ?? CONTOUR_REF_COLOR),
-        opacity: seg.picked ? 0.95 : 0.72,
+        opacity: seg.broken ? 0.95 : (seg.picked ? 0.95 : 0.72),
         resolution: edgeLineResolution(),
         dashed: true,
         renderOrder: 14,
@@ -3346,17 +3351,24 @@ const Viewport = forwardRef(({
       name: saved.name,
       usedBy: contourUsedByText(buf, saved.name),
     };
+    const meshReady = !!(boundaryTopoRef.current?.edges && cachedMeshDataRef.current?.vertProperties);
+    const resolved = resolveContourScript(buf, boundaryTopoRef.current?.edges || [], { meshReady });
+    if (resolved.ok && resolved.changed) onContourRefsResolvedRef.current?.(resolved.buffer);
+    const display = (resolved.displays || []).find((row) => row.id === saved.id);
     contourEditRef.current = session;
     setContourEdit(session);
     enterContourMode({ entry: 'crossSection' });
     setContourMode((prev) => {
       if (!prev) return prev;
       const applied = applySavedContour(prev, saved);
+      const contour = applied.params?.contour;
+      const refs = display?.refs || contour?.refs;
       return {
         ...applied,
         entry: 'crossSection',
         contourId: saved.id,
         contourName: saved.name,
+        params: contour ? { ...applied.params, contour: { ...contour, refs } } : applied.params,
       };
     });
     contourPlaneOpenRef.current = false;
@@ -8460,11 +8472,23 @@ const Viewport = forwardRef(({
             const mesh = err ? null : (window.__MANIFOLD_CONTEXT__?.lastResult?.mesh ?? null);
             // Identity check against the render choke point: the object we painted is the
             // object the worker just returned, or this run did not reach the screen at all.
+            const solidBounds = () => {
+              const g = resultRef.current?.geometry;
+              if (!g?.attributes?.position) return null;
+              g.computeBoundingBox();
+              const box = g.boundingBox;
+              if (!box || box.isEmpty()) return null;
+              return {
+                min: [box.min.x, box.min.y, box.min.z],
+                max: [box.max.x, box.max.y, box.max.z],
+              };
+            };
             return {
               error: err,
               mesh,
               onScreen: !!mesh && window.__VIEWPORT__?._lastRenderedMesh === mesh,
               sceneTris: __tris(),
+              bounds: solidBounds(),
             };
           },
           // az/el in degrees, z-up world (the app models parts with +Z up). Delegates to
@@ -9367,7 +9391,8 @@ const Viewport = forwardRef(({
    * Execute script using the sandbox worker
    */
   const executeScript = useCallback(async (scriptOverride, opts = {}) => {
-    const script = scriptOverride ?? currentScript ?? '';
+    let script = scriptOverride ?? currentScript ?? '';
+    const submitted = script;
     const noShadow = opts.noShadow === true;
 
     if (!sceneRef.current) return false;
@@ -9440,6 +9465,32 @@ const Viewport = forwardRef(({
     // Clear only after a successful rebuild (geometry changed → stale edges).
 
     try {
+      const prevMesh = cachedMeshDataRef.current;
+      const publishRefDisplay = (displays) => {
+        const open = contourModeRef.current;
+        if (!open?.contourId || !displays?.length) return;
+        const hit = displays.find((row) => row.id === open.contourId);
+        if (!hit) return;
+        setContourMode((prev) => {
+          if (!prev?.params?.contour || prev.contourId !== hit.id) return prev;
+          return {
+            ...prev,
+            params: {
+              ...prev.params,
+              contour: { ...prev.params.contour, refs: hit.refs },
+            },
+          };
+        });
+      };
+      const failBrokenRefs = (outcome) => {
+        const msg = outcome?.message || 'A contour reference is broken';
+        stageExecErrorRef.current = msg;
+        setExecutionError(msg);
+        publishRefDisplay(outcome?.displays);
+        if (!opts.editPreview) {
+          onRunOutcomeRef.current?.({ script: submitted, ok: false, scriptLine: null });
+        }
+      };
       if (!manifoldContext.isReady) {
         throw new Error('Manifold Sandbox not initialized');
       }
@@ -9472,6 +9523,25 @@ const Viewport = forwardRef(({
       // Do not post this preview in front of the build the spinner awaits.
       if (opts.editPreview && assemblyRunLockRef?.current) {
         return false;
+      }
+
+      // Match references against the mesh this part already has. A miss
+      // soft-fails before the worker runs and leaves the statement alone.
+      const readyTopo = boundaryTopoRef.current;
+      const meshReady = !!(readyTopo?.edges && prevMesh?.vertProperties);
+      let rewroteRefs = false;
+      if (meshReady) {
+        const before = resolveContourScript(script, readyTopo.edges, { meshReady: true });
+        if (!before.ok) {
+          failBrokenRefs(before);
+          return false;
+        }
+        if (before.changed && before.buffer !== script) {
+          script = before.buffer;
+          onContourRefsResolvedRef.current?.(script);
+          rewroteRefs = true;
+          publishRefDisplay(before.displays);
+        }
       }
 
       // Step 3: Execute script in sandbox worker (nonce ties compare to this solid)
@@ -9553,6 +9623,29 @@ const Viewport = forwardRef(({
       featureEdgesSourceRef.current = null;
       syncFeatureEdges(resultRef.current?.geometry ?? null);
       graphsBoundMeshRef.current = meshData;
+      const builtTopo = boundaryTopoRef.current;
+      if (builtTopo?.edges) {
+        const after = resolveContourScript(script, builtTopo.edges, { meshReady: true });
+        if (!after.ok) {
+          if (rewroteRefs) onContourRefsResolvedRef.current?.(submitted);
+          if (prevMesh?.vertProperties) {
+            renderMeshData(prevMesh);
+            setCachedMeshData(prevMesh);
+            cachedMeshDataRef.current = prevMesh;
+            setModelBounds(calculateBoundsFromMesh(prevMesh));
+            featureEdgesSourceRef.current = null;
+            syncFeatureEdges(resultRef.current?.geometry ?? null);
+            graphsBoundMeshRef.current = prevMesh;
+          }
+          failBrokenRefs(after);
+          return false;
+        }
+        if (after.changed && after.buffer !== script) {
+          script = after.buffer;
+          onContourRefsResolvedRef.current?.(script);
+        }
+        publishRefDisplay(after.displays);
+      }
       if (preservePicks) {
         facePickGroupRef.current = savedFaces;
         if (hadEdges) highlightSelectedEdges(liveEdges);
