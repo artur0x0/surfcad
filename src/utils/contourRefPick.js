@@ -13,6 +13,9 @@ import { CONTOUR_PICK_COLOR } from './contourStatus.js';
 /** Muted zinc, under the sketch strokes. */
 export const CONTOUR_REF_COLOR = 0x71717a;
 
+/** Broken reference. Still dashed, still under the sketch strokes. */
+export const CONTOUR_REF_BROKEN_COLOR = 0xef4444;
+
 const MID_TOL_MM = 1e-3;
 
 export function referencePickAllowed(gesture) {
@@ -318,6 +321,22 @@ export function materializeReference(plane, hit) {
   return ref;
 }
 
+/** Where the broken tag sits, in plane UV. */
+export function referenceTagAnchor(ref) {
+  const geom = ref?.geom;
+  if (!geom) return null;
+  if (geom.kind === 'point' && Array.isArray(geom.at)) return geom.at.slice();
+  if (geom.kind === 'line' && geom.a && geom.b) {
+    return [(geom.a[0] + geom.b[0]) / 2, (geom.a[1] + geom.b[1]) / 2];
+  }
+  if (geom.kind === 'polyline' && geom.points?.length) {
+    const p = geom.points[Math.floor((geom.points.length - 1) / 2)];
+    return p.slice();
+  }
+  if (geom.kind === 'arc' && Array.isArray(geom.center)) return geom.center.slice();
+  return null;
+}
+
 export function referencePickItem(ref, at) {
   const item = {
     kind: 'ref',
@@ -383,16 +402,27 @@ export function referencePaintSegments(spec, picks) {
   const out = [];
   for (const ref of spec?.refs || []) {
     const picked = selected.has(ref.id);
+    const broken = !!ref.broken;
+    const color = broken
+      ? CONTOUR_REF_BROKEN_COLOR
+      : (picked ? CONTOUR_PICK_COLOR : CONTOUR_REF_COLOR);
     if (ref.kind === 'face' && Array.isArray(ref.loop) && ref.loop.length >= 2) {
       out.push({
         id: ref.id,
         uvs: ref.loop.map((p) => p.slice()),
         picked: false,
-        color: CONTOUR_REF_COLOR,
+        broken,
+        color: broken ? CONTOUR_REF_BROKEN_COLOR : CONTOUR_REF_COLOR,
       });
       for (const uvs of geomPolylines(ref.geom)) {
-        if (!picked) continue;
-        out.push({ id: ref.id, uvs, picked: true, color: CONTOUR_PICK_COLOR });
+        if (!picked && !broken) continue;
+        out.push({
+          id: ref.id,
+          uvs,
+          picked: !broken && picked,
+          broken,
+          color,
+        });
       }
       continue;
     }
@@ -400,8 +430,9 @@ export function referencePaintSegments(spec, picks) {
       out.push({
         id: ref.id,
         uvs,
-        picked,
-        color: picked ? CONTOUR_PICK_COLOR : CONTOUR_REF_COLOR,
+        picked: !broken && picked,
+        broken,
+        color,
       });
     }
   }

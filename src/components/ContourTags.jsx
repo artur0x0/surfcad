@@ -16,6 +16,7 @@ import { useDisplayUnit } from '../hooks/useDisplayUnit';
 import { formatDisplayLength } from '../utils/displayUnit';
 import { CONSTRAINT_LABELS } from '../utils/contourGesture';
 import { constraintAnchor, dimensionAnchor, planeUvToWorld } from '../utils/contourPick';
+import { referenceTagAnchor } from '../utils/contourRefPick';
 import { dimensionLayout, dimensionMarkup } from '../utils/contourDimensionDraw';
 import { plusTagsToHide } from '../utils/contourTagPlace';
 import { worldPoint } from '../utils/partPose';
@@ -151,6 +152,10 @@ const ContourTags = ({
           }
         }
         for (const con of cons) place(con.id, constraintAnchor(model, con));
+        for (const ref of model?.refs || []) {
+          if (!ref?.broken) continue;
+          place(`broken:${ref.id}`, referenceTagAnchor(ref));
+        }
       }
       const measured = [];
       for (const [id, el] of nodes.current) {
@@ -192,7 +197,8 @@ const ContourTags = ({
     };
   }, [cameraRef, canvasRef, plane, model, getAnchor]);
 
-  if ((!dimensions.length && !constraints.length) || !plane) return null;
+  const brokenRefs = (model?.refs || []).filter((ref) => ref?.broken && ref.geom);
+  if ((!dimensions.length && !constraints.length && !brokenRefs.length) || !plane) return null;
 
   const layer = (
     <div
@@ -337,6 +343,28 @@ const ContourTags = ({
           </div>
         );
       })}
+      {brokenRefs.map((ref) => (
+        <div
+          key={`broken:${ref.id}`}
+          ref={(el) => {
+            if (el) nodes.current.set(`broken:${ref.id}`, el);
+            else nodes.current.delete(`broken:${ref.id}`);
+          }}
+          className="pointer-events-none fixed"
+          data-contour-ref-broken={ref.id}
+          style={{
+            position: 'fixed',
+            zIndex: 30,
+            pointerEvents: 'none',
+            transform: 'translate(-50%, -120%)',
+            display: 'none',
+          }}
+        >
+          <span className="rounded-full border border-red-400 bg-white/95 px-2 py-1 text-[12px] font-medium text-red-700 shadow">
+            broken
+          </span>
+        </div>
+      ))}
     </div>
   );
 

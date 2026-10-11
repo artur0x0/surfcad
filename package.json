@@ -84,6 +84,7 @@
         "golden:contour-edit": "node scripts/golden/smoke_contour_edit.mjs",
         "golden:contour-delete": "node scripts/golden/smoke_contour_delete.mjs",
         "golden:contour-refs": "node scripts/golden/smoke_contour_refs.mjs",
+        "golden:contour-ref-resolve": "node scripts/golden/smoke_contour_ref_resolve.mjs",
         "golden:empty-run-clears": "node scripts/golden/smoke_empty_run_clears.mjs",
         "golden:cad-palette": "node scripts/golden/smoke_cad_palette_overlays.mjs",
         "golden:overlay-visibility": "node scripts/golden/smoke_overlay_visibility.mjs",

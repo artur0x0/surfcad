@@ -5320,6 +5320,11 @@ const App = () => {
    * Slice 24/25/26/28/30: in-mode Confirm. Profile writes makeCrossSection only
    * (no Auto-Run). Extrude / Revolve / Loft / Sweep write the solid and Auto-Run.
    */
+  const handleContourRefsResolved = (buffer) => {
+    if (typeof buffer !== 'string') return false;
+    return !!codeEditorRef.current?.applyBuffer?.(buffer, 'Contour reference');
+  };
+
   const handleCommitContourProfile = (payload) => {
     if (!focusWritePart(payload?.partId)) {
       viewportRef.current?.softFailContour?.(PICKED_PART_FAIL);
@@ -7408,6 +7413,7 @@ const App = () => {
               onInsertHelper={handleInsertHelper}
               onFeatureOpen={handleFeatureOpen}
               onCommitContourProfile={handleCommitContourProfile}
+              onContourRefsResolved={handleContourRefsResolved}
               onDeleteContour={handleDeleteContour}
               onCommitFillet={handleCommitFillet}
               onCommitFeatureEdit={handleCommitFeatureEdit}
@@ -7916,6 +7922,7 @@ const App = () => {
             onInsertHelper={handleInsertHelper}
             onFeatureOpen={handleFeatureOpen}
             onCommitContourProfile={handleCommitContourProfile}
+            onContourRefsResolved={handleContourRefsResolved}
             onDeleteContour={handleDeleteContour}
             onCommitFillet={handleCommitFillet}
             onCommitFeatureEdit={handleCommitFeatureEdit}
