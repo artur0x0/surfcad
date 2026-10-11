@@ -219,6 +219,35 @@ async function loadScript(page, src) {
   return measure(page);
 }
 
+async function ensurePartSelected(page) {
+  if (await page.locator('[data-part-row]').count() === 0) {
+    const clicked = await page.evaluate(() => {
+      const btn = document.querySelector('[data-cad-run]');
+      if (!btn) return false;
+      btn.click();
+      return true;
+    });
+    if (!clicked) throw new Error('Run is not in the page, so no part can be selected');
+    await page.waitForFunction(() => document.querySelectorAll('[data-part-row]').length > 0, null, { timeout: 20000 });
+  }
+  const partsBtn = page.locator('[data-stage-btn="parts"]');
+  const phone = await partsBtn.isVisible().catch(() => false);
+  if (phone) {
+    await partsBtn.click();
+    await page.waitForFunction(() => (
+      document.querySelector('[data-mobile-stage]')?.getAttribute('data-mobile-stage') === 'parts'
+    ), null, { timeout: 8000 });
+  }
+  await page.locator('[data-part-row]').first().waitFor({ state: 'visible', timeout: 8000 });
+  await page.evaluate(() => {
+    document.querySelector('[data-part-row]')?.click();
+  });
+  await page.waitForFunction(() => (
+    document.querySelector('[data-part-row]')?.getAttribute('data-part-selected') === 'true'
+  ), null, { timeout: 8000 });
+  if (phone) await page.locator('[data-stage-btn="cad"]').click();
+}
+
 async function newContour(page) {
   await page.locator('[data-new-contour-role="profile"][data-new-contour-index="0"]').click();
   await page.locator('[data-contour-chip]').waitFor({ timeout: 8000 });
@@ -258,6 +287,7 @@ async function runSize(browser, label, contextOptions) {
   await boot(page);
 
   const sheetBefore = await loadScript(page, SHEET);
+  await ensurePartSelected(page);
   await confirmExtrude(page);
   const sheetScript = await editorScript(page);
   const sheetPlace = placedBeforeReturn(sheetScript);
@@ -275,6 +305,7 @@ async function runSize(browser, label, contextOptions) {
   await page.screenshot({ path: join(SHOT_DIR, `sheet-extrude-${label}.png`) });
 
   const cubeBefore = await loadScript(page, CUBE);
+  await ensurePartSelected(page);
   await confirmExtrude(page);
   const cubeScript = await editorScript(page);
   check(`${label} cube extrude is before return`, cubeScript.indexOf('makeExtrude') < findReturnPartIndex(cubeScript)
