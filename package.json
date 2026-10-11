@@ -221,6 +221,7 @@
         "golden:face-paint": "node scripts/golden/smoke_face_paint.mjs",
         "golden:fea-study": "node scripts/golden/fea_study_panel.mjs",
         "golden:fea-face-highlight": "node scripts/golden/fea_face_highlight.mjs",
+        "golden:fea-analyze-playtest": "node scripts/golden/fea_analyze_playtest.mjs",
         "golden:fea-bonded": "node scripts/golden/fea_bonded.mjs",
         "golden:fea-friction": "node scripts/golden/fea_friction.mjs",
         "golden:fea-stress": "node scripts/golden/fea_stress_pixels.mjs",

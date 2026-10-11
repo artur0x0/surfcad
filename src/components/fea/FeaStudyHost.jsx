@@ -19,11 +19,13 @@ export function FeaStudyHost({
   getSolid,
   getAssembly,
   getPartScript,
+  getPartId,
   onHighlight,
   onContactHighlight,
   onClaim,
   onActive,
   pickRef,
+  tapActionRef,
   toggleRef,
   closeRef,
 }) {
@@ -38,6 +40,7 @@ export function FeaStudyHost({
     getSolid,
     getAssembly,
     getPartScript,
+    getPartId,
     onHighlight,
     onContactHighlight,
     onClaim,
@@ -46,6 +49,7 @@ export function FeaStudyHost({
   const close = panel.close;
   const toggle = panel.toggle;
   const pick = panel.pick;
+  const tapAction = panel.tapAction;
 
   useEffect(() => {
     onActive?.(open);
@@ -74,6 +78,14 @@ export function FeaStudyHost({
       pickRef.current = null;
     };
   }, [open, pick, pickRef]);
+
+  useEffect(() => {
+    if (!tapActionRef) return undefined;
+    tapActionRef.current = open ? tapAction : null;
+    return () => {
+      tapActionRef.current = null;
+    };
+  }, [open, tapAction, tapActionRef]);
 
   if (!open || !enabled) return null;
   if (compact) return <FeaStudySheet panel={panel} />;

@@ -16,24 +16,38 @@ const TARGETS = [
   { value: 'pressure', label: 'Pressure' },
 ];
 
+const TAB_TONES = {
+  cyan: {
+    on: 'bg-cyan-600 text-white',
+    off: 'border border-cyan-700/70 bg-cyan-950/80 text-cyan-100',
+  },
+  blue: {
+    on: 'bg-blue-500 text-white',
+    off: 'border border-blue-700/70 bg-blue-950/80 text-blue-100',
+  },
+  yellow: {
+    on: 'bg-yellow-500 text-gray-900',
+    off: 'border border-yellow-700/70 bg-yellow-950/80 text-yellow-100',
+  },
+};
+
 /** Shared tab row. Fix / Force / Pressure and Stress / Displacement use it. */
-export function FeaTabs({ options, value, onChange, groupAttr, itemAttr }) {
+export function FeaTabs({ options, value, onChange, groupAttr, itemAttr, toneFor }) {
   return (
     <div className="flex gap-1" {...{ [groupAttr]: '' }}>
       {options.map((option) => {
         const active = value === option.value;
+        const toneName = toneFor?.(option.value) || 'cyan';
+        const tone = TAB_TONES[toneName] || TAB_TONES.cyan;
         return (
           <button
             key={option.value}
             type="button"
             {...{ [itemAttr]: option.value }}
+            {...(toneFor ? { 'data-fea-tone': toneName } : {})}
             aria-pressed={active}
             onClick={() => onChange?.(option.value)}
-            className={`rounded px-2 py-1 text-[13px] ${
-              active
-                ? 'bg-cyan-600 text-white'
-                : 'border border-cyan-700/70 bg-cyan-950/80 text-cyan-100'
-            }`}
+            className={`rounded px-2 py-1 text-[13px] ${active ? tone.on : tone.off}`}
           >
             {option.label}
           </button>
@@ -90,6 +104,7 @@ export function FeaStudyControls({ panel }) {
         onChange={panel.setTarget}
         groupAttr="data-fea-targets"
         itemAttr="data-fea-target"
+        toneFor={(target) => (target === 'fixture' ? 'blue' : 'yellow')}
       />
       </div>
       {draft.target === 'force' && (
@@ -128,6 +143,8 @@ export function FeaStudyControls({ panel }) {
       <p className="text-[11px] text-cyan-100/80">Tap a face. Tap it again to remove it.</p>
       <FeaLoadList
         study={panel.study}
+        memberIds={panel.memberIds}
+        analyzedPartId={panel.analyzedPartId}
         onRemoveFixture={panel.removeFixture}
         onRemoveLoad={panel.removeLoad}
         selectedLoad={panel.preview?.available ? panel.preview.loadIndex : -1}

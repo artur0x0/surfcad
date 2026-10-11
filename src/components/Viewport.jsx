@@ -1173,11 +1173,13 @@ const Viewport = forwardRef(({
   const paintModeRef = useRef(null);
   const [feaActive, setFeaActive] = useState(false);
   const feaPickRef = useRef(null);
+  const feaTapActionRef = useRef(null);
   const feaToggleRef = useRef(() => {});
   const feaCloseRef = useRef(() => {});
   /** One Fix/Force/Pressure overlay per (entry, face). Reconciled, not stacked. */
   const feaFaceOverlaysRef = useRef(new Map());
   const feaHighlightStudyRef = useRef(null);
+  const feaHighlightMetaRef = useRef(null);
   const exitPaintModeRef = useRef(() => {});
   const applyLivePaintTapRef = useRef(() => {});
   /** SCS sheet metal: picker popup (S1) + mode state (stage, sku, partId). */
@@ -7218,7 +7220,11 @@ const Viewport = forwardRef(({
         }
         clickCountRef.current = 0;
         pendingClickDataRef.current = null;
-        feaPickRef.current({ removeProbeId: marker.object.userData.probeId });
+        try {
+          feaPickRef.current({ removeProbeId: marker.object.userData.probeId });
+        } catch (err) {
+          console.error('[FEA] ignored a bad pick', err);
+        }
         return;
       }
     }
@@ -7246,6 +7252,35 @@ const Viewport = forwardRef(({
       return;
     }
 
+    if (feaPickRef.current && partChoiceHit.partId) {
+      let action = 'pick';
+      try {
+        action = feaTapActionRef.current
+          ? feaTapActionRef.current(partChoiceHit.partId)
+          : (String(partChoiceHit.partId) === String(activePartIdRef.current || '') ? 'pick' : 'ignore');
+      } catch (err) {
+        console.error('[FEA] ignored a bad pick', err);
+        return;
+      }
+      if (action === 'ignore' || action === 'add-part') {
+        if (clickTimerRef.current) {
+          clearTimeout(clickTimerRef.current);
+          clickTimerRef.current = null;
+        }
+        clickCountRef.current = 0;
+        pendingClickDataRef.current = null;
+        if (action === 'add-part') {
+          try {
+            feaPickRef.current({ addPartId: partChoiceHit.partId });
+          } catch (err) {
+            console.error('[FEA] ignored a bad pick', err);
+          }
+        }
+        return;
+      }
+    }
+
+    try {
     showPartChoice(partChoiceHit, event, 'face');
     if (!retargetPickPart(partChoiceHit.partId)) return;
     const again = resultRef.current?.geometry?.attributes?.position
@@ -7329,7 +7364,14 @@ const Viewport = forwardRef(({
     clickTimerRef.current = setTimeout(() => {
       processClick();
     }, MULTI_CLICK_DELAY);
-    
+    } catch (err) {
+      if (feaPickRef.current) {
+        console.error('[FEA] ignored a bad pick', err);
+        return;
+      }
+      throw err;
+    }
+
   }, [onFaceSelected, measurementEnabled, clearHighlight, clearEdgeHover, clearEdgeHighlight,
     pickEdgeAtClient, endPolylinePointDrag, pickPolylinePointAtClient, pickContourAtClient, commitBooleanState,
     collectPartHits, retargetPickPart, showPartChoice, dismissPartChoice, clearGeomSelection,
@@ -8820,10 +8862,16 @@ const Viewport = forwardRef(({
     if (renderer && scene && camera) renderer.render(scene, camera);
   }
 
-  function paintFeaFaces(study) {
+  function paintFeaFaces(study, meta) {
     const next = study && typeof study === 'object' && !Array.isArray(study) ? study : null;
     feaHighlightStudyRef.current = next;
-    const synced = syncFeaFaceHighlights(feaFaceOverlaysRef.current, next, feaPartHosts());
+    if (meta && typeof meta === 'object') feaHighlightMetaRef.current = meta;
+    const synced = syncFeaFaceHighlights(
+      feaFaceOverlaysRef.current,
+      next,
+      feaPartHosts(),
+      feaHighlightMetaRef.current || {},
+    );
     feaFaceOverlaysRef.current = synced.overlays;
     const renderer = rendererRef.current;
     const scene = sceneRef.current;
@@ -8849,7 +8897,7 @@ const Viewport = forwardRef(({
   // The last study is re-applied so a disposed mesh cannot leave a stale fill.
   useEffect(() => {
     if (!feaHighlightStudyRef.current && feaFaceOverlaysRef.current.size === 0) return;
-    paintFeaFaces(feaHighlightStudyRef.current);
+    paintFeaFaces(feaHighlightStudyRef.current, feaHighlightMetaRef.current);
   }, [meshEpoch, overlayEpoch]);
 
   // Colors can arrive without a new mesh (a document load). Empty skips the work.
@@ -10785,13 +10833,15 @@ const Viewport = forwardRef(({
         })}
         getAssembly={feaAssemblyParts}
         getPartScript={getPartScript}
+        getPartId={() => getBooleanContextRef.current?.()?.activeId ?? activePartIdRef.current}
         onContactHighlight={paintFeaContacts}
-        onHighlight={(study) => {
-          paintFeaFaces(study);
+        onHighlight={(study, meta) => {
+          paintFeaFaces(study, meta);
         }}
         onClaim={releaseModesForFea}
         onActive={setFeaActive}
         pickRef={feaPickRef}
+        tapActionRef={feaTapActionRef}
         toggleRef={feaToggleRef}
         closeRef={feaCloseRef}
       />

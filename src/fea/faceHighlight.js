@@ -25,10 +25,20 @@ import { FACE_HIGHLIGHT_RENDER_ORDER } from '../utils/faceColorSkin.js';
 import { fingerprintsFromGeometry } from '../utils/facePaint.js';
 import { matchFaceKeys } from '../utils/faceColorMatch.js';
 import { highlightBoundaryPositions } from '../utils/planarSeam.js';
+import { faceBelongsToStudy } from './feaPickGate.js';
 import { faceKeyOf } from './studyPanel.js';
 
 export const FEA_FACE_HIGHLIGHT_NAME = 'fea-face-highlight';
-export const FEA_FACE_HIGHLIGHT_COLOR = 0x22d3ee;
+/** Paint swatch blue-500. Fixtures stay off the viridis stress ramp. */
+export const FEA_FIXTURE_HIGHLIGHT_COLOR = 0x3b82f6;
+/** Paint swatch yellow-500. Darker than the viridis end yellow. */
+export const FEA_LOAD_HIGHLIGHT_COLOR = 0xeab308;
+/** @deprecated Fixtures use FEA_FIXTURE_HIGHLIGHT_COLOR. Loads use yellow. */
+export const FEA_FACE_HIGHLIGHT_COLOR = FEA_FIXTURE_HIGHLIGHT_COLOR;
+
+export function feaHighlightColor(role) {
+  return role === 'load' ? FEA_LOAD_HIGHLIGHT_COLOR : FEA_FIXTURE_HIGHLIGHT_COLOR;
+}
 
 export function faceHighlightKey(role, entryIndex, faceIndex) {
   return `${role}:${entryIndex}:${faceIndex}`;
@@ -60,20 +70,24 @@ export function faceHighlightTargets(study) {
 
 /**
  * The part mesh that owns this face. A stamped part id wins. A part-scope
- * face (no id) uses the active solid, or the only solid on screen.
+ * face (no id) stays on the analyzed part when that id is known, otherwise
+ * the active solid, or the only solid on screen.
  */
-export function hostForHighlight(hosts, target) {
+export function hostForHighlight(hosts, target, analyzedPartId) {
   const list = Array.isArray(hosts) ? hosts : [];
   if (target?.partId) {
     return list.find((host) => String(host?.id) === String(target.partId)) || null;
+  }
+  if (analyzedPartId != null && analyzedPartId !== '') {
+    return list.find((host) => String(host?.id) === String(analyzedPartId)) || null;
   }
   const active = list.find((host) => host?.active);
   if (active) return active;
   return list.length === 1 ? list[0] : null;
 }
 
-/** Changes when the part mesh, its geometry, or the covered triangles change. */
-export function highlightSignature(mesh, triangles) {
+/** Changes when the part mesh, its geometry, the color, or the triangles change. */
+export function highlightSignature(mesh, triangles, color) {
   const geometry = mesh?.geometry;
   let hash = 2166136261;
   const list = triangles || [];
@@ -81,7 +95,7 @@ export function highlightSignature(mesh, triangles) {
     hash ^= list[i] >>> 0;
     hash = Math.imul(hash, 16777619);
   }
-  return `${mesh?.uuid || ''}:${geometry?.uuid || ''}:${list.length}:${hash >>> 0}`;
+  return `${mesh?.uuid || ''}:${geometry?.uuid || ''}:${color ?? ''}:${list.length}:${hash >>> 0}`;
 }
 
 export function disposeHighlightObject(object) {
@@ -124,7 +138,7 @@ function defaultResolveTriangles(host, face) {
  * Local-space fill plus the face outline. The caller parents it to the
  * part mesh. It does not raycast, so the solid still receives the tap.
  */
-export function createFaceHighlightMesh(geometry, triangleIndices) {
+export function createFaceHighlightMesh(geometry, triangleIndices, color = FEA_FIXTURE_HIGHLIGHT_COLOR) {
   const index = geometry?.index?.array;
   const positionAttr = geometry?.attributes?.position;
   const positions = positionAttr?.array;
@@ -147,7 +161,7 @@ export function createFaceHighlightMesh(geometry, triangleIndices) {
   const fill = new BufferGeometry();
   fill.setAttribute('position', new BufferAttribute(local.subarray(0, write), 3));
   const mesh = new Mesh(fill, new MeshBasicMaterial({
-    color: FEA_FACE_HIGHLIGHT_COLOR,
+    color,
     transparent: true,
     opacity: 0.3,
     depthTest: true,
@@ -167,7 +181,7 @@ export function createFaceHighlightMesh(geometry, triangleIndices) {
       const edgeGeometry = new BufferGeometry();
       edgeGeometry.setAttribute('position', new BufferAttribute(new Float32Array(boundary), 3));
       const edges = new LineSegments(edgeGeometry, new LineBasicMaterial({
-        color: FEA_FACE_HIGHLIGHT_COLOR,
+        color,
         linewidth: 3,
         depthTest: true,
         depthWrite: false,
@@ -219,23 +233,57 @@ export function reconcileFaceHighlights(overlays, desired, { dispose, attach }) 
       kept.push(key);
       continue;
     }
-    const mesh = typeof spec.create === 'function' ? spec.create() : null;
-    if (!mesh) continue;
+    const hostMesh = spec.hostMesh;
+    if (!hostMesh || typeof hostMesh.add !== 'function') continue;
+    let mesh = null;
+    try {
+      mesh = typeof spec.create === 'function' ? spec.create() : null;
+    } catch (err) {
+      console.error('[FEA] ignored a bad face highlight', err);
+      continue;
+    }
+    if (!mesh || mesh === hostMesh) continue;
     mesh.name = FEA_FACE_HIGHLIGHT_NAME;
     if (!mesh.userData) mesh.userData = {};
     mesh.userData.feaHighlightKey = key;
+    if (spec.role) mesh.userData.feaRole = spec.role;
     mesh.raycast = () => {};
     mesh.frustumCulled = false;
-    attach(mesh, spec);
+    try {
+      attach(mesh, spec);
+    } catch (err) {
+      console.error('[FEA] ignored a bad face highlight', err);
+      dispose(mesh);
+      continue;
+    }
     next.set(key, {
       key,
       signature: spec.signature,
-      hostMesh: spec.hostMesh,
+      hostMesh,
       mesh,
     });
     created.push(key);
   }
   return { overlays: next, created, removed, kept };
+}
+
+function idList(value) {
+  if (!value) return null;
+  if (value.array && value.array.length) return value.array;
+  if (typeof value.length === 'number' && value.length > 0) return value;
+  return null;
+}
+
+function hostHasFaceMap(host) {
+  if (idList(host?.faceIDs)) return true;
+  return !!idList(host?.mesh?.geometry?.attributes?.faceID);
+}
+
+/** A removed extra is the wrong parent. The active pick mesh may not be parented yet. */
+function hostAttached(host) {
+  if (!host?.mesh || typeof host.mesh.add !== 'function') return false;
+  if (host.mesh.parent == null && !host.active) return false;
+  return true;
 }
 
 /**
@@ -245,22 +293,42 @@ export function reconcileFaceHighlights(overlays, desired, { dispose, attach }) 
 export function syncFeaFaceHighlights(overlays, study, hosts, options = {}) {
   const resolveTriangles = options.resolveTriangles || defaultResolveTriangles;
   const createMesh = options.createMesh
-    || ((host, triangles) => createFaceHighlightMesh(host?.mesh?.geometry, triangles));
+    || ((host, triangles, target) => createFaceHighlightMesh(
+      host?.mesh?.geometry,
+      triangles,
+      feaHighlightColor(target?.role),
+    ));
   const dispose = options.dispose || disposeHighlightObject;
   const attach = options.attach || ((mesh, spec) => {
-    if (typeof spec.hostMesh?.add === 'function') spec.hostMesh.add(mesh);
+    if (spec.hostMesh && spec.hostMesh !== mesh && typeof spec.hostMesh.add === 'function') {
+      spec.hostMesh.add(mesh);
+    }
   });
   const list = Array.isArray(hosts) ? hosts : [];
+  const memberIds = options.memberIds;
+  const analyzedPartId = options.analyzedPartId;
   const desired = [];
   for (const target of faceHighlightTargets(study)) {
-    const host = hostForHighlight(list, target);
-    if (!host?.mesh) continue;
-    const triangles = resolveTriangles(host, target.face) || [];
+    if (Array.isArray(memberIds) && !faceBelongsToStudy(target.face, memberIds, analyzedPartId)) {
+      continue;
+    }
+    const host = hostForHighlight(list, target, analyzedPartId);
+    if (!hostAttached(host)) continue;
+    if (!options.resolveTriangles && !hostHasFaceMap(host)) continue;
+    let triangles = [];
+    try {
+      triangles = resolveTriangles(host, target.face) || [];
+    } catch (err) {
+      console.error('[FEA] ignored a bad face highlight', err);
+      continue;
+    }
     if (!triangles.length) continue;
     const frozen = Array.from(triangles);
+    const color = feaHighlightColor(target.role);
     desired.push({
       key: target.key,
-      signature: highlightSignature(host.mesh, frozen),
+      role: target.role,
+      signature: highlightSignature(host.mesh, frozen, color),
       hostMesh: host.mesh,
       create: () => createMesh(host, frozen, target),
     });
