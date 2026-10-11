@@ -9,6 +9,7 @@ import { createRoot } from 'react-dom/client';
 import Viewport from '../../src/components/Viewport.jsx';
 import FeatureStrip from '../../src/components/FeatureStrip.jsx';
 import { AuthProvider } from '../../src/hooks/useAuth.jsx';
+import { GithubSessionProvider } from '../../src/hooks/useGithubSession.jsx';
 import { parseFeatureMarkers } from '../../src/utils/featureMarkers.js';
 import { deleteFeatureEdit } from '../../src/utils/featureEdit.js';
 import { historyForPart, pushPartHistory, undoPartHistory } from '../../src/utils/partHistory.js';
@@ -34,7 +35,11 @@ return part;
 
 export function renderFeatureEditDeleteShot(el, { compact = false } = {}) {
   createRoot(el).render(
-    React.createElement(AuthProvider, null, React.createElement(Shot, { compact })),
+    React.createElement(
+      AuthProvider,
+      null,
+      React.createElement(GithubSessionProvider, null, React.createElement(Shot, { compact })),
+    ),
   );
 }
 

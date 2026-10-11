@@ -1205,6 +1205,7 @@ const Viewport = forwardRef(({
   const contourGhostMatsRef = useRef(null);
   const [contourToast, setContourToast] = useState(null);
   const contourToastTimerRef = useRef(null);
+  const featureDeleteToastTimerRef = useRef(null);
   /** Slice 27: Fillet-in-mode (enter without edges; Accept commits sweep fillet). */
   const [filletMode, setFilletMode] = useState(null);
   const filletModeRef = useRef(null);
@@ -1535,7 +1536,12 @@ const Viewport = forwardRef(({
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionError, setExecutionError] = useState(null);
   useEffect(() => {
-    if (executionError) setFeatureDeleteToast(null);
+    if (!executionError) return;
+    if (featureDeleteToastTimerRef.current) {
+      clearTimeout(featureDeleteToastTimerRef.current);
+      featureDeleteToastTimerRef.current = null;
+    }
+    setFeatureDeleteToast(null);
   }, [executionError]);
   
   // Cross-section state
@@ -9897,6 +9903,11 @@ const Viewport = forwardRef(({
     if (!ok) return;
     dismissFeatureEditAfterDelete();
     setFeatureDeleteToast(['Deleted.']);
+    if (featureDeleteToastTimerRef.current) clearTimeout(featureDeleteToastTimerRef.current);
+    featureDeleteToastTimerRef.current = setTimeout(() => {
+      featureDeleteToastTimerRef.current = null;
+      setFeatureDeleteToast(null);
+    }, 3200);
   };
 
   const featureEditDelete = featureEditRef.current ? deleteFeatureFromEdit : null;

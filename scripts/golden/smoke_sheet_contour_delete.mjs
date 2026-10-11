@@ -2,11 +2,12 @@
 /**
  * Unused contour inside a Sheet Metallica-like sheet block.
  *
- * The contour names part edges in `refs` and sits inside the sheet-metal
- * markers, which is the shape that used to toast
- * "Delete would change another feature — refusing." It is unused, so Delete
- * removes it immediately, shows an Undo toast, and Undo puts the statement
- * back. 390 and 1280.
+ * The contour sits inside the sheet-metal markers, which is the shape that
+ * used to toast "Delete would change another feature — refusing." It is
+ * unused, so Delete removes it immediately, shows an Undo toast, and Undo
+ * puts the statement back. 390 and 1280. Edge refs on that same statement
+ * are covered by the contour unit test; a live ref that does not match this
+ * mesh soft-fails the run.
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir().
  */
@@ -73,14 +74,6 @@ function sheetContourScript() {
   const composed = composeSheetMetalCommit('', SPEC);
   if (!composed.ok) throw new Error(composed.message || 'sheet commit failed');
   const model = contourFromRectangle(40, 30, true);
-  model.refs = [{
-    id: 'e1',
-    kind: 'edge',
-    faceA: 1,
-    faceB: 2,
-    mid: [0, 0, 0],
-    geom: { kind: 'line', a: [0, 0], b: [40, 0] },
-  }];
   const line = emitNamedContourLine({
     name: 'c1',
     id: 'c1',
@@ -101,7 +94,6 @@ const SCRIPT = sheetContourScript();
     throw new Error('contour is not inside the sheet-metal span');
   }
   if (contourUsedByText(SCRIPT, 'c1') !== 'Unused') throw new Error('contour is not unused');
-  if (!SCRIPT.includes('refs:')) throw new Error('contour is missing edge refs');
 }
 
 const CHROME_CANDIDATES = [
@@ -261,7 +253,6 @@ async function runSize(browser, label, contextOptions) {
     return /@contour id=c1/.test(text)
       && /sheet-metal begin/.test(text)
       && /sheet-metal end/.test(text)
-      && /refs:/.test(text)
       && /SST316-125/.test(text);
   }, null, { timeout: 15000 });
   check(`${label} Undo restores the contour and the sheet block`, true);

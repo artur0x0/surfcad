@@ -90,6 +90,7 @@ async function runSize(label, compact, width, height) {
       error: window.__MESH_ERROR__,
     }));
     console.log(label, 'state', state);
+    console.log(label, 'errors', errors.slice(0, 8));
     throw err;
   }
   const meshError = await page.evaluate(() => window.__MESH_ERROR__ || '');
@@ -177,6 +178,14 @@ async function runSize(label, compact, width, height) {
   check(`${label}: fillet edit opened`, openedFillet === true);
   await page.locator('[data-feature-edit-delete]').waitFor({ timeout: 15000 });
   await page.locator('[data-feature-edit-delete]').click();
+  await page.locator('[data-feature-edit-delete-toast]').waitFor({ timeout: 5000 });
+  const quiet = await page.evaluate(() => ({
+    confirm: !!document.querySelector('[data-feature-edit-delete-dialog]'),
+    toast: document.querySelector('[data-feature-edit-delete-toast]')?.innerText || '',
+    executionError: !!document.querySelector('[data-execution-error]'),
+  }));
+  check(`${label}: no confirm when nothing depends on the feature`, !quiet.confirm && !quiet.executionError);
+  check(`${label}: immediate delete still shows Deleted`, /Deleted\./.test(quiet.toast) && !/refusing/.test(quiet.toast), quiet.toast);
   await page.waitForFunction(() => {
     const script = window.__SCRIPT__ || '';
     return script.includes('cube begin')
@@ -185,13 +194,6 @@ async function runSize(label, compact, width, height) {
       && window.__MESH_SIG__?.()
       && window.__MESH_SIG__() !== window.__ORIGINAL_SIG__;
   }, null, { timeout: 30000 });
-  const quiet = await page.evaluate(() => ({
-    confirm: !!document.querySelector('[data-feature-edit-delete-dialog]'),
-    toast: document.querySelector('[data-feature-edit-delete-toast]')?.innerText || '',
-    executionError: !!document.querySelector('[data-execution-error]'),
-  }));
-  check(`${label}: no confirm when nothing depends on the feature`, !quiet.confirm && !quiet.executionError);
-  check(`${label}: immediate delete still shows Deleted`, /Deleted\./.test(quiet.toast) && !/refusing/.test(quiet.toast), quiet.toast);
 
   await page.locator('[data-feature-bar-undo]').click();
   await page.waitForFunction(
