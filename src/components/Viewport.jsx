@@ -62,6 +62,7 @@ import ErrorPopup from './ErrorPopup';
 import { FeatureDeleteToast } from './FeatureEditDelete';
 import ContourModeRail from './ContourModeRail';
 import ContourModeChip from './ContourModeChip';
+import ContourEditBar from './ContourEditBar';
 import FeatureSlotCard from './FeatureSlotCard';
 import FeatureSheet from './FeatureSheet';
 import FeatureEditSheet from './FeatureEditSheet';
@@ -112,7 +113,8 @@ import {
   withAutoPickedContour,
 } from '../utils/savedContours';
 import { shouldClearViewportScript } from '../utils/helperPaletteSnippets';
-import { mintContourIdentity } from '../utils/namedContour';
+import { hasNamedContour, mintContourIdentity } from '../utils/namedContour';
+import { contourUsedByText } from '../utils/contourUsers';
 import {
   addFeatureStation,
   assignFeatureSlot,
@@ -121,6 +123,7 @@ import {
   featureSlotGhostId,
   featureSlotReady,
   removeFeatureStation,
+  renameFeatureSlotRefs,
   setFeatureStationOffset,
 } from '../utils/featureSlotCard';
 import {
@@ -1047,6 +1050,7 @@ const Viewport = forwardRef(({
   const featureSessionRef = useRef(false);
   const featureEditRef = useRef(null);
   const beginFeatureEditRef = useRef(null);
+  const beginContourEditRef = useRef(null);
   const commitFeatureEditRef = useRef(() => false);
   const cancelFeatureEditRef = useRef(() => {});
   const executeScriptRef = useRef(null);
@@ -1137,6 +1141,8 @@ const Viewport = forwardRef(({
   const featureSlotsRef = useRef(null);
   featureSlotsRef.current = featureSlots;
   const slotReturnRef = useRef(null);
+  const contourEditRef = useRef(null);
+  const [contourEdit, setContourEdit] = useState(null);
   const [slotHoverId, setSlotHoverId] = useState(null);
   const closeFeatureSlotsRef = useRef(() => {});
   const [contourFaceAim, setContourFaceAim] = useState('');
@@ -1924,6 +1930,8 @@ const Viewport = forwardRef(({
      * a pick retargets onto that part before the graphs are used.
      */
     beginFeatureEdit: (feature, script) => beginFeatureEditRef.current?.(feature, script) === true,
+    /** Open a saved contour in the contour editor. The strip uses this. */
+    beginContourEdit: (contourId) => beginContourEditRef.current?.(contourId) === true,
     /** Close every other card without writing, so the edit card can open alone. */
     yieldToFeatureEditCard: () => yieldToFeatureEditCardRef.current(),
     placeAssembly: (payload) => placeAssemblyRef.current(payload),
@@ -3065,6 +3073,8 @@ const Viewport = forwardRef(({
   }, [clearFilletBlendPreview, anchorToActivePart]);
 
   const exitContourMode = useCallback((reason) => {
+    contourEditRef.current = null;
+    setContourEdit(null);
     faceSketchRef.current?.cancel();
     setContourFaceAim('');
     const keepCard = reason === 'slot' && featureSlotsRef.current;
@@ -3262,12 +3272,107 @@ const Viewport = forwardRef(({
   const beginNewContour = useCallback((slot) => {
     if (!featureSlotsRef.current || !slot) return;
     slotReturnRef.current = slot;
+    contourEditRef.current = null;
+    setContourEdit(null);
     enterContourMode({ entry: 'crossSection' });
   }, [enterContourMode]);
+
+  const openSavedContour = useCallback((contourId) => {
+    if (!contourId || mode === 'game') return false;
+    const fromEditor = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
+    const buf = hasNamedContour(fromEditor, contourId)
+      ? fromEditor
+      : (hasNamedContour(currentScript, contourId) ? currentScript : fromEditor);
+    const saved = listSavedContours(buf).find((row) => row.id === contourId);
+    if (!saved) {
+      showContourToast('That contour is not in this part.');
+      return false;
+    }
+    const session = {
+      id: saved.id,
+      name: saved.name,
+      usedBy: contourUsedByText(buf, saved.name),
+    };
+    contourEditRef.current = session;
+    setContourEdit(session);
+    enterContourMode({ entry: 'crossSection' });
+    setContourMode((prev) => {
+      if (!prev) return prev;
+      const applied = applySavedContour(prev, saved);
+      return {
+        ...applied,
+        entry: 'crossSection',
+        contourId: saved.id,
+        contourName: saved.name,
+      };
+    });
+    contourPlaneOpenRef.current = false;
+    setContourPlaneOpen(false);
+    if (saved.plane?.normal) {
+      setContourFaceAim('');
+      requestFaceSketchAim(saved.plane.normal);
+    }
+    return true;
+  }, [mode, getHelperBuffer, currentScript, enterContourMode]);
+
+  const editSlotContour = useCallback((slot) => {
+    const card = featureSlotsRef.current;
+    if (!card || !slot) return;
+    const ref = slot.role === 'station'
+      ? card.stations?.[slot.index]
+      : (slot.role === 'path' ? card.path : card.profile);
+    if (!ref?.contourId) return;
+    slotReturnRef.current = slot;
+    if (!openSavedContour(ref.contourId)) slotReturnRef.current = null;
+  }, [openSavedContour]);
+
+  beginContourEditRef.current = (contourId) => {
+    slotReturnRef.current = null;
+    featureSlotsRef.current = null;
+    setFeatureSlots(null);
+    setSlotHoverId(null);
+    return openSavedContour(contourId) === true;
+  };
 
   const confirmContourProfile = useCallback(() => {
     const state = contourModeRef.current;
     if (!state) return;
+    if (contourEditRef.current) {
+      const edit = contourEditRef.current;
+      if (state.tool === 'path') {
+        const pts = state.params?.points;
+        if (!Array.isArray(pts) || pts.length < 2) {
+          showContourToast('Path needs at least 2 points.');
+          return;
+        }
+      } else {
+        const gate = validateContourProfile(state.tool, state.params);
+        if (!gate.ok) {
+          showContourToast(gate.message);
+          return;
+        }
+      }
+      const commitFace = activeContourFace(state, modelBounds);
+      const ok = onCommitContourProfile?.({
+        editContour: true,
+        partId: activePartIdRef.current,
+        contourId: edit.id,
+        contourName: state.contourName || edit.name,
+        face: state.planeFace || commitFace,
+        tool: state.tool,
+        params: state.params,
+      });
+      if (!ok) return;
+      const back = !!(slotReturnRef.current && featureSlotsRef.current);
+      if (back) {
+        const buf = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
+        const saved = listSavedContours(buf).find((row) => row.id === edit.id);
+        if (saved) setFeatureSlots((prev) => renameFeatureSlotRefs(prev, edit.id, saved));
+      }
+      slotReturnRef.current = null;
+      exitContourMode(back ? 'slot' : undefined);
+      return;
+    }
     if (slotReturnRef.current && featureSlotsRef.current) {
       const slot = slotReturnRef.current;
       const gate = validateContourProfile(state.tool, state.params);
@@ -6837,6 +6942,9 @@ const Viewport = forwardRef(({
     // Feature edit of an old inline profile still rewrites that feature
     // on the rail Confirm. Pointer-up must not insert a second contour.
     if (featureEditRef.current?.dialog === 'contour') return state;
+    // An open edit saves on the rail checkmark. Pointer-up must not write,
+    // so X can discard the session.
+    if (contourEditRef.current) return state;
     const buf = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
     const minted = state.contourId ? null : mintContourIdentity(buf);
     const contourId = state.contourId || minted.id;
@@ -10495,6 +10603,20 @@ const Viewport = forwardRef(({
         />
       )}
 
+      {contourMode && contourEdit && !contourPlaneOpen && mode !== 'game' && (
+        <ContourEditBar
+          name={contourMode.contourName || contourEdit.name}
+          usedBy={contourEdit.usedBy || 'Unused'}
+          tool={contourMode.tool}
+          params={contourMode.params || {}}
+          lengthMm={characteristicLengthMm({ bounds: modelBounds })}
+          onName={(contourName) => setContourMode((prev) => (prev ? { ...prev, contourName } : prev))}
+          onParam={(key, value) => setContourMode((prev) => (
+            prev ? { ...prev, params: { ...(prev.params || {}), [key]: value } } : prev
+          ))}
+        />
+      )}
+
       {/* Contour rail: tools, Back undoes, Confirm finishes, X exits. */}
       {contourMode && (
         <ContourModeRail
@@ -10725,6 +10847,7 @@ const Viewport = forwardRef(({
             setFeatureSlots((prev) => assignFeatureSlot(prev, slot, contour));
           }}
           onNew={beginNewContour}
+          onEdit={editSlotContour}
           onOffset={(index, offset) => setFeatureSlots((prev) => setFeatureStationOffset(prev, index, offset))}
           onExtrudeChange={(extrude) => setFeatureSlots((prev) => (prev ? { ...prev, extrude } : prev))}
           onRevolveChange={(revolve) => setFeatureSlots((prev) => (prev ? { ...prev, revolve } : prev))}

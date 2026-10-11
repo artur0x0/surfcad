@@ -89,10 +89,11 @@ console.log('mobile B: home-indicator + feature strip');
       /FEATURE_MARKER_KINDS/.test(markers),
   );
   check(
-    'FeatureStrip uses parseFeatureMarkers + data-feature-chip',
-    /parseFeatureMarkers/.test(strip) &&
+    'FeatureStrip merges named contours onto the marker chips',
+    /featuresWithContours/.test(strip) &&
       /data-feature-strip/.test(strip) &&
-      /data-feature-chip/.test(strip),
+      /data-feature-chip/.test(strip) &&
+      /data-contour-id/.test(strip),
   );
   check(
     'CodeEditor exposes revealRange for strip jumps',
