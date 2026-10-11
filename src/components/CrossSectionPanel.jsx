@@ -1,7 +1,7 @@
 // components/CrossSectionPanel.jsx
 /* eslint-disable react-hooks/exhaustive-deps -- see Viewport note; same ref-backed pattern */
 import React, { useState, useEffect, useRef } from 'react';
-import { FlipHorizontal, Check, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, X } from 'lucide-react';
+import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, X } from 'lucide-react';
 import TrianglesCenterlineDashedVertical from './icons/TrianglesCenterlineDashedVertical';
 import ViewSnapControl from './ViewSnapControl';
 import { PLANE_PRESETS } from '../utils/crossSection';
@@ -16,6 +16,8 @@ const CrossSectionPanel = ({
   onToggle,
   onPlaneChange,
   onZoomToFit,
+  /** Contour mode only. Aims the camera along the sketch plane and zoom-fits. */
+  onNormalToSketch = null,
   onSnapView,
   bounds,
   measurementEnabled,
@@ -208,6 +210,19 @@ const handleButtonClick = () => {
         >
           <Maximize2 size={20} />
         </button>
+        {typeof onNormalToSketch === 'function' && (
+          <button
+            type="button"
+            onClick={onNormalToSketch}
+            className="p-2 rounded text-blue-600 hover:bg-blue-100 active:bg-blue-200"
+            title="Normal to sketch"
+            aria-label="Normal to sketch"
+            data-normal-to-sketch=""
+          >
+            {/* lucide-react 0.469 has no RightAngle. CornerDownRight is the right-angle corner. */}
+            <CornerDownRight size={20} />
+          </button>
+        )}
 
         {/* Pick selectors — icons only; idle matches zoom/ruler (no filled tan/opaque frame) */}
         {typeof onPickModeChange === 'function' && (
