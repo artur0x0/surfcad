@@ -155,8 +155,10 @@ const parts = {
   const planes = slice('const paintConstructionPlanes = useCallback', '}, [clearConstructionPlanes]);');
   check('contours paint one group per part, tagged and placed at that part',
     /overlayPartId: entry\.partId/.test(ghosts) && /overlayAnchorForRef\.current\(entry\.partId/.test(ghosts));
+  // #354 folded the selected stroke and the idle stroke into one bucketed
+  // paintEdgeLines. The line is still local to the part group.
   check('contour lines are local to the part group (not anchored to the pick mesh)',
-    (ghosts.match(/position: \[0, 0, 0\]/g) || []).length === 2 && !/anchorToActivePart/.test(ghosts));
+    (ghosts.match(/position: \[0, 0, 0\]/g) || []).length === 1 && !/anchorToActivePart/.test(ghosts));
   check('work planes paint one group per part, tagged and placed at that part',
     /overlayPartId: entry\.partId/.test(planes) && /overlayAnchorForRef\.current\(entry\.partId/.test(planes)
     && !/anchorToActivePart/.test(planes));

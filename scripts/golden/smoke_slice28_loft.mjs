@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * Slice 28 — Loft solid (multi-profile, same workplane + offsets).
+ * Slice 28 — Loft solid (named contours, station offset along the normal).
  * - Loft enters contour mode (Slice 24 shell)
- * - multi-profile list (min 2); each profile = makeCrossSection on offset plane
+ * - multi-profile list (min 2); each station is a named contour
  * - live solid preview payload as profiles / offsets change
- * - Confirm composes profiles + makeLoft + placeInFrame replace; Auto-Run
+ * - Confirm writes makeLoft by those names inside id=loft1; Auto-Run
  * - 2-profile Confirm keeps distinct stations (script + solid ends)
  * - 3-profile middle station stays on the loft path (continuous, not an island)
- * - second Confirm replaces the same marked block (no duplicate stack)
- * - Back / strip = no orphan loft
- * - Extrude / Revolve stay frame-only; Profile Confirm profile-only; Fillet (#34)
+ * - the same featureId rewrites that block; a confirm with no id appends loft2
+ * - Back / strip removes the loft and leaves the named contours
+ * - Extrude / Revolve leave the loft; Profile Confirm profile-only; Fillet (#34)
  * - loud fail on <2 profiles or coincident offsets
  */
 import Module from '../../built/manifold.js';
@@ -18,7 +18,6 @@ import {
   isolateLoftStationParams,
   HELPER_PALETTE_ITEMS,
   CONTOUR_LOFT_BEGIN,
-  CONTOUR_LOFT_END,
   CONTOUR_EXTRUDE_BEGIN,
 } from '../../src/utils/helperPaletteSnippets.js';
 import {
@@ -361,7 +360,9 @@ function xyExtent(cs) {
     && !/placeOnFace\s*\(/.test(first.buffer));
   check('no placeOnFace', !/placeOnFace\s*\(/.test(first.buffer));
   check('has loft markers', hasContourLoftBlock(first.buffer));
-  check('markers wrap solid', first.buffer.includes(CONTOUR_LOFT_BEGIN) && first.buffer.includes(CONTOUR_LOFT_END));
+  check('markers wrap solid', /contour-mode loft begin id=loft1/.test(first.buffer) && /contour-mode loft end id=loft1/.test(first.buffer));
+  check('loft names contours', /makeLoft\(\[c1, \{ \.\.\.c2, plane: offsetPlaneFrame\(c2\.plane, 20\) \}\]\)/.test(first.buffer));
+  check('feature id is loft1', first.featureId === 'loft1');
   check('one makeLoft', countMakeLoft(first.buffer) === 1);
   check('no makeExtrude', countMakeExtrude(first.buffer) === 0);
   check('no makeRevolve', countMakeRevolve(first.buffer) === 0);
@@ -373,12 +374,13 @@ function xyExtent(cs) {
     /center:\s*\[0,\s*0,\s*10\]/.test(first.buffer)
     && /normal:\s*\[0,\s*0,\s*1\]/.test(first.buffer));
 
-  const owned = contourLoftOwnedRegion(first.buffer);
-  check('owned region has profiles + solid + placeInFrame',
-    /makeCrossSection/.test(owned) && /makeLoft/.test(owned) && /placeInFrame/.test(owned));
+  const owned = contourLoftOwnedRegion(first.buffer, first.featureId);
+  check('owned region names contours and places the solid',
+    /makeLoft/.test(owned) && /placeInFrame/.test(owned) && !/makeCrossSection/.test(owned));
 
   const second = composeContourLoft(first.buffer, {
     face,
+    featureId: first.featureId,
     loft: {
       profiles: [
         { tool: 'rectangle', params: { width: 16, height: 10, centered: true }, offset: 0 },
@@ -395,6 +397,15 @@ function xyExtent(cs) {
     /profileRectangle\s*\(/.test(second.buffer) && /profileCircle\s*\(\s*6\s*,/.test(second.buffer));
   check('update keeps one return', (second.buffer.match(/\breturn\s+part\s*;/g) || []).length === 1);
   check('update still one loft block', (second.buffer.match(/contour-mode loft begin/g) || []).length === 1);
+  check('update keeps loft1', second.featureId === 'loft1' && /id=loft1/.test(second.buffer) && !/id=loft2/.test(second.buffer));
+
+  const appended = composeContourLoft(first.buffer, {
+    face,
+    loft: { profiles: defaultLoftProfiles(), selected: 0 },
+  });
+  check('confirm with no id appends loft2', appended.ok && appended.featureId === 'loft2'
+    && /id=loft1/.test(appended.buffer) && /id=loft2/.test(appended.buffer)
+    && countMakeLoft(appended.buffer) === 2);
 
   const three = composeContourLoft(starter, {
     face,
@@ -523,37 +534,6 @@ function xyExtent(cs) {
         msg: 'unbalanced loft markers',
         buffer: `${starter}${CONTOUR_LOFT_BEGIN}\n`,
       },
-      {
-        name: 'makeCrossSection missing',
-        msg: 'makeCrossSection missing',
-        buffer: starter,
-        patch() {
-          item.build = () => (
-            `${CONTOUR_LOFT_BEGIN}\n`
-            + 'let part = placeInFrame({center:[0,0,0],normal:[0,0,1],x:[1,0,0],y:[0,1,0]}, makeLoft([]));\n'
-            + `${CONTOUR_LOFT_END}\n`
-          );
-        },
-      },
-      {
-        name: 'need at least 2 makeCrossSection',
-        msg: 'need at least 2 makeCrossSection',
-        buffer: starter,
-        patch() {
-          item.build = () => (
-            `${CONTOUR_LOFT_BEGIN}\n`
-            + 'const xs0 = makeCrossSection(fr, profileCircle(5));\n'
-            + 'let part = placeInFrame(fr, makeLoft([xs0]));\n'
-            + `${CONTOUR_LOFT_END}\n`
-          );
-        },
-      },
-      {
-        name: 'Could not compose Loft',
-        msg: 'Could not compose Loft',
-        buffer: starter,
-        patch() { item.build = () => null; },
-      },
     ];
     for (const c of guardCases) {
       try {
@@ -573,7 +553,7 @@ function xyExtent(cs) {
   const stripped = stripContourLoftBlock(first.buffer);
   check('strip removes loft markers', !hasContourLoftBlock(stripped));
   check('strip removes makeLoft', countMakeLoft(stripped) === 0);
-  check('strip removes makeCrossSection', countMakeCrossSection(stripped) === 0);
+  check('strip leaves the named contours', countMakeCrossSection(stripped) === 2 && /@contour id=c1/.test(stripped) && /@contour id=c2/.test(stripped));
   check('strip keeps part', /Manifold\.cube/.test(stripped));
   check('Back-equivalent has no orphan Loft', countMakeLoft(stripped) === 0);
 }
@@ -651,9 +631,9 @@ function xyExtent(cs) {
     params: { radius: 5, segments: 32 },
     extrude: { distance: 10, direction: 'normal', sense: 'positive' },
   });
-  check('Extrude after Loft strips loft', backToExt.ok && !hasContourLoftBlock(backToExt.buffer));
+  check('Extrude after Loft leaves the loft', backToExt.ok && hasContourLoftBlock(backToExt.buffer));
   check('Extrude after Loft one makeExtrude', countMakeExtrude(backToExt.buffer) === 1);
-  check('Extrude after Loft no makeLoft', countMakeLoft(backToExt.buffer) === 0);
+  check('Extrude after Loft keeps makeLoft', countMakeLoft(backToExt.buffer) === 1);
 
   const backToRev = composeContourRevolve(lofted.buffer, {
     face,
@@ -661,9 +641,9 @@ function xyExtent(cs) {
     params: { radius: 5, segments: 32 },
     revolve: { angle: 180, axis: 'v', sense: 'positive' },
   });
-  check('Revolve after Loft strips loft', backToRev.ok && !hasContourLoftBlock(backToRev.buffer));
+  check('Revolve after Loft leaves the loft', backToRev.ok && hasContourLoftBlock(backToRev.buffer));
   check('Revolve after Loft one makeRevolve', countMakeRevolve(backToRev.buffer) === 1);
-  check('Revolve after Loft no makeLoft', countMakeLoft(backToRev.buffer) === 0);
+  check('Revolve after Loft keeps makeLoft', countMakeLoft(backToRev.buffer) === 1);
 }
 
 // ── Function() under stubs (syntax + bindings) ─────────────────

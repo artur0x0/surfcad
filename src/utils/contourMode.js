@@ -10,8 +10,9 @@
  * solid preview; second Confirm updates the same marked block).
  * Slice 26: Revolve entry Confirm commits profile + makeRevolve solid (live
  * solid preview; axis on the profile plane). Profile stays Profile-only.
- * Slice 28: Loft entry Confirm commits ≥2 profiles + makeLoft (same workplane
- * + per-profile offset along the normal; live solid preview).
+ * Slice 28: Loft entry Confirm names each contour and commits makeLoft by
+ * those names. A station stores only an optional offset along the contour
+ * normal. The block id is on the marker, so several lofts can coexist.
  * Slice 30: Sweep entry Confirm commits profile + makeSweepPath + sweepPoints
  * (path in the plane frame, placeInFrame replace; live station preview).
  *
@@ -34,6 +35,8 @@ import {
 } from './crossSectionSubstrate.js';
 import {
   composeHelperInsert,
+  declaredNames,
+  emitPartPlace,
   emitProfileExprFromParams,
   solidCombineOp,
   solidMergeOn,
@@ -56,7 +59,16 @@ import {
   offsetPlaneFrame,
 } from './makeLoft.js';
 import { assembleSweepPath } from './edgeSweepPath.js';
-import { upsertNamedContour } from './namedContour.js';
+import { contourStatements, upsertNamedContour } from './namedContour.js';
+import {
+  featureMarkersBalanced,
+  findFeatureBlocks,
+  mintBlockId,
+} from './featureBlockId.js';
+import {
+  emitLoftReferenceLines,
+  parseLoftReferences,
+} from './loftReference.js';
 import {
   commitArc,
   commitConstraint,
@@ -302,6 +314,8 @@ export function normalizeLoftProfile(raw = {}, fallbackTool = 'circle') {
     plane: owns ? plane : null,
     planeRef: owns ? (raw.planeRef || null) : null,
     planeLabel: owns ? (raw.planeLabel || '') : '',
+    contourId: raw.contourId || null,
+    contourName: raw.contourName || null,
   };
 }
 
@@ -1812,28 +1826,30 @@ export function composeContourRevolve(buffer, {
   return { ok: true, buffer: composed, run: true };
 }
 
+export function listContourLoftBlocks(buffer) {
+  return findFeatureBlocks(buffer, CONTOUR_LOFT_BEGIN, CONTOUR_LOFT_END);
+}
+
 export function hasContourLoftBlock(buffer) {
-  const t = String(buffer || '');
-  return t.includes(CONTOUR_LOFT_BEGIN) && t.includes(CONTOUR_LOFT_END);
+  return listContourLoftBlocks(buffer).length > 0;
 }
 
-export function contourLoftOwnedRegion(buffer) {
-  const text = String(buffer || '');
-  const i = text.lastIndexOf(CONTOUR_LOFT_BEGIN);
-  if (i < 0) return '';
-  const j = text.indexOf(CONTOUR_LOFT_END, i);
-  if (j < 0) return '';
-  return text.slice(i, j + CONTOUR_LOFT_END.length);
+/** The block with this id. With no id, the only block, or empty when several exist. */
+export function contourLoftOwnedRegion(buffer, id = null) {
+  const blocks = listContourLoftBlocks(buffer);
+  if (id) return blocks.find((b) => b.id === id)?.text || '';
+  return blocks.length === 1 ? blocks[0].text : '';
 }
 
-export function stripContourLoftBlock(buffer) {
+export function stripContourLoftBlock(buffer, id = null) {
+  const blocks = listContourLoftBlocks(buffer);
+  const hit = id
+    ? blocks.find((b) => b.id === id)
+    : (blocks.length === 1 ? blocks[0] : null);
+  if (!hit) return String(buffer || '');
   const text = String(buffer || '');
-  const i = text.lastIndexOf(CONTOUR_LOFT_BEGIN);
-  if (i < 0) return text;
-  const j = text.indexOf(CONTOUR_LOFT_END, i);
-  if (j < 0) return text;
-  const after = text.slice(j + CONTOUR_LOFT_END.length).replace(/^\r?\n/, '');
-  const before = text.slice(0, i).replace(/\s+$/, '');
+  const after = text.slice(hit.end).replace(/^\r?\n/, '');
+  const before = text.slice(0, hit.start).replace(/\s+$/, '');
   if (before && after) return `${before}\n${after}`;
   return before || after;
 }
@@ -1858,33 +1874,90 @@ function stripReplaceableContourSolid(buffer, ownedRegion, stripFn) {
 
 function stripContourSiblingBlocks(buffer) {
   const withoutProfile = stripContourProfileBlock(buffer);
+  // Loft blocks stay. A new loft appends; the same id rewrites that block.
   return stripReplaceableContourSolid(
     stripReplaceableContourSolid(
       stripReplaceableContourSolid(
-        stripReplaceableContourSolid(
-          withoutProfile,
-          contourExtrudeOwnedRegion,
-          stripContourExtrudeBlock,
-        ),
-        contourRevolveOwnedRegion,
-        stripContourRevolveBlock,
+        withoutProfile,
+        contourExtrudeOwnedRegion,
+        stripContourExtrudeBlock,
       ),
-      contourLoftOwnedRegion,
-      stripContourLoftBlock,
+      contourRevolveOwnedRegion,
+      stripContourRevolveBlock,
     ),
     contourSweepOwnedRegion,
     stripContourSweepBlock,
   );
 }
 
+function _loftFramesParallel(frames) {
+  const n0 = frames[0]?.normal;
+  if (!n0) return false;
+  const l0 = Math.hypot(n0[0], n0[1], n0[2]);
+  if (!(l0 > 1e-12)) return false;
+  for (let i = 1; i < frames.length; i++) {
+    const n = frames[i].normal;
+    const l = Math.hypot(n[0], n[1], n[2]);
+    if (!(l > 1e-12)) return false;
+    const dot = (n0[0] * n[0] + n0[1] * n[1] + n0[2] * n[2]) / (l0 * l);
+    if (Math.abs(dot) < 0.99) return false;
+  }
+  return true;
+}
+
+function _loftPlaceIndex(frames, offsets) {
+  if (!_loftFramesParallel(frames)) return 0;
+  const n0 = frames[0].normal;
+  const l0 = Math.hypot(n0[0], n0[1], n0[2]) || 1;
+  const axis = [n0[0] / l0, n0[1] / l0, n0[2] / l0];
+  const c0 = frames[0].center;
+  let best = 0;
+  let bestZ = Number(offsets[0]) || 0;
+  for (let i = 1; i < frames.length; i++) {
+    const z = (frames[i].center[0] - c0[0]) * axis[0]
+      + (frames[i].center[1] - c0[1]) * axis[1]
+      + (frames[i].center[2] - c0[2]) * axis[2]
+      + (Number(offsets[i]) || 0);
+    if (z < bestZ - 1e-9) {
+      best = i;
+      bestZ = z;
+    }
+  }
+  return best;
+}
+
+function _frameFromPlaneExpr(expr) {
+  const m = String(expr || '').match(
+    /center:\s*\[([^\]]+)\][\s\S]*?normal:\s*\[([^\]]+)\][\s\S]*?x:\s*\[([^\]]+)\][\s\S]*?y:\s*\[([^\]]+)\]/,
+  );
+  if (!m) return null;
+  const vec = (s) => s.split(',').map((part) => Number(part.trim()));
+  const center = vec(m[1]);
+  const normal = vec(m[2]);
+  const x = vec(m[3]);
+  const y = vec(m[4]);
+  if ([...center, ...normal, ...x, ...y].some((n) => !Number.isFinite(n))) return null;
+  return { center, normal, x, y };
+}
+
+function _insertBeforeReturn(buffer, blockText) {
+  const text = String(buffer || '').replace(/\s*$/, '');
+  const chunk = blockText.endsWith('\n') ? blockText : `${blockText}\n`;
+  const ret = text.match(/\n?return\s+part\s*;$/);
+  if (ret) {
+    const head = text.slice(0, text.length - ret[0].length).replace(/\s*$/, '');
+    return `${head ? `${head}\n` : ''}${chunk}return part;\n`;
+  }
+  return `${text ? `${text}\n` : ''}${chunk}return part;\n`;
+}
+
 /**
- * Confirm → insert or replace in-mode Loft (≥2 profiles + makeLoft + placeInFrame).
+ * Confirm → a loft block that names contours.
+ * Each station is an optional offset along its contour normal.
+ * A new confirm appends loft2. The same featureId rewrites that block.
  * Empty buffer: `let part = placeInFrame`. Existing part: union via `part.add`.
- * Second Confirm updates an additive block; founding `let part` solids stack.
- * Offset stations share the card plane. A station with its own frame emits
- * that frame. Parallel offset-only confirms stay on offsetPlaneFrame.
  *
- * @returns {{ ok: true, buffer: string, run: true } | { ok: false, message: string }}
+ * @returns {{ ok: true, buffer: string, run: true, featureId: string, contours: Array<{ name: string, offset: number }> } | { ok: false, message: string }}
  */
 export function composeContourLoft(buffer, {
   face = null,
@@ -1894,11 +1967,9 @@ export function composeContourLoft(buffer, {
   params = null,
   combine,
   merge,
+  featureId = null,
 } = {}) {
   const raw = profiles || loft.profiles || defaultLoftProfiles();
-  // Clone every station so Confirm cannot alias two profiles to one params
-  // object. If the chip passed tool/params, flush them onto the selected
-  // station only — never rewrite siblings from the live chip.
   const selected = Math.max(0, Math.min(Number(loft.selected) || 0, raw.length - 1));
   const list = raw.map((p, i) => {
     const cloned = {
@@ -1921,66 +1992,127 @@ export function composeContourLoft(buffer, {
   }
 
   const text = String(buffer || '');
-  if (markersUnbalanced(text, CONTOUR_LOFT_BEGIN, CONTOUR_LOFT_END)) {
+  if (!featureMarkersBalanced(text, CONTOUR_LOFT_BEGIN, CONTOUR_LOFT_END)) {
     return {
       ok: false,
       message: 'composeContourLoft: unbalanced loft markers — refusing silent no-op.',
     };
   }
 
-  const planar = face && face.type === 'planar' ? face : null;
   const stripped = stripContourSiblingBlocks(buffer);
-  const stationParams = sections.normalized.map((p) => ({
-    ...toolToProfileParams(p.tool, { ...(p.params || {}) }),
-    offset: p.offset,
-    planeKind: p.planeKind,
-    plane: loftStationOwnsPlane(p) ? p.plane : null,
-    planeRef: p.planeRef || null,
-    planeLabel: p.planeLabel || '',
-  }));
-  // Do not spread station 0 onto the helper params object — that was rewriting
-  // every makeCrossSection from one profile when emit fell back to parent fields.
+  const blocks = listContourLoftBlocks(stripped);
+  const requestedId = featureId && /^[A-Za-z_$][\w$]*$/.test(String(featureId))
+    ? String(featureId)
+    : null;
+  const existing = requestedId ? blocks.find((b) => b.id === requestedId) : null;
+  const finalId = existing ? existing.id : (requestedId || mintBlockId(blocks, 'loft'));
+  const prior = existing ? parseLoftReferences(existing.text) : [];
+  const cardPlane = planeFromContourFace(face && face.type === 'planar' ? face : null);
+  const normalized = sections.normalized;
+  const planned = [];
+  let next = stripped;
+
+  for (let i = 0; i < normalized.length; i++) {
+    const p = normalized[i];
+    const owns = loftStationOwnsPlane(p);
+    const offset = owns ? 0 : Number(p.offset) || 0;
+    const requestedName = p.contourName || null;
+    const requestedContour = p.contourId || null;
+    if (requestedName || requestedContour) {
+      const stmt = contourStatements(next).find((s) => (
+        (requestedName && (s.name === requestedName || s.id === requestedName))
+        || (requestedContour && s.id === requestedContour)
+      ));
+      if (stmt) {
+        const frame = _frameFromPlaneExpr(stmt.planeExpr) || (owns ? p.plane : cardPlane);
+        planned.push({ name: stmt.name, offset, frame, action: 'keep' });
+        continue;
+      }
+    }
+    const prev = !requestedName && !requestedContour ? prior[i] : null;
+    const frame = owns ? p.plane : cardPlane;
+    const profileExpr = emitProfileExprFromParams(toolToProfileParams(p.tool, p.params));
+    if (prev) {
+      const stmt = contourStatements(next).find((s) => s.name === prev.name || s.id === prev.name);
+      planned.push({
+        name: prev.name,
+        offset,
+        frame,
+        action: 'upsert',
+        id: stmt?.id || prev.name,
+        profileExpr,
+      });
+      continue;
+    }
+    planned.push({
+      name: requestedName,
+      offset,
+      frame,
+      action: 'mint',
+      id: requestedContour,
+      profileExpr,
+    });
+  }
+
+  for (const step of planned) {
+    if (step.action !== 'upsert') continue;
+    const saved = upsertNamedContour(next, {
+      id: step.id,
+      name: step.name,
+      frame: step.frame,
+      profileExpr: step.profileExpr,
+    });
+    if (!saved.ok) return saved;
+    step.name = saved.name;
+    next = saved.buffer;
+  }
+  for (const step of planned) {
+    if (step.action !== 'mint') continue;
+    const block = listContourLoftBlocks(next).find((b) => b.id === finalId);
+    const saved = upsertNamedContour(next, {
+      id: step.id || null,
+      name: step.name || null,
+      frame: step.frame,
+      profileExpr: step.profileExpr,
+      ...(block ? { at: block.start } : {}),
+    });
+    if (!saved.ok) return saved;
+    step.name = saved.name;
+    next = saved.buffer;
+  }
+
+  const priorSolid = scriptHasPriorSolid(stripped);
+  const names = declaredNames(next);
   const combineOp = solidCombineOp(combine ?? loft?.combine);
-  const profileParams = {
-    body: 'part',
-    _contourLoft: {
-      plane: planeFromContourFace(face),
-      profiles: stationParams,
-      combine: combineOp,
-      merge: solidMergeOn(merge ?? loft?.merge),
-    },
-  };
-  const composed = composeHelperInsert(
-    stripped,
-    'crossSection',
-    null,
-    profileParams,
-    planar,
-    null,
-  );
-  if (typeof composed !== 'string') {
-    return {
-      ok: false,
-      message: 'Could not compose Loft — need a part and a planar workplane.',
-    };
+  const lines = emitLoftReferenceLines({
+    begin: CONTOUR_LOFT_BEGIN,
+    end: CONTOUR_LOFT_END,
+    featureId: finalId,
+    stations: planned.map((s) => ({ name: s.name, offset: s.offset })),
+    placeIndex: _loftPlaceIndex(planned.map((s) => s.frame), planned.map((s) => s.offset)),
+    partLine: (expr) => emitPartPlace(names, expr, priorSolid, priorSolid, combineOp, solidMergeOn(merge ?? loft?.merge)),
+  });
+  const body = lines.join('\n');
+  const block = listContourLoftBlocks(next).find((b) => b.id === finalId);
+  if (block) {
+    let head = next.slice(0, block.start);
+    let rest = next.slice(block.end);
+    if (head && !head.endsWith('\n')) head = `${head}\n`;
+    if (rest && !rest.startsWith('\n')) rest = `\n${rest}`;
+    next = `${head}${body}${rest}`;
+    if (!/\n?return\s+part\s*;\s*$/.test(next)) {
+      next = `${next.replace(/\s*$/, '')}\nreturn part;\n`;
+    }
+  } else {
+    next = _insertBeforeReturn(next, body);
   }
-  const owned = contourLoftOwnedRegion(composed);
-  if (!/makeCrossSection\s*\(/.test(owned)) {
+
+  const owned = contourLoftOwnedRegion(next, finalId);
+  const refs = parseLoftReferences(owned);
+  if (refs.length < LOFT_MIN_PROFILES || !/makeLoft\s*\(/.test(owned)) {
     return {
       ok: false,
-      message: 'composeContourLoft: makeCrossSection missing — refusing silent no-op.',
-    };
-  }
-  if ((owned.match(/makeCrossSection\s*\(/g) || []).length < LOFT_MIN_PROFILES) {
-    return {
-      ok: false,
-      message: 'composeContourLoft: need at least 2 makeCrossSection profiles — refusing silent no-op.',
-    };
-  }
-  if (!/makeLoft\s*\(/.test(owned)) {
-    return {
-      ok: false,
-      message: 'composeContourLoft: makeLoft missing — refusing silent no-op.',
+      message: 'composeContourLoft: need at least 2 contour references — refusing silent no-op.',
     };
   }
   if (!/placeInFrame\s*\(|transformByFrame\s*\(/.test(owned)) {
@@ -1989,9 +2121,9 @@ export function composeContourLoft(buffer, {
       message: 'composeContourLoft: placeInFrame missing — refusing unscoped insert.',
     };
   }
-  const placeErr = advancedPlaceError(owned, scriptHasPriorSolid(stripped), 'composeContourLoft', combineOp);
+  const placeErr = advancedPlaceError(owned, priorSolid, 'composeContourLoft', combineOp);
   if (placeErr) return { ok: false, message: placeErr };
-  if (!hasContourLoftBlock(composed)) {
+  if (!owned.includes(`id=${finalId}`)) {
     return {
       ok: false,
       message: 'composeContourLoft: contour-mode loft markers missing — refusing unscoped insert.',
@@ -2003,13 +2135,25 @@ export function composeContourLoft(buffer, {
       message: 'composeContourLoft: unexpected Extrude/Revolve/Sweep in the Loft block.',
     };
   }
-  if (isBufferEmpty(String(buffer || '')) && /Manifold\.cube\s*\(/.test(composed)) {
+  if (/makeCrossSection\s*\(/.test(owned)) {
+    return {
+      ok: false,
+      message: 'composeContourLoft: a loft block names contours — refusing an inline profile.',
+    };
+  }
+  if (isBufferEmpty(String(buffer || '')) && /Manifold\.cube\s*\(/.test(next)) {
     return {
       ok: false,
       message: 'composeContourLoft: unexpected starter box on empty buffer — refusing extra solid.',
     };
   }
-  return { ok: true, buffer: composed, run: true };
+  return {
+    ok: true,
+    buffer: next,
+    run: true,
+    featureId: finalId,
+    contours: planned.map((s) => ({ name: s.name, offset: s.offset })),
+  };
 }
 
 export function countSweepPoints(buffer) {

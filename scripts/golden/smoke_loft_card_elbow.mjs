@@ -105,7 +105,7 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
   check('card emits makeLoft and placeInFrame', /makeLoft\s*\(/.test(script) && /placeInFrame\s*\(/.test(script));
   check(
     'placement frame is the first station, not a +20 offset',
-    /let\s+part\s*=\s*placeInFrame\(\s*fr\s*,/.test(script) && !/placeInFrame\([^)]*\[\s*0,\s*0,\s*20\s*\]/.test(script),
+    /let\s+part\s*=\s*placeInFrame\(\s*c1\.plane\s*,/.test(script) && !/\[\s*0,\s*0,\s*20\s*\]/.test(script),
     script,
   );
   if (elbow.ok) {

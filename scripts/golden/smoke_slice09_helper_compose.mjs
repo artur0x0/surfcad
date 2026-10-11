@@ -104,6 +104,16 @@ function stubRunner(source) {
     makeExtrude: () => solid('ex'),
     makeRevolve: () => solid('rev'),
     makeLoft: () => solid('loft'),
+    offsetPlaneFrame: (plane, offset) => ({
+      center: [
+        (plane?.center?.[0] || 0),
+        (plane?.center?.[1] || 0),
+        (plane?.center?.[2] || 0) + offset,
+      ],
+      normal: plane?.normal || [0, 0, 1],
+      x: plane?.x || [1, 0, 0],
+      y: plane?.y || [0, 1, 0],
+    }),
     profileCircle: (r) => ({ type: 'circle', contours: [[[r, 0], [0, r], [-r, 0], [0, -r]]] }),
     profileRectangle: (w, h) => ({ type: 'rectangle', contours: [[[0, 0], [w, 0], [w, h], [0, h]]] }),
     profilePolygon: (pts) => ({ type: 'polygon', contours: [pts] }),

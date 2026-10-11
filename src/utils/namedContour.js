@@ -224,13 +224,21 @@ export function upsertNamedContour(buffer, spec = {}) {
   const nameGate = checkContourName(buffer, finalName);
   if (!nameGate.ok) return nameGate;
   const line = emitNamedContourLine({ name: finalName, id: finalId, frame, profileExpr });
+  const at = Number.isInteger(spec.at) ? spec.at : null;
   return {
     ok: true,
-    buffer: insertStatement(buffer, line),
+    buffer: at == null ? insertStatement(buffer, line) : insertAt(buffer, at, line),
     id: finalId,
     name: finalName,
     statement: line,
   };
+}
+
+function insertAt(buffer, at, line) {
+  const text = String(buffer || '');
+  const i = Math.max(0, Math.min(text.length, at));
+  const gap = i > 0 && !text.slice(0, i).endsWith('\n') ? '\n' : '';
+  return `${text.slice(0, i)}${gap}${line}\n${text.slice(i)}`;
 }
 
 /**

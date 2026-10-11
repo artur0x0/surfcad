@@ -78,6 +78,7 @@
         "golden:contour-dimension-drive": "node scripts/golden/smoke_contour_dimension_drive.mjs",
         "golden:contour-reopen": "node scripts/golden/smoke_contour_reopen.mjs",
         "golden:named-contour": "node scripts/golden/smoke_named_contour.mjs",
+        "golden:loft-by-reference": "node scripts/golden/smoke_loft_by_reference.mjs",
         "golden:empty-run-clears": "node scripts/golden/smoke_empty_run_clears.mjs",
         "golden:cad-palette": "node scripts/golden/smoke_cad_palette_overlays.mjs",
         "golden:overlay-visibility": "node scripts/golden/smoke_overlay_visibility.mjs",
