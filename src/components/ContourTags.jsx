@@ -17,7 +17,7 @@ import { formatDisplayLength } from '../utils/displayUnit';
 import { CONSTRAINT_LABELS } from '../utils/contourGesture';
 import { constraintAnchor, dimensionAnchor, planeUvToWorld } from '../utils/contourPick';
 import { referenceTagAnchor } from '../utils/contourRefPick';
-import { dimensionLayout, dimensionMarkup } from '../utils/contourDimensionDraw';
+import { dimensionLayout, dimensionMarkup, placementFromPointer, DIM_TAP_PX } from '../utils/contourDimensionDraw';
 import { plusTagsToHide } from '../utils/contourTagPlace';
 import { worldPoint } from '../utils/partPose';
 
@@ -39,7 +39,10 @@ const CONSTRAINT_ICONS = {
  * descendants and lets the WebGL canvas paint over them. Fixed coordinates
  * come from the canvas, so a tag stays on the geometry. The layer ignores
  * pointers. Each tag does not, so orbit still hits the canvas. Tap a
- * dimension or constraint tag to reopen it in the card. Positions follow the camera
+ * dimension or constraint tag to reopen it in the card. Drag a dimension
+ * chip to move that dimension: along its normal for a length, distance,
+ * offset, or radius, and along the radius for an angle. A move under
+ * 6px still opens edit. Positions follow the camera
  * in a frame loop and are not React state. A perpendicular tag is a plus.
  * The same frame hides that plus when it would cover a dimension chip, and
  * collapses pluses that cover each other so a repeated constraint does not
@@ -52,6 +55,7 @@ const ContourTags = ({
   canvasRef = null,
   selectedId = null,
   onSelect,
+  onPlace,
   onDelete,
   onClose,
   getAnchor = null,
@@ -59,6 +63,10 @@ const ContourTags = ({
   const [unit] = useDisplayUnit();
   const nodes = useRef(new Map());
   const scratch = useRef(new Vector3());
+  const placeScratch = useRef(new Vector3());
+  const dragPlace = useRef(null);
+  const dragListen = useRef(null);
+  const swallowClick = useRef(false);
   const layerRef = useRef(null);
   const svgRef = useRef(null);
   const markupRef = useRef('');
@@ -80,6 +88,11 @@ const ContourTags = ({
     }
     const dims = model?.dimensions || [];
     const cons = model?.constraints || [];
+    const liveDim = (dim) => {
+      const live = dragPlace.current;
+      if (!live || live.id !== dim.id || !Number.isFinite(live.placement)) return dim;
+      return { ...dim, placement: live.placement };
+    };
     const tick = () => {
       const camera = cameraRef?.current;
       const canvas = canvasRef?.current;
@@ -128,7 +141,7 @@ const ContourTags = ({
           };
         };
         for (const dim of dims) {
-          const fig = dimensionLayout(model, dim, project);
+          const fig = dimensionLayout(model, liveDim(dim), project);
           const el = nodes.current.get(dim.id);
           if (fig) {
             markup.push(dimensionMarkup({ ...fig, id: dim.id }));
@@ -197,6 +210,99 @@ const ContourTags = ({
     };
   }, [cameraRef, canvasRef, plane, model, getAnchor]);
 
+  useEffect(() => {
+    const live = dragPlace.current;
+    if (!live) return;
+    const dim = (model?.dimensions || []).find((item) => item.id === live.id);
+    if (!dim) {
+      dragPlace.current = null;
+      return;
+    }
+    if (Number.isFinite(Number(dim.placement)) && Math.abs(Number(dim.placement) - live.placement) < 1e-3) {
+      dragPlace.current = null;
+    }
+  }, [model]);
+
+  useEffect(() => () => {
+    dragListen.current?.();
+    dragListen.current = null;
+  }, []);
+
+  const projectPointer = (uv) => {
+    const camera = cameraRef?.current;
+    const canvas = canvasRef?.current;
+    const view = canvas?.getBoundingClientRect();
+    if (!uv || !camera || !view || view.width <= 0 || view.height <= 0 || !plane?.center) return null;
+    const local = planeUvToWorld(uv, plane);
+    const pose = getAnchor?.();
+    const world = pose ? worldPoint(local, pose) : local;
+    const p = placeScratch.current.set(world[0], world[1], world[2]).project(camera);
+    if (p.z < -1.02 || p.z > 1.02) return null;
+    return {
+      x: (p.x * 0.5 + 0.5) * view.width + view.left,
+      y: (-p.y * 0.5 + 0.5) * view.height + view.top,
+    };
+  };
+
+  const measurePlacement = (id, x, y) => {
+    const dim = (model?.dimensions || []).find((item) => item.id === id);
+    if (!dim) return null;
+    return placementFromPointer(model, dim, projectPointer, { x, y });
+  };
+
+  const onDimPointerDown = (event, id) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    event.stopPropagation();
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* synthetic */ }
+    dragListen.current?.();
+    const gesture = {
+      id,
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    };
+    const finish = (ev, cancel) => {
+      if (ev.pointerId !== gesture.pointerId) return;
+      dragListen.current?.();
+      dragListen.current = null;
+      const dist = Math.hypot(ev.clientX - gesture.x, ev.clientY - gesture.y);
+      if (cancel || dist < DIM_TAP_PX) {
+        dragPlace.current = null;
+        if (!cancel && dist < DIM_TAP_PX) {
+          swallowClick.current = true;
+          onSelect?.(id);
+        }
+        return;
+      }
+      const placement = measurePlacement(id, ev.clientX, ev.clientY);
+      if (!Number.isFinite(placement)) {
+        dragPlace.current = null;
+        return;
+      }
+      dragPlace.current = { id, placement };
+      swallowClick.current = true;
+      onPlace?.(id, placement);
+    };
+    const move = (ev) => {
+      if (ev.pointerId !== gesture.pointerId) return;
+      const dist = Math.hypot(ev.clientX - gesture.x, ev.clientY - gesture.y);
+      if (dist < DIM_TAP_PX) return;
+      const placement = measurePlacement(id, ev.clientX, ev.clientY);
+      if (!Number.isFinite(placement)) return;
+      dragPlace.current = { id, placement };
+    };
+    const up = (ev) => finish(ev, false);
+    const cancel = (ev) => finish(ev, true);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+    dragListen.current = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+    };
+  };
+
   const brokenRefs = (model?.refs || []).filter((ref) => ref?.broken && ref.geom);
   if ((!dimensions.length && !constraints.length && !brokenRefs.length) || !plane) return null;
 
@@ -232,10 +338,14 @@ const ContourTags = ({
             <button
               type="button"
               data-contour-tag={dim.id}
-              className="min-h-11 min-w-11 rounded-full bg-white/90 px-2 text-[12px] font-medium text-cyan-950 shadow"
-              onPointerDown={(event) => event.stopPropagation()}
+              className="min-h-11 min-w-11 touch-none select-none rounded-full bg-white/90 px-2 text-[12px] font-medium text-cyan-950 shadow"
+              onPointerDown={(event) => onDimPointerDown(event, dim.id)}
               onClick={(event) => {
                 event.stopPropagation();
+                if (swallowClick.current) {
+                  swallowClick.current = false;
+                  return;
+                }
                 onSelect?.(dim.id);
               }}
             >

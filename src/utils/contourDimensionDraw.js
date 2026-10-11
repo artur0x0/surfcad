@@ -11,6 +11,11 @@ const PAST_PX = 7;
 const ARROW_PX = 9;
 const ARROW_W = 5.5;
 const ARC_PX = 36;
+/** A shorter move still opens the editor. Past this, the chip repositions. */
+export const DIM_TAP_PX = 6;
+const LINEAR_PLACE_MIN = 1;
+const ANGLE_PLACE_MIN = 2;
+const ANGLE_PLACE_MAX = 400;
 
 function pointAt(model, id) {
   const sketch = (model?.points || []).find((p) => p.id === id)?.at;
@@ -236,16 +241,101 @@ function offsetNormal(a, b) {
   return { x: nx, y: ny };
 }
 
-function linearLayout(kind, aUv, bUv, project) {
+function round4(n) {
+  const r = Math.round(Number(n) * 1e4) / 1e4;
+  return Object.is(r, -0) ? 0 : r;
+}
+
+/** Left perpendicular of the segment, in sketch millimetres. Stable across cameras. */
+function segmentNormal(aUv, bUv) {
+  const u = unit(bUv[0] - aUv[0], bUv[1] - aUv[1]);
+  if (!u) return null;
+  return { x: -u.y, y: u.x };
+}
+
+function clampLinearPlacement(mm) {
+  if (!Number.isFinite(mm)) return null;
+  let v = mm;
+  if (Math.abs(v) < LINEAR_PLACE_MIN) v = v < 0 ? -LINEAR_PLACE_MIN : LINEAR_PLACE_MIN;
+  return round4(v);
+}
+
+function clampAnglePlacement(mm) {
+  if (!Number.isFinite(mm)) return null;
+  let v = mm;
+  if (v < ANGLE_PLACE_MIN) v = ANGLE_PLACE_MIN;
+  if (v > ANGLE_PLACE_MAX) v = ANGLE_PLACE_MAX;
+  return round4(v);
+}
+
+/**
+ * Signed millimetres from the segment to the pointer, along segmentNormal.
+ * A 1mm probe through `project` keeps the sign on the side the camera shows.
+ */
+function linearPlacementAt(aUv, bUv, project, pointer) {
+  const n = segmentNormal(aUv, bUv);
+  if (!n || !pointer) return null;
+  const mid = [(aUv[0] + bUv[0]) / 2, (aUv[1] + bUv[1]) / 2];
+  const origin = project(mid);
+  const probe = project([mid[0] + n.x, mid[1] + n.y]);
+  if (!origin || !probe) return null;
+  const dx = probe.x - origin.x;
+  const dy = probe.y - origin.y;
+  const len2 = dx * dx + dy * dy;
+  if (!(len2 > 1e-6)) return null;
+  const along = ((pointer.x - origin.x) * dx + (pointer.y - origin.y) * dy) / len2;
+  return clampLinearPlacement(along);
+}
+
+/** Arc radius in millimetres from the vertex out to the pointer. */
+function anglePlacementAt(model, dim, project, pointer) {
+  const angle = dimensionAngle(model, dim);
+  if (!angle || !pointer) return null;
+  const vertex = project(angle.vertex);
+  const probe = project([
+    angle.vertex[0] + angle.dirA.x,
+    angle.vertex[1] + angle.dirA.y,
+  ]);
+  if (!vertex || !probe) return null;
+  const pxPerUv = hypot2(probe.x - vertex.x, probe.y - vertex.y);
+  if (!(pxPerUv > 1e-3)) return null;
+  const radiusPx = hypot2(pointer.x - vertex.x, pointer.y - vertex.y);
+  return clampAnglePlacement(radiusPx / pxPerUv);
+}
+
+/**
+ * Placement for a chip drag. Linear kinds move along the dimension normal.
+ * An angle moves along its radius. Null when the pointer cannot be measured.
+ */
+export function placementFromPointer(model, dim, project, pointer) {
+  if (!model || !dim || typeof project !== 'function' || !pointer) return null;
+  if (dim.kind === 'angle') return anglePlacementAt(model, dim, project, pointer);
+  const ends = dimensionEndpoints(model, dim);
+  if (!ends) return null;
+  return linearPlacementAt(ends.a, ends.b, project, pointer);
+}
+
+function linearLayout(kind, aUv, bUv, project, placement) {
   const a = project(aUv);
   const b = project(bUv);
   if (!a || !b) return null;
-  const span = hypot2(b.x - a.x, b.y - a.y);
+  const placed = Number.isFinite(placement) && placement !== 0;
+  let dimA;
+  let dimB;
+  if (placed) {
+    const n = segmentNormal(aUv, bUv);
+    if (!n) return null;
+    dimA = project([aUv[0] + n.x * placement, aUv[1] + n.y * placement]);
+    dimB = project([bUv[0] + n.x * placement, bUv[1] + n.y * placement]);
+    if (!dimA || !dimB) return null;
+  } else {
+    const n = offsetNormal(a, b);
+    if (!n) return null;
+    dimA = { x: a.x + n.x * OFFSET_PX, y: a.y + n.y * OFFSET_PX };
+    dimB = { x: b.x + n.x * OFFSET_PX, y: b.y + n.y * OFFSET_PX };
+  }
+  const span = hypot2(dimB.x - dimA.x, dimB.y - dimA.y);
   if (!(span > 1)) return null;
-  const n = offsetNormal(a, b);
-  if (!n) return null;
-  const dimA = { x: a.x + n.x * OFFSET_PX, y: a.y + n.y * OFFSET_PX };
-  const dimB = { x: b.x + n.x * OFFSET_PX, y: b.y + n.y * OFFSET_PX };
   const extA = extension(a, dimA);
   const extB = extension(b, dimB);
   if (!extA || !extB) return null;
@@ -281,14 +371,18 @@ function angleLayout(model, dim, project) {
   if (!vertex || !probe) return null;
   const pxPerUv = hypot2(probe.x - vertex.x, probe.y - vertex.y);
   if (!(pxPerUv > 1e-3)) return null;
-  let radiusUv = ARC_PX / pxPerUv;
-  const A = lineOf(model, dim.a);
-  const B = lineOf(model, dim.b);
-  const leg = Math.min(
-    A ? hypot2(A.d[0], A.d[1]) : radiusUv,
-    B ? hypot2(B.d[0], B.d[1]) : radiusUv,
-  );
-  if (leg > 1) radiusUv = Math.min(radiusUv, leg * 0.55);
+  const storedRadius = Number(dim.placement);
+  const useStored = Number.isFinite(storedRadius) && storedRadius > 0;
+  let radiusUv = useStored ? storedRadius : ARC_PX / pxPerUv;
+  if (!useStored) {
+    const A = lineOf(model, dim.a);
+    const B = lineOf(model, dim.b);
+    const leg = Math.min(
+      A ? hypot2(A.d[0], A.d[1]) : radiusUv,
+      B ? hypot2(B.d[0], B.d[1]) : radiusUv,
+    );
+    if (leg > 1) radiusUv = Math.min(radiusUv, leg * 0.55);
+  }
   const steps = 14;
   const a0 = Math.atan2(angle.dirA.y, angle.dirA.x);
   const samples = [];
@@ -333,10 +427,23 @@ function angleLayout(model, dim, project) {
  */
 export function dimensionLayout(model, dim, project) {
   if (!model || !dim || typeof project !== 'function') return null;
-  if (dim.kind === 'angle') return angleLayout(model, dim, project);
-  const ends = dimensionEndpoints(model, dim);
-  if (!ends) return null;
-  return linearLayout(dim.kind, ends.a, ends.b, project);
+  const placement = Number(dim.placement);
+  const fig = dim.kind === 'angle'
+    ? angleLayout(model, dim, project)
+    : (() => {
+      const ends = dimensionEndpoints(model, dim);
+      if (!ends) return null;
+      return linearLayout(
+        dim.kind,
+        ends.a,
+        ends.b,
+        project,
+        Number.isFinite(placement) ? placement : undefined,
+      );
+    })();
+  if (!fig) return null;
+  if (Number.isFinite(placement)) fig.placement = placement;
+  return fig;
 }
 
 function num(n) {
@@ -372,5 +479,8 @@ export function dimensionMarkup(fig) {
     parts.push(`<polygon points="${pts}" fill="#0f172a" fill-opacity="0.55" stroke="none" />`);
     parts.push(`<polygon data-contour-dim-arrow="" points="${pts}" fill="#f8fafc" stroke="none" />`);
   }
-  return `<g data-contour-dim="${fig.id || ''}" data-contour-dim-kind="${fig.kind || ''}" data-contour-dim-label-x="${num(fig.label.x)}" data-contour-dim-label-y="${num(fig.label.y)}">${parts.join('')}</g>`;
+  const place = Number.isFinite(Number(fig.placement))
+    ? ` data-contour-dim-placement="${round4(fig.placement)}"`
+    : '';
+  return `<g data-contour-dim="${fig.id || ''}" data-contour-dim-kind="${fig.kind || ''}" data-contour-dim-label-x="${num(fig.label.x)}" data-contour-dim-label-y="${num(fig.label.y)}"${place}>${parts.join('')}</g>`;
 }
