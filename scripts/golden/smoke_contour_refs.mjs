@@ -5,7 +5,7 @@
  *
  * Screenshots at 390 and 1280 go to GOLDEN_SHOT_DIR or os.tmpdir().
  */
-/* global document, window */
+/* global document, window, MouseEvent */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
