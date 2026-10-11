@@ -59,7 +59,7 @@ import ProfileChip from './ProfileChip';
 import CrossSectionPanel from './CrossSectionPanel';
 import HelperInsertPalette from './HelperInsertPalette';
 import ErrorPopup from './ErrorPopup';
-import { FeatureDeleteToast } from './FeatureEditDelete';
+import { FeatureDeleteConfirm, FeatureDeleteToast } from './FeatureEditDelete';
 import ContourModeRail from './ContourModeRail';
 import ContourModeChip from './ContourModeChip';
 import ContourEditBar from './ContourEditBar';
@@ -238,8 +238,7 @@ import {
   contourFieldsFromState,
   creationDialogFor,
   editPreviewScript,
-  featureDependents,
-  dependentToastLines,
+  featureDeletePlan,
   openFeatureEdit,
 } from '../utils/featureEdit';
 import {
@@ -1077,6 +1076,7 @@ const Viewport = forwardRef(({
   const [helperEdit, setHelperEdit] = useState(null);
   const [featureEditBanner, setFeatureEditBanner] = useState('');
   const [featureDeleteToast, setFeatureDeleteToast] = useState(null);
+  const [featureDeleteConfirm, setFeatureDeleteConfirm] = useState(null);
   const cadBodyStickyRef = useRef(false);
   const showCadBodyHighlightRef = useRef(() => false);
   const swapPickPartRef = useRef(() => false);
@@ -1486,7 +1486,7 @@ const Viewport = forwardRef(({
    * `canUndo` says there is history to pop.
    */
   const toastPayload = (msg, opts) => (
-    msg == null ? null : { text: String(msg), undo: opts?.undo !== false }
+    msg == null ? null : { text: String(msg), undo: opts?.undo !== false, deleted: !!opts?.deleted }
   );
 
   const armEdgeModeToastClear = () => {
@@ -3567,6 +3567,15 @@ const Viewport = forwardRef(({
     if (back) setFeatureSlots((prev) => clearFeatureSlotRefs(prev, edit.id));
     slotReturnRef.current = null;
     exitContourMode(back ? 'slot' : undefined);
+    // exitContourMode clears the contour toast. Set the Undo toast after it
+    // so the last update in this click is the one that stays.
+    const text = withFeatures ? 'Deleted the contour and its features.' : 'Deleted contour.';
+    setContourToast({ text, undo: true, deleted: true });
+    if (contourToastTimerRef.current) clearTimeout(contourToastTimerRef.current);
+    contourToastTimerRef.current = setTimeout(() => {
+      contourToastTimerRef.current = null;
+      setContourToast(null);
+    }, 3200);
   }, [onDeleteContour, exitContourMode]);
 
   const requestContourDelete = useCallback(() => {
@@ -9829,6 +9838,7 @@ const Viewport = forwardRef(({
     featureEditRef.current = null;
     setHelperEdit(null);
     setFeatureEditBanner('');
+    setFeatureDeleteConfirm(null);
     if (full && !editPreviewBlocked()) executeScriptRef.current?.(full, { editPreview: true });
   };
 
@@ -9867,15 +9877,26 @@ const Viewport = forwardRef(({
     }
   };
 
-  const deleteFeatureFromEdit = () => {
+  const deleteFeatureFromEdit = (withDependents = false) => {
     const edit = featureEditRef.current;
     if (!edit?.feature) return;
     const script = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || edit.script || '';
-    const lines = dependentToastLines(featureDependents(script, edit.feature));
-    const ok = onDeleteFeatureEditRef.current?.(edit.feature);
+    if (!withDependents) {
+      const plan = featureDeletePlan(script, edit.feature);
+      if (plan.confirm) {
+        setFeatureDeleteConfirm({ count: plan.count, label: plan.message });
+        return;
+      }
+      if (!plan.ok) {
+        showContourToast(plan.message);
+        return;
+      }
+    }
+    setFeatureDeleteConfirm(null);
+    const ok = onDeleteFeatureEditRef.current?.(edit.feature, { withDependents: !!withDependents });
     if (!ok) return;
     dismissFeatureEditAfterDelete();
-    setFeatureDeleteToast(lines.length ? lines : null);
+    setFeatureDeleteToast(['Deleted.']);
   };
 
   const featureEditDelete = featureEditRef.current ? deleteFeatureFromEdit : null;
@@ -10823,6 +10844,8 @@ const Viewport = forwardRef(({
             setSheetMetalMode(null);
           }}
           onDeleteFeature={featureEditRef.current?.dialog === 'sheetMetal' ? featureEditDelete : null}
+          onUndo={onUndo}
+          canUndo={canUndo}
           compact={isMobile}
           mesh={cachedMeshData}
           script={sheetMetalMode.exportOpen && typeof getHelperBuffer === 'function' ? getHelperBuffer() : null}
@@ -10876,6 +10899,12 @@ const Viewport = forwardRef(({
         label={contourDeleteConfirm?.label || ''}
         onCancel={() => setContourDeleteConfirm(null)}
         onConfirm={() => commitContourDelete(true)}
+      />
+      <FeatureDeleteConfirm
+        open={!!featureDeleteConfirm}
+        label={featureDeleteConfirm?.label || ''}
+        onCancel={() => setFeatureDeleteConfirm(null)}
+        onConfirm={() => deleteFeatureFromEdit(true)}
       />
 
       {/* Contour rail: tools, Back undoes, Confirm finishes, X exits. */}
@@ -11714,7 +11743,11 @@ const Viewport = forwardRef(({
       )}
 
       {contourToast && createPortal(
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none max-w-[min(22rem,calc(100%-2rem))]">
+        <div
+          className="fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none max-w-[min(22rem,calc(100%-2rem))]"
+          data-contour-toast=""
+          {...(contourToast.deleted ? { 'data-delete-undo-toast': '' } : {})}
+        >
           <ErrorPopup
             tone="cyan"
             onDismiss={() => setContourToast(null)}

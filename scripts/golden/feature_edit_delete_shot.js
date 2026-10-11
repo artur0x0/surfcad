@@ -1,6 +1,8 @@
 /**
- * Feature-edit Delete: the button removes the block immediately. A toast
- * with Undo appears only when a later feature depends on it.
+ * Feature-edit Delete. A feature another feature block uses asks
+ * "Delete along with N features", then removes those blocks as one undo
+ * step. A feature with no feature dependents deletes immediately. Either
+ * way the toast says Deleted and offers Undo.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -103,8 +105,10 @@ function Shot({ compact }) {
     return () => { stop = true; };
   }, []);
 
-  const onDelete = (feature) => {
-    const result = deleteFeatureEdit(scriptRef.current, feature);
+  const onDelete = (feature, opts) => {
+    const result = deleteFeatureEdit(scriptRef.current, feature, {
+      withDependents: !!opts?.withDependents,
+    });
     if (!result.ok) {
       window.__DELETE_ERROR__ = result.message || 'delete failed';
       return false;

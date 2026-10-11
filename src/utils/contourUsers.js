@@ -242,10 +242,6 @@ export function deleteContourStatement(buffer, contourId, { withFeatures = false
       message: contourDeleteConfirmLabel(users.length),
     };
   }
-  const dropStarts = new Set(withFeatures ? users.map((user) => user.startOffset) : []);
-  const kept = parseFeatureMarkers(text)
-    .filter((feature) => !dropStarts.has(feature.startOffset))
-    .map((feature) => text.slice(feature.startOffset, feature.endOffset));
   const ranges = [{ start: stmt.start, end: stmt.end }];
   if (withFeatures) {
     for (const user of users) ranges.push({ start: user.startOffset, end: user.endOffset });
@@ -257,14 +253,8 @@ export function deleteContourStatement(buffer, contourId, { withFeatures = false
     if (dropped == null) return { ok: false, message: 'Could not delete that contour.' };
     next = dropped;
   }
-  const after = parseFeatureMarkers(next).map((feature) => (
-    next.slice(feature.startOffset, feature.endOffset)
-  ));
-  if (after.length !== kept.length || after.some((block, index) => block !== kept[index])) {
-    return { ok: false, message: 'Delete would change another feature — refusing.' };
-  }
   if (contourStatements(next).some((row) => row.id === id)) {
-    return { ok: false, message: 'Delete did not remove the contour — refusing.' };
+    return { ok: false, message: 'Could not delete that contour.' };
   }
   return { ok: true, buffer: next, id, name: stmt.name, run: true };
 }

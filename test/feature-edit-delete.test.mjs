@@ -20,7 +20,7 @@ import {
   MOVE_FACE_END,
 } from '../src/utils/helperPaletteSnippets.js';
 import { parseFeatureMarkers } from '../src/utils/featureMarkers.js';
-import { deleteFeatureEdit, dependentToastLines, featureDependents } from '../src/utils/featureEdit.js';
+import { deleteFeatureEdit, dependentToastLines, featureDeletePlan, featureDependents } from '../src/utils/featureEdit.js';
 import {
   emptyPartHistory,
   historyForPart,
@@ -239,15 +239,65 @@ test('delete waits on the assembly open lock and does not take it', () => {
   assert.ok(fn.indexOf('assemblyOpenLockRef.current') < fn.indexOf('applyBuffer?.'));
   assert.equal(/assemblyOpenLockRef\.current\s*=/.test(fn), false);
   assert.match(fn, /deleteFeatureEdit/);
-  assert.match(view, /featureDependents/);
-  assert.match(view, /dependentToastLines/);
+  assert.match(fn, /withDependents/);
+  assert.match(view, /featureDeletePlan/);
+  assert.match(view, /FeatureDeleteConfirm/);
   assert.match(view, /onDeleteFeatureEditRef/);
   assert.match(view, /deleteFeatureFromEdit/);
-  assert.doesNotMatch(view, /FeatureDeleteConfirm|data-feature-edit-delete-dialog/);
+  assert.match(view, /Deleted\./);
   assert.match(dialog, /data-feature-edit-delete/);
   assert.match(dialog, /data-feature-edit-delete-toast/);
-  assert.doesNotMatch(dialog, /data-feature-edit-delete-dialog/);
+  assert.match(dialog, /FeatureDeleteConfirm/);
+  assert.match(dialog, /testId="feature-edit"/);
   assert.equal(/assemblyOpenLockRef\.current\s*=/.test(view), false);
+});
+
+test('a marker nested in another feature deletes instead of refusing', () => {
+  const nested = [
+    CUBE_BEGIN,
+    'let box1 = Manifold.cube([40, 30, 20], true);',
+    'let part = box1;',
+    FILLET_MODE_BEGIN,
+    'const selEdges = edgesBetween(part, 0, 2);',
+    FILLET_MODE_END,
+    CUBE_END,
+    'return part;',
+    '',
+  ].join('\n');
+  const result = deleteFeatureEdit(nested, byKind(nested, 'cube'));
+  assert.equal(result.ok, true, result.message);
+  assert.doesNotMatch(String(result.message || ''), /refusing/);
+  assert.equal(result.buffer.includes('cube begin'), false);
+  assert.equal(result.buffer.includes('fillet-mode begin'), false);
+  assert.match(result.buffer, /return part;/);
+});
+
+test('feature-block dependents confirm and delete together', () => {
+  const text = scriptOf([cube, fillet, cut, 'const extra = span * 2;', 'return part;']);
+  const host = byKind(text, 'cube');
+  const plan = featureDeletePlan(text, host);
+  assert.equal(plan.ok, false);
+  assert.equal(plan.confirm, true);
+  assert.equal(plan.count, 2);
+  assert.equal(plan.message, 'Delete along with 2 features');
+  const last = featureDeletePlan(text, byKind(text, 'cut'));
+  assert.equal(last.ok, true);
+  assert.equal(last.confirm, false);
+  const kept = deleteFeatureEdit(text, host);
+  assert.equal(kept.ok, true, kept.message);
+  assert.match(kept.buffer, /fillet-mode begin/);
+  assert.match(kept.buffer, /cut begin/);
+  const gone = deleteFeatureEdit(text, host, { withDependents: true });
+  assert.equal(gone.ok, true, gone.message);
+  assert.doesNotMatch(String(gone.message || ''), /refusing/);
+  assert.doesNotMatch(gone.buffer, /cube begin/);
+  assert.doesNotMatch(gone.buffer, /fillet-mode begin/);
+  assert.doesNotMatch(gone.buffer, /cut begin/);
+  assert.match(gone.buffer, /const extra = span \* 2;/);
+  assert.match(gone.buffer, /return part;/);
+  let history = pushPartHistory(emptyPartHistory(), text, 'Part');
+  history = pushPartHistory(history, gone.buffer, 'Delete Cube');
+  assert.equal(undoPartHistory(history).code, text);
 });
 
 test('a dependent warning is toast copy, and no dependents means no toast', () => {

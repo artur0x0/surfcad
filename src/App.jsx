@@ -645,7 +645,7 @@ const App = () => {
    * one step on this part and restores the previous script. The dialog stays
    * up while an assembly open holds the worker.
    */
-  const handleDeleteFeatureEdit = (feature) => {
+  const handleDeleteFeatureEdit = (feature, opts) => {
     if (!feature) return false;
     if (assemblyOpenLockRef.current) {
       viewportRef.current?.softFailContour?.(
@@ -655,7 +655,7 @@ const App = () => {
     }
     focusWritePartRef.current(null);
     const buf = codeEditorRef.current?.getContent?.() || currentScript || '';
-    const result = deleteFeatureEdit(buf, feature);
+    const result = deleteFeatureEdit(buf, feature, { withDependents: !!opts?.withDependents });
     if (!result.ok) {
       viewportRef.current?.softFailContour?.(result.message);
       return false;
