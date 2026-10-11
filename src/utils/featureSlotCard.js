@@ -97,6 +97,25 @@ export function renameFeatureSlotRefs(card, contourId, contour) {
   return next;
 }
 
+/** Empty every slot that stored this contour. Offsets on other stations stay. */
+export function clearFeatureSlotRefs(card, contourId) {
+  if (!card || !contourId) return card;
+  const hit = (row) => row?.contourId === contourId;
+  const blank = { contourId: null, contourName: null, label: '', plane: null };
+  let next = card;
+  if (hit(card.profile)) next = { ...next, profile: null };
+  if (hit(card.path)) next = { ...next, path: null };
+  if (next.stations) {
+    next = {
+      ...next,
+      stations: next.stations.map((row) => (
+        hit(row) ? { ...row, ...blank, offset: row.offset } : row
+      )),
+    };
+  }
+  return next;
+}
+
 /** Fill one slot. Every other slot, offset, and combine flag stays. */
 export function assignFeatureSlot(card, slot, contour) {
   if (!card || !slot) return card;
