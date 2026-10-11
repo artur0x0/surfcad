@@ -2,9 +2,9 @@
 /**
  * Slice 30 — Sweep solid (profile + path) from contour mode.
  * - Advanced → Sweep enters contour mode (not a placeholder)
- * - Profile is makeCrossSection; path is makeSweepPath from edges
- * - Confirm composes sweepPoints + frame-only placeInFrame replace
- * - second Confirm on a founding Sweep stacks (part.add); host Sweep still replaces
+ * - Profile and path are named contours; the block names them
+ * - Confirm composes sweepPoints + frame-only placeInFrame
+ * - second Confirm appends; the same feature id rewrites that block
  * - Back / strip leaves no orphan sweep
  * - loud fail on empty path, disconnected edges, empty profile
  * - Extrude / Revolve / Loft / Fillet / #41 groups stay put
@@ -15,8 +15,6 @@ import {
   HELPER_PALETTE_GROUPS,
   itemsByGroup,
   HELPER_PALETTE_ITEMS,
-  CONTOUR_SWEEP_BEGIN,
-  CONTOUR_SWEEP_END,
 } from '../../src/utils/helperPaletteSnippets.js';
 import { isFilletEntry } from '../../src/utils/filletMode.js';
 import {
@@ -163,17 +161,18 @@ function sweepPayload(extra = {}) {
   const first = composeContourSweep('', sweepPayload());
   check('empty-buffer Sweep ok', first.ok === true, first.message || '');
   check('empty-buffer has markers', hasContourSweepBlock(first.buffer));
-  check('markers bookend', first.buffer.includes(CONTOUR_SWEEP_BEGIN) && first.buffer.includes(CONTOUR_SWEEP_END));
+  check('markers carry sweep1', /contour-mode sweep begin id=sweep1/.test(first.buffer)
+    && /contour-mode sweep end id=sweep1/.test(first.buffer));
   const owned = contourSweepOwnedRegion(first.buffer);
-  check('owned has makeCrossSection', /makeCrossSection\s*\(/.test(owned));
-  check('owned has makeSweepPath', /makeSweepPath\s*\(/.test(owned));
+  check('owned names the contours', !/makeCrossSection\s*\(/.test(owned) && !/makeSweepPath\s*\(/.test(owned));
+  check('path contour is outside the block', /type:\s*'path'/.test(first.buffer) && /@contour id=c2/.test(first.buffer));
   check('owned has sweepPoints', /sweepPoints\s*\(/.test(owned));
   check('owned has placeInFrame', /placeInFrame\s*\(/.test(owned));
   check('owned has no placeOnFace', !/placeOnFace\s*\(/.test(owned));
   check('owned has no host add', !/part\s*=\s*part\.add\(/.test(owned));
   check('owned has no starter cube', !/Manifold\.cube\s*\(/.test(first.buffer));
   check('empty buffer uses let part', /let\s+part\s*=\s*placeInFrame\(/.test(owned));
-  check('one makeCrossSection', countMakeCrossSection(first.buffer) === 1);
+  check('profile and path are two contours', countMakeCrossSection(first.buffer) === 2);
   check('one sweepPoints', countSweepPoints(first.buffer) === 1);
   check('router matches direct compose', composeContourCommit('', sweepPayload()).buffer === first.buffer);
 
@@ -196,12 +195,14 @@ function sweepPayload(extra = {}) {
   check('second Confirm keeps prior radius (stack)', /profileCircle\(2/.test(second.buffer));
 
   const reversed = composeContourSweep('', sweepPayload({ sweep: { reverse: true } }));
-  check('reverse emits flag', reversed.ok && /reverse:\s*true/.test(contourSweepOwnedRegion(reversed.buffer)));
+  check('reverse bakes the far end as the path origin', reversed.ok
+    && /center:\s*\[0,\s*0,\s*20\]/.test(reversed.buffer)
+    && !/reverse:\s*true/.test(contourSweepOwnedRegion(reversed.buffer)));
 
   const stripped = stripContourSweepBlock(first.buffer);
   check('Back-equivalent has no orphan Sweep', !hasContourSweepBlock(stripped));
   check('Back-equivalent has no sweepPoints', countSweepPoints(stripped) === 0);
-  check('Back-equivalent has no makeCrossSection', countMakeCrossSection(stripped) === 0);
+  check('Back-equivalent leaves the named contours', countMakeCrossSection(stripped) === 2);
 
   const onStarter = composeContourSweep(starter, sweepPayload());
   check('starter Sweep unions onto part',
@@ -222,10 +223,10 @@ function sweepPayload(extra = {}) {
     params: { radius: 5, segments: 32 },
     extrude: { distance: 10, direction: 'normal', sense: 'positive' },
   });
-  check('Extrude after Sweep strips sweep', thenExt.ok && !hasContourSweepBlock(thenExt.buffer));
+  check('Extrude after Sweep leaves the sweep', thenExt.ok && hasContourSweepBlock(thenExt.buffer));
   check('Extrude after Sweep has extrude markers', hasContourExtrudeBlock(thenExt.buffer));
   check('Extrude after Sweep one makeExtrude', countMakeExtrude(thenExt.buffer) === 1);
-  check('Extrude after Sweep no sweepPoints', countSweepPoints(thenExt.buffer) === 0);
+  check('Extrude after Sweep keeps sweepPoints', countSweepPoints(thenExt.buffer) === 1);
 
   const profile = composeContourCommit(swept.buffer, {
     entry: 'crossSection',
@@ -261,7 +262,8 @@ function sweepPayload(extra = {}) {
     makeCrossSection: (plane, profile) => ({
       kind: 'crossSection',
       plane,
-      contours: profile.contours,
+      profile,
+      contours: profile.contours || (profile.points ? [profile.points] : []),
     }),
     makeSweepPath: () => ({
       kind: 'sweepPath',

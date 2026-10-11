@@ -233,6 +233,7 @@ return part;
     tool: 'circle',
     params: { radius: 7, segments: 24 },
     extrude: { distance: 8, direction: 'normal', sense: 'positive' },
+    featureId: first.featureId,
   });
   check('second Confirm ok', second.ok === true, second.message || '');
   check('second Confirm still one block', (second.buffer.match(/contour-mode extrude begin/g) || []).length === 1);

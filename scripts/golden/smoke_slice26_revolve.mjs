@@ -4,7 +4,7 @@
  * - Revolve enters contour mode (Slice 24 shell)
  * - live solid preview payload (angle / axis on plane / sense)
  * - Confirm composes profile + makeRevolve + placeInFrame (replace part)
- * - second Confirm replaces the same marked block (no duplicate stack)
+ * - the same feature id rewrites that block; a confirm with no id appends
  * - Profile Confirm stays Profile-only; Extrude from #32 unchanged
  * - Loft still shell-only (not a contour entry)
  * - #30 fillet Strategy default remains sweep
@@ -14,8 +14,6 @@ import Module from '../../built/manifold.js';
 import {
   composeHelperInsert,
   HELPER_PALETTE_ITEMS,
-  CONTOUR_REVOLVE_BEGIN,
-  CONTOUR_REVOLVE_END,
   CONTOUR_EXTRUDE_BEGIN,
 } from '../../src/utils/helperPaletteSnippets.js';
 import {
@@ -246,7 +244,8 @@ function rFace() {
     && /part\s*=\s*part\.add\(\s*placeInFrame\s*\(/.test(first.buffer)
     && !/placeOnFace\s*\(/.test(first.buffer));
   check('has revolve markers', hasContourRevolveBlock(first.buffer));
-  check('markers wrap solid', first.buffer.includes(CONTOUR_REVOLVE_BEGIN) && first.buffer.includes(CONTOUR_REVOLVE_END));
+  check('markers carry revolve1', /contour-mode revolve begin id=revolve1/.test(first.buffer)
+    && /contour-mode revolve end id=revolve1/.test(first.buffer));
   check('one makeCrossSection', countMakeCrossSection(first.buffer) === 1);
   check('one makeRevolve', countMakeRevolve(first.buffer) === 1);
   check('no makeExtrude', countMakeExtrude(first.buffer) === 0);
@@ -256,18 +255,19 @@ function rFace() {
   check('emits 360° default', /, 96, 360\)/.test(first.buffer));
   check('identity remap (no min-radial shift)', !/\bu \+ 5\b/.test(first.buffer));
   check('emits identity [u, v] map', /\[u, v\]/.test(first.buffer));
-  check('place frame center is workplane origin',
-    /center:\s*xs\d*\.plane\.center/.test(first.buffer));
+  check('place frame center is the contour origin',
+    /center:\s*c\d+\.plane\.center/.test(first.buffer));
 
   const owned = contourRevolveOwnedRegion(first.buffer);
-  check('owned region has profile + solid',
-    /makeCrossSection/.test(owned) && /makeRevolve/.test(owned) && /placeInFrame/.test(owned));
+  check('owned region names the contour',
+    !/makeCrossSection/.test(owned) && /makeRevolve/.test(owned) && /placeInFrame/.test(owned));
 
   const second = composeContourRevolve(first.buffer, {
     face,
     tool: 'rectangle',
     params: { width: 16, height: 8, centered: true },
     revolve: { angle: 180, axis: 'v', sense: 'negative' },
+    featureId: first.featureId,
   });
   check('update ok', second.ok);
   check('update still one makeCrossSection', countMakeCrossSection(second.buffer) === 1);
@@ -278,6 +278,14 @@ function rFace() {
   check('update angle 180', /, 96, 180\)/.test(second.buffer));
   check('update keeps one return', (second.buffer.match(/\breturn\s+part\s*;/g) || []).length === 1);
   check('update still one revolve block', (second.buffer.match(/contour-mode revolve begin/g) || []).length === 1);
+  const appended = composeContourRevolve(first.buffer, {
+    face,
+    tool: 'rectangle',
+    params: { width: 16, height: 8, centered: true },
+    revolve: { angle: 180, axis: 'v', sense: 'negative' },
+  });
+  check('confirm with no id appends revolve2', appended.ok && appended.featureId === 'revolve2'
+    && /id=revolve1/.test(appended.buffer) && /profileCircle/.test(appended.buffer));
 
   const both = composeContourRevolve(starter, {
     face,
@@ -339,7 +347,7 @@ function rFace() {
   const stripped = stripContourRevolveBlock(first.buffer);
   check('strip removes revolve markers', !hasContourRevolveBlock(stripped));
   check('strip removes makeRevolve', countMakeRevolve(stripped) === 0);
-  check('strip removes makeCrossSection', countMakeCrossSection(stripped) === 0);
+  check('strip leaves the named contour', countMakeCrossSection(stripped) === 1 && /@contour id=c1/.test(stripped));
   check('strip keeps part', /Manifold\.cube/.test(stripped));
   check('Back-equivalent has no orphan Revolve', countMakeRevolve(stripped) === 0);
 }
@@ -396,8 +404,8 @@ function rFace() {
     params: { radius: 5, segments: 32 },
     revolve: { angle: 180, axis: 'v', sense: 'positive' },
   });
-  check('Revolve after Extrude strips extrude', thenFromExt.ok && !hasContourExtrudeBlock(thenFromExt.buffer));
-  check('Revolve after Extrude no makeExtrude', countMakeExtrude(thenFromExt.buffer) === 0);
+  check('Revolve after Extrude leaves extrude', thenFromExt.ok && hasContourExtrudeBlock(thenFromExt.buffer));
+  check('Revolve after Extrude keeps makeExtrude', countMakeExtrude(thenFromExt.buffer) === 1);
   check('Revolve after Extrude one makeRevolve', countMakeRevolve(thenFromExt.buffer) === 1);
 
   // Revolve then Extrude: Extrude strips the revolve block.
@@ -407,9 +415,9 @@ function rFace() {
     params: { radius: 5, segments: 32 },
     extrude: { distance: 10, direction: 'normal', sense: 'positive' },
   });
-  check('Extrude after Revolve strips revolve', backToExt.ok && !hasContourRevolveBlock(backToExt.buffer));
+  check('Extrude after Revolve leaves revolve', backToExt.ok && hasContourRevolveBlock(backToExt.buffer));
   check('Extrude after Revolve one makeExtrude', countMakeExtrude(backToExt.buffer) === 1);
-  check('Extrude after Revolve no makeRevolve', countMakeRevolve(backToExt.buffer) === 0);
+  check('Extrude after Revolve keeps makeRevolve', countMakeRevolve(backToExt.buffer) === 1);
 }
 
 // ── Function() under stubs (syntax + bindings) ─────────────────

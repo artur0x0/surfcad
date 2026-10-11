@@ -621,8 +621,8 @@ function xyExtent(cs) {
     face,
     loft: { profiles: defaultLoftProfiles() },
   });
-  check('Loft after Extrude strips extrude', fromExt.ok && !hasContourExtrudeBlock(fromExt.buffer));
-  check('Loft after Extrude no makeExtrude', countMakeExtrude(fromExt.buffer) === 0);
+  check('Loft after Extrude leaves extrude', fromExt.ok && hasContourExtrudeBlock(fromExt.buffer));
+  check('Loft after Extrude keeps makeExtrude', countMakeExtrude(fromExt.buffer) === 1);
   check('Loft after Extrude one makeLoft', countMakeLoft(fromExt.buffer) === 1);
 
   const backToExt = composeContourExtrude(lofted.buffer, {
