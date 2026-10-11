@@ -2961,15 +2961,16 @@ const Viewport = forwardRef(({
     contourRefRef.current = group;
   }, [clearContourRefWire, anchorToActivePart, edgeLineResolution]);
 
-  /** Move one handle (and its wire vertex) without rebuilding the draft. */
+  /**
+   * Move one handle (and its wire vertex) without rebuilding the draft.
+   * `worldPoint` is plane-local. The group already carries the part pose,
+   * so subtracting the anchor would shift a posed part a second time.
+   */
   const movePolylineHandle = useCallback((index, worldPoint) => {
     const group = polylineDraftRef.current;
     const handle = group?.userData?.handles?.[index];
     if (!handle) return;
-    const ox = group.position?.x || 0;
-    const oy = group.position?.y || 0;
-    const oz = group.position?.z || 0;
-    handle.position.set(worldPoint[0] - ox, worldPoint[1] - oy, worldPoint[2] - oz);
+    handle.position.set(worldPoint[0], worldPoint[1], worldPoint[2]);
     const line = group.userData.line;
     const handles = group.userData.handles;
     if (line?.geometry?.setPositions && handles?.length >= 2) {
@@ -6948,7 +6949,10 @@ const Viewport = forwardRef(({
   }, [beginPolylinePointDrag]);
 
   /**
-   * Project the cursor onto the draft's workplane.
+   * Project the cursor onto the draft's workplane, in the part frame.
+   * The stroke is anchored to the mesh. An unposed hit already includes an
+   * in-plane translation, and anchoring the handle adds it again, so the
+   * dot lands off the finger by the full pose.
    * @returns {{ uv: number[], world: number[] }|null}
    */
   const polylinePlanePointAtClient = useCallback((clientX, clientY, plane) => {
@@ -6961,7 +6965,15 @@ const Viewport = forwardRef(({
     raycasterRef.current.setFromCamera(mouseRef.current, camera);
     const o = raycasterRef.current.ray.origin;
     const d = raycasterRef.current.ray.direction;
-    const world = intersectRayPlane([o.x, o.y, o.z], [d.x, d.y, d.z], plane);
+    let rayO = [o.x, o.y, o.z];
+    let rayD = [d.x, d.y, d.z];
+    const pose = meshPose(resultRef.current);
+    if (pose) {
+      rayO = localPoint(rayO, pose);
+      const ahead = localPoint([o.x + d.x, o.y + d.y, o.z + d.z], pose);
+      rayD = [ahead[0] - rayO[0], ahead[1] - rayO[1], ahead[2] - rayO[2]];
+    }
+    const world = intersectRayPlane(rayO, rayD, plane);
     if (!world) return null;
     let uv;
     try {
@@ -7467,29 +7479,12 @@ const Viewport = forwardRef(({
       }
       const plane = selectedLoftDrawFrame(contourModeRef.current)
         || contourWorkplane(contourModeRef.current, modelBoundsRef.current);
-      raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
-      const origin = raycasterRef.current.ray.origin;
-      const dir = raycasterRef.current.ray.direction;
-      const hit = intersectRayPlane(
-        [origin.x, origin.y, origin.z],
-        [dir.x, dir.y, dir.z],
-        plane,
-      );
+      const hit = polylinePlanePointAtClient(event.clientX, event.clientY, plane);
       if (!hit) {
         showContourToast('Could not hit the workplane — orbit so the plane faces the camera.');
         return;
       }
-      let uv;
-      try {
-        uv = worldToPlaneUV(hit, plane);
-      } catch (e) {
-        showContourToast(e.message || 'Could not project onto the workplane.');
-        return;
-      }
-      if (!uv.every(Number.isFinite)) {
-        showContourToast('Workplane tap produced a non-finite UV — refusing the point.');
-        return;
-      }
+      const uv = hit.uv;
       setContourMode((prev) => {
         if (!prev || prev.tool !== 'polyline') return prev;
         const points = [...(prev.params?.points || []), [uv[0], uv[1]]];
@@ -7847,7 +7842,8 @@ const Viewport = forwardRef(({
     }
 
   }, [onFaceSelected, measurementEnabled, clearHighlight, clearEdgeHover, clearEdgeHighlight,
-    pickEdgeAtClient, endPolylinePointDrag, pickPolylinePointAtClient, pickContourAtClient, commitBooleanState,
+    pickEdgeAtClient, endPolylinePointDrag, pickPolylinePointAtClient, polylinePlanePointAtClient,
+    pickContourAtClient, commitBooleanState,
     collectPartHits, retargetPickPart, showPartChoice, dismissPartChoice, clearGeomSelection,
     applyMeasurePointer]);
 
@@ -8791,6 +8787,31 @@ const Viewport = forwardRef(({
               te: pe ? { te0: pe[0], te5: pe[5], te8: pe[8], te9: pe[9] } : null,
               bbox: b && !b.isEmpty() ? { min: b.min.toArray(), max: b.max.toArray() } : null,
             };
+          },
+          stageActivePose: () => {
+            const mesh = resultRef.current;
+            if (!mesh?.position) return null;
+            return {
+              t: [mesh.position.x, mesh.position.y, mesh.position.z],
+              q: mesh.quaternion
+                ? [mesh.quaternion.x, mesh.quaternion.y, mesh.quaternion.z, mesh.quaternion.w]
+                : [0, 0, 0, 1],
+            };
+          },
+          stageSetActivePose: (t, q) => {
+            const mesh = resultRef.current;
+            if (!mesh?.position?.set) return false;
+            const pose = {
+              t: Array.isArray(t) ? t : [0, 0, 0],
+              q: Array.isArray(q) ? q : [0, 0, 0, 1],
+            };
+            applyPartPose(mesh, pose);
+            syncAnchoredOverlays();
+            const renderer = rendererRef.current;
+            const scene = sceneRef.current;
+            const camera = cameraRef.current;
+            if (renderer && scene && camera) renderer.render(scene, camera);
+            return true;
           },
           stageProject: (world) => {
             const cam = cameraRef.current;
