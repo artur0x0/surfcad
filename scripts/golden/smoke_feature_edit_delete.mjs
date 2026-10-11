@@ -3,9 +3,10 @@
 /**
  * Feature-edit Delete.
  *
- * At 390px and desktop: open the edit dialog, tap Delete, see no confirm,
- * the block gone immediately, a toast with Undo only when a later feature
- * depends on it, then Undo from that toast restores the script and model.
+ * At 390px and desktop: a feature another block uses asks
+ * "Delete along with N features", then removes those blocks as one undo
+ * step. A feature with no feature dependents deletes immediately. Either
+ * path shows a Deleted toast with Undo. Toast Undo restores the script.
  *
  * Shots go to GOLDEN_SHOT_DIR or os.tmpdir() only.
  */
@@ -89,6 +90,7 @@ async function runSize(label, compact, width, height) {
       error: window.__MESH_ERROR__,
     }));
     console.log(label, 'state', state);
+    console.log(label, 'errors', errors.slice(0, 8));
     throw err;
   }
   const meshError = await page.evaluate(() => window.__MESH_ERROR__ || '');
@@ -113,13 +115,17 @@ async function runSize(label, compact, width, height) {
 
   const headBefore = await page.evaluate(() => window.__HISTORY_HEAD__);
   await page.locator('[data-feature-edit-delete]').click();
-  check(`${label}: no confirm dialog`, await page.locator('[data-feature-edit-delete-dialog]').count() === 0);
+  const confirmDialog = page.locator('[data-feature-edit-delete-dialog]');
+  await confirmDialog.waitFor({ timeout: 10000 });
+  const confirmLabel = (await page.locator('[data-feature-edit-delete-confirm]').innerText()).trim();
+  check(`${label}: cylinder confirm reads Delete along with 1 feature`,
+    confirmLabel === 'Delete along with 1 feature', confirmLabel);
+  await page.locator('[data-feature-edit-delete-confirm]').click();
   const toast = page.locator('[data-feature-edit-delete-toast]');
   await toast.waitFor({ timeout: 10000 });
-  const warningText = await page.locator('[data-feature-edit-dependent]').allTextContents();
-  check(`${label}: toast names an edge dependent`,
-    warningText.some((line) => /uses this feature's edges and may fail/.test(line)),
-    warningText.join(' | '));
+  const toastText = (await toast.innerText()).replace(/\s+/g, ' ');
+  check(`${label}: toast says Deleted`, /Deleted\./.test(toastText), toastText);
+  check(`${label}: toast is not a refuse`, !/refusing/.test(toastText), toastText);
   await page.locator('[data-feature-edit-delete-toast] [data-error-undo]').waitFor({ timeout: 5000 });
 
   await page.waitForFunction(() => !document.querySelector('#helper-param-title'), null, { timeout: 10000 });
@@ -127,7 +133,7 @@ async function runSize(label, compact, width, height) {
     const script = window.__SCRIPT__ || '';
     return script.includes('cube begin')
       && !script.includes('cylinder begin')
-      && script.includes('fillet-mode begin')
+      && !script.includes('fillet-mode begin')
       && script.includes('// header comment')
       && script.includes('// kept between')
       && window.__MESH_SIG__?.()
@@ -143,8 +149,8 @@ async function runSize(label, compact, width, height) {
     toast: !!document.querySelector('[data-feature-edit-delete-toast]'),
     executionError: !!document.querySelector('[data-execution-error]'),
   }));
-  check(`${label}: cylinder block is gone`, !after.script.includes('cylinder begin') && after.script.includes('cube begin'));
-  check(`${label}: comments and fillet stay`, after.script.includes('// kept between') && after.script.includes('fillet-mode begin') && after.script.includes('// header comment'));
+  check(`${label}: cylinder and fillet are gone`, !after.script.includes('cylinder begin') && !after.script.includes('fillet-mode begin') && after.script.includes('cube begin'));
+  check(`${label}: comments stay`, after.script.includes('// kept between') && after.script.includes('// header comment'));
   check(`${label}: model rebuilt`, after.sig && after.sig !== original.sig, `was ${original.sig} now ${after.sig}`);
   check(`${label}: one undo step`, after.head === headBefore + 1, `head ${headBefore} -> ${after.head}`);
   check(`${label}: edit dialog is gone and toast stays`, !after.confirm && !after.helper && after.toast, after.err);
@@ -172,6 +178,14 @@ async function runSize(label, compact, width, height) {
   check(`${label}: fillet edit opened`, openedFillet === true);
   await page.locator('[data-feature-edit-delete]').waitFor({ timeout: 15000 });
   await page.locator('[data-feature-edit-delete]').click();
+  await page.locator('[data-feature-edit-delete-toast]').waitFor({ timeout: 5000 });
+  const quiet = await page.evaluate(() => ({
+    confirm: !!document.querySelector('[data-feature-edit-delete-dialog]'),
+    toast: document.querySelector('[data-feature-edit-delete-toast]')?.innerText || '',
+    executionError: !!document.querySelector('[data-execution-error]'),
+  }));
+  check(`${label}: no confirm when nothing depends on the feature`, !quiet.confirm && !quiet.executionError);
+  check(`${label}: immediate delete still shows Deleted`, /Deleted\./.test(quiet.toast) && !/refusing/.test(quiet.toast), quiet.toast);
   await page.waitForFunction(() => {
     const script = window.__SCRIPT__ || '';
     return script.includes('cube begin')
@@ -180,12 +194,6 @@ async function runSize(label, compact, width, height) {
       && window.__MESH_SIG__?.()
       && window.__MESH_SIG__() !== window.__ORIGINAL_SIG__;
   }, null, { timeout: 30000 });
-  const quiet = await page.evaluate(() => ({
-    confirm: !!document.querySelector('[data-feature-edit-delete-dialog]'),
-    toast: !!document.querySelector('[data-feature-edit-delete-toast]'),
-    executionError: !!document.querySelector('[data-execution-error]'),
-  }));
-  check(`${label}: no toast when nothing depends on the feature`, !quiet.toast && !quiet.confirm && !quiet.executionError);
 
   await page.locator('[data-feature-bar-undo]').click();
   await page.waitForFunction(
@@ -199,7 +207,10 @@ async function runSize(label, compact, width, height) {
     check('390: cube edit opened', openedCube === true);
     await page.locator('[data-feature-edit-delete]').waitFor({ timeout: 15000 });
     await page.locator('[data-feature-edit-delete]').click();
-    check('390: cube delete has no confirm dialog', await page.locator('[data-feature-edit-delete-dialog]').count() === 0);
+    await page.locator('[data-feature-edit-delete-dialog]').waitFor({ timeout: 10000 });
+    const cubeLabel = (await page.locator('[data-feature-edit-delete-confirm]').innerText()).trim();
+    check('390: cube confirm reads Delete along with 1 feature', cubeLabel === 'Delete along with 1 feature', cubeLabel);
+    await page.locator('[data-feature-edit-delete-confirm]').click();
     await page.locator('[data-execution-error]').waitFor({ timeout: 20000 });
     await page.locator('[data-execution-error] [data-error-undo]').waitFor({ timeout: 5000 });
     const broken = await page.evaluate(() => ({
@@ -210,10 +221,10 @@ async function runSize(label, compact, width, height) {
       undo: !!document.querySelector('[data-execution-error] [data-error-undo]'),
       toast: !!document.querySelector('[data-feature-edit-delete-toast]'),
     }));
-    check('390: failed rerun leaves the cube block fully removed',
+    check('390: failed rerun removes the cube and the fillet that used it',
       !broken.script.includes('cube begin')
       && broken.script.includes('cylinder begin')
-      && broken.script.includes('fillet-mode begin')
+      && !broken.script.includes('fillet-mode begin')
       && broken.script.includes('// kept between'));
     check('390: error popup has Undo', broken.popup && broken.undo);
     check('390: no stuck dialog after a failed delete', !broken.confirm && !broken.helper && !broken.toast);

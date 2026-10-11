@@ -2,6 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { Trash2 } from 'lucide-react';
 import ErrorPopup from './ErrorPopup';
+import ContourDeleteDialog from './ContourDeleteDialog';
 
 /**
  * Danger control matching the feature sheet's Delete
@@ -30,8 +31,30 @@ export function FeatureDeleteButton({ onClick }) {
 }
 
 /**
- * Non-blocking note after an immediate delete, only when later features
- * reference this one. Undo is the same per-part step that put the block back.
+ * Confirm before a feature is deleted together with the later feature blocks
+ * that reference it. Same scrim and red button as contour delete.
+ */
+export function FeatureDeleteConfirm({
+  open = false,
+  label = '',
+  onCancel,
+  onConfirm,
+}) {
+  return (
+    <ContourDeleteDialog
+      open={open}
+      label={label}
+      title="Delete feature"
+      message="Later features use this one. Deleting it removes those features too."
+      testId="feature-edit"
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    />
+  );
+}
+
+/**
+ * Undo toast after a feature delete. One applyBuffer step puts the blocks back.
  */
 export function FeatureDeleteToast({
   lines = [],
@@ -45,6 +68,7 @@ export function FeatureDeleteToast({
     <div
       className="fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none max-w-[min(22rem,calc(100%-2rem))]"
       data-feature-edit-delete-toast=""
+      data-delete-undo-toast=""
     >
       <ErrorPopup
         tone="warn"

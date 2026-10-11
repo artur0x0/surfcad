@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { SHEET_PLANES } from '../../utils/sheetMetal/sheetModel';
 import {
   acceptBaseFlange,
@@ -17,11 +18,15 @@ import {
   pickSheetPlane,
   pushSheetHistory,
   setBaseDims,
+  sheetDraftExtraCount,
   sheetStepCount,
   TAP_SIZES,
   undoSheetStep,
   updateDraft,
 } from '../../utils/sheetMetal/sheetMetalMode';
+import { contourDeleteConfirmLabel } from '../../utils/contourUsers';
+import ContourDeleteDialog from '../ContourDeleteDialog';
+import ErrorPopup from '../ErrorPopup';
 import { buildSheetExport } from '../../utils/sheetMetal/sheetExport';
 import { formatSheetLength } from '../../utils/sheetMetal/sheetUnits';
 import { useDisplayUnit } from '../../hooks/useDisplayUnit';
@@ -37,25 +42,14 @@ import { FeatureDeleteButton } from '../FeatureEditDelete';
 const EDGE_NAMES = { 'u+': '+X edge', 'u-': '−X edge', 'v+': '+Y edge', 'v-': '−Y edge' };
 
 /** Accept / Back / Delete footer shared by feature popups. */
-const DraftFooter = ({ mode, setMode, onCommit, confirmDisabled = false }) => (
+const DraftFooter = ({ mode, setMode, onCommit, onDelete, confirmDisabled = false }) => (
   <div className="flex flex-wrap items-center gap-2">
     {!mode.draft.isNew && (
       <SmButton
         variant="danger"
         className="mr-auto"
         data-sm-delete="1"
-        onClick={() => {
-          const { mode: next, spec } = deleteDraftFeature(mode);
-          if (!spec) {
-            setMode(() => next);
-            return;
-          }
-          if (mode.reopen) {
-            setMode((m) => pushSheetHistory(m, spec));
-            return;
-          }
-          if (onCommit?.(spec, { step: `delete-${mode.draft.kind}` }) !== false) setMode(() => next);
-        }}
+        onClick={() => onDelete?.()}
       >
         Delete
       </SmButton>
@@ -81,7 +75,7 @@ const DraftFooter = ({ mode, setMode, onCommit, confirmDisabled = false }) => (
   </div>
 );
 
-const BendPopup = ({ mode, setMode, onCommit, onExit, unit, onUnit, compact = false }) => {
+const BendPopup = ({ mode, setMode, onCommit, onDelete, onExit, unit, onUnit, compact = false }) => {
   const d = mode.draft;
   const spec = mode.spec;
   const lim = bendLimits(spec);
@@ -99,7 +93,7 @@ const BendPopup = ({ mode, setMode, onCommit, onExit, unit, onUnit, compact = fa
       unit={unit}
       onUnit={onUnit}
       compact={compact}
-      footer={<DraftFooter mode={mode} setMode={setMode} onCommit={onCommit} confirmDisabled={!!block} />}
+      footer={<DraftFooter mode={mode} setMode={setMode} onCommit={onCommit} onDelete={onDelete} confirmDisabled={!!block} />}
     >
       {block && (
         <p className="text-sm text-red-200" data-sm-bend-block="1">{block}</p>
@@ -138,7 +132,7 @@ const BendPopup = ({ mode, setMode, onCommit, onExit, unit, onUnit, compact = fa
   );
 };
 
-const TabPopup = ({ mode, setMode, onCommit, onExit, unit, onUnit, compact = false, lengthMm = 100 }) => {
+const TabPopup = ({ mode, setMode, onCommit, onDelete, onExit, unit, onUnit, compact = false, lengthMm = 100 }) => {
   const d = mode.draft;
   const span = Number(d.span) || Math.max(d.width, 1);
   const where = d.panel === 'base' ? `Base ${EDGE_NAMES[d.edge] || d.edge}` : `Flange ${d.panel} ${d.edge === 'u+' ? 'tip' : 'side'}`;
@@ -152,7 +146,7 @@ const TabPopup = ({ mode, setMode, onCommit, onExit, unit, onUnit, compact = fal
       unit={unit}
       onUnit={onUnit}
       compact={compact}
-      footer={<DraftFooter mode={mode} setMode={setMode} onCommit={onCommit} />}
+      footer={<DraftFooter mode={mode} setMode={setMode} onCommit={onCommit} onDelete={onDelete} />}
     >
       <SmMmSlider id="sm-tab-width" label="Width" mm={d.width} minMm={1} maxMm={span} unit={unit}
         onMm={(v) => setMode((m) => updateDraft(m, { width: v }))} />
@@ -171,7 +165,7 @@ const TabPopup = ({ mode, setMode, onCommit, onExit, unit, onUnit, compact = fal
 
 const HOLE_TITLES = { hole: 'Hole', countersink: 'Countersunk hole', tapped: 'Tapped hole' };
 
-const HolePopup = ({ mode, setMode, onCommit, onExit, unit, onUnit, compact = false, lengthMm = 100 }) => {
+const HolePopup = ({ mode, setMode, onCommit, onDelete, onExit, unit, onUnit, compact = false, lengthMm = 100 }) => {
   const d = mode.draft;
   const range = holeRange(mode) || { u0: -50, u1: 50, v0: -50, v1: 50 };
   const minHole = Number(mode.spec.limits?.minHole) || 0;
@@ -186,7 +180,7 @@ const HolePopup = ({ mode, setMode, onCommit, onExit, unit, onUnit, compact = fa
       unit={unit}
       onUnit={onUnit}
       compact={compact}
-      footer={<DraftFooter mode={mode} setMode={setMode} onCommit={onCommit} />}
+      footer={<DraftFooter mode={mode} setMode={setMode} onCommit={onCommit} onDelete={onDelete} />}
     >
       {type === 'tapped' ? (
         <SmSelect id="sm-hole-thread" label="Thread" value={d.thread}
@@ -285,30 +279,107 @@ const TOOL_HINTS = {
 
 const SheetMetalFlow = ({
   mode, setMode, onCommit, onConfirm, onExit, compact = false, mesh = null, script = null, partName = '',
-  onDeleteFeature = null, lengthMm = 100,
+  onDeleteFeature = null, onUndo = null, canUndo = false, lengthMm = 100,
 }) => {
   const [unit, setDisplayUnit] = useDisplayUnit();
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [deleteToast, setDeleteToast] = useState(null);
+  const deleteToastTimer = useRef(null);
   const onUnit = (next) => setDisplayUnit(next);
+
+  const armDeleteToast = (text) => {
+    setDeleteToast(text);
+    if (deleteToastTimer.current) clearTimeout(deleteToastTimer.current);
+    deleteToastTimer.current = setTimeout(() => {
+      deleteToastTimer.current = null;
+      setDeleteToast(null);
+    }, 3200);
+  };
+
+  const commitSheetDelete = () => {
+    if (!mode?.draft) return;
+    const { mode: next, spec } = deleteDraftFeature(mode);
+    setDeleteConfirm(null);
+    if (!spec) {
+      setMode(() => next);
+      return;
+    }
+    if (mode.reopen) {
+      setMode((m) => pushSheetHistory(m, spec));
+    } else if (onCommit?.(spec, { step: `delete-${mode.draft.kind}` }) === false) {
+      return;
+    } else {
+      setMode(() => next);
+    }
+    armDeleteToast('Deleted.');
+  };
+
+  const requestSheetDelete = () => {
+    const extra = sheetDraftExtraCount(mode);
+    if (extra > 0) {
+      setDeleteConfirm({ label: contourDeleteConfirmLabel(extra) });
+      return;
+    }
+    commitSheetDelete();
+  };
+
+  const deleteChrome = (node) => (
+    <>
+      {node}
+      <ContourDeleteDialog
+        open={!!deleteConfirm}
+        label={deleteConfirm?.label || ''}
+        title="Delete feature"
+        message="Later sheet features sit on this one. Deleting it removes those features too."
+        testId="sm"
+        onCancel={() => setDeleteConfirm(null)}
+        onConfirm={commitSheetDelete}
+      />
+      {deleteToast && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none max-w-[min(22rem,calc(100%-2rem))]"
+          data-sm-delete-toast=""
+          data-delete-undo-toast=""
+        >
+          <ErrorPopup
+            tone="cyan"
+            role="status"
+            onDismiss={() => setDeleteToast(null)}
+            onUndo={() => {
+              if (mode?.reopen) setMode((m) => undoSheetStep(m));
+              else onUndo?.();
+            }}
+            canUndo={mode?.reopen ? mode.step > 0 : !!canUndo}
+            className="px-3 py-2 pointer-events-auto"
+          >
+            {deleteToast}
+          </ErrorPopup>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+
   if (!mode) return null;
 
   if (mode.stage === 'edit' && mode.exportOpen) {
-    return <ExportPopup mode={mode} setMode={setMode} mesh={mesh} script={script} partName={partName} unit={unit} onUnit={onUnit} compact={compact} />;
+    return deleteChrome(<ExportPopup mode={mode} setMode={setMode} mesh={mesh} script={script} partName={partName} unit={unit} onUnit={onUnit} compact={compact} />);
   }
 
   if (mode.stage === 'edit' && mode.draft?.kind === 'bend') {
-    return <BendPopup mode={mode} setMode={setMode} onCommit={onCommit} onExit={onExit} unit={unit} onUnit={onUnit} compact={compact} />;
+    return deleteChrome(<BendPopup mode={mode} setMode={setMode} onCommit={onCommit} onDelete={requestSheetDelete} onExit={onExit} unit={unit} onUnit={onUnit} compact={compact} />);
   }
   if (mode.stage === 'edit' && mode.draft?.kind === 'tab') {
-    return <TabPopup mode={mode} setMode={setMode} onCommit={onCommit} onExit={onExit} unit={unit} onUnit={onUnit} compact={compact} lengthMm={lengthMm} />;
+    return deleteChrome(<TabPopup mode={mode} setMode={setMode} onCommit={onCommit} onDelete={requestSheetDelete} onExit={onExit} unit={unit} onUnit={onUnit} compact={compact} lengthMm={lengthMm} />);
   }
   if (mode.stage === 'edit' && mode.draft?.kind === 'hole') {
-    return <HolePopup mode={mode} setMode={setMode} onCommit={onCommit} onExit={onExit} unit={unit} onUnit={onUnit} compact={compact} lengthMm={lengthMm} />;
+    return deleteChrome(<HolePopup mode={mode} setMode={setMode} onCommit={onCommit} onDelete={requestSheetDelete} onExit={onExit} unit={unit} onUnit={onUnit} compact={compact} lengthMm={lengthMm} />);
   }
 
   if (mode.stage === 'base' && mode.base) {
     const plane = SHEET_PLANES[mode.base.plane];
     const ends = baseSliderRange(mode.sku);
-    return (
+    return deleteChrome(
       <SmPopup
         title="Base flange"
         subtitle={`${plane?.label || mode.base.plane} plane · ${formatSheetLength(mode.sku?.thicknessMm, unit)} ${mode.sku?.name || ''}`}
@@ -354,11 +425,11 @@ const SheetMetalFlow = ({
           onMm={(v) => setMode((m) => setBaseDims(m, { height: v }))}
         />
         <p className="text-xs text-gray-400">Up to {formatSheetLength(BASE_MAX, unit, 0)}. Thickness comes from the SKU. Stored in mm.</p>
-      </SmPopup>
+      </SmPopup>,
     );
   }
 
-  return (
+  return deleteChrome(
     <SheetMetalModeChip mode={mode} compact={compact} onDismiss={onExit}>
       {mode.stage === 'plane' && (
         <div className="mt-1.5 font-sans" data-sheet-metal-step="plane">
@@ -425,7 +496,7 @@ const SheetMetalFlow = ({
           </div>
         </div>
       )}
-    </SheetMetalModeChip>
+    </SheetMetalModeChip>,
   );
 };
 

@@ -9,6 +9,7 @@ import {
 } from './contourMode.js';
 import { listSavedContours } from './savedContours.js';
 import { deleteFeatureEdit } from './featureEdit.js';
+import { parseFeatureMarkers } from './featureMarkers.js';
 import {
   assignFeatureSlot,
   clearFeatureSlotRefs,
@@ -248,6 +249,48 @@ test('deleting a feature leaves its contour, and an unused contour deletes immed
   assert.equal(gone.confirm, undefined);
   assert.doesNotMatch(gone.buffer, /@contour id=c1/);
   assert.match(removed.buffer, /@contour id=c1/);
+});
+
+test('an unused contour inside the sheet-metal block still deletes', () => {
+  const spec = {
+    v: 1,
+    sku: 'SST316-125',
+    material: 'Stainless Steel (316 Series)',
+    t: 3.175,
+    r: 3.81,
+    k: 0.38,
+    plane: 'XZ',
+    width: 100,
+    height: 60,
+    bends: [{ id: 'b1', panel: 'base', edge: 'u+', angle: 90, length: 28.2, flip: true }],
+    tabs: [],
+    holes: [],
+  };
+  const line = 'const c1 = makeCrossSection({ center: [0, 0, 0], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] }, solveContour({ points: [{ id: \'p0\', at: [-20, -15] }, { id: \'p1\', at: [20, -15] }, { id: \'p2\', at: [20, 15] }, { id: \'p3\', at: [-20, 15] }], lines: [], arcs: [], dimensions: [], constraints: [], refs: [{ id: \'e1\', kind: \'edge\', faceA: 1, faceB: 2, mid: [0, 0, 0] }] })); // @contour id=c1';
+  const script = [
+    '// --- sheet-metal begin ---',
+    `const sheetSpec = ${JSON.stringify(spec)};`,
+    'let part = sheetMetalSolid(sheetSpec);',
+    line,
+    '// --- sheet-metal end ---',
+    'return part;',
+    '',
+  ].join('\n');
+  assert.equal(contourUsedByText(script, 'c1'), 'Unused');
+  const chip = featuresWithContours(script).find((row) => row.contourId === 'c1');
+  assert.equal(chip.unused, true);
+  const sheet = parseFeatureMarkers(script).find((row) => row.kind === 'sheetMetal');
+  assert.ok(chip.startOffset >= sheet.startOffset && chip.endOffset <= sheet.endOffset);
+  const gone = deleteContourStatement(script, 'c1');
+  assert.equal(gone.ok, true, gone.message);
+  assert.equal(gone.confirm, undefined);
+  assert.doesNotMatch(String(gone.message || ''), /refusing/);
+  assert.doesNotMatch(gone.buffer, /@contour id=c1/);
+  assert.match(gone.buffer, /sheetSpec/);
+  assert.match(gone.buffer, /SST316-125/);
+  assert.match(gone.buffer, /sheet-metal begin/);
+  assert.match(gone.buffer, /sheet-metal end/);
+  assert.match(script, /refs:/);
 });
 
 test('a referenced contour asks before it deletes those features', () => {

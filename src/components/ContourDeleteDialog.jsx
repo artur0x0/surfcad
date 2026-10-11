@@ -9,6 +9,9 @@ import { createPortal } from 'react-dom';
 export default function ContourDeleteDialog({
   open = false,
   label = '',
+  title = 'Delete contour',
+  message = 'This contour is still named by features. Deleting it removes those features too.',
+  testId = 'contour',
   onCancel,
   onConfirm,
 }) {
@@ -37,26 +40,26 @@ export default function ContourDeleteDialog({
   const card = (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center surface-scrim p-4"
-      data-contour-delete-dialog=""
+      {...{ [`data-${testId}-delete-dialog`]: '' }}
       role="dialog"
       aria-modal="true"
-      aria-labelledby="contour-delete-title"
+      aria-labelledby={`${testId}-delete-title`}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onCancel?.();
       }}
     >
       <div className="w-full max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-lg surface-glass border border-gray-700 p-4 shadow-xl">
-        <h2 id="contour-delete-title" className="text-sm font-semibold text-gray-100">
-          Delete contour
+        <h2 id={`${testId}-delete-title`} className="text-sm font-semibold text-gray-100">
+          {title}
         </h2>
-        <p className="mt-2 text-xs text-gray-300" data-contour-delete-message="">
-          This contour is still named by features. Deleting it removes those features too.
+        <p className="mt-2 text-xs text-gray-300" {...{ [`data-${testId}-delete-message`]: '' }}>
+          {message}
         </p>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
           <button
             ref={cancelRef}
             type="button"
-            data-contour-delete-cancel=""
+            {...{ [`data-${testId}-delete-cancel`]: '' }}
             className="rounded-md px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10"
             onClick={() => onCancel?.()}
           >
@@ -64,7 +67,7 @@ export default function ContourDeleteDialog({
           </button>
           <button
             type="button"
-            data-contour-delete-confirm=""
+            {...{ [`data-${testId}-delete-confirm`]: '' }}
             className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500"
             onClick={() => onConfirm?.()}
           >

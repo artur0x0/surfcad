@@ -1,12 +1,15 @@
 /**
- * Feature-edit Delete: the button removes the block immediately. A toast
- * with Undo appears only when a later feature depends on it.
+ * Feature-edit Delete. A feature another feature block uses asks
+ * "Delete along with N features", then removes those blocks as one undo
+ * step. A feature with no feature dependents deletes immediately. Either
+ * way the toast says Deleted and offers Undo.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Viewport from '../../src/components/Viewport.jsx';
 import FeatureStrip from '../../src/components/FeatureStrip.jsx';
 import { AuthProvider } from '../../src/hooks/useAuth.jsx';
+import { GithubSessionProvider } from '../../src/hooks/useGithubSession.jsx';
 import { parseFeatureMarkers } from '../../src/utils/featureMarkers.js';
 import { deleteFeatureEdit } from '../../src/utils/featureEdit.js';
 import { historyForPart, pushPartHistory, undoPartHistory } from '../../src/utils/partHistory.js';
@@ -32,7 +35,11 @@ return part;
 
 export function renderFeatureEditDeleteShot(el, { compact = false } = {}) {
   createRoot(el).render(
-    React.createElement(AuthProvider, null, React.createElement(Shot, { compact })),
+    React.createElement(
+      AuthProvider,
+      null,
+      React.createElement(GithubSessionProvider, null, React.createElement(Shot, { compact })),
+    ),
   );
 }
 
@@ -103,8 +110,10 @@ function Shot({ compact }) {
     return () => { stop = true; };
   }, []);
 
-  const onDelete = (feature) => {
-    const result = deleteFeatureEdit(scriptRef.current, feature);
+  const onDelete = (feature, opts) => {
+    const result = deleteFeatureEdit(scriptRef.current, feature, {
+      withDependents: !!opts?.withDependents,
+    });
     if (!result.ok) {
       window.__DELETE_ERROR__ = result.message || 'delete failed';
       return false;

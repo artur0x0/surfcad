@@ -403,6 +403,37 @@ export function cancelDraft(mode) {
   return { ...mode, draft: null, hotEdge: null, toast: null };
 }
 
+/**
+ * Child bends, tabs, and holes a bend delete would take with it.
+ * The bend itself is not counted. A new draft, or a tab or hole, is 0.
+ */
+export function sheetDraftExtraCount(mode) {
+  const d = mode?.draft;
+  if (!d || d.isNew || d.kind !== 'bend' || !mode.spec) return 0;
+  const gone = new Set([d.id]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const bend of mode.spec.bends || []) {
+      if (!gone.has(bend.id) && gone.has(bend.panel)) {
+        gone.add(bend.id);
+        grew = true;
+      }
+    }
+  }
+  let extra = 0;
+  for (const bend of mode.spec.bends || []) {
+    if (bend.id !== d.id && gone.has(bend.id)) extra += 1;
+  }
+  for (const tab of mode.spec.tabs || []) {
+    if (gone.has(tab.panel)) extra += 1;
+  }
+  for (const hole of mode.spec.holes || []) {
+    if (gone.has(hole.panel)) extra += 1;
+  }
+  return extra;
+}
+
 /** Delete the edited feature; a bend takes its flange's children with it. */
 export function deleteDraftFeature(mode) {
   const d = mode?.draft;

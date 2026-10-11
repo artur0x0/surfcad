@@ -13,6 +13,7 @@ import { scriptWithFeatureCount } from './partHistory.js';
 import { shellFaceKey } from './shellMode.js';
 import { normalizeSheetSpec } from './sheetMetal/sheetModel.js';
 import { emitSolveContour, parseSolveContour } from './contourScript.js';
+import { contourDeleteConfirmLabel } from './contourUsers.js';
 
 const NUM = '[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?';
 
@@ -1160,34 +1161,84 @@ export function confirmFeatureEdit(script, feature, draft = {}) {
 
 const STALE_FEATURE = 'That feature is not in this part\'s script any more — pick it again.';
 
-function markerBlocks(script) {
-  return parseFeatureMarkers(script).map((feature) => script.slice(feature.startOffset, feature.endOffset));
+function mergeDeleteRanges(ranges) {
+  const sorted = [...ranges].sort((a, b) => a.start - b.start || a.end - b.end);
+  const merged = [];
+  for (const range of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && range.start <= last.end) last.end = Math.max(last.end, range.end);
+    else merged.push({ start: range.start, end: range.end });
+  }
+  return merged;
+}
+
+/**
+ * Later feature blocks that `featureDependents` names. A "Later code" hit
+ * has no feature id, so it does not ask for the confirm and is not dropped.
+ */
+function dependentFeatureSpans(script, live) {
+  const byId = new Map(parseFeatureMarkers(script).map((item) => [item.id, item]));
+  const spans = [];
+  const seen = new Set();
+  for (const dep of featureDependents(script, live)) {
+    if (!dep?.id || seen.has(dep.id)) continue;
+    const block = byId.get(dep.id);
+    if (!block) continue;
+    seen.add(dep.id);
+    spans.push(block);
+  }
+  return spans;
+}
+
+/**
+ * A feature with later feature-block dependents asks before it deletes them.
+ * No feature dependents (a name used only in later loose code does not count)
+ * deletes immediately.
+ */
+export function featureDeletePlan(script, feature) {
+  const text = typeof script === 'string' ? script : '';
+  const live = liveSheetFeature(text, feature);
+  if (!live) return { ok: false, message: STALE_FEATURE };
+  const count = dependentFeatureSpans(text, live).length;
+  if (count > 0) {
+    return {
+      ok: false,
+      confirm: true,
+      count,
+      message: contourDeleteConfirmLabel(count),
+    };
+  }
+  return { ok: true, confirm: false };
 }
 
 /**
  * Drop one marked feature. The block is the same span Confirm rewrites
  * (`liveSheetFeature`: id and kind, else kind and index). One bordering
- * newline is collapsed so neighbours do not gain a blank row. Every other
- * marked block stays byte-identical, including comments outside the span.
+ * newline is collapsed so neighbours do not gain a blank row.
+ * `withDependents` also drops every later feature block that references it,
+ * as one buffer so undo restores all of them. A contour statement or a
+ * nested marker that sits inside the span goes with that span. Delete never
+ * refuses because another marked span changed.
  */
-export function deleteFeatureEdit(script, feature) {
+export function deleteFeatureEdit(script, feature, { withDependents = false } = {}) {
   const text = typeof script === 'string' ? script : '';
   const live = liveSheetFeature(text, feature);
   if (!live) return { ok: false, message: STALE_FEATURE };
-  const features = parseFeatureMarkers(text);
-  const kept = features
-    .filter((item) => item.startOffset !== live.startOffset)
-    .map((item) => text.slice(item.startOffset, item.endOffset));
-  const result = deleteFeatureBlock(text, live);
-  if (!result.ok) return result;
-  const after = markerBlocks(result.buffer);
-  if (after.length !== kept.length || after.some((block, i) => block !== kept[i])) {
-    return { ok: false, message: 'Delete would change another feature — refusing.' };
+  const ranges = [{ start: live.startOffset, end: live.endOffset }];
+  if (withDependents) {
+    for (const block of dependentFeatureSpans(text, live)) {
+      ranges.push({ start: block.startOffset, end: block.endOffset });
+    }
   }
-  if (result.buffer === text) {
-    return { ok: false, message: 'Delete did not remove the feature — refusing.' };
+  const merged = mergeDeleteRanges(ranges).sort((a, b) => b.start - a.start);
+  let next = text;
+  for (const range of merged) {
+    const result = deleteFeatureBlock(next, { startOffset: range.start, endOffset: range.end });
+    if (!result.ok) return result;
+    next = result.buffer;
   }
-  return { ok: true, buffer: result.buffer, changed: true, run: true, feature: live };
+  if (next === text) return { ok: false, message: 'Could not delete that feature.' };
+  return { ok: true, buffer: next, changed: true, run: true, feature: live };
 }
 
 function codeText(block) {
