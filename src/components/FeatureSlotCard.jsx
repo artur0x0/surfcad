@@ -11,7 +11,7 @@ import {
 const ACCENT = 'cyan';
 
 function slotLabel(contour) {
-  if (!contour?.contourName) return 'No contour';
+  if (!contour?.contourName) return 'Pick a contour';
   return contour.label || contour.contourName;
 }
 
@@ -55,6 +55,7 @@ function ContourSlot({
         <div
           className={chipClass}
           data-slot-chip=""
+          data-slot-empty=""
           title={slotLabel(contour)}
         >
           {slotLabel(contour)}

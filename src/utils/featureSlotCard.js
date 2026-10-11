@@ -11,9 +11,18 @@ import {
   defaultExtrudeParams,
   defaultRevolveParams,
   isLoftEntry,
+  isSolidContourEntry,
   isSweepEntry,
   REVOLVE_SEGMENTS,
 } from './contourMode.js';
+import { SEPARATE_BODY_CALL } from './featureMarkers.js';
+import { inferExtrudeSense } from './featureSheetWriteback.js';
+import { parseLoftReferences } from './loftReference.js';
+import {
+  parseExtrudeReference,
+  parseRevolveReference,
+  parseSweepReferences,
+} from './solidReference.js';
 
 export const FEATURE_SLOT_TITLE = {
   makeExtrude: 'Extrude',
@@ -203,6 +212,136 @@ export function contoursForSlot(contours, role) {
   const list = Array.isArray(contours) ? contours : [];
   if (role === 'path') return list.filter((row) => row.tool === 'path');
   return list.filter((row) => row.tool !== 'path');
+}
+
+const ENTRY_BY_KIND = {
+  extrude: 'makeExtrude',
+  revolve: 'makeRevolve',
+  loft: 'makeLoft',
+  sweep: 'makeSweep',
+};
+
+function featureIdFromBlock(block) {
+  const m = String(block || '').match(/\bid=([A-Za-z_$][\w$]*)(?![\w$-])/);
+  return m ? m[1] : null;
+}
+
+function contourRef(name, contours) {
+  if (!name) return null;
+  const row = (contours || []).find((item) => item.name === name || item.id === name);
+  if (row) return refOf(row);
+  return { contourId: name, contourName: name, label: name, plane: null };
+}
+
+function revolveNumbers(block) {
+  const m = String(block || '').match(/,\s*(\d+)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)(?:\.rotate)?/);
+  if (!m) return null;
+  return { segments: Number(m[1]), angle: Number(m[2]) };
+}
+
+/** V-axis is `[u, v]`. U-axis is `[-v, u]`. Anything else stays on V. */
+function revolveAxisFromBlock(block) {
+  const map = String(block || '').match(
+    /ring\.map\(\s*\(\s*\[\s*u\s*,\s*v\s*\]\s*\)\s*=>\s*\[\s*([^,\]]+)\s*,\s*([^\]]+)\s*\]/,
+  );
+  if (!map) return 'v';
+  const radial = map[1].replace(/\s+/g, '');
+  const height = map[2].replace(/\s+/g, '');
+  if (radial === 'u' && height === 'v') return 'v';
+  if (radial === '-v' && height === 'u') return 'u';
+  return 'v';
+}
+
+function revolveSenseFromBlock(block, angle) {
+  const rot = String(block || '').match(/\.rotate\(\s*\[\s*0\s*,\s*0\s*,\s*(-?\d+(?:\.\d+)?)\s*\]\s*\)/);
+  if (!rot) return 'positive';
+  const start = Number(rot[1]);
+  const a = Number(angle);
+  if (Number.isFinite(a) && Math.abs(start + a) < 1e-6) return 'negative';
+  if (Number.isFinite(a) && Math.abs(start + a / 2) < 1e-6) return 'both';
+  return 'positive';
+}
+
+/**
+ * Slot card for a saved Extrude, Revolve, Loft, or Sweep block.
+ * A named contour fills that slot. An inline profile with no name stays
+ * empty, so the chip reads Pick a contour. Confirm rewrites `id=` when
+ * the marker carries one. A positional chip id such as `extrude-0` does not.
+ */
+export function featureSlotCardFromEdit(session, contours = []) {
+  const entry = session?.entry || ENTRY_BY_KIND[session?.kind] || ENTRY_BY_KIND[session?.feature?.kind];
+  const card = emptyFeatureSlotCard(isSolidContourEntry(entry) ? entry : 'makeExtrude');
+  const block = String(session?.block || '');
+  const fields = session?.fields || {};
+  card.featureId = featureIdFromBlock(block);
+  card.combine = /\.subtract\s*\(/.test(block) ? 'subtract' : 'add';
+  card.merge = card.combine === 'subtract' ? true : !SEPARATE_BODY_CALL.test(block);
+
+  if (card.kind === 'makeExtrude') {
+    const parsed = parseExtrudeReference(block);
+    const distance = parsed?.distance ?? fields.distance;
+    const sense = parsed
+      ? inferExtrudeSense(parsed.distance, parsed.w)
+      : (fields.sense || card.extrude.sense);
+    return {
+      ...card,
+      profile: contourRef(parsed?.name, contours),
+      extrude: {
+        ...card.extrude,
+        ...(distance != null ? { distance } : {}),
+        sense,
+      },
+    };
+  }
+
+  if (card.kind === 'makeRevolve') {
+    const parsed = parseRevolveReference(block);
+    const nums = revolveNumbers(block);
+    const angle = fields.angle ?? nums?.angle ?? card.revolve.angle;
+    return {
+      ...card,
+      profile: contourRef(parsed?.name, contours),
+      revolve: {
+        ...card.revolve,
+        angle,
+        segments: nums?.segments ?? card.revolve.segments,
+        sense: revolveSenseFromBlock(block, angle),
+        axis: revolveAxisFromBlock(block),
+      },
+    };
+  }
+
+  if (card.kind === 'makeSweep') {
+    const parsed = parseSweepReferences(block);
+    const lit = block.match(/closed:\s*(true|false)/);
+    let closed = lit ? lit[1] === 'true' : !!card.sweep?.closed;
+    if (!lit && parsed?.path) {
+      const path = (contours || []).find((item) => item.name === parsed.path || item.id === parsed.path);
+      if (typeof path?.params?.closed === 'boolean') closed = path.params.closed;
+    }
+    return {
+      ...card,
+      profile: contourRef(parsed?.profile, contours),
+      path: contourRef(parsed?.path, contours),
+      sweep: {
+        reverse: /\.slice\(\)\.reverse\(\)/.test(block) || !!fields.reverse,
+        closed,
+      },
+    };
+  }
+
+  const stations = parseLoftReferences(block);
+  if (stations.length >= 2) {
+    return {
+      ...card,
+      stations: stations.map((row, index) => ({
+        id: `p${index}`,
+        ...contourRef(row.name, contours),
+        offset: row.offset,
+      })),
+    };
+  }
+  return card;
 }
 
 /**
