@@ -584,8 +584,11 @@ export function commitDimension(state, draft) {
 }
 
 function replaceDimension(contour, dim) {
-  const kept = (contour?.dimensions || []).filter((item) => item.id !== dim.id);
-  return { ...contour, dimensions: [...kept, dim] };
+  const prev = (contour?.dimensions || []).find((item) => item.id === dim.id);
+  const next = { ...dim };
+  if (next.placement == null && prev?.placement != null) next.placement = prev.placement;
+  const kept = (contour?.dimensions || []).filter((item) => item.id !== next.id);
+  return { ...contour, dimensions: [...kept, next] };
 }
 
 /** Picks that reopen a saved dimension in the card. */

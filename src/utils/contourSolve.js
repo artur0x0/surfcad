@@ -169,6 +169,9 @@ function copyItem(item, label) {
       return [num(uv[0], 'anchor u'), num(uv[1], 'anchor v')];
     });
   }
+  if (item.placement != null) {
+    copy.placement = num(item.placement, `${label} ${item.id} placement`);
+  }
   if (item.at && typeof item.at === 'object') {
     copy.at = {};
     for (const [id, uv] of Object.entries(item.at)) {

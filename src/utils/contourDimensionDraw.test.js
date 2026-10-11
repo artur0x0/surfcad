@@ -5,10 +5,11 @@ import {
   dimensionEndpoints,
   dimensionLayout,
   dimensionMarkup,
+  placementFromPointer,
 } from './contourDimensionDraw.js';
 import { contourFromRectangle, solveContour } from './contourSolve.js';
 import { emitSolveContour, parseSolveContour } from './contourScript.js';
-import { buildDimension, specFromSolved } from './contourGesture.js';
+import { buildDimension, commitDimension, specFromSolved } from './contourGesture.js';
 import { SKETCH_HIT_PX, pickContourScreen } from './contourPick.js';
 import { sketchPointScaleFromDistance, SKETCH_POINT_PX, SKETCH_POINT_RADIUS } from './sketchLine.js';
 
@@ -180,4 +181,51 @@ test('sketch entities hit inside 12px and miss outside it', () => {
   const pointHit = pickContourScreen(sketch, project, 0, 11);
   assert.equal(pointHit?.kind, 'point');
   assert.equal(pointHit?.id, 'p0');
+});
+
+test('a stored placement shifts a length along the segment normal', () => {
+  const edge = project([15, 0]);
+  const fig = dimensionLayout(model, { kind: 'length', edge: 'e0', placement: 10 }, project);
+  assert.ok(Math.abs(fig.label.x - edge.x) < 0.5, `label x ${fig.label.x}`);
+  assert.ok(Math.abs(Math.abs(fig.label.y - edge.y) - 40) < 0.5, `shift ${fig.label.y - edge.y}`);
+  const back = placementFromPointer(model, { kind: 'length', edge: 'e0' }, project, fig.label);
+  assert.ok(Math.abs(back - 10) < 1e-6, `placement ${back}`);
+  const html = dimensionMarkup({ ...fig, id: 'd0' });
+  assert.match(html, /data-contour-dim-placement="10"/);
+});
+
+test('an angle placement is the arc radius', () => {
+  const dim = { kind: 'angle', a: 'e0', b: 'e2', sense: 1, placement: 12 };
+  const fig = dimensionLayout(model, dim, project);
+  const vertex = project(dimensionAngle(model, dim).vertex);
+  const d = dist(fig.label, vertex);
+  assert.ok(Math.abs(d - 48) < 1, `label ${d}px from the vertex`);
+  assert.equal(fig.arc != null, true);
+});
+
+test('placement survives emit, parse, and solve', () => {
+  const rect = contourFromRectangle(40, 20, true);
+  rect.dimensions = rect.dimensions.map((item) => (
+    item.id === 'd0' ? { ...item, placement: -8.5 } : item
+  ));
+  const solved = solveContour(rect);
+  const text = emitSolveContour(specFromSolved(solved));
+  assert.match(text, /placement:\s*-8\.5/);
+  const again = solveContour(parseSolveContour(text));
+  const d0 = again.dimensions.find((item) => item.id === 'd0');
+  assert.equal(d0.placement, -8.5);
+});
+
+test('editing a dimension keeps a dragged placement', () => {
+  const rect = contourFromRectangle(40, 20, true);
+  rect.dimensions = rect.dimensions.map((item) => (
+    item.id === 'd0' ? { ...item, placement: 14 } : item
+  ));
+  const result = commitDimension({
+    params: { contour: rect },
+    picks: [{ kind: 'line', id: 'e0' }],
+  }, { kind: 'length', valueMm: 40, id: 'd0' });
+  assert.equal(result.error, null);
+  const d0 = result.state.params.contour.dimensions.find((item) => item.id === 'd0');
+  assert.equal(d0.placement, 14);
 });

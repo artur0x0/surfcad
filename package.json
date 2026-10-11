@@ -74,6 +74,7 @@
         "golden:contour-entry": "node scripts/golden/smoke_contour_entry.mjs",
         "golden:contour-visuals": "node scripts/golden/smoke_contour_visuals.mjs",
         "golden:dimension-feedback": "node scripts/golden/smoke_dimension_feedback.mjs",
+        "golden:contour-plane-dim": "node scripts/golden/smoke_contour_plane_dim.mjs",
         "golden:dimension-done": "node scripts/golden/smoke_dimension_done.mjs",
         "golden:contour-dimension-drive": "node scripts/golden/smoke_contour_dimension_drive.mjs",
         "golden:contour-reopen": "node scripts/golden/smoke_contour_reopen.mjs",

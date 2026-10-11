@@ -3387,12 +3387,14 @@ const Viewport = forwardRef(({
     });
     contourPlaneOpenRef.current = false;
     setContourPlaneOpen(false);
+    // The contour is already accepted. Drop the plane-card preview.
+    overlayVis.end('planes');
     if (saved.plane?.normal) {
       setContourFaceAim('');
       requestFaceSketchAim(saved.plane.normal);
     }
     return true;
-  }, [mode, getHelperBuffer, currentScript, enterContourMode]);
+  }, [mode, getHelperBuffer, currentScript, enterContourMode, overlayVis]);
 
   const editSlotContour = useCallback((slot) => {
     const card = featureSlotsRef.current;
@@ -4532,13 +4534,16 @@ const Viewport = forwardRef(({
   const reopenContourPlane = useCallback(() => {
     faceSketchRef.current?.cancel();
     setContourFaceAim('');
+    overlayVis.begin('planes');
     contourPlaneOpenRef.current = true;
     setContourPlaneOpen(true);
-  }, []);
+  }, [overlayVis]);
 
   const startContourDrawing = useCallback(() => {
     const state = contourModeRef.current;
     if (!state) return;
+    // Accepting the plane hides the workplane quads. A toggle the user set stays.
+    overlayVis.end('planes');
     // A pending slide tick must not snapshot again after the card unmounts.
     holdSheetSlide();
     sheetCameraRef.current?.abandon();
@@ -4550,7 +4555,7 @@ const Viewport = forwardRef(({
     const normal = contourWorkplaneFace(state, modelBoundsRef.current)?.normal;
     setContourFaceAim('');
     requestFaceSketchAim(normal);
-  }, []);
+  }, [overlayVis]);
 
   const onContourBack = useCallback(() => {
     if ((sketchHistRef.current?.depth || 0) > 0) {
@@ -8848,6 +8853,20 @@ const Viewport = forwardRef(({
               open: !!contourModeRef.current,
               planeCard: contourPlaneOpenRef.current,
               planeSquare: !!workplaneOverlayRef.current,
+              planePreview: (() => {
+                const colors = [];
+                constructionPlaneRef.current?.traverse?.((child) => {
+                  if (child.userData?.kind !== 'constructionPlane') return;
+                  const hex = child.material?.color?.getHex?.();
+                  if (Number.isFinite(hex)) colors.push(hex);
+                });
+                return colors;
+              })(),
+              placements: (contourModeRef.current?.params?.contour?.dimensions || []).map((dim) => ({
+                id: dim.id,
+                kind: dim.kind,
+                placement: Number.isFinite(Number(dim.placement)) ? Number(dim.placement) : null,
+              })),
               gesture: contourModeRef.current?.gesture || '',
               dimensionEdit: contourModeRef.current?.dimensionEdit || null,
               constraintEdit: contourModeRef.current?.constraintEdit || null,
@@ -11083,6 +11102,21 @@ const Viewport = forwardRef(({
           canvasRef={canvasRef}
           selectedId={contourMode.tagId || null}
           getAnchor={contourAnchor}
+          onPlace={(id, placement) => {
+            const prev = contourModeRef.current;
+            const contour = prev?.params?.contour;
+            if (!prev || !contour || !Number.isFinite(placement)) return;
+            const dimensions = (contour.dimensions || []).map((item) => (
+              item.id === id ? { ...item, placement } : item
+            ));
+            if (!dimensions.some((item) => item.id === id)) return;
+            const next = {
+              ...prev,
+              params: { ...prev.params, contour: { ...contour, dimensions } },
+            };
+            const stored = saveContourBlock(next);
+            setContourMode(stored || next);
+          }}
           onSelect={(id) => {
             const prev = contourModeRef.current;
             if (!prev) return;
