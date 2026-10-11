@@ -16,7 +16,8 @@ import { probeQuantityName, probeUnit, readTetProbe } from './probeSample.js';
 import { probeShellAt, shellSheetFromScript } from './sheetMidsurface.js';
 import { activePlot, initialResultsView, reduceResultsView } from './resultsView.js';
 import { bindStressField, bindVectorField, setStressSkinSource } from './stressMap.js';
-import { composeFeaStudy, readFeaStudy, scriptOutsideFeaStudy } from './studyScript.js';
+import { feaTapAction, studyMemberIds } from './feaPickGate.js';
+import { composeFeaStudy, FEA_STUDY_BEGIN, readFeaStudy, scriptOutsideFeaStudy } from './studyScript.js';
 import {
   applyFacePick,
   customSeed,
@@ -95,6 +96,7 @@ export function useFeaStudy({
   getSolid,
   getAssembly,
   getPartScript,
+  getPartId,
   onHighlight,
   onContactHighlight,
   onClaim,
@@ -156,6 +158,9 @@ export function useFeaStudy({
   const getSolidRef = useRef(getSolid);
   const getAssemblyRef = useRef(getAssembly);
   const getPartScriptRef = useRef(getPartScript);
+  const getPartIdRef = useRef(getPartId);
+  const analyzedRef = useRef('');
+  const [analyzedPartId, setAnalyzedPartId] = useState('');
   const onHighlightRef = useRef(onHighlight);
   const onContactRef = useRef(onContactHighlight);
   const onClaimRef = useRef(onClaim);
@@ -165,6 +170,7 @@ export function useFeaStudy({
   getSolidRef.current = getSolid;
   getAssemblyRef.current = getAssembly;
   getPartScriptRef.current = getPartScript;
+  getPartIdRef.current = getPartId;
   onHighlightRef.current = onHighlight;
   onContactRef.current = onContactHighlight;
   onClaimRef.current = onClaim;
@@ -300,8 +306,25 @@ export function useFeaStudy({
   // The viewport reconciles overlay meshes to this study. Passing the
   // selection (not a flat triangle list) is what lets a cleared face drop
   // its own overlay instead of stacking another transparent copy.
+  const noteAnalyzedPart = () => {
+    const raw = typeof getPartIdRef.current === 'function' ? getPartIdRef.current() : '';
+    const id = raw != null && raw !== '' ? String(raw) : '';
+    analyzedRef.current = id;
+    setAnalyzedPartId(id);
+    return id;
+  };
+
+  const highlightContext = () => {
+    const rows = typeof getAssemblyRef.current === 'function' ? (getAssemblyRef.current() || []) : [];
+    const analyzed = analyzedRef.current;
+    return {
+      analyzedPartId: analyzed,
+      memberIds: studyMemberIds(studyRef.current, rows, analyzed),
+    };
+  };
+
   const paintHighlight = useCallback((next) => {
-    onHighlightRef.current?.(next ?? null);
+    onHighlightRef.current?.(next ?? null, highlightContext());
   }, []);
 
   const commitStudy = useCallback((next) => {
@@ -357,6 +380,7 @@ export function useFeaStudy({
       }
     }
     writtenRef.current = text.includes('// @fea-study ') ? text : null;
+    noteAnalyzedPart();
     studyRef.current = read;
     setStudy(read);
     setDraft((prev) => ({
@@ -411,7 +435,29 @@ export function useFeaStudy({
       setResult((prev) => (prev && !prev.stale ? { ...prev, stale: true } : prev));
     }
     const read = readFeaStudy(live);
-    if (!read) return;
+    if (!read) {
+      // A missing block means this part has no study. An invalid block is
+      // left alone so a mid-edit parse failure does not wipe the panel.
+      if (!live.includes(FEA_STUDY_BEGIN)) {
+        noteAnalyzedPart();
+        const fresh = freshStudy(detectFeaProfile());
+        studyRef.current = fresh;
+        setStudy(fresh);
+        writtenRef.current = null;
+        clearFields();
+        setResult(null);
+        paintHighlight(null);
+      }
+      return;
+    }
+    const prevAnalyzed = analyzedRef.current;
+    noteAnalyzedPart();
+    if (prevAnalyzed && analyzedRef.current !== prevAnalyzed) {
+      clearFields();
+      setResult(null);
+    }
+    readRows();
+    writtenRef.current = live;
     studyRef.current = read;
     setStudy(read);
     paintHighlight(read);
@@ -564,37 +610,79 @@ export function useFeaStudy({
     return true;
   }, []);
 
-  const pick = useCallback((clickData) => {
-    if (!studyRef.current) return false;
-    const screenNow = viewRef.current?.screen;
-    if (screenNow && screenNow !== 'setup') {
-      if (screenNow === 'results') return probeAt(clickData);
-      return false;
-    }
-    const solid = getSolidRef.current?.();
-    const geometry = clickData?.geometry || solid?.geometry;
-    const faceIDs = solid?.faceIDs;
-    const picked = paintPickFromClick({
-      geometry,
-      faceIDs,
-      seedFaceIndex: clickData?.seedFaceIndex,
-      faceNormal: clickData?.faceNormal,
-      angleTolerance: FACE_ANGLE_DEG,
+  const tapAction = useCallback((hitPartId) => {
+    const rows = typeof getAssemblyRef.current === 'function' ? (getAssemblyRef.current() || []) : [];
+    return feaTapAction({
+      screen: viewRef.current?.screen,
+      scopeKind: studyScopeKind(studyRef.current),
+      memberIds: studyMemberIds(studyRef.current, rows, analyzedRef.current),
+      hitPartId,
     });
-    if (!picked?.key) return false;
-    const face = studyFaceFromPick(picked, majorityFaceId(picked.indices, faceIDs));
-    if (!face) return false;
-    if (studyScopeKind(studyRef.current) !== 'part' && clickData?.partId) {
-      face.part = String(clickData.partId);
-    }
-    const next = applyFacePick(studyRef.current, draftRef.current, face);
-    if (!next.ok) {
-      setNotice(next.errors[0] || 'Could not use that face');
+  }, []);
+
+  const pick = useCallback((clickData) => {
+    try {
+      if (!studyRef.current) return false;
+      if (clickData?.addPartId) {
+        const rows = typeof getAssemblyRef.current === 'function' ? (getAssemblyRef.current() || []) : [];
+        const id = String(clickData.addPartId);
+        if (!rows.some((row) => String(row?.id) === id)) return false;
+        const action = feaTapAction({
+          screen: viewRef.current?.screen,
+          scopeKind: studyScopeKind(studyRef.current),
+          memberIds: studyMemberIds(studyRef.current, rows, analyzedRef.current),
+          hitPartId: id,
+        });
+        if (action !== 'add-part') return false;
+        toggleScopePart(id);
+        return true;
+      }
+      const screenNow = viewRef.current?.screen;
+      if (screenNow && screenNow !== 'setup') {
+        if (screenNow === 'results') {
+          const rows = typeof getAssemblyRef.current === 'function' ? (getAssemblyRef.current() || []) : [];
+          const members = studyMemberIds(studyRef.current, rows, analyzedRef.current);
+          const hit = clickData?.partId;
+          if (hit != null && hit !== '' && !members.includes(String(hit))) return false;
+          return probeAt(clickData);
+        }
+        return false;
+      }
+      const solid = getSolidRef.current?.();
+      let geometry = clickData?.geometry || solid?.geometry;
+      let faceIDs = solid?.faceIDs;
+      if (clickData?.geometry && solid?.geometry && clickData.geometry !== solid.geometry) {
+        geometry = clickData.geometry;
+        const attr = geometry.attributes?.faceID;
+        const mapped = attr?.array?.length ? attr.array : null;
+        if (!mapped) return false;
+        faceIDs = mapped;
+      }
+      const picked = paintPickFromClick({
+        geometry,
+        faceIDs,
+        seedFaceIndex: clickData?.seedFaceIndex,
+        faceNormal: clickData?.faceNormal,
+        angleTolerance: FACE_ANGLE_DEG,
+      });
+      if (!picked?.key) return false;
+      const face = studyFaceFromPick(picked, majorityFaceId(picked.indices, faceIDs));
+      if (!face) return false;
+      if (studyScopeKind(studyRef.current) !== 'part' && clickData?.partId) {
+        face.part = String(clickData.partId);
+      }
+      const next = applyFacePick(studyRef.current, draftRef.current, face);
+      if (!next.ok) {
+        setNotice(next.errors[0] || 'Could not use that face');
+        return false;
+      }
+      commitStudy(next.study);
+      return true;
+    } catch (err) {
+      console.error('[FEA] ignored a bad pick', err);
       return false;
     }
-    commitStudy(next.study);
-    return true;
-  }, [commitStudy, probeAt]);
+  }, [commitStudy, probeAt, toggleScopePart]);
 
   const pickIfOpen = useCallback((clickData) => {
     if (!openRef.current) return false;
@@ -1199,6 +1287,9 @@ export function useFeaStudy({
     removeFixture,
     removeLoad,
     assemblyParts,
+    analyzedPartId,
+    memberIds: studyMemberIds(study, assemblyParts, analyzedPartId),
+    tapAction,
     setStudyScope,
     toggleScopePart,
     setContactEnabled,

@@ -170,6 +170,24 @@ jobs:
             exit 1
           fi
 
+      # Analyze playtest: off-study taps must not crash, one part's overlays
+      # only, and fixture blue / load yellow. Both widths, no solve.
+      - name: FEA analyze playtest golden
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          GOLDEN_SHOT_DIR: ${{ runner.temp }}/golden
+          FEA_PREVIEW: '1'
+        run: |
+          test -n "$CHROME_PATH"
+          test -x "$CHROME_PATH"
+          test -n "$GOLDEN_SHOT_DIR"
+          mkdir -p "$GOLDEN_SHOT_DIR"
+          node scripts/golden/fea_analyze_playtest.mjs | tee "${RUNNER_TEMP}/fea-analyze-playtest.log"
+          if grep -q 'no system Chrome' "${RUNNER_TEMP}/fea-analyze-playtest.log"; then
+            echo "FEA analyze playtest golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+
   # npm copyleft and non-commercial gate, plus a freshness check for
   # public/THIRD_PARTY_NOTICES.txt. Always runs. The cargo-deny step is a
   # separate job so it can stay a no-op until the FEA crate exists.

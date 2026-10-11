@@ -8,6 +8,8 @@ import {
 } from 'three';
 import {
   FEA_FACE_HIGHLIGHT_NAME,
+  FEA_FIXTURE_HIGHLIGHT_COLOR,
+  FEA_LOAD_HIGHLIGHT_COLOR,
   createFaceHighlightMesh,
   disposeHighlightObject,
   faceHighlightTargets,
@@ -20,6 +22,7 @@ function fakeMesh(id) {
   const mesh = {
     uuid: id,
     geometry: { uuid: `${id}-geom` },
+    parent: { name: 'scene' },
     children: [],
     add(child) {
       child.parent = mesh;
@@ -72,6 +75,10 @@ test('a part id selects that host, and a part-scope face uses the active solid',
   assert.equal(hostForHighlight([other, { id: 'c', mesh: {} }], { partId: '' }), null);
   assert.equal(hostForHighlight([other], { partId: '' }), other);
   assert.equal(hostForHighlight([active], { partId: 'missing' }), null);
+  const parked = { id: 'a', active: false, mesh: {} };
+  const swapped = { id: 'b', active: true, mesh: {} };
+  assert.equal(hostForHighlight([parked, swapped], { partId: '' }, 'a'), parked);
+  assert.equal(hostForHighlight([swapped], { partId: '' }, 'a'), null);
 });
 
 test('reconcile keeps a matching key and disposes one that left', () => {
@@ -253,4 +260,80 @@ test('a built overlay is disposed with its outline and leaves the contact skin',
   assert.equal(contactDisposed, 0);
   assert.equal(contact.parent, hostMesh);
   disposeHighlightObject(direct);
+  assert.equal(record.mesh.material.color.getHex(), FEA_FIXTURE_HIGHLIGHT_COLOR);
+});
+
+test('fixtures are blue and loads are yellow', () => {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new BufferAttribute(new Float32Array([
+    0, 0, 0,
+    10, 0, 0,
+    0, 10, 0,
+  ]), 3));
+  geometry.setIndex([0, 1, 2]);
+  const fixture = createFaceHighlightMesh(geometry, [0]);
+  const load = createFaceHighlightMesh(geometry, [0], FEA_LOAD_HIGHLIGHT_COLOR);
+  assert.equal(fixture.material.color.getHex(), FEA_FIXTURE_HIGHLIGHT_COLOR);
+  assert.equal(fixture.children[0].material.color.getHex(), FEA_FIXTURE_HIGHLIGHT_COLOR);
+  assert.equal(load.material.color.getHex(), FEA_LOAD_HIGHLIGHT_COLOR);
+  assert.equal(load.children[0].material.color.getHex(), FEA_LOAD_HIGHLIGHT_COLOR);
+  disposeHighlightObject(fixture);
+  disposeHighlightObject(load);
+});
+
+test('a missing face map, a detached parent, or a throwing create does not attach', () => {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new BufferAttribute(new Float32Array([
+    0, 0, 0,
+    4, 0, 0,
+    0, 4, 0,
+  ]), 3));
+  geometry.setIndex([0, 1, 2]);
+  const bare = new Mesh(geometry, new MeshBasicMaterial());
+  const hosts = [{ id: 'a', active: true, mesh: bare }];
+  const study = { fixtures: [{ faces: [{ part: 'a' }] }], loads: [] };
+  const missing = syncFeaFaceHighlights(new Map(), study, hosts);
+  assert.equal(missing.overlays.size, 0);
+  assert.equal(bare.children.length, 0);
+
+  const detached = fakeMesh('gone');
+  detached.parent = null;
+  const detachedHosts = [{ id: 'gone', active: false, mesh: detached, faceIDs: [1] }];
+  const skipped = syncFeaFaceHighlights(new Map(), {
+    fixtures: [{ faces: [{ part: 'gone' }] }],
+  }, detachedHosts, { resolveTriangles: () => [0] });
+  assert.equal(skipped.overlays.size, 0);
+  assert.equal(detached.children.length, 0);
+
+  const host = fakeMesh('part');
+  host.faceIDs = [1];
+  const errors = [];
+  const orig = console.error;
+  console.error = (...args) => { errors.push(args); };
+  try {
+    const threw = syncFeaFaceHighlights(new Map(), {
+      fixtures: [{ faces: [{ part: 'part' }] }],
+    }, [{ id: 'part', active: true, mesh: host, faceIDs: [1] }], {
+      resolveTriangles: () => [0],
+      createMesh: () => { throw new Error('bad triangles'); },
+    });
+    assert.equal(threw.overlays.size, 0);
+    assert.equal(host.children.length, 0);
+    assert.equal(errors.length, 1);
+    assert.match(String(errors[0][0]), /ignored a bad face highlight/);
+  } finally {
+    console.error = orig;
+  }
+
+  const hidden = syncFeaFaceHighlights(new Map(), {
+    fixtures: [{ faces: [{ part: 'other' }] }, { faces: [{}] }],
+    loads: [{ faces: [{ part: 'part' }] }],
+  }, [{ id: 'part', active: true, mesh: host, faceIDs: [1] }], {
+    memberIds: ['part'],
+    analyzedPartId: 'part',
+    resolveTriangles: () => [1],
+    createMesh: (_host, _triangles, target) => fakeOverlay(target.key),
+  });
+  assert.deepEqual(hidden.created, ['fixture:1:0', 'load:0:0']);
+  assert.equal(host.children.filter((child) => child.name === FEA_FACE_HIGHLIGHT_NAME).length, 2);
 });
