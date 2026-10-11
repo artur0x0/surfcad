@@ -287,7 +287,8 @@ import PuzzlePickerModal from './components/PuzzlePickerModal';
 import GameConfetti from './components/GameConfetti';
 import { composeContourCommit } from './utils/contourMode';
 import { writeContourProfileBlock } from './utils/contourProfileWrite';
-import { saveEditedContour } from './utils/contourUsers';
+import { deleteContourStatement, saveEditedContour } from './utils/contourUsers';
+import { hasNamedContour } from './utils/namedContour';
 import {
   composeFilletCommit,
   composeChamferCommit,
@@ -5401,6 +5402,37 @@ const App = () => {
   };
 
   /**
+   * Delete a named contour. An unused contour drops its statement. A
+   * referenced contour, after confirm, also drops every feature block that
+   * names it. One applyBuffer, so Undo restores that whole step.
+   */
+  const handleDeleteContour = (payload) => {
+    if (!focusWritePart(payload?.partId)) {
+      viewportRef.current?.softFailContour?.(PICKED_PART_FAIL);
+      return false;
+    }
+    const id = payload?.contourId ? String(payload.contourId) : '';
+    let buf = codeEditorRef.current?.getContent?.() || '';
+    if (id && !hasNamedContour(buf, id) && hasNamedContour(currentScript, id)) buf = currentScript;
+    const saved = deleteContourStatement(buf, id, { withFeatures: !!payload?.withFeatures });
+    if (!saved.ok) {
+      viewportRef.current?.softFailContour?.(saved.message || 'Could not delete that contour.');
+      return false;
+    }
+    const wrote = codeEditorRef.current?.applyBuffer?.(saved.buffer, 'Delete contour');
+    if (!wrote) {
+      viewportRef.current?.softFailContour?.(
+        'Could not delete the contour from the editor — try again.',
+      );
+      return false;
+    }
+    setTimeout(() => {
+      handleGameRun();
+    }, 0);
+    return true;
+  };
+
+  /**
    * Slice 27: in-mode Fillet Accept. Writes makeSweepPath + filletAlongPath
    * and Auto-Runs. A second Accept appends to the marked block.
    * Picks can span parts: the editor part is written through the editor;
@@ -7376,6 +7408,7 @@ const App = () => {
               onInsertHelper={handleInsertHelper}
               onFeatureOpen={handleFeatureOpen}
               onCommitContourProfile={handleCommitContourProfile}
+              onDeleteContour={handleDeleteContour}
               onCommitFillet={handleCommitFillet}
               onCommitFeatureEdit={handleCommitFeatureEdit}
               onDeleteFeatureEdit={handleDeleteFeatureEdit}
@@ -7883,6 +7916,7 @@ const App = () => {
             onInsertHelper={handleInsertHelper}
             onFeatureOpen={handleFeatureOpen}
             onCommitContourProfile={handleCommitContourProfile}
+            onDeleteContour={handleDeleteContour}
             onCommitFillet={handleCommitFillet}
             onCommitFeatureEdit={handleCommitFeatureEdit}
             onDeleteFeatureEdit={handleDeleteFeatureEdit}

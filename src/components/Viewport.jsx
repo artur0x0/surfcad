@@ -63,6 +63,7 @@ import { FeatureDeleteToast } from './FeatureEditDelete';
 import ContourModeRail from './ContourModeRail';
 import ContourModeChip from './ContourModeChip';
 import ContourEditBar from './ContourEditBar';
+import ContourDeleteDialog from './ContourDeleteDialog';
 import FeatureSlotCard from './FeatureSlotCard';
 import FeatureSheet from './FeatureSheet';
 import FeatureEditSheet from './FeatureEditSheet';
@@ -114,7 +115,7 @@ import {
 } from '../utils/savedContours';
 import { shouldClearViewportScript } from '../utils/helperPaletteSnippets';
 import { hasNamedContour, mintContourIdentity } from '../utils/namedContour';
-import { contourUsedByText } from '../utils/contourUsers';
+import { contourFeatureUsers, contourUsedByText, deleteContourStatement } from '../utils/contourUsers';
 import {
   addFeatureStation,
   assignFeatureSlot,
@@ -122,6 +123,7 @@ import {
   featureSlotCommitPayload,
   featureSlotGhostId,
   featureSlotReady,
+  clearFeatureSlotRefs,
   removeFeatureStation,
   renameFeatureSlotRefs,
   setFeatureStationOffset,
@@ -858,6 +860,7 @@ const Viewport = forwardRef(({
   /** A palette tap is opening a sheet or mode (App: edit the picked part). */
   onFeatureOpen = null,
   onCommitContourProfile = null,
+  onDeleteContour = null,
   onCommitFillet = null,
   onCommitFeatureEdit = null,
   /** Delete from the open feature-edit dialog. False leaves the dialog up. */
@@ -1143,6 +1146,7 @@ const Viewport = forwardRef(({
   const slotReturnRef = useRef(null);
   const contourEditRef = useRef(null);
   const [contourEdit, setContourEdit] = useState(null);
+  const [contourDeleteConfirm, setContourDeleteConfirm] = useState(null);
   const [slotHoverId, setSlotHoverId] = useState(null);
   const closeFeatureSlotsRef = useRef(() => {});
   const [contourFaceAim, setContourFaceAim] = useState('');
@@ -3075,6 +3079,7 @@ const Viewport = forwardRef(({
   const exitContourMode = useCallback((reason) => {
     contourEditRef.current = null;
     setContourEdit(null);
+    setContourDeleteConfirm(null);
     faceSketchRef.current?.cancel();
     setContourFaceAim('');
     const keepCard = reason === 'slot' && featureSlotsRef.current;
@@ -3487,6 +3492,41 @@ const Viewport = forwardRef(({
       exitContourMode();
     }
   }, [onCommitContourProfile, selectedEdges, modelBounds, exitContourMode, getHelperBuffer]);
+
+  const commitContourDelete = useCallback((withFeatures) => {
+    const edit = contourEditRef.current;
+    if (!edit) return;
+    const ok = onDeleteContour?.({
+      partId: activePartIdRef.current,
+      contourId: edit.id,
+      withFeatures: !!withFeatures,
+    });
+    if (!ok) return;
+    setContourDeleteConfirm(null);
+    const back = !!(slotReturnRef.current && featureSlotsRef.current);
+    if (back) setFeatureSlots((prev) => clearFeatureSlotRefs(prev, edit.id));
+    slotReturnRef.current = null;
+    exitContourMode(back ? 'slot' : undefined);
+  }, [onDeleteContour, exitContourMode]);
+
+  const requestContourDelete = useCallback(() => {
+    const edit = contourEditRef.current;
+    if (!edit) return;
+    const fromEditor = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
+    const buf = hasNamedContour(fromEditor, edit.id)
+      ? fromEditor
+      : (hasNamedContour(currentScript, edit.id) ? currentScript : fromEditor);
+    const plan = deleteContourStatement(buf, edit.id, { withFeatures: false });
+    if (plan.confirm) {
+      setContourDeleteConfirm({ count: plan.count, label: plan.message });
+      return;
+    }
+    if (!plan.ok) {
+      showContourToast(plan.message);
+      return;
+    }
+    commitContourDelete(false);
+  }, [getHelperBuffer, currentScript, commitContourDelete]);
 
   const exitFilletMode = useCallback(() => {
     cancelFeatureEditRef.current?.('fillet');
@@ -4032,10 +4072,13 @@ const Viewport = forwardRef(({
     if (filletToastTimerRef.current) clearTimeout(filletToastTimerRef.current);
   }, [clearFilletBlendPreview]);
 
-  const savedContours = useMemo(
-    () => listSavedContours(currentScript || ''),
-    [currentScript],
-  );
+  const savedContours = useMemo(() => {
+    const script = currentScript || '';
+    return listSavedContours(script).map((row) => ({
+      ...row,
+      unused: contourFeatureUsers(script, row.name).length === 0,
+    }));
+  }, [currentScript]);
 
   const constructionPlanes = useMemo(
     () => listConstructionPlanes(currentScript || ''),
@@ -10614,8 +10657,15 @@ const Viewport = forwardRef(({
           onParam={(key, value) => setContourMode((prev) => (
             prev ? { ...prev, params: { ...(prev.params || {}), [key]: value } } : prev
           ))}
+          onDelete={requestContourDelete}
         />
       )}
+      <ContourDeleteDialog
+        open={!!contourDeleteConfirm}
+        label={contourDeleteConfirm?.label || ''}
+        onCancel={() => setContourDeleteConfirm(null)}
+        onConfirm={() => commitContourDelete(true)}
+      />
 
       {/* Contour rail: tools, Back undoes, Confirm finishes, X exits. */}
       {contourMode && (

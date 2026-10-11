@@ -18,6 +18,7 @@ export default function ContourEditBar({
   lengthMm = 100,
   onName,
   onParam,
+  onDelete,
 }) {
   const L = partLengthMm(lengthMm);
   const sized = !params?.contour && (tool === 'circle' || tool === 'rectangle' || tool === 'polygon');
@@ -36,17 +37,30 @@ export default function ContourEditBar({
         pointer-events-auto max-w-sm"
       data-contour-edit=""
     >
-      <label className="flex items-center gap-2 text-[12px]">
-        <span className="uppercase tracking-wide text-cyan-200/80">Name</span>
-        <input
-          type="text"
-          value={name}
-          aria-label="Contour name"
-          data-contour-name=""
-          onChange={(event) => onName?.(event.target.value)}
-          className="min-w-0 flex-1 rounded border border-cyan-700/70 bg-cyan-950 px-2 py-0.5 text-[13px] text-white"
-        />
-      </label>
+      <div className="flex items-center gap-2">
+        <label className="flex min-w-0 flex-1 items-center gap-2 text-[12px]">
+          <span className="uppercase tracking-wide text-cyan-200/80">Name</span>
+          <input
+            type="text"
+            value={name}
+            aria-label="Contour name"
+            data-contour-name=""
+            onChange={(event) => onName?.(event.target.value)}
+            className="min-w-0 flex-1 rounded border border-cyan-700/70 bg-cyan-950 px-2 py-0.5 text-[13px] text-white"
+          />
+        </label>
+        <button
+          type="button"
+          data-contour-delete=""
+          aria-label="Delete contour"
+          title="Delete this contour"
+          onClick={() => onDelete?.()}
+          className="inline-flex shrink-0 items-center rounded-md border border-red-700/60
+            bg-red-950/50 px-2.5 py-1 text-[13px] font-medium text-red-200 hover:bg-red-900/70 hover:text-white"
+        >
+          Delete
+        </button>
+      </div>
       <p className="text-[12px] leading-tight text-amber-200" data-contour-used-by="">
         {usedBy}
       </p>

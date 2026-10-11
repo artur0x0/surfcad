@@ -8,15 +8,19 @@ import {
   composeContourProfile,
 } from './contourMode.js';
 import { listSavedContours } from './savedContours.js';
+import { deleteFeatureEdit } from './featureEdit.js';
 import {
   assignFeatureSlot,
+  clearFeatureSlotRefs,
   emptyFeatureSlotCard,
   renameFeatureSlotRefs,
   setFeatureStationOffset,
 } from './featureSlotCard.js';
 import {
+  contourDeleteConfirmLabel,
   contourFeatureUsers,
   contourUsedByText,
+  deleteContourStatement,
   featuresWithContours,
   mentionsIdentifier,
   saveEditedContour,
@@ -186,6 +190,7 @@ test('the strip lists the contour chip without a type badge', () => {
   assert.equal(contour.chipLabel, 'c1');
   assert.equal(contour.id, 'contour:c1');
   assert.equal(contour.typeIndex, null);
+  assert.equal(contour.unused, false);
   const extrudeAt = chips.findIndex((chip) => chip.kind === 'extrude');
   const contourAt = chips.findIndex((chip) => chip.contourId === 'c1');
   assert.ok(contourAt >= 0 && contourAt < extrudeAt);
@@ -209,4 +214,58 @@ test('a rename refreshes every slot that stored the contour id', () => {
   assert.equal(next.stations[0].offset, 4);
   assert.equal(next.stations[1].contourName, 'c2');
   assert.equal(next.stations[1].offset, 20);
+  const cleared = clearFeatureSlotRefs(next, 'c1');
+  assert.equal(cleared.stations[0].contourName, null);
+  assert.equal(cleared.stations[0].offset, 4);
+  assert.equal(cleared.stations[1].contourName, 'c2');
+});
+
+test('deleting a feature leaves its contour, and an unused contour deletes immediately', () => {
+  const profile = composeContourProfile('', {
+    face: FACE,
+    tool: 'circle',
+    params: { radius: 6, segments: 24 },
+  });
+  assert.equal(profile.ok, true, profile.message);
+  const extruded = composeContourExtrude(profile.buffer, {
+    face: FACE,
+    tool: 'circle',
+    params: { radius: 6, segments: 24 },
+    contourId: 'c1',
+    contourName: 'c1',
+    extrude: { distance: 8, direction: 'normal', sense: 'positive' },
+  });
+  assert.equal(extruded.ok, true, extruded.message);
+  const removed = deleteFeatureEdit(extruded.buffer, { id: 'extrude1', kind: 'extrude' });
+  assert.equal(removed.ok, true, removed.message);
+  assert.match(removed.buffer, /@contour id=c1/);
+  assert.doesNotMatch(removed.buffer, /id=extrude1/);
+  assert.equal(contourUsedByText(removed.buffer, 'c1'), 'Unused');
+  const chip = featuresWithContours(removed.buffer).find((row) => row.contourId === 'c1');
+  assert.equal(chip.unused, true);
+  const gone = deleteContourStatement(removed.buffer, 'c1');
+  assert.equal(gone.ok, true, gone.message);
+  assert.equal(gone.confirm, undefined);
+  assert.doesNotMatch(gone.buffer, /@contour id=c1/);
+  assert.match(removed.buffer, /@contour id=c1/);
+});
+
+test('a referenced contour asks before it deletes those features', () => {
+  const before = sharedScript();
+  const ask = deleteContourStatement(before, 'c1');
+  assert.equal(ask.ok, false);
+  assert.equal(ask.confirm, true);
+  assert.equal(ask.count, 2);
+  assert.equal(ask.message, contourDeleteConfirmLabel(2));
+  assert.equal(ask.message, 'Delete along with 2 features');
+  assert.match(before, /id=extrude1/);
+  const one = deleteContourStatement(before, 'c2');
+  assert.equal(one.message, 'Delete along with 1 feature');
+  const saved = deleteContourStatement(before, 'c1', { withFeatures: true });
+  assert.equal(saved.ok, true, saved.message);
+  assert.doesNotMatch(saved.buffer, /@contour id=c1/);
+  assert.doesNotMatch(saved.buffer, /id=extrude1/);
+  assert.doesNotMatch(saved.buffer, /id=loft1/);
+  assert.match(saved.buffer, /@contour id=c2/);
+  assert.match(saved.buffer, /profileCircle\(3, 16\)/);
 });

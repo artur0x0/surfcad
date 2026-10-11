@@ -125,9 +125,17 @@ function FeatureGlyph({ kind, size }) {
 function chipTitle(f, failed, bodyCount) {
   if (failed) return `${f.chipLabel} — failed on the last run`;
   if (f.external) return `${f.chipLabel} — external copy, not linked`;
+  if (f.unused) return `${f.chipLabel} — unused`;
   return featureShowsSeparateBody(f, bodyCount)
     ? `${f.chipLabel} — separate body (merge off)`
     : f.chipLabel;
+}
+
+function UnusedTag({ on }) {
+  if (!on) return null;
+  return (
+    <span className="text-[8px] font-semibold leading-none text-amber-200">unused</span>
+  );
 }
 
 /** Merge bodies off: two small offset squares, top-left of the chip. */
@@ -397,19 +405,22 @@ export default function FeatureStrip({
                   data-feature-id={f.id}
                   data-feature-type-index={typeIndex || undefined}
                   data-contour-id={f.contourId || undefined}
+                  data-contour-unused={f.unused ? '' : undefined}
                   data-feature-external={f.external ? '1' : undefined}
                   data-feature-separate={separateLive ? '1' : undefined}
                   data-feature-failed={failed ? '1' : undefined}
                   aria-pressed={active}
-                  aria-label={f.chipLabel}
+                  aria-label={f.unused ? `${f.chipLabel} unused` : f.chipLabel}
                   aria-invalid={failed || undefined}
                   aria-description={f.external ? 'External copy, not linked' : undefined}
                   title={chipTitle(f, failed, bodyCount)}
                   onClick={() => onJump?.(f)}
                   className={`relative shrink-0 rounded-lg p-1.5 flex items-center justify-center
-                    border transition-colors active:opacity-80 ${chipTone(active, f.external, failed)}`}
+                    border transition-colors active:opacity-80 ${chipTone(active, f.external, failed)}
+                    ${f.unused ? 'flex-col gap-0.5' : ''}`}
                 >
                   <FeatureGlyph kind={f.kind} size={16} />
+                  <UnusedTag on={f.unused} />
                   <TypeBadge index={typeIndex} />
                   <SeparateBodyMarker on={separateLive} />
                 </button>
@@ -490,19 +501,22 @@ export default function FeatureStrip({
             data-feature-id={f.id}
             data-feature-type-index={typeIndex || undefined}
             data-contour-id={f.contourId || undefined}
+            data-contour-unused={f.unused ? '' : undefined}
             data-feature-external={f.external ? '1' : undefined}
             data-feature-separate={separateLive ? '1' : undefined}
             data-feature-failed={failed ? '1' : undefined}
             aria-pressed={active}
-            aria-label={f.chipLabel}
+            aria-label={f.unused ? `${f.chipLabel} unused` : f.chipLabel}
             aria-invalid={failed || undefined}
             aria-description={f.external ? 'External copy, not linked' : undefined}
             title={chipTitle(f, failed, bodyCount)}
             onClick={() => onJump?.(f)}
             className={`relative shrink-0 rounded-lg p-1.5 flex items-center justify-center
-              border transition-colors active:opacity-80 ${chipTone(active, f.external, failed)}`}
+              border transition-colors active:opacity-80 ${chipTone(active, f.external, failed)}
+              ${f.unused ? 'flex-col gap-0.5' : ''}`}
           >
             <FeatureGlyph kind={f.kind} size={16} />
+            <UnusedTag on={f.unused} />
             <TypeBadge index={typeIndex} />
             <SeparateBodyMarker on={separateLive} />
           </button>

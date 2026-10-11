@@ -99,7 +99,14 @@ export function contourFeatureUsers(buffer, contourName) {
       kind: feature.kind,
       label: featureLabelFromBlock(feature),
       startOffset: feature.startOffset,
+      endOffset: feature.endOffset,
     }));
+}
+
+/** "Delete along with 2 features". One feature stays singular. */
+export function contourDeleteConfirmLabel(count) {
+  const n = Number(count) || 0;
+  return `Delete along with ${n} feature${n === 1 ? '' : 's'}`;
 }
 
 /** "Used by Loft 1, Extrude 2", or "Unused". */
@@ -128,6 +135,7 @@ export function featuresWithContours(script) {
     index: null,
     typeIndex: null,
     contourId: stmt.id,
+    unused: contourFeatureUsers(text, stmt.name).length === 0,
   }));
   return [...features, ...contours].sort((a, b) => (
     a.startOffset - b.startOffset || String(a.id).localeCompare(String(b.id))
@@ -196,4 +204,67 @@ export function saveEditedContour(buffer, spec = {}) {
     next = renamed.buffer;
   }
   return { ok: true, buffer: next, id, name: editorName, run: true };
+}
+
+function dropSpan(script, start, end) {
+  const a = Math.max(0, start | 0);
+  const b = Math.max(a, end | 0);
+  if (!(b > a) || b > script.length) return null;
+  let before = script.slice(0, a);
+  let after = script.slice(b);
+  if (/(?:\r?\n)[ \t]*$/u.test(before) && /^(?:\r?\n)/u.test(after)) {
+    after = after.replace(/^(?:\r?\n)/u, '');
+  }
+  if (!after) before = before.replace(/(?:\r?\n){2,}$/u, '\n');
+  else if (!before) after = after.replace(/^(?:\r?\n)+/u, '');
+  return before + after;
+}
+
+/**
+ * Remove this contour's statement. A contour something still names is not
+ * removed until `withFeatures` is set; that also drops every feature block
+ * that names it, as one buffer so undo restores all of them.
+ *
+ * @returns {{ ok: true, buffer: string, id: string, name: string, run: true }
+ *   | { ok: false, confirm?: true, count?: number, message: string }}
+ */
+export function deleteContourStatement(buffer, contourId, { withFeatures = false } = {}) {
+  const text = String(buffer || '');
+  const id = String(contourId || '');
+  const stmt = contourStatements(text).find((row) => row.id === id);
+  if (!stmt) return { ok: false, message: 'No contour with that id.' };
+  const users = contourFeatureUsers(text, stmt.name);
+  if (users.length && !withFeatures) {
+    return {
+      ok: false,
+      confirm: true,
+      count: users.length,
+      message: contourDeleteConfirmLabel(users.length),
+    };
+  }
+  const dropStarts = new Set(withFeatures ? users.map((user) => user.startOffset) : []);
+  const kept = parseFeatureMarkers(text)
+    .filter((feature) => !dropStarts.has(feature.startOffset))
+    .map((feature) => text.slice(feature.startOffset, feature.endOffset));
+  const ranges = [{ start: stmt.start, end: stmt.end }];
+  if (withFeatures) {
+    for (const user of users) ranges.push({ start: user.startOffset, end: user.endOffset });
+  }
+  ranges.sort((a, b) => b.start - a.start);
+  let next = text;
+  for (const range of ranges) {
+    const dropped = dropSpan(next, range.start, range.end);
+    if (dropped == null) return { ok: false, message: 'Could not delete that contour.' };
+    next = dropped;
+  }
+  const after = parseFeatureMarkers(next).map((feature) => (
+    next.slice(feature.startOffset, feature.endOffset)
+  ));
+  if (after.length !== kept.length || after.some((block, index) => block !== kept[index])) {
+    return { ok: false, message: 'Delete would change another feature — refusing.' };
+  }
+  if (contourStatements(next).some((row) => row.id === id)) {
+    return { ok: false, message: 'Delete did not remove the contour — refusing.' };
+  }
+  return { ok: true, buffer: next, id, name: stmt.name, run: true };
 }
