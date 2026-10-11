@@ -2034,6 +2034,14 @@ function _loftPlaceIndex(frames, offsets) {
   return best;
 }
 
+function _namedContour(buffer, name, id) {
+  if (!name && !id) return null;
+  return contourStatements(String(buffer || '')).find((stmt) => (
+    (name && (stmt.name === name || stmt.id === name))
+    || (id && (stmt.id === id || stmt.name === id))
+  )) || null;
+}
+
 function _frameFromPlaneExpr(expr) {
   const m = String(expr || '').match(
     /center:\s*\[([^\]]+)\][\s\S]*?normal:\s*\[([^\]]+)\][\s\S]*?x:\s*\[([^\]]+)\][\s\S]*?y:\s*\[([^\]]+)\]/,
@@ -2090,13 +2098,32 @@ export function composeContourLoft(buffer, {
     }
     return cloned;
   });
+  // Named stations already own their frames. Offset stays on the station.
+  // Coincident numbers are not a shared-plane clash.
+  const namedStations = list.length > 0 && list.every((p) => _namedContour(buffer, p.contourName, p.contourId));
   let sections;
-  try {
-    const built = loftSectionsForCompose(face, list);
-    if (!built.ok) return built;
-    sections = built;
-  } catch (e) {
-    return { ok: false, message: (e && e.message) || String(e) };
+  if (namedStations) {
+    if (list.length < LOFT_MIN_PROFILES) {
+      return { ok: false, message: 'makeLoft: need at least 2 profiles' };
+    }
+    if (list.length > LOFT_MAX_PROFILES) {
+      return { ok: false, message: `makeLoft: at most ${LOFT_MAX_PROFILES} profiles in v1` };
+    }
+    const normalized = list.map((p) => normalizeLoftProfile(p));
+    for (let i = 0; i < normalized.length; i++) {
+      if (!Number.isFinite(Number(normalized[i].offset))) {
+        return { ok: false, message: `makeLoft: profile ${i + 1}: offset must be finite` };
+      }
+    }
+    sections = { normalized };
+  } else {
+    try {
+      const built = loftSectionsForCompose(face, list);
+      if (!built.ok) return built;
+      sections = built;
+    } catch (e) {
+      return { ok: false, message: (e && e.message) || String(e) };
+    }
   }
 
   const text = String(buffer || '');
@@ -2123,9 +2150,10 @@ export function composeContourLoft(buffer, {
   for (let i = 0; i < normalized.length; i++) {
     const p = normalized[i];
     const owns = loftStationOwnsPlane(p);
-    const offset = owns ? 0 : Number(p.offset) || 0;
     const requestedName = p.contourName || null;
     const requestedContour = p.contourId || null;
+    const named = !!(requestedName || requestedContour);
+    const offset = owns && !named ? 0 : (Number(p.offset) || 0);
     if (requestedName || requestedContour) {
       const stmt = contourStatements(next).find((s) => (
         (requestedName && (s.name === requestedName || s.id === requestedName))
@@ -2310,14 +2338,32 @@ export function composeContourSweep(buffer, {
 } = {}) {
   const gate = validateContourProfile(tool, params);
   if (!gate.ok) return gate;
-  const pathGate = validateSweepPath(edges, sweep);
-  if (!pathGate.ok) return pathGate;
-
-  const pathFrame = sweepPathFrame(pathGate.path.points);
-  if (!pathFrame) {
-    return { ok: false, message: 'composeContourSweep: path has no direction.' };
+  const pathName = pathContourName || sweep.pathContourName || null;
+  const pathId = pathContourId || sweep.pathContourId || null;
+  const pathStmt = _namedContour(buffer, pathName, pathId);
+  let pathGate;
+  let pathFrame;
+  let pathUv;
+  if (pathStmt) {
+    pathFrame = _frameFromPlaneExpr(pathStmt.planeExpr) || planeFromContourFace(face);
+    if (!pathFrame?.x) {
+      return { ok: false, message: 'composeContourSweep: path has no direction.' };
+    }
+    pathUv = [[0, 0], [1, 0]];
+    pathGate = {
+      ok: true,
+      path: { points: [pathFrame.center, pathFrame.center], closed: false, length: 1 },
+      normalized: { reverse: false },
+    };
+  } else {
+    pathGate = validateSweepPath(edges, sweep);
+    if (!pathGate.ok) return pathGate;
+    pathFrame = sweepPathFrame(pathGate.path.points);
+    if (!pathFrame) {
+      return { ok: false, message: 'composeContourSweep: path has no direction.' };
+    }
+    pathUv = projectPathUv(pathGate.path.points, pathFrame);
   }
-  const pathUv = projectPathUv(pathGate.path.points, pathFrame);
   const plane = planeFromContourFace(face);
   const text = String(buffer || '');
   if (!featureMarkersBalanced(text, CONTOUR_SWEEP_BEGIN, CONTOUR_SWEEP_END)) {
@@ -2457,8 +2503,55 @@ export function composeContourWorkplane(buffer, payload = {}) {
   return { ok: true, buffer: composed, run: false };
 }
 
+/**
+ * New contour on a Sweep path slot. The drawn profile becomes a path
+ * contour (UV ring, closed when the profile is a loop). It does not
+ * write a solid.
+ */
+export function composePathContour(buffer, {
+  face = null,
+  tool = 'circle',
+  params = {},
+} = {}) {
+  const gate = validateContourProfile(tool, params);
+  if (!gate.ok) return gate;
+  let ring;
+  try {
+    ring = buildProfileFromParams(toolToProfileParams(tool, params)).contours?.[0];
+  } catch (e) {
+    return { ok: false, message: (e && e.message) || String(e) };
+  }
+  if (!ring || ring.length < 2) {
+    return { ok: false, message: 'composePathContour: path needs at least 2 points' };
+  }
+  let pts = ring.map((p) => [Number(p[0]), Number(p[1])]);
+  if (pts.length >= 2) {
+    const a = pts[0];
+    const b = pts[pts.length - 1];
+    if (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6) pts = pts.slice(0, -1);
+  }
+  if (pts.length < 2) {
+    return { ok: false, message: 'composePathContour: path needs at least 2 points' };
+  }
+  const saved = upsertNamedContour(buffer, {
+    frame: planeFromContourFace(face && face.type === 'planar' ? face : null),
+    profileExpr: emitPathProfileExpr(pts, pts.length >= 3),
+  });
+  if (!saved.ok) return saved;
+  return {
+    ok: true,
+    buffer: saved.buffer,
+    contourId: saved.id,
+    contourName: saved.name,
+    run: false,
+  };
+}
+
 export function composeContourCommit(buffer, payload = {}) {
   const entry = payload.entry || 'crossSection';
+  if (payload.saveAsPath) {
+    return composePathContour(buffer, payload);
+  }
   if (isWorkplaneEntry(entry)) {
     return composeContourWorkplane(buffer, payload);
   }

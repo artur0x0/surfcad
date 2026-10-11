@@ -186,10 +186,8 @@ async function boot(page) {
   await page.waitForTimeout(200);
 }
 
-async function confirmFeature(page, label) {
-  const button = page.locator(`button[aria-label^="Insert ${label}"]`);
-  await button.scrollIntoViewIfNeeded();
-  await button.click();
+async function newContour(page, role, index) {
+  await page.locator(`[data-new-contour-role="${role}"][data-new-contour-index="${index}"]`).click();
   await page.locator('[data-contour-chip]').waitFor({ timeout: 8000 });
   await page.locator('[data-feature-card-confirm]').click();
   await page.waitForFunction(() => (
@@ -197,7 +195,17 @@ async function confirmFeature(page, label) {
     && !document.querySelector('[data-contour-chip]')
   ), null, { timeout: 8000 });
   await page.locator('[data-contour-confirm]').click();
-  await page.waitForFunction(() => !document.querySelector('[data-contour-exit]'), null, { timeout: 15000 });
+  await page.locator('[data-feature-slot-card]').waitFor({ timeout: 8000 });
+}
+
+async function confirmFeature(page, label) {
+  const button = page.locator(`button[aria-label^="Insert ${label}"]`);
+  await button.scrollIntoViewIfNeeded();
+  await button.click();
+  await page.locator('[data-feature-slot-card]').waitFor({ timeout: 8000 });
+  await newContour(page, 'profile', 0);
+  await page.locator('[data-feature-card-confirm]').click();
+  await page.waitForFunction(() => !document.querySelector('[data-feature-slot-card]'), null, { timeout: 15000 });
 }
 
 async function runSize(browser, label, contextOptions) {

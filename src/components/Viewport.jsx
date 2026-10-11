@@ -62,6 +62,7 @@ import ErrorPopup from './ErrorPopup';
 import { FeatureDeleteToast } from './FeatureEditDelete';
 import ContourModeRail from './ContourModeRail';
 import ContourModeChip from './ContourModeChip';
+import FeatureSlotCard from './FeatureSlotCard';
 import FeatureSheet from './FeatureSheet';
 import FeatureEditSheet from './FeatureEditSheet';
 import FilletModeChip from './FilletModeChip';
@@ -113,6 +114,16 @@ import {
 import { shouldClearViewportScript } from '../utils/helperPaletteSnippets';
 import { mintContourIdentity } from '../utils/namedContour';
 import {
+  addFeatureStation,
+  assignFeatureSlot,
+  emptyFeatureSlotCard,
+  featureSlotCommitPayload,
+  featureSlotGhostId,
+  featureSlotReady,
+  removeFeatureStation,
+  setFeatureStationOffset,
+} from '../utils/featureSlotCard';
+import {
   blockGeomKey,
   blockParamsPending,
   blockSpec,
@@ -137,6 +148,7 @@ import {
   isExtrudeEntry,
   isLoftEntry,
   isRevolveEntry,
+  isSolidContourEntry,
   isSweepEntry,
   isWorkplaneEntry,
   planeFromContourFace,
@@ -1121,6 +1133,12 @@ const Viewport = forwardRef(({
   /** Plane card is the first step. Drawing keeps the rail and drops the card. */
   const [contourPlaneOpen, setContourPlaneOpen] = useState(false);
   const contourPlaneOpenRef = useRef(false);
+  const [featureSlots, setFeatureSlots] = useState(null);
+  const featureSlotsRef = useRef(null);
+  featureSlotsRef.current = featureSlots;
+  const slotReturnRef = useRef(null);
+  const [slotHoverId, setSlotHoverId] = useState(null);
+  const closeFeatureSlotsRef = useRef(() => {});
   const [contourFaceAim, setContourFaceAim] = useState('');
   const [contourUndoDepth, setContourUndoDepth] = useState(0);
   const [faceSketchNonce, setFaceSketchNonce] = useState(0);
@@ -1518,6 +1536,7 @@ const Viewport = forwardRef(({
   const gestureSheetOpen = contourSession && !contourPlaneOpen
     && (contourMode?.gesture === 'dimension' || contourMode?.gesture === 'constraints');
   const contourSheetOpen = (contourSession && contourPlaneOpen) || gestureSheetOpen;
+  const featureSlotSheetOpen = mode !== 'game' && !!featureSlots && !contourMode;
   const filletSheetOpen = mode !== 'game' && !!filletMode;
   const shellSheetOpen = mode !== 'game' && !!shellMode;
   const draftSheetOpen = mode !== 'game' && !!draftMode;
@@ -1544,6 +1563,7 @@ const Viewport = forwardRef(({
     && !!featureEdit
     && (featureEdit.mode === 'edit' || featureEdit.mode === 'picker');
   const editSheetOpen = featureEditRequested
+    && !featureSlots
     && !contourSession
     && !filletSheetOpen
     && !shellSheetOpen
@@ -1562,6 +1582,7 @@ const Viewport = forwardRef(({
     && !editSheetOpen
     && pickMode === 'edge'
     && !contourMode
+    && !featureSlots
     && !filletMode
     && !shellMode
     && !draftMode
@@ -1577,8 +1598,10 @@ const Viewport = forwardRef(({
     && !paintMode && selectedEdges.length > 0;
   const featureCardKind = filletSheetOpen
     ? 'fillet'
-    : contourSheetOpen
-      ? 'contour'
+    : featureSlotSheetOpen
+      ? `slots:${featureSlots.kind}`
+      : contourSheetOpen
+        ? 'contour'
       : shellSheetOpen
         ? 'shell'
         : draftSheetOpen
@@ -3041,10 +3064,12 @@ const Viewport = forwardRef(({
     }
   }, [clearFilletBlendPreview, anchorToActivePart]);
 
-  const exitContourMode = useCallback(() => {
+  const exitContourMode = useCallback((reason) => {
     faceSketchRef.current?.cancel();
     setContourFaceAim('');
-    releaseContourOverlays(overlayVis);
+    const keepCard = reason === 'slot' && featureSlotsRef.current;
+    if (keepCard) holdContourOverlays(overlayVis, featureSlotsRef.current.kind);
+    else releaseContourOverlays(overlayVis);
     cancelFeatureEditRef.current?.('contour');
     setContourMode(null);
     contourModeRef.current = null;
@@ -3070,6 +3095,104 @@ const Viewport = forwardRef(({
     }
     setContourToast(null);
   }, [clearXsPreview, clearWorkplaneOverlay, clearPolylineDraft, clearExtrudePreview, clearRevolvePreview, clearLoftPreview, clearSweepPreview, applyContourPartGhost, clearSavedContourGhosts]);
+
+  const closeFeatureSlots = useCallback(() => {
+    slotReturnRef.current = null;
+    featureSlotsRef.current = null;
+    setFeatureSlots(null);
+    setSlotHoverId(null);
+    if (!contourModeRef.current) releaseContourOverlays(overlayVis);
+  }, []);
+  closeFeatureSlotsRef.current = closeFeatureSlots;
+
+  useEffect(() => {
+    if (!featureSlots) return undefined;
+    if (
+      paintMode || filletMode || shellMode || draftMode || cutMode || booleanMode
+      || moveMode || moveFaceMode || deleteFaceMode || sheetMetalMode || sheetMetalPicker
+      || feaActive || helperCardOpen
+    ) {
+      closeFeatureSlots();
+    }
+    return undefined;
+  }, [
+    featureSlots,
+    helperCardOpen,
+    paintMode,
+    filletMode,
+    shellMode,
+    draftMode,
+    cutMode,
+    booleanMode,
+    moveMode,
+    moveFaceMode,
+    deleteFaceMode,
+    sheetMetalMode,
+    sheetMetalPicker,
+    feaActive,
+    closeFeatureSlots,
+  ]);
+
+  const openFeatureSlots = useCallback((entry) => {
+    if (!isSolidContourEntry(entry) || mode === 'game') return;
+    slotReturnRef.current = null;
+    if (contourModeRef.current) exitContourMode();
+    holdContourOverlays(overlayVis, entry);
+    feaCloseRef.current();
+    exitPaintModeRef.current();
+    exitSheetMetalChromeRef.current();
+    setFilletMode(null);
+    filletModeRef.current = null;
+    clearFilletBlendPreview();
+    clearEdgeHover();
+    clearEdgeHighlight();
+    setSelectedEdges([]);
+    setShellMode(null);
+    shellModeRef.current = null;
+    setDraftMode(null);
+    draftModeRef.current = null;
+    setCutMode(null);
+    cutModeRef.current = null;
+    setBooleanMode(null);
+    booleanModeRef.current = null;
+    setMoveMode(null);
+    moveModeRef.current = null;
+    clearMoveFacePreviewRef.current();
+    setMoveFaceMode(null);
+    moveFaceModeRef.current = null;
+    clearDeleteFacePreviewRef.current();
+    setDeleteFaceMode(null);
+    deleteFaceModeRef.current = null;
+    setSheetMetalMode(null);
+    setSheetMetalPicker(null);
+    setHelperCardOpen(false);
+    const next = emptyFeatureSlotCard(entry);
+    featureSlotsRef.current = next;
+    setFeatureSlots(next);
+    setSlotHoverId(null);
+  }, [
+    mode,
+    exitContourMode,
+    clearFilletBlendPreview,
+    clearEdgeHover,
+    clearEdgeHighlight,
+  ]);
+
+  const confirmFeatureSlots = useCallback(() => {
+    const card = featureSlotsRef.current;
+    if (!featureSlotReady(card)) return;
+    const ok = onCommitContourProfile?.({
+      partId: activePartIdRef.current,
+      ...featureSlotCommitPayload(card),
+    });
+    if (ok) closeFeatureSlots();
+  }, [onCommitContourProfile, closeFeatureSlots]);
+
+  const cancelContourEditor = useCallback(() => {
+    const back = !!(slotReturnRef.current && featureSlotsRef.current);
+    slotReturnRef.current = null;
+    exitContourMode(back ? 'slot' : undefined);
+  }, [exitContourMode]);
 
   const enterContourMode = useCallback(({ entry } = {}) => {
     holdContourOverlays(overlayVis, entry);
@@ -3136,9 +3259,40 @@ const Viewport = forwardRef(({
     applyContourPartGhost(true);
   }, [selectedFace, selectedPlaneId, armedContourId, applyContourPartGhost, clearFilletBlendPreview, clearEdgeHover, clearEdgeHighlight, getHelperBuffer, currentScript]);
 
+  const beginNewContour = useCallback((slot) => {
+    if (!featureSlotsRef.current || !slot) return;
+    slotReturnRef.current = slot;
+    enterContourMode({ entry: 'crossSection' });
+  }, [enterContourMode]);
+
   const confirmContourProfile = useCallback(() => {
     const state = contourModeRef.current;
     if (!state) return;
+    if (slotReturnRef.current && featureSlotsRef.current) {
+      const slot = slotReturnRef.current;
+      const gate = validateContourProfile(state.tool, state.params);
+      if (!gate.ok) {
+        showContourToast(gate.message);
+        return;
+      }
+      const commitFace = activeContourFace(state, modelBounds);
+      const ok = onCommitContourProfile?.({
+        partId: activePartIdRef.current,
+        face: state.planeFace || commitFace,
+        tool: state.tool,
+        params: state.params,
+        entry: 'crossSection',
+        saveAsPath: slot.role === 'path',
+      });
+      if (!ok) return;
+      const buf = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
+      const saved = listSavedContours(buf);
+      const created = saved.length ? saved[saved.length - 1] : null;
+      slotReturnRef.current = null;
+      if (created) setFeatureSlots((prev) => assignFeatureSlot(prev, slot, created));
+      exitContourMode('slot');
+      return;
+    }
     if (!isWorkplaneEntry(state.entry)) {
       const gate = validateContourProfile(state.tool, state.params);
       if (!gate.ok) {
@@ -3227,7 +3381,7 @@ const Viewport = forwardRef(({
     if (ok) {
       exitContourMode();
     }
-  }, [onCommitContourProfile, selectedEdges, modelBounds, exitContourMode]);
+  }, [onCommitContourProfile, selectedEdges, modelBounds, exitContourMode, getHelperBuffer]);
 
   const exitFilletMode = useCallback(() => {
     cancelFeatureEditRef.current?.('fillet');
@@ -3518,6 +3672,7 @@ const Viewport = forwardRef(({
 
   const enterPaintMode = useCallback(() => {
     if (mode === 'game') return;
+    closeFeatureSlotsRef.current();
     feaCloseRef.current();
     exitContourMode();
     setFilletMode(null);
@@ -3567,6 +3722,7 @@ const Viewport = forwardRef(({
   // Analyze takes the canvas the way Paint does. Other mode chips close first.
   // This does not post a build and does not touch the assembly-open lock.
   const releaseModesForFea = useCallback(() => {
+    closeFeatureSlotsRef.current();
     exitContourMode();
     setFilletMode(null);
     filletModeRef.current = null;
@@ -3838,10 +3994,14 @@ const Viewport = forwardRef(({
       clearSavedContourGhosts();
       return;
     }
-    const pickedId = contourMode?.pickedContourId || armedContourId;
+    const pickedId = featureSlotGhostId(featureSlots, slotHoverId)
+      || contourMode?.pickedContourId
+      || armedContourId;
     paintSavedContourGhosts(entries.map((entry) => ({ ...entry, pickedId })));
   }, [
     contourMode,
+    featureSlots,
+    slotHoverId,
     armedContourId,
     savedContours,
     savedContourHostPlane,
@@ -10223,7 +10383,10 @@ const Viewport = forwardRef(({
           onProfilePreview={setXsPreview}
           onPathPreview={setPathPreview}
           onBlockPreview={setBlockPreview}
-          onEnterContourMode={enterContourMode}
+          onEnterContourMode={(payload) => {
+            if (isSolidContourEntry(payload?.entry)) openFeatureSlots(payload.entry);
+            else enterContourMode(payload);
+          }}
           onEnterFilletMode={enterFilletMode}
           onEnterShellMode={enterShellMode}
           onEnterDraftMode={enterDraftMode}
@@ -10347,7 +10510,7 @@ const Viewport = forwardRef(({
           })}
           onUndo={onContourBack}
           onConfirm={confirmContourProfile}
-          onBack={exitContourMode}
+          onBack={cancelContourEditor}
         />
       )}
 
@@ -10549,6 +10712,33 @@ const Viewport = forwardRef(({
         />
       )}
 
+      {featureSlotSheetOpen && (
+        <FeatureSlotCard
+          card={featureSlots}
+          contours={savedContours}
+          hoverId={slotHoverId}
+          compact={isMobile}
+          lengthMm={characteristicLengthMm({ bounds: modelBounds })}
+          onHover={setSlotHoverId}
+          onPick={(slot, contour) => {
+            setSlotHoverId(contour?.id || null);
+            setFeatureSlots((prev) => assignFeatureSlot(prev, slot, contour));
+          }}
+          onNew={beginNewContour}
+          onOffset={(index, offset) => setFeatureSlots((prev) => setFeatureStationOffset(prev, index, offset))}
+          onAddStation={() => setFeatureSlots((prev) => addFeatureStation(prev))}
+          onRemoveStation={(index) => setFeatureSlots((prev) => removeFeatureStation(prev, index))}
+          onCombine={(combine) => setFeatureSlots((prev) => (
+            prev ? { ...prev, combine: combine === 'subtract' ? 'subtract' : 'add' } : prev
+          ))}
+          onMerge={(merge) => setFeatureSlots((prev) => (
+            prev ? { ...prev, merge: merge !== false } : prev
+          ))}
+          onConfirm={confirmFeatureSlots}
+          onCancel={closeFeatureSlots}
+        />
+      )}
+
       {/* Plane card. Start drawing accepts the plane and leaves the rail up. */}
       {contourMode && contourPlaneOpen && !contourMode.gesture && mode !== 'game' && (
         <ContourModeChip
@@ -10685,7 +10875,7 @@ const Viewport = forwardRef(({
             prev ? { ...prev, merge: merge !== false } : prev
           ))}
           onConfirm={startContourDrawing}
-          onCancel={exitContourMode}
+          onCancel={cancelContourEditor}
           onDelete={featureEditRef.current?.dialog === 'contour' ? featureEditDelete : null}
           onUndoPoint={() => setContourMode((prev) => {
             if (!prev || prev.tool !== 'polyline') return prev;
