@@ -142,6 +142,9 @@ function copyRef(ref) {
   }
   if (ref.broken) copy.broken = true;
   if (ref.geom) copy.geom = copyGeom(ref.geom);
+  if (Array.isArray(ref.loop) && ref.loop.length >= 2) {
+    copy.loop = ref.loop.map((p, i) => uv2(p, `reference loop ${i}`));
+  }
   return copy;
 }
 

@@ -204,7 +204,18 @@ export function constraintAnchor(model, con) {
     if (!c) return null;
     return [c[0] + (Number(arc.radius) || 0), c[1]];
   };
-  const anchorOf = (id) => pointAt(id) || midLine(id) || arcCrown(id);
+  const refAt = (id) => {
+    const geom = (model.refs || []).find((ref) => ref.id === id)?.geom;
+    if (!geom) return null;
+    if (geom.kind === 'point') return geom.at;
+    if (geom.kind === 'line') return [(geom.a[0] + geom.b[0]) / 2, (geom.a[1] + geom.b[1]) / 2];
+    if (geom.kind === 'polyline' && geom.points?.length) {
+      return geom.points[Math.floor((geom.points.length - 1) / 2)];
+    }
+    if (geom.kind === 'arc') return geom.center;
+    return null;
+  };
+  const anchorOf = (id) => pointAt(id) || midLine(id) || arcCrown(id) || refAt(id);
   const items = con.items || [];
   if (con.kind === 'coincident') {
     const pts = items.map(pointAt).filter(Boolean);

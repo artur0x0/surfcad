@@ -185,6 +185,16 @@ import {
   saveContourDimension,
 } from '../utils/contourMode';
 import { SKETCH_HIT_PX, anchorOnEntity, pickContourScreen, planeUvToWorld } from '../utils/contourPick';
+import {
+  CONTOUR_REF_COLOR,
+  edgeReferenceHit,
+  faceOutlineHit,
+  materializeReference,
+  referenceEdgesForPart,
+  referencePaintSegments,
+  referencePickAllowed,
+  vertexHit,
+} from '../utils/contourRefPick';
 import { beginConstraintEdit, beginDimensionEdit } from '../utils/contourGesture';
 import { localPoint, worldPoint } from '../utils/partPose';
 import {
@@ -1174,6 +1184,7 @@ const Viewport = forwardRef(({
   const editorOverlayPartIdRef = useRef(null);
   const polylineDraftRef = useRef(null);
   const contourStatusRef = useRef(null);
+  const contourRefRef = useRef(null);
   /** Touch drag consumes the synthetic click that would otherwise add a point. */
   const polylineSuppressClickRef = useRef(false);
   /** Scratch for projecting handles to screen space (no per-frame alloc). */
@@ -2893,6 +2904,43 @@ const Viewport = forwardRef(({
     contourStatusRef.current = group;
   }, [clearContourStatusWire, anchorToActivePart, edgeLineResolution]);
 
+  const clearContourRefWire = useCallback(() => {
+    disposeEdgeOverlayObject(sceneRef.current, contourRefRef.current);
+    contourRefRef.current = null;
+  }, []);
+
+  /** Dashed references under the sketch strokes. No point handles. */
+  const paintContourRefWire = useCallback((plane, segments) => {
+    clearContourRefWire();
+    if (!plane || !segments?.length || !sceneRef.current) return;
+    const group = new Group();
+    group.name = 'contourRefWire';
+    for (const seg of segments) {
+      if (!seg?.uvs || seg.uvs.length < 2) continue;
+      const pos = new Float32Array(seg.uvs.length * 3);
+      for (let i = 0; i < seg.uvs.length; i += 1) {
+        const world = planeUvToWorld(seg.uvs[i], plane);
+        pos[i * 3] = world[0];
+        pos[i * 3 + 1] = world[1];
+        pos[i * 3 + 2] = world[2];
+      }
+      const line = makeSketchLine(pos, {
+        color: seg.picked ? CONTOUR_PICK_COLOR : (seg.color ?? CONTOUR_REF_COLOR),
+        opacity: seg.picked ? 0.95 : 0.72,
+        resolution: edgeLineResolution(),
+        dashed: true,
+        renderOrder: 14,
+      });
+      line.userData.entityId = seg.id || '';
+      line.userData.entityKind = 'ref';
+      group.add(line);
+    }
+    if (!group.children.length) return;
+    anchorToActivePart(group);
+    sceneRef.current.add(group);
+    contourRefRef.current = group;
+  }, [clearContourRefWire, anchorToActivePart, edgeLineResolution]);
+
   /** Move one handle (and its wire vertex) without rebuilding the draft. */
   const movePolylineHandle = useCallback((index, worldPoint) => {
     const group = polylineDraftRef.current;
@@ -4202,6 +4250,7 @@ const Viewport = forwardRef(({
       clearWorkplaneOverlay();
       clearPolylineDraft();
       clearContourStatusWire();
+      clearContourRefWire();
       clearExtrudePreview();
       clearRevolvePreview();
       clearLoftPreview();
@@ -4221,6 +4270,7 @@ const Viewport = forwardRef(({
       clearXsPreview();
       clearPolylineDraft();
       clearContourStatusWire();
+      clearContourRefWire();
       clearExtrudePreview();
       clearRevolvePreview();
       clearLoftPreview();
@@ -4230,6 +4280,14 @@ const Viewport = forwardRef(({
     const pts = contourMode.params?.contour?.points?.map((p) => p.at) || contourMode.params?.points;
     const loftDraw = selectedLoftDrawFrame(contourMode) || plane;
     const drawPlane = isLoftEntry(contourMode.entry) ? loftDraw : plane;
+    const refSegs = referencePaintSegments(
+      contourMode.params?.contour,
+      (contourMode.gesture === 'dimension' || contourMode.gesture === 'constraints')
+        ? contourMode.picks
+        : null,
+    );
+    if (refSegs.length) paintContourRefWire(drawPlane, refSegs);
+    else clearContourRefWire();
     const paint = highlightContourPaint(
       contourMode.params?.contour ? contourPaintModel(contourMode.params.contour) : null,
       contourMode.params?.contour,
@@ -4336,12 +4394,13 @@ const Viewport = forwardRef(({
       clearLoftPreview();
       clearSweepPreview();
     }
-  }, [contourMode, modelBounds, selectedEdges, paintPolylineDraft, paintContourStatusWire, paintExtrudePreview, paintRevolvePreview, paintLoftPreview, paintSweepPreview, applyContourPartGhost, clearWorkplaneOverlay, clearPolylineDraft, clearContourStatusWire, clearExtrudePreview, clearRevolvePreview, clearLoftPreview, clearSweepPreview, clearXsPreview, setXsPreview]);
+  }, [contourMode, modelBounds, selectedEdges, paintPolylineDraft, paintContourStatusWire, paintContourRefWire, paintExtrudePreview, paintRevolvePreview, paintLoftPreview, paintSweepPreview, applyContourPartGhost, clearWorkplaneOverlay, clearPolylineDraft, clearContourStatusWire, clearContourRefWire, clearExtrudePreview, clearRevolvePreview, clearLoftPreview, clearSweepPreview, clearXsPreview, setXsPreview]);
 
   useEffect(() => () => {
     clearWorkplaneOverlay();
     clearPolylineDraft();
     clearContourStatusWire();
+    clearContourRefWire();
     clearExtrudePreview();
     clearRevolvePreview();
     clearLoftPreview();
@@ -4349,7 +4408,7 @@ const Viewport = forwardRef(({
     applyContourPartGhost(false);
     clearSavedContourGhosts();
     if (contourToastTimerRef.current) clearTimeout(contourToastTimerRef.current);
-  }, [clearWorkplaneOverlay, clearPolylineDraft, clearContourStatusWire, clearExtrudePreview, clearRevolvePreview, clearLoftPreview, clearSweepPreview, applyContourPartGhost, clearSavedContourGhosts]);
+  }, [clearWorkplaneOverlay, clearPolylineDraft, clearContourStatusWire, clearContourRefWire, clearExtrudePreview, clearRevolvePreview, clearLoftPreview, clearSweepPreview, applyContourPartGhost, clearSavedContourGhosts]);
 
   // Contour mode: planar face tap updates the workplane; non-planar is a loud refuse.
   useEffect(() => {
@@ -6957,10 +7016,9 @@ const Viewport = forwardRef(({
       drawn = bestArc || bestLine;
     }
     const hit = drawn || pickContourScreen(model, project, clientX, clientY, SKETCH_HIT_PX);
-    if (!hit) return null;
-    const px = ((clientX - rect.left) / rect.width) * 2 - 1;
-    const py = -((clientY - rect.top) / rect.height) * 2 + 1;
-    raycasterRef.current.setFromCamera({ x: px, y: py }, camera);
+    const pxNdc = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const pyNdc = -((clientY - rect.top) / rect.height) * 2 + 1;
+    raycasterRef.current.setFromCamera({ x: pxNdc, y: pyNdc }, camera);
     const origin = raycasterRef.current.ray.origin;
     const dir = raycasterRef.current.ray.direction;
     let rayO = [origin.x, origin.y, origin.z];
@@ -6970,15 +7028,75 @@ const Viewport = forwardRef(({
       const ahead = localPoint([origin.x + dir.x, origin.y + dir.y, origin.z + dir.z], pose);
       rayD = [ahead[0] - rayO[0], ahead[1] - rayO[1], ahead[2] - rayO[2]];
     }
-    let at = null;
+    let tap = null;
     const landed = intersectRayPlane(rayO, rayD, plane);
     if (landed) {
-      try {
-        at = anchorOnEntity(model, hit, worldToPlaneUV(landed, plane));
-      } catch { /* a missed UV still selects the entity */ }
+      try { tap = worldToPlaneUV(landed, plane); } catch { /* the pick still selects */ }
     }
-    return at ? { ...hit, at } : hit;
-  }, []);
+    if (hit) {
+      let at = null;
+      if (tap) {
+        try { at = anchorOnEntity(model, hit, tap); } catch { /* a missed UV still selects */ }
+      }
+      return at ? { ...hit, at } : hit;
+    }
+    // Sketch missed. Vertices, then this part's edges, then a face outline.
+    if (!referencePickAllowed(state.gesture) || !resultRef.current) return null;
+    syncFeatureEdges(resultRef.current.geometry);
+    const topo = boundaryTopoRef.current;
+    const edges = topo?.edges || [];
+    const projectLocal = (local) => projectWorld(pose ? worldPoint(local, pose) : local);
+    const vertex = vertexHit(edges, projectLocal, clientX, clientY, SKETCH_HIT_PX);
+    let partHit = vertex;
+    if (!partHit) {
+      const localEdges = referenceEdgesForPart(featureEdgesRef.current, activePartIdRef.current);
+      const shift = meshPose(resultRef.current);
+      const pickEdges = shift ? localEdges.map((edge) => shiftEdgeForWorld(edge, resultRef.current)) : localEdges;
+      const cam = camera.position;
+      const opts = {
+        projectScratchA: edgePickScratchA.current,
+        projectScratchB: edgePickScratchB.current,
+        cameraPosition: [cam.x, cam.y, cam.z],
+      };
+      const hits = raycasterRef.current.intersectObject(resultRef.current);
+      if (hits.length > 0) {
+        const p = hits[0].point;
+        opts.meshHitPoint = [p.x, p.y, p.z];
+      }
+      const picked = pickNearestEdgeScreen(
+        pickEdges,
+        camera,
+        rect.width,
+        rect.height,
+        clientX - rect.left,
+        clientY - rect.top,
+        SKETCH_HIT_PX,
+        opts,
+      );
+      const local = picked && (pickEdges === localEdges
+        ? picked
+        : localEdges.find((edge) => edge.key === picked.key));
+      partHit = edgeReferenceHit(topo, local);
+    }
+    if (!partHit && resultRef.current) {
+      const faceHits = raycasterRef.current.intersectObject(resultRef.current);
+      const seed = faceHits[0]?.faceIndex;
+      if (seed != null) {
+        const graph = selectGraphFace(resultRef.current.geometry, seed, faceIDsRef.current);
+        const indices = graph.indices?.length ? graph.indices : [seed];
+        let faceId = Infinity;
+        for (const tri of indices) {
+          const raw = Number(faceIDsRef.current?.[tri]);
+          if (Number.isFinite(raw) && raw < faceId) faceId = raw;
+        }
+        if (faceId < Infinity) partHit = faceOutlineHit(edges, faceId, projectLocal, clientX, clientY);
+      }
+    }
+    if (!partHit) return null;
+    const ref = materializeReference(plane, partHit);
+    if (tap && ref) ref.tap = tap;
+    return { kind: 'reference', ref };
+  }, [syncFeatureEdges]);
 
   const saveContourBlock = useCallback((state) => {
     if (!state?.params?.contour) return state;

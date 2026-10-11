@@ -35,6 +35,7 @@ export function stickyPickToggle(picks, item, max = 2) {
     const v = Number(item.at[1]);
     if (Number.isFinite(u) && Number.isFinite(v)) next.at = [u, v];
   }
+  if (item.geomKind) next.geomKind = String(item.geomKind);
   list.push(next);
   if (list.length > cap) list.splice(0, list.length - cap);
   return list;

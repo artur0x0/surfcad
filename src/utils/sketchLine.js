@@ -32,6 +32,10 @@ export function makeSketchLine(flat, {
   opacity = 0.95,
   linewidth = SKETCH_LINE_PX,
   resolution = null,
+  dashed = false,
+  dashSize = 1.6,
+  gapSize = 1.1,
+  renderOrder = 15,
 } = {}) {
   const geom = new LineGeometry();
   geom.setPositions(flat);
@@ -42,12 +46,17 @@ export function makeSketchLine(flat, {
     opacity,
     depthTest: false,
     depthWrite: false,
+    dashed,
+    dashSize,
+    gapSize,
   });
   if (resolution?.x && resolution?.y) mat.resolution.set(resolution.x, resolution.y);
   const line = new Line2(geom, mat);
-  line.renderOrder = 15;
+  if (dashed) line.computeLineDistances();
+  line.renderOrder = renderOrder;
   line.frustumCulled = false;
   line.raycast = () => {};
   line.userData.sketchLinePx = linewidth;
+  line.userData.sketchDashed = !!dashed;
   return line;
 }
