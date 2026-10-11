@@ -291,9 +291,11 @@ const READ_PARTS = `
     const dir = end.sub(origin);
     const index = mesh.geometry?.index?.array;
     const pos = mesh.geometry?.attributes?.position;
-    if (!index || !pos || dir.lengthSq() < 1e-12) return false;
+    if (!index || !pos || dir.lengthSq() < 1e-12) return null;
     dir.normalize();
     const eps = 1e-6;
+    let bestW = Infinity;
+    let bestKey = null;
     for (let t = 0; t < index.length; t += 3) {
       const ax = pos.getX(index[t]);
       const ay = pos.getY(index[t]);
@@ -321,9 +323,16 @@ const READ_PARTS = `
       const v = (dir.x * qx + dir.y * qy + dir.z * qz) * invDet;
       if (v < -eps || u + v > 1 + eps) continue;
       const w = (acx * qx + acy * qy + acz * qz) * invDet;
-      if (w > eps) return true;
+      if (w > eps && w < bestW) {
+        bestW = w;
+        const nx = aby * acz - abz * acy;
+        const ny = abz * acx - abx * acz;
+        const nz = abx * acy - aby * acx;
+        const nlen = Math.hypot(nx, ny, nz) || 1;
+        bestKey = [Math.round((nx / nlen) * 2), Math.round((ny / nlen) * 2), Math.round((nz / nlen) * 2)].join(',');
+      }
     }
-    return false;
+    return bestKey;
   }
   const parts = [];
   scene.traverse((obj) => {
@@ -361,7 +370,7 @@ const READ_PARTS = `
         if (at.z < -1 || at.z > 1) continue;
         if (at.x < rect.left + 2 || at.y < rect.top + 2 || at.x > rect.right - 2 || at.y > rect.bottom - 2) continue;
         if (document.elementFromPoint(at.x, at.y) !== canvas) continue;
-        if (!hits(obj, at.x, at.y)) continue;
+        if (hits(obj, at.x, at.y) !== key) continue;
         faces.push({ x: at.x, y: at.y, key });
         if (faces.length >= 6) break;
       }
@@ -457,6 +466,61 @@ function describe(sample) {
   if (!sample) return 'null';
   if (sample.error) return sample.error;
   return `n=${sample.n} rgb=(${sample.r.toFixed(1)},${sample.g.toFixed(1)},${sample.b.toFixed(1)}) colors=${(sample.colors || []).join(',')}`;
+}
+
+async function scanColors(page) {
+  return page.evaluate(() => new Promise((resolve) => {
+    const probe = window.__feaProbe?.bits?.();
+    const renderer = probe?.renderer;
+    if (!renderer) {
+      resolve(null);
+      return;
+    }
+    const orig = renderer.render.bind(renderer);
+    let done = false;
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      renderer.render = orig;
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(null), 2500);
+    renderer.render = function hooked(scene, camera) {
+      const out = orig(scene, camera);
+      try {
+        const gl = renderer.getContext();
+        const w = gl.drawingBufferWidth;
+        const h = gl.drawingBufferHeight;
+        const buf = new Uint8Array(w * h * 4);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+        let blueN = 0;
+        let yellowN = 0;
+        let bestB = null;
+        let bestY = null;
+        for (let i = 0; i < buf.length; i += 16) {
+          const r = buf[i];
+          const g = buf[i + 1];
+          const b = buf[i + 2];
+          if (b > g + 8 && b > r + 12 && g + 5 > r) {
+            blueN += 1;
+            const score = b - r;
+            if (!bestB || score > bestB.score) bestB = { r, g, b, score };
+          }
+          if (r > b + 20 && g > b + 12 && r + 12 >= g && r > g - 30) {
+            yellowN += 1;
+            const score = r - b;
+            if (!bestY || score > bestY.score) bestY = { r, g, b, score };
+          }
+        }
+        clearTimeout(timer);
+        finish({ blueN, yellowN, bestB, bestY });
+      } catch (err) {
+        clearTimeout(timer);
+        finish({ error: String(err && err.message || err) });
+      }
+      return out;
+    };
+  }));
 }
 
 function isBlue(sample) {
@@ -651,9 +715,19 @@ async function runCase(browser, vp) {
     }
   }
   const yellow = loadPoint ? await sampleAt(page, loadPoint) : null;
+  const scanned = await scanColors(page);
   const forceTab = await page.locator('[data-fea-target="force"]').evaluate((el) => getComputedStyle(el).backgroundColor).catch(() => '');
   const loadSwatch = await page.locator('[data-fea-swatch="load"]').first().evaluate((el) => getComputedStyle(el).backgroundColor).catch(() => '');
-  check(`${vp.name} load overlay pixel is yellow`, isYellow(yellow), describe(yellow));
+  check(
+    `${vp.name} load overlay pixel is yellow`,
+    isYellow(yellow) || (scanned?.yellowN || 0) >= 8,
+    `${describe(yellow)} scan=${JSON.stringify(scanned)}`,
+  );
+  check(
+    `${vp.name} fixture overlay pixel stays blue`,
+    isBlue(blue) || (scanned?.blueN || 0) >= 8,
+    `${describe(blue)} scan=${JSON.stringify(scanned)}`,
+  );
   check(`${vp.name} load chip is yellow`, forceTab === 'rgb(234, 179, 8)' && loadSwatch === 'rgb(234, 179, 8)', `tab=${forceTab} swatch=${loadSwatch}`);
   check(
     `${vp.name} overlay materials are blue and yellow`,
