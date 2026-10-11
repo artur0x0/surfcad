@@ -71,6 +71,7 @@
         "golden:contour-constraints": "node scripts/golden/smoke_contour_constraints.mjs",
         "golden:contour-status": "node scripts/golden/smoke_contour_status.mjs",
         "golden:sketch-face-camera": "node scripts/golden/smoke_sketch_face_camera.mjs",
+        "golden:contour-tap-offset": "node scripts/golden/smoke_contour_tap_offset.mjs",
         "golden:contour-entry": "node scripts/golden/smoke_contour_entry.mjs",
         "golden:contour-visuals": "node scripts/golden/smoke_contour_visuals.mjs",
         "golden:dimension-feedback": "node scripts/golden/smoke_dimension_feedback.mjs",

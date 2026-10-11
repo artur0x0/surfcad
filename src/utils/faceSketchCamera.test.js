@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Vector3 } from 'three';
-import { faceSketchBox, faceSketchPose } from './faceSketchCamera.js';
+import { faceSketchBox, faceSketchPose, sketchCameraUp } from './faceSketchCamera.js';
 
 test('face sketch pose looks along the outward normal and frames the face', () => {
   const camera = new PerspectiveCamera(45, 390 / 700, 0.1, 2000);
@@ -28,4 +28,18 @@ test('face sketch pose looks along the outward normal and frames the face', () =
   assert.ok(dz / len > 0.98, `view dir ${dz / len}`);
   assert.ok(Math.hypot(pose.target[0], pose.target[1], pose.target[2] - 18) < 1);
   assert.ok(pose.position[2] > 18);
+  const up = pose.up;
+  assert.ok(up, 'pose has an up hint');
+  const upLen = Math.hypot(up[0], up[1], up[2]);
+  const upDot = (up[0] * 0 + up[1] * 0 + up[2] * 1) / upLen;
+  assert.ok(Math.abs(upDot) < 0.2, `up parallel to the view ${up}`);
+  assert.ok(Math.hypot(up[0], up[1] + 1, up[2]) < 1e-6, `+Z sketch up ${up}`);
+});
+
+test('sketch camera up matches the top view on a +Z face and world +Z otherwise', () => {
+  const top = sketchCameraUp([0, 0, 1]);
+  assert.deepEqual(top, [0, -1, 0]);
+  assert.deepEqual(sketchCameraUp([0, 0, -1]), [0, 1, 0]);
+  assert.deepEqual(sketchCameraUp([0, 1, 0]), [0, 0, 1]);
+  assert.deepEqual(sketchCameraUp([1, 0, 0]), [0, 0, 1]);
 });

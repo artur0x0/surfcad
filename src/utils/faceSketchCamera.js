@@ -62,6 +62,21 @@ export function boundsSketchBox(bounds) {
 }
 
 /**
+ * Up hint for a camera that looks along `normal`.
+ * A +Z face cannot use world +Z: that hint is parallel to the view, and
+ * fitView then picks +X, rolling the sketch 90°. Screen right becomes
+ * world −Y, so an in-plane Y error lands to the left of the finger.
+ * Top and bottom match VIEW_PRESETS.
+ * @param {number[]|null} normal unit view direction (target → camera)
+ * @returns {number[]}
+ */
+export function sketchCameraUp(normal) {
+  const z = Number(normal?.[2]) || 0;
+  if (Math.abs(z) > 1 - 1e-6) return z > 0 ? [0, -1, 0] : [0, 1, 0];
+  return [0, 0, 1];
+}
+
+/**
  * Pose that looks along `normal` (target → camera) and frames `box`.
  * The clone drops any feature-card view offset so the face is centered.
  * @returns {object|null}
@@ -89,7 +104,7 @@ export function faceSketchPose({ camera, controls, box, normal, margin = FACE_SK
     controls: fake,
     box,
     dir: [dir.x, dir.y, dir.z],
-    up: [0, 0, 1],
+    up: sketchCameraUp([dir.x, dir.y, dir.z]),
     margin,
   });
   if (!ok) return null;

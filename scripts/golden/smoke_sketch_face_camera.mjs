@@ -190,6 +190,9 @@ async function runPhone(browser) {
   await page.waitForFunction(() => (
     document.querySelector('.viewport-shell')?.getAttribute('data-contour-face-aim') === 'done'
   ), null, { timeout: 8000 });
+  // A callback-identity re-render used to start a second aim after this one
+  // finished, and that aim framed the whole part. Stay past that tween.
+  await page.waitForTimeout(500);
 
   const sketch = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch());
   const cam = await page.evaluate(() => window.__VIEWPORT__.stageCamera());
