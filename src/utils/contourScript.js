@@ -73,6 +73,50 @@ function emitLine(l) {
   return `{ id: ${emitString(l.id)}, a: ${emitString(l.a)}, b: ${emitString(l.b)} }`;
 }
 
+function emitUv(uv) {
+  return `[${emitNum(uv[0])}, ${emitNum(uv[1])}]`;
+}
+
+function emitGeom(geom) {
+  if (!geom) return 'null';
+  if (geom.kind === 'point') return `{ kind: 'point', at: ${emitUv(geom.at)} }`;
+  if (geom.kind === 'line') {
+    return `{ kind: 'line', a: ${emitUv(geom.a)}, b: ${emitUv(geom.b)} }`;
+  }
+  if (geom.kind === 'polyline') {
+    return `{ kind: 'polyline', points: [${geom.points.map(emitUv).join(', ')}] }`;
+  }
+  const fields = [
+    `kind: 'arc'`,
+    `center: ${emitUv(geom.center)}`,
+    `radius: ${emitNum(geom.radius)}`,
+    `sweep: ${emitString(geom.sweep || 'ccw')}`,
+  ];
+  if (geom.full) fields.push('full: true');
+  else {
+    if (geom.start != null) fields.push(`start: ${emitNum(geom.start)}`);
+    if (geom.end != null) fields.push(`end: ${emitNum(geom.end)}`);
+  }
+  return `{ ${fields.join(', ')} }`;
+}
+
+function emitBoundary(boundary) {
+  return `{ faceA: ${emitNum(boundary.faceA)}, faceB: ${emitNum(boundary.faceB)}, mid: [${boundary.mid.map(emitNum).join(', ')}] }`;
+}
+
+function emitRef(ref) {
+  const fields = [`id: ${emitString(ref.id)}`, `kind: ${emitString(ref.kind)}`];
+  if (ref.faceA != null) fields.push(`faceA: ${emitNum(ref.faceA)}`);
+  if (ref.faceB != null) fields.push(`faceB: ${emitNum(ref.faceB)}`);
+  if (Array.isArray(ref.mid)) fields.push(`mid: [${ref.mid.map(emitNum).join(', ')}]`);
+  if (ref.faceId != null) fields.push(`faceId: ${emitNum(ref.faceId)}`);
+  if (ref.end != null) fields.push(`end: ${emitNum(ref.end)}`);
+  if (ref.boundary) fields.push(`boundary: ${emitBoundary(ref.boundary)}`);
+  if (ref.broken) fields.push('broken: true');
+  if (ref.geom) fields.push(`geom: ${emitGeom(ref.geom)}`);
+  return `{ ${fields.join(', ')} }`;
+}
+
 /**
  * The source of the call, not the solved return value. Seeds are rounded
  * to 4 decimals, matching the other contour emitters.
@@ -101,6 +145,7 @@ export function emitSolveContour(model) {
     `dimensions: [${(spec.dimensions || []).map(emitItem).join(', ')}]`,
     `constraints: [${(spec.constraints || []).map(emitItem).join(', ')}]`,
   ];
+  if ((spec.refs || []).length) body.push(`refs: [${spec.refs.map(emitRef).join(', ')}]`);
   return `solveContour({ ${body.join(', ')} })`;
 }
 
@@ -217,7 +262,8 @@ function objectOf(value) {
 
 /**
  * Parse a `solveContour({...})` call or the object itself.
- * Returns the contour spec (points, lines, arcs, dimensions, constraints).
+ * Returns the contour spec (points, lines, arcs, dimensions, constraints, refs).
+ * A call with no refs list parses as an empty list.
  */
 export function parseSolveContour(source) {
   const text = String(source || '');
@@ -239,5 +285,6 @@ export function parseSolveContour(source) {
     arcs: value.arcs || [],
     dimensions: value.dimensions || [],
     constraints: value.constraints || [],
+    refs: value.refs || [],
   };
 }

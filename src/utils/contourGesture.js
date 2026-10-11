@@ -52,6 +52,19 @@ export function specFromSolved(solved) {
       }
       return copy;
     }),
+    refs: (solved.refs || []).map((ref) => {
+      const copy = { ...ref, mid: ref.mid ? ref.mid.slice() : undefined };
+      if (ref.geom) {
+        copy.geom = { ...ref.geom };
+        if (ref.geom.at) copy.geom.at = ref.geom.at.slice();
+        if (ref.geom.a) copy.geom.a = ref.geom.a.slice();
+        if (ref.geom.b) copy.geom.b = ref.geom.b.slice();
+        if (ref.geom.center) copy.geom.center = ref.geom.center.slice();
+        if (ref.geom.points) copy.geom.points = ref.geom.points.map((p) => p.slice());
+      }
+      if (ref.boundary) copy.boundary = { ...ref.boundary, mid: ref.boundary.mid.slice() };
+      return copy;
+    }),
   };
 }
 
