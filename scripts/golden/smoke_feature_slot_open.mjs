@@ -9,6 +9,7 @@
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir().
  */
+/* global document, window */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -103,6 +104,38 @@ async function tap(page, selector) {
   await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
 }
 
+async function ensurePartSelected(page) {
+  if (await page.locator('[data-part-row]').count() === 0) {
+    const clicked = await page.evaluate(() => {
+      const btn = document.querySelector('[data-cad-run]');
+      if (!btn) return false;
+      btn.click();
+      return true;
+    });
+    if (!clicked) throw new Error('Run is not in the page, so no part can be selected');
+    await page.waitForFunction(() => document.querySelectorAll('[data-part-row]').length > 0, null, { timeout: 20000 });
+  }
+  const phone = await page.locator('[data-mobile-stage]').count() > 0;
+  if (phone) {
+    await tap(page, '[data-stage-btn="parts"]');
+    await page.waitForFunction(() => (
+      document.querySelector('[data-mobile-stage]')?.getAttribute('data-mobile-stage') === 'parts'
+    ), null, { timeout: 8000 });
+  }
+  await page.locator('[data-part-row]').first().waitFor({ state: 'visible', timeout: 8000 });
+  const selected = await page.evaluate(() => {
+    const row = document.querySelector('[data-part-row]');
+    if (!row) return false;
+    row.click();
+    return true;
+  });
+  if (!selected) throw new Error('no part row');
+  await page.waitForFunction(() => (
+    document.querySelector('[data-part-row]')?.getAttribute('data-part-selected') === 'true'
+  ), null, { timeout: 8000 });
+  if (phone) await tap(page, '[data-stage-btn="cad"]');
+}
+
 async function boot(page) {
   await page.route('**/api/**', (route) => route.fulfill({
     status: 200,
@@ -129,6 +162,7 @@ async function boot(page) {
   if (ran?.error) throw new Error(ran.error);
   await page.waitForFunction(() => (window.__VIEWPORT__.stageVerifyFraming?.().tris || 0) > 10, null, { timeout: 30000 });
   await page.evaluate(() => window.__VIEWPORT__.stageFit({ az: 28, el: 18, margin: 1.02 }));
+  await ensurePartSelected(page);
   await page.waitForTimeout(200);
 }
 
