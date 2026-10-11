@@ -217,6 +217,15 @@ function arcGeom(pts, center, radius) {
   return geom;
 }
 
+/** One world point in the plane's UV. The normal component is dropped. */
+export function projectPoint(plane, world) {
+  const frame = planeFrame(plane);
+  if (!Array.isArray(world) || world.length < 3 || world.some((n) => !Number.isFinite(Number(n)))) {
+    throw new Error('projectReference: a point must be finite [x, y, z]');
+  }
+  return uvOf(world, frame);
+}
+
 /**
  * World millimetres onto the plane. One point is a vertex. Two or more
  * are an edge or a face loop.

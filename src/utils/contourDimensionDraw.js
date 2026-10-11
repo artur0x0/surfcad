@@ -13,16 +13,24 @@ const ARROW_W = 5.5;
 const ARC_PX = 36;
 
 function pointAt(model, id) {
-  return (model?.points || []).find((p) => p.id === id)?.at || null;
+  const sketch = (model?.points || []).find((p) => p.id === id)?.at;
+  if (sketch) return sketch;
+  const geom = (model?.refs || []).find((ref) => ref.id === id)?.geom;
+  if (geom?.kind === 'point') return geom.at;
+  return null;
 }
 
 function lineOf(model, id) {
   const line = (model?.lines || []).find((l) => l.id === id);
-  if (!line) return null;
-  const a = pointAt(model, line.a);
-  const b = pointAt(model, line.b);
-  if (!a || !b) return null;
-  return { line, a, b, d: [b[0] - a[0], b[1] - a[1]] };
+  if (line) {
+    const a = pointAt(model, line.a);
+    const b = pointAt(model, line.b);
+    if (!a || !b) return null;
+    return { line, a, b, d: [b[0] - a[0], b[1] - a[1]] };
+  }
+  const geom = (model?.refs || []).find((ref) => ref.id === id)?.geom;
+  if (geom?.kind !== 'line' || !geom.a || !geom.b) return null;
+  return { line: { a: id, b: id, ref: true }, a: geom.a, b: geom.b, d: [geom.b[0] - geom.a[0], geom.b[1] - geom.a[1]] };
 }
 
 function hypot2(x, y) {
@@ -108,6 +116,14 @@ export function dimensionEndpoints(model, dim) {
     if (pa && pb) return { a: pa, b: pb };
     const A = lineOf(model, dim.a);
     const B = lineOf(model, dim.b);
+    if (pa && B && !pb) {
+      const foot = footOnLine(pa, B.a, B.b);
+      return foot ? { a: pa, b: foot } : null;
+    }
+    if (pb && A && !pa) {
+      const foot = footOnLine(pb, A.a, A.b);
+      return foot ? { a: pb, b: foot } : null;
+    }
     if (!A || !B) return null;
     // The two taps, snapped back onto the solved lines. A midpoint of the
     // first edge sits off the point the user actually picked.

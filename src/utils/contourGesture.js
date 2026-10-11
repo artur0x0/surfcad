@@ -17,6 +17,12 @@ import {
 } from './contourSolve.js';
 import { contourStatusNote } from './contourStatus.js';
 import { stickyPickToggle } from './stickyPick.js';
+import {
+  nextReferenceId,
+  referencePickAllowed,
+  referencePickItem,
+  sameReference,
+} from './contourRefPick.js';
 
 const NAME_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 const PARALLEL_SPLIT_DEG = 15;
@@ -63,6 +69,7 @@ export function specFromSolved(solved) {
         if (ref.geom.points) copy.geom.points = ref.geom.points.map((p) => p.slice());
       }
       if (ref.boundary) copy.boundary = { ...ref.boundary, mid: ref.boundary.mid.slice() };
+      if (Array.isArray(ref.loop)) copy.loop = ref.loop.map((p) => (Array.isArray(p) ? p.slice() : p));
       return copy;
     }),
   };
@@ -93,8 +100,46 @@ export function promoteContourState(state) {
   };
 }
 
+function refRecord(model, id) {
+  return (model?.refs || []).find((ref) => ref.id === id) || null;
+}
+
+function geomKindOf(model, pick) {
+  if (pick?.kind !== 'ref') return null;
+  return pick.geomKind || refRecord(model, pick.id)?.geom?.kind || null;
+}
+
+function namedRefIds(contour) {
+  const ids = new Set((contour?.refs || []).map((ref) => ref.id));
+  const named = new Set();
+  const items = [...(contour?.dimensions || []), ...(contour?.constraints || [])];
+  for (const item of items) {
+    for (const key of ['a', 'b', 'edge', 'point', 'arc']) {
+      if (item?.[key] && ids.has(item[key])) named.add(item[key]);
+    }
+    for (const id of item?.items || []) {
+      if (ids.has(id)) named.add(id);
+    }
+  }
+  return named;
+}
+
+function dropUnusedRefs(contour) {
+  if (!contour?.refs?.length) return contour;
+  const named = namedRefIds(contour);
+  const refs = contour.refs.filter((ref) => named.has(ref.id));
+  if (refs.length === contour.refs.length) return contour;
+  return { ...contour, refs };
+}
+
+function withRefs(state, contour) {
+  if (!state || contour === state.params?.contour) return state;
+  return { ...state, params: { ...(state.params || {}), contour } };
+}
+
 export function selectContourGesture(state, gesture) {
-  const base = revertLiveDimension(state);
+  const reverted = revertLiveDimension(state);
+  const base = withRefs(reverted, dropUnusedRefs(reverted?.params?.contour));
   if (!base || base.entry === 'workplane') return base;
   if (gesture !== 'arc' && gesture !== 'dimension' && gesture !== 'constraints') return base;
   if (base.gesture === gesture) {
@@ -120,15 +165,48 @@ export function selectContourGesture(state, gesture) {
   return promoteContourState(armed);
 }
 
+function attachReference(state, incoming) {
+  const contour = state.params?.contour;
+  if (!contour) return { ...state, gestureNote: 'Draw a contour first.' };
+  if (!incoming?.geom) return { ...state, gestureNote: 'That edge is edge-on to the sketch.' };
+  const { tap, ...stored } = incoming;
+  const refs = (contour.refs || []).slice();
+  let found = refs.find((ref) => sameReference(ref, stored));
+  if (!found) {
+    found = { ...stored, id: nextReferenceId(refs) };
+    refs.push(found);
+  } else if (stored.geom) {
+    const index = refs.indexOf(found);
+    refs[index] = { ...found, geom: stored.geom, loop: stored.loop || found.loop };
+    found = refs[index];
+  }
+  const picks = stickyPickToggle(state.picks, referencePickItem(found, tap), 2);
+  const kept = picks.some((pick) => pick.kind === 'ref' && pick.id === found.id);
+  let nextRefs = refs;
+  if (!kept && !namedRefIds(contour).has(found.id)) {
+    nextRefs = refs.filter((ref) => ref.id !== found.id);
+  }
+  return {
+    ...state,
+    params: { ...state.params, contour: { ...contour, refs: nextRefs } },
+    picks,
+    tagId: null,
+    gestureNote: null,
+  };
+}
+
 export function toggleContourPick(state, pick) {
   const base = revertLiveDimension(state);
   if (!base?.gesture) return base;
+  if (pick?.kind === 'reference') {
+    if (!referencePickAllowed(base.gesture)) return base;
+    return attachReference(base, pick.ref);
+  }
   const max = base.gesture === 'arc' ? 3 : 2;
-  let item = pick;
   if (base.gesture === 'arc' && pick?.kind !== 'line') {
     return { ...base, gestureNote: 'An arc rounds lines. Tap a segment.' };
   }
-  const picks = stickyPickToggle(base.picks, item, max);
+  const picks = stickyPickToggle(base.picks, pick, max);
   return { ...base, picks, tagId: null, gestureNote: null };
 }
 
@@ -138,11 +216,15 @@ function pointAt(model, id) {
 
 function lineEnds(model, id) {
   const line = (model.lines || []).find((l) => l.id === id);
-  if (!line) return null;
-  const a = pointAt(model, line.a);
-  const b = pointAt(model, line.b);
-  if (!a || !b) return null;
-  return { line, a, b, d: [b[0] - a[0], b[1] - a[1]] };
+  if (line) {
+    const a = pointAt(model, line.a);
+    const b = pointAt(model, line.b);
+    if (!a || !b) return null;
+    return { line, a, b, d: [b[0] - a[0], b[1] - a[1]] };
+  }
+  const geom = refRecord(model, id)?.geom;
+  if (geom?.kind !== 'line' || !geom.a || !geom.b) return null;
+  return { line: null, a: geom.a, b: geom.b, d: [geom.b[0] - geom.a[0], geom.b[1] - geom.a[1]], ref: true };
 }
 
 function unitDot(d1, d2) {
@@ -193,6 +275,39 @@ function offsetOf(model, pointId, lineId) {
   return { value, side: value >= 0 ? 1 : -1 };
 }
 
+function refGeom(model, pick) {
+  if (pick?.kind !== 'ref') return null;
+  return refRecord(model, pick.id)?.geom || null;
+}
+
+function suggestRefDimension(model, list) {
+  const empty = { ok: false, kind: null, kinds: [], value: 0, side: 1, sense: 1, note: 'That pair is not a length, angle, distance, offset, or radius.' };
+  const ref = list.find((p) => p.kind === 'ref');
+  const other = list.find((p) => p !== ref);
+  const geom = refGeom(model, ref);
+  if (!geom || !other) return empty;
+  if (other.kind === 'point' && geom.kind === 'line') {
+    const gap = offsetOf(model, other.id, ref.id);
+    return { ok: true, kind: 'distance', kinds: ['distance'], value: gap.value, side: gap.side, sense: 1, note: '' };
+  }
+  if (other.kind === 'point' && geom.kind === 'point') {
+    const a = pointAt(model, other.id);
+    const b = geom.at;
+    if (!a || !b) return empty;
+    const value = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (!(value > 0)) return { ...empty, note: 'Those points are the same.' };
+    return { ok: true, kind: 'distance', kinds: ['distance'], value, side: 1, sense: 1, note: '' };
+  }
+  if (other.kind === 'point' && (geom.kind === 'polyline' || geom.kind === 'arc')) {
+    return { ok: true, kind: 'distance', kinds: ['distance'], value: 0, side: 1, sense: 1, note: '' };
+  }
+  if (other.kind === 'line' && geom.kind === 'line') {
+    const gap = separationOf(model, other.id, ref.id);
+    return { ok: true, kind: 'distance', kinds: ['distance'], value: gap.value, side: gap.side, sense: 1, note: '' };
+  }
+  return { ...empty, note: 'distance to that reference is not supported' };
+}
+
 /**
  * What a dimension pick offers. Two lines more than 15° from parallel
  * suggest an angle. Otherwise they suggest a distance. Both stay available.
@@ -201,6 +316,12 @@ export function suggestContourDimension(model, picks) {
   const list = Array.isArray(picks) ? picks : [];
   const empty = { ok: false, kind: null, kinds: [], value: 0, side: 1, sense: 1, note: 'Tap a line, an arc, two points, or a point and a line.' };
   if (!model) return { ...empty, note: 'Draw a contour first.' };
+  const refCount = list.filter((p) => p.kind === 'ref').length;
+  if (refCount >= 2) return { ...empty, note: 'a constraint cannot join two references' };
+  if (refCount === 1 && list.length === 1) {
+    return { ...empty, note: 'A reference keeps its size. Tap a sketch point or a sketch line as well.' };
+  }
+  if (refCount === 1 && list.length === 2) return suggestRefDimension(model, list);
   if (list.length === 1 && list[0].kind === 'line') {
     const ends = lineEnds(model, list[0].id);
     const value = ends ? Math.hypot(ends.d[0], ends.d[1]) : 0;
@@ -314,6 +435,23 @@ export function buildDimension(model, picks, draft) {
     }
     if (kind === 'angle') dim.sense = draft.sense < 0 ? -1 : 1;
     else dim.side = draft.side < 0 ? -1 : 1;
+  } else if (kind === 'distance' && list.length === 2 && list.some((p) => p.kind === 'ref')) {
+    if (list.filter((p) => p.kind === 'ref').length >= 2) {
+      return { ok: false, message: 'a constraint cannot join two references' };
+    }
+    const offer = suggestRefDimension(model, list);
+    if (!offer.ok) return { ok: false, message: offer.note || 'That dimension does not match the pick.' };
+    const ref = list.find((p) => p.kind === 'ref');
+    const other = list.find((p) => p !== ref);
+    if (other?.kind === 'point' && geomKindOf(model, ref) === 'point' && !(value > 0)) {
+      return { ok: false, message: 'Distance must be greater than 0.' };
+    }
+    dim.a = list[0].id;
+    dim.b = list[1].id;
+    if (other?.kind === 'point') {
+      const at = pointAt(model, other.id);
+      if (at) dim.at = { [other.id]: [at[0], at[1]] };
+    }
   } else if (kind === 'offset') {
     const point = list.find((p) => p.kind === 'point');
     const line = list.find((p) => p.kind === 'line');
@@ -456,6 +594,12 @@ export function picksForDimension(model, dim) {
   const hasPoint = (id) => (model.points || []).some((p) => p.id === id);
   const hasLine = (id) => (model.lines || []).some((l) => l.id === id);
   const chip = (kind, id, at) => {
+    const ref = refRecord(model, id);
+    if (ref) {
+      const pick = { kind: 'ref', id, geomKind: ref.geom?.kind || 'line', label: id };
+      if (at) pick.at = [at[0], at[1]];
+      return pick;
+    }
     const pick = { kind, id, label: id };
     if (at) pick.at = [at[0], at[1]];
     return pick;
@@ -498,6 +642,8 @@ export function picksForConstraint(model, con) {
   if (!model || !con) return [];
   const has = (list, id) => (list || []).some((item) => item.id === id);
   return (con.items || []).map((id) => {
+    const ref = refRecord(model, id);
+    if (ref) return { kind: 'ref', id, geomKind: ref.geom?.kind || 'line', label: id };
     if (has(model.points, id)) {
       const at = (model.points || []).find((p) => p.id === id)?.at;
       const pick = { kind: 'point', id, label: id };
@@ -719,6 +865,34 @@ function twoLineOffer(model, idA, idB) {
   return { ok: true, kind: 'parallel', kinds, side: 1, band, note: '' };
 }
 
+function suggestRefConstraint(model, list) {
+  const empty = { ok: false, kind: null, kinds: [], side: 1, band: null, note: 'That pair is not a constraint.' };
+  const ref = list.find((p) => p.kind === 'ref');
+  const other = list.find((p) => p !== ref);
+  const kind = geomKindOf(model, ref);
+  if (!other || !kind) return empty;
+  if (kind === 'polyline' && (other.kind === 'line')) {
+    return { ...empty, note: 'parallel needs a line reference' };
+  }
+  if (other.kind === 'line' && kind === 'line') {
+    const offer = twoLineOffer(model, other.id, ref.id);
+    return { ...offer, kinds: offer.kinds.filter((item) => item !== 'equal') };
+  }
+  if (other.kind === 'point' && (kind === 'line' || kind === 'polyline' || kind === 'point' || kind === 'arc')) {
+    return { ok: true, kind: 'coincident', kinds: ['coincident'], side: 1, band: 'reference', note: '' };
+  }
+  if (other.kind === 'line' && kind === 'arc') {
+    return { ok: true, kind: 'tangent', kinds: ['tangent'], side: 1, band: 'line-arc', note: '' };
+  }
+  if (other.kind === 'arc' && kind === 'arc') {
+    return { ok: true, kind: 'tangent', kinds: ['tangent'], side: 1, band: 'arcs', note: '' };
+  }
+  if (other.kind === 'arc' && kind === 'line') {
+    return { ok: true, kind: 'tangent', kinds: ['tangent'], side: 1, band: 'line-arc', note: '' };
+  }
+  return empty;
+}
+
 /**
  * What a constraint pick offers. Boundaries are inclusive: 20° from an
  * axis, 15° from parallel or perpendicular, and 10% on radii and on
@@ -728,6 +902,12 @@ export function suggestContourConstraint(model, picks) {
   const list = Array.isArray(picks) ? picks : [];
   const empty = { ok: false, kind: null, kinds: [], side: 1, band: null, note: 'Tap a line, a point, or an arc.' };
   if (!model) return { ...empty, note: 'Draw a contour first.' };
+  const refCount = list.filter((p) => p.kind === 'ref').length;
+  if (refCount >= 2) return { ...empty, note: 'a constraint cannot join two references' };
+  if (refCount === 1 && list.length === 1) {
+    return { ...empty, note: 'A reference stays fixed. Tap a sketch line or a sketch point as well.' };
+  }
+  if (refCount === 1 && list.length === 2) return suggestRefConstraint(model, list);
   if (list.length === 1 && list[0].kind === 'line') return oneLineOffer(model, list[0].id);
   if (list.length === 1 && (list[0].kind === 'point' || list[0].kind === 'arc')) {
     return { ok: true, kind: 'fix', kinds: ['fix'], side: 1, band: 'fix', note: '' };

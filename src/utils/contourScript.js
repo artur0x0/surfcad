@@ -113,6 +113,9 @@ function emitRef(ref) {
   if (ref.end != null) fields.push(`end: ${emitNum(ref.end)}`);
   if (ref.boundary) fields.push(`boundary: ${emitBoundary(ref.boundary)}`);
   if (ref.broken) fields.push('broken: true');
+  if (Array.isArray(ref.loop) && ref.loop.length) {
+    fields.push(`loop: [${ref.loop.map(emitUv).join(', ')}]`);
+  }
   if (ref.geom) fields.push(`geom: ${emitGeom(ref.geom)}`);
   return `{ ${fields.join(', ')} }`;
 }
