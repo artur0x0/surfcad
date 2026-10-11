@@ -287,6 +287,7 @@ import PuzzlePickerModal from './components/PuzzlePickerModal';
 import GameConfetti from './components/GameConfetti';
 import { composeContourCommit } from './utils/contourMode';
 import { writeContourProfileBlock } from './utils/contourProfileWrite';
+import { saveEditedContour } from './utils/contourUsers';
 import {
   composeFilletCommit,
   composeChamferCommit,
@@ -480,6 +481,10 @@ const App = () => {
     focusWritePartRef.current(null);
     setFeatureStripActiveId(feature.id);
     codeEditorRef.current?.revealRange?.(feature.startOffset, feature.endOffset);
+    if (feature.kind === 'contour') {
+      if (viewportRef.current?.beginContourEdit?.(feature.contourId)) setFeatureSheet(null);
+      return;
+    }
     const buf = codeEditorRef.current?.getContent?.() || currentScript || '';
     if (viewportRef.current?.beginFeatureEdit?.(feature, buf)) {
       setFeatureSheet(null);
@@ -521,6 +526,10 @@ const App = () => {
     // The sheet reads and writes the editor buffer: make it the picked part's.
     focusWritePartRef.current(null);
     setFeatureStripActiveId(feature.id);
+    if (feature.kind === 'contour') {
+      if (viewportRef.current?.beginContourEdit?.(feature.contourId)) setFeatureSheet(null);
+      return;
+    }
     const buf = codeEditorRef.current?.getContent?.() || currentScript || '';
     if (viewportRef.current?.beginFeatureEdit?.(feature, buf)) {
       setFeatureSheet(null);
@@ -5316,6 +5325,22 @@ const App = () => {
       return false;
     }
     const buf = codeEditorRef.current?.getContent?.() || '';
+    if (payload?.editContour) {
+      const saved = saveEditedContour(buf, payload || {});
+      if (!saved.ok) {
+        viewportRef.current?.softFailContour?.(saved.message);
+        return false;
+      }
+      const wrote = codeEditorRef.current?.applyBuffer?.(saved.buffer, 'Contour');
+      if (!wrote) {
+        viewportRef.current?.softFailContour?.('Could not write Contour into the editor — try again.');
+        return false;
+      }
+      setTimeout(() => {
+        handleGameRun();
+      }, 0);
+      return true;
+    }
     if (payload?.contourBlock) {
       const saved = writeContourProfileBlock(buf, payload || {});
       if (!saved.ok) {

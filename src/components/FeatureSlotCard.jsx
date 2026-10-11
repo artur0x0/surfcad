@@ -24,8 +24,14 @@ function ContourSlot({
   onPick,
   onHover,
   onNew,
+  onEdit,
 }) {
   const rows = contoursForSlot(contours, role);
+  const chipClass = `truncate rounded px-2.5 py-1 text-left text-[13px] ${
+    contour?.contourName
+      ? 'bg-amber-500 text-amber-950'
+      : 'bg-cyan-950/80 text-cyan-100 border border-cyan-700/70'
+  }`;
   return (
     <div
       className="flex flex-col gap-1 font-sans"
@@ -33,17 +39,27 @@ function ContourSlot({
       data-slot-index={index}
     >
       <div className="text-[11px] uppercase tracking-wide text-cyan-200/80">{title}</div>
-      <div
-        className={`truncate rounded px-2.5 py-1 text-[13px] ${
-          contour?.contourName
-            ? 'bg-amber-500 text-amber-950'
-            : 'bg-cyan-950/80 text-cyan-100 border border-cyan-700/70'
-        }`}
-        data-slot-chip={contour?.contourName || ''}
-        title={slotLabel(contour)}
-      >
-        {slotLabel(contour)}
-      </div>
+      {contour?.contourName ? (
+        <button
+          type="button"
+          className={chipClass}
+          data-slot-chip={contour.contourName}
+          data-slot-edit=""
+          title={slotLabel(contour)}
+          aria-label={`Edit ${contour.contourName}`}
+          onClick={() => onEdit?.()}
+        >
+          {slotLabel(contour)}
+        </button>
+      ) : (
+        <div
+          className={chipClass}
+          data-slot-chip=""
+          title={slotLabel(contour)}
+        >
+          {slotLabel(contour)}
+        </div>
+      )}
       {rows.length === 0 ? (
         <p className="text-[11px] text-cyan-100/80 leading-tight" role="status">
           {role === 'path' ? 'No saved paths yet.' : 'No saved contours yet.'}
@@ -143,6 +159,7 @@ const FeatureSlotCard = ({
   onPick,
   onHover,
   onNew,
+  onEdit,
   onOffset,
   onExtrudeChange,
   onRevolveChange,
@@ -241,6 +258,7 @@ const FeatureSlotCard = ({
                 onHover={onHover}
                 onPick={(row) => onPick?.({ role: 'station', index }, row)}
                 onNew={() => onNew?.({ role: 'station', index })}
+                onEdit={() => onEdit?.({ role: 'station', index })}
               />
               <LengthNumberField
                 id={index === 0 ? 'loft-offset' : `loft-offset-${index}`}
@@ -270,6 +288,7 @@ const FeatureSlotCard = ({
             onHover={onHover}
             onPick={(row) => onPick?.({ role: 'profile', index: 0 }, row)}
             onNew={() => onNew?.({ role: 'profile', index: 0 })}
+            onEdit={() => onEdit?.({ role: 'profile', index: 0 })}
           />
         )}
         {sweep && (
@@ -283,6 +302,7 @@ const FeatureSlotCard = ({
               onHover={onHover}
               onPick={(row) => onPick?.({ role: 'path', index: 0 }, row)}
               onNew={() => onNew?.({ role: 'path', index: 0 })}
+              onEdit={() => onEdit?.({ role: 'path', index: 0 })}
             />
             <label className="mt-1 flex items-center gap-2 text-[13px] text-cyan-100">
               <input

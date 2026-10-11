@@ -77,6 +77,26 @@ function named(ref) {
   return !!(ref && ref.contourName);
 }
 
+/**
+ * After a contour rename, every slot that stored this id shows the new name.
+ * Offsets and the other slots stay.
+ */
+export function renameFeatureSlotRefs(card, contourId, contour) {
+  if (!card || !contourId || !contour?.name) return card;
+  const ref = refOf(contour);
+  const hit = (row) => row?.contourId === contourId;
+  let next = card;
+  if (hit(card.profile)) next = { ...next, profile: { ...card.profile, ...ref } };
+  if (hit(card.path)) next = { ...next, path: { ...card.path, ...ref } };
+  if (next.stations) {
+    next = {
+      ...next,
+      stations: next.stations.map((row) => (hit(row) ? { ...row, ...ref } : row)),
+    };
+  }
+  return next;
+}
+
 /** Fill one slot. Every other slot, offset, and combine flag stays. */
 export function assignFeatureSlot(card, slot, contour) {
   if (!card || !slot) return card;

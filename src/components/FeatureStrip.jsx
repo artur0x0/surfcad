@@ -33,7 +33,8 @@ import SquareRoundCorner from './icons/SquareRoundCorner';
 import RectangleCircle from './icons/RectangleCircle';
 import Angle from './icons/Angle';
 import SheetMetalPlate from './icons/SheetMetalPlate';
-import { parseFeatureMarkers, featureShowsSeparateBody } from '../utils/featureMarkers';
+import { featureShowsSeparateBody } from '../utils/featureMarkers';
+import { featuresWithContours } from '../utils/contourUsers';
 import { featureBarWindowMode } from '../utils/featureBarLayout';
 import { chipTone } from '../utils/featureChipTone';
 import { JOINT_TYPE_LABEL } from '../joints/jointUi';
@@ -147,6 +148,11 @@ function SeparateBodyMarker({ on }) {
   );
 }
 
+function chipTypeIndex(feature) {
+  if (feature?.kind === 'contour') return null;
+  return feature?.typeIndex || 1;
+}
+
 function TypeBadge({ index }) {
   if (!index) return null;
   return (
@@ -195,7 +201,7 @@ export default function FeatureStrip({
   undoLabel = 'Undo',
   redoLabel = 'Redo',
 }) {
-  const features = useMemo(() => parseFeatureMarkers(script), [script]);
+  const features = useMemo(() => featuresWithContours(script), [script]);
   const jointMode = Array.isArray(joints);
   const horizontal = orientation === 'horizontal';
   const stripSide = side || (horizontal ? 'top' : 'right');
@@ -381,7 +387,7 @@ export default function FeatureStrip({
             {!jointMode && features.map((f) => {
               const active = activeId === f.id;
               const failed = !!failedIds?.has?.(f.id);
-              const typeIndex = f.typeIndex || 1;
+              const typeIndex = chipTypeIndex(f);
               const separateLive = featureShowsSeparateBody(f, bodyCount);
               return (
                 <button
@@ -389,7 +395,8 @@ export default function FeatureStrip({
                   type="button"
                   data-feature-chip={f.kind}
                   data-feature-id={f.id}
-                  data-feature-type-index={typeIndex}
+                  data-feature-type-index={typeIndex || undefined}
+                  data-contour-id={f.contourId || undefined}
                   data-feature-external={f.external ? '1' : undefined}
                   data-feature-separate={separateLive ? '1' : undefined}
                   data-feature-failed={failed ? '1' : undefined}
@@ -473,7 +480,7 @@ export default function FeatureStrip({
       {!jointMode && features.map((f) => {
         const active = activeId === f.id;
         const failed = !!failedIds?.has?.(f.id);
-        const typeIndex = f.typeIndex || 1;
+        const typeIndex = chipTypeIndex(f);
         const separateLive = featureShowsSeparateBody(f, bodyCount);
         return (
           <button
@@ -481,7 +488,8 @@ export default function FeatureStrip({
             type="button"
             data-feature-chip={f.kind}
             data-feature-id={f.id}
-            data-feature-type-index={typeIndex}
+            data-feature-type-index={typeIndex || undefined}
+            data-contour-id={f.contourId || undefined}
             data-feature-external={f.external ? '1' : undefined}
             data-feature-separate={separateLive ? '1' : undefined}
             data-feature-failed={failed ? '1' : undefined}
