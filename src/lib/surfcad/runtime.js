@@ -6200,26 +6200,140 @@ function _s23ClipToBBox(M, solid, bb) {
 }
 
 /**
+ * Face the concave chain is leaving through, or null when the end runs into
+ * material (a hollow cavity's inner ceiling). The sheet skin of a through
+ * cutout is exterior even when a flange puts it inside the part bbox.
+ * Alignment is the outward tangent against the face normal: the two hole
+ * walls sit on the same vertex and are perpendicular, so they lose.
+ */
+const _S23_EXIT_ALIGN = 0.85;
+const _S23_EXIT_NEAR2 = 0.75 * 0.75;
+
+function _s23ExteriorExitPlane(pt, tout) {
+  if (!pt || !tout || !_s23FaceSoup || !_s23FaceSoup.length) return null;
+  let bestN = null;
+  let bestP = null;
+  let bestAlign = _S23_EXIT_ALIGN;
+  for (const tri of _s23FaceSoup) {
+    if (_pointTriDist2(pt, tri.a, tri.b, tri.c) > _S23_EXIT_NEAR2) continue;
+    const n = _s23Norm(tri.n);
+    const align = _c4Dot(tout, n);
+    if (align > bestAlign) {
+      bestAlign = align;
+      bestN = n;
+      bestP = tri.a;
+    }
+  }
+  if (!bestN || !bestP) return null;
+  return { p: [bestP[0], bestP[1], bestP[2]], n: bestN };
+}
+
+/**
+ * The pre-fillet bbox clip already cuts a pad that leaves through a face of
+ * the part box (a shell opening, or the outer skin of a flat plate). Skip
+ * the local face clip there so that boolean stays the one the hollow golden
+ * measured. A sheet skin inside the box — the base under a flange, the
+ * inner face of a wall — is not this case.
+ */
+function _s23ExitsThroughBBox(bb, pt, tout) {
+  const eps = 0.05;
+  const faces = [
+    [pt[0] - bb.min[0], [-1, 0, 0]],
+    [bb.max[0] - pt[0], [1, 0, 0]],
+    [pt[1] - bb.min[1], [0, -1, 0]],
+    [bb.max[1] - pt[1], [0, 1, 0]],
+    [pt[2] - bb.min[2], [0, 0, -1]],
+    [bb.max[2] - pt[2], [0, 0, 1]],
+  ];
+  for (const [d, n] of faces) {
+    if (d <= eps && _c4Dot(tout, n) > _S23_EXIT_ALIGN) return true;
+  }
+  return false;
+}
+
+/**
+ * Cut `solid` back to the keep side of each plane (dot(X − p, n) ≤ 1e-3).
+ * The filler was padded past the face; this intersection throws that
+ * overshoot away. The 1e-3 is the same skin margin as the bbox clip: a
+ * cap cut exactly on the face comes back as the open-end fan. The part
+ * itself is not clipped, so a flange stays.
+ */
+function _s23ClipSolidToPlanes(M, solid, planes) {
+  let out = solid;
+  for (const plane of planes) {
+    const bb = _s23ReadBBox(out);
+    const c = [
+      (bb.min[0] + bb.max[0]) / 2,
+      (bb.min[1] + bb.max[1]) / 2,
+      (bb.min[2] + bb.max[2]) / 2,
+    ];
+    const diag = Math.hypot(
+      bb.max[0] - bb.min[0],
+      bb.max[1] - bb.min[1],
+      bb.max[2] - bb.min[2],
+    ) + 4;
+    const N = _s23Norm(plane.n);
+    const hint = Math.abs(N[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+    const X = _s23Norm(_s23Cross(hint, N));
+    const Y = _s23Norm(_s23Cross(N, X));
+    const side = _c4Dot(_s23Sub(c, plane.p), N);
+    // Same 1e-3 the bbox clip leaves outside the skin. Exact coincidence
+    // puts the filler cap back in the opening plane and the fan returns.
+    const eps = 1e-3;
+    const face = [
+      c[0] - N[0] * side + N[0] * eps,
+      c[1] - N[1] * side + N[1] * eps,
+      c[2] - N[2] * side + N[2] * eps,
+    ];
+    const center = [face[0] - N[0] * diag, face[1] - N[1] * diag, face[2] - N[2] * diag];
+    const S = diag * 2;
+    const box = M.cube([S, S, S], true).transform([
+      X[0], X[1], X[2], 0,
+      Y[0], Y[1], Y[2], 0,
+      N[0], N[1], N[2], 0,
+      center[0], center[1], center[2], 1,
+    ]);
+    const clipped = M.intersection(out, box);
+    const se = _c4StatusError(clipped);
+    if (se) throw new Error(`filletAlongPath: bad face clip (${se})`);
+    out = clipped;
+  }
+  return out;
+}
+
+/**
  * Concave filler caps are coplanar with the face the edge ends on.
  * On an open shell the free end is the opening (outside the bbox): the cap
  * leaves a triangular fan. The other end sits on the inner ceiling, inside
  * the bbox: the same coplanar cap is a shallow lip along the wall-ceiling
  * junction. Extend EVERY concave open-chain end by the usual cutter-expand
- * pad (not a deeper blend), then the caller clips back to the pre-fillet
- * bbox so the free end does not stick out of the opening. The inner pad
- * runs into the wall and is swallowed by the union. Convex sweeps are not
- * extended.
+ * pad (not a deeper blend). The caller still clips the result to the
+ * pre-fillet bbox, which only removes filler that left the part box.
+ *
+ * That bbox is the wrong slab on a bent sheet. The inside corner of a
+ * rectangular cutout runs through the thickness; a flange makes the part
+ * box taller than the base and wider than a wall, so the pad stays proud
+ * of the local skin. Ends that leave through an exterior face inside the
+ * part box are recorded here and the filler is cut back to those planes
+ * before the union. An end on the part box stays with the bbox clip. An
+ * end that runs into material is not recorded — its pad is swallowed.
+ * Convex sweeps are not extended.
  */
 function _s23ExtendConcaveOpenEnds(part, segs, closed, radius) {
   if (closed || !Array.isArray(segs) || !segs.length) return null;
   const pad = filletSweepCutterExpand(radius);
   if (!(pad > 1e-9)) return null;
   const bb = _s23ReadBBox(part);
+  const planes = [];
   const bump = (seg, which) => {
     if (!seg || seg.convex !== false || !seg.T || !seg.p0 || !seg.p1) return false;
     const T = seg.T;
     const dir = which === 'start' ? [-T[0], -T[1], -T[2]] : [T[0], T[1], T[2]];
     const pt = which === 'start' ? seg.p0 : seg.p1;
+    const tLen = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+    const tout = [dir[0] / tLen, dir[1] / tLen, dir[2] / tLen];
+    const plane = _s23ExteriorExitPlane(pt, tout);
+    if (plane && !_s23ExitsThroughBBox(bb, pt, tout)) planes.push(plane);
     const moved = [pt[0] + dir[0] * pad, pt[1] + dir[1] * pad, pt[2] + dir[2] * pad];
     if (which === 'start') seg.p0 = moved;
     else seg.p1 = moved;
@@ -6228,7 +6342,7 @@ function _s23ExtendConcaveOpenEnds(part, segs, closed, radius) {
   };
   const a = bump(segs[0], 'start');
   const b = bump(segs[segs.length - 1], 'end');
-  return (a || b) ? bb : null;
+  return (a || b) ? { bb, planes } : null;
 }
 
 /**
@@ -6519,11 +6633,15 @@ function _s23BuildVariableProfileCutter(
   _s23StampJunctionTurns(segs, junction);
   // Open-shell concave ends: pad past the open face so the filler cap is not
   // coplanar with it (the inner-corner triangle). Convex runs are left alone.
-  const openEndBBox = _s23ExtendConcaveOpenEnds(part, segs, closed, radius);
+  // The probe above already filled the face soup this reads.
+  const openEnd = _s23ExtendConcaveOpenEnds(part, segs, closed, radius);
   // C3.3: one continuous cutter with a PER-KNOT section. C3.2's single median
   // θ removed the staircase but gouged wherever the true θ was far from the
   // median; θ-grouped runs (C3.1) put the same error back as steps.
   const cut = _s23VaryingProfileCutter(segs, closed, radius, profileKind, arcSegs, testScale, part);
+  if (openEnd && openEnd.planes.length && cut.filler) {
+    cut.filler = _s23ClipSolidToPlanes(manifoldModule.Manifold, cut.filler, openEnd.planes);
+  }
   _recordVariableProfileMeta({
     usedFrames: true,
     frameCount: frames.length,
@@ -6547,7 +6665,7 @@ function _s23BuildVariableProfileCutter(
     thetaRunCount: cut.thetaRunCount,
     endExtend: cut.endExtend || 0,
   });
-  cut.openEndBBox = openEndBBox;
+  cut.openEndBBox = openEnd ? openEnd.bb : null;
   return cut;
 }
 
