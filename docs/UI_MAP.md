@@ -200,7 +200,9 @@ Desktop specifics:
   On mobile the profile chip is right-justified in `data-parts-ribbon-end`;
   desktop leaves that slot empty. Each row thumbnail
   (`data-part-thumbnail`, `data-part-preview="manifold"`) is a cached snapshot
-  of that part's solid. No solid is `data-part-preview="empty"`. Delete asks
+  of that part's solid and stays up when the eye hides the part. Only the
+  viewport drops a hidden row. No solid is `data-part-preview="empty"`.
+  `golden:part-hide-thumbnail`. Delete asks
   first; Cancel keeps the part, Confirm removes that part only. In git mode,
   **Open from repo** (folder): **Part** lists every part in the repo grouped
   by source assembly (loose `parts/` included); **Assembly** lists assemblies

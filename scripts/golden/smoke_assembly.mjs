@@ -23,6 +23,7 @@ import {
   composeViewportParts,
   dropPartRecord,
   feedRows,
+  preserveHiddenPartRuns,
   formatViewerTitle,
   parseAssemblyDocument,
   partListDeleteAction,
@@ -466,6 +467,50 @@ const BAD = 'let part = Manifold.cube([10, 10, 10], true);\nreturn part.missingM
   const hiddenSolids = composeViewportParts(hidden, hiddenRuns);
   check('hiding a row drops it from the composed viewport',
     hiddenSolids.length === 1 && hiddenSolids[0].id === 'local:wide');
+
+  const boxMesh = solidMesh;
+  const wideMesh = {
+    numProp: 3,
+    vertProperties: [2, 0, 0, 3, 0, 0, 2, 1, 0, 2, 0, 1],
+    triVerts: [0, 1, 2, 0, 2, 3],
+  };
+  const thumbRuns = {
+    'local:box': { ok: true, mesh: boxMesh, bodyCount: 1 },
+    'local:wide': { ok: true, mesh: wideMesh, bodyCount: 1 },
+  };
+  const activeHidden = setPartVisible(doc, 'local:wide', false);
+  const activeRebuilt = {
+    'local:box': thumbRuns['local:box'],
+    'local:wide': { ok: false, mesh: null, skipped: true, error: null },
+  };
+  const activeKept = preserveHiddenPartRuns(activeHidden, activeRebuilt, thumbRuns);
+  const activeRow = feedRows(activeHidden, activeKept, scripts).find((row) => row.id === 'local:wide');
+  const activeSolids = composeViewportParts(activeHidden, activeKept);
+  check('hiding the active part keeps its thumbnail and leaves the viewport',
+    activeRow.mesh === wideMesh
+    && activeRow.visible === false
+    && activeRow.error === false
+    && partPreviewKind(activeRow.mesh) === 'manifold'
+    && activeSolids.length === 1
+    && activeSolids[0].id === 'local:box');
+  const otherRebuilt = { 'local:wide': thumbRuns['local:wide'] };
+  const otherKept = preserveHiddenPartRuns(hidden, otherRebuilt, thumbRuns);
+  const otherRow = feedRows(hidden, otherKept, scripts).find((row) => row.id === 'local:box');
+  const otherSolids = composeViewportParts(hidden, otherKept);
+  check('hiding a part the refresh omitted keeps its thumbnail',
+    otherRow.mesh === boxMesh
+    && otherRow.visible === false
+    && otherRow.error === false
+    && partPreviewKind(otherRow.mesh) === 'manifold'
+    && otherSolids.length === 1
+    && otherSolids[0].id === 'local:wide');
+  const neverRan = preserveHiddenPartRuns(hidden, otherRebuilt, {
+    'local:wide': thumbRuns['local:wide'],
+  });
+  check('a hidden part with no successful mesh stays empty',
+    feedRows(hidden, neverRan, scripts).find((row) => row.id === 'local:box').mesh == null);
+  check('the assembly refresh keeps hidden thumbnail meshes',
+    /preserveHiddenPartRuns\(doc, runs, partRunsRef\.current\)/.test(read('src/App.jsx')));
 
   const poisoned = recordPartRun(hiddenRuns, 'local:box', {
     ok: false,

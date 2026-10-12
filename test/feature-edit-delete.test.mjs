@@ -18,6 +18,8 @@ import {
   FILLET_MODE_END,
   MOVE_FACE_BEGIN,
   MOVE_FACE_END,
+  newPartStarterScript,
+  shouldClearViewportScript,
 } from '../src/utils/helperPaletteSnippets.js';
 import { parseFeatureMarkers } from '../src/utils/featureMarkers.js';
 import { deleteFeatureEdit, dependentToastLines, featureDeletePlan, featureDependents } from '../src/utils/featureEdit.js';
@@ -269,7 +271,55 @@ test('a marker nested in another feature deletes instead of refusing', () => {
   assert.doesNotMatch(String(result.message || ''), /refusing/);
   assert.equal(result.buffer.includes('cube begin'), false);
   assert.equal(result.buffer.includes('fillet-mode begin'), false);
-  assert.match(result.buffer, /return part;/);
+  assert.equal(/\breturn\s+part\s*;/.test(result.buffer), false);
+  assert.equal(shouldClearViewportScript(result.buffer), true);
+});
+
+test('deleting the only feature leaves an empty part, in one undo step', () => {
+  const starter = newPartStarterScript();
+  assert.match(starter, /let part = box1;/);
+  assert.match(starter, /return part;/);
+  const feature = byKind(starter, 'cube');
+  const result = deleteFeatureEdit(starter, feature);
+  assert.equal(result.ok, true, result.message);
+  assert.equal(result.buffer, '');
+  assert.equal(shouldClearViewportScript(result.buffer), true);
+  assert.equal(/\bpart\b/.test(result.buffer), false);
+  assert.equal(parseFeatureMarkers(result.buffer).length, 0);
+
+  const commented = scriptOf(['// header comment', starter.trimEnd()]);
+  const commentedResult = deleteFeatureEdit(commented, byKind(commented, 'cube'));
+  assert.equal(commentedResult.ok, true, commentedResult.message);
+  assert.match(commentedResult.buffer, /\/\/ header comment/);
+  assert.equal(/\breturn\s+part\s*;/.test(commentedResult.buffer), false);
+  assert.equal(shouldClearViewportScript(commentedResult.buffer), true);
+
+  const studied = `${starter}// --- fea-study begin ---\n// @fea-study {"id":"s1"}\n// --- fea-study end ---\n`;
+  const studiedResult = deleteFeatureEdit(studied, byKind(studied, 'cube'));
+  assert.equal(studiedResult.ok, true, studiedResult.message);
+  assert.match(studiedResult.buffer, /fea-study begin/);
+  assert.equal(/\breturn\s+part\s*;/.test(studiedResult.buffer), false);
+  assert.equal(shouldClearViewportScript(studiedResult.buffer), true);
+
+  const plane = scriptOf([
+    'const fr = { center: [0, 0, 0], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] };',
+    starter.trimEnd(),
+  ]);
+  const planeResult = deleteFeatureEdit(plane, byKind(plane, 'cube'));
+  assert.equal(planeResult.ok, true, planeResult.message);
+  assert.match(planeResult.buffer, /const fr =/);
+  assert.equal(/\breturn\s+part\s*;/.test(planeResult.buffer), false);
+  assert.equal(shouldClearViewportScript(planeResult.buffer), true);
+
+  let history = pushPartHistory(emptyPartHistory(), starter, 'Part');
+  history = pushPartHistory(history, result.buffer, 'Delete Cube');
+  assert.equal(history.head, 1);
+  assert.equal(undoPartHistory(history).code, starter);
+
+  const seeded = historyForPart({}, 'part-1', starter);
+  const pushed = pushPartHistory(seeded, result.buffer, 'Delete Cube');
+  assert.equal(pushed.head, seeded.head + 1);
+  assert.equal(undoPartHistory(pushed).code, starter);
 });
 
 test('feature-block dependents confirm and delete together', () => {

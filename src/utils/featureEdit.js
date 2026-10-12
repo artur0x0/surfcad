@@ -8,6 +8,7 @@
  */
 
 import { parseFeatureMarkers } from './featureMarkers.js';
+import { shouldClearViewportScript } from './helperPaletteSnippets.js';
 import { deleteFeatureBlock, featureBlockText, liveSheetFeature, inferExtrudeSense } from './featureSheetWriteback.js';
 import { scriptWithFeatureCount } from './partHistory.js';
 import { shellFaceKey } from './shellMode.js';
@@ -1218,7 +1219,9 @@ export function featureDeletePlan(script, feature) {
  * `withDependents` also drops every later feature block that references it,
  * as one buffer so undo restores all of them. A contour statement or a
  * nested marker that sits inside the span goes with that span. Delete never
- * refuses because another marked span changed.
+ * refuses because another marked span changed. When that span was the
+ * declaration of `part` and the rest is an empty part, the dangling
+ * `return part;` is dropped in this same buffer.
  */
 export function deleteFeatureEdit(script, feature, { withDependents = false } = {}) {
   const text = typeof script === 'string' ? script : '';
@@ -1237,8 +1240,34 @@ export function deleteFeatureEdit(script, feature, { withDependents = false } = 
     if (!result.ok) return result;
     next = result.buffer;
   }
+  next = settleEmptyPartAfterDelete(next);
   if (next === text) return { ok: false, message: 'Could not delete that feature.' };
   return { ok: true, buffer: next, changed: true, run: true, feature: live };
+}
+
+/**
+ * An empty part is a blank, comment-only, or construction-plane script.
+ * Running it clears the viewport and does not evaluate `part`. The feature
+ * that declared `part` often sits in front of a trailing `return part;`.
+ * Removing only that feature leaves the return, and the run throws
+ * "Can't find variable: part". Drop the return when the rest matches an
+ * empty part. Later code that still names `part` is kept, so that rebuild
+ * still fails into the error popup.
+ */
+function settleEmptyPartAfterDelete(script) {
+  const text = typeof script === 'string' ? script : '';
+  if (declaredNamesIn(text).has('part')) return text;
+  const returnPart = /(?:^|\r?\n)[ \t]*return\s+part\s*;[ \t]*(?=\r?\n|$)/;
+  if (!returnPart.test(text)) return text;
+  let dropped = text.replace(
+    /(^|\r?\n)[ \t]*return\s+part\s*;[ \t]*(?=\r?\n|$)/g,
+    '$1',
+  );
+  dropped = dropped.replace(/^(?:[ \t]*\r?\n)+/, '').replace(/(?:\r?\n){3,}/g, '\n\n');
+  if (!dropped.trim()) return '';
+  if (!dropped.endsWith('\n')) dropped += '\n';
+  if (!shouldClearViewportScript(dropped)) return text;
+  return dropped;
 }
 
 function codeText(block) {
