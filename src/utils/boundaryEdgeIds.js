@@ -17,6 +17,13 @@
  * smooth loft seams) or the smaller face is below BOUNDARY_SMALL_FACE_FRAC
  * of the largest face (blend facets and their end-cap chords). Sharp edges
  * between substantial faces stay, and ids are assigned only to that set.
+ *
+ * Contour references use a second pass (`indexContourBoundaries`). Sheet
+ * metal is a union of flange boxes and bend zones, and Manifold face ids
+ * restart inside each of those solids, so the minimum face id is not unique.
+ * That pass keeps the run ordinal in the face id. It also keeps a sharp edge
+ * whose mate is the sheet thickness: that face is under the fillet fraction,
+ * and dropping it leaves a part like Sheet Metallica with no reference edges.
  */
 
 import { sameLocalSegment } from './activePartOverlay.js';
@@ -34,6 +41,36 @@ export const BOUNDARY_SHALLOW_DEG = 15;
 export const BOUNDARY_SMALL_FACE_FRAC = 0.05;
 /** Hard cap so Fillet mode cannot allocate a sprite per micro-triangle. */
 export const FILLET_OVERLAY_LABEL_CAP = 240;
+/**
+ * Contour face ids on a multi-run solid are `runOrdinal * stride + minFaceId`.
+ * A single-run solid keeps the minimum Manifold face id, so a box reference
+ * stays the same number. Face ids on a real mesh sit far below this stride.
+ */
+export const CONTOUR_FACE_RUN_STRIDE = 1 << 20;
+
+function contourRunOrdinals(triSource, triRaw, numTri, encode) {
+  if (!encode || !triSource || triSource.length < numTri) return null;
+  let maxRaw = 0;
+  for (let t = 0; t < numTri; t++) {
+    const raw = triRaw[t];
+    if (raw > maxRaw) maxRaw = raw;
+  }
+  if (!(maxRaw < CONTOUR_FACE_RUN_STRIDE)) return null;
+  const map = new Map();
+  const out = new Int32Array(numTri);
+  let next = 0;
+  for (let t = 0; t < numTri; t++) {
+    const raw = triSource[t];
+    let ord = map.get(raw);
+    if (ord === undefined) {
+      ord = next;
+      next += 1;
+      map.set(raw, ord);
+    }
+    out[t] = ord;
+  }
+  return next > 1 ? out : null;
+}
 
 function sub(a, b) {
   return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -74,7 +111,8 @@ function packedEdgeKey(a, b) {
   return a * EDGE_PACK + b;
 }
 
-export function indexBoundaryEdges(mesh) {
+export function indexBoundaryEdges(mesh, opts = {}) {
+  const options = opts || {};
   const positions = mesh?.positions;
   const indices = mesh?.indices;
   const faceIDs = mesh?.faceIDs;
@@ -145,6 +183,8 @@ export function indexBoundaryEdges(mesh) {
     const raw = Number(faceIDs[t]);
     triRaw[t] = Number.isFinite(raw) ? raw : t;
   }
+  const ordinals = contourRunOrdinals(mesh?.triSource, triRaw, numTri, options.encodeRuns === true);
+  const keepThin = options.keepThin === true;
 
   const parent = new Array(numTri);
   for (let i = 0; i < numTri; i++) parent[i] = i;
@@ -192,7 +232,8 @@ export function indexBoundaryEdges(mesh) {
   const faceOfTri = new Array(numTri);
   const faces = [];
   for (const members of groups.values()) {
-    let id = Infinity;
+    let localId = Infinity;
+    let run = 0;
     let areaSum = 0;
     let cx = 0;
     let cy = 0;
@@ -203,7 +244,10 @@ export function indexBoundaryEdges(mesh) {
     for (let k = 0; k < members.length; k++) {
       const i = members[k];
       const raw = triRaw[i];
-      if (raw < id) id = raw;
+      if (raw < localId) {
+        localId = raw;
+        run = ordinals ? ordinals[i] : 0;
+      }
       const area = triArea[i];
       areaSum += area;
       cx += triCx[i] * area;
@@ -214,8 +258,11 @@ export function indexBoundaryEdges(mesh) {
       nsz += triNz[i] * area;
     }
     const nLen = Math.hypot(nsx, nsy, nsz) || 1;
+    if (!Number.isFinite(localId)) localId = 0;
     const face = {
-      id: Number.isFinite(id) ? id : 0,
+      id: ordinals && localId < CONTOUR_FACE_RUN_STRIDE
+        ? run * CONTOUR_FACE_RUN_STRIDE + localId
+        : localId,
       area: areaSum,
       center: areaSum > 1e-18
         ? [cx / areaSum, cy / areaSum, cz / areaSum]
@@ -250,7 +297,7 @@ export function indexBoundaryEdges(mesh) {
     // acos is decreasing, so dihedral >= 15° is exactly nd <= cos(15°).
     if (nd > cosBoundary) continue;
     const minFaceArea = Math.min(faces[f0].area || 0, faces[f1].area || 0);
-    if (maxAreaPre > 0 && minFaceArea < smallLimitPre) continue;
+    if (!keepThin && maxAreaPre > 0 && minFaceArea < smallLimitPre) continue;
     const dihedralDeg = Math.acos(nd) * 180 / Math.PI;
     const ia = typeof key === 'number' ? (key / EDGE_PACK) | 0 : Number(key.slice(0, key.indexOf('-')));
     const ib = typeof key === 'number' ? key % EDGE_PACK : Number(key.slice(key.indexOf('-') + 1));
@@ -343,6 +390,7 @@ export function indexBoundaryEdges(mesh) {
   const smallLimit = BOUNDARY_SMALL_FACE_FRAC * maxArea;
   const eligible = boundaries.filter((edge) => {
     if (!(edge.dihedralDeg >= BOUNDARY_SHALLOW_DEG)) return false;
+    if (keepThin) return true;
     if (!(maxArea > 0)) return true;
     return edge.minFaceArea >= smallLimit;
   });
@@ -378,7 +426,37 @@ export function indexBoundaryEdges(mesh) {
     delete edge._pairKey;
   }
 
-  return { faces, edges: eligible };
+  const result = { faces, edges: eligible };
+  if (options.triFace) {
+    const triFace = new Int32Array(numTri);
+    for (let t = 0; t < numTri; t++) triFace[t] = faces[faceOfTri[t]].id;
+    result.triFace = triFace;
+  }
+  return result;
+}
+
+/**
+ * Boundary edges a contour may reference.
+ *
+ * Fillet mode drops a sharp edge when the thinner face is a blend crumb.
+ * A sheet's thickness is that thin next to the flange, so the same gate
+ * removes every edge of Sheet Metallica. This pass keeps those edges.
+ * Face ids restart on each flange and bend, so a multi-run solid encodes
+ * the run ordinal into the face id. One run (a box, a flat blank) does not.
+ *
+ * @param {object} geometry
+ * @param {ArrayLike<number>|null} faceIDs
+ */
+export function indexContourBoundaries(geometry, faceIDs) {
+  const pos = geometry?.attributes?.position?.array;
+  const index = geometry?.index?.array;
+  if (!pos || !index || !faceIDs?.length) return { faces: [], edges: [], triFace: null };
+  return indexBoundaryEdges({
+    positions: pos,
+    indices: index,
+    faceIDs,
+    triSource: geometry.userData?.triSource || null,
+  }, { keepThin: true, encodeRuns: true, triFace: true });
 }
 
 /**

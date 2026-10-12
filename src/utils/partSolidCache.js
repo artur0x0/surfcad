@@ -12,7 +12,11 @@ import { BufferAttribute, BufferGeometry } from 'three';
 import { dropPlanarFins } from './planarSeam.js';
 import { contactSeamSegments } from './contactSeam.js';
 import { buildCoherentEdges, buildFeatureEdges } from './selectEdge.js';
-import { annotateFeatureEdges, indexBoundaryEdgesFromGeometry } from './boundaryEdgeIds.js';
+import {
+  annotateFeatureEdges,
+  indexBoundaryEdgesFromGeometry,
+  indexContourBoundaries,
+} from './boundaryEdgeIds.js';
 import {
   REFERENCE_LENGTH_MM,
   boundsFromGeometry,
@@ -104,6 +108,21 @@ export function buildSolidGeometry(meshData) {
  * A new run is a new geometry, so it always misses.
  */
 const featureGraphCache = new WeakMap();
+const contourBoundaryCache = new WeakMap();
+
+/**
+ * Contour reference topology for this geometry.
+ * A new run is a new geometry, so a stale catalog is never reused.
+ * Fillet keeps `featureGraphFor(...).topo`; this one keeps sheet edges.
+ */
+export function contourBoundariesFor(geom, faceIDs) {
+  if (!geom || !faceIDs?.length) return { faces: [], edges: [], triFace: null };
+  const hit = contourBoundaryCache.get(geom);
+  if (hit && hit.faceIDs === faceIDs) return hit.topo;
+  const topo = indexContourBoundaries(geom, faceIDs);
+  contourBoundaryCache.set(geom, { faceIDs, topo });
+  return topo;
+}
 
 export function featureGraphFor(geom, faceIDs) {
   if (!geom) {

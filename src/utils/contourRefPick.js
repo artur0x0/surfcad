@@ -17,6 +17,8 @@ export const CONTOUR_REF_COLOR = 0x71717a;
 export const CONTOUR_REF_BROKEN_COLOR = 0xef4444;
 
 const MID_TOL_MM = 1e-3;
+/** A picked span belongs to the boundary that contains both of its ends. */
+const SEGMENT_MATCH_MM = 0.05;
 
 export function referencePickAllowed(gesture) {
   return gesture === 'dimension' || gesture === 'constraints';
@@ -172,12 +174,73 @@ export function vertexHit(edges, project, px, py, threshold) {
   return best;
 }
 
-/** The boundary a feature-edge segment belongs to, as one reference hit. */
+function distPointSeg3(p, a, b) {
+  if (!p || !a || !b) return Infinity;
+  const abx = b[0] - a[0];
+  const aby = b[1] - a[1];
+  const abz = b[2] - a[2];
+  const len2 = abx * abx + aby * aby + abz * abz;
+  let t = len2 > 1e-18
+    ? ((p[0] - a[0]) * abx + (p[1] - a[1]) * aby + (p[2] - a[2]) * abz) / len2
+    : 0;
+  if (t < 0) t = 0;
+  else if (t > 1) t = 1;
+  return Math.hypot(p[0] - (a[0] + t * abx), p[1] - (a[1] + t * aby), p[2] - (a[2] + t * abz));
+}
+
+function featureMid(edge) {
+  if (Array.isArray(edge?.mid) && edge.mid.length >= 3) return edge.mid;
+  const va = edge?.va;
+  const vb = edge?.vb;
+  if (!va || !vb) return null;
+  return [(va[0] + vb[0]) / 2, (va[1] + vb[1]) / 2, (va[2] + vb[2]) / 2];
+}
+
+function boundaryByEnds(edges, featureEdge) {
+  const va = featureEdge?.va;
+  const vb = featureEdge?.vb;
+  const mid = featureMid(featureEdge);
+  if (!mid) return null;
+  // A weld can leave the coherent span a fraction of a millimetre past the
+  // boundary. The midpoint still lies on the segment; the far end may not.
+  let best = null;
+  let bestMid = SEGMENT_MATCH_MM;
+  let bestEnds = Infinity;
+  for (const edge of edges || []) {
+    let dm = Infinity;
+    let da = Infinity;
+    let db = Infinity;
+    for (const seg of edge.segments || []) {
+      dm = Math.min(dm, distPointSeg3(mid, seg.va, seg.vb));
+      if (va) da = Math.min(da, distPointSeg3(va, seg.va, seg.vb));
+      if (vb) db = Math.min(db, distPointSeg3(vb, seg.va, seg.vb));
+    }
+    if (dm > SEGMENT_MATCH_MM) continue;
+    const ends = da + db;
+    if (dm < bestMid - 1e-9 || (Math.abs(dm - bestMid) <= 1e-9 && ends < bestEnds)) {
+      bestMid = dm;
+      bestEnds = ends;
+      best = edge;
+    }
+  }
+  return best;
+}
+
+/**
+ * The boundary a feature-edge segment belongs to, as one reference hit.
+ *
+ * A coherent pick renames the segment (`coh-0-0`) and may carry a fillet
+ * boundary id. Sheet metal edges are absent from that catalog, so the id
+ * does not name a contour boundary. The segment key wins when it is still
+ * the mesh key. Otherwise the midpoint has to lie on one boundary.
+ */
 export function edgeReferenceHit(topo, featureEdge) {
   if (!featureEdge) return null;
   const edges = topo?.edges || [];
-  const boundary = edges.find((edge) => edge.id === featureEdge.boundaryId)
-    || edges.find((edge) => (edge.segments || []).some((seg) => seg.key && seg.key === featureEdge.key));
+  const byKey = featureEdge.key
+    ? edges.find((edge) => (edge.segments || []).some((seg) => seg.key && seg.key === featureEdge.key))
+    : null;
+  const boundary = byKey || boundaryByEnds(edges, featureEdge);
   if (!boundary) return null;
   const worldPoints = boundaryChain(boundary);
   if (!worldPoints || worldPoints.length < 2) return null;

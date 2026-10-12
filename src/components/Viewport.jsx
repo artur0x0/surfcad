@@ -323,6 +323,7 @@ import {
   cachedSolidGeometry,
   contactSeamFor,
   createSolidCache,
+  contourBoundariesFor,
   featureEdgesOf,
   featureGraphFor,
   pruneSolidCacheIn,
@@ -1108,6 +1109,8 @@ const Viewport = forwardRef(({
   /** Per-triangle Manifold faceID from the last worker mesh (not a per-vertex attribute). */
   const faceIDsRef = useRef(null);
   const boundaryTopoRef = useRef(null);
+  /** Sheet-aware edges for contour references. Fillet keeps boundaryTopoRef. */
+  const contourTopoRef = useRef(null);
   const idLabelGroupRef = useRef(null);
   const edgeHighlightRef = useRef(null);
   /** Fillet / Chamfer picks kept on other parts, drawn at that part's position. */
@@ -3384,8 +3387,8 @@ const Viewport = forwardRef(({
       name: saved.name,
       usedBy: contourUsedByText(buf, saved.name),
     };
-    const meshReady = !!(boundaryTopoRef.current?.edges && cachedMeshDataRef.current?.vertProperties);
-    const resolved = resolveContourScript(buf, boundaryTopoRef.current?.edges || [], { meshReady });
+    const meshReady = !!(contourTopoRef.current?.edges && cachedMeshDataRef.current?.vertProperties);
+    const resolved = resolveContourScript(buf, contourTopoRef.current?.edges || [], { meshReady });
     if (resolved.ok && resolved.changed) onContourRefsResolvedRef.current?.(resolved.buffer);
     const display = (resolved.displays || []).find((row) => row.id === saved.id);
     contourEditRef.current = session;
@@ -4789,6 +4792,7 @@ const Viewport = forwardRef(({
     // that is already built (or pre-built in idle time) is a cache hit.
     const graph = featureGraphFor(geom ?? null, faceIDsRef.current);
     boundaryTopoRef.current = graph.topo;
+    contourTopoRef.current = contourBoundariesFor(geom ?? null, faceIDsRef.current);
     featureEdgesRef.current = graph.featureEdges;
     const partId = activePartIdRef.current;
     if (partId && featureEdgesRef.current) {
@@ -7118,7 +7122,7 @@ const Viewport = forwardRef(({
     // Sketch missed. Vertices, then this part's edges, then a face outline.
     if (!referencePickAllowed(state.gesture) || !resultRef.current) return null;
     syncFeatureEdges(resultRef.current.geometry);
-    const topo = boundaryTopoRef.current;
+    const topo = contourTopoRef.current;
     const edges = topo?.edges || [];
     const projectLocal = (local) => projectWorld(pose ? worldPoint(local, pose) : local);
     const vertex = vertexHit(edges, projectLocal, clientX, clientY, SKETCH_HIT_PX);
@@ -7157,14 +7161,19 @@ const Viewport = forwardRef(({
       const faceHits = raycasterRef.current.intersectObject(resultRef.current);
       const seed = faceHits[0]?.faceIndex;
       if (seed != null) {
-        const graph = selectGraphFace(resultRef.current.geometry, seed, faceIDsRef.current);
-        const indices = graph.indices?.length ? graph.indices : [seed];
-        let faceId = Infinity;
-        for (const tri of indices) {
-          const raw = Number(faceIDsRef.current?.[tri]);
-          if (Number.isFinite(raw) && raw < faceId) faceId = raw;
+        const encoded = topo?.triFace?.[seed];
+        let faceId = Number.isFinite(Number(encoded)) ? Number(encoded) : null;
+        if (faceId == null) {
+          const graph = selectGraphFace(resultRef.current.geometry, seed, faceIDsRef.current);
+          const indices = graph.indices?.length ? graph.indices : [seed];
+          faceId = Infinity;
+          for (const tri of indices) {
+            const raw = Number(faceIDsRef.current?.[tri]);
+            if (Number.isFinite(raw) && raw < faceId) faceId = raw;
+          }
+          if (!(faceId < Infinity)) faceId = null;
         }
-        if (faceId < Infinity) partHit = faceOutlineHit(edges, faceId, projectLocal, clientX, clientY);
+        if (faceId != null) partHit = faceOutlineHit(edges, faceId, projectLocal, clientX, clientY);
       }
     }
     if (!partHit) return null;
@@ -9622,6 +9631,7 @@ const Viewport = forwardRef(({
       featureEdgesSourceRef.current = null;
       faceIDsRef.current = null;
       boundaryTopoRef.current = null;
+      contourTopoRef.current = null;
       // Overlays drawn from that solid (cut plane, section/path previews, the
       // fillet blend ghost, f#/e# labels) must not outlive it on screen.
       clearIdLabels();
@@ -9729,7 +9739,7 @@ const Viewport = forwardRef(({
 
       // Match references against the mesh this part already has. A miss
       // soft-fails before the worker runs and leaves the statement alone.
-      const readyTopo = boundaryTopoRef.current;
+      const readyTopo = contourTopoRef.current;
       const meshReady = !!(readyTopo?.edges && prevMesh?.vertProperties);
       let rewroteRefs = false;
       if (meshReady) {
@@ -9825,7 +9835,7 @@ const Viewport = forwardRef(({
       featureEdgesSourceRef.current = null;
       syncFeatureEdges(resultRef.current?.geometry ?? null);
       graphsBoundMeshRef.current = meshData;
-      const builtTopo = boundaryTopoRef.current;
+      const builtTopo = contourTopoRef.current;
       if (builtTopo?.edges) {
         const after = resolveContourScript(script, builtTopo.edges, { meshReady: true });
         if (!after.ok) {
