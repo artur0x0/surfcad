@@ -522,8 +522,16 @@ export function applyContourSnap(spec, pointId, snap) {
     constraints: [...(model.constraints || []), built.constraint],
   };
   try {
+    const solvedSpec = specFromSolved(solveContour(model));
+    // The snap is a new placement. Later constraints start from this shape.
+    solvedSpec.points = (solvedSpec.points || []).map((p) => ({ id: p.id, at: p.at.slice() }));
+    solvedSpec.arcs = (solvedSpec.arcs || []).map((a) => {
+      const arc = { ...a };
+      delete arc.seedRadius;
+      return arc;
+    });
     return {
-      spec: specFromSolved(solveContour(model)),
+      spec: solvedSpec,
       added: true,
       constraint: built.constraint,
     };

@@ -111,9 +111,17 @@ export function dragContourPoint(spec, pointId, targetUv) {
   const locked = [current[0] + projected.du, current[1] + projected.dv];
   const trial = {
     ...spec,
-    points: spec.points.map((p) => (
-      p.id === pointId ? { ...p, at: [locked[0], locked[1]] } : { ...p, at: p.at.slice() }
-    )),
+    // Drag from the shape on screen. Leaving `seed` set would jump back to
+    // the drawing and undo the previous drag.
+    points: spec.points.map((p) => ({
+      id: p.id,
+      at: p.id === pointId ? [locked[0], locked[1]] : p.at.slice(),
+    })),
+    arcs: (spec.arcs || []).map((a) => {
+      const arc = { ...a };
+      delete arc.seedRadius;
+      return arc;
+    }),
     constraints: [
       ...(spec.constraints || []),
       { id: DRAG_ID, kind: 'fix', items: [pointId], at: { [pointId]: locked } },
@@ -131,7 +139,11 @@ export function dragContourPoint(spec, pointId, targetUv) {
   const next = {
     points: solved.points.map((p) => ({ id: p.id, at: p.at.slice() })),
     lines: (spec.lines || []).map((l) => ({ ...l })),
-    arcs: (solved.arcs || []).map((a) => ({ ...a })),
+    arcs: (solved.arcs || []).map((a) => {
+      const arc = { ...a };
+      delete arc.seedRadius;
+      return arc;
+    }),
     dimensions: (spec.dimensions || []).map((d) => ({ ...d })),
     constraints: (spec.constraints || []).map((c) => ({ ...c })),
     ...(spec.refs ? { refs: spec.refs.map((ref) => ({ ...ref })) } : {}),
@@ -603,7 +615,11 @@ export function removeContourPoint(spec, pointId) {
       at: p.at.slice(),
     })),
     lines: kept,
-    arcs: (spec.arcs || []).filter((arc) => !dropArcs.has(arc.id)).map((arc) => ({ ...arc })),
+    arcs: (spec.arcs || []).filter((arc) => !dropArcs.has(arc.id)).map((arc) => {
+      const copy = { ...arc };
+      delete copy.seedRadius;
+      return copy;
+    }),
     dimensions: (spec.dimensions || []).map((item) => ({ ...item })),
     constraints: (spec.constraints || []).map((item) => ({
       ...item,
@@ -616,7 +632,16 @@ export function removeContourPoint(spec, pointId) {
 function stampBroken(spec) {
   let solved;
   try {
-    solved = solveContour(spec);
+    // Stay on the current shape. A delete should not leap back to the draw seed.
+    solved = solveContour({
+      ...spec,
+      points: (spec.points || []).map((p) => ({ id: p.id, at: p.at.slice() })),
+      arcs: (spec.arcs || []).map((a) => {
+        const arc = { ...a };
+        delete arc.seedRadius;
+        return arc;
+      }),
+    });
   } catch {
     return spec;
   }
@@ -632,7 +657,11 @@ function stampBroken(spec) {
     ...spec,
     points: (solved.points || []).map((p) => ({ id: p.id, at: p.at.slice() })),
     lines: (solved.lines || []).map((line) => ({ ...line })),
-    arcs: (solved.arcs || []).map((arc) => ({ ...arc })),
+    arcs: (solved.arcs || []).map((arc) => {
+      const copy = { ...arc };
+      delete copy.seedRadius;
+      return copy;
+    }),
     dimensions: (spec.dimensions || []).map((item) => flag(item, dimBroken.has(item.id))),
     constraints: (spec.constraints || []).map((item) => flag(item, conBroken.has(item.id))),
     ...(spec.refs ? { refs: spec.refs.map((ref) => ({ ...ref })) } : {}),

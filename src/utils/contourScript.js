@@ -76,11 +76,21 @@ function emitArc(arc) {
   }
   if (arc.sweep) fields.push(`sweep: ${emitString(arc.sweep)}`);
   if (arc.segments != null) fields.push(`segments: ${Math.round(arc.segments)}`);
+  if (Number.isFinite(Number(arc.seedRadius)) && Math.abs(Number(arc.seedRadius) - Number(arc.radius)) > 5e-5) {
+    fields.push(`seedRadius: ${emitNum(arc.seedRadius)}`);
+  }
   return `{ ${fields.join(', ')} }`;
 }
 
 function emitPoint(p) {
-  return `{ id: ${emitString(p.id)}, at: [${emitNum(p.at[0])}, ${emitNum(p.at[1])}] }`;
+  const fields = [`id: ${emitString(p.id)}`, `at: [${emitNum(p.at[0])}, ${emitNum(p.at[1])}]`];
+  // The draw seed, when the solved position has left it. A reload then
+  // applies the same constraints to the same drawing.
+  if (Array.isArray(p.seed) && p.seed.length >= 2) {
+    const moved = Math.abs(p.seed[0] - p.at[0]) > 5e-5 || Math.abs(p.seed[1] - p.at[1]) > 5e-5;
+    if (moved) fields.push(`seed: [${emitNum(p.seed[0])}, ${emitNum(p.seed[1])}]`);
+  }
+  return `{ ${fields.join(', ')} }`;
 }
 
 function emitLine(l) {

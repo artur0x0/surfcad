@@ -63,7 +63,15 @@ function cloneSpec(spec) {
   if (!spec || typeof spec !== 'object') fail('expected a contour');
   const points = (spec.points || []).map((p) => {
     if (!p?.id || !Array.isArray(p.at)) fail('a point needs an id and at');
-    return { id: String(p.id), at: [num(p.at[0], `point ${p.id} u`), num(p.at[1], `point ${p.id} v`)] };
+    const point = { id: String(p.id), at: [num(p.at[0], `point ${p.id} u`), num(p.at[1], `point ${p.id} v`)] };
+    // `at` is the last solved position. `seed` is where the user drew or
+    // dragged. Constraint solves start from the seed, so add order does not
+    // pick a different point on the same under-defined manifold.
+    if (Array.isArray(p.seed) && p.seed.length >= 2
+      && Number.isFinite(Number(p.seed[0])) && Number.isFinite(Number(p.seed[1]))) {
+      point.seed = [Number(p.seed[0]), Number(p.seed[1])];
+    }
+    return point;
   });
   const lines = (spec.lines || []).map((l) => {
     if (!l?.id || !l.a || !l.b) fail('a line needs id, a, and b');
@@ -89,6 +97,9 @@ function cloneSpec(spec) {
     }
     if (a.segments != null) arc.segments = Math.max(3, Math.round(num(a.segments, 'segments')));
     if (Number.isFinite(Number(a.seq)) && Number(a.seq) >= 1) arc.seq = Math.round(Number(a.seq));
+    if (Number.isFinite(Number(a.seedRadius)) && Number(a.seedRadius) > 0) {
+      arc.seedRadius = Number(a.seedRadius);
+    }
     return arc;
   });
   const dimensions = (spec.dimensions || []).map((d) => copyItem(d, 'dimension'));
@@ -1086,11 +1097,12 @@ function compile(model) {
   }
   const x0 = new Float64Array(n);
   pointList.forEach((p, i) => {
-    x0[i * 2] = p.at[0];
-    x0[i * 2 + 1] = p.at[1];
+    const seed = p.seed || p.at;
+    x0[i * 2] = seed[0];
+    x0[i * 2 + 1] = seed[1];
   });
   arcList.forEach((a, i) => {
-    x0[pointList.length * 2 + i] = a.radius;
+    x0[pointList.length * 2 + i] = a.seedRadius > 0 ? a.seedRadius : a.radius;
   });
   return { n, m, scale, residualAll, residual, groups, eqs, x0, pIndex, rIndex, brokenRefs };
 }
@@ -1179,6 +1191,13 @@ function levenberg(sys, xStart, skipId) {
   if (m === 0) return { x, scaledInf: 0, converged: true, iterations: 0, r, scale, m };
   residual(x, r);
   let norm = scaledInf(r, scale, m);
+  // λ||δ||² on top of Marquardt's λ·Hᵢᵢ. A perpendicular is one row in a
+  // mostly-free sketch, so most of H is numerical dust. λ·Hᵢᵢ then vanishes
+  // on those columns and the step runs away along the free directions. The
+  // angle residual overshoots, λ climbs, and 40 iterations stop a few degrees
+  // short of a compatible 90°. Which seed does that depends on add order.
+  // The extra λ keeps the step near the current points. The line search
+  // shortens a step the linear model over-predicted.
   let lambda = 1e-3;
   let iterations = 0;
   let converged = norm <= SOLVE_TOL;
@@ -1197,7 +1216,7 @@ function levenberg(sys, xStart, skipId) {
     }
     for (let a = 0; a < n; a += 1) {
       for (let b = 0; b < a; b += 1) H[a * n + b] = H[b * n + a];
-      H[a * n + a] += lambda * Math.max(H[a * n + a], 1e-8);
+      H[a * n + a] += lambda * Math.max(H[a * n + a], 1e-8) + lambda;
     }
     const neg = new Float64Array(n);
     for (let a = 0; a < n; a += 1) neg[a] = -g[a];
@@ -1207,25 +1226,32 @@ function levenberg(sys, xStart, skipId) {
       if (lambda >= 1e8) break;
       continue;
     }
-    let stepLen = 0;
-    const trial = Float64Array.from(x);
-    for (let a = 0; a < n; a += 1) {
-      trial[a] = x[a] + step[a];
-      stepLen += step[a] * step[a];
-    }
-    const rt = new Float64Array(m);
-    residual(trial, rt);
-    const next = scaledInf(rt, scale, m);
-    if (next < norm) {
-      x.set(trial);
-      r.set(rt);
-      norm = next;
-      lambda = Math.max(lambda / 10, 1e-10);
-      if (norm <= SOLVE_TOL || stepLen < 1e-18) {
-        converged = norm <= SOLVE_TOL;
+    let accepted = false;
+    let alpha = 1;
+    for (let halve = 0; halve < 12; halve += 1) {
+      let stepLen = 0;
+      const trial = Float64Array.from(x);
+      for (let a = 0; a < n; a += 1) {
+        const d = alpha * step[a];
+        trial[a] = x[a] + d;
+        stepLen += d * d;
+      }
+      const rt = new Float64Array(m);
+      residual(trial, rt);
+      const next = scaledInf(rt, scale, m);
+      if (next < norm) {
+        x.set(trial);
+        r.set(rt);
+        norm = next;
+        if (alpha === 1) lambda = Math.max(lambda / 10, 1e-10);
+        accepted = true;
+        if (norm <= SOLVE_TOL || stepLen < 1e-18) converged = norm <= SOLVE_TOL;
         break;
       }
-    } else {
+      alpha *= 0.5;
+    }
+    if (converged) break;
+    if (!accepted) {
       lambda = Math.min(lambda * 10, 1e8);
       if (lambda >= 1e8) break;
     }
@@ -1665,12 +1691,17 @@ function assembleResult(model, sys, solved, fact, conflict, repeated) {
     if (area < 0) ring.reverse();
     contours.push(ring);
   }
-  const points = model.points.map((p) => ({
-    id: p.id,
-    at: [round4(at[p.id][0]), round4(at[p.id][1])],
-  }));
+  const points = model.points.map((p) => {
+    const seed = p.seed || p.at;
+    return {
+      id: p.id,
+      at: [round4(at[p.id][0]), round4(at[p.id][1])],
+      seed: [round4(seed[0]), round4(seed[1])],
+    };
+  });
   const arcs = model.arcs.map((a) => {
     const copy = { ...a, radius: round4(radii[a.id]) };
+    copy.seedRadius = a.seedRadius > 0 ? a.seedRadius : a.radius;
     return copy;
   });
   return {

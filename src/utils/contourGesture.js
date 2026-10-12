@@ -31,7 +31,11 @@ const PARALLEL_SPLIT_DEG = 15;
 
 export function specFromSolved(solved) {
   const spec = {
-    points: (solved.points || []).map((p) => ({ id: p.id, at: p.at.slice() })),
+    points: (solved.points || []).map((p) => {
+      const point = { id: p.id, at: p.at.slice() };
+      if (Array.isArray(p.seed) && p.seed.length >= 2) point.seed = p.seed.slice();
+      return point;
+    }),
     lines: (solved.lines || []).map((l) => {
       const line = { id: l.id, a: l.a, b: l.b };
       if (l.guide) line.guide = true;

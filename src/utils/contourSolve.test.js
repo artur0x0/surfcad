@@ -286,6 +286,74 @@ test('a perpendicular on two polyline segments is one real constraint', () => {
   assert.ok(Math.abs(segmentAngle(solved, 'e0', 'e1') - 90) < 0.05);
 });
 
+function permutations(items) {
+  if (items.length <= 1) return [items.map((item) => item.slice())];
+  const out = [];
+  items.forEach((item, index) => {
+    const rest = items.slice(0, index).concat(items.slice(index + 1));
+    for (const tail of permutations(rest)) out.push([item.slice(), ...tail]);
+  });
+  return out;
+}
+
+function addPerpendiculars(uvs, order) {
+  let state = armContourGesture({
+    ...enterContourState('crossSection', null),
+    tool: 'polyline',
+    params: { points: uvs.map((p) => p.slice()) },
+  }, 'constraints');
+  for (const [a, b] of order) {
+    const saved = saveContourConstraint({
+      ...state,
+      picks: [{ id: a, kind: 'line' }, { id: b, kind: 'line' }],
+    }, { kind: 'perpendicular', side: 1 });
+    assert.equal(saved.error, null, `${order.map((pair) => pair.join('')).join('>')} ${saved.error}`);
+    state = saved.state;
+  }
+  return state;
+}
+
+test('perpendiculars on one polyline match in every add order', () => {
+  const uvs = [[0, 0], [40, 2], [46, 28], [4, 24]];
+  const sets = [
+    [['e0', 'e1'], ['e2', 'e3']],
+    [['e0', 'e1'], ['e1', 'e2'], ['e2', 'e3']],
+  ];
+  for (const pairs of sets) {
+    const runs = permutations(pairs).map((order) => {
+      const state = addPerpendiculars(uvs, order);
+      const contour = state.params.contour;
+      const solved = analyzeContour(contour);
+      return { order, contour, solved };
+    });
+    const reference = runs[0];
+    for (const run of runs) {
+      const label = run.order.map((pair) => pair.join('')).join('>');
+      assert.equal(run.solved.status, 'under', label);
+      assert.equal(run.solved.conflict, null, label);
+      assert.deepEqual(run.solved.repeated, [], label);
+      assert.equal(run.solved.dof, reference.solved.dof, label);
+      for (const [a, b] of pairs) {
+        assert.ok(Math.abs(segmentAngle(run.solved, a, b) - 90) < 0.05, `${label} ${a} ${b}`);
+      }
+      for (const line of run.solved.lines) {
+        assert.equal(run.solved.entities.lines[line.id], 'under', `${label} ${line.id}`);
+        const color = contourEntityColor(run.solved.entities.lines[line.id]);
+        assert.notEqual(color, 0xfbbf24, label);
+        assert.notEqual(color, CONTOUR_STATUS_COLOR.conflict, label);
+      }
+      for (const point of run.solved.points) {
+        const other = reference.solved.points.find((item) => item.id === point.id);
+        const delta = Math.hypot(point.at[0] - other.at[0], point.at[1] - other.at[1]);
+        assert.ok(delta < 1e-3, `${label} ${point.id} moved ${delta}`);
+      }
+      run.contour.points.forEach((point, index) => {
+        assert.ok(Math.hypot(point.seed[0] - uvs[index][0], point.seed[1] - uvs[index][1]) < 1e-4, label);
+      });
+    }
+  }
+});
+
 test('a corner arc plus a perpendicular does not mark a real tangent repeated', () => {
   const rounded = roundContourCorner(
     contourFromPolyline([[0, 0], [40, 0], [50, 8], [5, 10]]),
