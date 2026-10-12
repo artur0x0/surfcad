@@ -4,8 +4,8 @@
  *
  * A touch tap places a polyline point within 2px of the finger. The spots
  * are the center and four corners, with the plane card closed and open, and
- * again after the part is translated in the sketch plane. The camera looks
- * along the picked face normal with the top-view up hint.
+ * again after the part is translated in the sketch plane. Select plane aims
+ * along the picked face normal, frames that face, and leaves the part opaque.
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir(), never the artifacts dir.
  */
@@ -24,6 +24,11 @@ let boss = Manifold.cube([10, 10, 8], true).translate([0, 0, 14]);
 return host.add(boss);
 `;
 const FACE = [0, 0, 18];
+const FACE_CORNERS = [[-5, -5, 18], [5, -5, 18], [5, 5, 18], [-5, 5, 18]];
+const HOST_CORNERS = [
+  [-20, -15, -10], [20, -15, -10], [-20, 15, -10], [20, 15, -10],
+  [-20, -15, 10], [20, -15, 10], [-20, 15, 10], [20, 15, 10],
+];
 const POSE = [8, 0, 0];
 const LIMIT_PX = 2;
 const CLOSED = [
@@ -126,6 +131,24 @@ async function boot(page) {
   await page.waitForTimeout(250);
 }
 
+async function ndcExtent(page, corners) {
+  return page.evaluate((pts) => {
+    const canvas = document.querySelector('.viewport-shell > canvas');
+    const rect = canvas.getBoundingClientRect();
+    let extent = 0;
+    const mapped = [];
+    for (const w of pts) {
+      const p = window.__VIEWPORT__.stageProject(w);
+      if (!p) return { ok: false, extent: null, mapped };
+      const u = ((p.x - rect.left) / rect.width) * 2 - 1;
+      const v = 1 - ((p.y - rect.top) / rect.height) * 2;
+      extent = Math.max(extent, Math.abs(u), Math.abs(v));
+      mapped.push([+u.toFixed(3), +v.toFixed(3)]);
+    }
+    return { ok: true, extent: +extent.toFixed(3), mapped };
+  }, corners);
+}
+
 async function projectHitsCanvas(page, world) {
   return page.evaluate((w) => {
     const p = window.__VIEWPORT__.stageProject(w);
@@ -166,13 +189,23 @@ async function enterSketch(page, label) {
   await page.waitForFunction(() => (
     document.querySelector('.viewport-shell')?.getAttribute('data-contour-face-aim') === 'done'
   ), null, { timeout: 8000 });
-  await page.locator('[data-contour-tool="polyline"]').click();
-  await page.waitForFunction(() => window.__VIEWPORT__.stageContourSketch().tool === 'polyline', null, { timeout: 4000 });
+  // A restarted aim used to finish, then start again and frame the whole part.
+  await page.waitForTimeout(500);
+  const sketch = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch());
   const cam = await page.evaluate(() => window.__VIEWPORT__.stageCamera());
   const align = dotView(cam, [0, 0, 1]);
   const up = cam?.up || [];
+  const faceNdc = await ndcExtent(page, FACE_CORNERS);
+  const hostNdc = await ndcExtent(page, HOST_CORNERS);
+  console.log(`  ${label} aim ${sketch.aim} align ${align?.toFixed?.(3)} face ${faceNdc.extent} host ${hostNdc.extent} opacity ${sketch.partOpacity} transparent ${sketch.partTransparent}`);
   check(`${label} camera looks along +Z`, align != null && align > 0.98, String(align));
   check(`${label} sketch up is the top view`, Math.hypot(up[0] || 0, (up[1] || 0) + 1, up[2] || 0) < 0.05, JSON.stringify(up));
+  check(`${label} face aim finished`, sketch.aim === 'done' && sketch.highlights === 0, JSON.stringify(sketch));
+  check(`${label} face is framed`, faceNdc.ok && faceNdc.extent >= 0.55 && faceNdc.extent <= 1.02, JSON.stringify(faceNdc));
+  check(`${label} host sticks outside the frame`, hostNdc.ok && hostNdc.extent > 1.05, JSON.stringify(hostNdc));
+  check(`${label} part stays opaque`, sketch.partOpacity === 1 && sketch.partTransparent === false, `opacity=${sketch.partOpacity} transparent=${sketch.partTransparent}`);
+  await page.locator('[data-contour-tool="polyline"]').click();
+  await page.waitForFunction(() => window.__VIEWPORT__.stageContourSketch().tool === 'polyline', null, { timeout: 4000 });
   return true;
 }
 
@@ -274,15 +307,41 @@ async function openPlaneCard(page, label) {
 }
 
 async function clearWithTool(page, label) {
-  await page.locator('[data-contour-tool="circle"]').click();
-  await page.waitForFunction(() => window.__VIEWPORT__.stageContourSketch().tool === 'circle', null, { timeout: 4000 });
-  await page.locator('[data-contour-tool="polyline"]').click();
-  await page.waitForFunction(() => {
-    const sketch = window.__VIEWPORT__.stageContourSketch();
-    return sketch.tool === 'polyline' && sketch.points === 0;
-  }, null, { timeout: 4000 });
+  // A drawn polyline stays when the tool changes. Double-tap removes a dot
+  // and leaves the plane card open. Below three points the shape goes.
+  for (let i = 0; i < 8; i += 1) {
+    const sketch = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch());
+    if ((sketch.points || 0) === 0) break;
+    const dot = sketch.dots?.[sketch.dots.length - 1];
+    if (!dot) {
+      check(`${label} point has a dot`, false, JSON.stringify(sketch));
+      return;
+    }
+    const before = sketch.points;
+    await page.evaluate((pt) => {
+      const canvas = document.querySelector('.viewport-shell > canvas');
+      for (let n = 0; n < 2; n += 1) {
+        canvas.dispatchEvent(new window.MouseEvent('mouseup', {
+          bubbles: true,
+          cancelable: true,
+          clientX: pt.x,
+          clientY: pt.y,
+          button: 0,
+        }));
+      }
+    }, dot);
+    try {
+      await page.waitForFunction((n) => window.__VIEWPORT__.stageContourSketch().points < n, before, { timeout: 4000 });
+    } catch { /* reported below */ }
+  }
   const sketch = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch());
-  check(`${label} tool switch cleared the points`, sketch.points === 0 && sketch.tool === 'polyline', JSON.stringify(sketch));
+  check(
+    `${label} double-tap cleared the points`,
+    sketch.points === 0 && sketch.planeCard && sketch.tool === 'polyline',
+    JSON.stringify(sketch),
+  );
+  // The first tap of each double-tap toasts over the top of a phone canvas.
+  await page.waitForFunction(() => !document.querySelector('[data-contour-toast]'), null, { timeout: 5000 });
 }
 
 async function setPose(page, t) {
