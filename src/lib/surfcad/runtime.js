@@ -4708,7 +4708,7 @@ function makeCrossSection(plane, profile) {
     desc = { type: profile.type };
     for (const k of Object.keys(profile)) {
       // References stay on the contour statement. They are not profile rings.
-      if (k === 'contours' || k === 'refs') continue;
+      if (k === 'contours' || k === 'refs' || k === 'polyline') continue;
       desc[k] = profile[k];
     }
     contours = profile.contours.map(loop => _xsNormalizeLoop(loop, 'makeCrossSection'));

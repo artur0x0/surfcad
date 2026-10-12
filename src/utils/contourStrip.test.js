@@ -189,3 +189,32 @@ test('deleting a reference names the one dimension, and an unpromoted shape is o
   assert.equal(contourChips({ tool: 'rectangle', params: { width: 20, height: 12 } })[0].label, 'Rectangle');
   assert.equal(deleteContourEntity(drawn, 'e0').removed.length, 0);
 });
+
+test('a promoted polyline is one chip, and delete takes the chain and its dimension', () => {
+  const spec = contourFromPolyline([[0, 0], [10, 0], [10, 8]]);
+  spec.dimensions.push({ id: 'd0', kind: 'length', edge: 'e0', value: 10, seq: 9 });
+  const state = {
+    tool: 'polyline',
+    params: { contour: spec, points: spec.points.map((p) => p.at.slice()) },
+  };
+  const chips = contourChips(state);
+  assert.equal(chips.filter((chip) => chip.kind === 'line').length, 0);
+  assert.equal(chips.find((chip) => chip.id === 'polyline').label, 'Polyline');
+  assert.equal(chips.some((chip) => chip.id === 'd0'), true);
+  const rect = contourFromRectangle(20, 10, true);
+  assert.ok(contourChips({ params: { contour: rect } }).some((chip) => chip.id === 'e0'));
+  assert.equal(rect.polyline, undefined);
+
+  const solved = specFromSolved(solveContour(spec));
+  assert.equal(solved.polyline, true);
+  const roundTrip = parseSolveContour(emitSolveContour(solved));
+  assert.equal(roundTrip.polyline, true);
+  assert.equal(contourChips({ params: { contour: roundTrip } }).filter((chip) => chip.kind === 'line').length, 0);
+
+  const deleted = deleteContourEntity(state, 'polyline');
+  assert.equal(deleted.label, 'Delete along with 1 dimension');
+  assert.deepEqual(deleted.state.params.points, []);
+  assert.equal(deleted.state.params.contour, undefined);
+  assert.equal(deleted.removed[0], 'polyline');
+  assert.equal(contourChips(deleted.state).length, 0);
+});

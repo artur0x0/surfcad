@@ -88,7 +88,9 @@ function cloneSpec(spec) {
   const dimensions = (spec.dimensions || []).map((d) => copyItem(d, 'dimension'));
   const constraints = (spec.constraints || []).map((c) => copyItem(c, 'constraint'));
   const refs = (spec.refs || []).map(copyRef);
-  return { points, lines, arcs, dimensions, constraints, refs };
+  const model = { points, lines, arcs, dimensions, constraints, refs };
+  if (spec.polyline) model.polyline = true;
+  return model;
 }
 
 function uv2(uv, what) {
@@ -253,7 +255,7 @@ export function contourFromPolyline(uvs) {
       b: points[(i + 1) % points.length].id,
     });
   }
-  return assignSeq({ points, lines, arcs: [], dimensions: [], constraints: [] });
+  return assignSeq({ points, lines, arcs: [], dimensions: [], constraints: [], polyline: true });
 }
 
 /** Axis-aligned rectangle in UV. Centered uses the origin. Fully defined. */
@@ -1674,6 +1676,7 @@ function assembleResult(model, sys, solved, fact, conflict, repeated) {
     dimensions: model.dimensions.map((d) => ({ ...d })),
     constraints: model.constraints.map((c) => ({ ...c, items: c.items ? [...c.items] : undefined })),
     refs: (model.refs || []).map((ref) => copyRef(ref)),
+    ...(model.polyline ? { polyline: true } : {}),
     broken: sys.brokenRefs || [],
     dof: fact.dof,
     status,

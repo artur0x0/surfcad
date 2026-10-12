@@ -112,11 +112,11 @@ export const CONTOUR_ENTRY_IDS = new Set([
 ]);
 
 export const CONTOUR_TOOLS = [
-  { id: 'cursor', label: 'Cursor', title: 'Drag a point or a line. A line moves both ends. Does not add points' },
+  { id: 'cursor', label: 'Cursor', title: 'Drag a point. Does not move a whole line and does not add points' },
   { id: 'circle', label: 'Circle', title: 'Circle profile on the workplane' },
   { id: 'rectangle', label: 'Rect', title: 'Rectangle profile on the workplane' },
   { id: 'polygon', label: 'Polygon', title: 'Regular polygon profile on the workplane' },
-  { id: 'polyline', label: 'Polyline', title: 'Tap points on the workplane; right-drag a point to move it, or drag it with one finger. Double-tap a dot to remove it (closed on Confirm)' },
+  { id: 'polyline', label: 'Polyline', title: 'Tap a segment to insert a point. Double-tap a point to remove it. Drag a point to move it' },
 ];
 
 export const CONTOUR_TOOL_IDS = CONTOUR_TOOLS.map((t) => t.id);
@@ -625,9 +625,13 @@ export function enterContourState(entry, faceData = null) {
   const resolved = resolveContourWorkplane(faceData);
   const loft = defaultLoftState();
   const first = loft.profiles[0];
+  const resolvedEntry = CONTOUR_ENTRY_IDS.has(entry) ? entry : 'crossSection';
+  // Select plane opens a sketch on Cursor. The circle station stays the
+  // profile until a profile tool replaces it. Loft stations stay circles.
+  const tool = resolvedEntry === 'crossSection' ? 'cursor' : first.tool;
   return {
-    entry: CONTOUR_ENTRY_IDS.has(entry) ? entry : 'crossSection',
-    tool: first.tool,
+    entry: resolvedEntry,
+    tool,
     params: { ...first.params },
     extrude: defaultExtrudeParams(),
     revolve: defaultRevolveParams(),

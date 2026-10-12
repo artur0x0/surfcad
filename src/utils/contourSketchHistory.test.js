@@ -51,7 +51,7 @@ test('the accepted sketch is the baseline and one edit undoes', () => {
   assert.equal(undone.history.depth, 1);
 
   const again = undoSketchEdit(undone.history);
-  assert.equal(again.state.tool, 'circle');
+  assert.equal(again.state.tool, 'cursor');
   assert.equal(again.history.depth, 0);
   assert.equal(undoSketchEdit(again.history), null);
 });

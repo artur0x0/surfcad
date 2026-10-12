@@ -3,8 +3,9 @@
  *
  * Neither gesture is a profile tool. Selecting one does not reset the
  * points. The first selection promotes a circle, rectangle, polygon, or
- * polyline into a contour, once. Cancel writes nothing and leaves that
- * promotion in the session.
+ * polyline into a solver contour, once. A polyline stays one entity: the
+ * strip does not gain a chip per segment. Cancel writes nothing and
+ * leaves that promotion in the session.
  */
 
 import {
@@ -29,7 +30,7 @@ const NAME_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 const PARALLEL_SPLIT_DEG = 15;
 
 export function specFromSolved(solved) {
-  return {
+  const spec = {
     points: (solved.points || []).map((p) => ({ id: p.id, at: p.at.slice() })),
     lines: (solved.lines || []).map((l) => {
       const line = { id: l.id, a: l.a, b: l.b };
@@ -79,14 +80,26 @@ export function specFromSolved(solved) {
       return copy;
     }),
   };
+  if (solved?.polyline) spec.polyline = true;
+  return spec;
+}
+
+function drawnProfileTool(tool, params) {
+  if (tool !== 'cursor') return tool;
+  const p = params || {};
+  if (Array.isArray(p.points) && p.points.length) return 'polyline';
+  if (p.polygonPreset) return 'polygon';
+  if (p.width != null || p.height != null) return 'rectangle';
+  return 'circle';
 }
 
 export function contourFromTool(tool, params = {}) {
   const p = params || {};
   if (p.contour) return p.contour;
-  if (tool === 'polyline') return contourFromPolyline(p.points || []);
-  if (tool === 'rectangle') return contourFromRectangle(p.width, p.height, p.centered !== false);
-  if (tool === 'polygon') return contourFromPolygon(p.polygonPreset || 'hexagon', p.radius);
+  const kind = drawnProfileTool(tool, p);
+  if (kind === 'polyline') return contourFromPolyline(p.points || []);
+  if (kind === 'rectangle') return contourFromRectangle(p.width, p.height, p.centered !== false);
+  if (kind === 'polygon') return contourFromPolygon(p.polygonPreset || 'hexagon', p.radius);
   return contourFromCircle(p.radius, p.segments ?? 64);
 }
 

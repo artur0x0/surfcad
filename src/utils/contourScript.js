@@ -174,6 +174,7 @@ export function emitSolveContour(model) {
     `dimensions: [${(spec.dimensions || []).map(emitItem).join(', ')}]`,
     `constraints: [${(spec.constraints || []).map(emitItem).join(', ')}]`,
   ];
+  if (spec.polyline) body.push('polyline: true');
   if ((spec.refs || []).length) body.push(`refs: [${spec.refs.map(emitRef).join(', ')}]`);
   return `solveContour({ ${body.join(', ')} })`;
 }
@@ -316,7 +317,7 @@ export function parseSolveContour(source) {
     parser.i += 1;
   }
   const value = objectOf(parser.parseValue());
-  return {
+  const spec = {
     points: value.points || [],
     lines: (value.lines || []).map(keepSeq),
     arcs: (value.arcs || []).map(keepSeq),
@@ -324,4 +325,6 @@ export function parseSolveContour(source) {
     constraints: (value.constraints || []).map(keepSeq),
     refs: (value.refs || []).map(keepSeq),
   };
+  if (value.polyline) spec.polyline = true;
+  return spec;
 }

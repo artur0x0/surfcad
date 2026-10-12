@@ -2,9 +2,9 @@
 /**
  * Sketch strip at 390 and 1280, touch only.
  *
- * The plane card keeps the part strip hidden. After Select plane the phone
- * CAD bar and the desktop viewer bar list sketch chips. An empty polyline
- * reads No sketch entities. A dimension chip and a constraint chip open
+ * The plane card keeps the part strip hidden. After Select plane the pressed
+ * tool is Cursor, and the phone CAD bar and the desktop viewer bar list
+ * sketch chips. An empty polyline reads No sketch entities. A dimension chip and a constraint chip open
  * their edit cards. A canvas tap selects the same line the chip does. A
  * two-pick dimension gesture clears the chip. Cursor keeps the drawn chips.
  * Double-tap removal of a polyline dot leaves a broken constraint chip.
@@ -136,7 +136,7 @@ async function doubleTap(page, x, y) {
       fire('pointerup');
     };
     tap();
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await new Promise((resolve) => setTimeout(resolve, 80));
     tap();
   }, { x, y });
 }
@@ -278,6 +278,14 @@ async function runSize(browser, label, contextOptions) {
     && circle.pressed.join(',') === 'shape' && circle.chips[0]?.label === 'Circle'
     && circle.card === '' && circle.undo === false && circle.redo === false,
     JSON.stringify(circle));
+  const entered = await page.evaluate(() => ({
+    tool: window.__VIEWPORT__.stageContourSketch().tool,
+    cursor: document.querySelector('[data-contour-tool="cursor"]')?.getAttribute('aria-pressed'),
+    polyline: document.querySelector('[data-contour-tool="polyline"]')?.getAttribute('aria-pressed'),
+  }));
+  check(`${label} Select plane starts on Cursor`,
+    entered.tool === 'cursor' && entered.cursor === 'true' && entered.polyline === 'false',
+    JSON.stringify(entered));
 
   await tapSelector(client, page, '[data-cad-feature-strip] [data-sketch-id="shape"]');
   await page.waitForFunction(() => document.querySelector('[data-contour-card="entity"] [data-contour-entity-delete]'), null, { timeout: 4000 });
@@ -320,6 +328,8 @@ async function runSize(browser, label, contextOptions) {
     shapeBack.pressed.join(',') === 'shape' && shapeBack.undo === false && shapeBack.chips[0]?.label === 'Circle',
     JSON.stringify(shapeBack));
 
+  await tapSelector(client, page, '[data-contour-tool="circle"]');
+  await page.waitForFunction(() => window.__VIEWPORT__.stageContourSketch().tool === 'circle', null, { timeout: 4000 });
   await tapSelector(client, page, '[data-contour-tool="cursor"]');
   await page.waitForFunction(() => (
     window.__VIEWPORT__.stageContourSketch().tool === 'cursor'
@@ -332,8 +342,10 @@ async function runSize(browser, label, contextOptions) {
     JSON.stringify(cursorKept));
 
   await tapSelector(client, page, '[data-cad-feature-strip] [data-feature-bar-undo]');
+  await page.waitForFunction(() => window.__VIEWPORT__.stageContourSketch().tool === 'circle', null, { timeout: 4000 });
+  await tapSelector(client, page, '[data-cad-feature-strip] [data-feature-bar-undo]');
   await page.waitForFunction(() => (
-    window.__VIEWPORT__.stageContourSketch().tool === 'circle'
+    window.__VIEWPORT__.stageContourSketch().tool === 'cursor'
     && document.querySelector('[data-cad-feature-strip] [data-sketch-kind="circle"]')
     && document.querySelector('[data-cad-feature-strip] [data-feature-bar-undo]')?.disabled
   ), null, { timeout: 4000 });

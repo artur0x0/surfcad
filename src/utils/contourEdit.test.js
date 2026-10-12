@@ -17,10 +17,12 @@ import {
 } from './contourDrag.js';
 import {
   buildDimension,
+  contourFromTool,
   dimensionShownNumber,
   dimensionStoredValue,
   suggestContourDimension,
 } from './contourGesture.js';
+import { contourChips } from './contourStrip.js';
 import {
   contourFromPolygon,
   roundContourCorner,
@@ -49,7 +51,25 @@ test('a tool change keeps a drawn polyline and a promoted contour', () => {
   assert.equal(kept.gesture, null);
   assert.equal(kept.params.contour.points.length, 3);
   assert.equal(kept.params.points.length, 3);
+  assert.equal(kept.params.contour.polyline, true);
   assert.ok(sketchHandles(kept).every((h) => h.kind === 'contour'));
+  const cursor = switchContourTool(drawn, 'cursor');
+  assert.equal(cursor.params.contour, undefined);
+  assert.equal(contourChips(cursor).length, 1);
+  assert.equal(contourChips(cursor)[0].id, 'shape');
+  assert.equal(contourChips(cursor).filter((chip) => chip.kind === 'line').length, 0);
+  const promoted = armContourGesture(cursor, 'dimension');
+  assert.equal(promoted.params.contour.polyline, true);
+  assert.equal(promoted.params.contour.lines.length, 3);
+  const chips = contourChips(promoted);
+  assert.equal(chips.filter((chip) => chip.kind === 'line').length, 0);
+  assert.equal(chips.filter((chip) => chip.id === 'polyline').length, 1);
+  const fromCursor = contourFromTool('cursor', {
+    points: [[0, 0], [10, 0], [10, 4]],
+    radius: 5,
+  });
+  assert.equal(fromCursor.polyline, true);
+  assert.ok(fromCursor.lines.length >= 3);
 });
 
 test('free polyline points drag after a dimension and a tool change', () => {

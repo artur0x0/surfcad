@@ -3,9 +3,9 @@ import { Trash2 } from 'lucide-react';
 import FeatureSheet from './FeatureSheet';
 
 /**
- * Short card for a selected line, arc, circle, unpromoted shape, or
- * reference. The only action is Delete. X closes the card and leaves
- * the sketch selected.
+ * Short card for a selected line, arc, circle, polyline, unpromoted
+ * shape, or reference. The only action is Delete. X closes the card
+ * and leaves the sketch selected.
  */
 export default function ContourEntityCard({
   chip,

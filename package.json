@@ -75,6 +75,7 @@
         "golden:contour-tap-offset": "node scripts/golden/smoke_contour_tap_offset.mjs",
         "golden:contour-entry": "node scripts/golden/smoke_contour_entry.mjs",
         "golden:contour-cursor": "node scripts/golden/smoke_contour_cursor.mjs",
+        "golden:polyline-entity": "node scripts/golden/smoke_polyline_entity.mjs",
         "golden:contour-normal": "node scripts/golden/smoke_contour_normal.mjs",
         "golden:contour-keep-edit": "node scripts/golden/smoke_contour_keep_edit.mjs",
         "golden:contour-strip": "node scripts/golden/smoke_contour_strip.mjs",
