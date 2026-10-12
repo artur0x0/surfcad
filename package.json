@@ -207,6 +207,7 @@
         "golden:feature-skip-midchain": "node scripts/golden/smoke_feature_skip_midchain.mjs",
         "golden:rollback-bar": "node scripts/golden/smoke_rollback_bar.mjs",
         "golden:rollback-insert": "node scripts/golden/smoke_rollback_insert.mjs",
+        "golden:rollback-accept": "node scripts/golden/smoke_rollback_accept.mjs",
         "golden:safari-page-lifecycle": "node scripts/golden/smoke_safari_page_lifecycle.mjs",
         "golden:failed-part-outline": "node scripts/golden/smoke_failed_part_outline.mjs",
         "golden:fillet-default-radius": "node scripts/golden/smoke_fillet_default_radius.mjs",

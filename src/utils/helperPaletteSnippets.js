@@ -981,20 +981,18 @@ export function buildHelperSnippet(id, opts = {}) {
  * @param {object[]|null} [edgeContext] Slice 12 selected edges for fillet/chamfer
  * @returns {string|null} full replacement buffer
  */
-export function composeHelperInsert(buffer, id, caretOffset = null, params = null, faceContext = null, edgeContext = null) {
-  const item = HELPER_PALETTE_ITEMS.find((h) => h.id === id);
-  if (!item) return null;
-
+/**
+ * Splice a finished snippet at a caret. The same rules as a palette insert:
+ * stay after `let part`, and do not split the block that declares it.
+ * `null` caret appends. The trailing `return part;` is rewritten once.
+ * @param {string} buffer
+ * @param {string} snippet
+ * @param {number|null} [caretOffset]
+ * @returns {string}
+ */
+export function insertBlockAtCaret(buffer, snippet, caretOffset = null) {
   const strippedBuf = stripTrailingReturnPart(buffer || '');
-  const empty = isBufferEmpty(strippedBuf);
-  const merged = mergeParams(item, params);
-  const names = declaredNames(strippedBuf);
-  let snippet = item.build(empty, merged, names, strippedBuf, faceContext, edgeContext);
-  if (snippet == null) return null;
-
-  snippet = stripTrailingReturnPart(snippet);
-  const filtered = filterRedeclarations(snippet, strippedBuf);
-
+  const filtered = stripTrailingReturnPart(String(snippet || '')).replace(/^\n+|\s+$/g, '');
   let insertAt = caretOffset == null ? strippedBuf.length : caretOffset;
   if (insertAt < 0) insertAt = 0;
   if (insertAt > strippedBuf.length) insertAt = strippedBuf.length;
@@ -1030,6 +1028,22 @@ export function composeHelperInsert(buffer, id, caretOffset = null, params = nul
   }
   body = body.replace(/\s+$/, '');
   return `${body}\nreturn part;\n`;
+}
+
+export function composeHelperInsert(buffer, id, caretOffset = null, params = null, faceContext = null, edgeContext = null) {
+  const item = HELPER_PALETTE_ITEMS.find((h) => h.id === id);
+  if (!item) return null;
+
+  const strippedBuf = stripTrailingReturnPart(buffer || '');
+  const empty = isBufferEmpty(strippedBuf);
+  const merged = mergeParams(item, params);
+  const names = declaredNames(strippedBuf);
+  let snippet = item.build(empty, merged, names, strippedBuf, faceContext, edgeContext);
+  if (snippet == null) return null;
+
+  snippet = stripTrailingReturnPart(snippet);
+  const filtered = filterRedeclarations(snippet, strippedBuf);
+  return insertBlockAtCaret(buffer, filtered, caretOffset);
 }
 
 /**

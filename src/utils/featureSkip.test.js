@@ -19,11 +19,14 @@ import {
   composeHelperInsert,
 } from './helperPaletteSnippets.js';
 import { SHEET_METAL_BEGIN, SHEET_METAL_END } from './sheetMetal/sheetMeshFlag.js';
+import { composeFilletCommit } from './filletMode.js';
 import {
   clampRollbackAnchor,
+  commitScriptAtRollback,
   evaluationScript,
   hardSkipIds,
   insertedFeature,
+  rolledBackFeatureIds,
   rollbackAnchorAfterInsert,
   rollbackAnchorAtGap,
   rollbackAnchorsAfterOpen,
@@ -292,4 +295,66 @@ test('insert lands on the bar; undo, delete, and reload reclamp it', () => {
   assert.equal(Object.prototype.hasOwnProperty.call(saved, 'rollbackAnchors'), false);
   assert.notEqual(evaluationScript(script, { anchorId: 'fillet1' }), script);
   assert.deepEqual(rollbackAnchorsAfterOpen(), {});
+  assert.deepEqual(rolledBackFeatureIds(script, 'fillet1'), ['shell1']);
+  assert.deepEqual(rolledBackFeatureIds(script, undefined), []);
+  assert.deepEqual(rolledBackFeatureIds(script, null), ['cube1', 'fillet1', 'shell1']);
+});
+
+test('an appended accept moves to the rollback bar', () => {
+  const script = [
+    region(CUBE_BEGIN, CUBE_END, 'cube1', 'let part = Manifold.cube([20, 20, 20], true);'),
+    region(FILLET_MODE_BEGIN, FILLET_MODE_END, 'fillet1', 'part = filletAlongPath(part, path, 2);'),
+    region(SHELL_BEGIN, SHELL_END, 'shell1', "part = hollow(part, 2, 'z');"),
+    'return part;',
+    '',
+  ].join('\n');
+  const appended = script.replace(
+    'return part;',
+    `${region(CUBE_BEGIN, CUBE_END, 'cube2', 'part = part.add(Manifold.cube([4, 4, 4], true));')}\nreturn part;`,
+  );
+  const placed = commitScriptAtRollback(script, appended, 'fillet1');
+  assert.equal(placed.anchor, 'cube2');
+  const ids = parseFeatureMarkers(placed.buffer).map((feature) => feature.id);
+  assert.deepEqual(ids, ['cube1', 'fillet1', 'cube2', 'shell1']);
+  const live = evaluationScript(placed.buffer, { anchorId: placed.anchor });
+  assert.match(live, /\[4,\s*4,\s*4\]/);
+  assert.equal(live.includes("hollow(part, 2, 'z')"), false);
+  const edited = commitScriptAtRollback(script, script.replace('[20, 20, 20]', '[22, 22, 22]'), 'fillet1');
+  assert.equal(edited.anchor, 'fillet1');
+  assert.equal(edited.buffer.includes('[22, 22, 22]'), true);
+  assert.deepEqual(parseFeatureMarkers(edited.buffer).map((feature) => feature.id), ['cube1', 'fillet1', 'shell1']);
+});
+
+test('a fillet accept at mid-bar lands in the gap and reports the tail', () => {
+  const script = [
+    region(CUBE_BEGIN, CUBE_END, 'cube1', 'let part = Manifold.cube([20, 20, 20], true);'),
+    region(SHELL_BEGIN, SHELL_END, 'shell1', "part = hollow(part, 2, 'z');"),
+    'return part;',
+    '',
+  ].join('\n');
+  const composed = composeFilletCommit(script, {
+    edges: [{
+      a: 0,
+      b: 1,
+      va: [0, 0, 0],
+      vb: [0, 0, 20],
+      boundaryId: 0,
+      faceA: 0,
+      faceB: 6,
+      pairCount: 1,
+    }],
+    params: { radius: 2, strategy: 'sweep' },
+    commitMode: 'append',
+    filletClass: 'easy',
+  });
+  assert.equal(composed.ok, true);
+  const placed = commitScriptAtRollback(script, composed.buffer, 'cube1');
+  const ids = parseFeatureMarkers(placed.buffer).map((feature) => feature.id);
+  assert.deepEqual(ids, ['cube1', 'fillet-1', 'shell1']);
+  assert.equal(placed.anchor, 'fillet-1');
+  const live = evaluationScript(placed.buffer, { anchorId: placed.anchor });
+  assert.match(live, /filletAlongPath\(/);
+  assert.equal(live.includes("hollow(part, 2, 'z')"), false);
+  assert.deepEqual(rolledBackFeatureIds(placed.buffer, placed.anchor), ['shell1']);
+  assert.deepEqual(rolledBackFeatureIds(script, 'cube1'), ['shell1']);
 });

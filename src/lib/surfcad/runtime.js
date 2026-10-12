@@ -36,7 +36,7 @@ import {
   scriptLineFromStack,
   unionSkipIds,
 } from '../../utils/featureFailure.js';
-import { evaluationScript } from '../../utils/featureSkip.js';
+import { evaluationScript, rolledBackFeatureIds } from '../../utils/featureSkip.js';
 import { parseFeatureMarkers } from '../../utils/featureMarkers.js';
 import { buildMakeLoftSolid, offsetPlaneFrame } from '../../utils/makeLoft.js';
 import { blockSpec, buildBlockManifold } from '../../utils/blockSolid.js';
@@ -8622,9 +8622,11 @@ function executeSkippingFailedFeatures(script, importedModels, anchorId) {
       : text;
     try {
       const result = manifoldFromScriptResult(executeScript(source, importedModels));
+      const rolledBack = anchored ? rolledBackFeatureIds(text, anchorId) : [];
       return {
         result,
         featureSkip: primary ? featureSkipFailure(text, primary, thrown, skipIds) : null,
+        rolledBack,
       };
     } catch (error) {
       if (!primary) primary = error;
@@ -9038,6 +9040,7 @@ self.onmessage = async (event) => {
             bodyCentroids,
             timing: { execMs: _execMs, serializeMs: _serializeMs },
             ...(ran.featureSkip ? { featureSkip: ran.featureSkip } : {}),
+            ...(ran.rolledBack?.length ? { rolledBack: ran.rolledBack } : {}),
           }
         });
         break;
@@ -9749,6 +9752,7 @@ export function runPreparedScript(source, opts = {}) {
   );
   const summary = summarizeManifold(ran.result);
   if (ran.featureSkip) summary.featureSkip = ran.featureSkip;
+  if (ran.rolledBack?.length) summary.rolledBack = ran.rolledBack;
   markSheetMesh(summary.mesh, source);
   cachedManifold = summary.manifold;
   cachedExecuteNonce = (opts.nonce !== undefined && opts.nonce !== null) ? opts.nonce : null;

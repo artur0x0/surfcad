@@ -9,6 +9,7 @@ import FeatureStrip from './components/FeatureStrip';
 import { failedFeatureFromOutcome, failedFeatureIds, failedFeatureTitles } from './utils/featureFailure';
 import {
   clampRollbackAnchor,
+  commitScriptAtRollback,
   rollbackAnchorAfterInsert,
   rollbackAnchorsAfterOpen,
   rollbackInsertCaret,
@@ -603,7 +604,8 @@ const App = () => {
       viewportRef.current?.softFailContour?.(result.message);
       return;
     }
-    const wrote = codeEditorRef.current?.applyBuffer?.(
+    const wrote = commitFeatureBuffer(
+      buf,
       result.buffer,
       `${feature.label || 'Feature'} sheet`,
     );
@@ -646,7 +648,8 @@ const App = () => {
       return false;
     }
     if (!result.changed) return true;
-    const wrote = codeEditorRef.current?.applyBuffer?.(
+    const wrote = commitFeatureBuffer(
+      buf,
       result.buffer,
       `Edit ${feature.label || feature.kind || 'feature'}`,
     );
@@ -5287,11 +5290,17 @@ const App = () => {
       if (!w?.id || typeof w.buffer !== 'string' || w.id === doc.activeId) continue;
       if (!doc.parts.some((row) => row.id === w.id)) continue;
       const prevScript = typeof scripts[w.id] === 'string' ? scripts[w.id] : '';
-      scripts = { ...scripts, [w.id]: w.buffer };
-      savePartScript(w.id, w.buffer);
+      const partKey = String(w.id);
+      const stored = storedRollback(partKey);
+      const placed = (stored === null || typeof stored === 'string')
+        ? commitScriptAtRollback(prevScript, w.buffer, stored)
+        : { buffer: w.buffer, anchor: stored };
+      if (stored === null || typeof stored === 'string') storeRollbackAnchor(partKey, placed.anchor);
+      scripts = { ...scripts, [w.id]: placed.buffer };
+      savePartScript(w.id, placed.buffer);
       partHistoriesRef.current[w.id] = pushPartHistory(
         historyForPart(partHistoriesRef.current, w.id, prevScript),
-        w.buffer,
+        placed.buffer,
         w.message || 'External copy',
       );
       wrote += 1;
@@ -5354,6 +5363,26 @@ const App = () => {
         .map((w) => fresh.parts[w.id]?.name || w.id);
       if (names.length) viewportRef.current?.notify?.(`Also cut ${names.join(', ')} (external copy).`);
     }
+  };
+
+  /**
+   * Feature Accept writes through the palette-insert caret. A new block that
+   * landed past the bar is moved into that gap, and the bar moves onto it
+   * so the new feature runs. An edit of a block that is already there does
+   * not move. The bar at the end leaves the buffer alone.
+   */
+  const commitFeatureBuffer = (before, nextBuffer, message) => {
+    if (typeof nextBuffer !== 'string') return false;
+    const key = editorRollbackKey();
+    const stored = storedRollback(key);
+    const placed = (stored === null || typeof stored === 'string')
+      ? commitScriptAtRollback(before, nextBuffer, stored)
+      : { buffer: nextBuffer, anchor: stored };
+    const wrote = !!codeEditorRef.current?.applyBuffer?.(placed.buffer, message);
+    if (wrote && key && (stored === null || typeof stored === 'string')) {
+      storeRollbackAnchor(key, placed.anchor);
+    }
+    return wrote;
   };
 
   /**
@@ -5438,7 +5467,7 @@ const App = () => {
         viewportRef.current?.softFailContour?.(saved.message);
         return false;
       }
-      const wrote = codeEditorRef.current?.applyBuffer?.(saved.buffer, 'Contour');
+      const wrote = commitFeatureBuffer(buf, saved.buffer, 'Contour');
       if (!wrote) {
         viewportRef.current?.softFailContour?.('Could not write Contour into the editor — try again.');
         return false;
@@ -5455,7 +5484,7 @@ const App = () => {
         return false;
       }
       if (!saved.written) return true;
-      const wrote = codeEditorRef.current?.applyBuffer?.(saved.buffer, 'Contour');
+      const wrote = commitFeatureBuffer(buf, saved.buffer, 'Contour');
       if (!wrote) {
         viewportRef.current?.softFailContour?.('Could not write Contour into the editor — try again.');
         return false;
@@ -5481,7 +5510,7 @@ const App = () => {
       : result.run
         ? `Contour ${solidLabel}`
         : 'Contour profile';
-    const wrote = codeEditorRef.current?.applyBuffer?.(result.buffer, msg);
+    const wrote = commitFeatureBuffer(buf, result.buffer, msg);
     if (!wrote) {
       const writeName = entry === 'workplane'
         ? 'Workplane'
@@ -5503,7 +5532,7 @@ const App = () => {
       setTimeout(() => {
         handleGameRun();
       }, 0);
-      crossPartSubtract(buf, result.buffer);
+      crossPartSubtract(buf, codeEditorRef.current?.getContent?.() ?? result.buffer);
     }
     return true;
   };
@@ -5600,7 +5629,7 @@ const App = () => {
       writes = plan.writes;
     }
     if (editorBuffer != null) {
-      const wrote = codeEditorRef.current?.applyBuffer?.(editorBuffer, `${label} mode`);
+      const wrote = commitFeatureBuffer(buf, editorBuffer, `${label} mode`);
       if (!wrote) {
         viewportRef.current?.softFailFillet?.(
           `Could not write ${label} into the editor — try again.`,
@@ -5751,7 +5780,7 @@ const App = () => {
       return false;
     }
     if (result.buffer === buf) return true;
-    const wrote = codeEditorRef.current?.applyBuffer?.(result.buffer, 'Sheet metal');
+    const wrote = commitFeatureBuffer(buf, result.buffer, 'Sheet metal');
     if (!wrote) {
       viewportRef.current?.notify?.('Could not write sheet metal into the editor — try again.');
       return false;
@@ -5880,7 +5909,7 @@ const App = () => {
       viewportRef.current?.softFailShell?.(result.message);
       return false;
     }
-    const wrote = codeEditorRef.current?.applyBuffer?.(result.buffer, 'Shell');
+    const wrote = commitFeatureBuffer(buf, result.buffer, 'Shell');
     if (!wrote) {
       viewportRef.current?.softFailShell?.(
         'Could not write Shell into the editor — try again.',
@@ -5907,7 +5936,7 @@ const App = () => {
       viewportRef.current?.softFailDraft?.(result.message);
       return false;
     }
-    const wrote = codeEditorRef.current?.applyBuffer?.(result.buffer, 'Draft');
+    const wrote = commitFeatureBuffer(buf, result.buffer, 'Draft');
     if (!wrote) {
       viewportRef.current?.softFailDraft?.(
         'Could not write Draft into the editor — try again.',
@@ -5934,7 +5963,7 @@ const App = () => {
       viewportRef.current?.softFailCut?.(result.message);
       return false;
     }
-    const wrote = codeEditorRef.current?.applyBuffer?.(result.buffer, 'Cut');
+    const wrote = commitFeatureBuffer(buf, result.buffer, 'Cut');
     if (!wrote) {
       viewportRef.current?.softFailCut?.(
         'Could not write Cut into the editor — try again.',
@@ -5988,7 +6017,7 @@ const App = () => {
       viewportRef.current?.softFailBoolean?.(result.message);
       return false;
     }
-    const wrote = codeEditorRef.current?.applyBuffer?.(result.buffer, 'Boolean');
+    const wrote = commitFeatureBuffer(buf, result.buffer, 'Boolean');
     if (!wrote) {
       viewportRef.current?.softFailBoolean?.(
         'Could not write Boolean into the editor — try again.',
@@ -6015,7 +6044,7 @@ const App = () => {
       viewportRef.current?.softFailDeleteFace?.(result.message);
       return false;
     }
-    const wrote = codeEditorRef.current?.applyBuffer?.(result.buffer, 'Delete Face');
+    const wrote = commitFeatureBuffer(buf, result.buffer, 'Delete Face');
     if (!wrote) {
       viewportRef.current?.softFailDeleteFace?.(
         'Could not write Delete Face into the editor — try again.',
@@ -6042,7 +6071,7 @@ const App = () => {
       viewportRef.current?.softFailMoveFace?.(result.message);
       return false;
     }
-    const wrote = codeEditorRef.current?.applyBuffer?.(result.buffer, 'Move Face');
+    const wrote = commitFeatureBuffer(buf, result.buffer, 'Move Face');
     if (!wrote) {
       viewportRef.current?.softFailMoveFace?.(
         'Could not write Move Face into the editor — try again.',
@@ -6069,7 +6098,7 @@ const App = () => {
       viewportRef.current?.softFailMove?.(result.message);
       return false;
     }
-    const wrote = codeEditorRef.current?.applyBuffer?.(result.buffer, 'Move');
+    const wrote = commitFeatureBuffer(buf, result.buffer, 'Move');
     if (!wrote) {
       viewportRef.current?.softFailMove?.(
         'Could not write Move into the editor — try again.',

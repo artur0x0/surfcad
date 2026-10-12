@@ -747,10 +747,10 @@ export default function FeatureStrip({
                   data-feature-rolled-back={dimmed ? '1' : undefined}
                   data-feature-depends={failedTitles?.[f.id]?.dependsOn || undefined}
                   aria-pressed={active}
-                  aria-label={f.unused ? `${f.chipLabel} unused` : f.chipLabel}
+                  aria-label={dimmed ? `${f.chipLabel}, rolled back` : (f.unused ? `${f.chipLabel} unused` : f.chipLabel)}
                   aria-invalid={(failed && !dimmed) || undefined}
-                  aria-description={f.external ? 'External copy, not linked' : undefined}
-                  title={dimmed ? `${f.chipLabel} — after the rollback bar` : chipTitle(f, failed, bodyCount, failedTitles)}
+                  aria-description={dimmed ? 'rolled back' : (f.external ? 'External copy, not linked' : undefined)}
+                  title={dimmed ? `${f.chipLabel} — rolled back` : chipTitle(f, failed, bodyCount, failedTitles)}
                   onClick={() => onJump?.(f)}
                   className={`relative shrink-0 rounded-lg p-1.5 flex items-center justify-center
                     border transition-colors active:opacity-80 ${chipTone(active, f.external, failed, dimmed)}`}
@@ -858,10 +858,10 @@ export default function FeatureStrip({
             data-feature-rolled-back={dimmed ? '1' : undefined}
             data-feature-depends={failedTitles?.[f.id]?.dependsOn || undefined}
             aria-pressed={active}
-            aria-label={f.unused ? `${f.chipLabel} unused` : f.chipLabel}
+            aria-label={dimmed ? `${f.chipLabel}, rolled back` : (f.unused ? `${f.chipLabel} unused` : f.chipLabel)}
             aria-invalid={(failed && !dimmed) || undefined}
-            aria-description={f.external ? 'External copy, not linked' : undefined}
-            title={dimmed ? `${f.chipLabel} — after the rollback bar` : chipTitle(f, failed, bodyCount, failedTitles)}
+            aria-description={dimmed ? 'rolled back' : (f.external ? 'External copy, not linked' : undefined)}
+            title={dimmed ? `${f.chipLabel} — rolled back` : chipTitle(f, failed, bodyCount, failedTitles)}
             onClick={() => onJump?.(f)}
             className={`relative shrink-0 rounded-lg p-1.5 flex items-center justify-center
               border transition-colors active:opacity-80 ${chipTone(active, f.external, failed, dimmed)}`}

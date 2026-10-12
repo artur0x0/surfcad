@@ -10896,7 +10896,12 @@ const Viewport = forwardRef(({
         console.log(`[Viewport] Memory after execution: ${memoryUsedMB.toFixed(1)}MB`);
       }
       
-      console.log('[Viewport] Script executed successfully');
+      const rolledBack = Array.isArray(result?.rolledBack) ? result.rolledBack : [];
+      if (rolledBack.length) {
+        console.log(`[Viewport] Rolled back ${rolledBack.join(', ')}; those features did not run.`);
+      } else {
+        console.log('[Viewport] Script executed successfully');
+      }
       const g = graphTimingRef.current || {};
       const workerTiming = result.timing || {};
       const totalMs = performance.now() - runTimingStartRef.current;
@@ -10934,7 +10939,12 @@ const Viewport = forwardRef(({
             skipped: Array.isArray(skip.skipped) ? skip.skipped : [],
           });
         } else {
-          onRunOutcomeRef.current?.({ script, ok: true, scriptLine: null });
+          onRunOutcomeRef.current?.({
+            script,
+            ok: true,
+            scriptLine: null,
+            ...(rolledBack.length ? { rolledBack } : {}),
+          });
         }
       }
       if (soloRunFailedRef.current) {
@@ -10942,7 +10952,14 @@ const Viewport = forwardRef(({
         syncFailedPartOutlinesRef.current();
       }
       // Truthy object: callers that only check success keep working; game compare needs nonce.
-      return { ok: true, nonce, mesh: meshData, bodyCount: bodyCentroidsRef.current.length };
+      return {
+        ok: true,
+        nonce,
+        mesh: meshData,
+        bodyCount: bodyCentroidsRef.current.length,
+        volume: Number.isFinite(result?.volume) ? result.volume : null,
+        rolledBack,
+      };
 
     } catch (error) {
       if (opts.editPreview) {

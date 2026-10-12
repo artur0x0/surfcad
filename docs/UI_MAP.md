@@ -372,13 +372,18 @@ Mobile specifics:
   (`data-feature-depends`).
   The rollback bar (`data-rollback-bar`) sits in a gap between feature chips.
   Its line runs the full strip height, centred in that gap, and the upside-down
-  triangle sits just above the strip with its tip on the top edge.
-  Release dims every chip after it and rebuilds up to that gap. Dragging it
-  back to the end runs the whole script. Sketch and joint chips hide the bar.
-  A palette insert while the bar is set lands at that gap, and the bar moves
-  onto the new chip so the tail stays dim. Undo, redo, and delete keep the
+  triangle sits just above the strip with its tip on the top edge. The rail
+  uses the same control.
+  Release greys every chip after it on the strip and on the rail
+  (`data-feature-rolled-back`, titled rolled back) and rebuilds up to that
+  gap. The run names those features in `rolledBack` instead of reporting
+  them as a success. Dragging the bar back to the end runs the whole script.
+  Sketch and joint chips hide the bar.
+  A palette insert, and every feature Accept, lands at that gap, and the bar
+  moves onto the new chip so the tail stays grey. An edit of an existing
+  feature does not move the bar. Undo, redo, and delete keep the
   bar when its feature is still in the script, and snap to the end when it
-  is not. Contour and sheet writes do not move the bar. File open and reload
+  is not. File open and reload
   drop it and run the full script. The Extrude card labels Out / In / Both
   as Direction.
   Chip highlight (`featureStripActiveId`)

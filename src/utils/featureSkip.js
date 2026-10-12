@@ -13,6 +13,7 @@
  */
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { featureDependents } from './featureEdit.js';
+import { insertBlockAtCaret } from './helperPaletteSnippets.js';
 
 const REF_KEY = /refKey\s*:\s*(['"`])([^'"`]*)\1/g;
 
@@ -279,13 +280,16 @@ export function clampRollbackAnchor(script, anchor) {
   return featureIds(script).includes(anchor) ? anchor : undefined;
 }
 
+function blockBody(script, feature) {
+  return script.slice(feature.startOffset, feature.endOffset);
+}
+
 /**
- * The block an insert added, matched by the unchanged blocks on either side.
+ * Blocks whose text changed, between the unchanged prefix and suffix.
  * @param {string} beforeScript
  * @param {string} afterScript
  */
-export function insertedFeature(beforeScript, afterScript) {
-  const textOf = (script, feature) => script.slice(feature.startOffset, feature.endOffset);
+export function changedFeatureSlice(beforeScript, afterScript) {
   const before = parseFeatureMarkers(beforeScript);
   const after = parseFeatureMarkers(afterScript);
   let prefix = 0;
@@ -293,17 +297,115 @@ export function insertedFeature(beforeScript, afterScript) {
     prefix < before.length
     && prefix < after.length
     && before[prefix].kind === after[prefix].kind
-    && textOf(beforeScript, before[prefix]) === textOf(afterScript, after[prefix])
+    && blockBody(beforeScript, before[prefix]) === blockBody(afterScript, after[prefix])
   ) prefix += 1;
   let suffix = 0;
   while (
     suffix < before.length - prefix
     && suffix < after.length - prefix
     && before[before.length - 1 - suffix].kind === after[after.length - 1 - suffix].kind
-    && textOf(beforeScript, before[before.length - 1 - suffix]) === textOf(afterScript, after[after.length - 1 - suffix])
+    && blockBody(beforeScript, before[before.length - 1 - suffix]) === blockBody(afterScript, after[after.length - 1 - suffix])
   ) suffix += 1;
-  const added = after.slice(prefix, after.length - suffix);
+  return after.slice(prefix, after.length - suffix);
+}
+
+/**
+ * The block an insert added, matched by the unchanged blocks on either side.
+ * @param {string} beforeScript
+ * @param {string} afterScript
+ */
+export function insertedFeature(beforeScript, afterScript) {
+  const added = changedFeatureSlice(beforeScript, afterScript);
   return added.length ? added[0] : null;
+}
+
+/**
+ * Features the rollback bar blanks. `null` is every feature. An unknown
+ * anchor blanks nothing. Omit the anchor when the bar is at the end.
+ * @param {string} script
+ * @param {string|null|undefined} anchorId
+ * @returns {string[]}
+ */
+export function rolledBackFeatureIds(script, anchorId) {
+  const features = parseFeatureMarkers(typeof script === 'string' ? script : '');
+  if (anchorId === null) return features.map((feature) => feature.id);
+  if (typeof anchorId !== 'string') return [];
+  const at = features.findIndex((feature) => feature.id === anchorId);
+  if (at < 0) return [];
+  return features.slice(at + 1).map((feature) => feature.id);
+}
+
+/**
+ * Place new feature blocks at the rollback bar, the way a palette insert does.
+ * An Accept that appended past the bar is cut out and spliced at the caret.
+ * A block that is already in that gap stays. An edit of an existing block
+ * does not move, and the bar stays. The bar then sits on the new feature.
+ * @param {string} beforeScript
+ * @param {string} afterScript
+ * @param {string|null|undefined} anchor
+ * @returns {{ buffer: string, anchor: string|null|undefined }}
+ */
+export function commitScriptAtRollback(beforeScript, afterScript, anchor) {
+  const after = typeof afterScript === 'string' ? afterScript : '';
+  if (anchor !== null && typeof anchor !== 'string') {
+    return { buffer: after, anchor: undefined };
+  }
+  const beforeIds = new Set(parseFeatureMarkers(beforeScript).map((feature) => feature.id));
+  const fresh = changedFeatureSlice(beforeScript, after).filter((feature) => (
+    feature.id && !beforeIds.has(feature.id)
+  ));
+  if (!fresh.length) {
+    return { buffer: after, anchor: clampRollbackAnchor(after, anchor) };
+  }
+  const features = parseFeatureMarkers(after);
+  const anchorIndex = anchor === null ? -1 : features.findIndex((feature) => feature.id === anchor);
+  const freshIds = new Set(fresh.map((feature) => feature.id));
+  const tailFresh = features.filter((feature) => {
+    if (!freshIds.has(feature.id)) return false;
+    const idx = features.findIndex((item) => item.id === feature.id);
+    return idx > anchorIndex;
+  });
+  if (!tailFresh.length) {
+    return { buffer: after, anchor: clampRollbackAnchor(after, anchor) };
+  }
+  const packed = tailFresh.every((feature, i) => {
+    const idx = features.findIndex((item) => item.id === feature.id);
+    return idx === anchorIndex + 1 + i;
+  });
+  const lastId = tailFresh[tailFresh.length - 1].id;
+  if (packed) return { buffer: after, anchor: lastId };
+
+  const chunks = tailFresh.map((feature) => (
+    after.slice(feature.startOffset, feature.endOffset).replace(/^\n+|\s+$/g, '')
+  ));
+  let rest = after;
+  for (let i = tailFresh.length - 1; i >= 0; i -= 1) {
+    const feature = tailFresh[i];
+    let cutStart = feature.startOffset;
+    let cutEnd = feature.endOffset;
+    if (rest[cutEnd] === '\n') cutEnd += 1;
+    else if (cutStart > 0 && rest[cutStart - 1] === '\n') cutStart -= 1;
+    rest = `${rest.slice(0, cutStart)}${rest.slice(cutEnd)}`;
+  }
+  let caret = null;
+  if (anchor === null) caret = 0;
+  else {
+    const host = parseFeatureMarkers(rest).find((feature) => feature.id === anchor);
+    caret = host ? host.endOffset : null;
+  }
+  if (typeof caret !== 'number') {
+    return { buffer: after, anchor: clampRollbackAnchor(after, anchor) };
+  }
+  const buffer = insertBlockAtCaret(rest, chunks.join('\n'), caret);
+  // A marker without an id is named from its place in the strip, so the
+  // name can change when the block moves. Read it from the placed script.
+  const norm = (text) => text.replace(/\s+/g, ' ').trim();
+  const want = new Set(chunks.map(norm));
+  const placed = parseFeatureMarkers(buffer).filter((feature) => (
+    want.has(norm(buffer.slice(feature.startOffset, feature.endOffset)))
+  ));
+  const landed = placed.length ? placed[placed.length - 1].id : lastId;
+  return { buffer, anchor: landed || lastId };
 }
 
 /**

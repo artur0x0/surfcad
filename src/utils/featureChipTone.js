@@ -30,7 +30,11 @@ export function chipTone(active, external = false, failed = false, dimmed = fals
       ? 'bg-gray-800/70 text-gray-200 border-2 border-yellow-400 hover:text-white'
       : 'bg-gray-800/70 text-gray-200 border-gray-500/40 hover:text-white';
   }
-  return dimmed ? `${tone} opacity-40` : tone;
+  // Past the bar: grey, not a faded copy of the live colour. opacity-40
+  // stays so a rolled-back chip still reads as dimmed.
+  return dimmed
+    ? 'bg-gray-800/80 text-gray-400 border-gray-500/70 opacity-40 grayscale'
+    : tone;
 }
 
 /**
