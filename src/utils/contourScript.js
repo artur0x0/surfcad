@@ -48,6 +48,7 @@ function emitItem(item) {
   if (item.name) fields.push(`name: ${emitString(item.name)}`);
   if (item.side != null) fields.push(`side: ${item.side < 0 ? -1 : 1}`);
   if (item.sense != null) fields.push(`sense: ${item.sense < 0 ? -1 : 1}`);
+  if (item.broken) fields.push('broken: true');
   if (item.at) fields.push(`at: ${emitAt(item.at)}`);
   if (item.placement != null && Number.isFinite(Number(item.placement))) {
     fields.push(`placement: ${emitNum(item.placement)}`);

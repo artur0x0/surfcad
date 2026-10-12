@@ -168,6 +168,7 @@ function copyItem(item, label) {
   if (item.value != null) copy.value = num(item.value, `${label} ${item.id} value`);
   if (item.side != null) copy.side = item.side < 0 ? -1 : 1;
   if (item.sense != null) copy.sense = item.sense < 0 ? -1 : 1;
+  if (item.broken) copy.broken = true;
   // Where the two taps sat on a line-line distance. The figure starts there.
   // Dropping this is what put the first extension on the edge midpoint.
   if (Array.isArray(item.anchors)) {
@@ -665,6 +666,14 @@ function compile(model) {
     if (refIds.length >= 2) fail('a constraint cannot join two references');
     return refIds.some((id) => !live.has(id));
   };
+  // A target that is no longer a point, line, arc, or reference is a later
+  // loss. The item stays, marked broken, and adds no residual.
+  const lostTarget = (item) => namedIds(item).some((id) => (
+    id && !points.has(id) && !lines.has(id) && !arcs.has(id) && !refs.has(id)
+  ));
+  const markBroken = (item) => {
+    item.broken = true;
+  };
   const segDist = (p, a, b) => {
     const dx = b[0] - a[0];
     const dy = b[1] - a[1];
@@ -808,6 +817,11 @@ function compile(model) {
   }
 
   for (const dim of model.dimensions) {
+    if (lostTarget(dim)) {
+      markBroken(dim);
+      continue;
+    }
+    if (dim.broken) delete dim.broken;
     if (skipItem(dim)) continue;
     if (dim.kind === 'length') {
       if (refs.has(dim.edge)) fail('length stays on a sketch line');
@@ -876,6 +890,17 @@ function compile(model) {
   }
 
   for (const con of model.constraints) {
+    if (lostTarget(con)) {
+      markBroken(con);
+      continue;
+    }
+    // One stored target, or any other count, is a broken coincident.
+    // It stays on the contour so Delete can remove it.
+    if (con.kind === 'coincident' && (con.items || []).length !== 2) {
+      markBroken(con);
+      continue;
+    }
+    if (con.broken) delete con.broken;
     if (skipItem(con)) continue;
     const items = con.items || [];
     if ((con.kind === 'horizontal' || con.kind === 'vertical' || con.kind === 'equal' || con.kind === 'fix')
@@ -920,7 +945,6 @@ function compile(model) {
         fail('equal needs two lines or two arcs');
       }
     } else if (con.kind === 'coincident') {
-      if (items.length !== 2) fail('coincident needs two items');
       if (refs.has(items[0]) || refs.has(items[1])) {
         compileCoincidentRef(con, items);
         continue;
@@ -955,7 +979,10 @@ function compile(model) {
           return Math.hypot(p[0] - c[0], p[1] - c[1]) - rad(x, a);
         });
       } else {
-        fail('coincident needs two points, or a point and a line or an arc');
+        // A pair that is not two points, or a point and a line or an arc,
+        // used to throw and block Delete. Keep it, marked broken.
+        markBroken(con);
+        continue;
       }
     } else if (con.kind === 'tangent') {
       if (items.length !== 2) fail('tangent needs two items');

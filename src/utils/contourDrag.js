@@ -133,6 +133,7 @@ export function dragContourPoint(spec, pointId, targetUv) {
     arcs: (solved.arcs || []).map((a) => ({ ...a })),
     dimensions: (spec.dimensions || []).map((d) => ({ ...d })),
     constraints: (spec.constraints || []).map((c) => ({ ...c })),
+    ...(spec.refs ? { refs: spec.refs.map((ref) => ({ ...ref })) } : {}),
   };
   return {
     spec: next,

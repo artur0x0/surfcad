@@ -89,6 +89,7 @@
         "golden:feature-slot-open": "node scripts/golden/smoke_feature_slot_open.mjs",
         "golden:contour-edit": "node scripts/golden/smoke_contour_edit.mjs",
         "golden:contour-delete": "node scripts/golden/smoke_contour_delete.mjs",
+        "golden:contour-broken-delete": "node scripts/golden/smoke_contour_broken_delete.mjs",
         "golden:contour-stale-preview": "node scripts/golden/smoke_contour_stale_preview.mjs",
         "golden:sheet-contour-delete": "node scripts/golden/smoke_sheet_contour_delete.mjs",
         "golden:sheet-extrude": "node scripts/golden/smoke_sheet_extrude.mjs",
