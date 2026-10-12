@@ -165,9 +165,9 @@ function FeatureGlyph({ kind, size }) {
   );
 }
 
-/** Title text for one chip. */
-function chipTitle(f, failed, bodyCount) {
-  if (failed) return `${f.chipLabel} — failed on the last run`;
+/** Title text for one chip. A skipped dependent names the feature it uses. */
+function chipTitle(f, failed, bodyCount, failedTitles) {
+  if (failed) return failedTitles?.[f.id]?.chip || `${f.chipLabel} — failed on the last run`;
   if (f.external) return `${f.chipLabel} — external copy, not linked`;
   if (f.unused) return `${f.chipLabel} — unused`;
   return featureShowsSeparateBody(f, bodyCount)
@@ -246,6 +246,11 @@ export default function FeatureStrip({
   hidden = false,
   /** Ids of features the last run failed in (red chip border). */
   failedIds = null,
+  /**
+   * Titles for dependents skipped with that failure.
+   * `{ [id]: { chip, sheet, dependsOn } }` from `failedFeatureTitles`.
+   */
+  failedTitles = null,
   /**
    * Live body count of the strip's part (from the last successful run).
    * Separate-body marker shows only when a chip wrote merge:false AND this
@@ -495,11 +500,12 @@ export default function FeatureStrip({
                   data-feature-external={f.external ? '1' : undefined}
                   data-feature-separate={separateLive ? '1' : undefined}
                   data-feature-failed={failed ? '1' : undefined}
+                  data-feature-depends={failedTitles?.[f.id]?.dependsOn || undefined}
                   aria-pressed={active}
                   aria-label={f.unused ? `${f.chipLabel} unused` : f.chipLabel}
                   aria-invalid={failed || undefined}
                   aria-description={f.external ? 'External copy, not linked' : undefined}
-                  title={chipTitle(f, failed, bodyCount)}
+                  title={chipTitle(f, failed, bodyCount, failedTitles)}
                   onClick={() => onJump?.(f)}
                   className={`relative shrink-0 rounded-lg p-1.5 flex items-center justify-center
                     border transition-colors active:opacity-80 ${chipTone(active, f.external, failed)}`}
@@ -590,11 +596,12 @@ export default function FeatureStrip({
             data-feature-external={f.external ? '1' : undefined}
             data-feature-separate={separateLive ? '1' : undefined}
             data-feature-failed={failed ? '1' : undefined}
+            data-feature-depends={failedTitles?.[f.id]?.dependsOn || undefined}
             aria-pressed={active}
             aria-label={f.unused ? `${f.chipLabel} unused` : f.chipLabel}
             aria-invalid={failed || undefined}
             aria-description={f.external ? 'External copy, not linked' : undefined}
-            title={chipTitle(f, failed, bodyCount)}
+            title={chipTitle(f, failed, bodyCount, failedTitles)}
             onClick={() => onJump?.(f)}
             className={`relative shrink-0 rounded-lg p-1.5 flex items-center justify-center
               border transition-colors active:opacity-80 ${chipTone(active, f.external, failed)}`}

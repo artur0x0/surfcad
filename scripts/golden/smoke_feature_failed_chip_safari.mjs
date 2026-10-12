@@ -128,12 +128,13 @@ const BAD_ID = feats[2].id;
 {
   const bad = await run(FAILING);
   const badLine = FAILING.split('\n').findIndex((l) => l.includes('edgesBetween(part, 90, 91)')) + 1;
-  check('V8: the error still names the failing script line', bad.payload?.scriptLine === badLine,
-    String(bad.payload?.scriptLine));
-  check('V8: and also the tracked feature block', bad.payload?.featureId === BAD_ID
-    && bad.payload?.featureBlock === FAILING.slice(feats[2].startOffset, feats[2].endOffset),
-    String(bad.payload?.featureId));
-  const byLine = failedFeatureFromOutcome(FAILING, { scriptLine: bad.payload.scriptLine });
+  const v8Skip = bad.payload?.featureSkip;
+  check('V8: the recovered run still names the failing script line', v8Skip?.scriptLine === badLine,
+    String(v8Skip?.scriptLine));
+  check('V8: and also the tracked feature block', v8Skip?.featureId === BAD_ID
+    && v8Skip?.featureBlock === FAILING.slice(feats[2].startOffset, feats[2].endOffset),
+    String(v8Skip?.featureId));
+  const byLine = failedFeatureFromOutcome(FAILING, { scriptLine: v8Skip?.scriptLine });
   check('V8: the line alone still maps to the second fillet', byLine?.id === BAD_ID);
 }
 
@@ -150,10 +151,12 @@ let safari;
   check('the simulated WebKit stack has no V8 / Firefox frame', anonymousFrameLine(probe.stack) === null, probe.stack);
   const bad = await run(FAILING);
   safari = bad;
-  check('Safari: the run still fails', bad.type === 'error', bad.payload?.message);
-  check('Safari: no script line from the stack', bad.payload?.scriptLine == null, String(bad.payload?.scriptLine));
-  check('Safari: the error names the open feature block', bad.payload?.featureId === BAD_ID, String(bad.payload?.featureId));
-  const hit = failedFeatureFromOutcome(FAILING, bad.payload);
+  const safariSkip = bad.payload?.featureSkip;
+  check('Safari: the run recovers a solid and still names the block',
+    bad.type === 'result' && safariSkip?.featureId === BAD_ID, bad.payload?.message || String(safariSkip?.featureId));
+  check('Safari: no script line from the stack', safariSkip?.scriptLine == null, String(safariSkip?.scriptLine));
+  check('Safari: the report names the open feature block', safariSkip?.featureId === BAD_ID, String(safariSkip?.featureId));
+  const hit = failedFeatureFromOutcome(FAILING, safariSkip || {});
   check('Safari: App maps it to the second fillet (not the cube / first fillet)',
     hit && hit.id === BAD_ID && hit.kind === 'fillet' && hit.typeIndex === 2,
     JSON.stringify(hit && { id: hit.id, typeIndex: hit.typeIndex }));
@@ -222,8 +225,9 @@ export { default as FeatureStrip } from './src/components/FeatureStrip.jsx';`,
   });
   writeFileSync(out, res.outputFiles[0].text);
   const ui = await import(out);
-  const hit = failedFeatureFromOutcome(FAILING, safari.payload);
-  const ids = failedFeatureIds(FAILING, hit);
+  const renderedSkip = safari.payload?.featureSkip;
+  const hit = failedFeatureFromOutcome(FAILING, renderedSkip || {});
+  const ids = failedFeatureIds(FAILING, hit ? { ...hit, skipped: renderedSkip?.skipped } : null);
   rmSync(dir, { recursive: true, force: true });
   // Server render: silence React's "useLayoutEffect does nothing on the server".
   const h = (C, props) => {
@@ -296,7 +300,8 @@ export { default as FeatureStrip } from './src/components/FeatureStrip.jsx';`,
     /failedFeatureFromOutcome\(script, \{ featureId, featureBlock, scriptLine \}\)/.test(app)
     && (app.match(/featureEditFailedIds=\{sheetFailedIds\}/g) || []).length === 2
     && /failedIds=\{featureEditFailedIds\}/.test(vp)
-    && (app.match(/failedIds=\{stripFailedIds\}/g) || []).length === 3);
+    && (app.match(/failedIds=\{stripFailedIds\}/g) || []).length === 2
+    && /failedIds=\{scriptStripFailedIds\}/.test(app));
   const arch = read('docs/architecture.md');
   check('architecture.md documents block tracking, the Safari fallback and the sheet red',
     /instrumentFeatureBlocks/.test(arch) && /Safari/.test(arch) && /data-feature-sheet-failed/.test(arch));

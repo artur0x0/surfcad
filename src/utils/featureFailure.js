@@ -19,6 +19,7 @@
  * every block) carries none, so no chip is marked. The id wins over the line.
  */
 import { parseFeatureMarkers } from './featureMarkers.js';
+import { hardSkipIds } from './featureSkip.js';
 
 /** Frames of the `new Function` body: V8 `<anonymous>:L:C`, Firefox `> Function:L:C`. */
 const ANON_FRAME = /(?:<anonymous>|> Function):(\d+):(\d+)/;
@@ -85,23 +86,115 @@ export function failedFeatureFor(script, line) {
   };
 }
 
+function blockMatches(text, features, id, block) {
+  if (!id || typeof block !== 'string') return null;
+  return features.find((feature) => feature.id === id && text.slice(feature.startOffset, feature.endOffset) === block) || null;
+}
+
 /**
  * Ids of strip chips to draw as failed in `script`. A chip keeps the red
- * border while its block text is the one that failed; editing that block
- * (or a run that succeeds) clears it. Another part's script does not match.
+ * border while its block text is the one that failed, or the one a skip
+ * omitted with that failure. Editing that block (or a run that succeeds)
+ * clears it. Another part's script does not match.
  *
  * @param {string} script   the strip's script
- * @param {{ id: string, block: string }|null} failure
+ * @param {{ id: string, block: string, skipped?: Array<{ id: string, block: string }> }|null} failure
  * @returns {Set<string>}
  */
 export function failedFeatureIds(script, failure) {
   const out = new Set();
   if (!failure?.id || typeof failure.block !== 'string') return out;
   const text = String(script || '');
-  for (const f of parseFeatureMarkers(text)) {
-    if (f.id === failure.id && text.slice(f.startOffset, f.endOffset) === failure.block) out.add(f.id);
+  const features = parseFeatureMarkers(text);
+  if (blockMatches(text, features, failure.id, failure.block)) out.add(failure.id);
+  for (const row of failure.skipped || []) {
+    if (blockMatches(text, features, row?.id, row?.block)) out.add(row.id);
   }
   return out;
+}
+
+/**
+ * Chip and sheet titles for dependents that were skipped with a failure.
+ * The feature that threw keeps the existing "failed on the last run" copy.
+ * @returns {Record<string, { chip: string, sheet: string }>}
+ */
+export function failedFeatureTitles(script, failure) {
+  const titles = {};
+  if (!failure?.skipped) return titles;
+  const text = String(script || '');
+  const features = parseFeatureMarkers(text);
+  const labelOf = (id) => features.find((feature) => feature.id === id)?.chipLabel || 'a feature';
+  for (const row of failure.skipped) {
+    if (!row || row.threw || !row.dependsOn) continue;
+    const feature = blockMatches(text, features, row.id, row.block);
+    if (!feature) continue;
+    const who = labelOf(row.dependsOn);
+    titles[feature.id] = {
+      chip: `${feature.chipLabel} — skipped, depends on ${who}`,
+      sheet: `Skipped — depends on ${who}`,
+      dependsOn: row.dependsOn,
+    };
+  }
+  return titles;
+}
+
+/**
+ * Ids to omit after one more block throws, in script order.
+ * The thrown block and its hard dependents join `skipIds`. No growth means
+ * the run cannot skip its way to a solid.
+ */
+export function unionSkipIds(script, skipIds, featureId) {
+  const have = new Set(Array.isArray(skipIds) ? skipIds : []);
+  if (typeof featureId === 'string' && featureId) {
+    for (const id of hardSkipIds(script, featureId)) have.add(id);
+  }
+  return parseFeatureMarkers(script).filter((feature) => have.has(feature.id)).map((feature) => feature.id);
+}
+
+/**
+ * What a recovered or exhausted run reports. `thrownIds[0]` is the original
+ * failure. Later thrown blocks stay failures. A block skipped only because
+ * it uses a name or refKey from one of those is a dependent.
+ */
+export function featureSkipFailure(script, error, thrownIds, skipIds) {
+  const text = String(script || '');
+  const features = parseFeatureMarkers(text);
+  const blockOf = (id) => {
+    const feature = features.find((item) => item.id === id);
+    return feature ? text.slice(feature.startOffset, feature.endOffset) : '';
+  };
+  const thrown = (Array.isArray(thrownIds) ? thrownIds : []).filter((id) => typeof id === 'string' && id);
+  const thrownSet = new Set(thrown);
+  const primary = thrown[0] || (typeof error?.featureId === 'string' ? error.featureId : null);
+  const skipped = [];
+  for (const id of Array.isArray(skipIds) ? skipIds : []) {
+    if (!id || id === primary) continue;
+    const threw = thrownSet.has(id);
+    let dependsOn = null;
+    if (!threw) {
+      for (const source of thrown) {
+        if (hardSkipIds(text, source).includes(id)) {
+          dependsOn = source;
+          break;
+        }
+      }
+    }
+    skipped.push({
+      id,
+      block: blockOf(id),
+      threw,
+      dependsOn,
+    });
+  }
+  return {
+    featureId: primary,
+    featureBlock: typeof error?.featureBlock === 'string' && error.featureBlock
+      ? error.featureBlock
+      : blockOf(primary),
+    scriptLine: Number.isFinite(error?.scriptLine) ? error.scriptLine : null,
+    message: typeof error?.message === 'string' && error.message ? error.message : 'Script execution failed',
+    skipped,
+  };
 }
 
 // ── Feature-block tracking (engine-independent; primary mapping) ─────────

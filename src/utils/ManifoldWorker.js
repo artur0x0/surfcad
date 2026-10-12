@@ -839,6 +839,7 @@ class ManifoldWorker {
           // Marked feature block that was running (engine-independent).
           if (typeof payload.featureId === 'string') error.featureId = payload.featureId;
           if (typeof payload.featureBlock === 'string') error.featureBlock = payload.featureBlock;
+          if (payload.featureSkip && typeof payload.featureSkip === 'object') error.featureSkip = payload.featureSkip;
           request.reject(error);
         }
         
