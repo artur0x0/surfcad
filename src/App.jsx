@@ -358,6 +358,8 @@ const App = () => {
   const [cadPartId, setCadPartId] = useState(null);
   const featureSessionRef = useRef(false);
   const [featureSession, setFeatureSession] = useState(false);
+  /** Sketch chips after Select plane. Null keeps the part strip. */
+  const [sketchStrip, setSketchStrip] = useState(null);
   const syncCadScriptRef = useRef(() => {});
   /** focusWritePart, for handlers declared above it. */
   const focusWritePartRef = useRef(() => true);
@@ -2276,6 +2278,12 @@ const App = () => {
     featureSessionRef.current = on;
     setFeatureSession((prev) => (prev === on ? prev : on));
   };
+
+  const handleSketchStrip = (payload) => {
+    setSketchStrip((prev) => (payload == null && prev == null ? prev : payload));
+  };
+  const onSketchUndo = () => viewportRef.current?.undoContourSketch?.();
+  const onSketchSelect = (chip) => viewportRef.current?.selectSketchEntity?.(chip);
 
   /**
    * Load the part a feature acts on into the editor before it writes, opens
@@ -7026,6 +7034,7 @@ const App = () => {
   const undoLabel = stripUndoLabel(showJoints ? null : cadPartId);
   const redoLabel = stripRedoLabel(showJoints ? null : cadPartId);
   const liveJointChips = showJoints ? jointChips(assemblyDoc, jointLive) : null;
+  const sketchOpen = sketchStrip != null;
   const jointCardNode = jointCreateOpen && appMode !== 'game'
     ? (
       <JointCard
@@ -7454,6 +7463,7 @@ const App = () => {
               onRunOutcome={handleRunOutcome}
               getBooleanContext={assemblyPartContext}
               onFeatureSessionChange={handleFeatureSession}
+              onSketchStripChange={handleSketchStrip}
               partLabels={partLabels}
               featureEdit={appMode === 'game' || (useStages && !isCadStage) ? null : featureSheet}
               featureEditScript={currentScript}
@@ -7543,21 +7553,23 @@ const App = () => {
                   >
                     <FeatureStrip
                       orientation="horizontal"
-                      script={showJoints ? '' : stripScript}
-                      joints={liveJointChips}
+                      script={sketchOpen || showJoints ? '' : stripScript}
+                      joints={sketchOpen ? null : liveJointChips}
+                      entities={sketchOpen ? sketchStrip.entities : null}
                       bodyCount={stripBodyCount}
                       failedIds={stripFailedIds}
-                      hidden={featureSession}
-                      activeId={featureSheet?.feature?.id || featureStripActiveId}
+                      hidden={sketchOpen ? false : featureSession}
+                      activeId={sketchOpen ? sketchStrip.activeId : (featureSheet?.feature?.id || featureStripActiveId)}
                       hideWhenEmpty
-                      onJump={(f) => openFeatureSheetFor(f)}
-                      onSelectJoint={handleSelectJoint}
-                      onUndo={stripUndo}
-                      onRedo={stripRedo}
-                      canUndo={stripCanUndo}
-                      canRedo={stripCanRedo}
-                      undoLabel={undoLabel}
-                      redoLabel={redoLabel}
+                      onJump={sketchOpen ? undefined : ((f) => openFeatureSheetFor(f))}
+                      onSelectJoint={sketchOpen ? undefined : handleSelectJoint}
+                      onSelectEntity={sketchOpen ? onSketchSelect : undefined}
+                      onUndo={sketchOpen ? onSketchUndo : stripUndo}
+                      onRedo={sketchOpen ? undefined : stripRedo}
+                      canUndo={sketchOpen ? !!sketchStrip.canUndo : stripCanUndo}
+                      canRedo={sketchOpen ? false : stripCanRedo}
+                      undoLabel={sketchOpen ? 'Undo' : undoLabel}
+                      redoLabel={sketchOpen ? 'Redo' : redoLabel}
                     />
                   </div>
                 )}
@@ -7871,21 +7883,23 @@ const App = () => {
             >
               <FeatureStrip
                 orientation="horizontal"
-                script={showJoints ? '' : stripScript}
-                joints={liveJointChips}
+                script={sketchOpen || showJoints ? '' : stripScript}
+                joints={sketchOpen ? null : liveJointChips}
+                entities={sketchOpen ? sketchStrip.entities : null}
                 bodyCount={stripBodyCount}
                 failedIds={stripFailedIds}
-                hidden={featureSession}
-                activeId={featureSheet?.feature?.id || featureStripActiveId}
+                hidden={sketchOpen ? false : featureSession}
+                activeId={sketchOpen ? sketchStrip.activeId : (featureSheet?.feature?.id || featureStripActiveId)}
                 hideWhenEmpty
-                onJump={handleDesktopFeatureStripJump}
-                onSelectJoint={handleSelectJoint}
-                onUndo={stripUndo}
-                onRedo={stripRedo}
-                canUndo={stripCanUndo}
-                canRedo={stripCanRedo}
-                undoLabel={undoLabel}
-                redoLabel={redoLabel}
+                onJump={sketchOpen ? undefined : handleDesktopFeatureStripJump}
+                onSelectJoint={sketchOpen ? undefined : handleSelectJoint}
+                onSelectEntity={sketchOpen ? onSketchSelect : undefined}
+                onUndo={sketchOpen ? onSketchUndo : stripUndo}
+                onRedo={sketchOpen ? undefined : stripRedo}
+                canUndo={sketchOpen ? !!sketchStrip.canUndo : stripCanUndo}
+                canRedo={sketchOpen ? false : stripCanRedo}
+                undoLabel={sketchOpen ? 'Undo' : undoLabel}
+                redoLabel={sketchOpen ? 'Redo' : redoLabel}
               />
             </div>
           )}
@@ -7961,6 +7975,7 @@ const App = () => {
             onRunOutcome={handleRunOutcome}
             getBooleanContext={assemblyPartContext}
             onFeatureSessionChange={handleFeatureSession}
+            onSketchStripChange={handleSketchStrip}
             partLabels={partLabels}
             featureEdit={appMode === 'game' ? null : featureSheet}
             featureEditScript={currentScript}

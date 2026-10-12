@@ -201,6 +201,8 @@ import {
 } from '../utils/contourRefPick';
 import { resolveContourScript } from '../utils/contourRefResolve';
 import { beginConstraintEdit, beginDimensionEdit } from '../utils/contourGesture';
+import { contourChips } from '../utils/contourStrip';
+import { selectSketchChip, sketchActiveId, sketchHighlightPicks } from '../utils/contourSketchStrip';
 import { localPoint, worldPoint } from '../utils/partPose';
 import {
   CONTOUR_IDLE_COLOR,
@@ -1021,6 +1023,11 @@ const Viewport = forwardRef(({
   onRunOutcome = null,
   /** True while any feature session is open. App hides the feature strip. */
   onFeatureSessionChange = null,
+  /**
+   * Sketch chips for the phone and desktop bars. Null while the plane card
+   * is open and after contour mode closes.
+   */
+  onSketchStripChange = null,
   /** id → display name for the which-part chip. */
   partLabels = null,
   /** Saved assembly colors, keyed by surf id. Empty skips the face skin. */
@@ -1148,6 +1155,9 @@ const Viewport = forwardRef(({
   const activePartIdRef = useRef(null);
   const onPickRetargetRef = useRef(null);
   const onFeatureSessionChangeRef = useRef(null);
+  const onSketchStripChangeRef = useRef(null);
+  const undoContourSketchRef = useRef(null);
+  const selectSketchEntityRef = useRef(null);
   const partLabelsRef = useRef(null);
   const featureSessionRef = useRef(false);
   const featureEditRef = useRef(null);
@@ -1871,6 +1881,7 @@ const Viewport = forwardRef(({
   const jointPickingRef = useRef(false);
   jointPickingRef.current = !!jointPicking;
   onFeatureSessionChangeRef.current = onFeatureSessionChange;
+  onSketchStripChangeRef.current = onSketchStripChange;
   partLabelsRef.current = partLabels || {};
   getBooleanContextRef.current = getBooleanContext;
   const onRunOutcomeRef = useRef(null);
@@ -2077,6 +2088,10 @@ const Viewport = forwardRef(({
     beginFeatureEdit: (feature, script) => beginFeatureEditRef.current?.(feature, script) === true,
     /** Open a saved contour in the contour editor. The strip uses this. */
     beginContourEdit: (contourId) => beginContourEditRef.current?.(contourId) === true,
+    /** Sketch-strip Undo. The bar has no redo stack. */
+    undoContourSketch: () => undoContourSketchRef.current?.(),
+    /** Sketch-strip chip. A dimension or constraint opens its card. */
+    selectSketchEntity: (chip) => selectSketchEntityRef.current?.(chip),
     /** Close every other card without writing, so the edit card can open alone. */
     yieldToFeatureEditCard: () => yieldToFeatureEditCardRef.current(),
     placeAssembly: (payload) => placeAssemblyRef.current(payload),
@@ -4619,20 +4634,14 @@ const Viewport = forwardRef(({
     const handleIds = handles.map((h) => h.id);
     const loftDraw = selectedLoftDrawFrame(contourMode) || plane;
     const drawPlane = isLoftEntry(contourMode.entry) ? loftDraw : plane;
-    const refSegs = referencePaintSegments(
-      contourMode.params?.contour,
-      (contourMode.gesture === 'dimension' || contourMode.gesture === 'constraints')
-        ? contourMode.picks
-        : null,
-    );
+    const highlightPicks = sketchHighlightPicks(contourMode);
+    const refSegs = referencePaintSegments(contourMode.params?.contour, highlightPicks);
     if (refSegs.length) paintContourRefWire(drawPlane, refSegs);
     else clearContourRefWire();
     const paint = highlightContourPaint(
       contourMode.params?.contour ? contourPaintModel(contourMode.params.contour) : null,
       contourMode.params?.contour,
-      (contourMode.gesture === 'dimension' || contourMode.gesture === 'constraints')
-        ? contourMode.picks
-        : null,
+      highlightPicks,
     );
     const openPolyline = contourMode.tool === 'polyline'
       && !contourMode.params?.contour
@@ -4934,6 +4943,26 @@ const Viewport = forwardRef(({
     }
     reopenContourPlane();
   }, [undoContourSketch, reopenContourPlane]);
+
+  const selectSketchEntity = useCallback((chip) => {
+    setContourMode((prev) => (prev ? selectSketchChip(prev, chip) : prev));
+  }, []);
+  undoContourSketchRef.current = undoContourSketch;
+  selectSketchEntityRef.current = selectSketchEntity;
+
+  useEffect(() => {
+    const publish = onSketchStripChangeRef.current;
+    if (!publish) return;
+    if (!contourMode || contourPlaneOpen) {
+      publish(null);
+      return;
+    }
+    publish({
+      entities: contourChips(contourMode),
+      activeId: sketchActiveId(contourMode),
+      canUndo: (sketchHistRef.current?.depth || 0) > 0,
+    });
+  }, [contourMode, contourPlaneOpen, contourUndoDepth]);
 
   const clearPathPreview = useCallback(() => {
     if (!pathPreviewRef.current) return;
@@ -8019,6 +8048,27 @@ const Viewport = forwardRef(({
       const hit = pickContourAtClient(event.clientX, event.clientY);
       if (hit) setContourMode((prev) => (prev ? applyContourPick(prev, hit) : prev));
       return;
+    }
+
+    // A tap on a line or arc, with no gesture open, selects that chip.
+    if (
+      contourModeRef.current?.params?.contour
+      && !contourModeRef.current.gesture
+      && !contourPlaneOpenRef.current
+    ) {
+      const hit = pickContourAtClient(event.clientX, event.clientY);
+      if (hit && (hit.kind === 'line' || hit.kind === 'arc')) {
+        if (clickTimerRef.current) {
+          clearTimeout(clickTimerRef.current);
+          clickTimerRef.current = null;
+        }
+        clickCountRef.current = 0;
+        pendingClickDataRef.current = null;
+        setContourMode((prev) => (
+          prev ? selectSketchChip(prev, { id: hit.id, kind: hit.kind, label: hit.label }) : prev
+        ));
+        return;
+      }
     }
 
     // A handle on a circle, rectangle, polygon, or arc is a grab, not a face pick.
