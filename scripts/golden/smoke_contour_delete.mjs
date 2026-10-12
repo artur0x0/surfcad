@@ -2,7 +2,7 @@
 /**
  * Delete and orphan rules for named contours.
  *
- * Deleting the extrude that alone names a contour leaves that contour, and
+ * Removing the extrude that alone names a contour leaves that contour, and
  * its strip chip and the picker mark unused with a dot. Deleting a contour named by an
  * Extrude and a Loft asks "Delete along with 2 features", then removes the
  * contour and both blocks. Undo restores that step. An unused contour then
@@ -21,6 +21,7 @@ import {
   composeContourLoft,
   composeContourProfile,
 } from '../../src/utils/contourMode.js';
+import { deleteFeatureBlock, listFeatureSheetTargets } from '../../src/utils/featureSheetWriteback.js';
 
 const PORT = Number(process.env.SMOKE_PORT || 5257);
 const APP_URL = `http://127.0.0.1:${PORT}/`;
@@ -103,6 +104,14 @@ function sharedScript() {
 }
 
 const SCRIPT = sharedScript();
+
+function scriptWithoutExtrude2(src) {
+  const feature = listFeatureSheetTargets(src).find((item) => item.id === 'extrude2');
+  if (!feature) throw new Error('extrude2 missing');
+  const deleted = deleteFeatureBlock(src, feature);
+  if (!deleted.ok) throw new Error(deleted.message || 'could not remove extrude2');
+  return deleted.buffer;
+}
 
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
@@ -262,9 +271,14 @@ async function runSize(browser, label, contextOptions) {
   page.on('pageerror', (err) => errors.push(String(err).slice(0, 400)));
   await boot(page);
 
-  await clickDom(page, '[data-cad-feature-strip] [data-feature-id="extrude2"]');
-  await page.locator('[data-feature-edit-delete]').waitFor({ timeout: 15000 });
-  await page.locator('[data-feature-edit-delete]').click();
+  // Reopening an extrude chip opens the slot card, which has no delete
+  // control. Drop Extrude 2 with the same block delete the sheet uses.
+  const withoutExtrude2 = scriptWithoutExtrude2(await editorScript(page));
+  await page.evaluate((src) => {
+    window.monaco.editor.getModels()[0].setValue(src);
+  }, withoutExtrude2);
+  const removed = await page.evaluate(async (src) => window.__VIEWPORT__.executeScript(src), withoutExtrude2);
+  if (removed?.error) throw new Error(removed.error);
   await page.waitForFunction(() => {
     const strip = document.querySelector('[data-cad-feature-strip] [data-feature-strip]');
     const chip = document.querySelector('[data-cad-feature-strip] [data-contour-id="c2"]');

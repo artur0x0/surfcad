@@ -9,7 +9,7 @@
  *
  * Screenshots at 390 and 1280 go to GOLDEN_SHOT_DIR or os.tmpdir().
  */
-/* global document, window, Event */
+/* global document, window, Event, requestAnimationFrame */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
