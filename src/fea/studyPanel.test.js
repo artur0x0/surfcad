@@ -18,7 +18,9 @@ import {
   studyFaceFromPick,
   namedDirection,
   studyWithForceDirection,
+  studyWithForceMagnitude,
   studyWithLoadVector,
+  studyWithPressureValue,
   studyWithMaterialId,
   studyWithType,
   studyWithoutFixture,
@@ -208,6 +210,35 @@ test('the direction picker retargets force loads and keeps pressure', () => {
   assert.equal(tilted.study.loads[0].direction, 'custom');
   assert.equal(namedDirection([0, 0, -5], [1, 0, 0]), '-z');
   assert.equal(namedDirection([0, 0, 5], [0, 0, 1]), '+z');
+});
+
+test('a magnitude edit rewrites stored forces and leaves pressure', () => {
+  const drafted = applyFacePick(freshStudy(), {
+    ...emptyDraft(),
+    target: 'force',
+    magnitudeN: 200,
+    direction: '-z',
+  }, top);
+  const pressed = applyFacePick(drafted.study, { ...emptyDraft(), target: 'pressure', pressureMPa: 2 }, side);
+  const doubled = studyWithForceMagnitude(pressed.study, 400);
+  assert.equal(doubled.changed, true);
+  assert.equal(doubled.study.loads[0].direction, '-z');
+  assert.deepEqual(doubled.study.loads[0].vector, [0, 0, -400]);
+  assert.equal(doubled.study.loads[1].pressure_MPa, 2);
+  const same = studyWithForceMagnitude(doubled.study, 400);
+  assert.equal(same.changed, false);
+  assert.equal(same.study, doubled.study);
+  const tilted = studyWithLoadVector(doubled.study, 0, [0, 30, -40]);
+  const scaled = studyWithForceMagnitude(tilted.study, 100);
+  assert.equal(scaled.study.loads[0].direction, 'custom');
+  assert.deepEqual(scaled.study.loads[0].vector, [0, 60, -80]);
+  const pressure = studyWithPressureValue(scaled.study, 5);
+  assert.equal(pressure.changed, true);
+  assert.equal(pressure.study.loads[1].pressure_MPa, 5);
+  assert.deepEqual(pressure.study.loads[0].vector, [0, 60, -80]);
+  const held = studyWithPressureValue(pressure.study, 5);
+  assert.equal(held.changed, false);
+  assert.equal(held.study, pressure.study);
 });
 
 test('a new phone study refines by default', () => {

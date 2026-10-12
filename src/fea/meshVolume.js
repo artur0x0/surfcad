@@ -1025,9 +1025,9 @@ export function releaseMesh(mesh) {
  * Key for the TET10 cache. Positions, indices, and face ids are hashed
  * from their bytes, so a geometry edit misses. The mesh target and the
  * device profile select the edge length, so they are part of the key.
- * Material is not. `bcKey` is set only for an adaptive refine, where the
- * final mesh depends on the fixtures and loads. An empty key keeps the
- * uniform-mesh key used when refine is off.
+ * Material, fixtures, and loads are not: a load edit reuses the mesh and
+ * the solver decides whether the cached solution still applies. `bcKey`
+ * is optional and unused by the solid solve.
  */
 export function meshCacheKey(surface, target, profile, bcKey = '') {
   const source = surface || {};

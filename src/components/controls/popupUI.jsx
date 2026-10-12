@@ -95,6 +95,7 @@ export const NumberField = ({
   disabled = false, id, className = '', unit,
   shaped = false, signed = false, onPointerDown,
   numberAttrs = null, sliderAttrs = null, captionAttrs = null,
+  trailing = null,
 }) => {
   const a = accentOf(accent);
   const parts = numberFieldLabelParts(label, unit);
@@ -157,6 +158,7 @@ export const NumberField = ({
           {...(parts.unit ? { 'data-unit': parts.unit } : null)}
           {...numberAttrs}
         />
+        {trailing}
       </div>
     </PopupSection>
   );

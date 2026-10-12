@@ -5,7 +5,8 @@
  * A force set to −Z draws yellow arrows on the loaded face, pointing in
  * that screen direction. +X retargets them. Normal removes them. The X/Y/Z
  * buttons use the viewport triad constant: filled when selected, outlined
- * when not, with readable contrast.
+ * when not, with readable contrast. The force box ends in an N|lb toggle.
+ * The study stays in newtons; imperial is the global display unit.
  *
  * 390×844 touch and 1280×800. FEA_VIEW=390 or FEA_VIEW=1280 runs one.
  * FEA_PREVIEW=1 serves dist. Screenshots go to GOLDEN_SHOT_DIR or
@@ -17,6 +18,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { MPA_PER_PSI, N_PER_LBF, formatLoadDisplay } from '../../src/fea/loadUnits.js';
 import { TRIAD_AXIS_COLORS, contrastRatio } from '../../src/utils/triadAxis.js';
 
 const PORT = Number(process.env.SMOKE_PORT || 4343);
@@ -435,6 +437,46 @@ function hexOf(parsed) {
   return ((parsed.r & 255) << 16) | ((parsed.g & 255) << 8) | (parsed.b & 255);
 }
 
+async function unitToggleBox(page, vp) {
+  return page.locator('[data-fea-load-units]').evaluate((el, size) => {
+    const box = el.getBoundingClientRect();
+    const buttons = [...el.querySelectorAll('[data-fea-load-unit-choice]')].map((button) => {
+      const b = button.getBoundingClientRect();
+      const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return {
+        label: button.getAttribute('data-fea-load-unit-choice'),
+        pressed: button.getAttribute('aria-pressed'),
+        className: button.className,
+        top: b.top,
+        left: b.left,
+        right: b.right,
+        bottom: b.bottom,
+        hit: hit === button || button.contains(hit),
+      };
+    });
+    return {
+      unit: el.getAttribute('data-fea-load-unit'),
+      top: box.top,
+      left: box.left,
+      right: box.right,
+      bottom: box.bottom,
+      vw: size.width,
+      vh: size.height,
+      buttons,
+    };
+  }, { width: vp.width, height: vp.height });
+}
+
+function toggleFits(box) {
+  if (!box || box.buttons.length < 2) return false;
+  const inside = box.top >= -1 && box.left >= -1 && box.right <= box.vw + 1 && box.bottom <= box.vh + 1;
+  return inside && box.buttons.every((button) => button.hit
+    && button.top >= -1
+    && button.left >= -1
+    && button.right <= box.vw + 1
+    && button.bottom <= box.vh + 1);
+}
+
 async function directionButtons(page) {
   await page.locator('[data-fea-direction="-z"]').scrollIntoViewIfNeeded();
   return page.locator('[data-fea-direction]').evaluateAll((els) => els.map((el) => {
@@ -595,9 +637,65 @@ async function runCase(browser, vp) {
   await page.locator('[data-fea-target="force"]').click();
   await page.waitForTimeout(700);
   check(`${vp.name} iso snap`, await snap(page, 'iso'));
+  const forceField = page.locator('[data-popup-number="fea-force"]');
+  await forceField.scrollIntoViewIfNeeded();
+  check(`${vp.name} force field is newtons`, await forceField.getAttribute('data-unit') === 'N');
+  check(`${vp.name} force label stays Force`, await forceField.getAttribute('data-field-label') === 'Force');
+  check(`${vp.name} default force is 200 N`, await forceField.inputValue() === formatLoadDisplay(200, 'N'));
+  const newtonToggle = await unitToggleBox(page, vp);
+  const newtonButton = newtonToggle?.buttons?.find((button) => button.label === 'N');
+  const poundButton = newtonToggle?.buttons?.find((button) => button.label === 'lb');
+  check(`${vp.name} N|lb toggle is on screen`, toggleFits(newtonToggle), JSON.stringify(newtonToggle));
+  check(
+    `${vp.name} N is the selected segment`,
+    newtonToggle?.unit === 'N' && newtonButton?.pressed === 'true' && /bg-cyan-600/.test(newtonButton?.className || '') && /text-white/.test(newtonButton?.className || ''),
+    JSON.stringify(newtonButton),
+  );
+  check(
+    `${vp.name} lb is the idle segment`,
+    poundButton?.pressed === 'false' && /text-gray-300/.test(poundButton?.className || '') && !/bg-cyan-600/.test(poundButton?.className || ''),
+    JSON.stringify(poundButton),
+  );
+  await page.locator('[data-fea-load-unit-choice="lb"]').click();
+  check(`${vp.name} lb shows the converted force`, await forceField.inputValue() === formatLoadDisplay(200, 'lb'));
+  check(`${vp.name} lb uses the lbf factor`, Math.abs(Number(await forceField.inputValue()) * N_PER_LBF - 200) < 0.001);
+  check(`${vp.name} field unit follows the toggle`, await forceField.getAttribute('data-unit') === 'lb');
+  const poundToggle = await unitToggleBox(page, vp);
+  check(`${vp.name} lb segment selected`, poundToggle?.unit === 'lb' && toggleFits(poundToggle), JSON.stringify(poundToggle));
+  const unitsShot = join(SHOT_DIR, `fea-load-units-${vp.name}-lb.png`);
+  check(`${vp.name} unit shot dir`, !unitsShot.startsWith('/opt/cursor/artifacts'), unitsShot);
+  await page.screenshot({ path: unitsShot });
+  await page.locator('[data-fea-load-unit-choice="N"]').click();
+  check(`${vp.name} back to N restores 200`, await forceField.inputValue() === formatLoadDisplay(200, 'N'));
+  await page.locator('[data-fea-target="pressure"]').click();
+  const pressureField = page.locator('[data-popup-number="fea-pressure"]');
+  await pressureField.scrollIntoViewIfNeeded();
+  check(`${vp.name} pressure field is megapascals`, await pressureField.getAttribute('data-unit') === 'MPa');
+  check(`${vp.name} default pressure is 1 MPa`, await pressureField.inputValue() === formatLoadDisplay(1, 'MPa'));
+  const pascalToggle = await unitToggleBox(page, vp);
+  check(
+    `${vp.name} MPa|psi toggle is on screen`,
+    toggleFits(pascalToggle) && pascalToggle.buttons.map((button) => button.label).join(',') === 'MPa,psi',
+    JSON.stringify(pascalToggle),
+  );
+  await page.locator('[data-fea-load-unit-choice="psi"]').click();
+  check(`${vp.name} psi shows the converted pressure`, await pressureField.inputValue() === formatLoadDisplay(1, 'psi'));
+  check(`${vp.name} psi uses the psi factor`, Math.abs(Number(await pressureField.inputValue()) * MPA_PER_PSI - 1) < 0.001);
+  const psiShot = join(SHOT_DIR, `fea-load-units-${vp.name}-psi.png`);
+  await page.screenshot({ path: psiShot });
+  await page.locator('[data-fea-load-unit-choice="MPa"]').click();
+  check(`${vp.name} back to MPa restores 1`, await pressureField.inputValue() === formatLoadDisplay(1, 'MPa'));
+  await page.locator('[data-fea-target="force"]').click();
   await page.locator('[data-fea-direction="-z"]').click();
   const picked = await pickFace(page, vp.touch);
   check(`${vp.name} force on a face`, !!picked && await loadCount(page) === '1', `loads=${await loadCount(page)}`);
+  const stored = ((await page.locator('[data-fea-load="0"]').innerText()) || '').replace(/\s+/g, ' ');
+  check(`${vp.name} stored force is newtons`, /0,\s*0,\s*-200 N/.test(stored), stored);
+  await page.locator('[data-fea-load-unit-choice="lb"]').click();
+  const storedLb = ((await page.locator('[data-fea-load="0"]').innerText()) || '').replace(/\s+/g, ' ');
+  check(`${vp.name} toggling lb keeps the stored newtons`, storedLb === stored, storedLb);
+  check(`${vp.name} displayed pounds match 200 N`, await forceField.inputValue() === formatLoadDisplay(200, 'lb'));
+  await page.locator('[data-fea-load-unit-choice="N"]').click();
   check(`${vp.name} iso snap for -Z`, await snap(page, 'iso'));
   const down = await waitArrows(page, (reading) => arrowsPoint(reading) && arrowsYellow(reading));
   check(`${vp.name} -Z arrows are yellow and point -Z`, arrowsPoint(down) && arrowsYellow(down) && down.count >= 3 && down.count <= 9, describeArrows(down));

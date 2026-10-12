@@ -410,6 +410,73 @@ export function studyWithLoadVector(study, index, vector) {
   return patched(study, { loads });
 }
 
+function scaleToMagnitude(vector, magnitude) {
+  const x = Number(vector?.[0]) || 0;
+  const y = Number(vector?.[1]) || 0;
+  const z = Number(vector?.[2]) || 0;
+  const len = Math.hypot(x, y, z);
+  if (!(len > 0) || !(magnitude > 0)) return null;
+  const scale = magnitude / len;
+  return [x, y, z].map((component) => {
+    const value = component * scale;
+    return value === 0 ? 0 : value;
+  });
+}
+
+/**
+ * Set every force load to `magnitudeN` newtons, keeping its direction.
+ * Pressure is left alone. `changed` is false when every force already
+ * has that magnitude. The caller commits, which marks the last result stale.
+ */
+export function studyWithForceMagnitude(study, magnitudeN) {
+  const mag = Math.abs(Number(magnitudeN));
+  if (!Number.isFinite(mag) || mag === 0) {
+    return { ok: false, errors: ['Give a non-zero force in newtons'], study, changed: false };
+  }
+  let changed = false;
+  const loads = (study?.loads || []).map((load) => {
+    if (!load || load.kind !== 'force') return load;
+    const token = load.direction;
+    let vector = token && token !== 'custom'
+      ? forceVector(token, mag, load.faces?.[0]?.n)
+      : null;
+    if (!vector) vector = scaleToMagnitude(load.vector, mag);
+    if (!vector) return load;
+    const same = Array.isArray(load.vector)
+      && load.vector.length === 3
+      && load.vector[0] === vector[0]
+      && load.vector[1] === vector[1]
+      && load.vector[2] === vector[2];
+    if (same) return load;
+    changed = true;
+    return { ...load, vector };
+  });
+  if (!changed) return { ok: true, errors: [], study, changed: false };
+  const next = patched(study, { loads });
+  return { ...next, changed: !!next.ok };
+}
+
+/**
+ * Set every pressure load to `pressureMPa`. Force loads are left alone.
+ * `changed` is false when every pressure already has that value.
+ */
+export function studyWithPressureValue(study, pressureMPa) {
+  const pressure = Number(pressureMPa);
+  if (!Number.isFinite(pressure) || pressure === 0) {
+    return { ok: false, errors: ['Give a non-zero pressure in megapascals'], study, changed: false };
+  }
+  let changed = false;
+  const loads = (study?.loads || []).map((load) => {
+    if (!load || load.kind !== 'pressure') return load;
+    if (load.pressure_MPa === pressure) return load;
+    changed = true;
+    return { ...load, pressure_MPa: pressure };
+  });
+  if (!changed) return { ok: true, errors: [], study, changed: false };
+  const next = patched(study, { loads });
+  return { ...next, changed: !!next.ok };
+}
+
 /**
  * Point every force load along `direction`, keeping each magnitude.
  * Pressure stays on the face normal. `changed` is false when nothing moved.
