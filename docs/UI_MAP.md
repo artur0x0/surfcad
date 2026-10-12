@@ -100,7 +100,11 @@ Desktop specifics:
   **No sketch entities** (`data-sketch-entities-empty`). A tap selects a line,
   arc, circle, or reference, and the canvas uses that same pick highlight. A
   dimension or constraint chip opens its edit card. Undo is the sketch
-  history. Redo stays disabled. The plane card leaves this bar on the hidden
+  history. Redo stays disabled. Cursor keeps these chips; it does not
+  replace the sketch with an empty profile. Double-tap removal of a
+  polyline dot drops that point's lines. A dimension or constraint that
+  named the point stays, and its chip takes the failed red border
+  (`data-sketch-broken`). The plane card leaves this bar on the hidden
   part-strip placeholder. `golden:contour-strip`.
   When no part is selected the same bar shows assembly joints
   (`data-assembly-joints`), or **No assembly joints**

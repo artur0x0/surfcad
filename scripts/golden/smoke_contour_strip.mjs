@@ -6,7 +6,9 @@
  * CAD bar and the desktop viewer bar list sketch chips. An empty polyline
  * reads No sketch entities. A dimension chip and a constraint chip open
  * their edit cards. A canvas tap selects the same line the chip does. A
- * two-pick dimension gesture clears the chip. Undo follows sketch history.
+ * two-pick dimension gesture clears the chip. Cursor keeps the drawn chips.
+ * Double-tap removal of a polyline dot leaves a broken constraint chip.
+ * Undo follows sketch history.
  * Redo stays disabled. Leaving contour mode brings the part strip back.
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir(), never the artifacts dir.
@@ -102,6 +104,40 @@ async function tapAt(client, page, x, y) {
   await page.waitForTimeout(120);
 }
 
+async function doubleTap(page, x, y) {
+  await page.evaluate(async ({ x: px, y: py }) => {
+    const canvas = document.querySelector('.viewport-shell > canvas');
+    const fire = (type) => {
+      canvas.dispatchEvent(new window.PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: px,
+        clientY: py,
+        button: 0,
+        buttons: type === 'pointerdown' ? 1 : 0,
+        pointerId: 1,
+        pointerType: 'touch',
+        isPrimary: true,
+      }));
+      canvas.dispatchEvent(new window.MouseEvent(type === 'pointerdown' ? 'mousedown' : type === 'pointerup' ? 'mouseup' : 'mousemove', {
+        bubbles: true,
+        cancelable: true,
+        clientX: px,
+        clientY: py,
+        button: 0,
+        buttons: type === 'pointerdown' ? 1 : 0,
+      }));
+    };
+    const tap = () => {
+      fire('pointerdown');
+      fire('pointerup');
+    };
+    tap();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    tap();
+  }, { x, y });
+}
+
 async function tapSelector(client, page, selector) {
   const loc = page.locator(selector).first();
   await loc.waitFor({ timeout: 8000 });
@@ -170,6 +206,7 @@ function strip(page) {
       label: el.getAttribute('aria-label'),
       title: el.getAttribute('title'),
       pressed: el.getAttribute('aria-pressed') === 'true',
+      broken: el.hasAttribute('data-sketch-broken'),
       index: el.querySelector('[data-feature-type-badge]')?.textContent || '',
     }));
     const undo = document.querySelector('[data-cad-feature-strip] [data-feature-bar-undo]');
@@ -185,6 +222,8 @@ function strip(page) {
       pressed: chips.filter((chip) => chip.pressed).map((chip) => chip.id),
       undo: undo ? !undo.disabled : null,
       redo: redo ? !redo.disabled : null,
+      points: Array.isArray(sketch?.uvs) ? sketch.uvs.length : (sketch?.points || 0),
+      tool: sketch?.tool || '',
       picked: sketch?.picked || [],
       highlights: sketch?.pickHighlights || null,
       card: document.querySelector('[data-contour-card]')?.getAttribute('data-contour-card') || '',
@@ -236,6 +275,24 @@ async function runSize(browser, label, contextOptions) {
     && circle.pressed.join(',') === 'shape' && circle.chips[0]?.label === 'Circle'
     && circle.undo === false && circle.redo === false,
     JSON.stringify(circle));
+
+  await tapSelector(client, page, '[data-contour-tool="cursor"]');
+  await page.waitForFunction(() => (
+    window.__VIEWPORT__.stageContourSketch().tool === 'cursor'
+    && document.querySelector('[data-cad-feature-strip] [data-sketch-kind="circle"]')?.getAttribute('aria-pressed') === 'true'
+  ), null, { timeout: 4000 });
+  const cursorKept = await strip(page);
+  check(`${label} cursor keeps the circle chip`,
+    cursorKept.tool === 'cursor' && cursorKept.pressed.join(',') === 'shape'
+    && cursorKept.chips[0]?.label === 'Circle' && cursorKept.undo === true && cursorKept.redo === false,
+    JSON.stringify(cursorKept));
+
+  await tapSelector(client, page, '[data-cad-feature-strip] [data-feature-bar-undo]');
+  await page.waitForFunction(() => (
+    window.__VIEWPORT__.stageContourSketch().tool === 'circle'
+    && document.querySelector('[data-cad-feature-strip] [data-sketch-kind="circle"]')
+    && document.querySelector('[data-cad-feature-strip] [data-feature-bar-undo]')?.disabled
+  ), null, { timeout: 4000 });
 
   await tapSelector(client, page, '[data-contour-tool="polyline"]');
   await page.waitForFunction(() => (
@@ -335,6 +392,43 @@ async function runSize(browser, label, contextOptions) {
   check(`${label} two dimension picks clear the chip`,
     two.pressed.length === 0 && two.picked.length === 2 && two.redo === false && two.undo === true,
     JSON.stringify(two));
+
+  await tapSelector(client, page, '[data-contour-tool="cursor"]');
+  await page.waitForFunction(() => {
+    const sketch = window.__VIEWPORT__.stageContourSketch();
+    return sketch.tool === 'cursor' && !sketch.gesture;
+  }, null, { timeout: 4000 });
+  await waitCameraStill(page);
+  await fitSketchDots(page);
+  await waitCameraStill(page);
+  await muteTags(page);
+  const fixDot = await page.evaluate(() => {
+    const dots = window.__VIEWPORT__.stageContourSketch().dots || [];
+    return dots.find((dot) => dot.id === 'p0') || null;
+  });
+  if (fixDot) await doubleTap(page, fixDot.x, fixDot.y);
+  await page.waitForFunction(() => {
+    const sketch = window.__VIEWPORT__.stageContourSketch();
+    const chip = document.querySelector('[data-cad-feature-strip] [data-sketch-id="k4"]');
+    return (sketch.uvs || []).length === 3 && chip?.hasAttribute('data-sketch-broken');
+  }, null, { timeout: 4000 });
+  const trimmed = await strip(page);
+  const broken = trimmed.chips.find((chip) => chip.id === 'k4');
+  check(`${label} double-tap leaves a broken constraint chip`,
+    !!fixDot && trimmed.points === 3 && broken?.kind === 'constraint' && broken.broken === true,
+    JSON.stringify({ dot: fixDot, points: trimmed.points, k4: broken }));
+  await page.screenshot({ path: join(SHOT_DIR, `contour-strip-${label}-broken.png`) });
+
+  await tapSelector(client, page, '[data-cad-feature-strip] [data-feature-bar-undo]');
+  await page.waitForFunction(() => {
+    const sketch = window.__VIEWPORT__.stageContourSketch();
+    const chip = document.querySelector('[data-cad-feature-strip] [data-sketch-id="k4"]');
+    return (sketch.uvs || []).length === 4 && chip && !chip.hasAttribute('data-sketch-broken');
+  }, null, { timeout: 4000 });
+  const restored = await strip(page);
+  check(`${label} strip Undo restores the fixed point`,
+    restored.points === 4 && restored.chips.some((chip) => chip.id === 'k4' && chip.broken === false),
+    JSON.stringify(restored));
 
   await tapSelector(client, page, '[data-contour-exit]');
   await page.waitForFunction(() => !document.querySelector('[data-contour-exit]'), null, { timeout: 8000 });

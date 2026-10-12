@@ -148,6 +148,7 @@ function rowChip(row) {
       label,
       title: shown ? `${label} ${shown}` : label,
       seq,
+      ...(item.broken ? { broken: true } : {}),
     };
   }
   if (kind === 'constraint') {
@@ -159,6 +160,7 @@ function rowChip(row) {
       label,
       title: label,
       seq,
+      ...(item.broken ? { broken: true } : {}),
     };
   }
   return {
@@ -185,15 +187,26 @@ function shapeChip(tool) {
   }];
 }
 
+/** Cursor edits the profile already on screen. Chips follow that profile. */
+function drawnTool(tool, params) {
+  if (tool !== 'cursor') return tool;
+  const p = params || {};
+  if (Array.isArray(p.points)) return 'polyline';
+  if (p.polygonPreset) return 'polygon';
+  if (p.width != null || p.height != null) return 'rectangle';
+  return 'circle';
+}
+
 function unpromotedChips(tool, params) {
-  if (tool === 'polyline') {
-    return Array.isArray(params?.points) && params.points.length > 0 ? shapeChip(tool) : [];
+  const drawn = drawnTool(tool, params);
+  if (drawn === 'polyline') {
+    return Array.isArray(params?.points) && params.points.length > 0 ? shapeChip(drawn) : [];
   }
-  if (tool === 'circle') return Number(params?.radius) > 0 ? shapeChip(tool) : [];
-  if (tool === 'rectangle') {
-    return Number(params?.width) > 0 && Number(params?.height) > 0 ? shapeChip(tool) : [];
+  if (drawn === 'circle') return Number(params?.radius) > 0 ? shapeChip(drawn) : [];
+  if (drawn === 'rectangle') {
+    return Number(params?.width) > 0 && Number(params?.height) > 0 ? shapeChip(drawn) : [];
   }
-  if (tool === 'polygon') return Number(params?.radius) > 0 ? shapeChip(tool) : [];
+  if (drawn === 'polygon') return Number(params?.radius) > 0 ? shapeChip(drawn) : [];
   return [];
 }
 
