@@ -16,6 +16,7 @@ import {
   solveContour,
 } from './contourSolve.js';
 import { contourStatusNote } from './contourStatus.js';
+import { assignSeq } from './contourStrip.js';
 import { stickyPickToggle } from './stickyPick.js';
 import {
   nextReferenceId,
@@ -30,7 +31,12 @@ const PARALLEL_SPLIT_DEG = 15;
 export function specFromSolved(solved) {
   return {
     points: (solved.points || []).map((p) => ({ id: p.id, at: p.at.slice() })),
-    lines: (solved.lines || []).map((l) => ({ id: l.id, a: l.a, b: l.b })),
+    lines: (solved.lines || []).map((l) => {
+      const line = { id: l.id, a: l.a, b: l.b };
+      if (l.guide) line.guide = true;
+      if (Number.isFinite(Number(l.seq)) && Number(l.seq) >= 1) line.seq = Math.round(Number(l.seq));
+      return line;
+    }),
     arcs: (solved.arcs || []).map((a) => ({ ...a })),
     dimensions: (solved.dimensions || []).map((d) => {
       const copy = {
@@ -188,7 +194,7 @@ function attachReference(state, incoming) {
   }
   return {
     ...state,
-    params: { ...state.params, contour: { ...contour, refs: nextRefs } },
+    params: { ...state.params, contour: assignSeq({ ...contour, refs: nextRefs }) },
     picks,
     tagId: null,
     gestureNote: null,
@@ -626,6 +632,9 @@ function replaceDimension(contour, dim) {
   const prev = (contour?.dimensions || []).find((item) => item.id === dim.id);
   const next = { ...dim };
   if (next.placement == null && prev?.placement != null) next.placement = prev.placement;
+  if (!Number.isFinite(Number(next.seq)) && Number.isFinite(Number(prev?.seq))) {
+    next.seq = Math.round(Number(prev.seq));
+  }
   const kept = (contour?.dimensions || []).filter((item) => item.id !== next.id);
   return { ...contour, dimensions: [...kept, next] };
 }
@@ -1047,7 +1056,11 @@ export function commitConstraint(state, draft) {
   const built = buildConstraint(ready.params.contour, ready.picks, draft);
   if (!built.ok) return { state: ready, error: built.message };
   const id = ready.constraintEdit || built.constraint.id;
+  const prev = (ready.params.contour.constraints || []).find((item) => item.id === id);
   const con = { ...built.constraint, id };
+  if (!Number.isFinite(Number(con.seq)) && Number.isFinite(Number(prev?.seq))) {
+    con.seq = Math.round(Number(prev.seq));
+  }
   const kept = (ready.params.contour.constraints || []).filter((item) => item.id !== id);
   const model = {
     ...ready.params.contour,

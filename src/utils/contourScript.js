@@ -29,8 +29,15 @@ function emitAt(at) {
   return `{ ${parts.join(', ')} }`;
 }
 
+function emitSeq(item, fields) {
+  const n = Number(item?.seq);
+  if (Number.isFinite(n) && n >= 1) fields.push(`seq: ${Math.round(n)}`);
+}
+
 function emitItem(item) {
-  const fields = [`id: ${emitString(item.id)}`, `kind: ${emitString(item.kind)}`];
+  const fields = [`id: ${emitString(item.id)}`];
+  emitSeq(item, fields);
+  fields.push(`kind: ${emitString(item.kind)}`);
   if (item.edge) fields.push(`edge: ${emitString(item.edge)}`);
   if (item.arc) fields.push(`arc: ${emitString(item.arc)}`);
   if (item.point) fields.push(`point: ${emitString(item.point)}`);
@@ -55,9 +62,12 @@ function emitItem(item) {
 function emitArc(arc) {
   const fields = [
     `id: ${emitString(arc.id)}`,
+  ];
+  emitSeq(arc, fields);
+  fields.push(
     `center: ${emitString(arc.center)}`,
     `radius: ${emitNum(arc.radius)}`,
-  ];
+  );
   if (arc.full) fields.push('full: true');
   else {
     fields.push(`start: ${emitString(arc.start)}`);
@@ -73,8 +83,10 @@ function emitPoint(p) {
 }
 
 function emitLine(l) {
-  const guide = l.guide ? ', guide: true' : '';
-  return `{ id: ${emitString(l.id)}, a: ${emitString(l.a)}, b: ${emitString(l.b)}${guide} }`;
+  const fields = [`id: ${emitString(l.id)}`, `a: ${emitString(l.a)}`, `b: ${emitString(l.b)}`];
+  emitSeq(l, fields);
+  if (l.guide) fields.push('guide: true');
+  return `{ ${fields.join(', ')} }`;
 }
 
 function emitUv(uv) {
@@ -109,7 +121,9 @@ function emitBoundary(boundary) {
 }
 
 function emitRef(ref) {
-  const fields = [`id: ${emitString(ref.id)}`, `kind: ${emitString(ref.kind)}`];
+  const fields = [`id: ${emitString(ref.id)}`];
+  emitSeq(ref, fields);
+  fields.push(`kind: ${emitString(ref.kind)}`);
   if (ref.faceA != null) fields.push(`faceA: ${emitNum(ref.faceA)}`);
   if (ref.faceB != null) fields.push(`faceB: ${emitNum(ref.faceB)}`);
   if (Array.isArray(ref.mid)) fields.push(`mid: [${ref.mid.map(emitNum).join(', ')}]`);
@@ -260,6 +274,14 @@ class Parser {
   }
 }
 
+function keepSeq(item) {
+  if (!item || typeof item !== 'object') return item;
+  const n = Number(item.seq);
+  if (Number.isFinite(n) && n >= 1) item.seq = Math.round(n);
+  else delete item.seq;
+  return item;
+}
+
 function objectOf(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('solveContour: expected a contour object');
@@ -288,10 +310,10 @@ export function parseSolveContour(source) {
   const value = objectOf(parser.parseValue());
   return {
     points: value.points || [],
-    lines: value.lines || [],
-    arcs: value.arcs || [],
-    dimensions: value.dimensions || [],
-    constraints: value.constraints || [],
-    refs: value.refs || [],
+    lines: (value.lines || []).map(keepSeq),
+    arcs: (value.arcs || []).map(keepSeq),
+    dimensions: (value.dimensions || []).map(keepSeq),
+    constraints: (value.constraints || []).map(keepSeq),
+    refs: (value.refs || []).map(keepSeq),
   };
 }
