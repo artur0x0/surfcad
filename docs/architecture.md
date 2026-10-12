@@ -434,6 +434,12 @@ The strip (both layouts) marks that chip with `data-feature-failed`, `aria-inval
 
 Editing that block, or the next good run, clears it. Only a throw inside an open block marks anything. A syntax error (no block ran), a non-Manifold return after every block has closed, or a throw outside every block marks nothing. Only the run shown in the viewport, which is the part the strip shows, is tracked. Background parts' failures stay on the Parts feed.
 
+**Feature skip.** `src/utils/featureSkip.js` builds a throwaway evaluation copy. It does not rewrite the buffer, an undo commit, or the saved script, and it does not call `scriptWithFeatureCount` (that helper deletes later blocks for the undo seed). The worker still runs the script as written. This copy is not on the run path yet.
+
+`hardSkipIds(script, featureId)` is the failed feature plus its transitive hard dependents, in script order. A hard dependent is a later block `featureDependents` marks with reason `variable` (a `const`, `let`, or `var` other than `part`, including a contour name), or a later block whose `refKey:` value is quoted in a skipped block and in no earlier block that is still outside the skip set. A sheet edge such as `wall:base:v-:w0` quoted in the sheet block, then named as `refKey:` on a later contour, skips that contour and the extrude, revolve, loft, or sweep that names the contour. `part` is not a hard edge. A later fillet, chamfer, or shell that only reads and writes `part` stays out of the set, even when `featureDependents` would call it an edge or face dependent. Those blocks stay in the copy and run until a throw inside them.
+
+`evaluationScript(script, { skipIds, anchorId })` blanks the interior of each id in `skipIds`. `anchorId` is the feature a rollback bar would sit after: a string blanks every statement after that feature, `null` blanks from the start of the script, and an unknown id blanks no tail. Omit `anchorId` when the bar is at the end. Marker comments stay, and so do other `//` lines, so the ids and the line numbers do not move. The trailing `return part;` stays. Blanking a line removes its code and keeps the newline.
+
 ## Cross-part copies
 
 Accept writes each affected part's script. A part that is not in the editor is written in the background: its script is replaced, saved, and pushed as one feature step on that part's own undo stack, then every visible part runs again. The active part's graphs rebuild on that success path. Another part's graphs rebuild when a pick retargets onto it, as before.

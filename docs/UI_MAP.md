@@ -365,6 +365,9 @@ Mobile specifics:
   the bar itself stays mounted so Undo and Redo remain. A chip whose block holds a
   frozen copy of another part's geometry (`externalBody`) has a 2px yellow border
   (`data-feature-external="1"`), active or not; its feature sheet says External copy.
+  A feature the last run failed in keeps the red chip (`data-feature-failed`,
+  `featureFailure.js`). `featureSkip.js` can blank that block and its hard
+  dependents in an evaluation copy; a run does not apply that copy yet.
   Chip highlight (`featureStripActiveId`)
   clears on sheet cancel/accept/delete (and after script jump). C.4+: Script-stage
   editor stack is full-bleed (`absolute inset-0`) so the top ribbon
@@ -600,7 +603,10 @@ document: `src/utils/defaultScript.js`. Draft persistence:
 `src/utils/scriptValidator.js` → `src/utils/scriptExecutor.js` →
 `src/workers/sandboxWorker.js` (every helper function and the real geometry
 work), with Manifold booted by `src/utils/ManifoldWorker.js`. Timeout/memory
-caps: `EXECUTION_LIMITS`, `src/components/Viewport.jsx:212`.
+caps: `EXECUTION_LIMITS`, `src/components/Viewport.jsx:212`. The evaluation
+copy for a failed feature, and for a later rollback anchor, is
+`src/utils/featureSkip.js` (`hardSkipIds`, `evaluationScript`). It leaves
+the buffer unchanged. The sandbox still executes the script as written.
 
 ### Selection
 Faces: `src/utils/selectFace.js`, `src/utils/faceFeaturePlacement.js`.
