@@ -208,7 +208,7 @@ async function titleLayout(page) {
     const box = (el) => {
       if (!el) return null;
       const r = el.getBoundingClientRect();
-      const style = getComputedStyle(el);
+      const style = window.getComputedStyle(el);
       return {
         left: r.left,
         top: r.top,
@@ -332,7 +332,7 @@ async function runSize(browser, vp) {
     await selectPart(page, vp.mobile);
     await page.waitForFunction(() => {
       const part = document.querySelector('[data-title-role="part"]');
-      const style = part ? getComputedStyle(part) : null;
+      const style = part ? window.getComputedStyle(part) : null;
       return (part?.textContent || '').trim() === 'Bracket' && style?.visibility === 'visible';
     }, null, { timeout: 10000 });
     await page.waitForFunction(() => (window.__VIEWPORT__.stageVerifyFraming?.().tris || 0) > 10, null, { timeout: 30000 });
