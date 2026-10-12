@@ -6,13 +6,19 @@
  * contour normal. Sweep has a profile slot and a path slot.
  */
 
+import { planeUvToWorld } from './contourPick.js';
 import {
+  buildExtrudeSolidPreview,
+  buildLoftSolidPreview,
+  buildRevolveSolidPreview,
+  buildSweepSolidPreviewFromPoints,
   defaultContourParams,
   defaultExtrudeParams,
   defaultRevolveParams,
   isLoftEntry,
   isSolidContourEntry,
   isSweepEntry,
+  planeFromContourFace,
   REVOLVE_SEGMENTS,
 } from './contourMode.js';
 import { SEPARATE_BODY_CALL } from './featureMarkers.js';
@@ -416,4 +422,119 @@ export function featureSlotCommitPayload(card) {
       })),
     },
   };
+}
+
+function findSaved(contours, ref) {
+  if (!ref) return null;
+  const id = ref.contourId || ref.contourName;
+  const name = ref.contourName;
+  if (!id && !name) return null;
+  return (contours || []).find((row) => (
+    (id && (row.id === id || row.name === id))
+    || (name && (row.name === name || row.id === name))
+  )) || null;
+}
+
+function sameSlot(live, slot) {
+  if (!live?.slot || !slot || live.slot.role !== slot.role) return false;
+  if (slot.role === 'station') return Number(live.slot.index) === Number(slot.index);
+  return true;
+}
+
+function offsetFrame(plane, offset) {
+  const n = plane.normal;
+  const w = Number(offset) || 0;
+  return {
+    center: [
+      plane.center[0] + w * n[0],
+      plane.center[1] + w * n[1],
+      plane.center[2] + w * n[2],
+    ],
+    normal: n.slice(),
+    x: plane.x.slice(),
+    y: plane.y.slice(),
+  };
+}
+
+/**
+ * Profile for one slot. A live draw (New contour / edit) wins for that slot.
+ * Otherwise the saved contour's tool, params, and plane.
+ */
+function slotProfile(ref, slot, contours, live) {
+  if (sameSlot(live, slot) && live.tool && live.params && live.face) {
+    const plane = planeFromContourFace(live.face);
+    if (!plane?.center) return null;
+    return { tool: live.tool, params: live.params, face: live.face, plane };
+  }
+  const row = findSaved(contours, ref);
+  if (!row || row.tool === 'path' || !row.plane?.center) return null;
+  const face = faceOf(refOf(row));
+  if (!face) return null;
+  return { tool: row.tool, params: row.params, face, plane: row.plane };
+}
+
+function pathWorldPoints(row) {
+  const pts = row?.params?.points;
+  const plane = row?.plane;
+  if (!Array.isArray(pts) || pts.length < 2 || !plane?.center || !plane.x || !plane.y) return null;
+  return pts.map((uv) => planeUvToWorld(uv, plane));
+}
+
+/**
+ * Live solid for an Extrude, Revolve, Loft, or Sweep card.
+ * Uses the saved contour (tool, params, plane), not the circle placeholder
+ * Confirm sends so compose can look the name up. `live` is the profile
+ * currently being drawn into `live.slot`. Null until the slots that preview
+ * needs are filled. Not the committed solid.
+ */
+export function buildFeatureSlotPreview(card, contours, live = null) {
+  if (!card) return null;
+  if (card.kind === 'makeExtrude') {
+    const prof = slotProfile(card.profile, { role: 'profile' }, contours, live);
+    if (!prof) return null;
+    const payload = buildExtrudeSolidPreview(prof.face, prof.tool, prof.params, card.extrude);
+    return payload ? { kind: 'extrude', payload } : null;
+  }
+  if (card.kind === 'makeRevolve') {
+    const prof = slotProfile(card.profile, { role: 'profile' }, contours, live);
+    if (!prof) return null;
+    const payload = buildRevolveSolidPreview(prof.face, prof.tool, prof.params, card.revolve);
+    return payload ? { kind: 'revolve', payload } : null;
+  }
+  if (card.kind === 'makeSweep') {
+    const prof = slotProfile(card.profile, { role: 'profile' }, contours, live);
+    const path = findSaved(contours, card.path);
+    const points = pathWorldPoints(path);
+    if (!prof || !points) return null;
+    const payload = buildSweepSolidPreviewFromPoints(
+      prof.face,
+      prof.tool,
+      prof.params,
+      points,
+      card.sweep,
+    );
+    return payload ? { kind: 'sweep', payload } : null;
+  }
+  if (!isLoftEntry(card.kind)) return null;
+  const profiles = [];
+  for (let i = 0; i < (card.stations || []).length; i += 1) {
+    const station = card.stations[i];
+    const prof = slotProfile(station, { role: 'station', index: i }, contours, live);
+    if (!prof) return null;
+    profiles.push({
+      id: station.id,
+      tool: prof.tool,
+      params: prof.params,
+      offset: 0,
+      planeKind: 'contour',
+      plane: offsetFrame(prof.plane, station.offset),
+      contourId: station.contourId || null,
+      contourName: station.contourName || null,
+    });
+  }
+  const payload = buildLoftSolidPreview(
+    { type: 'planar', planeFrame: profiles[0].plane },
+    profiles,
+  );
+  return payload ? { kind: 'loft', payload } : null;
 }

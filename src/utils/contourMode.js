@@ -1444,8 +1444,51 @@ export function buildSweepSolidPreview(face, tool, params, edges, sweep) {
   }
   if (!loop || loop.length < 3) return null;
   const plane = prev.plane;
-  const localPts = pathGate.path.points.map((p) => worldToFrameLocal(p, plane));
-  const frames = sweepLocalFrames(localPts, !!pathGate.path.closed);
+  return sweepPreviewPayload(plane, loop, pathGate.path.points, {
+    closed: !!pathGate.path.closed,
+    length: pathGate.path.length,
+    edgeCount: pathGate.path.edgeCount,
+  });
+}
+
+/**
+ * Stations for a sweep whose path is already a world polyline (a saved path
+ * contour), not a list of mesh edges. Null when the profile or the path is
+ * not ready. `sweep.closed` closes the station loop. `sweep.reverse` flips
+ * the point order.
+ */
+export function buildSweepSolidPreviewFromPoints(face, tool, params, worldPoints, sweep = {}) {
+  const gate = validateContourProfile(tool, params);
+  if (!gate.ok) return null;
+  const normalized = normalizeSweepParams(sweep);
+  let points = (Array.isArray(worldPoints) ? worldPoints : []).filter((p) => (
+    Array.isArray(p) && p.length >= 3 && [p[0], p[1], p[2]].every((n) => Number.isFinite(Number(n)))
+  )).map((p) => [Number(p[0]), Number(p[1]), Number(p[2])]);
+  if (normalized.reverse) points = points.slice().reverse();
+  if (points.length < 2) return null;
+  const prev = buildContourPreview(face, tool, params);
+  if (!prev?.plane) return null;
+  let loop;
+  try {
+    loop = buildProfileFromParams(toolToProfileParams(tool, params)).contours?.[0];
+  } catch {
+    return null;
+  }
+  if (!loop || loop.length < 3) return null;
+  try {
+    return sweepPreviewPayload(prev.plane, loop, points, {
+      closed: !!(sweep && sweep.closed),
+      length: null,
+      edgeCount: points.length,
+    });
+  } catch {
+    return null;
+  }
+}
+
+function sweepPreviewPayload(plane, loop, worldPoints, { closed, length, edgeCount }) {
+  const localPts = worldPoints.map((p) => worldToFrameLocal(p, plane));
+  const frames = sweepLocalFrames(localPts, !!closed);
   const stations = localPts.map((origin, i) => {
     const { N, B } = frames[i];
     const ring = loop.map(([u, v]) => frameLocalToWorld([
@@ -1458,9 +1501,9 @@ export function buildSweepSolidPreview(face, tool, params, edges, sweep) {
   return {
     plane,
     stations: subsampleSweepStations(stations, 32),
-    closed: !!pathGate.path.closed,
-    length: pathGate.path.length,
-    edgeCount: pathGate.path.edgeCount,
+    closed: !!closed,
+    length,
+    edgeCount,
   };
 }
 

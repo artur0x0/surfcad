@@ -387,13 +387,22 @@ export function assembleCrossSection(plane, profileOrParams) {
  */
 export function buildCrossSectionPreview(faceClassification, params) {
   try {
-    const plane = faceClassification && faceClassification.type === 'planar'
-      ? planeFrameFromFaceData(faceClassification)
-      : defaultTopPlaneFrame(
-        faceClassification?.center || [0, 0, 0],
-      );
-    // Snap origin to face center (same as emitFaceWorkplaneLines)
-    if (faceClassification?.center) {
+    const framed = faceClassification?.planeFrame;
+    const plane = framed?.center && framed?.normal && framed?.x && framed?.y
+      ? {
+        center: framed.center.map(Number),
+        normal: framed.normal.map(Number),
+        x: framed.x.map(Number),
+        y: framed.y.map(Number),
+      }
+      : faceClassification && faceClassification.type === 'planar'
+        ? planeFrameFromFaceData(faceClassification)
+        : defaultTopPlaneFrame(
+          faceClassification?.center || [0, 0, 0],
+        );
+    // Snap origin to face center (same as emitFaceWorkplaneLines).
+    // An explicit planeFrame already owns its center.
+    if (!framed?.center && faceClassification?.center) {
       const pc = faceClassification.center;
       const off =
         (pc[0] - plane.center[0]) * plane.normal[0]

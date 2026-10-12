@@ -122,6 +122,7 @@ import {
   assignFeatureSlot,
   emptyFeatureSlotCard,
   featureSlotCardFromEdit,
+  buildFeatureSlotPreview,
   featureSlotCommitPayload,
   featureSlotGhostId,
   featureSlotReady,
@@ -1289,11 +1290,12 @@ const Viewport = forwardRef(({
   /** TrackballControls noRotate/noPan saved while a point handle is grabbed. */
   const polylineControlsLockRef = useRef(null);
   /**
-   * A contour gesture tap must not orbit. Trackball starts a one-finger
-   * rotate on pointerdown, and a phone finger moves a few pixels before
-   * mouseup. Part edges sit on the silhouette, so that rotate swings them
-   * off the finger and the 12px pick misses. noRotate stays on until the
-   * finger leaves the tap slop; a real drag orbits from there.
+   * Dimension and Constrain only. A tap must not orbit: Trackball starts a
+   * one-finger rotate on pointerdown, and a phone finger moves a few pixels
+   * before mouseup. Part edges sit on the silhouette, so that rotate swings
+   * them off the finger and the 12px pick misses. noRotate stays on until
+   * the finger leaves the tap slop; a real drag orbits from there. Pan is
+   * not held. Arc, the plane card, and the slot cards do not take this hold.
    */
   const tapOrbitHoldRef = useRef(null);
   /**
@@ -4637,6 +4639,66 @@ const Viewport = forwardRef(({
       clearSweepPreview();
     }
   }, [contourMode, modelBounds, selectedEdges, paintPolylineDraft, paintContourStatusWire, paintContourRefWire, paintExtrudePreview, paintRevolvePreview, paintLoftPreview, paintSweepPreview, applyContourPartGhost, clearWorkplaneOverlay, clearPolylineDraft, clearContourStatusWire, clearContourRefWire, clearExtrudePreview, clearRevolvePreview, clearLoftPreview, clearSweepPreview, clearXsPreview, setXsPreview, clearStaleSolveOverlays]);
+
+  // Slot cards never set a solid contour entry, so the effect above clears
+  // the solid. Paint it again from the filled contours and the card params.
+  // Declared after that effect so a same-commit clear does not win.
+  useEffect(() => {
+    if (mode === 'game' || !featureSlots) return;
+    if (contourMode && isSolidContourEntry(contourMode.entry)) return;
+    const returning = slotReturnRef.current;
+    const live = contourMode && returning && !isWorkplaneEntry(contourMode.entry)
+      ? {
+        slot: returning,
+        tool: contourMode.tool,
+        params: contourMode.params,
+        face: activeContourFace(contourMode, modelBounds),
+      }
+      : null;
+    const built = buildFeatureSlotPreview(featureSlots, savedContours, live);
+    if (!built) {
+      clearExtrudePreview();
+      clearRevolvePreview();
+      clearLoftPreview();
+      clearSweepPreview();
+      return;
+    }
+    if (built.kind === 'extrude') {
+      clearRevolvePreview();
+      clearLoftPreview();
+      clearSweepPreview();
+      paintExtrudePreview(built.payload);
+    } else if (built.kind === 'revolve') {
+      clearExtrudePreview();
+      clearLoftPreview();
+      clearSweepPreview();
+      paintRevolvePreview(built.payload);
+    } else if (built.kind === 'loft') {
+      clearExtrudePreview();
+      clearRevolvePreview();
+      clearSweepPreview();
+      paintLoftPreview(built.payload);
+    } else if (built.kind === 'sweep') {
+      clearExtrudePreview();
+      clearRevolvePreview();
+      clearLoftPreview();
+      paintSweepPreview(built.payload);
+    }
+  }, [
+    mode,
+    featureSlots,
+    contourMode,
+    savedContours,
+    modelBounds,
+    paintExtrudePreview,
+    paintRevolvePreview,
+    paintLoftPreview,
+    paintSweepPreview,
+    clearExtrudePreview,
+    clearRevolvePreview,
+    clearLoftPreview,
+    clearSweepPreview,
+  ]);
 
   useEffect(() => () => {
     clearWorkplaneOverlay();
@@ -8618,19 +8680,45 @@ const Viewport = forwardRef(({
         controls.noRotate = noRotateAfter;
       }
     };
-    const releaseTapOrbitHold = () => {
+    // Mouse rotate does not record a delta while noRotate is set, so the
+    // circle is still (0, 0). A zero-speed update after one move consumes
+    // that jump. The next move orbits from the finger.
+    const seedMouseRotate = (event) => {
+      const controls = controlsRef.current;
+      if (!controls || !event || !Number.isFinite(event.pageX)) return;
+      const speed = controls.rotateSpeed;
+      controls.rotateSpeed = 0;
+      controls.noRotate = false;
+      try {
+        canvas.dispatchEvent(new PointerEvent('pointermove', {
+          bubbles: true,
+          cancelable: true,
+          pointerId: event.pointerId,
+          pointerType: 'mouse',
+          clientX: event.clientX,
+          clientY: event.clientY,
+          pageX: event.pageX,
+          pageY: event.pageY,
+          button: event.button,
+          buttons: event.buttons,
+        }));
+        controls.update();
+      } finally {
+        controls.rotateSpeed = speed;
+      }
+    };
+    const releaseTapOrbitHold = (event) => {
       const hold = tapOrbitHoldRef.current;
       if (!hold) return;
       tapOrbitHoldRef.current = null;
       const controls = controlsRef.current;
       if (!controls) return;
       if (hold.pointerType === 'touch') {
-        settleTouchRotate(controls, hold.noRotate);
-        controls.noPan = hold.noPan;
+        settleTouchRotate(controls, false);
         return;
       }
-      controls.noRotate = hold.noRotate;
-      controls.noPan = hold.noPan;
+      if (event) seedMouseRotate(event);
+      controls.noRotate = false;
     };
     const pointerHitsSketchDrag = (event) => {
       if (event.button != null && event.button !== 0 && event.button !== 2) return false;
@@ -8674,9 +8762,19 @@ const Viewport = forwardRef(({
         return;
       }
       if (event.button != null && event.button !== 0) return;
-      if (!contourModeRef.current?.gesture) return;
+      const gesture = contourModeRef.current?.gesture;
+      const tapSlop = gesture === 'dimension' || gesture === 'constraints';
+      if (!tapSlop) {
+        // A feature card, Arc, and empty canvas do not keep a rotate lock.
+        // Sketch-handle grabs already returned above.
+        if (!polylinePointDragRef.current && !sketchDragHoldRef.current) {
+          unlockOrbitForPointDrag();
+          controls.noRotate = false;
+        }
+        return;
+      }
       if (tapOrbitHoldRef.current && event.pointerId !== tapOrbitHoldRef.current.pointerId) {
-        releaseTapOrbitHold();
+        releaseTapOrbitHold(event);
         return;
       }
       if (tapOrbitHoldRef.current) return;
@@ -8685,11 +8783,8 @@ const Viewport = forwardRef(({
         y: event.clientY,
         pointerId: event.pointerId,
         pointerType: event.pointerType,
-        noRotate: controls.noRotate,
-        noPan: controls.noPan,
       };
       controls.noRotate = true;
-      controls.noPan = true;
     };
     const onTapOrbitMove = (event) => {
       const drag = sketchDragHoldRef.current;
@@ -8698,7 +8793,7 @@ const Viewport = forwardRef(({
       if (!hold || event.pointerId !== hold.pointerId) return;
       const moved = Math.hypot(event.clientX - hold.x, event.clientY - hold.y);
       if (moved <= SKETCH_HIT_PX) return;
-      releaseTapOrbitHold();
+      releaseTapOrbitHold(event);
     };
     const onTouchDown = (event) => {
       if (event.pointerType !== 'touch') return;
@@ -8717,7 +8812,7 @@ const Viewport = forwardRef(({
     };
     const onTouchUp = (event) => {
       const hold = tapOrbitHoldRef.current;
-      if (!hold || event.pointerId === hold.pointerId) releaseTapOrbitHold();
+      if (!hold || event.pointerId === hold.pointerId) releaseTapOrbitHold(event);
       releaseSketchDragHold(event);
       if (event.pointerType !== 'touch' || !polylinePointDragRef.current?.touch) return;
       endPolylinePointDrag(event);
