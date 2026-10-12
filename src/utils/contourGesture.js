@@ -556,6 +556,43 @@ function copyContour(contour) {
   return specFromSolved(contour);
 }
 
+/** Present only while a typed point distance is solved. Not a stored lock. */
+const DRIVE_PIN = '__contourDrivePin';
+
+/**
+ * The first picked point stays put for this edit solve, so the second point
+ * takes the typed distance. The pin is a temporary fix and is stripped
+ * before the contour is kept.
+ */
+function withEditPin(contour, dimension) {
+  const pin = dimension?.at?.[dimension.a];
+  if (!pin || dimension.kind !== 'distance' || !dimension.a || !dimension.b) return contour;
+  const pointIds = new Set((contour.points || []).map((p) => p.id));
+  const lineIds = new Set((contour.lines || []).map((l) => l.id));
+  if (!pointIds.has(dimension.a) || !pointIds.has(dimension.b)) return contour;
+  if (lineIds.has(dimension.a) || lineIds.has(dimension.b)) return contour;
+  return {
+    ...contour,
+    constraints: [
+      ...(contour.constraints || []),
+      {
+        id: DRIVE_PIN,
+        kind: 'fix',
+        items: [dimension.a],
+        at: { [dimension.a]: [pin[0], pin[1]] },
+      },
+    ],
+  };
+}
+
+function withoutEditPin(contour) {
+  if (!(contour?.constraints || []).some((item) => item.id === DRIVE_PIN)) return contour;
+  return {
+    ...contour,
+    constraints: contour.constraints.filter((item) => item.id !== DRIVE_PIN),
+  };
+}
+
 /** Drop a typed preview and put the contour back to the shape before it. */
 export function revertLiveDimension(state) {
   if (!state?.dimensionLive?.base) return state;
@@ -580,6 +617,8 @@ function withLiveBase(state, live, gestureNote) {
 
 /**
  * Re-solve one dimension from the contour as it was when typing started.
+ * A point distance pins the first pick for this solve only, then drops
+ * that pin, so the stored dimension locks the distance and nothing else.
  * The preview keeps the picks, so the card does not reset. Confirm is what
  * writes the block. An empty or non-positive length, radius, or point
  * distance puts the contour back.
@@ -612,12 +651,12 @@ export function liveDimension(state, draft) {
   }
   let solved;
   try {
-    solved = solveContour(replaceDimension(live.base, built.dimension));
+    solved = solveContour(withEditPin(replaceDimension(live.base, built.dimension), built.dimension));
   } catch (err) {
     const message = err.message || String(err);
     return { state: withLiveBase(ready, live, message), error: message };
   }
-  const contour = specFromSolved(solved);
+  const contour = withoutEditPin(specFromSolved(solved));
   const statusNote = contourStatusNote(solved);
   return {
     state: {
