@@ -8,7 +8,8 @@ import {
 } from './contourSolve.js';
 import { contourPointDragAllowed, dragContourPoint, pointFreedom } from './contourDrag.js';
 import { CONTOUR_STATUS_COLOR, contourEntityColor } from './contourStatus.js';
-import { armContourGesture, enterContourState, saveContourConstraint } from './contourMode.js';
+import { armContourGesture, enterContourState, saveContourConstraint, saveContourDimension } from './contourMode.js';
+import { constraintAnchor } from './contourPick.js';
 import { liveDimension } from './contourGesture.js';
 
 const BLUE = CONTOUR_STATUS_COLOR.under;
@@ -286,12 +287,19 @@ test('a perpendicular on two polyline segments is one real constraint', () => {
   assert.ok(Math.abs(segmentAngle(solved, 'e0', 'e1') - 90) < 0.05);
 });
 
+function copyStep(item) {
+  if (Array.isArray(item)) return item.slice();
+  const copy = { ...item };
+  if (Array.isArray(item.items)) copy.items = item.items.slice();
+  return copy;
+}
+
 function permutations(items) {
-  if (items.length <= 1) return [items.map((item) => item.slice())];
+  if (items.length <= 1) return [items.map(copyStep)];
   const out = [];
   items.forEach((item, index) => {
     const rest = items.slice(0, index).concat(items.slice(index + 1));
-    for (const tail of permutations(rest)) out.push([item.slice(), ...tail]);
+    for (const tail of permutations(rest)) out.push([copyStep(item), ...tail]);
   });
   return out;
 }
@@ -350,6 +358,92 @@ test('perpendiculars on one polyline match in every add order', () => {
       run.contour.points.forEach((point, index) => {
         assert.ok(Math.hypot(point.seed[0] - uvs[index][0], point.seed[1] - uvs[index][1]) < 1e-4, label);
       });
+    }
+  }
+});
+
+const INCH = 25.4;
+
+function addSketchSteps(uvs, steps) {
+  let state = armContourGesture({
+    ...enterContourState('crossSection', null),
+    tool: 'polyline',
+    params: { points: uvs.map((p) => p.slice()) },
+  }, 'constraints');
+  for (const step of steps) {
+    const saved = step.kind === 'length'
+      ? saveContourDimension({
+        ...state,
+        gesture: 'dimension',
+        picks: [{ id: step.edge, kind: 'line' }],
+      }, { kind: 'length', valueMm: step.value })
+      : saveContourConstraint({
+        ...state,
+        gesture: 'constraints',
+        picks: step.items.map((id) => ({ id, kind: 'line' })),
+      }, { kind: 'perpendicular', side: 1 });
+    assert.equal(saved.error, null, `${JSON.stringify(step)} ${saved.error}`);
+    state = saved.state;
+  }
+  return state;
+}
+
+test('a 1.5 in side and the two corner perpendiculars match in every order', () => {
+  // The working phone sketch: a free quad, a 1.5000 in width, and two
+  // perpendiculars whose pluses sit side by side. Each plus is the average
+  // of the two edge midpoints, so the pair is the two corners of one edge.
+  const uvs = [[0, 0], [34, 3], [38, 78], [2, 74]];
+  const width = 1.5 * INCH;
+  const sets = [
+    [
+      { kind: 'length', edge: 'e0', value: width },
+      { kind: 'perpendicular', items: ['e3', 'e0'] },
+      { kind: 'perpendicular', items: ['e0', 'e1'] },
+    ],
+    [
+      { kind: 'length', edge: 'e0', value: width },
+      { kind: 'perpendicular', items: ['e1', 'e2'] },
+      { kind: 'perpendicular', items: ['e2', 'e3'] },
+    ],
+  ];
+  for (const steps of sets) {
+    const perps = steps.filter((step) => step.kind === 'perpendicular');
+    const runs = permutations(steps).map((order) => {
+      const state = addSketchSteps(uvs, order);
+      const solved = analyzeContour(state.params.contour);
+      return { order, solved };
+    });
+    const reference = runs[0].solved;
+    for (const run of runs) {
+      const label = run.order.map((step) => (
+        step.kind === 'length' ? `L${step.edge}` : step.items.join('')
+      )).join('>');
+      assert.equal(run.solved.status, 'under', label);
+      assert.equal(run.solved.conflict, null, label);
+      assert.deepEqual(run.solved.repeated, [], label);
+      assert.equal(run.solved.dof, reference.dof, label);
+      const edge = run.solved.lines.find((line) => line.id === 'e0');
+      const pa = Object.fromEntries(run.solved.points.map((p) => [p.id, p.at]));
+      assert.ok(Math.abs(gap(pa[edge.a], pa[edge.b]) - width) < 1e-3, label);
+      for (const step of perps) {
+        assert.ok(Math.abs(segmentAngle(run.solved, step.items[0], step.items[1]) - 90) < 0.05, label);
+      }
+      for (const line of run.solved.lines) {
+        assert.equal(run.solved.entities.lines[line.id], 'under', `${label} ${line.id}`);
+        const color = contourEntityColor(run.solved.entities.lines[line.id]);
+        assert.equal(color, BLUE, label);
+      }
+      const anchors = run.solved.constraints
+        .filter((con) => con.kind === 'perpendicular')
+        .map((con) => constraintAnchor(run.solved, con));
+      assert.equal(anchors.length, 2, label);
+      assert.ok(Math.abs(anchors[0][1] - anchors[1][1]) < 2, `${label} pluses share a row`);
+      assert.ok(Math.abs(anchors[0][0] - anchors[1][0]) > 8, `${label} pluses sit apart`);
+      for (const point of run.solved.points) {
+        const other = reference.points.find((item) => item.id === point.id);
+        const delta = Math.hypot(point.at[0] - other.at[0], point.at[1] - other.at[1]);
+        assert.ok(delta < 1e-3, `${label} ${point.id} moved ${delta}`);
+      }
     }
   }
 });
