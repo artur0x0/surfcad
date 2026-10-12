@@ -2808,28 +2808,15 @@ const Viewport = forwardRef(({
     }
   }, [clearSweepPreview, anchorToActivePart]);
 
+  // A sketch leaves the part material alone. Slice 24 dimmed every solid to
+  // opacity 0.4 for the whole contour pose. Sheet-metal contour references
+  // are strokes on the part, so that dim has no remaining job. The restore
+  // path still clears a leftover from an older session.
   const applyContourPartGhost = useCallback((on) => {
     const mesh = resultRef.current;
-    if (!mesh) return;
+    if (!mesh || on) return;
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    if (on) {
-      contourGhostMatsRef.current = true;
-      for (const m of mats) {
-        if (!m) continue;
-        if (m.userData._contourPrev == null) {
-          m.userData._contourPrev = {
-            transparent: m.transparent,
-            opacity: m.opacity,
-            depthWrite: m.depthWrite,
-          };
-        }
-        // Dim in place so the part stays recognizable (not a grey void).
-        m.transparent = true;
-        m.opacity = 0.4;
-        m.depthWrite = false;
-        m.needsUpdate = true;
-      }
-    } else if (contourGhostMatsRef.current) {
+    if (contourGhostMatsRef.current) {
       for (const m of mats) {
         const prev = m?.userData?._contourPrev;
         if (!prev) continue;
@@ -4892,7 +4879,7 @@ const Viewport = forwardRef(({
       showContourToast(resolved.message);
       clearHighlight();
       setSelectedFace(null);
-      onFaceSelected?.(null);
+      onFaceSelectedRef.current?.(null);
       return;
     }
     setContourMode((prev) => {
@@ -4908,9 +4895,13 @@ const Viewport = forwardRef(({
       });
     });
     // The plane card keeps the feature-sheet slide. Aim waits for Select plane.
+    // onFaceSelected stays a ref. The sketch-strip publish re-renders App and
+    // hands this callback a new identity; depending on it restarted the
+    // Select-plane tween on every frame, so the camera never settled and the
+    // highlight never cleared.
     if (contourPlaneOpenRef.current) return;
     requestFaceSketchAim(resolved.face?.normal || resolved.plane?.normal);
-  }, [selectedFace, onFaceSelected, clearHighlight]);
+  }, [selectedFace, clearHighlight]);
 
   // Select plane: look along the sketch-plane normal. A highlighted face
   // is framed; any other plane frames the part. The highlight drops when
@@ -7372,6 +7363,7 @@ const Viewport = forwardRef(({
   const beginPolylinePointDrag = useCallback((event, { touch = false, cursorTap = false } = {}) => {
     const state = contourModeRef.current;
     if (polylinePointDragRef.current) return true;
+    if (contourPlaneOpenRef.current) return false;
     if (!state || state.gesture) return false;
     if (pickModeRef.current === 'edge') return false;
     const handles = sketchHandles(state);
@@ -7443,6 +7435,7 @@ const Viewport = forwardRef(({
   const beginSketchLineDrag = useCallback((event, { touch = false } = {}) => {
     const state = contourModeRef.current;
     if (polylinePointDragRef.current) return true;
+    if (contourPlaneOpenRef.current) return false;
     if (!state || state.gesture || state.tool !== 'cursor') return false;
     if (pickModeRef.current === 'edge') return false;
     if (pickPolylinePointAtClient(event.clientX, event.clientY) >= 0) return false;
@@ -8256,10 +8249,13 @@ const Viewport = forwardRef(({
     }
 
     // A handle on a circle, rectangle, polygon, or arc is a grab, not a face pick.
+    // The plane card is for choosing a plane. The preview circle's rim sits
+    // on the face, and swallowing that tap kept the face from being selected.
     if (
       contourModeRef.current
       && contourModeRef.current.tool !== 'polyline'
       && !contourModeRef.current.gesture
+      && !contourPlaneOpenRef.current
       && pickModeRef.current !== 'edge'
       && sketchHandles(contourModeRef.current).length
       && pickPolylinePointAtClient(event.clientX, event.clientY) >= 0
@@ -9197,6 +9193,7 @@ const Viewport = forwardRef(({
     };
     const pointerHitsSketchDrag = (event) => {
       if (event.button != null && event.button !== 0 && event.button !== 2) return false;
+      if (contourPlaneOpenRef.current) return false;
       const state = contourModeRef.current;
       if (!state || state.gesture) return false;
       if (pickModeRef.current === 'edge') return false;
@@ -9850,6 +9847,19 @@ const Viewport = forwardRef(({
               undoDepth: sketchHistRef.current?.depth || 0,
               open: !!contourModeRef.current,
               planeCard: contourPlaneOpenRef.current,
+              partOpacity: (() => {
+                const mesh = resultRef.current;
+                if (!mesh) return null;
+                const mats = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).filter(Boolean);
+                if (!mats.length) return null;
+                return Math.min(...mats.map((m) => Number(m.opacity)));
+              })(),
+              partTransparent: (() => {
+                const mesh = resultRef.current;
+                if (!mesh) return false;
+                const mats = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).filter(Boolean);
+                return mats.some((m) => m.transparent === true);
+              })(),
               planeSquare: !!workplaneOverlayRef.current,
               planePreview: (() => {
                 const colors = [];

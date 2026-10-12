@@ -4,7 +4,7 @@
  *
  * Shared mode Extrude / Revolve / Loft own. Fillet-without-edges is Slice 27
  * (its own edge-pick mode — not a contour entry).
- * Slice 24: enter mode, ghost the part, swap the left rail, pick a workplane,
+ * Slice 24: enter mode, swap the left rail, pick a workplane,
  * draw circle/rect/polygon/(cheap polyline), live makeCrossSection preview.
  * Slice 25: Extrude entry Confirm names a contour and commits makeExtrude
  * by that name. Distance and the sense shift stay in the block. The block
