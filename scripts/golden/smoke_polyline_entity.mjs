@@ -2,8 +2,9 @@
 /**
  * A polyline stays one strip chip. Touch at 390, mouse at 1280.
  *
- * A segment tap inserts a point. A fast double-tap removes one. A drag
- * moves that point. Cursor does not translate a line. Dimension promotion
+ * Select plane leaves Cursor pressed. A segment tap inserts a point. A fast
+ * double-tap removes one. A drag moves that point. Cursor does not translate
+ * a line. Dimension promotion
  * keeps the one Polyline chip. The chip's Delete card removes the chain.
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir().
@@ -261,12 +262,20 @@ async function runSize(browser, label, contextOptions, touch) {
 
   await tapSelector(client, page, 'button[aria-label^="Insert Create contour"]', touch);
   await page.locator('[data-contour-chip]').waitFor({ timeout: 8000 });
-  await tapSelector(client, page, '[data-contour-tool="polyline"]', touch);
   await tapSelector(client, page, '[data-feature-card-confirm]', touch);
   await page.waitForFunction(() => (
     document.querySelector('.viewport-shell')?.getAttribute('data-contour-face-aim') === 'done'
     && !document.querySelector('[data-contour-chip]')
   ), null, { timeout: 8000 });
+  const entered = await page.evaluate(() => ({
+    tool: window.__VIEWPORT__.stageContourSketch().tool,
+    cursor: document.querySelector('[data-contour-tool="cursor"]')?.getAttribute('aria-pressed'),
+    polyline: document.querySelector('[data-contour-tool="polyline"]')?.getAttribute('aria-pressed'),
+  }));
+  check(`${label} Select plane starts on Cursor`,
+    entered.tool === 'cursor' && entered.cursor === 'true' && entered.polyline === 'false',
+    JSON.stringify(entered));
+  await tapSelector(client, page, '[data-contour-tool="polyline"]', touch);
 
   for (let i = 0; i < CORNERS.length; i += 1) {
     const hit = await project(page, CORNERS[i]);

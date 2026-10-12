@@ -625,9 +625,13 @@ export function enterContourState(entry, faceData = null) {
   const resolved = resolveContourWorkplane(faceData);
   const loft = defaultLoftState();
   const first = loft.profiles[0];
+  const resolvedEntry = CONTOUR_ENTRY_IDS.has(entry) ? entry : 'crossSection';
+  // Select plane opens a sketch on Cursor. The circle station stays the
+  // profile until a profile tool replaces it. Loft stations stay circles.
+  const tool = resolvedEntry === 'crossSection' ? 'cursor' : first.tool;
   return {
-    entry: CONTOUR_ENTRY_IDS.has(entry) ? entry : 'crossSection',
-    tool: first.tool,
+    entry: resolvedEntry,
+    tool,
     params: { ...first.params },
     extrude: defaultExtrudeParams(),
     revolve: defaultRevolveParams(),

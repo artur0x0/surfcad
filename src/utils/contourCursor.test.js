@@ -46,6 +46,8 @@ test('cursor drags a point and does not add points', () => {
   assert.equal(contourToolAddsPoints('polyline'), true);
 
   const started = enterContourState('crossSection', null);
+  assert.equal(started.tool, 'cursor');
+  assert.equal(started.params.radius, 5);
   const cursor = switchContourTool(started, 'cursor');
   assert.equal(cursor.tool, 'cursor');
   assert.equal(cursor.params.radius, started.params.radius);
