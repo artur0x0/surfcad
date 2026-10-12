@@ -3,7 +3,8 @@
  * Polyline perpendicular at 390 and 1280, touch only.
  *
  * Two segments of a polyline take a perpendicular. After Add the lines are
- * neither amber nor red, the repeated note is absent, and the angle is 90°.
+ * neither amber nor red, there is no conflict note, the angle is 90°, and the
+ * segments keep their length. Every add order is the solver test.
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir(), never the artifacts dir.
  */
@@ -223,6 +224,8 @@ async function runSize(browser, label, viewport) {
     const beforeLen = {
       e0: segLen(beforeSketch.uvs, 'p0', 'p1'),
       e1: segLen(beforeSketch.uvs, 'p1', 'p2'),
+      e2: segLen(beforeSketch.uvs, 'p2', 'p3'),
+      e3: segLen(beforeSketch.uvs, 'p3', 'p0'),
     };
     check(`${label} the corner starts away from 90°`, Math.abs(before - 90) > 5, String(before));
 
@@ -245,10 +248,15 @@ async function runSize(browser, label, viewport) {
     const afterLen = {
       e0: segLen(after.uvs, 'p0', 'p1'),
       e1: segLen(after.uvs, 'p1', 'p2'),
+      e2: segLen(after.uvs, 'p2', 'p3'),
+      e3: segLen(after.uvs, 'p3', 'p0'),
     };
+    const lengthDetail = ['e0', 'e1', 'e2', 'e3']
+      .map((id) => `${id} ${beforeLen[id].toFixed(2)}→${afterLen[id].toFixed(2)}`)
+      .join(' ');
     check(`${label} the segments keep their length`,
-      Math.abs(afterLen.e0 - beforeLen.e0) < 1 && Math.abs(afterLen.e1 - beforeLen.e1) < 1,
-      `e0 ${beforeLen.e0.toFixed(2)}→${afterLen.e0.toFixed(2)} e1 ${beforeLen.e1.toFixed(2)}→${afterLen.e1.toFixed(2)}`);
+      ['e0', 'e1', 'e2', 'e3'].every((id) => Math.abs(afterLen[id] - beforeLen[id]) < 1),
+      lengthDetail);
     check(`${label} both segments are painted`, segmentLines.length >= 2, JSON.stringify(after.lines));
     check(`${label} the segments are not amber or red`,
       segmentLines.length >= 2 && segmentLines.every((line) => line.color !== AMBER && line.color !== RED),

@@ -39,9 +39,48 @@ const CONSISTENT_TOL = 1e-4;
 const RANK_REL = 1e-5;
 const RANK_ABS = 1e-9;
 const NULL_EPS = 1e-6;
-const MAX_ITER = 40;
+const MAX_ITER = 400;
 const FD_STEP = 1e-6;
 const DEG = Math.PI / 180;
+// A full Newton step for a 90° turn is tens of millimetres and stretches the
+// segment. Cap the step so the iteration walks the arc from the current points.
+const MAX_STEP = 2;
+
+function wrapAngle(d) {
+  let a = d;
+  while (a > Math.PI) a -= 2 * Math.PI;
+  while (a < -Math.PI) a += 2 * Math.PI;
+  return a;
+}
+
+/** Signed turn from d1 to d2, from the unit directions. Length does not enter. */
+function signedTurn(d1, d2) {
+  const L1 = Math.hypot(d1[0], d1[1]);
+  const L2 = Math.hypot(d2[0], d2[1]);
+  if (L1 < 1e-12 || L2 < 1e-12) return null;
+  const cross = (d1[0] * d2[1] - d1[1] * d2[0]) / (L1 * L2);
+  const dot = (d1[0] * d2[0] + d1[1] * d2[1]) / (L1 * L2);
+  return Math.atan2(cross, dot);
+}
+
+/**
+ * The branch to keep, read once from the current turn. Parallel keeps the
+ * nearer of "same way" and "opposite way". Perpendicular keeps the current
+ * sign, so a later step cannot flip the corner onto the other perpendicular.
+ */
+function lockedAngleTarget(phi, kind) {
+  if (phi == null) return 0;
+  if (kind === 'parallel') {
+    return Math.abs(phi) <= Math.PI / 2 ? 0 : (phi >= 0 ? Math.PI : -Math.PI);
+  }
+  return phi >= 0 ? Math.PI / 2 : -Math.PI / 2;
+}
+
+function angleToTarget(d1, d2, target) {
+  const phi = signedTurn(d1, d2);
+  if (phi == null) return 1;
+  return wrapAngle(phi - target);
+}
 
 const CONSTRAINT_KINDS = new Set([
   'horizontal', 'vertical', 'parallel', 'perpendicular',
@@ -64,9 +103,8 @@ function cloneSpec(spec) {
   const points = (spec.points || []).map((p) => {
     if (!p?.id || !Array.isArray(p.at)) fail('a point needs an id and at');
     const point = { id: String(p.id), at: [num(p.at[0], `point ${p.id} u`), num(p.at[1], `point ${p.id} v`)] };
-    // `at` is the last solved position. `seed` is where the user drew or
-    // dragged. Constraint solves start from the seed, so add order does not
-    // pick a different point on the same under-defined manifold.
+    // `at` is the geometry on screen, and the solve starts there. `seed` is
+    // where the user drew or dragged; it is not a second start point.
     if (Array.isArray(p.seed) && p.seed.length >= 2
       && Number.isFinite(Number(p.seed[0])) && Number.isFinite(Number(p.seed[1]))) {
       point.seed = [Number(p.seed[0]), Number(p.seed[1])];
@@ -664,6 +702,11 @@ function compile(model) {
     eqs.push({ id, scale, fn });
   };
 
+  const restDir = (line) => {
+    const a = points.get(line.a).at;
+    const b = points.get(line.b).at;
+    return [b[0] - a[0], b[1] - a[1]];
+  };
   const lineOf = (id) => requireId(lines, id, 'line');
   const arcOf = (id) => requireId(arcs, id, 'arc');
   const pointOf = (id) => requireId(points, id, 'point');
@@ -779,7 +822,8 @@ function compile(model) {
     if (geom.kind !== 'line' || !lines.has(other)) fail(`${con.kind} needs a line reference`);
     const line = lines.get(other);
     const dir = fixedDir(geom);
-    push(con.id, DEG, (x) => angleMiss(lineDir(x, line), dir, con.kind));
+    const target = lockedAngleTarget(signedTurn(restDir(line), dir), con.kind);
+    push(con.id, DEG, (x) => angleToTarget(lineDir(x, line), dir, target));
   }
 
   function compileCoincidentRef(con, items) {
@@ -941,7 +985,8 @@ function compile(model) {
       }
       const a = lineOf(items[0]);
       const b = lineOf(items[1]);
-      push(con.id, DEG, (x) => angleMiss(lineDir(x, a), lineDir(x, b), con.kind));
+      const target = lockedAngleTarget(signedTurn(restDir(a), restDir(b)), con.kind);
+      push(con.id, DEG, (x) => angleToTarget(lineDir(x, a), lineDir(x, b), target));
     } else if (con.kind === 'equal') {
       if (items.length !== 2) fail('equal needs two items');
       const aLine = lines.get(items[0]);
@@ -1103,6 +1148,15 @@ function scaledInf(r, scale, m) {
   return max;
 }
 
+function scaledSumSq(r, scale, m) {
+  let sum = 0;
+  for (let i = 0; i < m; i += 1) {
+    const v = r[i] / (scale[i] || 1);
+    sum += v * v;
+  }
+  return sum;
+}
+
 function jacobian(n, m, x, residual, r0, scale) {
   const J = new Float64Array(m * n);
   const rp = new Float64Array(m);
@@ -1176,13 +1230,14 @@ function levenberg(sys, xStart, skipId) {
   const r = new Float64Array(m);
   if (m === 0) return { x, scaledInf: 0, converged: true, iterations: 0, r, scale, m };
   residual(x, r);
+  let merit = scaledSumSq(r, scale, m);
   let norm = scaledInf(r, scale, m);
   // Minimum-norm damped step from the current points.
   // δ = Jᵀ (JJᵀ + λI)⁻¹ (−r) when a sketch has fewer rows than coordinates,
-  // and (JᵀJ + λI)⁻¹ Jᵀ (−r) otherwise. A free coordinate with no row stays
-  // put. Marquardt's λ·Hᵢᵢ vanished on those columns, so a parallel on two
-  // joined segments stretched them off the sketch instead of rotating them.
-  // The line search shortens a step the linear model over-predicted.
+  // and (JᵀJ + λI)⁻¹ Jᵀ (−r) otherwise. λI is the displacement penalty, so a
+  // free coordinate does not move. The step is also capped, and the line
+  // search shortens one the linear model over-predicted. A conflict is the
+  // residual that is still large after this, not a step that failed to land.
   let lambda = 1e-2;
   let iterations = 0;
   let converged = norm <= SOLVE_TOL;
@@ -1235,6 +1290,14 @@ function levenberg(sys, xStart, skipId) {
       if (lambda >= 1e8) break;
       continue;
     }
+    let raw = 0;
+    for (let a = 0; a < n; a += 1) raw += step[a] * step[a];
+    raw = Math.sqrt(raw);
+    const capped = raw > MAX_STEP;
+    if (capped) {
+      const scaleStep = MAX_STEP / raw;
+      for (let a = 0; a < n; a += 1) step[a] *= scaleStep;
+    }
     let accepted = false;
     let alpha = 1;
     for (let halve = 0; halve < 12; halve += 1) {
@@ -1247,12 +1310,14 @@ function levenberg(sys, xStart, skipId) {
       }
       const rt = new Float64Array(m);
       residual(trial, rt);
-      const next = scaledInf(rt, scale, m);
-      if (next < norm) {
+      const nextMerit = scaledSumSq(rt, scale, m);
+      const nextInf = scaledInf(rt, scale, m);
+      if (nextMerit < merit) {
         x.set(trial);
         r.set(rt);
-        norm = next;
-        if (alpha === 1) lambda = Math.max(lambda / 10, 1e-6);
+        merit = nextMerit;
+        norm = nextInf;
+        if (alpha === 1 && !capped) lambda = Math.max(lambda / 10, 1e-6);
         accepted = true;
         if (norm <= SOLVE_TOL || stepLen < 1e-18) converged = norm <= SOLVE_TOL;
         break;
@@ -1265,7 +1330,7 @@ function levenberg(sys, xStart, skipId) {
       if (lambda >= 1e8) break;
     }
   }
-  return { x, scaledInf: norm, converged: norm <= SOLVE_TOL, iterations, r, scale, m };
+  return { x, scaledInf: scaledInf(r, scale, m), converged: scaledInf(r, scale, m) <= SOLVE_TOL, iterations, r, scale, m };
 }
 
 function jacobiEigen(S, n) {
@@ -1734,295 +1799,134 @@ function assembleResult(model, sys, solved, fact, conflict, repeated) {
   };
 }
 
-function angleMiss(d1, d2, kind) {
-  const L1 = Math.hypot(d1[0], d1[1]);
-  const L2 = Math.hypot(d2[0], d2[1]);
-  if (L1 < 1e-12 || L2 < 1e-12) return 1;
-  const phi = Math.atan2(d1[0] * d2[1] - d1[1] * d2[0], d1[0] * d2[0] + d1[1] * d2[1]);
-  const deltas = angleDeltas(phi, kind);
-  return Math.abs(deltas[0]) <= Math.abs(deltas[1]) ? deltas[0] : deltas[1];
-}
 
-function wrapAngle(d) {
-  let a = d;
-  while (a > Math.PI) a -= 2 * Math.PI;
-  while (a < -Math.PI) a += 2 * Math.PI;
-  return a;
-}
-
-function angleDeltas(phi, kind) {
-  if (kind === 'parallel') {
-    return [wrapAngle(-phi), wrapAngle((phi > 0 ? Math.PI : -Math.PI) - phi)];
+/**
+ * Length targets taken from the geometry the solve started at. They are not
+ * constraints and they do not enter the rank or the conflict test. A real
+ * length or equal already owns that line.
+ */
+function lengthHoldEqs(model, x0) {
+  const index = new Map((model.points || []).map((p, i) => [p.id, i]));
+  const driven = new Set();
+  for (const dim of model.dimensions || []) {
+    if (dim.kind === 'length' && dim.edge && !dim.broken) driven.add(dim.edge);
   }
-  return [wrapAngle(Math.PI / 2 - phi), wrapAngle(-Math.PI / 2 - phi)];
+  for (const con of model.constraints || []) {
+    if (con.kind === 'equal' && !con.broken) (con.items || []).forEach((id) => driven.add(id));
+  }
+  const holds = [];
+  for (const line of model.lines || []) {
+    if (line.guide || driven.has(line.id)) continue;
+    const ia = index.get(line.a);
+    const ib = index.get(line.b);
+    if (ia == null || ib == null) continue;
+    const target = Math.hypot(x0[ib * 2] - x0[ia * 2], x0[ib * 2 + 1] - x0[ia * 2 + 1]);
+    holds.push({
+      fn: (x) => Math.hypot(x[ib * 2] - x[ia * 2], x[ib * 2 + 1] - x[ia * 2 + 1]) - target,
+    });
+  }
+  return holds;
 }
 
 /**
- * Turn parallel and perpendicular into a rotation before the least-squares
- * polish. The angle residual is flat at the worst error, and a Newton step
- * there stretches the segments. Rotating the shorter line about the shared
- * vertex, or about its midpoint, keeps both lengths and leaves the smaller move.
+ * Pull line lengths back onto the values at x0, moving only in the nullspace
+ * of the constraints that are already met. A length row inside the angle
+ * solve makes a closed quad stall a fraction of a degree short and report a
+ * conflict; the angle is driven to zero first, and this step only tidies the
+ * lengths the angle did not need to change.
  */
-function relaxAngleConstraints(model, x) {
-  const index = new Map((model.points || []).map((p, i) => [p.id, i]));
-  const lineById = new Map((model.lines || []).map((line) => [line.id, line]));
-  const xy = (id) => {
-    const i = index.get(id);
-    if (i == null) return null;
-    return [x[i * 2], x[i * 2 + 1]];
+function restoreLengths(sys, model, xSolved, x0) {
+  const holds = lengthHoldEqs(model, x0);
+  if (!holds.length || sys.m === 0) return Float64Array.from(xSolved);
+  let x = Float64Array.from(xSolved);
+  const rf0 = new Float64Array(sys.m);
+  sys.residualAll(x, rf0);
+  if (scaledInf(rf0, sys.scale, sys.m) > CONSISTENT_TOL) return x;
+
+  const n = sys.n;
+  const h = holds.length;
+  const hScale = new Float64Array(h).fill(1);
+  const holdResidual = (xx, out) => {
+    for (let i = 0; i < h; i += 1) out[i] = holds[i].fn(xx);
   };
-  const write = (id, p) => {
-    const i = index.get(id);
-    if (i == null) return;
-    x[i * 2] = p[0];
-    x[i * 2 + 1] = p[1];
-  };
-  const rotateAbout = (id, center, ang) => {
-    const p = xy(id);
-    if (!p || !(Math.abs(ang) > 0)) return;
-    const dx = p[0] - center[0];
-    const dy = p[1] - center[1];
-    const co = Math.cos(ang);
-    const si = Math.sin(ang);
-    write(id, [center[0] + co * dx - si * dy, center[1] + si * dx + co * dy]);
-  };
-  const rotateLine = (line, ang) => {
-    const a = xy(line.a);
-    const b = xy(line.b);
-    if (!a || !b) return;
-    rotateAbout(line.a, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], ang);
-    rotateAbout(line.b, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], ang);
-  };
-  const sharedVertex = (a, b) => {
-    if (a.a === b.a) return { v: a.a, freeA: a.b, freeB: b.b };
-    if (a.a === b.b) return { v: a.a, freeA: a.b, freeB: b.a };
-    if (a.b === b.a) return { v: a.b, freeA: a.a, freeB: b.b };
-    if (a.b === b.b) return { v: a.b, freeA: a.a, freeB: b.a };
-    return null;
-  };
-  const angles = (model.constraints || []).filter((con) => (
-    (con.kind === 'parallel' || con.kind === 'perpendicular')
-    && !con.broken
-    && (con.items || []).length === 2
-  ));
-  if (!angles.length) return;
-  const driven = new Set((model.dimensions || [])
-    .filter((dim) => dim.kind === 'length' && dim.edge && !dim.broken)
-    .map((dim) => dim.edge));
-  const targetLen = new Map();
-  for (const line of model.lines || []) {
-    if (driven.has(line.id) || line.guide) continue;
-    const a = xy(line.a);
-    const b = xy(line.b);
-    if (!a || !b) continue;
-    targetLen.set(line.id, Math.hypot(b[0] - a[0], b[1] - a[1]));
-  }
-  const lineLen = (line) => {
-    const stored = targetLen.get(line.id);
-    if (stored > 0) return stored;
-    const a = xy(line.a);
-    const b = xy(line.b);
-    if (!a || !b) return 0;
-    return Math.hypot(b[0] - a[0], b[1] - a[1]);
-  };
-  const fitRadii = (d, r0, r1) => {
-    if (d > r0 + r1) {
-      const gap = d - r0 - r1;
-      const sum = r0 + r1 || 1;
-      return [r0 + (gap * r0) / sum, r1 + (gap * r1) / sum];
-    }
-    const diff = Math.abs(r0 - r1);
-    if (d < diff) {
-      const gap = diff - d;
-      return r0 >= r1 ? [Math.max(0, r0 - gap), r1] : [r0, Math.max(0, r1 - gap)];
-    }
-    return [r0, r1];
-  };
-  const intersectCircles = (c0, r0, c1, r1) => {
-    const dx = c1[0] - c0[0];
-    const dy = c1[1] - c0[1];
-    const d = Math.hypot(dx, dy);
-    if (!(d > 1e-9)) return [];
-    const radii = fitRadii(d, r0, r1);
-    const along = (radii[0] * radii[0] - radii[1] * radii[1] + d * d) / (2 * d);
-    const h = Math.sqrt(Math.max(0, radii[0] * radii[0] - along * along));
-    const xm = c0[0] + (along * dx) / d;
-    const ym = c0[1] + (along * dy) / d;
-    const rx = (-dy * h) / d;
-    const ry = (dx * h) / d;
-    const stretch = Math.abs(radii[0] - r0) + Math.abs(radii[1] - r1);
-    if (h < 1e-9) return [{ p: [xm, ym], stretch }];
-    return [
-      { p: [xm + rx, ym + ry], stretch },
-      { p: [xm - rx, ym - ry], stretch },
-    ];
-  };
-  const nearer = (cur, hits) => {
-    let best = null;
-    let bestD = Infinity;
-    for (const hit of hits) {
-      const d = (hit.p[0] - cur[0]) ** 2 + (hit.p[1] - cur[1]) ** 2;
-      if (d < bestD) { bestD = d; best = hit; }
-    }
-    return best;
-  };
-  // The point that is not on the rotated pair sits on two circles. Placing it
-  // on the nearer intersection keeps those lengths. If the circles miss, the
-  // radii give just enough so the angle can still be a rotation.
-  const reseat = (fixed) => {
-    let stretch = 0;
-    for (const point of model.points || []) {
-      if (fixed.has(point.id)) continue;
-      const links = (model.lines || []).filter((line) => (
-        !line.guide && ((line.a === point.id && fixed.has(line.b)) || (line.b === point.id && fixed.has(line.a)))
-      ));
-      if (links.length < 2) continue;
-      const end = (line) => (line.a === point.id ? line.b : line.a);
-      const hits = intersectCircles(xy(end(links[0])), lineLen(links[0]), xy(end(links[1])), lineLen(links[1]));
-      const best = nearer(xy(point.id), hits);
-      if (!best) return { ok: false, stretch: Infinity };
-      write(point.id, best.p);
-      stretch += best.stretch;
-    }
-    return { ok: true, stretch };
-  };
-  const sideLinks = (lineA, lineB) => {
-    const endsA = new Set([lineA.a, lineA.b]);
-    const endsB = new Set([lineB.a, lineB.b]);
-    return (model.lines || []).filter((line) => {
-      if (line.guide || line.id === lineA.id || line.id === lineB.id) return false;
-      const touchA = endsA.has(line.a) || endsA.has(line.b);
-      const touchB = endsB.has(line.a) || endsB.has(line.b);
-      return touchA && touchB;
-    });
-  };
-  const shiftLine = (moved, fixedLine) => {
-    const sides = sideLinks(moved, fixedLine);
-    if (sides.length !== 2) return 0;
-    const spec = sides.map((line) => {
-      const movedId = (line.a === moved.a || line.a === moved.b) ? line.a : line.b;
-      const fixedId = movedId === line.a ? line.b : line.a;
-      return { movedId, fixedId, r: lineLen(line), line };
-    });
-    if (spec[0].movedId === spec[1].movedId) return 0;
-    const a = xy(spec[0].movedId);
-    const b = xy(spec[1].movedId);
-    const f0 = xy(spec[0].fixedId);
-    const f1 = xy(spec[1].fixedId);
-    const hits = intersectCircles(
-      [f0[0] - a[0], f0[1] - a[1]], spec[0].r,
-      [f1[0] - b[0], f1[1] - b[1]], spec[1].r,
-    );
-    const best = nearer([0, 0], hits);
-    if (!best) return 0;
-    write(moved.a, [xy(moved.a)[0] + best.p[0], xy(moved.a)[1] + best.p[1]]);
-    write(moved.b, [xy(moved.b)[0] + best.p[0], xy(moved.b)[1] + best.p[1]]);
-    return best.stretch;
-  };
-  const lengthDrift = () => {
+  const lengthSum = (xx) => {
+    const rL = new Float64Array(h);
+    holdResidual(xx, rL);
     let sum = 0;
-    for (const [id, target] of targetLen) {
-      const line = lineById.get(id);
-      if (!line) continue;
-      const a = xy(line.a);
-      const b = xy(line.b);
-      if (!a || !b) continue;
-      sum += Math.abs(Math.hypot(b[0] - a[0], b[1] - a[1]) - target);
-    }
+    for (let i = 0; i < h; i += 1) sum += rL[i] * rL[i];
     return sum;
   };
-  const angleCost = () => {
-    let sum = 0;
-    for (const other of angles) {
-      const oa = lineById.get(other.items[0]);
-      const ob = lineById.get(other.items[1]);
-      if (!oa || !ob) continue;
-      const a0 = xy(oa.a);
-      const a1 = xy(oa.b);
-      const b0 = xy(ob.a);
-      const b1 = xy(ob.b);
-      if (!a0 || !a1 || !b0 || !b1) continue;
-      sum += Math.abs(angleMiss(
-        [a1[0] - a0[0], a1[1] - a0[1]],
-        [b1[0] - b0[0], b1[1] - b0[1]],
-        other.kind,
-      ));
-    }
-    return sum;
-  };
-  for (let sweep = 0; sweep < 4; sweep += 1) {
-    let moved = false;
-    for (const con of angles) {
-      const la = lineById.get(con.items[0]);
-      const lb = lineById.get(con.items[1]);
-      if (!la || !lb) continue;
-      const pa = xy(la.a);
-      const pb = xy(la.b);
-      const qa = xy(lb.a);
-      const qb = xy(lb.b);
-      if (!pa || !pb || !qa || !qb) continue;
-      const d1 = [pb[0] - pa[0], pb[1] - pa[1]];
-      const d2 = [qb[0] - qa[0], qb[1] - qa[1]];
-      const L1 = Math.hypot(d1[0], d1[1]);
-      const L2 = Math.hypot(d2[0], d2[1]);
-      if (L1 < 1e-9 || L2 < 1e-9) continue;
-      const phi = Math.atan2(d1[0] * d2[1] - d1[1] * d2[0], d1[0] * d2[0] + d1[1] * d2[1]);
-      const options = angleDeltas(phi, con.kind);
-      if (options.some((delta) => Math.abs(delta) < 1e-6)) continue;
-      const deltas = options.slice().sort((a, b) => Math.abs(a) - Math.abs(b));
-      const share = sharedVertex(la, lb);
-      const snapshot = Float64Array.from(x);
-      let best = null;
-      for (const delta of deltas) {
-        x.set(snapshot);
-        if (share) {
-          const va = xy(share.freeA);
-          const vb = xy(share.freeB);
-          const v = xy(share.v);
-          const lenA = Math.hypot(va[0] - v[0], va[1] - v[1]);
-          const lenB = Math.hypot(vb[0] - v[0], vb[1] - v[1]);
-          const pivots = [
-            { id: share.freeB, ang: delta, reach: lenB },
-            { id: share.freeA, ang: -delta, reach: lenA },
-          ];
-          for (const pivot of pivots) {
-            x.set(snapshot);
-            rotateAbout(pivot.id, v, pivot.ang);
-            const rotated = Float64Array.from(x);
-            const score = (ok) => angleCost() * 1e6 + lengthDrift() * 1000 + pivot.reach * Math.abs(pivot.ang) + (ok ? 0 : 1e9);
-            const plain = score(true);
-            if (!best || plain < best.cost) best = { ok: true, cost: plain, x: Float64Array.from(x) };
-            x.set(rotated);
-            const seat = reseat(new Set([la.a, la.b, lb.a, lb.b]));
-            const seated = score(seat.ok);
-            if (!best || seated < best.cost) best = { ok: seat.ok, cost: seated, x: Float64Array.from(x) };
-          }
-        } else if (L2 <= L1) {
-          rotateLine(lb, delta);
-          const rotated = Float64Array.from(x);
-          const plain = angleCost() * 1e6 + lengthDrift() * 1000 + L2 * Math.abs(delta);
-          if (!best || plain < best.cost) best = { ok: true, cost: plain, x: Float64Array.from(x) };
-          x.set(rotated);
-          shiftLine(lb, la);
-          const shifted = angleCost() * 1e6 + lengthDrift() * 1000 + L2 * Math.abs(delta);
-          if (!best || shifted < best.cost) best = { ok: true, cost: shifted, x: Float64Array.from(x) };
-        } else {
-          rotateLine(la, -delta);
-          const rotated = Float64Array.from(x);
-          const plain = angleCost() * 1e6 + lengthDrift() * 1000 + L1 * Math.abs(delta);
-          if (!best || plain < best.cost) best = { ok: true, cost: plain, x: Float64Array.from(x) };
-          x.set(rotated);
-          shiftLine(la, lb);
-          const shifted = angleCost() * 1e6 + lengthDrift() * 1000 + L1 * Math.abs(delta);
-          if (!best || shifted < best.cost) best = { ok: true, cost: shifted, x: Float64Array.from(x) };
-        }
+
+  let sumL = lengthSum(x);
+  for (let iter = 0; iter < 20 && sumL > 1e-6; iter += 1) {
+    const fact = factorAt(sys, x);
+    const basis = fact.nullspace;
+    const k = basis.length;
+    if (!k) break;
+    const rL = new Float64Array(h);
+    holdResidual(x, rL);
+    const JL = jacobian(n, h, Float64Array.from(x), holdResidual, rL, hScale);
+    const Jr = new Float64Array(h * k);
+    for (let i = 0; i < h; i += 1) {
+      for (let c = 0; c < k; c += 1) {
+        const col = basis[c];
+        let s = 0;
+        for (let a = 0; a < n; a += 1) s += JL[i * n + a] * col[a];
+        Jr[i * k + c] = s;
       }
-      if (!best) continue;
-      x.set(best.x);
-      moved = true;
     }
-    if (!moved) break;
+    const lambda = 1e-4;
+    const A = new Float64Array(k * k);
+    const rhs = new Float64Array(k);
+    for (let i = 0; i < h; i += 1) {
+      for (let c = 0; c < k; c += 1) {
+        const Jic = Jr[i * k + c];
+        rhs[c] -= Jic * rL[i];
+        for (let d = c; d < k; d += 1) A[c * k + d] += Jic * Jr[i * k + d];
+      }
+    }
+    for (let c = 0; c < k; c += 1) {
+      for (let d = 0; d < c; d += 1) A[c * k + d] = A[d * k + c];
+      A[c * k + c] += lambda;
+    }
+    const y = solveSymmetric(A, rhs);
+    if (!y) break;
+    const step = new Float64Array(n);
+    for (let c = 0; c < k; c += 1) {
+      const col = basis[c];
+      for (let a = 0; a < n; a += 1) step[a] += y[c] * col[a];
+    }
+    let raw = 0;
+    for (let a = 0; a < n; a += 1) raw += step[a] * step[a];
+    raw = Math.sqrt(raw);
+    if (raw < 1e-12) break;
+    if (raw > MAX_STEP) {
+      const scaleStep = MAX_STEP / raw;
+      for (let a = 0; a < n; a += 1) step[a] *= scaleStep;
+    }
+
+    let accepted = false;
+    let alpha = 1;
+    for (let halve = 0; halve < 6; halve += 1) {
+      const trial = Float64Array.from(x);
+      for (let a = 0; a < n; a += 1) trial[a] = x[a] + alpha * step[a];
+      const polished = levenberg(sys, trial);
+      if (polished.scaledInf > CONSISTENT_TOL) {
+        alpha *= 0.5;
+        continue;
+      }
+      const next = lengthSum(polished.x);
+      if (next < sumL * 0.999) {
+        x = polished.x;
+        sumL = next;
+        accepted = true;
+        break;
+      }
+      alpha *= 0.5;
+    }
+    if (!accepted) break;
   }
+  return x;
 }
 
 function solveModel(spec) {
@@ -2033,9 +1937,17 @@ function solveModel(spec) {
   for (const key of ['points', 'lines', 'arcs', 'dimensions', 'constraints']) {
     if (!model[key]) model[key] = [];
   }
-  const xStart = Float64Array.from(sys.x0);
-  relaxAngleConstraints(model, xStart);
-  const solved = levenberg(sys, xStart);
+  const solved = levenberg(sys, sys.x0);
+  if (solved.scaledInf <= CONSISTENT_TOL) {
+    solved.x = restoreLengths(sys, model, solved.x, sys.x0);
+  }
+  const held = new Float64Array(sys.m);
+  sys.residualAll(solved.x, held);
+  solved.r = held;
+  solved.scale = sys.scale;
+  solved.m = sys.m;
+  solved.scaledInf = scaledInf(held, sys.scale, sys.m);
+  solved.converged = solved.scaledInf <= SOLVE_TOL;
   const consistent = solved.scaledInf <= CONSISTENT_TOL;
   const fact = factorAt(sys, solved.x);
   const conflict = consistent ? null : attribute(sys, solved);

@@ -582,6 +582,75 @@ test('a perpendicular already implied by horizontal and vertical stays repeated'
   assert.equal(solved.entities.lines.e0, 'under');
 });
 
+test('a perpendicular keeps the turn the polyline already had', () => {
+  const uvs = [[0, 0], [40, 2], [46, 28], [4, 24]];
+  const spec = contourFromPolyline(uvs);
+  const pa = Object.fromEntries(spec.points.map((p) => [p.id, p.at]));
+  const turn = (aId, bId) => {
+    const la = spec.lines.find((l) => l.id === aId);
+    const lb = spec.lines.find((l) => l.id === bId);
+    const d1 = [pa[la.b][0] - pa[la.a][0], pa[la.b][1] - pa[la.a][1]];
+    const d2 = [pa[lb.b][0] - pa[lb.a][0], pa[lb.b][1] - pa[lb.a][1]];
+    return Math.atan2(d1[0] * d2[1] - d1[1] * d2[0], d1[0] * d2[0] + d1[1] * d2[1]) * 180 / Math.PI;
+  };
+  const before = turn('e0', 'e1');
+  assert.ok(before > 10 && before < 170, String(before));
+  spec.constraints.push({ id: 'kp', kind: 'perpendicular', items: ['e0', 'e1'] });
+  const solved = analyzeContour(spec);
+  assert.equal(solved.status, 'under');
+  assert.equal(solved.conflict, null);
+  const afterPa = Object.fromEntries(solved.points.map((p) => [p.id, p.at]));
+  const la = solved.lines.find((l) => l.id === 'e0');
+  const lb = solved.lines.find((l) => l.id === 'e1');
+  const d1 = [afterPa[la.b][0] - afterPa[la.a][0], afterPa[la.b][1] - afterPa[la.a][1]];
+  const d2 = [afterPa[lb.b][0] - afterPa[lb.a][0], afterPa[lb.b][1] - afterPa[lb.a][1]];
+  const after = Math.atan2(d1[0] * d2[1] - d1[1] * d2[0], d1[0] * d2[0] + d1[1] * d2[1]) * 180 / Math.PI;
+  assert.ok(Math.sign(after) === Math.sign(before), `${before} flipped to ${after}`);
+  assert.ok(Math.abs(after - 90) < 0.05, String(after));
+});
+
+test('perpendicular and parallel on different corners are not a false conflict', () => {
+  // These two angles cannot keep every length exact. They still have to
+  // reach the angle from the current quad, stay on the page, and stay blue.
+  const uvs = [[0, 0], [40, 2], [46, 28], [4, 24]];
+  const drawn = drawnLengths(uvs);
+  const steps = [
+    { kind: 'perpendicular', items: ['e0', 'e1'] },
+    { kind: 'parallel', items: ['e2', 'e3'] },
+  ];
+  for (const order of permutations(steps)) {
+    let state = armContourGesture({
+      ...enterContourState('crossSection', null),
+      tool: 'polyline',
+      params: { points: uvs.map((p) => p.slice()) },
+    }, 'constraints');
+    const label = order.map((step) => `${step.kind}:${step.items.join('')}`).join('>');
+    for (const step of order) {
+      const saved = saveContourConstraint({
+        ...state,
+        picks: step.items.map((id) => ({ id, kind: 'line' })),
+      }, { kind: step.kind, side: 1 });
+      assert.equal(saved.error, null, label);
+      state = saved.state;
+      const solved = analyzeContour(state.params.contour);
+      assert.equal(solved.status, 'under', label);
+      assert.equal(solved.conflict, null, label);
+      assert.deepEqual(solved.repeated, [], label);
+      const angle = segmentAngle(solved, step.items[0], step.items[1]);
+      if (step.kind === 'perpendicular') assert.ok(Math.abs(angle - 90) < 0.05, `${label} ${angle}`);
+      else assert.ok(angle < 0.05 || angle > 179.95, `${label} ${angle}`);
+      const lengths = lineLengths(solved);
+      for (const [id, length] of Object.entries(drawn)) {
+        assert.ok(lengths[id] < length * 1.5 + 1, `${label} ${id} stretched ${lengths[id]} from ${length}`);
+        assert.ok(lengths[id] > length * 0.5, `${label} ${id} collapsed ${lengths[id]}`);
+      }
+      for (const line of solved.lines) {
+        assert.equal(contourEntityColor(solved.entities.lines[line.id]), BLUE, label);
+      }
+    }
+  }
+});
+
 test('parallel and perpendicular on the same pair stays a conflict', () => {
   const spec = contourFromRectangle(40, 20, true);
   spec.dimensions = [];
