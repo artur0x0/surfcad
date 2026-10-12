@@ -135,6 +135,8 @@ function copyRef(ref) {
     fail(`unknown reference ${ref.kind}`);
   }
   const copy = { id: String(ref.id), kind: String(ref.kind) };
+  // Sheet edges are named by refKey. The next solve matches that name.
+  if (typeof ref.refKey === 'string' && ref.refKey) copy.refKey = ref.refKey;
   if (ref.faceA != null) copy.faceA = num(ref.faceA, 'faceA');
   if (ref.faceB != null) copy.faceB = num(ref.faceB, 'faceB');
   if (ref.faceId != null) copy.faceId = num(ref.faceId, 'faceId');
@@ -151,6 +153,7 @@ function copyRef(ref) {
       faceB: num(b.faceB, 'boundary faceB'),
       mid: [0, 1, 2].map((i) => num(b.mid[i], `boundary mid ${i}`)),
     };
+    if (typeof b.refKey === 'string' && b.refKey) copy.boundary.refKey = b.refKey;
   }
   if (ref.broken) copy.broken = true;
   if (ref.geom) copy.geom = copyGeom(ref.geom);

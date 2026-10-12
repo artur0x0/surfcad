@@ -439,7 +439,8 @@ async function runSize(browser, label, contextOptions) {
     const saved = await editorScript(page);
     const before = lineUs(saved);
     check(`${label} the statement stores the sheet edge`, /refs:/.test(saved) && /kind: 'edge'/.test(saved) && before.some((u) => u < -80), saved.slice(0, 400));
-    check(`${label} the lip is the return flange, not a mesh face id`, /refKey: 'wall:b2:u\+:w0'/.test(saved), saved.slice(0, 500));
+    const refAt = saved.indexOf('refs:');
+    check(`${label} the lip is the return flange, not a mesh face id`, /refKey: 'wall:b2:u\+:w0'/.test(saved), saved.slice(refAt, refAt + 500));
     check(`${label} the dimension is a distance to that reference`, /kind: 'distance'/.test(saved) && /b: 'r0'/.test(saved));
     check(`${label} the constraint is parallel to that reference`, /kind: 'parallel'/.test(saved) && /'e3'/.test(saved) && /'r0'/.test(saved));
 
@@ -458,23 +459,31 @@ async function runSize(browser, label, contextOptions) {
 
     await clickSel(page, '[data-cad-feature-strip] [data-contour-id="c1"]');
     await page.locator('[data-contour-edit]').waitFor({ timeout: 8000 });
-    await page.waitForTimeout(500);
+    await page.waitForFunction(() => (
+      document.querySelector('.viewport-shell')?.getAttribute('data-contour-face-aim') === 'done'
+    ), null, { timeout: 8000 });
     const liveBroken = await page.locator('[data-contour-ref-broken]').count();
     check(`${label} reopening the contour shows the reference live`, liveBroken === 0, String(liveBroken));
 
     // Each edge class, after the flange edit. The lower edge used to bind the hole.
-    for (let i = 0; i < 3; i += 1) await wheelZoomIn(page);
+    // The first dimension already owns the other sketch corner, so this point stays clear.
+    for (let i = 0; i < 2; i += 1) await wheelZoomIn(page);
     const targets = classTargets();
     for (const target of targets) {
       await clickSel(page, '[data-contour-tool="dimension"]');
       await page.locator('[data-contour-card="dimension"]').waitFor({ timeout: 8000 });
       await page.waitForTimeout(300);
-      await tapClear(page, client, [-20, 0, 15]);
+      await tapClear(page, client, [20, 0, 15]);
       await tapClear(page, client, target.world);
-      await page.waitForFunction(() => {
-        const card = document.querySelector('[data-contour-card="dimension"]');
-        return card && card.innerText.includes('Distance');
-      }, null, { timeout: 8000 });
+      try {
+        await page.waitForFunction(() => {
+          const card = document.querySelector('[data-contour-card="dimension"]');
+          return card && card.innerText.includes('Distance');
+        }, null, { timeout: 8000 });
+      } catch (err) {
+        const text = await page.locator('[data-contour-card="dimension"]').innerText().catch(() => 'no card');
+        throw new Error(`${target.key} did not offer Distance (${text.slice(0, 240)})`);
+      }
       await clickSel(page, '[data-contour-card="dimension"] [data-feature-card-confirm]');
       await page.waitForTimeout(400);
     }

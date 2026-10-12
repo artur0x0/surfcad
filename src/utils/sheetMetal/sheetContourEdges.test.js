@@ -4,6 +4,8 @@ import { projectReference } from '../contourRef.js';
 import { chainSegments, materializeReference, referenceHitAt } from '../contourRefPick.js';
 import { matchBoundaryEdge, resolveContourSpec } from '../contourRefResolve.js';
 import { emitSolveContour, parseSolveContour } from '../contourScript.js';
+import { solveContour } from '../contourSolve.js';
+import { specFromSolved } from '../contourGesture.js';
 import { referencePickEdges, sheetContourEdges, sheetSpecInScript } from './sheetContourEdges.js';
 
 const SPEC = {
@@ -282,6 +284,16 @@ test('a flange edit and a hole edit move only their own refKey', () => {
   const parsed = parseSolveContour(text);
   assert.equal(parsed.refs[0].refKey, 'wall:b2:u+:w0');
   assert.equal(parsed.refs[1].refKey, 'wall:base:v-:w0');
+
+  // Confirm writes solveContour(spec). The copy used to drop refKey, so the
+  // saved lip was the right line with no name.
+  const solved = specFromSolved(solveContour(spec));
+  assert.equal(solved.refs[0].refKey, 'wall:b2:u+:w0');
+  assert.equal(solved.refs[1].refKey, 'wall:base:v-:w0');
+  assert.equal(solved.refs[2].refKey, 'hole:h1:w0');
+  const saved = parseSolveContour(emitSolveContour(solved));
+  assert.equal(saved.refs[0].refKey, 'wall:b2:u+:w0');
+  assert.equal(saved.refs[2].refKey, 'hole:h1:w0');
 });
 
 test('a script yields a sheet spec, and a cube script does not', () => {
