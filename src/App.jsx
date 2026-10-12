@@ -79,6 +79,7 @@ import {
   renameTargetId,
   sanitizePartName,
   reorderParts,
+  preserveHiddenPartRuns,
   scriptForRow,
   serializeAssembly,
   setPartVisible,
@@ -2002,17 +2003,20 @@ const App = () => {
       }
 
       if (gen !== refreshGenRef.current) return false;
-      for (const [id, run] of Object.entries(runs)) {
+      // Hidden rows were not re-run. Keep their last solid so the parts-list
+      // thumbnail stays; composeViewportParts still leaves them out of the view.
+      const keptRuns = preserveHiddenPartRuns(doc, runs, partRunsRef.current);
+      for (const [id, run] of Object.entries(keptRuns)) {
         if (run?.ok && run.mesh?.vertProperties) partLeftoversRef.current[id] = run.mesh;
       }
-      commitPartRuns(runs);
+      commitPartRuns(keptRuns);
       let placed = doc;
       if (!assemblyOpenLockRef.current && Array.isArray(doc.joints) && doc.joints.length) {
         let catalogs = {};
         try {
           catalogs = catalogsFromRuns({
             parts: doc.parts,
-            runs,
+            runs: keptRuns,
             leftovers: partLeftoversRef.current,
             scripts,
           });
@@ -2025,16 +2029,16 @@ const App = () => {
         setJointLive(jointLiveRef.current);
         if (refreshed.changed) placed = rememberAssembly(refreshed.doc);
       }
-      const solids = composeViewportParts(placed, runs);
-      const leftovers = leftoverPickSolids(placed, runs, partLeftoversRef.current);
-      const activeOk = !!(viewId && runs[viewId]?.ok === true && activeVisible);
+      const solids = composeViewportParts(placed, keptRuns);
+      const leftovers = leftoverPickSolids(placed, keptRuns, partLeftoversRef.current);
+      const activeOk = !!(viewId && keptRuns[viewId]?.ok === true && activeVisible);
       viewportRef.current?.placeAssembly?.({
         solids,
         leftovers,
         activeId: viewId,
         blankActive: !activeOk,
         // Red outline in the viewer, same rule as the Parts feed's red row.
-        failedIds: failedPartIdsFor(doc, runs),
+        failedIds: failedPartIdsFor(doc, keptRuns),
       });
     return true;
   };

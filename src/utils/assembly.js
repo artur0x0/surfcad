@@ -760,6 +760,31 @@ export function partRowFlags(run) {
   return { error: false, missing: false };
 }
 
+/**
+ * A visibility refresh runs only the parts the viewport draws, then
+ * replaces the run map. A hidden row is absent from that map, or the
+ * active hidden row is stored with a null mesh. The parts-list thumbnail
+ * reads this map, so copy the last successful mesh back onto each hidden
+ * row. `composeViewportParts` still skips `visible === false`. A run that
+ * never succeeded has no mesh to keep.
+ */
+export function preserveHiddenPartRuns(doc, nextRuns, prevRuns) {
+  const runs = { ...(nextRuns || {}) };
+  const prev = prevRuns || {};
+  for (const part of doc?.parts || []) {
+    if (!part || part.visible !== false || part.id == null) continue;
+    const earlier = prev[part.id];
+    const mesh = earlier?.ok === true && earlier.mesh?.vertProperties ? earlier.mesh : null;
+    if (!mesh) continue;
+    const current = runs[part.id];
+    if (current?.ok === true && current.mesh?.vertProperties) continue;
+    const kept = { ok: true, mesh, error: null };
+    if (Number.isFinite(earlier.bodyCount)) kept.bodyCount = earlier.bodyCount;
+    runs[part.id] = kept;
+  }
+  return runs;
+}
+
 /** Feed rows. Mesh is present only for a successful latest run. */
 export function feedRows(doc, runs, scripts) {
   const source = doc?.source === 'git' ? 'git' : 'local';

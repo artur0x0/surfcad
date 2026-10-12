@@ -33,12 +33,12 @@ part = filletAlongPath(part, path, 1.5);
 return part;
 `;
 
-export function renderFeatureEditDeleteShot(el, { compact = false } = {}) {
+export function renderFeatureEditDeleteShot(el, { compact = false, script = DELETE_SCRIPT } = {}) {
   createRoot(el).render(
     React.createElement(
       AuthProvider,
       null,
-      React.createElement(GithubSessionProvider, null, React.createElement(Shot, { compact })),
+      React.createElement(GithubSessionProvider, null, React.createElement(Shot, { compact, initialScript: script })),
     ),
   );
 }
@@ -55,11 +55,11 @@ function meshSig() {
   return `${verts.length}:${hash}`;
 }
 
-function Shot({ compact }) {
+function Shot({ compact, initialScript }) {
   const viewRef = useRef(null);
-  const scriptRef = useRef(DELETE_SCRIPT);
-  const historyRef = useRef(historyForPart({}, 'part-1', DELETE_SCRIPT));
-  const [script, setScript] = useState(DELETE_SCRIPT);
+  const scriptRef = useRef(initialScript);
+  const historyRef = useRef(historyForPart({}, 'part-1', initialScript));
+  const [script, setScript] = useState(initialScript);
   const [session, setSession] = useState(false);
   const [canUndo, setCanUndo] = useState(historyRef.current.head > 0);
   const originalSig = useRef('');
@@ -75,7 +75,7 @@ function Shot({ compact }) {
 
   useEffect(() => {
     let stop = false;
-    window.__SCRIPT__ = DELETE_SCRIPT;
+    window.__SCRIPT__ = initialScript;
     window.__HISTORY_HEAD__ = historyRef.current.head;
     window.__MESH_SIG__ = () => meshSig();
     window.__OPEN_EDIT__ = (kind) => {
@@ -95,7 +95,7 @@ function Shot({ compact }) {
       if (stop) return;
       let ran = false;
       for (let i = 0; i < 20 && !ran && !stop; i += 1) {
-        ran = await viewRef.current?.executeScript?.(DELETE_SCRIPT);
+        ran = await viewRef.current?.executeScript?.(initialScript);
         if (!ran) await new Promise((resolve) => setTimeout(resolve, 250));
       }
       if (stop) return;
@@ -108,7 +108,7 @@ function Shot({ compact }) {
       window.__MESH__ = false;
     });
     return () => { stop = true; };
-  }, []);
+  }, [initialScript]);
 
   const onDelete = (feature, opts) => {
     const result = deleteFeatureEdit(scriptRef.current, feature, {
