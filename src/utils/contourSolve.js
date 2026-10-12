@@ -30,7 +30,13 @@ export const CONTOUR_POINT_CAP = 128;
 
 const SOLVE_TOL = 1e-6;
 const CONSISTENT_TOL = 1e-4;
-const RANK_REL = 1e-8;
+// Forward-difference noise in J is about 1e-8 of the largest singular value
+// (the step is 1e-6, and an angle row is divided by DEG, so that value is
+// tens). A relative cutoff of 1e-8 sat on the noise. Dropping a real
+// tangent or a real perpendicular then left a noise mode above the cutoff,
+// the integer rank did not fall, and the constraint was marked repeated.
+// 1e-5 is still far under a millimetre-scale row.
+const RANK_REL = 1e-5;
 const RANK_ABS = 1e-9;
 const NULL_EPS = 1e-6;
 const MAX_ITER = 40;
