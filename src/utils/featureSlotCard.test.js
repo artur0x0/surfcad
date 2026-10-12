@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   assignFeatureSlot,
+  buildFeatureSlotPreview,
   contoursForSlot,
   emptyFeatureSlotCard,
   featureSlotCardFromEdit,
@@ -289,4 +290,78 @@ test('revolve confirm writes the card angle, segments, and sense', () => {
   assert.match(wrote.buffer, /, 24, 180\)/);
   assert.match(wrote.buffer, /rotate\(\[0, 0, -180\]\)/);
   assert.match(wrote.buffer, /profileCircle\(8, 16\)/);
+});
+
+test('slot preview uses the saved contour and the card values', () => {
+  const profile = composeContourProfile(STARTER, {
+    face: FACE,
+    tool: 'rectangle',
+    params: { width: 12, height: 8, centered: true },
+  });
+  const saved = listSavedContours(profile.buffer);
+  assert.equal(buildFeatureSlotPreview(emptyFeatureSlotCard('makeExtrude'), saved), null);
+  const card = {
+    ...assignFeatureSlot(emptyFeatureSlotCard('makeExtrude'), { role: 'profile' }, saved[0]),
+    extrude: { distance: 25, direction: 'normal', sense: 'positive' },
+  };
+  const preview = buildFeatureSlotPreview(card, saved);
+  assert.equal(preview.kind, 'extrude');
+  assert.equal(preview.payload.distance, 25);
+  const loop = preview.payload.contours[0];
+  const width = Math.max(...loop.map((p) => p[0])) - Math.min(...loop.map((p) => p[0]));
+  assert.ok(Math.abs(width - 12) < 1e-6, String(width));
+
+  const live = buildFeatureSlotPreview(emptyFeatureSlotCard('makeExtrude'), [], {
+    slot: { role: 'profile' },
+    tool: 'circle',
+    params: { radius: 6, segments: 16 },
+    face: FACE,
+  });
+  assert.equal(live.kind, 'extrude');
+  assert.equal(live.payload.distance, 10);
+
+  const revolve = buildFeatureSlotPreview({
+    ...assignFeatureSlot(emptyFeatureSlotCard('makeRevolve'), { role: 'profile' }, saved[0]),
+    revolve: { angle: 90, axis: 'v', sense: 'positive', segments: 16 },
+  }, saved);
+  assert.equal(revolve.kind, 'revolve');
+  assert.equal(revolve.payload.angle, 90);
+});
+
+test('loft and sweep previews follow the filled slots', () => {
+  const a = composeContourProfile(STARTER, {
+    face: FACE,
+    tool: 'circle',
+    params: { radius: 5, segments: 16 },
+  });
+  const b = composeContourProfile(a.buffer, {
+    face: FACE,
+    tool: 'circle',
+    params: { radius: 8, segments: 16 },
+  });
+  const saved = listSavedContours(b.buffer);
+  let loft = emptyFeatureSlotCard('makeLoft');
+  loft = assignFeatureSlot(loft, { role: 'station', index: 0 }, saved[0]);
+  loft = assignFeatureSlot(loft, { role: 'station', index: 1 }, saved[1]);
+  const loftPreview = buildFeatureSlotPreview(loft, saved);
+  assert.equal(loftPreview.kind, 'loft');
+  assert.ok(loftPreview.payload.stations.length >= 2);
+  const z0 = loftPreview.payload.stations[0].plane.center[2];
+  const z1 = loftPreview.payload.stations[1].plane.center[2];
+  assert.ok(Math.abs((z1 - z0) - 20) < 1e-6, `${z0} ${z1}`);
+
+  const path = composePathContour(b.buffer, {
+    face: SIDE,
+    tool: 'circle',
+    params: { radius: 8, segments: 12 },
+  });
+  assert.equal(path.ok, true, path.message);
+  const sweepSaved = listSavedContours(path.buffer);
+  let sweep = emptyFeatureSlotCard('makeSweep');
+  sweep = assignFeatureSlot(sweep, { role: 'profile' }, sweepSaved.find((row) => row.name === 'c1'));
+  sweep = assignFeatureSlot(sweep, { role: 'path' }, sweepSaved.find((row) => row.tool === 'path'));
+  const sweepPreview = buildFeatureSlotPreview(sweep, sweepSaved);
+  assert.equal(sweepPreview?.kind, 'sweep');
+  assert.ok(sweepPreview.payload.stations.length >= 2);
+  assert.equal(sweepPreview.payload.closed, true);
 });
