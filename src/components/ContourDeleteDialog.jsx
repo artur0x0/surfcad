@@ -44,6 +44,9 @@ export default function ContourDeleteDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby={`${testId}-delete-title`}
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onCancel?.();
+      }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onCancel?.();
       }}

@@ -201,8 +201,8 @@ import {
 } from '../utils/contourRefPick';
 import { resolveContourScript } from '../utils/contourRefResolve';
 import { beginConstraintEdit, beginDimensionEdit } from '../utils/contourGesture';
-import { contourChips } from '../utils/contourStrip';
-import { selectSketchChip, sketchActiveId, sketchHighlightPicks } from '../utils/contourSketchStrip';
+import { contourChips, deleteContourEntity } from '../utils/contourStrip';
+import { entityDeleteChip, selectSketchChip, sketchActiveId, sketchHighlightPicks } from '../utils/contourSketchStrip';
 import { localPoint, worldPoint } from '../utils/partPose';
 import {
   CONTOUR_IDLE_COLOR,
@@ -230,6 +230,7 @@ import {
   sketchSegments,
   translatePolylineSegment,
 } from '../utils/contourDrag';
+import ContourEntityCard from './ContourEntityCard';
 import ContourGestureCard from './ContourGestureCard';
 import ContourStatusLegend from './ContourStatusLegend';
 import ContourTags from './ContourTags';
@@ -1264,6 +1265,7 @@ const Viewport = forwardRef(({
   const contourEditRef = useRef(null);
   const [contourEdit, setContourEdit] = useState(null);
   const [contourDeleteConfirm, setContourDeleteConfirm] = useState(null);
+  const [sketchDeleteConfirm, setSketchDeleteConfirm] = useState(null);
   const [slotHoverId, setSlotHoverId] = useState(null);
   const closeFeatureSlotsRef = useRef(() => {});
   const [contourFaceAim, setContourFaceAim] = useState('');
@@ -3326,6 +3328,7 @@ const Viewport = forwardRef(({
     contourEditRef.current = null;
     setContourEdit(null);
     setContourDeleteConfirm(null);
+    setSketchDeleteConfirm(null);
     faceSketchRef.current?.cancel();
     setContourFaceAim('');
     const keepCard = reason === 'slot' && featureSlotsRef.current;
@@ -3832,6 +3835,49 @@ const Viewport = forwardRef(({
     }
     commitContourDelete(false);
   }, [getHelperBuffer, currentScript, commitContourDelete]);
+
+  /** One sketch step. The script stays until the contour is confirmed. */
+  const applySketchEntityDelete = useCallback((id) => {
+    const prev = contourModeRef.current;
+    if (!prev || !id) return false;
+    const result = deleteContourEntity(prev, id);
+    if (!result.removed.length) return false;
+    let next = { ...result.state, entityCard: null };
+    if (isLoftEntry(next.entry) && next.loft?.profiles?.length) {
+      const selected = Math.max(0, Math.min(next.loft.selected || 0, next.loft.profiles.length - 1));
+      const profiles = next.loft.profiles.map((profile, index) => (
+        index === selected ? { ...profile, tool: next.tool, params: next.params } : { ...profile }
+      ));
+      next = { ...next, loft: { ...next.loft, profiles, selected } };
+    }
+    setSketchDeleteConfirm(null);
+    setContourMode(next);
+    setContourToast({ text: 'Deleted.', undo: true, deleted: true, sketch: true });
+    if (contourToastTimerRef.current) clearTimeout(contourToastTimerRef.current);
+    contourToastTimerRef.current = setTimeout(() => {
+      contourToastTimerRef.current = null;
+      setContourToast(null);
+    }, 3200);
+    return true;
+  }, []);
+
+  const requestSketchEntityDelete = useCallback(() => {
+    const prev = contourModeRef.current;
+    const id = prev?.entityCard;
+    if (!prev || !id) return;
+    const preview = deleteContourEntity(prev, id);
+    if (!preview.removed.length) return;
+    if (preview.label) {
+      const chip = entityDeleteChip(prev);
+      setSketchDeleteConfirm({
+        id,
+        label: preview.label,
+        title: chip?.label ? `Delete ${chip.label.toLowerCase()}` : 'Delete',
+      });
+      return;
+    }
+    applySketchEntityDelete(id);
+  }, [applySketchEntityDelete]);
 
   const exitFilletMode = useCallback(() => {
     cancelFeatureEditRef.current?.('fillet');
@@ -11900,6 +11946,15 @@ const Viewport = forwardRef(({
         onCancel={() => setContourDeleteConfirm(null)}
         onConfirm={() => commitContourDelete(true)}
       />
+      <ContourDeleteDialog
+        open={!!sketchDeleteConfirm}
+        title={sketchDeleteConfirm?.title || 'Delete'}
+        message="This also removes the dimensions and constraints that name it."
+        label={sketchDeleteConfirm?.label || ''}
+        testId="sketch-entity"
+        onCancel={() => setSketchDeleteConfirm(null)}
+        onConfirm={() => applySketchEntityDelete(sketchDeleteConfirm?.id)}
+      />
       <FeatureDeleteConfirm
         open={!!featureDeleteConfirm}
         label={featureDeleteConfirm?.label || ''}
@@ -12064,6 +12119,15 @@ const Viewport = forwardRef(({
             const stored = saveContourBlock(result.state);
             setContourMode(stored || result.state);
           }}
+        />
+      )}
+
+      {contourMode && !contourPlaneOpen && mode !== 'game' && (
+        <ContourEntityCard
+          chip={entityDeleteChip(contourMode)}
+          compact={isMobile}
+          onCancel={() => setContourMode((prev) => (prev?.entityCard ? { ...prev, entityCard: null } : prev))}
+          onDelete={requestSketchEntityDelete}
         />
       )}
 
@@ -12772,12 +12836,13 @@ const Viewport = forwardRef(({
           className="fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none max-w-[min(22rem,calc(100%-2rem))]"
           data-contour-toast=""
           {...(contourToast.deleted ? { 'data-delete-undo-toast': '' } : {})}
+          {...(contourToast.sketch ? { 'data-sketch-delete-toast': '' } : {})}
         >
           <ErrorPopup
             tone="cyan"
             onDismiss={() => setContourToast(null)}
-            onUndo={contourToast.undo ? onUndo : undefined}
-            canUndo={canUndo}
+            onUndo={contourToast.sketch ? undoContourSketch : (contourToast.undo ? onUndo : undefined)}
+            canUndo={contourToast.sketch ? contourUndoDepth > 0 : canUndo}
             className="px-3 py-2 pointer-events-auto"
           >
             {contourToast.text}

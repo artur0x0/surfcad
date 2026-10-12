@@ -8,6 +8,9 @@
  * their edit cards. A canvas tap selects the same line the chip does. A
  * two-pick dimension gesture clears the chip. Cursor keeps the drawn chips.
  * Double-tap removal of a polyline dot leaves a broken constraint chip.
+ * A geometry chip deletes at once when nothing names it, and confirms
+ * Delete along with N when dimensions or constraints do. That undo is
+ * one sketch step. The script stays unchanged.
  * Undo follows sketch history.
  * Redo stays disabled. Leaving contour mode brings the part strip back.
  *
@@ -273,8 +276,49 @@ async function runSize(browser, label, contextOptions) {
   check(`${label} circle chip is the sketch`,
     circle.label === 'Sketch' && circle.hidden === '' && circle.partChips === 0
     && circle.pressed.join(',') === 'shape' && circle.chips[0]?.label === 'Circle'
-    && circle.undo === false && circle.redo === false,
+    && circle.card === '' && circle.undo === false && circle.redo === false,
     JSON.stringify(circle));
+
+  await tapSelector(client, page, '[data-cad-feature-strip] [data-sketch-id="shape"]');
+  await page.waitForFunction(() => document.querySelector('[data-contour-card="entity"] [data-contour-entity-delete]'), null, { timeout: 4000 });
+  await tapSelector(client, page, '[data-contour-card="entity"] [data-feature-card-cancel]');
+  await page.waitForFunction(() => (
+    !document.querySelector('[data-contour-card="entity"]')
+    && document.querySelector('[data-cad-feature-strip] [data-sketch-id="shape"]')?.getAttribute('aria-pressed') === 'true'
+  ), null, { timeout: 4000 });
+  const closed = await strip(page);
+  check(`${label} closing the delete card keeps the circle`,
+    closed.card === '' && closed.pressed.join(',') === 'shape' && closed.undo === false,
+    JSON.stringify(closed));
+
+  await tapSelector(client, page, '[data-cad-feature-strip] [data-sketch-id="shape"]');
+  await page.waitForFunction(() => document.querySelector('[data-contour-entity-delete]'), null, { timeout: 4000 });
+  await tapSelector(client, page, '[data-contour-entity-delete]');
+  await page.waitForFunction(() => {
+    const undo = document.querySelector('[data-sketch-delete-toast] [data-error-undo]');
+    const empty = document.querySelector('[data-cad-feature-strip] [data-sketch-entities-empty]');
+    return undo && !undo.disabled && empty?.textContent?.includes('No sketch entities')
+      && !document.querySelector('[data-sketch-entity-delete-dialog]');
+  }, null, { timeout: 4000 });
+  const droppedShape = await strip(page);
+  const shapeScript = await page.evaluate(() => (
+    (window.monaco?.editor?.getModels?.() || []).map((model) => model.getValue()).join('\n')
+  ));
+  check(`${label} unused shape deletes at once`,
+    droppedShape.chips.length === 0 && droppedShape.empty === 'No sketch entities'
+    && droppedShape.undo === true && !shapeScript.includes('solveContour'),
+    JSON.stringify(droppedShape));
+
+  await tapSelector(client, page, '[data-sketch-delete-toast] [data-error-undo]');
+  await page.waitForFunction(() => (
+    document.querySelector('[data-cad-feature-strip] [data-sketch-kind="circle"]')
+    && document.querySelector('[data-cad-feature-strip] [data-feature-bar-undo]')?.disabled
+    && !document.querySelector('[data-sketch-delete-toast]')
+  ), null, { timeout: 4000 });
+  const shapeBack = await strip(page);
+  check(`${label} toast Undo restores the circle`,
+    shapeBack.pressed.join(',') === 'shape' && shapeBack.undo === false && shapeBack.chips[0]?.label === 'Circle',
+    JSON.stringify(shapeBack));
 
   await tapSelector(client, page, '[data-contour-tool="cursor"]');
   await page.waitForFunction(() => (
@@ -358,16 +402,91 @@ async function runSize(browser, label, contextOptions) {
 
   await tapSelector(client, page, '[data-cad-feature-strip] [data-sketch-id="e0"]');
   await page.waitForFunction(() => (
-    !document.querySelector('[data-contour-card]')
+    document.querySelector('[data-contour-card="entity"][data-contour-entity-id="e0"] [data-contour-entity-delete]')
     && document.querySelector('[data-cad-feature-strip] [data-sketch-id="e0"]')?.getAttribute('aria-pressed') === 'true'
   ), null, { timeout: 4000 });
   const selected = await strip(page);
   check(`${label} line chip selects that edge`,
-    selected.pressed.join(',') === 'e0' && selected.card === ''
+    selected.pressed.join(',') === 'e0' && selected.card === 'entity'
     && (selected.highlights?.lines || []).includes('e0'),
     JSON.stringify(selected));
   await page.screenshot({ path: join(SHOT_DIR, `contour-strip-${label}-line.png`) });
 
+  const dismissLineDelete = async (how) => {
+    await tapSelector(client, page, '[data-contour-entity-delete]');
+    await page.waitForFunction(() => {
+      const dialog = document.querySelector('[data-sketch-entity-delete-dialog]');
+      const button = document.querySelector('[data-sketch-entity-delete-confirm]');
+      const cancel = document.querySelector('[data-sketch-entity-delete-cancel]');
+      return dialog && button?.textContent?.includes('Delete along with 2 items')
+        && document.activeElement === cancel;
+    }, null, { timeout: 4000 });
+    if (how === 'cancel') {
+      await tapSelector(client, page, '[data-sketch-entity-delete-cancel]');
+    } else if (how === 'escape') {
+      await page.keyboard.press('Escape');
+    } else {
+      const point = await page.evaluate(() => {
+        const scrim = document.querySelector('[data-sketch-entity-delete-dialog]');
+        const x = 16;
+        const y = 72;
+        return { x, y, ok: document.elementFromPoint(x, y) === scrim };
+      });
+      if (!point.ok) throw new Error(`scrim miss ${JSON.stringify(point)}`);
+      await tapAt(client, page, point.x, point.y);
+    }
+    await page.waitForFunction(() => (
+      !document.querySelector('[data-sketch-entity-delete-dialog]')
+      && document.querySelector('[data-contour-card="entity"][data-contour-entity-id="e0"]')
+      && document.querySelector('[data-cad-feature-strip] [data-sketch-id="e0"]')?.getAttribute('aria-pressed') === 'true'
+    ), null, { timeout: 4000 });
+  };
+  await dismissLineDelete('cancel');
+  await dismissLineDelete('escape');
+  await dismissLineDelete('scrim');
+  const kept = await strip(page);
+  check(`${label} cancel, Escape, and the scrim keep the line`,
+    kept.pressed.join(',') === 'e0' && kept.chips.some((chip) => chip.id === 'd0')
+    && kept.chips.some((chip) => chip.id === 'k0'),
+    JSON.stringify(kept.chips.map((chip) => chip.id)));
+
+  await tapSelector(client, page, '[data-contour-entity-delete]');
+  await page.waitForFunction(() => (
+    document.querySelector('[data-sketch-entity-delete-confirm]')?.textContent?.includes('Delete along with 2 items')
+  ), null, { timeout: 4000 });
+  await page.screenshot({ path: join(SHOT_DIR, `contour-strip-${label}-delete.png`) });
+  await tapSelector(client, page, '[data-sketch-entity-delete-confirm]');
+  await page.waitForFunction(() => {
+    const ids = [...document.querySelectorAll('[data-cad-feature-strip] [data-sketch-id]')].map((el) => el.getAttribute('data-sketch-id'));
+    const toast = document.querySelector('[data-sketch-delete-toast]');
+    return !ids.includes('e0') && !ids.includes('d0') && !ids.includes('k0')
+      && ids.includes('e1') && ids.includes('d1') && toast
+      && (window.__VIEWPORT__.stageContourSketch().uvs || []).length === 4;
+  }, null, { timeout: 4000 });
+  const removed = await strip(page);
+  const removedScript = await page.evaluate(() => (
+    (window.monaco?.editor?.getModels?.() || []).map((model) => model.getValue()).join('\n')
+  ));
+  check(`${label} confirm deletes the line and what names it`,
+    removed.points === 4 && !removed.chips.some((chip) => chip.id === 'e0' || chip.id === 'd0' || chip.id === 'k0')
+    && removed.chips.some((chip) => chip.id === 'e1') && !removedScript.includes('solveContour'),
+    JSON.stringify({ points: removed.points, ids: removed.chips.map((chip) => chip.id) }));
+
+  await tapSelector(client, page, '[data-cad-feature-strip] [data-feature-bar-undo]');
+  await page.waitForFunction(() => {
+    const ids = [...document.querySelectorAll('[data-cad-feature-strip] [data-sketch-id]')].map((el) => el.getAttribute('data-sketch-id'));
+    return ids.includes('e0') && ids.includes('d0') && ids.includes('k0')
+      && document.querySelector('[data-cad-feature-strip] [data-sketch-id="e0"]')?.getAttribute('aria-pressed') === 'true';
+  }, null, { timeout: 4000 });
+  const lineBack = await strip(page);
+  check(`${label} one sketch undo restores the line and its dependents`,
+    lineBack.pressed.join(',') === 'e0'
+    && lineBack.chips.some((chip) => chip.id === 'd0')
+    && lineBack.chips.some((chip) => chip.id === 'k0'),
+    JSON.stringify(lineBack.chips.map((chip) => chip.id)));
+
+  await waitCameraStill(page);
+  await fitSketchDots(page);
   await waitCameraStill(page);
   await tapSegment(client, page, 'p1', 'p2');
   await page.waitForFunction(() => (

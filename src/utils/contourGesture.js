@@ -157,6 +157,7 @@ export function selectContourGesture(state, gesture) {
       gestureNote: null,
       dimensionEdit: null,
       constraintEdit: null,
+      entityCard: null,
     };
   }
   const armed = {
@@ -167,6 +168,7 @@ export function selectContourGesture(state, gesture) {
     gestureNote: null,
     dimensionEdit: null,
     constraintEdit: null,
+    entityCard: null,
   };
   return promoteContourState(armed);
 }
