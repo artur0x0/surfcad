@@ -373,7 +373,12 @@ Mobile specifics:
   The rollback bar (`data-rollback-bar`) sits in a gap between feature chips.
   Release dims every chip after it and rebuilds up to that gap. Dragging it
   back to the end runs the whole script. Sketch and joint chips hide the bar.
-  The Extrude card labels Out / In / Both as Direction.
+  A palette insert while the bar is set lands at that gap, and the bar moves
+  onto the new chip so the tail stays dim. Undo, redo, and delete keep the
+  bar when its feature is still in the script, and snap to the end when it
+  is not. Contour and sheet writes do not move the bar. File open and reload
+  drop it and run the full script. The Extrude card labels Out / In / Both
+  as Direction.
   Chip highlight (`featureStripActiveId`)
   clears on sheet cancel/accept/delete (and after script jump). C.4+: Script-stage
   editor stack is full-bleed (`absolute inset-0`) so the top ribbon

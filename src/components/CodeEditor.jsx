@@ -188,7 +188,7 @@ const CodeEditor = forwardRef(({
      * faceContext, and edgeContext (selected edges for fillet/chamfer).
      * Returns true on success. Caller (game) may Auto-Run after.
      */
-    insertHelper: (helperId, params = null, faceContext = null, edgeContext = null) => {
+    insertHelper: (helperId, params = null, faceContext = null, edgeContext = null, insertAt = undefined) => {
       if (!helperId) return false;
 
       if (historyTimeoutRef.current) {
@@ -199,8 +199,9 @@ const CodeEditor = forwardRef(({
       const ed = editorRef.current;
       let buffer = ed ? ed.getValue() : (valueRef.current || '');
       let caretOffset = null;
+      const useBar = typeof insertAt === 'number' && Number.isFinite(insertAt);
 
-      if (ed) {
+      if (!useBar && ed) {
         const model = ed.getModel();
         const sel = ed.getSelection();
         if (model && sel) {
@@ -216,7 +217,14 @@ const CodeEditor = forwardRef(({
         }
       }
 
-      const content = composeHelperInsert(buffer, helperId, caretOffset, params, faceContext, edgeContext);
+      const content = composeHelperInsert(
+        buffer,
+        helperId,
+        useBar ? insertAt : caretOffset,
+        params,
+        faceContext,
+        edgeContext,
+      );
       if (typeof content !== 'string') return false;
 
       if (ed) {

@@ -7,6 +7,12 @@ import ScriptEditorDrawer from './components/ScriptEditorDrawer';
 import MobileStageToggle from './components/MobileStageToggle';
 import FeatureStrip from './components/FeatureStrip';
 import { failedFeatureFromOutcome, failedFeatureIds, failedFeatureTitles } from './utils/featureFailure';
+import {
+  clampRollbackAnchor,
+  rollbackAnchorAfterInsert,
+  rollbackAnchorsAfterOpen,
+  rollbackInsertCaret,
+} from './utils/featureSkip';
 import { failedPartIdsFor } from './utils/failedPartOutline';
 import { bodyCountOfWorkerMesh } from './utils/meshBodyComponents';
 import ErrorPopup from './components/ErrorPopup';
@@ -681,6 +687,7 @@ const App = () => {
       result.buffer,
       `Delete ${feature.chipLabel || feature.label || feature.kind || 'feature'}`,
     );
+    if (wrote) clampStoredRollback(editorRollbackKey(), result.buffer);
     if (!wrote) {
       viewportRef.current?.softFailContour?.(
         'Could not delete the feature from the editor — try again.',
@@ -714,6 +721,7 @@ const App = () => {
       result.buffer,
       `Delete ${feature.label || 'feature'}`,
     );
+    if (wrote) clampStoredRollback(editorRollbackKey(), result.buffer);
     if (!wrote) {
       viewportRef.current?.softFailContour?.(
         'Could not delete feature from the editor — try again.',
@@ -922,6 +930,43 @@ const App = () => {
   const pendingAutoRunRef = useRef(null);
   const appModeRef = useRef(appMode);
   appModeRef.current = appMode;
+  const storedRollback = (key) => (
+    key && Object.prototype.hasOwnProperty.call(rollbackAnchorsRef.current, key)
+      ? rollbackAnchorsRef.current[key]
+      : undefined
+  );
+  const storeRollbackAnchor = (key, anchor) => {
+    if (!key) return;
+    const prev = rollbackAnchorsRef.current;
+    const had = Object.prototype.hasOwnProperty.call(prev, key);
+    if (anchor === undefined) {
+      if (!had) return;
+      const next = { ...prev };
+      delete next[key];
+      rollbackAnchorsRef.current = next;
+      setRollbackAnchors(next);
+      return;
+    }
+    if (had && prev[key] === anchor) return;
+    const next = { ...prev, [key]: anchor };
+    rollbackAnchorsRef.current = next;
+    setRollbackAnchors(next);
+  };
+  const clearRollbackAnchors = () => {
+    if (!Object.keys(rollbackAnchorsRef.current).length) return;
+    const next = rollbackAnchorsAfterOpen();
+    rollbackAnchorsRef.current = next;
+    setRollbackAnchors(next);
+  };
+  const clampStoredRollback = (key, script) => {
+    if (!key || appModeRef.current === 'game') return;
+    storeRollbackAnchor(key, clampRollbackAnchor(script, storedRollback(key)));
+  };
+  const editorRollbackKey = () => {
+    if (appModeRef.current === 'game') return null;
+    const id = assemblyRef.current?.activeId;
+    return id ? String(id) : '__cad__';
+  };
 
   // iOS Safari keyboard: visualViewport height/offsetTop so the game editor
   // sits above the keyboard without eating the 3D viewport.
@@ -1989,6 +2034,7 @@ const App = () => {
           noShadow: true,
           preservePicks: opts.preservePicks === true,
           partId: viewId,
+          rollbackAnchor: storedRollback(String(viewId)),
         };
         let run = await viewportRef.current?.executeScript(scripts[viewId], runOpts);
         if (run == null || run === false) {
@@ -2077,6 +2123,7 @@ const App = () => {
   };
 
   const finishOpenedPart = async (saved, scripts, progress) => {
+    clearRollbackAnchors();
     try {
       const ids = (saved?.parts || []).map((part) => part.id);
       const loaded = await loadPartAssets(ids);
@@ -2397,6 +2444,7 @@ const App = () => {
     const scripts = { ...partScriptsRef.current, [id]: text };
     rememberScripts(scripts);
     suppressPartSaveRef.current = false;
+    storeRollbackAnchor(String(id), undefined);
     if (assemblyRef.current?.activeId === id) {
       codeEditorRef.current?.loadContent(text, 'Part file', false);
       return;
@@ -3786,6 +3834,7 @@ const App = () => {
       const nextDoc = rememberAssembly({ ...doc, source: 'git', activeId: id, parts });
       focusPartHistory(id, content);
       suppressPartSaveRef.current = false;
+      storeRollbackAnchor(String(id), undefined);
       setCurrentFilename(id.split('/').pop() || id);
       codeEditorRef.current?.loadContent(content, id, false);
       if (!existing && gitVaultRef.current?.repo) {
@@ -4523,6 +4572,7 @@ const App = () => {
             setGitBehindToast(null);
           }
           rememberGitBaseline(nextBaseline);
+          clearRollbackAnchors();
           const active = saved.parts.find((p) => p.id === saved.activeId) || saved.parts[0];
           if (active) {
             const picked = scriptForRow(saved, keepScripts, active.id);
@@ -4559,6 +4609,7 @@ const App = () => {
           setGitBehindToast(null);
         }
         rememberGitBaseline(nextBaseline);
+        storeRollbackAnchor(String(path), undefined);
         if (doc.activeId === path) {
           suppressPartSaveRef.current = false;
           codeEditorRef.current?.loadContent(reloaded.content, path, false);
@@ -5315,8 +5366,30 @@ const App = () => {
       viewportRef.current?.notify?.(PICKED_PART_FAIL);
       return;
     }
-    const beforeInsert = codeEditorRef.current?.getContent?.();
-    const ok = codeEditorRef.current?.insertHelper?.(helperId, params, faceContext, edgeContext);
+    const beforeInsert = codeEditorRef.current?.getContent?.() ?? '';
+    const rollbackKey = editorRollbackKey();
+    const stored = storedRollback(rollbackKey);
+    const rolledBack = stored === null || typeof stored === 'string';
+    const caret = rolledBack ? rollbackInsertCaret(beforeInsert, stored) : null;
+    const placeAtBar = rolledBack && typeof caret === 'number';
+    const ok = codeEditorRef.current?.insertHelper?.(
+      helperId,
+      params,
+      faceContext,
+      edgeContext,
+      placeAtBar ? caret : undefined,
+    );
+    if (ok && rollbackKey) {
+      if (placeAtBar) {
+        const after = codeEditorRef.current?.getContent?.() ?? beforeInsert;
+        storeRollbackAnchor(
+          rollbackKey,
+          rollbackAnchorAfterInsert(beforeInsert, after, stored),
+        );
+      } else if (rolledBack) {
+        storeRollbackAnchor(rollbackKey, undefined);
+      }
+    }
     if (ok) {
       if (params && params.combine === 'subtract') {
         crossPartSubtract(beforeInsert, codeEditorRef.current?.getContent?.());
@@ -5454,6 +5527,7 @@ const App = () => {
       return false;
     }
     const wrote = codeEditorRef.current?.applyBuffer?.(saved.buffer, 'Delete contour');
+    if (wrote) clampStoredRollback(editorRollbackKey(), saved.buffer);
     if (!wrote) {
       viewportRef.current?.softFailContour?.(
         'Could not delete the contour from the editor — try again.',
@@ -6069,6 +6143,7 @@ const App = () => {
     if (undone.code == null) return;
     partHistoriesRef.current[id] = undone.history;
     applyPartHistory(undone.history);
+    clampStoredRollback(id, undone.code);
     console.log('[App] Undoing to commit:', {
       partId: id,
       head: undone.history.head,
@@ -6095,6 +6170,7 @@ const App = () => {
     if (redone.code == null) return;
     partHistoriesRef.current[id] = redone.history;
     applyPartHistory(redone.history);
+    clampStoredRollback(id, redone.code);
     console.log('[App] Redoing to commit:', {
       partId: id,
       head: redone.history.head,
@@ -7183,11 +7259,7 @@ const App = () => {
   const stripRollbackAnchor = anchorOf(stripPartKey);
   const editorRollbackAnchor = anchorOf(editorPartKey);
   const commitRollback = (key, script) => (anchor) => {
-    const next = { ...rollbackAnchorsRef.current };
-    if (anchor === undefined) delete next[key];
-    else next[key] = anchor;
-    rollbackAnchorsRef.current = next;
-    setRollbackAnchors(next);
+    storeRollbackAnchor(key, anchor);
     if (!script) return;
     viewportRef.current?.executeScript(script, {
       rollbackAnchor: anchor === undefined ? undefined : anchor,

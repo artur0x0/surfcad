@@ -304,11 +304,33 @@ export function declaredNames(buffer) {
   return names;
 }
 
+/** Offset just after the statement whose `=` is at `eq`. */
+function statementEndAfterEquals(source, eq) {
+  const s = String(source || '');
+  let i = eq + 1;
+  let depth = 0;
+  let inStr = null;
+  for (; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (ch === '\\') { i += 1; continue; }
+      if (ch === inStr) inStr = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; continue; }
+    if (ch === '(' || ch === '[' || ch === '{') { depth += 1; continue; }
+    if (ch === ')' || ch === ']' || ch === '}') {
+      if (depth > 0) depth -= 1;
+      continue;
+    }
+    if (ch === ';' && depth === 0) return i + 1;
+  }
+  return i;
+}
+
 /**
  * Offset just after the last top-level `let/const/var part = …` or `part = …`.
- * Returns 0 when no binding exists. Inserts that read or assign `part` must
- * land at or after this offset — otherwise the engine hits TDZ
- * (`Cannot access 'part' before initialization`).
+ * Returns 0 when no binding exists.
  */
 export function findLastPartBindingEnd(buffer) {
   const s = String(buffer || '');
@@ -319,30 +341,23 @@ export function findLastPartBindingEnd(buffer) {
   while ((m = re.exec(s))) {
     const eq = s.indexOf('=', m.index);
     if (eq < 0) continue;
-    let i = eq + 1;
-    let depth = 0;
-    let inStr = null;
-    for (; i < s.length; i++) {
-      const ch = s[i];
-      if (inStr) {
-        if (ch === '\\') { i += 1; continue; }
-        if (ch === inStr) inStr = null;
-        continue;
-      }
-      if (ch === '"' || ch === "'" || ch === '`') { inStr = ch; continue; }
-      if (ch === '(' || ch === '[' || ch === '{') { depth += 1; continue; }
-      if (ch === ')' || ch === ']' || ch === '}') {
-        if (depth > 0) depth -= 1;
-        continue;
-      }
-      if (ch === ';' && depth === 0) {
-        i += 1;
-        break;
-      }
-    }
-    lastEnd = i;
+    lastEnd = statementEndAfterEquals(s, eq);
   }
   return lastEnd;
+}
+
+/**
+ * Offset just after the first `let/const/var part = …`. Later `part = …`
+ * assignments are not the initialization. A caret before this offset would
+ * read `part` in the TDZ. Returns 0 when `part` is never declared.
+ */
+export function findPartDeclarationEnd(buffer) {
+  const s = String(buffer || '');
+  const m = /\b(?:const|let|var)\s+part\s*=/.exec(s);
+  if (!m) return 0;
+  const eq = s.indexOf('=', m.index);
+  if (eq < 0) return 0;
+  return statementEndAfterEquals(s, eq);
 }
 
 
@@ -984,14 +999,15 @@ export function composeHelperInsert(buffer, id, caretOffset = null, params = nul
   if (insertAt < 0) insertAt = 0;
   if (insertAt > strippedBuf.length) insertAt = strippedBuf.length;
 
-  // Prefer insert after the live solid binding so `part = part.add(…)` /
+  // Prefer insert after the declaration of `part` so `part = part.add(…)` /
   // facesByNormal(part, …) never land in the TDZ before `let part`.
-  // If the binding sits inside a marked Contour/Fillet/Chamfer region, land
-  // after that region's end marker so we do not split the block.
+  // Later `part =` lines are assignments, not the declaration, so a caret
+  // between features stays there. If the declaration sits inside a marked
+  // block, land after that block's end marker so we do not split it.
   if (filtered.trim() && /\bpart\b/.test(filtered) && declaredNames(strippedBuf).has('part')) {
     const bindingEnd = extendPastOwnedEndMarkers(
       strippedBuf,
-      findLastPartBindingEnd(strippedBuf),
+      findPartDeclarationEnd(strippedBuf),
     );
     if (insertAt < bindingEnd) insertAt = bindingEnd;
   }
