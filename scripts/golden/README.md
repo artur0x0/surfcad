@@ -67,6 +67,7 @@ requires `test_real_worker.mjs` via `npm run verify` once the harness is present
 | `smoke_contour_constraints.mjs` | Constraints: suggestion bands at 15° and 20°, all eight kinds, equal of a line and an arc is refused, tangent stores side, icons, Confirm stays |
 | `smoke_contour_status.mjs` | Status colours, conflict note, repeated word, nullspace drag, script write on pointer-up only, saved ghost colour |
 | `smoke_sketch_status_colours.mjs` | Touch at 390 and 1280: an unconstrained rectangle is blue and draggable, a fully dimensioned one is black and not, a half-constrained one is mixed |
+| `smoke_contour_perpendicular.mjs` | Touch at 390 and 1280: a perpendicular on two polyline segments leaves those lines neither amber nor red, the angle is 90°, and every segment keeps its length |
 | `smoke_sketch_face_camera.mjs` | Sketch-on-face at 390px: Select plane aims along the picked face normal and frames the face, the highlight is off, and Back undoes one polyline point while X still exits |
 | `smoke_contour_tap_offset.mjs` | Touch taps at 390 and 1280 place a polyline point within 2px of the finger, at the corners and the center, with the plane card open and closed, and with the part posed. The plane card draws no circle, and a tap where that rim sat still selects the face |
 | `smoke_contour_normal.mjs` | Contour drag and Normal to sketch at 390 and 1280: dragging a point leaves the camera quaternion unchanged, an empty-space drag still orbits, and Normal to sketch aims along the plane and zoom-fits |

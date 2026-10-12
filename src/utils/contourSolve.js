@@ -30,12 +30,57 @@ export const CONTOUR_POINT_CAP = 128;
 
 const SOLVE_TOL = 1e-6;
 const CONSISTENT_TOL = 1e-4;
-const RANK_REL = 1e-8;
+// Forward-difference noise in J is about 1e-8 of the largest singular value
+// (the step is 1e-6, and an angle row is divided by DEG, so that value is
+// tens). A relative cutoff of 1e-8 sat on the noise. Dropping a real
+// tangent or a real perpendicular then left a noise mode above the cutoff,
+// the integer rank did not fall, and the constraint was marked repeated.
+// 1e-5 is still far under a millimetre-scale row.
+const RANK_REL = 1e-5;
 const RANK_ABS = 1e-9;
 const NULL_EPS = 1e-6;
-const MAX_ITER = 40;
+const MAX_ITER = 400;
 const FD_STEP = 1e-6;
 const DEG = Math.PI / 180;
+// A full Newton step for a 90° turn is tens of millimetres and stretches the
+// segment. Cap the step so the iteration walks the arc from the current points.
+const MAX_STEP = 2;
+
+function wrapAngle(d) {
+  let a = d;
+  while (a > Math.PI) a -= 2 * Math.PI;
+  while (a < -Math.PI) a += 2 * Math.PI;
+  return a;
+}
+
+/** Signed turn from d1 to d2, from the unit directions. Length does not enter. */
+function signedTurn(d1, d2) {
+  const L1 = Math.hypot(d1[0], d1[1]);
+  const L2 = Math.hypot(d2[0], d2[1]);
+  if (L1 < 1e-12 || L2 < 1e-12) return null;
+  const cross = (d1[0] * d2[1] - d1[1] * d2[0]) / (L1 * L2);
+  const dot = (d1[0] * d2[0] + d1[1] * d2[1]) / (L1 * L2);
+  return Math.atan2(cross, dot);
+}
+
+/**
+ * The branch to keep, read once from the current turn. Parallel keeps the
+ * nearer of "same way" and "opposite way". Perpendicular keeps the current
+ * sign, so a later step cannot flip the corner onto the other perpendicular.
+ */
+function lockedAngleTarget(phi, kind) {
+  if (phi == null) return 0;
+  if (kind === 'parallel') {
+    return Math.abs(phi) <= Math.PI / 2 ? 0 : (phi >= 0 ? Math.PI : -Math.PI);
+  }
+  return phi >= 0 ? Math.PI / 2 : -Math.PI / 2;
+}
+
+function angleToTarget(d1, d2, target) {
+  const phi = signedTurn(d1, d2);
+  if (phi == null) return 1;
+  return wrapAngle(phi - target);
+}
 
 const CONSTRAINT_KINDS = new Set([
   'horizontal', 'vertical', 'parallel', 'perpendicular',
@@ -57,7 +102,14 @@ function cloneSpec(spec) {
   if (!spec || typeof spec !== 'object') fail('expected a contour');
   const points = (spec.points || []).map((p) => {
     if (!p?.id || !Array.isArray(p.at)) fail('a point needs an id and at');
-    return { id: String(p.id), at: [num(p.at[0], `point ${p.id} u`), num(p.at[1], `point ${p.id} v`)] };
+    const point = { id: String(p.id), at: [num(p.at[0], `point ${p.id} u`), num(p.at[1], `point ${p.id} v`)] };
+    // `at` is the geometry on screen, and the solve starts there. `seed` is
+    // where the user drew or dragged; it is not a second start point.
+    if (Array.isArray(p.seed) && p.seed.length >= 2
+      && Number.isFinite(Number(p.seed[0])) && Number.isFinite(Number(p.seed[1]))) {
+      point.seed = [Number(p.seed[0]), Number(p.seed[1])];
+    }
+    return point;
   });
   const lines = (spec.lines || []).map((l) => {
     if (!l?.id || !l.a || !l.b) fail('a line needs id, a, and b');
@@ -83,6 +135,9 @@ function cloneSpec(spec) {
     }
     if (a.segments != null) arc.segments = Math.max(3, Math.round(num(a.segments, 'segments')));
     if (Number.isFinite(Number(a.seq)) && Number(a.seq) >= 1) arc.seq = Math.round(Number(a.seq));
+    if (Number.isFinite(Number(a.seedRadius)) && Number(a.seedRadius) > 0) {
+      arc.seedRadius = Number(a.seedRadius);
+    }
     return arc;
   });
   const dimensions = (spec.dimensions || []).map((d) => copyItem(d, 'dimension'));
@@ -637,12 +692,6 @@ function compile(model) {
     if (L1 < 1e-12 || L2 < 1e-12) return 1;
     return (d1[0] * d2[1] - d1[1] * d2[0]) / (L1 * L2);
   };
-  const unitDot = (d1, d2) => {
-    const L1 = Math.hypot(d1[0], d1[1]);
-    const L2 = Math.hypot(d2[0], d2[1]);
-    if (L1 < 1e-12 || L2 < 1e-12) return 1;
-    return (d1[0] * d2[0] + d1[1] * d2[1]) / (L1 * L2);
-  };
   const signedDistPointLine = (p, a, d) => {
     const L = Math.hypot(d[0], d[1]);
     if (L < 1e-12) return 1;
@@ -653,6 +702,11 @@ function compile(model) {
     eqs.push({ id, scale, fn });
   };
 
+  const restDir = (line) => {
+    const a = points.get(line.a).at;
+    const b = points.get(line.b).at;
+    return [b[0] - a[0], b[1] - a[1]];
+  };
   const lineOf = (id) => requireId(lines, id, 'line');
   const arcOf = (id) => requireId(arcs, id, 'arc');
   const pointOf = (id) => requireId(points, id, 'point');
@@ -768,10 +822,8 @@ function compile(model) {
     if (geom.kind !== 'line' || !lines.has(other)) fail(`${con.kind} needs a line reference`);
     const line = lines.get(other);
     const dir = fixedDir(geom);
-    push(con.id, DEG, (x) => {
-      const d = lineDir(x, line);
-      return con.kind === 'parallel' ? unitCross(d, dir) : unitDot(d, dir);
-    });
+    const target = lockedAngleTarget(signedTurn(restDir(line), dir), con.kind);
+    push(con.id, DEG, (x) => angleToTarget(lineDir(x, line), dir, target));
   }
 
   function compileCoincidentRef(con, items) {
@@ -933,11 +985,8 @@ function compile(model) {
       }
       const a = lineOf(items[0]);
       const b = lineOf(items[1]);
-      push(con.id, DEG, (x) => {
-        const d1 = lineDir(x, a);
-        const d2 = lineDir(x, b);
-        return con.kind === 'parallel' ? unitCross(d1, d2) : unitDot(d1, d2);
-      });
+      const target = lockedAngleTarget(signedTurn(restDir(a), restDir(b)), con.kind);
+      push(con.id, DEG, (x) => angleToTarget(lineDir(x, a), lineDir(x, b), target));
     } else if (con.kind === 'equal') {
       if (items.length !== 2) fail('equal needs two items');
       const aLine = lines.get(items[0]);
@@ -1099,6 +1148,15 @@ function scaledInf(r, scale, m) {
   return max;
 }
 
+function scaledSumSq(r, scale, m) {
+  let sum = 0;
+  for (let i = 0; i < m; i += 1) {
+    const v = r[i] / (scale[i] || 1);
+    sum += v * v;
+  }
+  return sum;
+}
+
 function jacobian(n, m, x, residual, r0, scale) {
   const J = new Float64Array(m * n);
   const rp = new Float64Array(m);
@@ -1172,59 +1230,107 @@ function levenberg(sys, xStart, skipId) {
   const r = new Float64Array(m);
   if (m === 0) return { x, scaledInf: 0, converged: true, iterations: 0, r, scale, m };
   residual(x, r);
+  let merit = scaledSumSq(r, scale, m);
   let norm = scaledInf(r, scale, m);
-  let lambda = 1e-3;
+  // Minimum-norm damped step from the current points.
+  // δ = Jᵀ (JJᵀ + λI)⁻¹ (−r) when a sketch has fewer rows than coordinates,
+  // and (JᵀJ + λI)⁻¹ Jᵀ (−r) otherwise. λI is the displacement penalty, so a
+  // free coordinate does not move. The step is also capped, and the line
+  // search shortens one the linear model over-predicted. A conflict is the
+  // residual that is still large after this, not a step that failed to land.
+  let lambda = 1e-2;
   let iterations = 0;
   let converged = norm <= SOLVE_TOL;
   for (let iter = 0; iter < MAX_ITER && !converged; iter += 1) {
     iterations = iter + 1;
     const J = jacobian(n, m, x, residual, r, scale);
-    const H = new Float64Array(n * n);
-    const g = new Float64Array(n);
-    for (let i = 0; i < m; i += 1) {
-      const ri = r[i] / (scale[i] || 1);
-      for (let a = 0; a < n; a += 1) {
-        const Jia = J[i * n + a];
-        g[a] += Jia * ri;
-        for (let b = a; b < n; b += 1) H[a * n + b] += Jia * J[i * n + b];
+    let step = null;
+    if (m <= n) {
+      const A = new Float64Array(m * m);
+      const rhs = new Float64Array(m);
+      for (let i = 0; i < m; i += 1) {
+        rhs[i] = -(r[i] / (scale[i] || 1));
+        for (let k = 0; k < n; k += 1) {
+          const Jik = J[i * n + k];
+          for (let j = i; j < m; j += 1) A[i * m + j] += Jik * J[j * n + k];
+        }
       }
+      for (let i = 0; i < m; i += 1) {
+        for (let j = 0; j < i; j += 1) A[i * m + j] = A[j * m + i];
+        A[i * m + i] += lambda;
+      }
+      const y = solveSymmetric(A, rhs);
+      if (y) {
+        step = new Float64Array(n);
+        for (let i = 0; i < m; i += 1) {
+          for (let k = 0; k < n; k += 1) step[k] += J[i * n + k] * y[i];
+        }
+      }
+    } else {
+      const H = new Float64Array(n * n);
+      const g = new Float64Array(n);
+      for (let i = 0; i < m; i += 1) {
+        const ri = r[i] / (scale[i] || 1);
+        for (let a = 0; a < n; a += 1) {
+          const Jia = J[i * n + a];
+          g[a] += Jia * ri;
+          for (let b = a; b < n; b += 1) H[a * n + b] += Jia * J[i * n + b];
+        }
+      }
+      for (let a = 0; a < n; a += 1) {
+        for (let b = 0; b < a; b += 1) H[a * n + b] = H[b * n + a];
+        H[a * n + a] += lambda;
+      }
+      const neg = new Float64Array(n);
+      for (let a = 0; a < n; a += 1) neg[a] = -g[a];
+      step = solveSymmetric(H, neg);
     }
-    for (let a = 0; a < n; a += 1) {
-      for (let b = 0; b < a; b += 1) H[a * n + b] = H[b * n + a];
-      H[a * n + a] += lambda * Math.max(H[a * n + a], 1e-8);
-    }
-    const neg = new Float64Array(n);
-    for (let a = 0; a < n; a += 1) neg[a] = -g[a];
-    const step = solveSymmetric(H, neg);
     if (!step) {
       lambda = Math.min(lambda * 10, 1e8);
       if (lambda >= 1e8) break;
       continue;
     }
-    let stepLen = 0;
-    const trial = Float64Array.from(x);
-    for (let a = 0; a < n; a += 1) {
-      trial[a] = x[a] + step[a];
-      stepLen += step[a] * step[a];
+    let raw = 0;
+    for (let a = 0; a < n; a += 1) raw += step[a] * step[a];
+    raw = Math.sqrt(raw);
+    const capped = raw > MAX_STEP;
+    if (capped) {
+      const scaleStep = MAX_STEP / raw;
+      for (let a = 0; a < n; a += 1) step[a] *= scaleStep;
     }
-    const rt = new Float64Array(m);
-    residual(trial, rt);
-    const next = scaledInf(rt, scale, m);
-    if (next < norm) {
-      x.set(trial);
-      r.set(rt);
-      norm = next;
-      lambda = Math.max(lambda / 10, 1e-10);
-      if (norm <= SOLVE_TOL || stepLen < 1e-18) {
-        converged = norm <= SOLVE_TOL;
+    let accepted = false;
+    let alpha = 1;
+    for (let halve = 0; halve < 12; halve += 1) {
+      let stepLen = 0;
+      const trial = Float64Array.from(x);
+      for (let a = 0; a < n; a += 1) {
+        const d = alpha * step[a];
+        trial[a] = x[a] + d;
+        stepLen += d * d;
+      }
+      const rt = new Float64Array(m);
+      residual(trial, rt);
+      const nextMerit = scaledSumSq(rt, scale, m);
+      const nextInf = scaledInf(rt, scale, m);
+      if (nextMerit < merit) {
+        x.set(trial);
+        r.set(rt);
+        merit = nextMerit;
+        norm = nextInf;
+        if (alpha === 1 && !capped) lambda = Math.max(lambda / 10, 1e-6);
+        accepted = true;
+        if (norm <= SOLVE_TOL || stepLen < 1e-18) converged = norm <= SOLVE_TOL;
         break;
       }
-    } else {
+      alpha *= 0.5;
+    }
+    if (converged) break;
+    if (!accepted) {
       lambda = Math.min(lambda * 10, 1e8);
       if (lambda >= 1e8) break;
     }
   }
-  return { x, scaledInf: norm, converged: norm <= SOLVE_TOL, iterations, r, scale, m };
+  return { x, scaledInf: scaledInf(r, scale, m), converged: scaledInf(r, scale, m) <= SOLVE_TOL, iterations, r, scale, m };
 }
 
 function jacobiEigen(S, n) {
@@ -1659,12 +1765,17 @@ function assembleResult(model, sys, solved, fact, conflict, repeated) {
     if (area < 0) ring.reverse();
     contours.push(ring);
   }
-  const points = model.points.map((p) => ({
-    id: p.id,
-    at: [round4(at[p.id][0]), round4(at[p.id][1])],
-  }));
+  const points = model.points.map((p) => {
+    const seed = p.seed || p.at;
+    return {
+      id: p.id,
+      at: [round4(at[p.id][0]), round4(at[p.id][1])],
+      seed: [round4(seed[0]), round4(seed[1])],
+    };
+  });
   const arcs = model.arcs.map((a) => {
     const copy = { ...a, radius: round4(radii[a.id]) };
+    copy.seedRadius = a.seedRadius > 0 ? a.seedRadius : a.radius;
     return copy;
   });
   return {
@@ -1688,6 +1799,136 @@ function assembleResult(model, sys, solved, fact, conflict, repeated) {
   };
 }
 
+
+/**
+ * Length targets taken from the geometry the solve started at. They are not
+ * constraints and they do not enter the rank or the conflict test. A real
+ * length or equal already owns that line.
+ */
+function lengthHoldEqs(model, x0) {
+  const index = new Map((model.points || []).map((p, i) => [p.id, i]));
+  const driven = new Set();
+  for (const dim of model.dimensions || []) {
+    if (dim.kind === 'length' && dim.edge && !dim.broken) driven.add(dim.edge);
+  }
+  for (const con of model.constraints || []) {
+    if (con.kind === 'equal' && !con.broken) (con.items || []).forEach((id) => driven.add(id));
+  }
+  const holds = [];
+  for (const line of model.lines || []) {
+    if (line.guide || driven.has(line.id)) continue;
+    const ia = index.get(line.a);
+    const ib = index.get(line.b);
+    if (ia == null || ib == null) continue;
+    const target = Math.hypot(x0[ib * 2] - x0[ia * 2], x0[ib * 2 + 1] - x0[ia * 2 + 1]);
+    holds.push({
+      fn: (x) => Math.hypot(x[ib * 2] - x[ia * 2], x[ib * 2 + 1] - x[ia * 2 + 1]) - target,
+    });
+  }
+  return holds;
+}
+
+/**
+ * Pull line lengths back onto the values at x0, moving only in the nullspace
+ * of the constraints that are already met. A length row inside the angle
+ * solve makes a closed quad stall a fraction of a degree short and report a
+ * conflict; the angle is driven to zero first, and this step only tidies the
+ * lengths the angle did not need to change.
+ */
+function restoreLengths(sys, model, xSolved, x0) {
+  const holds = lengthHoldEqs(model, x0);
+  if (!holds.length || sys.m === 0) return Float64Array.from(xSolved);
+  let x = Float64Array.from(xSolved);
+  const rf0 = new Float64Array(sys.m);
+  sys.residualAll(x, rf0);
+  if (scaledInf(rf0, sys.scale, sys.m) > CONSISTENT_TOL) return x;
+
+  const n = sys.n;
+  const h = holds.length;
+  const hScale = new Float64Array(h).fill(1);
+  const holdResidual = (xx, out) => {
+    for (let i = 0; i < h; i += 1) out[i] = holds[i].fn(xx);
+  };
+  const lengthSum = (xx) => {
+    const rL = new Float64Array(h);
+    holdResidual(xx, rL);
+    let sum = 0;
+    for (let i = 0; i < h; i += 1) sum += rL[i] * rL[i];
+    return sum;
+  };
+
+  let sumL = lengthSum(x);
+  for (let iter = 0; iter < 20 && sumL > 1e-6; iter += 1) {
+    const fact = factorAt(sys, x);
+    const basis = fact.nullspace;
+    const k = basis.length;
+    if (!k) break;
+    const rL = new Float64Array(h);
+    holdResidual(x, rL);
+    const JL = jacobian(n, h, Float64Array.from(x), holdResidual, rL, hScale);
+    const Jr = new Float64Array(h * k);
+    for (let i = 0; i < h; i += 1) {
+      for (let c = 0; c < k; c += 1) {
+        const col = basis[c];
+        let s = 0;
+        for (let a = 0; a < n; a += 1) s += JL[i * n + a] * col[a];
+        Jr[i * k + c] = s;
+      }
+    }
+    const lambda = 1e-4;
+    const A = new Float64Array(k * k);
+    const rhs = new Float64Array(k);
+    for (let i = 0; i < h; i += 1) {
+      for (let c = 0; c < k; c += 1) {
+        const Jic = Jr[i * k + c];
+        rhs[c] -= Jic * rL[i];
+        for (let d = c; d < k; d += 1) A[c * k + d] += Jic * Jr[i * k + d];
+      }
+    }
+    for (let c = 0; c < k; c += 1) {
+      for (let d = 0; d < c; d += 1) A[c * k + d] = A[d * k + c];
+      A[c * k + c] += lambda;
+    }
+    const y = solveSymmetric(A, rhs);
+    if (!y) break;
+    const step = new Float64Array(n);
+    for (let c = 0; c < k; c += 1) {
+      const col = basis[c];
+      for (let a = 0; a < n; a += 1) step[a] += y[c] * col[a];
+    }
+    let raw = 0;
+    for (let a = 0; a < n; a += 1) raw += step[a] * step[a];
+    raw = Math.sqrt(raw);
+    if (raw < 1e-12) break;
+    if (raw > MAX_STEP) {
+      const scaleStep = MAX_STEP / raw;
+      for (let a = 0; a < n; a += 1) step[a] *= scaleStep;
+    }
+
+    let accepted = false;
+    let alpha = 1;
+    for (let halve = 0; halve < 6; halve += 1) {
+      const trial = Float64Array.from(x);
+      for (let a = 0; a < n; a += 1) trial[a] = x[a] + alpha * step[a];
+      const polished = levenberg(sys, trial);
+      if (polished.scaledInf > CONSISTENT_TOL) {
+        alpha *= 0.5;
+        continue;
+      }
+      const next = lengthSum(polished.x);
+      if (next < sumL * 0.999) {
+        x = polished.x;
+        sumL = next;
+        accepted = true;
+        break;
+      }
+      alpha *= 0.5;
+    }
+    if (!accepted) break;
+  }
+  return x;
+}
+
 function solveModel(spec) {
   const model = cloneSpec(spec);
   closeOpenChain(model);
@@ -1697,6 +1938,16 @@ function solveModel(spec) {
     if (!model[key]) model[key] = [];
   }
   const solved = levenberg(sys, sys.x0);
+  if (solved.scaledInf <= CONSISTENT_TOL) {
+    solved.x = restoreLengths(sys, model, solved.x, sys.x0);
+  }
+  const held = new Float64Array(sys.m);
+  sys.residualAll(solved.x, held);
+  solved.r = held;
+  solved.scale = sys.scale;
+  solved.m = sys.m;
+  solved.scaledInf = scaledInf(held, sys.scale, sys.m);
+  solved.converged = solved.scaledInf <= SOLVE_TOL;
   const consistent = solved.scaledInf <= CONSISTENT_TOL;
   const fact = factorAt(sys, solved.x);
   const conflict = consistent ? null : attribute(sys, solved);
