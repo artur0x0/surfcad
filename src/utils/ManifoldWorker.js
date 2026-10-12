@@ -148,6 +148,9 @@ class ManifoldWorker {
           importedModels,
           memoryLimitMB,
           nonce: options.nonce ?? null,
+          ...(options.rollbackAnchor === null || typeof options.rollbackAnchor === 'string'
+            ? { rollbackAnchor: options.rollbackAnchor }
+            : {}),
         }
       });
     });

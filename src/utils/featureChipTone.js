@@ -14,20 +14,23 @@
  */
 export const FAILED_RING_CLASS = 'feature-failed-ring';
 
-export function chipTone(active, external = false, failed = false) {
-  if (failed) {
-    return active
+export function chipTone(active, external = false, failed = false, dimmed = false) {
+  const showFailed = failed && !dimmed;
+  let tone;
+  if (showFailed) {
+    tone = active
       ? `bg-cyan-600 text-white border-2 border-red-400 ${FAILED_RING_CLASS} shadow`
       : `bg-gray-800/70 text-gray-200 border-2 border-red-400 ${FAILED_RING_CLASS} hover:text-white`;
-  }
-  if (active) {
-    return external
+  } else if (active) {
+    tone = external
       ? 'bg-cyan-600 text-white border-2 border-yellow-400 shadow'
       : 'bg-cyan-600 text-white border-cyan-400/70 shadow';
+  } else {
+    tone = external
+      ? 'bg-gray-800/70 text-gray-200 border-2 border-yellow-400 hover:text-white'
+      : 'bg-gray-800/70 text-gray-200 border-gray-500/40 hover:text-white';
   }
-  return external
-    ? 'bg-gray-800/70 text-gray-200 border-2 border-yellow-400 hover:text-white'
-    : 'bg-gray-800/70 text-gray-200 border-gray-500/40 hover:text-white';
+  return dimmed ? `${tone} opacity-40` : tone;
 }
 
 /**

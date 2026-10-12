@@ -101,10 +101,10 @@ function typedNumber(raw, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function SenseRow({ value, onChange, attr }) {
+function SenseRow({ value, onChange, attr, label = 'Sense' }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[11px] uppercase tracking-wide text-cyan-200/80">Sense</span>
+      <span className="text-[11px] uppercase tracking-wide text-cyan-200/80">{label}</span>
       <div className="flex rounded border border-cyan-700/70 overflow-hidden">
         {[
           { id: 'positive', label: 'Out' },
@@ -330,6 +330,7 @@ const FeatureSlotCard = ({
               maxMm={L}
             />
             <SenseRow
+              label="Direction"
               attr="data-extrude-sense"
               value={extrudeParams.sense}
               onChange={(sense) => onExtrudeChange?.({ ...extrudeParams, sense })}

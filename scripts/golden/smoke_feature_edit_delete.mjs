@@ -158,6 +158,18 @@ async function runSize(label, compact, width, height) {
   const toastShot = join(shotDir, `feature-edit-delete-toast-${label}.png`);
   await page.screenshot({ path: toastShot });
   console.log(`  shot ${toastShot}`);
+  if (label === '390') {
+    const undoBox = await page.locator('[data-feature-edit-delete-toast] [data-error-undo]').boundingBox();
+    const dismissBox = await page.locator('[data-feature-edit-delete-toast] [data-error-dismiss]').boundingBox();
+    const gap = undoBox && dismissBox ? dismissBox.x - (undoBox.x + undoBox.width) : 0;
+    check('390: Undo tap target is at least 44px',
+      !!undoBox && undoBox.width >= 44 && undoBox.height >= 44,
+      JSON.stringify(undoBox));
+    check('390: dismiss tap target is at least 44px',
+      !!dismissBox && dismissBox.width >= 44 && dismissBox.height >= 44,
+      JSON.stringify(dismissBox));
+    check('390: space between Undo and X', gap >= 12, String(gap));
+  }
 
   await page.locator('[data-feature-edit-delete-toast] [data-error-undo]').click();
   await page.waitForFunction((expected) => window.__SCRIPT__ === expected && window.__MESH_SIG__?.() === window.__ORIGINAL_SIG__,

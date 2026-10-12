@@ -242,7 +242,7 @@ export default function FeatureEditSheet({
           maxMm={distanceFit.max}
         />
         <ChoiceRow
-          label="Sense"
+          label="Direction"
           accent={ACCENT}
           value={draft.sense || 'positive'}
           onChange={(sense) => setDraft((prev) => ({ ...prev, sense }))}

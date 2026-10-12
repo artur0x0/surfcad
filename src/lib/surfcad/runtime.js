@@ -8580,14 +8580,20 @@ let _scriptLineOffset;
  * that still has no solid throws the original error, with the same report
  * attached, so the viewport can keep the last mesh and mark every chip.
  */
-function executeSkippingFailedFeatures(script, importedModels) {
+function executeSkippingFailedFeatures(script, importedModels, anchorId) {
   const text = String(script ?? '');
+  const anchored = anchorId === null || typeof anchorId === 'string';
   const limit = parseFeatureMarkers(text).length + 1;
   let skipIds = [];
   const thrown = [];
   let primary = null;
   for (let attempt = 0; attempt < limit; attempt += 1) {
-    const source = skipIds.length ? evaluationScript(text, { skipIds }) : text;
+    const source = (skipIds.length || anchored)
+      ? evaluationScript(text, {
+          ...(skipIds.length ? { skipIds } : {}),
+          ...(anchored ? { anchorId } : {}),
+        })
+      : text;
     try {
       const result = manifoldFromScriptResult(executeScript(source, importedModels));
       return {
@@ -8948,7 +8954,7 @@ self.onmessage = async (event) => {
           throw new Error('Worker not initialized');
         }
         
-        const { script, importedModels, memoryLimitMB, nonce } = payload;
+        const { script, importedModels, memoryLimitMB, nonce, rollbackAnchor } = payload;
         if (typeof globalThis !== 'undefined') {
           globalThis.__filletSweepRingLog = [];
           globalThis.__filletSweepRingCall = null;
@@ -8962,7 +8968,7 @@ self.onmessage = async (event) => {
         const _execT0 = _perfNow();
         _featureOps = [];
         _sourceTess = [];
-        const ran = executeSkippingFailedFeatures(script, importedModels);
+        const ran = executeSkippingFailedFeatures(script, importedModels, rollbackAnchor);
         const result = ran.result;
         const _execMs = _perfNow() - _execT0;
         
@@ -9710,7 +9716,11 @@ export function runPreparedScript(source, opts = {}) {
   }
   _featureOps = [];
   _sourceTess = [];
-  const ran = executeSkippingFailedFeatures(String(source ?? ''), opts.importedModels || {});
+  const ran = executeSkippingFailedFeatures(
+    String(source ?? ''),
+    opts.importedModels || {},
+    opts.rollbackAnchor,
+  );
   const summary = summarizeManifold(ran.result);
   if (ran.featureSkip) summary.featureSkip = ran.featureSkip;
   markSheetMesh(summary.mesh, source);

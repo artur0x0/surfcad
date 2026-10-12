@@ -216,3 +216,32 @@ export function evaluationScript(script, options = {}) {
   }
   return out === text ? text : out;
 }
+
+/**
+ * Gap the rollback bar occupies. `0` is before every feature, `ids.length`
+ * is after the last one. A missing anchor sits at the end.
+ * @param {string[]} ids
+ * @param {string|null|undefined} anchor
+ */
+export function rollbackGapIndex(ids, anchor) {
+  const list = Array.isArray(ids) ? ids : [];
+  if (anchor === null) return 0;
+  if (typeof anchor !== 'string') return list.length;
+  const at = list.indexOf(anchor);
+  return at < 0 ? list.length : at + 1;
+}
+
+/**
+ * Feature the bar sits after. `null` is before everything. `undefined` is
+ * the gap after the last feature (no skip).
+ * @param {string[]} ids
+ * @param {number} index
+ * @returns {string|null|undefined}
+ */
+export function rollbackAnchorAtGap(ids, index) {
+  const list = Array.isArray(ids) ? ids : [];
+  const at = Number(index);
+  if (!Number.isFinite(at) || at <= 0) return null;
+  if (at >= list.length) return undefined;
+  return list[at - 1];
+}

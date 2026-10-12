@@ -1032,6 +1032,11 @@ const Viewport = forwardRef(({
    * the strip and sheet red border. `skipped` names dependents omitted with it.
    */
   onRunOutcome = null,
+  /**
+   * Rollback bar for this run. `null` blanks from the start, a feature id
+   * blanks everything after that feature, and omission runs the whole script.
+   */
+  rollbackAnchor = undefined,
   /** True while any feature session is open. App hides the feature strip. */
   onFeatureSessionChange = null,
   /**
@@ -1908,6 +1913,8 @@ const Viewport = forwardRef(({
   getBooleanContextRef.current = getBooleanContext;
   const onRunOutcomeRef = useRef(null);
   onRunOutcomeRef.current = onRunOutcome;
+  const rollbackAnchorRef = useRef(rollbackAnchor);
+  rollbackAnchorRef.current = rollbackAnchor;
   const onContourRefsResolvedRef = useRef(null);
   onContourRefsResolvedRef.current = onContourRefsResolved;
   featureSessionRef.current = !!(
@@ -10717,11 +10724,15 @@ const Viewport = forwardRef(({
       const nonce = (typeof crypto !== 'undefined' && crypto.randomUUID)
         ? crypto.randomUUID()
         : `exec-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const anchor = Object.prototype.hasOwnProperty.call(opts, 'rollbackAnchor')
+        ? opts.rollbackAnchor
+        : rollbackAnchorRef.current;
       const result = await manifoldContext.executeScript(script, {
         timeoutMs: EXECUTION_LIMITS.timeoutMs,
         memoryLimitMB: EXECUTION_LIMITS.memoryLimitMB,
         nonce,
         importedModels: prepared.importedModels,
+        ...(anchor === null || typeof anchor === 'string' ? { rollbackAnchor: anchor } : {}),
       });
       
       if (abortController.aborted) {
@@ -13059,6 +13070,7 @@ const Viewport = forwardRef(({
             onDismiss={() => setContourToast(null)}
             onUndo={contourToast.sketch ? undoContourSketch : (contourToast.undo ? onUndo : undefined)}
             canUndo={contourToast.sketch ? contourUndoDepth > 0 : canUndo}
+            roomy={!!contourToast.deleted}
             className="px-3 py-2 pointer-events-auto"
           >
             {contourToast.text}
