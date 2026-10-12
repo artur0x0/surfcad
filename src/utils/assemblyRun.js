@@ -53,7 +53,7 @@ export async function runAssemblyParts({ doc, scripts, execute, ids = null }) {
     }
     let outcome;
     try {
-      const result = await execute(resolved.script, { importedModels });
+      const result = await execute(resolved.script, { importedModels, partId: part.id });
       const mesh = result?.mesh && result.mesh.vertProperties ? result.mesh : null;
       const bodyCount = Array.isArray(result?.bodyCentroids)
         ? result.bodyCentroids.length

@@ -370,6 +370,10 @@ Mobile specifics:
   an evaluation copy (`featureSkip.js`) and rebuilds the rest. A dependent
   chip is the same red, titled with the feature it depends on
   (`data-feature-depends`).
+  The rollback bar (`data-rollback-bar`) sits in a gap between feature chips.
+  Release dims every chip after it and rebuilds up to that gap. Dragging it
+  back to the end runs the whole script. Sketch and joint chips hide the bar.
+  The Extrude card labels Out / In / Both as Direction.
   Chip highlight (`featureStripActiveId`)
   clears on sheet cancel/accept/delete (and after script jump). C.4+: Script-stage
   editor stack is full-bleed (`absolute inset-0`) so the top ribbon
@@ -608,7 +612,8 @@ work), with Manifold booted by `src/utils/ManifoldWorker.js`. Timeout/memory
 caps: `EXECUTION_LIMITS`, `src/components/Viewport.jsx:212`. The evaluation
 copy for a failed feature, and for a later rollback anchor, is
 `src/utils/featureSkip.js` (`hardSkipIds`, `evaluationScript`). The worker
-`execute` message runs that copy. The buffer stays unchanged.
+`execute` message runs that copy, including a `rollbackAnchor` from the
+feature-strip bar. The buffer stays unchanged.
 
 ### Selection
 Faces: `src/utils/selectFace.js`, `src/utils/faceFeaturePlacement.js`.

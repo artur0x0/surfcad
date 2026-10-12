@@ -453,6 +453,10 @@ const App = () => {
    * block text is unchanged; the next good run clears it.
    */
   const [runFailure, setRunFailure] = useState(null);
+  /** Rollback bar per part. `null` is before every feature. A missing key is the end. */
+  const [rollbackAnchors, setRollbackAnchors] = useState({});
+  const rollbackAnchorsRef = useRef({});
+  rollbackAnchorsRef.current = rollbackAnchors;
   const handleRunOutcome = ({ script, ok, scriptLine, featureId, featureBlock, skipped } = {}) => {
     // Tracked block first (works on Safari), the stack's line second.
     const next = ok ? null : failedFeatureFromOutcome(script, { featureId, featureBlock, scriptLine });
@@ -1964,9 +1968,11 @@ const App = () => {
           ids: otherIds,
           execute: (script, execOpts) => {
             noteBuild();
+            const anchor = rollbackAnchorsRef.current[String(execOpts?.partId || '')];
             return manifoldContext.executeScript(script, {
               timeoutMs: 30000,
               importedModels: execOpts?.importedModels,
+              ...(anchor === null || typeof anchor === 'string' ? { rollbackAnchor: anchor } : {}),
             });
           },
         });
@@ -6943,10 +6949,14 @@ const App = () => {
           doc,
           scripts,
           ids: [id],
-          execute: (script, execOpts) => manifoldContext.executeScript(script, {
-            timeoutMs: 30000,
-            importedModels: execOpts?.importedModels,
-          }),
+          execute: (script, execOpts) => {
+            const anchor = rollbackAnchorsRef.current[String(execOpts?.partId || '')];
+            return manifoldContext.executeScript(script, {
+              timeoutMs: 30000,
+              importedModels: execOpts?.importedModels,
+              ...(anchor === null || typeof anchor === 'string' ? { rollbackAnchor: anchor } : {}),
+            });
+          },
         });
         const ran = result.runs?.[id];
         if (ran?.ok && ran.mesh?.vertProperties) {
@@ -7165,6 +7175,26 @@ const App = () => {
   const stripScript = (
     cadHighlightId && assemblyDoc && cadHighlightId !== assemblyDoc.activeId
   ) ? (partScripts[cadHighlightId] || '') : currentScript;
+  const stripPartKey = cadHighlightId ? String(cadHighlightId) : '__cad__';
+  const editorPartKey = assemblyDoc?.activeId ? String(assemblyDoc.activeId) : '__cad__';
+  const anchorOf = (key) => (
+    Object.prototype.hasOwnProperty.call(rollbackAnchors, key) ? rollbackAnchors[key] : undefined
+  );
+  const stripRollbackAnchor = anchorOf(stripPartKey);
+  const editorRollbackAnchor = anchorOf(editorPartKey);
+  const commitRollback = (key, script) => (anchor) => {
+    const next = { ...rollbackAnchorsRef.current };
+    if (anchor === undefined) delete next[key];
+    else next[key] = anchor;
+    rollbackAnchorsRef.current = next;
+    setRollbackAnchors(next);
+    if (!script) return;
+    viewportRef.current?.executeScript(script, {
+      rollbackAnchor: anchor === undefined ? undefined : anchor,
+    });
+  };
+  const handleRollbackAnchor = commitRollback(stripPartKey, stripScript);
+  const handleEditorRollbackAnchor = commitRollback(editorPartKey, currentScript);
   const stripFailedIds = failedFeatureIds(stripScript, runFailure);
   const stripFailedTitles = failedFeatureTitles(stripScript, runFailure);
   const scriptStripFailedIds = failedFeatureIds(currentScript, runFailure);
@@ -7480,6 +7510,7 @@ const App = () => {
               jointCard={jointCardNode}
               cadPartSelected={cadPartId != null}
               onRunOutcome={handleRunOutcome}
+              rollbackAnchor={appMode === 'game' ? undefined : editorRollbackAnchor}
               getBooleanContext={assemblyPartContext}
               onFeatureSessionChange={handleFeatureSession}
               onSketchStripChange={handleSketchStrip}
@@ -7579,6 +7610,8 @@ const App = () => {
                       bodyCount={stripBodyCount}
                       failedIds={stripFailedIds}
                       failedTitles={stripFailedTitles}
+                      rollbackAnchor={stripRollbackAnchor}
+                      onRollback={handleRollbackAnchor}
                       hidden={sketchOpen ? false : featureSession}
                       activeId={sketchOpen ? sketchStrip.activeId : (featureSheet?.feature?.id || featureStripActiveId)}
                       hideWhenEmpty
@@ -7633,6 +7666,8 @@ const App = () => {
                           bodyCount={stripBodyCount}
                           failedIds={scriptStripFailedIds}
                           failedTitles={scriptStripFailedTitles}
+                          rollbackAnchor={editorRollbackAnchor}
+                          onRollback={handleEditorRollbackAnchor}
                           hidden={featureSession}
                           activeId={featureSheet?.feature?.id || featureStripActiveId}
                           onJump={handleFeatureStripJump}
@@ -7911,6 +7946,8 @@ const App = () => {
                 bodyCount={stripBodyCount}
                 failedIds={stripFailedIds}
                 failedTitles={stripFailedTitles}
+                rollbackAnchor={stripRollbackAnchor}
+                onRollback={handleRollbackAnchor}
                 hidden={sketchOpen ? false : featureSession}
                 activeId={sketchOpen ? sketchStrip.activeId : (featureSheet?.feature?.id || featureStripActiveId)}
                 hideWhenEmpty
@@ -7996,6 +8033,7 @@ const App = () => {
             jointCard={jointCardNode}
             cadPartSelected={cadPartId != null}
             onRunOutcome={handleRunOutcome}
+            rollbackAnchor={appMode === 'game' ? undefined : editorRollbackAnchor}
             getBooleanContext={assemblyPartContext}
             onFeatureSessionChange={handleFeatureSession}
             onSketchStripChange={handleSketchStrip}

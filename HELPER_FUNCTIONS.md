@@ -1342,8 +1342,9 @@ part = placeInFrame(xs.plane, makeExtrude(xs.contours, 10), [0, 0, 0]);
 
 `height` is always > 0. When `part` already exists, Advanced Confirm is
 additive (`part.add` of the placed solid). An empty script still uses
-`let part = placeInFrame(...)`. Sense **In** uses `w = −height`; **Both** uses
-`w = −height/2`. Direction defaults to the plane normal; a world axis is
+`let part = placeInFrame(...)`. The Extrude card labels Out / In / Both as
+Direction. **In** uses `w = −height`; **Both** uses `w = −height/2`. The axis
+defaults to the plane normal; a world axis is
 refused unless it is parallel to that normal. Loud-fail on a bad plane,
 profile, or distance.
 

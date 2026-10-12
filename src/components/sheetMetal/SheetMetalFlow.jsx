@@ -350,6 +350,7 @@ const SheetMetalFlow = ({
               else onUndo?.();
             }}
             canUndo={mode?.reopen ? mode.step > 0 : !!canUndo}
+            roomy
             className="px-3 py-2 pointer-events-auto"
           >
             {deleteToast}

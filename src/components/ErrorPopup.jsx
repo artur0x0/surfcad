@@ -29,6 +29,8 @@ export default function ErrorPopup({
   onDismiss = null,
   onUndo = null,
   canUndo = false,
+  /** Deleted toasts: 44px Undo and dismiss, with space between them. */
+  roomy = false,
   className = '',
   ...rest
 }) {
@@ -38,15 +40,18 @@ export default function ErrorPopup({
   };
 
   const actions = (
-    <div className={`flex items-center shrink-0 pointer-events-auto ${layout === 'stacked' ? 'gap-5' : 'gap-1'}`}>
+    <div className={`flex items-center shrink-0 pointer-events-auto ${roomy ? 'gap-4' : layout === 'stacked' ? 'gap-5' : 'gap-1'}`}>
       {typeof onUndo === 'function' && (
         <button
           type="button"
           data-error-undo=""
           onClick={handleUndo}
           disabled={!canUndo}
-          className="px-2 py-0.5 rounded-md bg-white/15 hover:bg-white/25
-            disabled:opacity-40 disabled:pointer-events-none font-semibold"
+          className={roomy
+            ? `min-h-[44px] min-w-[44px] px-3 rounded-md bg-white/15 hover:bg-white/25
+              disabled:opacity-40 disabled:pointer-events-none font-semibold`
+            : `px-2 py-0.5 rounded-md bg-white/15 hover:bg-white/25
+              disabled:opacity-40 disabled:pointer-events-none font-semibold`}
           title="Undo"
           aria-label="Undo"
         >
@@ -58,11 +63,13 @@ export default function ErrorPopup({
           type="button"
           data-error-dismiss=""
           onClick={onDismiss}
-          className="text-white/80 hover:text-white p-0.5"
+          className={roomy
+            ? 'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-white/80 hover:text-white'
+            : 'text-white/80 hover:text-white p-0.5'}
           title="Dismiss"
           aria-label="Dismiss"
         >
-          <X size={14} />
+          <X size={roomy ? 18 : 14} />
         </button>
       )}
     </div>

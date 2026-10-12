@@ -16,7 +16,7 @@ import {
   CONTOUR_PROFILE_END,
 } from './helperPaletteSnippets.js';
 import { SHEET_METAL_BEGIN, SHEET_METAL_END } from './sheetMetal/sheetMeshFlag.js';
-import { evaluationScript, hardSkipIds } from './featureSkip.js';
+import { evaluationScript, hardSkipIds, rollbackAnchorAtGap, rollbackGapIndex } from './featureSkip.js';
 
 function region(begin, end, id, body) {
   return `${markerWithId(begin, id)}\n${body}\n${markerWithId(end, id)}`;
@@ -199,4 +199,15 @@ test('the rollback anchor blanks the tail and keeps return part and line numbers
   assert.equal(both.includes('Manifold.cube'), false);
   assert.equal(both.includes('edgesBetween(part, 0, 6)'), true);
   assert.equal(both.includes('part = hollow(part, 1);'), false);
+});
+
+test('the rollback bar gap is the feature it sits after', () => {
+  const ids = ['cube1', 'fillet1', 'shell1'];
+  assert.equal(rollbackGapIndex(ids, undefined), 3);
+  assert.equal(rollbackGapIndex(ids, null), 0);
+  assert.equal(rollbackGapIndex(ids, 'fillet1'), 2);
+  assert.equal(rollbackGapIndex(ids, 'missing'), 3);
+  assert.equal(rollbackAnchorAtGap(ids, 0), null);
+  assert.equal(rollbackAnchorAtGap(ids, 2), 'fillet1');
+  assert.equal(rollbackAnchorAtGap(ids, 3), undefined);
 });

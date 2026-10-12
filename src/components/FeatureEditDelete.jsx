@@ -76,6 +76,7 @@ export function FeatureDeleteToast({
         onDismiss={onDismiss}
         onUndo={onUndo}
         canUndo={canUndo}
+        roomy
         className="px-3 py-2 pointer-events-auto"
       >
         <ul className="space-y-0.5" data-feature-edit-dependents="">
