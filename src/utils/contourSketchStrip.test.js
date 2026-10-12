@@ -3,7 +3,7 @@ import test from 'node:test';
 import { planPolylinePointRemoval } from './contourDrag.js';
 import { contourFromRectangle } from './contourSolve.js';
 import { contourChips } from './contourStrip.js';
-import { selectSketchChip, sketchActiveId, sketchHighlightPicks } from './contourSketchStrip.js';
+import { entityDeleteChip, selectSketchChip, sketchActiveId, sketchHighlightPicks } from './contourSketchStrip.js';
 
 const rect = contourFromRectangle(40, 20);
 
@@ -63,11 +63,15 @@ test('a chip tap opens the edit card or replaces the pick, and a broken referenc
   const line = selectSketchChip(building, { id: 'e0', kind: 'line', label: 'Line' });
   assert.equal(line.gesture, null);
   assert.deepEqual(line.picks.map((pick) => pick.id), ['e0']);
+  assert.equal(line.entityCard, 'e0');
   assert.equal(sketchActiveId(line), 'e0');
+  assert.equal(entityDeleteChip(line)?.label, 'Line');
 
   const dim = selectSketchChip(building, { id: 'd0', kind: 'dimension' });
   assert.equal(dim.dimensionEdit, 'd0');
   assert.equal(dim.gesture, 'dimension');
+  assert.equal(dim.entityCard, null);
+  assert.equal(entityDeleteChip(dim), null);
   assert.equal(sketchActiveId(dim), 'd0');
 
   const con = selectSketchChip({ params: { contour: rect } }, { id: 'k0', kind: 'constraint' });
@@ -83,7 +87,10 @@ test('a chip tap opens the edit card or replaces the pick, and a broken referenc
   }, { id: 'shape', kind: 'circle' });
   assert.equal(shape.gesture, null);
   assert.deepEqual(shape.picks, []);
+  assert.equal(shape.entityCard, 'shape');
+  assert.equal(entityDeleteChip(shape)?.id, 'shape');
   assert.equal(sketchActiveId(shape), 'shape');
+  assert.equal(entityDeleteChip({ ...shape, entityCard: null }), null);
 
   const spec = {
     lines: [],

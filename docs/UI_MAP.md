@@ -104,7 +104,15 @@ Desktop specifics:
   replace the sketch with an empty profile. Double-tap removal of a
   polyline dot drops that point's lines. A dimension or constraint that
   named the point stays, and its chip takes the failed red border
-  (`data-sketch-broken`). The plane card leaves this bar on the hidden
+  (`data-sketch-broken`). A line, arc, circle, unpromoted shape, or reference
+  chip opens a short card whose only action is Delete
+  (`data-contour-card="entity"`, `data-contour-entity-delete`). Nothing that
+  names it deletes at once, and the toast Undo is the sketch history
+  (`data-sketch-delete-toast`). Dimensions or constraints that name it open
+  the same scrim and glass card, Cancel focused, red button **Delete along
+  with N** dimensions, constraints, or items (`data-sketch-entity-delete-dialog`).
+  Confirm removes the entity and those dependents as one sketch undo. Cancel,
+  Escape, and the scrim leave the sketch. The plane card leaves this bar on the hidden
   part-strip placeholder. `golden:contour-strip`.
   When no part is selected the same bar shows assembly joints
   (`data-assembly-joints`), or **No assembly joints**

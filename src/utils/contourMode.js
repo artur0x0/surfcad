@@ -726,6 +726,7 @@ export function switchContourTool(state, tool) {
       tagId: null,
       gestureNote: null,
       dimensionLive: null,
+      entityCard: null,
     };
     if (!isLoftEntry(reverted?.entry)) return next;
     const written = writeLoftSelected(next, { tool: nextTool, params: next.params });
@@ -736,6 +737,7 @@ export function switchContourTool(state, tool) {
       tagId: null,
       gestureNote: null,
       dimensionLive: null,
+      entityCard: null,
     };
   }
   const next = defaultContourParams(nextTool);
@@ -752,6 +754,7 @@ export function switchContourTool(state, tool) {
     tagId: null,
     gestureNote: null,
     dimensionLive: null,
+    entityCard: null,
   };
   if (isLoftEntry(state?.entry)) {
     const written = writeLoftSelected(nextState, { tool: nextTool, params: next });
