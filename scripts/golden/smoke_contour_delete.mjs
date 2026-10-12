@@ -2,8 +2,8 @@
 /**
  * Delete and orphan rules for named contours.
  *
- * Deleting the extrude that alone names a contour leaves that contour, and
- * its strip chip and the picker show unused. Deleting a contour named by an
+ * Removing the extrude that alone names a contour leaves that contour, and
+ * its strip chip and the picker mark unused with a dot. Deleting a contour named by an
  * Extrude and a Loft asks "Delete along with 2 features", then removes the
  * contour and both blocks. Undo restores that step. An unused contour then
  * deletes with no confirm.
@@ -21,6 +21,7 @@ import {
   composeContourLoft,
   composeContourProfile,
 } from '../../src/utils/contourMode.js';
+import { deleteFeatureBlock, listFeatureSheetTargets } from '../../src/utils/featureSheetWriteback.js';
 
 const PORT = Number(process.env.SMOKE_PORT || 5257);
 const APP_URL = `http://127.0.0.1:${PORT}/`;
@@ -103,6 +104,14 @@ function sharedScript() {
 }
 
 const SCRIPT = sharedScript();
+
+function scriptWithoutExtrude2(src) {
+  const feature = listFeatureSheetTargets(src).find((item) => item.id === 'extrude2');
+  if (!feature) throw new Error('extrude2 missing');
+  const deleted = deleteFeatureBlock(src, feature);
+  if (!deleted.ok) throw new Error(deleted.message || 'could not remove extrude2');
+  return deleted.buffer;
+}
 
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
@@ -262,14 +271,21 @@ async function runSize(browser, label, contextOptions) {
   page.on('pageerror', (err) => errors.push(String(err).slice(0, 400)));
   await boot(page);
 
-  await clickDom(page, '[data-cad-feature-strip] [data-feature-id="extrude2"]');
-  await page.locator('[data-feature-edit-delete]').waitFor({ timeout: 15000 });
-  await page.locator('[data-feature-edit-delete]').click();
+  // Reopening an extrude chip opens the slot card, which has no delete
+  // control. Drop Extrude 2 with the same block delete the sheet uses.
+  const withoutExtrude2 = scriptWithoutExtrude2(await editorScript(page));
+  await page.evaluate((src) => {
+    window.monaco.editor.getModels()[0].setValue(src);
+  }, withoutExtrude2);
+  const removed = await page.evaluate(async (src) => window.__VIEWPORT__.executeScript(src), withoutExtrude2);
+  if (removed?.error) throw new Error(removed.error);
   await page.waitForFunction(() => {
     const strip = document.querySelector('[data-cad-feature-strip] [data-feature-strip]');
     const chip = document.querySelector('[data-cad-feature-strip] [data-contour-id="c2"]');
     if (!strip || strip.hasAttribute('hidden') || !chip) return false;
-    return chip.hasAttribute('data-contour-unused') && /unused/.test(chip.textContent || '');
+    return chip.hasAttribute('data-contour-unused')
+      && !/unused/i.test(chip.textContent || '')
+      && !!chip.querySelector('[data-contour-unused-dot]');
   }, null, { timeout: 15000 });
   const afterExtrude = await editorScript(page);
   check(`${label} deleting the extrude leaves c2`, /@contour id=c2/.test(afterExtrude));
@@ -277,7 +293,10 @@ async function runSize(browser, label, contextOptions) {
   check(`${label} the root extrude and the loft stay`,
     /id=extrude1/.test(afterExtrude) && /id=loft1/.test(afterExtrude) && /id=extrude3/.test(afterExtrude));
   const chip = page.locator('[data-cad-feature-strip] [data-contour-id="c2"]');
-  check(`${label} the strip chip says unused`, /unused/.test((await chip.innerText()).trim()));
+  check(`${label} the strip chip marks unused with a dot`,
+    (await chip.getAttribute('data-contour-unused')) === ''
+    && !/unused/i.test((await chip.innerText()).trim())
+    && await chip.locator('[data-contour-unused-dot]').count() === 1);
   await revealChip(page, '[data-cad-feature-strip] [data-contour-id="c2"]');
   await page.screenshot({ path: join(SHOT_DIR, `contour-delete-unused-${label}.png`) });
 
@@ -288,9 +307,10 @@ async function runSize(browser, label, contextOptions) {
   await card.waitFor({ timeout: 8000 });
   const pick = page.locator('[data-slot-pick="c2"]');
   await pick.waitFor({ timeout: 8000 });
-  check(`${label} the picker marks c2 unused`,
+  check(`${label} the picker marks c2 unused with a dot`,
     await pick.getAttribute('data-contour-unused') === ''
-    && /unused/.test((await pick.innerText()).trim()));
+    && !/unused/i.test((await pick.innerText()).trim())
+    && await pick.locator('[data-contour-unused-dot]').count() === 1);
   check(`${label} a used contour has no unused tag`,
     await page.locator('[data-slot-pick="c1"]').getAttribute('data-contour-unused') === null);
   await page.locator('[data-feature-card-cancel]').click();
@@ -358,7 +378,9 @@ async function runSize(browser, label, contextOptions) {
   }, null, { timeout: 15000 });
   check(`${label} undo restores the contour and both features`, true);
   check(`${label} c2 stays unused after that undo`,
-    /unused/.test((await chip.innerText()).trim()));
+    (await chip.getAttribute('data-contour-unused')) === ''
+    && !/unused/i.test((await chip.innerText()).trim())
+    && await chip.locator('[data-contour-unused-dot]').count() === 1);
 
   await clickDom(page, '[data-cad-feature-strip] [data-contour-id="c2"]');
   await page.locator('[data-contour-delete]').waitFor({ timeout: 8000 });

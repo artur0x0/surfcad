@@ -131,10 +131,15 @@ function chipTitle(f, failed, bodyCount) {
     : f.chipLabel;
 }
 
-function UnusedTag({ on }) {
+/** Unused status without a label. The word made the chip taller than a used one. */
+function UnusedMark({ on }) {
   if (!on) return null;
   return (
-    <span className="text-[8px] font-semibold leading-none text-amber-200">unused</span>
+    <span
+      className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-amber-200/90 pointer-events-none"
+      data-contour-unused-dot=""
+      aria-hidden="true"
+    />
   );
 }
 
@@ -416,11 +421,10 @@ export default function FeatureStrip({
                   title={chipTitle(f, failed, bodyCount)}
                   onClick={() => onJump?.(f)}
                   className={`relative shrink-0 rounded-lg p-1.5 flex items-center justify-center
-                    border transition-colors active:opacity-80 ${chipTone(active, f.external, failed)}
-                    ${f.unused ? 'flex-col gap-0.5' : ''}`}
+                    border transition-colors active:opacity-80 ${chipTone(active, f.external, failed)}`}
                 >
                   <FeatureGlyph kind={f.kind} size={16} />
-                  <UnusedTag on={f.unused} />
+                  <UnusedMark on={f.unused} />
                   <TypeBadge index={typeIndex} />
                   <SeparateBodyMarker on={separateLive} />
                 </button>
@@ -512,11 +516,10 @@ export default function FeatureStrip({
             title={chipTitle(f, failed, bodyCount)}
             onClick={() => onJump?.(f)}
             className={`relative shrink-0 rounded-lg p-1.5 flex items-center justify-center
-              border transition-colors active:opacity-80 ${chipTone(active, f.external, failed)}
-              ${f.unused ? 'flex-col gap-0.5' : ''}`}
+              border transition-colors active:opacity-80 ${chipTone(active, f.external, failed)}`}
           >
             <FeatureGlyph kind={f.kind} size={16} />
-            <UnusedTag on={f.unused} />
+            <UnusedMark on={f.unused} />
             <TypeBadge index={typeIndex} />
             <SeparateBodyMarker on={separateLive} />
           </button>
