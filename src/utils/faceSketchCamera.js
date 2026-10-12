@@ -5,7 +5,7 @@
 // clears it when the tween ends. Trackball is remounted at the end so
 // damping cannot walk the pose back.
 import { Box3, Vector3 } from 'three';
-import { easeInOutCubic, fitView } from './viewCamera.js';
+import { easeInOutCubic, fitView, meshWorldBox } from './viewCamera.js';
 import {
   applyViewPose,
   captureViewPose,
@@ -59,6 +59,33 @@ export function boundsSketchBox(bounds) {
   box.getSize(_size);
   if (!(_size.lengthSq() > 1e-12)) return null;
   return box;
+}
+
+/**
+ * Box the face-sketch aim frames.
+ *
+ * Select plane frames a highlighted face when one is up. Any other plane,
+ * and Normal (`force`), frames the part. The part box is the mesh in world
+ * space. Model bounds are local vertex limits: a placed part would be aimed
+ * at the origin while the solid sits off to one side. In the top view that
+ * +X placement lands on the left of the screen.
+ *
+ * @param {object} o
+ * @param {boolean} [o.force] Normal to sketch: frame the part, not a face
+ * @param {Iterable<import('three').Object3D>|import('three').Object3D|null} [o.highlightMeshes]
+ * @param {import('three').Object3D|null} [o.partMesh]
+ * @param {{ min?: number[], max?: number[] }|null} [o.bounds]
+ * @returns {import('three').Box3|null}
+ */
+export function sketchAimBox({ force = false, highlightMeshes, partMesh, bounds } = {}) {
+  const list = Array.isArray(highlightMeshes)
+    ? highlightMeshes.filter(Boolean)
+    : (highlightMeshes ? [highlightMeshes] : []);
+  const faceMeshes = list.filter((mesh) => mesh.name === 'highlight');
+  const highlighted = faceSketchBox(faceMeshes.length ? faceMeshes : list);
+  const partBox = meshWorldBox(partMesh);
+  if (force && partBox) return partBox;
+  return highlighted || partBox || boundsSketchBox(bounds);
 }
 
 /**
