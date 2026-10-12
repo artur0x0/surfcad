@@ -33,6 +33,7 @@ import {
   studyWithContactKind,
   studyWithContactMu,
   studyWithCustomMaterial,
+  studyWithForceDirection,
   studyWithLoadVector,
   studyWithMaterialId,
   studyWithRefine,
@@ -320,6 +321,7 @@ export function useFeaStudy({
     return {
       analyzedPartId: analyzed,
       memberIds: studyMemberIds(studyRef.current, rows, analyzed),
+      screen: viewRef.current?.screen || 'setup',
     };
   };
 
@@ -516,7 +518,10 @@ export function useFeaStudy({
 
   const setDirection = useCallback((direction) => {
     setDraft((prev) => ({ ...prev, direction }));
-  }, []);
+    const next = studyWithForceDirection(studyRef.current, direction);
+    if (next.ok && next.changed) commitStudy(next.study);
+    else if (!next.ok) setNotice(next.errors[0] || 'Could not set the load direction');
+  }, [commitStudy]);
 
   const setPressure = useCallback((pressureMPa) => {
     setDraft((prev) => ({ ...prev, pressureMPa: Number(pressureMPa) }));
@@ -1076,6 +1081,13 @@ export function useFeaStudy({
 
   const screen = view.screen;
   const results = screen !== 'setup';
+
+  // Arrows are part of the highlight reconcile. Leaving setup drops them;
+  // coming back builds them again from the stored direction.
+  useEffect(() => {
+    if (!open) return;
+    paintHighlight(studyRef.current);
+  }, [open, screen, paintHighlight]);
 
   useEffect(() => {
     if (screen === 'results') return;

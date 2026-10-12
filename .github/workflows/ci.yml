@@ -188,6 +188,24 @@ jobs:
             exit 1
           fi
 
+      # Load-direction arrows and triad-colored direction buttons. Both
+      # widths, no solve. Shots stay in GOLDEN_SHOT_DIR.
+      - name: FEA load arrow golden
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          GOLDEN_SHOT_DIR: ${{ runner.temp }}/golden
+          FEA_PREVIEW: '1'
+        run: |
+          test -n "$CHROME_PATH"
+          test -x "$CHROME_PATH"
+          test -n "$GOLDEN_SHOT_DIR"
+          mkdir -p "$GOLDEN_SHOT_DIR"
+          node scripts/golden/fea_load_arrows.mjs | tee "${RUNNER_TEMP}/fea-load-arrows.log"
+          if grep -q 'no system Chrome' "${RUNNER_TEMP}/fea-load-arrows.log"; then
+            echo "FEA load arrow golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+
   # npm copyleft and non-commercial gate, plus a freshness check for
   # public/THIRD_PARTY_NOTICES.txt. Always runs. The cargo-deny step is a
   # separate job so it can stay a no-op until the FEA crate exists.

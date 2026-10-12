@@ -34,6 +34,40 @@ const AXIS = Object.freeze({
   '-z': [0, 0, -1],
 });
 
+const NAMED_DIRECTIONS = new Set(['normal', '-normal', ...Object.keys(AXIS), 'custom']);
+
+function unitVector(vector) {
+  if (!vector || vector.length < 3) return null;
+  const len = Math.hypot(Number(vector[0]), Number(vector[1]), Number(vector[2]));
+  if (!(len > 0) || !Number.isFinite(len)) return null;
+  return [vector[0] / len, vector[1] / len, vector[2] / len];
+}
+
+function sameDirection(a, b) {
+  const ua = unitVector(a);
+  const ub = unitVector(b);
+  if (!ua || !ub) return false;
+  const dot = ua[0] * ub[0] + ua[1] * ub[1] + ua[2] * ub[2];
+  return dot >= 0.999;
+}
+
+/** The picker token that matches this vector, or `custom`. */
+export function namedDirection(vector, normal) {
+  const unit = unitVector(vector);
+  if (!unit) return null;
+  for (const [label, axis] of Object.entries(AXIS)) {
+    if (sameDirection(unit, axis)) return label;
+  }
+  const n = unitVector(normal);
+  if (n && sameDirection(unit, n)) return 'normal';
+  if (n && sameDirection(unit, [-n[0], -n[1], -n[2]])) return '-normal';
+  return 'custom';
+}
+
+function storedDirection(direction) {
+  return NAMED_DIRECTIONS.has(direction) && direction !== 'custom' ? direction : 'normal';
+}
+
 export function emptyDraft() {
   return {
     target: 'fixture',
@@ -332,7 +366,12 @@ export function applyFacePick(study, draft, face) {
     if (had) return patched(study, { loads: withoutFace(study.loads, face, 'force') });
     const vector = forceVector(draft.direction, draft.magnitudeN, face.n);
     if (!vector) return { ok: false, errors: ['Give a non-zero force in newtons'], study };
-    const loads = study.loads.concat([{ kind: 'force', faces: [face], vector }]);
+    const loads = study.loads.concat([{
+      kind: 'force',
+      faces: [face],
+      vector,
+      direction: storedDirection(draft.direction),
+    }]);
     return patched(study, { loads });
   }
   if (target === 'pressure') {
@@ -360,10 +399,44 @@ export function studyWithoutLoad(study, index) {
 
 /** Replace one load vector. The panel commits this once, on pointer-up. */
 export function studyWithLoadVector(study, index, vector) {
-  const loads = (study?.loads || []).map((load, i) => (
-    i === index ? { ...load, vector: [Number(vector?.[0]), Number(vector?.[1]), Number(vector?.[2])] } : load
-  ));
+  const loads = (study?.loads || []).map((load, i) => {
+    if (i !== index) return load;
+    const nextVector = [Number(vector?.[0]), Number(vector?.[1]), Number(vector?.[2])];
+    const direction = namedDirection(nextVector, load.faces?.[0]?.n);
+    const next = { ...load, vector: nextVector };
+    if (direction) next.direction = direction;
+    return next;
+  });
   return patched(study, { loads });
+}
+
+/**
+ * Point every force load along `direction`, keeping each magnitude.
+ * Pressure stays on the face normal. `changed` is false when nothing moved.
+ */
+export function studyWithForceDirection(study, direction) {
+  const token = storedDirection(direction);
+  if (token !== direction && direction !== 'normal') {
+    return { ok: false, errors: ['Pick a load direction'], study, changed: false };
+  }
+  let changed = false;
+  const loads = (study?.loads || []).map((load) => {
+    if (!load || load.kind !== 'force') return load;
+    const mag = Math.hypot(load.vector?.[0] || 0, load.vector?.[1] || 0, load.vector?.[2] || 0);
+    const vector = forceVector(token, mag, load.faces?.[0]?.n);
+    if (!vector) return load;
+    const sameVec = Array.isArray(load.vector)
+      && load.vector.length === 3
+      && load.vector[0] === vector[0]
+      && load.vector[1] === vector[1]
+      && load.vector[2] === vector[2];
+    if (load.direction === token && sameVec) return load;
+    changed = true;
+    return { ...load, direction: token, vector };
+  });
+  if (!changed) return { ok: true, errors: [], study, changed: false };
+  const next = patched(study, { loads });
+  return { ...next, changed: !!next.ok };
 }
 
 /**

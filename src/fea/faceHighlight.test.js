@@ -17,6 +17,7 @@ import {
   reconcileFaceHighlights,
   syncFeaFaceHighlights,
 } from './faceHighlight.js';
+import { FEA_LOAD_ARROW_NAME, FEA_LOAD_ARROWS_NAME } from './loadArrows.js';
 
 function fakeMesh(id) {
   const mesh = {
@@ -336,4 +337,117 @@ test('a missing face map, a detached parent, or a throwing create does not attac
   });
   assert.deepEqual(hidden.created, ['fixture:1:0', 'load:0:0']);
   assert.equal(host.children.filter((child) => child.name === FEA_FACE_HIGHLIGHT_NAME).length, 2);
+});
+
+function quadHost(id) {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new BufferAttribute(new Float32Array([
+    0, 0, 0,
+    10, 0, 0,
+    10, 10, 0,
+    0, 10, 0,
+  ]), 3));
+  geometry.setIndex([0, 1, 2, 0, 2, 3]);
+  const mesh = new Mesh(geometry, new MeshBasicMaterial());
+  mesh.parent = { name: 'scene' };
+  return { id, active: true, mesh };
+}
+
+function arrowGroups(mesh) {
+  return (mesh?.children || []).filter((child) => child.name === FEA_FACE_HIGHLIGHT_NAME)
+    .flatMap((highlight) => highlight.children.filter((child) => child.name === FEA_LOAD_ARROWS_NAME));
+}
+
+function watchDispose(object) {
+  let count = 0;
+  object.traverse((node) => {
+    if (node.geometry?.dispose) {
+      const orig = node.geometry.dispose.bind(node.geometry);
+      node.geometry.dispose = () => {
+        count += 1;
+        orig();
+      };
+    }
+    const materials = Array.isArray(node.material) ? node.material : (node.material ? [node.material] : []);
+    for (const material of materials) {
+      const orig = material.dispose.bind(material);
+      material.dispose = () => {
+        count += 1;
+        orig();
+      };
+    }
+  });
+  return () => count;
+}
+
+test('load arrows follow direction, stay on that part, and dispose with the highlight', () => {
+  const partA = quadHost('a');
+  const partB = quadHost('b');
+  const face = { part: 'b', n: [0, 0, 1], at: [5, 5, 0], area: 100 };
+  const study = {
+    fixtures: [{ faces: [{ part: 'a', n: [0, 0, 1] }] }],
+    loads: [{
+      kind: 'force',
+      direction: '-z',
+      vector: [0, 0, -8],
+      faces: [face],
+    }],
+  };
+  const options = { resolveTriangles: () => [0, 1] };
+  const first = syncFeaFaceHighlights(new Map(), study, [partA, partB], options);
+  assert.equal(arrowGroups(partA.mesh).length, 0);
+  const arrows = arrowGroups(partB.mesh);
+  assert.equal(arrows.length, 1);
+  const heads = arrows[0].children;
+  assert.ok(heads.length >= 3 && heads.length <= 9, `count ${heads.length}`);
+  assert.equal(heads[0].name, FEA_LOAD_ARROW_NAME);
+  assert.equal(heads[0].parent.parent.parent, partB.mesh);
+  for (const head of heads) {
+    assert.ok(Math.abs(head.userData.tip[2]) < 1e-6);
+    assert.ok(head.userData.tail[2] > head.userData.tip[2]);
+    assert.deepEqual(head.userData.dir, [0, 0, -1]);
+    assert.equal(head.children[0].material.color.getHex(), FEA_LOAD_HIGHLIGHT_COLOR);
+  }
+  const disposed = watchDispose(arrows[0]);
+  const kept = syncFeaFaceHighlights(first.overlays, study, [partA, partB], options);
+  assert.equal(kept.overlays.get('load:0:0').mesh, first.overlays.get('load:0:0').mesh);
+  assert.equal(disposed(), 0);
+
+  const sideways = {
+    ...study,
+    loads: [{ ...study.loads[0], direction: '+x', vector: [8, 0, 0] }],
+  };
+  const moved = syncFeaFaceHighlights(kept.overlays, sideways, [partA, partB], options);
+  assert.ok(disposed() > 0);
+  const next = arrowGroups(partB.mesh)[0];
+  assert.ok(next);
+  assert.deepEqual(next.children[0].userData.dir, [1, 0, 0]);
+  assert.notEqual(next, arrows[0]);
+
+  const normal = {
+    ...study,
+    loads: [{ ...study.loads[0], direction: 'normal', vector: [0, 0, 8] }],
+  };
+  const flat = syncFeaFaceHighlights(moved.overlays, normal, [partA, partB], options);
+  assert.equal(arrowGroups(partB.mesh).length, 0);
+  assert.equal(flat.overlays.has('load:0:0'), true);
+
+  const again = syncFeaFaceHighlights(flat.overlays, sideways, [partA, partB], options);
+  assert.equal(arrowGroups(partB.mesh).length, 1);
+  const hidden = syncFeaFaceHighlights(again.overlays, sideways, [partA, partB], {
+    ...options,
+    screen: 'results',
+  });
+  assert.equal(arrowGroups(partB.mesh).length, 0);
+  assert.equal(hidden.overlays.has('load:0:0'), true);
+  const back = syncFeaFaceHighlights(hidden.overlays, sideways, [partA, partB], {
+    ...options,
+    screen: 'setup',
+  });
+  assert.equal(arrowGroups(partB.mesh).length, 1);
+
+  const cleared = syncFeaFaceHighlights(back.overlays, { fixtures: study.fixtures, loads: [] }, [partA, partB], options);
+  assert.equal(arrowGroups(partB.mesh).length, 0);
+  assert.equal(cleared.overlays.has('load:0:0'), false);
+  assert.equal(partA.mesh.children.some((child) => child.name === FEA_FACE_HIGHLIGHT_NAME), true);
 });

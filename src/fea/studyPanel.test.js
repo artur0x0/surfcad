@@ -16,6 +16,9 @@ import {
   sameStudyFace,
   solverRequestMaterial,
   studyFaceFromPick,
+  namedDirection,
+  studyWithForceDirection,
+  studyWithLoadVector,
   studyWithMaterialId,
   studyWithType,
   studyWithoutFixture,
@@ -174,8 +177,37 @@ test('the panel study round-trips through the part script', () => {
   assert.equal(again.fixtures.length, 1);
   assert.equal(again.loads.length, 1);
   assert.deepEqual(again.loads[0].vector, [200, 0, 0]);
+  assert.equal(again.loads[0].direction, 'normal');
   assert.equal(again.result, null);
   assert.match(next, /return part;/);
+});
+
+test('the direction picker retargets force loads and keeps pressure', () => {
+  const drafted = applyFacePick(freshStudy(), {
+    ...emptyDraft(),
+    target: 'force',
+    magnitudeN: 200,
+    direction: '-z',
+  }, top);
+  assert.equal(drafted.study.loads[0].direction, '-z');
+  assert.deepEqual(drafted.study.loads[0].vector, [0, 0, -200]);
+  const pressed = applyFacePick(drafted.study, { ...emptyDraft(), target: 'pressure', pressureMPa: 2 }, side);
+  const sideways = studyWithForceDirection(pressed.study, '+x');
+  assert.equal(sideways.changed, true);
+  assert.equal(sideways.study.loads[0].direction, '+x');
+  assert.deepEqual(sideways.study.loads[0].vector, [200, 0, 0]);
+  assert.equal(sideways.study.loads[1].pressure_MPa, 2);
+  assert.equal(sideways.study.loads[1].direction, undefined);
+  const normal = studyWithForceDirection(sideways.study, 'normal');
+  assert.equal(normal.study.loads[0].direction, 'normal');
+  assert.deepEqual(normal.study.loads[0].vector, [0, 0, 200]);
+  const same = studyWithForceDirection(normal.study, 'normal');
+  assert.equal(same.changed, false);
+  assert.equal(same.study, normal.study);
+  const tilted = studyWithLoadVector(sideways.study, 0, [0, 30, -40]);
+  assert.equal(tilted.study.loads[0].direction, 'custom');
+  assert.equal(namedDirection([0, 0, -5], [1, 0, 0]), '-z');
+  assert.equal(namedDirection([0, 0, 5], [0, 0, 1]), '+z');
 });
 
 test('a new phone study refines by default', () => {

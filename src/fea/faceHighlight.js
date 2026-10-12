@@ -10,6 +10,10 @@
  *
  * Contact skins are a different child (`fea-contact`). This module only
  * disposes meshes it put in the map.
+ *
+ * A non-normal load also parents direction arrows to that overlay. They
+ * leave with the overlay: a direction change rebuilds the key, and a key
+ * that leaves is disposed with its arrow geometry.
  */
 
 import {
@@ -26,6 +30,12 @@ import { fingerprintsFromGeometry } from '../utils/facePaint.js';
 import { matchFaceKeys } from '../utils/faceColorMatch.js';
 import { highlightBoundaryPositions } from '../utils/planarSeam.js';
 import { faceBelongsToStudy } from './feaPickGate.js';
+import {
+  arrowPlacementKey,
+  createLoadArrows,
+  faceArrowPlacements,
+  loadArrowDirection,
+} from './loadArrows.js';
 import { faceKeyOf } from './studyPanel.js';
 
 export const FEA_FACE_HIGHLIGHT_NAME = 'fea-face-highlight';
@@ -59,6 +69,7 @@ export function faceHighlightTargets(study) {
           faceIndex,
           partId: part != null && part !== '' ? String(part) : '',
           face,
+          entry,
         });
       });
     });
@@ -325,13 +336,30 @@ export function syncFeaFaceHighlights(overlays, study, hosts, options = {}) {
     if (!triangles.length) continue;
     const frozen = Array.from(triangles);
     const color = feaHighlightColor(target.role);
+    const placements = loadArrowPlacementsFor(target, host, frozen, options);
     desired.push({
       key: target.key,
       role: target.role,
-      signature: highlightSignature(host.mesh, frozen, color),
+      signature: `${highlightSignature(host.mesh, frozen, color)}|${arrowPlacementKey(placements)}`,
       hostMesh: host.mesh,
-      create: () => createMesh(host, frozen, target),
+      create: () => {
+        const mesh = createMesh(host, frozen, target);
+        if (!options.createMesh && mesh && placements.length && typeof mesh.add === 'function') {
+          const arrows = createLoadArrows(placements, FEA_LOAD_HIGHLIGHT_COLOR);
+          if (arrows) mesh.add(arrows);
+        }
+        return mesh;
+      },
     });
   }
   return reconcileFaceHighlights(overlays, desired, { dispose, attach });
+}
+
+/** Arrows only in setup, and only for a load that is not Normal. */
+function loadArrowPlacementsFor(target, host, triangles, options) {
+  if (target?.role !== 'load') return [];
+  if (options?.screen != null && options.screen !== 'setup') return [];
+  const direction = loadArrowDirection(target.entry, target.face);
+  if (!direction) return [];
+  return faceArrowPlacements(host?.mesh?.geometry, triangles, direction);
 }

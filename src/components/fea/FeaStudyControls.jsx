@@ -1,8 +1,9 @@
 import React from 'react';
 import { ArrowLeft, Check } from 'lucide-react';
-import { ChoiceRow, NumberField } from '../controls/popupUI';
+import { ACCENTS, ChoiceRow, NumberField, POPUP_TEXT, PopupSection } from '../controls/popupUI';
 import { MODAL_MODE_SLOTS, activePlot, plotTabs, resultsChrome } from '../../fea/resultsView.js';
 import { FORCE_DIRECTIONS } from '../../fea/studyPanel.js';
+import { directionAxis, directionButtonStyle } from '../../utils/triadAxis.js';
 import { FeaLegend } from './FeaLegend';
 import { FeaProbeList } from './FeaProbeList';
 import { FeaLoadList } from './FeaLoadList';
@@ -54,6 +55,39 @@ export function FeaTabs({ options, value, onChange, groupAttr, itemAttr, toneFor
         );
       })}
     </div>
+  );
+}
+
+/** X/Y/Z use the viewport triad colors. Normal stays the card accent. */
+function FeaDirectionRow({ value, onChange }) {
+  return (
+    <PopupSection label="Direction" accent="cyan">
+      <div className="flex flex-wrap items-center gap-1.5" data-fea-directions="">
+        {FORCE_DIRECTIONS.map((option) => {
+          const on = option.value === value;
+          const axis = directionAxis(option.value);
+          const style = axis ? directionButtonStyle(axis, on) : undefined;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              data-fea-direction={option.value}
+              {...(axis ? { 'data-fea-axis': axis } : {})}
+              aria-pressed={on}
+              onClick={() => onChange?.(option.value)}
+              style={style}
+              className={`rounded px-2.5 py-1 ${POPUP_TEXT.value} font-medium ${
+                axis
+                  ? 'border'
+                  : (on ? ACCENTS.cyan.chipOn : ACCENTS.cyan.chipOff)
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </PopupSection>
   );
 }
 
@@ -119,10 +153,7 @@ export function FeaStudyControls({ panel }) {
             value={draft.magnitudeN}
             onChange={panel.setMagnitude}
           />
-          <ChoiceRow
-            label="Direction"
-            accent="cyan"
-            options={FORCE_DIRECTIONS}
+          <FeaDirectionRow
             value={draft.direction || 'normal'}
             onChange={panel.setDirection}
           />

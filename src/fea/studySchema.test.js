@@ -101,6 +101,27 @@ test('faces carry faceID plus the face-paint fingerprint', () => {
   assert.deepEqual(study.loads[0].vector, [0, 0, -200]);
   assert.equal(study.loads[1].pressure_MPa, -0.25);
 
+  const directed = defaultStudy({
+    loads: [{
+      kind: 'force',
+      faces: [face({ faceID: 8, at: [50, 0, 10], n: [0, 0, 1], area: 100 })],
+      vector: [0, 0, -200],
+      direction: '-z',
+    }],
+  });
+  assert.equal(directed.loads[0].direction, '-z');
+  const badDirection = validateStudy({
+    ...defaultStudy(),
+    loads: [{
+      kind: 'force',
+      faces: [face()],
+      vector: [1, 0, 0],
+      direction: 'sideways',
+    }],
+  });
+  assert.equal(badDirection.ok, false);
+  assert.match(badDirection.errors.join('\n'), /direction must be normal/);
+
   const sloppy = validateStudy({
     ...defaultStudy(),
     fixtures: [{
