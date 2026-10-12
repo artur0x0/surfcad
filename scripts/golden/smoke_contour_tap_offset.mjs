@@ -307,15 +307,41 @@ async function openPlaneCard(page, label) {
 }
 
 async function clearWithTool(page, label) {
-  await page.locator('[data-contour-tool="circle"]').click();
-  await page.waitForFunction(() => window.__VIEWPORT__.stageContourSketch().tool === 'circle', null, { timeout: 4000 });
-  await page.locator('[data-contour-tool="polyline"]').click();
-  await page.waitForFunction(() => {
-    const sketch = window.__VIEWPORT__.stageContourSketch();
-    return sketch.tool === 'polyline' && sketch.points === 0;
-  }, null, { timeout: 4000 });
+  // A drawn polyline stays when the tool changes. Double-tap removes a dot
+  // and leaves the plane card open. Below three points the shape goes.
+  for (let i = 0; i < 8; i += 1) {
+    const sketch = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch());
+    if ((sketch.points || 0) === 0) break;
+    const dot = sketch.dots?.[sketch.dots.length - 1];
+    if (!dot) {
+      check(`${label} point has a dot`, false, JSON.stringify(sketch));
+      return;
+    }
+    const before = sketch.points;
+    await page.evaluate((pt) => {
+      const canvas = document.querySelector('.viewport-shell > canvas');
+      for (let n = 0; n < 2; n += 1) {
+        canvas.dispatchEvent(new MouseEvent('mouseup', {
+          bubbles: true,
+          cancelable: true,
+          clientX: pt.x,
+          clientY: pt.y,
+          button: 0,
+        }));
+      }
+    }, dot);
+    try {
+      await page.waitForFunction((n) => window.__VIEWPORT__.stageContourSketch().points < n, before, { timeout: 4000 });
+    } catch { /* reported below */ }
+  }
   const sketch = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch());
-  check(`${label} tool switch cleared the points`, sketch.points === 0 && sketch.tool === 'polyline', JSON.stringify(sketch));
+  check(
+    `${label} double-tap cleared the points`,
+    sketch.points === 0 && sketch.planeCard && sketch.tool === 'polyline',
+    JSON.stringify(sketch),
+  );
+  // The first tap of each double-tap toasts over the top of a phone canvas.
+  await page.waitForFunction(() => !document.querySelector('[data-contour-toast]'), null, { timeout: 5000 });
 }
 
 async function setPose(page, t) {
