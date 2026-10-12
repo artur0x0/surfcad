@@ -321,7 +321,7 @@ async function clearWithTool(page, label) {
     await page.evaluate((pt) => {
       const canvas = document.querySelector('.viewport-shell > canvas');
       for (let n = 0; n < 2; n += 1) {
-        canvas.dispatchEvent(new MouseEvent('mouseup', {
+        canvas.dispatchEvent(new window.MouseEvent('mouseup', {
           bubbles: true,
           cancelable: true,
           clientX: pt.x,
