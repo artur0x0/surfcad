@@ -24,7 +24,8 @@ const MATERIAL_ID_KEYS = new Set(['id']);
 const MATERIAL_CUSTOM_KEYS = new Set(['name', 'E_MPa', 'nu', 'yield_MPa', 'density_kg_m3']);
 const MESH_KEYS = new Set(['target', 'refine']);
 const FIXTURE_KEYS = new Set(['kind', 'faces']);
-const LOAD_KEYS = new Set(['kind', 'faces', 'vector', 'pressure_MPa']);
+const LOAD_KEYS = new Set(['kind', 'faces', 'vector', 'pressure_MPa', 'direction']);
+const LOAD_DIRECTIONS = new Set(['normal', '-normal', '+x', '-x', '+y', '-y', '+z', '-z', 'custom']);
 const FACE_KEYS = new Set(['faceID', 'part', 'at', 'n', 'area', 'src', 'ord']);
 const SCOPE_KEYS = new Set(['kind', 'ids']);
 const PART_ENTRY_KEYS = new Set(['id', 'material']);
@@ -220,6 +221,15 @@ function readFixture(fixture, index, errors) {
   return { kind: 'fixed', faces };
 }
 
+function readDirection(load, path, errors) {
+  if (load.direction == null) return undefined;
+  if (typeof load.direction !== 'string' || !LOAD_DIRECTIONS.has(load.direction)) {
+    errors.push(`${path}.direction must be normal, an axis, or custom`);
+    return undefined;
+  }
+  return load.direction;
+}
+
 function readLoad(load, index, errors) {
   const path = `loads[${index}]`;
   if (!isPlain(load)) {
@@ -235,7 +245,10 @@ function readLoad(load, index, errors) {
       errors.push(`${path}.vector is [0, 0, 0]; give the force in newtons`);
     }
     if (!vector || !faces.length) return null;
-    return { kind: 'force', faces, vector };
+    const direction = readDirection(load, path, errors);
+    const force = { kind: 'force', faces, vector };
+    if (direction) force.direction = direction;
+    return force;
   }
   if (load.kind === 'pressure') {
     if (load.vector != null) errors.push(`${path} pressure load must not set vector`);
@@ -244,7 +257,10 @@ function readLoad(load, index, errors) {
       return null;
     }
     if (!faces.length) return null;
-    return { kind: 'pressure', faces, pressure_MPa: load.pressure_MPa };
+    const direction = readDirection(load, path, errors);
+    const pressure = { kind: 'pressure', faces, pressure_MPa: load.pressure_MPa };
+    if (direction) pressure.direction = direction;
+    return pressure;
   }
   errors.push(`${path}.kind must be "force" or "pressure"`);
   return null;

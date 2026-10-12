@@ -8,18 +8,17 @@
  * keyed by faceID and position. Displacement is the magnitude in millimetres.
  * The render mesh is not deformed.
  *
- * The worker passes a mesh cache. A uniform mesh (refine off) is keyed by
- * the surface hash, the mesh target, and the device profile, so a material,
- * load, or fixture change reuses that TET10 mesh. Adaptive refine keys the
- * final mesh by the fixtures and loads as well, so a material-only change
- * still reuses it and a load change does not. When only E and/or yield
- * change, with the same ν and the same force and pressure loads, the cached
- * solution is rescaled and solve_tet10 is not called: stress stays put,
- * displacement is multiplied by E_old / E_new, and the safety factor is
- * yield / p95. The stored convergence rows scale the same way. Anything
- * else re-solves once on the cached mesh and does not remesh. The phone
- * cache holds one mesh; desktop holds two. Evicting an entry releases its
- * arrays.
+ * The worker passes a mesh cache. The mesh key is the surface hash, the
+ * mesh target, and the device profile. A material change, a fixture edit,
+ * and a load magnitude or direction change all reuse that TET10 mesh,
+ * including an adaptive mesh. When only E and/or yield change, with the
+ * same ν and the same force and pressure loads, the cached solution is
+ * rescaled and solve_tet10 is not called: stress stays put, displacement
+ * is multiplied by E_old / E_new, and the safety factor is yield / p95.
+ * The stored convergence rows scale the same way. A different fixture,
+ * load vector, or direction misses that solution key and re-solves once
+ * on the cached mesh. The phone cache holds one mesh; desktop holds two.
+ * Evicting an entry releases its arrays.
  *
  * A pure sheet-metal part (`sheetMetalSolid`, study model "auto" or "shell")
  * is meshed on its mid-surface and solved with solve_shell. study model
@@ -256,13 +255,10 @@ export async function solveSolid({
   const passLimit = mode === 'auto' ? refinePassLimit(device) : 1;
   const refineCap = refineDofCap(device, thin, solver);
   const signature = bcSignature(study);
+  // The mesh key ignores fixtures and loads. The solution key (`signature`)
+  // does not, so a load edit re-solves on the mesh already in the cache.
   const cacheKey = cache
-    ? tools.meshCacheKey(
-      { positions, indices, faceIDs },
-      target,
-      device,
-      mode === 'auto' ? signature : '',
-    )
+    ? tools.meshCacheKey({ positions, indices, faceIDs }, target, device)
     : '';
   let entry = cache ? takeCacheEntry(cache, cacheKey) : null;
   let volume = entry?.mesh?.nodes ? entry.mesh : null;

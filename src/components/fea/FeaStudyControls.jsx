@@ -1,8 +1,16 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Check } from 'lucide-react';
-import { ChoiceRow, NumberField } from '../controls/popupUI';
+import { ACCENTS, ChoiceRow, NumberField, POPUP_TEXT, PopupSection } from '../controls/popupUI';
 import { MODAL_MODE_SLOTS, activePlot, plotTabs, resultsChrome } from '../../fea/resultsView.js';
+import {
+  formatLoadDisplay,
+  fromDisplayLoad,
+  loadUnitForSystem,
+  toDisplayLoad,
+} from '../../fea/loadUnits.js';
 import { FORCE_DIRECTIONS } from '../../fea/studyPanel.js';
+import { useDisplayUnit } from '../../hooks/useDisplayUnit.js';
+import { directionAxis, directionButtonStyle } from '../../utils/triadAxis.js';
 import { FeaLegend } from './FeaLegend';
 import { FeaProbeList } from './FeaProbeList';
 import { FeaLoadList } from './FeaLoadList';
@@ -54,6 +62,117 @@ export function FeaTabs({ options, value, onChange, groupAttr, itemAttr, toneFor
         );
       })}
     </div>
+  );
+}
+
+const LOAD_UNIT_CHOICES = {
+  force: ['N', 'lb'],
+  pressure: ['MPa', 'psi'],
+};
+
+const LOAD_FIELD = {
+  force: { label: 'Force', id: 'fea-force', min: 0.1, max: 10000, step: 10 },
+  pressure: { label: 'Pressure', id: 'fea-pressure', min: -50, max: 50, step: 0.1 },
+};
+
+/** N|lb or MPa|psi. Display only — the study stays in newtons and megapascals. */
+function FeaLoadUnitToggle({ kind, unit, onChange }) {
+  const choices = LOAD_UNIT_CHOICES[kind] || LOAD_UNIT_CHOICES.force;
+  return (
+    <div
+      role="group"
+      aria-label={kind === 'pressure' ? 'Pressure units' : 'Force units'}
+      data-fea-load-units=""
+      data-fea-load-unit={unit}
+      className="inline-flex shrink-0 rounded-md bg-black/30 p-0.5"
+    >
+      {choices.map((choice) => {
+        const on = choice === unit;
+        return (
+          <button
+            key={choice}
+            type="button"
+            data-fea-load-unit-choice={choice}
+            aria-pressed={on}
+            onClick={() => onChange?.(choice)}
+            className={`rounded px-2 py-1 text-[13px] font-medium ${
+              on ? 'bg-cyan-600 text-white' : 'text-gray-300 hover:text-white'
+            }`}
+          >
+            {choice}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Magnitude box plus the unit toggle. `si` is newtons or megapascals.
+ * The toggle converts the displayed number and does not write the study.
+ */
+function FeaLoadMagnitude({ kind, si, onSi }) {
+  const [system] = useDisplayUnit();
+  const [unit, setUnit] = useState(() => loadUnitForSystem(kind, system));
+  useEffect(() => {
+    setUnit(loadUnitForSystem(kind, system));
+  }, [kind, system]);
+  const field = LOAD_FIELD[kind] || LOAD_FIELD.force;
+  return (
+    <NumberField
+      label={field.label}
+      id={field.id}
+      accent="cyan"
+      unit={unit}
+      min={toDisplayLoad(field.min, unit)}
+      max={toDisplayLoad(field.max, unit)}
+      step={toDisplayLoad(field.step, unit)}
+      value={formatLoadDisplay(si, unit)}
+      onChange={(raw) => {
+        if (raw === '' || raw === '-' || raw === '.') {
+          onSi?.(raw);
+          return;
+        }
+        const next = fromDisplayLoad(raw, unit);
+        onSi?.(Number.isFinite(next) ? next : si);
+      }}
+      trailing={(
+        <FeaLoadUnitToggle kind={kind} unit={unit} onChange={setUnit} />
+      )}
+    />
+  );
+}
+
+/** X/Y/Z use the viewport triad colors. Normal stays the card accent. */
+function FeaDirectionRow({ value, onChange }) {
+  return (
+    <PopupSection label="Direction" accent="cyan">
+      <div className="flex flex-wrap items-center gap-1.5" data-fea-directions="">
+        {FORCE_DIRECTIONS.map((option) => {
+          const on = option.value === value;
+          const axis = directionAxis(option.value);
+          const style = axis ? directionButtonStyle(axis, on) : undefined;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              data-fea-direction={option.value}
+              {...(axis ? { 'data-fea-axis': axis } : {})}
+              aria-pressed={on}
+              onClick={() => onChange?.(option.value)}
+              style={style}
+              className={`rounded px-2.5 py-1 ${POPUP_TEXT.value} font-medium ${
+                axis
+                  ? 'border'
+                  : (on ? ACCENTS.cyan.chipOn : ACCENTS.cyan.chipOff)
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </PopupSection>
   );
 }
 
@@ -109,36 +228,15 @@ export function FeaStudyControls({ panel }) {
       </div>
       {draft.target === 'force' && (
         <>
-          <NumberField
-            label="Force N"
-            id="fea-force"
-            accent="cyan"
-            min={0.1}
-            max={10000}
-            step={10}
-            value={draft.magnitudeN}
-            onChange={panel.setMagnitude}
-          />
-          <ChoiceRow
-            label="Direction"
-            accent="cyan"
-            options={FORCE_DIRECTIONS}
+          <FeaLoadMagnitude kind="force" si={draft.magnitudeN} onSi={panel.setMagnitude} />
+          <FeaDirectionRow
             value={draft.direction || 'normal'}
             onChange={panel.setDirection}
           />
         </>
       )}
       {draft.target === 'pressure' && (
-        <NumberField
-          label="Pressure MPa"
-          id="fea-pressure"
-          accent="cyan"
-          min={-50}
-          max={50}
-          step={0.1}
-          value={draft.pressureMPa}
-          onChange={panel.setPressure}
-        />
+        <FeaLoadMagnitude kind="pressure" si={draft.pressureMPa} onSi={panel.setPressure} />
       )}
       <p className="text-[11px] text-cyan-100/80">Tap a face. Tap it again to remove it.</p>
       <FeaLoadList

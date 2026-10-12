@@ -72,6 +72,27 @@ function linearSolve(mesh, mat) {
   };
 }
 
+function tipDisplacement(result) {
+  const probe = result && result.probe;
+  const nodes = probe && probe.nodes;
+  const disp = probe && probe.displacement;
+  assert.ok(nodes && disp && nodes.length >= 3 && disp.length === nodes.length, 'probe displacement');
+  let maxX = -Infinity;
+  for (let i = 0; i < nodes.length; i += 3) maxX = Math.max(maxX, nodes[i]);
+  const acc = [0, 0, 0];
+  let count = 0;
+  const cutoff = maxX - 0.5;
+  for (let i = 0; i < nodes.length / 3; i += 1) {
+    if (nodes[i * 3] < cutoff) continue;
+    acc[0] += disp[i * 3];
+    acc[1] += disp[i * 3 + 1];
+    acc[2] += disp[i * 3 + 2];
+    count += 1;
+  }
+  assert.ok(count > 0, `tip nodes near x=${maxX}`);
+  return acc.map((value) => value / count);
+}
+
 function relError(actual, expected) {
   if (!Number.isFinite(actual) && !Number.isFinite(expected)) return 0;
   const denom = Math.max(Math.abs(actual), Math.abs(expected), 1e-30);
@@ -432,10 +453,11 @@ describe('mesh cache', { concurrency: 1 }, () => {
     console.log(`wasm rescale worst relative error ${worst}`);
   });
 
-  test('auto refine reuses the mesh for a material change and remeshes when the load changes', async () => {
+  test('auto refine reuses the mesh for a material change and for a load change', async () => {
     const cache = createMeshCache();
     const surface = box([40, 10, 10]);
     let made = 0;
+    let solves = 0;
     const meshVolumeFn = async (part, options) => {
       made += 1;
       assert.equal(options.sizing, undefined);
@@ -448,13 +470,17 @@ describe('mesh cache', { concurrency: 1 }, () => {
       profile: 'desktop',
       cache,
       meshVolume: meshVolumeFn,
-      solveTet10: (mesh, mat) => linearSolve(mesh, mat),
+      solveTet10: (mesh, mat) => {
+        solves += 1;
+        return linearSolve(mesh, mat);
+      },
       solveStub: () => { throw new Error('stub'); },
     };
     const study = { ...beamStudy(200), mesh: { target: 4, refine: 'auto' } };
     const first = await solveSolid({ ...common, study, material: material(4096) });
     const stiffer = await solveSolid({ ...common, study, material: material(8192) });
     assert.equal(made, 1);
+    assert.equal(solves, 1);
     assert.equal(first.meshReused, false);
     assert.equal(stiffer.meshReused, true);
     assert.equal(stiffer.rescaled, true);
@@ -465,7 +491,65 @@ describe('mesh cache', { concurrency: 1 }, () => {
       loads: [{ ...study.loads[0], vector: [0, 0, -400] }],
     };
     const again = await solveSolid({ ...common, study: loaded, material: material(8192) });
-    assert.equal(made, 2);
-    assert.equal(again.meshReused, false);
+    assert.equal(made, 1);
+    assert.equal(solves, 2);
+    assert.equal(again.meshReused, true);
+    assert.equal(again.rescaled, false);
+  });
+
+  test('doubling the force doubles displacement and a new direction rotates it', { timeout: 180_000 }, async () => {
+    const surface = box([40, 10, 10]);
+    const cache = createMeshCache();
+    let meshes = 0;
+    let solves = 0;
+    const common = {
+      positions: surface.positions,
+      indices: surface.indices,
+      faceIDs: surface.faceIds,
+      profile: 'desktop',
+      cache,
+      material: material(4096, 52.5),
+      meshVolume: async (part, options) => {
+        meshes += 1;
+        return meshVolume(part, options);
+      },
+      solveTet10: (...args) => {
+        solves += 1;
+        return fea.solve_tet10(...args);
+      },
+      solveStub: fea.solve,
+    };
+    const bend = beamStudy(200, 8);
+    const doubled = beamStudy(400, 8);
+    const sideways = beamStudy(400, 8);
+    sideways.loads[0].vector = [0, -400, 0];
+    sideways.loads[0].direction = '-y';
+    const down = await solveSolid({ ...common, study: bend });
+    const again = await solveSolid({ ...common, study: doubled });
+    const turned = await solveSolid({ ...common, study: sideways });
+    assert.equal(meshes, 1);
+    assert.equal(solves, 3);
+    assert.equal(down.meshReused, false);
+    assert.equal(down.rescaled, false);
+    assert.equal(again.meshReused, true);
+    assert.equal(again.rescaled, false);
+    assert.equal(turned.meshReused, true);
+    assert.equal(turned.rescaled, false);
+    const a = tipDisplacement(down);
+    const b = tipDisplacement(again);
+    const c = tipDisplacement(turned);
+    const az = Math.abs(a[2]);
+    const bz = Math.abs(b[2]);
+    assert.ok(az > Math.abs(a[1]) * 2 && az > Math.abs(a[0]) * 2, `−Z tip ${a}`);
+    assert.ok(relError(bz, az * 2) < 1e-4, `doubled Z ${b[2]} vs ${a[2]}`);
+    assert.ok(relError(Math.hypot(b[0], b[1], b[2]), Math.hypot(a[0], a[1], a[2]) * 2) < 1e-4);
+    const cy = Math.abs(c[1]);
+    assert.ok(cy > Math.abs(c[2]) * 2 && cy > Math.abs(c[0]) * 2, `−Y tip ${c}`);
+    assert.ok(cy > az * 1.5, `rotated |uy| ${cy} vs |uz| ${az}`);
+    assert.ok(Math.abs(c[2]) < az * 0.5, `rotated uz ${c[2]} vs bend ${a[2]}`);
+    const bendDir = b.map((value) => value / Math.hypot(b[0], b[1], b[2]));
+    const turnDir = c.map((value) => value / Math.hypot(c[0], c[1], c[2]));
+    const dot = bendDir[0] * turnDir[0] + bendDir[1] * turnDir[1] + bendDir[2] * turnDir[2];
+    assert.ok(Math.abs(dot) < 0.5, `direction dot ${dot}`);
   });
 });

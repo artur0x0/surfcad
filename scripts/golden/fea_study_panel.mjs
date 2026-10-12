@@ -6,6 +6,8 @@
  * refine resolves the clamped corner, so the check allows 30%.
  * After that solve, the material changes and Run goes again: the mesh is
  * reused, the second run is much faster, and the legend matches the new yield.
+ * Doubling the force re-solves on that mesh and doubles the stress. Pointing
+ * the same force along +X re-solves again and leaves the bending stress.
  *
  * 390×844 touch (iPhone UA, DPR 2) and 1280×800 desktop. FEA_VIEW=desktop
  * or FEA_VIEW=390 runs one of them. FEA_PREVIEW=1 serves the existing
@@ -13,7 +15,7 @@
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir() only.
  */
-/* global document, indexedDB, localStorage, window */
+/* global Event, document, indexedDB, localStorage, window */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -899,6 +901,76 @@ async function runCase(browser, vp) {
     firstSolveMs > 0 && reusedMs > 0 && reusedMs * 2 < firstSolveMs,
     `first ${firstSolveMs} ms, second ${reusedMs} ms`,
   );
+
+  await page.locator(`${shell} [data-fea-plot="displacement"]`).click();
+  await page.locator(`${shell} [data-fea-displacement]`).waitFor({ timeout: 8000 });
+  const reusedDispText = ((await page.locator(`${shell} [data-fea-displacement]`).innerText()) || '').replace(/\s+/g, ' ');
+  const reusedDisp = Number((reusedDispText.match(/max ([0-9.]+) mm/) || [])[1]);
+  check(`${vp.name} reused displacement is readable`, reusedDisp > 0, reusedDispText);
+
+  await page.locator(`${shell} [data-fea-back]`).click();
+  await page.locator(`${shell}[data-fea-view="setup"]`).waitFor({ timeout: 8000 });
+  const forceField = page.locator(`${shell} [data-popup-number="fea-force"]`);
+  await forceField.scrollIntoViewIfNeeded();
+  await forceField.evaluate((el) => {
+    const desc = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+    desc.set.call(el, '400');
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.locator(`${shell} [data-fea-load="0"]`).filter({ hasText: '0, 0, -400' }).waitFor({ timeout: 8000 });
+  await page.locator(`${shell} [data-fea-stale="1"]`).waitFor({ timeout: 8000 });
+  check(`${vp.name} doubled force marks the result stale`, true);
+  await page.locator(`${shell} [data-fea-run]`).click();
+  await page.waitForFunction((sel) => {
+    const el = document.querySelector(sel);
+    return !!el && /mesh reused/i.test(el.textContent || '');
+  }, `${shell} [data-fea-timing]`, { timeout: 120000 });
+  const doubled = await page.evaluate(() => ({
+    stress: document.querySelector('[data-fea-stress]')?.textContent || '',
+    stale: document.querySelector('[data-fea-stale]')?.getAttribute('data-fea-stale') || '',
+    timing: (document.querySelector('[data-fea-timing]')?.textContent || '').replace(/\s+/g, ' ').trim(),
+  }));
+  const doubledMax = Number((doubled.stress.match(/max ([0-9.]+) MPa/) || [])[1]);
+  const doubleError = Number.isFinite(doubledMax) && reusedMax > 0
+    ? Math.abs(doubledMax - 2 * reusedMax) / (2 * reusedMax)
+    : Infinity;
+  console.log(`  load x2 ${vp.name} max ${doubledMax} MPa vs ${reusedMax} (${doubled.timing})`);
+  check(`${vp.name} doubled force re-solved`, doubled.stale === '0', doubled.stale);
+  check(`${vp.name} doubled force reused the mesh`, /mesh reused/i.test(doubled.timing), doubled.timing);
+  check(`${vp.name} doubled force doubles the stress`, doubleError <= 0.08, `max ${doubledMax} vs 2x ${reusedMax}`);
+  await page.locator(`${shell} [data-fea-plot="displacement"]`).click();
+  await page.locator(`${shell} [data-fea-displacement]`).waitFor({ timeout: 8000 });
+  const doubledDispText = ((await page.locator(`${shell} [data-fea-displacement]`).innerText()) || '').replace(/\s+/g, ' ');
+  const doubledDisp = Number((doubledDispText.match(/max ([0-9.]+) mm/) || [])[1]);
+  const dispError = Number.isFinite(doubledDisp) && reusedDisp > 0
+    ? Math.abs(doubledDisp - 2 * reusedDisp) / (2 * reusedDisp)
+    : Infinity;
+  check(`${vp.name} doubled force doubles the displacement`, dispError <= 0.15, `max ${doubledDisp} vs 2x ${reusedDisp} (${doubledDispText})`);
+  const doubleShot = join(SHOT_DIR, vp.touch ? 'fea-study-load-double-390.png' : 'fea-study-load-double-1280.png');
+  check(`${vp.name} double shot dir`, !doubleShot.startsWith('/opt/cursor/artifacts'), doubleShot);
+  await page.screenshot({ path: doubleShot });
+
+  await page.locator(`${shell} [data-fea-back]`).click();
+  await page.locator(`${shell}[data-fea-view="setup"]`).waitFor({ timeout: 8000 });
+  await page.locator(`${shell} [data-fea-direction="+x"]`).scrollIntoViewIfNeeded();
+  await page.locator(`${shell} [data-fea-direction="+x"]`).click();
+  await page.locator(`${shell} [data-fea-load="0"]`).filter({ hasText: '400, 0, 0' }).waitFor({ timeout: 8000 });
+  await page.locator(`${shell} [data-fea-run]`).click();
+  await page.waitForFunction((sel) => {
+    const el = document.querySelector(sel);
+    return !!el && /mesh reused/i.test(el.textContent || '');
+  }, `${shell} [data-fea-timing]`, { timeout: 120000 });
+  const axial = await page.evaluate(() => ({
+    stress: document.querySelector('[data-fea-stress]')?.textContent || '',
+    timing: (document.querySelector('[data-fea-timing]')?.textContent || '').replace(/\s+/g, ' ').trim(),
+  }));
+  const axialMax = Number((axial.stress.match(/max ([0-9.]+) MPa/) || [])[1]);
+  console.log(`  load +X ${vp.name} max ${axialMax} MPa (${axial.timing})`);
+  check(`${vp.name} +X reused the mesh`, /mesh reused/i.test(axial.timing), axial.timing);
+  check(`${vp.name} +X stress leaves the bending result`, Number.isFinite(axialMax) && axialMax < doubledMax * 0.25, `axial ${axialMax} vs bend ${doubledMax}`);
+  const axialShot = join(SHOT_DIR, vp.touch ? 'fea-study-load-axial-390.png' : 'fea-study-load-axial-1280.png');
+  await page.screenshot({ path: axialShot });
 
   const notice = (await noticeOf(page) || '').trim();
   check(`${vp.name} study write accepted`, notice === '', notice);

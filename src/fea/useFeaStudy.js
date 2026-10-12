@@ -33,7 +33,10 @@ import {
   studyWithContactKind,
   studyWithContactMu,
   studyWithCustomMaterial,
+  studyWithForceDirection,
+  studyWithForceMagnitude,
   studyWithLoadVector,
+  studyWithPressureValue,
   studyWithMaterialId,
   studyWithRefine,
   studyWithResolvedParts,
@@ -320,6 +323,7 @@ export function useFeaStudy({
     return {
       analyzedPartId: analyzed,
       memberIds: studyMemberIds(studyRef.current, rows, analyzed),
+      screen: viewRef.current?.screen || 'setup',
     };
   };
 
@@ -511,16 +515,29 @@ export function useFeaStudy({
   }, [commitStudy]);
 
   const setMagnitude = useCallback((magnitudeN) => {
-    setDraft((prev) => ({ ...prev, magnitudeN: Number(magnitudeN) }));
-  }, []);
+    const value = Number(magnitudeN);
+    setDraft((prev) => ({ ...prev, magnitudeN: value }));
+    if (!Number.isFinite(value) || value === 0) return;
+    // The draft alone is what the next face tap uses. Existing forces have
+    // to move too, or Run sends the old vector and the solution cache hits.
+    const next = studyWithForceMagnitude(studyRef.current, value);
+    if (next.ok && next.changed) commitStudy(next.study);
+  }, [commitStudy]);
 
   const setDirection = useCallback((direction) => {
     setDraft((prev) => ({ ...prev, direction }));
-  }, []);
+    const next = studyWithForceDirection(studyRef.current, direction);
+    if (next.ok && next.changed) commitStudy(next.study);
+    else if (!next.ok) setNotice(next.errors[0] || 'Could not set the load direction');
+  }, [commitStudy]);
 
   const setPressure = useCallback((pressureMPa) => {
-    setDraft((prev) => ({ ...prev, pressureMPa: Number(pressureMPa) }));
-  }, []);
+    const value = Number(pressureMPa);
+    setDraft((prev) => ({ ...prev, pressureMPa: value }));
+    if (!Number.isFinite(value) || value === 0) return;
+    const next = studyWithPressureValue(studyRef.current, value);
+    if (next.ok && next.changed) commitStudy(next.study);
+  }, [commitStudy]);
 
   const removeFixture = useCallback((index) => {
     const next = studyWithoutFixture(studyRef.current, index);
@@ -1076,6 +1093,13 @@ export function useFeaStudy({
 
   const screen = view.screen;
   const results = screen !== 'setup';
+
+  // Arrows are part of the highlight reconcile. Leaving setup drops them;
+  // coming back builds them again from the stored direction.
+  useEffect(() => {
+    if (!open) return;
+    paintHighlight(studyRef.current);
+  }, [open, screen, paintHighlight]);
 
   useEffect(() => {
     if (screen === 'results') return;

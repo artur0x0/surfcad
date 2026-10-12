@@ -450,6 +450,7 @@ import {
 import { formatViewerTitle, sanitizePartName } from '../utils/assembly.js';
 import { createCuttingPlaneWidget, updateCuttingPlaneWidget } from '../utils/cuttingPlaneWidget';
 import { AxesHelper } from 'three';
+import { applyTriadAxisColors } from '../utils/triadAxis';
 import { createDeltaLines, disposeMeasurementLines } from '../utils/measurementTool';
 import {
   boundsOfTriangles,
@@ -10001,8 +10002,9 @@ const Viewport = forwardRef(({
       orbitControls = controls;
       controlsRef.current = controls;
 
-      // Add axis helper
+      // Add axis helper. Origin colors are the shared triad constant.
       const axisHelper = new AxesHelper(50);
+      applyTriadAxisColors(axisHelper);
       sceneRef.current.add(axisHelper);
       axisHelperRef.current = axisHelper;
       axisHelperRef.current.visible = axisHelperEnabled;
