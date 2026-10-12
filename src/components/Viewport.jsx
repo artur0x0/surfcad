@@ -11822,7 +11822,11 @@ const Viewport = forwardRef(({
     { partSelected: cadPartSelected !== false },
   );
 
-  const titlePlace = 'left-1/2 -translate-x-1/2 max-w-[min(36rem,calc(100%-2rem))]';
+  const titlePlace = 'left-1/2 -translate-x-1/2 w-max max-w-[min(36rem,calc(100%-2rem))]';
+  // Contour mode keeps the part-in-assembly row in layout so the status
+  // legend can sit on that same box. The chips themselves are hidden.
+  const hideCadTitle = mode !== 'game' && !!contourMode;
+  const contourLegend = hideCadTitle && !isWorkplaneEntry(contourMode.entry);
 
   return (
     <div
@@ -11887,43 +11891,62 @@ const Viewport = forwardRef(({
         cadToolbarHost,
       )}
 
-      {/* Title row. Game: puzzle name. CAD: part, then "in", then assembly. */}
+      {/* Title row. Game: puzzle name. CAD: part, then "in", then assembly.
+          Contour mode keeps that row laid out and hides the chips, and
+          centres the status legend on the same box. */}
       {mode === 'game' && (
         <ViewportTitleChip>{gamePuzzleTitle || 'Puzzle'}</ViewportTitleChip>
       )}
       {mode !== 'game' && (
         showCadTitle ? (
         <div
-          className={`pointer-events-none absolute top-4 z-10 flex items-center gap-2 ${titlePlace}`}
+          className={`pointer-events-none absolute top-4 z-10 ${titlePlace}`}
           data-viewer-title=""
           data-viewer-title-text={titleParts.text}
+          data-viewer-title-hidden={hideCadTitle ? '' : undefined}
         >
-          {titleParts.part ? (
-            <ViewportTitleChip inline value={currentFilename} onRename={onRenameFile}>
-              {titleParts.part}
-            </ViewportTitleChip>
-          ) : null}
-          {titleParts.connector ? (
-            <span
-              className="shrink-0 text-xs font-medium text-gray-300"
-              data-title-in=""
+          <div className="relative" data-viewer-title-pills="">
+            <div
+              data-viewer-title-chips=""
+              className={`flex items-center gap-2 ${hideCadTitle ? 'invisible' : ''}`}
+              {...(hideCadTitle ? { inert: '' } : {})}
             >
-              {titleParts.connector}
-            </span>
-          ) : null}
-          {titleParts.assembly ? (
-            <ViewportTitleChip
-              inline
-              noun="Assembly"
-              value={titleParts.assembly}
-              onRename={onRenameAssembly}
-            >
-              {titleParts.assembly}
-            </ViewportTitleChip>
-          ) : null}
+              {titleParts.part ? (
+                <ViewportTitleChip inline value={currentFilename} onRename={onRenameFile}>
+                  {titleParts.part}
+                </ViewportTitleChip>
+              ) : null}
+              {titleParts.connector ? (
+                <span
+                  className="shrink-0 text-xs font-medium text-gray-300"
+                  data-title-in=""
+                >
+                  {titleParts.connector}
+                </span>
+              ) : null}
+              {titleParts.assembly ? (
+                <ViewportTitleChip
+                  inline
+                  noun="Assembly"
+                  value={titleParts.assembly}
+                  onRename={onRenameAssembly}
+                >
+                  {titleParts.assembly}
+                </ViewportTitleChip>
+              ) : null}
+            </div>
+            {contourLegend ? (
+              <ContourStatusLegend className="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2" />
+            ) : null}
+          </div>
         </div>
         ) : (
-          <div data-viewer-title-empty="" hidden />
+          <>
+            <div data-viewer-title-empty="" hidden />
+            {contourLegend ? (
+              <ContourStatusLegend className="absolute left-1/2 top-4 z-20 -translate-x-1/2" />
+            ) : null}
+          </>
         )
       )}
 
@@ -12107,10 +12130,6 @@ const Viewport = forwardRef(({
         onCancel={() => setFeatureDeleteConfirm(null)}
         onConfirm={() => deleteFeatureFromEdit(true)}
       />
-
-      {contourMode && !isWorkplaneEntry(contourMode.entry) && mode !== 'game' && (
-        <ContourStatusLegend />
-      )}
 
       {/* Contour rail: tools, Back undoes, Confirm finishes, X exits. */}
       {contourMode && (
