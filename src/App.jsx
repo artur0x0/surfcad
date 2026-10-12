@@ -8,7 +8,6 @@ import MobileStageToggle from './components/MobileStageToggle';
 import FeatureStrip from './components/FeatureStrip';
 import { failedFeatureFromOutcome, failedFeatureIds, failedFeatureTitles } from './utils/featureFailure';
 import {
-  clampRollbackAnchor,
   commitScriptAtRollback,
   rollbackAnchorAfterInsert,
   rollbackAnchorsAfterOpen,
@@ -690,7 +689,6 @@ const App = () => {
       result.buffer,
       `Delete ${feature.chipLabel || feature.label || feature.kind || 'feature'}`,
     );
-    if (wrote) clampStoredRollback(editorRollbackKey(), result.buffer);
     if (!wrote) {
       viewportRef.current?.softFailContour?.(
         'Could not delete the feature from the editor — try again.',
@@ -724,7 +722,6 @@ const App = () => {
       result.buffer,
       `Delete ${feature.label || 'feature'}`,
     );
-    if (wrote) clampStoredRollback(editorRollbackKey(), result.buffer);
     if (!wrote) {
       viewportRef.current?.softFailContour?.(
         'Could not delete feature from the editor — try again.',
@@ -960,10 +957,6 @@ const App = () => {
     const next = rollbackAnchorsAfterOpen();
     rollbackAnchorsRef.current = next;
     setRollbackAnchors(next);
-  };
-  const clampStoredRollback = (key, script) => {
-    if (!key || appModeRef.current === 'game') return;
-    storeRollbackAnchor(key, clampRollbackAnchor(script, storedRollback(key)));
   };
   const editorRollbackKey = () => {
     if (appModeRef.current === 'game') return null;
@@ -5556,7 +5549,6 @@ const App = () => {
       return false;
     }
     const wrote = codeEditorRef.current?.applyBuffer?.(saved.buffer, 'Delete contour');
-    if (wrote) clampStoredRollback(editorRollbackKey(), saved.buffer);
     if (!wrote) {
       viewportRef.current?.softFailContour?.(
         'Could not delete the contour from the editor — try again.',
@@ -6172,7 +6164,6 @@ const App = () => {
     if (undone.code == null) return;
     partHistoriesRef.current[id] = undone.history;
     applyPartHistory(undone.history);
-    clampStoredRollback(id, undone.code);
     console.log('[App] Undoing to commit:', {
       partId: id,
       head: undone.history.head,
@@ -6199,7 +6190,6 @@ const App = () => {
     if (redone.code == null) return;
     partHistoriesRef.current[id] = redone.history;
     applyPartHistory(redone.history);
-    clampStoredRollback(id, redone.code);
     console.log('[App] Redoing to commit:', {
       partId: id,
       head: redone.history.head,

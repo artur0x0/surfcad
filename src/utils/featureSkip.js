@@ -220,7 +220,8 @@ export function evaluationScript(script, options = {}) {
 
 /**
  * Gap the rollback bar occupies. `0` is before every feature, `ids.length`
- * is after the last one. A missing anchor sits at the end.
+ * is after the last one. A missing anchor sits at the end, never at the start.
+ * An empty list's only index is 0; that is the end until the anchor is `null`.
  * @param {string[]} ids
  * @param {string|null|undefined} anchor
  */
@@ -230,6 +231,31 @@ export function rollbackGapIndex(ids, anchor) {
   if (typeof anchor !== 'string') return list.length;
   const at = list.indexOf(anchor);
   return at < 0 ? list.length : at + 1;
+}
+
+/**
+ * One reading of the rollback bar for the strip and for evaluation.
+ * `null` is the start and skips every feature. A known id skips the tail
+ * after that feature. A missing id, or no anchor, is the end and skips
+ * nothing — it is not the start. Callers must use this anchor, not a second
+ * guess from the gap index: index 0 is the start only when the anchor is `null`.
+ * @param {string} script
+ * @param {string|null|undefined} anchor
+ * @returns {{ anchor: string|null|undefined, index: number, skipIds: string[], ids: string[] }}
+ */
+export function resolveRollback(script, anchor) {
+  const text = typeof script === 'string' ? script : '';
+  const ids = parseFeatureMarkers(text).map((feature) => feature.id);
+  let resolved;
+  if (anchor === null) resolved = null;
+  else if (typeof anchor === 'string' && ids.includes(anchor)) resolved = anchor;
+  else resolved = undefined;
+  return {
+    anchor: resolved,
+    index: rollbackGapIndex(ids, resolved),
+    skipIds: rolledBackFeatureIds(text, resolved),
+    ids,
+  };
 }
 
 /**
@@ -268,8 +294,9 @@ export function rollbackInsertCaret(script, anchor) {
 
 /**
  * Keep the bar when its feature is still in the script. `null` stays before
- * everything. A missing id snaps to the end. Undo, redo, and delete use this.
- * A contour or sheet write uses it too, so the bar does not follow a new block.
+ * everything. A missing id snaps to the end. Callers that must remember a
+ * stale id (undo, redo, delete) do not use this: they keep the stored id
+ * and let `resolveRollback` draw that miss as the end.
  * @param {string} script
  * @param {string|null|undefined} anchor
  * @returns {string|null|undefined}
@@ -335,11 +362,83 @@ export function rolledBackFeatureIds(script, anchorId) {
   return features.slice(at + 1).map((feature) => feature.id);
 }
 
+function explicitMarkerId(script, feature) {
+  const lineEnd = script.indexOf('\n', feature.startOffset);
+  const line = script.slice(feature.startOffset, lineEnd < 0 ? feature.endOffset : lineEnd);
+  return / id=[A-Za-z_$][\w$]* ---/.test(line);
+}
+
+function mintFeatureId(script, prefix) {
+  const used = new Set(parseFeatureMarkers(script).map((feature) => feature.id));
+  let n = 1;
+  let cand = `${prefix}${n}`;
+  while (used.has(cand)) {
+    n += 1;
+    cand = `${prefix}${n}`;
+    if (n > 10000) break;
+  }
+  return cand;
+}
+
+/** Write `id=` on a block that only had a positional chip id, so the id survives a later insert. */
+function stampFeatureId(script, feature, id) {
+  if (!feature || explicitMarkerId(script, feature)) return script;
+  const beginEnd = script.indexOf('\n', feature.startOffset);
+  const beginStop = beginEnd < 0 ? feature.endOffset : beginEnd;
+  const endStart = script.lastIndexOf('\n', Math.max(feature.endOffset - 1, 0)) + 1;
+  const beginLine = script.slice(feature.startOffset, beginStop);
+  const endLine = script.slice(endStart, feature.endOffset);
+  if (/ id=/.test(beginLine) || / id=/.test(endLine)) return script;
+  const nextBegin = beginLine.replace(/ ---$/, ` id=${id} ---`);
+  const nextEnd = endLine.replace(/ ---$/, ` id=${id} ---`);
+  if (nextBegin === beginLine || nextEnd === endLine) return script;
+  return `${script.slice(0, feature.startOffset)}${nextBegin}${script.slice(beginStop, endStart)}${nextEnd}${script.slice(feature.endOffset)}`;
+}
+
+function stampLanded(buffer, featureId) {
+  const feature = parseFeatureMarkers(buffer).find((item) => item.id === featureId);
+  if (!feature || explicitMarkerId(buffer, feature)) return { buffer, id: featureId };
+  const id = mintFeatureId(buffer, feature.kind || 'feature');
+  const next = stampFeatureId(buffer, feature, id);
+  const placed = parseFeatureMarkers(next).find((item) => item.id === id);
+  return { buffer: next, id: placed?.id || featureId };
+}
+
+/**
+ * The same block after a rewrite that changed its positional id.
+ * An id that still exists but now labels a different block follows the
+ * original body. A missing block is the end, not the start.
+ * @returns {string|null|undefined}
+ */
+function reboundAnchor(beforeScript, afterScript, anchor) {
+  if (anchor === null) return null;
+  if (typeof anchor !== 'string') return undefined;
+  const before = parseFeatureMarkers(beforeScript);
+  const after = parseFeatureMarkers(afterScript);
+  const host = before.find((feature) => feature.id === anchor);
+  if (!host) return after.some((feature) => feature.id === anchor) ? anchor : undefined;
+  const body = blockBody(beforeScript, host);
+  const same = after.find((feature) => (
+    feature.kind === host.kind && blockBody(afterScript, feature) === body
+  ));
+  if (same) return same.id;
+  return after.some((feature) => feature.id === anchor) ? anchor : undefined;
+}
+
+function withStampedAnchor(buffer, featureId) {
+  if (typeof featureId !== 'string' || !featureId) {
+    return { buffer, anchor: featureId === null ? null : undefined };
+  }
+  const stamped = stampLanded(buffer, featureId);
+  return { buffer: stamped.buffer, anchor: stamped.id };
+}
+
 /**
  * Place new feature blocks at the rollback bar, the way a palette insert does.
  * An Accept that appended past the bar is cut out and spliced at the caret.
  * A block that is already in that gap stays. An edit of an existing block
  * does not move, and the bar stays. The bar then sits on the new feature.
+ * A missing anchor is the end: fresh blocks are not pulled to the start.
  * @param {string} beforeScript
  * @param {string} afterScript
  * @param {string|null|undefined} anchor
@@ -347,9 +446,11 @@ export function rolledBackFeatureIds(script, anchorId) {
  */
 export function commitScriptAtRollback(beforeScript, afterScript, anchor) {
   const after = typeof afterScript === 'string' ? afterScript : '';
-  if (anchor !== null && typeof anchor !== 'string') {
+  const bound = reboundAnchor(beforeScript, after, anchor);
+  if (bound !== null && typeof bound !== 'string') {
     return { buffer: after, anchor: undefined };
   }
+  anchor = bound;
   const beforeIds = new Set(parseFeatureMarkers(beforeScript).map((feature) => feature.id));
   const fresh = changedFeatureSlice(beforeScript, after).filter((feature) => (
     feature.id && !beforeIds.has(feature.id)
@@ -373,7 +474,7 @@ export function commitScriptAtRollback(beforeScript, afterScript, anchor) {
     return idx === anchorIndex + 1 + i;
   });
   const lastId = tailFresh[tailFresh.length - 1].id;
-  if (packed) return { buffer: after, anchor: lastId };
+  if (packed) return withStampedAnchor(after, lastId);
 
   const chunks = tailFresh.map((feature) => (
     after.slice(feature.startOffset, feature.endOffset).replace(/^\n+|\s+$/g, '')
@@ -405,7 +506,7 @@ export function commitScriptAtRollback(beforeScript, afterScript, anchor) {
     want.has(norm(buffer.slice(feature.startOffset, feature.endOffset)))
   ));
   const landed = placed.length ? placed[placed.length - 1].id : lastId;
-  return { buffer, anchor: landed || lastId };
+  return withStampedAnchor(buffer, landed || lastId);
 }
 
 /**

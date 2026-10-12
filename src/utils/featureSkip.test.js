@@ -32,6 +32,7 @@ import {
   rollbackAnchorsAfterOpen,
   rollbackGapIndex,
   rollbackInsertCaret,
+  resolveRollback,
 } from './featureSkip.js';
 
 function region(begin, end, id, body) {
@@ -350,11 +351,102 @@ test('a fillet accept at mid-bar lands in the gap and reports the tail', () => {
   assert.equal(composed.ok, true);
   const placed = commitScriptAtRollback(script, composed.buffer, 'cube1');
   const ids = parseFeatureMarkers(placed.buffer).map((feature) => feature.id);
-  assert.deepEqual(ids, ['cube1', 'fillet-1', 'shell1']);
-  assert.equal(placed.anchor, 'fillet-1');
+  assert.deepEqual(ids, ['cube1', 'fillet1', 'shell1']);
+  assert.equal(placed.anchor, 'fillet1');
+  assert.match(placed.buffer, /fillet-mode begin id=fillet1 ---/);
   const live = evaluationScript(placed.buffer, { anchorId: placed.anchor });
   assert.match(live, /filletAlongPath\(/);
   assert.equal(live.includes("hollow(part, 2, 'z')"), false);
   assert.deepEqual(rolledBackFeatureIds(placed.buffer, placed.anchor), ['shell1']);
   assert.deepEqual(rolledBackFeatureIds(script, 'cube1'), ['shell1']);
+  const plan = resolveRollback(placed.buffer, placed.anchor);
+  assert.equal(plan.anchor, 'fillet1');
+  assert.deepEqual(plan.skipIds, ['shell1']);
+});
+
+test('a missing rollback id is the end for the bar and the run', () => {
+  const script = [
+    region(CUBE_BEGIN, CUBE_END, 'cube1', 'let part = Manifold.cube([20, 20, 20], true);'),
+    region(SHELL_BEGIN, SHELL_END, 'shell1', "part = hollow(part, 2, 'z');"),
+    'return part;',
+    '',
+  ].join('\n');
+  const missing = resolveRollback(script, 'fillet-9');
+  assert.equal(missing.anchor, undefined);
+  assert.equal(missing.index, 2);
+  assert.deepEqual(missing.skipIds, []);
+  assert.equal(evaluationScript(script, { anchorId: missing.anchor }), script);
+  const empty = resolveRollback('', 'fillet-1');
+  assert.equal(empty.index, 0);
+  assert.equal(empty.anchor, undefined);
+  assert.deepEqual(empty.skipIds, []);
+  assert.equal(rollbackAnchorAtGap(empty.ids, empty.index), null);
+  const start = resolveRollback(script, null);
+  assert.equal(start.anchor, null);
+  assert.equal(start.index, 0);
+  assert.deepEqual(start.skipIds, ['cube1', 'shell1']);
+});
+
+test('a shifted positional id stays on the same block', () => {
+  const cube = (body) => `${CUBE_BEGIN}\n${body}\n${CUBE_END}`;
+  const before = [
+    cube('let part = Manifold.cube([20, 20, 20], true);'),
+    cube('part = part.add(Manifold.cube([4, 4, 4], true));'),
+    'return part;',
+    '',
+  ].join('\n');
+  assert.deepEqual(parseFeatureMarkers(before).map((feature) => feature.id), ['cube-0', 'cube-1']);
+  const prepended = [
+    cube('part = part.add(Manifold.cube([1, 1, 1], true));'),
+    cube('let part = Manifold.cube([20, 20, 20], true);'),
+    cube('part = part.add(Manifold.cube([4, 4, 4], true));'),
+    'return part;',
+    '',
+  ].join('\n');
+  const placed = commitScriptAtRollback(before, prepended, 'cube-1');
+  const ids = parseFeatureMarkers(placed.buffer).map((feature) => feature.id);
+  assert.deepEqual(ids, ['cube-0', 'cube-1', 'cube-2']);
+  assert.equal(placed.anchor, 'cube-2');
+  const host = parseFeatureMarkers(placed.buffer).find((feature) => feature.id === placed.anchor);
+  assert.match(placed.buffer.slice(host.startOffset, host.endOffset), /\[4,\s*4,\s*4\]/);
+  const aliased = parseFeatureMarkers(placed.buffer).find((feature) => feature.id === 'cube-1');
+  assert.match(placed.buffer.slice(aliased.startOffset, aliased.endOffset), /\[20,\s*20,\s*20\]/);
+  const plan = resolveRollback(placed.buffer, placed.anchor);
+  assert.equal(plan.anchor, 'cube-2');
+  assert.deepEqual(plan.skipIds, []);
+});
+
+test('a missing anchor does not pull a new fillet to the start', () => {
+  const script = [
+    region(CUBE_BEGIN, CUBE_END, 'cube1', 'let part = Manifold.cube([20, 20, 20], true);'),
+    region(SHELL_BEGIN, SHELL_END, 'shell1', "part = hollow(part, 2, 'z');"),
+    'return part;',
+    '',
+  ].join('\n');
+  const composed = composeFilletCommit(script, {
+    edges: [{
+      a: 0,
+      b: 1,
+      va: [0, 0, 0],
+      vb: [0, 0, 20],
+      boundaryId: 0,
+      faceA: 0,
+      faceB: 6,
+      pairCount: 1,
+    }],
+    params: { radius: 2, strategy: 'sweep' },
+    commitMode: 'append',
+    filletClass: 'easy',
+  });
+  assert.equal(composed.ok, true);
+  const placed = commitScriptAtRollback(script, composed.buffer, 'fillet-9');
+  const ids = parseFeatureMarkers(placed.buffer).map((feature) => feature.id);
+  assert.equal(ids[0], 'cube1');
+  assert.equal(ids[ids.length - 1].startsWith('fillet'), true);
+  assert.equal(placed.anchor, undefined);
+  const plan = resolveRollback(placed.buffer, 'fillet-9');
+  assert.equal(plan.anchor, undefined);
+  assert.notEqual(plan.anchor, null);
+  assert.deepEqual(plan.skipIds, []);
+  assert.equal(plan.index, ids.length);
 });

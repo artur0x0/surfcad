@@ -36,7 +36,7 @@ import {
   scriptLineFromStack,
   unionSkipIds,
 } from '../../utils/featureFailure.js';
-import { evaluationScript, rolledBackFeatureIds } from '../../utils/featureSkip.js';
+import { evaluationScript, resolveRollback } from '../../utils/featureSkip.js';
 import { parseFeatureMarkers } from '../../utils/featureMarkers.js';
 import { buildMakeLoftSolid, offsetPlaneFrame } from '../../utils/makeLoft.js';
 import { blockSpec, buildBlockManifold } from '../../utils/blockSolid.js';
@@ -8608,7 +8608,8 @@ let _scriptLineOffset;
  */
 function executeSkippingFailedFeatures(script, importedModels, anchorId) {
   const text = String(script ?? '');
-  const anchored = anchorId === null || typeof anchorId === 'string';
+  const plan = resolveRollback(text, anchorId);
+  const anchored = plan.anchor === null || typeof plan.anchor === 'string';
   const limit = parseFeatureMarkers(text).length + 1;
   let skipIds = [];
   const thrown = [];
@@ -8617,12 +8618,12 @@ function executeSkippingFailedFeatures(script, importedModels, anchorId) {
     const source = (skipIds.length || anchored)
       ? evaluationScript(text, {
           ...(skipIds.length ? { skipIds } : {}),
-          ...(anchored ? { anchorId } : {}),
+          ...(anchored ? { anchorId: plan.anchor } : {}),
         })
       : text;
     try {
       const result = manifoldFromScriptResult(executeScript(source, importedModels));
-      const rolledBack = anchored ? rolledBackFeatureIds(text, anchorId) : [];
+      const rolledBack = plan.skipIds;
       return {
         result,
         featureSkip: primary ? featureSkipFailure(text, primary, thrown, skipIds) : null,
