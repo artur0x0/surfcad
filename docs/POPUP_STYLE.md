@@ -18,9 +18,11 @@ over inventing a new modal layout.
   The tag is on the geometry while that value is typed, and after Confirm.
   Tap either for Delete and X. It does not reopen
   the card. A conflict note (`data-contour-conflict`) names the primary id on
-  the open card and on the contour chip. Repeated shows the word Repeated. and
-  is not red. Reopening the feature shows that saved contour on the chip. A
-  named dimension's tag leads with the name. The card title is the
+  the open card and on the contour chip, in red. Repeated shows the word
+  Repeated in amber (`data-contour-repeated`) and is not red. Free sketch
+  geometry stays blue and draggable. Locked geometry is black and does not
+  drag. The key is `data-contour-status-legend`. Reopening the feature shows
+  that saved contour on the chip. A named dimension's tag leads with the name. The card title is the
   feature Confirm writes (Extrude, Revolve, Loft, Sweep, Workplane); the profile
   shape sits in the subtitle. A profile-only contour titles the plane card
   Contour. Loft (#94) and Workplane use the compact mobile

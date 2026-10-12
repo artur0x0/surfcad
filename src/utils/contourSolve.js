@@ -1563,10 +1563,10 @@ function assembleResult(model, sys, solved, fact, conflict, repeated) {
       for (const ref of entityTouches(model, id)) touched.add(ref);
     }
   }
-  // Grey and dark for everything the conflict does not touch come from the
-  // system with those items removed. One bad dimension must not paint the
-  // rest of the contour grey. If that subsystem is still inconsistent, the
-  // grey/dark pass is skipped and untouched entities stay under.
+  // Blue and black for everything the conflict does not touch come from the
+  // system with those items removed. One bad dimension must not repaint the
+  // rest of the contour. If that subsystem is still inconsistent, the
+  // pass is skipped and untouched entities stay under.
   let paintSpace = fact.nullspace;
   let paintConsistent = consistent;
   if (conflict?.ids?.length) {

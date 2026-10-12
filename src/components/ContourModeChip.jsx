@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { LengthNumberField, NumberField } from './controls/popupUI';
 import { FeatureDeleteButton } from './FeatureEditDelete';
 import FeatureSheet from './FeatureSheet';
-import { contourStatusNote } from '../utils/contourStatus';
+import { contourStatusNote, contourStatusNoteAttrs } from '../utils/contourStatus';
 import { partLengthMm } from '../utils/sliderRange';
 
 const ACCENT = 'cyan';
@@ -236,9 +236,10 @@ const ContourModeChip = ({
     : commitName
       ? `Select plane accepts the plane. Confirm on the rail writes ${commitName}`
       : 'Select plane accepts the plane';
+  const statusAttrs = contourStatusNoteAttrs(statusNote);
   const note = statusNote?.text
-    ? (statusNote.conflict
-      ? <span data-contour-conflict={statusNote.primaryId || ''}>{statusNote.text}</span>
+    ? (statusAttrs
+      ? <span {...statusAttrs}>{statusNote.text}</span>
       : statusNote.text)
     : confirmNote;
 
