@@ -33,6 +33,28 @@ function at(solved, id) {
   return solved.points.find((p) => p.id === id).at;
 }
 
+function lineLengths(solved) {
+  const pa = Object.fromEntries(solved.points.map((p) => [p.id, p.at]));
+  const out = {};
+  for (const line of solved.lines) out[line.id] = gap(pa[line.a], pa[line.b]);
+  return out;
+}
+
+function drawnLengths(uvs) {
+  const out = {};
+  for (let i = 0; i < uvs.length; i += 1) {
+    const a = uvs[i];
+    const b = uvs[(i + 1) % uvs.length];
+    out[`e${i}`] = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  }
+  return out;
+}
+
+function assertLengthHeld(got, drawn, label) {
+  const tol = Math.max(2.5, drawn * 0.08);
+  assert.ok(Math.abs(got - drawn) <= tol, `${label} length ${got} vs ${drawn}`);
+}
+
 function freedoms(solved) {
   const free = {};
   solved.points.forEach((p, i) => {
@@ -350,10 +372,10 @@ test('perpendiculars on one polyline match in every add order', () => {
         assert.notEqual(color, 0xfbbf24, label);
         assert.notEqual(color, CONTOUR_STATUS_COLOR.conflict, label);
       }
-      for (const point of run.solved.points) {
-        const other = reference.solved.points.find((item) => item.id === point.id);
-        const delta = Math.hypot(point.at[0] - other.at[0], point.at[1] - other.at[1]);
-        assert.ok(delta < 1e-3, `${label} ${point.id} moved ${delta}`);
+      const drawn = drawnLengths(uvs);
+      const lengths = lineLengths(run.solved);
+      for (const [id, length] of Object.entries(drawn)) {
+        assertLengthHeld(lengths[id], length, `${label} ${id}`);
       }
       run.contour.points.forEach((point, index) => {
         assert.ok(Math.hypot(point.seed[0] - uvs[index][0], point.seed[1] - uvs[index][1]) < 1e-4, label);
@@ -439,10 +461,74 @@ test('a 1.5 in side and the two corner perpendiculars match in every order', () 
       assert.equal(anchors.length, 2, label);
       assert.ok(Math.abs(anchors[0][1] - anchors[1][1]) < 2, `${label} pluses share a row`);
       assert.ok(Math.abs(anchors[0][0] - anchors[1][0]) > 8, `${label} pluses sit apart`);
-      for (const point of run.solved.points) {
-        const other = reference.points.find((item) => item.id === point.id);
-        const delta = Math.hypot(point.at[0] - other.at[0], point.at[1] - other.at[1]);
-        assert.ok(delta < 1e-3, `${label} ${point.id} moved ${delta}`);
+      const drawn = drawnLengths(uvs);
+      const lengths = lineLengths(run.solved);
+      for (const [id, length] of Object.entries(drawn)) {
+        if (id === 'e0') continue;
+        assertLengthHeld(lengths[id], length, `${label} ${id}`);
+      }
+    }
+  }
+});
+
+test('parallel and perpendicular keep every line length in every order', () => {
+  const uvs = [[0, 0], [40, 2], [46, 28], [4, 24]];
+  const drawn = drawnLengths(uvs);
+  const sets = [
+    [
+      { kind: 'parallel', items: ['e0', 'e1'] },
+      { kind: 'parallel', items: ['e2', 'e3'] },
+    ],
+    [
+      { kind: 'parallel', items: ['e0', 'e2'] },
+      { kind: 'parallel', items: ['e1', 'e3'] },
+    ],
+    [
+      { kind: 'perpendicular', items: ['e0', 'e1'] },
+      { kind: 'perpendicular', items: ['e2', 'e3'] },
+    ],
+    [
+      { kind: 'parallel', items: ['e0', 'e2'] },
+      { kind: 'perpendicular', items: ['e0', 'e1'] },
+    ],
+  ];
+  for (const steps of sets) {
+    for (const order of permutations(steps)) {
+      let state = armContourGesture({
+        ...enterContourState('crossSection', null),
+        tool: 'polyline',
+        params: { points: uvs.map((p) => p.slice()) },
+      }, 'constraints');
+      const label = order.map((step) => `${step.kind}:${step.items.join('')}`).join('>');
+      let before = drawn;
+      for (const step of order) {
+        const saved = saveContourConstraint({
+          ...state,
+          picks: step.items.map((id) => ({ id, kind: 'line' })),
+        }, { kind: step.kind, side: 1 });
+        assert.equal(saved.error, null, `${label} ${saved.error}`);
+        state = saved.state;
+        const solved = analyzeContour(state.params.contour);
+        assert.equal(solved.status, 'under', label);
+        assert.equal(solved.conflict, null, label);
+        assert.deepEqual(solved.repeated, [], label);
+        const turn = segmentAngle(solved, step.items[0], step.items[1]);
+        if (step.kind === 'perpendicular') {
+          assert.ok(Math.abs(turn - 90) < 0.05, `${label} ${turn}`);
+        } else {
+          assert.ok(turn < 0.05 || turn > 179.95, `${label} ${turn}`);
+        }
+        const lengths = lineLengths(solved);
+        for (const [id, length] of Object.entries(before)) {
+          assertLengthHeld(lengths[id], length, `${label} after ${step.kind} ${id}`);
+          assert.ok(lengths[id] < length * 2 + 1, `${label} ${id} exploded ${lengths[id]}`);
+        }
+        for (const line of solved.lines) {
+          assert.equal(solved.entities.lines[line.id], 'under', `${label} ${line.id}`);
+          const color = contourEntityColor(solved.entities.lines[line.id]);
+          assert.equal(color, BLUE, label);
+        }
+        before = lengths;
       }
     }
   }

@@ -132,6 +132,12 @@ async function tapWorld(client, page, world) {
   return hit;
 }
 
+function segLen(uvs, a, b) {
+  const at = Object.fromEntries((uvs || []).map((p) => [p.id, p]));
+  if (!at[a] || !at[b]) return NaN;
+  return Math.hypot(at[b].u - at[a].u, at[b].v - at[a].v);
+}
+
 function angleOf(uvs) {
   const at = Object.fromEntries((uvs || []).map((p) => [p.id, p]));
   const d1 = [at.p1.u - at.p0.u, at.p1.v - at.p0.v];
@@ -212,7 +218,12 @@ async function runSize(browser, label, viewport) {
       (window.__VIEWPORT__.stageContourSketch().dots || []).length >= 4
     ), null, { timeout: 4000 });
 
-    const before = angleOf((await sketch(page)).uvs);
+    const beforeSketch = await sketch(page);
+    const before = angleOf(beforeSketch.uvs);
+    const beforeLen = {
+      e0: segLen(beforeSketch.uvs, 'p0', 'p1'),
+      e1: segLen(beforeSketch.uvs, 'p1', 'p2'),
+    };
     check(`${label} the corner starts away from 90°`, Math.abs(before - 90) > 5, String(before));
 
     await pickLine(client, page, 'p0', 'p1', POINTS[0], POINTS[1], 'e0');
@@ -231,6 +242,13 @@ async function runSize(browser, label, viewport) {
     check(`${label} perpendicular is stored`, after.constraints === 1, String(after.constraints));
     check(`${label} picks clear after Add`, (after.picked || []).length === 0, JSON.stringify(after.picked));
     check(`${label} the angle is 90°`, Math.abs(turn - 90) < 0.5, String(turn));
+    const afterLen = {
+      e0: segLen(after.uvs, 'p0', 'p1'),
+      e1: segLen(after.uvs, 'p1', 'p2'),
+    };
+    check(`${label} the segments keep their length`,
+      Math.abs(afterLen.e0 - beforeLen.e0) < 1 && Math.abs(afterLen.e1 - beforeLen.e1) < 1,
+      `e0 ${beforeLen.e0.toFixed(2)}→${afterLen.e0.toFixed(2)} e1 ${beforeLen.e1.toFixed(2)}→${afterLen.e1.toFixed(2)}`);
     check(`${label} both segments are painted`, segmentLines.length >= 2, JSON.stringify(after.lines));
     check(`${label} the segments are not amber or red`,
       segmentLines.length >= 2 && segmentLines.every((line) => line.color !== AMBER && line.color !== RED),
