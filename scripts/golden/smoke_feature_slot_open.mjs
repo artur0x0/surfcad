@@ -4,8 +4,9 @@
  * and from a strip chip. Touch taps at 390 and 1280.
  *
  * The card's button is Confirm. There is no Select plane, no plane editor,
- * and no No contour row. An empty slot is a Pick a contour chip. The picker
- * lists the saved contour and New contour.
+ * and no No contour row. Pick a contour is plain text, not a button. The
+ * picker lists the saved contour and New contour. Picking one highlights
+ * only that button.
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir().
  */
@@ -185,14 +186,31 @@ async function assertSlotCard(page, label, feature, via) {
     await page.locator('[data-plane-editor]').count() === 0
     && await page.locator('[id^="plane-angle-"]').count() === 0
     && !/plane angle/i.test(text));
+  const prompts = await page.locator('[data-slot-prompt]').evaluateAll((els) => els.map((el) => ({
+    tag: el.tagName,
+    inButton: !!el.closest('button'),
+    text: (el.textContent || '').trim(),
+  })));
   check(`${label} ${feature.label} from ${via} has a Pick a contour chip`,
     emptyCount >= 1 && emptyText === 'Pick a contour', emptyText || `count ${emptyCount}`);
+  check(`${label} ${feature.label} from ${via} shows Pick a contour as text`,
+    prompts.length >= 1 && prompts.every((row) => row.tag === 'P' && !row.inButton && row.text === 'Pick a contour'),
+    JSON.stringify(prompts));
   check(`${label} ${feature.label} from ${via} has no No contour row`, !text.includes('No contour'));
   check(`${label} ${feature.label} from ${via} lists the saved contour and New contour`,
     await page.locator('[data-slot-pick="c1"]').count() >= 1
     && await page.locator('[data-new-contour]').count() >= 1);
   check(`${label} ${feature.label} from ${via} leaves the contour rail down`,
     await page.locator('[data-contour-tool]').count() === 0);
+  await tap(page, '[data-slot-pick="c1"]');
+  await page.waitForFunction(() => document.querySelectorAll('[data-slot-selected]').length === 1, null, { timeout: 4000 });
+  const picked = await page.locator('[data-slot-selected]').evaluateAll((els) => els.map((el) => ({
+    tag: el.tagName,
+    prompt: el.hasAttribute('data-slot-prompt'),
+  })));
+  check(`${label} ${feature.label} from ${via} highlights only the picked contour`,
+    picked.length === 1 && picked[0].tag === 'BUTTON' && picked[0].prompt === false,
+    JSON.stringify(picked));
 }
 
 async function runSize(browser, label, contextOptions) {

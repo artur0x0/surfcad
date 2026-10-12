@@ -93,7 +93,7 @@ const starter = 'let part = Manifold.cube([40, 30, 20], true);\nreturn part;\n';
   check('workplane is a contour entry', isContourEntry('workplane'));
   check('Loft is contour entry', isContourEntry('makeLoft'));
   check('Sweep is contour entry', isContourEntry('makeSweep'));
-  check('circle/rect/polygon/polyline tools', CONTOUR_TOOLS.length === 4);
+  check('cursor/circle/rect/polygon/polyline tools', CONTOUR_TOOLS.length === 5 && CONTOUR_TOOLS[0].id === 'cursor');
   check('isContourTool circle', isContourTool('circle'));
   check('isContourTool refuses loft', !isContourTool('loft'));
 
@@ -108,6 +108,8 @@ const starter = 'let part = Manifold.cube([40, 30, 20], true);\nreturn part;\n';
 
   const sw = switchContourTool(st, 'rectangle');
   check('switch tool to rectangle', sw.tool === 'rectangle' && sw.params.width === 20);
+  const cursor = switchContourTool(st, 'cursor');
+  check('cursor keeps the circle it found', cursor.tool === 'cursor' && cursor.params.radius === st.params.radius);
 }
 
 // ── Workplane ──────────────────────────────────────────────────
@@ -147,6 +149,8 @@ const starter = 'let part = Manifold.cube([40, 30, 20], true);\nreturn part;\n';
   check('rect params', toolToProfileParams('rectangle', { width: 10, height: 6 }).profileType === 'rectangle');
   check('poly params', toolToProfileParams('polygon', { polygonPreset: 'hexagon' }).polygonPreset === 'hexagon');
   check('polyline → custom', toolToProfileParams('polyline', { points: [[0, 0], [1, 0], [0, 1]] }).polygonPreset === 'custom');
+  check('cursor confirms the polyline it is dragging', toolToProfileParams('cursor', { points: [[0, 0], [1, 0], [0, 1]] }).polygonPreset === 'custom');
+  check('cursor confirms the circle it kept', toolToProfileParams('cursor', { radius: 4, segments: 32 }).profileType === 'circle');
 
   const okC = validateContourProfile('circle', defaultContourParams('circle'));
   check('default circle valid', okC.ok);

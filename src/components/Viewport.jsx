@@ -213,12 +213,20 @@ import {
 } from '../utils/contourStatus';
 import {
   applyDraggedContour,
+  clearPolylineShape,
+  contourLineDragAllowed,
   contourPointDragAllowed,
+  dragContourLine,
   dragContourPoint,
   dragSketchParam,
   insertContourPoint,
+  isPolylineDot,
   planContourDragRelease,
+  planPolylinePointRemoval,
+  POLYLINE_DOUBLE_TAP_MS,
   sketchHandles,
+  sketchSegments,
+  translatePolylineSegment,
 } from '../utils/contourDrag';
 import ContourGestureCard from './ContourGestureCard';
 import ContourStatusLegend from './ContourStatusLegend';
@@ -1285,8 +1293,12 @@ const Viewport = forwardRef(({
   const polylineProjectScratch = useRef(new Vector3());
   /** Index of the draft point under the cursor (-1 = none). */
   const polylinePointHoverRef = useRef(-1);
-  /** Live right-drag: { index, plane, moved } while a point is being moved. */
+  /** Live right-drag: { index, plane, moved } while a point or line is being moved. */
   const polylinePointDragRef = useRef(null);
+  /** Second tap on the same polyline dot, inside POLYLINE_DOUBLE_TAP_MS, removes it. */
+  const polylineDotTapRef = useRef(null);
+  /** Contour id a double-tap is deleting when the editor session is not open. */
+  const shapeDeleteIdRef = useRef(null);
   /** TrackballControls noRotate/noPan saved while a point handle is grabbed. */
   const polylineControlsLockRef = useRef(null);
   /**
@@ -3114,6 +3126,55 @@ const Viewport = forwardRef(({
     return best;
   }, []);
 
+  /** Nearest sketch segment within the same slop, skipping a point the caller already hit. */
+  const pickSketchLineAtClient = useCallback((clientX, clientY) => {
+    const state = contourModeRef.current;
+    const segments = sketchSegments(state);
+    const handles = polylineDraftRef.current?.userData?.handles;
+    const camera = cameraRef.current;
+    const canvas = canvasRef.current;
+    if (!segments.length || !handles?.length || !camera || !canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    const slop = resolveEdgePickSlopPx();
+    const screenOf = (handle) => {
+      if (!handle) return null;
+      handle.getWorldPosition(polylineProjectScratch.current);
+      const v = polylineProjectScratch.current.project(camera);
+      if (v.z < -1) return null;
+      return {
+        x: (v.x * 0.5 + 0.5) * rect.width,
+        y: (-v.y * 0.5 + 0.5) * rect.height,
+      };
+    };
+    const handleFor = (segment, end) => {
+      if (segment.kind === 'polyline') {
+        return handles[end === 'a' ? segment.indexA : segment.indexB] || null;
+      }
+      const id = end === 'a' ? segment.pointA : segment.pointB;
+      return handles.find((handle) => handle.userData?.pointId === id) || null;
+    };
+    let best = null;
+    let bestD = slop;
+    for (const segment of segments) {
+      const a = screenOf(handleFor(segment, 'a'));
+      const b = screenOf(handleFor(segment, 'b'));
+      if (!a || !b) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len2 = dx * dx + dy * dy;
+      let t = len2 > 1e-12 ? ((px - a.x) * dx + (py - a.y) * dy) / len2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      const d = Math.hypot(px - (a.x + t * dx), py - (a.y + t * dy));
+      if (d <= bestD) {
+        bestD = d;
+        best = segment;
+      }
+    }
+    return best;
+  }, []);
+
   /**
    * Hovering a handle hands the right button to the point, not the camera:
    * TrackballControls pans on right-drag, which would fight the move.
@@ -3678,28 +3739,65 @@ const Viewport = forwardRef(({
 
   const commitContourDelete = useCallback((withFeatures) => {
     const edit = contourEditRef.current;
-    if (!edit) return;
+    const contourId = edit?.id || shapeDeleteIdRef.current;
+    if (!contourId) return;
     const ok = onDeleteContour?.({
       partId: activePartIdRef.current,
-      contourId: edit.id,
+      contourId,
       withFeatures: !!withFeatures,
     });
     if (!ok) return;
+    shapeDeleteIdRef.current = null;
     setContourDeleteConfirm(null);
+    const text = withFeatures ? 'Deleted the contour and its features.' : 'Deleted contour.';
+    const showDeleted = () => {
+      setContourToast({ text, undo: true, deleted: true });
+      if (contourToastTimerRef.current) clearTimeout(contourToastTimerRef.current);
+      contourToastTimerRef.current = setTimeout(() => {
+        contourToastTimerRef.current = null;
+        setContourToast(null);
+      }, 3200);
+    };
+    if (!edit) {
+      setContourMode((prev) => (prev ? clearPolylineShape(prev, { dropIdentity: true }) : prev));
+      showDeleted();
+      return;
+    }
     const back = !!(slotReturnRef.current && featureSlotsRef.current);
     if (back) setFeatureSlots((prev) => clearFeatureSlotRefs(prev, edit.id));
     slotReturnRef.current = null;
     exitContourMode(back ? 'slot' : undefined);
     // exitContourMode clears the contour toast. Set the Undo toast after it
     // so the last update in this click is the one that stays.
-    const text = withFeatures ? 'Deleted the contour and its features.' : 'Deleted contour.';
-    setContourToast({ text, undo: true, deleted: true });
-    if (contourToastTimerRef.current) clearTimeout(contourToastTimerRef.current);
-    contourToastTimerRef.current = setTimeout(() => {
-      contourToastTimerRef.current = null;
-      setContourToast(null);
-    }, 3200);
+    showDeleted();
   }, [onDeleteContour, exitContourMode]);
+
+  /**
+   * Delete a saved polyline that fell under the auto-closed minimum.
+   * No feature users: one undo, immediately. Users: the same red confirm
+   * as contour Delete, then one undo of the shape and those features.
+   * A missing statement clears the sketch and does not toast a refusal.
+   */
+  const requestShapeDelete = useCallback((contourId) => {
+    const id = contourId ? String(contourId) : '';
+    if (!id) return;
+    shapeDeleteIdRef.current = id;
+    const fromEditor = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
+    const buf = hasNamedContour(fromEditor, id)
+      ? fromEditor
+      : (hasNamedContour(currentScript, id) ? currentScript : fromEditor);
+    const plan = deleteContourStatement(buf, id, { withFeatures: false });
+    if (plan.confirm) {
+      setContourDeleteConfirm({ count: plan.count, label: plan.message });
+      return;
+    }
+    if (!plan.ok) {
+      shapeDeleteIdRef.current = null;
+      setContourMode((prev) => (prev ? clearPolylineShape(prev, { dropIdentity: true }) : prev));
+      return;
+    }
+    commitContourDelete(false);
+  }, [getHelperBuffer, currentScript, commitContourDelete]);
 
   const requestContourDelete = useCallback(() => {
     const edit = contourEditRef.current;
@@ -7179,8 +7277,9 @@ const Viewport = forwardRef(({
    * A solver-locked point and a contour already in conflict consume the
    * event so the camera does not pan.
    */
-  const beginPolylinePointDrag = useCallback((event, { touch = false } = {}) => {
+  const beginPolylinePointDrag = useCallback((event, { touch = false, cursorTap = false } = {}) => {
     const state = contourModeRef.current;
+    if (polylinePointDragRef.current) return true;
     if (!state || state.gesture) return false;
     if (pickModeRef.current === 'edge') return false;
     const handles = sketchHandles(state);
@@ -7188,7 +7287,7 @@ const Viewport = forwardRef(({
     const index = pickPolylinePointAtClient(event.clientX, event.clientY);
     if (index < 0 || index >= handles.length) return false;
     const spec = state.params?.contour || null;
-    const pointId = spec?.points?.[index]?.id || null;
+    const pointId = handles[index].id || spec?.points?.[index]?.id || null;
     const frozen = !!(spec && pointId && !contourPointDragAllowed(spec, pointId));
     event.preventDefault();
     polylinePointDragRef.current = {
@@ -7196,11 +7295,13 @@ const Viewport = forwardRef(({
       plane: selectedLoftDrawFrame(state) || contourWorkplane(state, modelBoundsRef.current),
       moved: false,
       touch,
+      cursorTap,
       frozen,
       pointId,
       lastSpec: spec,
       kind: handles[index].kind,
       baseParams: state.params,
+      down: { x: event.clientX, y: event.clientY },
     };
     if (touch) polylineSuppressClickRef.current = true;
     setPolylinePointHover(index);
@@ -7208,18 +7309,6 @@ const Viewport = forwardRef(({
     paintPolylineHandleStates();
     return true;
   }, [pickPolylinePointAtClient, setPolylinePointHover, paintPolylineHandleStates]);
-
-  /**
-   * Handle mouse down - record position for drag detection
-   */
-  const handleMouseDown = useCallback((event) => {
-    mouseDownPosRef.current = { x: event.clientX, y: event.clientY };
-    isDraggingRef.current = false;
-
-    // Right button on a placed point picks it up (left button keeps adding).
-    if (event.button !== 2) return;
-    beginPolylinePointDrag(event, { touch: false });
-  }, [beginPolylinePointDrag]);
 
   /**
    * Project the cursor onto the draft's workplane, in the part frame.
@@ -7257,6 +7346,63 @@ const Viewport = forwardRef(({
     if (!uv.every(Number.isFinite)) return null;
     return { uv, world };
   }, []);
+
+  /** Cursor tool: drag a segment. Both ends move. A miss does not add a point. */
+  const beginSketchLineDrag = useCallback((event, { touch = false } = {}) => {
+    const state = contourModeRef.current;
+    if (polylinePointDragRef.current) return true;
+    if (!state || state.gesture || state.tool !== 'cursor') return false;
+    if (pickModeRef.current === 'edge') return false;
+    if (pickPolylinePointAtClient(event.clientX, event.clientY) >= 0) return false;
+    const segment = pickSketchLineAtClient(event.clientX, event.clientY);
+    if (!segment) return false;
+    const plane = selectedLoftDrawFrame(state) || contourWorkplane(state, modelBoundsRef.current);
+    const grab = polylinePlanePointAtClient(event.clientX, event.clientY, plane);
+    if (!grab) return false;
+    const spec = state.params?.contour || null;
+    const frozen = !!(segment.kind === 'contour' && spec && !contourLineDragAllowed(spec, segment.id));
+    event.preventDefault();
+    polylinePointDragRef.current = {
+      line: true,
+      lineId: segment.id,
+      index: -1,
+      indexA: segment.indexA,
+      indexB: segment.indexB,
+      plane,
+      moved: false,
+      touch,
+      frozen,
+      grabUv: grab.uv,
+      originSpec: spec,
+      originPoints: Array.isArray(state.params?.points)
+        ? state.params.points.map((uv) => [Number(uv?.[0]) || 0, Number(uv?.[1]) || 0])
+        : null,
+      lastSpec: spec,
+      kind: segment.kind,
+      down: { x: event.clientX, y: event.clientY },
+    };
+    if (touch) polylineSuppressClickRef.current = true;
+    if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing';
+    return true;
+  }, [pickPolylinePointAtClient, pickSketchLineAtClient, polylinePlanePointAtClient]);
+
+  /**
+   * Handle mouse down - record position for drag detection
+   */
+  const handleMouseDown = useCallback((event) => {
+    mouseDownPosRef.current = { x: event.clientX, y: event.clientY };
+    isDraggingRef.current = false;
+
+    // Cursor drags with the left button and never drops a new point.
+    if (event.button === 0 && contourModeRef.current?.tool === 'cursor') {
+      if (beginPolylinePointDrag(event, { touch: false, cursorTap: true })) return;
+      beginSketchLineDrag(event, { touch: false });
+      return;
+    }
+    // Right button on a placed point picks it up (left button keeps adding).
+    if (event.button !== 2) return;
+    beginPolylinePointDrag(event, { touch: false });
+  }, [beginPolylinePointDrag, beginSketchLineDrag]);
 
   const pickContourAtClient = useCallback((clientX, clientY) => {
     const state = contourModeRef.current;
@@ -7508,7 +7654,7 @@ const Viewport = forwardRef(({
   /** Unpromoted draft: write the dragged UV once, on release. No script write. */
   const commitPolylinePointDrag = useCallback((uv, index) => {
     setContourMode((prev) => {
-      if (!prev || prev.tool !== 'polyline' || prev.params?.contour) return prev;
+      if (!prev || prev.params?.contour || !Array.isArray(prev.params?.points)) return prev;
       const points = (prev.params?.points || []).map(
         (pt, i) => (i === index ? [uv[0], uv[1]] : pt),
       );
@@ -7549,15 +7695,63 @@ const Viewport = forwardRef(({
     if (paint) paintContourStatusWire(plane, paint.segments);
   }, [movePolylineHandle, paintContourStatusWire, clearStaleSolveOverlays]);
 
+  const commitDraftPoints = useCallback((points) => {
+    setContourMode((prev) => {
+      if (!prev || prev.params?.contour || !Array.isArray(points)) return prev;
+      const next = { ...prev, params: { ...(prev.params || {}), points } };
+      return isLoftEntry(prev.entry) ? writeLoftSelected(next, { params: next.params }) : next;
+    });
+  }, []);
+
+  const removePolylineDot = useCallback((pointId) => {
+    const state = contourModeRef.current;
+    if (!state || state.gesture || !pointId) return;
+    const plan = planPolylinePointRemoval(state, pointId);
+    if (plan.action === 'none') return;
+    if (plan.action === 'delete-shape') {
+      if (plan.contourId) {
+        requestShapeDelete(plan.contourId);
+        return;
+      }
+      setContourMode(plan.state);
+      return;
+    }
+    const next = plan.state;
+    if (next?.params?.contour && next.contourId && !contourEditRef.current) {
+      const stored = saveContourBlock(next);
+      setContourMode(stored || next);
+      return;
+    }
+    setContourMode(next);
+  }, [requestShapeDelete, saveContourBlock]);
+
+  const notePolylineDotTap = useCallback((pointId) => {
+    const state = contourModeRef.current;
+    if (!state || state.gesture || !pointId) return false;
+    const handle = sketchHandles(state).find((item) => item.id === pointId);
+    if (!isPolylineDot(state, handle)) return false;
+    const now = Date.now();
+    const prev = polylineDotTapRef.current;
+    polylineDotTapRef.current = { id: pointId, at: now };
+    if (!prev || prev.id !== pointId || now - prev.at > POLYLINE_DOUBLE_TAP_MS) return false;
+    polylineDotTapRef.current = null;
+    removePolylineDot(pointId);
+    return true;
+  }, [removePolylineDot]);
+
   const endPolylinePointDrag = useCallback((event) => {
     const drag = polylinePointDragRef.current;
     if (!drag) return;
     polylinePointDragRef.current = null;
     if (canvasRef.current) canvasRef.current.style.cursor = '';
     if (!drag.frozen && drag.moved) {
-      if (drag.pointId && drag.lastSpec) commitPromotedPointDrag(drag.lastSpec);
+      if (drag.line && drag.lastSpec) commitPromotedPointDrag(drag.lastSpec);
+      else if (drag.line && drag.draftPoints) commitDraftPoints(drag.draftPoints);
+      else if (drag.pointId && drag.lastSpec) commitPromotedPointDrag(drag.lastSpec);
       else if (drag.paramPatch) commitSketchParam(drag.paramPatch);
       else if (drag.lastUv) commitPolylinePointDrag(drag.lastUv, drag.index);
+    } else if (!drag.moved && !drag.line && drag.pointId && (drag.touch || drag.cursorTap)) {
+      notePolylineDotTap(drag.pointId);
     }
     // A finger has no hover after lift. A mouse cursor still on the handle keeps the grab.
     if (drag.touch) sketchHoverMuteRef.current = performance.now() + 700;
@@ -7565,8 +7759,8 @@ const Viewport = forwardRef(({
       && pickPolylinePointAtClient(event.clientX, event.clientY) === drag.index;
     setPolylinePointHover(stillOver ? drag.index : -1);
     paintPolylineHandleStates();
-  }, [commitPolylinePointDrag, commitPromotedPointDrag, commitSketchParam, pickPolylinePointAtClient,
-    setPolylinePointHover, paintPolylineHandleStates]);
+  }, [commitDraftPoints, commitPolylinePointDrag, commitPromotedPointDrag, commitSketchParam,
+    notePolylineDotTap, pickPolylinePointAtClient, setPolylinePointHover, paintPolylineHandleStates]);
 
   /**
    * Handle mouse move - detect if dragging
@@ -7577,9 +7771,36 @@ const Viewport = forwardRef(({
     if (drag) {
       // Touch is driven by pointermove. The synthetic mousemove must not solve twice.
       if (drag.touch && event.type === 'mousemove') return;
+      // A tap wobbles. That is still a tap, so a double-tap can remove the dot.
+      if ((drag.touch || drag.cursorTap) && drag.down) {
+        const slop = Math.hypot(event.clientX - drag.down.x, event.clientY - drag.down.y);
+        if (slop <= 6) return;
+      }
       if (!drag.frozen) {
         const hit = polylinePlanePointAtClient(event.clientX, event.clientY, drag.plane);
-        if (hit && drag.pointId && drag.lastSpec) {
+        if (hit && drag.line) {
+          const du = hit.uv[0] - (drag.grabUv?.[0] || 0);
+          const dv = hit.uv[1] - (drag.grabUv?.[1] || 0);
+          if (drag.kind === 'contour' && drag.originSpec && drag.lineId) {
+            const result = dragContourLine(drag.originSpec, drag.lineId, [du, dv]);
+            if (result?.moved && result.spec) {
+              drag.moved = true;
+              drag.lastSpec = result.spec;
+              showDraggedContour(drag.plane, result.spec);
+            }
+          } else if (Array.isArray(drag.originPoints) && drag.indexA >= 0 && drag.indexB >= 0) {
+            const points = translatePolylineSegment(
+              drag.originPoints,
+              drag.indexA,
+              drag.indexB,
+              [du, dv],
+            );
+            drag.moved = true;
+            drag.draftPoints = points;
+            movePolylineHandle(drag.indexA, planeUvToWorld(points[drag.indexA], drag.plane));
+            movePolylineHandle(drag.indexB, planeUvToWorld(points[drag.indexB], drag.plane));
+          }
+        } else if (hit && drag.pointId && drag.lastSpec) {
           const result = dragContourPoint(drag.lastSpec, drag.pointId, hit.uv);
           if (result.moved && result.spec) {
             drag.moved = true;
@@ -7831,6 +8052,9 @@ const Viewport = forwardRef(({
       // Tapping a handle almost always means "grab this", not "stack a second
       // point on top of it" — say so instead of silently doing the wrong thing.
       if (pickPolylinePointAtClient(event.clientX, event.clientY) >= 0) {
+        const index = pickPolylinePointAtClient(event.clientX, event.clientY);
+        const pointId = sketchHandles(contourModeRef.current)[index]?.id;
+        if (pointId && notePolylineDotTap(pointId)) return;
         showContourToast('Right-drag this point to move it — tap elsewhere to add one.', { undo: false });
         return;
       }
@@ -8532,7 +8756,7 @@ const Viewport = forwardRef(({
       if (picks.length > 1 && !shellModeRef.current) {
         console.log(`[Face Selection] ${picks.length} faces picked (shift-click to add more)`);
       }
-  }, [onFaceSelected, clearHighlight, clearEdgeHighlight, highlightFace, publishFacePicks, paintDraftPicks, commitCutState, paintMovePreview, commitMoveFaceState, commitDeleteFaceState, getHelperBuffer, commitBooleanState, crossSectionEnabled]);
+  }, [onFaceSelected, clearHighlight, clearEdgeHighlight, highlightFace, publishFacePicks, paintDraftPicks, commitCutState, paintMovePreview, commitMoveFaceState, commitDeleteFaceState, getHelperBuffer, commitBooleanState, crossSectionEnabled, notePolylineDotTap]);
 
   const chooseAmbiguousPart = useCallback((partId) => {
     const pending = ambiguousPickRef.current;
@@ -8726,7 +8950,10 @@ const Viewport = forwardRef(({
       if (!state || state.gesture) return false;
       if (pickModeRef.current === 'edge') return false;
       if (!sketchHandles(state).length) return false;
-      return pickPolylinePointAtClient(event.clientX, event.clientY) >= 0;
+      if (pickPolylinePointAtClient(event.clientX, event.clientY) >= 0) return true;
+      return state.tool === 'cursor'
+        && (event.button == null || event.button === 0)
+        && !!pickSketchLineAtClient(event.clientX, event.clientY);
     };
     const releaseSketchDragHold = (event) => {
       const hold = sketchDragHoldRef.current;
@@ -8804,6 +9031,11 @@ const Viewport = forwardRef(({
         isDraggingRef.current = false;
         mouseDownPosRef.current = null;
       }
+      if (contourModeRef.current?.tool === 'cursor') {
+        if (beginPolylinePointDrag(event, { touch: true, cursorTap: true })) return;
+        beginSketchLineDrag(event, { touch: true });
+        return;
+      }
       beginPolylinePointDrag(event, { touch: true });
     };
     const onTouchMove = (event) => {
@@ -8854,7 +9086,7 @@ const Viewport = forwardRef(({
       window.removeEventListener('pointerup', onTouchUp);
       window.removeEventListener('pointercancel', onTouchUp);
     };
-  }, [handleMouseDown, handleMouseMove, handleMouseUp, endPolylinePointDrag, beginPolylinePointDrag, pickPolylinePointAtClient, unlockOrbitForPointDrag]);
+  }, [handleMouseDown, handleMouseMove, handleMouseUp, endPolylinePointDrag, beginPolylinePointDrag, beginSketchLineDrag, pickPolylinePointAtClient, pickSketchLineAtClient, unlockOrbitForPointDrag]);
 
   // Click / toast timer cleanup effect
   useEffect(() => {

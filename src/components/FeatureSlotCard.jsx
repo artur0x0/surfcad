@@ -10,11 +10,6 @@ import {
 
 const ACCENT = 'cyan';
 
-function slotLabel(contour) {
-  if (!contour?.contourName) return 'Pick a contour';
-  return contour.label || contour.contourName;
-}
-
 function ContourSlot({
   role,
   index,
@@ -27,11 +22,6 @@ function ContourSlot({
   onEdit,
 }) {
   const rows = contoursForSlot(contours, role);
-  const chipClass = `truncate rounded px-2.5 py-1 text-left text-[13px] ${
-    contour?.contourName
-      ? 'bg-amber-500 text-amber-950'
-      : 'bg-cyan-950/80 text-cyan-100 border border-cyan-700/70'
-  }`;
   return (
     <div
       className="flex flex-col gap-1 font-sans"
@@ -39,28 +29,13 @@ function ContourSlot({
       data-slot-index={index}
     >
       <div className="text-[11px] uppercase tracking-wide text-cyan-200/80">{title}</div>
-      {contour?.contourName ? (
-        <button
-          type="button"
-          className={chipClass}
-          data-slot-chip={contour.contourName}
-          data-slot-edit=""
-          title={slotLabel(contour)}
-          aria-label={`Edit ${contour.contourName}`}
-          onClick={() => onEdit?.()}
-        >
-          {slotLabel(contour)}
-        </button>
-      ) : (
-        <div
-          className={chipClass}
-          data-slot-chip=""
-          data-slot-empty=""
-          title={slotLabel(contour)}
-        >
-          {slotLabel(contour)}
-        </div>
-      )}
+      <p
+        className="px-0.5 text-[13px] leading-tight text-cyan-100/90"
+        data-slot-prompt=""
+        data-slot-empty={contour?.contourName ? undefined : ''}
+      >
+        Pick a contour
+      </p>
       {rows.length === 0 ? (
         <p className="text-[11px] text-cyan-100/80 leading-tight" role="status">
           {role === 'path' ? 'No saved paths yet.' : 'No saved contours yet.'}
@@ -76,12 +51,16 @@ function ContourSlot({
                 role="option"
                 aria-selected={on}
                 data-slot-pick={row.id}
-                title={`Use ${row.label || row.name}`}
+                data-slot-chip={on ? (contour.contourName || row.name || row.id) : undefined}
+                data-slot-edit={on ? '' : undefined}
+                data-slot-selected={on ? '' : undefined}
+                title={on ? `Edit ${contour.contourName || row.name}` : `Use ${row.label || row.name}`}
+                aria-label={on ? `Edit ${contour.contourName || row.name}` : `Use ${row.label || row.name}`}
                 onPointerEnter={() => onHover?.(row.id)}
                 onPointerLeave={() => onHover?.(null)}
                 onFocus={() => onHover?.(row.id)}
                 onBlur={() => onHover?.(null)}
-                onClick={() => onPick?.(row)}
+                onClick={() => (on ? onEdit?.() : onPick?.(row))}
                 data-contour-unused={row.unused ? '' : undefined}
                 className={`relative flex items-center gap-2 rounded px-2.5 py-1 text-left text-[13px] ${
                   on

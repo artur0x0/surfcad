@@ -10,7 +10,7 @@
  * pointer-up, and only when a contour block is already in the script.
  */
 
-import { analyzeContour } from './contourSolve.js';
+import { analyzeContour, solveContour } from './contourSolve.js';
 import { assignSeq } from './contourStrip.js';
 import { isLoftEntry, writeLoftSelected } from './contourMode.js';
 import { contourBlockReady } from './contourProfileWrite.js';
@@ -341,4 +341,302 @@ export function insertContourPoint(spec, uv) {
   nextLines.push(kept);
   nextLines.push({ id: fresh, a: id, b: best.b });
   return assignSeq({ ...spec, points, lines: nextLines });
+}
+
+/** Three points is the auto-closed polyline. Fewer than that is not a shape. */
+export const POLYLINE_CLOSE_MIN = 3;
+
+/** Same window as a paint double-tap. The first tap is not delayed. */
+export const POLYLINE_DOUBLE_TAP_MS = 300;
+
+function sharedTranslation(nullspace, indexA, indexB, delta) {
+  const first = projectPointDelta(nullspace, indexA, delta);
+  if (!first.free) return [0, 0];
+  const second = projectPointDelta(nullspace, indexB, [first.du, first.dv]);
+  if (!second.free) return [0, 0];
+  const third = projectPointDelta(nullspace, indexA, [second.du, second.dv]);
+  if (!third.free || Math.hypot(third.du, third.dv) <= BLOCK_EPS) return [0, 0];
+  return [third.du, third.dv];
+}
+
+function lineRecord(spec, lineId) {
+  return (spec?.lines || []).find((line) => line?.id === lineId && !line.guide) || null;
+}
+
+/** A line drag needs one direction both endpoints can still move. */
+export function contourLineDragAllowed(spec, lineId) {
+  const line = lineRecord(spec, lineId);
+  if (!line) return false;
+  try {
+    const analyzed = analyzeContour(spec);
+    if (analyzed.status === 'conflict') return false;
+    const indexA = analyzed.points.findIndex((p) => p.id === line.a);
+    const indexB = analyzed.points.findIndex((p) => p.id === line.b);
+    if (indexA < 0 || indexB < 0) return false;
+    return sharedTranslation(analyzed.nullspace, indexA, indexB, [1, 0])[0] !== 0
+      || sharedTranslation(analyzed.nullspace, indexA, indexB, [0, 1])[1] !== 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Translate both endpoints of `lineId` by the same UV delta.
+ * The delta is the part both points can still move. A lock the solver
+ * rejects keeps the last feasible contour.
+ */
+export function dragContourLine(spec, lineId, deltaUv) {
+  const line = lineRecord(spec, lineId);
+  const originA = pointAt(spec, line?.a);
+  const originB = pointAt(spec, line?.b);
+  if (!line || !originA || !originB) return hold(spec, line?.a, { held: true });
+  let analyzed;
+  try {
+    analyzed = analyzeContour(spec);
+  } catch {
+    return hold(spec, line.a, { held: true });
+  }
+  if (analyzed.status === 'conflict') return hold(spec, line.a, { held: true });
+  const indexA = analyzed.points.findIndex((p) => p.id === line.a);
+  const indexB = analyzed.points.findIndex((p) => p.id === line.b);
+  const delta = sharedTranslation(analyzed.nullspace, indexA, indexB, deltaUv);
+  if (Math.hypot(delta[0], delta[1]) <= BLOCK_EPS) return hold(spec, line.a, { held: true });
+  const lockA = [originA[0] + delta[0], originA[1] + delta[1]];
+  const lockB = [originB[0] + delta[0], originB[1] + delta[1]];
+  const trial = {
+    ...spec,
+    points: spec.points.map((p) => {
+      if (p.id === line.a) return { ...p, at: lockA.slice() };
+      if (p.id === line.b) return { ...p, at: lockB.slice() };
+      return { ...p, at: p.at.slice() };
+    }),
+    constraints: [
+      ...(spec.constraints || []),
+      { id: `${DRAG_ID}a`, kind: 'fix', items: [line.a], at: { [line.a]: lockA } },
+      { id: `${DRAG_ID}b`, kind: 'fix', items: [line.b], at: { [line.b]: lockB } },
+    ],
+  };
+  let solved;
+  try {
+    solved = analyzeContour(trial);
+  } catch {
+    return hold(spec, line.a, { held: true, inconsistent: true });
+  }
+  if (solved.status === 'conflict') return hold(spec, line.a, { held: true, inconsistent: true });
+  const next = {
+    points: solved.points.map((p) => ({ id: p.id, at: p.at.slice() })),
+    lines: (spec.lines || []).map((l) => ({ ...l })),
+    arcs: (solved.arcs || []).map((a) => ({ ...a })),
+    dimensions: (spec.dimensions || []).map((d) => ({ ...d })),
+    constraints: (spec.constraints || []).map((c) => ({ ...c })),
+    ...(spec.refs ? { refs: spec.refs.map((ref) => ({ ...ref })) } : {}),
+  };
+  return { spec: next, uv: pointAt(next, line.a), moved: true, held: false };
+}
+
+/** Move both ends of an unpromoted segment by `delta`, from the original points. */
+export function translatePolylineSegment(points, indexA, indexB, delta) {
+  const du = Number(delta?.[0]) || 0;
+  const dv = Number(delta?.[1]) || 0;
+  return (points || []).map((uv, index) => {
+    const u = Number(uv?.[0]) || 0;
+    const v = Number(uv?.[1]) || 0;
+    if (index !== indexA && index !== indexB) return [u, v];
+    return [u + du, v + dv];
+  });
+}
+
+/** Segments the cursor tool can drag. A promoted contour wins over the draft list. */
+export function sketchSegments(state) {
+  const spec = state?.params?.contour;
+  if (spec?.lines?.length) {
+    const out = [];
+    for (const line of spec.lines) {
+      if (!line || line.guide) continue;
+      const a = spec.points?.find((p) => p.id === line.a);
+      const b = spec.points?.find((p) => p.id === line.b);
+      if (!a?.at || !b?.at) continue;
+      out.push({
+        id: line.id,
+        a: a.at,
+        b: b.at,
+        pointA: line.a,
+        pointB: line.b,
+        kind: 'contour',
+      });
+    }
+    if (out.length) return out;
+  }
+  const raw = state?.params?.points;
+  if (!Array.isArray(raw) || raw.length < 2) return [];
+  const closed = raw.length >= POLYLINE_CLOSE_MIN;
+  const count = closed ? raw.length : raw.length - 1;
+  const out = [];
+  for (let i = 0; i < count; i += 1) {
+    const j = (i + 1) % raw.length;
+    out.push({
+      id: `seg${i}`,
+      a: raw[i],
+      b: raw[j],
+      indexA: i,
+      indexB: j,
+      kind: 'polyline',
+    });
+  }
+  return out;
+}
+
+/** A polyline dot is a draft point, or a contour point on a real segment. */
+export function isPolylineDot(state, handle) {
+  if (!handle) return false;
+  if (handle.kind === 'polyline') return true;
+  if (handle.kind !== 'contour') return false;
+  const spec = state?.params?.contour;
+  return (spec?.lines || []).some((line) => (
+    line && !line.guide && (line.a === handle.id || line.b === handle.id)
+  ));
+}
+
+function profilePointIds(spec) {
+  const ids = new Set();
+  for (const line of spec?.lines || []) {
+    if (!line || line.guide) continue;
+    if (line.a) ids.add(line.a);
+    if (line.b) ids.add(line.b);
+  }
+  return ids;
+}
+
+function copyLine(line) {
+  const next = { id: line.id, a: line.a, b: line.b };
+  if (line.guide) next.guide = true;
+  if (Number.isFinite(Number(line.seq)) && Number(line.seq) >= 1) next.seq = Math.round(Number(line.seq));
+  return next;
+}
+
+/** Drop a vertex and bridge its two neighbors. Constraints that named it stay. */
+export function removeContourPoint(spec, pointId) {
+  const lines = (spec?.lines || []).map(copyLine);
+  const incident = lines.filter((line) => !line.guide && (line.a === pointId || line.b === pointId));
+  const neighbors = [];
+  for (const line of incident) {
+    const other = line.a === pointId ? line.b : line.a;
+    if (other && other !== pointId && !neighbors.includes(other)) neighbors.push(other);
+  }
+  const drop = new Set();
+  for (const line of lines) {
+    if (line.a === pointId || line.b === pointId) drop.add(line.id);
+  }
+  const kept = lines.filter((line) => !drop.has(line.id));
+  if (neighbors.length === 2) {
+    const bridge = { id: incident[0]?.id || nextSeriesId(kept, 'e'), a: neighbors[0], b: neighbors[1] };
+    if (incident[0]?.seq) bridge.seq = incident[0].seq;
+    kept.push(bridge);
+  }
+  const dropArcs = new Set();
+  for (const arc of spec?.arcs || []) {
+    if (arc?.center === pointId || arc?.start === pointId || arc?.end === pointId) dropArcs.add(arc.id);
+  }
+  return assignSeq({
+    ...spec,
+    points: (spec.points || []).filter((p) => p.id !== pointId).map((p) => ({
+      id: p.id,
+      at: p.at.slice(),
+    })),
+    lines: kept,
+    arcs: (spec.arcs || []).filter((arc) => !dropArcs.has(arc.id)).map((arc) => ({ ...arc })),
+    dimensions: (spec.dimensions || []).map((item) => ({ ...item })),
+    constraints: (spec.constraints || []).map((item) => ({
+      ...item,
+      items: item.items ? [...item.items] : item.items,
+    })),
+    ...(spec.refs ? { refs: spec.refs.map((ref) => ({ ...ref })) } : {}),
+  });
+}
+
+function stampBroken(spec) {
+  let solved;
+  try {
+    solved = solveContour(spec);
+  } catch {
+    return spec;
+  }
+  const dimBroken = new Set((solved.dimensions || []).filter((item) => item.broken).map((item) => item.id));
+  const conBroken = new Set((solved.constraints || []).filter((item) => item.broken).map((item) => item.id));
+  const flag = (item, broken) => {
+    const copy = { ...item };
+    if (broken) copy.broken = true;
+    else delete copy.broken;
+    return copy;
+  };
+  return {
+    ...spec,
+    points: (solved.points || []).map((p) => ({ id: p.id, at: p.at.slice() })),
+    lines: (solved.lines || []).map((line) => ({ ...line })),
+    arcs: (solved.arcs || []).map((arc) => ({ ...arc })),
+    dimensions: (spec.dimensions || []).map((item) => flag(item, dimBroken.has(item.id))),
+    constraints: (spec.constraints || []).map((item) => flag(item, conBroken.has(item.id))),
+    ...(spec.refs ? { refs: spec.refs.map((ref) => ({ ...ref })) } : {}),
+  };
+}
+
+/** Drop the polyline. A saved id is cleared so a later Confirm does not rewrite it. */
+export function clearPolylineShape(state, { dropIdentity = false } = {}) {
+  if (!state) return state;
+  const params = { ...(state.params || {}), points: [] };
+  delete params.contour;
+  let next = {
+    ...state,
+    params,
+    picks: [],
+    tagId: null,
+    gestureNote: null,
+    dimensionEdit: null,
+    constraintEdit: null,
+    dimensionLive: null,
+  };
+  if (dropIdentity) {
+    next = { ...next, contourId: null, contourName: null };
+  }
+  return isLoftEntry(state.entry) ? writeLoftSelected(next, { params: next.params }) : next;
+}
+
+/**
+ * Remove one polyline dot. Constraints that named it stay, marked broken
+ * when the remainder solves. Below the auto-closed minimum the shape goes.
+ * @returns {{ action: 'none'|'remove'|'delete-shape', state: object, contourId?: string|null }}
+ */
+export function planPolylinePointRemoval(state, pointId) {
+  if (!state || !pointId) return { action: 'none', state };
+  const spec = state.params?.contour;
+  if (spec?.points?.some((p) => p.id === pointId)) {
+    const profile = profilePointIds(spec);
+    if (!profile.has(pointId)) return { action: 'none', state };
+    if (profile.size - 1 < POLYLINE_CLOSE_MIN) {
+      return {
+        action: 'delete-shape',
+        contourId: state.contourId || null,
+        state: clearPolylineShape(state, { dropIdentity: true }),
+      };
+    }
+    const stamped = stampBroken(removeContourPoint(spec, pointId));
+    return { action: 'remove', state: applyDraggedContour(state, stamped) };
+  }
+  const raw = state.params?.points;
+  if (!Array.isArray(raw) || !raw.length) return { action: 'none', state };
+  const match = /^p(\d+)$/.exec(String(pointId));
+  const index = match ? Number(match[1]) : -1;
+  if (index < 0 || index >= raw.length) return { action: 'none', state };
+  if (raw.length - 1 < POLYLINE_CLOSE_MIN) {
+    return {
+      action: 'delete-shape',
+      contourId: state.contourId || null,
+      state: clearPolylineShape(state, { dropIdentity: true }),
+    };
+  }
+  const points = raw.filter((_, i) => i !== index).map((uv) => [Number(uv?.[0]) || 0, Number(uv?.[1]) || 0]);
+  const params = { ...(state.params || {}), points };
+  let next = { ...state, params };
+  if (isLoftEntry(next.entry)) next = writeLoftSelected(next, { params });
+  return { action: 'remove', state: next };
 }
