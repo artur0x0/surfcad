@@ -98,6 +98,7 @@
         "golden:sheet-contour-delete": "node scripts/golden/smoke_sheet_contour_delete.mjs",
         "golden:sheet-extrude": "node scripts/golden/smoke_sheet_extrude.mjs",
         "golden:contour-refs": "node scripts/golden/smoke_contour_refs.mjs",
+        "golden:contour-snap": "node scripts/golden/smoke_contour_snap.mjs",
         "golden:sheet-contour-refs": "node scripts/golden/smoke_sheet_contour_refs.mjs",
         "golden:contour-ref-resolve": "node scripts/golden/smoke_contour_ref_resolve.mjs",
         "golden:empty-run-clears": "node scripts/golden/smoke_empty_run_clears.mjs",
