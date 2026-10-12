@@ -17,6 +17,7 @@
  */
 
 import { referenceGeomLive } from './contourRef.js';
+import { assignSeq } from './contourStrip.js';
 
 export const CONTOUR_POINT_CAP = 128;
 
@@ -55,6 +56,7 @@ function cloneSpec(spec) {
     if (!l?.id || !l.a || !l.b) fail('a line needs id, a, and b');
     const line = { id: String(l.id), a: String(l.a), b: String(l.b) };
     if (l.guide) line.guide = true;
+    if (Number.isFinite(Number(l.seq)) && Number(l.seq) >= 1) line.seq = Math.round(Number(l.seq));
     return line;
   });
   const arcs = (spec.arcs || []).map((a) => {
@@ -73,6 +75,7 @@ function cloneSpec(spec) {
       arc.end = String(a.end);
     }
     if (a.segments != null) arc.segments = Math.max(3, Math.round(num(a.segments, 'segments')));
+    if (Number.isFinite(Number(a.seq)) && Number(a.seq) >= 1) arc.seq = Math.round(Number(a.seq));
     return arc;
   });
   const dimensions = (spec.dimensions || []).map((d) => copyItem(d, 'dimension'));
@@ -144,6 +147,7 @@ function copyRef(ref) {
   }
   if (ref.broken) copy.broken = true;
   if (ref.geom) copy.geom = copyGeom(ref.geom);
+  if (Number.isFinite(Number(ref.seq)) && Number(ref.seq) >= 1) copy.seq = Math.round(Number(ref.seq));
   if (Array.isArray(ref.loop) && ref.loop.length >= 2) {
     copy.loop = ref.loop.map((p, i) => uv2(p, `reference loop ${i}`));
   }
@@ -153,6 +157,7 @@ function copyRef(ref) {
 function copyItem(item, label) {
   if (!item?.id || !item.kind) fail(`a ${label} needs an id and a kind`);
   const copy = { id: String(item.id), kind: String(item.kind) };
+  if (Number.isFinite(Number(item.seq)) && Number(item.seq) >= 1) copy.seq = Math.round(Number(item.seq));
   if (item.edge) copy.edge = String(item.edge);
   if (item.arc) copy.arc = String(item.arc);
   if (item.point) copy.point = String(item.point);
@@ -237,7 +242,7 @@ export function contourFromPolyline(uvs) {
       b: points[(i + 1) % points.length].id,
     });
   }
-  return { points, lines, arcs: [], dimensions: [], constraints: [] };
+  return assignSeq({ points, lines, arcs: [], dimensions: [], constraints: [] });
 }
 
 /** Axis-aligned rectangle in UV. Centered uses the origin. Fully defined. */
@@ -270,7 +275,7 @@ export function contourFromRectangle(width, height, centered = true) {
     { id: 'd0', kind: 'length', edge: 'e0', value: w },
     { id: 'd1', kind: 'length', edge: 'e1', value: h },
   ];
-  return { points, lines, arcs: [], dimensions, constraints };
+  return assignSeq({ points, lines, arcs: [], dimensions, constraints });
 }
 
 /**
@@ -281,13 +286,13 @@ export function contourFromCircle(radius, segments = 64) {
   const r = num(radius, 'radius');
   if (!(r > 0)) fail('radius must be > 0');
   const seg = Math.max(3, Math.round(num(segments, 'segments')));
-  return {
+  return assignSeq({
     points: [{ id: 'p0', at: [0, 0] }],
     lines: [],
     arcs: [{ id: 'a0', center: 'p0', radius: r, full: true, sweep: 'ccw', segments: seg }],
     dimensions: [{ id: 'd0', kind: 'radius', arc: 'a0', value: r }],
     constraints: [{ id: 'k0', kind: 'fix', items: ['p0'], at: { p0: [0, 0] } }],
-  };
+  });
 }
 
 /** Regular polygon, one corner on +V, equal sides, center fixed, radius to a vertex. */
@@ -321,7 +326,7 @@ export function contourFromPolygon(preset, radius) {
   // that included it would see a branch and refuse the polygon.
   lines.push({ id: `e${sides}`, a: 'p0', b: 'p1', guide: true });
   const dimensions = [{ id: 'd0', kind: 'length', edge: `e${sides}`, value: r }];
-  return { points, lines, arcs: [], dimensions, constraints };
+  return assignSeq({ points, lines, arcs: [], dimensions, constraints });
 }
 
 function orientPair(a, b) {
@@ -1643,6 +1648,7 @@ function assembleResult(model, sys, solved, fact, conflict, repeated) {
 function solveModel(spec) {
   const model = cloneSpec(spec);
   closeOpenChain(model);
+  assignSeq(model);
   const sys = compile(model);
   for (const key of ['points', 'lines', 'arcs', 'dimensions', 'constraints']) {
     if (!model[key]) model[key] = [];

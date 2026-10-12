@@ -11,6 +11,7 @@
  */
 
 import { analyzeContour } from './contourSolve.js';
+import { assignSeq } from './contourStrip.js';
 import { isLoftEntry, writeLoftSelected } from './contourMode.js';
 import { contourBlockReady } from './contourProfileWrite.js';
 
@@ -315,7 +316,7 @@ export function insertContourPoint(spec, uv) {
       const prev = points[points.length - 2];
       lines.push({ id: nextSeriesId(lines, 'e'), a: prev.id, b: id });
     }
-    return { ...spec, points, lines };
+    return assignSeq({ ...spec, points, lines });
   }
   let best = null;
   let bestD = Infinity;
@@ -331,10 +332,12 @@ export function insertContourPoint(spec, uv) {
     }
   }
   points.push({ id, at });
-  if (!best) return { ...spec, points, lines };
+  if (!best) return assignSeq({ ...spec, points, lines });
   const fresh = nextSeriesId(lines, 'e');
   const nextLines = lines.filter((l) => l.id !== best.id);
-  nextLines.push({ id: best.id, a: best.a, b: id });
+  const kept = { id: best.id, a: best.a, b: id };
+  if (Number.isFinite(Number(best.seq)) && Number(best.seq) >= 1) kept.seq = Math.round(Number(best.seq));
+  nextLines.push(kept);
   nextLines.push({ id: fresh, a: id, b: best.b });
-  return { ...spec, points, lines: nextLines };
+  return assignSeq({ ...spec, points, lines: nextLines });
 }
