@@ -2,9 +2,10 @@
 /**
  * Sketch strip at 390 and 1280, touch only.
  *
- * The plane card keeps the part strip hidden. After Select plane the pressed
- * tool is Cursor, and the phone CAD bar and the desktop viewer bar list
- * sketch chips. An empty polyline reads No sketch entities. A dimension chip and a constraint chip open
+ * The plane card keeps the part strip hidden and draws no circle. After
+ * Select plane the pressed tool is Cursor and the strip reads No sketch
+ * entities. Choosing Circle adds that chip. An empty polyline reads No
+ * sketch entities. A dimension chip and a constraint chip open
  * their edit cards. A canvas tap selects the same line the chip does. A
  * two-pick dimension gesture clears the chip. Cursor keeps the drawn chips.
  * Double-tap removal of a polyline dot leaves a broken constraint chip.
@@ -262,6 +263,8 @@ async function runSize(browser, label, contextOptions) {
   const plane = await strip(page);
   const confirm = (await page.locator('[data-feature-card-confirm]').innerText()).trim();
   check(`${label} plane card says Select plane`, confirm.includes('Select plane'), confirm);
+  const planePreview = await page.evaluate(() => window.__VIEWPORT__.stageContourOverlays().preview);
+  check(`${label} plane card draws no circle`, planePreview === 0, String(planePreview));
   check(`${label} plane card hides the part strip`,
     plane.hidden === 'feature' && plane.sketch === 0 && plane.empty === '' && plane.chips.length === 0,
     JSON.stringify(plane));
@@ -270,22 +273,35 @@ async function runSize(browser, label, contextOptions) {
   await tapSelector(client, page, '[data-feature-card-confirm]');
   await page.waitForFunction(() => (
     document.querySelector('.viewport-shell')?.getAttribute('data-contour-face-aim') === 'done'
-    && document.querySelector('[data-cad-feature-strip] [data-sketch-kind="circle"]')
+    && document.querySelector('[data-cad-feature-strip] [data-sketch-entities-empty]')?.textContent?.includes('No sketch entities')
   ), null, { timeout: 8000 });
-  const circle = await strip(page);
-  check(`${label} circle chip is the sketch`,
-    circle.label === 'Sketch' && circle.hidden === '' && circle.partChips === 0
-    && circle.pressed.join(',') === 'shape' && circle.chips[0]?.label === 'Circle'
-    && circle.card === '' && circle.undo === false && circle.redo === false,
-    JSON.stringify(circle));
+  const fresh = await strip(page);
+  const freshPreview = await page.evaluate(() => window.__VIEWPORT__.stageContourOverlays().preview);
+  const freshSketch = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch());
   const entered = await page.evaluate(() => ({
     tool: window.__VIEWPORT__.stageContourSketch().tool,
     cursor: document.querySelector('[data-contour-tool="cursor"]')?.getAttribute('aria-pressed'),
     polyline: document.querySelector('[data-contour-tool="polyline"]')?.getAttribute('aria-pressed'),
   }));
+  check(`${label} fresh sketch has no circle chip`,
+    fresh.label === 'Sketch' && fresh.empty === 'No sketch entities' && fresh.chips.length === 0
+    && fresh.undo === false && fresh.redo === false && freshPreview === 0
+    && freshSketch.tool === 'cursor' && freshSketch.radius == null && freshSketch.points === 0,
+    JSON.stringify({ fresh, freshPreview, radius: freshSketch.radius }));
   check(`${label} Select plane starts on Cursor`,
     entered.tool === 'cursor' && entered.cursor === 'true' && entered.polyline === 'false',
     JSON.stringify(entered));
+
+  await tapSelector(client, page, '[data-contour-tool="circle"]');
+  await page.waitForFunction(() => (
+    document.querySelector('[data-cad-feature-strip] [data-sketch-kind="circle"]')
+  ), null, { timeout: 4000 });
+  const circle = await strip(page);
+  check(`${label} circle chip is the sketch`,
+    circle.label === 'Sketch' && circle.hidden === '' && circle.partChips === 0
+    && circle.pressed.join(',') === 'shape' && circle.chips[0]?.label === 'Circle'
+    && circle.card === '' && circle.undo === true && circle.redo === false,
+    JSON.stringify(circle));
 
   await tapSelector(client, page, '[data-cad-feature-strip] [data-sketch-id="shape"]');
   await page.waitForFunction(() => document.querySelector('[data-contour-card="entity"] [data-contour-entity-delete]'), null, { timeout: 4000 });
@@ -296,7 +312,7 @@ async function runSize(browser, label, contextOptions) {
   ), null, { timeout: 4000 });
   const closed = await strip(page);
   check(`${label} closing the delete card keeps the circle`,
-    closed.card === '' && closed.pressed.join(',') === 'shape' && closed.undo === false,
+    closed.card === '' && closed.pressed.join(',') === 'shape' && closed.undo === true,
     JSON.stringify(closed));
 
   await tapSelector(client, page, '[data-cad-feature-strip] [data-sketch-id="shape"]');
@@ -320,12 +336,12 @@ async function runSize(browser, label, contextOptions) {
   await tapSelector(client, page, '[data-sketch-delete-toast] [data-error-undo]');
   await page.waitForFunction(() => (
     document.querySelector('[data-cad-feature-strip] [data-sketch-kind="circle"]')
-    && document.querySelector('[data-cad-feature-strip] [data-feature-bar-undo]')?.disabled
+    && document.querySelector('[data-cad-feature-strip] [data-feature-bar-undo]')?.disabled === false
     && !document.querySelector('[data-sketch-delete-toast]')
   ), null, { timeout: 4000 });
   const shapeBack = await strip(page);
   check(`${label} toast Undo restores the circle`,
-    shapeBack.pressed.join(',') === 'shape' && shapeBack.undo === false && shapeBack.chips[0]?.label === 'Circle',
+    shapeBack.pressed.join(',') === 'shape' && shapeBack.undo === true && shapeBack.chips[0]?.label === 'Circle',
     JSON.stringify(shapeBack));
 
   await tapSelector(client, page, '[data-contour-tool="circle"]');
@@ -346,7 +362,8 @@ async function runSize(browser, label, contextOptions) {
   await tapSelector(client, page, '[data-cad-feature-strip] [data-feature-bar-undo]');
   await page.waitForFunction(() => (
     window.__VIEWPORT__.stageContourSketch().tool === 'cursor'
-    && document.querySelector('[data-cad-feature-strip] [data-sketch-kind="circle"]')
+    && document.querySelector('[data-cad-feature-strip] [data-sketch-entities-empty]')?.textContent?.includes('No sketch entities')
+    && !document.querySelector('[data-cad-feature-strip] [data-sketch-kind="circle"]')
     && document.querySelector('[data-cad-feature-strip] [data-feature-bar-undo]')?.disabled
   ), null, { timeout: 4000 });
 
@@ -363,13 +380,15 @@ async function runSize(browser, label, contextOptions) {
 
   await tapSelector(client, page, '[data-cad-feature-strip] [data-feature-bar-undo]');
   await page.waitForFunction(() => (
-    document.querySelector('[data-cad-feature-strip] [data-sketch-kind="circle"]')
+    window.__VIEWPORT__.stageContourSketch().tool === 'cursor'
+    && document.querySelector('[data-cad-feature-strip] [data-sketch-entities-empty]')?.textContent?.includes('No sketch entities')
     && document.querySelector('[data-cad-feature-strip] [data-feature-bar-undo]')?.disabled
     && document.querySelector('[data-cad-feature-strip] [data-feature-bar-redo]')?.disabled
   ), null, { timeout: 4000 });
   const undone = await strip(page);
-  check(`${label} strip Undo restores the circle`,
-    undone.pressed.join(',') === 'shape' && undone.undo === false && undone.redo === false,
+  check(`${label} strip Undo restores the empty sketch`,
+    undone.empty === 'No sketch entities' && undone.chips.length === 0
+    && undone.tool === 'cursor' && undone.undo === false && undone.redo === false,
     JSON.stringify(undone));
 
   await tapSelector(client, page, '[data-contour-tool="rectangle"]');

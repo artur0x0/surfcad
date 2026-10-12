@@ -13,8 +13,12 @@ import {
   sketchHandles,
   sketchSegments,
 } from './contourDrag.js';
+import { contourChips } from './contourStrip.js';
 import {
+  buildContourPreview,
+  composeContourProfile,
   contourToolAddsPoints,
+  cursorSketchEmpty,
   enterContourState,
   switchContourTool,
   toolToProfileParams,
@@ -47,11 +51,29 @@ test('cursor drags a point and does not add points', () => {
 
   const started = enterContourState('crossSection', null);
   assert.equal(started.tool, 'cursor');
-  assert.equal(started.params.radius, 5);
+  assert.equal(cursorSketchEmpty(started), true);
+  assert.deepEqual(started.params.points, []);
+  assert.equal(started.params.radius, undefined);
+  assert.equal(buildContourPreview(null, started.tool, started.params), null);
+  assert.deepEqual(contourChips(started), []);
+  assert.equal(started.loft.profiles[0].tool, 'circle');
+  assert.equal(started.loft.profiles[0].params.radius, 5);
+  assert.equal(started.loft.profiles[1].params.radius, 8);
+  const wrote = composeContourProfile('return part;\n', {
+    tool: started.tool,
+    params: started.params,
+  });
+  assert.equal(wrote.ok, true);
+  assert.equal(wrote.empty, true);
+  assert.equal(wrote.buffer, 'return part;\n');
+  const solid = enterContourState('makeExtrude', null);
+  assert.equal(solid.tool, 'circle');
+  assert.equal(solid.params.radius, 5);
+  assert.equal(enterContourState('makeLoft', null).loft.profiles[0].params.radius, 5);
   const cursor = switchContourTool(started, 'cursor');
   assert.equal(cursor.tool, 'cursor');
-  assert.equal(cursor.params.radius, started.params.radius);
-  assert.equal(toolToProfileParams('cursor', cursor.params).profileType, 'circle');
+  assert.equal(cursorSketchEmpty(cursor), true);
+  assert.equal(toolToProfileParams('cursor', { radius: 5, segments: 64 }).profileType, 'circle');
 
   const spec = { ...freeQuad(), polyline: true };
   const dragged = dragContourPoint(spec, 'p1', [14, 3]);

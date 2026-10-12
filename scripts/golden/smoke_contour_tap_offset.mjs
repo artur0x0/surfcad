@@ -6,6 +6,7 @@
  * are the center and four corners, with the plane card closed and open, and
  * again after the part is translated in the sketch plane. Select plane aims
  * along the picked face normal, frames that face, and leaves the part opaque.
+ * The plane card draws no circle. A tap where that rim sat still selects the face.
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir(), never the artifacts dir.
  */
@@ -24,6 +25,8 @@ let boss = Manifold.cube([10, 10, 8], true).translate([0, 0, 14]);
 return host.add(boss);
 `;
 const FACE = [0, 0, 18];
+// On the boss top, about where the old default circle's rim crossed the face.
+const FACE_RIM = [4, 0, 18];
 const FACE_CORNERS = [[-5, -5, 18], [5, -5, 18], [5, 5, 18], [-5, 5, 18]];
 const HOST_CORNERS = [
   [-20, -15, -10], [20, -15, -10], [-20, 15, -10], [20, 15, -10],
@@ -179,10 +182,26 @@ async function enterSketch(page, label) {
   }
   check(`${label} face center lands on the canvas`, !!hit?.ok, JSON.stringify(hit));
   if (!hit?.ok) return false;
+  const beforePick = await page.evaluate(() => ({
+    tool: window.__VIEWPORT__.stageContourSketch().tool,
+    radius: window.__VIEWPORT__.stageContourSketch().radius,
+    points: window.__VIEWPORT__.stageContourSketch().points,
+    preview: window.__VIEWPORT__.stageContourOverlays().preview,
+    preset: window.__VIEWPORT__.stageContourSketch().planePreset,
+  }));
+  check(`${label} plane card draws no circle`,
+    beforePick.tool === 'cursor' && beforePick.radius == null && beforePick.points === 0
+    && beforePick.preview === 0 && beforePick.preset !== 'face',
+    JSON.stringify(beforePick));
+  const rim = await projectHitsCanvas(page, FACE_RIM);
+  check(`${label} old rim spot lands on the canvas`, !!rim?.ok, JSON.stringify(rim));
+  if (!rim?.ok) return false;
   const canvas = page.locator('.viewport-shell > canvas');
   const box = await canvas.boundingBox();
-  await canvas.click({ position: { x: hit.x - box.x, y: hit.y - box.y } });
+  await canvas.click({ position: { x: rim.x - box.x, y: rim.y - box.y } });
   await page.waitForFunction(() => window.__VIEWPORT__.stageContourSketch().planePreset === 'face', null, { timeout: 4000 });
+  check(`${label} tap on the old rim selects the face`,
+    (await page.evaluate(() => window.__VIEWPORT__.stageContourSketch().planePreset)) === 'face');
   const start = page.locator('[data-feature-card-confirm]');
   await start.waitFor({ timeout: 4000 });
   await start.click();
@@ -268,8 +287,8 @@ async function ensurePolyline(page) {
 async function undoToEmpty(page, label) {
   for (let i = 0; i < 20; i += 1) {
     const sketch = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch());
-    // Stop on an empty polyline. One more Back restores the circle baseline
-    // that Select plane seeded, and the taps after that would not place points.
+    // Stop on an empty polyline. Select plane seeded no circle, so one more
+    // Back returns to Cursor and the one after that reopens the plane card.
     if ((sketch.points || 0) === 0 && sketch.tool === 'polyline' && !sketch.planeCard) break;
     if (sketch.planeCard) {
       check(`${label} points cleared`, false, 'plane card opened early');

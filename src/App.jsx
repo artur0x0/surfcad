@@ -5378,6 +5378,7 @@ const App = () => {
       viewportRef.current?.softFailContour?.(result.message);
       return false;
     }
+    if (result.empty) return true;
     const entry = payload?.entry;
     const solidLabel = entry === 'makeSweep'
       ? 'sweep'

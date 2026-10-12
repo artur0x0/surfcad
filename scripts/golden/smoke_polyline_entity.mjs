@@ -2,7 +2,8 @@
 /**
  * A polyline stays one strip chip. Touch at 390, mouse at 1280.
  *
- * Select plane leaves Cursor pressed. A segment tap inserts a point. A fast
+ * Select plane leaves Cursor pressed on an empty sketch. No circle is drawn
+ * and the strip has no circle chip. A segment tap inserts a point. A fast
  * double-tap removes one. A drag moves that point. Cursor does not translate
  * a line. Dimension promotion
  * keeps the one Polyline chip. The chip's Delete card removes the chain.
@@ -272,9 +273,16 @@ async function runSize(browser, label, contextOptions, touch) {
     cursor: document.querySelector('[data-contour-tool="cursor"]')?.getAttribute('aria-pressed'),
     polyline: document.querySelector('[data-contour-tool="polyline"]')?.getAttribute('aria-pressed'),
   }));
+  const fresh = await sketch(page);
+  const freshChips = await chips(page);
+  const freshPreview = await page.evaluate(() => window.__VIEWPORT__.stageContourOverlays().preview);
   check(`${label} Select plane starts on Cursor`,
     entered.tool === 'cursor' && entered.cursor === 'true' && entered.polyline === 'false',
     JSON.stringify(entered));
+  check(`${label} fresh sketch draws no circle`,
+    fresh.tool === 'cursor' && fresh.points === 0 && fresh.radius == null
+    && freshPreview === 0 && freshChips.every((chip) => chip.kind !== 'circle'),
+    JSON.stringify({ fresh, freshChips, freshPreview }));
   await tapSelector(client, page, '[data-contour-tool="polyline"]', touch);
 
   for (let i = 0; i < CORNERS.length; i += 1) {
