@@ -60,7 +60,12 @@ editor integration is designed. Remove the `hidden` class to bring it back.
 
 **The CAD title reads "part in assembly".** Part name, the word in, then the
 assembly name (`data-viewer-title`, `data-title-in`, `data-viewer-title-text`).
-Example: part1 in Assembly. With no part selected the part pill is not
+Example: part1 in Assembly. In contour mode that row stays laid out and the
+chips hide (`data-viewer-title-hidden` on `data-viewer-title`, `visibility:
+hidden` on `data-viewer-title-chips`). The status legend
+(`data-contour-status-legend`: Free, Locked, Conflict, Repeated) is centred
+on that box, horizontally and vertically. Leaving contour mode shows the
+chips again. `golden:contour-legend`. With no part selected the part pill is not
 rendered (`data-title-role="part"` absent); only the assembly name shows.
 An empty name does not leave a blank rounded chip. The assembly name is the document `name`. A new
 assembly starts as Assembly, then Assembly (1), Assembly (2) when that name
@@ -102,7 +107,10 @@ Desktop specifics:
   and the positive size in the title. An empty sketch, including the fresh
   Cursor sketch, reads **No sketch entities** (`data-sketch-entities-empty`).   A tap selects a line,
   arc, circle, polyline, or reference, and the canvas uses that same pick highlight. A
-  dimension or constraint chip opens its edit card. Undo is the sketch
+  dimension or constraint chip opens its edit card. A perpendicular
+  constraint chip uses Lucide `angle` (`svg.lucide-angle`, vendored at
+  `src/components/icons/Angle.jsx` because lucide-react 0.469 does not
+  export `angle`). Undo is the sketch
   history. Redo stays disabled. Cursor keeps these chips; it does not
   replace the sketch with an empty profile. Double-tap removal of a
   polyline dot keeps the one Polyline chip. A dimension or constraint that
@@ -473,7 +481,7 @@ All of these are absolutely positioned inside the shell at
 | Screen position | What | Component | Site in Viewport.jsx |
 | --- | --- | --- | --- |
 | *editor header* (portal) | Toolbar, all CAD | `Toolbar.jsx` `variant="strip"` | `:3530` |
-| top-center | CAD: part, the word in, assembly. No part selected: assembly name only, no empty part pill. Game: puzzle name | `data-viewer-title` / `ViewportTitleChip` | Viewport |
+| top-center | CAD: part, the word in, assembly. No part selected: assembly name only, no empty part pill. In contour mode those chips hide and the status legend (`data-contour-status-legend`) is centred on that box; the chips return when contour mode closes. Game: puzzle name | `data-viewer-title` / `ViewportTitleChip` / `ContourStatusLegend` | Viewport |
 | top-left, 44×44, under the IO tray | puzzle easter egg, signed-in only (`useAuthState().signedIn`) | `data-puzzle-unlock` | `PuzzleUnlock` |
 | below the feature bar, centered | "Puzzle unlocked" toast after the fifth tap | `data-puzzle-unlock-toast` | `PuzzleUnlock` |
 | bottom of the pane, 10px from the left edge (`fullLeft`) and 10px clear of the right rail. On a phone the stage switcher hides and the card sits on that switcher's bottom edge (`data-feature-card`) | Paint: 8 swatches (grid padded so the selection ring is not clipped), custom `#rrggbb`, Part, Undo, Clear, Remove unmatched colors. The color preview sits in the note. Confirm saves the session. X and Esc revert it. No swipe. The left helper rail is hidden, so the card passes `fullLeft` | `PaintModeChip` `data-paint-mode` on `FeatureSheet` | Viewport |
