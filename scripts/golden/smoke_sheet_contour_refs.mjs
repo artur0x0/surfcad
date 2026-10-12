@@ -9,7 +9,7 @@
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir().
  */
-/* global document, window */
+/* global document, window, WheelEvent */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -164,11 +164,11 @@ async function touchWorld(page, client, world) {
     const p = window.__VIEWPORT__.project(w[0], w[1], w[2]);
     if (!p || p.behind) return { error: `off screen ${JSON.stringify(w)}` };
     const el = document.elementFromPoint(p.x, p.y);
-    const blocked = el?.closest('[data-contour-card], [data-feature-sheet], [data-contour-tool], [data-cad-feature-strip], [data-part-row]');
+    const blocked = el?.closest('[data-contour-card], [data-feature-sheet], [data-contour-tool], [data-cad-feature-strip], [data-part-row], [data-rail-pair], [data-feature-card]');
     return {
       ...p,
       top: el ? `${el.tagName}` : 'none',
-      blocked: blocked ? (blocked.getAttribute('data-contour-card') || blocked.getAttribute('data-contour-tool') || 'chrome') : '',
+      blocked: blocked ? (blocked.getAttribute('data-contour-card') || blocked.getAttribute('data-contour-tool') || blocked.getAttribute('data-rail-pair') || 'chrome') : '',
     };
   }, world);
   if (pt.error) throw new Error(pt.error);
@@ -184,6 +184,65 @@ async function touchWorld(page, client, world) {
   await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await page.waitForTimeout(40);
   return pt;
+}
+
+/** Mid-span of the return-flange lip. The ends are vertices, and parallel needs the edge. */
+function lipCandidates() {
+  const out = [];
+  for (const z of [0, 4, -4, 8, -8, 12, -12]) {
+    out.push([-89, 39, z]);
+    out.push([-89, 36, z]);
+  }
+  return out;
+}
+
+async function wheelZoomOut(page) {
+  await page.evaluate(() => {
+    const canvas = document.querySelector('.viewport-shell > canvas');
+    const rect = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new WheelEvent('wheel', {
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+      deltaY: 480,
+      deltaMode: 0,
+      bubbles: true,
+      cancelable: true,
+    }));
+  });
+  await page.waitForTimeout(160);
+}
+
+/** The framed lip can sit under the phone rail. Zoom out along the same view until a point is clear. */
+async function revealLip(page) {
+  for (let i = 0; i < 8; i += 1) {
+    const lip = await firstClearLip(page);
+    if (lip) return lip;
+    await wheelZoomOut(page);
+  }
+  return null;
+}
+
+async function firstClearLip(page) {
+  return page.evaluate((candidates) => {
+    const canvas = document.querySelector('.viewport-shell > canvas');
+    let best = null;
+    let bestAbs = Infinity;
+    for (const world of candidates) {
+      const p = window.__VIEWPORT__.project(world[0], world[1], world[2]);
+      if (!p || p.behind) continue;
+      if (p.x < 16 || p.y < 16) continue;
+      const el = document.elementFromPoint(p.x, p.y);
+      if (!el || (el !== canvas && !canvas?.contains(el))) continue;
+      const blocked = el.closest('[data-contour-card], [data-feature-sheet], [data-contour-tool], [data-cad-feature-strip], [data-part-row], [data-rail-pair], [data-feature-card]');
+      if (blocked) continue;
+      const abs = Math.abs(world[2]);
+      if (abs < bestAbs) {
+        bestAbs = abs;
+        best = world;
+      }
+    }
+    return best;
+  }, lipCandidates());
 }
 
 function lineUs(script) {
@@ -270,9 +329,13 @@ async function runSize(browser, label, contextOptions) {
     await page.waitForTimeout(700);
     client = await context.newCDPSession(page);
 
-    // Sketch corner, then the return-flange lip (the edge a flange edit moves).
+    // Sketch corner, then a clear point on the return-flange lip.
+    // On a 390px phone the lower end of that lip sits under the right rail.
     await touchWorld(page, client, [-20, 0, 15]);
-    await touchWorld(page, client, [-89, 39, 6]);
+    const lip = await revealLip(page);
+    check(`${label} the flange lip has a clear tap`, !!lip, 'covered');
+    if (!lip) throw new Error('flange lip covered');
+    await touchWorld(page, client, lip);
     const still = await viewAlign(page);
     check(`${label} the tap leaves the sketch-normal camera`, still != null && still > 0.98, String(still));
     await page.waitForFunction(() => {
@@ -287,7 +350,10 @@ async function runSize(browser, label, contextOptions) {
     await page.locator('[data-contour-card="constraint"]').waitFor({ timeout: 8000 });
     await page.waitForTimeout(500);
     await touchWorld(page, client, [-20, 0, 0]);
-    await touchWorld(page, client, [-89, 39, -8]);
+    const lipAgain = await revealLip(page);
+    check(`${label} the flange lip stays tappable`, !!lipAgain, 'covered');
+    if (!lipAgain) throw new Error('flange lip covered');
+    await touchWorld(page, client, lipAgain);
     await page.waitForFunction(() => {
       const card = document.querySelector('[data-contour-card="constraint"]');
       return card && /Parallel/i.test(card.innerText);
