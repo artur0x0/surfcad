@@ -419,12 +419,14 @@ Mobile specifics:
 - **Default view snaps (Slice Mobile B.1):** `VIEW_SNAP_MARGIN = 1.35` (was
   implicit 1.15) for top / right / front / iso (and other `VIEW_PRESETS`).
   Zoom-to-Fit (`data-zoom-to-fit`) keeps `fitView` margin 1.15 and frames the
-  union box of every visible part. Normal to sketch (`data-normal-to-sketch`,
-  Lucide `CornerDownRight` — lucide-react 0.469 has no `RightAngle`) sits
-  directly under it and only in contour mode. It aims along the current
-  sketch plane and zoom-fits (`golden:contour-normal`). A hidden row is left out. One visible part
+  union box of every visible part. A hidden row is left out. One visible part
   is that part alone. Parts far apart stay inside the frame. View snaps still
-  frame the active part. Game puzzle enter keeps 1.55.
+  frame the active part. Game puzzle enter keeps 1.55. Normal to sketch
+  (`data-normal-to-sketch`, Lucide `CornerDownRight` — lucide-react 0.469 has
+  no `RightAngle`) sits directly under Zoom to Fit and only in contour mode.
+  It aims along the current sketch plane and zoom-fits the part's world box,
+  so a placed part stays centred and in frame (`golden:contour-normal`,
+  `golden:contour-normal-fit`).
 - **Both panes stay mounted** across stages (WebGL + Monaco + editor refs /
   portal host). Off-stage pane is `invisible pointer-events-none`.
 - **Editor budget** (`mobileEditorPx`) still applies to the **game** stack as a

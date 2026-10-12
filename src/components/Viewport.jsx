@@ -475,7 +475,7 @@ import {
   featureSheetClearanceNdc,
   featureSheetCoveredFraction,
 } from '../utils/featureSheetCamera';
-import { boundsSketchBox, createFaceSketchAim, faceSketchBox } from '../utils/faceSketchCamera';
+import { createFaceSketchAim, sketchAimBox } from '../utils/faceSketchCamera';
 import {
   makeSketchLine,
   sketchPointScaleFromDistance,
@@ -4912,8 +4912,10 @@ const Viewport = forwardRef(({
   }, [selectedFace, clearHighlight]);
 
   // Select plane: look along the sketch-plane normal. A highlighted face
-  // is framed; any other plane frames the part. The highlight drops when
-  // the tween ends. The plane card has already dropped its slide snapshot.
+  // is framed; any other plane frames the part in world space. Normal
+  // (force) always frames that part, so a placement offset cannot leave
+  // the solid off to the side of a local-bounds aim. The highlight drops
+  // when the tween ends. The plane card has already dropped its slide snapshot.
   // onFaceSelected is a ref. A fresh callback identity must not re-run this
   // effect: the highlight is already cleared, and the second aim frames the part.
   useEffect(() => {
@@ -4924,11 +4926,12 @@ const Viewport = forwardRef(({
     faceSketchForceRef.current = false;
     if (!state || !normal) return undefined;
     if (contourPlaneOpenRef.current && !force) return undefined;
-    const meshes = highlightMeshRef.current;
-    const list = Array.isArray(meshes) ? meshes.filter(Boolean) : (meshes ? [meshes] : []);
-    const faceMeshes = list.filter((mesh) => mesh.name === 'highlight');
-    const box = faceSketchBox(faceMeshes.length ? faceMeshes : list)
-      || boundsSketchBox(modelBoundsRef.current);
+    const box = sketchAimBox({
+      force,
+      highlightMeshes: highlightMeshRef.current,
+      partMesh: resultRef.current,
+      bounds: modelBoundsRef.current,
+    });
     if (!box) {
       clearHighlight();
       setSelectedFace(null);

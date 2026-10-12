@@ -77,6 +77,7 @@
         "golden:contour-cursor": "node scripts/golden/smoke_contour_cursor.mjs",
         "golden:polyline-entity": "node scripts/golden/smoke_polyline_entity.mjs",
         "golden:contour-normal": "node scripts/golden/smoke_contour_normal.mjs",
+        "golden:contour-normal-fit": "node scripts/golden/smoke_contour_normal_fit.mjs",
         "golden:contour-keep-edit": "node scripts/golden/smoke_contour_keep_edit.mjs",
         "golden:contour-strip": "node scripts/golden/smoke_contour_strip.mjs",
         "golden:contour-legend": "node scripts/golden/smoke_contour_legend.mjs",
