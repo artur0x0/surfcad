@@ -185,6 +185,47 @@ async function runSize(label, compact, width, height) {
   check(`${label}: drag leaves the script and does not undo`,
     rolled.script.includes("hollow(part, 2, 'z')") && rolled.undos === 0, String(rolled.undos));
 
+  const geom = await page.evaluate(() => {
+    const strip = window.document.querySelector('[data-feature-strip]');
+    const mark = window.document.querySelector('[data-rollback-mark]');
+    const line = window.document.querySelector('[data-rollback-line]');
+    const fillet = window.document.querySelector('[data-feature-id="fillet1"]');
+    const shell = window.document.querySelector('[data-feature-id="shell1"]');
+    const chips = [...window.document.querySelectorAll('[data-feature-id]')];
+    if (!strip || !mark || !line || !fillet || !shell) return null;
+    const stripBox = strip.getBoundingClientRect();
+    const markBox = mark.getBoundingClientRect();
+    const lineBox = line.getBoundingClientRect();
+    const filletBox = fillet.getBoundingClientRect();
+    const shellBox = shell.getBoundingClientRect();
+    const overlaps = chips.some((chip) => {
+      const chipBox = chip.getBoundingClientRect();
+      const overlapX = Math.min(markBox.right, chipBox.right) - Math.max(markBox.left, chipBox.left);
+      const overlapY = Math.min(markBox.bottom, chipBox.bottom) - Math.max(markBox.top, chipBox.top);
+      return overlapX > 0 && overlapY > 0;
+    });
+    return {
+      tipDelta: markBox.bottom - stripBox.top,
+      overlaps,
+      centerDelta: (lineBox.left + lineBox.width / 2) - ((filletBox.right + shellBox.left) / 2),
+      clearLeft: lineBox.left - filletBox.right,
+      clearRight: shellBox.left - lineBox.right,
+      lineTopDelta: lineBox.top - stripBox.top,
+      lineBottomDelta: stripBox.bottom - lineBox.bottom,
+    };
+  });
+  check(`${label}: triangle tip touches the strip top`,
+    !!geom && Math.abs(geom.tipDelta) <= 1, JSON.stringify(geom));
+  check(`${label}: triangle does not overlap a chip`,
+    !!geom && !geom.overlaps, JSON.stringify(geom));
+  check(`${label}: line is centred in the gap`,
+    !!geom && Math.abs(geom.centerDelta) <= 1, JSON.stringify(geom));
+  check(`${label}: line clears each chip by at least 2px`,
+    !!geom && geom.clearLeft >= 2 && geom.clearRight >= 2, JSON.stringify(geom));
+  check(`${label}: line spans the strip`,
+    !!geom && Math.abs(geom.lineTopDelta) <= 1 && Math.abs(geom.lineBottomDelta) <= 1,
+    JSON.stringify(geom));
+
   const shotPath = join(shotDir, `rollback-bar-${label}.png`);
   await page.screenshot({ path: shotPath });
   console.log(`  shot ${shotPath}`);

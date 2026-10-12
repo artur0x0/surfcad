@@ -371,6 +371,8 @@ Mobile specifics:
   chip is the same red, titled with the feature it depends on
   (`data-feature-depends`).
   The rollback bar (`data-rollback-bar`) sits in a gap between feature chips.
+  Its line runs the full strip height, centred in that gap, and the upside-down
+  triangle sits just above the strip with its tip on the top edge.
   Release dims every chip after it and rebuilds up to that gap. Dragging it
   back to the end runs the whole script. Sketch and joint chips hide the bar.
   A palette insert while the bar is set lands at that gap, and the bar moves

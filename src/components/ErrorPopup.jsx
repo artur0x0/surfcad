@@ -29,7 +29,7 @@ export default function ErrorPopup({
   onDismiss = null,
   onUndo = null,
   canUndo = false,
-  /** Deleted toasts: 44px Undo and dismiss, with space between them. */
+  /** Deleted toasts: one line, Undo and dismiss 44px wide, with space between them. */
   roomy = false,
   className = '',
   ...rest
@@ -48,7 +48,7 @@ export default function ErrorPopup({
           onClick={handleUndo}
           disabled={!canUndo}
           className={roomy
-            ? `min-h-[44px] min-w-[44px] px-3 rounded-md bg-white/15 hover:bg-white/25
+            ? `min-w-[44px] border-0 px-3 py-0 rounded-md bg-white/15 hover:bg-white/25
               disabled:opacity-40 disabled:pointer-events-none font-semibold`
             : `px-2 py-0.5 rounded-md bg-white/15 hover:bg-white/25
               disabled:opacity-40 disabled:pointer-events-none font-semibold`}
@@ -64,7 +64,7 @@ export default function ErrorPopup({
           data-error-dismiss=""
           onClick={onDismiss}
           className={roomy
-            ? 'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-white/80 hover:text-white'
+            ? 'inline-flex min-w-[44px] items-center justify-center rounded-md border-0 px-0 py-0 text-white/80 hover:text-white'
             : 'text-white/80 hover:text-white p-0.5'}
           title="Dismiss"
           aria-label="Dismiss"
@@ -75,7 +75,7 @@ export default function ErrorPopup({
     </div>
   );
 
-  const shell = `${TONE_CLASS[tone] || TONE_CLASS.error} surface-glass-chip text-xs font-sans font-medium shadow-lg rounded-lg ${layout === 'stacked' ? 'w-full' : ''} ${className}`;
+  const shell = `${TONE_CLASS[tone] || TONE_CLASS.error} surface-glass-chip text-xs font-sans font-medium shadow-lg rounded-lg ${layout === 'stacked' ? 'w-full' : ''} ${roomy ? 'px-3 py-0' : ''} ${className}`;
 
   // Execution errors: one shape. Label and actions share the first line;
   // the description is the full-width second line, so a short message and a
@@ -107,7 +107,7 @@ export default function ErrorPopup({
       className={shell}
       {...rest}
     >
-      <div className="flex items-start gap-2">
+      <div className={`flex gap-2 ${roomy ? 'items-center' : 'items-start'}`}>
         <div className="flex-1 min-w-0">
           {title ? <div className="font-bold mb-1">{title}</div> : null}
           <div className="text-left">{children}</div>
