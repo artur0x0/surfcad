@@ -210,18 +210,50 @@ function unpromotedChips(tool, params) {
   return [];
 }
 
+function polylineChip(seq) {
+  return {
+    id: 'polyline',
+    kind: 'polyline',
+    label: 'Polyline',
+    index: 1,
+    title: 'Polyline',
+    seq,
+  };
+}
+
+/**
+ * One chip per line, arc, dimension, constraint, and reference.
+ * A polyline is the exception: its segments stay one chip. Constraints
+ * and dimensions that name a segment or a point still get their own chips.
+ */
+function chipsForSpec(spec) {
+  const rows = entityRows(spec);
+  const indexByLabel = new Map();
+  if (!spec?.polyline) return rows.map((row) => chip(rowChip(row), indexByLabel));
+  const out = [];
+  let placed = false;
+  for (const row of rows) {
+    if (row.kind === 'line') {
+      if (!placed) {
+        out.push(polylineChip(row.seq));
+        placed = true;
+      }
+      continue;
+    }
+    out.push(chip(rowChip(row), indexByLabel));
+  }
+  if (!placed && (spec.points || []).length) out.unshift(polylineChip(0));
+  return out;
+}
+
 /** Chips in creation order. A promoted contour replaces the single shape chip. */
 export function contourChips(state) {
   if (!state) return [];
-  if (state.params?.contour) {
-    const indexByLabel = new Map();
-    return entityRows(state.params.contour).map((row) => chip(rowChip(row), indexByLabel));
-  }
+  if (state.params?.contour) return chipsForSpec(state.params.contour);
   if (Array.isArray(state.lines) || Array.isArray(state.arcs)
     || Array.isArray(state.dimensions) || Array.isArray(state.constraints)
     || Array.isArray(state.refs)) {
-    const indexByLabel = new Map();
-    return entityRows(state).map((row) => chip(rowChip(row), indexByLabel));
+    return chipsForSpec(state);
   }
   return unpromotedChips(state.tool, state.params);
 }
@@ -264,6 +296,79 @@ function withoutId(list, ids) {
   return (list || []).filter((item) => item && !ids.has(item.id));
 }
 
+function uniqueById(items) {
+  const seen = new Set();
+  const out = [];
+  for (const item of items) {
+    if (!item?.id || seen.has(item.id)) continue;
+    seen.add(item.id);
+    out.push(item);
+  }
+  return out;
+}
+
+/**
+ * The polyline chip deletes the whole chain: every segment, the points on
+ * those segments, and a corner arc that uses one of those points. Dimensions
+ * and constraints that name any of them go with it.
+ */
+function deletePolylineChip(state, contour) {
+  const lineIds = (contour.lines || []).filter((line) => line && !line.guide).map((line) => line.id);
+  const pointIds = new Set();
+  for (const line of contour.lines || []) {
+    if (!line || line.guide) continue;
+    if (line.a) pointIds.add(line.a);
+    if (line.b) pointIds.add(line.b);
+  }
+  const arcIds = [];
+  for (const arc of contour.arcs || []) {
+    if (!arc) continue;
+    if ([arc.center, arc.start, arc.end].some((id) => id && pointIds.has(id))) {
+      arcIds.push(arc.id);
+      if (arc.center) pointIds.add(arc.center);
+    }
+  }
+  const geometryIds = [...lineIds, ...arcIds, ...pointIds];
+  const dimensions = uniqueById(geometryIds.flatMap((id) => contourDependents(contour, id).dimensions));
+  const constraints = uniqueById(geometryIds.flatMap((id) => contourDependents(contour, id).constraints));
+  const dependents = { dimensions, constraints, count: dimensions.length + constraints.length };
+  const removed = new Set([
+    ...geometryIds,
+    ...dimensions.map((item) => item.id),
+    ...constraints.map((item) => item.id),
+  ]);
+  const next = {
+    ...contour,
+    points: (contour.points || []).filter((point) => point && !pointIds.has(point.id)),
+    lines: (contour.lines || []).filter((line) => line && !removed.has(line.id)),
+    arcs: (contour.arcs || []).filter((arc) => arc && !removed.has(arc.id)),
+    dimensions: withoutId(contour.dimensions, removed),
+    constraints: withoutId(contour.constraints, removed),
+    refs: withoutId(contour.refs, removed),
+  };
+  const alive = next.points.length || next.lines.some((line) => !line.guide)
+    || next.arcs.length || next.dimensions.length || next.constraints.length || next.refs.length;
+  const cleared = {
+    ...state,
+    params: alive
+      ? { ...(state.params || {}), contour: next, points: next.points.map((point) => point.at.slice()) }
+      : { points: [] },
+    picks: [],
+    tagId: null,
+    gestureNote: null,
+    dimensionEdit: null,
+    constraintEdit: null,
+    dimensionLive: null,
+    entityCard: null,
+  };
+  return {
+    state: cleared,
+    dependents,
+    label: dependentDeleteLabel(dependents),
+    removed: ['polyline', ...removed],
+  };
+}
+
 /**
  * Drop one sketch entity and the dimensions and constraints that name it.
  * Points stay. One params replace, no solve, so a deleted side is not redrawn.
@@ -272,6 +377,7 @@ function withoutId(list, ids) {
 export function deleteContourEntity(state, id) {
   if (!state || !id) return { state, dependents: contourDependents(null, id), label: null, removed: [] };
   const contour = state.params?.contour;
+  if (contour?.polyline && id === 'polyline') return deletePolylineChip(state, contour);
   if (!contour) {
     if (id !== 'shape') {
       return { state, dependents: contourDependents(null, id), label: null, removed: [] };

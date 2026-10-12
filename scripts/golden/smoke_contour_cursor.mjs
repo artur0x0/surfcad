@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Cursor tool, rail icons, line drag, and double-tap point removal.
+ * Cursor tool, rail icons, point drag, and double-tap point removal.
  * Touch and mouse at 390 and 1280.
  *
- * Cursor (Lucide mouse-pointer-2) drags a point or a line and does not add
- * a point. A line drag translates both endpoints. Polyline is Lucide
+ * Cursor (Lucide mouse-pointer-2) drags a point and does not add a point.
+ * A drag on a line does not translate that line. Polyline is Lucide
  * waypoints. Arc is Lucide spline. Double-tapping a dot removes it. The
  * next removal under the auto-closed minimum deletes the shape, and Back
  * restores that shape in one step.
@@ -153,7 +153,7 @@ async function doubleTap(page, x, y) {
       fire('pointerup');
     };
     tap();
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await new Promise((resolve) => setTimeout(resolve, 80));
     tap();
   }, { x, y });
 }
@@ -211,20 +211,38 @@ async function runSize(browser, label, contextOptions) {
   }
   await page.waitForTimeout(200);
   const dragged = await sketch(page);
-  const d0 = uv(dragged, 'p0');
-  const d1 = uv(dragged, 'p1');
-  const s0 = uv(before, 'p0');
-  const s1 = uv(before, 'p1');
-  const s2 = uv(before, 'p2');
-  const d2 = uv(dragged, 'p2');
-  const same = d0 && d1 && s0 && s1
-    && Math.abs((d0.u - s0.u) - (d1.u - s1.u)) < 0.2
-    && Math.abs((d0.v - s0.v) - (d1.v - s1.v)) < 0.2
-    && Math.hypot(d0.u - s0.u, d0.v - s0.v) > 1;
-  const held = s2 && d2 && Math.hypot(d2.u - s2.u, d2.v - s2.v) < 0.2;
-  check(`${label} line drag moves both ends`, dragged.points === 4 && same && held,
+  const still = ['p0', 'p1', 'p2', 'p3'].every((id) => {
+    const a = uv(before, id);
+    const b = uv(dragged, id);
+    return a && b && Math.hypot(b.u - a.u, b.v - a.v) < 0.2;
+  });
+  check(`${label} line drag does not move the line`, dragged.points === 4 && still,
     JSON.stringify({ before: before.uvs, after: dragged.uvs }));
   await page.screenshot({ path: join(SHOT_DIR, `contour-cursor-${label}-line.png`) });
+  await page.locator('[data-normal-to-sketch]').click();
+  await page.waitForTimeout(400);
+
+  const dotBefore = await sketch(page);
+  const from = await project(page, [6, -4, 10]);
+  const to = await project(page, [6, 0, 10]);
+  check(`${label} point drag starts on the canvas`, !!from?.canvas && !!to?.canvas, JSON.stringify({ from, to }));
+  if (from?.canvas && to?.canvas) {
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 8 });
+    await page.mouse.up();
+  }
+  await page.waitForTimeout(200);
+  const moved = await sketch(page);
+  const movedP1 = uv(dotBefore, 'p1');
+  const nextP1 = uv(moved, 'p1');
+  const heldP0 = uv(dotBefore, 'p0');
+  const nextP0 = uv(moved, 'p0');
+  const onePoint = movedP1 && nextP1 && heldP0 && nextP0
+    && Math.hypot(nextP1.u - movedP1.u, nextP1.v - movedP1.v) > 1
+    && Math.hypot(nextP0.u - heldP0.u, nextP0.v - heldP0.v) < 0.2;
+  check(`${label} point drag moves one point`, moved.points === 4 && onePoint,
+    JSON.stringify({ before: dotBefore.uvs, after: moved.uvs }));
 
   const depth = dragged.undoDepth;
   const dot = await project(page, [6, 4, 10]);

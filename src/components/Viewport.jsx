@@ -215,10 +215,9 @@ import {
 } from '../utils/contourStatus';
 import {
   applyDraggedContour,
+  applyPolylineSegmentInsert,
   clearPolylineShape,
-  contourLineDragAllowed,
   contourPointDragAllowed,
-  dragContourLine,
   dragContourPoint,
   dragSketchParam,
   insertContourPoint,
@@ -226,9 +225,10 @@ import {
   planContourDragRelease,
   planPolylinePointRemoval,
   POLYLINE_DOUBLE_TAP_MS,
+  POLYLINE_SAME_TAP_MS,
+  segmentForSnap,
   sketchHandles,
   sketchSegments,
-  translatePolylineSegment,
 } from '../utils/contourDrag';
 import ContourEntityCard from './ContourEntityCard';
 import {
@@ -7355,10 +7355,10 @@ const Viewport = forwardRef(({
   }, [readMeasurePointer, commitMeasurePicks]);
 
   /**
-   * Right-button (desktop) or one-finger (touch) drag of a sketch handle.
-   * Every tool uses the same grab. A gesture selects and does not drag.
-   * A solver-locked point and a contour already in conflict consume the
-   * event so the camera does not pan.
+   * Drag one sketch point. Cursor and Polyline use the left button as well
+   * as touch, so a tap-drag moves the point. Other tools keep the right
+   * button. A gesture selects and does not drag. A solver-locked point and
+   * a contour already in conflict consume the event so the camera does not pan.
    */
   const beginPolylinePointDrag = useCallback((event, { touch = false, cursorTap = false } = {}) => {
     const state = contourModeRef.current;
@@ -7431,63 +7431,26 @@ const Viewport = forwardRef(({
     return { uv, world };
   }, []);
 
-  /** Cursor tool: drag a segment. Both ends move. A miss does not add a point. */
-  const beginSketchLineDrag = useCallback((event, { touch = false } = {}) => {
-    const state = contourModeRef.current;
-    if (polylinePointDragRef.current) return true;
-    if (contourPlaneOpenRef.current) return false;
-    if (!state || state.gesture || state.tool !== 'cursor') return false;
-    if (pickModeRef.current === 'edge') return false;
-    if (pickPolylinePointAtClient(event.clientX, event.clientY) >= 0) return false;
-    const segment = pickSketchLineAtClient(event.clientX, event.clientY);
-    if (!segment) return false;
-    const plane = selectedLoftDrawFrame(state) || contourWorkplane(state, modelBoundsRef.current);
-    const grab = polylinePlanePointAtClient(event.clientX, event.clientY, plane);
-    if (!grab) return false;
-    const spec = state.params?.contour || null;
-    const frozen = !!(segment.kind === 'contour' && spec && !contourLineDragAllowed(spec, segment.id));
-    event.preventDefault();
-    polylinePointDragRef.current = {
-      line: true,
-      lineId: segment.id,
-      index: -1,
-      indexA: segment.indexA,
-      indexB: segment.indexB,
-      plane,
-      moved: false,
-      touch,
-      frozen,
-      grabUv: grab.uv,
-      originSpec: spec,
-      originPoints: Array.isArray(state.params?.points)
-        ? state.params.points.map((uv) => [Number(uv?.[0]) || 0, Number(uv?.[1]) || 0])
-        : null,
-      lastSpec: spec,
-      kind: segment.kind,
-      down: { x: event.clientX, y: event.clientY },
-    };
-    if (touch) polylineSuppressClickRef.current = true;
-    if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing';
-    return true;
-  }, [pickPolylinePointAtClient, pickSketchLineAtClient, polylinePlanePointAtClient]);
-
   /**
    * Handle mouse down - record position for drag detection
    */
   const handleMouseDown = useCallback((event) => {
     mouseDownPosRef.current = { x: event.clientX, y: event.clientY };
     isDraggingRef.current = false;
+    // The synthetic mouse after a touch is the same tap. It must not start
+    // a second drag, or one finger-up would count as two taps.
+    if (polylineSuppressClickRef.current) return;
 
-    // Cursor drags with the left button and never drops a new point.
-    if (event.button === 0 && contourModeRef.current?.tool === 'cursor') {
-      if (beginPolylinePointDrag(event, { touch: false, cursorTap: true })) return;
-      beginSketchLineDrag(event, { touch: false });
+    const tool = contourModeRef.current?.tool;
+    // Cursor and Polyline drag a point with the left button. A line does not.
+    if (event.button === 0 && (tool === 'cursor' || tool === 'polyline')) {
+      beginPolylinePointDrag(event, { touch: false, cursorTap: true });
       return;
     }
     // Right button on a placed point picks it up (left button keeps adding).
     if (event.button !== 2) return;
     beginPolylinePointDrag(event, { touch: false });
-  }, [beginPolylinePointDrag, beginSketchLineDrag]);
+  }, [beginPolylinePointDrag]);
 
   const publishContourSnap = useCallback((snap) => {
     const next = snap?.screen ? {
@@ -7870,14 +7833,6 @@ const Viewport = forwardRef(({
     if (paint) paintContourStatusWire(plane, paint.segments);
   }, [movePolylineHandle, paintContourStatusWire, clearStaleSolveOverlays]);
 
-  const commitDraftPoints = useCallback((points) => {
-    setContourMode((prev) => {
-      if (!prev || prev.params?.contour || !Array.isArray(points)) return prev;
-      const next = { ...prev, params: { ...(prev.params || {}), points } };
-      return isLoftEntry(prev.entry) ? writeLoftSelected(next, { params: next.params }) : next;
-    });
-  }, []);
-
   const removePolylineDot = useCallback((pointId) => {
     const state = contourModeRef.current;
     if (!state || state.gesture || !pointId) return;
@@ -7907,6 +7862,7 @@ const Viewport = forwardRef(({
     if (!isPolylineDot(state, handle)) return false;
     const now = Date.now();
     const prev = polylineDotTapRef.current;
+    if (prev && prev.id === pointId && now - prev.at <= POLYLINE_SAME_TAP_MS) return false;
     polylineDotTapRef.current = { id: pointId, at: now };
     if (!prev || prev.id !== pointId || now - prev.at > POLYLINE_DOUBLE_TAP_MS) return false;
     polylineDotTapRef.current = null;
@@ -7920,16 +7876,14 @@ const Viewport = forwardRef(({
     polylinePointDragRef.current = null;
     if (canvasRef.current) canvasRef.current.style.cursor = '';
     if (!drag.frozen && drag.moved) {
-      if (drag.line && drag.lastSpec) commitPromotedPointDrag(drag.lastSpec);
-      else if (drag.line && drag.draftPoints) commitDraftPoints(drag.draftPoints);
-      else if (drag.pointId && drag.lastSpec) commitPromotedPointDrag(drag.lastSpec, drag.snap, drag.pointId);
+      if (drag.pointId && drag.lastSpec) commitPromotedPointDrag(drag.lastSpec, drag.snap, drag.pointId);
       else if (drag.snap && drag.kind === 'polyline' && drag.lastUv) {
         const points = drag.baseParams?.points || [];
         const spec = promoteSnappedPolyline(points, drag.index, drag.lastUv, drag.snap);
         commitPromotedPointDrag(spec);
       } else if (drag.paramPatch) commitSketchParam(drag.paramPatch);
       else if (drag.lastUv) commitPolylinePointDrag(drag.lastUv, drag.index);
-    } else if (!drag.moved && !drag.line && drag.pointId && (drag.touch || drag.cursorTap)) {
+    } else if (!drag.moved && drag.pointId && (drag.touch || drag.cursorTap)) {
       notePolylineDotTap(drag.pointId);
     }
     publishContourSnap(null);
@@ -7939,7 +7893,7 @@ const Viewport = forwardRef(({
       && pickPolylinePointAtClient(event.clientX, event.clientY) === drag.index;
     setPolylinePointHover(stillOver ? drag.index : -1);
     paintPolylineHandleStates();
-  }, [commitDraftPoints, commitPolylinePointDrag, commitPromotedPointDrag, commitSketchParam,
+  }, [commitPolylinePointDrag, commitPromotedPointDrag, commitSketchParam,
     notePolylineDotTap, pickPolylinePointAtClient, setPolylinePointHover, paintPolylineHandleStates,
     publishContourSnap]);
 
@@ -7959,61 +7913,37 @@ const Viewport = forwardRef(({
       }
       if (!drag.frozen) {
         const hit = polylinePlanePointAtClient(event.clientX, event.clientY, drag.plane);
-        if (hit && drag.line) {
-          const du = hit.uv[0] - (drag.grabUv?.[0] || 0);
-          const dv = hit.uv[1] - (drag.grabUv?.[1] || 0);
-          if (drag.kind === 'contour' && drag.originSpec && drag.lineId) {
-            const result = dragContourLine(drag.originSpec, drag.lineId, [du, dv]);
-            if (result?.moved && result.spec) {
-              drag.moved = true;
-              drag.lastSpec = result.spec;
-              showDraggedContour(drag.plane, result.spec);
-            }
-          } else if (Array.isArray(drag.originPoints) && drag.indexA >= 0 && drag.indexB >= 0) {
-            const points = translatePolylineSegment(
-              drag.originPoints,
-              drag.indexA,
-              drag.indexB,
-              [du, dv],
-            );
+        const excludePointId = drag.pointId || (drag.kind === 'polyline' ? `p${drag.index}` : null);
+        const snap = (drag.pointId || drag.kind === 'polyline')
+          ? readContourSnap(event.clientX, event.clientY, { excludePointId })
+          : null;
+        drag.snap = snap;
+        publishContourSnap(snap);
+        const uv = snap?.uv || hit?.uv;
+        if (uv && drag.pointId && drag.lastSpec) {
+          const result = dragContourPoint(drag.lastSpec, drag.pointId, uv);
+          if (result.moved && result.spec) {
             drag.moved = true;
-            drag.draftPoints = points;
-            movePolylineHandle(drag.indexA, planeUvToWorld(points[drag.indexA], drag.plane));
-            movePolylineHandle(drag.indexB, planeUvToWorld(points[drag.indexB], drag.plane));
+            drag.lastSpec = result.spec;
+            drag.lastUv = result.uv;
+            showDraggedContour(drag.plane, result.spec);
           }
-        } else {
-          const excludePointId = drag.pointId || (drag.kind === 'polyline' ? `p${drag.index}` : null);
-          const snap = (drag.pointId || drag.kind === 'polyline')
-            ? readContourSnap(event.clientX, event.clientY, { excludePointId })
-            : null;
-          drag.snap = snap;
-          publishContourSnap(snap);
-          const uv = snap?.uv || hit?.uv;
-          if (uv && drag.pointId && drag.lastSpec) {
-            const result = dragContourPoint(drag.lastSpec, drag.pointId, uv);
-            if (result.moved && result.spec) {
-              drag.moved = true;
-              drag.lastSpec = result.spec;
-              drag.lastUv = result.uv;
-              showDraggedContour(drag.plane, result.spec);
-            }
-          } else if (hit && (drag.kind === 'rectangle' || drag.kind === 'circle' || drag.kind === 'polygon')) {
-            const shaped = dragSketchParam(drag.kind, drag.baseParams, drag.index, hit.uv);
-            if (shaped) {
-              drag.moved = true;
-              drag.paramPatch = shaped.params;
-              shaped.handles.forEach((handle, i) => {
-                movePolylineHandle(i, planeUvToWorld(handle.at, drag.plane));
-              });
-            }
-          } else if (uv) {
+        } else if (hit && (drag.kind === 'rectangle' || drag.kind === 'circle' || drag.kind === 'polygon')) {
+          const shaped = dragSketchParam(drag.kind, drag.baseParams, drag.index, hit.uv);
+          if (shaped) {
             drag.moved = true;
-            drag.lastUv = uv;
-            const world = snap
-              ? planeUvToWorld(uv, drag.plane)
-              : hit.world;
-            movePolylineHandle(drag.index, world);
+            drag.paramPatch = shaped.params;
+            shaped.handles.forEach((handle, i) => {
+              movePolylineHandle(i, planeUvToWorld(handle.at, drag.plane));
+            });
           }
+        } else if (uv) {
+          drag.moved = true;
+          drag.lastUv = uv;
+          const world = snap
+            ? planeUvToWorld(uv, drag.plane)
+            : hit.world;
+          movePolylineHandle(drag.index, world);
         }
       }
       return;
@@ -8227,49 +8157,8 @@ const Viewport = forwardRef(({
       return;
     }
 
-    // A tap on a line or arc, with no gesture open, selects that chip.
-    if (
-      contourModeRef.current?.params?.contour
-      && !contourModeRef.current.gesture
-      && !contourPlaneOpenRef.current
-    ) {
-      const hit = pickContourAtClient(event.clientX, event.clientY);
-      if (hit && (hit.kind === 'line' || hit.kind === 'arc')) {
-        if (clickTimerRef.current) {
-          clearTimeout(clickTimerRef.current);
-          clickTimerRef.current = null;
-        }
-        clickCountRef.current = 0;
-        pendingClickDataRef.current = null;
-        setContourMode((prev) => (
-          prev ? selectSketchChip(prev, { id: hit.id, kind: hit.kind, label: hit.label }) : prev
-        ));
-        return;
-      }
-    }
-
-    // A handle on a circle, rectangle, polygon, or arc is a grab, not a face pick.
-    // The plane card is for choosing a plane. The preview circle's rim sits
-    // on the face, and swallowing that tap kept the face from being selected.
-    if (
-      contourModeRef.current
-      && contourModeRef.current.tool !== 'polyline'
-      && !contourModeRef.current.gesture
-      && !contourPlaneOpenRef.current
-      && pickModeRef.current !== 'edge'
-      && sketchHandles(contourModeRef.current).length
-      && pickPolylinePointAtClient(event.clientX, event.clientY) >= 0
-    ) {
-      if (clickTimerRef.current) {
-        clearTimeout(clickTimerRef.current);
-        clickTimerRef.current = null;
-      }
-      clickCountRef.current = 0;
-      pendingClickDataRef.current = null;
-      return;
-    }
-
-    // Slice 24: polyline tool — tap the workplane to add UV points (cheap draw).
+    // Polyline owns the tap before a line chip can. A segment inserts a
+    // point. A point is a double-tap or a drag, never a stacked point.
     if (contourModeRef.current?.tool === 'polyline' && pickModeRef.current !== 'edge') {
       if (clickTimerRef.current) {
         clearTimeout(clickTimerRef.current);
@@ -8277,21 +8166,25 @@ const Viewport = forwardRef(({
       }
       clickCountRef.current = 0;
       pendingClickDataRef.current = null;
-      // MUST match the painted overlay (contourWorkplaneFace): resolving a
-      // different fallback here is what put tapped points off-cursor.
-      // Tapping a handle almost always means "grab this", not "stack a second
-      // point on top of it" — say so instead of silently doing the wrong thing.
-      if (pickPolylinePointAtClient(event.clientX, event.clientY) >= 0) {
-        const index = pickPolylinePointAtClient(event.clientX, event.clientY);
-        const pointId = sketchHandles(contourModeRef.current)[index]?.id;
-        if (pointId && notePolylineDotTap(pointId)) return;
-        showContourToast('Right-drag this point to move it — tap elsewhere to add one.', { undo: false });
+      const pointIndex = pickPolylinePointAtClient(event.clientX, event.clientY);
+      if (pointIndex >= 0) {
+        const pointId = sketchHandles(contourModeRef.current)[pointIndex]?.id;
+        if (pointId) notePolylineDotTap(pointId);
         return;
       }
       const plane = selectedLoftDrawFrame(contourModeRef.current)
         || contourWorkplane(contourModeRef.current, modelBoundsRef.current);
       const snap = readContourSnap(event.clientX, event.clientY);
       const hit = polylinePlanePointAtClient(event.clientX, event.clientY, plane);
+      const segment = pickSketchLineAtClient(event.clientX, event.clientY)
+        || segmentForSnap(contourModeRef.current, snap);
+      if (segment && (hit || snap)) {
+        publishContourSnap(null);
+        setContourMode((prev) => (
+          prev ? applyPolylineSegmentInsert(prev, segment, hit?.uv || snap?.uv, snap) : prev
+        ));
+        return;
+      }
       if (!hit && !snap) {
         showContourToast('Could not hit the workplane — orbit so the plane faces the camera.');
         return;
@@ -8316,13 +8209,82 @@ const Viewport = forwardRef(({
             const spec = promoteDrawnSnap(prev.params?.points || [], uv, snap);
             return applyDraggedContour(prev, spec);
           } catch {
-            return prev;
+            const points = [...(prev.params?.points || []), [uv[0], uv[1]]];
+            const next = { ...prev, params: { ...prev.params, points } };
+            return isLoftEntry(prev.entry) ? writeLoftSelected(next, { params: next.params }) : next;
           }
         }
         const points = [...(prev.params?.points || []), [uv[0], uv[1]]];
         const next = { ...prev, params: { ...prev.params, points } };
         return isLoftEntry(prev.entry) ? writeLoftSelected(next, { params: next.params }) : next;
       });
+      return;
+    }
+
+    // A tap on a line or arc, with no gesture open, selects that chip.
+    // A polyline segment selects the one polyline chip.
+    if (
+      contourModeRef.current?.params?.contour
+      && !contourModeRef.current.gesture
+      && !contourPlaneOpenRef.current
+    ) {
+      const hit = pickContourAtClient(event.clientX, event.clientY);
+      if (hit && (hit.kind === 'line' || hit.kind === 'arc')) {
+        if (clickTimerRef.current) {
+          clearTimeout(clickTimerRef.current);
+          clickTimerRef.current = null;
+        }
+        clickCountRef.current = 0;
+        pendingClickDataRef.current = null;
+        const chip = contourModeRef.current.params.contour.polyline && hit.kind === 'line'
+          ? { id: 'polyline', kind: 'polyline', label: 'Polyline' }
+          : { id: hit.id, kind: hit.kind, label: hit.label };
+        setContourMode((prev) => (prev ? selectSketchChip(prev, chip) : prev));
+        return;
+      }
+    }
+
+    // An unpromoted polyline segment, in any other tool, selects that one chip.
+    if (
+      contourModeRef.current
+      && contourModeRef.current.tool !== 'polyline'
+      && !contourModeRef.current.gesture
+      && !contourPlaneOpenRef.current
+      && !contourModeRef.current.params?.contour
+      && Array.isArray(contourModeRef.current.params?.points)
+      && contourModeRef.current.params.points.length >= 2
+      && pickSketchLineAtClient(event.clientX, event.clientY)
+    ) {
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
+      clickCountRef.current = 0;
+      pendingClickDataRef.current = null;
+      setContourMode((prev) => (
+        prev ? selectSketchChip(prev, { id: 'shape', kind: 'polyline', label: 'Polyline' }) : prev
+      ));
+      return;
+    }
+
+    // A handle on a circle, rectangle, polygon, or arc is a grab, not a face pick.
+    // The plane card is for choosing a plane. The preview circle's rim sits
+    // on the face, and swallowing that tap kept the face from being selected.
+    if (
+      contourModeRef.current
+      && contourModeRef.current.tool !== 'polyline'
+      && !contourModeRef.current.gesture
+      && !contourPlaneOpenRef.current
+      && pickModeRef.current !== 'edge'
+      && sketchHandles(contourModeRef.current).length
+      && pickPolylinePointAtClient(event.clientX, event.clientY) >= 0
+    ) {
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
+      clickCountRef.current = 0;
+      pendingClickDataRef.current = null;
       return;
     }
 
@@ -9198,10 +9160,7 @@ const Viewport = forwardRef(({
       if (!state || state.gesture) return false;
       if (pickModeRef.current === 'edge') return false;
       if (!sketchHandles(state).length) return false;
-      if (pickPolylinePointAtClient(event.clientX, event.clientY) >= 0) return true;
-      return state.tool === 'cursor'
-        && (event.button == null || event.button === 0)
-        && !!pickSketchLineAtClient(event.clientX, event.clientY);
+      return pickPolylinePointAtClient(event.clientX, event.clientY) >= 0;
     };
     const releaseSketchDragHold = (event) => {
       const hold = sketchDragHoldRef.current;
@@ -9280,8 +9239,7 @@ const Viewport = forwardRef(({
         mouseDownPosRef.current = null;
       }
       if (contourModeRef.current?.tool === 'cursor') {
-        if (beginPolylinePointDrag(event, { touch: true, cursorTap: true })) return;
-        beginSketchLineDrag(event, { touch: true });
+        beginPolylinePointDrag(event, { touch: true, cursorTap: true });
         return;
       }
       beginPolylinePointDrag(event, { touch: true });
@@ -9341,7 +9299,7 @@ const Viewport = forwardRef(({
       window.removeEventListener('pointerup', onTouchUp);
       window.removeEventListener('pointercancel', onTouchUp);
     };
-  }, [handleMouseDown, handleMouseMove, handleMouseUp, endPolylinePointDrag, beginPolylinePointDrag, beginSketchLineDrag, pickPolylinePointAtClient, pickSketchLineAtClient, unlockOrbitForPointDrag, readContourSnap, publishContourSnap]);
+  }, [handleMouseDown, handleMouseMove, handleMouseUp, endPolylinePointDrag, beginPolylinePointDrag, pickPolylinePointAtClient, pickSketchLineAtClient, unlockOrbitForPointDrag, readContourSnap, publishContourSnap]);
 
   // Click / toast timer cleanup effect
   useEffect(() => {

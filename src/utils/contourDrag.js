@@ -10,7 +10,8 @@
  * pointer-up, and only when a contour block is already in the script.
  */
 
-import { analyzeContour, solveContour } from './contourSolve.js';
+import { analyzeContour, contourFromPolyline, solveContour } from './contourSolve.js';
+import { applyContourSnap } from './contourSnap.js';
 import { assignSeq } from './contourStrip.js';
 import { isLoftEntry, writeLoftSelected } from './contourMode.js';
 import { contourBlockReady } from './contourProfileWrite.js';
@@ -134,6 +135,7 @@ export function dragContourPoint(spec, pointId, targetUv) {
     dimensions: (spec.dimensions || []).map((d) => ({ ...d })),
     constraints: (spec.constraints || []).map((c) => ({ ...c })),
     ...(spec.refs ? { refs: spec.refs.map((ref) => ({ ...ref })) } : {}),
+    ...(spec.polyline ? { polyline: true } : {}),
   };
   return {
     spec: next,
@@ -343,110 +345,149 @@ export function insertContourPoint(spec, uv) {
   return assignSeq({ ...spec, points, lines: nextLines });
 }
 
+/** Keep the new point off the endpoints so the split stays two real segments. */
+export function projectUvOnSegment(uv, a, b) {
+  const ax = Number(a?.[0]) || 0;
+  const ay = Number(a?.[1]) || 0;
+  const bx = Number(b?.[0]) || 0;
+  const by = Number(b?.[1]) || 0;
+  const ux = Number(uv?.[0]) || 0;
+  const uy = Number(uv?.[1]) || 0;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  let t = 0.5;
+  if (len2 > 1e-18) t = ((ux - ax) * dx + (uy - ay) * dy) / len2;
+  t = Math.max(0.08, Math.min(0.92, t));
+  return [ax + t * dx, ay + t * dy];
+}
+
+/** Split `lineId`. `project` drops the point onto that segment. */
+export function splitContourLine(spec, lineId, uv, { project = true } = {}) {
+  if (!spec || !lineId || !Array.isArray(uv)) return spec;
+  const points = (spec.points || []).map((p) => ({ id: p.id, at: p.at.slice() }));
+  const lines = (spec.lines || []).map((l) => ({ ...l }));
+  const line = lines.find((l) => l.id === lineId && !l.guide);
+  if (!line) return spec;
+  const a = points.find((p) => p.id === line.a)?.at;
+  const b = points.find((p) => p.id === line.b)?.at;
+  if (!a || !b) return spec;
+  const at = project
+    ? projectUvOnSegment(uv, a, b)
+    : [Number(uv[0]) || 0, Number(uv[1]) || 0];
+  const id = nextSeriesId(points, 'p');
+  points.push({ id, at });
+  const fresh = nextSeriesId(lines, 'e');
+  const nextLines = lines.filter((l) => l.id !== line.id);
+  const kept = { id: line.id, a: line.a, b: id };
+  if (Number.isFinite(Number(line.seq)) && Number(line.seq) >= 1) kept.seq = Math.round(Number(line.seq));
+  nextLines.push(kept);
+  nextLines.push({ id: fresh, a: id, b: line.b });
+  return assignSeq({ ...spec, points, lines: nextLines });
+}
+
+/** Insert on an unpromoted segment. The closing edge appends. */
+export function insertDraftPolylinePoint(points, segment, uv, { project = true } = {}) {
+  const raw = (points || []).map((p) => [Number(p?.[0]) || 0, Number(p?.[1]) || 0]);
+  const a = raw[segment?.indexA];
+  const b = raw[segment?.indexB];
+  if (!a || !b) return { points: raw, index: -1 };
+  const at = project
+    ? projectUvOnSegment(uv, a, b)
+    : [Number(uv?.[0]) || 0, Number(uv?.[1]) || 0];
+  const closing = segment.indexB === 0 && segment.indexA === raw.length - 1;
+  const index = closing ? raw.length : segment.indexA + 1;
+  const next = raw.slice();
+  next.splice(index, 0, at);
+  return { points: next, index };
+}
+
+function snapOwnsSegment(snap, segment) {
+  if (!snap?.target || snap.target.kind !== 'line' || !segment) return false;
+  if (segment.kind === 'contour') return snap.target.id === segment.id;
+  const match = /^e(\d+)$/.exec(String(snap.target.id || ''));
+  return !!(match && segment.kind === 'polyline' && Number(match[1]) === segment.indexA);
+}
+
+function writeDraftPoints(state, points) {
+  const params = { ...(state.params || {}), points };
+  delete params.contour;
+  const next = { ...state, params };
+  return isLoftEntry(state.entry) ? writeLoftSelected(next, { params }) : next;
+}
+
+function withPolylineFlag(spec) {
+  if (!spec || spec.polyline) return spec;
+  return { ...spec, polyline: true };
+}
+
+/**
+ * Insert a point on one polyline segment.
+ * A snap to that same segment is the finger projected onto it, with no
+ * coincident. A snap to a part edge or another point uses the snap and
+ * stores the coincident. A failed promote keeps the inserted draft points.
+ */
+export function applyPolylineSegmentInsert(state, segment, uv, snap) {
+  if (!state || !segment) return state;
+  const own = snapOwnsSegment(snap, segment);
+  const external = !!(snap?.target && snap.uv && !own);
+  const tap = Array.isArray(uv) ? uv : (snap?.uv || null);
+  if (!tap && !external) return state;
+
+  const contour = state.params?.contour;
+  if (contour && segment.kind === 'contour') {
+    const before = (contour.points || []).length;
+    let spec = splitContourLine(contour, segment.id, external ? snap.uv : tap, { project: !external });
+    if ((spec.points || []).length === before) return state;
+    spec = withPolylineFlag(spec);
+    if (external) {
+      const pointId = spec.points[spec.points.length - 1]?.id;
+      if (pointId) spec = withPolylineFlag(applyContourSnap(spec, pointId, snap).spec || spec);
+    }
+    return applyDraggedContour(state, spec);
+  }
+
+  const raw = state.params?.points;
+  if (!Array.isArray(raw) || segment.kind !== 'polyline') return state;
+  if (external) {
+    try {
+      let spec = contourFromPolyline(raw);
+      const before = spec.points.length;
+      spec = splitContourLine(spec, `e${segment.indexA}`, snap.uv, { project: false });
+      if (spec.points.length === before) throw new Error('segment missing');
+      const pointId = spec.points[spec.points.length - 1]?.id;
+      if (pointId) spec = applyContourSnap(spec, pointId, snap).spec || spec;
+      return applyDraggedContour(state, withPolylineFlag(spec));
+    } catch {
+      const inserted = insertDraftPolylinePoint(raw, segment, snap.uv, { project: false });
+      return writeDraftPoints(state, inserted.points);
+    }
+  }
+  const inserted = insertDraftPolylinePoint(raw, segment, tap, { project: true });
+  return writeDraftPoints(state, inserted.points);
+}
+
 /** Three points is the auto-closed polyline. Fewer than that is not a shape. */
 export const POLYLINE_CLOSE_MIN = 3;
 
 /** Same window as a paint double-tap. The first tap is not delayed. */
 export const POLYLINE_DOUBLE_TAP_MS = 300;
 
-function sharedTranslation(nullspace, indexA, indexB, delta) {
-  const first = projectPointDelta(nullspace, indexA, delta);
-  if (!first.free) return [0, 0];
-  const second = projectPointDelta(nullspace, indexB, [first.du, first.dv]);
-  if (!second.free) return [0, 0];
-  const third = projectPointDelta(nullspace, indexA, [second.du, second.dv]);
-  if (!third.free || Math.hypot(third.du, third.dv) <= BLOCK_EPS) return [0, 0];
-  return [third.du, third.dv];
-}
-
-function lineRecord(spec, lineId) {
-  return (spec?.lines || []).find((line) => line?.id === lineId && !line.guide) || null;
-}
-
-/** A line drag needs one direction both endpoints can still move. */
-export function contourLineDragAllowed(spec, lineId) {
-  const line = lineRecord(spec, lineId);
-  if (!line) return false;
-  try {
-    const analyzed = analyzeContour(spec);
-    if (analyzed.status === 'conflict') return false;
-    const indexA = analyzed.points.findIndex((p) => p.id === line.a);
-    const indexB = analyzed.points.findIndex((p) => p.id === line.b);
-    if (indexA < 0 || indexB < 0) return false;
-    return sharedTranslation(analyzed.nullspace, indexA, indexB, [1, 0])[0] !== 0
-      || sharedTranslation(analyzed.nullspace, indexA, indexB, [0, 1])[1] !== 0;
-  } catch {
-    return false;
-  }
-}
-
 /**
- * Translate both endpoints of `lineId` by the same UV delta.
- * The delta is the part both points can still move. A lock the solver
- * rejects keeps the last feasible contour.
+ * A second note this soon is the synthetic mouse event after the same touch.
+ * It is not a second tap.
  */
-export function dragContourLine(spec, lineId, deltaUv) {
-  const line = lineRecord(spec, lineId);
-  const originA = pointAt(spec, line?.a);
-  const originB = pointAt(spec, line?.b);
-  if (!line || !originA || !originB) return hold(spec, line?.a, { held: true });
-  let analyzed;
-  try {
-    analyzed = analyzeContour(spec);
-  } catch {
-    return hold(spec, line.a, { held: true });
-  }
-  if (analyzed.status === 'conflict') return hold(spec, line.a, { held: true });
-  const indexA = analyzed.points.findIndex((p) => p.id === line.a);
-  const indexB = analyzed.points.findIndex((p) => p.id === line.b);
-  const delta = sharedTranslation(analyzed.nullspace, indexA, indexB, deltaUv);
-  if (Math.hypot(delta[0], delta[1]) <= BLOCK_EPS) return hold(spec, line.a, { held: true });
-  const lockA = [originA[0] + delta[0], originA[1] + delta[1]];
-  const lockB = [originB[0] + delta[0], originB[1] + delta[1]];
-  const trial = {
-    ...spec,
-    points: spec.points.map((p) => {
-      if (p.id === line.a) return { ...p, at: lockA.slice() };
-      if (p.id === line.b) return { ...p, at: lockB.slice() };
-      return { ...p, at: p.at.slice() };
-    }),
-    constraints: [
-      ...(spec.constraints || []),
-      { id: `${DRAG_ID}a`, kind: 'fix', items: [line.a], at: { [line.a]: lockA } },
-      { id: `${DRAG_ID}b`, kind: 'fix', items: [line.b], at: { [line.b]: lockB } },
-    ],
-  };
-  let solved;
-  try {
-    solved = analyzeContour(trial);
-  } catch {
-    return hold(spec, line.a, { held: true, inconsistent: true });
-  }
-  if (solved.status === 'conflict') return hold(spec, line.a, { held: true, inconsistent: true });
-  const next = {
-    points: solved.points.map((p) => ({ id: p.id, at: p.at.slice() })),
-    lines: (spec.lines || []).map((l) => ({ ...l })),
-    arcs: (solved.arcs || []).map((a) => ({ ...a })),
-    dimensions: (spec.dimensions || []).map((d) => ({ ...d })),
-    constraints: (spec.constraints || []).map((c) => ({ ...c })),
-    ...(spec.refs ? { refs: spec.refs.map((ref) => ({ ...ref })) } : {}),
-  };
-  return { spec: next, uv: pointAt(next, line.a), moved: true, held: false };
+export const POLYLINE_SAME_TAP_MS = 45;
+
+/** True when `now` is a later tap on the same point, inside the double-tap window. */
+export function isPolylineDoubleTap(prev, pointId, now) {
+  if (!prev || prev.id !== pointId || !Number.isFinite(now) || !Number.isFinite(prev.at)) return false;
+  const dt = now - prev.at;
+  if (dt <= POLYLINE_SAME_TAP_MS) return false;
+  return dt <= POLYLINE_DOUBLE_TAP_MS;
 }
 
-/** Move both ends of an unpromoted segment by `delta`, from the original points. */
-export function translatePolylineSegment(points, indexA, indexB, delta) {
-  const du = Number(delta?.[0]) || 0;
-  const dv = Number(delta?.[1]) || 0;
-  return (points || []).map((uv, index) => {
-    const u = Number(uv?.[0]) || 0;
-    const v = Number(uv?.[1]) || 0;
-    if (index !== indexA && index !== indexB) return [u, v];
-    return [u + du, v + dv];
-  });
-}
-
-/** Segments the cursor tool can drag. A promoted contour wins over the draft list. */
+/** Segments a polyline tap can split. A promoted contour wins over the draft list. */
 export function sketchSegments(state) {
   const spec = state?.params?.contour;
   if (spec?.lines?.length) {
@@ -484,6 +525,18 @@ export function sketchSegments(state) {
     });
   }
   return out;
+}
+
+/** Sketch line under a snap, when the finger missed the segment slop. */
+export function segmentForSnap(state, snap) {
+  if (!snap?.target || snap.target.kind !== 'line') return null;
+  const segments = sketchSegments(state);
+  const direct = segments.find((segment) => segment.kind === 'contour' && segment.id === snap.target.id);
+  if (direct) return direct;
+  const match = /^e(\d+)$/.exec(String(snap.target.id || ''));
+  if (!match) return null;
+  const index = Number(match[1]);
+  return segments.find((segment) => segment.kind === 'polyline' && segment.indexA === index) || null;
 }
 
 /** A polyline dot is a draft point, or a contour point on a real segment. */

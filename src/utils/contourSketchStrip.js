@@ -22,6 +22,9 @@ export function sketchActiveId(state) {
   if (state.constraintEdit) return state.constraintEdit;
   const picks = Array.isArray(state.picks) ? state.picks : [];
   if (buildingGesture(state) && picks.length !== 1) return null;
+  if (!state.gesture && state.entityCard === 'polyline') {
+    return contourChips(state).some((chip) => chip.id === 'polyline') ? 'polyline' : null;
+  }
   if (picks.length === 1) {
     const pick = picks[0];
     if (!pick?.id || pick.kind === 'point') return null;
@@ -87,6 +90,11 @@ export function selectSketchChip(state, chip) {
     dimensionLive: null,
     gestureNote: null,
   };
+  if (chip.id === 'polyline') {
+    const lines = (state.params?.contour?.lines || []).filter((line) => line && !line.guide);
+    const picks = lines.map((line) => ({ kind: 'line', id: line.id, label: line.id }));
+    return { ...cleared, picks, entityCard: 'polyline' };
+  }
   const kind = geometryKind(chip.kind);
   if (!kind || chip.id === 'shape') {
     return { ...cleared, picks: [], entityCard: chip.id === 'shape' ? 'shape' : null };

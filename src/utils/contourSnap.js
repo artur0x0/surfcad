@@ -403,6 +403,7 @@ function copySpec(spec) {
       items: c.items ? [...c.items] : c.items,
     })),
     ...(spec.refs ? { refs: spec.refs.map((ref) => ({ ...ref })) } : {}),
+    ...(spec.polyline ? { polyline: true } : {}),
   };
 }
 

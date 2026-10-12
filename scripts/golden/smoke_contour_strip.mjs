@@ -136,7 +136,7 @@ async function doubleTap(page, x, y) {
       fire('pointerup');
     };
     tap();
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await new Promise((resolve) => setTimeout(resolve, 80));
     tap();
   }, { x, y });
 }

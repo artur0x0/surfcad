@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  contourLineDragAllowed,
-  dragContourLine,
+  applyPolylineSegmentInsert,
+  dragContourPoint,
   isPolylineDot,
+  isPolylineDoubleTap,
   planPolylinePointRemoval,
   POLYLINE_CLOSE_MIN,
+  POLYLINE_DOUBLE_TAP_MS,
+  POLYLINE_SAME_TAP_MS,
+  projectUvOnSegment,
   sketchHandles,
   sketchSegments,
-  translatePolylineSegment,
 } from './contourDrag.js';
 import {
   contourToolAddsPoints,
@@ -16,7 +19,7 @@ import {
   switchContourTool,
   toolToProfileParams,
 } from './contourMode.js';
-import { contourFromRectangle, solveContour } from './contourSolve.js';
+import { contourFromPolyline, contourFromRectangle, solveContour } from './contourSolve.js';
 
 function freeQuad() {
   return {
@@ -38,7 +41,7 @@ function freeQuad() {
   };
 }
 
-test('cursor drags a line by the same delta and does not add points', () => {
+test('cursor drags a point and does not add points', () => {
   assert.equal(contourToolAddsPoints('cursor'), false);
   assert.equal(contourToolAddsPoints('polyline'), true);
 
@@ -48,39 +51,76 @@ test('cursor drags a line by the same delta and does not add points', () => {
   assert.equal(cursor.params.radius, started.params.radius);
   assert.equal(toolToProfileParams('cursor', cursor.params).profileType, 'circle');
 
-  const spec = freeQuad();
-  assert.equal(contourLineDragAllowed(spec, 'e0'), true);
-  const dragged = dragContourLine(spec, 'e0', [3, -2]);
+  const spec = { ...freeQuad(), polyline: true };
+  const dragged = dragContourPoint(spec, 'p1', [14, 3]);
   assert.equal(dragged.moved, true);
+  assert.equal(dragged.spec.polyline, true);
   const at = Object.fromEntries(dragged.spec.points.map((p) => [p.id, p.at]));
-  assert.ok(Math.abs(at.p0[0] - 3) < 1e-6 && Math.abs(at.p0[1] + 2) < 1e-6);
-  assert.ok(Math.abs(at.p1[0] - 13) < 1e-6 && Math.abs(at.p1[1] + 2) < 1e-6);
+  assert.deepEqual(at.p0, [0, 0]);
+  assert.ok(Math.hypot(at.p1[0] - 10, at.p1[1]) > 1);
   assert.deepEqual(at.p2, [10, 8]);
   assert.deepEqual(at.p3, [0, 8]);
   assert.equal(dragged.spec.points.length, spec.points.length);
   assert.equal(dragged.spec.lines.length, spec.lines.length);
 
   const rect = contourFromRectangle(40, 30, true);
-  assert.equal(contourLineDragAllowed(rect, 'e0'), false);
-  const held = dragContourLine(rect, 'e0', [4, 0]);
+  assert.equal(rect.polyline, undefined);
+  const held = dragContourPoint(rect, 'p0', [4, 0]);
   assert.equal(held.moved, false);
-  assert.deepEqual(held.spec.points.find((p) => p.id === 'p0').at, rect.points.find((p) => p.id === 'p0').at);
-  assert.deepEqual(held.spec.points.find((p) => p.id === 'p1').at, rect.points.find((p) => p.id === 'p1').at);
+  assert.equal(held.spec.polyline, undefined);
 });
 
-test('an unpromoted segment translates both ends and leaves the other points', () => {
+test('a segment tap inserts one point and a fast double-tap is the removal window', () => {
   const points = [[0, 0], [10, 0], [10, 8], [0, 8]];
-  const next = translatePolylineSegment(points, 1, 2, [2, 3]);
-  assert.deepEqual(next[0], [0, 0]);
-  assert.deepEqual(next[1], [12, 3]);
-  assert.deepEqual(next[2], [12, 11]);
-  assert.deepEqual(next[3], [0, 8]);
-  assert.deepEqual(points[1], [10, 0]);
-  const state = { tool: 'cursor', params: { points }, entry: 'crossSection' };
+  const state = { tool: 'polyline', params: { points }, entry: 'crossSection' };
   const segments = sketchSegments(state);
   assert.equal(segments.length, 4);
   assert.equal(segments[1].indexA, 1);
   assert.equal(segments[1].indexB, 2);
+  const inserted = applyPolylineSegmentInsert(state, segments[0], [5, 0.4], {
+    uv: [5, 0],
+    target: { kind: 'line', id: 'e0' },
+  });
+  assert.equal(inserted.params.contour, undefined);
+  assert.equal(inserted.params.points.length, 5);
+  assert.deepEqual(points, [[0, 0], [10, 0], [10, 8], [0, 8]]);
+  const mid = inserted.params.points[1];
+  assert.ok(Math.abs(mid[0] - 5) < 1e-6 && Math.abs(mid[1]) < 1e-6);
+
+  const spec = contourFromPolyline(points);
+  const promoted = {
+    tool: 'polyline',
+    entry: 'crossSection',
+    params: { contour: spec, points: spec.points.map((p) => p.at.slice()) },
+  };
+  const segment = sketchSegments(promoted).find((item) => item.id === 'e0');
+  const split = applyPolylineSegmentInsert(promoted, segment, [5, 1], {
+    uv: [5, 0],
+    target: { kind: 'line', id: 'e0' },
+  });
+  assert.equal(split.params.contour.polyline, true);
+  assert.equal(split.params.contour.points.length, 5);
+  assert.equal(split.params.contour.constraints.length, 0);
+  assert.notEqual(solveContour(split.params.contour).status, 'conflict');
+  const dragged = dragContourPoint(split.params.contour, 'p1', [12, 3]);
+  assert.equal(dragged.spec.polyline, true);
+
+  const external = applyPolylineSegmentInsert(promoted, segment, [5, 0], {
+    uv: [10, 8],
+    target: { kind: 'point', id: 'p2' },
+  });
+  assert.equal(external.params.contour.polyline, true);
+  assert.equal(external.params.contour.points.length, 5);
+  assert.ok(external.params.contour.constraints.some((item) => item.kind === 'coincident'));
+
+  const onSegment = projectUvOnSegment([5, 4], [0, 0], [10, 0]);
+  assert.ok(Math.abs(onSegment[0] - 5) < 1e-6 && Math.abs(onSegment[1]) < 1e-6);
+  assert.equal(isPolylineDoubleTap({ id: 'p1', at: 0 }, 'p1', POLYLINE_SAME_TAP_MS), false);
+  assert.equal(isPolylineDoubleTap({ id: 'p1', at: 0 }, 'p1', 20), false);
+  assert.equal(isPolylineDoubleTap({ id: 'p1', at: 0 }, 'p1', 80), true);
+  assert.equal(isPolylineDoubleTap({ id: 'p1', at: 0 }, 'p1', POLYLINE_DOUBLE_TAP_MS), true);
+  assert.equal(isPolylineDoubleTap({ id: 'p1', at: 0 }, 'p1', POLYLINE_DOUBLE_TAP_MS + 1), false);
+  assert.equal(isPolylineDoubleTap({ id: 'p0', at: 0 }, 'p1', 80), false);
 });
 
 test('double-tap removes one polyline dot and marks a constraint that named it broken', () => {

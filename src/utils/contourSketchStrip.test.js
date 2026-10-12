@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { planPolylinePointRemoval } from './contourDrag.js';
-import { contourFromRectangle } from './contourSolve.js';
+import { contourFromPolyline, contourFromRectangle } from './contourSolve.js';
 import { contourChips } from './contourStrip.js';
 import { entityDeleteChip, selectSketchChip, sketchActiveId, sketchHighlightPicks } from './contourSketchStrip.js';
 
@@ -112,6 +112,21 @@ test('a chip tap opens the edit card or replaces the pick, and a broken referenc
   assert.equal(ref.picks[0].kind, 'ref');
   assert.equal(ref.picks[0].geomKind, 'line');
   assert.equal(sketchActiveId(ref), 'r0');
+
+  const poly = contourFromPolyline([[0, 0], [12, 0], [12, 6]]);
+  const selected = selectSketchChip({
+    tool: 'cursor',
+    params: { contour: poly },
+    gesture: 'dimension',
+    picks: [{ kind: 'line', id: 'e0' }],
+  }, { id: 'polyline', kind: 'polyline', label: 'Polyline' });
+  assert.equal(selected.gesture, null);
+  assert.equal(selected.entityCard, 'polyline');
+  assert.equal(selected.picks.length, poly.lines.length);
+  assert.ok(selected.picks.every((pick) => pick.kind === 'line'));
+  assert.equal(sketchActiveId(selected), 'polyline');
+  assert.equal(entityDeleteChip(selected)?.id, 'polyline');
+  assert.equal(entityDeleteChip({ ...selected, gesture: 'dimension' }), null);
 });
 
 test('cursor keeps the drawn shape, and a removed point leaves a broken constraint chip', () => {
