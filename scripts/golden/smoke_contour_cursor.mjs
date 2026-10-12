@@ -128,7 +128,7 @@ async function doubleTap(page, x, y) {
   await page.evaluate(async ({ x: px, y: py }) => {
     const canvas = document.querySelector('.viewport-shell > canvas');
     const fire = (type) => {
-      canvas.dispatchEvent(new PointerEvent(type, {
+      canvas.dispatchEvent(new window.PointerEvent(type, {
         bubbles: true,
         cancelable: true,
         clientX: px,
@@ -139,7 +139,7 @@ async function doubleTap(page, x, y) {
         pointerType: 'touch',
         isPrimary: true,
       }));
-      canvas.dispatchEvent(new MouseEvent(type === 'pointerdown' ? 'mousedown' : type === 'pointerup' ? 'mouseup' : 'mousemove', {
+      canvas.dispatchEvent(new window.MouseEvent(type === 'pointerdown' ? 'mousedown' : type === 'pointerup' ? 'mouseup' : 'mousemove', {
         bubbles: true,
         cancelable: true,
         clientX: px,

@@ -169,7 +169,6 @@ import {
   resolveRevolveAxis,
   selectLoftProfile,
   setLoftProfileOffset,
-  contourToolAddsPoints,
   switchContourTool,
   toolToProfileParams,
   validateContourProfile,
