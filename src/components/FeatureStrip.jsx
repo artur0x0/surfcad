@@ -180,6 +180,8 @@ function measureRollbackGaps(track, vertical) {
 function RollbackHandle({
   orientation,
   position,
+  insetBefore,
+  insetAfter,
   index,
   count,
   anchorAttr,
@@ -188,6 +190,9 @@ function RollbackHandle({
   onPointerUp,
 }) {
   const vertical = orientation === 'vertical';
+  // The mark sits just outside the strip: tip on the top edge (horizontal)
+  // or the side edge (vertical). The 2px line is the strip's full span,
+  // centred on the gap. The wider box is only the drag target.
   return (
     <div
       data-rollback-bar=""
@@ -205,25 +210,33 @@ function RollbackHandle({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       className={vertical
-        ? 'absolute left-0 right-0 z-10 flex h-7 -translate-y-1/2 cursor-row-resize touch-none items-center justify-center'
-        : 'absolute bottom-0 top-0 z-10 flex w-7 -translate-x-1/2 cursor-col-resize touch-none flex-col items-center'}
-      style={vertical ? { top: position } : { left: position }}
+        ? 'absolute z-10 h-7 -translate-y-1/2 cursor-row-resize touch-none'
+        : 'absolute z-10 w-7 -translate-x-1/2 cursor-col-resize touch-none'}
+      style={vertical
+        ? { top: position, left: -insetBefore, right: -insetAfter }
+        : { left: position, top: -insetBefore, bottom: -insetAfter }}
     >
       {vertical ? (
         <>
-          <span data-rollback-line="" className="h-0.5 flex-1 bg-cyan-300" />
+          <span
+            data-rollback-line=""
+            className="pointer-events-none absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 bg-cyan-300"
+          />
           <span
             data-rollback-mark=""
-            className="h-0 w-0 shrink-0 border-y-[5px] border-y-transparent border-l-[7px] border-l-cyan-300"
+            className="pointer-events-none absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-y-[6px] border-y-transparent border-r-[8px] border-r-cyan-300"
           />
         </>
       ) : (
         <>
           <span
-            data-rollback-mark=""
-            className="h-0 w-0 shrink-0 border-x-[6px] border-x-transparent border-t-[8px] border-t-cyan-300"
+            data-rollback-line=""
+            className="pointer-events-none absolute bottom-0 left-1/2 top-0 w-0.5 -translate-x-1/2 bg-cyan-300"
           />
-          <span data-rollback-line="" className="w-0.5 flex-1 bg-cyan-300" />
+          <span
+            data-rollback-mark=""
+            className="pointer-events-none absolute bottom-full left-1/2 h-0 w-0 -translate-x-1/2 border-x-[6px] border-x-transparent border-t-[8px] border-t-cyan-300"
+          />
         </>
       )}
     </div>
@@ -356,7 +369,7 @@ export default function FeatureStrip({
   const features = useMemo(() => featuresWithContours(script), [script]);
   const featureIds = useMemo(() => features.map((feature) => feature.id), [features]);
   const [previewIndex, setPreviewIndex] = useState(null);
-  const [gapPos, setGapPos] = useState([]);
+  const [barFrame, setBarFrame] = useState(null);
   const dragRef = useRef(false);
   const featuresRef = useRef(features);
   featuresRef.current = features;
@@ -371,6 +384,7 @@ export default function FeatureStrip({
   const between = stripSide === 'between';
   const scrollRef = useRef(null);
   const trackRef = useRef(null);
+  const stripRef = useRef(null);
   const [featureWindow, setFeatureWindow] = useState('fit');
   const stripItems = entityMode ? entities : (jointMode ? joints : features);
   const lastFeatureId = stripItems.length ? stripItems[stripItems.length - 1].id : null;
@@ -437,15 +451,54 @@ export default function FeatureStrip({
   }, [entityMode, featureIds, jointMode, rollbackAnchor]);
 
   useLayoutEffect(() => {
-    if (!showRollback) {
-      setGapPos((prev) => (prev.length ? [] : prev));
-      return;
+    if (!showRollback || hidden) {
+      setBarFrame((prev) => (prev == null ? prev : null));
+      return undefined;
     }
-    const next = measureRollbackGaps(trackRef.current, !horizontal);
-    setGapPos((prev) => (
-      prev.length === next.length && prev.every((pos, i) => pos === next[i]) ? prev : next
-    ));
-  }, [showRollback, horizontal, featureIds, shownIndex, listLength]);
+    const track = trackRef.current;
+    const strip = stripRef.current;
+    const scroller = scrollRef.current;
+    if (!track || !strip) return undefined;
+
+    const place = () => {
+      const vertical = !horizontal;
+      const gaps = measureRollbackGaps(track, vertical);
+      const gap = gaps[shownIndex];
+      if (gap == null) {
+        setBarFrame((prev) => (prev == null ? prev : null));
+        return;
+      }
+      const trackRect = track.getBoundingClientRect();
+      const stripRect = strip.getBoundingClientRect();
+      const style = getComputedStyle(strip);
+      const borderStart = parseFloat(vertical ? style.borderTopWidth : style.borderLeftWidth) || 0;
+      const borderEnd = parseFloat(vertical ? style.borderBottomWidth : style.borderRightWidth) || 0;
+      const origin = vertical ? trackRect.top - stripRect.top : trackRect.left - stripRect.left;
+      const pos = origin - borderStart + gap;
+      setBarFrame((prev) => (
+        prev
+        && prev.pos === pos
+        && prev.insetBefore === borderStart
+        && prev.insetAfter === borderEnd
+          ? prev
+          : { pos, insetBefore: borderStart, insetAfter: borderEnd }
+      ));
+    };
+
+    place();
+    scroller?.addEventListener('scroll', place, { passive: true });
+    let observer;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(place);
+      observer.observe(track);
+      observer.observe(strip);
+      if (scroller) observer.observe(scroller);
+    }
+    return () => {
+      scroller?.removeEventListener('scroll', place);
+      observer?.disconnect();
+    };
+  }, [showRollback, hidden, horizontal, featureIds, shownIndex, listLength]);
 
   const nearestGap = (event) => {
     const track = trackRef.current;
@@ -503,10 +556,12 @@ export default function FeatureStrip({
   const onBarUp = (event) => {
     finishDrag(event);
   };
-  const rollbackHandle = showRollback ? (
+  const rollbackHandle = showRollback && barFrame ? (
     <RollbackHandle
       orientation={horizontal ? 'horizontal' : 'vertical'}
-      position={gapPos[shownIndex] ?? 0}
+      position={barFrame.pos}
+      insetBefore={barFrame.insetBefore}
+      insetAfter={barFrame.insetAfter}
       index={shownIndex}
       count={features.length}
       anchorAttr={anchorAttr}
@@ -561,7 +616,8 @@ export default function FeatureStrip({
     const historyBtn = 'shrink-0 rounded-lg p-1.5 flex items-center justify-center text-blue-400 hover:bg-gray-700/60 disabled:opacity-30 active:opacity-80';
     return (
       <div
-        className="flex w-full min-w-0 flex-row items-center
+        ref={stripRef}
+        className="relative flex w-full min-w-0 flex-row items-center
           border border-gray-700/40 bg-gray-900/70 surface-glass-chip"
         data-feature-strip=""
         data-feature-strip-orientation="horizontal"
@@ -604,7 +660,7 @@ export default function FeatureStrip({
           >
             <div
               ref={trackRef}
-              className="relative flex w-max flex-row items-center gap-1.5"
+              className="relative flex w-max flex-row items-center gap-2"
               data-feature-bar-track=""
             >
             {jointMode && joints.length === 0 && (
@@ -706,7 +762,6 @@ export default function FeatureStrip({
                 </button>
               );
             })}
-            {rollbackHandle}
             </div>
           </div>
         </div>
@@ -726,21 +781,19 @@ export default function FeatureStrip({
             <Redo size={16} strokeWidth={2} aria-hidden="true" />
           </button>
         </div>
+        {rollbackHandle}
       </div>
     );
   }
 
   return (
     <div
-      ref={scrollRef}
+      ref={stripRef}
       className={between
-        ? `shrink-0 flex flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden
-          border-x border-gray-700/50 bg-gray-900/80 surface-glass-chip
-          px-1.5 py-2 w-11 rail-scroll h-full min-h-0`
-        : `shrink-0 flex flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden
-          border-l border-gray-700/40 bg-gray-900/70 surface-glass-chip
-          px-1.5 pt-2 w-11 rail-scroll flex-1 min-h-0
-          pb-[max(3.5rem,calc(env(safe-area-inset-bottom,0px)+3.25rem))]`}
+        ? `relative shrink-0 flex flex-col border-x border-gray-700/50 bg-gray-900/80 surface-glass-chip
+          w-11 h-full min-h-0`
+        : `relative shrink-0 flex flex-col border-l border-gray-700/40 bg-gray-900/70 surface-glass-chip
+          w-11 flex-1 min-h-0`}
       data-feature-strip=""
       data-feature-strip-orientation="vertical"
       data-feature-strip-side={stripSide}
@@ -749,6 +802,15 @@ export default function FeatureStrip({
       aria-label={jointMode ? 'Assembly joints' : 'Modeling features'}
       data-assembly-joints={jointMode ? '' : undefined}
     >
+      <div
+        ref={scrollRef}
+        className={between
+          ? `flex w-full flex-1 min-h-0 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden
+            px-1.5 py-2 rail-scroll`
+          : `flex w-full flex-1 min-h-0 flex-col items-center gap-1.5 overflow-y-auto overflow-x-hidden
+            px-1.5 pt-2 rail-scroll
+            pb-[max(3.5rem,calc(env(safe-area-inset-bottom,0px)+3.25rem))]`}
+      >
       {jointMode && joints.map((joint) => {
         const invalid = !!joint.invalid;
         return (
@@ -772,7 +834,7 @@ export default function FeatureStrip({
       {!jointMode && (
       <div
         ref={trackRef}
-        className="relative flex w-full flex-col items-center gap-1.5"
+        className="relative flex w-full flex-col items-center gap-2"
         data-feature-bar-track=""
       >
       {features.map((f, i) => {
@@ -811,9 +873,10 @@ export default function FeatureStrip({
           </button>
         );
       })}
-      {rollbackHandle}
       </div>
       )}
+      </div>
+      {rollbackHandle}
     </div>
   );
 }

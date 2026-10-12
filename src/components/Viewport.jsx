@@ -13073,7 +13073,7 @@ const Viewport = forwardRef(({
             onUndo={contourToast.sketch ? undoContourSketch : (contourToast.undo ? onUndo : undefined)}
             canUndo={contourToast.sketch ? contourUndoDepth > 0 : canUndo}
             roomy={!!contourToast.deleted}
-            className="px-3 py-2 pointer-events-auto"
+            className={contourToast.deleted ? 'pointer-events-auto' : 'px-3 py-2 pointer-events-auto'}
           >
             {contourToast.text}
           </ErrorPopup>

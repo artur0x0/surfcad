@@ -3,7 +3,7 @@
 /**
  * Feature-edit Delete.
  *
- * At 390px and desktop: a feature another block uses asks
+ * At 390px and 1280px: a feature another block uses asks
  * "Delete along with N features", then removes those blocks as one undo
  * step. A feature with no feature dependents deletes immediately. Either
  * path shows a Deleted toast with Undo. Toast Undo restores the script.
@@ -158,18 +158,35 @@ async function runSize(label, compact, width, height) {
   const toastShot = join(shotDir, `feature-edit-delete-toast-${label}.png`);
   await page.screenshot({ path: toastShot });
   console.log(`  shot ${toastShot}`);
-  if (label === '390') {
-    const undoBox = await page.locator('[data-feature-edit-delete-toast] [data-error-undo]').boundingBox();
-    const dismissBox = await page.locator('[data-feature-edit-delete-toast] [data-error-dismiss]').boundingBox();
-    const gap = undoBox && dismissBox ? dismissBox.x - (undoBox.x + undoBox.width) : 0;
-    check('390: Undo tap target is at least 44px',
-      !!undoBox && undoBox.width >= 44 && undoBox.height >= 44,
-      JSON.stringify(undoBox));
-    check('390: dismiss tap target is at least 44px',
-      !!dismissBox && dismissBox.width >= 44 && dismissBox.height >= 44,
-      JSON.stringify(dismissBox));
-    check('390: space between Undo and X', gap >= 12, String(gap));
-  }
+  const toastMetrics = await page.evaluate(() => {
+    const root = document.querySelector('[data-feature-edit-delete-toast]');
+    const box = (node) => {
+      const rect = node?.getBoundingClientRect();
+      return rect ? { x: rect.x, y: rect.y, w: rect.width, h: rect.height } : null;
+    };
+    const popup = box(root?.querySelector('[data-error-popup]'));
+    const undo = box(root?.querySelector('[data-error-undo]'));
+    const dismiss = box(root?.querySelector('[data-error-dismiss]'));
+    const text = box(root?.querySelector('[data-feature-edit-dependent]'));
+    return {
+      popupH: popup?.h ?? 0,
+      textH: text?.h ?? 0,
+      undoW: undo?.w ?? 0,
+      dismissW: dismiss?.w ?? 0,
+      gap: undo && dismiss ? dismiss.x - (undo.x + undo.w) : 0,
+    };
+  });
+  check(`${label}: Deleted toast is one line high`,
+    toastMetrics.popupH > 0
+      && toastMetrics.popupH <= 28
+      && toastMetrics.popupH <= toastMetrics.textH + 8
+      && toastMetrics.popupH + 1 >= toastMetrics.textH,
+    JSON.stringify(toastMetrics));
+  check(`${label}: Undo tap target is at least 44px wide`,
+    toastMetrics.undoW >= 44, JSON.stringify(toastMetrics));
+  check(`${label}: dismiss tap target is at least 44px wide`,
+    toastMetrics.dismissW >= 44, JSON.stringify(toastMetrics));
+  check(`${label}: space between Undo and X`, toastMetrics.gap >= 12, String(toastMetrics.gap));
 
   await page.locator('[data-feature-edit-delete-toast] [data-error-undo]').click();
   await page.waitForFunction((expected) => window.__SCRIPT__ === expected && window.__MESH_SIG__?.() === window.__ORIGINAL_SIG__,
@@ -251,7 +268,7 @@ async function runSize(label, compact, width, height) {
 
 try {
   await runSize('390', true, 390, 780);
-  await runSize('desktop', false, 1100, 760);
+  await runSize('1280', false, 1280, 900);
 } finally {
   await browser.close();
   server.close();
