@@ -3,6 +3,8 @@ import test from 'node:test';
 import { markerWithId } from './featureBlockId.js';
 import { featureDependents } from './featureEdit.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
+import { serializeAssembly } from './assembly.js';
+import { deleteFeatureBlock } from './featureSheetWriteback.js';
 import {
   CUBE_BEGIN,
   CUBE_END,
@@ -14,9 +16,20 @@ import {
   CONTOUR_EXTRUDE_END,
   CONTOUR_PROFILE_BEGIN,
   CONTOUR_PROFILE_END,
+  composeHelperInsert,
 } from './helperPaletteSnippets.js';
 import { SHEET_METAL_BEGIN, SHEET_METAL_END } from './sheetMetal/sheetMeshFlag.js';
-import { evaluationScript, hardSkipIds, rollbackAnchorAtGap, rollbackGapIndex } from './featureSkip.js';
+import {
+  clampRollbackAnchor,
+  evaluationScript,
+  hardSkipIds,
+  insertedFeature,
+  rollbackAnchorAfterInsert,
+  rollbackAnchorAtGap,
+  rollbackAnchorsAfterOpen,
+  rollbackGapIndex,
+  rollbackInsertCaret,
+} from './featureSkip.js';
 
 function region(begin, end, id, body) {
   return `${markerWithId(begin, id)}\n${body}\n${markerWithId(end, id)}`;
@@ -210,4 +223,73 @@ test('the rollback bar gap is the feature it sits after', () => {
   assert.equal(rollbackAnchorAtGap(ids, 0), null);
   assert.equal(rollbackAnchorAtGap(ids, 2), 'fillet1');
   assert.equal(rollbackAnchorAtGap(ids, 3), undefined);
+});
+
+test('insert lands on the bar; undo, delete, and reload reclamp it', () => {
+  const script = [
+    region(CUBE_BEGIN, CUBE_END, 'cube1', 'let part = Manifold.cube([20, 20, 20], true);'),
+    region(FILLET_MODE_BEGIN, FILLET_MODE_END, 'fillet1', 'part = filletAlongPath(part, path, 2);'),
+    region(SHELL_BEGIN, SHELL_END, 'shell1', "part = hollow(part, 2, 'z');"),
+    'return part;',
+    '',
+  ].join('\n');
+  const caret = rollbackInsertCaret(script, 'fillet1');
+  const fillet = parseFeatureMarkers(script).find((feature) => feature.id === 'fillet1');
+  assert.equal(caret, fillet.endOffset);
+  assert.equal(rollbackInsertCaret(script, null), 0);
+  assert.equal(rollbackInsertCaret(script, undefined), null);
+  assert.equal(rollbackInsertCaret(script, 'missing'), null);
+
+  const inserted = composeHelperInsert(script, 'cube', caret, {
+    width: 14,
+    depth: 14,
+    height: 14,
+    center: true,
+  });
+  assert.equal(typeof inserted, 'string');
+  const added = insertedFeature(script, inserted);
+  assert.equal(added?.kind, 'cube');
+  assert.ok(added.startOffset >= caret);
+  const shell = parseFeatureMarkers(inserted).find((feature) => feature.id === 'shell1');
+  assert.ok(shell && added.endOffset <= shell.startOffset);
+  const moved = rollbackAnchorAfterInsert(script, inserted, 'fillet1');
+  assert.equal(moved, added.id);
+  const live = evaluationScript(inserted, { anchorId: moved });
+  assert.match(live, /\[14,\s*14,\s*14\]/);
+  assert.equal(live.includes("hollow(part, 2, 'z')"), false);
+  assert.match(live, /return part;/);
+  assert.equal(rollbackAnchorAfterInsert(script, inserted, undefined), undefined);
+
+  assert.equal(clampRollbackAnchor(script, moved), undefined);
+  assert.equal(clampRollbackAnchor(script, 'fillet1'), 'fillet1');
+  assert.equal(clampRollbackAnchor(inserted, 'fillet1'), 'fillet1');
+
+  const features = parseFeatureMarkers(script);
+  const droppedAnchor = deleteFeatureBlock(script, features.find((feature) => feature.id === 'fillet1'));
+  assert.equal(droppedAnchor.ok, true);
+  assert.equal(clampRollbackAnchor(droppedAnchor.buffer, 'fillet1'), undefined);
+  const droppedTail = deleteFeatureBlock(script, features.find((feature) => feature.id === 'shell1'));
+  assert.equal(clampRollbackAnchor(droppedTail.buffer, 'fillet1'), 'fillet1');
+  const droppedHead = deleteFeatureBlock(script, features.find((feature) => feature.id === 'cube1'));
+  assert.equal(clampRollbackAnchor(droppedHead.buffer, 'fillet1'), 'fillet1');
+
+  const edited = script.replace("hollow(part, 2, 'z')", "hollow(part, 3, 'z')");
+  assert.equal(clampRollbackAnchor(edited, 'fillet1'), 'fillet1');
+  const appended = script.replace(
+    'return part;',
+    `${region(CUBE_BEGIN, CUBE_END, 'cube2', 'part = part.add(Manifold.cube([4, 4, 4], true));')}\nreturn part;`,
+  );
+  assert.equal(clampRollbackAnchor(appended, 'fillet1'), 'fillet1');
+  assert.equal(rollbackAnchorAfterInsert(script, appended, 'fillet1'), 'cube2');
+
+  const saved = serializeAssembly({
+    name: 'Bracket',
+    parts: [{ id: 'p1', name: 'Part', rollbackAnchor: 'fillet1' }],
+    rollbackAnchors: { p1: 'fillet1' },
+  });
+  assert.equal(saved.parts[0].id, 'p1');
+  assert.equal(Object.prototype.hasOwnProperty.call(saved.parts[0], 'rollbackAnchor'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(saved, 'rollbackAnchors'), false);
+  assert.notEqual(evaluationScript(script, { anchorId: 'fillet1' }), script);
+  assert.deepEqual(rollbackAnchorsAfterOpen(), {});
 });

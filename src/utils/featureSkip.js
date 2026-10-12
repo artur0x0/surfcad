@@ -245,3 +245,83 @@ export function rollbackAnchorAtGap(ids, index) {
   if (at >= list.length) return undefined;
   return list[at - 1];
 }
+
+function featureIds(script) {
+  return parseFeatureMarkers(script).map((feature) => feature.id);
+}
+
+/**
+ * Caret for a palette insert while the bar is set. `null` anchor is the
+ * start of the buffer. A feature id is that block's end. Omitted, or an
+ * id that is no longer in the script, appends (compose treats null as the end).
+ * @param {string} script
+ * @param {string|null|undefined} anchor
+ * @returns {number|null}
+ */
+export function rollbackInsertCaret(script, anchor) {
+  if (anchor === null) return 0;
+  if (typeof anchor !== 'string') return null;
+  const feature = parseFeatureMarkers(script).find((item) => item.id === anchor);
+  return feature ? feature.endOffset : null;
+}
+
+/**
+ * Keep the bar when its feature is still in the script. `null` stays before
+ * everything. A missing id snaps to the end. Undo, redo, and delete use this.
+ * A contour or sheet write uses it too, so the bar does not follow a new block.
+ * @param {string} script
+ * @param {string|null|undefined} anchor
+ * @returns {string|null|undefined}
+ */
+export function clampRollbackAnchor(script, anchor) {
+  if (anchor === null) return null;
+  if (typeof anchor !== 'string') return undefined;
+  return featureIds(script).includes(anchor) ? anchor : undefined;
+}
+
+/**
+ * The block an insert added, matched by the unchanged blocks on either side.
+ * @param {string} beforeScript
+ * @param {string} afterScript
+ */
+export function insertedFeature(beforeScript, afterScript) {
+  const textOf = (script, feature) => script.slice(feature.startOffset, feature.endOffset);
+  const before = parseFeatureMarkers(beforeScript);
+  const after = parseFeatureMarkers(afterScript);
+  let prefix = 0;
+  while (
+    prefix < before.length
+    && prefix < after.length
+    && before[prefix].kind === after[prefix].kind
+    && textOf(beforeScript, before[prefix]) === textOf(afterScript, after[prefix])
+  ) prefix += 1;
+  let suffix = 0;
+  while (
+    suffix < before.length - prefix
+    && suffix < after.length - prefix
+    && before[before.length - 1 - suffix].kind === after[after.length - 1 - suffix].kind
+    && textOf(beforeScript, before[before.length - 1 - suffix]) === textOf(afterScript, after[after.length - 1 - suffix])
+  ) suffix += 1;
+  const added = after.slice(prefix, after.length - suffix);
+  return added.length ? added[0] : null;
+}
+
+/**
+ * After a palette insert at the bar, the bar sits on the new feature so that
+ * card stays live and the old tail stays dim. The end of the strip (no
+ * anchor) stays at the end.
+ * @param {string} beforeScript
+ * @param {string} afterScript
+ * @param {string|null|undefined} anchor
+ */
+export function rollbackAnchorAfterInsert(beforeScript, afterScript, anchor) {
+  if (anchor !== null && typeof anchor !== 'string') return undefined;
+  const added = insertedFeature(beforeScript, afterScript);
+  if (added?.id) return added.id;
+  return clampRollbackAnchor(afterScript, anchor);
+}
+
+/** File open and reload drop the in-memory bar. Nothing is written to the file. */
+export function rollbackAnchorsAfterOpen() {
+  return {};
+}
