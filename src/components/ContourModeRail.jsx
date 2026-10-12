@@ -3,8 +3,9 @@ import {
   Circle,
   Square,
   Hexagon,
+  Waypoints,
   Spline,
-  Radius,
+  MousePointer2,
   Ruler,
   Link2,
   ArrowLeft,
@@ -19,11 +20,14 @@ import {
   useLeftRailFit,
 } from '../utils/railPair';
 
+// lucide-react 0.469 has no `vector-polygon`. Waypoints is the node-and-segment glyph.
+// Arc takes `spline`, the polyline glyph this rail used before.
 const ICONS = {
+  cursor: MousePointer2,
   circle: Circle,
   rectangle: Square,
   polygon: Hexagon,
-  polyline: Spline,
+  polyline: Waypoints,
 };
 
 const GESTURES = [
@@ -33,7 +37,7 @@ const GESTURES = [
 ];
 
 const GESTURE_ICONS = {
-  arc: Radius,
+  arc: Spline,
   dimension: Ruler,
   constraints: Link2,
 };

@@ -112,10 +112,11 @@ export const CONTOUR_ENTRY_IDS = new Set([
 ]);
 
 export const CONTOUR_TOOLS = [
+  { id: 'cursor', label: 'Cursor', title: 'Drag a point or a line. A line moves both ends. Does not add points' },
   { id: 'circle', label: 'Circle', title: 'Circle profile on the workplane' },
   { id: 'rectangle', label: 'Rect', title: 'Rectangle profile on the workplane' },
   { id: 'polygon', label: 'Polygon', title: 'Regular polygon profile on the workplane' },
-  { id: 'polyline', label: 'Polyline', title: 'Tap points on the workplane; right-drag a point to move it, or drag it with one finger (closed on Confirm)' },
+  { id: 'polyline', label: 'Polyline', title: 'Tap points on the workplane; right-drag a point to move it, or drag it with one finger. Double-tap a dot to remove it (closed on Confirm)' },
 ];
 
 export const CONTOUR_TOOL_IDS = CONTOUR_TOOLS.map((t) => t.id);
@@ -168,6 +169,11 @@ export function isContourTool(id) {
   return CONTOUR_TOOL_IDS.includes(id);
 }
 
+/** Only Polyline drops a new point. Cursor drags what is already there. */
+export function contourToolAddsPoints(tool) {
+  return tool === 'polyline';
+}
+
 export function defaultContourParams(tool) {
   if (tool === 'rectangle') {
     return { width: 20, height: 12, centered: true };
@@ -175,7 +181,7 @@ export function defaultContourParams(tool) {
   if (tool === 'polygon') {
     return { polygonPreset: 'hexagon', radius: 8 };
   }
-  if (tool === 'polyline') {
+  if (tool === 'polyline' || tool === 'cursor') {
     return { points: [] };
   }
   return { radius: 5, segments: 64 };
@@ -710,7 +716,8 @@ export function switchContourTool(state, tool) {
   const nextTool = isContourTool(tool) ? tool : 'circle';
   // Same tool only drops the gesture. A different tool does that too once
   // geometry exists: switching must not freeze or discard the sketch.
-  if (reverted?.tool === nextTool || sketchKeepsGeometry(reverted)) {
+  // Cursor edits the sketch that is already on screen. It is not a new profile.
+  if (reverted?.tool === nextTool || sketchKeepsGeometry(reverted) || nextTool === 'cursor') {
     const next = {
       ...reverted,
       tool: nextTool,
@@ -755,11 +762,22 @@ export function switchContourTool(state, tool) {
 
 /**
  * Map in-mode tool + params → Slice 21 buildProfileFromParams / compose shape.
+ * Cursor keeps whatever profile is already drawn. Confirm still writes that profile.
  */
+function profileKind(tool, params) {
+  if (tool !== 'cursor') return tool;
+  const p = params || {};
+  if (Array.isArray(p.points)) return 'polyline';
+  if (p.polygonPreset) return 'polygon';
+  if (p.width != null || p.height != null) return 'rectangle';
+  return 'circle';
+}
+
 export function toolToProfileParams(tool, params = {}) {
   const p = params || {};
+  const kind = profileKind(tool, p);
   if (p.contour) return { profileType: 'contour', contour: p.contour };
-  if (tool === 'rectangle') {
+  if (kind === 'rectangle') {
     return {
       profileType: 'rectangle',
       width: p.width,
@@ -767,14 +785,14 @@ export function toolToProfileParams(tool, params = {}) {
       centered: p.centered,
     };
   }
-  if (tool === 'polygon') {
+  if (kind === 'polygon') {
     return {
       profileType: 'polygon',
       polygonPreset: p.polygonPreset || 'hexagon',
       radius: p.radius,
     };
   }
-  if (tool === 'polyline') {
+  if (kind === 'polyline') {
     return {
       profileType: 'polygon',
       polygonPreset: 'custom',
