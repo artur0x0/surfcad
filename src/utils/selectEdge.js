@@ -555,9 +555,29 @@ export function pickNearestEdgeScreen(
   if (hit && camPos && Array.isArray(hit) && Array.isArray(camPos)) {
     hitDist = Math.hypot(hit[0] - camPos[0], hit[1] - camPos[1], hit[2] - camPos[2]);
   }
+  const tiePx = opts.collinearTiePx > 0 ? opts.collinearTiePx : 0;
+  const tiePoint = Array.isArray(opts.collinearPoint) ? opts.collinearPoint : null;
+  const nearLine = (e) => {
+    if (!tiePoint || !e?.va || !e?.vb) return Infinity;
+    const abx = e.vb[0] - e.va[0];
+    const aby = e.vb[1] - e.va[1];
+    const abz = e.vb[2] - e.va[2];
+    const len2 = abx * abx + aby * aby + abz * abz;
+    let t = len2 > 1e-18
+      ? ((tiePoint[0] - e.va[0]) * abx + (tiePoint[1] - e.va[1]) * aby + (tiePoint[2] - e.va[2]) * abz) / len2
+      : 0;
+    if (t < 0) t = 0;
+    else if (t > 1) t = 1;
+    return Math.hypot(
+      tiePoint[0] - (e.va[0] + t * abx),
+      tiePoint[1] - (e.va[1] + t * aby),
+      tiePoint[2] - (e.va[2] + t * abz),
+    );
+  };
   let best = null;
   let bestD = Infinity;
   let bestDepth = Infinity;
+  let bestWorld = Infinity;
   for (const e of featureEdges) {
     const sa = projectWorldToCanvas(camera, e.va, canvasW, canvasH, scratchA);
     const sb = projectWorldToCanvas(camera, e.vb, canvasW, canvasH, scratchB);
@@ -582,6 +602,22 @@ export function pickNearestEdgeScreen(
       const mid = e.mid;
       const edgeDist = Math.hypot(mid[0] - camPos[0], mid[1] - camPos[1], mid[2] - camPos[2]);
       if (edgeDist > hitDist + occludeEps && edgeFacesAwayFromCamera(e, camPos)) continue;
+    }
+    if (tiePx > 0 && tiePoint) {
+      // Two sheet skins share a screen line. A clearly closer pixel still
+      // wins. Inside the tie, the edge nearer the front-face hit wins.
+      const wd = nearLine(e);
+      if (!best || d < bestD - tiePx) {
+        bestD = d;
+        bestDepth = depth;
+        bestWorld = wd;
+        best = e;
+      } else if (d <= bestD + tiePx && wd < bestWorld) {
+        bestWorld = wd;
+        bestDepth = depth;
+        best = e;
+      }
+      continue;
     }
     if (d < bestD || (d === bestD && depth < bestDepth)) {
       bestD = d;

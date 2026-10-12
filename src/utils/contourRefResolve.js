@@ -1,10 +1,15 @@
 /**
  * Re-resolve contour references against rebuilt boundary edges.
  *
- * A match is the unordered face pair. The midpoint separates two edges
- * that share that pair: only an edge within 0.001 mm is that one. A single
- * edge with the pair follows a move, and its midpoint is rewritten with the
- * geom. A different pair is never a match, even when its midpoint is nearer.
+ * A sheet edge matches on refKey. A missing key is broken: it is not
+ * replaced by another edge, even one that shares a face pair. The unique
+ * pair shortcut must not retarget a lost edge onto whatever pair remains.
+ *
+ * Other solids match the unordered face pair. The midpoint separates two
+ * edges that share that pair: only an edge within 0.001 mm is that one. A
+ * single edge with the pair follows a move, and its midpoint is rewritten
+ * with the geom. A different pair is never a match, even when its midpoint
+ * is nearer.
  *
  * A miss keeps the cached geom and sets broken. The statement is not
  * rewritten. A vertex follows its edge. A face whose bound edge is missing,
@@ -64,6 +69,7 @@ function cloneRef(ref) {
       faceB: ref.boundary.faceB,
       mid: ref.boundary.mid.slice(),
     };
+    if (ref.boundary.refKey) copy.boundary.refKey = ref.boundary.refKey;
   }
   if (ref.geom) copy.geom = cloneGeom(ref.geom);
   if (Array.isArray(ref.loop)) copy.loop = ref.loop.map((p) => p.slice());
@@ -82,18 +88,33 @@ function boundaryWorld(edge) {
 }
 
 /**
- * The boundary with this face pair. One edge follows a move. Two edges
- * that share the pair match only the stored midpoint, so a neighbour is
- * not a retarget.
+ * The boundary this reference names.
+ *
+ * A refKey matches that edge or nothing. It does not fall through to a
+ * face pair, so a lost key cannot attach to a different edge that still
+ * has a pair.
+ *
+ * Without a key, one edge of the pair follows a move. Two edges that share
+ * the pair match only the stored midpoint.
  * @returns {object|null}
  */
-export function matchBoundaryEdge(edges, faceA, faceB, mid) {
+export function matchBoundaryEdge(edges, faceA, faceB, mid, refKey) {
+  if (typeof refKey === 'string' && refKey) {
+    return (edges || []).find((edge) => edge?.refKey === refKey) || null;
+  }
   if (faceA == null || faceB == null || !Array.isArray(mid)) return null;
   const key = pairKey(faceA, faceB);
   const same = (edges || []).filter((edge) => pairKey(edge?.faceA, edge?.faceB) === key);
   if (!same.length) return null;
   if (same.length === 1) return same[0];
   return same.find((edge) => dist3(edge.mid, mid) <= MID_TOL_MM) || null;
+}
+
+function applyIdentity(copy, hit) {
+  copy.faceA = hit.faceA;
+  copy.faceB = hit.faceB;
+  copy.mid = hit.mid.slice();
+  if (hit.refKey) copy.refKey = hit.refKey;
 }
 
 function projectChain(plane, world) {
@@ -175,20 +196,20 @@ function sameLive(prev, next) {
 }
 
 function resolveEdge(ref, edges, plane) {
-  const hit = matchBoundaryEdge(edges, ref.faceA, ref.faceB, ref.mid);
+  const hit = matchBoundaryEdge(edges, ref.faceA, ref.faceB, ref.mid, ref.refKey);
   if (!hit) return keepBroken(ref);
   const world = boundaryWorld(hit);
   const projected = world && world.length >= 2 ? projectChain(plane, world) : null;
   if (!projected?.geom || projected.broken) return keepBroken(ref);
   const copy = cloneRef(ref);
   delete copy.broken;
-  copy.mid = hit.mid.slice();
+  applyIdentity(copy, hit);
   copy.geom = projected.geom;
   return copy;
 }
 
 function resolveVertex(ref, edges, plane) {
-  const hit = matchBoundaryEdge(edges, ref.faceA, ref.faceB, ref.mid);
+  const hit = matchBoundaryEdge(edges, ref.faceA, ref.faceB, ref.mid, ref.refKey);
   if (!hit) return keepBroken(ref);
   const world = boundaryWorld(hit);
   if (!world || world.length < 2) return keepBroken(ref);
@@ -201,7 +222,7 @@ function resolveVertex(ref, edges, plane) {
   if (!projected?.geom || projected.geom.kind !== 'point') return keepBroken(ref);
   const copy = cloneRef(ref);
   delete copy.broken;
-  copy.mid = hit.mid.slice();
+  applyIdentity(copy, hit);
   copy.end = end;
   copy.geom = projected.geom;
   return copy;
@@ -210,7 +231,7 @@ function resolveVertex(ref, edges, plane) {
 function resolveFace(ref, edges, plane) {
   const bound = ref.boundary;
   if (!bound) return keepBroken(ref);
-  const hit = matchBoundaryEdge(edges, bound.faceA, bound.faceB, bound.mid);
+  const hit = matchBoundaryEdge(edges, bound.faceA, bound.faceB, bound.mid, bound.refKey);
   const owned = (edges || []).filter((edge) => (
     Number(edge?.faceA) === Number(ref.faceId) || Number(edge?.faceB) === Number(ref.faceId)
   ));
@@ -223,6 +244,7 @@ function resolveFace(ref, edges, plane) {
   const copy = cloneRef(ref);
   delete copy.broken;
   copy.boundary = { faceA: hit.faceA, faceB: hit.faceB, mid: hit.mid.slice() };
+  if (hit.refKey) copy.boundary.refKey = hit.refKey;
   copy.geom = projected.geom;
   copy.loop = loop;
   return copy;

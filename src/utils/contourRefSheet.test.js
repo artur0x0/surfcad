@@ -8,6 +8,7 @@ import {
   edgeReferenceHit,
   faceOutlineHit,
   materializeReference,
+  referenceHitAt,
   vertexHit,
 } from './contourRefPick.js';
 import { resolveContourSpec } from './contourRefResolve.js';
@@ -119,6 +120,16 @@ test('sheet metal edges, vertices, and face loops project and follow a flange ed
     assert.equal(fillet.edges.length, 0, 'fillet catalog drops every Sheet Metallica edge');
     assert.ok(contour.edges.length > 20, `contour edges ${contour.edges.length}`);
 
+    const spansLowerEdge = (points, length) => (
+      length > 40
+      && points?.length >= 2
+      && points.every((p) => Math.abs(p[2] + 30) < 0.5 && Math.abs(p[1]) < 0.3 && Math.abs(p[0]) <= 50.1)
+    );
+    const meshedLower = contour.edges.filter((edge) => spansLowerEdge(chainOf(edge), edge.length));
+    assert.equal(meshedLower.length, 0, 'the mesh catalog has no 100 mm base lower edge');
+    const coherentLower = coherent.filter((edge) => spansLowerEdge([edge.va, edge.vb], edge.length));
+    assert.equal(coherentLower.length, 0, 'coherent edges also drop the naked lower edge');
+
     const counts = new Map();
     for (const edge of contour.edges) counts.set(pairKey(edge), (counts.get(pairKey(edge)) || 0) + 1);
     const collided = [...counts.values()].filter((n) => n > 1);
@@ -199,6 +210,12 @@ test('sheet metal edges, vertices, and face loops project and follow a flange ed
       }
     }
     assert.ok(faceId != null, 'base face');
+    const lowerOutline = faceOutlineHit(contour.edges, faceId, project, 0, -30);
+    assert.equal(lowerOutline?.kind, 'face');
+    const onHole = (lowerOutline.worldPoints || []).every((p) => (
+      Math.hypot(p[0] + 23.93, p[1], p[2] - 1.91) < 4
+    ));
+    assert.equal(onHole, true, 'a lower-edge tap on the mesh face binds a hole chord');
     const outline = faceOutlineHit(contour.edges, faceId, project, 0, 0);
     assert.equal(outline.kind, 'face');
     assert.ok(outline.loopWorld.length >= 4, `loop ${outline.loopWorld?.length}`);
@@ -267,6 +284,26 @@ test('sheet metal edges, vertices, and face loops project and follow a flange ed
     const boxContour = ctx.box.contour.edges.map(pairKey).sort();
     assert.deepEqual(boxContour, boxPairs);
     assert.ok(boxPairs.length === 12);
+
+    const boxPlane = { center: [0, 0, 0], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] };
+    const projectBox = (world) => ({ x: world[0], y: world[1] });
+    for (const edge of ctx.box.contour.edges) {
+      const chain = chainOf(edge);
+      const hit = referenceHitAt(ctx.box.contour.edges, projectBox, edge.mid, 12);
+      assert.equal(pairKey(hit), pairKey(edge), `cube tap left ${pairKey(edge)}`);
+      const expected = projectReference(boxPlane, chain);
+      const made = materializeReference(boxPlane, hit);
+      if (expected.broken) {
+        assert.equal(made, null);
+        continue;
+      }
+      assert.equal(made.geom.kind, 'line');
+      const da = Math.hypot(made.geom.a[0] - expected.geom.a[0], made.geom.a[1] - expected.geom.a[1]);
+      const db = Math.hypot(made.geom.b[0] - expected.geom.b[0], made.geom.b[1] - expected.geom.b[1]);
+      const fa = Math.hypot(made.geom.a[0] - expected.geom.b[0], made.geom.a[1] - expected.geom.b[1]);
+      const fb = Math.hypot(made.geom.b[0] - expected.geom.a[0], made.geom.b[1] - expected.geom.a[1]);
+      assert.ok((da <= 0.05 && db <= 0.05) || (fa <= 0.05 && fb <= 0.05), pairKey(edge));
+    }
   } finally {
     disposeAll(ctx);
   }

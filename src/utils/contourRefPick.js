@@ -168,9 +168,18 @@ export function vertexHit(edges, project, px, py, threshold) {
           end: item.end,
           worldPoints: [item.world.slice()],
         };
+        if (edge.refKey) best.refKey = edge.refKey;
       }
     }
   }
+  return best;
+}
+
+function distChain3(p, pts) {
+  if (!p || !pts?.length) return Infinity;
+  if (pts.length === 1) return dist3(p, pts[0]);
+  let best = Infinity;
+  for (let i = 1; i < pts.length; i += 1) best = Math.min(best, distPointSeg3(p, pts[i - 1], pts[i]));
   return best;
 }
 
@@ -244,40 +253,68 @@ export function edgeReferenceHit(topo, featureEdge) {
   if (!boundary) return null;
   const worldPoints = boundaryChain(boundary);
   if (!worldPoints || worldPoints.length < 2) return null;
-  return {
+  const hit = {
     kind: 'edge',
     faceA: boundary.faceA,
     faceB: boundary.faceB,
     mid: boundary.mid,
     worldPoints,
   };
+  if (boundary.refKey) hit.refKey = boundary.refKey;
+  return hit;
 }
 
 /**
  * Screen-space edges after a vertex miss. The viewport uses
  * pickNearestEdgeScreen for this tier; this is the same 12 px order for tests.
+ *
+ * `worldBias` is a 3D point on the edge the caller tapped. Two sheet skins
+ * can share a screen line. A clearly closer pixel still wins. Inside 0.75 px
+ * the nearer edge in 3D wins, so the back skin is not the front skin.
  */
-export function edgeHit(edges, project, px, py, threshold) {
+export function edgeHit(edges, project, px, py, threshold, worldBias = null) {
   const limit = threshold > 0 ? threshold : 12;
+  const tiePx = 0.75;
   let best = null;
   let bestD = limit;
+  let bestWorld = Infinity;
   for (const edge of edges || []) {
     const worldPoints = boundaryChain(edge);
     if (!worldPoints || worldPoints.length < 2) continue;
     const screen = worldPoints.map((p) => screenOf(project, p)).filter(Boolean);
     const d = distChain(px, py, screen);
-    if (d <= bestD) {
-      bestD = d;
-      best = {
-        kind: 'edge',
-        faceA: edge.faceA,
-        faceB: edge.faceB,
-        mid: edge.mid,
-        worldPoints,
-      };
-    }
+    if (d > limit) continue;
+    const worldD = worldBias ? distChain3(worldBias, worldPoints) : 0;
+    let take = false;
+    if (!worldBias) take = d <= bestD;
+    else if (!best) take = true;
+    else if (d < bestD - tiePx) take = true;
+    else if (d <= bestD + tiePx && worldD < bestWorld) take = true;
+    if (!take) continue;
+    bestD = d;
+    bestWorld = worldD;
+    best = {
+      kind: 'edge',
+      faceA: edge.faceA,
+      faceB: edge.faceB,
+      mid: edge.mid,
+      worldPoints,
+    };
+    if (edge.refKey) best.refKey = edge.refKey;
   }
   return best;
+}
+
+/**
+ * Tap a world point and bind the edge under it. A vertex wins only when the
+ * tap is on that vertex (0.75 mm), so the middle of an edge stays the edge.
+ */
+export function referenceHitAt(edges, project, world, threshold = 12) {
+  const screen = screenOf(project, world);
+  if (!screen || !world) return null;
+  const vertex = vertexHit(edges, project, screen.x, screen.y, threshold);
+  if (vertex?.worldPoints?.[0] && dist3(vertex.worldPoints[0], world) <= 0.75) return vertex;
+  return edgeHit(edges, project, screen.x, screen.y, threshold, world);
 }
 
 function faceSegments(edges, faceId) {
@@ -322,7 +359,7 @@ export function faceOutlineHit(edges, faceId, project, px, py) {
     }
   }
   if (!bound) return null;
-  return {
+  const hit = {
     kind: 'face',
     faceId,
     faceA: bound.edge.faceA,
@@ -331,6 +368,8 @@ export function faceOutlineHit(edges, faceId, project, px, py) {
     worldPoints: bound.worldPoints,
     loopWorld,
   };
+  if (bound.edge.refKey) hit.refKey = bound.edge.refKey;
+  return hit;
 }
 
 /**
@@ -370,6 +409,7 @@ export function materializeReference(plane, hit) {
       faceB: hit.faceB,
       mid: hit.mid.slice(),
     };
+    if (hit.refKey) ref.boundary.refKey = hit.refKey;
     try {
       ref.loop = (hit.loopWorld || []).map((p) => projectPoint(plane, p));
     } catch {
@@ -380,6 +420,7 @@ export function materializeReference(plane, hit) {
   ref.faceA = hit.faceA;
   ref.faceB = hit.faceB;
   ref.mid = hit.mid.slice();
+  if (hit.refKey) ref.refKey = hit.refKey;
   if (hit.kind === 'vertex') ref.end = hit.end;
   return ref;
 }
