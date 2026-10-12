@@ -7257,15 +7257,21 @@ const Viewport = forwardRef(({
       let bestLineD = SKETCH_HIT_PX;
       let bestArc = null;
       let bestArcD = SKETCH_HIT_PX;
+      let bestEnd = null;
+      let bestEndD = SKETCH_HIT_PX;
       for (const child of wire?.children || []) {
         const pts = child.userData?.localPts;
         const id = child.userData?.entityId;
         if (!id || !pts || pts.length < 2) continue;
         let d = Infinity;
+        let endA = null;
+        let endB = null;
         for (let i = 1; i < pts.length; i += 1) {
           const a = screenOfLocal(child, pts[i - 1]);
           const b = screenOfLocal(child, pts[i]);
           if (!a || !b) continue;
+          if (i === 1) endA = a;
+          endB = b;
           const dx = b.x - a.x;
           const dy = b.y - a.y;
           const L2 = dx * dx + dy * dy;
@@ -7274,6 +7280,18 @@ const Viewport = forwardRef(({
           d = Math.min(d, Math.hypot(clientX - (a.x + t * dx), clientY - (a.y + t * dy)));
         }
         const kind = child.userData.entityKind === 'arc' ? 'arc' : 'line';
+        if (kind === 'line') {
+          const line = (model.lines || []).find((item) => item.id === id);
+          const ends = [[line?.a, endA], [line?.b, endB]];
+          for (const [pointId, screen] of ends) {
+            if (!pointId || !screen) continue;
+            const ed = Math.hypot(clientX - screen.x, clientY - screen.y);
+            if (ed <= bestEndD) {
+              bestEndD = ed;
+              bestEnd = { kind: 'point', id: pointId, label: pointId };
+            }
+          }
+        }
         if (kind === 'arc' && d <= bestArcD) {
           bestArcD = d;
           bestArc = { kind: 'arc', id, label: id };
@@ -7282,7 +7300,9 @@ const Viewport = forwardRef(({
           bestLine = { kind: 'line', id, label: id };
         }
       }
-      drawn = bestArc || bestLine;
+      // A corner is the point. The stroke passes through it, and the point
+      // is what a distance to a hole needs.
+      drawn = bestEnd || bestArc || bestLine;
     }
     const hit = drawn || pickContourScreen(model, project, clientX, clientY, SKETCH_HIT_PX);
     const pxNdc = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -7341,6 +7361,10 @@ const Viewport = forwardRef(({
     if (!partHit && topo?.sheet) {
       // Model edges only. A mesh face outline on this part binds a hole chord
       // when the tapped flange edge is a naked triangle.
+      // Collinear skins share a screen line. The front-face hit picks the
+      // nearer skin; fillet picks do not set this tie.
+      opts.collinearTiePx = 0.75;
+      opts.collinearPoint = opts.meshHitPoint || opts.cameraPosition;
       const modelEdges = referencePickEdges(topo) || [];
       const pickEdges = modelEdges.map((edge) => orientPickEdge(edge, resultRef.current));
       const picked = pickScreen(pickEdges);
@@ -8938,6 +8962,37 @@ const Viewport = forwardRef(({
             const ok = handleViewSnap(known, margin);
             renderer.render(sceneRef.current, cameraRef.current);
             return ok;
+          },
+          stageRetarget: (world, dolly = 1) => {
+            const cam = cameraRef.current;
+            const ctl = controlsRef.current;
+            if (!cam || !ctl || !world) return false;
+            // A damped wheel is still zooming. Settle it, then hold this frame.
+            const prevStatic = ctl.staticMoving;
+            ctl.staticMoving = true;
+            for (let i = 0; i < 4; i += 1) ctl.update();
+            ctl.staticMoving = prevStatic;
+            const offset = cam.position.clone().sub(ctl.target);
+            const scale = Number(dolly) > 0 ? Number(dolly) : 1;
+            const next = new Vector3(world[0], world[1], world[2]);
+            ctl.noZoom = true;
+            ctl.noRotate = true;
+            ctl.noPan = true;
+            ctl.target.copy(next);
+            cam.position.copy(next).add(offset.multiplyScalar(scale));
+            ctl.update();
+            return cam.position.distanceTo(ctl.target);
+          },
+          sketchPoints: () => {
+            const handles = polylineDraftRef.current?.userData?.handles || [];
+            const scratch = new Vector3();
+            return handles.map((handle) => {
+              handle.getWorldPosition(scratch);
+              return {
+                id: handle.userData?.pointId || '',
+                world: [scratch.x, scratch.y, scratch.z],
+              };
+            });
           },
           project: (x, y, z) => {
             const cam = cameraRef.current;

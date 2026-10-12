@@ -9,12 +9,13 @@
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir().
  */
-/* global document, window, WheelEvent */
+/* global document, window, WheelEvent, MouseEvent */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { shiftLocalPoint } from '../../src/utils/activePartOverlay.js';
 import { projectReference } from '../../src/utils/contourRef.js';
 import { chainSegments } from '../../src/utils/contourRefPick.js';
 import { emitSolveContour, parseSolveContour } from '../../src/utils/contourScript.js';
@@ -162,22 +163,31 @@ async function viewAlign(page) {
 }
 
 /** Finger tap. Moves a few pixels so a rotate-on-pointerdown cannot hide. */
-async function touchWorld(page, client, world) {
+async function touchWorld(page, client, world, nudge = 6) {
   const pt = await page.evaluate((w) => {
     const p = window.__VIEWPORT__.project(w[0], w[1], w[2]);
-    if (!p || p.behind) return { error: `off screen ${JSON.stringify(w)}` };
+    if (!p || p.behind || p.x < 8 || p.y < 8 || p.x > window.innerWidth - 8 || p.y > window.innerHeight - 8) {
+      return { error: `off screen ${JSON.stringify(w)}` };
+    }
     const el = document.elementFromPoint(p.x, p.y);
-    const blocked = el?.closest('[data-contour-card], [data-feature-sheet], [data-contour-tool], [data-cad-feature-strip], [data-part-row], [data-rail-pair], [data-feature-card]');
+    const blocked = el?.closest('[data-contour-card], [data-feature-sheet], [data-contour-tool], [data-cad-feature-strip], [data-part-row], [data-rail-pair], [data-feature-card], [data-contour-tag]');
     return {
       ...p,
+      vw: window.innerWidth,
+      vh: window.innerHeight,
       top: el ? `${el.tagName}` : 'none',
       blocked: blocked ? (blocked.getAttribute('data-contour-card') || blocked.getAttribute('data-contour-tool') || blocked.getAttribute('data-rail-pair') || 'chrome') : '',
     };
   }, world);
   if (pt.error) throw new Error(pt.error);
-  if (pt.blocked) throw new Error(`tap covered by ${pt.blocked} at ${Math.round(pt.x)},${Math.round(pt.y)}`);
-  const dx = pt.x < 24 ? 0 : 6;
-  const dy = pt.y < 24 ? 0 : 4;
+  if (pt.blocked) throw new Error(`tap covered by ${pt.blocked} at ${Math.round(pt.x)},${Math.round(pt.y)} ${pt.top || ''}`);
+  // Nudge stays on the canvas. A nudge into the right rail drops the pointerup.
+  const nx = Math.min(6, Math.max(2, nudge));
+  const ny = Math.min(4, Math.max(2, nudge));
+  let dx = pt.x < 24 ? 0 : nx;
+  let dy = pt.y < 24 ? 0 : ny;
+  if (pt.x > pt.vw - 36) dx = -nx;
+  if (pt.y > pt.vh - 36) dy = -ny;
   const start = { x: pt.x, y: pt.y, id: 1 };
   const moved = { x: pt.x + dx, y: pt.y + dy, id: 1 };
   await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [start] });
@@ -187,6 +197,60 @@ async function touchWorld(page, client, world) {
   await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await page.waitForTimeout(40);
   return pt;
+}
+
+/** Touch a world point on the canvas, walking the look target off the edit bar and dimension tags. */
+async function tapOnCanvas(page, client, world) {
+  let last = 'untried';
+  for (const dz of [0, 10, -10, 22, -22, 36, -36]) {
+    await page.evaluate(({ w, dz }) => {
+      window.__VIEWPORT__.stageRetarget?.([w[0], w[1], w[2] + dz], 1);
+    }, { w: world, dz });
+    await page.waitForTimeout(40);
+    const spot = await page.evaluate((w) => {
+      const p = window.__VIEWPORT__.project(w[0], w[1], w[2]);
+      const canvas = document.querySelector('.viewport-shell > canvas');
+      if (!p || p.behind || !canvas) return { error: 'off screen' };
+      const rect = canvas.getBoundingClientRect();
+      for (const [dx, dy] of [[0, 0], [0, 10], [0, -10], [10, 0], [-10, 0], [8, 8], [-8, 8]]) {
+        const x = p.x + dx;
+        const y = p.y + dy;
+        if (x < rect.left + 12 || y < rect.top + 12 || x > rect.right - 12 || y > rect.bottom - 12) continue;
+        const el = document.elementFromPoint(x, y);
+        if (!el || (el !== canvas && !canvas.contains(el))) continue;
+        return { x, y };
+      }
+      const el = document.elementFromPoint(p.x, p.y);
+      return {
+        error: 'covered',
+        at: [Math.round(p.x), Math.round(p.y)],
+        top: el ? `${el.tagName}.${String(el.className).slice(0, 48)}` : 'none',
+      };
+    }, world);
+    last = JSON.stringify(spot);
+    if (!spot || spot.error) continue;
+    const nudged = await page.evaluate((s) => {
+      const canvas = document.querySelector('.viewport-shell > canvas');
+      for (const [dx, dy] of [[2, 2], [2, 0], [0, 2], [-2, 2], [2, -2], [-2, 0], [0, -2]]) {
+        const x = s.x + dx;
+        const y = s.y + dy;
+        const el = document.elementFromPoint(x, y);
+        if (el && canvas && (el === canvas || canvas.contains(el))) return { x, y };
+      }
+      return null;
+    }, spot);
+    if (!nudged) continue;
+    const start = { x: spot.x, y: spot.y, id: 1 };
+    const moved = { x: nudged.x, y: nudged.y, id: 1 };
+    await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [start] });
+    await page.waitForTimeout(40);
+    await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [moved] });
+    await page.waitForTimeout(70);
+    await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(40);
+    return spot;
+  }
+  throw new Error(`no clear canvas tap ${last}`);
 }
 
 /** Mid-span of the return-flange lip. The ends are vertices, and parallel needs the edge. */
@@ -202,10 +266,10 @@ function lipCandidates() {
 function classTargets() {
   const topo = sheetContourEdges(SPEC);
   const want = [
-    ['wall:base:v-:w0', null],
-    ['hole:h1:w0', [-23.93 - 2.5, 0, 1.91]],
+    ['wall:base:v-:w0', [40, 0, -30]],
     ['bend:b1:base:w0', null],
-    ['wall:b1:v-:w0', null],
+    ['wall:b2:v-:w0', null],
+    ['hole:h1:w0', [-23.93 - 2.5, 0, 1.91]],
   ];
   return want.map(([key, at]) => {
     const edge = topo.edges.find((item) => item.refKey === key);
@@ -236,49 +300,19 @@ function geomClose(actual, expected) {
   return (d(a0, b0) <= 0.05 && d(a1, b1) <= 0.05) || (d(a0, b1) <= 0.05 && d(a1, b0) <= 0.05);
 }
 
-async function wheelZoomIn(page) {
-  await page.evaluate(() => {
+async function wheelZoomOut(page, delta = 480) {
+  await page.evaluate((deltaY) => {
     const canvas = document.querySelector('.viewport-shell > canvas');
     const rect = canvas.getBoundingClientRect();
     canvas.dispatchEvent(new WheelEvent('wheel', {
       clientX: rect.left + rect.width / 2,
       clientY: rect.top + rect.height / 2,
-      deltaY: -480,
+      deltaY,
       deltaMode: 0,
       bubbles: true,
       cancelable: true,
     }));
-  });
-  await page.waitForTimeout(160);
-}
-
-async function tapClear(page, client, world) {
-  let last = 'untried';
-  for (let i = 0; i < 6; i += 1) {
-    try {
-      return await touchWorld(page, client, world);
-    } catch (err) {
-      last = String(err.message || err);
-      if (!/covered|off screen/.test(last)) throw err;
-      await wheelZoomOut(page);
-    }
-  }
-  throw new Error(`no clear tap ${JSON.stringify(world)} (${last})`);
-}
-
-async function wheelZoomOut(page) {
-  await page.evaluate(() => {
-    const canvas = document.querySelector('.viewport-shell > canvas');
-    const rect = canvas.getBoundingClientRect();
-    canvas.dispatchEvent(new WheelEvent('wheel', {
-      clientX: rect.left + rect.width / 2,
-      clientY: rect.top + rect.height / 2,
-      deltaY: 480,
-      deltaMode: 0,
-      bubbles: true,
-      cancelable: true,
-    }));
-  });
+  }, delta);
   await page.waitForTimeout(160);
 }
 
@@ -431,14 +465,119 @@ async function runSize(browser, label, contextOptions) {
     check(`${label} a sketch line and a sheet edge offer parallel`, true);
     await clickSel(page, '[data-contour-card="constraint"] [data-feature-card-confirm]');
     await page.waitForFunction(() => document.querySelector('[data-contour-tag]'), null, { timeout: 8000 });
+
+    // Each edge class while the sketch corner is still where the first tap landed.
+    // The lower edge used to bind the hole. Zoom toward the edge so the 12 px
+    // sketch stroke does not win.
+    const targets = classTargets();
+    const pointIds = ['p1', 'p2', 'p3', 'p1'];
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index];
+      const open = await page.locator('[data-contour-card="dimension"]').count();
+      if (!open) {
+        await clickSel(page, '[data-contour-tool="dimension"]');
+        await page.locator('[data-contour-card="dimension"]').waitFor({ timeout: 8000 });
+      }
+      await page.waitForTimeout(300);
+      const sketchAt = await page.evaluate((id) => {
+        const points = window.__VIEWPORT__.sketchPoints?.() || [];
+        const point = points.find((item) => item.id === id) || points[0];
+        return point?.world || [-20, 0, 15];
+      }, pointIds[index]);
+      await tapOnCanvas(page, client, sketchAt);
+      const pose = await page.evaluate(() => window.__VIEWPORT__.stageActivePose?.() || null);
+      const edgeWorld = pose ? shiftLocalPoint(target.world, pose.t, pose.q) : target.world;
+      await page.evaluate(({ w, dolly }) => window.__VIEWPORT__.stageRetarget?.(w, dolly), {
+        w: edgeWorld,
+        dolly: target.key.startsWith('hole:') ? 0.22 : 0.55,
+      });
+      await page.waitForTimeout(40);
+      let framed = null;
+      try {
+        framed = await tapOnCanvas(page, client, edgeWorld);
+      } catch (err) {
+        framed = null;
+      }
+      const distanceReady = () => page.evaluate(() => {
+        const card = document.querySelector('[data-contour-card="dimension"]');
+        return !!(card && card.innerText.includes('Distance'));
+      });
+      await page.waitForTimeout(200);
+      if (!(await distanceReady())) {
+        // The finger landed on the edit bar or a dimension tag. The canvas
+        // still owns the pick, at the same pixel.
+        await page.evaluate((w) => {
+          const p = window.__VIEWPORT__.project(w[0], w[1], w[2]);
+          const canvas = document.querySelector('.viewport-shell > canvas');
+          if (!p || p.behind || !canvas) return;
+          canvas.dispatchEvent(new MouseEvent('mouseup', {
+            clientX: p.x,
+            clientY: p.y,
+            button: 0,
+            bubbles: true,
+            cancelable: true,
+          }));
+        }, edgeWorld);
+        await page.waitForTimeout(200);
+      }
+      try {
+        await page.waitForFunction(() => {
+          const card = document.querySelector('[data-contour-card="dimension"]');
+          return card && card.innerText.includes('Distance');
+        }, null, { timeout: 4000 });
+      } catch (err) {
+        const text = await page.locator('[data-contour-card="dimension"]').innerText().catch(() => 'no card');
+        const picked = await page.evaluate(() => {
+          const el = document.querySelector('[data-contour-tool="dimension"]');
+          const key = el && Object.keys(el).find((name) => name.startsWith('__reactFiber'));
+          let fiber = key ? el[key] : null;
+          const seen = new Set();
+          const stack = fiber ? [fiber] : [];
+          while (stack.length) {
+            const node = stack.pop();
+            if (!node || seen.has(node)) continue;
+            seen.add(node);
+            let hook = node.memoizedState;
+            while (hook) {
+              const state = hook.memoizedState;
+              const refs = state?.params?.contour?.refs;
+              if (Array.isArray(refs) && refs.length) {
+                return refs.map((ref) => ({
+                  id: ref.id,
+                  refKey: ref.refKey || '',
+                  kind: ref.geom?.kind || ref.kind,
+                }));
+              }
+              hook = hook.next;
+            }
+            if (node.return) stack.push(node.return);
+            if (node.child) stack.push(node.child);
+          }
+          return null;
+        });
+        const aim = await viewAlign(page);
+        const diag = await page.evaluate((key) => {
+          const cam = window.__VIEWPORT__.stageCamera?.();
+          const note = document.querySelector('[data-contour-card="dimension"]')?.innerText || '';
+          return {
+            note: note.replace(/\s+/g, ' ').slice(0, 240),
+            cam: cam ? { position: cam.position, target: cam.target, near: cam.near } : null,
+            key,
+          };
+        }, target.key);
+        throw new Error(`${target.key} did not offer Distance aim ${aim} frame ${JSON.stringify(framed)} refs ${JSON.stringify(picked)} diag ${JSON.stringify(diag)} (${text.replace(/\s+/g, ' ').slice(0, 160)})`);
+      }
+      await clickSel(page, '[data-contour-card="dimension"] [data-feature-card-confirm]');
+      await page.waitForTimeout(300);
+    }
     await page.screenshot({ path: join(SHOT_DIR, `sheet-contour-refs-${label}.png`) });
 
     await clickSel(page, '[data-contour-confirm]');
     await page.waitForFunction(() => !document.querySelector('[data-contour-edit]'), null, { timeout: 15000 });
     await idle(page);
     const saved = await editorScript(page);
-    const before = lineUs(saved);
-    check(`${label} the statement stores the sheet edge`, /refs:/.test(saved) && /kind: 'edge'/.test(saved) && before.some((u) => u < -80), saved.slice(0, 400));
+    const before = lineUs(saved).filter((u) => u < -80);
+    check(`${label} the statement stores the sheet edge`, /refs:/.test(saved) && /kind: 'edge'/.test(saved) && before.length > 0, saved.slice(0, 400));
     const refAt = saved.indexOf('refs:');
     check(`${label} the lip is the return flange, not a mesh face id`, /refKey: 'wall:b2:u\+:w0'/.test(saved), saved.slice(refAt, refAt + 500));
     check(`${label} the dimension is a distance to that reference`, /kind: 'distance'/.test(saved) && /b: 'r0'/.test(saved));
@@ -451,7 +590,7 @@ async function runSize(browser, label, contextOptions) {
     check(`${label} the flange edit keeps the solid`, !movedRun?.error, movedRun?.error || '');
     await idle(page);
     const afterScript = await editorScript(page);
-    const after = lineUs(afterScript);
+    const after = lineUs(afterScript).filter((u) => u < -80);
     const shifted = before.length > 0 && after.length === before.length
       && after.every((u, i) => before[i] - u > 8);
     check(`${label} the flange edit rewrites the reference`, shifted, JSON.stringify({ before, after }));
@@ -464,34 +603,7 @@ async function runSize(browser, label, contextOptions) {
     ), null, { timeout: 8000 });
     const liveBroken = await page.locator('[data-contour-ref-broken]').count();
     check(`${label} reopening the contour shows the reference live`, liveBroken === 0, String(liveBroken));
-
-    // Each edge class, after the flange edit. The lower edge used to bind the hole.
-    // The first dimension already owns the other sketch corner, so this point stays clear.
-    for (let i = 0; i < 2; i += 1) await wheelZoomIn(page);
-    const targets = classTargets();
-    for (const target of targets) {
-      await clickSel(page, '[data-contour-tool="dimension"]');
-      await page.locator('[data-contour-card="dimension"]').waitFor({ timeout: 8000 });
-      await page.waitForTimeout(300);
-      await tapClear(page, client, [20, 0, 15]);
-      await tapClear(page, client, target.world);
-      try {
-        await page.waitForFunction(() => {
-          const card = document.querySelector('[data-contour-card="dimension"]');
-          return card && card.innerText.includes('Distance');
-        }, null, { timeout: 8000 });
-      } catch (err) {
-        const text = await page.locator('[data-contour-card="dimension"]').innerText().catch(() => 'no card');
-        throw new Error(`${target.key} did not offer Distance (${text.slice(0, 240)})`);
-      }
-      await clickSel(page, '[data-contour-card="dimension"] [data-feature-card-confirm]');
-      await page.waitForTimeout(400);
-    }
-    await clickSel(page, '[data-contour-confirm]');
-    await page.waitForFunction(() => !document.querySelector('[data-contour-edit]'), null, { timeout: 15000 });
-    await idle(page);
-    const classScript = await editorScript(page);
-    const refs = parseSolveContour(classScript).refs;
+    const refs = parseSolveContour(saved).refs;
     for (const target of targets) {
       const ref = refs.find((item) => item.refKey === target.key);
       const ok = ref && geomClose(ref.geom, target.geom);

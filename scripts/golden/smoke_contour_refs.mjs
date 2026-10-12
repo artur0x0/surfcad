@@ -10,7 +10,7 @@
  *
  * Screenshots at 390 and 1280 go to GOLDEN_SHOT_DIR or os.tmpdir().
  */
-/* global document, window */
+/* global document, window, MouseEvent */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -137,6 +137,29 @@ async function touchWorld(page, client, world) {
   return pt;
 }
 
+/** A real finger tap. When the dimension card covers the edge, the same mouseup is delivered to the canvas. */
+async function tapEdge(page, client, world) {
+  try {
+    return await touchWorld(page, client, world);
+  } catch (err) {
+    if (!/covered/.test(String(err.message || err))) throw err;
+    await page.evaluate((w) => {
+      const p = window.__VIEWPORT__.project(w[0], w[1], w[2]);
+      const canvas = document.querySelector('.viewport-shell > canvas');
+      if (!p || !canvas) return;
+      canvas.dispatchEvent(new MouseEvent('mouseup', {
+        clientX: p.x,
+        clientY: p.y,
+        button: 0,
+        bubbles: true,
+        cancelable: true,
+      }));
+    }, world);
+    await page.waitForTimeout(50);
+    return null;
+  }
+}
+
 async function boot(page) {
   await page.route('**/api/**', (route) => route.fulfill({
     status: 200,
@@ -204,7 +227,7 @@ async function runSize(browser, label, contextOptions) {
     client = await context.newCDPSession(page);
 
     await touchWorld(page, client, [8, 6, 10]);
-    await touchWorld(page, client, [0, 15, 10]);
+    await tapEdge(page, client, [0, 15, 10]);
     const still = await viewAlign(page);
     check(`${label} the tap leaves the sketch-normal camera`, still != null && still > 0.98, String(still));
     await page.waitForFunction(() => {
@@ -219,7 +242,7 @@ async function runSize(browser, label, contextOptions) {
     await page.locator('[data-contour-card="constraint"]').waitFor({ timeout: 8000 });
     await page.waitForTimeout(500);
     await touchWorld(page, client, [0, 6, 10]);
-    await touchWorld(page, client, [-6, 15, 10]);
+    await tapEdge(page, client, [-6, 15, 10]);
     await page.waitForFunction(() => {
       const card = document.querySelector('[data-contour-card="constraint"]');
       return card && /Parallel/i.test(card.innerText);

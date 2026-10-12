@@ -6,6 +6,7 @@ import { matchBoundaryEdge, resolveContourSpec } from '../contourRefResolve.js';
 import { emitSolveContour, parseSolveContour } from '../contourScript.js';
 import { solveContour } from '../contourSolve.js';
 import { specFromSolved } from '../contourGesture.js';
+import { pickNearestEdgeScreen } from '../selectEdge.js';
 import { referencePickEdges, sheetContourEdges, sheetSpecInScript } from './sheetContourEdges.js';
 
 const SPEC = {
@@ -294,6 +295,51 @@ test('a flange edit and a hole edit move only their own refKey', () => {
   const saved = parseSolveContour(emitSolveContour(solved));
   assert.equal(saved.refs[0].refKey, 'wall:b2:u+:w0');
   assert.equal(saved.refs[2].refKey, 'hole:h1:w0');
+});
+
+test('collinear front and back skins break a screen tie toward the face under the finger', () => {
+  const scratch = () => ({
+    x: 0,
+    y: 0,
+    z: 0,
+    project() {
+      const x = this.x;
+      const z = this.z;
+      this.x = x / 80;
+      this.y = -z / 80;
+      this.z = 0;
+    },
+  });
+  const front = { key: 'wall:base:v-:w0', va: [-40, 0, -30], vb: [40, 0, -30], mid: [0, 0, -30] };
+  const back = { key: 'wall:base:v-:w1', va: [-40, -3.2, -30], vb: [40, -3.2, -30], mid: [0, -3.2, -30] };
+  const opts = {
+    projectScratchA: scratch(),
+    projectScratchB: scratch(),
+    cameraPosition: [0, 40, -30],
+  };
+  const tie = {
+    collinearTiePx: 0.75,
+    collinearPoint: [0, 0.2, -30],
+  };
+  const backWins = pickNearestEdgeScreen([back, front], {}, 200, 200, 100, 62.5, 12, opts);
+  assert.equal(backWins.key, 'wall:base:v-:w1');
+  const frontWins = pickNearestEdgeScreen([back, front], {}, 200, 200, 100, 62.5, 12, {
+    ...opts,
+    ...tie,
+    projectScratchA: scratch(),
+    projectScratchB: scratch(),
+  });
+  assert.equal(frontWins.key, 'wall:base:v-:w0');
+  // A clearly closer pixel still wins. The back skin is shifted in Z so its
+  // screen line is 2.5 px off the front skin.
+  const offsetBack = { key: 'wall:base:v-:w1', va: [-40, -3.2, -32], vb: [40, -3.2, -32], mid: [0, -3.2, -32] };
+  const closerPixel = pickNearestEdgeScreen([offsetBack, front], {}, 200, 200, 100, 60, 12, {
+    ...opts,
+    ...tie,
+    projectScratchA: scratch(),
+    projectScratchB: scratch(),
+  });
+  assert.equal(closerPixel.key, 'wall:base:v-:w1');
 });
 
 test('a script yields a sheet spec, and a cube script does not', () => {
