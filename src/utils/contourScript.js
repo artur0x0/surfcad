@@ -118,13 +118,20 @@ function emitGeom(geom) {
 }
 
 function emitBoundary(boundary) {
-  return `{ faceA: ${emitNum(boundary.faceA)}, faceB: ${emitNum(boundary.faceB)}, mid: [${boundary.mid.map(emitNum).join(', ')}] }`;
+  const fields = [
+    `faceA: ${emitNum(boundary.faceA)}`,
+    `faceB: ${emitNum(boundary.faceB)}`,
+    `mid: [${boundary.mid.map(emitNum).join(', ')}]`,
+  ];
+  if (boundary.refKey) fields.push(`refKey: ${emitString(boundary.refKey)}`);
+  return `{ ${fields.join(', ')} }`;
 }
 
 function emitRef(ref) {
   const fields = [`id: ${emitString(ref.id)}`];
   emitSeq(ref, fields);
   fields.push(`kind: ${emitString(ref.kind)}`);
+  if (ref.refKey) fields.push(`refKey: ${emitString(ref.refKey)}`);
   if (ref.faceA != null) fields.push(`faceA: ${emitNum(ref.faceA)}`);
   if (ref.faceB != null) fields.push(`faceB: ${emitNum(ref.faceB)}`);
   if (Array.isArray(ref.mid)) fields.push(`mid: [${ref.mid.map(emitNum).join(', ')}]`);

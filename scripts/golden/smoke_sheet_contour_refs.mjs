@@ -15,8 +15,11 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
-import { emitSolveContour } from '../../src/utils/contourScript.js';
+import { projectReference } from '../../src/utils/contourRef.js';
+import { chainSegments } from '../../src/utils/contourRefPick.js';
+import { emitSolveContour, parseSolveContour } from '../../src/utils/contourScript.js';
 import { emitNamedContourLine } from '../../src/utils/namedContour.js';
+import { sheetContourEdges } from '../../src/utils/sheetMetal/sheetContourEdges.js';
 
 const PORT = Number(process.env.SMOKE_PORT || 5274);
 const APP_URL = `http://127.0.0.1:${PORT}/`;
@@ -196,6 +199,73 @@ function lipCandidates() {
   return out;
 }
 
+function classTargets() {
+  const topo = sheetContourEdges(SPEC);
+  const want = [
+    ['wall:base:v-:w0', null],
+    ['hole:h1:w0', [-23.93 - 2.5, 0, 1.91]],
+    ['bend:b1:base:w0', null],
+    ['wall:b1:v-:w0', null],
+  ];
+  return want.map(([key, at]) => {
+    const edge = topo.edges.find((item) => item.refKey === key);
+    const chain = chainSegments(edge.segments)[0];
+    return {
+      key,
+      world: at || edge.mid.slice(),
+      geom: projectReference(FRAME, chain).geom,
+    };
+  });
+}
+
+function geomClose(actual, expected) {
+  if (!actual || actual.kind !== expected.kind) return false;
+  const d = (p, q) => Math.hypot((p?.[0] || 0) - (q?.[0] || 0), (p?.[1] || 0) - (q?.[1] || 0));
+  if (actual.kind === 'line') {
+    const direct = d(actual.a, expected.a) <= 0.05 && d(actual.b, expected.b) <= 0.05;
+    const flip = d(actual.a, expected.b) <= 0.05 && d(actual.b, expected.a) <= 0.05;
+    return direct || flip;
+  }
+  if (actual.kind === 'arc') {
+    return d(actual.center, expected.center) <= 0.05 && Math.abs(actual.radius - expected.radius) <= 0.05;
+  }
+  const a0 = actual.points[0];
+  const a1 = actual.points[actual.points.length - 1];
+  const b0 = expected.points[0];
+  const b1 = expected.points[expected.points.length - 1];
+  return (d(a0, b0) <= 0.05 && d(a1, b1) <= 0.05) || (d(a0, b1) <= 0.05 && d(a1, b0) <= 0.05);
+}
+
+async function wheelZoomIn(page) {
+  await page.evaluate(() => {
+    const canvas = document.querySelector('.viewport-shell > canvas');
+    const rect = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new WheelEvent('wheel', {
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+      deltaY: -480,
+      deltaMode: 0,
+      bubbles: true,
+      cancelable: true,
+    }));
+  });
+  await page.waitForTimeout(160);
+}
+
+async function tapClear(page, client, world) {
+  let last = 'untried';
+  for (let i = 0; i < 6; i += 1) {
+    try {
+      return await touchWorld(page, client, world);
+    } catch (err) {
+      last = String(err.message || err);
+      if (!/covered|off screen/.test(last)) throw err;
+      await wheelZoomOut(page);
+    }
+  }
+  throw new Error(`no clear tap ${JSON.stringify(world)} (${last})`);
+}
+
 async function wheelZoomOut(page) {
   await page.evaluate(() => {
     const canvas = document.querySelector('.viewport-shell > canvas');
@@ -369,7 +439,7 @@ async function runSize(browser, label, contextOptions) {
     const saved = await editorScript(page);
     const before = lineUs(saved);
     check(`${label} the statement stores the sheet edge`, /refs:/.test(saved) && /kind: 'edge'/.test(saved) && before.some((u) => u < -80), saved.slice(0, 400));
-    check(`${label} the face id keeps the manifold run`, /faceA: 2\d{6}|faceB: 2\d{6}/.test(saved), saved.slice(0, 400));
+    check(`${label} the lip is the return flange, not a mesh face id`, /refKey: 'wall:b2:u\+:w0'/.test(saved), saved.slice(0, 500));
     check(`${label} the dimension is a distance to that reference`, /kind: 'distance'/.test(saved) && /b: 'r0'/.test(saved));
     check(`${label} the constraint is parallel to that reference`, /kind: 'parallel'/.test(saved) && /'e3'/.test(saved) && /'r0'/.test(saved));
 
@@ -391,6 +461,35 @@ async function runSize(browser, label, contextOptions) {
     await page.waitForTimeout(500);
     const liveBroken = await page.locator('[data-contour-ref-broken]').count();
     check(`${label} reopening the contour shows the reference live`, liveBroken === 0, String(liveBroken));
+
+    // Each edge class, after the flange edit. The lower edge used to bind the hole.
+    for (let i = 0; i < 3; i += 1) await wheelZoomIn(page);
+    const targets = classTargets();
+    for (const target of targets) {
+      await clickSel(page, '[data-contour-tool="dimension"]');
+      await page.locator('[data-contour-card="dimension"]').waitFor({ timeout: 8000 });
+      await page.waitForTimeout(300);
+      await tapClear(page, client, [-20, 0, 15]);
+      await tapClear(page, client, target.world);
+      await page.waitForFunction(() => {
+        const card = document.querySelector('[data-contour-card="dimension"]');
+        return card && card.innerText.includes('Distance');
+      }, null, { timeout: 8000 });
+      await clickSel(page, '[data-contour-card="dimension"] [data-feature-card-confirm]');
+      await page.waitForTimeout(400);
+    }
+    await clickSel(page, '[data-contour-confirm]');
+    await page.waitForFunction(() => !document.querySelector('[data-contour-edit]'), null, { timeout: 15000 });
+    await idle(page);
+    const classScript = await editorScript(page);
+    const refs = parseSolveContour(classScript).refs;
+    for (const target of targets) {
+      const ref = refs.find((item) => item.refKey === target.key);
+      const ok = ref && geomClose(ref.geom, target.geom);
+      check(`${label} tap ${target.key} binds that edge`, !!ok, ref ? JSON.stringify(ref.geom) : 'missing');
+    }
+    const lowerRef = refs.find((item) => item.refKey === 'wall:base:v-:w0');
+    check(`${label} the lower edge is not the hole circle`, lowerRef?.geom?.kind === 'line' && Math.abs(lowerRef.geom.a[1]) > 20);
     check(`${label} no page error`, errors.length === 0, errors.join(' | '));
   } finally {
     if (client) await client.detach().catch(() => {});

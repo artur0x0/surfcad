@@ -18,12 +18,12 @@
  * of the largest face (blend facets and their end-cap chords). Sharp edges
  * between substantial faces stay, and ids are assigned only to that set.
  *
- * Contour references use a second pass (`indexContourBoundaries`). Sheet
- * metal is a union of flange boxes and bend zones, and Manifold face ids
- * restart inside each of those solids, so the minimum face id is not unique.
- * That pass keeps the run ordinal in the face id. It also keeps a sharp edge
- * whose mate is the sheet thickness: that face is under the fillet fraction,
- * and dropping it leaves a part like Sheet Metallica with no reference edges.
+ * Contour references on a box use a second pass (`indexContourBoundaries`).
+ * That pass keeps the run ordinal in the face id, because a boolean restarts
+ * Manifold face ids, and it keeps a sharp edge whose mate is thin. Sheet
+ * metal contour edges do not come from here. A flange edge can be one naked
+ * triangle this pass never lists, and `sheetContourEdges` names the edges
+ * from the sheet model instead. Fillet keeps using this pass.
  */
 
 import { sameLocalSegment } from './activePartOverlay.js';

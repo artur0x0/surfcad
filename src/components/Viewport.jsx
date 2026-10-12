@@ -87,6 +87,7 @@ import {
   sheetToolsFor,
 } from '../utils/sheetMetal/sheetMetalMode';
 import { buildSheetOverlay, disposeSheetOverlay, sheetPickFromHits, syncSheetEdgeLineResolution } from '../utils/sheetMetal/sheetOverlay';
+import { referencePickEdges, sheetContourEdges, sheetSpecInScript } from '../utils/sheetMetal/sheetContourEdges';
 import { ensureBodyMaterial } from '../utils/sheetMetal/sheetMaterial';
 import { makeDefaultPartMaterial } from '../utils/partMaterial';
 import DraftModeChip from './DraftModeChip';
@@ -663,6 +664,20 @@ function shiftEdgeForWorld(edge, mesh) {
   return { ...edge, va: s(edge.va), vb: s(edge.vb), mid: s(edge.mid) };
 }
 
+/** Sheet pick segments follow the part pose. Normals rotate; positions shift. */
+function orientPickEdge(edge, mesh) {
+  const shifted = shiftEdgeForWorld(edge, mesh);
+  const pose = meshPose(mesh);
+  if (!pose || !edge) return shifted;
+  const spin = (normal) => {
+    if (!normal) return normal;
+    const origin = shiftLocalPoint([0, 0, 0], pose.t, pose.q);
+    const tip = shiftLocalPoint(normal, pose.t, pose.q);
+    return [tip[0] - origin[0], tip[1] - origin[1], tip[2] - origin[2]];
+  };
+  return { ...shifted, n0: spin(edge.n0), n1: spin(edge.n1) };
+}
+
 function geometryFromMeshData(meshData) {
   const geometry = new BufferGeometry();
   const np = meshData.numProp || 3;
@@ -1172,6 +1187,11 @@ const Viewport = forwardRef(({
   const boundaryTopoRef = useRef(null);
   /** Sheet-aware edges for contour references. Fillet keeps boundaryTopoRef. */
   const contourTopoRef = useRef(null);
+  /** Spec of the solid on screen. Contour edges come from this, not the mesh. */
+  const sheetSpecRef = useRef(null);
+  /** Previous spec while a run is resolving. Undefined means no swap is open. */
+  const sheetSpecRollbackRef = useRef(undefined);
+  const sheetPartIdRef = useRef(undefined);
   const idLabelGroupRef = useRef(null);
   const edgeHighlightRef = useRef(null);
   /** Fillet / Chamfer picks kept on other parts, drawn at that part's position. */
@@ -4955,7 +4975,8 @@ const Viewport = forwardRef(({
     // that is already built (or pre-built in idle time) is a cache hit.
     const graph = featureGraphFor(geom ?? null, faceIDsRef.current);
     boundaryTopoRef.current = graph.topo;
-    contourTopoRef.current = contourBoundariesFor(geom ?? null, faceIDsRef.current);
+    const sheetTopo = sheetContourEdges(sheetSpecRef.current);
+    contourTopoRef.current = sheetTopo || contourBoundariesFor(geom ?? null, faceIDsRef.current);
     featureEdgesRef.current = graph.featureEdges;
     const partId = activePartIdRef.current;
     if (partId && featureEdgesRef.current) {
@@ -7296,37 +7317,46 @@ const Viewport = forwardRef(({
     const projectLocal = (local) => projectWorld(pose ? worldPoint(local, pose) : local);
     const vertex = vertexHit(edges, projectLocal, clientX, clientY, SKETCH_HIT_PX);
     let partHit = vertex;
-    if (!partHit) {
+    const cam = camera.position;
+    const opts = {
+      projectScratchA: edgePickScratchA.current,
+      projectScratchB: edgePickScratchB.current,
+      cameraPosition: [cam.x, cam.y, cam.z],
+    };
+    const hits = raycasterRef.current.intersectObject(resultRef.current);
+    if (hits.length > 0) {
+      const p = hits[0].point;
+      opts.meshHitPoint = [p.x, p.y, p.z];
+    }
+    const pickScreen = (pickEdges) => pickNearestEdgeScreen(
+      pickEdges,
+      camera,
+      rect.width,
+      rect.height,
+      clientX - rect.left,
+      clientY - rect.top,
+      SKETCH_HIT_PX,
+      opts,
+    );
+    if (!partHit && topo?.sheet) {
+      // Model edges only. A mesh face outline on this part binds a hole chord
+      // when the tapped flange edge is a naked triangle.
+      const modelEdges = referencePickEdges(topo) || [];
+      const pickEdges = modelEdges.map((edge) => orientPickEdge(edge, resultRef.current));
+      const picked = pickScreen(pickEdges);
+      const local = picked && modelEdges.find((edge) => edge.key === picked.key);
+      partHit = edgeReferenceHit(topo, local);
+    } else if (!partHit) {
       const localEdges = referenceEdgesForPart(featureEdgesRef.current, activePartIdRef.current);
       const shift = meshPose(resultRef.current);
       const pickEdges = shift ? localEdges.map((edge) => shiftEdgeForWorld(edge, resultRef.current)) : localEdges;
-      const cam = camera.position;
-      const opts = {
-        projectScratchA: edgePickScratchA.current,
-        projectScratchB: edgePickScratchB.current,
-        cameraPosition: [cam.x, cam.y, cam.z],
-      };
-      const hits = raycasterRef.current.intersectObject(resultRef.current);
-      if (hits.length > 0) {
-        const p = hits[0].point;
-        opts.meshHitPoint = [p.x, p.y, p.z];
-      }
-      const picked = pickNearestEdgeScreen(
-        pickEdges,
-        camera,
-        rect.width,
-        rect.height,
-        clientX - rect.left,
-        clientY - rect.top,
-        SKETCH_HIT_PX,
-        opts,
-      );
+      const picked = pickScreen(pickEdges);
       const local = picked && (pickEdges === localEdges
         ? picked
         : localEdges.find((edge) => edge.key === picked.key));
       partHit = edgeReferenceHit(topo, local);
     }
-    if (!partHit && resultRef.current) {
+    if (!partHit && !topo?.sheet && resultRef.current) {
       const faceHits = raycasterRef.current.intersectObject(resultRef.current);
       const seed = faceHits[0]?.faceIndex;
       if (seed != null) {
@@ -10130,6 +10160,9 @@ const Viewport = forwardRef(({
       }
       featureEdgesRef.current = [];
       featureEdgesSourceRef.current = null;
+      sheetSpecRollbackRef.current = { spec: sheetSpecRef.current, partId: sheetPartIdRef.current };
+      sheetSpecRef.current = sheetSpecInScript(script);
+      sheetPartIdRef.current = meshPartId;
       syncFeatureEdges(resultRef.current?.geometry ?? null);
       graphsBoundMeshRef.current = meshData;
       const builtTopo = contourTopoRef.current;
@@ -10138,6 +10171,11 @@ const Viewport = forwardRef(({
         if (!after.ok) {
           if (rewroteRefs) onContourRefsResolvedRef.current?.(submitted);
           if (prevMesh?.vertProperties) {
+            if (sheetSpecRollbackRef.current !== undefined) {
+              sheetSpecRef.current = sheetSpecRollbackRef.current.spec;
+              sheetPartIdRef.current = sheetSpecRollbackRef.current.partId;
+              sheetSpecRollbackRef.current = undefined;
+            }
             renderMeshData(prevMesh);
             setCachedMeshData(prevMesh);
             cachedMeshDataRef.current = prevMesh;
@@ -10145,15 +10183,20 @@ const Viewport = forwardRef(({
             featureEdgesSourceRef.current = null;
             syncFeatureEdges(resultRef.current?.geometry ?? null);
             graphsBoundMeshRef.current = prevMesh;
+          } else {
+            sheetSpecRollbackRef.current = undefined;
           }
           failBrokenRefs(after);
           return false;
         }
+        sheetSpecRollbackRef.current = undefined;
         if (after.changed && after.buffer !== script) {
           script = after.buffer;
           onContourRefsResolvedRef.current?.(script);
         }
         publishRefDisplay(after.displays);
+      } else {
+        sheetSpecRollbackRef.current = undefined;
       }
       if (preservePicks) {
         facePickGroupRef.current = savedFaces;
@@ -10281,6 +10324,7 @@ const Viewport = forwardRef(({
       soloRunFailedRef.current = !!prev?.vertProperties;
       if (prev?.vertProperties && resultRef.current) {
         renderMeshData(prev);
+        sheetSpecRollbackRef.current = undefined;
         featureEdgesSourceRef.current = null;
         syncFeatureEdges(resultRef.current?.geometry ?? null);
         // Re-paint edge highlight from current selection (effect also runs).
@@ -10698,6 +10742,10 @@ const Viewport = forwardRef(({
       applyFaceSkinRef.current(resultRef.current);
     }
     applyPartPose(resultRef.current, placement || { t: Array.isArray(position) ? position : [0, 0, 0], q: [0, 0, 0, 1] });
+    if (partId !== undefined && partId !== sheetPartIdRef.current) {
+      sheetPartIdRef.current = partId ?? null;
+      sheetSpecRef.current = sheetSpecInScript(currentScript || '');
+    }
     featureEdgesSourceRef.current = null;
     syncFeatureEdges(resultRef.current.geometry ?? null);
     graphsBoundMeshRef.current = mesh;
