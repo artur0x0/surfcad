@@ -199,14 +199,39 @@ async function runSize(browser, label, contextOptions) {
   await page.waitForTimeout(150);
   check(`${label} cursor does not add a point`, (await sketch(page)).points === 4, JSON.stringify(await sketch(page)));
 
+  const canvas = page.locator('.viewport-shell > canvas');
+  for (let n = 0; n < 7; n += 1) {
+    const gap = await page.evaluate(() => {
+      const dots = window.__VIEWPORT__.stageContourSketch().dots || [];
+      const a = dots.find((dot) => dot.id === 'p0');
+      const b = dots.find((dot) => dot.id === 'p1');
+      if (!a || !b) return 0;
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      return Math.min(Math.hypot(mx - a.x, my - a.y), Math.hypot(mx - b.x, my - b.y));
+    });
+    if (gap > 56) break;
+    const box = await canvas.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height * 0.42);
+    await page.mouse.wheel(0, -400);
+    await page.waitForTimeout(80);
+  }
   const before = await sketch(page);
-  const mid = await project(page, [0, -4, 10]);
-  const dest = await project(page, [0, 0, 10]);
-  check(`${label} line drag starts on the canvas`, !!mid?.canvas && !!dest?.canvas, JSON.stringify({ mid, dest }));
-  if (mid?.canvas && dest?.canvas) {
+  const mid = await page.evaluate(() => {
+    const dots = window.__VIEWPORT__.stageContourSketch().dots || [];
+    const a = dots.find((dot) => dot.id === 'p0');
+    const b = dots.find((dot) => dot.id === 'p1');
+    if (!a || !b) return null;
+    const x = (a.x + b.x) / 2;
+    const y = (a.y + b.y) / 2;
+    const node = document.elementFromPoint(x, y);
+    return { x, y, canvas: node?.tagName === 'CANVAS' };
+  });
+  check(`${label} line drag starts on the canvas`, !!mid?.canvas, JSON.stringify(mid));
+  if (mid?.canvas) {
     await page.mouse.move(mid.x, mid.y);
     await page.mouse.down();
-    await page.mouse.move(dest.x, dest.y, { steps: 8 });
+    await page.mouse.move(mid.x + 36, mid.y - 28, { steps: 8 });
     await page.mouse.up();
   }
   await page.waitForTimeout(200);
@@ -244,7 +269,7 @@ async function runSize(browser, label, contextOptions) {
   check(`${label} point drag moves one point`, moved.points === 4 && onePoint,
     JSON.stringify({ before: dotBefore.uvs, after: moved.uvs }));
 
-  const depth = dragged.undoDepth;
+  const depth = moved.undoDepth;
   const dot = await project(page, [6, 4, 10]);
   check(`${label} double-tap lands on the canvas`, !!dot?.canvas, JSON.stringify(dot));
   if (dot?.canvas) await doubleTap(page, dot.x, dot.y);

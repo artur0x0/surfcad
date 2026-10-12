@@ -226,6 +226,26 @@ async function segmentMid(page, idA, idB) {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
+/** Zoom until the segment midpoint is outside the finger slop of both ends. */
+async function clearSegment(page, idA, idB) {
+  const canvas = page.locator('.viewport-shell > canvas');
+  for (let n = 0; n < 7; n += 1) {
+    const mid = await segmentMid(page, idA, idB);
+    const a = await dotOf(page, idA);
+    const b = await dotOf(page, idB);
+    const gap = mid && a && b
+      ? Math.min(Math.hypot(mid.x - a.x, mid.y - a.y), Math.hypot(mid.x - b.x, mid.y - b.y))
+      : 0;
+    if (gap > 56) return mid;
+    const box = await canvas.boundingBox();
+    if (!box) return mid;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height * 0.42);
+    await page.mouse.wheel(0, -400);
+    await page.waitForTimeout(80);
+  }
+  return segmentMid(page, idA, idB);
+}
+
 async function reaim(page, touch, client) {
   await tapSelector(client, page, '[data-normal-to-sketch]', touch);
   await page.waitForTimeout(450);
@@ -277,8 +297,8 @@ async function runSize(browser, label, contextOptions, touch) {
     JSON.stringify(drawn));
 
   const beforeLine = await sketch(page);
-  const lineMid = await segmentMid(page, 'p0', 'p1');
-  if (lineMid) await dragAt(client, page, lineMid.x, lineMid.y, lineMid.x, lineMid.y - 48, touch);
+  const lineMid = await clearSegment(page, 'p2', 'p3');
+  if (lineMid) await dragAt(client, page, lineMid.x, lineMid.y, lineMid.x + 48, lineMid.y, touch);
   const afterLine = await sketch(page);
   const lineHeld = (beforeLine.uvs || []).every((point) => {
     const next = uvOf(afterLine, point.id);
@@ -313,7 +333,7 @@ async function runSize(browser, label, contextOptions, touch) {
   await tapSelector(client, page, '[data-contour-tool="polyline"]', touch);
   await page.waitForTimeout(200);
   const beforeInsert = (await sketch(page)).points;
-  const again = await segmentMid(page, 'p0', 'p1');
+  const again = await clearSegment(page, 'p2', 'p3');
   if (again) await tapAt(client, page, again.x, again.y, touch);
   await page.waitForTimeout(250);
   drawn = await chips(page);
@@ -359,6 +379,10 @@ async function runSize(browser, label, contextOptions, touch) {
     .catch(() => check(`${label} polyline chip opens the delete card`, false));
   await page.screenshot({ path: join(SHOT_DIR, `polyline-entity-${label}-card.png`) });
   await tapSelector(client, page, '[data-contour-entity-delete]', touch);
+  await page.waitForTimeout(200);
+  if (await page.locator('[data-sketch-entity-delete-confirm]').count()) {
+    await tapSelector(client, page, '[data-sketch-entity-delete-confirm]', touch);
+  }
   await page.waitForTimeout(250);
   const empty = await page.evaluate(() => (
     document.querySelector('[data-cad-feature-strip] [data-sketch-entities-empty]')?.textContent?.trim() || ''
