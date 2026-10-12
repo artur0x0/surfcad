@@ -181,6 +181,7 @@ import {
   previewContourDimension,
   removeContourConstraint,
   removeContourDimension,
+  removeContourRef,
   saveContourArc,
   saveContourConstraint,
   saveContourDimension,
@@ -11569,13 +11570,17 @@ const Viewport = forwardRef(({
             if (!prev) return;
             const contour = prev.params?.contour;
             const isConstraint = (contour?.constraints || []).some((con) => con.id === id);
+            const isRef = (contour?.refs || []).some((ref) => ref.id === id);
             const result = isConstraint
               ? removeContourConstraint(prev, id)
-              : removeContourDimension(prev, id);
+              : isRef
+                ? removeContourRef(prev, id)
+                : removeContourDimension(prev, id);
             if (result.error) {
               showContourToast(result.error);
               return;
             }
+            if (result.warning) showContourToast(result.warning);
             const stored = saveContourBlock(result.state);
             setContourMode(stored || result.state);
           }}
@@ -11614,6 +11619,7 @@ const Viewport = forwardRef(({
               showContourToast(result.error);
               return;
             }
+            if (result.warning) showContourToast(result.warning);
             const next = {
               ...result.state,
               gesture: null,

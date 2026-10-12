@@ -16,7 +16,7 @@ import {
   solveContour,
 } from './contourSolve.js';
 import { contourStatusNote } from './contourStatus.js';
-import { assignSeq } from './contourStrip.js';
+import { assignSeq, deleteContourEntity } from './contourStrip.js';
 import { stickyPickToggle } from './stickyPick.js';
 import {
   nextReferenceId,
@@ -525,6 +525,33 @@ function storeSolved(state, model) {
   return { state: next, error: null, solved };
 }
 
+/**
+ * The item is already gone from `model`. Solve what remains. A solver
+ * failure is status, not a reason to put the item back.
+ */
+function storeRemoved(state, model) {
+  let solved = null;
+  let warning = null;
+  try {
+    solved = solveContour(model);
+  } catch (err) {
+    warning = err.message || String(err);
+  }
+  let contour = model;
+  try {
+    contour = specFromSolved(solved || model);
+  } catch {
+    contour = model;
+  }
+  const params = { ...(state.params || {}), contour };
+  const next = { ...state, params, picks: [], gestureNote: warning };
+  if (solved) {
+    const statusNote = contourStatusNote(solved);
+    next.gestureNote = statusNote.text || null;
+  }
+  return { state: next, error: null, warning, solved };
+}
+
 function copyContour(contour) {
   return specFromSolved(contour);
 }
@@ -736,8 +763,15 @@ export function deleteContourDimension(state, id) {
   if (dimensions.length === (contour.dimensions || []).length) {
     return { state: cleared, error: 'That dimension is already gone.' };
   }
-  const result = storeSolved(cleared, { ...contour, dimensions });
-  if (result.state) result.state = { ...result.state, tagId: null, dimensionLive: null };
+  const result = storeRemoved(cleared, { ...contour, dimensions });
+  if (result.state) {
+    result.state = {
+      ...result.state,
+      tagId: null,
+      dimensionLive: null,
+      dimensionEdit: result.state.dimensionEdit === id ? null : result.state.dimensionEdit,
+    };
+  }
   return result;
 }
 
@@ -1028,13 +1062,28 @@ function nextConstraintId(model) {
   return `k${max + 1}`;
 }
 
+function liveTarget(model, pick) {
+  if (!pick?.id || !model) return false;
+  if (pick.kind === 'ref') return (model.refs || []).some((ref) => ref.id === pick.id);
+  if (pick.kind === 'point') return (model.points || []).some((item) => item.id === pick.id);
+  if (pick.kind === 'line') return (model.lines || []).some((item) => item.id === pick.id);
+  if (pick.kind === 'arc') return (model.arcs || []).some((item) => item.id === pick.id);
+  return false;
+}
+
 export function buildConstraint(model, picks, draft) {
-  const offered = suggestContourConstraint(model, picks);
+  const list = Array.isArray(picks) ? picks : [];
+  if (list.some((pick) => !liveTarget(model, pick))) {
+    return { ok: false, message: 'That target is not on the contour.' };
+  }
+  const offered = suggestContourConstraint(model, list);
   const kind = draft?.kind;
   if (!offered.ok || !offered.kinds.includes(kind)) {
     return { ok: false, message: offered.note || 'That constraint does not match the pick.' };
   }
-  const list = picks || [];
+  if (kind === 'coincident' && new Set(list.map((pick) => pick.id)).size !== 2) {
+    return { ok: false, message: 'Coincident needs two targets.' };
+  }
   const con = { id: nextConstraintId(model), kind, items: list.map((p) => p.id) };
   if (kind === 'tangent') {
     const side = Number.isFinite(Number(draft?.side)) ? Number(draft.side) : offered.side;
@@ -1076,7 +1125,28 @@ export function deleteContourConstraint(state, id) {
   if (constraints.length === (contour.constraints || []).length) {
     return { state, error: 'That constraint is already gone.' };
   }
-  const result = storeSolved(state, { ...contour, constraints });
+  const result = storeRemoved(state, { ...contour, constraints });
+  if (result.state) {
+    result.state = {
+      ...result.state,
+      tagId: null,
+      constraintEdit: result.state.constraintEdit === id ? null : result.state.constraintEdit,
+    };
+  }
+  return result;
+}
+
+/** Drop a reference and anything that names it, then solve what remains. */
+export function deleteContourRef(state, id) {
+  const contour = state?.params?.contour;
+  if (!contour) return { state, error: 'No contour.' };
+  if (!(contour.refs || []).some((ref) => ref.id === id)) {
+    return { state, error: 'That reference is already gone.' };
+  }
+  const dropped = deleteContourEntity(state, id);
+  const nextContour = dropped.state?.params?.contour;
+  if (!nextContour) return { state: dropped.state, error: null };
+  const result = storeRemoved(dropped.state, nextContour);
   if (result.state) result.state = { ...result.state, tagId: null };
   return result;
 }

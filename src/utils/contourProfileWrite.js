@@ -65,27 +65,41 @@ export function writeContourProfileBlock(buffer, payload = {}) {
   const params = payload.params || {};
   const contour = params.contour;
   if (!contour) return { ok: false, message: 'No contour to save.' };
-  let solved;
+  let spec = null;
+  let status = null;
   try {
-    solved = solveContour(contour);
+    const solved = solveContour(contour);
+    if (!solved.contours?.length) {
+      return {
+        ok: true,
+        buffer: String(buffer || ''),
+        written: false,
+        message: 'Open contour — the dimension stays here until the contour closes.',
+      };
+    }
+    spec = specFromSolved(solved);
   } catch (err) {
-    return { ok: false, message: err.message || String(err) };
+    // The deleted item is already out of `contour`. Write that spec
+    // anyway. The solver message is status, not a refused save.
+    status = err.message || String(err);
+    try {
+      spec = specFromSolved(contour);
+    } catch {
+      return { ok: false, message: status };
+    }
   }
-  const spec = specFromSolved(solved);
-  if (!solved.contours?.length) {
-    return {
-      ok: true,
-      buffer: String(buffer || ''),
-      written: false,
-      message: 'Open contour — the dimension stays here until the contour closes.',
-    };
+  let profileExpr;
+  try {
+    profileExpr = emitSolveContour(spec);
+  } catch (err) {
+    return { ok: false, message: status || err.message || String(err) };
   }
   const planar = payload.face && payload.face.type === 'planar' ? payload.face : null;
   const saved = upsertNamedContour(buffer, {
     id: payload.contourId || null,
     name: payload.contourName || null,
     frame: planeFromContourFace(planar),
-    profileExpr: emitSolveContour(spec),
+    profileExpr,
   });
   if (!saved.ok) return saved;
   return {
@@ -94,5 +108,6 @@ export function writeContourProfileBlock(buffer, payload = {}) {
     written: true,
     contourId: saved.id,
     contourName: saved.name,
+    ...(status ? { message: status } : {}),
   };
 }

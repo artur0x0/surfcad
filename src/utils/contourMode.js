@@ -93,6 +93,7 @@ import {
   commitDimension,
   deleteContourConstraint,
   deleteContourDimension,
+  deleteContourRef,
   liveDimension,
   promoteContourState,
   revertLiveDimension,
@@ -692,6 +693,11 @@ export function removeContourConstraint(state, id) {
   return { ...result, state: syncContourSession(result.state) };
 }
 
+export function removeContourRef(state, id) {
+  const result = deleteContourRef(state, id);
+  return { ...result, state: syncContourSession(result.state) };
+}
+
 /** A drawn polyline or a promoted contour survives a tool change. */
 export function sketchKeepsGeometry(state) {
   if (state?.params?.contour?.points?.length) return true;
@@ -1073,11 +1079,12 @@ export function worldToPlaneUV(world, plane) {
 }
 
 /**
- * Loud-fail gate for Confirm. Never returns ok with degenerate contours.
+ * Loud-fail gate for Confirm. A promoted contour whose solver still
+ * rejects the remainder stays ok: the delete is already in params.
  */
 export function validateContourProfile(tool, params) {
+  const p = params || {};
   try {
-    const p = params || {};
     if (tool === 'circle') {
       const r = Number(p.radius);
       if (!(r > 0) || !Number.isFinite(r)) {
@@ -1110,6 +1117,9 @@ export function validateContourProfile(tool, params) {
     }
     return { ok: true };
   } catch (e) {
+    // A delete can leave a contour the solver still rejects. The removal
+    // is already in params, so Confirm may write it and show the status.
+    if (p.contour?.points?.length) return { ok: true };
     return { ok: false, message: (e && e.message) || String(e) };
   }
 }

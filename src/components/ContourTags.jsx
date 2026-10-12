@@ -472,8 +472,21 @@ const ContourTags = ({
             display: 'none',
           }}
         >
-          <span className="rounded-full border border-red-400 bg-white/95 px-2 py-1 text-[12px] font-medium text-red-700 shadow">
-            broken
+          <span className="pointer-events-auto inline-flex items-center gap-1">
+            <span className="rounded-full border border-red-400 bg-white/95 px-2 py-1 text-[12px] font-medium text-red-700 shadow">
+              broken
+            </span>
+            <button
+              type="button"
+              data-contour-ref-delete={ref.id}
+              className="min-h-11 rounded-full border border-red-700/60 bg-red-950/80 px-2.5 text-[13px] font-medium text-red-100 shadow"
+              onClick={(event) => {
+                event.stopPropagation();
+                onDelete?.(ref.id);
+              }}
+            >
+              Delete
+            </button>
           </span>
         </div>
       ))}
