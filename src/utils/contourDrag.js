@@ -159,3 +159,182 @@ export function applyDraggedContour(state, spec) {
 export function planContourDragRelease({ buffer = '', entry = '', moved = false, contourId = null } = {}) {
   return { write: !!(moved && contourId && contourBlockReady(buffer, entry, 0, contourId)) };
 }
+
+function rectangleCorners(width, height, centered) {
+  const w = Number(width) || 0;
+  const h = Number(height) || 0;
+  const x0 = centered ? -w / 2 : 0;
+  const y0 = centered ? -h / 2 : 0;
+  return [
+    [x0, y0],
+    [x0 + w, y0],
+    [x0 + w, y0 + h],
+    [x0, y0 + h],
+  ];
+}
+
+function polygonSideCount(preset) {
+  if (preset === 'triangle') return 3;
+  if (preset === 'square') return 4;
+  if (preset === 'pentagon') return 5;
+  if (preset === 'hexagon') return 6;
+  return 0;
+}
+
+function polygonVertices(preset, radius) {
+  const sides = polygonSideCount(preset);
+  const r = Number(radius) || 0;
+  const pts = [];
+  for (let i = 0; i < sides; i += 1) {
+    const t = (i / sides) * Math.PI * 2 - Math.PI / 2;
+    pts.push([r * Math.cos(t), r * Math.sin(t)]);
+  }
+  return pts;
+}
+
+/**
+ * Grab points for the sketch that is on screen. A contour wins, then a
+ * drawn polyline, then the active primitive. The tool id does not hide them.
+ */
+export function sketchHandles(state) {
+  const contour = state?.params?.contour;
+  if (contour?.points?.length) {
+    return contour.points.filter((p) => p?.at).map((p) => ({
+      id: p.id,
+      at: [p.at[0], p.at[1]],
+      kind: 'contour',
+    }));
+  }
+  const raw = state?.params?.points;
+  if (Array.isArray(raw) && raw.length) {
+    return raw.map((uv, i) => ({
+      id: `p${i}`,
+      at: [Number(uv?.[0]) || 0, Number(uv?.[1]) || 0],
+      kind: 'polyline',
+    }));
+  }
+  const tool = state?.tool;
+  const params = state?.params || {};
+  if (tool === 'rectangle') {
+    return rectangleCorners(params.width, params.height, params.centered !== false).map((at, i) => ({
+      id: `p${i}`,
+      at,
+      kind: 'rectangle',
+    }));
+  }
+  if (tool === 'circle') {
+    const r = Number(params.radius) || 0;
+    if (!(r > 0)) return [];
+    return [{ id: 'rim', at: [r, 0], kind: 'circle' }];
+  }
+  if (tool === 'polygon') {
+    return polygonVertices(params.polygonPreset || 'hexagon', params.radius).map((at, i) => ({
+      id: `p${i + 1}`,
+      at,
+      kind: 'polygon',
+    }));
+  }
+  return [];
+}
+
+/**
+ * Drag an unpromoted circle, rectangle, or polygon. The patch is width,
+ * height, or radius. Fully constrained contours do not come through here.
+ */
+export function dragSketchParam(kind, params, index, uv) {
+  const p = params || {};
+  const u = Number(uv?.[0]);
+  const v = Number(uv?.[1]);
+  if (!Number.isFinite(u) || !Number.isFinite(v)) return null;
+  if (kind === 'circle') {
+    const radius = Math.max(0.1, Math.hypot(u, v));
+    return { params: { radius }, handles: [{ id: 'rim', at: [u, v] }] };
+  }
+  if (kind === 'polygon') {
+    const radius = Math.max(0.1, Math.hypot(u, v));
+    return {
+      params: { radius },
+      handles: polygonVertices(p.polygonPreset || 'hexagon', radius).map((at, i) => ({
+        id: `p${i + 1}`,
+        at,
+      })),
+    };
+  }
+  if (kind !== 'rectangle') return null;
+  const centered = p.centered !== false;
+  let width = Number(p.width) || 0;
+  let height = Number(p.height) || 0;
+  if (centered) {
+    width = Math.max(0.1, 2 * Math.abs(u));
+    height = Math.max(0.1, 2 * Math.abs(v));
+  } else if (index === 1) {
+    width = Math.max(0.1, u);
+  } else if (index === 2) {
+    width = Math.max(0.1, u);
+    height = Math.max(0.1, v);
+  } else if (index === 3) {
+    height = Math.max(0.1, v);
+  } else {
+    return null;
+  }
+  return {
+    params: { width, height },
+    handles: rectangleCorners(width, height, centered).map((at, i) => ({ id: `p${i}`, at })),
+  };
+}
+
+function nextSeriesId(items, prefix) {
+  let max = -1;
+  for (const item of items || []) {
+    const m = new RegExp(`^${prefix}(\\d+)$`).exec(item?.id || '');
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `${prefix}${max + 1}`;
+}
+
+function distToSeg(p, a, b) {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-18) return Math.hypot(p[0] - a[0], p[1] - a[1]);
+  let t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+
+/** Split the nearest profile edge so a new polyline point stays on the chain. */
+export function insertContourPoint(spec, uv) {
+  if (!spec || !Array.isArray(uv)) return spec;
+  const points = (spec.points || []).map((p) => ({ id: p.id, at: p.at.slice() }));
+  const lines = (spec.lines || []).map((l) => ({ ...l }));
+  const id = nextSeriesId(points, 'p');
+  const at = [Number(uv[0]) || 0, Number(uv[1]) || 0];
+  if (!lines.length) {
+    points.push({ id, at });
+    if (points.length >= 2) {
+      const prev = points[points.length - 2];
+      lines.push({ id: nextSeriesId(lines, 'e'), a: prev.id, b: id });
+    }
+    return { ...spec, points, lines };
+  }
+  let best = null;
+  let bestD = Infinity;
+  for (const line of lines) {
+    if (line.guide) continue;
+    const a = points.find((p) => p.id === line.a)?.at;
+    const b = points.find((p) => p.id === line.b)?.at;
+    if (!a || !b) continue;
+    const d = distToSeg(at, a, b);
+    if (d < bestD) {
+      bestD = d;
+      best = line;
+    }
+  }
+  points.push({ id, at });
+  if (!best) return { ...spec, points, lines };
+  const fresh = nextSeriesId(lines, 'e');
+  const nextLines = lines.filter((l) => l.id !== best.id);
+  nextLines.push({ id: best.id, a: best.a, b: id });
+  nextLines.push({ id: fresh, a: id, b: best.b });
+  return { ...spec, points, lines: nextLines };
+}

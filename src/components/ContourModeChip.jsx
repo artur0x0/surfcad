@@ -226,16 +226,16 @@ const ContourModeChip = ({
     polyline: 'Polyline',
   })[tool] || tool;
   // Feature entries title the card with the thing the rail Confirm writes.
-  // The plane card for a profile is just Contour. Start drawing accepts the plane.
+  // The plane card for a profile is just Contour. Select plane accepts the plane.
   const title = commitName || 'Contour';
   const subtitle = solidEntry && shapeLabel
     ? `${shapeLabel} · Plane · ${planeLabel}`
     : `Plane · ${planeLabel}`;
   const confirmNote = isWorkplane
-    ? 'Start drawing accepts the plane'
+    ? 'Select plane accepts the plane'
     : commitName
-      ? `Start drawing accepts the plane. Confirm on the rail writes ${commitName}`
-      : 'Start drawing accepts the plane';
+      ? `Select plane accepts the plane. Confirm on the rail writes ${commitName}`
+      : 'Select plane accepts the plane';
   const note = statusNote?.text
     ? (statusNote.conflict
       ? <span data-contour-conflict={statusNote.primaryId || ''}>{statusNote.text}</span>
@@ -249,7 +249,7 @@ const ContourModeChip = ({
       compact={compact}
       onCancel={onCancel}
       onConfirm={onConfirm}
-      confirmLabel="Start drawing"
+      confirmLabel="Select plane"
       cardAttrs={{ 'data-contour-chip': '' }}
       bodyAttrs={{ 'data-contour-chip-scroll': '' }}
       note={note}

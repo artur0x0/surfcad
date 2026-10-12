@@ -3,7 +3,7 @@
  * Extrude, Revolve, Loft, and Sweep open the slot card from the shape rail
  * and from a strip chip. Touch taps at 390 and 1280.
  *
- * The card's button is Confirm. There is no Start drawing, no plane editor,
+ * The card's button is Confirm. There is no Select plane, no plane editor,
  * and no No contour row. An empty slot is a Pick a contour chip. The picker
  * lists the saved contour and New contour.
  *
@@ -179,7 +179,7 @@ async function assertSlotCard(page, label, feature, via) {
     : '';
   check(`${label} ${feature.label} from ${via} is the slot card`, title === feature.label, title);
   check(`${label} ${feature.label} from ${via} confirms`, confirm === 'Confirm', confirm);
-  check(`${label} ${feature.label} from ${via} has no Start drawing`, !text.includes('Start drawing')
+  check(`${label} ${feature.label} from ${via} has no Select plane`, !text.includes('Select plane')
     && await page.locator('[data-contour-chip]').count() === 0);
   check(`${label} ${feature.label} from ${via} has no plane fields`,
     await page.locator('[data-plane-editor]').count() === 0

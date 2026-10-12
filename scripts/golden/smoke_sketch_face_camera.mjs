@@ -2,7 +2,7 @@
 /**
  * Sketch-on-face at 390px.
  *
- * Start drawing aims along the picked face's outward normal and frames the
+ * Select plane aims along the picked face's outward normal and frames the
  * face. The highlight is off when the aim ends. Back undoes one polyline
  * point. X exits contour mode.
  *
@@ -185,7 +185,7 @@ async function runPhone(browser) {
   }
   const start = page.locator('[data-feature-card-confirm]');
   await start.waitFor({ timeout: 4000 });
-  check('390 Start drawing is the plane card action', (await start.innerText()).includes('Start drawing'));
+  check('390 Select plane is the plane card action', (await start.innerText()).includes('Select plane'));
   await start.click();
   await page.waitForFunction(() => (
     document.querySelector('.viewport-shell')?.getAttribute('data-contour-face-aim') === 'done'
@@ -213,7 +213,7 @@ async function runPhone(browser) {
   const back = page.locator('[data-contour-back]');
   await back.waitFor({ timeout: 4000 });
   check('390 Back is on the rail', await back.count() === 1 && !(await back.isDisabled()));
-  check('390 plane card closed after Start drawing', await page.locator('[data-contour-chip]').count() === 0);
+  check('390 plane card closed after Select plane', await page.locator('[data-contour-chip]').count() === 0);
   check('390 rail stayed in contour mode', await page.locator('[data-contour-tool="circle"]').count() === 1);
 
   await page.locator('[data-contour-tool="polyline"]').click();

@@ -53,7 +53,9 @@ function cloneSpec(spec) {
   });
   const lines = (spec.lines || []).map((l) => {
     if (!l?.id || !l.a || !l.b) fail('a line needs id, a, and b');
-    return { id: String(l.id), a: String(l.a), b: String(l.b) };
+    const line = { id: String(l.id), a: String(l.a), b: String(l.b) };
+    if (l.guide) line.guide = true;
+    return line;
   });
   const arcs = (spec.arcs || []).map((a) => {
     if (!a?.id || !a.center) fail('an arc needs an id and a center');
@@ -315,7 +317,9 @@ export function contourFromPolygon(preset, radius) {
   }
   // Vertex radius is a length on the spoke to the first vertex. The card's
   // dimension kinds stay length / angle / distance / offset / radius-of-arc.
-  lines.push({ id: `e${sides}`, a: 'p0', b: 'p1' });
+  // The radius spoke is not part of the profile loop. A boundary walk
+  // that included it would see a branch and refuse the polygon.
+  lines.push({ id: `e${sides}`, a: 'p0', b: 'p1', guide: true });
   const dimensions = [{ id: 'd0', kind: 'length', edge: `e${sides}`, value: r }];
   return { points, lines, arcs: [], dimensions, constraints };
 }
@@ -502,7 +506,10 @@ export function roundContourCorner(spec, segmentIds, radius) {
 
 function chainEdges(model) {
   const edges = [];
-  for (const line of model.lines) edges.push([line.a, line.b]);
+  for (const line of model.lines) {
+    if (line.guide) continue;
+    edges.push([line.a, line.b]);
+  }
   for (const arc of model.arcs) {
     if (!arc.full) edges.push([arc.start, arc.end]);
   }
@@ -1474,7 +1481,10 @@ function tessellate(model, at, radii) {
     adj.get(a).push({ to: b, edge });
     adj.get(b).push({ to: a, edge });
   };
-  for (const line of model.lines) link(line.a, line.b, { key: line.id, arc: null });
+  for (const line of model.lines) {
+    if (line.guide) continue;
+    link(line.a, line.b, { key: line.id, arc: null });
+  }
   for (const arc of partial) link(arc.start, arc.end, { key: arc.id, arc });
   for (const nbrs of adj.values()) {
     if (nbrs.length > 2) fail('contour has a branch');

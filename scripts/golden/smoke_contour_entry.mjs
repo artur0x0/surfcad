@@ -2,7 +2,7 @@
 /**
  * Contour entry at 390px and 1280px.
  *
- * The plane card slides the part up and is titled Contour. Start drawing
+ * The plane card slides the part up and is titled Contour. Select plane
  * aims the camera along the sketch-plane normal, zoom-fits, and closes the
  * card while the rail stays in contour tools. Back undoes one polyline
  * point, and the next Back reopens the plane card. Confirm finishes.
@@ -167,7 +167,7 @@ async function runSize(browser, label, contextOptions) {
   const title = (await page.locator('[data-feature-card-title]').innerText()).trim();
   check(`${label} plane card title is Contour`, title === 'Contour', title);
   const start = page.locator('[data-feature-card-confirm]');
-  check(`${label} Start drawing is the plane action`, (await start.innerText()).includes('Start drawing'));
+  check(`${label} Select plane is the plane action`, (await start.innerText()).includes('Select plane'));
   await page.waitForTimeout(500);
   const after = await lowestNdc(page);
   const afterCam = await page.evaluate(() => window.__VIEWPORT__.stageCamera());

@@ -125,7 +125,10 @@ console.log('gesture does not clear the polyline');
   check('promotion closes the third point', armed.params.contour.lines.length === 3);
   const back = switchContourTool(armed, 'polyline');
   check('polyline again keeps the points', back.gesture == null && back.params.points.length === 3);
-  check('a different tool still starts clean', switchContourTool(armed, 'circle').params.contour == null);
+  const other = switchContourTool(armed, 'circle');
+  check('a different tool keeps the contour', other.tool === 'circle' && other.gesture == null && other.params.contour?.points?.length === 3);
+  const fresh = switchContourTool({ ...enterContourState('crossSection', null), tool: 'polyline', params: { points: [] } }, 'circle');
+  check('an empty polyline still starts that tool clean', fresh.tool === 'circle' && fresh.params.contour == null && fresh.params.points == null);
 }
 
 console.log('confirm writes the dimension and stays');

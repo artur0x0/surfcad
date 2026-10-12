@@ -2,7 +2,7 @@
 /**
  * Plane preview and dimension placement at 390 and 1280.
  *
- * Workplane quads show on the plane card and hide after Start drawing.
+ * Workplane quads show on the plane card and hide after Select plane.
  * Back shows them again. A chip move under 6px opens edit. Dragging a
  * length chip and an angle chip stores placement, and reopen keeps both
  * with the preview still hidden.
@@ -339,7 +339,7 @@ async function runViewport(page, width, pointerType) {
       && sketch.planePreview.length === 0
       && pressed === 'false';
   }, null, { timeout: 8000 });
-  check(`${width} Start drawing hides the plane preview`, true);
+  check(`${width} Select plane hides the plane preview`, true);
   await page.screenshot({ path: join(SHOT_DIR, `contour-plane-dim-hidden-${width}.png`) });
 
   await page.locator('[data-contour-back]').click();

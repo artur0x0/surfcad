@@ -692,12 +692,38 @@ export function removeContourConstraint(state, id) {
   return { ...result, state: syncContourSession(result.state) };
 }
 
+/** A drawn polyline or a promoted contour survives a tool change. */
+export function sketchKeepsGeometry(state) {
+  if (state?.params?.contour?.points?.length) return true;
+  const pts = state?.params?.points;
+  return Array.isArray(pts) && pts.length > 0;
+}
+
 export function switchContourTool(state, tool) {
   const reverted = state?.dimensionLive ? syncContourSession(revertLiveDimension(state)) : state;
   const nextTool = isContourTool(tool) ? tool : 'circle';
-  if (reverted?.tool === nextTool) {
-    const next = { ...reverted, gesture: null, picks: [], tagId: null, gestureNote: null, dimensionLive: null };
-    return isLoftEntry(reverted?.entry) ? syncContourSession(next) : next;
+  // Same tool only drops the gesture. A different tool does that too once
+  // geometry exists: switching must not freeze or discard the sketch.
+  if (reverted?.tool === nextTool || sketchKeepsGeometry(reverted)) {
+    const next = {
+      ...reverted,
+      tool: nextTool,
+      gesture: null,
+      picks: [],
+      tagId: null,
+      gestureNote: null,
+      dimensionLive: null,
+    };
+    if (!isLoftEntry(reverted?.entry)) return next;
+    const written = writeLoftSelected(next, { tool: nextTool, params: next.params });
+    return {
+      ...written,
+      gesture: null,
+      picks: [],
+      tagId: null,
+      gestureNote: null,
+      dimensionLive: null,
+    };
   }
   const next = defaultContourParams(nextTool);
   if (reverted?.params?.radius != null && next.radius != null) {

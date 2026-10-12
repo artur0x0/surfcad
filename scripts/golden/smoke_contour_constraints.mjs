@@ -263,7 +263,8 @@ console.log('confirm stays');
     params: { points: [[0, 0], [30, 0], [30, 12]] },
   }, 'constraints');
   check('constraints does not clear the polyline', drawn.params.points.length === 3 && drawn.gesture === 'constraints');
-  check('a different tool still starts clean', switchContourTool(drawn, 'circle').params.contour == null);
+  const other = switchContourTool(drawn, 'circle');
+  check('a different tool keeps the contour', other.tool === 'circle' && other.gesture == null && other.params.contour?.points?.length === 3);
   const picked = { ...drawn, picks: [{ id: 'e0', kind: 'line' }] };
   const saved = saveContourConstraint(picked, { kind: 'horizontal', side: 1 });
   check('confirm stays in constraints', saved.state.gesture === 'constraints' && !saved.error, saved.error || '');

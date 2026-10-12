@@ -306,7 +306,7 @@ async function runViewport(page, width) {
     && !document.querySelector('[data-contour-chip]')
   ), null, { timeout: 8000 });
   const afterAim = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch().planeSquare);
-  check(`${width} no sketch-plane square after Start drawing`, afterAim === false, String(afterAim));
+  check(`${width} no sketch-plane square after Select plane`, afterAim === false, String(afterAim));
 
   const pts = await chooseTriangle(page);
   check(`${width} triangle is on the upper canvas`, Array.isArray(pts) && pts.length === 3, JSON.stringify(pts));
