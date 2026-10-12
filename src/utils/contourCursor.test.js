@@ -118,6 +118,8 @@ test('a segment tap inserts one point and a fast double-tap is the removal windo
   const onSegment = projectUvOnSegment([5, 4], [0, 0], [10, 0]);
   assert.ok(Math.abs(onSegment[0] - 5) < 1e-6 && Math.abs(onSegment[1]) < 1e-6);
   assert.equal(isPolylineDoubleTap({ id: 'p1', at: 0 }, 'p1', POLYLINE_SAME_TAP_MS), false);
+  assert.equal(isPolylineDoubleTap({ id: 'p1', at: 0, source: 'mouse' }, 'p1', 0, 'mouse'), true);
+  assert.equal(isPolylineDoubleTap({ id: 'p1', at: 0, source: 'touch' }, 'p1', 20, 'mouse'), false);
   assert.equal(isPolylineDoubleTap({ id: 'p1', at: 0 }, 'p1', 20), false);
   assert.equal(isPolylineDoubleTap({ id: 'p1', at: 0 }, 'p1', 80), true);
   assert.equal(isPolylineDoubleTap({ id: 'p1', at: 0 }, 'p1', POLYLINE_DOUBLE_TAP_MS), true);

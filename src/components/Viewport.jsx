@@ -222,9 +222,9 @@ import {
   dragSketchParam,
   insertContourPoint,
   isPolylineDot,
+  isPolylineDoubleTap,
   planContourDragRelease,
   planPolylinePointRemoval,
-  POLYLINE_DOUBLE_TAP_MS,
   POLYLINE_SAME_TAP_MS,
   segmentForSnap,
   sketchHandles,
@@ -7855,16 +7855,23 @@ const Viewport = forwardRef(({
     setContourMode(next);
   }, [requestShapeDelete, saveContourBlock]);
 
-  const notePolylineDotTap = useCallback((pointId) => {
+  const notePolylineDotTap = useCallback((pointId, source = 'mouse') => {
     const state = contourModeRef.current;
     if (!state || state.gesture || !pointId) return false;
     const handle = sketchHandles(state).find((item) => item.id === pointId);
     if (!isPolylineDot(state, handle)) return false;
     const now = Date.now();
     const prev = polylineDotTapRef.current;
-    if (prev && prev.id === pointId && now - prev.at <= POLYLINE_SAME_TAP_MS) return false;
-    polylineDotTapRef.current = { id: pointId, at: now };
-    if (!prev || prev.id !== pointId || now - prev.at > POLYLINE_DOUBLE_TAP_MS) return false;
+    // A finger-up notes the touch, then the synthetic mouse arrives. That
+    // second note is the same tap. Two mouseups are a double-tap.
+    if (
+      prev?.source === 'touch'
+      && source === 'mouse'
+      && prev.id === pointId
+      && now - prev.at <= POLYLINE_SAME_TAP_MS
+    ) return false;
+    polylineDotTapRef.current = { id: pointId, at: now, source };
+    if (!isPolylineDoubleTap(prev, pointId, now, source)) return false;
     polylineDotTapRef.current = null;
     removePolylineDot(pointId);
     return true;
@@ -7884,7 +7891,7 @@ const Viewport = forwardRef(({
       } else if (drag.paramPatch) commitSketchParam(drag.paramPatch);
       else if (drag.lastUv) commitPolylinePointDrag(drag.lastUv, drag.index);
     } else if (!drag.moved && drag.pointId && (drag.touch || drag.cursorTap)) {
-      notePolylineDotTap(drag.pointId);
+      notePolylineDotTap(drag.pointId, drag.touch ? 'touch' : 'mouse');
     }
     publishContourSnap(null);
     // A finger has no hover after lift. A mouse cursor still on the handle keeps the grab.

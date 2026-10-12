@@ -479,12 +479,18 @@ export const POLYLINE_DOUBLE_TAP_MS = 300;
  */
 export const POLYLINE_SAME_TAP_MS = 45;
 
-/** True when `now` is a later tap on the same point, inside the double-tap window. */
-export function isPolylineDoubleTap(prev, pointId, now) {
+/**
+ * True when `now` is a later tap on the same point, inside the double-tap window.
+ * Two mouseups in the same millisecond count. The synthetic mouse after a
+ * finger-up does not: that pair is a touch note followed by a mouse note.
+ */
+export function isPolylineDoubleTap(prev, pointId, now, source) {
   if (!prev || prev.id !== pointId || !Number.isFinite(now) || !Number.isFinite(prev.at)) return false;
   const dt = now - prev.at;
-  if (dt <= POLYLINE_SAME_TAP_MS) return false;
-  return dt <= POLYLINE_DOUBLE_TAP_MS;
+  if (dt < 0 || dt > POLYLINE_DOUBLE_TAP_MS) return false;
+  if (source == null) return dt > POLYLINE_SAME_TAP_MS;
+  if (prev.source === 'touch' && source === 'mouse' && dt <= POLYLINE_SAME_TAP_MS) return false;
+  return true;
 }
 
 /** Segments a polyline tap can split. A promoted contour wins over the draft list. */
