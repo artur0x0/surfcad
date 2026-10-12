@@ -92,8 +92,20 @@ Desktop specifics:
   for that feature (`handleDesktopFeatureStripJump` → `beginFeatureEdit`).
   A named contour chip (`data-feature-chip="contour"`, `data-contour-id`)
   opens the contour editor instead (`beginContourEdit`). A contour no
-  feature names stays on that strip with an unused tag
-  (`data-contour-unused`).
+  feature names stays on that strip with an unused dot
+  (`data-contour-unused-dot`).
+  After Select plane the same bar lists the open sketch (`aria-label="Sketch"`,
+  `data-sketch-entities`): icon chips in creation order, with a per-kind index
+  and the positive size in the title. A polyline with no points reads
+  **No sketch entities** (`data-sketch-entities-empty`). A tap selects a line,
+  arc, circle, or reference, and the canvas uses that same pick highlight. A
+  dimension or constraint chip opens its edit card. Undo is the sketch
+  history. Redo stays disabled. Cursor keeps these chips; it does not
+  replace the sketch with an empty profile. Double-tap removal of a
+  polyline dot drops that point's lines. A dimension or constraint that
+  named the point stays, and its chip takes the failed red border
+  (`data-sketch-broken`). The plane card leaves this bar on the hidden
+  part-strip placeholder. `golden:contour-strip`.
   When no part is selected the same bar shows assembly joints
   (`data-assembly-joints`), or **No assembly joints**
   (`data-feature-strip-empty`), and Undo is titled **Undo joint**.
@@ -312,8 +324,12 @@ Mobile specifics:
   reopen that feature's **creation dialog** (same path on mobile and desktop).
   A named contour is its own chip on that strip (`data-contour-id`, no type
   badge). The CAD strip opens it in the contour editor. The script-stage
-  strip only jumps the caret. A contour no feature names shows unused
-  (`data-contour-unused`) on that chip.
+  strip only jumps the caret. A contour no feature names shows an unused dot
+  (`data-contour-unused-dot`) on that chip.
+  After Select plane this bar switches to the sketch chips described under
+  the desktop feature strip (`data-sketch-entities`, **No sketch entities**,
+  sketch Undo, Redo disabled). The script-stage strip stays hidden for that
+  session.
   A contour chip comes back with the saved profile: a `solveContour` call restores
   dimensions, names, and constraints, and a point-list polygon restores its points
   without becoming a constrained contour.

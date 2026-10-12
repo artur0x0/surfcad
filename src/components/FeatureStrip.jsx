@@ -11,6 +11,17 @@ import {
   Box,
   Cylinder,
   Circle,
+  CircleDot,
+  Equal,
+  Lock,
+  Minus,
+  MoveHorizontal,
+  MoveVertical,
+  Plus,
+  Radius,
+  Ruler,
+  Spline,
+  Square,
   Torus,
   Hexagon,
   Squircle,
@@ -20,6 +31,7 @@ import {
   Cone,
   PackageOpen,
   Focus,
+  AlignCenterHorizontal,
   AlignVerticalJustifyCenter,
   FlipHorizontal2,
   Boxes,
@@ -103,6 +115,39 @@ const JOINT_ICONS = Object.freeze({
 
 /** Same box for an empty joints caption and a joint chip, so the bar does not jump. */
 const JOINT_CHIP_BOX = 'relative shrink-0 rounded-lg p-1.5 h-8 box-border flex items-center justify-center border';
+
+const SKETCH_SHAPE_ICONS = Object.freeze({
+  circle: Circle,
+  rectangle: Square,
+  polygon: Hexagon,
+  polyline: Spline,
+  line: Minus,
+  arc: Radius,
+});
+
+const SKETCH_CONSTRAINT_ICONS = Object.freeze({
+  horizontal: MoveHorizontal,
+  vertical: MoveVertical,
+  parallel: AlignCenterHorizontal,
+  perpendicular: Plus,
+  tangent: Radius,
+  equal: Equal,
+  coincident: CircleDot,
+  fix: Lock,
+});
+
+function SketchGlyph({ entity, size }) {
+  let Icon = Minus;
+  if (entity?.kind === 'dimension') Icon = entity.dimKind === 'angle' ? Angle : Ruler;
+  else if (entity?.kind === 'constraint') Icon = SKETCH_CONSTRAINT_ICONS[entity.constraintKind] || Lock;
+  else if (entity?.kind === 'ref') {
+    Icon = entity.geomKind === 'point' ? CircleDot
+      : entity.geomKind === 'arc' ? Circle
+        : entity.geomKind === 'polyline' ? Spline
+          : Minus;
+  } else Icon = SKETCH_SHAPE_ICONS[entity?.kind] || Minus;
+  return <Icon size={size} strokeWidth={2} aria-hidden="true" />;
+}
 
 function JointGlyph({ type, size }) {
   const Icon = JOINT_ICONS[type] || AlignVerticalJustifyCenter;
@@ -211,21 +256,27 @@ export default function FeatureStrip({
   /** Joint chips. An array (including empty) switches this strip to joints. */
   joints = null,
   onSelectJoint,
+  /**
+   * Sketch chips. An array (including empty) switches this strip to the
+   * open contour. Undo stays; Redo stays disabled by the caller.
+   */
+  entities = null,
+  onSelectEntity,
   undoLabel = 'Undo',
   redoLabel = 'Redo',
 }) {
   const features = useMemo(() => featuresWithContours(script), [script]);
-  const jointMode = Array.isArray(joints);
+  const entityMode = Array.isArray(entities);
+  const jointMode = !entityMode && Array.isArray(joints);
   const horizontal = orientation === 'horizontal';
   const stripSide = side || (horizontal ? 'top' : 'right');
   const between = stripSide === 'between';
   const scrollRef = useRef(null);
   const trackRef = useRef(null);
   const [featureWindow, setFeatureWindow] = useState('fit');
-  const lastFeatureId = jointMode
-    ? (joints.length ? joints[joints.length - 1].id : null)
-    : (features.length ? features[features.length - 1].id : null);
-  const listLength = jointMode ? joints.length : features.length;
+  const stripItems = entityMode ? entities : (jointMode ? joints : features);
+  const lastFeatureId = stripItems.length ? stripItems[stripItems.length - 1].id : null;
+  const listLength = stripItems.length;
 
   // Vertical rails: when the feature list grows, scroll so the last chip is
   // visible. Key off length + last id so unrelated re-renders don't yank
@@ -326,9 +377,10 @@ export default function FeatureStrip({
         data-feature-strip-side="top"
         data-feature-strip-empty={listLength === 0 ? '' : undefined}
         data-assembly-joints={jointMode ? '' : undefined}
+        data-sketch-entities={entityMode ? '' : undefined}
         data-feature-bar-layout="undo-features-redo"
         role="navigation"
-        aria-label={jointMode ? 'Assembly joints' : 'Modeling features'}
+        aria-label={entityMode ? 'Sketch' : (jointMode ? 'Assembly joints' : 'Modeling features')}
       >
         <div
           className="shrink-0 pl-[max(0.5rem,env(safe-area-inset-left))]"
@@ -372,7 +424,15 @@ export default function FeatureStrip({
                 No assembly joints
               </div>
             )}
-            {!jointMode && features.length === 0 && !hideWhenEmpty && (
+            {entityMode && entities.length === 0 && (
+              <div
+                className={`${JOINT_CHIP_BOX} border-transparent px-2 text-[9px] text-gray-400 font-sans whitespace-nowrap`}
+                data-sketch-entities-empty=""
+              >
+                No sketch entities
+              </div>
+            )}
+            {!jointMode && !entityMode && features.length === 0 && !hideWhenEmpty && (
               <div className="text-[9px] text-gray-400 font-sans whitespace-nowrap px-1">
                 No features
               </div>
@@ -397,7 +457,29 @@ export default function FeatureStrip({
                 </button>
               );
             })}
-            {!jointMode && features.map((f) => {
+            {entityMode && entities.map((entity) => {
+              const active = activeId === entity.id;
+              const failed = !!entity.broken;
+              return (
+                <button
+                  key={entity.id}
+                  type="button"
+                  data-sketch-id={entity.id}
+                  data-sketch-kind={entity.kind}
+                  data-sketch-broken={failed ? '' : undefined}
+                  aria-pressed={active}
+                  aria-label={entity.label}
+                  aria-invalid={failed || undefined}
+                  title={entity.title || entity.label}
+                  onClick={() => onSelectEntity?.(entity)}
+                  className={`${JOINT_CHIP_BOX} transition-colors active:opacity-80 ${chipTone(active, false, failed)}`}
+                >
+                  <SketchGlyph entity={entity} size={16} />
+                  <TypeBadge index={entity.index} />
+                </button>
+              );
+            })}
+            {!jointMode && !entityMode && features.map((f) => {
               const active = activeId === f.id;
               const failed = !!failedIds?.has?.(f.id);
               const typeIndex = chipTypeIndex(f);
