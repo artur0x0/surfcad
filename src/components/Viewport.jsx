@@ -1027,9 +1027,9 @@ const Viewport = forwardRef(({
   cadPartSelected = true,
   /**
    * Every run of a script here reports its outcome:
-   * `{ script, ok, scriptLine, featureId, featureBlock }`. App maps a failure
-   * to its feature block (tracked id first, stack line second) for the strip
-   * and sheet red border.
+   * `{ script, ok, scriptLine, featureId, featureBlock, skipped }`. App maps a
+   * failure to its feature block (tracked id first, stack line second) for
+   * the strip and sheet red border. `skipped` names dependents omitted with it.
    */
   onRunOutcome = null,
   /** True while any feature session is open. App hides the feature strip. */
@@ -1057,6 +1057,8 @@ const Viewport = forwardRef(({
   featureEdit = null,
   featureEditScript = '',
   featureEditFailedIds = null,
+  /** Dependent titles for the feature sheet (`failedFeatureTitles`). */
+  featureEditFailedTitles = null,
   onFeatureEditAccept = null,
   onFeatureEditCancel = null,
   onFeatureEditDelete = null,
@@ -10902,7 +10904,26 @@ const Viewport = forwardRef(({
         seamMs: g.seamMs ?? null,
       };
       if (typeof window !== 'undefined') window.__SURFCAD_RUN_TIMING = report;
-      if (!opts.editPreview) onRunOutcomeRef.current?.({ script, ok: true, scriptLine: null });
+      if (!opts.editPreview) {
+        const skip = result?.featureSkip;
+        if (skip && typeof skip.featureId === 'string' && skip.featureId) {
+          // The new mesh is the recovered solid. Keep the original error
+          // visible and mark the chips, without the leftover-part outline.
+          const msg = typeof skip.message === 'string' && skip.message ? skip.message : 'Script execution failed';
+          stageExecErrorRef.current = msg;
+          setExecutionError(msg);
+          onRunOutcomeRef.current?.({
+            script,
+            ok: false,
+            scriptLine: Number.isFinite(skip.scriptLine) ? skip.scriptLine : null,
+            featureId: skip.featureId,
+            featureBlock: typeof skip.featureBlock === 'string' ? skip.featureBlock : null,
+            skipped: Array.isArray(skip.skipped) ? skip.skipped : [],
+          });
+        } else {
+          onRunOutcomeRef.current?.({ script, ok: true, scriptLine: null });
+        }
+      }
       if (soloRunFailedRef.current) {
         soloRunFailedRef.current = false;
         syncFailedPartOutlinesRef.current();
@@ -10930,6 +10951,7 @@ const Viewport = forwardRef(({
           scriptLine: Number.isFinite(error?.scriptLine) ? error.scriptLine : null,
           featureId: typeof error?.featureId === 'string' ? error.featureId : null,
           featureBlock: typeof error?.featureBlock === 'string' ? error.featureBlock : null,
+          skipped: Array.isArray(error?.featureSkip?.skipped) ? error.featureSkip.skipped : [],
         });
       }
 
@@ -12912,6 +12934,7 @@ const Viewport = forwardRef(({
             : null}
           script={featureEditScript || ''}
           failedIds={featureEditFailedIds}
+          failedTitles={featureEditFailedTitles}
           compact={isMobile}
           lengthMm={characteristicLengthMm({ bounds: modelBounds })}
           onAccept={onFeatureEditAccept}

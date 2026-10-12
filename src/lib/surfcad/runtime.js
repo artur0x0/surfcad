@@ -31,9 +31,13 @@ import {
   createFeatureTracker,
   FEATURE_TRACE_ENTER,
   FEATURE_TRACE_LEAVE,
+  featureSkipFailure,
   instrumentFeatureBlocks,
   scriptLineFromStack,
+  unionSkipIds,
 } from '../../utils/featureFailure.js';
+import { evaluationScript } from '../../utils/featureSkip.js';
+import { parseFeatureMarkers } from '../../utils/featureMarkers.js';
 import { buildMakeLoftSolid, offsetPlaneFrame } from '../../utils/makeLoft.js';
 import { blockSpec, buildBlockManifold } from '../../utils/blockSolid.js';
 import { buildSheetMetalSolid } from '../../utils/sheetMetal/sheetSolid.js';
@@ -8568,6 +8572,48 @@ const executeScript = (script, importedModels) => {
 /** Engine header lines before the script in a `new Function` body (lazy). */
 let _scriptLineOffset;
 
+/**
+ * Run `script`, and when a marked feature throws, run an evaluation copy
+ * that skips that feature and its hard dependents. Another throw repeats,
+ * bounded by the feature count. The user's script is not rewritten.
+ * A recovered run returns the surviving solid plus `featureSkip`. A run
+ * that still has no solid throws the original error, with the same report
+ * attached, so the viewport can keep the last mesh and mark every chip.
+ */
+function executeSkippingFailedFeatures(script, importedModels) {
+  const text = String(script ?? '');
+  const limit = parseFeatureMarkers(text).length + 1;
+  let skipIds = [];
+  const thrown = [];
+  let primary = null;
+  for (let attempt = 0; attempt < limit; attempt += 1) {
+    const source = skipIds.length ? evaluationScript(text, { skipIds }) : text;
+    try {
+      const result = manifoldFromScriptResult(executeScript(source, importedModels));
+      return {
+        result,
+        featureSkip: primary ? featureSkipFailure(text, primary, thrown, skipIds) : null,
+      };
+    } catch (error) {
+      if (!primary) primary = error;
+      const featureId = typeof error?.featureId === 'string' ? error.featureId : '';
+      if (!featureId || thrown.includes(featureId)) throw attachFeatureSkip(primary, text, thrown, skipIds);
+      thrown.push(featureId);
+      const next = unionSkipIds(text, skipIds, featureId);
+      if (next.length === skipIds.length) throw attachFeatureSkip(primary, text, thrown, skipIds);
+      skipIds = next;
+    }
+  }
+  throw attachFeatureSkip(primary, text, thrown, skipIds);
+}
+
+function attachFeatureSkip(error, script, thrown, skipIds) {
+  if (!thrown.length) return error;
+  const report = featureSkipFailure(script, error, thrown, skipIds);
+  try { error.featureSkip = report; } catch { /* frozen error */ }
+  return error;
+}
+
 function _isManifoldValue(value) {
   return !!value && typeof value.getMesh === 'function';
 }
@@ -8916,7 +8962,8 @@ self.onmessage = async (event) => {
         const _execT0 = _perfNow();
         _featureOps = [];
         _sourceTess = [];
-        const result = manifoldFromScriptResult(executeScript(script, importedModels));
+        const ran = executeSkippingFailedFeatures(script, importedModels);
+        const result = ran.result;
         const _execMs = _perfNow() - _execT0;
         
         // Cache the manifold for cross-section operations (+ nonce for game compare)
@@ -8958,6 +9005,7 @@ self.onmessage = async (event) => {
             nonce: cachedExecuteNonce,
             bodyCentroids,
             timing: { execMs: _execMs, serializeMs: _serializeMs },
+            ...(ran.featureSkip ? { featureSkip: ran.featureSkip } : {}),
           }
         });
         break;
@@ -9561,6 +9609,7 @@ self.onmessage = async (event) => {
         scriptLine: Number.isFinite(error?.scriptLine) ? error.scriptLine : null,
         featureId: typeof error?.featureId === 'string' ? error.featureId : null,
         featureBlock: typeof error?.featureBlock === 'string' ? error.featureBlock : null,
+        featureSkip: error?.featureSkip && typeof error.featureSkip === 'object' ? error.featureSkip : null,
       }
     });
   }
@@ -9661,8 +9710,9 @@ export function runPreparedScript(source, opts = {}) {
   }
   _featureOps = [];
   _sourceTess = [];
-  const result = executeScript(String(source ?? ''), opts.importedModels || {});
-  const summary = summarizeManifold(result);
+  const ran = executeSkippingFailedFeatures(String(source ?? ''), opts.importedModels || {});
+  const summary = summarizeManifold(ran.result);
+  if (ran.featureSkip) summary.featureSkip = ran.featureSkip;
   markSheetMesh(summary.mesh, source);
   cachedManifold = summary.manifold;
   cachedExecuteNonce = (opts.nonce !== undefined && opts.nonce !== null) ? opts.nonce : null;

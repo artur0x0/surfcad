@@ -9,8 +9,10 @@
  * (`scriptLine`). The viewport reports every run (`onRunOutcome`); App maps
  * a failed line to the marked feature block that holds it
  * (`failedFeatureFor`) and the strip draws that chip with `border-red-400`
- * (the error popup's red) while that block's text is unchanged. A good run
- * clears it. Successful chips keep their classes.
+ * (the error popup's red) while that block's text is unchanged. A throw
+ * inside a marked feature is skipped and the rest of the script runs
+ * again; the report still names that feature, so the chip stays red.
+ * A good run clears it. Successful chips keep their classes.
  */
 import { readFileSync } from 'node:fs';
 import { register } from 'node:module';
@@ -96,10 +98,12 @@ const GOOD = `${CUBE}\n${GOOD_FILLET}\nreturn part;\n`;
 {
   const bad = await run(FAILING);
   const badLine = FAILING.split('\n').findIndex((l) => l.includes('edgesBetween(part, 90, 91)')) + 1;
-  check('a failing helper call errors', bad.type === 'error', bad.payload?.message);
-  check(`the error names the failing script line (${badLine})`, bad.payload?.scriptLine === badLine,
-    String(bad.payload?.scriptLine));
-  const hit = failedFeatureFor(FAILING, bad.payload?.scriptLine);
+  const skip = bad.payload?.featureSkip;
+  check('a failing helper call recovers the earlier solid', bad.type === 'result' && !!skip?.featureId,
+    bad.payload?.message || bad.type);
+  check(`the report names the failing script line (${badLine})`, skip?.scriptLine === badLine,
+    String(skip?.scriptLine));
+  const hit = failedFeatureFor(FAILING, skip?.scriptLine);
   const feats = parseFeatureMarkers(FAILING);
   check('the line maps to the second fillet block, not the cube or the first fillet',
     hit && hit.kind === 'fillet' && hit.typeIndex === 2 && hit.id === feats[2].id,
@@ -153,7 +157,8 @@ const GOOD = `${CUBE}\n${GOOD_FILLET}\nreturn part;\n`;
     && /ok: false,\s*scriptLine: Number\.isFinite\(error\?\.scriptLine\)/.test(vp));
   check('App maps the outcome and feeds every strip',
     /failedFeatureFromOutcome\(script, \{ featureId, featureBlock, scriptLine \}\)/.test(app)
-    && (app.match(/failedIds=\{stripFailedIds\}/g) || []).length === 3
+    && (app.match(/failedIds=\{stripFailedIds\}/g) || []).length === 2
+    && /failedIds=\{scriptStripFailedIds\}/.test(app)
     && (app.match(/onRunOutcome=\{handleRunOutcome\}/g) || []).length === 2);
   check('both strip layouts mark failed chips',
     (strip.match(/data-feature-failed=\{failed \? '1' : undefined\}/g) || []).length === 2

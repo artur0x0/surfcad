@@ -6,7 +6,7 @@ import SplitDivider from './components/SplitDivider';
 import ScriptEditorDrawer from './components/ScriptEditorDrawer';
 import MobileStageToggle from './components/MobileStageToggle';
 import FeatureStrip from './components/FeatureStrip';
-import { failedFeatureFromOutcome, failedFeatureIds } from './utils/featureFailure';
+import { failedFeatureFromOutcome, failedFeatureIds, failedFeatureTitles } from './utils/featureFailure';
 import { failedPartIdsFor } from './utils/failedPartOutline';
 import { bodyCountOfWorkerMesh } from './utils/meshBodyComponents';
 import ErrorPopup from './components/ErrorPopup';
@@ -307,6 +307,11 @@ import { composeMoveCommit } from './utils/moveMode';
 import { composeMoveFaceCommit } from './utils/moveFaceMode';
 import { composeDeleteFaceCommit } from './utils/deleteFaceMode';
 
+function failureSkipStamp(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return '';
+  return rows.map((row) => `${row?.id || ''}:${row?.threw ? 1 : 0}:${row?.dependsOn || ''}`).join('|');
+}
+
 const App = () => {
   const [currentScript, setCurrentScript] = useState('');
   const [isMobile, setIsMobile] = useState(false);
@@ -448,11 +453,16 @@ const App = () => {
    * block text is unchanged; the next good run clears it.
    */
   const [runFailure, setRunFailure] = useState(null);
-  const handleRunOutcome = ({ script, ok, scriptLine, featureId, featureBlock } = {}) => {
+  const handleRunOutcome = ({ script, ok, scriptLine, featureId, featureBlock, skipped } = {}) => {
     // Tracked block first (works on Safari), the stack's line second.
     const next = ok ? null : failedFeatureFromOutcome(script, { featureId, featureBlock, scriptLine });
+    const stamped = next ? { ...next, skipped: Array.isArray(skipped) ? skipped : [] } : null;
     setRunFailure((prev) => (
-      (prev?.id ?? null) === (next?.id ?? null) && (prev?.block ?? null) === (next?.block ?? null) ? prev : next
+      (prev?.id ?? null) === (stamped?.id ?? null)
+      && (prev?.block ?? null) === (stamped?.block ?? null)
+      && failureSkipStamp(prev?.skipped) === failureSkipStamp(stamped?.skipped)
+        ? prev
+        : stamped
     ));
   };
   /**
@@ -7156,6 +7166,9 @@ const App = () => {
     cadHighlightId && assemblyDoc && cadHighlightId !== assemblyDoc.activeId
   ) ? (partScripts[cadHighlightId] || '') : currentScript;
   const stripFailedIds = failedFeatureIds(stripScript, runFailure);
+  const stripFailedTitles = failedFeatureTitles(stripScript, runFailure);
+  const scriptStripFailedIds = failedFeatureIds(currentScript, runFailure);
+  const scriptStripFailedTitles = failedFeatureTitles(currentScript, runFailure);
   // Live body count for the separate-body chip marker (clears after Boolean union).
   const stripRun = cadHighlightId ? partRuns[cadHighlightId] : null;
   const stripBodyCount = (stripRun?.ok && stripRun.mesh)
@@ -7165,6 +7178,7 @@ const App = () => {
     : 0;
   // Feature sheets read the editor's script, so match the failure there.
   const sheetFailedIds = failedFeatureIds(currentScript, runFailure);
+  const sheetFailedTitles = failedFeatureTitles(currentScript, runFailure);
   const partLabels = {};
   for (const row of assemblyDoc?.parts || []) partLabels[row.id] = row.name || row.id;
   const assemblyLabel = assemblyName(assemblyDoc);
@@ -7473,6 +7487,7 @@ const App = () => {
               featureEdit={appMode === 'game' || (useStages && !isCadStage) ? null : featureSheet}
               featureEditScript={currentScript}
               featureEditFailedIds={sheetFailedIds}
+              featureEditFailedTitles={sheetFailedTitles}
               onFeatureEditAccept={handleFeatureSheetAccept}
               onFeatureEditCancel={closeFeatureSheet}
               onFeatureEditDelete={handleFeatureSheetDelete}
@@ -7563,6 +7578,7 @@ const App = () => {
                       entities={sketchOpen ? sketchStrip.entities : null}
                       bodyCount={stripBodyCount}
                       failedIds={stripFailedIds}
+                      failedTitles={stripFailedTitles}
                       hidden={sketchOpen ? false : featureSession}
                       activeId={sketchOpen ? sketchStrip.activeId : (featureSheet?.feature?.id || featureStripActiveId)}
                       hideWhenEmpty
@@ -7615,7 +7631,8 @@ const App = () => {
                           orientation="vertical"
                           script={currentScript}
                           bodyCount={stripBodyCount}
-                          failedIds={failedFeatureIds(currentScript, runFailure)}
+                          failedIds={scriptStripFailedIds}
+                          failedTitles={scriptStripFailedTitles}
                           hidden={featureSession}
                           activeId={featureSheet?.feature?.id || featureStripActiveId}
                           onJump={handleFeatureStripJump}
@@ -7893,6 +7910,7 @@ const App = () => {
                 entities={sketchOpen ? sketchStrip.entities : null}
                 bodyCount={stripBodyCount}
                 failedIds={stripFailedIds}
+                failedTitles={stripFailedTitles}
                 hidden={sketchOpen ? false : featureSession}
                 activeId={sketchOpen ? sketchStrip.activeId : (featureSheet?.feature?.id || featureStripActiveId)}
                 hideWhenEmpty
@@ -7985,6 +8003,7 @@ const App = () => {
             featureEdit={appMode === 'game' ? null : featureSheet}
             featureEditScript={currentScript}
             featureEditFailedIds={sheetFailedIds}
+            featureEditFailedTitles={sheetFailedTitles}
             onFeatureEditAccept={handleFeatureSheetAccept}
             onFeatureEditCancel={closeFeatureSheet}
             onFeatureEditDelete={handleFeatureSheetDelete}

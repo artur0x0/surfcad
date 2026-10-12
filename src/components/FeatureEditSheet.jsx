@@ -134,6 +134,8 @@ export default function FeatureEditSheet({
   onPickFeature,
   /** Ids the last run failed in (red border, wins over the external yellow). */
   failedIds = null,
+  /** Dependent titles from `failedFeatureTitles`. The thrown feature keeps the failed copy. */
+  failedTitles = null,
   /** Phone. The card docks to the pane bottom and the stage switcher hides. */
   compact = false,
   lengthMm = 100,
@@ -185,8 +187,9 @@ export default function FeatureEditSheet({
                 data-feature-type-index={typeIndex}
                 onClick={() => onPickFeature?.(f)}
                 data-feature-sheet-failed={failed ? '1' : undefined}
+                data-feature-depends={failedTitles?.[f.id]?.dependsOn || undefined}
                 aria-invalid={failed || undefined}
-                title={failed ? `${f.chipLabel} — failed on the last run` : undefined}
+                title={failedTitles?.[f.id]?.chip || (failed ? `${f.chipLabel} — failed on the last run` : undefined)}
                 className={`relative flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left
                   ${sheetPickTone(editable, failed)}`}
               >
@@ -286,11 +289,14 @@ export default function FeatureEditSheet({
     );
   }
 
-  const subtitle = failed
-    ? 'Failed on the last run'
-    : feature.external
-      ? 'External copy · not linked · Delete removes it'
-      : 'Feature sheet';
+  const skipTitle = failedTitles?.[feature.id];
+  const subtitle = skipTitle?.sheet
+    ? skipTitle.sheet
+    : failed
+      ? 'Failed on the last run'
+      : feature.external
+        ? 'External copy · not linked · Delete removes it'
+        : 'Feature sheet';
 
   return (
     <FeatureSheet
@@ -333,6 +339,7 @@ export default function FeatureEditSheet({
             }`}
             data-feature-sheet-external={feature.external ? '1' : undefined}
             data-feature-sheet-failed={failed ? '1' : undefined}
+            data-feature-depends={skipTitle?.dependsOn || undefined}
           >
             <FeatureGlyph kind={feature.kind} size={18} />
             <TypeBadge index={typeIndex} />
