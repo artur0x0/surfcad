@@ -151,6 +151,7 @@ import {
   applyContourPlaneEdit,
   axisPresetFrame,
   contourHostCenter,
+  cursorSketchEmpty,
   enterContourState,
   intersectRayPlane,
   isExtrudeEntry,
@@ -3608,6 +3609,13 @@ const Viewport = forwardRef(({
   const confirmContourProfile = useCallback(() => {
     const state = contourModeRef.current;
     if (!state) return;
+    // Nothing drawn. Confirm must not toast, and must not emit an empty
+    // polygon or the loft station's circle.
+    if (
+      cursorSketchEmpty(state)
+      && !isSolidContourEntry(state.entry)
+      && !isWorkplaneEntry(state.entry)
+    ) return;
     if (contourEditRef.current) {
       const edit = contourEditRef.current;
       if (state.tool === 'path') {
@@ -8275,8 +8283,9 @@ const Viewport = forwardRef(({
     }
 
     // A handle on a circle, rectangle, polygon, or arc is a grab, not a face pick.
-    // The plane card is for choosing a plane. The preview circle's rim sits
-    // on the face, and swallowing that tap kept the face from being selected.
+    // The plane card is for choosing a plane. A profile rim sits on the face,
+    // and swallowing that tap kept the face from being selected. An empty
+    // Cursor sketch has no rim, so that same tap selects the face.
     if (
       contourModeRef.current
       && contourModeRef.current.tool !== 'polyline'

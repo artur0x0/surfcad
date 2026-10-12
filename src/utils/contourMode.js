@@ -618,6 +618,21 @@ export function mapContoursToRevolve(contours, uvAxis) {
 }
 
 /**
+ * A fresh Cursor sketch has nothing drawn. A radius, a rectangle, a
+ * polygon, or any point is a profile Cursor is keeping.
+ */
+export function cursorSketchEmpty(state) {
+  if (!state || state.tool !== 'cursor') return false;
+  const p = state.params || {};
+  if (p.contour) return false;
+  if (Array.isArray(p.points) && p.points.length > 0) return false;
+  if (p.polygonPreset) return false;
+  if (p.width != null || p.height != null) return false;
+  if (Number(p.radius) > 0) return false;
+  return true;
+}
+
+/**
  * Seed mode state from a palette entry + current face pick.
  * Non-planar face → default +Z plane + loud enterRefuse (do not invent a plane).
  */
@@ -626,13 +641,16 @@ export function enterContourState(entry, faceData = null) {
   const loft = defaultLoftState();
   const first = loft.profiles[0];
   const resolvedEntry = CONTOUR_ENTRY_IDS.has(entry) ? entry : 'crossSection';
-  // Select plane opens a sketch on Cursor. The circle station stays the
-  // profile until a profile tool replaces it. Loft stations stay circles.
-  const tool = resolvedEntry === 'crossSection' ? 'cursor' : first.tool;
+  // Select plane opens a sketch on Cursor with nothing drawn. The first
+  // loft station is a circle, and copying it painted that circle before
+  // any tool was chosen. Loft stations and solid entries stay circles.
+  const sketch = resolvedEntry === 'crossSection';
+  const tool = sketch ? 'cursor' : first.tool;
+  const params = sketch ? { ...defaultContourParams('cursor') } : { ...first.params };
   return {
     entry: resolvedEntry,
     tool,
-    params: { ...first.params },
+    params,
     extrude: defaultExtrudeParams(),
     revolve: defaultRevolveParams(),
     sweep: defaultSweepParams(),
@@ -1109,6 +1127,9 @@ export function worldToPlaneUV(world, plane) {
  */
 export function validateContourProfile(tool, params) {
   const p = params || {};
+  if (cursorSketchEmpty({ tool, params: p })) {
+    return { ok: false, empty: true };
+  }
   try {
     if (tool === 'circle') {
       const r = Number(p.radius);
@@ -1154,6 +1175,7 @@ export function validateContourProfile(tool, params) {
  * incomplete (e.g. polyline with fewer than 3 points) — caller may draft.
  */
 export function buildContourPreview(face, tool, params) {
+  if (cursorSketchEmpty({ tool, params })) return null;
   const gate = validateContourProfile(tool, params);
   if (!gate.ok) return null;
   return buildCrossSectionPreview(face || null, toolToProfileParams(tool, params));
@@ -1592,6 +1614,9 @@ export function composeContourProfile(buffer, {
   contourId = null,
   contourName = null,
 } = {}) {
+  if (cursorSketchEmpty({ tool, params })) {
+    return { ok: true, buffer: String(buffer || ''), empty: true };
+  }
   const gate = validateContourProfile(tool, params);
   if (!gate.ok) return gate;
 
