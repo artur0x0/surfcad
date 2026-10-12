@@ -154,3 +154,21 @@ test('sheet metal plus an extrude gains volume, and so does a regular part', { t
   assert.ok(cubeBoth.volume > cubeOnly.volume + 100, `cube ${cubeOnly.volume} -> ${cubeBoth.volume}`);
   assert.ok(cubeBoth.tris > cubeOnly.tris, `cube tris ${cubeOnly.tris} -> ${cubeBoth.tris}`);
 });
+
+test('a sheet subtract overshoots both faces; a plain part keeps the typed depth', () => {
+  const sheet = sheetWithStudy();
+  const cut = extrude(sheet, {
+    extrude: { distance: 10, direction: 'normal', sense: 'negative' },
+    combine: 'subtract',
+  });
+  assert.equal(cut.ok, true, cut.message || '');
+  assert.match(cut.buffer, /part = part\.subtract\(placeInFrame\(c1\.plane, makeExtrude\(c1\.contours, 20\), \[0, 0, -10\]\)\)/);
+
+  const plain = extrude(CUBE, {
+    extrude: { distance: 10, direction: 'normal', sense: 'negative' },
+    combine: 'subtract',
+  });
+  assert.equal(plain.ok, true, plain.message || '');
+  assert.match(plain.buffer, /makeExtrude\(c1\.contours, 10\)/);
+  assert.match(plain.buffer, /\[0, 0, -10\]/);
+});

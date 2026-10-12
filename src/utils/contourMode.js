@@ -61,6 +61,7 @@ import {
   offsetPlaneFrame,
 } from './makeLoft.js';
 import { assembleSweepPath } from './edgeSweepPath.js';
+import { sheetCutExtrudeSpan } from './featureSheetWriteback.js';
 import {
   contourStatements,
   findReturnPartIndex,
@@ -1882,14 +1883,23 @@ export function composeContourExtrude(buffer, {
 
   const host = _placeHost(stripped, existing);
   const combineOp = solidCombineOp(combine ?? extrude?.combine);
+  let distance = extGate.normalized.distance;
+  let w = extrudeWOffset(distance, extGate.normalized.sense);
+  // Sheet subtracts overshoot both skins and the bend arc. The requested
+  // depth is still covered; the shift stays symmetric so the card round-trips.
+  if (combineOp === 'subtract') {
+    const span = sheetCutExtrudeSpan(text, distance, w);
+    distance = span.distance;
+    w = span.w;
+  }
   const names = _namesBeside(committed.buffer, listContourExtrudeBlocks(committed.buffer).find((b) => b.id === finalId));
   const lines = emitExtrudeReferenceLines({
     begin: CONTOUR_EXTRUDE_BEGIN,
     end: CONTOUR_EXTRUDE_END,
     featureId: finalId,
     contour: step.name,
-    distance: extGate.normalized.distance,
-    w: extrudeWOffset(extGate.normalized.distance, extGate.normalized.sense),
+    distance,
+    w,
     partLine: (expr) => emitPartPlace(
       names,
       expr,

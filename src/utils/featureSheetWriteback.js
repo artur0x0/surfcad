@@ -9,6 +9,7 @@
  */
 
 import { parseFeatureMarkers } from './featureMarkers.js';
+import { readSheetMetalSpec } from './sheetMetal/sheetMetalScript.js';
 
 /** Kinds with real numeric writeback in Slice C. */
 export const FEATURE_SHEET_EDITABLE = Object.freeze(['extrude', 'fillet', 'revolve']);
@@ -54,6 +55,35 @@ export function extrudeSenseOffset(distance, sense) {
   if (sense === 'negative') return +((-d).toFixed(4));
   if (sense === 'both') return +((-d / 2).toFixed(4));
   return 0;
+}
+
+/**
+ * A sheet cut drawn on one face used to stop on that plane. The bend arc
+ * sits about one inner radius on the other side of the tangent, so a
+ * one-sided 10 mm depth left a skin on the arc. A subtract on a sheet
+ * spans at least `t + r + 1` mm both ways from the sketch plane, and still
+ * covers whatever depth was requested. The shift is symmetric, so the card
+ * reads it back as sense `both`. No sheet spec leaves the span alone.
+ */
+export function sheetCutExtrudeSpan(script, distance, w) {
+  const spec = readSheetMetalSpec(script);
+  const t = Number(spec?.t) || 0;
+  const bendR = Number(spec?.r) || 0;
+  const d = Number(distance);
+  const shift = Number(w);
+  if (!(t > 0) || !(d > 0) || !Number.isFinite(shift)) {
+    return { distance: d, w: Number.isFinite(shift) ? shift : 0 };
+  }
+  const reach = t + Math.max(0, bendR) + 1;
+  const z0 = shift;
+  const z1 = shift + d;
+  const lo = Math.min(z0, -reach);
+  const hi = Math.max(z1, reach);
+  const half = Math.max(-lo, hi);
+  return {
+    distance: +((half * 2).toFixed(4)),
+    w: +((-half).toFixed(4)),
+  };
 }
 
 /**
@@ -120,12 +150,17 @@ export function parseFeatureSheetParams(kind, blockText) {
   };
 }
 
-function rewriteExtrudeBlock(block, params) {
-  const distance = Math.max(0.1, numOr(params.distance, 10));
+function rewriteExtrudeBlock(block, params, script) {
+  let distance = Math.max(0.1, numOr(params.distance, 10));
   const sense = params.sense === 'negative' || params.sense === 'both'
     ? params.sense
     : 'positive';
-  const w = extrudeSenseOffset(distance, sense);
+  let w = extrudeSenseOffset(distance, sense);
+  if (/part\s*=\s*part\.subtract\(/.test(block)) {
+    const span = sheetCutExtrudeSpan(script, distance, w);
+    distance = span.distance;
+    w = span.w;
+  }
   const distLit = Number.isInteger(distance) ? String(distance) : String(+distance.toFixed(4));
   const wLit = Number.isInteger(w) ? String(w) : String(+Number(w).toFixed(4));
 
@@ -182,7 +217,7 @@ export function writeFeatureSheetParams(script, feature, params) {
   }
 
   let nextBlock;
-  if (feature.kind === 'extrude') nextBlock = rewriteExtrudeBlock(block, params || {});
+  if (feature.kind === 'extrude') nextBlock = rewriteExtrudeBlock(block, params || {}, script);
   else if (feature.kind === 'fillet') nextBlock = rewriteFilletBlock(block, params || {});
   else if (feature.kind === 'revolve') nextBlock = rewriteRevolveBlock(block, params || {});
   else {
