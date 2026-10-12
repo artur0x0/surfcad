@@ -5760,9 +5760,30 @@ function _recordVariableProfileMeta(meta) {
   }
 }
 
+/** Distance from p to the segment ab (clamped). A long edge's ends are not near its midpoint. */
+function _s23PointSegDist(p, a, b) {
+  const abx = b[0] - a[0];
+  const aby = b[1] - a[1];
+  const abz = b[2] - a[2];
+  const L2 = abx * abx + aby * aby + abz * abz;
+  if (!(L2 > 1e-18)) return Math.hypot(p[0] - a[0], p[1] - a[1], p[2] - a[2]);
+  let u = ((p[0] - a[0]) * abx + (p[1] - a[1]) * aby + (p[2] - a[2]) * abz) / L2;
+  if (u < 0) u = 0;
+  else if (u > 1) u = 1;
+  const qx = a[0] + abx * u;
+  const qy = a[1] + aby * u;
+  const qz = a[2] + abz * u;
+  return Math.hypot(p[0] - qx, p[1] - qy, p[2] - qz);
+}
+
 /**
- * Probe wall normals (n0/n1) at each densified knot from the nearest convex edge.
- * Same mid-match spirit as _s23ProbeSegments; feeds buildVariableProfileFrames.
+ * Probe wall normals (n0/n1) at each densified knot from the feature edge
+ * the knot actually lies on. Midpoint distance misses the ends of a long
+ * edge (a cutout corner running through a bend is one edge of several mm):
+ * those knots bound a neighbouring seam, the path was split into convex
+ * cutters and concave fillers, and the subtract ate the round. Distance is
+ * to the edge segment, with the same alignment penalty as _s23ProbeSegments
+ * so a seam that only touches the endpoint does not win.
  */
 function _s23ProbeKnotNormals(part, points, closed) {
   const edges = _s23ProbeFeatureEdges(part);
@@ -5777,15 +5798,20 @@ function _s23ProbeKnotNormals(part, points, closed) {
     const p0 = points[i];
     const p1 = points[(i + 1) % n];
     const segL = Math.hypot(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
+    const T = _s23Norm(_s23Sub(p1, p0));
     const mid = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, (p0[2] + p1[2]) / 2];
     let best = null;
+    let bestScore = Infinity;
     let bestD = Infinity;
     for (const e of edges) {
       if (!e || !Array.isArray(e.va) || !Array.isArray(e.vb)) continue;
       if (!e.n0 || !e.n1) continue;
-      const em = [(e.va[0] + e.vb[0]) / 2, (e.va[1] + e.vb[1]) / 2, (e.va[2] + e.vb[2]) / 2];
-      const d = Math.hypot(em[0] - mid[0], em[1] - mid[1], em[2] - mid[2]);
-      if (d < bestD) {
+      const d = _s23PointSegDist(mid, e.va, e.vb);
+      const eT = _s23Norm(_s23Sub(e.vb, e.va));
+      const align = Math.abs(_s23Dot(eT, T));
+      const score = d + (1 - align) * Math.max(0.55, 0.35 * (segL || 1));
+      if (score < bestScore - 1e-12 || (Math.abs(score - bestScore) <= 1e-12 && d < bestD)) {
+        bestScore = score;
         bestD = d;
         best = e;
       }
