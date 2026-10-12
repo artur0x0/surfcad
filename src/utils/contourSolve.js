@@ -14,6 +14,13 @@
  * on an under-defined contour or on a conflict. A conflict comes back as
  * status `conflict` with the least-squares shape. A repeated constraint is
  * a warning, not an error and not a red state.
+ *
+ * A dimension locks only the quantity it measures. A length, a point
+ * distance, an angle, an offset, a radius, and a point-to-reference-edge
+ * distance are each one row. A line distance is that gap plus the parallel
+ * row, and neither row pins a point. `at` on a dimension is the editor's
+ * anchor for a typed edit. This solver does not turn it into a fix. A point
+ * is locked only when the nullspace has lost both of its coordinates.
  */
 
 import { referenceGeomLive } from './contourRef.js';
@@ -850,12 +857,11 @@ function compile(model) {
         compileDistanceRef(dim);
         continue;
       }
-      // Two points: the first pick stays put and the second takes the distance.
-      // Two lines stay the parallel gap they already were.
+      // Two points: the distance only. Both stay free, and a drag of one
+      // moves the other. Two lines keep the parallel gap they already were.
+      // The editor pins the first pick with a temporary fix while a typed
+      // value is solved. That fix is not part of this system.
       if (points.has(dim.a) && points.has(dim.b) && !lines.has(dim.a) && !lines.has(dim.b)) {
-        const pin = dim.at?.[dim.a] || points.get(dim.a).at;
-        push(dim.id, 1, (x) => xy(x, dim.a)[0] - pin[0]);
-        push(dim.id, 1, (x) => xy(x, dim.a)[1] - pin[1]);
         push(dim.id, 1, (x) => {
           const pa = xy(x, dim.a);
           const pb = xy(x, dim.b);
@@ -1572,6 +1578,10 @@ function applyX(model, x) {
   return { at, radii };
 }
 
+/**
+ * Locked only when every coordinate in the block is gone from the nullspace.
+ * One remaining coordinate is still free: the point stays draggable.
+ */
 function pointStatus(nullspace, index, nCoord) {
   let n2 = 0;
   for (const vec of nullspace) {
