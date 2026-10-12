@@ -1,22 +1,67 @@
 /**
  * Contour status colours and the conflict / repeated note.
  *
- * The solver stays free of display units and of these colours. Under is
- * gray-400, full is the idle ghost zinc, conflict is red-400. An unpromoted
- * polyline, circle, rectangle, or polygon stays the draft cyan; that colour
- * is not a status.
+ * The solver stays free of display units and of these colours. Colour matches
+ * editability. A free degree of freedom stays the draft blue and can be
+ * dragged. A solver-locked point, line, or arc is black and cannot. Conflict
+ * stays red. Repeated is an amber warning, not a geometry colour. Grey is
+ * not a status.
  */
 
 import { analyzeContour } from './contourSolve.js';
 
 export const CONTOUR_STATUS_COLOR = {
-  under: 0x9ca3af,
-  full: 0x3f3f46,
+  under: 0x22d3ee,
+  full: 0x000000,
   conflict: 0xf87171,
 };
 
-/** Draft wire before the contour painter owns it. */
-export const CONTOUR_DRAFT_COLOR = 0x22d3ee;
+/** Draft wire before the contour painter owns it. Same blue as a free DOF. */
+export const CONTOUR_DRAFT_COLOR = CONTOUR_STATUS_COLOR.under;
+
+/** Amber warning for a repeated constraint. Not painted on the geometry. */
+export const CONTOUR_REPEATED_COLOR = 0xfbbf24;
+
+/**
+ * Old circle, rectangle, or point-list profile with no solve. Not a status,
+ * and not the locked black.
+ */
+export const CONTOUR_IDLE_COLOR = 0x3f3f46;
+
+/** On-screen key. Order is the sentence a sketch should read as. */
+export const CONTOUR_STATUS_LEGEND = [
+  { status: 'under', label: 'Free', color: CONTOUR_STATUS_COLOR.under },
+  { status: 'full', label: 'Locked', color: CONTOUR_STATUS_COLOR.full },
+  { status: 'conflict', label: 'Conflict', color: CONTOUR_STATUS_COLOR.conflict },
+  { status: 'repeated', label: 'Repeated', color: CONTOUR_REPEATED_COLOR },
+];
+
+export function contourStatusHex(color) {
+  const n = Number(color);
+  const hex = (Number.isFinite(n) ? Math.round(n) : 0).toString(16);
+  return `#${hex.padStart(6, '0').slice(-6)}`;
+}
+
+/**
+ * Span attrs for the conflict note (red) and the repeated warning (amber).
+ * Null when the note is neither.
+ */
+export function contourStatusNoteAttrs(note) {
+  if (!note?.text) return null;
+  if (note.conflict) {
+    return {
+      'data-contour-conflict': note.primaryId || '',
+      className: 'text-red-400',
+    };
+  }
+  if (note.repeated) {
+    return {
+      'data-contour-repeated': '',
+      className: 'text-amber-300',
+    };
+  }
+  return null;
+}
 
 /** Selected saved ghost. Status colour is for every ghost that is not the pick. */
 export const CONTOUR_SELECTED_COLOR = 0xff9900;
@@ -58,7 +103,9 @@ export function highlightContourPaint(paint, model, picks) {
 }
 
 export function contourEntityColor(status) {
-  return CONTOUR_STATUS_COLOR[status] || CONTOUR_STATUS_COLOR.under;
+  // Black is 0, so a missing status cannot use ||.
+  const color = CONTOUR_STATUS_COLOR[status];
+  return color == null ? CONTOUR_STATUS_COLOR.under : color;
 }
 
 function itemRefs(item) {

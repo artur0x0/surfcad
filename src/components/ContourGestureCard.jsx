@@ -3,7 +3,7 @@ import { Trash2 } from 'lucide-react';
 import StickyPickApply from './StickyPickApply';
 import { useDisplayUnit } from '../hooks/useDisplayUnit';
 import { displayToMm, lengthToDisplay } from '../utils/displayUnit';
-import { contourStatusNote } from '../utils/contourStatus';
+import { contourStatusNote, contourStatusNoteAttrs } from '../utils/contourStatus';
 import {
   CONSTRAINT_LABELS,
   DIMENSION_LABELS,
@@ -163,8 +163,9 @@ const ContourGestureCard = ({
   if (note && note !== status.text) parts.push(note);
   if (pickNote && pickNote !== status.text && !parts.includes(pickNote)) parts.push(pickNote);
   const shownNote = parts.join(' ');
-  const noteNode = status.conflict
-    ? <span data-contour-conflict={status.primaryId || ''}>{shownNote}</span>
+  const statusAttrs = contourStatusNoteAttrs(status);
+  const noteNode = statusAttrs
+    ? <span {...statusAttrs}>{shownNote}</span>
     : shownNote;
   const title = isArc ? 'Arc' : isConstraint ? 'Constrain' : 'Dimension';
   const labels = isConstraint ? CONSTRAINT_LABELS : DIMENSION_LABELS;

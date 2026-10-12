@@ -2,8 +2,10 @@
  * Contour status colours, the conflict note, the repeated word, and dragging.
  * No Manifold. No screenshots.
  *
- * A free closed polyline is grey and dof = 2n. A fully constrained rectangle
- * is dark. A contradictory pair paints only the lines it names. A horizontal
+ * A free closed polyline is blue and dof = 2n. A fully constrained rectangle
+ * is black. A half-constrained rectangle is blue on free entities and black
+ * on locked ones, and that colour matches whether the point drags. A
+ * contradictory pair paints only the lines it names. A horizontal
  * point with the other end fixed changes u only. A fixed point does not move.
  * An inconsistent temporary lock keeps the previous point. The script is
  * written on release only when a block already exists. The saved ghost uses
@@ -18,8 +20,11 @@ import { emitSolveContour } from '../../src/utils/contourScript.js';
 import { listSavedContours } from '../../src/utils/savedContours.js';
 import {
   CONTOUR_DRAFT_COLOR,
+  CONTOUR_REPEATED_COLOR,
   CONTOUR_STATUS_COLOR,
+  CONTOUR_STATUS_LEGEND,
   contourEntityColor,
+  contourStatusHex,
   contourPaintModel,
   contourStatusNote,
   savedContourStatus,
@@ -45,32 +50,56 @@ const near = (a, b, eps = 1e-3) => Math.abs(a - b) < eps;
 
 console.log('colours');
 {
-  check('under is gray-400', contourEntityColor('under') === 0x9ca3af && CONTOUR_STATUS_COLOR.under === 0x9ca3af);
-  check('full is the idle ghost', contourEntityColor('full') === 0x3f3f46);
+  check('a free entity is the draft blue', contourEntityColor('under') === 0x22d3ee && CONTOUR_STATUS_COLOR.under === CONTOUR_DRAFT_COLOR);
+  check('a locked entity is black', contourEntityColor('full') === 0x000000);
   check('conflict is red-400', contourEntityColor('conflict') === 0xf87171);
-  check('unpromoted draft stays cyan', CONTOUR_DRAFT_COLOR === 0x22d3ee);
+  check('repeated is amber and not a geometry colour', CONTOUR_REPEATED_COLOR === 0xfbbf24 && contourEntityColor('repeated') !== CONTOUR_REPEATED_COLOR);
+  check('grey is not a status colour', ![CONTOUR_STATUS_COLOR.under, CONTOUR_STATUS_COLOR.full, CONTOUR_STATUS_COLOR.conflict].includes(0x9ca3af));
+  check('unpromoted draft stays blue', CONTOUR_DRAFT_COLOR === 0x22d3ee);
   check('no contour does not paint a status wire', contourPaintModel(null) == null);
+  check('the legend names free, locked, conflict, and repeated', CONTOUR_STATUS_LEGEND.map((item) => `${item.status}:${contourStatusHex(item.color)}`).join(',') === 'under:#22d3ee,full:#000000,conflict:#f87171,repeated:#fbbf24');
 }
 
-console.log('free polyline is grey');
+console.log('free polyline is blue');
 {
   const spec = contourFromPolyline([[0, 0], [10, 0], [0, 10]]);
   const solved = analyzeContour(spec);
   const paint = contourPaintModel(spec);
   check('dof is 2n', solved.dof === 6 && solved.points.length === 3, `dof ${solved.dof}`);
   check('status under', solved.status === 'under');
-  check('every point is grey', paint.pointColors.every((c) => c === 0x9ca3af), paint.pointColors.map((c) => c.toString(16)).join(','));
-  check('every edge is grey', paint.segments.every((s) => s.color === 0x9ca3af && s.status === 'under'));
+  check('every point is blue', paint.pointColors.every((c) => c === 0x22d3ee), paint.pointColors.map((c) => c.toString(16)).join(','));
+  check('every edge is blue', paint.segments.every((s) => s.color === 0x22d3ee && s.status === 'under'));
+  check('every free point drags', solved.points.every((p) => contourPointDragAllowed(spec, p.id)));
 }
 
-console.log('fully constrained is dark');
+console.log('fully constrained is black');
 {
   const spec = contourFromRectangle(40, 20, true);
   const solved = analyzeContour(spec);
   const paint = contourPaintModel(spec);
   check('status full', solved.status === 'full' && solved.dof === 0, `${solved.status} dof ${solved.dof}`);
-  check('every point is dark', paint.pointColors.every((c) => c === 0x3f3f46));
-  check('every edge is dark', paint.segments.every((s) => s.color === 0x3f3f46 && s.status === 'full'));
+  check('every point is black', paint.pointColors.every((c) => c === 0x000000));
+  check('every edge is black', paint.segments.every((s) => s.color === 0x000000 && s.status === 'full'));
+  check('no locked point drags', solved.points.every((p) => !contourPointDragAllowed(spec, p.id)));
+}
+
+console.log('half constrained is mixed');
+{
+  const spec = contourFromRectangle(40, 20, true);
+  spec.dimensions = spec.dimensions.filter((d) => d.id !== 'd0');
+  const solved = analyzeContour(spec);
+  const paint = contourPaintModel(spec);
+  const point = (id) => paint.pointColors[solved.points.findIndex((p) => p.id === id)];
+  const edge = (id) => paint.segments.find((s) => s.id === id);
+  check('one degree of freedom remains', solved.status === 'under' && solved.dof === 1, `${solved.status} dof ${solved.dof}`);
+  check('the fixed corners are black', point('p0') === 0x000000 && point('p3') === 0x000000);
+  check('the free corners are blue', point('p1') === 0x22d3ee && point('p2') === 0x22d3ee);
+  check('the locked edge is black', edge('e3')?.color === 0x000000 && edge('e3')?.status === 'full');
+  check('the free edges are blue', ['e0', 'e1', 'e2'].every((id) => edge(id)?.color === 0x22d3ee && edge(id)?.status === 'under'));
+  check('colour matches the drag lock', solved.points.every((p) => (
+    contourPointDragAllowed(spec, p.id) === (solved.entities.points[p.id] === 'under')
+  )));
+  check('nothing is grey', paint.pointColors.every((c) => c !== 0x9ca3af) && paint.segments.every((s) => s.color !== 0x9ca3af));
 }
 
 console.log('contradictory pair');
@@ -104,7 +133,7 @@ console.log('contradictory pair');
   const named = (id) => paint.segments.find((s) => s.id === id);
   check('status conflict', solved.status === 'conflict');
   check('the named lines are red', named('e0')?.color === 0xf87171 && named('e1')?.color === 0xf87171);
-  check('the untouched fixed point stays dark', paint.pointColors[3] === 0x3f3f46 && solved.entities.points.p3 === 'full');
+  check('the untouched fixed point stays black', paint.pointColors[3] === 0x000000 && solved.entities.points.p3 === 'full');
   check('a point the pair does not name is not red', solved.entities.points.p1 !== 'conflict');
   check('the note names the primary id', note.conflict && note.text.includes(note.primaryId) && note.text.includes('k0'), note.text);
   check('the note names the other id', note.text.includes('k1') && /Also conflicts with/.test(note.text), note.text);
@@ -198,9 +227,9 @@ console.log('script write is pointer-up only');
   check('release of that contour writes once', planContourDragRelease({ buffer: block, entry: 'crossSection', moved: true, contourId: 'xs' }).write === true);
   const listed = listSavedContours(block);
   check('the saved contour is read back', listed.length === 1 && listed[0].params.contour?.points?.length === 3);
-  check('the saved ghost uses the under colour', savedContourStatus(listed[0]) === 'under' && contourEntityColor(savedContourStatus(listed[0])) === 0x9ca3af);
+  check('the saved ghost uses the free blue', savedContourStatus(listed[0]) === 'under' && contourEntityColor(savedContourStatus(listed[0])) === 0x22d3ee);
   const full = listSavedContours(`${CONTOUR_PROFILE_BEGIN}\nconst plane = { center: [0, 0, 0], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] };\nconst xs = makeCrossSection(plane, ${emitSolveContour(contourFromRectangle(40, 20))});\n${CONTOUR_PROFILE_END}`);
-  check('a full ghost is dark', savedContourStatus(full[0]) === 'full' && contourEntityColor('full') === 0x3f3f46);
+  check('a full ghost is black', savedContourStatus(full[0]) === 'full' && contourEntityColor('full') === 0x000000);
 }
 
 console.log('card note');
@@ -275,7 +304,7 @@ export { default as ContourModeChip } from './src/components/ContourModeChip.jsx
     picks: [],
   });
   check('the card says Repeated.', again.includes('Repeated.'));
-  check('repeated is not a conflict attribute', !/data-contour-conflict/.test(again));
+  check('repeated is amber and not a conflict', /data-contour-repeated/.test(again) && /text-amber-300/.test(again) && !/data-contour-conflict/.test(again));
 }
 
 if (failed) {

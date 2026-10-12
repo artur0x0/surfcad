@@ -200,7 +200,9 @@ import { resolveContourScript } from '../utils/contourRefResolve';
 import { beginConstraintEdit, beginDimensionEdit } from '../utils/contourGesture';
 import { localPoint, worldPoint } from '../utils/partPose';
 import {
+  CONTOUR_IDLE_COLOR,
   CONTOUR_PICK_COLOR,
+  CONTOUR_STATUS_COLOR,
   contourEntityColor,
   contourPaintModel,
   highlightContourPaint,
@@ -216,6 +218,7 @@ import {
   sketchHandles,
 } from '../utils/contourDrag';
 import ContourGestureCard from './ContourGestureCard';
+import ContourStatusLegend from './ContourStatusLegend';
 import ContourTags from './ContourTags';
 import {
   holdContourOverlays,
@@ -472,8 +475,8 @@ const EDGE_HOVER_HALO_PX = 6;
 /** Selection core opacity. Was 1 (fully opaque orange). */
 const EDGE_SELECT_OPACITY = 0.72;
 
-/** Unpromoted draft handles stay cyan. A promoted contour uses status colours. */
-const POLYLINE_POINT_COLOR = 0x22d3ee;
+/** Free sketch handles. Same blue as a solver-free degree of freedom. */
+const POLYLINE_POINT_COLOR = CONTOUR_STATUS_COLOR.under;
 const POLYLINE_POINT_HOVER_COLOR = 0xfbbf24;
 const POLYLINE_POINT_DRAG_COLOR = 0xf97316;
 /** Handle scale targets; the render loop eases toward these (never snaps). */
@@ -2294,7 +2297,7 @@ const Viewport = forwardRef(({
         const rings = savedContourRings(contour, entry.hostPlane);
         const picked = entry.editor && contour.id === entry.pickedId;
         const status = picked ? null : savedContourStatus(contour);
-        const color = picked ? 0xff9900 : (status ? contourEntityColor(status) : 0x3f3f46);
+        const color = picked ? 0xff9900 : (status ? contourEntityColor(status) : CONTOUR_IDLE_COLOR);
         const opacity = picked ? 0.75 : (status === 'conflict' ? 0.9 : 0.55);
         const name = picked ? 'contourSelected' : `contour${status || 'Idle'}`;
         for (const ring of rings) {
@@ -2356,7 +2359,7 @@ const Viewport = forwardRef(({
           flat.push(first[0], first[1], first[2]);
         }
         const loop = makeSketchLine(flat, {
-          color: 0x22d3ee,
+          color: CONTOUR_STATUS_COLOR.under,
           opacity: 0.95,
           resolution,
         });
@@ -2962,7 +2965,7 @@ const Viewport = forwardRef(({
     contourStatusRef.current = null;
   }, []);
 
-  /** Promoted contour wire, one colour per entity. Cyan stays on an unpromoted draft. */
+  /** Promoted contour wire, one colour per entity. Blue stays on an unpromoted draft. */
   const paintContourStatusWire = useCallback((plane, segments) => {
     clearContourStatusWire();
     if (!plane || !segments?.length || !sceneRef.current) return;
@@ -9251,9 +9254,29 @@ const Viewport = forwardRef(({
                     id: handle.userData?.pointId || '',
                     x: rect.left + (v.x * 0.5 + 0.5) * rect.width,
                     y: rect.top + (-v.y * 0.5 + 0.5) * rect.height,
+                    color: handle.material?.color?.getHex?.() ?? null,
                   };
                   return dot;
                 });
+              })(),
+              lines: (() => {
+                const out = [];
+                const take = (root) => {
+                  root?.traverse?.((child) => {
+                    if (!child.userData?.sketchLinePx) return;
+                    const color = child.material?.color?.getHex?.();
+                    if (!Number.isFinite(color)) return;
+                    out.push({
+                      id: child.userData.entityId || '',
+                      kind: child.userData.entityKind || 'line',
+                      color,
+                    });
+                  });
+                };
+                take(contourStatusRef.current);
+                take(xsPreviewRef.current);
+                take(polylineDraftRef.current);
+                return out;
               })(),
               sketchLinePx: (() => {
                 let px = 0;
@@ -11402,6 +11425,10 @@ const Viewport = forwardRef(({
         onCancel={() => setFeatureDeleteConfirm(null)}
         onConfirm={() => deleteFeatureFromEdit(true)}
       />
+
+      {contourMode && !isWorkplaneEntry(contourMode.entry) && mode !== 'game' && (
+        <ContourStatusLegend />
+      )}
 
       {/* Contour rail: tools, Back undoes, Confirm finishes, X exits. */}
       {contourMode && (
