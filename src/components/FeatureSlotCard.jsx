@@ -83,7 +83,7 @@ function ContourSlot({
                 onBlur={() => onHover?.(null)}
                 onClick={() => onPick?.(row)}
                 data-contour-unused={row.unused ? '' : undefined}
-                className={`flex items-center gap-2 rounded px-2.5 py-1 text-left text-[13px] ${
+                className={`relative flex items-center gap-2 rounded px-2.5 py-1 text-left text-[13px] ${
                   on
                     ? 'bg-amber-500 text-amber-950'
                     : 'bg-cyan-950/80 text-cyan-100 border border-cyan-700/70'
@@ -91,9 +91,11 @@ function ContourSlot({
               >
                 <span className="min-w-0 flex-1 truncate">{row.label || row.name}</span>
                 {row.unused ? (
-                  <span className={`shrink-0 text-[11px] ${on ? 'text-amber-950' : 'text-amber-200'}`}>
-                    unused
-                  </span>
+                  <span
+                    className={`pointer-events-none absolute right-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full ${on ? 'bg-amber-950/80' : 'bg-amber-200/90'}`}
+                    data-contour-unused-dot=""
+                    aria-hidden="true"
+                  />
                 ) : null}
               </button>
             );

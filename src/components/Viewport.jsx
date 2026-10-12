@@ -564,12 +564,18 @@ function disposeProbeGroup(group) {
 /** Dispose LineSegments2 Group (halo+core) or legacy LineSegments. */
 function disposeEdgeOverlayObject(scene, obj) {
   if (!obj) return;
-  scene?.remove(obj);
+  // scene.remove misses an overlay that was reparented (paintEdgeLines adds
+  // to the scene, then a ghost group adopts the lines). The old lines stay
+  // in that group and the next solve paints another copy.
+  if (typeof obj.removeFromParent === 'function') obj.removeFromParent();
+  else scene?.remove(obj);
   const disposeOne = (node) => {
-    node.geometry?.dispose?.();
+    try { node.geometry?.dispose?.(); } catch { /* already disposed */ }
     const mat = node.material;
-    if (Array.isArray(mat)) mat.forEach((m) => m?.dispose?.());
-    else mat?.dispose?.();
+    try {
+      if (Array.isArray(mat)) mat.forEach((m) => m?.dispose?.());
+      else mat?.dispose?.();
+    } catch { /* a shared preview material disposes once */ }
   };
   if (typeof obj.traverse === 'function') {
     obj.traverse((child) => {
@@ -577,6 +583,54 @@ function disposeEdgeOverlayObject(scene, obj) {
     });
   }
   disposeOne(obj);
+}
+
+const SKETCH_PREVIEW_NAMES = new Set([
+  'crossSectionPreview',
+  'contourExtrudePreview',
+  'contourExtrudePreviewGroup',
+  'contourRevolvePreview',
+  'contourRevolvePreviewGroup',
+  'contourLoftPreview',
+  'contourLoftPreviewGroup',
+  'contourSweepPreview',
+  'contourSweepPreviewGroup',
+]);
+
+const SKETCH_HIGHLIGHT_NAMES = new Set([
+  'highlight',
+  'edgeSelection',
+  'edgeSelectionOtherPart',
+  'edgeHover',
+  'contourSelected',
+]);
+
+const SKETCH_WIRE_NAMES = new Set([
+  'contourStatusWire',
+  'contourRefWire',
+  'contourPolylineDraft',
+]);
+
+/** Drop named overlays. A child whose parent is also named is disposed with that parent. */
+function dropNamedOverlays(scene, names) {
+  if (!scene || !names?.size) return;
+  const doomed = [];
+  scene.traverse((obj) => {
+    if (obj?.name && names.has(obj.name)) doomed.push(obj);
+  });
+  const doomedSet = new Set(doomed);
+  for (const obj of doomed) {
+    let parent = obj.parent;
+    let nested = false;
+    while (parent) {
+      if (doomedSet.has(parent)) {
+        nested = true;
+        break;
+      }
+      parent = parent.parent;
+    }
+    if (!nested) disposeEdgeOverlayObject(scene, obj);
+  }
 }
 
 /** Assembly pose is on the mesh, not in the script. Overlays and picks apply it. */
@@ -4257,9 +4311,24 @@ const Viewport = forwardRef(({
     const pickedId = featureSlotGhostId(featureSlots, slotHoverId)
       || contourMode?.pickedContourId
       || armedContourId;
-    paintSavedContourGhosts(entries.map((entry) => ({ ...entry, pickedId })));
+    // The script still has the pre-solve contour until the rail checkmark.
+    // Painting it again leaves the old orange highlight and the gray ghost
+    // on top of the live solve.
+    const liveId = (
+      contourMode?.params?.contour
+      && !contourPlaneOpen
+      && (contourMode.contourId || contourMode.pickedContourId)
+    ) || null;
+    paintSavedContourGhosts(entries.map((entry) => ({
+      ...entry,
+      pickedId,
+      contours: liveId && entry.editor
+        ? (entry.contours || []).filter((contour) => contour.id !== liveId)
+        : entry.contours,
+    })));
   }, [
     contourMode,
+    contourPlaneOpen,
     featureSlots,
     slotHoverId,
     armedContourId,
@@ -4308,6 +4377,79 @@ const Viewport = forwardRef(({
     clearConstructionPlanes();
   }, [clearConstructionPlanes]);
 
+  /**
+   * Dimension re-solve, point drag, and undo rebuild the live sketch.
+   * Preview meshes and the saved-contour highlight are not part of that
+   * rebuild, so the previous shape stays unless these are dropped first.
+   * Face highlights held by highlightMeshRef stay: Select plane frames
+   * them, and clearHighlight() is what releases the face pick.
+   * keepSketch leaves the handles and the status wire during a drag.
+   */
+  const clearStaleSolveOverlays = useCallback(({ keepSketch = false } = {}) => {
+    clearXsPreview();
+    clearExtrudePreview();
+    clearRevolvePreview();
+    clearLoftPreview();
+    clearSweepPreview();
+    clearEdgeHover();
+    const sweep = isSweepEntry(contourModeRef.current?.entry);
+    if (!sweep) clearEdgeHighlight();
+    const live = !!(
+      contourModeRef.current?.params?.contour
+      && !contourPlaneOpenRef.current
+    );
+    const names = new Set(SKETCH_PREVIEW_NAMES);
+    for (const name of SKETCH_HIGHLIGHT_NAMES) {
+      if (name === 'highlight') continue;
+      if (sweep && (name === 'edgeSelection' || name === 'edgeSelectionOtherPart')) continue;
+      if (name === 'contourSelected' && !live) continue;
+      names.add(name);
+    }
+    if (!keepSketch) {
+      for (const name of SKETCH_WIRE_NAMES) names.add(name);
+    }
+    const scene = sceneRef.current;
+    dropNamedOverlays(scene, names);
+    const kept = new Set();
+    const meshes = highlightMeshRef.current;
+    const list = Array.isArray(meshes) ? meshes : (meshes ? [meshes] : []);
+    for (const mesh of list) {
+      if (mesh) kept.add(mesh);
+    }
+    if (scene) {
+      const orphans = [];
+      scene.traverse((obj) => {
+        if (obj?.name === 'highlight' && !kept.has(obj)) orphans.push(obj);
+      });
+      const orphanSet = new Set(orphans);
+      for (const obj of orphans) {
+        let parent = obj.parent;
+        let nested = false;
+        while (parent) {
+          if (orphanSet.has(parent)) {
+            nested = true;
+            break;
+          }
+          parent = parent.parent;
+        }
+        if (!nested) disposeEdgeOverlayObject(scene, obj);
+      }
+    }
+    if (!keepSketch) {
+      for (const ref of [contourStatusRef, contourRefRef, polylineDraftRef]) {
+        if (ref.current && !ref.current.parent) ref.current = null;
+      }
+    }
+  }, [
+    clearXsPreview,
+    clearExtrudePreview,
+    clearRevolvePreview,
+    clearLoftPreview,
+    clearSweepPreview,
+    clearEdgeHover,
+    clearEdgeHighlight,
+  ]);
+
   // Live workplane + makeCrossSection profile (+ Extrude / Revolve / Loft solid) preview.
   useEffect(() => {
     if (!contourMode) {
@@ -4315,13 +4457,20 @@ const Viewport = forwardRef(({
       clearPolylineDraft();
       clearContourStatusWire();
       clearContourRefWire();
+      clearXsPreview();
       clearExtrudePreview();
       clearRevolvePreview();
       clearLoftPreview();
       clearSweepPreview();
       applyContourPartGhost(false);
+      dropNamedOverlays(sceneRef.current, new Set([
+        ...SKETCH_PREVIEW_NAMES,
+        'contourSelected',
+        ...SKETCH_WIRE_NAMES,
+      ]));
       return;
     }
+    clearStaleSolveOverlays();
     // No face pick: snap the default +Z plane to the part top so the live
     // solid sits on the workplane (same intent as facesByNormal on Confirm).
     // Same resolver the polyline hit-test uses — see contourWorkplaneFace.
@@ -4463,7 +4612,7 @@ const Viewport = forwardRef(({
       clearLoftPreview();
       clearSweepPreview();
     }
-  }, [contourMode, modelBounds, selectedEdges, paintPolylineDraft, paintContourStatusWire, paintContourRefWire, paintExtrudePreview, paintRevolvePreview, paintLoftPreview, paintSweepPreview, applyContourPartGhost, clearWorkplaneOverlay, clearPolylineDraft, clearContourStatusWire, clearContourRefWire, clearExtrudePreview, clearRevolvePreview, clearLoftPreview, clearSweepPreview, clearXsPreview, setXsPreview]);
+  }, [contourMode, modelBounds, selectedEdges, paintPolylineDraft, paintContourStatusWire, paintContourRefWire, paintExtrudePreview, paintRevolvePreview, paintLoftPreview, paintSweepPreview, applyContourPartGhost, clearWorkplaneOverlay, clearPolylineDraft, clearContourStatusWire, clearContourRefWire, clearExtrudePreview, clearRevolvePreview, clearLoftPreview, clearSweepPreview, clearXsPreview, setXsPreview, clearStaleSolveOverlays]);
 
   useEffect(() => () => {
     clearWorkplaneOverlay();
@@ -7269,13 +7418,16 @@ const Viewport = forwardRef(({
   }, [getHelperBuffer, saveContourBlock]);
 
   const showDraggedContour = useCallback((plane, spec) => {
+    // The drag does not go through the contour effect until pointer-up.
+    // Previews and the old highlight would otherwise sit on the pre-drag shape.
+    clearStaleSolveOverlays({ keepSketch: true });
     (spec?.points || []).forEach((point, index) => {
       if (!point?.at) return;
       movePolylineHandle(index, planeUvToWorld(point.at, plane));
     });
     const paint = contourPaintModel(spec);
     if (paint) paintContourStatusWire(plane, paint.segments);
-  }, [movePolylineHandle, paintContourStatusWire]);
+  }, [movePolylineHandle, paintContourStatusWire, clearStaleSolveOverlays]);
 
   const endPolylinePointDrag = useCallback((event) => {
     const drag = polylinePointDragRef.current;
@@ -9043,6 +9195,8 @@ const Viewport = forwardRef(({
               dimensionEdit: contourModeRef.current?.dimensionEdit || null,
               constraintEdit: contourModeRef.current?.constraintEdit || null,
               dimensions: contourModeRef.current?.params?.contour?.dimensions?.length || 0,
+              dimensionValues: (contourModeRef.current?.params?.contour?.dimensions || [])
+                .map((dim) => Number(dim.value)),
               uvs: (() => {
                 const contourPts = contourModeRef.current?.params?.contour?.points;
                 if (Array.isArray(contourPts) && contourPts.length) {
@@ -9129,6 +9283,31 @@ const Viewport = forwardRef(({
                 return (SKETCH_POINT_RADIUS * handle.scale.x * 2) / worldPerPx;
               })(),
             };
+          },
+          stageContourOverlays: () => {
+            const scene = sceneRef.current;
+            const counts = { preview: 0, highlight: 0, ghost: 0, names: [] };
+            if (!scene) return counts;
+            scene.traverse((obj) => {
+              const name = obj.name || '';
+              if (!name) return;
+              const preview = /Preview|crossSectionPreview/.test(name);
+              const highlight = name === 'highlight'
+                || name === 'edgeSelection'
+                || name === 'edgeSelectionOtherPart'
+                || name === 'edgeHover'
+                || name === 'contourSelected';
+              const ghost = name === 'savedContourGhosts'
+                || name === 'savedContourGhostsPart'
+                || name === 'contourSelected'
+                || /^contour(under|full|conflict|Idle)$/.test(name);
+              if (!preview && !highlight && !ghost) return;
+              counts.names.push(name);
+              if (preview) counts.preview += 1;
+              if (highlight) counts.highlight += 1;
+              if (ghost) counts.ghost += 1;
+            });
+            return counts;
           },
         };
       }
