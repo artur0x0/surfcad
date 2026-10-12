@@ -21,10 +21,10 @@ const SCRIPT = 'return Manifold.cube([40, 30, 20], true);\n';
 const AMBER = 0xfbbf24;
 const RED = 0xf87171;
 const POINTS = [
-  [10, -8, 10],
-  [-8, -4, 10],
-  [-2, 8, 10],
-  [6, 5, 10],
+  [6, -4, 10],
+  [-6, -2, 10],
+  [-4, 5, 10],
+  [5, 3, 10],
 ];
 
 const CHROME_CANDIDATES = [
@@ -141,25 +141,45 @@ function angleOf(uvs) {
   return Math.acos(Math.max(-1, Math.min(1, dot / n))) * 180 / Math.PI;
 }
 
-async function tapSegment(client, page, aId, bId) {
+async function dropUnwantedPicks(page, lineId) {
+  const picked = (await sketch(page)).picked || [];
+  for (const pick of picked) {
+    if (pick.kind === 'line' && (pick.id === lineId || pick.id === 'e0' || pick.id === 'e1')) continue;
+    await page.locator(`[data-sticky-pick="${pick.kind}:${pick.id}"]`).click();
+    await page.waitForTimeout(80);
+  }
+}
+
+async function pickLine(client, page, aId, bId, worldA, worldB, lineId) {
   const state = await sketch(page);
   const dots = Object.fromEntries((state.dots || []).map((dot) => [dot.id, dot]));
   const a = dots[aId];
   const b = dots[bId];
   if (!a || !b) throw new Error(`missing dots ${aId} ${bId}`);
-  for (const t of [0.5, 0.35, 0.65, 0.42]) {
-    const x = a.x + (b.x - a.x) * t;
-    const y = a.y + (b.y - a.y) * t;
-    const hit = await page.evaluate(({ px, py }) => {
+  const candidates = [];
+  for (const t of [0.5, 0.38, 0.62]) {
+    candidates.push({
+      x: a.x + (b.x - a.x) * t,
+      y: a.y + (b.y - a.y) * t,
+    });
+    const world = worldA.map((value, i) => value + (worldB[i] - value) * t);
+    const hit = await project(page, world);
+    if (hit.ok) candidates.push({ x: hit.x, y: hit.y });
+  }
+  for (const point of candidates) {
+    const onCanvas = await page.evaluate(({ px, py }) => {
       const el = document.elementFromPoint(px, py);
       const blocked = el?.closest?.('[data-contour-card], [data-feature-sheet], [data-contour-tool], [data-cad-feature-strip]');
-      return { canvas: el?.tagName === 'CANVAS' && !blocked, tag: el?.tagName || '' };
-    }, { px: x, py: y });
-    if (!hit.canvas) continue;
-    await tapAt(client, page, x, y);
-    return { x, y };
+      return el?.tagName === 'CANVAS' && !blocked;
+    }, { px: point.x, py: point.y });
+    if (!onCanvas) continue;
+    await tapAt(client, page, point.x, point.y);
+    const picked = (await sketch(page)).picked || [];
+    if (picked.some((pick) => pick.kind === 'line' && pick.id === lineId)) return;
+    await dropUnwantedPicks(page, lineId);
   }
-  throw new Error(`segment ${aId}-${bId} is covered`);
+  const picked = (await sketch(page)).picked || [];
+  throw new Error(`segment ${lineId} was not picked ${JSON.stringify(picked)}`);
 }
 
 async function runSize(browser, label, viewport) {
@@ -195,13 +215,8 @@ async function runSize(browser, label, viewport) {
     const before = angleOf((await sketch(page)).uvs);
     check(`${label} the corner starts away from 90°`, Math.abs(before - 90) > 5, String(before));
 
-    await tapSegment(client, page, 'p0', 'p1');
-    await tapSegment(client, page, 'p1', 'p2');
-    await page.waitForFunction(() => {
-      const picked = window.__VIEWPORT__.stageContourSketch().picked || [];
-      const lines = picked.filter((pick) => pick.kind === 'line').map((pick) => pick.id);
-      return lines.includes('e0') && lines.includes('e1');
-    }, null, { timeout: 4000 });
+    await pickLine(client, page, 'p0', 'p1', POINTS[0], POINTS[1], 'e0');
+    await pickLine(client, page, 'p1', 'p2', POINTS[1], POINTS[2], 'e1');
 
     await page.locator('[data-contour-card="constraint"] [data-sticky-property="perpendicular"]').click();
     await page.locator('[data-contour-card="constraint"] [data-feature-card-confirm]').click();
