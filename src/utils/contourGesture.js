@@ -402,13 +402,51 @@ function nextDimId(model) {
   return `d${max + 1}`;
 }
 
+function pickIsLine(pick) {
+  return pick?.kind === 'line' || (pick?.kind === 'ref' && pick.geomKind === 'line');
+}
+
+function pickIsPoint(pick) {
+  return pick?.kind === 'point' || (pick?.kind === 'ref' && pick.geomKind === 'point');
+}
+
+/**
+ * Offset, and a distance to a line or a reference edge, carry a side.
+ * Length, radius, angle, and point-to-point distance do not.
+ */
+export function dimensionUsesSide(kind, picks) {
+  if (kind === 'offset') return true;
+  const list = Array.isArray(picks) ? picks : [];
+  if (kind !== 'distance' || list.length !== 2) return false;
+  if (list.every(pickIsLine)) return true;
+  return list.some(pickIsPoint) && list.some(pickIsLine);
+}
+
+/**
+ * The card and the tag show a positive size. The stored value keeps the
+ * side, so the solver residual does not flip the geometry.
+ */
+export function dimensionStoredValue(kind, picks, typed, side) {
+  const n = Number(typed);
+  if (!Number.isFinite(n) || !dimensionUsesSide(kind, picks)) return n;
+  return (side < 0 ? -1 : 1) * Math.abs(n);
+}
+
+/** What the field and the tag print. Angles stay signed; lengths do not. */
+export function dimensionShownNumber(kind, value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || kind === 'angle') return n;
+  return Math.abs(n);
+}
+
 export function buildDimension(model, picks, draft) {
   const kind = draft?.kind;
-  const value = Number(draft?.valueMm);
+  const list = picks || [];
+  const side = draft?.side < 0 ? -1 : 1;
+  const value = dimensionStoredValue(kind, list, draft?.valueMm, side);
   if (!Number.isFinite(value)) return { ok: false, message: 'Enter a number.' };
   const nameCheck = validateDimensionName(draft?.name, model, draft?.id);
   if (!nameCheck.ok) return nameCheck;
-  const list = picks || [];
   const dim = { id: draft?.id || nextDimId(model), kind, value };
   if (nameCheck.name) dim.name = nameCheck.name;
   if (kind === 'length' && list.length === 1 && list[0].kind === 'line') {
@@ -434,7 +472,7 @@ export function buildDimension(model, picks, draft) {
       dim.anchors = [[list[0].at[0], list[0].at[1]], [list[1].at[0], list[1].at[1]]];
     }
     if (kind === 'angle') dim.sense = draft.sense < 0 ? -1 : 1;
-    else dim.side = draft.side < 0 ? -1 : 1;
+    else dim.side = side;
   } else if (kind === 'distance' && list.length === 2 && list.some((p) => p.kind === 'ref')) {
     if (list.filter((p) => p.kind === 'ref').length >= 2) {
       return { ok: false, message: 'a constraint cannot join two references' };
@@ -458,10 +496,11 @@ export function buildDimension(model, picks, draft) {
     if (!point || !line) return { ok: false, message: 'Offset needs a point and a line.' };
     dim.point = point.id;
     dim.edge = line.id;
-    dim.side = draft.side < 0 ? -1 : 1;
+    dim.side = side;
   } else {
     return { ok: false, message: 'That dimension does not match the pick.' };
   }
+  if (dimensionUsesSide(kind, list)) dim.side = side;
   return { ok: true, dimension: dim };
 }
 

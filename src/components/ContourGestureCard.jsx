@@ -7,6 +7,7 @@ import { contourStatusNote } from '../utils/contourStatus';
 import {
   CONSTRAINT_LABELS,
   DIMENSION_LABELS,
+  dimensionShownNumber,
   prefillForKind,
   suggestContourArc,
   suggestContourConstraint,
@@ -17,7 +18,8 @@ import {
 const FIELD = 'w-full rounded border border-cyan-700/70 bg-cyan-950/80 px-2.5 py-1 text-[16px] text-white';
 
 function formatPrefill(kind, mm, unit) {
-  const n = kind === 'angle' ? Number(mm) : lengthToDisplay(mm, unit);
+  const shown = dimensionShownNumber(kind, mm);
+  const n = kind === 'angle' ? shown : lengthToDisplay(shown, unit);
   if (!Number.isFinite(n)) return '';
   const digits = kind === 'angle' ? 2 : (unit === 'in' ? 4 : 2);
   return String(Number(n.toFixed(digits)));

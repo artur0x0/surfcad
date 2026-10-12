@@ -236,7 +236,7 @@ async function undoToEmpty(page, label) {
   for (let i = 0; i < 20; i += 1) {
     const sketch = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch());
     // Stop on an empty polyline. One more Back restores the circle baseline
-    // that Start drawing seeded, and the taps after that would not place points.
+    // that Select plane seeded, and the taps after that would not place points.
     if ((sketch.points || 0) === 0 && sketch.tool === 'polyline' && !sketch.planeCard) break;
     if (sketch.planeCard) {
       check(`${label} points cleared`, false, 'plane card opened early');

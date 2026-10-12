@@ -73,7 +73,8 @@ function emitPoint(p) {
 }
 
 function emitLine(l) {
-  return `{ id: ${emitString(l.id)}, a: ${emitString(l.a)}, b: ${emitString(l.b)} }`;
+  const guide = l.guide ? ', guide: true' : '';
+  return `{ id: ${emitString(l.id)}, a: ${emitString(l.a)}, b: ${emitString(l.b)}${guide} }`;
 }
 
 function emitUv(uv) {

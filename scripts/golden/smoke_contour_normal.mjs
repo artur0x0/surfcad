@@ -246,7 +246,7 @@ async function runSize(browser, label, contextOptions, pointerType) {
     document.querySelector('.viewport-shell')?.getAttribute('data-contour-face-aim') === 'done'
     && !document.querySelector('[data-contour-chip]')
   ), null, { timeout: 8000 });
-  check(`${label} Normal to stays up after Start drawing`, await page.locator('[data-normal-to-sketch]').count() === 1);
+  check(`${label} Normal to stays up after Select plane`, await page.locator('[data-normal-to-sketch]').count() === 1);
 
   const pointHit = await projectHitsCanvas(page, POINT);
   check(`${label} polyline tap lands on the canvas`, !!pointHit?.ok, JSON.stringify(pointHit));

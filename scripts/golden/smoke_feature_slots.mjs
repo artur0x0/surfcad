@@ -160,8 +160,8 @@ async function runSize(browser, label, contextOptions) {
   await page.locator('[data-contour-chip]').waitFor({ timeout: 8000 });
   const planeTitle = (await page.locator('[data-feature-card-title]').innerText()).trim();
   check(`${label} New contour opens the plane card`, planeTitle === 'Contour', planeTitle);
-  check(`${label} plane card says Start drawing`,
-    (await page.locator('[data-feature-card-confirm]').innerText()).includes('Start drawing'));
+  check(`${label} plane card says Select plane`,
+    (await page.locator('[data-feature-card-confirm]').innerText()).includes('Select plane'));
   await page.locator('[data-contour-exit]').click();
   await card.waitFor({ timeout: 8000 });
   const afterX = await page.locator('[data-slot-role="profile"] [data-slot-chip]').getAttribute('data-slot-chip');

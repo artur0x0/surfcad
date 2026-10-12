@@ -14,6 +14,7 @@ import {
 import { Vector3 } from 'three';
 import { useDisplayUnit } from '../hooks/useDisplayUnit';
 import { formatDisplayLength } from '../utils/displayUnit';
+import { dimensionShownNumber } from '../utils/contourGesture';
 import { CONSTRAINT_LABELS } from '../utils/contourGesture';
 import { constraintAnchor, dimensionAnchor, planeUvToWorld } from '../utils/contourPick';
 import { referenceTagAnchor } from '../utils/contourRefPick';
@@ -314,9 +315,10 @@ const ContourTags = ({
       style={{ position: 'fixed', inset: 0, zIndex: 30, pointerEvents: 'none' }}
     >
       {dimensions.map((dim) => {
+        const shown = dimensionShownNumber(dim.kind, dim.value);
         const value = dim.kind === 'angle'
-          ? `${Number(dim.value).toFixed(1)}°`
-          : formatDisplayLength(dim.value, unit);
+          ? `${Number(shown).toFixed(1)}°`
+          : formatDisplayLength(shown, unit);
         const label = dim.name ? `${dim.name} ${value}` : value;
         const open = selectedId === dim.id;
         return (
