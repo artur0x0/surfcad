@@ -223,10 +223,14 @@ Desktop specifics:
   still opens the repo part list.
   On mobile the profile chip is right-justified in `data-parts-ribbon-end`;
   desktop leaves that slot empty. Each row thumbnail
-  (`data-part-thumbnail`, `data-part-preview="manifold"`) is a cached snapshot
-  of that part's solid and stays up when the eye hides the part. Only the
-  viewport drops a hidden row. No solid is `data-part-preview="empty"`.
-  `golden:part-hide-thumbnail`. Delete asks
+  (`data-part-thumbnail`, `data-part-preview="manifold"`) is a snapshot of
+  that part's solid and stays up when the eye hides the part, including a
+  hidden part that has never been in the CAD view. The bitmap is stored in
+  IndexedDB by part id and script hash and paints on load
+  (`data-part-thumb-source="cache"`). A missing hash is rebuilt off the CAD
+  view. Only the viewport drops a hidden row. No solid and no stored bitmap
+  is `data-part-preview="empty"`.
+  `golden:part-hide-thumbnail` and `golden:part-thumb-cache`. Delete asks
   first; Cancel keeps the part, Confirm removes that part only. In git mode,
   **Open from repo** (folder): **Part** lists every part in the repo grouped
   by source assembly (loose `parts/` included); **Assembly** lists assemblies

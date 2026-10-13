@@ -100,7 +100,8 @@ const BAD = 'let part = Manifold.cube([10, 10, 10], true);\nreturn part.missingM
     /setPartVisible\(/.test(app) && /composeViewportParts\(/.test(app) && /placeAssembly/.test(app));
   check('feed row has a thumbnail, a blue selection bar, an eye, and delete',
     /data-part-thumbnail/.test(feed)
-    && /data-part-preview=\{partPreviewKind\(mesh\)\}/.test(feed)
+    && /data-part-preview=\{kind\}/.test(feed)
+    && /partPreviewKind\(mesh\)/.test(feed)
     && /data-part-selected-bar/.test(feed)
     && /data-part-selected-bar=""\s*className="[^"]*bg-blue-500/.test(feed)
     && /selected && !row\.error \? 'bg-blue-950\/50'/.test(feed)
@@ -118,7 +119,7 @@ const BAD = 'let part = Manifold.cube([10, 10, 10], true);\nreturn part.missingM
     && /cache\.get\(key\)/.test(preview)
     && !/requestAnimationFrame/.test(preview)
     && /takePartPreview\(meshRef\.current\)/.test(feed)
-    && /\[previewKey\]/.test(feed)
+    && /\[previewKey, showLive, cached\]/.test(feed)
     && /assemblyNameForLoad\(raw, filename\)/.test(read('src/utils/assembly.js'))
     && /saveAssemblyDocument\(clean\)/.test(store));
   const del = app.slice(app.indexOf('const handleDeletePart'), app.indexOf('const handleGameRun'));

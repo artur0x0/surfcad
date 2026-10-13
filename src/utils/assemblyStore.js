@@ -10,6 +10,7 @@
 import { serializeAssembly } from './assembly.js';
 import { LOCAL_ROW_PREFIX, remapLocalColorKeys, stripLocalRowPrefix } from './git/localPartIdMigration.js';
 import { idbWithTimeout, IDB_OP_TIMEOUT_MS } from './idbWithTimeout.js';
+import { forgetPartThumbnails } from './partThumbnailStore.js';
 
 const DB_NAME = 'surfcad-assembly';
 const DB_VERSION = 1;
@@ -232,6 +233,11 @@ export async function loadPartSyncFlags(ids) {
 
 export async function deletePartScript(id) {
   if (!id) return false;
+  try {
+    await forgetPartThumbnails(id);
+  } catch (err) {
+    console.warn('[Assembly] thumbnail cleanup failed:', err?.message || err);
+  }
   const { ok } = await runTx(PART_STORE, 'readwrite', (store) => store.delete(String(id)));
   return ok;
 }
