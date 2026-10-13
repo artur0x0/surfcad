@@ -21,7 +21,6 @@ import {
   sheetDraftExtraCount,
   sheetStepCount,
   TAP_SIZES,
-  undoSheetStep,
   updateDraft,
 } from '../../utils/sheetMetal/sheetMetalMode';
 import { contourDeleteConfirmLabel } from '../../utils/contourUsers';
@@ -212,7 +211,7 @@ const HolePopup = ({ mode, setMode, onCommit, onDelete, onExit, unit, onUnit, co
 
 
 /** DFM, flat size, and the STEP source. Downloads and Order live on the quote handoff. */
-const ExportPopup = ({ mode, setMode, mesh, script, partName, unit, onUnit, compact = false }) => {
+const CheckPopup = ({ mode, setMode, mesh, script, partName, unit, onUnit, compact = false }) => {
   const bundle = React.useMemo(
     () => buildSheetExport(mode.spec, { mesh: mesh || null, script: script ?? null, partName: partName || mode.partId || 'sheet', unit }),
     [mode.spec, mode.partId, partName, mesh, script, unit],
@@ -225,14 +224,14 @@ const ExportPopup = ({ mode, setMode, mesh, script, partName, unit, onUnit, comp
   const close = () => setMode((m) => closeSheetExport(m));
   return (
     <SmPopup
-      title="Check & Export"
+      title="Check"
       subtitle={blocked
         ? `${fails.length} issue${fails.length === 1 ? '' : 's'} block export`
         : warns.length
           ? `Ready · ${warns.length} warning${warns.length === 1 ? '' : 's'}`
           : 'Ready for SendCutSend'}
       onClose={close}
-      closeLabel="Close export"
+      closeLabel="Close check"
       dataAttr="data-sheet-metal-export"
       unit={unit}
       onUnit={onUnit}
@@ -286,7 +285,7 @@ const TOOL_HINTS = {
 };
 
 const SheetMetalFlow = ({
-  mode, setMode, onCommit, onConfirm, onExit, compact = false, mesh = null, script = null, partName = '',
+  mode, setMode, onCommit, onDone, onExit, compact = false, mesh = null, script = null, partName = '',
   onDeleteFeature = null, onUndo = null, canUndo = false, lengthMm = 100,
 }) => {
   const [unit, setDisplayUnit] = useDisplayUnit();
@@ -370,7 +369,7 @@ const SheetMetalFlow = ({
   if (!mode) return null;
 
   if (mode.stage === 'edit' && mode.exportOpen) {
-    return deleteChrome(<ExportPopup mode={mode} setMode={setMode} mesh={mesh} script={script} partName={partName} unit={unit} onUnit={onUnit} compact={compact} />);
+    return deleteChrome(<CheckPopup mode={mode} setMode={setMode} mesh={mesh} script={script} partName={partName} unit={unit} onUnit={onUnit} compact={compact} />);
   }
 
   if (mode.stage === 'edit' && mode.draft?.kind === 'base') {
@@ -510,35 +509,24 @@ const SheetMetalFlow = ({
             {TOOL_HINTS[mode.tool] || 'Pick a tool on the left rail.'}
           </div>
           {mode.toast && <div className="mt-1 text-[12px] text-amber-200" data-sm-toast="1">{mode.toast}</div>}
-          {mode.reopen && (
-            <div className="mt-2 flex items-center gap-2">
-              <SmButton
-                data-sm-undo="1"
-                title="Undo the last bend or feature"
-                onClick={() => setMode((m) => undoSheetStep(m))}
-              >
-                Undo
-              </SmButton>
-              <SmButton
-                variant="primary"
-                className="flex-1"
-                data-sm-confirm="1"
-                title="Write this sheet and close"
-                onClick={() => onConfirm?.()}
-              >
-                Confirm
-              </SmButton>
-            </div>
-          )}
           <div className="mt-2 flex items-center gap-2">
             {onDeleteFeature ? <FeatureDeleteButton onClick={onDeleteFeature} /> : null}
             <SmButton
-              variant="primary"
-              className={onDeleteFeature ? 'flex-1' : 'w-full'}
-              data-sm-export="1"
+              className="flex-1"
+              data-sm-check="1"
+              title="Check this sheet"
               onClick={() => setMode((m) => openSheetExport(m))}
             >
-              Check &amp; Export
+              Check
+            </SmButton>
+            <SmButton
+              variant="primary"
+              className="flex-1"
+              data-sm-done="1"
+              title="Write this sheet when it changed, then close"
+              onClick={() => onDone?.()}
+            >
+              Done
             </SmButton>
           </div>
         </div>

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Phone layout: the sheet-metal chip (material, hint, Check & Export) is
+ * Phone layout: the sheet-metal chip (material, hint, Check, Done) is
  * the shared feature card in the gap between the side rails. At 375 and
  * 390 its box does not intersect either toolbar (10px off each rail).
  * The hint wraps; the material line ellipsizes. Desktop (1280) stays

@@ -84,6 +84,7 @@ import {
   pushSheetHistory,
   reopenSheetMetalMode,
   setSheetTool,
+  sheetDoneSpec,
   sheetTap,
   sheetToolsFor,
 } from '../utils/sheetMetal/sheetMetalMode';
@@ -12163,15 +12164,32 @@ const Viewport = forwardRef(({
             }
             return onCommitSheetMetal?.(spec, { ...meta, partId: sheetMetalMode.partId }) ?? false;
           }}
-          onConfirm={() => {
-            const mode = sheetMetalModeRef.current;
+          onDone={() => {
+            const current = sheetMetalModeRef.current;
+            if (!current || current.stage !== 'edit' || current.draft || current.exportOpen) return;
             const edit = featureEditRef.current;
-            if (!mode?.reopen || edit?.kind !== 'sheetMetal') return;
-            const ok = commitFeatureEditRef.current?.({
-              fields: { ...(edit.session?.fields || {}) },
-              spec: mode.spec,
-            });
-            if (!ok) return;
+            // Reopen still owns a feature-edit session. That writer leaves the
+            // script byte-identical when the spec matches, and it does not pop
+            // the in-memory step stack.
+            if (current.reopen && edit?.kind === 'sheetMetal') {
+              const ok = commitFeatureEditRef.current?.({
+                fields: { ...(edit.session?.fields || {}) },
+                spec: current.spec,
+              });
+              if (!ok) return;
+              sheetMetalModeRef.current = null;
+              setSheetMetalMode(null);
+              return;
+            }
+            const read = getHelperBufferRef.current;
+            const script = typeof read === 'function' ? read() : '';
+            const decision = sheetDoneSpec(current, readSheetMetalSpec(script));
+            if (!decision.close) return;
+            if (decision.write) {
+              const ok = onCommitSheetMetal?.(decision.spec, { partId: current.partId, step: 'done' });
+              if (ok === false) return;
+            }
+            cancelFeatureEditRef.current?.('sheetMetal');
             sheetMetalModeRef.current = null;
             setSheetMetalMode(null);
           }}

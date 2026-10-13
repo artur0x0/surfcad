@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
  * Tapping an existing Sheet chip reopens the flow at the last screen.
- * The saved blank, bends, and features come back. Undo pops one step at
- * a time and stops on the flat blank. Cancel leaves the saved block
- * unchanged; Confirm writes the undone spec. 390px and desktop.
+ * The saved bends come back. Check shows DFM and writes nothing. X writes
+ * nothing, including after a bend that exists only in memory. Done closes
+ * without writing when the spec matches, and writes when it does not.
+ * The strip Undo drops that write. 390 and 1280.
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir() only.
  */
@@ -50,8 +51,10 @@ console.log('sheet metal reopen — ribbon tap restores steps');
   check('ribbon reopen builds a gauge the chip can render',
     /reopenSheetMetalMode\(/.test(view)
     && !/bendable: true,\s*thicknessMm: active\.spec\.t/.test(view));
-  check('undo and confirm live on the reopened edit chip',
-    /data-sm-undo/.test(flow) && /data-sm-confirm/.test(flow) && /undoSheetStep/.test(flow));
+  check('Check and Done live on the edit chip, and the in-card undo is gone',
+    /data-sm-check="1"/.test(flow) && /data-sm-done="1"/.test(flow)
+    && !/data-sm-undo/.test(flow) && !/data-sm-confirm/.test(flow)
+    && !/undoSheetStep/.test(flow));
   check('a missing thickness does not call toFixed',
     /Number\.isFinite\(inchN\)/.test(label) && /Number\.isFinite\(mmN\)/.test(label));
   const shapeAt = palette.indexOf("section.section === 'shape' && onOpenSheetMetal");
@@ -162,6 +165,27 @@ if (exe && failed === 0) {
             .then(() => true).catch(() => false);
         };
 
+        const openSheetChip = async () => {
+          const row = await page.evaluate(() => {
+            const rows = [...window.document.querySelectorAll('[data-part-row]')];
+            const part = rows.find((el) => el.getClientRects().length) || rows[0];
+            if (part && part.getAttribute('data-part-selected') !== 'true') part.click();
+            return !!part;
+          });
+          if (!row) return false;
+          const ready = await page.waitForFunction(() => {
+            const chips = [...window.document.querySelectorAll('[data-feature-chip="sheetMetal"]')];
+            return chips.some((el) => el.getClientRects().length);
+          }, null, { timeout: 10000 }).then(() => true).catch(() => false);
+          if (!ready) return false;
+          await page.evaluate(() => {
+            const chips = [...window.document.querySelectorAll('[data-feature-chip="sheetMetal"]')];
+            const el = chips.find((node) => node.getClientRects().length) || chips[0];
+            el?.click();
+          });
+          return true;
+        };
+
         const bend1 = await acceptFeature('[data-sheet-metal-bend]', { kind: 'edge', panel: 'base', edge: 'u+' });
         const bend2 = await acceptFeature('[data-sheet-metal-bend]', { kind: 'edge', panel: 'base', edge: 'u-' });
         await page.locator('[data-sheet-tool="tab"]').click();
@@ -177,7 +201,12 @@ if (exe && failed === 0) {
         await page.waitForFunction(() => !document.querySelector('[data-sheet-metal-mode]'), null, { timeout: 10000 });
         const saved = await page.evaluate(scriptOf);
         errors.length = 0;
-        await page.locator('[data-feature-chip="sheetMetal"]').first().click();
+        const tapped = await openSheetChip();
+        if (!tapped) {
+          check(`${label}: ribbon tap reopens edit with the bends, and does not crash`, false, 'Sheet chip was not on the part strip');
+          await context.close();
+          continue;
+        }
         const reopened = await page.waitForSelector('[data-sm-reopen="1"]', { timeout: 10000 }).then(() => true).catch(() => false);
         const ui = await page.evaluate(() => {
           const step = document.querySelector('[data-sm-step-count]');
@@ -200,58 +229,82 @@ if (exe && failed === 0) {
           && /mm/.test(ui.gauge),
           JSON.stringify({ ui, errors: errors.slice(0, 2) }));
 
-        let count = ui.count;
-        let undoOk = reopened && count >= 3;
-        while (undoOk && count > 0) {
-          const before = count;
-          await page.locator('[data-sm-undo]').click();
-          const dropped = await page.waitForFunction((n) => {
-            const el = document.querySelector('[data-sm-step-count]');
-            const stage = document.querySelector('[data-sheet-metal-mode]')?.getAttribute('data-sheet-metal-mode') || '';
-            return stage === 'edit' && el && Number(el.getAttribute('data-sm-step-count')) === n - 1;
-          }, before, { timeout: 5000 }).then(() => true).catch(() => false);
-          const live = await page.evaluate(scriptOf);
-          if (!dropped || live !== saved || errors.length) undoOk = false;
-          count = before - 1;
-        }
-        await page.locator('[data-sm-undo]').click();
-        await page.waitForTimeout(250);
-        const blank = await page.evaluate(() => ({
-          stage: document.querySelector('[data-sheet-metal-mode]')?.getAttribute('data-sheet-metal-mode') || '',
-          count: Number(document.querySelector('[data-sm-step-count]')?.getAttribute('data-sm-step-count')),
-          bends: Number(document.querySelector('[data-sm-bends]')?.getAttribute('data-sm-bends')),
-        }));
-        const afterUndos = await page.evaluate(scriptOf);
-        check(`${label}: undo drops one step at a time and lands on the flat blank`,
-          undoOk && blank.stage === 'edit' && blank.count === 0 && blank.bends === 0
-          && afterUndos === saved && errors.length === 0,
-          JSON.stringify({ undoOk, blank, same: afterUndos === saved, errors: errors.slice(0, 2) }));
+        await page.locator('[data-sm-check]').click();
+        const openedCheck = await page.waitForSelector('[data-sheet-metal-export]', { timeout: 8000 }).then(() => true).catch(() => false);
+        const dfm = await page.evaluate(() => {
+          const card = window.document.querySelector('[data-sheet-metal-export]');
+          return {
+            title: (card?.querySelector('[data-feature-card-title]')?.textContent || '').trim(),
+            downloads: card?.querySelectorAll('[data-sm-dxf], [data-sm-step], [data-sm-order]').length || 0,
+            flat: !!card?.querySelector('[data-sm-flat-size]'),
+            step: card?.querySelector('[data-sm-step-source]')?.getAttribute('data-sm-step-source') || '',
+            undo: !!window.document.querySelector('[data-sm-undo]'),
+          };
+        });
+        check(`${label}: Check shows DFM and does not download or order`,
+          openedCheck && dfm.title === 'Check' && dfm.downloads === 0 && dfm.flat && !!dfm.step && !dfm.undo,
+          JSON.stringify(dfm));
+        await page.locator('[data-sheet-metal-export] [data-feature-card-cancel]').click();
+        await page.waitForSelector('[data-sm-done]', { timeout: 8000 });
+        const afterCheck = await page.evaluate(scriptOf);
+        check(`${label}: closing Check writes nothing`, afterCheck === saved && errors.length === 0);
 
+        const held = await acceptFeature('[data-sheet-metal-bend]', { kind: 'edge', panel: 'base', edge: 'v-' });
+        const heldScript = await page.evaluate(scriptOf);
+        check(`${label}: a reopen bend stays in memory`,
+          held && heldScript === saved,
+          JSON.stringify({ held, same: heldScript === saved }));
         await page.locator('[data-sheet-metal-mode] [data-feature-card-cancel]').click();
-        const cancelled = await page.waitForFunction(() => !document.querySelector('[data-sheet-metal-mode]'), null, { timeout: 8000 })
+        const cancelled = await page.waitForFunction(() => !window.document.querySelector('[data-sheet-metal-mode]'), null, { timeout: 8000 })
           .then(() => true).catch(() => false);
         const afterCancel = await page.evaluate(scriptOf);
-        check(`${label}: Cancel restores the saved feature unchanged`,
+        check(`${label}: X writes nothing`,
           cancelled && afterCancel === saved && errors.length === 0,
           cancelled ? '' : 'mode still open');
 
-        await page.locator('[data-feature-chip="sheetMetal"]').first().click();
+        if (!await openSheetChip()) {
+          check(`${label}: Done closes without writing when the spec matches`, false, 'Sheet chip was not on the part strip');
+          await context.close();
+          continue;
+        }
         await page.waitForSelector('[data-sm-reopen="1"]', { timeout: 10000 });
-        const full = Number(await page.locator('[data-sm-step-count]').getAttribute('data-sm-step-count'));
-        await page.locator('[data-sm-undo]').click();
-        await page.waitForFunction((n) => {
-          const el = document.querySelector('[data-sm-step-count]');
-          return el && Number(el.getAttribute('data-sm-step-count')) === n - 1;
-        }, full, { timeout: 5000 });
-        await page.locator('[data-sm-confirm]').click();
-        const confirmed = await page.waitForFunction(() => !document.querySelector('[data-sheet-metal-mode]'), null, { timeout: 15000 })
+        await page.locator('[data-sm-done]').click();
+        const closedSame = await page.waitForFunction(() => !window.document.querySelector('[data-sheet-metal-mode]'), null, { timeout: 8000 })
+          .then(() => true).catch(() => false);
+        const afterSame = await page.evaluate(scriptOf);
+        check(`${label}: Done closes without writing when the spec matches`,
+          closedSame && afterSame === saved && errors.length === 0);
+
+        if (!await openSheetChip()) {
+          check(`${label}: Done writes the new bend and keeps the one Sheet chip`, false, 'Sheet chip was not on the part strip');
+          await context.close();
+          continue;
+        }
+        await page.waitForSelector('[data-sm-reopen="1"]', { timeout: 10000 });
+        const extra = await acceptFeature('[data-sheet-metal-bend]', { kind: 'edge', panel: 'base', edge: 'v-' });
+        const beforeDone = await page.evaluate(scriptOf);
+        await page.locator('[data-sm-done]').click();
+        const confirmed = await page.waitForFunction(() => !window.document.querySelector('[data-sheet-metal-mode]'), null, { timeout: 15000 })
           .then(() => true).catch(() => false);
         const written = specOf(await page.evaluate(scriptOf));
-        const writtenCount = (written?.bends?.length || 0) + (written?.tabs?.length || 0) + (written?.holes?.length || 0);
         const chips = await page.locator('[data-feature-chip="sheetMetal"]').count();
-        check(`${label}: Confirm writes the undone sheet and keeps the one Sheet chip`,
-          confirmed && writtenCount === full - 1 && chips === 1 && errors.length === 0,
-          JSON.stringify({ confirmed, writtenCount, full, chips, bends: written?.bends?.length, tabs: written?.tabs?.length, errors: errors.slice(0, 2) }));
+        check(`${label}: Done writes the new bend and keeps the one Sheet chip`,
+          extra && beforeDone === saved && confirmed
+          && written?.bends?.length === (builtSpec?.bends?.length || 0) + 1
+          && written?.tabs?.length === builtSpec?.tabs?.length
+          && chips === 1 && errors.length === 0,
+          JSON.stringify({ extra, same: beforeDone === saved, confirmed, bends: written?.bends?.length, tabs: written?.tabs?.length, chips, errors: errors.slice(0, 2) }));
+
+        await page.evaluate(() => {
+          const buttons = [...window.document.querySelectorAll('[data-cad-feature-strip] [data-feature-bar-undo]')];
+          const btn = buttons.find((el) => !el.disabled && el.getClientRects().length) || buttons.find((el) => !el.disabled);
+          btn?.click();
+        });
+        const restored = await page.waitForFunction((text) => {
+          const live = (window.monaco?.editor?.getModels?.() || []).map((m) => m.getValue()).join('\n');
+          return live === text;
+        }, saved, { timeout: 8000 }).then(() => true).catch(() => false);
+        check(`${label}: strip Undo drops that Done write`, restored && errors.length === 0);
         await context.close();
       }
     }

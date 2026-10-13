@@ -4,7 +4,7 @@
  * issues warn. Flat pattern (BA unfold) → cut-only DXF (mm); the spec → exact
  * STEP B-rep (smoke_scs_true_curve_step); the mesh writer stays as the
  * fallback and is still checked here. Order opens app.sendcutsend.com from
- * ScsHandoff, not from the Check & Export popup.
+ * ScsHandoff, not from the Check card.
  */
 import { readFileSync } from 'node:fs';
 import { joinScsCatalog, findScsSku, SCS_ORDER_URL } from '../../src/utils/scs/scsCatalog.js';
@@ -167,7 +167,7 @@ console.log('SCS S5 — mode + UI wiring');
 {
   const m = acceptBaseFlange(pickSheetPlane(enterSheetMetalMode(alu, 'p1'), 'XY')).mode;
   const open = openSheetExport(m);
-  check('Check & Export opens from edit', open.exportOpen === true);
+  check('Check opens from edit', open.exportOpen === true);
   check('taps are ignored while export is open', sheetTap(open, { kind: 'edge', panel: 'base', edge: 'u+' }) === open);
   check('tool switch ignored while export is open', setSheetTool(open, 'hole') === open);
   check('close returns to edit', closeSheetExport(open).exportOpen === false);
@@ -177,8 +177,14 @@ console.log('SCS S5 — mode + UI wiring');
   const flow = read('src/components/sheetMetal/SheetMetalFlow.jsx');
   const handoff = read('src/components/sheetMetal/ScsHandoff.jsx');
   const view = read('src/components/Viewport.jsx');
-  const popup = flow.slice(flow.indexOf('const ExportPopup'), flow.indexOf('const TOOL_HINTS'));
-  check('chip has Check & Export', /data-sm-export="1"/.test(flow) && /openSheetExport/.test(flow));
+  const popup = flow.slice(flow.indexOf('const CheckPopup'), flow.indexOf('const TOOL_HINTS'));
+  check('chip has Check and Done',
+    /data-sm-check="1"/.test(flow)
+    && /data-sm-done="1"/.test(flow)
+    && /openSheetExport/.test(flow)
+    && !/data-sm-export/.test(flow)
+    && !/data-sm-undo/.test(flow)
+    && !/data-sm-confirm/.test(flow));
   check('export popup has no download or order button',
     !/data-sm-dxf/.test(popup)
     && !/data-sm-order/.test(popup)

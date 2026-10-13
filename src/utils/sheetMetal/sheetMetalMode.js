@@ -903,8 +903,23 @@ export function bendDeductionAt(spec, angle) {
   return 2 * (spec.r + spec.t) * Math.tan(th / 2) - ba;
 }
 
+/**
+ * Done closes the edit chip. It writes only when the open spec is not the
+ * saved one. A draft or the Check card stays put. This does not pop the
+ * reopen step stack.
+ */
+export function sheetDoneSpec(mode, savedSpec) {
+  if (!mode || mode.stage !== 'edit' || mode.draft || mode.exportOpen) {
+    return { close: false, write: false, spec: null };
+  }
+  const live = mode.spec ? normalizeSheetSpec(mode.spec) : null;
+  const saved = savedSpec ? normalizeSheetSpec(savedSpec) : null;
+  const same = JSON.stringify(live) === JSON.stringify(saved);
+  return { close: true, write: !same && !!live, spec: live };
+}
+
 // ---------------------------------------------------------------- S5 export
-/** Check & Export popup: only from edit with no open draft. */
+/** Check popup: only from edit with no open draft. */
 export function openSheetExport(mode) {
   if (!mode || mode.stage !== 'edit' || mode.draft) return mode;
   return { ...mode, exportOpen: true, hotEdge: null, toast: null };

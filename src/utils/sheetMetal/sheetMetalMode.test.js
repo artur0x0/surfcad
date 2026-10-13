@@ -8,6 +8,7 @@ import {
   bendBlockReason,
   deleteDraftFeature,
   editSheetChip,
+  sheetDoneSpec,
   sheetDraftExtraCount,
   sheetTap,
 } from './sheetMetalMode.js';
@@ -189,4 +190,29 @@ test('two tabs are one feature', () => {
   assert.equal(committed.spec.tabs.length, 2);
   assert.equal(committed.spec.tabs[0].feature, committed.spec.tabs[1].feature);
   assert.equal(committed.spec.bends.length, 0);
+});
+
+test('Done writes only when the open spec differs and leaves the step stack', () => {
+  const saved = {
+    ...createSheetSpec(stock, 'XY', { width: 80, height: 50 }),
+    bends: [{ id: 'b1', panel: 'base', edge: 'u+', angle: 90, length: 20, flip: false }],
+  };
+  const mode = { stage: 'edit', spec: saved, step: 2, reopen: true };
+  const same = sheetDoneSpec(mode, saved);
+  assert.equal(same.close, true);
+  assert.equal(same.write, false);
+  const next = {
+    ...mode,
+    spec: {
+      ...saved,
+      bends: [...saved.bends, { id: 'b2', panel: 'base', edge: 'u-', angle: 90, length: 18, flip: false }],
+    },
+  };
+  const diff = sheetDoneSpec(next, saved);
+  assert.equal(diff.write, true);
+  assert.equal(diff.spec.bends.length, 2);
+  assert.equal(next.step, 2);
+  assert.equal(sheetDoneSpec({ ...mode, draft: { kind: 'bend' } }, saved).close, false);
+  assert.equal(sheetDoneSpec({ ...mode, exportOpen: true }, saved).close, false);
+  assert.deepEqual(sheetDoneSpec({ stage: 'edit', spec: null }, null), { close: true, write: false, spec: null });
 });
