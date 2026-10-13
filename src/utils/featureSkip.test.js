@@ -27,6 +27,7 @@ import {
   clampRollbackAnchor,
   commitScriptAtRollback,
   evaluationScript,
+  rollbackClearsPart,
   hardSkipIds,
   insertedFeature,
   rolledBackFeatureIds,
@@ -216,9 +217,14 @@ test('the rollback anchor blanks the tail and keeps return part and line numbers
 
   const beforeAll = evaluationScript(script, { anchorId: null });
   assert.equal(beforeAll.includes('Manifold.cube'), false);
-  assert.match(beforeAll, /return part;/);
+  assert.equal(beforeAll.includes('return part;'), false);
   assert.equal(beforeAll.split('\n').length, script.split('\n').length);
-  assert.throws(() => runCopy(beforeAll), /part/);
+  const returnLine = lineOf(script, 'return part;');
+  assert.equal(beforeAll.split('\n')[returnLine - 1].trim(), '');
+  assert.equal(rollbackClearsPart(script, null), true);
+  assert.equal(rollbackClearsPart(script, 'fillet1'), false);
+  assert.equal(rollbackClearsPart(script, undefined), false);
+  assert.equal(runCopy(beforeAll).result, undefined);
 
   const both = evaluationScript(script, { skipIds: ['cube1'], anchorId: 'fillet1' });
   assert.equal(both.includes('Manifold.cube'), false);

@@ -117,6 +117,25 @@ test('a non-active part is preloaded, and a missing asset fails only that part',
   assert.equal(result.runs.a.ok, true);
 });
 
+test('a rolled-back empty part is empty, not a missing manifold', async () => {
+  const doc = {
+    source: 'local',
+    name: 'BracketBox',
+    activeId: 'a',
+    parts: [{ id: 'a', name: 'Block', visible: true, order: 0 }],
+  };
+  const result = await runAssemblyParts({
+    doc,
+    scripts: { a: 'let part = Manifold.cube([10, 10, 10], true);\nreturn part;\n' },
+    execute: async () => ({ ok: true, cleared: true }),
+  });
+  assert.equal(result.runs.a.ok, false);
+  assert.equal(result.runs.a.empty, true);
+  assert.equal(result.runs.a.mesh, null);
+  assert.notEqual(result.runs.a.error, 'Script must return a Manifold object');
+  assert.equal(result.solids.some((solid) => solid.id === 'a'), false);
+});
+
 test('selected-part download refuses hidden and failed parts', () => {
   const mesh = { vertProperties: triangle.vertProperties, triVerts: triangle.triVerts };
   const hidden = selectedPartDownload({
