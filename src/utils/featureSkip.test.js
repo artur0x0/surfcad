@@ -33,7 +33,12 @@ import {
   rollbackGapIndex,
   rollbackInsertCaret,
   resolveRollback,
+  featureBlocksAfterReturn,
+  repairScriptReturns,
 } from './featureSkip.js';
+import { composeFeaStudy } from '../fea/studyScript.js';
+import { defaultStudy } from '../fea/studySchema.js';
+import { findReturnPartIndex } from './scriptReturn.js';
 
 function region(begin, end, id, body) {
   return `${markerWithId(begin, id)}\n${body}\n${markerWithId(end, id)}`;
@@ -449,4 +454,82 @@ test('a missing anchor does not pull a new fillet to the start', () => {
   assert.notEqual(plan.anchor, null);
   assert.deepEqual(plan.skipIds, []);
   assert.equal(plan.index, ids.length);
+});
+
+const FILLET_EDGE = {
+  a: 0,
+  b: 1,
+  va: [0, 0, 0],
+  vb: [0, 0, 20],
+  boundaryId: 0,
+  faceA: 0,
+  faceB: 6,
+  pairCount: 1,
+};
+
+function returnCount(script) {
+  return (String(script).match(/return part;/g) || []).length;
+}
+
+test('a study appended after return does not bury the next fillet', () => {
+  const cube = [
+    region(CUBE_BEGIN, CUBE_END, 'cube1', 'let part = Manifold.cube([20, 20, 20], true);'),
+    'return part;',
+    '',
+  ].join('\n');
+  const studied = composeFeaStudy(cube, defaultStudy({ id: 's1', name: 'Bracket' }));
+  assert.equal(returnCount(studied), 1);
+  assert.ok(studied.indexOf('fea-study begin') > findReturnPartIndex(studied));
+  const first = composeFilletCommit(studied, {
+    edges: [FILLET_EDGE],
+    params: { radius: 3.72, strategy: 'sweep' },
+    commitMode: 'append',
+    filletClass: 'easy',
+  });
+  assert.equal(first.ok, true, first.message);
+  const ret = findReturnPartIndex(first.buffer);
+  assert.equal(returnCount(first.buffer), 1);
+  assert.ok(first.buffer.indexOf('fillet-mode begin') < ret);
+  assert.ok(first.buffer.indexOf('fea-study begin') > ret);
+  assert.deepEqual(featureBlocksAfterReturn(first.buffer), []);
+  const second = composeFilletCommit(first.buffer, {
+    edges: [FILLET_EDGE],
+    params: { radius: 3.27, strategy: 'sweep' },
+    commitMode: 'append',
+    filletClass: 'easy',
+  });
+  assert.equal(second.ok, true, second.message);
+  assert.equal(returnCount(second.buffer), 1);
+  assert.equal((second.buffer.match(/fillet-mode begin/g) || []).length, 2);
+  assert.ok(second.buffer.lastIndexOf('fillet-mode begin') < findReturnPartIndex(second.buffer));
+  assert.deepEqual(featureBlocksAfterReturn(second.buffer), []);
+  const placed = commitScriptAtRollback(studied, first.buffer, 'cube1');
+  assert.equal(returnCount(placed.buffer), 1);
+  assert.ok(placed.buffer.indexOf('filletAlongPath') < findReturnPartIndex(placed.buffer));
+  assert.equal(placed.anchor.startsWith('fillet'), true);
+});
+
+test('repair moves fillets that landed after the study back above the return', () => {
+  const broken = [
+    region(CUBE_BEGIN, CUBE_END, 'extrude2', 'let part = Manifold.cube([20, 20, 20], true);'),
+    'return part;',
+    '// --- fea-study begin ---',
+    '// @fea-study {"v":1,"id":"s1"}',
+    '// --- fea-study end ---',
+    region(FILLET_MODE_BEGIN, FILLET_MODE_END, 'selEdges1', 'part = filletAlongPath(part, path, 3.72);'),
+    region(FILLET_MODE_BEGIN, FILLET_MODE_END, 'selEdges5', 'part = filletAlongPath(part, path, 3.27);'),
+    'return part;',
+    '',
+  ].join('\n');
+  assert.deepEqual(featureBlocksAfterReturn(broken).map((feature) => feature.id), ['selEdges1', 'selEdges5']);
+  const repaired = repairScriptReturns(broken);
+  assert.equal(repaired.changed, true);
+  assert.deepEqual(repaired.moved, ['selEdges1', 'selEdges5']);
+  assert.equal(returnCount(repaired.buffer), 1);
+  const ret = findReturnPartIndex(repaired.buffer);
+  assert.ok(repaired.buffer.indexOf('id=selEdges1') < ret);
+  assert.ok(repaired.buffer.indexOf('id=selEdges5') < ret);
+  assert.ok(repaired.buffer.indexOf('fea-study begin') > ret);
+  assert.deepEqual(featureBlocksAfterReturn(repaired.buffer), []);
+  assert.equal(repairScriptReturns(repaired.buffer).changed, false);
 });

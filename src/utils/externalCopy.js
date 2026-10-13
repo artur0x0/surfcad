@@ -14,6 +14,7 @@
  */
 
 import { parseFeatureMarkers } from './featureMarkers.js';
+import { placeBlockBeforeReturn } from './scriptReturn.js';
 import { partPlacement } from './jointSchema.js';
 import { quaternionIsIdentity } from './partPose.js';
 
@@ -264,8 +265,7 @@ export function cutterProbeScript(body) {
 }
 
 function insertBeforeReturn(buffer, block) {
-  const base = stripTrailingReturnPart(String(buffer || ''));
-  return base ? `${base}\n${block}\nreturn part;\n` : `${block}\nreturn part;\n`;
+  return placeBlockBeforeReturn(buffer, block);
 }
 
 /** Find a copy block by its source id and ref. */

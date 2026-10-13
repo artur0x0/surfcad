@@ -9,6 +9,7 @@ import FeatureStrip from './components/FeatureStrip';
 import { failedFeatureFromOutcome, failedFeatureIds, failedFeatureTitles } from './utils/featureFailure';
 import {
   commitScriptAtRollback,
+  repairScriptReturns,
   rollbackAnchorAfterInsert,
   rollbackAnchorsAfterOpen,
   rollbackInsertCaret,
@@ -2119,6 +2120,20 @@ const App = () => {
   };
 
   const finishOpenedPart = async (saved, scripts, progress) => {
+    const opened = { ...(scripts || {}) };
+    for (const [id, text] of Object.entries(opened)) {
+      if (typeof text !== 'string') continue;
+      const repaired = repairScriptReturns(text);
+      if (!repaired.changed) continue;
+      opened[id] = repaired.buffer;
+      const names = repaired.moved.length ? repaired.moved.join(', ') : 'duplicate return';
+      console.warn(`[App] Moved feature blocks above return part in ${id}: ${names}`);
+      try { await savePartScript(id, repaired.buffer); } catch { /* keep the healed copy in memory */ }
+    }
+    if (partScriptsRef.current) {
+      partScriptsRef.current = { ...partScriptsRef.current, ...opened };
+      setPartScripts((prev) => ({ ...(prev || {}), ...opened }));
+    }
     clearRollbackAnchors();
     try {
       const ids = (saved?.parts || []).map((part) => part.id);
@@ -2139,7 +2154,7 @@ const App = () => {
     const active = saved?.parts?.find((part) => part.id === saved.activeId) || saved?.parts?.[0];
     if (!active) return;
     setCurrentFilename(active.name);
-    const picked = scriptForRow(saved, scripts, active.id);
+    const picked = scriptForRow(saved, opened, active.id);
     focusPartHistory(active.id, picked.ok ? picked.script : '');
     await applyAssemblyOpenHold();
     const report = typeof progress === 'function' ? progress : null;
@@ -5282,12 +5297,13 @@ const App = () => {
     for (const w of writes) {
       if (!w?.id || typeof w.buffer !== 'string' || w.id === doc.activeId) continue;
       if (!doc.parts.some((row) => row.id === w.id)) continue;
-      const prevScript = typeof scripts[w.id] === 'string' ? scripts[w.id] : '';
+      const prevScript = repairScriptReturns(typeof scripts[w.id] === 'string' ? scripts[w.id] : '').buffer;
       const partKey = String(w.id);
       const stored = storedRollback(partKey);
+      const nextBuffer = repairScriptReturns(w.buffer).buffer;
       const placed = (stored === null || typeof stored === 'string')
-        ? commitScriptAtRollback(prevScript, w.buffer, stored)
-        : { buffer: w.buffer, anchor: stored };
+        ? commitScriptAtRollback(prevScript, nextBuffer, stored)
+        : { buffer: nextBuffer, anchor: stored };
       if (stored === null || typeof stored === 'string') storeRollbackAnchor(partKey, placed.anchor);
       scripts = { ...scripts, [w.id]: placed.buffer };
       savePartScript(w.id, placed.buffer);
@@ -5368,9 +5384,11 @@ const App = () => {
     if (typeof nextBuffer !== 'string') return false;
     const key = editorRollbackKey();
     const stored = storedRollback(key);
+    const beforeFixed = repairScriptReturns(typeof before === 'string' ? before : '').buffer;
+    const nextFixed = repairScriptReturns(nextBuffer).buffer;
     const placed = (stored === null || typeof stored === 'string')
-      ? commitScriptAtRollback(before, nextBuffer, stored)
-      : { buffer: nextBuffer, anchor: stored };
+      ? commitScriptAtRollback(beforeFixed, nextFixed, stored)
+      : { buffer: nextFixed, anchor: stored };
     const wrote = !!codeEditorRef.current?.applyBuffer?.(placed.buffer, message);
     if (wrote && key && (stored === null || typeof stored === 'string')) {
       storeRollbackAnchor(key, placed.anchor);

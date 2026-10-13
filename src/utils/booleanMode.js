@@ -21,6 +21,7 @@
  */
 
 import { BOOLEAN_BEGIN, BOOLEAN_END } from './helperPaletteSnippets.js';
+import { placeBlockBeforeReturn } from './scriptReturn.js';
 import { meshBodyComponents, bodyContainingTriangle, cutBodyKey } from './cutMode.js';
 import {
   EXTERNAL_COPY_FAILED_SOURCE,
@@ -474,10 +475,6 @@ export function booleanPieceHidden(state, partId, at) {
   return slot.drop.some((d) => pieceKey(d.at) === key);
 }
 
-function stripReturn(buffer) {
-  return String(buffer || '').replace(/\n*return\s+part\s*;?\s*$/i, '').replace(/\s+$/, '');
-}
-
 export function stripBooleanBlock(buffer) {
   const text = String(buffer || '');
   const i = text.lastIndexOf(BOOLEAN_BEGIN);
@@ -616,9 +613,8 @@ export function composeBooleanCommit(buffer, state, partId, mesh = null, ctx = {
     return `externalBody(${frozenScriptFunction(t.script)}, { bodies: [${at}], offset: ${formatVec(t.offset)} })`;
   }).join(',\n');
   const call = tools.length ? skeleton.replace('__TOOLS__', `\n${toolText}\n`) : skeleton;
-  const base = stripReturn(stripBooleanBlock(String(buffer || '')));
   const block = [BOOLEAN_BEGIN, ...headers, call, BOOLEAN_END].join('\n');
-  const composed = base ? `${base}\n${block}\nreturn part;\n` : `${block}\nreturn part;\n`;
+  const composed = placeBlockBeforeReturn(stripBooleanBlock(String(buffer || '')), block);
   return {
     ok: true,
     buffer: composed,
