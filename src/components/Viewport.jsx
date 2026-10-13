@@ -256,7 +256,12 @@ import {
   releaseJointPlanes,
   useTemporaryVisibility,
 } from '../hooks/useTemporaryVisibility';
-import { planeReferenceKey, planesForJointOverlay } from '../utils/jointPlanes';
+import {
+  CONSTRUCTION_PLANE_SIZE,
+  planeReferenceKey,
+  planesForJointOverlay,
+  planesForWorkplaneTool,
+} from '../utils/jointPlanes';
 import { buildSweepPathPreview } from '../utils/edgeSweepPath';
 import {
   buildFilletBlendPreview,
@@ -2510,6 +2515,45 @@ const Viewport = forwardRef(({
     workplaneOverlayRef.current = null;
   }, []);
 
+  /**
+   * Plane tool: the new plane, before Confirm. Same quad the confirmed
+   * construction plane uses, translucent, at the frame the inputs describe.
+   * The sketch plane square stays undrawn.
+   */
+  const paintPlaneToolPreview = useCallback((plane) => {
+    clearWorkplaneOverlay();
+    if (!plane?.center || !plane?.normal || !plane?.x || !plane?.y || !sceneRef.current) return;
+    const size = CONSTRUCTION_PLANE_SIZE;
+    const geom = new PlaneGeometry(size, size);
+    const mat = makePreviewSkinMaterial();
+    // Coplanar with the picked face. Depth test would lose the fight and
+    // the preview would not be there.
+    mat.depthTest = false;
+    const quad = new ThreeMesh(geom, mat);
+    quad.name = 'planeToolPreview';
+    quad.position.set(plane.center[0], plane.center[1], plane.center[2]);
+    const q = new Quaternion();
+    q.setFromRotationMatrix(new Matrix4().makeBasis(
+      new Vector3(plane.x[0], plane.x[1], plane.x[2]),
+      new Vector3(plane.y[0], plane.y[1], plane.y[2]),
+      new Vector3(plane.normal[0], plane.normal[1], plane.normal[2]),
+    ));
+    quad.quaternion.copy(q);
+    quad.renderOrder = PREVIEW_RENDER_ORDER.skin;
+    quad.frustumCulled = false;
+    quad.userData = {
+      kind: 'planeToolPreview',
+      normal: [plane.normal[0], plane.normal[1], plane.normal[2]],
+      size,
+    };
+    const group = new Group();
+    group.name = 'planeToolPreview';
+    group.add(quad);
+    anchorToActivePart(group);
+    sceneRef.current.add(group);
+    workplaneOverlayRef.current = group;
+  }, [clearWorkplaneOverlay, anchorToActivePart]);
+
   /** Restore orbit/pan after a point grab (hover or drag) releases. */
   const unlockOrbitForPointDrag = useCallback(() => {
     const saved = polylineControlsLockRef.current;
@@ -2884,7 +2928,7 @@ const Viewport = forwardRef(({
       for (const p of entry.planes || []) {
         const plane = p.plane;
         if (!plane?.center || !plane?.x || !plane?.y || !plane?.normal) continue;
-        const size = 48;
+        const size = CONSTRUCTION_PLANE_SIZE;
         const geom = new PlaneGeometry(size, size);
         const jointId = p.jointPlaneId || p.id;
         const picked = entry.jointPlaneIds instanceof Set
@@ -4575,6 +4619,8 @@ const Viewport = forwardRef(({
     .map((pick) => `${pick.partId}:${pick.key.id}`)
     .join('|');
 
+  const planeToolOpen = isWorkplaneEntry(contourMode?.entry);
+
   useEffect(() => {
     if (!showPlanes) {
       clearConstructionPlanes();
@@ -4583,13 +4629,16 @@ const Viewport = forwardRef(({
     const picked = new Set(jointPlanePickKey ? jointPlanePickKey.split('|') : []);
     paintConstructionPlanes(partOverlayEntries().map((entry) => ({
       ...entry,
-      planes: planesForJointOverlay(entry, jointPicking),
+      planes: jointPicking
+        ? planesForJointOverlay(entry, true)
+        : (planeToolOpen ? planesForWorkplaneTool(entry) : planesForJointOverlay(entry, false)),
       selectedId: selectedPlaneId,
       jointPlaneIds: picked,
     })));
   }, [
     selectedPlaneId,
     showPlanes,
+    planeToolOpen,
     jointPicking,
     jointPlanePickKey,
     paintConstructionPlanes,
@@ -4715,6 +4764,9 @@ const Viewport = forwardRef(({
       clearRevolvePreview();
       clearLoftPreview();
       clearSweepPreview();
+      // A face tap or an X/Y/Z pick stores planeFace. Until then there is
+      // no new plane to preview. Offset and angles are already in that frame.
+      if (contourMode.planeFace) paintPlaneToolPreview(planeFromContourFace(contourMode.planeFace));
       return;
     }
     const handles = sketchHandles(contourMode);
@@ -4833,7 +4885,7 @@ const Viewport = forwardRef(({
       clearLoftPreview();
       clearSweepPreview();
     }
-  }, [contourMode, modelBounds, selectedEdges, paintPolylineDraft, paintContourStatusWire, paintContourRefWire, paintExtrudePreview, paintRevolvePreview, paintLoftPreview, paintSweepPreview, applyContourPartGhost, clearWorkplaneOverlay, clearPolylineDraft, clearContourStatusWire, clearContourRefWire, clearExtrudePreview, clearRevolvePreview, clearLoftPreview, clearSweepPreview, clearXsPreview, setXsPreview, clearStaleSolveOverlays]);
+  }, [contourMode, modelBounds, selectedEdges, paintPolylineDraft, paintContourStatusWire, paintContourRefWire, paintExtrudePreview, paintRevolvePreview, paintLoftPreview, paintSweepPreview, applyContourPartGhost, clearWorkplaneOverlay, paintPlaneToolPreview, clearPolylineDraft, clearContourStatusWire, clearContourRefWire, clearExtrudePreview, clearRevolvePreview, clearLoftPreview, clearSweepPreview, clearXsPreview, setXsPreview, clearStaleSolveOverlays]);
 
   // Slot cards never set a solid contour entry, so the effect above clears
   // the solid. Paint it again from the filled contours and the card params.
@@ -10053,6 +10105,32 @@ const Viewport = forwardRef(({
                 if (!(worldPerPx > 0)) return 0;
                 return (SKETCH_POINT_RADIUS * handle.scale.x * 2) / worldPerPx;
               })(),
+            };
+          },
+          stagePlaneTool: () => {
+            const planes = [];
+            constructionPlaneRef.current?.traverse?.((child) => {
+              if (child.userData?.kind !== 'constructionPlane') return;
+              planes.push(child.userData.jointPlaneId || child.userData.planeId || '');
+            });
+            let mesh = null;
+            workplaneOverlayRef.current?.traverse?.((child) => {
+              if (child.isMesh && child.userData?.kind === 'planeToolPreview') mesh = child;
+            });
+            const at = new Vector3();
+            if (mesh) mesh.getWorldPosition(at);
+            return {
+              toggle: !!showPlanesRef.current,
+              planes,
+              preview: mesh ? {
+                present: true,
+                transparent: mesh.material?.transparent === true,
+                opacity: Number.isFinite(mesh.material?.opacity) ? mesh.material.opacity : null,
+                depthWrite: mesh.material?.depthWrite === true,
+                size: mesh.userData.size ?? null,
+                center: [at.x, at.y, at.z],
+                normal: mesh.userData.normal || null,
+              } : { present: false },
             };
           },
           stageContourOverlays: () => {

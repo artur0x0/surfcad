@@ -28,6 +28,12 @@ function frameOf(center, normal, x, y) {
   };
 }
 
+/**
+ * Quad size of a confirmed construction plane, and of the Plane-tool
+ * preview of the plane Confirm would write.
+ */
+export const CONSTRUCTION_PLANE_SIZE = 48;
+
 /** XY / YZ / ZX through the part origin. Ids never change. */
 export const ORIGIN_JOINT_PLANES = Object.freeze([
   Object.freeze({
@@ -107,18 +113,14 @@ export function planeReferenceKey(id, plane) {
   return { id: rec.id, at: rec.at, n: rec.n };
 }
 
-/**
- * Quads for the planes overlay. Workplanes keep the script id the contour
- * tools select. `jointPlaneId` is the stable id a joint stores. Origin and
- * sketch quads are added while a joint card is picking.
- */
-export function planesForJointOverlay(entry, picking) {
-  const work = (entry?.planes || []).map((plane) => ({
+function workplaneQuads(entry) {
+  return (entry?.planes || []).map((plane) => ({
     ...plane,
     jointPlaneId: workplaneJointId(plane.name),
   }));
-  if (!picking) return work;
-  const seen = new Set(work.map((plane) => plane.jointPlaneId));
+}
+
+function originPlaneQuads(seen) {
   const extra = [];
   for (const row of ORIGIN_JOINT_PLANES) {
     if (seen.has(row.id)) continue;
@@ -130,6 +132,30 @@ export function planesForJointOverlay(entry, picking) {
     });
     seen.add(row.id);
   }
+  return extra;
+}
+
+/**
+ * Quads while the Plane tool is open: the part's user planes, then the
+ * three reference planes. Sketch planes stay out. The rail toggle is a
+ * separate hold; this list is what that hold paints for the tool.
+ */
+export function planesForWorkplaneTool(entry) {
+  const work = workplaneQuads(entry);
+  const seen = new Set(work.map((plane) => plane.jointPlaneId));
+  return [...work, ...originPlaneQuads(seen)];
+}
+
+/**
+ * Quads for the planes overlay. Workplanes keep the script id the contour
+ * tools select. `jointPlaneId` is the stable id a joint stores. Origin and
+ * sketch quads are added while a joint card is picking.
+ */
+export function planesForJointOverlay(entry, picking) {
+  const work = workplaneQuads(entry);
+  if (!picking) return work;
+  const seen = new Set(work.map((plane) => plane.jointPlaneId));
+  const extra = originPlaneQuads(seen);
   for (const contour of entry?.contours || []) {
     const rec = contour?.plane
       ? recordFromFrame(contourJointId(contour.id), contour.name || contour.label, contour.plane)
