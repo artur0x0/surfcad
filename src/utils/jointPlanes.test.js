@@ -31,6 +31,11 @@ test('the Plane tool does not add sketch planes', () => {
   assert.equal(ids.includes('contour:c1'), false);
 });
 
+test('a selected face drops the reference planes and keeps the user plane', () => {
+  const ids = planesForWorkplaneTool(entry, { references: false }).map((plane) => plane.jointPlaneId);
+  assert.deepEqual(ids, ['workplane:deck']);
+});
+
 test('the planes toggle alone still omits reference planes', () => {
   const ids = planesForJointOverlay(entry, false).map((plane) => plane.jointPlaneId);
   assert.deepEqual(ids, ['workplane:deck']);

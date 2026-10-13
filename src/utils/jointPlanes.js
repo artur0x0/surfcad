@@ -139,9 +139,13 @@ function originPlaneQuads(seen) {
  * Quads while the Plane tool is open: the part's user planes, then the
  * three reference planes. Sketch planes stay out. The rail toggle is a
  * separate hold; this list is what that hold paints for the tool.
+ * `references: false` drops XY/YZ/ZX while a face stays selected. User
+ * planes stay. The hold itself is unchanged, so closing the tool still
+ * restores the rail.
  */
-export function planesForWorkplaneTool(entry) {
+export function planesForWorkplaneTool(entry, { references = true } = {}) {
   const work = workplaneQuads(entry);
+  if (!references) return work;
   const seen = new Set(work.map((plane) => plane.jointPlaneId));
   return [...work, ...originPlaneQuads(seen)];
 }
