@@ -176,11 +176,13 @@ async function runSize(label, compact, width, height) {
       gap: undo && dismiss ? dismiss.x - (undo.x + undo.w) : 0,
     };
   });
-  check(`${label}: Deleted toast is one line high`,
-    toastMetrics.popupH > 0
-      && toastMetrics.popupH <= 28
-      && toastMetrics.popupH <= toastMetrics.textH + 8
+  check(`${label}: Deleted toast text stays one line`,
+    toastMetrics.textH > 0
+      && toastMetrics.textH <= 22
       && toastMetrics.popupH + 1 >= toastMetrics.textH,
+    JSON.stringify(toastMetrics));
+  check(`${label}: Deleted toast card is taller than that line`,
+    toastMetrics.popupH >= toastMetrics.textH + 8,
     JSON.stringify(toastMetrics));
   check(`${label}: Undo tap target is at least 44px wide`,
     toastMetrics.undoW >= 44, JSON.stringify(toastMetrics));

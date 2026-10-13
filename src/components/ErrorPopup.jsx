@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 
 /**
@@ -34,13 +34,40 @@ export default function ErrorPopup({
   className = '',
   ...rest
 }) {
+  const shellRef = useRef(null);
+  const rowRef = useRef(null);
+  const [roomyMinPx, setRoomyMinPx] = useState(null);
+
+  // Delete Undo used to be exactly one content row plus the border. The card
+  // is 1.5× that height. The row itself stays one line and does not stretch,
+  // so the gap between Undo and X is unchanged.
+  useLayoutEffect(() => {
+    if (!roomy) return undefined;
+    const rowEl = rowRef.current;
+    const shellEl = shellRef.current;
+    if (!rowEl || !shellEl) return undefined;
+    const rowH = rowEl.getBoundingClientRect().height;
+    if (!(rowH > 0)) return undefined;
+    const cs = window.getComputedStyle(shellEl);
+    const chrome = (parseFloat(cs.borderTopWidth) || 0)
+      + (parseFloat(cs.borderBottomWidth) || 0)
+      + (parseFloat(cs.paddingTop) || 0)
+      + (parseFloat(cs.paddingBottom) || 0);
+    const next = (rowH + chrome) * 1.5;
+    setRoomyMinPx((prev) => (prev != null && Math.abs(prev - next) < 0.5 ? prev : next));
+    return undefined;
+  }, [roomy, children]);
+
   const handleUndo = () => {
     onUndo?.();
     onDismiss?.();
   };
 
   const actions = (
-    <div className={`flex items-center shrink-0 pointer-events-auto ${roomy ? 'gap-4' : layout === 'stacked' ? 'gap-5' : 'gap-1'}`}>
+    <div
+      data-error-actions=""
+      className={`flex items-center shrink-0 pointer-events-auto ${roomy ? 'gap-4' : layout === 'stacked' ? 'gap-5' : 'gap-1'}`}
+    >
       {typeof onUndo === 'function' && (
         <button
           type="button"
@@ -75,7 +102,8 @@ export default function ErrorPopup({
     </div>
   );
 
-  const shell = `${TONE_CLASS[tone] || TONE_CLASS.error} surface-glass-chip text-xs font-sans font-medium shadow-lg rounded-lg ${layout === 'stacked' ? 'w-full' : ''} ${roomy ? 'px-3 py-0' : ''} ${className}`;
+  const shell = `${TONE_CLASS[tone] || TONE_CLASS.error} surface-glass-chip text-xs font-sans font-medium shadow-lg rounded-lg ${layout === 'stacked' ? 'w-full' : ''} ${roomy ? 'flex items-center px-3 py-0' : ''} ${className}`;
+  const roomyStyle = roomy && roomyMinPx ? { minHeight: `${roomyMinPx}px` } : undefined;
 
   // Execution errors: one shape. Label and actions share the first line;
   // the description is the full-width second line, so a short message and a
@@ -101,16 +129,23 @@ export default function ErrorPopup({
 
   return (
     <div
+      ref={shellRef}
       role="alert"
       data-error-popup=""
       data-error-tone={tone}
+      {...(roomy ? { 'data-error-roomy': '' } : {})}
       className={shell}
       {...rest}
+      style={roomyStyle}
     >
-      <div className={`flex gap-2 ${roomy ? 'items-center' : 'items-start'}`}>
+      <div
+        ref={rowRef}
+        data-error-popup-row=""
+        className={`flex w-full gap-2 ${roomy ? 'items-center' : 'items-start'}`}
+      >
         <div className="flex-1 min-w-0">
           {title ? <div className="font-bold mb-1">{title}</div> : null}
-          <div className="text-left">{children}</div>
+          <div data-error-popup-text="" className={`text-left ${roomy ? 'whitespace-nowrap' : ''}`}>{children}</div>
         </div>
         {actions}
       </div>

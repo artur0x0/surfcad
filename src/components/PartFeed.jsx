@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Eye, EyeOff, FolderOpen, GripVertical, Loader2, Pencil, Plus, Save, Trash2, Truck, Upload } from 'lucide-react';
 import { partCanDeleteFromRepo, partListDeleteAction, sanitizeAssemblyName, sanitizePartName } from '../utils/assembly.js';
@@ -328,7 +328,7 @@ function PartThumbnail({ mesh, partId, script, visible = true }) {
 }
 
 
-export default function PartFeed({
+const PartFeed = forwardRef(function PartFeed({
   placement = 'desktop',
   source = 'local',
   rows = [],
@@ -407,7 +407,7 @@ export default function PartFeed({
   onDownload = null,
   isUploading = false,
   isDownloading = false,
-}) {
+}, ref) {
   const gitSession = useAuthState();
   const cartChrome = useCartChrome();
   const openTarget = gitSession.openTarget;
@@ -453,6 +453,14 @@ export default function PartFeed({
   const commitInputRef = useRef(null);
   // G4 conflict choice: null | { path, kind: 'part'|'assembly', name, stage, error, result }
   const [conflictFlow, setConflictFlow] = useState(null);
+  // Same object the behind toast calls: open the dialog, or run its keep handler.
+  const behindApiRef = useRef({
+    openBehindConflict() {},
+    async keepBehind() {
+      return { status: 'error', error: 'Action unavailable' };
+    },
+  });
+  useImperativeHandle(ref, () => behindApiRef.current, []);
   // G5/G11: null | { stage: 'pane'|'create'|'delete-confirm'|'busy'|'confirm'|'error'|'merge-conflict', ... }
   const [branchFlow, setBranchFlow] = useState(null);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
@@ -1185,20 +1193,30 @@ export default function PartFeed({
 
   const closeConflict = () => setConflictFlow(null);
 
+  // Popup buttons and the behind toast share this call.
+  const dispatchBehind = async (action, path, kind) => (
+    (await onBehindChoice?.({
+      action,
+      path,
+      kind,
+    })) || { status: 'error', error: 'Action unavailable' }
+  );
+
   const runConflict = async (action) => {
     if (!conflictFlow) return;
     setConflictFlow({ ...conflictFlow, stage: 'busy', error: '' });
-    const result = (await onBehindChoice?.({
-      action,
-      path: conflictFlow.path,
-      kind: conflictFlow.kind,
-    })) || { status: 'error', error: 'Action unavailable' };
+    const result = await dispatchBehind(action, conflictFlow.path, conflictFlow.kind);
     if (result.status === 'error') {
       setConflictFlow({ ...conflictFlow, stage: 'error', error: result.error || 'Failed', result });
     } else {
       setConflictFlow({ ...conflictFlow, stage: 'done', result, error: '' });
     }
   };
+
+  behindApiRef.current.openBehindConflict = (path, kind, name) => {
+    openConflict(path, kind, name);
+  };
+  behindApiRef.current.keepBehind = (path, kind) => dispatchBehind('keep', path, kind);
 
   useEffect(() => {
     if (commitFlow?.stage === 'message') commitInputRef.current?.focus();
@@ -2739,4 +2757,6 @@ export default function PartFeed({
       )}
     </aside>
   );
-}
+});
+
+export default PartFeed;

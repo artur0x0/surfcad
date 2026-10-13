@@ -18,6 +18,7 @@ import {
 import { failedPartIdsFor } from './utils/failedPartOutline';
 import { bodyCountOfWorkerMesh } from './utils/meshBodyComponents';
 import ErrorPopup from './components/ErrorPopup';
+import GitBehindToast from './components/GitBehindToast';
 import AssemblyOpenSpinner, { AssemblyOpenFailureToast } from './components/AssemblyOpenSpinner';
 import { landingMobileStage, linkedMobileStage } from './utils/mobileStage';
 import {
@@ -252,6 +253,9 @@ import {
   firstCommitBaseline,
   checkRemoteBehind,
   behindToastMessage,
+  behindToastTarget,
+  openBehindToastTarget,
+  keepBehindToastTarget,
   remainingBehindMarkers,
   reloadFromRemote,
   advanceBaselineHead,
@@ -349,6 +353,7 @@ const App = () => {
   const [gitBehindResolved, setGitBehindResolved] = useState([]); // path strings
   const gitBehindResolvedRef = useRef([]);
   const [gitBehindToast, setGitBehindToast] = useState(null); // { message, behindBy } | null
+  const partFeedRef = useRef(null);
   /** Part ids with an in-flight create or assembly rename (spinner on the row Save icon). */
   const [pendingPartIds, setPendingPartIds] = useState(() => new Set());
   /** Outbox row state: path → queued | sending | failed. Queued is the yellow unsynced dot. */
@@ -7386,6 +7391,7 @@ const App = () => {
 
   const partFeed = appMode !== 'game' && assemblyDoc ? (
     <PartFeed
+      ref={partFeedRef}
       placement={isMobile ? 'mobile' : 'desktop'}
       isMobile={isMobile}
       source={assemblyDoc.source}
@@ -7473,6 +7479,22 @@ const App = () => {
       }
     />
   ) : null;
+
+  const behindToastChoice = () => behindToastTarget(
+    gitBehindRef.current,
+    gitBehindResolvedRef.current,
+    {
+      assemblyName: assemblyName(assemblyRef.current),
+      parts: assemblyRef.current?.parts || [],
+    },
+  );
+  const onGitBehindGetLatest = () => {
+    openBehindToastTarget(partFeedRef.current, behindToastChoice());
+  };
+  const onGitBehindKeepMine = async () => {
+    await keepBehindToastTarget(partFeedRef.current, behindToastChoice());
+    setGitBehindToast(null);
+  };
 
   const assemblyOpenSpinner = assemblyOpenUi && appMode !== 'game' ? (
     <AssemblyOpenSpinner
@@ -7990,28 +8012,12 @@ const App = () => {
             </div>
           )}
           {gitBehindToast && !uploadError && !uploadNotice && (
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md" data-git-behind-toast="">
-              <ErrorPopup
-                tone="warn"
-                onDismiss={() => setGitBehindToast(null)}
-                className="px-4 py-2"
-              >
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <span data-git-behind-toast-msg="">{gitBehindToast.message}</span>
-                  <button
-                    type="button"
-                    data-git-behind-toast-parts=""
-                    className="shrink-0 rounded-md bg-amber-500/30 px-2 py-0.5 text-[11px] font-semibold text-amber-50 hover:bg-amber-500/45"
-                    onClick={() => {
-                      setMobileStageSticky('parts');
-                      setGitBehindToast(null);
-                    }}
-                  >
-                    Parts
-                  </button>
-                </div>
-              </ErrorPopup>
-            </div>
+            <GitBehindToast
+              message={gitBehindToast.message}
+              onGetLatest={onGitBehindGetLatest}
+              onKeepMine={onGitBehindKeepMine}
+              onDismiss={() => setGitBehindToast(null)}
+            />
           )}
         </div>
         <CartSheet />
@@ -8367,28 +8373,12 @@ const App = () => {
             </div>
           )}
           {gitBehindToast && !uploadError && !uploadNotice && (
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md" data-git-behind-toast="">
-              <ErrorPopup
-                tone="warn"
-                onDismiss={() => setGitBehindToast(null)}
-                className="px-4 py-2"
-              >
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <span data-git-behind-toast-msg="">{gitBehindToast.message}</span>
-                  <button
-                    type="button"
-                    data-git-behind-toast-parts=""
-                    className="shrink-0 rounded-md bg-amber-500/30 px-2 py-0.5 text-[11px] font-semibold text-amber-50 hover:bg-amber-500/45"
-                    onClick={() => {
-                      setMobileStageSticky('parts');
-                      setGitBehindToast(null);
-                    }}
-                  >
-                    Parts
-                  </button>
-                </div>
-              </ErrorPopup>
-            </div>
+            <GitBehindToast
+              message={gitBehindToast.message}
+              onGetLatest={onGitBehindGetLatest}
+              onKeepMine={onGitBehindKeepMine}
+              onDismiss={() => setGitBehindToast(null)}
+            />
           )}
         </div>
       </div>
