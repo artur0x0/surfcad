@@ -2,10 +2,11 @@
  * G4: Pull / conflicts in Git mode.
  *
  * After Open (and again on window focus), compare the baseline head to main.
- * When main has moved, the working copy is **behind**: a yellow toast points
- * at the Parts tab, and every part (and the assembly) that main changed
- * gets a marker. Clicking a marker offers Reload / Keep mine / Check in
- * mine to a branch (base auto-detected, same as G3).
+ * When main has moved, the working copy is **behind**: a yellow toast offers
+ * Get latest / Keep mine, and every part (and the assembly) that main changed
+ * gets a marker. Get latest opens the same marker dialog (Reload / Keep mine /
+ * Check in mine to a branch). Keep mine calls that dialog's keep handler.
+ * Check-in base is auto-detected, same as G3.
  *
  * Mock adapter only; nothing here talks to the network.
  */
@@ -143,7 +144,44 @@ export async function checkRemoteBehind(adapter, repo, {
 /** Toast copy when the working copy is behind main. */
 export function behindToastMessage({ behindBy = 0 } = {}) {
   const n = behindBy || 0;
-  return `Remote is ahead (${n} new commit${n === 1 ? '' : 's'}). Open Parts to Reload, Keep mine, or Check in mine to a branch.`;
+  return `Remote is ahead (${n} new commit${n === 1 ? '' : 's'}). Get latest, Keep mine, or Check in mine to a branch.`;
+}
+
+/**
+ * The file the behind toast acts on. The assembly when that file moved,
+ * otherwise the first marked part. Null when nothing in this document moved.
+ */
+export function behindToastTarget(check, resolvedPaths = [], {
+  assemblyName = '',
+  parts = [],
+} = {}) {
+  const markers = remainingBehindMarkers(check, resolvedPaths);
+  if (markers.assemblyBehind && check?.assemblyPath) {
+    const name = String(assemblyName || '').trim() || check.assemblyPath;
+    return { path: check.assemblyPath, kind: 'assembly', name };
+  }
+  const id = markers.partIds[0];
+  if (!id) return null;
+  const part = (parts || []).find((row) => row && row.id === id);
+  return { path: id, kind: 'part', name: part?.name || id };
+}
+
+/** Get latest: open the Parts-list conflict dialog for that same file. */
+export function openBehindToastTarget(feed, target) {
+  if (!target?.path || typeof feed?.openBehindConflict !== 'function') return false;
+  feed.openBehindConflict(target.path, target.kind, target.name);
+  return true;
+}
+
+/**
+ * Keep mine: the dialog's keep handler (`keepBehind` → action `keep`).
+ * The caller dismisses the toast after this returns.
+ */
+export async function keepBehindToastTarget(feed, target) {
+  if (!target?.path || typeof feed?.keepBehind !== 'function') {
+    return { status: 'error', error: 'Action unavailable' };
+  }
+  return feed.keepBehind(target.path, target.kind);
 }
 
 /**

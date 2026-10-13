@@ -135,8 +135,9 @@ Desktop specifics:
   Base only. Bend and Tab toggle edges into one chip: one Confirm, one undo.
   A tap opens that chip's card. Delete never refuses: nothing else
   goes with it deletes now, and children ask **Delete along with N features**.
-  The toast is one line, `Deleted.` (`data-delete-undo-toast`), and Undo and
-  dismiss are 44px wide. Undo is the one editor step. A sketch still takes the bar.
+  The toast is one line, `Deleted.` (`data-delete-undo-toast`). The card is
+  one and a half times the previous one-line height. Undo and dismiss stay
+  44px wide, and the gap between them stays. Undo is the one editor step. A sketch still takes the bar.
   `golden:sheet-ribbon`. `golden:sheet-feature-mix`.
   When no part is selected the same bar shows assembly joints
   (`data-assembly-joints`), or **No assembly joints**
@@ -286,7 +287,7 @@ Desktop specifics:
   shows a `local:` id. Add to Repo (`data-part-add-to-repo`) shows when `isSynced` is false, and when the flag
   is unset and the row id is not a repo path. Text inputs on Parts/git
   use `partsChrome.js` `PARTS_TEXT_INPUT_CLASS` (≥16px) to block iOS Safari focus-zoom.
-  Git create, Save, rename, copy, and delete show `data-part-pending` spinner in place of the Save icon while that branch's outbox op is queued or sending. A failed sync shows a red mark (`data-part-sync-failed`). A failed rename or assembly delete shows a toast with Retry and Revert (`data-rename-toast`). The delete popup also keeps that failure inline (`data-assembly-delete-error`) until the user retries or cancels. A Save (part row or assembly) that finds the working ref moved shows one yellow warning (`data-repo-moved-toast`) with **Make a new branch** (`data-repo-moved-branch`). That button saves the local files on `surfcad/<assembly>-YYYY-MM-DD` and switches the working ref; a success toast names the branch (`data-repo-saved-toast`). It does not open the conflict popup and it does not show a red Upload Error. Opening or reloading while the outbox is already behind the remote tip still opens only the conflict popup (`data-git-conflict-popup`) and does not show that warning. A moved remote tip is not overwritten.
+  Git create, Save, rename, copy, and delete show `data-part-pending` spinner in place of the Save icon while that branch's outbox op is queued or sending. A failed sync shows a red mark (`data-part-sync-failed`). A failed rename or assembly delete shows a toast with Retry and Revert (`data-rename-toast`). The delete popup also keeps that failure inline (`data-assembly-delete-error`) until the user retries or cancels. A Save (part row or assembly) that finds the working ref moved shows one yellow warning (`data-repo-moved-toast`) with **Make a new branch** (`data-repo-moved-branch`). That button saves the local files on `surfcad/<assembly>-YYYY-MM-DD` and switches the working ref; a success toast names the branch (`data-repo-saved-toast`). It does not open the conflict popup and it does not show a red Upload Error. Opening or reloading while the outbox is already behind the remote tip still opens only the conflict popup (`data-git-conflict-popup`) and does not show that warning. A moved remote tip is not overwritten. When main is ahead, a yellow toast (`data-git-behind-toast`) offers **Get latest** and **Keep mine**. Get latest opens the same marker dialog (`data-git-behind-ask`). Keep mine runs that dialog's keep action and dismisses the toast.
 - `PromptInput` is passed `isMobile={false}` explicitly (`src/App.jsx:1345`).
 
 ### Mobile shell (`src/App.jsx` mobile branch) — CAD stages + game stack

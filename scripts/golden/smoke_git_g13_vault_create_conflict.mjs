@@ -14,6 +14,7 @@ function ok(name, cond, extra = '') {
 
 const feed = readFileSync(new URL('../../src/components/PartFeed.jsx', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../../src/App.jsx', import.meta.url), 'utf8');
+const behindToast = readFileSync(new URL('../../src/components/GitBehindToast.jsx', import.meta.url), 'utf8');
 const arch = readFileSync(new URL('../../docs/architecture.md', import.meta.url), 'utf8');
 
 console.log('git G13 — slim vault create + conflict popup');
@@ -42,8 +43,10 @@ ok('Overwrite main keeps force-merge wiring', /data-git-conflict-overwrite/.test
 ok('Overwrite is refused', /data-git-conflict-warning/.test(feed)
   && /Sync will not overwrite the remote repo/.test(feed)
   && /syncHold/.test(feed));
-ok('G4 behind toast unchanged (separate flow)', /data-git-behind-toast/.test(app)
-  && /data-git-behind-reload/.test(feed));
+ok('G4 behind toast unchanged (separate flow)', /data-git-behind-toast/.test(behindToast)
+  && /GitBehindToast/.test(app)
+  && /data-git-behind-reload/.test(feed)
+  && !/data-git-behind-toast/.test(feed));
 
 ok('light vocab: Repo label, + Part|Assembly create; folder open', /htmlFor="git-move-vault-name"[\s\S]{0,80}Repo/.test(feed)
   && /data-part-add-action="part"/.test(feed)

@@ -12,7 +12,8 @@ import { stringifySurfJson, parseSurfJson } from '../../src/utils/git/surfJson.j
 import { fileWrite } from '../../src/utils/git/githubAdapterInterface.js';
 import { openVaultAssembly, isWorkspaceDirty, isPartDirty } from '../../src/utils/git/gitWorkspace.js';
 import {
-  checkRemoteBehind, behindPathsFromFiles, behindToastMessage,
+  checkRemoteBehind, behindPathsFromFiles, behindToastMessage, behindToastTarget,
+  openBehindToastTarget, keepBehindToastTarget,
   remainingBehindMarkers, reloadFromRemote, advanceBaselineHead,
   checkInMineToBranch,
 } from '../../src/utils/git/gitPull.js';
@@ -98,6 +99,35 @@ console.log('git G4 — behind detection');
   eq('bracket behind (bolt not)', behind.partIds, [BRACKET]);
   ok('toast names commit count', /1 new commit/.test(behindToastMessage({ behindBy: 1 })));
   ok('toast plural', /2 new commits/.test(behindToastMessage({ behindBy: 2 })));
+  ok('toast names Get latest and Keep mine',
+    /Get latest/.test(behindToastMessage({ behindBy: 1 }))
+    && /Keep mine/.test(behindToastMessage({ behindBy: 1 }))
+    && !/Open Parts/.test(behindToastMessage({ behindBy: 1 })));
+  eq('toast target prefers the assembly', behindToastTarget(behind, [], {
+    assemblyName: 'Gearbox',
+    parts: opened.doc.parts,
+  }), { path: ASM, kind: 'assembly', name: 'Gearbox' });
+  eq('toast target uses the part when the assembly is current', behindToastTarget({
+    ...behind, assemblyBehind: false,
+  }, [], { parts: opened.doc.parts }), { path: BRACKET, kind: 'part', name: 'Bracket' });
+  eq('resolved assembly falls through to the part', behindToastTarget(behind, [ASM], {
+    parts: opened.doc.parts,
+  }), { path: BRACKET, kind: 'part', name: 'Bracket' });
+  {
+    const calls = [];
+    const feed = {
+      openBehindConflict(path, kind, name) { calls.push(['open', path, kind, name]); },
+      keepBehind(path, kind) { calls.push(['keep', path, kind]); return { status: 'kept', path }; },
+    };
+    const target = { path: BRACKET, kind: 'part', name: 'Bracket' };
+    ok('Get latest opens that feed dialog', openBehindToastTarget(feed, target) === true);
+    eq('Keep mine calls the keep handler', await keepBehindToastTarget(feed, target), { status: 'kept', path: BRACKET });
+    eq('toast helpers hit the feed once each', calls, [
+      ['open', BRACKET, 'part', 'Bracket'],
+      ['keep', BRACKET, 'part'],
+    ]);
+    ok('missing target does not open a dialog', openBehindToastTarget(feed, null) === false);
+  }
 
   const scoped = behindPathsFromFiles(behind.files, { assemblyPath: ASM, partIds: [BRACKET, BOLT] });
   eq('scoped ignores spare not in doc', scoped.partIds, [BRACKET]);
@@ -233,8 +263,19 @@ console.log('\ngit G4 — assembly reload');
 console.log('\ngit G4 — UI wiring (PartFeed + App)');
 const feed = readFileSync(new URL('../../src/components/PartFeed.jsx', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../../src/App.jsx', import.meta.url), 'utf8');
-ok('behind toast + Parts button', /data-git-behind-toast/.test(app) && /data-git-behind-toast-parts/.test(app)
-  && /tone="warn"/.test(app) && /setMobileStageSticky\('parts'\)/.test(app));
+const toast = readFileSync(new URL('../../src/components/GitBehindToast.jsx', import.meta.url), 'utf8');
+ok('behind toast Get latest and Keep mine', /data-git-behind-toast/.test(toast)
+  && /data-git-behind-toast-get/.test(toast) && /data-git-behind-toast-keep/.test(toast)
+  && /Get latest/.test(toast) && /Keep mine/.test(toast)
+  && !/data-git-behind-toast-parts/.test(app) && !/data-git-behind-toast-parts/.test(toast)
+  && /tone="warn"/.test(toast));
+ok('Get latest reuses the Parts dialog opener', /openBehindToastTarget\(/.test(app)
+  && /openBehindConflict/.test(feed) && /dispatchBehind\(/.test(feed));
+const keepHandler = app.split('onGitBehindKeepMine')[1] || '';
+ok('Keep mine calls the dialog keep handler and dismisses the toast',
+  /keepBehindToastTarget\(/.test(keepHandler.slice(0, 500))
+  && /setGitBehindToast\(null\)/.test(keepHandler.slice(0, 500))
+  && /keepBehind = \(path, kind\) => dispatchBehind\('keep'/.test(feed));
 ok('check on open + focus', /checkGitRemoteBehind\(\{ showToast: true, reason: 'open' \}\)/.test(app)
   && /reason: 'focus'/.test(app)
   && /window\.addEventListener\('focus'/.test(app)
