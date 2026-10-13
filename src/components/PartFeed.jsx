@@ -16,16 +16,19 @@ import ProfileChip from './ProfileChip';
 import VaultPickerDialog from './VaultPickerDialog';
 import { useAuthState } from '../hooks/useAuthState';
 import { useCartChrome } from '../hooks/useCart';
+import { scriptHash } from '../utils/cart.js';
 import { localMeshBadgeTitle, showLocalMeshBadge } from '../utils/meshAssets.js';
 import {
   PART_PREVIEW_SIZE,
   blitPartPreview,
+  blitPartPreviewUrl,
   meshPreviewKey,
   paintEmptyPreview,
   partPreviewKind,
   peekPartPreview,
   takePartPreview,
 } from '../utils/partPreview.js';
+import { getPartThumbnail, subscribePartThumbs } from '../utils/partThumbnailStore.js';
 
 // Same ribbon and strip buttons as the script editor top bar
 // (CodeEditor `data-editor-ribbon` + Toolbar `variant="strip"`).
@@ -229,22 +232,66 @@ function RowPartName({ id, name, onRename, editing, setEditing }) {
   );
 }
 
-function PartThumbnail({ mesh }) {
+function PartThumbnail({ mesh, partId, script, visible = true }) {
   const ref = useRef(null);
   const meshRef = useRef(mesh);
   meshRef.current = mesh;
   const previewKey = meshPreviewKey(mesh);
+  const hash = typeof script === 'string' && script.trim() ? scriptHash(script) : '';
+  const [cached, setCached] = useState(null);
+  const readRef = useRef(0);
+  const live = partPreviewKind(mesh) === 'manifold';
+  const showLive = live && (visible !== false || !cached?.url);
+  const kind = showLive || cached?.url ? 'manifold' : 'empty';
+  const source = showLive ? 'live' : cached?.url ? cached.from : 'empty';
+
+  useEffect(() => {
+    if (!partId || !hash) return undefined;
+    let cancel = false;
+    const ticket = ++readRef.current;
+    getPartThumbnail(partId, script).then((url) => {
+      if (cancel || ticket !== readRef.current) return;
+      setCached(url ? { url, from: 'cache' } : null);
+    }).catch(() => {});
+    return () => { cancel = true; };
+  }, [partId, hash, script]);
+
+  useEffect(() => {
+    if (!partId) return undefined;
+    return subscribePartThumbs((ev) => {
+      if (String(ev.partId) !== String(partId)) return;
+      readRef.current += 1;
+      if (ev.forgotten) {
+        setCached(null);
+        return;
+      }
+      if (!hash || ev.hash !== hash || !ev.url) return;
+      setCached({ url: ev.url, from: 'generated' });
+    });
+  }, [partId, hash]);
 
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return undefined;
+    if (!showLive) {
+      if (cached?.url) {
+        let cancel = false;
+        blitPartPreviewUrl(canvas, cached.url).then((ok) => {
+          if (cancel || !ref.current) return;
+          if (!ok) paintEmptyPreview(ref.current);
+        });
+        return () => { cancel = true; };
+      }
+      paintEmptyPreview(canvas);
+      return undefined;
+    }
     if (!previewKey) {
       paintEmptyPreview(canvas);
       return undefined;
     }
-    const cached = peekPartPreview(previewKey);
-    if (cached) {
-      blitPartPreview(canvas, cached);
+    const cachedBitmap = peekPartPreview(previewKey);
+    if (cachedBitmap) {
+      blitPartPreview(canvas, cachedBitmap);
       return undefined;
     }
     let cancel = false;
@@ -264,7 +311,7 @@ function PartThumbnail({ mesh }) {
       cancel = true;
       cancelAnimationFrame(frame);
     };
-  }, [previewKey]);
+  }, [previewKey, showLive, cached]);
 
   return (
     <canvas
@@ -273,8 +320,9 @@ function PartThumbnail({ mesh }) {
       height={PART_PREVIEW_SIZE}
       className="h-12 w-12 shrink-0 rounded-md bg-[#1e1e1e]"
       data-part-thumbnail=""
-      data-part-preview={partPreviewKind(mesh)}
+      data-part-preview={kind}
       data-part-preview-key={previewKey || ''}
+      data-part-thumb-source={source}
     />
   );
 }
@@ -284,6 +332,7 @@ export default function PartFeed({
   placement = 'desktop',
   source = 'local',
   rows = [],
+  scripts = {},
   activeId = null,
   onSelect,
   /** Pencil: make this part active if needed, then open its script. */
@@ -1237,7 +1286,12 @@ export default function PartFeed({
                 data-part-drag=""
                 aria-hidden="true"
               />
-              <PartThumbnail mesh={row.mesh} />
+              <PartThumbnail
+                mesh={row.mesh}
+                partId={row.id}
+                script={scripts?.[row.id]}
+                visible={row.visible !== false}
+              />
               <div className="min-w-0 flex-1">
                 <RowPartName
                   id={row.id}

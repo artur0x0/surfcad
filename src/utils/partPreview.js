@@ -227,3 +227,24 @@ export function blitPartPreview(dest, src) {
   ctx.clearRect(0, 0, dest.width, dest.height);
   ctx.drawImage(src, 0, 0, dest.width, dest.height);
 }
+
+/** Paint a stored PNG data URL onto the row canvas. */
+export function blitPartPreviewUrl(dest, url) {
+  return new Promise((resolve) => {
+    if (!dest || typeof url !== 'string' || !url.startsWith('data:image/') || typeof Image === 'undefined') {
+      resolve(false);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      try {
+        blitPartPreview(dest, img);
+        resolve(true);
+      } catch {
+        resolve(false);
+      }
+    };
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
+}
