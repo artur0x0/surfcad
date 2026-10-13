@@ -612,3 +612,51 @@ test('a bar between a sheet chip and a later feature keeps that sheet and blanks
   assert.ok(filletAt < ret);
   assert.equal((placed.buffer.match(/return part;/g) || []).length, 1);
 });
+
+test('a bar between a contour and the feature that uses it keeps the contour', () => {
+  const contour = 'const c1 = makeCrossSection({ center: [0, 0, 10], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] }, profileCircle(4, 16)); // @contour id=c1';
+  const script = [
+    region(CUBE_BEGIN, CUBE_END, 'cube1', 'let part = Manifold.cube([20, 20, 20], true);'),
+    contour,
+    region(
+      CONTOUR_EXTRUDE_BEGIN,
+      CONTOUR_EXTRUDE_END,
+      'extrude1',
+      'part = part.add(placeInFrame(c1.plane, makeExtrude(c1.contours, 12), [0, 0, 0]));',
+    ),
+    'return part;',
+    '',
+  ].join('\n');
+  const stmtEnd = script.indexOf(contour) + contour.length;
+  assert.equal(rollbackInsertCaret(script, 'contour:c1'), stmtEnd);
+  assert.equal(clampRollbackAnchor(script, 'contour:c1'), 'contour:c1');
+  assert.equal(clampRollbackAnchor(script, 'contour:nope'), undefined);
+
+  const copy = evaluationScript(script, { anchorId: 'contour:c1' });
+  assert.match(copy, /Manifold\.cube/);
+  assert.match(copy, /@contour id=c1/);
+  assert.equal(copy.includes('makeExtrude'), false);
+  assert.match(copy, /return part;/);
+  assert.equal(copy.split('\n').length, script.split('\n').length);
+  assert.equal(lineOf(copy, 'return part;'), lineOf(script, 'return part;'));
+
+  const plan = resolveRollback(script, 'contour:c1');
+  assert.equal(plan.anchor, 'contour:c1');
+  assert.deepEqual(plan.skipIds, ['extrude1']);
+  assert.deepEqual(plan.ids, ['cube1', 'contour:c1', 'extrude1']);
+  assert.equal(plan.index, 2);
+  assert.deepEqual(rolledBackFeatureIds(script, 'contour:c1'), ['extrude1']);
+  assert.equal(resolveRollback(script, 'contour:nope').anchor, undefined);
+
+  const extra = region(CUBE_BEGIN, CUBE_END, 'cube2', 'part = part.add(Manifold.cube([4, 4, 4], true));');
+  const at = script.lastIndexOf('return part;');
+  const appended = `${script.slice(0, at)}${extra}\n${script.slice(at)}`;
+  const placed = commitScriptAtRollback(script, appended, 'contour:c1');
+  assert.deepEqual(parseFeatureMarkers(placed.buffer).map((feature) => feature.id), [
+    'cube1', 'cube2', 'extrude1',
+  ]);
+  assert.equal(placed.anchor, 'cube2');
+  assert.ok(placed.buffer.indexOf('id=cube2') > placed.buffer.indexOf('@contour id=c1'));
+  assert.ok(placed.buffer.indexOf('id=cube2') < placed.buffer.indexOf('id=extrude1'));
+  assert.equal(rollbackAnchorAfterInsert(script, placed.buffer, 'contour:c1'), 'cube2');
+});
