@@ -4598,13 +4598,32 @@ function makeExtrude(contours, height) {
 }
 
 /**
+ * Sheet thickness and bend radius for the fillet span. Set when the script
+ * builds a sheet, cleared around each executeScript so a later box fillet
+ * does not inherit it. Same numbers as sheetCutExtrudeSpan.
+ */
+let _sheetFilletSpan = null;
+
+/**
  * sheetMetalSolid(spec) — SendCutSend sheet-metal part from its JSON spec
  * (base flange, bends, tabs, holes, automatic corner reliefs). Written by
  * Sheet Metal mode inside the sheet-metal markers; see utils/sheetMetal.
  */
 function sheetMetalSolid(spec) {
   const { Manifold, CrossSection } = manifoldModule;
-  return _c8CheckValid(buildSheetMetalSolid(Manifold, CrossSection, spec), 'sheetMetalSolid');
+  const solid = _c8CheckValid(buildSheetMetalSolid(Manifold, CrossSection, spec), 'sheetMetalSolid');
+  const t = Number(spec && spec.t);
+  const bendR = Number(spec && spec.r);
+  if (t > 0) {
+    let angle = 0;
+    const bends = spec && Array.isArray(spec.bends) ? spec.bends : [];
+    for (const b of bends) {
+      const a = Math.abs(Number(b && b.angle) || 0);
+      if (a > angle) angle = a;
+    }
+    _sheetFilletSpan = { t, bendR: bendR > 0 ? bendR : 0, angle: angle > 0 ? angle : 90 };
+  }
+  return solid;
 }
 
 /**
@@ -7099,6 +7118,136 @@ function _filletOnlyOwningBody(M, part, path, radius, opts) {
 }
 
 /**
+ * On a sheet, an open fillet continues past a flat/bend seam along the same
+ * corner. The flange straight and the outer bend arc meet in space and not
+ * at a vertex index, so a path of the straight used to stop on the tangent
+ * plane: the round missed the bend and the thickness there. Walk feature
+ * edges that touch the open end, stay tangent, and share a wall. Stop once
+ * the tangent has turned through the bend and the next edge is a panel run
+ * longer than the sheet thickness — that is the base the arc becomes
+ * tangent to, not more of this corner. Same reach idea as the sheet
+ * subtract span (t + bend radius), measured along the edge.
+ * @param {object} part
+ * @param {number[][]} points
+ * @returns {number[][]}
+ */
+function _s23ExtendSheetCornerSpan(part, points) {
+  const spec = _sheetFilletSpan;
+  if (!spec || !part || !Array.isArray(points) || points.length < 2) return points;
+  let edges;
+  try {
+    edges = _s23ProbeFeatureEdges(part);
+  } catch (_) {
+    return points;
+  }
+  if (!Array.isArray(edges) || edges.length < 2) return points;
+
+  const t = spec.t;
+  const bendR = spec.bendR;
+  const bendRad = Math.min(Math.max(spec.angle, 1), 180) * Math.PI / 180;
+  const arcLen = bendRad * (bendR + t);
+  const chordMax = arcLen + t + 1;
+  const budget = chordMax;
+  const cosTol = Math.cos((28 * Math.PI) / 180);
+  const cosWall = Math.cos((25 * Math.PI) / 180);
+  const cosFlat = Math.cos((12 * Math.PI) / 180);
+  const touch = 0.08;
+  const turnedStop = Math.max(0, bendRad - (15 * Math.PI) / 180);
+
+  const edgeGeom = (e) => {
+    if (!e || !Array.isArray(e.va) || !Array.isArray(e.vb)) return null;
+    const d = [e.vb[0] - e.va[0], e.vb[1] - e.va[1], e.vb[2] - e.va[2]];
+    const L = Math.hypot(d[0], d[1], d[2]);
+    if (!(L > 0.05)) return null;
+    return { d, L, u: [d[0] / L, d[1] / L, d[2] / L] };
+  };
+  const distPt = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  const distPoly = (p, poly) => {
+    let best = Infinity;
+    for (let i = 1; i < poly.length; i++) {
+      const d = _s23PointSegDist(p, poly[i - 1], poly[i]);
+      if (d < best) best = d;
+    }
+    return best;
+  };
+  const shareWall = (a, b) => {
+    if (!a || !b || !a.n0 || !a.n1 || !b.n0 || !b.n1) return true;
+    const hit = (p, q) => Math.abs(_s23Dot(_s23Unit(p), _s23Unit(q))) >= cosWall;
+    return hit(a.n0, b.n0) || hit(a.n0, b.n1) || hit(a.n1, b.n0) || hit(a.n1, b.n1);
+  };
+  const wallAt = (origin, dir) => {
+    let best = null;
+    let bestD = Infinity;
+    for (const e of edges) {
+      const g = edgeGeom(e);
+      if (!g) continue;
+      if (Math.abs(_s23Dot(g.u, dir)) < 0.9) continue;
+      const d = _s23PointSegDist(origin, e.va, e.vb);
+      if (d > 0.35 || d >= bestD) continue;
+      bestD = d;
+      best = e;
+    }
+    return best;
+  };
+
+  const pts = points.map((p) => p.slice());
+  const grow = (which) => {
+    const start = (which === 'end' ? pts[pts.length - 1] : pts[0]).slice();
+    const prev0 = which === 'end' ? pts[pts.length - 2] : pts[1];
+    let seed = [start[0] - prev0[0], start[1] - prev0[1], start[2] - prev0[2]];
+    const seedL = Math.hypot(seed[0], seed[1], seed[2]);
+    if (!(seedL > 1e-9)) return;
+    seed = [seed[0] / seedL, seed[1] / seedL, seed[2] / seedL];
+    let added = 0;
+    for (let guard = 0; guard < 64 && added < budget; guard++) {
+      const origin = which === 'end' ? pts[pts.length - 1] : pts[0];
+      const prev = which === 'end' ? pts[pts.length - 2] : pts[1];
+      let tout = [origin[0] - prev[0], origin[1] - prev[1], origin[2] - prev[2]];
+      const tl = Math.hypot(tout[0], tout[1], tout[2]);
+      if (!(tl > 1e-9)) break;
+      tout = [tout[0] / tl, tout[1] / tl, tout[2] / tl];
+      const turned = Math.acos(Math.max(-1, Math.min(1, _s23Dot(tout, seed))));
+      const wall = wallAt(origin, tout);
+      let best = null;
+      for (const e of edges) {
+        const g = edgeGeom(e);
+        if (!g || g.L > chordMax) continue;
+        const da = distPt(e.va, origin);
+        const db = distPt(e.vb, origin);
+        const nearA = da <= touch;
+        const nearB = db <= touch;
+        if (nearA === nearB) continue;
+        const travel = nearA ? g.u : [-g.u[0], -g.u[1], -g.u[2]];
+        const align = _s23Dot(travel, tout);
+        if (align < cosTol) continue;
+        const far = nearA ? e.vb : e.va;
+        const mid = [
+          (e.va[0] + e.vb[0]) / 2,
+          (e.va[1] + e.vb[1]) / 2,
+          (e.va[2] + e.vb[2]) / 2,
+        ];
+        if (distPoly(mid, pts) <= 0.25) continue;
+        if (wall && !shareWall(wall, e)) continue;
+        if (typeof e.convex === 'boolean' && typeof wall?.convex === 'boolean' && e.convex !== wall.convex) {
+          continue;
+        }
+        // The bend has turned; a longer collinear run is the panel edge.
+        if (turned >= turnedStop && g.L > t + 1 && align >= cosFlat) continue;
+        if (!best || align > best.align + 1e-4) best = { far, L: g.L, align };
+      }
+      if (!best) break;
+      const next = [best.far[0], best.far[1], best.far[2]];
+      if (which === 'end') pts.push(next);
+      else pts.unshift(next);
+      added += best.L;
+    }
+  };
+  grow('end');
+  grow('start');
+  return pts;
+}
+
+/**
  * filletAlongPath(part, path, radius, opts?)
  * Sweep a dihedral fillet (or equal-leg chamfer) along path → boolean subtract.
  *
@@ -7141,6 +7290,13 @@ function filletAlongPath(part, path, radius, opts = {}) {
   const arcSegs = opts.segments != null ? opts.segments : FILLET_ARC_SEGMENTS;
   let { points, closed, length } = _s23NormalizePath(path, opts);
   const carried = _s23CarriedEdges(path);
+  if (!opts._rawPath && !closed && _sheetFilletSpan) {
+    const spanned = _s23ExtendSheetCornerSpan(part, points);
+    if (spanned.length !== points.length) {
+      points = spanned;
+      length = pathPolylineLength(points, false);
+    }
+  }
 
   // C3 hard: densify + per-knot path-normal inscribed-arc frames (buildVariableProfileFrames).
   // C4: a concave run is material-ADD, which the dihedral sweep cannot express
@@ -8752,6 +8908,7 @@ const executeScript = (script, importedModels) => {
   if (!manifoldModule) {
     throw new Error('Manifold not initialized');
   }
+  _sheetFilletSpan = null;
   
   // Set up __importedManifolds with reconstructed Manifolds
   const importedManifolds = {};
@@ -8831,6 +8988,8 @@ const executeScript = (script, importedModels) => {
       }
     }
     throw err;
+  } finally {
+    _sheetFilletSpan = null;
   }
 };
 

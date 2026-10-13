@@ -33,6 +33,13 @@ export const SWEEP_PATH_INVALID =
 /** Recover a dominant simple chain when strays are a small leftover (not a tie). */
 export const SWEEP_PATH_RECOVER_MIN_FRAC = 0.75;
 
+/**
+ * Flat/bend seams share a point and not a vertex index. A sweep keyed only
+ * on indices kept the arc and dropped the flange straight. Endpoints this
+ * close are one chain vertex.
+ */
+const PATH_ENDPOINT_WELD_MM = 0.05;
+
 /** Min path sample spacing after pts expansion (mm). See thinSweepPathPoints.
  * Assembly floor only — long straights are already one segment, so this does
  * not subdivide them. Fillet consumption resamples arcs separately
@@ -157,8 +164,10 @@ export function splitEdgePathComponents(selectedEdges) {
     return { ok: false, code: 'empty', message: SWEEP_PATH_EMPTY };
   }
 
-  const adj = buildEdgeVertexAdj(unique);
-  const comps = edgeComponents(unique, adj);
+  const linked = _weldCoincidentEnds(unique);
+  const origByKey = new Map(unique.map((e) => [e.key, e]));
+  const adj = buildEdgeVertexAdj(linked);
+  const comps = edgeComponents(linked, adj);
   for (const comp of comps) {
     if (!isSimpleChainOrLoop(comp)) {
       return { ok: false, code: 'branch', message: SWEEP_PATH_BRANCH };
@@ -171,7 +180,10 @@ export function splitEdgePathComponents(selectedEdges) {
     const ib = Math.min(...b.map((e) => orderIndex.get(e.key) ?? 0));
     return ia - ib;
   });
-  return { ok: true, components: sorted };
+  return {
+    ok: true,
+    components: sorted.map((comp) => comp.map((e) => origByKey.get(e.key) || e)),
+  };
 }
 
 function _dist(a, b) {
@@ -278,13 +290,79 @@ export function normalizePathEdge(edge) {
   };
 }
 
-/** Orient so .a/.va sit at fromVert (mesh vertex index). */
+/**
+ * Remap endpoint indices so geometrically coincident ends (a duplicate-vertex
+ * seam) are one graph vertex. Mesh indices stay on meshA/meshB. An edge is
+ * never welded to itself.
+ * @param {object[]} edges
+ * @returns {object[]}
+ */
+function _weldCoincidentEnds(edges) {
+  const n = edges.length;
+  if (n < 2) return edges;
+  const parent = new Array(n * 2);
+  for (let i = 0; i < parent.length; i++) parent[i] = i;
+  const find = (i) => {
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]];
+      i = parent[i];
+    }
+    return i;
+  };
+  const unite = (i, j) => {
+    const a = find(i);
+    const b = find(j);
+    if (a !== b) parent[a] = b;
+  };
+  const at = (i) => ((i & 1) === 0 ? edges[i >> 1].va : edges[i >> 1].vb);
+  for (let i = 0; i < parent.length; i++) {
+    for (let j = i + 1; j < parent.length; j++) {
+      if ((i >> 1) === (j >> 1)) continue;
+      if (_dist(at(i), at(j)) <= PATH_ENDPOINT_WELD_MM) unite(i, j);
+    }
+  }
+  const id = new Map();
+  let seq = 1;
+  const wid = (i) => {
+    const root = find(i);
+    let v = id.get(root);
+    if (v == null) {
+      v = seq;
+      seq += 1;
+      id.set(root, v);
+    }
+    return v;
+  };
+  return edges.map((e, ei) => ({
+    ...e,
+    a: wid(ei * 2),
+    b: wid(ei * 2 + 1),
+    meshA: e.a,
+    meshB: e.b,
+  }));
+}
+
+function _withMeshVerts(edge) {
+  if (!edge || !Number.isFinite(edge.meshA) || !Number.isFinite(edge.meshB)) return edge;
+  const out = { ...edge, a: edge.meshA, b: edge.meshB };
+  delete out.meshA;
+  delete out.meshB;
+  return out;
+}
+
+/** Orient so .a/.va sit at fromVert (welded chain index while ordering). */
 function orientFromVert(edge, fromVert) {
+  const mesh = (a, b) => (
+    Number.isFinite(edge.meshA) && Number.isFinite(edge.meshB)
+      ? { meshA: a, meshB: b }
+      : {}
+  );
   if (edge.a === fromVert) {
     return {
       key: edge.key,
       a: edge.a,
       b: edge.b,
+      ...mesh(edge.meshA, edge.meshB),
       va: edge.va.slice(),
       vb: edge.vb.slice(),
       mid: edge.mid ? edge.mid.slice() : _mid(edge.va, edge.vb),
@@ -298,6 +376,7 @@ function orientFromVert(edge, fromVert) {
     key: edge.key,
     a: edge.b,
     b: edge.a,
+    ...mesh(edge.meshB, edge.meshA),
     va: edge.vb.slice(),
     vb: edge.va.slice(),
     mid: edge.mid ? edge.mid.slice() : _mid(edge.va, edge.vb),
@@ -351,8 +430,10 @@ export function orderEdgePath(selectedEdges) {
     return { ok: false, code: 'empty', message: SWEEP_PATH_EMPTY };
   }
 
-  const adj = buildEdgeVertexAdj(unique);
-  const picked = pickPathComponent(unique, adj);
+  // Chain across a flat/bend seam. Indices stay different; the point does not.
+  const linked = _weldCoincidentEnds(unique);
+  const adj = buildEdgeVertexAdj(linked);
+  const picked = pickPathComponent(linked, adj);
   if (!picked.edges) {
     return {
       ok: false,
@@ -437,7 +518,7 @@ export function orderEdgePath(selectedEdges) {
   return {
     ok: true,
     closed,
-    orderedEdges: ordered,
+    orderedEdges: ordered.map(_withMeshVerts),
     points,
     length,
     recovered: !!picked.recovered,
