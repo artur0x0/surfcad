@@ -4620,6 +4620,16 @@ const Viewport = forwardRef(({
     .join('|');
 
   const planeToolOpen = isWorkplaneEntry(contourMode?.entry);
+  // A selected face hides XY/YZ/ZX. The rail hold stays on, so closing the
+  // tool still restores whatever visibility the planes toggle had before.
+  const planeFaceSelected = planeToolOpen && !!selectedFace;
+  const releaseWorkplaneFaceRef = useRef(() => {});
+  releaseWorkplaneFaceRef.current = () => {
+    if (!isWorkplaneEntry(contourModeRef.current?.entry)) return;
+    clearHighlight();
+    setSelectedFace(null);
+    onFaceSelectedRef.current?.(null);
+  };
 
   useEffect(() => {
     if (!showPlanes) {
@@ -4631,7 +4641,9 @@ const Viewport = forwardRef(({
       ...entry,
       planes: jointPicking
         ? planesForJointOverlay(entry, true)
-        : (planeToolOpen ? planesForWorkplaneTool(entry) : planesForJointOverlay(entry, false)),
+        : (planeToolOpen
+          ? planesForWorkplaneTool(entry, { references: !planeFaceSelected })
+          : planesForJointOverlay(entry, false)),
       selectedId: selectedPlaneId,
       jointPlaneIds: picked,
     })));
@@ -4639,6 +4651,7 @@ const Viewport = forwardRef(({
     selectedPlaneId,
     showPlanes,
     planeToolOpen,
+    planeFaceSelected,
     jointPicking,
     jointPlanePickKey,
     paintConstructionPlanes,
@@ -8629,6 +8642,7 @@ const Viewport = forwardRef(({
             angles: { x: 0, y: 0, z: 0 },
           });
         });
+        releaseWorkplaneFaceRef.current();
         return;
       }
     }
@@ -12680,17 +12694,20 @@ const Viewport = forwardRef(({
           planeAngles={contourMode.planeAngles || { x: 0, y: 0, z: 0 }}
           constructionPlanes={constructionPlanes}
           pickedPlaneId={selectedPlaneId || ''}
-          onPlanePreset={(axis) => setContourMode((prev) => {
-            if (!prev) return prev;
-            const center = prev.planeBase?.center
-              || prev.planeFace?.center
-              || contourHostCenter(modelBounds);
-            return applyContourPlaneEdit(prev, {
-              preset: axis,
-              base: axisPresetFrame(axis, center),
-              angles: { x: 0, y: 0, z: 0 },
+          onPlanePreset={(axis) => {
+            releaseWorkplaneFaceRef.current();
+            setContourMode((prev) => {
+              if (!prev) return prev;
+              const center = prev.planeBase?.center
+                || prev.planeFace?.center
+                || contourHostCenter(modelBounds);
+              return applyContourPlaneEdit(prev, {
+                preset: axis,
+                base: axisPresetFrame(axis, center),
+                angles: { x: 0, y: 0, z: 0 },
+              });
             });
-          })}
+          }}
           onPlaneAngles={(angles) => setContourMode((prev) => {
             if (!prev) return prev;
             const center = prev.planeBase?.center
@@ -12700,6 +12717,7 @@ const Viewport = forwardRef(({
             return applyContourPlaneEdit(prev, { angles, base });
           })}
           onPickWorkplane={(plane, id) => {
+            releaseWorkplaneFaceRef.current();
             setSelectedPlaneId(id || null);
             setContourMode((prev) => (prev
               ? applyContourPlaneEdit(prev, {

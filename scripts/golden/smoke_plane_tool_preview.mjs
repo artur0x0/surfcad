@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
  * Plane tool. Opening it shows the reference planes and existing user
- * planes even when the rail was off. X without a rail tap puts that
- * visibility back. A face tap, then an X/Y/Z pick, each leave a
- * translucent preview mesh at the confirmed quad size. Offset moves it.
+ * planes even when the rail was off. A face tap hides XY/YZ/ZX and
+ * leaves the user plane plus a translucent preview. Deselecting the
+ * face (World X) shows the reference planes again. X without a rail
+ * tap puts the rail back. Offset moves the preview.
  *
  * 390×844 and 1280×800. Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir().
  */
@@ -54,7 +55,10 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
   const arch = read('docs/architecture.md');
   const map = read('docs/UI_MAP.md');
   check('Plane tool paints reference planes with user planes',
-    /planesForWorkplaneTool\(entry\)/.test(view) && /export function planesForWorkplaneTool/.test(planes));
+    /planesForWorkplaneTool\(entry, \{ references: !planeFaceSelected \}\)/.test(view)
+      && /export function planesForWorkplaneTool/.test(planes));
+  check('a selected face drops the reference planes',
+    /references: false/.test(planes) && /planeFaceSelected/.test(view));
   check('preview uses the confirmed quad size',
     /paintPlaneToolPreview\(/.test(view) && /CONSTRUCTION_PLANE_SIZE/.test(view) && CONSTRUCTION_PLANE_SIZE === 48);
   check('sketch plane square stays undrawn',
@@ -195,8 +199,14 @@ async function runView(browser, vp) {
     try {
       await page.waitForFunction(() => {
         const sketch = window.__VIEWPORT__.stageContourSketch();
-        const preview = window.__VIEWPORT__.stagePlaneTool().preview;
-        return sketch.planePreset === 'face' && preview.present === true;
+        const tool = window.__VIEWPORT__.stagePlaneTool();
+        return sketch.planePreset === 'face'
+          && sketch.highlights > 0
+          && tool.preview.present === true
+          && !tool.planes.includes('origin:xy')
+          && !tool.planes.includes('origin:yz')
+          && !tool.planes.includes('origin:zx')
+          && tool.planes.includes('workplane:deck');
       }, null, { timeout: 2500 });
       break;
     } catch {
@@ -209,6 +219,7 @@ async function runView(browser, vp) {
   check(`${vp.name} a face tap shows the preview mesh`,
     faceHit?.ok === true
       && sketch.planePreset === 'face'
+      && sketch.highlights > 0
       && faced.preview.present === true
       && faced.preview.transparent === true
       && faced.preview.depthWrite === false
@@ -217,15 +228,31 @@ async function runView(browser, vp) {
       && faced.preview.size === CONSTRUCTION_PLANE_SIZE
       && near(faced.preview.center[2], 10),
     JSON.stringify(faced.preview));
+  check(`${vp.name} a selected face hides the reference planes`,
+    faced.toggle === true
+      && !faced.planes.includes('origin:xy')
+      && !faced.planes.includes('origin:yz')
+      && !faced.planes.includes('origin:zx')
+      && faced.planes.includes('workplane:deck'),
+    JSON.stringify(faced.planes));
   const faceShot = join(SHOT_DIR, `plane-tool-face-${vp.name}.png`);
   await page.screenshot({ path: faceShot });
 
   await page.locator('button[title="World X plane"]').click();
   await page.waitForFunction(() => {
-    const preview = window.__VIEWPORT__.stagePlaneTool().preview;
-    return preview.present === true && preview.normal && preview.normal[0] > 0.9;
+    const tool = window.__VIEWPORT__.stagePlaneTool();
+    const live = window.__VIEWPORT__.stageContourSketch();
+    return tool.preview.present === true
+      && tool.preview.normal
+      && tool.preview.normal[0] > 0.9
+      && tool.planes.includes('origin:xy')
+      && tool.planes.includes('origin:yz')
+      && tool.planes.includes('origin:zx')
+      && live.highlights === 0
+      && live.planePreset === 'x';
   }, null, { timeout: 4000 });
   const axis = await planeState(page);
+  const axisSketch = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch());
   check(`${vp.name} an X pick shows the preview mesh`,
     axis.preview.present === true
       && axis.preview.transparent === true
@@ -234,6 +261,15 @@ async function runView(browser, vp) {
       && near(axis.preview.center[0], 0)
       && near(axis.preview.center[2], 10),
     JSON.stringify(axis.preview));
+  check(`${vp.name} deselecting the face shows the reference planes`,
+    axisSketch.highlights === 0
+      && axisSketch.planePreset === 'x'
+      && axis.toggle === true
+      && axis.planes.includes('origin:xy')
+      && axis.planes.includes('origin:yz')
+      && axis.planes.includes('origin:zx')
+      && axis.planes.includes('workplane:deck'),
+    JSON.stringify({ highlights: axisSketch.highlights, planes: axis.planes }));
   const axisShot = join(SHOT_DIR, `plane-tool-axis-${vp.name}.png`);
   await page.screenshot({ path: axisShot });
 
