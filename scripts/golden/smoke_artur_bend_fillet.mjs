@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * Artur's bracket script (fixtures/artur_bend_fillet_0913.js).
+ * Artur's bracket script (fixtures/artur_bend_fillet_0913.txt). The
+ * top-level return is legal in the sandbox and illegal as a module, so the
+ * fixture is text.
  *
  * c1 is a base through-cut. c2 is a wall notch on the flange, from z=12.96
  * up, six millimetres past the bend tangent at z=6.985. selEdges is a 3.27
@@ -24,7 +26,7 @@ import { countDegenerateTriangles } from '../../src/utils/filletEdgeClass.js';
 import { runScript } from '../../src/lib/surfcad/index.js';
 import { buildSolidGeometry } from '../../src/utils/partSolidCache.js';
 
-const fixturePath = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'artur_bend_fillet_0913.js');
+const fixturePath = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'artur_bend_fillet_0913.txt');
 const fixture = readFileSync(fixturePath, 'utf8');
 const THICK = 3.175;
 
