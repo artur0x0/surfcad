@@ -11,8 +11,8 @@
  * hole confirms Delete along with 2 features; a contour ref on its wall is
  * not part of that count, and one undo restores the bend, the tab, and the
  * hole. A part that also has a cube, a fillet, and an extrude keeps those
- * chips on the same bar, in script order. Closing the flow puts the Sheet
- * chip back.
+ * chips on the same bar, in script order. Closing the flow keeps those
+ * expanded chips. The rollback bar stays on the list.
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir() only.
  */
@@ -178,12 +178,12 @@ if (exe && failed === 0) {
         await page.selectOption('#sm-gauge', 'ALU-090');
         await page.locator('[data-sheet-metal-start]').click();
         await page.waitForSelector('[data-sheet-metal-step="plane"]', { timeout: 15000 });
-        await page.waitForSelector('[data-cad-feature-strip] [data-sheet-ribbon]', { timeout: 10000 });
+        await page.waitForSelector('[data-cad-feature-strip] [data-feature-chip="sheetBase"]', { timeout: 10000 });
         const plane = await page.evaluate(ribbonOf);
-        check(`${label}: plane shows Base only, not joints and not the Sheet chip`,
-          plane?.ribbon && !plane.joints && !plane.sketch && plane.label === 'Sheet metal'
+        check(`${label}: plane shows Base only, not joints and not a separate sheet list`,
+          !plane?.ribbon && !plane.joints && !plane.sketch && plane.label === 'Modeling features'
           && plane.chips.length === 1 && plane.chips[0].kind === 'sheetBase' && plane.chips[0].label === 'Base'
-          && !plane.rollback,
+          && plane.rollback,
           JSON.stringify(plane));
 
         await page.locator('[data-sm-plane="XY"]').click();
@@ -234,7 +234,7 @@ if (exe && failed === 0) {
           btn?.click();
         });
         const undone = await page.waitForFunction(() => {
-          const root = window.document.querySelector('[data-cad-feature-strip] [data-sheet-ribbon]');
+          const root = window.document.querySelector('[data-cad-feature-strip] [data-feature-strip]');
           const chips = [...(root?.querySelectorAll('[data-feature-chip]') || [])].map((el) => el.getAttribute('data-feature-chip'));
           return chips.join(',') === 'sheetBase';
         }, null, { timeout: 10000 }).then(() => true).catch(() => false);
@@ -281,14 +281,14 @@ if (exe && failed === 0) {
         await page.locator('[data-sheet-tool="tab"]').click();
         const tab = await acceptFeature('[data-sheet-metal-tab]', { kind: 'edge', panel: 'base', edge: 'v+' });
         await page.waitForFunction(() => {
-          const root = window.document.querySelector('[data-cad-feature-strip] [data-sheet-ribbon]');
+          const root = window.document.querySelector('[data-cad-feature-strip] [data-feature-strip]');
           return root && root.querySelectorAll('[data-feature-chip]').length >= 4;
         }, null, { timeout: 10000 });
         const edit = await page.evaluate(ribbonOf);
         const kinds = (edit?.chips || []).map((chip) => chip.kind);
         const labels = (edit?.chips || []).map((chip) => chip.label);
         check(`${label}: edit lists Base, each bend, and the tab`,
-          bend1 && bend2 && tab && edit?.ribbon && !edit.joints && !edit.rollback
+          bend1 && bend2 && tab && !edit?.ribbon && !edit.joints && edit?.rollback
           && kinds.join(',') === 'sheetBase,sheetBend,sheetBend,sheetTab'
           && labels.join(',') === 'Base,Bend 1,Bend 2,Tab'
           && !kinds.includes('sheetMetal'),
@@ -395,7 +395,7 @@ if (exe && failed === 0) {
         }, mixed);
         await page.locator('[data-sheet-tool="hole"]').click();
         await page.waitForFunction(() => {
-          const root = window.document.querySelector('[data-cad-feature-strip] [data-sheet-ribbon]');
+          const root = window.document.querySelector('[data-cad-feature-strip] [data-feature-strip]');
           const chips = [...(root?.querySelectorAll('[data-feature-chip]') || [])].map((el) => el.getAttribute('data-feature-chip'));
           return chips[0] === 'cube' && chips.includes('extrude');
         }, null, { timeout: 10000 });
@@ -410,11 +410,21 @@ if (exe && failed === 0) {
 
         await page.locator('[data-sheet-metal-mode] [data-feature-card-cancel]').click();
         await page.waitForFunction(() => !window.document.querySelector('[data-sheet-metal-mode]'), null, { timeout: 10000 });
+        await page.evaluate(() => {
+          const rows = [...window.document.querySelectorAll('[data-part-row]')];
+          const part = rows.find((el) => el.getClientRects().length) || rows[0];
+          if (part && part.getAttribute('data-part-selected') !== 'true') part.click();
+        });
+        await page.waitForFunction(() => {
+          const chips = [...window.document.querySelectorAll('[data-cad-feature-strip] [data-feature-chip]')];
+          const kinds = chips.map((el) => el.getAttribute('data-feature-chip'));
+          return kinds.includes('sheetBase') && kinds.includes('cube');
+        }, null, { timeout: 10000 }).catch(() => null);
         const closed = await page.evaluate(ribbonOf);
-        const stillExpanded = (closed?.chips || []).some((chip) => chip.kind === 'sheetBase' || chip.kind === 'sheetBend');
-        const partStrip = (closed?.chips || []).some((chip) => chip.kind === 'sheetMetal');
-        check(`${label}: closing the flow leaves the sheet ribbon`,
-          !closed?.ribbon && !stillExpanded && (closed?.joints || partStrip) && errors.length === 0,
+        const closedKinds = (closed?.chips || []).map((chip) => chip.kind);
+        check(`${label}: closing the flow keeps Base and the other features on the one strip`,
+          !closed?.ribbon && closedKinds.includes('sheetBase') && closedKinds.includes('cube')
+          && !closedKinds.includes('sheetMetal') && errors.length === 0,
           JSON.stringify({ closed, errors: errors.slice(0, 2) }));
         await context.close();
       }

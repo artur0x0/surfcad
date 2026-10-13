@@ -16,8 +16,11 @@ import {
   CONTOUR_EXTRUDE_END,
   CONTOUR_PROFILE_BEGIN,
   CONTOUR_PROFILE_END,
+  CUT_BEGIN,
+  CUT_END,
   composeHelperInsert,
 } from './helperPaletteSnippets.js';
+import { sheetMetalBlock } from './sheetMetal/sheetMetalScript.js';
 import { SHEET_METAL_BEGIN, SHEET_METAL_END } from './sheetMetal/sheetMeshFlag.js';
 import { composeFilletCommit } from './filletMode.js';
 import {
@@ -532,4 +535,80 @@ test('repair moves fillets that landed after the study back above the return', (
   assert.ok(repaired.buffer.indexOf('fea-study begin') > ret);
   assert.deepEqual(featureBlocksAfterReturn(repaired.buffer), []);
   assert.equal(repairScriptReturns(repaired.buffer).changed, false);
+});
+
+test('a bar between a sheet chip and a later feature keeps that sheet and blanks the tail', () => {
+  const spec = {
+    v: 1,
+    sku: 'T',
+    t: 1.5,
+    r: 1,
+    k: 0.44,
+    plane: 'XY',
+    width: 80,
+    height: 40,
+    bends: [{ id: 'b1', panel: 'base', edge: 'u+', angle: 90, length: 12 }],
+    tabs: [{ id: 't1', panel: 'base', edge: 'v+', width: 10, depth: 6 }],
+    holes: [
+      { id: 'hb', panel: 'base', d: 4 },
+      { id: 'h1', panel: 'b1', d: 3 },
+    ],
+  };
+  const script = [
+    region(CONTOUR_EXTRUDE_BEGIN, CONTOUR_EXTRUDE_END, 'extrude1', 'let part = Manifold.cube([20, 20, 10], true);'),
+    sheetMetalBlock(spec, { union: true }),
+    region(FILLET_MODE_BEGIN, FILLET_MODE_END, 'fillet1', 'part = filletAlongPath(part, path, 2);'),
+    region(CUT_BEGIN, CUT_END, 'cut1', 'part = cut(part, { originOffset: 1 });'),
+    'return part;',
+    '',
+  ].join('\n');
+  const marker = parseFeatureMarkers(script).find((feature) => feature.kind === 'sheetMetal');
+  assert.equal(rollbackInsertCaret(script, 'sheet:tab:t1'), marker.endOffset);
+  assert.ok(marker.endOffset < script.indexOf('return part;'));
+  assert.equal(clampRollbackAnchor(script, 'sheet:tab:t1'), 'sheet:tab:t1');
+  assert.equal(clampRollbackAnchor(script, 'contour:nope'), undefined);
+
+  const afterTab = evaluationScript(script, { anchorId: 'sheet:tab:t1' });
+  assert.match(afterTab, /sheetMetalSolid/);
+  assert.match(afterTab, /"id":"b1"/);
+  assert.match(afterTab, /"id":"t1"/);
+  assert.match(afterTab, /"id":"hb"/);
+  assert.match(afterTab, /"id":"h1"/);
+  assert.equal(afterTab.includes('filletAlongPath'), false);
+  assert.equal(afterTab.includes('originOffset'), false);
+  assert.match(afterTab, /return part;/);
+  const plan = resolveRollback(script, 'sheet:tab:t1');
+  assert.equal(plan.anchor, 'sheet:tab:t1');
+  assert.deepEqual(plan.skipIds, ['fillet1', 'cut1']);
+  assert.equal(plan.index, 4);
+
+  const afterExtrude = evaluationScript(script, { anchorId: 'extrude1' });
+  assert.match(afterExtrude, /Manifold\.cube/);
+  assert.equal(afterExtrude.includes('sheetMetalSolid'), false);
+  assert.equal(afterExtrude.includes('filletAlongPath'), false);
+  assert.deepEqual(rolledBackFeatureIds(script, 'extrude1'), ['sheetMetal-1', 'fillet1', 'cut1']);
+
+  const afterBase = evaluationScript(script, { anchorId: 'sheet:base' });
+  assert.match(afterBase, /sheetMetalSolid/);
+  assert.match(afterBase, /"id":"hb"/);
+  assert.equal(afterBase.includes('"id":"b1"'), false);
+  assert.equal(afterBase.includes('"id":"t1"'), false);
+  assert.equal(afterBase.includes('"id":"h1"'), false);
+  assert.equal(afterBase.includes('filletAlongPath'), false);
+
+  const extra = region(CUBE_BEGIN, CUBE_END, 'cube1', 'part = part.add(Manifold.cube([4, 4, 4], true));');
+  const at = script.lastIndexOf('return part;');
+  const appended = `${script.slice(0, at)}${extra}\n${script.slice(at)}`;
+  const placed = commitScriptAtRollback(script, appended, 'sheet:tab:t1');
+  assert.deepEqual(parseFeatureMarkers(placed.buffer).map((feature) => feature.id), [
+    'extrude1', 'sheetMetal-1', 'cube1', 'fillet1', 'cut1',
+  ]);
+  assert.equal(placed.anchor, 'cube1');
+  const ret = findReturnPartIndex(placed.buffer);
+  const cubeAt = placed.buffer.indexOf('id=cube1');
+  const filletAt = placed.buffer.indexOf('id=fillet1');
+  assert.ok(cubeAt > placed.buffer.indexOf('sheet-metal end'));
+  assert.ok(cubeAt < filletAt);
+  assert.ok(filletAt < ret);
+  assert.equal((placed.buffer.match(/return part;/g) || []).length, 1);
 });

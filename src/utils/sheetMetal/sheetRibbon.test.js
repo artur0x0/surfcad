@@ -9,7 +9,8 @@ import {
   FILLET_MODE_END,
 } from '../helperPaletteSnippets.js';
 import { sheetMetalBlock } from './sheetMetalScript.js';
-import { sheetChipOwnsRef, sheetRibbonChips } from './sheetRibbon.js';
+import { featureStripChips, sheetChipOwnsRef, sheetRibbonChips } from './sheetRibbon.js';
+import { parseFeatureMarkers } from '../featureMarkers.js';
 
 const spec = {
   v: 1,
@@ -110,4 +111,30 @@ test('refKeys stay on the bend id and the tab id', () => {
   assert.equal(sheetChipOwnsRef(tab, 'tab:t1:q0:w1'), true);
   assert.equal(chips.some((chip) => sheetChipOwnsRef(chip, 'hole:h1:w0')), false);
   assert.equal(chips.some((chip) => sheetChipOwnsRef(chip, 'cutout:base:w0')), false);
+});
+
+test('featureStripChips follows script order and keeps the block offsets', () => {
+  const chips = featureStripChips(mixedScript());
+  assert.deepEqual(chips.map((chip) => chip.kind), [
+    'cube', 'fillet', 'sheetBase', 'sheetBend', 'sheetBend', 'sheetTab', 'extrude',
+  ]);
+  const base = chips.find((chip) => chip.id === 'sheet:base');
+  const marker = parseFeatureMarkers(mixedScript()).find((feature) => feature.kind === 'sheetMetal');
+  assert.equal(base.markerId, marker.id);
+  assert.equal(base.endOffset, marker.endOffset);
+  assert.equal(chips.some((chip) => chip.kind === 'sheetMetal'), false);
+});
+
+test('a second sheet block does not reuse the first chip ids', () => {
+  const script = [
+    sheetMetalBlock(spec),
+    sheetMetalBlock({ ...spec, width: 40 }, { union: true }),
+    'return part;',
+  ].join('\n');
+  const chips = featureStripChips(script);
+  const bases = chips.filter((chip) => chip.sheetKind === 'base');
+  assert.equal(bases.length, 2);
+  assert.equal(bases[0].id, 'sheet:base');
+  assert.notEqual(bases[1].id, 'sheet:base');
+  assert.match(bases[1].id, /^sheet:sheetMetal-\d+:base$/);
 });

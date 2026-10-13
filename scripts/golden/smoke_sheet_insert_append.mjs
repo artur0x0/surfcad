@@ -234,7 +234,7 @@ if (exe && failed === 0) {
           && after.script.includes('part = part.add(sheetMetalSolid(sheetSpec))')
           && after.script.includes('"t":2.286')
           && after.script.includes('"plane":"XY"')
-          && after.chips.includes('cube') && after.chips.includes('fillet') && after.chips.includes('sheetMetal')
+          && after.chips.includes('cube') && after.chips.includes('fillet') && after.chips.includes('sheetBase')
           && !after.parts.some((name) => name.startsWith('Sheet')),
           JSON.stringify({ accepted, chips: after.chips, parts: after.parts, size, errors: errors.slice(0, 4), head: after.script.slice(0, 80) }));
         check(`${label}: the body still contains the box`,
