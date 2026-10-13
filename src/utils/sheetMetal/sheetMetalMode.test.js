@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createSheetSpec, sheetFreeEdges } from './sheetModel.js';
+import { sheetContourEdges } from './sheetContourEdges.js';
 import {
   acceptBaseEdit,
+  acceptDraft,
+  bendBlockReason,
   deleteDraftFeature,
   editSheetChip,
   sheetDraftExtraCount,
+  sheetTap,
 } from './sheetMetalMode.js';
 
 const spec = {
@@ -99,4 +104,89 @@ test('base edit keeps bends and base delete removes the block', () => {
   assert.equal(removed.removeBlock, true);
   assert.equal(removed.spec, null);
   assert.equal(removed.mode.spec, null);
+});
+
+const stock = {
+  sku: 'T',
+  name: 'T',
+  thicknessMm: 1.5,
+  bendable: true,
+  services: ['bending'],
+  bend: { radiusIn: 0.05, kFactor: 0.44, maxAngleDeg: 180, minFlangeIn: 0.25 },
+};
+
+function editMode(spec, tool = 'bend') {
+  return { stage: 'edit', spec, tool };
+}
+
+test('two edges confirm as one feature and one spec', () => {
+  const spec = createSheetSpec(stock, 'XY', { width: 100, height: 60 });
+  let mode = sheetTap(editMode(spec), { kind: 'edge', panel: 'base', edge: 'u+' });
+  mode = sheetTap(mode, { kind: 'edge', panel: 'base', edge: 'u-' });
+  assert.equal(mode.draft.edges.length, 2);
+  assert.equal(mode.draft.feature, 'f1');
+  assert.equal(bendBlockReason(mode), null);
+  const committed = acceptDraft(mode);
+  assert.equal(committed.spec.bends.length, 2);
+  assert.equal(committed.spec.bends[0].feature, committed.spec.bends[1].feature);
+  assert.notEqual(committed.spec.bends[0].id, committed.spec.bends[1].id);
+  const keys = (sheetContourEdges(committed.spec)?.edges || []).map((edge) => edge.refKey);
+  for (const row of committed.spec.bends) {
+    assert.equal(keys.some((key) => key.startsWith(`bend:${row.id}:`) || key.startsWith(`wall:${row.id}:`)), true);
+  }
+  const again = sheetTap(editMode(committed.spec), { kind: 'edge', panel: 'base', edge: 'v+' });
+  assert.equal(again.draft.edges, undefined);
+  assert.equal(again.draft.feature, undefined);
+});
+
+test('a second tap on the same edge drops it, and an ineligible edge stays out', () => {
+  const spec = createSheetSpec(stock, 'XY', { width: 100, height: 60 });
+  let mode = sheetTap(editMode(spec), { kind: 'edge', panel: 'base', edge: 'u+' });
+  const id = mode.draft.id;
+  mode = sheetTap(mode, { kind: 'edge', panel: 'base', edge: 'u+' });
+  assert.equal(mode.draft, null);
+  mode = sheetTap(editMode(spec), { kind: 'edge', panel: 'base', edge: 'u+' });
+  mode = sheetTap(mode, { kind: 'edge', panel: 'base', edge: 'u-' });
+  mode = sheetTap(mode, { kind: 'edge', panel: 'base', edge: 'u-' });
+  assert.equal(mode.draft.edges, undefined);
+  assert.equal(mode.draft.id, id);
+  const walled = {
+    ...spec,
+    bends: [
+      { id: 'b1', panel: 'base', edge: 'u+', angle: 90, length: 20, flip: false },
+      { id: 'b2', panel: 'base', edge: 'v+', angle: 90, length: 20, flip: false },
+    ],
+  };
+  const toward = sheetFreeEdges(walled).find((edge) => edge.panel === 'b1' && edge.edge === 'v+');
+  assert.equal(toward?.eligible, false);
+  const blocked = sheetTap(editMode(walled), { kind: 'edge', panel: 'b1', edge: 'v+' });
+  assert.equal(blocked.draft, undefined);
+});
+
+test('a flange tip and side together disable Confirm', () => {
+  const spec = {
+    ...createSheetSpec(stock, 'XY', { width: 100, height: 60 }),
+    bends: [{ id: 'b1', panel: 'base', edge: 'u+', angle: 90, length: 25, flip: false }],
+  };
+  let mode = sheetTap(editMode(spec), { kind: 'edge', panel: 'b1', edge: 'u+' });
+  mode = sheetTap(mode, { kind: 'edge', panel: 'b1', edge: 'v-' });
+  assert.equal(mode.draft.edges.length, 2);
+  const reason = bendBlockReason(mode);
+  assert.equal(typeof reason, 'string');
+  assert.equal(reason.length > 0, true);
+  const refused = acceptDraft(mode);
+  assert.equal(refused.spec, null);
+  assert.equal(refused.mode.draft.edges.length, 2);
+});
+
+test('two tabs are one feature', () => {
+  const spec = createSheetSpec(stock, 'XY', { width: 100, height: 60 });
+  let mode = sheetTap(editMode(spec, 'tab'), { kind: 'edge', panel: 'base', edge: 'u+' }, 100);
+  mode = sheetTap(mode, { kind: 'edge', panel: 'base', edge: 'v+' }, 100);
+  assert.equal(mode.draft.kind, 'tab');
+  assert.equal(mode.draft.edges.length, 2);
+  const committed = acceptDraft(mode);
+  assert.equal(committed.spec.tabs.length, 2);
+  assert.equal(committed.spec.tabs[0].feature, committed.spec.tabs[1].feature);
+  assert.equal(committed.spec.bends.length, 0);
 });

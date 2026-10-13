@@ -4,7 +4,9 @@
  *
  * While sheet metal is open the CAD bar is not assembly joints and not the
  * one Sheet chip. Plane shows Base. Edit shows Base, each bend, and each
- * tab. A tap opens that chip's card. An unused tab deletes with no dialog,
+ * tab. Two edges confirm as one chip: two ids, two refKeys, and one undo
+ * drops both. A tip and a side that collide keep Confirm disabled. A tap
+ * opens that chip's card. An unused tab deletes with no dialog,
  * the one-line Deleted toast, and one undo. A bend that carries a tab and a
  * hole confirms Delete along with 2 features; a contour ref on its wall is
  * not part of that count, and one undo restores the bend, the tab, and the
@@ -24,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { panelById, panelPoint, solveSheet } from '../../src/utils/sheetMetal/sheetModel.js';
 import { readSheetMetalSpec } from '../../src/utils/sheetMetal/sheetMetalScript.js';
+import { sheetContourEdges } from '../../src/utils/sheetMetal/sheetContourEdges.js';
 import {
   CONTOUR_EXTRUDE_BEGIN,
   CONTOUR_EXTRUDE_END,
@@ -192,6 +195,54 @@ if (exe && failed === 0) {
         await page.locator('[data-sheet-metal-base] [data-sm-accept]').click();
         await page.waitForSelector('[data-sheet-metal-step="edit"]', { timeout: 15000 });
 
+        const tapEdge = (pick) => page.evaluate((next) => {
+          window.__SHEET__?.tap(next);
+        }, pick);
+        await tapEdge({ kind: 'edge', panel: 'base', edge: 'u+' });
+        await page.waitForSelector('[data-sheet-metal-bend]', { timeout: 8000 });
+        await tapEdge({ kind: 'edge', panel: 'base', edge: 'u-' });
+        const twoEdges = await page.waitForFunction(() => {
+          const card = window.document.querySelector('[data-sheet-metal-bend]');
+          return card && card.getAttribute('data-sm-edges') === '2';
+        }, null, { timeout: 8000 }).then(() => true).catch(() => false);
+        const multiEnabled = await page.locator('[data-sheet-metal-bend] [data-sm-accept]').isEnabled().catch(() => false);
+        await page.locator('[data-sheet-metal-bend] [data-sm-accept]').click();
+        await page.waitForFunction(() => !window.document.querySelector('[data-sheet-metal-bend]'), null, { timeout: 15000 });
+        const groupedChip = await page.waitForFunction(() => {
+          const chips = [...window.document.querySelectorAll('[data-cad-feature-strip] [data-sheet-kind="bend"]')];
+          const members = (chips[0]?.getAttribute('data-sheet-members') || '').split(' ').filter(Boolean);
+          return chips.length === 1 && members.length === 2 ? members : null;
+        }, null, { timeout: 10000 }).catch(() => null);
+        const groupedMembers = await page.evaluate(() => {
+          const chip = window.document.querySelector('[data-cad-feature-strip] [data-sheet-kind="bend"]');
+          return (chip?.getAttribute('data-sheet-members') || '').split(' ').filter(Boolean);
+        });
+        const groupedSpec = readSheetMetalSpec(await page.evaluate(scriptOf));
+        const groupedKeys = (sheetContourEdges(groupedSpec)?.edges || []).map((edge) => edge.refKey);
+        const featureIds = (groupedSpec?.bends || []).map((row) => row.id);
+        const oneFeature = new Set((groupedSpec?.bends || []).map((row) => row.feature)).size === 1;
+        const bothRefs = featureIds.length === 2 && featureIds.every((id) => (
+          groupedKeys.some((key) => key.startsWith(`bend:${id}:`) || key.startsWith(`wall:${id}:`))
+        ));
+        check(`${label}: two edges are one chip, two ids, and two refKeys`,
+          twoEdges && multiEnabled && !!groupedChip && oneFeature && bothRefs
+          && groupedMembers.join(' ') === featureIds.join(' '),
+          JSON.stringify({ twoEdges, multiEnabled, groupedMembers, featureIds, oneFeature, bothRefs }));
+        await page.evaluate(() => {
+          const buttons = [...window.document.querySelectorAll('[data-cad-feature-strip] [data-feature-bar-undo]')];
+          const btn = buttons.find((el) => !el.disabled && el.getClientRects().length) || buttons.find((el) => !el.disabled);
+          btn?.click();
+        });
+        const undone = await page.waitForFunction(() => {
+          const root = window.document.querySelector('[data-cad-feature-strip] [data-sheet-ribbon]');
+          const chips = [...(root?.querySelectorAll('[data-feature-chip]') || [])].map((el) => el.getAttribute('data-feature-chip'));
+          return chips.join(',') === 'sheetBase';
+        }, null, { timeout: 10000 }).then(() => true).catch(() => false);
+        const undoneSpec = readSheetMetalSpec(await page.evaluate(scriptOf));
+        check(`${label}: one undo drops both edges`,
+          undone && (undoneSpec?.bends || []).length === 0,
+          JSON.stringify({ undone, bends: undoneSpec?.bends?.length }));
+
         const acceptFeature = async (popup, pick) => {
           const opened = await page.evaluate((next) => {
             window.__SHEET__?.tap(next);
@@ -206,6 +257,26 @@ if (exe && failed === 0) {
         };
 
         const bend1 = await acceptFeature('[data-sheet-metal-bend]', { kind: 'edge', panel: 'base', edge: 'u+' });
+        const flangeId = await page.evaluate(() => {
+          const chip = window.document.querySelector('[data-cad-feature-strip] [data-sheet-kind="bend"]');
+          return (chip?.getAttribute('data-sheet-members') || '').split(' ')[0];
+        });
+        await tapEdge({ kind: 'edge', panel: flangeId, edge: 'u+' });
+        await page.waitForSelector('[data-sheet-metal-bend]', { timeout: 8000 });
+        await tapEdge({ kind: 'edge', panel: flangeId, edge: 'v-' });
+        const blockedEdges = await page.waitForFunction(() => {
+          const card = window.document.querySelector('[data-sheet-metal-bend]');
+          return card && card.getAttribute('data-sm-edges') === '2';
+        }, null, { timeout: 8000 }).then(() => true).catch(() => false);
+        const blockedUi = await page.evaluate(() => ({
+          disabled: !!window.document.querySelector('[data-sheet-metal-bend] [data-sm-accept]')?.disabled,
+          reason: (window.document.querySelector('[data-sm-bend-block]')?.textContent || '').trim(),
+        }));
+        check(`${label}: a blocked edge disables Confirm`,
+          blockedEdges && blockedUi.disabled && blockedUi.reason.length > 0,
+          JSON.stringify({ blockedEdges, blockedUi, flangeId }));
+        await page.locator('[data-sheet-metal-bend] [data-sm-back]').click();
+        await page.waitForFunction(() => !window.document.querySelector('[data-sheet-metal-bend]'), null, { timeout: 8000 });
         const bend2 = await acceptFeature('[data-sheet-metal-bend]', { kind: 'edge', panel: 'base', edge: 'u-' });
         await page.locator('[data-sheet-tool="tab"]').click();
         const tab = await acceptFeature('[data-sheet-metal-tab]', { kind: 'edge', panel: 'base', edge: 'v+' });

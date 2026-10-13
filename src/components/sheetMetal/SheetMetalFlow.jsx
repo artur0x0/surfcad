@@ -81,11 +81,14 @@ const BendPopup = ({ mode, setMode, onCommit, onDelete, onExit, unit, onUnit, co
   const lim = bendLimits(spec);
   const bd = bendDeductionAt(spec, d.angle);
   const place = d.edge === 'u+' ? 'tip' : (d.edge === 'v+' || d.edge === 'v-') ? 'side' : (d.edge || '');
-  const where = d.panel === 'base' ? `Base ${EDGE_NAMES[d.edge] || d.edge}` : `Flange ${d.panel} ${place}`;
+  const count = Array.isArray(d.edges) && d.edges.length ? d.edges.length : 1;
+  const where = count > 1
+    ? `${count} edges`
+    : (d.panel === 'base' ? `Base ${EDGE_NAMES[d.edge] || d.edge}` : `Flange ${d.panel} ${place}`);
   const block = bendBlockReason(mode);
   return (
     <SmPopup
-      title={d.isNew ? 'Bend' : `Bend ${d.id}`}
+      title={d.isNew ? (count > 1 ? 'Bends' : 'Bend') : `Bend ${d.id}`}
       subtitle={where}
       onClose={onExit}
       closeLabel="Exit sheet metal without writing this bend"
@@ -93,6 +96,7 @@ const BendPopup = ({ mode, setMode, onCommit, onDelete, onExit, unit, onUnit, co
       unit={unit}
       onUnit={onUnit}
       compact={compact}
+      cardAttrs={{ 'data-sm-edges': String(count) }}
       footer={<DraftFooter mode={mode} setMode={setMode} onCommit={onCommit} onDelete={onDelete} confirmDisabled={!!block} />}
     >
       {block && (
@@ -135,17 +139,21 @@ const BendPopup = ({ mode, setMode, onCommit, onDelete, onExit, unit, onUnit, co
 const TabPopup = ({ mode, setMode, onCommit, onDelete, onExit, unit, onUnit, compact = false, lengthMm = 100 }) => {
   const d = mode.draft;
   const span = Number(d.span) || Math.max(d.width, 1);
-  const where = d.panel === 'base' ? `Base ${EDGE_NAMES[d.edge] || d.edge}` : `Flange ${d.panel} ${d.edge === 'u+' ? 'tip' : 'side'}`;
+  const count = Array.isArray(d.edges) && d.edges.length ? d.edges.length : 1;
+  const where = count > 1
+    ? `${count} edges`
+    : (d.panel === 'base' ? `Base ${EDGE_NAMES[d.edge] || d.edge}` : `Flange ${d.panel} ${d.edge === 'u+' ? 'tip' : 'side'}`);
   return (
     <SmPopup
-      title={d.isNew ? 'Tab' : `Tab ${d.id}`}
-      subtitle={`${where} · edge ${formatSheetLength(span, unit, 1)}`}
+      title={d.isNew ? (count > 1 ? 'Tabs' : 'Tab') : `Tab ${d.id}`}
+      subtitle={count > 1 ? where : `${where} · edge ${formatSheetLength(span, unit, 1)}`}
       onClose={onExit}
       closeLabel="Exit sheet metal without writing this tab"
       dataAttr="data-sheet-metal-tab"
       unit={unit}
       onUnit={onUnit}
       compact={compact}
+      cardAttrs={{ 'data-sm-edges': String(count) }}
       footer={<DraftFooter mode={mode} setMode={setMode} onCommit={onCommit} onDelete={onDelete} />}
     >
       <SmMmSlider id="sm-tab-width" label="Width" mm={d.width} minMm={1} maxMm={span} unit={unit}
@@ -270,8 +278,8 @@ const ExportPopup = ({ mode, setMode, mesh, script, partName, unit, onUnit, comp
 };
 
 const TOOL_HINTS = {
-  tab: 'Tap an orange edge to add a tab, or a tab to edit it.',
-  bend: 'Tap an orange edge to bend it, or a bend to edit it.',
+  tab: 'Tap orange edges to add them as one tab, or a tab to edit it.',
+  bend: 'Tap orange edges to bend them as one feature, or a bend to edit it.',
   hole: 'Tap a face to place a hole, or a hole to edit it.',
   countersink: 'Tap a face to place a countersunk hole.',
   tapped: 'Tap a face to place a tapped hole.',

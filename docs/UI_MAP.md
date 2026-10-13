@@ -130,7 +130,8 @@ Desktop specifics:
   marker. Order is the markers before the block, then Base
   (`data-feature-chip="sheetBase"`), each bend (`sheetBend`), and each tab
   (`sheetTab`), then the markers after the block. Plane and base show Base
-  only. A tap opens that chip's card. Delete never refuses: nothing else
+  only. Bend and Tab toggle edges into one chip: one Confirm, one undo.
+  A tap opens that chip's card. Delete never refuses: nothing else
   goes with it deletes now, and children ask **Delete along with N features**.
   The toast is one line, `Deleted.` (`data-delete-undo-toast`), and Undo and
   dismiss are 44px wide. Undo is the one editor step. The
