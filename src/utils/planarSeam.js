@@ -1,7 +1,9 @@
 /**
  * A fillet boolean can leave a needle between two copies of a cap vertex.
  * The needle is about 0.001mm tall, its normal is sideways, and flat shading
- * draws it as a seam through the face. It is not the curved blend.
+ * draws it as a seam through the face. On a bent sheet the same needle is
+ * shorter than a bend chord (~0.9 mm), not the long ruling of a box edge.
+ * It is not the curved blend.
  *
  * Drop it from the drawn mesh only when every vertex already lies on another
  * triangle of that face. A thin fillet facet is the only cover of its own
@@ -9,7 +11,12 @@
  */
 
 const FIN_HEIGHT_MM = 0.002;
-const FIN_MIN_EDGE_MM = 1;
+// The height test is what keeps a real fillet facet: that facet is the only
+// cover of its surface and it is taller than FIN_HEIGHT_MM. A 1 mm floor
+// left bend-chord needles, and a 0.05 mm floor still left the tangency
+// needles on a sheet-thickness fillet (longest edge about 0.03 mm). Those
+// already lie on the wall. Flat shading draws them as a seam.
+const FIN_MIN_EDGE_MM = 0.005;
 const COVER_MM = 0.02;
 const COVER_AREA = 0.05;
 
