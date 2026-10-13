@@ -5785,7 +5785,88 @@ function _s23PointSegDist(p, a, b) {
  * to the edge segment, with the same alignment penalty as _s23ProbeSegments
  * so a seam that only touches the endpoint does not win.
  */
-function _s23ProbeKnotNormals(part, points, closed) {
+function _s23Unit(v) {
+  return _s23Norm(v);
+}
+
+function _s23NormalsMatch(a0, a1, b0, b1) {
+  if (!a0 || !a1 || !b0 || !b1) return false;
+  const d = (p, q) => _s23Dot(_s23Unit(p), _s23Unit(q));
+  return (d(a0, b0) > 0.92 && d(a1, b1) > 0.92) || (d(a0, b1) > 0.92 && d(a1, b0) > 0.92);
+}
+
+function _s23FacesMatch(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length < 2 || b.length < 2) return false;
+  const ax = Number(a[0]);
+  const ay = Number(a[1]);
+  const bx = Number(b[0]);
+  const by = Number(b[1]);
+  if (![ax, ay, bx, by].every((n) => Number.isFinite(n))) return false;
+  return (ax === bx && ay === by) || (ax === by && ay === bx);
+}
+
+/** Edges makeSweepPath kept from the pick (normals + adjacent faces). */
+function _s23CarriedEdges(path) {
+  const list = path && typeof path === 'object' && !Array.isArray(path) ? path.edges : null;
+  if (!Array.isArray(list)) return null;
+  const out = [];
+  for (const e of list) {
+    if (!e || !Array.isArray(e.va) || !Array.isArray(e.vb)) continue;
+    if (!e.n0 || !e.n1) continue;
+    out.push(e);
+  }
+  return out.length ? out : null;
+}
+
+/**
+ * The picked edge under this knot, when the path carried its walls.
+ * A knot on the bend-root line is 0 mm from both the concave facet edge and
+ * the convex bottom edge; without this, list order takes the convex twin.
+ */
+function _s23CarriedOnSegment(carried, mid, T) {
+  if (!carried) return null;
+  let best = null;
+  let bestD = Infinity;
+  for (const e of carried) {
+    const d = _s23PointSegDist(mid, e.va, e.vb);
+    const eT = _s23Norm(_s23Sub(e.vb, e.va));
+    const align = Math.abs(_s23Dot(eT, T));
+    if (align < 0.85) continue;
+    if (d < bestD) {
+      bestD = d;
+      best = e;
+    }
+  }
+  if (!best || bestD > 0.85) return null;
+  return best;
+}
+
+/**
+ * Among mesh edges on the same line as the pick, keep the one with the
+ * pick's faces, else its normals. Returns null when the pick does not
+ * disambiguate (one edge, or no identity match).
+ */
+function _s23EdgeMatchingCarry(edges, carried, mid, T) {
+  if (!carried) return null;
+  const onLine = [];
+  for (const e of edges) {
+    if (!e || !e.n0 || !e.n1 || !Array.isArray(e.va) || !Array.isArray(e.vb)) continue;
+    const d = _s23PointSegDist(mid, e.va, e.vb);
+    if (d > 0.2) continue;
+    const eT = _s23Norm(_s23Sub(e.vb, e.va));
+    if (Math.abs(_s23Dot(eT, T)) < 0.95) continue;
+    onLine.push(e);
+  }
+  if (onLine.length < 2) return null;
+  const byFace = onLine.find((e) => _s23FacesMatch(carried.faces, e.faces)
+    || (Number.isFinite(carried.faceA) && Number.isFinite(carried.faceB)
+      && _s23FacesMatch([carried.faceA, carried.faceB], e.faces)));
+  if (byFace) return byFace;
+  const byNorm = onLine.find((e) => _s23NormalsMatch(carried.n0, carried.n1, e.n0, e.n1));
+  return byNorm || null;
+}
+
+function _s23ProbeKnotNormals(part, points, closed, carried = null) {
   const edges = _s23ProbeFeatureEdges(part);
   const n = points.length;
   const segCount = closed ? n : n - 1;
@@ -5816,7 +5897,10 @@ function _s23ProbeKnotNormals(part, points, closed) {
         best = e;
       }
     }
-    const hit = best && bestD <= Math.max(0.85, Math.max(0.55 * (segL || 1), 0.35));
+    const carriedHit = _s23CarriedOnSegment(carried, mid, T);
+    const identified = _s23EdgeMatchingCarry(edges, carriedHit, mid, T);
+    if (identified) best = identified;
+    const hit = best && (identified || bestD <= Math.max(0.85, Math.max(0.55 * (segL || 1), 0.35)));
     if (!hit) continue;
     const nr = { n0: best.n0, n1: best.n1 };
     segmentNormals[i] = nr;
@@ -6207,20 +6291,68 @@ function _s23ReadBBox(part) {
 }
 
 /**
- * Drop filler material that the open-end pad pushed past the pre-fillet bbox.
- * eps keeps the original skin (float) so a solid fillet is not shaved.
+ * How far a concave fillet section reaches past the edge, in the wall plane.
+ * The open-end pad is along the tangent and is not part of this.
  */
-function _s23ClipToBBox(M, solid, bb) {
+function _s23FilletSectionReach(radius, theta) {
+  const th = Math.min(Math.PI - 0.08, Math.max(0.08, Number(theta) || Math.PI / 2));
+  const e = filletSweepCutterExpand(radius);
+  const tanHalf = Math.tan(th / 2);
+  if (!(tanHalf > 1e-6)) return radius + e + 0.05;
+  // Leg setback, plus the rear bumper's own setback. 0.05 keeps the
+  // tangent point off the clip face (the box also carries a 1e-3 skin).
+  return (radius + e) / tanHalf + 0.05;
+}
+
+/**
+ * An open end that leaves through a face of the part box must not grow
+ * that side: the pad along the tangent is what the clip is for. Other
+ * sides grow by the fillet section, so a round that fills an exterior
+ * corner (the bend root, below the sheet) is kept.
+ */
+function _s23ZeroGrowOnBBoxExit(growMin, growMax, bb, pt, tout) {
+  const eps = 0.05;
+  const sides = [
+    [pt[0] - bb.min[0], growMin, 0, [-1, 0, 0]],
+    [bb.max[0] - pt[0], growMax, 0, [1, 0, 0]],
+    [pt[1] - bb.min[1], growMin, 1, [0, -1, 0]],
+    [bb.max[1] - pt[1], growMax, 1, [0, 1, 0]],
+    [pt[2] - bb.min[2], growMin, 2, [0, 0, -1]],
+    [bb.max[2] - pt[2], growMax, 2, [0, 0, 1]],
+  ];
+  for (const [d, arr, k, n] of sides) {
+    if (d <= eps && _c4Dot(tout, n) > _S23_EXIT_ALIGN) arr[k] = 0;
+  }
+}
+
+/**
+ * Drop the open-end pad that left the pre-fillet bbox. `grow` widens the
+ * box by the fillet section on sides the path does not exit, so the round
+ * itself can sit outside the part. eps keeps the original skin (float).
+ */
+function _s23ClipToBBox(M, solid, bb, grow) {
   const eps = 1e-3;
+  const g0 = grow && grow.min ? grow.min : [0, 0, 0];
+  const g1 = grow && grow.max ? grow.max : [0, 0, 0];
+  const min = [
+    bb.min[0] - (Number(g0[0]) || 0),
+    bb.min[1] - (Number(g0[1]) || 0),
+    bb.min[2] - (Number(g0[2]) || 0),
+  ];
+  const max = [
+    bb.max[0] + (Number(g1[0]) || 0),
+    bb.max[1] + (Number(g1[1]) || 0),
+    bb.max[2] + (Number(g1[2]) || 0),
+  ];
   const size = [
-    bb.max[0] - bb.min[0] + 2 * eps,
-    bb.max[1] - bb.min[1] + 2 * eps,
-    bb.max[2] - bb.min[2] + 2 * eps,
+    max[0] - min[0] + 2 * eps,
+    max[1] - min[1] + 2 * eps,
+    max[2] - min[2] + 2 * eps,
   ];
   const c = [
-    (bb.max[0] + bb.min[0]) / 2,
-    (bb.max[1] + bb.min[1]) / 2,
-    (bb.max[2] + bb.min[2]) / 2,
+    (max[0] + min[0]) / 2,
+    (max[1] + min[1]) / 2,
+    (max[2] + min[2]) / 2,
   ];
   const box = M.cube(size, true).translate(c);
   const clipped = M.intersection(solid, box);
@@ -6332,13 +6464,103 @@ function _s23ClipSolidToPlanes(M, solid, planes) {
 }
 
 /**
+ * Outward wall planes of a straight concave run (the empty side of each
+ * face). A turning chain returns null — its walls are not one pair of planes.
+ */
+function _s23StraightEmptySidePlanes(segs) {
+  const conc = (segs || []).filter((s) => s && s.convex === false && s.f0 && s.f1 && s.T && s.p0);
+  if (!conc.length) return null;
+  const f0 = _s23Norm(conc[0].f0);
+  const f1 = _s23Norm(conc[0].f1);
+  for (let i = 1; i < conc.length; i++) {
+    const a0 = _s23Norm(conc[i].f0);
+    const a1 = _s23Norm(conc[i].f1);
+    const same = (Math.abs(_s23Dot(a0, f0)) > 0.98 && Math.abs(_s23Dot(a1, f1)) > 0.98)
+      || (Math.abs(_s23Dot(a0, f1)) > 0.98 && Math.abs(_s23Dot(a1, f0)) > 0.98);
+    if (!same) return null;
+  }
+  const T = _s23Norm(conc[0].T);
+  let n0 = _s23Cross(T, f0);
+  if (_s23Dot(n0, f1) < 0) n0 = [-n0[0], -n0[1], -n0[2]];
+  n0 = _s23Norm(n0);
+  let n1 = _s23Cross(T, f1);
+  if (_s23Dot(n1, f0) < 0) n1 = [-n1[0], -n1[1], -n1[2]];
+  n1 = _s23Norm(n1);
+  if (!(Math.hypot(n0[0], n0[1], n0[2]) > 0.5) || !(Math.hypot(n1[0], n1[1], n1[2]) > 0.5)) return null;
+  const p = conc[0].p0;
+  return [{ p, n: n0 }, { p, n: n1 }];
+}
+
+/**
+ * The expand pad pushes a strip past each wall so the union is not coplanar.
+ * On a convex cutter that strip sits in empty space and the subtract ignores
+ * it. On this concave edge one wall is the base's end face, and below the
+ * sheet that "material" side is void, so the strip hangs as a lip and the
+ * added volume is about twice the section. Cut that lip off the filler that
+ * left the part box. Filler inside the box (a cutout corner) is not touched.
+ * The nominal round is on the empty side of both walls and stays.
+ */
+function _s23ClipExteriorFillerLip(M, filler, bb, segs) {
+  const walls = _s23StraightEmptySidePlanes(segs);
+  if (!walls || !filler || !bb) return filler;
+  const eps = 1e-3;
+  const size = [
+    bb.max[0] - bb.min[0] + 2 * eps,
+    bb.max[1] - bb.min[1] + 2 * eps,
+    bb.max[2] - bb.min[2] + 2 * eps,
+  ];
+  const c = [
+    (bb.max[0] + bb.min[0]) / 2,
+    (bb.max[1] + bb.min[1]) / 2,
+    (bb.max[2] + bb.min[2]) / 2,
+  ];
+  const box = M.cube(size, true).translate(c);
+  let outside;
+  try {
+    outside = M.difference(filler, box);
+  } catch (_) {
+    return filler;
+  }
+  if (_c4StatusError(outside) || !(outside.volume() > 1e-6)) return filler;
+  // _s23ClipSolidToPlanes keeps the side opposite the given normal.
+  // Negating the outward wall normal keeps the empty side, plus 1e-3.
+  const planes = walls.map((w) => ({
+    p: w.p,
+    n: [-w.n[0], -w.n[1], -w.n[2]],
+  }));
+  let kept;
+  try {
+    kept = _s23ClipSolidToPlanes(M, outside, planes);
+  } catch (_) {
+    return filler;
+  }
+  if (_c4StatusError(kept)) return filler;
+  let inside;
+  try {
+    inside = M.intersection(filler, box);
+  } catch (_) {
+    return filler;
+  }
+  if (_c4StatusError(inside)) return filler;
+  try {
+    const out = M.union([inside, kept]);
+    if (_c4StatusError(out)) return filler;
+    return out;
+  } catch (_) {
+    return filler;
+  }
+}
+
+/**
  * Concave filler caps are coplanar with the face the edge ends on.
  * On an open shell the free end is the opening (outside the bbox): the cap
  * leaves a triangular fan. The other end sits on the inner ceiling, inside
  * the bbox: the same coplanar cap is a shallow lip along the wall-ceiling
  * junction. Extend EVERY concave open-chain end by the usual cutter-expand
  * pad (not a deeper blend). The caller still clips the result to the
- * pre-fillet bbox, which only removes filler that left the part box.
+ * pre-fillet bbox, widened by the fillet section except on a side the
+ * open end leaves through. That cuts the pad off and keeps a round that
+ * fills an exterior corner outside the box.
  *
  * That bbox is the wrong slab on a bent sheet. The inside corner of a
  * rectangular cutout runs through the thickness; a flange makes the part
@@ -6355,6 +6577,14 @@ function _s23ExtendConcaveOpenEnds(part, segs, closed, radius) {
   if (!(pad > 1e-9)) return null;
   const bb = _s23ReadBBox(part);
   const planes = [];
+  let reach = 0;
+  for (const seg of segs) {
+    if (!seg || seg.convex !== false) continue;
+    const got = _s23FilletSectionReach(radius, seg.theta);
+    if (got > reach) reach = got;
+  }
+  const growMin = [reach, reach, reach];
+  const growMax = [reach, reach, reach];
   const bump = (seg, which) => {
     if (!seg || seg.convex !== false || !seg.T || !seg.p0 || !seg.p1) return false;
     const T = seg.T;
@@ -6362,6 +6592,7 @@ function _s23ExtendConcaveOpenEnds(part, segs, closed, radius) {
     const pt = which === 'start' ? seg.p0 : seg.p1;
     const tLen = Math.hypot(dir[0], dir[1], dir[2]) || 1;
     const tout = [dir[0] / tLen, dir[1] / tLen, dir[2] / tLen];
+    _s23ZeroGrowOnBBoxExit(growMin, growMax, bb, pt, tout);
     const plane = _s23ExteriorExitPlane(pt, tout);
     if (plane && !_s23ExitsThroughBBox(bb, pt, tout)) planes.push(plane);
     const moved = [pt[0] + dir[0] * pad, pt[1] + dir[1] * pad, pt[2] + dir[2] * pad];
@@ -6372,7 +6603,7 @@ function _s23ExtendConcaveOpenEnds(part, segs, closed, radius) {
   };
   const a = bump(segs[0], 'start');
   const b = bump(segs[segs.length - 1], 'end');
-  return (a || b) ? { bb, planes } : null;
+  return (a || b) ? { bb, planes, grow: { min: growMin, max: growMax } } : null;
 }
 
 /**
@@ -6620,9 +6851,9 @@ function _s23ExtendOpenRunEnds(part, segs, radius, profileKind, arcSegs) {
 }
 
 function _s23BuildVariableProfileCutter(
-  M, CrossSection, part, points, closed, radius, profileKind, arcSegs, testScale, rawSegCount, junction,
+  M, CrossSection, part, points, closed, radius, profileKind, arcSegs, testScale, rawSegCount, junction, carried = null,
 ) {
-  const { segmentNormals, seedNormals, segmentConvex } = _s23ProbeKnotNormals(part, points, closed);
+  const { segmentNormals, seedNormals, segmentConvex } = _s23ProbeKnotNormals(part, points, closed, carried);
   const built = buildVariableProfileFrames(points, closed, {
     radius,
     segmentNormals,
@@ -6669,8 +6900,10 @@ function _s23BuildVariableProfileCutter(
   // θ removed the staircase but gouged wherever the true θ was far from the
   // median; θ-grouped runs (C3.1) put the same error back as steps.
   const cut = _s23VaryingProfileCutter(segs, closed, radius, profileKind, arcSegs, testScale, part);
-  if (openEnd && openEnd.planes.length && cut.filler) {
-    cut.filler = _s23ClipSolidToPlanes(manifoldModule.Manifold, cut.filler, openEnd.planes);
+  if (openEnd && cut.filler) {
+    const Mclip = manifoldModule.Manifold;
+    if (openEnd.planes.length) cut.filler = _s23ClipSolidToPlanes(Mclip, cut.filler, openEnd.planes);
+    cut.filler = _s23ClipExteriorFillerLip(Mclip, cut.filler, openEnd.bb, segs);
   }
   _recordVariableProfileMeta({
     usedFrames: true,
@@ -6696,6 +6929,7 @@ function _s23BuildVariableProfileCutter(
     endExtend: cut.endExtend || 0,
   });
   cut.openEndBBox = openEnd ? openEnd.bb : null;
+  cut.openEndGrow = openEnd ? openEnd.grow : null;
   return cut;
 }
 
@@ -6906,6 +7140,7 @@ function filletAlongPath(part, path, radius, opts = {}) {
   const profileKind = (opts.profile === 'chamfer') ? 'chamfer' : 'fillet';
   const arcSegs = opts.segments != null ? opts.segments : FILLET_ARC_SEGMENTS;
   let { points, closed, length } = _s23NormalizePath(path, opts);
+  const carried = _s23CarriedEdges(path);
 
   // C3 hard: densify + per-knot path-normal inscribed-arc frames (buildVariableProfileFrames).
   // C4: a concave run is material-ADD, which the dihedral sweep cannot express
@@ -6917,7 +7152,7 @@ function filletAlongPath(part, path, radius, opts = {}) {
   let pathConvex = false;
   if (!opts._rawPath) {
     try {
-      const scan = _s23ProbeKnotNormals(part, points, closed);
+      const scan = _s23ProbeKnotNormals(part, points, closed, carried);
       pathConvex = scan.segmentConvex.every((c) => c !== false);
       if (!variableProfile && !pathConvex) variableProfile = true;
     } catch (e) {
@@ -6993,7 +7228,7 @@ function filletAlongPath(part, path, radius, opts = {}) {
         try {
           built = variableProfile
             ? _s23BuildVariableProfileCutter(
-              M, CrossSection, part, run, runClosed, radius, profileKind, arcSegs, scale, rawSegCount, junction,
+              M, CrossSection, part, run, runClosed, radius, profileKind, arcSegs, scale, rawSegCount, junction, carried,
             )
             : _s23BuildDihedralCutter(
               M, CrossSection, part, run, runClosed, radius, profileKind, arcSegs, scale, junction,
@@ -7012,7 +7247,7 @@ function filletAlongPath(part, path, radius, opts = {}) {
             part = M.union([part, built.filler]);
           } catch (_) { /* keep */ }
           // Clip outside the swallow: a failed open-end clip must not drop the filler silently.
-          if (built.openEndBBox) part = _s23ClipToBBox(M, part, built.openEndBBox);
+          if (built.openEndBBox) part = _s23ClipToBBox(M, part, built.openEndBBox, built.openEndGrow);
         }
       }
       if (!cutters.length) {
@@ -7086,11 +7321,12 @@ function filletAlongPath(part, path, radius, opts = {}) {
   let expectAddOverride = 0;
   let expectVolOverride = null;
   let openEndBBox = null;
+  let openEndGrow = null;
   if (!opts.initialNormal) {
     const scale = testingOversize ? testCutterScale : 1;
     const built = variableProfile
       ? _s23BuildVariableProfileCutter(
-        M, CrossSection, part, points, closed, radius, profileKind, arcSegs, scale, rawSegCount,
+        M, CrossSection, part, points, closed, radius, profileKind, arcSegs, scale, rawSegCount, null, carried,
       )
       : _s23BuildDihedralCutter(
         M, CrossSection, part, points, closed, radius, profileKind, arcSegs, scale,
@@ -7100,6 +7336,7 @@ function filletAlongPath(part, path, radius, opts = {}) {
     expectAddOverride = built.expectAdd || 0;
     expectVolOverride = built.expectVol;
     openEndBBox = built.openEndBBox || null;
+    openEndGrow = built.openEndGrow || null;
   }
 
   // Legacy 90° RMF — only when opts.initialNormal is set. May reverse the path.
@@ -7306,9 +7543,11 @@ function filletAlongPath(part, path, radius, opts = {}) {
         + '(filler far larger than requested radius) — failing loud rather than shipping an oversized blend',
       );
     }
-    // Pad lives outside the pre-fillet bbox. Clip after the volume guard so
-    // expectAdd (which includes the pad length) still matches `added`.
-    if (openEndBBox) out = _s23ClipToBBox(M, out, openEndBBox);
+    // The end pad leaves the pre-fillet bbox along the tangent. Clip after
+    // the volume guard so expectAdd (which includes the pad length) still
+    // matches `added`. The box is widened by the fillet section, so a round
+    // that fills an exterior corner is not cut off with the pad.
+    if (openEndBBox) out = _s23ClipToBBox(M, out, openEndBBox, openEndGrow);
   }
   // Near-no-op and oversize guards use the dihedral removed-area when the
   // per-segment cutter ran. A 90°-only expect false-trips an acute fillet

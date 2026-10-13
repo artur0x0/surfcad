@@ -373,7 +373,11 @@ Mobile specifics:
   The rollback bar (`data-rollback-bar`) sits in a gap between feature chips.
   Its line runs the full strip height, centred in that gap, and the upside-down
   triangle sits just above the strip with its tip on the top edge. The rail
-  uses the same control.
+  uses the same control. The drawn triangle stays small. Dragging uses an
+  invisible 44×44 box on that triangle (`data-rollback-hit`) on the strip and
+  on the rail. When the bar is before the first feature, a lead spacer
+  (`data-rollback-lead`) opens padding so that box clears the first chip, and
+  the chip still opens on tap.
   Release greys every chip after it on the strip and on the rail
   (`data-feature-rolled-back`, titled rolled back) and rebuilds up to that
   gap. The run names those features in `rolledBack` instead of reporting
