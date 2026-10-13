@@ -220,6 +220,7 @@
         "golden:rollback-sync": "node scripts/golden/smoke_rollback_sync.mjs",
         "golden:rollback-badge": "node scripts/golden/smoke_rollback_badge.mjs",
         "golden:rollback-select": "node scripts/golden/smoke_rollback_select.mjs",
+        "golden:rollback-contour": "node scripts/golden/smoke_rollback_contour.mjs",
         "golden:script-return": "node scripts/golden/smoke_script_return.mjs",
         "golden:safari-page-lifecycle": "node scripts/golden/smoke_safari_page_lifecycle.mjs",
         "golden:failed-part-outline": "node scripts/golden/smoke_failed_part_outline.mjs",

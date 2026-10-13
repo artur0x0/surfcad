@@ -14,6 +14,7 @@
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { featureDependents } from './featureEdit.js';
 import { insertBlockAtCaret } from './helperPaletteSnippets.js';
+import { contourStatements } from './namedContour.js';
 import { featureStripChips } from './sheetMetal/sheetRibbon.js';
 import { readSheetMetalSpec } from './sheetMetal/sheetMetalScript.js';
 import {
@@ -183,9 +184,11 @@ function mergeRanges(ranges) {
 /**
  * Throwaway evaluation copy.
  *
- * `skipIds` blanks those block interiors. `anchorId` is the feature the
- * rollback bar sits after: a string blanks every statement after it, `null`
- * blanks from the start of the script, and an unknown id blanks no tail.
+ * `skipIds` blanks those block interiors. `anchorId` is the feature or
+ * contour the rollback bar sits after: a feature id blanks every statement
+ * after it, a contour id blanks every statement after that contour
+ * statement, `null` blanks from the start of the script, and an unknown id
+ * blanks no tail.
  * A sheet chip keeps that block through the chip (later bends, tabs, and
  * their holes drop out of `sheetSpec`) and blanks from the end of the block.
  * Omit `anchorId` when the bar is at the end. The trailing `return part;`
@@ -215,6 +218,10 @@ export function evaluationScript(script, options = {}) {
       else {
         const chip = sheetAnchor(text, opts.anchorId);
         if (chip && Number.isFinite(chip.endOffset)) from = chip.endOffset;
+        else {
+          const contour = contourAnchor(text, opts.anchorId);
+          if (contour && Number.isFinite(contour.endOffset)) from = contour.endOffset;
+        }
       }
     }
     if (from != null) ranges.push(...statementRanges(text, from));
@@ -265,7 +272,7 @@ export function resolveRollback(script, anchor) {
   const ids = chips.map((chip) => chip.id);
   const known = new Set(markerIds);
   for (const chip of chips) {
-    if (chip.sheet) known.add(chip.id);
+    if (chip.sheet || chip.kind === 'contour') known.add(chip.id);
   }
   let resolved;
   if (anchor === null) resolved = null;
@@ -298,12 +305,25 @@ function featureIds(script) {
   return parseFeatureMarkers(script).map((feature) => feature.id);
 }
 
-/** A sheet chip id, when it is not also a marker id. Contour ids are not anchors. */
+/** A sheet chip id, when it is not also a marker id. */
 function sheetAnchor(script, anchor) {
   if (typeof anchor !== 'string') return null;
   if (featureIds(script).includes(anchor)) return null;
   const chip = featureStripChips(script).find((item) => item.sheet && item.id === anchor);
   return chip || null;
+}
+
+/**
+ * A contour chip id (`contour:<id>`), when that statement is still in the script.
+ * The statement stays live. Features that start after it are the rolled-back tail.
+ */
+function contourAnchor(script, anchor) {
+  if (typeof anchor !== 'string' || !anchor.startsWith('contour:')) return null;
+  const id = anchor.slice('contour:'.length);
+  if (!id) return null;
+  const stmt = contourStatements(script).find((row) => row.id === id);
+  if (!stmt || !Number.isFinite(stmt.end)) return null;
+  return { id: anchor, startOffset: stmt.start, endOffset: stmt.end };
 }
 
 function markerIndexForAnchor(features, script, anchor) {
@@ -312,9 +332,17 @@ function markerIndexForAnchor(features, script, anchor) {
   const direct = features.findIndex((feature) => feature.id === anchor);
   if (direct >= 0) return direct;
   const chip = sheetAnchor(script, anchor);
-  if (!chip?.markerId) return null;
-  const host = features.findIndex((feature) => feature.id === chip.markerId);
-  return host >= 0 ? host : null;
+  if (chip?.markerId) {
+    const host = features.findIndex((feature) => feature.id === chip.markerId);
+    return host >= 0 ? host : null;
+  }
+  const contour = contourAnchor(script, anchor);
+  if (!contour) return null;
+  let last = -1;
+  for (let i = 0; i < features.length; i += 1) {
+    if (features[i].endOffset <= contour.endOffset) last = i;
+  }
+  return last;
 }
 
 function trimSheetSpec(spec, keptChips) {
@@ -371,7 +399,9 @@ export function rollbackInsertCaret(script, anchor) {
   const feature = parseFeatureMarkers(script).find((item) => item.id === anchor);
   if (feature) return feature.endOffset;
   const chip = sheetAnchor(script, anchor);
-  return chip && Number.isFinite(chip.endOffset) ? chip.endOffset : null;
+  if (chip && Number.isFinite(chip.endOffset)) return chip.endOffset;
+  const contour = contourAnchor(script, anchor);
+  return contour ? contour.endOffset : null;
 }
 
 /**
@@ -387,7 +417,8 @@ export function clampRollbackAnchor(script, anchor) {
   if (anchor === null) return null;
   if (typeof anchor !== 'string') return undefined;
   if (featureIds(script).includes(anchor)) return anchor;
-  return sheetAnchor(script, anchor) ? anchor : undefined;
+  if (sheetAnchor(script, anchor)) return anchor;
+  return contourAnchor(script, anchor) ? anchor : undefined;
 }
 
 function blockBody(script, feature) {
@@ -444,10 +475,16 @@ export function rolledBackFeatureIds(script, anchorId) {
   const at = features.findIndex((feature) => feature.id === anchorId);
   if (at >= 0) return features.slice(at + 1).map((feature) => feature.id);
   const chip = sheetAnchor(text, anchorId);
-  if (!chip?.markerId) return [];
-  const host = features.findIndex((feature) => feature.id === chip.markerId);
-  if (host < 0) return [];
-  return features.slice(host + 1).map((feature) => feature.id);
+  if (chip?.markerId) {
+    const host = features.findIndex((feature) => feature.id === chip.markerId);
+    if (host < 0) return [];
+    return features.slice(host + 1).map((feature) => feature.id);
+  }
+  const contour = contourAnchor(text, anchorId);
+  if (!contour) return [];
+  return features
+    .filter((feature) => feature.startOffset >= contour.endOffset)
+    .map((feature) => feature.id);
 }
 
 function explicitMarkerId(script, feature) {
@@ -503,6 +540,9 @@ function reboundAnchor(beforeScript, afterScript, anchor) {
   if (typeof anchor !== 'string') return undefined;
   if (sheetAnchor(beforeScript, anchor)) {
     return sheetAnchor(afterScript, anchor) ? anchor : undefined;
+  }
+  if (contourAnchor(beforeScript, anchor)) {
+    return contourAnchor(afterScript, anchor) ? anchor : undefined;
   }
   const before = parseFeatureMarkers(beforeScript);
   const after = parseFeatureMarkers(afterScript);

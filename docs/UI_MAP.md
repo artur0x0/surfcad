@@ -408,6 +408,9 @@ Mobile specifics:
   feature does not move the bar. The strip and the run share
   `resolveRollback`: a missing id is the end for both, never the start, and
   the handle is that anchor rather than a gap index turned back into an id.
+  A contour chip (`contour:<id>`) is an anchor. The bar can sit between that
+  contour and the feature that uses it: the contour stays live and the feature
+  is rolled back. A contour id that is gone from the script is the end.
   Undo, redo, and delete keep the stored id. When the anchor feature is
   gone the bar sits at the end and the full remaining solid runs; when that
   feature comes back the bar returns to it. File open and reload
