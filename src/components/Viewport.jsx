@@ -1135,7 +1135,9 @@ const Viewport = forwardRef(({
   // Shell and Draft read the list off selectedFace.group; every other feature
   // keeps using the LAST pick.
   const facePickGroupRef = useRef(null);
-  const mouseDownPosRef = useRef({ x: 0, y: 0 });
+  // Null until a press starts on the canvas. A leftover {0,0} made the first
+  // mouseup — including a rollback-bar release over this canvas — look like a tap.
+  const mouseDownPosRef = useRef(null);
   const isDraggingRef = useRef(false);
   /** Slice Mobile C: pointer-hold opens feature sheet without conflicting with orbit. */
   const featureLongPressTimerRef = useRef(null);
@@ -8269,6 +8271,10 @@ const Viewport = forwardRef(({
       isDraggingRef.current = false;
       return;
     }
+    // A mouseup that did not start on the canvas is not a tap. Releasing the
+    // rollback bar (its triangle sits over this canvas) must keep the part.
+    // Only a press that begins and ends on empty space clears the selection.
+    if (!mouseDownPosRef.current && !isDraggingRef.current) return;
     // A finger tap wobbles a few pixels. That is still a sketch pick.
     // A real orbit moves further and must not also select.
     if (isDraggingRef.current) {

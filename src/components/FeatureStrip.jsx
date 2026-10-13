@@ -166,26 +166,52 @@ const ROLLBACK_HIT = 44;
  * it, the bar sits far enough back that the hit box does not cover that chip.
  */
 const ROLLBACK_LEAD = 40;
+/**
+ * Past the last chip, in px. Half of the 8px chip gap, so the line clears the
+ * count badge the way a centred gap clears the badge beside it.
+ */
+const ROLLBACK_END_PAD = 4;
+
+/** Chip border box expanded by a badge or marker that hangs outside it. */
+function chipExtent(chip) {
+  const box = chip.getBoundingClientRect();
+  let left = box.left;
+  let right = box.right;
+  let top = box.top;
+  let bottom = box.bottom;
+  const marks = chip.querySelectorAll(
+    '[data-feature-type-badge], [data-feature-separate-body], [data-contour-unused-dot]',
+  );
+  marks.forEach((mark) => {
+    const markBox = mark.getBoundingClientRect();
+    if (markBox.width <= 0 || markBox.height <= 0) return;
+    left = Math.min(left, markBox.left);
+    right = Math.max(right, markBox.right);
+    top = Math.min(top, markBox.top);
+    bottom = Math.max(bottom, markBox.bottom);
+  });
+  return { left, right, top, bottom };
+}
 
 function measureRollbackGaps(track, vertical) {
   if (!track) return [];
   const chips = [...track.querySelectorAll('[data-feature-id]')];
   if (!chips.length) return [];
   const trackRect = track.getBoundingClientRect();
-  const boxes = chips.map((chip) => chip.getBoundingClientRect());
+  const boxes = chips.map(chipExtent);
   const gaps = [];
   if (vertical) {
     gaps.push(boxes[0].top - trackRect.top);
     for (let i = 1; i < boxes.length; i += 1) {
       gaps.push(((boxes[i - 1].bottom + boxes[i].top) / 2) - trackRect.top);
     }
-    gaps.push(boxes[boxes.length - 1].bottom - trackRect.top);
+    gaps.push(boxes[boxes.length - 1].bottom - trackRect.top + ROLLBACK_END_PAD);
   } else {
     gaps.push(boxes[0].left - trackRect.left);
     for (let i = 1; i < boxes.length; i += 1) {
       gaps.push(((boxes[i - 1].right + boxes[i].left) / 2) - trackRect.left);
     }
-    gaps.push(boxes[boxes.length - 1].right - trackRect.left);
+    gaps.push(boxes[boxes.length - 1].right - trackRect.left + ROLLBACK_END_PAD);
   }
   const lead = track.querySelector('[data-rollback-lead]');
   if (lead) {
@@ -593,6 +619,16 @@ export default function FeatureStrip({
     event.currentTarget.setPointerCapture?.(event.pointerId);
     dragRef.current = true;
     setPreviewIndex(nearestGap(event));
+    // A release over the canvas (the triangle sits above the strip) must not
+    // become an empty-space tap. Safari still delivers that mouseup to the
+    // element under the finger. Swallow it, and the click that follows, until
+    // this gesture's pointerup has finished dispatching.
+    const swallowRelease = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+    };
+    window.addEventListener('mouseup', swallowRelease, true);
+    window.addEventListener('click', swallowRelease, true);
     const move = (ev) => {
       if (!dragRef.current) return;
       const next = nearestGap(ev);
@@ -603,6 +639,10 @@ export default function FeatureStrip({
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       finishDrag(ev);
+      setTimeout(() => {
+        window.removeEventListener('mouseup', swallowRelease, true);
+        window.removeEventListener('click', swallowRelease, true);
+      }, 0);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);

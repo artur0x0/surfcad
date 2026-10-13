@@ -106,20 +106,37 @@ function readBars() {
     if (!track || !bar || !chips.length) return null;
     const vertical = orientation === 'vertical';
     const trackRect = track.getBoundingClientRect();
-    const boxes = chips.map((chip) => chip.getBoundingClientRect());
+    const extent = (chip) => {
+      const box = chip.getBoundingClientRect();
+      let left = box.left;
+      let right = box.right;
+      let top = box.top;
+      let bottom = box.bottom;
+      chip.querySelectorAll('[data-feature-type-badge], [data-feature-separate-body], [data-contour-unused-dot]').forEach((mark) => {
+        const markBox = mark.getBoundingClientRect();
+        if (markBox.width <= 0 || markBox.height <= 0) return;
+        left = Math.min(left, markBox.left);
+        right = Math.max(right, markBox.right);
+        top = Math.min(top, markBox.top);
+        bottom = Math.max(bottom, markBox.bottom);
+      });
+      return { left, right, top, bottom };
+    };
+    const boxes = chips.map(extent);
+    const endPad = 4;
     const gaps = [];
     if (vertical) {
       gaps.push(boxes[0].top - trackRect.top);
       for (let i = 1; i < boxes.length; i += 1) {
         gaps.push(((boxes[i - 1].bottom + boxes[i].top) / 2) - trackRect.top);
       }
-      gaps.push(boxes[boxes.length - 1].bottom - trackRect.top);
+      gaps.push(boxes[boxes.length - 1].bottom - trackRect.top + endPad);
     } else {
       gaps.push(boxes[0].left - trackRect.left);
       for (let i = 1; i < boxes.length; i += 1) {
         gaps.push(((boxes[i - 1].right + boxes[i].left) / 2) - trackRect.left);
       }
-      gaps.push(boxes[boxes.length - 1].right - trackRect.left);
+      gaps.push(boxes[boxes.length - 1].right - trackRect.left + endPad);
     }
     const barRect = bar.getBoundingClientRect();
     const center = vertical

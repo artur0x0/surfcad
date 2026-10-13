@@ -198,6 +198,8 @@ async function runSize(label, compact, width, height) {
     const lineBox = line.getBoundingClientRect();
     const filletBox = fillet.getBoundingClientRect();
     const shellBox = shell.getBoundingClientRect();
+    const filletBadge = fillet.querySelector('[data-feature-type-badge]')?.getBoundingClientRect();
+    const filletRight = Math.max(filletBox.right, filletBadge?.right || 0);
     const overlaps = chips.some((chip) => {
       const chipBox = chip.getBoundingClientRect();
       const overlapX = Math.min(markBox.right, chipBox.right) - Math.max(markBox.left, chipBox.left);
@@ -207,8 +209,8 @@ async function runSize(label, compact, width, height) {
     return {
       tipDelta: markBox.bottom - stripBox.top,
       overlaps,
-      centerDelta: (lineBox.left + lineBox.width / 2) - ((filletBox.right + shellBox.left) / 2),
-      clearLeft: lineBox.left - filletBox.right,
+      centerDelta: (lineBox.left + lineBox.width / 2) - ((filletRight + shellBox.left) / 2),
+      clearLeft: lineBox.left - filletRight,
       clearRight: shellBox.left - lineBox.right,
       lineTopDelta: lineBox.top - stripBox.top,
       lineBottomDelta: stripBox.bottom - lineBox.bottom,
