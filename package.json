@@ -29,6 +29,7 @@
         "golden:sheet-start-designing": "node scripts/golden/smoke_sheet_start_designing.mjs",
         "golden:sheet-insert-append": "node scripts/golden/smoke_sheet_insert_append.mjs",
         "golden:sheet-metal-reopen": "node scripts/golden/smoke_sheet_metal_reopen.mjs",
+        "golden:sheet-ribbon": "node scripts/golden/smoke_sheet_ribbon.mjs",
         "golden:scs-sheet-material": "node scripts/golden/smoke_scs_sheet_material.mjs",
         "golden:scs-step-brep": "node scripts/golden/smoke_scs_true_curve_step.mjs",
         "golden:slice03": "node scripts/golden/smoke_slice03_format.mjs",

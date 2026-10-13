@@ -79,6 +79,7 @@ import SheetMetalFlow from './sheetMetal/SheetMetalFlow';
 import {
   baseDraftSpec,
   draftPreviewSpec,
+  editSheetChip,
   enterSheetMetalMode,
   pushSheetHistory,
   reopenSheetMetalMode,
@@ -86,6 +87,8 @@ import {
   sheetTap,
   sheetToolsFor,
 } from '../utils/sheetMetal/sheetMetalMode';
+import { readSheetMetalSpec } from '../utils/sheetMetal/sheetMetalScript';
+import { sheetRibbonChips } from '../utils/sheetMetal/sheetRibbon';
 import { buildSheetOverlay, disposeSheetOverlay, sheetPickFromHits, syncSheetEdgeLineResolution } from '../utils/sheetMetal/sheetOverlay';
 import { referencePickEdges, sheetContourEdges, sheetSpecInScript } from '../utils/sheetMetal/sheetContourEdges';
 import { ensureBodyMaterial } from '../utils/sheetMetal/sheetMaterial';
@@ -1046,6 +1049,11 @@ const Viewport = forwardRef(({
    * is open and after contour mode closes.
    */
   onSketchStripChange = null,
+  /**
+   * Sheet chips for the phone and desktop bars. Null when sheet metal
+   * is closed. Sketch chips still replace this list.
+   */
+  onSheetStripChange = null,
   /** id → display name for the which-part chip. */
   partLabels = null,
   /** Saved assembly colors, keyed by surf id. Empty skips the face skin. */
@@ -1176,8 +1184,11 @@ const Viewport = forwardRef(({
   const onPickRetargetRef = useRef(null);
   const onFeatureSessionChangeRef = useRef(null);
   const onSketchStripChangeRef = useRef(null);
+  const onSheetStripChangeRef = useRef(null);
+  const getHelperBufferRef = useRef(null);
   const undoContourSketchRef = useRef(null);
   const selectSketchEntityRef = useRef(null);
+  const selectSheetChipRef = useRef(null);
   const partLabelsRef = useRef(null);
   const featureSessionRef = useRef(false);
   const featureEditRef = useRef(null);
@@ -1386,6 +1397,7 @@ const Viewport = forwardRef(({
   /** SCS sheet metal: picker popup (S1) + mode state (stage, sku, partId). */
   const [sheetMetalPicker, setSheetMetalPicker] = useState(null);
   const [sheetMetalMode, setSheetMetalMode] = useState(null);
+  const [sheetRibbonActiveId, setSheetRibbonActiveId] = useState(null);
   const sheetMetalModeRef = useRef(null);
   sheetMetalModeRef.current = sheetMetalMode;
   const exitSheetMetalChromeRef = useRef(() => {});
@@ -1911,6 +1923,8 @@ const Viewport = forwardRef(({
   jointPickingRef.current = !!jointPicking;
   onFeatureSessionChangeRef.current = onFeatureSessionChange;
   onSketchStripChangeRef.current = onSketchStripChange;
+  onSheetStripChangeRef.current = onSheetStripChange;
+  getHelperBufferRef.current = getHelperBuffer;
   partLabelsRef.current = partLabels || {};
   getBooleanContextRef.current = getBooleanContext;
   const onRunOutcomeRef = useRef(null);
@@ -2123,6 +2137,8 @@ const Viewport = forwardRef(({
     undoContourSketch: () => undoContourSketchRef.current?.(),
     /** Sketch-strip chip. A dimension or constraint opens its card. */
     selectSketchEntity: (chip) => selectSketchEntityRef.current?.(chip),
+    /** Sheet-ribbon chip. Highlights that chip. Does not open its card. */
+    selectSheetChip: (chip) => selectSheetChipRef.current?.(chip),
     /** Close every other card without writing, so the edit card can open alone. */
     yieldToFeatureEditCard: () => yieldToFeatureEditCardRef.current(),
     placeAssembly: (payload) => placeAssemblyRef.current(payload),
@@ -5025,6 +5041,32 @@ const Viewport = forwardRef(({
   }, []);
   undoContourSketchRef.current = undoContourSketch;
   selectSketchEntityRef.current = selectSketchEntity;
+
+  const selectSheetChip = useCallback((chip) => {
+    if (!chip?.id || !sheetMetalModeRef.current) return;
+    setSheetRibbonActiveId(chip.id);
+    if (!chip.sheet) return;
+    setSheetMetalMode((prev) => (prev ? editSheetChip(prev, chip) : prev));
+  }, []);
+  selectSheetChipRef.current = selectSheetChip;
+
+  useEffect(() => {
+    const publish = onSheetStripChangeRef.current;
+    if (!publish) return;
+    if (mode === 'game' || !sheetMetalMode) {
+      publish(null);
+      return;
+    }
+    const read = getHelperBufferRef.current;
+    const script = (typeof read === 'function' ? read() : '') || currentScript || '';
+    const items = sheetRibbonChips(script, {
+      stage: sheetMetalMode.stage,
+      spec: sheetMetalMode.spec,
+    });
+    const activeId = items.some((item) => item.id === sheetRibbonActiveId) ? sheetRibbonActiveId : null;
+    if (sheetRibbonActiveId && activeId == null) setSheetRibbonActiveId(null);
+    publish({ items, activeId });
+  }, [mode, sheetMetalMode, sheetRibbonActiveId, currentScript]);
 
   useEffect(() => {
     const publish = onSketchStripChangeRef.current;
@@ -12098,7 +12140,7 @@ const Viewport = forwardRef(({
           mode={sheetMetalMode}
           setMode={(fn) => setSheetMetalMode((prev) => (prev ? fn(prev) : prev))}
           onCommit={(spec, meta) => {
-            if (sheetMetalMode.reopen) {
+            if (sheetMetalMode.reopen && !meta?.write) {
               setSheetMetalMode((prev) => (prev ? pushSheetHistory(prev, spec) : prev));
               return true;
             }
@@ -12121,7 +12163,17 @@ const Viewport = forwardRef(({
             setSheetMetalMode(null);
           }}
           onDeleteFeature={featureEditRef.current?.dialog === 'sheetMetal' ? featureEditDelete : null}
-          onUndo={onUndo}
+          onUndo={() => {
+            onUndo?.();
+            const read = getHelperBufferRef.current;
+            const script = typeof read === 'function' ? read() : '';
+            const spec = readSheetMetalSpec(script);
+            setSheetMetalMode((prev) => {
+              if (!prev) return prev;
+              if (!spec) return { ...prev, spec: null, draft: null, hotEdge: null, toast: null };
+              return { ...prev, stage: 'edit', spec, draft: null, hotEdge: null, toast: null };
+            });
+          }}
           canUndo={canUndo}
           compact={isMobile}
           mesh={cachedMeshData}

@@ -107,7 +107,7 @@ import {
   withInsertedGroup,
 } from './utils/partGroups';
 import { sheetMetalBinding } from './utils/scs/scsCatalog';
-import { composeSheetMetalCommit, readSheetMetalSpec, sheetMetalFresh, sheetStarterScript } from './utils/sheetMetal/sheetMetalScript';
+import { composeSheetMetalCommit, readSheetMetalSpec, removeSheetMetalBlock, sheetMetalFresh, sheetStarterScript } from './utils/sheetMetal/sheetMetalScript';
 import {
   historyForPart,
   pushPartHistory,
@@ -373,6 +373,8 @@ const App = () => {
   const [featureSession, setFeatureSession] = useState(false);
   /** Sketch chips after Select plane. Null keeps the part strip. */
   const [sketchStrip, setSketchStrip] = useState(null);
+  /** Sheet chips while sheet metal is open. Null keeps the part strip. */
+  const [sheetStrip, setSheetStrip] = useState(null);
   const syncCadScriptRef = useRef(() => {});
   /** focusWritePart, for handlers declared above it. */
   const focusWritePartRef = useRef(() => true);
@@ -2360,8 +2362,23 @@ const App = () => {
   const handleSketchStrip = (payload) => {
     setSketchStrip((prev) => (payload == null && prev == null ? prev : payload));
   };
+  const handleSheetStrip = (payload) => {
+    setSheetStrip((prev) => {
+      if (payload == null) return prev == null ? prev : null;
+      const items = payload.items || [];
+      const prevItems = prev?.items || [];
+      const same = prev
+        && prev.activeId === payload.activeId
+        && prevItems.length === items.length
+        && prevItems.every((item, i) => (
+          item.id === items[i].id && item.kind === items[i].kind && item.chipLabel === items[i].chipLabel
+        ));
+      return same ? prev : payload;
+    });
+  };
   const onSketchUndo = () => viewportRef.current?.undoContourSketch?.();
   const onSketchSelect = (chip) => viewportRef.current?.selectSketchEntity?.(chip);
+  const onSheetSelect = (chip) => viewportRef.current?.selectSheetChip?.(chip);
 
   /**
    * Load the part a feature acts on into the editor before it writes, opens
@@ -5784,7 +5801,7 @@ const App = () => {
       return false;
     }
     const buf = codeEditorRef.current?.getContent?.() || '';
-    const result = composeSheetMetalCommit(buf, spec);
+    const result = meta?.removeBlock ? removeSheetMetalBlock(buf) : composeSheetMetalCommit(buf, spec);
     if (!result.ok) {
       viewportRef.current?.notify?.(result.message);
       return false;
@@ -7160,7 +7177,8 @@ const App = () => {
       : Math.round(Math.min(Math.max(vv.height * 0.32, 160), vv.height * 0.38)));
 
   const cadHighlightId = cadPartId || assemblyDoc?.activeId || null;
-  const showJoints = jointsChromeMounted({ appMode, featureSession }) && cadStripsShowJoints(cadPartId);
+  const sheetRibbonOpen = sketchStrip == null && sheetStrip != null;
+  const showJoints = !sheetRibbonOpen && jointsChromeMounted({ appMode, featureSession }) && cadStripsShowJoints(cadPartId);
   const jointCreateOpen = jointsChromeMounted({ appMode, featureSession })
     && (jointCard?.mode === 'create' || jointCard?.mode === 'edit');
   const jointUndoReady = showJoints && assemblyHistTick >= 0 && assemblyHistoryCanUndo(assemblyHistoryRef.current);
@@ -7623,6 +7641,7 @@ const App = () => {
               getBooleanContext={assemblyPartContext}
               onFeatureSessionChange={handleFeatureSession}
               onSketchStripChange={handleSketchStrip}
+            onSheetStripChange={handleSheetStrip}
               partLabels={partLabels}
               featureEdit={appMode === 'game' || (useStages && !isCadStage) ? null : featureSheet}
               featureEditScript={currentScript}
@@ -7713,20 +7732,22 @@ const App = () => {
                   >
                     <FeatureStrip
                       orientation="horizontal"
-                      script={sketchOpen || showJoints ? '' : stripScript}
-                      joints={sketchOpen ? null : liveJointChips}
+                      script={sketchOpen || sheetRibbonOpen || showJoints ? '' : stripScript}
+                      joints={sketchOpen || sheetRibbonOpen ? null : liveJointChips}
                       entities={sketchOpen ? sketchStrip.entities : null}
+                      sheetItems={sheetRibbonOpen ? sheetStrip.items : null}
                       bodyCount={stripBodyCount}
                       failedIds={stripFailedIds}
                       failedTitles={stripFailedTitles}
                       rollbackAnchor={stripRollbackAnchor}
                       onRollback={handleRollbackAnchor}
-                      hidden={sketchOpen ? false : featureSession}
-                      activeId={sketchOpen ? sketchStrip.activeId : (featureSheet?.feature?.id || featureStripActiveId)}
+                      hidden={sketchOpen || sheetRibbonOpen ? false : featureSession}
+                      activeId={sketchOpen ? sketchStrip.activeId : (sheetRibbonOpen ? sheetStrip.activeId : (featureSheet?.feature?.id || featureStripActiveId))}
                       hideWhenEmpty
-                      onJump={sketchOpen ? undefined : ((f) => openFeatureSheetFor(f))}
-                      onSelectJoint={sketchOpen ? undefined : handleSelectJoint}
+                      onJump={sketchOpen || sheetRibbonOpen ? undefined : ((f) => openFeatureSheetFor(f))}
+                      onSelectJoint={sketchOpen || sheetRibbonOpen ? undefined : handleSelectJoint}
                       onSelectEntity={sketchOpen ? onSketchSelect : undefined}
+                      onSelectSheet={sheetRibbonOpen ? onSheetSelect : undefined}
                       onUndo={sketchOpen ? onSketchUndo : stripUndo}
                       onRedo={sketchOpen ? undefined : stripRedo}
                       canUndo={sketchOpen ? !!sketchStrip.canUndo : stripCanUndo}
@@ -8049,20 +8070,22 @@ const App = () => {
             >
               <FeatureStrip
                 orientation="horizontal"
-                script={sketchOpen || showJoints ? '' : stripScript}
-                joints={sketchOpen ? null : liveJointChips}
+                script={sketchOpen || sheetRibbonOpen || showJoints ? '' : stripScript}
+                joints={sketchOpen || sheetRibbonOpen ? null : liveJointChips}
                 entities={sketchOpen ? sketchStrip.entities : null}
+                sheetItems={sheetRibbonOpen ? sheetStrip.items : null}
                 bodyCount={stripBodyCount}
                 failedIds={stripFailedIds}
                 failedTitles={stripFailedTitles}
                 rollbackAnchor={stripRollbackAnchor}
                 onRollback={handleRollbackAnchor}
-                hidden={sketchOpen ? false : featureSession}
-                activeId={sketchOpen ? sketchStrip.activeId : (featureSheet?.feature?.id || featureStripActiveId)}
+                hidden={sketchOpen || sheetRibbonOpen ? false : featureSession}
+                activeId={sketchOpen ? sketchStrip.activeId : (sheetRibbonOpen ? sheetStrip.activeId : (featureSheet?.feature?.id || featureStripActiveId))}
                 hideWhenEmpty
-                onJump={sketchOpen ? undefined : handleDesktopFeatureStripJump}
-                onSelectJoint={sketchOpen ? undefined : handleSelectJoint}
+                onJump={sketchOpen || sheetRibbonOpen ? undefined : handleDesktopFeatureStripJump}
+                onSelectJoint={sketchOpen || sheetRibbonOpen ? undefined : handleSelectJoint}
                 onSelectEntity={sketchOpen ? onSketchSelect : undefined}
+                onSelectSheet={sheetRibbonOpen ? onSheetSelect : undefined}
                 onUndo={sketchOpen ? onSketchUndo : stripUndo}
                 onRedo={sketchOpen ? undefined : stripRedo}
                 canUndo={sketchOpen ? !!sketchStrip.canUndo : stripCanUndo}
@@ -8146,6 +8169,7 @@ const App = () => {
             getBooleanContext={assemblyPartContext}
             onFeatureSessionChange={handleFeatureSession}
             onSketchStripChange={handleSketchStrip}
+            onSheetStripChange={handleSheetStrip}
             partLabels={partLabels}
             featureEdit={appMode === 'game' ? null : featureSheet}
             featureEditScript={currentScript}

@@ -307,7 +307,17 @@ export function editFeatureDraft(mode, kind, id) {
 export function updateDraft(mode, patch) {
   if (!mode?.draft) return mode;
   const d = { ...mode.draft };
-  if (d.kind === 'bend') {
+  if (d.kind === 'base') {
+    const ends = baseSliderRange(mode.sku);
+    const clampDim = (n, fallback, lo) => {
+      const v = Number(n);
+      if (!Number.isFinite(v)) return fallback;
+      return Math.min(BASE_MAX, Math.max(lo, v));
+    };
+    if (patch?.width !== undefined && patch.width !== '') d.width = clampDim(patch.width, d.width, ends.widthMin);
+    if (patch?.height !== undefined && patch.height !== '') d.height = clampDim(patch.height, d.height, ends.heightMin);
+    if (patch?.plane && SHEET_PLANES[patch.plane]) d.plane = patch.plane;
+  } else if (d.kind === 'bend') {
     const lim = bendLimits(mode.spec);
     if (patch.angle !== undefined && patch.angle !== '') d.angle = clamp(patch.angle, lim.angleMin, lim.angleMax, d.angle);
     if (patch.length !== undefined && patch.length !== '') d.length = clamp(patch.length, lim.lengthMin, Math.max(lim.lengthMax, d.length), d.length);
@@ -345,6 +355,9 @@ export function draftPreviewSpec(mode) {
   const spec = mode?.spec;
   const d = mode?.draft;
   if (!spec || !d) return spec || null;
+  if (d.kind === 'base') {
+    return { ...spec, plane: d.plane || spec.plane, width: d.width, height: d.height };
+  }
   const key = d.kind === 'bend' ? 'bends' : d.kind === 'tab' ? 'tabs' : 'holes';
   const list = [...(spec[key] || [])];
   const feat = featureFromDraft(d);
@@ -354,11 +367,61 @@ export function draftPreviewSpec(mode) {
   return { ...spec, [key]: list };
 }
 
+/** Patch width, height, and plane onto the open sheet. Bends, tabs, and holes stay. */
+export function acceptBaseEdit(mode) {
+  const d = mode?.draft;
+  if (!d || d.kind !== 'base' || !mode.spec) return { mode, spec: null };
+  const spec = draftPreviewSpec(mode);
+  return { mode: { ...mode, spec, draft: null, hotEdge: null, toast: null }, spec };
+}
+
 export function acceptDraft(mode) {
   if (!mode?.draft) return { mode, spec: null };
+  if (mode.draft.kind === 'base') return acceptBaseEdit(mode);
   if (bendBlockReason(mode)) return { mode, spec: null };
   const spec = draftPreviewSpec(mode);
   return { mode: { ...mode, spec, draft: null, hotEdge: null, toast: null }, spec };
+}
+
+/**
+ * Open the base flange card without leaving edit, so the ribbon stays the
+ * full chip list. Confirm patches the flange; it does not mint a new spec.
+ */
+export function editBaseDraft(mode) {
+  if (!mode?.spec || mode.stage !== 'edit') return mode;
+  const spec = mode.spec;
+  return {
+    ...mode,
+    toast: null,
+    exportOpen: false,
+    hotEdge: null,
+    draft: {
+      kind: 'base',
+      id: 'base',
+      isNew: false,
+      memberIds: ['base'],
+      plane: spec.plane,
+      width: spec.width,
+      height: spec.height,
+    },
+  };
+}
+
+/** Ribbon chip → the base, bend, or tab card. Other chips are not sheets. */
+export function editSheetChip(mode, chip) {
+  if (!mode || mode.stage !== 'edit' || !chip?.sheet) return mode;
+  if (chip.sheetKind === 'base') return editBaseDraft(mode);
+  if (chip.sheetKind !== 'bend' && chip.sheetKind !== 'tab') return mode;
+  const id = chip.memberIds?.[0];
+  if (!id) return mode;
+  const next = editFeatureDraft(mode, chip.sheetKind, id);
+  if (next === mode || !next?.draft) return mode;
+  const memberIds = (chip.memberIds || []).filter(Boolean);
+  return {
+    ...next,
+    exportOpen: false,
+    draft: { ...next.draft, memberIds: memberIds.length ? memberIds : [id] },
+  };
 }
 
 /** Append one committed spec. Steps after the current index are dropped. */
@@ -403,63 +466,86 @@ export function cancelDraft(mode) {
   return { ...mode, draft: null, hotEdge: null, toast: null };
 }
 
-/**
- * Child bends, tabs, and holes a bend delete would take with it.
- * The bend itself is not counted. A new draft, or a tab or hole, is 0.
- */
-export function sheetDraftExtraCount(mode) {
-  const d = mode?.draft;
-  if (!d || d.isNew || d.kind !== 'bend' || !mode.spec) return 0;
-  const gone = new Set([d.id]);
+function draftMembers(draft) {
+  const ids = Array.isArray(draft?.memberIds) ? draft.memberIds.filter(Boolean) : [];
+  if (!ids.length && draft?.id) ids.push(draft.id);
+  return ids;
+}
+
+/** The draft rows plus every bend that hangs off them. */
+function bendDeleteClosure(spec, roots) {
+  const gone = new Set(roots);
   let grew = true;
   while (grew) {
     grew = false;
-    for (const bend of mode.spec.bends || []) {
+    for (const bend of spec?.bends || []) {
       if (!gone.has(bend.id) && gone.has(bend.panel)) {
         gone.add(bend.id);
         grew = true;
       }
     }
   }
-  let extra = 0;
-  for (const bend of mode.spec.bends || []) {
-    if (bend.id !== d.id && gone.has(bend.id)) extra += 1;
+  return gone;
+}
+
+/**
+ * Features a delete would take besides the chip itself.
+ * A bend counts child bends, tabs, and holes. A base counts every bend,
+ * tab, and hole. The chip's own rows are not counted. A new draft, a tab,
+ * or a hole is 0. A contour refKey is not a user and is not counted.
+ */
+export function sheetDraftExtraCount(mode) {
+  const d = mode?.draft;
+  if (!d || d.isNew || !mode.spec) return 0;
+  const spec = mode.spec;
+  if (d.kind === 'base') {
+    return (spec.bends?.length || 0) + (spec.tabs?.length || 0) + (spec.holes?.length || 0);
   }
-  for (const tab of mode.spec.tabs || []) {
+  if (d.kind !== 'bend') return 0;
+  const roots = new Set(draftMembers(d));
+  const gone = bendDeleteClosure(spec, roots);
+  let extra = 0;
+  for (const bend of spec.bends || []) {
+    if (gone.has(bend.id) && !roots.has(bend.id)) extra += 1;
+  }
+  for (const tab of spec.tabs || []) {
     if (gone.has(tab.panel)) extra += 1;
   }
-  for (const hole of mode.spec.holes || []) {
+  for (const hole of spec.holes || []) {
     if (gone.has(hole.panel)) extra += 1;
   }
   return extra;
 }
 
-/** Delete the edited feature; a bend takes its flange's children with it. */
+/**
+ * Delete the edited chip. A bend takes its flange's children. A grouped
+ * chip drops every member id. Base removes the whole sheet (`removeBlock`).
+ */
 export function deleteDraftFeature(mode) {
   const d = mode?.draft;
-  if (!d || d.isNew) return { mode: cancelDraft(mode), spec: null };
-  const spec = mode.spec;
-  const gone = new Set();
-  if (d.kind === 'bend') {
-    gone.add(d.id);
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const b of spec.bends || []) {
-        if (!gone.has(b.id) && gone.has(b.panel)) {
-          gone.add(b.id);
-          grew = true;
-        }
-      }
-    }
+  if (!d || d.isNew) return { mode: cancelDraft(mode), spec: null, removeBlock: false };
+  if (d.kind === 'base') {
+    return {
+      mode: { ...mode, spec: null, draft: null, hotEdge: null, toast: null },
+      spec: null,
+      removeBlock: true,
+    };
   }
+  const spec = mode.spec;
+  if (!spec) return { mode: cancelDraft(mode), spec: null, removeBlock: false };
+  const members = new Set(draftMembers(d));
+  const gone = d.kind === 'bend' ? bendDeleteClosure(spec, members) : new Set();
   const next = {
     ...spec,
     bends: (spec.bends || []).filter((b) => (d.kind === 'bend' ? !gone.has(b.id) : true)),
-    tabs: (spec.tabs || []).filter((tb) => !(d.kind === 'tab' && tb.id === d.id) && !gone.has(tb.panel)),
-    holes: (spec.holes || []).filter((h) => !(d.kind === 'hole' && h.id === d.id) && !gone.has(h.panel)),
+    tabs: (spec.tabs || []).filter((tb) => !(d.kind === 'tab' && members.has(tb.id)) && !gone.has(tb.panel)),
+    holes: (spec.holes || []).filter((h) => !(d.kind === 'hole' && members.has(h.id)) && !gone.has(h.panel)),
   };
-  return { mode: { ...mode, spec: next, draft: null, hotEdge: null }, spec: next };
+  return {
+    mode: { ...mode, spec: next, draft: null, hotEdge: null },
+    spec: next,
+    removeBlock: false,
+  };
 }
 
 /**
