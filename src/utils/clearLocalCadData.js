@@ -7,6 +7,7 @@
  *   - surfcad-sync (outbox + kv)
  *   - SurfDB model cache (+ in-memory Manifold import cache)
  *   - surfcad-assets (mesh bytes keyed by git blob sha)
+ *   - surfcad-part-thumbs (part-row thumbnail bitmaps)
  *   - OAuth editor hand-off localStorage (surfcad_editor) so a reload cannot
  *     resurrect the previous buffer
  *
@@ -21,6 +22,7 @@ import { clearAssetCache } from './git/assetCache.js';
 import { clearSyncStore } from './git/syncStore.js';
 import { clearModelCache } from './importModel.js';
 import { clearEditorState } from './editorStorage.js';
+import { clearPartThumbnails } from './partThumbnailStore.js';
 
 export async function clearLocalCadData() {
   const results = {
@@ -62,6 +64,13 @@ export async function clearLocalCadData() {
     results.modelCache = true;
   } catch (err) {
     console.warn('[ClearLocalCad] modelCache:', err);
+  }
+
+  try {
+    await clearPartThumbnails();
+    results.thumbs = true;
+  } catch (err) {
+    console.warn('[ClearLocalCad] thumbs:', err);
   }
 
   try {

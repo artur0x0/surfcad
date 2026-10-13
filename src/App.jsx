@@ -68,6 +68,7 @@ import {
 } from './utils/editorStorage';
 import { saveEditorDraft, loadEditorDraft } from './utils/editorDraft';
 import { clearLocalCadData } from './utils/clearLocalCadData';
+import { ensurePartThumbnails } from './utils/partThumbnails';
 import { clearCachePlan, runClearLocalCache } from './utils/clearLocalCache';
 import { repoKeyOf } from './utils/git/syncStore';
 import ClearCacheDialog from './components/ClearCacheDialog';
@@ -897,6 +898,19 @@ const App = () => {
     bootReadOnlyRef.current = false;
     setBootResume('out');
   }, [gitSession.phase]);
+
+  useEffect(() => {
+    if (!assemblyDoc || appMode === 'game') return undefined;
+    let cancel = false;
+    ensurePartThumbnails({
+      parts: assemblyDoc.parts,
+      scripts: partScripts,
+      runs: partRuns,
+    }).catch((err) => {
+      if (!cancel) console.warn('[partThumb]', err?.message || err);
+    });
+    return () => { cancel = true; };
+  }, [assemblyDoc, partScripts, partRuns, appMode]);
 
   const viewportRef = useRef(null);
 
@@ -7372,6 +7386,7 @@ const App = () => {
       onRenameAssembly={handleRenameAssembly}
       onRenamePart={handleRenamePart}
       rows={partRows}
+      scripts={partScripts}
       activeId={cadPartId}
       onSelect={handleSelectPart}
       onEditScript={openPartScript}
