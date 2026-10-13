@@ -384,13 +384,16 @@ Mobile specifics:
   chip is the same red, titled with the feature it depends on
   (`data-feature-depends`).
   The rollback bar (`data-rollback-bar`) sits in a gap between feature chips.
-  Its line runs the full strip height, centred in that gap, and the upside-down
-  triangle sits just above the strip with its tip on the top edge. The rail
-  uses the same control. The drawn triangle stays small. Dragging uses an
-  invisible 44×44 box on that triangle (`data-rollback-hit`) on the strip and
-  on the rail. When the bar is before the first feature, a lead spacer
-  (`data-rollback-lead`) opens padding so that box clears the first chip, and
-  the chip still opens on tap.
+  Its line runs the full strip height, centred in that gap, clear of the count
+  badges that hang off each icon. The gap after the last chip sits past that
+  badge. The upside-down triangle sits just above the strip with its tip on
+  the top edge. The rail uses the same control. The drawn triangle stays small.
+  Dragging uses an invisible 44×44 box on that triangle (`data-rollback-hit`)
+  on the strip and on the rail. When the bar is before the first feature, a
+  lead spacer (`data-rollback-lead`) opens padding so that box clears the first
+  chip, and the chip still opens on tap.
+  Releasing the bar keeps the part selected. Only a tap that starts and ends
+  on empty canvas, away from the bar, clears the part and shows assembly joints.
   Release greys every chip after it on the strip and on the rail
   (`data-feature-rolled-back`, titled rolled back) and rebuilds up to that
   gap. The run names those features in `rolledBack` instead of reporting
