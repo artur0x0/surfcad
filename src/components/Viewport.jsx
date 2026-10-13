@@ -79,6 +79,7 @@ import SheetMetalFlow from './sheetMetal/SheetMetalFlow';
 import {
   baseDraftSpec,
   draftPreviewSpec,
+  editSheetChip,
   enterSheetMetalMode,
   pushSheetHistory,
   reopenSheetMetalMode,
@@ -86,6 +87,7 @@ import {
   sheetTap,
   sheetToolsFor,
 } from '../utils/sheetMetal/sheetMetalMode';
+import { readSheetMetalSpec } from '../utils/sheetMetal/sheetMetalScript';
 import { sheetRibbonChips } from '../utils/sheetMetal/sheetRibbon';
 import { buildSheetOverlay, disposeSheetOverlay, sheetPickFromHits, syncSheetEdgeLineResolution } from '../utils/sheetMetal/sheetOverlay';
 import { referencePickEdges, sheetContourEdges, sheetSpecInScript } from '../utils/sheetMetal/sheetContourEdges';
@@ -5043,6 +5045,8 @@ const Viewport = forwardRef(({
   const selectSheetChip = useCallback((chip) => {
     if (!chip?.id || !sheetMetalModeRef.current) return;
     setSheetRibbonActiveId(chip.id);
+    if (!chip.sheet) return;
+    setSheetMetalMode((prev) => (prev ? editSheetChip(prev, chip) : prev));
   }, []);
   selectSheetChipRef.current = selectSheetChip;
 
@@ -12136,7 +12140,7 @@ const Viewport = forwardRef(({
           mode={sheetMetalMode}
           setMode={(fn) => setSheetMetalMode((prev) => (prev ? fn(prev) : prev))}
           onCommit={(spec, meta) => {
-            if (sheetMetalMode.reopen) {
+            if (sheetMetalMode.reopen && !meta?.write) {
               setSheetMetalMode((prev) => (prev ? pushSheetHistory(prev, spec) : prev));
               return true;
             }
@@ -12159,7 +12163,17 @@ const Viewport = forwardRef(({
             setSheetMetalMode(null);
           }}
           onDeleteFeature={featureEditRef.current?.dialog === 'sheetMetal' ? featureEditDelete : null}
-          onUndo={onUndo}
+          onUndo={() => {
+            onUndo?.();
+            const read = getHelperBufferRef.current;
+            const script = typeof read === 'function' ? read() : '';
+            const spec = readSheetMetalSpec(script);
+            setSheetMetalMode((prev) => {
+              if (!prev) return prev;
+              if (!spec) return { ...prev, spec: null, draft: null, hotEdge: null, toast: null };
+              return { ...prev, stage: 'edit', spec, draft: null, hotEdge: null, toast: null };
+            });
+          }}
           canUndo={canUndo}
           compact={isMobile}
           mesh={cachedMeshData}

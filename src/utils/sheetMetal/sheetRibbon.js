@@ -99,7 +99,10 @@ export function sheetRibbonChips(script, { stage = 'edit', spec = null } = {}) {
     sawSheet = true;
     out.push(...sheetEntries(blockSpec(text, marker, live, usedLive)));
   }
-  if (!sawSheet) out.push(...sheetEntries(live || readSheetMetalSpec(text)));
+  if (!sawSheet) {
+    const fallback = live || readSheetMetalSpec(text);
+    if (fallback) out.push(...sheetEntries(fallback));
+  }
   return out;
 }
 

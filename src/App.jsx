@@ -107,7 +107,7 @@ import {
   withInsertedGroup,
 } from './utils/partGroups';
 import { sheetMetalBinding } from './utils/scs/scsCatalog';
-import { composeSheetMetalCommit, readSheetMetalSpec, sheetMetalFresh, sheetStarterScript } from './utils/sheetMetal/sheetMetalScript';
+import { composeSheetMetalCommit, readSheetMetalSpec, removeSheetMetalBlock, sheetMetalFresh, sheetStarterScript } from './utils/sheetMetal/sheetMetalScript';
 import {
   historyForPart,
   pushPartHistory,
@@ -5801,7 +5801,7 @@ const App = () => {
       return false;
     }
     const buf = codeEditorRef.current?.getContent?.() || '';
-    const result = composeSheetMetalCommit(buf, spec);
+    const result = meta?.removeBlock ? removeSheetMetalBlock(buf) : composeSheetMetalCommit(buf, spec);
     if (!result.ok) {
       viewportRef.current?.notify?.(result.message);
       return false;
