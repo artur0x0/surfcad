@@ -143,6 +143,7 @@
         "golden:sheet-bend-fillet-cut": "node scripts/golden/smoke_sheet_bend_fillet_cut.mjs",
         "golden:bend-root-fillet": "node scripts/golden/smoke_bend_root_fillet.mjs",
         "golden:flange-outer-fillet": "node scripts/golden/smoke_flange_outer_fillet.mjs",
+        "golden:flange-bend-fillet-step": "node scripts/golden/smoke_flange_bend_fillet_step.mjs",
         "golden:fillet-tangent-round-wrap": "node scripts/golden/smoke_fillet_tangent_round_wrap.mjs",
         "golden:fillet-chamfer-rounded-wrap": "node scripts/golden/smoke_fillet_chamfer_rounded_wrap.mjs",
         "golden:artur-playtest-wrap-chamfer": "node scripts/golden/smoke_artur_playtest_wrap_chamfer.mjs",

@@ -5591,7 +5591,10 @@ function _s23WeldFilletResult(manifold) {
   if (_c4StatusError(builtManifold)) return manifold;
   const v0 = manifold.volume();
   const v1 = builtManifold.volume();
-  if (!(Number.isFinite(v1) && Math.abs(v1 - v0) < 1e-3)) return manifold;
+  // Snapping the tangency needles on a sheet bend (vertices ~1e-5 mm apart)
+  // rebuilds about 0.002 mm³ off on a ~30 cm³ part — float from the new mesh,
+  // not removed material. 0.001 mm³ rejected that snap and left the needles.
+  if (!(Number.isFinite(v1) && Math.abs(v1 - v0) < 0.02)) return manifold;
   return builtManifold;
 }
 
@@ -7122,11 +7125,21 @@ function _filletOnlyOwningBody(M, part, path, radius, opts) {
  * corner. The flange straight and the outer bend arc meet in space and not
  * at a vertex index, so a path of the straight used to stop on the tangent
  * plane: the round missed the bend and the thickness there. Walk feature
- * edges that touch the open end, stay tangent, and share a wall. Stop once
- * the tangent has turned through the bend and the next edge is a panel run
- * longer than the sheet thickness — that is the base the arc becomes
- * tangent to, not more of this corner. Same reach idea as the sheet
- * subtract span (t + bend radius), measured along the edge.
+ * edges that touch the open end, stay tangent, and share a wall.
+ *
+ * The bend is a chain of facets, not one tangent edge. A length cap of
+ * "the arc plus the thickness" rejected the flange straight (~28 mm) even
+ * when the corner had not turned yet, so a pick that started on a facet
+ * never reached the flange and left a step there. The cap applies only
+ * after the tangent has turned through the bend. A midpoint within 0.25 mm
+ * of the path also matched the next short facet (its midpoint is half a
+ * chord past the open end) and the walk died on the first facet; 0.05 mm
+ * is the endpoint weld, so only an edge already on the path is skipped.
+ *
+ * The arc's last vertex is the base corner, where the outer surface is
+ * tangent to the panel. A cutter ring on that vertex lies in the panel and
+ * the boolean stacks a skin, a gap, and the solid. Stop short of it. The
+ * base edge stays sharp; the arc up to that inset is the round.
  * @param {object} part
  * @param {number[][]} points
  * @returns {number[][]}
@@ -7191,6 +7204,23 @@ function _s23ExtendSheetCornerSpan(part, points) {
   };
 
   const pts = points.map((p) => p.slice());
+  // A chord already on the path has its midpoint on a segment. The next
+  // facet's midpoint is half a chord past the open end — 0.25 mm treated
+  // every chord shorter than 0.5 mm as already consumed and the walk died
+  // on the first facet. 0.05 mm is the endpoint weld: on the path, or not.
+  const onPath = 0.05;
+  // Land this far short of a vertex that also belongs to the panel the arc
+  // becomes tangent to. A ring on that vertex is coplanar with the panel
+  // and the end face, and the boolean leaves a stack of sheets there.
+  const panelInset = 0.15;
+  const panelAt = (p) => {
+    for (const e of edges) {
+      const g = edgeGeom(e);
+      if (!g || g.L <= t + 1) continue;
+      if (Math.min(distPt(e.va, p), distPt(e.vb, p)) <= touch) return true;
+    }
+    return false;
+  };
   const grow = (which) => {
     const start = (which === 'end' ? pts[pts.length - 1] : pts[0]).slice();
     const prev0 = which === 'end' ? pts[pts.length - 2] : pts[1];
@@ -7211,7 +7241,13 @@ function _s23ExtendSheetCornerSpan(part, points) {
       let best = null;
       for (const e of edges) {
         const g = edgeGeom(e);
-        if (!g || g.L > chordMax) continue;
+        if (!g) continue;
+        // The arc-length cap stops a long panel only after the corner has
+        // turned through the bend. Before that, the long edge is the flange
+        // straight: a pick that starts on a bend facet has to reach it.
+        // chordMax (~arc + t) is shorter than the flange, so capping first
+        // left the round on the arc and a step where the flange meets it.
+        if (g.L > chordMax && turned >= turnedStop) continue;
         const da = distPt(e.va, origin);
         const db = distPt(e.vb, origin);
         const nearA = da <= touch;
@@ -7226,20 +7262,36 @@ function _s23ExtendSheetCornerSpan(part, points) {
           (e.va[1] + e.vb[1]) / 2,
           (e.va[2] + e.vb[2]) / 2,
         ];
-        if (distPoly(mid, pts) <= 0.25) continue;
+        if (distPoly(mid, pts) <= onPath) continue;
         if (wall && !shareWall(wall, e)) continue;
         if (typeof e.convex === 'boolean' && typeof wall?.convex === 'boolean' && e.convex !== wall.convex) {
           continue;
         }
         // The bend has turned; a longer collinear run is the panel edge.
         if (turned >= turnedStop && g.L > t + 1 && align >= cosFlat) continue;
-        if (!best || align > best.align + 1e-4) best = { far, L: g.L, align };
+        if (!best || align > best.align + 1e-4) best = { far, L: g.L, align, turned };
       }
       if (!best) break;
-      const next = [best.far[0], best.far[1], best.far[2]];
-      if (which === 'end') pts.push(next);
-      else pts.unshift(next);
-      added += best.L;
+      let dest = [best.far[0], best.far[1], best.far[2]];
+      let step = best.L;
+      if (best.turned >= turnedStop && panelAt(dest)) {
+        // The far vertex is the panel corner. A ring on it lies in the panel
+        // and the boolean stacks sheets on the bend. Stop short of it.
+        const back = Math.min(panelInset, best.L * 0.85);
+        const dir = [dest[0] - origin[0], dest[1] - origin[1], dest[2] - origin[2]];
+        const dl = Math.hypot(dir[0], dir[1], dir[2]);
+        if (!(dl > back + 1e-6)) break;
+        dest = [
+          dest[0] - (dir[0] / dl) * back,
+          dest[1] - (dir[1] / dl) * back,
+          dest[2] - (dir[2] / dl) * back,
+        ];
+        step = dl - back;
+      }
+      if (which === 'end') pts.push(dest);
+      else pts.unshift(dest);
+      added += step;
+      if (step < best.L - 1e-6) break;
     }
   };
   grow('end');
