@@ -69,6 +69,7 @@ import { assembleSweepPath, splitEdgePathComponents } from './edgeSweepPath.js';
 import { planeFrameFromFaceData } from './crossSectionSubstrate.js';
 import { emitSolveContour } from './contourScript.js';
 import { findFeatureBlocks, isMarkerLine, mintBlockId } from './featureBlockId.js';
+import { joinScriptReturn, splitScriptReturn } from './scriptReturn.js';
 import { emitLoftReferenceLines } from './loftReference.js';
 import {
   emitExtrudeReferenceLines,
@@ -991,32 +992,35 @@ export function buildHelperSnippet(id, opts = {}) {
  * @returns {string}
  */
 export function insertBlockAtCaret(buffer, snippet, caretOffset = null) {
-  const strippedBuf = stripTrailingReturnPart(buffer || '');
+  // A study comment sits after `return part;`. Stripping only a trailing
+  // return leaves that return in the middle, and a null caret then appends
+  // the feature after it. The feature is dead code. Split on the real
+  // return, insert into the head, and keep the study as the tail.
+  const src = String(buffer || '');
+  const { head, tail, returnAt } = splitScriptReturn(src);
   const filtered = stripTrailingReturnPart(String(snippet || '')).replace(/^\n+|\s+$/g, '');
-  let insertAt = caretOffset == null ? strippedBuf.length : caretOffset;
+  let insertAt = caretOffset == null ? head.length : caretOffset;
+  if (returnAt >= 0 && caretOffset != null && caretOffset >= returnAt) insertAt = head.length;
   if (insertAt < 0) insertAt = 0;
-  if (insertAt > strippedBuf.length) insertAt = strippedBuf.length;
+  if (insertAt > head.length) insertAt = head.length;
 
   // Prefer insert after the declaration of `part` so `part = part.add(…)` /
   // facesByNormal(part, …) never land in the TDZ before `let part`.
   // Later `part =` lines are assignments, not the declaration, so a caret
   // between features stays there. If the declaration sits inside a marked
   // block, land after that block's end marker so we do not split it.
-  if (filtered.trim() && /\bpart\b/.test(filtered) && declaredNames(strippedBuf).has('part')) {
+  if (filtered.trim() && /\bpart\b/.test(filtered) && declaredNames(head).has('part')) {
     const bindingEnd = extendPastOwnedEndMarkers(
-      strippedBuf,
-      findPartDeclarationEnd(strippedBuf),
+      head,
+      findPartDeclarationEnd(head),
     );
     if (insertAt < bindingEnd) insertAt = bindingEnd;
   }
 
-  if (!filtered.trim()) {
-    const body = strippedBuf.replace(/\s+$/, '');
-    return body ? `${body}\nreturn part;\n` : 'return part;\n';
-  }
+  if (!filtered.trim()) return joinScriptReturn(head, tail);
 
-  const before = strippedBuf.slice(0, insertAt);
-  const after = strippedBuf.slice(insertAt);
+  const before = head.slice(0, insertAt);
+  const after = head.slice(insertAt);
 
   let body = '';
   if (before) {
@@ -1027,7 +1031,7 @@ export function insertBlockAtCaret(buffer, snippet, caretOffset = null) {
     body += after.replace(/^\n+/, '');
   }
   body = body.replace(/\s+$/, '');
-  return `${body}\nreturn part;\n`;
+  return joinScriptReturn(body, tail);
 }
 
 export function composeHelperInsert(buffer, id, caretOffset = null, params = null, faceContext = null, edgeContext = null) {

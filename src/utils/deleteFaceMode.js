@@ -11,6 +11,7 @@
 import { shellFaceKey } from './shellMode.js';
 import { facePickLiteral } from './faceFeaturePlacement.js';
 import { DELETE_FACE_BEGIN, DELETE_FACE_END } from './helperPaletteSnippets.js';
+import { placeBlockBeforeReturn } from './scriptReturn.js';
 
 export const DELETE_FACE_ENTRY_ID = 'deleteFace';
 
@@ -70,10 +71,6 @@ export function validateDeleteFaceAccept(state) {
   return { ok: true, faces };
 }
 
-function stripReturn(buffer) {
-  return String(buffer || '').replace(/\n*return\s+part\s*;?\s*$/i, '').replace(/\s+$/, '');
-}
-
 export function stripDeleteFaceBlock(buffer) {
   const text = String(buffer || '');
   const i = text.lastIndexOf(DELETE_FACE_BEGIN);
@@ -96,9 +93,8 @@ export function composeDeleteFaceCommit(buffer, state) {
   const body = state?.body || 'part';
   const faces = gate.faces.map((f) => facePickLiteral(f)).join(', ');
   const call = `${body} = deleteFace(${body}, [${faces}]);`;
-  const base = stripReturn(stripDeleteFaceBlock(String(buffer || '')));
   const block = [DELETE_FACE_BEGIN, call, DELETE_FACE_END].join('\n');
-  const composed = base ? `${base}\n${block}\nreturn part;\n` : `${block}\nreturn part;\n`;
+  const composed = placeBlockBeforeReturn(stripDeleteFaceBlock(String(buffer || '')), block);
   const ownedStart = composed.lastIndexOf(DELETE_FACE_BEGIN);
   const ownedEnd = composed.indexOf(DELETE_FACE_END, ownedStart);
   const owned = composed.slice(ownedStart, ownedEnd + DELETE_FACE_END.length);

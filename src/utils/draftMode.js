@@ -15,6 +15,7 @@
 import { shellFaceKey } from './shellMode.js';
 import { facePickLiteral, formatVec3 } from './faceFeaturePlacement.js';
 import { DRAFT_BEGIN, DRAFT_END } from './helperPaletteSnippets.js';
+import { placeBlockBeforeReturn } from './scriptReturn.js';
 
 export const DRAFT_ENTRY_ID = 'addDraft';
 
@@ -163,10 +164,6 @@ export function validateDraftAccept(state) {
   return { ok: true, pull, angle };
 }
 
-function stripReturn(buffer) {
-  return String(buffer || '').replace(/\n*return\s+part\s*;?\s*$/i, '').replace(/\s+$/, '');
-}
-
 export function stripDraftBlock(buffer) {
   const text = String(buffer || '');
   const i = text.lastIndexOf(DRAFT_BEGIN);
@@ -197,14 +194,13 @@ export function composeDraftCommit(buffer, state) {
   const gate = validateDraftAccept(state);
   if (!gate.ok) return gate;
   const s = state;
-  const base = stripReturn(stripDraftBlock(String(buffer || '')));
   const faces = s.drafts.map((f) => facePickLiteral(f)).join(', ');
   const pullLit = formatVec3(gate.pull);
   const refLit = facePickLiteral(s.neutral);
   const body = s.body || 'part';
   const line = `${body} = draftFaces(${body}, [${faces}], ${formatAngle(gate.angle)}, { pull: ${pullLit}, reference: ${refLit} });`;
   const block = [DRAFT_BEGIN, line, DRAFT_END].join('\n');
-  const composed = base ? `${base}\n${block}\nreturn part;\n` : `${block}\nreturn part;\n`;
+  const composed = placeBlockBeforeReturn(stripDraftBlock(String(buffer || '')), block);
   const ownedStart = composed.lastIndexOf(DRAFT_BEGIN);
   const ownedEnd = composed.indexOf(DRAFT_END, ownedStart);
   const owned = composed.slice(ownedStart, ownedEnd + DRAFT_END.length);

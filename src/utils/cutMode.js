@@ -16,6 +16,7 @@
  */
 
 import { CUT_BEGIN, CUT_END } from './helperPaletteSnippets.js';
+import { placeBlockBeforeReturn } from './scriptReturn.js';
 import { meshBodyComponents } from './meshBodyComponents.js';
 
 export { meshBodyComponents };
@@ -450,10 +451,6 @@ function planeLiteral(plane) {
   return `{ normal: ${formatVec(plane.normal)}, originOffset: ${formatNum(plane.originOffset)} }`;
 }
 
-function stripReturn(buffer) {
-  return String(buffer || '').replace(/\n*return\s+part\s*;?\s*$/i, '').replace(/\s+$/, '');
-}
-
 export function stripCutBlock(buffer) {
   const text = String(buffer || '');
   const i = text.lastIndexOf(CUT_BEGIN);
@@ -492,9 +489,8 @@ export function composeCutCommit(buffer, state, mesh = null) {
   const call = optParts.length
     ? `${bodyName} = cut(${bodyName}, ${planeLit}, { ${optParts.join(', ')} });`
     : `${bodyName} = cut(${bodyName}, ${planeLit});`;
-  const base = stripReturn(stripCutBlock(String(buffer || '')));
   const block = [CUT_BEGIN, call, CUT_END].join('\n');
-  const composed = base ? `${base}\n${block}\nreturn part;\n` : `${block}\nreturn part;\n`;
+  const composed = placeBlockBeforeReturn(stripCutBlock(String(buffer || '')), block);
   const ownedStart = composed.lastIndexOf(CUT_BEGIN);
   const ownedEnd = composed.indexOf(CUT_END, ownedStart);
   const owned = composed.slice(ownedStart, ownedEnd + CUT_END.length);

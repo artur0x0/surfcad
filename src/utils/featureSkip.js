@@ -14,6 +14,11 @@
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { featureDependents } from './featureEdit.js';
 import { insertBlockAtCaret } from './helperPaletteSnippets.js';
+import {
+  findReturnPartIndex,
+  joinScriptReturn,
+  splitScriptReturn,
+} from './scriptReturn.js';
 
 const REF_KEY = /refKey\s*:\s*(['"`])([^'"`]*)\1/g;
 
@@ -527,4 +532,57 @@ export function rollbackAnchorAfterInsert(beforeScript, afterScript, anchor) {
 /** File open and reload drop the in-memory bar. Nothing is written to the file. */
 export function rollbackAnchorsAfterOpen() {
   return {};
+}
+
+/**
+ * Feature blocks that start after the script's `return part;`.
+ * The strip still lists them. The worker never runs them.
+ * @param {string} script
+ * @returns {Array<{ id: string, kind: string, startOffset: number, endOffset: number }>}
+ */
+export function featureBlocksAfterReturn(script) {
+  const text = typeof script === 'string' ? script : '';
+  const at = findReturnPartIndex(text);
+  if (at < 0) return [];
+  return parseFeatureMarkers(text).filter((feature) => feature.startOffset >= at);
+}
+
+/**
+ * Move feature blocks that sit after `return part;` to just before it,
+ * and drop every extra top-level return. The study comment stays after
+ * the one return. A script that is already in that shape is returned
+ * unchanged.
+ * @param {string} script
+ * @returns {{ buffer: string, moved: string[], changed: boolean }}
+ */
+export function repairScriptReturns(script) {
+  const text = typeof script === 'string' ? script : '';
+  const dead = featureBlocksAfterReturn(text);
+  const splitOnce = splitScriptReturn(text);
+  const tailHasReturn = splitOnce.returnAt >= 0 && findReturnPartIndex(splitOnce.tail) >= 0;
+  if (!dead.length && !tailHasReturn) {
+    return { buffer: text, moved: [], changed: false };
+  }
+  let rest = text;
+  for (let i = dead.length - 1; i >= 0; i -= 1) {
+    const feature = dead[i];
+    let cutStart = feature.startOffset;
+    let cutEnd = feature.endOffset;
+    if (rest[cutEnd] === '\n') cutEnd += 1;
+    else if (cutStart > 0 && rest[cutStart - 1] === '\n') cutStart -= 1;
+    rest = `${rest.slice(0, cutStart)}${rest.slice(cutEnd)}`;
+  }
+  const split = splitScriptReturn(rest);
+  const chunks = dead.map((feature) => (
+    text.slice(feature.startOffset, feature.endOffset).replace(/^\n+|\s+$/g, '')
+  ));
+  const nextHead = chunks.length
+    ? (split.head ? `${split.head}\n${chunks.join('\n')}` : chunks.join('\n'))
+    : split.head;
+  const buffer = joinScriptReturn(nextHead, split.tail);
+  return {
+    buffer,
+    moved: dead.map((feature) => feature.id),
+    changed: buffer !== text,
+  };
 }

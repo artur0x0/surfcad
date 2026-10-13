@@ -10,6 +10,7 @@
 import { shellFaceKey } from './shellMode.js';
 import { facePickLiteral } from './faceFeaturePlacement.js';
 import { MOVE_FACE_BEGIN, MOVE_FACE_END } from './helperPaletteSnippets.js';
+import { placeBlockBeforeReturn } from './scriptReturn.js';
 
 export const MOVE_FACE_ENTRY_ID = 'moveFace';
 
@@ -90,10 +91,6 @@ export function validateMoveFaceAccept(state) {
   return { ok: true, faces, distance, flip: !!s.flip };
 }
 
-function stripReturn(buffer) {
-  return String(buffer || '').replace(/\n*return\s+part\s*;?\s*$/i, '').replace(/\s+$/, '');
-}
-
 export function stripMoveFaceBlock(buffer) {
   const text = String(buffer || '');
   const i = text.lastIndexOf(MOVE_FACE_BEGIN);
@@ -118,9 +115,8 @@ export function composeMoveFaceCommit(buffer, state) {
   const faces = gate.faces.map((f) => facePickLiteral(f)).join(', ');
   const flip = gate.flip ? ', { flip: true }' : '';
   const call = `${body} = moveFace(${body}, [${faces}], ${formatNum(gate.distance)}${flip});`;
-  const base = stripReturn(stripMoveFaceBlock(String(buffer || '')));
   const block = [MOVE_FACE_BEGIN, call, MOVE_FACE_END].join('\n');
-  const composed = base ? `${base}\n${block}\nreturn part;\n` : `${block}\nreturn part;\n`;
+  const composed = placeBlockBeforeReturn(stripMoveFaceBlock(String(buffer || '')), block);
   const ownedStart = composed.lastIndexOf(MOVE_FACE_BEGIN);
   const ownedEnd = composed.indexOf(MOVE_FACE_END, ownedStart);
   const owned = composed.slice(ownedStart, ownedEnd + MOVE_FACE_END.length);

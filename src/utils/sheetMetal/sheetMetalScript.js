@@ -3,6 +3,7 @@
  * one marked block holds the sheet spec (JSON) and builds the solid.
  */
 import { newPartStarterScript } from '../helperPaletteSnippets.js';
+import { insertChunkBeforeReturn } from '../scriptReturn.js';
 import { createSheetSpec } from './sheetModel.js';
 import { defaultBaseDims } from './sheetMetalMode.js';
 import {
@@ -92,21 +93,9 @@ function outsideHasWork(script, start, end) {
     .trim().length > 0;
 }
 
-const TRAILING_RETURN = /^(?<head>[\s\S]*?)(?<tail>\r?\nreturn\s+part\s*;[ \t]*\r?\n?)$/;
-const ONLY_RETURN = /^(?<tail>return\s+part\s*;[ \t]*\r?\n?)$/;
-
-/** Insert `block` after every earlier line, immediately before a trailing return. */
+/** Insert `block` before the script return. A study after that return stays there. */
 function appendSheetBlock(buffer, block) {
-  const s = String(buffer ?? '');
-  const m = s.match(TRAILING_RETURN) || s.match(ONLY_RETURN);
-  if (!m) {
-    const base = s.replace(/\s*$/, '');
-    return base ? `${base}\n${block}\n` : `${block}\n`;
-  }
-  const head = m.groups.head || '';
-  const tail = m.groups.tail;
-  const glue = head.length === 0 || head.endsWith('\n') ? '' : '\n';
-  return `${head}${glue}${block}${tail}`;
+  return insertChunkBeforeReturn(buffer, block);
 }
 
 /** Parse the spec back out of a script (null when absent / unreadable). */
