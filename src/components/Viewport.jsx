@@ -390,6 +390,7 @@ import {
   pickNearestEdgeScreen,
   propagateTangentEdges,
   resolveEdgePickSlopPx,
+  EDGE_FILLET_HIT_RADIUS_PX,
   toggleEdgeSelectionPropagated,
   popLastEdgeSelection,
   selectionEdgeKey,
@@ -7181,13 +7182,19 @@ const Viewport = forwardRef(({
     const rect = canvas.getBoundingClientRect();
     const px = clientX - rect.left;
     const py = clientY - rect.top;
-    const slop = resolveEdgePickSlopPx();
+    // Fillet / chamfer only. Other edge picks keep the 32 / 40px slop.
+    // Short edges grow to a 44px hit (22px each side); the stroke width does not.
+    const filletPick = !!filletModeRef.current;
+    const slop = filletPick
+      ? Math.max(resolveEdgePickSlopPx(), EDGE_FILLET_HIT_RADIUS_PX)
+      : resolveEdgePickSlopPx();
     const cam = cameraRef.current.position;
     const opts = {
       projectScratchA: edgePickScratchA.current,
       projectScratchB: edgePickScratchB.current,
       cameraPosition: [cam.x, cam.y, cam.z],
     };
+    if (filletPick) opts.minHitLengthPx = EDGE_FILLET_HIT_RADIUS_PX;
     if (occlude) {
       // Raycast mesh for occlusion — reject back-face edges behind the hit.
       mouseRef.current.x = (px / rect.width) * 2 - 1;
