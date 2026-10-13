@@ -10,6 +10,9 @@
  */
 
 import { declaredNames, emitPlaneFrameLiteral } from './helperPaletteSnippets.js';
+import { findReturnPartIndex, insertChunkBeforeReturn } from './scriptReturn.js';
+
+export { findReturnPartIndex };
 
 const RESERVED = new Set([
   'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
@@ -171,63 +174,6 @@ function spliceStatement(buffer, stmt, line) {
 }
 
 /**
- * Index of the script's `return part;`.
- * That return is not always the last line: a study comment follows it.
- * A `return part` inside a function (brace depth > 0) is the copy's
- * return, not the script's. Comments and strings are skipped.
- * -1 when the script does not return part.
- */
-export function findReturnPartIndex(buffer) {
-  const s = String(buffer || '');
-  let i = 0;
-  let quote = null;
-  let depth = 0;
-  while (i < s.length) {
-    const c = s[i];
-    if (quote) {
-      if (c === '\\' && i + 1 < s.length) {
-        i += 2;
-        continue;
-      }
-      if (c === quote) quote = null;
-      i += 1;
-      continue;
-    }
-    if (c === '"' || c === '\'' || c === '`') {
-      quote = c;
-      i += 1;
-      continue;
-    }
-    if (c === '/' && s[i + 1] === '/') {
-      const nl = s.indexOf('\n', i);
-      i = nl < 0 ? s.length : nl + 1;
-      continue;
-    }
-    if (c === '/' && s[i + 1] === '*') {
-      const end = s.indexOf('*/', i + 2);
-      i = end < 0 ? s.length : end + 2;
-      continue;
-    }
-    if (c === '{') {
-      depth += 1;
-      i += 1;
-      continue;
-    }
-    if (c === '}') {
-      if (depth > 0) depth -= 1;
-      i += 1;
-      continue;
-    }
-    if (depth === 0 && s.startsWith('return', i) && !/[\w$]/.test(s[i - 1] || '')) {
-      const m = /^return\s+part\s*;/.exec(s.slice(i));
-      if (m) return i;
-    }
-    i += 1;
-  }
-  return -1;
-}
-
-/**
  * Insert `chunk` immediately before the script's `return part;`.
  * Text after that return (the study block) stays after it. A match that
  * only accepts a trailing return appends the chunk in dead code: the
@@ -235,22 +181,8 @@ export function findReturnPartIndex(buffer) {
  * With no return, the chunk is appended. `ensureReturn` adds
  * `return part;` in that case.
  */
-export function insertBeforeScriptReturn(buffer, chunk, { ensureReturn = false } = {}) {
-  const src = String(buffer || '');
-  const body = chunk.endsWith('\n') ? chunk : `${chunk}\n`;
-  const at = findReturnPartIndex(src);
-  if (at >= 0) {
-    const head = src.slice(0, at).replace(/\s*$/, '');
-    let tail = src.slice(at);
-    if (tail && !tail.endsWith('\n')) tail = `${tail}\n`;
-    return `${head ? `${head}\n` : ''}${body}${tail}`;
-  }
-  const trimmed = src.replace(/\s*$/, '');
-  const base = trimmed ? `${trimmed}\n${body}` : body;
-  if (ensureReturn && findReturnPartIndex(base) < 0) {
-    return `${base.replace(/\s*$/, '')}\nreturn part;\n`;
-  }
-  return base.endsWith('\n') ? base : `${base}\n`;
+export function insertBeforeScriptReturn(buffer, chunk, opts) {
+  return insertChunkBeforeReturn(buffer, chunk, opts);
 }
 
 function insertStatement(buffer, line) {

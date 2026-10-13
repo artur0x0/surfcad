@@ -48,7 +48,7 @@ import { featureShowsSeparateBody } from '../utils/featureMarkers';
 import { featuresWithContours } from '../utils/contourUsers';
 import { featureBarWindowMode } from '../utils/featureBarLayout';
 import { chipTone } from '../utils/featureChipTone';
-import { rollbackAnchorAtGap, rollbackGapIndex } from '../utils/featureSkip';
+import { resolveRollback, rollbackAnchorAtGap, rollbackGapIndex } from '../utils/featureSkip';
 import { JOINT_TYPE_LABEL } from '../joints/jointUi';
 
 /**
@@ -437,18 +437,25 @@ export default function FeatureStrip({
     return () => ro.disconnect();
   }, [horizontal, listLength, lastFeatureId, featureWindow]);
 
-  const committedIndex = rollbackGapIndex(featureIds, rollbackAnchor);
+  // The committed gap and the handle label both come from resolveRollback.
+  // Turning the gap index back into an id maps 0 to the start, which is
+  // wrong for a missing id (an empty chip list's only index is 0).
+  const plan = useMemo(
+    () => resolveRollback(jointMode || entityMode ? '' : script, rollbackAnchor),
+    [entityMode, jointMode, rollbackAnchor, script],
+  );
+  const committedIndex = rollbackGapIndex(featureIds, plan.anchor);
   const shownIndex = previewIndex == null ? committedIndex : previewIndex;
   const showRollback = !jointMode && !entityMode && features.length > 0;
-  const shownAnchor = rollbackAnchorAtGap(featureIds, shownIndex);
-  const anchorAttr = shownAnchor === null ? 'start' : (shownAnchor || 'end');
+  const shownAnchor = previewIndex == null
+    ? plan.anchor
+    : rollbackAnchorAtGap(featureIds, previewIndex);
+  const anchorAttr = shownAnchor === null ? 'start' : (typeof shownAnchor === 'string' ? shownAnchor : 'end');
 
   useEffect(() => {
-    if (jointMode || entityMode) return;
-    if (typeof rollbackAnchor !== 'string') return;
-    if (featureIds.includes(rollbackAnchor)) return;
-    onRollbackRef.current?.(undefined);
-  }, [entityMode, featureIds, jointMode, rollbackAnchor]);
+    if (dragRef.current) return;
+    setPreviewIndex((prev) => (prev == null ? prev : null));
+  }, [rollbackAnchor, script]);
 
   useLayoutEffect(() => {
     if (!showRollback || hidden) {
@@ -747,10 +754,10 @@ export default function FeatureStrip({
                   data-feature-rolled-back={dimmed ? '1' : undefined}
                   data-feature-depends={failedTitles?.[f.id]?.dependsOn || undefined}
                   aria-pressed={active}
-                  aria-label={f.unused ? `${f.chipLabel} unused` : f.chipLabel}
+                  aria-label={dimmed ? `${f.chipLabel}, rolled back` : (f.unused ? `${f.chipLabel} unused` : f.chipLabel)}
                   aria-invalid={(failed && !dimmed) || undefined}
-                  aria-description={f.external ? 'External copy, not linked' : undefined}
-                  title={dimmed ? `${f.chipLabel} — after the rollback bar` : chipTitle(f, failed, bodyCount, failedTitles)}
+                  aria-description={dimmed ? 'rolled back' : (f.external ? 'External copy, not linked' : undefined)}
+                  title={dimmed ? `${f.chipLabel} — rolled back` : chipTitle(f, failed, bodyCount, failedTitles)}
                   onClick={() => onJump?.(f)}
                   className={`relative shrink-0 rounded-lg p-1.5 flex items-center justify-center
                     border transition-colors active:opacity-80 ${chipTone(active, f.external, failed, dimmed)}`}
@@ -858,10 +865,10 @@ export default function FeatureStrip({
             data-feature-rolled-back={dimmed ? '1' : undefined}
             data-feature-depends={failedTitles?.[f.id]?.dependsOn || undefined}
             aria-pressed={active}
-            aria-label={f.unused ? `${f.chipLabel} unused` : f.chipLabel}
+            aria-label={dimmed ? `${f.chipLabel}, rolled back` : (f.unused ? `${f.chipLabel} unused` : f.chipLabel)}
             aria-invalid={(failed && !dimmed) || undefined}
-            aria-description={f.external ? 'External copy, not linked' : undefined}
-            title={dimmed ? `${f.chipLabel} — after the rollback bar` : chipTitle(f, failed, bodyCount, failedTitles)}
+            aria-description={dimmed ? 'rolled back' : (f.external ? 'External copy, not linked' : undefined)}
+            title={dimmed ? `${f.chipLabel} — rolled back` : chipTitle(f, failed, bodyCount, failedTitles)}
             onClick={() => onJump?.(f)}
             className={`relative shrink-0 rounded-lg p-1.5 flex items-center justify-center
               border transition-colors active:opacity-80 ${chipTone(active, f.external, failed, dimmed)}`}

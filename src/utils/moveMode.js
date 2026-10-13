@@ -13,6 +13,7 @@
  */
 
 import { MOVE_BEGIN, MOVE_END } from './helperPaletteSnippets.js';
+import { placeBlockBeforeReturn } from './scriptReturn.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
 
 export const MOVE_ENTRY_ID = 'move';
@@ -215,10 +216,6 @@ export function movePreviewOffset(state, buffer) {
   return next;
 }
 
-function stripReturn(buffer) {
-  return String(buffer || '').replace(/\n*return\s+part\s*;?\s*$/i, '').replace(/\s+$/, '');
-}
-
 export function stripMoveBlock(buffer) {
   const text = String(buffer || '');
   const i = text.lastIndexOf(MOVE_BEGIN);
@@ -244,9 +241,8 @@ export function composeMoveCommit(buffer, state) {
   if (!gate.ok) return gate;
   const bodyName = state?.body || 'part';
   const call = `${bodyName} = move(${bodyName}, [${formatNum(gate.dx)}, ${formatNum(gate.dy)}, ${formatNum(gate.dz)}], { bodies: [{ at: ${formatVec(gate.at)} }] });`;
-  const base = stripReturn(stripMoveBlock(String(buffer || '')));
   const block = [MOVE_BEGIN, call, MOVE_END].join('\n');
-  const composed = base ? `${base}\n${block}\nreturn part;\n` : `${block}\nreturn part;\n`;
+  const composed = placeBlockBeforeReturn(stripMoveBlock(String(buffer || '')), block);
   const ownedStart = composed.lastIndexOf(MOVE_BEGIN);
   const ownedEnd = composed.indexOf(MOVE_END, ownedStart);
   const owned = composed.slice(ownedStart, ownedEnd + MOVE_END.length);
