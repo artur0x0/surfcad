@@ -102,6 +102,9 @@ const FEATURE_ICONS = Object.freeze({
   polarArray: Boxes,
   workplane: Layers3,
   sheetMetal: SheetMetalPlate,
+  sheetBase: SheetMetalPlate,
+  sheetBend: Angle,
+  sheetTab: Square,
 });
 
 const JOINT_ICONS = Object.freeze({
@@ -298,7 +301,7 @@ function FeatureGlyph({ kind, size }) {
       size={size}
       strokeWidth={2}
       aria-hidden="true"
-      className={kind === 'sheetMetal' ? 'text-blue-400' : undefined}
+      className={kind === 'sheetMetal' || kind === 'sheetBase' ? 'text-blue-400' : undefined}
     />
   );
 }
@@ -404,6 +407,13 @@ export default function FeatureStrip({
    */
   entities = null,
   onSelectEntity,
+  /**
+   * Sheet-metal chips. An array switches this strip to the open sheet:
+   * markers around the block, then the base, each bend, and each tab.
+   * Sketch entities still win. The rollback bar stays on the part strip.
+   */
+  sheetItems = null,
+  onSelectSheet,
   undoLabel = 'Undo',
   redoLabel = 'Redo',
   /**
@@ -426,7 +436,8 @@ export default function FeatureStrip({
   const onRollbackRef = useRef(onRollback);
   onRollbackRef.current = onRollback;
   const entityMode = Array.isArray(entities);
-  const jointMode = !entityMode && Array.isArray(joints);
+  const sheetMode = !entityMode && Array.isArray(sheetItems);
+  const jointMode = !entityMode && !sheetMode && Array.isArray(joints);
   const horizontal = orientation === 'horizontal';
   const stripSide = side || (horizontal ? 'top' : 'right');
   const between = stripSide === 'between';
@@ -434,7 +445,7 @@ export default function FeatureStrip({
   const trackRef = useRef(null);
   const stripRef = useRef(null);
   const [featureWindow, setFeatureWindow] = useState('fit');
-  const stripItems = entityMode ? entities : (jointMode ? joints : features);
+  const stripItems = entityMode ? entities : (sheetMode ? sheetItems : (jointMode ? joints : features));
   const lastFeatureId = stripItems.length ? stripItems[stripItems.length - 1].id : null;
   const listLength = stripItems.length;
 
@@ -489,12 +500,12 @@ export default function FeatureStrip({
   // Turning the gap index back into an id maps 0 to the start, which is
   // wrong for a missing id (an empty chip list's only index is 0).
   const plan = useMemo(
-    () => resolveRollback(jointMode || entityMode ? '' : script, rollbackAnchor),
-    [entityMode, jointMode, rollbackAnchor, script],
+    () => resolveRollback(jointMode || entityMode || sheetMode ? '' : script, rollbackAnchor),
+    [entityMode, jointMode, sheetMode, rollbackAnchor, script],
   );
   const committedIndex = rollbackGapIndex(featureIds, plan.anchor);
   const shownIndex = previewIndex == null ? committedIndex : previewIndex;
-  const showRollback = !jointMode && !entityMode && features.length > 0;
+  const showRollback = !jointMode && !entityMode && !sheetMode && features.length > 0;
   const shownAnchor = previewIndex == null
     ? plan.anchor
     : rollbackAnchorAtGap(featureIds, previewIndex);
@@ -680,9 +691,10 @@ export default function FeatureStrip({
         data-feature-strip-empty={listLength === 0 ? '' : undefined}
         data-assembly-joints={jointMode ? '' : undefined}
         data-sketch-entities={entityMode ? '' : undefined}
+        data-sheet-ribbon={sheetMode ? '' : undefined}
         data-feature-bar-layout="undo-features-redo"
         role="navigation"
-        aria-label={entityMode ? 'Sketch' : (jointMode ? 'Assembly joints' : 'Modeling features')}
+        aria-label={entityMode ? 'Sketch' : (sheetMode ? 'Sheet metal' : (jointMode ? 'Assembly joints' : 'Modeling features'))}
       >
         <div
           className="shrink-0 pl-[max(0.5rem,env(safe-area-inset-left))]"
@@ -734,12 +746,12 @@ export default function FeatureStrip({
                 No sketch entities
               </div>
             )}
-            {!jointMode && !entityMode && features.length === 0 && !hideWhenEmpty && (
+            {!jointMode && !entityMode && !sheetMode && features.length === 0 && !hideWhenEmpty && (
               <div className="text-[9px] text-gray-400 font-sans whitespace-nowrap px-1">
                 No features
               </div>
             )}
-            {!jointMode && !entityMode && shownIndex === 0 && features.length > 0 && (
+            {!jointMode && !entityMode && !sheetMode && shownIndex === 0 && features.length > 0 && (
               <RollbackLead vertical={false} />
             )}
             {jointMode && joints.map((joint) => {
@@ -784,7 +796,64 @@ export default function FeatureStrip({
                 </button>
               );
             })}
-            {!jointMode && !entityMode && features.map((f, i) => {
+            {sheetMode && sheetItems.map((item) => {
+              if (item.sheet) {
+                const active = activeId === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    data-feature-chip={item.kind}
+                    data-feature-id={item.id}
+                    data-sheet-kind={item.sheetKind}
+                    data-sheet-members={(item.memberIds || []).join(' ')}
+                    data-feature-type-index={item.typeIndex || undefined}
+                    aria-pressed={active}
+                    aria-label={item.chipLabel}
+                    title={item.chipLabel}
+                    onClick={() => onSelectSheet?.(item)}
+                    className={`relative shrink-0 rounded-lg p-1.5 flex items-center justify-center
+                      border transition-colors active:opacity-80 ${chipTone(active, false, false)}`}
+                  >
+                    <FeatureGlyph kind={item.kind} size={16} />
+                    <TypeBadge index={item.typeIndex} />
+                  </button>
+                );
+              }
+              const active = activeId === item.id;
+              const failed = !!failedIds?.has?.(item.id);
+              const typeIndex = chipTypeIndex(item);
+              const separateLive = featureShowsSeparateBody(item, bodyCount);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  data-feature-chip={item.kind}
+                  data-feature-id={item.id}
+                  data-feature-type-index={typeIndex || undefined}
+                  data-contour-id={item.contourId || undefined}
+                  data-contour-unused={item.unused ? '' : undefined}
+                  data-feature-external={item.external ? '1' : undefined}
+                  data-feature-separate={separateLive ? '1' : undefined}
+                  data-feature-failed={failed ? '1' : undefined}
+                  data-feature-depends={failedTitles?.[item.id]?.dependsOn || undefined}
+                  aria-pressed={active}
+                  aria-label={item.unused ? `${item.chipLabel} unused` : item.chipLabel}
+                  aria-invalid={failed || undefined}
+                  aria-description={item.external ? 'External copy, not linked' : undefined}
+                  title={chipTitle(item, failed, bodyCount, failedTitles)}
+                  onClick={() => onSelectSheet?.(item)}
+                  className={`relative shrink-0 rounded-lg p-1.5 flex items-center justify-center
+                    border transition-colors active:opacity-80 ${chipTone(active, item.external, failed)}`}
+                >
+                  <FeatureGlyph kind={item.kind} size={16} />
+                  <UnusedMark on={item.unused} />
+                  <TypeBadge index={typeIndex} />
+                  <SeparateBodyMarker on={separateLive} />
+                </button>
+              );
+            })}
+            {!jointMode && !entityMode && !sheetMode && features.map((f, i) => {
               const active = activeId === f.id;
               const dimmed = i >= shownIndex;
               const failed = !!failedIds?.has?.(f.id);
