@@ -203,6 +203,41 @@ function _n(v) {
   return [v[0] / L, v[1] / L, v[2] / L];
 }
 
+function _vec3(v) {
+  if (!Array.isArray(v) || v.length < 3) return undefined;
+  const x = Number(v[0]);
+  const y = Number(v[1]);
+  const z = Number(v[2]);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return undefined;
+  return [x, y, z];
+}
+
+/**
+ * Wall identity the fillet probe must not re-guess. Two feature edges can
+ * share one line (the bend root: a concave facet edge and a convex bottom
+ * edge). n0/n1 and the adjacent face ids say which one was picked.
+ */
+function _edgeWallIdentity(edge) {
+  if (!edge) return {};
+  const n0 = _vec3(edge.n0);
+  const n1 = _vec3(edge.n1);
+  const out = {};
+  if (n0 && n1) {
+    out.n0 = n0;
+    out.n1 = n1;
+  }
+  const faces = Array.isArray(edge.faces) ? edge.faces : null;
+  if (faces && faces.length >= 2 && Number.isFinite(Number(faces[0])) && Number.isFinite(Number(faces[1]))) {
+    out.faces = [Number(faces[0]), Number(faces[1])];
+  }
+  if (Number.isFinite(edge.faceA) && Number.isFinite(edge.faceB)) {
+    out.faceA = Number(edge.faceA);
+    out.faceB = Number(edge.faceB);
+  }
+  if (typeof edge.convex === 'boolean') out.convex = edge.convex;
+  return out;
+}
+
 /**
  * Normalize a selected / feature edge into a copy with key + endpoints.
  * @param {object} edge
@@ -239,6 +274,7 @@ export function normalizePathEdge(edge) {
     length,
     tangent: edge.tangent ? edge.tangent.slice() : undefined,
     pts,
+    ..._edgeWallIdentity(edge),
   };
 }
 
@@ -255,6 +291,7 @@ function orientFromVert(edge, fromVert) {
       length: edge.length,
       tangent: edge.tangent ? edge.tangent.slice() : undefined,
       pts: Array.isArray(edge.pts) ? edge.pts.map((p) => p.slice()) : undefined,
+      ..._edgeWallIdentity(edge),
     };
   }
   return {
@@ -269,9 +306,11 @@ function orientFromVert(edge, fromVert) {
       ? [-edge.tangent[0], -edge.tangent[1], -edge.tangent[2]]
       : undefined,
     // Flip dense polyline with the endpoints so makeSweepPath stays coherent.
+    // Wall normals stay with their faces; reversing the chord does not swap them.
     pts: Array.isArray(edge.pts)
       ? edge.pts.map((p) => p.slice()).reverse()
       : undefined,
+    ..._edgeWallIdentity(edge),
   };
 }
 
@@ -794,6 +833,7 @@ export function assembleSweepPath(selectedEdges, opts = {}) {
     mid: e.mid ? e.mid.slice() : _mid(e.va, e.vb),
     length: e.length,
     pts: Array.isArray(e.pts) ? e.pts.map((p) => p.slice()) : undefined,
+    ..._edgeWallIdentity(e),
   }));
 
   // Closed: drop duplicated closing vertex (sweepPoints uses closed:true).
@@ -848,6 +888,12 @@ export function assembleSweepPath(selectedEdges, opts = {}) {
       points: pts,
       length,
       edgeCount: edges.length,
+      // Picked walls. filletAlongPath uses these when two mesh edges share a line.
+      edges: edges.map((e) => ({
+        va: e.va.slice(),
+        vb: e.vb.slice(),
+        ..._edgeWallIdentity(e),
+      })),
     },
     orderedEdges: edges,
   };
