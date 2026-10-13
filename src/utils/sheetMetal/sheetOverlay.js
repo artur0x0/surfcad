@@ -163,11 +163,15 @@ export function buildSheetOverlay(mode) {
     opacity: 0.75,
     side: DoubleSide,
   });
-  const draftId = mode.draft?.id || null;
-  const matFor = (id) => (draftId && id === draftId ? draftMat : metal);
+  const draftIds = new Set();
+  if (mode.draft?.id) draftIds.add(mode.draft.id);
+  for (const edge of mode.draft?.edges || []) {
+    if (edge?.id) draftIds.add(edge.id);
+  }
+  const matFor = (id) => (draftIds.has(id) ? draftMat : metal);
   for (const p of solved.panels) {
     const m = boxMesh(p.U, p.V, p.N, panelPoint(p, p.u0, p.v0, 0), p.u1 - p.u0, p.v1 - p.v0, spec.t,
-      matFor(p.id === 'base' && mode.stage === 'base' ? draftId : p.id), { kind: 'panel', panel: p.id });
+      matFor(p.id === 'base' && mode.stage === 'base' ? mode.draft?.id : p.id), { kind: 'panel', panel: p.id });
     if (m) group.add(m);
   }
   for (const b of solved.bends) {
@@ -187,20 +191,46 @@ export function buildSheetOverlay(mode) {
     // Cylinder axis is +Y → map Y to the panel normal.
     const p = h.panelRef;
     g.applyMatrix4(basis(p.U, p.N, vMul(-1, p.V), vAdd(h.center, vMul(spec.t / 2, p.N))));
-    const m = new Mesh(g, draftId === h.id ? draftMat : holeMat);
+    const m = new Mesh(g, draftIds.has(h.id) ? draftMat : holeMat);
     m.userData.sm = { kind: 'hole', id: h.id };
     group.add(m);
   }
   // Edge highlights: a thin screen-space line, plus an undrawn box so a
   // fingertip still hits the edge. Only for the active tool.
-  if (mode.stage === 'edit' && !mode.draft && (mode.tool === 'bend' || mode.tool === 'tab')) {
-    const hot = mode.hotEdge ? `${mode.hotEdge.panel}:${mode.hotEdge.edge}` : '';
+  const pickingNew = !!(mode.draft?.isNew && mode.draft.kind === mode.tool
+    && (mode.tool === 'bend' || mode.tool === 'tab'));
+  if (mode.stage === 'edit' && (mode.tool === 'bend' || mode.tool === 'tab') && (!mode.draft || pickingNew)) {
+    const hot = new Set();
+    const mark = (panel, edgeName) => {
+      if (panel && edgeName) hot.add(`${panel}:${edgeName}`);
+    };
+    if (Array.isArray(mode.draft?.edges) && mode.draft.edges.length) {
+      for (const edge of mode.draft.edges) mark(edge.panel, edge.edge);
+    } else if (mode.draft?.panel && mode.draft?.edge) mark(mode.draft.panel, mode.draft.edge);
+    else if (mode.hotEdge) mark(mode.hotEdge.panel, mode.hotEdge.edge);
     const resolution = Array.isArray(mode.lineResolution) && mode.lineResolution.length >= 2
       ? mode.lineResolution
       : [390, 844];
     // Same footprint as the old fat bar (≥ 5% of the base). Not drawn.
     const size = Math.max(4, spec.t * 3, Math.max(spec.width, spec.height) * 0.05);
-    for (const e of sheetFreeEdges(spec, solved)) {
+    // A new card still offers the committed free edges, so another tap can join
+    // the feature. Eligibility stays on that committed spec: a corner that is
+    // dim before the card stays dim.
+    let edgeSpec = spec;
+    let edgeSolved = solved;
+    if (pickingNew) {
+      const committed = normalizeSheetSpec(mode.spec);
+      if (committed) {
+        edgeSpec = committed;
+        try {
+          edgeSolved = solveSheet(committed);
+        } catch {
+          edgeSpec = spec;
+          edgeSolved = solved;
+        }
+      }
+    }
+    for (const e of sheetFreeEdges(edgeSpec, edgeSolved)) {
       const forBend = mode.tool === 'bend';
       if (forBend ? !e.bendable : !e.tabbable) continue;
       if (!(e.length > 1e-3)) continue;
@@ -218,7 +248,7 @@ export function buildSheetOverlay(mode) {
         continue;
       }
       const key = `${e.panel}:${e.edge}`;
-      const isHot = key === hot;
+      const isHot = hot.has(key);
       const sm = { kind: 'edge', panel: e.panel, edge: e.edge };
       const handle = new Group();
       handle.name = 'sheetEdgeHandle';

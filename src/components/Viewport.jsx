@@ -5068,6 +5068,23 @@ const Viewport = forwardRef(({
     publish({ items, activeId });
   }, [mode, sheetMetalMode, sheetRibbonActiveId, currentScript]);
 
+  // An editor undo rewrites the script without going through the sheet card.
+  // The open sheet then reads that spec back, so one undo drops every edge
+  // of the feature that was just confirmed.
+  useEffect(() => {
+    const current = sheetMetalModeRef.current;
+    if (!current || current.stage !== 'edit') return;
+    const spec = readSheetMetalSpec(currentScript || '');
+    if (JSON.stringify(spec || null) === JSON.stringify(current.spec || null)) return;
+    setSheetMetalMode((prev) => {
+      if (!prev || prev.stage !== 'edit') return prev;
+      const next = readSheetMetalSpec(currentScript || '');
+      if (JSON.stringify(next || null) === JSON.stringify(prev.spec || null)) return prev;
+      if (!next) return { ...prev, spec: null, draft: null, hotEdge: null, toast: null };
+      return { ...prev, spec: next, draft: null, hotEdge: null, toast: null };
+    });
+  }, [currentScript]);
+
   useEffect(() => {
     const publish = onSketchStripChangeRef.current;
     if (!publish) return;

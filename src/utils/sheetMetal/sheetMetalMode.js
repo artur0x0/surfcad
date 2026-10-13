@@ -285,8 +285,13 @@ export function startBendDraft(mode, { panel, edge }) {
 export function bendBlockReason(mode) {
   if (mode?.draft?.kind !== 'bend' || !mode.spec) return null;
   const spec = draftPreviewSpec(mode);
-  const hit = bendInterference(spec, mode.draft.id);
-  return hit.ok ? null : hit.reason;
+  const edges = draftEdgeRows(mode.draft);
+  const ids = edges.length ? edges.map((edge) => edge.id) : [mode.draft.id];
+  for (const id of ids) {
+    const hit = bendInterference(spec, id);
+    if (!hit.ok) return hit.reason;
+  }
+  return null;
 }
 
 export function editFeatureDraft(mode, kind, id) {
@@ -346,8 +351,58 @@ export function updateDraft(mode, patch) {
 }
 
 function featureFromDraft(d) {
-  const { kind: _k, isNew: _n, span: _s, ...rest } = d;
+  const { kind: _k, isNew: _n, span: _s, edges: _e, memberIds: _m, ...rest } = d;
   return rest;
+}
+
+/** One row per selected edge. A single new edge has no `edges` list. */
+function draftEdgeRows(draft) {
+  if (!draft) return [];
+  if (Array.isArray(draft.edges) && draft.edges.length) return draft.edges;
+  return [];
+}
+
+function bendRow(draft, edge) {
+  const row = {
+    id: edge.id,
+    panel: edge.panel,
+    edge: edge.edge,
+    angle: draft.angle,
+    length: draft.length,
+    flip: !!draft.flip,
+  };
+  if (draft.feature) row.feature = draft.feature;
+  return row;
+}
+
+function tabRow(draft, edge) {
+  const span = Number(edge.span) || Number(draft.span) || 0;
+  const width = span > 0 ? Math.min(Number(draft.width) || 0, span) : draft.width;
+  const centered = draft.centered !== false;
+  const offset = centered
+    ? round2(Math.max(0, (span - width) / 2))
+    : clamp(draft.offset ?? 0, 0, Math.max(0, span - width), 0);
+  const row = {
+    id: edge.id,
+    panel: edge.panel,
+    edge: edge.edge,
+    width,
+    depth: draft.depth,
+    centered,
+    offset,
+  };
+  if (draft.feature) row.feature = draft.feature;
+  return row;
+}
+
+function replaceRows(list, rows) {
+  const next = [...(list || [])];
+  for (const row of rows) {
+    const at = next.findIndex((item) => item.id === row.id);
+    if (at >= 0) next[at] = row;
+    else next.push(row);
+  }
+  return next;
 }
 
 /** Spec with the draft applied (preview + Accept). */
@@ -357,6 +412,12 @@ export function draftPreviewSpec(mode) {
   if (!spec || !d) return spec || null;
   if (d.kind === 'base') {
     return { ...spec, plane: d.plane || spec.plane, width: d.width, height: d.height };
+  }
+  const edges = draftEdgeRows(d);
+  if (edges.length && (d.kind === 'bend' || d.kind === 'tab')) {
+    const key = d.kind === 'bend' ? 'bends' : 'tabs';
+    const rows = edges.map((edge) => (d.kind === 'bend' ? bendRow(d, edge) : tabRow(d, edge)));
+    return { ...spec, [key]: replaceRows(spec[key], rows) };
   }
   const key = d.kind === 'bend' ? 'bends' : d.kind === 'tab' ? 'tabs' : 'holes';
   const list = [...(spec[key] || [])];
@@ -417,11 +478,32 @@ export function editSheetChip(mode, chip) {
   const next = editFeatureDraft(mode, chip.sheetKind, id);
   if (next === mode || !next?.draft) return mode;
   const memberIds = (chip.memberIds || []).filter(Boolean);
-  return {
-    ...next,
-    exportOpen: false,
-    draft: { ...next.draft, memberIds: memberIds.length ? memberIds : [id] },
-  };
+  const ids = memberIds.length ? memberIds : [id];
+  const draft = { ...next.draft, memberIds: ids };
+  if (ids.length > 1) {
+    const list = chip.sheetKind === 'bend' ? next.spec.bends : next.spec.tabs;
+    const edges = ids.map((memberId) => {
+      const row = (list || []).find((item) => item.id === memberId);
+      if (!row) return null;
+      const edge = { id: row.id, panel: row.panel, edge: row.edge };
+      if (chip.sheetKind === 'tab') {
+        const panel = panelById(solveSheet(next.spec), row.panel);
+        const frame = panel ? panelEdge(panel, row.edge) : null;
+        if (frame) edge.span = round2(frame.q1 - frame.q0);
+      }
+      return edge;
+    }).filter(Boolean);
+    draft.edges = edges;
+    draft.feature = next.draft.feature || chip.feature || null;
+    if (chip.sheetKind === 'tab' && edges.length) {
+      const spans = edges.map((edge) => Number(edge.span) || 0).filter((n) => n > 0);
+      if (spans.length) {
+        draft.span = Math.min(...spans);
+        if (draft.width > draft.span) draft.width = draft.span;
+      }
+    }
+  }
+  return { ...next, exportOpen: false, draft };
 }
 
 /** Append one committed spec. Steps after the current index are dropped. */
@@ -548,19 +630,146 @@ export function deleteDraftFeature(mode) {
   };
 }
 
+function mintSheetId(prefix, spec, reserved = []) {
+  const taken = new Set(reserved.filter(Boolean));
+  for (const row of [...(spec?.bends || []), ...(spec?.tabs || []), ...(spec?.holes || [])]) {
+    if (row?.id) taken.add(row.id);
+    if (row?.feature) taken.add(String(row.feature));
+  }
+  for (let i = 1; i < 10000; i += 1) {
+    const id = `${prefix}${i}`;
+    if (!taken.has(id)) return id;
+  }
+  return `${prefix}x${Date.now()}`;
+}
+
+function freeEdge(spec, panel, edge) {
+  return sheetFreeEdges(spec).find((row) => row.panel === panel && row.edge === edge) || null;
+}
+
+function edgeSpan(spec, panel, edge) {
+  const panelRow = panelById(solveSheet(spec), panel);
+  const frame = panelRow ? panelEdge(panelRow, edge) : null;
+  if (!frame) return 0;
+  return round2(frame.q1 - frame.q0);
+}
+
+function bendSelection(mode, edges, shared) {
+  const first = edges[0];
+  const feature = edges.length > 1
+    ? (shared.feature || mintSheetId('f', mode.spec, edges.map((edge) => edge.id)))
+    : null;
+  return {
+    ...mode,
+    toast: null,
+    hotEdge: { panel: first.panel, edge: first.edge },
+    draft: {
+      kind: 'bend',
+      isNew: true,
+      id: first.id,
+      panel: first.panel,
+      edge: first.edge,
+      angle: shared.angle,
+      length: shared.length,
+      flip: !!shared.flip,
+      ...(feature ? { feature, edges } : {}),
+    },
+  };
+}
+
+function tabSelection(mode, edges, shared) {
+  const first = edges[0];
+  const spans = edges.map((edge) => Number(edge.span) || 0).filter((n) => n > 0);
+  const span = spans.length ? Math.min(...spans) : (Number(shared.span) || 0);
+  const width = span > 0 ? Math.min(Number(shared.width) || span, span) : shared.width;
+  const feature = edges.length > 1
+    ? (shared.feature || mintSheetId('f', mode.spec, edges.map((edge) => edge.id)))
+    : null;
+  return {
+    ...mode,
+    toast: null,
+    hotEdge: { panel: first.panel, edge: first.edge },
+    draft: {
+      kind: 'tab',
+      isNew: true,
+      id: first.id,
+      panel: first.panel,
+      edge: first.edge,
+      width,
+      depth: shared.depth,
+      centered: shared.centered !== false,
+      offset: shared.offset ?? 0,
+      span,
+      ...(feature ? { feature, edges } : {}),
+    },
+  };
+}
+
+/** Add or remove one eligible edge on the open new bend. The last edge closes the card. */
+export function toggleBendEdge(mode, pick) {
+  if (!mode?.spec || mode.stage !== 'edit') return mode;
+  if (mode.draft && (!mode.draft.isNew || mode.draft.kind !== 'bend')) return mode;
+  const panel = pick?.panel;
+  const edge = pick?.edge;
+  if (!panel || !edge) return mode;
+  if (!mode.draft) return startBendDraft(mode, pick);
+  const current = draftEdgeRows(mode.draft);
+  const edges = current.length
+    ? current
+    : [{ id: mode.draft.id, panel: mode.draft.panel, edge: mode.draft.edge }];
+  const at = edges.findIndex((row) => row.panel === panel && row.edge === edge);
+  if (at >= 0) {
+    const next = edges.filter((_, index) => index !== at);
+    if (!next.length) return cancelDraft(mode);
+    return bendSelection(mode, next, mode.draft);
+  }
+  const row = freeEdge(mode.spec, panel, edge);
+  if (!row?.eligible) return mode;
+  const id = mintSheetId('b', mode.spec, edges.map((item) => item.id));
+  return bendSelection(mode, [...edges, { id, panel, edge }], mode.draft);
+}
+
+/** Add or remove one tabbable edge on the open new tab. The last edge closes the card. */
+export function toggleTabEdge(mode, pick, lengthMm = REFERENCE_LENGTH_MM) {
+  if (!mode?.spec || mode.stage !== 'edit') return mode;
+  if (mode.draft && (!mode.draft.isNew || mode.draft.kind !== 'tab')) return mode;
+  const panel = pick?.panel;
+  const edge = pick?.edge;
+  if (!panel || !edge) return mode;
+  if (!mode.draft) return startTabDraft(mode, pick, lengthMm);
+  const current = draftEdgeRows(mode.draft);
+  const edges = current.length
+    ? current
+    : [{ id: mode.draft.id, panel: mode.draft.panel, edge: mode.draft.edge, span: mode.draft.span }];
+  const at = edges.findIndex((row) => row.panel === panel && row.edge === edge);
+  if (at >= 0) {
+    const next = edges.filter((_, index) => index !== at);
+    if (!next.length) return cancelDraft(mode);
+    return tabSelection(mode, next, mode.draft);
+  }
+  const row = freeEdge(mode.spec, panel, edge);
+  if (!row?.tabbable) return mode;
+  const id = mintSheetId('t', mode.spec, edges.map((item) => item.id));
+  const span = edgeSpan(mode.spec, panel, edge);
+  return tabSelection(mode, [...edges, { id, panel, edge, span }], mode.draft);
+}
+
 /**
  * Viewport tap router (pick = sheetPickFromHits result, point in part frame).
- * plane → base popup; edge → new feature for the active tool; feature → edit.
+ * plane → base popup; edge → toggle into the open bend or tab; feature → edit.
+ * A new bend or tab keeps taking edges. An edit card does not.
  */
 export function sheetTap(mode, pick, lengthMm = REFERENCE_LENGTH_MM) {
   if (!mode || !pick) return mode;
   if (mode.stage === 'plane') return pick.kind === 'plane' ? pickSheetPlane(mode, pick.plane, lengthMm) : mode;
-  if (mode.stage !== 'edit' || mode.draft || mode.exportOpen) return mode;
+  if (mode.stage !== 'edit' || mode.exportOpen) return mode;
   if (pick.kind === 'edge') {
-    if (mode.tool === 'bend') return startBendDraft(mode, pick);
-    if (mode.tool === 'tab') return startTabDraft(mode, pick, lengthMm);
+    if (mode.draft && !mode.draft.isNew) return mode;
+    if (mode.tool === 'bend') return toggleBendEdge(mode, pick);
+    if (mode.tool === 'tab') return toggleTabEdge(mode, pick, lengthMm);
     return mode;
   }
+  if (mode.draft) return mode;
   if (pick.kind === 'bend' || pick.kind === 'tab' || pick.kind === 'hole') return editFeatureDraft(mode, pick.kind, pick.id);
   if (pick.kind === 'panel' && HOLE_TOOLS.has(mode.tool)) return startHoleDraft(mode, pick, lengthMm);
   return mode;
