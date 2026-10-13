@@ -11,11 +11,12 @@
  */
 
 const FIN_HEIGHT_MM = 0.002;
-// A bend facet is shorter than 1 mm, and the needle along it is shorter still.
 // The height test is what keeps a real fillet facet: that facet is the only
-// cover of its surface and it is taller than FIN_HEIGHT_MM. Gating on a 1 mm
-// edge left the bend needles in the mesh, and flat shading drew them as seams.
-const FIN_MIN_EDGE_MM = 0.05;
+// cover of its surface and it is taller than FIN_HEIGHT_MM. A 1 mm floor
+// left bend-chord needles, and a 0.05 mm floor still left the tangency
+// needles on a sheet-thickness fillet (longest edge about 0.03 mm). Those
+// already lie on the wall. Flat shading draws them as a seam.
+const FIN_MIN_EDGE_MM = 0.005;
 const COVER_MM = 0.02;
 const COVER_AREA = 0.05;
 
