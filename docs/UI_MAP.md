@@ -125,6 +125,14 @@ Desktop specifics:
   Confirm removes the entity and those dependents as one sketch undo. Cancel,
   Escape, and the scrim leave the sketch. The plane card leaves this bar on the hidden
   part-strip placeholder. `golden:contour-strip`.
+  While sheet metal is open the same bar lists the sheet (`data-sheet-ribbon`,
+  `aria-label="Sheet metal"`), not assembly joints and not the one Sheet
+  marker. Order is the markers before the block, then Base
+  (`data-feature-chip="sheetBase"`), each bend (`sheetBend`), and each tab
+  (`sheetTab`), then the markers after the block. Plane and base show Base
+  only. A tap highlights that chip and does not open its card. The
+  script-stage strip stays on markers. A sketch still takes the bar.
+  `golden:sheet-ribbon`.
   When no part is selected the same bar shows assembly joints
   (`data-assembly-joints`), or **No assembly joints**
   (`data-feature-strip-empty`), and Undo is titled **Undo joint**.
