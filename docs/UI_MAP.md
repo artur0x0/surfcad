@@ -414,7 +414,10 @@ Mobile specifics:
   Undo, redo, and delete keep the stored id. When the anchor feature is
   gone the bar sits at the end and the full remaining solid runs; when that
   feature comes back the bar returns to it. File open and reload
-  drop it and run the full script. The Extrude card labels Out / In / Both
+  drop it and run the full script. Dragging the bar to the very start shows an
+  empty part and no error: the evaluation copy no longer declares `part`, so
+  the dangling `return part;` is blanked and the viewport clears instead of
+  running it. The Extrude card labels Out / In / Both
   as Direction.
   Chip highlight (`featureStripActiveId`)
   clears on sheet cancel/accept/delete (and after script jump). C.4+: Script-stage

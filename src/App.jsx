@@ -12,6 +12,7 @@ import {
   repairScriptReturns,
   rollbackAnchorAfterInsert,
   rollbackAnchorsAfterOpen,
+  rollbackClearsPart,
   rollbackInsertCaret,
 } from './utils/featureSkip';
 import { failedPartIdsFor } from './utils/failedPartOutline';
@@ -2027,6 +2028,9 @@ const App = () => {
           execute: (script, execOpts) => {
             noteBuild();
             const anchor = rollbackAnchorsRef.current[String(execOpts?.partId || '')];
+            if ((anchor === null || typeof anchor === 'string') && rollbackClearsPart(script, anchor)) {
+              return { ok: true, cleared: true };
+            }
             return manifoldContext.executeScript(script, {
               timeoutMs: 30000,
               importedModels: execOpts?.importedModels,
@@ -7098,6 +7102,9 @@ const App = () => {
           ids: [id],
           execute: (script, execOpts) => {
             const anchor = rollbackAnchorsRef.current[String(execOpts?.partId || '')];
+            if ((anchor === null || typeof anchor === 'string') && rollbackClearsPart(script, anchor)) {
+              return { ok: true, cleared: true };
+            }
             return manifoldContext.executeScript(script, {
               timeoutMs: 30000,
               importedModels: execOpts?.importedModels,

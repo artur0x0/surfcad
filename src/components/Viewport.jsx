@@ -120,6 +120,7 @@ import {
   withAutoPickedContour,
 } from '../utils/savedContours';
 import { shouldClearViewportScript } from '../utils/helperPaletteSnippets';
+import { rollbackClearsPart } from '../utils/featureSkip';
 import { hasNamedContour, mintContourIdentity } from '../utils/namedContour';
 import { contourFeatureUsers, contourUsedByText, deleteContourStatement } from '../utils/contourUsers';
 import {
@@ -10756,7 +10757,12 @@ const Viewport = forwardRef(({
     // worker's cached manifold, the context's lastResult, the pick topology, the
     // solid-derived overlays — would hand the last object back through
     // cross-section, model info, quoting, game compare or the stage hooks.
-    if (shouldClearViewportScript(script)) {
+    const anchor = Object.prototype.hasOwnProperty.call(opts, 'rollbackAnchor')
+      ? opts.rollbackAnchor
+      : rollbackAnchorRef.current;
+    // A bar at the start blanks `let part` and the trailing `return part`.
+    // That copy is an empty part: clear the solid, do not ask the worker.
+    if (shouldClearViewportScript(script) || rollbackClearsPart(script, anchor)) {
       onRunOutcomeRef.current?.({ script, ok: true, scriptLine: null });
       setExecutionError(null);
       setCachedMeshData(null);
@@ -10904,9 +10910,6 @@ const Viewport = forwardRef(({
       const nonce = (typeof crypto !== 'undefined' && crypto.randomUUID)
         ? crypto.randomUUID()
         : `exec-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      const anchor = Object.prototype.hasOwnProperty.call(opts, 'rollbackAnchor')
-        ? opts.rollbackAnchor
-        : rollbackAnchorRef.current;
       const result = await manifoldContext.executeScript(script, {
         timeoutMs: EXECUTION_LIMITS.timeoutMs,
         memoryLimitMB: EXECUTION_LIMITS.memoryLimitMB,

@@ -4,7 +4,8 @@
  * The buffer, undo commits, and saved script stay as written. This module
  * returns a throwaway string: skipped block interiors are blank, and a
  * rollback anchor blanks every statement after that feature except the
- * trailing `return part`. Marker comments stay, and newlines stay, so
+ * trailing `return part`, unless that copy no longer declares `part`.
+ * Marker comments stay, and newlines stay, so
  * feature ids and line numbers do not move. That is the same effect as
  * commenting the statements out. `part` keeps the previous live assignment.
  *
@@ -13,7 +14,7 @@
  */
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { featureDependents } from './featureEdit.js';
-import { insertBlockAtCaret } from './helperPaletteSnippets.js';
+import { declaredNames, insertBlockAtCaret } from './helperPaletteSnippets.js';
 import { contourStatements } from './namedContour.js';
 import { featureStripChips } from './sheetMetal/sheetRibbon.js';
 import { readSheetMetalSpec } from './sheetMetal/sheetMetalScript.js';
@@ -145,6 +146,13 @@ function statementRanges(text, from) {
   return ranges;
 }
 
+function blankTrailingReturn(text) {
+  const keep = trailingReturnRange(text);
+  if (!keep) return text;
+  const [start, end] = keep;
+  return `${text.slice(0, start)}${text.slice(start, end).replace(/[^\n\r]/g, '')}${text.slice(end)}`;
+}
+
 function trailingReturnRange(text) {
   const re = /^[ \t]*return\s+part\s*;[ \t]*$/gm;
   let last = null;
@@ -192,7 +200,7 @@ function mergeRanges(ranges) {
  * A sheet chip keeps that block through the chip (later bends, tabs, and
  * their holes drop out of `sheetSpec`) and blanks from the end of the block.
  * Omit `anchorId` when the bar is at the end. The trailing `return part;`
- * stays. The input string is not modified.
+ * stays unless the copy no longer declares `part`. The input string is not modified.
  *
  * @param {string} script
  * @param {{ skipIds?: string[], anchorId?: string|null }} [options]
@@ -209,6 +217,7 @@ export function evaluationScript(script, options = {}) {
     const interior = blockInterior(text, feature);
     if (interior) ranges.push(interior);
   }
+  let applied = false;
   if (opts.anchorId === null || typeof opts.anchorId === 'string') {
     let from = null;
     if (opts.anchorId === null) from = 0;
@@ -224,7 +233,10 @@ export function evaluationScript(script, options = {}) {
         }
       }
     }
-    if (from != null) ranges.push(...statementRanges(text, from));
+    if (from != null) {
+      applied = true;
+      ranges.push(...statementRanges(text, from));
+    }
   }
   const keep = trailingReturnRange(text);
   const cut = keep ? ranges.flatMap((range) => subtractRange(range, keep)) : ranges;
@@ -237,7 +249,23 @@ export function evaluationScript(script, options = {}) {
     }
   }
   out = applySheetAnchorTrim(out, text, opts.anchorId);
+  // Blanking from the start removes `let part` and used to leave
+  // `return part;`. The worker then throws "Can't find variable: part".
+  // Drop that return when the copy no longer declares part. Line count stays.
+  if (applied && !declaredNames(out).has('part')) out = blankTrailingReturn(out);
   return out === text ? text : out;
+}
+
+/**
+ * The rollback copy has no `part` to return. The viewport clears the solid
+ * instead of running the worker. `null` is the start. A feature id is the
+ * bar after that feature. Omitted, or the end, is false.
+ * @param {string} script
+ * @param {string|null|undefined} anchor
+ */
+export function rollbackClearsPart(script, anchor) {
+  if (anchor !== null && typeof anchor !== 'string') return false;
+  return !declaredNames(evaluationScript(script, { anchorId: anchor })).has('part');
 }
 
 /**
