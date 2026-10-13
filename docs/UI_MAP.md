@@ -125,18 +125,19 @@ Desktop specifics:
   Confirm removes the entity and those dependents as one sketch undo. Cancel,
   Escape, and the scrim leave the sketch. The plane card leaves this bar on the hidden
   part-strip placeholder. `golden:contour-strip`.
-  While sheet metal is open the same bar lists the sheet (`data-sheet-ribbon`,
-  `aria-label="Sheet metal"`), not assembly joints and not the one Sheet
-  marker. Order is the markers before the block, then Base
-  (`data-feature-chip="sheetBase"`), each bend (`sheetBend`), and each tab
-  (`sheetTab`), then the markers after the block. Plane and base show Base
-  only. Bend and Tab toggle edges into one chip: one Confirm, one undo.
+  Sheet metal and regular features share that bar, in script order. A sheet
+  block expands in place to Base (`data-feature-chip="sheetBase"`), each bend
+  (`sheetBend`), and each tab (`sheetTab`). There is no separate sheet list.
+  The script-stage rail (`data-script-feature-strip`) shows the same chips.
+  The rollback bar stays. A gap after a sheet chip evaluates the sheet through
+  that chip and blanks later features; insert lands at the end of the sheet
+  block, before `return part;`. Plane and base on a flange-only script show
+  Base only. Bend and Tab toggle edges into one chip: one Confirm, one undo.
   A tap opens that chip's card. Delete never refuses: nothing else
   goes with it deletes now, and children ask **Delete along with N features**.
   The toast is one line, `Deleted.` (`data-delete-undo-toast`), and Undo and
-  dismiss are 44px wide. Undo is the one editor step. The
-  script-stage strip stays on markers. A sketch still takes the bar.
-  `golden:sheet-ribbon`.
+  dismiss are 44px wide. Undo is the one editor step. A sketch still takes the bar.
+  `golden:sheet-ribbon`. `golden:sheet-feature-mix`.
   When no part is selected the same bar shows assembly joints
   (`data-assembly-joints`), or **No assembly joints**
   (`data-feature-strip-empty`), and Undo is titled **Undo joint**.
@@ -700,7 +701,7 @@ toggle in the card header writes the global `surfcad.displayUnit` (stored length
 Out-of-stock gauges stay visible and disabled. Catalog/cache in `src/utils/scs/`.
 The committed script is the sheet block plus `return part;`. The worker and
 `runScript` unwrap a sheet wrapper (`solid` + spec or flat pattern) and still
-reject any other non-Manifold. Tapping the Sheet chip on the feature ribbon
+reject any other non-Manifold. Tapping Base, a bend, or a tab on the feature strip
 reopens that flow at the edit step with the saved blank, bends, and features.
 Done writes the spec when it differs, then closes. The card X writes nothing.
 The strip Undo is the editor step. Check shows DFM only. Part-row Order on a sheet-only part that passes those checks opens the SendCutSend handoff (DXF, STEP, redirect) instead of the quote. Quote with SurfCAD instead can still add a cart line. The Sheet Metal button stays under Shape.

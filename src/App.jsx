@@ -2378,7 +2378,10 @@ const App = () => {
   };
   const onSketchUndo = () => viewportRef.current?.undoContourSketch?.();
   const onSketchSelect = (chip) => viewportRef.current?.selectSketchEntity?.(chip);
-  const onSheetSelect = (chip) => viewportRef.current?.selectSheetChip?.(chip);
+  const onSheetSelect = (chip) => {
+    if (chip?.id) setFeatureStripActiveId(chip.id);
+    viewportRef.current?.selectSheetChip?.(chip);
+  };
 
   /**
    * Load the part a feature acts on into the editor before it writes, opens
@@ -7732,22 +7735,21 @@ const App = () => {
                   >
                     <FeatureStrip
                       orientation="horizontal"
-                      script={sketchOpen || sheetRibbonOpen || showJoints ? '' : stripScript}
+                      script={sketchOpen || showJoints ? '' : stripScript}
                       joints={sketchOpen || sheetRibbonOpen ? null : liveJointChips}
                       entities={sketchOpen ? sketchStrip.entities : null}
-                      sheetItems={sheetRibbonOpen ? sheetStrip.items : null}
                       bodyCount={stripBodyCount}
                       failedIds={stripFailedIds}
                       failedTitles={stripFailedTitles}
                       rollbackAnchor={stripRollbackAnchor}
                       onRollback={handleRollbackAnchor}
-                      hidden={sketchOpen || sheetRibbonOpen ? false : featureSession}
-                      activeId={sketchOpen ? sketchStrip.activeId : (sheetRibbonOpen ? sheetStrip.activeId : (featureSheet?.feature?.id || featureStripActiveId))}
+                      hidden={sketchOpen ? false : featureSession}
+                      activeId={sketchOpen ? sketchStrip.activeId : (featureSheet?.feature?.id || featureStripActiveId || (sheetRibbonOpen ? sheetStrip.activeId : null))}
                       hideWhenEmpty
-                      onJump={sketchOpen || sheetRibbonOpen ? undefined : ((f) => openFeatureSheetFor(f))}
+                      onJump={sketchOpen ? undefined : ((f) => openFeatureSheetFor(f))}
                       onSelectJoint={sketchOpen || sheetRibbonOpen ? undefined : handleSelectJoint}
                       onSelectEntity={sketchOpen ? onSketchSelect : undefined}
-                      onSelectSheet={sheetRibbonOpen ? onSheetSelect : undefined}
+                      onSelectSheet={sketchOpen ? undefined : onSheetSelect}
                       onUndo={sketchOpen ? onSketchUndo : stripUndo}
                       onRedo={sketchOpen ? undefined : stripRedo}
                       canUndo={sketchOpen ? !!sketchStrip.canUndo : stripCanUndo}
@@ -7799,8 +7801,9 @@ const App = () => {
                           rollbackAnchor={editorRollbackAnchor}
                           onRollback={handleEditorRollbackAnchor}
                           hidden={featureSession}
-                          activeId={featureSheet?.feature?.id || featureStripActiveId}
+                          activeId={featureSheet?.feature?.id || featureStripActiveId || sheetStrip?.activeId || null}
                           onJump={handleFeatureStripJump}
+                          onSelectSheet={onSheetSelect}
                         />
                       </div>
                     </div>
@@ -8070,22 +8073,21 @@ const App = () => {
             >
               <FeatureStrip
                 orientation="horizontal"
-                script={sketchOpen || sheetRibbonOpen || showJoints ? '' : stripScript}
+                script={sketchOpen || showJoints ? '' : stripScript}
                 joints={sketchOpen || sheetRibbonOpen ? null : liveJointChips}
                 entities={sketchOpen ? sketchStrip.entities : null}
-                sheetItems={sheetRibbonOpen ? sheetStrip.items : null}
                 bodyCount={stripBodyCount}
                 failedIds={stripFailedIds}
                 failedTitles={stripFailedTitles}
                 rollbackAnchor={stripRollbackAnchor}
                 onRollback={handleRollbackAnchor}
-                hidden={sketchOpen || sheetRibbonOpen ? false : featureSession}
-                activeId={sketchOpen ? sketchStrip.activeId : (sheetRibbonOpen ? sheetStrip.activeId : (featureSheet?.feature?.id || featureStripActiveId))}
+                hidden={sketchOpen ? false : featureSession}
+                activeId={sketchOpen ? sketchStrip.activeId : (featureSheet?.feature?.id || featureStripActiveId || (sheetRibbonOpen ? sheetStrip.activeId : null))}
                 hideWhenEmpty
-                onJump={sketchOpen || sheetRibbonOpen ? undefined : handleDesktopFeatureStripJump}
+                onJump={sketchOpen ? undefined : handleDesktopFeatureStripJump}
                 onSelectJoint={sketchOpen || sheetRibbonOpen ? undefined : handleSelectJoint}
                 onSelectEntity={sketchOpen ? onSketchSelect : undefined}
-                onSelectSheet={sheetRibbonOpen ? onSheetSelect : undefined}
+                onSelectSheet={sketchOpen ? undefined : onSheetSelect}
                 onUndo={sketchOpen ? onSketchUndo : stripUndo}
                 onRedo={sketchOpen ? undefined : stripRedo}
                 canUndo={sketchOpen ? !!sketchStrip.canUndo : stripCanUndo}

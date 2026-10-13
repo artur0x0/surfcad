@@ -61,7 +61,7 @@ function plateOk(probe) {
   const thin = sorted[0] > 1.5 && sorted[0] < 3.2;
   const plate = sorted[1] > 40 && sorted[2] > 40 && sorted[0] < sorted[1] * 0.2;
   const notCube = Math.abs(sorted[2] - sorted[0]) > 20;
-  return thin && plate && notCube && probe.hasSheet && !probe.hasCube && probe.chip === 'sheetMetal';
+  return thin && plate && notCube && probe.hasSheet && !probe.hasCube && probe.chip === 'sheetBase';
 }
 
 if (exe && failed === 0) {

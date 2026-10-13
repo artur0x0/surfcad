@@ -90,6 +90,7 @@ import {
 } from '../utils/sheetMetal/sheetMetalMode';
 import { readSheetMetalSpec } from '../utils/sheetMetal/sheetMetalScript';
 import { sheetRibbonChips } from '../utils/sheetMetal/sheetRibbon';
+import { parseFeatureMarkers } from '../utils/featureMarkers';
 import { buildSheetOverlay, disposeSheetOverlay, sheetPickFromHits, syncSheetEdgeLineResolution } from '../utils/sheetMetal/sheetOverlay';
 import { referencePickEdges, sheetContourEdges, sheetSpecInScript } from '../utils/sheetMetal/sheetContourEdges';
 import { ensureBodyMaterial } from '../utils/sheetMetal/sheetMaterial';
@@ -1195,6 +1196,7 @@ const Viewport = forwardRef(({
   const undoContourSketchRef = useRef(null);
   const selectSketchEntityRef = useRef(null);
   const selectSheetChipRef = useRef(null);
+  const pendingSheetChipRef = useRef(null);
   const partLabelsRef = useRef(null);
   const featureSessionRef = useRef(false);
   const featureEditRef = useRef(null);
@@ -5096,11 +5098,22 @@ const Viewport = forwardRef(({
   selectSketchEntityRef.current = selectSketchEntity;
 
   const selectSheetChip = useCallback((chip) => {
-    if (!chip?.id || !sheetMetalModeRef.current) return;
-    setSheetRibbonActiveId(chip.id);
-    if (!chip.sheet) return;
-    setSheetMetalMode((prev) => (prev ? editSheetChip(prev, chip) : prev));
-  }, []);
+    if (!chip?.sheet || !chip.id) return;
+    if (sheetMetalModeRef.current) {
+      setSheetRibbonActiveId(chip.id);
+      setSheetMetalMode((prev) => (prev ? editSheetChip(prev, chip) : prev));
+      return;
+    }
+    const read = getHelperBufferRef.current;
+    const text = (typeof read === 'function' ? read() : '') || currentScript || '';
+    const marker = parseFeatureMarkers(text).find((feature) => (
+      feature.kind === 'sheetMetal' && (!chip.markerId || feature.id === chip.markerId)
+    ));
+    if (!marker) return;
+    pendingSheetChipRef.current = chip;
+    const opened = beginFeatureEditRef.current?.(marker, text) === true;
+    if (!opened) pendingSheetChipRef.current = null;
+  }, [currentScript]);
   selectSheetChipRef.current = selectSheetChip;
 
   useEffect(() => {
@@ -11327,6 +11340,8 @@ const Viewport = forwardRef(({
     setHelperEdit(null);
     setFeatureEditBanner('');
     const launch = async () => {
+      const pendingSheet = pendingSheetChipRef.current;
+      pendingSheetChipRef.current = null;
       let session = session0;
       try {
         if (needsPreview && !editPreviewBlocked()) {
@@ -11389,7 +11404,11 @@ const Viewport = forwardRef(({
           if (helperCardOpenRef.current) setHelperCardOpen(false);
           if (feaActive) feaCloseRef.current();
           setSheetMetalPicker(null);
-          if (next) setSheetMetalMode(next);
+          const opened = pendingSheet?.sheet ? editSheetChip(next, pendingSheet) : next;
+          if (opened) {
+            setSheetMetalMode(opened);
+            if (pendingSheet?.id) setSheetRibbonActiveId(pendingSheet.id);
+          }
         } else if (dialog.dialog === 'shell') {
           enterShellMode();
           const face = (active.resolvedFaces || [])[0] || null;

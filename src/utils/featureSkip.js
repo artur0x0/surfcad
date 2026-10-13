@@ -14,6 +14,8 @@
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { featureDependents } from './featureEdit.js';
 import { insertBlockAtCaret } from './helperPaletteSnippets.js';
+import { featureStripChips } from './sheetMetal/sheetRibbon.js';
+import { readSheetMetalSpec } from './sheetMetal/sheetMetalScript.js';
 import {
   findReturnPartIndex,
   joinScriptReturn,
@@ -184,6 +186,8 @@ function mergeRanges(ranges) {
  * `skipIds` blanks those block interiors. `anchorId` is the feature the
  * rollback bar sits after: a string blanks every statement after it, `null`
  * blanks from the start of the script, and an unknown id blanks no tail.
+ * A sheet chip keeps that block through the chip (later bends, tabs, and
+ * their holes drop out of `sheetSpec`) and blanks from the end of the block.
  * Omit `anchorId` when the bar is at the end. The trailing `return part;`
  * stays. The input string is not modified.
  *
@@ -208,18 +212,24 @@ export function evaluationScript(script, options = {}) {
     else {
       const anchor = features.find((feature) => feature.id === opts.anchorId);
       if (anchor) from = anchor.endOffset;
+      else {
+        const chip = sheetAnchor(text, opts.anchorId);
+        if (chip && Number.isFinite(chip.endOffset)) from = chip.endOffset;
+      }
     }
     if (from != null) ranges.push(...statementRanges(text, from));
   }
   const keep = trailingReturnRange(text);
   const cut = keep ? ranges.flatMap((range) => subtractRange(range, keep)) : ranges;
   const merged = mergeRanges(cut);
-  if (!merged.length) return text;
   let out = text;
-  for (let i = merged.length - 1; i >= 0; i -= 1) {
-    const [start, end] = merged[i];
-    out = `${out.slice(0, start)}${out.slice(start, end).replace(/[^\n\r]/g, '')}${out.slice(end)}`;
+  if (merged.length) {
+    for (let i = merged.length - 1; i >= 0; i -= 1) {
+      const [start, end] = merged[i];
+      out = `${out.slice(0, start)}${out.slice(start, end).replace(/[^\n\r]/g, '')}${out.slice(end)}`;
+    }
   }
+  out = applySheetAnchorTrim(out, text, opts.anchorId);
   return out === text ? text : out;
 }
 
@@ -250,10 +260,16 @@ export function rollbackGapIndex(ids, anchor) {
  */
 export function resolveRollback(script, anchor) {
   const text = typeof script === 'string' ? script : '';
-  const ids = parseFeatureMarkers(text).map((feature) => feature.id);
+  const markerIds = featureIds(text);
+  const chips = featureStripChips(text);
+  const ids = chips.map((chip) => chip.id);
+  const known = new Set(markerIds);
+  for (const chip of chips) {
+    if (chip.sheet) known.add(chip.id);
+  }
   let resolved;
   if (anchor === null) resolved = null;
-  else if (typeof anchor === 'string' && ids.includes(anchor)) resolved = anchor;
+  else if (typeof anchor === 'string' && known.has(anchor)) resolved = anchor;
   else resolved = undefined;
   return {
     anchor: resolved,
@@ -282,6 +298,65 @@ function featureIds(script) {
   return parseFeatureMarkers(script).map((feature) => feature.id);
 }
 
+/** A sheet chip id, when it is not also a marker id. Contour ids are not anchors. */
+function sheetAnchor(script, anchor) {
+  if (typeof anchor !== 'string') return null;
+  if (featureIds(script).includes(anchor)) return null;
+  const chip = featureStripChips(script).find((item) => item.sheet && item.id === anchor);
+  return chip || null;
+}
+
+function markerIndexForAnchor(features, script, anchor) {
+  if (anchor === null) return -1;
+  if (typeof anchor !== 'string') return null;
+  const direct = features.findIndex((feature) => feature.id === anchor);
+  if (direct >= 0) return direct;
+  const chip = sheetAnchor(script, anchor);
+  if (!chip?.markerId) return null;
+  const host = features.findIndex((feature) => feature.id === chip.markerId);
+  return host >= 0 ? host : null;
+}
+
+function trimSheetSpec(spec, keptChips) {
+  const bends = new Set();
+  const tabs = new Set();
+  for (const chip of keptChips) {
+    if (chip.sheetKind === 'bend') {
+      for (const id of chip.memberIds || []) bends.add(String(id));
+    }
+    if (chip.sheetKind === 'tab') {
+      for (const id of chip.memberIds || []) tabs.add(String(id));
+    }
+  }
+  const panels = new Set(['base', ...bends]);
+  return {
+    ...spec,
+    bends: (spec.bends || []).filter((row) => bends.has(String(row?.id))),
+    tabs: (spec.tabs || []).filter((row) => tabs.has(String(row?.id))),
+    holes: (spec.holes || []).filter((row) => panels.has(String(row?.panel || 'base'))),
+  };
+}
+
+/** Keep the sheet spec through the chip the bar sits on. Later features are already blank. */
+function applySheetAnchorTrim(blanked, original, anchorId) {
+  const chip = sheetAnchor(original, anchorId);
+  if (!chip?.markerId || !Number.isFinite(chip.endOffset)) return blanked;
+  const marker = parseFeatureMarkers(original).find((feature) => feature.id === chip.markerId);
+  if (!marker) return blanked;
+  const spec = readSheetMetalSpec(original.slice(marker.startOffset, marker.endOffset));
+  if (!spec) return blanked;
+  const group = featureStripChips(original).filter((item) => item.sheet && item.markerId === chip.markerId);
+  const at = group.findIndex((item) => item.id === chip.id);
+  if (at < 0) return blanked;
+  const next = trimSheetSpec(spec, group.slice(0, at + 1));
+  const needle = `const sheetSpec = ${JSON.stringify(spec)};`;
+  const replacement = `const sheetSpec = ${JSON.stringify(next)};`;
+  if (needle === replacement) return blanked;
+  const i = blanked.indexOf(needle);
+  if (i < 0) return blanked;
+  return `${blanked.slice(0, i)}${replacement}${blanked.slice(i + needle.length)}`;
+}
+
 /**
  * Caret for a palette insert while the bar is set. `null` anchor is the
  * start of the buffer. A feature id is that block's end. Omitted, or an
@@ -294,7 +369,9 @@ export function rollbackInsertCaret(script, anchor) {
   if (anchor === null) return 0;
   if (typeof anchor !== 'string') return null;
   const feature = parseFeatureMarkers(script).find((item) => item.id === anchor);
-  return feature ? feature.endOffset : null;
+  if (feature) return feature.endOffset;
+  const chip = sheetAnchor(script, anchor);
+  return chip && Number.isFinite(chip.endOffset) ? chip.endOffset : null;
 }
 
 /**
@@ -309,7 +386,8 @@ export function rollbackInsertCaret(script, anchor) {
 export function clampRollbackAnchor(script, anchor) {
   if (anchor === null) return null;
   if (typeof anchor !== 'string') return undefined;
-  return featureIds(script).includes(anchor) ? anchor : undefined;
+  if (featureIds(script).includes(anchor)) return anchor;
+  return sheetAnchor(script, anchor) ? anchor : undefined;
 }
 
 function blockBody(script, feature) {
@@ -359,12 +437,17 @@ export function insertedFeature(beforeScript, afterScript) {
  * @returns {string[]}
  */
 export function rolledBackFeatureIds(script, anchorId) {
-  const features = parseFeatureMarkers(typeof script === 'string' ? script : '');
+  const text = typeof script === 'string' ? script : '';
+  const features = parseFeatureMarkers(text);
   if (anchorId === null) return features.map((feature) => feature.id);
   if (typeof anchorId !== 'string') return [];
   const at = features.findIndex((feature) => feature.id === anchorId);
-  if (at < 0) return [];
-  return features.slice(at + 1).map((feature) => feature.id);
+  if (at >= 0) return features.slice(at + 1).map((feature) => feature.id);
+  const chip = sheetAnchor(text, anchorId);
+  if (!chip?.markerId) return [];
+  const host = features.findIndex((feature) => feature.id === chip.markerId);
+  if (host < 0) return [];
+  return features.slice(host + 1).map((feature) => feature.id);
 }
 
 function explicitMarkerId(script, feature) {
@@ -418,6 +501,9 @@ function stampLanded(buffer, featureId) {
 function reboundAnchor(beforeScript, afterScript, anchor) {
   if (anchor === null) return null;
   if (typeof anchor !== 'string') return undefined;
+  if (sheetAnchor(beforeScript, anchor)) {
+    return sheetAnchor(afterScript, anchor) ? anchor : undefined;
+  }
   const before = parseFeatureMarkers(beforeScript);
   const after = parseFeatureMarkers(afterScript);
   const host = before.find((feature) => feature.id === anchor);
@@ -464,7 +550,10 @@ export function commitScriptAtRollback(beforeScript, afterScript, anchor) {
     return { buffer: after, anchor: clampRollbackAnchor(after, anchor) };
   }
   const features = parseFeatureMarkers(after);
-  const anchorIndex = anchor === null ? -1 : features.findIndex((feature) => feature.id === anchor);
+  const anchorIndex = markerIndexForAnchor(features, after, anchor);
+  if (anchorIndex == null) {
+    return { buffer: after, anchor: clampRollbackAnchor(after, anchor) };
+  }
   const freshIds = new Set(fresh.map((feature) => feature.id));
   const tailFresh = features.filter((feature) => {
     if (!freshIds.has(feature.id)) return false;
@@ -493,12 +582,7 @@ export function commitScriptAtRollback(beforeScript, afterScript, anchor) {
     else if (cutStart > 0 && rest[cutStart - 1] === '\n') cutStart -= 1;
     rest = `${rest.slice(0, cutStart)}${rest.slice(cutEnd)}`;
   }
-  let caret = null;
-  if (anchor === null) caret = 0;
-  else {
-    const host = parseFeatureMarkers(rest).find((feature) => feature.id === anchor);
-    caret = host ? host.endOffset : null;
-  }
+  const caret = rollbackInsertCaret(rest, anchor);
   if (typeof caret !== 'number') {
     return { buffer: after, anchor: clampRollbackAnchor(after, anchor) };
   }

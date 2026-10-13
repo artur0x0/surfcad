@@ -174,16 +174,27 @@ if (exe && failed === 0) {
           });
           if (!row) return false;
           const ready = await page.waitForFunction(() => {
-            const chips = [...window.document.querySelectorAll('[data-feature-chip="sheetMetal"]')];
+            const chips = [...window.document.querySelectorAll('[data-feature-chip="sheetBase"]')];
             return chips.some((el) => el.getClientRects().length);
           }, null, { timeout: 10000 }).then(() => true).catch(() => false);
           if (!ready) return false;
           await page.evaluate(() => {
-            const chips = [...window.document.querySelectorAll('[data-feature-chip="sheetMetal"]')];
+            const chips = [...window.document.querySelectorAll('[data-feature-chip="sheetBase"]')];
             const el = chips.find((node) => node.getClientRects().length) || chips[0];
             el?.click();
           });
-          return true;
+          const opened = await page.waitForSelector(
+            '[data-sheet-metal-base], [data-sheet-metal-bend], [data-sheet-metal-tab], [data-sm-reopen="1"]',
+            { timeout: 10000 },
+          ).then(() => true).catch(() => false);
+          if (!opened) return false;
+          const back = page.locator('[data-sm-back]');
+          if (await back.count()) {
+            const visible = back.filter({ hasNot: page.locator('[hidden]') }).first();
+            const target = (await visible.count()) ? visible : back.first();
+            await target.click();
+          }
+          return page.waitForSelector('[data-sm-reopen="1"]', { timeout: 8000 }).then(() => true).catch(() => false);
         };
 
         const bend1 = await acceptFeature('[data-sheet-metal-bend]', { kind: 'edge', panel: 'base', edge: 'u+' });
@@ -203,7 +214,7 @@ if (exe && failed === 0) {
         errors.length = 0;
         const tapped = await openSheetChip();
         if (!tapped) {
-          check(`${label}: ribbon tap reopens edit with the bends, and does not crash`, false, 'Sheet chip was not on the part strip');
+          check(`${label}: ribbon tap reopens edit with the bends, and does not crash`, false, 'Base chip was not on the part strip');
           await context.close();
           continue;
         }
@@ -263,7 +274,7 @@ if (exe && failed === 0) {
           cancelled ? '' : 'mode still open');
 
         if (!await openSheetChip()) {
-          check(`${label}: Done closes without writing when the spec matches`, false, 'Sheet chip was not on the part strip');
+          check(`${label}: Done closes without writing when the spec matches`, false, 'Base chip was not on the part strip');
           await context.close();
           continue;
         }
@@ -276,7 +287,7 @@ if (exe && failed === 0) {
           closedSame && afterSame === saved && errors.length === 0);
 
         if (!await openSheetChip()) {
-          check(`${label}: Done writes the new bend and keeps the one Sheet chip`, false, 'Sheet chip was not on the part strip');
+          check(`${label}: Done writes the new bend and keeps Base, the bends, and the tab`, false, 'Base chip was not on the part strip');
           await context.close();
           continue;
         }
@@ -287,12 +298,16 @@ if (exe && failed === 0) {
         const confirmed = await page.waitForFunction(() => !window.document.querySelector('[data-sheet-metal-mode]'), null, { timeout: 15000 })
           .then(() => true).catch(() => false);
         const written = specOf(await page.evaluate(scriptOf));
-        const chips = await page.locator('[data-feature-chip="sheetMetal"]').count();
-        check(`${label}: Done writes the new bend and keeps the one Sheet chip`,
+        const chips = await page.evaluate(() => (
+          [...window.document.querySelectorAll('[data-cad-feature-strip] [data-feature-chip]')]
+            .map((el) => el.getAttribute('data-feature-chip'))
+        ));
+        check(`${label}: Done writes the new bend and keeps Base, the bends, and the tab`,
           extra && beforeDone === saved && confirmed
           && written?.bends?.length === (builtSpec?.bends?.length || 0) + 1
           && written?.tabs?.length === builtSpec?.tabs?.length
-          && chips === 1 && errors.length === 0,
+          && chips.includes('sheetBase') && chips.filter((kind) => kind === 'sheetBend').length === written.bends.length
+          && !chips.includes('sheetMetal') && errors.length === 0,
           JSON.stringify({ extra, same: beforeDone === saved, confirmed, bends: written?.bends?.length, tabs: written?.tabs?.length, chips, errors: errors.slice(0, 2) }));
 
         await page.evaluate(() => {
