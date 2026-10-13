@@ -206,6 +206,7 @@
         "golden:feature-failed-chip-safari": "node scripts/golden/smoke_feature_failed_chip_safari.mjs",
         "golden:feature-skip-midchain": "node scripts/golden/smoke_feature_skip_midchain.mjs",
         "golden:rollback-bar": "node scripts/golden/smoke_rollback_bar.mjs",
+        "golden:rollback-hit": "node scripts/golden/smoke_rollback_hit.mjs",
         "golden:rollback-insert": "node scripts/golden/smoke_rollback_insert.mjs",
         "golden:rollback-accept": "node scripts/golden/smoke_rollback_accept.mjs",
         "golden:rollback-sync": "node scripts/golden/smoke_rollback_sync.mjs",

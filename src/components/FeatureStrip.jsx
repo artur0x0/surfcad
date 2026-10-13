@@ -154,6 +154,16 @@ function JointGlyph({ type, size }) {
   return <Icon size={size} strokeWidth={2} aria-hidden="true" />;
 }
 
+/** Triangle border, in px. The tip sits on the strip edge; the centre is half of this outside it. */
+const ROLLBACK_MARK = 8;
+/** Invisible drag target on the triangle. The drawn mark stays ROLLBACK_MARK. */
+const ROLLBACK_HIT = 44;
+/**
+ * Lead spacer when the bar is before the first chip. With the flex gap after
+ * it, the bar sits far enough back that the hit box does not cover that chip.
+ */
+const ROLLBACK_LEAD = 40;
+
 function measureRollbackGaps(track, vertical) {
   if (!track) return [];
   const chips = [...track.querySelectorAll('[data-feature-id]')];
@@ -174,7 +184,27 @@ function measureRollbackGaps(track, vertical) {
     }
     gaps.push(boxes[boxes.length - 1].right - trackRect.left);
   }
+  const lead = track.querySelector('[data-rollback-lead]');
+  if (lead) {
+    const leadBox = lead.getBoundingClientRect();
+    gaps[0] = vertical
+      ? ((leadBox.top + leadBox.bottom) / 2) - trackRect.top
+      : ((leadBox.left + leadBox.right) / 2) - trackRect.left;
+  }
   return gaps;
+}
+
+function RollbackLead({ vertical }) {
+  return (
+    <span
+      data-rollback-lead=""
+      aria-hidden="true"
+      className="shrink-0"
+      style={vertical
+        ? { height: ROLLBACK_LEAD, width: '100%' }
+        : { width: ROLLBACK_LEAD, height: 1 }}
+    />
+  );
 }
 
 function RollbackHandle({
@@ -192,7 +222,13 @@ function RollbackHandle({
   const vertical = orientation === 'vertical';
   // The mark sits just outside the strip: tip on the top edge (horizontal)
   // or the side edge (vertical). The 2px line is the strip's full span,
-  // centred on the gap. The wider box is only the drag target.
+  // centred on the gap. The 44px box is the triangle's drag target; the
+  // drawn triangle stays small.
+  const hitStyle = {
+    width: ROLLBACK_HIT,
+    height: ROLLBACK_HIT,
+    ...(vertical ? { left: -ROLLBACK_MARK / 2 } : { top: -ROLLBACK_MARK / 2 }),
+  };
   return (
     <div
       data-rollback-bar=""
@@ -226,6 +262,12 @@ function RollbackHandle({
             data-rollback-mark=""
             className="pointer-events-none absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-y-[6px] border-y-transparent border-r-[8px] border-r-cyan-300"
           />
+          <span
+            data-rollback-hit=""
+            aria-hidden="true"
+            className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+            style={hitStyle}
+          />
         </>
       ) : (
         <>
@@ -236,6 +278,12 @@ function RollbackHandle({
           <span
             data-rollback-mark=""
             className="pointer-events-none absolute bottom-full left-1/2 h-0 w-0 -translate-x-1/2 border-x-[6px] border-x-transparent border-t-[8px] border-t-cyan-300"
+          />
+          <span
+            data-rollback-hit=""
+            aria-hidden="true"
+            className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2"
+            style={hitStyle}
           />
         </>
       )}
@@ -691,6 +739,9 @@ export default function FeatureStrip({
                 No features
               </div>
             )}
+            {!jointMode && !entityMode && shownIndex === 0 && features.length > 0 && (
+              <RollbackLead vertical={false} />
+            )}
             {jointMode && joints.map((joint) => {
               const invalid = !!joint.invalid;
               return (
@@ -844,6 +895,9 @@ export default function FeatureStrip({
         className="relative flex w-full flex-col items-center gap-2"
         data-feature-bar-track=""
       >
+      {shownIndex === 0 && features.length > 0 && (
+        <RollbackLead vertical />
+      )}
       {features.map((f, i) => {
         const active = activeId === f.id;
         const dimmed = i >= shownIndex;
