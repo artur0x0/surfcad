@@ -36,7 +36,7 @@ over inventing a new modal layout.
   stay centered between both rails.
 - **`sheetMetal/SmControls.jsx`** — `SmPopup` is the shared feature card
   (`FeatureSheet`) for Sheet Metal: picker, plane and edit chip, base, bend,
-  tab, hole, countersink, tapped, and Check & Export. X and Esc write nothing.
+  tab, hole, countersink, tapped, and Check. X and Esc write nothing.
   Confirm is a 44px button and saves that step. The mm|in toggle is in the
   header. The DFM list scrolls in the body. ≥16px number / select fields
   (`PARTS_TEXT_INPUT_*`). Hidden in game.

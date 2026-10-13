@@ -274,7 +274,7 @@ if (exe && failed === 0) {
       const partShot = join(shotDir, 'side-relief-part-390.png');
       await page.screenshot({ path: partShot });
       console.log(`  shot ${partShot}`);
-      await page.locator('[data-sm-export]').click();
+      await page.locator('[data-sm-check]').click();
       await page.waitForSelector('[data-sheet-metal-export]', { timeout: 8000 });
       const ui = await page.evaluate(() => ({
         ok: (document.querySelector('[data-sm-dfm-ok]')?.textContent || '').trim(),
@@ -283,7 +283,7 @@ if (exe && failed === 0) {
       const exportShot = join(shotDir, 'side-relief-export-390.png');
       await page.screenshot({ path: exportShot });
       console.log(`  shot ${exportShot}`);
-      check('390: the relieved side bend passes Check & Export',
+      check('390: the relieved side bend passes Check',
         ui.ok === 'All SCS checks passed.' && !ui.fails && errors.length === 0,
         JSON.stringify({ ui, errors: errors.slice(0, 2) }));
     }

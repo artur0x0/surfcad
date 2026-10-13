@@ -2,7 +2,7 @@
 /**
  * SendCutSend handoff. An eligible sheet part shows DXF, STEP, and the
  * redirect instead of the quote. "Quote with SurfCAD instead" reaches
- * Add to cart. A mixed part shows the normal quote. Check & Export has
+ * Add to cart. A mixed part shows the normal quote. Check has
  * no download or order button. Checkout of an eligible script stays on
  * the SurfCAD quote.
  *
@@ -70,7 +70,7 @@ console.log('SCS handoff — source');
   const quote = read('src/components/QuoteModal.jsx');
   const hook = read('src/hooks/useCart.jsx');
   const palette = read('src/components/HelperInsertPalette.jsx');
-  const popup = flow.slice(flow.indexOf('const ExportPopup'), flow.indexOf('const TOOL_HINTS'));
+  const popup = flow.slice(flow.indexOf('const CheckPopup'), flow.indexOf('const TOOL_HINTS'));
   const branchAt = quote.indexOf('{showHandoff ? (');
   const branch = quote.slice(branchAt, quote.indexOf(') : (', branchAt));
   const orderStart = hook.indexOf('const orderPart = useCallback');
@@ -79,8 +79,8 @@ console.log('SCS handoff — source');
 
   check('eligible fixture routes to scs and a mixed part routes to the quote',
     sheetCheckoutRoute(eligible) === 'scs' && sheetCheckoutRoute(mixed) === 'quote');
-  check('ExportPopup has no download or order button',
-    popup.includes('const ExportPopup')
+  check('Check has no download or order button',
+    popup.includes('const CheckPopup')
     && !/data-sm-dxf/.test(popup)
     && !/data-sm-order/.test(popup)
     && !/Download DXF/.test(popup)
@@ -281,6 +281,8 @@ HTMLAnchorElement.prototype.click = function () {
       exportDx: document.querySelectorAll('[data-sheet-metal-export] [data-sm-dxf], [data-sheet-metal-export] [data-sm-step], [data-sheet-metal-export] [data-sm-order]').length,
       dfmOk: !!document.querySelector('[data-sm-dfm-ok]'),
       flat: !!document.querySelector('[data-sheet-metal-export] [data-sm-flat-size]'),
+      checkTitle: (document.querySelector('[data-sheet-metal-export] [data-feature-card-title]')?.textContent || '').trim(),
+      stepSource: document.querySelector('[data-sheet-metal-export] [data-sm-step-source]')?.getAttribute('data-sm-step-source') || '',
       title: (document.querySelector('h2')?.textContent || '').trim(),
       view: document.querySelector('[data-harness-current]')?.getAttribute('data-harness-current') || '',
       flatText: (document.querySelector('[data-scs-handoff] [data-sm-flat-size]')?.textContent || '').replace(/\s+/g, ' ').trim(),
@@ -313,9 +315,9 @@ HTMLAnchorElement.prototype.click = function () {
       JSON.stringify(ui));
 
     await snap('scs-handoff-390.png');
-    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.waitForSelector('[data-scs-handoff]');
-    await snap('scs-handoff-1440.png');
+    await snap('scs-handoff-1280.png');
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.locator('[data-scs-surf-quote]').click();
@@ -325,9 +327,9 @@ HTMLAnchorElement.prototype.click = function () {
       !ui.handoff && ui.add === 'Add to cart' && ui.quotes >= 1 && ui.added === 0 && ui.title === 'Manufacturing Quote',
       JSON.stringify(ui));
     await snap('scs-surf-quote-390.png');
-    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.waitForSelector('[data-quote-add]');
-    await snap('scs-surf-quote-1440.png');
+    await snap('scs-surf-quote-1280.png');
 
     await page.setViewportSize({ width: 390, height: 844 });
     await show('mixed');
@@ -337,21 +339,22 @@ HTMLAnchorElement.prototype.click = function () {
       ui.view === 'mixed' && !ui.handoff && !ui.dxf && ui.add === 'Add to cart' && ui.title === 'Manufacturing Quote',
       JSON.stringify(ui));
     await snap('scs-mixed-quote-390.png');
-    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.waitForSelector('[data-quote-add]');
-    await snap('scs-mixed-quote-1440.png');
+    await snap('scs-mixed-quote-1280.png');
 
     await page.setViewportSize({ width: 390, height: 844 });
     await show('export');
     await page.waitForSelector('[data-sheet-metal-export]', { timeout: 5000 });
     ui = await counts();
-    check('Check & Export has DFM and no download or order button',
-      ui.view === 'export' && ui.exportDx === 0 && ui.dfmOk && ui.flat && !ui.order,
+    check('Check has DFM and no download or order button',
+      ui.view === 'export' && ui.exportDx === 0 && ui.dfmOk && ui.flat && !ui.order
+      && ui.checkTitle === 'Check' && !!ui.stepSource,
       JSON.stringify(ui));
     await snap('scs-export-390.png');
-    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.waitForSelector('[data-sheet-metal-export]');
-    await snap('scs-export-1440.png');
+    await snap('scs-export-1280.png');
 
     await page.setViewportSize({ width: 390, height: 844 });
     await show('checkout');
