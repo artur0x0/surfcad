@@ -353,12 +353,12 @@ window.__edgeReady = true;
       page.on('pageerror', (err) => console.log('  pageerror', err.message));
 
       await page.setContent(pageHtml('ribbon'), { waitUntil: 'load' });
-      await page.waitForSelector('[data-feature-chip="sheetMetal"] [data-sheet-metal-icon]', { timeout: 8000 });
+      await page.waitForSelector('[data-feature-chip="sheetBase"] [data-sheet-metal-icon]', { timeout: 8000 });
       const icon = await page.evaluate(() => {
-        const svg = document.querySelector('[data-feature-chip="sheetMetal"] [data-sheet-metal-icon]');
+        const svg = document.querySelector('[data-feature-chip="sheetBase"] [data-sheet-metal-icon]');
         const path = svg?.querySelector('path')?.getAttribute('d') || '';
         const color = svg ? getComputedStyle(svg).color : '';
-        return { path, color, count: document.querySelectorAll('[data-feature-chip="sheetMetal"]').length };
+        return { path, color, count: document.querySelectorAll('[data-feature-chip="sheetBase"]').length };
       });
       check(`${slug}: ribbon sheet badge is the blue bent plate`,
         icon.count === 1

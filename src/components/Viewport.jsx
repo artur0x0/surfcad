@@ -90,6 +90,7 @@ import {
 } from '../utils/sheetMetal/sheetMetalMode';
 import { readSheetMetalSpec } from '../utils/sheetMetal/sheetMetalScript';
 import { sheetRibbonChips } from '../utils/sheetMetal/sheetRibbon';
+import { parseFeatureMarkers } from '../utils/featureMarkers';
 import { buildSheetOverlay, disposeSheetOverlay, sheetPickFromHits, syncSheetEdgeLineResolution } from '../utils/sheetMetal/sheetOverlay';
 import { referencePickEdges, sheetContourEdges, sheetSpecInScript } from '../utils/sheetMetal/sheetContourEdges';
 import { ensureBodyMaterial } from '../utils/sheetMetal/sheetMaterial';
@@ -255,7 +256,12 @@ import {
   releaseJointPlanes,
   useTemporaryVisibility,
 } from '../hooks/useTemporaryVisibility';
-import { planeReferenceKey, planesForJointOverlay } from '../utils/jointPlanes';
+import {
+  CONSTRUCTION_PLANE_SIZE,
+  planeReferenceKey,
+  planesForJointOverlay,
+  planesForWorkplaneTool,
+} from '../utils/jointPlanes';
 import { buildSweepPathPreview } from '../utils/edgeSweepPath';
 import {
   buildFilletBlendPreview,
@@ -1190,6 +1196,7 @@ const Viewport = forwardRef(({
   const undoContourSketchRef = useRef(null);
   const selectSketchEntityRef = useRef(null);
   const selectSheetChipRef = useRef(null);
+  const pendingSheetChipRef = useRef(null);
   const partLabelsRef = useRef(null);
   const featureSessionRef = useRef(false);
   const featureEditRef = useRef(null);
@@ -2508,6 +2515,45 @@ const Viewport = forwardRef(({
     workplaneOverlayRef.current = null;
   }, []);
 
+  /**
+   * Plane tool: the new plane, before Confirm. Same quad the confirmed
+   * construction plane uses, translucent, at the frame the inputs describe.
+   * The sketch plane square stays undrawn.
+   */
+  const paintPlaneToolPreview = useCallback((plane) => {
+    clearWorkplaneOverlay();
+    if (!plane?.center || !plane?.normal || !plane?.x || !plane?.y || !sceneRef.current) return;
+    const size = CONSTRUCTION_PLANE_SIZE;
+    const geom = new PlaneGeometry(size, size);
+    const mat = makePreviewSkinMaterial();
+    // Coplanar with the picked face. Depth test would lose the fight and
+    // the preview would not be there.
+    mat.depthTest = false;
+    const quad = new ThreeMesh(geom, mat);
+    quad.name = 'planeToolPreview';
+    quad.position.set(plane.center[0], plane.center[1], plane.center[2]);
+    const q = new Quaternion();
+    q.setFromRotationMatrix(new Matrix4().makeBasis(
+      new Vector3(plane.x[0], plane.x[1], plane.x[2]),
+      new Vector3(plane.y[0], plane.y[1], plane.y[2]),
+      new Vector3(plane.normal[0], plane.normal[1], plane.normal[2]),
+    ));
+    quad.quaternion.copy(q);
+    quad.renderOrder = PREVIEW_RENDER_ORDER.skin;
+    quad.frustumCulled = false;
+    quad.userData = {
+      kind: 'planeToolPreview',
+      normal: [plane.normal[0], plane.normal[1], plane.normal[2]],
+      size,
+    };
+    const group = new Group();
+    group.name = 'planeToolPreview';
+    group.add(quad);
+    anchorToActivePart(group);
+    sceneRef.current.add(group);
+    workplaneOverlayRef.current = group;
+  }, [clearWorkplaneOverlay, anchorToActivePart]);
+
   /** Restore orbit/pan after a point grab (hover or drag) releases. */
   const unlockOrbitForPointDrag = useCallback(() => {
     const saved = polylineControlsLockRef.current;
@@ -2882,7 +2928,7 @@ const Viewport = forwardRef(({
       for (const p of entry.planes || []) {
         const plane = p.plane;
         if (!plane?.center || !plane?.x || !plane?.y || !plane?.normal) continue;
-        const size = 48;
+        const size = CONSTRUCTION_PLANE_SIZE;
         const geom = new PlaneGeometry(size, size);
         const jointId = p.jointPlaneId || p.id;
         const picked = entry.jointPlaneIds instanceof Set
@@ -4573,6 +4619,8 @@ const Viewport = forwardRef(({
     .map((pick) => `${pick.partId}:${pick.key.id}`)
     .join('|');
 
+  const planeToolOpen = isWorkplaneEntry(contourMode?.entry);
+
   useEffect(() => {
     if (!showPlanes) {
       clearConstructionPlanes();
@@ -4581,13 +4629,16 @@ const Viewport = forwardRef(({
     const picked = new Set(jointPlanePickKey ? jointPlanePickKey.split('|') : []);
     paintConstructionPlanes(partOverlayEntries().map((entry) => ({
       ...entry,
-      planes: planesForJointOverlay(entry, jointPicking),
+      planes: jointPicking
+        ? planesForJointOverlay(entry, true)
+        : (planeToolOpen ? planesForWorkplaneTool(entry) : planesForJointOverlay(entry, false)),
       selectedId: selectedPlaneId,
       jointPlaneIds: picked,
     })));
   }, [
     selectedPlaneId,
     showPlanes,
+    planeToolOpen,
     jointPicking,
     jointPlanePickKey,
     paintConstructionPlanes,
@@ -4713,6 +4764,9 @@ const Viewport = forwardRef(({
       clearRevolvePreview();
       clearLoftPreview();
       clearSweepPreview();
+      // A face tap or an X/Y/Z pick stores planeFace. Until then there is
+      // no new plane to preview. Offset and angles are already in that frame.
+      if (contourMode.planeFace) paintPlaneToolPreview(planeFromContourFace(contourMode.planeFace));
       return;
     }
     const handles = sketchHandles(contourMode);
@@ -4831,7 +4885,7 @@ const Viewport = forwardRef(({
       clearLoftPreview();
       clearSweepPreview();
     }
-  }, [contourMode, modelBounds, selectedEdges, paintPolylineDraft, paintContourStatusWire, paintContourRefWire, paintExtrudePreview, paintRevolvePreview, paintLoftPreview, paintSweepPreview, applyContourPartGhost, clearWorkplaneOverlay, clearPolylineDraft, clearContourStatusWire, clearContourRefWire, clearExtrudePreview, clearRevolvePreview, clearLoftPreview, clearSweepPreview, clearXsPreview, setXsPreview, clearStaleSolveOverlays]);
+  }, [contourMode, modelBounds, selectedEdges, paintPolylineDraft, paintContourStatusWire, paintContourRefWire, paintExtrudePreview, paintRevolvePreview, paintLoftPreview, paintSweepPreview, applyContourPartGhost, clearWorkplaneOverlay, paintPlaneToolPreview, clearPolylineDraft, clearContourStatusWire, clearContourRefWire, clearExtrudePreview, clearRevolvePreview, clearLoftPreview, clearSweepPreview, clearXsPreview, setXsPreview, clearStaleSolveOverlays]);
 
   // Slot cards never set a solid contour entry, so the effect above clears
   // the solid. Paint it again from the filled contours and the card params.
@@ -5044,11 +5098,22 @@ const Viewport = forwardRef(({
   selectSketchEntityRef.current = selectSketchEntity;
 
   const selectSheetChip = useCallback((chip) => {
-    if (!chip?.id || !sheetMetalModeRef.current) return;
-    setSheetRibbonActiveId(chip.id);
-    if (!chip.sheet) return;
-    setSheetMetalMode((prev) => (prev ? editSheetChip(prev, chip) : prev));
-  }, []);
+    if (!chip?.sheet || !chip.id) return;
+    if (sheetMetalModeRef.current) {
+      setSheetRibbonActiveId(chip.id);
+      setSheetMetalMode((prev) => (prev ? editSheetChip(prev, chip) : prev));
+      return;
+    }
+    const read = getHelperBufferRef.current;
+    const text = (typeof read === 'function' ? read() : '') || currentScript || '';
+    const marker = parseFeatureMarkers(text).find((feature) => (
+      feature.kind === 'sheetMetal' && (!chip.markerId || feature.id === chip.markerId)
+    ));
+    if (!marker) return;
+    pendingSheetChipRef.current = chip;
+    const opened = beginFeatureEditRef.current?.(marker, text) === true;
+    if (!opened) pendingSheetChipRef.current = null;
+  }, [currentScript]);
   selectSheetChipRef.current = selectSheetChip;
 
   useEffect(() => {
@@ -10042,6 +10107,32 @@ const Viewport = forwardRef(({
               })(),
             };
           },
+          stagePlaneTool: () => {
+            const planes = [];
+            constructionPlaneRef.current?.traverse?.((child) => {
+              if (child.userData?.kind !== 'constructionPlane') return;
+              planes.push(child.userData.jointPlaneId || child.userData.planeId || '');
+            });
+            let mesh = null;
+            workplaneOverlayRef.current?.traverse?.((child) => {
+              if (child.isMesh && child.userData?.kind === 'planeToolPreview') mesh = child;
+            });
+            const at = new Vector3();
+            if (mesh) mesh.getWorldPosition(at);
+            return {
+              toggle: !!showPlanesRef.current,
+              planes,
+              preview: mesh ? {
+                present: true,
+                transparent: mesh.material?.transparent === true,
+                opacity: Number.isFinite(mesh.material?.opacity) ? mesh.material.opacity : null,
+                depthWrite: mesh.material?.depthWrite === true,
+                size: mesh.userData.size ?? null,
+                center: [at.x, at.y, at.z],
+                normal: mesh.userData.normal || null,
+              } : { present: false },
+            };
+          },
           stageContourOverlays: () => {
             const scene = sceneRef.current;
             const counts = { preview: 0, highlight: 0, ghost: 0, names: [] };
@@ -11249,6 +11340,8 @@ const Viewport = forwardRef(({
     setHelperEdit(null);
     setFeatureEditBanner('');
     const launch = async () => {
+      const pendingSheet = pendingSheetChipRef.current;
+      pendingSheetChipRef.current = null;
       let session = session0;
       try {
         if (needsPreview && !editPreviewBlocked()) {
@@ -11311,7 +11404,11 @@ const Viewport = forwardRef(({
           if (helperCardOpenRef.current) setHelperCardOpen(false);
           if (feaActive) feaCloseRef.current();
           setSheetMetalPicker(null);
-          if (next) setSheetMetalMode(next);
+          const opened = pendingSheet?.sheet ? editSheetChip(next, pendingSheet) : next;
+          if (opened) {
+            setSheetMetalMode(opened);
+            if (pendingSheet?.id) setSheetRibbonActiveId(pendingSheet.id);
+          }
         } else if (dialog.dialog === 'shell') {
           enterShellMode();
           const face = (active.resolvedFaces || [])[0] || null;

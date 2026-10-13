@@ -1,11 +1,11 @@
 /**
- * Chips for the CAD bar while sheet metal is open.
+ * One feature list for the CAD strip and the script rail.
  *
- * The script still has one sheet-metal marker. This list is a view: markers
- * before that block, then the base flange, then one chip per bend group and
- * one per tab group, then markers after the block. A row with no `feature`
- * is its own chip. Rows that share `feature` are one chip, sitting at the
- * first row. Holes are not chips.
+ * The script still has one sheet-metal marker per block. `featureStripChips`
+ * expands each block in place: Base, then one chip per bend group, then one
+ * per tab group. A row with no `feature` is its own chip. Rows that share
+ * `feature` are one chip, sitting at the first row. Holes are not chips.
+ * There is no second list for sheet mode.
  *
  * refKeys stay on the bend id and the tab id (`solveSheet` panel ids and
  * `buildSheetBrep` pieces). The chip does not rename them.
@@ -78,32 +78,63 @@ function blockSpec(script, marker, live, usedLive) {
   return readSheetMetalSpec(script.slice(marker.startOffset, marker.endOffset));
 }
 
+function withBlock(chip, marker, first) {
+  const id = first || !marker?.id
+    ? chip.id
+    : `sheet:${marker.id}:${chip.id.replace(/^sheet:/, '')}`;
+  return {
+    ...chip,
+    id,
+    markerId: marker?.id || null,
+    startOffset: marker?.startOffset,
+    endOffset: marker?.endOffset,
+  };
+}
+
 /**
- * Ordered chips. `plane` and `base` are the base flange only.
- * `spec` is the live sheet (it wins for the first block). Other markers
- * stay in script order around that block.
+ * One feature list: contours and markers in script order, with each sheet
+ * block expanded to Base, then bend groups, then tab groups. There is no
+ * second list for sheet mode. `spec` wins for the first sheet block.
  */
-export function sheetRibbonChips(script, { stage = 'edit', spec = null } = {}) {
-  if (stage === 'plane' || stage === 'base') return [baseChip()];
+export function featureStripChips(script, { spec = null } = {}) {
   const text = String(script || '');
   const markers = featuresWithContours(text);
   const live = spec && typeof spec === 'object' ? spec : null;
   const usedLive = { current: false };
   const out = [];
-  let sawSheet = false;
+  let sheets = 0;
   for (const marker of markers) {
     if (marker.kind !== 'sheetMetal') {
       out.push(marker);
       continue;
     }
-    sawSheet = true;
-    out.push(...sheetEntries(blockSpec(text, marker, live, usedLive)));
-  }
-  if (!sawSheet) {
-    const fallback = live || readSheetMetalSpec(text);
-    if (fallback) out.push(...sheetEntries(fallback));
+    const block = blockSpec(text, marker, live, usedLive);
+    if (!block) {
+      out.push(marker);
+      continue;
+    }
+    const first = sheets === 0;
+    sheets += 1;
+    for (const chip of sheetEntries(block)) out.push(withBlock(chip, marker, first));
   }
   return out;
+}
+
+/**
+ * Ordered chips while a sheet flow is choosing its plane or base flange:
+ * that step is Base only. Every other stage is the one feature list.
+ */
+export function sheetRibbonChips(script, { stage = 'edit', spec = null } = {}) {
+  if (stage === 'plane' || stage === 'base') return [baseChip()];
+  const text = String(script || '');
+  const chips = featureStripChips(text, { spec });
+  if (chips.some((chip) => chip.sheet)) return chips;
+  const live = spec && typeof spec === 'object' ? spec : null;
+  const fallback = live || readSheetMetalSpec(text);
+  if (!fallback || featuresWithContours(text).some((marker) => marker.kind === 'sheetMetal')) {
+    return chips;
+  }
+  return [...chips, ...sheetEntries(fallback)];
 }
 
 /**
