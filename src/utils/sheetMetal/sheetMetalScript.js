@@ -145,3 +145,19 @@ export function composeSheetMetalCommit(buffer, spec) {
   // append their own `return part;`.
   return { ok: true, buffer: withSheetReturn(next) };
 }
+
+/**
+ * Drop the sheet-metal block. Code before it and code after it stay,
+ * including the single `return part;`.
+ */
+export function removeSheetMetalBlock(buffer) {
+  const s = String(buffer ?? '');
+  const i = s.indexOf(SHEET_METAL_BEGIN);
+  if (i < 0) return { ok: true, buffer: s };
+  const endMark = s.indexOf(SHEET_METAL_END, i);
+  if (endMark < 0) return { ok: false, buffer: s, message: 'Sheet metal block is incomplete.' };
+  let end = endMark + SHEET_METAL_END.length;
+  if (s[end] === '\r') end += 1;
+  if (s[end] === '\n') end += 1;
+  return { ok: true, buffer: withSheetReturn(`${s.slice(0, i)}${s.slice(end)}`) };
+}

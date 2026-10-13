@@ -130,7 +130,10 @@ Desktop specifics:
   marker. Order is the markers before the block, then Base
   (`data-feature-chip="sheetBase"`), each bend (`sheetBend`), and each tab
   (`sheetTab`), then the markers after the block. Plane and base show Base
-  only. A tap highlights that chip and does not open its card. The
+  only. A tap opens that chip's card. Delete never refuses: nothing else
+  goes with it deletes now, and children ask **Delete along with N features**.
+  The toast is one line, `Deleted.` (`data-delete-undo-toast`), and Undo and
+  dismiss are 44px wide. Undo is the one editor step. The
   script-stage strip stays on markers. A sketch still takes the bar.
   `golden:sheet-ribbon`.
   When no part is selected the same bar shows assembly joints

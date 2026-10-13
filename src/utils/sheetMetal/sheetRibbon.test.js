@@ -74,6 +74,20 @@ test('a mixed part lists markers and sheet chips in script order', () => {
   assert.equal(chips.some((chip) => chip.memberIds?.includes('h1')), false);
 });
 
+test('a deleted base leaves the other markers and does not invent a Base chip', () => {
+  const script = [
+    CUBE_BEGIN,
+    'let box = 1;',
+    CUBE_END,
+    CONTOUR_EXTRUDE_BEGIN,
+    'let ex = 1;',
+    CONTOUR_EXTRUDE_END,
+    'return part;',
+  ].join('\n');
+  const chips = sheetRibbonChips(script, { stage: 'edit', spec: null });
+  assert.deepEqual(chips.map((chip) => chip.kind), ['cube', 'extrude']);
+});
+
 test('a sheet with no other markers is base, bends, then tabs', () => {
   const script = `${sheetMetalBlock(spec)}\nreturn part;\n`;
   const chips = sheetRibbonChips(script, { stage: 'edit' });

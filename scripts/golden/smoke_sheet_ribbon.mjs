@@ -4,9 +4,13 @@
  *
  * While sheet metal is open the CAD bar is not assembly joints and not the
  * one Sheet chip. Plane shows Base. Edit shows Base, each bend, and each
- * tab. A tap highlights that chip and does not open its card. A part that
- * also has a cube, a fillet, and an extrude keeps those chips on the same
- * bar, in script order. Closing the flow puts the Sheet chip back.
+ * tab. A tap opens that chip's card. An unused tab deletes with no dialog,
+ * the one-line Deleted toast, and one undo. A bend that carries a tab and a
+ * hole confirms Delete along with 2 features; a contour ref on its wall is
+ * not part of that count, and one undo restores the bend, the tab, and the
+ * hole. A part that also has a cube, a fillet, and an extrude keeps those
+ * chips on the same bar, in script order. Closing the flow puts the Sheet
+ * chip back.
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir() only.
  */
@@ -18,6 +22,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { panelById, panelPoint, solveSheet } from '../../src/utils/sheetMetal/sheetModel.js';
+import { readSheetMetalSpec } from '../../src/utils/sheetMetal/sheetMetalScript.js';
 import {
   CONTOUR_EXTRUDE_BEGIN,
   CONTOUR_EXTRUDE_END,
@@ -217,34 +223,102 @@ if (exe && failed === 0) {
           && !kinds.includes('sheetMetal'),
           JSON.stringify({ bend1, bend2, tab, edit, errors: errors.slice(0, 2) }));
 
-        await page.locator('[data-cad-feature-strip] [data-feature-id="sheet:base"]').click();
-        const baseLit = await page.waitForFunction(() => {
-          const el = window.document.querySelector('[data-cad-feature-strip] [data-feature-id="sheet:base"]');
-          return el && el.getAttribute('aria-pressed') === 'true';
-        }, null, { timeout: 5000 }).then(() => true).catch(() => false);
-        const pressedBase = await page.evaluate(ribbonOf);
-        const bendCard = await page.locator('[data-sheet-metal-bend]').count();
-        check(`${label}: tapping Base highlights it and does not open a card`,
-          baseLit
-          && pressedBase?.chips[0]?.pressed === true
-          && pressedBase.chips.slice(1).every((chip) => !chip.pressed)
-          && bendCard === 0,
-          JSON.stringify(pressedBase));
-        await page.locator('[data-cad-feature-strip] [data-sheet-kind="bend"]').first().click();
-        const bendLit = await page.waitForFunction(() => {
-          const chips = [...window.document.querySelectorAll('[data-cad-feature-strip] [data-sheet-kind="bend"]')];
-          return chips[0] && chips[0].getAttribute('aria-pressed') === 'true';
-        }, null, { timeout: 5000 }).then(() => true).catch(() => false);
-        const pressedBend = await page.evaluate(ribbonOf);
-        check(`${label}: tapping a bend highlights that chip only`,
-          bendLit
-          && pressedBend?.chips[1]?.pressed === true
-          && pressedBend.chips[0]?.pressed === false
-          && await page.locator('[data-sheet-metal-bend]').count() === 0,
-          JSON.stringify(pressedBend));
-
         const saved = await page.evaluate(scriptOf);
-        const mixed = withNeighbors(saved);
+        const bendId = await page.evaluate(() => {
+          const chips = [...window.document.querySelectorAll('[data-cad-feature-strip] [data-sheet-kind="bend"]')];
+          return (chips[1]?.getAttribute('data-sheet-members') || '').split(' ')[0];
+        });
+
+        await page.locator('[data-cad-feature-strip] [data-feature-id="sheet:base"]').click();
+        const baseCard = await page.waitForSelector('[data-sheet-metal-base]', { timeout: 8000 }).then(() => true).catch(() => false);
+        const baseOpen = await page.evaluate(ribbonOf);
+        check(`${label}: tapping Base opens its card and keeps every bend`,
+          baseCard
+          && (baseOpen?.chips || []).map((chip) => chip.kind).join(',') === 'sheetBase,sheetBend,sheetBend,sheetTab'
+          && baseOpen?.chips[0]?.pressed === true,
+          JSON.stringify(baseOpen));
+        await page.locator('[data-sheet-metal-base] [data-sm-back]').click();
+        await page.waitForSelector('[data-sheet-metal-step="edit"]', { timeout: 8000 });
+
+        await page.locator('[data-cad-feature-strip] [data-sheet-kind="bend"]').first().click();
+        const bendCard = await page.waitForSelector('[data-sheet-metal-bend]', { timeout: 8000 }).then(() => true).catch(() => false);
+        const bendOpen = await page.evaluate(ribbonOf);
+        check(`${label}: tapping a bend opens its card`,
+          bendCard && bendOpen?.chips[1]?.pressed === true && bendOpen?.chips[0]?.pressed === false,
+          JSON.stringify(bendOpen));
+        await page.locator('[data-sheet-metal-bend] [data-sm-back]').click();
+        await page.waitForFunction(() => !window.document.querySelector('[data-sheet-metal-bend]'), null, { timeout: 8000 });
+
+        await page.locator('[data-cad-feature-strip] [data-sheet-kind="tab"]').first().click();
+        await page.waitForSelector('[data-sheet-metal-tab]', { timeout: 8000 });
+        await page.locator('[data-sheet-metal-tab] [data-sm-delete]').click();
+        const tabDialog = await page.locator('[data-sm-delete-dialog]').count();
+        await page.locator('[data-delete-undo-toast]').waitFor({ timeout: 8000 });
+        const tabToast = await page.evaluate(() => {
+          const root = window.document.querySelector('[data-delete-undo-toast]');
+          const undo = root?.querySelector('[data-error-undo]');
+          const box = undo?.getBoundingClientRect();
+          return {
+            text: (root?.innerText || '').replace(/\s+/g, ' ').trim(),
+            width: box?.width || 0,
+          };
+        });
+        check(`${label}: an unused tab deletes now, with the Deleted toast`,
+          tabDialog === 0 && tabToast.text.includes('Deleted.') && tabToast.width >= 44,
+          JSON.stringify({ tabDialog, tabToast }));
+        await page.locator('[data-delete-undo-toast] [data-error-undo]').click();
+        const tabRestored = await page.waitForFunction((before) => {
+          const text = (window.monaco?.editor?.getModels?.() || []).map((m) => m.getValue()).join('\n');
+          return text === before;
+        }, saved, { timeout: 15000 }).then(() => true).catch(() => false);
+        check(`${label}: Undo puts that tab back in one step`, tabRestored);
+
+        await page.locator('[data-sheet-tool="tab"]').click();
+        const childTab = await acceptFeature('[data-sheet-metal-tab]', { kind: 'edge', panel: bendId, edge: 'u+' });
+        const holePoint = await page.evaluate(scriptOf).then((text) => {
+          const live = readSheetMetalSpec(text);
+          const panel = panelById(solveSheet(live), bendId);
+          if (!panel) return null;
+          const u = (panel.u0 + panel.u1) / 2;
+          const v = (panel.v0 + panel.v1) / 2;
+          return panelPoint(panel, u, v, 0);
+        });
+        await page.locator('[data-sheet-tool="hole"]').click();
+        const childHole = await acceptFeature('[data-sheet-metal-hole]', { kind: 'panel', panel: bendId, point: holePoint });
+        const refNote = "// refKey: 'wall:b2:u+:w0'";
+        await page.evaluate((note) => {
+          const model = window.monaco.editor.getModels()[0];
+          const text = model.getValue();
+          if (!text.includes(note)) model.setValue(`${note}\n${text}`);
+        }, refNote);
+        await page.waitForTimeout(1600);
+        const withChildren = await page.evaluate(scriptOf);
+        await page.locator(`[data-cad-feature-strip] [data-feature-id="sheet:bend:${bendId}"]`).click();
+        await page.waitForSelector('[data-sheet-metal-bend]', { timeout: 8000 });
+        await page.locator('[data-sheet-metal-bend] [data-sm-delete]').click();
+        await page.locator('[data-sm-delete-dialog]').waitFor({ timeout: 8000 });
+        const confirmLabel = ((await page.locator('[data-sm-delete-confirm]').innerText()) || '').replace(/\s+/g, ' ').trim();
+        check(`${label}: a bend with a tab and a hole confirms, and a wall ref stays out`,
+          childTab && childHole && !!holePoint
+          && withChildren.includes(refNote)
+          && confirmLabel === 'Delete along with 2 features',
+          JSON.stringify({ childTab, childHole, holePoint, confirmLabel, bendId }));
+        await page.locator('[data-sm-delete-confirm]').click();
+        await page.locator('[data-delete-undo-toast]').waitFor({ timeout: 8000 });
+        await page.locator('[data-delete-undo-toast] [data-error-undo]').click();
+        const bendRestored = await page.waitForFunction((before) => {
+          const text = (window.monaco?.editor?.getModels?.() || []).map((m) => m.getValue()).join('\n');
+          return text === before;
+        }, withChildren, { timeout: 15000 }).then(() => true).catch(() => false);
+        const restoredSpec = readSheetMetalSpec(await page.evaluate(scriptOf));
+        check(`${label}: one undo restores that bend, its tab, and its hole`,
+          bendRestored
+          && (restoredSpec?.bends || []).some((row) => row.id === bendId)
+          && (restoredSpec?.tabs || []).some((row) => row.panel === bendId)
+          && (restoredSpec?.holes || []).some((row) => row.panel === bendId),
+          JSON.stringify({ bendRestored, bends: restoredSpec?.bends?.length, tabs: restoredSpec?.tabs?.length, holes: restoredSpec?.holes?.length }));
+
+        const mixed = withNeighbors(withChildren);
         await page.evaluate((text) => {
           window.monaco.editor.getModels()[0].setValue(text);
         }, mixed);
@@ -257,7 +331,7 @@ if (exe && failed === 0) {
         const mix = await page.evaluate(ribbonOf);
         check(`${label}: a mixed part keeps every feature in script order`,
           (mix?.chips || []).map((chip) => chip.kind).join(',')
-            === 'cube,fillet,sheetBase,sheetBend,sheetBend,sheetTab,extrude',
+            === 'cube,fillet,sheetBase,sheetBend,sheetBend,sheetTab,sheetTab,extrude',
           JSON.stringify(mix));
         const shot = join(shotDir, `sheet-ribbon-${label}.png`);
         await page.screenshot({ path: shot });

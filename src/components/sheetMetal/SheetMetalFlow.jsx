@@ -297,20 +297,21 @@ const SheetMetalFlow = ({
   };
 
   const commitSheetDelete = () => {
-    if (!mode?.draft) return;
-    const { mode: next, spec } = deleteDraftFeature(mode);
+    if (!mode?.draft || mode.draft.isNew) return;
+    const { mode: next, spec, removeBlock } = deleteDraftFeature(mode);
     setDeleteConfirm(null);
-    if (!spec) {
+    if (!removeBlock && !spec) {
       setMode(() => next);
       return;
     }
-    if (mode.reopen) {
-      setMode((m) => pushSheetHistory(m, spec));
-    } else if (onCommit?.(spec, { step: `delete-${mode.draft.kind}` }) === false) {
-      return;
-    } else {
-      setMode(() => next);
-    }
+    // One editor undo, including reopen. The in-card step stack stays put.
+    const wrote = onCommit?.(removeBlock ? null : spec, {
+      step: `delete-${mode.draft.kind}`,
+      removeBlock: !!removeBlock,
+      write: true,
+    });
+    if (wrote === false) return;
+    setMode(() => next);
     armDeleteToast('Deleted.');
   };
 
@@ -345,11 +346,8 @@ const SheetMetalFlow = ({
             tone="cyan"
             role="status"
             onDismiss={() => setDeleteToast(null)}
-            onUndo={() => {
-              if (mode?.reopen) setMode((m) => undoSheetStep(m));
-              else onUndo?.();
-            }}
-            canUndo={mode?.reopen ? mode.step > 0 : !!canUndo}
+            onUndo={() => onUndo?.()}
+            canUndo={!!canUndo}
             roomy
             className="pointer-events-auto"
           >
@@ -365,6 +363,46 @@ const SheetMetalFlow = ({
 
   if (mode.stage === 'edit' && mode.exportOpen) {
     return deleteChrome(<ExportPopup mode={mode} setMode={setMode} mesh={mesh} script={script} partName={partName} unit={unit} onUnit={onUnit} compact={compact} />);
+  }
+
+  if (mode.stage === 'edit' && mode.draft?.kind === 'base') {
+    const d = mode.draft;
+    const plane = SHEET_PLANES[d.plane];
+    const ends = baseSliderRange(mode.sku);
+    return deleteChrome(
+      <SmPopup
+        title="Base flange"
+        subtitle={`${plane?.label || d.plane} plane · ${formatSheetLength(mode.sku?.thicknessMm, unit)} ${mode.sku?.name || ''}`}
+        onClose={onExit}
+        closeLabel="Exit sheet metal without writing"
+        dataAttr="data-sheet-metal-base"
+        unit={unit}
+        onUnit={onUnit}
+        compact={compact}
+        cardAttrs={{ 'data-sheet-length': lengthMm }}
+        footer={<DraftFooter mode={mode} setMode={setMode} onCommit={onCommit} onDelete={requestSheetDelete} />}
+      >
+        <SmMmSlider
+          id="sm-base-x"
+          label="X (width)"
+          mm={d.width}
+          minMm={ends.widthMin}
+          maxMm={ends.max}
+          unit={unit}
+          onMm={(v) => setMode((m) => updateDraft(m, { width: v }))}
+        />
+        <SmMmSlider
+          id="sm-base-y"
+          label="Y (height)"
+          mm={d.height}
+          minMm={ends.heightMin}
+          maxMm={ends.max}
+          unit={unit}
+          onMm={(v) => setMode((m) => updateDraft(m, { height: v }))}
+        />
+        <p className="text-xs text-gray-400">Up to {formatSheetLength(BASE_MAX, unit, 0)}. Thickness comes from the SKU. Stored in mm.</p>
+      </SmPopup>,
+    );
   }
 
   if (mode.stage === 'edit' && mode.draft?.kind === 'bend') {
