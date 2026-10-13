@@ -642,7 +642,11 @@ Edges: `src/utils/selectEdge.js` (`pickNearestEdgeScreen`,
 `buildCoherentEdges`, `toggleEdgeSelectionPropagated`),
 `src/utils/boundaryEdgeIds.js`, `src/utils/edgeTangencyField.js`. Pick mode is
 one `pickMode` state (`src/components/Viewport.jsx:282`), toggled from the
-`CrossSectionPanel` cluster.
+`CrossSectionPanel` cluster. Fillet and chamfer use that same pick. A short
+edge's hit segment grows to 44px (22px past each end); the drawn stroke stays
+the real edge. Inside that radius the nearest screen distance wins, so a long
+edge that is closer still picks. `golden:fillet-edge-hit` taps within about
+15px of a short corner on a sheet and on a filleted box at 390 and 1280.
 
 ### The "in-mode" pattern
 Contour / Extrude / Revolve / Loft / Sweep: `src/utils/contourMode.js` +

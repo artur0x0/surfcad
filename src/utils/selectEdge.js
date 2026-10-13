@@ -442,6 +442,34 @@ export const EDGE_PICK_SLOP_PX = 32;
 export const EDGE_PICK_SLOP_COARSE_PX = 40;
 
 /**
+ * Fillet / chamfer pick only. A short corner edge is a few CSS pixels on a
+ * phone, so its hit segment is grown to this length (22px past each end of a
+ * point-sized edge). The drawn stroke is unchanged. Long edges are already
+ * longer than this and stay on their real segment.
+ */
+export const EDGE_FILLET_HIT_RADIUS_PX = 44;
+
+/** Extend a screen segment to `minLen` px, equally past each end. Null when it is already long enough. */
+function extendScreenSegment(ax, ay, bx, by, minLen) {
+  if (!(minLen > 0)) return null;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  if (!(len2 > 1e-12)) return null;
+  const len = Math.sqrt(len2);
+  if (len >= minLen) return null;
+  const extra = (minLen - len) / 2;
+  const ux = dx / len;
+  const uy = dy / len;
+  return {
+    ax: ax - ux * extra,
+    ay: ay - uy * extra,
+    bx: bx + ux * extra,
+    by: by + uy * extra,
+  };
+}
+
+/**
  * Resolve pixel slop for the current pointer type.
  * Coarse (touch) gets a larger target; fine pointers stay at EDGE_PICK_SLOP_PX.
  */
@@ -533,6 +561,13 @@ export function edgeFacesAwayFromCamera(e, camPos) {
  * is the intended pick). Edges with any camera-facing normal (silhouette band)
  * are kept. Taps with no mesh hit skip this filter.
  *
+ * Fillet / chamfer (`opts.minHitLengthPx`, {@link EDGE_FILLET_HIT_RADIUS_PX}):
+ * a segment shorter than that on screen is tested as if it extended equally
+ * past each end, so a corner a few pixels long still has a 44px hit (22px
+ * each side). Distance is to that hit segment. Several edges inside the slop
+ * still resolve to the nearest one, so a long edge that is actually closer
+ * wins. The polyline drawn for the edge is not this segment.
+ *
  * @returns {object|null}
  */
 export function pickNearestEdgeScreen(
@@ -585,7 +620,12 @@ export function pickNearestEdgeScreen(
     let d;
     let depth;
     if (sa && sb) {
-      d = distPointToSegment2D(px, py, sa.x, sa.y, sb.x, sb.y);
+      const grown = opts.minHitLengthPx > 0
+        ? extendScreenSegment(sa.x, sa.y, sb.x, sb.y, opts.minHitLengthPx)
+        : null;
+      d = grown
+        ? distPointToSegment2D(px, py, grown.ax, grown.ay, grown.bx, grown.by)
+        : distPointToSegment2D(px, py, sa.x, sa.y, sb.x, sb.y);
       depth = Math.min(sa.ndcZ, sb.ndcZ);
     } else {
       const s = sa || sb;

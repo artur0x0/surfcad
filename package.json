@@ -213,6 +213,7 @@
         "golden:safari-page-lifecycle": "node scripts/golden/smoke_safari_page_lifecycle.mjs",
         "golden:failed-part-outline": "node scripts/golden/smoke_failed_part_outline.mjs",
         "golden:fillet-default-radius": "node scripts/golden/smoke_fillet_default_radius.mjs",
+        "golden:fillet-edge-hit": "node scripts/golden/smoke_fillet_edge_hit.mjs",
         "golden:feature-sliders": "node scripts/golden/smoke_feature_sliders.mjs",
         "golden:helper-sliders": "node scripts/golden/smoke_helper_sliders.mjs",
         "golden:sheet-sliders": "node scripts/golden/smoke_sheet_sliders.mjs",
