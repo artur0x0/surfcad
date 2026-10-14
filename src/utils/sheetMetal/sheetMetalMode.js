@@ -24,6 +24,7 @@ import {
 } from './sheetModel.js';
 import { bendInterference } from './sheetInterference.js';
 import { REFERENCE_LENGTH_MM } from '../characteristicLength.js';
+import { solveContour } from '../contourSolve.js';
 import { FASTENER_METRIC, FASTENER_UNC } from '../../workers/fastenerSizes.js';
 
 export const BASE_DEFAULTS = Object.freeze({ width: 100, height: 60 });
@@ -856,7 +857,82 @@ export const TAP_SIZES = Object.freeze([
   ...['#4-40', '#6-32', '#8-32', '#10-32', '1/4-20'].map((k) => ({ id: k, tap: FASTENER_UNC[k].tap })),
 ]);
 
-/** Hole at the tapped point of a panel face. */
+/**
+ * Sketch plane on the panel's top face. Sketch (u, v) is that panel's (u, v).
+ * The centre is not stored as a contour, so a later bend does not re-solve it.
+ */
+export function sheetPanelFrame(spec, panelId) {
+  const panel = panelById(solveSheet(spec), panelId);
+  if (!panel?.o || !panel.N || !panel.U || !panel.V) return null;
+  const t = Number(spec?.t) || 0;
+  return {
+    center: [
+      panel.o[0] + t * panel.N[0],
+      panel.o[1] + t * panel.N[1],
+      panel.o[2] + t * panel.N[2],
+    ],
+    normal: panel.N.slice(),
+    x: panel.U.slice(),
+    y: panel.V.slice(),
+  };
+}
+
+/**
+ * One `sheetSpec.holes` row per solved centre, on the panel the user picked.
+ * No centres leaves the spec alone. The rows are the list the solid, the
+ * flat pattern, and DFM already read.
+ *
+ * @returns {{ ok: true, empty: true, spec: object }
+ *   | { ok: true, empty: false, spec: object }
+ *   | { ok: false, message: string }}
+ */
+export function sheetHolesFromSketch(spec, sketch, contour) {
+  if (!spec || !sketch?.panel) return { ok: false, message: 'Hole needs a panel.' };
+  if (!panelById(solveSheet(spec), sketch.panel)) {
+    return { ok: false, message: 'Hole could not find its panel.' };
+  }
+  const raw = contour && typeof contour === 'object' ? contour : { points: [] };
+  let points = Array.isArray(raw.points) ? raw.points : [];
+  if (points.length || (raw.arcs || []).length || (raw.dimensions || []).length) {
+    try {
+      const solved = solveContour({
+        centers: true,
+        points: raw.points || [],
+        lines: raw.lines || [],
+        arcs: raw.arcs || [],
+        dimensions: raw.dimensions || [],
+        constraints: raw.constraints || [],
+        refs: raw.refs || [],
+      });
+      points = solved?.points || [];
+    } catch (err) {
+      return { ok: false, message: err?.message || 'Hole sketch did not solve.' };
+    }
+  }
+  const centres = points.filter((point) => Array.isArray(point?.at) && point.at.length >= 2);
+  if (!centres.length) return { ok: true, empty: true, spec };
+  const holes = [...(spec.holes || [])];
+  const next = { ...spec, holes };
+  for (const point of centres) {
+    const row = {
+      id: sheetFeatureId('h', next),
+      panel: sketch.panel,
+      u: round2(point.at[0]),
+      v: round2(point.at[1]),
+      d: sketch.d,
+      type: sketch.type || 'hole',
+    };
+    if (sketch.thread) row.thread = sketch.thread;
+    if (row.type === 'countersink') {
+      row.cskDia = sketch.cskDia;
+      row.cskAngle = sketch.cskAngle || 82;
+    }
+    holes.push(row);
+  }
+  return { ok: true, empty: false, spec: next };
+}
+
+/** Hole at the tapped point of a panel face. Next opens the centres sketch. */
 export function startHoleDraft(mode, { panel, point }, lengthMm = REFERENCE_LENGTH_MM) {
   if (!mode?.spec || mode.stage !== 'edit' || !Array.isArray(point)) return mode;
   const solved = solveSheet(mode.spec);

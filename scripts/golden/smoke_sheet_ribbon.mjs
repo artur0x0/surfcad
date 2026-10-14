@@ -355,7 +355,40 @@ if (exe && failed === 0) {
           return panelPoint(panel, u, v, 0);
         });
         await page.locator('[data-sheet-tool="hole"]').click();
-        const childHole = await acceptFeature('[data-sheet-metal-hole]', { kind: 'panel', panel: bendId, point: holePoint });
+        const childHole = await (async () => {
+          const opened = await page.evaluate((next) => {
+            window.__SHEET__?.tap(next);
+            return !!window.__SHEET__;
+          }, { kind: 'panel', panel: bendId, point: holePoint });
+          if (!opened) return false;
+          const card = await page.waitForSelector('[data-sheet-metal-hole]', { timeout: 8000 }).then(() => true).catch(() => false);
+          if (!card) return false;
+          await page.locator('[data-sm-next]').click();
+          const aimed = await page.waitForFunction(() => {
+            const sketch = window.__VIEWPORT__?.stageContourSketch?.();
+            return sketch?.entry === 'hole'
+              && sketch.planeCard === false
+              && window.document.querySelector('.viewport-shell')?.getAttribute('data-contour-face-aim') === 'done';
+          }, null, { timeout: 8000 }).then(() => true).catch(() => false);
+          if (!aimed) return false;
+          await page.locator('[data-contour-tool="polyline"]').click();
+          const hit = await page.evaluate((world) => {
+            const p = window.__VIEWPORT__.stageProject(world);
+            const canvas = window.document.querySelector('.viewport-shell > canvas');
+            if (!p || !canvas) return null;
+            const el = window.document.elementFromPoint(p.x, p.y);
+            return { x: p.x, y: p.y, ok: el === canvas };
+          }, holePoint);
+          if (!hit?.ok) return false;
+          await page.mouse.click(hit.x, hit.y);
+          const placed = await page.waitForFunction(() => (
+            window.__VIEWPORT__.stageContourSketch().points === 1
+          ), null, { timeout: 4000 }).then(() => true).catch(() => false);
+          if (!placed) return false;
+          await page.locator('[data-contour-confirm]').click();
+          return page.waitForFunction(() => !window.document.querySelector('[data-contour-exit]'), null, { timeout: 15000 })
+            .then(() => true).catch(() => false);
+        })();
         const refNote = "// refKey: 'wall:b2:u+:w0'";
         await page.evaluate((note) => {
           const model = window.monaco.editor.getModels()[0];

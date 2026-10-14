@@ -86,6 +86,8 @@ import {
   reopenSheetMetalMode,
   setSheetTool,
   sheetDoneSpec,
+  sheetHolesFromSketch,
+  sheetPanelFrame,
   sheetTap,
   sheetToolsFor,
 } from '../utils/sheetMetal/sheetMetalMode';
@@ -1326,6 +1328,7 @@ const Viewport = forwardRef(({
   const holeSpecRef = useRef(null);
   const holeEditRef = useRef(null);
   const holeCentresEditRef = useRef(null);
+  const sheetHoleSketchRef = useRef(null);
   const featureSlotsRef = useRef(null);
   featureSlotsRef.current = featureSlots;
   const slotReturnRef = useRef(null);
@@ -3427,6 +3430,10 @@ const Viewport = forwardRef(({
   }, [clearFilletBlendPreview, anchorToActivePart]);
 
   const exitContourMode = useCallback((reason) => {
+    if (sheetHoleSketchRef.current) {
+      sheetHoleSketchRef.current = null;
+      setSheetMetalMode((prev) => (prev?.holeSketch ? { ...prev, holeSketch: null } : prev));
+    }
     holeCentresEditRef.current = null;
     contourEditRef.current = null;
     setContourEdit(null);
@@ -3561,7 +3568,7 @@ const Viewport = forwardRef(({
     exitContourMode(back ? 'slot' : undefined);
   }, [exitContourMode]);
 
-  const enterContourMode = useCallback(({ entry, centresEdit = null } = {}) => {
+  const enterContourMode = useCallback(({ entry, centresEdit = null, keepSheet = false, sheetSketch = null } = {}) => {
     if (isSolidContourEntry(entry) && mode !== 'game') {
       openFeatureSlots(entry);
       return;
@@ -3569,7 +3576,7 @@ const Viewport = forwardRef(({
     holdContourOverlays(overlayVis, entry);
     feaCloseRef.current();
     exitPaintModeRef.current();
-    exitSheetMetalChromeRef.current();
+    if (!keepSheet) exitSheetMetalChromeRef.current();
     setFilletMode(null);
     filletModeRef.current = null;
     clearFilletBlendPreview();
@@ -3628,8 +3635,12 @@ const Viewport = forwardRef(({
       next = holeCentresSketch(next, centresEdit);
       contourEditRef.current = null;
       setContourEdit(null);
+    } else if (sheetSketch?.frame) {
+      next = holeCentresSketch(next, { frame: sheetSketch.frame, contour: { points: [] } });
+      contourEditRef.current = null;
+      setContourEdit(null);
     }
-    const planeOpen = !centresEdit;
+    const planeOpen = !centresEdit && !sheetSketch;
     contourPlaneOpenRef.current = planeOpen;
     setContourPlaneOpen(planeOpen);
     sketchHistRef.current = emptySketchHistory();
@@ -3639,11 +3650,28 @@ const Viewport = forwardRef(({
     if (centresEdit?.frame?.normal) {
       overlayVis.end('planes');
       requestFaceSketchAim(centresEdit.frame.normal);
+    } else if (sheetSketch?.frame?.normal) {
+      overlayVis.end('planes');
+      requestFaceSketchAim(sheetSketch.frame.normal);
     }
     // Soft-fail / refuse only — no informational toast on successful feature UI open.
     if (next.enterRefuse) showContourToast(next.enterRefuse);
     applyContourPartGhost(true);
   }, [mode, openFeatureSlots, selectedFace, selectedPlaneId, armedContourId, applyContourPartGhost, clearFilletBlendPreview, clearEdgeHover, clearEdgeHighlight, getHelperBuffer, currentScript]);
+
+  const sheetHoleSketch = sheetMetalMode?.holeSketch || null;
+  useEffect(() => {
+    if (!sheetHoleSketch) return;
+    if (sheetHoleSketchRef.current) return;
+    const frame = sheetPanelFrame(sheetMetalMode?.spec, sheetHoleSketch.panel);
+    if (!frame) {
+      showContourToast('Hole could not find its panel.');
+      setSheetMetalMode((prev) => (prev ? { ...prev, holeSketch: null } : prev));
+      return;
+    }
+    sheetHoleSketchRef.current = sheetHoleSketch;
+    enterContourMode({ entry: 'hole', keepSheet: true, sheetSketch: { frame } });
+  }, [sheetHoleSketch, sheetMetalMode?.spec, enterContourMode]);
 
   const beginHoleSketch = useCallback(() => {
     const parsed = holeSpecFromCard(holeCardRef.current || defaultHoleCard());
@@ -3810,6 +3838,31 @@ const Viewport = forwardRef(({
     const state = contourModeRef.current;
     if (!state) return;
     if (isHoleEntry(state.entry)) {
+      if (sheetHoleSketchRef.current && sheetMetalModeRef.current?.spec) {
+        const sketch = sheetHoleSketchRef.current;
+        const contour = holeSketchContour(state) || { points: [] };
+        const built = sheetHolesFromSketch(sheetMetalModeRef.current.spec, sketch, contour);
+        if (!built.ok) {
+          showContourToast(built.message);
+          return;
+        }
+        if (!built.empty) {
+          const ok = onCommitSheetMetal?.({ ...built.spec }, {
+            partId: sheetMetalModeRef.current.partId,
+            step: 'hole',
+          });
+          if (!ok) return;
+          sheetHoleSketchRef.current = null;
+          setSheetMetalMode((prev) => (prev ? {
+            ...prev,
+            spec: built.spec,
+            holeSketch: null,
+            draft: null,
+          } : prev));
+        }
+        exitContourMode();
+        return;
+      }
       if (holeCentresEditRef.current) {
         const contour = holeSketchContour(state) || { points: [] };
         const ok = onCommitHole?.({
@@ -3992,7 +4045,7 @@ const Viewport = forwardRef(({
     if (ok) {
       exitContourMode();
     }
-  }, [onCommitContourProfile, onCommitHole, selectedEdges, modelBounds, exitContourMode, getHelperBuffer]);
+  }, [onCommitContourProfile, onCommitHole, onCommitSheetMetal, selectedEdges, modelBounds, exitContourMode, getHelperBuffer]);
 
   const commitContourDelete = useCallback((withFeatures) => {
     const edit = contourEditRef.current;
@@ -6959,7 +7012,8 @@ const Viewport = forwardRef(({
     disposeSheetOverlay(scene, sheetMetalOverlayRef.current);
     sheetMetalOverlayRef.current = null;
     const mesh = resultRef.current;
-    if (!sheetMetalMode) {
+    const sketchingHoles = !!sheetMetalMode?.holeSketch;
+    if (!sheetMetalMode || sketchingHoles) {
       if (mesh && mesh.userData.sheetMetalHidden) {
         mesh.visible = true;
         delete mesh.userData.sheetMetalHidden;
@@ -8486,8 +8540,9 @@ const Viewport = forwardRef(({
     mouseRef.current.y = -(py / rect.height) * 2 + 1;
 
     // SCS sheet metal owns the canvas: taps hit only its overlay (planes,
-    // edge handles, features). A miss does nothing.
-    if (sheetMetalModeRef.current) {
+    // edge handles, features). A miss does nothing. The centres sketch
+    // owns the canvas while it is open.
+    if (sheetMetalModeRef.current && !sheetMetalModeRef.current.holeSketch) {
       if (clickTimerRef.current) {
         clearTimeout(clickTimerRef.current);
         clickTimerRef.current = null;
@@ -12489,7 +12544,7 @@ const Viewport = forwardRef(({
       )}
 
       {/* SCS sheet metal: left rail swaps like contour mode. */}
-      {sheetMetalMode && mode !== 'game' && (
+      {sheetMetalMode && !sheetMetalMode.holeSketch && mode !== 'game' && (
         <SheetMetalRail
           onExit={() => {
             cancelFeatureEditRef.current?.('sheetMetal');
@@ -12500,10 +12555,26 @@ const Viewport = forwardRef(({
           onSelectTool={(id) => setSheetMetalMode((prev) => (prev ? setSheetTool(prev, id) : prev))}
         />
       )}
-      {sheetMetalMode && mode !== 'game' && (
+      {sheetMetalMode && !sheetMetalMode.holeSketch && mode !== 'game' && (
         <SheetMetalFlow
           mode={sheetMetalMode}
           setMode={(fn) => setSheetMetalMode((prev) => (prev ? fn(prev) : prev))}
+          onSketch={() => setSheetMetalMode((prev) => {
+            const draft = prev?.draft;
+            if (!draft || draft.kind !== 'hole' || !draft.isNew) return prev;
+            return {
+              ...prev,
+              draft: null,
+              toast: null,
+              holeSketch: {
+                panel: draft.panel,
+                type: draft.type || 'hole',
+                d: draft.d,
+                ...(draft.thread ? { thread: draft.thread } : {}),
+                ...(draft.type === 'countersink' ? { cskDia: draft.cskDia, cskAngle: draft.cskAngle ?? 82 } : {}),
+              },
+            };
+          })}
           onCommit={(spec, meta) => {
             if (sheetMetalMode.reopen && !meta?.write) {
               setSheetMetalMode((prev) => (prev ? pushSheetHistory(prev, spec) : prev));
