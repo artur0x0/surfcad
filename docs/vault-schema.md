@@ -225,7 +225,7 @@ The UI reads and writes the local cache. Git create, save, rename, copy, link, a
 
 IndexedDB `surfcad-sync` is the durable copy (`outbox` plus `kv` for the branch SHA, part rows, path index, and the whole-tree snapshot). Memory is the live copy, so a flush in the same turn sees the op. When IndexedDB is missing, memory still works. IndexedDB `surfcad-assembly` holds the open document and part records (row id → `{ script, savedAt, isSynced }`) in both modes. `isSynced` is local only.
 
-The queue is FIFO per repo and branch. Ops for another branch stay queued and are not pushed onto this tip. The worker pushes immediately when online, and again on `online`. On reconnect it compares that branch's remote commit SHA to `lastSyncedSha` first. If they differ, it does not push and does not overwrite; the conflict popup opens. A push does not rewrite surf ids. The id migration commit is queued ahead of other pending ops, so a later rename still sees the bare id.
+The queue is FIFO per repo and branch. Ops for another branch stay queued and are not pushed onto this tip. The worker pushes immediately when online, and again on `online`. On reconnect it compares that branch's remote commit SHA to `lastSyncedSha` first. If they differ, it does not push and does not overwrite; the conflict popup opens. Overwrite main passes `force` and commits the queued files onto the current tip; other remote files stay. A push does not rewrite surf ids. The id migration commit is queued ahead of other pending ops, so a later rename still sees the bare id.
 
 ## Layout migration
 

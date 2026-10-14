@@ -374,6 +374,7 @@ const PartFeed = forwardRef(function PartFeed({
   suggestNewPartPath = '',
   canCommit = false,
   onGitCommit = null,
+  onOverwriteMain = null,
   // G4 pull/conflicts
   behindPartIds = null,
   assemblyBehind = false,
@@ -1132,10 +1133,30 @@ const PartFeed = forwardRef(function PartFeed({
   };
 
   const runForceMerge = async () => {
+    if (commitFlow?.stage === 'busy') return;
+    const draft = commitFlow?.draft || '';
+    const prior = commitFlow?.result || null;
+    setCommitFlow({ stage: 'busy', draft, result: prior, error: '' });
+    const result = (await onOverwriteMain?.()) || { status: 'error', error: 'Overwrite unavailable' };
+    const wrote = result.status === 'synced'
+      || result.status === 'committed'
+      || result.status === 'idle'
+      || result.status === 'clean';
+    if (wrote) {
+      onSyncConflictClear?.();
+      setCommitFlow(null);
+      if (leaveGuard?.stage === 'commit' && leaveGuard.pending) {
+        const pending = leaveGuard.pending;
+        setLeaveGuard(null);
+        queueMicrotask(() => proceedAssemblyAction(pending));
+      }
+      return;
+    }
     setCommitFlow({
-      ...commitFlow,
       stage: 'error',
-      error: 'Sync will not overwrite the remote repo. Stay on branch keeps your local changes queued.',
+      draft,
+      result: prior,
+      error: result.error || 'Overwrite failed',
     });
   };
 
@@ -2039,7 +2060,10 @@ const PartFeed = forwardRef(function PartFeed({
       )}
       {commitFlow && typeof document !== 'undefined' && (
         <VaultPickerDialog
-          title={commitFlow.stage === 'ask-force' ? 'Conflict with main' : 'Save to repo'}
+          title={(
+            commitFlow.stage === 'ask-force'
+            || (commitFlow.result?.syncHold && (commitFlow.stage === 'busy' || commitFlow.stage === 'error'))
+          ) ? 'Conflict with main' : 'Save to repo'}
           labelledBy="git-commit-title"
           dataAttr="commit"
           onClose={commitFlow.stage === 'busy' ? undefined : closeCommit}

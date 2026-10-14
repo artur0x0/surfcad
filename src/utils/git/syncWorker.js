@@ -6,6 +6,8 @@
  * the remote commit SHA first. If it differs from lastSyncedSha for this
  * branch, do not push and do not overwrite. A user Save shows the yellow
  * warning toast. An open, reload, or background flush shows the G13 popup.
+ * Overwrite main passes `force` and commits the queued files on the current
+ * tip; those paths take the local bytes and every other remote file stays.
  * Those two UIs are not both shown for the same result.
  * Otherwise push the queue. Part ids are not rewritten on push.
  */
@@ -20,7 +22,8 @@ import { isVaultWriteRefusal, repoHasVaultMarker, vaultWriteRefusalMessage } fro
 /**
  * Push queued ops for one repo.
  * -> { status: 'idle'|'offline'|'conflict'|'failed'|'synced', ... }
- * conflict: remote commit SHA !== lastSyncedSha. Nothing was written.
+ * conflict: remote commit SHA !== lastSyncedSha, and `force` was not set.
+ * Nothing was written. `force` commits the queue on the current tip.
  * failed: the rename (or other) op failed; `toast` is set for renames.
  */
 export async function flushSyncQueue({
@@ -29,6 +32,7 @@ export async function flushSyncQueue({
   repo,
   branch = 'main',
   online = true,
+  force = false,
 } = {}) {
   if (!store || !adapter || !repo) return { status: 'idle' };
   await store.ready();
@@ -63,7 +67,10 @@ export async function flushSyncQueue({
 
   const remote = (await adapter.getBranch(writeRepo, branch))?.sha || null;
   const synced = store.getLastSyncedSha(repo, branch);
-  if (synced && remote && remote !== synced) {
+  // This is the guard that blocks a force-write. A moved tip stays put
+  // until the user chooses Overwrite main (`force`). That commit uses the
+  // current tip as baseSha, so the queued paths take the local bytes.
+  if (!force && synced && remote && remote !== synced) {
     return {
       status: 'conflict',
       remoteSha: remote,
@@ -81,6 +88,7 @@ export async function flushSyncQueue({
   const layoutMoves = [];
   const assemblyRenames = [];
   const meshes = [];
+  const writtenFiles = [];
   let otherWrites = false;
   for (const item of queued) {
     await store.setOpStatus(item.id, 'sending');
@@ -109,13 +117,15 @@ export async function flushSyncQueue({
         files = plan.files;
         plannedMoves = plan.moves;
       }
+      const committedFiles = await normalizeOutboxFiles(files);
       const res = await adapter.commitFiles(writeRepo, {
         branch,
         message: item.message || 'Sync',
-        files: await normalizeOutboxFiles(files),
+        files: committedFiles,
         baseSha: head,
       });
       head = res.sha;
+      writtenFiles.push(...committedFiles);
       if (plannedMoves) layoutMoves.push(...plannedMoves);
       syncedPartIds.push(...(item.partIds || []));
       if (Array.isArray(item.payload?.meshes)) meshes.push(...item.payload.meshes);
@@ -206,6 +216,7 @@ export async function flushSyncQueue({
     layoutMoves,
     assemblyRenames,
     meshes,
+    files: writtenFiles,
     assemblyRenameOnly: assemblyRenames.length > 0 && !otherWrites,
   };
 }
