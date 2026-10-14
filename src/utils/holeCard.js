@@ -9,6 +9,7 @@
  */
 
 import { contourFromPolyline, contourFromRectangle } from './contourSolve.js';
+import { restoreContourPlane } from './contourMode.js';
 
 export const HOLE_SIZE_OPTIONS = ['M2', 'M2.5', 'M3', 'M4', 'M5', 'M6', 'M8', 'M10'];
 export const HOLE_FIT_OPTIONS = ['close', 'normal', 'loose'];
@@ -165,21 +166,7 @@ export function holeCentresSketch(state, saved) {
     Array.isArray(point?.at) ? [Number(point.at[0]), Number(point.at[1])] : null
   )).filter((point) => point && Number.isFinite(point[0]) && Number.isFinite(point[1]));
   const frame = saved?.frame;
-  const planeFace = frame?.center && frame?.normal && frame?.x && frame?.y ? {
-    type: 'planar',
-    center: frame.center.slice(),
-    normal: frame.normal.slice(),
-    area: 400,
-    triangleCount: 2,
-    selectionMode: 'coplanar',
-    planeFrame: {
-      center: frame.center.slice(),
-      normal: frame.normal.slice(),
-      x: frame.x.slice(),
-      y: frame.y.slice(),
-    },
-  } : state?.planeFace || null;
-  return {
+  let next = {
     ...state,
     entry: 'hole',
     tool: points.length ? 'polyline' : 'cursor',
@@ -195,8 +182,13 @@ export function holeCentresSketch(state, saved) {
         centers: true,
       },
     },
-    planeFace,
     contourId: saved?.id || state?.contourId || null,
     contourName: saved?.name || state?.contourName || null,
   };
+  if (frame?.center && frame?.normal && frame?.x && frame?.y) {
+    next = restoreContourPlane(next, frame, saved?.planeOffset);
+  } else if (state?.planeFace) {
+    next.planeFace = state.planeFace;
+  }
+  return next;
 }

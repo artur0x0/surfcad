@@ -15,6 +15,7 @@ import {
 import {
   isLoftEntry,
   isSolidContourEntry,
+  restoreContourPlane,
   toolToProfileParams,
   writeLoftSelected,
 } from './contourMode.js';
@@ -261,6 +262,7 @@ export function listSavedContours(buffer) {
       params: profile.params,
       plane: resolved.plane,
       host: resolved.host,
+      planeOffset: Number.isFinite(Number(stmt.planeOffset)) ? Number(stmt.planeOffset) : 0,
       label: contourLabel(stmt.name, profile.tool, profile.params),
     });
   }
@@ -298,23 +300,6 @@ export function savedContourRings(contour, hostPlane = null) {
   }
 }
 
-function planeFaceFromFrame(plane) {
-  return {
-    type: 'planar',
-    center: plane.center.slice(),
-    normal: plane.normal.slice(),
-    area: 400,
-    triangleCount: 2,
-    selectionMode: 'coplanar',
-    planeFrame: {
-      center: plane.center.slice(),
-      normal: plane.normal.slice(),
-      x: plane.x.slice(),
-      y: plane.y.slice(),
-    },
-  };
-}
-
 /** Seed in-mode tool / params (and plane, when the script has a literal frame). */
 export function applySavedContour(state, contour) {
   if (!state || !contour) return state;
@@ -325,7 +310,7 @@ export function applySavedContour(state, contour) {
     params,
     pickedContourId: contour.id,
   };
-  if (contour.plane) next.planeFace = planeFaceFromFrame(contour.plane);
+  if (contour.plane) next = restoreContourPlane(next, contour.plane, contour.planeOffset);
   if (isLoftEntry(state.entry)) {
     next = writeLoftSelected(next, { tool: contour.tool, params });
     next = { ...next, pickedContourId: contour.id };

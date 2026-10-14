@@ -3871,6 +3871,8 @@ const Viewport = forwardRef(({
           partId: activePartIdRef.current,
           contourId: holeCentresEditRef.current.id,
           contour,
+          frame: planeFromContourFace(activeContourFace(state, modelBounds)),
+          planeOffset: Number(state.planeOffset) || 0,
         });
         if (ok) exitContourMode();
         return;
@@ -3886,6 +3888,7 @@ const Viewport = forwardRef(({
         frame: planeFromContourFace(commitFace),
         contour,
         spec: state.holeSpec || {},
+        planeOffset: Number(state.planeOffset) || 0,
       });
       if (ok) exitContourMode();
       return;
@@ -3921,6 +3924,7 @@ const Viewport = forwardRef(({
         face: state.planeFace || commitFace,
         tool: state.tool,
         params: state.params,
+        planeOffset: Number(state.planeOffset) || 0,
       });
       if (!ok) return;
       const back = !!(slotReturnRef.current && featureSlotsRef.current);
@@ -3948,6 +3952,7 @@ const Viewport = forwardRef(({
         params: state.params,
         entry: 'crossSection',
         saveAsPath: slot.role === 'path',
+        planeOffset: Number(state.planeOffset) || 0,
       });
       if (!ok) return;
       const buf = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
@@ -4042,6 +4047,7 @@ const Viewport = forwardRef(({
       merge: loftState.combine === 'subtract' ? true : loftState.merge !== false,
       contourId: loftState.contourId || null,
       contourName: loftState.contourName || null,
+      planeOffset: Number(loftState.planeOffset) || 0,
     });
     if (ok) {
       exitContourMode();
@@ -8182,6 +8188,7 @@ const Viewport = forwardRef(({
       params: state.params,
       entry: state.entry,
       loft: state.loft,
+      planeOffset: Number(state.planeOffset) || 0,
     });
     if (ok === false) return null;
     return { ...state, contourId, contourName };
@@ -10225,6 +10232,10 @@ const Viewport = forwardRef(({
               aim: containerRef.current?.getAttribute('data-contour-face-aim') || '',
               highlights: Array.isArray(meshes) ? meshes.length : (meshes ? 1 : 0),
               planePreset: contourModeRef.current?.planePreset || '',
+              planeOffset: Number(contourModeRef.current?.planeOffset) || 0,
+              planeCenter: Array.isArray(contourModeRef.current?.planeFace?.planeFrame?.center)
+                ? contourModeRef.current.planeFace.planeFrame.center.slice()
+                : null,
               entry: contourModeRef.current?.entry || '',
               tool: contourModeRef.current?.tool || '',
               sketchLines: (() => {

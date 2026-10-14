@@ -11,7 +11,8 @@ const ACCENT = 'cyan';
  * Slice 24/25/26/28/30 — contour-mode chip (Edge-pick pattern).
  * Plane + profile params; Extrude / Revolve / Loft / Sweep entries also edit
  * solid params and Confirm commits the solid. Workplane entry is plane-only
- * (Face / construction plane + offset + rotate). Mobile-first compact card.
+ * (Face / construction plane + offset + rotate). Contour and hole plane
+ * cards share that Offset field. Mobile-first compact card.
  */
 const ContourModeChip = ({
   tool = 'circle',
@@ -378,27 +379,25 @@ const ContourModeChip = ({
             />
           );
         })}
-        {isWorkplane && (
-          <LengthNumberField
-            id="workplane-offset"
-            label="Offset"
-            accent={ACCENT}
-            valueMm={(planeOffset === '' || planeOffset === '-' || planeOffset === '.')
-              ? planeOffset
-              : (Number.isFinite(Number(planeOffset)) ? Number(planeOffset) : 0)}
-            onChangeMm={(v) => {
-              if (v === '' || v === '-' || v === '.') {
-                onPlaneOffset?.(v);
-                return;
-              }
-              const n = Number(v);
-              onPlaneOffset?.(Number.isFinite(n) ? n : 0);
-            }}
-            maxMm={L}
-            signed
-            className="mt-1"
-          />
-        )}
+        <LengthNumberField
+          id="workplane-offset"
+          label="Offset"
+          accent={ACCENT}
+          valueMm={(planeOffset === '' || planeOffset === '-' || planeOffset === '.')
+            ? planeOffset
+            : (Number.isFinite(Number(planeOffset)) ? Number(planeOffset) : 0)}
+          onChangeMm={(v) => {
+            if (v === '' || v === '-' || v === '.') {
+              onPlaneOffset?.(v);
+              return;
+            }
+            const n = Number(v);
+            onPlaneOffset?.(Number.isFinite(n) ? n : 0);
+          }}
+          maxMm={L}
+          signed
+          className="mt-1"
+        />
       </div>
       {!isWorkplane && (
       <>

@@ -78,6 +78,7 @@
         "golden:sketch-face-camera": "node scripts/golden/smoke_sketch_face_camera.mjs",
         "golden:contour-tap-offset": "node scripts/golden/smoke_contour_tap_offset.mjs",
         "golden:contour-entry": "node scripts/golden/smoke_contour_entry.mjs",
+        "golden:contour-plane-offset": "node scripts/golden/smoke_contour_plane_offset.mjs",
         "golden:hole-contour": "node scripts/golden/smoke_hole_contour.mjs",
         "golden:hole-rectangle": "node scripts/golden/smoke_hole_rectangle.mjs",
         "golden:hole-edit": "node scripts/golden/smoke_hole_edit.mjs",
