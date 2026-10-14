@@ -274,6 +274,7 @@
         "golden:permanent-ids": "node scripts/golden/smoke_permanent_ids.mjs",
         "golden:parts-layout": "node scripts/golden/smoke_parts_layout.mjs",
         "golden:delete-assembly": "node scripts/golden/smoke_delete_assembly.mjs",
+        "golden:part-delete-dialog": "node scripts/golden/smoke_part_delete_dialog.mjs",
         "golden:part-groups": "node scripts/golden/smoke_part_groups.mjs",
         "golden:face-colors": "node scripts/golden/smoke_face_colors.mjs",
         "golden:face-match": "node scripts/golden/smoke_face_match.mjs",

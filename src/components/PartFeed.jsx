@@ -1,7 +1,7 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Eye, EyeOff, FolderOpen, GripVertical, Loader2, Pencil, Plus, Save, Trash2, Truck, Upload } from 'lucide-react';
-import { partCanDeleteFromRepo, partListDeleteAction, sanitizeAssemblyName, sanitizePartName } from '../utils/assembly.js';
+import { partCanDeleteFromRepo, partDeleteChoice, partListDeleteAction, partRepoDeleteConfirmCopy, sanitizeAssemblyName, sanitizePartName } from '../utils/assembly.js';
 import { partListSubtitles } from '../utils/git/partListSubtitle.js';
 import {
   filterVaultOpenIndex, filterVaultPartItems, groupVaultOpenPartRows, vaultOpenAssemblies, vaultOpenPartRows,
@@ -1252,7 +1252,7 @@ const PartFeed = forwardRef(function PartFeed({
   }, [pendingDelete]);
 
   const askDeletePart = (partId, name) => {
-    setPendingDelete({ id: partId, name: name || 'this part' });
+    setPendingDelete({ id: partId, name: name || 'this part', step: 'choose' });
   };
 
   const cancelDeletePart = () => {
@@ -1262,10 +1262,16 @@ const PartFeed = forwardRef(function PartFeed({
 
   const confirmDeletePart = (choice = 'assembly') => {
     const pending = pendingDelete;
+    if (!pending?.id) return;
+    if (choice === 'repo' && !partCanDeleteFromRepo(source, pending.id)) return;
+    const next = partDeleteChoice(pending.step, choice);
+    if (next.step === 'confirm-repo') {
+      setPendingDelete({ ...pending, step: 'confirm-repo' });
+      return;
+    }
     setPendingDelete(null);
-    const action = partListDeleteAction(choice);
-    if ((action !== 'drop' && action !== 'drop-repo') || !pending?.id) return;
-    onDeletePart?.(pending.id, { fromRepo: action === 'drop-repo' });
+    if ((next.action !== 'drop' && next.action !== 'drop-repo')) return;
+    onDeletePart?.(pending.id, { fromRepo: next.action === 'drop-repo' });
   };
 
   const subtitles = partListSubtitles(rows);
@@ -2722,6 +2728,7 @@ const PartFeed = forwardRef(function PartFeed({
         <div
           className="fixed inset-0 z-50 flex items-center justify-center surface-scrim p-4"
           data-part-delete-dialog=""
+          data-part-delete-step={pendingDelete.step === 'confirm-repo' ? 'repo' : 'choose'}
           role="dialog"
           aria-modal="true"
           aria-labelledby="part-delete-title"
@@ -2739,42 +2746,73 @@ const PartFeed = forwardRef(function PartFeed({
             <h2 id="part-delete-title" className="text-sm font-semibold text-gray-100">
               Delete part
             </h2>
-            <p className="mt-2 text-xs text-gray-300">
-              {partCanDeleteFromRepo(source, pendingDelete.id)
-                ? `Remove ${pendingDelete.name} from this assembly only, or also delete its file from the repo.`
-                : `Remove ${pendingDelete.name} from this assembly?`}
-            </p>
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
-              <button
-                ref={cancelBtnRef}
-                type="button"
-                data-part-delete-cancel=""
-                className="rounded-md px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10"
-                onClick={cancelDeletePart}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                data-part-delete-confirm=""
-                data-part-delete-scope="assembly"
-                className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500"
-                onClick={() => confirmDeletePart('assembly')}
-              >
-                Delete from assembly
-              </button>
-              {partCanDeleteFromRepo(source, pendingDelete.id) && (
-                <button
-                  type="button"
-                  data-part-delete-confirm-repo=""
-                  data-part-delete-scope="repo"
-                  className="rounded-md bg-red-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-                  onClick={() => confirmDeletePart('repo')}
-                >
-                  Delete from assembly & repo
-                </button>
-              )}
-            </div>
+            {pendingDelete.step === 'confirm-repo' ? (
+              <>
+                <p className="mt-2 text-xs text-gray-300" data-part-delete-repo-message="">
+                  {partRepoDeleteConfirmCopy(pendingDelete.id)}
+                </p>
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+                  <button
+                    ref={cancelBtnRef}
+                    type="button"
+                    data-part-delete-cancel=""
+                    className="rounded-md px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10"
+                    onClick={cancelDeletePart}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    data-part-delete-repo-commit=""
+                    className="rounded-md bg-red-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+                    onClick={() => confirmDeletePart('repo')}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="mt-2 text-xs text-gray-300">
+                  {partCanDeleteFromRepo(source, pendingDelete.id)
+                    ? `Remove ${pendingDelete.name} from this assembly only, or also delete its file from the repo.`
+                    : `Remove ${pendingDelete.name} from this assembly?`}
+                </p>
+                <div className="mt-4 flex flex-col gap-2">
+                  <button
+                    ref={cancelBtnRef}
+                    type="button"
+                    data-part-delete-cancel=""
+                    className="rounded-md px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10"
+                    onClick={cancelDeletePart}
+                  >
+                    Cancel
+                  </button>
+                  <div className="flex flex-col gap-[14px]" data-part-delete-actions="">
+                    <button
+                      type="button"
+                      data-part-delete-confirm=""
+                      data-part-delete-scope="assembly"
+                      className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500"
+                      onClick={() => confirmDeletePart('assembly')}
+                    >
+                      Delete from assembly
+                    </button>
+                    {partCanDeleteFromRepo(source, pendingDelete.id) && (
+                      <button
+                        type="button"
+                        data-part-delete-confirm-repo=""
+                        data-part-delete-scope="repo"
+                        className="rounded-md bg-red-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+                        onClick={() => confirmDeletePart('repo')}
+                      >
+                        Delete from assembly & repo
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>,
         document.body,

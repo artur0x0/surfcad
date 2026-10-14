@@ -297,11 +297,40 @@ export function formatViewerTitle(partName, assemblyNameValue, opts = {}) {
  * - cancel / dismiss → keep
  * - confirm / assembly → drop from assembly only (legacy confirm = assembly)
  * - repo → drop from assembly and delete the vault file when applicable
+ *
+ * `repo` here is the committed choice. The first tap on that button does
+ * not call this: `partDeleteChoice` holds it for a second confirm.
  */
 export function partListDeleteAction(choice) {
   if (choice === 'confirm' || choice === 'assembly') return 'drop';
   if (choice === 'repo') return 'drop-repo';
   return 'keep';
+}
+
+/**
+ * Assembly delete drops on the first tap. Repo delete opens a second
+ * confirm and drops only when that step commits. Cancel keeps the part.
+ */
+export function partDeleteChoice(step, choice) {
+  if (choice === 'repo' && step !== 'confirm-repo') {
+    return { step: 'confirm-repo', action: 'keep' };
+  }
+  return { step: null, action: partListDeleteAction(choice) };
+}
+
+/** Vault script basename. The repo-delete confirm names this file. */
+export function partRepoFileName(partId) {
+  const base = String(partId || '').replace(/\\/g, '/').split('/').filter(Boolean).pop() || '';
+  return base;
+}
+
+/**
+ * Second confirm for a repo file delete. Assembly-only delete has no
+ * second copy: its Undo toast already covers that drop.
+ */
+export function partRepoDeleteConfirmCopy(partId) {
+  const file = partRepoFileName(partId) || 'this file';
+  return `Delete ${file} from the repo? This can't be undone from SurfCAD.`;
 }
 
 /** True when Parts delete can offer "Delete from assembly & repo". */
