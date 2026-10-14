@@ -3,8 +3,9 @@
  *
  * The card is type, size, fit, a raw diameter, through or depth, side, and
  * the two ends. An explicit diameter wins. A blind hole has no far end.
- * The sketch may be a promoted contour or a plain point list. No points is
- * not a contour: a new hole then writes nothing.
+ * The sketch may be a promoted contour or a plain point list. A new hole
+ * with no points writes nothing. An open centres contour with no points
+ * is still that contour.
  */
 
 import { contourFromPolyline } from './contourSolve.js';
@@ -16,6 +17,35 @@ export const HOLE_END_OPTIONS = [
   { value: 'cbore', label: 'c-bore' },
   { value: 'csk', label: 'c-sink' },
 ];
+
+export function holeCardFromSpec(spec) {
+  const card = defaultHoleCard();
+  if (!spec || typeof spec !== 'object') return card;
+  if (spec.dia != null && spec.dia !== '') {
+    card.dia = spec.dia;
+  } else {
+    card.dia = '';
+    card.type = spec.type === 'tapDrill' ? 'tapDrill' : 'clearance';
+    card.size = spec.size || 'M3';
+    if (card.type === 'clearance') card.fit = spec.fit || 'normal';
+  }
+  card.through = spec.through !== false;
+  if (spec.depth != null) card.depth = spec.depth;
+  card.side = Number(spec.side) === -1 ? -1 : 1;
+  const takeEnd = (side, value) => {
+    const kind = value?.kind;
+    if (kind === 'cbore' || kind === 'csk') {
+      card[`${side}Kind`] = kind;
+      card[`${side}Dia`] = value.dia;
+      card[`${side}Depth`] = value.depth;
+    } else {
+      card[`${side}Kind`] = 'none';
+    }
+  };
+  takeEnd('near', spec.near);
+  takeEnd('far', spec.far);
+  return card;
+}
 
 export function defaultHoleCard() {
   return {
@@ -87,12 +117,13 @@ export function holeSpecFromCard(card) {
 }
 
 /**
- * Centres for Accept. A promoted contour wins. Otherwise each tapped point
- * is a centre and the segments between them are lines. Nothing drawn is null.
+ * Centres for Accept. A promoted contour wins, including one with no points.
+ * Otherwise each tapped point is a centre and the segments between them are
+ * lines. Nothing drawn, and no contour object, is null.
  */
 export function holeSketchContour(state) {
   const contour = state?.params?.contour;
-  if (contour?.points?.length) {
+  if (contour && Array.isArray(contour.points)) {
     return {
       points: contour.points,
       lines: contour.lines || [],
@@ -109,4 +140,50 @@ export function holeSketchContour(state) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Reopen a centres contour on the hole rail. The plane card stays closed.
+ * The baked frame is the sketch plane. Lines stay construction.
+ */
+export function holeCentresSketch(state, saved) {
+  const contour = saved?.contour || {};
+  const points = (contour.points || []).map((point) => (
+    Array.isArray(point?.at) ? [Number(point.at[0]), Number(point.at[1])] : null
+  )).filter((point) => point && Number.isFinite(point[0]) && Number.isFinite(point[1]));
+  const frame = saved?.frame;
+  const planeFace = frame?.center && frame?.normal && frame?.x && frame?.y ? {
+    type: 'planar',
+    center: frame.center.slice(),
+    normal: frame.normal.slice(),
+    area: 400,
+    triangleCount: 2,
+    selectionMode: 'coplanar',
+    planeFrame: {
+      center: frame.center.slice(),
+      normal: frame.normal.slice(),
+      x: frame.x.slice(),
+      y: frame.y.slice(),
+    },
+  } : state?.planeFace || null;
+  return {
+    ...state,
+    entry: 'hole',
+    tool: points.length ? 'polyline' : 'cursor',
+    params: {
+      points,
+      contour: {
+        points: contour.points || [],
+        lines: (contour.lines || []).map((line) => ({ ...line, construction: line.construction !== false })),
+        arcs: contour.arcs || [],
+        dimensions: contour.dimensions || [],
+        constraints: contour.constraints || [],
+        refs: contour.refs || [],
+        centers: true,
+      },
+    },
+    planeFace,
+    contourId: saved?.id || state?.contourId || null,
+    contourName: saved?.name || state?.contourName || null,
+  };
 }

@@ -20,7 +20,12 @@ import {
   deleteContourStatement,
   featuresWithContours,
 } from './contourUsers.js';
-import { composeHoleOnContour } from './holeContour.js';
+import {
+  composeHoleOnContour,
+  readCentersContour,
+  readContourHole,
+  rewriteCentersContour,
+} from './holeContour.js';
 
 const FRAME = {
   center: [0, 0, 10],
@@ -227,6 +232,67 @@ test('a second hole stays after the contour it names', () => {
   assert.match(copy, /dia: 5/);
   assert.match(copy, /makeExtrude/);
   assert.equal(copy.includes("size: 'M3'"), false);
+});
+
+function solveCall(script) {
+  const at = script.indexOf('solveContour');
+  const end = script.indexOf('); // @contour', at);
+  return script.slice(at, end);
+}
+
+test('a spec edit rewrites that hole and leaves the contour and the bar', () => {
+  const wrote = composeHoleOnContour(cubeScript(), { frame: FRAME, contour: POINTS, spec: SPEC });
+  const opened = readContourHole(wrote.buffer, 'hole1');
+  assert.equal(opened.featureId, 'hole1');
+  assert.equal(opened.contourId, 'c1');
+  assert.equal(opened.contourName, 'c1');
+  assert.equal(opened.spec.side, 1);
+  assert.equal(opened.spec.size, 'M3');
+  const solve = solveCall(wrote.buffer);
+  const edited = composeHoleOnContour(wrote.buffer, {
+    featureId: 'hole1',
+    spec: { dia: 5, through: true, side: -1 },
+  });
+  assert.equal(edited.ok, true, edited.message || '');
+  assert.match(edited.buffer, /dia: 5/);
+  assert.match(edited.buffer, /side: -1/);
+  assert.equal(solveCall(edited.buffer), solve);
+  assert.equal(
+    edited.buffer.split('holesOnContour').length,
+    wrote.buffer.split('holesOnContour').length,
+  );
+  const placed = commitScriptAtRollback(wrote.buffer, edited.buffer, 'hole1');
+  assert.equal(placed.anchor, 'hole1');
+  assert.ok(placed.buffer.indexOf('role=centers') < placed.buffer.indexOf('id=hole1'));
+});
+
+test('clearing the last centre rewrites the contour and leaves the hole block', () => {
+  const wrote = composeHoleOnContour(cubeScript(), { frame: FRAME, contour: POINTS, spec: SPEC });
+  const hole = wrote.buffer.slice(wrote.buffer.indexOf('id=hole1'));
+  const cleared = rewriteCentersContour(wrote.buffer, {
+    contourId: 'c1',
+    contour: { points: [] },
+  });
+  assert.equal(cleared.ok, true, cleared.message || '');
+  assert.equal(cleared.changed, true);
+  assert.match(cleared.buffer, /points: \[\]/);
+  assert.match(cleared.buffer, /centers: true/);
+  assert.equal(cleared.buffer.slice(cleared.buffer.indexOf('id=hole1')), hole);
+  const read = readCentersContour(cleared.buffer, 'c1');
+  assert.equal(read.contour.points.length, 0);
+  assert.equal(read.contour.centers, true);
+  assert.equal(readContourHole(cleared.buffer, 'hole1').contourId, 'c1');
+});
+
+test('an old hole block does not read as a contour hole', () => {
+  const old = cubeScript(region(
+    HOLE_BEGIN,
+    HOLE_END,
+    'hole9',
+    'part = hole(part, fr, 0, 0, 5, 12);',
+  ));
+  assert.equal(readContourHole(old, 'hole9'), null);
+  assert.equal(readCentersContour(old, 'c1'), null);
 });
 
 test('a bad hole spec is refused', () => {

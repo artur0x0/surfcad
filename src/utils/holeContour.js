@@ -16,7 +16,7 @@ import {
   mintBlockId,
 } from './featureBlockId.js';
 import { HOLE_BEGIN, HOLE_END, declaredNames } from './helperPaletteSnippets.js';
-import { emitSolveContour } from './contourScript.js';
+import { emitSolveContour, parseScriptValue, parseSolveContour } from './contourScript.js';
 import {
   contourStatements,
   insertBeforeScriptReturn,
@@ -301,6 +301,94 @@ export function composeHoleOnContour(buffer, {
     contourId: contourStmt.id,
     contourName: contourStmt.name,
     createdContour,
+  };
+}
+
+function specObjectSource(text) {
+  const src = String(text || '');
+  const at = src.search(/holesOnContour\s*\(/);
+  if (at < 0) return '';
+  const brace = src.indexOf('{', at);
+  return brace < 0 ? '' : src.slice(brace);
+}
+
+/**
+ * A contour hole block and the centres contour it names.
+ * An old `hole()` block is not one of these, so the helper sheet still opens.
+ *
+ * @returns {{ featureId: string, contourName: string, contourId: string|null, spec: object } | null}
+ */
+export function readContourHole(buffer, featureId) {
+  const block = listHoleBlocks(buffer).find((row) => row.id === featureId);
+  if (!block || !isContourHole(block.text)) return null;
+  const name = holeName(block.text);
+  if (!name) return null;
+  let raw;
+  try {
+    raw = parseScriptValue(specObjectSource(block.text));
+  } catch {
+    return null;
+  }
+  const normalized = normalizeSpec(raw);
+  if (!normalized.ok) return null;
+  const stmt = contourStatements(buffer).find((row) => row.name === name || row.id === name);
+  return {
+    featureId: block.id,
+    contourName: name,
+    contourId: stmt?.id || null,
+    spec: normalized.spec,
+  };
+}
+
+/**
+ * The baked centres contour. Empty points stay a contour. A profile contour
+ * is not one of these.
+ *
+ * @returns {{ id: string, name: string, frame: object, contour: object } | null}
+ */
+export function readCentersContour(buffer, contourId) {
+  const stmt = contourStatements(buffer).find((row) => row.id === contourId && row.role === 'centers');
+  if (!stmt) return null;
+  let contour;
+  try {
+    contour = parseSolveContour(stmt.profileExpr);
+  } catch {
+    return null;
+  }
+  const frame = frameFromStatement(stmt);
+  if (!frame) return null;
+  return { id: stmt.id, name: stmt.name, frame, contour };
+}
+
+/**
+ * Rewrite one centres statement. Hole blocks that name it stay where they are.
+ *
+ * @returns {{ ok: true, buffer: string, changed: boolean, run: boolean, contourId: string, contourName: string }
+ *   | { ok: false, message: string }}
+ */
+export function rewriteCentersContour(buffer, { contourId = null, contour = null } = {}) {
+  const text = String(buffer || '');
+  const stmt = contourStatements(text).find((row) => row.id === contourId && row.role === 'centers');
+  if (!stmt) return { ok: false, message: 'Hole could not find its contour.' };
+  const frame = frameFromStatement(stmt);
+  if (!frame) return { ok: false, message: 'Hole needs a plane.' };
+  const model = contour && Array.isArray(contour.points) ? contour : { points: [] };
+  const saved = upsertNamedContour(text, {
+    id: stmt.id,
+    name: stmt.name,
+    frame,
+    profileExpr: profileExpr(model),
+    role: 'centers',
+  });
+  if (!saved.ok) return saved;
+  const changed = saved.buffer !== text;
+  return {
+    ok: true,
+    buffer: saved.buffer,
+    changed,
+    run: changed,
+    contourId: saved.id,
+    contourName: saved.name,
   };
 }
 

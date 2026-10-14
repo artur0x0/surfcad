@@ -310,6 +310,13 @@ function objectOf(value) {
   return value;
 }
 
+/** Parse one script literal: object, array, string, number, or boolean. */
+export function parseScriptValue(source) {
+  const parser = new Parser(String(source || ''));
+  parser.skip();
+  return parser.parseValue();
+}
+
 /**
  * Parse a `solveContour({...})` call or the object itself.
  * Returns the contour spec (points, lines, arcs, dimensions, constraints, refs).
