@@ -88,10 +88,16 @@ Drawing a polyline point, or dragging a sketch point, snaps to a part reference 
 | `deleteFace` | solid, faces `{ center, normal }` → those faces removed and the solid healed | No `decompose` unless bodies overlap (then per body). Neighbors extend or trim until they meet. If they cannot keep a closed solid, throws. Does not return an open or non-manifold mesh. |
 | `edge`, `edgesBetween`, `boundaryEdges` | current solid + ids → segments | Ids are for this mesh. A miss throws `re-pick edges`. Fillet Accept of several disjoint corners writes every lookup before the first blend, so those ids are still the pre-blend mesh. |
 | `facesByNormal`, `planarFaceAt`, `edgesByOrientation`, `convexEdges`, `concaveEdges`, `signedFeatureEdges`, `workplaneFromFace`, `placeInFrame`, `transformByFrame`, `placeOnFace` | queries / frames on one solid | Worker faces do not merge across bodies (below). |
-| `hole`, `holeSpan`, `cboreHole`, `cskHole`, `holePattern`, `clearanceHole`, `tapDrillHole`, fastener lookups | solid + frame → solid with holes | No body split. |
+| `hole`, `holeSpan`, `cboreHole`, `cskHole`, `holePattern`, `clearanceHole`, `tapDrillHole`, `holesOnContour`, fastener lookups | solid + frame → solid with holes | No body split. `holesOnContour` cuts one hole per centre of a shared contour. |
 | `roundedBox`, `tube`, `rectTube`, `hexPrism`, `mirror`, `array3D`, `polarArray`, `center`, `align`, `getDimensions`, loft/sweep vector helpers | as named | No body split. |
 
 `cut`, `move`, and `booleanBodies` are the helpers that `decompose` the input and `compose` the output. `externalBody` decomposes its copied solid to keep the named bodies. `shell` and `addDraft` do not. On disjoint bodies (a keep-both cut) `hollow`, `draftFaces`, `moveFace`, `deleteFace` also see one mesh with more triangles.
+
+### Holes on a contour
+
+`solveContour({ centers: true })` keeps every sketch point, including an arc centre, and does not close an open chain or tessellate rings (`contours` is `[]`). A centres contour may branch. A line with `construction: true` stays in the solve and is not a profile edge; `guide` is still the hidden spoke. An empty centres contour solves to no points. `makeCrossSection` stores that profile and the plane.
+
+`holesOnContour(part, section, spec)` reads `section.plane` and `section.profile.points`. Every point is a centre. An arc whose centre is not one of those points throws. Construction lines add no centres. No centres returns `part`. Two calls may name one section and cut opposite ways: `side: 1` enters toward −normal, the same direction as `hole()`, and `side: -1` or `flip: true` enters the other way. `depth` is millimetres past the plane on that side (the cutter is `depth + 1`, so 1 mm clears the entry side). `through: true` uses `holeSpan`. Through and depth together throw. A far end (`near` / `far` are `{ kind: 'none'|'cbore'|'csk', dia, depth }`) requires through. An explicit `dia` is the hole diameter. Without it, `type: 'tapDrill'` uses `fastenerTapDrillDia(size)` and otherwise `fastenerClearanceDia(size, fit)`. `hole`, `holePattern`, `cboreHole`, `cskHole`, `clearanceHole`, and `tapDrillHole` are unchanged.
 
 ### Loft
 

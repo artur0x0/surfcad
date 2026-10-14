@@ -5,7 +5,9 @@ import {
   contourFromPolyline,
   contourFromRectangle,
   roundContourCorner,
+  solveContour,
 } from './contourSolve.js';
+import { emitSolveContour, parseSolveContour } from './contourScript.js';
 import { contourPointDragAllowed, dragContourPoint, pointFreedom } from './contourDrag.js';
 import { CONTOUR_STATUS_COLOR, contourEntityColor } from './contourStatus.js';
 import { armContourGesture, enterContourState, saveContourConstraint, saveContourDimension } from './contourMode.js';
@@ -686,4 +688,66 @@ test('typing a point distance pins the first point for that solve and then drops
   assert.equal(solved.dof, 3, `dof ${solved.dof} free ${JSON.stringify(free)}`);
   assert.equal(solved.entities.points.p0, 'under');
   assert.equal(solved.entities.points.p1, 'under');
+});
+
+test('a centres contour stays open, may branch, and round-trips construction lines', () => {
+  const open = {
+    centers: true,
+    points: [
+      { id: 'p0', at: [0, 0] },
+      { id: 'p1', at: [10, 0] },
+      { id: 'p2', at: [10, 8] },
+    ],
+    lines: [
+      { id: 'e0', a: 'p0', b: 'p1', construction: true },
+      { id: 'e1', a: 'p1', b: 'p2', construction: true },
+    ],
+    dimensions: [{ id: 'd0', kind: 'distance', a: 'p0', b: 'p1', value: 16, name: 'pitch' }],
+  };
+  const solved = solveContour(open);
+  assert.equal(solved.centers, true);
+  assert.deepEqual(solved.contours, []);
+  assert.equal(solved.open, true);
+  assert.equal(solved.lines.length, 2);
+  assert.equal(solved.lines[0].construction, true);
+  const a = solved.points.find((p) => p.id === 'p0').at;
+  const b = solved.points.find((p) => p.id === 'p1').at;
+  assert.ok(Math.abs(gap(a, b) - 16) < 1e-3, JSON.stringify([a, b]));
+
+  const closed = analyzeContour({
+    points: open.points,
+    lines: open.lines.map((line) => ({ id: line.id, a: line.a, b: line.b })),
+  });
+  assert.equal(closed.lines.length, 3);
+  assert.ok(closed.contours.length >= 1);
+
+  const branched = solveContour({
+    centers: true,
+    points: [
+      { id: 'p0', at: [0, 0] },
+      { id: 'p1', at: [10, 0] },
+      { id: 'p2', at: [0, 10] },
+      { id: 'p3', at: [-10, 0] },
+    ],
+    lines: [
+      { id: 'e0', a: 'p0', b: 'p1', construction: true },
+      { id: 'e1', a: 'p0', b: 'p2', construction: true },
+      { id: 'e2', a: 'p0', b: 'p3', construction: true },
+    ],
+  });
+  assert.equal(branched.lines.length, 3);
+  assert.deepEqual(branched.contours, []);
+
+  const empty = solveContour({ centers: true, points: [] });
+  assert.equal(empty.centers, true);
+  assert.deepEqual(empty.points, []);
+  assert.deepEqual(empty.contours, []);
+
+  const src = emitSolveContour(solved);
+  assert.match(src, /centers: true/);
+  assert.match(src, /construction: true/);
+  const parsed = parseSolveContour(src);
+  assert.equal(parsed.centers, true);
+  assert.equal(parsed.lines[0].construction, true);
+  assert.equal(parsed.dimensions[0].name, 'pitch');
 });

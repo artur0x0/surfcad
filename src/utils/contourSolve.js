@@ -115,6 +115,7 @@ function cloneSpec(spec) {
     if (!l?.id || !l.a || !l.b) fail('a line needs id, a, and b');
     const line = { id: String(l.id), a: String(l.a), b: String(l.b) };
     if (l.guide) line.guide = true;
+    if (l.construction) line.construction = true;
     if (Number.isFinite(Number(l.seq)) && Number(l.seq) >= 1) line.seq = Math.round(Number(l.seq));
     return line;
   });
@@ -580,7 +581,7 @@ export function roundContourCorner(spec, segmentIds, radius) {
 function chainEdges(model) {
   const edges = [];
   for (const line of model.lines) {
-    if (line.guide) continue;
+    if (line.guide || line.construction) continue;
     edges.push([line.a, line.b]);
   }
   for (const arc of model.arcs) {
@@ -1615,6 +1616,7 @@ function tessellateFull(center, radius, segments) {
 }
 
 function tessellate(model, at, radii) {
+  if (model.centers) return { loops: [], closed: false };
   const loops = [];
   for (const arc of model.arcs) {
     if (!arc.full) continue;
@@ -1631,7 +1633,7 @@ function tessellate(model, at, radii) {
     adj.get(b).push({ to: a, edge });
   };
   for (const line of model.lines) {
-    if (line.guide) continue;
+    if (line.guide || line.construction) continue;
     link(line.a, line.b, { key: line.id, arc: null });
   }
   for (const arc of partial) link(arc.start, arc.end, { key: arc.id, arc });
@@ -1788,6 +1790,7 @@ function assembleResult(model, sys, solved, fact, conflict, repeated) {
     constraints: model.constraints.map((c) => ({ ...c, items: c.items ? [...c.items] : undefined })),
     refs: (model.refs || []).map((ref) => copyRef(ref)),
     ...(model.polyline ? { polyline: true } : {}),
+    ...(model.centers ? { centers: true } : {}),
     broken: sys.brokenRefs || [],
     dof: fact.dof,
     status,
@@ -1931,7 +1934,29 @@ function restoreLengths(sys, model, xSolved, x0) {
 
 function solveModel(spec) {
   const model = cloneSpec(spec);
-  closeOpenChain(model);
+  if (spec && spec.centers) model.centers = true;
+  if (model.centers && !model.points.length && !model.arcs.length) {
+    return {
+      type: 'contour',
+      centers: true,
+      contours: [],
+      points: [],
+      lines: model.lines.map((l) => ({ ...l })),
+      arcs: [],
+      dimensions: model.dimensions.map((d) => ({ ...d })),
+      constraints: model.constraints.map((c) => ({ ...c, items: c.items ? [...c.items] : undefined })),
+      refs: (model.refs || []).map((ref) => copyRef(ref)),
+      broken: [],
+      dof: 0,
+      status: 'under',
+      conflict: null,
+      repeated: [],
+      open: true,
+      entities: { points: {}, lines: {}, arcs: {} },
+      nullspace: [],
+    };
+  }
+  if (!model.centers) closeOpenChain(model);
   assignSeq(model);
   const sys = compile(model);
   for (const key of ['points', 'lines', 'arcs', 'dimensions', 'constraints']) {

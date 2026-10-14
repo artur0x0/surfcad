@@ -3675,6 +3675,213 @@ function tapDrillHole(part, frame, u, v, size, span) {
   return hole(part, frame, u, v, dia, sp);
 }
 
+function _holeOpt(spec) {
+  if (spec == null) return {};
+  if (typeof spec !== 'object' || Array.isArray(spec)) {
+    throw new Error('holesOnContour: spec must be an object');
+  }
+  return spec;
+}
+
+function _holeSide(spec) {
+  const flip = spec.flip === true;
+  let side = 1;
+  if (spec.side != null && spec.side !== '') {
+    side = Number(spec.side);
+    if (side !== 1 && side !== -1) throw new Error('holesOnContour: side must be 1 or -1');
+  }
+  if (flip && spec.side != null && spec.side !== '' && side !== -1) {
+    throw new Error('holesOnContour: flip and side disagree');
+  }
+  return flip ? -1 : side;
+}
+
+function _holeDia(spec) {
+  if (spec.dia != null && spec.dia !== '') {
+    const dia = Number(spec.dia);
+    if (!(dia > 0)) throw new Error('holesOnContour: dia must be > 0');
+    return dia;
+  }
+  const type = spec.type == null || spec.type === 'clearance'
+    ? 'clearance'
+    : (spec.type === 'tap' || spec.type === 'tapDrill' ? 'tapDrill' : null);
+  if (!type) throw new Error('holesOnContour: type must be clearance or tapDrill');
+  if (spec.size == null || spec.size === '') throw new Error('holesOnContour: set dia or a fastener size');
+  return type === 'tapDrill'
+    ? fastenerTapDrillDia(spec.size)
+    : fastenerClearanceDia(spec.size, spec.fit || 'normal');
+}
+
+function _holeReach(part, frame, spec) {
+  const hasDepth = spec.depth != null && spec.depth !== '';
+  if (spec.through === true && hasDepth) {
+    throw new Error('holesOnContour: set through or depth, not both');
+  }
+  const blind = spec.through === false || (hasDepth && spec.through !== true);
+  if (!blind) return { through: true, span: holeSpan(part, frame) };
+  const depth = Number(spec.depth);
+  if (!(depth > 0)) throw new Error('holesOnContour: depth must be > 0');
+  // hole() keeps 1mm on the start side of the plane. depth is how far the
+  // cutter enters the chosen side, so the span is one millimetre longer.
+  return { through: false, span: depth + 1 };
+}
+
+function _holeEnd(raw, label) {
+  if (raw == null || raw === 'none') return null;
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`holesOnContour: ${label} must be none or { kind, dia, depth }`);
+  }
+  const kind = raw.kind == null ? 'none' : String(raw.kind);
+  if (kind === 'none') return null;
+  if (kind !== 'cbore' && kind !== 'csk') {
+    throw new Error(`holesOnContour: ${label} kind must be none, cbore, or csk`);
+  }
+  const dia = Number(raw.dia);
+  const depth = Number(raw.depth);
+  if (!(dia > 0) || !(depth > 0)) {
+    throw new Error(`holesOnContour: ${label} needs a dia and a depth`);
+  }
+  return { kind, dia, depth };
+}
+
+function _holeProfile(section) {
+  if (section && section.profile && typeof section.profile === 'object') return section.profile;
+  if (section && (Array.isArray(section.points) || Array.isArray(section.arcs))) return section;
+  return { points: [], arcs: [] };
+}
+
+function _holeCentres(profile) {
+  const points = Array.isArray(profile.points) ? profile.points : [];
+  const seen = new Set();
+  const out = [];
+  for (const p of points) {
+    if (!p || p.id == null || !Array.isArray(p.at)) {
+      throw new Error('holesOnContour: a centre needs an id and at');
+    }
+    const id = String(p.id);
+    const u = Number(p.at[0]);
+    const v = Number(p.at[1]);
+    if (!Number.isFinite(u) || !Number.isFinite(v)) {
+      throw new Error(`holesOnContour: centre ${id} must be a finite [u, v]`);
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, u, v });
+  }
+  for (const arc of profile.arcs || []) {
+    if (!arc || arc.center == null) continue;
+    const id = String(arc.center);
+    if (!seen.has(id)) {
+      throw new Error(`holesOnContour: arc ${arc.id || ''} center ${id} is not a sketch point`);
+    }
+  }
+  return out;
+}
+
+function _holeFrameForSide(frame, side) {
+  if (side === 1) return frame;
+  return {
+    center: frame.center.slice(),
+    normal: [-frame.normal[0], -frame.normal[1], -frame.normal[2]],
+    x: frame.x.slice(),
+    y: [-frame.y[0], -frame.y[1], -frame.y[2]],
+  };
+}
+
+function _holeFarFrame(part, frame) {
+  const bb = part.boundingBox();
+  const fn = frame.normal;
+  const fc = frame.center;
+  let minW = Infinity;
+  const xs = [bb.min[0], bb.max[0]];
+  const ys = [bb.min[1], bb.max[1]];
+  const zs = [bb.min[2], bb.max[2]];
+  for (const x of xs) for (const y of ys) for (const z of zs) {
+    const w = (x - fc[0]) * fn[0] + (y - fc[1]) * fn[1] + (z - fc[2]) * fn[2];
+    if (w < minW) minW = w;
+  }
+  return {
+    center: [fc[0] + fn[0] * minW, fc[1] + fn[1] * minW, fc[2] + fn[2] * minW],
+    normal: [-fn[0], -fn[1], -fn[2]],
+    x: frame.x.slice(),
+    y: [-frame.y[0], -frame.y[1], -frame.y[2]],
+  };
+}
+
+function _holeEndCutter(M, frame, u, v, end, diaThru) {
+  if (!(end.dia > diaThru)) {
+    const name = end.kind === 'cbore' ? 'c-bore' : 'c-sink';
+    throw new Error(`holesOnContour: ${name} dia (${end.dia}) must be > hole dia (${diaThru})`);
+  }
+  if (end.kind === 'cbore') return _c4PutCyl(M, frame, u, v, end.dia, end.depth + 1);
+  const n = frame.normal;
+  const c = _c4Add(_c4Add(frame.center, _c4Mul(u, frame.x)), _c4Mul(v, frame.y));
+  const cone = M.cylinder(end.depth, diaThru / 2, end.dia / 2, 48, true);
+  const w0 = -end.depth / 2;
+  const t = frameToMatrix({
+    center: [c[0] + n[0] * w0, c[1] + n[1] * w0, c[2] + n[2] * w0],
+    x: frame.x,
+    y: frame.y,
+    normal: n,
+  });
+  return cone.transform(t);
+}
+
+/**
+ * holesOnContour(part, section, spec) — one hole at every sketch point of a
+ * centres contour, including arc centres. `section` is a makeCrossSection
+ * (plane + profile). Construction lines are not centres. No centres returns
+ * `part`. `dia` is a raw millimetre diameter and wins over `size` + `fit`.
+ * Without `dia`, `type: 'tapDrill'` uses the tap drill and anything else uses
+ * the clearance diameter. `side: 1` cuts toward −normal (the same way as
+ * hole()); `side: -1` or `flip: true` cuts the other way. `depth` is how far
+ * the hole enters that side; `through: true` uses holeSpan. A far c-bore or
+ * c-sink needs a through hole. Two calls may share one section.
+ */
+function holesOnContour(part, section, spec) {
+  if (!part || typeof part.boundingBox !== 'function') {
+    throw new Error('holesOnContour: part must be a solid');
+  }
+  const opts = _holeOpt(spec);
+  const plane = section && section.plane;
+  if (!plane || !plane.normal || !plane.center || !plane.x || !plane.y) {
+    throw new Error('holesOnContour: section needs a plane (center, normal, x, y)');
+  }
+  const centres = _holeCentres(_holeProfile(section));
+  if (!centres.length) return part;
+  const dia = _holeDia(opts);
+  const side = _holeSide(opts);
+  const entry = _holeFrameForSide(plane, side);
+  const reach = _holeReach(part, entry, opts);
+  const near = _holeEnd(opts.near, 'near');
+  const farEnd = _holeEnd(opts.far, 'far');
+  if (farEnd && !reach.through) throw new Error('holesOnContour: a blind hole has no far end');
+  const M = manifoldModule.Manifold;
+  const far = farEnd ? _holeFarFrame(part, entry) : null;
+  let out = part;
+  for (const c of centres) {
+    const u = c.u;
+    const v = side === 1 ? c.v : -c.v;
+    out = _c4RequireValidSolid(
+      M.difference(out, _c4PutCyl(M, entry, u, v, dia, reach.span)),
+      'holesOnContour',
+    );
+    if (near) {
+      out = _c4RequireValidSolid(
+        M.difference(out, _holeEndCutter(M, entry, u, v, near, dia)),
+        'holesOnContour',
+      );
+    }
+    if (far) {
+      out = _c4RequireValidSolid(
+        M.difference(out, _holeEndCutter(M, far, u, -v, farEnd, dia)),
+        'holesOnContour',
+      );
+    }
+  }
+  return out;
+}
+
 // ============================================================================
 // C6 — Fillet helper (Manifold JS has no native fillet; this is the v1/v2
 // geometric construction). v1 ported from cadgen-workspace/harness/c6_fillet.mjs
@@ -8776,6 +8983,8 @@ function _featureTessellation(runOriginalID) {
  * `conflict` and the shape is the least-squares result. A repeated
  * constraint is listed on `repeated` with warning `repeated`. More than
  * 128 points throws. Contours are tessellated point loops for makeExtrude.
+ * `centers: true` keeps the points, skips the closing edge and the rings,
+ * and is the profile `holesOnContour` cuts.
  */
 function solveContour(spec) {
   return solveContourModel(spec);
@@ -8837,6 +9046,7 @@ const HELPER_FUNCTIONS = {
   // Slice-01 fastener vocabulary
   clearanceHole,
   tapDrillHole,
+  holesOnContour,
   fastenerClearanceDia,
   fastenerTapDrillDia,
   fastenerMajorDia,

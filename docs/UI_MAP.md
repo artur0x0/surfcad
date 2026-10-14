@@ -861,6 +861,9 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
   `polarArray` stays the same way: one Array button whose Type param is Grid or
   Polar, and the `array3D` build delegates to `polarArray`'s for Polar.
   `holePattern` likewise: Hole's "n×m pattern" tick emits `holePattern()`.
+  The kernel helper `holesOnContour` cuts one hole at every centre of a shared
+  contour (each sketch point, including an arc centre), through or to a depth,
+  on `side` 1 or -1. The Hole button still writes the slider block.
   Hide a tool this way rather than deleting an item other code builds with.
 - **The right rail is content-height**, not paired: view-snap then zoom-to-fit (`Maximize2`) at the top, then Normal to sketch (`CornerDownRight`, `data-normal-to-sketch`, contour mode only), then Face, Edge, plane overlays, contour overlays, and Paint, then a divider, then Analyze (`Gauge`), the XYZ triad (`Move3d` / `AxesHelper`), measure, and cross-section. There is no patch-colour toggle. The green Lucide `Frame` (`#` / auto-fit-on-run) was removed — it duplicated zoom-to-fit. A shared 26rem cap used to crop Cross-section off the bottom,
   where — being bottom-anchored 10px above the viewport edge — it was out of

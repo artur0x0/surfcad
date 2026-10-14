@@ -1,6 +1,6 @@
 {
   "generatedFrom": "src/lib/surfcad/runtime.js HELPER_FUNCTIONS",
-  "count": 72,
+  "count": 73,
   "helpers": [
     {
       "name": "shell",
@@ -1204,6 +1204,29 @@
       ]
     },
     {
+      "name": "holesOnContour",
+      "signature": "holesOnContour(part, section, spec)",
+      "params": [
+        {
+          "name": "part",
+          "text": "part"
+        },
+        {
+          "name": "section",
+          "text": "section"
+        },
+        {
+          "name": "spec",
+          "text": "spec"
+        }
+      ],
+      "description": "holesOnContour(part, section, spec) — one hole at every sketch point of a centres contour, including arc centres. `section` is a makeCrossSection (plane + profile). ",
+      "doc": "holesOnContour(part, section, spec) — one hole at every sketch point of a\ncentres contour, including arc centres. `section` is a makeCrossSection\n(plane + profile). Construction lines are not centres. No centres returns\n`part`. `dia` is a raw millimetre diameter and wins over `size` + `fit`.\nWithout `dia`, `type: 'tapDrill'` uses the tap drill and anything else uses\nthe clearance diameter. `side: 1` cuts toward −normal (the same way as\nhole()); `side: -1` or `flip: true` cuts the other way. `depth` is how far\nthe hole enters that side; `through: true` uses holeSpan. A far c-bore or\nc-sink needs a through hole. Two calls may share one section.",
+      "examples": [
+        "const c1 = makeCrossSection(plane, solveContour({\n  centers: true,\n  points: [{ id: 'p0', at: [10, 0] }, { id: 'c0', at: [0, 0] }],\n  arcs: [{ id: 'a0', center: 'c0', radius: 10, full: true, sweep: 'ccw' }],\n}));\npart = holesOnContour(part, c1, { dia: 4, through: false, depth: 6, side: 1 });\npart = holesOnContour(part, c1, { type: 'clearance', size: 'M3', fit: 'normal', through: true, side: -1 });"
+      ]
+    },
+    {
       "name": "fastenerClearanceDia",
       "signature": "fastenerClearanceDia(size, fit = 'normal')",
       "params": [
@@ -1346,7 +1369,7 @@
         }
       ],
       "description": "makeExtrude(contours, height) — extrude a 2D profile by `height` along Z. ",
-      "doc": "Extrude a 2D profile by `height` along +Z. Same contour rules as\nmakeRevolve (outer + optional holes, winding auto-fixed).\n\n\n\n**Contour-mode Extrude (Slice 25):** game-mode **Extrude** builds a profile on\nthe workplane, then Confirm emits:\n\n\n\n`height` is always > 0. When `part` already exists, Advanced Confirm is\nadditive (`part.add` of the placed solid). An empty script still uses\n`let part = placeInFrame(...)`. Sense **In** uses `w = −height`; **Both** uses\n`w = −height/2`. Direction defaults to the plane normal; a world axis is\nrefused unless it is parallel to that normal. Loud-fail on a bad plane,\nprofile, or distance.\n\n**Contour-mode Revolve (Slice 26):** game-mode **Revolve** builds a profile on\nthe workplane, then Confirm emits `makeCrossSection` + `makeRevolve` placed\nso the axis lies **on the profile plane** (default: along V). The profile\nis remapped with identity `(u,v)→(radial,height)` in the axis/radial basis\n(axis through the workplane origin). A centered circle therefore revolves\nabout a diameter — a sphere. Profiles that cross the axis are clipped to\n+radial (`makeRevolve` / Manifold); on-axis, zero-width, and entirely\n−radial profiles loud-fail.\n\n\n\n`angle` is always > 0 and ≤ 360 (default 360). Sense **In** starts at\n`−angle`; **Both** starts at `−angle/2`. Axis defaults to plane **V**; a\nworld axis is refused unless it lies on the profile plane. Loud-fail on a\nbad plane, profile, angle, or an on-axis / zero-width / entirely-negative\nradial profile.",
+      "doc": "Extrude a 2D profile by `height` along +Z. Same contour rules as\nmakeRevolve (outer + optional holes, winding auto-fixed).\n\n\n\n**Contour-mode Extrude (Slice 25):** game-mode **Extrude** builds a profile on\nthe workplane, then Confirm emits:\n\n\n\n`height` is always > 0. When `part` already exists, Advanced Confirm is\nadditive (`part.add` of the placed solid). An empty script still uses\n`let part = placeInFrame(...)`. The Extrude card labels Out / In / Both as\nDirection. **In** uses `w = −height`; **Both** uses `w = −height/2`. The axis\ndefaults to the plane normal; a world axis is\nrefused unless it is parallel to that normal. Loud-fail on a bad plane,\nprofile, or distance.\n\n**Contour-mode Revolve (Slice 26):** game-mode **Revolve** builds a profile on\nthe workplane, then Confirm emits `makeCrossSection` + `makeRevolve` placed\nso the axis lies **on the profile plane** (default: along V). The profile\nis remapped with identity `(u,v)→(radial,height)` in the axis/radial basis\n(axis through the workplane origin). A centered circle therefore revolves\nabout a diameter — a sphere. Profiles that cross the axis are clipped to\n+radial (`makeRevolve` / Manifold); on-axis, zero-width, and entirely\n−radial profiles loud-fail.\n\n\n\n`angle` is always > 0 and ≤ 360 (default 360). Sense **In** starts at\n`−angle`; **Both** starts at `−angle/2`. Axis defaults to plane **V**; a\nworld axis is refused unless it lies on the profile plane. Loud-fail on a\nbad plane, profile, angle, or an on-axis / zero-width / entirely-negative\nradial profile.",
       "examples": [
         "const plate = makeExtrude([ [[-40,-15],[40,-15],[40,15],[-40,15]] ], 3);",
         "const fr = { center: [0, 0, 0], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] };\nconst xs = makeCrossSection(fr, profileCircle(5, 32));\npart = placeInFrame(xs.plane, makeExtrude(xs.contours, 10), [0, 0, 0]);\n// when part already exists, Confirm unions instead of replacing:\n// part = part.add(placeInFrame(xs.plane, makeExtrude(xs.contours, 10), [0, 0, 0]));",
@@ -1481,7 +1504,7 @@
           "text": "profile"
         }
       ],
-      "description": "makeCrossSection(plane, profile) → reusable { kind, plane, profile, contours }. plane: workplaneFromFace frame. profile: profileCircle/Rectangle/Polygon result, or { type, ... }, or bare contours / point list (same rules as makeExtrude). ",
+      "description": "makeCrossSection(plane, profile) → reusable { kind, plane, profile, contours }. plane: workplaneFromFace frame. profile: profileCircle/Rectangle/Polygon result, or { type, ... }, a { type:'path', points, closed } wire (two or more [u,v], zero area allowed), or bare contours / ...",
       "doc": "**Parameters:**\n- `plane` — frame from `workplaneFromFace` (`center`, `normal`, `x`, `y`)\n- `profile` — `profileCircle` / `profileRectangle` / `profilePolygon` result,\n  a `{ type, ... }` descriptor, or a contours / point list (same rules as\n  `makeExtrude`)\n\n**Returns:** `{ kind:'crossSection', plane, profile, contours }`\n\n**Loud failures:** missing plane axes; non-positive sizes; < 3 polygon points;\ndegenerate (zero-area) profile.\n\n**UI:** Advanced rail → **Profile** (with **Workplane**) → contour mode\n(circle / rectangle / polygon / polyline). Face select feeds the plane.\nSaved contours stay pickable for Extrude / Revolve / Sweep / Loft. Preview\noverlays the profile on the plane while editing.\n\n**Non-goals (wait for Product brief):** fillet-via-sweep;\nextrude/revolve/loft from this value.\n(Edge→sweep path is Slice 22 — see below.) A constrained contour\nuses `solveContour`.\n\n---\n\n## Edge → sweep path (Slice 22)\n\nOrdered **sweep path / wire** from the current edge selection (including\ntangent-prop chains). Later slices consume this value to sweep a cross-section\ncutter along it. This slice ships the path value only — fillet-via-sweep is\n**not** started here (wait for Product brief).",
       "examples": [
         "let part = Manifold.cube([40, 30, 20], true);\nconst topFace = facesByNormal(part, [0, 0, 1])[0];\nconst fr = workplaneFromFace(part, topFace);\nconst xs = makeCrossSection(fr, profileCircle(5, 32));\n// xs.plane / xs.profile / xs.contours — consume in later slices\nreturn part;",
@@ -1497,7 +1520,7 @@
           "text": "spec"
         }
       ],
-      "description": "solveContour(spec) → a contour profile in plane UV. spec is `{ points, lines, arcs, dimensions, constraints }`. ",
+      "description": "solveContour(spec) → a contour profile in plane UV. spec is `{ points, lines, arcs, dimensions, constraints, refs }`. ",
       "doc": "Solve a constrained contour in plane UV. Lengths are millimetres. Angles are\ndegrees. A dimension name is a string on that dimension and is not a script\nbinding. Horizontal is constant `v`. Vertical is constant `u`. Both are the\nworkplane frame, not the screen.\n\n\n\n**Returns:** `{ type:'contour', contours, points, lines, arcs, dimensions, constraints, dof, status, conflict, repeated, open }`.\n`status` is `under`, `full`, or `conflict`. `repeated` lists constraints\nwhose removal does not change the rank, each with `warning: 'repeated'`.\nThat warning is not a failure. More than 128 points throws. An open chain\nof three or more points is closed with one more line before the solve.\nA contour may hold more than one chain. A vertex with more than two\nedges throws.\n\n**Loud failures:** unknown id, unknown kind, equal of a line and an arc,\na name that is not an identifier or is used twice on the contour, a bare\nidentifier where a number belongs.",
       "examples": [
         "const contour = solveContour({\n  points: [\n    { id: 'p0', at: [0, 0] },\n    { id: 'p1', at: [40, 0] },\n    { id: 'p2', at: [40, 20] },\n    { id: 'p3', at: [0, 20] },\n  ],\n  lines: [\n    { id: 'e0', a: 'p0', b: 'p1' },\n    { id: 'e1', a: 'p1', b: 'p2' },\n    { id: 'e2', a: 'p2', b: 'p3' },\n    { id: 'e3', a: 'p3', b: 'p0' },\n  ],\n  arcs: [],\n  dimensions: [\n    { id: 'd0', kind: 'length', edge: 'e0', value: 40, name: 'width' },\n  ],\n  constraints: [\n    { id: 'k0', kind: 'horizontal', items: ['e0'] },\n    { id: 'k1', kind: 'fix', items: ['p0'], at: { p0: [0, 0] } },\n  ],\n});\nconst xs = makeCrossSection(fr, contour);"
