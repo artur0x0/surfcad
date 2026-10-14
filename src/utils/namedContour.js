@@ -108,10 +108,12 @@ export function contourStatements(buffer) {
     const endMatch = tail.match(/^\s*;[^\n]*/);
     if (!endMatch) continue;
     const marker = endMatch[0].match(/@contour\s+id\s*=\s*([A-Za-z_$][\w$]*)/);
+    const role = endMatch[0].match(/\brole\s*=\s*([A-Za-z_$][\w$]*)/);
     const name = bind[1];
     out.push({
       id: marker ? marker[1] : name,
       name,
+      role: role ? role[1] : null,
       marker: marker ? marker[1] : null,
       start,
       end: call.end + 1 + endMatch[0].length,
@@ -162,8 +164,9 @@ export function mintContourIdentity(buffer) {
   return { id: cand, name: cand };
 }
 
-export function emitNamedContourLine({ name, id, frame, profileExpr }) {
-  return `const ${name} = makeCrossSection(${emitPlaneFrameLiteral(frame)}, ${profileExpr}); // @contour id=${id}`;
+export function emitNamedContourLine({ name, id, frame, profileExpr, role = null }) {
+  const roleText = role ? ` role=${role}` : '';
+  return `const ${name} = makeCrossSection(${emitPlaneFrameLiteral(frame)}, ${profileExpr}); // @contour id=${id}${roleText}`;
 }
 
 function spliceStatement(buffer, stmt, line) {
@@ -210,7 +213,8 @@ export function upsertNamedContour(buffer, spec = {}) {
     const nextName = spec.name ? String(spec.name) : found.name;
     const nameGate = checkContourName(buffer, nextName, found.name);
     if (!nameGate.ok) return nameGate;
-    const line = emitNamedContourLine({ name: nextName, id: found.id, frame, profileExpr });
+    const role = Object.prototype.hasOwnProperty.call(spec, 'role') ? spec.role : found.role;
+    const line = emitNamedContourLine({ name: nextName, id: found.id, frame, profileExpr, role });
     return {
       ok: true,
       buffer: spliceStatement(buffer, found, line),
@@ -231,7 +235,8 @@ export function upsertNamedContour(buffer, spec = {}) {
   else finalName = minted.name;
   const nameGate = checkContourName(buffer, finalName);
   if (!nameGate.ok) return nameGate;
-  const line = emitNamedContourLine({ name: finalName, id: finalId, frame, profileExpr });
+  const role = Object.prototype.hasOwnProperty.call(spec, 'role') ? spec.role : null;
+  const line = emitNamedContourLine({ name: finalName, id: finalId, frame, profileExpr, role });
   const at = Number.isInteger(spec.at) ? spec.at : null;
   return {
     ok: true,

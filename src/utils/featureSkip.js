@@ -592,11 +592,60 @@ function withStampedAnchor(buffer, featureId) {
   return { buffer: stamped.buffer, anchor: stamped.id };
 }
 
+function holeContourNameFromText(text) {
+  const match = String(text || '').match(/holesOnContour\s*\(\s*part\s*,\s*([A-Za-z_$][\w$]*)/);
+  return match ? match[1] : null;
+}
+
+function holeContourName(script, feature) {
+  return holeContourNameFromText(script.slice(feature.startOffset, feature.endOffset));
+}
+
+/**
+ * A centres contour this Accept just added, named by one of the hole blocks
+ * that are moving to the bar. An existing contour stays where it is.
+ */
+function freshCentresCompanions(beforeScript, afterScript, tailFresh) {
+  const beforeIds = new Set(contourStatements(beforeScript).map((stmt) => stmt.id));
+  const names = new Set(tailFresh.map((feature) => holeContourName(afterScript, feature)).filter(Boolean));
+  return contourStatements(afterScript).filter((stmt) => {
+    if (!names.has(stmt.name) || beforeIds.has(stmt.id)) return false;
+    return stmt.role === 'centers';
+  });
+}
+
+function contourSitsOnHole(script, stmt, tailFresh) {
+  const hole = tailFresh.find((feature) => holeContourName(script, feature) === stmt.name);
+  if (!hole) return true;
+  if (stmt.end > hole.startOffset) return false;
+  return script.slice(stmt.end, hole.startOffset).trim() === '';
+}
+
+/**
+ * A hole cannot land before the contour it names. When that statement stays
+ * in the tail, the caret moves to the statement's end.
+ */
+function caretAfterNamedContour(script, pieces, caret) {
+  const travelling = pieces.some((piece) => piece.contour);
+  if (travelling) return caret;
+  let at = caret;
+  for (const piece of pieces) {
+    const name = holeContourNameFromText(piece.text);
+    if (!name) continue;
+    const stmt = contourStatements(script).find((row) => row.name === name);
+    if (stmt && stmt.end > at) at = stmt.end;
+  }
+  return at;
+}
+
 /**
  * Place new feature blocks at the rollback bar, the way a palette insert does.
  * An Accept that appended past the bar is cut out and spliced at the caret.
  * A block that is already in that gap stays. An edit of an existing block
  * does not move, and the bar stays. The bar then sits on the new feature.
+ * A centres contour this Accept just added travels with the hole block that
+ * first names it, and stays in front of that block. An existing contour
+ * stays put. A hole that names it is not placed before that statement.
  * A missing anchor is the end: fresh blocks are not pulled to the start.
  * @param {string} beforeScript
  * @param {string} afterScript
@@ -631,21 +680,40 @@ export function commitScriptAtRollback(beforeScript, afterScript, anchor) {
   if (!tailFresh.length) {
     return { buffer: after, anchor: clampRollbackAnchor(after, anchor) };
   }
+  const companions = freshCentresCompanions(beforeScript, after, tailFresh);
   const packed = tailFresh.every((feature, i) => {
     const idx = features.findIndex((item) => item.id === feature.id);
     return idx === anchorIndex + 1 + i;
-  });
+  }) && companions.every((stmt) => contourSitsOnHole(after, stmt, tailFresh));
   const lastId = tailFresh[tailFresh.length - 1].id;
   if (packed) return withStampedAnchor(after, lastId);
 
-  const chunks = tailFresh.map((feature) => (
-    after.slice(feature.startOffset, feature.endOffset).replace(/^\n+|\s+$/g, '')
-  ));
+  const claimed = new Set();
+  const pieces = [];
+  for (const feature of tailFresh) {
+    const name = holeContourName(after, feature);
+    const stmt = companions.find((row) => row.name === name && !claimed.has(row.id));
+    if (stmt) {
+      claimed.add(stmt.id);
+      pieces.push({
+        start: stmt.start,
+        end: stmt.end,
+        contour: true,
+        text: after.slice(stmt.start, stmt.end).trim(),
+      });
+    }
+    pieces.push({
+      start: feature.startOffset,
+      end: feature.endOffset,
+      contour: false,
+      text: after.slice(feature.startOffset, feature.endOffset).replace(/^\n+|\s+$/g, ''),
+    });
+  }
   let rest = after;
-  for (let i = tailFresh.length - 1; i >= 0; i -= 1) {
-    const feature = tailFresh[i];
-    let cutStart = feature.startOffset;
-    let cutEnd = feature.endOffset;
+  const cuts = [...pieces].sort((a, b) => b.start - a.start);
+  for (const piece of cuts) {
+    let cutStart = piece.start;
+    let cutEnd = piece.end;
     if (rest[cutEnd] === '\n') cutEnd += 1;
     else if (cutStart > 0 && rest[cutStart - 1] === '\n') cutStart -= 1;
     rest = `${rest.slice(0, cutStart)}${rest.slice(cutEnd)}`;
@@ -654,11 +722,15 @@ export function commitScriptAtRollback(beforeScript, afterScript, anchor) {
   if (typeof caret !== 'number') {
     return { buffer: after, anchor: clampRollbackAnchor(after, anchor) };
   }
-  const buffer = insertBlockAtCaret(rest, chunks.join('\n'), caret);
+  const buffer = insertBlockAtCaret(
+    rest,
+    pieces.map((piece) => piece.text).join('\n'),
+    caretAfterNamedContour(rest, pieces, caret),
+  );
   // A marker without an id is named from its place in the strip, so the
   // name can change when the block moves. Read it from the placed script.
   const norm = (text) => text.replace(/\s+/g, ' ').trim();
-  const want = new Set(chunks.map(norm));
+  const want = new Set(pieces.filter((piece) => !piece.contour).map((piece) => norm(piece.text)));
   const placed = parseFeatureMarkers(buffer).filter((feature) => (
     want.has(norm(buffer.slice(feature.startOffset, feature.endOffset)))
   ));

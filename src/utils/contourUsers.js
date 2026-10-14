@@ -12,13 +12,14 @@ import { contourStatements, renameNamedContour, upsertNamedContour } from './nam
 import { composeContourProfile, planeFromContourFace } from './contourMode.js';
 import { emitPathProfileExpr } from './solidReference.js';
 
-const USER_KINDS = new Set(['extrude', 'revolve', 'loft', 'sweep']);
+const USER_KINDS = new Set(['extrude', 'revolve', 'loft', 'sweep', 'hole']);
 
 const KIND_TITLE = {
   extrude: 'Extrude',
   revolve: 'Revolve',
   loft: 'Loft',
   sweep: 'Sweep',
+  hole: 'Hole',
 };
 
 function isIdentChar(ch) {
@@ -84,7 +85,7 @@ export function featureLabelFromBlock(feature) {
 }
 
 /**
- * Extrude, Revolve, Loft, and Sweep blocks that name this contour, in script order.
+ * Extrude, Revolve, Loft, Sweep, and Hole blocks that name this contour, in script order.
  * @returns {Array<{ id: string, kind: string, label: string, startOffset: number }>}
  */
 export function contourFeatureUsers(buffer, contourName) {
