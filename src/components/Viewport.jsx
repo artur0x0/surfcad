@@ -58,6 +58,7 @@ import PuzzleUnlock from './PuzzleUnlock';
 import ProfileChip from './ProfileChip';
 import CrossSectionPanel from './CrossSectionPanel';
 import HelperInsertPalette from './HelperInsertPalette';
+import HoleCard from './HoleCard';
 import ErrorPopup from './ErrorPopup';
 import { FeatureDeleteConfirm, FeatureDeleteToast } from './FeatureEditDelete';
 import ContourModeRail from './ContourModeRail';
@@ -161,6 +162,7 @@ import {
   enterContourState,
   intersectRayPlane,
   isExtrudeEntry,
+  isHoleEntry,
   isLoftEntry,
   isRevolveEntry,
   isSolidContourEntry,
@@ -195,6 +197,7 @@ import {
   saveContourConstraint,
   saveContourDimension,
 } from '../utils/contourMode';
+import { defaultHoleCard, holeSketchContour, holeSpecFromCard } from '../utils/holeCard';
 import { SKETCH_HIT_PX, anchorOnEntity, pickContourScreen, planeUvToWorld } from '../utils/contourPick';
 import {
   CONTOUR_REF_COLOR,
@@ -983,6 +986,8 @@ const Viewport = forwardRef(({
   /** A palette tap is opening a sheet or mode (App: edit the picked part). */
   onFeatureOpen = null,
   onCommitContourProfile = null,
+  /** Hole Accept. Empty centres return true and write nothing. */
+  onCommitHole = null,
   /** A successful reference match rewrites geom in the contour statement. */
   onContourRefsResolved = null,
   onDeleteContour = null,
@@ -1308,6 +1313,10 @@ const Viewport = forwardRef(({
   const [contourPlaneOpen, setContourPlaneOpen] = useState(false);
   const contourPlaneOpenRef = useRef(false);
   const [featureSlots, setFeatureSlots] = useState(null);
+  const [holeCard, setHoleCard] = useState(null);
+  const holeCardRef = useRef(null);
+  holeCardRef.current = holeCard;
+  const holeSpecRef = useRef(null);
   const featureSlotsRef = useRef(null);
   featureSlotsRef.current = featureSlots;
   const slotReturnRef = useRef(null);
@@ -3033,7 +3042,7 @@ const Viewport = forwardRef(({
    * when the point list changes — a live drag mutates positions in place so
    * the wire follows the cursor at frame rate instead of through React.
    */
-  const paintPolylineDraft = useCallback((plane, points, { wire = true, pointColors = null, pointIds = null } = {}) => {
+  const paintPolylineDraft = useCallback((plane, points, { wire = true, pointColors = null, pointIds = null, dashed = false } = {}) => {
     // A repaint (point added, undone, plane re-picked) rebuilds the handles;
     // carry the hover across it so the grab target does not flicker back to
     // idle under a stationary cursor.
@@ -3080,6 +3089,7 @@ const Viewport = forwardRef(({
         color: POLYLINE_POINT_COLOR,
         opacity: 0.9,
         resolution: edgeLineResolution(),
+        dashed,
       });
       group.add(line);
     }
@@ -3100,7 +3110,7 @@ const Viewport = forwardRef(({
   }, []);
 
   /** Promoted contour wire, one colour per entity. Blue stays on an unpromoted draft. */
-  const paintContourStatusWire = useCallback((plane, segments) => {
+  const paintContourStatusWire = useCallback((plane, segments, { dashed = false } = {}) => {
     clearContourStatusWire();
     if (!plane || !segments?.length || !sceneRef.current) return;
     const group = new Group();
@@ -3118,6 +3128,7 @@ const Viewport = forwardRef(({
         color: seg.color,
         opacity: 0.95,
         resolution: edgeLineResolution(),
+        dashed,
       });
       line.userData.entityId = seg.id || '';
       line.userData.entityKind = seg.kind || 'line';
@@ -3596,8 +3607,13 @@ const Viewport = forwardRef(({
       enterContourState(entry, faceArg),
       characteristicLengthMm({ bounds: modelBoundsRef.current }),
     );
-    const armed = saved.find((c) => c.id === armedContourId);
-    next = armed ? applySavedContour(next, armed) : withAutoPickedContour(next, saved);
+    if (entry === 'hole' && holeSpecRef.current) {
+      next = { ...next, holeSpec: holeSpecRef.current };
+    }
+    if (entry !== 'hole') {
+      const armed = saved.find((c) => c.id === armedContourId);
+      next = armed ? applySavedContour(next, armed) : withAutoPickedContour(next, saved);
+    }
     contourPlaneOpenRef.current = true;
     setContourPlaneOpen(true);
     sketchHistRef.current = emptySketchHistory();
@@ -3608,6 +3624,43 @@ const Viewport = forwardRef(({
     if (next.enterRefuse) showContourToast(next.enterRefuse);
     applyContourPartGhost(true);
   }, [mode, openFeatureSlots, selectedFace, selectedPlaneId, armedContourId, applyContourPartGhost, clearFilletBlendPreview, clearEdgeHover, clearEdgeHighlight, getHelperBuffer, currentScript]);
+
+  const beginHoleSketch = useCallback(() => {
+    const parsed = holeSpecFromCard(holeCardRef.current || defaultHoleCard());
+    if (!parsed.ok) {
+      showContourToast(parsed.message);
+      return;
+    }
+    holeSpecRef.current = parsed.spec;
+    setHoleCard(null);
+    enterContourMode({ entry: 'hole' });
+  }, [enterContourMode, showContourToast]);
+
+  useEffect(() => {
+    if (!holeCard) return;
+    if (
+      contourMode || filletMode || shellMode || draftMode || cutMode
+      || booleanMode || moveMode || moveFaceMode || deleteFaceMode
+      || featureSlots || sheetMetalMode || sheetMetalPicker || paintMode
+    ) {
+      setHoleCard(null);
+    }
+  }, [
+    holeCard, contourMode, filletMode, shellMode, draftMode, cutMode,
+    booleanMode, moveMode, moveFaceMode, deleteFaceMode, featureSlots,
+    sheetMetalMode, sheetMetalPicker, paintMode,
+  ]);
+
+  useEffect(() => {
+    if (!isHoleEntry(contourMode?.entry) || contourPlaneOpen) return undefined;
+    const onKey = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      cancelContourEditor();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [contourMode, contourPlaneOpen, cancelContourEditor]);
 
   const beginNewContour = useCallback((slot) => {
     if (!featureSlotsRef.current || !slot) return;
@@ -3686,6 +3739,22 @@ const Viewport = forwardRef(({
   const confirmContourProfile = useCallback(() => {
     const state = contourModeRef.current;
     if (!state) return;
+    if (isHoleEntry(state.entry)) {
+      const contour = holeSketchContour(state);
+      if (!contour?.points?.length) {
+        exitContourMode();
+        return;
+      }
+      const commitFace = activeContourFace(state, modelBounds);
+      const ok = onCommitHole?.({
+        partId: activePartIdRef.current,
+        frame: planeFromContourFace(commitFace),
+        contour,
+        spec: state.holeSpec || {},
+      });
+      if (ok) exitContourMode();
+      return;
+    }
     // Nothing drawn. Confirm must not toast, and must not emit an empty
     // polygon or the loft station's circle.
     if (
@@ -3842,7 +3911,7 @@ const Viewport = forwardRef(({
     if (ok) {
       exitContourMode();
     }
-  }, [onCommitContourProfile, selectedEdges, modelBounds, exitContourMode, getHelperBuffer]);
+  }, [onCommitContourProfile, onCommitHole, selectedEdges, modelBounds, exitContourMode, getHelperBuffer]);
 
   const commitContourDelete = useCallback((withFeatures) => {
     const edit = contourEditRef.current;
@@ -4622,7 +4691,8 @@ const Viewport = forwardRef(({
     .map((pick) => `${pick.partId}:${pick.key.id}`)
     .join('|');
 
-  const planeToolOpen = isWorkplaneEntry(contourMode?.entry);
+  const holePlaneCard = isHoleEntry(contourMode?.entry) && contourPlaneOpen;
+  const planeToolOpen = isWorkplaneEntry(contourMode?.entry) || holePlaneCard;
   // A selected face hides XY/YZ/ZX. The rail hold stays on, so closing the
   // tool still restores whatever visibility the planes toggle had before.
   const planeFaceSelected = planeToolOpen && !!selectedFace;
@@ -4783,6 +4853,38 @@ const Viewport = forwardRef(({
       // A face tap or an X/Y/Z pick stores planeFace. Until then there is
       // no new plane to preview. Offset and angles are already in that frame.
       if (contourMode.planeFace) paintPlaneToolPreview(planeFromContourFace(contourMode.planeFace));
+      return;
+    }
+    if (isHoleEntry(contourMode.entry)) {
+      clearXsPreview();
+      clearExtrudePreview();
+      clearRevolvePreview();
+      clearLoftPreview();
+      clearSweepPreview();
+      const holeHandles = sketchHandles(contourMode);
+      const holePts = holeHandles.map((h) => h.at);
+      const holeIds = holeHandles.map((h) => h.id);
+      const holePicks = sketchHighlightPicks(contourMode);
+      const holeRefs = referencePaintSegments(contourMode.params?.contour, holePicks);
+      if (holeRefs.length) paintContourRefWire(plane, holeRefs);
+      else clearContourRefWire();
+      const holePaint = highlightContourPaint(
+        contourMode.params?.contour ? contourPaintModel(contourMode.params.contour) : null,
+        contourMode.params?.contour,
+        holePicks,
+      );
+      if (holePts.length) {
+        paintPolylineDraft(plane, holePts, {
+          wire: !holePaint && holePts.length >= 2,
+          pointColors: holePaint?.pointColors || null,
+          pointIds: holeIds,
+          dashed: true,
+        });
+      } else {
+        clearPolylineDraft();
+      }
+      if (holePaint) paintContourStatusWire(plane, holePaint.segments, { dashed: true });
+      else clearContourStatusWire();
       return;
     }
     const handles = sketchHandles(contourMode);
@@ -9980,7 +10082,25 @@ const Viewport = forwardRef(({
               aim: containerRef.current?.getAttribute('data-contour-face-aim') || '',
               highlights: Array.isArray(meshes) ? meshes.length : (meshes ? 1 : 0),
               planePreset: contourModeRef.current?.planePreset || '',
+              entry: contourModeRef.current?.entry || '',
               tool: contourModeRef.current?.tool || '',
+              sketchLines: (() => {
+                const rows = [];
+                const walk = (group) => {
+                  group?.traverse?.((child) => {
+                    if (!child?.userData || child.userData.sketchDashed == null) return;
+                    const color = child.material?.color?.getHex?.();
+                    rows.push({
+                      name: group.name || '',
+                      dashed: child.userData.sketchDashed === true,
+                      color: Number.isFinite(color) ? color : null,
+                    });
+                  });
+                };
+                walk(polylineDraftRef.current);
+                walk(contourStatusRef.current);
+                return rows;
+              })(),
               points: Array.isArray(contourModeRef.current?.params?.points)
                 ? contourModeRef.current.params.points.length
                 : 0,
@@ -12227,6 +12347,10 @@ const Viewport = forwardRef(({
             if (isSolidContourEntry(payload?.entry)) openFeatureSlots(payload.entry);
             else enterContourMode(payload);
           }}
+          onEnterHoleMode={mode !== 'game' ? () => {
+            holeSpecRef.current = null;
+            setHoleCard(defaultHoleCard());
+          } : null}
           onEnterFilletMode={enterFilletMode}
           onEnterShellMode={enterShellMode}
           onEnterDraftMode={enterDraftMode}
@@ -12643,6 +12767,20 @@ const Viewport = forwardRef(({
               : { ...result.state, dimensionEdit: null, constraintEdit: null };
             const stored = saveContourBlock(next);
             setContourMode(stored || next);
+          }}
+        />
+      )}
+
+      {holeCard && !contourMode && mode !== 'game' && !filletMode && !shellMode && !draftMode && !cutMode && !booleanMode && !moveMode && !moveFaceMode && !deleteFaceMode && !featureSlots && !sheetMetalMode && !paintMode && (
+        <HoleCard
+          card={holeCard}
+          compact={isMobile}
+          lengthMm={characteristicLengthMm({ bounds: modelBounds })}
+          onChange={setHoleCard}
+          onNext={beginHoleSketch}
+          onCancel={() => {
+            holeSpecRef.current = null;
+            setHoleCard(null);
           }}
         />
       )}

@@ -1807,7 +1807,7 @@ export const HELPER_PALETTE_ITEMS = [
     id: 'hole',
     label: 'Hole',
     group: 'Features',
-    title: 'Hole — clearance or tap drill, single or n×m pattern, with optional c-bore / c-sink on each end',
+    title: 'Hole — clearance or tap drill on a contour, with optional c-bore / c-sink on each end',
     // `pattern: true` is what retired the separate Hole grid button: tick
     // "n×m pattern" here and the build emits holePattern() instead of a single
     // hole (the c-bore / c-sink end fields hide themselves, since a pattern

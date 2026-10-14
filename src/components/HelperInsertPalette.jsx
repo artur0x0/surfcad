@@ -121,6 +121,8 @@ const HelperInsertPalette = ({
   /** Before a tap opens a sheet or mode: App loads the picked part into the editor. */
   onOpen = null,
   onEnterContourMode = null,
+  /** CAD Hole opens the params card, then the plane. Game keeps the helper sheet. */
+  onEnterHoleMode = null,
   onEnterFilletMode = null,
   onEnterShellMode = null,
   onEnterDraftMode = null,
@@ -229,8 +231,13 @@ const HelperInsertPalette = ({
       return;
     }
     setRefuseTitle(null);
-    // Slice 24/25/26/28/30: Extrude / Revolve / Loft / Sweep / Profile enter contour mode.
-    if (isContourEntry(item.id) && typeof onEnterContourMode === 'function') {
+    // Hole is a contour entry so the sketch keeps that id. The card comes first.
+    // Game has no card handler and keeps the docked helper sheet.
+    if (item.id === 'hole' && typeof onEnterHoleMode === 'function') {
+      onEnterHoleMode();
+      return;
+    }
+    if (item.id !== 'hole' && isContourEntry(item.id) && typeof onEnterContourMode === 'function') {
       onEnterContourMode({ entry: item.id });
       return;
     }
