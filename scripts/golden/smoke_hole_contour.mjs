@@ -4,7 +4,7 @@
  *
  * The card has type, size, fit, diameter, through, side, and ends.
  * Next opens the plane card and the XY / YZ / ZX quads. Select plane aims
- * the camera. The rail is Cursor, Polyline, Arc, Dimension, Constraints.
+ * the camera. The rail is Cursor, Rectangle, Polyline, Arc, Dimension, Constraints.
  * Sketch lines are dashed and stay the free-status colour. Accept writes
  * the centres contour and the hole block and parks the bar on hole1.
  * X, Esc, and an empty sketch write nothing.
@@ -196,11 +196,11 @@ async function runSize(browser, label, contextOptions) {
   await page.waitForFunction(() => (window.__VIEWPORT__.stageContourSketch().planePreview || []).length >= 3, null, { timeout: 4000 });
   const quads = await page.evaluate(() => window.__VIEWPORT__.stageContourSketch().planePreview.length);
   check(`${label} XY YZ ZX quads are drawn`, quads >= 3, String(quads));
-  const tools = ['cursor', 'polyline', 'arc', 'dimension', 'constraints'];
+  const tools = ['cursor', 'rectangle', 'polyline', 'arc', 'dimension', 'constraints'];
   for (const id of tools) {
     check(`${label} rail has ${id}`, await page.locator(`[data-contour-tool="${id}"]`).count() === 1);
   }
-  for (const id of ['circle', 'rectangle', 'polygon']) {
+  for (const id of ['circle', 'polygon']) {
     check(`${label} rail hides ${id}`, await page.locator(`[data-contour-tool="${id}"]`).count() === 0);
   }
   await page.screenshot({ path: join(SHOT_DIR, `hole-plane-${label}.png`) });

@@ -8,7 +8,7 @@
  * is still that contour.
  */
 
-import { contourFromPolyline } from './contourSolve.js';
+import { contourFromPolyline, contourFromRectangle } from './contourSolve.js';
 
 export const HOLE_SIZE_OPTIONS = ['M2', 'M2.5', 'M3', 'M4', 'M5', 'M6', 'M8', 'M10'];
 export const HOLE_FIT_OPTIONS = ['close', 'normal', 'loose'];
@@ -116,30 +116,43 @@ export function holeSpecFromCard(card) {
   return { ok: true, spec };
 }
 
+function withConstruction(contour) {
+  return {
+    points: contour.points || [],
+    lines: (contour.lines || []).map((line) => ({ ...line, construction: line.construction !== false })),
+    arcs: contour.arcs || [],
+    dimensions: contour.dimensions || [],
+    constraints: contour.constraints || [],
+    refs: contour.refs || [],
+  };
+}
+
 /**
  * Centres for Accept. A promoted contour wins, including one with no points.
+ * A rectangle is that tool's four corners, with its dimensions and constraints.
  * Otherwise each tapped point is a centre and the segments between them are
  * lines. Nothing drawn, and no contour object, is null.
  */
 export function holeSketchContour(state) {
-  const contour = state?.params?.contour;
-  if (contour && Array.isArray(contour.points)) {
-    return {
-      points: contour.points,
-      lines: contour.lines || [],
-      arcs: contour.arcs || [],
-      dimensions: contour.dimensions || [],
-      constraints: contour.constraints || [],
-      refs: contour.refs || [],
-    };
+  const params = state?.params || {};
+  const contour = params.contour;
+  if (contour && Array.isArray(contour.points)) return withConstruction(contour);
+  const raw = params.points;
+  if (Array.isArray(raw) && raw.length > 0) {
+    try {
+      return withConstruction(contourFromPolyline(raw));
+    } catch {
+      return null;
+    }
   }
-  const raw = state?.params?.points;
-  if (!Array.isArray(raw) || raw.length === 0) return null;
-  try {
-    return contourFromPolyline(raw);
-  } catch {
-    return null;
+  if (params.width != null && params.height != null) {
+    try {
+      return withConstruction(contourFromRectangle(params.width, params.height, params.centered !== false));
+    } catch {
+      return null;
+    }
   }
+  return null;
 }
 
 /**

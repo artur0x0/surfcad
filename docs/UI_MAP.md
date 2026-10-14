@@ -862,9 +862,10 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
   type, fastener size, fit, raw diameter, through or a depth, side, near end,
   and far end. No U/V and no n×m. Next opens the contour plane card
   (`data-plane-editor`) and the XY, YZ, and ZX quads. Select plane stores that
-  frame, aims the camera, and leaves the rail on Cursor, Polyline, Arc,
-  Dimension, and Constraints. Sketch lines are dashed and keep the status
-  colour. Accept writes the centres contour (`role=centers`) and the Hole
+  frame, aims the camera, and leaves the rail on Cursor, Rectangle, Polyline,
+  Arc, Dimension, and Constraints. Rectangle puts a hole at each corner and
+  keeps that tool's dimensions and constraints. Circle and Polygon stay off
+  this rail. Sketch lines are dashed and keep the status colour. Accept writes the centres contour (`role=centers`) and the Hole
   block in one undo and parks the bar on the new hole chip. No centres writes
   nothing. X and Esc write nothing. An old hole block still opens the helper
   sheet. This button does not convert it.
