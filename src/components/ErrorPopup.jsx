@@ -39,7 +39,7 @@ export default function ErrorPopup({
   const [roomyMinPx, setRoomyMinPx] = useState(null);
 
   // Delete Undo used to be exactly one content row plus the border. The card
-  // is 1.5× that height. The row itself stays one line and does not stretch,
+  // is 2× that height. The row itself stays one line and does not stretch,
   // so the gap between Undo and X is unchanged.
   useLayoutEffect(() => {
     if (!roomy) return undefined;
@@ -53,7 +53,7 @@ export default function ErrorPopup({
       + (parseFloat(cs.borderBottomWidth) || 0)
       + (parseFloat(cs.paddingTop) || 0)
       + (parseFloat(cs.paddingBottom) || 0);
-    const next = (rowH + chrome) * 1.5;
+    const next = (rowH + chrome) * 2;
     setRoomyMinPx((prev) => (prev != null && Math.abs(prev - next) < 0.5 ? prev : next));
     return undefined;
   }, [roomy, children]);

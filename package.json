@@ -246,6 +246,7 @@
         "golden:git-g3-commit-push": "node scripts/golden/smoke_git_g3_commit_push.mjs",
         "golden:git-g4-pull-conflicts": "node scripts/golden/smoke_git_g4_pull_conflicts.mjs",
         "golden:playtest-toasts": "node scripts/golden/smoke_playtest_toasts.mjs",
+        "golden:feature-card-gap": "node scripts/golden/smoke_feature_card_gap.mjs",
         "golden:git-g5-branch-view": "node scripts/golden/smoke_git_g5_branch_view.mjs",
         "golden:git-g6-move-to-git": "node scripts/golden/smoke_git_g6_move_to_git.mjs",
         "golden:git-g7-real-adapter": "node scripts/golden/smoke_git_g7_real_adapter.mjs",

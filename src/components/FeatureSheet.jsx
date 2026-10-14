@@ -460,8 +460,10 @@ export default function FeatureSheet({
         ) : null}
       </div>
       {!editing && (footer || note || onConfirm) ? (
+        // pt-4 is the shared gap above Delete/Confirm. The fillet link row
+        // and every other card on this shell use it instead of a per-card margin.
         <div
-          className={`shrink-0 px-3 pt-1 ${compact ? '' : 'pb-2'}`}
+          className={`shrink-0 px-3 pt-4 ${compact ? '' : 'pb-2'}`}
           style={compact
             ? { paddingBottom: 'max(8px, env(safe-area-inset-bottom, 0px))' }
             : undefined}
