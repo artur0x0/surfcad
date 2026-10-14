@@ -97,14 +97,52 @@ function drawnProfileTool(tool, params) {
   return 'circle';
 }
 
+function moveUv(uv, du, dv) {
+  if (!Array.isArray(uv) || uv.length < 2) return uv;
+  return [Number(uv[0]) + du, Number(uv[1]) + dv];
+}
+
+function moveAtMap(at, du, dv) {
+  if (!at || typeof at !== 'object' || Array.isArray(at)) return at;
+  return Object.fromEntries(Object.entries(at).map(([id, uv]) => [id, moveUv(uv, du, dv)]));
+}
+
+/** A dragged primitive stores `origin`. Promotion has to take that shift with it. */
+function translateBuiltContour(spec, origin) {
+  const du = Number(origin?.[0]) || 0;
+  const dv = Number(origin?.[1]) || 0;
+  if (Math.abs(du) < 1e-12 && Math.abs(dv) < 1e-12) return spec;
+  return {
+    ...spec,
+    points: (spec.points || []).map((p) => ({
+      ...p,
+      at: moveUv(p.at, du, dv),
+      ...(Array.isArray(p.seed) ? { seed: moveUv(p.seed, du, dv) } : {}),
+    })),
+    constraints: (spec.constraints || []).map((c) => (
+      c.at ? { ...c, at: moveAtMap(c.at, du, dv) } : c
+    )),
+    dimensions: (spec.dimensions || []).map((d) => {
+      if (!d.at && !Array.isArray(d.anchors)) return d;
+      return {
+        ...d,
+        ...(d.at ? { at: moveAtMap(d.at, du, dv) } : {}),
+        ...(Array.isArray(d.anchors) ? { anchors: d.anchors.map((uv) => moveUv(uv, du, dv)) } : {}),
+      };
+    }),
+  };
+}
+
 export function contourFromTool(tool, params = {}) {
   const p = params || {};
   if (p.contour) return p.contour;
   const kind = drawnProfileTool(tool, p);
   if (kind === 'polyline') return contourFromPolyline(p.points || []);
-  if (kind === 'rectangle') return contourFromRectangle(p.width, p.height, p.centered !== false);
-  if (kind === 'polygon') return contourFromPolygon(p.polygonPreset || 'hexagon', p.radius);
-  return contourFromCircle(p.radius, p.segments ?? 64);
+  let spec;
+  if (kind === 'rectangle') spec = contourFromRectangle(p.width, p.height, p.centered !== false);
+  else if (kind === 'polygon') spec = contourFromPolygon(p.polygonPreset || 'hexagon', p.radius);
+  else spec = contourFromCircle(p.radius, p.segments ?? 64);
+  return translateBuiltContour(spec, p.origin);
 }
 
 export function promoteContourState(state) {

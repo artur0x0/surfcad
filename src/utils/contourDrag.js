@@ -1,10 +1,14 @@
 /**
- * Drag one contour point.
+ * Drag one contour point, or translate a whole shape.
  *
- * The drag is a temporary lock, not a stored constraint. The cursor delta is
- * projected onto that point's nullspace block. A fully constrained point and
- * a contour already in conflict do not move. A temporary fix then re-solves.
- * If that lock is inconsistent, the last feasible contour is kept.
+ * A point drag is a temporary lock, not a stored constraint. The cursor
+ * delta is projected onto that point's nullspace block. A fully constrained
+ * point and a contour already in conflict do not move. A temporary fix then
+ * re-solves. If that lock is inconsistent, the last feasible contour is kept.
+ *
+ * A shape drag projects one translation onto the contour nullspace and
+ * re-solves. A free shape moves. A fully locked shape does not. A partly
+ * constrained shape moves only along the directions the solver still allows.
  *
  * This module does not write the script. The viewport writes seeds on
  * pointer-up, and only when a contour block is already in the script.
@@ -157,6 +161,118 @@ export function dragContourPoint(spec, pointId, targetUv) {
   };
 }
 
+function shapeHold(spec, extra = {}) {
+  return { spec, moved: false, shape: true, ...extra };
+}
+
+/**
+ * Project a rigid translation onto the contour nullspace.
+ * Arc-radius coordinates stay put unless a free mode couples them.
+ */
+function projectTranslation(nullspace, pointCount, du, dv) {
+  const sample = nullspace?.[0];
+  const n = sample?.length || pointCount * 2;
+  const projected = new Array(n).fill(0);
+  let energy = 0;
+  for (const vec of nullspace || []) {
+    let dot = 0;
+    for (let i = 0; i < pointCount; i += 1) {
+      dot += du * (vec[i * 2] || 0) + dv * (vec[i * 2 + 1] || 0);
+    }
+    energy += dot * dot;
+    for (let k = 0; k < vec.length; k += 1) projected[k] += dot * (vec[k] || 0);
+  }
+  return { projected, energy };
+}
+
+function solvedSpec(spec, solved) {
+  return {
+    points: solved.points.map((p) => ({ id: p.id, at: p.at.slice() })),
+    lines: (spec.lines || []).map((l) => ({ ...l })),
+    arcs: (solved.arcs || []).map((a) => {
+      const arc = { ...a };
+      delete arc.seedRadius;
+      return arc;
+    }),
+    dimensions: (spec.dimensions || []).map((d) => ({ ...d })),
+    constraints: (spec.constraints || []).map((c) => ({ ...c })),
+    ...(spec.refs ? { refs: spec.refs.map((ref) => ({ ...ref })) } : {}),
+    ...(spec.polyline ? { polyline: true } : {}),
+    ...(spec.centers ? { centers: true } : {}),
+  };
+}
+
+/** True when some translation is still a degree of freedom. */
+export function contourShapeDragAllowed(spec) {
+  if (!spec?.points?.length) return false;
+  let analyzed;
+  try {
+    analyzed = analyzeContour(spec);
+  } catch {
+    return false;
+  }
+  if (analyzed.status === 'conflict') return false;
+  const along = projectTranslation(analyzed.nullspace, analyzed.points.length, 1, 0);
+  const across = projectTranslation(analyzed.nullspace, analyzed.points.length, 0, 1);
+  return along.energy > BLOCK_EPS || across.energy > BLOCK_EPS;
+}
+
+/**
+ * Translate the whole contour by `deltaUv`, from the last feasible shape.
+ * Does not mutate `spec`. A zero projection, a conflict, or an inconsistent
+ * re-solve keeps that shape.
+ */
+export function dragContourShape(spec, deltaUv) {
+  if (!spec?.points?.length || !Array.isArray(deltaUv)) return shapeHold(spec);
+  const du = Number(deltaUv[0]) || 0;
+  const dv = Number(deltaUv[1]) || 0;
+  let analyzed;
+  try {
+    analyzed = analyzeContour(spec);
+  } catch {
+    return shapeHold(spec, { held: true });
+  }
+  if (analyzed.status === 'conflict') return shapeHold(spec, { held: true });
+  const { projected, energy } = projectTranslation(analyzed.nullspace, analyzed.points.length, du, dv);
+  if (!(energy > BLOCK_EPS)) return shapeHold(spec, { held: true });
+  const n = analyzed.points.length;
+  const points = analyzed.points.map((p, i) => ({
+    id: p.id,
+    at: [p.at[0] + (projected[i * 2] || 0), p.at[1] + (projected[i * 2 + 1] || 0)],
+  }));
+  const trial = {
+    ...spec,
+    points,
+    arcs: (spec.arcs || []).map((a, i) => {
+      const arc = { ...a };
+      delete arc.seedRadius;
+      const dr = projected[n * 2 + i] || 0;
+      if (Math.abs(dr) > 1e-9 && Number.isFinite(Number(arc.radius))) {
+        arc.radius = Number(arc.radius) + dr;
+      }
+      return arc;
+    }),
+    constraints: (spec.constraints || []).map((c) => ({ ...c })),
+  };
+  let solved;
+  try {
+    solved = analyzeContour(trial);
+  } catch {
+    return shapeHold(spec, { held: true, inconsistent: true });
+  }
+  if (solved.status === 'conflict') return shapeHold(spec, { held: true, inconsistent: true });
+  const next = solvedSpec(spec, solved);
+  const before = Object.fromEntries((spec.points || []).map((p) => [p.id, p.at]));
+  let travel = 0;
+  for (const point of next.points) {
+    const at = before[point.id];
+    if (!at) continue;
+    travel = Math.max(travel, Math.hypot(point.at[0] - at[0], point.at[1] - at[1]));
+  }
+  if (!(travel > 1e-4)) return shapeHold(spec, { held: true });
+  return { spec: next, moved: true, held: false, shape: true };
+}
+
 /** Write solved seeds into contour-mode state. Does not touch the script. */
 export function applyDraggedContour(state, spec) {
   if (!state || !spec) return state;
@@ -200,6 +316,27 @@ function polygonVertices(preset, radius) {
   return pts;
 }
 
+function originOf(params) {
+  const o = params?.origin;
+  return [Number(o?.[0]) || 0, Number(o?.[1]) || 0];
+}
+
+function placed(at, origin) {
+  return [(Number(at?.[0]) || 0) + origin[0], (Number(at?.[1]) || 0) + origin[1]];
+}
+
+/** Circle, rectangle, or polygon params still draw when Cursor is the tool. */
+function activeSketchKind(state) {
+  const tool = state?.tool;
+  const params = state?.params || {};
+  if (tool === 'rectangle' || tool === 'circle' || tool === 'polygon' || tool === 'polyline') return tool;
+  if (tool !== 'cursor') return null;
+  if (params.polygonPreset) return 'polygon';
+  if (params.width != null || params.height != null) return 'rectangle';
+  if (Number(params.radius) > 0) return 'circle';
+  return null;
+}
+
 /**
  * Grab points for the sketch that is on screen. A contour wins, then a
  * drawn polyline, then the active primitive. The tool id does not hide them.
@@ -221,24 +358,25 @@ export function sketchHandles(state) {
       kind: 'polyline',
     }));
   }
-  const tool = state?.tool;
+  const kind = activeSketchKind(state);
   const params = state?.params || {};
-  if (tool === 'rectangle') {
+  const origin = originOf(params);
+  if (kind === 'rectangle') {
     return rectangleCorners(params.width, params.height, params.centered !== false).map((at, i) => ({
       id: `p${i}`,
-      at,
+      at: placed(at, origin),
       kind: 'rectangle',
     }));
   }
-  if (tool === 'circle') {
+  if (kind === 'circle') {
     const r = Number(params.radius) || 0;
     if (!(r > 0)) return [];
-    return [{ id: 'rim', at: [r, 0], kind: 'circle' }];
+    return [{ id: 'rim', at: placed([r, 0], origin), kind: 'circle' }];
   }
-  if (tool === 'polygon') {
+  if (kind === 'polygon') {
     return polygonVertices(params.polygonPreset || 'hexagon', params.radius).map((at, i) => ({
       id: `p${i + 1}`,
-      at,
+      at: placed(at, origin),
       kind: 'polygon',
     }));
   }
@@ -246,25 +384,29 @@ export function sketchHandles(state) {
 }
 
 /**
- * Drag an unpromoted circle, rectangle, or polygon. The patch is width,
- * height, or radius. Fully constrained contours do not come through here.
+ * Drag an unpromoted circle, rectangle, or polygon point. The patch is
+ * width, height, or radius, measured from `params.origin`. Fully
+ * constrained contours do not come through here.
  */
 export function dragSketchParam(kind, params, index, uv) {
   const p = params || {};
   const u = Number(uv?.[0]);
   const v = Number(uv?.[1]);
   if (!Number.isFinite(u) || !Number.isFinite(v)) return null;
+  const [ou, ov] = originOf(p);
+  const ru = u - ou;
+  const rv = v - ov;
   if (kind === 'circle') {
-    const radius = Math.max(0.1, Math.hypot(u, v));
+    const radius = Math.max(0.1, Math.hypot(ru, rv));
     return { params: { radius }, handles: [{ id: 'rim', at: [u, v] }] };
   }
   if (kind === 'polygon') {
-    const radius = Math.max(0.1, Math.hypot(u, v));
+    const radius = Math.max(0.1, Math.hypot(ru, rv));
     return {
       params: { radius },
       handles: polygonVertices(p.polygonPreset || 'hexagon', radius).map((at, i) => ({
         id: `p${i + 1}`,
-        at,
+        at: placed(at, [ou, ov]),
       })),
     };
   }
@@ -273,21 +415,59 @@ export function dragSketchParam(kind, params, index, uv) {
   let width = Number(p.width) || 0;
   let height = Number(p.height) || 0;
   if (centered) {
-    width = Math.max(0.1, 2 * Math.abs(u));
-    height = Math.max(0.1, 2 * Math.abs(v));
+    width = Math.max(0.1, 2 * Math.abs(ru));
+    height = Math.max(0.1, 2 * Math.abs(rv));
   } else if (index === 1) {
-    width = Math.max(0.1, u);
+    width = Math.max(0.1, ru);
   } else if (index === 2) {
-    width = Math.max(0.1, u);
-    height = Math.max(0.1, v);
+    width = Math.max(0.1, ru);
+    height = Math.max(0.1, rv);
   } else if (index === 3) {
-    height = Math.max(0.1, v);
+    height = Math.max(0.1, rv);
   } else {
     return null;
   }
   return {
     params: { width, height },
-    handles: rectangleCorners(width, height, centered).map((at, i) => ({ id: `p${i}`, at })),
+    handles: rectangleCorners(width, height, centered).map((at, i) => ({
+      id: `p${i}`,
+      at: placed(at, [ou, ov]),
+    })),
+  };
+}
+
+/**
+ * Translate an unpromoted circle, rectangle, polygon, or polyline.
+ * Primitives keep their size and store the shift as `origin`. A polyline
+ * adds the delta to every point. Does not mutate `params`.
+ */
+export function dragSketchShape(kind, params, deltaUv) {
+  const du = Number(deltaUv?.[0]) || 0;
+  const dv = Number(deltaUv?.[1]) || 0;
+  const p = params || {};
+  const moved = Math.hypot(du, dv) > 1e-9;
+  if (kind === 'polyline') {
+    const points = (Array.isArray(p.points) ? p.points : []).map((pt) => [
+      (Number(pt?.[0]) || 0) + du,
+      (Number(pt?.[1]) || 0) + dv,
+    ]);
+    return {
+      params: { points },
+      handles: points.map((at, i) => ({ id: `p${i}`, at })),
+      moved,
+      shape: true,
+    };
+  }
+  if (kind !== 'circle' && kind !== 'rectangle' && kind !== 'polygon') {
+    return { params: {}, handles: [], moved: false, shape: true };
+  }
+  const [ou, ov] = originOf(p);
+  const origin = [ou + du, ov + dv];
+  return {
+    params: { origin },
+    handles: sketchHandles({ tool: kind, params: { ...p, origin } }),
+    moved,
+    shape: true,
   };
 }
 
@@ -308,6 +488,108 @@ function distToSeg(p, a, b) {
   let t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2;
   t = Math.max(0, Math.min(1, t));
   return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+
+function pointInEdges(p, edges) {
+  let inside = false;
+  for (const [a, b] of edges) {
+    const yi = a[1];
+    const yj = b[1];
+    if ((yi > p[1]) === (yj > p[1])) continue;
+    const x = ((b[0] - a[0]) * (p[1] - yi)) / (yj - yi) + a[0];
+    if (p[0] < x) inside = !inside;
+  }
+  return inside;
+}
+
+function loopShapeHit(points, p, slop, kind, closed) {
+  const n = points.length;
+  if (n < 2) return null;
+  const count = closed ? n : n - 1;
+  const edges = [];
+  let best = Infinity;
+  for (let i = 0; i < count; i += 1) {
+    const a = points[i];
+    const b = points[(i + 1) % n];
+    edges.push([a, b]);
+    best = Math.min(best, distToSeg(p, a, b));
+  }
+  if (best <= slop) return { kind, hit: 'edge' };
+  if (closed && n >= 3 && pointInEdges(p, edges)) return { kind, hit: 'interior' };
+  return null;
+}
+
+function contourShapeHit(spec, p, slop) {
+  const edges = [];
+  const degree = new Map();
+  for (const line of spec.lines || []) {
+    if (!line || line.guide) continue;
+    const a = (spec.points || []).find((pt) => pt.id === line.a)?.at;
+    const b = (spec.points || []).find((pt) => pt.id === line.b)?.at;
+    if (!a || !b) continue;
+    edges.push([a, b]);
+    degree.set(line.a, (degree.get(line.a) || 0) + 1);
+    degree.set(line.b, (degree.get(line.b) || 0) + 1);
+  }
+  let best = Infinity;
+  for (const [a, b] of edges) best = Math.min(best, distToSeg(p, a, b));
+  if (edges.length && best <= slop) return { kind: 'contour', hit: 'edge' };
+  const closed = edges.length >= 3 && [...degree.values()].every((n) => n === 2);
+  if (closed && pointInEdges(p, edges)) return { kind: 'contour', hit: 'interior' };
+  for (const arc of spec.arcs || []) {
+    if (!arc?.full) continue;
+    const center = (spec.points || []).find((pt) => pt.id === arc.center)?.at;
+    const r = Number(arc.radius) || 0;
+    if (!center || !(r > 0)) continue;
+    const d = Math.hypot(p[0] - center[0], p[1] - center[1]);
+    if (Math.abs(d - r) <= slop) return { kind: 'contour', hit: 'edge', id: arc.id };
+    if (d < r) return { kind: 'contour', hit: 'interior', id: arc.id };
+  }
+  return null;
+}
+
+/**
+ * Edge or interior of the shape under `uv`, in plane millimetres.
+ * `edgeSlop` is the fat edge. A point handle is the caller's job: a vertex
+ * is also on its edge.
+ * @returns {{ kind: string, hit: 'edge'|'interior', id?: string }|null}
+ */
+export function sketchShapeAt(state, uv, edgeSlop = 0) {
+  const u = Number(uv?.[0]);
+  const v = Number(uv?.[1]);
+  if (!Number.isFinite(u) || !Number.isFinite(v)) return null;
+  const slop = Math.max(0, Number(edgeSlop) || 0);
+  const p = [u, v];
+  const spec = state?.params?.contour;
+  if (spec?.points?.length) return contourShapeHit(spec, p, slop);
+  const raw = state?.params?.points;
+  if (Array.isArray(raw) && raw.length >= 2) {
+    const points = raw.map((pt) => [Number(pt?.[0]) || 0, Number(pt?.[1]) || 0]);
+    return loopShapeHit(points, p, slop, 'polyline', raw.length >= POLYLINE_CLOSE_MIN);
+  }
+  const kind = activeSketchKind(state);
+  const params = state?.params || {};
+  const origin = originOf(params);
+  if (kind === 'circle') {
+    const r = Number(params.radius) || 0;
+    if (!(r > 0)) return null;
+    const d = Math.hypot(p[0] - origin[0], p[1] - origin[1]);
+    if (Math.abs(d - r) <= slop) return { kind, hit: 'edge' };
+    if (d < r) return { kind, hit: 'interior' };
+    return null;
+  }
+  if (kind === 'rectangle') {
+    const corners = rectangleCorners(params.width, params.height, params.centered !== false)
+      .map((at) => placed(at, origin));
+    return loopShapeHit(corners, p, slop, 'rectangle', true);
+  }
+  if (kind === 'polygon') {
+    const corners = polygonVertices(params.polygonPreset || 'hexagon', params.radius)
+      .map((at) => placed(at, origin));
+    if (corners.length < 3) return null;
+    return loopShapeHit(corners, p, slop, 'polygon', true);
+  }
+  return null;
 }
 
 /** Split the nearest profile edge so a new polyline point stays on the chain. */
