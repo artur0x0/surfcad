@@ -100,6 +100,7 @@ export function writeContourProfileBlock(buffer, payload = {}) {
     name: payload.contourName || null,
     frame: planeFromContourFace(planar),
     profileExpr,
+    ...(payload.planeOffset !== undefined ? { planeOffset: payload.planeOffset } : {}),
   });
   if (!saved.ok) return saved;
   return {

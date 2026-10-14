@@ -216,6 +216,7 @@ export function composeHoleOnContour(buffer, {
   contourName = null,
   featureId = null,
   spec = {},
+  planeOffset,
 } = {}) {
   const text = String(buffer || '');
   if (!featureMarkersBalanced(text, HOLE_BEGIN, HOLE_END)) {
@@ -266,6 +267,7 @@ export function composeHoleOnContour(buffer, {
       frame,
       profileExpr: profileExpr(contour),
       role: 'centers',
+      ...(planeOffset !== undefined ? { planeOffset } : {}),
     });
     if (!saved.ok) return saved;
     next = saved.buffer;
@@ -280,6 +282,7 @@ export function composeHoleOnContour(buffer, {
       frame: plane,
       profileExpr: profileExpr(contour),
       role: 'centers',
+      ...(planeOffset !== undefined ? { planeOffset } : {}),
     });
     if (!saved.ok) return saved;
     next = saved.buffer;
@@ -357,7 +360,13 @@ export function readCentersContour(buffer, contourId) {
   }
   const frame = frameFromStatement(stmt);
   if (!frame) return null;
-  return { id: stmt.id, name: stmt.name, frame, contour };
+  return {
+    id: stmt.id,
+    name: stmt.name,
+    frame,
+    contour,
+    planeOffset: Number.isFinite(Number(stmt.planeOffset)) ? Number(stmt.planeOffset) : 0,
+  };
 }
 
 /**
@@ -366,19 +375,27 @@ export function readCentersContour(buffer, contourId) {
  * @returns {{ ok: true, buffer: string, changed: boolean, run: boolean, contourId: string, contourName: string }
  *   | { ok: false, message: string }}
  */
-export function rewriteCentersContour(buffer, { contourId = null, contour = null } = {}) {
+export function rewriteCentersContour(buffer, {
+  contourId = null,
+  contour = null,
+  frame = null,
+  planeOffset,
+} = {}) {
   const text = String(buffer || '');
   const stmt = contourStatements(text).find((row) => row.id === contourId && row.role === 'centers');
   if (!stmt) return { ok: false, message: 'Hole could not find its contour.' };
-  const frame = frameFromStatement(stmt);
-  if (!frame) return { ok: false, message: 'Hole needs a plane.' };
+  const baked = frame?.center && frame?.normal && frame?.x && frame?.y
+    ? frame
+    : frameFromStatement(stmt);
+  if (!baked) return { ok: false, message: 'Hole needs a plane.' };
   const model = contour && Array.isArray(contour.points) ? contour : { points: [] };
   const saved = upsertNamedContour(text, {
     id: stmt.id,
     name: stmt.name,
-    frame,
+    frame: baked,
     profileExpr: profileExpr(model),
     role: 'centers',
+    ...(planeOffset !== undefined ? { planeOffset } : {}),
   });
   if (!saved.ok) return saved;
   const changed = saved.buffer !== text;

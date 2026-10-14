@@ -185,6 +185,7 @@ export function saveEditedContour(buffer, spec = {}) {
       name: stmt.name,
       frame: planeFromContourFace(face),
       profileExpr: emitPathProfileExpr(pts, closed),
+      ...(spec.planeOffset !== undefined ? { planeOffset: spec.planeOffset } : {}),
     });
     if (!saved.ok) return saved;
     next = saved.buffer;
@@ -195,6 +196,7 @@ export function saveEditedContour(buffer, spec = {}) {
       params,
       contourId: id,
       contourName: stmt.name,
+      ...(spec.planeOffset !== undefined ? { planeOffset: spec.planeOffset } : {}),
     });
     if (!saved.ok) return saved;
     next = saved.buffer;

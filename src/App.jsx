@@ -5633,10 +5633,17 @@ const App = () => {
       ? rewriteCentersContour(buf, {
         contourId: payload.contourId,
         contour: payload.contour,
+        frame: payload.frame,
+        planeOffset: payload.planeOffset,
       })
       : composeHoleOnContour(buf, payload?.editSpec
         ? { featureId: payload.featureId, spec: payload.spec }
-        : { frame: payload.frame, contour: payload.contour, spec: payload.spec });
+        : {
+          frame: payload.frame,
+          contour: payload.contour,
+          spec: payload.spec,
+          planeOffset: payload.planeOffset,
+        });
     if (!result.ok) {
       viewportRef.current?.softFailContour?.(result.message);
       return false;

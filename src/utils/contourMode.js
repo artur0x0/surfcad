@@ -1,6 +1,8 @@
 /**
  * Slice 24/25/26/28 — Contour-mode shell + Extrude / Revolve / Loft solid commit.
  * Workplane entry: plane-only mode (Face / construction plane + offset + rotate).
+ * Contour and hole plane cards share that offset. Accept moves the frame
+ * center along the normal, and the number is stored on the contour comment.
  *
  * Shared mode Extrude / Revolve / Loft own. Fillet-without-edges is Slice 27
  * (its own edge-pick mode — not a contour entry).
@@ -1047,9 +1049,57 @@ export function activeContourFace(state, bounds) {
 }
 
 /**
+ * Copy of a frame translated `offset` millimetres along its normal.
+ * Zero returns a copy and leaves the center where it is. The axes stay.
+ */
+export function contourPlaneOffsetFrame(frame, offset) {
+  const w = Number(offset);
+  if (!frame?.center || !frame?.normal || !frame?.x || !frame?.y) {
+    throw new Error('contourPlaneOffsetFrame: need center, normal, x, y');
+  }
+  if (!Number.isFinite(w) || w === 0) {
+    return {
+      center: frame.center.map(Number),
+      normal: frame.normal.map(Number),
+      x: frame.x.map(Number),
+      y: frame.y.map(Number),
+    };
+  }
+  return offsetPlaneFrame(frame, w);
+}
+
+/**
+ * Reopen a baked frame. `plane` is the shifted center. `planeOffset` is the
+ * number that produced it, so the next edit starts from the unshifted base.
+ */
+export function restoreContourPlane(state, plane, planeOffset = 0) {
+  if (!state || !plane?.center || !plane?.normal || !plane?.x || !plane?.y) return state;
+  const w = Number(planeOffset);
+  const offset = Number.isFinite(w) ? w : 0;
+  let base = plane;
+  try {
+    base = contourPlaneOffsetFrame(plane, offset === 0 ? 0 : -offset);
+  } catch {
+    base = plane;
+  }
+  let baked = plane;
+  try {
+    baked = contourPlaneOffsetFrame(plane, 0);
+  } catch {
+    baked = plane;
+  }
+  return {
+    ...state,
+    planeOffset: offset,
+    planeBase: base,
+    planeFace: _faceFromFrame(baked),
+  };
+}
+
+/**
  * Apply an X/Y/Z preset, a picked workplane/face frame, and/or angle sliders.
  * The result is stored on planeFace.planeFrame so live preview and Confirm
- * share one plane.
+ * share one plane. A non-zero offset moves that frame's center along the normal.
  */
 export function applyContourPlaneEdit(state, edit = {}) {
   if (!state) return state;
@@ -1076,12 +1126,10 @@ export function applyContourPlaneEdit(state, edit = {}) {
   const offsetRaw = edit.offset !== undefined ? edit.offset : state.planeOffset;
   const offset = Number(offsetRaw);
   const planeOffset = Number.isFinite(offset) ? offset : 0;
-  if (planeOffset !== 0) {
-    try {
-      frame = offsetPlaneFrame(frame, planeOffset);
-    } catch {
-      // Keep oriented frame if offset fails (bad frame).
-    }
+  try {
+    frame = contourPlaneOffsetFrame(frame, planeOffset);
+  } catch {
+    // Keep the oriented frame if the offset cannot be applied.
   }
   return {
     ...state,
@@ -1627,6 +1675,7 @@ export function composeContourProfile(buffer, {
   params = {},
   contourId = null,
   contourName = null,
+  planeOffset,
 } = {}) {
   if (cursorSketchEmpty({ tool, params })) {
     return { ok: true, buffer: String(buffer || ''), empty: true };
@@ -1640,6 +1689,7 @@ export function composeContourProfile(buffer, {
     name: contourName,
     frame: planeFromContourFace(planar),
     profileExpr: emitProfileExprFromParams(toolToProfileParams(tool, params)),
+    ...(planeOffset !== undefined ? { planeOffset } : {}),
   });
   if (!saved.ok) return saved;
   if (/makeExtrude\s*\(|makeRevolve\s*\(|makeLoft\s*\(|\bsweepPoints\s*\(/.test(saved.statement || '')) {
@@ -2672,6 +2722,7 @@ export function composePathContour(buffer, {
   face = null,
   tool = 'circle',
   params = {},
+  planeOffset,
 } = {}) {
   const gate = validateContourProfile(tool, params);
   if (!gate.ok) return gate;
@@ -2696,6 +2747,7 @@ export function composePathContour(buffer, {
   const saved = upsertNamedContour(buffer, {
     frame: planeFromContourFace(face && face.type === 'planar' ? face : null),
     profileExpr: emitPathProfileExpr(pts, pts.length >= 3),
+    ...(planeOffset !== undefined ? { planeOffset } : {}),
   });
   if (!saved.ok) return saved;
   return {

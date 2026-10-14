@@ -109,12 +109,14 @@ export function contourStatements(buffer) {
     if (!endMatch) continue;
     const marker = endMatch[0].match(/@contour\s+id\s*=\s*([A-Za-z_$][\w$]*)/);
     const role = endMatch[0].match(/\brole\s*=\s*([A-Za-z_$][\w$]*)/);
+    const offset = endMatch[0].match(/\boffset\s*=\s*(-?\d+(?:\.\d+)?)/);
     const name = bind[1];
     out.push({
       id: marker ? marker[1] : name,
       name,
       role: role ? role[1] : null,
       marker: marker ? marker[1] : null,
+      planeOffset: offset ? Number(offset[1]) : 0,
       start,
       end: call.end + 1 + endMatch[0].length,
       planeExpr: (call.args[0] || '').trim(),
@@ -164,9 +166,27 @@ export function mintContourIdentity(buffer) {
   return { id: cand, name: cand };
 }
 
-export function emitNamedContourLine({ name, id, frame, profileExpr, role = null }) {
+function formatContourOffset(offset) {
+  const n = Number(offset);
+  if (!Number.isFinite(n)) return '';
+  const rounded = +n.toFixed(6);
+  if (rounded === 0) return '';
+  return ` offset=${Object.is(rounded, -0) ? 0 : rounded}`;
+}
+
+/** A rewrite that omits planeOffset keeps the number already on the statement. */
+function planeOffsetOf(spec, found) {
+  if (spec && Object.prototype.hasOwnProperty.call(spec, 'planeOffset')) {
+    const n = Number(spec.planeOffset);
+    return Number.isFinite(n) ? n : 0;
+  }
+  const kept = Number(found?.planeOffset);
+  return Number.isFinite(kept) ? kept : 0;
+}
+
+export function emitNamedContourLine({ name, id, frame, profileExpr, role = null, planeOffset = 0 }) {
   const roleText = role ? ` role=${role}` : '';
-  return `const ${name} = makeCrossSection(${emitPlaneFrameLiteral(frame)}, ${profileExpr}); // @contour id=${id}${roleText}`;
+  return `const ${name} = makeCrossSection(${emitPlaneFrameLiteral(frame)}, ${profileExpr}); // @contour id=${id}${roleText}${formatContourOffset(planeOffset)}`;
 }
 
 function spliceStatement(buffer, stmt, line) {
@@ -214,7 +234,14 @@ export function upsertNamedContour(buffer, spec = {}) {
     const nameGate = checkContourName(buffer, nextName, found.name);
     if (!nameGate.ok) return nameGate;
     const role = Object.prototype.hasOwnProperty.call(spec, 'role') ? spec.role : found.role;
-    const line = emitNamedContourLine({ name: nextName, id: found.id, frame, profileExpr, role });
+    const line = emitNamedContourLine({
+      name: nextName,
+      id: found.id,
+      frame,
+      profileExpr,
+      role,
+      planeOffset: planeOffsetOf(spec, found),
+    });
     return {
       ok: true,
       buffer: spliceStatement(buffer, found, line),
@@ -236,7 +263,14 @@ export function upsertNamedContour(buffer, spec = {}) {
   const nameGate = checkContourName(buffer, finalName);
   if (!nameGate.ok) return nameGate;
   const role = Object.prototype.hasOwnProperty.call(spec, 'role') ? spec.role : null;
-  const line = emitNamedContourLine({ name: finalName, id: finalId, frame, profileExpr, role });
+  const line = emitNamedContourLine({
+    name: finalName,
+    id: finalId,
+    frame,
+    profileExpr,
+    role,
+    planeOffset: planeOffsetOf(spec, null),
+  });
   const at = Number.isInteger(spec.at) ? spec.at : null;
   return {
     ok: true,
