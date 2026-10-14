@@ -690,18 +690,35 @@ export function isolateLoftStationParams(prof = {}) {
     polygonPreset: prof.polygonPreset,
     points: prof.points,
     contour: prof.contour,
+    ...(Array.isArray(prof.origin) ? { origin: prof.origin } : {}),
   };
+}
+
+function profileOrigin(p) {
+  const u = Number(p?.origin?.[0]) || 0;
+  const v = Number(p?.origin?.[1]) || 0;
+  if (Math.abs(u) < 1e-9 && Math.abs(v) < 1e-9) return null;
+  return [u, v];
+}
+
+function emitPointList(points) {
+  const pts = points.map(([u, v]) => `[${roundFaceNum(u, 4)}, ${roundFaceNum(v, 4)}]`);
+  return `profilePolygon([${pts.join(', ')}])`;
 }
 
 /** Emit profileCircle / profileRectangle / profilePolygon / solveContour from Slice 21 params. */
 export function emitProfileExprFromParams(p) {
   if (p.contour) return emitSolveContour(p.contour);
   const type = str(p.profileType, 'circle');
+  const origin = profileOrigin(p);
   if (type === 'rectangle') {
     const w = num(p.width, 20);
     const h = num(p.height, 12);
     const c = bool(p.centered, true);
-    return `profileRectangle(${w}, ${h}, ${c})`;
+    if (!origin) return `profileRectangle(${w}, ${h}, ${c})`;
+    const x0 = (c ? -w / 2 : 0) + origin[0];
+    const y0 = (c ? -h / 2 : 0) + origin[1];
+    return emitPointList([[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]]);
   }
   if (type === 'polygon') {
     const preset = str(p.polygonPreset, 'hexagon');
@@ -716,28 +733,50 @@ export function emitProfileExprFromParams(p) {
     }
     if (preset === 'quarterCircle') {
       const seg = 8;
-      const pts = ['[0, 0]', `[${r}, 0]`];
+      if (!origin) {
+        const pts = ['[0, 0]', `[${r}, 0]`];
+        for (let i = 1; i <= seg; i++) {
+          const t = (i / seg) * (Math.PI / 2);
+          const u = +(r * Math.cos(t)).toFixed(4);
+          const v = +(r * Math.sin(t)).toFixed(4);
+          pts.push(`[${u}, ${v}]`);
+        }
+        return `profilePolygon([${pts.join(', ')}])`;
+      }
+      const pts = [[0, 0], [r, 0]];
       for (let i = 1; i <= seg; i++) {
         const t = (i / seg) * (Math.PI / 2);
+        pts.push([r * Math.cos(t), r * Math.sin(t)]);
+      }
+      return emitPointList(pts.map(([u, v]) => [u + origin[0], v + origin[1]]));
+    }
+    const sides = regularPolygonSides(preset) || 6;
+    if (!origin) {
+      const pts = [];
+      for (let i = 0; i < sides; i++) {
+        const t = (i / sides) * Math.PI * 2 - Math.PI / 2;
         const u = +(r * Math.cos(t)).toFixed(4);
         const v = +(r * Math.sin(t)).toFixed(4);
         pts.push(`[${u}, ${v}]`);
       }
       return `profilePolygon([${pts.join(', ')}])`;
     }
-    const sides = regularPolygonSides(preset) || 6;
     const pts = [];
     for (let i = 0; i < sides; i++) {
       const t = (i / sides) * Math.PI * 2 - Math.PI / 2;
-      const u = +(r * Math.cos(t)).toFixed(4);
-      const v = +(r * Math.sin(t)).toFixed(4);
-      pts.push(`[${u}, ${v}]`);
+      pts.push([r * Math.cos(t) + origin[0], r * Math.sin(t) + origin[1]]);
     }
-    return `profilePolygon([${pts.join(', ')}])`;
+    return emitPointList(pts);
   }
   const r = num(p.radius, 5);
   const seg = Math.max(3, Math.round(num(p.segments, 64)));
-  return `profileCircle(${r}, ${seg})`;
+  if (!origin) return `profileCircle(${r}, ${seg})`;
+  const pts = [];
+  for (let i = 0; i < seg; i += 1) {
+    const t = (i / seg) * Math.PI * 2;
+    pts.push([r * Math.cos(t) + origin[0], r * Math.sin(t) + origin[1]]);
+  }
+  return emitPointList(pts);
 }
 
 function _loftDot(a, b) {

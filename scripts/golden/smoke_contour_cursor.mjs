@@ -4,7 +4,7 @@
  * Touch and mouse at 390 and 1280.
  *
  * Cursor (Lucide mouse-pointer-2) drags a point and does not add a point.
- * A drag on a line does not translate that line. Polyline is Lucide
+ * A drag on a line translates the whole polyline, and Back restores it. Polyline is Lucide
  * waypoints. Arc is Lucide spline. Double-tapping a dot removes it. The
  * next removal under the auto-closed minimum deletes the shape, and Back
  * restores that shape in one step.
@@ -217,6 +217,7 @@ async function runSize(browser, label, contextOptions) {
     await page.waitForTimeout(80);
   }
   const before = await sketch(page);
+  const depthBefore = before.undoDepth;
   const mid = await page.evaluate(() => {
     const dots = window.__VIEWPORT__.stageContourSketch().dots || [];
     const a = dots.find((dot) => dot.id === 'p0');
@@ -236,14 +237,29 @@ async function runSize(browser, label, contextOptions) {
   }
   await page.waitForTimeout(200);
   const dragged = await sketch(page);
-  const still = ['p0', 'p1', 'p2', 'p3'].every((id) => {
+  const deltas = ['p0', 'p1', 'p2', 'p3'].map((id) => {
     const a = uv(before, id);
     const b = uv(dragged, id);
+    return a && b ? [b.u - a.u, b.v - a.v] : null;
+  });
+  const translated = deltas.every((d) => d && Math.hypot(d[0], d[1]) > 0.4)
+    && deltas.every((d) => Math.hypot(d[0] - deltas[0][0], d[1] - deltas[0][1]) < 0.2);
+  check(`${label} line drag translates the whole polyline`,
+    dragged.points === 4 && translated && dragged.undoDepth === depthBefore + 1,
+    JSON.stringify({ before: before.uvs, after: dragged.uvs, depth: dragged.undoDepth }));
+  await page.screenshot({ path: join(SHOT_DIR, `contour-cursor-${label}-line.png`) });
+  await page.locator('[data-contour-back]').click();
+  await page.waitForFunction((depth) => (
+    window.__VIEWPORT__.stageContourSketch().undoDepth === depth
+  ), depthBefore, { timeout: 4000 });
+  const restoredLine = await sketch(page);
+  const lineBack = ['p0', 'p1', 'p2', 'p3'].every((id) => {
+    const a = uv(before, id);
+    const b = uv(restoredLine, id);
     return a && b && Math.hypot(b.u - a.u, b.v - a.v) < 0.2;
   });
-  check(`${label} line drag does not move the line`, dragged.points === 4 && still,
-    JSON.stringify({ before: before.uvs, after: dragged.uvs }));
-  await page.screenshot({ path: join(SHOT_DIR, `contour-cursor-${label}-line.png`) });
+  check(`${label} Back restores the translated polyline`, restoredLine.points === 4 && lineBack,
+    JSON.stringify(restoredLine.uvs));
   await page.locator('[data-normal-to-sketch]').click();
   await page.waitForTimeout(400);
 

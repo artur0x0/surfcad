@@ -4,8 +4,8 @@
  *
  * Select plane leaves Cursor pressed on an empty sketch. No circle is drawn
  * and the strip has no circle chip. A segment tap inserts a point. A fast
- * double-tap removes one. A drag moves that point. Cursor does not translate
- * a line. Dimension promotion
+ * double-tap removes one. A drag moves that point. A Cursor drag on a line
+ * translates the whole polyline, and Back restores it. Dimension promotion
  * keeps the one Polyline chip. The chip's Delete card removes the chain.
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir().
@@ -314,15 +314,43 @@ async function runSize(browser, label, contextOptions, touch) {
     JSON.stringify(drawn));
 
   const beforeLine = await sketch(page);
-  const lineMid = await clearSegment(page, 'p2', 'p3');
-  if (lineMid) await dragAt(client, page, lineMid.x, lineMid.y, lineMid.x + 48, lineMid.y, touch);
+  const lineDepth = beforeLine.undoDepth;
+  await reaim(page, touch, client);
+  let lineMid = null;
+  for (const [idA, idB] of [['p0', 'p1'], ['p1', 'p2'], ['p2', 'p3'], ['p3', 'p0']]) {
+    const mid = await clearSegment(page, idA, idB);
+    if (!mid) continue;
+    const onCanvas = await page.evaluate(({ x, y }) => (
+      document.elementFromPoint(x, y)?.tagName === 'CANVAS'
+    ), mid);
+    if (!onCanvas) continue;
+    lineMid = mid;
+    break;
+  }
+  check(`${label} cursor line drag starts on the canvas`, !!lineMid, JSON.stringify(lineMid));
+  if (lineMid) await dragAt(client, page, lineMid.x, lineMid.y, lineMid.x + 36, lineMid.y - 28, touch);
   const afterLine = await sketch(page);
-  const lineHeld = (beforeLine.uvs || []).every((point) => {
+  const lineDeltas = (beforeLine.uvs || []).map((point) => {
     const next = uvOf(afterLine, point.id);
+    return next ? [next.u - point.u, next.v - point.v] : null;
+  });
+  const lineMoved = lineDeltas.length === 4
+    && lineDeltas.every((d) => d && Math.hypot(d[0], d[1]) > 0.4)
+    && lineDeltas.every((d) => Math.hypot(d[0] - lineDeltas[0][0], d[1] - lineDeltas[0][1]) < 0.25);
+  check(`${label} cursor line drag translates the whole polyline`,
+    afterLine.points === 4 && lineMoved && afterLine.undoDepth === lineDepth + 1,
+    JSON.stringify({ before: beforeLine.uvs, after: afterLine.uvs, depth: afterLine.undoDepth }));
+  await tapSelector(client, page, '[data-contour-back]', touch);
+  await page.waitForFunction((depth) => (
+    window.__VIEWPORT__.stageContourSketch().undoDepth === depth
+  ), lineDepth, { timeout: 4000 });
+  const lineBack = await sketch(page);
+  const lineRestored = (beforeLine.uvs || []).every((point) => {
+    const next = uvOf(lineBack, point.id);
     return next && Math.hypot(next.u - point.u, next.v - point.v) < 0.25;
   });
-  check(`${label} cursor line drag does not translate the line`, afterLine.points === 4 && lineHeld,
-    JSON.stringify({ before: beforeLine.uvs, after: afterLine.uvs }));
+  check(`${label} Back restores the translated polyline`, lineBack.points === 4 && lineRestored,
+    JSON.stringify(lineBack.uvs));
   await reaim(page, touch, client);
 
   const beforePoint = await sketch(page);

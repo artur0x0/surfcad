@@ -116,7 +116,7 @@ export const CONTOUR_ENTRY_IDS = new Set([
 ]);
 
 export const CONTOUR_TOOLS = [
-  { id: 'cursor', label: 'Cursor', title: 'Drag a point. Does not move a whole line and does not add points' },
+  { id: 'cursor', label: 'Cursor', title: 'Drag a point, or an edge or the interior, to move the whole shape. Does not add points' },
   { id: 'circle', label: 'Circle', title: 'Circle profile on the workplane' },
   { id: 'rectangle', label: 'Rect', title: 'Rectangle profile on the workplane' },
   { id: 'polygon', label: 'Polygon', title: 'Regular polygon, 3 to 8 sides, on the workplane' },
@@ -830,12 +830,14 @@ export function toolToProfileParams(tool, params = {}) {
   const p = params || {};
   const kind = profileKind(tool, p);
   if (p.contour) return { profileType: 'contour', contour: p.contour };
+  const origin = Array.isArray(p.origin) ? p.origin : null;
   if (kind === 'rectangle') {
     return {
       profileType: 'rectangle',
       width: p.width,
       height: p.height,
       centered: p.centered,
+      ...(origin ? { origin } : {}),
     };
   }
   if (kind === 'polygon') {
@@ -843,6 +845,7 @@ export function toolToProfileParams(tool, params = {}) {
       profileType: 'polygon',
       polygonPreset: p.polygonPreset || 'hexagon',
       radius: p.radius,
+      ...(origin ? { origin } : {}),
     };
   }
   if (kind === 'polyline') {
@@ -856,6 +859,7 @@ export function toolToProfileParams(tool, params = {}) {
     profileType: 'circle',
     radius: p.radius,
     segments: p.segments,
+    ...(origin ? { origin } : {}),
   };
 }
 

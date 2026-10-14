@@ -226,6 +226,13 @@ export function quarterCircleFilletContours(radius, arcSegments = 8) {
  * @param {object} params
  * @returns {{ profile: ProfileDesc, contours: number[][][] }}
  */
+function withOrigin(contours, origin) {
+  const du = Number(origin?.[0]) || 0;
+  const dv = Number(origin?.[1]) || 0;
+  if (Math.abs(du) < 1e-12 && Math.abs(dv) < 1e-12) return contours;
+  return (contours || []).map((loop) => loop.map(([u, v]) => [u + du, v + dv]));
+}
+
 export function buildProfileFromParams(params = {}) {
   const type = String(params.profileType || params.type || 'circle');
   if (type === 'contour' && params.contour) {
@@ -249,7 +256,7 @@ export function buildProfileFromParams(params = {}) {
     const r = Number.isFinite(radius) && radius > 0 ? radius : 5;
     return {
       profile: { type: 'circle', radius: r, segments },
-      contours: circleContours(r, segments),
+      contours: withOrigin(circleContours(r, segments), params.origin),
     };
   }
   if (type === 'rectangle') {
@@ -260,7 +267,7 @@ export function buildProfileFromParams(params = {}) {
     const centered = params.centered !== false && params.centered !== 'false';
     return {
       profile: { type: 'rectangle', width: w, height: h, centered },
-      contours: rectangleContours(w, h, centered),
+      contours: withOrigin(rectangleContours(w, h, centered), params.origin),
     };
   }
   if (type === 'polygon') {
@@ -271,7 +278,7 @@ export function buildProfileFromParams(params = {}) {
       const arc = Math.max(2, Math.round(Number(params.arcSegments) || 8));
       return {
         profile: { type: 'polygon', preset: 'quarterCircle', radius: r, arcSegments: arc },
-        contours: quarterCircleFilletContours(r, arc),
+        contours: withOrigin(quarterCircleFilletContours(r, arc), params.origin),
       };
     }
     if (preset === 'custom' && Array.isArray(params.points)) {
@@ -284,7 +291,7 @@ export function buildProfileFromParams(params = {}) {
     const sides = REGULAR_POLYGON_PRESETS[preset] || Math.max(3, Math.round(Number(params.sides) || 6));
     return {
       profile: { type: 'polygon', preset, sides, radius: r },
-      contours: regularPolygonContours(sides, r),
+      contours: withOrigin(regularPolygonContours(sides, r), params.origin),
     };
   }
   throw new Error(`buildProfileFromParams: unknown profileType "${type}"`);
