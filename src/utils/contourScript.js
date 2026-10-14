@@ -97,6 +97,7 @@ function emitLine(l) {
   const fields = [`id: ${emitString(l.id)}`, `a: ${emitString(l.a)}`, `b: ${emitString(l.b)}`];
   emitSeq(l, fields);
   if (l.guide) fields.push('guide: true');
+  if (l.construction) fields.push('construction: true');
   return `{ ${fields.join(', ')} }`;
 }
 
@@ -185,6 +186,7 @@ export function emitSolveContour(model) {
     `constraints: [${(spec.constraints || []).map(emitItem).join(', ')}]`,
   ];
   if (spec.polyline) body.push('polyline: true');
+  if (spec.centers) body.push('centers: true');
   if ((spec.refs || []).length) body.push(`refs: [${spec.refs.map(emitRef).join(', ')}]`);
   return `solveContour({ ${body.join(', ')} })`;
 }
@@ -336,5 +338,6 @@ export function parseSolveContour(source) {
     refs: (value.refs || []).map(keepSeq),
   };
   if (value.polyline) spec.polyline = true;
+  if (value.centers) spec.centers = true;
   return spec;
 }

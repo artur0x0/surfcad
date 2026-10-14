@@ -817,6 +817,26 @@ const fr = workplaneFromFace(part, facesByNormal(part, [0,0,1])[0]);
 part = holePattern(part, fr, { n: 3, m: 2, spacingU: 12, spacingV: 10, dia: 4 });
 ```
 
+### holesOnContour(part, section, spec)
+
+One hole at every sketch point of a centres contour, arc centres included.
+`section` is a `makeCrossSection` of `solveContour({ centers: true, ... })`.
+Construction lines are not centres. No centres returns `part`. `dia` is a raw
+millimetre diameter and wins over fastener `size` and `fit`. `side: 1` cuts
+toward −normal; `side: -1` or `flip: true` cuts the other way, so two calls
+can share one section. `depth` is millimetres past the plane on that side.
+`through: true` uses `holeSpan`. A far c-bore or c-sink requires a through hole.
+
+```javascript
+const c1 = makeCrossSection(plane, solveContour({
+  centers: true,
+  points: [{ id: 'p0', at: [10, 0] }, { id: 'c0', at: [0, 0] }],
+  arcs: [{ id: 'a0', center: 'c0', radius: 10, full: true, sweep: 'ccw' }],
+}));
+part = holesOnContour(part, c1, { dia: 4, through: false, depth: 6, side: 1 });
+part = holesOnContour(part, c1, { type: 'clearance', size: 'M3', fit: 'normal', through: true, side: -1 });
+```
+
 
 ### clearanceHole(part, frame, u, v, size, spanOrOpts?, fit?)
 
