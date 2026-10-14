@@ -237,6 +237,7 @@ import {
   createSyncStore,
   flushSyncQueue,
   captureBaseline,
+  baselineAfterPartSave,
   stringifySurfJson,
   fileWrite,
   fileDelete,
@@ -2880,13 +2881,20 @@ const App = () => {
             branch: result.branch || base.branch || gitWorkingBranch(),
           }));
         } else if (!result.layoutApplied && doc?.source === 'git' && result.partIds?.length) {
-          rememberGitBaseline(captureBaseline({
+          // Advance only the parts this flush committed. A sibling edit that
+          // was not in the outbox keeps its previous baseline.
+          const saved = {};
+          for (const id of result.partIds) {
+            const text = partScriptsRef.current?.[id];
+            saved[id] = typeof text === 'string' ? text : '';
+          }
+          rememberGitBaseline(baselineAfterPartSave(base, {
+            doc,
+            saved,
             assemblyPath: assemblyFilePath(vaultSegment(doc.name) || doc.name),
             assemblyName: doc.name,
-            doc,
-            scripts: partScriptsRef.current,
             assets: assetMap,
-            branch: base?.branch || gitWorkingBranch(),
+            branch: base?.branch || result.branch || gitWorkingBranch(),
             headSha: result.sha,
           }));
         } else if (!result.layoutApplied && base) {
