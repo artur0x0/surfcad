@@ -494,6 +494,67 @@ function heatChanged(before, after) {
 
 const FEA_SHELL = '[data-fea-sheet="1"]';
 
+/**
+ * The Analyze card has no voxel-preview chrome and no empty slot where the
+ * magnitude, direction, and material sliders used to sit.
+ */
+async function assertNoVoxelPreview(page, vp, shell) {
+  const report = await page.locator(shell).evaluate((card) => {
+    const selectors = [
+      '[data-fea-preview-sliders]',
+      '[data-fea-preview-slider]',
+      '[data-fea-preview-badge]',
+      '[data-fea-preview]',
+      '[data-fea-load-select]',
+      '[data-fea-source="preview"]',
+    ];
+    const counts = {};
+    for (const sel of selectors) counts[sel] = card.querySelectorAll(sel).length;
+    const loads = card.querySelector('[data-fea-loads]');
+    let gap = null;
+    let nextTag = '';
+    let nextHeight = 0;
+    if (loads) {
+      let node = loads;
+      while (node.parentElement && node.parentElement !== card && !/\bgap-1\.5\b/.test(node.parentElement.className || '')) {
+        node = node.parentElement;
+      }
+      const next = node.nextElementSibling;
+      if (!next) gap = 0;
+      else {
+        const a = node.getBoundingClientRect();
+        const b = next.getBoundingClientRect();
+        gap = b.top - a.bottom;
+        nextHeight = b.height;
+        if (next.hasAttribute('data-fea-notice')) nextTag = 'notice';
+        else if (next.hasAttribute('data-fea-preview-sliders')) nextTag = 'preview';
+        else nextTag = next.tagName;
+      }
+    }
+    return {
+      counts,
+      gap,
+      nextTag,
+      nextHeight,
+      labelled: /\bPreview\b/.test(card.innerText || ''),
+    };
+  });
+  const absent = Object.values(report.counts).every((count) => count === 0) && !report.labelled;
+  check(
+    `${vp.name} analyze card has no preview UI`,
+    absent,
+    JSON.stringify(report.counts) + (report.labelled ? ' labelled Preview' : ''),
+  );
+  if (report.gap != null) {
+    const parked = report.nextTag === '' || report.nextTag === 'notice';
+    check(
+      `${vp.width} analyze card has no preview layout gap`,
+      report.gap <= 10 && parked,
+      `gap ${report.gap} next ${report.nextTag || 'end'} h ${report.nextHeight}`,
+    );
+  }
+}
+
 async function assertFeaSheet(page, vp, text) {
   await page.waitForFunction((touch) => {
     const el = document.querySelector('[data-fea-sheet="1"]');
@@ -517,6 +578,7 @@ async function assertFeaSheet(page, vp, text) {
     chrome.compact,
   );
   check(`${vp.name} footer is not Confirm`, chrome.confirm === 'no', chrome.confirm);
+  await assertNoVoxelPreview(page, vp, FEA_SHELL);
 }
 
 async function assertResultsPlots(page, vp, shell, sample) {
@@ -525,7 +587,7 @@ async function assertResultsPlots(page, vp, shell, sample) {
   check(`${vp.name} results view`, view === 'results', view || '');
   check(`${vp.name} setup hidden`, await page.locator(`${shell} [data-fea-material]`).count() === 0);
   check(`${vp.name} targets hidden`, await page.locator(`${shell} [data-fea-target="fixture"]`).count() === 0);
-  check(`${vp.name} preview sliders hidden`, await page.locator(`${shell} [data-fea-preview-sliders]`).count() === 0);
+  await assertNoVoxelPreview(page, vp, shell);
   const stressPressed = await page.locator(`${shell} [data-fea-plot="stress"]`).getAttribute('aria-pressed');
   check(`${vp.name} stress tab`, stressPressed === 'true', stressPressed || '');
   check(`${vp.name} displacement tab`, await page.locator(`${shell} [data-fea-plot="displacement"]`).count() === 1);
@@ -633,6 +695,7 @@ async function runCase(browser, vp) {
   check(`${vp.name} tip face is tappable`, tip.length > 0, `points=${tip.length}`);
   check(`${vp.name} force`, await tapUntil(page, vp.touch, tip, 'data-fea-load-count', '1'));
   check(`${vp.name} front snap after picks`, await snap(page, 'front'));
+  await assertNoVoxelPreview(page, vp, shell);
 
   await page.locator('[data-fea-run]').click();
   const stages = new Set();

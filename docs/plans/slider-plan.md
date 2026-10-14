@@ -115,13 +115,11 @@ Angle snaps are fixed. They do not scale with L.
 
 ## What was searched
 
-Range inputs: `NumberField` in `popupUI.jsx`, `SmSlider` in `SmControls.jsx`, `FeaPreviewSliders.jsx`, the position slider in `CrossSectionPanel.jsx`, the infill slider in `QuoteModal.jsx`.
+Range inputs: `NumberField` in `popupUI.jsx`, `SmSlider` in `SmControls.jsx`, the position slider in `CrossSectionPanel.jsx`, the infill slider in `QuoteModal.jsx`.
 
 `NumberField` is the shared slider. The range input and the typed box share `onChange`. Fallback when a caller omits an end: `min` 0 (or `2 × default` when default is negative), `max` 100, `step` 0.5.
 
 Helper sheets do not draw their own thumbs. `HelperParamModal` paints a `NumberField` for every `type: 'number'` param. Omitted `max` becomes `max(100, 4·|default|, 40)`. `slider: true` on a param is ignored.
-
-FEA preview is the only pointer-scrub (`onPointerDown` / `onInput` / `onPointerUp`). Those sliders stay linear because they do not opt into the map. Do not edit them.
 
 No numeric slider: Boolean, Delete Face, Paint, Center, Align, Mirror, Path, contour polyline, Sweep path, sheet export, cross-section normal (three number boxes), quote quantity (stepper), the FEA progress bar. Layout drags are not value sliders.
 
@@ -279,7 +277,7 @@ Tapped hole: no diameter slider. Thread is a select. Tap-drill diameter comes fr
 | --- | --- | --- | --- | --- |
 | Section position | `CrossSectionPanel.jsx` | before bounds: −100…100. After bounds: the bbox projected on the plane normal, default the center, step 0.5 | the stored end is `center ± (halfExtent / shape(2/3))`, so the outer third of the thumb continues past the box. Default stays the center. Length snap | shape, signed length. Rotation stays three number boxes. |
 | Quote infill | `QuoteModal.jsx` | 10…100, default 20, step 5 | unchanged | linear, percent. Out of these PRs. |
-| Analyze force, pressure, E, ν, yield, preview magnitude, preview direction, preview material | `FeaStudyControls.jsx`, `FeaMaterialPicker.jsx`, `FeaPreviewSliders.jsx` | today's ranges | no change | linear. Do not edit FEA. |
+| Analyze force, pressure, E, ν, yield | `FeaStudyControls.jsx`, `FeaMaterialPicker.jsx` | today's ranges | no change | linear. Do not edit FEA. |
 
 ### Joints
 

@@ -506,16 +506,6 @@ export function studyWithForceDirection(study, direction) {
   return { ...next, changed: !!next.ok };
 }
 
-/**
- * Safety factor shown next to a preview. It is the last TET10 run, never
- * yield divided by the preview p95.
- */
-export function runSafetyFactor(result) {
-  if (!result || (result.source !== 'tet10' && result.source !== 'shell')) return null;
-  const fos = result.safetyFactor != null ? result.safetyFactor : result.fos;
-  return typeof fos === 'number' && Number.isFinite(fos) ? fos : null;
-}
-
 /** Triangle indices for the study faces that still match the live mesh. */
 export function highlightIndicesForStudy(fingerprints, study) {
   const faces = [];

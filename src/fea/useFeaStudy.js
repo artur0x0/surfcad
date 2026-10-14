@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { paintPickFromClick } from '../utils/facePaint.js';
-import { boundingBox, detectFeaProfile, refineMode } from './deviceProfile.js';
+import { detectFeaProfile, refineMode } from './deviceProfile.js';
 import { createFeaClient } from './feaClient.js';
 import { feaDebugEnabled, initialFeaProgress, logFeaTiming, reduceFeaProgress } from './feaProgress.js';
 import { studyForAssemblySolve, studyForSolve } from './renderFaceIds.js';
@@ -23,7 +23,6 @@ import {
   customSeed,
   emptyDraft,
   freshStudy,
-  libraryOptions,
   majorityFaceId,
   meshArraysFromGeometry,
   solverRequestMaterial,
@@ -35,7 +34,6 @@ import {
   studyWithCustomMaterial,
   studyWithForceDirection,
   studyWithForceMagnitude,
-  studyWithLoadVector,
   studyWithPressureValue,
   studyWithMaterialId,
   studyWithRefine,
@@ -45,10 +43,6 @@ import {
   studyWithoutFixture,
   studyWithoutLoad,
 } from './studyPanel.js';
-import { sliderFromLoad, studyForPreview } from './preview/loadDrag.js';
-import { createPreviewController } from './preview/previewController.js';
-import { previewFits } from './preview/resolution.js';
-import { probePreviewGpu, runGpuPreview } from './preview/webgpuPreview.js';
 
 const FACE_ANGLE_DEG = 3;
 const PROBE_CAP = 24;
@@ -68,25 +62,6 @@ function commitRunReport(prev, event) {
   }
   return next;
 }
-
-const EMPTY_PREVIEW = {
-  available: false,
-  showing: false,
-  loadIndex: 0,
-  magnitude: 200,
-  angle: 0,
-  materialIndex: 0,
-  ms: null,
-  bytes: null,
-  resolution: null,
-  nx: 0,
-  ny: 0,
-  nz: 0,
-  min: null,
-  p95: null,
-  max: null,
-  fast: false,
-};
 
 export function useFeaStudy({
   enabled = true,
@@ -112,7 +87,6 @@ export function useFeaStudy({
   const [running, setRunning] = useState(false);
   const [runReport, setRunReport] = useState(() => initialFeaProgress());
   const [notice, setNotice] = useState('');
-  const [preview, setPreview] = useState(EMPTY_PREVIEW);
   const [plot, setPlotState] = useState('stress');
   const [modeIndex, setModeIndex] = useState(0);
   const [animate, setAnimateState] = useState(false);
@@ -139,19 +113,8 @@ export function useFeaStudy({
   const markStaleRef = useRef(() => {});
   const draftRef = useRef(draft);
   const openRef = useRef(open);
-  const previewRef = useRef(preview);
-  const previewDragRef = useRef(false);
-  const materialDirtyRef = useRef(false);
-  const previewFieldRef = useRef(null);
-  const previewNodalRef = useRef(null);
-  const previewMeshRef = useRef(null);
-  const previewRebindRef = useRef(false);
-  const gpuRef = useRef(null);
-  const controllerRef = useRef(null);
-  const applyPreviewRef = useRef(() => {});
   draftRef.current = draft;
   openRef.current = open;
-  previewRef.current = preview;
   viewRef.current = view;
   plotRef.current = plot;
   modeIndexRef.current = modeIndex;
@@ -202,100 +165,6 @@ export function useFeaStudy({
     clearFields();
     setResult((prev) => (prev && !prev.stale ? { ...prev, stale: true } : prev));
   };
-
-  const rebindPreview = useCallback(() => {
-    if (previewRebindRef.current) return;
-    const nodal = previewNodalRef.current;
-    const solid = getSolidRef.current?.();
-    const geometry = solid?.geometry;
-    if (!nodal || !geometry || geometry === previewFieldRef.current?.geometry) return;
-    const positions = geometry.attributes?.position?.array;
-    const verts = positions ? positions.length / 3 : 0;
-    if (verts && nodal.length !== verts) {
-      previewFieldRef.current = null;
-      setPreview((prev) => (prev.showing ? { ...prev, showing: false } : prev));
-      return;
-    }
-    const bound = bindStressField(geometry, nodal, solid.faceIDs);
-    if (!bound) return;
-    const source = {
-      geometry,
-      field: bound,
-      scale: previewFieldRef.current?.scale || { p95: null, yield_MPa: null },
-      onStale: () => rebindPreview(),
-    };
-    previewRebindRef.current = true;
-    previewFieldRef.current = source;
-    setStressSkinSource(source);
-    previewRebindRef.current = false;
-  }, []);
-
-  applyPreviewRef.current = (result) => {
-    if (!openRef.current || !result?.nodal) return;
-    const mesh = previewMeshRef.current;
-    const solid = getSolidRef.current?.();
-    const geometry = solid?.geometry || mesh?.geometry;
-    const faceIDs = solid?.faceIDs || mesh?.faceIDs;
-    if (!geometry) return;
-    const bound = bindStressField(geometry, result.nodal, faceIDs);
-    if (!bound) return;
-    previewNodalRef.current = result.nodal;
-    const source = {
-      geometry,
-      field: bound,
-      scale: { p95: result.p95, yield_MPa: mesh?.yieldMPa ?? null },
-      onStale: () => rebindPreview(),
-    };
-    previewFieldRef.current = source;
-    setStressSkinSource(source);
-    setPreview((prev) => ({
-      ...prev,
-      showing: true,
-      ms: result.ms,
-      bytes: result.bytes,
-      resolution: result.resolution,
-      nx: result.nx,
-      ny: result.ny,
-      nz: result.nz,
-      min: result.min,
-      p95: result.p95,
-      max: result.max,
-      fast: result.fast === true,
-    }));
-  };
-
-  const previewJob = useCallback(() => {
-    const solid = getSolidRef.current?.();
-    const mesh = meshArraysFromGeometry(solid?.geometry, solid?.faceIDs);
-    if (!mesh) return null;
-    const state = previewRef.current;
-    const options = libraryOptions();
-    const currentId = studyRef.current?.material?.id || '';
-    const pickedId = state.materialIndex >= 0 ? (options[state.materialIndex]?.id || '') : '';
-    const materialId = materialDirtyRef.current ? pickedId : currentId;
-    const drafted = studyForPreview(studyRef.current, {
-      loadIndex: state.loadIndex,
-      magnitude: state.magnitude,
-      angle: state.angle,
-      materialId,
-    });
-    if (!drafted) return null;
-    const resolved = solverRequestMaterial(drafted);
-    if (!resolved.ok) return null;
-    previewMeshRef.current = {
-      geometry: solid.geometry,
-      faceIDs: solid.faceIDs,
-      yieldMPa: resolved.material.yield_MPa ?? null,
-    };
-    return {
-      positions: mesh.positions,
-      indices: mesh.indices,
-      faceIDs: mesh.faceIDs,
-      study: drafted,
-      material: resolved.material,
-      bbox: boundingBox(mesh.positions),
-    };
-  }, []);
 
   const replaceStudy = useCallback((next) => {
     studyRef.current = next;
@@ -359,11 +228,6 @@ export function useFeaStudy({
   }, [paintHighlight, replaceStudy]);
 
   const close = useCallback(() => {
-    previewDragRef.current = false;
-    controllerRef.current?.cancel();
-    previewFieldRef.current = null;
-    previewNodalRef.current = null;
-    setPreview((prev) => ({ ...prev, showing: false }));
     setOpen(false);
     onHighlightRef.current?.([]);
   }, []);
@@ -397,16 +261,12 @@ export function useFeaStudy({
       custom: customSeed(read),
     }));
     clearFields();
-    previewFieldRef.current = null;
-    previewNodalRef.current = null;
-    previewDragRef.current = false;
     solvedOutsideRef.current = null;
     setPlotState('stress');
     setDismissed(false);
     setView(initialResultsView());
     setResult(null);
     setRunReport(initialFeaProgress());
-    setPreview((prev) => ({ ...EMPTY_PREVIEW, available: prev.available }));
     setNotice('');
     setOpen(true);
     paintHighlight(read);
@@ -707,11 +567,6 @@ export function useFeaStudy({
   }, [pick]);
 
   const run = useCallback(async () => {
-    previewDragRef.current = false;
-    controllerRef.current?.cancel();
-    previewFieldRef.current = null;
-    previewNodalRef.current = null;
-    setPreview((prev) => (prev.showing ? { ...prev, showing: false } : prev));
     if (lockedRef.current?.()) {
       setNotice('An assembly is opening — run the study again once it finishes.');
       return;
@@ -1154,10 +1009,6 @@ export function useFeaStudy({
       setStressSkinSource(null);
       return;
     }
-    if (preview.showing && previewFieldRef.current) {
-      setStressSkinSource(previewFieldRef.current);
-      return;
-    }
     if (screen !== 'results') {
       setStressSkinSource(null);
       return;
@@ -1170,117 +1021,18 @@ export function useFeaStudy({
         ? contactFieldRef.current
         : stressFieldRef.current;
     setStressSkinSource(src ? { ...src, animate: modalResult && animate } : null);
-  }, [open, screen, plot, result, preview.showing, preview.ms, animate, modeIndex]);
-
-  useEffect(() => {
-    controllerRef.current = createPreviewController({
-      profile: () => detectFeaProfile(),
-      fits: (job) => {
-        const limits = gpuRef.current?.limits;
-        const box = job?.bbox;
-        if (!limits || !box) return false;
-        return previewFits(box.dx, box.dy, box.dz, 128, limits);
-      },
-      solve: (job) => runGpuPreview(gpuRef.current, {
-        ...job,
-        tol: job.phase === 'drag' ? 1e-3 : 1e-4,
-        maxIter: job.phase === 'drag' ? 16 : 24,
-      }),
-      onResult: (solved) => applyPreviewRef.current(solved),
-      onError: (err) => setNotice(err?.message || 'Preview failed'),
-    });
-    return () => controllerRef.current?.cancel();
-  }, []);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    let dead = false;
-    probePreviewGpu().then((hit) => {
-      if (dead) return;
-      gpuRef.current = hit?.ok ? hit : null;
-      setPreview((prev) => ({ ...prev, available: !!hit?.ok }));
-    });
-    return () => {
-      dead = true;
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open || previewDragRef.current) return;
-    const ids = libraryOptions().map((option) => option.id);
-    const slider = sliderFromLoad(study, previewRef.current.loadIndex, ids);
-    setPreview((prev) => {
-      if (
-        prev.loadIndex === slider.loadIndex
-        && prev.magnitude === slider.magnitude
-        && prev.angle === slider.angle
-        && prev.materialIndex === slider.materialIndex
-      ) return prev;
-      return { ...prev, ...slider };
-    });
-  }, [open, study]);
-
-  const previewBegin = useCallback(() => {
-    previewDragRef.current = true;
-  }, []);
-
-  const previewInput = useCallback((patch) => {
-    if (!gpuRef.current?.ok) return;
-    previewDragRef.current = true;
-    if (Object.prototype.hasOwnProperty.call(patch, 'materialIndex')) materialDirtyRef.current = true;
-    previewRef.current = { ...previewRef.current, ...patch };
-    setPreview((prev) => ({ ...prev, ...patch }));
-    const job = previewJob();
-    if (!job) return;
-    controllerRef.current?.push(job);
-  }, [previewJob]);
-
-  const previewCommit = useCallback(() => {
-    previewDragRef.current = false;
-    const state = previewRef.current;
-    const options = libraryOptions();
-    const materialId = options[state.materialIndex]?.id || '';
-    const drafted = studyForPreview(studyRef.current, {
-      loadIndex: state.loadIndex,
-      magnitude: state.magnitude,
-      angle: state.angle,
-      materialId,
-    });
-    if (drafted) {
-      let next = studyWithLoadVector(
-        studyRef.current,
-        state.loadIndex,
-        drafted.loads[state.loadIndex].vector,
-      );
-      if (next.ok && materialDirtyRef.current && materialId) {
-        next = studyWithMaterialId(next.study, materialId);
-      }
-      materialDirtyRef.current = false;
-      if (next.ok) commitStudy(next.study);
-    }
-    const job = previewJob();
-    if (job && gpuRef.current?.ok) controllerRef.current?.flush(job);
-  }, [commitStudy, previewJob]);
-
-  const selectPreviewLoad = useCallback((index) => {
-    const ids = libraryOptions().map((option) => option.id);
-    const slider = sliderFromLoad(studyRef.current, index, ids);
-    previewRef.current = { ...previewRef.current, ...slider };
-    setPreview((prev) => ({ ...prev, ...slider }));
-  }, []);
+  }, [open, screen, plot, result, animate, modeIndex]);
 
   useEffect(() => () => {
     const client = clientRef.current;
     clientRef.current = null;
     client?.dispose?.();
-    controllerRef.current?.cancel();
     openRef.current = false;
     stressFieldRef.current = null;
     displacementFieldRef.current = null;
     contactFieldRef.current = null;
     probeMapRef.current = new Map();
     setProbeOverlay([]);
-    previewFieldRef.current = null;
     setStressSkinSource(null);
     onHighlightRef.current?.(null);
   }, []);
@@ -1322,11 +1074,6 @@ export function useFeaStudy({
     pick: pickIfOpen,
     run,
     cancel,
-    preview,
-    previewBegin,
-    previewInput,
-    previewCommit,
-    selectPreviewLoad,
     results,
     screen,
     viewKind: view.kind,

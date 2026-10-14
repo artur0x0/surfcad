@@ -507,6 +507,68 @@ function noticeOf(page) {
 
 const FEA_SHELL = '[data-fea-sheet="1"]';
 
+/**
+ * The Analyze card has no voxel-preview chrome and no empty slot where the
+ * magnitude, direction, and material sliders used to sit. The load list is
+ * the last setup row, or it sits one flex gap above a notice.
+ */
+async function assertNoVoxelPreview(page, vp, shell = FEA_SHELL) {
+  const report = await page.locator(shell).evaluate((card) => {
+    const selectors = [
+      '[data-fea-preview-sliders]',
+      '[data-fea-preview-slider]',
+      '[data-fea-preview-badge]',
+      '[data-fea-preview]',
+      '[data-fea-load-select]',
+      '[data-fea-source="preview"]',
+    ];
+    const counts = {};
+    for (const sel of selectors) counts[sel] = card.querySelectorAll(sel).length;
+    const loads = card.querySelector('[data-fea-loads]');
+    let gap = null;
+    let nextTag = '';
+    let nextHeight = 0;
+    if (loads) {
+      let node = loads;
+      while (node.parentElement && node.parentElement !== card && !/\bgap-1\.5\b/.test(node.parentElement.className || '')) {
+        node = node.parentElement;
+      }
+      const next = node.nextElementSibling;
+      if (!next) gap = 0;
+      else {
+        const a = node.getBoundingClientRect();
+        const b = next.getBoundingClientRect();
+        gap = b.top - a.bottom;
+        nextHeight = b.height;
+        if (next.hasAttribute('data-fea-notice')) nextTag = 'notice';
+        else if (next.hasAttribute('data-fea-preview-sliders')) nextTag = 'preview';
+        else nextTag = next.tagName;
+      }
+    }
+    return {
+      counts,
+      gap,
+      nextTag,
+      nextHeight,
+      labelled: /\bPreview\b/.test(card.innerText || ''),
+    };
+  });
+  const absent = Object.values(report.counts).every((count) => count === 0) && !report.labelled;
+  check(
+    `${vp.name} analyze card has no preview UI`,
+    absent,
+    JSON.stringify(report.counts) + (report.labelled ? ' labelled Preview' : ''),
+  );
+  if (report.gap != null) {
+    const parked = report.nextTag === '' || report.nextTag === 'notice';
+    check(
+      `${vp.width} analyze card has no preview layout gap`,
+      report.gap <= 10 && parked,
+      `gap ${report.gap} next ${report.nextTag || 'end'} h ${report.nextHeight}`,
+    );
+  }
+}
+
 async function assertFeaSheet(page, vp, text) {
   await page.waitForFunction((touch) => {
     const el = document.querySelector('[data-fea-sheet="1"]');
@@ -570,6 +632,7 @@ async function assertFeaSheet(page, vp, text) {
     });
     check(`${vp.name} stage switcher hidden`, display === 'none', display);
   }
+  await assertNoVoxelPreview(page, vp);
 }
 
 function heatChanged(before, after) {
@@ -584,7 +647,7 @@ async function assertResultsPlots(page, vp, shell) {
   check(`${vp.name} results view`, view === 'results', view || '');
   check(`${vp.name} setup hidden`, await page.locator(`${shell} [data-fea-material]`).count() === 0);
   check(`${vp.name} targets hidden`, await page.locator(`${shell} [data-fea-target="fixture"]`).count() === 0);
-  check(`${vp.name} preview sliders hidden`, await page.locator(`${shell} [data-fea-preview-sliders]`).count() === 0);
+  await assertNoVoxelPreview(page, vp, shell);
   const stressPressed = await page.locator(`${shell} [data-fea-plot="stress"]`).getAttribute('aria-pressed');
   check(`${vp.name} stress tab`, stressPressed === 'true', stressPressed || '');
   check(`${vp.name} displacement tab`, await page.locator(`${shell} [data-fea-plot="displacement"]`).count() === 1);
@@ -761,6 +824,7 @@ async function runCase(browser, vp) {
   check(`${vp.name} force on a face`, loaded.ok, JSON.stringify(loaded));
   check(`${vp.name} front snap after picks`, await snap(page, 'front'));
 
+  await assertNoVoxelPreview(page, vp, shell);
   const setupShot = join(SHOT_DIR, vp.touch ? 'fea-card-setup-390.png' : 'fea-card-setup-desktop.png');
   check(`${vp.name} setup shot dir`, !setupShot.startsWith('/opt/cursor/artifacts'), setupShot);
   await page.screenshot({ path: setupShot });
@@ -1126,7 +1190,7 @@ async function runSheetCase(browser, vp) {
   check(`${vp.name} sheet stress finite`, Number.isFinite(maxMPa) && maxMPa > 0.05 && maxMPa < 5000, summary.stress);
   check(`${vp.name} sheet results view`, await page.locator(`${shell}[data-fea-view="results"]`).count() === 1);
   check(`${vp.name} sheet setup hidden`, await page.locator(`${shell} [data-fea-material]`).count() === 0);
-  check(`${vp.name} sheet preview sliders hidden`, await page.locator(`${shell} [data-fea-preview-sliders]`).count() === 0);
+  await assertNoVoxelPreview(page, vp, shell);
   check(`${vp.name} sheet no jacobian failure`, !/Jacobian|non-positive/i.test(summary.notice), summary.notice);
   const shot = join(SHOT_DIR, vp.touch ? 'fea-sheet-390.png' : 'fea-sheet-1280.png');
   check(`${vp.name} sheet shot dir`, !shot.startsWith('/opt/cursor/artifacts'), shot);

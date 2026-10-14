@@ -16,7 +16,6 @@ import { FeaProbeList } from './FeaProbeList';
 import { FeaLoadList } from './FeaLoadList';
 import { FeaAssemblySetup } from './FeaAssemblySetup';
 import { FeaMaterialPicker } from './FeaMaterialPicker';
-import { FeaPreviewSliders } from './FeaPreviewSliders';
 
 const TARGETS = [
   { value: 'fixture', label: 'Fix' },
@@ -245,10 +244,7 @@ export function FeaStudyControls({ panel }) {
         analyzedPartId={panel.analyzedPartId}
         onRemoveFixture={panel.removeFixture}
         onRemoveLoad={panel.removeLoad}
-        selectedLoad={panel.preview?.available ? panel.preview.loadIndex : -1}
-        onSelectLoad={panel.preview?.available ? panel.selectPreviewLoad : null}
       />
-      <FeaPreviewSliders panel={panel} />
       {panel.notice && (
         <p className="text-[11px] text-amber-200" data-fea-notice="">{panel.notice}</p>
       )}
@@ -355,7 +351,6 @@ function FrameTiming({ report, done }) {
 }
 
 function showLegend(panel) {
-  if (panel.preview?.showing) return true;
   if (!panel.result) return false;
   if (panel.results) return true;
   if (panel.dismissed && !panel.result.stale) return false;
@@ -481,7 +476,6 @@ export function FeaResultsReadout({ panel }) {
             quiet={!filled}
             govern={govern}
             result={legendResult}
-            preview={filled ? panel.preview : null}
             plot={legendPlot}
           />
         </div>
@@ -521,7 +515,7 @@ export function FeaRunBar({ panel }) {
   return (
     <div className="mt-1 flex shrink-0 flex-col gap-1">
       {!chrome.frame && showLegend(panel) && (
-        <FeaLegend result={panel.result} preview={panel.preview} plot="stress" />
+        <FeaLegend result={panel.result} plot="stress" />
       )}
       {!chrome.frame && !panel.running && <FeaTiming report={report} />}
       <div className="flex items-center justify-end gap-2">

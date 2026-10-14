@@ -99,8 +99,7 @@ over inventing a new modal layout.
 - **`FeaStudyChip.jsx` / `FeaStudySheet.jsx`** — the shared feature card (`FeatureSheet`)
   on phone and desktop. Both pass `fullLeft`: the left tool rail is hidden, so the
   left edge is 10px from the pane and the right edge stays clear of the right rail.
-  Material, Fix / Force / Pressure, the load list, and the
-  preview sliders stay in the body during setup. After a solve, the legend,
+  Material, Fix / Force / Pressure, and the load list stay in the body during setup. After a solve, the legend,
   the Stress / Displacement tabs, and Stage times scroll in the body. The footer is Run, or Back to Setup
   after a solve. It does not say Confirm. X and Esc close Analyze. Hidden in game.
 - **`PaintModeChip.jsx`** — the shared feature card (`FeatureSheet`) with `fullLeft` on phone and desktop: the left helper rail is hidden, so the left edge is 10px from the pane and the right edge stays clear of the right rail. Eight swatches,
