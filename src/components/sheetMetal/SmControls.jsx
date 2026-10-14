@@ -1,7 +1,8 @@
 import React from 'react';
 import FeatureSheet from '../FeatureSheet';
+import { useDisplayNumber } from '../../hooks/useDisplayNumber';
 import { PARTS_TEXT_INPUT_CLASS, PARTS_TEXT_INPUT_STYLE } from '../../utils/partsChrome';
-import { displayToMm, lengthToDisplay } from '../../utils/displayUnit';
+import { commitDisplayLength, lengthToDisplay } from '../../utils/displayUnit';
 import { lengthFromThumb, lengthSnap, thumbFromLength, THUMB_COUNT } from '../../utils/sliderMap';
 
 /**
@@ -44,6 +45,14 @@ export const SmSlider = ({
 }) => {
   const lo = Number.isFinite(Number(min)) ? Number(min) : 0;
   const hi = Number.isFinite(Number(max)) ? Number(max) : lo;
+  const box = useDisplayNumber(value, (raw) => {
+    if (shaped || raw === '' || raw === '-' || raw === '.') {
+      onChange?.(raw);
+      return;
+    }
+    const n = Number(raw);
+    onChange?.(Number.isFinite(n) ? n : raw);
+  });
   let rangeValue;
   let rangeMin;
   let rangeMax;
@@ -57,6 +66,7 @@ export const SmSlider = ({
     rangeMax = THUMB_COUNT;
     rangeStep = 1;
     onRange = (e) => {
+      box.endDraft();
       onChange?.(lengthFromThumb(e.target.value, { min: lo, max: hi, signed, snap }));
     };
   } else {
@@ -64,7 +74,10 @@ export const SmSlider = ({
     rangeMin = min;
     rangeMax = max;
     rangeStep = step;
-    onRange = (e) => onChange?.(Number(e.target.value));
+    onRange = (e) => {
+      box.endDraft();
+      onChange?.(Number(e.target.value));
+    };
   }
   return (
     <div>
@@ -90,15 +103,11 @@ export const SmSlider = ({
           min={shaped ? undefined : min}
           max={shaped ? undefined : max}
           step={shaped ? 'any' : step}
-          value={value ?? ''}
+          value={box.value}
           disabled={disabled}
-          onChange={(e) => {
-            if (shaped) {
-              onChange?.(e.target.value);
-              return;
-            }
-            onChange?.(e.target.value === '' ? '' : Number(e.target.value));
-          }}
+          onFocus={box.onFocus}
+          onBlur={box.onBlur}
+          onChange={box.onChange}
           className={`${PARTS_TEXT_INPUT_CLASS} !w-24 shrink-0 tabular-nums ${SM_TAP}`}
           style={PARTS_TEXT_INPUT_STYLE}
           aria-label={`${label} value`}
@@ -161,12 +170,9 @@ export const SmMmSlider = ({
       step={Number.isFinite(snap) && snap > 0 ? snap : undefined}
       unit={unit}
       onChange={(v) => {
-        if (v === '' || v === '-' || v === '.') {
-          onMm?.(v);
-          return;
-        }
-        const next = displayToMm(v, unit);
-        onMm?.(Number.isFinite(next) ? next : mm);
+        const next = commitDisplayLength(v, mm, unit);
+        if (v !== '' && v !== '-' && v !== '.' && next === mm) return;
+        onMm?.(next);
       }}
     />
   );

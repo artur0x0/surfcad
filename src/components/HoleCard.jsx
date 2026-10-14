@@ -1,4 +1,5 @@
 import React from 'react';
+import { useDisplayNumber } from '../hooks/useDisplayNumber';
 import { LengthNumberField } from './controls/popupUI';
 import FeatureSheet from './FeatureSheet';
 import { FeatureDeleteButton } from './FeatureEditDelete';
@@ -57,6 +58,7 @@ const HoleCard = ({
 }) => {
   const L = partLengthMm(lengthMm);
   const set = (patch) => onChange?.({ ...card, ...patch });
+  const dia = useDisplayNumber(card.dia === 0 ? 0 : (card.dia ?? ''), (raw) => set({ dia: raw }));
   const clearance = card.type !== 'tapDrill';
   const through = card.through !== false;
   const endFields = (side) => {
@@ -157,9 +159,11 @@ const HoleCard = ({
             data-hole-dia=""
             aria-label="Diameter"
             inputMode="decimal"
-            value={card.dia === 0 ? 0 : (card.dia ?? '')}
+            value={dia.value}
             placeholder="size"
-            onChange={(event) => set({ dia: event.target.value })}
+            onFocus={dia.onFocus}
+            onBlur={dia.onBlur}
+            onChange={dia.onChange}
             className={selectClass}
           />
         </label>

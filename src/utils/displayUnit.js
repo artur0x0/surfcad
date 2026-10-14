@@ -7,6 +7,11 @@
  * field writes. Length captions carry the unit suffix (`Distance mm`).
  * Angles stay degrees.
  *
+ * `formatDisplayNumber` is the one display formatter: at most four decimal
+ * places, trailing zeros removed. Putting that string in a field is not an
+ * edit. `commitDisplayLength` / `commitDisplayNumber` keep the stored value
+ * when the field still shows that string.
+ *
  * Persisted at `surfcad.displayUnit`. Measure, the joint distance field,
  * the contour loft offset, and sheet metal read it. `lengthSnap`
  * (`sliderMap.js`) reads it for the length-slider detent. A leftover
@@ -73,6 +78,61 @@ export function lengthToDisplay(mm, unit) {
   return normalizeDisplayUnit(unit) === 'in' ? n / MM_PER_IN : n;
 }
 
+/** Calculated numbers show at most this many decimal places. */
+export const DISPLAY_NUMBER_DIGITS = 4;
+
+/**
+ * The string a numeric input or readout shows.
+ * At most four decimal places, trailing zeros removed.
+ * Non-finite input is `''`. A rounded zero is `0`, never `-0`.
+ * Full precision stays in the stored value; this string is display only.
+ */
+export function formatDisplayNumber(value) {
+  if (value == null || String(value).trim() === '') return '';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '';
+  const rounded = Number(n.toFixed(DISPLAY_NUMBER_DIGITS));
+  if (rounded === 0) return '0';
+  let text = rounded.toFixed(DISPLAY_NUMBER_DIGITS);
+  if (text.includes('.')) text = text.replace(/0+$/, '').replace(/\.$/, '');
+  if (text === '-0') return '0';
+  return text;
+}
+
+/**
+ * A typed display number versus the number already stored.
+ * The same formatted text is not an edit: `stored` comes back unchanged.
+ * A different finite number is what the user typed. `''`, `'-'`, and `'.'`
+ * pass through so a cleared box can stay cleared.
+ */
+export function commitDisplayNumber(typed, stored) {
+  if (typed === '' || typed === '-' || typed === '.') return typed;
+  const raw = String(typed).trim();
+  if (raw === '' || raw === '-' || raw === '.') return typed;
+  const shown = formatDisplayNumber(stored);
+  if (shown !== '' && raw === shown) return stored;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : stored;
+}
+
+/**
+ * A typed length in the display unit versus millimetres already stored.
+ * Echoing the formatted field keeps `storedMm` (full precision).
+ * A new typed number converts to millimetres.
+ */
+export function commitDisplayLength(typed, storedMm, unit) {
+  if (typed === '' || typed === '-' || typed === '.') return typed;
+  const raw = String(typed).trim();
+  if (raw === '' || raw === '-' || raw === '.') return typed;
+  const stored = Number(storedMm);
+  if (Number.isFinite(stored)) {
+    const shown = formatDisplayNumber(lengthToDisplay(stored, unit));
+    if (shown !== '' && raw === shown) return storedMm;
+  }
+  const mm = displayToMm(raw, unit);
+  return Number.isFinite(mm) ? mm : storedMm;
+}
+
 /**
  * A typed display number → millimetres. Non-finite input stays non-finite.
  * Call this before a length is written. Do not parse a formatted caption.
@@ -93,29 +153,26 @@ export function lengthCaption(label, unit) {
   return `${text} ${suffix}`;
 }
 
-/** `30.00 mm` or `1.1811 in`. Lengths only — angles stay degrees. */
+/** `30 mm` or `1.1811 in`. Lengths only — angles stay degrees. */
 export function formatDisplayLength(mm, unit) {
   const u = normalizeDisplayUnit(unit);
-  const n = lengthToDisplay(mm, u);
-  if (!Number.isFinite(n)) return '';
-  const digits = u === 'in' ? 4 : 2;
-  return `${n.toFixed(digits)} ${u}`;
+  const text = formatDisplayNumber(lengthToDisplay(mm, u));
+  if (!text) return '';
+  return `${text} ${u}`;
 }
 
-/** Signed length. A zero rounds to `0.00 mm`, not `-0.00`. */
+/** Signed length. A zero rounds to `0 mm`, not `-0`. */
 export function formatDisplayDelta(mm, unit) {
   const u = normalizeDisplayUnit(unit);
-  const n = lengthToDisplay(mm, u);
-  if (!Number.isFinite(n)) return '';
-  const digits = u === 'in' ? 4 : 2;
-  const rounded = Number(n.toFixed(digits));
-  if (rounded === 0) return `${(0).toFixed(digits)} ${u}`;
-  const body = rounded > 0 ? `+${rounded.toFixed(digits)}` : rounded.toFixed(digits);
+  const text = formatDisplayNumber(lengthToDisplay(mm, u));
+  if (!text) return '';
+  if (text === '0') return `0 ${u}`;
+  const body = text.startsWith('-') ? text : `+${text}`;
   return `${body} ${u}`;
 }
 
 export function formatDisplayAngle(deg) {
-  const n = Number(deg);
-  if (!Number.isFinite(n)) return '';
-  return `${n.toFixed(1)}°`;
+  const text = formatDisplayNumber(deg);
+  if (!text) return '';
+  return `${text}°`;
 }

@@ -157,7 +157,7 @@ console.log('SCS S2 — chrome + wiring');
     && saveDisplayUnit('nope', mem) === 'mm' && mem.store['surfcad.sheetMetal.displayUnit'] === 'in');
   check('inch display round-trips to mm; mm text stays mm',
     near(displayToMm(lengthToDisplay(100, 'in'), 'in'), 100, 0.02)
-    && formatSheetLength(25.4, 'in') === '1.000 in' && formatSheetLength(100, 'mm') === '100.00 mm');
+    && formatSheetLength(25.4, 'in') === '1 in' && formatSheetLength(100, 'mm') === '100 mm');
   check('plane buttons as big tap fallback', /data-sm-plane/.test(flow));
   check('taps route to the overlay first', /if \(sheetMetalModeRef\.current\) \{[\s\S]{0,600}sheetPickFromHits/.test(view));
   check('part mesh hidden while drafting, restored on exit', /sheetMetalHidden = true/.test(view) && /mesh\.visible = true/.test(view));

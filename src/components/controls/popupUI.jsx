@@ -19,8 +19,9 @@
 //      colour by extending ACCENTS, never by interpolating.
 import React from 'react';
 import { useDisplayUnit } from '../../hooks/useDisplayUnit';
+import { useDisplayNumber } from '../../hooks/useDisplayNumber';
 import { numberFieldLabelParts } from '../../utils/featureFieldEdit';
-import { displayToMm, lengthCaption, lengthToDisplay } from '../../utils/displayUnit';
+import { commitDisplayLength, lengthCaption, lengthToDisplay } from '../../utils/displayUnit';
 import { lengthFromThumb, lengthSnap, thumbFromLength, THUMB_COUNT } from '../../utils/sliderMap';
 
 /* Shared accent/text tokens are imported by chips; keep them here. */
@@ -87,8 +88,10 @@ export const PopupSection = ({
 
 /**
  * Number control: caption, slider and typed box — always all three.
- * The box is wide enough for a real value (not the old 3.5rem), and both
- * inputs write through the same onChange so they can never disagree.
+ * The box is wide enough for a real value (not the old 3.5rem). It shows
+ * `formatDisplayNumber` (at most four decimals). The stored value stays
+ * full precision until the typed text differs from that display. The
+ * slider still writes the thumb's number.
  */
 export const NumberField = ({
   label, value, onChange, min, max, step, accent = 'slate',
@@ -99,6 +102,7 @@ export const NumberField = ({
 }) => {
   const a = accentOf(accent);
   const parts = numberFieldLabelParts(label, unit);
+  const box = useDisplayNumber(value, onChange);
   const lo = Number.isFinite(Number(min)) ? Number(min) : 0;
   const hi = Number.isFinite(Number(max)) ? Number(max) : (shaped ? lo : 100);
   let rangeValue;
@@ -114,6 +118,7 @@ export const NumberField = ({
     rangeMax = THUMB_COUNT;
     rangeStep = 1;
     onRange = (e) => {
+      box.endDraft();
       const next = lengthFromThumb(e.target.value, { min: lo, max: hi, signed, snap });
       onChange?.(String(next));
     };
@@ -122,7 +127,10 @@ export const NumberField = ({
     rangeMin = min ?? 0;
     rangeMax = max ?? 100;
     rangeStep = step ?? 0.5;
-    onRange = (e) => onChange?.(e.target.value);
+    onRange = (e) => {
+      box.endDraft();
+      onChange?.(e.target.value);
+    };
   }
   return (
     <PopupSection label={label} accent={accent} className={className} captionAttrs={captionAttrs}>
@@ -144,12 +152,14 @@ export const NumberField = ({
         />
         <input
           type="number"
-          value={value ?? ''}
+          value={box.value}
           min={shaped ? undefined : min}
           max={shaped ? undefined : max}
           step={shaped ? 'any' : (step ?? 'any')}
           disabled={disabled}
-          onChange={(e) => onChange?.(e.target.value)}
+          onFocus={box.onFocus}
+          onBlur={box.onBlur}
+          onChange={box.onChange}
           className={`w-20 shrink-0 rounded border px-2 py-1 tabular-nums text-white
             ${POPUP_TEXT.value} ${a.field} disabled:opacity-40`}
           aria-label={`${label} value`}
@@ -204,12 +214,9 @@ export const LengthNumberField = ({
       sliderAttrs={sliderAttrs}
       captionAttrs={captionAttrs}
       onChange={(raw) => {
-        if (raw === '' || raw === '-' || raw === '.') {
-          onChangeMm?.(raw);
-          return;
-        }
-        const mm = displayToMm(raw, unit);
-        onChangeMm?.(Number.isFinite(mm) ? mm : valueMm);
+        const next = commitDisplayLength(raw, valueMm, unit);
+        if (raw !== '' && raw !== '-' && raw !== '.' && next === valueMm) return;
+        onChangeMm?.(next);
       }}
     />
   );

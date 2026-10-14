@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { Vector3 } from 'three';
 import { useDisplayUnit } from '../hooks/useDisplayUnit';
-import { formatDisplayLength } from '../utils/displayUnit';
+import { formatDisplayAngle, formatDisplayLength } from '../utils/displayUnit';
 import { dimensionShownNumber } from '../utils/contourGesture';
 import { CONSTRAINT_LABELS } from '../utils/contourGesture';
 import { constraintAnchor, dimensionAnchor, planeUvToWorld } from '../utils/contourPick';
@@ -317,7 +317,7 @@ const ContourTags = ({
       {dimensions.map((dim) => {
         const shown = dimensionShownNumber(dim.kind, dim.value);
         const value = dim.kind === 'angle'
-          ? `${Number(shown).toFixed(1)}°`
+          ? formatDisplayAngle(shown)
           : formatDisplayLength(shown, unit);
         const label = dim.name ? `${dim.name} ${value}` : value;
         const open = selectedId === dim.id;

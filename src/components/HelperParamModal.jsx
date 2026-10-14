@@ -13,6 +13,7 @@ import {
   LengthNumberField, NumberField, SelectField, CheckField, PopupButton, POPUP_TEXT,
 } from './controls/popupUI';
 import { helperFieldSpec } from '../utils/helperSheetRange';
+import { formatDisplayNumber } from '../utils/displayUnit';
 import { FeatureDeleteButton } from './FeatureEditDelete';
 import FeatureSheet from './FeatureSheet';
 
@@ -291,9 +292,9 @@ const HelperParamModal = ({
             {faceInfo.type} face
           </span>
           {' · '}
-          n {faceInfo.normal.map((v) => Number(v).toFixed(2)).join(', ')}
+          n {faceInfo.normal.map((v) => formatDisplayNumber(v)).join(', ')}
           {' · '}
-          c {faceInfo.center.map((v) => Number(v).toFixed(1)).join(', ')}
+          c {faceInfo.center.map((v) => formatDisplayNumber(v)).join(', ')}
         </div>
       )}
 
@@ -307,17 +308,17 @@ const HelperParamModal = ({
           {minEdgeLength != null && (
             <>
               {' · '}
-              min L={minEdgeLength.toFixed(2)}{item?._minEdgeLength != null ? ' (effective)' : ''}
+              min L={formatDisplayNumber(minEdgeLength)}{item?._minEdgeLength != null ? ' (effective)' : ''}
               {applySizeGuard && (
                 <>
                   {' · '}
-                  keep r &lt; {(EDGE_BLEND_SIZE_GUARD * minEdgeLength).toFixed(2)} (planar)
+                  keep r &lt; {formatDisplayNumber(EDGE_BLEND_SIZE_GUARD * minEdgeLength)} (planar)
                 </>
               )}
               {resolvedStrategy === 'sweep' && (
                 <>
                   {' · '}
-                  sweep — no 0.45·L clamp (max {Number(sweepMax).toFixed(0)})
+                  sweep — no 0.45·L clamp (max {formatDisplayNumber(sweepMax)})
                 </>
               )}
             </>
@@ -329,10 +330,10 @@ const HelperParamModal = ({
         <div className="px-4 py-2 border-b border-red-900/50 bg-red-950/50 text-[11px] text-red-100 shrink-0 flex items-start gap-2">
           <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5" />
           <div>
-            <span className="font-semibold">{blendParamName === 'chamfer' ? 'Chamfer' : 'Radius'} {blendNum}</span>
+            <span className="font-semibold">{blendParamName === 'chamfer' ? 'Chamfer' : 'Radius'} {formatDisplayNumber(blendNum)}</span>
             {' ≥ '}
-            size guard ({EDGE_BLEND_SIZE_GUARD}× min L = {(EDGE_BLEND_SIZE_GUARD * minEdgeLength).toFixed(2)}).
-            {' '}Confirm will clamp to {safeBlendMax}.
+            size guard ({EDGE_BLEND_SIZE_GUARD}× min L = {formatDisplayNumber(EDGE_BLEND_SIZE_GUARD * minEdgeLength)}).
+            {' '}Confirm will clamp to {formatDisplayNumber(safeBlendMax)}.
           </div>
         </div>
       )}
@@ -417,7 +418,7 @@ const HelperParamModal = ({
         compact={compact}
         onCancel={onCancel}
         onConfirm={handleConfirm}
-        confirmLabel={sizeGuardFail ? `Clamp & Confirm (${safeBlendMax})` : 'Confirm'}
+        confirmLabel={sizeGuardFail ? `Clamp & Confirm (${formatDisplayNumber(safeBlendMax)})` : 'Confirm'}
         cardAttrs={{
           id: 'helper-param-title',
           'data-helper-param': item.id,
@@ -479,10 +480,10 @@ const HelperParamModal = ({
             variant="primary"
             accent={sizeGuardFail ? 'amber' : ACCENT}
             onClick={handleConfirm}
-            title={sizeGuardFail ? `Clamp to ${safeBlendMax} and insert` : 'Confirm insert'}
+            title={sizeGuardFail ? `Clamp to ${formatDisplayNumber(safeBlendMax)} and insert` : 'Confirm insert'}
           >
             <Check size={16} />
-            {sizeGuardFail ? `Clamp & Confirm (${safeBlendMax})` : 'Confirm'}
+            {sizeGuardFail ? `Clamp & Confirm (${formatDisplayNumber(safeBlendMax)})` : 'Confirm'}
           </PopupButton>
           </div>
         </div>

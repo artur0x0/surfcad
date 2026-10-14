@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDisplayNumber } from '../../utils/displayUnit';
 
 /**
  * Assembly scope and the bonded pair list. Renders nothing for a one-part
@@ -86,8 +87,12 @@ export function FeaAssemblySetup({ panel }) {
                 type="number"
                 min="0"
                 step="0.05"
-                value={contact.mu ?? 0.2}
-                onChange={(event) => panel.setContactMu?.(index, event.target.value)}
+                value={formatDisplayNumber(contact.mu ?? 0.2)}
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  if (raw.trim() === formatDisplayNumber(contact.mu ?? 0.2)) return;
+                  panel.setContactMu?.(index, raw);
+                }}
                 className="w-14 rounded border border-cyan-700/70 bg-cyan-950/80 px-1 py-0.5 text-[12px] text-cyan-100"
                 aria-label="Friction coefficient"
               />

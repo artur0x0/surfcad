@@ -1,16 +1,15 @@
 import React from 'react';
 import { X } from 'lucide-react';
+import { formatDisplayNumber } from '../../utils/displayUnit';
 
 function formatValue(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 'n/a';
-  return String(Math.round(n * 100) / 100);
+  const text = formatDisplayNumber(value);
+  return text === '' ? 'n/a' : text;
 }
 
 function formatCoord(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return '?';
-  return String(Math.round(n * 10) / 10);
+  const text = formatDisplayNumber(value);
+  return text === '' ? '?' : text;
 }
 
 function joinNums(list) {
