@@ -255,6 +255,68 @@ export function firstCommitBaseline({ branch = 'main', headSha = null } = {}) {
 }
 
 /**
+ * Baseline after a commit that wrote some part scripts.
+ *
+ * Only `saved` paths move forward. Every other part still in the document
+ * keeps its previous baseline script, so an unsaved edit stays dirty and a
+ * clean part stays clean. A part added since open and not listed in `saved`
+ * is left out of the script map: `isPartDirty` treats a missing entry as
+ * dirty. Filling the map from the whole working copy (what `captureBaseline`
+ * does with that map) cleared every other row's dot even though those files
+ * were not in the commit.
+ *
+ * Part ids are the current document when the assembly file was written with
+ * it. A row that file no longer lists is not kept as a pending removal.
+ * `removed` drops a path that this commit deleted or remapped away.
+ */
+export function baselineAfterPartSave(baseline, {
+  doc,
+  saved = {},
+  removed = [],
+  assemblyPath = null,
+  assemblyName = null,
+  branch = null,
+  headSha = null,
+  assets = null,
+  assemblyWritten = true,
+} = {}) {
+  const prev = baseline || {};
+  const asmName = vaultSegment(assemblyName || doc?.name) || prev.assemblyName || 'Assembly';
+  const path = assemblyPath || prev.assemblyPath || assemblyFilePath(asmName);
+  const captured = captureBaseline({
+    assemblyPath: path,
+    assemblyName: asmName,
+    doc: doc || { name: asmName, source: 'git', parts: [] },
+    scripts: {},
+    assets: assets ?? prev.assets ?? null,
+    branch: branch || prev.branch || 'main',
+    headSha: headSha ?? prev.headSha ?? null,
+  });
+  const removedSet = new Set((removed || []).filter(Boolean).map(String));
+  const prevScripts = prev.scripts || {};
+  const scriptMap = {};
+  const partIds = [];
+  for (const id of captured.partIds) {
+    if (removedSet.has(id)) continue;
+    partIds.push(id);
+    if (Object.prototype.hasOwnProperty.call(saved, id)) {
+      const text = saved[id];
+      scriptMap[id] = typeof text === 'string' ? text : '';
+    } else if (Object.prototype.hasOwnProperty.call(prevScripts, id)) {
+      scriptMap[id] = prevScripts[id];
+    }
+  }
+  captured.scripts = scriptMap;
+  captured.partIds = partIds;
+  if (!assemblyWritten && typeof prev.assemblyText === 'string') {
+    captured.assemblyText = prev.assemblyText;
+    if (prev.assemblyPath) captured.assemblyPath = prev.assemblyPath;
+    if (prev.assemblyName) captured.assemblyName = prev.assemblyName;
+  }
+  return captured;
+}
+
+/**
  * Instantly commit one part (plus the assembly `.surf.json`) to the working
  * branch. Used by Parts "Add to Repo" for local content not yet in the vault.
  * Remaps `local:` / foreign ids to `parts/<Name>.js` (`Name (2)` on collision).
@@ -358,12 +420,14 @@ export async function commitPartToRepo(adapter, repo, {
       files,
       baseSha: expectedBase,
     });
-    const nextScripts = { ...(base.scripts || {}), ...workScripts, [destId]: pushContent };
-    const next = captureBaseline({
+    // The commit wrote destId and the assembly file only. Sibling edits
+    // stay on their old baseline so their dirty dots stay.
+    const next = baselineAfterPartSave(base, {
+      doc: workDoc,
+      saved: { [destId]: pushContent },
+      removed: id !== destId ? [id] : [],
       assemblyPath,
       assemblyName: asmName,
-      doc: workDoc,
-      scripts: nextScripts,
       assets: base.assets,
       branch,
       headSha: res.sha,
@@ -406,7 +470,6 @@ export async function commitPartToRepo(adapter, repo, {
  */
 export async function deletePartFromRepo(adapter, repo, {
   doc,
-  scripts,
   baseline,
   partPath,
   message = null,
@@ -460,13 +523,11 @@ export async function deletePartFromRepo(adapter, repo, {
       files,
       baseSha: expectedBase,
     });
-    const nextScripts = { ...(base.scripts || {}), ...(scripts || {}) };
-    delete nextScripts[path];
-    const next = captureBaseline({
+    const next = baselineAfterPartSave(base, {
+      doc,
+      removed: [path],
       assemblyPath,
       assemblyName: asmName,
-      doc,
-      scripts: nextScripts,
       assets: base.assets,
       branch,
       headSha: res.sha,
@@ -599,14 +660,32 @@ export async function saveLocalOnNewBranch(adapter, repo, {
     baseSha,
   });
   const asmName = vaultSegment(doc?.name) || baseline?.assemblyName || 'Assembly';
-  const next = captureBaseline({
-    assemblyPath: assemblyFilePath(asmName),
-    assemblyName: asmName,
+  const assemblyPath = assemblyFilePath(asmName);
+  const saved = {};
+  const removed = [];
+  let assemblyWritten = false;
+  for (const file of list) {
+    if (!file?.path) continue;
+    if (file.path === assemblyPath || (baseline?.assemblyPath && file.path === baseline.assemblyPath)) {
+      if (!file.delete) assemblyWritten = true;
+      continue;
+    }
+    const info = parseVaultPath(file.path);
+    const isPart = info && (info.kind === 'assembly-part' || info.kind === 'shared-part');
+    if (!isPart) continue;
+    if (file.delete) removed.push(file.path);
+    else if (typeof file.content === 'string') saved[file.path] = file.content;
+  }
+  const next = baselineAfterPartSave(baseline, {
     doc: doc || { name: asmName, source: 'git', parts: [] },
-    scripts: scripts || {},
+    saved,
+    removed,
+    assemblyPath,
+    assemblyName: asmName,
     assets: baseline?.assets,
     branch,
     headSha: res.sha,
+    assemblyWritten,
   });
   return {
     status: 'committed',

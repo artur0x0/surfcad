@@ -136,6 +136,7 @@
         "golden:feature-edit-delete": "node scripts/golden/smoke_feature_edit_delete.mjs",
         "golden:delete-last-feature": "node scripts/golden/smoke_delete_last_feature.mjs",
         "golden:part-hide-thumbnail": "node scripts/golden/smoke_part_hide_thumbnail.mjs",
+        "golden:part-dirty": "node scripts/golden/smoke_part_dirty.mjs",
         "golden:part-thumb-cache": "node scripts/golden/smoke_part_thumb_cache.mjs",
         "golden:ui-desktop-rail-error-undo": "node scripts/golden/smoke_ui_desktop_rail_error_undo.mjs",
         "golden:fillet-kernel-spike-c": "node scripts/golden/smoke_fillet_kernel_spike_c.mjs",
