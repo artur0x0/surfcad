@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { contourRailTools, enterContourState } from './contourMode.js';
+import { contourRailTools, enterContourState, switchContourTool } from './contourMode.js';
+import { selectContourGesture } from './contourGesture.js';
+import { solveContour } from './contourSolve.js';
 import { composeHoleOnContour } from './holeContour.js';
 import {
   defaultHoleCard,
@@ -59,9 +61,10 @@ test('a bad diameter or a shallow end is refused on the card', () => {
   assert.equal(holeSpecFromCard({ ...defaultHoleCard(), through: false, depth: 0 }).ok, false);
 });
 
-test('the hole rail is cursor and polyline, and the sketch starts empty', () => {
-  assert.deepEqual(contourRailTools('hole').map((tool) => tool.id), ['cursor', 'polyline']);
+test('the hole rail is cursor, rectangle, and polyline, and the sketch starts empty', () => {
+  assert.deepEqual(contourRailTools('hole').map((tool) => tool.id), ['cursor', 'rectangle', 'polyline']);
   assert.ok(contourRailTools('crossSection').some((tool) => tool.id === 'circle'));
+  assert.ok(contourRailTools('crossSection').some((tool) => tool.id === 'rectangle'));
   const started = enterContourState('hole', null);
   assert.equal(started.entry, 'hole');
   assert.equal(started.tool, 'cursor');
@@ -125,4 +128,55 @@ test('a saved spec refills the card and an empty contour stays a contour', () =>
   assert.equal(sketch.params.contour.lines[0].construction, true);
   assert.deepEqual(sketch.planeFace.planeFrame.normal, [0, 0, 1]);
   assert.deepEqual(sketch.params.points, [[1, 2]]);
+});
+
+test('a rectangle is four centres and keeps its dimensions and constraints', () => {
+  const drawn = switchContourTool(enterContourState('hole', null), 'rectangle');
+  const contour = holeSketchContour(drawn);
+  assert.equal(contour.points.length, 4);
+  assert.equal(contour.lines.length, 4);
+  assert.ok(contour.lines.every((line) => line.construction === true));
+  assert.ok(contour.dimensions.some((dim) => dim.kind === 'length' && dim.edge === 'e0' && dim.value === 20));
+  assert.ok(contour.dimensions.some((dim) => dim.kind === 'length' && dim.edge === 'e1' && dim.value === 12));
+  assert.ok(contour.constraints.some((item) => item.kind === 'horizontal'));
+  assert.ok(contour.constraints.some((item) => item.kind === 'vertical'));
+  const kept = holeSketchContour(switchContourTool(drawn, 'cursor'));
+  assert.equal(kept.points.length, 4);
+  const line = holeSketchContour({
+    tool: 'polyline',
+    params: { points: [[0, 0], [1, 0]], width: 20, height: 12 },
+  });
+  assert.equal(line.points.length, 2);
+  const armed = selectContourGesture(drawn, 'dimension');
+  assert.equal(armed.entry, 'hole');
+  assert.equal(armed.gesture, 'dimension');
+  assert.equal(armed.params.contour.points.length, 4);
+  const widened = {
+    ...armed.params.contour,
+    dimensions: armed.params.contour.dimensions.map((dim) => (
+      dim.edge === 'e0' ? { ...dim, value: 30 } : dim
+    )),
+  };
+  const solved = solveContour({
+    centers: true,
+    points: widened.points,
+    lines: widened.lines,
+    arcs: widened.arcs,
+    dimensions: widened.dimensions,
+    constraints: widened.constraints,
+    refs: widened.refs,
+  });
+  const xs = solved.points.map((point) => point.at[0]).sort((a, b) => a - b);
+  assert.ok(Math.abs(xs[0] - (-10)) < 0.05, xs.join(','));
+  assert.ok(Math.abs(xs[xs.length - 1] - 20) < 0.05, xs.join(','));
+  const spec = holeSpecFromCard(defaultHoleCard()).spec;
+  const wrote = composeHoleOnContour(PART, { frame: FRAME, contour, spec });
+  assert.equal(wrote.ok, true);
+  for (const id of ['p0', 'p1', 'p2', 'p3']) {
+    assert.match(wrote.buffer, new RegExp(`id: '${id}'`));
+  }
+  assert.match(wrote.buffer, /kind: 'length'/);
+  assert.match(wrote.buffer, /kind: 'horizontal'/);
+  assert.match(wrote.buffer, /construction: true/);
+  assert.match(wrote.buffer, /holesOnContour\(part, c1,/);
 });

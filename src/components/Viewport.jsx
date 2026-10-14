@@ -3054,7 +3054,7 @@ const Viewport = forwardRef(({
    * when the point list changes — a live drag mutates positions in place so
    * the wire follows the cursor at frame rate instead of through React.
    */
-  const paintPolylineDraft = useCallback((plane, points, { wire = true, pointColors = null, pointIds = null, dashed = false } = {}) => {
+  const paintPolylineDraft = useCallback((plane, points, { wire = true, pointColors = null, pointIds = null, dashed = false, closed = false } = {}) => {
     // A repaint (point added, undone, plane re-picked) rebuilds the handles;
     // carry the hover across it so the grab target does not flicker back to
     // idle under a stationary cursor.
@@ -3091,11 +3091,12 @@ const Viewport = forwardRef(({
     }
     let line = null;
     if (wire && world.length >= 2) {
-      const pos = new Float32Array(world.length * 3);
-      for (let i = 0; i < world.length; i++) {
-        pos[i * 3] = world[i][0];
-        pos[i * 3 + 1] = world[i][1];
-        pos[i * 3 + 2] = world[i][2];
+      const stroke = closed && world.length >= 3 ? [...world, world[0]] : world;
+      const pos = new Float32Array(stroke.length * 3);
+      for (let i = 0; i < stroke.length; i++) {
+        pos[i * 3] = stroke[i][0];
+        pos[i * 3 + 1] = stroke[i][1];
+        pos[i * 3 + 2] = stroke[i][2];
       }
       line = makeSketchLine(pos, {
         color: POLYLINE_POINT_COLOR,
@@ -4998,6 +4999,11 @@ const Viewport = forwardRef(({
       const holeHandles = sketchHandles(contourMode);
       const holePts = holeHandles.map((h) => h.at);
       const holeIds = holeHandles.map((h) => h.id);
+      const holeParams = contourMode.params || {};
+      const holeRectangle = !holeParams.contour
+        && holeParams.width != null
+        && holeParams.height != null
+        && !(Array.isArray(holeParams.points) && holeParams.points.length);
       const holePicks = sketchHighlightPicks(contourMode);
       const holeRefs = referencePaintSegments(contourMode.params?.contour, holePicks);
       if (holeRefs.length) paintContourRefWire(plane, holeRefs);
@@ -5013,6 +5019,7 @@ const Viewport = forwardRef(({
           pointColors: holePaint?.pointColors || null,
           pointIds: holeIds,
           dashed: true,
+          closed: holeRectangle,
         });
       } else {
         clearPolylineDraft();

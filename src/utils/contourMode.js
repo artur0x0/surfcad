@@ -123,10 +123,10 @@ export const CONTOUR_TOOLS = [
 
 export const CONTOUR_TOOL_IDS = CONTOUR_TOOLS.map((t) => t.id);
 
-/** Hole sketches centres. Circle, rectangle, and polygon stay off that rail. */
+/** Hole sketches centres. Circle and polygon stay off that rail. Rectangle is the same tool as the other contour rails: four corners. */
 export function contourRailTools(entry) {
   if (entry === 'hole') {
-    return CONTOUR_TOOLS.filter((tool) => tool.id === 'cursor' || tool.id === 'polyline');
+    return CONTOUR_TOOLS.filter((tool) => tool.id === 'cursor' || tool.id === 'rectangle' || tool.id === 'polyline');
   }
   return CONTOUR_TOOLS;
 }
