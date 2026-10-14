@@ -172,14 +172,15 @@ const TabPopup = ({ mode, setMode, onCommit, onDelete, onExit, unit, onUnit, com
 
 const HOLE_TITLES = { hole: 'Hole', countersink: 'Countersunk hole', tapped: 'Tapped hole' };
 
-const HolePopup = ({ mode, setMode, onCommit, onDelete, onExit, unit, onUnit, compact = false, lengthMm = 100 }) => {
+const HolePopup = ({ mode, setMode, onCommit, onDelete, onExit, onSketch, unit, onUnit, compact = false, lengthMm = 100 }) => {
   const d = mode.draft;
   const range = holeRange(mode) || { u0: -50, u1: 50, v0: -50, v1: 50 };
   const minHole = Number(mode.spec.limits?.minHole) || 0;
   const type = d.type || 'hole';
+  const placing = !!d.isNew;
   return (
     <SmPopup
-      title={d.isNew ? HOLE_TITLES[type] : `${HOLE_TITLES[type]} ${d.id}`}
+      title={placing ? HOLE_TITLES[type] : `${HOLE_TITLES[type]} ${d.id}`}
       subtitle={`${d.panel === 'base' ? 'Base' : `Flange ${d.panel}`} face${minHole ? ` · SKU min Ø ${formatSheetLength(minHole, unit)}` : ''}`}
       onClose={onExit}
       closeLabel="Exit sheet metal without writing this hole"
@@ -187,7 +188,14 @@ const HolePopup = ({ mode, setMode, onCommit, onDelete, onExit, unit, onUnit, co
       unit={unit}
       onUnit={onUnit}
       compact={compact}
-      footer={<DraftFooter mode={mode} setMode={setMode} onCommit={onCommit} onDelete={onDelete} />}
+      footer={placing ? (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <SmButton onClick={() => setMode((m) => cancelDraft(m))} data-sm-back="1">Back</SmButton>
+          <SmButton variant="primary" data-sm-next="1" onClick={() => onSketch?.()}>Next</SmButton>
+        </div>
+      ) : (
+        <DraftFooter mode={mode} setMode={setMode} onCommit={onCommit} onDelete={onDelete} />
+      )}
     >
       {type === 'tapped' ? (
         <SmSelect id="sm-hole-thread" label="Thread" value={d.thread}
@@ -201,10 +209,14 @@ const HolePopup = ({ mode, setMode, onCommit, onDelete, onExit, unit, onUnit, co
         <SmMmSlider id="sm-hole-csk" label="Countersink Ø (82°)" mm={d.cskDia} minMm={d.d} maxMm={Math.max(d.d * 3, d.cskDia)} unit={unit}
           onMm={(v) => setMode((m) => updateDraft(m, { cskDia: v }))} />
       )}
-      <SmMmSlider id="sm-hole-u" label="Position along U" mm={d.u} minMm={range.u0} maxMm={range.u1} unit={unit}
-        onMm={(v) => setMode((m) => updateDraft(m, { u: v }))} />
-      <SmMmSlider id="sm-hole-v" label="Position along V" mm={d.v} minMm={range.v0} maxMm={range.v1} unit={unit}
-        onMm={(v) => setMode((m) => updateDraft(m, { v: v }))} />
+      {!placing && (
+        <>
+          <SmMmSlider id="sm-hole-u" label="Position along U" mm={d.u} minMm={range.u0} maxMm={range.u1} unit={unit}
+            onMm={(v) => setMode((m) => updateDraft(m, { u: v }))} />
+          <SmMmSlider id="sm-hole-v" label="Position along V" mm={d.v} minMm={range.v0} maxMm={range.v1} unit={unit}
+            onMm={(v) => setMode((m) => updateDraft(m, { v: v }))} />
+        </>
+      )}
     </SmPopup>
   );
 };
@@ -279,13 +291,13 @@ const CheckPopup = ({ mode, setMode, mesh, script, partName, unit, onUnit, compa
 const TOOL_HINTS = {
   tab: 'Tap orange edges to add them as one tab, or a tab to edit it.',
   bend: 'Tap orange edges to bend them as one feature, or a bend to edit it.',
-  hole: 'Tap a face to place a hole, or a hole to edit it.',
-  countersink: 'Tap a face to place a countersunk hole.',
-  tapped: 'Tap a face to place a tapped hole.',
+  hole: 'Tap a face, set the size, then sketch the centres. Tap a hole to edit it.',
+  countersink: 'Tap a face, set the countersink, then sketch the centres.',
+  tapped: 'Tap a face, pick the thread, then sketch the centres.',
 };
 
 const SheetMetalFlow = ({
-  mode, setMode, onCommit, onDone, onExit, compact = false, mesh = null, script = null, partName = '',
+  mode, setMode, onCommit, onDone, onExit, onSketch = null, compact = false, mesh = null, script = null, partName = '',
   onDeleteFeature = null, onUndo = null, canUndo = false, lengthMm = 100,
 }) => {
   const [unit, setDisplayUnit] = useDisplayUnit();
@@ -419,7 +431,7 @@ const SheetMetalFlow = ({
     return deleteChrome(<TabPopup mode={mode} setMode={setMode} onCommit={onCommit} onDelete={requestSheetDelete} onExit={onExit} unit={unit} onUnit={onUnit} compact={compact} lengthMm={lengthMm} />);
   }
   if (mode.stage === 'edit' && mode.draft?.kind === 'hole') {
-    return deleteChrome(<HolePopup mode={mode} setMode={setMode} onCommit={onCommit} onDelete={requestSheetDelete} onExit={onExit} unit={unit} onUnit={onUnit} compact={compact} lengthMm={lengthMm} />);
+    return deleteChrome(<HolePopup mode={mode} setMode={setMode} onCommit={onCommit} onDelete={requestSheetDelete} onExit={onExit} onSketch={onSketch} unit={unit} onUnit={onUnit} compact={compact} lengthMm={lengthMm} />);
   }
 
   if (mode.stage === 'base' && mode.base) {

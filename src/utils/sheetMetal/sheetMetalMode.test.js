@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createSheetSpec, sheetFreeEdges } from './sheetModel.js';
 import { sheetContourEdges } from './sheetContourEdges.js';
+import { sheetFlatPattern } from './sheetFlat.js';
+import { sheetMetalBlock } from './sheetMetalScript.js';
+import { evaluationScript } from '../featureSkip.js';
 import {
   acceptBaseEdit,
   acceptDraft,
@@ -10,6 +13,8 @@ import {
   editSheetChip,
   sheetDoneSpec,
   sheetDraftExtraCount,
+  sheetHolesFromSketch,
+  sheetPanelFrame,
   sheetTap,
 } from './sheetMetalMode.js';
 
@@ -215,4 +220,40 @@ test('Done writes only when the open spec differs and leaves the step stack', ()
   assert.equal(sheetDoneSpec({ ...mode, draft: { kind: 'bend' } }, saved).close, false);
   assert.equal(sheetDoneSpec({ ...mode, exportOpen: true }, saved).close, false);
   assert.deepEqual(sheetDoneSpec({ stage: 'edit', spec: null }, null), { close: true, write: false, spec: null });
+});
+
+test('a centres sketch writes panel u v and a blank sketch writes nothing', () => {
+  const spec = createSheetSpec(stock, 'XY', { width: 80, height: 40 });
+  spec.bends = [{ id: 'b1', panel: 'base', edge: 'u+', angle: 90, length: 20 }];
+  const frame = sheetPanelFrame(spec, 'b1');
+  assert.ok(frame.normal.length === 3);
+  const empty = sheetHolesFromSketch(spec, { panel: 'b1', type: 'hole', d: 4 }, { points: [] });
+  assert.equal(empty.empty, true);
+  assert.equal(empty.spec, spec);
+  const wrote = sheetHolesFromSketch(spec, {
+    panel: 'b1',
+    type: 'countersink',
+    d: 4,
+    cskDia: 8,
+    cskAngle: 82,
+  }, {
+    points: [{ id: 'p0', at: [6, 0] }, { id: 'p1', at: [6, 8] }],
+    lines: [{ id: 'e0', a: 'p0', b: 'p1', construction: true }],
+  });
+  assert.equal(wrote.ok, true, wrote.message || '');
+  assert.equal(wrote.empty, false);
+  assert.equal(wrote.spec.holes.length, 2);
+  assert.equal(wrote.spec.holes[0].panel, 'b1');
+  assert.equal(wrote.spec.holes[0].u, 6);
+  assert.equal(wrote.spec.holes[1].v, 8);
+  assert.equal(wrote.spec.holes[0].type, 'countersink');
+  assert.equal(wrote.spec.holes[0].cskDia, 8);
+  assert.equal(wrote.spec.holes[0].d, wrote.spec.holes[1].d);
+  assert.equal(JSON.stringify(wrote.spec).includes('solveContour'), false);
+  const flat = sheetFlatPattern(wrote.spec);
+  assert.equal(flat.holes.length, 2);
+  const script = `${sheetMetalBlock(wrote.spec)}\nreturn part;\n`;
+  const trimmed = evaluationScript(script, { anchorId: 'sheet:base' });
+  assert.equal(trimmed.includes('"panel":"b1"'), false);
+  assert.match(trimmed, /sheetMetalSolid/);
 });

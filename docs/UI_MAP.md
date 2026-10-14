@@ -877,6 +877,12 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
   undo and does not move the bar. Delete (`data-feature-edit-delete`) removes
   that hole block only. The centres chip stays. An old `hole()` block still
   opens the helper sheet.
+  On a sheet, Hole, Csk, and Tap tap a panel, then Next (`data-sm-next`) opens
+  that same dashed sketch on the panel. The plane card stays closed. Accept
+  writes one `sheetSpec.holes` row per centre (`panel`, `u`, `v`, and the
+  type fields that list already has). No centres writes nothing. The contour
+  is not stored. A bar that drops a flange still drops the holes on that
+  flange. Tapping an existing hole still edits that one hole, including U and V.
   `polarArray` stays the same way: one Array button whose Type param is Grid or
   Polar, and the `array3D` build delegates to `polarArray`'s for Polar.
   `holePattern` stays so an old script still runs. The Hole button does not emit it.
