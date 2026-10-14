@@ -300,6 +300,7 @@ import GameHintsModal from './components/GameHintsModal';
 import PuzzlePickerModal from './components/PuzzlePickerModal';
 import GameConfetti from './components/GameConfetti';
 import { composeContourCommit } from './utils/contourMode';
+import { composeHoleOnContour } from './utils/holeContour';
 import { writeContourProfileBlock } from './utils/contourProfileWrite';
 import { deleteContourStatement, saveEditedContour } from './utils/contourUsers';
 import { hasNamedContour } from './utils/namedContour';
@@ -985,6 +986,20 @@ const App = () => {
     if (appModeRef.current === 'game') return null;
     const id = assemblyRef.current?.activeId;
     return id ? String(id) : '__cad__';
+  };
+  /**
+   * A feature committed before any part is active parks its bar on `__cad__`.
+   * Creating or selecting the part that then owns that script takes the bar
+   * with it. A part that already has its own bar keeps it.
+   */
+  const adoptCadRollback = (partId) => {
+    if (!partId) return;
+    const id = String(partId);
+    if (id === '__cad__') return;
+    const pending = storedRollback('__cad__');
+    if (pending === undefined) return;
+    if (storedRollback(id) === undefined) storeRollbackAnchor(id, pending);
+    storeRollbackAnchor('__cad__', undefined);
   };
 
   // iOS Safari keyboard: visualViewport height/offsetTop so the game editor
@@ -2233,6 +2248,7 @@ const App = () => {
   const handleSelectPart = (id, opts = {}) => {
     const doc = assemblyRef.current;
     if (!doc || id == null) return;
+    adoptCadRollback(id);
     setJointCard(null);
     jointPicksRef.current = [];
     rememberCadPart(id);
@@ -5592,6 +5608,40 @@ const App = () => {
   };
 
   /**
+   * Hole Accept. One undo. The bar sits on the new hole. No centres writes
+   * nothing. A bar that was already at the end moves onto that hole chip.
+   */
+  const handleCommitHole = (payload) => {
+    if (!focusWritePart(payload?.partId)) {
+      viewportRef.current?.softFailContour?.(PICKED_PART_FAIL);
+      return false;
+    }
+    const buf = codeEditorRef.current?.getContent?.() || '';
+    const result = composeHoleOnContour(buf, {
+      frame: payload?.frame,
+      contour: payload?.contour,
+      spec: payload?.spec,
+    });
+    if (!result.ok) {
+      viewportRef.current?.softFailContour?.(result.message);
+      return false;
+    }
+    if (result.empty) return true;
+    const key = editorRollbackKey();
+    const stored = storedRollback(key);
+    const wrote = commitFeatureBuffer(buf, result.buffer, 'Hole');
+    if (!wrote) {
+      viewportRef.current?.softFailContour?.('Could not write Hole into the editor — try again.');
+      return false;
+    }
+    if (stored === undefined && result.featureId) storeRollbackAnchor(key, result.featureId);
+    setTimeout(() => {
+      handleGameRun();
+    }, 0);
+    return true;
+  };
+
+  /**
    * Delete a named contour. An unused contour drops its statement. A
    * referenced contour, after confirm, also drops every feature block that
    * names it. One applyBuffer, so Undo restores that whole step.
@@ -5756,6 +5806,7 @@ const App = () => {
       codeEditorRef.current?.loadContent(text, DEFAULT_PART_NAME, false);
     }
     saveEditorDraft({ script: text, filename: DEFAULT_PART_NAME, partId: seedId });
+    adoptCadRollback(seedId);
     try {
       await savePartScript(seedId, text, source === 'git' ? { isSynced: false } : {});
     } catch (err) {
@@ -7645,6 +7696,7 @@ const App = () => {
               onInsertHelper={handleInsertHelper}
               onFeatureOpen={handleFeatureOpen}
               onCommitContourProfile={handleCommitContourProfile}
+              onCommitHole={handleCommitHole}
               onContourRefsResolved={handleContourRefsResolved}
               onDeleteContour={handleDeleteContour}
               onCommitFillet={handleCommitFillet}
@@ -8158,6 +8210,7 @@ const App = () => {
             onInsertHelper={handleInsertHelper}
             onFeatureOpen={handleFeatureOpen}
             onCommitContourProfile={handleCommitContourProfile}
+            onCommitHole={handleCommitHole}
             onContourRefsResolved={handleContourRefsResolved}
             onDeleteContour={handleDeleteContour}
             onCommitFillet={handleCommitFillet}

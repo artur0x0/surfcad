@@ -110,6 +110,7 @@ export const CONTOUR_ENTRY_IDS = new Set([
   'makeSweep',
   'crossSection',
   'workplane',
+  'hole',
 ]);
 
 export const CONTOUR_TOOLS = [
@@ -121,6 +122,14 @@ export const CONTOUR_TOOLS = [
 ];
 
 export const CONTOUR_TOOL_IDS = CONTOUR_TOOLS.map((t) => t.id);
+
+/** Hole sketches centres. Circle, rectangle, and polygon stay off that rail. */
+export function contourRailTools(entry) {
+  if (entry === 'hole') {
+    return CONTOUR_TOOLS.filter((tool) => tool.id === 'cursor' || tool.id === 'polyline');
+  }
+  return CONTOUR_TOOLS;
+}
 
 export const CONTOUR_NO_SOLID =
   'This Confirm writes Profile only (makeCrossSection). Extrude solids use the Extrude entry; Revolve solids use the Revolve entry; Loft solids use the Loft entry; Sweep solids use the Sweep entry.';
@@ -159,6 +168,10 @@ export function isSweepEntry(id) {
 
 export function isWorkplaneEntry(id) {
   return id === 'workplane';
+}
+
+export function isHoleEntry(id) {
+  return id === 'hole';
 }
 
 /** Extrude / Revolve / Sweep / Loft — solid Confirm, not Profile-only. */
@@ -645,7 +658,7 @@ export function enterContourState(entry, faceData = null) {
   // Select plane opens a sketch on Cursor with nothing drawn. The first
   // loft station is a circle, and copying it painted that circle before
   // any tool was chosen. Loft stations and solid entries stay circles.
-  const sketch = resolvedEntry === 'crossSection';
+  const sketch = resolvedEntry === 'crossSection' || resolvedEntry === 'hole';
   const tool = sketch ? 'cursor' : first.tool;
   const params = sketch ? { ...defaultContourParams('cursor') } : { ...first.params };
   return {

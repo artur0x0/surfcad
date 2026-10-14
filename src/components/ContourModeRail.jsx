@@ -12,7 +12,7 @@ import {
   Check,
   X,
 } from 'lucide-react';
-import { CONTOUR_TOOLS } from '../utils/contourMode';
+import { contourRailTools } from '../utils/contourMode';
 import {
   RAIL_PAIR_HEIGHT_CLASS,
   RAIL_SCROLL_CLASS,
@@ -64,6 +64,7 @@ const ContourModeRail = ({
   const iconSize = 20;
   const pad = 'p-2';
   const workplaneOnly = entry === 'workplane';
+  const profileTools = contourRailTools(entry);
 
   return (
     <div
@@ -85,7 +86,7 @@ const ContourModeRail = ({
       >
         {workplaneOnly ? 'Plane' : 'Contour'}
       </div>
-      {!workplaneOnly && CONTOUR_TOOLS.map((item) => {
+      {!workplaneOnly && profileTools.map((item) => {
         const Icon = ICONS[item.id] || Circle;
         const active = !gesture && tool === item.id;
         return (
