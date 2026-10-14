@@ -10,7 +10,7 @@
  * pointer-up, and only when a contour block is already in the script.
  */
 
-import { analyzeContour, contourFromPolyline, solveContour } from './contourSolve.js';
+import { analyzeContour, contourFromPolyline, regularPolygonSides, solveContour } from './contourSolve.js';
 import { applyContourSnap } from './contourSnap.js';
 import { assignSeq } from './contourStrip.js';
 import { isLoftEntry, writeLoftSelected } from './contourMode.js';
@@ -189,16 +189,8 @@ function rectangleCorners(width, height, centered) {
   ];
 }
 
-function polygonSideCount(preset) {
-  if (preset === 'triangle') return 3;
-  if (preset === 'square') return 4;
-  if (preset === 'pentagon') return 5;
-  if (preset === 'hexagon') return 6;
-  return 0;
-}
-
 function polygonVertices(preset, radius) {
-  const sides = polygonSideCount(preset);
+  const sides = regularPolygonSides(preset);
   const r = Number(radius) || 0;
   const pts = [];
   for (let i = 0; i < sides; i += 1) {

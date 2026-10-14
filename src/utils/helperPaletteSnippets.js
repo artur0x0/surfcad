@@ -68,6 +68,7 @@ import { BLOCK_POSE_PARAMS, blockSpec, blockSolidExpression } from './blockSolid
 import { assembleSweepPath, splitEdgePathComponents } from './edgeSweepPath.js';
 import { planeFrameFromFaceData } from './crossSectionSubstrate.js';
 import { emitSolveContour } from './contourScript.js';
+import { REGULAR_POLYGON_PRESETS, regularPolygonSides } from './contourSolve.js';
 import { findFeatureBlocks, isMarkerLine, mintBlockId } from './featureBlockId.js';
 import { joinScriptReturn, splitScriptReturn } from './scriptReturn.js';
 import { emitLoftReferenceLines } from './loftReference.js';
@@ -724,7 +725,7 @@ export function emitProfileExprFromParams(p) {
       }
       return `profilePolygon([${pts.join(', ')}])`;
     }
-    const sides = preset === 'triangle' ? 3 : preset === 'square' ? 4 : preset === 'pentagon' ? 5 : 6;
+    const sides = regularPolygonSides(preset) || 6;
     const pts = [];
     for (let i = 0; i < sides; i++) {
       const t = (i / sides) * Math.PI * 2 - Math.PI / 2;
@@ -1584,7 +1585,7 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'centered', type: 'bool', default: true, label: 'Centered' },
       {
         name: 'polygonPreset', type: 'select', default: 'hexagon', label: 'Polygon',
-        options: ['triangle', 'square', 'pentagon', 'hexagon', 'quarterCircle'],
+        options: [...Object.keys(REGULAR_POLYGON_PRESETS), 'quarterCircle'],
       },
     ],
     build: (empty, p, names, buffer, faceCtx = null, edgeCtx = null) => {

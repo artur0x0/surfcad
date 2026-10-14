@@ -85,6 +85,7 @@
         "golden:hole-edit": "node scripts/golden/smoke_hole_edit.mjs",
         "golden:sheet-hole": "node scripts/golden/smoke_sheet_hole.mjs",
         "golden:contour-cursor": "node scripts/golden/smoke_contour_cursor.mjs",
+        "golden:polygon-sides": "node scripts/golden/smoke_polygon_sides.mjs",
         "golden:polyline-entity": "node scripts/golden/smoke_polyline_entity.mjs",
         "golden:contour-normal": "node scripts/golden/smoke_contour_normal.mjs",
         "golden:contour-normal-fit": "node scripts/golden/smoke_contour_normal_fit.mjs",
