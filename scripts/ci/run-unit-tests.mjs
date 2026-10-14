@@ -8,7 +8,7 @@
  * a test, so the per-test timeout does not fire. The kill prints the suite
  * path instead of waiting for the job limit. Serial FEA runs also keep the
  * heavy wasm suites off each other's cores: the hung CI attempt overlapped
- * fTetWild, the rotated-bar solve, and the plate preview.
+ * fTetWild and the rotated-bar solve.
  *
  * Patterns match the previous CI step. `scripts/golden/*playtest*` is not
  * included. `backend/test` is not included.
@@ -30,7 +30,6 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
  */
 const FEA_FILE_TIMEOUT_MS = {
   'src/fea/sheetMetallica.test.js': 12 * 60 * 1000,
-  'src/fea/preview/voxelPreview.test.js': 8 * 60 * 1000,
   'src/fea/solveSolid.test.js': 8 * 60 * 1000,
   'src/fea/meshVolume.test.js': 6 * 60 * 1000,
   'src/fea/partTransform.test.js': 6 * 60 * 1000,

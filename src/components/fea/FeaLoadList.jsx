@@ -23,8 +23,6 @@ export function FeaLoadList({
   study,
   onRemoveFixture,
   onRemoveLoad,
-  selectedLoad = -1,
-  onSelectLoad = null,
   memberIds = null,
   analyzedPartId = '',
 }) {
@@ -70,21 +68,9 @@ export function FeaLoadList({
         )}
         <ul className="mt-0.5 flex flex-col gap-0.5">
           {loads.map(({ load, index }) => (
-            <li key={`load-${index}`} className="flex items-center gap-1 text-[12px] text-yellow-50" data-fea-load={index} data-fea-load-selected={selectedLoad === index ? '1' : '0'}>
+            <li key={`load-${index}`} className="flex items-center gap-1 text-[12px] text-yellow-50" data-fea-load={index}>
               <span data-fea-swatch="load" className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm bg-yellow-500" />
-              {onSelectLoad ? (
-                <button
-                  type="button"
-                  data-fea-load-select={index}
-                  aria-pressed={selectedLoad === index}
-                  onClick={() => onSelectLoad(index)}
-                  className={`min-w-0 flex-1 truncate rounded px-1 text-left ${selectedLoad === index ? 'bg-yellow-500/25 text-yellow-50' : ''}`}
-                >
-                  {loadText(load)} · {faceAt(load.faces?.[0])}
-                </button>
-              ) : (
-                <span className="min-w-0 flex-1 truncate">{loadText(load)} · {faceAt(load.faces?.[0])}</span>
-              )}
+              <span className="min-w-0 flex-1 truncate">{loadText(load)} · {faceAt(load.faces?.[0])}</span>
               <button
                 type="button"
                 data-fea-remove={`load-${index}`}

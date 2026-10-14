@@ -278,7 +278,6 @@
         "golden:fea-friction": "node scripts/golden/fea_friction.mjs",
         "golden:fea-stress": "node scripts/golden/fea_stress_pixels.mjs",
         "golden:fea-probe": "node scripts/golden/fea_probe.mjs",
-        "golden:fea-preview": "node scripts/golden/fea_preview.mjs",
         "golden:face-paint-tap-pixels": "node scripts/golden/smoke_face_paint_tap_pixels.mjs",
         "golden:fit-color-scroll": "node scripts/golden/smoke_fit_color_scroll.mjs",
     "golden:face-select-boundaries": "node scripts/golden/smoke_face_select_boundaries.mjs",
