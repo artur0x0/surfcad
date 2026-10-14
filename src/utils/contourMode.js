@@ -172,6 +172,18 @@ export function isWorkplaneEntry(id) {
   return id === 'workplane';
 }
 
+/**
+ * Workplane writes from the card. Add plane stores the preview frame
+ * (reference, angles, and offset) and closes. Contour and hole still
+ * accept the plane and leave the sketch rail up.
+ */
+export function planeCardCommit(entry) {
+  if (isWorkplaneEntry(entry)) {
+    return { label: 'Add plane', writes: true, rail: false };
+  }
+  return { label: 'Select plane', writes: false, rail: true };
+}
+
 export function isHoleEntry(id) {
   return id === 'hole';
 }

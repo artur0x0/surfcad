@@ -26,6 +26,7 @@ import {
   isWorkplaneEntry,
   isContourEntry,
   axisPresetFrame,
+  planeCardCommit,
 } from '../../src/utils/contourMode.js';
 import { listConstructionPlanes } from '../../src/utils/savedContours.js';
 import { offsetPlaneFrame } from '../../src/utils/makeLoft.js';
@@ -113,7 +114,18 @@ console.log('workplane strip + UI');
   check('workplane chip uses the shared feature card', /<FeatureSheet\b/.test(chip) && /isWorkplane/.test(chip));
   check('feature card caps height at 22.5rem', /22\.5rem/.test(css) && /feature-sheet-card/.test(shell));
   const rail = read('../../src/components/ContourModeRail.jsx');
-  check('rail hides contour tools for workplane', /workplaneOnly/.test(rail));
+  const mode = read('../../src/utils/contourMode.js');
+  const view = read('../../src/components/Viewport.jsx');
+  const commit = planeCardCommit('workplane');
+  check('Add plane writes from the card',
+    commit.label === 'Add plane' && commit.writes === true && commit.rail === false
+      && planeCardCommit('crossSection').rail === true
+      && planeCardCommit('hole').label === 'Select plane'
+      && /export function planeCardCommit/.test(mode)
+      && /confirmLabel=\{cardCommit\.label\}/.test(chip));
+  check('workplane has no left Plane rail',
+    !/workplaneOnly/.test(rail)
+      && /planeCardCommit\(contourMode\.entry\)\.rail/.test(view));
   const docs = read('../../docs/POPUP_STYLE.md');
   check('POPUP_STYLE.md documents ContourModeChip', /ContourModeChip/.test(docs) && /FilletModeChip/.test(docs));
   const uiMap = read('../../docs/UI_MAP.md');

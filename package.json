@@ -58,6 +58,7 @@
         "golden:slice30": "node scripts/golden/smoke_slice30_sweep.mjs",
         "golden:workplane": "node scripts/golden/smoke_workplane_strip_ui.mjs",
         "golden:plane-tool": "node scripts/golden/smoke_plane_tool_preview.mjs",
+        "golden:workplane-add": "node scripts/golden/smoke_workplane_add.mjs",
         "golden:feature-sheet": "node scripts/golden/smoke_feature_sheet_card.mjs",
         "golden:feature-field-edit": "node scripts/golden/smoke_feature_field_edit.mjs",
         "golden:measure-feature-sheet": "node scripts/golden/smoke_measure_feature_sheet_390.mjs",
