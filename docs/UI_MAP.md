@@ -232,8 +232,16 @@ Desktop specifics:
   (`data-part-thumb-source="cache"`). A missing hash is rebuilt off the CAD
   view. Only the viewport drops a hidden row. No solid and no stored bitmap
   is `data-part-preview="empty"`.
-  `golden:part-hide-thumbnail` and `golden:part-thumb-cache`. Delete asks
-  first; Cancel keeps the part, Confirm removes that part only. In git mode,
+  `golden:part-hide-thumbnail` and `golden:part-thumb-cache`. The trash control
+  opens **Delete part** (`data-part-delete-dialog`). Cancel leaves the part.
+  **Delete from assembly** removes that part only and does not ask again.
+  **Delete from assembly & repo**, when the row is a vault path, sits 14px
+  below that button. It opens a second confirm that names the file
+  (`Delete FilletKilla.js from the repo? This can't be undone from SurfCAD.`,
+  `data-part-delete-repo-message`) with Cancel and Delete. Cancel still leaves
+  the part. Delete removes the row and commits the file delete. That second
+  confirm is the exception for a repo delete the Undo toast does not cover.
+  `golden:part-delete-dialog` checks both steps at 390 and 1280. In git mode,
   **Open from repo** (folder): **Part** lists every part in the repo grouped
   by source assembly (loose `parts/` included); **Assembly** lists assemblies
   only. Picking one opens **Open assembly?** (`OpenAssemblyChoiceDialog`,
@@ -333,8 +341,9 @@ Mobile specifics:
   editor is closed until the pencil or Edit script opens the right-hand drawer.
   The Parts stage is the part list, including group rows and the thread
   (same markup as desktop). Each row shows the same cached solid
-  snapshot as desktop. Delete asks first. Confirm removes that part only
-  (its script, its row, and its solid). Cancel leaves it. Folder → Assembly
+  snapshot as desktop. Delete uses that same dialog: assembly delete does not
+  ask again, and a repo delete names the file and asks once more. Cancel
+  leaves the part. Folder → Assembly
   uses the same Open assembly list and **Delete assembly?** dialog as desktop.
   The ribbon centers
   the assembly name (Assembly when the document has none) and keeps Local or

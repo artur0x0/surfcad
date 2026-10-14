@@ -27,6 +27,8 @@ import {
   formatViewerTitle,
   parseAssemblyDocument,
   partListDeleteAction,
+  partDeleteChoice,
+  partRepoDeleteConfirmCopy,
   partCanDeleteFromRepo,
   recordPartRun,
   removePart,
@@ -222,7 +224,15 @@ const BAD = 'let part = Manifold.cube([10, 10, 10], true);\nreturn part.missingM
     && partListDeleteAction('confirm') === 'drop'
     && partListDeleteAction('assembly') === 'drop'
     && partListDeleteAction('repo') === 'drop-repo'
-    && /partListDeleteAction\(choice\)/.test(confirmDel)
+    && /partDeleteChoice\(pending\.step, choice\)/.test(confirmDel)
+    && partDeleteChoice('choose', 'assembly').action === 'drop'
+    && partDeleteChoice('choose', 'assembly').step === null
+    && partDeleteChoice('choose', 'repo').action === 'keep'
+    && partDeleteChoice('choose', 'repo').step === 'confirm-repo'
+    && partDeleteChoice('confirm-repo', 'repo').action === 'drop-repo'
+    && partDeleteChoice('confirm-repo', 'cancel').action === 'keep'
+    && partRepoDeleteConfirmCopy('assemblies/Gearbox/FilletKilla.js')
+      === "Delete FilletKilla.js from the repo? This can't be undone from SurfCAD."
     && /onDeletePart\?\.\(pending\.id, \{ fromRepo:/.test(confirmDel)
     && /data-part-delete-confirm/.test(feed)
     && /data-part-delete-scope="assembly"/.test(feed)
