@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { LengthNumberField, NumberField } from './controls/popupUI';
 import { FeatureDeleteButton } from './FeatureEditDelete';
 import FeatureSheet from './FeatureSheet';
+import { planeCardCommit } from '../utils/contourMode';
 import { contourStatusNote, contourStatusNoteAttrs } from '../utils/contourStatus';
 import { partLengthMm } from '../utils/sliderRange';
 
@@ -228,12 +229,14 @@ const ContourModeChip = ({
   })[tool] || tool;
   // Feature entries title the card with the thing the rail Confirm writes.
   // The plane card for a profile is just Contour. Select plane accepts the plane.
+  // Workplane writes from this card: Add plane, no helper line.
+  const cardCommit = planeCardCommit(entry);
   const title = commitName || 'Contour';
   const subtitle = solidEntry && shapeLabel
     ? `${shapeLabel} · Plane · ${planeLabel}`
     : `Plane · ${planeLabel}`;
-  const confirmNote = isWorkplane
-    ? 'Select plane accepts the plane'
+  const confirmNote = cardCommit.writes
+    ? ''
     : commitName
       ? `Select plane accepts the plane. Confirm on the rail writes ${commitName}`
       : 'Select plane accepts the plane';
@@ -251,7 +254,7 @@ const ContourModeChip = ({
       compact={compact}
       onCancel={onCancel}
       onConfirm={onConfirm}
-      confirmLabel="Select plane"
+      confirmLabel={cardCommit.label}
       cardAttrs={{ 'data-contour-chip': '' }}
       bodyAttrs={{ 'data-contour-chip-scroll': '' }}
       note={note}

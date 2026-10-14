@@ -63,7 +63,6 @@ const ContourModeRail = ({
   const { railRef, fits, widthClass } = useLeftRailFit();
   const iconSize = 20;
   const pad = 'p-2';
-  const workplaneOnly = entry === 'workplane';
   const profileTools = contourRailTools(entry);
 
   return (
@@ -74,7 +73,7 @@ const ContourModeRail = ({
         ${widthClass} ${RAIL_PAIR_HEIGHT_CLASS} ${RAIL_SCROLL_CLASS}
         p-2`}
       role="group"
-      aria-label={workplaneOnly ? 'Workplane tools' : 'Contour tools'}
+      aria-label="Contour tools"
       data-rail-pair="left"
       data-rail-height={RAIL_PAIR_HEIGHT_ATTR}
       data-rail-fit={fits ? 'fits' : 'scroll'}
@@ -84,9 +83,9 @@ const ContourModeRail = ({
           compact ? 'leading-3' : 'leading-4'
         }`}
       >
-        {workplaneOnly ? 'Plane' : 'Contour'}
+        Contour
       </div>
-      {!workplaneOnly && profileTools.map((item) => {
+      {profileTools.map((item) => {
         const Icon = ICONS[item.id] || Circle;
         const active = !gesture && tool === item.id;
         return (
@@ -107,7 +106,7 @@ const ContourModeRail = ({
           </button>
         );
       })}
-      {!workplaneOnly && GESTURES.map((item) => {
+      {GESTURES.map((item) => {
         const Icon = GESTURE_ICONS[item.id] || Ruler;
         const active = gesture === item.id;
         return (
@@ -128,9 +127,7 @@ const ContourModeRail = ({
           </button>
         );
       })}
-      {!workplaneOnly && (
-        <div className="border-t border-gray-300/70 my-0.5 mx-0.5" aria-hidden />
-      )}
+      <div className="border-t border-gray-300/70 my-0.5 mx-0.5" aria-hidden />
       <button
         type="button"
         data-contour-back=""
@@ -146,7 +143,7 @@ const ContourModeRail = ({
         type="button"
         data-contour-confirm=""
         onClick={() => onConfirm?.()}
-        title={workplaneOnly ? 'Finish workplane' : 'Finish contour'}
+        title="Finish contour"
         aria-label="Confirm"
         className={`${pad} rounded flex items-center justify-center transition-colors
           text-cyan-800 hover:bg-cyan-100 active:bg-cyan-200`}
@@ -157,12 +154,8 @@ const ContourModeRail = ({
         type="button"
         data-contour-exit=""
         onClick={() => onBack?.()}
-        title={workplaneOnly
-          ? 'Dismiss — exit workplane mode without writing'
-          : 'Dismiss — exit contour mode (no additional solid write)'}
-        aria-label={workplaneOnly
-          ? 'Dismiss workplane mode without committing'
-          : 'Dismiss contour mode without committing a solid'}
+        title="Dismiss — exit contour mode (no additional solid write)"
+        aria-label="Dismiss contour mode without committing a solid"
         className={`${pad} rounded text-gray-700 hover:bg-gray-200 active:bg-gray-300
           flex items-center justify-center transition-colors`}
       >

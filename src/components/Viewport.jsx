@@ -170,6 +170,7 @@ import {
   isSolidContourEntry,
   isSweepEntry,
   isWorkplaneEntry,
+  planeCardCommit,
   planeFromContourFace,
   removeLoftProfile,
   resolveContourWorkplane,
@@ -12716,8 +12717,9 @@ const Viewport = forwardRef(({
         onConfirm={() => deleteFeatureFromEdit(true)}
       />
 
-      {/* Contour rail: tools, Back undoes, Confirm finishes, X exits. */}
-      {contourMode && (
+      {/* Contour rail: tools, Back undoes, Confirm finishes, X exits.
+          Workplane writes from the card, so it has no Plane rail. */}
+      {contourMode && planeCardCommit(contourMode.entry).rail && (
         <ContourModeRail
           tool={contourMode.tool}
           gesture={contourMode.gesture || null}
@@ -13020,7 +13022,7 @@ const Viewport = forwardRef(({
         />
       )}
 
-      {/* Plane card. Select plane accepts the plane and leaves the rail up. */}
+      {/* Plane card. Contour Select plane leaves the rail up. Workplane Add plane writes and closes. */}
       {contourMode && contourPlaneOpen && !contourMode.gesture && mode !== 'game' && !isSolidContourEntry(contourMode.entry) && (
         <ContourModeChip
           tool={contourMode.tool}
@@ -13159,7 +13161,7 @@ const Viewport = forwardRef(({
           onMergeChange={(merge) => setContourMode((prev) => (
             prev ? { ...prev, merge: merge !== false } : prev
           ))}
-          onConfirm={startContourDrawing}
+          onConfirm={planeCardCommit(contourMode.entry).writes ? confirmContourProfile : startContourDrawing}
           onCancel={cancelContourEditor}
           onDelete={featureEditRef.current?.dialog === 'contour' ? featureEditDelete : null}
           onUndoPoint={() => setContourMode((prev) => {
