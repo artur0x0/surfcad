@@ -40,8 +40,12 @@ ok('Overwrite main keeps force-merge wiring', /data-git-conflict-overwrite/.test
   && /Overwrite main/.test(feed) && /data-git-force-merge=""/.test(feed)
   && /data-git-force-merge-warning/.test(feed) && /runForceMerge/.test(feed)
   && !/>Force merge</.test(feed));
-ok('Overwrite is refused', /data-git-conflict-warning/.test(feed)
-  && /Sync will not overwrite the remote repo/.test(feed)
+ok('Overwrite main force-writes', /data-git-conflict-warning/.test(feed)
+  && /onOverwriteMain/.test(feed)
+  && /runForceMerge/.test(feed)
+  && !/Sync will not overwrite the remote repo/.test(feed)
+  && /handleOverwriteMain/.test(app)
+  && /force:\s*true/.test(app)
   && /syncHold/.test(feed));
 ok('G4 behind toast unchanged (separate flow)', /data-git-behind-toast/.test(behindToast)
   && /GitBehindToast/.test(app)

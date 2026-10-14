@@ -6,7 +6,8 @@
  * the sync worker is the only writer. `commitWorkspace` remains for callers
  * that already hold a matching baseline (move-to-git follow-ups, goldens):
  * it commits with `baseSha` and, on `non_fast_forward`, returns `conflict`
- * without writing. It does not open a side branch and it does not overwrite.
+ * without writing. It does not open a side branch. `forceMergeCommit` is
+ * the explicit Overwrite main write: the same files land on the current tip.
  *
  * When the assembly was renamed, the same commit moves the `.surf.json`
  * and assembly-owned parts to the new folder (deletes the old paths);
@@ -29,7 +30,7 @@ import {
   vaultSegment,
 } from './vaultLayout.js';
 import { sharedPathForMove } from './gitDeleteAssembly.js';
-import { stringifySurfJson } from './surfJson.js';
+import { parseSurfJson, stringifySurfJson } from './surfJson.js';
 import { isSurfId, readSurfId, withSurfId } from './surfId.js';
 
 export const COMMIT_BRANCH_PREFIX = 'surfcad/';
@@ -886,15 +887,118 @@ export async function commitWorkspace(adapter, repo, opts = {}) {
   }
 }
 
-/** Retired with force merge. The conflict popup explains that nothing was overwritten. */
+/** The automatic sync wrote nothing. Overwrite main is a separate explicit write. */
 export function forceMergeWarning() {
   return 'The repo moved since the last sync. Nothing was overwritten.';
 }
 
 /**
- * Retired. Force merge wrote local files on top of a moved tip.
- * Calling it throws and does not touch the repo.
+ * Fold an overwrite commit into the open working copy so the screen matches
+ * main. Part scripts take the written text. The open assembly's `.surf.json`
+ * replaces that document. Other remote files are not in `files` and stay.
  */
-export async function forceMergeCommit() {
-  throw new Error('Force merge is retired. Sync will not overwrite the remote repo.');
+export function applyOverwriteFiles(doc, scripts, files) {
+  const nextScripts = { ...(scripts || {}) };
+  let nextDoc = doc;
+  let changed = false;
+  for (const file of files || []) {
+    const path = file?.path;
+    if (!path) continue;
+    if (file.delete) {
+      if (Object.prototype.hasOwnProperty.call(nextScripts, path)) {
+        delete nextScripts[path];
+        changed = true;
+      }
+      continue;
+    }
+    if (typeof file.content !== 'string') continue;
+    if (String(path).endsWith('.surf.json')) {
+      if (!doc) continue;
+      try {
+        const parsed = parseSurfJson(file.content);
+        const parsedName = vaultSegment(parsed?.name);
+        const openName = vaultSegment(doc.name);
+        if (!parsedName || !openName || parsedName !== openName) continue;
+        nextDoc = { ...parsed, source: 'git' };
+        changed = true;
+      } catch {
+        /* leave the open document when the assembly file cannot be read */
+      }
+      continue;
+    }
+    if (nextScripts[path] !== file.content) {
+      nextScripts[path] = file.content;
+      changed = true;
+    }
+  }
+  return { doc: nextDoc, scripts: nextScripts, changed };
+}
+
+/**
+ * Write local files on top of the current branch tip.
+ * Overwrite main is the user's explicit choice: these paths take the local
+ * bytes and every other remote file stays. `baseSha` is the current tip,
+ * so the moved-tip guard does not refuse the write. A document plus a
+ * baseline and no file list assembles the save first.
+ * -> { status: 'committed', sha, branch, files, written, baseline?, doc?, scripts? }
+ *  | { status: 'clean' | 'error', ... }
+ */
+export async function forceMergeCommit(adapter, repo, {
+  branch = 'main',
+  message = 'Overwrite main',
+  files = null,
+  doc = null,
+  scripts = null,
+  baseline = null,
+} = {}) {
+  assertGithubAdapter(adapter);
+  let list = Array.isArray(files) ? files.filter((file) => file?.path) : [];
+  let workDoc = doc;
+  let workScripts = scripts;
+  let asmPath = baseline?.assemblyPath || null;
+  let msg = String(message || '').trim() || 'Overwrite main';
+  if (!list.length && doc && baseline) {
+    const assembled = await assembleCommitFiles(adapter, repo, {
+      doc,
+      scripts,
+      baseline,
+      message: msg,
+    });
+    if (assembled.status === 'clean') return assembled;
+    list = assembled.files;
+    workDoc = assembled.doc;
+    workScripts = assembled.scripts;
+    branch = assembled.branch || branch;
+    msg = assembled.message || msg;
+    asmPath = assembled.assemblyPath || asmPath;
+  }
+  if (!list.length) return { status: 'error', error: 'Nothing to overwrite' };
+  const tip = await adapter.getBranch(repo, branch);
+  const head = tip?.sha || null;
+  const res = await adapter.commitFiles(repo, {
+    branch,
+    message: msg,
+    files: list,
+    baseSha: head,
+  });
+  const next = workDoc
+    ? nextBaseline(
+      workDoc,
+      workScripts || {},
+      baseline || {},
+      asmPath || assemblyFilePath(vaultSegment(workDoc.name) || 'assembly'),
+      branch,
+      res.sha,
+    )
+    : null;
+  return {
+    status: 'committed',
+    sha: res.sha,
+    branch,
+    files: list.map((file) => file.path),
+    written: list,
+    baseline: next,
+    doc: workDoc,
+    scripts: workScripts,
+  };
 }
