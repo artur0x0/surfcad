@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import StickyPickApply from './StickyPickApply';
 import { useDisplayUnit } from '../hooks/useDisplayUnit';
-import { displayToMm, lengthToDisplay } from '../utils/displayUnit';
+import { commitDisplayLength, commitDisplayNumber, formatDisplayNumber, lengthToDisplay } from '../utils/displayUnit';
 import { contourStatusNote, contourStatusNoteAttrs } from '../utils/contourStatus';
 import {
   CONSTRAINT_LABELS,
@@ -20,9 +20,7 @@ const FIELD = 'w-full rounded border border-cyan-700/70 bg-cyan-950/80 px-2.5 py
 function formatPrefill(kind, mm, unit) {
   const shown = dimensionShownNumber(kind, mm);
   const n = kind === 'angle' ? shown : lengthToDisplay(shown, unit);
-  if (!Number.isFinite(n)) return '';
-  const digits = kind === 'angle' ? 2 : (unit === 'in' ? 4 : 2);
-  return String(Number(n.toFixed(digits)));
+  return formatDisplayNumber(n);
 }
 
 function seedText(isArc, arc, suggestion, unit) {
@@ -93,9 +91,17 @@ const ContourGestureCard = ({
   const active = property || (isConstraint ? constraint?.kind : suggestion?.kind);
   const prefill = !isArc && !isConstraint && active ? prefillForKind(model, picks, active) : null;
   const nameCheck = isArc || isConstraint ? { ok: true, name: '' } : validateDimensionName(name, model, ignoreNameId);
+  const seedKind = isArc
+    ? 'length'
+    : (editingDimension ? editDimension.kind : (active || suggestion?.kind));
+  const seedRaw = isArc
+    ? (arc?.radius || 0)
+    : (editingDimension ? editDimension.value : (prefill?.value ?? suggestion?.value));
+  const seedMm = dimensionShownNumber(seedKind, seedRaw);
   let valueMm = NaN;
-  if (isArc || active !== 'angle') valueMm = displayToMm(text, unit);
-  else valueMm = Number(text);
+  if (isArc || active !== 'angle') valueMm = commitDisplayLength(text, seedMm, unit);
+  else valueMm = commitDisplayNumber(text, seedMm);
+  if (valueMm === '' || valueMm === '-' || valueMm === '.') valueMm = NaN;
   const pointDistance = !isArc && !isConstraint && active === 'distance'
     && (picks || []).length === 2
     && (picks || []).every((p) => p.kind === 'point');

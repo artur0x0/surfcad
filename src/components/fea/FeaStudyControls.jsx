@@ -10,6 +10,7 @@ import {
 } from '../../fea/loadUnits.js';
 import { FORCE_DIRECTIONS } from '../../fea/studyPanel.js';
 import { useDisplayUnit } from '../../hooks/useDisplayUnit.js';
+import { formatDisplayNumber } from '../../utils/displayUnit.js';
 import { directionAxis, directionButtonStyle } from '../../utils/triadAxis.js';
 import { FeaLegend } from './FeaLegend';
 import { FeaProbeList } from './FeaProbeList';
@@ -414,11 +415,11 @@ function ModeList({ panel, reserve }) {
         const fy = mass[index * 3 + 1];
         const fz = mass[index * 3 + 2];
         const title = !reserve && [fx, fy, fz].every((value) => Number.isFinite(value))
-          ? `effective mass ${fx.toFixed(2)} ${fy.toFixed(2)} ${fz.toFixed(2)}`
+          ? `effective mass ${formatDisplayNumber(fx)} ${formatDisplayNumber(fy)} ${formatDisplayNumber(fz)}`
           : undefined;
         const label = reserve || !Number.isFinite(Number(hz))
           ? `Mode ${index + 1}`
-          : `Mode ${index + 1}: ${Number(hz).toFixed(1)} Hz`;
+          : `Mode ${index + 1}: ${formatDisplayNumber(hz)} Hz`;
         return (
           <button
             key={index}

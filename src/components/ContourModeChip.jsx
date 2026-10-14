@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
+import { useDisplayUnit } from '../hooks/useDisplayUnit';
 import { LengthNumberField, NumberField } from './controls/popupUI';
+import { formatDisplayLength } from '../utils/displayUnit';
 import { FeatureDeleteButton } from './FeatureEditDelete';
 import FeatureSheet from './FeatureSheet';
 import { contourStatusNote, contourStatusNoteAttrs } from '../utils/contourStatus';
@@ -70,6 +72,7 @@ const ContourModeChip = ({
   onCancel = null,
   lengthMm = 100,
 }) => {
+  const [displayUnit] = useDisplayUnit();
   const isExtrude = entry === 'makeExtrude';
   const isRevolve = entry === 'makeRevolve';
   const isLoft = entry === 'makeLoft';
@@ -648,7 +651,7 @@ const ContourModeChip = ({
           <div className="text-[11px] uppercase tracking-wide text-cyan-200/80">Path</div>
           <div className="text-[13px] text-cyan-100 leading-tight">
             {sweepPath?.ok
-              ? `${sweepPath.path.edgeCount} edge${sweepPath.path.edgeCount === 1 ? '' : 's'} · ${sweepPath.path.closed ? 'loop' : 'chain'} · ${Number(sweepPath.path.length).toFixed(1)} mm`
+              ? `${sweepPath.path.edgeCount} edge${sweepPath.path.edgeCount === 1 ? '' : 's'} · ${sweepPath.path.closed ? 'loop' : 'chain'} · ${formatDisplayLength(sweepPath.path.length, displayUnit)}`
               : (sweepPath?.message || 'Pick a contiguous edge chain')}
           </div>
           <div className="flex items-center gap-2 flex-wrap text-[11px]">

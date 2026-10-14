@@ -136,6 +136,7 @@
         "golden:desktop-feature-strip": "node scripts/golden/smoke_desktop_feature_strip_between_panes.mjs",
         "golden:feature-edit-roundtrip": "node scripts/golden/smoke_feature_edit_roundtrip.mjs",
         "golden:feature-edit-delete": "node scripts/golden/smoke_feature_edit_delete.mjs",
+        "golden:display-number": "node scripts/golden/smoke_display_number.mjs",
         "golden:delete-last-feature": "node scripts/golden/smoke_delete_last_feature.mjs",
         "golden:part-hide-thumbnail": "node scripts/golden/smoke_part_hide_thumbnail.mjs",
         "golden:part-dirty": "node scripts/golden/smoke_part_dirty.mjs",

@@ -49,6 +49,7 @@ import {
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 import { applyTrackballFeel } from '../utils/trackballFeel';
 import { installPageZoomLock } from '../utils/pageZoomLock';
+import { formatDisplayNumber } from '../utils/displayUnit';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
@@ -13038,7 +13039,7 @@ const Viewport = forwardRef(({
           lengthMm={characteristicLengthMm({ bounds: modelBounds })}
           planeLabel={
             contourMode.planeFace
-              ? `planar n=[${contourMode.planeFace.normal.map((v) => Number(v).toFixed(2)).join(', ')}]`
+              ? `planar n=[${contourMode.planeFace.normal.map((v) => formatDisplayNumber(v)).join(', ')}]`
               : 'default +Z top'
           }
           planePreset={contourMode.planePreset || 'z'}

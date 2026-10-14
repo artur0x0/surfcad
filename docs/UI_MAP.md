@@ -158,7 +158,8 @@ Desktop specifics:
   only while that card is open. Face picks stay highlighted until Add or X.
   Distance (`data-joint-value`) is a signed length slider in the global
   display unit. Angle (`data-joint-angle`) is a ±90° slider at 1°. Degrees
-  stay in the value field and are not converted as a length. Flip toggles
+  stay in the value field and are not converted as a length. Both boxes use
+  `formatDisplayNumber` (at most four decimals, trailing zeros removed). Flip toggles
   sense.
   Adding a joint does not make the page scroll: `html`, `body`, and `#root`
   stay `overflow: hidden`, and the left rail remains the scroller
@@ -769,7 +770,11 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
   scale (`POPUP_TEXT`), one set of fields, accents per surface (`cyan` contour,
   `amber` fillet, `slate` helper sheets). **Every number renders a slider AND a
   typed box**: `NumberField` never gives you one without the other, so don't
-  hand-roll an `<input type="range">` in a popup. Accent classes are spelled out
+  hand-roll an `<input type="range">` in a popup. The typed box and the other
+  numeric readouts use `formatDisplayNumber` (`src/utils/displayUnit.js`): at
+  most four decimals, trailing zeros removed. The stored value stays at full
+  precision until the user types a different number. Displaying a field does
+  not rewrite the script. Accent classes are spelled out
   in `ACCENTS` because Tailwind purges computed class names — extend the map,
   never interpolate.
 - **Circle segments default to 64** everywhere (palette items, contour profiles,
@@ -862,7 +867,7 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
   type, fastener size, fit, raw diameter, through or a depth, side, near end,
   and far end. No U/V and no n×m. Next opens the contour plane card
   (`data-plane-editor`) and the XY, YZ, and ZX quads, plus Offset along the
-  normal (the same field as Workplane). Select plane stores that
+  normal (the same field as Workplane, shown with `formatDisplayNumber`). Select plane stores that
   frame, aims the camera, and leaves the rail on Cursor, Rectangle, Polyline,
   Arc, Dimension, and Constraints. Rectangle puts a hole at each corner and
   keeps that tool's dimensions and constraints. Circle and Polygon stay off

@@ -8,7 +8,7 @@ import { PLANE_PRESETS } from '../utils/crossSection';
 import { RAIL_NO_CLIP_CLASS, RAIL_PAIR_HEIGHT_ATTR } from '../utils/railPair';
 import { sectionThumbRange } from '../utils/sliderRange';
 import { lengthFromThumb, lengthSnap, thumbFromLength, THUMB_COUNT } from '../utils/sliderMap';
-import { formatDisplayLength } from '../utils/displayUnit';
+import { formatDisplayLength, formatDisplayNumber } from '../utils/displayUnit';
 import { useDisplayUnit } from '../hooks/useDisplayUnit';
 
 const CrossSectionPanel = ({ 
@@ -142,6 +142,7 @@ const CrossSectionPanel = ({
   };
 
   const handleCustomNormalChange = (axis, value) => {
+    if (String(value).trim() === formatDisplayNumber(customNormal[axis])) return;
     const newNormal = [...customNormal];
     newNormal[axis] = parseFloat(value) || 0;
     setCustomNormal(newNormal);
@@ -525,7 +526,7 @@ const handleButtonClick = () => {
           <div className="grid grid-cols-3 gap-2">
             <input
               type="number"
-              value={customNormal[0]}
+              value={formatDisplayNumber(customNormal[0])}
               onChange={(e) => handleCustomNormalChange(0, e.target.value)}
               placeholder="X"
               step="0.1"
@@ -538,7 +539,7 @@ const handleButtonClick = () => {
             />
             <input
               type="number"
-              value={customNormal[1]}
+              value={formatDisplayNumber(customNormal[1])}
               onChange={(e) => handleCustomNormalChange(1, e.target.value)}
               placeholder="Y"
               step="0.1"
@@ -551,7 +552,7 @@ const handleButtonClick = () => {
             />
             <input
               type="number"
-              value={customNormal[2]}
+              value={formatDisplayNumber(customNormal[2])}
               onChange={(e) => handleCustomNormalChange(2, e.target.value)}
               placeholder="Z"
               step="0.1"

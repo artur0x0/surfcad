@@ -162,11 +162,9 @@ export function checkSheetDfm(rawSpec, { unit = 'mm' } = {}) {
     const max = bent ? L.maxFlat : L.maxPart;
     const min = bent ? L.minFlat : L.minPart;
     const label = `${fmt(flat.size[0])} × ${fmt(flat.size[1])}`;
-    const pairText = (pair, digits) => (display === 'in'
-      ? formatSheetPair(pair, 'in', 3)
-      : `${pair.map((n) => n.toFixed(digits)).join(' × ')} mm`);
-    if (!fitsSize(flat.size, max)) push('fail', 'flat-size', `Flat ${label} exceeds SCS max ${pairText(max, 0)}${bent ? ' for bending' : ''}.`);
-    if (!fitsSize(flat.size, min, { min: true })) push('fail', 'flat-size', `Flat ${label} is below SCS min ${pairText(min, 1)}${bent ? ' for bending' : ''}.`);
+    const pairText = (pair) => formatSheetPair(pair, display);
+    if (!fitsSize(flat.size, max)) push('fail', 'flat-size', `Flat ${label} exceeds SCS max ${pairText(max)}${bent ? ' for bending' : ''}.`);
+    if (!fitsSize(flat.size, min, { min: true })) push('fail', 'flat-size', `Flat ${label} is below SCS min ${pairText(min)}${bent ? ' for bending' : ''}.`);
   }
 
   const fails = issues.filter((x) => x.level === 'fail').length;

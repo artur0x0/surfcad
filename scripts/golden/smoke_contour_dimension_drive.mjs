@@ -304,7 +304,7 @@ window.renderDistanceTag = (model) => {
       });
       const probe = await page.evaluate(() => window.__tagProbe);
       check('the tag is visible inside the 390px canvas', probe.canvasWidth === 390 && probe.shown && probe.inside, JSON.stringify(probe));
-      check('the tag reads the driven distance', /span/.test(probe.text) && /30\.00 mm/.test(probe.text), probe.text);
+      check('the tag reads the driven distance', /span/.test(probe.text) && /30 mm/.test(probe.text), probe.text);
       check('the tag is portaled and not clipped by the shell', probe.portaled && probe.fixed && !probe.clipped, JSON.stringify(probe));
       await page.screenshot({ path: join(SHOT_DIR, 'contour-dimension-drive-390.png') });
     } finally {
