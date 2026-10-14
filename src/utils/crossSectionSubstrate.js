@@ -18,7 +18,7 @@
 /** @typedef {{ center: number[], normal: number[], x: number[], y: number[] }} PlaneFrame */
 /** @typedef {{ type: string, [k: string]: any }} ProfileDesc */
 
-import { solveContour } from './contourSolve.js';
+import { REGULAR_POLYGON_PRESETS, solveContour } from './contourSolve.js';
 
 function _len(v) {
   return Math.hypot(v[0], v[1], v[2]) || 1;
@@ -281,8 +281,7 @@ export function buildProfileFromParams(params = {}) {
         contours: [pts],
       };
     }
-    const sidesMap = { triangle: 3, square: 4, pentagon: 5, hexagon: 6 };
-    const sides = sidesMap[preset] || Math.max(3, Math.round(Number(params.sides) || 6));
+    const sides = REGULAR_POLYGON_PRESETS[preset] || Math.max(3, Math.round(Number(params.sides) || 6));
     return {
       profile: { type: 'polygon', preset, sides, radius: r },
       contours: regularPolygonContours(sides, r),

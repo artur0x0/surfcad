@@ -119,7 +119,7 @@ export const CONTOUR_TOOLS = [
   { id: 'cursor', label: 'Cursor', title: 'Drag a point. Does not move a whole line and does not add points' },
   { id: 'circle', label: 'Circle', title: 'Circle profile on the workplane' },
   { id: 'rectangle', label: 'Rect', title: 'Rectangle profile on the workplane' },
-  { id: 'polygon', label: 'Polygon', title: 'Regular polygon profile on the workplane' },
+  { id: 'polygon', label: 'Polygon', title: 'Regular polygon, 3 to 8 sides, on the workplane' },
   { id: 'polyline', label: 'Polyline', title: 'Tap a segment to insert a point. Double-tap a point to remove it. Drag a point to move it' },
 ];
 

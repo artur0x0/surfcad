@@ -364,14 +364,25 @@ export function contourFromCircle(radius, segments = 64) {
   });
 }
 
+/** Regular polygons the contour card offers, three sides through eight. */
+export const REGULAR_POLYGON_PRESETS = {
+  triangle: 3,
+  square: 4,
+  pentagon: 5,
+  hexagon: 6,
+  heptagon: 7,
+  octagon: 8,
+};
+
+/** Side count for a regular preset. Zero when the name is not one of those. */
+export function regularPolygonSides(preset) {
+  return REGULAR_POLYGON_PRESETS[preset] || 0;
+}
+
 /** Regular polygon, one corner on +V, equal sides, center fixed, radius to a vertex. */
 export function contourFromPolygon(preset, radius) {
-  const sides = preset === 'triangle' ? 3
-    : preset === 'square' ? 4
-      : preset === 'pentagon' ? 5
-        : preset === 'hexagon' ? 6
-          : 0;
-  if (!sides) fail('polygon preset must be triangle, square, pentagon, or hexagon');
+  const sides = regularPolygonSides(preset);
+  if (!sides) fail('polygon preset must be triangle, square, pentagon, hexagon, heptagon, or octagon');
   const r = num(radius, 'radius');
   if (!(r > 0)) fail('radius must be > 0');
   const points = [{ id: 'p0', at: [0, 0] }];

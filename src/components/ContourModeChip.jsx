@@ -5,6 +5,7 @@ import { formatDisplayLength } from '../utils/displayUnit';
 import { FeatureDeleteButton } from './FeatureEditDelete';
 import FeatureSheet from './FeatureSheet';
 import { planeCardCommit } from '../utils/contourMode';
+import { REGULAR_POLYGON_PRESETS } from '../utils/contourSolve';
 import { contourStatusNote, contourStatusNoteAttrs } from '../utils/contourStatus';
 import { partLengthMm } from '../utils/sliderRange';
 
@@ -182,14 +183,14 @@ const ContourModeChip = ({
         <label className="flex flex-col gap-0.5">
           <span className="text-[11px] uppercase tracking-wide text-cyan-200/80">Polygon</span>
           <select
+            data-polygon-preset=""
             value={params.polygonPreset || 'hexagon'}
             onChange={(e) => set('polygonPreset', e.target.value, 'select')}
             className="rounded border border-cyan-700/70 bg-cyan-950/80 px-2.5 py-1 text-[13px] text-white"
           >
-            <option value="triangle">triangle</option>
-            <option value="square">square</option>
-            <option value="pentagon">pentagon</option>
-            <option value="hexagon">hexagon</option>
+            {Object.keys(REGULAR_POLYGON_PRESETS).map((preset) => (
+              <option key={preset} value={preset}>{preset}</option>
+            ))}
           </select>
         </label>
         {lenField('radius', 'Radius', { min: 0.1, max: 0.8 * L })}
