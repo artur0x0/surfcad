@@ -1,6 +1,7 @@
 import React from 'react';
 import { LengthNumberField } from './controls/popupUI';
 import FeatureSheet from './FeatureSheet';
+import { FeatureDeleteButton } from './FeatureEditDelete';
 import {
   HOLE_END_OPTIONS,
   HOLE_FIT_OPTIONS,
@@ -40,14 +41,17 @@ function SelectField({ id, label, value, options, onChange }) {
 }
 
 /**
- * Hole params. Next opens the plane card. X and Esc write nothing.
- * No U/V and no n×m. An explicit diameter wins over size and fit.
+ * Hole params. Next opens the plane card. Confirm rewrites one hole.
+ * X and Esc write nothing. No U/V and no n×m. An explicit diameter wins.
  */
 const HoleCard = ({
   card,
   onChange,
   onNext,
   onCancel,
+  editing = false,
+  onEditCentres = null,
+  onDelete = null,
   compact = false,
   lengthMm = 100,
 }) => {
@@ -100,10 +104,25 @@ const HoleCard = ({
       compact={compact}
       onCancel={onCancel}
       onConfirm={onNext}
-      confirmLabel="Next"
+      confirmLabel={editing ? 'Confirm' : 'Next'}
       cardAttrs={{ 'data-hole-card': '' }}
       bodyAttrs={{ 'data-hole-card-scroll': '' }}
-      note="Next picks the plane. Accept writes one hole at every centre."
+      note={editing
+        ? 'Confirm rewrites this hole. Edit centres changes the shared sketch.'
+        : 'Next picks the plane. Accept writes one hole at every centre.'}
+      footer={editing ? (
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            data-hole-edit-centres=""
+            onClick={() => onEditCentres?.()}
+            className="inline-flex items-center rounded-md border border-cyan-700/70 bg-cyan-950/80 px-2.5 py-1.5 text-[13px] font-medium text-cyan-100 hover:bg-cyan-900/70"
+          >
+            Edit centres
+          </button>
+          <FeatureDeleteButton onClick={onDelete} />
+        </div>
+      ) : null}
     >
       <div className="mt-1.5 flex flex-col gap-1.5 font-sans">
         <SelectField

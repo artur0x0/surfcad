@@ -197,7 +197,14 @@ import {
   saveContourConstraint,
   saveContourDimension,
 } from '../utils/contourMode';
-import { defaultHoleCard, holeSketchContour, holeSpecFromCard } from '../utils/holeCard';
+import {
+  defaultHoleCard,
+  holeCardFromSpec,
+  holeCentresSketch,
+  holeSketchContour,
+  holeSpecFromCard,
+} from '../utils/holeCard';
+import { readCentersContour, readContourHole } from '../utils/holeContour';
 import { SKETCH_HIT_PX, anchorOnEntity, pickContourScreen, planeUvToWorld } from '../utils/contourPick';
 import {
   CONTOUR_REF_COLOR,
@@ -1317,6 +1324,8 @@ const Viewport = forwardRef(({
   const holeCardRef = useRef(null);
   holeCardRef.current = holeCard;
   const holeSpecRef = useRef(null);
+  const holeEditRef = useRef(null);
+  const holeCentresEditRef = useRef(null);
   const featureSlotsRef = useRef(null);
   featureSlotsRef.current = featureSlots;
   const slotReturnRef = useRef(null);
@@ -3418,6 +3427,7 @@ const Viewport = forwardRef(({
   }, [clearFilletBlendPreview, anchorToActivePart]);
 
   const exitContourMode = useCallback((reason) => {
+    holeCentresEditRef.current = null;
     contourEditRef.current = null;
     setContourEdit(null);
     setContourDeleteConfirm(null);
@@ -3551,7 +3561,7 @@ const Viewport = forwardRef(({
     exitContourMode(back ? 'slot' : undefined);
   }, [exitContourMode]);
 
-  const enterContourMode = useCallback(({ entry } = {}) => {
+  const enterContourMode = useCallback(({ entry, centresEdit = null } = {}) => {
     if (isSolidContourEntry(entry) && mode !== 'game') {
       openFeatureSlots(entry);
       return;
@@ -3607,19 +3617,29 @@ const Viewport = forwardRef(({
       enterContourState(entry, faceArg),
       characteristicLengthMm({ bounds: modelBoundsRef.current }),
     );
-    if (entry === 'hole' && holeSpecRef.current) {
+    if (entry === 'hole' && holeSpecRef.current && !centresEdit) {
       next = { ...next, holeSpec: holeSpecRef.current };
     }
     if (entry !== 'hole') {
       const armed = saved.find((c) => c.id === armedContourId);
       next = armed ? applySavedContour(next, armed) : withAutoPickedContour(next, saved);
     }
-    contourPlaneOpenRef.current = true;
-    setContourPlaneOpen(true);
+    if (centresEdit) {
+      next = holeCentresSketch(next, centresEdit);
+      contourEditRef.current = null;
+      setContourEdit(null);
+    }
+    const planeOpen = !centresEdit;
+    contourPlaneOpenRef.current = planeOpen;
+    setContourPlaneOpen(planeOpen);
     sketchHistRef.current = emptySketchHistory();
     setContourUndoDepth(0);
     setContourFaceAim('');
     setContourMode(next);
+    if (centresEdit?.frame?.normal) {
+      overlayVis.end('planes');
+      requestFaceSketchAim(centresEdit.frame.normal);
+    }
     // Soft-fail / refuse only — no informational toast on successful feature UI open.
     if (next.enterRefuse) showContourToast(next.enterRefuse);
     applyContourPartGhost(true);
@@ -3632,9 +3652,48 @@ const Viewport = forwardRef(({
       return;
     }
     holeSpecRef.current = parsed.spec;
+    holeEditRef.current = null;
     setHoleCard(null);
     enterContourMode({ entry: 'hole' });
   }, [enterContourMode, showContourToast]);
+
+  const confirmHoleEdit = useCallback(() => {
+    const edit = holeEditRef.current;
+    if (!edit) return;
+    const parsed = holeSpecFromCard(holeCardRef.current || defaultHoleCard());
+    if (!parsed.ok) {
+      showContourToast(parsed.message);
+      return;
+    }
+    const ok = onCommitHole?.({
+      editSpec: true,
+      featureId: edit.featureId,
+      spec: parsed.spec,
+      partId: activePartIdRef.current,
+    });
+    if (!ok) return;
+    holeEditRef.current = null;
+    holeSpecRef.current = null;
+    setHoleCard(null);
+  }, [onCommitHole, showContourToast]);
+
+  const editHoleCentres = useCallback(() => {
+    const edit = holeEditRef.current;
+    if (!edit?.contourId) {
+      showContourToast('That contour is not in this part.');
+      return;
+    }
+    const buf = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || currentScript || '';
+    const saved = readCentersContour(buf, edit.contourId);
+    if (!saved) {
+      showContourToast('That contour is not in this part.');
+      return;
+    }
+    holeCentresEditRef.current = saved;
+    holeSpecRef.current = null;
+    setHoleCard(null);
+    enterContourMode({ entry: 'hole', centresEdit: saved });
+  }, [enterContourMode, getHelperBuffer, currentScript, showContourToast]);
 
   useEffect(() => {
     if (!holeCard) return;
@@ -3733,6 +3792,17 @@ const Viewport = forwardRef(({
     featureSlotsRef.current = null;
     setFeatureSlots(null);
     setSlotHoverId(null);
+    if (mode !== 'game') {
+      const buf = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || currentScript || '';
+      const saved = readCentersContour(buf, contourId);
+      if (saved) {
+        holeCentresEditRef.current = saved;
+        holeEditRef.current = null;
+        setHoleCard(null);
+        enterContourMode({ entry: 'hole', centresEdit: saved });
+        return true;
+      }
+    }
     return openSavedContour(contourId) === true;
   };
 
@@ -3740,6 +3810,17 @@ const Viewport = forwardRef(({
     const state = contourModeRef.current;
     if (!state) return;
     if (isHoleEntry(state.entry)) {
+      if (holeCentresEditRef.current) {
+        const contour = holeSketchContour(state) || { points: [] };
+        const ok = onCommitHole?.({
+          editCentres: true,
+          partId: activePartIdRef.current,
+          contourId: holeCentresEditRef.current.id,
+          contour,
+        });
+        if (ok) exitContourMode();
+        return;
+      }
       const contour = holeSketchContour(state);
       if (!contour?.points?.length) {
         exitContourMode();
@@ -11446,6 +11527,26 @@ const Viewport = forwardRef(({
     const dialog = creationDialogFor(feature?.kind);
     if (!dialog) return false;
     const text = typeof script === 'string' ? script : '';
+    if (mode !== 'game' && feature?.kind === 'hole') {
+      const opened = readContourHole(text, feature.id);
+      if (opened) {
+        holeEditRef.current = { ...opened, feature };
+        holeCentresEditRef.current = null;
+        holeSpecRef.current = null;
+        featureEditRef.current = null;
+        setHelperEdit(null);
+        setFeatureEditBanner('');
+        if (featureSlotsRef.current) {
+          featureSlotsRef.current = null;
+          setFeatureSlots(null);
+        }
+        if (contourModeRef.current) exitContourMode();
+        setHoleCard(holeCardFromSpec(opened.spec));
+        return true;
+      }
+      holeEditRef.current = null;
+      setHoleCard(null);
+    }
     if (mode !== 'game' && isSolidContourEntry(dialog.entry)) {
       const session0 = openFeatureEdit(text, feature);
       const block = session0.block || featureBlockText(text, feature);
@@ -12349,6 +12450,8 @@ const Viewport = forwardRef(({
           }}
           onEnterHoleMode={mode !== 'game' ? () => {
             holeSpecRef.current = null;
+            holeEditRef.current = null;
+            holeCentresEditRef.current = null;
             setHoleCard(defaultHoleCard());
           } : null}
           onEnterFilletMode={enterFilletMode}
@@ -12777,9 +12880,21 @@ const Viewport = forwardRef(({
           compact={isMobile}
           lengthMm={characteristicLengthMm({ bounds: modelBounds })}
           onChange={setHoleCard}
-          onNext={beginHoleSketch}
+          editing={!!holeEditRef.current}
+          onNext={holeEditRef.current ? confirmHoleEdit : beginHoleSketch}
+          onEditCentres={editHoleCentres}
+          onDelete={() => {
+            const feature = holeEditRef.current?.feature;
+            if (!feature) return;
+            const ok = onDeleteFeatureEdit?.(feature);
+            if (!ok) return;
+            holeEditRef.current = null;
+            holeSpecRef.current = null;
+            setHoleCard(null);
+          }}
           onCancel={() => {
             holeSpecRef.current = null;
+            holeEditRef.current = null;
             setHoleCard(null);
           }}
         />

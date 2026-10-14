@@ -300,7 +300,7 @@ import GameHintsModal from './components/GameHintsModal';
 import PuzzlePickerModal from './components/PuzzlePickerModal';
 import GameConfetti from './components/GameConfetti';
 import { composeContourCommit } from './utils/contourMode';
-import { composeHoleOnContour } from './utils/holeContour';
+import { composeHoleOnContour, rewriteCentersContour } from './utils/holeContour';
 import { writeContourProfileBlock } from './utils/contourProfileWrite';
 import { deleteContourStatement, saveEditedContour } from './utils/contourUsers';
 import { hasNamedContour } from './utils/namedContour';
@@ -5608,8 +5608,11 @@ const App = () => {
   };
 
   /**
-   * Hole Accept. One undo. The bar sits on the new hole. No centres writes
-   * nothing. A bar that was already at the end moves onto that hole chip.
+   * Hole Accept, or a tap-to-edit confirm. A new hole is one undo and the bar
+   * sits on that chip. No centres on a new hole writes nothing. A spec
+   * confirm rewrites that hole and leaves the contour. A centres confirm
+   * rewrites the one solveContour call and leaves every hole block. An edit
+   * that changes nothing skips undo. An edit does not move the bar.
    */
   const handleCommitHole = (payload) => {
     if (!focusWritePart(payload?.partId)) {
@@ -5617,24 +5620,32 @@ const App = () => {
       return false;
     }
     const buf = codeEditorRef.current?.getContent?.() || '';
-    const result = composeHoleOnContour(buf, {
-      frame: payload?.frame,
-      contour: payload?.contour,
-      spec: payload?.spec,
-    });
+    const editing = !!(payload?.editSpec || payload?.editCentres);
+    const result = payload?.editCentres
+      ? rewriteCentersContour(buf, {
+        contourId: payload.contourId,
+        contour: payload.contour,
+      })
+      : composeHoleOnContour(buf, payload?.editSpec
+        ? { featureId: payload.featureId, spec: payload.spec }
+        : { frame: payload.frame, contour: payload.contour, spec: payload.spec });
     if (!result.ok) {
       viewportRef.current?.softFailContour?.(result.message);
       return false;
     }
-    if (result.empty) return true;
+    if (result.empty || result.changed === false || result.buffer === buf) return true;
     const key = editorRollbackKey();
     const stored = storedRollback(key);
-    const wrote = commitFeatureBuffer(buf, result.buffer, 'Hole');
+    const wrote = commitFeatureBuffer(
+      buf,
+      result.buffer,
+      payload?.editCentres ? 'Hole centres' : 'Hole',
+    );
     if (!wrote) {
       viewportRef.current?.softFailContour?.('Could not write Hole into the editor — try again.');
       return false;
     }
-    if (stored === undefined && result.featureId) storeRollbackAnchor(key, result.featureId);
+    if (!editing && stored === undefined && result.featureId) storeRollbackAnchor(key, result.featureId);
     setTimeout(() => {
       handleGameRun();
     }, 0);

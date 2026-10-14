@@ -868,6 +868,15 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
   block in one undo and parks the bar on the new hole chip. No centres writes
   nothing. X and Esc write nothing. An old hole block still opens the helper
   sheet. This button does not convert it.
+  Tapping a contour hole chip (`data-feature-id="hole1"`) opens the same card
+  with that spec. Confirm (`data-feature-card-confirm`) rewrites the spec and
+  leaves the contour. Edit centres (`data-hole-edit-centres`) reopens the
+  dashed sketch on the baked plane. The plane card stays closed. Confirm
+  (`data-contour-confirm`) rewrites the one `solveContour` call, including a
+  sketch with no centres, and leaves every hole block. Each confirm is one
+  undo and does not move the bar. Delete (`data-feature-edit-delete`) removes
+  that hole block only. The centres chip stays. An old `hole()` block still
+  opens the helper sheet.
   `polarArray` stays the same way: one Array button whose Type param is Grid or
   Polar, and the `array3D` build delegates to `polarArray`'s for Polar.
   `holePattern` stays so an old script still runs. The Hole button does not emit it.

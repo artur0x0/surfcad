@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { contourRailTools, enterContourState } from './contourMode.js';
 import { composeHoleOnContour } from './holeContour.js';
-import { defaultHoleCard, holeSketchContour, holeSpecFromCard } from './holeCard.js';
+import {
+  defaultHoleCard,
+  holeCardFromSpec,
+  holeCentresSketch,
+  holeSketchContour,
+  holeSpecFromCard,
+} from './holeCard.js';
 
 const FRAME = { center: [0, 0, 5], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] };
 const PART = 'let part = Manifold.cube([10, 10, 10], true);\nreturn part;\n';
@@ -80,4 +86,43 @@ test('one centre writes a hole and zero centres write nothing', () => {
   assert.match(wrote.buffer, /centers: true/);
   assert.match(wrote.buffer, /construction: true/);
   assert.match(wrote.buffer, /holesOnContour\(part, c1,/);
+});
+
+test('a saved spec refills the card and an empty contour stays a contour', () => {
+  const fastener = holeSpecFromCard(defaultHoleCard()).spec;
+  const filled = holeSpecFromCard(holeCardFromSpec(fastener));
+  assert.equal(filled.ok, true);
+  assert.equal(filled.spec.type, 'clearance');
+  assert.equal(filled.spec.size, 'M3');
+  assert.equal(filled.spec.fit, 'normal');
+  assert.equal(filled.spec.dia, undefined);
+  const explicit = holeSpecFromCard(holeCardFromSpec({
+    dia: 5,
+    through: true,
+    side: -1,
+    near: { kind: 'none' },
+    far: { kind: 'none' },
+  }));
+  assert.equal(explicit.spec.dia, 5);
+  assert.equal(explicit.spec.side, -1);
+  assert.equal(explicit.spec.type, undefined);
+  const empty = holeSketchContour({ params: { contour: { points: [], lines: [] } } });
+  assert.deepEqual(empty.points, []);
+  assert.equal(holeSketchContour({ params: { points: [] } }), null);
+  const sketch = holeCentresSketch(enterContourState('hole', null), {
+    id: 'c1',
+    name: 'c1',
+    frame: FRAME,
+    contour: {
+      points: [{ id: 'p0', at: [1, 2] }],
+      lines: [{ id: 'e0', a: 'p0', b: 'p0' }],
+    },
+  });
+  assert.equal(sketch.entry, 'hole');
+  assert.equal(sketch.tool, 'polyline');
+  assert.equal(sketch.contourId, 'c1');
+  assert.equal(sketch.params.contour.centers, true);
+  assert.equal(sketch.params.contour.lines[0].construction, true);
+  assert.deepEqual(sketch.planeFace.planeFrame.normal, [0, 0, 1]);
+  assert.deepEqual(sketch.params.points, [[1, 2]]);
 });
