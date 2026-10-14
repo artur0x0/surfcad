@@ -5,7 +5,7 @@
  *
  * The remote-ahead toast has Get latest and Keep mine. Get latest opens the
  * shared Parts conflict dialog. Keep mine runs that dialog's keep handler
- * and dismisses the toast. The delete Undo toast stays one line, at 1.5×
+ * and dismisses the toast. The delete Undo toast stays one line, at 2×
  * its previous height, with the same gap between Undo and X.
  *
  * Shots go to GOLDEN_SHOT_DIR or os.tmpdir() only.
@@ -222,8 +222,8 @@ async function runSize(label, width, height) {
     metrics.text === 'Deleted.' && metrics.lines === 1 && metrics.nowrap === 'nowrap'
       && metrics.textH > 0 && metrics.lineH > 0 && metrics.textH <= metrics.lineH + 1,
     JSON.stringify(metrics));
-  check(`${label}: Deleted toast is 1.5× the previous card height`,
-    metrics.roomy && Math.abs(metrics.ratio - 1.5) < 0.05 && metrics.popupH > metrics.rowH,
+  check(`${label}: Deleted toast is 2× the previous card height`,
+    metrics.roomy && Math.abs(metrics.ratio - 2) < 0.05 && metrics.popupH > metrics.rowH,
     JSON.stringify(metrics));
   check(`${label}: Undo and X stay 44px with the same gap`,
     metrics.undoW >= 44 && metrics.dismissW >= 44

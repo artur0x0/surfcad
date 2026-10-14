@@ -2,7 +2,7 @@
  * Artur playtest toasts. The remote-ahead card has Get latest and Keep mine.
  * Get latest opens the Parts-list conflict dialog. Keep mine runs that
  * dialog's keep handler and dismisses the card. The delete Undo card is
- * 1.5× its one-line height.
+ * 2× its one-line height.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
