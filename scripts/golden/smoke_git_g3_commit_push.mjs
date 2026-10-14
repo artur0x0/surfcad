@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * G3 commit/push: changed parts + assembly as one commit to main.
- * A moved tip returns conflict and writes nothing (force merge is retired).
+ * A moved tip returns conflict and writes nothing until Overwrite main.
  * Assembly rename moves paths in the same commit (see G5 golden for full
  * rename-on-Commit coverage).
  * Mock adapter only — no network, no tokens.
@@ -129,14 +129,16 @@ console.log('\ngit G3 — moved main → conflict, nothing overwritten');
   const again = await commitWorkspace(gh, repo, { doc: opened.doc, scripts, baseline: opened.baseline, now: DAY });
   eq('second stale save is also a conflict', again.status, 'conflict');
   eq('keep on branch leaves main', (await gh.getBranch(repo, 'main')).sha, remote.sha);
-  let retired = '';
-  try {
-    await forceMergeCommit(gh, repo, res);
-  } catch (err) {
-    retired = err.message || '';
-  }
-  ok('force merge is retired', /will not overwrite/.test(retired), retired);
-  eq('retired call left main', (await gh.getBranch(repo, 'main')).sha, remote.sha);
+  const overwritten = await forceMergeCommit(gh, repo, {
+    doc: opened.doc,
+    scripts,
+    baseline: opened.baseline,
+    message: 'mine',
+  });
+  eq('overwrite committed', overwritten.status, 'committed');
+  eq('main contains the local content', (await gh.readFile(repo, BRACKET, 'main')).content, '// mine bracket');
+  eq('remote spare stays', (await gh.readFile(repo, SPARE, 'main')).content, '// remote spare');
+  eq('overwrite is the new main', (await gh.getBranch(repo, 'main')).sha, overwritten.sha);
 }
 
 console.log('\ngit G3 — first commit of a new assembly (no Open)');
@@ -201,7 +203,7 @@ console.log('\ngit G3 — UI wiring (PartFeed + App)');
 const feed = readFileSync(new URL('../../src/components/PartFeed.jsx', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../../src/App.jsx', import.meta.url), 'utf8');
 ok('Commit button git-only, gated', /data-git-commit=""/.test(feed) && /disabled=\{!canCommit\}/.test(feed)
-  && /canCommit=\{assemblyDoc\.source === 'git' && !!sourceDirty\}/.test(app));
+  && /canCommit=\{assemblyDoc\.source === 'git' && !!sourceDirty/.test(app));
 ok('commit message dialog', /data-git-commit-message/.test(feed) && /data-git-commit-confirm/.test(feed));
 ok('commit message prompts + no iOS zoom', /Enter a commit message/.test(feed)
   && /data-git-commit-message[\s\S]*?PARTS_TEXT_INPUT_STYLE/.test(feed)
@@ -217,11 +219,14 @@ ok('G13 conflict popup options', /data-git-conflict-popup/.test(feed)
   && /data-git-conflict-open-github/.test(feed) && /Open on GitHub/.test(feed)
   && /data-git-conflict-overwrite/.test(feed) && /Overwrite main/.test(feed)
   && !/Keep on branch/.test(feed) && !/>Force merge</.test(feed));
-ok('App queues Save and does not force merge', /handleGitCommit/.test(app)
+ok('App queues Save; Overwrite main force-flushes', /handleGitCommit/.test(app)
   && /assembleCommitFiles\(gitAdapterRef\.current/.test(app)
   && /op: 'save'/.test(app)
   && !/commitWorkspace\(gitAdapterRef\.current/.test(app)
   && !/forceMergeCommit\(/.test(app)
+  && /handleOverwriteMain/.test(app)
+  && /force:\s*true/.test(app)
+  && /onOverwriteMain=\{handleOverwriteMain\}/.test(app)
   && /onGitCommit=\{handleGitCommit\}/.test(app) && /canCommit=/.test(app));
 ok('baseline advances after commit', /rememberGitBaseline\(result\.baseline\)/.test(app)
   || /rememberGitBaseline\(captureBaseline\(/.test(app));

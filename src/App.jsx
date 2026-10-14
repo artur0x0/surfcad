@@ -247,6 +247,7 @@ import {
   vaultSegment,
   assemblyFilePath,
   assembleCommitFiles,
+  applyOverwriteFiles,
   commitPartToRepo,
   saveLocalOnNewBranch,
   REPO_MOVED_WARNING,
@@ -4501,6 +4502,80 @@ const App = () => {
   };
 
   /**
+   * Fold Overwrite main's commit into the open document so the screen
+   * matches the tip and the yellow dots can clear.
+   */
+  const absorbOverwriteFiles = async (files) => {
+    const doc = assemblyRef.current;
+    if (!doc || doc.source !== 'git' || !files?.length) return;
+    const applied = applyOverwriteFiles(doc, partScriptsRef.current, files);
+    if (!applied.changed) return;
+    rememberScripts(applied.scripts);
+    const saved = rememberAssembly(applied.doc);
+    const written = new Set(
+      (files || [])
+        .filter((file) => file?.path && !file.delete && typeof file.content === 'string')
+        .map((file) => file.path),
+    );
+    for (const part of saved.parts || []) {
+      if (!written.has(part.id)) continue;
+      const text = applied.scripts[part.id];
+      if (typeof text !== 'string') continue;
+      await savePartScript(part.id, text, { isSynced: true });
+    }
+    const active = saved.parts?.find((part) => part.id === saved.activeId) || saved.parts?.[0];
+    if (!active || !written.has(active.id)) return;
+    const text = applied.scripts[active.id];
+    if (typeof text !== 'string') return;
+    focusPartHistory(active.id, text);
+    suppressPartSaveRef.current = false;
+    setCurrentFilename(active.name);
+    setCurrentScript(text);
+    codeEditorRef.current?.loadContent(text, active.name, false);
+  };
+
+  /**
+   * Conflict popup → Overwrite main. The moved-tip guard stays in place for
+   * Save and for a background flush. This is the explicit force-write: the
+   * queued local files land on the current main tip, then the conflict and
+   * the dirty dots clear. No second confirm.
+   */
+  const handleOverwriteMain = async () => {
+    const vault = gitVaultRef.current;
+    const adapter = gitAdapterRef.current;
+    if (!vault?.repo || !adapter) return { status: 'error', error: 'No repo' };
+    try {
+      const branch = gitWorkingBranch();
+      const online = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+      const result = await flushSyncQueue({
+        store: gitSync(),
+        adapter,
+        repo: vault.repo,
+        branch,
+        online,
+        force: true,
+      });
+      if (result.status === 'offline') {
+        return { status: 'offline', error: 'You are offline. Local changes stay queued.' };
+      }
+      if (result.status !== 'synced' && result.status !== 'idle') {
+        return { status: 'error', error: result.error || 'Overwrite failed' };
+      }
+      await absorbOverwriteFiles(result.files);
+      await adoptSyncResult(result, { surfaceConflict: false });
+      setSyncConflict(null);
+      setUploadError(null);
+      return {
+        status: result.status === 'idle' ? 'idle' : 'synced',
+        sha: result.sha,
+        branch: result.branch || branch,
+      };
+    } catch (err) {
+      return { status: 'error', error: err?.message || 'Overwrite failed' };
+    }
+  };
+
+  /**
    * Make a new branch from the local baseline and commit the save that
    * main refused. Switches the working ref so the next save goes there.
    */
@@ -7522,6 +7597,7 @@ const App = () => {
       onSyncConflictClear={() => setSyncConflict(null)}
       canCommit={assemblyDoc.source === 'git' && !!sourceDirty && gitSession.phase === 'connected'}
       onGitCommit={handleGitCommit}
+      onOverwriteMain={handleOverwriteMain}
       behindPartIds={behindPartIdSet}
       assemblyBehind={!!behindMarkers.assemblyBehind}
       assemblyPath={gitAssemblyPath || ''}

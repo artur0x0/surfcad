@@ -20,7 +20,7 @@ import {
 import { createSyncStore } from '../../src/utils/git/syncStore.js';
 import { flushSyncQueue } from '../../src/utils/git/syncWorker.js';
 import { openVaultAssembly, planCopyToAssembly, planOpenVaultPart } from '../../src/utils/git/gitWorkspace.js';
-import { assembleCommitFiles, forceMergeCommit } from '../../src/utils/git/gitCommit.js';
+import { assembleCommitFiles } from '../../src/utils/git/gitCommit.js';
 
 let failed = 0;
 let passed = 0;
@@ -288,9 +288,16 @@ console.log('\nremote moved → conflict, nothing overwritten');
   ok('sync hold does not overwrite', conflict.syncHold === true && conflict.remoteSha === moved.sha);
   ok('local edit was not pushed', !/\/\/ local/.test((await gh.readFile(repo, GB, 'main')).content));
   ok('op stays queued', store.pending(repo).length === 1);
+  const overwritten = await flushSyncQueue({
+    store, adapter: gh, repo, branch: 'main', online: true, force: true,
+  });
+  eq('Overwrite main synced', overwritten.status, 'synced');
+  ok('main contains the local content', /\/\/ local/.test((await gh.readFile(repo, GB, 'main')).content));
+  ok('queue cleared', store.pending(repo).length === 0);
+  ok('dirty dot cleared', !store.partStates()[`${repo.owner}/${repo.name}\0main\0${GB}`]);
 }
 
-console.log('\nSave is queued and never force-merges');
+console.log('\nSave is queued and does not force-merge on its own');
 {
   const { gh, repo, head } = await seed();
   const store = createSyncStore({ persist: false });
@@ -314,17 +321,16 @@ console.log('\nSave is queued and never force-merges');
   const online = await flushSyncQueue({ store, adapter: gh, repo, branch: 'main', online: true });
   eq('save syncs', online.status, 'synced');
   ok('save landed', /queued save/.test((await gh.readFile(repo, GB, 'main')).content));
-  let retired = '';
-  try { await forceMergeCommit(); } catch (err) { retired = err.message || ''; }
-  ok('force merge cannot run', /will not overwrite/.test(retired), retired);
   const app = readFileSync(new URL('../../src/App.jsx', import.meta.url), 'utf8');
   const feed = readFileSync(new URL('../../src/components/PartFeed.jsx', import.meta.url), 'utf8');
   ok('App Save goes through the outbox', /assembleCommitFiles\(gitAdapterRef/.test(app)
     && /op: 'save'/.test(app)
     && !/commitWorkspace\(/.test(app)
     && !/forceMergeCommit\(/.test(app));
-  ok('mismatch opens G13 and Overwrite is refused', /status === 'conflict'/.test(feed)
-    && /Sync will not overwrite the remote repo/.test(feed));
+  ok('Overwrite main force-flushes past the moved-tip guard', /onOverwriteMain/.test(feed)
+    && /handleOverwriteMain/.test(app)
+    && /force:\s*true/.test(app)
+    && !/Sync will not overwrite the remote repo/.test(feed));
 }
 
 console.log('\nbranch switch with a pending rename does not fork');
