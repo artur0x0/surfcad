@@ -296,7 +296,11 @@ import {
 import PartFeed from './components/PartFeed';
 import manifoldContext from './utils/ManifoldWorker';
 import DEFAULT_SCRIPT from './utils/defaultScript';
-import { newPartStarterScript } from './utils/helperPaletteSnippets';
+import {
+  composeHelperInsert,
+  HELPER_PALETTE_ITEMS,
+  newPartStarterScript,
+} from './utils/helperPaletteSnippets';
 import {
   DEMO_PUZZLE,
   DEFAULT_PUZZLE_ID,
@@ -7437,6 +7441,33 @@ const App = () => {
     runScript: handleGameRun,
     readRunFailure() {
       return runFailureRef.current;
+    },
+    prepareHelperInsert({ helperId, params = null, faceContext = null, edgeContext = null } = {}) {
+      const item = HELPER_PALETTE_ITEMS.find((row) => row.id === helperId);
+      if (!item) {
+        return { error: { code: 'unknown_helper', message: `Unknown helper id: ${helperId}` } };
+      }
+      if (!focusWritePart(null)) {
+        return { error: { code: 'no_write_part', message: 'No writable part for helper insert' } };
+      }
+      const buffer = codeEditorRef.current?.getContent?.() ?? '';
+      const content = composeHelperInsert(
+        buffer,
+        helperId,
+        null,
+        params,
+        faceContext,
+        edgeContext,
+      );
+      if (typeof content !== 'string') {
+        return {
+          error: {
+            code: 'insert_failed',
+            message: 'Helper refused insert (check params, selection, or contour/mode prerequisites)',
+          },
+        };
+      }
+      return { source: content };
     },
   });
 

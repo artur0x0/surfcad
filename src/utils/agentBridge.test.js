@@ -11,6 +11,7 @@ import {
   createSurfcadBridge,
 } from './agentBridge.js';
 import { emptyPartHistory, undoPartHistory } from './partHistory.js';
+import { v1Registry } from '../agent/commands/index.js';
 
 const BOX = `// --- cube begin ---
 let part = Manifold.cube([40, 30, 20], true);
@@ -27,33 +28,7 @@ part = part.subtract(Manifold.cylinder(40, 6, 6, 48, true));
 return part;
 `;
 
-const COMMANDS = [
-  'get_script',
-  'set_script',
-  'run',
-  'status',
-  'errors',
-  'screenshot',
-  'undo',
-  'list_commands',
-  'feature_tree',
-  'selection',
-  'mode',
-  'dirty',
-  'toasts',
-  'parts',
-  'camera',
-  'list_faces',
-  'list_edges',
-  'select_clear',
-  'select_faces',
-  'select_edges',
-  'select_parts',
-  'set_active_part',
-  'camera_set',
-  'camera_fit',
-  'zoom_to_selection',
-];
+const COMMANDS = v1Registry.names;
 
 function storage(value) {
   return {

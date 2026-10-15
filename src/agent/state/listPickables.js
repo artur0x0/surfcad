@@ -7,10 +7,19 @@ function vec3(value) {
   return out.every((n) => Number.isFinite(n)) ? out : null;
 }
 
-function serializeFaceKey(face) {
+export function serializeFaceKey(face) {
   const key = faceColorKey(face);
   if (!key) return null;
   return JSON.parse(JSON.stringify(key));
+}
+
+function topoFaceToKey(face) {
+  if (!face) return null;
+  const center = vec3(face.center) || vec3(face.at);
+  const normal = vec3(face.normal) || vec3(face.n);
+  const area = Number(face.area);
+  if (!center || !normal || !Number.isFinite(area)) return null;
+  return serializeFaceKey({ at: center, n: normal, area });
 }
 
 /**
@@ -74,6 +83,40 @@ export function buildEdgeList(featureEdges, fingerprints) {
       const n1 = vec3(edge.n1);
       if (n0) row.faceKeyA = { at: mid, n: n0, area: 0 };
       if (n1) row.faceKeyB = { at: mid, n: n1, area: 0 };
+    }
+    edges.push(row);
+  }
+  return { edges };
+}
+
+/**
+ * Topology-stable edges: one row per boundary-edge id from `indexBoundaryEdges`.
+ * Keys are short (`e0`, `e1`, …) for `select_edges`.
+ *
+ * @param {{ faces?: object[], edges?: object[] }} topo
+ */
+export function buildGroupedEdgeList(topo) {
+  const faceById = new Map();
+  for (const face of topo?.faces || []) {
+    if (face && Number.isFinite(face.id)) faceById.set(face.id, face);
+  }
+  const edges = [];
+  for (const boundary of topo?.edges || []) {
+    if (!Number.isFinite(boundary.id)) continue;
+    const mid = vec3(boundary.mid);
+    const length = Number(boundary.length);
+    const faceA = faceById.get(boundary.faceA);
+    const faceB = faceById.get(boundary.faceB);
+    const row = {
+      key: `e${boundary.id}`,
+      mid,
+      length: Number.isFinite(length) ? length : null,
+    };
+    const faceKeyA = topoFaceToKey(faceA);
+    const faceKeyB = topoFaceToKey(faceB);
+    if (faceKeyA && faceKeyB) {
+      row.faceKeyA = faceKeyA;
+      row.faceKeyB = faceKeyB;
     }
     edges.push(row);
   }

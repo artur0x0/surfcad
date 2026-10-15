@@ -125,6 +125,38 @@ export async function run(ctx) {
     return { ok: env.ok === true && n >= 12, call: 'list_edges', args: {}, envelope: env, detail: `edges=${n}` };
   });
 
+  await runner.runStep('list_feature_edges topology count', async () => {
+    const raw = await agentCall(page, 'list_edges', { raw: true });
+    const grouped = await agentCall(page, 'list_feature_edges', {});
+    const rawN = raw.result?.edges?.length ?? 0;
+    const groupedN = grouped.result?.edges?.length ?? 0;
+    findings.push(
+      `list_feature_edges returns ${groupedN} boundary edges vs ${rawN} raw mesh edges on the bracket playtest.`,
+    );
+    return {
+      ok: grouped.ok === true && groupedN > 0 && rawN > groupedN,
+      call: 'list_feature_edges',
+      args: {},
+      envelope: grouped,
+      detail: `raw=${rawN} grouped=${groupedN}`,
+    };
+  });
+
+  await runner.runStep('select_edges grouped key', async () => {
+    const listed = await agentCall(page, 'list_feature_edges', {});
+    const key = listed.result?.edges?.[0]?.key;
+    const env = await agentCall(page, 'select_edges', { keys: [key] });
+    const sel = await agentCall(page, 'selection', {});
+    const ok = env.ok === true && (sel.result?.edges?.length ?? 0) >= 1;
+    return {
+      ok,
+      call: 'select_edges',
+      args: { keys: [key] },
+      envelope: env,
+      detail: JSON.stringify(sel.result?.edges?.length),
+    };
+  });
+
   await runner.runStep('select_faces top via list_faces', async () => {
     const listed = await agentCall(page, 'list_faces', {});
     const top = listed.result?.faces?.find((row) => row.normal?.[2] > 0.9)?.key

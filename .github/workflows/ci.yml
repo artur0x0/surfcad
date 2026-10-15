@@ -170,6 +170,11 @@ jobs:
             echo "agent bridge h3 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
+          node scripts/golden/smoke_agent_bridge_h4.mjs | tee "${RUNNER_TEMP}/agent-bridge-h4.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h4.log"; then
+            echo "agent bridge h4 golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:

@@ -1,5 +1,8 @@
 import { matchFaceKeys } from '../utils/faceColorMatch.js';
 import { edgeKey } from '../utils/selectEdge.js';
+import { serializeFaceKey } from './state/listPickables.js';
+
+const BOUNDARY_EDGE_KEY_RE = /^e(\d+)$/;
 
 function vec3(value) {
   if (!value) return null;
@@ -141,10 +144,48 @@ function edgeFromFaceKeys(featureEdges, faceKeyA, faceKeyB) {
   return hits;
 }
 
+function topoFaceToKey(face) {
+  if (!face) return null;
+  const at = vec3(face.center) || vec3(face.at);
+  const n = vec3(face.normal) || vec3(face.n);
+  const area = Number(face.area);
+  if (!at || !n || !Number.isFinite(area)) return null;
+  return serializeFaceKey({ at, n, area });
+}
+
+function resolveBoundaryKey(raw, topo, featureEdges, fingerprints) {
+  const match = BOUNDARY_EDGE_KEY_RE.exec(raw);
+  if (!match) return null;
+  const id = Number(match[1]);
+  const boundary = (topo?.edges || []).find((row) => row.id === id);
+  if (!boundary) {
+    return { error: { code: 'unknown_edge', message: `Boundary edge not found: ${raw}` } };
+  }
+  const faceById = new Map();
+  for (const face of topo?.faces || []) {
+    if (face && Number.isFinite(face.id)) faceById.set(face.id, face);
+  }
+  const faceKeyA = topoFaceToKey(faceById.get(boundary.faceA));
+  const faceKeyB = topoFaceToKey(faceById.get(boundary.faceB));
+  if (faceKeyA && faceKeyB) {
+    const hits = edgeFromAdjacentFaceKeys(featureEdges, fingerprints, faceKeyA, faceKeyB);
+    if (hits.length === 1) return { edge: hits[0] };
+    if (hits.length > 1) {
+      return { error: { code: 'ambiguous_edge', message: 'Boundary edge matches more than one mesh segment' } };
+    }
+  }
+  const seg = boundary.segments?.[0];
+  if (seg?.key) {
+    const hit = featureEdges.find((edge) => edgeKey(edge) === seg.key) || null;
+    if (hit) return { edge: hit };
+  }
+  return { error: { code: 'unknown_edge', message: `Could not resolve boundary edge: ${raw}` } };
+}
+
 /**
  * @returns {{ edges: object[], error?: { code: string, message: string } }}
  */
-export function resolveEdgeKeys(featureEdges, keys, partId = null, fingerprints = []) {
+export function resolveEdgeKeys(featureEdges, keys, partId = null, fingerprints = [], topo = null) {
   const list = Array.isArray(keys) ? keys : (keys ? [keys] : []);
   if (!list.length) {
     return { error: { code: 'bad_args', message: 'select_edges needs at least one edge key' } };
@@ -155,7 +196,16 @@ export function resolveEdgeKeys(featureEdges, keys, partId = null, fingerprints 
     const raw = list[i];
     let hit = null;
     if (typeof raw === 'string' && raw) {
-      hit = edges.find((edge) => edgeKey(edge) === raw) || null;
+      if (BOUNDARY_EDGE_KEY_RE.test(raw)) {
+        const resolvedBoundary = resolveBoundaryKey(raw, topo, edges, fingerprints);
+        if (resolvedBoundary?.error) return resolvedBoundary;
+        if (resolvedBoundary?.edge) {
+          hit = resolvedBoundary.edge;
+        }
+      }
+      if (!hit) {
+        hit = edges.find((edge) => edgeKey(edge) === raw) || null;
+      }
       if (!hit) {
         return { error: { code: 'unknown_edge', message: `Edge key not found: ${raw}` } };
       }

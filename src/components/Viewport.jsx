@@ -502,7 +502,7 @@ import {
 } from '../utils/measurePicks';
 import { applyCameraPose, fitView, meshWorldBox, unionWorldBox, VIEW_PRESETS, VIEW_SNAP_MARGIN } from '../utils/viewCamera';
 import { resolveEdgeKeys, resolveFaceKeys } from '../agent/resolvePickIds.js';
-import { buildEdgeList, buildFaceList } from '../agent/state/listPickables.js';
+import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from '../agent/state/listPickables.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
 import {
@@ -1259,6 +1259,7 @@ const Viewport = forwardRef(({
   const agentZoomToSelectionRef = useRef(() => ({ error: { code: 'no_selection', message: 'No selection' } }));
   const agentListFacesRef = useRef(() => ({ faces: [], partId: null }));
   const agentListEdgesRef = useRef(() => ({ edges: [], partId: null }));
+  const agentListFeatureEdgesRef = useRef(() => ({ edges: [], partId: null }));
   const swapPickPartRef = useRef(() => false);
   const ambiguousPickRef = useRef(null);
   const [partChoice, setPartChoice] = useState(null);
@@ -2310,6 +2311,7 @@ const Viewport = forwardRef(({
       zoomToSelection: () => agentZoomToSelectionRef.current(),
       listFaces: (args) => agentListFacesRef.current(args),
       listEdges: (args) => agentListEdgesRef.current(args),
+      listFeatureEdges: (args) => agentListFeatureEdgesRef.current(args),
     });
   }
 
@@ -10954,6 +10956,7 @@ const Viewport = forwardRef(({
       keys,
       activePartIdRef.current,
       fingerprints,
+      boundaryTopoRef.current,
     );
     if (resolved.error) return resolved;
     const coherent = featureEdgesRef.current || [];
@@ -11016,6 +11019,20 @@ const Viewport = forwardRef(({
     const listed = buildEdgeList(rawEdges, fingerprints);
     return {
       partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
+      raw: true,
+      ...listed,
+    };
+  };
+
+  agentListFeatureEdgesRef.current = ({ partId } = {}) => {
+    const geom = meshGeometryForAgentPart(partId);
+    if (!geom) return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
+    syncFeatureEdges(geom);
+    const topo = boundaryTopoRef.current;
+    const listed = buildGroupedEdgeList(topo);
+    return {
+      partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
+      grouped: true,
       ...listed,
     };
   };

@@ -24,11 +24,16 @@ import { cameraFitCommand } from './cameraFit.js';
 import { zoomToSelectionCommand } from './zoomToSelection.js';
 import { listFacesCommand } from './listFaces.js';
 import { listEdgesCommand } from './listEdges.js';
+import { listFeatureEdgesCommand } from './listFeatureEdges.js';
+import { invokeHelperCommand, buildHelperPaletteCommands } from './invokeHelper.js';
+
+const HELPER_COMMANDS = buildHelperPaletteCommands();
 
 /**
  * Public order. The first seven names are the original v1 tool list.
  * `list_commands` is next. H2 state readers are appended after it.
  * H3 selection and camera writers follow the readers.
+ * H4 helper inserts and grouped edge catalog follow H3.
  */
 export const V1_COMMANDS = Object.freeze([
   getScriptCommand,
@@ -48,6 +53,9 @@ export const V1_COMMANDS = Object.freeze([
   cameraCommand,
   listFacesCommand,
   listEdgesCommand,
+  listFeatureEdgesCommand,
+  invokeHelperCommand,
+  ...HELPER_COMMANDS,
   selectClearCommand,
   selectFacesCommand,
   selectEdgesCommand,
