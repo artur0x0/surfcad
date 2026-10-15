@@ -78,7 +78,11 @@ That is a sparse copy of the import graph of `src/lib/surfcad/index.js`, not a f
 
 ## Live tab
 
-`window.surfcad` is the stable surface a browser agent drives, and the surface a future surfcad-agent MCP server relays into unchanged. It is installed from `App.jsx` onto the main window. The worker lockdown replaces `fetch` and the other host globals, so the bridge does not live in the worker. `src/utils/agentBridge.js`.
+`window.surfcad` is the stable surface a browser agent drives, and the surface a future surfcad-agent MCP server relays into unchanged. It is installed from `App.jsx` onto the main window. The worker lockdown replaces `fetch` and the other host globals, so the bridge does not live in the worker. `src/utils/agentBridge.js` owns the envelope, the queue, and the one-undo step. The commands themselves are `src/agent/commands/`.
+
+Each command is `{ name, schema, run(ctx, args), uiEntry?, example }`. `schema` describes the args object in JSON Schema form. `example` is one args object `list_commands` returns with the schema. `uiEntry` is optional: a `data-*` attribute name that already exists on a control, or a helper id. `run` records `data-cad-run`. The other v1 commands have no `uiEntry`. Nothing in this version clicks that attribute. `ctx` is the host ref. App fills it with the editor, the part history, `execute`, and the toolbar `undo`, `redo`, and `runScript` handlers. Viewport fills `screenshot` with the same `capturePng` its imperative handle exposes. `fillAgentHost` (`src/agent/host.js`) merges by key.
+
+Quote, order, cart, and checkout are permanently exempt (`src/agent/exempt.js`). They are not commands. A later coverage check may name them only as exempt, with that reason: commerce spends money.
 
 The object is on in dev (`import.meta.env.DEV`). Elsewhere it is opt-in: the page URL `?agent=1`, or localStorage `surfcadAgent` set to `1`. Flag off, `window.surfcad` is absent and the shells are unchanged. `golden:agent-bridge` checks that at 390 and 1280.
 
@@ -115,7 +119,7 @@ The promise resolves to an envelope. It does not reject for a refused command or
 
 The envelope and every `result` survive `JSON.stringify` and come back unchanged from `JSON.parse`. No functions, no class instances, no `ArrayBuffer` views. Numbers are finite. `bbox` is `{ "min": [x, y, z], "max": [x, y, z] }` or `null`, with plain arrays.
 
-`get_script`, `status`, and `errors` resolve immediately from the editor and the last finished run. `set_script`, `run`, `screenshot`, and `undo` run one at a time, in the order they were called.
+`get_script`, `status`, `errors`, and `list_commands` resolve immediately from the editor, the last finished run, or the registry. `set_script`, `run`, `screenshot`, and `undo` run one at a time, in the order they were called.
 
 ### Commands
 
@@ -130,6 +134,7 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `errors` | `{}` | `{ "errors": string[] }` — messages from that last finished run. Empty after a good run. |
 | `screenshot` | `{ "format": "png" }` | `{ "dataUrl": string }`. `format` may be omitted and defaults to `"png"`. |
 | `undo` | `{}` | Same shape as `set_script`. Steps the active part's history once and runs that script. |
+| `list_commands` | `{}` | `{ "commands": [{ "name": string, "schema": object, "example": object }] }` — every command, in `commands` order, including this one. `schema` is the args schema. `example` is one args object. No functions, no `uiEntry`. |
 
 `Status` is `{ "volume": number \| null, "bbox": { "min": number[3], "max": number[3] } \| null, "partName": string, "featureCount": number }`. `volume` and `bbox` are null when the run failed. `bbox` is millimetres. `featureCount` is the number of marked feature blocks in the script that ran. Before any run, `volume` is null, `bbox` is null, `partName` is `""`, and `featureCount` is `0`.
 
@@ -160,5 +165,6 @@ These are thin wrappers over `call()`. They pass a plain object as `argsJson`, u
 | `errors()` | `errors` | `string[]` |
 | `screenshot()` | `screenshot` `{ format: "png" }` | `dataUrl` string |
 | `undo()` | `undo` | `{ ok, errors, status }`, or throws `nothing_to_undo` |
+| `listCommands()` | `list_commands` | The `commands` array from that result |
 
 `scripts/demo/agent-bridge-demo.mjs` is a Playwright agent that uses only `call()` with JSON strings: a box, then a hole, then status and a screenshot, then undo once, then a script that throws.

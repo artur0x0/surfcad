@@ -134,6 +134,23 @@ jobs:
             exit 1
           fi
 
+      # Flag off, the agent registry adds no window.surfcad and no host chrome.
+      # Both widths. The build above is the one this step loads.
+      - name: Agent harness flag-off golden
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          GOLDEN_SHOT_DIR: ${{ runner.temp }}/golden
+        run: |
+          test -n "$CHROME_PATH"
+          test -x "$CHROME_PATH"
+          test -n "$GOLDEN_SHOT_DIR"
+          mkdir -p "$GOLDEN_SHOT_DIR"
+          node scripts/golden/smoke_agent_bridge_flag.mjs | tee "${RUNNER_TEMP}/agent-bridge-flag.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-flag.log"; then
+            echo "agent harness flag golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+
       # Cheapest FEA study golden: one desktop pass against the build this job
       # already produced. The 390px pass runs locally with the same script.
       - name: FEA study panel golden

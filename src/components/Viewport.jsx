@@ -47,6 +47,7 @@ import {
   PREVIEW_RENDER_ORDER,
 } from '../utils/previewStyle';
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
+import { fillAgentHost } from '../agent/host';
 import { applyTrackballFeel } from '../utils/trackballFeel';
 import { installPageZoomLock } from '../utils/pageZoomLock';
 import { formatDisplayNumber } from '../utils/displayUnit';
@@ -1108,6 +1109,12 @@ const Viewport = forwardRef(({
   onFeatureEditPick = null,
   /** Another card took the pane. Close the edit card and write nothing. */
   onFeatureEditDismiss = null,
+  /**
+   * Live-tab agent host. This component publishes `screenshot` (the same
+   * `capturePng` the imperative handle exposes). App publishes the rest.
+   * Flag off, the ref is still filled and nothing is mounted on screen.
+   */
+  agentHostRef = null,
 }, ref) => {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -2225,6 +2232,14 @@ const Viewport = forwardRef(({
       }
     },
   }));
+
+  // Same capture as capturePng. The call happens after commit, when the
+  // imperative handle is current.
+  if (agentHostRef) {
+    fillAgentHost(agentHostRef, {
+      screenshot: () => ref?.current?.capturePng?.() ?? null,
+    });
+  }
 
   // Clear face highlight
   const clearHighlight = useCallback(() => {

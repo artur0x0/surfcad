@@ -18,10 +18,14 @@
  *
  * On in dev. Elsewhere, the page URL `?agent=1` or localStorage
  * `surfcadAgent` = `1` opts in. Flag off, nothing is installed.
+ *
+ * Command bodies live in `src/agent/commands/`. This file owns the envelope,
+ * the queue, and the one-undo mutate. `list_commands` is appended on v1.
  */
 
+import { v1Registry } from '../agent/commands/index.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
-import { emptyPartHistory, pushPartHistory, undoPartHistory } from './partHistory.js';
+import { emptyPartHistory, pushPartHistory } from './partHistory.js';
 
 export const AGENT_STORAGE_KEY = 'surfcadAgent';
 
@@ -31,16 +35,9 @@ export const AGENT_BRIDGE_VERSION = 1;
 /**
  * Command names, in the order an MCP tool list would publish them.
  * Snake case, stable. A new name may be appended on v1. Renaming one bumps the version.
+ * The array is the registry's public order, including `list_commands`.
  */
-export const AGENT_COMMANDS = Object.freeze([
-  'get_script',
-  'set_script',
-  'run',
-  'status',
-  'errors',
-  'screenshot',
-  'undo',
-]);
+export const AGENT_COMMANDS = v1Registry.names;
 
 const EMPTY_STATUS = Object.freeze({
   volume: null,
@@ -233,62 +230,46 @@ export function createSurfcadBridge(host) {
     try {
       outcome = await host.execute(text);
     } catch (err) {
-      outcome = {
-        ok: false,
-        errors: [String(err?.message || err)],
-        volume: null,
-        bbox: null,
-        partName: '',
-      };
+      outcome = failedExecute(err);
     }
     host.writeHistory(commitAgentStep(before, text, message));
     return remember(outcome, text);
   }
 
-  async function runScreenshot(args) {
-    const format = args.format == null ? 'png' : args.format;
-    if (format !== 'png') return fail('unsupported_format', 'screenshot format must be png');
-    let png;
-    try {
-      png = await host.screenshot();
-    } catch (err) {
-      return fail('screenshot_failed', String(err?.message || err));
-    }
-    if (typeof png !== 'string' || !png.startsWith('data:image/png')) {
-      return fail('screenshot_failed', 'screenshot failed');
-    }
-    return pass({ dataUrl: png });
+  function failedExecute(err) {
+    return {
+      ok: false,
+      errors: [String(err?.message || err)],
+      volume: null,
+      bbox: null,
+      partName: '',
+    };
   }
 
-  async function runUndo() {
-    const before = cloneAgentHistory(host.readHistory());
-    const undone = undoPartHistory(before);
-    if (undone.code == null) return fail('nothing_to_undo', 'Nothing to undo');
-    host.setEditor(undone.code);
-    let outcome;
-    try {
-      outcome = await host.execute(undone.code);
-    } catch (err) {
-      outcome = {
-        ok: false,
-        errors: [String(err?.message || err)],
-        volume: null,
-        bbox: null,
-        partName: '',
-      };
-    }
-    host.writeHistory(undone.history);
-    return pass(remember(outcome, undone.code));
-  }
+  /**
+   * Handlers the command bodies call. Session state (last run, the queue,
+   * one-undo mutate) stays here. The host methods are the ones App and
+   * Viewport published.
+   */
+  const ctx = {
+    getScript: () => host.getScript(),
+    setEditor: (src) => host.setEditor(src),
+    readHistory: () => host.readHistory(),
+    writeHistory: (history) => host.writeHistory(history),
+    execute: (src) => host.execute(src),
+    screenshot: () => host.screenshot(),
+    mutate,
+    remember,
+    readStatus: () => copyStatus(lastStatus),
+    readErrors: () => lastErrors.slice(),
+    cloneHistory: cloneAgentHistory,
+    failedExecute,
+    listCommands: () => v1Registry.catalog(),
+  };
 
-  function readCommand(name) {
-    if (name === 'get_script') {
-      const text = host.getScript();
-      return pass({ source: typeof text === 'string' ? text : '' });
-    }
-    if (name === 'status') return pass(copyStatus(lastStatus));
-    if (name === 'errors') return pass({ errors: lastErrors.slice() });
-    return null;
+  function toEnvelope(out) {
+    if (out && out.error) return fail(out.error.code, out.error.message);
+    return pass(out ? out.result : undefined);
   }
 
   /**
@@ -296,6 +277,8 @@ export function createSurfcadBridge(host) {
    * Resolves to `{ v, ok, result? , error? }`. A script that fails to build
    * is still `ok: true`: the CAD outcome is `result.ok` / `result.errors`.
    * Envelope `ok: false` means the command itself was refused.
+   * Reads (`get_script`, `status`, `errors`, `list_commands`) do not wait
+   * for a queued mutation. `set_script`, `run`, `screenshot`, and `undo` do.
    */
   function call(name, argsJson) {
     if (typeof name !== 'string' || !AGENT_COMMANDS.includes(name)) {
@@ -305,24 +288,18 @@ export function createSurfcadBridge(host) {
     const parsed = parseArgs(argsJson);
     if (!parsed.ok) return Promise.resolve(fail(parsed.code, parsed.message));
     const args = parsed.args;
+    const command = v1Registry.get(name);
 
-    if (name === 'set_script' && typeof args.source !== 'string') {
-      return Promise.resolve(fail('bad_args', 'set_script source must be a string'));
-    }
-    if (name === 'screenshot' && args.format != null && args.format !== 'png') {
-      return Promise.resolve(fail('unsupported_format', 'screenshot format must be png'));
+    if (typeof command.checkArgs === 'function') {
+      const refused = command.checkArgs(args);
+      if (refused) return Promise.resolve(fail(refused.code, refused.message));
     }
 
-    const immediate = readCommand(name);
-    if (immediate) return Promise.resolve(immediate);
+    if (command.immediate) return Promise.resolve(toEnvelope(command.run(ctx, args)));
 
     return enqueue(async () => {
       try {
-        if (name === 'set_script') return pass(await mutate(args.source, 'Agent script'));
-        if (name === 'run') return pass(await mutate(host.getScript(), 'Agent run'));
-        if (name === 'screenshot') return await runScreenshot(args);
-        if (name === 'undo') return await runUndo();
-        return fail('unknown_command', `Unknown command: ${name}`);
+        return toEnvelope(await command.run(ctx, args));
       } catch (err) {
         return fail('internal', String(err?.message || err));
       }
@@ -360,6 +337,9 @@ export function createSurfcadBridge(host) {
     },
     undo() {
       return unwrap(call('undo'));
+    },
+    listCommands() {
+      return unwrap(call('list_commands')).then((result) => result.commands);
     },
   };
 }

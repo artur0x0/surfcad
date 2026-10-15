@@ -35,6 +35,7 @@ const COMMANDS = [
   'errors',
   'screenshot',
   'undo',
+  'list_commands',
 ];
 
 function storage(value) {
@@ -441,6 +442,55 @@ test('reads do not wait for a queued mutation', async () => {
   const wrote = await pending;
   assert.equal(wrote.result.ok, true);
   assert.equal((await api.call('status', '{}')).result.volume, 24000);
+});
+
+test('list_commands returns name, schema, and example and does not commit', async () => {
+  const env = world();
+  const api = createSurfcadBridge(env.host);
+  await invoke(api, 'set_script', { source: BOX });
+  const listed = await invoke(api, 'list_commands', { extra: true });
+  assert.equal(listed.ok, true);
+  assert.equal(listed.result.commands.length, COMMANDS.length);
+  assert.deepEqual(listed.result.commands.map((command) => command.name), COMMANDS);
+  for (const command of listed.result.commands) {
+    assert.equal(typeof command.name, 'string');
+    assert.equal(command.schema.type, 'object');
+    assert.equal(typeof command.example, 'object');
+    assert.equal(command.example != null && !Array.isArray(command.example), true);
+    assert.equal('uiEntry' in command, false);
+    assert.equal('run' in command, false);
+  }
+  const setScript = listed.result.commands.find((command) => command.name === 'set_script');
+  assert.deepEqual(setScript.schema.required, ['source']);
+  assert.equal(setScript.schema.properties.source.type, 'string');
+  assert.equal(typeof setScript.example.source, 'string');
+  const shot = listed.result.commands.find((command) => command.name === 'screenshot');
+  assert.deepEqual(shot.schema.properties.format.enum, ['png']);
+  assert.deepEqual(shot.example, { format: 'png' });
+  assert.equal(env.history().head, 0);
+  assert.equal(env.history().commits.length, 1);
+  assert.equal(env.calls.execute, 1);
+  assert.deepEqual(await api.listCommands(), listed.result.commands);
+});
+
+test('list_commands does not wait for a queued mutation', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const env = world();
+  const orig = env.host.execute;
+  env.host.execute = async (src) => {
+    await gate;
+    return orig(src);
+  };
+  const api = createSurfcadBridge(env.host);
+  const pending = api.call('set_script', JSON.stringify({ source: BOX }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const listed = await api.call('list_commands', '{}');
+  assert.equal(listed.ok, true);
+  assert.equal(listed.result.commands[0].name, 'get_script');
+  assert.equal(listed.result.commands.at(-1).name, 'list_commands');
+  release();
+  await pending;
 });
 
 test('commitAgentStep does not add a step for the same text', () => {
