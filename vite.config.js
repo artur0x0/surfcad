@@ -4,6 +4,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import wasm from "vite-plugin-wasm"
 import topLevelAwait from "vite-plugin-top-level-await"
+import viteAgentBridgeWs from './scripts/vite-agent-bridge-ws.mjs'
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url))
 
@@ -11,7 +12,8 @@ export default defineConfig({
   plugins: [
     react(),
     wasm(),
-    topLevelAwait()
+    topLevelAwait(),
+    viteAgentBridgeWs(),
   ],
   build: {
     rollupOptions: {

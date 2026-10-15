@@ -59,4 +59,9 @@ export const COVERAGE_ALLOWLIST = Object.freeze([
   Object.freeze({ id: 'data-sketch-chip', reason: 'H6 sketch entity strip chip.' }),
   Object.freeze({ id: 'data-feature-sheet-pick', reason: 'H5 feature edit picker row.' }),
   Object.freeze({ id: 'data-feature-sheet-edit-script', reason: 'H5 edit script jump (no command).' }),
+  Object.freeze({ id: 'data-agent-bridge-start', reason: 'M1 local WS pairing chrome (not a bridge command).' }),
+  Object.freeze({ id: 'data-agent-bridge-approve', reason: 'M1 approve local WS peer.' }),
+  Object.freeze({ id: 'data-agent-bridge-reject', reason: 'M1 reject local WS peer.' }),
+  Object.freeze({ id: 'data-agent-bridge-disconnect', reason: 'M1 disconnect local WS peer.' }),
+  Object.freeze({ id: 'data-agent-bridge-toggle', reason: 'M1 open/close pairing panel.' }),
 ]);
