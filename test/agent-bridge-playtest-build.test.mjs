@@ -10,7 +10,6 @@ import { WebSocket } from 'ws';
 import { PAIR_MSG } from '../src/agent/ws/relayHub.js';
 import { pickFreePort } from '../scripts/playtest/lib/pickFreePort.mjs';
 import {
-  findChrome,
   installApiMocks,
   startPreviewServer,
   waitForServer,

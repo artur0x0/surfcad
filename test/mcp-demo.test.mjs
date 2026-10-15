@@ -27,7 +27,7 @@ test('demo:mcp playtest (headless)', { skip: !chromePath }, () => {
     env: {
       ...process.env,
       SURFCAD_PLAYTEST: '1',
-      CHROME_PATH: CHROME_CANDIDATES.find((p) => existsSync(p)),
+      CHROME_PATH: chromePath,
     },
     stdio: 'pipe',
     encoding: 'utf8',
