@@ -430,6 +430,8 @@ export function createSurfcadBridge(hostSource) {
     prepareJointCommit: () => hostFn('prepareJointCommit')?.(),
     finishJointCommit: () => { hostFn('finishJointCommit')?.(); },
     jointCancel: () => hostFn('jointCancel')?.(),
+    jointSelect: (args) => hostFn('jointSelect')?.(args),
+    jointEdit: (args) => hostFn('jointEdit')?.(args),
     agentUndo: () => hostFn('agentUndo')?.(),
     slotOpen: (args) => hostFn('slotOpen')?.(args),
     slotAssignContour: (args) => hostFn('slotAssignContour')?.(args),
