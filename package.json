@@ -196,6 +196,7 @@
         "golden:cut-plane": "node scripts/golden/smoke_cut_plane.mjs",
         "golden:block-shape-boolean": "node scripts/golden/smoke_block_shape_boolean.mjs",
         "golden:block-pose-preview": "node scripts/golden/smoke_block_pose_preview.mjs",
+        "golden:blocks-artur-fixes": "node scripts/golden/smoke_blocks_artur_fixes.mjs",
         "golden:fillet-after-cut": "node scripts/golden/smoke_fillet_after_cut.mjs",
         "golden:fillet-join-body": "node scripts/golden/smoke_fillet_join_body.mjs",
         "golden:fillet-move-seam": "node scripts/golden/smoke_fillet_move_seam.mjs",

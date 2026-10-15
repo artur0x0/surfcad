@@ -102,6 +102,66 @@ export function meshBodyComponents(positions, index) {
  * Body count for a worker mesh (`vertProperties` / `triVerts` / `numProp`).
  * Same connected-component count as meshBodyComponents on the drawn mesh.
  */
+function workerMeshGeometry(mesh) {
+  if (!mesh?.vertProperties || !mesh?.triVerts) return null;
+  const np = mesh.numProp || 3;
+  const src = mesh.vertProperties;
+  const nVert = Math.floor(src.length / np);
+  if (nVert <= 0) return null;
+  let positions = src;
+  if (np !== 3) {
+    positions = new Float32Array(nVert * 3);
+    for (let i = 0; i < nVert; i++) {
+      positions[i * 3] = src[i * np];
+      positions[i * 3 + 1] = src[i * np + 1];
+      positions[i * 3 + 2] = src[i * np + 2];
+    }
+  }
+  return { positions, index: mesh.triVerts };
+}
+
+function triangleVertexKey(positions, index, tri) {
+  const keys = [];
+  for (let k = 0; k < 3; k++) {
+    const vi = index[tri * 3 + k];
+    const p = readPos(positions, vi);
+    keys.push(p.map((v) => Math.round(v * 1e4) / 1e4).join(','));
+  }
+  return keys.sort().join('|');
+}
+
+function bodyOwnsTriangle(body, wantKey) {
+  const mesh = body?.getMesh?.();
+  if (!mesh) return false;
+  const geom = workerMeshGeometry(mesh);
+  if (!geom) return false;
+  const { positions, index } = geom;
+  const triCount = Math.floor(index.length / 3);
+  for (let t = 0; t < triCount; t++) {
+    if (triangleVertexKey(positions, index, t) === wantKey) return true;
+  }
+  return false;
+}
+
+/**
+ * Which decomposed Manifold body owns a hit triangle on the combined mesh.
+ * Overlapping solids can share a centroid; the triangle index does not.
+ */
+export function decomposedBodyIndexForTri(manifold, bodies, tri) {
+  const t = Number(tri);
+  if (!manifold || !Array.isArray(bodies) || bodies.length <= 1 || !Number.isFinite(t)) return -1;
+  const geom = workerMeshGeometry(manifold.getMesh());
+  if (!geom) return -1;
+  const comps = meshBodyComponents(geom.positions, geom.index);
+  const comp = comps.find((c) => c.triangles.includes(t));
+  if (!comp) return -1;
+  const wantKey = triangleVertexKey(geom.positions, geom.index, t);
+  for (let i = 0; i < bodies.length; i++) {
+    if (bodyOwnsTriangle(bodies[i], wantKey)) return i;
+  }
+  return -1;
+}
+
 export function bodyCountOfWorkerMesh(mesh) {
   if (!mesh?.vertProperties || !mesh?.triVerts) return 0;
   const np = mesh.numProp || 3;

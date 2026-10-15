@@ -38,6 +38,7 @@ import {
 } from '../../utils/featureFailure.js';
 import { evaluationScript, resolveRollback } from '../../utils/featureSkip.js';
 import { parseFeatureMarkers } from '../../utils/featureMarkers.js';
+import { decomposedBodyIndexForTri } from '../../utils/meshBodyComponents.js';
 import { buildMakeLoftSolid, offsetPlaneFrame } from '../../utils/makeLoft.js';
 import { blockSpec, buildBlockManifold } from '../../utils/blockSolid.js';
 import { buildSheetMetalSolid } from '../../utils/sheetMetal/sheetSolid.js';
@@ -8248,7 +8249,7 @@ function move(manifold, delta, opts = {}) {
   let selected;
   try {
     bodies = _cutBodiesOf(manifold);
-    selected = _moveSelected(bodies, options.bodies);
+    selected = _moveSelected(manifold, bodies, options.bodies);
   } catch (err) {
     const msg = err && err.message ? String(err.message) : String(err);
     throw new Error(msg.replace(/^cut:/, 'move:'));
@@ -8478,10 +8479,14 @@ function _moveCentroidSpan(body) {
  * pick still names the nearest body when it sits within 1% of that body's
  * radius (at least 0.05) and the next body is outside that distance.
  */
-function _moveBodyIndex(bodies, at) {
+function _moveBodyIndex(manifold, bodies, at, tri) {
   const point = [Number(at[0]), Number(at[1]), Number(at[2])];
   if (point.some((v) => !Number.isFinite(v))) {
     throw new Error('move: body point must be finite [x, y, z]');
+  }
+  if (manifold && tri != null && Number.isFinite(Number(tri)) && bodies.length > 1) {
+    const byTri = decomposedBodyIndexForTri(manifold, bodies, tri);
+    if (byTri >= 0) return byTri;
   }
   const spans = bodies.map((body) => _moveCentroidSpan(body));
   let best = -1;
@@ -8515,14 +8520,15 @@ function _moveBodyIndex(bodies, at) {
   throw new Error('move: that point is not a body centroid — re-pick the body');
 }
 
-function _moveSelected(bodies, spec) {
+function _moveSelected(manifold, bodies, spec) {
   if (!Array.isArray(spec) || spec.length !== 1) {
     throw new Error('move: name one body with { bodies: [{ at }] }');
   }
   const entry = spec[0];
   const at = entry && (entry.at || entry.center);
   if (!Array.isArray(at)) throw new Error('move: name one body with { bodies: [{ at }] }');
-  return new Set([_moveBodyIndex(bodies, at)]);
+  const tri = entry && entry.tri != null ? Number(entry.tri) : null;
+  return new Set([_moveBodyIndex(manifold, bodies, at, tri)]);
 }
 
 function _cutSelected(bodies, spec) {

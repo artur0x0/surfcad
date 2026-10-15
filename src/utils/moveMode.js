@@ -108,12 +108,17 @@ export function parseLastMove(buffer) {
   if (j < 0) return null;
   const chunk = text.slice(i, j);
   const m = chunk.match(
-    /move\(\s*\w+\s*,\s*\[\s*([^,\]]+)\s*,\s*([^,\]]+)\s*,\s*([^\]]+)\s*\]\s*,\s*\{\s*bodies:\s*\[\s*\{\s*at:\s*\[\s*([^,\]]+)\s*,\s*([^,\]]+)\s*,\s*([^\]]+)\s*\]/,
+    /move\(\s*\w+\s*,\s*\[\s*([^,\]]+)\s*,\s*([^,\]]+)\s*,\s*([^\]]+)\s*\]\s*,\s*\{\s*bodies:\s*\[\s*\{\s*at:\s*\[\s*([^,\]]+)\s*,\s*([^,\]]+)\s*,\s*([^\]]+)\s*\](?:\s*,\s*tri:\s*(\d+))?/,
   );
   if (!m) return null;
   const nums = m.slice(1, 7).map(Number);
   if (nums.some((n) => !Number.isFinite(n))) return null;
-  return { delta: nums.slice(0, 3), at: nums.slice(3, 6) };
+  const tri = m[7] != null && m[7] !== '' ? Number(m[7]) : null;
+  return {
+    delta: nums.slice(0, 3),
+    at: nums.slice(3, 6),
+    tri: Number.isFinite(tri) ? tri : null,
+  };
 }
 
 /**
@@ -192,12 +197,14 @@ export function validateMoveAccept(state) {
   if (!delta || delta.some((v) => !Number.isFinite(v))) {
     return { ok: false, message: which === 'xyz' ? MOVE_MODE_NEED_DELTA : MOVE_MODE_NEED_DISTANCE };
   }
+  const tri = state?.target?.minTri;
   return {
     ok: true,
     dx: delta[0],
     dy: delta[1],
     dz: delta[2],
     at: at.slice(0, 3).map(Number),
+    tri: Number.isFinite(Number(tri)) ? Number(tri) : null,
   };
 }
 
@@ -240,7 +247,8 @@ export function composeMoveCommit(buffer, state) {
   const gate = validateMoveAccept(ready);
   if (!gate.ok) return gate;
   const bodyName = state?.body || 'part';
-  const call = `${bodyName} = move(${bodyName}, [${formatNum(gate.dx)}, ${formatNum(gate.dy)}, ${formatNum(gate.dz)}], { bodies: [{ at: ${formatVec(gate.at)} }] });`;
+  const triLit = gate.tri != null ? `, tri: ${gate.tri}` : '';
+  const call = `${bodyName} = move(${bodyName}, [${formatNum(gate.dx)}, ${formatNum(gate.dy)}, ${formatNum(gate.dz)}], { bodies: [{ at: ${formatVec(gate.at)}${triLit} }] });`;
   const block = [MOVE_BEGIN, call, MOVE_END].join('\n');
   const composed = placeBlockBeforeReturn(stripMoveBlock(String(buffer || '')), block);
   const ownedStart = composed.lastIndexOf(MOVE_BEGIN);
