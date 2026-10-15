@@ -11,7 +11,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
