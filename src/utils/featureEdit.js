@@ -1056,6 +1056,7 @@ function rewriteBlock(block, session, draft) {
       next = next.replace(/op:\s*'(\w+)'/, `op: '${fields.op}'`);
     }
   } else if (kind === 'move') {
+    setNum(new RegExp(`(move\\s*\\(\\s*[^,]+,\\s*\\[\\s*${NUM}\\s*,\\s*${NUM}\\s*,\\s*)(${NUM})`), 'dz');
     setNum(new RegExp(`(move\\s*\\(\\s*[^,]+,\\s*\\[\\s*${NUM}\\s*,\\s*)(${NUM})`), 'dy');
     setNum(new RegExp(`(move\\s*\\(\\s*[^,]+,\\s*\\[\\s*)(${NUM})`), 'dx');
   } else if (kind === 'moveFace') {
