@@ -193,10 +193,10 @@ const ShippingStep = ({ address, quoteData, modelData, onComplete, onError }) =>
     return (
       <div className="p-8 flex flex-col items-center justify-center min-h-[300px]">
         <div className="relative">
-          <div className="w-16 h-16 border-4 border-gray-700 border-t-blue-500 rounded-full animate-spin"></div>
+          <div className="w-16 h-16 border-4 border-chrome-border border-t-blue-500 rounded-full animate-spin"></div>
           <Truck className="absolute inset-0 m-auto text-gray-500" size={24} />
         </div>
-        <p className="text-gray-400 mt-4">Calculating shipping rates...</p>
+        <p className="text-chrome-secondary mt-4">Calculating shipping rates...</p>
         <p className="text-gray-600 text-sm mt-1">
           Shipping to {address.city}, {address.state} {address.zip}
         </p>
@@ -208,14 +208,14 @@ const ShippingStep = ({ address, quoteData, modelData, onComplete, onError }) =>
     <div className="p-5 space-y-4">
       {/* Shipping To Summary */}
       <div className="bg-gray-800/30 rounded-xl p-4">
-        <p className="text-gray-400 text-xs uppercase tracking-wide mb-1">Shipping to</p>
+        <p className="text-chrome-secondary text-xs uppercase tracking-wide mb-1">Shipping to</p>
         <p className="text-white">
           {address.name}
         </p>
-        <p className="text-gray-400 text-sm">
+        <p className="text-chrome-secondary text-sm">
           {address.street}{address.street2 ? `, ${address.street2}` : ''}
         </p>
-        <p className="text-gray-400 text-sm">
+        <p className="text-chrome-secondary text-sm">
           {address.city}, {address.state} {address.zip}
         </p>
       </div>
@@ -246,11 +246,11 @@ const ShippingStep = ({ address, quoteData, modelData, onComplete, onError }) =>
               className={`w-full flex items-center gap-4 p-4 rounded-xl border transition-all ${
                 isSelected
                   ? 'border-white-100 bg-white-100'
-                  : 'border-gray-700 bg-gray-800/30 hover:border-gray-600'
+                  : 'border-chrome-border bg-gray-800/30 hover:border-gray-600'
               }`}
             >
               <div className={`p-2 rounded-lg ${
-                isSelected ? 'bg-gray-300/20 text-gray-300' : 'bg-gray-700/50 text-gray-400'
+                isSelected ? 'bg-gray-300/20 text-gray-300' : 'bg-chrome-border/50 text-chrome-secondary'
               }`}>
                 <Icon size={20} />
               </div>
@@ -288,7 +288,7 @@ const ShippingStep = ({ address, quoteData, modelData, onComplete, onError }) =>
               
               {/* Radio indicator */}
               <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                isSelected ? 'border-gray-300' : 'border-gray-700'
+                isSelected ? 'border-gray-300' : 'border-chrome-border'
               }`}>
                 {isSelected && (
                   <div className="w-2.5 h-2.5 rounded-full bg-gray-300"></div>
@@ -301,15 +301,15 @@ const ShippingStep = ({ address, quoteData, modelData, onComplete, onError }) =>
 
       {/* Order Summary Preview */}
       <div className="bg-gray-800/30 rounded-xl p-4 mt-6">
-        <div className="flex justify-between text-sm text-gray-400">
+        <div className="flex justify-between text-sm text-chrome-secondary">
           <span>Qty {quoteData.quantity || 1}</span>
           <span>{quoteData.quantity > 1 ? `$${(quoteData.unitSubtotal || quoteData.subtotal).toFixed(2)} each` : ''}</span>
         </div>
-        <div className="flex justify-between text-sm text-gray-400 mt-1">
+        <div className="flex justify-between text-sm text-chrome-secondary mt-1">
           <span>Subtotal</span>
           <span>${quoteData.subtotal.toFixed(2)}</span>
         </div>
-        <div className="flex justify-between text-sm text-gray-400 mt-1">
+        <div className="flex justify-between text-sm text-chrome-secondary mt-1">
           <span>Shipping</span>
           <span>${selectedRate?.price.toFixed(2) || '—'}</span>
         </div>
@@ -317,7 +317,7 @@ const ShippingStep = ({ address, quoteData, modelData, onComplete, onError }) =>
           <span>Tax</span>
           <span>Calculated at checkout</span>
         </div>
-        <div className="border-t border-gray-700 mt-3 pt-3 flex justify-between">
+        <div className="border-t border-chrome-border mt-3 pt-3 flex justify-between">
           <span className="font-medium text-white">Estimated Total</span>
           <span className="font-semibold text-white">
             ${(quoteData.subtotal + (selectedRate?.price || 0)).toFixed(2)}+

@@ -728,10 +728,10 @@ export default function FeatureStrip({
       <div
         className={between
           ? `shrink-0 flex flex-col items-center justify-start gap-1
-            border-x border-gray-700/50 bg-gray-900/80 surface-glass-chip
+            border-x border-chrome-border/50 bg-chrome-surface/80 surface-glass-chip
             px-1.5 py-2 w-11 h-full min-h-0`
           : `shrink-0 flex flex-col items-center justify-start gap-1
-            border-l border-gray-700/40 bg-gray-900/70 surface-glass-chip
+            border-l border-chrome-border/40 bg-chrome-surface/70 surface-glass-chip
             px-1.5 py-2 w-11 flex-1 min-h-0
             pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]`}
         data-feature-strip=""
@@ -743,7 +743,7 @@ export default function FeatureStrip({
         title="No marked features yet"
       >
         <div
-          className="text-[9px] text-gray-400 font-sans leading-tight text-center writing-mode-vertical"
+          className="text-[9px] text-chrome-secondary font-sans leading-tight text-center writing-mode-vertical"
           style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
         >
           {jointMode ? 'No assembly joints' : 'No features'}
@@ -753,12 +753,12 @@ export default function FeatureStrip({
   }
 
   if (horizontal) {
-    const historyBtn = 'shrink-0 rounded-lg p-1.5 flex items-center justify-center text-blue-400 hover:bg-gray-700/60 disabled:opacity-30 active:opacity-80';
+    const historyBtn = 'shrink-0 rounded-lg p-1.5 flex items-center justify-center text-blue-400 hover:bg-chrome-border/60 disabled:opacity-30 active:opacity-80';
     return (
       <div
         ref={stripRef}
         className="relative flex w-full min-w-0 flex-row items-center
-          border border-gray-700/40 bg-gray-900/70 surface-glass-chip"
+          border border-chrome-border/40 bg-chrome-surface/70 surface-glass-chip"
         data-feature-strip=""
         data-feature-strip-orientation="horizontal"
         data-feature-strip-side="top"
@@ -805,7 +805,7 @@ export default function FeatureStrip({
             >
             {jointMode && joints.length === 0 && (
               <div
-                className={`${JOINT_CHIP_BOX} border-transparent px-2 text-[9px] text-gray-400 font-sans whitespace-nowrap`}
+                className={`${JOINT_CHIP_BOX} border-transparent px-2 text-[9px] text-chrome-secondary font-sans whitespace-nowrap`}
                 data-assembly-joints-empty=""
               >
                 No assembly joints
@@ -813,14 +813,14 @@ export default function FeatureStrip({
             )}
             {entityMode && entities.length === 0 && (
               <div
-                className={`${JOINT_CHIP_BOX} border-transparent px-2 text-[9px] text-gray-400 font-sans whitespace-nowrap`}
+                className={`${JOINT_CHIP_BOX} border-transparent px-2 text-[9px] text-chrome-secondary font-sans whitespace-nowrap`}
                 data-sketch-entities-empty=""
               >
                 No sketch entities
               </div>
             )}
             {!jointMode && !entityMode && features.length === 0 && !hideWhenEmpty && (
-              <div className="text-[9px] text-gray-400 font-sans whitespace-nowrap px-1">
+              <div className="text-[9px] text-chrome-secondary font-sans whitespace-nowrap px-1">
                 No features
               </div>
             )}
@@ -898,9 +898,9 @@ export default function FeatureStrip({
     <div
       ref={stripRef}
       className={between
-        ? `relative shrink-0 flex flex-col border-x border-gray-700/50 bg-gray-900/80 surface-glass-chip
+        ? `relative shrink-0 flex flex-col border-x border-chrome-border/50 bg-chrome-surface/80 surface-glass-chip
           w-11 h-full min-h-0`
-        : `relative shrink-0 flex flex-col border-l border-gray-700/40 bg-gray-900/70 surface-glass-chip
+        : `relative shrink-0 flex flex-col border-l border-chrome-border/40 bg-chrome-surface/70 surface-glass-chip
           w-11 flex-1 min-h-0`}
       data-feature-strip=""
       data-feature-strip-orientation="vertical"

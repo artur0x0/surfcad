@@ -43,7 +43,7 @@ const SplitDivider = ({ orientation = 'vertical', onDrag, onDragEnd, label }) =>
       onPointerMove={handleMove}
       onPointerUp={end}
       onPointerCancel={end}
-      className={`shrink-0 touch-none bg-gray-700 hover:bg-blue-500 active:bg-blue-400
+      className={`shrink-0 touch-none bg-chrome-border hover:bg-blue-500 active:bg-blue-400
         transition-colors ${vertical
           ? 'w-1 cursor-col-resize h-full'
           : 'h-1 cursor-row-resize w-full'}`}

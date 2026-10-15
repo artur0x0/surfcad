@@ -30,9 +30,9 @@ export default function VaultPickerDialog({
         }
       }}
     >
-      <div className="w-full max-w-sm rounded-lg surface-glass border border-gray-700 p-4 shadow-xl">
+      <div className="w-full max-w-sm rounded-lg surface-glass border border-chrome-border p-4 shadow-xl">
         <div className="flex items-center gap-2" data-git-dialog-header="">
-          <h2 id={labelledBy} className="min-w-0 flex-1 text-sm font-semibold text-gray-100">{title}</h2>
+          <h2 id={labelledBy} className="min-w-0 flex-1 text-sm font-semibold text-chrome-text">{title}</h2>
           {headerRight}
         </div>
         <div className="mt-3">{children}</div>

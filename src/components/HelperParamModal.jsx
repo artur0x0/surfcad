@@ -130,7 +130,7 @@ const HelperParamModal = ({
           aria-labelledby="helper-refuse-title"
           className="pointer-events-auto w-full max-w-sm max-h-[min(70%,calc(100dvh-11rem))] mb-1 overflow-hidden flex flex-col rounded-lg surface-glass border border-amber-700/60 shadow-2xl"
         >
-          <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-gray-700 shrink-0">
+          <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-chrome-border shrink-0">
             <div className="min-w-0 flex items-center gap-2">
               <AlertTriangle size={18} className="text-amber-400 shrink-0" />
               <h2 id="helper-refuse-title" className="font-semibold text-sm text-white truncate">
@@ -140,7 +140,7 @@ const HelperParamModal = ({
             <button
               type="button"
               onClick={() => onCancel?.()}
-              className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-gray-800 shrink-0"
+              className="p-1.5 rounded text-chrome-secondary hover:text-white hover:bg-gray-800 shrink-0"
               title="Close"
               aria-label="Close"
             >
@@ -150,7 +150,7 @@ const HelperParamModal = ({
           <div className="p-4 text-sm text-gray-200 leading-relaxed">
             {refuseMessage}
           </div>
-          <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-gray-700 shrink-0">
+          <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-chrome-border shrink-0">
             <PopupButton accent={ACCENT} onClick={() => onCancel?.()}>
               OK
             </PopupButton>
@@ -343,7 +343,7 @@ const HelperParamModal = ({
   const fields = (
     <>
       {visibleParams.length === 0 && (
-        <p className="text-xs text-gray-400">No options — confirm to insert.</p>
+        <p className="text-xs text-chrome-secondary">No options — confirm to insert.</p>
       )}
       {visibleParams.map((p) => {
         if (p.type === 'bool') {
@@ -443,21 +443,21 @@ const HelperParamModal = ({
       <div
         role="dialog"
         aria-labelledby="helper-param-title"
-        className="pointer-events-auto w-full max-w-sm max-h-[min(70%,calc(100dvh-11rem))] mb-1 overflow-hidden flex flex-col rounded-lg surface-glass border border-gray-700 shadow-2xl"
+        className="pointer-events-auto w-full max-w-sm max-h-[min(70%,calc(100dvh-11rem))] mb-1 overflow-hidden flex flex-col rounded-lg surface-glass border border-chrome-border shadow-2xl"
       >
-        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-gray-700 shrink-0">
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-chrome-border shrink-0">
           <div className="min-w-0">
             <h2 id="helper-param-title" className={`${POPUP_TEXT.title} text-white truncate`}>
               {item.label}
             </h2>
-            <p className={`${POPUP_TEXT.subtitle} text-gray-400 truncate`} title={item.title}>
+            <p className={`${POPUP_TEXT.subtitle} text-chrome-secondary truncate`} title={item.title}>
               {item.title}
             </p>
           </div>
           <button
             type="button"
             onClick={() => onCancel?.()}
-            className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-gray-800 shrink-0"
+            className="p-1.5 rounded text-chrome-secondary hover:text-white hover:bg-gray-800 shrink-0"
             title="Cancel"
             aria-label="Cancel"
           >
@@ -471,7 +471,7 @@ const HelperParamModal = ({
           {fields}
         </div>
 
-        <div className="flex items-center gap-2 px-4 py-3 border-t border-gray-700 shrink-0">
+        <div className="flex items-center gap-2 px-4 py-3 border-t border-chrome-border shrink-0">
           {onDelete ? <FeatureDeleteButton onClick={onDelete} /> : null}
           <div className="ml-auto flex items-center gap-2">
           <PopupButton accent={ACCENT} onClick={() => onCancel?.()}>

@@ -91,7 +91,7 @@ const BAD = 'let part = Manifold.cube([10, 10, 10], true);\nreturn part.missingM
 
   check('desktop feed sits to the left of the editor',
     (() => {
-      const desk = app.slice(app.lastIndexOf('flex h-dvh bg-gray-900'));
+      const desk = app.slice(app.lastIndexOf('flex h-dvh bg-chrome-surface'));
       const feedAt = desk.indexOf('data-parts-feed-placement="desktop-left"');
       const editorAt = desk.indexOf('<CodeEditor');
       return feedAt >= 0 && editorAt > feedAt;

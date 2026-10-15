@@ -330,7 +330,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
           title={githubReady
             ? 'Sign in with GitHub'
             : 'GitHub sign-in — set GITHUB_APP_CLIENT_ID (and VITE_GITHUB_APP_CLIENT_ID) to enable'}
-          className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-black text-white rounded-xl font-medium hover:bg-gray-900 transition-colors border border-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-black text-white rounded-xl font-medium hover:bg-chrome-surface transition-colors border border-chrome-border disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.21 11.39.6.11.82-.26.82-.58 0-.29-.01-1.04-.02-2.05-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.74.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.49 1 .11-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.12-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 3-.4c1.02 0 2.05.14 3.01.4 2.29-1.55 3.3-1.23 3.3-1.23.66 1.66.24 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.62-5.48 5.92.43.37.81 1.1.81 2.22 0 1.6-.01 2.89-.01 3.29 0 .32.22.7.83.58C20.56 21.8 24 17.3 24 12 24 5.37 18.63 0 12 0z"/>
@@ -339,7 +339,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
         </button>
         <p
           data-auth-github-subtitle=""
-          className="mt-1.5 text-center text-xs text-gray-400"
+          className="mt-1.5 text-center text-xs text-chrome-secondary"
         >
           {GITHUB_SIGNIN_SUBTITLE}
         </p>
@@ -349,7 +349,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
         type="button"
         data-auth-google-signin=""
         onClick={() => handleOAuthLogin('google')}
-        className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-black text-white rounded-xl font-medium hover:bg-gray-900 transition-colors border border-gray-700"
+        className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-black text-white rounded-xl font-medium hover:bg-chrome-surface transition-colors border border-chrome-border"
       >
         <svg className="w-5 h-5" viewBox="0 0 24 24">
           <path
@@ -376,7 +376,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
         type="button"
         data-auth-apple-signin=""
         onClick={() => handleOAuthLogin('apple')}
-        className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-black text-white rounded-xl font-medium hover:bg-gray-900 transition-colors border border-gray-700"
+        className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-black text-white rounded-xl font-medium hover:bg-chrome-surface transition-colors border border-chrome-border"
       >
         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
           <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
@@ -388,7 +388,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
         type="button"
         data-auth-email-signin=""
         onClick={() => setMode('login')}
-        className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-black text-white rounded-xl font-medium hover:bg-gray-900 transition-colors border border-gray-700"
+        className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-black text-white rounded-xl font-medium hover:bg-chrome-surface transition-colors border border-chrome-border"
       >
         <Mail size={20} />
         Sign in with Email
@@ -405,7 +405,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
             <Mail className="w-8 h-8 text-blue-400" />
           </div>
           <h3 className="text-lg font-semibold text-white mb-2">Check your email</h3>
-          <p className="text-gray-400 text-sm">
+          <p className="text-chrome-secondary text-sm">
             We sent a 6-digit code to<br />
             <span className="text-white font-medium">{verificationEmail}</span>
           </p>
@@ -425,7 +425,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
               onKeyDown={(e) => handleCodeKeyDown(index, e)}
               onPaste={index === 0 ? handleCodePaste : undefined}
               className={`w-12 h-14 text-center text-xl font-bold bg-gray-800/50 border rounded-xl text-white focus:outline-none transition-colors ${
-                verificationError ? 'border-red-500' : 'border-gray-700 focus:border-blue-500'
+                verificationError ? 'border-red-500' : 'border-chrome-border focus:border-blue-500'
               }`}
             />
           ))}
@@ -468,7 +468,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
             setVerificationCode(['', '', '', '', '', '']);
             setVerificationError('');
           }}
-          className="w-full text-gray-400 text-sm hover:text-white transition-colors flex items-center justify-center gap-1"
+          className="w-full text-chrome-secondary text-sm hover:text-white transition-colors flex items-center justify-center gap-1"
         >
           <ArrowLeft size={14} />
           Back to sign in options
@@ -485,10 +485,10 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
     
         <div className="relative">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-700"></div>
+            <div className="w-full border-t border-chrome-border"></div>
           </div>
           <div className="relative flex justify-center text-sm">
-            <span className="px-4 bg-[#1e1e1e] text-gray-500">or</span>
+            <span className="px-4 bg-chrome-background text-gray-500">or</span>
           </div>
         </div>
         
@@ -503,7 +503,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
         {orderContext && (
           <button
             onClick={() => setMode('guest')}
-            className="w-full text-gray-400 text-sm hover:text-white transition-colors py-2"
+            className="w-full text-chrome-secondary text-sm hover:text-white transition-colors py-2"
           >
             Continue as Guest
           </button>
@@ -524,7 +524,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
               type="email"
               value={formData.email}
               onChange={(e) => handleInputChange('email', e.target.value)}
-              className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-3 px-10 text-white placeholder-gray-500 focus:outline-none focus:border-gray-300 transition-colors"
+              className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-3 px-10 text-white placeholder-gray-500 focus:outline-none focus:border-gray-300 transition-colors"
               placeholder="email"
               required
             />
@@ -539,7 +539,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
               type={showPassword ? "text" : "password"}
               value={formData.password}
               onChange={(e) => handleInputChange('password', e.target.value)}
-              className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-3 px-10 pr-12 text-white placeholder-gray-500 focus:outline-none focus:border-gray-300 transition-colors"
+              className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-3 px-10 pr-12 text-white placeholder-gray-500 focus:outline-none focus:border-gray-300 transition-colors"
               placeholder="••••••••"
               required
             />
@@ -572,7 +572,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
           <button
             type="button"
             onClick={() => setMode('options')}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="text-chrome-secondary hover:text-white transition-colors"
           >
             ← Back
           </button>
@@ -595,7 +595,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
                 type="text"
                 value={formData.firstName}
                 onChange={(e) => handleInputChange('firstName', e.target.value)}
-                className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-3 px-10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
+                className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-3 px-10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
                 placeholder="First"
               />
             </div>
@@ -606,7 +606,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
               type="text"
               value={formData.lastName}
               onChange={(e) => handleInputChange('lastName', e.target.value)}
-              className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
+              className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
               placeholder="Last"
             />
           </div>
@@ -621,7 +621,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
               value={formData.email}
               onChange={(e) => handleInputChange('email', e.target.value)}
               className={`w-full bg-gray-800/50 border rounded-xl py-3 px-10 text-white placeholder-gray-500 focus:outline-none transition-colors ${
-                formErrors.email ? 'border-red-500' : 'border-gray-700 focus:border-blue-500'
+                formErrors.email ? 'border-red-500' : 'border-chrome-border focus:border-blue-500'
               }`}
               placeholder="you@example.com"
               required
@@ -641,7 +641,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
               value={formData.password}
               onChange={(e) => handleInputChange('password', e.target.value)}
               className={`w-full bg-gray-800/50 border rounded-xl py-3 px-10 pr-12 text-white placeholder-gray-500 focus:outline-none transition-colors ${
-                formErrors.password ? 'border-red-500' : 'border-gray-700 focus:border-blue-500'
+                formErrors.password ? 'border-red-500' : 'border-chrome-border focus:border-blue-500'
               }`}
               placeholder="At least 8 characters"
               minLength={8}
@@ -671,7 +671,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
               value={formData.confirmPassword}
               onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
               className={`w-full bg-gray-800/50 border rounded-xl py-3 px-10 pr-12 text-white placeholder-gray-500 focus:outline-none transition-colors ${
-                formErrors.confirmPassword ? 'border-red-500' : 'border-gray-700 focus:border-blue-500'
+                formErrors.confirmPassword ? 'border-red-500' : 'border-chrome-border focus:border-blue-500'
               }`}
               placeholder="Confirm your password"
               required
@@ -708,7 +708,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
           <button
             type="button"
             onClick={() => setMode('options')}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="text-chrome-secondary hover:text-white transition-colors"
           >
             ← Back
           </button>
@@ -721,7 +721,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
   if (mode === 'guest') {
     return (
       <form onSubmit={handleGuestCheckout} className="p-5 space-y-4">
-        <p className="text-gray-400 text-sm">
+        <p className="text-chrome-secondary text-sm">
           Enter your email to continue. You can create an account after checkout to track your order.
         </p>
         
@@ -733,7 +733,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
               type="email"
               value={formData.email}
               onChange={(e) => handleInputChange('email', e.target.value)}
-              className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-3 px-10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
+              className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-3 px-10 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
               placeholder="you@example.com"
               required
             />
@@ -743,7 +743,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full py-3 bg-gray-700 text-white rounded-xl font-medium hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          className="w-full py-3 bg-chrome-border text-white rounded-xl font-medium hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {isLoading ? (
             <>
@@ -758,7 +758,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
         <button
           type="button"
           onClick={() => setMode('options')}
-          className="w-full text-gray-400 text-sm hover:text-white transition-colors"
+          className="w-full text-chrome-secondary text-sm hover:text-white transition-colors"
         >
           ← Back to sign in options
         </button>

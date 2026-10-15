@@ -79,7 +79,8 @@ console.log('feature sheet card — source');
     && !/fixed inset-0/.test(shell)
     && /bg-cyan-600/.test(shell)
     && /feature-sheet-card/.test(css)
-    && /rgb\(17 24 39 \/ 0\.72\)/.test(css)
+    && /rgb\(var\(--chrome-surface\) \/ 0\.72\)/.test(css)
+    && /--chrome-surface:\s*17 24 39/.test(css)
     && /border-gray-500\/50/.test(shell)
     && /22\.5rem/.test(css));
   check('width reuses the rail gap with a 10px side gap and a 22rem cap',

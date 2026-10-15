@@ -66,11 +66,11 @@ export default function CartSheet() {
         data-cart-sheet=""
         data-cart-count={cart.count || 0}
         className="modal-fit-panel relative z-10 flex w-full flex-col rounded-t-xl border border-gray-600
-          bg-gray-900 shadow-2xl sm:max-w-md sm:rounded-xl"
+          bg-chrome-surface shadow-2xl sm:max-w-md sm:rounded-xl"
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-gray-700 px-4 py-3">
-          <h2 className="text-sm font-semibold text-gray-100">Cart</h2>
+        <div className="flex items-center justify-between border-b border-chrome-border px-4 py-3">
+          <h2 className="text-sm font-semibold text-chrome-text">Cart</h2>
           <button
             type="button"
             data-cart-close=""
@@ -83,7 +83,7 @@ export default function CartSheet() {
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
           {lines.length === 0 ? (
-            <p className="px-1 py-6 text-center text-sm text-gray-400" data-cart-empty="">
+            <p className="px-1 py-6 text-center text-sm text-chrome-secondary" data-cart-empty="">
               Nothing ordered yet.
             </p>
           ) : lines.map((line) => (
@@ -98,16 +98,16 @@ export default function CartSheet() {
                   src={line.thumbDataUrl}
                   alt=""
                   data-cart-thumb="image"
-                  className="h-12 w-12 shrink-0 rounded-md bg-[#1e1e1e] object-cover"
+                  className="h-12 w-12 shrink-0 rounded-md bg-chrome-background object-cover"
                 />
               ) : (
                 <div
                   data-cart-thumb="empty"
-                  className="h-12 w-12 shrink-0 rounded-md bg-[#1e1e1e]"
+                  className="h-12 w-12 shrink-0 rounded-md bg-chrome-background"
                 />
               )}
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm text-gray-100" data-cart-line-name="">
+                <p className="truncate text-sm text-chrome-text" data-cart-line-name="">
                   {line.liveName || line.partName}
                 </p>
                 <p className="truncate text-[11px] text-gray-500" data-cart-line-assembly="">
@@ -119,7 +119,7 @@ export default function CartSheet() {
                   </p>
                 ) : null}
                 {line.elsewhere ? (
-                  <p className="text-[11px] text-gray-400" data-cart-elsewhere="">
+                  <p className="text-[11px] text-chrome-secondary" data-cart-elsewhere="">
                     Not in this assembly
                   </p>
                 ) : null}
@@ -150,7 +150,7 @@ export default function CartSheet() {
                 >
                   <Minus size={14} />
                 </button>
-                <span className="w-6 text-center text-xs tabular-nums text-gray-100">{line.qty}</span>
+                <span className="w-6 text-center text-xs tabular-nums text-chrome-text">{line.qty}</span>
                 <button
                   type="button"
                   data-cart-qty-inc=""
@@ -176,7 +176,7 @@ export default function CartSheet() {
             </div>
           ))}
         </div>
-        <div className="border-t border-gray-700 px-4 py-3">
+        <div className="border-t border-chrome-border px-4 py-3">
           <button
             type="button"
             data-cart-checkout=""
@@ -188,7 +188,7 @@ export default function CartSheet() {
             Checkout
           </button>
           {skipNote ? (
-            <p className="mt-2 text-center text-[11px] text-gray-400" data-cart-checkout-skip="">
+            <p className="mt-2 text-center text-[11px] text-chrome-secondary" data-cart-checkout-skip="">
               {skipNote}
             </p>
           ) : null}

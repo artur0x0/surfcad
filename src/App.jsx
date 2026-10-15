@@ -7954,7 +7954,7 @@ const App = () => {
       <CartChromeProvider value={cartChrome}>
         <div
           ref={splitShellRef}
-          className={`relative flex flex-col bg-gray-900 overflow-hidden ${keyboardOpen ? '' : 'h-dvh'}`}
+          className={`relative flex flex-col bg-chrome-surface overflow-hidden ${keyboardOpen ? '' : 'h-dvh'}`}
           style={mobileShellStyle}
           data-mobile-stage={useStages ? mobileStage : undefined}
         >
@@ -8249,7 +8249,7 @@ const App = () => {
 
   return (
     <CartChromeProvider value={cartChrome}>
-      <div className="flex h-dvh bg-gray-900">
+      <div className="flex h-dvh bg-chrome-surface">
         {appMode !== 'game' && (
           <div data-parts-feed-placement="desktop-left" className="h-full shrink-0">
             {partFeed}

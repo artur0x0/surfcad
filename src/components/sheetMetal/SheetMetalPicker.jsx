@@ -123,7 +123,7 @@ const SheetMetalPicker = ({
           />
           {picked && (
             <div className="text-xs text-gray-300 leading-relaxed" data-scs-sku={picked.sku}>
-              <div><span className="text-gray-400">SKU</span> {picked.sku} · {picked.cuttingProcess || 'laser'}</div>
+              <div><span className="text-chrome-secondary">SKU</span> {picked.sku} · {picked.cuttingProcess || 'laser'}</div>
               {picked.bend ? (
                 <div>
                   Bend radius {picked.bend.radiusIn}&quot; · K {picked.bend.kFactor} · max {picked.bend.maxAngleDeg}° · min flange {picked.bend.minFlangeIn}&quot;

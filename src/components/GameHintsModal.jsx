@@ -49,9 +49,9 @@ const GameHintsModal = ({ onClose, puzzle = null }) => {
       <div
         role="dialog"
         aria-labelledby="game-hints-title"
-        className="w-full max-w-lg max-h-[85dvh] overflow-hidden flex flex-col rounded-lg surface-glass border border-gray-700 shadow-xl"
+        className="w-full max-w-lg max-h-[85dvh] overflow-hidden flex flex-col rounded-lg surface-glass border border-chrome-border shadow-xl"
       >
-        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-gray-700 shrink-0">
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-chrome-border shrink-0">
           <div className="flex items-center gap-2 text-white min-w-0">
             <BookOpen size={18} className="text-cyan-400 shrink-0" />
             <h2 id="game-hints-title" className="font-semibold text-sm truncate">
@@ -61,7 +61,7 @@ const GameHintsModal = ({ onClose, puzzle = null }) => {
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-gray-800 shrink-0"
+            className="p-1.5 rounded text-chrome-secondary hover:text-white hover:bg-gray-800 shrink-0"
             title="Close"
           >
             <X size={18} />
@@ -69,7 +69,7 @@ const GameHintsModal = ({ onClose, puzzle = null }) => {
         </div>
 
         <div className="overflow-y-auto p-4 space-y-4 text-sm text-gray-200">
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-chrome-secondary">
             Match the grey ghost. Copy the target below into the blank editor,
             or rewrite it yourself with the allowlist helpers.
           </p>
@@ -79,13 +79,13 @@ const GameHintsModal = ({ onClose, puzzle = null }) => {
           )}
 
           <div className="rounded border border-gray-600/50 bg-gray-950/60 overflow-hidden">
-            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-gray-700/80 bg-gray-800/50">
+            <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-chrome-border/80 bg-gray-800/50">
               <span className="text-xs font-semibold text-gray-300">Target code</span>
               <button
                 type="button"
                 onClick={handleCopy}
                 disabled={!code}
-                className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium text-cyan-200 hover:bg-gray-700 disabled:opacity-40"
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium text-cyan-200 hover:bg-chrome-border disabled:opacity-40"
                 title="Copy target code"
               >
                 {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
@@ -107,7 +107,7 @@ const GameHintsModal = ({ onClose, puzzle = null }) => {
               {ALLOWLIST.map((row) => (
                 <li key={row.name} className="border-b border-gray-800 pb-2 last:border-0">
                   <code className="text-[11px] text-emerald-300 font-mono break-all">{row.name}</code>
-                  <div className="text-xs text-gray-400 mt-0.5">{row.role}</div>
+                  <div className="text-xs text-chrome-secondary mt-0.5">{row.role}</div>
                 </li>
               ))}
             </ul>

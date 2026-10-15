@@ -2,8 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
-body { 
-  background: #1e1e1e;
+/* Chrome tokens. Today's colours, unchanged. Channels so a Tailwind
+   opacity modifier matches the old utility (bg-chrome-surface/80 is
+   the old bg-gray-900/80). The viewport ground and sketch status colours are
+   not these variables. */
+:root {
+  --chrome-background: 30 30 30; /* #1e1e1e */
+  --chrome-surface: 17 24 39; /* gray-900 #111827 */
+  --chrome-text: 243 244 246; /* gray-100 #f3f4f6 */
+  --chrome-text-secondary: 156 163 175; /* gray-400 #9ca3af */
+  --chrome-divider: 55 65 81; /* gray-700 #374151 */
+  --chrome-border: 55 65 81; /* gray-700 #374151 */
+}
+
+body {
+  background: rgb(var(--chrome-background));
 }
 
 /* The document is not a scroll container. useModalViewport hides overflow
@@ -115,7 +128,7 @@ body,
    The body paints an 8px gray-500/45 track because iOS Safari fades the
    overlay bar. Number and select text is 16px so iOS does not zoom. */
 .feature-sheet-card {
-  background-color: rgb(17 24 39 / 0.72);
+  background-color: rgb(var(--chrome-surface) / 0.72);
   max-height: min(
     22.5rem,
     calc(
@@ -228,7 +241,7 @@ textarea {
   }
   /* Panels and modal sheets. */
   .surface-glass {
-    background-color: rgb(17 24 39 / 0.82); /* gray-900 */
+    background-color: rgb(var(--chrome-surface) / 0.82); /* gray-900 */
   }
   /* Small viewport overlays. Tint comes from the component (cyan = contour,
      amber = fillet/edge); this only supplies the frosting. */
@@ -258,7 +271,7 @@ textarea {
    opaque tint so text stays legible over a busy viewport. */
 @supports not (backdrop-filter: blur(1px)) {
   .surface-glass {
-    background-color: rgb(17 24 39 / 0.96);
+    background-color: rgb(var(--chrome-surface) / 0.96);
   }
   .surface-scrim {
     background-color: rgb(0 0 0 / 0.7);

@@ -51,16 +51,16 @@ const Toolbar = ({
     const iconSize = isStrip ? 18 : 20;
     // Strip sits on Monaco dark chrome; overlay fallback keeps light frosted bar.
     const backCls = isStrip
-      ? 'text-gray-300 hover:bg-gray-700/60 hover:text-white'
+      ? 'text-gray-300 hover:bg-chrome-border/60 hover:text-white'
       : 'text-gray-700 hover:bg-gray-100';
     const editCls = isStrip
-      ? 'text-blue-400 hover:bg-gray-700/60'
+      ? 'text-blue-400 hover:bg-chrome-border/60'
       : 'text-blue-600 hover:bg-gray-100';
     const runCls = isStrip
-      ? 'text-green-400 hover:bg-gray-700/60'
+      ? 'text-green-400 hover:bg-chrome-border/60'
       : 'text-green-600 hover:bg-gray-100';
     const cyanCls = isStrip
-      ? 'text-cyan-400 hover:bg-gray-700/60'
+      ? 'text-cyan-400 hover:bg-chrome-border/60'
       : 'text-cyan-700 hover:bg-gray-100';
     const dividerCls = isStrip ? 'w-px bg-gray-600 mx-0.5 self-stretch my-1' : 'w-px bg-gray-300 mx-1';
     const timeCls = gameSuccess
@@ -154,7 +154,7 @@ const Toolbar = ({
   // CAD (desktop + phone): same mid-strip tokens as the game bar — dark, compact,
   // horizontally scrollable. The strip IS the editor header, not a viewport sheet.
   if (!isGame) {
-    const btn = 'shrink-0 p-1.5 flex items-center rounded active:opacity-80 hover:bg-gray-700/60';
+    const btn = 'shrink-0 p-1.5 flex items-center rounded active:opacity-80 hover:bg-chrome-border/60';
     const icon = 18;
     const blue = 'text-blue-400';
     const divider = 'shrink-0 w-px bg-gray-600 mx-0.5 self-stretch my-1';

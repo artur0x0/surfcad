@@ -17,17 +17,17 @@ const ConfirmationStep = ({ order, isGuest, onConvertAccount, onClose, onViewOrd
       <h2 className="text-2xl font-bold text-white mb-2">
         Order Confirmed!
       </h2>
-      <p className="text-gray-400 mb-6">
+      <p className="text-chrome-secondary mb-6">
         Thank you for your order. We're getting started on it right away.
       </p>
 
       {/* Order Number */}
       <div className="bg-gray-800/50 rounded-xl p-4 mb-6">
-        <p className="text-gray-400 text-sm mb-1">Order Number</p>
+        <p className="text-chrome-secondary text-sm mb-1">Order Number</p>
         <p className="text-2xl font-mono font-bold text-white tracking-wider">
           {order.orderNumber}
         </p>
-        <p className="text-gray-400 text-sm mt-2" data-order-qty="">Qty {order.quantity || 1}</p>
+        <p className="text-chrome-secondary text-sm mt-2" data-order-qty="">Qty {order.quantity || 1}</p>
       </div>
 
       {/* Order Details */}
@@ -54,8 +54,8 @@ const ConfirmationStep = ({ order, isGuest, onConvertAccount, onClose, onViewOrd
           </div>
 
           <div className="flex items-start gap-3">
-            <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0 mt-0.5">
-              <span className="text-gray-400 text-xs font-bold">2</span>
+            <div className="w-6 h-6 rounded-full bg-chrome-border flex items-center justify-center flex-shrink-0 mt-0.5">
+              <span className="text-chrome-secondary text-xs font-bold">2</span>
             </div>
             <div>
               <p className="text-gray-300 text-sm font-medium">Manufacturing</p>
@@ -64,8 +64,8 @@ const ConfirmationStep = ({ order, isGuest, onConvertAccount, onClose, onViewOrd
           </div>
 
           <div className="flex items-start gap-3">
-            <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0 mt-0.5">
-              <span className="text-gray-400 text-xs font-bold">3</span>
+            <div className="w-6 h-6 rounded-full bg-chrome-border flex items-center justify-center flex-shrink-0 mt-0.5">
+              <span className="text-chrome-secondary text-xs font-bold">3</span>
             </div>
             <div>
               <p className="text-gray-300 text-sm font-medium">Quality Check</p>
@@ -74,8 +74,8 @@ const ConfirmationStep = ({ order, isGuest, onConvertAccount, onClose, onViewOrd
           </div>
 
           <div className="flex items-start gap-3">
-            <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0 mt-0.5">
-              <span className="text-gray-400 text-xs font-bold">4</span>
+            <div className="w-6 h-6 rounded-full bg-chrome-border flex items-center justify-center flex-shrink-0 mt-0.5">
+              <span className="text-chrome-secondary text-xs font-bold">4</span>
             </div>
             <div>
               <p className="text-gray-300 text-sm font-medium">Shipped</p>
@@ -86,7 +86,7 @@ const ConfirmationStep = ({ order, isGuest, onConvertAccount, onClose, onViewOrd
       </div>
 
       {/* Email Confirmation */}
-      <div className="flex items-center justify-center gap-2 text-gray-400 text-sm mb-6">
+      <div className="flex items-center justify-center gap-2 text-chrome-secondary text-sm mb-6">
         <Mail size={16} />
         <span>Confirmation email sent</span>
       </div>
@@ -97,7 +97,7 @@ const ConfirmationStep = ({ order, isGuest, onConvertAccount, onClose, onViewOrd
           <p className="text-blue-400 font-medium mb-2">
             Create an account to track your order
           </p>
-          <p className="text-gray-400 text-sm mb-4">
+          <p className="text-chrome-secondary text-sm mb-4">
             Add a password to save your details for future orders.
           </p>
           <button
@@ -132,7 +132,7 @@ const ConfirmationStep = ({ order, isGuest, onConvertAccount, onClose, onViewOrd
       {/* Close Button */}
       <button
         onClick={onClose}
-        className="w-full py-3 bg-gray-700 text-white rounded-xl font-medium hover:bg-gray-600 transition-colors"
+        className="w-full py-3 bg-chrome-border text-white rounded-xl font-medium hover:bg-gray-600 transition-colors"
       >
         Done
       </button>

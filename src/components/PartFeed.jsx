@@ -33,7 +33,7 @@ import { getPartThumbnail, subscribePartThumbs } from '../utils/partThumbnailSto
 
 // Same ribbon and strip buttons as the script editor top bar
 // (CodeEditor `data-editor-ribbon` + Toolbar `variant="strip"`).
-const STRIP_BTN = 'shrink-0 p-1.5 flex items-center rounded active:opacity-80 hover:bg-gray-700/60 text-blue-400';
+const STRIP_BTN = 'shrink-0 p-1.5 flex items-center rounded active:opacity-80 hover:bg-chrome-border/60 text-blue-400';
 const STRIP_DIVIDER = 'shrink-0 w-px bg-gray-600 mx-0.5 self-stretch my-1';
 const STRIP_ICON = 18;
 
@@ -79,8 +79,8 @@ function RibbonAssemblyName({
     if (next && next !== (name || '')) onRename(next);
   };
 
-  const label = 'max-w-full truncate bg-gray-900 px-1.5 text-center text-xs font-medium text-gray-100';
-  const editInput = 'max-w-full min-w-[6rem] truncate bg-gray-900 px-1.5 text-center text-base font-medium text-gray-100 outline-none';
+  const label = 'max-w-full truncate bg-chrome-surface px-1.5 text-center text-xs font-medium text-chrome-text';
+  const editInput = 'max-w-full min-w-[6rem] truncate bg-chrome-surface px-1.5 text-center text-base font-medium text-chrome-text outline-none';
   const behindBadge = behind ? (
     <button
       type="button"
@@ -194,8 +194,8 @@ function RowPartName({ id, name, onRename, editing, setEditing }) {
     if (next && next !== (name || '')) onRename?.(id, next);
   };
 
-  const label = 'truncate text-sm font-medium text-gray-100';
-  const editInput = 'w-full truncate rounded border border-blue-400/80 bg-gray-900 px-1 text-base font-medium text-gray-100 outline-none';
+  const label = 'truncate text-sm font-medium text-chrome-text';
+  const editInput = 'w-full truncate rounded border border-blue-400/80 bg-chrome-surface px-1 text-base font-medium text-chrome-text outline-none';
   if (editing) {
     const stop = (event) => event.stopPropagation();
     return (
@@ -319,7 +319,7 @@ function PartThumbnail({ mesh, partId, script, visible = true }) {
       ref={ref}
       width={PART_PREVIEW_SIZE}
       height={PART_PREVIEW_SIZE}
-      className="h-12 w-12 shrink-0 rounded-md bg-[#1e1e1e]"
+      className="h-12 w-12 shrink-0 rounded-md bg-chrome-background"
       data-part-thumbnail=""
       data-part-preview={kind}
       data-part-preview-key={previewKey || ''}
@@ -1244,8 +1244,8 @@ const PartFeed = forwardRef(function PartFeed({
     if (commitFlow?.stage === 'message') commitInputRef.current?.focus();
   }, [commitFlow?.stage]);
   const shell = placement === 'mobile'
-    ? 'flex h-full w-full flex-col bg-[#1e1e1e] text-gray-100'
-    : 'flex h-full w-72 shrink-0 flex-col border-r border-white/10 bg-[#1e1e1e] text-gray-100';
+    ? 'flex h-full w-full flex-col bg-chrome-background text-chrome-text'
+    : 'flex h-full w-72 shrink-0 flex-col border-r border-white/10 bg-chrome-background text-chrome-text';
   const ribbonName = typeof assemblyName === 'string' ? assemblyName.trim() : '';
 
   useEffect(() => {
@@ -1522,7 +1522,7 @@ const PartFeed = forwardRef(function PartFeed({
                 data-part-delete={row.id}
                 aria-label="Delete part"
                 title="Delete part"
-                className="shrink-0 rounded-full p-1.5 text-gray-400 hover:bg-white/10 hover:text-red-300"
+                className="shrink-0 rounded-full p-1.5 text-chrome-secondary hover:bg-white/10 hover:text-red-300"
                 onPointerDown={(event) => event.stopPropagation()}
                 onDragStart={(event) => event.stopPropagation()}
                 onKeyDown={(event) => event.stopPropagation()}
@@ -1542,7 +1542,7 @@ const PartFeed = forwardRef(function PartFeed({
       <div
         data-ribbon-bg="editor"
         data-parts-feed-ribbon=""
-        className="relative z-30 flex w-full items-center border-b border-gray-700/60 bg-gray-900 px-1 py-0.5 shrink-0"
+        className="relative z-30 flex w-full items-center border-b border-chrome-border/60 bg-chrome-surface px-1 py-0.5 shrink-0"
       >
         <BrandHeaderMark />
         <div className="relative z-10 flex shrink-0 items-center gap-0.5 sm:gap-1" data-parts-feed-toolbar="">
@@ -1566,7 +1566,7 @@ const PartFeed = forwardRef(function PartFeed({
               <div
                 data-part-open-dropdown=""
                 role="menu"
-                className="absolute left-0 top-full z-50 mt-1 min-w-[8.5rem] rounded-md border border-gray-600 bg-gray-900 py-1 shadow-lg"
+                className="absolute left-0 top-full z-50 mt-1 min-w-[8.5rem] rounded-md border border-gray-600 bg-chrome-surface py-1 shadow-lg"
               >
                 <button
                   type="button"
@@ -1574,7 +1574,7 @@ const PartFeed = forwardRef(function PartFeed({
                   data-part-open-action="part"
                   data-git-open-part-action={source === 'git' ? '' : undefined}
                   data-part-open-local={source === 'git' ? undefined : 'part'}
-                  className="block w-full px-3 py-1.5 text-left text-xs text-gray-100 hover:bg-white/10"
+                  className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
                   onClick={() => {
                     setFolderMenuOpen(false);
                     // Vault when GitHub is connected. Reauth asks to reconnect
@@ -1591,7 +1591,7 @@ const PartFeed = forwardRef(function PartFeed({
                   role="menuitem"
                   data-part-open-action="assembly"
                   data-assembly-add-existing=""
-                  className="block w-full px-3 py-1.5 text-left text-xs text-gray-100 hover:bg-white/10"
+                  className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
                   onClick={() => requestAssemblyAction('existing')}
                 >
                   Assembly
@@ -1619,14 +1619,14 @@ const PartFeed = forwardRef(function PartFeed({
               <div
                 data-part-add-dropdown=""
                 role="menu"
-                className="absolute left-0 top-full z-50 mt-1 min-w-[8.5rem] rounded-md border border-gray-600 bg-gray-900 py-1 shadow-lg"
+                className="absolute left-0 top-full z-50 mt-1 min-w-[8.5rem] rounded-md border border-gray-600 bg-chrome-surface py-1 shadow-lg"
               >
                 <button
                   type="button"
                   role="menuitem"
                   data-part-add-action="part"
                   data-part-add-kind="part"
-                  className="block w-full px-3 py-1.5 text-left text-xs text-gray-100 hover:bg-white/10"
+                  className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
                   onClick={() => {
                     setPlusMenuOpen(false);
                     startNewPart();
@@ -1639,7 +1639,7 @@ const PartFeed = forwardRef(function PartFeed({
                   role="menuitem"
                   data-part-add-action="assembly"
                   data-part-add-kind="assembly"
-                  className="block w-full px-3 py-1.5 text-left text-xs text-gray-100 hover:bg-white/10"
+                  className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
                   onClick={() => requestAssemblyAction('new')}
                 >
                   Assembly
@@ -1934,7 +1934,7 @@ const PartFeed = forwardRef(function PartFeed({
                     autoFocus
                   />
                 )}
-                {openPicker.loading && <p className="text-xs text-gray-400" data-git-dialog-loading="">Loading…</p>}
+                {openPicker.loading && <p className="text-xs text-chrome-secondary" data-git-dialog-loading="">Loading…</p>}
                 {openPicker.error && !openPicker.loading && (
                   <p className="text-xs text-amber-300" data-git-dialog-empty="">{openPicker.error}</p>
                 )}
@@ -1969,12 +1969,12 @@ const PartFeed = forwardRef(function PartFeed({
                                 data-git-open-part-source={item.source}
                                 data-git-open-part-foreign={item.foreign ? 'true' : undefined}
                                 title={item.path}
-                                className="w-full rounded-md px-2 py-1.5 text-left text-xs text-gray-100 hover:bg-white/10"
+                                className="w-full rounded-md px-2 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
                                 onClick={() => { void runOpenPart(item.path); }}
                               >
                                 <span className="block truncate">
                                   {item.name}
-                                  {item.sameName ? <span className="ml-1 text-gray-400">· {item.source}</span> : null}
+                                  {item.sameName ? <span className="ml-1 text-chrome-secondary">· {item.source}</span> : null}
                                 </span>
                                 <span className="text-[10px] text-gray-500">
                                   {item.inDoc ? 'in this assembly' : item.foreign ? `links from ${item.source}` : 'opens by reference'}
@@ -2044,7 +2044,7 @@ const PartFeed = forwardRef(function PartFeed({
             </div>
           )}
         >
-          <p className="mb-2 text-[11px] text-gray-400">
+          <p className="mb-2 text-[11px] text-chrome-secondary">
             Part name
           </p>
           <input
@@ -2105,7 +2105,7 @@ const PartFeed = forwardRef(function PartFeed({
                   </button>
                   <button
                     type="button"
-                    className="rounded-md px-3 py-1.5 text-xs text-gray-100 hover:bg-white/10 border border-gray-600"
+                    className="rounded-md px-3 py-1.5 text-xs text-chrome-text hover:bg-white/10 border border-gray-600"
                     data-git-conflict-open-github=""
                     onClick={openConflictOnGithub}
                   >
@@ -2147,7 +2147,7 @@ const PartFeed = forwardRef(function PartFeed({
         >
           {commitFlow.stage === 'message' && (
             <>
-              <p className="mb-2 text-[11px] text-gray-400">
+              <p className="mb-2 text-[11px] text-chrome-secondary">
                 Saving commits changed parts and the assembly to the repo.
               </p>
               <input
@@ -2167,7 +2167,7 @@ const PartFeed = forwardRef(function PartFeed({
               />
             </>
           )}
-          {commitFlow.stage === 'busy' && <p className="text-xs text-gray-400" data-git-dialog-loading="">Committing…</p>}
+          {commitFlow.stage === 'busy' && <p className="text-xs text-chrome-secondary" data-git-dialog-loading="">Committing…</p>}
           {commitFlow.stage === 'ask-force' && (
             <div
               data-git-force-merge-ask=""
@@ -2180,7 +2180,7 @@ const PartFeed = forwardRef(function PartFeed({
                   : (
                     <>
                       {'Your changes were committed to '}
-                      <span className="font-mono text-gray-100">{commitFlow.result?.branch}</span>
+                      <span className="font-mono text-chrome-text">{commitFlow.result?.branch}</span>
                       {` (from base ${String(commitFlow.result?.baseSha || '').slice(0, 7)}).`}
                     </>
                   )}
@@ -2230,7 +2230,7 @@ const PartFeed = forwardRef(function PartFeed({
                   <button
                     type="button"
                     data-git-behind-keep=""
-                    className="rounded-md px-3 py-1.5 text-xs text-gray-100 hover:bg-white/10 border border-gray-600"
+                    className="rounded-md px-3 py-1.5 text-xs text-chrome-text hover:bg-white/10 border border-gray-600"
                     onClick={() => runConflict('keep')}
                   >
                     Keep mine
@@ -2257,13 +2257,13 @@ const PartFeed = forwardRef(function PartFeed({
             <div data-git-behind-ask="" data-git-behind-path={conflictFlow.path} data-git-behind-kind={conflictFlow.kind}>
               <p className="text-xs text-gray-300">
                 {'Remote changed '}
-                <span className="font-medium text-gray-100">{conflictFlow.name}</span>
+                <span className="font-medium text-chrome-text">{conflictFlow.name}</span>
                 {'. Reload takes the remote version, Keep mine keeps yours, or Check in mine parks yours on a new branch (base auto-detected).'}
               </p>
               <p className="mt-2 truncate font-mono text-[10px] text-gray-500" title={conflictFlow.path}>{conflictFlow.path}</p>
             </div>
           )}
-          {conflictFlow.stage === 'busy' && <p className="text-xs text-gray-400" data-git-dialog-loading="">Working…</p>}
+          {conflictFlow.stage === 'busy' && <p className="text-xs text-chrome-secondary" data-git-dialog-loading="">Working…</p>}
           {conflictFlow.stage === 'done' && (
             <p className="text-xs text-gray-300" data-git-behind-done={conflictFlow.result?.status || ''}>
               {conflictFlow.result?.status === 'reloaded' && 'Reloaded from remote.'}
@@ -2351,7 +2351,7 @@ const PartFeed = forwardRef(function PartFeed({
           dataAttr="assembly-leave"
           onClose={undefined}
         >
-          <p className="text-xs text-gray-400" data-git-dialog-loading="">Saving…</p>
+          <p className="text-xs text-chrome-secondary" data-git-dialog-loading="">Saving…</p>
         </VaultPickerDialog>
       )}
 
@@ -2471,19 +2471,19 @@ const PartFeed = forwardRef(function PartFeed({
             <p className="text-xs text-gray-300" data-git-branch-dirty-warn="">
               Uncommitted changes will be lost when switching to
               {' '}
-              <span className="font-mono text-gray-100">{branchFlow.pending}</span>
+              <span className="font-mono text-chrome-text">{branchFlow.pending}</span>
               .
             </p>
           )}
           {branchFlow.stage === 'busy' && (
-            <p className="text-xs text-gray-400" data-git-branch-switching="">Working…</p>
+            <p className="text-xs text-chrome-secondary" data-git-branch-switching="">Working…</p>
           )}
           {branchFlow.stage === 'error' && (
             <p className="text-xs text-amber-300" data-git-branch-error="">{branchFlow.error}</p>
           )}
           {branchFlow.stage === 'create' && (
             <>
-              <p className="mb-2 text-[11px] text-gray-400">
+              <p className="mb-2 text-[11px] text-chrome-secondary">
                 {'New branch from '}
                 <span className="font-mono text-gray-200">{currentBranch || 'main'}</span>
                 .
@@ -2515,14 +2515,14 @@ const PartFeed = forwardRef(function PartFeed({
           {branchFlow.stage === 'delete-confirm' && (
             <p className="text-xs text-gray-300" data-git-branch-delete-warn="">
               {'Delete branch '}
-              <span className="font-mono text-gray-100">{branchFlow.pending}</span>
+              <span className="font-mono text-chrome-text">{branchFlow.pending}</span>
               {'? This cannot be undone from SurfCAD.'}
             </p>
           )}
           {branchFlow.stage === 'merge-conflict' && (
             <p className="text-xs text-gray-300" data-git-branch-merge-conflict="">
               {'This branch has diverged from '}
-              <span className="font-mono text-gray-100">main</span>
+              <span className="font-mono text-chrome-text">main</span>
               {'. Resolve the merge on GitHub, then switch back to main.'}
             </p>
           )}
@@ -2541,7 +2541,7 @@ const PartFeed = forwardRef(function PartFeed({
                 </div>
               ) : null}
               {branchFlow.loading && (
-                <p className="text-xs text-gray-400" data-git-branch-loading="">Loading…</p>
+                <p className="text-xs text-chrome-secondary" data-git-branch-loading="">Loading…</p>
               )}
               {branchFlow.error && !branchFlow.loading && (
                 <p className="text-xs text-amber-300" data-git-branch-list-error="">{branchFlow.error}</p>
@@ -2562,7 +2562,7 @@ const PartFeed = forwardRef(function PartFeed({
                           className={`flex min-w-0 flex-1 items-center justify-between rounded px-2 py-1.5 text-left text-xs ${
                             current
                               ? 'bg-blue-600/20 text-blue-200'
-                              : 'text-gray-100 hover:bg-white/10'
+                              : 'text-chrome-text hover:bg-white/10'
                           } disabled:cursor-default`}
                           onClick={() => requestSwitchBranch(b.name)}
                         >
@@ -2635,7 +2635,7 @@ const PartFeed = forwardRef(function PartFeed({
         >
           {moveFlow.stage === 'form' && (
             <div className="space-y-3" data-git-vault-create="">
-              <label className="block text-[11px] text-gray-400" htmlFor="git-move-vault-name">
+              <label className="block text-[11px] text-chrome-secondary" htmlFor="git-move-vault-name">
                 Repo
               </label>
               <input
@@ -2665,7 +2665,7 @@ const PartFeed = forwardRef(function PartFeed({
             </div>
           )}
           {moveFlow.stage === 'busy' && (
-            <p className="text-xs text-gray-400" data-git-dialog-loading="">Working…</p>
+            <p className="text-xs text-chrome-secondary" data-git-dialog-loading="">Working…</p>
           )}
           {moveFlow.stage === 'done' && (
             <p className="text-xs text-gray-300" data-git-move-done={moveFlow.result?.vault?.repo?.name || ''}>
@@ -2692,8 +2692,8 @@ const PartFeed = forwardRef(function PartFeed({
             }
           }}
         >
-          <div className="w-full max-w-sm rounded-lg surface-glass border border-gray-700 p-4 shadow-xl">
-            <h2 id="part-group-remove-title" className="text-sm font-semibold text-gray-100">
+          <div className="w-full max-w-sm rounded-lg surface-glass border border-chrome-border p-4 shadow-xl">
+            <h2 id="part-group-remove-title" className="text-sm font-semibold text-chrome-text">
               Remove group
             </h2>
             <p className="mt-2 text-xs text-gray-300">
@@ -2744,8 +2744,8 @@ const PartFeed = forwardRef(function PartFeed({
             }
           }}
         >
-          <div className="w-full max-w-sm rounded-lg surface-glass border border-gray-700 p-4 shadow-xl">
-            <h2 id="part-delete-title" className="text-sm font-semibold text-gray-100">
+          <div className="w-full max-w-sm rounded-lg surface-glass border border-chrome-border p-4 shadow-xl">
+            <h2 id="part-delete-title" className="text-sm font-semibold text-chrome-text">
               Delete part
             </h2>
             {pendingDelete.step === 'confirm-repo' ? (

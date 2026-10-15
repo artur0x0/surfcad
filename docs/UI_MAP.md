@@ -485,8 +485,9 @@ Mobile specifics:
   C.4: `buildCoherentEdges` traces tagged vs untagged sharp pools separately so
   post-fillet rounded rails (untagged open arcs) stay pickable for Tangent-on.
   Overflow scrolls inside (`data-rail-pair="left"|"right"`).
-- **Ribbon / top chrome bg (C.1):** editor mid-strip is `bg-gray-900`
-  (`data-ribbon-bg="editor"`), matching the code editor shell.
+- **Ribbon / top chrome bg (C.1):** editor mid-strip is `bg-chrome-surface`
+  (`data-ribbon-bg="editor"`), the gray-900 token `#111827`, matching the code
+  editor shell.
 - **Default view snaps (Slice Mobile B.1):** `VIEW_SNAP_MARGIN = 1.35` (was
   implicit 1.15) for top / right / front / iso (and other `VIEW_PRESETS`).
   Zoom-to-Fit (`data-zoom-to-fit`) keeps `fitView` margin 1.15 and frames the
@@ -801,7 +802,7 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
   adds the frosting) and `surface-scrim` (modal backdrops). They share one
   `--surface-blur` token, and there is an `@supports not (backdrop-filter)`
   fallback that goes more opaque so text stays legible. Never put a flat
-  `bg-gray-900` / `bg-[#1e1e1e]` slab over the viewport. The one exception is
+  `bg-chrome-surface` (gray-900) / `bg-[#1e1e1e]` slab over the viewport. The one exception is
   native `<select>` / `<option>`: the OS renders the option list and a
   translucent one is unreadable.
 - **Cross-section buttons name their action**: the collapsed rail opens the

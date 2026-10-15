@@ -3,7 +3,7 @@
  * font-size ≥16px so iOS Safari never auto-zooms on focus.
  */
 export const PARTS_TEXT_INPUT_CLASS =
-  'w-full rounded-md border border-gray-600 bg-black/30 px-2 py-1.5 text-base text-gray-100 outline-none focus:border-blue-500';
+  'w-full rounded-md border border-gray-600 bg-black/30 px-2 py-1.5 text-base text-chrome-text outline-none focus:border-blue-500';
 export const PARTS_TEXT_INPUT_STYLE = { fontSize: '16px' };
 
 /**
@@ -13,7 +13,7 @@ export const PARTS_TEXT_INPUT_STYLE = { fontSize: '16px' };
 export const PARTS_DIALOG_BTN_GHOST =
   'rounded-md text-xs text-gray-200 hover:bg-white/10';
 export const PARTS_DIALOG_BTN_SECONDARY =
-  'rounded-md border border-gray-600 text-xs text-gray-100 hover:bg-white/10';
+  'rounded-md border border-gray-600 text-xs text-chrome-text hover:bg-white/10';
 export const PARTS_DIALOG_BTN_PRIMARY =
   'rounded-md bg-blue-600 text-xs font-medium text-white hover:bg-blue-500';
 

@@ -33,7 +33,7 @@ export function chipTone(active, external = false, failed = false, dimmed = fals
   // Past the bar: grey, not a faded copy of the live colour. opacity-40
   // stays so a rolled-back chip still reads as dimmed.
   return dimmed
-    ? 'bg-gray-800/80 text-gray-400 border-gray-500/70 opacity-40 grayscale'
+    ? 'bg-gray-800/80 text-chrome-secondary border-gray-500/70 opacity-40 grayscale'
     : tone;
 }
 
@@ -48,7 +48,7 @@ export function sheetIdentityTone(external = false, failed = false) {
 
 /** Feature sheet picker row: same red as the strip when that feature failed. */
 export function sheetPickTone(editable = true, failed = false) {
-  const base = editable ? 'bg-cyan-950/60 text-white' : 'bg-gray-900/60 text-gray-300';
+  const base = editable ? 'bg-cyan-950/60 text-white' : 'bg-chrome-surface/60 text-gray-300';
   if (failed) return `${base} border-2 border-red-400 ${FAILED_RING_CLASS}`;
   return `${base} ${editable ? 'border border-cyan-600/50' : 'border border-gray-600/50'}`;
 }

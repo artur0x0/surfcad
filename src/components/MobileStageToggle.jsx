@@ -32,7 +32,7 @@ export default function MobileStageToggle({ stage = 'cad', onChange }) {
       style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom, 0px))' }}
     >
       <div
-        className="relative flex items-center justify-center rounded-full shadow-lg border border-white/20 bg-gray-900/55 surface-glass-chip"
+        className="relative flex items-center justify-center rounded-full shadow-lg border border-white/20 bg-chrome-surface/55 surface-glass-chip"
         style={{ width: 112, height: 30 }}
         data-home-indicator-pill=""
       >

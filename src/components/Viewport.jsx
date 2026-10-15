@@ -864,7 +864,7 @@ function geometryFromPreviewMesh(mesh) {
 /** Shared top title. Puzzle name in game; filename on mobile CAD. */
 
 const TITLE_CHIP = 'text-xs font-medium text-center truncate px-3 py-1.5 rounded-lg shadow'
-  + ' bg-gray-900/80 surface-glass-chip border border-gray-500/50 text-gray-100';
+  + ' bg-chrome-surface/80 surface-glass-chip border border-gray-500/50 text-chrome-text';
 
 /**
  * Title chip. With `onRename` it is also the rename control: click (or Enter /
@@ -921,7 +921,7 @@ function ViewportTitleChip({ children, value = null, onRename = null, inline = f
             if (e.key === 'Escape') { e.preventDefault(); setEditing(false); }
             e.stopPropagation(); // viewport hotkeys must not eat the typing
           }}
-          className={`${shell} w-48 outline-none border-blue-400/80 bg-gray-900`}
+          className={`${shell} w-48 outline-none border-blue-400/80 bg-chrome-surface`}
           style={{ fontSize: '16px' }}
           aria-label={noun === 'Assembly' ? 'Assembly name' : 'Part name'}
           data-title-chip="input"
@@ -12471,7 +12471,7 @@ const Viewport = forwardRef(({
               key={item.partId}
               type="button"
               data-which-part={item.partId}
-              className="block w-full truncate rounded-md px-2 py-1 text-left text-xs text-gray-100 hover:bg-white/10"
+              className="block w-full truncate rounded-md px-2 py-1 text-left text-xs text-chrome-text hover:bg-white/10"
               onClick={() => chooseAmbiguousPart(item.partId)}
             >
               {item.name}

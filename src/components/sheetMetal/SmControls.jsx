@@ -126,7 +126,7 @@ export const SmButton = ({ variant = 'ghost', className = '', children, ...rest 
     ? 'bg-cyan-600 text-white hover:bg-cyan-500 active:bg-cyan-400'
     : variant === 'danger'
       ? 'bg-red-900/60 text-red-100 hover:bg-red-800/70'
-      : 'bg-white/10 text-gray-100 hover:bg-white/20 active:bg-white/25';
+      : 'bg-white/10 text-chrome-text hover:bg-white/20 active:bg-white/25';
   return (
     <button
       type="button"

@@ -26,9 +26,9 @@ const PuzzlePickerModal = ({
       <div
         role="dialog"
         aria-labelledby="puzzle-picker-title"
-        className="w-full max-w-md max-h-[85dvh] overflow-hidden flex flex-col rounded-lg surface-glass border border-gray-700 shadow-xl"
+        className="w-full max-w-md max-h-[85dvh] overflow-hidden flex flex-col rounded-lg surface-glass border border-chrome-border shadow-xl"
       >
-        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-gray-700 shrink-0">
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-chrome-border shrink-0">
           <div className="flex items-center gap-2 text-white">
             <Puzzle size={18} className="text-cyan-400" />
             <h2 id="puzzle-picker-title" className="font-semibold text-sm">
@@ -38,7 +38,7 @@ const PuzzlePickerModal = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-gray-800"
+            className="p-1.5 rounded text-chrome-secondary hover:text-white hover:bg-gray-800"
             title="Close"
             disabled={loading}
           >
@@ -59,13 +59,13 @@ const PuzzlePickerModal = ({
                 className={`w-full text-left rounded-lg border px-3 py-2.5 transition-colors disabled:opacity-50 ${
                   active
                     ? 'border-cyan-500/70 bg-cyan-950/40'
-                    : 'border-gray-700 bg-gray-850/40 hover:border-gray-500 hover:bg-gray-800/60'
+                    : 'border-chrome-border bg-gray-850/40 hover:border-gray-500 hover:bg-gray-800/60'
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-white truncate">{p.title}</div>
-                    <div className="text-[11px] text-gray-400 mt-0.5 line-clamp-2">{p.blurb}</div>
+                    <div className="text-[11px] text-chrome-secondary mt-0.5 line-clamp-2">{p.blurb}</div>
                   </div>
                   <div className="shrink-0 text-right">
                     {p.difficulty && (
