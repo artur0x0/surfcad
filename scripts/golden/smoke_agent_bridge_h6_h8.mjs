@@ -209,17 +209,36 @@ check('slot_assign_contour', assigned.ok === true, JSON.stringify(assigned));
 const params = await agentCall(page, 'slot_set_params', { distance: 12 });
 check('slot_set_params', params.ok === true, JSON.stringify(params));
 
+const statusBeforeSlot = await agentCall(page, 'status', {});
+const volBefore = statusBeforeSlot.result?.volume ?? 0;
+const fcBefore = statusBeforeSlot.result?.featureCount ?? 0;
+
 const extruded = await agentCall(page, 'slot_commit', {});
 check('slot_commit', extruded.ok === true && extruded.result?.written === true,
   JSON.stringify(extruded));
+check(
+  'slot_commit returns fresh status.volume',
+  (extruded.result?.status?.volume ?? 0) > volBefore,
+  JSON.stringify({ before: volBefore, after: extruded.result?.status?.volume }),
+);
+check(
+  'slot_commit returns fresh status.featureCount',
+  (extruded.result?.status?.featureCount ?? 0) > fcBefore,
+  JSON.stringify({ before: fcBefore, after: extruded.result?.status?.featureCount }),
+);
 
 const tree = await agentCall(page, 'feature_tree', {});
 const kinds = (tree.result?.features || []).map((row) => row.kind);
 check('feature_tree has extrude', kinds.includes('extrude'), JSON.stringify(kinds));
 
 const status = await agentCall(page, 'status', {});
-check('status volume after extrude', status.ok === true && (status.result?.volume ?? 0) > 0,
-  JSON.stringify(status.result));
+check(
+  'status matches slot_commit without extra run',
+  status.ok === true
+    && status.result?.volume === extruded.result?.status?.volume
+    && status.result?.featureCount === extruded.result?.status?.featureCount,
+  JSON.stringify({ status: status.result, slot: extruded.result?.status }),
+);
 
 const errs = await agentCall(page, 'errors', {});
 check('errors empty', errs.ok === true && (errs.result?.errors?.length ?? 0) === 0,

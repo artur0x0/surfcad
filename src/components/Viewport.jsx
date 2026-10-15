@@ -1382,6 +1382,7 @@ const Viewport = forwardRef(({
   const [slotHoverId, setSlotHoverId] = useState(null);
   const closeFeatureSlotsRef = useRef(() => {});
   const exitContourModeRef = useRef(() => {});
+  const finishContourCommitRef = useRef(() => {});
   const [contourFaceAim, setContourFaceAim] = useState('');
   const [contourUndoDepth, setContourUndoDepth] = useState(0);
   const [faceSketchNonce, setFaceSketchNonce] = useState(0);
@@ -2450,27 +2451,7 @@ const Viewport = forwardRef(({
       slotSetParams: (args) => agentSlotSetParamsRef.current(args),
       slotCancel: () => agentSlotCancelRef.current(),
       prepareSlotCommit: () => agentPrepareSlotCommitRef.current(),
-      finishContourCommit: ({ payload, fromSlot }) => {
-        if (fromSlot) {
-          closeFeatureSlotsRef.current();
-          return;
-        }
-        if (slotReturnRef.current && featureSlotsRef.current && payload?.entry === 'crossSection') {
-          const read = getHelperBufferRef.current;
-          const text = (typeof read === 'function' ? read() : '') || currentScript || '';
-          const saved = listSavedContours(text);
-          const created = saved.length ? saved[saved.length - 1] : null;
-          if (created) {
-            setFeatureSlots((prev) => assignFeatureSlot(prev, slotReturnRef.current, created));
-          }
-          slotReturnRef.current = null;
-          exitContourModeRef.current?.('slot');
-          return;
-        }
-        if (contourModeRef.current) {
-          exitContourModeRef.current?.();
-        }
-      },
+      finishContourCommit: (args) => finishContourCommitRef.current?.(args),
     });
   }
 
@@ -3749,6 +3730,27 @@ const Viewport = forwardRef(({
   }, []);
   closeFeatureSlotsRef.current = closeFeatureSlots;
   exitContourModeRef.current = exitContourMode;
+  finishContourCommitRef.current = ({ payload, fromSlot } = {}) => {
+    if (fromSlot) {
+      closeFeatureSlotsRef.current();
+      return;
+    }
+    if (slotReturnRef.current && featureSlotsRef.current && payload?.entry === 'crossSection') {
+      const read = getHelperBufferRef.current;
+      const text = (typeof read === 'function' ? read() : '') || currentScript || '';
+      const saved = listSavedContours(text);
+      const created = saved.length ? saved[saved.length - 1] : null;
+      if (created) {
+        setFeatureSlots((prev) => assignFeatureSlot(prev, slotReturnRef.current, created));
+      }
+      slotReturnRef.current = null;
+      exitContourModeRef.current?.('slot');
+      return;
+    }
+    if (contourModeRef.current) {
+      exitContourModeRef.current?.();
+    }
+  };
 
   useEffect(() => {
     if (!featureSlots) return undefined;
