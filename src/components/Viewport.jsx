@@ -1262,6 +1262,16 @@ const Viewport = forwardRef(({
   const agentListFacesRef = useRef(() => ({ faces: [], partId: null }));
   const agentListEdgesRef = useRef(() => ({ edges: [], partId: null }));
   const agentListFeatureEdgesRef = useRef(() => ({ edges: [], partId: null }));
+  const agentSketchBeginRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
+  const agentSketchAcceptPlaneRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
+  const agentSketchAddRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
+  const agentSketchCancelRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
+  const agentPrepareSketchCommitRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
+  const agentSlotOpenRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
+  const agentSlotAssignContourRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
+  const agentSlotSetParamsRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
+  const agentSlotCancelRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
+  const agentPrepareSlotCommitRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const swapPickPartRef = useRef(() => false);
   const ambiguousPickRef = useRef(null);
   const [partChoice, setPartChoice] = useState(null);
@@ -1368,6 +1378,7 @@ const Viewport = forwardRef(({
   const [sketchDeleteConfirm, setSketchDeleteConfirm] = useState(null);
   const [slotHoverId, setSlotHoverId] = useState(null);
   const closeFeatureSlotsRef = useRef(() => {});
+  const exitContourModeRef = useRef(() => {});
   const [contourFaceAim, setContourFaceAim] = useState('');
   const [contourUndoDepth, setContourUndoDepth] = useState(0);
   const [faceSketchNonce, setFaceSketchNonce] = useState(0);
@@ -2268,7 +2279,13 @@ const Viewport = forwardRef(({
       readMode() {
         return buildAgentMode({
           appMode: mode,
-          contour: contourMode,
+          contour: contourMode
+            ? {
+              ...contourMode,
+              planeOpen: contourPlaneOpen,
+            }
+            : null,
+          featureSlots: featureSlots ? { kind: featureSlots.kind } : null,
           fillet: filletMode
             ? { entry: filletMode.entry, edgeCount: selectedEdges.length }
             : null,
@@ -2315,6 +2332,37 @@ const Viewport = forwardRef(({
       listEdges: (args) => agentListEdgesRef.current(args),
       listFeatureEdges: (args) => agentListFeatureEdgesRef.current(args),
       readHelperEdgeContext: () => selectedEdgesRef.current || [],
+      sketchBegin: (args) => agentSketchBeginRef.current(args),
+      sketchAcceptPlane: (args) => agentSketchAcceptPlaneRef.current(args),
+      sketchAdd: (args) => agentSketchAddRef.current(args),
+      sketchCancel: () => agentSketchCancelRef.current(),
+      prepareSketchCommit: () => agentPrepareSketchCommitRef.current(),
+      slotOpen: (args) => agentSlotOpenRef.current(args),
+      slotAssignContour: (args) => agentSlotAssignContourRef.current(args),
+      slotSetParams: (args) => agentSlotSetParamsRef.current(args),
+      slotCancel: () => agentSlotCancelRef.current(),
+      prepareSlotCommit: () => agentPrepareSlotCommitRef.current(),
+      finishContourCommit: ({ payload, fromSlot }) => {
+        if (fromSlot) {
+          closeFeatureSlotsRef.current();
+          return;
+        }
+        if (slotReturnRef.current && featureSlotsRef.current && payload?.entry === 'crossSection') {
+          const read = getHelperBufferRef.current;
+          const text = (typeof read === 'function' ? read() : '') || currentScript || '';
+          const saved = listSavedContours(text);
+          const created = saved.length ? saved[saved.length - 1] : null;
+          if (created) {
+            setFeatureSlots((prev) => assignFeatureSlot(prev, slotReturnRef.current, created));
+          }
+          slotReturnRef.current = null;
+          exitContourModeRef.current?.('slot');
+          return;
+        }
+        if (contourModeRef.current) {
+          exitContourModeRef.current?.();
+        }
+      },
     });
   }
 
@@ -3592,6 +3640,7 @@ const Viewport = forwardRef(({
     if (!contourModeRef.current) releaseContourOverlays(overlayVis);
   }, []);
   closeFeatureSlotsRef.current = closeFeatureSlots;
+  exitContourModeRef.current = exitContourMode;
 
   useEffect(() => {
     if (!featureSlots) return undefined;
@@ -11045,6 +11094,282 @@ const Viewport = forwardRef(({
       partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
       grouped: true,
       ...listed,
+    };
+  };
+
+  agentSketchBeginRef.current = (args = {}) => {
+    if (mode === 'game') {
+      return { error: { code: 'bad_view', message: 'Sketch is not available in game mode' } };
+    }
+    const entry = args.entry === 'workplane' ? 'workplane' : 'crossSection';
+    if (contourModeRef.current) {
+      return { error: { code: 'sketch_open', message: 'Close the open sketch before starting another' } };
+    }
+    if (featureSlotsRef.current && isSolidContourEntry(featureSlotsRef.current.kind)) {
+      return { error: { code: 'slot_open', message: 'Close the feature slot card before opening a sketch' } };
+    }
+    const preset = args.plane;
+    if (preset === 'x' || preset === 'y' || preset === 'z') {
+      setSelectedFace(null);
+      clearHighlight();
+      onFaceSelected?.(null);
+      setSelectedPlaneId(null);
+    }
+    enterContourMode({ entry });
+    const accept = args.accept_plane !== false;
+    const offset = args.offset;
+    if (accept || offset != null) {
+      window.setTimeout(() => {
+        if (offset != null && contourModeRef.current) {
+          setContourMode((prev) => {
+            if (!prev) return prev;
+            const next = applyContourPlaneEdit(prev, { offset });
+            contourModeRef.current = next;
+            return next;
+          });
+        }
+        if (accept && contourPlaneOpenRef.current) {
+          startContourDrawing();
+        }
+      }, 0);
+    }
+    return { result: { entry, accept_plane: accept } };
+  };
+
+  agentSketchAcceptPlaneRef.current = (args = {}) => {
+    if (!contourModeRef.current) {
+      return { error: { code: 'no_sketch', message: 'Contour sketch is not open' } };
+    }
+    if (!contourPlaneOpenRef.current) {
+      return { result: { ok: true, already: true } };
+    }
+    if (args.offset != null) {
+      setContourMode((prev) => {
+        if (!prev) return prev;
+        const next = applyContourPlaneEdit(prev, { offset: args.offset });
+        contourModeRef.current = next;
+        return next;
+      });
+    }
+    startContourDrawing();
+    return { result: { ok: true } };
+  };
+
+  agentSketchAddRef.current = ({ tool, params }) => {
+    if (!contourModeRef.current) {
+      return { error: { code: 'no_sketch', message: 'Contour sketch is not open' } };
+    }
+    if (contourPlaneOpenRef.current) {
+      return { error: { code: 'plane_card_open', message: 'Call sketch_accept_plane before sketch_add' } };
+    }
+    setContourMode((prev) => {
+      if (!prev) return prev;
+      const switched = switchContourTool(prev, tool);
+      const next = {
+        ...switched,
+        params: { ...(switched.params || {}), ...(params || {}) },
+      };
+      contourModeRef.current = next;
+      return next;
+    });
+    return { result: { tool } };
+  };
+
+  agentSketchCancelRef.current = () => {
+    if (!contourModeRef.current && !contourPlaneOpenRef.current) {
+      return { error: { code: 'no_sketch', message: 'Contour sketch is not open' } };
+    }
+    cancelContourEditor();
+    return { result: { ok: true } };
+  };
+
+  agentPrepareSketchCommitRef.current = () => {
+    const state = contourModeRef.current;
+    if (!state) {
+      return { error: { code: 'no_sketch', message: 'Contour sketch is not open' } };
+    }
+    if (contourPlaneOpenRef.current) {
+      return { error: { code: 'plane_card_open', message: 'Call sketch_accept_plane before sketch_commit' } };
+    }
+    if (isHoleEntry(state.entry)) {
+      return { error: { code: 'wrong_entry', message: 'Hole sketch commit is not wired for the agent yet' } };
+    }
+    if (
+      cursorSketchEmpty(state)
+      && !isSolidContourEntry(state.entry)
+      && !isWorkplaneEntry(state.entry)
+    ) {
+      return { error: { code: 'empty_sketch', message: 'Sketch has no profile to commit' } };
+    }
+    if (!isWorkplaneEntry(state.entry)) {
+      const gate = validateContourProfile(state.tool, state.params);
+      if (!gate.ok) {
+        return {
+          error: {
+            code: 'invalid_profile',
+            message: gate.message || 'Invalid sketch profile',
+          },
+        };
+      }
+    }
+    const bounds = modelBoundsRef.current;
+    const commitFace = activeContourFace(state, bounds);
+    if (slotReturnRef.current && featureSlotsRef.current) {
+      const slot = slotReturnRef.current;
+      return {
+        payload: {
+          partId: activePartIdRef.current,
+          face: state.planeFace || commitFace,
+          tool: state.tool,
+          params: state.params,
+          entry: 'crossSection',
+          saveAsPath: slot.role === 'path',
+          planeOffset: Number(state.planeOffset) || 0,
+        },
+      };
+    }
+    const loftState = isLoftEntry(state.entry)
+      ? writeLoftSelected(state, {
+        tool: state.tool,
+        params: { ...(state.params || {}) },
+      })
+      : state;
+    return {
+      payload: {
+        partId: activePartIdRef.current,
+        face: loftState.planeFace || commitFace,
+        tool: loftState.tool,
+        params: loftState.params,
+        entry: loftState.entry,
+        extrude: loftState.extrude,
+        revolve: loftState.revolve,
+        loft: loftState.loft,
+        sweep: loftState.sweep,
+        edges: selectedEdgesRef.current || [],
+        combine: loftState.combine === 'subtract' ? 'subtract' : 'add',
+        merge: loftState.combine === 'subtract' ? true : loftState.merge !== false,
+        contourId: loftState.contourId || null,
+        contourName: loftState.contourName || null,
+        planeOffset: Number(loftState.planeOffset) || 0,
+      },
+    };
+  };
+
+  agentSlotOpenRef.current = ({ kind }) => {
+    if (mode === 'game') {
+      return { error: { code: 'bad_view', message: 'Feature slots are not available in game mode' } };
+    }
+    if (!isSolidContourEntry(kind)) {
+      return { error: { code: 'bad_args', message: 'Unknown feature slot kind' } };
+    }
+    if (contourModeRef.current) {
+      return { error: { code: 'sketch_open', message: 'Close the open sketch before opening a slot card' } };
+    }
+    openFeatureSlots(kind);
+    return { result: { kind } };
+  };
+
+  agentSlotAssignContourRef.current = ({ contour_id, role = 'profile', index = 0 }) => {
+    const card = featureSlotsRef.current;
+    if (!card) {
+      return { error: { code: 'no_slot', message: 'Feature slot card is not open' } };
+    }
+    const read = getHelperBufferRef.current;
+    const text = (typeof read === 'function' ? read() : '') || currentScript || '';
+    const saved = listSavedContours(text).find(
+      (row) => row.id === contour_id || row.name === contour_id,
+    );
+    if (!saved) {
+      return { error: { code: 'unknown_contour', message: `Contour not found: ${contour_id}` } };
+    }
+    const slot = role === 'station'
+      ? { role: 'station', index: Number(index) || 0 }
+      : { role };
+    const next = assignFeatureSlot(card, slot, saved);
+    featureSlotsRef.current = next;
+    setFeatureSlots(next);
+    return { result: { contour_id: saved.id, contour_name: saved.name, role } };
+  };
+
+  agentSlotSetParamsRef.current = (args = {}) => {
+    const card = featureSlotsRef.current;
+    if (!card) {
+      return { error: { code: 'no_slot', message: 'Feature slot card is not open' } };
+    }
+    let next = card;
+    if (card.kind === 'makeExtrude' && card.extrude) {
+      next = {
+        ...next,
+        extrude: {
+          ...card.extrude,
+          ...(args.distance != null ? { distance: Number(args.distance) } : {}),
+          ...(args.sense != null ? { sense: args.sense } : {}),
+          ...(args.direction != null ? { direction: args.direction } : {}),
+        },
+      };
+    }
+    if (card.kind === 'makeRevolve' && card.revolve) {
+      next = {
+        ...next,
+        revolve: {
+          ...card.revolve,
+          ...(args.angle != null ? { angle: Number(args.angle) } : {}),
+          ...(args.axis != null ? { axis: args.axis } : {}),
+          ...(args.segments != null ? { segments: Math.round(Number(args.segments)) } : {}),
+          ...(args.sense != null ? { sense: args.sense } : {}),
+        },
+      };
+    }
+    if (card.kind === 'makeSweep' && card.sweep) {
+      next = {
+        ...next,
+        sweep: {
+          ...card.sweep,
+          ...(args.reverse != null ? { reverse: !!args.reverse } : {}),
+          ...(args.closed != null ? { closed: !!args.closed } : {}),
+        },
+      };
+    }
+    if (args.combine != null) {
+      next = { ...next, combine: args.combine === 'subtract' ? 'subtract' : 'add' };
+    }
+    if (args.merge != null) {
+      next = { ...next, merge: !!args.merge };
+    }
+    if (args.station_index != null && args.station_offset != null && next.stations) {
+      next = setFeatureStationOffset(
+        next,
+        Number(args.station_index) || 0,
+        Number(args.station_offset) || 0,
+      );
+    }
+    featureSlotsRef.current = next;
+    setFeatureSlots(next);
+    return { result: { kind: next.kind } };
+  };
+
+  agentSlotCancelRef.current = () => {
+    if (!featureSlotsRef.current) {
+      return { error: { code: 'no_slot', message: 'Feature slot card is not open' } };
+    }
+    closeFeatureSlotsRef.current();
+    return { result: { ok: true } };
+  };
+
+  agentPrepareSlotCommitRef.current = () => {
+    const card = featureSlotsRef.current;
+    if (!card) {
+      return { error: { code: 'no_slot', message: 'Feature slot card is not open' } };
+    }
+    if (!featureSlotReady(card)) {
+      return { error: { code: 'slot_not_ready', message: 'Fill every required contour slot first' } };
+    }
+    return {
+      payload: {
+        ...featureSlotCommitPayload(card),
+        partId: activePartIdRef.current,
+      },
+      fromSlot: true,
     };
   };
 

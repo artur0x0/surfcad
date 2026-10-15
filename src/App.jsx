@@ -114,6 +114,7 @@ import {
 import { sheetMetalBinding } from './utils/scs/scsCatalog';
 import { composeSheetMetalCommit, readSheetMetalSpec, removeSheetMetalBlock, sheetMetalFresh, sheetStarterScript } from './utils/sheetMetal/sheetMetalScript';
 import {
+  emptyPartHistory,
   historyForPart,
   pushPartHistory,
   redoPartHistory,
@@ -126,7 +127,12 @@ import { editedPartIdsSinceSnapshot, snapshotPartScripts } from './agent/state/e
 import { buildFeatureTree } from './agent/state/featureTree';
 import { buildPartsState } from './agent/state/parts';
 import { buildToasts } from './agent/state/toasts';
-import { agentBridgeEnabled, createSurfcadBridge } from './utils/agentBridge';
+import {
+  agentBridgeEnabled,
+  cloneAgentHistory,
+  commitAgentStep,
+  createSurfcadBridge,
+} from './utils/agentBridge';
 import { runAssemblyParts } from './utils/assemblyRun';
 import { catalogsFromRuns } from './utils/jointResolve';
 import { partPlacement } from './utils/jointSchema';
@@ -7468,6 +7474,38 @@ const App = () => {
         };
       }
       return { source: content };
+    },
+    async commitContourPayload(payload, meta = {}) {
+      if (!focusWritePart(payload?.partId)) {
+        return { error: { code: 'no_write_part', message: 'No writable part for contour commit' } };
+      }
+      const readHistory = agentHostRef.current?.readHistory;
+      const writeHistory = agentHostRef.current?.writeHistory;
+      const beforeBuf = codeEditorRef.current?.getContent?.() ?? '';
+      const histBefore = cloneAgentHistory(
+        typeof readHistory === 'function' ? readHistory() : emptyPartHistory(),
+      );
+      const ok = handleCommitContourProfile({
+        ...payload,
+        partId: payload?.partId ?? assemblyRef.current?.activeId,
+      });
+      if (!ok) {
+        return {
+          error: {
+            code: 'commit_failed',
+            message: 'Contour commit refused (check errors or toasts)',
+          },
+        };
+      }
+      const after = codeEditorRef.current?.getContent?.() ?? '';
+      if (after !== beforeBuf && typeof writeHistory === 'function') {
+        writeHistory(commitAgentStep(histBefore, after, meta.fromSlot ? 'Contour extrude' : 'Contour profile'));
+      }
+      const finish = agentHostRef.current?.finishContourCommit;
+      if (typeof finish === 'function') {
+        finish({ payload, fromSlot: meta.fromSlot === true });
+      }
+      return { result: { written: after !== beforeBuf, scriptLength: after.length } };
     },
   });
 

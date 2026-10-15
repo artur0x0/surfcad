@@ -1,0 +1,51 @@
+import { normalizeSketchTool, sketchParamsFromArgs } from '../sketchAgent.js';
+
+export const sketchAddCommand = Object.freeze({
+  name: 'sketch_add',
+  schema: Object.freeze({
+    type: 'object',
+    additionalProperties: true,
+    properties: {
+      tool: {
+        type: 'string',
+        description: 'circle | rectangle | polygon | polyline | cursor',
+      },
+      width: { type: 'number' },
+      height: { type: 'number' },
+      centered: { type: 'boolean' },
+      radius: { type: 'number' },
+      segments: { type: 'number' },
+      polygon_preset: { type: 'string' },
+      points: {
+        type: 'array',
+        items: {
+          type: 'array',
+          items: { type: 'number' },
+          minItems: 2,
+          maxItems: 2,
+        },
+      },
+    },
+  }),
+  example: Object.freeze({ tool: 'rectangle', width: 30, height: 20 }),
+  uiEntry: 'rectangle',
+  checkArgs(args) {
+    const tool = normalizeSketchTool(args?.tool || 'rectangle');
+    if (!tool) return { code: 'bad_args', message: 'sketch_add needs a supported tool' };
+    return null;
+  },
+  run(ctx, args) {
+    const add = ctx.sketchAdd;
+    if (typeof add !== 'function') {
+      return { error: { code: 'internal', message: 'sketchAdd handler is missing' } };
+    }
+    const tool = normalizeSketchTool(args?.tool || 'rectangle');
+    if (!tool) {
+      return { error: { code: 'bad_args', message: 'sketch_add needs a supported tool' } };
+    }
+    const params = sketchParamsFromArgs(tool, args || {});
+    const out = add({ tool, params });
+    if (out?.error) return { error: out.error };
+    return { result: { tool, ...(out?.result || {}) } };
+  },
+});

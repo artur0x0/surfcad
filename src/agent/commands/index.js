@@ -26,6 +26,16 @@ import { listFacesCommand } from './listFaces.js';
 import { listEdgesCommand } from './listEdges.js';
 import { listFeatureEdgesCommand } from './listFeatureEdges.js';
 import { invokeHelperCommand, buildHelperPaletteCommands } from './invokeHelper.js';
+import { sketchBeginCommand } from './sketchBegin.js';
+import { sketchAcceptPlaneCommand } from './sketchAcceptPlane.js';
+import { sketchAddCommand } from './sketchAdd.js';
+import { sketchCommitCommand } from './sketchCommit.js';
+import { sketchCancelCommand } from './sketchCancel.js';
+import { slotOpenCommand } from './slotOpen.js';
+import { slotAssignContourCommand } from './slotAssignContour.js';
+import { slotSetParamsCommand } from './slotSetParams.js';
+import { slotCommitCommand } from './slotCommit.js';
+import { slotCancelCommand } from './slotCancel.js';
 
 const HELPER_COMMANDS = buildHelperPaletteCommands();
 
@@ -34,6 +44,7 @@ const HELPER_COMMANDS = buildHelperPaletteCommands();
  * `list_commands` is next. H2 state readers are appended after it.
  * H3 selection and camera writers follow the readers.
  * H4 helper inserts and grouped edge catalog follow H3.
+ * H6 sketch and H8 slot helpers follow H4.
  */
 export const V1_COMMANDS = Object.freeze([
   getScriptCommand,
@@ -64,6 +75,16 @@ export const V1_COMMANDS = Object.freeze([
   cameraSetCommand,
   cameraFitCommand,
   zoomToSelectionCommand,
+  sketchBeginCommand,
+  sketchAcceptPlaneCommand,
+  sketchAddCommand,
+  sketchCommitCommand,
+  sketchCancelCommand,
+  slotOpenCommand,
+  slotAssignContourCommand,
+  slotSetParamsCommand,
+  slotCommitCommand,
+  slotCancelCommand,
 ]);
 
 export const v1Registry = defineCommands(V1_COMMANDS);
