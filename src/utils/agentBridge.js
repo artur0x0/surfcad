@@ -5,10 +5,14 @@
  * The worker lockdown replaces `fetch` and the other host globals, so an
  * agent cannot drive the open tab from inside the sandbox.
  *
+ * The stable entry is `call(name, argsJson)`. It resolves to a JSON
+ * envelope `{ v, ok, result?, error? }`. Command names are snake_case.
+ * Convenience methods are thin wrappers over that dispatcher.
+ *
  * A call that changes the script is one undo step on the active part, the
- * same stack as the editor Undo button. `run()` of the text `setScript`
+ * same stack as the editor Undo button. `run` of the text `set_script`
  * just wrote does not add a second step, so Undo once removes that edit.
- * `run()` of a buffer that is not yet the head (a typed edit that has not
+ * `run` of a buffer that is not yet the head (a typed edit that has not
  * committed) is that one step. Both calls write the editor and wait until
  * the viewport has run the script.
  *
@@ -20,6 +24,23 @@ import { parseFeatureMarkers } from './featureMarkers.js';
 import { emptyPartHistory, pushPartHistory, undoPartHistory } from './partHistory.js';
 
 export const AGENT_STORAGE_KEY = 'surfcadAgent';
+
+/** Envelope `v` and `window.surfcad.version`. Additive changes stay on this number. */
+export const AGENT_BRIDGE_VERSION = 1;
+
+/**
+ * Command names, in the order an MCP tool list would publish them.
+ * Snake case, stable. A new name may be appended on v1. Renaming one bumps the version.
+ */
+export const AGENT_COMMANDS = Object.freeze([
+  'get_script',
+  'set_script',
+  'run',
+  'status',
+  'errors',
+  'screenshot',
+  'undo',
+]);
 
 const EMPTY_STATUS = Object.freeze({
   volume: null,
@@ -116,6 +137,58 @@ function copyStatus(status) {
   };
 }
 
+function pass(result) {
+  return { v: AGENT_BRIDGE_VERSION, ok: true, result };
+}
+
+function fail(code, message) {
+  return { v: AGENT_BRIDGE_VERSION, ok: false, error: { code, message } };
+}
+
+function bridgeError(error) {
+  const err = new Error(error?.message || 'Agent bridge failed');
+  err.code = error?.code || 'internal';
+  return err;
+}
+
+/** True for data that `JSON.stringify` keeps without dropping or reshaping it. */
+function isJsonValue(value) {
+  if (value === null) return true;
+  const kind = typeof value;
+  if (kind === 'string' || kind === 'boolean') return true;
+  if (kind === 'number') return Number.isFinite(value);
+  if (kind !== 'object') return false;
+  if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(value)) return false;
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return false;
+  return Object.keys(value).every((key) => isJsonValue(value[key]));
+}
+
+/**
+ * `argsJson` is a JSON string (what an MCP relay sends) or a plain object.
+ * The object path is cloned through JSON so a typed array cannot leak through.
+ */
+function parseArgs(argsJson) {
+  if (argsJson == null || argsJson === '') return { ok: true, args: {} };
+  if (typeof argsJson === 'string') {
+    let parsed;
+    try {
+      parsed = JSON.parse(argsJson);
+    } catch {
+      return { ok: false, code: 'bad_json', message: 'args are not valid JSON' };
+    }
+    if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { ok: false, code: 'bad_args', message: 'args must be a JSON object' };
+    }
+    return { ok: true, args: parsed };
+  }
+  if (!isJsonValue(argsJson) || Array.isArray(argsJson)) {
+    return { ok: false, code: 'bad_args', message: 'args are not a JSON object' };
+  }
+  return { ok: true, args: JSON.parse(JSON.stringify(argsJson)) };
+}
+
 /**
  * @param {{
  *   getScript: () => string,
@@ -139,11 +212,11 @@ export function createSurfcadBridge(host) {
 
   function remember(outcome, script) {
     const errors = outcome?.ok === true ? [] : errorMessages(outcome?.errors);
-    lastErrors = errors;
+    lastErrors = errors.slice();
     lastStatus = statusFrom(outcome, script);
     return {
       ok: outcome?.ok === true,
-      errors: errors.slice(),
+      errors: lastErrors.slice(),
       status: copyStatus(lastStatus),
     };
   }
@@ -153,74 +226,140 @@ export function createSurfcadBridge(host) {
    * from the head. The history snapshot is taken before `execute`, because
    * the first real run seeds an assembly and replaces the stack.
    */
-  function mutate(text, message) {
+  async function mutate(text, message) {
+    const before = cloneAgentHistory(host.readHistory());
+    host.setEditor(text);
+    let outcome;
+    try {
+      outcome = await host.execute(text);
+    } catch (err) {
+      outcome = {
+        ok: false,
+        errors: [String(err?.message || err)],
+        volume: null,
+        bbox: null,
+        partName: '',
+      };
+    }
+    host.writeHistory(commitAgentStep(before, text, message));
+    return remember(outcome, text);
+  }
+
+  async function runScreenshot(args) {
+    const format = args.format == null ? 'png' : args.format;
+    if (format !== 'png') return fail('unsupported_format', 'screenshot format must be png');
+    let png;
+    try {
+      png = await host.screenshot();
+    } catch (err) {
+      return fail('screenshot_failed', String(err?.message || err));
+    }
+    if (typeof png !== 'string' || !png.startsWith('data:image/png')) {
+      return fail('screenshot_failed', 'screenshot failed');
+    }
+    return pass({ dataUrl: png });
+  }
+
+  async function runUndo() {
+    const before = cloneAgentHistory(host.readHistory());
+    const undone = undoPartHistory(before);
+    if (undone.code == null) return fail('nothing_to_undo', 'Nothing to undo');
+    host.setEditor(undone.code);
+    let outcome;
+    try {
+      outcome = await host.execute(undone.code);
+    } catch (err) {
+      outcome = {
+        ok: false,
+        errors: [String(err?.message || err)],
+        volume: null,
+        bbox: null,
+        partName: '',
+      };
+    }
+    host.writeHistory(undone.history);
+    return pass(remember(outcome, undone.code));
+  }
+
+  function readCommand(name) {
+    if (name === 'get_script') {
+      const text = host.getScript();
+      return pass({ source: typeof text === 'string' ? text : '' });
+    }
+    if (name === 'status') return pass(copyStatus(lastStatus));
+    if (name === 'errors') return pass({ errors: lastErrors.slice() });
+    return null;
+  }
+
+  /**
+   * Stable dispatcher. `argsJson` is a JSON string or a plain JSON object.
+   * Resolves to `{ v, ok, result? , error? }`. A script that fails to build
+   * is still `ok: true`: the CAD outcome is `result.ok` / `result.errors`.
+   * Envelope `ok: false` means the command itself was refused.
+   */
+  function call(name, argsJson) {
+    if (typeof name !== 'string' || !AGENT_COMMANDS.includes(name)) {
+      const label = typeof name === 'string' ? name : typeof name;
+      return Promise.resolve(fail('unknown_command', `Unknown command: ${label}`));
+    }
+    const parsed = parseArgs(argsJson);
+    if (!parsed.ok) return Promise.resolve(fail(parsed.code, parsed.message));
+    const args = parsed.args;
+
+    if (name === 'set_script' && typeof args.source !== 'string') {
+      return Promise.resolve(fail('bad_args', 'set_script source must be a string'));
+    }
+    if (name === 'screenshot' && args.format != null && args.format !== 'png') {
+      return Promise.resolve(fail('unsupported_format', 'screenshot format must be png'));
+    }
+
+    const immediate = readCommand(name);
+    if (immediate) return Promise.resolve(immediate);
+
     return enqueue(async () => {
-      const before = cloneAgentHistory(host.readHistory());
-      host.setEditor(text);
-      const outcome = await host.execute(text);
-      host.writeHistory(commitAgentStep(before, text, message));
-      return remember(outcome, text);
+      try {
+        if (name === 'set_script') return pass(await mutate(args.source, 'Agent script'));
+        if (name === 'run') return pass(await mutate(host.getScript(), 'Agent run'));
+        if (name === 'screenshot') return await runScreenshot(args);
+        if (name === 'undo') return await runUndo();
+        return fail('unknown_command', `Unknown command: ${name}`);
+      } catch (err) {
+        return fail('internal', String(err?.message || err));
+      }
     });
   }
 
+  async function unwrap(envPromise) {
+    const env = await envPromise;
+    if (!env.ok) throw bridgeError(env.error);
+    return env.result;
+  }
+
   return {
+    version: AGENT_BRIDGE_VERSION,
+    commands: AGENT_COMMANDS,
+    call,
+
     getScript() {
-      const text = host.getScript();
-      return typeof text === 'string' ? text : '';
+      return unwrap(call('get_script')).then((result) => result.source);
     },
-
-    setScript(src) {
-      if (typeof src !== 'string') {
-        return Promise.resolve({
-          ok: false,
-          errors: ['setScript expects a string'],
-          status: copyStatus(lastStatus),
-        });
-      }
-      return mutate(src, 'Agent script');
+    setScript(source) {
+      return unwrap(call('set_script', { source }));
     },
-
     run() {
-      return mutate(host.getScript(), 'Agent run');
+      return unwrap(call('run'));
     },
-
     status() {
-      return copyStatus(lastStatus);
+      return unwrap(call('status'));
     },
-
     errors() {
-      return lastErrors.slice();
+      return unwrap(call('errors')).then((result) => result.errors);
     },
-
     screenshot() {
-      return Promise.resolve(host.screenshot()).then((png) => {
-        if (typeof png !== 'string' || !png.startsWith('data:image/png')) {
-          throw new Error('screenshot failed');
-        }
-        return png;
-      });
+      return unwrap(call('screenshot', { format: 'png' })).then((result) => result.dataUrl);
     },
-
-    /**
-     * One step back on the active part, then the restored script runs.
-     * Resolves to the same `{ ok, errors, status }` shape as `run()`.
-     */
     undo() {
-      return enqueue(async () => {
-        const before = cloneAgentHistory(host.readHistory());
-        const undone = undoPartHistory(before);
-        if (undone.code == null) {
-          return {
-            ok: false,
-            errors: ['Nothing to undo'],
-            status: copyStatus(lastStatus),
-          };
-        }
-        host.setEditor(undone.code);
-        const outcome = await host.execute(undone.code);
-        host.writeHistory(undone.history);
-        return remember(outcome, undone.code);
-      });
+      return unwrap(call('undo'));
     },
   };
 }

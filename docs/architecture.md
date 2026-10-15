@@ -68,11 +68,11 @@ Drawing a polyline point, or dragging a sketch point, snaps to a part reference 
 
 ### Live tab
 
-`window.surfcad` (`src/utils/agentBridge.js`, installed from `App.jsx`) drives the open page from the main thread. The worker lockdown replaces `fetch`, so this is not a worker global. It is on in dev. Elsewhere the URL `?agent=1` or localStorage `surfcadAgent` = `1` opts in. Flag off, the object is absent and the shells do not change.
+`window.surfcad` (`src/utils/agentBridge.js`, installed from `App.jsx`) is the stable main-thread surface a browser agent, and later an MCP server, relays into. The worker lockdown replaces `fetch`, so this is not a worker global. It is on in dev. Elsewhere the URL `?agent=1` or localStorage `surfcadAgent` = `1` opts in. Flag off, the object is absent and the shells do not change.
 
-`getScript()` reads the editor. `setScript(src)` and `run()` write that buffer, run it through the same assembly path as the Run button, and resolve to `{ ok, errors, status }`. `status()` is `{ volume, bbox, partName, featureCount }`. `errors()` is the last run's messages. `screenshot()` is a PNG data URL of the viewport (`Viewport` `capturePng`, one render then the canvas). `undo()` steps the active part's history once and runs that script.
+`version` is `1`. `commands` lists the snake_case names. `call(name, argsJson)` resolves to a JSON envelope `{ v: 1, ok, result?, error?: { code, message } }`. A script that fails to build is still envelope `ok: true`; the CAD outcome is `result`. Envelope `ok: false` means the command was refused. The commands are `get_script`, `set_script` `{ source }`, `run`, `status`, `errors`, `screenshot` `{ format: 'png' }` → `{ dataUrl }`, and `undo`. Results are plain JSON: `bbox` is `{ min: [x, y, z], max: [x, y, z] }`. Convenience methods are thin wrappers over `call()`. Args, results, error codes, and the rule that additive changes keep v1 are in `docs/agent-export.md`.
 
-A call that changes the script is one undo step on the part stack. `run()` of the text `setScript` just wrote does not add another step. The snapshot is taken before the run, because the first real script seeds an assembly and would otherwise replace the stack with one commit per feature marker. Queued calls cannot interleave. Flag-off chrome at 390 and 1280 is `golden:agent-bridge`. The Playwright driver is `scripts/demo/agent-bridge-demo.mjs`.
+A call that changes the script is one undo step on the part stack. `run` of the text `set_script` just wrote does not add another step. The snapshot is taken before the run, because the first real script seeds an assembly and would otherwise replace the stack with one commit per feature marker. `set_script`, `run`, `screenshot`, and `undo` are queued. Flag-off chrome at 390 and 1280 is `golden:agent-bridge`. The Playwright driver is `scripts/demo/agent-bridge-demo.mjs`, and it uses only `call()`.
 
 | Helper | Inputs → output | Multi-body |
 | --- | --- | --- |

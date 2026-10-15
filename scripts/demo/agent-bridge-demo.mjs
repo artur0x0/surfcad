@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 /**
- * An agent builds a part through window.surfcad only.
+ * An agent builds a part through window.surfcad.call only.
  *
- * Dev server (the bridge is on in dev). The page is driven with
- * getScript / setScript / run / status / errors / screenshot / undo.
- * No toolbar clicks. A box, then a hole, then status and a screenshot,
- * then undo once, then a script that throws.
+ * Dev server (the bridge is on in dev). Every command is a JSON string
+ * in and a JSON envelope out. No toolbar clicks. A box, then a hole,
+ * then status and a screenshot, then undo once, then a script that throws.
  *
  * Writes before.png, after.png, and agent-bridge-demo.webm under
  * AGENT_DEMO_DIR or /opt/cursor/artifacts when that directory exists.
@@ -103,6 +102,33 @@ function pause(page, ms) {
   return page.waitForTimeout(ms);
 }
 
+/** Relay path: args are a JSON string. The page round-trips the envelope. */
+async function agentCall(page, name, args) {
+  const argsJson = JSON.stringify(args ?? {});
+  return page.evaluate(async ({ name, argsJson }) => {
+    function assertJsonValue(value, path) {
+      if (value === null) return;
+      const kind = typeof value;
+      if (kind === 'string' || kind === 'boolean') return;
+      if (kind === 'number') {
+        if (!Number.isFinite(value)) throw new Error(`non-finite at ${path}`);
+        return;
+      }
+      if (kind !== 'object') throw new Error(`non-json ${kind} at ${path}`);
+      if (ArrayBuffer.isView(value)) throw new Error(`typed array at ${path}`);
+      if (Array.isArray(value)) {
+        value.forEach((item, i) => assertJsonValue(item, `${path}[${i}]`));
+        return;
+      }
+      if (Object.getPrototypeOf(value) !== Object.prototype) throw new Error(`instance at ${path}`);
+      Object.keys(value).forEach((key) => assertJsonValue(value[key], `${path}.${key}`));
+    }
+    const env = await window.surfcad.call(name, argsJson);
+    assertJsonValue(env, 'envelope');
+    return JSON.parse(JSON.stringify(env));
+  }, { name, argsJson });
+}
+
 console.log('agent bridge demo — window.surfcad only');
 
 let browser;
@@ -137,51 +163,56 @@ try {
 
   await page.goto(APP_URL, { waitUntil: 'load', timeout: 45000 });
   await page.waitForFunction(
-    () => window.surfcad && typeof window.surfcad.setScript === 'function'
+    () => window.surfcad && window.surfcad.version === 1 && typeof window.surfcad.call === 'function'
       && document.querySelector('canvas'),
     null,
     { timeout: 60000 },
   );
+  const surface = await page.evaluate(() => ({
+    version: window.surfcad.version,
+    commands: JSON.parse(JSON.stringify(window.surfcad.commands)),
+  }));
+  check('version is 1', surface.version === 1, String(surface.version));
+  check('commands are the v1 tool list', JSON.stringify(surface.commands) === JSON.stringify([
+    'get_script', 'set_script', 'run', 'status', 'errors', 'screenshot', 'undo',
+  ]), JSON.stringify(surface.commands));
   await pause(page, 600);
 
   const beforePath = join(OUT_DIR, 'agent-bridge-before.png');
   await page.screenshot({ path: beforePath });
   console.log(`  before ${beforePath}`);
 
-  const box = await page.evaluate(async (src) => {
-    const wrote = await window.surfcad.setScript(src);
-    const ran = await window.surfcad.run();
-    return {
-      script: window.surfcad.getScript(),
-      wrote,
-      ran,
-      status: window.surfcad.status(),
-      errors: window.surfcad.errors(),
-    };
-  }, BOX);
-  check('box script is the editor buffer', box.script === BOX);
-  check('box run ok', box.ran.ok === true, JSON.stringify(box.ran.errors));
-  check('box is one feature', box.status.featureCount === 1, `count ${box.status.featureCount}`);
-  check('box part name', box.status.partName === 'Part (1)', box.status.partName);
-  check('box volume', Math.abs(box.status.volume - 24000) < 1, String(box.status.volume));
-  check('box bbox', Array.isArray(box.status.bbox?.min) && box.status.bbox.min.length === 3, JSON.stringify(box.status.bbox));
-  check('run after setScript did not add a second step', box.wrote.status.featureCount === box.ran.status.featureCount);
+  const wroteBox = await agentCall(page, 'set_script', { source: BOX });
+  const ranBox = await agentCall(page, 'run', {});
+  const boxScript = await agentCall(page, 'get_script', {});
+  const boxStatus = await agentCall(page, 'status', {});
+  const boxErrors = await agentCall(page, 'errors', {});
+  check('box envelope ok', wroteBox.v === 1 && wroteBox.ok === true && ranBox.ok === true, JSON.stringify(wroteBox.error || ranBox.error));
+  check('box script is the editor buffer', boxScript.result?.source === BOX);
+  check('box run ok', ranBox.result?.ok === true, JSON.stringify(ranBox.result?.errors));
+  check('box is one feature', boxStatus.result?.featureCount === 1, `count ${boxStatus.result?.featureCount}`);
+  check('box part name', boxStatus.result?.partName === 'Part (1)', boxStatus.result?.partName);
+  check('box volume', Math.abs(boxStatus.result?.volume - 24000) < 1, String(boxStatus.result?.volume));
+  check('box bbox', Array.isArray(boxStatus.result?.bbox?.min) && boxStatus.result.bbox.min.length === 3, JSON.stringify(boxStatus.result?.bbox));
+  check('box errors empty', boxErrors.result?.errors?.length === 0, JSON.stringify(boxErrors.result));
+  check('run after set_script did not change the feature count', wroteBox.result?.status?.featureCount === ranBox.result?.status?.featureCount);
   await pause(page, 700);
 
-  const hole = await page.evaluate(async (src) => {
-    const wrote = await window.surfcad.setScript(src);
-    const ran = await window.surfcad.run();
-    const status = window.surfcad.status();
-    const png = await window.surfcad.screenshot();
-    return { wrote, ran, status, errors: window.surfcad.errors(), png, script: window.surfcad.getScript() };
-  }, HOLE);
-  check('hole script is the editor buffer', hole.script === HOLE);
-  check('hole run ok', hole.ran.ok === true, JSON.stringify(hole.ran.errors));
-  check('hole is two features', hole.status.featureCount === 2, `count ${hole.status.featureCount}`);
-  check('hole volume dropped', hole.status.volume < 23000 && hole.status.volume > 15000, String(hole.status.volume));
-  check('hole errors empty', hole.errors.length === 0, hole.errors.join(' | '));
-  check('screenshot is a png data url', typeof hole.png === 'string' && hole.png.startsWith('data:image/png;base64,'), String(hole.png).slice(0, 32));
-  const pngBytes = Buffer.from(String(hole.png).split(',')[1] || '', 'base64');
+  const wroteHole = await agentCall(page, 'set_script', { source: HOLE });
+  const ranHole = await agentCall(page, 'run', {});
+  const holeScript = await agentCall(page, 'get_script', {});
+  const holeStatus = await agentCall(page, 'status', {});
+  const holeErrors = await agentCall(page, 'errors', {});
+  const shot = await agentCall(page, 'screenshot', { format: 'png' });
+  check('hole envelope ok', wroteHole.ok === true && ranHole.ok === true && shot.ok === true, JSON.stringify(shot.error || ranHole.error));
+  check('hole script is the editor buffer', holeScript.result?.source === HOLE);
+  check('hole run ok', ranHole.result?.ok === true, JSON.stringify(ranHole.result?.errors));
+  check('hole is two features', holeStatus.result?.featureCount === 2, `count ${holeStatus.result?.featureCount}`);
+  check('hole volume dropped', holeStatus.result?.volume < 23000 && holeStatus.result?.volume > 15000, String(holeStatus.result?.volume));
+  check('hole errors empty', holeErrors.result?.errors?.length === 0, (holeErrors.result?.errors || []).join(' | '));
+  const png = shot.result?.dataUrl;
+  check('screenshot is a png data url', typeof png === 'string' && png.startsWith('data:image/png;base64,'), String(png).slice(0, 32));
+  const pngBytes = Buffer.from(String(png).split(',')[1] || '', 'base64');
   check('screenshot png is a real image', pngBytes.length > 5000 && pngBytes[0] === 0x89 && pngBytes[1] === 0x50, `bytes ${pngBytes.length}`);
   writeFileSync(join(OUT_DIR, 'agent-bridge-viewport.png'), pngBytes);
 
@@ -190,34 +221,24 @@ try {
   console.log(`  after ${afterPath}`);
   await pause(page, 800);
 
-  const undone = await page.evaluate(async (boxSrc) => {
-    const result = await window.surfcad.undo();
-    return {
-      result,
-      script: window.surfcad.getScript(),
-      status: window.surfcad.status(),
-      backToBox: window.surfcad.getScript() === boxSrc,
-    };
-  }, BOX);
-  check('undo once restores the box', undone.backToBox === true, undone.script.slice(0, 80));
-  check('undo run ok', undone.result.ok === true, JSON.stringify(undone.result.errors));
-  check('undo volume is the box', Math.abs(undone.status.volume - 24000) < 1, String(undone.status.volume));
-  check('undo feature count is one', undone.status.featureCount === 1, String(undone.status.featureCount));
+  const undone = await agentCall(page, 'undo', {});
+  const undoneScript = await agentCall(page, 'get_script', {});
+  const undoneStatus = await agentCall(page, 'status', {});
+  check('undo envelope ok', undone.v === 1 && undone.ok === true, JSON.stringify(undone.error));
+  check('undo once restores the box', undoneScript.result?.source === BOX, String(undoneScript.result?.source).slice(0, 80));
+  check('undo run ok', undone.result?.ok === true, JSON.stringify(undone.result?.errors));
+  check('undo volume is the box', Math.abs(undoneStatus.result?.volume - 24000) < 1, String(undoneStatus.result?.volume));
+  check('undo feature count is one', undoneStatus.result?.featureCount === 1, String(undoneStatus.result?.featureCount));
   await pause(page, 800);
 
-  const bad = await page.evaluate(async (src) => {
-    const wrote = await window.surfcad.setScript(src);
-    const ran = await window.surfcad.run();
-    return {
-      wrote,
-      ran,
-      errors: window.surfcad.errors(),
-      status: window.surfcad.status(),
-    };
-  }, BAD);
-  check('error run is not ok', bad.ran.ok === false, JSON.stringify(bad.ran));
-  check('errors() names the throw', bad.errors.some((msg) => String(msg).includes('agent bridge demo')), bad.errors.join(' | '));
-  check('failed status has no volume', bad.status.volume == null, String(bad.status.volume));
+  const wroteBad = await agentCall(page, 'set_script', { source: BAD });
+  const ranBad = await agentCall(page, 'run', {});
+  const badErrors = await agentCall(page, 'errors', {});
+  const badStatus = await agentCall(page, 'status', {});
+  check('error script still returns an envelope', wroteBad.ok === true && ranBad.ok === true && ranBad.v === 1, JSON.stringify(ranBad.error));
+  check('error run result is not ok', ranBad.result?.ok === false, JSON.stringify(ranBad.result));
+  check('errors names the throw', (badErrors.result?.errors || []).some((msg) => String(msg).includes('agent bridge demo')), (badErrors.result?.errors || []).join(' | '));
+  check('failed status has no volume', badStatus.result?.volume == null, String(badStatus.result?.volume));
   await page.waitForFunction(
     () => {
       const node = document.querySelector('[data-execution-error]');
