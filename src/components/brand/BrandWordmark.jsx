@@ -46,6 +46,40 @@ export function BrandWordmark({ tone = 'on-dark', size = 16 }) {
   );
 }
 
+/** Paper tile: surfboard on Paper. Same art as `public/favicon.svg`, scaled for the header. */
+export function BrandTileMark({ size = 16 }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 512 512"
+      aria-hidden="true"
+      data-brand-mark="paper"
+      className="block shrink-0"
+    >
+      <rect width="512" height="512" rx="116" fill="#FAFAF9" />
+      <g transform="translate(256 256) scale(1.12) translate(-256 -256) rotate(-30 256 256)">
+        <path
+          d="M256 52 C 334 128 344 300 318 404 C 302 452 210 452 194 404 C 168 300 178 128 256 52 Z"
+          fill="#16171D"
+          stroke="#E6E7EB"
+          strokeWidth="12"
+        />
+        <line
+          x1="256"
+          y1="92"
+          x2="256"
+          y2="424"
+          stroke="#FFFFFF"
+          strokeWidth="40"
+          strokeLinecap="round"
+        />
+      </g>
+    </svg>
+  );
+}
+
 /**
  * Header lockup. 16px, under the 24px orange cutoff, so CAD is Ink.
  * The Paper chip is the light surface that wordmark sits on. Pointer
@@ -55,9 +89,10 @@ export function BrandHeaderMark() {
   return (
     <span
       data-brand-header=""
-      className="pointer-events-none inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5"
+      className="pointer-events-none inline-flex shrink-0 items-center gap-1 rounded-md py-0.5 pl-0 pr-1.5"
       style={{ background: '#FAFAF9' }}
     >
+      <BrandTileMark size={16} />
       <BrandWordmark tone="on-light" size={16} />
     </span>
   );
