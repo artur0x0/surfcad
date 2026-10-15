@@ -11,6 +11,7 @@ import {
   formatDisplayDelta,
   formatDisplayLength,
   formatDisplayNumber,
+  isFormattedDisplayEcho,
   getDisplayUnit,
   lengthCaption,
   lengthToDisplay,
@@ -42,6 +43,7 @@ test('lengths convert and angles do not', () => {
   assert.equal(formatDisplayLength(30, 'in'), '1.1811 in');
   assert.equal(formatDisplayLength(12, 'in'), '0.4724 in');
   assert.equal(formatDisplayLength(24, 'in'), '0.9449 in');
+  assert.equal(formatDisplayLength(0, 'mm'), '0 mm');
   assert.equal(formatDisplayDelta(-30, 'mm'), '-30 mm');
   assert.equal(formatDisplayDelta(0, 'mm'), '0 mm');
   assert.equal(formatDisplayDelta(25.4, 'in'), '+1 in');
@@ -67,6 +69,20 @@ test('formatDisplayNumber keeps at most 4 decimals and trims trailing zeros', ()
   assert.equal(formatDisplayNumber(Number.NaN), '');
   assert.equal(formatDisplayNumber(''), '');
   assert.equal(formatDisplayNumber(30 / 25.4).includes('e'), false);
+  assert.equal(formatDisplayNumber(0), '0');
+  assert.equal(formatDisplayNumber(-0), '0');
+  assert.equal(formatDisplayNumber('0.0000'), '0');
+});
+
+test('isFormattedDisplayEcho treats zero and rounded-zero display as unchanged', () => {
+  assert.equal(isFormattedDisplayEcho(0, '0'), true);
+  assert.equal(isFormattedDisplayEcho(-0, '0'), true);
+  assert.equal(isFormattedDisplayEcho(0.00004, '0'), true);
+  assert.equal(isFormattedDisplayEcho(0, '0.0000'), false);
+  assert.equal(isFormattedDisplayEcho('', '0'), false);
+  assert.equal(isFormattedDisplayEcho(5, '0'), false);
+  assert.equal(commitDisplayNumber('0', 0.00004), 0.00004);
+  assert.equal(commitDisplayLength('0', 0, 'mm'), 0);
 });
 
 test('echoing a formatted length keeps the stored millimetres', () => {
