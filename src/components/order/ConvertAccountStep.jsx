@@ -64,14 +64,14 @@ const ConvertAccountStep = ({ email, address, onComplete, onSkip, onError }) => 
         <h3 className="text-xl font-bold text-white mb-2">
           Create Your Account
         </h3>
-        <p className="text-gray-400 text-sm">
+        <p className="text-chrome-secondary text-sm">
           Just add a password to save your information for future orders
         </p>
       </div>
 
       {/* Saved Info Summary */}
       <div className="bg-gray-800/30 rounded-xl p-4 mb-6">
-        <p className="text-gray-400 text-xs uppercase tracking-wide mb-2">
+        <p className="text-chrome-secondary text-xs uppercase tracking-wide mb-2">
           Your saved information
         </p>
         <div className="space-y-2">
@@ -106,7 +106,7 @@ const ConvertAccountStep = ({ email, address, onComplete, onSkip, onError }) => 
                 if (errors.password) setErrors({ ...errors, password: null });
               }}
               className={`w-full bg-gray-800/50 border rounded-xl py-3 px-10 text-white placeholder-gray-500 focus:outline-none transition-colors ${
-                errors.password ? 'border-red-500' : 'border-gray-700 focus:border-blue-500'
+                errors.password ? 'border-red-500' : 'border-chrome-border focus:border-blue-500'
               }`}
               placeholder="At least 8 characters"
             />
@@ -130,7 +130,7 @@ const ConvertAccountStep = ({ email, address, onComplete, onSkip, onError }) => 
                 if (errors.confirmPassword) setErrors({ ...errors, confirmPassword: null });
               }}
               className={`w-full bg-gray-800/50 border rounded-xl py-3 px-10 text-white placeholder-gray-500 focus:outline-none transition-colors ${
-                errors.confirmPassword ? 'border-red-500' : 'border-gray-700 focus:border-blue-500'
+                errors.confirmPassword ? 'border-red-500' : 'border-chrome-border focus:border-blue-500'
               }`}
               placeholder="Confirm your password"
             />
@@ -143,7 +143,7 @@ const ConvertAccountStep = ({ email, address, onComplete, onSkip, onError }) => 
         {/* Benefits */}
         <div className="bg-gray-800/20 rounded-xl p-4 space-y-2">
           <p className="text-gray-300 text-sm font-medium">With an account you can:</p>
-          <ul className="space-y-1.5 text-gray-400 text-sm">
+          <ul className="space-y-1.5 text-chrome-secondary text-sm">
             <li className="flex items-center gap-2">
               <Check size={14} className="text-green-400" />
               Track your order status
@@ -183,7 +183,7 @@ const ConvertAccountStep = ({ email, address, onComplete, onSkip, onError }) => 
           <button
             type="button"
             onClick={onSkip}
-            className="w-full py-2 text-gray-400 text-sm hover:text-white transition-colors"
+            className="w-full py-2 text-chrome-secondary text-sm hover:text-white transition-colors"
           >
             Skip for now
           </button>

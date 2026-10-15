@@ -159,7 +159,7 @@ const AddressStep = ({ initialAddress, onComplete, onError }) => {
           value={formData.name}
           onChange={(e) => handleChange('name', e.target.value)}
           className={`w-full bg-gray-800/50 border rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none transition-colors ${
-            errors.name ? 'border-red-500' : 'border-gray-700 focus:border-blue-500'
+            errors.name ? 'border-red-500' : 'border-chrome-border focus:border-blue-500'
           }`}
           placeholder="John Doe"
         />
@@ -178,7 +178,7 @@ const AddressStep = ({ initialAddress, onComplete, onError }) => {
           value={formData.street}
           onChange={(e) => handleChange('street', e.target.value)}
           className={`w-full bg-gray-800/50 border rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none transition-colors ${
-            errors.street ? 'border-red-500' : 'border-gray-700 focus:border-blue-500'
+            errors.street ? 'border-red-500' : 'border-chrome-border focus:border-blue-500'
           }`}
           placeholder="123 Main St"
         />
@@ -196,7 +196,7 @@ const AddressStep = ({ initialAddress, onComplete, onError }) => {
           type="text"
           value={formData.street2}
           onChange={(e) => handleChange('street2', e.target.value)}
-          className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
+          className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
           placeholder="Apt 4B"
         />
       </div>
@@ -212,7 +212,7 @@ const AddressStep = ({ initialAddress, onComplete, onError }) => {
             value={formData.city}
             onChange={(e) => handleChange('city', e.target.value)}
             className={`w-full bg-gray-800/50 border rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none transition-colors ${
-              errors.city ? 'border-red-500' : 'border-gray-700 focus:border-blue-500'
+              errors.city ? 'border-red-500' : 'border-chrome-border focus:border-blue-500'
             }`}
             placeholder="City"
           />
@@ -229,7 +229,7 @@ const AddressStep = ({ initialAddress, onComplete, onError }) => {
             value={formData.state}
             onChange={(e) => handleChange('state', e.target.value)}
             className={`w-full bg-gray-800/50 border rounded-xl py-3 px-2 text-white focus:outline-none transition-colors appearance-none ${
-              errors.state ? 'border-red-500' : 'border-gray-700 focus:border-blue-500'
+              errors.state ? 'border-red-500' : 'border-chrome-border focus:border-blue-500'
             }`}
           >
             <option value="">--</option>
@@ -254,7 +254,7 @@ const AddressStep = ({ initialAddress, onComplete, onError }) => {
             onChange={(e) => handleChange('zip', e.target.value)}
             onBlur={validateAddress}
             className={`w-full bg-gray-800/50 border rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none transition-colors ${
-              errors.zip ? 'border-red-500' : 'border-gray-700 focus:border-blue-500'
+              errors.zip ? 'border-red-500' : 'border-chrome-border focus:border-blue-500'
             }`}
             placeholder="12345"
             maxLength={10}
@@ -275,7 +275,7 @@ const AddressStep = ({ initialAddress, onComplete, onError }) => {
           value={formData.phone}
           onChange={(e) => handleChange('phone', e.target.value)}
           className={`w-full bg-gray-800/50 border rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none transition-colors ${
-            errors.phone ? 'border-red-500' : 'border-gray-700 focus:border-blue-500'
+            errors.phone ? 'border-red-500' : 'border-chrome-border focus:border-blue-500'
           }`}
           placeholder="(555) 123-4567"
         />
@@ -286,7 +286,7 @@ const AddressStep = ({ initialAddress, onComplete, onError }) => {
 
       {/* Address Validation Result */}
       {isValidating && (
-        <div className="flex items-center gap-2 text-gray-400 text-sm">
+        <div className="flex items-center gap-2 text-chrome-secondary text-sm">
           <Loader2 className="animate-spin" size={16} />
           Validating address...
         </div>

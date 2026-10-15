@@ -48,13 +48,13 @@ export default function CartRemoveDialog({
         if (event.target === event.currentTarget) onCancel?.();
       }}
     >
-      <div className="w-full max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-lg surface-glass border border-gray-700 p-4 shadow-xl">
-        <h2 id="cart-remove-title" className="text-sm font-semibold text-gray-100">
+      <div className="w-full max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-lg surface-glass border border-chrome-border p-4 shadow-xl">
+        <h2 id="cart-remove-title" className="text-sm font-semibold text-chrome-text">
           Remove from cart
         </h2>
         <p className="mt-2 text-xs text-gray-300" data-cart-remove-message="">
           {'Remove '}
-          <span className="font-medium text-gray-100" data-cart-remove-name="">{name}</span>
+          <span className="font-medium text-chrome-text" data-cart-remove-name="">{name}</span>
           {" from the cart? This can't be undone."}
         </p>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">

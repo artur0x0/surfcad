@@ -78,7 +78,7 @@ const ScsHandoff = ({ script, partName = 'sheet', onQuoteInstead }) => {
       >
         Order on SendCutSend
       </SmButton>
-      <p className="text-[11px] text-gray-400" data-sm-step-source={stepSource}>
+      <p className="text-[11px] text-chrome-secondary" data-sm-step-source={stepSource}>
         DXF is the flat cut (mm). STEP is the bent 3D part
         {stepSource === 'spec' ? `, built from the sheet spec with exact bends${bendCount ? ` (${bendCount} cylindrical)` : ''}` : ''}
         {stepSource === 'mesh' ? ', faceted from the 3D part' : ''}

@@ -270,7 +270,7 @@ export { default as FeatureStrip } from './src/components/FeatureStrip.jsx';`,
     && sheetIdentityTone(false, false) === 'border border-cyan-500/40');
   check('picker rows keep their old tones when not failed',
     sheetPickTone(true, false) === 'bg-cyan-950/60 text-white border border-cyan-600/50'
-    && sheetPickTone(false, false) === 'bg-gray-900/60 text-gray-300 border border-gray-600/50');
+    && sheetPickTone(false, false) === 'bg-chrome-surface/60 text-gray-300 border border-gray-600/50');
   check('strip, sheet and picker share the failed ring class',
     chipTone(false, false, true).includes(FAILED_RING_CLASS) && chipTone(true, true, true).includes(FAILED_RING_CLASS)
     && sheetIdentityTone(false, true).includes(FAILED_RING_CLASS) && sheetPickTone(true, true).includes(FAILED_RING_CLASS));

@@ -3,6 +3,7 @@ import Editor from '@monaco-editor/react';
 import { ArrowLeft } from 'lucide-react';
 import Toolbar from './Toolbar';
 import ProfileChip from './ProfileChip';
+import { BrandHeaderMark } from './brand/BrandWordmark';
 import { composeHelperInsert } from '../utils/helperPaletteSnippets';
 
 // "Select All" in the (long-press) context menu. Monaco 0.52 removed
@@ -487,21 +488,22 @@ const CodeEditor = forwardRef(({
   };
 
   return (
-    <div className="relative flex flex-col h-full bg-gray-900">
+    <div className="relative flex flex-col h-full bg-chrome-surface">
       {/* Mid-strip: Select All always. Game actions inline; CAD portals here (both shells). */}
       <div
         data-ribbon-bg="editor"
         data-editor-ribbon=""
-        className="relative z-30 w-full flex items-center gap-1 px-1 py-0.5 border-b border-gray-700/60 bg-gray-900 shrink-0"
+        className="relative z-30 w-full flex items-center gap-1 px-1 py-0.5 border-b border-chrome-border/60 bg-chrome-surface shrink-0"
       >
+        <BrandHeaderMark />
         {typeof onClose === 'function' && (
           <button
             type="button"
             data-script-editor-close=""
             onClick={onClose}
             className={isMobile
-              ? 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded text-blue-400 hover:bg-gray-700/60 active:opacity-80'
-              : 'shrink-0 p-1.5 flex items-center gap-1 rounded text-blue-400 hover:bg-gray-700/60 active:opacity-80'}
+              ? 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded text-blue-400 hover:bg-chrome-border/60 active:opacity-80'
+              : 'shrink-0 p-1.5 flex items-center gap-1 rounded text-blue-400 hover:bg-chrome-border/60 active:opacity-80'}
             title={isMobile ? 'Back to parts' : 'Back to CAD'}
             aria-label={isMobile ? 'Back to parts' : 'Back to CAD'}
           >

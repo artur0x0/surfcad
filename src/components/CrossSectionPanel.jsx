@@ -533,7 +533,7 @@ const handleButtonClick = () => {
               disabled={Math.abs(customNormal[0]) === 1}
               className={`border border-gray-300 rounded px-2 py-1 text-xs ${
                 Math.abs(customNormal[0]) === 1
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  ? 'bg-gray-100 text-chrome-secondary cursor-not-allowed'
                   : 'bg-white text-gray-700'
               }`}
             />
@@ -546,7 +546,7 @@ const handleButtonClick = () => {
               disabled={Math.abs(customNormal[1]) === 1}
               className={`border border-gray-300 rounded px-2 py-1 text-xs ${
                 Math.abs(customNormal[1]) === 1
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  ? 'bg-gray-100 text-chrome-secondary cursor-not-allowed'
                   : 'bg-white text-gray-700'
               }`}
             />
@@ -559,7 +559,7 @@ const handleButtonClick = () => {
               disabled={Math.abs(customNormal[2]) === 1}
               className={`border border-gray-300 rounded px-2 py-1 text-xs ${
                 Math.abs(customNormal[2]) === 1
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  ? 'bg-gray-100 text-chrome-secondary cursor-not-allowed'
                   : 'bg-white text-gray-700'
               }`}
             />

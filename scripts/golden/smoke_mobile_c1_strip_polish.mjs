@@ -122,13 +122,13 @@ console.log('mobile C.1: strip polish + UI reorg');
       /'right'/.test(strip) &&
       /data-feature-strip-orientation="vertical"/.test(strip) &&
       /data-cad-feature-strip/.test(app) &&
-      /border-l border-gray-700\/40/.test(strip),
+      /border-l border-chrome-border\/40/.test(strip),
   );
   check(
-    'E: ribbon / top chrome bg matches code editor (bg-gray-900)',
+    'E: ribbon / top chrome bg matches code editor (chrome surface token)',
     /data-ribbon-bg="editor"/.test(editor) &&
-      /bg-gray-900/.test(editor) &&
-      /data-ribbon-bg="editor"[\s\S]{0,200}?bg-gray-900/.test(editor),
+      /bg-chrome-surface/.test(editor) &&
+      /data-ribbon-bg="editor"[\s\S]{0,200}?bg-chrome-surface/.test(editor),
   );
 }
 

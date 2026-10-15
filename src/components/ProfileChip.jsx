@@ -64,16 +64,16 @@ export default function ProfileChip({
 
   const tone = signedIn
     ? 'border-green-500/50 text-green-300 hover:bg-green-500/15'
-    : 'border-gray-500/50 text-gray-400 hover:bg-gray-500/15';
+    : 'border-gray-500/50 text-chrome-secondary hover:bg-gray-500/15';
 
   const inline = variant === 'inline';
   const shell = inline
     ? `pointer-events-auto relative z-10 flex h-7 w-7 shrink-0 items-center
-        justify-center rounded-full border surface-glass-chip bg-gray-900/55
+        justify-center rounded-full border surface-glass-chip bg-chrome-surface/55
         text-[10px] font-semibold tracking-wide transition-colors
         active:opacity-80 ${tone}`
     : `pointer-events-auto absolute top-4 right-4 z-50 flex h-9 w-9 items-center
-        justify-center rounded-full border surface-glass-chip bg-gray-900/55
+        justify-center rounded-full border surface-glass-chip bg-chrome-surface/55
         text-xs font-semibold tracking-wide shadow-lg transition-colors
         active:opacity-80 ${tone}`;
 
@@ -221,8 +221,8 @@ export default function ProfileChip({
           className="pointer-events-auto fixed left-1/2 top-[28%] z-[70] w-[min(20rem,calc(100%-2rem))]
             -translate-x-1/2 rounded-lg border border-gray-600 bg-gray-950/95 px-4 py-4 text-center shadow-xl"
         >
-          <p className="text-sm font-medium text-gray-100">Reconnect GitHub</p>
-          <p className="mt-1 text-xs text-gray-400" data-reauth-empty-copy="">
+          <p className="text-sm font-medium text-chrome-text">Reconnect GitHub</p>
+          <p className="mt-1 text-xs text-chrome-secondary" data-reauth-empty-copy="">
             Nothing new was created. Reconnect to open your repo.
           </p>
           <button

@@ -451,7 +451,7 @@ export default function FeatureSheet({
         ) : null}
         {moreBelow ? (
           <div
-            className="pointer-events-none absolute inset-x-0 bottom-0 flex h-8 items-end justify-center bg-gradient-to-t from-gray-900/80 to-transparent"
+            className="pointer-events-none absolute inset-x-0 bottom-0 flex h-8 items-end justify-center bg-gradient-to-t from-chrome-surface/80 to-transparent"
             data-feature-sheet-scroll-hint=""
             aria-hidden="true"
           >

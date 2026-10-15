@@ -31,7 +31,7 @@ console.log('hidden script editor, pencil drawer and sheet');
   const toolbar = read('../../src/components/Toolbar.jsx');
   const view = read('../../src/components/Viewport.jsx');
   const close = read('../../src/utils/scriptEditorClose.js');
-  const desk = app.slice(app.lastIndexOf('flex h-dvh bg-gray-900'));
+  const desk = app.slice(app.lastIndexOf('flex h-dvh bg-chrome-surface'));
 
   check('parts feed still precedes the desktop editor',
     (() => {

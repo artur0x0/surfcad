@@ -149,24 +149,24 @@ const AccountModal = ({ onClose, user, selectedTab = 'info' }) => {
 
   return (
     <ModalFit cap="80vh" className="surface-scrim flex items-center justify-center z-50 px-4">
-      <div className="modal-fit-panel surface-glass rounded-2xl shadow-2xl max-w-lg w-full flex flex-col border border-gray-700/50">
-        <div className="flex items-center justify-between p-5 border-b border-gray-700/50">
+      <div className="modal-fit-panel surface-glass rounded-2xl shadow-2xl max-w-lg w-full flex flex-col border border-chrome-border/50">
+        <div className="flex items-center justify-between p-5 border-b border-chrome-border/50">
           <h2 className="text-lg font-semibold text-white">Account</h2>
-          <button onClick={onClose} className="p-1.5 hover:bg-gray-700/50 rounded-lg transition-colors">
-            <X size={20} className="text-gray-400" />
+          <button onClick={onClose} className="p-1.5 hover:bg-chrome-border/50 rounded-lg transition-colors">
+            <X size={20} className="text-chrome-secondary" />
           </button>
         </div>
 
-        <div className="flex border-b border-gray-700/50">
+        <div className="flex border-b border-chrome-border/50">
           <button
             onClick={() => setActiveTab('info')}
-            className={`flex-1 py-3 text-sm font-medium ${activeTab === 'info' ? 'text-white border-b-2 border-blue-500' : 'text-gray-400'}`}
+            className={`flex-1 py-3 text-sm font-medium ${activeTab === 'info' ? 'text-white border-b-2 border-blue-500' : 'text-chrome-secondary'}`}
           >
             Info
           </button>
           <button
             onClick={() => setActiveTab('orders')}
-            className={`flex-1 py-3 text-sm font-medium ${activeTab === 'orders' ? 'text-white border-b-2 border-blue-500' : 'text-gray-400'}`}
+            className={`flex-1 py-3 text-sm font-medium ${activeTab === 'orders' ? 'text-white border-b-2 border-blue-500' : 'text-chrome-secondary'}`}
           >
             Orders
           </button>
@@ -214,42 +214,42 @@ const AccountModal = ({ onClose, user, selectedTab = 'info' }) => {
               >
                 Log Out
               </button>
-              <div className="border-t border-gray-700/50"></div>
+              <div className="border-t border-chrome-border/50"></div>
 
               {user.authProvider === 'local' && (
                 <form onSubmit={handleChangePassword} className="space-y-4">
                   <h3 className="text-sm font-medium text-white">Change Password</h3>
                   
                   <div className="space-y-1">
-                    <label className="text-xs text-gray-400">Current Password</label>
+                    <label className="text-xs text-chrome-secondary">Current Password</label>
                     <input
                       type="password"
                       placeholder="Current Password"
                       value={formData.currentPassword}
                       onChange={e => setFormData({ ...formData, currentPassword: e.target.value })}
-                      className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-2 px-3 text-white"
+                      className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-2 px-3 text-white"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs text-gray-400">New Password</label>
+                    <label className="text-xs text-chrome-secondary">New Password</label>
                     <input
                       type="password"
                       placeholder="New Password (min 8 characters)"
                       value={formData.newPassword}
                       onChange={e => setFormData({ ...formData, newPassword: e.target.value })}
-                      className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-2 px-3 text-white"
+                      className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-2 px-3 text-white"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs text-gray-400">Confirm New Password</label>
+                    <label className="text-xs text-chrome-secondary">Confirm New Password</label>
                     <input
                       type="password"
                       placeholder="Confirm New Password"
                       value={formData.confirmPassword}
                       onChange={e => setFormData({ ...formData, confirmPassword: e.target.value })}
-                      className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-2 px-3 text-white"
+                      className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-2 px-3 text-white"
                     />
                   </div>
 
@@ -263,86 +263,86 @@ const AccountModal = ({ onClose, user, selectedTab = 'info' }) => {
                 <h3 className="text-sm font-medium text-white">Default Address</h3>
                 
                 <div className="space-y-1">
-                  <label className="text-xs text-gray-400">Full Name</label>
+                  <label className="text-xs text-chrome-secondary">Full Name</label>
                   <input
                     type="text"
                     placeholder="Full Name"
                     value={formData.address.name}
                     onChange={e => setFormData({ ...formData, address: { ...formData.address, name: e.target.value } })}
-                    className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-2 px-3 text-white"
+                    className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-2 px-3 text-white"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs text-gray-400">Street Address</label>
+                  <label className="text-xs text-chrome-secondary">Street Address</label>
                   <input
                     type="text"
                     placeholder="Street Address"
                     value={formData.address.street}
                     onChange={e => setFormData({ ...formData, address: { ...formData.address, street: e.target.value } })}
-                    className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-2 px-3 text-white"
+                    className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-2 px-3 text-white"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs text-gray-400">Apartment, suite, etc. (optional)</label>
+                  <label className="text-xs text-chrome-secondary">Apartment, suite, etc. (optional)</label>
                   <input
                     type="text"
                     placeholder="Apartment, suite, etc."
                     value={formData.address.street2}
                     onChange={e => setFormData({ ...formData, address: { ...formData.address, street2: e.target.value } })}
-                    className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-2 px-3 text-white"
+                    className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-2 px-3 text-white"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-xs text-gray-400">City</label>
+                    <label className="text-xs text-chrome-secondary">City</label>
                     <input
                       type="text"
                       placeholder="City"
                       value={formData.address.city}
                       onChange={e => setFormData({ ...formData, address: { ...formData.address, city: e.target.value } })}
-                      className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-2 px-3 text-white"
+                      className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-2 px-3 text-white"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-gray-400">State / Province</label>
+                    <label className="text-xs text-chrome-secondary">State / Province</label>
                     <input
                       type="text"
                       placeholder="State"
                       value={formData.address.state}
                       onChange={e => setFormData({ ...formData, address: { ...formData.address, state: e.target.value } })}
-                      className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-2 px-3 text-white"
+                      className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-2 px-3 text-white"
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-xs text-gray-400">ZIP / Postal Code</label>
+                    <label className="text-xs text-chrome-secondary">ZIP / Postal Code</label>
                     <input
                       type="text"
                       placeholder="ZIP"
                       value={formData.address.zip}
                       onChange={e => setFormData({ ...formData, address: { ...formData.address, zip: e.target.value } })}
-                      className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-2 px-3 text-white"
+                      className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-2 px-3 text-white"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-gray-400">Country</label>
+                    <label className="text-xs text-chrome-secondary">Country</label>
                     <input
                       type="text"
                       placeholder="Country"
                       value={formData.address.country}
                       onChange={e => setFormData({ ...formData, address: { ...formData.address, country: e.target.value } })}
-                      className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-2 px-3 text-white"
+                      className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-2 px-3 text-white"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs text-gray-400 flex items-center gap-1">
+                  <label className="text-xs text-chrome-secondary flex items-center gap-1">
                     <Phone size={14} />
                     Phone Number
                   </label>
@@ -351,7 +351,7 @@ const AccountModal = ({ onClose, user, selectedTab = 'info' }) => {
                     placeholder="Phone"
                     value={formData.address.phone}
                     onChange={e => setFormData({ ...formData, address: { ...formData.address, phone: e.target.value } })}
-                    className="w-full bg-gray-800/50 border border-gray-700 rounded-xl py-2 px-3 text-white"
+                    className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-2 px-3 text-white"
                   />
                 </div>
 
@@ -367,7 +367,7 @@ const AccountModal = ({ onClose, user, selectedTab = 'info' }) => {
               {isLoading ? (
                 <div className="flex justify-center py-4"><Loader2 className="animate-spin" size={24} /></div>
               ) : orders.length === 0 ? (
-                <div className="text-gray-400 text-center py-4">No orders yet</div>
+                <div className="text-chrome-secondary text-center py-4">No orders yet</div>
               ) : (
                 <div className="space-y-4">
                   {orders.map(order => (
@@ -384,10 +384,10 @@ const AccountModal = ({ onClose, user, selectedTab = 'info' }) => {
                           {order.status.toUpperCase()}
                         </span>
                       </div>
-                      <div className="text-sm text-gray-400">Date: {new Date(order['created-at']).toLocaleDateString()}</div>
-                      <div className="text-sm text-gray-400">Total: ${Number(order.quote?.total || 0).toFixed(2)}</div>
+                      <div className="text-sm text-chrome-secondary">Date: {new Date(order['created-at']).toLocaleDateString()}</div>
+                      <div className="text-sm text-chrome-secondary">Total: ${Number(order.quote?.total || 0).toFixed(2)}</div>
                       {order.shipping && order.shipping['tracking-number'] && (
-                        <div className="text-sm text-gray-400">
+                        <div className="text-sm text-chrome-secondary">
                           Tracking: <a href={order.shipping['tracking-url']} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
                             {order.shipping['tracking-number']}
                           </a>
@@ -395,7 +395,7 @@ const AccountModal = ({ onClose, user, selectedTab = 'info' }) => {
                       )}
                       <div className="space-y-1" data-order-lines="">
                         {displayOrderLines(order).map((line, index) => (
-                          <div key={line.lineId || `line-${index}`} className="text-sm text-gray-400" data-order-line="">
+                          <div key={line.lineId || `line-${index}`} className="text-sm text-chrome-secondary" data-order-line="">
                             <span data-order-line-name="">{line.partName}</span>
                             {' · '}
                             {line.process || '—'} | {line.material || '—'}

@@ -48,7 +48,8 @@ one shell you must change the other.
 - **Desktop drawer** (`data-script-drawer-side="right"`): under the feature ribbon (`top: 8rem`), inset so the left rail stays clear, drag the left edge to resize, Escape or Back closes it.
 - **Phone sheet** (`data-script-sheet`, 390px): full-screen over the home pill. Back is an ArrowLeft icon only (`data-script-editor-close`, `aria-label="Back to parts"`, 44×44) and returns to Parts with the same close-save. A stored or linked Script stage opens Parts.
 - **CAD corner.** There is no `data-cad-io-tray`. Upload and Download are on the Parts ribbon. Order is the part-row cart button (`data-part-order`). Run, Select all, Undo, and Redo stay in the editor.
-- **Puzzle easter egg** (`data-puzzle-unlock`, 44×44, viewport top-left): five taps in three seconds while `useAuthState().signedIn` (grey reauth counts) call `handleStartGame` and show `data-puzzle-unlock-toast` ("Puzzle unlocked"). The taps are not stored. Signed-out and pending sessions have no target and no toast. Nothing covers that corner.
+- **Puzzle easter egg** (`data-puzzle-unlock`, 44×44, viewport top-left): five taps in three seconds while `useAuthState().signedIn` (grey reauth counts) call `handleStartGame` and show `data-puzzle-unlock-toast` ("Puzzle unlocked"). The taps are not stored. Signed-out and pending sessions have no target and no toast. Nothing covers that corner. On a phone the wordmark sits to the right of it (`left-12`, `pointer-events-none`).
+- **Identity.** The parts ribbon and the script ribbon show the outlined SurfCAD wordmark at 16px (`data-brand-wordmark`). CAD is Ink (`#16171D`) on a Paper chip, not orange: the header is under 24px. Orange (`#FF5A1F`) is only the splash word "CAD", at 40px, on the Paper loading gate (`data-app-loading`) with the ink-tile mark and the tagline "Don't do CAD. SurfCAD." in Grey (`#6B6E78`). The phone CAD view shows the same 16px wordmark beside the puzzle target. `golden:brand-identity` checks 390 and 1280.
 
 **The seam between the two panes is draggable** in both shells
 (`SplitDivider.jsx`, pointer-capture based): left/right on desktop
@@ -485,8 +486,9 @@ Mobile specifics:
   C.4: `buildCoherentEdges` traces tagged vs untagged sharp pools separately so
   post-fillet rounded rails (untagged open arcs) stay pickable for Tangent-on.
   Overflow scrolls inside (`data-rail-pair="left"|"right"`).
-- **Ribbon / top chrome bg (C.1):** editor mid-strip is `bg-gray-900`
-  (`data-ribbon-bg="editor"`), matching the code editor shell.
+- **Ribbon / top chrome bg (C.1):** editor mid-strip is `bg-chrome-surface`
+  (`data-ribbon-bg="editor"`), the gray-900 token `#111827`, matching the code
+  editor shell.
 - **Default view snaps (Slice Mobile B.1):** `VIEW_SNAP_MARGIN = 1.35` (was
   implicit 1.15) for top / right / front / iso (and other `VIEW_PRESETS`).
   Zoom-to-Fit (`data-zoom-to-fit`) keeps `fitView` margin 1.15 and frames the
@@ -801,7 +803,7 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
   adds the frosting) and `surface-scrim` (modal backdrops). They share one
   `--surface-blur` token, and there is an `@supports not (backdrop-filter)`
   fallback that goes more opaque so text stays legible. Never put a flat
-  `bg-gray-900` / `bg-[#1e1e1e]` slab over the viewport. The one exception is
+  `bg-chrome-surface` (gray-900) / `bg-[#1e1e1e]` slab over the viewport. The one exception is
   native `<select>` / `<option>`: the OS renders the option list and a
   translucent one is unreadable.
 - **Cross-section buttons name their action**: the collapsed rail opens the

@@ -99,7 +99,7 @@ export default function GitCallback({ onComplete } = {}) {
             GitHub connect failed: {error}
           </p>
           {sameOriginHint && (
-            <p data-git-callback-origin-hint="" className="max-w-md text-center text-sm text-gray-400">
+            <p data-git-callback-origin-hint="" className="max-w-md text-center text-sm text-chrome-secondary">
               Open Connect and finish authorization on the same origin
               (same host and port) that you used to start — for example
               {' '}

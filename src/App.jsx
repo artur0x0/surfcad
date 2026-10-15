@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import CodeEditor from './components/CodeEditor';
 import Viewport from './components/Viewport';
+import { BrandMark, BrandWordmark } from './components/brand/BrandWordmark';
 import PromptInput from './components/PromptInput';
 import SplitDivider from './components/SplitDivider';
 import ScriptEditorDrawer from './components/ScriptEditorDrawer';
@@ -7460,11 +7461,20 @@ const App = () => {
   // Show loading state while Manifold initializes
   if (!manifoldReady || editorInitialScript === null) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-900 text-white" data-app-loading="">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
-          <p>Loading...</p>
-          <p className="mt-2 text-xs text-gray-500">
+      <div
+        className="flex h-screen items-center justify-center"
+        style={{ background: '#FAFAF9' }}
+        data-app-loading=""
+      >
+        <div className="flex flex-col items-center px-6 text-center">
+          <BrandMark size={72} />
+          <div className="mt-4">
+            <BrandWordmark tone="splash" size={40} />
+          </div>
+          <p className="mt-3 text-sm" style={{ color: '#6B6E78' }} data-brand-tagline="">
+            Don't do CAD. SurfCAD.
+          </p>
+          <p className="mt-6 text-xs" style={{ color: '#6B6E78' }} data-app-loading-status="">
             {!manifoldReady ? 'Starting CAD engine…' : 'Restoring document…'}
           </p>
         </div>
@@ -7909,6 +7919,7 @@ const App = () => {
               canRedo={canRedo()}
               currentFilename={currentFilename}
               showCadTitle={!!assemblyDoc}
+              brandHeader={isMobile || !assemblyDoc}
               assemblyName={assemblyLabel}
               onRenameFile={handleRenameFile}
               onRenameAssembly={handleRenameAssembly}
@@ -8035,7 +8046,7 @@ const App = () => {
       <CartChromeProvider value={cartChrome}>
         <div
           ref={splitShellRef}
-          className={`relative flex flex-col bg-gray-900 overflow-hidden ${keyboardOpen ? '' : 'h-dvh'}`}
+          className={`relative flex flex-col bg-chrome-surface overflow-hidden ${keyboardOpen ? '' : 'h-dvh'}`}
           style={mobileShellStyle}
           data-mobile-stage={useStages ? mobileStage : undefined}
         >
@@ -8330,7 +8341,7 @@ const App = () => {
 
   return (
     <CartChromeProvider value={cartChrome}>
-      <div className="flex h-dvh bg-gray-900">
+      <div className="flex h-dvh bg-chrome-surface">
         {appMode !== 'game' && (
           <div data-parts-feed-placement="desktop-left" className="h-full shrink-0">
             {partFeed}
@@ -8423,6 +8434,7 @@ const App = () => {
             canRedo={canRedo()}
             currentFilename={currentFilename}
             showCadTitle={!!assemblyDoc}
+            brandHeader={!assemblyDoc}
             assemblyName={assemblyLabel}
             onRenameFile={handleRenameFile}
             onRenameAssembly={handleRenameAssembly}

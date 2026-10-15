@@ -52,8 +52,8 @@ export const ACCENTS = {
     confirm: 'bg-amber-600 hover:bg-amber-500 text-white',
   },
   slate: {
-    panel: 'bg-gray-900/80 border-gray-500/60',
-    caption: 'text-gray-400',
+    panel: 'bg-chrome-surface/80 border-gray-500/60',
+    caption: 'text-chrome-secondary',
     muted: 'text-gray-300',
     field: 'border-gray-600/80 bg-gray-950/70',
     range: 'accent-cyan-500',
@@ -274,7 +274,7 @@ export const SelectField = ({ label, value, onChange, options = [], accent = 'sl
         className={`rounded border px-2 py-1 text-white ${POPUP_TEXT.value} ${a.field}`}
       >
         {options.map((o) => (
-          <option key={String(val(o))} value={String(val(o))} className="bg-gray-900">
+          <option key={String(val(o))} value={String(val(o))} className="bg-chrome-surface">
             {text(o)}
           </option>
         ))}

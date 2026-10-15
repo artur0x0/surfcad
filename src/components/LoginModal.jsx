@@ -13,11 +13,11 @@ const LoginModal = ({ onClose, onComplete, currentScript, currentFilename }) => 
 
   return (
     <ModalFit className="surface-scrim flex items-center justify-center z-50 px-4">
-      <div className="modal-fit-panel surface-glass rounded-2xl shadow-2xl max-w-lg w-full flex flex-col border border-gray-700/50">
-        <div className="flex items-center justify-between p-5 border-b border-gray-700/50">
+      <div className="modal-fit-panel surface-glass rounded-2xl shadow-2xl max-w-lg w-full flex flex-col border border-chrome-border/50">
+        <div className="flex items-center justify-between p-5 border-b border-chrome-border/50">
           <h2 className="text-lg font-semibold text-white">Login</h2>
-          <button onClick={onClose} className="p-1.5 hover:bg-gray-700/50 rounded-lg transition-colors">
-            <X size={20} className="text-gray-400" />
+          <button onClick={onClose} className="p-1.5 hover:bg-chrome-border/50 rounded-lg transition-colors">
+            <X size={20} className="text-chrome-secondary" />
           </button>
         </div>
 

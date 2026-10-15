@@ -6,24 +6,24 @@ import ModalFit from './ModalFit';
 const TermsModal = ({ onClose, onAccept }) => {
   return (
     <ModalFit cap="85vh" className="surface-scrim flex items-center justify-center z-[60] px-4">
-      <div className="modal-fit-panel surface-glass rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col border border-gray-700/50">
+      <div className="modal-fit-panel surface-glass rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col border border-chrome-border/50">
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-gray-700/50">
+        <div className="flex items-center justify-between p-5 border-b border-chrome-border/50">
           <div className="flex items-center gap-3">
-            <FileText size={20} className="text-gray-400" />
+            <FileText size={20} className="text-chrome-secondary" />
             <h2 className="text-lg font-semibold text-white">Terms of Sale</h2>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 hover:bg-gray-700/50 rounded-lg transition-colors"
+            className="p-1.5 hover:bg-chrome-border/50 rounded-lg transition-colors"
           >
-            <X size={20} className="text-gray-400" />
+            <X size={20} className="text-chrome-secondary" />
           </button>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6 text-sm text-gray-300">
-          <p className="text-gray-400 text-xs">
+          <p className="text-chrome-secondary text-xs">
             Last updated: {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
           </p>
 
@@ -57,7 +57,7 @@ const TermsModal = ({ onClose, onAccept }) => {
             <p>
               3D printed parts are subject to manufacturing tolerances that vary by process:
             </p>
-            <ul className="list-disc list-inside mt-2 space-y-1 text-gray-400">
+            <ul className="list-disc list-inside mt-2 space-y-1 text-chrome-secondary">
               <li>FDM: ±0.3mm or ±0.3%, whichever is greater</li>
               <li>SLA: ±0.15mm or ±0.2%, whichever is greater</li>
               <li>SLS/MJF: ±0.3mm or ±0.3%, whichever is greater</li>
@@ -72,7 +72,7 @@ const TermsModal = ({ onClose, onAccept }) => {
             <p>
               Parts manufactured by us are <strong className="text-white">NOT</strong> intended or approved for:
             </p>
-            <ul className="list-disc list-inside mt-2 space-y-1 text-gray-400">
+            <ul className="list-disc list-inside mt-2 space-y-1 text-chrome-secondary">
               <li>Use in any product or project subject to International Traffic in Arms Regulations (ITAR) rules</li>
               <li>Life-critical or life-support applications</li>
               <li>Medical devices or implants</li>
@@ -92,7 +92,7 @@ const TermsModal = ({ onClose, onAccept }) => {
             <p>
               By submitting a design for manufacturing, you represent and warrant that:
             </p>
-            <ul className="list-disc list-inside mt-2 space-y-1 text-gray-400">
+            <ul className="list-disc list-inside mt-2 space-y-1 text-chrome-secondary">
               <li>You own or have proper authorization to manufacture the design</li>
               <li>The design does not infringe any third-party intellectual property rights</li>
               <li>You will indemnify us against any IP infringement claims</li>
@@ -107,7 +107,7 @@ const TermsModal = ({ onClose, onAccept }) => {
             <p>
               <strong className="text-white">All sales are final. We do not offer refunds or accept returns</strong> except in the following circumstances:
             </p>
-            <ul className="list-disc list-inside mt-2 space-y-1 text-gray-400">
+            <ul className="list-disc list-inside mt-2 space-y-1 text-chrome-secondary">
               <li>Parts that do not match the submitted design specifications</li>
               <li>Parts with manufacturing defects that render them unusable</li>
               <li>Damaged or lost shipments (subject to carrier claim process)</li>
@@ -171,7 +171,7 @@ const TermsModal = ({ onClose, onAccept }) => {
         </div>
 
         {/* Footer */}
-        <div className="p-5 border-t border-gray-700/50 space-y-3">
+        <div className="p-5 border-t border-chrome-border/50 space-y-3">
           <button
             onClick={onAccept}
             className="w-full py-3 bg-gray-200 text-black rounded-xl font-medium hover:bg-white transition-colors"
@@ -180,7 +180,7 @@ const TermsModal = ({ onClose, onAccept }) => {
           </button>
           <button
             onClick={onClose}
-            className="w-full py-2 text-gray-400 text-sm hover:text-white transition-colors"
+            className="w-full py-2 text-chrome-secondary text-sm hover:text-white transition-colors"
           >
             Cancel
           </button>

@@ -103,7 +103,7 @@ export default function PartGroupBlock({
     <div
       data-part-group-actions=""
       role="menu"
-      className="z-50 min-w-[13.5rem] rounded-md border border-gray-600 bg-gray-900 py-1 shadow-lg"
+      className="z-50 min-w-[13.5rem] rounded-md border border-gray-600 bg-chrome-surface py-1 shadow-lg"
       style={menuPos ? { position: 'fixed', top: menuPos.top, left: menuPos.left } : { position: 'absolute', right: 8, top: '100%' }}
     >
       <GroupMenuItem action="rename" label="Rename" onAction={onAction} />
@@ -163,7 +163,7 @@ export default function PartGroupBlock({
           }
         }}
       >
-        <span data-part-group-chevron="" className="shrink-0 text-gray-400" aria-hidden="true">
+        <span data-part-group-chevron="" className="shrink-0 text-chrome-secondary" aria-hidden="true">
           {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </span>
         <GroupName
@@ -174,7 +174,7 @@ export default function PartGroupBlock({
         />
         <span
           data-part-group-count=""
-          className="shrink-0 text-[11px] tabular-nums text-gray-400"
+          className="shrink-0 text-[11px] tabular-nums text-chrome-secondary"
         >
           {count}
         </span>
@@ -185,7 +185,7 @@ export default function PartGroupBlock({
           aria-label="Group actions"
           aria-haspopup="menu"
           aria-expanded={menuOpen ? 'true' : 'false'}
-          className="ml-auto shrink-0 rounded-full p-1.5 text-gray-400 hover:bg-white/10 hover:text-gray-200"
+          className="ml-auto shrink-0 rounded-full p-1.5 text-chrome-secondary hover:bg-white/10 hover:text-gray-200"
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
@@ -221,7 +221,7 @@ function GroupMenuItem({ action, label, danger = false, onAction }) {
       role="menuitem"
       data-part-group-action={action}
       className={`block w-full px-3 py-1.5 text-left text-xs hover:bg-white/10 ${
-        danger ? 'text-red-300' : 'text-gray-100'
+        danger ? 'text-red-300' : 'text-chrome-text'
       }`}
       onClick={(event) => {
         event.stopPropagation();
@@ -267,7 +267,7 @@ function GroupName({ id, name, editing, onRename }) {
           if (event.key === 'Escape') { event.preventDefault(); onRename?.(id, name); }
           event.stopPropagation();
         }}
-        className="min-w-0 flex-1 truncate rounded border border-blue-400/80 bg-gray-900 px-1 text-base font-medium text-gray-100 outline-none"
+        className="min-w-0 flex-1 truncate rounded border border-blue-400/80 bg-chrome-surface px-1 text-base font-medium text-chrome-text outline-none"
         style={PARTS_TEXT_INPUT_STYLE}
         aria-label="Group name"
         data-part-group-name-input={id}
@@ -275,7 +275,7 @@ function GroupName({ id, name, editing, onRename }) {
     );
   }
   return (
-    <span data-part-group-name="" className="min-w-0 truncate text-sm font-medium text-gray-100" title={name}>
+    <span data-part-group-name="" className="min-w-0 truncate text-sm font-medium text-chrome-text" title={name}>
       {name}
     </span>
   );
