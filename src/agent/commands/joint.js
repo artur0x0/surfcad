@@ -23,6 +23,26 @@ const FACE_KEY_SCHEMA = {
   },
 };
 
+const JOINT_PARAM_PROPERTIES = Object.freeze({
+  type: { type: 'string' },
+  name: { type: 'string' },
+  value_mm: { type: 'number' },
+  value: { type: 'number' },
+  sense: { type: 'number' },
+  opposed: { type: 'boolean' },
+});
+
+const JOINT_PICK_ROW_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: true,
+  required: ['part_id', 'key'],
+  properties: {
+    part_id: { type: 'string' },
+    key: FACE_KEY_SCHEMA,
+    kind: { type: 'string', description: 'face | axis | edge when key is explicit' },
+  },
+});
+
 export const jointOpenCommand = Object.freeze({
   name: 'joint_open',
   uiEntry: 'data-joints-button',
@@ -40,14 +60,7 @@ export const jointSetParamsCommand = Object.freeze({
   schema: Object.freeze({
     type: 'object',
     additionalProperties: true,
-    properties: {
-      type: { type: 'string' },
-      name: { type: 'string' },
-      value_mm: { type: 'number' },
-      value: { type: 'number' },
-      sense: { type: 'number' },
-      opposed: { type: 'boolean' },
-    },
+    properties: JOINT_PARAM_PROPERTIES,
   }),
   example: { type: 'coincident' },
   checkArgs(args) {
@@ -70,17 +83,10 @@ export const jointPickCommand = Object.freeze({
     properties: {
       part_id: { type: 'string' },
       key: FACE_KEY_SCHEMA,
+      kind: { type: 'string' },
       picks: {
         type: 'array',
-        items: Object.freeze({
-          type: 'object',
-          additionalProperties: true,
-          required: ['part_id', 'key'],
-          properties: {
-            part_id: { type: 'string' },
-            key: FACE_KEY_SCHEMA,
-          },
-        }),
+        items: JOINT_PICK_ROW_SCHEMA,
       },
     },
   }),
@@ -130,5 +136,53 @@ export const jointCancelCommand = Object.freeze({
   immediate: true,
   run(ctx) {
     return hostCall(ctx, 'jointCancel');
+  },
+});
+
+export const jointSelectCommand = Object.freeze({
+  name: 'joint_select',
+  uiEntry: 'data-joint-chip',
+  schema: Object.freeze({
+    type: 'object',
+    additionalProperties: true,
+    required: ['joint_id'],
+    properties: {
+      joint_id: { type: 'string' },
+    },
+  }),
+  example: { joint_id: 'j1' },
+  checkArgs(args) {
+    if (args?.joint_id == null || args.joint_id === '') {
+      return { code: 'bad_args', message: 'joint_select needs joint_id' };
+    }
+    return null;
+  },
+  run(ctx, args) {
+    return hostCall(ctx, 'jointSelect', { joint_id: String(args.joint_id) });
+  },
+});
+
+export const jointEditCommand = Object.freeze({
+  name: 'joint_edit',
+  uiEntry: 'data-joint-chip',
+  schema: Object.freeze({
+    type: 'object',
+    additionalProperties: true,
+    properties: {
+      joint_id: { type: 'string' },
+      ...JOINT_PARAM_PROPERTIES,
+    },
+  }),
+  example: { joint_id: 'j1', name: 'Pin fit' },
+  checkArgs(args) {
+    const built = jointParamsFromArgs(args);
+    if (built.error) return built.error;
+    return null;
+  },
+  run(ctx, args) {
+    const built = jointParamsFromArgs(args);
+    if (built.error) return { error: built.error };
+    const jointId = args?.joint_id != null ? String(args.joint_id) : undefined;
+    return hostCall(ctx, 'jointEdit', { joint_id: jointId, patch: built.patch });
   },
 });
