@@ -894,6 +894,9 @@ function replaceNum(block, re, value) {
   return block.replace(global, (full, head) => `${head}${lit(value)}`);
 }
 
+// Not used for fillet or chamfer. Collapsing every edge declaration into
+// one flatMap deletes the extra makeSweepPath pairs, and a disconnected
+// selection then throws. Those edits run replaceEditedBlend instead.
 function rewriteEdges(block, ids) {
   const lines = block.split('\n');
   const decl = [];

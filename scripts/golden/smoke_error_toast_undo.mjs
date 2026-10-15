@@ -5,8 +5,9 @@
  *
  * Before: the scrap notice read "Fillet left zero-area faces. Undo restores
  * the solid." — it *told* the user to undo and then left them to go find the
- * button. Now it reads "Unable to generate clean fillet, please try smaller
- * size." and the toast itself carries the Undo.
+ * button. Now it reads "Unable to generate clean fillet, please try a different
+ * size." and the toast itself carries the Undo. A larger radius is sometimes
+ * the one that comes out clean.
  *
  * Toast payloads are `{ text, undo }`. `undo` defaults ON because almost every
  * toast in the viewport is a refusal; purely informational hints opt out with
@@ -40,8 +41,12 @@ console.log('error toasts — Undo button + fillet scrap copy');
 // ---- the copy ----
 check(
   'fillet scrap notice uses the new wording',
-  src.includes('Unable to generate clean fillet, please try smaller size.'),
+  src.includes('Unable to generate clean fillet, please try a different size.'),
   'new string not found',
+);
+check(
+  'fillet scrap notice does not demand a smaller size',
+  !src.includes('try smaller size') && !src.includes('try a smaller size'),
 );
 check(
   'old zero-area wording is gone',

@@ -4262,47 +4262,23 @@ const Viewport = forwardRef(({
   const acceptFillet = useCallback(() => {
     const state = filletModeRef.current;
     if (!state) return;
+    // Edit Confirm is the create Accept path. A separate rewrite collapsed
+    // disconnected corners into one makeSweepPath and the worker threw.
     const editing = featureEditRef.current;
-    if (editing && (editing.kind === 'fillet' || editing.kind === 'chamfer')) {
-      const edges = (selectedEdges && selectedEdges.length) ? selectedEdges : (state.lastEdges || []);
-      const chamfer = state.entry === 'chamferEdges';
-      if (edges.length) {
-        const gate = chamfer
-          ? validateChamferAccept(edges, state.params)
-          : validateFilletAccept(edges, state.params);
-        if (!gate.ok) {
-          showFilletToast(gate.message);
-          return;
-        }
+    const editingBlend = editing && (editing.kind === 'fillet' || editing.kind === 'chamfer')
+      ? editing
+      : null;
+    const closeBlendEdit = () => {
+      if (!editingBlend) return;
+      const live = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
+      const restore = editingBlend.previewed && live === editingBlend.script ? live : '';
+      featureEditRef.current = null;
+      setHelperEdit(null);
+      setFeatureEditBanner('');
+      if (restore && assemblyRunLockRef?.current !== true) {
+        executeScriptRef.current?.(restore, { editPreview: true });
       }
-      const selectedIds = [...new Set(edges.map((edge) => edge.boundaryId).filter((id) => Number.isFinite(id)))];
-      const missingIds = editing.clearMissing
-        ? []
-        : (editing.missingEdges || []).map((edge) => edge.id).filter((id) => Number.isFinite(id));
-      const storedIds = (editing.session?.edges || []).map((edge) => edge.id).filter((id) => Number.isFinite(id));
-      const nextIds = [...selectedIds, ...missingIds].sort((a, b) => a - b);
-      const sameEdges = !editing.clearMissing
-        && JSON.stringify(nextIds) === JSON.stringify(storedIds.slice().sort((a, b) => a - b));
-      const fields = chamfer
-        ? { ...(editing.session?.fields || {}), chamfer: Number(state.params.chamfer) }
-        : {
-          ...(editing.session?.fields || {}),
-          radius: Number(state.params.radius),
-        };
-      const ok = commitFeatureEditRef.current?.({
-        fields,
-        edgeIds: sameEdges ? undefined : nextIds,
-        clearMissing: !!editing.clearMissing,
-      });
-      if (ok) {
-        edgeRematchToastSuppressRef.current = true;
-        clearEdgeHover();
-        clearEdgeHighlight();
-        setSelectedEdges([]);
-        exitFilletMode();
-      }
-      return;
-    }
+    };
     const edges = (selectedEdges && selectedEdges.length)
       ? selectedEdges
       : (state.lastEdges || []);
@@ -4361,12 +4337,14 @@ const Viewport = forwardRef(({
         params: own ? own.gate.normalized : state.params,
         commitMode: hasChamferModeBlock(buf) ? 'append' : 'replace',
         otherParts,
+        editFeature: editingBlend?.feature || null,
       });
       if (ok) {
         edgeRematchToastSuppressRef.current = true;
         clearEdgeHover();
         clearEdgeHighlight();
         setSelectedEdges([]);
+        closeBlendEdit();
         exitFilletMode();
       }
       return;
@@ -4391,6 +4369,7 @@ const Viewport = forwardRef(({
       geometry: own ? resultRef.current?.geometry : null,
       commitMode: hasFilletModeBlock(buf) ? 'append' : 'replace',
       otherParts,
+      editFeature: editingBlend?.feature || null,
     });
     if (!ok) filletQualityWatchRef.current = null;
     if (ok) {
@@ -4399,6 +4378,7 @@ const Viewport = forwardRef(({
       clearEdgeHover();
       clearEdgeHighlight();
       setSelectedEdges([]);
+      closeBlendEdit();
       exitFilletMode();
     }
   }, [onCommitFillet, selectedEdges, getHelperBuffer, exitFilletMode, clearEdgeHover, clearEdgeHighlight]);
@@ -11347,7 +11327,7 @@ const Viewport = forwardRef(({
         // large NEW scrap delta (not a modest re-tessellation bump).
         const scrapy = introduced > Math.max(300, 0.1 * Math.max(preDeg, 1));
         setFilletScrapNotice(scrapy
-          ? 'Unable to generate clean fillet, please try smaller size.'
+          ? 'Unable to generate clean fillet, please try a different size.'
           : null);
       } else {
         setFilletScrapNotice(null);

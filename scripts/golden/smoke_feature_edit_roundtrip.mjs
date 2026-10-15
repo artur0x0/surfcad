@@ -15,7 +15,13 @@
 import { register } from 'node:module';
 import { BufferGeometry, BufferAttribute } from 'three';
 import { composeHelperInsert } from '../../src/utils/helperPaletteSnippets.js';
-import { composeFilletCommit, composeChamferCommit } from '../../src/utils/filletMode.js';
+import {
+  composeFilletCommit,
+  composeChamferCommit,
+  replaceEditedBlend,
+  countMakeSweepPath,
+  countFilletAlongPath,
+} from '../../src/utils/filletMode.js';
 import {
   composeContourCommit,
   defaultLoftProfiles,
@@ -353,19 +359,107 @@ if (fillet.ok) {
     const ids = parseStoredEdges(blockText(two.buffer, f2)).map((e) => e.id).filter((id) => id != null);
     check('two stored edges resolve', open2.missingEdges.length === 0 && open2.resolvedEdges.length >= 2, `ids=${ids} resolved=${open2.resolvedEdges.length}`);
     const dropped = ids.slice(0, 1);
-    const removed = confirmFeatureEdit(two.buffer, f2, { fields: open2.fields, edgeIds: dropped });
-    const removedFeature = removed.ok ? parseFeatureMarkers(removed.buffer).find((item) => item.kind === 'fillet') : null;
-    const removedIds = removedFeature ? parseStoredEdges(blockText(removed.buffer, removedFeature)).map((e) => e.id).filter((id) => id != null) : [];
-    check('removing an edge updates in place', removed.ok && parseFeatureMarkers(removed.buffer).length === parseFeatureMarkers(two.buffer).length && JSON.stringify(removedIds) === JSON.stringify(dropped), removed.message || `ids=${removedIds}`);
-    const added = [...dropped, ids[1]];
-    const putBack = confirmFeatureEdit(removed.buffer, removedFeature, {
-      fields: open2.fields,
-      edgeIds: added,
+    const oneEdge = vertical.filter((edge) => edge.boundaryId === dropped[0]);
+    const blendOpts = { filletClass: 'easy', geometry: g };
+    const removed = replaceEditedBlend(two.buffer, f2, {
+      edges: oneEdge,
+      params: { radius: 2, strategy: 'sweep' },
+      ...blendOpts,
     });
-    const putFeature = putBack.ok ? parseFeatureMarkers(putBack.buffer).find((item) => item.kind === 'fillet') : null;
-    const putIds = putFeature ? parseStoredEdges(blockText(putBack.buffer, putFeature)).map((e) => e.id).filter((id) => id != null) : [];
-    check('adding an edge updates in place', putBack.ok && parseFeatureMarkers(putBack.buffer).length === parseFeatureMarkers(two.buffer).length && JSON.stringify(putIds.sort()) === JSON.stringify(added.slice().sort()), putBack.message || `ids=${putIds}`);
+    const removedRun = removed.ok ? await exec(removed.buffer) : null;
+    const removedFeature = removed.ok ? parseFeatureMarkers(removed.buffer).find((item) => item.kind === 'fillet') : null;
+    check(
+      'removing an edge stays one runnable fillet',
+      removed.ok
+        && removed.changed === true
+        && !removedRun?.featureSkip
+        && parseFeatureMarkers(removed.buffer).length === parseFeatureMarkers(two.buffer).length
+        && countMakeSweepPath(removed.buffer) === 1
+        && countFilletAlongPath(removed.buffer) === 1,
+      removed.message || removedRun?.featureSkip?.message || '',
+    );
+    const putBack = replaceEditedBlend(removed.buffer, removedFeature, {
+      edges: vertical.slice(0, 2),
+      params: { radius: 2, strategy: 'sweep' },
+      ...blendOpts,
+    });
+    const putRun = putBack.ok ? await exec(putBack.buffer) : null;
+    const freshTwo = composeFilletCommit(starter, {
+      edges: vertical.slice(0, 2),
+      params: { radius: 2, strategy: 'sweep' },
+      ...blendOpts,
+    });
+    check(
+      'putting the edge back matches a fresh create',
+      putBack.ok && freshTwo.ok && !putRun?.featureSkip && putBack.buffer === freshTwo.buffer,
+      putBack.message || putRun?.featureSkip?.message || '',
+    );
+
+    const sameRadius = replaceEditedBlend(two.buffer, f2, {
+      edges: vertical.slice(0, 2),
+      params: { radius: 2, strategy: 'sweep' },
+      ...blendOpts,
+    });
+    check(
+      'unchanged disconnected fillet edit writes nothing',
+      sameRadius.ok && sameRadius.changed === false && sameRadius.run === false && sameRadius.buffer === two.buffer,
+      sameRadius.message || '',
+    );
+
+    const createdRun = await exec(two.buffer);
+    const radiusEdit = replaceEditedBlend(two.buffer, f2, {
+      edges: vertical.slice(0, 2),
+      params: { radius: 4, strategy: 'sweep' },
+      ...blendOpts,
+    });
+    const freshRadius = composeFilletCommit(starter, {
+      edges: vertical.slice(0, 2),
+      params: { radius: 4, strategy: 'sweep' },
+      ...blendOpts,
+    });
+    const radiusRun = radiusEdit.ok ? await exec(radiusEdit.buffer) : null;
+    const freshRadiusRun = freshRadius.ok ? await exec(freshRadius.buffer) : null;
+    check(
+      'disconnected fillet places without error',
+      !createdRun?.featureSkip && countMakeSweepPath(two.buffer) === 2 && countFilletAlongPath(two.buffer) === 2,
+      createdRun?.featureSkip?.message || '',
+    );
+    check(
+      'editing a disconnected fillet matches a fresh create at the new radius',
+      radiusEdit.ok && freshRadius.ok
+        && radiusEdit.changed === true
+        && !radiusRun?.featureSkip
+        && !freshRadiusRun?.featureSkip
+        && countMakeSweepPath(radiusEdit.buffer) === 2
+        && countFilletAlongPath(radiusEdit.buffer) === 2
+        && radiusEdit.buffer === freshRadius.buffer
+        && Math.abs(Number(radiusRun.volume) - Number(freshRadiusRun.volume)) < 1e-4
+        && Math.abs(Number(radiusRun.volume) - Number(createdRun.volume)) > 1,
+      radiusEdit.message || radiusRun?.featureSkip?.message || freshRadiusRun?.featureSkip?.message || '',
+    );
   }
+
+  const edited = replaceEditedBlend(fillet.buffer, feature, {
+    edges: one,
+    params: { radius: 4, strategy: 'sweep' },
+    filletClass: 'easy',
+    geometry: g,
+  });
+  const fresh = composeFilletCommit(starter, {
+    edges: one,
+    params: { radius: 4, strategy: 'sweep' },
+    filletClass: 'easy',
+    geometry: g,
+  });
+  const editedRun = edited.ok ? await exec(edited.buffer) : null;
+  const freshRun = fresh.ok ? await exec(fresh.buffer) : null;
+  check(
+    'editing one edge matches a fresh create at the new radius',
+    edited.ok && fresh.ok && !editedRun?.featureSkip && !freshRun?.featureSkip
+      && edited.buffer === fresh.buffer
+      && Math.abs(Number(editedRun.volume) - Number(freshRun.volume)) < 1e-4,
+    edited.message || editedRun?.featureSkip?.message || '',
+  );
 
   const gone = liveEdges.filter((e) => e.boundaryId !== storedIds[0]);
   const missed = resolveStoredEdges(parseStoredEdges(blockText(fillet.buffer, feature)), gone);
@@ -387,6 +481,46 @@ if (fillet.ok) {
 const chamfer = composeChamferCommit(starter, { edges: one, params: { chamfer: 1.5 } });
 check('chamfer composer', chamfer.ok, chamfer.message);
 if (chamfer.ok) roundTrip('chamfer', chamfer.buffer, 'chamfer', { chamfer: 1.5 });
+
+const chamferTwo = composeChamferCommit(starter, {
+  edges: vertical.slice(0, 2),
+  params: { chamfer: 1.5 },
+});
+check('disconnected chamfer places', chamferTwo.ok && countMakeSweepPath(chamferTwo.buffer) === 2, chamferTwo.message || '');
+if (chamferTwo.ok) {
+  const chamferFeature = parseFeatureMarkers(chamferTwo.buffer).find((item) => item.kind === 'chamfer');
+  const chamferSame = replaceEditedBlend(chamferTwo.buffer, chamferFeature, {
+    chamfer: true,
+    edges: vertical.slice(0, 2),
+    params: { chamfer: 1.5 },
+  });
+  check(
+    'unchanged disconnected chamfer edit writes nothing',
+    chamferSame.ok && chamferSame.changed === false && chamferSame.buffer === chamferTwo.buffer,
+    chamferSame.message || '',
+  );
+  const chamferEdit = replaceEditedBlend(chamferTwo.buffer, chamferFeature, {
+    chamfer: true,
+    edges: vertical.slice(0, 2),
+    params: { chamfer: 2.5 },
+  });
+  const chamferFresh = composeChamferCommit(starter, {
+    edges: vertical.slice(0, 2),
+    params: { chamfer: 2.5 },
+  });
+  const chamferRun = chamferEdit.ok ? await exec(chamferEdit.buffer) : null;
+  const chamferFreshRun = chamferFresh.ok ? await exec(chamferFresh.buffer) : null;
+  check(
+    'editing a disconnected chamfer matches a fresh create at the new size',
+    chamferEdit.ok && chamferFresh.ok
+      && !chamferRun?.featureSkip
+      && !chamferFreshRun?.featureSkip
+      && countFilletAlongPath(chamferEdit.buffer) === 2
+      && chamferEdit.buffer === chamferFresh.buffer
+      && Math.abs(Number(chamferRun.volume) - Number(chamferFreshRun.volume)) < 1e-4,
+    chamferEdit.message || chamferRun?.featureSkip?.message || '',
+  );
+}
 
 console.log('feature edit — coverage');
 {
@@ -411,6 +545,12 @@ console.log('feature edit — coverage');
     && /editPreviewBlocked\(\)/.test(view)
     && !/assemblyOpenLockRef\.current\s*=/.test(view));
   check('fillet chip shows missing edges', /data-feature-edit-missing/.test(chip) && /data-feature-edit-clear-missing/.test(chip));
+  const accept = view.slice(view.indexOf('const acceptFillet'), view.indexOf('const exitShellMode'));
+  check(
+    'fillet edit uses the create commit',
+    accept.includes('editFeature:') && !accept.includes('commitFeatureEditRef'),
+  );
+  check('fillet edit splices the create composer', /replaceEditedBlend/.test(app));
   check('viewport resolves edit edges on the prefix graph', /editPreviewScript/.test(view) && /resolveStoredEdges|openFeatureEdit/.test(view));
   const parsed = parseFeatureEdit('fillet', '// --- fillet-mode begin ---\nconst selEdges = edgesBetween(part, 2, 5); // boundary edge 9\npart = filletAlongPath(part, path, 2);\n// --- fillet-mode end ---');
   check('edgesBetween parses the boundary id', parsed.ok && parsed.edges[0]?.id === 9 && parsed.fields.radius === 2);
