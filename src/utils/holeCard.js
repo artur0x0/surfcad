@@ -137,6 +137,18 @@ function withConstruction(contour) {
 export function holeSketchContour(state) {
   const params = state?.params || {};
   const contour = params.contour;
+  if (contour && contour.centers === true && Array.isArray(contour.points)) {
+    const uv = contour.points
+      .map((point) => (Array.isArray(point?.at) ? [Number(point.at[0]), Number(point.at[1])] : null))
+      .filter((row) => row && Number.isFinite(row[0]) && Number.isFinite(row[1]));
+    if (uv.length > 0) {
+      try {
+        return withConstruction(contourFromPolyline(uv));
+      } catch {
+        return null;
+      }
+    }
+  }
   if (contour && Array.isArray(contour.points)) return withConstruction(contour);
   const raw = params.points;
   if (Array.isArray(raw) && raw.length > 0) {

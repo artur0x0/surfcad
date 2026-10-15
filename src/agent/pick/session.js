@@ -36,11 +36,26 @@ function faceKeyId(key) {
   return parts.join('|');
 }
 
+function sketchKeyId(kind, key) {
+  const k = String(kind || '').toLowerCase();
+  if (typeof key === 'string' && key) return `${k}:${key}`;
+  if (key && typeof key === 'object' && key.id) return `${k}:${key.id}`;
+  if (k === 'point' && Array.isArray(key?.at) && key.at.length >= 2) {
+    const u = round(key.at[0], 1e-4);
+    const v = round(key.at[1], 1e-4);
+    if (Number.isFinite(u) && Number.isFinite(v)) return `uv:${u},${v}`;
+  }
+  return null;
+}
+
 /** Stable id for an agent key, used to dedupe and to match `remove`. */
 export function pickKeyId(kind, key) {
   if (kind === 'face') {
     const id = faceKeyId(key);
     return id ? `f:${id}` : null;
+  }
+  if (kind === 'point' || kind === 'line' || kind === 'arc' || kind === 'ref') {
+    return sketchKeyId(kind, key);
   }
   if (typeof key === 'string' && key) return `e:${key}`;
   if (key && typeof key === 'object' && !Array.isArray(key)) {

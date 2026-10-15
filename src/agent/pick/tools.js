@@ -47,7 +47,9 @@ export const PICK_TOOLS = Object.freeze({
 
 export const PICK_TOOL_IDS = Object.freeze(Object.keys(PICK_TOOLS));
 
-export const PICK_KINDS = Object.freeze(['face', 'edge']);
+export const PICK_KINDS = Object.freeze(['face', 'edge', 'point', 'line', 'arc', 'ref']);
+
+export const SKETCH_PICK_KINDS = Object.freeze(['point', 'line', 'arc', 'ref']);
 
 /** `pick_begin` uiEntry: the mode chips of every card it can open. */
 export const PICK_TOOL_UI_ENTRIES = Object.freeze(PICK_TOOL_IDS.map((id) => PICK_TOOLS[id].uiEntry));

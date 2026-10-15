@@ -185,7 +185,7 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `slot_set_params` | extrude / revolve / sweep / loft station fields | Updates card params (e.g. `{ "distance": 10 }` on Extrude). |
 | `slot_commit` | `{}` | Confirms the slot card and writes the solid feature block — one undo step. Uses the bridge `mutate` path (write + run + `status` refresh), same as `confirm_feature`. Result includes `{ ok, written, status, errors }`. |
 | `slot_cancel` | `{}` | Closes the slot card without writing. |
-| `pick_begin` | `{ "kind"?: "face"\|"edge", "tool"?: "filletEdges"\|"chamferEdges"\|"shell"\|"addDraft"\|"moveFace"\|"deleteFace", "keep"?, "min"?, "max"?, "timeout_ms"?, "params"?, "replace"? }` | Opens a pick session (see Pick sessions). Result is the session summary `{ session, target, tool, kind, count, seeded, picks, entries, min, max, opened, editing, expiresInMs }`. |
+| `pick_begin` | `{ "kind"?: "face"\|"edge"\|"point"\|"line"\|"arc"\|"ref", "tool"?: "filletEdges"\|"chamferEdges"\|"shell"\|"addDraft"\|"moveFace"\|"deleteFace", "keep"?, "min"?, "max"?, "timeout_ms"?, "params"?, "replace"? }` | Opens a pick session (see Pick sessions). Result is the session summary `{ session, target, tool, kind, count, seeded, picks, entries, min, max, opened, editing, expiresInMs }`. |
 | `pick_next` | `{ "keys": […] }` or `{ "key": … }`, `"remove"?: boolean` | Picks those keys on the session's consumer, the same as tapping them. A key already picked is skipped (`skipped`), not toggled off. `remove: true` taps them off. Resolves after the viewport shows the picks. |
 | `pick_undo` | `{}` | Drops the last agent pick (the card's Undo). |
 | `pick_clear` | `{}` | Drops every pick, seeded ones included (the card's Clear). |
@@ -194,6 +194,16 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `pick_state` | `{}` | `{ session, target, kind, viewport, editing }` — the live session summary or null, and what a tap would feed right now. Immediate. |
 | `pick_faces` | `pick_begin` fields plus `keys` / `key` and `accept?` | One call: `pick_begin` (kind `face`) → `pick_next` → `pick_done`. Any failure after begin cancels the session. |
 | `pick_edges` | same, kind `edge` | Same as `pick_faces` for edges. |
+| `pick_points` | `pick_begin` fields plus `kind` (`point` \| `line` \| `arc` \| `ref`) and `keys` | One call on an open contour gesture or hole-centres sketch. UV `{ at: [u, v] }` keys add hole centres. |
+| `hole_open` | `{}` | Opens the Hole card. |
+| `hole_set_params` | Hole card fields (`size`, `fit`, `dia`, `through`, `depth`, ends, …) | Patches the open Hole card. |
+| `hole_begin_centres` | `{}` | Next on the card: opens the centres sketch (plane card first). |
+| `hole_commit` | `{}` | Accept on the centres sketch — one undo when the script changes. |
+| `hole_cancel` | `{}` | Closes the Hole card or cancels the centres sketch without writing. |
+| `plane_set` | `{ preset?, offset?, angles? }` | Edits the open plane card (offset along the normal). |
+| `workplane_select` | `{ plane_id }` | Selects a saved construction plane on the plane card. |
+| `set_active_workplane` | `{ plane_id }` or `{ clear: true }` | Sets or clears the construction-plane overlay highlight. |
+| `list_sketch_entities` | `{}` | `{ points, lines, arcs, refs }` in the open sketch (immediate). |
 
 ### Pick sessions
 
@@ -204,7 +214,7 @@ A pick session feeds one consumer, the same one a tap in the viewport would feed
 
 Keys are the stable ids from `list_faces` (`{ at, n, area, src?, ord? }`) and `list_feature_edges` (`"eN"`; packed mesh keys and `{ faceKeyA, faceKeyB }` pairs also work). A grouped `eN` expands to the coherent edge chain a UI tap stores, and counts as one pick toward `min` / `max`. Seeded entries count one each. Every change republishes the whole list, so the card or selection ends exactly as that sequence of taps would leave it.
 
-One session at a time. A session idle for `timeout_ms` (default 120000, 1000–1800000) expires: the next call that needs it gets `pick_timeout` once, and the picks stay in the viewport. Cut, Boolean, and Move pick bodies and planes, not keyed faces or edges, so they refuse with `picker_busy`; so do the sketch, slot cards (use `slot_assign_contour`), the hole card, paint, measure, joints, and sheet metal.
+One session at a time. A session idle for `timeout_ms` (default 120000, 1000–1800000) expires: the next call that needs it gets `pick_timeout` once, and the picks stay in the viewport. Cut, Boolean, and Move pick bodies and planes, not keyed faces or edges, so they refuse with `picker_busy`; so do the sketch (except an open contour gesture or hole-centres target for sketch kinds), slot cards (use `slot_assign_contour`), the Hole card before centres begin, paint, measure, joints, and sheet metal.
 
 `pick_done { accept: true }` runs the card's Accept unchanged: its gates, its compose, and its edit path. If the card stays open, the result is `accept_refused` with the card's toast as the message, and the session stays open so the agent can fix the picks. On an edit card this is the way to commit changed edge or face picks; `confirm_feature` there writes only the fields.
 
