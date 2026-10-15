@@ -169,6 +169,16 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `camera_set` | `{ "view"?: "iso"\|"front"\|"right"\|"top"\|…, "position"?, "target"?, "fov"? }` | `{ "ok": true }`. Named views use the same presets as `data-view-snap-*`. |
 | `camera_fit` | `{}` | `{ "ok": true }` — Zoom to Fit (`data-zoom-to-fit`). |
 | `zoom_to_selection` | `{}` | `{ "ok": true }` — frames the current face or edge selection. |
+| `sketch_begin` | `{ "entry"?: "crossSection"\|"workplane", "offset"?, "accept_plane"?: boolean, "plane"?: "x"\|"y"\|"z"\|"face" }` | Opens contour sketch mode on the selected planar face (or preset plane). Default `accept_plane: true` leaves the plane card and arms Cursor. |
+| `sketch_accept_plane` | `{ "offset"?: number }` | Accepts the plane card and starts drawing (`data-contour-confirm`). |
+| `sketch_add` | `{ "tool": "circle"\|"rectangle"\|"polygon"\|"polyline"\|"cursor", …params }` | Switches the contour rail tool and sets profile params (same defaults as the UI). |
+| `sketch_commit` | `{}` | Writes the sketch (`makeCrossSection` / workplane) via `commitContourPayload` — one undo step when the buffer changes. |
+| `sketch_cancel` | `{}` | Exits contour mode without writing (`data-contour-exit`). |
+| `slot_open` | `{ "kind": "makeExtrude"\|"makeRevolve"\|"makeLoft"\|"makeSweep" }` | Opens the feature slot card (same as tapping Extrude / Revolve / Loft / Sweep on the helper rail). |
+| `slot_assign_contour` | `{ "contour_id": string, "role"?: "profile"\|"path"\|"station", "index"?: number }` | Fills a slot from a saved `@contour` id. |
+| `slot_set_params` | extrude / revolve / sweep / loft station fields | Updates card params (e.g. `{ "distance": 10 }` on Extrude). |
+| `slot_commit` | `{}` | Confirms the slot card and writes the solid feature block — one undo step. |
+| `slot_cancel` | `{}` | Closes the slot card without writing. |
 
 `Status` is `{ "volume": number \| null, "bbox": { "min": number[3], "max": number[3] } \| null, "partName": string, "featureCount": number }`. `volume` and `bbox` are null when the run failed. `bbox` is millimetres. `featureCount` is the number of marked feature blocks in the script that ran. Before any run, `volume` is null, `bbox` is null, `partName` is `""`, and `featureCount` is `0`.
 
@@ -199,7 +209,16 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `no_feature_edit` | `edit_feature`, `confirm_feature`, or `cancel_feature` with no open feature session. |
 | `edit_failed` | Confirm or open refused (stale feature, assembly lock, etc.). |
 | `delete_failed` | Delete could not commit to the editor. |
-| `no_write_part` | Feature strip command could not load the target part into the editor. |
+| `no_write_part` | Feature strip or contour commit could not load the writable part. |
+| `sketch_open` | `sketch_begin` while another sketch or slot card is open. |
+| `no_sketch` | Sketch command while contour mode is closed. |
+| `plane_card_open` | `sketch_add` / `sketch_commit` before the plane card is accepted. |
+| `empty_sketch` | `sketch_commit` with nothing drawn. |
+| `invalid_profile` | Profile params fail `validateContourProfile`. |
+| `no_slot` | Slot command while the feature slot card is closed. |
+| `slot_not_ready` | `slot_commit` before every required contour slot is filled. |
+| `unknown_contour` | `slot_assign_contour` id is not in the script. |
+| `commit_failed` | `commitContourPayload` refused (toast / soft-fail). |
 
 ### Convenience methods
 

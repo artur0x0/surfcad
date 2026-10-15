@@ -43,6 +43,8 @@ export function buildAgentMode(input = {}) {
       entry: input.contour.entry || null,
       gesture: input.contour.gesture || null,
       planeTool: input.contour.planeTool === true,
+      planeOpen: input.contour.planeOpen === true,
+      tool: input.contour.tool || null,
     }
     : null;
 
@@ -67,6 +69,10 @@ export function buildAgentMode(input = {}) {
     }
     : null;
 
+  const featureSlot = input.featureSlots?.kind
+    ? { kind: input.featureSlots.kind }
+    : null;
+
   return {
     app: appMode,
     viewport,
@@ -74,5 +80,6 @@ export function buildAgentMode(input = {}) {
     fillet,
     featureEdit,
     sheetMetal,
+    featureSlot,
   };
 }
