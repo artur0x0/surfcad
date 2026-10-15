@@ -120,6 +120,7 @@ import {
   undoPartHistory,
 } from './utils/partHistory';
 import { fillAgentHost } from './agent/host';
+import { agentGitRealOptIn } from './agent/gitAgent.js';
 import { buildDirtyState } from './agent/state/dirty';
 import { buildSelection } from './agent/state/selection';
 import { editedPartIdsSinceSnapshot, snapshotPartScripts } from './agent/state/editedSinceLoad';
@@ -8175,6 +8176,12 @@ const App = () => {
       }
       if (inserted?.status === 'inserted') recordAgentAssemblyStep(before);
       return { result: inserted };
+    },
+    readAgentGitAdapterKind() {
+      return ensureGitAdapter()?.kind ?? null;
+    },
+    readAgentGitRealOptIn() {
+      return agentGitRealOptIn();
     },
     async agentGitMoveToRepo({ vault_name } = {}) {
       const before = assemblyRef.current;
