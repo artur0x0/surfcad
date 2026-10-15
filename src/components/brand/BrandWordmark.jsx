@@ -4,10 +4,9 @@ import React from 'react';
  * Outlined SurfCAD wordmark (Inter Tight 700 paths). No font load.
  *
  * Orange (#FF5A1F) is only the splash "CAD", and only at 24px or taller
- * on Paper. The header is under 24px, so CAD is Ink (#16171D), not orange.
- * wordmark-ink.svg is that variant (Surf and CAD both Ink). The header
- * draws it on a Paper chip: Ink on gray-900 would not read, and this
- * chrome stays dark outside that chip.
+ * on Paper. The CAD viewport header is 16px Paper (#FAFAF9) on a
+ * transparent lockup over the dark chrome — Surf and CAD are both white
+ * there, not orange. wordmark-ink.svg is the Ink variant for light surfaces.
  *
  * glyph box from the brand SVG: x 1.999-333.258, y 14.492-80.890.
  */
@@ -81,19 +80,17 @@ export function BrandTileMark({ size = 16 }) {
 }
 
 /**
- * Header lockup. 16px, under the 24px orange cutoff, so CAD is Ink.
- * The Paper chip is the light surface that wordmark sits on. Pointer
- * events stay off so the puzzle target and ribbon buttons keep their hits.
+ * Header lockup: paper-tile mark + 16px Paper wordmark on transparent chrome.
+ * Pointer events stay off so the puzzle target and ribbon buttons keep their hits.
  */
 export function BrandHeaderMark() {
   return (
     <span
       data-brand-header=""
-      className="pointer-events-none inline-flex shrink-0 items-center gap-1 rounded-md py-0.5 pl-0 pr-1.5"
-      style={{ background: '#FAFAF9' }}
+      className="pointer-events-none inline-flex shrink-0 items-center gap-1"
     >
       <BrandTileMark size={16} />
-      <BrandWordmark tone="on-light" size={16} />
+      <BrandWordmark tone="on-dark" size={16} />
     </span>
   );
 }

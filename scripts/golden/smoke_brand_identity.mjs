@@ -98,12 +98,13 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
     && /cad: '#FF5A1F'/.test(word)
     && /tone === 'on-light'/.test(word)
     && /cad: '#16171D'/.test(word));
-  check('header mark is 16px ink on a paper chip with the paper tile',
-    /tone="on-light" size=\{16\}/.test(word)
-    && /<BrandTileMark size=\{16\} \/>/.test(word)
+  const headerMark = word.slice(word.indexOf('export function BrandHeaderMark'), word.indexOf('/** Ink tile'));
+  check('header mark is 16px Paper wordmark on transparent chrome with the paper tile',
+    /tone="on-dark" size=\{16\}/.test(headerMark)
+    && /<BrandTileMark size=\{16\} \/>/.test(headerMark)
     && /data-brand-mark="paper"/.test(word)
-    && /background: '#FAFAF9'/.test(word)
-    && /data-brand-header/.test(word));
+    && !/background:/.test(headerMark)
+    && /data-brand-header/.test(headerMark));
   check('splash is paper, mark, 40px wordmark, grey tagline',
     /data-app-loading/.test(loading)
     && /background: '#FAFAF9'/.test(loading)
@@ -357,11 +358,12 @@ try {
       titleMidY: titleBox ? Math.round(titleBox.top + titleBox.height / 2) : null,
     };
   });
-  check('1280 header CAD is Ink and under 24px with paper tile in the viewport row',
+  const transparentChip = at1280?.chip === 'rgba(0, 0, 0, 0)' || at1280?.chip === 'transparent';
+  check('1280 header wordmark is Paper on transparent chrome with paper tile in the viewport row',
     at1280 && at1280.h < 24 && at1280.h >= 14
-    && at1280.cad === 'ink' && at1280.size === '16'
-    && at1280.surf === INK && at1280.cadFill === INK
-    && at1280.chip === PAPER
+    && at1280.cad === 'paper' && at1280.size === '16'
+    && at1280.surf === PAPER && at1280.cadFill === PAPER
+    && transparentChip
     && at1280.hasTile
     && host1280 === 1,
     JSON.stringify(at1280));
@@ -382,9 +384,11 @@ try {
 
   const phone = await boot(browser, { width: 390, height: 844, touch: true });
   const at390 = await readMark(phone.page, '[data-brand-header-host]');
-  check('390 CAD header CAD is Ink and under 24px with paper tile',
+  const transparent390 = at390?.chip === 'rgba(0, 0, 0, 0)' || at390?.chip === 'transparent';
+  check('390 CAD header wordmark is Paper on transparent chrome with paper tile',
     at390 && at390.h < 24 && at390.h >= 14
-    && at390.cad === 'ink' && at390.cadFill === INK && at390.surf === INK
+    && at390.cad === 'paper' && at390.cadFill === PAPER && at390.surf === PAPER
+    && transparent390
     && at390.hasTile,
     JSON.stringify(at390));
   await phone.page.locator('[data-stage-btn="parts"]').click();
