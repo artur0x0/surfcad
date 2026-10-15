@@ -108,6 +108,12 @@ jobs:
       - name: npm ci
         run: npm ci
 
+      - name: vite build (production)
+        run: npm run build
+
+      - name: Verify production bundle omits playtest auto-approve
+        run: node --test --test-name-pattern 'production dist bundle' test/agent-bridge-playtest-build.test.mjs
+
       - name: vite build (playtest)
         run: npm run build:playtest
 
@@ -117,6 +123,16 @@ jobs:
         with:
           chrome-version: stable
           install-dependencies: true
+
+      - name: Agent bridge auto-approve guard (production)
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+        run: |
+          test -n "$CHROME_PATH"
+          test -x "$CHROME_PATH"
+          npm run build
+          node --test --test-name-pattern 'localStorage auto-approve' test/agent-bridge-playtest-build.test.mjs
+          npm run build:playtest
 
       - name: App-load golden
         env:
