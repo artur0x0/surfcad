@@ -46,7 +46,7 @@ export default function ScriptEditorDrawer({ open = false, children }) {
       data-script-editor-open={open ? 'true' : 'false'}
       data-script-drawer-clearance="below-feature-ribbon"
       aria-hidden={open ? undefined : true}
-      className={`absolute bottom-0 right-0 z-[45] flex min-h-0 flex-col border-l border-white/10 bg-[#1e1e1e] shadow-2xl ${
+      className={`absolute bottom-0 right-0 z-[45] flex min-h-0 flex-col border-l border-white/10 bg-chrome-background shadow-2xl ${
         open ? '' : 'invisible pointer-events-none'
       }`}
       style={{ top: '8rem', width, maxWidth: `calc(100% - ${LEFT_RAIL_CLEARANCE}px)` }}

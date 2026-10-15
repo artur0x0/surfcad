@@ -10,12 +10,12 @@ export default function CheckoutStepper({ index = 0, total = 0, name = '', qty =
       data-checkout-stepper=""
       data-checkout-index={n}
       data-checkout-total={total}
-      className="border-b border-gray-700/40 bg-gray-900/50 px-5 py-2"
+      className="border-b border-chrome-border/40 bg-chrome-surface/50 px-5 py-2"
     >
-      <p className="text-xs font-medium text-gray-100" data-checkout-progress="">
+      <p className="text-xs font-medium text-chrome-text" data-checkout-progress="">
         Line {n} of {total}
       </p>
-      <p className="truncate text-[11px] text-gray-400" data-checkout-part="">
+      <p className="truncate text-[11px] text-chrome-secondary" data-checkout-part="">
         {name}
         {qty ? <span data-checkout-qty=""> · Qty {qty}</span> : null}
       </p>

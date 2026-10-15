@@ -200,7 +200,7 @@ export default function FeatureEditSheet({
                 </span>
                 <span className={`${POPUP_TEXT.value} font-medium whitespace-nowrap`}>{f.chipLabel}</span>
                 {!editable && (
-                  <span className="text-[10px] uppercase tracking-wide text-gray-400">script</span>
+                  <span className="text-[10px] uppercase tracking-wide text-chrome-secondary">script</span>
                 )}
               </button>
             );

@@ -60,11 +60,11 @@ export default function OpenAssemblyChoiceDialog({
         </div>
       )}
     >
-      {loading && <p className="text-xs text-gray-400" data-git-dialog-loading="">Inserting…</p>}
+      {loading && <p className="text-xs text-chrome-secondary" data-git-dialog-loading="">Inserting…</p>}
       {!loading && (
         <p className="text-xs text-gray-300" data-git-open-choice-ask="">
           {'Open '}
-          <span className="font-medium text-gray-100">{assemblyName}</span>
+          <span className="font-medium text-chrome-text">{assemblyName}</span>
           {' as the working assembly, or insert its parts into the current one?'}
         </p>
       )}

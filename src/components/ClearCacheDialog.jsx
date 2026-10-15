@@ -47,10 +47,10 @@ export default function ClearCacheDialog({
       }}
     >
       <div
-        className="w-full max-w-sm rounded-lg surface-glass border border-gray-700 p-4 shadow-xl"
+        className="w-full max-w-sm rounded-lg surface-glass border border-chrome-border p-4 shadow-xl"
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <h2 id="clear-cache-title" className="text-sm font-semibold text-gray-100">
+        <h2 id="clear-cache-title" className="text-sm font-semibold text-chrome-text">
           Clear local cache
         </h2>
         <p className="mt-2 text-xs text-gray-300">

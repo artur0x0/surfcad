@@ -89,7 +89,7 @@ function PayForm({ order, priceUpdated, onPaid, onError }) {
         </StripeFrame>
       </div>
 
-      <label className="flex items-start gap-3 text-sm text-gray-400">
+      <label className="flex items-start gap-3 text-sm text-chrome-secondary">
         <input
           type="checkbox"
           data-checkout-terms=""

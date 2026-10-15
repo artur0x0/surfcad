@@ -371,9 +371,9 @@ export default function CheckoutPage({
       <div
         role="dialog"
         aria-label="Checkout"
-        className="modal-fit-panel relative z-10 flex w-full flex-col rounded-t-2xl border border-gray-700 bg-gray-900 shadow-2xl sm:max-w-lg sm:rounded-2xl"
+        className="modal-fit-panel relative z-10 flex w-full flex-col rounded-t-2xl border border-chrome-border bg-chrome-surface shadow-2xl sm:max-w-lg sm:rounded-2xl"
       >
-        <div className="flex items-center justify-between border-b border-gray-700 px-4 py-3">
+        <div className="flex items-center justify-between border-b border-chrome-border px-4 py-3">
           <h2 className="text-sm font-semibold text-white">Checkout</h2>
           <button type="button" data-checkout-close="" aria-label="Close checkout" onClick={onClose} className="rounded-md p-1 text-gray-300 hover:bg-white/10">
             <X size={16} />
@@ -407,7 +407,7 @@ export default function CheckoutPage({
             <>
               <section className="space-y-2" data-checkout-lines="">
                 {plan.rows.length === 0 && (
-                  <p className="text-sm text-gray-400">Your cart is empty.</p>
+                  <p className="text-sm text-chrome-secondary">Your cart is empty.</p>
                 )}
                 {plan.rows.map((row) => (
                   <div
@@ -417,7 +417,7 @@ export default function CheckoutPage({
                     className="flex items-center gap-3 border-b border-white/5 py-2"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-gray-100" data-checkout-line-name="">{row.partName}</p>
+                      <p className="truncate text-sm text-chrome-text" data-checkout-line-name="">{row.partName}</p>
                       <p className="truncate text-[11px] text-gray-500">
                         {row.options.process} · {row.options.material}
                         {row.quotedUnitPrice != null ? ` · ${money(row.quotedUnitPrice)} each` : ''}
@@ -434,7 +434,7 @@ export default function CheckoutPage({
                         </p>
                       )}
                       {row.action === 'skip' && (
-                        <p className="text-[11px] text-gray-400" data-checkout-skipped="">
+                        <p className="text-[11px] text-chrome-secondary" data-checkout-skipped="">
                           Skipped until this assembly is open.
                         </p>
                       )}
@@ -450,7 +450,7 @@ export default function CheckoutPage({
                       >
                         <Minus size={14} />
                       </button>
-                      <span className="w-6 text-center text-xs tabular-nums text-gray-100">{row.qty}</span>
+                      <span className="w-6 text-center text-xs tabular-nums text-chrome-text">{row.qty}</span>
                       <button
                         type="button"
                         data-checkout-qty-inc=""
@@ -477,7 +477,7 @@ export default function CheckoutPage({
                   </div>
                 ))}
                 {note && (
-                  <p className="text-[11px] text-gray-400" data-checkout-skip="">{note}</p>
+                  <p className="text-[11px] text-chrome-secondary" data-checkout-skip="">{note}</p>
                 )}
                 {overCap && (
                   <p className="text-[11px] text-amber-200" data-checkout-cap="">
@@ -499,7 +499,7 @@ export default function CheckoutPage({
               <section className="space-y-2" data-shipping-quote="">
                 <h3 className="text-sm font-medium text-gray-200">Shipping</h3>
                 {shippingBusy && (
-                  <p className="flex items-center gap-2 text-xs text-gray-400" data-shipping-loading="">
+                  <p className="flex items-center gap-2 text-xs text-chrome-secondary" data-shipping-loading="">
                     <Loader2 className="animate-spin" size={14} />
                     Quoting UPS…
                   </p>
@@ -522,7 +522,7 @@ export default function CheckoutPage({
                         disabled={locked}
                         onClick={() => setMethodCode(rate.code)}
                         className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-sm ${
-                          selected ? 'border-blue-400 bg-blue-500/10 text-white' : 'border-gray-700 text-gray-300'
+                          selected ? 'border-blue-400 bg-blue-500/10 text-white' : 'border-chrome-border text-gray-300'
                         }`}
                       >
                         <span>{rate.name}</span>
@@ -534,7 +534,7 @@ export default function CheckoutPage({
               </section>
 
               {serverSkipped.length > 0 && (
-                <p className="text-[11px] text-gray-400" data-checkout-server-skip="">
+                <p className="text-[11px] text-chrome-secondary" data-checkout-server-skip="">
                   {serverSkipped.map((row) => row.partName || row.lineId).filter(Boolean).join(', ')} skipped.
                 </p>
               )}

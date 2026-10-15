@@ -51,8 +51,8 @@ export default function ContourDeleteDialog({
         if (event.target === event.currentTarget) onCancel?.();
       }}
     >
-      <div className="w-full max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-lg surface-glass border border-gray-700 p-4 shadow-xl">
-        <h2 id={`${testId}-delete-title`} className="text-sm font-semibold text-gray-100">
+      <div className="w-full max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-lg surface-glass border border-chrome-border p-4 shadow-xl">
+        <h2 id={`${testId}-delete-title`} className="text-sm font-semibold text-chrome-text">
           {title}
         </h2>
         <p className="mt-2 text-xs text-gray-300" {...{ [`data-${testId}-delete-message`]: '' }}>

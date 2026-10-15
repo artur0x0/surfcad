@@ -300,16 +300,16 @@ const OrderModal = ({
 
   return (
     <ModalFit className="surface-scrim flex items-center justify-center z-50 px-4">
-      <div className="modal-fit-panel surface-glass rounded-2xl shadow-2xl max-w-lg w-full flex flex-col border border-gray-700/50">
+      <div className="modal-fit-panel surface-glass rounded-2xl shadow-2xl max-w-lg w-full flex flex-col border border-chrome-border/50">
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-gray-700/50">
+        <div className="flex items-center justify-between p-5 border-b border-chrome-border/50">
           <div className="flex items-center gap-3">
             {canGoBack && (
               <button
                 onClick={handleBack}
-                className="p-1.5 hover:bg-gray-700/50 rounded-lg transition-colors"
+                className="p-1.5 hover:bg-chrome-border/50 rounded-lg transition-colors"
               >
-                <ArrowLeft size={20} className="text-gray-400" />
+                <ArrowLeft size={20} className="text-chrome-secondary" />
               </button>
             )}
             <h2 className="text-lg font-semibold text-white">
@@ -319,9 +319,9 @@ const OrderModal = ({
           {currentStep !== STEPS.CONFIRMATION && (
             <button
               onClick={onClose}
-              className="p-1.5 hover:bg-gray-700/50 rounded-lg transition-colors"
+              className="p-1.5 hover:bg-chrome-border/50 rounded-lg transition-colors"
             >
-              <X size={20} className="text-gray-400" />
+              <X size={20} className="text-chrome-secondary" />
             </button>
           )}
         </div>
@@ -330,7 +330,7 @@ const OrderModal = ({
 
         {/* Progress Indicator */}
         {currentStep !== STEPS.CONFIRMATION && currentStep !== STEPS.CONVERT && (
-          <div className="px-5 py-3 border-b border-gray-700/30">
+          <div className="px-5 py-3 border-b border-chrome-border/30">
             <div className="flex items-center gap-2">
               {[STEPS.AUTH, STEPS.ADDRESS, STEPS.SHIPPING, STEPS.PAYMENT].map((step, idx) => (
                 <React.Fragment key={step}>
@@ -340,14 +340,14 @@ const OrderModal = ({
                         ? 'bg-gray-200' 
                         : [STEPS.AUTH, STEPS.ADDRESS, STEPS.SHIPPING, STEPS.PAYMENT].indexOf(currentStep) > idx
                           ? 'bg-gray-200'
-                          : 'bg-gray-700'
+                          : 'bg-chrome-border'
                     }`}
                   />
                   {idx < 3 && (
                     <div className={`flex-1 h-0.5 ${
                       [STEPS.AUTH, STEPS.ADDRESS, STEPS.SHIPPING, STEPS.PAYMENT].indexOf(currentStep) > idx
                         ? 'bg-gray-200' 
-                        : 'bg-gray-700'
+                        : 'bg-chrome-border'
                     }`} />
                   )}
                 </React.Fragment>

@@ -169,7 +169,7 @@ You can choose to modify the existing code or create something completely new ba
   };
 
   return (
-    <div className={`border-t border-gray-700/50 bg-[#1e1e1e] ${isMobile ? 'px-2 py-1' : 'p-3'}`}
+    <div className={`border-t border-chrome-border/50 bg-chrome-background ${isMobile ? 'px-2 py-1' : 'p-3'}`}
          style={isMobile ? { paddingBottom: 'max(4px, env(safe-area-inset-bottom))' } : {}}>
 
       <form onSubmit={handleSubmit} className={`flex flex-col ${isMobile ? 'gap-1' : 'gap-2'}`}>
@@ -206,7 +206,7 @@ You can choose to modify the existing code or create something completely new ba
                 : "[AI] Describe a shape to create or modify..."
             }
             rows={1}
-            className={`flex-1 bg-[#1e1e1e] text-gray-200 rounded text-base border border-gray-600 opacity-50 focus:outline-none focus:ring-1 focus:ring-white focus:border-transparent focus:opacity-100 placeholder-gray-500 resize-none overflow-hidden ${
+            className={`flex-1 bg-chrome-background text-gray-200 rounded text-base border border-gray-600 opacity-50 focus:outline-none focus:ring-1 focus:ring-white focus:border-transparent focus:opacity-100 placeholder-gray-500 resize-none overflow-hidden ${
               isMobile ? 'px-2 py-1' : 'px-3 py-2'
             }`}
             disabled={isLoading}
@@ -222,7 +222,7 @@ You can choose to modify the existing code or create something completely new ba
               }
             }}
             disabled={isLoading}
-            className={`${isMobile ? 'h-8 px-2' : 'h-[38px] px-3'} bg-[#1e1e1e] text-white rounded border border-gray-600 enabled:hover:ring-1 enabled:hover:ring-white enabled:hover:border-transparent disabled:opacity-50 transition-colors`}
+            className={`${isMobile ? 'h-8 px-2' : 'h-[38px] px-3'} bg-chrome-background text-white rounded border border-gray-600 enabled:hover:ring-1 enabled:hover:ring-white enabled:hover:border-transparent disabled:opacity-50 transition-colors`}
           >
             {isLoading ? (
               <Loader2 size={16} className="animate-spin" />

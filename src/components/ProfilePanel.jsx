@@ -107,14 +107,14 @@ export default function ProfilePanel({
       role="dialog"
       aria-label="Account"
       className={`absolute ${alignClass} top-full z-[60] mt-1 w-64 rounded-md border border-gray-600
-        bg-gray-900 py-2 shadow-xl`}
+        bg-chrome-surface py-2 shadow-xl`}
       onPointerDown={(e) => e.stopPropagation()}
     >
       {confirmDelete ? (
         <div className="px-3 py-1" data-profile-delete-confirm="">
           <p className="text-xs text-gray-200">
             This deletes your SurfCAD account and your GitHub repo
-            (usually <span className="font-mono text-gray-100">surfcad-vault</span>).
+            (usually <span className="font-mono text-chrome-text">surfcad-vault</span>).
             This cannot be undone.
           </p>
           {error ? (
@@ -146,12 +146,12 @@ export default function ProfilePanel({
         <>
           <div className="px-3 pb-2 pt-1" data-profile-panel-info="">
             {name ? (
-              <p className="truncate text-sm font-medium text-gray-100" data-profile-panel-name="">
+              <p className="truncate text-sm font-medium text-chrome-text" data-profile-panel-name="">
                 {name}
               </p>
             ) : null}
             {email ? (
-              <p className="truncate text-xs text-gray-400" data-profile-panel-email="" title={email}>
+              <p className="truncate text-xs text-chrome-secondary" data-profile-panel-email="" title={email}>
                 {email}
               </p>
             ) : null}
@@ -175,7 +175,7 @@ export default function ProfilePanel({
           <button
             type="button"
             data-profile-sign-out=""
-            className="block w-full px-3 py-1.5 text-left text-xs text-gray-100 hover:bg-white/10"
+            className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
             onClick={() => { void onSignOut?.(); onClose?.(); }}
           >
             Sign out
@@ -197,7 +197,7 @@ export default function ProfilePanel({
           <button
             type="button"
             data-profile-sign-in=""
-            className="block w-full px-3 py-1.5 text-left text-xs text-gray-100 hover:bg-white/10"
+            className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
             onClick={() => { onSignIn?.(); onClose?.(); }}
           >
             Sign in
@@ -218,12 +218,12 @@ export default function ProfilePanel({
         <>
           <div className="px-3 pb-2 pt-1" data-profile-panel-info="">
             {name ? (
-              <p className="truncate text-sm font-medium text-gray-100" data-profile-panel-name="">
+              <p className="truncate text-sm font-medium text-chrome-text" data-profile-panel-name="">
                 {name}
               </p>
             ) : null}
             {email ? (
-              <p className="truncate text-xs text-gray-400" data-profile-panel-email="" title={email}>
+              <p className="truncate text-xs text-chrome-secondary" data-profile-panel-email="" title={email}>
                 {email}
               </p>
             ) : null}
@@ -235,7 +235,7 @@ export default function ProfilePanel({
           <button
             type="button"
             data-profile-sign-out=""
-            className="block w-full px-3 py-1.5 text-left text-xs text-gray-100 hover:bg-white/10"
+            className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
             onClick={() => { void onSignOut?.(); onClose?.(); }}
           >
             Sign out
@@ -251,7 +251,7 @@ export default function ProfilePanel({
               Clear local cache
             </button>
           ) : null}
-          <div className="my-2 border-t border-gray-700" data-profile-danger-divider="" />
+          <div className="my-2 border-t border-chrome-border" data-profile-danger-divider="" />
           <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-red-400/90"
             data-profile-danger-zone="">
             Danger zone

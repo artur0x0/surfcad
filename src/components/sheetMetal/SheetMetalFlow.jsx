@@ -278,7 +278,7 @@ const CheckPopup = ({ mode, setMode, mesh, script, partName, unit, onUnit, compa
           ))}
         </ul>
       )}
-      <p className="text-[11px] text-gray-400" data-sm-step-source={stepSource || 'none'}>
+      <p className="text-[11px] text-chrome-secondary" data-sm-step-source={stepSource || 'none'}>
         DXF is the flat cut (mm). STEP is the bent 3D part
         {stepSource === 'spec' ? `, built from the sheet spec with exact bends${bendCount ? ` (${bendCount} cylindrical)` : ''}` : ''}
         {stepSource === 'mesh' ? ', faceted from the 3D part' : ''}
@@ -419,7 +419,7 @@ const SheetMetalFlow = ({
           unit={unit}
           onMm={(v) => setMode((m) => updateDraft(m, { height: v }))}
         />
-        <p className="text-xs text-gray-400">Up to {formatSheetLength(BASE_MAX, unit, 0)}. Thickness comes from the SKU. Stored in mm.</p>
+        <p className="text-xs text-chrome-secondary">Up to {formatSheetLength(BASE_MAX, unit, 0)}. Thickness comes from the SKU. Stored in mm.</p>
       </SmPopup>,
     );
   }
@@ -482,7 +482,7 @@ const SheetMetalFlow = ({
           unit={unit}
           onMm={(v) => setMode((m) => setBaseDims(m, { height: v }))}
         />
-        <p className="text-xs text-gray-400">Up to {formatSheetLength(BASE_MAX, unit, 0)}. Thickness comes from the SKU. Stored in mm.</p>
+        <p className="text-xs text-chrome-secondary">Up to {formatSheetLength(BASE_MAX, unit, 0)}. Thickness comes from the SKU. Stored in mm.</p>
       </SmPopup>,
     );
   }

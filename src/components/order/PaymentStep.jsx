@@ -28,25 +28,25 @@ function OrderSummary({ order, quoteData, shippingOption }) {
     <div className="bg-gray-800/30 rounded-xl p-4" data-payment-summary="">
       <h3 className="text-sm font-medium text-gray-300 mb-3">Order Summary</h3>
       <div className="space-y-2 text-sm">
-        <div className="flex justify-between text-gray-400" data-payment-qty="">
+        <div className="flex justify-between text-chrome-secondary" data-payment-qty="">
           <span>Qty {order.quantity || quoteData.quantity || 1}</span>
           <span></span>
         </div>
-        <div className="flex justify-between text-gray-400">
+        <div className="flex justify-between text-chrome-secondary">
           <span>{quoteData.process} - {quoteData.material}</span>
           <span>${(order.subtotal ?? quoteData.subtotal).toFixed(2)}</span>
         </div>
-        <div className="flex justify-between text-gray-400">
+        <div className="flex justify-between text-chrome-secondary">
           <span>{shippingOption.service}</span>
           <span>${(order.shipping ?? shippingOption.price).toFixed(2)}</span>
         </div>
         {order.tax > 0 && (
-          <div className="flex justify-between text-gray-400">
+          <div className="flex justify-between text-chrome-secondary">
             <span>Tax</span>
             <span>${order.tax.toFixed(2)}</span>
           </div>
         )}
-        <div className="border-t border-gray-700 pt-2 mt-2 flex justify-between font-medium text-white">
+        <div className="border-t border-chrome-border pt-2 mt-2 flex justify-between font-medium text-white">
           <span>Total</span>
           <span>${Number(order.total || 0).toFixed(2)}</span>
         </div>
@@ -165,7 +165,7 @@ const PaymentForm = ({
         {/* Stripe Payment Element */}
         <div className="bg-gray-800/30 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-4">
-            <CreditCard size={18} className="text-gray-400" />
+            <CreditCard size={18} className="text-chrome-secondary" />
             <span className="text-sm font-medium text-gray-300">Payment Details</span>
           </div>
           
@@ -193,7 +193,7 @@ const PaymentForm = ({
             }}
             className="mt-1 w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
           />
-          <label htmlFor="terms-checkbox" className="text-sm text-gray-400 cursor-pointer">
+          <label htmlFor="terms-checkbox" className="text-sm text-chrome-secondary cursor-pointer">
             I carefully reviewed and agreed with the{' '}
             <button
               type="button"
@@ -354,10 +354,10 @@ const PaymentStep = ({
     return (
       <div className="p-8 flex flex-col items-center justify-center min-h-[300px]">
         <div className="relative">
-          <div className="w-16 h-16 border-4 border-gray-700 border-t-gray-300 rounded-full animate-spin"></div>
+          <div className="w-16 h-16 border-4 border-chrome-border border-t-gray-300 rounded-full animate-spin"></div>
           <CreditCard className="absolute inset-0 m-auto text-gray-500" size={24} />
         </div>
-        <p className="text-gray-400 mt-4">Preparing your order...</p>
+        <p className="text-chrome-secondary mt-4">Preparing your order...</p>
       </div>
     );
   }
@@ -369,7 +369,7 @@ const PaymentStep = ({
         <p className="text-red-400">{createError || 'Failed to initialize payment.'}</p>
         <button
           onClick={createOrder}
-          className="mt-4 px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+          className="mt-4 px-6 py-2 bg-chrome-border text-white rounded-lg hover:bg-gray-600 transition-colors"
         >
           Try Again
         </button>

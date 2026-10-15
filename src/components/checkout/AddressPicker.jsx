@@ -36,7 +36,7 @@ const EMPTY = {
 
 function fieldClass(invalid) {
   return `w-full bg-gray-800/50 border rounded-xl py-2.5 px-3 text-white placeholder-gray-500 focus:outline-none ${
-    invalid ? 'border-red-500' : 'border-gray-700 focus:border-blue-500'
+    invalid ? 'border-red-500' : 'border-chrome-border focus:border-blue-500'
   }`;
 }
 
@@ -190,7 +190,7 @@ export default function AddressPicker({
               data-address-choice={id}
               data-address-selected={selected ? 'true' : 'false'}
               className={`rounded-xl border p-3 ${
-                selected ? 'border-blue-400 bg-blue-500/10' : 'border-gray-700 bg-gray-800/30'
+                selected ? 'border-blue-400 bg-blue-500/10' : 'border-chrome-border bg-gray-800/30'
               }`}
             >
               <button
@@ -199,10 +199,10 @@ export default function AddressPicker({
                 onClick={() => onSelect?.(id)}
               >
                 <p className="text-sm text-white">{address.name}</p>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-chrome-secondary">
                   {address.street}{address.street2 ? `, ${address.street2}` : ''}
                 </p>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-chrome-secondary">
                   {address.city}, {address.state} {address.zip}
                 </p>
               </button>
@@ -231,7 +231,7 @@ export default function AddressPicker({
 
       {adding && (
         <form onSubmit={saveAddress} className="space-y-3" data-address-form="">
-          <label className="block text-xs text-gray-400">
+          <label className="block text-xs text-chrome-secondary">
             Full name
             <input
               data-address-name=""
@@ -240,7 +240,7 @@ export default function AddressPicker({
               className={`${fieldClass(errors.name)} mt-1`}
             />
           </label>
-          <label className="block text-xs text-gray-400">
+          <label className="block text-xs text-chrome-secondary">
             Street
             <input
               data-address-street=""
@@ -250,7 +250,7 @@ export default function AddressPicker({
               className={`${fieldClass(errors.street)} mt-1`}
             />
           </label>
-          <label className="block text-xs text-gray-400">
+          <label className="block text-xs text-chrome-secondary">
             Apt, suite (optional)
             <input
               data-address-street2=""
@@ -260,7 +260,7 @@ export default function AddressPicker({
             />
           </label>
           <div className="grid grid-cols-2 gap-2">
-            <label className="block text-xs text-gray-400">
+            <label className="block text-xs text-chrome-secondary">
               City
               <input
                 data-address-city=""
@@ -270,7 +270,7 @@ export default function AddressPicker({
                 className={`${fieldClass(errors.city)} mt-1`}
               />
             </label>
-            <label className="block text-xs text-gray-400">
+            <label className="block text-xs text-chrome-secondary">
               State
               <select
                 data-address-state=""
@@ -287,7 +287,7 @@ export default function AddressPicker({
             </label>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <label className="block text-xs text-gray-400">
+            <label className="block text-xs text-chrome-secondary">
               ZIP
               <input
                 data-address-zip=""
@@ -297,7 +297,7 @@ export default function AddressPicker({
                 className={`${fieldClass(errors.zip)} mt-1`}
               />
             </label>
-            <label className="block text-xs text-gray-400">
+            <label className="block text-xs text-chrome-secondary">
               Phone
               <input
                 data-address-phone=""

@@ -29,7 +29,7 @@ export function AssemblyOpenRow({
         data-git-open-item={name}
         data-git-open-kind="assembly"
         data-git-open-current={current ? 'true' : undefined}
-        className="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-xs text-gray-100 hover:bg-white/10"
+        className="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
         onClick={() => onOpen?.(name)}
       >
         <span className="block truncate">{label || name}</span>
@@ -167,7 +167,7 @@ export default function DeleteAssemblyDialog({
     >
       {loading && (
         <div data-assembly-delete-checking="">
-          <p className="text-xs text-gray-400" data-git-dialog-loading="">Checking parts…</p>
+          <p className="text-xs text-chrome-secondary" data-git-dialog-loading="">Checking parts…</p>
           <div
             className="mt-2 h-4 w-4 animate-spin motion-reduce:animate-none rounded-full border-b-2 border-white"
             data-assembly-delete-checking-spinner=""
@@ -179,12 +179,12 @@ export default function DeleteAssemblyDialog({
       {!loading && (
         <>
           <p className="text-xs text-gray-300" data-assembly-delete-summary="">
-            <span className="font-medium text-gray-100" data-assembly-delete-name="">{assemblyName}</span>
+            <span className="font-medium text-chrome-text" data-assembly-delete-name="">{assemblyName}</span>
             {' has '}
             <span data-assembly-delete-count={String(count)}>{countLabel}</span>
             .
           </p>
-          <p className="mt-2 text-xs text-gray-400" data-assembly-delete-rules="">
+          <p className="mt-2 text-xs text-chrome-secondary" data-assembly-delete-rules="">
             Keeping parts leaves files in /parts where they are. Deleting parts removes a script only when no other assembly uses it. A copy another assembly uses moves to /parts.
           </p>
           {referenced.length > 0 && (
@@ -199,7 +199,7 @@ export default function DeleteAssemblyDialog({
                     className="text-xs text-gray-300"
                     data-assembly-delete-kept-part={part.name}
                   >
-                    <span className="text-gray-100">{part.name}</span>
+                    <span className="text-chrome-text">{part.name}</span>
                     <span className="text-gray-500" data-assembly-delete-kept-by="">
                       {` — ${(part.assemblies || []).join(', ')}`}
                     </span>
@@ -208,7 +208,7 @@ export default function DeleteAssemblyDialog({
               </ul>
             </div>
           )}
-          <label className="mt-3 block text-xs text-gray-400" htmlFor="assembly-delete-confirm">
+          <label className="mt-3 block text-xs text-chrome-secondary" htmlFor="assembly-delete-confirm">
             {`Type ${assemblyName} to delete its parts`}
           </label>
           <input

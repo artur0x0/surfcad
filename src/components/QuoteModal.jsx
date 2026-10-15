@@ -234,14 +234,14 @@ const QuoteModal = ({
     >
       <div className="modal-fit-panel surface-glass rounded-lg shadow-2xl max-w-2xl w-full flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
+        <div className="flex items-center justify-between p-6 border-b border-chrome-border">
           <h2 className="text-xl font-semibold text-white flex items-center gap-2">
             {showHandoff ? null : <DollarSign size={24} />}
             {showHandoff ? 'SendCutSend' : 'Manufacturing Quote'}
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="text-chrome-secondary hover:text-white transition-colors"
           >
             <X size={24} />
           </button>
@@ -278,7 +278,7 @@ const QuoteModal = ({
                 disabled={process.disabled}
                 className={`p-4 rounded-lg border-2 transition-all text-left ${
                   selectedProcess === key
-                    ? 'border-gray bg-gray-700'
+                    ? 'border-gray bg-chrome-border'
                     : 'border-gray-600 bg-gray-800/50 hover:border-gray-500'
                 } ${
                   process.disabled
@@ -287,7 +287,7 @@ const QuoteModal = ({
                 }`}
               >
                 <div className="font-medium text-white">{key}</div>
-                <div className="text-xs text-gray-400 mt-1">{process.name}</div>
+                <div className="text-xs text-chrome-secondary mt-1">{process.name}</div>
                 {process.disabled && (
                   <div className="text-xs text-yellow-500 mt-1">Coming Soon</div>
                 )}
@@ -297,7 +297,7 @@ const QuoteModal = ({
         </div>
 
           {/* Max Size Info */}
-          <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
+          <div className="bg-gray-800/50 rounded-lg p-4 border border-chrome-border">
             <div className="text-sm text-gray-300">
               <span className="font-medium">Maximum Build Size:</span>{' '}
               {currentProcess.maxSize.x} × {currentProcess.maxSize.y} × {currentProcess.maxSize.z} mm
@@ -313,13 +313,13 @@ const QuoteModal = ({
               <select
                 value={selectedMaterial}
                 onChange={(e) => setSelectedMaterial(e.target.value)}
-                className="w-full bg-[#1e1e1e] text-white border border-gray-600 rounded-lg px-4 py-3 pr-10 focus:outline-none focus:ring-1 focus:ring-grey focus:border-white appearance-none cursor-pointer"
+                className="w-full bg-chrome-background text-white border border-gray-600 rounded-lg px-4 py-3 pr-10 focus:outline-none focus:ring-1 focus:ring-grey focus:border-white appearance-none cursor-pointer"
               >
                 {currentProcess.materials.map((material) => (
                   <option 
                     key={material} 
                     value={material}
-                    className="bg-[#1e1e1e] text-white"
+                    className="bg-chrome-background text-white"
                   >
                     {material}
                   </option>
@@ -349,7 +349,7 @@ const QuoteModal = ({
               step="5"
               value={infill}
               onChange={(e) => setInfill(parseInt(e.target.value))}
-              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+              className="w-full h-2 bg-chrome-border rounded-lg appearance-none cursor-pointer accent-blue-500"
             />
             <div className="flex justify-between text-xs text-gray-500 mt-1">
               <span>10% (Faster, Less Strong)</span>
@@ -398,7 +398,7 @@ const QuoteModal = ({
                 <div className="flex items-center justify-between text-gray-300" data-quote-qty="">
                   <span>Qty {quoteResult.quantity || qty}</span>
                   {quoteResult.quantity > 1 && (
-                    <span className="font-medium text-sm text-gray-400">
+                    <span className="font-medium text-sm text-chrome-secondary">
                       ${quoteResult.unitSubtotal.toFixed(2)} each
                     </span>
                   )}
@@ -408,11 +408,11 @@ const QuoteModal = ({
 
                 {/* Cost Breakdown */}
                 <div className="space-y-2">
-                  <div className="flex justify-between text-gray-400 text-sm">
+                  <div className="flex justify-between text-chrome-secondary text-sm">
                     <span>Material Cost:</span>
                     <span>${quoteResult.costs.material.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-gray-400 text-sm">
+                  <div className="flex justify-between text-chrome-secondary text-sm">
                     <span>Machine Time:</span>
                     <span>${quoteResult.costs.machine.toFixed(2)}</span>
                   </div>
@@ -426,7 +426,7 @@ const QuoteModal = ({
                 </div>
 
                 {/* Quote Details */}
-                <div className="text-xs text-gray-500 mt-4 pt-4 border-t border-gray-700">
+                <div className="text-xs text-gray-500 mt-4 pt-4 border-t border-chrome-border">
                   <div>Process: {selectedProcess}</div>
                   <div>Material: {selectedMaterial}</div>
                   <div>Infill: {infill}%</div>
@@ -455,11 +455,11 @@ const QuoteModal = ({
         </div>
         {moreBelow ? (
           <div
-            className="pointer-events-none absolute inset-x-0 bottom-0 flex h-12 items-end justify-center bg-gradient-to-t from-gray-900 to-transparent"
+            className="pointer-events-none absolute inset-x-0 bottom-0 flex h-12 items-end justify-center bg-gradient-to-t from-chrome-surface to-transparent"
             data-quote-scroll-hint=""
             aria-hidden="true"
           >
-            <ChevronDown size={18} className="mb-1 text-gray-100" />
+            <ChevronDown size={18} className="mb-1 text-chrome-text" />
           </div>
         ) : null}
         </div>
