@@ -501,8 +501,10 @@ import {
   triangleGroupStats,
 } from '../utils/measurePicks';
 import { applyCameraPose, fitView, meshWorldBox, unionWorldBox, VIEW_PRESETS, VIEW_SNAP_MARGIN } from '../utils/viewCamera';
+import { expandResolvedEdgesForHelper } from '../agent/expandEdgeSelection.js';
 import { resolveEdgeKeys, resolveFaceKeys } from '../agent/resolvePickIds.js';
 import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from '../agent/state/listPickables.js';
+import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
 import {
@@ -2407,6 +2409,7 @@ const Viewport = forwardRef(({
         holeEditRef.current = null;
         setHoleCard(null);
       },
+      readHelperEdgeContext: () => selectedEdgesRef.current || [],
     });
   }
 
@@ -11056,13 +11059,21 @@ const Viewport = forwardRef(({
     );
     if (resolved.error) return resolved;
     const coherent = featureEdgesRef.current || [];
-    const edges = resolved.edges.map((edge) => {
-      const key = edge.key || `${edge.a}-${edge.b}`;
-      return coherent.find((row) => row.key === key) || edge;
+    const topo = boundaryTopoRef.current;
+    const annotated = topo?.edges?.length
+      ? annotateFeatureEdges(rawEdges, topo)
+      : rawEdges;
+    const edges = expandResolvedEdgesForHelper(resolved.edges, {
+      coherent,
+      annotated,
+      topo,
     });
+    if (!edges.length) {
+      return { error: { code: 'unknown_edge', message: 'Edge key did not resolve to pickable geometry' } };
+    }
     setSelectedEdges(edges);
     highlightSelectedEdges(edges);
-    return { count: resolved.edges.length };
+    return { count: edges.length };
   };
 
   agentSetCameraRef.current = ({ view, position, target, fov }) => {

@@ -310,6 +310,11 @@ export function createSurfcadBridge(hostSource) {
       rollbackAnchor: null,
       activeChipId: null,
     }),
+    readHelperEdgeContext: () => {
+      const read = hostFn('readHelperEdgeContext');
+      const list = read ? read() : null;
+      return Array.isArray(list) ? list : [];
+    },
     readSelection: () => (hostFn('readSelection')?.() ?? {
       activePartId: null,
       cadPartId: null,

@@ -197,6 +197,17 @@ const picked = await agentCall(page, 'select_edges', { keys: [edgeKey] });
 check('select_edges via grouped key', picked.ok === true && (picked.result?.count ?? 0) >= 1,
   JSON.stringify(picked));
 
+const filletSweep = await agentCall(page, 'insert_fillet_edges', {
+  use_selection: true,
+  radius: 2,
+  strategy: 'sweep',
+});
+check(
+  'insert_fillet_edges sweep after grouped eN select',
+  filletSweep.ok === true && filletSweep.result?.ok === true,
+  JSON.stringify(filletSweep.error || filletSweep.result?.errors),
+);
+
 const alias = await agentCall(page, 'insert_cylinder', { height: 12, radius: 5 });
 check('insert_cylinder alias', alias.ok === true && alias.result?.ok === true, JSON.stringify(alias));
 
