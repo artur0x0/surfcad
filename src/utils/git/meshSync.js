@@ -19,8 +19,13 @@ import {
 } from './vaultLayout.js';
 
 /** Git Save may commit meshes only when the vault is writable. */
-export function meshVaultSaveAllowed({ source, readOnly, githubConnected } = {}) {
-  return source === 'git' && readOnly !== true && githubConnected === true;
+export function meshVaultSaveAllowed({
+  source, readOnly, githubConnected, adapterKind,
+} = {}) {
+  if (source !== 'git') return false;
+  if (adapterKind === 'mock') return true;
+  if (readOnly === true) return false;
+  return githubConnected === true;
 }
 
 function isSharedMesh(meshPath) {
