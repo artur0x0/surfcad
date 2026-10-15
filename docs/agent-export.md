@@ -143,12 +143,20 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `undo` | `{}` | Same shape as `set_script`. Steps the active part's history once and runs that script. |
 | `list_commands` | `{}` | `{ "commands": [{ "name": string, "schema": object, "example": object }] }` — every command, in `commands` order, including this one. `schema` is the args schema. `example` is one args object. No functions, no `uiEntry`. |
 | `feature_tree` | `{}` | `{ "features": [{ "id", "kind", "label", "chipLabel", "index", "failed", "sheet", "external", "separate" }], "rollbackAnchor": string \| null, "activeChipId": string \| null }` for the active part script. |
-| `selection` | `{}` | `{ "activePartId", "cadPartId", "cadPartHighlighted", "face", "edges", "contour": { "armedId", "planeId" } }` — `activePartId` is the editor part. `cadPartId` is the viewer/title highlight and falls back to `activePartId` when no separate pick is armed. `cadPartHighlighted` is true when the user picked another part in the viewer while the editor stayed on `activePartId`. Face picks include a `key` `{ at, n, area }` when known. |
+| `selection` | `{}` | `{ "activePartId", "cadPartId", "cadPartHighlighted", "face", "edges", "contour": { "armedId", "planeId" } }` — `activePartId` is the editor part. `cadPartId` is the viewer/title highlight (`select_parts`, viewer pick, or `set_active_part`); it falls back to `activePartId` when unset. `cadPartHighlighted` is true when that highlight differs from `activePartId`. Face picks include a `key` `{ at, n, area }` when known. |
 | `mode` | `{}` | `{ "app": "cad" \| "game", "viewport": string, "contour", "fillet", "featureEdit", "sheetMetal" }` summary of the open picker / card. |
 | `dirty` | `{}` | `{ "workspaceDirty", "assemblyDirty", "renamePending", "legacyCleanup", "partIds": string[], "unsaved", "editedSinceLoad": string[], "undoStackDirty"? }` — git fields (`workspaceDirty`, `partIds`, `assemblyDirty`, …) keep their existing meaning. `unsaved` is true when any part script differs from the snapshot at open or last save/export, or when the active part's undo stack head differs from the live buffer (`undoStackDirty`). `editedSinceLoad` lists those part ids. On a fresh local document with no git baseline, rely on `unsaved` / `editedSinceLoad` rather than `workspaceDirty` / `partIds`. |
 | `toasts` | `{}` | `{ "toasts": [{ "id", "kind", "message" }] }` visible upload / git / rename notices. |
 | `parts` | `{}` | `{ "activeId", "assemblyName", "parts": [{ "id", "name", "visible" }] }`. |
 | `camera` | `{}` | `{ "position", "quaternion", "target", "zoom", "fov" }` arrays or null. |
+| `select_clear` | `{}` | `{ "cleared": true }` — clears face, edge, and contour picks in the viewport. |
+| `select_faces` | `{ "keys": [{ "at", "n", "area" }] }` or `{ "key": … }` | `{ "count": number }`. Uses the same face fingerprints as saved paint keys. |
+| `select_edges` | `{ "keys": ["a-b", …] }` or face-key pairs | `{ "count": number }`. |
+| `select_parts` | `{ "part_ids": [string] }` | `{ "partIds": [string] }` — highlights the last id (`cadPartId`) without switching the editor part. |
+| `set_active_part` | `{ "part_id": string }` | `{ "partId": string }` — same as choosing a parts row (Monaco + mesh). |
+| `camera_set` | `{ "view"?: "iso"\|"front"\|"right"\|"top"\|…, "position"?, "target"?, "fov"? }` | `{ "ok": true }`. Named views use the same presets as `data-view-snap-*`. |
+| `camera_fit` | `{}` | `{ "ok": true }` — Zoom to Fit (`data-zoom-to-fit`). |
+| `zoom_to_selection` | `{}` | `{ "ok": true }` — frames the current face or edge selection. |
 
 `Status` is `{ "volume": number \| null, "bbox": { "min": number[3], "max": number[3] } \| null, "partName": string, "featureCount": number }`. `volume` and `bbox` are null when the run failed. `bbox` is millimetres. `featureCount` is the number of marked feature blocks in the script that ran. Before any run, `volume` is null, `bbox` is null, `partName` is `""`, and `featureCount` is `0`.
 
@@ -165,6 +173,15 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `nothing_to_undo` | `undo` is already at the bottom of the stack. The editor and the history do not change. |
 | `screenshot_failed` | The viewport did not return a `data:image/png` URL. |
 | `internal` | The command threw unexpectedly. |
+| `unknown_face` | `select_faces` key did not match any patch. |
+| `ambiguous_face` | `select_faces` key matched more than one patch. |
+| `unknown_edge` | `select_edges` key or face-key pair did not match. |
+| `ambiguous_edge` | `select_edges` face-key pair matched more than one edge. |
+| `unknown_part` | `set_active_part` or `select_parts` id is not in the assembly. |
+| `bad_view` | `camera_set` `view` is not a known preset. |
+| `no_mesh` | Selection or camera command ran before a solid was shown. |
+| `no_selection` | `zoom_to_selection` with no face or edge picked. |
+| `camera_failed` | Viewport could not apply the requested camera change. |
 
 ### Convenience methods
 

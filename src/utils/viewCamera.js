@@ -220,3 +220,31 @@ export function easeInOutCubic(t) {
   const x = Math.min(1, Math.max(0, t));
   return x < 0.5 ? 4 * x * x * x : 1 - ((-2 * x + 2) ** 3) / 2;
 }
+
+/**
+ * Set camera pose explicitly (agent harness). At least one of position,
+ * target, or fov must be provided. Returns false when nothing changed.
+ */
+export function applyCameraPose({ camera, controls, position, target, fov }) {
+  if (!camera) return false;
+  let changed = false;
+  const fovNum = Number(fov);
+  if (Number.isFinite(fovNum) && fovNum > 0 && fovNum < 180) {
+    camera.fov = fovNum;
+    camera.updateProjectionMatrix();
+    changed = true;
+  }
+  if (Array.isArray(position) && position.length === 3
+    && position.every((n) => Number.isFinite(Number(n)))) {
+    camera.position.set(Number(position[0]), Number(position[1]), Number(position[2]));
+    changed = true;
+  }
+  if (controls?.target && Array.isArray(target) && target.length === 3
+    && target.every((n) => Number.isFinite(Number(n)))) {
+    controls.target.set(Number(target[0]), Number(target[1]), Number(target[2]));
+    camera.lookAt(controls.target);
+    if (typeof controls.update === 'function') controls.update();
+    changed = true;
+  }
+  return changed;
+}

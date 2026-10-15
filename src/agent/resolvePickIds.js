@@ -1,0 +1,141 @@
+import { matchFaceKeys } from '../utils/faceColorMatch.js';
+import { edgeKey } from '../utils/selectEdge.js';
+
+function vec3(value) {
+  if (!value) return null;
+  if (Array.isArray(value)) {
+    const out = [Number(value[0]), Number(value[1]), Number(value[2])];
+    return out.every((n) => Number.isFinite(n)) ? out : null;
+  }
+  if (typeof value === 'object') {
+    const out = [Number(value.x), Number(value.y), Number(value.z)];
+    return out.every((n) => Number.isFinite(n)) ? out : null;
+  }
+  return null;
+}
+
+function readFaceKey(raw, { allowZeroArea = false } = {}) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const at = vec3(raw.at);
+  const n = vec3(raw.n);
+  const area = Number(raw.area);
+  const areaOk = allowZeroArea
+    ? Number.isFinite(area) && area >= 0
+    : area > 0;
+  if (!at || !n || !areaOk) return null;
+  const key = { at, n, area };
+  if (Number.isInteger(raw.src) && raw.src < 0) {
+    key.src = raw.src;
+    if (Number.isInteger(raw.ord) && raw.ord >= 0) key.ord = raw.ord;
+  }
+  return key;
+}
+
+function keysMatchLoose(a, b) {
+  if (!a || !b) return false;
+  const atA = vec3(a.at);
+  const atB = vec3(b.at);
+  const nA = vec3(a.n);
+  const nB = vec3(b.n);
+  if (!atA || !atB || !nA || !nB) return false;
+  const dist = Math.hypot(atA[0] - atB[0], atA[1] - atB[1], atA[2] - atB[2]);
+  if (dist > 1.01) return false;
+  const dot = nA[0] * nB[0] + nA[1] * nB[1] + nA[2] * nB[2];
+  return dot > Math.cos((8 * Math.PI) / 180);
+}
+
+/**
+ * Resolve stable face keys against mesh fingerprints.
+ * @returns {{ picks: object[], error?: { code: string, message: string } }}
+ */
+export function resolveFaceKeys(fingerprints, keys) {
+  const list = Array.isArray(keys) ? keys : (keys ? [keys] : []);
+  if (!list.length) {
+    return { error: { code: 'bad_args', message: 'select_faces needs at least one face key' } };
+  }
+  const items = [];
+  for (let i = 0; i < list.length; i++) {
+    const key = readFaceKey(list[i]);
+    if (!key) {
+      return { error: { code: 'bad_args', message: `face key at index ${i} must include at, n, and area` } };
+    }
+    items.push({ key });
+  }
+  const { matched, ambiguous, missing } = matchFaceKeys(fingerprints, items);
+  if (ambiguous.length) {
+    return { error: { code: 'ambiguous_face', message: 'Face key matches more than one patch' } };
+  }
+  if (missing.length) {
+    return { error: { code: 'unknown_face', message: 'Face key did not match any patch on the active mesh' } };
+  }
+  const picks = matched.map((row) => {
+    const face = row.face;
+    return {
+      center: face.at.slice(),
+      normal: face.n.slice(),
+      area: face.area,
+      indices: face.tris?.length ? face.tris.slice() : [],
+    };
+  });
+  return { picks };
+}
+
+function edgeFromFaceKeys(featureEdges, faceKeyA, faceKeyB) {
+  const hits = [];
+  for (const edge of featureEdges) {
+    const mid = vec3(edge.mid);
+    const n0 = vec3(edge.n0);
+    const n1 = vec3(edge.n1);
+    if (!mid || !n0 || !n1) continue;
+    const a = { at: mid, n: n0, area: 0 };
+    const b = { at: mid, n: n1, area: 0 };
+    const forward = keysMatchLoose(a, faceKeyA) && keysMatchLoose(b, faceKeyB);
+    const reverse = keysMatchLoose(a, faceKeyB) && keysMatchLoose(b, faceKeyA);
+    if (forward || reverse) hits.push(edge);
+  }
+  return hits;
+}
+
+/**
+ * @returns {{ edges: object[], error?: { code: string, message: string } }}
+ */
+export function resolveEdgeKeys(featureEdges, keys, partId = null) {
+  const list = Array.isArray(keys) ? keys : (keys ? [keys] : []);
+  if (!list.length) {
+    return { error: { code: 'bad_args', message: 'select_edges needs at least one edge key' } };
+  }
+  const edges = Array.isArray(featureEdges) ? featureEdges : [];
+  const resolved = [];
+  for (let i = 0; i < list.length; i++) {
+    const raw = list[i];
+    let hit = null;
+    if (typeof raw === 'string' && raw) {
+      hit = edges.find((edge) => edgeKey(edge) === raw) || null;
+      if (!hit) {
+        return { error: { code: 'unknown_edge', message: `Edge key not found: ${raw}` } };
+      }
+    } else if (raw && typeof raw === 'object') {
+      const faceKeyA = readFaceKey(raw.faceKeyA, { allowZeroArea: true });
+      const faceKeyB = readFaceKey(raw.faceKeyB, { allowZeroArea: true });
+      if (!faceKeyA || !faceKeyB) {
+        return { error: { code: 'bad_args', message: `edge key at index ${i} needs faceKeyA and faceKeyB` } };
+      }
+      const hits = edgeFromFaceKeys(edges, faceKeyA, faceKeyB);
+      if (hits.length > 1) {
+        return { error: { code: 'ambiguous_edge', message: 'Edge face-key pair matches more than one edge' } };
+      }
+      if (!hits.length) {
+        return { error: { code: 'unknown_edge', message: 'Edge face-key pair did not match any feature edge' } };
+      }
+      hit = hits[0];
+    } else {
+      return { error: { code: 'bad_args', message: `edge key at index ${i} must be a string or face-key pair` } };
+    }
+    if (partId != null && partId !== '') {
+      resolved.push({ ...hit, partId: String(partId) });
+    } else {
+      resolved.push(hit);
+    }
+  }
+  return { edges: resolved };
+}

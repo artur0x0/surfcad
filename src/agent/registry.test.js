@@ -19,7 +19,7 @@ test('v1 registry order is the bridge command list, with list_commands appended'
     'undo',
   ]);
   assert.equal(AGENT_COMMANDS[7], 'list_commands');
-  assert.equal(AGENT_COMMANDS.at(-1), 'camera');
+  assert.equal(AGENT_COMMANDS.at(-1), 'zoom_to_selection');
 });
 
 test('every v1 command has a schema, an example, and run', () => {

@@ -43,6 +43,14 @@ const COMMANDS = [
   'toasts',
   'parts',
   'camera',
+  'select_clear',
+  'select_faces',
+  'select_edges',
+  'select_parts',
+  'set_active_part',
+  'camera_set',
+  'camera_fit',
+  'zoom_to_selection',
 ];
 
 function storage(value) {
@@ -499,7 +507,7 @@ test('list_commands does not wait for a queued mutation', async () => {
   assert.equal(listed.ok, true);
   assert.equal(listed.result.commands[0].name, 'get_script');
   assert.equal(listed.result.commands[7].name, 'list_commands');
-  assert.equal(listed.result.commands.at(-1).name, 'camera');
+  assert.equal(listed.result.commands.at(-1).name, 'zoom_to_selection');
   release();
   await pending;
 });

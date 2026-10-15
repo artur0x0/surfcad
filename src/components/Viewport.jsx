@@ -36,6 +36,7 @@ import {
   SpriteMaterial,
   CanvasTexture,
   Color,
+  Box3,
 } from 'three';
 import {
   BLOCK_PREVIEW_EDGE_ANGLE,
@@ -499,7 +500,8 @@ import {
   toggleMeasurePick,
   triangleGroupStats,
 } from '../utils/measurePicks';
-import { fitView, meshWorldBox, unionWorldBox, VIEW_PRESETS, VIEW_SNAP_MARGIN } from '../utils/viewCamera';
+import { applyCameraPose, fitView, meshWorldBox, unionWorldBox, VIEW_PRESETS, VIEW_SNAP_MARGIN } from '../utils/viewCamera';
+import { resolveEdgeKeys, resolveFaceKeys } from '../agent/resolvePickIds.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
 import {
   boxCornerPoints,
@@ -1247,6 +1249,12 @@ const Viewport = forwardRef(({
   const [featureDeleteConfirm, setFeatureDeleteConfirm] = useState(null);
   const cadBodyStickyRef = useRef(false);
   const showCadBodyHighlightRef = useRef(() => false);
+  const agentClearSelectionRef = useRef(() => {});
+  const agentSelectFacesRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh to select on' } }));
+  const agentSelectEdgesRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh to select on' } }));
+  const agentSetCameraRef = useRef(() => ({ ok: false }));
+  const agentFitCameraRef = useRef(() => false);
+  const agentZoomToSelectionRef = useRef(() => ({ error: { code: 'no_selection', message: 'No selection' } }));
   const swapPickPartRef = useRef(() => false);
   const ambiguousPickRef = useRef(null);
   const [partChoice, setPartChoice] = useState(null);
@@ -2290,6 +2298,12 @@ const Viewport = forwardRef(({
         if (!shellToast) return [];
         return [{ id: 'viewport-toast', kind: 'info', message: String(shellToast) }];
       },
+      clearSelection: () => agentClearSelectionRef.current(),
+      selectFaces: (args) => agentSelectFacesRef.current(args),
+      selectEdges: (args) => agentSelectEdgesRef.current(args),
+      setCamera: (args) => agentSetCameraRef.current(args),
+      fitCamera: () => agentFitCameraRef.current(),
+      zoomToSelection: () => agentZoomToSelectionRef.current(),
     });
   }
 
@@ -10899,6 +10913,98 @@ const Viewport = forwardRef(({
     if (ok) console.log(`[Viewport] Snapped to ${preset.label}`);
     return ok;
   }, []);
+
+  agentClearSelectionRef.current = () => {
+    clearGeomSelection();
+  };
+
+  agentSelectFacesRef.current = ({ keys }) => {
+    const geom = resultRef.current?.geometry;
+    const positions = geom?.attributes?.position;
+    const index = geom?.index?.array;
+    if (!geom || !positions || !index?.length) {
+      return { error: { code: 'no_mesh', message: 'No mesh to select faces on' } };
+    }
+    syncFeatureEdges(geom);
+    const fingerprints = fingerprintsFromGeometry(geom, faceIDsRef.current);
+    const resolved = resolveFaceKeys(fingerprints, keys);
+    if (resolved.error) return resolved;
+    const picks = resolved.picks;
+    publishFacePicks(picks, geom, positions, index);
+    return { count: picks.length };
+  };
+
+  agentSelectEdgesRef.current = ({ keys }) => {
+    const geom = resultRef.current?.geometry;
+    if (!geom) {
+      return { error: { code: 'no_mesh', message: 'No mesh to select edges on' } };
+    }
+    syncFeatureEdges(geom);
+    const resolved = resolveEdgeKeys(featureEdgesRef.current, keys, activePartIdRef.current);
+    if (resolved.error) return resolved;
+    setSelectedEdges(resolved.edges);
+    highlightSelectedEdges(resolved.edges);
+    return { count: resolved.edges.length };
+  };
+
+  agentSetCameraRef.current = ({ view, position, target, fov }) => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera) return { ok: false };
+    if (typeof view === 'string' && VIEW_PRESETS[view]) {
+      const ok = handleViewSnap(view);
+      return ok ? { ok: true } : { ok: false };
+    }
+    const ok = applyCameraPose({ camera, controls, position, target, fov });
+    if (ok && rendererRef.current && sceneRef.current) {
+      rendererRef.current.render(sceneRef.current, camera);
+    }
+    return { ok };
+  };
+
+  agentFitCameraRef.current = () => {
+    handleZoomToFit();
+    return !!cameraRef.current;
+  };
+
+  agentZoomToSelectionRef.current = () => {
+    const geom = resultRef.current?.geometry;
+    const positions = geom?.attributes?.position?.array;
+    const index = geom?.index?.array;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!geom || !camera || !controls) {
+      return { error: { code: 'no_mesh', message: 'No mesh to frame' } };
+    }
+    const box = new Box3();
+    const face = selectedFaceRef.current;
+    const edges = selectedEdgesRef.current || [];
+    if (face?.indices?.length && positions && index) {
+      const bounds = boundsOfTriangles(positions, index, face.indices);
+      if (bounds?.min && bounds?.max) {
+        box.min.set(bounds.min[0], bounds.min[1], bounds.min[2]);
+        box.max.set(bounds.max[0], bounds.max[1], bounds.max[2]);
+      }
+    } else if (edges.length) {
+      const scratch = new Vector3();
+      for (const edge of edges) {
+        if (edge?.va) {
+          scratch.set(edge.va[0], edge.va[1], edge.va[2]);
+          box.expandByPoint(scratch);
+        }
+        if (edge?.vb) {
+          scratch.set(edge.vb[0], edge.vb[1], edge.vb[2]);
+          box.expandByPoint(scratch);
+        }
+      }
+    }
+    if (box.isEmpty()) {
+      return { error: { code: 'no_selection', message: 'No face or edge selection to frame' } };
+    }
+    holdSheetSlide();
+    const ok = fitView({ camera, controls, box });
+    return ok ? { ok: true } : { ok: false };
+  };
 
   const exitMeasureMode = useCallback(() => {
     if (measureTapTimerRef.current) {

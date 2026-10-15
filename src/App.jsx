@@ -7786,6 +7786,40 @@ const App = () => {
         })),
       });
     },
+    setActivePart(partId) {
+      const doc = assemblyRef.current;
+      if (!doc?.parts?.some((row) => row.id === partId)) {
+        return { error: { code: 'unknown_part', message: `Unknown part id: ${partId}` } };
+      }
+      handleSelectPart(partId);
+      return { ok: true };
+    },
+    selectParts({ partIds }) {
+      const doc = assemblyRef.current;
+      if (!doc) return { error: { code: 'unknown_part', message: 'No assembly loaded' } };
+      const ids = Array.isArray(partIds) ? partIds : [];
+      const resolved = [];
+      for (const id of ids) {
+        if (!doc.parts.some((row) => row.id === id)) {
+          return { error: { code: 'unknown_part', message: `Unknown part id: ${id}` } };
+        }
+        resolved.push(id);
+      }
+      const last = resolved[resolved.length - 1];
+      rememberCadPart(last);
+      const part = doc.parts.find((row) => row.id === last);
+      const mesh = meshForPart(last);
+      if (mesh?.vertProperties) {
+        viewportRef.current?.swapPickPart?.({
+          partId: last,
+          mesh,
+          position: partPosition(part) || [0, 0, 0],
+          placement: partPlacement(part),
+        });
+      }
+      viewportRef.current?.showCadBodyHighlight?.();
+      return { partIds: resolved };
+    },
   });
   const partLabels = {};
   for (const row of assemblyDoc?.parts || []) partLabels[row.id] = row.name || row.id;
