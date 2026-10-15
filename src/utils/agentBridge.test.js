@@ -504,6 +504,56 @@ test('list_commands does not wait for a queued mutation', async () => {
   await pending;
 });
 
+test('state readers resolve from the host ref at call time', async () => {
+  const ref = {
+    current: {
+      getScript: () => '',
+      setEditor() {},
+      readHistory: () => emptyPartHistory(),
+      writeHistory() {},
+      async execute() {
+        return { ok: true, errors: [], volume: 1, bbox: null, partName: 'Part (1)' };
+      },
+      screenshot: () => 'data:image/png;base64,iVBORw0KGgo=',
+    },
+  };
+  const api = createSurfcadBridge({ resolve: () => ref.current });
+  const empty = await api.call('feature_tree', '{}');
+  assert.equal(empty.ok, true);
+  assert.equal(empty.result.features.length, 0);
+
+  ref.current.readFeatureTree = () => ({
+    features: [{ id: 'cube1', kind: 'cube', index: 0 }],
+    rollbackAnchor: null,
+    activeChipId: null,
+  });
+  ref.current.readParts = () => ({
+    activeId: 'local:part1',
+    assemblyName: 'box',
+    parts: [{ id: 'local:part1', name: 'Part (1)', visible: true }],
+  });
+  ref.current.readCamera = () => ({
+    position: [1, 2, 3],
+    quaternion: [0, 0, 0, 1],
+    target: [0, 0, 0],
+    zoom: 1,
+    fov: 45,
+  });
+  ref.current.readDirty = () => ({
+    workspaceDirty: true,
+    assemblyDirty: false,
+    renamePending: false,
+    legacyCleanup: false,
+    partIds: ['local:part1'],
+  });
+
+  const tree = await api.call('feature_tree', '{}');
+  assert.equal(tree.result.features.length, 1);
+  assert.equal((await api.call('parts', '{}')).result.parts.length, 1);
+  assert.deepEqual((await api.call('camera', '{}')).result.position, [1, 2, 3]);
+  assert.equal((await api.call('dirty', '{}')).result.workspaceDirty, true);
+});
+
 test('commitAgentStep does not add a step for the same text', () => {
   const once = commitAgentStep(emptyPartHistory(), BOX, 'Agent script');
   const twice = commitAgentStep(once, BOX, 'Agent run');

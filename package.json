@@ -12,6 +12,7 @@
         "golden:agent-catalog": "node scripts/golden/smoke_agent_catalog.mjs",
         "golden:agent-headless": "node scripts/golden/smoke_agent_headless.mjs",
         "golden:agent-bridge": "node scripts/golden/smoke_agent_bridge_flag.mjs",
+        "golden:agent-bridge-readers": "node scripts/golden/smoke_agent_bridge_readers.mjs",
         "lint": "eslint . --max-warnings 0 --report-unused-disable-directives",
         "preview": "vite preview",
         "verify": "node ${CADGEN_HARNESS:-/home/artur/cadgen-workspace}/harness/verify_all.mjs",

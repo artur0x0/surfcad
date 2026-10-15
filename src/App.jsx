@@ -7423,16 +7423,7 @@ const App = () => {
       return undefined;
     }
     window.surfcad = createSurfcadBridge({
-      getScript: () => agentHostRef.current.getScript(),
-      setEditor: (src) => agentHostRef.current.setEditor(src),
-      readHistory: () => agentHostRef.current.readHistory(),
-      writeHistory: (history) => agentHostRef.current.writeHistory(history),
-      execute: (script) => agentHostRef.current.execute(script),
-      screenshot: () => {
-        const shot = agentHostRef.current?.screenshot;
-        if (typeof shot === 'function') return shot();
-        return viewportRef.current?.capturePng?.() ?? null;
-      },
+      resolve: () => agentHostRef.current,
     });
     return () => {
       delete window.surfcad;
@@ -7703,6 +7694,15 @@ const App = () => {
       };
     },
     readDirty() {
+      let undoStackDirty = false;
+      const readHistory = agentHostRef.current?.readHistory;
+      if (typeof readHistory === 'function') {
+        const hist = readHistory();
+        const head = Number.isInteger(hist?.head) ? hist.head : -1;
+        const code = head >= 0 && hist?.commits?.[head] ? hist.commits[head].code : '';
+        const live = codeEditorRef.current?.getContent?.() ?? '';
+        undoStackDirty = live !== code;
+      }
       return buildDirtyState({
         workspaceDirty: !!sourceDirty,
         partIds: gitDirtyIds,
@@ -7711,11 +7711,13 @@ const App = () => {
           : false,
         renamePending: !!dirtyBaseline?.renamePending,
         legacyCleanup: !!dirtyBaseline?.legacyCleanup,
+        undoStackDirty,
       });
     },
     readToasts() {
       const rows = [];
       if (uploadError) rows.push({ id: 'upload', kind: 'error', message: uploadError });
+      if (uploadNotice) rows.push({ id: 'upload-notice', kind: 'info', message: uploadNotice });
       if (renameNotice?.message) {
         rows.push({ id: 'rename', kind: 'warn', message: renameNotice.message });
       }
@@ -7726,6 +7728,8 @@ const App = () => {
       if (repoSaved?.branch) {
         rows.push({ id: 'repo-saved', kind: 'info', message: repoSavedMessage(repoSaved.branch) });
       }
+      const viewportToasts = agentHostRef.current?.readViewportToasts;
+      if (typeof viewportToasts === 'function') rows.push(...viewportToasts());
       return buildToasts(rows);
     },
     readParts() {

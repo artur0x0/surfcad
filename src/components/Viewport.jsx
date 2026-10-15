@@ -2286,6 +2286,10 @@ const Viewport = forwardRef(({
           fov: camera.fov,
         });
       },
+      readViewportToasts() {
+        if (!shellToast) return [];
+        return [{ id: 'viewport-toast', kind: 'info', message: String(shellToast) }];
+      },
     });
   }
 
