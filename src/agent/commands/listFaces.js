@@ -3,7 +3,7 @@ export const listFacesCommand = Object.freeze({
   name: 'list_faces',
   schema: {
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       part_id: { type: 'string' },
     },

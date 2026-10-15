@@ -2,7 +2,7 @@ export const slotSetParamsCommand = Object.freeze({
   name: 'slot_set_params',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       distance: { type: 'number', description: 'Extrude distance mm' },
       sense: { type: 'string', enum: ['positive', 'negative', 'both'] },

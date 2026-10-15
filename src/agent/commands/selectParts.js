@@ -2,7 +2,7 @@ export const selectPartsCommand = Object.freeze({
   name: 'select_parts',
   schema: {
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       part_ids: { type: 'array', items: { type: 'string' }, minItems: 1 },
       part_id: { type: 'string' },

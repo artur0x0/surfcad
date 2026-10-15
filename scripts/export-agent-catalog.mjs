@@ -865,4 +865,8 @@ writeFileSync(join(outDir, 'sync-files.json'), `${JSON.stringify(sync, null, 2)}
 console.log(`helpers ${helpers.count}`);
 console.log(`manifold methods ${manifold.Manifold.length} cross ${manifold.CrossSection.length} fns ${manifold.functions.length}`);
 console.log(`runtime files ${sync.runtimeFiles.length}`);
+
+// Bridge command catalog for surfcad-mcp (M2).
+await import('./export-agent-bridge-commands.mjs');
+
 if (process.exitCode) process.exit(process.exitCode);

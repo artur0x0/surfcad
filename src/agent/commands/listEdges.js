@@ -2,7 +2,7 @@ export const listEdgesCommand = Object.freeze({
   name: 'list_edges',
   schema: {
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       part_id: { type: 'string' },
       raw: {

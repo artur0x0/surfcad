@@ -2,7 +2,7 @@ import { NO_ARGS_SCHEMA } from '../registry.js';
 
 const TARGET_SCHEMA = Object.freeze({
   type: 'object',
-  additionalProperties: true,
+  additionalProperties: false,
   properties: {
     id: { type: 'string', description: 'Feature id from feature_tree' },
     index: { type: 'number', description: 'Feature index from feature_tree' },
@@ -40,7 +40,7 @@ export const activateFeatureCommand = Object.freeze({
   name: 'activate_feature',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       ...TARGET_SCHEMA.properties,
       clear: { type: 'boolean', description: 'Clear the active chip highlight' },
@@ -56,11 +56,11 @@ export const editFeatureCommand = Object.freeze({
   name: 'edit_feature',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       params: {
         type: 'object',
-        additionalProperties: true,
+        additionalProperties: false,
         description: 'Feature sheet / edit-card fields to merge before confirm',
       },
     },
@@ -120,7 +120,7 @@ export const deleteFeatureCommand = Object.freeze({
   uiEntry: 'data-feature-sheet-delete',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       ...TARGET_SCHEMA.properties,
     },
@@ -136,7 +136,7 @@ export const rollbackToCommand = Object.freeze({
   uiEntry: 'data-rollback-bar',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       id: { type: 'string', description: 'Feature id the bar sits after' },
       index: { type: 'number', description: 'Gap index: 0 before all, length after last' },

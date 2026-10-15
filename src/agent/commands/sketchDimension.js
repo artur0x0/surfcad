@@ -4,7 +4,7 @@ const PICK_SCHEMA = {
   type: 'array',
   items: {
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       kind: { type: 'string', enum: ['point', 'line', 'arc', 'ref'] },
       id: { type: 'string' },
@@ -17,7 +17,7 @@ export const sketchDimensionCommand = Object.freeze({
   uiEntry: 'dimension',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       kind: { type: 'string', enum: ['length', 'angle', 'distance', 'offset', 'radius'] },
       value: { type: 'number' },

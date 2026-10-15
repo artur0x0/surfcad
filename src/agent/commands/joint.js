@@ -1,4 +1,4 @@
-import { NO_ARGS_SCHEMA } from '../registry.js';
+import { NO_ARGS_SCHEMA, FACE_KEY_SCHEMA, JOINT_TYPES } from '../schemas/common.js';
 import { jointParamsFromArgs } from '../jointAgent.js';
 import { runJointCommit } from './runJointCommit.js';
 
@@ -11,17 +11,6 @@ function hostCall(ctx, name, args) {
   if (out?.error) return { error: out.error };
   return { result: out?.result ?? out };
 }
-
-const FACE_KEY_SCHEMA = {
-  type: 'object',
-  additionalProperties: true,
-  required: ['at', 'n', 'area'],
-  properties: {
-    at: { type: 'array', items: { type: 'number' } },
-    n: { type: 'array', items: { type: 'number' } },
-    area: { type: 'number' },
-  },
-};
 
 export const jointOpenCommand = Object.freeze({
   name: 'joint_open',
@@ -39,9 +28,9 @@ export const jointSetParamsCommand = Object.freeze({
   uiEntry: 'data-joint-card',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
-      type: { type: 'string' },
+      type: { type: 'string', enum: JOINT_TYPES.slice() },
       name: { type: 'string' },
       value_mm: { type: 'number' },
       value: { type: 'number' },
@@ -66,7 +55,7 @@ export const jointPickCommand = Object.freeze({
   uiEntry: 'data-joint-card',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       part_id: { type: 'string' },
       key: FACE_KEY_SCHEMA,
@@ -74,7 +63,7 @@ export const jointPickCommand = Object.freeze({
         type: 'array',
         items: Object.freeze({
           type: 'object',
-          additionalProperties: true,
+          additionalProperties: false,
           required: ['part_id', 'key'],
           properties: {
             part_id: { type: 'string' },

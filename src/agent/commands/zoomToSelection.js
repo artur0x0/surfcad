@@ -2,7 +2,7 @@ export const zoomToSelectionCommand = Object.freeze({
   name: 'zoom_to_selection',
   schema: {
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {},
   },
   example: {},

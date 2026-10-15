@@ -4,7 +4,7 @@ export const sketchAddCommand = Object.freeze({
   name: 'sketch_add',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       tool: {
         type: 'string',

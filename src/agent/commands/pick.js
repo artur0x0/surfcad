@@ -31,6 +31,7 @@ import {
   checkToolParams,
   pickerBusyError,
 } from '../pick/tools.js';
+import { PICK_KEY_SCHEMA } from '../schemas/common.js';
 
 /** How long a published pick may take to show in the viewport. */
 export const PICK_SETTLE_MS = 6000;
@@ -150,8 +151,12 @@ function resolveKeys(ctx, kind, keys) {
 }
 
 const KEY_PROPS = Object.freeze({
-  keys: { type: 'array', description: 'Face keys (list_faces) or edge ids (list_feature_edges eN, list_edges key, or { faceKeyA, faceKeyB })' },
-  key: { description: 'One key; same forms as keys' },
+  keys: {
+    type: 'array',
+    items: PICK_KEY_SCHEMA,
+    description: 'Face keys (list_faces) or edge ids (list_feature_edges eN, list_edges key, or { faceKeyA, faceKeyB })',
+  },
+  key: { ...PICK_KEY_SCHEMA, description: 'One key; same forms as keys' },
 });
 
 const BEGIN_PROPS = Object.freeze({
@@ -495,7 +500,7 @@ export const pickBeginCommand = Object.freeze({
   uiEntry: PICK_TOOL_UI_ENTRIES.slice(),
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: BEGIN_PROPS,
   }),
   example: { tool: 'filletEdges', params: { radius: 1 } },
@@ -507,7 +512,7 @@ export const pickNextCommand = Object.freeze({
   name: 'pick_next',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       ...KEY_PROPS,
       remove: { type: 'boolean', description: 'Tap these picks off instead of on' },
@@ -520,7 +525,7 @@ export const pickNextCommand = Object.freeze({
 
 export const pickUndoCommand = Object.freeze({
   name: 'pick_undo',
-  schema: Object.freeze({ type: 'object', additionalProperties: true, properties: {} }),
+  schema: Object.freeze({ type: 'object', additionalProperties: false, properties: {} }),
   example: {},
   run(ctx) {
     return editPick(ctx, popPick);
@@ -529,7 +534,7 @@ export const pickUndoCommand = Object.freeze({
 
 export const pickClearCommand = Object.freeze({
   name: 'pick_clear',
-  schema: Object.freeze({ type: 'object', additionalProperties: true, properties: {} }),
+  schema: Object.freeze({ type: 'object', additionalProperties: false, properties: {} }),
   example: {},
   run(ctx) {
     return editPick(ctx, (session) => ({ session: clearPicks(session) }));
@@ -540,7 +545,7 @@ export const pickDoneCommand = Object.freeze({
   name: 'pick_done',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       accept: { type: 'boolean', description: 'Press the card Accept (one undo step, waits for the run). Omit to leave the picks for use_selection or a later Accept.' },
     },
@@ -557,14 +562,14 @@ export const pickDoneCommand = Object.freeze({
 
 export const pickCancelCommand = Object.freeze({
   name: 'pick_cancel',
-  schema: Object.freeze({ type: 'object', additionalProperties: true, properties: {} }),
+  schema: Object.freeze({ type: 'object', additionalProperties: false, properties: {} }),
   example: {},
   run: cancelPick,
 });
 
 export const pickStateCommand = Object.freeze({
   name: 'pick_state',
-  schema: Object.freeze({ type: 'object', additionalProperties: true, properties: {} }),
+  schema: Object.freeze({ type: 'object', additionalProperties: false, properties: {} }),
   example: {},
   immediate: true,
   run(ctx) {
@@ -605,7 +610,7 @@ function oneShotSchema(kind) {
   delete rest.replace;
   return Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       ...KEY_PROPS,
       ...rest,
@@ -668,7 +673,7 @@ export const pickPointsCommand = Object.freeze({
   name: 'pick_points',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       ...KEY_PROPS,
       kind: { type: 'string', enum: SKETCH_PICK_KINDS.slice() },

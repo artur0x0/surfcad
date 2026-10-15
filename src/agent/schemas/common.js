@@ -1,0 +1,129 @@
+/** Shared JSON Schema fragments for agent bridge commands (strict, MCP-facing). */
+
+export const NO_ARGS_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  properties: {},
+});
+
+export const FACE_KEY_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  required: ['at', 'n', 'area'],
+  properties: {
+    at: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
+    n: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
+    area: { type: 'number' },
+    src: { type: 'integer' },
+    ord: { type: 'integer' },
+  },
+});
+
+export const EDGE_KEY_SCHEMA = Object.freeze({
+  oneOf: [
+    { type: 'string', description: 'Grouped boundary id (eN) or packed mesh edge key' },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['faceKeyA', 'faceKeyB'],
+      properties: {
+        faceKeyA: FACE_KEY_SCHEMA,
+        faceKeyB: FACE_KEY_SCHEMA,
+        faceA: FACE_KEY_SCHEMA,
+        faceB: FACE_KEY_SCHEMA,
+        faceKeys: {
+          type: 'array',
+          minItems: 2,
+          maxItems: 2,
+          items: FACE_KEY_SCHEMA,
+        },
+      },
+    },
+  ],
+});
+
+export const PICK_KEY_SCHEMA = Object.freeze({
+  oneOf: [
+    { type: 'string' },
+    FACE_KEY_SCHEMA,
+    EDGE_KEY_SCHEMA,
+  ],
+});
+
+export const EDGE_FACE_PAIR_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  required: ['faceKeyA', 'faceKeyB'],
+  properties: {
+    faceKeyA: FACE_KEY_SCHEMA,
+    faceKeyB: FACE_KEY_SCHEMA,
+    faceA: FACE_KEY_SCHEMA,
+    faceB: FACE_KEY_SCHEMA,
+    faceKeys: {
+      type: 'array',
+      minItems: 2,
+      maxItems: 2,
+      items: FACE_KEY_SCHEMA,
+    },
+  },
+});
+
+export const SKETCH_PICK_ITEM_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    kind: { type: 'string', enum: ['point', 'line', 'arc', 'ref'] },
+    id: { type: 'string' },
+  },
+});
+
+export const SKETCH_PICKS_SCHEMA = Object.freeze({
+  type: 'array',
+  items: SKETCH_PICK_ITEM_SCHEMA,
+});
+
+export const BBOX_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    min: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
+    max: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
+  },
+});
+
+export const STATUS_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    volume: { type: ['number', 'null'] },
+    bbox: { oneOf: [BBOX_SCHEMA, { type: 'null' }] },
+    partName: { type: 'string' },
+    featureCount: { type: 'integer' },
+  },
+});
+
+export const MUTATE_RESULT_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    ok: { type: 'boolean' },
+    errors: { type: 'array', items: { type: 'string' } },
+    status: STATUS_SCHEMA,
+    unchanged: { type: 'boolean' },
+  },
+});
+
+export const JOINT_TYPES = Object.freeze([
+  'coincident',
+  'parallel',
+  'perpendicular',
+  'distance',
+  'angle',
+  'concentric',
+  'symmetric',
+  'fixed',
+]);
+
+export const CAMERA_VIEW_ENUM = Object.freeze([
+  'iso', 'front', 'right', 'top', 'back', 'left', 'bottom',
+]);

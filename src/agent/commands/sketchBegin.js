@@ -2,7 +2,7 @@ export const sketchBeginCommand = Object.freeze({
   name: 'sketch_begin',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       entry: {
         type: 'string',

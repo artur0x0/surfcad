@@ -49,7 +49,7 @@ Helpers close over one module per process, the one bound by `initializeManifold`
 
 ## Catalog
 
-`npm run export:agent` (`scripts/export-agent-catalog.mjs`) rewrites `src/lib/surfcad/catalog/`:
+`npm run export:agent` (`scripts/export-agent-catalog.mjs`) rewrites `src/lib/surfcad/catalog/` and `src/agent/commands.json`:
 
 | File | Contents |
 | --- | --- |
@@ -58,10 +58,13 @@ Helpers close over one module per process, the one bound by `initializeManifold`
 | `assembly.schema.json` | JSON Schema for `.surf.json`. Field rules, groups, and the `// @surf-id` header are [the vault schema](vault-schema.md). |
 | `sheet-metal.json` | `part.sheetMetal` (`sku` required), the `// --- sheet-metal begin/end ---` block, `sheetMetalSolid`, DFM rules, and export options. |
 | `sync-files.json` | The copy list for an external consumer, plus `regenerate`. |
+| `src/agent/commands.json` | Every live-tab bridge command from `V1_COMMANDS`: `name`, `description`, strict JSON Schema `args`, `result` shape, `errors` codes, `mutates`, `destructive`, `confirm` (MCP callers must pass `confirm: true` when true), `immediate`, `uiEntry`, and `example`. Built by `scripts/export-agent-bridge-commands.mjs`. |
 
-Regenerate in this repo when a helper is added or its signature or docs change, and when the shipped Manifold `.d.ts` changes. Copy the JSON. Do not regenerate from a partial tree.
+Regenerate in this repo when a helper is added or its signature or docs change, when the shipped Manifold `.d.ts` changes, and when a bridge command is added or its args schema changes. Copy the JSON. Do not regenerate from a partial tree.
 
 `npm run golden:agent-catalog` fails if a `HELPER_FUNCTIONS` key has no catalog entry, or an entry has no signature and one-line description.
+
+`npm run golden:agent-commands` (and `src/agent/commandsExport.test.js` in `npm test`) fails when `commands.json` is stale, when a registry command has an incomplete args schema (`additionalProperties: false` at the top level; every property typed), or when export metadata is missing.
 
 ## Sync
 
@@ -88,8 +91,10 @@ Quote, order, cart, and checkout are permanently exempt (`src/agent/exempt.js`).
 
 1. **Register** `{ name, schema, run(ctx, args), uiEntry, example }` in `src/agent/commands/` and export it from `src/agent/commands/index.js`. `uiEntry` is the helper id (e.g. `makeExtrude`) or a `data-*` id that already exists on the control (e.g. `data-feature-chip`).
 2. **Tag the control** with `data-ui-action="<same id as uiEntry>"` on the button or card the user clicks. Helper rail items set `data-ui-action={item.id}` automatically from `HELPER_PALETTE_ITEMS`.
-3. **Coverage.** `npm test` (via `scripts/ci/run-unit-tests.mjs`) runs `coverage:agent`. If the command is not ready yet, add the id to `src/agent/coverageAllowlist.js` with a short reason and remove that row when `uiEntry` lands. Allowlist rows must match real tags; the test fails on orphans and on rows for ids that are already covered. Commerce ids never get commands or tags.
-4. **Host.** When the command should mirror a button, publish the same handler App or Viewport uses into `fillAgentHost` and call it from `run` (v1 `run` / `undo` still use the mutate path until a later PR wires toolbar parity).
+3. **Coverage.** `npm test` (via `scripts/ci/run-unit-tests.mjs`) runs `coverage:agent` and `commandsExport.test.js`. If the command is not ready yet, add the id to `src/agent/coverageAllowlist.js` with a short reason and remove that row when `uiEntry` lands. Allowlist rows must match real tags; the test fails on orphans and on rows for ids that are already covered. Commerce ids never get commands or tags.
+4. **Export.** Run `npm run export:agent` and commit `src/agent/commands.json` when `schema`, `description`, or export metadata changes.
+5. **Lint.** New `button` elements with `onClick` in `Toolbar.jsx`, `HelperInsertPalette.jsx`, and `ContourModeRail.jsx` must include `data-ui-action` on the same element (ESLint `no-restricted-syntax`).
+6. **Host.** When the command should mirror a button, publish the same handler App or Viewport uses into `fillAgentHost` and call it from `run` (v1 `run` / `undo` still use the mutate path until a later PR wires toolbar parity).
 
 The object is on in dev (`import.meta.env.DEV`). Elsewhere it is opt-in: the page URL `?agent=1`, or localStorage `surfcadAgent` set to `1`. Flag off, `window.surfcad` is absent and the shells are unchanged. `golden:agent-bridge` checks that at 390 and 1280.
 
