@@ -503,6 +503,8 @@ import {
 import { applyCameraPose, fitView, meshWorldBox, unionWorldBox, VIEW_PRESETS, VIEW_SNAP_MARGIN } from '../utils/viewCamera';
 import { expandResolvedEdgesForHelper } from '../agent/expandEdgeSelection.js';
 import { resolveEdgeKeys, resolveFaceKeys } from '../agent/resolvePickIds.js';
+import { ambiguousFaceError } from '../agent/pick/candidates.js';
+import { createViewportPickHost } from '../agent/pick/viewportPicks.js';
 import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from '../agent/state/listPickables.js';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
@@ -1274,6 +1276,9 @@ const Viewport = forwardRef(({
   const agentSlotSetParamsRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const agentSlotCancelRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const agentPrepareSlotCommitRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
+  const agentPickDepsRef = useRef(null);
+  const agentPickHostRef = useRef(null);
+  if (!agentPickHostRef.current) agentPickHostRef.current = createViewportPickHost(() => agentPickDepsRef.current);
   const swapPickPartRef = useRef(() => false);
   const ambiguousPickRef = useRef(null);
   const [partChoice, setPartChoice] = useState(null);
@@ -2329,6 +2334,7 @@ const Viewport = forwardRef(({
       clearSelection: () => agentClearSelectionRef.current(),
       selectFaces: (args) => agentSelectFacesRef.current(args),
       selectEdges: (args) => agentSelectEdgesRef.current(args),
+      ...agentPickHostRef.current,
       setCamera: (args) => agentSetCameraRef.current(args),
       fitCamera: () => agentFitCameraRef.current(),
       zoomToSelection: () => agentZoomToSelectionRef.current(),
@@ -11106,38 +11112,187 @@ const Viewport = forwardRef(({
     return { count: picks.length };
   };
 
+  const prepareAgentEdgePick = (geom) => {
+    syncFeatureEdges(geom);
+    const fingerprints = fingerprintsFromGeometry(geom, faceIDsRef.current);
+    const rawEdges = buildFeatureEdges(geom);
+    const topo = boundaryTopoRef.current;
+    const annotated = topo?.edges?.length
+      ? annotateFeatureEdges(rawEdges, topo)
+      : rawEdges;
+    return { fingerprints, rawEdges, topo, annotated };
+  };
+
+  const expandAgentEdgeKeys = (prep, keys) => {
+    const resolved = resolveEdgeKeys(
+      prep.rawEdges,
+      keys,
+      activePartIdRef.current,
+      prep.fingerprints,
+      prep.topo,
+    );
+    if (resolved.error) return resolved;
+    const edges = expandResolvedEdgesForHelper(resolved.edges, {
+      coherent: featureEdgesRef.current || [],
+      annotated: prep.annotated,
+      topo: prep.topo,
+    });
+    if (!edges.length) {
+      return { error: { code: 'unknown_edge', message: 'Edge key did not resolve to pickable geometry' } };
+    }
+    return { edges };
+  };
+
   agentSelectEdgesRef.current = ({ keys }) => {
     const geom = resultRef.current?.geometry;
     if (!geom) {
       return { error: { code: 'no_mesh', message: 'No mesh to select edges on' } };
     }
-    syncFeatureEdges(geom);
-    const fingerprints = fingerprintsFromGeometry(geom, faceIDsRef.current);
-    const rawEdges = buildFeatureEdges(geom);
-    const resolved = resolveEdgeKeys(
-      rawEdges,
-      keys,
-      activePartIdRef.current,
-      fingerprints,
-      boundaryTopoRef.current,
-    );
-    if (resolved.error) return resolved;
-    const coherent = featureEdgesRef.current || [];
-    const topo = boundaryTopoRef.current;
-    const annotated = topo?.edges?.length
-      ? annotateFeatureEdges(rawEdges, topo)
-      : rawEdges;
-    const edges = expandResolvedEdgesForHelper(resolved.edges, {
-      coherent,
-      annotated,
-      topo,
-    });
-    if (!edges.length) {
-      return { error: { code: 'unknown_edge', message: 'Edge key did not resolve to pickable geometry' } };
-    }
-    setSelectedEdges(edges);
-    highlightSelectedEdges(edges);
-    return { count: edges.length };
+    const out = expandAgentEdgeKeys(prepareAgentEdgePick(geom), keys);
+    if (out.error) return out;
+    setSelectedEdges(out.edges);
+    highlightSelectedEdges(out.edges);
+    return { count: out.edges.length };
+  };
+
+  const atKeyIndex = (error, index) => ({
+    ...error,
+    message: `${error.message} (key at index ${index})`,
+    details: { ...(error.details || {}), index },
+  });
+
+  // H9 pick sessions. Same state a tap writes; see agent/pick/viewportPicks.js.
+  const agentPickModeRefs = {
+    filletEdges: filletModeRef,
+    chamferEdges: filletModeRef,
+    shell: shellModeRef,
+    addDraft: draftModeRef,
+    moveFace: moveFaceModeRef,
+    deleteFace: deleteFaceModeRef,
+  };
+  agentPickDepsRef.current = {
+    modes: () => ({
+      game: mode === 'game',
+      fillet: filletModeRef.current,
+      shell: !!shellModeRef.current,
+      draft: !!draftModeRef.current,
+      moveFace: !!moveFaceModeRef.current,
+      deleteFace: !!deleteFaceModeRef.current,
+      cut: !!cutModeRef.current,
+      boolean: !!booleanModeRef.current,
+      move: !!moveModeRef.current,
+      contour: !!contourModeRef.current,
+      featureSlot: !!featureSlotsRef.current,
+      paint: !!paintModeRef.current,
+      measure: !!measurementEnabledRef.current,
+      sheetMetal: !!(sheetMetalModeRef.current || sheetMetalPicker),
+      hole: !!holeCardRef.current,
+      joints: !!jointPickingRef.current,
+      fea: feaActive,
+      featureEdit: !!featureEditRef.current,
+    }),
+    opening: () => !!featureEditRef.current?.opening,
+    editing: () => !!featureEditRef.current?.feature,
+    hasMesh: () => !!resultRef.current?.geometry,
+    toast: () => filletToast || shellToast,
+    selectedEdges: () => selectedEdgesRef.current,
+    facePicks: () => facePickGroupRef.current?.picks || null,
+    selectedFace: () => selectedFaceRef.current,
+    toolState: (tool) => agentPickModeRefs[tool]?.current || null,
+    commitToolState: (tool, next) => {
+      if (tool === 'moveFace') commitMoveFaceState(next);
+      else if (tool === 'deleteFace') commitDeleteFaceState(next);
+      else if (tool === 'addDraft') {
+        draftModeRef.current = next;
+        setDraftMode(next);
+        paintDraftPicks(next);
+      } else if (tool === 'shell') {
+        shellModeRef.current = next;
+        setShellMode(next);
+      } else if (agentPickModeRefs[tool]) {
+        filletModeRef.current = next;
+        setFilletMode(next);
+      }
+    },
+    resolveFaces: (keys) => {
+      const geom = resultRef.current?.geometry;
+      syncFeatureEdges(geom);
+      const fingerprints = fingerprintsFromGeometry(geom, faceIDsRef.current);
+      const groups = [];
+      for (let i = 0; i < keys.length; i++) {
+        const out = resolveFaceKeys(fingerprints, [keys[i]]);
+        if (out.error?.code === 'ambiguous_face') return { error: ambiguousFaceError(fingerprints, keys[i], i) };
+        if (out.error) return { error: atKeyIndex(out.error, i) };
+        groups.push(out.picks);
+      }
+      return { groups };
+    },
+    resolveEdges: (keys) => {
+      const prep = prepareAgentEdgePick(resultRef.current?.geometry);
+      const groups = [];
+      for (let i = 0; i < keys.length; i++) {
+        const out = expandAgentEdgeKeys(prep, [keys[i]]);
+        if (out.error) return { error: atKeyIndex(out.error, i) };
+        groups.push(out.edges);
+      }
+      return { groups };
+    },
+    pickMode: () => pickModeRef.current,
+    // The Face / Edge toggle, without its first-use toast.
+    setPickMode: (kind) => {
+      pickModeRef.current = kind;
+      setPickMode(kind);
+      if (kind === 'edge') {
+        clearHighlight();
+        setSelectedFace(null);
+        onFaceSelected?.(null);
+        rebuildFeatureEdges();
+      } else {
+        clearEdgeHover();
+        clearEdgeHighlight();
+      }
+    },
+    writeFaces: (faces, { selection }) => {
+      const geom = resultRef.current?.geometry;
+      if (selection) {
+        clearEdgeHighlight();
+        setSelectedEdges([]);
+      }
+      publishFacePicks(faces, geom, geom?.attributes?.position, geom?.index?.array);
+    },
+    writeEdges: (edges, { selection }) => {
+      if (selection) {
+        clearHighlight();
+        setSelectedFace(null);
+        onFaceSelected?.(null);
+      }
+      clearEdgeHover();
+      setSelectedEdges(edges);
+      if (edges.length) highlightSelectedEdges(edges);
+      else clearEdgeHighlight();
+    },
+    enter: (tool) => {
+      onFeatureOpen?.({ id: tool });
+      if (tool === 'filletEdges' || tool === 'chamferEdges') enterFilletMode({ entry: tool });
+      else if (tool === 'shell') enterShellMode();
+      else if (tool === 'addDraft') enterDraftMode();
+      else if (tool === 'moveFace') enterMoveFaceMode();
+      else if (tool === 'deleteFace') enterDeleteFaceMode();
+    },
+    accept: (tool) => {
+      if (tool === 'filletEdges' || tool === 'chamferEdges') acceptFillet();
+      else if (tool === 'shell') acceptShell();
+      else if (tool === 'addDraft') acceptDraft();
+      else if (tool === 'moveFace') acceptMoveFace();
+      else if (tool === 'deleteFace') acceptDeleteFace();
+    },
+    exit: (tool) => {
+      if (tool === 'filletEdges' || tool === 'chamferEdges') exitFilletMode();
+      else if (tool === 'shell') exitShellMode();
+      else if (tool === 'addDraft') exitDraftMode();
+      else if (tool === 'moveFace') exitMoveFaceMode();
+      else if (tool === 'deleteFace') exitDeleteFaceMode();
+    },
   };
 
   agentSetCameraRef.current = ({ view, position, target, fov }) => {
