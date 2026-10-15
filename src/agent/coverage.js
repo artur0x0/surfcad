@@ -49,7 +49,8 @@ export function coveredActionIds() {
   const ids = new Set(AGENT_EXEMPT.map((row) => row.id));
   for (const name of v1Registry.names) {
     const command = v1Registry.get(name);
-    if (command?.uiEntry) ids.add(command.uiEntry);
+    const entries = Array.isArray(command?.uiEntry) ? command.uiEntry : [command?.uiEntry];
+    for (const entry of entries) if (entry) ids.add(entry);
   }
   return ids;
 }
