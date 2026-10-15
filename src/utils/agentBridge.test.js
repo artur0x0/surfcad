@@ -539,6 +539,39 @@ test('state readers resolve from the host ref at call time', async () => {
   assert.equal((await api.call('dirty', '{}')).result.workspaceDirty, true);
 });
 
+test('visible director pacing does not change mutate results', async () => {
+  const env = world();
+  let cued = 0;
+  env.host.readAgentVisible = () => ({ enabled: true, stepDelayMs: 0 });
+  env.host.agentVisibleDirector = {
+    async before() { cued += 1; },
+    async after() { cued += 1; },
+  };
+  const visibleApi = createSurfcadBridge({ resolve: () => env.host });
+  const visibleRun = await invoke(visibleApi, 'set_script', { source: BOX });
+  assert.ok(cued >= 2);
+
+  const plainEnv = world();
+  const plainApi = createSurfcadBridge(plainEnv.host);
+  const plainRun = await invoke(plainApi, 'set_script', { source: BOX });
+  assert.deepEqual(visibleRun.result.status, plainRun.result.status);
+  assert.equal(visibleRun.result.ok, plainRun.result.ok);
+});
+
+test('agent_set_visible updates host options', async () => {
+  const env = world();
+  env.host.setAgentVisible = (patch) => {
+    env.visible = { ...(env.visible || { enabled: false }), ...patch };
+    return env.visible;
+  };
+  env.host.readAgentVisible = () => env.visible || { enabled: false };
+  const api = createSurfcadBridge({ resolve: () => env.host });
+  const out = await invoke(api, 'agent_set_visible', { enabled: true, stepDelayMs: 100 });
+  assert.equal(out.ok, true);
+  assert.equal(out.result.options.enabled, true);
+  assert.equal(out.result.options.stepDelayMs, 100);
+});
+
 test('commitAgentStep does not add a step for the same text', () => {
   const once = commitAgentStep(emptyPartHistory(), BOX, 'Agent script');
   const twice = commitAgentStep(once, BOX, 'Agent run');

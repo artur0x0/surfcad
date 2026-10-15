@@ -10,6 +10,7 @@
  *   PLAYTEST_PORT (default 4174)
  *   PLAYTEST_OUT  (report directory)
  *   CHROME_PATH
+ *   AGENT_VISIBLE=1  — slower visible cues (?visible=1&visibleDelay=350)
  */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -26,7 +27,9 @@ import { writeReport } from './lib/report.mjs';
 import { scenarios, getScenario } from './scenarios/index.mjs';
 
 const PORT = Number(process.env.PLAYTEST_PORT || 4174);
-const BASE_URL = process.env.PLAYTEST_URL || `http://127.0.0.1:${PORT}/?agent=1`;
+const VISIBLE = process.env.AGENT_VISIBLE === '1' || process.env.AGENT_VISIBLE === 'true';
+const VISIBLE_QS = VISIBLE ? '&visible=1&visibleDelay=350' : '';
+const BASE_URL = process.env.PLAYTEST_URL || `http://127.0.0.1:${PORT}/?agent=1${VISIBLE_QS}`;
 
 const args = process.argv.slice(2);
 const scenarioArgIdx = args.indexOf('--scenario');

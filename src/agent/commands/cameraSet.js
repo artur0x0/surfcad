@@ -28,17 +28,17 @@ export const cameraSetCommand = Object.freeze({
     }
     return null;
   },
-  run(ctx, args) {
+  async run(ctx, args) {
     const setCamera = ctx.setCamera;
     if (typeof setCamera !== 'function') {
       return { error: { code: 'internal', message: 'setCamera handler is missing' } };
     }
-    const out = setCamera({
+    const out = await Promise.resolve(setCamera({
       view: args?.view,
       position: args?.position,
       target: args?.target,
       fov: args?.fov,
-    });
+    }));
     if (out?.error) return { error: out.error };
     if (out?.ok === false) {
       return { error: { code: 'camera_failed', message: 'Camera could not be updated' } };

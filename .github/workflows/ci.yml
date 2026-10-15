@@ -199,6 +199,11 @@ jobs:
             echo "agent playtest skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
+          node scripts/golden/smoke_agent_visible.mjs | tee "${RUNNER_TEMP}/agent-visible.log"
+          if grep -q 'no system Chrome' "${RUNNER_TEMP}/agent-visible.log"; then
+            echo "agent visible golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
 
       # Cheapest FEA study golden: one desktop pass against the build this job
       # already produced. The 390px pass runs locally with the same script.

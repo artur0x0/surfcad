@@ -128,6 +128,7 @@ import { resolveRollbackTarget, resolveStripTarget } from './agent/featureStripA
 import { buildPartsState } from './agent/state/parts';
 import { buildToasts } from './agent/state/toasts';
 import { agentBridgeEnabled, createSurfcadBridge } from './utils/agentBridge';
+import AgentVisibleLayer from './components/AgentVisibleLayer';
 import { runAssemblyParts } from './utils/assemblyRun';
 import { catalogsFromRuns } from './utils/jointResolve';
 import { partPlacement } from './utils/jointSchema';
@@ -8534,6 +8535,7 @@ const App = () => {
 
     return (
       <CartChromeProvider value={cartChrome}>
+        <AgentVisibleLayer agentHostRef={agentHostRef} />
         <div
           ref={splitShellRef}
           className={`relative flex flex-col bg-chrome-surface overflow-hidden ${keyboardOpen ? '' : 'h-dvh'}`}
@@ -8831,6 +8833,7 @@ const App = () => {
 
   return (
     <CartChromeProvider value={cartChrome}>
+      <AgentVisibleLayer agentHostRef={agentHostRef} />
       <div className="flex h-dvh bg-chrome-surface">
         {appMode !== 'game' && (
           <div data-parts-feed-placement="desktop-left" className="h-full shrink-0">

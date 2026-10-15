@@ -248,3 +248,70 @@ export function applyCameraPose({ camera, controls, position, target, fov }) {
   }
   return changed;
 }
+
+/**
+ * Smooth camera pose for agent visible mode. Resolves when the tween finishes.
+ * @param {{ camera: object, controls?: object, position?: number[], target?: number[], fov?: number, durationMs?: number, onFrame?: () => void }} opts
+ */
+export function animateCameraPose(opts) {
+  const {
+    camera,
+    controls,
+    position,
+    target,
+    fov,
+    durationMs = 420,
+    onFrame,
+  } = opts || {};
+  if (!camera) return Promise.resolve(false);
+  const startPos = camera.position.clone();
+  const endPos = Array.isArray(position) && position.length === 3
+    && position.every((n) => Number.isFinite(Number(n)))
+    ? { x: Number(position[0]), y: Number(position[1]), z: Number(position[2]) }
+    : null;
+  const hasTarget = controls?.target && Array.isArray(target) && target.length === 3
+    && target.every((n) => Number.isFinite(Number(n)));
+  const startTarget = hasTarget ? controls.target.clone() : null;
+  const endTarget = hasTarget
+    ? { x: Number(target[0]), y: Number(target[1]), z: Number(target[2]) }
+    : null;
+  const startFov = Number.isFinite(Number(camera.fov)) ? Number(camera.fov) : null;
+  const endFov = Number.isFinite(Number(fov)) && Number(fov) > 0 && Number(fov) < 180
+    ? Number(fov)
+    : null;
+  if (!endPos && !endTarget && endFov == null) return Promise.resolve(false);
+  if (durationMs <= 0) {
+    return Promise.resolve(applyCameraPose({ camera, controls, position, target, fov }));
+  }
+  const t0 = performance.now();
+  return new Promise((resolve) => {
+    const tick = (now) => {
+      const t = Math.min(1, (now - t0) / durationMs);
+      const e = easeInOutCubic(t);
+      if (endPos) {
+        camera.position.set(
+          startPos.x + (endPos.x - startPos.x) * e,
+          startPos.y + (endPos.y - startPos.y) * e,
+          startPos.z + (endPos.z - startPos.z) * e,
+        );
+      }
+      if (endTarget && startTarget) {
+        controls.target.set(
+          startTarget.x + (endTarget.x - startTarget.x) * e,
+          startTarget.y + (endTarget.y - startTarget.y) * e,
+          startTarget.z + (endTarget.z - startTarget.z) * e,
+        );
+        camera.lookAt(controls.target);
+      }
+      if (endFov != null && startFov != null) {
+        camera.fov = startFov + (endFov - startFov) * e;
+        camera.updateProjectionMatrix();
+      }
+      if (typeof controls?.update === 'function') controls.update();
+      if (typeof onFrame === 'function') onFrame();
+      if (t < 1) requestAnimationFrame(tick);
+      else resolve(true);
+    };
+    requestAnimationFrame(tick);
+  });
+}

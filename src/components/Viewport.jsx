@@ -500,7 +500,15 @@ import {
   toggleMeasurePick,
   triangleGroupStats,
 } from '../utils/measurePicks';
-import { applyCameraPose, fitView, meshWorldBox, unionWorldBox, VIEW_PRESETS, VIEW_SNAP_MARGIN } from '../utils/viewCamera';
+import {
+  animateCameraPose,
+  applyCameraPose,
+  fitView,
+  meshWorldBox,
+  unionWorldBox,
+  VIEW_PRESETS,
+  VIEW_SNAP_MARGIN,
+} from '../utils/viewCamera';
 import { expandResolvedEdgesForHelper } from '../agent/expandEdgeSelection.js';
 import { resolveEdgeKeys, resolveFaceKeys } from '../agent/resolvePickIds.js';
 import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from '../agent/state/listPickables.js';
@@ -11140,7 +11148,7 @@ const Viewport = forwardRef(({
     return { count: edges.length };
   };
 
-  agentSetCameraRef.current = ({ view, position, target, fov }) => {
+  agentSetCameraRef.current = async ({ view, position, target, fov }) => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     if (!camera) return { ok: false };
@@ -11148,10 +11156,30 @@ const Viewport = forwardRef(({
       const ok = handleViewSnap(view);
       return ok ? { ok: true } : { ok: false };
     }
-    const ok = applyCameraPose({ camera, controls, position, target, fov });
-    if (ok && rendererRef.current && sceneRef.current) {
-      rendererRef.current.render(sceneRef.current, camera);
+    const visible = agentHostRef?.current?.readAgentVisible?.();
+    const ease = visible?.enabled === true && visible?.easeCamera !== false;
+    const renderFrame = () => {
+      if (rendererRef.current && sceneRef.current && camera) {
+        rendererRef.current.render(sceneRef.current, camera);
+      }
+    };
+    if (ease && (position || target || fov)) {
+      const animated = await animateCameraPose({
+        camera,
+        controls,
+        position,
+        target,
+        fov,
+        durationMs: 420,
+        onFrame: renderFrame,
+      });
+      if (animated) {
+        renderFrame();
+        return { ok: true };
+      }
     }
+    const ok = applyCameraPose({ camera, controls, position, target, fov });
+    if (ok) renderFrame();
     return { ok };
   };
 
@@ -13160,6 +13188,7 @@ const Viewport = forwardRef(({
     <div
       ref={containerRef}
       className="viewport-shell relative w-full h-full bg-[#1e1e1e] overflow-hidden"
+      data-agent-viewport=""
       data-contour-face-aim={contourFaceAim || undefined}
     >
       {partChoice?.choices?.length > 1 && (

@@ -45,6 +45,7 @@ import { slotAssignContourCommand } from './slotAssignContour.js';
 import { slotSetParamsCommand } from './slotSetParams.js';
 import { slotCommitCommand } from './slotCommit.js';
 import { slotCancelCommand } from './slotCancel.js';
+import { agentSetVisibleCommand } from './agentSetVisible.js';
 
 const HELPER_COMMANDS = buildHelperPaletteCommands();
 
@@ -65,6 +66,7 @@ export const V1_COMMANDS = Object.freeze([
   screenshotCommand,
   undoCommand,
   listCommandsCommand,
+  agentSetVisibleCommand,
   featureTreeCommand,
   selectionCommand,
   modeCommand,
