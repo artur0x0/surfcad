@@ -214,6 +214,7 @@
         "golden:playtest-concave-fillet-tangency": "node scripts/golden/smoke_playtest_concave_fillet_tangency.mjs",
         "golden:face-click": "node scripts/golden/smoke_face_click_graph.mjs",
         "golden:move-body": "node scripts/golden/smoke_move_body.mjs",
+        "golden:move-artur-fixes": "node scripts/golden/smoke_move_artur_fixes.mjs",
         "golden:move-one-axis": "node scripts/golden/smoke_move_one_axis.mjs",
         "golden:move-face": "node scripts/golden/smoke_move_face.mjs",
         "golden:delete-face": "node scripts/golden/smoke_delete_face.mjs",
