@@ -13,7 +13,7 @@ import {
   LengthNumberField, NumberField, SelectField, CheckField, PopupButton, POPUP_TEXT,
 } from './controls/popupUI';
 import { helperFieldSpec } from '../utils/helperSheetRange';
-import { formatDisplayNumber } from '../utils/displayUnit';
+import { formatDisplayNumber, isPartialNumberEntry } from '../utils/displayUnit';
 import { FeatureDeleteButton } from './FeatureEditDelete';
 import FeatureSheet from './FeatureSheet';
 
@@ -166,7 +166,7 @@ const HelperParamModal = ({
     setValues((prev) => {
       let v = raw;
       if (type === 'number') {
-        if (raw === '' || raw === '-' || raw === '.') {
+        if (isPartialNumberEntry(raw)) {
           v = raw;
         } else {
           const n = Number(raw);

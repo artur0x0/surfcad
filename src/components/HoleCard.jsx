@@ -58,7 +58,7 @@ const HoleCard = ({
 }) => {
   const L = partLengthMm(lengthMm);
   const set = (patch) => onChange?.({ ...card, ...patch });
-  const dia = useDisplayNumber(card.dia === 0 ? 0 : (card.dia ?? ''), (raw) => set({ dia: raw }));
+  const dia = useDisplayNumber(card.dia ?? '', (raw) => set({ dia: raw }));
   const clearance = card.type !== 'tapDrill';
   const through = card.through !== false;
   const endFields = (side) => {
