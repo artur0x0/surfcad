@@ -262,6 +262,7 @@
         "golden:cart-checkout": "node scripts/golden/smoke_cart_checkout.mjs",
         "golden:quote-then-add": "node scripts/golden/smoke_quote_then_add.mjs",
         "golden:checkout-page": "node scripts/golden/smoke_checkout_page.mjs",
+        "golden:partners-page": "node scripts/golden/smoke_partners_page.mjs",
         "golden:cart-remove-confirm": "node scripts/golden/smoke_cart_remove_confirm.mjs",
         "golden:github-reauth": "node scripts/golden/smoke_github_reauth.mjs",
         "golden:clear-local-cad": "node scripts/golden/smoke_clear_local_cad.mjs",

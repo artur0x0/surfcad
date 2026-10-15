@@ -4,12 +4,19 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App';
 import GitCallback from './components/GitCallback';
+import PartnersPage from './pages/PartnersPage.jsx';
 import { AuthProvider } from './hooks/useAuth';
 import { GithubSessionProvider } from './hooks/useGithubSession';
 import { GITHUB_CALLBACK_PATH } from './utils/git/githubAuth.js';
 
+const PARTNERS_PATH = '/partners';
+
 function pathIsGitCallback(pathname = window.location.pathname) {
   return String(pathname || '').replace(/\/$/, '') === GITHUB_CALLBACK_PATH;
+}
+
+function pathIsPartners(pathname = window.location.pathname) {
+  return String(pathname || '').replace(/\/$/, '') === PARTNERS_PATH;
 }
 
 /**
@@ -26,22 +33,31 @@ function pathIsGitCallback(pathname = window.location.pathname) {
 // eslint-disable-next-line react-refresh/only-export-components -- Root is the createRoot tree, not a shared export
 function Root() {
   const [gitCallback, setGitCallback] = useState(() => pathIsGitCallback());
+  const [partnersPage, setPartnersPage] = useState(() => pathIsPartners());
 
   const goHome = useCallback(() => {
     if (pathIsGitCallback()) {
       window.history.replaceState({}, '', '/');
     }
     setGitCallback(false);
+    setPartnersPage(pathIsPartners());
   }, []);
 
   useEffect(() => {
-    const sync = () => setGitCallback(pathIsGitCallback());
+    const sync = () => {
+      setGitCallback(pathIsGitCallback());
+      setPartnersPage(pathIsPartners());
+    };
     window.addEventListener('popstate', sync);
     return () => window.removeEventListener('popstate', sync);
   }, []);
 
   if (gitCallback) {
     return <GitCallback onComplete={goHome} />;
+  }
+
+  if (partnersPage) {
+    return <PartnersPage />;
   }
 
   return (

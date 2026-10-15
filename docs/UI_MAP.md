@@ -1,9 +1,18 @@
 # UI Map — where every piece is on screen, and where its code lives
 
 SurfCAD is a **single-page, two-pane app**: a Monaco script editor and a
-Three.js viewport. There is no router and no page list. Everything the user sees
-is either one of those two panes, a floating overlay inside the viewport, or a
-full-screen modal.
+Three.js viewport. There is no in-app router and no page list inside the CAD
+shell. Everything the user sees in the editor is either one of those two panes,
+a floating overlay inside the viewport, or a full-screen modal.
+
+**Public routes** (`src/main.jsx`, path-based, no sign-in):
+
+| Path | Screen | Code |
+|------|--------|------|
+| `/git/callback` | GitHub OAuth hand-off | `GitCallback.jsx` |
+| `/partners` | Become a partner form + thank-you | `src/pages/PartnersPage.jsx` (`data-partners-page`) |
+
+`golden:partners-page` screenshots the form and thank-you state at 390 and 1280.
 
 Read this file to answer "where is X on screen?" and "which file do I edit?".
 For blend/fillet internals read `.claude/skills/fillets/SKILL.md`; for the

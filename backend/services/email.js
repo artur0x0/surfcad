@@ -612,11 +612,93 @@ export async function sendAdminDisputeNotification(order, dispute, customerEmail
   }
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Notify admin (Artur via ADMIN_EMAIL) about a new partner lead.
+ */
+export async function sendPartnerLeadNotification(lead) {
+  const client = getEmailClient();
+
+  if (!client || !config.adminEmail) {
+    console.warn('[Email] Skipping partner lead notification (not configured)');
+    return false;
+  }
+
+  const typeLabel = lead.partnerType === 'other' && lead.partnerTypeOther
+    ? `Other — ${lead.partnerTypeOther}`
+    : lead.partnerType;
+
+  const subject = `Partner inquiry: ${lead.company} (${lead.email})`;
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: monospace; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; vertical-align: top; }
+    th { background: #f5f5f5; width: 140px; }
+    pre { white-space: pre-wrap; margin: 0; font-family: inherit; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Become a partner — new submission</h2>
+    <table>
+      <tr><th>Name</th><td>${escapeHtml(lead.name)}</td></tr>
+      <tr><th>Email</th><td>${escapeHtml(lead.email)}</td></tr>
+      <tr><th>Company</th><td>${escapeHtml(lead.company)}</td></tr>
+      <tr><th>Website</th><td>${escapeHtml(lead.website || '—')}</td></tr>
+      <tr><th>Partner type</th><td>${escapeHtml(typeLabel)}</td></tr>
+      <tr><th>Message</th><td><pre>${escapeHtml(lead.message)}</pre></td></tr>
+      <tr><th>Submitted</th><td>${new Date(lead.createdAt || Date.now()).toLocaleString()}</td></tr>
+    </table>
+    <p style="color: #666; font-size: 12px; margin-top: 20px;">
+      Lead ID: ${escapeHtml(lead._id)}
+    </p>
+  </div>
+</body>
+</html>
+  `;
+
+  try {
+    const message = {
+      senderAddress: config.azure.emailSender,
+      content: {
+        subject,
+        html: htmlContent,
+      },
+      recipients: {
+        to: [{ address: config.adminEmail }],
+      },
+    };
+
+    const poller = await client.beginSend(message);
+    await poller.pollUntilDone();
+
+    console.log(`[Email] Partner lead notification sent for ${lead.email}`);
+    return true;
+  } catch (error) {
+    console.error('[Email] Failed to send partner lead notification:', error);
+    return false;
+  }
+}
+
 export default {
   sendVerificationEmail,
   sendAdminNewUserNotification,
   sendOrderConfirmation,
   sendAdminOrderNotification,
   sendAdminDisputeNotification,
-  sendShippingNotification
+  sendShippingNotification,
+  sendPartnerLeadNotification,
 };

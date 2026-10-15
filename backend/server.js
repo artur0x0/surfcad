@@ -22,6 +22,7 @@ import webhookRoutes from './routes/webhooks.js';
 import convertRoutes from './routes/convert.js';
 import winsRoutes from './routes/wins.js';
 import githubRoutes from './routes/github.js';
+import partnersRoutes from './routes/partners.js';
 
 // CAD and AI 
 let SYSTEM_PROMPT = 'You are a CAD assistant.';
@@ -73,6 +74,7 @@ app.use('/api/cart', cartRoutes);
 app.use('/api/convert', convertRoutes);
 app.use('/api/wins', winsRoutes);
 app.use('/api/github', githubRoutes);
+app.use('/api/partners', partnersRoutes);
 
 const MODEL_CONFIG = {
   model: 'meta-llama/llama-4-scout-17b-16e-instruct',
