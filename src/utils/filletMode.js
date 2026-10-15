@@ -13,7 +13,8 @@
  * last edge only. X exits with no commit. Strategy default stays sweep (#30).
  * Editing an existing block uses this same composer (`replaceEditedBlend`):
  * the new block is spliced over the old one. There is no second validator
- * and no edge-list rebuild.
+ * and no edge-list rebuild. Const names are reserved from the rest of the
+ * script, so a new corner does not redeclare selEdgesN a later block owns.
  *
  * Chamfer mode mirrors Fillet: enter without edges, pick disjoint components,
  * Accept emits makeSweepPath + filletAlongPath(..., { profile: 'chamfer' })
@@ -25,6 +26,7 @@
 
 import {
   composeHelperInsert,
+  declaredNames,
   FILLET_MODE_BEGIN,
   FILLET_MODE_END,
   CHAMFER_MODE_BEGIN,
@@ -176,6 +178,7 @@ export function composeChamferCommit(buffer, {
   edges = null,
   params = {},
   commitMode = 'replace',
+  reservedNames = null,
 } = {}) {
   const gate = validateChamferAccept(edges, params);
   if (!gate.ok) return gate;
@@ -188,6 +191,7 @@ export function composeChamferCommit(buffer, {
     { ...gate.normalized, _chamferMode: true },
     null,
     edges,
+    reservedNames,
   );
   if (typeof composed !== 'string') {
     return { ok: false, message: gate.message || CHAMFER_MODE_EMPTY };
@@ -752,7 +756,7 @@ export function countMakeSweepPath(buffer) {
  * edge is filleted on the solid the first block already produced.
  *
  * @param {string} buffer
- * @param {{ edges?: object[]|null, params?: object, commitMode?: string, filletClass?: string|null, geometry?: object|null }} [opts]
+ * @param {{ edges?: object[]|null, params?: object, commitMode?: string, filletClass?: string|null, geometry?: object|null, reservedNames?: Iterable<string>|null }} [opts]
  * @returns {{ ok: true, buffer: string, run: true, kernel?: string } | { ok: false, message: string }}
  */
 export function composeFilletCommit(buffer, {
@@ -761,6 +765,7 @@ export function composeFilletCommit(buffer, {
   commitMode = 'replace',
   filletClass = null,
   geometry = null,
+  reservedNames = null,
 } = {}) {
   const gate = validateFilletAccept(edges, params);
   if (!gate.ok) return gate;
@@ -800,6 +805,7 @@ export function composeFilletCommit(buffer, {
     emitParams,
     null,
     edges,
+    reservedNames,
   );
   if (typeof composed !== 'string') {
     return {
@@ -863,14 +869,24 @@ export function composeFilletCommit(buffer, {
 }
 
 /**
+ * Const bindings outside the block `feature` occupies. The block's own
+ * names are omitted: that text is about to be replaced, so the composer
+ * may emit them again.
+ */
+function namesOutsideBlock(script, feature) {
+  const text = String(script || '');
+  return declaredNames(text.slice(0, feature.startOffset) + text.slice(feature.endOffset));
+}
+
+/**
  * Edit a fillet or chamfer by running the same composer Accept uses.
  *
- * The base is the script before this feature (later features stay out of
- * name allocation, the same way the block was first written). commitMode
- * follows the create rule on that prefix: append when an earlier block of
- * this kind is still there, otherwise replace. The new block is spliced
- * over the old one, so disconnected corners stay separate blends and
- * everything after the feature stays put. One buffer, no second validator.
+ * The solid is the script before this feature, so commitMode follows the
+ * create rule on that prefix (append when an earlier block of this kind is
+ * still there) and later features are not rewritten. Name allocation is the
+ * whole script except this block. The prefix counter alone reissued
+ * selEdges4 when a new corner needed the next name, and a later block
+ * already declared it. One buffer, no second validator.
  *
  * @param {string} script
  * @param {{ id?: string, kind?: string, index?: number }} feature
@@ -895,14 +911,16 @@ export function replaceEditedBlend(script, feature, {
   const commitMode = (chamfer ? hasChamferModeBlock(prefix) : hasFilletModeBlock(prefix))
     ? 'append'
     : 'replace';
+  const reservedNames = namesOutsideBlock(text, live);
   const created = chamfer
-    ? composeChamferCommit(prefix, { edges, params, commitMode })
+    ? composeChamferCommit(prefix, { edges, params, commitMode, reservedNames })
     : composeFilletCommit(prefix, {
       edges,
       params,
       commitMode,
       filletClass,
       geometry,
+      reservedNames,
     });
   if (!created.ok) return created;
   const block = chamfer ? chamferModeOwnedRegion(created.buffer) : filletModeOwnedRegion(created.buffer);
