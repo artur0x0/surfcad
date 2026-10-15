@@ -123,8 +123,10 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
     !/data-editor-ribbon[\s\S]{0,400}<BrandHeaderMark \/>/.test(editor));
   check('CAD viewport header row carries the brand beside the title',
     /data-viewer-header-row/.test(view)
+    && /flex min-h-9 items-center/.test(view)
     && /left-2 right-2 lg:left-4 lg:right-4/.test(view)
     && /data-brand-header-host/.test(view)
+    && /shrink-0 items-center self-center" data-brand-header-host=""/.test(view)
     && /<BrandHeaderMark \/>/.test(view)
     && /<PuzzleUnlock enabled=\{mode !== 'game'\} onUnlock=\{onStartGame\} \/>/.test(view));
   check('docs name the identity golden',
@@ -201,6 +203,36 @@ async function seedAssembly(page) {
       };
     });
   }, { doc: DOC, script: SCRIPT });
+}
+
+async function readHeaderAlign(page) {
+  return page.evaluate(() => {
+    const row = document.querySelector('[data-viewer-header-row]');
+    const rail = document.querySelector('[data-rail-pair="left"]');
+    if (!row || !rail) return null;
+    const rowBox = row.getBoundingClientRect();
+    const host = row.querySelector('[data-brand-header-host]');
+    const tile = host?.querySelector('[data-brand-mark="paper"]');
+    const title = row.querySelector('[data-viewer-title]');
+    const chips = row.querySelector('[data-viewer-title-chips]');
+    const profile = document.querySelector('[data-profile-chip-variant="viewport"]');
+    const tileBox = tile?.getBoundingClientRect();
+    const railBox = rail.getBoundingClientRect();
+    const titleBox = title?.getBoundingClientRect();
+    const chipsBox = chips?.getBoundingClientRect();
+    const profileBox = profile?.getBoundingClientRect();
+    const brandBox = host?.getBoundingClientRect();
+    return {
+      tileLeft: tileBox ? Math.round(tileBox.left) : null,
+      railLeft: Math.round(railBox.left),
+      titleMid: titleBox ? Math.round(titleBox.left + titleBox.width / 2) : null,
+      viewportMid: Math.round(rowBox.left + rowBox.width / 2),
+      brandRight: brandBox ? Math.round(brandBox.right) : null,
+      profileLeft: profileBox ? Math.round(profileBox.left) : null,
+      brandMidY: brandBox ? Math.round(brandBox.top + brandBox.height / 2) : null,
+      chipsMidY: chipsBox ? Math.round(chipsBox.top + chipsBox.height / 2) : null,
+    };
+  });
 }
 
 async function readMark(page, selector) {
@@ -333,31 +365,7 @@ try {
   const deskPage = await boot(browser, { width: 1280, height: 800, touch: false });
   const at1280 = await readMark(deskPage.page, '[data-brand-header-host]');
   const host1280 = await deskPage.page.locator('[data-brand-header-host]').count();
-  const rowAlign1280 = await deskPage.page.evaluate(() => {
-    const row = document.querySelector('[data-viewer-header-row]');
-    const rail = document.querySelector('[data-rail-pair="left"]');
-    if (!row || !rail) return null;
-    const rowBox = row.getBoundingClientRect();
-    const host = row.querySelector('[data-brand-header-host]');
-    const tile = host?.querySelector('[data-brand-mark="paper"]');
-    const title = row.querySelector('[data-viewer-title]');
-    const profile = document.querySelector('[data-profile-chip-variant="viewport"]');
-    const tileBox = tile?.getBoundingClientRect();
-    const railBox = rail.getBoundingClientRect();
-    const titleBox = title?.getBoundingClientRect();
-    const profileBox = profile?.getBoundingClientRect();
-    const brandBox = host?.getBoundingClientRect();
-    return {
-      tileLeft: tileBox ? Math.round(tileBox.left) : null,
-      railLeft: Math.round(railBox.left),
-      titleMid: titleBox ? Math.round(titleBox.left + titleBox.width / 2) : null,
-      viewportMid: Math.round(rowBox.left + rowBox.width / 2),
-      brandRight: brandBox ? Math.round(brandBox.right) : null,
-      profileLeft: profileBox ? Math.round(profileBox.left) : null,
-      rowMidY: Math.round(rowBox.top + rowBox.height / 2),
-      titleMidY: titleBox ? Math.round(titleBox.top + titleBox.height / 2) : null,
-    };
-  });
+  const rowAlign1280 = await readHeaderAlign(deskPage.page);
   const transparentChip = at1280?.chip === 'rgba(0, 0, 0, 0)' || at1280?.chip === 'transparent';
   check('1280 header wordmark is Paper on transparent chrome with paper tile in the viewport row',
     at1280 && at1280.h < 24 && at1280.h >= 14
@@ -376,8 +384,13 @@ try {
     && Math.abs(rowAlign1280.titleMid - rowAlign1280.viewportMid) <= 2
     && rowAlign1280.brandRight != null
     && rowAlign1280.profileLeft != null
-    && rowAlign1280.brandRight < rowAlign1280.profileLeft - 4
-    && Math.abs(rowAlign1280.rowMidY - rowAlign1280.titleMidY) <= 2,
+    && rowAlign1280.brandRight < rowAlign1280.profileLeft - 4,
+    JSON.stringify(rowAlign1280));
+  check('1280 brand is vertically centred with the assembly chips',
+    rowAlign1280
+    && rowAlign1280.brandMidY != null
+    && rowAlign1280.chipsMidY != null
+    && Math.abs(rowAlign1280.brandMidY - rowAlign1280.chipsMidY) <= 1,
     JSON.stringify(rowAlign1280));
   await deskPage.page.screenshot({ path: join(SHOT_DIR, 'brand-header-1280.png') });
   await deskPage.context.close();
@@ -391,6 +404,16 @@ try {
     && transparent390
     && at390.hasTile,
     JSON.stringify(at390));
+  const rowAlign390 = await readHeaderAlign(phone.page);
+  check('390 brand left edge lines up with the helper rail',
+    rowAlign390 && rowAlign390.tileLeft === rowAlign390.railLeft,
+    JSON.stringify(rowAlign390));
+  check('390 brand is vertically centred with the assembly chips',
+    rowAlign390
+    && rowAlign390.brandMidY != null
+    && rowAlign390.chipsMidY != null
+    && Math.abs(rowAlign390.brandMidY - rowAlign390.chipsMidY) <= 1,
+    JSON.stringify(rowAlign390));
   await phone.page.locator('[data-stage-btn="parts"]').click();
   await phone.page.waitForTimeout(300);
   const partsBrandCount = await phone.page.locator('[data-stage-pane="parts"] [data-brand-header]').count();
