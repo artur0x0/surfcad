@@ -3,6 +3,8 @@ nginx/*
 
 # Environment variables 
 .env*
+!.env.example
+!**/.env.example
 
 # Mac
 .DS_Store

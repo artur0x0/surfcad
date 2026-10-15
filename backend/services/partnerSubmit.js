@@ -1,5 +1,6 @@
 import { validatePartnerPayload } from './partnerLeads.js';
 import { checkPartnerRateLimit } from './partnerRateLimit.js';
+import { verifyPartnerTurnstile } from './partnerTurnstile.js';
 
 function clientIp(req) {
   const forwarded = req.headers['x-forwarded-for'];
@@ -16,11 +17,13 @@ function clientIp(req) {
  *   PartnerLeadModel?: { create: (doc: object) => Promise<object> },
  *   sendNotification?: (lead: object) => Promise<boolean>,
  *   rateLimit?: typeof checkPartnerRateLimit,
+ *   verifyTurnstile?: typeof verifyPartnerTurnstile,
  * }} deps
  */
 export async function handlePartnerPost(req, res, deps = {}) {
   const Lead = deps.PartnerLeadModel;
   const rateLimit = deps.rateLimit ?? checkPartnerRateLimit;
+  const verifyTurnstile = deps.verifyTurnstile ?? verifyPartnerTurnstile;
 
   try {
     const validated = validatePartnerPayload(req.body);
@@ -32,6 +35,14 @@ export async function handlePartnerPost(req, res, deps = {}) {
     }
 
     const ip = clientIp(req);
+    const turnstile = await verifyTurnstile(
+      req.body?.turnstileToken,
+      ip,
+      deps.turnstileDeps,
+    );
+    if (!turnstile.ok) {
+      return res.status(turnstile.status).json({ error: turnstile.error });
+    }
     const limited = rateLimit(ip);
     if (!limited.allowed) {
       return res.status(429).json({
