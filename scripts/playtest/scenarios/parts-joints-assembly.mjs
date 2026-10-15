@@ -1,10 +1,18 @@
-/** Two-part local assembly, coincident joint, assembly undo. */
+/** Two-part local assembly, coincident + concentric joints, edit, assembly undo. */
 import { agentCall } from '../lib/harness.mjs';
 import { createStepRunner } from '../lib/stepRunner.mjs';
 
 const USER_ID = 'user-playtest-parts-joints';
 let basePartId = null;
 let pinPartId = null;
+
+const BASE_HOLE_SCRIPT = [
+  'let part = Manifold.cube([50, 40, 10], true);',
+  'part = part.subtract(Manifold.cylinder(15, 6, 6, 64));',
+  'return part;',
+].join('\n');
+
+const PIN_CYL_SCRIPT = 'return Manifold.cylinder(20, 5, 5, 64);\n';
 
 export const id = 'parts-joints-assembly';
 export const title = 'Parts, assembly, joint, undo';
@@ -40,6 +48,28 @@ function bottomFace(faces) {
     const nz = row.normal?.[2] ?? row.n?.[2] ?? row.key?.n?.[2] ?? 0;
     if (z != null && z < bestZ && nz < -0.5) {
       bestZ = z;
+      best = row;
+    }
+  }
+  return best;
+}
+
+function cylindricalWallFace(faces, expectedRadius) {
+  let best = null;
+  let bestScore = -1;
+  for (const row of faces || []) {
+    const at = row.center || row.at || row.key?.at;
+    const n = row.normal || row.n || row.key?.n;
+    if (!Array.isArray(at) || !Array.isArray(n)) continue;
+    const nz = Math.abs(n[2] ?? 0);
+    const rxy = Math.hypot(at[0] ?? 0, at[1] ?? 0);
+    const radius = Number(expectedRadius);
+    const radialOk = !Number.isFinite(radius)
+      || (rxy > radius * 0.45 && rxy < radius * 1.6);
+    const area = Number(row.area ?? row.key?.area ?? 0);
+    const score = area * (1 - nz);
+    if (nz < 0.45 && area > 20 && radialOk && score > bestScore) {
+      bestScore = score;
       best = row;
     }
   }
@@ -122,17 +152,18 @@ export async function run(ctx) {
         { part_id: pinPartId, key: pinBottomKey },
       ],
     });
-    await agentCall(page, 'joint_set_params', { type: 'coincident' });
+    const params = await agentCall(page, 'joint_set_params', { type: 'planar' });
     const committed = await agentCall(page, 'joint_commit', {});
     const pickCount = picked.result?.count ?? 0;
     const jointCount = committed.result?.jointCount ?? 0;
-    const ok = opened.ok && picked.ok && pickCount >= 2 && committed.ok && jointCount >= 1;
+    const ok = !!(opened.ok && picked.ok && pickCount >= 2 && committed.ok && jointCount >= 1
+      && params.result?.type === 'coincident');
     return {
       ok,
       call: 'joint_commit',
       args: {},
       envelope: committed,
-      detail: `picks=${pickCount} joints=${jointCount}`,
+      detail: `picks=${pickCount} joints=${jointCount} type=${params.result?.type}`,
     };
   });
 
@@ -140,6 +171,83 @@ export async function run(ctx) {
     const env = await agentCall(page, 'undo', {});
     const ok = env.ok === true && env.result?.kind === 'assembly' && env.result?.joints === 0;
     return { ok, call: 'undo', args: {}, envelope: env, detail: `joints=${env.result?.joints}` };
+  });
+
+  let baseWallKey = null;
+  let pinWallKey = null;
+
+  await runner.runStep('cylinder geometry for concentric', async () => {
+    await agentCall(page, 'set_active_part', { part_id: basePartId });
+    await agentCall(page, 'set_script', { source: BASE_HOLE_SCRIPT });
+    const baseRun = await agentCall(page, 'run', {});
+    await agentCall(page, 'set_active_part', { part_id: pinPartId });
+    await agentCall(page, 'set_script', { source: PIN_CYL_SCRIPT });
+    const pinRun = await agentCall(page, 'run', {});
+    await page.waitForTimeout(400);
+    const ok = baseRun.ok === true && baseRun.result?.ok === true
+      && pinRun.ok === true && pinRun.result?.ok === true;
+    return { ok, call: 'run', args: {}, envelope: pinRun };
+  });
+
+  let concentricJointId = null;
+
+  await runner.runStep('concentric joint commit', async () => {
+    await agentCall(page, 'set_active_part', { part_id: basePartId });
+    await agentCall(page, 'run', {});
+    const baseFaces = await agentCall(page, 'list_faces', {});
+    const baseWall = cylindricalWallFace(baseFaces.result?.faces, 6);
+    await agentCall(page, 'set_active_part', { part_id: pinPartId });
+    await agentCall(page, 'run', {});
+    const pinFaces = await agentCall(page, 'list_faces', {});
+    const pinWall = cylindricalWallFace(pinFaces.result?.faces, 5);
+    baseWallKey = baseWall?.key || baseWall;
+    pinWallKey = pinWall?.key || pinWall;
+    const pickRows = (baseWallKey && pinWallKey)
+      ? [
+        { part_id: basePartId, key: baseWallKey },
+        { part_id: pinPartId, key: pinWallKey },
+      ]
+      : [
+        {
+          part_id: basePartId,
+          kind: 'axis',
+          key: { at: [0, 0, 0], dir: [0, 0, 1], radius: 6 },
+        },
+        {
+          part_id: pinPartId,
+          kind: 'axis',
+          key: { at: [0, 0, 10], dir: [0, 0, 1], radius: 5 },
+        },
+      ];
+    await agentCall(page, 'joint_cancel', {});
+    const opened = await agentCall(page, 'joint_open', {});
+    const picked = await agentCall(page, 'joint_pick', { picks: pickRows });
+    const params = await agentCall(page, 'joint_set_params', { type: 'concentric' });
+    const committed = await agentCall(page, 'joint_commit', {});
+    concentricJointId = committed.result?.jointId ?? null;
+    const pickCount = picked.result?.count ?? 0;
+    const ok = !!(opened.ok && picked.ok && pickCount >= 2 && params.result?.type === 'concentric'
+      && committed.ok && (committed.result?.jointCount ?? 0) >= 1 && concentricJointId);
+    return {
+      ok,
+      call: 'joint_commit',
+      envelope: committed,
+      detail: `picks=${pickCount} walls=${!!baseWallKey} type=${params.result?.type} jointId=${concentricJointId}`,
+    };
+  });
+
+  await runner.runStep('joint_select and joint_edit', async () => {
+    const selected = await agentCall(page, 'joint_select', { joint_id: concentricJointId });
+    const edited = await agentCall(page, 'joint_edit', { name: 'Pin axis' });
+    const committed = await agentCall(page, 'joint_commit', {});
+    const ok = !!(selected.ok && selected.result?.mode === 'edit'
+      && edited.ok && edited.result?.name === 'Pin axis' && committed.ok);
+    return {
+      ok,
+      call: 'joint_edit',
+      envelope: edited,
+      detail: `name=${edited.result?.name}`,
+    };
   });
 
   return {

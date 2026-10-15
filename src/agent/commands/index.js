@@ -86,6 +86,8 @@ import {
   jointPickCommand,
   jointCommitCommand,
   jointCancelCommand,
+  jointSelectCommand,
+  jointEditCommand,
 } from './joint.js';
 
 const HELPER_COMMANDS = buildHelperPaletteCommands();
@@ -179,6 +181,8 @@ export const V1_COMMANDS = Object.freeze([
   jointPickCommand,
   jointCommitCommand,
   jointCancelCommand,
+  jointSelectCommand,
+  jointEditCommand,
 ]);
 
 export const v1Registry = defineCommands(V1_COMMANDS);

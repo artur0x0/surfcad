@@ -210,10 +210,12 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `open_part` | `{ path }` | Opens or links a vault part into the assembly (git mode). |
 | `insert_part` | `{ source_assembly }` or `{ name?, script? }` | Inserts another assembly’s parts (git) or adds a new part row (local, same as `create_part`). |
 | `joint_open` | `{}` | Opens the Joints create card (`data-joints-button`). Clears CAD part highlight for the joint strip. |
-| `joint_set_params` | `{ type?, name?, value_mm?, sense?, opposed? }` | Patches the open joint card (mate type and fields). |
-| `joint_pick` | `{ part_id, key }` or `{ picks: [{ part_id, key }] }` | Face keys from `list_faces` on each part — same path as tapping in joint mode. |
+| `joint_set_params` | `{ type?, name?, value_mm?, sense?, opposed? }` | Patches the open joint card (mate type and fields). Returns the merged card fields (`type`, `name`, `valueMm`, …). `planar` is an alias for `coincident`. |
+| `joint_pick` | `{ part_id, key, kind? }` or `{ picks: [{ part_id, key, kind? }] }` | Face keys from `list_faces` (or explicit axis/edge keys) — classified like a canvas tap (`cylindrical` walls become axis picks for concentric). |
 | `joint_commit` | `{}` | Confirms the joint card (`applyJointCard`). One assembly-history undo step. |
 | `joint_cancel` | `{}` | Dismisses the joint card without writing. |
+| `joint_select` | `{ joint_id }` | Opens an existing joint from the strip (`data-joint-chip`) in edit mode. |
+| `joint_edit` | `{ joint_id?, type?, name?, value_mm?, … }` | Patches a joint in edit mode (optional `joint_id` selects first). Commit with `joint_commit`. |
 
 ### Pick sessions
 

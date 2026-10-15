@@ -19,7 +19,7 @@ test('v1 registry order is the bridge command list, with list_commands appended'
     'undo',
   ]);
   assert.equal(AGENT_COMMANDS[7], 'list_commands');
-  assert.equal(AGENT_COMMANDS.at(-1), 'joint_cancel');
+  assert.equal(AGENT_COMMANDS.at(-1), 'joint_edit');
   assert.equal(AGENT_COMMANDS.includes('list_faces'), true);
   assert.equal(AGENT_COMMANDS.includes('list_edges'), true);
 });

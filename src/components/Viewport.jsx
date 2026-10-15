@@ -519,6 +519,7 @@ import { createViewportPickHost } from '../agent/pick/viewportPicks.js';
 import { createSketchPickHandlers } from '../agent/pick/sketchViewportPicks.js';
 import { planePatchFromArgs } from '../agent/sketchPlaneAgent.js';
 import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from '../agent/state/listPickables.js';
+import { describeJointPick } from '../agent/jointPickDescribe.js';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -1277,6 +1278,9 @@ const Viewport = forwardRef(({
   const agentFitCameraRef = useRef(() => false);
   const agentZoomToSelectionRef = useRef(() => ({ error: { code: 'no_selection', message: 'No selection' } }));
   const agentListFacesRef = useRef(() => ({ faces: [], partId: null }));
+  const agentDescribeJointPickRef = useRef(() => ({
+    error: { code: 'no_mesh', message: 'No mesh for that part' },
+  }));
   const agentListEdgesRef = useRef(() => ({ edges: [], partId: null }));
   const agentListFeatureEdgesRef = useRef(() => ({ edges: [], partId: null }));
   const agentSketchBeginRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
@@ -2277,6 +2281,7 @@ const Viewport = forwardRef(({
         rendererRef.current.render(sceneRef.current, cam);
       }
     },
+    describeJointPick: (args) => agentDescribeJointPickRef.current(args),
     /**
      * PNG data URL of the viewport. One render, then read the canvas on this
      * thread, so a browser agent can see the part without the worker.
@@ -11508,6 +11513,13 @@ const Viewport = forwardRef(({
       ...listed,
     };
   };
+
+  agentDescribeJointPickRef.current = ({ partId, key, kind } = {}) => describeJointPick({
+    key,
+    kind,
+    geometry: meshGeometryForAgentPart(partId),
+    faceIDs: faceIDsRef.current,
+  });
 
   agentListEdgesRef.current = ({ partId } = {}) => {
     const geom = meshGeometryForAgentPart(partId);
