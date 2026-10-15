@@ -81,6 +81,18 @@ export function lengthToDisplay(mm, unit) {
 /** Calculated numbers show at most this many decimal places. */
 export const DISPLAY_NUMBER_DIGITS = 4;
 
+/** In-progress typed number in a field (`''` is cleared, not zero). */
+export function isPartialNumberEntry(value) {
+  return value === '' || value === '-' || value === '.';
+}
+
+/** Finite stored number, or NaN when the box is partial / non-numeric. */
+export function finiteStoredNumber(value) {
+  if (isPartialNumberEntry(value)) return NaN;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : NaN;
+}
+
 /**
  * The string a numeric input or readout shows.
  * At most four decimal places, trailing zeros removed.
@@ -107,16 +119,15 @@ export function formatDisplayNumber(value) {
  */
 /** True when `raw` is only the formatted view of `stored` (not a partial edit). */
 export function isFormattedDisplayEcho(stored, raw) {
-  if (stored === '' || stored === '-' || stored === '.') return false;
-  const n = Number(stored);
+  const n = finiteStoredNumber(stored);
   if (!Number.isFinite(n)) return false;
   return String(raw).trim() === formatDisplayNumber(stored);
 }
 
 export function commitDisplayNumber(typed, stored) {
-  if (typed === '' || typed === '-' || typed === '.') return typed;
+  if (isPartialNumberEntry(typed)) return typed;
   const raw = String(typed).trim();
-  if (raw === '' || raw === '-' || raw === '.') return typed;
+  if (isPartialNumberEntry(raw)) return typed;
   if (isFormattedDisplayEcho(stored, raw)) return stored;
   const n = Number(raw);
   return Number.isFinite(n) ? n : stored;
@@ -128,10 +139,10 @@ export function commitDisplayNumber(typed, stored) {
  * A new typed number converts to millimetres.
  */
 export function commitDisplayLength(typed, storedMm, unit) {
-  if (typed === '' || typed === '-' || typed === '.') return typed;
+  if (isPartialNumberEntry(typed)) return typed;
   const raw = String(typed).trim();
-  if (raw === '' || raw === '-' || raw === '.') return typed;
-  const stored = Number(storedMm);
+  if (isPartialNumberEntry(raw)) return typed;
+  const stored = finiteStoredNumber(storedMm);
   if (Number.isFinite(stored)) {
     const display = lengthToDisplay(stored, unit);
     if (isFormattedDisplayEcho(display, raw)) return storedMm;

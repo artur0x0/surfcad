@@ -12,6 +12,8 @@ import {
   formatDisplayLength,
   formatDisplayNumber,
   isFormattedDisplayEcho,
+  isPartialNumberEntry,
+  finiteStoredNumber,
   getDisplayUnit,
   lengthCaption,
   lengthToDisplay,
@@ -83,6 +85,15 @@ test('isFormattedDisplayEcho treats zero and rounded-zero display as unchanged',
   assert.equal(isFormattedDisplayEcho(5, '0'), false);
   assert.equal(commitDisplayNumber('0', 0.00004), 0.00004);
   assert.equal(commitDisplayLength('0', 0, 'mm'), 0);
+});
+
+test('partial entries are not confused with zero', () => {
+  assert.equal(isPartialNumberEntry(''), true);
+  assert.equal(finiteStoredNumber(''), Number.NaN);
+  assert.equal(Number.isFinite(finiteStoredNumber(0)), true);
+  assert.equal(finiteStoredNumber(0), 0);
+  assert.equal(commitDisplayLength('0', '', 'mm'), 0);
+  assert.equal(commitDisplayNumber('0', ''), 0);
 });
 
 test('echoing a formatted length keeps the stored millimetres', () => {
