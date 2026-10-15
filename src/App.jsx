@@ -118,6 +118,7 @@ import {
   redoPartHistory,
   undoPartHistory,
 } from './utils/partHistory';
+import { fillAgentHost } from './agent/host';
 import { agentBridgeEnabled, createSurfcadBridge } from './utils/agentBridge';
 import { runAssemblyParts } from './utils/assemblyRun';
 import { catalogsFromRuns } from './utils/jointResolve';
@@ -7333,8 +7334,9 @@ const App = () => {
 
 
   // Browser-agent bridge. Main thread only: the worker lockdown replaces fetch.
-  // Host methods read refs, so the installed object stays current across renders.
-  agentHostRef.current = {
+  // App publishes the script, history, and toolbar handlers. Viewport merges
+  // screenshot onto the same ref. fillAgentHost keeps the other side's keys.
+  fillAgentHost(agentHostRef, {
     getScript() {
       return codeEditorRef.current?.getContent?.() ?? '';
     },
@@ -7396,10 +7398,12 @@ const App = () => {
       const message = (run && run.error) || (ran === false ? 'Run did not finish' : 'Script failed');
       return { ok: false, errors: [String(message)], volume: null, bbox: null, partName };
     },
-    screenshot() {
-      return viewportRef.current?.capturePng?.() ?? null;
-    },
-  };
+    // Toolbar handlers. v1 `run` and `undo` keep the script mutate path.
+    // Later commands call these same functions the buttons call.
+    undo: handleUndo,
+    redo: handleRedo,
+    runScript: handleGameRun,
+  });
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -7414,7 +7418,11 @@ const App = () => {
       readHistory: () => agentHostRef.current.readHistory(),
       writeHistory: (history) => agentHostRef.current.writeHistory(history),
       execute: (script) => agentHostRef.current.execute(script),
-      screenshot: () => agentHostRef.current.screenshot(),
+      screenshot: () => {
+        const shot = agentHostRef.current?.screenshot;
+        if (typeof shot === 'function') return shot();
+        return viewportRef.current?.capturePng?.() ?? null;
+      },
     });
     return () => {
       delete window.surfcad;
@@ -7907,6 +7915,7 @@ const App = () => {
     const viewportEl = (
             <Viewport 
               ref={viewportRef} 
+              agentHostRef={agentHostRef}
               onAccount={handleAccount}
               onSignedOut={handleProfileSignedOut}
               onClearLocalCadData={openClearLocalCache}
@@ -8422,6 +8431,7 @@ const App = () => {
           )}
           <Viewport 
             ref={viewportRef} 
+            agentHostRef={agentHostRef}
             onAccount={handleAccount}
             onSignedOut={handleProfileSignedOut}
             onClearLocalCadData={openClearLocalCache}

@@ -174,7 +174,7 @@ try {
   }));
   check('version is 1', surface.version === 1, String(surface.version));
   check('commands are the v1 tool list', JSON.stringify(surface.commands) === JSON.stringify([
-    'get_script', 'set_script', 'run', 'status', 'errors', 'screenshot', 'undo',
+    'get_script', 'set_script', 'run', 'status', 'errors', 'screenshot', 'undo', 'list_commands',
   ]), JSON.stringify(surface.commands));
   await pause(page, 600);
 

@@ -53,15 +53,16 @@ export function lockedOptions(options) {
   };
 }
 
-function lineStale(line) {
-  return !!(line.hashStale || line.quoteExpired || isQuoteExpired(line));
+function lineStale(line, now) {
+  return !!(line.hashStale || line.quoteExpired || isQuoteExpired(line, now));
 }
 
 /**
  * Payable lines are charged together. A fresh quote (hash matches, inside
  * the 7-day TTL) is payable even when the assembly is closed — the server
  * still has the 3MF. A stale or expired line is re-quoted only when that
- * part's script is open. Otherwise it is skipped.
+ * part's script is open. Otherwise it is skipped. Expiry uses this
+ * function's `now`, not a second read of the wall clock.
  */
 export function planCheckout(doc, scripts, cart, runs = null, now = new Date()) {
   const view = presentCartLines(doc, scripts, cart, now);
@@ -76,7 +77,7 @@ export function planCheckout(doc, scripts, cart, runs = null, now = new Date()) 
     const partId = resolved.part?.id || line.partId;
     const open = !!(doc && script && !line.missing && !line.elsewhere);
     const options = lockedOptions(line.options);
-    const stale = lineStale(line);
+    const stale = lineStale(line, now);
     const row = {
       lineId: line.lineId,
       partId,
@@ -92,7 +93,7 @@ export function planCheckout(doc, scripts, cart, runs = null, now = new Date()) 
       quoteId: line.quoteId,
       quotedAt: line.quotedAt,
       hashStale: !!line.hashStale,
-      quoteExpired: !!line.quoteExpired || isQuoteExpired(line),
+      quoteExpired: !!line.quoteExpired || isQuoteExpired(line, now),
       thumbDataUrl: line.thumbDataUrl || null,
       lineError: runErrorFor(runs, [partId, line.partId]),
       action: 'skip',
