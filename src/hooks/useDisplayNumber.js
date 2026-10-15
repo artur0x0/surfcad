@@ -1,5 +1,10 @@
 import { useState } from 'react';
-import { formatDisplayNumber, isFormattedDisplayEcho } from '../utils/displayUnit';
+import {
+  finiteStoredNumber,
+  formatDisplayNumber,
+  isFormattedDisplayEcho,
+  isPartialNumberEntry,
+} from '../utils/displayUnit';
 
 function rawOf(event) {
   if (event && typeof event === 'object' && event.target) return event.target.value;
@@ -14,10 +19,10 @@ function rawOf(event) {
  */
 export function useDisplayNumber(value, onChange) {
   const [draft, setDraft] = useState(null);
-  const partial = value === '' || value === '-' || value === '.';
+  const partial = isPartialNumberEntry(value);
   const formatted = partial
     ? value
-    : (Number.isFinite(Number(value)) ? formatDisplayNumber(value) : (value ?? ''));
+    : (Number.isFinite(finiteStoredNumber(value)) ? formatDisplayNumber(value) : (value ?? ''));
   const shown = draft != null ? draft : (formatted ?? '');
   return {
     value: shown,
@@ -25,14 +30,19 @@ export function useDisplayNumber(value, onChange) {
       if (event?.target && typeof document !== 'undefined' && event.target !== document.activeElement) return;
       setDraft(formatted ?? '');
     },
-    onBlur: () => setDraft(null),
+    onBlur: () => {
+      if (draft != null && !isPartialNumberEntry(draft) && !isFormattedDisplayEcho(value, draft)) {
+        onChange?.(draft);
+      }
+      setDraft(null);
+    },
     endDraft: () => setDraft(null),
     onChange: (event) => {
       const raw = rawOf(event);
       const focused = !event?.target
         || typeof document === 'undefined'
         || event.target === document.activeElement;
-      if (raw === '' || raw === '-' || raw === '.') {
+      if (isPartialNumberEntry(raw)) {
         if (focused) setDraft(raw);
         else setDraft(null);
         onChange?.(raw);

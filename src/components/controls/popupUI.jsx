@@ -21,7 +21,13 @@ import React from 'react';
 import { useDisplayUnit } from '../../hooks/useDisplayUnit';
 import { useDisplayNumber } from '../../hooks/useDisplayNumber';
 import { numberFieldLabelParts } from '../../utils/featureFieldEdit';
-import { commitDisplayLength, lengthCaption, lengthToDisplay } from '../../utils/displayUnit';
+import {
+  commitDisplayLength,
+  finiteStoredNumber,
+  isPartialNumberEntry,
+  lengthCaption,
+  lengthToDisplay,
+} from '../../utils/displayUnit';
 import { blendSnapStep } from '../../utils/blendSize';
 import {
   lengthFromThumb, lengthSnap, logLengthFromThumb, logThumbFromLength, thumbFromLength, THUMB_COUNT,
@@ -201,10 +207,11 @@ export const LengthNumberField = ({
   const spanMm = Math.abs(end - (signed ? -end : lo));
   const useLog = curve === 'log';
   const snap = useLog ? null : lengthToDisplay(lengthSnap(unit, spanMm), unit);
-  const partial = valueMm === '' || valueMm === '-' || valueMm === '.';
+  const partial = isPartialNumberEntry(valueMm);
+  const storedMm = finiteStoredNumber(valueMm);
   const shown = partial
     ? valueMm
-    : (Number.isFinite(Number(valueMm)) ? lengthToDisplay(Number(valueMm), unit) : '');
+    : (Number.isFinite(storedMm) ? lengthToDisplay(storedMm, unit) : '');
   return (
     <NumberField
       shaped
@@ -226,7 +233,7 @@ export const LengthNumberField = ({
       captionAttrs={captionAttrs}
       onChange={(raw) => {
         const next = commitDisplayLength(raw, valueMm, unit);
-        if (raw !== '' && raw !== '-' && raw !== '.' && next === valueMm) return;
+        if (!isPartialNumberEntry(raw) && next === valueMm) return;
         onChangeMm?.(next);
       }}
     />
