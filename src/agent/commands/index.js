@@ -26,6 +26,15 @@ import { listFacesCommand } from './listFaces.js';
 import { listEdgesCommand } from './listEdges.js';
 import { listFeatureEdgesCommand } from './listFeatureEdges.js';
 import { invokeHelperCommand, buildHelperPaletteCommands } from './invokeHelper.js';
+import {
+  openFeatureCommand,
+  activateFeatureCommand,
+  editFeatureCommand,
+  confirmFeatureCommand,
+  cancelFeatureCommand,
+  deleteFeatureCommand,
+  rollbackToCommand,
+} from './featureStrip.js';
 
 const HELPER_COMMANDS = buildHelperPaletteCommands();
 
@@ -34,6 +43,7 @@ const HELPER_COMMANDS = buildHelperPaletteCommands();
  * `list_commands` is next. H2 state readers are appended after it.
  * H3 selection and camera writers follow the readers.
  * H4 helper inserts and grouped edge catalog follow H3.
+ * H5 feature strip / rollback commands follow H4.
  */
 export const V1_COMMANDS = Object.freeze([
   getScriptCommand,
@@ -56,6 +66,13 @@ export const V1_COMMANDS = Object.freeze([
   listFeatureEdgesCommand,
   invokeHelperCommand,
   ...HELPER_COMMANDS,
+  openFeatureCommand,
+  activateFeatureCommand,
+  editFeatureCommand,
+  confirmFeatureCommand,
+  cancelFeatureCommand,
+  deleteFeatureCommand,
+  rollbackToCommand,
   selectClearCommand,
   selectFacesCommand,
   selectEdgesCommand,
