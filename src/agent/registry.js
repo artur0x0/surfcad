@@ -5,8 +5,9 @@
  * `schema` is a JSON-schema-ish description of the args object. `example`
  * is one valid args object. `run` returns `{ result }` or `{ error: { code, message } }`.
  * `uiEntry`, when set, is a `data-*` attribute name or a helper id, or a
- * list of them when one command drives several controls. It is metadata
- * for a later visible mode. H1 does not click it.
+ * list of them when one command drives several controls. Visible mode uses
+ * it to flash matching `data-ui-action` / data-* controls; handlers are
+ * unchanged (no parallel DOM-click path).
  *
  * Names are snake_case. Appending a name stays on bridge v1. Renaming one
  * bumps the version. Commerce is not registered here; see `exempt.js`.

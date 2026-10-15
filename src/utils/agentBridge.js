@@ -404,7 +404,45 @@ export function createSurfcadBridge(hostSource) {
     cloneHistory: cloneAgentHistory,
     failedExecute,
     listCommands: () => v1Registry.catalog(),
+    readAgentVisible: () => {
+      const read = hostFn('readAgentVisible');
+      if (read) return read();
+      return { enabled: false };
+    },
+    setAgentVisible: (patch) => {
+      const apply = hostFn('setAgentVisible');
+      if (!apply) return { enabled: false };
+      return apply(patch);
+    },
   };
+
+  function readVisibleCueState() {
+    const read = hostFn('readAgentVisible');
+    const opts = read ? read() : { enabled: false };
+    const host = getHost();
+    const director = host && host.agentVisibleDirector && typeof host.agentVisibleDirector === 'object'
+      ? host.agentVisibleDirector
+      : null;
+    return { opts, director };
+  }
+
+  async function runWithVisibleCue(name, args, command, runBody) {
+    const { opts, director } = readVisibleCueState();
+    const shouldCue = opts?.enabled === true && director;
+    if (shouldCue && typeof director.before === 'function') {
+      await director.before({ name, args, command });
+    }
+    let out;
+    try {
+      out = toEnvelope(await runBody());
+    } catch (err) {
+      out = fail('internal', String(err?.message || err));
+    }
+    if (shouldCue && typeof director.after === 'function') {
+      await director.after({ name, args, command, envelope: out });
+    }
+    return out;
+  }
 
   function toEnvelope(out) {
     if (out && out.error) return fail(out.error.code, out.error.message, out.error.details);
@@ -435,15 +473,11 @@ export function createSurfcadBridge(hostSource) {
       if (refused) return Promise.resolve(fail(refused.code, refused.message, refused.details));
     }
 
-    if (command.immediate) return Promise.resolve(toEnvelope(command.run(ctx, args)));
+    if (command.immediate) {
+      return runWithVisibleCue(name, args, command, () => Promise.resolve(command.run(ctx, args)));
+    }
 
-    return enqueue(async () => {
-      try {
-        return toEnvelope(await command.run(ctx, args));
-      } catch (err) {
-        return fail('internal', String(err?.message || err));
-      }
-    });
+    return enqueue(() => runWithVisibleCue(name, args, command, () => command.run(ctx, args)));
   }
 
   async function unwrap(envPromise) {
