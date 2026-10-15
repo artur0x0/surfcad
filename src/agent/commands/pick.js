@@ -296,7 +296,7 @@ export async function beginPick(ctx, args) {
   const first = await until(ctx, () => ctx.pickRead(), (read) => !!read && read.settled === true);
   if (!first.ok) return fail(settleError(target, null, null));
   const original = first.value.entries;
-  const keep = args.keep ?? (target !== 'selection');
+  const keep = args.keep ?? (target !== 'selection' && target !== 'holeCentres');
   const sketchTarget = target === 'contour' || target === 'holeCentres';
   let session = store.begin({
     kind,
