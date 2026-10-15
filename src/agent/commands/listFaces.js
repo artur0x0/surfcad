@@ -1,3 +1,4 @@
+/** Read-only catalog of face keys for select_faces. */
 export const listFacesCommand = Object.freeze({
   name: 'list_faces',
   schema: {
