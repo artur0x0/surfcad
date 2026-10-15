@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { resolveEdgeKeys, resolveFaceKeys } from './resolvePickIds.js';
+
+const TOP = { at: [0, 0, 10], n: [0, 0, 1], area: 1200, tris: [0, 1] };
+
+test('resolveFaceKeys matches one fingerprint', () => {
+  const out = resolveFaceKeys([TOP], [{ at: [0, 0, 10], n: [0, 0, 1], area: 1200 }]);
+  assert.equal(out.error, undefined);
+  assert.equal(out.picks.length, 1);
+  assert.deepEqual(out.picks[0].center, [0, 0, 10]);
+});
+
+test('resolveFaceKeys reports unknown face', () => {
+  const out = resolveFaceKeys([TOP], [{ at: [99, 0, 10], n: [0, 0, 1], area: 1200 }]);
+  assert.equal(out.error?.code, 'unknown_face');
+});
+
+test('resolveEdgeKeys matches packed key', () => {
+  const edge = { key: '1-2', a: 1, b: 2, mid: [0, 0, 0], n0: [0, 0, 1], n1: [1, 0, 0], va: [0, 0, 0], vb: [1, 0, 0] };
+  const out = resolveEdgeKeys([edge], ['1-2']);
+  assert.equal(out.edges.length, 1);
+});
