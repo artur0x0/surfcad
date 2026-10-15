@@ -2,7 +2,7 @@
 /**
  * Agent bridge H12: mock vault save, branch create/switch, confirm gate.
  */
-/* global document, window, indexedDB, localStorage, sessionStorage */
+/* global document, window, indexedDB, localStorage */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
