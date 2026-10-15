@@ -44,6 +44,10 @@ export const sketchAddCommand = Object.freeze({
       return { error: { code: 'bad_args', message: 'sketch_add needs a supported tool' } };
     }
     const params = sketchParamsFromArgs(tool, args || {});
+    const extra = args?.params;
+    if (extra && typeof extra === 'object' && !Array.isArray(extra)) {
+      Object.assign(params, extra);
+    }
     const out = add({ tool, params });
     if (out?.error) return { error: out.error };
     return { result: { tool, ...(out?.result || {}) } };

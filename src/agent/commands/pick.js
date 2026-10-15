@@ -27,6 +27,7 @@ import {
   PICK_TOOLS,
   PICK_TOOL_IDS,
   PICK_TOOL_UI_ENTRIES,
+  SKETCH_PICK_KINDS,
   checkToolParams,
   pickerBusyError,
 } from '../pick/tools.js';
@@ -130,7 +131,9 @@ function resolveKeys(ctx, kind, keys) {
     if (!id) {
       const want = kind === 'face'
         ? 'a list_faces key { at, n, area }'
-        : 'a list_feature_edges id (eN), a list_edges key, or { faceKeyA, faceKeyB }';
+        : SKETCH_PICK_KINDS.includes(kind)
+          ? `a sketch ${kind} id or { id }`
+          : 'a list_feature_edges id (eN), a list_edges key, or { faceKeyA, faceKeyB }';
       return { error: { code: 'bad_args', message: `key at index ${i} is not ${want}` } };
     }
     ids.push(id);
@@ -152,7 +155,7 @@ const KEY_PROPS = Object.freeze({
 });
 
 const BEGIN_PROPS = Object.freeze({
-  kind: { type: 'string', enum: PICK_KINDS.slice(), description: 'face or edge. Required for the plain selection; must match the card when one is open.' },
+  kind: { type: 'string', enum: PICK_KINDS.slice(), description: 'face or edge for the viewport selection; point, line, arc, or ref for an open contour gesture or hole-centres sketch.' },
   tool: { type: 'string', enum: PICK_TOOL_IDS.slice(), description: 'Open this picker card, the same as its rail button. Omit to feed the open card or the selection.' },
   keep: { type: 'boolean', description: 'Keep picks already there. Default: false for the selection, true for a card (its preselection or stored edges).' },
   min: { type: 'integer', minimum: 0, description: 'Fewest picks pick_done accepts. Default 1.' },
@@ -164,7 +167,7 @@ const BEGIN_PROPS = Object.freeze({
 
 function checkBeginArgs(args) {
   if (args.kind != null && !PICK_KINDS.includes(args.kind)) {
-    return { code: 'bad_args', message: 'kind must be face or edge' };
+    return { code: 'bad_args', message: 'kind must be face, edge, or a sketch kind (point, line, arc, ref)' };
   }
   if (args.tool != null && !PICK_TOOLS[args.tool]) {
     return { code: 'bad_args', message: `tool must be one of: ${PICK_TOOL_IDS.join(', ')}` };
@@ -233,6 +236,10 @@ export async function beginPick(ctx, args) {
   let target = info.target;
   let opened = false;
   let kind;
+  const fail = (error) => {
+    if (opened) ctx.pickExit();
+    return { error };
+  };
   if (args.tool) {
     const spec = PICK_TOOLS[args.tool];
     if (args.kind && args.kind !== spec.kind) return { error: wrongKind(args.kind, args.tool, spec.kind) };
@@ -251,6 +258,18 @@ export async function beginPick(ctx, args) {
       info = shown.value;
       target = args.tool;
     }
+  } else if (target === 'contour' || target === 'holeCentres') {
+    if (!args.kind) {
+      return { error: { code: 'bad_args', message: `pick_begin needs kind (${target === 'holeCentres' ? 'point or uv' : 'point, line, arc, or ref'})` } };
+    }
+    const holeCentreKinds = target === 'holeCentres'
+      && (SKETCH_PICK_KINDS.includes(args.kind) || args.kind === 'point' || args.kind === 'uv');
+    if (!SKETCH_PICK_KINDS.includes(args.kind) && !holeCentreKinds) {
+      return { error: wrongKind(args.kind, target, info.kind || 'point') };
+    }
+    kind = args.kind;
+    const entered = ctx.pickEnter({ kind });
+    if (entered?.error) return fail(entered.error);
   } else if (target === 'selection') {
     if (!args.kind) {
       return { error: { code: 'bad_args', message: 'pick_begin needs kind (face or edge) or tool when no picker card is open' } };
@@ -269,11 +288,6 @@ export async function beginPick(ctx, args) {
     if (bad) return { error: bad };
   }
 
-  const fail = (error) => {
-    if (opened) ctx.pickExit();
-    return { error };
-  };
-
   if (args.params != null) {
     const set = ctx.pickParams({ params: args.params });
     if (set?.error) return fail(set.error);
@@ -283,10 +297,11 @@ export async function beginPick(ctx, args) {
   if (!first.ok) return fail(settleError(target, null, null));
   const original = first.value.entries;
   const keep = args.keep ?? (target !== 'selection');
+  const sketchTarget = target === 'contour' || target === 'holeCentres';
   let session = store.begin({
     kind,
     target,
-    tool: target === 'selection' ? null : target,
+    tool: (target === 'selection' || sketchTarget) ? null : target,
     opened,
     editing: !!info.editing,
     min: limits.min,
@@ -635,4 +650,46 @@ export const pickEdgesCommand = Object.freeze({
   example: { keys: ['e3'], tool: 'filletEdges', params: { radius: 1 }, accept: true },
   checkArgs: checkOneShot('pick_edges', 'edge'),
   run: oneShot('edge'),
+});
+
+function checkSketchOneShot(name) {
+  const keyCheck = checkKeyArgs(name);
+  return (args) => {
+    const bad = keyCheck(args);
+    if (bad) return bad;
+    if (!args.kind || !SKETCH_PICK_KINDS.includes(args.kind)) {
+      return { code: 'bad_args', message: `${name} needs kind: point, line, arc, or ref` };
+    }
+    return checkBeginArgs({ ...args, replace: false });
+  };
+}
+
+export const pickPointsCommand = Object.freeze({
+  name: 'pick_points',
+  schema: Object.freeze({
+    type: 'object',
+    additionalProperties: true,
+    properties: {
+      ...KEY_PROPS,
+      kind: { type: 'string', enum: SKETCH_PICK_KINDS.slice() },
+      keep: BEGIN_PROPS.keep,
+      min: BEGIN_PROPS.min,
+      max: BEGIN_PROPS.max,
+      timeout_ms: BEGIN_PROPS.timeout_ms,
+    },
+  }),
+  example: { kind: 'point', keys: [{ at: [10, 5] }] },
+  checkArgs: checkSketchOneShot('pick_points'),
+  run: async (ctx, args) => {
+    const begun = await beginPick(ctx, { ...args, replace: false });
+    if (begun.error) return begun;
+    const next = await nextPick(ctx, { keys: keysFrom(args) });
+    if (next.error) {
+      await cancelPick(ctx);
+      return next;
+    }
+    const done = await donePick(ctx, { accept: false });
+    if (done.error && ctx.pickSessions.peek()) await cancelPick(ctx);
+    return done;
+  },
 });

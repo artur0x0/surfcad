@@ -5820,6 +5820,56 @@ const App = () => {
     };
   };
 
+  const prepareAgentHoleMutate = (payload) => {
+    if (!focusWritePart(payload?.partId)) {
+      return { error: { code: 'no_write_part', message: 'No writable part for hole commit' } };
+    }
+    const buf = codeEditorRef.current?.getContent?.() ?? '';
+    const editing = !!(payload?.editSpec || payload?.editCentres);
+    const result = payload?.editCentres
+      ? rewriteCentersContour(buf, {
+        contourId: payload.contourId,
+        contour: payload.contour,
+        frame: payload.frame,
+        planeOffset: payload.planeOffset,
+      })
+      : composeHoleOnContour(buf, payload?.editSpec
+        ? { featureId: payload.featureId, spec: payload.spec }
+        : {
+          frame: payload.frame,
+          contour: payload.contour,
+          spec: payload.spec,
+          planeOffset: payload.planeOffset,
+        });
+    if (!result.ok) {
+      return { error: { code: 'commit_failed', message: result.message || 'Hole commit refused' } };
+    }
+    if (result.empty || result.changed === false || result.buffer === buf) {
+      return { changed: false, source: buf, message: 'Hole', featureId: result.featureId ?? null };
+    }
+    const placement = placeCommitBuffer(buf, result.buffer);
+    return {
+      changed: true,
+      source: placement.placed.buffer,
+      message: payload?.editCentres ? 'Hole centres' : 'Hole',
+      featureId: result.featureId ?? null,
+      placement,
+      editing,
+      rollbackFeatureId: !editing ? result.featureId : null,
+    };
+  };
+
+  const applyAgentHoleMutateExtras = (prep) => {
+    applyAgentContourRollback(prep.placement);
+    if (prep.rollbackFeatureId) {
+      const key = editorRollbackKey();
+      const stored = storedRollback(key);
+      if (stored === undefined && prep.rollbackFeatureId) {
+        storeRollbackAnchor(key, prep.rollbackFeatureId);
+      }
+    }
+  };
+
   const prepareAgentContourMutate = (payload, meta = {}) => {
     if (!focusWritePart(payload?.partId)) {
       return { error: { code: 'no_write_part', message: 'No writable part for contour commit' } };
@@ -7629,6 +7679,10 @@ const App = () => {
       { ...payload, partId: payload?.partId ?? assemblyRef.current?.activeId },
       meta,
     ),
+    prepareHoleMutate: (payload) => prepareAgentHoleMutate(payload),
+    applyHoleMutateExtras(prep) {
+      applyAgentHoleMutateExtras(prep);
+    },
     applyContourMutateExtras(prep) {
       if (!prep) return;
       applyAgentContourRollback(prep.placement);
