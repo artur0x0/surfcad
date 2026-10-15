@@ -26,3 +26,5 @@ if (schemaErrors.length) {
 
 writeFileSync(outPath, serializeCommandsDocument(document), 'utf8');
 console.log(`Wrote ${COMMANDS_JSON_PATH} (${document.count} commands)`);
+
+await import('./sync-surfcad-mcp-commands.mjs');

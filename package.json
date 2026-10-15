@@ -319,6 +319,9 @@
         "golden:face-select-boundaries": "node scripts/golden/smoke_face_select_boundaries.mjs",
         "golden:loftzilla": "node scripts/golden/smoke_loftzilla_fillet_band.mjs"
     },
+    "workspaces": [
+        "packages/surfcad-mcp"
+    ],
     "dependencies": {
         "@monaco-editor/react": "^4.6.0",
         "@stripe/react-stripe-js": "^5.4.1",

@@ -1,0 +1,17 @@
+{
+  "name": "surfcad-mcp",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "SurfCAD agent bridge MCP server (stdio) — pairs to a browser tab via the M1 relay",
+  "type": "module",
+  "bin": {
+    "surfcad-mcp": "./bin/surfcad-mcp.js"
+  },
+  "scripts": {
+    "start": "node ./bin/surfcad-mcp.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1"
+  }
+}

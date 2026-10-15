@@ -346,3 +346,14 @@ Loopback-only relay for a local MCP / stdio process to drive the same bridge as 
 ```
 
 Refusals use the same `error` objects as the in-page envelope. Non-loopback TCP peers and non-local `Origin` values are dropped.
+
+### MCP stdio server (M2)
+
+| Piece | Role |
+| --- | --- |
+| `packages/surfcad-mcp` | Unpublished package: MCP over stdio, one tool per `commands.json` row plus `pair`. |
+| `packages/surfcad-mcp/data/commands.json` | Copy of `src/agent/commands.json`; refreshed by `npm run export:agent`. |
+| `SURFCAD_PAIRING_CODE` | Optional env pairing code (same as the in-app **Local agent** panel). |
+| `SURFCAD_AGENT_BRIDGE_WS_URL` | Relay URL (default `ws://127.0.0.1:17341`). |
+
+Claude Desktop / Cursor config examples live in `packages/surfcad-mcp/README.md`.
