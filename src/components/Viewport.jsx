@@ -367,6 +367,8 @@ import {
   validateMoveAccept,
   movePreviewOffset,
   resolveMoveBodyAt,
+  seedMoveDeltasFromLastMove,
+  attachMoveTargetMesh,
   cutNormalFromScript,
   MOVE_MODE_NEED_BODY,
 } from '../utils/moveMode';
@@ -7210,6 +7212,21 @@ const Viewport = forwardRef(({
     if (renderer && camera) renderer.render(scene, camera);
   }, [clearMovePreview, getHelperBuffer]);
 
+  const syncMoveTargetFromMesh = useCallback((state) => {
+    if (!state?.target?.at) return state;
+    const geom = resultRef.current?.geometry;
+    const positions = geom?.attributes?.position;
+    const index = geom?.index?.array;
+    if (!positions || !index) return state;
+    const buf = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
+    const bodies = meshBodyComponents(positions, index);
+    const seeded = seedMoveDeltasFromLastMove(state, buf, state.target.at);
+    return {
+      ...seeded,
+      target: attachMoveTargetMesh(seeded.target, bodies, bodyCentroidsRef.current, buf),
+    };
+  }, [getHelperBuffer]);
+
   const exitMoveMode = useCallback(() => {
     cancelFeatureEditRef.current?.('move');
     const was = moveModeRef.current;
@@ -9834,7 +9851,10 @@ const Viewport = forwardRef(({
             minTri: hit.minTri,
             triangles: hit.triangles.slice(),
           };
-          const next = { ...moveModeRef.current, target };
+          let next = { ...moveModeRef.current, target };
+          if (target) {
+            next = seedMoveDeltasFromLastMove(next, buf, target.at);
+          }
           moveModeRef.current = next;
           setMoveMode(next);
           clearHighlight();
@@ -13056,15 +13076,25 @@ const Viewport = forwardRef(({
         } else if (dialog.dialog === 'move') {
           enterMoveMode();
           const at = active.fields?.at;
-          const next = {
+          let next = {
             ...emptyMoveState(),
             dx: Number(active.fields?.dx) || 0,
             dy: Number(active.fields?.dy) || 0,
             dz: Number(active.fields?.dz) || 0,
             target: Array.isArray(at) ? { at: at.slice() } : null,
           };
+          next = syncMoveTargetFromMesh(next);
           moveModeRef.current = next;
           setMoveMode(next);
+          if (next.target?.triangles?.length) {
+            const geom = resultRef.current?.geometry;
+            const positions = geom?.attributes?.position;
+            const index = geom?.index?.array;
+            if (positions && index) {
+              highlightFace(next.target.triangles, geom, positions, index, 0x22d3ee, 'move-body');
+            }
+          }
+          paintMovePreview(next);
         } else if (dialog.dialog === 'moveFace') {
           enterMoveFaceMode();
           commitMoveFaceState({
@@ -14726,6 +14756,7 @@ const Viewport = forwardRef(({
           onConfirm={acceptMove}
           onDelete={featureEditRef.current?.dialog === 'move' ? featureEditDelete : null}
           onDismiss={exitMoveMode}
+          labelBuffer={(typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || ''}
         />
       )}
 

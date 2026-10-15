@@ -75,9 +75,90 @@ export function clearMoveTarget(state) {
   return { ...state, target: null };
 }
 
-export function moveTargetLabel(target) {
+/**
+ * World centroid for the subtitle while the sliders show absolute move deltas.
+ * When the anchor matches the last move block, the body already sits at
+ * anchor + that move's delta.
+ */
+export function moveBodyWorldAt(anchorAt, buffer) {
+  const at = Array.isArray(anchorAt) ? anchorAt.slice(0, 3).map(Number) : null;
+  if (!at || at.some((v) => !Number.isFinite(v))) return null;
+  const prev = parseLastMove(buffer);
+  if (prev && dist2(at, prev.at) <= 1e-4) {
+    return prev.at.map((v, i) => v + prev.delta[i]);
+  }
+  return at;
+}
+
+export function moveTargetLabel(target, opts = {}) {
   if (!target || !Array.isArray(target.at)) return 'Double-click a body';
-  return `Body at ${formatVec(target.at)}`;
+  const at = target.at.slice(0, 3).map(Number);
+  const buffer = typeof opts.buffer === 'string' ? opts.buffer : '';
+  const dx = Number(opts.dx);
+  const dy = Number(opts.dy);
+  const dz = Number(opts.dz);
+  const sliders = [dx, dy, dz];
+  let display = at;
+  const prev = buffer ? parseLastMove(buffer) : null;
+  if (prev && dist2(at, prev.at) <= 1e-4 && sliders.every((v) => Number.isFinite(v))) {
+    display = at.map((v, i) => v + sliders[i]);
+  } else {
+    const world = moveBodyWorldAt(at, buffer);
+    if (world) display = world;
+  }
+  return `Body at ${formatVec(display)}`;
+}
+
+/**
+ * After a body pick, keep absolute move deltas when replacing the last move.
+ */
+export function seedMoveDeltasFromLastMove(state, buffer, anchorAt) {
+  if (!state || (state.direction || 'xyz') !== 'xyz') return state;
+  const prev = parseLastMove(buffer);
+  const at = Array.isArray(anchorAt) ? anchorAt.slice(0, 3).map(Number) : null;
+  if (!prev || !at || dist2(at, prev.at) > 1e-4) return state;
+  const dx = Number(state.dx) || 0;
+  const dy = Number(state.dy) || 0;
+  const dz = Number(state.dz) || 0;
+  if (dx !== 0 || dy !== 0 || dz !== 0) return state;
+  return {
+    ...state,
+    dx: prev.delta[0],
+    dy: prev.delta[1],
+    dz: prev.delta[2],
+  };
+}
+
+/** Mesh body whose centroid matches the move anchor in world space. */
+export function findMeshBodyForMoveAnchor(bodies, anchorAt, kernelCentroids, buffer) {
+  const list = Array.isArray(bodies) ? bodies : [];
+  const anchor = Array.isArray(anchorAt) ? anchorAt.slice(0, 3).map(Number) : null;
+  if (!anchor || anchor.some((v) => !Number.isFinite(v))) return null;
+  const world = moveBodyWorldAt(anchor, buffer);
+  let best = null;
+  let bestD = Infinity;
+  for (const body of list) {
+    const resolved = resolveMoveBodyAt(body.at, kernelCentroids, buffer);
+    const d = dist2(resolved, world);
+    if (d < bestD) {
+      bestD = d;
+      best = body;
+    }
+  }
+  if (!best || bestD > 1) return null;
+  return best;
+}
+
+export function attachMoveTargetMesh(target, bodies, kernelCentroids, buffer) {
+  if (!target || !Array.isArray(target.at)) return target;
+  const hit = findMeshBodyForMoveAnchor(bodies, target.at, kernelCentroids, buffer);
+  if (!hit) return target;
+  return {
+    ...target,
+    at: resolveMoveBodyAt(hit.at, kernelCentroids, buffer),
+    minTri: hit.minTri,
+    triangles: hit.triangles.slice(),
+  };
 }
 
 /**

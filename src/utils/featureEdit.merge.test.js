@@ -26,6 +26,21 @@ test('confirmFeatureEdit merges partial bridge fields with parsed block params',
   assert.doesNotMatch(result.buffer, /Manifold\.cube\(\[40, 30, 20\]/);
 });
 
+test('confirmFeatureEdit rewrites move dz', () => {
+  const script = `let part = Manifold.cube([10, 10, 10], true);
+// --- move begin ---
+part = move(part, [0, 0, 2.625], { bodies: [{ at: [0, 0, 0] }] });
+// --- move end ---
+return part;
+`;
+  const move = parseFeatureMarkers(script).find((f) => f.kind === 'move');
+  assert.ok(move);
+  const session = openFeatureEdit(script, move);
+  const result = confirmFeatureEdit(script, move, { fields: { ...session.fields, dz: 5 } });
+  assert.ok(result.ok && result.changed);
+  assert.match(result.buffer, /\[0,\s*0,\s*5\]/);
+});
+
 test('confirmFeatureEdit keeps cylinder size when only pose is patched', () => {
   const host = composeHelperInsert('', 'cube', null, { width: 10, depth: 10, height: 10, center: true });
   const script = composeHelperInsert(host, 'cylinder', null, {
