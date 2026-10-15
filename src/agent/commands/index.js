@@ -22,6 +22,8 @@ import { setActivePartCommand } from './setActivePart.js';
 import { cameraSetCommand } from './cameraSet.js';
 import { cameraFitCommand } from './cameraFit.js';
 import { zoomToSelectionCommand } from './zoomToSelection.js';
+import { listFacesCommand } from './listFaces.js';
+import { listEdgesCommand } from './listEdges.js';
 
 /**
  * Public order. The first seven names are the original v1 tool list.
@@ -44,6 +46,8 @@ export const V1_COMMANDS = Object.freeze([
   toastsCommand,
   partsCommand,
   cameraCommand,
+  listFacesCommand,
+  listEdgesCommand,
   selectClearCommand,
   selectFacesCommand,
   selectEdgesCommand,

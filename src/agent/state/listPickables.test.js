@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { buildEdgeList, buildFaceList } from './listPickables.js';
+
+test('buildFaceList returns keys agents can pass to select_faces', () => {
+  const out = buildFaceList([{
+    at: [20, 0, 0],
+    n: [1, 0, 0],
+    area: 600,
+    tris: [1, 2, 3],
+  }]);
+  assert.equal(out.faces.length, 1);
+  assert.deepEqual(out.faces[0].key.at, [20, 0, 0]);
+  assert.equal(out.faces[0].triangleCount, 3);
+});
+
+test('buildEdgeList attaches adjacent face keys when tri0/tri1 are present', () => {
+  const fingerprints = [
+    { at: [20, 0, 0], n: [1, 0, 0], area: 600, tris: [0] },
+    { at: [0, 0, 10], n: [0, 0, 1], area: 1200, tris: [1] },
+  ];
+  const edges = [{
+    key: '1-2',
+    a: 1,
+    b: 2,
+    mid: [20, 0, 10],
+    length: 30,
+    n0: [1, 0, 0],
+    n1: [0, 0, 1],
+    tri0: 0,
+    tri1: 1,
+  }];
+  const out = buildEdgeList(edges, fingerprints);
+  assert.equal(out.edges.length, 1);
+  assert.equal(out.edges[0].key, '1-2');
+  assert.equal(out.edges[0].faceKeyA.area, 600);
+  assert.equal(out.edges[0].faceKeyB.area, 1200);
+});

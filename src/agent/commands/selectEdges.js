@@ -8,7 +8,12 @@ export const selectEdgesCommand = Object.freeze({
       key: {},
     },
   },
-  example: { keys: ['12-34'] },
+  example: {
+    keys: [{
+      faceKeyA: { at: [20, 0, 0], n: [1, 0, 0], area: 600 },
+      faceKeyB: { at: [0, 0, 10], n: [0, 0, 1], area: 1200 },
+    }],
+  },
   uiEntry: 'data-pick-mode-edge',
   immediate: true,
   checkArgs(args) {

@@ -121,6 +121,8 @@ export function buildFeatureEdges(geometry, minAngleDeg = DEFAULT_FEATURE_DEG) {
       tangent: [dx / length, dy / length, dz / length],
       n0: [nx[t0], ny[t0], nz[t0]],
       n1: [nx[t1], ny[t1], nz[t1]],
+      tri0: t0,
+      tri1: t1,
       bodyId: triBody[t0],
     });
   }

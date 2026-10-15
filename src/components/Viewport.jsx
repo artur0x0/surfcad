@@ -502,6 +502,8 @@ import {
 } from '../utils/measurePicks';
 import { applyCameraPose, fitView, meshWorldBox, unionWorldBox, VIEW_PRESETS, VIEW_SNAP_MARGIN } from '../utils/viewCamera';
 import { resolveEdgeKeys, resolveFaceKeys } from '../agent/resolvePickIds.js';
+import { buildEdgeList, buildFaceList } from '../agent/state/listPickables.js';
+import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
 import {
   boxCornerPoints,
@@ -1255,6 +1257,8 @@ const Viewport = forwardRef(({
   const agentSetCameraRef = useRef(() => ({ ok: false }));
   const agentFitCameraRef = useRef(() => false);
   const agentZoomToSelectionRef = useRef(() => ({ error: { code: 'no_selection', message: 'No selection' } }));
+  const agentListFacesRef = useRef(() => ({ faces: [], partId: null }));
+  const agentListEdgesRef = useRef(() => ({ edges: [], partId: null }));
   const swapPickPartRef = useRef(() => false);
   const ambiguousPickRef = useRef(null);
   const [partChoice, setPartChoice] = useState(null);
@@ -2304,6 +2308,8 @@ const Viewport = forwardRef(({
       setCamera: (args) => agentSetCameraRef.current(args),
       fitCamera: () => agentFitCameraRef.current(),
       zoomToSelection: () => agentZoomToSelectionRef.current(),
+      listFaces: (args) => agentListFacesRef.current(args),
+      listEdges: (args) => agentListEdgesRef.current(args),
     });
   }
 
@@ -9280,7 +9286,8 @@ const Viewport = forwardRef(({
       : {
         center: last.center,
         normal: last.normal,
-        area: 0,
+        area: Number(last.area) > 0 ? Number(last.area) : 0,
+        indices: Array.isArray(last.indices) ? last.indices.slice() : undefined,
         triangleCount: (last.indices || []).length,
         selectionMode: 'coplanar',
       };
@@ -10940,10 +10947,22 @@ const Viewport = forwardRef(({
       return { error: { code: 'no_mesh', message: 'No mesh to select edges on' } };
     }
     syncFeatureEdges(geom);
-    const resolved = resolveEdgeKeys(featureEdgesRef.current, keys, activePartIdRef.current);
+    const fingerprints = fingerprintsFromGeometry(geom, faceIDsRef.current);
+    const rawEdges = buildFeatureEdges(geom);
+    const resolved = resolveEdgeKeys(
+      rawEdges,
+      keys,
+      activePartIdRef.current,
+      fingerprints,
+    );
     if (resolved.error) return resolved;
-    setSelectedEdges(resolved.edges);
-    highlightSelectedEdges(resolved.edges);
+    const coherent = featureEdgesRef.current || [];
+    const edges = resolved.edges.map((edge) => {
+      const key = edge.key || `${edge.a}-${edge.b}`;
+      return coherent.find((row) => row.key === key) || edge;
+    });
+    setSelectedEdges(edges);
+    highlightSelectedEdges(edges);
     return { count: resolved.edges.length };
   };
 
@@ -10965,6 +10984,40 @@ const Viewport = forwardRef(({
   agentFitCameraRef.current = () => {
     handleZoomToFit();
     return !!cameraRef.current;
+  };
+
+  const meshGeometryForAgentPart = (partId) => {
+    const active = activePartIdRef.current;
+    if (partId == null || partId === '' || String(partId) === String(active)) {
+      return resultRef.current?.geometry ?? null;
+    }
+    const mesh = assemblyExtrasRef.current.get(String(partId))
+      || assemblyExtrasRef.current.get(partId);
+    return mesh?.geometry ?? null;
+  };
+
+  agentListFacesRef.current = ({ partId } = {}) => {
+    const geom = meshGeometryForAgentPart(partId);
+    if (!geom) return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
+    const fingerprints = fingerprintsFromGeometry(geom, faceIDsRef.current);
+    const listed = buildFaceList(fingerprints);
+    return {
+      partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
+      ...listed,
+    };
+  };
+
+  agentListEdgesRef.current = ({ partId } = {}) => {
+    const geom = meshGeometryForAgentPart(partId);
+    if (!geom) return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
+    syncFeatureEdges(geom);
+    const fingerprints = fingerprintsFromGeometry(geom, faceIDsRef.current);
+    const rawEdges = buildFeatureEdges(geom);
+    const listed = buildEdgeList(rawEdges, fingerprints);
+    return {
+      partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
+      ...listed,
+    };
   };
 
   agentZoomToSelectionRef.current = () => {

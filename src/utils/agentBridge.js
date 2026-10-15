@@ -345,6 +345,8 @@ export function createSurfcadBridge(hostSource) {
       zoom: null,
       fov: null,
     }),
+    listFaces: (args) => hostFn('listFaces')?.(args),
+    listEdges: (args) => hostFn('listEdges')?.(args),
     clearSelection: () => { hostFn('clearSelection')?.(); },
     selectFaces: (args) => hostFn('selectFaces')?.(args),
     selectEdges: (args) => hostFn('selectEdges')?.(args),
