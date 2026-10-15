@@ -126,20 +126,56 @@ export async function seedAssembly(page, seed) {
   }, { doc: assembly, partRows: parts, uid: userId });
 }
 
+const EMPTY_CART = Object.freeze({
+  version: 0,
+  lines: [],
+  tombstones: [],
+});
+
+/**
+ * Stub the /api calls the CAD shell hits on boot when auth/me says signed-in.
+ * Playwright intercepts before the network (preview has no proxy; dev may hit a
+ * real backend and return 401 when cookies do not match the stubbed session).
+ */
 export async function installApiMocks(page) {
-  await page.route('**/api/auth/me', (route) => route.fulfill({
-    status: 200,
+  const fulfill = (route, status, body) => route.fulfill({
+    status,
     contentType: 'application/json',
-    body: JSON.stringify({
-      authenticated: true,
-      user: { _id: 'user-playtest', email: 'playtest@test.local' },
-    }),
+    body: JSON.stringify(body),
+  });
+
+  await page.route('**/api/auth/me', (route) => fulfill(route, 200, {
+    authenticated: true,
+    user: { _id: 'user-playtest', email: 'playtest@test.local' },
   }));
-  await page.route('**/api/config', (route) => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({}),
+
+  await page.route('**/api/config', (route) => fulfill(route, 200, {
+    githubAppClientId: null,
   }));
+
+  await page.route('**/api/cart', async (route) => {
+    const method = route.request().method();
+    if (method === 'GET' || method === 'PUT') {
+      return fulfill(route, 200, { ...EMPTY_CART });
+    }
+    return route.fallback();
+  });
+
+  await page.route('**/api/github/oauth/refresh', (route) => fulfill(route, 404, {
+    error: 'not found',
+  }));
+
+  await page.route('**/api/auth/github', (route) => fulfill(route, 200, {
+    ok: true,
+  }));
+
+  await page.route('**/api/wins', (route) => {
+    const method = route.request().method();
+    if (method === 'POST' || method === 'GET') {
+      return fulfill(route, 200, { ok: true, wins: [] });
+    }
+    return route.fallback();
+  });
 }
 
 export async function waitForBridge(page) {
