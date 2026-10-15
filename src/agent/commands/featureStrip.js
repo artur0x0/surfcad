@@ -82,8 +82,27 @@ export const confirmFeatureCommand = Object.freeze({
   uiEntry: 'data-feature-sheet-accept',
   schema: NO_ARGS_SCHEMA,
   example: {},
-  run(ctx) {
-    return hostCall(ctx, 'confirmFeature', {});
+  async run(ctx) {
+    const prepare = ctx.prepareFeatureConfirm;
+    if (typeof prepare !== 'function') {
+      return { error: { code: 'internal', message: 'prepareFeatureConfirm handler is missing' } };
+    }
+    const prep = prepare();
+    if (prep?.error) return { error: prep.error };
+    let outcome = { ok: true, errors: [], status: ctx.readStatus?.() };
+    if (prep.changed) {
+      outcome = await ctx.mutate(prep.source, prep.message);
+    }
+    ctx.dismissFeatureConfirmSession?.();
+    return {
+      result: {
+        ok: outcome.ok === true,
+        id: prep.featureId,
+        errors: outcome.errors || [],
+        status: outcome.status,
+        unchanged: !prep.changed,
+      },
+    };
   },
 });
 

@@ -2409,6 +2409,19 @@ const Viewport = forwardRef(({
         holeEditRef.current = null;
         setHoleCard(null);
       },
+      agentHoleConfirmPayload() {
+        const edit = holeEditRef.current;
+        if (!edit) return null;
+        const parsed = holeSpecFromCard(holeCardRef.current || defaultHoleCard());
+        if (!parsed.ok) {
+          return { error: { code: 'edit_failed', message: parsed.message } };
+        }
+        const featureId = edit.featureId || edit.feature?.id;
+        if (!featureId) {
+          return { error: { code: 'edit_failed', message: 'Hole confirm refused' } };
+        }
+        return { featureId, spec: parsed.spec };
+      },
       readHelperEdgeContext: () => selectedEdgesRef.current || [],
     });
   }

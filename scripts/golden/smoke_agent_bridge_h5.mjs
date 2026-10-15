@@ -191,15 +191,27 @@ const filletChip = (treeF.result?.features || []).find((f) => f.kind === 'fillet
   || (treeF.result?.features || [])[1];
 check('fillet chip', !!filletChip, JSON.stringify(treeF));
 
+const openForCancel = await agentCall(page, 'open_feature', { id: filletChip.id });
+check('open_feature for cancel', openForCancel.ok === true, JSON.stringify(openForCancel));
+const cancelOpen = await agentCall(page, 'cancel_feature', {});
+check('cancel_feature after open', cancelOpen.ok === true && cancelOpen.result?.cancelled === true,
+  JSON.stringify(cancelOpen));
+
+const volAfterFillet = (await agentCall(page, 'status', {})).result?.volume;
 const openFillet = await agentCall(page, 'open_feature', { id: filletChip.id });
 check('open_feature fillet', openFillet.ok === true, JSON.stringify(openFillet));
 await page.waitForTimeout(300);
 
-const edit = await agentCall(page, 'edit_feature', { params: { radius: 2.5 } });
+const edit = await agentCall(page, 'edit_feature', { params: { radius: 5 } });
 check('edit_feature fillet radius', edit.ok === true, JSON.stringify(edit));
 
 const confirm = await agentCall(page, 'confirm_feature', {});
-check('confirm_feature fillet', confirm.ok === true, JSON.stringify(confirm));
+const volOnConfirm = confirm.result?.status?.volume;
+check('confirm_feature fillet', confirm.ok === true && confirm.result?.ok === true, JSON.stringify(confirm));
+check('confirm_feature refreshes volume without run',
+  typeof volOnConfirm === 'number' && volOnConfirm > 0
+  && Math.abs(volOnConfirm - volAfterFillet) > 0.5,
+  `before=${volAfterFillet} after=${volOnConfirm}`);
 
 const faces = await agentCall(page, 'list_faces', {});
 const faceList = faces.result?.faces || [];

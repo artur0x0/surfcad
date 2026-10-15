@@ -571,6 +571,8 @@ const App = () => {
   const agentFeatureDraftRef = useRef(null);
   /** Marker feature last opened by agent `open_feature` (direct confirm fallback). */
   const agentFeatureTargetRef = useRef(null);
+  /** Agent `open_feature` session; `cancel_feature` may close even before UI refs catch up. */
+  const agentFeatureSessionRef = useRef(null);
   const [jointCard, setJointCard] = useState(null);
   const jointCardRef = useRef(null);
   const jointPicksRef = useRef([]);
@@ -2432,6 +2434,100 @@ const App = () => {
   const handleFeatureOpen = () => {
     focusWritePart(null);
     setFeatureSheet((cur) => (cur ? null : cur));
+  };
+
+  const agentFeatureSessionActive = () => (
+    !!agentFeatureSessionRef.current
+    || !!agentFeatureTargetRef.current
+    || !!featureSheetRef.current
+    || viewportRef.current?.agentReadHoleEdit?.()?.open
+    || viewportRef.current?.agentReadFeatureEdit?.()?.open
+  );
+
+  const dismissAgentFeatureSession = () => {
+    viewportRef.current?.agentCancelFeatureEdit?.();
+    viewportRef.current?.agentCancelHoleEdit?.();
+    closeFeatureSheet();
+    setFeatureStripActiveId(null);
+    agentFeatureDraftRef.current = null;
+    agentFeatureTargetRef.current = null;
+    agentFeatureSessionRef.current = null;
+  };
+
+  const prepareAgentFeatureConfirm = () => {
+    if (assemblyOpenLockRef.current) {
+      return {
+        error: {
+          code: 'edit_failed',
+          message: 'An assembly is opening — confirm the edit again once it finishes.',
+        },
+      };
+    }
+    if (!focusWritePart(null)) {
+      return { error: { code: 'no_write_part', message: 'No writable part for feature confirm' } };
+    }
+    const draft = agentFeatureDraftRef.current || {};
+    const buf = codeEditorRef.current?.getContent?.() ?? '';
+
+    if (viewportRef.current?.agentReadHoleEdit?.()?.open) {
+      const holePayload = viewportRef.current?.agentHoleConfirmPayload?.();
+      if (holePayload?.error) return holePayload;
+      const result = composeHoleOnContour(buf, {
+        featureId: holePayload.featureId,
+        spec: holePayload.spec,
+      });
+      if (!result.ok) return { error: { code: 'edit_failed', message: result.message } };
+      const changed = !(result.empty || result.changed === false || result.buffer === buf);
+      return {
+        changed,
+        source: changed ? result.buffer : buf,
+        featureId: holePayload.featureId,
+        message: 'Hole',
+      };
+    }
+
+    const vpEdit = viewportRef.current?.agentReadFeatureEdit?.();
+    if (vpEdit?.open && vpEdit.feature) {
+      const live = liveSheetFeature(buf, vpEdit.feature) || vpEdit.feature;
+      const result = confirmFeatureEdit(buf, live, { fields: { ...(vpEdit.fields || {}), ...draft } });
+      if (!result.ok) return { error: { code: 'edit_failed', message: result.message } };
+      return {
+        changed: !!result.changed,
+        source: result.changed ? result.buffer : buf,
+        featureId: live.id,
+        message: `Edit ${live.label || live.kind || 'feature'}`,
+      };
+    }
+
+    const sheet = featureSheetRef.current;
+    if (sheet?.mode === 'edit' && sheet.feature) {
+      const live = liveSheetFeature(buf, sheet.feature);
+      if (!live) return { error: { code: 'edit_failed', message: STALE_FEATURE_MSG } };
+      const result = writeFeatureSheetParams(buf, live, draft);
+      if (!result.ok) return { error: { code: 'edit_failed', message: result.message } };
+      const changed = result.buffer !== buf;
+      return {
+        changed,
+        source: result.buffer,
+        featureId: live.id,
+        message: `${live.label || 'Feature'} sheet`,
+      };
+    }
+
+    const target = agentFeatureTargetRef.current;
+    if (target) {
+      const live = liveSheetFeature(buf, target) || target;
+      const result = confirmFeatureEdit(buf, live, { fields: draft });
+      if (!result.ok) return { error: { code: 'edit_failed', message: result.message } };
+      return {
+        changed: !!result.changed,
+        source: result.changed ? result.buffer : buf,
+        featureId: live.id,
+        message: `Edit ${live.label || live.kind || 'feature'}`,
+      };
+    }
+
+    return { error: { code: 'no_feature_edit', message: 'No feature edit session is open' } };
   };
 
   const handleFeatureSession = (active) => {
@@ -7869,6 +7965,11 @@ const App = () => {
       if (resolved.error) return resolved;
       agentFeatureDraftRef.current = {};
       agentFeatureTargetRef.current = resolved.feature || null;
+      agentFeatureSessionRef.current = {
+        id: resolved.chip.id,
+        kind: resolved.chip.kind,
+        index: resolved.chip.index,
+      };
       if (resolved.contourId) {
         if (viewportRef.current?.beginContourEdit?.(resolved.contourId)) {
           setFeatureSheet(null);
@@ -7881,6 +7982,8 @@ const App = () => {
             },
           };
         }
+        agentFeatureSessionRef.current = null;
+        agentFeatureTargetRef.current = null;
         return { error: { code: 'edit_failed', message: 'Could not open contour for edit' } };
       }
       openFeatureSheetFor(resolved.feature);
@@ -7930,73 +8033,14 @@ const App = () => {
       }
       return { result: { params: agentFeatureDraftRef.current } };
     },
-    confirmFeature() {
-      const draft = agentFeatureDraftRef.current || {};
-      const holeEdit = viewportRef.current?.agentReadHoleEdit?.();
-      if (holeEdit?.open) {
-        const ok = viewportRef.current?.agentConfirmHoleEdit?.();
-        if (!ok) {
-          return { error: { code: 'edit_failed', message: 'Hole confirm refused' } };
-        }
-        agentFeatureDraftRef.current = null;
-        setFeatureStripActiveId(null);
-        return { result: { ok: true, id: holeEdit.feature?.id } };
-      }
-      const vpEdit = viewportRef.current?.agentReadFeatureEdit?.();
-      if (vpEdit?.open) {
-        const ok = viewportRef.current?.agentConfirmFeatureEdit?.({ fields: draft });
-        if (!ok) {
-          return { error: { code: 'edit_failed', message: 'Feature confirm refused' } };
-        }
-        agentFeatureDraftRef.current = null;
-        setFeatureStripActiveId(null);
-        return { result: { ok: true, id: vpEdit.feature.id } };
-      }
-      const sheet = featureSheetRef.current;
-      if (sheet?.mode === 'edit' && sheet.feature) {
-        handleFeatureSheetAccept(sheet.feature, draft);
-        agentFeatureDraftRef.current = null;
-        agentFeatureTargetRef.current = null;
-        return { result: { ok: true, id: sheet.feature.id } };
-      }
-      const target = agentFeatureTargetRef.current;
-      if (target) {
-        const ok = handleCommitFeatureEdit({ feature: target, draft: { fields: draft } });
-        if (!ok) {
-          return { error: { code: 'edit_failed', message: 'Feature confirm refused' } };
-        }
-        agentFeatureDraftRef.current = null;
-        agentFeatureTargetRef.current = null;
-        viewportRef.current?.agentCancelFeatureEdit?.();
-        viewportRef.current?.agentCancelHoleEdit?.();
-        closeFeatureSheet();
-        setFeatureStripActiveId(null);
-        return { result: { ok: true, id: target.id } };
-      }
-      return { error: { code: 'no_feature_edit', message: 'No feature edit session is open' } };
-    },
+    prepareFeatureConfirm: () => prepareAgentFeatureConfirm(),
+    dismissFeatureConfirmSession: () => dismissAgentFeatureSession(),
     cancelFeature() {
-      const holeEdit = viewportRef.current?.agentReadHoleEdit?.();
-      if (holeEdit?.open) {
-        viewportRef.current?.agentCancelHoleEdit?.();
-        agentFeatureDraftRef.current = null;
-        return { result: { cancelled: true } };
+      if (!agentFeatureSessionActive()) {
+        return { error: { code: 'no_feature_edit', message: 'No feature edit session is open' } };
       }
-      const vpEdit = viewportRef.current?.agentReadFeatureEdit?.();
-      if (vpEdit?.open) {
-        viewportRef.current?.agentCancelFeatureEdit?.();
-        agentFeatureDraftRef.current = null;
-        return { result: { cancelled: true } };
-      }
-      if (featureSheetRef.current) {
-        closeFeatureSheet();
-        agentFeatureDraftRef.current = null;
-        agentFeatureTargetRef.current = null;
-        return { result: { cancelled: true } };
-      }
-      agentFeatureDraftRef.current = null;
-      agentFeatureTargetRef.current = null;
-      return { error: { code: 'no_feature_edit', message: 'No feature edit session is open' } };
+      dismissAgentFeatureSession();
+      return { result: { cancelled: true } };
     },
     deleteFeature(args = {}) {
       if (!focusWritePart(null)) {
