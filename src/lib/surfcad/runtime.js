@@ -7987,36 +7987,46 @@ function filletAlongPath(part, path, radius, opts = {}) {
   }
   // Join a fillet wedge that shares a face with the owner, then drop
   // disconnected cutter scraps (thin purple sheets) via decompose.
-  // Closed-loop sweep seams often leave tiny extra components. For closed
-  // paths, multiple components are a hard fail (no silent keep-largest).
-  // Corner arcs are split upstream (planFilletSweepPath mode:'runs' →
-  // independent semi-arc subtracts). No sphere-cap post-pass (#107 bulges).
+  // A closed sweep seam leaves empty shells (measured ~1e-14 mm³ on a face
+  // loop that runs through prior fillet arcs). Those are not a second body.
+  // Two components that both have volume are still a hard fail — no
+  // keep-largest of a real split. Corner arcs are split upstream
+  // (planFilletSweepPath mode:'runs' → independent semi-arc subtracts).
+  // No sphere-cap post-pass (#107 bulges).
+  const CLOSED_SEAM_DUST_MM3 = 1e-8;
   out = _filletJoinOwnedPieces(M, out);
   try {
     if (typeof out.decompose === 'function') {
       const parts = out.decompose();
       if (Array.isArray(parts) && parts.length > 1) {
-        if (closed) {
-          throw new Error(
-            `filletAlongPath: decompose found ${parts.length} components on closed path `
-            + '— failing loud rather than shipping a dirty solid',
-          );
-        }
         let best = parts[0];
         let bestVol = best.volume();
+        const volumes = [bestVol];
         for (let i = 1; i < parts.length; i++) {
           const v = parts[i].volume();
+          volumes.push(v);
           if (v > bestVol) { bestVol = v; best = parts[i]; }
         }
-        const scrapVol = parts.reduce((s, c) => s + c.volume(), 0) - bestVol;
-        // If scraps are a real fraction of the solid, something is badly wrong.
-        if (scrapVol > 0.05 * bestVol && scrapVol > 1e-2) {
-          throw new Error(
-            `filletAlongPath: decompose found ${parts.length} components with scrap vol `
-            + `${scrapVol.toFixed(4)} — failing loud rather than shipping a dirty solid`,
-          );
+        if (closed) {
+          const real = volumes.filter((v) => v > CLOSED_SEAM_DUST_MM3).length;
+          if (real > 1) {
+            throw new Error(
+              `filletAlongPath: decompose found ${parts.length} components on closed path `
+              + '— failing loud rather than shipping a dirty solid',
+            );
+          }
+          out = best;
+        } else {
+          const scrapVol = volumes.reduce((s, v) => s + v, 0) - bestVol;
+          // If scraps are a real fraction of the solid, something is badly wrong.
+          if (scrapVol > 0.05 * bestVol && scrapVol > 1e-2) {
+            throw new Error(
+              `filletAlongPath: decompose found ${parts.length} components with scrap vol `
+              + `${scrapVol.toFixed(4)} — failing loud rather than shipping a dirty solid`,
+            );
+          }
+          out = best;
         }
-        out = best;
       }
     }
   } catch (e) {

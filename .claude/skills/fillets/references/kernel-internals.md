@@ -268,7 +268,7 @@ In execution order. Every one throws; none degrade silently.
 | no-op | `removed ≤ 1e-6` — cutter outside the solid (wrong orientation/path) |
 | near-no-op | `removed < 0.02 · expectVol` |
 | oversize | `removed > 8 · expectVol` |
-| scrap components | `decompose()` > 1: **hard fail on closed paths**; open paths keep the largest only if scrap ≤ 5% of it and ≤ 1e-2 |
+| scrap components | `decompose()` > 1: closed paths keep the largest when every other component is seam dust (volume ≤ 1e-8); two components with volume still hard-fail. Open paths keep the largest only if scrap ≤ 5% of it and ≤ 1e-2 |
 | degenerate tris | `isFilletSliverDirty(tiny, nTri)` — tiny > 80 **and** > 6% of tris |
 
 `expectVol` uses the **dihedral** removed area when the per-segment cutter ran
