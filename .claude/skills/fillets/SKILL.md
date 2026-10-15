@@ -142,8 +142,9 @@ Each one is a scar. Changing it reintroduces a shipped bug.
 A wrong solid must never ship quietly. `filletAlongPath` checks, in order:
 concavity (sphere probe ≥ 45% inside) → degenerate θ → no orientation → zero
 cutter volume → empty result → near-no-op (`removed < 2% · expectVol`) →
-oversize (`removed > 8 × expectVol`) → scrap components (`decompose()`; hard
-fail on closed paths) → degenerate triangles (`isFilletSliverDirty`). Full table
+oversize (`removed > 8 × expectVol`) → scrap components (`decompose()`; closed
+paths drop empty seam shells and hard-fail when two components have volume)
+→ degenerate triangles (`isFilletSliverDirty`). Full table
 and the `_testCutterScale` test hook: `references/kernel-internals.md`.
 
 **Know what these cannot catch.** They all integrate. C3.0–C3.2 shipped three
