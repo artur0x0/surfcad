@@ -15,14 +15,15 @@ function host(overrides = {}) {
   let script = SCRIPT;
   let activeChipId = null;
   let rollbackAnchor = null;
-  let sheet = null;
+  let session = null;
   let draft = {};
   return {
     getScript: () => script,
     setEditor(src) { script = src; },
     readHistory: () => ({ commits: [], head: -1 }),
     writeHistory: () => {},
-    execute: async () => ({ ok: true, errors: [], volume: 1, bbox: null, partName: '' }),
+    execute: async () => ({ ok: true, errors: [], volume: 2, bbox: null, partName: '' }),
+    readStatus: () => ({ volume: 2, bbox: null, partName: '', featureCount: 2 }),
     readFeatureTree: () => ({
       features: [
         { id: 'cube1', kind: 'cube', index: 0 },
@@ -33,7 +34,7 @@ function host(overrides = {}) {
     }),
     openFeature({ index }) {
       if (index === 1) {
-        sheet = { mode: 'edit', feature: { id: 'fillet1', kind: 'fillet', index: 1 } };
+        session = { id: 'fillet1', kind: 'fillet', index: 1 };
         return { result: { id: 'fillet1', kind: 'fillet', index: 1 } };
       }
       return { error: { code: 'bad_index', message: 'nope' } };
@@ -42,11 +43,27 @@ function host(overrides = {}) {
       draft = { ...draft, ...params };
       return { result: { params: draft } };
     },
-    confirmFeature() {
-      if (!sheet) return { error: { code: 'no_feature_edit', message: 'closed' } };
-      script = script.replace('filletEdges(part, convexEdges(part).slice(0, 2), 1)', 'filletEdges(part, convexEdges(part).slice(0, 2), 2)');
-      sheet = null;
-      return { result: { ok: true, id: 'fillet1' } };
+    prepareFeatureConfirm() {
+      if (!session) return { error: { code: 'no_feature_edit', message: 'closed' } };
+      const next = script.replace(
+        'filletEdges(part, convexEdges(part).slice(0, 2), 1)',
+        'filletEdges(part, convexEdges(part).slice(0, 2), 2)',
+      );
+      return {
+        changed: true,
+        source: next,
+        featureId: 'fillet1',
+        message: 'Edit fillet',
+      };
+    },
+    dismissFeatureConfirmSession() {
+      session = null;
+      draft = {};
+    },
+    cancelFeature() {
+      if (!session) return { error: { code: 'no_feature_edit', message: 'closed' } };
+      session = null;
+      return { result: { cancelled: true } };
     },
     rollbackTo({ id }) {
       if (id === 'cube1') {
@@ -73,8 +90,18 @@ test('open_feature and confirm_feature route through host', async () => {
   assert.equal(edit.result.params.radius, 2);
   const confirm = await api.call('confirm_feature', {});
   assert.equal(confirm.ok, true);
+  assert.equal(confirm.result.status?.volume, 2);
   const tree = await api.call('feature_tree', '{}');
   assert.equal(tree.ok, true);
+});
+
+test('cancel_feature after open_feature', async () => {
+  const h = host();
+  const api = createSurfcadBridge({ resolve: () => h });
+  await api.call('open_feature', { index: 1 });
+  const cancel = await api.call('cancel_feature', {});
+  assert.equal(cancel.ok, true);
+  assert.equal(cancel.result.cancelled, true);
 });
 
 test('rollback_to and activate_feature', async () => {
