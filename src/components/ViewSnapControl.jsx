@@ -51,6 +51,7 @@ const ViewSnapControl = ({ onSnap }) => {
               className="p-2 rounded text-blue-600 hover:bg-blue-100 active:bg-blue-200"
               title={label}
               aria-label={label}
+              data-ui-action={`data-view-snap-${key}`}
             >
               <Icon size={20} />
             </button>
@@ -68,6 +69,7 @@ const ViewSnapControl = ({ onSnap }) => {
         title={open ? 'Hide view snaps' : 'Show view snaps (Front / Right / Top / Iso)'}
         aria-label="View snaps"
         aria-expanded={open}
+        data-ui-action="data-view-snap-toggle"
       >
         {/* Open → arrow toward the menu that just unfurled left of this button. */}
         {open ? <ArrowLeft size={20} /> : <Box size={20} />}

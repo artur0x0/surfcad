@@ -261,6 +261,7 @@ function RollbackHandle({
   return (
     <div
       data-rollback-bar=""
+      data-ui-action="data-rollback-bar"
       data-rollback-index={index}
       data-rollback-anchor={anchorAttr}
       data-rollback-orientation={orientation}
@@ -683,6 +684,7 @@ export default function FeatureStrip({
         key={f.id}
         type="button"
         data-feature-chip={f.kind}
+        data-ui-action="data-feature-chip"
         data-feature-id={f.id}
         data-sheet-kind={sheet ? f.sheetKind : undefined}
         data-sheet-members={sheet ? (f.memberIds || []).join(' ') : undefined}
@@ -781,6 +783,7 @@ export default function FeatureStrip({
             title={undoLabel}
             aria-label={undoLabel}
             data-feature-bar-undo=""
+            data-ui-action="data-feature-bar-undo"
           >
             <Undo size={16} strokeWidth={2} aria-hidden="true" />
           </button>
@@ -837,6 +840,7 @@ export default function FeatureStrip({
                   data-joint-type={joint.type}
                   data-joint-status={joint.status || 'ok'}
                   data-joint-value={joint.type === 'angle' ? joint.value : undefined}
+                  data-ui-action="data-joint-chip"
                   aria-label={joint.name || JOINT_TYPE_LABEL[joint.type] || 'Joint'}
                   aria-invalid={invalid || undefined}
                   title={joint.title || joint.name}
@@ -857,6 +861,7 @@ export default function FeatureStrip({
                   data-sketch-id={entity.id}
                   data-sketch-kind={entity.kind}
                   data-sketch-broken={failed ? '' : undefined}
+                  data-ui-action="data-sketch-chip"
                   aria-pressed={active}
                   aria-label={entity.label}
                   aria-invalid={failed || undefined}
@@ -885,6 +890,7 @@ export default function FeatureStrip({
             title={redoLabel}
             aria-label={redoLabel}
             data-feature-bar-redo=""
+            data-ui-action="data-feature-bar-redo"
           >
             <Redo size={16} strokeWidth={2} aria-hidden="true" />
           </button>
@@ -929,6 +935,7 @@ export default function FeatureStrip({
             data-joint-type={joint.type}
             data-joint-status={joint.status || 'ok'}
             data-joint-value={joint.type === 'angle' ? joint.value : undefined}
+            data-ui-action="data-joint-chip"
             aria-label={joint.name || JOINT_TYPE_LABEL[joint.type] || 'Joint'}
             aria-invalid={invalid || undefined}
             title={joint.title || joint.name}

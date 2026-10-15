@@ -64,6 +64,7 @@ const MoveFaceModeChip = ({
       cardAttrs={{
         'data-move-face-mode': '1',
         'data-move-face-confirm': canConfirm ? 'enabled' : 'disabled',
+        'data-ui-action': 'data-move-face-mode-chip',
       }}
       note={(
         <span className="flex min-w-0 items-center gap-2">

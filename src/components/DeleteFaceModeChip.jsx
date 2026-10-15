@@ -43,6 +43,7 @@ const DeleteFaceModeChip = ({
       cardAttrs={{
         'data-delete-face-mode': '1',
         'data-delete-face-confirm': canConfirm ? 'enabled' : 'disabled',
+        'data-ui-action': 'data-delete-face-mode-chip',
       }}
       note={(
         <span className="flex min-w-0 items-center gap-2">

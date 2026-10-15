@@ -41,6 +41,7 @@ export function PaintModeChip({
       cardAttrs={{
         'data-paint-mode': '1',
         'data-paint-confirm': canConfirm ? 'enabled' : 'disabled',
+        'data-ui-action': 'data-paint-mode-chip',
       }}
       note={(
         <span

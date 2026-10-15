@@ -95,6 +95,7 @@ const MoveModeChip = ({
         'data-move-mode': '1',
         'data-move-direction': direction,
         'data-move-confirm': canConfirm ? 'enabled' : 'disabled',
+        'data-ui-action': 'data-move-mode-chip',
       }}
       note={(
         <span className="flex min-w-0 items-center gap-2">

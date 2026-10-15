@@ -116,6 +116,7 @@ const BooleanModeChip = ({
         'data-boolean-allow-section': '1',
         'data-boolean-survives-parts': '1',
         'data-boolean-confirm': canConfirm ? 'enabled' : 'disabled',
+        'data-ui-action': 'data-boolean-mode-chip',
       }}
       note={(
         <span className="flex min-w-0 items-center gap-2">

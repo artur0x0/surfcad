@@ -32,6 +32,7 @@ export default function ContourEntityCard({
       )}
       cardAttrs={{
         'data-contour-card': 'entity',
+        'data-ui-action': 'data-contour-entity-card',
         'data-contour-entity-id': chip.id,
       }}
     />

@@ -80,6 +80,7 @@ export default function MeasureModeChip({
         'data-measure-mode': '1',
         'data-measure-picks': String(count),
         'data-measure-unit': unit,
+        'data-ui-action': 'data-measure-mode-chip',
       }}
     >
       <div className="mt-1 space-y-1 font-sans" data-measure-readout="">
