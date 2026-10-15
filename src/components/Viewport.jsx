@@ -1248,6 +1248,8 @@ const Viewport = forwardRef(({
   const onDeleteFeatureEditRef = useRef(onDeleteFeatureEdit);
   onDeleteFeatureEditRef.current = onDeleteFeatureEdit;
   const [helperEdit, setHelperEdit] = useState(null);
+  const helperEditRef = useRef(null);
+  helperEditRef.current = helperEdit;
   const [featureEditBanner, setFeatureEditBanner] = useState('');
   const [featureDeleteToast, setFeatureDeleteToast] = useState(null);
   const [featureDeleteConfirm, setFeatureDeleteConfirm] = useState(null);
@@ -1367,6 +1369,7 @@ const Viewport = forwardRef(({
   holeCardRef.current = holeCard;
   const holeSpecRef = useRef(null);
   const holeEditRef = useRef(null);
+  const confirmHoleEditRef = useRef(() => {});
   const holeCentresEditRef = useRef(null);
   const sheetHoleSketchRef = useRef(null);
   const featureSlotsRef = useRef(null);
@@ -2331,6 +2334,111 @@ const Viewport = forwardRef(({
       listFaces: (args) => agentListFacesRef.current(args),
       listEdges: (args) => agentListEdgesRef.current(args),
       listFeatureEdges: (args) => agentListFeatureEdgesRef.current(args),
+      agentReadFeatureEdit() {
+        const edit = featureEditRef.current;
+        const helper = helperEditRef.current;
+        if (edit?.feature) {
+          return {
+            open: true,
+            feature: {
+              id: edit.feature.id,
+              kind: edit.feature.kind,
+              index: edit.feature.index,
+            },
+            fields: { ...(edit.session?.fields || {}), ...(helper?.fields || {}) },
+          };
+        }
+        if (helper?.feature) {
+          return {
+            open: true,
+            feature: {
+              id: helper.feature.id,
+              kind: helper.feature.kind,
+              index: helper.feature.index,
+            },
+            fields: { ...(helper.fields || {}) },
+          };
+        }
+        return { open: false };
+      },
+      agentPatchFeatureEdit(fields) {
+        const bag = fields && typeof fields === 'object' && !Array.isArray(fields) ? fields : {};
+        const edit = featureEditRef.current;
+        const helper = helperEditRef.current;
+        if (!edit?.feature && !helper?.feature) {
+          return { error: { code: 'no_feature_edit', message: 'No viewport feature edit is open' } };
+        }
+        if (edit?.feature) {
+          edit.session = {
+            ...edit.session,
+            fields: { ...(edit.session?.fields || {}), ...bag },
+          };
+        }
+        if (helper?.feature) {
+          setHelperEdit((prev) => (prev ? { ...prev, fields: { ...(prev.fields || {}), ...bag } } : prev));
+        }
+        return { ok: true };
+      },
+      agentConfirmFeatureEdit({ fields } = {}) {
+        const edit = featureEditRef.current;
+        if (!edit?.feature) return false;
+        const bag = fields && typeof fields === 'object' && !Array.isArray(fields) ? fields : {};
+        const draft = {
+          fields: { ...(edit.session?.fields || {}), ...bag },
+        };
+        return commitFeatureEditRef.current?.(draft) ?? false;
+      },
+      agentCancelFeatureEdit() {
+        const edit = featureEditRef.current;
+        if (!edit?.feature) return;
+        cancelFeatureEditRef.current?.(edit.dialog || edit.kind);
+      },
+      agentDismissFeatureEdit() {
+        featureEditRef.current = null;
+        setHelperEdit(null);
+        setFeatureEditBanner('');
+      },
+      agentReadHoleEdit() {
+        const edit = holeEditRef.current;
+        if (!edit) return { open: false };
+        return {
+          open: true,
+          feature: edit.feature || null,
+          card: holeCardRef.current,
+        };
+      },
+      agentPatchHoleCard(patch) {
+        if (!holeEditRef.current) {
+          return { error: { code: 'no_feature_edit', message: 'No hole edit session is open' } };
+        }
+        const bag = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
+        setHoleCard((prev) => ({ ...(prev || defaultHoleCard()), ...bag }));
+        return { ok: true };
+      },
+      agentConfirmHoleEdit() {
+        if (!holeEditRef.current) return false;
+        confirmHoleEditRef.current?.();
+        return !holeEditRef.current;
+      },
+      agentCancelHoleEdit() {
+        if (!holeEditRef.current) return;
+        holeSpecRef.current = null;
+        holeEditRef.current = null;
+        setHoleCard(null);
+      },
+      agentHoleConfirmPayload() {
+        const edit = holeEditRef.current;
+        if (!edit) return null;
+        const parsed = holeSpecFromCard(holeCardRef.current || defaultHoleCard());
+        if (!parsed.ok) {
+          return { error: { code: 'edit_failed', message: parsed.message } };
+        }
+        const featureId = edit.featureId || edit.feature?.id;
+        if (!featureId) {
+          return { error: { code: 'edit_failed', message: 'Hole confirm refused' } };
+        }
+        return { featureId, spec: parsed.spec };
+      },
       readHelperEdgeContext: () => selectedEdgesRef.current || [],
       sketchBegin: (args) => agentSketchBeginRef.current(args),
       sketchAcceptPlane: (args) => agentSketchAcceptPlaneRef.current(args),
@@ -3867,6 +3975,7 @@ const Viewport = forwardRef(({
     holeSpecRef.current = null;
     setHoleCard(null);
   }, [onCommitHole, showContourToast]);
+  confirmHoleEditRef.current = confirmHoleEdit;
 
   const editHoleCentres = useCallback(() => {
     const edit = holeEditRef.current;
