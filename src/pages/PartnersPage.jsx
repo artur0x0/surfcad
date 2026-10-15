@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { BrandWordmark } from '../components/brand/BrandWordmark.jsx';
 import { PARTNER_TYPES } from '../utils/partnerForm.js';
+import { loadTurnstileScript, resolveTurnstileSiteKey } from '../utils/turnstile.js';
 
 const PAPER = '#FAFAF9';
 const INK = '#16171D';
@@ -10,11 +11,73 @@ const MIST = '#E6E7EB';
 const fieldClass =
   'w-full rounded-lg border bg-white px-3 py-2.5 text-base text-[#16171D] outline-none transition focus:border-[#16171D] focus:ring-2 focus:ring-[#16171D]/10';
 
+const TURNSTILE_RETRY =
+  'We could not verify your submission. Please refresh the page and try again.';
+
 export default function PartnersPage() {
   const [partnerType, setPartnerType] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
+  const turnstileSiteKey = resolveTurnstileSiteKey();
+  const turnstileContainerRef = useRef(null);
+  const turnstileWidgetIdRef = useRef(null);
+
+  useEffect(() => {
+    if (!turnstileSiteKey || !turnstileContainerRef.current) return undefined;
+    let cancelled = false;
+
+    loadTurnstileScript()
+      .then(() => {
+        if (cancelled || !turnstileContainerRef.current || !window.turnstile) return;
+        if (turnstileWidgetIdRef.current != null) {
+          try {
+            window.turnstile.remove(turnstileWidgetIdRef.current);
+          } catch {
+            /* stale widget */
+          }
+        }
+        turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current, {
+          sitekey: turnstileSiteKey,
+          size: 'invisible',
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError('Could not load form protection. Check your connection and refresh.');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      if (turnstileWidgetIdRef.current != null && window.turnstile) {
+        try {
+          window.turnstile.remove(turnstileWidgetIdRef.current);
+        } catch {
+          /* gone */
+        }
+        turnstileWidgetIdRef.current = null;
+      }
+    };
+  }, [turnstileSiteKey]);
+
+  async function requestTurnstileToken() {
+    if (!turnstileSiteKey) {
+      if (import.meta.env.DEV) return '';
+      throw new Error(TURNSTILE_RETRY);
+    }
+    await loadTurnstileScript();
+    if (!window.turnstile || turnstileWidgetIdRef.current == null) {
+      throw new Error(TURNSTILE_RETRY);
+    }
+    return new Promise((resolve, reject) => {
+      window.turnstile.execute(turnstileWidgetIdRef.current, {
+        callback: (token) => resolve(token),
+        'error-callback': () => reject(new Error(TURNSTILE_RETRY)),
+        'expired-callback': () => reject(new Error(TURNSTILE_RETRY)),
+      });
+    });
+  }
 
   async function onSubmit(event) {
     event.preventDefault();
@@ -34,10 +97,11 @@ export default function PartnersPage() {
 
     setSubmitting(true);
     try {
+      const turnstileToken = await requestTurnstileToken();
       const res = await fetch('/api/partners', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, turnstileToken }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -46,6 +110,13 @@ export default function PartnersPage() {
       setDone(true);
       form.reset();
       setPartnerType('');
+      if (turnstileWidgetIdRef.current != null && window.turnstile) {
+        try {
+          window.turnstile.reset(turnstileWidgetIdRef.current);
+        } catch {
+          /* ignore */
+        }
+      }
     } catch (err) {
       setError(err?.message || 'Could not send your message');
     } finally {
@@ -103,6 +174,13 @@ export default function PartnersPage() {
               <label htmlFor="company_fax">Fax</label>
               <input id="company_fax" name="company_fax" type="text" tabIndex={-1} autoComplete="off" />
             </div>
+
+            <div
+              ref={turnstileContainerRef}
+              data-partners-turnstile=""
+              className="sr-only"
+              aria-hidden="true"
+            />
 
             <label className="block space-y-1.5">
               <span className="text-sm font-medium">Name</span>
