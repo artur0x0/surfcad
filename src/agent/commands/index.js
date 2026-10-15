@@ -14,10 +14,19 @@ import { dirtyCommand } from './dirty.js';
 import { toastsCommand } from './toasts.js';
 import { partsCommand } from './parts.js';
 import { cameraCommand } from './camera.js';
+import { selectClearCommand } from './selectClear.js';
+import { selectFacesCommand } from './selectFaces.js';
+import { selectEdgesCommand } from './selectEdges.js';
+import { selectPartsCommand } from './selectParts.js';
+import { setActivePartCommand } from './setActivePart.js';
+import { cameraSetCommand } from './cameraSet.js';
+import { cameraFitCommand } from './cameraFit.js';
+import { zoomToSelectionCommand } from './zoomToSelection.js';
 
 /**
  * Public order. The first seven names are the original v1 tool list.
  * `list_commands` is next. H2 state readers are appended after it.
+ * H3 selection and camera writers follow the readers.
  */
 export const V1_COMMANDS = Object.freeze([
   getScriptCommand,
@@ -35,6 +44,14 @@ export const V1_COMMANDS = Object.freeze([
   toastsCommand,
   partsCommand,
   cameraCommand,
+  selectClearCommand,
+  selectFacesCommand,
+  selectEdgesCommand,
+  selectPartsCommand,
+  setActivePartCommand,
+  cameraSetCommand,
+  cameraFitCommand,
+  zoomToSelectionCommand,
 ]);
 
 export const v1Registry = defineCommands(V1_COMMANDS);

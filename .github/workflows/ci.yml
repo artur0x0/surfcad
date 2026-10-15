@@ -165,6 +165,11 @@ jobs:
             echo "agent bridge readers golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
+          node scripts/golden/smoke_agent_bridge_h3.mjs | tee "${RUNNER_TEMP}/agent-bridge-h3.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h3.log"; then
+            echo "agent bridge h3 golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
 
       # Cheapest FEA study golden: one desktop pass against the build this job
       # already produced. The 390px pass runs locally with the same script.
