@@ -17,7 +17,7 @@ export function formatSheetLength(mm, unit = 'mm', mmDigits = 2) {
   const n = Number(mm);
   if (!Number.isFinite(n)) return '';
   const text = formatDisplayNumber(u === 'in' ? n / MM_PER_IN : n);
-  if (!text) return '';
+  if (text === '') return '';
   return `${text} ${u}`;
 }
 

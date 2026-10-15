@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { formatDisplayNumber } from '../utils/displayUnit';
+import { formatDisplayNumber, isFormattedDisplayEcho } from '../utils/displayUnit';
 
 function rawOf(event) {
   if (event && typeof event === 'object' && event.target) return event.target.value;
@@ -38,7 +38,10 @@ export function useDisplayNumber(value, onChange) {
         onChange?.(raw);
         return;
       }
-      if (Number.isFinite(Number(value)) && String(raw).trim() === formatDisplayNumber(value)) return;
+      if (isFormattedDisplayEcho(value, raw)) {
+        if (focused) setDraft(null);
+        return;
+      }
       if (focused) setDraft(raw);
       else setDraft(null);
       onChange?.(raw);
