@@ -117,6 +117,7 @@ import {
   redoPartHistory,
   undoPartHistory,
 } from './utils/partHistory';
+import { agentBridgeEnabled, createSurfcadBridge } from './utils/agentBridge';
 import { runAssemblyParts } from './utils/assemblyRun';
 import { catalogsFromRuns } from './utils/jointResolve';
 import { partPlacement } from './utils/jointSchema';
@@ -1028,6 +1029,8 @@ const App = () => {
   });
   /** One undo stack per part id. Game uses its own key. */
   const partHistoriesRef = useRef({});
+  /** Latest main-thread host for window.surfcad. The effect installs once. */
+  const agentHostRef = useRef(null);
   const historyRef = useRef(history);
   historyRef.current = history;
 
@@ -7327,6 +7330,95 @@ const App = () => {
     }
   };
 
+
+  // Browser-agent bridge. Main thread only: the worker lockdown replaces fetch.
+  // Host methods read refs, so the installed object stays current across renders.
+  agentHostRef.current = {
+    getScript() {
+      return codeEditorRef.current?.getContent?.() ?? '';
+    },
+    setEditor(src) {
+      const text = typeof src === 'string' ? src : '';
+      codeEditorRef.current?.setTextOnly?.(text);
+      setCurrentScript(text);
+    },
+    readHistory() {
+      const id = appModeRef.current === 'game'
+        ? '__game__'
+        : (assemblyRef.current?.activeId ? String(assemblyRef.current.activeId) : '__cad__');
+      const existing = partHistoriesRef.current[id];
+      if (existing && Array.isArray(existing.commits)) return existing;
+      return { commits: [], head: -1 };
+    },
+    writeHistory(history) {
+      const id = appModeRef.current === 'game'
+        ? '__game__'
+        : (assemblyRef.current?.activeId ? String(assemblyRef.current.activeId) : '__cad__');
+      const next = {
+        commits: Array.isArray(history?.commits) ? history.commits : [],
+        head: Number.isInteger(history?.head) ? history.head : -1,
+      };
+      partHistoriesRef.current[id] = next;
+      applyPartHistory(next);
+    },
+    async execute(script) {
+      const text = typeof script === 'string' ? script : '';
+      setCurrentScript(text);
+      if (appModeRef.current === 'game') {
+        return {
+          ok: false,
+          errors: ['Agent bridge drives the CAD tab'],
+          volume: null,
+          bbox: null,
+          partName: '',
+        };
+      }
+      const ran = await refreshAssemblyRef.current?.(text);
+      const doc = assemblyRef.current;
+      const id = doc?.activeId;
+      const part = id ? doc.parts.find((row) => row.id === id) : null;
+      const partName = part?.name || '';
+      const run = id ? partRunsRef.current?.[id] : null;
+      if (run?.empty) {
+        return { ok: true, errors: [], volume: null, bbox: null, partName };
+      }
+      if (run?.ok === true && run.mesh?.vertProperties) {
+        const last = manifoldContext.getLastResult?.() || null;
+        return {
+          ok: true,
+          errors: [],
+          volume: last?.volume,
+          bbox: last?.boundingBox,
+          partName,
+        };
+      }
+      const message = (run && run.error) || (ran === false ? 'Run did not finish' : 'Script failed');
+      return { ok: false, errors: [String(message)], volume: null, bbox: null, partName };
+    },
+    screenshot() {
+      return viewportRef.current?.capturePng?.() ?? null;
+    },
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const enabled = agentBridgeEnabled({ dev: import.meta.env.DEV === true });
+    if (!enabled || !manifoldReady || editorInitialScript === null) {
+      delete window.surfcad;
+      return undefined;
+    }
+    window.surfcad = createSurfcadBridge({
+      getScript: () => agentHostRef.current.getScript(),
+      setEditor: (src) => agentHostRef.current.setEditor(src),
+      readHistory: () => agentHostRef.current.readHistory(),
+      writeHistory: (history) => agentHostRef.current.writeHistory(history),
+      execute: (script) => agentHostRef.current.execute(script),
+      screenshot: () => agentHostRef.current.screenshot(),
+    });
+    return () => {
+      delete window.surfcad;
+    };
+  }, [manifoldReady, editorInitialScript]);
 
   // Tailscale / mobile: never leave the user on "Loading..." forever if the
   // CAD engine stalls. A slow /api/auth/me or vault resolve keeps the

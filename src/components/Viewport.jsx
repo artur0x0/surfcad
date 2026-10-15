@@ -2205,6 +2205,22 @@ const Viewport = forwardRef(({
         rendererRef.current.render(sceneRef.current, cam);
       }
     },
+    /**
+     * PNG data URL of the viewport. One render, then read the canvas on this
+     * thread, so a browser agent can see the part without the worker.
+     */
+    capturePng: () => {
+      const renderer = rendererRef.current;
+      const scene = sceneRef.current;
+      const camera = cameraRef.current;
+      if (!renderer || !scene || !camera) return null;
+      renderer.render(scene, camera);
+      try {
+        return renderer.domElement.toDataURL('image/png');
+      } catch {
+        return null;
+      }
+    },
   }));
 
   // Clear face highlight

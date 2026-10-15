@@ -4,6 +4,8 @@ SurfCAD helpers stay in this repo. The external agent package pins a surfcad rep
 
 This package is `"private": true`. Do not publish it as npm `surfcad`. That name belongs to the helper library the agent repo publishes.
 
+The live tab is a different surface. `window.surfcad` drives the open SurfCAD page from the main thread. It is not part of the copied helper package. See [Live tab](#live-tab).
+
 ## Public surface
 
 | Path | Role |
@@ -73,3 +75,23 @@ That is a sparse copy of the import graph of `src/lib/surfcad/index.js`, not a f
 - The `runScript` return shape above.
 - The catalog file names.
 - `bindWorker` message types the app already sends (`init`, `execute`, `ping`, `previewCut`, `previewBoolean`, `previewBlock`, and the rest of that handler).
+
+## Live tab
+
+`window.surfcad` lets a browser agent (Playwright or Claude-in-Chrome) drive the open SurfCAD tab. It is installed from `App.jsx` onto the main window. The worker lockdown replaces `fetch` and the other host globals, so the bridge does not live in the worker.
+
+The object is on in dev (`import.meta.env.DEV`). Elsewhere it is opt-in: the page URL `?agent=1`, or localStorage `surfcadAgent` set to `1`. Flag off, `window.surfcad` is absent and the shells are unchanged. `golden:agent-bridge` checks that at 390 and 1280.
+
+| Method | What it does |
+| --- | --- |
+| `getScript()` | The editor buffer, a string. |
+| `setScript(src)` | Writes `src` into the editor, runs it, and resolves to `{ ok, errors, status }`. One undo step when the text changes. A non-string is refused and does not commit. |
+| `run()` | Runs the current buffer and resolves to `{ ok, errors, status }`. One undo step when that buffer is not already the head. The same text `setScript` just wrote is not a second step, so Undo once removes that edit. |
+| `status()` | `{ volume, bbox, partName, featureCount }` from the last finished call. `bbox` is `{ min, max }` in millimetres, or null. `featureCount` is the number of marked feature blocks. |
+| `errors()` | The last run's error messages, an array of strings. Empty after a good run. |
+| `screenshot()` | Promise of a PNG data URL of the viewport. |
+| `undo()` | One step back on the active part, then that script runs. Same result shape as `run()`. Nothing to undo resolves `{ ok: false, errors: ['Nothing to undo'], status }`. |
+
+`setScript`, `run`, and `undo` finish only after the viewport has run. The editor shows the same text. Calls are queued, so two writes cannot interleave their undo steps. The stack is the part history the Undo button already uses (`src/utils/partHistory.js`). The first real run may seed an assembly and replace that stack; the bridge snapshots the stack first and writes exactly one step back. `src/utils/agentBridge.js`.
+
+`scripts/demo/agent-bridge-demo.mjs` is a Playwright agent that uses only `window.surfcad`: a box, then a hole, then status and a screenshot, then undo once, then a script that throws.

@@ -2,7 +2,7 @@
 
 **Maintenance:** every PR that changes kernel helpers, face/edge/contour graphs, multi-body rules, or UI pickers must update this file in the same PR (or a tiny follow-up before the next feature). Drop stale sections when behavior changes.
 
-Runtime map for SurfCAD. The vault format is `docs/vault-schema.md`. Screen placement is `docs/UI_MAP.md`. Popup chrome is `docs/POPUP_STYLE.md`. Blend kernels are `.claude/skills/fillets/SKILL.md`. Fillet and graph speed is `docs/performance.md`. The agent catalog contract is `docs/agent-export.md`. `EDGES.md` is an older plan; the graphs below are what the code builds.
+Runtime map for SurfCAD. The vault format is `docs/vault-schema.md`. Screen placement is `docs/UI_MAP.md`. Popup chrome is `docs/POPUP_STYLE.md`. Blend kernels are `.claude/skills/fillets/SKILL.md`. Fillet and graph speed is `docs/performance.md`. The agent catalog contract, and the live `window.surfcad` tab bridge, are `docs/agent-export.md`. `EDGES.md` is an older plan; the graphs below are what the code builds.
 
 Two different things are called contours. **Sketch contours** are `makeCrossSection` profiles (contour mode). **Body contours** are the coherent edge chains the viewport paints and that Fillet / Sweep path picks walk. This file uses those names.
 
@@ -65,6 +65,14 @@ Drawing a polyline point, or dragging a sketch point, snaps to a part reference 
 - **Script return.** `manifoldFromScriptResult` is the one check on the worker `execute` path and in `runPreparedScript` (what `runScript` calls). A Manifold passes through. A sheet wrapper — `{ solid }` plus a sheet `spec`, a `flat` pattern, or `kind: 'sheet'` — unwraps to `solid`. Any other non-Manifold still throws `Script must return a Manifold object`.
 - **Catalog.** `npm run export:agent` rewrites `src/lib/surfcad/catalog/` from the helper source, `HELPER_FUNCTIONS.md`, the shipped Manifold `.d.ts`, the `.surf.json` rules, and the sheet-metal modules. Regenerate when a helper is added or its signature or docs change, and when the shipped Manifold types change. `golden:agent-catalog` fails if a `HELPER_FUNCTIONS` key has no signature and one-line description in that catalog. The assembly document is `docs/vault-schema.md`.
 - **Sync.** An external agent repo copies the import graph of `src/lib/surfcad/index.js` plus `built/manifold.wasm` at a pinned commit. The file list is `src/lib/surfcad/catalog/sync-files.json`. See `docs/agent-export.md`.
+
+### Live tab
+
+`window.surfcad` (`src/utils/agentBridge.js`, installed from `App.jsx`) drives the open page from the main thread. The worker lockdown replaces `fetch`, so this is not a worker global. It is on in dev. Elsewhere the URL `?agent=1` or localStorage `surfcadAgent` = `1` opts in. Flag off, the object is absent and the shells do not change.
+
+`getScript()` reads the editor. `setScript(src)` and `run()` write that buffer, run it through the same assembly path as the Run button, and resolve to `{ ok, errors, status }`. `status()` is `{ volume, bbox, partName, featureCount }`. `errors()` is the last run's messages. `screenshot()` is a PNG data URL of the viewport (`Viewport` `capturePng`, one render then the canvas). `undo()` steps the active part's history once and runs that script.
+
+A call that changes the script is one undo step on the part stack. `run()` of the text `setScript` just wrote does not add another step. The snapshot is taken before the run, because the first real script seeds an assembly and would otherwise replace the stack with one commit per feature marker. Queued calls cannot interleave. Flag-off chrome at 390 and 1280 is `golden:agent-bridge`. The Playwright driver is `scripts/demo/agent-bridge-demo.mjs`.
 
 | Helper | Inputs → output | Multi-body |
 | --- | --- | --- |
