@@ -15,8 +15,6 @@ export const COVERAGE_ALLOWLIST = Object.freeze([
   Object.freeze({ id: 'polygon', reason: 'H6 contour tool polygon.' }),
   Object.freeze({ id: 'polyline', reason: 'H6 contour tool polyline.' }),
   Object.freeze({ id: 'arc', reason: 'H6 contour arc gesture.' }),
-  Object.freeze({ id: 'dimension', reason: 'H7 sketch_dimension.' }),
-  Object.freeze({ id: 'constraints', reason: 'H7 sketch_constrain.' }),
   Object.freeze({ id: 'data-contour-back', reason: 'H6 sketch undo / plane card.' }),
   Object.freeze({ id: 'sheet-tool-tab', reason: 'H14 sheet tab tool.' }),
   Object.freeze({ id: 'sheet-tool-bend', reason: 'H14 sheet bend tool.' }),
