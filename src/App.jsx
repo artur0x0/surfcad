@@ -73,6 +73,7 @@ import { saveEditorDraft, loadEditorDraft } from './utils/editorDraft';
 import { clearLocalCadData } from './utils/clearLocalCadData';
 import { ensurePartThumbnails } from './utils/partThumbnails';
 import { clearCachePlan, runClearLocalCache } from './utils/clearLocalCache';
+import { isAssemblyDirty } from './utils/git/gitWorkspace';
 import { repoKeyOf } from './utils/git/syncStore';
 import ClearCacheDialog from './components/ClearCacheDialog';
 import { resolveActiveRestore } from './utils/partScriptRestore';
@@ -119,6 +120,10 @@ import {
   undoPartHistory,
 } from './utils/partHistory';
 import { fillAgentHost } from './agent/host';
+import { buildDirtyState } from './agent/state/dirty';
+import { buildFeatureTree } from './agent/state/featureTree';
+import { buildPartsState } from './agent/state/parts';
+import { buildToasts } from './agent/state/toasts';
 import { agentBridgeEnabled, createSurfcadBridge } from './utils/agentBridge';
 import { runAssemblyParts } from './utils/assemblyRun';
 import { catalogsFromRuns } from './utils/jointResolve';
@@ -476,6 +481,8 @@ const App = () => {
    * block text is unchanged; the next good run clears it.
    */
   const [runFailure, setRunFailure] = useState(null);
+  const runFailureRef = useRef(null);
+  runFailureRef.current = runFailure;
   /** Rollback bar per part. `null` is before every feature. A missing key is the end. */
   const [rollbackAnchors, setRollbackAnchors] = useState({});
   const rollbackAnchorsRef = useRef({});
@@ -7403,6 +7410,9 @@ const App = () => {
     undo: handleUndo,
     redo: handleRedo,
     runScript: handleGameRun,
+    readRunFailure() {
+      return runFailureRef.current;
+    },
   });
 
   useEffect(() => {
@@ -7665,6 +7675,73 @@ const App = () => {
   // Feature sheets read the editor's script, so match the failure there.
   const sheetFailedIds = failedFeatureIds(currentScript, runFailure);
   const sheetFailedTitles = failedFeatureTitles(currentScript, runFailure);
+  fillAgentHost(agentHostRef, {
+    readFeatureTree() {
+      const doc = assemblyRef.current;
+      const script = codeEditorRef.current?.getContent?.() ?? '';
+      const key = doc?.activeId ? String(doc.activeId) : '__cad__';
+      const rollbackAnchor = Object.prototype.hasOwnProperty.call(rollbackAnchors, key)
+        ? rollbackAnchors[key]
+        : null;
+      return buildFeatureTree({
+        script,
+        failedIds: sheetFailedIds,
+        rollbackAnchor: rollbackAnchor ?? null,
+        activeChipId: featureStripActiveId,
+      });
+    },
+    readSelection() {
+      const fromViewport = agentHostRef.current?.readViewportSelection;
+      const base = typeof fromViewport === 'function' ? fromViewport() : null;
+      const doc = assemblyRef.current;
+      return {
+        activePartId: doc?.activeId ?? base?.activePartId ?? null,
+        cadPartId: cadPartIdRef.current,
+        face: base?.face ?? null,
+        edges: base?.edges ?? [],
+        contour: base?.contour ?? { armedId: null, planeId: null },
+      };
+    },
+    readDirty() {
+      return buildDirtyState({
+        workspaceDirty: !!sourceDirty,
+        partIds: gitDirtyIds,
+        assemblyDirty: dirtyBaseline && assemblyDoc
+          ? isAssemblyDirty(assemblyDoc, dirtyBaseline)
+          : false,
+        renamePending: !!dirtyBaseline?.renamePending,
+        legacyCleanup: !!dirtyBaseline?.legacyCleanup,
+      });
+    },
+    readToasts() {
+      const rows = [];
+      if (uploadError) rows.push({ id: 'upload', kind: 'error', message: uploadError });
+      if (renameNotice?.message) {
+        rows.push({ id: 'rename', kind: 'warn', message: renameNotice.message });
+      }
+      if (gitBehindToast?.message) {
+        rows.push({ id: 'git-behind', kind: 'warn', message: gitBehindToast.message });
+      }
+      if (repoMoved) rows.push({ id: 'repo-moved', kind: 'warn', message: REPO_MOVED_WARNING });
+      if (repoSaved?.branch) {
+        rows.push({ id: 'repo-saved', kind: 'info', message: repoSavedMessage(repoSaved.branch) });
+      }
+      return buildToasts(rows);
+    },
+    readParts() {
+      const doc = assemblyRef.current;
+      if (!doc) return buildPartsState({});
+      return buildPartsState({
+        activeId: doc.activeId,
+        assemblyName: assemblyName(doc),
+        parts: doc.parts.map((row) => ({
+          id: row.id,
+          name: row.name,
+          visible: row.visible,
+        })),
+      });
+    },
+  });
   const partLabels = {};
   for (const row of assemblyDoc?.parts || []) partLabels[row.id] = row.name || row.id;
   const assemblyLabel = assemblyName(assemblyDoc);

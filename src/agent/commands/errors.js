@@ -7,6 +7,11 @@ export const errorsCommand = Object.freeze({
   example: {},
   immediate: true,
   run(ctx) {
-    return { result: { errors: ctx.readErrors() } };
+    const read = ctx.readStructuredErrors;
+    const errors = typeof read === 'function' ? read() : ctx.readErrors().map((message) => ({
+      code: 'build_failed',
+      message,
+    }));
+    return { result: { errors } };
   },
 });

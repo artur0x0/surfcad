@@ -24,6 +24,7 @@
  */
 
 import { v1Registry } from '../agent/commands/index.js';
+import { formatAgentErrors } from '../agent/state/formatErrors.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { emptyPartHistory, pushPartHistory } from './partHistory.js';
 
@@ -199,6 +200,7 @@ function parseArgs(argsJson) {
 export function createSurfcadBridge(host) {
   let chain = Promise.resolve();
   let lastErrors = [];
+  let lastStructuredErrors = [];
   let lastStatus = copyStatus(EMPTY_STATUS);
 
   function enqueue(task) {
@@ -208,9 +210,16 @@ export function createSurfcadBridge(host) {
   }
 
   function remember(outcome, script) {
+    const text = typeof script === 'string' ? script : '';
     const errors = outcome?.ok === true ? [] : errorMessages(outcome?.errors);
     lastErrors = errors.slice();
-    lastStatus = statusFrom(outcome, script);
+    const runFailure = typeof host.readRunFailure === 'function' ? host.readRunFailure() : null;
+    lastStructuredErrors = formatAgentErrors({
+      messages: lastErrors,
+      script: text,
+      runFailure,
+    });
+    lastStatus = statusFrom(outcome, text);
     return {
       ok: outcome?.ok === true,
       errors: lastErrors.slice(),
@@ -262,6 +271,55 @@ export function createSurfcadBridge(host) {
     remember,
     readStatus: () => copyStatus(lastStatus),
     readErrors: () => lastErrors.slice(),
+    readStructuredErrors: () => {
+      if (typeof host.readStructuredErrors === 'function') {
+        return host.readStructuredErrors();
+      }
+      if (lastStructuredErrors.length) return lastStructuredErrors.slice();
+      const runFailure = typeof host.readRunFailure === 'function' ? host.readRunFailure() : null;
+      const script = typeof host.getScript === 'function' ? host.getScript() : '';
+      return formatAgentErrors({ messages: lastErrors, script, runFailure });
+    },
+    readFeatureTree: () => (typeof host.readFeatureTree === 'function' ? host.readFeatureTree() : {
+      features: [],
+      rollbackAnchor: null,
+      activeChipId: null,
+    }),
+    readSelection: () => (typeof host.readSelection === 'function' ? host.readSelection() : {
+      activePartId: null,
+      cadPartId: null,
+      face: null,
+      edges: [],
+      contour: { armedId: null, planeId: null },
+    }),
+    readMode: () => (typeof host.readMode === 'function' ? host.readMode() : {
+      app: 'cad',
+      viewport: 'idle',
+      contour: null,
+      fillet: null,
+      featureEdit: null,
+      sheetMetal: null,
+    }),
+    readDirty: () => (typeof host.readDirty === 'function' ? host.readDirty() : {
+      workspaceDirty: false,
+      assemblyDirty: false,
+      renamePending: false,
+      legacyCleanup: false,
+      partIds: [],
+    }),
+    readToasts: () => (typeof host.readToasts === 'function' ? host.readToasts() : { toasts: [] }),
+    readParts: () => (typeof host.readParts === 'function' ? host.readParts() : {
+      activeId: null,
+      assemblyName: '',
+      parts: [],
+    }),
+    readCamera: () => (typeof host.readCamera === 'function' ? host.readCamera() : {
+      position: null,
+      quaternion: null,
+      target: null,
+      zoom: null,
+      fov: null,
+    }),
     cloneHistory: cloneAgentHistory,
     failedExecute,
     listCommands: () => v1Registry.catalog(),
@@ -277,7 +335,8 @@ export function createSurfcadBridge(host) {
    * Resolves to `{ v, ok, result? , error? }`. A script that fails to build
    * is still `ok: true`: the CAD outcome is `result.ok` / `result.errors`.
    * Envelope `ok: false` means the command itself was refused.
-   * Reads (`get_script`, `status`, `errors`, `list_commands`) do not wait
+   * Reads (`get_script`, `status`, `errors`, `list_commands`, and the H2
+   * state readers) do not wait
    * for a queued mutation. `set_script`, `run`, `screenshot`, and `undo` do.
    */
   function call(name, argsJson) {

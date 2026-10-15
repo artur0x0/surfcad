@@ -126,7 +126,7 @@ The promise resolves to an envelope. It does not reject for a refused command or
 
 The envelope and every `result` survive `JSON.stringify` and come back unchanged from `JSON.parse`. No functions, no class instances, no `ArrayBuffer` views. Numbers are finite. `bbox` is `{ "min": [x, y, z], "max": [x, y, z] }` or `null`, with plain arrays.
 
-`get_script`, `status`, `errors`, and `list_commands` resolve immediately from the editor, the last finished run, or the registry. `set_script`, `run`, `screenshot`, and `undo` run one at a time, in the order they were called.
+`get_script`, `status`, `errors`, `list_commands`, and the H2 state readers resolve immediately from the editor, the last finished run, the host ref, or the registry. `set_script`, `run`, `screenshot`, and `undo` run one at a time, in the order they were called.
 
 ### Commands
 
@@ -138,10 +138,17 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `set_script` | `{ "source": string }` | `{ "ok": boolean, "errors": string[], "status": Status }` — writes `source`, runs it, and records one undo step when the text differs from the head. |
 | `run` | `{}` | Same shape as `set_script`. Runs the current buffer. One undo step when that buffer is not already the head. The text `set_script` just wrote is not a second step, so undo once removes that edit. |
 | `status` | `{}` | `Status` from the last finished `set_script`, `run`, or `undo`. |
-| `errors` | `{}` | `{ "errors": string[] }` — messages from that last finished run. Empty after a good run. |
+| `errors` | `{}` | `{ "errors": [{ "code": string, "message": string, "featureIndex"?: number }] }` — structured messages from the last finished run. `featureIndex` is set when the failing marked block is known. Empty after a good run. |
 | `screenshot` | `{ "format": "png" }` | `{ "dataUrl": string }`. `format` may be omitted and defaults to `"png"`. |
 | `undo` | `{}` | Same shape as `set_script`. Steps the active part's history once and runs that script. |
 | `list_commands` | `{}` | `{ "commands": [{ "name": string, "schema": object, "example": object }] }` — every command, in `commands` order, including this one. `schema` is the args schema. `example` is one args object. No functions, no `uiEntry`. |
+| `feature_tree` | `{}` | `{ "features": [{ "id", "kind", "label", "chipLabel", "index", "failed", "sheet", "external", "separate" }], "rollbackAnchor": string \| null, "activeChipId": string \| null }` for the active part script. |
+| `selection` | `{}` | `{ "activePartId", "cadPartId", "face", "edges", "contour": { "armedId", "planeId" } }` — face picks include a `key` `{ at, n, area }` when known. |
+| `mode` | `{}` | `{ "app": "cad" \| "game", "viewport": string, "contour", "fillet", "featureEdit", "sheetMetal" }` summary of the open picker / card. |
+| `dirty` | `{}` | `{ "workspaceDirty", "assemblyDirty", "renamePending", "legacyCleanup", "partIds": string[] }` git / local dirty chrome. |
+| `toasts` | `{}` | `{ "toasts": [{ "id", "kind", "message" }] }` visible upload / git / rename notices. |
+| `parts` | `{}` | `{ "activeId", "assemblyName", "parts": [{ "id", "name", "visible" }] }`. |
+| `camera` | `{}` | `{ "position", "quaternion", "target", "zoom", "fov" }` arrays or null. |
 
 `Status` is `{ "volume": number \| null, "bbox": { "min": number[3], "max": number[3] } \| null, "partName": string, "featureCount": number }`. `volume` and `bbox` are null when the run failed. `bbox` is millimetres. `featureCount` is the number of marked feature blocks in the script that ran. Before any run, `volume` is null, `bbox` is null, `partName` is `""`, and `featureCount` is `0`.
 
@@ -169,7 +176,7 @@ These are thin wrappers over `call()`. They pass a plain object as `argsJson`, u
 | `setScript(source)` | `set_script` `{ source }` | `{ ok, errors, status }` |
 | `run()` | `run` | `{ ok, errors, status }` |
 | `status()` | `status` | `Status` |
-| `errors()` | `errors` | `string[]` |
+| `errors()` | `errors` | `{ code, message, featureIndex? }[]` |
 | `screenshot()` | `screenshot` `{ format: "png" }` | `dataUrl` string |
 | `undo()` | `undo` | `{ ok, errors, status }`, or throws `nothing_to_undo` |
 | `listCommands()` | `list_commands` | The `commands` array from that result |

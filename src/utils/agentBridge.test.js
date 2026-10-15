@@ -36,6 +36,13 @@ const COMMANDS = [
   'screenshot',
   'undo',
   'list_commands',
+  'feature_tree',
+  'selection',
+  'mode',
+  'dirty',
+  'toasts',
+  'parts',
+  'camera',
 ];
 
 function storage(value) {
@@ -272,6 +279,7 @@ test('status, errors, screenshot, and undo follow the last run', async () => {
   const emptyStatus = await invoke(api, 'status');
   const emptyScript = await invoke(api, 'get_script');
   assert.deepEqual(emptyErrors.result, { errors: [] });
+  assert.equal(emptyErrors.result.errors.length, 0);
   assert.equal(emptyStatus.result.volume, null);
   assert.equal(emptyStatus.result.bbox, null);
   assert.equal(emptyScript.result.source, '');
@@ -302,7 +310,9 @@ test('status, errors, screenshot, and undo follow the last run', async () => {
   assert.deepEqual(bad.result.errors, ['agent bridge demo']);
   assert.equal(bad.result.status.volume, null);
   assert.equal(bad.result.status.partName, 'Part (1)');
-  assert.deepEqual((await invoke(api, 'errors')).result.errors, ['agent bridge demo']);
+  assert.deepEqual((await invoke(api, 'errors')).result.errors, [
+    { code: 'build_failed', message: 'agent bridge demo' },
+  ]);
   assert.equal((await invoke(api, 'status')).result.volume, null);
 
   const stuck = await invoke(api, 'undo');
@@ -488,7 +498,8 @@ test('list_commands does not wait for a queued mutation', async () => {
   const listed = await api.call('list_commands', '{}');
   assert.equal(listed.ok, true);
   assert.equal(listed.result.commands[0].name, 'get_script');
-  assert.equal(listed.result.commands.at(-1).name, 'list_commands');
+  assert.equal(listed.result.commands[7].name, 'list_commands');
+  assert.equal(listed.result.commands.at(-1).name, 'camera');
   release();
   await pending;
 });
