@@ -24,9 +24,11 @@ export function createAgentVisibleDirector(overlay, readOptions) {
       if (opts.ripple) await overlay.rippleAt({ x, y });
       if (opts.highlight) await overlay.flashHighlight(el);
     }
-    if (!hints.length && uiEntry) {
-      const el = resolveUiEntryElement(uiEntry);
-      if (el) {
+    const entries = Array.isArray(uiEntry) ? uiEntry : (uiEntry ? [uiEntry] : []);
+    if (!hints.length && entries.length) {
+      for (const entry of entries) {
+        const el = resolveUiEntryElement(entry);
+        if (!el) continue;
         const { x, y } = elementClientCenter(el);
         if (opts.cursor) await overlay.moveCursorTo({ x, y });
         if (opts.highlight) await overlay.flashHighlight(el);

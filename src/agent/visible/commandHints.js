@@ -27,7 +27,7 @@ export function visibleTargetsForCommand(name, args, uiEntry) {
     out.push({ selector: '[data-contour-tool]' });
   }
 
-  if (name.startsWith('select_')) {
+  if (name.startsWith('select_') || name.startsWith('pick_')) {
     out.push({ selector: '[data-agent-viewport]' });
   }
 

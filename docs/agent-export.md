@@ -102,6 +102,7 @@ Additive changes stay on v1:
 - appending a command to `commands`
 - adding an optional argument (callers that omit it keep working)
 - adding a field on a result object
+- adding an optional field on an error object (`details`)
 
 Unknown argument fields are ignored, so a newer caller can send a field an older page does not read.
 
@@ -123,6 +124,8 @@ The promise resolves to an envelope. It does not reject for a refused command or
 ```
 
 `ok: true` means the command ran. A script that fails to build is still `ok: true`: the CAD outcome is `result.ok === false` and `result.errors`. `ok: false` means the command itself was refused. There is no `result` on a refusal, and no `error` on a success.
+
+A refusal may carry `error.details`, a JSON object with structured context (H9 pick errors: the candidate keys of an ambiguous face, the mode that owns the canvas, the index of the key that failed). It is optional and additive; a caller that reads only `code` and `message` keeps working.
 
 The envelope and every `result` survive `JSON.stringify` and come back unchanged from `JSON.parse`. No functions, no class instances, no `ArrayBuffer` views. Numbers are finite. `bbox` is `{ "min": [x, y, z], "max": [x, y, z] }` or `null`, with plain arrays.
 
@@ -180,6 +183,28 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `slot_set_params` | extrude / revolve / sweep / loft station fields | Updates card params (e.g. `{ "distance": 10 }` on Extrude). |
 | `slot_commit` | `{}` | Confirms the slot card and writes the solid feature block — one undo step. Uses the bridge `mutate` path (write + run + `status` refresh), same as `confirm_feature`. Result includes `{ ok, written, status, errors }`. |
 | `slot_cancel` | `{}` | Closes the slot card without writing. |
+| `pick_begin` | `{ "kind"?: "face"\|"edge", "tool"?: "filletEdges"\|"chamferEdges"\|"shell"\|"addDraft"\|"moveFace"\|"deleteFace", "keep"?, "min"?, "max"?, "timeout_ms"?, "params"?, "replace"? }` | Opens a pick session (see Pick sessions). Result is the session summary `{ session, target, tool, kind, count, seeded, picks, entries, min, max, opened, editing, expiresInMs }`. |
+| `pick_next` | `{ "keys": […] }` or `{ "key": … }`, `"remove"?: boolean` | Picks those keys on the session's consumer, the same as tapping them. A key already picked is skipped (`skipped`), not toggled off. `remove: true` taps them off. Resolves after the viewport shows the picks. |
+| `pick_undo` | `{}` | Drops the last agent pick (the card's Undo). |
+| `pick_clear` | `{}` | Drops every pick, seeded ones included (the card's Clear). |
+| `pick_done` | `{ "accept"?: boolean }` | Ends the session. Without `accept`, the picks stay where they are: on the selection for `insert_* use_selection`, or on the open card. `accept: true` presses the card's own Accept, records one undo step, and waits for the run. Result adds `{ done, accepted, unchanged?, ok?, errors?, status? }`. |
+| `pick_cancel` | `{}` | Ends the session and puts the consumer back: a card the session opened is dismissed; otherwise the picks from before `pick_begin` are restored. |
+| `pick_state` | `{}` | `{ session, target, kind, viewport, editing }` — the live session summary or null, and what a tap would feed right now. Immediate. |
+| `pick_faces` | `pick_begin` fields plus `keys` / `key` and `accept?` | One call: `pick_begin` (kind `face`) → `pick_next` → `pick_done`. Any failure after begin cancels the session. |
+| `pick_edges` | same, kind `edge` | Same as `pick_faces` for edges. |
+
+### Pick sessions
+
+A pick session feeds one consumer, the same one a tap in the viewport would feed:
+
+- **The selection.** No picker card is open. `kind` is required and sets the Face / Edge pick mode (`data-pick-mode-face` / `data-pick-mode-edge`). Picks land on `selection`, which is what `invoke_helper` / `insert_*` read with `use_selection: true` (a face for `insert_hole`, edges for `insert_fillet_edges`, `insert_make_sweep_path`, and the other edge helpers). The selection starts empty unless `keep: true`.
+- **A picker card.** `tool` opens Fillet, Chamfer, Shell, Draft, Move Face, or Delete Face through the same enter handler as the rail button. With no `tool`, the open card is the target, including a card `open_feature` opened on a strip chip. A card keeps its preselection or the edit's stored picks unless `keep: false`. `params` sets the card fields first: Fillet `radius`, Chamfer `chamfer`, Shell `wall` / `openingMode`, Draft `angle` / `flip`, Move Face `distance` / `flip`. Draft takes the first face as the neutral plane and drafts the rest.
+
+Keys are the stable ids from `list_faces` (`{ at, n, area, src?, ord? }`) and `list_feature_edges` (`"eN"`; packed mesh keys and `{ faceKeyA, faceKeyB }` pairs also work). A grouped `eN` expands to the coherent edge chain a UI tap stores, and counts as one pick toward `min` / `max`. Seeded entries count one each. Every change republishes the whole list, so the card or selection ends exactly as that sequence of taps would leave it.
+
+One session at a time. A session idle for `timeout_ms` (default 120000, 1000–1800000) expires: the next call that needs it gets `pick_timeout` once, and the picks stay in the viewport. Cut, Boolean, and Move pick bodies and planes, not keyed faces or edges, so they refuse with `picker_busy`; so do the sketch, slot cards (use `slot_assign_contour`), the hole card, paint, measure, joints, and sheet metal.
+
+`pick_done { accept: true }` runs the card's Accept unchanged: its gates, its compose, and its edit path. If the card stays open, the result is `accept_refused` with the card's toast as the message, and the session stays open so the agent can fix the picks. On an edit card this is the way to commit changed edge or face picks; `confirm_feature` there writes only the fields.
 
 `Status` is `{ "volume": number \| null, "bbox": { "min": number[3], "max": number[3] } \| null, "partName": string, "featureCount": number }`. `volume` and `bbox` are null when the run failed. `bbox` is millimetres. `featureCount` is the number of marked feature blocks in the script that ran. Before any run, `volume` is null, `bbox` is null, `partName` is `""`, and `featureCount` is `0`.
 
@@ -193,13 +218,13 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `bad_json` | `argsJson` is a string and `JSON.parse` throws. |
 | `bad_args` | Args are not a JSON object, are not serialisable (function, class instance, typed array, non-finite number), or a required field has the wrong type (`set_script` `source` must be a string). |
 | `unsupported_format` | `screenshot` `format` is present and is not `"png"`. |
-| `nothing_to_undo` | `undo` is already at the bottom of the stack. The editor and the history do not change. |
+| `nothing_to_undo` | `undo` is already at the bottom of the stack. The editor and the history do not change. Also `pick_undo` with no agent pick in the session. |
 | `screenshot_failed` | The viewport did not return a `data:image/png` URL. |
 | `internal` | The command threw unexpectedly. |
-| `unknown_face` | `select_faces` key did not match any patch. |
-| `ambiguous_face` | `select_faces` key matched more than one patch. |
-| `unknown_edge` | `select_edges` key or face-key pair did not match. |
-| `ambiguous_edge` | `select_edges` face-key pair matched more than one edge. |
+| `unknown_face` | `select_faces` / `pick_next` key did not match any patch. From `pick_next`, `details.index` is the failing key. |
+| `ambiguous_face` | `select_faces` / `pick_next` key matched more than one patch. From `pick_next`, `details.candidates` lists the matching `list_faces` keys (with `src` / `ord` when tagged) to retry with. |
+| `unknown_edge` | `select_edges` / `pick_next` key or face-key pair did not match. From `pick_next`, `details.index` is the failing key. |
+| `ambiguous_edge` | `select_edges` / `pick_next` face-key pair matched more than one edge. |
 | `unknown_part` | `set_active_part` or `select_parts` id is not in the assembly. |
 | `bad_view` | `camera_set` `view` is not a known preset. |
 | `no_mesh` | Selection or camera command ran before a solid was shown. |
@@ -220,6 +245,19 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `slot_not_ready` | `slot_commit` before every required contour slot is filled. |
 | `unknown_contour` | `slot_assign_contour` id is not in the script. |
 | `commit_failed` | `commitContourPayload` refused (toast / soft-fail). |
+| `pick_open` | `pick_begin` while a session is live (pass `replace: true`). `details` is the live session. |
+| `no_pick_session` | `pick_next` / `pick_undo` / `pick_clear` / `pick_done` / `pick_cancel` with no session. |
+| `pick_timeout` | The session expired after `timeout_ms` idle (reported once), or the viewport did not show a pick or open a card within 6 s. |
+| `pick_closed` | The session's card closed, or the selection's Face / Edge mode changed, since the last pick call. The session ends. |
+| `picker_busy` | Another mode owns the canvas, or `tool` names a different card than the open one. `details.viewport` names it; `details.hint` says what to call instead when there is one. |
+| `wrong_kind` | `kind` does not match the card (`details.kind` is what it picks). |
+| `empty_pick` | `pick_done` with nothing picked and `min` > 0. The session stays open. |
+| `pick_count` | `pick_done` with fewer than `min` picks. The session stays open. |
+| `pick_limit` | `pick_next` would pass `max`, or `pick_begin` with `keep` found more than `max`. The viewport does not change. |
+| `pick_rejected` | The consumer kept fewer picks than were sent. The session keeps its previous picks. |
+| `not_picked` | `pick_next { remove: true }` with keys that are not picked. |
+| `no_card` | `pick_done { accept: true }` on the selection. Call the helper with `use_selection` instead. |
+| `accept_refused` | The card's Accept gate refused; `message` is its toast. The session stays open. |
 
 ### Convenience methods
 

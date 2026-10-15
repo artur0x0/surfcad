@@ -19,7 +19,7 @@ test('v1 registry order is the bridge command list, with list_commands appended'
     'undo',
   ]);
   assert.equal(AGENT_COMMANDS[7], 'list_commands');
-  assert.equal(AGENT_COMMANDS.at(-1), 'slot_cancel');
+  assert.equal(AGENT_COMMANDS.at(-1), 'pick_edges');
   assert.equal(AGENT_COMMANDS.includes('list_faces'), true);
   assert.equal(AGENT_COMMANDS.includes('list_edges'), true);
 });
@@ -78,6 +78,10 @@ test('the registry rejects a command that cannot be listed', () => {
   assert.equal(helper.get('ping').uiEntry, 'fillet');
   const selector = defineCommands([{ ...ok, uiEntry: 'data-joints-button' }]);
   assert.equal(selector.get('ping').uiEntry, 'data-joints-button');
+  const several = defineCommands([{ ...ok, uiEntry: ['data-shell-mode-chip', 'fillet'] }]);
+  assert.deepEqual(several.get('ping').uiEntry, ['data-shell-mode-chip', 'fillet']);
+  assert.throws(() => defineCommands([{ ...ok, uiEntry: [] }]), /uiEntry/);
+  assert.throws(() => defineCommands([{ ...ok, uiEntry: ['data-ok', 'click me'] }]), /uiEntry/);
 });
 
 test('quote, order, cart, and checkout stay exempt', () => {

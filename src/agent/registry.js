@@ -4,8 +4,10 @@
  * A command is `{ name, schema, run(ctx, args), uiEntry?, example }`.
  * `schema` is a JSON-schema-ish description of the args object. `example`
  * is one valid args object. `run` returns `{ result }` or `{ error: { code, message } }`.
- * `uiEntry`, when set, is a `data-*` attribute name or a helper id. It is
- * metadata for visible mode highlights (data-ui-action / data-* controls).
+ * `uiEntry`, when set, is a `data-*` attribute name or a helper id, or a
+ * list of them when one command drives several controls. Visible mode uses
+ * it to flash matching `data-ui-action` / data-* controls; handlers are
+ * unchanged (no parallel DOM-click path).
  *
  * Names are snake_case. Appending a name stays on bridge v1. Renaming one
  * bumps the version. Commerce is not registered here; see `exempt.js`.
@@ -46,10 +48,12 @@ function assertJsonObject(value, label) {
 
 function assertUiEntry(uiEntry, name) {
   if (uiEntry == null) return;
-  const selector = typeof uiEntry === 'string' && DATA_ATTR_RE.test(uiEntry);
-  const helperId = typeof uiEntry === 'string' && HELPER_ID_RE.test(uiEntry);
-  if (!selector && !helperId) {
-    throw new Error(`agent command ${name} uiEntry must be a data-* selector or helper id`);
+  const list = Array.isArray(uiEntry) ? uiEntry : [uiEntry];
+  const ok = list.length > 0 && list.every((entry) => (
+    typeof entry === 'string' && (DATA_ATTR_RE.test(entry) || HELPER_ID_RE.test(entry))
+  ));
+  if (!ok) {
+    throw new Error(`agent command ${name} uiEntry must be a data-* selector or helper id, or a list of them`);
   }
 }
 
@@ -101,7 +105,8 @@ export function defineCommands(commands) {
       immediate: command.immediate === true,
     };
     if (typeof command.checkArgs === 'function') entry.checkArgs = command.checkArgs;
-    if (command.uiEntry != null) entry.uiEntry = command.uiEntry;
+    if (Array.isArray(command.uiEntry)) entry.uiEntry = Object.freeze(command.uiEntry.slice());
+    else if (command.uiEntry != null) entry.uiEntry = command.uiEntry;
     list.push(Object.freeze(entry));
   }
   const byName = new Map(list.map((command) => [command.name, command]));

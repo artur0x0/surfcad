@@ -484,7 +484,7 @@ test('list_commands does not wait for a queued mutation', async () => {
   assert.equal(listed.ok, true);
   assert.equal(listed.result.commands[0].name, 'get_script');
   assert.equal(listed.result.commands[7].name, 'list_commands');
-  assert.equal(listed.result.commands.at(-1).name, 'slot_cancel');
+  assert.equal(listed.result.commands.at(-1).name, 'pick_edges');
   release();
   await pending;
 });
@@ -582,3 +582,32 @@ test('commitAgentStep does not add a step for the same text', () => {
   assert.equal(next.head, 1);
   assert.equal(next.commits.length, 2);
 });
+
+test('a refused command keeps structured error details on the envelope', async () => {
+  const host = createViewportPickHostStub({ busy: 'featureSlot' });
+  const api = createSurfcadBridge({ resolve: () => host });
+  const env = await api.call('pick_begin', { kind: 'face' });
+  assert.equal(env.ok, false);
+  assert.equal(env.error.code, 'picker_busy');
+  assert.equal(env.error.details.viewport, 'featureSlot');
+  const plain = await api.call('pick_next', {});
+  assert.equal(plain.error.code, 'bad_args');
+  assert.equal('details' in plain.error, false);
+  const state = await api.call('pick_state', {});
+  assert.equal(state.result.session, null);
+  assert.equal(state.result.viewport, 'featureSlot');
+});
+
+function createViewportPickHostStub({ busy }) {
+  const refuse = () => ({ error: { code: 'internal', message: 'unused' } });
+  return {
+    pickInfo: () => ({ target: null, kind: null, busy, opening: false, editing: false, hasMesh: true, toast: null }),
+    pickEnter: refuse,
+    pickResolve: refuse,
+    pickRead: () => ({ target: null, entries: [], settled: true }),
+    pickWrite: refuse,
+    pickParams: refuse,
+    pickAccept: refuse,
+    pickExit: refuse,
+  };
+}

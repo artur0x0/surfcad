@@ -1,9 +1,16 @@
 /**
  * Resolve a registry `uiEntry` (data-* selector or helper id) to a DOM node.
- * @param {string | null | undefined} uiEntry
+ * @param {string | string[] | null | undefined} uiEntry
  * @returns {Element | null}
  */
 export function resolveUiEntryElement(uiEntry) {
+  if (Array.isArray(uiEntry)) {
+    for (const entry of uiEntry) {
+      const el = resolveUiEntryElement(entry);
+      if (el) return el;
+    }
+    return null;
+  }
   if (typeof uiEntry !== 'string' || !uiEntry) return null;
   if (typeof document === 'undefined') return null;
   if (uiEntry.startsWith('data-')) {

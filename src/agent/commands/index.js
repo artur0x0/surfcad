@@ -46,6 +46,17 @@ import { slotSetParamsCommand } from './slotSetParams.js';
 import { slotCommitCommand } from './slotCommit.js';
 import { slotCancelCommand } from './slotCancel.js';
 import { agentSetVisibleCommand } from './agentSetVisible.js';
+import {
+  pickBeginCommand,
+  pickNextCommand,
+  pickUndoCommand,
+  pickClearCommand,
+  pickDoneCommand,
+  pickCancelCommand,
+  pickStateCommand,
+  pickFacesCommand,
+  pickEdgesCommand,
+} from './pick.js';
 
 const HELPER_COMMANDS = buildHelperPaletteCommands();
 
@@ -56,6 +67,7 @@ const HELPER_COMMANDS = buildHelperPaletteCommands();
  * H4 helper inserts and grouped edge catalog follow H3.
  * H5 feature strip / rollback commands follow H4.
  * H6 sketch and H8 slot helpers follow H3 writers.
+ * H9 pick sessions follow H8.
  */
 export const V1_COMMANDS = Object.freeze([
   getScriptCommand,
@@ -104,6 +116,15 @@ export const V1_COMMANDS = Object.freeze([
   slotSetParamsCommand,
   slotCommitCommand,
   slotCancelCommand,
+  pickBeginCommand,
+  pickNextCommand,
+  pickUndoCommand,
+  pickClearCommand,
+  pickDoneCommand,
+  pickCancelCommand,
+  pickStateCommand,
+  pickFacesCommand,
+  pickEdgesCommand,
 ]);
 
 export const v1Registry = defineCommands(V1_COMMANDS);

@@ -25,6 +25,7 @@
 
 import { v1Registry } from '../agent/commands/index.js';
 import { formatAgentErrors } from '../agent/state/formatErrors.js';
+import { createPickSessions } from '../agent/pick/session.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { emptyPartHistory, pushPartHistory } from './partHistory.js';
 
@@ -139,8 +140,11 @@ function pass(result) {
   return { v: AGENT_BRIDGE_VERSION, ok: true, result };
 }
 
-function fail(code, message) {
-  return { v: AGENT_BRIDGE_VERSION, ok: false, error: { code, message } };
+/** `details` is optional structured context (H9 pick errors). Additive on v1. */
+function fail(code, message, details) {
+  const error = { code, message };
+  if (details !== undefined && isJsonValue(details)) error.details = JSON.parse(JSON.stringify(details));
+  return { v: AGENT_BRIDGE_VERSION, ok: false, error };
 }
 
 function bridgeError(error) {
@@ -218,6 +222,7 @@ export function createSurfcadBridge(hostSource) {
   let lastErrors = [];
   let lastStructuredErrors = [];
   let lastStatus = copyStatus(EMPTY_STATUS);
+  const pickSessions = createPickSessions();
 
   function enqueue(task) {
     const run = chain.then(task, task);
@@ -386,6 +391,16 @@ export function createSurfcadBridge(hostSource) {
     setCamera: (args) => hostFn('setCamera')?.(args),
     fitCamera: () => hostFn('fitCamera')?.(),
     zoomToSelection: () => hostFn('zoomToSelection')?.(),
+    pickSessions,
+    pickInfo: () => hostFn('pickInfo')?.(),
+    pickEnter: (args) => hostFn('pickEnter')?.(args),
+    pickResolve: (args) => hostFn('pickResolve')?.(args),
+    pickRead: () => hostFn('pickRead')?.(),
+    pickWrite: (args) => hostFn('pickWrite')?.(args),
+    pickParams: (args) => hostFn('pickParams')?.(args),
+    pickAccept: () => hostFn('pickAccept')?.(),
+    pickExit: () => hostFn('pickExit')?.(),
+    wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     cloneHistory: cloneAgentHistory,
     failedExecute,
     listCommands: () => v1Registry.catalog(),
@@ -430,7 +445,7 @@ export function createSurfcadBridge(hostSource) {
   }
 
   function toEnvelope(out) {
-    if (out && out.error) return fail(out.error.code, out.error.message);
+    if (out && out.error) return fail(out.error.code, out.error.message, out.error.details);
     return pass(out ? out.result : undefined);
   }
 
@@ -455,7 +470,7 @@ export function createSurfcadBridge(hostSource) {
 
     if (typeof command.checkArgs === 'function') {
       const refused = command.checkArgs(args);
-      if (refused) return Promise.resolve(fail(refused.code, refused.message));
+      if (refused) return Promise.resolve(fail(refused.code, refused.message, refused.details));
     }
 
     if (command.immediate) {

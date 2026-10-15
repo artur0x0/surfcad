@@ -17,6 +17,7 @@
         "golden:agent-bridge-h4": "node scripts/golden/smoke_agent_bridge_h4.mjs",
         "golden:agent-bridge-h5": "node scripts/golden/smoke_agent_bridge_h5.mjs",
         "golden:agent-bridge-h6-h8": "node scripts/golden/smoke_agent_bridge_h6_h8.mjs",
+        "golden:agent-bridge-h9": "node scripts/golden/smoke_agent_bridge_h9.mjs",
         "golden:agent-playtest": "node scripts/golden/smoke_agent_playtest.mjs",
         "golden:agent-visible": "node scripts/golden/smoke_agent_visible.mjs",
         "playtest": "npm run build && node scripts/playtest/run.mjs",
