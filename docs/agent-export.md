@@ -154,6 +154,13 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `list_feature_edges` | `{ "part_id"?: string }` | `{ "partId", "grouped": true, "edges": [{ "key": "e0", …, "faceKeyA", "faceKeyB" }] }` — one row per boundary-edge id from the Fillet topo pass (far fewer than raw `list_edges`). |
 | `invoke_helper` | `{ "id": string, "params"?: object, "use_selection"?: boolean }` | Runs `composeHelperInsert` on the active part, then the same mutate path as `set_script`. Result includes `{ "helperId", "ok", "errors", "status" }`. Unknown ids → `unknown_helper`. |
 | `insert_<helper>` | param fields per `HELPER_PALETTE_ITEMS` | Thin alias for one helper id (e.g. `insert_cube`, `insert_make_extrude`). Same result shape as `invoke_helper`. Each carries `uiEntry` equal to the helper id for coverage. |
+| `open_feature` | `{ "id"?: string, "index"?: number }` | Opens the feature sheet or viewport edit card for that strip chip (`data-feature-chip`). Result `{ id, kind, index }`. |
+| `activate_feature` | `{ "id"?: string, "index"?: number, "clear"?: boolean }` | Sets `feature_tree.activeChipId` like a strip tap without opening the editor. `clear` clears the highlight. |
+| `edit_feature` | `{ "params"?: object }` | Merges param fields into the open edit session (sheet or viewport card) before confirm. |
+| `confirm_feature` | `{}` | Accept on the open feature edit (`data-feature-sheet-accept`). One undo step when the script changes. |
+| `cancel_feature` | `{}` | Closes the open feature edit without writing. |
+| `delete_feature` | `{ "id"?: string, "index"?: number }` | Deletes a feature block (`data-feature-sheet-delete`). With no id/index, deletes the open edit target. One undo step. |
+| `rollback_to` | `{ "id"?: string, "index"?: number, "clear"?: boolean, "start"?: boolean }` | Moves the rollback bar (`data-rollback-bar`). `index` `0` is before every feature; `clear` removes the stored anchor. Does not push undo. Result `{ rollbackAnchor }`. |
 | `select_clear` | `{}` | `{ "cleared": true }` — clears face, edge, and contour picks in the viewport. |
 | `select_faces` | `{ "keys": [{ "at", "n", "area" }] }` or `{ "key": … }` | `{ "count": number }`. Uses the same face fingerprints as saved paint keys. |
 | `select_edges` | `{ "keys": […] }` | `{ "count": number }`. Each key may be a grouped boundary id (`"e0"` from `list_feature_edges`), a packed mesh string (`"12-34"` from raw `list_edges`), or an object `{ "faceKeyA", "faceKeyB" }` using **face-centre keys** from `list_faces` (`at`, `n`, `area` with `area > 0`). Aliases: `{ "faceA", "faceB" }` or `{ "faceKeys": [keyA, keyB] }`. The legacy `{ faceKeyA, faceKeyB }` form with `area: 0` at the edge midpoint still works when full face keys are unavailable. |
@@ -187,6 +194,12 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `no_mesh` | Selection or camera command ran before a solid was shown. |
 | `no_selection` | `zoom_to_selection` with no face or edge picked. |
 | `camera_failed` | Viewport could not apply the requested camera change. |
+| `unknown_feature` | `open_feature`, `delete_feature`, or `rollback_to` id is not in the active script strip. |
+| `bad_index` | `open_feature`, `activate_feature`, `delete_feature`, or `rollback_to` index is out of range. |
+| `no_feature_edit` | `edit_feature`, `confirm_feature`, or `cancel_feature` with no open feature session. |
+| `edit_failed` | Confirm or open refused (stale feature, assembly lock, etc.). |
+| `delete_failed` | Delete could not commit to the editor. |
+| `no_write_part` | Feature strip command could not load the target part into the editor. |
 
 ### Convenience methods
 
