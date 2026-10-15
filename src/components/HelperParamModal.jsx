@@ -16,6 +16,7 @@ import { helperFieldSpec } from '../utils/helperSheetRange';
 import { formatDisplayNumber } from '../utils/displayUnit';
 import { FeatureDeleteButton } from './FeatureEditDelete';
 import FeatureSheet from './FeatureSheet';
+import { isBlockSolidId } from '../utils/blockSolid';
 
 /** Helper sheets are neutral; the accent chips own cyan/amber. */
 const ACCENT = 'slate';
@@ -175,7 +176,17 @@ const HelperParamModal = ({
       } else if (type === 'bool') {
         v = !!raw;
       }
-      return { ...prev, [name]: v };
+      const next = { ...prev, [name]: v };
+      if (
+        isBlockSolidId(item?.id)
+        && Object.prototype.hasOwnProperty.call(prev, 'center')
+        && ['x', 'y', 'z', 'rx', 'ry', 'rz'].includes(name)
+        && type === 'number'
+        && v !== prev[name]
+      ) {
+        next.center = false;
+      }
+      return next;
     });
   };
 

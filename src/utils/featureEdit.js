@@ -15,6 +15,7 @@ import { shellFaceKey } from './shellMode.js';
 import { normalizeSheetSpec } from './sheetMetal/sheetModel.js';
 import { emitSolveContour, parseSolveContour } from './contourScript.js';
 import { contourDeleteConfirmLabel } from './contourUsers.js';
+import { isBlockFeatureKind, rewriteBlockSolidLet } from './blockSolid.js';
 
 const NUM = '[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?';
 
@@ -1027,19 +1028,11 @@ function rewriteBlock(block, session, draft) {
   } else if (kind === 'chamfer') {
     setNum(new RegExp(`(filletAlongPath\\s*\\(\\s*[^,]+,\\s*[^,]+,\\s*)(${NUM})`), 'chamfer');
     setNum(new RegExp(`(chamferEdges\\s*\\(\\s*[^,]+,\\s*[^,]+,\\s*)(${NUM})`), 'chamfer');
-  } else if (kind === 'cube') {
-    setNum(new RegExp(`(Manifold\\.cube\\(\\s*\\[\\s*)(${NUM})`), 'width');
-    setNum(new RegExp(`(Manifold\\.cube\\(\\s*\\[\\s*${NUM}\\s*,\\s*)(${NUM})`), 'depth');
-    setNum(new RegExp(`(Manifold\\.cube\\(\\s*\\[\\s*${NUM}\\s*,\\s*${NUM}\\s*,\\s*)(${NUM})`), 'height');
-  } else if (kind === 'roundedBox') {
-    setNum(new RegExp(`(roundedBox\\(\\s*\\[[^\\]]+\\]\\s*,\\s*)(${NUM})`), 'edgeRadius');
-  } else if (kind === 'cylinder' || kind === 'sphere' || kind === 'hexPrism') {
-    const fn = kind === 'cylinder' ? 'Manifold\\.cylinder' : kind === 'sphere' ? 'Manifold\\.sphere' : 'hexPrism';
-    if (kind === 'cylinder') setNum(new RegExp(`(${fn}\\(\\s*${NUM}\\s*,\\s*)(${NUM})`), 'radius');
-    else setNum(new RegExp(`(${fn}\\(\\s*)(${NUM})`), 'radius');
-  } else if (kind === 'tube') {
-    setNum(new RegExp(`(tube\\(\\s*${NUM}\\s*,\\s*${NUM}\\s*,\\s*)(${NUM})`), 'height');
-    setNum(new RegExp(`(tube\\(\\s*\\[[^\\]]+\\]\\s*,\\s*${NUM}\\s*,\\s*)(${NUM})`), 'height');
+  } else if (isBlockFeatureKind(kind)) {
+    if (!fieldsEqual(fields, prev)) {
+      const rewritten = rewriteBlockSolidLet(next, kind, fields);
+      if (rewritten !== next) next = rewritten;
+    }
   } else if (kind === 'hole' || kind === 'clearanceHole' || kind === 'tapDrillHole') {
     const fn = /tapDrillHole\s*\(/.test(next) && kind !== 'clearanceHole' && !/clearanceHole\s*\(/.test(next)
       ? 'tapDrillHole'
