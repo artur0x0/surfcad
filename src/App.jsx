@@ -701,8 +701,11 @@ const App = () => {
       return false;
     }
     if (result.run) {
-      setTimeout(() => {
-        handleGameRun();
+      setTimeout(async () => {
+        await handleGameRun();
+        try {
+          await window.surfcad?.syncStatusFromRun?.();
+        } catch { /* agent off */ }
       }, 0);
     }
     return true;

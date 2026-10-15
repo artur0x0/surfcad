@@ -254,6 +254,20 @@ export function createSurfcadBridge(hostSource) {
    * from the head. The history snapshot is taken before `execute`, because
    * the first real run seeds an assembly and replaces the stack.
    */
+  /** Re-run the current script and refresh cached status/errors (no undo step). */
+  async function syncStatusFromRun() {
+    const execute = hostFn('execute');
+    const getScript = hostFn('getScript');
+    if (!execute || !getScript) return copyStatus(lastStatus);
+    const text = getScript();
+    try {
+      const outcome = await execute(text);
+      return remember(outcome, text);
+    } catch (err) {
+      return remember(failedExecute(err), text);
+    }
+  }
+
   async function mutate(text, message) {
     const readHistory = hostFn('readHistory');
     const setEditor = hostFn('setEditor');
@@ -298,6 +312,7 @@ export function createSurfcadBridge(hostSource) {
     screenshot: () => hostFn('screenshot')?.(),
     mutate,
     remember,
+    syncStatusFromRun,
     readStatus: () => copyStatus(lastStatus),
     readErrors: () => lastErrors.slice(),
     readStructuredErrors: () => {
@@ -514,6 +529,9 @@ export function createSurfcadBridge(hostSource) {
     },
     undo() {
       return unwrap(call('undo'));
+    },
+    syncStatusFromRun() {
+      return syncStatusFromRun();
     },
     listCommands() {
       return unwrap(call('list_commands')).then((result) => result.commands);
