@@ -484,7 +484,7 @@ test('list_commands does not wait for a queued mutation', async () => {
   assert.equal(listed.ok, true);
   assert.equal(listed.result.commands[0].name, 'get_script');
   assert.equal(listed.result.commands[7].name, 'list_commands');
-  assert.equal(listed.result.commands.at(-1).name, 'pick_edges');
+  assert.equal(listed.result.commands.at(-1).name, 'list_sketch_entities');
   release();
   await pending;
 });
