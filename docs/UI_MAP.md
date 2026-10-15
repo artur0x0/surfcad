@@ -14,6 +14,7 @@ script API read `HELPER_FUNCTIONS.md`.
 - **Global CSS / Monaco overrides / touch fixes:** `src/index.css`
 - **Everything inside the 3D pane:** `src/components/Viewport.jsx` (~4k lines)
 - **Script execution sandbox:** `src/workers/sandboxWorker.js` (~4.9k lines)
+- **Browser agent:** `window.surfcad` is not a control on screen. Version 1. The stable entry is `call(name, argsJson)`. `App.jsx` installs it on the main window in dev, or when the URL has `?agent=1`, or when localStorage `surfcadAgent` is `1`. Flag off, the object is absent and both shells stay as drawn. `src/utils/agentBridge.js`. See `docs/agent-export.md`.
 
 ---
 

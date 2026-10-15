@@ -4,6 +4,8 @@ SurfCAD helpers stay in this repo. The external agent package pins a surfcad rep
 
 This package is `"private": true`. Do not publish it as npm `surfcad`. That name belongs to the helper library the agent repo publishes.
 
+The live tab is a different surface. `window.surfcad` drives the open SurfCAD page from the main thread. It is not part of the copied helper package. See [Live tab](#live-tab).
+
 ## Public surface
 
 | Path | Role |
@@ -73,3 +75,90 @@ That is a sparse copy of the import graph of `src/lib/surfcad/index.js`, not a f
 - The `runScript` return shape above.
 - The catalog file names.
 - `bindWorker` message types the app already sends (`init`, `execute`, `ping`, `previewCut`, `previewBoolean`, `previewBlock`, and the rest of that handler).
+
+## Live tab
+
+`window.surfcad` is the stable surface a browser agent drives, and the surface a future surfcad-agent MCP server relays into unchanged. It is installed from `App.jsx` onto the main window. The worker lockdown replaces `fetch` and the other host globals, so the bridge does not live in the worker. `src/utils/agentBridge.js`.
+
+The object is on in dev (`import.meta.env.DEV`). Elsewhere it is opt-in: the page URL `?agent=1`, or localStorage `surfcadAgent` set to `1`. Flag off, `window.surfcad` is absent and the shells are unchanged. `golden:agent-bridge` checks that at 390 and 1280.
+
+### Version
+
+`window.surfcad.version` is `1`. Every envelope carries the same number as `v`.
+
+Additive changes stay on v1:
+
+- appending a command to `commands`
+- adding an optional argument (callers that omit it keep working)
+- adding a field on a result object
+
+Unknown argument fields are ignored, so a newer caller can send a field an older page does not read.
+
+These bump the version: removing or renaming a command, changing what an existing field means, or making a previously optional argument required. A relay reads `version` and `commands` and does not invent names the page did not list.
+
+### Dispatcher
+
+```js
+window.surfcad.call(name, argsJson)
+```
+
+`name` is one of `window.surfcad.commands`. `argsJson` is a JSON string (what the MCP relay sends) or a plain object (what the convenience wrappers pass). An object is cloned through `JSON.parse(JSON.stringify(...))` before the command runs, so a typed array cannot leak into the result.
+
+The promise resolves to an envelope. It does not reject for a refused command or a script that failed to build.
+
+```json
+{ "v": 1, "ok": true, "result": {} }
+{ "v": 1, "ok": false, "error": { "code": "unknown_command", "message": "Unknown command: …" } }
+```
+
+`ok: true` means the command ran. A script that fails to build is still `ok: true`: the CAD outcome is `result.ok === false` and `result.errors`. `ok: false` means the command itself was refused. There is no `result` on a refusal, and no `error` on a success.
+
+The envelope and every `result` survive `JSON.stringify` and come back unchanged from `JSON.parse`. No functions, no class instances, no `ArrayBuffer` views. Numbers are finite. `bbox` is `{ "min": [x, y, z], "max": [x, y, z] }` or `null`, with plain arrays.
+
+`get_script`, `status`, and `errors` resolve immediately from the editor and the last finished run. `set_script`, `run`, `screenshot`, and `undo` run one at a time, in the order they were called.
+
+### Commands
+
+`window.surfcad.commands` is this list, in this order:
+
+| Command | Args | Result |
+| --- | --- | --- |
+| `get_script` | `{}` | `{ "source": string }` — the editor buffer. |
+| `set_script` | `{ "source": string }` | `{ "ok": boolean, "errors": string[], "status": Status }` — writes `source`, runs it, and records one undo step when the text differs from the head. |
+| `run` | `{}` | Same shape as `set_script`. Runs the current buffer. One undo step when that buffer is not already the head. The text `set_script` just wrote is not a second step, so undo once removes that edit. |
+| `status` | `{}` | `Status` from the last finished `set_script`, `run`, or `undo`. |
+| `errors` | `{}` | `{ "errors": string[] }` — messages from that last finished run. Empty after a good run. |
+| `screenshot` | `{ "format": "png" }` | `{ "dataUrl": string }`. `format` may be omitted and defaults to `"png"`. |
+| `undo` | `{}` | Same shape as `set_script`. Steps the active part's history once and runs that script. |
+
+`Status` is `{ "volume": number \| null, "bbox": { "min": number[3], "max": number[3] } \| null, "partName": string, "featureCount": number }`. `volume` and `bbox` are null when the run failed. `bbox` is millimetres. `featureCount` is the number of marked feature blocks in the script that ran. Before any run, `volume` is null, `bbox` is null, `partName` is `""`, and `featureCount` is `0`.
+
+`set_script`, `run`, and `undo` resolve only after the viewport has run. The editor shows the same text. The stack is the part history the Undo button already uses (`src/utils/partHistory.js`). The first real run may seed an assembly and replace that stack; the bridge snapshots the stack first and writes exactly one step back.
+
+### Error codes
+
+| Code | When |
+| --- | --- |
+| `unknown_command` | `name` is not in `commands`. |
+| `bad_json` | `argsJson` is a string and `JSON.parse` throws. |
+| `bad_args` | Args are not a JSON object, are not serialisable (function, class instance, typed array, non-finite number), or a required field has the wrong type (`set_script` `source` must be a string). |
+| `unsupported_format` | `screenshot` `format` is present and is not `"png"`. |
+| `nothing_to_undo` | `undo` is already at the bottom of the stack. The editor and the history do not change. |
+| `screenshot_failed` | The viewport did not return a `data:image/png` URL. |
+| `internal` | The command threw unexpectedly. |
+
+### Convenience methods
+
+These are thin wrappers over `call()`. They pass a plain object as `argsJson`, unwrap `result`, and throw an `Error` with a `code` property when the envelope is `ok: false`. A script that fails to build does not throw: `setScript`, `run`, and `undo` return the CAD outcome, whose own `ok` is false.
+
+| Method | Relays | Returns |
+| --- | --- | --- |
+| `getScript()` | `get_script` | `source` string |
+| `setScript(source)` | `set_script` `{ source }` | `{ ok, errors, status }` |
+| `run()` | `run` | `{ ok, errors, status }` |
+| `status()` | `status` | `Status` |
+| `errors()` | `errors` | `string[]` |
+| `screenshot()` | `screenshot` `{ format: "png" }` | `dataUrl` string |
+| `undo()` | `undo` | `{ ok, errors, status }`, or throws `nothing_to_undo` |
+
+`scripts/demo/agent-bridge-demo.mjs` is a Playwright agent that uses only `call()` with JSON strings: a box, then a hole, then status and a screenshot, then undo once, then a script that throws.
