@@ -178,6 +178,10 @@ await page.waitForFunction(
   { timeout: 120000 },
 );
 await page.waitForSelector('[data-cad-run]', { state: 'attached', timeout: 120000 });
+// Monaco loads late and its mount auto-runs the buffer 100ms later. That run
+// would replace an edit-card preview mesh mid-flow, so let it land first.
+await page.waitForSelector('.monaco-editor', { state: 'attached', timeout: 120000 });
+await page.waitForTimeout(500);
 
 const ran = await agentCall(page, 'run', {});
 check('seed run', ran.ok === true && ran.result?.ok === true, JSON.stringify(ran));
