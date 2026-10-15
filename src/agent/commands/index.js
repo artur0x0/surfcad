@@ -81,6 +81,17 @@ import {
   insertPartCommand,
 } from './document.js';
 import {
+  gitMoveToRepoCommand,
+  gitSaveCommand,
+  gitAddToRepoCommand,
+  gitBehindResolveCommand,
+  gitBranchCreateCommand,
+  gitBranchSwitchCommand,
+  gitBranchDeleteCommand,
+  gitForceOverwriteCommand,
+  gitListBranchesCommand,
+} from './git.js';
+import {
   jointOpenCommand,
   jointSetParamsCommand,
   jointPickCommand,
@@ -102,6 +113,7 @@ const HELPER_COMMANDS = buildHelperPaletteCommands();
  * H9 pick sessions follow H8.
  * H10 hole card, plane/workplane, sketch point picks follow H9.
  * H11 parts, assemblies, and joints follow H10.
+ * H12 git ribbon commands follow H11.
  */
 export const V1_COMMANDS = Object.freeze([
   getScriptCommand,
@@ -183,6 +195,15 @@ export const V1_COMMANDS = Object.freeze([
   jointCancelCommand,
   jointSelectCommand,
   jointEditCommand,
+  gitMoveToRepoCommand,
+  gitSaveCommand,
+  gitAddToRepoCommand,
+  gitBehindResolveCommand,
+  gitBranchCreateCommand,
+  gitBranchSwitchCommand,
+  gitBranchDeleteCommand,
+  gitForceOverwriteCommand,
+  gitListBranchesCommand,
 ]);
 
 export const v1Registry = defineCommands(V1_COMMANDS);
