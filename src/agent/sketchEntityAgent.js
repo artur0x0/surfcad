@@ -97,6 +97,10 @@ export function applyHoleCentreWrites(state, entries) {
       if (!pt?.at) {
         return { error: { code: 'unknown_entity', message: `Point ${pick.id} is not in the sketch` } };
       }
+      if (next.params?.contour?.centers === true
+        && (next.params.contour.points || []).some((row) => row.id === pick.id)) {
+        continue;
+      }
       const uv = pt.at;
       if (next.params?.contour) {
         const spec = insertContourPoint(next.params.contour, uv);

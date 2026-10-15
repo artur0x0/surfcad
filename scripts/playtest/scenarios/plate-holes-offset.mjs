@@ -1,4 +1,5 @@
 /** Plate with holes on rectangle corners + arc centre, offset workplane, undo. */
+import { join } from 'node:path';
 import { agentCall, saveBridgeScreenshot } from '../lib/harness.mjs';
 import { createStepRunner } from '../lib/stepRunner.mjs';
 
@@ -93,6 +94,20 @@ export async function run(ctx) {
     };
   });
 
-  await saveBridgeScreenshot(page, outDir, 'plate-holes-offset-final');
-  return runner.summary();
+  const screenshots = [];
+  await runner.runStep('screenshot final', async () => {
+    const path = join(outDir, 'screenshots', `${id}-1280.png`);
+    await saveBridgeScreenshot(page, path);
+    screenshots.push(path);
+    return { ok: true, detail: path };
+  });
+
+  return {
+    id,
+    title,
+    ok: runner.failed === 0,
+    steps: runner.steps,
+    replaySteps: runner.replaySteps,
+    screenshots,
+  };
 }

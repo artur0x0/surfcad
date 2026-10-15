@@ -61,7 +61,10 @@ export function createSketchPickHandlers(getDeps) {
         const count = holeCentreCount(state);
         return {
           target: sketch.target,
-          entries: Array.from({ length: count }, (_, i) => ({ id: `centre:${i}`, entry: { kind: 'centre', index: i } })),
+          entries: Array.from({ length: count }, (_, i) => ({
+            id: `centre:${i}`,
+            entry: { kind: 'centre', index: i },
+          })),
           settled: true,
           count,
         };
@@ -88,7 +91,10 @@ export function createSketchPickHandlers(getDeps) {
         if (applied.error) return applied;
         d.commitContourState?.(applied.state);
         const count = holeCentreCount(applied.state);
-        return { count, ids: Array.from({ length: count }, (_, i) => `centre:${i}`) };
+        return {
+          count,
+          ids: Array.from({ length: count }, (_, i) => `centre:${i}`),
+        };
       }
       let next = state;
       for (const row of entries) {

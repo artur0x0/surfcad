@@ -10,6 +10,7 @@ import {
   holeCentresSketch,
   holeSketchContour,
   holeSpecFromCard,
+  materializeHoleRectangleCenters,
 } from './holeCard.js';
 
 const FRAME = { center: [0, 0, 5], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] };
@@ -128,6 +129,14 @@ test('a saved spec refills the card and an empty contour stays a contour', () =>
   assert.equal(sketch.params.contour.lines[0].construction, true);
   assert.deepEqual(sketch.planeFace.planeFrame.normal, [0, 0, 1]);
   assert.deepEqual(sketch.params.points, [[1, 2]]);
+});
+
+test('materializeHoleRectangleCenters marks centres on the promoted contour', () => {
+  const drawn = switchContourTool(enterContourState('hole', null), 'rectangle');
+  const next = materializeHoleRectangleCenters(drawn);
+  assert.equal(next.params.contour.centers, true);
+  assert.equal(next.params.centers, true);
+  assert.equal(next.params.contour.points.length, 4);
 });
 
 test('a rectangle is four centres and keeps its dimensions and constraints', () => {
