@@ -98,10 +98,13 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
     && /cad: '#FF5A1F'/.test(word)
     && /tone === 'on-light'/.test(word)
     && /cad: '#16171D'/.test(word));
-  check('header mark is 16px ink on a paper chip',
-    /tone="on-light" size=\{16\}/.test(word)
-    && /background: '#FAFAF9'/.test(word)
-    && /data-brand-header/.test(word));
+  const headerMark = word.slice(word.indexOf('export function BrandHeaderMark'), word.indexOf('/** Ink tile'));
+  check('header mark is 16px Paper wordmark on transparent chrome with the paper tile',
+    /tone="on-dark" size=\{16\}/.test(headerMark)
+    && /<BrandTileMark size=\{16\} \/>/.test(headerMark)
+    && /data-brand-mark="paper"/.test(word)
+    && !/background:/.test(headerMark)
+    && /data-brand-header/.test(headerMark));
   check('splash is paper, mark, 40px wordmark, grey tagline',
     /data-app-loading/.test(loading)
     && /background: '#FAFAF9'/.test(loading)
@@ -112,16 +115,16 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
     && !/#FF5A1F/.test(loading)
     && !/FF5A1F/i.test(loading));
   const ribbon = feed.slice(feed.indexOf('data-parts-feed-ribbon'), feed.indexOf('data-parts-rows'));
-  check('parts ribbon leads with the header mark, toolbar order unchanged',
-    ribbon.indexOf('<BrandHeaderMark />') >= 0
-    && ribbon.indexOf('<BrandHeaderMark />') < ribbon.indexOf('data-parts-feed-toolbar')
+  check('parts ribbon has no header mark, toolbar order unchanged',
+    !ribbon.includes('<BrandHeaderMark />')
     && ribbon.indexOf('data-parts-feed-toolbar') < ribbon.indexOf('data-parts-ribbon-center')
     && ribbon.indexOf('data-parts-ribbon-center') < ribbon.indexOf('data-parts-ribbon-end'));
-  check('script ribbon leads with the header mark',
-    /data-editor-ribbon[\s\S]{0,400}<BrandHeaderMark \/>/.test(editor));
-  check('phone CAD header is beside the puzzle target',
-    /brandHeader &&/.test(view)
-    && /left-12 top-1/.test(view)
+  check('script ribbon has no header mark',
+    !/data-editor-ribbon[\s\S]{0,400}<BrandHeaderMark \/>/.test(editor));
+  check('CAD viewport header row carries the brand beside the title',
+    /data-viewer-header-row/.test(view)
+    && /left-2 right-2 lg:left-4 lg:right-4/.test(view)
+    && /data-brand-header-host/.test(view)
     && /<BrandHeaderMark \/>/.test(view)
     && /<PuzzleUnlock enabled=\{mode !== 'game'\} onUnlock=\{onStartGame\} \/>/.test(view));
   check('docs name the identity golden',
@@ -211,6 +214,7 @@ async function readMark(page, selector) {
       return path ? getComputedStyle(path).fill : '';
     };
     const chip = root.querySelector('[data-brand-header]');
+    const tile = root.querySelector('[data-brand-mark="paper"]');
     return {
       h: Math.round(box.height),
       cad: mark.getAttribute('data-brand-cad'),
@@ -218,6 +222,7 @@ async function readMark(page, selector) {
       surf: fill('surf'),
       cadFill: fill('cad'),
       chip: chip ? getComputedStyle(chip).backgroundColor : '',
+      hasTile: !!tile,
     };
   }, selector);
 }
@@ -326,30 +331,78 @@ try {
   }
 
   const deskPage = await boot(browser, { width: 1280, height: 800, touch: false });
-  const at1280 = await readMark(deskPage.page, '[data-parts-feed-ribbon]');
+  const at1280 = await readMark(deskPage.page, '[data-brand-header-host]');
   const host1280 = await deskPage.page.locator('[data-brand-header-host]').count();
-  check('1280 header CAD is Ink and under 24px',
+  const rowAlign1280 = await deskPage.page.evaluate(() => {
+    const row = document.querySelector('[data-viewer-header-row]');
+    const rail = document.querySelector('[data-rail-pair="left"]');
+    if (!row || !rail) return null;
+    const rowBox = row.getBoundingClientRect();
+    const host = row.querySelector('[data-brand-header-host]');
+    const tile = host?.querySelector('[data-brand-mark="paper"]');
+    const title = row.querySelector('[data-viewer-title]');
+    const profile = document.querySelector('[data-profile-chip-variant="viewport"]');
+    const tileBox = tile?.getBoundingClientRect();
+    const railBox = rail.getBoundingClientRect();
+    const titleBox = title?.getBoundingClientRect();
+    const profileBox = profile?.getBoundingClientRect();
+    const brandBox = host?.getBoundingClientRect();
+    return {
+      tileLeft: tileBox ? Math.round(tileBox.left) : null,
+      railLeft: Math.round(railBox.left),
+      titleMid: titleBox ? Math.round(titleBox.left + titleBox.width / 2) : null,
+      viewportMid: Math.round(rowBox.left + rowBox.width / 2),
+      brandRight: brandBox ? Math.round(brandBox.right) : null,
+      profileLeft: profileBox ? Math.round(profileBox.left) : null,
+      rowMidY: Math.round(rowBox.top + rowBox.height / 2),
+      titleMidY: titleBox ? Math.round(titleBox.top + titleBox.height / 2) : null,
+    };
+  });
+  const transparentChip = at1280?.chip === 'rgba(0, 0, 0, 0)' || at1280?.chip === 'transparent';
+  check('1280 header wordmark is Paper on transparent chrome with paper tile in the viewport row',
     at1280 && at1280.h < 24 && at1280.h >= 14
-    && at1280.cad === 'ink' && at1280.size === '16'
-    && at1280.surf === INK && at1280.cadFill === INK
-    && at1280.chip === PAPER
-    && host1280 === 0,
+    && at1280.cad === 'paper' && at1280.size === '16'
+    && at1280.surf === PAPER && at1280.cadFill === PAPER
+    && transparentChip
+    && at1280.hasTile
+    && host1280 === 1,
     JSON.stringify(at1280));
+  check('1280 brand left edge lines up with the helper rail',
+    rowAlign1280 && rowAlign1280.tileLeft === rowAlign1280.railLeft,
+    JSON.stringify(rowAlign1280));
+  check('1280 title stays centred and clear of the profile chip',
+    rowAlign1280
+    && rowAlign1280.titleMid != null
+    && Math.abs(rowAlign1280.titleMid - rowAlign1280.viewportMid) <= 2
+    && rowAlign1280.brandRight != null
+    && rowAlign1280.profileLeft != null
+    && rowAlign1280.brandRight < rowAlign1280.profileLeft - 4
+    && Math.abs(rowAlign1280.rowMidY - rowAlign1280.titleMidY) <= 2,
+    JSON.stringify(rowAlign1280));
   await deskPage.page.screenshot({ path: join(SHOT_DIR, 'brand-header-1280.png') });
   await deskPage.context.close();
 
   const phone = await boot(browser, { width: 390, height: 844, touch: true });
   const at390 = await readMark(phone.page, '[data-brand-header-host]');
-  check('390 CAD header CAD is Ink and under 24px',
+  const transparent390 = at390?.chip === 'rgba(0, 0, 0, 0)' || at390?.chip === 'transparent';
+  check('390 CAD header wordmark is Paper on transparent chrome with paper tile',
     at390 && at390.h < 24 && at390.h >= 14
-    && at390.cad === 'ink' && at390.cadFill === INK && at390.surf === INK,
+    && at390.cad === 'paper' && at390.cadFill === PAPER && at390.surf === PAPER
+    && transparent390
+    && at390.hasTile,
     JSON.stringify(at390));
   await phone.page.locator('[data-stage-btn="parts"]').click();
   await phone.page.waitForTimeout(300);
-  const parts390 = await readMark(phone.page, '[data-stage-pane="parts"] [data-parts-feed-ribbon]');
-  check('390 parts header CAD is Ink and under 24px',
-    parts390 && parts390.h < 24 && parts390.cad === 'ink' && parts390.cadFill === INK,
-    JSON.stringify(parts390));
+  const partsBrandCount = await phone.page.locator('[data-stage-pane="parts"] [data-brand-header]').count();
+  check('390 parts stage has no brand header',
+    partsBrandCount === 0,
+    String(partsBrandCount));
+  await phone.page.locator('[data-part-edit-script]').first().click();
+  await phone.page.waitForSelector('[data-script-editor-open="true"]', { timeout: 15000 });
+  const scriptBrandCount = await phone.page.locator('[data-script-editor-open="true"] [data-brand-header]').count();
+  check('390 script stage has no brand header',
+    scriptBrandCount === 0,
+    String(scriptBrandCount));
   await phone.page.screenshot({ path: join(SHOT_DIR, 'brand-header-390.png') });
   await phone.context.close();
 } finally {

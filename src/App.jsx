@@ -8749,7 +8749,7 @@ const App = () => {
               canRedo={canRedo()}
               currentFilename={currentFilename}
               showCadTitle={!!assemblyDoc}
-              brandHeader={isMobile || !assemblyDoc}
+              brandHeader={appMode !== 'game'}
               assemblyName={assemblyLabel}
               onRenameFile={handleRenameFile}
               onRenameAssembly={handleRenameAssembly}
@@ -9267,7 +9267,7 @@ const App = () => {
             canRedo={canRedo()}
             currentFilename={currentFilename}
             showCadTitle={!!assemblyDoc}
-            brandHeader={!assemblyDoc}
+            brandHeader={appMode !== 'game'}
             assemblyName={assemblyLabel}
             onRenameFile={handleRenameFile}
             onRenameAssembly={handleRenameAssembly}
