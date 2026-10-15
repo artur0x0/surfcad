@@ -3,26 +3,8 @@ import { agentCall } from '../lib/harness.mjs';
 import { createStepRunner } from '../lib/stepRunner.mjs';
 
 const USER_ID = 'user-playtest-parts-joints';
-const SURF_A = '2026-10-15-20-00-00-0001-aaaa';
-const SURF_B = '2026-10-15-20-00-00-0002-bbbb';
 let basePartId = null;
 let pinPartId = null;
-
-const HEADER_A = `// @surf-id ${SURF_A}\n`;
-const HEADER_B = `// @surf-id ${SURF_B}\n`;
-
-const BASE_SCRIPT = `${HEADER_A}// --- cube begin id=base ---
-return Manifold.cube([50, 40, 10], true);
-// --- cube end ---
-`;
-
-const PIN_SCRIPT = `${HEADER_B}// --- pin begin id=pin ---
-return Manifold.cylinder(16, 5, 5, 30, true).translate([0, 0, 15]);
-// --- pin end ---
-`;
-
-const SEED_BASE = `${HEADER_A}return Manifold.cube([10, 10, 10], true);\n`;
-const SEED_PIN = `${HEADER_B}return Manifold.cube([6, 6, 6], true);\n`;
 
 export const id = 'parts-joints-assembly';
 export const title = 'Parts, assembly, joint, undo';
@@ -143,7 +125,6 @@ export async function run(ctx) {
     await agentCall(page, 'joint_set_params', { type: 'coincident' });
     const committed = await agentCall(page, 'joint_commit', {});
     const pickCount = picked.result?.count ?? 0;
-    const parts = await agentCall(page, 'parts', {});
     const jointCount = committed.result?.jointCount ?? 0;
     const ok = opened.ok && picked.ok && pickCount >= 2 && committed.ok && jointCount >= 1;
     return {
