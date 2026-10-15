@@ -222,7 +222,9 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `git_branch_switch` | `{ branch, confirm? }` | Switch working branch. `confirm: true` required when `dirty.workspaceDirty`. |
 | `git_branch_delete` | `{ branch, confirm: true }` | Delete a branch ref (not `main`, not current). |
 | `git_force_overwrite` | `{ confirm: true }` | Conflict popup → Overwrite main (`handleOverwriteMain`). |
-| `git_list_branches` | `{}` | `{ branches, branch }` from `handleListBranches` (immediate). |
+| `git_list_branches` | `{}` | `{ branches, branch }` from `handleListBranches` (immediate). Read-only: allowed even when the real GitHub adapter is active. |
+
+**Real vault guard.** If the live adapter is GitHub (`kind: real`, e.g. a token in storage), agent git **write** commands above refuse with `real_repo_blocked` unless the page opted in with URL `?agentGit=real` or localStorage `surfcadAgentGitReal` = `1`. UI Save / branch flows are unaffected.
 
 ### Pick sessions
 
@@ -249,6 +251,7 @@ One session at a time. A session idle for `timeout_ms` (default 120000, 1000–1
 | `bad_json` | `argsJson` is a string and `JSON.parse` throws. |
 | `bad_args` | Args are not a JSON object, are not serialisable (function, class instance, typed array, non-finite number), or a required field has the wrong type (`set_script` `source` must be a string). |
 | `confirm_required` | A destructive git command was called without `confirm: true` (`git_branch_delete`, `git_force_overwrite`, `git_behind_resolve` reload/branch, or `git_branch_switch` while the vault working copy is dirty). |
+| `real_repo_blocked` | Agent git write while the real GitHub adapter is active and the tab has not opted in (`?agentGit=real` or `surfcadAgentGitReal=1`). |
 | `git_error` | Git handler returned `{ status: "error" }` (message in `error.message`). |
 | `unsupported_format` | `screenshot` `format` is present and is not `"png"`. |
 | `nothing_to_undo` | `undo` is already at the bottom of the stack. The editor and the history do not change. Also `pick_undo` with no agent pick in the session. |

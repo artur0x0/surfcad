@@ -1,6 +1,26 @@
-import { requireDestructiveConfirm, gitOpResult } from '../gitAgent.js';
+import {
+  requireDestructiveConfirm,
+  gitOpResult,
+  agentGitRealWriteBlocked,
+} from '../gitAgent.js';
 
-async function hostGit(ctx, name, args) {
+function assertAgentGitWrite(ctx) {
+  const kind = typeof ctx.readAgentGitAdapterKind === 'function'
+    ? ctx.readAgentGitAdapterKind()
+    : null;
+  const optedIn = typeof ctx.readAgentGitRealOptIn === 'function'
+    ? ctx.readAgentGitRealOptIn() === true
+    : false;
+  const blocked = agentGitRealWriteBlocked(kind, optedIn);
+  if (blocked) return { error: blocked };
+  return null;
+}
+
+async function hostGit(ctx, name, args, { readOnly = false } = {}) {
+  if (!readOnly) {
+    const gate = assertAgentGitWrite(ctx);
+    if (gate) return gate;
+  }
   const fn = ctx[name];
   if (typeof fn !== 'function') {
     return { error: { code: 'internal', message: `${name} handler is missing` } };
@@ -227,6 +247,6 @@ export const gitListBranchesCommand = Object.freeze({
   example: {},
   immediate: true,
   async run(ctx) {
-    return hostGit(ctx, 'agentGitListBranches', {});
+    return hostGit(ctx, 'agentGitListBranches', {}, { readOnly: true });
   },
 });
