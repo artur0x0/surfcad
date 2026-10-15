@@ -929,7 +929,7 @@ function ViewportTitleChip({ children, value = null, onRename = null, inline = f
   const renameTitle = noun === 'Assembly' ? 'Click to rename this assembly' : 'Click to rename this part';
   const shown = value || (noun === 'Assembly' ? '' : 'Untitled');
   const frame = inline
-    ? `relative z-10 min-w-0 max-w-[min(14rem,42vw)] ${onRename ? 'pointer-events-auto' : 'pointer-events-none'}`
+    ? `relative z-10 min-w-0 max-w-[min(18rem,calc(100vw-13rem))] ${onRename ? 'pointer-events-auto' : 'pointer-events-none'}`
     : `absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[min(20rem,calc(100%-2rem))] ${
       onRename ? '' : 'pointer-events-none'
     }`;
@@ -1020,7 +1020,7 @@ const Viewport = forwardRef(({
   gamePuzzleTitle = null,
   gameBestTimeMs = null,
   isMobile = false,
-  /** Phone CAD view, and desktop when the parts ribbon is absent. */
+  /** CAD viewport only (not Parts or Script stages on a phone). */
   brandHeader = false,
   onInsertHelper = null,
   /** A palette tap is opening a sheet or mode (App: edit the picked part). */
@@ -13595,7 +13595,6 @@ const Viewport = forwardRef(({
     { partSelected: cadPartSelected !== false },
   );
 
-  const titlePlace = 'left-1/2 -translate-x-1/2 w-max max-w-[min(36rem,calc(100%-2rem))]';
   // Contour mode keeps the part-in-assembly row in layout so the status
   // legend can sit on that same box. The chips themselves are hidden.
   const hideCadTitle = mode !== 'game' && !!contourMode;
@@ -13636,14 +13635,8 @@ const Viewport = forwardRef(({
         <ProfileChip variant="viewport" onAccount={onAccount} onSignedOut={onSignedOut} onClearLocalCadData={onClearLocalCadData} vaultName={profileVaultName} />
       )}
 
-      {/* Five taps in this corner enter the puzzle. The IO tray is gone, so the corner itself is the target.
-          The wordmark starts at left-12 so it does not sit on that 44px square. */}
+      {/* Five taps in this corner enter the puzzle. The IO tray is gone, so the corner itself is the target. */}
       <PuzzleUnlock enabled={mode !== 'game'} onUnlock={onStartGame} />
-      {mode !== 'game' && brandHeader && (
-        <div className="pointer-events-none absolute left-12 top-1 z-10" data-brand-header-host="">
-          <BrandHeaderMark />
-        </div>
-      )}
 
       {/* CAD chrome lives in the editor mid-strip in BOTH shells (desktop matches
           phone now): rendered here so Run can execute the live buffer without
@@ -13677,57 +13670,65 @@ const Viewport = forwardRef(({
       {mode === 'game' && (
         <ViewportTitleChip>{gamePuzzleTitle || 'Puzzle'}</ViewportTitleChip>
       )}
-      {mode !== 'game' && (
-        showCadTitle ? (
+      {mode !== 'game' && (brandHeader || showCadTitle) && (
         <div
-          className={`pointer-events-none absolute top-4 z-10 ${titlePlace}`}
-          data-viewer-title=""
-          data-viewer-title-text={titleParts.text}
-          data-viewer-title-hidden={hideCadTitle ? '' : undefined}
+          className="pointer-events-none absolute top-4 z-10 min-h-9 left-2 right-2 lg:left-4 lg:right-4 pr-11"
+          data-viewer-header-row=""
         >
-          <div className="relative" data-viewer-title-pills="">
-            <div
-              data-viewer-title-chips=""
-              className={`flex items-center gap-2 ${hideCadTitle ? 'invisible' : ''}`}
-              {...(hideCadTitle ? { inert: '' } : {})}
-            >
-              {titleParts.part ? (
-                <ViewportTitleChip inline value={currentFilename} onRename={onRenameFile}>
-                  {titleParts.part}
-                </ViewportTitleChip>
-              ) : null}
-              {titleParts.connector ? (
-                <span
-                  className="shrink-0 text-xs font-medium text-gray-300"
-                  data-title-in=""
-                >
-                  {titleParts.connector}
-                </span>
-              ) : null}
-              {titleParts.assembly ? (
-                <ViewportTitleChip
-                  inline
-                  noun="Assembly"
-                  value={titleParts.assembly}
-                  onRename={onRenameAssembly}
-                >
-                  {titleParts.assembly}
-                </ViewportTitleChip>
-              ) : null}
+          {brandHeader ? (
+            <div className="relative z-10 inline-flex" data-brand-header-host="">
+              <BrandHeaderMark />
             </div>
-            {contourLegend ? (
-              <ContourStatusLegend className="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2" />
-            ) : null}
-          </div>
-        </div>
-        ) : (
-          <>
+          ) : null}
+          {showCadTitle ? (
+            <div
+              className="absolute inset-0 flex items-center justify-center px-[min(11rem,38vw)]"
+              data-viewer-title=""
+              data-viewer-title-text={titleParts.text}
+              data-viewer-title-hidden={hideCadTitle ? '' : undefined}
+            >
+              <div className="relative max-w-full min-w-0" data-viewer-title-pills="">
+                <div
+                  data-viewer-title-chips=""
+                  className={`flex max-w-full min-w-0 items-center justify-center gap-2 ${hideCadTitle ? 'invisible' : ''}`}
+                  {...(hideCadTitle ? { inert: '' } : {})}
+                >
+                  {titleParts.part ? (
+                    <ViewportTitleChip inline value={currentFilename} onRename={onRenameFile}>
+                      {titleParts.part}
+                    </ViewportTitleChip>
+                  ) : null}
+                  {titleParts.connector ? (
+                    <span
+                      className="shrink-0 text-xs font-medium text-gray-300"
+                      data-title-in=""
+                    >
+                      {titleParts.connector}
+                    </span>
+                  ) : null}
+                  {titleParts.assembly ? (
+                    <ViewportTitleChip
+                      inline
+                      noun="Assembly"
+                      value={titleParts.assembly}
+                      onRename={onRenameAssembly}
+                    >
+                      {titleParts.assembly}
+                    </ViewportTitleChip>
+                  ) : null}
+                </div>
+                {contourLegend ? (
+                  <ContourStatusLegend className="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2" />
+                ) : null}
+              </div>
+            </div>
+          ) : (
             <div data-viewer-title-empty="" hidden />
-            {contourLegend ? (
-              <ContourStatusLegend className="absolute left-1/2 top-4 z-20 -translate-x-1/2" />
-            ) : null}
-          </>
-        )
+          )}
+        </div>
+      )}
+      {mode !== 'game' && !showCadTitle && !brandHeader && contourLegend && (
+        <ContourStatusLegend className="absolute left-1/2 top-4 z-20 -translate-x-1/2" />
       )}
 
       {mode === 'game' && gameSuccess && (
