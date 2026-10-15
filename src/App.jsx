@@ -120,7 +120,15 @@ import {
   undoPartHistory,
 } from './utils/partHistory';
 import { fillAgentHost } from './agent/host';
-import { agentGitRealOptIn } from './agent/gitAgent.js';
+import {
+  agentGitConsentInteractive,
+  agentGitRealOptIn,
+  agentGitSessionDenied,
+  agentGitSetSessionAllow,
+  agentGitSetSessionDenied,
+} from './agent/gitAgent.js';
+import { AGENT_GIT_CONSENT_TIMEOUT_MS } from './agent/commands/git.js';
+import AgentGitConsentModal from './components/AgentGitConsentModal';
 import { buildDirtyState } from './agent/state/dirty';
 import { buildSelection } from './agent/state/selection';
 import { editedPartIdsSinceSnapshot, snapshotPartScripts } from './agent/state/editedSinceLoad';
@@ -863,6 +871,9 @@ const App = () => {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [clearCacheUi, setClearCacheUi] = useState(null);
+  const [agentGitConsentUi, setAgentGitConsentUi] = useState(null);
+  const agentGitConsentQueueRef = useRef([]);
+  const agentGitConsentActiveRef = useRef(null);
   const [accountModalTab, setAccountModalTab] = useState('info');
   const [editorInitialScript, setEditorInitialScript] = useState(null);
   const [initError, setInitError] = useState(null);
@@ -2915,6 +2926,73 @@ const App = () => {
     const baseline = gitBaselineRef.current;
     const vault = gitVaultRef.current;
     return baseline?.branch || vault?.defaultBranch || 'main';
+  };
+
+  const readAgentGitWriteTarget = () => {
+    const vault = gitVaultRef.current;
+    const repo = vault?.repo
+      ? `${vault.repo.owner}/${vault.repo.name}`
+      : 'your repo';
+    return { repo, branch: gitWorkingBranch() };
+  };
+
+  const pumpAgentGitConsent = () => {
+    if (agentGitConsentActiveRef.current) return;
+    const next = agentGitConsentQueueRef.current.shift();
+    if (!next) {
+      setAgentGitConsentUi(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      finishAgentGitConsent('timeout');
+    }, AGENT_GIT_CONSENT_TIMEOUT_MS);
+    agentGitConsentActiveRef.current = { ...next, timer };
+    setAgentGitConsentUi({
+      command: next.command,
+      repo: next.repo,
+      branch: next.branch,
+    });
+  };
+
+  const finishAgentGitConsent = (outcome) => {
+    const active = agentGitConsentActiveRef.current;
+    if (!active) {
+      if (outcome === 'allow' || outcome === 'deny') setAgentGitConsentUi(null);
+      return;
+    }
+    clearTimeout(active.timer);
+    agentGitConsentActiveRef.current = null;
+    if (outcome === 'allow') {
+      agentGitSetSessionAllow();
+      active.resolve('allow');
+      while (agentGitConsentQueueRef.current.length) {
+        agentGitConsentQueueRef.current.shift()?.resolve('allow');
+      }
+      setAgentGitConsentUi(null);
+      return;
+    }
+    if (outcome === 'deny') {
+      agentGitSetSessionDenied();
+      active.resolve('deny');
+      while (agentGitConsentQueueRef.current.length) {
+        agentGitConsentQueueRef.current.shift()?.resolve('deny');
+      }
+      setAgentGitConsentUi(null);
+      return;
+    }
+    active.resolve('timeout');
+    while (agentGitConsentQueueRef.current.length) {
+      agentGitConsentQueueRef.current.shift()?.resolve('timeout');
+    }
+    setAgentGitConsentUi(null);
+  };
+
+  const requestAgentGitWriteConsent = async ({ command, repo, branch }) => {
+    if (!agentGitConsentInteractive()) return 'timeout';
+    return new Promise((resolve) => {
+      agentGitConsentQueueRef.current.push({ command, repo, branch, resolve });
+      pumpAgentGitConsent();
+    });
   };
 
   const noteRecentAssembly = (name) => {
@@ -7735,6 +7813,21 @@ const App = () => {
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
+    try {
+      const demo = new URLSearchParams(window.location.search).get('agentGitConsentDemo') === '1';
+      if (demo) {
+        setAgentGitConsentUi({
+          command: 'git_save',
+          repo: 'demo-owner/demo-vault',
+          branch: 'main',
+        });
+      }
+    } catch { /* ignore */ }
+    return undefined;
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
     const enabled = agentBridgeEnabled({ dev: import.meta.env.DEV === true });
     if (!enabled || !manifoldReady || editorInitialScript === null) {
       delete window.surfcad;
@@ -8182,6 +8275,15 @@ const App = () => {
     },
     readAgentGitRealOptIn() {
       return agentGitRealOptIn();
+    },
+    readAgentGitSessionDenied() {
+      return agentGitSessionDenied();
+    },
+    readAgentGitWriteTarget() {
+      return readAgentGitWriteTarget();
+    },
+    requestAgentGitWriteConsent(args) {
+      return requestAgentGitWriteConsent(args);
     },
     async agentGitMoveToRepo({ vault_name } = {}) {
       const before = assemblyRef.current;
@@ -8670,6 +8772,16 @@ const App = () => {
     />
   ) : null;
 
+  const agentGitConsentModal = agentGitConsentUi ? (
+    <AgentGitConsentModal
+      command={agentGitConsentUi.command}
+      repo={agentGitConsentUi.repo}
+      branch={agentGitConsentUi.branch}
+      onAllow={() => finishAgentGitConsent('allow')}
+      onDeny={() => finishAgentGitConsent('deny')}
+    />
+  ) : null;
+
   const clearCacheDialog = (
     <ClearCacheDialog
       open={!!clearCacheUi}
@@ -9023,6 +9135,7 @@ const App = () => {
           )}
 
           {clearCacheDialog}
+          {agentGitConsentModal}
 
           {/* Login Modal */}
           {showLoginModal && (
@@ -9389,6 +9502,7 @@ const App = () => {
         </div>
 
         {clearCacheDialog}
+        {agentGitConsentModal}
 
         {/* Login Modal */}
         {showLoginModal && (

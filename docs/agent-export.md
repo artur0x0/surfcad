@@ -224,7 +224,7 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `git_force_overwrite` | `{ confirm: true }` | Conflict popup → Overwrite main (`handleOverwriteMain`). |
 | `git_list_branches` | `{}` | `{ branches, branch }` from `handleListBranches` (immediate). Read-only: allowed even when the real GitHub adapter is active. |
 
-**Real vault guard.** If the live adapter is GitHub (`kind: real`, e.g. a token in storage), agent git **write** commands above refuse with `real_repo_blocked` unless the page opted in with URL `?agentGit=real` or localStorage `surfcadAgentGitReal` = `1`. UI Save / branch flows are unaffected.
+**Real vault guard.** If the live adapter is GitHub (`kind: real`, e.g. a token in storage), the first agent git **write** in a tab opens a consent modal (`data-agent-git-consent-allow` / `data-agent-git-consent-deny`) naming the command and `owner/repo/branch`, e.g. “An agent wants to save to *acme/widgets/main*. Allow agent writes to your GitHub repos for this session?”. **Allow for this session** sets session opt-in and runs the pending command; **Deny** or dismiss sets a session deny flag, returns `real_repo_blocked` with a clear decline message, and does not show the modal again that session. Opt-in also works via URL `?agentGit=real`, localStorage `surfcadAgentGitReal` = `1`, or sessionStorage `surfcadAgentGitRealSession` = `1` after Allow. Headless / playtest / automation (`navigator.webdriver`) never waits on the modal: writes return `real_repo_blocked` immediately with `error.details.reason` `consent_pending`. After a deny, `details.reason` is `consent_declined`. UI Save / branch flows are unaffected.
 
 ### Pick sessions
 
@@ -251,7 +251,7 @@ One session at a time. A session idle for `timeout_ms` (default 120000, 1000–1
 | `bad_json` | `argsJson` is a string and `JSON.parse` throws. |
 | `bad_args` | Args are not a JSON object, are not serialisable (function, class instance, typed array, non-finite number), or a required field has the wrong type (`set_script` `source` must be a string). |
 | `confirm_required` | A destructive git command was called without `confirm: true` (`git_branch_delete`, `git_force_overwrite`, `git_behind_resolve` reload/branch, or `git_branch_switch` while the vault working copy is dirty). |
-| `real_repo_blocked` | Agent git write while the real GitHub adapter is active and the tab has not opted in (`?agentGit=real` or `surfcadAgentGitReal=1`). |
+| `real_repo_blocked` | Agent git write while the real GitHub adapter is active without opt-in. `error.details.reason` is `consent_pending` (no answer / headless), `consent_declined` (user denied this session), or omitted when blocked by legacy query/storage-only paths. Message explains consent or decline. |
 | `git_error` | Git handler returned `{ status: "error" }` (message in `error.message`). |
 | `unsupported_format` | `screenshot` `format` is present and is not `"png"`. |
 | `nothing_to_undo` | `undo` is already at the bottom of the stack. The editor and the history do not change. Also `pick_undo` with no agent pick in the session. |
