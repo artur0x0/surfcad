@@ -5,7 +5,7 @@
  *
  * Counts and angles stay linear. A typed number is not snapped.
  */
-import { adjacentBlendSize } from './adjacentBlend.js';
+import { BLEND_SIZE_MAX_MM, BLEND_SIZE_MIN_MM, defaultBlendSizeMm } from './blendSize.js';
 import { partLengthMm, scaleFromReference, travelRangeMm } from './sliderRange.js';
 import { resolveFastenerSize } from '../workers/fastenerSizes.js';
 
@@ -282,12 +282,17 @@ export function helperFieldSpec(itemId, param, ctx = {}) {
   }
 
   if ((id === 'filletEdges' && name === 'radius') || (id === 'chamferEdges' && name === 'chamfer')) {
-    const sized = adjacentBlendSize(ctx.edges);
-    const fromSheet = param.max != null && Number.isFinite(Number(param.max));
-    const seed = fromSheet ? num(param.default, sized.defaultMm) : sized.defaultMm;
-    const max = fromSheet ? Number(param.max) : sized.maxMm;
-    const min = fromSheet && Number.isFinite(Number(param.min)) ? Number(param.min) : sized.minMm;
-    return pack('length', seed, Math.min(min, max), Math.max(min, max), 1, ctx, param);
+    const seed = ctx?.saved ? num(param.default, defaultBlendSizeMm()) : defaultBlendSizeMm();
+    return {
+      kind: 'length',
+      seed,
+      min: BLEND_SIZE_MIN_MM,
+      max: BLEND_SIZE_MAX_MM,
+      step: 1,
+      shaped: true,
+      signed: false,
+      curve: 'log',
+    };
   }
 
   if (id === 'roundedBox' && name === 'edgeRadius') {

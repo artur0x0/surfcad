@@ -8,7 +8,7 @@ Empty part, and any part with no finite bounds: characteristic length **L = 100 
 
 ## Decisions
 
-1. **Fillet and chamfer do not use L.** The default is `0.10 ×` the length of the adjacent edge perpendicular to the picked edge, or the neighbor closest to perpendicular. The slider max is `0.20 ×` that length, also capped by `sweepBlendHardMax`. On the stock cube 40 × 30 × 20, a pick whose perpendicular neighbor is the 20 mm edge defaults to 2 mm. See the fillet section for which neighbor that is.
+1. **Fillet and chamfer do not use L.** The default is 2 mm in every display unit, so inches show 0.0787. The slider is 0.5 mm to 25 mm on a log curve, the same physical range in inches. A typed size outside that range is kept and the thumb sits on the nearer end.
 2. **The global inch/mm toggle wins everywhere, including sheet metal.** Sheet-metal values load in SCS native units (millimetres) and convert for display. Gauge numbers stay on screen for reference where the picker already shows them. PR D removes `surfcad.sheetMetal.displayUnit`. The sheet reads `surfcad.displayUnit`. A leftover sheet key does not override the global unit.
 3. **Counts and segments stay linear.** Step 1. They do not use `shape`.
 4. **Cylinder hole angle is ±90° at a 1° snap.** It is an angle, not a length.
@@ -18,7 +18,7 @@ Empty part, and any part with no finite bounds: characteristic length **L = 100 
 8. **Move and pose measure `D_off` when the slider is pressed.** Orbiting while the thumb is down does not live-update the end.
 9. **Quote infill stays 10…100 step 5**, default 20. It is a percent. It is not in these PRs.
 10. **Clearance and tap diameters stay on the fastener table.** Free diameters scale. Tap-drill does not grow a second slider.
-11. **An untouched thumb is re-seeded when L changes.** A touched thumb is kept, and the range grows to include it. That matches `radiusTouched` / `sizeTouched` on the fillet chip.
+11. **An untouched thumb is re-seeded when L changes.** A touched thumb is kept, and the range grows to include it. Fillet and chamfer are the exception: the seed stays 2 mm, a touched size is kept, and the slider stays 0.5…25 mm with the thumb on the nearer end.
 12. **Static helper `default` fields stay the L = 100 numbers** so an empty-buffer golden keeps today's script literal. The modal scales by `L/100` when the sheet opens.
 
 ## Characteristic length
@@ -55,7 +55,7 @@ Longest side of the overall extents, in millimetres. Not the diagonal. Not volum
 
 **volume^(1/3).** A thin plate and a sheet collapse toward the thickness (~23 mm and ~21 mm). A 400 mm rod reads ~34 mm. Rejected.
 
-**Median feature-edge length.** The plate's median is 60. The rod's median is 10. A sphere has no long sharp edges. Rejected as L. The fillet rule below uses one adjacent edge, not this median.
+**Median feature-edge length.** The plate's median is 60. The rod's median is 10. A sphere has no long sharp edges. Rejected as L. Fillet and chamfer do not use this median or any edge length.
 
 **Longest side.** A 100 mm cube is L = 100. A plate and a sheet take L from the planform. A rod takes L from its length. Disjoint bodies: the longest side includes the gap.
 
@@ -146,33 +146,19 @@ Painted by `ContourModeChip.jsx`. Profile fields are hidden on Workplane. Extrud
 
 ### Fillet and chamfer
 
-L does not drive these. `Ladj` is the length of the adjacent edge perpendicular to the picked edge.
+L does not drive these. The default is 2 mm in every display unit (`defaultBlendSizeMm`). Inches show 0.0787. Edge length and the part box do not change it. Fillet and chamfer share the seed.
 
-Among edges that share a vertex with the picked edge, are not that edge, and are not collinear with it (`|dot|` of the unit tangents under 0.999), choose the one whose direction is closest to 90° (`|dot|` closest to 0). If several are equally close, choose the shorter one.
+The slider is 0.5 mm to 25 mm on a log map, the same physical range in inches. Equal thumb travel is a constant ratio, so the low end has finer steps. The detent is finer at the small end (0.05 / 0.1 / 0.5 / 1 mm, or 0.001 / 0.005 / 0.01 / 0.02 in). The ends stay exactly 0.5 mm and 25 mm. A typed size outside that range is kept and the thumb sits on the nearer end. A typed radius still applies to every part in a multi-part pick.
 
-On the stock cube every corner is 90°. The shorter neighbor wins:
-
-| Picked edge | Neighbors | Ladj | Default 0.10 × | Max 0.20 × |
-| --- | --- | --- | --- | --- |
-| 40 mm | 30 and 20 | 20 | 2 mm | 4 mm |
-| 30 mm | 40 and 20 | 20 | 2 mm | 4 mm |
-| 20 mm | 40 and 30 | 30 | 3 mm | 6 mm |
-
-The "stock cube → 2 mm" case is a pick of the 40 mm or 30 mm edge. A pick of the 20 mm height edge is 3 mm, because the shorter perpendicular neighbor is 30 mm.
-
-A tangent chain uses one radius. `Ladj` is the shortest of those neighbor lengths across the picked edges, so the chain is limited by the tightest neighbor. Edge count does not otherwise scale the radius.
-
-No adjacent edge: use `0.10 ×` the picked edge's `effectiveBlendEdgeLength`, then 2 mm if there is no edge length. The slider max is `min(0.20 ×` the same length, `sweepBlendHardMax(path))`. The default is clamped into `[slider min, slider max]`. The existing chip minimum stays 0.1 mm unless the max is smaller. A typed radius still applies to every part in a multi-part pick.
-
-`scripts/golden/smoke_fillet_default_radius.mjs` currently pins a fixed 2 mm (thin parts clamp by `0.45 ×` the thinnest extent). The feature-card PR rewrites it to this neighbor rule. The "edge count does not grow the radius" check stays.
+`scripts/golden/smoke_fillet_default_radius.mjs` pins 2 mm, including a thin sheet, and that a typed 40 mm is kept.
 
 | Slider | Where | Current | Proposed | Curve, units, edge cases |
 | --- | --- | --- | --- | --- |
-| Fillet radius (mode card) | `FilletModeChip.jsx`. Max from `sweepBlendHardMax` passed by the viewport. Seed `defaultFilletRadius` in `filletMode.js` | min 0.1, max = kernel cap or 40. Default 2, or `0.45 ×` min extent when that is smaller | default and max from `Ladj` above. Length snap | shape, length. Not scaled by L. |
-| Chamfer size (mode card) | same chip, `kind === 'chamfer'`. Seed `enterChamferState` | min 0.1, max grows with the current size. Default `defaultEdgeBlendSize` or 2 | same neighbor rule as fillet | shape, length. |
-| Fillet radius (helper sheet) | palette param in `helperPaletteSnippets.js`, face and edge overrides in `faceFeaturePlacement.js` | palette default 3, overwritten to 2 when the edge sheet resolves sweep | one seed with the mode card | shape, length. |
-| Chamfer size (helper sheet) | palette param and the face/edge overrides | default 2, modal max from the omitted-max formula unless `blendMax` is set | same as the mode card | shape, length. |
-| Fillet radius (feature edit fallback) | `FeatureEditSheet.jsx` | 0.01…40, step 0.25, parse fallback 2 | same neighbor rule, including the kernel cap | shape, length. |
+| Fillet radius (mode card) | `FilletModeChip.jsx`. Seed `defaultFilletRadius` in `filletMode.js` | min 0.1, max = kernel cap or 40. Default 2, or `0.45 ×` min extent when that is smaller | 2 mm. Slider 0.5…25 mm | log, length. Not scaled by L. |
+| Chamfer size (mode card) | same chip, `kind === 'chamfer'`. Seed `enterChamferState` | min 0.1, max grows with the current size. Default `defaultEdgeBlendSize` or 2 | same 2 mm seed and 0.5…25 mm log slider | log, length. |
+| Fillet radius (helper sheet) | palette param in `helperPaletteSnippets.js`, face and edge overrides in `faceFeaturePlacement.js` | palette default 3, overwritten to 2 when the edge sheet resolves sweep | one seed with the mode card | log, length. |
+| Chamfer size (helper sheet) | palette param and the face/edge overrides | default 2, modal max from the omitted-max formula unless `blendMax` is set | same as the mode card | log, length. |
+| Fillet radius (feature edit fallback) | `FeatureEditSheet.jsx` | 0.01…40, step 0.25, parse fallback 2 | same 2 mm seed and 0.5…25 mm log slider | log, length. |
 
 ### Shell, draft, cut, move, move face
 

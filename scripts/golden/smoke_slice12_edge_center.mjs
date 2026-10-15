@@ -36,11 +36,9 @@ import {
   popLastEdgeSelection,
   edgeKey,
   minSelectedEdgeLength,
-  defaultEdgeBlendSize,
   edgeBlendHardMax,
   edgeBlendFailsSizeGuard,
 } from '../../src/utils/selectEdge.js';
-import { adjacentBlendSize } from '../../src/utils/adjacentBlend.js';
 
 let failed = 0;
 function check(name, cond, detail = '') {
@@ -567,25 +565,13 @@ const planarFace = {
   check('pre-fix triangle-centroid miss leaves probe solid', badInter > 10, `vol=${badInter}`);
 }
 
-// ── Polish: default fillet r from edge length ──────────────────
+// ── Fillet and chamfer size is a fixed 2 mm ────────────────────
 {
-  console.log('\ndefault fillet r from edge length');
+  console.log('\nfillet and chamfer size is 2 mm');
   const L = 40;
-  const r = defaultEdgeBlendSize(L);
-  check('default r for L=40 is 6', r === 6, `got ${r}`);
-  check('default r under size guard', r < EDGE_BLEND_SIZE_GUARD * L);
   check('hard max under size guard', edgeBlendHardMax(L) < EDGE_BLEND_SIZE_GUARD * L);
   check('r=22.51 fails guard on L=40', edgeBlendFailsSizeGuard(22.51, L));
-  check('default r passes guard', !edgeBlendFailsSizeGuard(r, L));
-
-  // Short edge: floor must not exceed softMax / guard
-  const short = defaultEdgeBlendSize(1);
-  check('short edge default ≤ 0.35·L', short <= 0.35 * 1 + 1e-9, `got ${short}`);
-  check('short edge default under guard', short < EDGE_BLEND_SIZE_GUARD * 1);
-
-  // Param min is 0.01 — rounding must not collapse tiny edges to 0
-  const tiny = defaultEdgeBlendSize(0.01);
-  check('tiny edge default floors at param min 0.01', tiny === 0.01, `got ${tiny}`);
+  check('the 2 mm seed passes the planar guard on L=40', !edgeBlendFailsSizeGuard(2, L));
 
   const edges = [
     { mid: [0, 0, 0], va: [0, 0, 0], vb: [40, 0, 0], length: 40 },
@@ -594,16 +580,16 @@ const planarFace = {
   const item = HELPER_PALETTE_ITEMS.find((h) => h.id === 'filletEdges');
   const resolved = resolveFaceModal(item, null, edges);
   const radiusParam = resolved.item?.params?.find((p) => p.name === 'radius');
-  const alone = adjacentBlendSize(edges);
-  check('resolveFaceModal seeds 0.10 × the picked edge when it has no neighbor',
-    radiusParam?.default === alone.defaultMm, `got ${radiusParam?.default}`);
-  check('resolveFaceModal caps the slider at 0.20 × that edge',
-    radiusParam?.max === alone.maxMm, `got ${radiusParam?.max}`);
+  check('resolveFaceModal seeds 2 mm', radiusParam?.default === 2, `got ${radiusParam?.default}`);
+  check('resolveFaceModal slider is 0.5 to 25 mm',
+    radiusParam?.min === 0.5 && radiusParam?.max === 25, `min ${radiusParam?.min} max ${radiusParam?.max}`);
 
   const chamferItem = HELPER_PALETTE_ITEMS.find((h) => h.id === 'chamferEdges');
   const cResolved = resolveFaceModal(chamferItem, null, edges);
   const cParam = cResolved.item?.params?.find((p) => p.name === 'chamfer');
-  check('chamfer uses the same adjacent-edge seed', cParam?.default === alone.defaultMm, `got ${cParam?.default}`);
+  check('chamfer uses the same 2 mm seed and slider',
+    cParam?.default === 2 && cParam?.min === 0.5 && cParam?.max === 25,
+    `got ${cParam?.default} ${cParam?.min} ${cParam?.max}`);
 
   const list = [{ key: 'a' }, { key: 'b' }, { key: 'c' }];
   check('popLastEdgeSelection drops last', popLastEdgeSelection(list).map((e) => e.key).join(',') === 'a,b');

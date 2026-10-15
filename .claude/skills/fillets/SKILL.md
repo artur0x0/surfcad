@@ -64,7 +64,8 @@ Kernel choice is one function: `filletKernelSpike.js` →
    junctions ⇒ `FILLET_SWEEP_BRANCH`. Disconnected picks still draw their
    polylines so the user sees why.
 
-   Radius: default `defaultSweepBlendSize(L) = clamp(0.1·L, 1, 6)`; hard max
+   Radius: the card and the helper sheet seed 2 mm in every display unit
+   (inches show 0.0787). The slider is a log from 0.5 mm to 25 mm. Hard max
    `sweepBlendHardMax(L) = max(6, 0.5·L)`. Planar keeps a separate `0.45·L`
    guard (`EDGE_BLEND_SIZE_GUARD`).
 
@@ -142,8 +143,9 @@ Each one is a scar. Changing it reintroduces a shipped bug.
 A wrong solid must never ship quietly. `filletAlongPath` checks, in order:
 concavity (sphere probe ≥ 45% inside) → degenerate θ → no orientation → zero
 cutter volume → empty result → near-no-op (`removed < 2% · expectVol`) →
-oversize (`removed > 8 × expectVol`) → scrap components (`decompose()`; hard
-fail on closed paths) → degenerate triangles (`isFilletSliverDirty`). Full table
+oversize (`removed > 8 × expectVol`) → scrap components (`decompose()`; closed
+paths drop empty seam shells and hard-fail when two components have volume)
+→ degenerate triangles (`isFilletSliverDirty`). Full table
 and the `_testCutterScale` test hook: `references/kernel-internals.md`.
 
 **Know what these cannot catch.** They all integrate. C3.0–C3.2 shipped three

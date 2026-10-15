@@ -39,6 +39,7 @@ import {
   POPUP_TEXT,
   accentOf,
 } from './controls/popupUI';
+import { BLEND_SIZE_MAX_MM, BLEND_SIZE_MIN_MM } from '../utils/blendSize';
 import { growToFit, partLengthMm } from '../utils/sliderRange';
 import {
   featureBlockText,
@@ -255,17 +256,16 @@ export default function FeatureEditSheet({
       </>
     );
   } else if (editable && feature.kind === 'fillet') {
-    const radiusNum = Number(draft.radius);
-    const radiusFit = growToFit(0.1, Math.max(40, Number.isFinite(radiusNum) ? radiusNum : 0), radiusNum);
     fields = (
       <LengthNumberField
         id="sheet-fillet-radius"
         label="Radius"
         accent={ACCENT}
+        curve="log"
         valueMm={draft.radius}
         onChangeMm={(v) => setNum('radius', v, 2)}
-        minMm={radiusFit.min}
-        maxMm={radiusFit.max}
+        minMm={BLEND_SIZE_MIN_MM}
+        maxMm={BLEND_SIZE_MAX_MM}
       />
     );
   } else if (editable && feature.kind === 'revolve') {
