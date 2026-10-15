@@ -81,6 +81,17 @@ import {
   insertPartCommand,
 } from './document.js';
 import {
+  gitMoveToRepoCommand,
+  gitSaveCommand,
+  gitAddToRepoCommand,
+  gitBehindResolveCommand,
+  gitBranchCreateCommand,
+  gitBranchSwitchCommand,
+  gitBranchDeleteCommand,
+  gitForceOverwriteCommand,
+  gitListBranchesCommand,
+} from './git.js';
+import {
   jointOpenCommand,
   jointSetParamsCommand,
   jointPickCommand,
@@ -179,6 +190,15 @@ export const V1_COMMANDS = Object.freeze([
   jointPickCommand,
   jointCommitCommand,
   jointCancelCommand,
+  gitMoveToRepoCommand,
+  gitSaveCommand,
+  gitAddToRepoCommand,
+  gitBehindResolveCommand,
+  gitBranchCreateCommand,
+  gitBranchSwitchCommand,
+  gitBranchDeleteCommand,
+  gitForceOverwriteCommand,
+  gitListBranchesCommand,
 ]);
 
 export const v1Registry = defineCommands(V1_COMMANDS);

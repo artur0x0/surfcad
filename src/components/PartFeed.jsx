@@ -143,6 +143,7 @@ function RibbonAssemblyName({
       {onBranchClick ? (
         <button
           type="button"
+          data-ui-action="data-git-branches"
           data-assembly-branch=""
           data-git-branches=""
           title={`Branch: ${branchLabel}. Click to manage branches.`}
@@ -1720,6 +1721,7 @@ const PartFeed = forwardRef(function PartFeed({
             <button
               type="button"
               className={`relative ${STRIP_BTN} disabled:cursor-not-allowed disabled:opacity-40`}
+              data-ui-action="data-git-save"
               data-git-commit=""
               data-git-save=""
               data-git-dirty={sourceDirty ? 'true' : 'false'}
@@ -1743,6 +1745,7 @@ const PartFeed = forwardRef(function PartFeed({
           <button
             type="button"
             className="sr-only"
+            data-ui-action="data-git-move-open"
             data-git-move-open=""
             tabIndex={-1}
             aria-hidden="true"
@@ -2088,6 +2091,7 @@ const PartFeed = forwardRef(function PartFeed({
                   </button>
                   <button
                     type="button"
+                    data-ui-action="data-git-commit-confirm"
                     data-git-commit-confirm=""
                     className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
                     onClick={runCommit}
@@ -2117,6 +2121,7 @@ const PartFeed = forwardRef(function PartFeed({
                   </button>
                   <button
                     type="button"
+                    data-ui-action="data-git-conflict-overwrite"
                     data-git-force-merge=""
                     data-git-conflict-overwrite=""
                     className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500"
@@ -2135,6 +2140,7 @@ const PartFeed = forwardRef(function PartFeed({
                     <button
                       type="button"
                       className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
+                      data-ui-action="data-git-commit-add-to-repo"
                       data-git-commit-add-to-repo=""
                       onClick={() => { void runAddStrayToRepo(commitFlow.result.stray); }}
                     >
@@ -2225,6 +2231,7 @@ const PartFeed = forwardRef(function PartFeed({
                   </button>
                   <button
                     type="button"
+                    data-ui-action="data-git-behind-reload"
                     data-git-behind-reload=""
                     className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
                     onClick={() => runConflict('reload')}
@@ -2233,6 +2240,7 @@ const PartFeed = forwardRef(function PartFeed({
                   </button>
                   <button
                     type="button"
+                    data-ui-action="data-git-behind-keep"
                     data-git-behind-keep=""
                     className="rounded-md px-3 py-1.5 text-xs text-chrome-text hover:bg-white/10 border border-gray-600"
                     onClick={() => runConflict('keep')}
@@ -2241,6 +2249,7 @@ const PartFeed = forwardRef(function PartFeed({
                   </button>
                   <button
                     type="button"
+                    data-ui-action="data-git-behind-branch"
                     data-git-behind-branch=""
                     className="rounded-md px-3 py-1.5 text-xs text-amber-100 hover:bg-amber-900/40 border border-amber-500/50"
                     onClick={() => runConflict('branch')}
@@ -2382,6 +2391,7 @@ const PartFeed = forwardRef(function PartFeed({
           headerRight={branchFlow.stage === 'pane' ? (
             <button
               type="button"
+              data-ui-action="data-git-branch-action-create"
               data-git-branch-action="create"
               className="shrink-0 rounded p-1 text-blue-400 hover:bg-white/10"
               title="Create branch"
@@ -2401,6 +2411,7 @@ const PartFeed = forwardRef(function PartFeed({
                   <button
                     type="button"
                     className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500"
+                    data-ui-action="data-git-branch-confirm"
                     data-git-branch-confirm=""
                     onClick={() => runSwitchBranch(branchFlow.pending)}
                   >
@@ -2421,6 +2432,7 @@ const PartFeed = forwardRef(function PartFeed({
                   <button
                     type="button"
                     className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
+                    data-ui-action="data-git-branch-create-confirm"
                     data-git-branch-create-confirm=""
                     onClick={() => { void runCreateBranch(); }}
                   >
@@ -2441,6 +2453,7 @@ const PartFeed = forwardRef(function PartFeed({
                   <button
                     type="button"
                     className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500"
+                    data-ui-action="data-git-branch-delete-confirm"
                     data-git-branch-delete-confirm=""
                     onClick={() => { void runDeleteBranch(branchFlow.pending); }}
                   >

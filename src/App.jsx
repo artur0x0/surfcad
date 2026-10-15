@@ -120,6 +120,7 @@ import {
   undoPartHistory,
 } from './utils/partHistory';
 import { fillAgentHost } from './agent/host';
+import { agentGitRealOptIn } from './agent/gitAgent.js';
 import { buildDirtyState } from './agent/state/dirty';
 import { buildSelection } from './agent/state/selection';
 import { editedPartIdsSinceSnapshot, snapshotPartScripts } from './agent/state/editedSinceLoad';
@@ -4559,10 +4560,12 @@ const App = () => {
   const handleGitCommit = async (message) => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') return { status: 'error', error: 'Not in Git mode' };
+    const adapter = ensureGitAdapter();
     if (!meshVaultSaveAllowed({
       source: doc.source,
       readOnly: bootReadOnlyRef.current,
       githubConnected,
+      adapterKind: adapter?.kind,
     })) {
       return { status: 'error', error: 'Reconnect GitHub before saving this assembly.' };
     }
@@ -8173,6 +8176,84 @@ const App = () => {
       }
       if (inserted?.status === 'inserted') recordAgentAssemblyStep(before);
       return { result: inserted };
+    },
+    readAgentGitAdapterKind() {
+      return ensureGitAdapter()?.kind ?? null;
+    },
+    readAgentGitRealOptIn() {
+      return agentGitRealOptIn();
+    },
+    async agentGitMoveToRepo({ vault_name } = {}) {
+      const before = assemblyRef.current;
+      const clean = typeof vault_name === 'string' ? vault_name.trim() : '';
+      const result = await handleMoveToGit({
+        vaultName: clean || undefined,
+        sharedIds: [],
+      });
+      if (result.status === 'moved' && before) recordAgentAssemblyStep(before);
+      return result;
+    },
+    async agentGitSave({ message }) {
+      const draft = String(message || '').trim();
+      if (!draft) return { status: 'error', error: 'Commit message required' };
+      return handleGitCommit(draft);
+    },
+    async agentGitAddToRepo({ partId }) {
+      if (!partId) return { status: 'error', error: 'part_id required' };
+      return handleAddToRepo(partId);
+    },
+    async agentGitBehindResolve({ action, path, kind }) {
+      const doc = assemblyRef.current;
+      if (!doc || doc.source !== 'git') {
+        return { status: 'error', error: 'Not in Git mode' };
+      }
+      let resolvedPath = path;
+      let resolvedKind = kind === 'assembly' ? 'assembly' : (kind === 'part' ? 'part' : null);
+      if (!resolvedPath) {
+        if (behindMarkers.assemblyBehind && gitAssemblyPath) {
+          resolvedPath = gitAssemblyPath;
+          resolvedKind = 'assembly';
+        } else if (behindPartIdSet.size) {
+          resolvedPath = behindPartIdSet.values().next().value;
+          resolvedKind = 'part';
+        }
+      }
+      if (!resolvedPath) {
+        return { status: 'error', error: 'No behind marker for this assembly' };
+      }
+      if (!resolvedKind) {
+        resolvedKind = resolvedPath.endsWith('.surf.json') ? 'assembly' : 'part';
+      }
+      return handleBehindChoice({ action, path: resolvedPath, kind: resolvedKind });
+    },
+    async agentGitBranchCreate({ name }) {
+      const branchName = String(name || '').trim();
+      if (!branchName) return { status: 'error', error: 'Branch name required' };
+      return handleCreateBranch(branchName);
+    },
+    async agentGitBranchSwitch({ branch, confirm }) {
+      const target = String(branch || '').trim();
+      if (!target) return { status: 'error', error: 'Branch required' };
+      if (sourceDirty && confirm !== true) {
+        return {
+          status: 'error',
+          code: 'confirm_required',
+          error: 'git_branch_switch requires confirm: true while the working copy has uncommitted changes',
+        };
+      }
+      return handleSwitchBranch(target);
+    },
+    async agentGitBranchDelete({ branch }) {
+      const target = String(branch || '').trim();
+      if (!target) return { status: 'error', error: 'Branch required' };
+      return handleDeleteBranch(target);
+    },
+    async agentGitForceOverwrite() {
+      return handleOverwriteMain();
+    },
+    async agentGitListBranches() {
+      const items = await handleListBranches();
+      return { status: 'ok', branches: items || [], branch: gitWorkingBranch() };
     },
     jointOpen() {
       if (appModeRef.current === 'game' || featureSessionRef.current) {
