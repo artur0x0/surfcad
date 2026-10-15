@@ -2,7 +2,7 @@ export const agentSetVisibleCommand = Object.freeze({
   name: 'agent_set_visible',
   schema: {
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       enabled: { type: 'boolean', description: 'Turn operator-visible cues on or off' },
       stepDelayMs: { type: 'number', minimum: 0, description: 'Pause after each highlight (ms)' },

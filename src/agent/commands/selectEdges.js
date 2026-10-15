@@ -1,11 +1,13 @@
+import { EDGE_KEY_SCHEMA } from '../schemas/common.js';
+
 export const selectEdgesCommand = Object.freeze({
   name: 'select_edges',
   schema: {
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
-      keys: { type: 'array' },
-      key: {},
+      keys: { type: 'array', items: EDGE_KEY_SCHEMA },
+      key: EDGE_KEY_SCHEMA,
     },
   },
   example: {

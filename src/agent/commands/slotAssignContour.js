@@ -2,7 +2,7 @@ export const slotAssignContourCommand = Object.freeze({
   name: 'slot_assign_contour',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     required: ['contour_id'],
     properties: {
       contour_id: { type: 'string', description: '@contour id or binding name' },

@@ -107,6 +107,22 @@ export default [
     rules: { 'react-refresh/only-export-components': 'off' },
   },
 
+  // Agent harness (R2): rails, chips, toolbar, and cards need data-ui-action on
+  // the same element as onClick (commerce modals stay exempt via exempt.js).
+  {
+    files: [
+      'src/components/Toolbar.jsx',
+      'src/components/HelperInsertPalette.jsx',
+      'src/components/ContourModeRail.jsx',
+    ],
+    rules: {
+      'no-restricted-syntax': ['error', {
+        selector: 'JSXOpeningElement[name.name="button"]:has(JSXAttribute[name.name="onClick"]):not(:has(JSXAttribute[name.name="data-ui-action"]))',
+        message: 'Toolbar and rail buttons need data-ui-action for the agent harness.',
+      }],
+    },
+  },
+
   // ── Web app: plain JS (utils, kernel helpers, worker bridge) ──
   {
     files: ['src/**/*.js'],

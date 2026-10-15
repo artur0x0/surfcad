@@ -4,7 +4,7 @@ export const cameraSetCommand = Object.freeze({
   name: 'camera_set',
   schema: {
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       view: { type: 'string', enum: ['iso', 'front', 'right', 'top', 'back', 'left', 'bottom'] },
       position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },

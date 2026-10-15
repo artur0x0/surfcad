@@ -3,7 +3,7 @@ export const setScriptCommand = Object.freeze({
   name: 'set_script',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     required: ['source'],
     properties: {
       source: {

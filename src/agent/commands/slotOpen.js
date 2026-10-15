@@ -4,7 +4,7 @@ export const slotOpenCommand = Object.freeze({
   name: 'slot_open',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     required: ['kind'],
     properties: {
       kind: {

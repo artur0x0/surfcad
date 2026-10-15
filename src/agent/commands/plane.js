@@ -13,13 +13,13 @@ export const planeSetCommand = Object.freeze({
   uiEntry: 'data-contour-mode-chip',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       preset: { type: 'string', enum: ['x', 'y', 'z'] },
       offset: { type: 'number' },
       angles: {
         type: 'object',
-        additionalProperties: true,
+        additionalProperties: false,
         properties: {
           x: { type: 'number' },
           y: { type: 'number' },
@@ -45,7 +45,7 @@ export const workplaneSelectCommand = Object.freeze({
   uiEntry: 'data-contour-mode-chip',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       plane_id: { type: 'string', description: 'Construction plane id from the plane card list' },
     },
@@ -65,7 +65,7 @@ export const setActiveWorkplaneCommand = Object.freeze({
   uiEntry: 'data-overlay-toggle-plane',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       plane_id: { type: 'string', description: 'Construction plane id, or null to clear' },
       clear: { type: 'boolean' },

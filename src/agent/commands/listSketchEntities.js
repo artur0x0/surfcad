@@ -2,7 +2,7 @@ export const listSketchEntitiesCommand = Object.freeze({
   name: 'list_sketch_entities',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {},
   }),
   example: {},

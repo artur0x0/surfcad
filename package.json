@@ -10,6 +10,7 @@
         "fea:mesh": "node scripts/fea/build-mesh-wasm.mjs",
         "export:agent": "node scripts/export-agent-catalog.mjs",
         "golden:agent-catalog": "node scripts/golden/smoke_agent_catalog.mjs",
+        "golden:agent-commands": "node scripts/golden/smoke_agent_commands_json.mjs",
         "golden:agent-headless": "node scripts/golden/smoke_agent_headless.mjs",
         "golden:agent-bridge": "node scripts/golden/smoke_agent_bridge_flag.mjs",
         "golden:agent-bridge-readers": "node scripts/golden/smoke_agent_bridge_readers.mjs",

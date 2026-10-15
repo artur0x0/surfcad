@@ -16,7 +16,7 @@ export const holeOpenCommand = Object.freeze({
   uiEntry: 'hole',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {},
   }),
   example: {},
@@ -30,13 +30,13 @@ export const holeSetParamsCommand = Object.freeze({
   uiEntry: 'data-hole-card',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
-      params: { type: 'object', additionalProperties: true },
+      params: { type: 'object', additionalProperties: false },
       type: { type: 'string' },
       size: { type: 'string' },
       fit: { type: 'string' },
-      dia: {},
+      dia: { type: 'number' },
       through: { type: 'boolean' },
       depth: { type: 'number' },
       side: { type: 'number' },
@@ -59,7 +59,7 @@ export const holeBeginCentresCommand = Object.freeze({
   uiEntry: 'data-hole-card',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {},
   }),
   example: {},
@@ -73,7 +73,7 @@ export const holeCommitCommand = Object.freeze({
   uiEntry: 'data-contour-confirm',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {},
   }),
   example: {},
@@ -91,7 +91,7 @@ export const holeCancelCommand = Object.freeze({
   uiEntry: 'data-hole-card',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {},
   }),
   example: {},

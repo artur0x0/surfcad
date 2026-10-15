@@ -1,4 +1,4 @@
-import { NO_ARGS_SCHEMA } from '../registry.js';
+import { NO_ARGS_SCHEMA, FACE_KEY_SCHEMA, JOINT_TYPES } from '../schemas/common.js';
 import { jointParamsFromArgs } from '../jointAgent.js';
 import { runJointCommit } from './runJointCommit.js';
 
@@ -12,19 +12,14 @@ function hostCall(ctx, name, args) {
   return { result: out?.result ?? out };
 }
 
-const FACE_KEY_SCHEMA = {
-  type: 'object',
-  additionalProperties: true,
-  required: ['at', 'n', 'area'],
-  properties: {
-    at: { type: 'array', items: { type: 'number' } },
-    n: { type: 'array', items: { type: 'number' } },
-    area: { type: 'number' },
-  },
-};
+/** `planar` is accepted in args and normalized to `coincident` in `jointParamsFromArgs`. */
+const JOINT_TYPE_SCHEMA = Object.freeze({
+  type: 'string',
+  enum: [...JOINT_TYPES, 'planar'],
+});
 
 const JOINT_PARAM_PROPERTIES = Object.freeze({
-  type: { type: 'string' },
+  type: JOINT_TYPE_SCHEMA,
   name: { type: 'string' },
   value_mm: { type: 'number' },
   value: { type: 'number' },
@@ -32,14 +27,20 @@ const JOINT_PARAM_PROPERTIES = Object.freeze({
   opposed: { type: 'boolean' },
 });
 
+const JOINT_PICK_KINDS = Object.freeze(['face', 'axis', 'edge']);
+
 const JOINT_PICK_ROW_SCHEMA = Object.freeze({
   type: 'object',
-  additionalProperties: true,
+  additionalProperties: false,
   required: ['part_id', 'key'],
   properties: {
     part_id: { type: 'string' },
     key: FACE_KEY_SCHEMA,
-    kind: { type: 'string', description: 'face | axis | edge when key is explicit' },
+    kind: {
+      type: 'string',
+      enum: JOINT_PICK_KINDS.slice(),
+      description: 'Pick kind when key is explicit (concentric uses axis picks)',
+    },
   },
 });
 
@@ -59,7 +60,7 @@ export const jointSetParamsCommand = Object.freeze({
   uiEntry: 'data-joint-card',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: JOINT_PARAM_PROPERTIES,
   }),
   example: { type: 'coincident' },
@@ -79,11 +80,11 @@ export const jointPickCommand = Object.freeze({
   uiEntry: 'data-joint-card',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       part_id: { type: 'string' },
       key: FACE_KEY_SCHEMA,
-      kind: { type: 'string' },
+      kind: { type: 'string', enum: JOINT_PICK_KINDS.slice() },
       picks: {
         type: 'array',
         items: JOINT_PICK_ROW_SCHEMA,
@@ -99,7 +100,7 @@ export const jointPickCommand = Object.freeze({
   checkArgs(args) {
     const rows = Array.isArray(args?.picks)
       ? args.picks
-      : (args?.part_id && args?.key ? [{ part_id: args.part_id, key: args.key }] : []);
+      : (args?.part_id && args?.key ? [{ part_id: args.part_id, key: args.key, kind: args.kind }] : []);
     if (!rows.length) {
       return { code: 'bad_args', message: 'joint_pick needs part_id+key or picks[]' };
     }
@@ -113,7 +114,7 @@ export const jointPickCommand = Object.freeze({
   run(ctx, args) {
     const rows = Array.isArray(args?.picks)
       ? args.picks
-      : [{ part_id: args.part_id, key: args.key }];
+      : [{ part_id: args.part_id, key: args.key, kind: args.kind }];
     return hostCall(ctx, 'jointApplyPicks', { picks: rows });
   },
 });
@@ -144,10 +145,10 @@ export const jointSelectCommand = Object.freeze({
   uiEntry: 'data-joint-chip',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     required: ['joint_id'],
     properties: {
-      joint_id: { type: 'string' },
+      joint_id: { type: 'string', description: 'Joint id from the assembly strip' },
     },
   }),
   example: { joint_id: 'j1' },
@@ -167,9 +168,9 @@ export const jointEditCommand = Object.freeze({
   uiEntry: 'data-joint-chip',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
-      joint_id: { type: 'string' },
+      joint_id: { type: 'string', description: 'Joint id to edit; omit to edit the open card target' },
       ...JOINT_PARAM_PROPERTIES,
     },
   }),
