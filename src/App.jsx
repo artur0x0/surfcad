@@ -140,6 +140,7 @@ import { buildToasts } from './agent/state/toasts';
 import { agentBridgeEnabled, createSurfcadBridge } from './utils/agentBridge';
 import { buildEffectiveJointCard } from './agent/jointCardAgent.js';
 import AgentVisibleLayer from './components/AgentVisibleLayer';
+import AgentBridgePairing from './components/AgentBridgePairing';
 import { runAssemblyParts } from './utils/assemblyRun';
 import { catalogsFromRuns } from './utils/jointResolve';
 import { partPlacement } from './utils/jointSchema';
@@ -8980,6 +8981,10 @@ const App = () => {
     />
   ) : null;
 
+  const agentBridgeLive = agentBridgeEnabled({ dev: import.meta.env.DEV === true })
+    && manifoldReady
+    && editorInitialScript !== null;
+
   if (isMobile) {
     // Keep h-dvh while the keyboard is closed so Monaco can take a real
     // user-gesture focus (iOS often refuses keyboard inside a fixed+overflow
@@ -9142,6 +9147,7 @@ const App = () => {
     return (
       <CartChromeProvider value={cartChrome}>
         <AgentVisibleLayer agentHostRef={agentHostRef} />
+        <AgentBridgePairing enabled={agentBridgeLive} />
         <div
           ref={splitShellRef}
           className={`relative flex flex-col bg-chrome-surface overflow-hidden ${keyboardOpen ? '' : 'h-dvh'}`}
@@ -9441,6 +9447,7 @@ const App = () => {
   return (
     <CartChromeProvider value={cartChrome}>
       <AgentVisibleLayer agentHostRef={agentHostRef} />
+      <AgentBridgePairing enabled={agentBridgeLive} />
       <div className="flex h-dvh bg-chrome-surface">
         {appMode !== 'game' && (
           <div data-parts-feed-placement="desktop-left" className="h-full shrink-0">

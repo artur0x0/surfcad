@@ -318,3 +318,31 @@ These are thin wrappers over `call()`. They pass a plain object as `argsJson`, u
 | `listCommands()` | `list_commands` | The `commands` array from that result |
 
 `scripts/demo/agent-bridge-demo.mjs` is a Playwright agent that uses only `call()` with JSON strings: a box, then a hole, then status and a screenshot, then undo once, then a script that throws.
+
+### Local WebSocket pairing (M1)
+
+Loopback-only relay for a local MCP / stdio process to drive the same bridge as `window.surfcad.call` without injecting into the page.
+
+| Piece | Role |
+| --- | --- |
+| `scripts/vite-agent-bridge-ws.mjs` | Vite plugin: starts the relay on `127.0.0.1` (port `SURFCAD_AGENT_BRIDGE_WS_PORT`, default **17341**) during `vite` dev and `vite preview`. |
+| `src/components/AgentBridgePairing.jsx` | In-app UI: user must **Show pairing code**, then **Allow connection** when a client connects. Paired state and **Disconnect** are visible. |
+| `src/agent/ws/relayHub.js` | Pairing state machine and message routing. |
+| `src/agent/ws/tabConnection.js` | Tab side: forwards `{ id, command, args }` to `window.surfcad.call`. |
+| `scripts/agent-bridge-ws-client.mjs` | Tiny Node client: `npm run agent-bridge:client -- --token CODE --command list_faces`. |
+
+**Pairing (control messages use `type`):**
+
+1. Tab (after the user shows a code): `{ "type": "register_tab", "token": "ABCDEF" }`
+2. Local client: `{ "type": "pair", "token": "ABCDEF" }`
+3. Tab user approves: `{ "type": "pair_approve" }` → both sides receive `{ "type": "paired", "token": "…" }`
+
+**Bridge traffic (after paired):**
+
+```json
+{ "id": "1", "command": "list_faces", "args": {} }
+{ "id": "1", "ok": true, "result": { … } }
+{ "id": "2", "ok": false, "error": { "code": "real_repo_blocked", "message": "…" } }
+```
+
+Refusals use the same `error` objects as the in-page envelope. Non-loopback TCP peers and non-local `Origin` values are dropped.
