@@ -3,7 +3,7 @@ export const screenshotCommand = Object.freeze({
   name: 'screenshot',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       format: {
         type: 'string',

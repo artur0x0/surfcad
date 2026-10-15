@@ -2,7 +2,7 @@ export const sketchAcceptPlaneCommand = Object.freeze({
   name: 'sketch_accept_plane',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       offset: { type: 'number', description: 'Optional plane offset before accepting' },
     },

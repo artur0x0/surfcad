@@ -17,12 +17,10 @@ const NAME_RE = /^[a-z][a-z0-9_]*$/;
 const DATA_ATTR_RE = /^data-[a-z0-9-]+$/;
 const HELPER_ID_RE = /^[A-Za-z][A-Za-z0-9]*$/;
 
-/** Args object for a command that reads nothing. Unknown fields stay legal. */
-export const NO_ARGS_SCHEMA = Object.freeze({
-  type: 'object',
-  additionalProperties: true,
-  properties: {},
-});
+import { NO_ARGS_SCHEMA as STRICT_NO_ARGS } from './schemas/common.js';
+
+/** Args object for a command that reads nothing. */
+export const NO_ARGS_SCHEMA = STRICT_NO_ARGS;
 
 /** True for data that `JSON.stringify` keeps without dropping or reshaping it. */
 function isJsonValue(value) {

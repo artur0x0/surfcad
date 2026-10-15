@@ -519,6 +519,8 @@ import { createViewportPickHost } from '../agent/pick/viewportPicks.js';
 import { createSketchPickHandlers } from '../agent/pick/sketchViewportPicks.js';
 import { planePatchFromArgs } from '../agent/sketchPlaneAgent.js';
 import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from '../agent/state/listPickables.js';
+import { describeJointPick } from '../agent/jointPickDescribe.js';
+import { catalogFingerprintsForAgent } from '../agent/faceCatalog.js';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -951,7 +953,7 @@ function ViewportTitleChip({
     : 'Select all bodies in this part';
   const shown = value || (noun === 'Assembly' ? '' : 'Untitled');
   const frame = inline
-    ? `relative z-10 min-w-0 max-w-[min(14rem,42vw)] ${onRename ? 'pointer-events-auto' : 'pointer-events-none'}`
+    ? `relative z-10 min-w-0 max-w-[min(9rem,calc(100vw-14rem))] sm:max-w-[min(12rem,calc(100vw-13rem))] lg:max-w-[min(18rem,calc(100vw-13rem))] ${onRename || onActivate ? 'pointer-events-auto' : 'pointer-events-none'}`
     : `absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[min(20rem,calc(100%-2rem))] ${
       onRename ? '' : 'pointer-events-none'
     }`;
@@ -1048,7 +1050,7 @@ const Viewport = forwardRef(({
   gamePuzzleTitle = null,
   gameBestTimeMs = null,
   isMobile = false,
-  /** Phone CAD view, and desktop when the parts ribbon is absent. */
+  /** CAD viewport only (not Parts or Script stages on a phone). */
   brandHeader = false,
   onInsertHelper = null,
   /** A palette tap is opening a sheet or mode (App: edit the picked part). */
@@ -1306,6 +1308,9 @@ const Viewport = forwardRef(({
   const agentFitCameraRef = useRef(() => false);
   const agentZoomToSelectionRef = useRef(() => ({ error: { code: 'no_selection', message: 'No selection' } }));
   const agentListFacesRef = useRef(() => ({ faces: [], partId: null }));
+  const agentDescribeJointPickRef = useRef(() => ({
+    error: { code: 'no_mesh', message: 'No mesh for that part' },
+  }));
   const agentListEdgesRef = useRef(() => ({ edges: [], partId: null }));
   const agentListFeatureEdgesRef = useRef(() => ({ edges: [], partId: null }));
   const agentSketchBeginRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
@@ -2306,6 +2311,7 @@ const Viewport = forwardRef(({
         rendererRef.current.render(sceneRef.current, cam);
       }
     },
+    describeJointPick: (args) => agentDescribeJointPickRef.current(args),
     /**
      * PNG data URL of the viewport. One render, then read the canvas on this
      * thread, so a browser agent can see the part without the worker.
@@ -11528,15 +11534,34 @@ const Viewport = forwardRef(({
     return mesh?.geometry ?? null;
   };
 
+  const faceIDsForAgentPart = (partId, geom) => {
+    const active = activePartIdRef.current;
+    if (partId == null || partId === '' || String(partId) === String(active)) {
+      return faceIDsRef.current;
+    }
+    const attr = geom?.getAttribute?.('faceID');
+    return attr?.array?.length ? attr.array : null;
+  };
+
   agentListFacesRef.current = ({ partId } = {}) => {
     const geom = meshGeometryForAgentPart(partId);
     if (!geom) return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
-    const fingerprints = fingerprintsFromGeometry(geom, faceIDsRef.current);
+    const fingerprints = catalogFingerprintsForAgent(geom, faceIDsForAgentPart(partId, geom));
     const listed = buildFaceList(fingerprints);
     return {
       partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
       ...listed,
     };
+  };
+
+  agentDescribeJointPickRef.current = ({ partId, key, kind } = {}) => {
+    const geom = meshGeometryForAgentPart(partId);
+    return describeJointPick({
+      key,
+      kind,
+      geometry: geom,
+      faceIDs: faceIDsForAgentPart(partId, geom),
+    });
   };
 
   agentListEdgesRef.current = ({ partId } = {}) => {
@@ -13613,9 +13638,6 @@ const Viewport = forwardRef(({
     { partSelected: cadPartSelected !== false },
   );
 
-  const titlePlace = brandHeader
-    ? 'left-12 right-2 top-4 flex justify-center'
-    : 'left-1/2 -translate-x-1/2 w-max max-w-[min(36rem,calc(100%-2rem))]';
   // Contour mode keeps the part-in-assembly row in layout so the status
   // legend can sit on that same box. The chips themselves are hidden.
   const hideCadTitle = mode !== 'game' && !!contourMode;
@@ -13656,14 +13678,8 @@ const Viewport = forwardRef(({
         <ProfileChip variant="viewport" onAccount={onAccount} onSignedOut={onSignedOut} onClearLocalCadData={onClearLocalCadData} vaultName={profileVaultName} />
       )}
 
-      {/* Five taps in this corner enter the puzzle. The IO tray is gone, so the corner itself is the target.
-          The wordmark starts at left-12 so it does not sit on that 44px square. */}
+      {/* Five taps in this corner enter the puzzle. The IO tray is gone, so the corner itself is the target. */}
       <PuzzleUnlock enabled={mode !== 'game'} onUnlock={onStartGame} />
-      {mode !== 'game' && brandHeader && (
-        <div className="pointer-events-none absolute left-12 top-1 z-10" data-brand-header-host="">
-          <BrandHeaderMark />
-        </div>
-      )}
 
       {/* CAD chrome lives in the editor mid-strip in BOTH shells (desktop matches
           phone now): rendered here so Run can execute the live buffer without
@@ -13697,63 +13713,71 @@ const Viewport = forwardRef(({
       {mode === 'game' && (
         <ViewportTitleChip>{gamePuzzleTitle || 'Puzzle'}</ViewportTitleChip>
       )}
-      {mode !== 'game' && (
-        showCadTitle ? (
+      {mode !== 'game' && (brandHeader || showCadTitle) && (
         <div
-          className={`pointer-events-none absolute top-4 z-20 ${titlePlace}`}
-          data-viewer-title=""
-          data-viewer-title-text={titleParts.text}
-          data-viewer-title-hidden={hideCadTitle ? '' : undefined}
+          className="pointer-events-none absolute top-4 z-20 flex min-h-9 items-center left-2 right-2 lg:left-4 lg:right-4 pr-11"
+          data-viewer-header-row=""
         >
-          <div className="relative z-30" data-viewer-title-pills="">
-            <div
-              data-viewer-title-chips=""
-              className={`pointer-events-auto flex flex-nowrap items-center justify-center gap-3 ${hideCadTitle ? 'invisible' : ''}`}
-              {...(hideCadTitle ? { inert: '' } : {})}
-            >
-              {titleParts.part ? (
-                <ViewportTitleChip
-                  inline
-                  value={currentFilename}
-                  onActivate={onTitlePartActivate}
-                  onRename={onRenameFile}
-                  renameOnDoubleClick
-                >
-                  {titleParts.part}
-                </ViewportTitleChip>
-              ) : null}
-              {titleParts.connector ? (
-                <span
-                  className="shrink-0 text-xs font-medium text-gray-300"
-                  data-title-in=""
-                >
-                  {titleParts.connector}
-                </span>
-              ) : null}
-              {titleParts.assembly ? (
-                <ViewportTitleChip
-                  inline
-                  noun="Assembly"
-                  value={titleParts.assembly}
-                  onActivate={onTitleAssemblyActivate}
-                >
-                  {titleParts.assembly}
-                </ViewportTitleChip>
-              ) : null}
+          {brandHeader ? (
+            <div className="relative z-10 inline-flex shrink-0 items-center self-center" data-brand-header-host="">
+              <BrandHeaderMark />
             </div>
-            {contourLegend ? (
-              <ContourStatusLegend className="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2" />
-            ) : null}
-          </div>
-        </div>
-        ) : (
-          <>
+          ) : null}
+          {showCadTitle ? (
+            <div
+              className="absolute inset-0 flex items-center justify-center px-[min(11rem,26vw)] lg:px-[min(11rem,38vw)]"
+              data-viewer-title=""
+              data-viewer-title-text={titleParts.text}
+              data-viewer-title-hidden={hideCadTitle ? '' : undefined}
+            >
+              <div className="relative z-30 max-w-full min-w-0" data-viewer-title-pills="">
+                <div
+                  data-viewer-title-chips=""
+                  className={`pointer-events-auto flex max-w-full min-w-0 flex-nowrap items-center justify-center gap-3 ${hideCadTitle ? 'invisible' : ''}`}
+                  {...(hideCadTitle ? { inert: '' } : {})}
+                >
+                  {titleParts.part ? (
+                    <ViewportTitleChip
+                      inline
+                      value={currentFilename}
+                      onActivate={onTitlePartActivate}
+                      onRename={onRenameFile}
+                      renameOnDoubleClick
+                    >
+                      {titleParts.part}
+                    </ViewportTitleChip>
+                  ) : null}
+                  {titleParts.connector ? (
+                    <span
+                      className="shrink-0 text-xs font-medium text-gray-300"
+                      data-title-in=""
+                    >
+                      {titleParts.connector}
+                    </span>
+                  ) : null}
+                  {titleParts.assembly ? (
+                    <ViewportTitleChip
+                      inline
+                      noun="Assembly"
+                      value={titleParts.assembly}
+                      onActivate={onTitleAssemblyActivate}
+                    >
+                      {titleParts.assembly}
+                    </ViewportTitleChip>
+                  ) : null}
+                </div>
+                {contourLegend ? (
+                  <ContourStatusLegend className="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2" />
+                ) : null}
+              </div>
+            </div>
+          ) : (
             <div data-viewer-title-empty="" hidden />
-            {contourLegend ? (
-              <ContourStatusLegend className="absolute left-1/2 top-4 z-20 -translate-x-1/2" />
-            ) : null}
-          </>
-        )
+          )}
+        </div>
+      )}
+      {mode !== 'game' && !showCadTitle && !brandHeader && contourLegend && (
+        <ContourStatusLegend className="absolute left-1/2 top-4 z-20 -translate-x-1/2" />
       )}
 
       {mode === 'game' && gameSuccess && (

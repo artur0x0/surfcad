@@ -2,7 +2,7 @@ export const setActivePartCommand = Object.freeze({
   name: 'set_active_part',
   schema: {
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     required: ['part_id'],
     properties: {
       part_id: { type: 'string' },

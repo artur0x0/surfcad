@@ -9,6 +9,7 @@ import { HELPER_PALETTE_ITEMS } from '../utils/helperPaletteSnippets.js';
 import { COVERAGE_ALLOWLIST } from './coverageAllowlist.js';
 import { AGENT_EXEMPT } from './exempt.js';
 import { v1Registry } from './commands/index.js';
+import { validateArgsSchema } from './export/schemaPolicy.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const COMPONENTS = join(ROOT, 'src/components');
@@ -155,6 +156,10 @@ export function validateAgentCoverage({
     }
     if (command.example == null || typeof command.example !== 'object' || Array.isArray(command.example)) {
       errors.push(`registry command ${name} missing example object`);
+    }
+    const policy = validateArgsSchema(name, command.schema);
+    if (!policy.ok) {
+      errors.push(`registry command ${name} args schema: ${policy.reasons.join('; ')}`);
     }
   }
 

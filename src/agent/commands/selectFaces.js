@@ -1,6 +1,6 @@
 const FACE_KEY_SCHEMA = {
   type: 'object',
-  additionalProperties: true,
+  additionalProperties: false,
   required: ['at', 'n', 'area'],
   properties: {
     at: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
@@ -15,7 +15,7 @@ export const selectFacesCommand = Object.freeze({
   name: 'select_faces',
   schema: {
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       keys: { type: 'array', items: FACE_KEY_SCHEMA },
       key: FACE_KEY_SCHEMA,

@@ -50,8 +50,12 @@ export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
         row && typeof row === 'object' && 'value' in row ? row.value : row
       ));
       properties[param.name] = { type: 'string', enum: allowed };
+    } else if (param.type === 'string') {
+      properties[param.name] = { type: 'string' };
+    } else if (param.type === 'body' || param.type === 'solid') {
+      properties[param.name] = { type: 'string', description: 'Part script binding name' };
     } else {
-      properties[param.name] = {};
+      properties[param.name] = { type: 'string' };
     }
   }
   return properties;
