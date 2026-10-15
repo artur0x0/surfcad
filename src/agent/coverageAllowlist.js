@@ -9,7 +9,6 @@
 
 export const COVERAGE_ALLOWLIST = Object.freeze([
   Object.freeze({ id: 'data-sheet-metal-button', reason: 'H14 sheet-metal flow entry.' }),
-  Object.freeze({ id: 'data-joints-button', reason: 'H11 joints list entry.' }),
   Object.freeze({ id: 'cursor', reason: 'H6 contour tool cursor.' }),
   Object.freeze({ id: 'circle', reason: 'H6 contour tool circle.' }),
   Object.freeze({ id: 'polygon', reason: 'H6 contour tool polygon.' }),
@@ -32,7 +31,6 @@ export const COVERAGE_ALLOWLIST = Object.freeze([
   Object.freeze({ id: 'data-paint-mode-chip', reason: 'H13 paint mode card.' }),
   Object.freeze({ id: 'data-measure-mode-chip', reason: 'H13 measure mode card.' }),
   Object.freeze({ id: 'data-sheet-metal-mode-chip', reason: 'H14 sheet-metal stage chip.' }),
-  Object.freeze({ id: 'data-joint-card', reason: 'H11 joint create/edit card.' }),
   Object.freeze({ id: 'data-contour-entity-card', reason: 'H6 contour entity delete card.' }),
   Object.freeze({ id: 'data-contour-gesture-card', reason: 'H7 dimension/constraint card.' }),
   Object.freeze({ id: 'data-normal-to-sketch', reason: 'H3 normal_to_sketch.' }),

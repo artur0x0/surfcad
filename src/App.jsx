@@ -2016,6 +2016,44 @@ const App = () => {
     return clean;
   };
 
+  const recordAgentAssemblyStep = (beforeDoc) => {
+    const after = assemblyRef.current;
+    if (!beforeDoc || !after) return;
+    const base = assemblyHistoryRef.current?.commits?.length
+      ? assemblyHistoryRef.current
+      : seedAssemblyHistory(beforeDoc);
+    assemblyHistoryRef.current = {
+      key: assemblyHistoryKey(after),
+      ...pushAssemblyHistory(base, beforeDoc, after),
+    };
+    setAssemblyHistTick((tick) => tick + 1);
+  };
+
+  const ensureLocalSurfIds = async () => {
+    const doc = assemblyRef.current;
+    if (!doc || doc.source === 'git') return;
+    let scripts = { ...partScriptsRef.current };
+    let parts = [...(doc.parts || [])];
+    let changed = false;
+    for (const row of parts) {
+      if (row.surfId) continue;
+      const surfId = mintSurfId();
+      const text = withSurfId(scripts[row.id] || '', surfId);
+      scripts[row.id] = text;
+      await savePartScript(row.id, text);
+      parts = parts.map((part) => (part.id === row.id ? { ...part, surfId } : part));
+      changed = true;
+    }
+    if (!changed) return;
+    rememberScripts(scripts);
+    rememberAssembly({ ...doc, parts });
+    const active = doc.activeId;
+    if (active && scripts[active]) {
+      codeEditorRef.current?.setTextOnly?.(scripts[active]);
+      setCurrentScript(scripts[active]);
+    }
+  };
+
   const historyKey = () => {
     if (appModeRef.current === 'game') return '__game__';
     const id = assemblyRef.current?.activeId;
@@ -8071,6 +8109,169 @@ const App = () => {
       }
       viewportRef.current?.showCadBodyHighlight?.();
       return { partIds: resolved };
+    },
+    async agentCreateAssembly() {
+      const before = assemblyRef.current;
+      await handleNewAssembly();
+      await ensureLocalSurfIds();
+      const after = assemblyRef.current;
+      if (before && after) recordAgentAssemblyStep(before);
+      return {
+        result: {
+          assemblyName: after?.name ?? '',
+          activeId: after?.activeId ?? null,
+          partCount: after?.parts?.length ?? 0,
+        },
+      };
+    },
+    async agentCreatePart({ name, script } = {}) {
+      const before = assemblyRef.current;
+      if (!before) {
+        return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+      }
+      await handleAddPart(name, { script });
+      await ensureLocalSurfIds();
+      const after = assemblyRef.current;
+      recordAgentAssemblyStep(before);
+      return {
+        result: {
+          partId: after?.activeId ?? null,
+          partCount: after?.parts?.length ?? 0,
+        },
+      };
+    },
+    async agentOpenAssembly({ name }) {
+      const before = assemblyRef.current;
+      if (!before || before.source !== 'git') {
+        return { error: { code: 'git_only', message: 'open_assembly needs a git-backed assembly' } };
+      }
+      await handleOpenVaultAssembly(name);
+      const after = assemblyRef.current;
+      if (after && after !== before) recordAgentAssemblyStep(before);
+      return { result: { name, activeId: after?.activeId ?? null } };
+    },
+    async agentOpenPart({ path }) {
+      const before = assemblyRef.current;
+      if (!before || before.source !== 'git') {
+        return { error: { code: 'git_only', message: 'open_part needs a git-backed assembly' } };
+      }
+      const opened = await handleOpenVaultPart(path);
+      if (opened?.status === 'error') {
+        return { error: { code: 'open_failed', message: opened.error || 'Could not open part' } };
+      }
+      recordAgentAssemblyStep(before);
+      return { result: { path: opened.path, mode: opened.mode } };
+    },
+    async agentInsertAssemblyParts({ sourceName }) {
+      const before = assemblyRef.current;
+      if (!before || before.source !== 'git') {
+        return { error: { code: 'git_only', message: 'insert_part with source_assembly needs git mode' } };
+      }
+      const inserted = await handleInsertVaultAssemblyParts(sourceName);
+      if (inserted?.status === 'error') {
+        return { error: { code: 'insert_failed', message: inserted.error || 'Could not insert parts' } };
+      }
+      if (inserted?.status === 'inserted') recordAgentAssemblyStep(before);
+      return { result: inserted };
+    },
+    jointOpen() {
+      if (appModeRef.current === 'game' || featureSessionRef.current) {
+        return { error: { code: 'bad_view', message: 'Joints are not available right now' } };
+      }
+      rememberCadPart(null);
+      handleOpenJoints();
+      return { result: { open: true } };
+    },
+    jointSetParams({ patch } = {}) {
+      const card = jointCardRef.current;
+      if (!card) {
+        return { error: { code: 'no_joint_card', message: 'Call joint_open before joint_set_params' } };
+      }
+      const bag = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
+      handleJointCardChange({ ...card, ...bag });
+      return { result: { ok: true, type: jointCardRef.current?.type ?? null } };
+    },
+    jointApplyPicks({ picks } = {}) {
+      const doc = assemblyRef.current;
+      if (!doc) return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+      if (!jointCardRef.current) {
+        return { error: { code: 'no_joint_card', message: 'Call joint_open before joint_pick' } };
+      }
+      const rows = Array.isArray(picks) ? picks : [];
+      const picked = [];
+      for (const row of rows) {
+        const part = doc.parts.find((p) => p.id === row?.part_id);
+        if (!part) {
+          return { error: { code: 'unknown_part', message: `Unknown part id: ${row?.part_id}` } };
+        }
+        if (!part.surfId) {
+          return { error: { code: 'no_surf_id', message: `Part has no surf id: ${part.id}` } };
+        }
+        handleJointPick({
+          partId: part.id,
+          kind: 'face',
+          planar: true,
+          axis: false,
+          key: row.key,
+        });
+        picked.push(part.id);
+      }
+      return { result: { picked, count: (jointPicksRef.current || []).length } };
+    },
+    prepareJointCommit() {
+      const doc = assemblyRef.current;
+      const card = jointCardRef.current;
+      if (!doc || !card) {
+        return { error: { code: 'no_joint_card', message: 'Joint card is not open' } };
+      }
+      const scripts = partScriptsRef.current;
+      const locked = !!assemblyOpenLockRef.current;
+      const result = applyJointCard({
+        doc,
+        scripts,
+        card,
+        action: 'confirm',
+        locked,
+        preempt: null,
+        catalogs: jointCatalogsRef.current,
+      });
+      if (locked) {
+        return { error: { code: 'edit_failed', message: result.message || 'Assembly is opening' } };
+      }
+      if (!result.ok) {
+        return { ok: false, message: result.message || 'Joint commit refused' };
+      }
+      finishJointWrite(result, scripts, { resetPicks: card.mode !== 'edit' });
+      rememberCadPart(null);
+      const written = assemblyRef.current;
+      const joints = written?.joints || [];
+      const jointId = joints[joints.length - 1]?.id ?? null;
+      return { ok: true, jointId, jointCount: joints.length };
+    },
+    finishJointCommit() {
+      if (jointCardRef.current) {
+        jointPicksRef.current = [];
+        viewportRef.current?.clearJointHighlights?.();
+        setJointCard(null);
+      }
+    },
+    jointCancel() {
+      handleJointCancel();
+      return { result: { cancelled: true } };
+    },
+    async agentUndo() {
+      if (cadStripsShowJoints(cadPartIdRef.current) && assemblyHistoryCanUndo(assemblyHistoryRef.current)) {
+        handleJointUndo();
+        return {
+          handled: true,
+          result: {
+            ok: true,
+            kind: 'assembly',
+            joints: assemblyRef.current?.joints?.length ?? 0,
+          },
+        };
+      }
+      return { handled: false };
     },
     openFeature(args = {}) {
       if (!focusWritePart(null)) {

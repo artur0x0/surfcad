@@ -204,6 +204,16 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `workplane_select` | `{ plane_id }` | Selects a saved construction plane on the plane card. |
 | `set_active_workplane` | `{ plane_id }` or `{ clear: true }` | Sets or clears the construction-plane overlay highlight. |
 | `list_sketch_entities` | `{}` | `{ points, lines, arcs, refs }` in the open sketch (immediate). |
+| `create_assembly` | `{}` | Seeds a blank assembly (Parts **+** → Assembly). One assembly-history undo step when replacing an open document. |
+| `create_part` | `{ name?, script? }` | Adds a part row (Parts **+** → Part). Local parts receive a `surf-id` when missing. |
+| `open_assembly` | `{ name }` | Opens a vault assembly (git mode). |
+| `open_part` | `{ path }` | Opens or links a vault part into the assembly (git mode). |
+| `insert_part` | `{ source_assembly }` or `{ name?, script? }` | Inserts another assembly’s parts (git) or adds a new part row (local, same as `create_part`). |
+| `joint_open` | `{}` | Opens the Joints create card (`data-joints-button`). Clears CAD part highlight for the joint strip. |
+| `joint_set_params` | `{ type?, name?, value_mm?, sense?, opposed? }` | Patches the open joint card (mate type and fields). |
+| `joint_pick` | `{ part_id, key }` or `{ picks: [{ part_id, key }] }` | Face keys from `list_faces` on each part — same path as tapping in joint mode. |
+| `joint_commit` | `{}` | Confirms the joint card (`applyJointCard`). One assembly-history undo step. |
+| `joint_cancel` | `{}` | Dismisses the joint card without writing. |
 
 ### Pick sessions
 
