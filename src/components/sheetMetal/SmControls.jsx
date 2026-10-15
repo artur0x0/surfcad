@@ -2,7 +2,12 @@ import React from 'react';
 import FeatureSheet from '../FeatureSheet';
 import { useDisplayNumber } from '../../hooks/useDisplayNumber';
 import { PARTS_TEXT_INPUT_CLASS, PARTS_TEXT_INPUT_STYLE } from '../../utils/partsChrome';
-import { commitDisplayLength, lengthToDisplay } from '../../utils/displayUnit';
+import {
+  commitDisplayLength,
+  finiteStoredNumber,
+  isPartialNumberEntry,
+  lengthToDisplay,
+} from '../../utils/displayUnit';
 import { lengthFromThumb, lengthSnap, thumbFromLength, THUMB_COUNT } from '../../utils/sliderMap';
 
 /**
@@ -154,10 +159,11 @@ export const SmMmSlider = ({
   const hi = signed ? end : (Number.isFinite(end) ? end : lo);
   const span = Math.abs(hi - lo);
   const snap = lengthToDisplay(lengthSnap(unit, span), unit);
-  const partial = mm === '' || mm === '-' || mm === '.';
+  const partial = isPartialNumberEntry(mm);
+  const storedMm = finiteStoredNumber(mm);
   const shown = partial
     ? mm
-    : (Number.isFinite(Number(mm)) ? lengthToDisplay(Number(mm), unit) : '');
+    : (Number.isFinite(storedMm) ? lengthToDisplay(storedMm, unit) : '');
   return (
     <SmSlider
       shaped
@@ -171,7 +177,7 @@ export const SmMmSlider = ({
       unit={unit}
       onChange={(v) => {
         const next = commitDisplayLength(v, mm, unit);
-        if (v !== '' && v !== '-' && v !== '.' && next === mm) return;
+        if (!isPartialNumberEntry(v) && next === mm) return;
         onMm?.(next);
       }}
     />

@@ -160,7 +160,9 @@ function pack(kind, seed, min, max, step, ctx, param, extra = {}) {
 }
 
 function liveNum(values, name, fallback) {
-  const n = Number(values?.[name]);
+  const raw = values?.[name];
+  if (raw === '' || raw === '-' || raw === '.') return fallback;
+  const n = Number(raw);
   return Number.isFinite(n) ? n : fallback;
 }
 
