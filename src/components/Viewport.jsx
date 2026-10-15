@@ -124,6 +124,7 @@ import { applyPartPose } from '../utils/partPose';
 import {
   applySavedContour,
   listConstructionPlanes,
+  resolveConstructionPlane,
   listSavedContours,
   pickContourByRay,
   savedContourRings,
@@ -213,6 +214,7 @@ import {
   holeCentresSketch,
   holeSketchContour,
   holeSpecFromCard,
+  materializeHoleRectangleCenters,
 } from '../utils/holeCard';
 import { readCentersContour, readContourHole } from '../utils/holeContour';
 import { SKETCH_HIT_PX, anchorOnEntity, pickContourScreen, planeUvToWorld } from '../utils/contourPick';
@@ -2513,12 +2515,12 @@ const Viewport = forwardRef(({
         if (!contourModeRef.current || !contourPlaneOpenRef.current) {
           return { error: { code: 'plane_card_open', message: 'The plane card is not open' } };
         }
-        const hit = constructionPlanesRef.current.find((p) => p.id === plane_id);
+        const hit = resolveConstructionPlane(constructionPlanesRef.current, plane_id);
         if (!hit?.plane) {
           return { error: { code: 'unknown_plane', message: `Unknown workplane id: ${plane_id}` } };
         }
         releaseWorkplaneFaceRef.current();
-        setSelectedPlaneId(plane_id || null);
+        setSelectedPlaneId(hit.id || null);
         setContourMode((prev) => (prev
           ? applyContourPlaneEdit(prev, {
             preset: 'workplane',
@@ -2526,7 +2528,7 @@ const Viewport = forwardRef(({
             angles: { x: 0, y: 0, z: 0 },
           })
           : prev));
-        return { result: { plane_id } };
+        return { result: { plane_id: hit.id } };
       },
       setActiveWorkplane({ plane_id, clear } = {}) {
         if (clear === true) {
@@ -2534,12 +2536,12 @@ const Viewport = forwardRef(({
           return { result: { plane_id: null } };
         }
         if (plane_id != null) {
-          const hit = constructionPlanesRef.current.find((p) => p.id === plane_id);
+          const hit = resolveConstructionPlane(constructionPlanesRef.current, plane_id);
           if (!hit) {
             return { error: { code: 'unknown_plane', message: `Unknown workplane id: ${plane_id}` } };
           }
-          setSelectedPlaneId(plane_id);
-          return { result: { plane_id } };
+          setSelectedPlaneId(hit.id);
+          return { result: { plane_id: hit.id } };
         }
         return { error: { code: 'bad_args', message: 'set_active_workplane needs plane_id or clear' } };
       },
@@ -11419,7 +11421,8 @@ const Viewport = forwardRef(({
       else if (tool === 'deleteFace') enterDeleteFaceMode();
     },
     accept: (tool) => {
-      if (tool === 'filletEdges' || tool === 'chamferEdges') acceptFillet();
+      if (tool === 'holeCentres') confirmContourProfile();
+      else if (tool === 'filletEdges' || tool === 'chamferEdges') acceptFillet();
       else if (tool === 'shell') acceptShell();
       else if (tool === 'addDraft') acceptDraft();
       else if (tool === 'moveFace') acceptMoveFace();
@@ -11601,10 +11604,13 @@ const Viewport = forwardRef(({
     setContourMode((prev) => {
       if (!prev) return prev;
       const switched = switchContourTool(prev, tool);
-      const next = {
+      let next = {
         ...switched,
         params: { ...(switched.params || {}), ...(params || {}) },
       };
+      if (isHoleEntry(next.entry) && next.tool === 'rectangle') {
+        next = materializeHoleRectangleCenters(next);
+      }
       contourModeRef.current = next;
       return next;
     });

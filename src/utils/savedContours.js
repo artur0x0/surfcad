@@ -337,6 +337,18 @@ export function listConstructionPlanes(buffer) {
     }));
 }
 
+/** Match full `name@end` ids or a lone variable name such as `wp1`. */
+export function resolveConstructionPlane(planes, planeId) {
+  const id = String(planeId || '').trim();
+  if (!id || !Array.isArray(planes)) return null;
+  const exact = planes.find((row) => row.id === id);
+  if (exact) return exact;
+  const name = id.includes('@') ? id.split('@')[0] : id;
+  const matches = planes.filter((row) => row.name === name || row.id.startsWith(`${name}@`));
+  if (!matches.length) return null;
+  return matches[matches.length - 1];
+}
+
 function _raySegDist(origin, dir, a, b) {
   const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
   const dd = dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2];

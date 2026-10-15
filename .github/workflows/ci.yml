@@ -224,6 +224,10 @@ jobs:
             echo "agent playtest skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
+          if ! grep -q 'agent playtest: ok' "${RUNNER_TEMP}/agent-playtest.log"; then
+            echo "agent playtest did not pass (see log above)"
+            exit 1
+          fi
           node scripts/golden/smoke_agent_visible.mjs | tee "${RUNNER_TEMP}/agent-visible.log"
           if grep -q 'no system Chrome' "${RUNNER_TEMP}/agent-visible.log"; then
             echo "agent visible golden skipped because Chrome was not found; CI must launch it"

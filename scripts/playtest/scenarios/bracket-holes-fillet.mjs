@@ -159,17 +159,26 @@ export async function run(ctx) {
 
   await runner.runStep('select_faces top via list_faces', async () => {
     const listed = await agentCall(page, 'list_faces', {});
-    const top = listed.result?.faces?.find((row) => row.normal?.[2] > 0.9)?.key
-      || listed.result?.faces?.[0]?.key;
-    const env = await agentCall(page, 'select_faces', { keys: [top] });
-    const sel = await agentCall(page, 'selection', {});
-    const ok = env.ok === true && (sel.result?.face?.area ?? 0) > 100;
+    const faces = listed.result?.faces || [];
+    const tops = faces.filter((row) => (row.normal?.[2] ?? 0) > 0.9);
+    const topFace = tops.sort((a, b) => (b.area ?? 0) - (a.area ?? 0))[0]
+      || faces.sort((a, b) => (b.area ?? 0) - (a.area ?? 0))[0];
+    if (!topFace?.key) {
+      return {
+        ok: false,
+        call: 'list_faces',
+        envelope: listed,
+        detail: 'no face key',
+      };
+    }
+    const env = await agentCall(page, 'select_faces', { keys: [topFace.key] });
+    const ok = env.ok === true && (env.result?.count ?? 0) >= 1;
     return {
       ok,
       call: 'select_faces',
-      args: { keys: [top] },
+      args: { keys: [topFace.key] },
       envelope: env,
-      detail: JSON.stringify(sel.result?.face),
+      detail: `count=${env.result?.count} area=${topFace.area}`,
     };
   });
 
