@@ -86,6 +86,18 @@ export function startPreviewServer(port) {
  * @param {import('playwright-core').Page} page
  * @param {{ userId: string, assembly: object, parts: Array<{ id: string, script: string }> }} seed
  */
+/** Fake GitHub token so mock vault Save is allowed (never hits the network). */
+export async function seedGithubToken(page) {
+  await page.evaluate(() => {
+    localStorage.setItem('surfcad.github.tokenBundle', JSON.stringify({
+      accessToken: 'gho_playtest_mock',
+      expiresAt: Date.now() + 3_600_000,
+    }));
+    localStorage.removeItem('surfcad.github.token');
+    globalThis.sessionStorage?.removeItem('surfcad.github.token');
+  });
+}
+
 export async function seedAssembly(page, seed) {
   const { userId, assembly, parts } = seed;
   await page.evaluate(async ({ doc, partRows, uid }) => {
