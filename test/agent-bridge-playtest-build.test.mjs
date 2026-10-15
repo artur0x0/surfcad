@@ -69,9 +69,11 @@ test('playtest build includes auto-approve storage key', () => {
 });
 
 test('localStorage auto-approve flag is ignored in production build', { timeout: 180_000 }, async (t) => {
-  const exe = findChrome();
+  const exe = process.env.CHROME_PATH && existsSync(process.env.CHROME_PATH)
+    ? process.env.CHROME_PATH
+    : null;
   if (!exe) {
-    t.skip('no Chrome — set CHROME_PATH');
+    t.skip('CHROME_PATH not set (smoke job only)');
     return;
   }
 

@@ -9,15 +9,12 @@ import { dirname, join } from 'node:path';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DEMO = join(ROOT, 'scripts/demo/mcp-demo.mjs');
 
-const CHROME_CANDIDATES = [
-  process.env.CHROME_PATH,
-  '/usr/bin/google-chrome',
-  '/usr/bin/chromium-browser',
-  '/usr/bin/chromium',
-].filter(Boolean);
+/** Same gate as smoke goldens: only run when CI installs Chrome explicitly. */
+const chromePath = process.env.CHROME_PATH && existsSync(process.env.CHROME_PATH)
+  ? process.env.CHROME_PATH
+  : null;
 
-const hasChrome = CHROME_CANDIDATES.some((p) => existsSync(p));
-test('demo:mcp playtest (headless)', { skip: !hasChrome }, () => {
+test('demo:mcp playtest (headless)', { skip: !chromePath }, () => {
   const playtestBuild = spawnSync('npm', ['run', 'build:playtest'], {
     cwd: ROOT,
     encoding: 'utf8',
