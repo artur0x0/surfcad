@@ -4,6 +4,7 @@
  */
 
 import { PAIR_MSG } from './relayHub.js';
+import { isAgentBridgeAutoApprove } from './autoApprove.js';
 
 /**
  * @typedef {'idle' | 'advertising' | 'pending' | 'paired'} TabPairState
@@ -73,6 +74,9 @@ export function createAgentBridgeTabConnection(opts) {
       if (!msg || typeof msg !== 'object') return;
       if (msg.type === PAIR_MSG.PAIR_REQUEST) {
         setState('pending');
+        if (isAgentBridgeAutoApprove()) {
+          send({ type: PAIR_MSG.PAIR_APPROVE });
+        }
         return;
       }
       if (msg.type === PAIR_MSG.PAIRED) {

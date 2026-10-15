@@ -103,6 +103,25 @@ export async function seedGithubToken(page) {
   });
 }
 
+/** Playtest / MCP demo: auto-approve M1 pairing (never set in normal use). */
+export async function enableAgentBridgeAutoApprove(page) {
+  await page.evaluate(() => {
+    localStorage.setItem('surfcadAgentBridgeAutoApprove', '1');
+  });
+}
+
+/**
+ * Open Local agent pairing and return the 6-character code shown in the panel.
+ * @param {import('playwright-core').Page} page
+ */
+export async function showAgentBridgePairingCode(page) {
+  await page.click('[data-ui-action="data-agent-bridge-toggle"]');
+  await page.click('[data-ui-action="data-agent-bridge-start"]');
+  await page.waitForSelector('[data-agent-bridge-code]', { state: 'visible', timeout: 15000 });
+  const code = await page.locator('[data-agent-bridge-code]').innerText();
+  return String(code || '').trim();
+}
+
 export async function seedAssembly(page, seed) {
   const { userId, assembly, parts } = seed;
   await page.evaluate(async ({ doc, partRows, uid }) => {

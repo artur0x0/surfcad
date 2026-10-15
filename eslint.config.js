@@ -198,7 +198,7 @@ export default [
 
   // ── node:test suite ──
   {
-    files: ['test/**/*.js'],
+    files: ['test/**/*.{js,mjs}'],
     languageOptions: { ecmaVersion: 2022, sourceType: 'module', globals: nodeGlobals },
   },
 

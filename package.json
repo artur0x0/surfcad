@@ -31,6 +31,8 @@
         "playtest:visible": "npm run build && AGENT_VISIBLE=1 node scripts/playtest/run.mjs --scenario bracket-holes-fillet",
         "playtest:replay": "node scripts/playtest/replay.mjs",
         "agent-bridge:client": "node scripts/agent-bridge-ws-client.mjs",
+        "demo:mcp": "node scripts/demo/mcp-demo.mjs",
+        "golden:mcp-demo": "node scripts/golden/smoke_mcp_demo.mjs",
         "lint": "eslint . --max-warnings 0 --report-unused-disable-directives",
         "preview": "vite preview",
         "verify": "node ${CADGEN_HARNESS:-/home/artur/cadgen-workspace}/harness/verify_all.mjs",
