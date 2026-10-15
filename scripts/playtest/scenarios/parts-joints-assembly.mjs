@@ -12,7 +12,7 @@ const BASE_HOLE_SCRIPT = [
   'return part;',
 ].join('\n');
 
-const PIN_CYL_SCRIPT = 'return Manifold.cylinder(20, 5, 5, 64);\n';
+const PIN_CYL_SCRIPT = 'return Manifold.cylinder(30, 5, 5, 64, false);\n';
 
 export const id = 'parts-joints-assembly';
 export const title = 'Parts, assembly, joint, undo';
@@ -55,25 +55,36 @@ function bottomFace(faces) {
 }
 
 function cylindricalWallFace(faces, expectedRadius) {
+  const radius = Number(expectedRadius);
+  const pool = (faces || []).filter((row) => row.axis?.radius > 0);
+  const list = pool.length ? pool : (faces || []);
   let best = null;
-  let bestScore = -1;
-  for (const row of faces || []) {
+  let bestDist = Infinity;
+  for (const row of list) {
     const at = row.center || row.at || row.key?.at;
     const n = row.normal || row.n || row.key?.n;
-    if (!Array.isArray(at) || !Array.isArray(n)) continue;
-    const nz = Math.abs(n[2] ?? 0);
+    if (!Array.isArray(at)) continue;
+    const nz = Math.abs(n?.[2] ?? 0);
     const rxy = Math.hypot(at[0] ?? 0, at[1] ?? 0);
-    const radius = Number(expectedRadius);
-    const radialOk = !Number.isFinite(radius)
-      || (rxy > radius * 0.45 && rxy < radius * 1.6);
     const area = Number(row.area ?? row.key?.area ?? 0);
-    const score = area * (1 - nz);
-    if (nz < 0.45 && area > 20 && radialOk && score > bestScore) {
-      bestScore = score;
-      best = row;
+    const triCount = Number(row.triangleCount ?? 0);
+    const mergedWall = area > 80 && triCount >= 8;
+    const wallLike = mergedWall || (nz < 0.45 && area > 20);
+    if (!wallLike) continue;
+    if (!Number.isFinite(radius)) {
+      const score = area * (mergedWall ? 1 : (1 - nz));
+      if (score > (best?.score ?? -1)) {
+        best = { row, score };
+      }
+      continue;
+    }
+    const dist = Math.abs(rxy - radius);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = { row, score: area };
     }
   }
-  return best;
+  return best?.row ?? null;
 }
 
 export async function run(ctx) {
@@ -94,7 +105,6 @@ export async function run(ctx) {
   });
 
   await runner.runStep('insert_cube base', async () => {
-    await page.waitForTimeout(800);
     const parts = await agentCall(page, 'parts', {});
     basePartId = parts.result?.activeId;
     const inserted = await agentCall(page, 'insert_cube', { width: 50, depth: 40, height: 10 });
@@ -144,7 +154,7 @@ export async function run(ctx) {
     return { ok, detail: JSON.stringify({ baseTopKey, pinBottomKey }) };
   });
 
-  await runner.runStep('joint_open pick commit', async () => {
+  await runner.runStep('joint_open pick commit back-to-back', async () => {
     const opened = await agentCall(page, 'joint_open', {});
     const picked = await agentCall(page, 'joint_pick', {
       picks: [
@@ -167,14 +177,34 @@ export async function run(ctx) {
     };
   });
 
-  await runner.runStep('undo joint', async () => {
+  await runner.runStep('undo joint reports reverted', async () => {
     const env = await agentCall(page, 'undo', {});
-    const ok = env.ok === true && env.result?.kind === 'assembly' && env.result?.joints === 0;
-    return { ok, call: 'undo', args: {}, envelope: env, detail: `joints=${env.result?.joints}` };
+    const rev = env.result?.reverted;
+    const ok = env.ok === true
+      && env.result?.kind === 'assembly'
+      && env.result?.joints === 0
+      && rev?.jointsBefore >= 1
+      && rev?.jointsAfter === 0;
+    return { ok, call: 'undo', args: {}, envelope: env, detail: JSON.stringify(rev) };
   });
 
-  let baseWallKey = null;
-  let pinWallKey = null;
+  await runner.runStep('failed commit does not add undo step', async () => {
+    await agentCall(page, 'joint_cancel', {});
+    await agentCall(page, 'joint_open', {});
+    await agentCall(page, 'joint_pick', {
+      picks: [{ part_id: basePartId, key: baseTopKey }],
+    });
+    await agentCall(page, 'joint_set_params', { type: 'coincident' });
+    const failed = await agentCall(page, 'joint_commit', {});
+    await agentCall(page, 'joint_cancel', {});
+    const ok = failed.ok === false && failed.error?.code === 'commit_failed';
+    return {
+      ok,
+      call: 'joint_commit',
+      envelope: failed,
+      detail: `failed=${failed.error?.message}`,
+    };
+  });
 
   await runner.runStep('cylinder geometry for concentric', async () => {
     await agentCall(page, 'set_active_part', { part_id: basePartId });
@@ -183,13 +213,24 @@ export async function run(ctx) {
     await agentCall(page, 'set_active_part', { part_id: pinPartId });
     await agentCall(page, 'set_script', { source: PIN_CYL_SCRIPT });
     const pinRun = await agentCall(page, 'run', {});
-    await page.waitForTimeout(400);
     const ok = baseRun.ok === true && baseRun.result?.ok === true
       && pinRun.ok === true && pinRun.result?.ok === true;
     return { ok, call: 'run', args: {}, envelope: pinRun };
   });
 
   let concentricJointId = null;
+
+  await runner.runStep('tall pin list_faces side count', async () => {
+    await agentCall(page, 'set_active_part', { part_id: pinPartId });
+    await agentCall(page, 'run', {});
+    const pinFaces = await agentCall(page, 'list_faces', {});
+    const walls = (pinFaces.result?.faces || []).filter((row) => {
+      const nz = Math.abs(row.normal?.[2] ?? row.n?.[2] ?? 1);
+      return nz < 0.45;
+    });
+    const ok = walls.length <= 4;
+    return { ok, detail: `sideFaces=${walls.length}` };
+  });
 
   await runner.runStep('concentric joint commit', async () => {
     await agentCall(page, 'set_active_part', { part_id: basePartId });
@@ -200,39 +241,30 @@ export async function run(ctx) {
     await agentCall(page, 'run', {});
     const pinFaces = await agentCall(page, 'list_faces', {});
     const pinWall = cylindricalWallFace(pinFaces.result?.faces, 5);
-    baseWallKey = baseWall?.key || baseWall;
-    pinWallKey = pinWall?.key || pinWall;
-    const pickRows = (baseWallKey && pinWallKey)
-      ? [
-        { part_id: basePartId, key: baseWallKey },
-        { part_id: pinPartId, key: pinWallKey },
-      ]
-      : [
-        {
-          part_id: basePartId,
-          kind: 'axis',
-          key: { at: [0, 0, 0], dir: [0, 0, 1], radius: 6 },
-        },
-        {
-          part_id: pinPartId,
-          kind: 'axis',
-          key: { at: [0, 0, 10], dir: [0, 0, 1], radius: 5 },
-        },
-      ];
+    const baseWallKey = baseWall?.axis || baseWall?.key || baseWall;
+    const pinWallKey = pinWall?.axis || pinWall?.key || pinWall;
+    const basePickKind = baseWall?.axis ? 'axis' : undefined;
+    const pinPickKind = pinWall?.axis ? 'axis' : undefined;
     await agentCall(page, 'joint_cancel', {});
     const opened = await agentCall(page, 'joint_open', {});
-    const picked = await agentCall(page, 'joint_pick', { picks: pickRows });
+    const picked = await agentCall(page, 'joint_pick', {
+      picks: [
+        { part_id: basePartId, key: baseWallKey, kind: basePickKind },
+        { part_id: pinPartId, key: pinWallKey, kind: pinPickKind },
+      ],
+    });
     const params = await agentCall(page, 'joint_set_params', { type: 'concentric' });
     const committed = await agentCall(page, 'joint_commit', {});
     concentricJointId = committed.result?.jointId ?? null;
     const pickCount = picked.result?.count ?? 0;
-    const ok = !!(opened.ok && picked.ok && pickCount >= 2 && params.result?.type === 'concentric'
+    const ok = !!(baseWallKey && pinWallKey && opened.ok && picked.ok && pickCount >= 2
+      && params.result?.type === 'concentric'
       && committed.ok && (committed.result?.jointCount ?? 0) >= 1 && concentricJointId);
     return {
       ok,
       call: 'joint_commit',
       envelope: committed,
-      detail: `picks=${pickCount} walls=${!!baseWallKey} type=${params.result?.type} jointId=${concentricJointId}`,
+      detail: `picks=${pickCount} type=${params.result?.type} jointId=${concentricJointId}`,
     };
   });
 

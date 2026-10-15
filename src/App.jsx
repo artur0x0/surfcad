@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import CodeEditor from './components/CodeEditor';
 import Viewport from './components/Viewport';
 import { BrandMark, BrandWordmark } from './components/brand/BrandWordmark';
@@ -137,6 +138,7 @@ import { resolveRollbackTarget, resolveStripTarget } from './agent/featureStripA
 import { buildPartsState } from './agent/state/parts';
 import { buildToasts } from './agent/state/toasts';
 import { agentBridgeEnabled, createSurfcadBridge } from './utils/agentBridge';
+import { buildEffectiveJointCard } from './agent/jointCardAgent.js';
 import AgentVisibleLayer from './components/AgentVisibleLayer';
 import { runAssemblyParts } from './utils/assemblyRun';
 import { catalogsFromRuns } from './utils/jointResolve';
@@ -585,6 +587,8 @@ const App = () => {
   const agentFeatureSessionRef = useRef(null);
   const [jointCard, setJointCard] = useState(null);
   const jointCardRef = useRef(null);
+  /** Synchronous joint card for agent pick/commit (React state may lag one frame). */
+  const jointCardAgentRef = useRef(null);
   const jointPicksRef = useRef([]);
   const jointCatalogsRef = useRef({});
   const jointLiveRef = useRef({ statuses: {}, messages: {} });
@@ -592,6 +596,21 @@ const App = () => {
   const assemblyHistoryRef = useRef(null);
   const [assemblyHistTick, setAssemblyHistTick] = useState(0);
   jointCardRef.current = jointCard;
+  const publishJointCard = (next) => {
+    jointCardAgentRef.current = next;
+    flushSync(() => setJointCard(next));
+  };
+  useEffect(() => {
+    if (!jointCard) {
+      jointCardAgentRef.current = null;
+      return;
+    }
+    jointCardAgentRef.current = buildEffectiveJointCard(
+      jointCard,
+      jointPicksRef.current,
+      assemblyRef.current,
+    );
+  }, [jointCard]);
   const closeFeatureSheet = () => {
     setFeatureSheet(null);
     setFeatureStripActiveId(null);
@@ -6850,7 +6869,7 @@ const App = () => {
     if (appModeRef.current === 'game' || featureSessionRef.current) return;
     jointPicksRef.current = [];
     viewportRef.current?.clearJointHighlights?.();
-    setJointCard(draftFromPicks(null, [], { joints: assemblyRef.current?.joints || [] }));
+    publishJointCard(draftFromPicks(null, [], { joints: assemblyRef.current?.joints || [] }));
   };
 
   const handleCadEmptyClick = () => {
@@ -6885,7 +6904,7 @@ const App = () => {
       axis: !!raw.axis,
       key: raw.key,
     };
-    if (jointCardRef.current?.partChange) return;
+    if ((jointCardAgentRef.current ?? jointCardRef.current)?.partChange) return;
     const accepted = acceptJointPick(jointPicksRef.current, pick);
     if (accepted.refuse && accepted.message) viewportRef.current?.notify?.(accepted.message);
     jointPicksRef.current = accepted.picks;
@@ -7033,7 +7052,7 @@ const App = () => {
     dismissJointEdit(assemblyRef.current);
     jointPicksRef.current = [];
     viewportRef.current?.clearJointHighlights?.();
-    setJointCard(null);
+    publishJointCard(null);
   };
 
   const handleJointUndo = () => {
@@ -7044,7 +7063,7 @@ const App = () => {
       doc,
       scripts,
     });
-    if (!step.changed || step.scripts !== scripts) return;
+    if (!step.changed || step.scripts !== scripts) return false;
     assemblyHistoryRef.current = {
       key: assemblyHistoryRef.current?.key,
       ...step.history,
@@ -7052,6 +7071,7 @@ const App = () => {
     const written = rememberAssembly(step.doc);
     setAssemblyHistTick((tick) => tick + 1);
     paintAssemblyPoses(written);
+    return true;
   };
 
   const handleJointRedo = () => {
@@ -8367,7 +8387,7 @@ const App = () => {
     },
     jointSetParams({ patch } = {}) {
       const doc = assemblyRef.current;
-      const card = jointCardRef.current;
+      const card = jointCardAgentRef.current ?? jointCardRef.current;
       if (!card) {
         return { error: { code: 'no_joint_card', message: 'Call joint_open before joint_set_params' } };
       }
@@ -8377,23 +8397,25 @@ const App = () => {
         const named = nextJointName(next.type, doc?.joints || []);
         next = { ...next, name: next.name && next.userNamed ? next.name : named };
       }
-      handleJointCardChange(next);
+      const settled = buildEffectiveJointCard(next, jointPicksRef.current, doc);
+      publishJointCard(settled);
       return {
         result: {
           ok: true,
-          type: next.type ?? null,
-          name: next.name ?? null,
-          valueMm: next.valueMm ?? null,
-          sense: next.sense === -1 ? -1 : 1,
-          opposed: next.opposed !== false,
-          mode: next.mode ?? null,
+          type: settled.type ?? null,
+          name: settled.name ?? null,
+          valueMm: settled.valueMm ?? null,
+          sense: settled.sense === -1 ? -1 : 1,
+          opposed: settled.opposed !== false,
+          mode: settled.mode ?? null,
+          pickCount: (settled.picks || []).length,
         },
       };
     },
     jointApplyPicks({ picks } = {}) {
       const doc = assemblyRef.current;
       if (!doc) return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
-      if (!jointCardRef.current) {
+      if (!(jointCardAgentRef.current ?? jointCardRef.current)) {
         return { error: { code: 'no_joint_card', message: 'Call joint_open before joint_pick' } };
       }
       const rows = Array.isArray(picks) ? picks : [];
@@ -8419,6 +8441,7 @@ const App = () => {
             },
           };
         }
+        const beforeLen = (jointPicksRef.current || []).length;
         handleJointPick({
           partId: part.id,
           kind: described.kind,
@@ -8426,22 +8449,24 @@ const App = () => {
           axis: described.axis,
           key: described.key,
         });
+        const afterLen = (jointPicksRef.current || []).length;
+        if (afterLen <= beforeLen) {
+          return {
+            error: {
+              code: 'pick_failed',
+              message: `Joint pick was not accepted for part ${part.id}`,
+            },
+          };
+        }
         picked.push(part.id);
       }
       const picksNow = jointPicksRef.current || [];
-      const openCard = jointCardRef.current;
-      if (openCard && picksNow.length) {
-        setJointCard({
-          ...draftFromPicks(
-            openCard.mode === 'create' || openCard.mode === 'edit' ? openCard : null,
-            picksNow,
-            { joints: doc.joints || [] },
-          ),
-          mode: openCard.mode === 'edit' ? 'edit' : 'create',
-          partChange: openCard.partChange || null,
-        });
-      }
-      return { result: { picked, count: picksNow.length } };
+      const openCard = jointCardAgentRef.current ?? jointCardRef.current;
+      const settled = openCard
+        ? buildEffectiveJointCard(openCard, picksNow, doc)
+        : null;
+      if (settled) publishJointCard(settled);
+      return { result: { picked, count: picksNow.length, pickCount: picksNow.length } };
     },
     jointSelect({ joint_id } = {}) {
       const doc = assemblyRef.current;
@@ -8510,7 +8535,11 @@ const App = () => {
     },
     prepareJointCommit() {
       const doc = assemblyRef.current;
-      const card = jointCardRef.current;
+      const base = jointCardAgentRef.current ?? jointCardRef.current;
+      const card = base
+        ? buildEffectiveJointCard(base, jointPicksRef.current, doc)
+        : null;
+      if (card) jointCardAgentRef.current = card;
       if (!doc || !card) {
         return { error: { code: 'no_joint_card', message: 'Joint card is not open' } };
       }
@@ -8539,10 +8568,10 @@ const App = () => {
       return { ok: true, jointId, jointCount: joints.length };
     },
     finishJointCommit() {
-      if (jointCardRef.current) {
+      if (jointCardRef.current || jointCardAgentRef.current) {
         jointPicksRef.current = [];
         viewportRef.current?.clearJointHighlights?.();
-        setJointCard(null);
+        publishJointCard(null);
       }
     },
     jointCancel() {
@@ -8551,13 +8580,32 @@ const App = () => {
     },
     async agentUndo() {
       if (cadStripsShowJoints(cadPartIdRef.current) && assemblyHistoryCanUndo(assemblyHistoryRef.current)) {
-        handleJointUndo();
+        const beforeDoc = assemblyRef.current;
+        const jointsBefore = beforeDoc?.joints?.length ?? 0;
+        const namesBefore = (beforeDoc?.joints || []).map((row) => row.name || row.id);
+        const headBefore = assemblyHistoryRef.current?.head ?? 0;
+        const changed = handleJointUndo();
+        if (!changed) {
+          return { handled: false };
+        }
+        const afterDoc = assemblyRef.current;
+        const jointsAfter = afterDoc?.joints?.length ?? 0;
+        const namesAfter = (afterDoc?.joints || []).map((row) => row.name || row.id);
+        const headAfter = assemblyHistoryRef.current?.head ?? 0;
         return {
           handled: true,
           result: {
             ok: true,
             kind: 'assembly',
-            joints: assemblyRef.current?.joints?.length ?? 0,
+            joints: jointsAfter,
+            reverted: {
+              historyHeadBefore: headBefore,
+              historyHeadAfter: headAfter,
+              jointsBefore,
+              jointsAfter,
+              jointNamesBefore: namesBefore,
+              jointNamesAfter: namesAfter,
+            },
           },
         };
       }
