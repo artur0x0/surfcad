@@ -114,7 +114,6 @@ import {
 import { sheetMetalBinding } from './utils/scs/scsCatalog';
 import { composeSheetMetalCommit, readSheetMetalSpec, removeSheetMetalBlock, sheetMetalFresh, sheetStarterScript } from './utils/sheetMetal/sheetMetalScript';
 import {
-  emptyPartHistory,
   historyForPart,
   pushPartHistory,
   redoPartHistory,
@@ -128,12 +127,7 @@ import { buildFeatureTree } from './agent/state/featureTree';
 import { resolveRollbackTarget, resolveStripTarget } from './agent/featureStripAgent';
 import { buildPartsState } from './agent/state/parts';
 import { buildToasts } from './agent/state/toasts';
-import {
-  agentBridgeEnabled,
-  cloneAgentHistory,
-  commitAgentStep,
-  createSurfcadBridge,
-} from './utils/agentBridge';
+import { agentBridgeEnabled, createSurfcadBridge } from './utils/agentBridge';
 import { runAssemblyParts } from './utils/assemblyRun';
 import { catalogsFromRuns } from './utils/jointResolve';
 import { partPlacement } from './utils/jointSchema';
@@ -5752,6 +5746,105 @@ const App = () => {
     }
   };
 
+  const placeCommitBuffer = (before, nextBuffer) => {
+    const key = editorRollbackKey();
+    const stored = storedRollback(key);
+    const beforeFixed = repairScriptReturns(typeof before === 'string' ? before : '').buffer;
+    const nextFixed = repairScriptReturns(nextBuffer).buffer;
+    const placed = (stored === null || typeof stored === 'string')
+      ? commitScriptAtRollback(beforeFixed, nextFixed, stored)
+      : { buffer: nextFixed, anchor: stored };
+    return { key, stored, placed };
+  };
+
+  const contourCommitMessage = (entry, result) => {
+    const solidLabel = entry === 'makeSweep'
+      ? 'sweep'
+      : entry === 'makeLoft'
+        ? 'loft'
+        : entry === 'makeRevolve'
+          ? 'revolve'
+          : 'extrude';
+    if (entry === 'workplane') return 'Workplane';
+    if (result.run) return `Contour ${solidLabel}`;
+    return 'Contour profile';
+  };
+
+  const buildContourCommitPlan = (buf, payload = {}) => {
+    if (payload?.editContour) {
+      const saved = saveEditedContour(buf, payload);
+      if (!saved.ok) return { ok: false, message: saved.message };
+      return {
+        ok: true,
+        buffer: saved.buffer,
+        run: true,
+        empty: false,
+        message: 'Contour',
+      };
+    }
+    if (payload?.contourBlock) {
+      const saved = writeContourProfileBlock(buf, payload);
+      if (!saved.ok) return { ok: false, message: saved.message };
+      if (!saved.written) {
+        return { ok: true, buffer: buf, run: false, empty: true, message: 'Contour' };
+      }
+      return {
+        ok: true,
+        buffer: saved.buffer,
+        run: false,
+        empty: false,
+        message: 'Contour',
+      };
+    }
+    const result = composeContourCommit(buf, payload);
+    if (!result.ok) return { ok: false, message: result.message };
+    if (result.empty) {
+      return {
+        ok: true,
+        buffer: buf,
+        run: false,
+        empty: true,
+        message: contourCommitMessage(payload?.entry, result),
+      };
+    }
+    return {
+      ok: true,
+      buffer: result.buffer,
+      run: !!result.run,
+      empty: false,
+      message: contourCommitMessage(payload?.entry, result),
+    };
+  };
+
+  const prepareAgentContourMutate = (payload, meta = {}) => {
+    if (!focusWritePart(payload?.partId)) {
+      return { error: { code: 'no_write_part', message: 'No writable part for contour commit' } };
+    }
+    const buf = codeEditorRef.current?.getContent?.() ?? '';
+    const plan = buildContourCommitPlan(buf, payload);
+    if (!plan.ok) {
+      return { error: { code: 'commit_failed', message: plan.message || 'Contour commit refused' } };
+    }
+    const placement = placeCommitBuffer(buf, plan.buffer);
+    const changed = placement.placed.buffer !== buf;
+    return {
+      changed,
+      source: placement.placed.buffer,
+      message: plan.message,
+      runSubtract: plan.run ? buf : null,
+      finish: { payload, fromSlot: meta.fromSlot === true },
+      placement,
+    };
+  };
+
+  const applyAgentContourRollback = (placement) => {
+    if (!placement) return;
+    const { key, stored, placed } = placement;
+    if (key && (stored === null || typeof stored === 'string')) {
+      storeRollbackAnchor(key, placed.anchor);
+    }
+  };
+
   /**
    * Slice 24/25/26/28/30: in-mode Confirm. Profile writes makeCrossSection only
    * (no Auto-Run). Extrude / Revolve / Loft / Sweep write the solid and Auto-Run.
@@ -5767,78 +5860,26 @@ const App = () => {
       return false;
     }
     const buf = codeEditorRef.current?.getContent?.() || '';
-    if (payload?.editContour) {
-      const saved = saveEditedContour(buf, payload || {});
-      if (!saved.ok) {
-        viewportRef.current?.softFailContour?.(saved.message);
-        return false;
-      }
-      const wrote = commitFeatureBuffer(buf, saved.buffer, 'Contour');
-      if (!wrote) {
-        viewportRef.current?.softFailContour?.('Could not write Contour into the editor — try again.');
-        return false;
-      }
-      setTimeout(() => {
-        handleGameRun();
-      }, 0);
-      return true;
-    }
-    if (payload?.contourBlock) {
-      const saved = writeContourProfileBlock(buf, payload || {});
-      if (!saved.ok) {
-        viewportRef.current?.softFailContour?.(saved.message);
-        return false;
-      }
-      if (!saved.written) return true;
-      const wrote = commitFeatureBuffer(buf, saved.buffer, 'Contour');
-      if (!wrote) {
-        viewportRef.current?.softFailContour?.('Could not write Contour into the editor — try again.');
-        return false;
-      }
-      return true;
-    }
-    const result = composeContourCommit(buf, payload || {});
-    if (!result.ok) {
-      viewportRef.current?.softFailContour?.(result.message);
+    const plan = buildContourCommitPlan(buf, payload || {});
+    if (!plan.ok) {
+      viewportRef.current?.softFailContour?.(plan.message);
       return false;
     }
-    if (result.empty) return true;
-    const entry = payload?.entry;
-    const solidLabel = entry === 'makeSweep'
-      ? 'sweep'
-      : entry === 'makeLoft'
-        ? 'loft'
-        : entry === 'makeRevolve'
-          ? 'revolve'
-          : 'extrude';
-    const msg = entry === 'workplane'
-      ? 'Workplane'
-      : result.run
-        ? `Contour ${solidLabel}`
-        : 'Contour profile';
-    const wrote = commitFeatureBuffer(buf, result.buffer, msg);
+    if (plan.empty) return true;
+    const wrote = commitFeatureBuffer(buf, plan.buffer, plan.message);
     if (!wrote) {
-      const writeName = entry === 'workplane'
-        ? 'Workplane'
-        : entry === 'makeSweep'
-          ? 'Sweep'
-          : entry === 'makeLoft'
-            ? 'Loft'
-            : entry === 'makeRevolve'
-              ? 'Revolve'
-              : result.run
-                ? 'Extrude'
-                : 'Contour';
-      viewportRef.current?.softFailContour?.(
-        `Could not write ${writeName} into the editor — try again.`,
-      );
+      viewportRef.current?.softFailContour?.('Could not write Contour into the editor — try again.');
       return false;
     }
-    if (result.run) {
+    if (plan.run) {
       setTimeout(() => {
         handleGameRun();
       }, 0);
-      crossPartSubtract(buf, codeEditorRef.current?.getContent?.() ?? result.buffer);
+      crossPartSubtract(buf, codeEditorRef.current?.getContent?.() ?? plan.buffer);
+    } else if (payload?.editContour) {
+      setTimeout(() => {
+        handleGameRun();
+      }, 0);
     }
     return true;
   };
@@ -7580,37 +7621,16 @@ const App = () => {
       }
       return { source: content };
     },
-    async commitContourPayload(payload, meta = {}) {
-      if (!focusWritePart(payload?.partId)) {
-        return { error: { code: 'no_write_part', message: 'No writable part for contour commit' } };
+    prepareContourMutate: (payload, meta) => prepareAgentContourMutate(
+      { ...payload, partId: payload?.partId ?? assemblyRef.current?.activeId },
+      meta,
+    ),
+    applyContourMutateExtras(prep) {
+      if (!prep) return;
+      applyAgentContourRollback(prep.placement);
+      if (prep.runSubtract) {
+        crossPartSubtract(prep.runSubtract, codeEditorRef.current?.getContent?.() ?? '');
       }
-      const readHistory = agentHostRef.current?.readHistory;
-      const writeHistory = agentHostRef.current?.writeHistory;
-      const beforeBuf = codeEditorRef.current?.getContent?.() ?? '';
-      const histBefore = cloneAgentHistory(
-        typeof readHistory === 'function' ? readHistory() : emptyPartHistory(),
-      );
-      const ok = handleCommitContourProfile({
-        ...payload,
-        partId: payload?.partId ?? assemblyRef.current?.activeId,
-      });
-      if (!ok) {
-        return {
-          error: {
-            code: 'commit_failed',
-            message: 'Contour commit refused (check errors or toasts)',
-          },
-        };
-      }
-      const after = codeEditorRef.current?.getContent?.() ?? '';
-      if (after !== beforeBuf && typeof writeHistory === 'function') {
-        writeHistory(commitAgentStep(histBefore, after, meta.fromSlot ? 'Contour extrude' : 'Contour profile'));
-      }
-      const finish = agentHostRef.current?.finishContourCommit;
-      if (typeof finish === 'function') {
-        finish({ payload, fromSlot: meta.fromSlot === true });
-      }
-      return { result: { written: after !== beforeBuf, scriptLength: after.length } };
     },
   });
 

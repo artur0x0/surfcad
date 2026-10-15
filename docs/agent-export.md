@@ -172,12 +172,12 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `sketch_begin` | `{ "entry"?: "crossSection"\|"workplane", "offset"?, "accept_plane"?: boolean, "plane"?: "x"\|"y"\|"z"\|"face" }` | Opens contour sketch mode on the selected planar face (or preset plane). Default `accept_plane: true` leaves the plane card and arms Cursor. |
 | `sketch_accept_plane` | `{ "offset"?: number }` | Accepts the plane card and starts drawing (`data-contour-confirm`). |
 | `sketch_add` | `{ "tool": "circle"\|"rectangle"\|"polygon"\|"polyline"\|"cursor", …params }` | Switches the contour rail tool and sets profile params (same defaults as the UI). |
-| `sketch_commit` | `{}` | Writes the sketch (`makeCrossSection` / workplane) via `commitContourPayload` — one undo step when the buffer changes. |
+| `sketch_commit` | `{}` | Writes the sketch (`makeCrossSection` / workplane) via `mutate` — one undo step when the buffer changes; result includes refreshed `status`. |
 | `sketch_cancel` | `{}` | Exits contour mode without writing (`data-contour-exit`). |
 | `slot_open` | `{ "kind": "makeExtrude"\|"makeRevolve"\|"makeLoft"\|"makeSweep" }` | Opens the feature slot card (same as tapping Extrude / Revolve / Loft / Sweep on the helper rail). |
 | `slot_assign_contour` | `{ "contour_id": string, "role"?: "profile"\|"path"\|"station", "index"?: number }` | Fills a slot from a saved `@contour` id. |
 | `slot_set_params` | extrude / revolve / sweep / loft station fields | Updates card params (e.g. `{ "distance": 10 }` on Extrude). |
-| `slot_commit` | `{}` | Confirms the slot card and writes the solid feature block — one undo step. |
+| `slot_commit` | `{}` | Confirms the slot card and writes the solid feature block — one undo step. Uses the bridge `mutate` path (write + run + `status` refresh), same as `confirm_feature`. Result includes `{ ok, written, status, errors }`. |
 | `slot_cancel` | `{}` | Closes the slot card without writing. |
 
 `Status` is `{ "volume": number \| null, "bbox": { "min": number[3], "max": number[3] } \| null, "partName": string, "featureCount": number }`. `volume` and `bbox` are null when the run failed. `bbox` is millimetres. `featureCount` is the number of marked feature blocks in the script that ran. Before any run, `volume` is null, `bbox` is null, `partName` is `""`, and `featureCount` is `0`.
