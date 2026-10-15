@@ -186,6 +186,34 @@ function applyPoseExpr(expr, spec) {
 }
 
 /** Right-hand side of the `let` the pop writes. */
+/** Feature-edit kinds that share blockSpec / blockSolidExpression. */
+export function isBlockFeatureKind(kind) {
+  return isBlockSolidId(kind);
+}
+
+/**
+ * Rewrite the primitive `let` inside a marked block from edited fields.
+ * Pose, Centered (cube), and size all come from blockSolidExpression.
+ */
+export function rewriteBlockSolidLet(block, kind, fields) {
+  if (!isBlockSolidId(kind)) return block;
+  const starters = {
+    cube: 'Manifold\\.cube',
+    roundedBox: 'roundedBox',
+    cylinder: 'Manifold\\.cylinder',
+    sphere: 'Manifold\\.sphere',
+    tube: 'tube',
+    hexPrism: 'hexPrism',
+  };
+  const start = starters[kind];
+  if (!start) return block;
+  const spec = blockSpec(kind, fields);
+  const expr = blockSolidExpression(spec);
+  const re = new RegExp(`let\\s+(\\w+)\\s*=\\s*${start}\\([^;]+;`, 'm');
+  if (!re.test(block)) return block;
+  return block.replace(re, (_, varName) => `let ${varName} = ${expr};`);
+}
+
 export function blockSolidExpression(spec) {
   let expr;
   switch (spec.id) {
