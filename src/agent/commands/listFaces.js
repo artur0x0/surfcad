@@ -1,5 +1,3 @@
-import { NO_ARGS_SCHEMA } from '../registry.js';
-
 export const listFacesCommand = Object.freeze({
   name: 'list_faces',
   schema: {
