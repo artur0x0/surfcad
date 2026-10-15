@@ -144,7 +144,8 @@ const CrossSectionPanel = ({
   const handleCustomNormalChange = (axis, value) => {
     if (String(value).trim() === formatDisplayNumber(customNormal[axis])) return;
     const newNormal = [...customNormal];
-    newNormal[axis] = parseFloat(value) || 0;
+    const n = Number(value);
+    newNormal[axis] = Number.isFinite(n) ? n : 0;
     setCustomNormal(newNormal);
     
     // Auto-activate custom if any value is non-zero

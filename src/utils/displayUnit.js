@@ -105,12 +105,19 @@ export function formatDisplayNumber(value) {
  * A different finite number is what the user typed. `''`, `'-'`, and `'.'`
  * pass through so a cleared box can stay cleared.
  */
+/** True when `raw` is only the formatted view of `stored` (not a partial edit). */
+export function isFormattedDisplayEcho(stored, raw) {
+  if (stored === '' || stored === '-' || stored === '.') return false;
+  const n = Number(stored);
+  if (!Number.isFinite(n)) return false;
+  return String(raw).trim() === formatDisplayNumber(stored);
+}
+
 export function commitDisplayNumber(typed, stored) {
   if (typed === '' || typed === '-' || typed === '.') return typed;
   const raw = String(typed).trim();
   if (raw === '' || raw === '-' || raw === '.') return typed;
-  const shown = formatDisplayNumber(stored);
-  if (shown !== '' && raw === shown) return stored;
+  if (isFormattedDisplayEcho(stored, raw)) return stored;
   const n = Number(raw);
   return Number.isFinite(n) ? n : stored;
 }
@@ -126,8 +133,8 @@ export function commitDisplayLength(typed, storedMm, unit) {
   if (raw === '' || raw === '-' || raw === '.') return typed;
   const stored = Number(storedMm);
   if (Number.isFinite(stored)) {
-    const shown = formatDisplayNumber(lengthToDisplay(stored, unit));
-    if (shown !== '' && raw === shown) return storedMm;
+    const display = lengthToDisplay(stored, unit);
+    if (isFormattedDisplayEcho(display, raw)) return storedMm;
   }
   const mm = displayToMm(raw, unit);
   return Number.isFinite(mm) ? mm : storedMm;
@@ -148,7 +155,7 @@ export function displayToMm(value, unit) {
 export function lengthCaption(label, unit) {
   const text = label == null ? '' : String(label).trim();
   const suffix = normalizeDisplayUnit(unit);
-  if (!text) return suffix;
+  if (text === '') return suffix;
   if (text.endsWith(` ${suffix}`)) return text;
   return `${text} ${suffix}`;
 }
@@ -157,7 +164,7 @@ export function lengthCaption(label, unit) {
 export function formatDisplayLength(mm, unit) {
   const u = normalizeDisplayUnit(unit);
   const text = formatDisplayNumber(lengthToDisplay(mm, u));
-  if (!text) return '';
+  if (text === '') return '';
   return `${text} ${u}`;
 }
 
@@ -165,7 +172,7 @@ export function formatDisplayLength(mm, unit) {
 export function formatDisplayDelta(mm, unit) {
   const u = normalizeDisplayUnit(unit);
   const text = formatDisplayNumber(lengthToDisplay(mm, u));
-  if (!text) return '';
+  if (text === '') return '';
   if (text === '0') return `0 ${u}`;
   const body = text.startsWith('-') ? text : `+${text}`;
   return `${body} ${u}`;
@@ -173,6 +180,6 @@ export function formatDisplayDelta(mm, unit) {
 
 export function formatDisplayAngle(deg) {
   const text = formatDisplayNumber(deg);
-  if (!text) return '';
+  if (text === '') return '';
   return `${text}°`;
 }
