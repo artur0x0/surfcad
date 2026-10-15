@@ -121,6 +121,8 @@ import {
 } from './utils/partHistory';
 import { fillAgentHost } from './agent/host';
 import { buildDirtyState } from './agent/state/dirty';
+import { buildSelection } from './agent/state/selection';
+import { editedPartIdsSinceSnapshot, snapshotPartScripts } from './agent/state/editedSinceLoad';
 import { buildFeatureTree } from './agent/state/featureTree';
 import { buildPartsState } from './agent/state/parts';
 import { buildToasts } from './agent/state/toasts';
@@ -1040,6 +1042,19 @@ const App = () => {
   const partHistoriesRef = useRef({});
   /** Latest main-thread host for window.surfcad. The effect installs once. */
   const agentHostRef = useRef(null);
+  /** Scripts at last open / save; drives agent `dirty.unsaved`. */
+  const agentScriptSnapshotRef = useRef(null);
+  const agentSnapshotDocKeyRef = useRef('');
+  const captureAgentScriptSnapshot = () => {
+    const doc = assemblyRef.current;
+    if (!doc) return;
+    const scripts = partScriptsRef.current || {};
+    const liveId = doc.activeId;
+    let liveScript = liveId ? scripts[liveId] : '';
+    const editor = codeEditorRef.current?.getContent?.();
+    if (liveId && typeof editor === 'string') liveScript = editor;
+    agentScriptSnapshotRef.current = snapshotPartScripts(scripts, { liveId, liveScript });
+  };
   const historyRef = useRef(history);
   historyRef.current = history;
 
@@ -1646,6 +1661,15 @@ const App = () => {
     }, 600);
     return () => clearTimeout(timer);
   }, [currentScript, currentFilename, manifoldReady, editorInitialScript, appMode]);
+
+  // Agent `dirty.unsaved`: baseline scripts at open (reset when the assembly identity changes).
+  useEffect(() => {
+    if (!assemblyDoc || editorInitialScript === null || appMode === 'game') return;
+    const key = `${assemblyDoc.name ?? ''}\0${assemblyDoc.source ?? ''}\0${(assemblyDoc.parts || []).map((row) => row.id).join('\n')}`;
+    if (agentSnapshotDocKeyRef.current === key && agentScriptSnapshotRef.current) return;
+    agentSnapshotDocKeyRef.current = key;
+    captureAgentScriptSnapshot();
+  }, [assemblyDoc, editorInitialScript, appMode]);
 
   // A reload can beat the debounce (refresh mid-typing). pagehide covers the
   // iOS/Safari case where unload never fires. Flush drafts only — never
@@ -3499,6 +3523,7 @@ const App = () => {
       if (result.baseline) {
         rememberGitBaseline(result.baseline);
         gitVaultRef.current = { ...vault, headSha: result.sha };
+        captureAgentScriptSnapshot();
       }
       if (result.sha) await gitSync().setLastSyncedSha(vault.repo, result.sha, gitWorkingBranch());
       if (result.status === 'committed' || result.status === 'clean') {
@@ -7685,15 +7710,22 @@ const App = () => {
       const fromViewport = agentHostRef.current?.readViewportSelection;
       const base = typeof fromViewport === 'function' ? fromViewport() : null;
       const doc = assemblyRef.current;
-      return {
-        activePartId: doc?.activeId ?? base?.activePartId ?? null,
-        cadPartId: cadPartIdRef.current,
+      const activePartId = doc?.activeId ?? base?.activePartId ?? null;
+      const cadPick = cadPartIdRef.current;
+      return buildSelection({
+        activePartId,
+        // Viewer/title highlight (`cadPartIdRef`). Falls back to the editor part.
+        cadPartId: cadPick ?? activePartId,
+        cadPartHighlighted: cadPick != null && cadPick !== activePartId,
         face: base?.face ?? null,
         edges: base?.edges ?? [],
-        contour: base?.contour ?? { armedId: null, planeId: null },
-      };
+        armedContourId: base?.contour?.armedId ?? null,
+        selectedPlaneId: base?.contour?.planeId ?? null,
+      });
     },
     readDirty() {
+      const doc = assemblyRef.current;
+      if (!agentScriptSnapshotRef.current && doc) captureAgentScriptSnapshot();
       let undoStackDirty = false;
       const readHistory = agentHostRef.current?.readHistory;
       if (typeof readHistory === 'function') {
@@ -7703,6 +7735,14 @@ const App = () => {
         const live = codeEditorRef.current?.getContent?.() ?? '';
         undoStackDirty = live !== code;
       }
+      const scripts = partScriptsRef.current || {};
+      const liveId = doc?.activeId ?? null;
+      const liveScript = codeEditorRef.current?.getContent?.() ?? '';
+      const editedSinceLoad = editedPartIdsSinceSnapshot(agentScriptSnapshotRef.current, scripts, {
+        liveId,
+        liveScript,
+        partIds: (doc?.parts || []).map((row) => row.id),
+      });
       return buildDirtyState({
         workspaceDirty: !!sourceDirty,
         partIds: gitDirtyIds,
@@ -7712,6 +7752,7 @@ const App = () => {
         renamePending: !!dirtyBaseline?.renamePending,
         legacyCleanup: !!dirtyBaseline?.legacyCleanup,
         undoStackDirty,
+        editedSinceLoad,
       });
     },
     readToasts() {

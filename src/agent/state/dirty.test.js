@@ -14,6 +14,8 @@ test('buildDirtyState copies part ids and flags', () => {
     renamePending: true,
     legacyCleanup: false,
     partIds: ['a', 'b'],
+    unsaved: false,
+    editedSinceLoad: [],
   });
 });
 
@@ -24,6 +26,20 @@ test('buildDirtyState folds undoStackDirty into workspaceDirty', () => {
     renamePending: false,
     legacyCleanup: false,
     partIds: [],
+    unsaved: true,
+    editedSinceLoad: [],
     undoStackDirty: true,
+  });
+});
+
+test('buildDirtyState sets unsaved from editedSinceLoad', () => {
+  assert.deepEqual(buildDirtyState({ editedSinceLoad: ['p1'] }), {
+    workspaceDirty: false,
+    assemblyDirty: false,
+    renamePending: false,
+    legacyCleanup: false,
+    partIds: [],
+    unsaved: true,
+    editedSinceLoad: ['p1'],
   });
 });
