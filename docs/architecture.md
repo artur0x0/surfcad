@@ -84,6 +84,8 @@ Quote, order, cart, and checkout are permanently exempt (`src/agent/exempt.js`).
 
 A call that changes the script is one undo step on the part stack. `run` of the text `set_script` just wrote does not add another step. The snapshot is taken before the run, because the first real script seeds an assembly and would otherwise replace the stack with one commit per feature marker. `set_script`, `run`, `screenshot`, and `undo` are queued. Flag-off chrome at 390 and 1280 is `golden:agent-bridge`. The Playwright driver is `scripts/demo/agent-bridge-demo.mjs`, and it uses only `call()`.
 
+**Scripted playtest (P1+P2).** `npm run playtest` (or `golden:agent-playtest` in CI) builds, serves `vite preview` on loopback with `?agent=1`, and runs `scripts/playtest/run.mjs`. Scenarios live under `scripts/playtest/scenarios/` and drive only `window.surfcad.call` — bracket (holes + fillet), enclosure hollow, sheet-metal solid, and a two-part assembly. Each run writes `report.json` and `summary.md` under `PLAYTEST_OUT` (per-step timings, pass/fail, PNG screenshots at 1280 and 390 for one scenario). `scripts/playtest/replay.mjs` replays the `replay` block from a report. Nightly: `.github/workflows/playtest-nightly.yml`. `list_edges` is documented as raw mesh edges in the report findings, not redesigned here.
+
 | Helper | Inputs → output | Multi-body |
 | --- | --- | --- |
 | `makeExtrude`, `makeRevolve`, `makeLoft` | contours or sections → a new solid | No split. UI adds or subtracts onto `part` when `part` already exists. Default is add (`part.add`). Merge bodies off emits `part.add(x, { merge: false })` (separate body, below). Subtract emits `part.subtract`. An empty script is still `let part = …`. |

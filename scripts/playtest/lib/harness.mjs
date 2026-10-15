@@ -1,0 +1,215 @@
+/**
+ * Shared Playwright harness for window.surfcad scripted playtests.
+ * Frontend-only: vite preview on localhost. Never staging or production hosts.
+ */
+/* global indexedDB, localStorage, window, document */
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { chromium } from 'playwright-core';
+
+const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
+
+export const CHROME_CANDIDATES = [
+  process.env.CHROME_PATH,
+  '/usr/bin/google-chrome',
+  '/usr/bin/chromium-browser',
+  '/usr/bin/chromium',
+].filter(Boolean);
+
+const CONSOLE_ALLOW = [
+  /favicon/i,
+  /Failed to load resource.*404/i,
+  /Failed to load resource: the server responded with a status of 500/i,
+  /monaco-editor.*simpleWorker\.nls/i,
+  /Failed trying to load default language strings/i,
+  /Error executing script:.*playtest deliberate failure/i,
+];
+
+/** Hard-fail unless the URL host is loopback (cloud-agent safety). */
+export function assertLocalhost(urlString) {
+  let host;
+  try {
+    host = new URL(urlString).hostname;
+  } catch (err) {
+    throw new Error(`playtest: invalid base URL — ${err?.message || err}`);
+  }
+  if (host !== 'localhost' && host !== '127.0.0.1' && host !== '::1') {
+    throw new Error(`playtest: base URL must be localhost (got host "${host}")`);
+  }
+}
+
+export function findChrome() {
+  return CHROME_CANDIDATES.find((p) => existsSync(p)) || null;
+}
+
+export function defaultOutDir() {
+  if (process.env.PLAYTEST_OUT) return process.env.PLAYTEST_OUT;
+  if (existsSync('/opt/cursor/artifacts')) return join('/opt/cursor/artifacts', 'playtest');
+  return join(tmpdir(), 'surfcad-playtest');
+}
+
+export async function waitForServer(baseUrl, timeoutMs = 60000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const res = await fetch(baseUrl);
+      if (res.ok) return true;
+    } catch { /* not up */ }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return false;
+}
+
+export function startPreviewServer(port) {
+  if (!existsSync(join(REPO_ROOT, 'dist/index.html'))) {
+    throw new Error('playtest: dist/ missing — run `npm run build` first');
+  }
+  const server = spawn(
+    'npx',
+    ['vite', 'preview', '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
+    { cwd: REPO_ROOT, stdio: 'ignore', detached: true },
+  );
+  let stopped = false;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    try { process.kill(-server.pid, 'SIGTERM'); } catch { /* gone */ }
+    try { server.kill('SIGKILL'); } catch { /* gone */ }
+  };
+  return { server, stop };
+}
+
+/**
+ * @param {import('playwright-core').Page} page
+ * @param {{ userId: string, assembly: object, parts: Array<{ id: string, script: string }> }} seed
+ */
+export async function seedAssembly(page, seed) {
+  const { userId, assembly, parts } = seed;
+  await page.evaluate(async ({ doc, partRows, uid }) => {
+    localStorage.setItem('surfcadAgent', '1');
+    localStorage.setItem('surfcad.lastAssembly', JSON.stringify({
+      [uid]: {
+        name: doc.name,
+        activeId: doc.activeId,
+        source: doc.source || 'git',
+        savedAt: Date.now(),
+      },
+    }));
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.deleteDatabase('surfcad-assembly');
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+      req.onblocked = () => resolve();
+    });
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.open('surfcad-assembly', 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('assembly')) db.createObjectStore('assembly');
+        if (!db.objectStoreNames.contains('parts')) db.createObjectStore('parts');
+      };
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(['assembly', 'parts'], 'readwrite');
+        tx.objectStore('assembly').put(doc, 'current');
+        for (const row of partRows) {
+          tx.objectStore('parts').put({ id: row.id, script: row.script, savedAt: Date.now() }, row.id);
+        }
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  }, { doc: assembly, partRows: parts, uid: userId });
+}
+
+export async function installApiMocks(page) {
+  await page.route('**/api/auth/me', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      authenticated: true,
+      user: { _id: 'user-playtest', email: 'playtest@test.local' },
+    }),
+  }));
+  await page.route('**/api/config', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({}),
+  }));
+}
+
+export async function waitForBridge(page) {
+  await page.waitForFunction(
+    () => typeof window.surfcad?.call === 'function' && !document.querySelector('[data-app-loading]'),
+    { timeout: 120000 },
+  );
+  await page.waitForSelector('[data-cad-run]', { state: 'attached', timeout: 120000 });
+}
+
+/** Relay-style call: args are JSON-serialised like an external agent. */
+export async function agentCall(page, name, args) {
+  const argsJson = JSON.stringify(args ?? {});
+  return page.evaluate(async ({ name, argsJson }) => {
+    const env = await window.surfcad.call(name, argsJson);
+    return JSON.parse(JSON.stringify(env));
+  }, { name, argsJson });
+}
+
+export function createConsoleCollector(page) {
+  const errors = [];
+  page.on('pageerror', (err) => errors.push(String(err?.message || err)));
+  page.on('console', (msg) => {
+    if (msg.type() !== 'error') return;
+    const text = msg.text();
+    if (CONSOLE_ALLOW.some((re) => re.test(text))) return;
+    errors.push(text);
+  });
+  return errors;
+}
+
+/**
+ * @param {import('playwright-core').Browser} browser
+ * @param {{ width: number, height: number, baseUrl: string, userId: string, assembly: object, parts: Array<{id:string,script:string}> }} opts
+ */
+export async function openAgentPage(browser, opts) {
+  const page = await browser.newPage({ viewport: { width: opts.width, height: opts.height } });
+  const consoleErrors = createConsoleCollector(page);
+  await installApiMocks(page);
+  const origin = new URL(opts.baseUrl).origin;
+  await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
+  await seedAssembly(page, { userId: opts.userId, assembly: opts.assembly, parts: opts.parts });
+  await page.goto(opts.baseUrl, { waitUntil: 'domcontentloaded' });
+  await waitForBridge(page);
+  return { page, consoleErrors };
+}
+
+export async function saveBridgeScreenshot(page, outPath, { width, height } = {}) {
+  if (width && height) await page.setViewportSize({ width, height });
+  const shot = await agentCall(page, 'screenshot', { format: 'png' });
+  if (!shot?.ok || !shot.result?.dataUrl) {
+    throw new Error(`screenshot bridge failed: ${JSON.stringify(shot?.error || shot)}`);
+  }
+  const b64 = String(shot.result.dataUrl).split(',')[1] || '';
+  mkdirSync(dirname(outPath), { recursive: true });
+  writeFileSync(outPath, Buffer.from(b64, 'base64'));
+  if (width && height) await page.setViewportSize({ width: 1280, height: 800 });
+  return outPath;
+}
+
+export async function savePageScreenshot(page, outPath) {
+  mkdirSync(dirname(outPath), { recursive: true });
+  await page.screenshot({ path: outPath });
+  return outPath;
+}
+
+export async function launchBrowser(exe) {
+  return chromium.launch({
+    executablePath: exe,
+    headless: true,
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
+  });
+}

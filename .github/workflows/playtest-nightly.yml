@@ -1,0 +1,57 @@
+# Nightly scripted agent playtest (bridge-only). Optional; not a required check.
+name: Playtest nightly
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: playtest-nightly
+  cancel-in-progress: true
+
+jobs:
+  scripted:
+    name: agent playtest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
+
+      - name: vite build
+        run: npm run build
+
+      - name: Install Chrome
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@v2
+        with:
+          chrome-version: stable
+          install-dependencies: true
+
+      - name: Scripted playtest
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          PLAYTEST_OUT: ${{ runner.temp }}/playtest-nightly
+        run: |
+          test -n "$CHROME_PATH"
+          node scripts/playtest/run.mjs | tee "${RUNNER_TEMP}/playtest.log"
+          test -f "${PLAYTEST_OUT}/report.json"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playtest-report
+          path: ${{ runner.temp }}/playtest-nightly/
+          if-no-files-found: warn
