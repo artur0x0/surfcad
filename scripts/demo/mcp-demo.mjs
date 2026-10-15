@@ -7,6 +7,8 @@
  *   SURFCAD_PLAYTEST=1 — set localStorage auto-approve (CI / harness only)
  *   DEMO_PORT, SURFCAD_AGENT_BRIDGE_WS_PORT, CHROME_PATH
  */
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -23,10 +25,34 @@ import {
 } from '../playtest/lib/harness.mjs';
 import { pickFreePort } from '../playtest/lib/pickFreePort.mjs';
 
-const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../packages/surfcad-mcp');
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
+const PKG_ROOT = join(REPO_ROOT, 'packages/surfcad-mcp');
 const SERVER_BIN = join(PKG_ROOT, 'bin/surfcad-mcp.js');
 const PLAYTEST = process.env.SURFCAD_PLAYTEST === '1' || process.env.SURFCAD_PLAYTEST === 'true';
 const PORT = Number(process.env.DEMO_PORT || process.env.PLAYTEST_PORT || 4182);
+const AUTO_APPROVE_KEY = 'surfcadAgentBridgeAutoApprove';
+
+function distHasPlaytestAutoApprove() {
+  const assets = join(REPO_ROOT, 'dist/assets');
+  if (!existsSync(assets)) return false;
+  return readdirSync(assets)
+    .filter((name) => name.endsWith('.js'))
+    .some((name) => readFileSync(join(assets, name), 'utf8').includes(AUTO_APPROVE_KEY));
+}
+
+function ensurePlaytestDist() {
+  if (!PLAYTEST || distHasPlaytestAutoApprove()) return;
+  const result = spawnSync('npm', ['run', 'build:playtest'], {
+    cwd: REPO_ROOT,
+    stdio: 'inherit',
+    env: process.env,
+  });
+  if (result.status !== 0) {
+    throw new Error('npm run build:playtest failed');
+  }
+}
+
+ensurePlaytestDist();
 
 const USER_ID = 'user-mcp-demo';
 const SEED_SCRIPT = `// --- cube begin ---
