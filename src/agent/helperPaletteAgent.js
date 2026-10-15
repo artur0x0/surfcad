@@ -122,8 +122,11 @@ export function validateHelperParams(item, params) {
 
 export function selectionContextFromArgs(ctx, args) {
   if (!args?.use_selection) return { faceContext: null, edgeContext: null };
+  const helperEdges = ctx.readHelperEdgeContext?.();
   const sel = ctx.readSelection?.() ?? {};
   const face = sel.face || null;
-  const edges = Array.isArray(sel.edges) && sel.edges.length ? sel.edges : null;
+  const edges = Array.isArray(helperEdges) && helperEdges.length
+    ? helperEdges
+    : (Array.isArray(sel.edges) && sel.edges.length ? sel.edges : null);
   return { faceContext: face, edgeContext: edges };
 }
