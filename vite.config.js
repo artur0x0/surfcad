@@ -9,6 +9,8 @@ import viteAgentBridgeWs from './scripts/vite-agent-bridge-ws.mjs'
 const rootDir = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig({
+  // VITE_SURFCAD_PLAYTEST=1 (npm run build:playtest) enables playtest-only agent bridge
+  // auto-approve in the client bundle; normal production builds omit it entirely.
   plugins: [
     react(),
     wasm(),

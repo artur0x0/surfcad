@@ -24,7 +24,7 @@ if (!exe) {
 }
 
 if (!existsSync(join(ROOT, 'dist/index.html'))) {
-  console.log('  ❌ dist/ missing — run `npm run build` first');
+  console.log('  ❌ dist/ missing — run `npm run build:playtest` first');
   process.exit(1);
 }
 

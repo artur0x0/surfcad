@@ -17,9 +17,14 @@ const CHROME_CANDIDATES = [
 ].filter(Boolean);
 
 const hasChrome = CHROME_CANDIDATES.some((p) => existsSync(p));
-const hasDist = existsSync(join(ROOT, 'dist/index.html'));
+test('demo:mcp playtest (headless)', { skip: !hasChrome }, () => {
+  const playtestBuild = spawnSync('npm', ['run', 'build:playtest'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+  assert.equal(playtestBuild.status, 0, playtestBuild.stderr || playtestBuild.stdout);
 
-test('demo:mcp playtest (headless)', { skip: !hasChrome || !hasDist }, () => {
   const result = spawnSync(process.execPath, [DEMO], {
     cwd: ROOT,
     env: {

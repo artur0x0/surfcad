@@ -108,8 +108,8 @@ jobs:
       - name: npm ci
         run: npm ci
 
-      - name: vite build
-        run: npm run build
+      - name: vite build (playtest)
+        run: npm run build:playtest
 
       - name: Install Chrome
         id: setup-chrome

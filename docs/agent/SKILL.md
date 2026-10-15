@@ -60,4 +60,4 @@ Other codes (`unknown_face`, `picker_busy`, `pick_timeout`, …) match `docs/age
 
 ## Local demo
 
-`npm run demo:mcp` — spawns preview + `surfcad-mcp`, prints pairing steps, runs a short box → hole → fillet build (playtest auto-approve in CI).
+`npm run build:playtest && npm run demo:mcp` — playtest bundles only (`VITE_SURFCAD_PLAYTEST=1`); production `npm run build` never ships the auto-approve path. CI smoke builds playtest before goldens.
