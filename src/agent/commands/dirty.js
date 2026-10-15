@@ -15,6 +15,8 @@ export const dirtyCommand = Object.freeze({
         renamePending: false,
         legacyCleanup: false,
         partIds: [],
+        unsaved: false,
+        editedSinceLoad: [],
       };
     return { result };
   },

@@ -1,4 +1,5 @@
 import { NO_ARGS_SCHEMA } from '../registry.js';
+import { buildSelection } from '../state/selection.js';
 
 export const selectionCommand = Object.freeze({
   name: 'selection',
@@ -7,15 +8,20 @@ export const selectionCommand = Object.freeze({
   immediate: true,
   run(ctx) {
     const read = ctx.readSelection;
-    const result = typeof read === 'function'
-      ? read()
-      : {
-        activePartId: null,
-        cadPartId: null,
-        face: null,
-        edges: [],
-        contour: { armedId: null, planeId: null },
-      };
-    return { result };
+    if (typeof read !== 'function') {
+      return { result: buildSelection({}) };
+    }
+    const raw = read();
+    return {
+      result: buildSelection({
+        activePartId: raw.activePartId,
+        cadPartId: raw.cadPartId,
+        cadPartHighlighted: raw.cadPartHighlighted,
+        face: raw.face,
+        edges: raw.edges,
+        armedContourId: raw.contour?.armedId,
+        selectedPlaneId: raw.contour?.planeId,
+      }),
+    };
   },
 });

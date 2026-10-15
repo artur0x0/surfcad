@@ -199,8 +199,8 @@ await page.waitForFunction(
 await page.waitForSelector('[data-cad-run]', { state: 'attached', timeout: 120000 });
 
 const dirtyBefore = await agentCall(page, 'dirty', {});
-check('dirty before agent edit', dirtyBefore.ok === true
-  && (dirtyBefore.result?.workspaceDirty === true || dirtyBefore.result?.undoStackDirty === true),
+check('dirty unsaved false before agent edit', dirtyBefore.ok === true
+  && dirtyBefore.result?.unsaved === false,
   JSON.stringify(dirtyBefore.result));
 
 const wrote = await agentCall(page, 'set_script', { source: BOX });
@@ -228,12 +228,13 @@ check('mode app cad', mode.ok === true && mode.result?.app === 'cad', JSON.strin
 const selection = await agentCall(page, 'selection', {});
 check('selection active part', selection.ok === true && selection.result?.activePartId != null,
   JSON.stringify(selection.result));
+check('selection cadPartId', selection.ok === true && selection.result?.cadPartId != null,
+  JSON.stringify(selection.result));
 
 const dirtyAfter = await agentCall(page, 'dirty', {});
-check('dirty after hole edit', dirtyAfter.ok === true
-  && (dirtyAfter.result?.workspaceDirty === true
-    || dirtyAfter.result?.undoStackDirty === true
-    || (dirtyAfter.result?.partIds?.length ?? 0) > 0),
+check('dirty unsaved after hole edit', dirtyAfter.ok === true
+  && dirtyAfter.result?.unsaved === true
+  && (dirtyAfter.result?.editedSinceLoad?.length ?? 0) >= 1,
   JSON.stringify(dirtyAfter.result));
 
 check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));

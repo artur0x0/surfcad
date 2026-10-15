@@ -313,6 +313,7 @@ export function createSurfcadBridge(hostSource) {
     readSelection: () => (hostFn('readSelection')?.() ?? {
       activePartId: null,
       cadPartId: null,
+      cadPartHighlighted: false,
       face: null,
       edges: [],
       contour: { armedId: null, planeId: null },
@@ -331,6 +332,8 @@ export function createSurfcadBridge(hostSource) {
       renamePending: false,
       legacyCleanup: false,
       partIds: [],
+      unsaved: false,
+      editedSinceLoad: [],
     }),
     readToasts: () => (hostFn('readToasts')?.() ?? { toasts: [] }),
     readParts: () => (hostFn('readParts')?.() ?? {

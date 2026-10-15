@@ -62,6 +62,7 @@ function serializeEdge(edge) {
  * @param {{
  *   activePartId?: string | null,
  *   cadPartId?: string | null,
+ *   cadPartHighlighted?: boolean,
  *   face?: object | null,
  *   edges?: object[],
  *   armedContourId?: string | null,
@@ -72,9 +73,11 @@ export function buildSelection(input = {}) {
   const edges = Array.isArray(input.edges)
     ? input.edges.map(serializeEdge).filter(Boolean)
     : [];
+  const cadPartHighlighted = input.cadPartHighlighted === true;
   return {
     activePartId: input.activePartId ?? null,
     cadPartId: input.cadPartId ?? null,
+    cadPartHighlighted,
     face: serializeFace(input.face),
     edges,
     contour: {

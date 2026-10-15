@@ -28,6 +28,7 @@ test('buildSelection serializes face, edges, and contour ids', () => {
   });
   assert.equal(row.activePartId, 'part-a');
   assert.equal(row.cadPartId, 'part-b');
+  assert.equal(row.cadPartHighlighted, false);
   assert.equal(row.face.key.area, 12.5);
   assert.equal(row.edges[0].key, '1-4');
   assert.equal(row.contour.armedId, 'c1');
