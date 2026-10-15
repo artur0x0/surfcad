@@ -148,7 +148,7 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `status` | `{}` | `Status` from the last finished `set_script`, `run`, or `undo`. |
 | `errors` | `{}` | `{ "errors": [{ "code": string, "message": string, "featureIndex"?: number }] }` — structured messages from the last finished run. `featureIndex` is set when the failing marked block is known. Empty after a good run. |
 | `screenshot` | `{ "format": "png" }` | `{ "dataUrl": string }`. `format` may be omitted and defaults to `"png"`. |
-| `undo` | `{}` | Same shape as `set_script`. Steps the active part's history once and runs that script. |
+| `undo` | `{}` | Part script: same shape as `set_script`. Assembly / joint strip: `{ ok, kind: "assembly", joints, reverted?: { historyHeadBefore, historyHeadAfter, jointsBefore, jointsAfter, jointNamesBefore, jointNamesAfter } }` when a joint-history step was undone; `handled: false` falls through to part undo or `nothing_to_undo`. Failed `joint_commit` does not push an assembly-history step. |
 | `list_commands` | `{}` | `{ "commands": [{ "name": string, "schema": object, "example": object }] }` — every command, in `commands` order, including this one. `schema` is the args schema. `example` is one args object. No functions, no `uiEntry`. |
 | `agent_set_visible` | `{ "enabled"?: boolean, "stepDelayMs"?: number, "cursor"?: boolean, "highlight"?: boolean, "ripple"?: boolean, "easeCamera"?: boolean }` | `{ "options": { … } }` — toggles operator-visible cues (synthetic cursor, control flashes, pacing). Same options can be seeded with `?visible=1`, `?agent=visible`, localStorage `surfcadAgentVisible` = `1`, or env `AGENT_VISIBLE=1`. Does not change command outcomes. |
 | `feature_tree` | `{}` | `{ "features": [{ "id", "kind", "label", "chipLabel", "index", "failed", "sheet", "external", "separate" }], "rollbackAnchor": string \| null, "activeChipId": string \| null }` for the active part script. |
@@ -158,7 +158,7 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `toasts` | `{}` | `{ "toasts": [{ "id", "kind", "message" }] }` visible upload / git / rename notices. |
 | `parts` | `{}` | `{ "activeId", "assemblyName", "parts": [{ "id", "name", "visible" }] }`. |
 | `camera` | `{}` | `{ "position", "quaternion", "target", "zoom", "fov" }` arrays or null. |
-| `list_faces` | `{ "part_id"?: string }` | `{ "partId", "faces": [{ "key", "center", "normal", "area", "triangleCount" }] }`. `key` is the exact object `select_faces` accepts. Omit `part_id` for the active part mesh. |
+| `list_faces` | `{ "part_id"?: string }` | `{ "partId", "faces": [{ "key", "center", "normal", "area", "triangleCount", "kind"?, "axis"? }] }`. Tessellated cylinder walls merge to one row per analytic surface (same grouping as a viewport tap). Cylindrical rows include `axis: { at, dir, radius }` — pass that object (with `kind: "axis"`) to `joint_pick` for concentric mates. `key` is the exact object `select_faces` accepts. Omit `part_id` for the active part mesh. |
 | `list_edges` | `{ "part_id"?: string, "raw"?: boolean, "grouped"?: boolean }` | Default `raw: true`: tessellated mesh feature edges (`raw: true` in the result). Set `raw: false` or `grouped: true` for the same payload as `list_feature_edges`. |
 | `list_feature_edges` | `{ "part_id"?: string }` | `{ "partId", "grouped": true, "edges": [{ "key": "e0", …, "faceKeyA", "faceKeyB" }] }` — one row per boundary-edge id from the Fillet topo pass (far fewer than raw `list_edges`). |
 | `invoke_helper` | `{ "id": string, "params"?: object, "use_selection"?: boolean }` | Runs `composeHelperInsert` on the active part, then the same mutate path as `set_script`. Result includes `{ "helperId", "ok", "errors", "status" }`. Unknown ids → `unknown_helper`. |
@@ -231,7 +231,7 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `git_force_overwrite` | `{ confirm: true }` | Conflict popup → Overwrite main (`handleOverwriteMain`). |
 | `git_list_branches` | `{}` | `{ branches, branch }` from `handleListBranches` (immediate). Read-only: allowed even when the real GitHub adapter is active. |
 
-**Real vault guard.** If the live adapter is GitHub (`kind: real`, e.g. a token in storage), agent git **write** commands above refuse with `real_repo_blocked` unless the page opted in with URL `?agentGit=real` or localStorage `surfcadAgentGitReal` = `1`. UI Save / branch flows are unaffected.
+**Real vault guard.** If the live adapter is GitHub (`kind: real`, e.g. a token in storage), the first agent git **write** in a tab opens a consent modal (`data-agent-git-consent-allow` / `data-agent-git-consent-deny`) naming the command and `owner/repo/branch`, e.g. “An agent wants to save to *acme/widgets/main*. Allow agent writes to your GitHub repos for this session?”. **Allow for this session** sets session opt-in and runs the pending command; **Deny** or dismiss sets a session deny flag, returns `real_repo_blocked` with a clear decline message, and does not show the modal again that session. Opt-in also works via URL `?agentGit=real`, localStorage `surfcadAgentGitReal` = `1`, or sessionStorage `surfcadAgentGitRealSession` = `1` after Allow. Headless / playtest / automation (`navigator.webdriver`) never waits on the modal: writes return `real_repo_blocked` immediately with `error.details.reason` `consent_pending`. After a deny, `details.reason` is `consent_declined`. UI Save / branch flows are unaffected.
 
 ### Pick sessions
 
@@ -258,7 +258,7 @@ One session at a time. A session idle for `timeout_ms` (default 120000, 1000–1
 | `bad_json` | `argsJson` is a string and `JSON.parse` throws. |
 | `bad_args` | Args are not a JSON object, are not serialisable (function, class instance, typed array, non-finite number), or a required field has the wrong type (`set_script` `source` must be a string). |
 | `confirm_required` | A destructive git command was called without `confirm: true` (`git_branch_delete`, `git_force_overwrite`, `git_behind_resolve` reload/branch, or `git_branch_switch` while the vault working copy is dirty). |
-| `real_repo_blocked` | Agent git write while the real GitHub adapter is active and the tab has not opted in (`?agentGit=real` or `surfcadAgentGitReal=1`). |
+| `real_repo_blocked` | Agent git write while the real GitHub adapter is active without opt-in. `error.details.reason` is `consent_pending` (no answer / headless), `consent_declined` (user denied this session), or omitted when blocked by legacy query/storage-only paths. Message explains consent or decline. |
 | `git_error` | Git handler returned `{ status: "error" }` (message in `error.message`). |
 | `unsupported_format` | `screenshot` `format` is present and is not `"png"`. |
 | `nothing_to_undo` | `undo` is already at the bottom of the stack. The editor and the history do not change. Also `pick_undo` with no agent pick in the session. |

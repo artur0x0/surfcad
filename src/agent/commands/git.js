@@ -1,26 +1,58 @@
 import {
   requireDestructiveConfirm,
   gitOpResult,
-  agentGitRealWriteBlocked,
+  realRepoBlockedError,
 } from '../gitAgent.js';
 import { NO_ARGS_SCHEMA } from '../registry.js';
 
-function assertAgentGitWrite(ctx) {
+/** Max wait for the in-app consent modal (interactive tabs only). */
+export const AGENT_GIT_CONSENT_TIMEOUT_MS = 120_000;
+
+async function ensureAgentGitWriteConsent(ctx, commandName) {
   const kind = typeof ctx.readAgentGitAdapterKind === 'function'
     ? ctx.readAgentGitAdapterKind()
     : null;
+  if (kind !== 'real') return null;
   const optedIn = typeof ctx.readAgentGitRealOptIn === 'function'
     ? ctx.readAgentGitRealOptIn() === true
     : false;
-  const blocked = agentGitRealWriteBlocked(kind, optedIn);
-  if (blocked) return { error: blocked };
-  return null;
+  if (optedIn) return null;
+
+  if (typeof ctx.readAgentGitSessionDenied === 'function' && ctx.readAgentGitSessionDenied() === true) {
+    return realRepoBlockedError(
+      'consent_declined',
+      'You declined agent git writes for this browser session.',
+    );
+  }
+
+  const request = ctx.requestAgentGitWriteConsent;
+  if (typeof request !== 'function') {
+    return realRepoBlockedError(
+      'consent_pending',
+      'Agent git write consent is unavailable in this environment.',
+    );
+  }
+  const target = typeof ctx.readAgentGitWriteTarget === 'function'
+    ? ctx.readAgentGitWriteTarget()
+    : { repo: 'your repo', branch: 'main' };
+  const outcome = await request({ command: commandName, ...target });
+  if (outcome === 'allow') return null;
+  if (outcome === 'deny') {
+    return realRepoBlockedError(
+      'consent_declined',
+      'You declined agent git writes for this browser session.',
+    );
+  }
+  return realRepoBlockedError(
+    'consent_pending',
+    'Agent git write consent timed out or is unavailable headless (playtest / automation).',
+  );
 }
 
-async function hostGit(ctx, name, args, { readOnly = false } = {}) {
+async function hostGit(ctx, name, args, { readOnly = false, commandName = '' } = {}) {
   if (!readOnly) {
-    const gate = assertAgentGitWrite(ctx);
-    if (gate) return gate;
+    const gate = await ensureAgentGitWriteConsent(ctx, commandName || name);
+    if (gate) return { error: gate };
   }
   const fn = ctx[name];
   if (typeof fn !== 'function') {
@@ -47,7 +79,7 @@ export const gitMoveToRepoCommand = Object.freeze({
   }),
   example: { vault_name: 'my-vault' },
   async run(ctx, args) {
-    return hostGit(ctx, 'agentGitMoveToRepo', args || {});
+    return hostGit(ctx, 'agentGitMoveToRepo', args || {}, { commandName: 'git_move_to_repo' });
   },
 });
 
@@ -70,7 +102,7 @@ export const gitSaveCommand = Object.freeze({
   },
   async run(ctx, args) {
     const message = String(args?.message || '').trim();
-    return hostGit(ctx, 'agentGitSave', { message });
+    return hostGit(ctx, 'agentGitSave', { message }, { commandName: 'git_save' });
   },
 });
 
@@ -93,7 +125,7 @@ export const gitAddToRepoCommand = Object.freeze({
     return null;
   },
   async run(ctx, args) {
-    return hostGit(ctx, 'agentGitAddToRepo', { partId: args.part_id });
+    return hostGit(ctx, 'agentGitAddToRepo', { partId: args.part_id }, { commandName: 'git_add_to_repo' });
   },
 });
 
@@ -134,7 +166,7 @@ export const gitBehindResolveCommand = Object.freeze({
       action: args.action,
       path: args.path,
       kind: args.kind,
-    });
+    }, { commandName: 'git_behind_resolve' });
   },
 });
 
@@ -156,7 +188,7 @@ export const gitBranchCreateCommand = Object.freeze({
     return null;
   },
   async run(ctx, args) {
-    return hostGit(ctx, 'agentGitBranchCreate', { name: String(args.name).trim() });
+    return hostGit(ctx, 'agentGitBranchCreate', { name: String(args.name).trim() }, { commandName: 'git_branch_create' });
   },
 });
 
@@ -186,7 +218,7 @@ export const gitBranchSwitchCommand = Object.freeze({
     return hostGit(ctx, 'agentGitBranchSwitch', {
       branch: args.branch,
       confirm: args?.confirm === true,
-    });
+    }, { commandName: 'git_branch_switch' });
   },
 });
 
@@ -212,7 +244,7 @@ export const gitBranchDeleteCommand = Object.freeze({
     return null;
   },
   async run(ctx, args) {
-    return hostGit(ctx, 'agentGitBranchDelete', { branch: args.branch });
+    return hostGit(ctx, 'agentGitBranchDelete', { branch: args.branch }, { commandName: 'git_branch_delete' });
   },
 });
 
@@ -233,7 +265,7 @@ export const gitForceOverwriteCommand = Object.freeze({
     return null;
   },
   async run(ctx) {
-    return hostGit(ctx, 'agentGitForceOverwrite', {});
+    return hostGit(ctx, 'agentGitForceOverwrite', {}, { commandName: 'git_force_overwrite' });
   },
 });
 
