@@ -422,6 +422,8 @@ export function createSurfcadBridge(hostSource) {
     agentGitBranchDelete: (args) => hostFn('agentGitBranchDelete')?.(args),
     agentGitForceOverwrite: (args) => hostFn('agentGitForceOverwrite')?.(args),
     agentGitListBranches: (args) => hostFn('agentGitListBranches')?.(args),
+    readAgentGitAdapterKind: () => hostFn('readAgentGitAdapterKind')?.() ?? null,
+    readAgentGitRealOptIn: () => hostFn('readAgentGitRealOptIn')?.() === true,
     jointOpen: () => hostFn('jointOpen')?.(),
     jointSetParams: (args) => hostFn('jointSetParams')?.(args),
     jointApplyPicks: (args) => hostFn('jointApplyPicks')?.(args),
