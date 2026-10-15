@@ -133,13 +133,32 @@ try {
     await openCard(page, 'Insert Fillet');
     await page.waitForSelector('[data-popup-slider="radius"]', { timeout: 8000 });
     const fillet = await sliderOf(page, '[data-popup-slider="radius"]');
-    check(`${vp.name} fillet radius is a shaped thumb`,
-      fillet && fillet.min === '0' && fillet.max === '1000' && fillet.step === '1' && fillet.curve === 'shaped',
+    check(`${vp.name} fillet radius is a log thumb`,
+      fillet && fillet.min === '0' && fillet.max === '1000' && fillet.step === '1' && fillet.curve === 'log',
       JSON.stringify(fillet));
+    const radiusBox = await page.locator('[data-popup-number="radius"]').inputValue();
+    check(`${vp.name} fillet default is 2 mm`, radiusBox === '2', radiusBox);
+    await page.locator('[data-popup-number="radius"]').fill('40');
+    await page.locator('[data-popup-number="radius"]').blur();
+    const typed = await page.locator('[data-popup-number="radius"]').inputValue();
+    const thumb = await page.locator('[data-popup-slider="radius"]').inputValue();
+    check(`${vp.name} typed 40 mm is kept`, typed === '40', typed);
+    check(`${vp.name} a typed 40 mm parks the thumb at the end`, thumb === '1000', thumb);
     const filletShot = join(SHOT_DIR, `feature-sliders-fillet-${vp.name}.png`);
     await page.screenshot({ path: filletShot });
     check(`${vp.name} fillet shot saved outside artifacts`,
       existsSync(filletShot) && !filletShot.startsWith('/opt/cursor/artifacts'), filletShot);
+    await page.locator('[data-feature-card-cancel]').click();
+    await page.waitForSelector('[data-edge-blend]', { state: 'detached', timeout: 8000 });
+
+    await openCard(page, 'Insert Chamfer');
+    await page.waitForSelector('[data-popup-slider="size"]', { timeout: 8000 });
+    const chamfer = await sliderOf(page, '[data-popup-slider="size"]');
+    check(`${vp.name} chamfer size is a log thumb`,
+      chamfer && chamfer.min === '0' && chamfer.max === '1000' && chamfer.step === '1' && chamfer.curve === 'log',
+      JSON.stringify(chamfer));
+    const sizeBox = await page.locator('[data-popup-number="size"]').inputValue();
+    check(`${vp.name} chamfer default is 2 mm`, sizeBox === '2', sizeBox);
     await page.locator('[data-feature-card-cancel]').click();
     await page.waitForSelector('[data-edge-blend]', { state: 'detached', timeout: 8000 });
 

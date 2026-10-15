@@ -1,32 +1,29 @@
 #!/usr/bin/env node
 /**
- * Fillet default radius from the adjacent edge closest to perpendicular.
+ * Fillet and chamfer default size is 2 mm in every display unit.
  *
- * The untouched radius used to be 0.1 × the picked path length (clamped
- * 1–6 mm), so every edge added in Fillet mode grew it. A chain now uses the
- * shortest perpendicular neighbor. On the 40×30×20 cube that neighbor is
- * 20 mm, so the seed stays 2 mm as edges accumulate. A 20 mm edge alone
- * seeds 3 mm. A 2 mm sheet seeds 0.2 mm. A typed radius still applies to
- * every part. `minExtent` does not size the radius.
+ * Inches show 0.0787. Edge length, path length, and the part box do not
+ * change the seed, so a thin sheet stays at 2 mm. A typed radius still
+ * applies to every part, including a typed 40 mm.
  *
  * Real solids (worker + pick graphs, like the viewport), Fillet mode's own
  * seed / Accept calls, and wiring checks on the Viewport seed effect.
  */
 import { readFileSync } from 'node:fs';
 import { register } from 'node:module';
-import { defaultSweepBlendSize, pathLengthFromEdges, toggleEdgeSelectionPropagated } from '../../src/utils/selectEdge.js';
+import { pathLengthFromEdges, toggleEdgeSelectionPropagated } from '../../src/utils/selectEdge.js';
+import { formatDisplayNumber, lengthToDisplay } from '../../src/utils/displayUnit.js';
 import { partEdgeParams, planMultiPartEdgeAccept } from '../../src/utils/multiPartEdges.js';
 import {
-  composeFilletCommit,
   defaultFilletParams,
   defaultFilletRadius,
+  enterChamferState,
   enterFilletState,
   FILLET_DEFAULT_RADIUS,
   normalizeFilletParams,
   solidMinExtent,
   validateFilletAccept,
 } from '../../src/utils/filletMode.js';
-import { classifyFilletEdges } from '../../src/utils/filletEdgeClass.js';
 import { cachedSolidGeometry, createSolidCache, featureGraphFor } from '../../src/utils/partSolidCache.js';
 
 
@@ -78,7 +75,7 @@ async function exec(script) {
 
 const near = (a, b, tol = 1e-6) => Math.abs(a - b) <= tol * Math.max(1, Math.abs(a), Math.abs(b));
 
-console.log('fillet default radius — adjacent edge, typed is shared');
+console.log('fillet default radius — 2 mm in every unit, typed is shared');
 
 const PARTS = {
   A: 'let part = Manifold.cube([40, 30, 20], true);\nreturn part;',
@@ -95,20 +92,24 @@ for (const [id, script] of Object.entries(PARTS)) {
   graphs[id] = { script, run, geometry: solid.geometry, edges: graph.featureEdges };
 }
 const pick = (sel, id, edge) => toggleEdgeSelectionPropagated(sel, edge, { propagate: true, featureEdges: graphs[id].edges });
-/** The viewport seed: defaultFilletParams with that part's feature edges. */
-const seedFor = (id, picks) => defaultFilletParams(picks, { neighbors: graphs[id].edges }).radius;
+/** Untouched size for any part's picks: 2 mm. */
+const seedFor = () => defaultFilletRadius();
 /** Straight edges of a part, longest first, so each pick adds path length. */
 const straight = (id) => graphs[id].edges.filter((e) => e.length > 1).sort((a, b) => b.length - a.length);
 
 // ── Pure helpers ───────────────────────────────────────────────
 check('FILLET_DEFAULT_RADIUS is 2 mm', FILLET_DEFAULT_RADIUS === 2);
-check('no picks → 2', defaultFilletRadius() === 2 && defaultFilletParams(null).radius === 2);
-check('minExtent no longer sizes the radius', defaultFilletRadius({ minExtent: 4 }) === 2
-  && defaultFilletRadius({ minExtent: 1 }) === 2);
+check('no picks → 2', defaultFilletRadius() === 2 && defaultFilletParams().radius === 2);
+check('inches show 0.0787 for the 2 mm seed',
+  formatDisplayNumber(lengthToDisplay(defaultFilletRadius(), 'in')) === '0.0787');
+check('edges and minExtent do not size the radius',
+  defaultFilletRadius({ minExtent: 4, picked: straight('A'), neighbors: graphs.A.edges }) === 2);
 const edgeByLen = (id, len) => graphs[id].edges.find((e) => Math.abs(e.length - len) < 0.2);
-check('cube 40 mm edge seeds 2 mm (shorter neighbor is 20)', seedFor('A', [edgeByLen('A', 40)]) === 2);
-check('cube 20 mm edge seeds 3 mm (shorter neighbor is 30)', seedFor('A', [edgeByLen('A', 20)]) === 3,
+check('cube 40 mm edge seeds 2 mm', seedFor('A', [edgeByLen('A', 40)]) === 2);
+check('cube 20 mm edge seeds 2 mm', seedFor('A', [edgeByLen('A', 20)]) === 2,
   String(seedFor('A', [edgeByLen('A', 20)])));
+check('chamfer enter seeds 2 mm', enterChamferState(straight('A')).params.chamfer === 2
+  && enterChamferState(null).params.chamfer === 2);
 check('solidMinExtent reads a plain box', solidMinExtent({ min: [0, 0, 0], max: [40, 30, 2] }) === 2);
 check('solidMinExtent reads the solids (A 20, T 2)',
   near(solidMinExtent(graphs.A.geometry), 20) && near(solidMinExtent(graphs.T.geometry), 2));
@@ -120,18 +121,15 @@ check('enterFilletState / normalizeFilletParams seed 2 without a part',
   let sel = [];
   const seeds = [];
   const lens = [];
-  const legacy = [];
   for (const edge of straight('A')) {
     if (sel.some((e) => e === edge)) continue;
     sel = pick(sel, 'A', edge);
     seeds.push(seedFor('A', sel));
     lens.push(pathLengthFromEdges(sel));
-    legacy.push(defaultSweepBlendSize(pathLengthFromEdges(sel)));
     if (sel.length >= 12) break;
   }
   check(`picked ${sel.length} edges on A, path ${lens[0]?.toFixed(0)} → ${lens.at(-1)?.toFixed(0)} mm`,
     sel.length >= 6 && lens.at(-1) > lens[0] * 3);
-  check('the old 0.1 × path seed would have grown', legacy.at(-1) > legacy[0], legacy.join(' '));
   check('seed stays 2 mm after every pick', seeds.every((r) => r === 2), seeds.join(' '));
   // Accept on an accumulated top loop (a closed loop the sweep takes) keeps 2.
   let loop = [];
@@ -167,12 +165,12 @@ const radii = (plan) => Object.fromEntries(plan.groups.map((g) => [g.partId, g.g
     rounds.every((r) => r.A === 2 && r.B === 2), JSON.stringify(rounds));
 }
 
-// ── Thin part clamps; thick part beside it keeps 2 ─────────────
+// ── Thin part keeps 2 mm, the same seed as the thick part ──────
 let thinSel = [];
 {
   const et = straight('T').filter((e) => e.length > 20);
   thinSel = pick(pick([], 'T', et[0]), 'T', et[1]);
-  check('thin sheet (2 mm) seeds 0.2 mm', seedFor('T', thinSel) === 0.2, String(seedFor('T', thinSel)));
+  check('thin sheet (2 mm) still seeds 2 mm', seedFor('T', thinSel) === 2, String(seedFor('T', thinSel)));
   let sel = [...thinSel];
   sel = pick(sel, 'A', straight('A')[0]);
   for (const active of ['A', 'T']) {
@@ -180,17 +178,8 @@ let thinSel = [];
     state.params = { ...state.params, radius: seedFor(active, sel.filter((e) => e.partId === active)) };
     const plan = multiPlan(sel, active, state);
     const r = plan.ok ? radii(plan) : {};
-    check(`A + thin T, ${active} active: A 2, T 0.2`, r.A === 2 && r.T === 0.2, plan.message || JSON.stringify(r));
+    check(`A + thin T, ${active} active: both seed 2`, r.A === 2 && r.T === 2, plan.message || JSON.stringify(r));
   }
-  const gate = validateFilletAccept(thinSel, { ...enterFilletState([]).params, radius: seedFor('T', thinSel) });
-  const klass = classifyFilletEdges(thinSel, { radius: gate.normalized.radius, geometry: graphs.T.geometry }).klass;
-  const res = composeFilletCommit(graphs.T.script, {
-    edges: thinSel, params: gate.normalized, filletClass: klass, geometry: graphs.T.geometry,
-  });
-  const run = res.ok ? await exec(res.buffer) : null;
-  check('thin sheet fillet at the clamped seed runs and removes material',
-    !!run && run.volume < graphs.T.run.volume - 1e-3 && run.volume > graphs.T.run.volume * 0.9,
-    run ? `vol ${run.volume}` : 'compose failed');
 }
 
 // ── A typed radius is shared across parts ──────────────────────
@@ -209,27 +198,28 @@ let thinSel = [];
   const plan3 = multiPlan(sel2, 'B', typed3);
   const r3 = plan3.ok ? radii(plan3) : {};
   check('typed 3 lands on A and B', r3.A === 3 && r3.B === 3, plan3.message || JSON.stringify(r3));
+  const kept = partEdgeParams({ radius: 40 }, sel2, { touched: true, seed: () => 2 });
+  check('typed 40 mm is kept', kept.radius === 40, String(kept.radius));
 }
 
 // ── Wiring ─────────────────────────────────────────────────────
 {
   const vp = read('src/components/Viewport.jsx');
-  check('seed effect seeds from the active part edges',
-    /const seeded = defaultFilletParams\(filletActiveEdges, \{ neighbors \}\)/.test(vp));
+  check('seed effect uses the fixed radius',
+    /const seeded = defaultFilletRadius\(\)/.test(vp));
   const i = vp.indexOf('const acceptFillet = useCallback');
   const body = vp.slice(i, vp.indexOf('const exitShellMode', i));
-  check('Accept reseeds each untouched part against its own edges',
+  check('Accept keeps an untouched size at the fixed radius',
     /touched: !!state\.radiusTouched/.test(body)
-    && /featureEdgesOf\(pickPartGeometry\(/.test(body)
-    && /neighbors: partEdges/.test(body));
+    && /seed: \(\) => defaultFilletRadius\(\)/.test(body));
   const fm = read('src/utils/filletMode.js');
   const def = fm.slice(fm.indexOf('export function defaultFilletParams'), fm.indexOf('export function enterFilletState'));
-  check('defaultFilletParams no longer reads path length', !/pathLength|defaultSweepBlendSize/.test(def));
+  check('defaultFilletParams does not read an edge length', !/pathLength|adjacentBlend|defaultSweepBlendSize/.test(def));
   check('helper-modal fillet default is the fixed radius too',
-    !/defaultSweepBlendSize/.test(read('src/utils/faceFeaturePlacement.js')));
+    !/adjacentBlend|defaultSweepBlendSize/.test(read('src/utils/faceFeaturePlacement.js')));
   const arch = read('docs/architecture.md');
-  check('architecture.md documents the adjacent-edge default',
-    /defaultFilletRadius/.test(arch) && /golden:fillet-default-radius/.test(arch));
+  check('architecture.md documents the 2 mm default',
+    /defaultFilletRadius/.test(arch) && /2 mm/.test(arch) && /golden:fillet-default-radius/.test(arch));
 }
 
 if (failed) {

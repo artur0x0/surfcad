@@ -1,6 +1,6 @@
 import React from 'react';
 import { LengthNumberField } from './controls/popupUI';
-import { growToFit } from '../utils/sliderRange';
+import { BLEND_SIZE_MAX_MM, BLEND_SIZE_MIN_MM } from '../utils/blendSize';
 import { FeatureDeleteButton } from './FeatureEditDelete';
 import FeatureSheet from './FeatureSheet';
 
@@ -46,14 +46,6 @@ const FilletModeChip = ({
   };
 
   const size = params[sizeKey];
-  const sizeNum = Number(size);
-  const baseMax = Number(params._blendMax) > 0
-    ? Number(params._blendMax)
-    : (chamfer
-      ? 40
-      : (Number(params._sweepMax) > 0 ? Number(params._sweepMax) : 40));
-  const baseMin = Number(params._blendMin) > 0 ? Number(params._blendMin) : 0.1;
-  const fit = growToFit(Math.min(baseMin, baseMax), baseMax, Number.isFinite(sizeNum) ? sizeNum : baseMin);
   const title = chamfer ? 'Chamfer' : 'Fillet';
   const heading = `${title} · ${edgeCount} edge${edgeCount === 1 ? '' : 's'}`;
   const subtitle = pathOk
@@ -86,10 +78,11 @@ const FilletModeChip = ({
           id={chamfer ? 'size' : 'radius'}
           label={chamfer ? 'Size' : 'Radius'}
           accent="cyan"
+          curve="log"
           valueMm={size}
           onChangeMm={setSize}
-          minMm={fit.min}
-          maxMm={fit.max}
+          minMm={BLEND_SIZE_MIN_MM}
+          maxMm={BLEND_SIZE_MAX_MM}
         />
       </div>
       {partCount > 1 ? (

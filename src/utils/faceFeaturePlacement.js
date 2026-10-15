@@ -23,11 +23,10 @@
 import {
   minSelectedEdgeLength,
   effectiveBlendEdgeLength,
-  blendSliderStep,
   pathLengthFromEdges,
   sweepBlendHardMax,
 } from './selectEdge.js';
-import { adjacentBlendSize } from './adjacentBlend.js';
+import { BLEND_SIZE_MAX_MM, BLEND_SIZE_MIN_MM, defaultBlendSizeMm } from './blendSize.js';
 import { resolveFilletStrategy } from './filletAlongPath.js';
 import {
   CROSS_SECTION_REFUSE_NON_PLANAR,
@@ -990,7 +989,7 @@ export function resolveFaceModal(paletteItem, selectedFace, selectedEdges = null
   }
 
   // Slice 12 + polish: fillet/chamfer with user-selected edges (no face required).
-  // The radius is the adjacent-edge seed. Sweep still skips the planar size guard.
+  // The size is the fixed 2 mm seed. Sweep still skips the planar size guard.
   if (isEdgeFeature && hasEdges) {
     const body = { name: 'body', type: 'body', default: 'part', label: 'Body' };
     const edgeScope = {
@@ -999,24 +998,21 @@ export function resolveFaceModal(paletteItem, selectedFace, selectedEdges = null
     };
     const minL = effectiveBlendEdgeLength(selectedEdges) ?? minSelectedEdgeLength(selectedEdges);
     const pathLen = pathLengthFromEdges(selectedEdges);
-    // Fillet and chamfer open on the adjacent-edge seed, the same one the
-    // mode card uses. Sweep still skips the planar 0.45·L size guard.
+    // Fillet and chamfer open on the same 2 mm seed as the mode card.
+    // Sweep still skips the planar 0.45·L size guard.
     const resolved = id === 'filletEdges'
       ? resolveFilletStrategy('sweep', selectedEdges)
       : 'planar';
     const useSweepSize = resolved === 'sweep';
-    const sized = adjacentBlendSize(selectedEdges);
-    const blendDefault = sized.defaultMm;
-    const blendMax = sized.maxMm;
-    const blendStep = blendSliderStep(blendMax);
+    const blendDefault = defaultBlendSizeMm();
     const blendParam = id === 'filletEdges'
       ? {
           name: 'radius', type: 'number', default: blendDefault, label: 'Radius',
-          min: sized.minMm, step: blendStep, slider: true, max: blendMax,
+          min: BLEND_SIZE_MIN_MM, slider: true, max: BLEND_SIZE_MAX_MM,
         }
       : {
           name: 'chamfer', type: 'number', default: blendDefault, label: 'Chamfer',
-          min: sized.minMm, step: blendStep, slider: true, max: blendMax,
+          min: BLEND_SIZE_MIN_MM, slider: true, max: BLEND_SIZE_MAX_MM,
         };
     let params;
     if (id === 'filletEdges') {
@@ -1114,20 +1110,17 @@ export function resolveFaceModal(paletteItem, selectedFace, selectedEdges = null
   const pathLenFace = hasEdges && isEdgeFeature ? pathLengthFromEdges(selectedEdges) : null;
   const useSweepSizeFace = id === 'filletEdges' && hasEdges
     && resolveFilletStrategy('sweep', selectedEdges) === 'sweep';
-  const sizedFace = hasEdges && isEdgeFeature ? adjacentBlendSize(selectedEdges) : null;
-  const blendDefault = sizedFace ? sizedFace.defaultMm : null;
-  const blendMax = sizedFace ? sizedFace.maxMm : null;
-  const blendStep = blendSliderStep(blendMax);
+  const blendFace = hasEdges && isEdgeFeature;
   // Prefer selected edges when both face + edges present for fillet/chamfer.
   const mergedParams = params.map((p) => {
     let def = seeds[p.name] !== undefined ? seeds[p.name] : p.default;
     if (p.name === 'edgeScope' && hasEdges) def = 'selected';
-    if (blendDefault != null && (p.name === 'radius' || p.name === 'chamfer')) def = blendDefault;
+    if (blendFace && (p.name === 'radius' || p.name === 'chamfer')) def = defaultBlendSizeMm();
     let next = p;
     if (def !== p.default) next = { ...next, default: def };
     else if (seeds[p.name] !== undefined) next = { ...next, default: seeds[p.name] };
-    if (blendMax != null && (p.name === 'radius' || p.name === 'chamfer')) {
-      next = { ...next, min: sizedFace.minMm, max: blendMax, step: blendStep, slider: true };
+    if (blendFace && (p.name === 'radius' || p.name === 'chamfer')) {
+      next = { ...next, min: BLEND_SIZE_MIN_MM, max: BLEND_SIZE_MAX_MM, slider: true };
     }
     return next;
   });

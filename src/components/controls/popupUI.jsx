@@ -22,7 +22,10 @@ import { useDisplayUnit } from '../../hooks/useDisplayUnit';
 import { useDisplayNumber } from '../../hooks/useDisplayNumber';
 import { numberFieldLabelParts } from '../../utils/featureFieldEdit';
 import { commitDisplayLength, lengthCaption, lengthToDisplay } from '../../utils/displayUnit';
-import { lengthFromThumb, lengthSnap, thumbFromLength, THUMB_COUNT } from '../../utils/sliderMap';
+import { blendSnapStep } from '../../utils/blendSize';
+import {
+  lengthFromThumb, lengthSnap, logLengthFromThumb, logThumbFromLength, thumbFromLength, THUMB_COUNT,
+} from '../../utils/sliderMap';
 
 /* Shared accent/text tokens are imported by chips; keep them here. */
 /* eslint-disable react-refresh/only-export-components */
@@ -96,7 +99,7 @@ export const PopupSection = ({
 export const NumberField = ({
   label, value, onChange, min, max, step, accent = 'slate',
   disabled = false, id, className = '', unit,
-  shaped = false, signed = false, onPointerDown,
+  shaped = false, signed = false, curve = 'shape', snapFor = null, onPointerDown,
   numberAttrs = null, sliderAttrs = null, captionAttrs = null,
   trailing = null,
 }) => {
@@ -111,15 +114,20 @@ export const NumberField = ({
   let rangeStep;
   let onRange;
   if (shaped) {
+    const useLog = curve === 'log';
     const snap = Number(step) > 0 ? Number(step) : 0;
-    const thumb = thumbFromLength(value, { min: lo, max: hi, signed });
+    const thumb = useLog
+      ? logThumbFromLength(value, { min: lo, max: hi })
+      : thumbFromLength(value, { min: lo, max: hi, signed });
     rangeValue = Math.round(Number.isFinite(thumb) ? thumb : 0);
     rangeMin = 0;
     rangeMax = THUMB_COUNT;
     rangeStep = 1;
     onRange = (e) => {
       box.endDraft();
-      const next = lengthFromThumb(e.target.value, { min: lo, max: hi, signed, snap });
+      const next = useLog
+        ? logLengthFromThumb(e.target.value, { min: lo, max: hi, snap: snapFor || snap })
+        : lengthFromThumb(e.target.value, { min: lo, max: hi, signed, snap });
       onChange?.(String(next));
     };
   } else {
@@ -147,7 +155,7 @@ export const NumberField = ({
           className={`flex-1 min-w-0 h-1.5 ${a.range} disabled:opacity-40`}
           aria-label={label}
           data-popup-slider={id || label}
-          {...(shaped ? { 'data-slider-curve': 'shaped' } : null)}
+          {...(shaped ? { 'data-slider-curve': curve === 'log' ? 'log' : 'shaped' } : null)}
           {...sliderAttrs}
         />
         <input
@@ -182,7 +190,7 @@ export const LengthNumberField = ({
   label, valueMm, onChangeMm, minMm = 0, maxMm = 100, signed = false,
   accent = 'slate', disabled = false, id, className = '',
   onPointerDown, numberAttrs = null, sliderAttrs = null, captionAttrs = null,
-  unit: unitProp = null,
+  unit: unitProp = null, curve = 'shape',
 }) => {
   const [liveUnit] = useDisplayUnit();
   const unit = unitProp || liveUnit;
@@ -191,7 +199,8 @@ export const LengthNumberField = ({
     : Number(maxMm);
   const lo = signed ? -end : (Number.isFinite(Number(minMm)) ? Number(minMm) : 0);
   const spanMm = Math.abs(end - (signed ? -end : lo));
-  const snap = lengthToDisplay(lengthSnap(unit, spanMm), unit);
+  const useLog = curve === 'log';
+  const snap = useLog ? null : lengthToDisplay(lengthSnap(unit, spanMm), unit);
   const partial = valueMm === '' || valueMm === '-' || valueMm === '.';
   const shown = partial
     ? valueMm
@@ -199,6 +208,8 @@ export const LengthNumberField = ({
   return (
     <NumberField
       shaped
+      curve={useLog ? 'log' : 'shape'}
+      snapFor={useLog ? (v) => blendSnapStep(v, unit) : null}
       signed={signed}
       id={id}
       label={lengthCaption(label, unit)}

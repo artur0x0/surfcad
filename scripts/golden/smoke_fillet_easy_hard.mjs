@@ -11,8 +11,6 @@ import { BufferGeometry, BufferAttribute } from 'three';
 import {
   buildFeatureEdges,
   buildCoherentEdges,
-  defaultSweepBlendSize,
-  pathLengthFromEdges,
 } from '../../src/utils/selectEdge.js';
 import {
   annotateFeatureEdges,
@@ -28,7 +26,7 @@ import {
   FILLET_REASON_LONG_CHAIN,
   FILLET_REASON_RADIUS_TOO_LARGE,
 } from '../../src/utils/filletEdgeClass.js';
-import { validateFilletAccept } from '../../src/utils/filletMode.js';
+import { defaultFilletRadius, validateFilletAccept } from '../../src/utils/filletMode.js';
 
 let failed = 0;
 function check(name, cond, detail = '') {
@@ -179,8 +177,7 @@ function coherentOf(payload) {
 }
 
 function atDefaultRadius(edges, geometry) {
-  const radius = defaultSweepBlendSize(pathLengthFromEdges(edges));
-  return classifyFilletEdges(edges, { radius, geometry });
+  return classifyFilletEdges(edges, { radius: defaultFilletRadius(), geometry });
 }
 
 console.log('fillet easy/hard — box, extrude, loft generator');
@@ -217,7 +214,7 @@ return placeInFrame(fr, makeLoft([xs0, xs1]));
   check('loft generator is hard', hard.klass === 'hard', hard.klass);
   check('loft generator reason is twisted wall', hard.reason === FILLET_REASON_TWISTED_WALL, hard.reason);
   check('loft generator reasons stay in the UI set', hard.reasons.every((r) => REASONS.has(r)));
-  const gate = validateFilletAccept([gen], { strategy: 'sweep', radius: defaultSweepBlendSize(gen.length) });
+  const gate = validateFilletAccept([gen], { strategy: 'sweep', radius: defaultFilletRadius() });
   check('hard generator still accepts', gate.ok === true, gate.message || '');
 }
 

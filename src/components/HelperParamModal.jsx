@@ -385,6 +385,7 @@ const HelperParamModal = ({
               minMm={spec.min}
               maxMm={spec.max}
               signed={spec.signed}
+              curve={spec.curve === 'log' ? 'log' : 'shape'}
               onPointerDown={spec.measure ? () => {
                 const d = onMeasure?.(spec.measure);
                 if (!Number.isFinite(Number(d))) return;

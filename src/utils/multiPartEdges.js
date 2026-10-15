@@ -69,8 +69,7 @@ export function retargetKeepsEdgePicks({ filletMode = null } = {}) {
  * Params one part's picks are validated and written with.
  *
  * A radius the user set applies to every part. A radius the user never
- * touched is reseeded per part from that part's adjacent edges, so each
- * part gets the radius, class and block it would get if filleted alone.
+ * touched is the fixed 2 mm seed, the same on every part.
  *
  * @param {object} params    session params (Fillet mode state.params)
  * @param {object[]} edges   picks of one part

@@ -14,7 +14,6 @@ import { BufferGeometry, BufferAttribute } from 'three';
 import {
   buildFeatureEdges,
   buildCoherentEdges,
-  defaultSweepBlendSize,
   pathLengthFromEdges,
 } from '../../src/utils/selectEdge.js';
 import {
@@ -154,12 +153,20 @@ console.log('fillet C2 — Accept compose + WASM loft hard path');
   check('easy compose stays sweep', easy.ok && /filletAlongPath\s*\(/.test(easy.buffer));
 }
 
+/** Historical path-length radius for this kernel fixture. The UI default is 2 mm. */
+function fixtureSweepRadius(pathLength) {
+  const L = Number(pathLength);
+  if (!(L > 0)) return 3;
+  const r = Math.min(6, Math.max(1, 0.1 * L));
+  return Math.max(0.01, Math.round(r * 100) / 100);
+}
+
 {
   const loft = coherentOf(await exec(LOFT));
   const generators = loft.edges.filter((e) => Math.abs(e.tangent[2]) > 0.8 && e.length > 10);
   check('loft has generator', generators.length >= 1, `n=${generators.length}`);
   const gen = generators[0];
-  const radius = defaultSweepBlendSize(pathLengthFromEdges([gen]));
+  const radius = fixtureSweepRadius(pathLengthFromEdges([gen]));
   const klass = classifyFilletEdges([gen], { radius, geometry: loft.g });
   check('generator classified hard', klass.klass === 'hard', klass.klass);
 

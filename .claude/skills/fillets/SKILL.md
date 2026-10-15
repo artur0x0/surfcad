@@ -64,7 +64,8 @@ Kernel choice is one function: `filletKernelSpike.js` →
    junctions ⇒ `FILLET_SWEEP_BRANCH`. Disconnected picks still draw their
    polylines so the user sees why.
 
-   Radius: default `defaultSweepBlendSize(L) = clamp(0.1·L, 1, 6)`; hard max
+   Radius: the card and the helper sheet seed 2 mm in every display unit
+   (inches show 0.0787). The slider is a log from 0.5 mm to 25 mm. Hard max
    `sweepBlendHardMax(L) = max(6, 0.5·L)`. Planar keeps a separate `0.45·L`
    guard (`EDGE_BLEND_SIZE_GUARD`).
 

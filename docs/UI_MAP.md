@@ -198,8 +198,11 @@ Desktop specifics:
   map. It is not written into the assembly file. Feature-card and helper-sheet
   length sliders use that length, the curve, and the global unit. A helper
   sheet scales its L=100 seeds when it opens. Sheet-metal length sliders
-  do too, and the cross-section thumb continues past the box. Fillet and chamfer use
-  the adjacent edge instead. The curve and the thumb snap live in
+  do too, and the cross-section thumb continues past the box. Fillet and chamfer
+  do not use L. Their size defaults to 2 mm in every display unit (0.0787 in)
+  and the slider runs from 0.5 mm to 25 mm on a log curve (`src/utils/blendSize.js`).
+  A typed size outside that range is kept and the thumb sits on the nearer end.
+  Other length sliders use the curve and the thumb snap in
   `src/utils/sliderMap.js` (0.1 mm, or 1/16 in). The contract is
   `docs/plans/slider-plan.md`.
 - CAD title is the same "part in assembly" line as mobile. No toolbar carries it.
@@ -696,7 +699,9 @@ Contour / Extrude / Revolve / Loft / Sweep: `src/utils/contourMode.js` +
 `src/components/Viewport.jsx:1337-1401`.
 Fillet / Chamfer: `src/utils/filletMode.js` + `FilletModeChip.jsx` (same
 edge-pick card on `FeatureSheet`; both commit path sweeps — Fillet → `filletAlongPath`,
-Chamfer → `filletAlongPath({ profile: 'chamfer' })`). Card: Tangent / Clear / Undo / Confirm. That link row sits above Delete and Confirm with the shared feature-card footer gap. Undo undoes the last edge pick only; X / Escape / dismiss without Confirm clears all picks and exits; no hard-edge warning; no
+Chamfer → `filletAlongPath({ profile: 'chamfer' })`). Size defaults to 2 mm
+(`blendSize.js`); the slider is a log from 0.5 mm to 25 mm, and a typed size
+outside that range is kept. Card: Tangent / Clear / Undo / Confirm. That link row sits above Delete and Confirm with the shared feature-card footer gap. Undo undoes the last edge pick only; X / Escape / dismiss without Confirm clears all picks and exits; no hard-edge warning; no
 strategy helper line. Confirm is the card footer. The standalone edge card has no Confirm.
 Enter/exit/accept at `src/components/Viewport.jsx` `enterFilletMode` /
 `acceptFillet`. Disjoint edge picks split via `splitEdgePathComponents` and
@@ -733,7 +738,7 @@ The strip Undo is the editor step. Check shows DFM only. Part-row Order on a she
 ### Viewport furniture
 Camera and snaps `src/utils/viewCamera.js`; cutting plane
 `src/utils/cuttingPlaneWidget.js`, `crossSection.js`,
-`crossSectionSubstrate.js`; measurement `src/utils/measurementTool.js`, `src/utils/measurePicks.js`, `src/utils/displayUnit.js`; characteristic length `src/utils/characteristicLength.js`; slider curve and snap `src/utils/sliderMap.js`; adjacent blend `src/utils/adjacentBlend.js`; feature-card ranges `src/utils/sliderRange.js`; helper-sheet ranges `src/utils/helperSheetRange.js`; saved
+`crossSectionSubstrate.js`; measurement `src/utils/measurementTool.js`, `src/utils/measurePicks.js`, `src/utils/displayUnit.js`; characteristic length `src/utils/characteristicLength.js`; slider curve and snap `src/utils/sliderMap.js`; fillet and chamfer size `src/utils/blendSize.js`; feature-card ranges `src/utils/sliderRange.js`; helper-sheet ranges `src/utils/helperSheetRange.js`; saved
 wires `src/utils/savedContours.js`.
 
 ### Files and commerce

@@ -236,7 +236,7 @@ function copyPickEdge(edge, key) {
  * Kernel size-guard fraction for **planar** filletEdges / chamferEdges (t < 0.45·L).
  * Planar-only: Strategy=sweep / filletAlongPath must NOT use this clamp — short
  * tessellation edges on a prior fillet rim would pin the slider near ~0.04 while
- * r=6 is fine in script. See defaultSweepBlendSize / sweepBlendHardMax.
+ * r=6 is fine in script. See sweepBlendHardMax.
  */
 export const EDGE_BLEND_SIZE_GUARD = 0.45;
 
@@ -263,10 +263,10 @@ export function minSelectedEdgeLength(edges) {
 }
 
 /**
- * Length used for Fillet/Chamfer slider defaults on multi-edge picks.
+ * Min length for the planar fillet/chamfer size guard on multi-edge picks.
  * Raw min() collapses to ~0.03 when a tangent/compound set includes short
  * tessellation scraps; drop outliers below 25% of the median, then take min
- * of the kept pool (single-edge unchanged).
+ * of the kept pool (single-edge unchanged). The size default does not use this.
  * @param {object[]|null|undefined} edges
  * @returns {number|null}
  */
@@ -294,34 +294,6 @@ export function effectiveBlendEdgeLength(edges) {
 }
 
 /**
- * Range-input step scaled to hard-max so short-edge sliders are not stuck
- * (step 0.5 with max≈0.03 leaves the thumb immovable).
- * @param {number|null|undefined} hardMax
- * @returns {number}
- */
-export function blendSliderStep(hardMax) {
-  const m = Number(hardMax);
-  if (!(m > 0) || m >= 5) return 0.5;
-  return Math.max(0.01, Math.round((m / 20) * 100) / 100);
-}
-
-/**
- * Safe default fillet/chamfer size from min edge length.
- * Formula: clamp(0.15·minL, min(0.5, 0.35·minL), 0.35·minL) — always ≤ 0.35·L < 0.45·L.
- * @param {number} minEdgeLength
- * @returns {number}
- */
-export function defaultEdgeBlendSize(minEdgeLength) {
-  const minL = Number(minEdgeLength);
-  if (!(minL > 0)) return 3;
-  const softMax = 0.35 * minL;
-  const floor = Math.min(0.5, softMax);
-  const r = Math.min(softMax, Math.max(floor, 0.15 * minL));
-  // Param min for radius/chamfer is 0.01 — never round a tiny softMax down to 0.
-  return Math.max(0.01, Math.round(r * 100) / 100);
-}
-
-/**
  * Slider / type hard max under the kernel size guard (0.44·minL).
  * @param {number} minEdgeLength
  * @returns {number}
@@ -345,7 +317,7 @@ export function edgeBlendFailsSizeGuard(size, minEdgeLength) {
 
 /**
  * Total path length of selected edges (sum of .length / |vb−va|).
- * Used for Strategy=sweep radius defaults when per-edge min L is tessellation-scale.
+ * Used by the sweep hard max. The fillet and chamfer size default does not use it.
  * @param {object[]|null|undefined} edges
  * @returns {number|null}
  */
@@ -371,35 +343,9 @@ export function pathLengthFromEdges(edges) {
 }
 
 /**
- * Absolute model-unit floor/cap for defaultSweepBlendSize (box-scale UX).
- * 0.1·L is scale-relative; these bound the thumb on ~10–60 unit perimeters.
- */
-export const SWEEP_BLEND_DEFAULT_MIN = 1;
-export const SWEEP_BLEND_DEFAULT_MAX = 6;
-
-/**
- * Untouched Fillet radius when nothing is picked: 2 mm.
- * A pick uses the adjacent edge (defaultFilletRadius in filletMode.js).
+ * Untouched fillet and chamfer size, in millimetres, in every display unit.
  */
 export const FILLET_DEFAULT_RADIUS = 2;
-
-/**
- * Sweep fillet default radius from path length (not 0.45·minL).
- * Caps at SWEEP_BLEND_DEFAULT_MAX so box-scale perimeter picks get a usable
- * thumb without the planar 0.45·L clamp. Empty L → 3 (planar fillet seed);
- * call sites pass null through rather than inventing L=30.
- * @param {number} pathLength
- * @returns {number}
- */
-export function defaultSweepBlendSize(pathLength) {
-  const L = Number(pathLength);
-  if (!(L > 0)) return 3;
-  const r = Math.min(
-    SWEEP_BLEND_DEFAULT_MAX,
-    Math.max(SWEEP_BLEND_DEFAULT_MIN, 0.1 * L),
-  );
-  return Math.max(0.01, Math.round(r * 100) / 100);
-}
 
 /**
  * Sweep slider / typed hard max — scale-relative (½·L), floored at 6 (not 50).
