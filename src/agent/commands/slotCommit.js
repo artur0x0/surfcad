@@ -4,7 +4,7 @@ export const slotCommitCommand = Object.freeze({
   name: 'slot_commit',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {},
   }),
   example: Object.freeze({}),

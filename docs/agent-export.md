@@ -49,7 +49,7 @@ Helpers close over one module per process, the one bound by `initializeManifold`
 
 ## Catalog
 
-`npm run export:agent` (`scripts/export-agent-catalog.mjs`) rewrites `src/lib/surfcad/catalog/`:
+`npm run export:agent` (`scripts/export-agent-catalog.mjs`) rewrites `src/lib/surfcad/catalog/` and `src/agent/commands.json`:
 
 | File | Contents |
 | --- | --- |
@@ -58,10 +58,13 @@ Helpers close over one module per process, the one bound by `initializeManifold`
 | `assembly.schema.json` | JSON Schema for `.surf.json`. Field rules, groups, and the `// @surf-id` header are [the vault schema](vault-schema.md). |
 | `sheet-metal.json` | `part.sheetMetal` (`sku` required), the `// --- sheet-metal begin/end ---` block, `sheetMetalSolid`, DFM rules, and export options. |
 | `sync-files.json` | The copy list for an external consumer, plus `regenerate`. |
+| `src/agent/commands.json` | Every live-tab bridge command from `V1_COMMANDS`: `name`, `description`, strict JSON Schema `args`, `result` shape, `errors` codes, `mutates`, `destructive`, `confirm` (MCP callers must pass `confirm: true` when true), `immediate`, `uiEntry`, and `example`. Built by `scripts/export-agent-bridge-commands.mjs`. |
 
-Regenerate in this repo when a helper is added or its signature or docs change, and when the shipped Manifold `.d.ts` changes. Copy the JSON. Do not regenerate from a partial tree.
+Regenerate in this repo when a helper is added or its signature or docs change, when the shipped Manifold `.d.ts` changes, and when a bridge command is added or its args schema changes. Copy the JSON. Do not regenerate from a partial tree.
 
 `npm run golden:agent-catalog` fails if a `HELPER_FUNCTIONS` key has no catalog entry, or an entry has no signature and one-line description.
+
+`npm run golden:agent-commands` (and `src/agent/commandsExport.test.js` in `npm test`) fails when `commands.json` is stale, when a registry command has an incomplete args schema (`additionalProperties: false` at the top level; every property typed), or when export metadata is missing.
 
 ## Sync
 
@@ -88,8 +91,10 @@ Quote, order, cart, and checkout are permanently exempt (`src/agent/exempt.js`).
 
 1. **Register** `{ name, schema, run(ctx, args), uiEntry, example }` in `src/agent/commands/` and export it from `src/agent/commands/index.js`. `uiEntry` is the helper id (e.g. `makeExtrude`) or a `data-*` id that already exists on the control (e.g. `data-feature-chip`).
 2. **Tag the control** with `data-ui-action="<same id as uiEntry>"` on the button or card the user clicks. Helper rail items set `data-ui-action={item.id}` automatically from `HELPER_PALETTE_ITEMS`.
-3. **Coverage.** `npm test` (via `scripts/ci/run-unit-tests.mjs`) runs `coverage:agent`. If the command is not ready yet, add the id to `src/agent/coverageAllowlist.js` with a short reason and remove that row when `uiEntry` lands. Allowlist rows must match real tags; the test fails on orphans and on rows for ids that are already covered. Commerce ids never get commands or tags.
-4. **Host.** When the command should mirror a button, publish the same handler App or Viewport uses into `fillAgentHost` and call it from `run` (v1 `run` / `undo` still use the mutate path until a later PR wires toolbar parity).
+3. **Coverage.** `npm test` (via `scripts/ci/run-unit-tests.mjs`) runs `coverage:agent` and `commandsExport.test.js`. If the command is not ready yet, add the id to `src/agent/coverageAllowlist.js` with a short reason and remove that row when `uiEntry` lands. Allowlist rows must match real tags; the test fails on orphans and on rows for ids that are already covered. Commerce ids never get commands or tags.
+4. **Export.** Run `npm run export:agent` and commit `src/agent/commands.json` when `schema`, `description`, or export metadata changes.
+5. **Lint.** New `button` elements with `onClick` in `Toolbar.jsx`, `HelperInsertPalette.jsx`, and `ContourModeRail.jsx` must include `data-ui-action` on the same element (ESLint `no-restricted-syntax`).
+6. **Host.** When the command should mirror a button, publish the same handler App or Viewport uses into `fillAgentHost` and call it from `run` (v1 `run` / `undo` still use the mutate path until a later PR wires toolbar parity).
 
 The object is on in dev (`import.meta.env.DEV`). Elsewhere it is opt-in: the page URL `?agent=1`, or localStorage `surfcadAgent` set to `1`. Flag off, `window.surfcad` is absent and the shells are unchanged. `golden:agent-bridge` checks that at 390 and 1280.
 
@@ -143,7 +148,7 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `status` | `{}` | `Status` from the last finished `set_script`, `run`, or `undo`. |
 | `errors` | `{}` | `{ "errors": [{ "code": string, "message": string, "featureIndex"?: number }] }` — structured messages from the last finished run. `featureIndex` is set when the failing marked block is known. Empty after a good run. |
 | `screenshot` | `{ "format": "png" }` | `{ "dataUrl": string }`. `format` may be omitted and defaults to `"png"`. |
-| `undo` | `{}` | Same shape as `set_script`. Steps the active part's history once and runs that script. |
+| `undo` | `{}` | Part script: same shape as `set_script`. Assembly / joint strip: `{ ok, kind: "assembly", joints, reverted?: { historyHeadBefore, historyHeadAfter, jointsBefore, jointsAfter, jointNamesBefore, jointNamesAfter } }` when a joint-history step was undone; `handled: false` falls through to part undo or `nothing_to_undo`. Failed `joint_commit` does not push an assembly-history step. |
 | `list_commands` | `{}` | `{ "commands": [{ "name": string, "schema": object, "example": object }] }` — every command, in `commands` order, including this one. `schema` is the args schema. `example` is one args object. No functions, no `uiEntry`. |
 | `agent_set_visible` | `{ "enabled"?: boolean, "stepDelayMs"?: number, "cursor"?: boolean, "highlight"?: boolean, "ripple"?: boolean, "easeCamera"?: boolean }` | `{ "options": { … } }` — toggles operator-visible cues (synthetic cursor, control flashes, pacing). Same options can be seeded with `?visible=1`, `?agent=visible`, localStorage `surfcadAgentVisible` = `1`, or env `AGENT_VISIBLE=1`. Does not change command outcomes. |
 | `feature_tree` | `{}` | `{ "features": [{ "id", "kind", "label", "chipLabel", "index", "failed", "sheet", "external", "separate" }], "rollbackAnchor": string \| null, "activeChipId": string \| null }` for the active part script. |
@@ -153,7 +158,7 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `toasts` | `{}` | `{ "toasts": [{ "id", "kind", "message" }] }` visible upload / git / rename notices. |
 | `parts` | `{}` | `{ "activeId", "assemblyName", "parts": [{ "id", "name", "visible" }] }`. |
 | `camera` | `{}` | `{ "position", "quaternion", "target", "zoom", "fov" }` arrays or null. |
-| `list_faces` | `{ "part_id"?: string }` | `{ "partId", "faces": [{ "key", "center", "normal", "area", "triangleCount" }] }`. `key` is the exact object `select_faces` accepts. Omit `part_id` for the active part mesh. |
+| `list_faces` | `{ "part_id"?: string }` | `{ "partId", "faces": [{ "key", "center", "normal", "area", "triangleCount", "kind"?, "axis"? }] }`. Tessellated cylinder walls merge to one row per analytic surface (same grouping as a viewport tap). Cylindrical rows include `axis: { at, dir, radius }` — pass that object (with `kind: "axis"`) to `joint_pick` for concentric mates. `key` is the exact object `select_faces` accepts. Omit `part_id` for the active part mesh. |
 | `list_edges` | `{ "part_id"?: string, "raw"?: boolean, "grouped"?: boolean }` | Default `raw: true`: tessellated mesh feature edges (`raw: true` in the result). Set `raw: false` or `grouped: true` for the same payload as `list_feature_edges`. |
 | `list_feature_edges` | `{ "part_id"?: string }` | `{ "partId", "grouped": true, "edges": [{ "key": "e0", …, "faceKeyA", "faceKeyB" }] }` — one row per boundary-edge id from the Fillet topo pass (far fewer than raw `list_edges`). |
 | `invoke_helper` | `{ "id": string, "params"?: object, "use_selection"?: boolean }` | Runs `composeHelperInsert` on the active part, then the same mutate path as `set_script`. Result includes `{ "helperId", "ok", "errors", "status" }`. Unknown ids → `unknown_helper`. |
@@ -210,10 +215,23 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `open_part` | `{ path }` | Opens or links a vault part into the assembly (git mode). |
 | `insert_part` | `{ source_assembly }` or `{ name?, script? }` | Inserts another assembly’s parts (git) or adds a new part row (local, same as `create_part`). |
 | `joint_open` | `{}` | Opens the Joints create card (`data-joints-button`). Clears CAD part highlight for the joint strip. |
-| `joint_set_params` | `{ type?, name?, value_mm?, sense?, opposed? }` | Patches the open joint card (mate type and fields). |
-| `joint_pick` | `{ part_id, key }` or `{ picks: [{ part_id, key }] }` | Face keys from `list_faces` on each part — same path as tapping in joint mode. |
+| `joint_set_params` | `{ type?, name?, value_mm?, sense?, opposed? }` | Patches the open joint card (mate type and fields). Returns the merged card fields (`type`, `name`, `valueMm`, …). `planar` is an alias for `coincident`. |
+| `joint_pick` | `{ part_id, key, kind? }` or `{ picks: [{ part_id, key, kind? }] }` | Face keys from `list_faces` (or explicit axis/edge keys) — classified like a canvas tap (`cylindrical` walls become axis picks for concentric). |
 | `joint_commit` | `{}` | Confirms the joint card (`applyJointCard`). One assembly-history undo step. |
 | `joint_cancel` | `{}` | Dismisses the joint card without writing. |
+| `joint_select` | `{ joint_id }` | Opens an existing joint from the strip (`data-joint-chip`) in edit mode. |
+| `joint_edit` | `{ joint_id?, type?, name?, value_mm?, … }` | Patches a joint in edit mode (optional `joint_id` selects first). Commit with `joint_commit`. |
+| `git_move_to_repo` | `{ vault_name? }` | G6: local assembly → vault (mock or real adapter). One assembly-history undo when promoted. |
+| `git_save` | `{ message }` | Save (commit) on the current branch — same as the ribbon Save flow after the message step. |
+| `git_add_to_repo` | `{ part_id }` | Add one stray/local part into the vault layout (`handleAddToRepo`). |
+| `git_behind_resolve` | `{ action: "keep" \| "reload" \| "branch", path?, kind? }` | Get-latest choice for one behind marker. `keep` needs no path when the assembly or a single part is behind. `reload` and `branch` require `confirm: true`. |
+| `git_branch_create` | `{ name }` | Create a branch from the current tip. |
+| `git_branch_switch` | `{ branch, confirm? }` | Switch working branch. `confirm: true` required when `dirty.workspaceDirty`. |
+| `git_branch_delete` | `{ branch, confirm: true }` | Delete a branch ref (not `main`, not current). |
+| `git_force_overwrite` | `{ confirm: true }` | Conflict popup → Overwrite main (`handleOverwriteMain`). |
+| `git_list_branches` | `{}` | `{ branches, branch }` from `handleListBranches` (immediate). Read-only: allowed even when the real GitHub adapter is active. |
+
+**Real vault guard.** If the live adapter is GitHub (`kind: real`, e.g. a token in storage), the first agent git **write** in a tab opens a consent modal (`data-agent-git-consent-allow` / `data-agent-git-consent-deny`) naming the command and `owner/repo/branch`, e.g. “An agent wants to save to *acme/widgets/main*. Allow agent writes to your GitHub repos for this session?”. **Allow for this session** sets session opt-in and runs the pending command; **Deny** or dismiss sets a session deny flag, returns `real_repo_blocked` with a clear decline message, and does not show the modal again that session. Opt-in also works via URL `?agentGit=real`, localStorage `surfcadAgentGitReal` = `1`, or sessionStorage `surfcadAgentGitRealSession` = `1` after Allow. Headless / playtest / automation (`navigator.webdriver`) never waits on the modal: writes return `real_repo_blocked` immediately with `error.details.reason` `consent_pending`. After a deny, `details.reason` is `consent_declined`. UI Save / branch flows are unaffected.
 
 ### Pick sessions
 
@@ -239,6 +257,9 @@ One session at a time. A session idle for `timeout_ms` (default 120000, 1000–1
 | `unknown_command` | `name` is not in `commands`. |
 | `bad_json` | `argsJson` is a string and `JSON.parse` throws. |
 | `bad_args` | Args are not a JSON object, are not serialisable (function, class instance, typed array, non-finite number), or a required field has the wrong type (`set_script` `source` must be a string). |
+| `confirm_required` | A destructive git command was called without `confirm: true` (`git_branch_delete`, `git_force_overwrite`, `git_behind_resolve` reload/branch, or `git_branch_switch` while the vault working copy is dirty). |
+| `real_repo_blocked` | Agent git write while the real GitHub adapter is active without opt-in. `error.details.reason` is `consent_pending` (no answer / headless), `consent_declined` (user denied this session), or omitted when blocked by legacy query/storage-only paths. Message explains consent or decline. |
+| `git_error` | Git handler returned `{ status: "error" }` (message in `error.message`). |
 | `unsupported_format` | `screenshot` `format` is present and is not `"png"`. |
 | `nothing_to_undo` | `undo` is already at the bottom of the stack. The editor and the history do not change. Also `pick_undo` with no agent pick in the session. |
 | `screenshot_failed` | The viewport did not return a `data:image/png` URL. |

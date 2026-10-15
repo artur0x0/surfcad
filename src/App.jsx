@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import CodeEditor from './components/CodeEditor';
 import Viewport from './components/Viewport';
 import { BrandMark, BrandWordmark } from './components/brand/BrandWordmark';
@@ -120,6 +121,15 @@ import {
   undoPartHistory,
 } from './utils/partHistory';
 import { fillAgentHost } from './agent/host';
+import {
+  agentGitConsentInteractive,
+  agentGitRealOptIn,
+  agentGitSessionDenied,
+  agentGitSetSessionAllow,
+  agentGitSetSessionDenied,
+} from './agent/gitAgent.js';
+import { AGENT_GIT_CONSENT_TIMEOUT_MS } from './agent/commands/git.js';
+import AgentGitConsentModal from './components/AgentGitConsentModal';
 import { buildDirtyState } from './agent/state/dirty';
 import { buildSelection } from './agent/state/selection';
 import { editedPartIdsSinceSnapshot, snapshotPartScripts } from './agent/state/editedSinceLoad';
@@ -128,6 +138,7 @@ import { resolveRollbackTarget, resolveStripTarget } from './agent/featureStripA
 import { buildPartsState } from './agent/state/parts';
 import { buildToasts } from './agent/state/toasts';
 import { agentBridgeEnabled, createSurfcadBridge } from './utils/agentBridge';
+import { buildEffectiveJointCard } from './agent/jointCardAgent.js';
 import AgentVisibleLayer from './components/AgentVisibleLayer';
 import { runAssemblyParts } from './utils/assemblyRun';
 import { catalogsFromRuns } from './utils/jointResolve';
@@ -576,6 +587,8 @@ const App = () => {
   const agentFeatureSessionRef = useRef(null);
   const [jointCard, setJointCard] = useState(null);
   const jointCardRef = useRef(null);
+  /** Synchronous joint card for agent pick/commit (React state may lag one frame). */
+  const jointCardAgentRef = useRef(null);
   const jointPicksRef = useRef([]);
   const jointCatalogsRef = useRef({});
   const jointLiveRef = useRef({ statuses: {}, messages: {} });
@@ -583,6 +596,21 @@ const App = () => {
   const assemblyHistoryRef = useRef(null);
   const [assemblyHistTick, setAssemblyHistTick] = useState(0);
   jointCardRef.current = jointCard;
+  const publishJointCard = (next) => {
+    jointCardAgentRef.current = next;
+    flushSync(() => setJointCard(next));
+  };
+  useEffect(() => {
+    if (!jointCard) {
+      jointCardAgentRef.current = null;
+      return;
+    }
+    jointCardAgentRef.current = buildEffectiveJointCard(
+      jointCard,
+      jointPicksRef.current,
+      assemblyRef.current,
+    );
+  }, [jointCard]);
   const closeFeatureSheet = () => {
     setFeatureSheet(null);
     setFeatureStripActiveId(null);
@@ -862,6 +890,9 @@ const App = () => {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [clearCacheUi, setClearCacheUi] = useState(null);
+  const [agentGitConsentUi, setAgentGitConsentUi] = useState(null);
+  const agentGitConsentQueueRef = useRef([]);
+  const agentGitConsentActiveRef = useRef(null);
   const [accountModalTab, setAccountModalTab] = useState('info');
   const [editorInitialScript, setEditorInitialScript] = useState(null);
   const [initError, setInitError] = useState(null);
@@ -2916,6 +2947,73 @@ const App = () => {
     return baseline?.branch || vault?.defaultBranch || 'main';
   };
 
+  const readAgentGitWriteTarget = () => {
+    const vault = gitVaultRef.current;
+    const repo = vault?.repo
+      ? `${vault.repo.owner}/${vault.repo.name}`
+      : 'your repo';
+    return { repo, branch: gitWorkingBranch() };
+  };
+
+  const pumpAgentGitConsent = () => {
+    if (agentGitConsentActiveRef.current) return;
+    const next = agentGitConsentQueueRef.current.shift();
+    if (!next) {
+      setAgentGitConsentUi(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      finishAgentGitConsent('timeout');
+    }, AGENT_GIT_CONSENT_TIMEOUT_MS);
+    agentGitConsentActiveRef.current = { ...next, timer };
+    setAgentGitConsentUi({
+      command: next.command,
+      repo: next.repo,
+      branch: next.branch,
+    });
+  };
+
+  const finishAgentGitConsent = (outcome) => {
+    const active = agentGitConsentActiveRef.current;
+    if (!active) {
+      if (outcome === 'allow' || outcome === 'deny') setAgentGitConsentUi(null);
+      return;
+    }
+    clearTimeout(active.timer);
+    agentGitConsentActiveRef.current = null;
+    if (outcome === 'allow') {
+      agentGitSetSessionAllow();
+      active.resolve('allow');
+      while (agentGitConsentQueueRef.current.length) {
+        agentGitConsentQueueRef.current.shift()?.resolve('allow');
+      }
+      setAgentGitConsentUi(null);
+      return;
+    }
+    if (outcome === 'deny') {
+      agentGitSetSessionDenied();
+      active.resolve('deny');
+      while (agentGitConsentQueueRef.current.length) {
+        agentGitConsentQueueRef.current.shift()?.resolve('deny');
+      }
+      setAgentGitConsentUi(null);
+      return;
+    }
+    active.resolve('timeout');
+    while (agentGitConsentQueueRef.current.length) {
+      agentGitConsentQueueRef.current.shift()?.resolve('timeout');
+    }
+    setAgentGitConsentUi(null);
+  };
+
+  const requestAgentGitWriteConsent = async ({ command, repo, branch }) => {
+    if (!agentGitConsentInteractive()) return 'timeout';
+    return new Promise((resolve) => {
+      agentGitConsentQueueRef.current.push({ command, repo, branch, resolve });
+      pumpAgentGitConsent();
+    });
+  };
+
   const noteRecentAssembly = (name) => {
     const seg = vaultSegment(name);
     if (!seg) return;
@@ -4559,10 +4657,12 @@ const App = () => {
   const handleGitCommit = async (message) => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') return { status: 'error', error: 'Not in Git mode' };
+    const adapter = ensureGitAdapter();
     if (!meshVaultSaveAllowed({
       source: doc.source,
       readOnly: bootReadOnlyRef.current,
       githubConnected,
+      adapterKind: adapter?.kind,
     })) {
       return { status: 'error', error: 'Reconnect GitHub before saving this assembly.' };
     }
@@ -6769,7 +6869,7 @@ const App = () => {
     if (appModeRef.current === 'game' || featureSessionRef.current) return;
     jointPicksRef.current = [];
     viewportRef.current?.clearJointHighlights?.();
-    setJointCard(draftFromPicks(null, [], { joints: assemblyRef.current?.joints || [] }));
+    publishJointCard(draftFromPicks(null, [], { joints: assemblyRef.current?.joints || [] }));
   };
 
   const handleCadEmptyClick = () => {
@@ -6804,7 +6904,7 @@ const App = () => {
       axis: !!raw.axis,
       key: raw.key,
     };
-    if (jointCardRef.current?.partChange) return;
+    if ((jointCardAgentRef.current ?? jointCardRef.current)?.partChange) return;
     const accepted = acceptJointPick(jointPicksRef.current, pick);
     if (accepted.refuse && accepted.message) viewportRef.current?.notify?.(accepted.message);
     jointPicksRef.current = accepted.picks;
@@ -6952,7 +7052,7 @@ const App = () => {
     dismissJointEdit(assemblyRef.current);
     jointPicksRef.current = [];
     viewportRef.current?.clearJointHighlights?.();
-    setJointCard(null);
+    publishJointCard(null);
   };
 
   const handleJointUndo = () => {
@@ -6963,7 +7063,7 @@ const App = () => {
       doc,
       scripts,
     });
-    if (!step.changed || step.scripts !== scripts) return;
+    if (!step.changed || step.scripts !== scripts) return false;
     assemblyHistoryRef.current = {
       key: assemblyHistoryRef.current?.key,
       ...step.history,
@@ -6971,6 +7071,7 @@ const App = () => {
     const written = rememberAssembly(step.doc);
     setAssemblyHistTick((tick) => tick + 1);
     paintAssemblyPoses(written);
+    return true;
   };
 
   const handleJointRedo = () => {
@@ -7732,6 +7833,21 @@ const App = () => {
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
+    try {
+      const demo = new URLSearchParams(window.location.search).get('agentGitConsentDemo') === '1';
+      if (demo) {
+        setAgentGitConsentUi({
+          command: 'git_save',
+          repo: 'demo-owner/demo-vault',
+          branch: 'main',
+        });
+      }
+    } catch { /* ignore */ }
+    return undefined;
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
     const enabled = agentBridgeEnabled({ dev: import.meta.env.DEV === true });
     if (!enabled || !manifoldReady || editorInitialScript === null) {
       delete window.surfcad;
@@ -8174,6 +8290,93 @@ const App = () => {
       if (inserted?.status === 'inserted') recordAgentAssemblyStep(before);
       return { result: inserted };
     },
+    readAgentGitAdapterKind() {
+      return ensureGitAdapter()?.kind ?? null;
+    },
+    readAgentGitRealOptIn() {
+      return agentGitRealOptIn();
+    },
+    readAgentGitSessionDenied() {
+      return agentGitSessionDenied();
+    },
+    readAgentGitWriteTarget() {
+      return readAgentGitWriteTarget();
+    },
+    requestAgentGitWriteConsent(args) {
+      return requestAgentGitWriteConsent(args);
+    },
+    async agentGitMoveToRepo({ vault_name } = {}) {
+      const before = assemblyRef.current;
+      const clean = typeof vault_name === 'string' ? vault_name.trim() : '';
+      const result = await handleMoveToGit({
+        vaultName: clean || undefined,
+        sharedIds: [],
+      });
+      if (result.status === 'moved' && before) recordAgentAssemblyStep(before);
+      return result;
+    },
+    async agentGitSave({ message }) {
+      const draft = String(message || '').trim();
+      if (!draft) return { status: 'error', error: 'Commit message required' };
+      return handleGitCommit(draft);
+    },
+    async agentGitAddToRepo({ partId }) {
+      if (!partId) return { status: 'error', error: 'part_id required' };
+      return handleAddToRepo(partId);
+    },
+    async agentGitBehindResolve({ action, path, kind }) {
+      const doc = assemblyRef.current;
+      if (!doc || doc.source !== 'git') {
+        return { status: 'error', error: 'Not in Git mode' };
+      }
+      let resolvedPath = path;
+      let resolvedKind = kind === 'assembly' ? 'assembly' : (kind === 'part' ? 'part' : null);
+      if (!resolvedPath) {
+        if (behindMarkers.assemblyBehind && gitAssemblyPath) {
+          resolvedPath = gitAssemblyPath;
+          resolvedKind = 'assembly';
+        } else if (behindPartIdSet.size) {
+          resolvedPath = behindPartIdSet.values().next().value;
+          resolvedKind = 'part';
+        }
+      }
+      if (!resolvedPath) {
+        return { status: 'error', error: 'No behind marker for this assembly' };
+      }
+      if (!resolvedKind) {
+        resolvedKind = resolvedPath.endsWith('.surf.json') ? 'assembly' : 'part';
+      }
+      return handleBehindChoice({ action, path: resolvedPath, kind: resolvedKind });
+    },
+    async agentGitBranchCreate({ name }) {
+      const branchName = String(name || '').trim();
+      if (!branchName) return { status: 'error', error: 'Branch name required' };
+      return handleCreateBranch(branchName);
+    },
+    async agentGitBranchSwitch({ branch, confirm }) {
+      const target = String(branch || '').trim();
+      if (!target) return { status: 'error', error: 'Branch required' };
+      if (sourceDirty && confirm !== true) {
+        return {
+          status: 'error',
+          code: 'confirm_required',
+          error: 'git_branch_switch requires confirm: true while the working copy has uncommitted changes',
+        };
+      }
+      return handleSwitchBranch(target);
+    },
+    async agentGitBranchDelete({ branch }) {
+      const target = String(branch || '').trim();
+      if (!target) return { status: 'error', error: 'Branch required' };
+      return handleDeleteBranch(target);
+    },
+    async agentGitForceOverwrite() {
+      return handleOverwriteMain();
+    },
+    async agentGitListBranches() {
+      const items = await handleListBranches();
+      return { status: 'ok', branches: items || [], branch: gitWorkingBranch() };
+    },
     jointOpen() {
       if (appModeRef.current === 'game' || featureSessionRef.current) {
         return { error: { code: 'bad_view', message: 'Joints are not available right now' } };
@@ -8183,18 +8386,36 @@ const App = () => {
       return { result: { open: true } };
     },
     jointSetParams({ patch } = {}) {
-      const card = jointCardRef.current;
+      const doc = assemblyRef.current;
+      const card = jointCardAgentRef.current ?? jointCardRef.current;
       if (!card) {
         return { error: { code: 'no_joint_card', message: 'Call joint_open before joint_set_params' } };
       }
       const bag = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
-      handleJointCardChange({ ...card, ...bag });
-      return { result: { ok: true, type: jointCardRef.current?.type ?? null } };
+      let next = { ...card, ...bag };
+      if (next.userPickedType && next.type && !next.userNamed) {
+        const named = nextJointName(next.type, doc?.joints || []);
+        next = { ...next, name: next.name && next.userNamed ? next.name : named };
+      }
+      const settled = buildEffectiveJointCard(next, jointPicksRef.current, doc);
+      publishJointCard(settled);
+      return {
+        result: {
+          ok: true,
+          type: settled.type ?? null,
+          name: settled.name ?? null,
+          valueMm: settled.valueMm ?? null,
+          sense: settled.sense === -1 ? -1 : 1,
+          opposed: settled.opposed !== false,
+          mode: settled.mode ?? null,
+          pickCount: (settled.picks || []).length,
+        },
+      };
     },
     jointApplyPicks({ picks } = {}) {
       const doc = assemblyRef.current;
       if (!doc) return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
-      if (!jointCardRef.current) {
+      if (!(jointCardAgentRef.current ?? jointCardRef.current)) {
         return { error: { code: 'no_joint_card', message: 'Call joint_open before joint_pick' } };
       }
       const rows = Array.isArray(picks) ? picks : [];
@@ -8207,20 +8428,118 @@ const App = () => {
         if (!part.surfId) {
           return { error: { code: 'no_surf_id', message: `Part has no surf id: ${part.id}` } };
         }
+        const described = viewportRef.current?.describeJointPick?.({
+          partId: part.id,
+          key: row.key,
+          kind: row.kind,
+        });
+        if (!described || described.error) {
+          return {
+            error: described?.error ?? {
+              code: 'pick_failed',
+              message: 'Could not classify joint pick on that part',
+            },
+          };
+        }
+        const beforeLen = (jointPicksRef.current || []).length;
         handleJointPick({
           partId: part.id,
-          kind: 'face',
-          planar: true,
-          axis: false,
-          key: row.key,
+          kind: described.kind,
+          planar: described.planar,
+          axis: described.axis,
+          key: described.key,
         });
+        const afterLen = (jointPicksRef.current || []).length;
+        if (afterLen <= beforeLen) {
+          return {
+            error: {
+              code: 'pick_failed',
+              message: `Joint pick was not accepted for part ${part.id}`,
+            },
+          };
+        }
         picked.push(part.id);
       }
-      return { result: { picked, count: (jointPicksRef.current || []).length } };
+      const picksNow = jointPicksRef.current || [];
+      const openCard = jointCardAgentRef.current ?? jointCardRef.current;
+      const settled = openCard
+        ? buildEffectiveJointCard(openCard, picksNow, doc)
+        : null;
+      if (settled) publishJointCard(settled);
+      return { result: { picked, count: picksNow.length, pickCount: picksNow.length } };
+    },
+    jointSelect({ joint_id } = {}) {
+      const doc = assemblyRef.current;
+      if (!doc) return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+      const id = joint_id != null ? String(joint_id) : '';
+      if (!id) {
+        return { error: { code: 'bad_args', message: 'joint_select needs joint_id' } };
+      }
+      const joint = (doc.joints || []).find((row) => row.id === id);
+      if (!joint) {
+        return { error: { code: 'unknown_joint', message: `Unknown joint id: ${id}` } };
+      }
+      rememberCadPart(null);
+      handleSelectJoint({ id });
+      const card = jointCardRef.current;
+      return {
+        result: {
+          joint_id: id,
+          type: card?.type ?? joint.type,
+          name: card?.name ?? joint.name,
+          mode: card?.mode ?? 'edit',
+          pickCount: (card?.picks || jointPicksRef.current || []).length,
+        },
+      };
+    },
+    jointEdit({ joint_id, patch } = {}) {
+      const doc = assemblyRef.current;
+      if (!doc) return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+      if (joint_id != null) {
+        const id = String(joint_id);
+        const joint = (doc.joints || []).find((row) => row.id === id);
+        if (!joint) {
+          return { error: { code: 'unknown_joint', message: `Unknown joint id: ${id}` } };
+        }
+        rememberCadPart(null);
+        handleSelectJoint({ id });
+      }
+      const card = jointCardRef.current;
+      if (!card || card.mode !== 'edit') {
+        return {
+          error: {
+            code: 'no_joint_edit',
+            message: 'Call joint_select with joint_id before joint_edit',
+          },
+        };
+      }
+      const bag = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
+      let next = { ...card, ...bag };
+      if (next.userPickedType && next.type && !next.userNamed) {
+        const named = nextJointName(next.type, doc?.joints || []);
+        next = { ...next, name: next.name && next.userNamed ? next.name : named };
+      }
+      handleJointCardChange(next);
+      return {
+        result: {
+          ok: true,
+          joint_id: card.id ?? null,
+          type: next.type ?? null,
+          name: next.name ?? null,
+          valueMm: next.valueMm ?? null,
+          sense: next.sense === -1 ? -1 : 1,
+          opposed: next.opposed !== false,
+          mode: next.mode ?? 'edit',
+        },
+      };
     },
     prepareJointCommit() {
       const doc = assemblyRef.current;
-      const card = jointCardRef.current;
+      const base = jointCardAgentRef.current ?? jointCardRef.current;
+      const card = base
+        ? buildEffectiveJointCard(base, jointPicksRef.current, doc)
+        : null;
+      if (card) jointCardAgentRef.current = card;
       if (!doc || !card) {
         return { error: { code: 'no_joint_card', message: 'Joint card is not open' } };
       }
@@ -8249,10 +8568,10 @@ const App = () => {
       return { ok: true, jointId, jointCount: joints.length };
     },
     finishJointCommit() {
-      if (jointCardRef.current) {
+      if (jointCardRef.current || jointCardAgentRef.current) {
         jointPicksRef.current = [];
         viewportRef.current?.clearJointHighlights?.();
-        setJointCard(null);
+        publishJointCard(null);
       }
     },
     jointCancel() {
@@ -8261,13 +8580,32 @@ const App = () => {
     },
     async agentUndo() {
       if (cadStripsShowJoints(cadPartIdRef.current) && assemblyHistoryCanUndo(assemblyHistoryRef.current)) {
-        handleJointUndo();
+        const beforeDoc = assemblyRef.current;
+        const jointsBefore = beforeDoc?.joints?.length ?? 0;
+        const namesBefore = (beforeDoc?.joints || []).map((row) => row.name || row.id);
+        const headBefore = assemblyHistoryRef.current?.head ?? 0;
+        const changed = handleJointUndo();
+        if (!changed) {
+          return { handled: false };
+        }
+        const afterDoc = assemblyRef.current;
+        const jointsAfter = afterDoc?.joints?.length ?? 0;
+        const namesAfter = (afterDoc?.joints || []).map((row) => row.name || row.id);
+        const headAfter = assemblyHistoryRef.current?.head ?? 0;
         return {
           handled: true,
           result: {
             ok: true,
             kind: 'assembly',
-            joints: assemblyRef.current?.joints?.length ?? 0,
+            joints: jointsAfter,
+            reverted: {
+              historyHeadBefore: headBefore,
+              historyHeadAfter: headAfter,
+              jointsBefore,
+              jointsAfter,
+              jointNamesBefore: namesBefore,
+              jointNamesAfter: namesAfter,
+            },
           },
         };
       }
@@ -8589,6 +8927,16 @@ const App = () => {
     />
   ) : null;
 
+  const agentGitConsentModal = agentGitConsentUi ? (
+    <AgentGitConsentModal
+      command={agentGitConsentUi.command}
+      repo={agentGitConsentUi.repo}
+      branch={agentGitConsentUi.branch}
+      onAllow={() => finishAgentGitConsent('allow')}
+      onDeny={() => finishAgentGitConsent('deny')}
+    />
+  ) : null;
+
   const clearCacheDialog = (
     <ClearCacheDialog
       open={!!clearCacheUi}
@@ -8668,7 +9016,7 @@ const App = () => {
               canRedo={canRedo()}
               currentFilename={currentFilename}
               showCadTitle={!!assemblyDoc}
-              brandHeader={isMobile || !assemblyDoc}
+              brandHeader={appMode !== 'game'}
               assemblyName={assemblyLabel}
               onRenameFile={handleRenameFile}
               onRenameAssembly={handleRenameAssembly}
@@ -8942,6 +9290,7 @@ const App = () => {
           )}
 
           {clearCacheDialog}
+          {agentGitConsentModal}
 
           {/* Login Modal */}
           {showLoginModal && (
@@ -9186,7 +9535,7 @@ const App = () => {
             canRedo={canRedo()}
             currentFilename={currentFilename}
             showCadTitle={!!assemblyDoc}
-            brandHeader={!assemblyDoc}
+            brandHeader={appMode !== 'game'}
             assemblyName={assemblyLabel}
             onRenameFile={handleRenameFile}
             onRenameAssembly={handleRenameAssembly}
@@ -9308,6 +9657,7 @@ const App = () => {
         </div>
 
         {clearCacheDialog}
+        {agentGitConsentModal}
 
         {/* Login Modal */}
         {showLoginModal && (

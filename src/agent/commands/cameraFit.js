@@ -2,7 +2,7 @@ export const cameraFitCommand = Object.freeze({
   name: 'camera_fit',
   schema: {
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {},
   },
   example: {},

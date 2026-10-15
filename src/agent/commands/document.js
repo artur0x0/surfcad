@@ -19,7 +19,7 @@ export const createAssemblyCommand = Object.freeze({
   uiEntry: 'data-part-add-kind-assembly',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {},
   }),
   example: {},
@@ -33,7 +33,7 @@ export const createPartCommand = Object.freeze({
   uiEntry: 'data-part-add-kind-part',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       name: { type: 'string' },
       script: { type: 'string' },
@@ -50,7 +50,7 @@ export const openAssemblyCommand = Object.freeze({
   uiEntry: ['data-part-open-action-assembly', 'data-git-open-replace'],
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     required: ['name'],
     properties: {
       name: { type: 'string', description: 'Vault assembly name' },
@@ -73,7 +73,7 @@ export const openPartCommand = Object.freeze({
   uiEntry: 'data-part-open-action-part',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     required: ['path'],
     properties: {
       path: { type: 'string', description: 'Vault part path' },
@@ -96,7 +96,7 @@ export const insertPartCommand = Object.freeze({
   uiEntry: 'data-git-open-insert',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       source_assembly: { type: 'string', description: 'Git vault assembly to insert from' },
       name: { type: 'string', description: 'Local: new part name (same as create_part)' },

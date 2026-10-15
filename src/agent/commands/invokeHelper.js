@@ -41,7 +41,7 @@ export const invokeHelperCommand = Object.freeze({
   name: 'invoke_helper',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     required: ['id'],
     properties: {
       id: { type: 'string', description: 'HELPER_PALETTE_ITEMS id' },
@@ -80,7 +80,7 @@ export function buildHelperPaletteCommands() {
     uiEntry: item.id,
     schema: Object.freeze({
       type: 'object',
-      additionalProperties: true,
+      additionalProperties: false,
       properties: schemaPropertiesForHelper(item, { includeId: false }),
     }),
     example: Object.freeze(exampleArgsForHelper(item)),

@@ -2,7 +2,7 @@ export const sketchCancelCommand = Object.freeze({
   name: 'sketch_cancel',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {},
   }),
   example: Object.freeze({}),

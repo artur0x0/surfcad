@@ -48,8 +48,14 @@ describe('mesh vault save policy', () => {
       source: 'git', readOnly: true, githubConnected: true,
     }), false);
     assert.equal(meshVaultSaveAllowed({
+      source: 'git', readOnly: true, githubConnected: false, adapterKind: 'mock',
+    }), true);
+    assert.equal(meshVaultSaveAllowed({
       source: 'git', readOnly: false, githubConnected: false,
     }), false);
+    assert.equal(meshVaultSaveAllowed({
+      source: 'git', readOnly: false, githubConnected: false, adapterKind: 'mock',
+    }), true);
     assert.equal(meshVaultSaveAllowed({
       source: 'local', readOnly: false, githubConnected: true,
     }), false);
