@@ -13660,11 +13660,11 @@ const Viewport = forwardRef(({
       )}
       {mode !== 'game' && (brandHeader || showCadTitle) && (
         <div
-          className="pointer-events-none absolute top-4 z-10 min-h-9 left-2 right-2 lg:left-4 lg:right-4 pr-11"
+          className="pointer-events-none absolute top-4 z-10 flex min-h-9 items-center left-2 right-2 lg:left-4 lg:right-4 pr-11"
           data-viewer-header-row=""
         >
           {brandHeader ? (
-            <div className="relative z-10 inline-flex" data-brand-header-host="">
+            <div className="relative z-10 inline-flex shrink-0 items-center self-center" data-brand-header-host="">
               <BrandHeaderMark />
             </div>
           ) : null}
