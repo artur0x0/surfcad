@@ -13,7 +13,6 @@ import { PARTS_TEXT_INPUT_CLASS, PARTS_TEXT_INPUT_STYLE } from '../utils/partsCh
 import OpenAssemblyChoiceDialog from './OpenAssemblyChoiceDialog';
 import DeleteAssemblyDialog, { AssemblyOpenList } from './DeleteAssemblyDialog';
 import ProfileChip from './ProfileChip';
-import { BrandHeaderMark } from './brand/BrandWordmark';
 import VaultPickerDialog from './VaultPickerDialog';
 import { useAuthState } from '../hooks/useAuthState';
 import { useCartChrome } from '../hooks/useCart';
@@ -1545,7 +1544,6 @@ const PartFeed = forwardRef(function PartFeed({
         data-parts-feed-ribbon=""
         className="relative z-30 flex w-full items-center border-b border-chrome-border/60 bg-chrome-surface px-1 py-0.5 shrink-0"
       >
-        <BrandHeaderMark />
         <div className="relative z-10 flex shrink-0 items-center gap-0.5 sm:gap-1" data-parts-feed-toolbar="">
           <div className="relative" ref={folderMenuRef} data-part-open-menu="">
             <button

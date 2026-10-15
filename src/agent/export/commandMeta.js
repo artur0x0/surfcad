@@ -533,6 +533,18 @@ export const COMMAND_META = {
     errors: ['internal'],
     mutates: false,
   },
+  joint_select: {
+    description: 'Highlight a joint on the assembly strip.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['bad_args', 'unknown_joint', 'internal'],
+    mutates: false,
+  },
+  joint_edit: {
+    description: 'Open or patch a joint on the strip (same fields as joint_set_params).',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['bad_args', 'unknown_joint', 'edit_failed', 'internal'],
+    mutates: false,
+  },
   git_move_to_repo: {
     description: 'Move the open local assembly into a new vault repo layout.',
     result: { type: 'object', additionalProperties: true },

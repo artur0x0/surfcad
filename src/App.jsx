@@ -8264,13 +8264,29 @@ const App = () => {
       return { result: { open: true } };
     },
     jointSetParams({ patch } = {}) {
+      const doc = assemblyRef.current;
       const card = jointCardRef.current;
       if (!card) {
         return { error: { code: 'no_joint_card', message: 'Call joint_open before joint_set_params' } };
       }
       const bag = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
-      handleJointCardChange({ ...card, ...bag });
-      return { result: { ok: true, type: jointCardRef.current?.type ?? null } };
+      let next = { ...card, ...bag };
+      if (next.userPickedType && next.type && !next.userNamed) {
+        const named = nextJointName(next.type, doc?.joints || []);
+        next = { ...next, name: next.name && next.userNamed ? next.name : named };
+      }
+      handleJointCardChange(next);
+      return {
+        result: {
+          ok: true,
+          type: next.type ?? null,
+          name: next.name ?? null,
+          valueMm: next.valueMm ?? null,
+          sense: next.sense === -1 ? -1 : 1,
+          opposed: next.opposed !== false,
+          mode: next.mode ?? null,
+        },
+      };
     },
     jointApplyPicks({ picks } = {}) {
       const doc = assemblyRef.current;
@@ -8288,16 +8304,107 @@ const App = () => {
         if (!part.surfId) {
           return { error: { code: 'no_surf_id', message: `Part has no surf id: ${part.id}` } };
         }
+        const described = viewportRef.current?.describeJointPick?.({
+          partId: part.id,
+          key: row.key,
+          kind: row.kind,
+        });
+        if (!described || described.error) {
+          return {
+            error: described?.error ?? {
+              code: 'pick_failed',
+              message: 'Could not classify joint pick on that part',
+            },
+          };
+        }
         handleJointPick({
           partId: part.id,
-          kind: 'face',
-          planar: true,
-          axis: false,
-          key: row.key,
+          kind: described.kind,
+          planar: described.planar,
+          axis: described.axis,
+          key: described.key,
         });
         picked.push(part.id);
       }
-      return { result: { picked, count: (jointPicksRef.current || []).length } };
+      const picksNow = jointPicksRef.current || [];
+      const openCard = jointCardRef.current;
+      if (openCard && picksNow.length) {
+        setJointCard({
+          ...draftFromPicks(
+            openCard.mode === 'create' || openCard.mode === 'edit' ? openCard : null,
+            picksNow,
+            { joints: doc.joints || [] },
+          ),
+          mode: openCard.mode === 'edit' ? 'edit' : 'create',
+          partChange: openCard.partChange || null,
+        });
+      }
+      return { result: { picked, count: picksNow.length } };
+    },
+    jointSelect({ joint_id } = {}) {
+      const doc = assemblyRef.current;
+      if (!doc) return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+      const id = joint_id != null ? String(joint_id) : '';
+      if (!id) {
+        return { error: { code: 'bad_args', message: 'joint_select needs joint_id' } };
+      }
+      const joint = (doc.joints || []).find((row) => row.id === id);
+      if (!joint) {
+        return { error: { code: 'unknown_joint', message: `Unknown joint id: ${id}` } };
+      }
+      rememberCadPart(null);
+      handleSelectJoint({ id });
+      const card = jointCardRef.current;
+      return {
+        result: {
+          joint_id: id,
+          type: card?.type ?? joint.type,
+          name: card?.name ?? joint.name,
+          mode: card?.mode ?? 'edit',
+          pickCount: (card?.picks || jointPicksRef.current || []).length,
+        },
+      };
+    },
+    jointEdit({ joint_id, patch } = {}) {
+      const doc = assemblyRef.current;
+      if (!doc) return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+      if (joint_id != null) {
+        const id = String(joint_id);
+        const joint = (doc.joints || []).find((row) => row.id === id);
+        if (!joint) {
+          return { error: { code: 'unknown_joint', message: `Unknown joint id: ${id}` } };
+        }
+        rememberCadPart(null);
+        handleSelectJoint({ id });
+      }
+      const card = jointCardRef.current;
+      if (!card || card.mode !== 'edit') {
+        return {
+          error: {
+            code: 'no_joint_edit',
+            message: 'Call joint_select with joint_id before joint_edit',
+          },
+        };
+      }
+      const bag = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
+      let next = { ...card, ...bag };
+      if (next.userPickedType && next.type && !next.userNamed) {
+        const named = nextJointName(next.type, doc?.joints || []);
+        next = { ...next, name: next.name && next.userNamed ? next.name : named };
+      }
+      handleJointCardChange(next);
+      return {
+        result: {
+          ok: true,
+          joint_id: card.id ?? null,
+          type: next.type ?? null,
+          name: next.name ?? null,
+          valueMm: next.valueMm ?? null,
+          sense: next.sense === -1 ? -1 : 1,
+          opposed: next.opposed !== false,
+          mode: next.mode ?? 'edit',
+        },
+      };
     },
     prepareJointCommit() {
       const doc = assemblyRef.current;
@@ -8749,7 +8856,7 @@ const App = () => {
               canRedo={canRedo()}
               currentFilename={currentFilename}
               showCadTitle={!!assemblyDoc}
-              brandHeader={isMobile || !assemblyDoc}
+              brandHeader={appMode !== 'game'}
               assemblyName={assemblyLabel}
               onRenameFile={handleRenameFile}
               onRenameAssembly={handleRenameAssembly}
@@ -9267,7 +9374,7 @@ const App = () => {
             canRedo={canRedo()}
             currentFilename={currentFilename}
             showCadTitle={!!assemblyDoc}
-            brandHeader={!assemblyDoc}
+            brandHeader={appMode !== 'game'}
             assemblyName={assemblyLabel}
             onRenameFile={handleRenameFile}
             onRenameAssembly={handleRenameAssembly}

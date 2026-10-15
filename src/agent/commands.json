@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 118,
+  "count": 120,
   "$defs": {
     "status": {
       "type": "object",
@@ -10117,7 +10117,8 @@
               "angle",
               "concentric",
               "symmetric",
-              "fixed"
+              "fixed",
+              "planar"
             ]
           },
           "name": {
@@ -10200,6 +10201,14 @@
               }
             }
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "face",
+              "axis",
+              "edge"
+            ]
+          },
           "picks": {
             "type": "array",
             "items": {
@@ -10248,6 +10257,15 @@
                       "type": "integer"
                     }
                   }
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "face",
+                    "axis",
+                    "edge"
+                  ],
+                  "description": "Pick kind when key is explicit (concentric uses axis picks)"
                 }
               }
             }
@@ -10355,6 +10373,102 @@
       "immediate": true,
       "uiEntry": "data-joint-card",
       "example": {}
+    },
+    {
+      "name": "joint_select",
+      "description": "Highlight a joint on the assembly strip.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "joint_id"
+        ],
+        "properties": {
+          "joint_id": {
+            "type": "string",
+            "description": "Joint id from the assembly strip"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "unknown_joint",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-joint-chip",
+      "example": {
+        "joint_id": "j1"
+      }
+    },
+    {
+      "name": "joint_edit",
+      "description": "Open or patch a joint on the strip (same fields as joint_set_params).",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "joint_id": {
+            "type": "string",
+            "description": "Joint id to edit; omit to edit the open card target"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "coincident",
+              "parallel",
+              "perpendicular",
+              "distance",
+              "angle",
+              "concentric",
+              "symmetric",
+              "fixed",
+              "planar"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "value_mm": {
+            "type": "number"
+          },
+          "value": {
+            "type": "number"
+          },
+          "sense": {
+            "type": "number"
+          },
+          "opposed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "unknown_joint",
+        "edit_failed",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-joint-chip",
+      "example": {
+        "joint_id": "j1",
+        "name": "Pin fit"
+      }
     },
     {
       "name": "git_move_to_repo",
