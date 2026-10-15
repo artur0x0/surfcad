@@ -8,8 +8,7 @@
  * Empty, cleared, or degenerate parts use 100 mm, the same reference the
  * length-slider defaults were written against.
  *
- * Fillet and chamfer do not read L. Their size comes from the adjacent edge
- * perpendicular to the pick (`docs/plans/slider-plan.md`).
+ * Fillet and chamfer do not read L. Their size is 2 mm in every display unit.
  */
 
 export const REFERENCE_LENGTH_MM = 100;

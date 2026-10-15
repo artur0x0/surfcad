@@ -288,7 +288,7 @@ import {
   enterChamferState,
   validateFilletAccept,
   validateChamferAccept,
-  defaultFilletParams,
+  defaultFilletRadius,
   solidMinExtent,
   hasFilletModeBlock,
   hasChamferModeBlock,
@@ -383,7 +383,6 @@ import {
   contactSeamFor,
   createSolidCache,
   contourBoundariesFor,
-  featureEdgesOf,
   featureGraphFor,
   pruneSolidCacheIn,
   releaseGeometryIn,
@@ -394,7 +393,6 @@ import {
   forgetCharacteristicLength,
   rememberCharacteristicLength,
 } from '../utils/characteristicLength';
-import { adjacentBlendSize } from '../utils/adjacentBlend';
 import { faceSliderFrame } from '../utils/helperSheetRange';
 import {
   directionOffscreenMm,
@@ -423,8 +421,6 @@ import {
   toggleEdgeSelectionPropagated,
   popLastEdgeSelection,
   selectionEdgeKey,
-  pathLengthFromEdges,
-  sweepBlendHardMax,
   projectWorldToCanvas,
   distPointToSegment2D,
   edgeTrackPoint,
@@ -4233,10 +4229,9 @@ const Viewport = forwardRef(({
     clearHighlight();
     setSelectedFace(null);
     onFaceSelected?.(null);
-    const neighbors = featureEdgesRef.current;
     const next = entry === 'chamferEdges'
-      ? enterChamferState(picked, { neighbors })
-      : enterFilletState(picked, { neighbors });
+      ? enterChamferState(picked)
+      : enterFilletState(picked);
     if (opts.params) {
       next.params = { ...next.params, ...opts.params };
       if (entry === 'chamferEdges') next.sizeTouched = true;
@@ -4249,15 +4244,6 @@ const Viewport = forwardRef(({
     setTangentProp(true);
     // No informational toast on successful Fillet/Chamfer UI open — soft-fail/accept gates still toast.
   }, [exitContourMode, onFaceSelected, selectedEdges, clearHighlight]);
-
-  /** Solid geometry of a part: the pick mesh when active, else its assembly mesh. */
-  const pickPartGeometry = (partId) => {
-    const active = activePartIdRef.current;
-    if (partId == null || partId === '' || active == null || String(partId) === String(active)) {
-      return resultRef.current?.geometry || null;
-    }
-    return assemblyExtrasRef.current?.get(String(partId))?.geometry || null;
-  };
 
   const acceptFillet = useCallback(() => {
     const state = filletModeRef.current;
@@ -4289,19 +4275,17 @@ const Viewport = forwardRef(({
     const plan = planMultiPartEdgeAccept({
       edges,
       activeId,
-      // An untouched size is the adjacent-edge seed. Each part reseeds it
-      // against its own edges. A typed size applies to every part.
+      // An untouched size is 2 mm on every part. A typed size applies to every part.
       validate: (list) => {
-        const partEdges = featureEdgesOf(pickPartGeometry(list[0]?.partId ?? activeId));
         if (chamfer) {
           const params = state.sizeTouched
             ? state.params
-            : { ...state.params, chamfer: adjacentBlendSize(list, partEdges).defaultMm };
+            : { ...state.params, chamfer: defaultFilletRadius() };
           return validateChamferAccept(list, params);
         }
         return validateFilletAccept(list, partEdgeParams(state.params, list, {
           touched: !!state.radiusTouched,
-          seed: (picks) => defaultFilletParams(picks, { neighbors: partEdges }).radius,
+          seed: () => defaultFilletRadius(),
         }));
       },
       partName: (id) => partLabelsRef.current?.[id] || id,
@@ -4659,10 +4643,9 @@ const Viewport = forwardRef(({
       clearFilletBlendPreview();
       return;
     }
-    const neighbors = featureEdgesRef.current;
     if (filletMode.entry === 'chamferEdges') {
       if (!filletMode.sizeTouched) {
-        const seeded = adjacentBlendSize(filletActiveEdges, neighbors).defaultMm;
+        const seeded = defaultFilletRadius();
         if (Number(filletMode.params?.chamfer) !== seeded) {
           setFilletMode((prev) => (
             prev && !prev.sizeTouched
@@ -4676,11 +4659,11 @@ const Viewport = forwardRef(({
       return;
     }
     if (!filletMode.radiusTouched) {
-      const seeded = defaultFilletParams(filletActiveEdges, { neighbors });
-      if (Number(filletMode.params?.radius) !== seeded.radius) {
+      const seeded = defaultFilletRadius();
+      if (Number(filletMode.params?.radius) !== seeded) {
         setFilletMode((prev) => (
           prev && !prev.radiusTouched
-            ? { ...prev, params: { ...prev.params, radius: seeded.radius } }
+            ? { ...prev, params: { ...prev.params, radius: seeded } }
             : prev
         ));
         return;
@@ -13308,20 +13291,7 @@ const Viewport = forwardRef(({
           edgeCount={selectedEdges.length}
           partCount={filletPartCount}
           tangentOn={tangentProp}
-          params={{
-            ...filletMode.params,
-            _sweepMax: (filletBlendPayload?.sweepMax > 0
-              ? filletBlendPayload.sweepMax
-              : sweepBlendHardMax(pathLengthFromEdges(filletActiveEdges.length ? filletActiveEdges : selectedEdges))),
-            _blendMax: adjacentBlendSize(
-              filletActiveEdges.length ? filletActiveEdges : selectedEdges,
-              featureEdgesRef.current,
-            ).maxMm,
-            _blendMin: adjacentBlendSize(
-              filletActiveEdges.length ? filletActiveEdges : selectedEdges,
-              featureEdgesRef.current,
-            ).minMm,
-          }}
+          params={filletMode.params}
           pathOk={filletChipStatus.ok}
           componentCount={filletChipStatus.componentCount}
           compact={isMobile}

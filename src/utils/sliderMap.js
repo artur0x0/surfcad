@@ -129,6 +129,51 @@ export function thumbFromLength(value, { min = 0, max = 1, signed = false } = {}
   return unshape(clamp01((n - a) / span)) * THUMB_COUNT;
 }
 
+function positiveSpan(min, max) {
+  const a = Number(min);
+  const b = Number(max);
+  const lo = Number.isFinite(a) ? a : 0;
+  const hi = Number.isFinite(b) ? b : lo;
+  return { lo: Math.min(lo, hi), hi: Math.max(lo, hi) };
+}
+
+/**
+ * Log map from `min` to `max`. Equal thumb travel is a constant ratio, so
+ * the low end has finer steps. `min` and `max` must be positive.
+ * Thumb 0 is `min` and thumb `THUMB_COUNT` is `max`, before and after snap.
+ * `snap` is a millimetre (or display-unit) detent, or a function of the
+ * unsnapped value. The inverse does not snap.
+ */
+export function logLengthFromThumb(thumb, { min = 0.5, max = 25, snap = 0 } = {}) {
+  const s = thumbUnit(thumb);
+  const { lo, hi } = positiveSpan(min, max);
+  if (!(lo > 0) || !(hi > lo)) return lo + (hi - lo) * s;
+  if (s <= 0) return lo;
+  if (s >= 1) return hi;
+  let value = lo * (hi / lo) ** s;
+  const step = typeof snap === 'function' ? Number(snap(value)) : Number(snap);
+  if (step > 0) value = snapLength(value, step);
+  if (value < lo) value = lo;
+  if (value > hi) value = hi;
+  return value;
+}
+
+/**
+ * Thumb index for a typed value on the log map. Does not snap and does not
+ * change the value: below `min` the thumb sits at the start, above `max`
+ * it sits at the end.
+ */
+export function logThumbFromLength(value, { min = 0.5, max = 25 } = {}) {
+  const n = Number(value);
+  const { lo, hi } = positiveSpan(min, max);
+  if (!Number.isFinite(n) || !(lo > 0) || !(hi > lo)) return 0;
+  if (n <= lo) return 0;
+  if (n >= hi) return THUMB_COUNT;
+  const t = Math.log(n / lo) / Math.log(hi / lo);
+  if (!Number.isFinite(t)) return 0;
+  return Math.min(1, Math.max(0, t)) * THUMB_COUNT;
+}
+
 /**
  * Value-range end R such that two-thirds of the thumb equals `dOff`.
  * R = dOff / shape(2/3) = dOff · 27/13.

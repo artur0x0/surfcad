@@ -111,16 +111,30 @@ describe('helper sheet ranges', () => {
     assert.equal(cbore.min, 3.4);
   });
 
-  it('seeds a helper fillet from the adjacent edge, not from L', () => {
+  it('seeds fillet and chamfer at 2 mm on a 0.5–25 mm log slider', () => {
     const bare = helperFieldSpec('filletEdges', cube('radius', 3, { min: 0.01 }), { lengthMm: 400 });
     assert.equal(bare.seed, 2);
+    assert.equal(bare.min, 0.5);
+    assert.equal(bare.max, 25);
+    assert.equal(bare.curve, 'log');
     const edge = [{
       key: '0-1', a: 0, b: 1, length: 40,
       va: [0, 0, 0], vb: [40, 0, 0],
     }];
     const sized = helperFieldSpec('filletEdges', cube('radius', 3), { lengthMm: 100, edges: edge });
-    assert.equal(sized.seed, 4);
-    assert.equal(sized.max, 8);
+    assert.equal(sized.seed, 2);
+    assert.equal(sized.max, 25);
+    const chamfer = helperFieldSpec('chamferEdges', cube('chamfer', 2), { lengthMm: 400, edges: edge });
+    assert.equal(chamfer.seed, 2);
+    assert.equal(chamfer.min, 0.5);
+    assert.equal(chamfer.max, 25);
+    assert.equal(chamfer.curve, 'log');
+    const saved = helperFieldSpec('filletEdges', cube('radius', 40), {
+      lengthMm: 100, saved: true, values: { radius: 40 },
+    });
+    assert.equal(saved.seed, 40);
+    assert.equal(saved.min, 0.5);
+    assert.equal(saved.max, 25);
   });
 
   it('reads a face frame from its vertices', () => {

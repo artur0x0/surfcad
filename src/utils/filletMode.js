@@ -56,7 +56,7 @@ import {
   FILLET_DEFAULT_RADIUS,
   sweepBlendHardMax,
 } from './selectEdge.js';
-import { adjacentBlendSize } from './adjacentBlend.js';
+import { defaultBlendSizeMm } from './blendSize.js';
 import { classifyFilletEdges } from './filletEdgeClass.js';
 import { shouldUseHardVariableSweep } from './filletKernelSpike.js';
 
@@ -79,13 +79,11 @@ export function isChamferEntry(id) {
   return id === 'chamferEdges';
 }
 
-export function enterChamferState(edges = null, { neighbors = null } = {}) {
+export function enterChamferState(edges = null) {
   const list = Array.isArray(edges) && edges.length ? edges : null;
-  const seeded = adjacentBlendSize(list, neighbors).defaultMm;
-  const chamfer = Number.isFinite(seeded) && seeded > 0 ? seeded : 2;
   return {
     entry: 'chamferEdges',
-    params: { body: 'part', chamfer, edgeScope: 'selected' },
+    params: { body: 'part', chamfer: defaultBlendSizeMm(), edgeScope: 'selected' },
     sizeTouched: false,
     lastEdges: list ? list.slice() : [],
     enterRefuse: null,
@@ -224,15 +222,8 @@ export function composeChamferCommit(buffer, {
   return { ok: true, buffer: composed, run: true, kernel: 'sweep-chamfer' };
 }
 
-/**
- * Untouched Fillet radius when nothing is picked (FILLET_DEFAULT_RADIUS).
- * A pick uses the adjacent edge instead (`defaultFilletRadius`).
- */
+/** Untouched fillet and chamfer size: 2 mm in every display unit. */
 export { FILLET_DEFAULT_RADIUS };
-/** No longer sizes the default. Kept so older readers still resolve. */
-export const FILLET_THIN_FRACTION = 0.45;
-/** Smallest chip default, unless the slider max is smaller. */
-export const FILLET_DEFAULT_MIN_RADIUS = 0.1;
 
 /**
  * Smallest bounding-box extent of a solid (mm), or null.
@@ -263,20 +254,19 @@ export function solidMinExtent(geometryOrBox) {
 }
 
 /**
- * Default Fillet radius from the adjacent edge closest to perpendicular.
- * `minExtent` is ignored. No picks → 2 mm.
- * @param {{ picked?: object[]|null, neighbors?: object[]|null, minExtent?: number|null }} [opts]
+ * Untouched fillet and chamfer size. 2 mm in every display unit.
+ * Inches show that length through the shared formatter (0.0787 in).
+ * Picks, edge length, and the part box do not change it.
  */
-export function defaultFilletRadius({ picked = null, neighbors = null } = {}) {
-  return adjacentBlendSize(picked, neighbors).defaultMm;
+export function defaultFilletRadius() {
+  return defaultBlendSizeMm();
 }
 
 /**
- * Fillet mode defaults. The radius is the adjacent-edge seed, not the
- * path length and not the part's thinnest extent.
+ * Fillet mode defaults. The radius is the fixed 2 mm seed.
  */
-export function defaultFilletParams(edges, { neighbors = null } = {}) {
-  const radius = defaultFilletRadius({ picked: edges, neighbors });
+export function defaultFilletParams() {
+  const radius = defaultFilletRadius();
   return {
     body: 'part',
     strategy: 'sweep',
@@ -291,10 +281,10 @@ export function defaultFilletParams(edges, { neighbors = null } = {}) {
 /**
  * Seed in-mode state. Empty edges are OK — never refuse on enter.
  */
-export function enterFilletState(edges = null, { neighbors = null } = {}) {
+export function enterFilletState(edges = null) {
   return {
     entry: 'filletEdges',
-    params: defaultFilletParams(edges, { neighbors }),
+    params: defaultFilletParams(),
     radiusTouched: false,
     lastEdges: Array.isArray(edges) && edges.length ? edges.slice() : [],
     enterRefuse: null,
