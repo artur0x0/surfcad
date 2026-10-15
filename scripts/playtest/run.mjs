@@ -9,6 +9,7 @@
  * Env:
  *   PLAYTEST_PORT (default 4174)
  *   PLAYTEST_OUT  (report directory)
+ *   SURFCAD_AGENT_BRIDGE_WS_PORT — relay port for vite preview (default: ephemeral free port)
  *   CHROME_PATH
  *   AGENT_VISIBLE=1  — slower visible cues (?visible=1&visibleDelay=350)
  */
@@ -23,6 +24,7 @@ import {
   startPreviewServer,
   waitForServer,
 } from './lib/harness.mjs';
+import { pickFreePort } from './lib/pickFreePort.mjs';
 import { writeReport } from './lib/report.mjs';
 import { scenarios, getScenario } from './scenarios/index.mjs';
 
@@ -62,7 +64,12 @@ const findings = [
   'On a 40×30×20 box with one centered hole, list_edges returns on the order of 156 raw mesh edges (not stable topology ids); prefer faceKeyA/faceKeyB pairs when listing adjacent faces.',
 ];
 
-const { stop } = startPreviewServer(PORT);
+const relayPort = process.env.SURFCAD_AGENT_BRIDGE_WS_PORT
+  ? Number(process.env.SURFCAD_AGENT_BRIDGE_WS_PORT)
+  : await pickFreePort();
+const { stop } = startPreviewServer(PORT, {
+  SURFCAD_AGENT_BRIDGE_WS_PORT: String(relayPort),
+});
 let browser;
 const allConsoleErrors = [];
 const scenarioReports = [];

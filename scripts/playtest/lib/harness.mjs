@@ -63,14 +63,19 @@ export async function waitForServer(baseUrl, timeoutMs = 60000) {
   return false;
 }
 
-export function startPreviewServer(port) {
+export function startPreviewServer(port, extraEnv = {}) {
   if (!existsSync(join(REPO_ROOT, 'dist/index.html'))) {
     throw new Error('playtest: dist/ missing — run `npm run build` first');
   }
   const server = spawn(
     'npx',
     ['vite', 'preview', '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
-    { cwd: REPO_ROOT, stdio: 'ignore', detached: true },
+    {
+      cwd: REPO_ROOT,
+      stdio: 'ignore',
+      detached: true,
+      env: { ...process.env, ...extraEnv },
+    },
   );
   let stopped = false;
   const stop = () => {

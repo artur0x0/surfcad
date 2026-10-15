@@ -75,7 +75,12 @@ export async function collectUnitFiles() {
     (name) => /\.(js|mjs|cjs)$/.test(name),
     [],
   );
-  return [...src, ...test, ...tests].sort();
+  const surfcadMcp = await walk(
+    join(ROOT, 'packages/surfcad-mcp/test'),
+    (name) => /\.test\.(js|mjs|cjs)$/.test(name),
+    [],
+  );
+  return [...src, ...test, ...tests, ...surfcadMcp].sort();
 }
 
 export function isFeaSuite(file) {

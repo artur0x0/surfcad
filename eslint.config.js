@@ -161,6 +161,11 @@ export default [
     languageOptions: { ecmaVersion: 2022, sourceType: 'module', globals: nodeGlobals },
   },
 
+  {
+    files: ['packages/surfcad-mcp/**/*.mjs', 'packages/surfcad-mcp/**/*.js'],
+    languageOptions: { ecmaVersion: 2022, sourceType: 'module', globals: nodeGlobals },
+  },
+
   // Golden puzzle scripts are DSL snippets evaluated inside the sandbox via
   // new Function(...) — function-body semantics, so top-level `return` is
   // legal ('commonjs' matches that shape; 'script'/'module' do not parse it)
