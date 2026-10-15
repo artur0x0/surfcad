@@ -520,6 +520,7 @@ import { createSketchPickHandlers } from '../agent/pick/sketchViewportPicks.js';
 import { planePatchFromArgs } from '../agent/sketchPlaneAgent.js';
 import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from '../agent/state/listPickables.js';
 import { describeJointPick } from '../agent/jointPickDescribe.js';
+import { catalogFingerprintsForAgent } from '../agent/faceCatalog.js';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -11503,10 +11504,19 @@ const Viewport = forwardRef(({
     return mesh?.geometry ?? null;
   };
 
+  const faceIDsForAgentPart = (partId, geom) => {
+    const active = activePartIdRef.current;
+    if (partId == null || partId === '' || String(partId) === String(active)) {
+      return faceIDsRef.current;
+    }
+    const attr = geom?.getAttribute?.('faceID');
+    return attr?.array?.length ? attr.array : null;
+  };
+
   agentListFacesRef.current = ({ partId } = {}) => {
     const geom = meshGeometryForAgentPart(partId);
     if (!geom) return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
-    const fingerprints = fingerprintsFromGeometry(geom, faceIDsRef.current);
+    const fingerprints = catalogFingerprintsForAgent(geom, faceIDsForAgentPart(partId, geom));
     const listed = buildFaceList(fingerprints);
     return {
       partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
@@ -11514,12 +11524,15 @@ const Viewport = forwardRef(({
     };
   };
 
-  agentDescribeJointPickRef.current = ({ partId, key, kind } = {}) => describeJointPick({
-    key,
-    kind,
-    geometry: meshGeometryForAgentPart(partId),
-    faceIDs: faceIDsRef.current,
-  });
+  agentDescribeJointPickRef.current = ({ partId, key, kind } = {}) => {
+    const geom = meshGeometryForAgentPart(partId);
+    return describeJointPick({
+      key,
+      kind,
+      geometry: geom,
+      faceIDs: faceIDsForAgentPart(partId, geom),
+    });
+  };
 
   agentListEdgesRef.current = ({ partId } = {}) => {
     const geom = meshGeometryForAgentPart(partId);

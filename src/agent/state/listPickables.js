@@ -34,13 +34,21 @@ export function buildFaceList(fingerprints) {
     const center = vec3(face.at);
     const normal = vec3(face.n);
     const tris = Array.isArray(face.tris) ? face.tris : [];
-    faces.push({
+    const row = {
       key,
       center,
       normal,
       area: Number(face.area),
       triangleCount: tris.length,
-    });
+    };
+    const axisAt = vec3(face.axis?.at);
+    const axisDir = vec3(face.axis?.dir);
+    const axisRadius = Number(face.axis?.radius);
+    if (axisAt && axisDir && axisRadius > 0) {
+      row.kind = 'cylindrical';
+      row.axis = { at: axisAt, dir: axisDir, radius: axisRadius };
+    }
+    faces.push(row);
   }
   return { faces };
 }
