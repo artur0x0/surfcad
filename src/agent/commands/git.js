@@ -3,6 +3,7 @@ import {
   gitOpResult,
   agentGitRealWriteBlocked,
 } from '../gitAgent.js';
+import { NO_ARGS_SCHEMA } from '../registry.js';
 
 function assertAgentGitWrite(ctx) {
   const kind = typeof ctx.readAgentGitAdapterKind === 'function'
@@ -39,7 +40,7 @@ export const gitMoveToRepoCommand = Object.freeze({
   uiEntry: 'data-git-move-open',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       vault_name: { type: 'string', description: 'New vault repo name (local assembly only)' },
     },
@@ -55,7 +56,7 @@ export const gitSaveCommand = Object.freeze({
   uiEntry: ['data-git-save', 'data-git-commit-confirm'],
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     required: ['message'],
     properties: {
       message: { type: 'string', description: 'Commit message (Save to current branch)' },
@@ -78,7 +79,7 @@ export const gitAddToRepoCommand = Object.freeze({
   uiEntry: 'data-git-commit-add-to-repo',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     required: ['part_id'],
     properties: {
       part_id: { type: 'string', description: 'Part row id to add under the vault layout' },
@@ -101,7 +102,7 @@ export const gitBehindResolveCommand = Object.freeze({
   uiEntry: ['data-git-behind-keep', 'data-git-behind-reload', 'data-git-behind-branch'],
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     required: ['action'],
     properties: {
       action: {
@@ -142,7 +143,7 @@ export const gitBranchCreateCommand = Object.freeze({
   uiEntry: ['data-git-branch-action-create', 'data-git-branch-create-confirm'],
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     required: ['name'],
     properties: {
       name: { type: 'string' },
@@ -164,7 +165,7 @@ export const gitBranchSwitchCommand = Object.freeze({
   uiEntry: ['data-git-branches', 'data-git-branch-confirm'],
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     required: ['branch'],
     properties: {
       branch: { type: 'string' },
@@ -194,7 +195,7 @@ export const gitBranchDeleteCommand = Object.freeze({
   uiEntry: 'data-git-branch-delete-confirm',
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     required: ['branch'],
     properties: {
       branch: { type: 'string' },
@@ -220,7 +221,7 @@ export const gitForceOverwriteCommand = Object.freeze({
   uiEntry: ['data-git-force-merge', 'data-git-conflict-overwrite'],
   schema: Object.freeze({
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: false,
     properties: {
       confirm: { type: 'boolean', description: 'Must be true' },
     },
@@ -239,11 +240,7 @@ export const gitForceOverwriteCommand = Object.freeze({
 export const gitListBranchesCommand = Object.freeze({
   name: 'git_list_branches',
   uiEntry: 'data-git-branches',
-  schema: Object.freeze({
-    type: 'object',
-    additionalProperties: true,
-    properties: {},
-  }),
+  schema: NO_ARGS_SCHEMA,
   example: {},
   immediate: true,
   async run(ctx) {

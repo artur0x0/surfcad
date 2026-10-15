@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 109,
+  "count": 118,
   "$defs": {
     "status": {
       "type": "object",
@@ -10354,6 +10354,338 @@
       "confirm": false,
       "immediate": true,
       "uiEntry": "data-joint-card",
+      "example": {}
+    },
+    {
+      "name": "git_move_to_repo",
+      "description": "Move the open local assembly into a new vault repo layout.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "vault_name": {
+            "type": "string",
+            "description": "New vault repo name (local assembly only)"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "git_blocked",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": true,
+      "confirm": true,
+      "immediate": false,
+      "uiEntry": "data-git-move-open",
+      "example": {
+        "vault_name": "my-vault"
+      }
+    },
+    {
+      "name": "git_save",
+      "description": "Commit dirty parts to the current vault branch.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Commit message (Save to current branch)"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "git_blocked",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": [
+        "data-git-save",
+        "data-git-commit-confirm"
+      ],
+      "example": {
+        "message": "Update bracket"
+      }
+    },
+    {
+      "name": "git_add_to_repo",
+      "description": "Add a part row into the vault tree and commit.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "part_id"
+        ],
+        "properties": {
+          "part_id": {
+            "type": "string",
+            "description": "Part row id to add under the vault layout"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "git_blocked",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-git-commit-add-to-repo",
+      "example": {
+        "part_id": "parts/Bracket.js"
+      }
+    },
+    {
+      "name": "git_behind_resolve",
+      "description": "Resolve behind-remote: keep mine, reload, or branch.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "keep",
+              "reload",
+              "branch"
+            ],
+            "description": "Get latest choice: keep mine, reload remote, or park mine on a branch"
+          },
+          "path": {
+            "type": "string",
+            "description": "Vault path (assembly or part file)"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "part",
+              "assembly"
+            ],
+            "description": "Defaults from path when omitted"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "confirm_required",
+        "git_blocked",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": true,
+      "confirm": true,
+      "immediate": false,
+      "uiEntry": [
+        "data-git-behind-keep",
+        "data-git-behind-reload",
+        "data-git-behind-branch"
+      ],
+      "example": {
+        "action": "keep",
+        "path": "assemblies/demo.surf.json",
+        "kind": "assembly"
+      }
+    },
+    {
+      "name": "git_branch_create",
+      "description": "Create and switch to a new vault branch.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "git_blocked",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": [
+        "data-git-branch-action-create",
+        "data-git-branch-create-confirm"
+      ],
+      "example": {
+        "name": "feature/agent-h12"
+      }
+    },
+    {
+      "name": "git_branch_switch",
+      "description": "Switch vault branch; confirm when the working copy is dirty.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "branch"
+        ],
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Required true when the working copy has uncommitted changes"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "confirm_required",
+        "git_blocked",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": true,
+      "confirm": true,
+      "immediate": false,
+      "uiEntry": [
+        "data-git-branches",
+        "data-git-branch-confirm"
+      ],
+      "example": {
+        "branch": "main"
+      }
+    },
+    {
+      "name": "git_branch_delete",
+      "description": "Delete a vault branch (requires confirm: true).",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "branch"
+        ],
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be true"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "confirm_required",
+        "git_blocked",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": true,
+      "confirm": true,
+      "immediate": false,
+      "uiEntry": "data-git-branch-delete-confirm",
+      "example": {
+        "branch": "feature/old",
+        "confirm": true
+      }
+    },
+    {
+      "name": "git_force_overwrite",
+      "description": "Force-overwrite remote conflicts (requires confirm: true).",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be true"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "confirm_required",
+        "git_blocked",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": true,
+      "confirm": true,
+      "immediate": false,
+      "uiEntry": [
+        "data-git-force-merge",
+        "data-git-conflict-overwrite"
+      ],
+      "example": {
+        "confirm": true
+      }
+    },
+    {
+      "name": "git_list_branches",
+      "description": "List vault branches for the open assembly.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": "data-git-branches",
       "example": {}
     }
   ]
