@@ -177,6 +177,8 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `sketch_accept_plane` | `{ "offset"?: number }` | Accepts the plane card and starts drawing (`data-contour-confirm`). |
 | `sketch_add` | `{ "tool": "circle"\|"rectangle"\|"polygon"\|"polyline"\|"cursor", …params }` | Switches the contour rail tool and sets profile params (same defaults as the UI). |
 | `sketch_commit` | `{}` | Writes the sketch (`makeCrossSection` / workplane) via `mutate` — one undo step when the buffer changes; result includes refreshed `status`. |
+| `sketch_dimension` | `{ "kind"?: "length"\|"angle"\|"distance"\|"offset"\|"radius", "value"?, "value_mm"?, "name"?, "picks"?: [{ "kind", "id" }], "edge"?, "line"?, "arc"?, "a"?, "b"?, "dimension_id"? }` | Adds or drives a dimension (same rules as the Dimension card). One `contourBlock` undo when the buffer changes. |
+| `sketch_constrain` | `{ "kind": "horizontal"\|"vertical"\|"parallel"\|"perpendicular"\|"tangent"\|"equal"\|"coincident"\|"fix", "picks"?: [{ "kind", "id" }], "side"?, "constraint_id"? }` | Adds a geometric constraint (same rules as the Constrain card). One `contourBlock` undo when the buffer changes. |
 | `sketch_cancel` | `{}` | Exits contour mode without writing (`data-contour-exit`). |
 | `slot_open` | `{ "kind": "makeExtrude"\|"makeRevolve"\|"makeLoft"\|"makeSweep" }` | Opens the feature slot card (same as tapping Extrude / Revolve / Loft / Sweep on the helper rail). |
 | `slot_assign_contour` | `{ "contour_id": string, "role"?: "profile"\|"path"\|"station", "index"?: number }` | Fills a slot from a saved `@contour` id. |

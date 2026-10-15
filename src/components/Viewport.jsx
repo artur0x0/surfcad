@@ -228,6 +228,7 @@ import {
 } from '../utils/contourRefPick';
 import { resolveContourScript } from '../utils/contourRefResolve';
 import { beginConstraintEdit, beginDimensionEdit } from '../utils/contourGesture';
+import { applySketchConstrain, applySketchDimension } from '../agent/sketchGestureAgent.js';
 import { contourChips, deleteContourEntity } from '../utils/contourStrip';
 import { entityDeleteChip, selectSketchChip, sketchActiveId, sketchHighlightPicks } from '../utils/contourSketchStrip';
 import { localPoint, worldPoint } from '../utils/partPose';
@@ -1279,6 +1280,9 @@ const Viewport = forwardRef(({
   const agentSketchAddRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const agentSketchCancelRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const agentPrepareSketchCommitRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
+  const agentPrepareSketchDimensionRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
+  const agentPrepareSketchConstrainRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
+  const agentPendingSketchGestureRef = useRef(null);
   const agentSlotOpenRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const agentSlotAssignContourRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const agentSlotSetParamsRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
@@ -2460,6 +2464,16 @@ const Viewport = forwardRef(({
       sketchAdd: (args) => agentSketchAddRef.current(args),
       sketchCancel: () => agentSketchCancelRef.current(),
       prepareSketchCommit: () => agentPrepareSketchCommitRef.current(),
+      prepareSketchDimension: (args) => agentPrepareSketchDimensionRef.current(args),
+      prepareSketchConstrain: (args) => agentPrepareSketchConstrainRef.current(args),
+      finishSketchGesture: () => {
+        const pending = agentPendingSketchGestureRef.current;
+        agentPendingSketchGestureRef.current = null;
+        if (pending) {
+          contourModeRef.current = pending;
+          setContourMode(pending);
+        }
+      },
       slotOpen: (args) => agentSlotOpenRef.current(args),
       slotAssignContour: (args) => agentSlotAssignContourRef.current(args),
       slotSetParams: (args) => agentSlotSetParamsRef.current(args),
@@ -11467,6 +11481,72 @@ const Viewport = forwardRef(({
       return next;
     });
     return { result: { tool } };
+  };
+
+  const agentContourGesturePlan = (applied, meta) => {
+    if (applied?.error) return { error: applied.error };
+    const state = applied.state;
+    if (!state?.params?.contour) {
+      return { error: { code: 'no_contour', message: 'Contour gesture did not produce a profile' } };
+    }
+    if (contourPlaneOpenRef.current) {
+      return { error: { code: 'plane_card_open', message: 'Call sketch_accept_plane before sketch gestures' } };
+    }
+    if (contourEditRef.current) {
+      return { error: { code: 'sketch_edit', message: 'Contour edit session is open' } };
+    }
+    const buf = (typeof getHelperBufferRef.current === 'function' ? getHelperBufferRef.current() : '') || '';
+    const minted = state.contourId ? null : mintContourIdentity(buf);
+    const contourId = state.contourId || minted?.id;
+    const contourName = state.contourName || minted?.name;
+    if (!contourId) {
+      return { error: { code: 'internal', message: 'Could not mint contour id' } };
+    }
+    const commitFace = activeContourFace(state, modelBoundsRef.current);
+    const nextState = { ...state, contourId, contourName };
+    agentPendingSketchGestureRef.current = nextState;
+    return {
+      payload: {
+        partId: activePartIdRef.current,
+        face: state.planeFace || commitFace,
+        tool: state.tool,
+        params: state.params,
+        entry: state.entry,
+        contourBlock: true,
+        contourId,
+        contourName,
+        planeOffset: Number(state.planeOffset) || 0,
+      },
+      result: meta,
+    };
+  };
+
+  agentPrepareSketchDimensionRef.current = (args = {}) => {
+    if (!contourModeRef.current) {
+      return { error: { code: 'no_sketch', message: 'Contour sketch is not open' } };
+    }
+    if (mode === 'game') {
+      return { error: { code: 'bad_view', message: 'Sketch is not available in game mode' } };
+    }
+    const applied = applySketchDimension(contourModeRef.current, args);
+    return agentContourGesturePlan(applied, {
+      dimensionId: applied.dimensionId,
+      kind: applied.kind,
+    });
+  };
+
+  agentPrepareSketchConstrainRef.current = (args = {}) => {
+    if (!contourModeRef.current) {
+      return { error: { code: 'no_sketch', message: 'Contour sketch is not open' } };
+    }
+    if (mode === 'game') {
+      return { error: { code: 'bad_view', message: 'Sketch is not available in game mode' } };
+    }
+    const applied = applySketchConstrain(contourModeRef.current, args);
+    return agentContourGesturePlan(applied, {
+      constraintId: applied.constraintId,
+      kind: applied.kind,
+    });
   };
 
   agentSketchCancelRef.current = () => {

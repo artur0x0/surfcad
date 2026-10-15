@@ -40,6 +40,8 @@ import { sketchAcceptPlaneCommand } from './sketchAcceptPlane.js';
 import { sketchAddCommand } from './sketchAdd.js';
 import { sketchCommitCommand } from './sketchCommit.js';
 import { sketchCancelCommand } from './sketchCancel.js';
+import { sketchDimensionCommand } from './sketchDimension.js';
+import { sketchConstrainCommand } from './sketchConstrain.js';
 import { slotOpenCommand } from './slotOpen.js';
 import { slotAssignContourCommand } from './slotAssignContour.js';
 import { slotSetParamsCommand } from './slotSetParams.js';
@@ -111,6 +113,8 @@ export const V1_COMMANDS = Object.freeze([
   sketchAddCommand,
   sketchCommitCommand,
   sketchCancelCommand,
+  sketchDimensionCommand,
+  sketchConstrainCommand,
   slotOpenCommand,
   slotAssignContourCommand,
   slotSetParamsCommand,
