@@ -4641,7 +4641,7 @@ function filletEdges(part, edgesIn, radiusIn, opts = {}) {
     if (isFilletSliverDirty(tiny, nTri)) {
       throw new Error(
         `filletEdges: result has ${tiny}/${nTri} degenerate triangles (sliver scraps) — `
-        + 'failing loud rather than shipping a dirty solid; try a smaller radius',
+        + 'failing loud rather than shipping a dirty solid; try a different size',
       );
     }
   }
@@ -8047,7 +8047,7 @@ function filletAlongPath(part, path, radius, opts = {}) {
     if (isFilletSliverDirty(tiny, nTri)) {
       throw new Error(
         `filletAlongPath: result has ${tiny}/${nTri} degenerate triangles (sliver scraps) — `
-        + 'failing loud rather than shipping a dirty solid; try a smaller radius or Strategy=planar',
+        + 'failing loud rather than shipping a dirty solid; try a different size or Strategy=planar',
       );
     }
   } catch (e) {

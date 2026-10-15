@@ -11,6 +11,9 @@
  * (commitMode 'append') so edge() runs on the already-filleted solid. Replace
  * stays the default for an in-place update of the same block. Undo pops the
  * last edge only. X exits with no commit. Strategy default stays sweep (#30).
+ * Editing an existing block uses this same composer (`replaceEditedBlend`):
+ * the new block is spliced over the old one. There is no second validator
+ * and no edge-list rebuild.
  *
  * Chamfer mode mirrors Fillet: enter without edges, pick disjoint components,
  * Accept emits makeSweepPath + filletAlongPath(..., { profile: 'chamfer' })
@@ -27,6 +30,8 @@ import {
   CHAMFER_MODE_BEGIN,
   CHAMFER_MODE_END,
 } from './helperPaletteSnippets.js';
+import { liveSheetFeature } from './featureSheetWriteback.js';
+import { scriptWithFeatureCount } from './partHistory.js';
 import {
   canBuildFilletAlongPath,
   filletWedgeContour,
@@ -140,6 +145,15 @@ export function hasChamferModeBlock(buffer) {
   return t.includes(CHAMFER_MODE_BEGIN) && t.includes(CHAMFER_MODE_END);
 }
 
+export function chamferModeOwnedRegion(buffer) {
+  const text = String(buffer || '');
+  const i = text.lastIndexOf(CHAMFER_MODE_BEGIN);
+  if (i < 0) return '';
+  const j = text.indexOf(CHAMFER_MODE_END, i);
+  if (j < 0) return '';
+  return text.slice(i, j + CHAMFER_MODE_END.length);
+}
+
 export function stripChamferModeBlock(buffer) {
   const text = String(buffer || '');
   const i = text.lastIndexOf(CHAMFER_MODE_BEGIN);
@@ -178,11 +192,7 @@ export function composeChamferCommit(buffer, {
   if (typeof composed !== 'string') {
     return { ok: false, message: gate.message || CHAMFER_MODE_EMPTY };
   }
-  const ownedStart = composed.lastIndexOf(CHAMFER_MODE_BEGIN);
-  const ownedEnd = composed.indexOf(CHAMFER_MODE_END, ownedStart < 0 ? 0 : ownedStart);
-  const owned = ownedStart < 0 || ownedEnd < 0
-    ? ''
-    : composed.slice(ownedStart, ownedEnd + CHAMFER_MODE_END.length);
+  const owned = chamferModeOwnedRegion(composed);
   const expectedComps = Array.isArray(gate.components) ? gate.components.length : 1;
   const pathCount = (owned.match(/makeSweepPath\s*\(/g) || []).length;
   const alongCount = (owned.match(/filletAlongPath\s*\(/g) || []).length;
@@ -850,4 +860,61 @@ export function composeFilletCommit(buffer, {
     run: true,
     kernel: hardVariable ? 'variable-profile-sweep' : 'sweep-dihedral',
   };
+}
+
+/**
+ * Edit a fillet or chamfer by running the same composer Accept uses.
+ *
+ * The base is the script before this feature (later features stay out of
+ * name allocation, the same way the block was first written). commitMode
+ * follows the create rule on that prefix: append when an earlier block of
+ * this kind is still there, otherwise replace. The new block is spliced
+ * over the old one, so disconnected corners stay separate blends and
+ * everything after the feature stays put. One buffer, no second validator.
+ *
+ * @param {string} script
+ * @param {{ id?: string, kind?: string, index?: number }} feature
+ * @param {{ chamfer?: boolean, edges?: object[]|null, params?: object, filletClass?: string|null, geometry?: object|null }} [opts]
+ */
+export function replaceEditedBlend(script, feature, {
+  chamfer = false,
+  edges = null,
+  params = {},
+  filletClass = null,
+  geometry = null,
+} = {}) {
+  const text = String(script || '');
+  const live = liveSheetFeature(text, feature);
+  if (!live) {
+    return {
+      ok: false,
+      message: 'That feature is not in this part\'s script any more — pick it again.',
+    };
+  }
+  const prefix = scriptWithFeatureCount(text, live.index);
+  const commitMode = (chamfer ? hasChamferModeBlock(prefix) : hasFilletModeBlock(prefix))
+    ? 'append'
+    : 'replace';
+  const created = chamfer
+    ? composeChamferCommit(prefix, { edges, params, commitMode })
+    : composeFilletCommit(prefix, {
+      edges,
+      params,
+      commitMode,
+      filletClass,
+      geometry,
+    });
+  if (!created.ok) return created;
+  const block = chamfer ? chamferModeOwnedRegion(created.buffer) : filletModeOwnedRegion(created.buffer);
+  if (!block) {
+    return {
+      ok: false,
+      message: chamfer
+        ? 'composeChamferCommit: chamfer-mode markers missing — refusing unscoped insert.'
+        : 'composeFilletCommit: fillet-mode markers missing — refusing unscoped insert.',
+    };
+  }
+  const buffer = text.slice(0, live.startOffset) + block + text.slice(live.endOffset);
+  if (buffer === text) return { ok: true, buffer: text, changed: false, run: false };
+  return { ok: true, buffer, changed: true, run: true, kernel: created.kernel };
 }

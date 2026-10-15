@@ -311,6 +311,7 @@ import {
   composeChamferCommit,
   hasFilletModeBlock,
   hasChamferModeBlock,
+  replaceEditedBlend,
 } from './utils/filletMode';
 import { composeMultiPartEdgeCommit } from './utils/multiPartEdges';
 import { composeShellCommit } from './utils/shellMode';
@@ -5795,7 +5796,40 @@ const App = () => {
     const buf = codeEditorRef.current?.getContent?.() || '';
     let editorBuffer = null;
     let writes = [];
-    if (!others.length) {
+    const editFeature = payload?.editFeature || null;
+    if (editFeature) {
+      // Same composer as a new fillet. The block replaces this feature
+      // instead of appending a second one onto the solid it already cut.
+      const edited = replaceEditedBlend(buf, editFeature, {
+        chamfer,
+        edges: payload?.edges,
+        params: payload?.params,
+        filletClass: payload?.filletClass ?? null,
+        geometry: payload?.geometry ?? null,
+      });
+      if (!edited.ok) {
+        viewportRef.current?.softFailFillet?.(edited.message);
+        return false;
+      }
+      editorBuffer = edited.changed ? edited.buffer : null;
+      if (others.length) {
+        const ctx = assemblyPartContext();
+        const plan = composeMultiPartEdgeCommit({
+          chamfer,
+          groups: others,
+          editorId,
+          editorBuffer: edited.buffer,
+          parts: ctx.parts,
+          compose: chamfer ? composeChamferCommit : composeFilletCommit,
+          hasBlock: chamfer ? hasChamferModeBlock : hasFilletModeBlock,
+        });
+        if (!plan.ok) {
+          viewportRef.current?.softFailFillet?.(plan.message);
+          return false;
+        }
+        writes = plan.writes;
+      }
+    } else if (!others.length) {
       const result = chamfer
         ? composeChamferCommit(buf, payload || {})
         : composeFilletCommit(buf, payload || {});
@@ -5833,7 +5867,11 @@ const App = () => {
       writes = plan.writes;
     }
     if (editorBuffer != null) {
-      const wrote = commitFeatureBuffer(buf, editorBuffer, `${label} mode`);
+      const wrote = commitFeatureBuffer(
+        buf,
+        editorBuffer,
+        editFeature ? `Edit ${editFeature.label || label}` : `${label} mode`,
+      );
       if (!wrote) {
         viewportRef.current?.softFailFillet?.(
           `Could not write ${label} into the editor — try again.`,
