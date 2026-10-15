@@ -1572,6 +1572,7 @@ const PartFeed = forwardRef(function PartFeed({
                   type="button"
                   role="menuitem"
                   data-part-open-action="part"
+                  data-ui-action="data-part-open-action-part"
                   data-git-open-part-action={source === 'git' ? '' : undefined}
                   data-part-open-local={source === 'git' ? undefined : 'part'}
                   className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
@@ -1590,6 +1591,7 @@ const PartFeed = forwardRef(function PartFeed({
                   type="button"
                   role="menuitem"
                   data-part-open-action="assembly"
+                  data-ui-action="data-part-open-action-assembly"
                   data-assembly-add-existing=""
                   className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
                   onClick={() => requestAssemblyAction('existing')}
@@ -1626,6 +1628,7 @@ const PartFeed = forwardRef(function PartFeed({
                   role="menuitem"
                   data-part-add-action="part"
                   data-part-add-kind="part"
+                  data-ui-action="data-part-add-kind-part"
                   className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
                   onClick={() => {
                     setPlusMenuOpen(false);
@@ -1639,6 +1642,7 @@ const PartFeed = forwardRef(function PartFeed({
                   role="menuitem"
                   data-part-add-action="assembly"
                   data-part-add-kind="assembly"
+                  data-ui-action="data-part-add-kind-assembly"
                   className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
                   onClick={() => requestAssemblyAction('new')}
                 >

@@ -42,6 +42,7 @@ export default function OpenAssemblyChoiceDialog({
           <button
             type="button"
             data-git-open-insert=""
+            data-ui-action="data-git-open-insert"
             className={`${PARTS_DIALOG_BTN_COMPACT} ${PARTS_DIALOG_BTN_SECONDARY}`}
             disabled={loading}
             onClick={onInsert}
@@ -51,6 +52,7 @@ export default function OpenAssemblyChoiceDialog({
           <button
             type="button"
             data-git-open-replace=""
+            data-ui-action="data-git-open-replace"
             className={`${PARTS_DIALOG_BTN_COMPACT} ${PARTS_DIALOG_BTN_PRIMARY}`}
             disabled={loading}
             onClick={onOpen}

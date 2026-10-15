@@ -13,6 +13,13 @@ export const undoCommand = Object.freeze({
   schema: NO_ARGS_SCHEMA,
   example: {},
   async run(ctx) {
+    const agentUndo = ctx.agentUndo;
+    if (typeof agentUndo === 'function') {
+      const routed = await agentUndo();
+      if (routed?.handled) {
+        return { result: routed.result };
+      }
+    }
     const before = ctx.cloneHistory(ctx.readHistory());
     const undone = undoPartHistory(before);
     if (undone.code == null) {

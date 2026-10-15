@@ -73,6 +73,20 @@ import {
   setActiveWorkplaneCommand,
 } from './plane.js';
 import { listSketchEntitiesCommand } from './listSketchEntities.js';
+import {
+  createAssemblyCommand,
+  createPartCommand,
+  openAssemblyCommand,
+  openPartCommand,
+  insertPartCommand,
+} from './document.js';
+import {
+  jointOpenCommand,
+  jointSetParamsCommand,
+  jointPickCommand,
+  jointCommitCommand,
+  jointCancelCommand,
+} from './joint.js';
 
 const HELPER_COMMANDS = buildHelperPaletteCommands();
 
@@ -85,6 +99,7 @@ const HELPER_COMMANDS = buildHelperPaletteCommands();
  * H6 sketch and H8 slot helpers follow H3 writers.
  * H9 pick sessions follow H8.
  * H10 hole card, plane/workplane, sketch point picks follow H9.
+ * H11 parts, assemblies, and joints follow H10.
  */
 export const V1_COMMANDS = Object.freeze([
   getScriptCommand,
@@ -154,6 +169,16 @@ export const V1_COMMANDS = Object.freeze([
   workplaneSelectCommand,
   setActiveWorkplaneCommand,
   listSketchEntitiesCommand,
+  createAssemblyCommand,
+  createPartCommand,
+  openAssemblyCommand,
+  openPartCommand,
+  insertPartCommand,
+  jointOpenCommand,
+  jointSetParamsCommand,
+  jointPickCommand,
+  jointCommitCommand,
+  jointCancelCommand,
 ]);
 
 export const v1Registry = defineCommands(V1_COMMANDS);
