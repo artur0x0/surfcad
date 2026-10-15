@@ -454,7 +454,7 @@ Mobile specifics:
   viewer. The Script stage does not float a second card over the editor.
   The CAD strip, the desktop strip, and long-press reopen the **creation dialog**
   for that feature (`beginFeatureEdit`), pre-filled from the block. Confirm
-  rewrites that block in place (`confirmFeatureEdit`). Fillet and chamfer Confirm does not rebuild the edge list; it runs the same Accept composer as a new blend (`replaceEditedBlend`) and splices that block over the old one, so disconnected edges stay separate blends. One write, one undo. X and Esc write nothing.
+  rewrites that block in place (`confirmFeatureEdit`). Fillet and chamfer Confirm does not rebuild the edge list; it runs the same Accept composer as a new blend (`replaceEditedBlend`) and splices that block over the old one, so disconnected edges stay separate blends. New consts are unique in the whole script, not only in the prefix. One write, one undo. X and Esc write nothing.
   The red Delete button sits opposite Confirm. Delete removes that one block
   and rebuilds immediately. When a later feature uses this feature's edges,
   faces, or variables, a toast names it and offers Undo. No dependents means

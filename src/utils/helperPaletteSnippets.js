@@ -1074,7 +1074,7 @@ export function insertBlockAtCaret(buffer, snippet, caretOffset = null) {
   return joinScriptReturn(body, tail);
 }
 
-export function composeHelperInsert(buffer, id, caretOffset = null, params = null, faceContext = null, edgeContext = null) {
+export function composeHelperInsert(buffer, id, caretOffset = null, params = null, faceContext = null, edgeContext = null, reservedNames = null) {
   const item = HELPER_PALETTE_ITEMS.find((h) => h.id === id);
   if (!item) return null;
 
@@ -1082,6 +1082,13 @@ export function composeHelperInsert(buffer, id, caretOffset = null, params = nul
   const empty = isBufferEmpty(strippedBuf);
   const merged = mergeParams(item, params);
   const names = declaredNames(strippedBuf);
+  // Edit splices one block into a script that already declares names after
+  // that block. The prefix alone would hand those names out again.
+  if (reservedNames) {
+    for (const name of reservedNames) {
+      if (typeof name === 'string' && name) names.add(name);
+    }
+  }
   let snippet = item.build(empty, merged, names, strippedBuf, faceContext, edgeContext);
   if (snippet == null) return null;
 
