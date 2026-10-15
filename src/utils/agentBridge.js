@@ -189,15 +189,31 @@ function parseArgs(argsJson) {
 
 /**
  * @param {{
- *   getScript: () => string,
- *   setEditor: (src: string) => void,
- *   readHistory: () => { commits: unknown[], head: number },
- *   writeHistory: (history: { commits: unknown[], head: number }) => void,
- *   execute: (src: string) => Promise<{ ok?: boolean, errors?: unknown, volume?: number, bbox?: object, partName?: string }>,
- *   screenshot: () => string | Promise<string>,
- * }} host
+ *   resolve?: () => Record<string, unknown> | null | undefined,
+ *   getScript?: () => string,
+ *   setEditor?: (src: string) => void,
+ *   readHistory?: () => { commits: unknown[], head: number },
+ *   writeHistory?: (history: { commits: unknown[], head: number }) => void,
+ *   execute?: (src: string) => Promise<{ ok?: boolean, errors?: unknown, volume?: number, bbox?: object, partName?: string }>,
+ *   screenshot?: () => string | Promise<string>,
+ * } | null} hostSource
+ *
+ * When `resolve` is set, every command reads handlers from `resolve()` at call
+ * time so App / Viewport can register readers on `agentHostRef` after mount.
  */
-export function createSurfcadBridge(host) {
+export function createSurfcadBridge(hostSource) {
+  function getHost() {
+    if (hostSource && typeof hostSource.resolve === 'function') {
+      const current = hostSource.resolve();
+      return current && typeof current === 'object' ? current : {};
+    }
+    return hostSource && typeof hostSource === 'object' ? hostSource : {};
+  }
+
+  function hostFn(name) {
+    const fn = getHost()[name];
+    return typeof fn === 'function' ? fn : null;
+  }
   let chain = Promise.resolve();
   let lastErrors = [];
   let lastStructuredErrors = [];
@@ -213,7 +229,8 @@ export function createSurfcadBridge(host) {
     const text = typeof script === 'string' ? script : '';
     const errors = outcome?.ok === true ? [] : errorMessages(outcome?.errors);
     lastErrors = errors.slice();
-    const runFailure = typeof host.readRunFailure === 'function' ? host.readRunFailure() : null;
+    const readRunFailure = hostFn('readRunFailure');
+    const runFailure = readRunFailure ? readRunFailure() : null;
     lastStructuredErrors = formatAgentErrors({
       messages: lastErrors,
       script: text,
@@ -233,15 +250,19 @@ export function createSurfcadBridge(host) {
    * the first real run seeds an assembly and replaces the stack.
    */
   async function mutate(text, message) {
-    const before = cloneAgentHistory(host.readHistory());
-    host.setEditor(text);
+    const readHistory = hostFn('readHistory');
+    const setEditor = hostFn('setEditor');
+    const execute = hostFn('execute');
+    const writeHistory = hostFn('writeHistory');
+    const before = cloneAgentHistory(readHistory ? readHistory() : emptyPartHistory());
+    if (setEditor) setEditor(text);
     let outcome;
     try {
-      outcome = await host.execute(text);
+      outcome = execute ? await execute(text) : failedExecute(new Error('execute missing'));
     } catch (err) {
       outcome = failedExecute(err);
     }
-    host.writeHistory(commitAgentStep(before, text, message));
+    if (writeHistory) writeHistory(commitAgentStep(before, text, message));
     return remember(outcome, text);
   }
 
@@ -261,38 +282,42 @@ export function createSurfcadBridge(host) {
    * Viewport published.
    */
   const ctx = {
-    getScript: () => host.getScript(),
-    setEditor: (src) => host.setEditor(src),
-    readHistory: () => host.readHistory(),
-    writeHistory: (history) => host.writeHistory(history),
-    execute: (src) => host.execute(src),
-    screenshot: () => host.screenshot(),
+    getScript: () => (hostFn('getScript')?.() ?? ''),
+    setEditor: (src) => { hostFn('setEditor')?.(src); },
+    readHistory: () => (hostFn('readHistory')?.() ?? emptyPartHistory()),
+    writeHistory: (history) => { hostFn('writeHistory')?.(history); },
+    execute: (src) => {
+      const run = hostFn('execute');
+      return run ? run(src) : Promise.resolve(failedExecute(new Error('execute missing')));
+    },
+    screenshot: () => hostFn('screenshot')?.(),
     mutate,
     remember,
     readStatus: () => copyStatus(lastStatus),
     readErrors: () => lastErrors.slice(),
     readStructuredErrors: () => {
-      if (typeof host.readStructuredErrors === 'function') {
-        return host.readStructuredErrors();
-      }
+      const custom = hostFn('readStructuredErrors');
+      if (custom) return custom();
       if (lastStructuredErrors.length) return lastStructuredErrors.slice();
-      const runFailure = typeof host.readRunFailure === 'function' ? host.readRunFailure() : null;
-      const script = typeof host.getScript === 'function' ? host.getScript() : '';
+      const readRunFailure = hostFn('readRunFailure');
+      const runFailure = readRunFailure ? readRunFailure() : null;
+      const getScript = hostFn('getScript');
+      const script = getScript ? getScript() : '';
       return formatAgentErrors({ messages: lastErrors, script, runFailure });
     },
-    readFeatureTree: () => (typeof host.readFeatureTree === 'function' ? host.readFeatureTree() : {
+    readFeatureTree: () => (hostFn('readFeatureTree')?.() ?? {
       features: [],
       rollbackAnchor: null,
       activeChipId: null,
     }),
-    readSelection: () => (typeof host.readSelection === 'function' ? host.readSelection() : {
+    readSelection: () => (hostFn('readSelection')?.() ?? {
       activePartId: null,
       cadPartId: null,
       face: null,
       edges: [],
       contour: { armedId: null, planeId: null },
     }),
-    readMode: () => (typeof host.readMode === 'function' ? host.readMode() : {
+    readMode: () => (hostFn('readMode')?.() ?? {
       app: 'cad',
       viewport: 'idle',
       contour: null,
@@ -300,20 +325,20 @@ export function createSurfcadBridge(host) {
       featureEdit: null,
       sheetMetal: null,
     }),
-    readDirty: () => (typeof host.readDirty === 'function' ? host.readDirty() : {
+    readDirty: () => (hostFn('readDirty')?.() ?? {
       workspaceDirty: false,
       assemblyDirty: false,
       renamePending: false,
       legacyCleanup: false,
       partIds: [],
     }),
-    readToasts: () => (typeof host.readToasts === 'function' ? host.readToasts() : { toasts: [] }),
-    readParts: () => (typeof host.readParts === 'function' ? host.readParts() : {
+    readToasts: () => (hostFn('readToasts')?.() ?? { toasts: [] }),
+    readParts: () => (hostFn('readParts')?.() ?? {
       activeId: null,
       assemblyName: '',
       parts: [],
     }),
-    readCamera: () => (typeof host.readCamera === 'function' ? host.readCamera() : {
+    readCamera: () => (hostFn('readCamera')?.() ?? {
       position: null,
       quaternion: null,
       target: null,

@@ -16,3 +16,14 @@ test('buildDirtyState copies part ids and flags', () => {
     partIds: ['a', 'b'],
   });
 });
+
+test('buildDirtyState folds undoStackDirty into workspaceDirty', () => {
+  assert.deepEqual(buildDirtyState({ undoStackDirty: true }), {
+    workspaceDirty: true,
+    assemblyDirty: false,
+    renamePending: false,
+    legacyCleanup: false,
+    partIds: [],
+    undoStackDirty: true,
+  });
+});
