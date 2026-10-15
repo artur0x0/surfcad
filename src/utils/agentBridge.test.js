@@ -43,6 +43,8 @@ const COMMANDS = [
   'toasts',
   'parts',
   'camera',
+  'list_faces',
+  'list_edges',
   'select_clear',
   'select_faces',
   'select_edges',

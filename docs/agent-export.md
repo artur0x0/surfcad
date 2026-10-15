@@ -149,9 +149,11 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `toasts` | `{}` | `{ "toasts": [{ "id", "kind", "message" }] }` visible upload / git / rename notices. |
 | `parts` | `{}` | `{ "activeId", "assemblyName", "parts": [{ "id", "name", "visible" }] }`. |
 | `camera` | `{}` | `{ "position", "quaternion", "target", "zoom", "fov" }` arrays or null. |
+| `list_faces` | `{ "part_id"?: string }` | `{ "partId", "faces": [{ "key", "center", "normal", "area", "triangleCount" }] }`. `key` is the exact object `select_faces` accepts. Omit `part_id` for the active part mesh. |
+| `list_edges` | `{ "part_id"?: string }` | `{ "partId", "edges": [{ "key", "mid", "length", "faceKeyA", "faceKeyB" }] }`. When both adjacent faces are known, `faceKeyA` / `faceKeyB` are full face keys (same shape as `list_faces.key`). Otherwise they are midpoint hints with `area: 0`. |
 | `select_clear` | `{}` | `{ "cleared": true }` — clears face, edge, and contour picks in the viewport. |
 | `select_faces` | `{ "keys": [{ "at", "n", "area" }] }` or `{ "key": … }` | `{ "count": number }`. Uses the same face fingerprints as saved paint keys. |
-| `select_edges` | `{ "keys": ["a-b", …] }` or face-key pairs | `{ "count": number }`. |
+| `select_edges` | `{ "keys": […] }` | `{ "count": number }`. Each key may be a packed string (`"12-34"`, same as `list_edges.key`), or an object `{ "faceKeyA", "faceKeyB" }` using **face-centre keys** from `list_faces` (`at`, `n`, `area` with `area > 0`). Aliases: `{ "faceA", "faceB" }` or `{ "faceKeys": [keyA, keyB] }`. The legacy `{ faceKeyA, faceKeyB }` form with `area: 0` at the edge midpoint still works when full face keys are unavailable. |
 | `select_parts` | `{ "part_ids": [string] }` | `{ "partIds": [string] }` — highlights the last id (`cadPartId`) without switching the editor part. |
 | `set_active_part` | `{ "part_id": string }` | `{ "partId": string }` — same as choosing a parts row (Monaco + mesh). |
 | `camera_set` | `{ "view"?: "iso"\|"front"\|"right"\|"top"\|…, "position"?, "target"?, "fov"? }` | `{ "ok": true }`. Named views use the same presets as `data-view-snap-*`. |

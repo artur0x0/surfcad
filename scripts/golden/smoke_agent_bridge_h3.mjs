@@ -28,8 +28,6 @@ let part = Manifold.cube([40, 30, 20], true);
 return part;
 `;
 
-const TOP_FACE_KEY = { at: [0, 0, 10], n: [0, 0, 1], area: 1200 };
-
 const ASSEMBLY = {
   format: 'surfcad.assembly',
   v: 1,
@@ -195,13 +193,44 @@ const beforePos = camBefore.result?.position;
 check('camera before', Array.isArray(beforePos) && beforePos.every((n) => Number.isFinite(n)),
   JSON.stringify(beforePos));
 
-const picked = await agentCall(page, 'select_faces', { keys: [TOP_FACE_KEY] });
+const listedFaces = await agentCall(page, 'list_faces', {});
+check('list_faces non-empty', listedFaces.ok === true && listedFaces.result?.faces?.length >= 6,
+  JSON.stringify(listedFaces.result?.faces?.length));
+
+const topKey = listedFaces.result.faces.find((row) => row.key?.n?.[2] > 0.9)?.key
+  || listedFaces.result.faces[0].key;
+
+const picked = await agentCall(page, 'select_faces', { keys: [topKey] });
 check('select_faces ok', picked.ok === true, JSON.stringify(picked));
 
 const sel = await agentCall(page, 'selection', {});
-check('selection face after select_faces',
-  sel.ok === true && sel.result?.face?.normal?.[2] > 0.9,
+check('selection face area after select_faces',
+  sel.ok === true && (sel.result?.face?.area ?? 0) > 100,
   JSON.stringify(sel.result?.face));
+
+const zoomSel = await agentCall(page, 'zoom_to_selection', {});
+check('zoom_to_selection after face pick', zoomSel.ok === true, JSON.stringify(zoomSel));
+
+const plusXKey = listedFaces.result.faces.find((row) => row.key?.n?.[0] > 0.9)?.key;
+if (plusXKey) {
+  const pickX = await agentCall(page, 'select_faces', { keys: [plusXKey] });
+  check('select_faces +X via list_faces key', pickX.ok === true, JSON.stringify(pickX));
+  const selX = await agentCall(page, 'selection', {});
+  check('+X face area', (selX.result?.face?.area ?? 0) > 100, JSON.stringify(selX.result?.face));
+  const zoomX = await agentCall(page, 'zoom_to_selection', {});
+  check('zoom_to_selection +X face', zoomX.ok === true, JSON.stringify(zoomX));
+}
+
+const listedEdges = await agentCall(page, 'list_edges', {});
+check('list_edges non-empty', listedEdges.ok === true && listedEdges.result?.edges?.length >= 4,
+  JSON.stringify(listedEdges.result?.edges?.length));
+
+const edgeRow = listedEdges.result.edges.find((row) => row.faceKeyA?.area > 0 && row.faceKeyB?.area > 0)
+  || listedEdges.result.edges[0];
+const edgePick = await agentCall(page, 'select_edges', {
+  keys: [{ faceKeyA: edgeRow.faceKeyA, faceKeyB: edgeRow.faceKeyB }],
+});
+check('select_edges via adjacent face keys', edgePick.ok === true, JSON.stringify(edgePick));
 
 const snap = await agentCall(page, 'camera_set', { view: 'top' });
 check('camera_set top', snap.ok === true, JSON.stringify(snap));

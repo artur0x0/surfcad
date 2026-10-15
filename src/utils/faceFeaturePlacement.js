@@ -117,6 +117,9 @@ export function classifySelectedFace(faceData) {
     triangleCount,
     selectionMode: mode,
   };
+  if (Array.isArray(faceData.indices) && faceData.indices.length) {
+    out.indices = faceData.indices.slice();
+  }
   // Multi-face pick (shift-click in the viewport): every accumulated face,
   // oldest first, this one last. Shell/Draft read it; every other feature keeps
   // using `center`/`normal` and so keeps behaving as a single-face pick.

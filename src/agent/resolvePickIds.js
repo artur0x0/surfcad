@@ -68,16 +68,61 @@ export function resolveFaceKeys(fingerprints, keys) {
   if (missing.length) {
     return { error: { code: 'unknown_face', message: 'Face key did not match any patch on the active mesh' } };
   }
-  const picks = matched.map((row) => {
-    const face = row.face;
-    return {
-      center: face.at.slice(),
-      normal: face.n.slice(),
-      area: face.area,
-      indices: face.tris?.length ? face.tris.slice() : [],
-    };
-  });
+  const picks = matched.map((row) => faceToAgentPick(row.face));
   return { picks };
+}
+
+/** Same triangle list and area as a viewport face pick. */
+export function faceToAgentPick(face) {
+  if (!face) {
+    return { center: null, normal: null, area: 0, indices: [] };
+  }
+  const tris = Array.isArray(face.tris) ? face.tris.slice() : [];
+  return {
+    center: vec3(face.at)?.slice() || null,
+    normal: vec3(face.n)?.slice() || null,
+    area: Number(face.area),
+    indices: tris,
+  };
+}
+
+function readEdgeFacePair(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (raw.faceKeyA && raw.faceKeyB) {
+    return { faceKeyA: raw.faceKeyA, faceKeyB: raw.faceKeyB };
+  }
+  if (raw.faceA && raw.faceB) {
+    return { faceKeyA: raw.faceA, faceKeyB: raw.faceB };
+  }
+  if (Array.isArray(raw.faceKeys) && raw.faceKeys.length === 2) {
+    return { faceKeyA: raw.faceKeys[0], faceKeyB: raw.faceKeys[1] };
+  }
+  return null;
+}
+
+function keyMatchesFace(fingerprint, queryKey) {
+  const { matched, missing, ambiguous } = matchFaceKeys([fingerprint], [{ key: queryKey }]);
+  return matched.length === 1 && !missing.length && !ambiguous.length;
+}
+
+function edgeFromAdjacentFaceKeys(featureEdges, fingerprints, faceKeyA, faceKeyB) {
+  const owners = new Map();
+  for (const face of fingerprints) {
+    const tris = face?.tris;
+    if (!Array.isArray(tris)) continue;
+    for (let i = 0; i < tris.length; i++) owners.set(tris[i], face);
+  }
+  const hits = [];
+  for (const edge of featureEdges) {
+    if (edge.tri0 == null || edge.tri1 == null) continue;
+    const fa = owners.get(edge.tri0);
+    const fb = owners.get(edge.tri1);
+    if (!fa || !fb) continue;
+    const forward = keyMatchesFace(fa, faceKeyA) && keyMatchesFace(fb, faceKeyB);
+    const reverse = keyMatchesFace(fa, faceKeyB) && keyMatchesFace(fb, faceKeyA);
+    if (forward || reverse) hits.push(edge);
+  }
+  return hits;
 }
 
 function edgeFromFaceKeys(featureEdges, faceKeyA, faceKeyB) {
@@ -99,7 +144,7 @@ function edgeFromFaceKeys(featureEdges, faceKeyA, faceKeyB) {
 /**
  * @returns {{ edges: object[], error?: { code: string, message: string } }}
  */
-export function resolveEdgeKeys(featureEdges, keys, partId = null) {
+export function resolveEdgeKeys(featureEdges, keys, partId = null, fingerprints = []) {
   const list = Array.isArray(keys) ? keys : (keys ? [keys] : []);
   if (!list.length) {
     return { error: { code: 'bad_args', message: 'select_edges needs at least one edge key' } };
@@ -115,12 +160,23 @@ export function resolveEdgeKeys(featureEdges, keys, partId = null) {
         return { error: { code: 'unknown_edge', message: `Edge key not found: ${raw}` } };
       }
     } else if (raw && typeof raw === 'object') {
-      const faceKeyA = readFaceKey(raw.faceKeyA, { allowZeroArea: true });
-      const faceKeyB = readFaceKey(raw.faceKeyB, { allowZeroArea: true });
-      if (!faceKeyA || !faceKeyB) {
-        return { error: { code: 'bad_args', message: `edge key at index ${i} needs faceKeyA and faceKeyB` } };
+      const pair = readEdgeFacePair(raw);
+      if (!pair) {
+        return { error: { code: 'bad_args', message: `edge key at index ${i} needs faceKeyA/faceKeyB, faceA/faceB, or faceKeys[2]` } };
       }
-      const hits = edgeFromFaceKeys(edges, faceKeyA, faceKeyB);
+      const fullA = readFaceKey(pair.faceKeyA);
+      const fullB = readFaceKey(pair.faceKeyB);
+      let hits;
+      if (fullA && fullB) {
+        hits = edgeFromAdjacentFaceKeys(edges, fingerprints, fullA, fullB);
+      } else {
+        const faceKeyA = readFaceKey(pair.faceKeyA, { allowZeroArea: true });
+        const faceKeyB = readFaceKey(pair.faceKeyB, { allowZeroArea: true });
+        if (!faceKeyA || !faceKeyB) {
+          return { error: { code: 'bad_args', message: `edge key at index ${i} needs valid face keys` } };
+        }
+        hits = edgeFromFaceKeys(edges, faceKeyA, faceKeyB);
+      }
       if (hits.length > 1) {
         return { error: { code: 'ambiguous_edge', message: 'Edge face-key pair matches more than one edge' } };
       }
