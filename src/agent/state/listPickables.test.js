@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildEdgeList, buildFaceList } from './listPickables.js';
+import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from './listPickables.js';
 
 test('buildFaceList returns keys agents can pass to select_faces', () => {
   const out = buildFaceList([{
@@ -35,4 +35,25 @@ test('buildEdgeList attaches adjacent face keys when tri0/tri1 are present', () 
   assert.equal(out.edges[0].key, '1-2');
   assert.equal(out.edges[0].faceKeyA.area, 600);
   assert.equal(out.edges[0].faceKeyB.area, 1200);
+});
+
+test('buildGroupedEdgeList returns short boundary keys', () => {
+  const topo = {
+    faces: [
+      { id: 1, center: [0, 0, 10], normal: [0, 0, 1], area: 400 },
+      { id: 2, center: [0, 10, 0], normal: [0, 1, 0], area: 400 },
+    ],
+    edges: [{
+      id: 3,
+      faceA: 1,
+      faceB: 2,
+      length: 40,
+      mid: [0, 5, 5],
+      segments: [{ key: '1-2', length: 40, mid: [0, 5, 5] }],
+    }],
+  };
+  const out = buildGroupedEdgeList(topo);
+  assert.equal(out.edges.length, 1);
+  assert.equal(out.edges[0].key, 'e3');
+  assert.equal(out.edges[0].faceKeyA.area, 400);
 });

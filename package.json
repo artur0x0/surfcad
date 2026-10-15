@@ -14,6 +14,7 @@
         "golden:agent-bridge": "node scripts/golden/smoke_agent_bridge_flag.mjs",
         "golden:agent-bridge-readers": "node scripts/golden/smoke_agent_bridge_readers.mjs",
         "golden:agent-bridge-h3": "node scripts/golden/smoke_agent_bridge_h3.mjs",
+        "golden:agent-bridge-h4": "node scripts/golden/smoke_agent_bridge_h4.mjs",
         "golden:agent-playtest": "node scripts/golden/smoke_agent_playtest.mjs",
         "playtest": "npm run build && node scripts/playtest/run.mjs",
         "playtest:replay": "node scripts/playtest/replay.mjs",

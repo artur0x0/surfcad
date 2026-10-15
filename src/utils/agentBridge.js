@@ -350,6 +350,8 @@ export function createSurfcadBridge(hostSource) {
     }),
     listFaces: (args) => hostFn('listFaces')?.(args),
     listEdges: (args) => hostFn('listEdges')?.(args),
+    listFeatureEdges: (args) => hostFn('listFeatureEdges')?.(args),
+    prepareHelperInsert: (payload) => hostFn('prepareHelperInsert')?.(payload),
     clearSelection: () => { hostFn('clearSelection')?.(); },
     selectFaces: (args) => hostFn('selectFaces')?.(args),
     selectEdges: (args) => hostFn('selectEdges')?.(args),
