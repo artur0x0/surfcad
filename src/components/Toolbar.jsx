@@ -74,6 +74,7 @@ const Toolbar = ({
           onClick={onExitGame}
           className={`${btnPad} flex items-center gap-1 ${backCls} rounded active:opacity-80`}
           title="Back to CAD"
+          data-ui-action="data-game-exit"
         >
           <ArrowLeft size={iconSize} />
         </button>
@@ -85,6 +86,7 @@ const Toolbar = ({
           disabled={!canUndo}
           className={`${btnPad} flex items-center gap-2 ${editCls} rounded disabled:opacity-30 active:opacity-80`}
           title="Undo"
+          data-ui-action="data-game-undo"
         >
           <Undo size={iconSize} />
         </button>
@@ -94,6 +96,7 @@ const Toolbar = ({
           disabled={!canRedo}
           className={`${btnPad} flex items-center gap-2 ${editCls} rounded disabled:opacity-30 active:opacity-80`}
           title="Redo"
+          data-ui-action="data-game-redo"
         >
           <Redo size={iconSize} />
         </button>
@@ -105,6 +108,7 @@ const Toolbar = ({
           disabled={isExecuting}
           className={`${btnPad} flex items-center gap-1 ${runCls} rounded disabled:opacity-50 active:opacity-80`}
           title="Run script"
+          data-ui-action="data-game-run"
         >
           {isExecuting ? (
             <div className={`${isStrip ? 'w-4 h-4' : 'w-5 h-5'} border-2 ${spinBorder} border-t-transparent rounded-full animate-spin`} />
@@ -133,6 +137,7 @@ const Toolbar = ({
           onClick={onPickPuzzle}
           className={`${btnPad} flex items-center gap-1 ${cyanCls} rounded active:opacity-80`}
           title="Switch puzzle"
+          data-ui-action="data-game-pick-puzzle"
         >
           <List size={iconSize} />
         </button>
@@ -144,6 +149,7 @@ const Toolbar = ({
           onClick={onHint}
           className={`${btnPad} flex items-center gap-1 ${cyanCls} rounded active:opacity-80`}
           title="Hint — target code & helpers"
+          data-ui-action="data-game-hint"
         >
           <BookOpen size={iconSize} />
         </button>
@@ -176,6 +182,7 @@ const Toolbar = ({
           aria-label="Run script"
           aria-busy={isExecuting}
           data-cad-run={isExecuting ? 'running' : 'idle'}
+          data-ui-action="data-cad-run"
         >
           {isExecuting ? (
             <span
@@ -198,6 +205,7 @@ const Toolbar = ({
           title="Select all text in the editor"
           aria-label="Select all text in the editor"
           data-cad-select-all=""
+          data-ui-action="data-cad-select-all"
         >
           <SquareDashedBottomCode size={icon} />
         </button>
@@ -211,6 +219,7 @@ const Toolbar = ({
           disabled={!canUndo}
           className={`${btn} ${blue} disabled:opacity-30`}
           title="Undo"
+          data-ui-action="data-cad-undo"
         >
           <Undo size={icon} />
         </button>
@@ -220,6 +229,7 @@ const Toolbar = ({
           disabled={!canRedo}
           className={`${btn} ${blue} disabled:opacity-30`}
           title="Redo"
+          data-ui-action="data-cad-redo"
         >
           <Redo size={icon} />
         </button>

@@ -107,7 +107,7 @@ const HoleCard = ({
       onCancel={onCancel}
       onConfirm={onNext}
       confirmLabel={editing ? 'Confirm' : 'Next'}
-      cardAttrs={{ 'data-hole-card': '' }}
+      cardAttrs={{ 'data-hole-card': '', 'data-ui-action': 'data-hole-card' }}
       bodyAttrs={{ 'data-hole-card-scroll': '' }}
       note={editing
         ? 'Confirm rewrites this hole. Edit centres changes the shared sketch.'

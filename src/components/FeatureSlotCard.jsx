@@ -187,6 +187,7 @@ const FeatureSlotCard = ({
       confirmDisabled={!ready}
       cardAttrs={{
         'data-feature-slot-card': card.kind,
+        'data-ui-action': 'data-feature-slot-card',
         'data-slot-hover': hoverId || '',
       }}
       note={ready ? 'Confirm writes this feature' : 'Pick a contour for each slot'}

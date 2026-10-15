@@ -526,6 +526,7 @@ const SheetMetalFlow = ({
             <SmButton
               className="flex-1"
               data-sm-check="1"
+              data-ui-action="data-sm-check"
               title="Check this sheet"
               onClick={() => setMode((m) => openSheetExport(m))}
             >
@@ -535,6 +536,7 @@ const SheetMetalFlow = ({
               variant="primary"
               className="flex-1"
               data-sm-done="1"
+              data-ui-action="data-sm-done"
               title="Write this sheet when it changed, then close"
               onClick={() => onDone?.()}
             >

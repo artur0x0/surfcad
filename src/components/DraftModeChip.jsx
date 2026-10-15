@@ -63,6 +63,7 @@ const DraftModeChip = ({
       cardAttrs={{
         'data-draft-mode': '1',
         'data-draft-confirm': canConfirm ? 'enabled' : 'disabled',
+        'data-ui-action': 'data-draft-mode-chip',
       }}
       note={(
         <span className="flex min-w-0 items-center gap-2">

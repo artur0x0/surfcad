@@ -184,6 +184,7 @@ export default function FeatureEditSheet({
                 key={f.id}
                 type="button"
                 data-feature-sheet-pick={f.id}
+                data-ui-action="data-feature-sheet-pick"
                 data-feature-kind={f.kind}
                 data-feature-type-index={typeIndex}
                 onClick={() => onPickFeature?.(f)}
@@ -310,6 +311,7 @@ export default function FeatureEditSheet({
           type="button"
           aria-label="Delete feature"
           data-feature-sheet-delete=""
+          data-ui-action="data-feature-sheet-delete"
           title="Delete this feature from the script"
           onClick={() => onDelete?.(feature)}
           className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[13px]
@@ -328,6 +330,7 @@ export default function FeatureEditSheet({
         'data-feature-sheet-editable': editable ? 'true' : 'false',
         'data-feature-sheet-accept': editable ? '' : undefined,
         'data-feature-sheet-cancel': '',
+        'data-ui-action': 'data-feature-sheet-accept',
         'aria-label': `${feature.chipLabel} feature sheet`,
       }}
     >
@@ -348,6 +351,7 @@ export default function FeatureEditSheet({
             variant="ghost"
             accent={ACCENT}
             data-feature-sheet-edit-script=""
+            data-ui-action="data-feature-sheet-edit-script"
             onClick={() => onEditScript?.(feature)}
           >
             <Code2 size={14} aria-hidden="true" />

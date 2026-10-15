@@ -70,6 +70,7 @@ const FilletModeChip = ({
         'data-edge-blend': chamfer ? 'chamfer' : 'fillet',
         'data-fillet-dismiss': '',
         'data-fillet-accept': 'enabled',
+        'data-ui-action': chamfer ? 'data-chamfer-mode-chip' : 'data-fillet-mode-chip',
       }}
       note={onDelete ? <FeatureDeleteButton onClick={onDelete} /> : null}
     >

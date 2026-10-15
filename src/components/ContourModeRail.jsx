@@ -93,6 +93,7 @@ const ContourModeRail = ({
             key={item.id}
             type="button"
             data-contour-tool={item.id}
+            data-ui-action={item.id}
             onClick={() => onSelectTool?.(item.id)}
             title={item.title}
             aria-label={item.title}
@@ -114,6 +115,7 @@ const ContourModeRail = ({
             key={item.id}
             type="button"
             data-contour-tool={item.id}
+            data-ui-action={item.id}
             onClick={() => onSelectTool?.(item.id)}
             title={item.title}
             aria-label={item.title}
@@ -131,6 +133,7 @@ const ContourModeRail = ({
       <button
         type="button"
         data-contour-back=""
+        data-ui-action="data-contour-back"
         onClick={() => onUndo?.()}
         title={canUndo ? 'Undo' : 'Plane'}
         aria-label="Back"
@@ -142,6 +145,7 @@ const ContourModeRail = ({
       <button
         type="button"
         data-contour-confirm=""
+        data-ui-action="data-contour-confirm"
         onClick={() => onConfirm?.()}
         title="Finish contour"
         aria-label="Confirm"
@@ -153,6 +157,7 @@ const ContourModeRail = ({
       <button
         type="button"
         data-contour-exit=""
+        data-ui-action="data-contour-exit"
         onClick={() => onBack?.()}
         title="Dismiss — exit contour mode (no additional solid write)"
         aria-label="Dismiss contour mode without committing a solid"

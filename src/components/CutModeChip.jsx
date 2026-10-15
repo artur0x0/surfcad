@@ -122,6 +122,7 @@ const CutModeChip = ({
       cardAttrs={{
         'data-cut-mode': '1',
         'data-cut-confirm': canConfirm ? 'enabled' : 'disabled',
+        'data-ui-action': 'data-cut-mode-chip',
       }}
       note={(
         <span className="flex min-w-0 items-center gap-2">

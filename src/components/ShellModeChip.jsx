@@ -75,6 +75,7 @@ const ShellModeChip = ({
       cardAttrs={{
         'data-shell-mode': '1',
         'data-shell-confirm': canConfirm ? 'enabled' : 'disabled',
+        'data-ui-action': 'data-shell-mode-chip',
       }}
       note={(
         <span className="flex min-w-0 items-center gap-2">

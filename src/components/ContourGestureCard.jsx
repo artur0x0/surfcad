@@ -218,6 +218,7 @@ const ContourGestureCard = ({
       compact={compact}
       cardAttrs={{
         'data-contour-card': isArc ? 'arc' : isConstraint ? 'constraint' : 'dimension',
+        'data-ui-action': 'data-contour-gesture-card',
         ...(isConstraint
           ? { 'data-contour-constraint-mode': editingConstraint ? 'edit' : 'add' }
           : isArc

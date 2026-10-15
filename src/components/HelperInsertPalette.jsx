@@ -397,6 +397,7 @@ const HelperInsertPalette = ({
                   }
                   className={`${pad} rounded text-blue-700 hover:bg-blue-100 active:bg-blue-200
                     flex items-center justify-center transition-colors`}
+                  data-ui-action={item.id}
                 >
                   <Icon size={iconSize} strokeWidth={2} />
                 </button>
@@ -409,6 +410,7 @@ const HelperInsertPalette = ({
                 title="Sheet Metal — design against SendCutSend stock"
                 aria-label="Sheet Metal: pick SendCutSend material and gauge"
                 data-sheet-metal-button="1"
+                data-ui-action="data-sheet-metal-button"
                 className={`${pad} rounded text-blue-700 hover:bg-blue-100 active:bg-blue-200
                     flex items-center justify-center transition-colors`}
               >
@@ -422,6 +424,7 @@ const HelperInsertPalette = ({
                 title="Joints"
                 aria-label="Joints"
                 data-joints-button="1"
+                data-ui-action="data-joints-button"
                 className={`${pad} rounded text-blue-700 hover:bg-blue-100 active:bg-blue-200
                     flex items-center justify-center transition-colors`}
               >
