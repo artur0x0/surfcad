@@ -3,6 +3,7 @@ import Editor from '@monaco-editor/react';
 import { ArrowLeft } from 'lucide-react';
 import Toolbar from './Toolbar';
 import ProfileChip from './ProfileChip';
+import { BrandHeaderMark } from './brand/BrandWordmark';
 import { composeHelperInsert } from '../utils/helperPaletteSnippets';
 
 // "Select All" in the (long-press) context menu. Monaco 0.52 removed
@@ -494,6 +495,7 @@ const CodeEditor = forwardRef(({
         data-editor-ribbon=""
         className="relative z-30 w-full flex items-center gap-1 px-1 py-0.5 border-b border-gray-700/60 bg-gray-900 shrink-0"
       >
+        <BrandHeaderMark />
         {typeof onClose === 'function' && (
           <button
             type="button"
