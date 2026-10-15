@@ -169,7 +169,16 @@ function resolveBoundaryKey(raw, topo, featureEdges, fingerprints) {
   const faceKeyB = topoFaceToKey(faceById.get(boundary.faceB));
   if (faceKeyA && faceKeyB) {
     const hits = edgeFromAdjacentFaceKeys(featureEdges, fingerprints, faceKeyA, faceKeyB);
-    if (hits.length === 1) return { edge: hits[0] };
+    if (hits.length === 1) {
+      return {
+        edge: {
+          ...hits[0],
+          boundaryId: boundary.id,
+          faceA: boundary.faceA,
+          faceB: boundary.faceB,
+        },
+      };
+    }
     if (hits.length > 1) {
       return { error: { code: 'ambiguous_edge', message: 'Boundary edge matches more than one mesh segment' } };
     }
@@ -177,7 +186,16 @@ function resolveBoundaryKey(raw, topo, featureEdges, fingerprints) {
   const seg = boundary.segments?.[0];
   if (seg?.key) {
     const hit = featureEdges.find((edge) => edgeKey(edge) === seg.key) || null;
-    if (hit) return { edge: hit };
+    if (hit) {
+      return {
+        edge: {
+          ...hit,
+          boundaryId: boundary.id,
+          faceA: boundary.faceA,
+          faceB: boundary.faceB,
+        },
+      };
+    }
   }
   return { error: { code: 'unknown_edge', message: `Could not resolve boundary edge: ${raw}` } };
 }
