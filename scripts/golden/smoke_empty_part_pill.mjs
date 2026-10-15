@@ -61,8 +61,9 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
   const title = view.slice(titleStart, view.indexOf("mode === 'game' && gameSuccess", titleStart));
   check('the part pill renders only when there is a part name',
     /titleParts\.part \? \(/.test(title)
-    && /ViewportTitleChip inline value=\{currentFilename\}/.test(title)
-    && title.indexOf('titleParts.part ?') < title.indexOf('ViewportTitleChip inline value={currentFilename}'));
+    && /onTitlePartActivate/.test(title)
+    && /value=\{currentFilename\}/.test(title)
+    && title.indexOf('titleParts.part ?') < title.indexOf('onTitlePartActivate'));
   const arch = read('docs/architecture.md');
   const map = read('docs/UI_MAP.md');
   check('architecture and UI map mention the omitted pill',

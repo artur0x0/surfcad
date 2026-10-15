@@ -259,6 +259,7 @@
         "golden:sheet-sliders": "node scripts/golden/smoke_sheet_sliders.mjs",
         "golden:part-rename-target": "node scripts/golden/smoke_part_rename_target.mjs",
         "golden:empty-part-pill": "node scripts/golden/smoke_empty_part_pill.mjs",
+        "golden:viewer-title-actions": "node scripts/golden/smoke_viewer_title_actions.mjs",
         "golden:multi-part-block-drop": "node scripts/golden/smoke_multi_part_block_drop.mjs",
         "golden:fillet-chamfer-multi-rotation": "node scripts/golden/smoke_fillet_chamfer_multi_rotation.mjs",
         "golden:helper-binding-clash": "node scripts/golden/smoke_helper_binding_clash.mjs",

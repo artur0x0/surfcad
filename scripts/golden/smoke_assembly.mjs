@@ -245,8 +245,9 @@ const BAD = 'let part = Manifold.cube([10, 10, 10], true);\nreturn part.missingM
     && partCanDeleteFromRepo('git', 'local:abc') === false
     && partCanDeleteFromRepo('local', 'assemblies/Gearbox/Bracket.js') === false);
   check('assembly name in the title and the ribbon uses the same commit rules',
-    /onRenameAssembly/.test(view)
+    /onTitleAssemblyActivate/.test(view)
     && /noun="Assembly"/.test(view)
+    && !/onRename=\{onRenameAssembly\}/.test(view)
     && /if \(e\.key === 'Enter'\)/.test(feed)
     && /if \(e\.key === 'Escape'\)/.test(feed)
     && /onBlur=\{commit\}/.test(feed)

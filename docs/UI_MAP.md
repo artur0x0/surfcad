@@ -85,13 +85,19 @@ is taken. A copy, import, or colliding rename uses the part rule (`Name`, or
 on the GitHub Contents API a space in that name is `%20` and parentheses are
 left as-is. A blank or whitespace name is saved as Assembly when the document
 is loaded. A custom name already saved is kept. A file name is used only
-when the saved document has none. Both chips rename in place: click, then an
-input. Enter or blur commits, Escape reverts, empty commits nothing. Part
-names are sanitised
-(`sanitizePartName`) because they end up in `${name}.js` downloads. The part
-chip is `onRenameFile` → `setCurrentFilename`. The assembly chip is
-`onRenameAssembly` → the document `name`. Game keeps a single puzzle-name
-chip. A signed-in, GitHub-connected reload shows the last opened assembly.
+when the saved document has none. The part chip selects all bodies in that
+part on a single tap (`onTitlePartActivate` → `showCadBodyHighlight`). A
+double-click opens rename (`onRenameFile` → `handleRenamePart` on
+`renameTargetId`). Enter or blur commits, Escape reverts, empty commits
+nothing. Part names are sanitised (`sanitizePartName`) because they end up in
+`${name}.js` downloads. The assembly chip enters assembly mode on a single tap
+(`onTitleAssemblyActivate`: clears `cadPartId`, keeps the last part's mesh and
+body highlight for joints). Assembly rename is only on the Parts ribbon center
+title (`RibbonAssemblyName` in `PartFeed.jsx`, click to edit). The viewer
+assembly chip does not rename. Title chips use `gap-3` and sit clear of the
+inline wordmark on phone (`brandHeader`, `left-12`). `golden:viewer-title-actions`
+checks spacing at 390 and 1280. Game keeps a single puzzle-name chip. A
+signed-in, GitHub-connected reload shows the last opened assembly.
 Signed out, both chips are absent (`data-viewer-title-empty`, `showCadTitle`
 off); reload does not load or create `Part (1)` in `Assembly`. Signed in
 without a usable GitHub token reopens a real cached assembly read-only, or
