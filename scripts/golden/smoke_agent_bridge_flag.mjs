@@ -5,7 +5,8 @@
  * Production preview (dev mode is off) at 390 and 1280, with no `?agent=1`
  * and no localStorage `surfcadAgent`. `window.surfcad` stays absent, and the
  * shells still mount the canvas, the CAD toolbar, and Run. Nothing named
- * agent is added to the page.
+ * agent is added to the page. The command registry does not paint a host
+ * node when the flag is off.
  *
  * `npm run build` first. Chrome is the system binary (`CHROME_PATH`).
  */
@@ -145,7 +146,7 @@ try {
       canvas: document.querySelectorAll('canvas').length,
       strip: document.querySelectorAll('[data-toolbar-variant="strip"]').length,
       run: document.querySelectorAll('[data-cad-run]').length,
-      agentNodes: document.querySelectorAll('[data-agent-bridge], [data-surfcad-agent]').length,
+      agentNodes: document.querySelectorAll('[data-agent-bridge], [data-surfcad-agent], [data-agent-host]').length,
       editorOpen: document.querySelector('[data-script-editor-open]')?.getAttribute('data-script-editor-open') || null,
       stage: document.querySelector('[data-mobile-stage-toggle]') ? 'phone' : 'desktop',
     }));
