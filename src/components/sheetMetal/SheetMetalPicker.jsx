@@ -64,6 +64,7 @@ const SheetMetalPicker = ({
       onClose={onCancel}
       closeLabel="Close sheet metal picker"
       dataAttr="data-sheet-metal-picker"
+      cardAttrs={{ 'data-ui-action': 'data-sheet-metal-picker' }}
       compact={compact}
       footer={(
         <div className="flex justify-end">
@@ -72,6 +73,7 @@ const SheetMetalPicker = ({
             disabled={!canStart}
             onClick={() => picked && onStart?.(picked)}
             data-sheet-metal-start="1"
+            data-ui-action="data-sheet-metal-start"
             title={canStart ? 'Bind this SKU to the part and start designing' : 'Pick an in-stock material and gauge first'}
           >
             Start designing

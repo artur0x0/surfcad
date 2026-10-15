@@ -208,6 +208,7 @@ const handleButtonClick = () => {
           title="Zoom to Fit"
           aria-label="Zoom to Fit"
           data-zoom-to-fit=""
+          data-ui-action="data-zoom-to-fit"
         >
           <Maximize2 size={20} />
         </button>
@@ -219,6 +220,7 @@ const handleButtonClick = () => {
             title="Normal to sketch"
             aria-label="Normal to sketch"
             data-normal-to-sketch=""
+            data-ui-action="data-normal-to-sketch"
           >
             {/* lucide-react 0.469 has no RightAngle. CornerDownRight is the right-angle corner. */}
             <CornerDownRight size={20} />
@@ -250,6 +252,7 @@ const handleButtonClick = () => {
                   title="Face pick mode — tap a face for Hole / features"
                   aria-label="Face pick mode"
                   aria-pressed={pickMode === 'face'}
+                  data-ui-action="data-pick-mode-face"
                 >
                   {/* Skinny rectangle = one flat face. Planes use Layers3, sketches NotebookPen. */}
                   <RectangleHorizontal size={20} />
@@ -265,6 +268,7 @@ const handleButtonClick = () => {
                   title="Edge pick mode — tap near edges for Fillet/Chamfer"
                   aria-label="Edge pick mode"
                   aria-pressed={pickMode === 'edge'}
+                  data-ui-action="data-pick-mode-edge"
                 >
                   <Spline size={20} />
                 </button>
@@ -289,6 +293,7 @@ const handleButtonClick = () => {
                   aria-label="Plane display"
                   aria-pressed={!!showPlanes}
                   data-overlay-toggle="plane"
+                  data-ui-action="data-overlay-toggle-plane"
                 >
                   <Layers3 size={20} />
                 </button>
@@ -306,6 +311,7 @@ const handleButtonClick = () => {
                   aria-label="Contour display"
                   aria-pressed={!!showContours}
                   data-overlay-toggle="contour"
+                  data-ui-action="data-overlay-toggle-contour"
                 >
                   <NotebookPen size={20} />
                 </button>
@@ -323,6 +329,7 @@ const handleButtonClick = () => {
                     aria-pressed={!!paintActive}
                     data-paint-chip=""
                     data-paint-chip-state={paintActive ? 'on' : 'off'}
+                    data-ui-action="data-paint-chip"
                   >
                     <Palette size={20} />
                   </button>
@@ -356,6 +363,7 @@ const handleButtonClick = () => {
             aria-pressed={!!analyzeActive}
             data-analyze-chip=""
             data-analyze-chip-state={analyzeActive ? 'on' : 'off'}
+            data-ui-action="data-analyze-chip"
           >
             <Gauge size={20} />
           </button>
@@ -365,6 +373,7 @@ const handleButtonClick = () => {
           className={`p-2 rounded ${axisHelperEnabled ? 'text-green-600 bg-green-100' : 'text-blue-600'} hover:bg-gray-100 active:bg-blue-100`}
           title={axisHelperEnabled ? 'Hide Axis Helper' : 'Show Axis Helper'}
           aria-pressed={!!axisHelperEnabled}
+          data-ui-action="data-axis-helper-toggle"
         >
           <Move3d size={20} />
         </button>
@@ -377,6 +386,7 @@ const handleButtonClick = () => {
           aria-pressed={!!measurementEnabled}
           data-measure-toggle=""
           data-measure-toggle-state={measurementEnabled ? 'on' : 'off'}
+          data-ui-action="data-measure-toggle"
         >
           <Ruler size={20} />
         </button>
@@ -385,6 +395,7 @@ const handleButtonClick = () => {
           className={`p-2 rounded ${enabled ? 'text-green-600 bg-green-100' : 'text-blue-600'} hover:bg-gray-100 active:bg-blue-100`}
           title={enabled ? 'Disable Cross Section' : 'Enable Cross Section'}
           aria-pressed={!!enabled}
+          data-ui-action="data-cross-section-toggle"
         >
           <FlipHorizontal size={20} />
         </button>
@@ -396,6 +407,7 @@ const handleButtonClick = () => {
             className="p-2 rounded hover:bg-gray-100 text-gray-600"
             title="Cross-section options"
             aria-label="Show cross-section options"
+            data-ui-action="data-cross-section-expand"
           >
             <TrianglesCenterlineDashedVertical size={20} />
           </button>

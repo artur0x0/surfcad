@@ -80,6 +80,8 @@ The command bodies are the registry in `src/agent/commands/`. Each one is `{ nam
 
 Quote, order, cart, and checkout are permanently exempt (`src/agent/exempt.js`). They spend money. The registry has no command for them, and a later coverage list must not turn that exemption into a command.
 
+**UI action tags.** Every user-facing rail, chip, card, toolbar control, and feature-strip control carries `data-ui-action="<id>"`. Helper palette buttons use the `HELPER_PALETTE_ITEMS` id. Other surfaces use stable ids (often the same string as an existing `data-*` marker, e.g. `data-cad-run`). Commerce buttons stay untagged for the agent; they are listed only in `exempt.js`. CI runs `coverage:agent` (`src/agent/coverage.test.js`): each helper id and each scanned `data-ui-action` literal must map to a registry `uiEntry` or a row in `src/agent/coverageAllowlist.js` (that list may only shrink as commands land). Every registry command must ship with a `schema` and an `example`. New product UI must add a matching command (or a temporary allowlist row with a reason) in the same PR.
+
 A call that changes the script is one undo step on the part stack. `run` of the text `set_script` just wrote does not add another step. The snapshot is taken before the run, because the first real script seeds an assembly and would otherwise replace the stack with one commit per feature marker. `set_script`, `run`, `screenshot`, and `undo` are queued. Flag-off chrome at 390 and 1280 is `golden:agent-bridge`. The Playwright driver is `scripts/demo/agent-bridge-demo.mjs`, and it uses only `call()`.
 
 | Helper | Inputs → output | Multi-body |

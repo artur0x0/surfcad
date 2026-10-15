@@ -13,6 +13,14 @@ import {
  */
 const TOOL_ICONS = { tab: PanelTop, bend: FoldVertical, hole: Circle, countersink: Cone, tapped: Drill };
 
+const SHEET_TOOL_UI_ACTION = {
+  tab: 'sheet-tool-tab',
+  bend: 'sheet-tool-bend',
+  hole: 'sheet-tool-hole',
+  countersink: 'sheet-tool-countersink',
+  tapped: 'sheet-tool-tapped',
+};
+
 /**
  * tools = sheetToolsFor(spec): only features SendCutSend makes on this SKU,
  * Tab first. Empty before the base flange exists.
@@ -48,6 +56,7 @@ const SheetMetalRail = ({ onExit, tools = [], tool = null, onSelectTool, childre
             aria-label={item.title}
             aria-pressed={active}
             data-sheet-tool={item.id}
+            data-ui-action={SHEET_TOOL_UI_ACTION[item.id] || `sheet-tool-${item.id}`}
             className={`p-2 min-h-[44px] rounded flex flex-col items-center justify-center gap-0.5 transition-colors
               ${active ? 'bg-orange-200 text-orange-900' : 'text-orange-800 hover:bg-orange-100 active:bg-orange-200'}`}
           >
@@ -64,6 +73,7 @@ const SheetMetalRail = ({ onExit, tools = [], tool = null, onSelectTool, childre
         onClick={() => onExit?.()}
         title="Exit sheet metal"
         aria-label="Exit sheet metal mode"
+        data-ui-action="data-sheet-metal-exit"
         className="p-2 min-h-[44px] rounded text-gray-700 hover:bg-gray-200 active:bg-gray-300 flex items-center justify-center"
       >
         <X size={20} strokeWidth={2} />

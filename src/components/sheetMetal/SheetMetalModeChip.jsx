@@ -29,6 +29,7 @@ const SheetMetalModeChip = ({ mode, compact = false, onDismiss, children }) => {
         'aria-label': 'Sheet metal',
         'data-sheet-metal-mode': mode.stage,
         'data-sheet-chip-gap': 'measured',
+        'data-ui-action': 'data-sheet-metal-mode-chip',
       }}
     >
       {children}

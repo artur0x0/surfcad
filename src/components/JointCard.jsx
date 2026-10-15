@@ -111,6 +111,7 @@ export default function JointCard({
       compact={compact}
       cardAttrs={{
         'data-joint-card': '',
+        'data-ui-action': 'data-joint-card',
         'data-joint-id': card.id || '',
         'data-joint-type': card.type || '',
         ...(suggestion ? { 'data-joint-suggestion': card.suggested } : {}),
