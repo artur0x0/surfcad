@@ -3,7 +3,7 @@
  * Public /partners form — Paper identity, thank-you state, 390 and 1280.
  * Shots go to GOLDEN_SHOT_DIR or os.tmpdir(). Needs system Chrome.
  */
-/* global document, getComputedStyle */
+/* global document, getComputedStyle, window */
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -46,7 +46,7 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
   const map = read('docs/UI_MAP.md');
   check('route mounted at /partners without auth',
     /pathIsPartners/.test(main) && /<PartnersPage/.test(main));
-  check('form fields and honeypot',
+  check('form fields, honeypot, and turnstile mount',
     /data-partners-form/.test(page)
     && /name="name"/.test(page)
     && /name="email"/.test(page)
@@ -54,7 +54,8 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
     && /name="website"/.test(page)
     && /name="partnerType"/.test(page)
     && /name="message"/.test(page)
-    && /name="company_fax"/.test(page));
+    && /name="company_fax"/.test(page)
+    && /data-partners-turnstile/.test(page));
   check('thank-you state',
     /data-partners-thanks/.test(page) && /data-partners-send-another/.test(page));
   check('brand colors on Paper',
@@ -132,6 +133,16 @@ try {
       hasTouch: vp.w < 500,
     });
     const page = await context.newPage();
+    await page.addInitScript(() => {
+      window.turnstile = {
+        render() { return 'golden-turnstile'; },
+        execute(_id, opts) {
+          if (opts?.callback) opts.callback('golden-turnstile-token');
+        },
+        reset() {},
+        remove() {},
+      };
+    });
     let posted = false;
     await page.route('**/api/partners', async (route) => {
       if (route.request().method() === 'POST') {

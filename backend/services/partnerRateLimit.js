@@ -2,7 +2,7 @@
  * In-memory per-IP rate limit for partner form posts.
  */
 
-const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** @type {Map<string, number[]>} */
 let buckets = new Map();
@@ -17,8 +17,8 @@ export function resetPartnerRateLimits() {
  * @returns {{ allowed: boolean, retryAfterSec?: number }}
  */
 export function checkPartnerRateLimit(ip, opts = {}) {
-  const limit = opts.limit ?? 5;
-  const windowMs = opts.windowMs ?? HOUR_MS;
+  const limit = opts.limit ?? 2;
+  const windowMs = opts.windowMs ?? DAY_MS;
   const now = opts.now ?? Date.now();
   const key = ip || 'unknown';
   const windowStart = now - windowMs;
