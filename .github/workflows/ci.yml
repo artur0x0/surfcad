@@ -180,6 +180,11 @@ jobs:
             echo "agent bridge h5 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
+          node scripts/golden/smoke_agent_bridge_block_edit.mjs | tee "${RUNNER_TEMP}/agent-bridge-block-edit.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-block-edit.log"; then
+            echo "agent bridge block-edit golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
           node scripts/golden/smoke_agent_bridge_h6_h8.mjs | tee "${RUNNER_TEMP}/agent-bridge-h6-h8.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h6-h8.log"; then
             echo "agent bridge h6-h8 golden skipped because Chrome was not found; CI must launch it"
@@ -195,6 +200,21 @@ jobs:
             echo "agent bridge h9 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
+          node scripts/golden/smoke_agent_bridge_h10.mjs | tee "${RUNNER_TEMP}/agent-bridge-h10.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h10.log"; then
+            echo "agent bridge h10 golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          node scripts/golden/smoke_agent_bridge_h11.mjs | tee "${RUNNER_TEMP}/agent-bridge-h11.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h11.log"; then
+            echo "agent bridge h11 golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          node scripts/golden/smoke_agent_bridge_h12.mjs | tee "${RUNNER_TEMP}/agent-bridge-h12.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h12.log"; then
+            echo "agent bridge h12 golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
@@ -207,6 +227,10 @@ jobs:
           node scripts/golden/smoke_agent_playtest.mjs | tee "${RUNNER_TEMP}/agent-playtest.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-playtest.log"; then
             echo "agent playtest skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'agent playtest: ok' "${RUNNER_TEMP}/agent-playtest.log"; then
+            echo "agent playtest did not pass (see log above)"
             exit 1
           fi
           node scripts/golden/smoke_agent_visible.mjs | tee "${RUNNER_TEMP}/agent-visible.log"

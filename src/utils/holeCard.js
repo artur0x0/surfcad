@@ -9,7 +9,8 @@
  */
 
 import { contourFromPolyline, contourFromRectangle } from './contourSolve.js';
-import { restoreContourPlane } from './contourMode.js';
+import { isHoleEntry, restoreContourPlane } from './contourMode.js';
+import { promoteContourState } from './contourGesture.js';
 
 export const HOLE_SIZE_OPTIONS = ['M2', 'M2.5', 'M3', 'M4', 'M5', 'M6', 'M8', 'M10'];
 export const HOLE_FIT_OPTIONS = ['close', 'normal', 'loose'];
@@ -134,9 +135,43 @@ function withConstruction(contour) {
  * Otherwise each tapped point is a centre and the segments between them are
  * lines. Nothing drawn, and no contour object, is null.
  */
+/**
+ * Hole rectangle tool: promote to a centres contour (four corners, construction edges).
+ */
+export function materializeHoleRectangleCenters(state) {
+  if (!state || !isHoleEntry(state.entry) || state.tool !== 'rectangle') return state;
+  const promoted = promoteContourState(state);
+  const contour = promoted.params?.contour;
+  if (!contour?.points?.length) return promoted;
+  return {
+    ...promoted,
+    params: {
+      ...promoted.params,
+      centers: true,
+      contour: {
+        ...contour,
+        centers: true,
+        lines: (contour.lines || []).map((line) => ({ ...line, construction: line.construction !== false })),
+      },
+    },
+  };
+}
+
 export function holeSketchContour(state) {
   const params = state?.params || {};
   const contour = params.contour;
+  if (contour && contour.centers === true && Array.isArray(contour.points)) {
+    const uv = contour.points
+      .map((point) => (Array.isArray(point?.at) ? [Number(point.at[0]), Number(point.at[1])] : null))
+      .filter((row) => row && Number.isFinite(row[0]) && Number.isFinite(row[1]));
+    if (uv.length > 0) {
+      try {
+        return withConstruction(contourFromPolyline(uv));
+      } catch {
+        return null;
+      }
+    }
+  }
   if (contour && Array.isArray(contour.points)) return withConstruction(contour);
   const raw = params.points;
   if (Array.isArray(raw) && raw.length > 0) {

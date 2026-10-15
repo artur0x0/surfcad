@@ -15,7 +15,11 @@ import { selectionEdgeKey } from '../../utils/selectEdge.js';
 import { applyDraftFaceTap } from '../../utils/draftMode.js';
 import { emptyMoveFaceState } from '../../utils/moveFaceMode.js';
 import { emptyDeleteFaceState } from '../../utils/deleteFaceMode.js';
-import { PICK_TOOLS, pickTargetFrom } from './tools.js';
+import { PICK_TOOLS, pickTargetFrom, SKETCH_PICK_KINDS } from './tools.js';
+
+function isSketchTarget(target) {
+  return target === 'contour' || target === 'holeCentres';
+}
 
 function faceEntry(face) {
   return {
@@ -119,7 +123,10 @@ export function createViewportPickHost(getDeps) {
   const deps = () => getDeps();
 
   function target() {
-    return pickTargetFrom(deps().modes());
+    const d = deps();
+    const sketch = typeof d.sketchPickInfo === 'function' ? d.sketchPickInfo() : null;
+    if (sketch?.target) return { target: sketch.target, kind: sketch.kind, busy: null };
+    return pickTargetFrom(d.modes());
   }
 
   // The group ref updates on write; selectedFace on the next render. Only a
@@ -142,8 +149,11 @@ export function createViewportPickHost(getDeps) {
 
   function read() {
     const d = deps();
-    const now = pickTargetFrom(d.modes());
+    const now = target();
     const tool = now.target;
+    if (isSketchTarget(tool) && typeof d.sketchPickRead === 'function') {
+      return d.sketchPickRead();
+    }
     if (!tool) return { target: null, entries: [], settled: true };
     const kind = tool === 'selection' ? selectionKind(d) : PICK_TOOLS[tool].kind;
     if (kind === 'edge') return { target: tool, entries: edgeRows(d.selectedEdges()), settled: true };
@@ -175,13 +185,31 @@ export function createViewportPickHost(getDeps) {
         d.enter(tool);
         return { ok: true };
       }
-      if (kind !== 'face' && kind !== 'edge') return { error: { code: 'bad_args', message: 'kind must be face or edge' } };
+      if (SKETCH_PICK_KINDS.includes(kind)) {
+        const sketch = typeof d.sketchPickInfo === 'function' ? d.sketchPickInfo() : null;
+        if (!sketch?.target) {
+          return { error: { code: 'bad_args', message: 'Open a contour gesture or hole centres sketch before picking sketch entities' } };
+        }
+        if (typeof d.sketchPickEnter !== 'function') {
+          return { error: { code: 'internal', message: 'sketch pick enter is missing' } };
+        }
+        return d.sketchPickEnter({ kind });
+      }
+      if (kind !== 'face' && kind !== 'edge') {
+        return { error: { code: 'bad_args', message: 'kind must be face, edge, or a sketch kind (point, line, arc, ref)' } };
+      }
       d.setPickMode(kind);
       return { ok: true };
     },
 
     pickResolve({ kind, keys }) {
       const d = deps();
+      if (SKETCH_PICK_KINDS.includes(kind)) {
+        if (typeof d.sketchPickResolve !== 'function') {
+          return { error: { code: 'internal', message: 'sketch pick resolve is missing' } };
+        }
+        return d.sketchPickResolve({ kind, keys });
+      }
       if (!d.hasMesh()) return { error: { code: 'no_mesh', message: 'No mesh to pick on' } };
       const out = kind === 'face' ? d.resolveFaces(keys) : d.resolveEdges(keys);
       if (out?.error) return { error: out.error };
@@ -196,6 +224,9 @@ export function createViewportPickHost(getDeps) {
       const now = target();
       const tool = now.target;
       if (!tool) return { error: { code: 'pick_closed', message: 'No picker is open' } };
+      if (isSketchTarget(tool) && typeof d.sketchPickWrite === 'function') {
+        return d.sketchPickWrite({ entries });
+      }
       const list = (Array.isArray(entries) ? entries : []).map((row) => row.entry);
       const kind = tool === 'selection' ? selectionKind(d) : PICK_TOOLS[tool].kind;
       const written = (rows) => ({ count: rows.length, ids: rows.map((row) => row.id) });

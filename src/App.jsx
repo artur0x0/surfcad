@@ -701,8 +701,11 @@ const App = () => {
       return false;
     }
     if (result.run) {
-      setTimeout(() => {
-        handleGameRun();
+      setTimeout(async () => {
+        await handleGameRun();
+        try {
+          await window.surfcad?.syncStatusFromRun?.();
+        } catch { /* agent off */ }
       }, 0);
     }
     return true;
@@ -2011,6 +2014,44 @@ const App = () => {
       }
     }
     return clean;
+  };
+
+  const recordAgentAssemblyStep = (beforeDoc) => {
+    const after = assemblyRef.current;
+    if (!beforeDoc || !after) return;
+    const base = assemblyHistoryRef.current?.commits?.length
+      ? assemblyHistoryRef.current
+      : seedAssemblyHistory(beforeDoc);
+    assemblyHistoryRef.current = {
+      key: assemblyHistoryKey(after),
+      ...pushAssemblyHistory(base, beforeDoc, after),
+    };
+    setAssemblyHistTick((tick) => tick + 1);
+  };
+
+  const ensureLocalSurfIds = async () => {
+    const doc = assemblyRef.current;
+    if (!doc || doc.source === 'git') return;
+    let scripts = { ...partScriptsRef.current };
+    let parts = [...(doc.parts || [])];
+    let changed = false;
+    for (const row of parts) {
+      if (row.surfId) continue;
+      const surfId = mintSurfId();
+      const text = withSurfId(scripts[row.id] || '', surfId);
+      scripts[row.id] = text;
+      await savePartScript(row.id, text);
+      parts = parts.map((part) => (part.id === row.id ? { ...part, surfId } : part));
+      changed = true;
+    }
+    if (!changed) return;
+    rememberScripts(scripts);
+    rememberAssembly({ ...doc, parts });
+    const active = doc.activeId;
+    if (active && scripts[active]) {
+      codeEditorRef.current?.setTextOnly?.(scripts[active]);
+      setCurrentScript(scripts[active]);
+    }
   };
 
   const historyKey = () => {
@@ -4518,10 +4559,12 @@ const App = () => {
   const handleGitCommit = async (message) => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') return { status: 'error', error: 'Not in Git mode' };
+    const adapter = ensureGitAdapter();
     if (!meshVaultSaveAllowed({
       source: doc.source,
       readOnly: bootReadOnlyRef.current,
       githubConnected,
+      adapterKind: adapter?.kind,
     })) {
       return { status: 'error', error: 'Reconnect GitHub before saving this assembly.' };
     }
@@ -5815,6 +5858,56 @@ const App = () => {
       empty: false,
       message: contourCommitMessage(payload?.entry, result),
     };
+  };
+
+  const prepareAgentHoleMutate = (payload) => {
+    if (!focusWritePart(payload?.partId)) {
+      return { error: { code: 'no_write_part', message: 'No writable part for hole commit' } };
+    }
+    const buf = codeEditorRef.current?.getContent?.() ?? '';
+    const editing = !!(payload?.editSpec || payload?.editCentres);
+    const result = payload?.editCentres
+      ? rewriteCentersContour(buf, {
+        contourId: payload.contourId,
+        contour: payload.contour,
+        frame: payload.frame,
+        planeOffset: payload.planeOffset,
+      })
+      : composeHoleOnContour(buf, payload?.editSpec
+        ? { featureId: payload.featureId, spec: payload.spec }
+        : {
+          frame: payload.frame,
+          contour: payload.contour,
+          spec: payload.spec,
+          planeOffset: payload.planeOffset,
+        });
+    if (!result.ok) {
+      return { error: { code: 'commit_failed', message: result.message || 'Hole commit refused' } };
+    }
+    if (result.empty || result.changed === false || result.buffer === buf) {
+      return { changed: false, source: buf, message: 'Hole', featureId: result.featureId ?? null };
+    }
+    const placement = placeCommitBuffer(buf, result.buffer);
+    return {
+      changed: true,
+      source: placement.placed.buffer,
+      message: payload?.editCentres ? 'Hole centres' : 'Hole',
+      featureId: result.featureId ?? null,
+      placement,
+      editing,
+      rollbackFeatureId: !editing ? result.featureId : null,
+    };
+  };
+
+  const applyAgentHoleMutateExtras = (prep) => {
+    applyAgentContourRollback(prep.placement);
+    if (prep.rollbackFeatureId) {
+      const key = editorRollbackKey();
+      const stored = storedRollback(key);
+      if (stored === undefined && prep.rollbackFeatureId) {
+        storeRollbackAnchor(key, prep.rollbackFeatureId);
+      }
+    }
   };
 
   const prepareAgentContourMutate = (payload, meta = {}) => {
@@ -7626,6 +7719,10 @@ const App = () => {
       { ...payload, partId: payload?.partId ?? assemblyRef.current?.activeId },
       meta,
     ),
+    prepareHoleMutate: (payload) => prepareAgentHoleMutate(payload),
+    applyHoleMutateExtras(prep) {
+      applyAgentHoleMutateExtras(prep);
+    },
     applyContourMutateExtras(prep) {
       if (!prep) return;
       applyAgentContourRollback(prep.placement);
@@ -8014,6 +8111,241 @@ const App = () => {
       }
       viewportRef.current?.showCadBodyHighlight?.();
       return { partIds: resolved };
+    },
+    async agentCreateAssembly() {
+      const before = assemblyRef.current;
+      await handleNewAssembly();
+      await ensureLocalSurfIds();
+      const after = assemblyRef.current;
+      if (before && after) recordAgentAssemblyStep(before);
+      return {
+        result: {
+          assemblyName: after?.name ?? '',
+          activeId: after?.activeId ?? null,
+          partCount: after?.parts?.length ?? 0,
+        },
+      };
+    },
+    async agentCreatePart({ name, script } = {}) {
+      const before = assemblyRef.current;
+      if (!before) {
+        return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+      }
+      await handleAddPart(name, { script });
+      await ensureLocalSurfIds();
+      const after = assemblyRef.current;
+      recordAgentAssemblyStep(before);
+      return {
+        result: {
+          partId: after?.activeId ?? null,
+          partCount: after?.parts?.length ?? 0,
+        },
+      };
+    },
+    async agentOpenAssembly({ name }) {
+      const before = assemblyRef.current;
+      if (!before || before.source !== 'git') {
+        return { error: { code: 'git_only', message: 'open_assembly needs a git-backed assembly' } };
+      }
+      await handleOpenVaultAssembly(name);
+      const after = assemblyRef.current;
+      if (after && after !== before) recordAgentAssemblyStep(before);
+      return { result: { name, activeId: after?.activeId ?? null } };
+    },
+    async agentOpenPart({ path }) {
+      const before = assemblyRef.current;
+      if (!before || before.source !== 'git') {
+        return { error: { code: 'git_only', message: 'open_part needs a git-backed assembly' } };
+      }
+      const opened = await handleOpenVaultPart(path);
+      if (opened?.status === 'error') {
+        return { error: { code: 'open_failed', message: opened.error || 'Could not open part' } };
+      }
+      recordAgentAssemblyStep(before);
+      return { result: { path: opened.path, mode: opened.mode } };
+    },
+    async agentInsertAssemblyParts({ sourceName }) {
+      const before = assemblyRef.current;
+      if (!before || before.source !== 'git') {
+        return { error: { code: 'git_only', message: 'insert_part with source_assembly needs git mode' } };
+      }
+      const inserted = await handleInsertVaultAssemblyParts(sourceName);
+      if (inserted?.status === 'error') {
+        return { error: { code: 'insert_failed', message: inserted.error || 'Could not insert parts' } };
+      }
+      if (inserted?.status === 'inserted') recordAgentAssemblyStep(before);
+      return { result: inserted };
+    },
+    async agentGitMoveToRepo({ vault_name } = {}) {
+      const before = assemblyRef.current;
+      const clean = typeof vault_name === 'string' ? vault_name.trim() : '';
+      const result = await handleMoveToGit({
+        vaultName: clean || undefined,
+        sharedIds: [],
+      });
+      if (result.status === 'moved' && before) recordAgentAssemblyStep(before);
+      return result;
+    },
+    async agentGitSave({ message }) {
+      const draft = String(message || '').trim();
+      if (!draft) return { status: 'error', error: 'Commit message required' };
+      return handleGitCommit(draft);
+    },
+    async agentGitAddToRepo({ partId }) {
+      if (!partId) return { status: 'error', error: 'part_id required' };
+      return handleAddToRepo(partId);
+    },
+    async agentGitBehindResolve({ action, path, kind }) {
+      const doc = assemblyRef.current;
+      if (!doc || doc.source !== 'git') {
+        return { status: 'error', error: 'Not in Git mode' };
+      }
+      let resolvedPath = path;
+      let resolvedKind = kind === 'assembly' ? 'assembly' : (kind === 'part' ? 'part' : null);
+      if (!resolvedPath) {
+        if (behindMarkers.assemblyBehind && gitAssemblyPath) {
+          resolvedPath = gitAssemblyPath;
+          resolvedKind = 'assembly';
+        } else if (behindPartIdSet.size) {
+          resolvedPath = behindPartIdSet.values().next().value;
+          resolvedKind = 'part';
+        }
+      }
+      if (!resolvedPath) {
+        return { status: 'error', error: 'No behind marker for this assembly' };
+      }
+      if (!resolvedKind) {
+        resolvedKind = resolvedPath.endsWith('.surf.json') ? 'assembly' : 'part';
+      }
+      return handleBehindChoice({ action, path: resolvedPath, kind: resolvedKind });
+    },
+    async agentGitBranchCreate({ name }) {
+      const branchName = String(name || '').trim();
+      if (!branchName) return { status: 'error', error: 'Branch name required' };
+      return handleCreateBranch(branchName);
+    },
+    async agentGitBranchSwitch({ branch, confirm }) {
+      const target = String(branch || '').trim();
+      if (!target) return { status: 'error', error: 'Branch required' };
+      if (sourceDirty && confirm !== true) {
+        return {
+          status: 'error',
+          code: 'confirm_required',
+          error: 'git_branch_switch requires confirm: true while the working copy has uncommitted changes',
+        };
+      }
+      return handleSwitchBranch(target);
+    },
+    async agentGitBranchDelete({ branch }) {
+      const target = String(branch || '').trim();
+      if (!target) return { status: 'error', error: 'Branch required' };
+      return handleDeleteBranch(target);
+    },
+    async agentGitForceOverwrite() {
+      return handleOverwriteMain();
+    },
+    async agentGitListBranches() {
+      const items = await handleListBranches();
+      return { status: 'ok', branches: items || [], branch: gitWorkingBranch() };
+    },
+    jointOpen() {
+      if (appModeRef.current === 'game' || featureSessionRef.current) {
+        return { error: { code: 'bad_view', message: 'Joints are not available right now' } };
+      }
+      rememberCadPart(null);
+      handleOpenJoints();
+      return { result: { open: true } };
+    },
+    jointSetParams({ patch } = {}) {
+      const card = jointCardRef.current;
+      if (!card) {
+        return { error: { code: 'no_joint_card', message: 'Call joint_open before joint_set_params' } };
+      }
+      const bag = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
+      handleJointCardChange({ ...card, ...bag });
+      return { result: { ok: true, type: jointCardRef.current?.type ?? null } };
+    },
+    jointApplyPicks({ picks } = {}) {
+      const doc = assemblyRef.current;
+      if (!doc) return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+      if (!jointCardRef.current) {
+        return { error: { code: 'no_joint_card', message: 'Call joint_open before joint_pick' } };
+      }
+      const rows = Array.isArray(picks) ? picks : [];
+      const picked = [];
+      for (const row of rows) {
+        const part = doc.parts.find((p) => p.id === row?.part_id);
+        if (!part) {
+          return { error: { code: 'unknown_part', message: `Unknown part id: ${row?.part_id}` } };
+        }
+        if (!part.surfId) {
+          return { error: { code: 'no_surf_id', message: `Part has no surf id: ${part.id}` } };
+        }
+        handleJointPick({
+          partId: part.id,
+          kind: 'face',
+          planar: true,
+          axis: false,
+          key: row.key,
+        });
+        picked.push(part.id);
+      }
+      return { result: { picked, count: (jointPicksRef.current || []).length } };
+    },
+    prepareJointCommit() {
+      const doc = assemblyRef.current;
+      const card = jointCardRef.current;
+      if (!doc || !card) {
+        return { error: { code: 'no_joint_card', message: 'Joint card is not open' } };
+      }
+      const scripts = partScriptsRef.current;
+      const locked = !!assemblyOpenLockRef.current;
+      const result = applyJointCard({
+        doc,
+        scripts,
+        card,
+        action: 'confirm',
+        locked,
+        preempt: null,
+        catalogs: jointCatalogsRef.current,
+      });
+      if (locked) {
+        return { error: { code: 'edit_failed', message: result.message || 'Assembly is opening' } };
+      }
+      if (!result.ok) {
+        return { ok: false, message: result.message || 'Joint commit refused' };
+      }
+      finishJointWrite(result, scripts, { resetPicks: card.mode !== 'edit' });
+      rememberCadPart(null);
+      const written = assemblyRef.current;
+      const joints = written?.joints || [];
+      const jointId = joints[joints.length - 1]?.id ?? null;
+      return { ok: true, jointId, jointCount: joints.length };
+    },
+    finishJointCommit() {
+      if (jointCardRef.current) {
+        jointPicksRef.current = [];
+        viewportRef.current?.clearJointHighlights?.();
+        setJointCard(null);
+      }
+    },
+    jointCancel() {
+      handleJointCancel();
+      return { result: { cancelled: true } };
+    },
+    async agentUndo() {
+      if (cadStripsShowJoints(cadPartIdRef.current) && assemblyHistoryCanUndo(assemblyHistoryRef.current)) {
+        handleJointUndo();
+        return {
+          handled: true,
+          result: {
+            ok: true,
+            kind: 'assembly',
+            joints: assemblyRef.current?.joints?.length ?? 0,
+          },
+        };
+      }
+      return { handled: false };
     },
     openFeature(args = {}) {
       if (!focusWritePart(null)) {

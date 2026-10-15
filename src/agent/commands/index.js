@@ -58,7 +58,46 @@ import {
   pickStateCommand,
   pickFacesCommand,
   pickEdgesCommand,
+  pickPointsCommand,
 } from './pick.js';
+import {
+  holeOpenCommand,
+  holeSetParamsCommand,
+  holeBeginCentresCommand,
+  holeCommitCommand,
+  holeCancelCommand,
+} from './hole.js';
+import {
+  planeSetCommand,
+  workplaneSelectCommand,
+  setActiveWorkplaneCommand,
+} from './plane.js';
+import { listSketchEntitiesCommand } from './listSketchEntities.js';
+import {
+  createAssemblyCommand,
+  createPartCommand,
+  openAssemblyCommand,
+  openPartCommand,
+  insertPartCommand,
+} from './document.js';
+import {
+  gitMoveToRepoCommand,
+  gitSaveCommand,
+  gitAddToRepoCommand,
+  gitBehindResolveCommand,
+  gitBranchCreateCommand,
+  gitBranchSwitchCommand,
+  gitBranchDeleteCommand,
+  gitForceOverwriteCommand,
+  gitListBranchesCommand,
+} from './git.js';
+import {
+  jointOpenCommand,
+  jointSetParamsCommand,
+  jointPickCommand,
+  jointCommitCommand,
+  jointCancelCommand,
+} from './joint.js';
 
 const HELPER_COMMANDS = buildHelperPaletteCommands();
 
@@ -70,6 +109,8 @@ const HELPER_COMMANDS = buildHelperPaletteCommands();
  * H5 feature strip / rollback commands follow H4.
  * H6 sketch and H8 slot helpers follow H3 writers.
  * H9 pick sessions follow H8.
+ * H10 hole card, plane/workplane, sketch point picks follow H9.
+ * H11 parts, assemblies, and joints follow H10.
  */
 export const V1_COMMANDS = Object.freeze([
   getScriptCommand,
@@ -129,6 +170,35 @@ export const V1_COMMANDS = Object.freeze([
   pickStateCommand,
   pickFacesCommand,
   pickEdgesCommand,
+  pickPointsCommand,
+  holeOpenCommand,
+  holeSetParamsCommand,
+  holeBeginCentresCommand,
+  holeCommitCommand,
+  holeCancelCommand,
+  planeSetCommand,
+  workplaneSelectCommand,
+  setActiveWorkplaneCommand,
+  listSketchEntitiesCommand,
+  createAssemblyCommand,
+  createPartCommand,
+  openAssemblyCommand,
+  openPartCommand,
+  insertPartCommand,
+  jointOpenCommand,
+  jointSetParamsCommand,
+  jointPickCommand,
+  jointCommitCommand,
+  jointCancelCommand,
+  gitMoveToRepoCommand,
+  gitSaveCommand,
+  gitAddToRepoCommand,
+  gitBehindResolveCommand,
+  gitBranchCreateCommand,
+  gitBranchSwitchCommand,
+  gitBranchDeleteCommand,
+  gitForceOverwriteCommand,
+  gitListBranchesCommand,
 ]);
 
 export const v1Registry = defineCommands(V1_COMMANDS);

@@ -1132,7 +1132,10 @@ export function confirmFeatureEdit(script, feature, draft = {}) {
   if (!live) return { ok: false, message: 'That feature is not in this part\'s script any more — pick it again.' };
   const session = openFeatureEdit(text, live);
   if (!session.ok) return session;
-  const fields = draft.fields || session.fields;
+  const fields = {
+    ...(session.fields || {}),
+    ...(draft.fields && typeof draft.fields === 'object' ? draft.fields : {}),
+  };
   const edgeIds = draftEdgeIds(session, draft);
   const edgesSame = edgeIds == null || JSON.stringify(edgeIds) === JSON.stringify(edgeIdList(session.edges));
   const facesSame = !Array.isArray(draft.faces)

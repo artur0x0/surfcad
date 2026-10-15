@@ -124,6 +124,7 @@ import { applyPartPose } from '../utils/partPose';
 import {
   applySavedContour,
   listConstructionPlanes,
+  resolveConstructionPlane,
   listSavedContours,
   pickContourByRay,
   savedContourRings,
@@ -213,6 +214,7 @@ import {
   holeCentresSketch,
   holeSketchContour,
   holeSpecFromCard,
+  materializeHoleRectangleCenters,
 } from '../utils/holeCard';
 import { readCentersContour, readContourHole } from '../utils/holeContour';
 import { SKETCH_HIT_PX, anchorOnEntity, pickContourScreen, planeUvToWorld } from '../utils/contourPick';
@@ -514,6 +516,8 @@ import { expandResolvedEdgesForHelper } from '../agent/expandEdgeSelection.js';
 import { resolveEdgeKeys, resolveFaceKeys } from '../agent/resolvePickIds.js';
 import { ambiguousFaceError } from '../agent/pick/candidates.js';
 import { createViewportPickHost } from '../agent/pick/viewportPicks.js';
+import { createSketchPickHandlers } from '../agent/pick/sketchViewportPicks.js';
+import { planePatchFromArgs } from '../agent/sketchPlaneAgent.js';
 import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from '../agent/state/listPickables.js';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
@@ -1280,6 +1284,7 @@ const Viewport = forwardRef(({
   const agentSketchAddRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const agentSketchCancelRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const agentPrepareSketchCommitRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
+  const agentPrepareHoleCommitRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const agentPrepareSketchDimensionRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const agentPrepareSketchConstrainRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const agentPendingSketchGestureRef = useRef(null);
@@ -1290,7 +1295,11 @@ const Viewport = forwardRef(({
   const agentPrepareSlotCommitRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const agentPickDepsRef = useRef(null);
   const agentPickHostRef = useRef(null);
+  const agentSketchPickRef = useRef(null);
   if (!agentPickHostRef.current) agentPickHostRef.current = createViewportPickHost(() => agentPickDepsRef.current);
+  if (!agentSketchPickRef.current) {
+    agentSketchPickRef.current = createSketchPickHandlers(() => agentPickDepsRef.current);
+  }
   const swapPickPartRef = useRef(() => false);
   const ambiguousPickRef = useRef(null);
   const [partChoice, setPartChoice] = useState(null);
@@ -1388,6 +1397,9 @@ const Viewport = forwardRef(({
   const holeEditRef = useRef(null);
   const confirmHoleEditRef = useRef(() => {});
   const holeCentresEditRef = useRef(null);
+  const agentHoleBeginCentresRef = useRef(() => {});
+  const agentFinishHoleSketchRef = useRef(() => {});
+  const constructionPlanesRef = useRef([]);
   const sheetHoleSketchRef = useRef(null);
   const featureSlotsRef = useRef(null);
   featureSlotsRef.current = featureSlots;
@@ -2434,6 +2446,109 @@ const Viewport = forwardRef(({
         setHoleCard((prev) => ({ ...(prev || defaultHoleCard()), ...bag }));
         return { ok: true };
       },
+      holeOpen() {
+        if (mode === 'game') {
+          return { error: { code: 'bad_view', message: 'Hole is not available in game mode' } };
+        }
+        if (contourModeRef.current || holeCardRef.current) {
+          return { error: { code: 'picker_busy', message: 'Close the open sketch or hole card first' } };
+        }
+        holeSpecRef.current = null;
+        holeEditRef.current = null;
+        holeCentresEditRef.current = null;
+        setHoleCard(defaultHoleCard());
+        return { result: { open: true } };
+      },
+      holeSetParams({ patch } = {}) {
+        if (!holeCardRef.current) {
+          return { error: { code: 'no_hole_card', message: 'Call hole_open before hole_set_params' } };
+        }
+        const bag = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
+        setHoleCard((prev) => ({ ...(prev || defaultHoleCard()), ...bag }));
+        return { result: { ok: true } };
+      },
+      holeBeginCentres() {
+        if (!holeCardRef.current) {
+          return { error: { code: 'no_hole_card', message: 'Call hole_open before hole_begin_centres' } };
+        }
+        agentHoleBeginCentresRef.current?.();
+        return { result: { centres: true } };
+      },
+      holeCancel() {
+        if (holeCardRef.current) {
+          holeSpecRef.current = null;
+          holeEditRef.current = null;
+          holeCentresEditRef.current = null;
+          setHoleCard(null);
+          return { result: { cancelled: true, card: true } };
+        }
+        if (contourModeRef.current && isHoleEntry(contourModeRef.current.entry)) {
+          agentSketchCancelRef.current?.();
+          return { result: { cancelled: true, sketch: true } };
+        }
+        return { error: { code: 'no_hole_card', message: 'No hole card or hole sketch is open' } };
+      },
+      finishHoleCommit() {
+        if (contourModeRef.current && isHoleEntry(contourModeRef.current.entry)) {
+          agentFinishHoleSketchRef.current?.();
+        }
+        holeSpecRef.current = null;
+        holeEditRef.current = null;
+        holeCentresEditRef.current = null;
+        setHoleCard(null);
+      },
+      planeSet(args = {}) {
+        if (!contourModeRef.current || !contourPlaneOpenRef.current) {
+          return { error: { code: 'plane_card_open', message: 'The plane card is not open' } };
+        }
+        const applied = planePatchFromArgs(
+          contourModeRef.current,
+          args,
+          contourHostCenter(modelBoundsRef.current),
+        );
+        if (applied.error) return applied;
+        contourModeRef.current = applied.state;
+        setContourMode(applied.state);
+        return { result: { ok: true } };
+      },
+      workplaneSelect({ plane_id } = {}) {
+        if (!contourModeRef.current || !contourPlaneOpenRef.current) {
+          return { error: { code: 'plane_card_open', message: 'The plane card is not open' } };
+        }
+        const hit = resolveConstructionPlane(constructionPlanesRef.current, plane_id);
+        if (!hit?.plane) {
+          return { error: { code: 'unknown_plane', message: `Unknown workplane id: ${plane_id}` } };
+        }
+        releaseWorkplaneFaceRef.current();
+        setSelectedPlaneId(hit.id || null);
+        setContourMode((prev) => (prev
+          ? applyContourPlaneEdit(prev, {
+            preset: 'workplane',
+            base: hit.plane,
+            angles: { x: 0, y: 0, z: 0 },
+          })
+          : prev));
+        return { result: { plane_id: hit.id } };
+      },
+      setActiveWorkplane({ plane_id, clear } = {}) {
+        if (clear === true) {
+          setSelectedPlaneId(null);
+          return { result: { plane_id: null } };
+        }
+        if (plane_id != null) {
+          const hit = resolveConstructionPlane(constructionPlanesRef.current, plane_id);
+          if (!hit) {
+            return { error: { code: 'unknown_plane', message: `Unknown workplane id: ${plane_id}` } };
+          }
+          setSelectedPlaneId(hit.id);
+          return { result: { plane_id: hit.id } };
+        }
+        return { error: { code: 'bad_args', message: 'set_active_workplane needs plane_id or clear' } };
+      },
+      listSketchEntities() {
+        const fn = agentSketchPickRef.current?.listSketchEntities;
+        return typeof fn === 'function' ? fn() : { error: { code: 'internal', message: 'listSketchEntities missing' } };
+      },
       agentConfirmHoleEdit() {
         if (!holeEditRef.current) return false;
         confirmHoleEditRef.current?.();
@@ -2464,6 +2579,7 @@ const Viewport = forwardRef(({
       sketchAdd: (args) => agentSketchAddRef.current(args),
       sketchCancel: () => agentSketchCancelRef.current(),
       prepareSketchCommit: () => agentPrepareSketchCommitRef.current(),
+      prepareHoleCommit: () => agentPrepareHoleCommitRef.current(),
       prepareSketchDimension: (args) => agentPrepareSketchDimensionRef.current(args),
       prepareSketchConstrain: (args) => agentPrepareSketchConstrainRef.current(args),
       finishSketchGesture: () => {
@@ -3758,6 +3874,7 @@ const Viewport = forwardRef(({
   }, []);
   closeFeatureSlotsRef.current = closeFeatureSlots;
   exitContourModeRef.current = exitContourMode;
+  agentFinishHoleSketchRef.current = () => exitContourModeRef.current();
   finishContourCommitRef.current = ({ payload, fromSlot } = {}) => {
     if (fromSlot) {
       closeFeatureSlotsRef.current();
@@ -3985,6 +4102,7 @@ const Viewport = forwardRef(({
     setHoleCard(null);
     enterContourMode({ entry: 'hole' });
   }, [enterContourMode, showContourToast]);
+  agentHoleBeginCentresRef.current = beginHoleSketch;
 
   const confirmHoleEdit = useCallback(() => {
     const edit = holeEditRef.current;
@@ -5002,6 +5120,7 @@ const Viewport = forwardRef(({
     () => listConstructionPlanes(currentScript || ''),
     [currentScript],
   );
+  constructionPlanesRef.current = constructionPlanes;
 
   const savedContourHostPlane = useMemo(() => {
     if (modelBounds?.max && Number.isFinite(Number(modelBounds.max[2]))) {
@@ -11302,7 +11421,8 @@ const Viewport = forwardRef(({
       else if (tool === 'deleteFace') enterDeleteFaceMode();
     },
     accept: (tool) => {
-      if (tool === 'filletEdges' || tool === 'chamferEdges') acceptFillet();
+      if (tool === 'holeCentres') confirmContourProfile();
+      else if (tool === 'filletEdges' || tool === 'chamferEdges') acceptFillet();
       else if (tool === 'shell') acceptShell();
       else if (tool === 'addDraft') acceptDraft();
       else if (tool === 'moveFace') acceptMoveFace();
@@ -11315,6 +11435,17 @@ const Viewport = forwardRef(({
       else if (tool === 'moveFace') exitMoveFaceMode();
       else if (tool === 'deleteFace') exitDeleteFaceMode();
     },
+    contourState: () => contourModeRef.current,
+    contourPlaneOpen: () => contourPlaneOpenRef.current,
+    commitContourState: (next) => {
+      contourModeRef.current = next;
+      setContourMode(next);
+    },
+    sketchPickInfo: () => agentSketchPickRef.current.sketchPickInfo(),
+    sketchPickRead: () => agentSketchPickRef.current.sketchPickRead(),
+    sketchPickResolve: (args) => agentSketchPickRef.current.sketchPickResolve(args),
+    sketchPickWrite: (args) => agentSketchPickRef.current.sketchPickWrite(args),
+    sketchPickEnter: (args) => agentSketchPickRef.current.sketchPickEnter(args),
   };
 
   agentSetCameraRef.current = async ({ view, position, target, fov }) => {
@@ -11473,10 +11604,13 @@ const Viewport = forwardRef(({
     setContourMode((prev) => {
       if (!prev) return prev;
       const switched = switchContourTool(prev, tool);
-      const next = {
+      let next = {
         ...switched,
         params: { ...(switched.params || {}), ...(params || {}) },
       };
+      if (isHoleEntry(next.entry) && next.tool === 'rectangle') {
+        next = materializeHoleRectangleCenters(next);
+      }
       contourModeRef.current = next;
       return next;
     });
@@ -11557,6 +11691,42 @@ const Viewport = forwardRef(({
     return { result: { ok: true } };
   };
 
+  agentPrepareHoleCommitRef.current = () => {
+    const state = contourModeRef.current;
+    if (!state || !isHoleEntry(state.entry)) {
+      return { error: { code: 'no_hole_sketch', message: 'Hole centres sketch is not open' } };
+    }
+    if (contourPlaneOpenRef.current) {
+      return { error: { code: 'plane_card_open', message: 'Call sketch_accept_plane before hole_commit' } };
+    }
+    if (holeCentresEditRef.current) {
+      const contour = holeSketchContour(state) || { points: [] };
+      return {
+        payload: {
+          editCentres: true,
+          partId: activePartIdRef.current,
+          contourId: holeCentresEditRef.current.id,
+          contour,
+          frame: planeFromContourFace(activeContourFace(state, modelBoundsRef.current)),
+          planeOffset: Number(state.planeOffset) || 0,
+        },
+      };
+    }
+    const contour = holeSketchContour(state);
+    if (!contour?.points?.length) {
+      return { empty: true, payload: null };
+    }
+    return {
+      payload: {
+        partId: activePartIdRef.current,
+        frame: planeFromContourFace(activeContourFace(state, modelBoundsRef.current)),
+        contour,
+        spec: state.holeSpec || holeSpecRef.current || {},
+        planeOffset: Number(state.planeOffset) || 0,
+      },
+    };
+  };
+
   agentPrepareSketchCommitRef.current = () => {
     const state = contourModeRef.current;
     if (!state) {
@@ -11566,7 +11736,7 @@ const Viewport = forwardRef(({
       return { error: { code: 'plane_card_open', message: 'Call sketch_accept_plane before sketch_commit' } };
     }
     if (isHoleEntry(state.entry)) {
-      return { error: { code: 'wrong_entry', message: 'Hole sketch commit is not wired for the agent yet' } };
+      return agentPrepareHoleCommitRef.current();
     }
     if (
       cursorSketchEmpty(state)

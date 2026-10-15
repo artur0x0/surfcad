@@ -254,6 +254,20 @@ export function createSurfcadBridge(hostSource) {
    * from the head. The history snapshot is taken before `execute`, because
    * the first real run seeds an assembly and replaces the stack.
    */
+  /** Re-run the current script and refresh cached status/errors (no undo step). */
+  async function syncStatusFromRun() {
+    const execute = hostFn('execute');
+    const getScript = hostFn('getScript');
+    if (!execute || !getScript) return copyStatus(lastStatus);
+    const text = getScript();
+    try {
+      const outcome = await execute(text);
+      return remember(outcome, text);
+    } catch (err) {
+      return remember(failedExecute(err), text);
+    }
+  }
+
   async function mutate(text, message) {
     const readHistory = hostFn('readHistory');
     const setEditor = hostFn('setEditor');
@@ -298,6 +312,7 @@ export function createSurfcadBridge(hostSource) {
     screenshot: () => hostFn('screenshot')?.(),
     mutate,
     remember,
+    syncStatusFromRun,
     readStatus: () => copyStatus(lastStatus),
     readErrors: () => lastErrors.slice(),
     readStructuredErrors: () => {
@@ -372,6 +387,9 @@ export function createSurfcadBridge(hostSource) {
     rollbackTo: (args) => hostFn('rollbackTo')?.(args),
     prepareContourMutate: (payload, meta) => hostFn('prepareContourMutate')?.(payload, meta),
     applyContourMutateExtras: (prep) => { hostFn('applyContourMutateExtras')?.(prep); },
+    prepareHoleMutate: (payload) => hostFn('prepareHoleMutate')?.(payload),
+    applyHoleMutateExtras: (prep) => { hostFn('applyHoleMutateExtras')?.(prep); },
+    finishHoleCommit: () => { hostFn('finishHoleCommit')?.(); },
     finishContourCommit: (args) => { hostFn('finishContourCommit')?.(args); },
     sketchBegin: (args) => hostFn('sketchBegin')?.(args),
     sketchAcceptPlane: (args) => hostFn('sketchAcceptPlane')?.(args),
@@ -381,6 +399,36 @@ export function createSurfcadBridge(hostSource) {
     prepareSketchDimension: (args) => hostFn('prepareSketchDimension')?.(args),
     prepareSketchConstrain: (args) => hostFn('prepareSketchConstrain')?.(args),
     finishSketchGesture: () => { hostFn('finishSketchGesture')?.(); },
+    holeOpen: () => hostFn('holeOpen')?.(),
+    holeSetParams: (args) => hostFn('holeSetParams')?.(args),
+    holeBeginCentres: () => hostFn('holeBeginCentres')?.(),
+    holeCancel: () => hostFn('holeCancel')?.(),
+    prepareHoleCommit: () => hostFn('prepareHoleCommit')?.(),
+    planeSet: (args) => hostFn('planeSet')?.(args),
+    workplaneSelect: (args) => hostFn('workplaneSelect')?.(args),
+    setActiveWorkplane: (args) => hostFn('setActiveWorkplane')?.(args),
+    listSketchEntities: () => hostFn('listSketchEntities')?.(),
+    agentCreateAssembly: (args) => hostFn('agentCreateAssembly')?.(args),
+    agentCreatePart: (args) => hostFn('agentCreatePart')?.(args),
+    agentOpenAssembly: (args) => hostFn('agentOpenAssembly')?.(args),
+    agentOpenPart: (args) => hostFn('agentOpenPart')?.(args),
+    agentInsertAssemblyParts: (args) => hostFn('agentInsertAssemblyParts')?.(args),
+    agentGitMoveToRepo: (args) => hostFn('agentGitMoveToRepo')?.(args),
+    agentGitSave: (args) => hostFn('agentGitSave')?.(args),
+    agentGitAddToRepo: (args) => hostFn('agentGitAddToRepo')?.(args),
+    agentGitBehindResolve: (args) => hostFn('agentGitBehindResolve')?.(args),
+    agentGitBranchCreate: (args) => hostFn('agentGitBranchCreate')?.(args),
+    agentGitBranchSwitch: (args) => hostFn('agentGitBranchSwitch')?.(args),
+    agentGitBranchDelete: (args) => hostFn('agentGitBranchDelete')?.(args),
+    agentGitForceOverwrite: (args) => hostFn('agentGitForceOverwrite')?.(args),
+    agentGitListBranches: (args) => hostFn('agentGitListBranches')?.(args),
+    jointOpen: () => hostFn('jointOpen')?.(),
+    jointSetParams: (args) => hostFn('jointSetParams')?.(args),
+    jointApplyPicks: (args) => hostFn('jointApplyPicks')?.(args),
+    prepareJointCommit: () => hostFn('prepareJointCommit')?.(),
+    finishJointCommit: () => { hostFn('finishJointCommit')?.(); },
+    jointCancel: () => hostFn('jointCancel')?.(),
+    agentUndo: () => hostFn('agentUndo')?.(),
     slotOpen: (args) => hostFn('slotOpen')?.(args),
     slotAssignContour: (args) => hostFn('slotAssignContour')?.(args),
     slotSetParams: (args) => hostFn('slotSetParams')?.(args),
@@ -514,6 +562,9 @@ export function createSurfcadBridge(hostSource) {
     },
     undo() {
       return unwrap(call('undo'));
+    },
+    syncStatusFromRun() {
+      return syncStatusFromRun();
     },
     listCommands() {
       return unwrap(call('list_commands')).then((result) => result.commands);
