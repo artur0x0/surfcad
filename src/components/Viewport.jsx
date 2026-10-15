@@ -48,6 +48,9 @@ import {
 } from '../utils/previewStyle';
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 import { fillAgentHost } from '../agent/host';
+import { buildAgentMode } from '../agent/state/mode';
+import { buildCameraState } from '../agent/state/camera';
+import { buildSelection } from '../agent/state/selection';
 import { applyTrackballFeel } from '../utils/trackballFeel';
 import { installPageZoomLock } from '../utils/pageZoomLock';
 import { formatDisplayNumber } from '../utils/displayUnit';
@@ -2238,6 +2241,51 @@ const Viewport = forwardRef(({
   if (agentHostRef) {
     fillAgentHost(agentHostRef, {
       screenshot: () => ref?.current?.capturePng?.() ?? null,
+      readViewportSelection() {
+        return buildSelection({
+          activePartId: activePartIdRef.current,
+          face: selectedFaceRef.current,
+          edges: selectedEdgesRef.current,
+          armedContourId,
+          selectedPlaneId,
+        });
+      },
+      readMode() {
+        return buildAgentMode({
+          appMode: mode,
+          contour: contourMode,
+          fillet: filletMode
+            ? { entry: filletMode.entry, edgeCount: selectedEdges.length }
+            : null,
+          shell: !!shellMode,
+          draft: !!draftMode,
+          cut: !!cutMode,
+          boolean: !!booleanMode,
+          move: !!moveMode,
+          moveFace: !!moveFaceMode,
+          deleteFace: !!deleteFaceMode,
+          paint: !!paintMode,
+          measure: measurementEnabled,
+          fea: feaActive,
+          sheetMetal: sheetMetalMode,
+          sheetMetalPicker: !!sheetMetalPicker,
+          holeCard: !!holeCard,
+          jointPicking: !!jointPicking,
+          featureEdit,
+        });
+      },
+      readCamera() {
+        const camera = cameraRef.current;
+        const controls = controlsRef.current;
+        if (!camera) return buildCameraState({});
+        return buildCameraState({
+          position: camera.position,
+          quaternion: camera.quaternion,
+          target: controls?.target,
+          zoom: camera.zoom,
+          fov: camera.fov,
+        });
+      },
     });
   }
 

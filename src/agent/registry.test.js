@@ -18,7 +18,8 @@ test('v1 registry order is the bridge command list, with list_commands appended'
     'screenshot',
     'undo',
   ]);
-  assert.equal(AGENT_COMMANDS.at(-1), 'list_commands');
+  assert.equal(AGENT_COMMANDS[7], 'list_commands');
+  assert.equal(AGENT_COMMANDS.at(-1), 'camera');
 });
 
 test('every v1 command has a schema, an example, and run', () => {
@@ -38,6 +39,8 @@ test('every v1 command has a schema, an example, and run', () => {
   assert.equal(v1Registry.get('undo').uiEntry, undefined);
   assert.equal(v1Registry.get('get_script').immediate, true);
   assert.equal(v1Registry.get('list_commands').immediate, true);
+  assert.equal(v1Registry.get('feature_tree').immediate, true);
+  assert.equal(v1Registry.get('camera').immediate, true);
   assert.equal(v1Registry.get('set_script').immediate, false);
   assert.equal(v1Registry.get('undo').immediate, false);
 });

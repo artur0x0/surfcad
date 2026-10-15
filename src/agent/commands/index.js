@@ -7,10 +7,17 @@ import { errorsCommand } from './errors.js';
 import { screenshotCommand } from './screenshot.js';
 import { undoCommand } from './undo.js';
 import { listCommandsCommand } from './listCommands.js';
+import { featureTreeCommand } from './featureTree.js';
+import { selectionCommand } from './selection.js';
+import { modeCommand } from './mode.js';
+import { dirtyCommand } from './dirty.js';
+import { toastsCommand } from './toasts.js';
+import { partsCommand } from './parts.js';
+import { cameraCommand } from './camera.js';
 
 /**
  * Public order. The first seven names are the original v1 tool list.
- * `list_commands` is appended. A later command is appended after it.
+ * `list_commands` is next. H2 state readers are appended after it.
  */
 export const V1_COMMANDS = Object.freeze([
   getScriptCommand,
@@ -21,6 +28,13 @@ export const V1_COMMANDS = Object.freeze([
   screenshotCommand,
   undoCommand,
   listCommandsCommand,
+  featureTreeCommand,
+  selectionCommand,
+  modeCommand,
+  dirtyCommand,
+  toastsCommand,
+  partsCommand,
+  cameraCommand,
 ]);
 
 export const v1Registry = defineCommands(V1_COMMANDS);
