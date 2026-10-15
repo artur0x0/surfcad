@@ -32,6 +32,7 @@ const MoveModeChip = ({
   onDelete = null,
   lengthMm = 100,
   onMeasure = null,
+  labelBuffer = '',
 }) => {
   const gate = validateMoveAccept({
     target, dx, dy, dz, direction, distance, cutNormal, faceNormal,
@@ -85,7 +86,7 @@ const MoveModeChip = ({
   return (
     <FeatureSheet
       title="Move"
-      subtitle={moveTargetLabel(target)}
+      subtitle={moveTargetLabel(target, { buffer: labelBuffer, dx, dy, dz })}
       compact={compact}
       fullLeft
       onCancel={onDismiss}
