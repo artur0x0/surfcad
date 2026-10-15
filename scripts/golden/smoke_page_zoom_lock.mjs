@@ -297,7 +297,7 @@ try {
   check('one document touchmove listener after StrictMode', report.listeners.touchmove === 1,
     `touchmove=${report.listeners.touchmove}`);
 
-  await page.click('[data-title-chip="button"][data-title-role="part"]');
+  await page.dblclick('[data-title-chip="button"][data-title-role="part"]');
   await page.waitForSelector('[data-title-chip="input"]', { timeout: 5000 });
 
   const fonts = await page.evaluate(() => {

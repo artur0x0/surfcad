@@ -6886,6 +6886,50 @@ const App = () => {
     setJointCard((cur) => (cur ? null : cur));
   };
 
+  const focusPartMeshForTitle = (partId) => {
+    const doc = assemblyRef.current;
+    if (!doc || partId == null) return;
+    const part = doc.parts.find((row) => row.id === partId);
+    const mesh = meshForPart(partId);
+    if (!mesh?.vertProperties) return;
+    viewportRef.current?.swapPickPart?.({
+      partId,
+      mesh,
+      position: partPosition(part) || [0, 0, 0],
+      placement: partPlacement(part),
+    });
+  };
+
+  const handleTitleAssemblyActivate = () => {
+    if (featureSessionRef.current || appModeRef.current === 'game') return;
+    const doc = assemblyRef.current;
+    if (!doc) return;
+    const focusId = cadPartIdRef.current ?? doc.activeId ?? null;
+    rememberCadPart(null);
+    jointPicksRef.current = [];
+    viewportRef.current?.clearJointHighlights?.();
+    setJointCard((cur) => (cur ? null : cur));
+    if (focusId) focusPartMeshForTitle(focusId);
+    viewportRef.current?.showCadBodyHighlight?.();
+  };
+
+  const handleTitlePartActivate = () => {
+    if (featureSessionRef.current || appModeRef.current === 'game') return;
+    const doc = assemblyRef.current;
+    if (!doc) return;
+    const id = renameTargetId(doc, cadPartIdRef.current);
+    if (id == null) return;
+    if (cadPartIdRef.current === id && id === doc.activeId) {
+      focusPartMeshForTitle(id);
+      viewportRef.current?.showCadBodyHighlight?.();
+      return;
+    }
+    handleSelectPart(id, {
+      keepPicks: cadPartIdRef.current === id,
+      bodyHighlight: true,
+    });
+  };
+
   const handleJointPick = (raw) => {
     const doc = assemblyRef.current;
     if (!doc || !raw?.partId) return;
@@ -9024,7 +9068,8 @@ const App = () => {
               brandHeader={appMode !== 'game'}
               assemblyName={assemblyLabel}
               onRenameFile={handleRenameFile}
-              onRenameAssembly={handleRenameAssembly}
+              onTitlePartActivate={handleTitlePartActivate}
+              onTitleAssemblyActivate={handleTitleAssemblyActivate}
               onSelectAll={handleSelectAll}
               mode={appMode}
               ghostMeshData={ghostMeshData}
@@ -9545,7 +9590,8 @@ const App = () => {
             brandHeader={appMode !== 'game'}
             assemblyName={assemblyLabel}
             onRenameFile={handleRenameFile}
-            onRenameAssembly={handleRenameAssembly}
+            onTitlePartActivate={handleTitlePartActivate}
+            onTitleAssemblyActivate={handleTitleAssemblyActivate}
             onSelectAll={handleSelectAll}
             mode={appMode}
             ghostMeshData={ghostMeshData}

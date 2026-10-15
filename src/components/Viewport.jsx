@@ -896,16 +896,25 @@ const TITLE_CHIP = 'text-xs font-medium text-center truncate px-3 py-1.5 rounded
   + ' bg-chrome-surface/80 surface-glass-chip border border-gray-500/50 text-chrome-text';
 
 /**
- * Title chip. With `onRename` it is also the rename control: click (or Enter /
- * Space on the focused chip) swaps in an input. Enter or blur commits, Escape
- * reverts. An empty or all-junk name commits nothing, so the part falls back to
- * "Untitled" rather than becoming nameless.
+ * Title chip. With `onRename` and `renameOnDoubleClick`, a double-click (or
+ * Enter / Space on the focused chip) swaps in an input. Enter or blur commits,
+ * Escape reverts. An empty or all-junk name commits nothing, so the part falls
+ * back to "Untitled" rather than becoming nameless.
  *
+ * `onActivate` is the single-click action (select bodies, enter assembly mode).
  * `inline` sits in the CAD title row (part, then "in", then the assembly).
  * The floating form is the game puzzle name, alone at the top.
  * `noun` is "Part" or "Assembly" — same commit rules, different label.
  */
-function ViewportTitleChip({ children, value = null, onRename = null, inline = false, noun = 'Part' }) {
+function ViewportTitleChip({
+  children,
+  value = null,
+  onActivate = null,
+  onRename = null,
+  renameOnDoubleClick = false,
+  inline = false,
+  noun = 'Part',
+}) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const inputRef = useRef(null);
@@ -914,10 +923,19 @@ function ViewportTitleChip({ children, value = null, onRename = null, inline = f
     if (editing) inputRef.current?.select();
   }, [editing]);
 
-  const start = () => {
+  const startRename = () => {
     if (!onRename) return;
     setDraft(value || '');
     setEditing(true);
+  };
+
+  const onChipClick = () => {
+    if (onActivate) onActivate();
+    else if (onRename && !renameOnDoubleClick) startRename();
+  };
+
+  const onChipDoubleClick = () => {
+    if (onRename && renameOnDoubleClick) startRename();
   };
 
   const commit = () => {
@@ -929,10 +947,15 @@ function ViewportTitleChip({ children, value = null, onRename = null, inline = f
 
   const shell = TITLE_CHIP;
   const role = noun === 'Assembly' ? 'assembly' : 'part';
-  const renameTitle = noun === 'Assembly' ? 'Click to rename this assembly' : 'Click to rename this part';
+  const renameTitle = noun === 'Assembly'
+    ? 'Double-click to rename this assembly'
+    : 'Double-click to rename this part';
+  const activateTitle = noun === 'Assembly'
+    ? 'Enter assembly mode (joints and placements)'
+    : 'Select all bodies in this part';
   const shown = value || (noun === 'Assembly' ? '' : 'Untitled');
   const frame = inline
-    ? `relative z-10 min-w-0 max-w-[min(18rem,calc(100vw-13rem))] ${onRename ? 'pointer-events-auto' : 'pointer-events-none'}`
+    ? `relative z-10 min-w-0 max-w-[min(9rem,calc(100vw-14rem))] sm:max-w-[min(12rem,calc(100vw-13rem))] lg:max-w-[min(18rem,calc(100vw-13rem))] ${onRename || onActivate ? 'pointer-events-auto' : 'pointer-events-none'}`
     : `absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[min(20rem,calc(100%-2rem))] ${
       onRename ? '' : 'pointer-events-none'
     }`;
@@ -957,15 +980,19 @@ function ViewportTitleChip({ children, value = null, onRename = null, inline = f
           data-title-role={role}
           {...(role === 'assembly' ? { 'data-assembly-name': '' } : {})}
         />
-      ) : onRename ? (
+      ) : (onActivate || onRename) ? (
         <button
           type="button"
-          onClick={start}
-          className={`${shell} hover:border-blue-400/70 hover:text-white cursor-text`}
-          title={renameTitle}
-          aria-label={`${noun} name: ${shown}. Click to rename.`}
+          onClick={onChipClick}
+          onDoubleClick={onChipDoubleClick}
+          className={`${shell} hover:border-blue-400/70 hover:text-white ${onRename ? 'cursor-text' : 'cursor-pointer'}`}
+          title={onRename && renameOnDoubleClick ? `${activateTitle}. ${renameTitle}.` : (onActivate ? activateTitle : renameTitle)}
+          aria-label={onRename && renameOnDoubleClick
+            ? `${noun} name: ${shown}. ${activateTitle} Double-click to rename.`
+            : `${noun} name: ${shown}. ${onActivate ? activateTitle : 'Click to rename.'}`}
           data-title-chip="button"
           data-title-role={role}
+          data-title-activate={onActivate ? '' : undefined}
           {...(role === 'assembly' ? { 'data-assembly-name': '' } : {})}
         >
           {children}
@@ -1007,8 +1034,10 @@ const Viewport = forwardRef(({
   /** Assembly document name. Blank documents resolve to Assembly before this. */
   assemblyName = '',
   onRenameFile = null,
-  /** Same click-to-edit as the part chip. Writes the document name. */
-  onRenameAssembly = null,
+  /** Single tap on the part chip: select all bodies in that part. */
+  onTitlePartActivate = null,
+  /** Single tap on the assembly chip: assembly mode (joints), not rename. */
+  onTitleAssemblyActivate = null,
   mode = 'cad',
   ghostMeshData = null,
   onStartGame,
@@ -10373,6 +10402,7 @@ const Viewport = forwardRef(({
       if (import.meta.env?.DEV) {
         window.__VIEWPORT__ = {
           ready: () => !!(sceneRef.current && rendererRef.current && resultRef.current),
+          cadBodySticky: () => cadBodyStickyRef.current,
           jointHighlightCount: () => jointHighlightRef.current.size,
           assemblyPartPositions: () => {
             const out = [];
@@ -13715,7 +13745,7 @@ const Viewport = forwardRef(({
       )}
       {mode !== 'game' && (brandHeader || showCadTitle) && (
         <div
-          className="pointer-events-none absolute top-4 z-10 flex min-h-9 items-center left-2 right-2 lg:left-4 lg:right-4 pr-11"
+          className="pointer-events-none absolute top-4 z-20 flex min-h-9 items-center left-2 right-2 lg:left-4 lg:right-4 pr-11"
           data-viewer-header-row=""
         >
           {brandHeader ? (
@@ -13725,19 +13755,25 @@ const Viewport = forwardRef(({
           ) : null}
           {showCadTitle ? (
             <div
-              className="absolute inset-0 flex items-center justify-center px-[min(11rem,38vw)]"
+              className="absolute inset-0 flex items-center justify-center px-[min(11rem,26vw)] lg:px-[min(11rem,38vw)]"
               data-viewer-title=""
               data-viewer-title-text={titleParts.text}
               data-viewer-title-hidden={hideCadTitle ? '' : undefined}
             >
-              <div className="relative max-w-full min-w-0" data-viewer-title-pills="">
+              <div className="relative z-30 max-w-full min-w-0" data-viewer-title-pills="">
                 <div
                   data-viewer-title-chips=""
-                  className={`flex max-w-full min-w-0 items-center justify-center gap-2 ${hideCadTitle ? 'invisible' : ''}`}
+                  className={`pointer-events-auto flex max-w-full min-w-0 flex-nowrap items-center justify-center gap-3 ${hideCadTitle ? 'invisible' : ''}`}
                   {...(hideCadTitle ? { inert: '' } : {})}
                 >
                   {titleParts.part ? (
-                    <ViewportTitleChip inline value={currentFilename} onRename={onRenameFile}>
+                    <ViewportTitleChip
+                      inline
+                      value={currentFilename}
+                      onActivate={onTitlePartActivate}
+                      onRename={onRenameFile}
+                      renameOnDoubleClick
+                    >
                       {titleParts.part}
                     </ViewportTitleChip>
                   ) : null}
@@ -13754,7 +13790,7 @@ const Viewport = forwardRef(({
                       inline
                       noun="Assembly"
                       value={titleParts.assembly}
-                      onRename={onRenameAssembly}
+                      onActivate={onTitleAssemblyActivate}
                     >
                       {titleParts.assembly}
                     </ViewportTitleChip>
@@ -14992,7 +15028,7 @@ const Viewport = forwardRef(({
         />
       )}
       
-      <canvas ref={canvasRef} />
+      <canvas ref={canvasRef} className="absolute inset-0 z-0 h-full w-full" />
     </div>
   );
 });

@@ -108,8 +108,12 @@ check('no doc → null', renameTargetId(null, 'p2') === null);
   check('clicking the active row brings the title back to it',
     /if \(id === doc\.activeId\) \{[\s\S]{0,200}setCurrentFilename\(partNow\?\.name/.test(sel));
   check('App passes onRenamePart to the Parts feed', /onRenamePart=\{handleRenamePart\}/.test(app));
-  check('the viewer title chip still renames via onRenameFile',
-    /<ViewportTitleChip inline value=\{currentFilename\} onRename=\{onRenameFile\}>/.test(read('src/components/Viewport.jsx')));
+  check('the viewer title chip renames on double-click via onRenameFile',
+    /onRename=\{onRenameFile\}/.test(read('src/components/Viewport.jsx'))
+    && /renameOnDoubleClick/.test(read('src/components/Viewport.jsx')));
+  check('the viewer assembly chip enters assembly mode, not rename',
+    /onTitleAssemblyActivate/.test(read('src/components/Viewport.jsx'))
+    && /onTitleAssemblyActivate=\{handleTitleAssemblyActivate\}/.test(read('src/App.jsx')));
   const feed = read('src/components/PartFeed.jsx');
   check('feed row name is a rename control for that row',
     /function RowPartName/.test(feed) && /onRename\?\.\(id, next\)/.test(feed)

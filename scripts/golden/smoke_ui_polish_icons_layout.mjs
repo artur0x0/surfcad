@@ -285,8 +285,10 @@ const contourRail = read('../../src/components/ContourModeRail.jsx');
 
 // ── AC10: rename the part from the title chip ──
 {
-  check('the chip becomes an input on click', /data-title-chip="input"/.test(view)
-    && /data-title-chip="button"/.test(view));
+  check('the chip becomes an input on double-click', /data-title-chip="input"/.test(view)
+    && /data-title-chip="button"/.test(view)
+    && /renameOnDoubleClick/.test(view)
+    && /onChipDoubleClick/.test(view));
   check('Enter commits and Escape reverts',
     /if \(e\.key === 'Enter'\)[\s\S]{0,60}commit\(\)/.test(view)
       && /if \(e\.key === 'Escape'\)[\s\S]{0,60}setEditing\(false\)/.test(view));

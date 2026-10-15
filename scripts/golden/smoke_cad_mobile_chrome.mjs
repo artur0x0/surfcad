@@ -102,7 +102,8 @@ console.log('cad mobile chrome harmonized to puzzle');
   );
   check(
     'filename chip shows in both CAD shells (no toolbar carries it now)',
-    /mode !== 'game' && \([\s\S]{0,900}<ViewportTitleChip inline value=\{currentFilename\} onRename=\{onRenameFile\}>/.test(view),
+    /mode !== 'game' && \([\s\S]{0,900}onRename=\{onRenameFile\}/.test(view)
+    && /onTitleAssemblyActivate/.test(view),
   );
 }
 
