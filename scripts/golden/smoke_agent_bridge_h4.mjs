@@ -185,9 +185,7 @@ const helper = await agentCall(page, 'invoke_helper', {
 });
 check('invoke_helper cube', helper.ok === true && helper.result?.ok === true, JSON.stringify(helper));
 
-const rawAfter = await agentCall(page, 'list_edges', {});
 const groupedAfter = await agentCall(page, 'list_feature_edges', {});
-const rawAfterN = rawAfter.result?.edges?.length ?? 0;
 const groupedAfterN = groupedAfter.result?.edges?.length ?? 0;
 check('grouped edge count after union', groupedAfterN >= groupedN,
   `grouped=${groupedAfterN}`);
