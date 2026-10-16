@@ -2440,7 +2440,7 @@ const Viewport = forwardRef(({
           deleteFace: !!deleteFaceMode,
           paint: !!paintMode,
           measure: measurementEnabled,
-          fea: feaActive,
+          fea: !!(feaActiveRef.current || feaPanelRef.current?.open),
           sheetMetal: sheetMetalMode,
           sheetMetalPicker: !!sheetMetalPicker,
           holeCard: !!holeCard,
