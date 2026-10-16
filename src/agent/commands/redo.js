@@ -5,6 +5,7 @@ import { NO_ARGS_SCHEMA } from '../registry.js';
  */
 export const redoCommand = Object.freeze({
   name: 'redo',
+  uiEntry: Object.freeze(['data-cad-redo', 'data-feature-bar-redo']),
   schema: NO_ARGS_SCHEMA,
   example: {},
   async run(ctx) {

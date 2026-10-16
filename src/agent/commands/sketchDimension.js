@@ -14,7 +14,7 @@ const PICK_SCHEMA = {
 
 export const sketchDimensionCommand = Object.freeze({
   name: 'sketch_dimension',
-  uiEntry: 'dimension',
+  uiEntry: Object.freeze(['dimension', 'data-contour-gesture-card']),
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,

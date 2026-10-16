@@ -6,6 +6,7 @@ import { NO_ARGS_SCHEMA } from '../registry.js';
  */
 export const undoCommand = Object.freeze({
   name: 'undo',
+  uiEntry: Object.freeze(['data-cad-undo', 'data-feature-bar-undo']),
   schema: NO_ARGS_SCHEMA,
   example: {},
   async run(ctx) {

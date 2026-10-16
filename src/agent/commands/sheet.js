@@ -66,6 +66,13 @@ export const sheetSetToolCommand = Object.freeze({
     },
   }),
   example: { tool: 'bend' },
+  uiEntry: Object.freeze([
+    'sheet-tool-tab',
+    'sheet-tool-bend',
+    'sheet-tool-hole',
+    'sheet-tool-countersink',
+    'sheet-tool-tapped',
+  ]),
   checkArgs(args) {
     const built = sheetToolFromArgs(args);
     return built.error ? built.error : null;
@@ -79,7 +86,7 @@ export const sheetSetToolCommand = Object.freeze({
 
 export const sheetSetParamsCommand = Object.freeze({
   name: 'sheet_set_params',
-  uiEntry: 'data-sheet-metal-base',
+  uiEntry: Object.freeze(['data-sheet-metal-base', 'data-sm-toggle']),
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,

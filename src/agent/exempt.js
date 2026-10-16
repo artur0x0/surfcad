@@ -27,4 +27,9 @@ export const AGENT_EXEMPT = Object.freeze([
     surface: 'checkout',
     reason: 'Commerce spends money. Checkout is permanently exempt from the agent harness.',
   }),
+  Object.freeze({
+    id: 'data-scs-surf-quote',
+    surface: 'SheetMetal ScsHandoff',
+    reason: 'Commerce spends money; SurfCAD quote is permanently exempt from the agent harness.',
+  }),
 ]);

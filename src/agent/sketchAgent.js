@@ -10,9 +10,12 @@ const TOOL_ALIASES = Object.freeze({
   poly: 'polyline',
 });
 
+const SKETCH_GESTURE_IDS = new Set(['arc', 'dimension', 'constraints']);
+
 export function normalizeSketchTool(raw) {
   const id = String(raw || 'rectangle').toLowerCase();
   const mapped = TOOL_ALIASES[id] || id;
+  if (SKETCH_GESTURE_IDS.has(mapped)) return mapped;
   return isContourTool(mapped) ? mapped : null;
 }
 
