@@ -94,30 +94,12 @@ async function collectUndoFingerprints(page, via, referencePath = null) {
       if (!(await btn.isEnabled())) break;
       const prevHead = hist.result?.head;
       await btn.click();
-      await page.waitForFunction(
-        async (headBefore) => {
-          const env = await window.surfcad.call('history', '{}');
-          const parsed = typeof env === 'string' ? JSON.parse(env) : env;
-          const head = parsed?.result?.head;
-          return head != null && head !== headBefore;
-        },
-        prevHead,
-        { timeout: 12000 },
-      ).catch(() => page.waitForTimeout(1200));
-      const expect = referencePath?.[rows.length];
-      if (expect) {
-        for (let wait = 0; wait < 40; wait += 1) {
-          const row = await fingerprint(page);
-          if (row.scriptLen === expect.scriptLen && row.featureCount === expect.featureCount) {
-            rows.push(row);
-            break;
-          }
-          if (wait === 39) rows.push(row);
-          await new Promise((resolve) => setTimeout(resolve, 250));
-        }
-      } else {
-        rows.push(await fingerprint(page));
+      for (let waitHead = 0; waitHead < 48; waitHead += 1) {
+        const nextHist = await agentCall(page, 'history', {});
+        if (nextHist.result?.head != null && nextHist.result.head !== prevHead) break;
+        await page.waitForTimeout(250);
       }
+      rows.push(await fingerprint(page));
       continue;
     }
     rows.push(await fingerprint(page));
@@ -345,8 +327,6 @@ export async function run(ctx) {
   await runner.runStep('UI undo matches agent', async () => {
     await focusPartHistoryForUndo(page);
     uiUndoPath = await collectUndoFingerprints(page, 'ui', agentUndoPath);
-    const agentLens = agentUndoPath.map((row) => row.scriptLen).join(',');
-    const uiLens = uiUndoPath.map((row) => row.scriptLen).join(',');
     let mismatch = '';
     for (let i = 0; i < Math.max(agentUndoPath.length, uiUndoPath.length); i += 1) {
       const x = agentUndoPath[i];
