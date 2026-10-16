@@ -196,6 +196,7 @@ export const SmUnitToggle = ({ unit = 'mm', onChange }) => (
       <button
         key={u}
         type="button"
+        data-ui-action="data-sm-unit-toggle"
         data-sm-unit={u}
         aria-pressed={unit === u}
         onClick={() => onChange?.(u)}
@@ -215,6 +216,7 @@ export const SmToggle = ({ id, label, checked, onChange }) => (
     type="button"
     role="switch"
     aria-checked={!!checked}
+    data-ui-action="data-sm-toggle"
     onClick={() => onChange?.(!checked)}
     className={`flex w-full items-center justify-between rounded-md px-3 ${SM_TAP} text-base
       ${checked ? 'bg-cyan-600/30 text-cyan-100' : 'bg-white/10 text-gray-200'}`}

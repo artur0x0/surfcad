@@ -14,7 +14,7 @@ const PICK_SCHEMA = {
 
 export const sketchConstrainCommand = Object.freeze({
   name: 'sketch_constrain',
-  uiEntry: 'constraints',
+  uiEntry: Object.freeze(['constraints', 'data-contour-gesture-card']),
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,

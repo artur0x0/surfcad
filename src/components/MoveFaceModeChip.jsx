@@ -4,6 +4,8 @@ import { FeatureDeleteButton } from './FeatureEditDelete';
 import FeatureSheet from './FeatureSheet';
 import { moveFaceRange } from '../utils/sliderRange';
 
+const UI_ACTION = 'data-move-face-mode-chip';
+
 /**
  * Move Face on the shared feature card.
  * Tap a face to add it. Tap a selected face again to remove it. Undo drops
@@ -77,6 +79,7 @@ const MoveFaceModeChip = ({
         <div className="flex gap-1 flex-wrap" role="group" aria-label="Offset">
           <button
             type="button"
+            data-ui-action={UI_ACTION}
             onClick={() => onFlip?.(!flip)}
             aria-pressed={!!flip}
             data-move-face-flip=""
@@ -93,6 +96,7 @@ const MoveFaceModeChip = ({
             <>
               <button
                 type="button"
+                data-ui-action={UI_ACTION}
                 className="px-2.5 py-1 rounded text-[13px] text-cyan-200 underline"
                 onClick={() => onUndo?.()}
                 title="Drop the last selected face"
@@ -102,6 +106,7 @@ const MoveFaceModeChip = ({
               </button>
               <button
                 type="button"
+                data-ui-action={UI_ACTION}
                 className="px-2.5 py-1 rounded text-[13px] text-cyan-200 underline"
                 onClick={() => onClear?.()}
                 title="Drop every selected face"

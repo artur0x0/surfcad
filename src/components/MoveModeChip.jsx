@@ -6,6 +6,7 @@ import { moveTargetLabel, validateMoveAccept } from '../utils/moveMode';
 import { travelRangeMm } from '../utils/sliderRange';
 
 const ACCENT = 'cyan';
+const UI_ACTION = 'data-move-mode-chip';
 
 /**
  * Move body on the shared feature card.
@@ -67,6 +68,7 @@ const MoveModeChip = ({
       <button
         key={id}
         type="button"
+        data-ui-action={UI_ACTION}
         onClick={() => choose(id)}
         disabled={!enabled}
         aria-pressed={on}
@@ -111,6 +113,7 @@ const MoveModeChip = ({
         {target && (
           <button
             type="button"
+            data-ui-action={UI_ACTION}
             className="self-start px-2.5 py-1 rounded text-[13px] text-cyan-200 underline"
             onClick={() => onClear?.()}
             title="Drop the picked body"

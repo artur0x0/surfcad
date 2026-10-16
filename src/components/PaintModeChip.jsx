@@ -2,6 +2,8 @@ import React from 'react';
 import { PAINT_SWATCHES, parsePaintHex, resolvedPaintColor } from '../utils/facePaint';
 import FeatureSheet from './FeatureSheet';
 
+const UI_ACTION = 'data-paint-mode-chip';
+
 /**
  * Paint on the shared feature card.
  * A tap paints immediately. Confirm writes the session. X and Esc write
@@ -66,6 +68,7 @@ export function PaintModeChip({
               <button
                 key={hex}
                 type="button"
+                data-ui-action={UI_ACTION}
                 data-paint-swatch={hex}
                 aria-pressed={on}
                 aria-label={hex}
@@ -101,6 +104,7 @@ export function PaintModeChip({
         <div className="flex gap-1 flex-wrap" role="group" aria-label="Paint target">
           <button
             type="button"
+            data-ui-action={UI_ACTION}
             data-paint-part=""
             onClick={() => onPart?.()}
             className="px-2.5 py-1 rounded text-[13px] bg-cyan-600 text-white"
@@ -110,6 +114,7 @@ export function PaintModeChip({
           </button>
           <button
             type="button"
+            data-ui-action={UI_ACTION}
             data-paint-undo=""
             onClick={() => onUndo?.()}
             disabled={!canUndo}
@@ -122,6 +127,7 @@ export function PaintModeChip({
           </button>
           <button
             type="button"
+            data-ui-action={UI_ACTION}
             data-paint-clear=""
             onClick={() => onClear?.()}
             disabled={!canClear}
@@ -137,6 +143,7 @@ export function PaintModeChip({
         {unmatched > 0 && (
           <button
             type="button"
+            data-ui-action={UI_ACTION}
             data-paint-unmatched=""
             onClick={() => onRemoveUnmatched?.()}
             className="self-start text-[11px] text-gray-300 underline"

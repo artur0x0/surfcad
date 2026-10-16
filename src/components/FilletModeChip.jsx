@@ -31,6 +31,7 @@ const FilletModeChip = ({
   onDelete = null,
 }) => {
   const chamfer = kind === 'chamfer';
+  const UI_ACTION = chamfer ? 'data-chamfer-mode-chip' : 'data-fillet-mode-chip';
   const sizeKey = chamfer ? 'chamfer' : 'radius';
   const setSize = (raw) => {
     let v = raw;
@@ -96,6 +97,7 @@ const FilletModeChip = ({
           <span>{missingLabel}</span>
           <button
             type="button"
+            data-ui-action={UI_ACTION}
             data-feature-edit-clear-missing=""
             className="underline text-cyan-200"
             onClick={() => onClearMissing?.()}
@@ -107,6 +109,7 @@ const FilletModeChip = ({
       <div className="mt-1.5 flex items-center gap-3 font-sans flex-wrap">
         <button
           type="button"
+          data-ui-action={UI_ACTION}
           className={`text-[11px] underline ${tangentOn ? 'text-cyan-300' : 'text-gray-300'}`}
           onClick={() => onToggleTangent?.()}
           title="When on, picking one edge adds G1-connected (tangent) edges in the loop"
@@ -116,6 +119,7 @@ const FilletModeChip = ({
         </button>
         <button
           type="button"
+          data-ui-action={UI_ACTION}
           data-fillet-clear=""
           className="text-[11px] text-gray-200 underline"
           onClick={() => onClear?.()}
@@ -125,6 +129,7 @@ const FilletModeChip = ({
         </button>
         <button
           type="button"
+          data-ui-action={UI_ACTION}
           data-fillet-back=""
           className="text-[11px] text-gray-200 underline"
           onClick={() => onBack?.()}

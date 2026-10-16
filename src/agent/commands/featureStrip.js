@@ -22,7 +22,7 @@ function hostCall(ctx, name, args) {
 
 export const openFeatureCommand = Object.freeze({
   name: 'open_feature',
-  uiEntry: 'data-feature-chip',
+  uiEntry: Object.freeze(['data-feature-chip', 'data-feature-sheet-pick']),
   schema: TARGET_SCHEMA,
   example: { index: 0 },
   checkArgs(args) {
@@ -38,6 +38,7 @@ export const openFeatureCommand = Object.freeze({
 
 export const activateFeatureCommand = Object.freeze({
   name: 'activate_feature',
+  uiEntry: 'data-sketch-chip',
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,

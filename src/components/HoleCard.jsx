@@ -116,6 +116,7 @@ const HoleCard = ({
         <div className="flex items-center justify-between gap-2">
           <button
             type="button"
+            data-ui-action="data-hole-card"
             data-hole-edit-centres=""
             onClick={() => onEditCentres?.()}
             className="inline-flex items-center rounded-md border border-cyan-700/70 bg-cyan-950/80 px-2.5 py-1.5 text-[13px] font-medium text-cyan-100 hover:bg-cyan-900/70"
@@ -200,6 +201,7 @@ const HoleCard = ({
                 <button
                   key={opt.id}
                   type="button"
+                  data-ui-action="data-hole-card"
                   data-hole-side={String(opt.id)}
                   aria-pressed={on}
                   onClick={() => set({ side: opt.id })}

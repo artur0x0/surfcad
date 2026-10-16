@@ -6,6 +6,7 @@ import { CUT_EXPLICIT_PLANES, cutPlaneFromState } from '../utils/cutMode';
 import { cutTravelMm, travelRangeMm } from '../utils/sliderRange';
 
 const ACCENT = 'cyan';
+const UI_ACTION = 'data-cut-mode-chip';
 
 /**
  * Cut on the shared feature card.
@@ -76,6 +77,7 @@ const CutModeChip = ({
     return (
       <button
         type="button"
+        data-ui-action={UI_ACTION}
         onClick={() => onPlaneSource?.(id)}
         aria-pressed={on}
         className={`px-2.5 py-1 rounded text-[13px] ${
@@ -95,6 +97,7 @@ const CutModeChip = ({
     return (
       <button
         type="button"
+        data-ui-action={UI_ACTION}
         onClick={() => onPickTarget?.(id)}
         aria-pressed={on}
         data-cut-pick={id}
@@ -159,6 +162,7 @@ const CutModeChip = ({
             <>
               <button
                 type="button"
+                data-ui-action={UI_ACTION}
                 className="px-2.5 py-1 rounded text-[13px] text-cyan-200 underline"
                 onClick={() => onUndo?.()}
                 title={pick === 'pieces' ? 'Bring back the last hidden piece' : 'Drop the last pick'}
@@ -168,6 +172,7 @@ const CutModeChip = ({
               </button>
               <button
                 type="button"
+                data-ui-action={UI_ACTION}
                 className="px-2.5 py-1 rounded text-[13px] text-cyan-200 underline"
                 onClick={() => onClear?.()}
                 title={pick === 'pieces' ? 'Show every piece. The plane stays.' : 'Drop the picks in this list'}

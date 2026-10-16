@@ -38,7 +38,7 @@ test('every v1 command has a schema, an example, and run', () => {
     assert.equal('run' in listed, false);
   }
   assert.equal(v1Registry.get('run').uiEntry, 'data-cad-run');
-  assert.equal(v1Registry.get('undo').uiEntry, undefined);
+  assert.deepEqual(v1Registry.get('undo').uiEntry, ['data-cad-undo', 'data-feature-bar-undo']);
   assert.equal(v1Registry.get('get_script').immediate, true);
   assert.equal(v1Registry.get('list_commands').immediate, true);
   assert.equal(v1Registry.get('feature_tree').immediate, true);
@@ -85,7 +85,13 @@ test('the registry rejects a command that cannot be listed', () => {
 });
 
 test('quote, order, cart, and checkout stay exempt', () => {
-  assert.deepEqual(AGENT_EXEMPT.map((row) => row.id), ['quote', 'order', 'cart', 'checkout']);
+  assert.deepEqual(AGENT_EXEMPT.map((row) => row.id), [
+    'quote',
+    'order',
+    'cart',
+    'checkout',
+    'data-scs-surf-quote',
+  ]);
   assert.equal(Object.isFrozen(AGENT_EXEMPT), true);
   for (const row of AGENT_EXEMPT) {
     assert.equal(Object.isFrozen(row), true);

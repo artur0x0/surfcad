@@ -2631,6 +2631,11 @@ const Viewport = forwardRef(({
           : prev));
         return { result: { plane_id: hit.id } };
       },
+      setSketchOverlayVisible({ enabled } = {}) {
+        const next = enabled == null ? !showContoursRef.current : !!enabled;
+        setShowContours(next);
+        return { result: { enabled: next } };
+      },
       setActiveWorkplane({ plane_id, clear } = {}) {
         if (clear === true) {
           setSelectedPlaneId(null);
@@ -11618,6 +11623,10 @@ const Viewport = forwardRef(({
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     if (!camera) return { ok: false };
+    if (view === 'normal_to_sketch') {
+      handleNormalToSketch();
+      return { ok: true };
+    }
     if (typeof view === 'string' && VIEW_PRESETS[view]) {
       const ok = handleViewSnap(view);
       return ok ? { ok: true } : { ok: false };
@@ -11785,6 +11794,15 @@ const Viewport = forwardRef(({
     }
     if (contourPlaneOpenRef.current) {
       return { error: { code: 'plane_card_open', message: 'Call sketch_accept_plane before sketch_add' } };
+    }
+    if (tool === 'arc' || tool === 'dimension' || tool === 'constraints') {
+      setContourMode((prev) => {
+        if (!prev) return prev;
+        const next = armContourGesture(prev, tool);
+        contourModeRef.current = next;
+        return next;
+      });
+      return { result: { tool, gesture: tool } };
     }
     setContourMode((prev) => {
       if (!prev) return prev;

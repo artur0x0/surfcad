@@ -9,6 +9,8 @@ import {
 import { FeatureDeleteButton } from './FeatureEditDelete';
 import FeatureSheet from './FeatureSheet';
 
+const UI_ACTION = 'data-boolean-mode-chip';
+
 /**
  * Boolean on the shared feature card.
  * Union / Difference / Intersect. Bodies use the Shell sticky picker.
@@ -66,6 +68,7 @@ const BooleanModeChip = ({
     return (
       <button
         type="button"
+        data-ui-action={UI_ACTION}
         onClick={() => onOp?.(id)}
         aria-pressed={on}
         className={`px-2.5 py-1 rounded text-[13px] ${
@@ -86,6 +89,7 @@ const BooleanModeChip = ({
     return (
       <button
         type="button"
+        data-ui-action={UI_ACTION}
         onClick={() => onPickTarget?.(id)}
         aria-pressed={on}
         className={`px-2.5 py-1 rounded text-[13px] ${
@@ -138,6 +142,7 @@ const BooleanModeChip = ({
             <>
               <button
                 type="button"
+                data-ui-action={UI_ACTION}
                 className="px-2.5 py-1 rounded text-[13px] text-cyan-200 underline"
                 onClick={() => onUndo?.()}
                 title={pick === 'pieces' ? 'Bring back the last hidden piece' : 'Drop the last pick'}
@@ -147,6 +152,7 @@ const BooleanModeChip = ({
               </button>
               <button
                 type="button"
+                data-ui-action={UI_ACTION}
                 className="px-2.5 py-1 rounded text-[13px] text-cyan-200 underline"
                 onClick={() => onClear?.()}
                 title={pick === 'pieces' ? 'Show every piece. The bodies stay.' : 'Drop the bodies in this list'}

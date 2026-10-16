@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 169,
+  "count": 171,
   "$defs": {
     "status": {
       "type": "object",
@@ -568,7 +568,10 @@
       "destructive": false,
       "confirm": false,
       "immediate": false,
-      "uiEntry": null,
+      "uiEntry": [
+        "data-cad-undo",
+        "data-feature-bar-undo"
+      ],
       "example": {}
     },
     {
@@ -669,7 +672,10 @@
       "destructive": false,
       "confirm": false,
       "immediate": false,
-      "uiEntry": null,
+      "uiEntry": [
+        "data-cad-redo",
+        "data-feature-bar-redo"
+      ],
       "example": {}
     },
     {
@@ -3572,7 +3578,10 @@
       "destructive": false,
       "confirm": false,
       "immediate": false,
-      "uiEntry": "cut",
+      "uiEntry": [
+        "cut",
+        "data-cut-mode-chip"
+      ],
       "example": {
         "body": "part"
       }
@@ -3672,7 +3681,10 @@
       "destructive": false,
       "confirm": false,
       "immediate": false,
-      "uiEntry": "boolean",
+      "uiEntry": [
+        "boolean",
+        "data-boolean-mode-chip"
+      ],
       "example": {
         "body": "part",
         "op": "union"
@@ -3780,7 +3792,10 @@
       "destructive": false,
       "confirm": false,
       "immediate": false,
-      "uiEntry": "move",
+      "uiEntry": [
+        "move",
+        "data-move-mode-chip"
+      ],
       "example": {
         "body": "part",
         "dx": 0,
@@ -5207,7 +5222,10 @@
       "destructive": false,
       "confirm": false,
       "immediate": false,
-      "uiEntry": "data-feature-chip",
+      "uiEntry": [
+        "data-feature-chip",
+        "data-feature-sheet-pick"
+      ],
       "example": {
         "index": 0
       }
@@ -5246,7 +5264,7 @@
       "destructive": false,
       "confirm": false,
       "immediate": false,
-      "uiEntry": null,
+      "uiEntry": "data-sketch-chip",
       "example": {
         "id": "cube1"
       }
@@ -6269,7 +6287,8 @@
               "top",
               "back",
               "left",
-              "bottom"
+              "bottom",
+              "normal_to_sketch"
             ]
           },
           "position": {
@@ -6312,7 +6331,14 @@
       "destructive": false,
       "confirm": false,
       "immediate": true,
-      "uiEntry": "data-view-snap-top",
+      "uiEntry": [
+        "data-view-snap-top",
+        "data-view-snap-front",
+        "data-view-snap-right",
+        "data-view-snap-iso",
+        "data-view-snap-toggle",
+        "data-normal-to-sketch"
+      ],
       "example": {
         "view": "top"
       }
@@ -6513,7 +6539,16 @@
       "destructive": false,
       "confirm": false,
       "immediate": false,
-      "uiEntry": "rectangle",
+      "uiEntry": [
+        "rectangle",
+        "cursor",
+        "circle",
+        "polygon",
+        "polyline",
+        "arc",
+        "dimension",
+        "constraints"
+      ],
       "example": {
         "tool": "rectangle",
         "width": 30,
@@ -6634,6 +6669,29 @@
       "confirm": false,
       "immediate": false,
       "uiEntry": "data-contour-exit",
+      "example": {}
+    },
+    {
+      "name": "sketch_undo",
+      "description": "Bridge command sketch_undo.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-contour-back",
       "example": {}
     },
     {
@@ -6810,7 +6868,10 @@
       "destructive": false,
       "confirm": false,
       "immediate": false,
-      "uiEntry": "dimension",
+      "uiEntry": [
+        "dimension",
+        "data-contour-gesture-card"
+      ],
       "example": {
         "kind": "length",
         "edge": "e0",
@@ -6976,7 +7037,10 @@
       "destructive": false,
       "confirm": false,
       "immediate": false,
-      "uiEntry": "constraints",
+      "uiEntry": [
+        "constraints",
+        "data-contour-gesture-card"
+      ],
       "example": {
         "kind": "horizontal",
         "picks": [
@@ -10073,6 +10137,36 @@
       }
     },
     {
+      "name": "set_sketch_overlay",
+      "description": "Bridge command set_sketch_overlay.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Show saved sketch overlays on the model"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-overlay-toggle-contour",
+      "example": {
+        "enabled": true
+      }
+    },
+    {
       "name": "list_sketch_entities",
       "description": "List entities in the open contour sketch.",
       "args": {
@@ -10745,7 +10839,13 @@
       "destructive": false,
       "confirm": false,
       "immediate": false,
-      "uiEntry": null,
+      "uiEntry": [
+        "sheet-tool-tab",
+        "sheet-tool-bend",
+        "sheet-tool-hole",
+        "sheet-tool-countersink",
+        "sheet-tool-tapped"
+      ],
       "example": {
         "tool": "bend"
       }
@@ -10843,7 +10943,10 @@
       "destructive": false,
       "confirm": false,
       "immediate": false,
-      "uiEntry": "data-sheet-metal-base",
+      "uiEntry": [
+        "data-sheet-metal-base",
+        "data-sm-toggle"
+      ],
       "example": {
         "width": 80,
         "height": 50
