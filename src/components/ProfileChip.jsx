@@ -25,6 +25,7 @@ export default function ProfileChip({
   onClearLocalCadData = null,
   vaultName = DEFAULT_VAULT_NAME,
   variant = 'viewport',
+  agentBridgeLive = false,
 }) {
   const { user, guest, isGuest, logout, checkAuth } = useAuth();
   const session = useAuthState();
@@ -97,8 +98,8 @@ export default function ProfileChip({
       void session.reconnect();
       return;
     }
-    // Clear is on this chip: open the account panel, signed in or out.
-    if (canClear) {
+    // Clear and/or local agent pairing live in the account panel.
+    if (canClear || agentBridgeLive) {
       setPanelOpen((open) => !open);
       return;
     }
@@ -139,7 +140,7 @@ export default function ProfileChip({
     onSignedOut?.();
   };
 
-  const showPanel = signedIn || reauth || canClear;
+  const showPanel = signedIn || reauth || canClear || agentBridgeLive;
 
   return (
     <div className={wrapClass} data-profile-chip-wrap="">
@@ -213,6 +214,7 @@ export default function ProfileChip({
           cartCount={cartCount}
           onOpenCart={session.signedIn ? () => cartChrome?.openCart?.() : null}
           align="right"
+          agentBridgeLive={agentBridgeLive}
         />
       )}
       {variant === 'viewport' && reauth && session.bootEmpty ? (

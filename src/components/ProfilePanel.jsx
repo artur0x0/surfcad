@@ -6,6 +6,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import AgentBridgePairing from './AgentBridgePairing';
 
 function displayName(user) {
   if (!user) return '';
@@ -31,6 +32,7 @@ export default function ProfilePanel({
   cartCount = 0,
   onOpenCart = null,
   align = 'right',
+  agentBridgeLive = false,
 }) {
   const { user } = useAuth();
   const ref = useRef(null);
@@ -266,6 +268,12 @@ export default function ProfilePanel({
           </button>
         </>
       )}
+      {agentBridgeLive ? (
+        <>
+          <div className="my-2 border-t border-chrome-border" data-profile-agent-bridge-divider="" />
+          <AgentBridgePairing enabled embedded />
+        </>
+      ) : null}
     </div>
   );
 }

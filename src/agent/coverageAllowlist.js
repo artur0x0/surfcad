@@ -8,14 +8,8 @@
  */
 
 export const COVERAGE_ALLOWLIST = Object.freeze([
-  Object.freeze({ id: 'data-contour-entity-card', reason: 'H6 entity delete card (no sketch_delete_entity command).' }),
   Object.freeze({ id: 'data-axis-helper-toggle', reason: 'Viewport axis helper toggle (non-product chrome).' }),
-  Object.freeze({ id: 'data-cross-section-toggle', reason: 'H13 section plane toggle (deferred).' }),
-  Object.freeze({ id: 'data-cross-section-expand', reason: 'H13 section options popup (deferred).' }),
-  Object.freeze({ id: 'data-cross-section-plane', reason: 'H13 section plane preset chips (deferred).' }),
-  Object.freeze({ id: 'data-section-offset', reason: 'H13 section position slider center (deferred).' }),
   Object.freeze({ id: 'data-sm-unit-toggle', reason: 'Sheet metal display mm|in toggle (display chrome only).' }),
-  Object.freeze({ id: 'data-cad-select-all', reason: 'Editor select-all (no agent command yet).' }),
   Object.freeze({ id: 'data-game-exit', reason: 'Game mode exit to CAD (out of harness scope).' }),
   Object.freeze({ id: 'data-game-undo', reason: 'Game toolbar undo (out of harness scope).' }),
   Object.freeze({ id: 'data-game-redo', reason: 'Game toolbar redo (out of harness scope).' }),

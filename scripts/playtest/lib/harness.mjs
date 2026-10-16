@@ -115,6 +115,10 @@ export async function enableAgentBridgeAutoApprove(page) {
  * @param {import('playwright-core').Page} page
  */
 export async function showAgentBridgePairingCode(page) {
+  const profileChip = page.locator('[data-profile-chip]').first();
+  if (await profileChip.count()) {
+    await profileChip.click();
+  }
   await page.click('[data-ui-action="data-agent-bridge-toggle"]');
   await page.click('[data-ui-action="data-agent-bridge-start"]');
   await page.waitForSelector('[data-agent-bridge-code]', { state: 'visible', timeout: 15000 });

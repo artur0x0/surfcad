@@ -405,6 +405,7 @@ const PartFeed = forwardRef(function PartFeed({
   onSignedOut = null,
   onClearLocalCadData = null,
   profileVaultName = null,
+  agentBridgeLive = false,
   onUpload = null,
   onDownload = null,
   isUploading = false,
@@ -1773,7 +1774,14 @@ const PartFeed = forwardRef(function PartFeed({
           {/* Mobile only. Desktop uses the CAD viewer profile chip. */}
           {isMobile && (
             <div data-parts-profile-chip="" className="flex shrink-0 items-center pl-0.5">
-              <ProfileChip variant="inline" onAccount={onAccount} onSignedOut={onSignedOut} onClearLocalCadData={onClearLocalCadData} vaultName={profileVaultName} />
+              <ProfileChip
+                variant="inline"
+                onAccount={onAccount}
+                onSignedOut={onSignedOut}
+                onClearLocalCadData={onClearLocalCadData}
+                vaultName={profileVaultName}
+                agentBridgeLive={agentBridgeLive}
+              />
             </div>
           )}
         </div>

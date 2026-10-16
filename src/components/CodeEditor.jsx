@@ -60,6 +60,7 @@ const CodeEditor = forwardRef(({
   onSignedOut = null,
   onClearLocalCadData = null,
   profileVaultName = null,
+  agentBridgeLive = false,
   onAccount = null,
   /** False while the CAD drawer/sheet is closed. Monaco stays mounted. */
   shown = true,
@@ -538,7 +539,14 @@ const CodeEditor = forwardRef(({
             data-script-profile-chip=""
             className="ml-auto flex shrink-0 items-center pl-0.5"
           >
-            <ProfileChip variant="inline" onAccount={onAccount} onSignedOut={onSignedOut} onClearLocalCadData={onClearLocalCadData} vaultName={profileVaultName} />
+            <ProfileChip
+              variant="inline"
+              onAccount={onAccount}
+              onSignedOut={onSignedOut}
+              onClearLocalCadData={onClearLocalCadData}
+              vaultName={profileVaultName}
+              agentBridgeLive={agentBridgeLive}
+            />
           </div>
         )}
       </div>
