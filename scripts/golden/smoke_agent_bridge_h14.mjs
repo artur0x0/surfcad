@@ -176,8 +176,10 @@ await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded' });
 await seedAssembly(page);
 await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
 
+await page.setDefaultTimeout(120000);
 await page.waitForFunction(
   () => typeof window.surfcad?.call === 'function' && !document.querySelector('[data-app-loading]'),
+  null,
   { timeout: 120000 },
 );
 await page.waitForSelector('[data-cad-run]', { state: 'attached', timeout: 120000 });

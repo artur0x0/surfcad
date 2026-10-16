@@ -38,7 +38,6 @@ export function createSheetAgentHandlers(deps) {
     onBindSheetMetal,
     onCommitSheetMetal,
     getHelperBuffer,
-    lengthMm,
     cancelFeatureEdit,
     selectSheetChip,
     beginFeatureEdit,
@@ -257,7 +256,6 @@ export function createSheetAgentHandlers(deps) {
         partId: mode.partId,
         nextMode: next,
         reopen: false,
-        removeBlock: mode.draft.kind === 'base' && mode.draft.isNew === false,
       };
     },
 
@@ -384,7 +382,7 @@ export function createSheetAgentHandlers(deps) {
         selectSheetChip?.(chip);
       }
       if (patch && Object.keys(patch).length) {
-        const applied = this.sheetSetParams({ patch });
+        const applied = await this.sheetSetParams({ patch });
         if (applied?.error) return applied;
       }
       const mode = modeRef.current;

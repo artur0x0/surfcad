@@ -1546,22 +1546,6 @@ const Viewport = forwardRef(({
   const sheetMetalPickerRef = useRef(null);
   sheetMetalPickerRef.current = sheetMetalPicker;
   const agentSheetHostRef = useRef(null);
-  agentSheetHostRef.current = createSheetAgentHandlers({
-    appMode: mode,
-    modeRef: sheetMetalModeRef,
-    pickerRef: sheetMetalPickerRef,
-    setMode: setSheetMetalMode,
-    setPicker: setSheetMetalPicker,
-    onBindSheetMetal,
-    onCommitSheetMetal,
-    getHelperBuffer,
-    cancelFeatureEdit: (kind) => cancelFeatureEditRef.current?.(kind),
-    selectSheetChip: (chip) => selectSheetChipRef.current?.(chip),
-    beginFeatureEdit: (marker, script) => beginFeatureEditRef.current?.(marker, script) === true,
-    characteristicLengthMm,
-    modelBoundsRef,
-    willCreatePart: () => (getSheetMetalReady ? !getSheetMetalReady() : false),
-  });
   const exitSheetMetalChromeRef = useRef(() => {});
   exitSheetMetalChromeRef.current = () => {
     if (!sheetMetalModeRef.current && !sheetMetalPicker) return;
@@ -1888,6 +1872,22 @@ const Viewport = forwardRef(({
   // rebinding listeners on every recompute.
   const modelBoundsRef = useRef(null);
   modelBoundsRef.current = modelBounds;
+  agentSheetHostRef.current = createSheetAgentHandlers({
+    appMode: mode,
+    modeRef: sheetMetalModeRef,
+    pickerRef: sheetMetalPickerRef,
+    setMode: setSheetMetalMode,
+    setPicker: setSheetMetalPicker,
+    onBindSheetMetal,
+    onCommitSheetMetal,
+    getHelperBuffer,
+    cancelFeatureEdit: (kind) => cancelFeatureEditRef.current?.(kind),
+    selectSheetChip: (chip) => selectSheetChipRef.current?.(chip),
+    beginFeatureEdit: (marker, script) => beginFeatureEditRef.current?.(marker, script) === true,
+    characteristicLengthMm,
+    modelBoundsRef,
+    willCreatePart: () => (getSheetMetalReady ? !getSheetMetalReady() : false),
+  });
   // After modelBounds. The dep array is evaluated during render; reading the
   // state earlier is a temporal dead zone and the production bundle white-screens.
   const [helperCardOpen, setHelperCardOpen] = useState(false);
