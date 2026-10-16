@@ -401,7 +401,7 @@ export function createFeaAgentHandlers(deps) {
         }
         if (reportStatus === 'done' && live.result?.source === 'tet10' && live.result?.stats == null) {
           const peak = live.result?.max;
-          if (typeof peak === 'number' && Number.isFinite(peak) && peak > 0) {
+          if (typeof peak === 'number' && Number.isFinite(peak)) {
             break;
           }
           await sleepMs(runPollMs);

@@ -13,7 +13,7 @@ import { feaStudyBlock } from '../../src/fea/studyScript.js';
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
 const PORT = Number(process.env.SMOKE_PORT || 4328);
 const APP_URL = `http://127.0.0.1:${PORT}/?agent=1`;
-const STUDY = feaStudyBlock({ mesh: { target: 4, refine: 'off' } });
+const STUDY = feaStudyBlock({ mesh: { target: 8, refine: 'off' } });
 const BEAM = `// @surf-id fea-agent-beam\nconst part = Manifold.cube([40, 10, 10], false);\nreturn part;\n${STUDY}`;
 
 const CHROME_CANDIDATES = [
@@ -185,6 +185,7 @@ await page.waitForFunction(
 );
 await page.waitForTimeout(600);
 
+logStep('  run beam…');
 const ran = await agentCall(page, 'run', {});
 check('run beam', ran.ok === true && ran.result?.ok === true, JSON.stringify(ran));
 await page.waitForTimeout(800);

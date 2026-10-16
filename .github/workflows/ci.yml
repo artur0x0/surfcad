@@ -397,7 +397,7 @@ jobs:
           test -x "$CHROME_PATH"
           test -n "$GOLDEN_SHOT_DIR"
           mkdir -p "$GOLDEN_SHOT_DIR"
-          node scripts/golden/smoke_agent_bridge_fea.mjs | tee "${RUNNER_TEMP}/agent-bridge-fea.log"
+          stdbuf -oL node scripts/golden/smoke_agent_bridge_fea.mjs | tee "${RUNNER_TEMP}/agent-bridge-fea.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-fea.log"; then
             echo "agent bridge fea golden skipped because Chrome was not found; CI must launch it"
             exit 1

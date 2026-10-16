@@ -8,7 +8,7 @@ test('feaRun times out when tet10 finishes without stats', async () => {
     open: true,
     running: false,
     runReport: { status: 'done' },
-    result: { source: 'tet10', max: 1, p95: 1, stats: null },
+    result: { source: 'tet10', max: null, p95: null, stats: null },
     run: async () => {},
   };
   const panelRef = { current: panel };
