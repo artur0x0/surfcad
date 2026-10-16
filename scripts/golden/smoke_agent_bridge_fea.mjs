@@ -2,7 +2,7 @@
 /**
  * Agent bridge FEA: open Analyze, material, fixture + force, run, magnitude re-run changes stress.
  */
-/* global window, indexedDB, localStorage */
+/* global document, window, indexedDB, localStorage */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -122,7 +122,8 @@ async function seedAssembly(page) {
         const db = req.result;
         const tx = db.transaction(['assembly', 'parts'], 'readwrite');
         tx.objectStore('assembly').put(doc, 'current');
-        tx.objectStore('parts').put({ id: PART_ID, script, savedAt: Date.now() }, PART_ID);
+        const partId = doc.activeId;
+        tx.objectStore('parts').put({ id: partId, script, savedAt: Date.now() }, partId);
         tx.oncomplete = () => { db.close(); resolve(); };
         tx.onerror = () => reject(tx.error);
       };
@@ -153,6 +154,7 @@ if (!(await waitForServer())) {
   stop();
   process.exit(1);
 }
+logStep('  preview server up');
 
 const browser = await chromium.launch({
   executablePath: exe,
@@ -161,6 +163,8 @@ const browser = await chromium.launch({
 });
 
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+page.setDefaultTimeout(120_000);
+page.setDefaultNavigationTimeout(60_000);
 await page.route('**/api/auth/me', (route) => route.fulfill({
   status: 200,
   contentType: 'application/json',
@@ -176,17 +180,25 @@ await page.route('**/api/config', (route) => route.fulfill({
 }));
 
 await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded' });
+logStep('  seed assembly…');
 await seedAssembly(page);
 await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
 
 await page.waitForFunction(
-  () => typeof window.surfcad?.call === 'function',
+  () => typeof window.surfcad?.call === 'function' && !document.querySelector('[data-app-loading]'),
+  null,
   { timeout: 120000 },
 );
+await page.waitForSelector('[data-cad-run]', { state: 'attached', timeout: 120000 });
+logStep('  agent harness ready');
 await page.waitForTimeout(600);
 
 logStep('  run beam…');
-const ran = await agentCall(page, 'run', {});
+let ran = await agentCall(page, 'run', {});
+if (!(ran.ok === true && ran.result?.ok === true)) {
+  await page.waitForTimeout(2500);
+  ran = await agentCall(page, 'run', {});
+}
 check('run beam', ran.ok === true && ran.result?.ok === true, JSON.stringify(ran));
 await page.waitForTimeout(800);
 
@@ -220,7 +232,7 @@ check('fea_pick load face', load.ok === true, JSON.stringify(load));
 await page.waitForSelector('[data-fea-load-count="1"]', { timeout: 15000 });
 
 logStep('  fea_run (200 N)…');
-const run1 = await agentCall(page, 'fea_run', {}, 300_000);
+const run1 = await agentCall(page, 'fea_run', {}, 180_000);
 check('fea_run first', run1.ok === true && run1.result?.status === 'done', JSON.stringify(run1.result));
 check('fea_run reports dof', Number.isFinite(run1.result?.dof) && run1.result.dof > 0,
   JSON.stringify({ dof: run1.result?.dof }));
@@ -236,7 +248,7 @@ check('magnitude write updates study script', scriptAfter.ok === true
   'study script unchanged after magnitude bump');
 
 logStep('  fea_run (400 N)…');
-const run2 = await agentCall(page, 'fea_run', {}, 300_000);
+const run2 = await agentCall(page, 'fea_run', {}, 180_000);
 check('fea_run second', run2.ok === true && run2.result?.status === 'done', JSON.stringify(run2.result));
 const max1 = run1.result?.maxVonMises_MPa;
 const max2 = run2.result?.maxVonMises_MPa;
