@@ -221,6 +221,19 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `joint_cancel` | `{}` | Dismisses the joint card without writing. |
 | `joint_select` | `{ joint_id }` | Opens an existing joint from the strip (`data-joint-chip`) in edit mode. |
 | `joint_edit` | `{ joint_id?, type?, name?, value_mm?, … }` | Patches a joint in edit mode (optional `joint_id` selects first). Commit with `joint_commit`. |
+| `sheet_open` | `{}` | Opens the Sheet Metal picker (`data-sheet-metal-button`). |
+| `sheet_start` | `{ sku }` or `{ material }` | Binds SendCutSend stock and enters sheet-metal mode (`data-sheet-metal-start`). |
+| `sheet_set_tool` | `{ tool: "tab"\|"bend"\|"hole"\|"countersink"\|"tapped" }` | Active tool on the sheet left rail. |
+| `sheet_set_params` | plane, base dims, bend/tab/hole fields, `r`/`k`/`t`, or `sku` | Patches the open sheet stage. |
+| `sheet_pick` | `{ plane }`, `{ panel, edge }`, `{ ref_key }`, `{ chip_id }`, or `{ picks: [...] }` | Plane pick, edge toggle, hole panel, or ribbon chip. |
+| `sheet_commit` | `{}` | Confirm base flange or open draft — one undo when the script changes. |
+| `sheet_cancel` | `{}` | Back from draft, check card, base popup, or close picker. |
+| `sheet_exit` | `{}` | Leave sheet-metal mode without Done (`data-sheet-metal-exit`). |
+| `sheet_check` | `{}` | Open flat pattern / DFM (`data-sm-check`). |
+| `sheet_refold` | `{}` | Close check and return to bent edit. |
+| `sheet_done` | `{}` | Write if the spec changed, then close (`data-sm-done`). |
+| `sheet_edit` | `{ chip_id?, feature_id?, …params }` | Open a sheet chip for edit; optional param patch. |
+| `sheet_begin_hole` | `{}` | Next on a new sheet hole — opens centres sketch. |
 | `git_move_to_repo` | `{ vault_name? }` | G6: local assembly → vault (mock or real adapter). One assembly-history undo when promoted. |
 | `git_save` | `{ message }` | Save (commit) on the current branch — same as the ribbon Save flow after the message step. |
 | `git_add_to_repo` | `{ part_id }` | Add one stray/local part into the vault layout (`handleAddToRepo`). |

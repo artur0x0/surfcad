@@ -104,6 +104,7 @@ import { parseFeatureMarkers } from '../utils/featureMarkers';
 import { buildSheetOverlay, disposeSheetOverlay, sheetPickFromHits, syncSheetEdgeLineResolution } from '../utils/sheetMetal/sheetOverlay';
 import { referencePickEdges, sheetContourEdges, sheetSpecInScript } from '../utils/sheetMetal/sheetContourEdges';
 import { ensureBodyMaterial } from '../utils/sheetMetal/sheetMaterial';
+import { createSheetAgentHandlers } from '../agent/sheetAgentHost.js';
 import { makeDefaultPartMaterial } from '../utils/partMaterial';
 import DraftModeChip from './DraftModeChip';
 import CutModeChip from './CutModeChip';
@@ -1542,6 +1543,9 @@ const Viewport = forwardRef(({
   const [sheetRibbonActiveId, setSheetRibbonActiveId] = useState(null);
   const sheetMetalModeRef = useRef(null);
   sheetMetalModeRef.current = sheetMetalMode;
+  const sheetMetalPickerRef = useRef(null);
+  sheetMetalPickerRef.current = sheetMetalPicker;
+  const agentSheetHostRef = useRef(null);
   const exitSheetMetalChromeRef = useRef(() => {});
   exitSheetMetalChromeRef.current = () => {
     if (!sheetMetalModeRef.current && !sheetMetalPicker) return;
@@ -1868,6 +1872,22 @@ const Viewport = forwardRef(({
   // rebinding listeners on every recompute.
   const modelBoundsRef = useRef(null);
   modelBoundsRef.current = modelBounds;
+  agentSheetHostRef.current = createSheetAgentHandlers({
+    appMode: mode,
+    modeRef: sheetMetalModeRef,
+    pickerRef: sheetMetalPickerRef,
+    setMode: setSheetMetalMode,
+    setPicker: setSheetMetalPicker,
+    onBindSheetMetal,
+    onCommitSheetMetal,
+    getHelperBuffer,
+    cancelFeatureEdit: (kind) => cancelFeatureEditRef.current?.(kind),
+    selectSheetChip: (chip) => selectSheetChipRef.current?.(chip),
+    beginFeatureEdit: (marker, script) => beginFeatureEditRef.current?.(marker, script) === true,
+    characteristicLengthMm,
+    modelBoundsRef,
+    willCreatePart: () => (getSheetMetalReady ? !getSheetMetalReady() : false),
+  });
   // After modelBounds. The dep array is evaluated during render; reading the
   // state earlier is a temporal dead zone and the production bundle white-screens.
   const [helperCardOpen, setHelperCardOpen] = useState(false);
@@ -2617,6 +2637,21 @@ const Viewport = forwardRef(({
       sketchCancel: () => agentSketchCancelRef.current(),
       prepareSketchCommit: () => agentPrepareSketchCommitRef.current(),
       prepareHoleCommit: () => agentPrepareHoleCommitRef.current(),
+      sheetOpen: () => agentSheetHostRef.current?.sheetOpen(),
+      sheetStart: (args) => agentSheetHostRef.current?.sheetStart(args),
+      sheetSetTool: (args) => agentSheetHostRef.current?.sheetSetTool(args),
+      sheetSetParams: (args) => agentSheetHostRef.current?.sheetSetParams(args),
+      sheetApplyPicks: (args) => agentSheetHostRef.current?.sheetApplyPicks(args),
+      sheetCancel: () => agentSheetHostRef.current?.sheetCancel(),
+      sheetExit: () => agentSheetHostRef.current?.sheetExit(),
+      sheetCheck: () => agentSheetHostRef.current?.sheetCheck(),
+      sheetRefold: () => agentSheetHostRef.current?.sheetRefold(),
+      sheetBeginHole: () => agentSheetHostRef.current?.sheetBeginHole(),
+      sheetEdit: (args) => agentSheetHostRef.current?.sheetEdit(args),
+      prepareSheetCommit: () => agentSheetHostRef.current?.prepareSheetCommit(),
+      finishSheetCommit: (prepared) => agentSheetHostRef.current?.finishSheetCommit(prepared),
+      prepareSheetDone: () => agentSheetHostRef.current?.prepareSheetDone(),
+      finishSheetDone: (prepared) => agentSheetHostRef.current?.finishSheetDone(prepared),
       prepareSketchDimension: (args) => agentPrepareSketchDimensionRef.current(args),
       prepareSketchConstrain: (args) => agentPrepareSketchConstrainRef.current(args),
       finishSketchGesture: () => {

@@ -5959,6 +5959,26 @@ const App = () => {
     };
   };
 
+  const prepareAgentSheetMutate = (prepared) => {
+    if (!prepared?.write || !prepared?.spec) return { changed: false };
+    if (!focusWritePart(prepared.partId)) {
+      return { error: { code: 'no_write_part', message: 'No writable part for sheet commit' } };
+    }
+    const buf = codeEditorRef.current?.getContent?.() ?? '';
+    const result = prepared.removeBlock ? removeSheetMetalBlock(buf) : composeSheetMetalCommit(buf, prepared.spec);
+    if (!result.ok) {
+      return { error: { code: 'commit_failed', message: result.message || 'Sheet metal commit refused' } };
+    }
+    if (result.buffer === buf) return { changed: false, source: buf, message: 'Sheet metal' };
+    const placement = placeCommitBuffer(buf, result.buffer);
+    return {
+      changed: true,
+      source: placement.placed.buffer,
+      message: 'Sheet metal',
+      placement,
+    };
+  };
+
   const prepareAgentHoleMutate = (payload) => {
     if (!focusWritePart(payload?.partId)) {
       return { error: { code: 'no_write_part', message: 'No writable part for hole commit' } };
@@ -7864,6 +7884,7 @@ const App = () => {
       meta,
     ),
     prepareHoleMutate: (payload) => prepareAgentHoleMutate(payload),
+    prepareSheetMutate: (prepared) => prepareAgentSheetMutate(prepared),
     applyHoleMutateExtras(prep) {
       applyAgentHoleMutateExtras(prep);
     },
