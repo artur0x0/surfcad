@@ -7,6 +7,8 @@ import * as sketchH7 from './sketch-dim-constrain-extrude.mjs';
 import * as plateHoles from './plate-holes-offset.mjs';
 import * as partsJoints from './parts-joints-assembly.mjs';
 import * as gitVault from './git-vault-flow.mjs';
+import * as historyUndo from './history-interleave-undo.mjs';
+
 /** Scripted end-to-end scenarios (bridge-only). */
 export const scenarios = [
   bracket,
@@ -18,6 +20,7 @@ export const scenarios = [
   plateHoles,
   partsJoints,
   gitVault,
+  historyUndo,
 ];
 
 export function getScenario(id) {
