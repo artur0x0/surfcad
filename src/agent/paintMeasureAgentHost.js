@@ -181,7 +181,6 @@ export function createPaintMeasureAgentHandlers(deps) {
       if (!state) {
         return { result: { open: false } };
       }
-      const surfId = deps.paintSurfIdRef?.current?.();
       const color = resolvedPaintColor(state.color, state.custom);
       const canConfirm = !!color && livePaintChanged(state.session, state.baseline);
       return {
