@@ -38,6 +38,8 @@ Optional: `SURFCAD_AGENT_BRIDGE_WS_URL` (default `ws://127.0.0.1:17341`; preview
 
 **Sheet metal (H14).** `sheet_open` → `sheet_start` `{ sku }` → `sheet_pick` `{ plane: "XY" }` → `sheet_set_params` / `sheet_commit` for base and bends; `sheet_check` / `sheet_refold` for flat pattern; `sheet_edit` on `sheet:base` to change gauge; one `undo` per committed write.
 
+**Paint and measure (H13).** `paint_open` → `paint_set_color` / `paint_faces` `{ keys }` from `list_faces` → `paint_confirm` (session undo via `paint_undo` before confirm). `measure_open` → `measure_pick` `{ face_keys }` → `measure_state` readout → `measure_clear` / `measure_close` (no write).
+
 ## Stable ids
 
 - **Faces** — keys from `list_faces` / `selection`: `{ at, n, area, src?, ord? }` (same as viewport fingerprints).
