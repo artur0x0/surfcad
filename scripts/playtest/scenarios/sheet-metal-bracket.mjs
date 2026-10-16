@@ -1,13 +1,13 @@
 /** Sheet-metal bracket via agent bridge: plate, two flanges, check/refold, edit thickness, undo. */
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { agentCall, saveBridgeScreenshot } from '../lib/harness.mjs';
 import { createStepRunner } from '../lib/stepRunner.mjs';
 import { newPartStarterScript } from '../../../src/utils/helperPaletteSnippets.js';
 
 const USER_ID = 'user-playtest-sheet-bracket';
-const ROOT = join(fileURLToPath(import.meta.url), '../../..');
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const catalog = readFileSync(join(ROOT, 'scripts/golden/fixtures/scs/catalog.json'));
 const specs = readFileSync(join(ROOT, 'scripts/golden/fixtures/scs/specs.json'));
 
