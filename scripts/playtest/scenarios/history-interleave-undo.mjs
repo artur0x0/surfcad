@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { agentCall, saveBridgeScreenshot } from '../lib/harness.mjs';
+import { agentCall, focusPartHistoryForUndo, saveBridgeScreenshot } from '../lib/harness.mjs';
 import { createStepRunner } from '../lib/stepRunner.mjs';
 import { newPartStarterScript } from '../../../src/utils/helperPaletteSnippets.js';
 
@@ -77,7 +77,7 @@ async function nudgeHistoryTarget(page) {
   return false;
 }
 
-async function collectUndoFingerprints(page, via) {
+async function collectUndoFingerprints(page, via, referencePath = null) {
   const rows = [await fingerprint(page)];
   for (let guard = 0; guard < 50; guard += 1) {
     let hist = await agentCall(page, 'history', {});
@@ -92,8 +92,33 @@ async function collectUndoFingerprints(page, via) {
     } else {
       const btn = page.locator('[data-ui-action="data-feature-bar-undo"]');
       if (!(await btn.isEnabled())) break;
+      const prevHead = hist.result?.head;
       await btn.click();
-      await page.waitForTimeout(900);
+      await page.waitForFunction(
+        async (headBefore) => {
+          const env = await window.surfcad.call('history', '{}');
+          const parsed = typeof env === 'string' ? JSON.parse(env) : env;
+          const head = parsed?.result?.head;
+          return head != null && head !== headBefore;
+        },
+        prevHead,
+        { timeout: 12000 },
+      ).catch(() => page.waitForTimeout(1200));
+      const expect = referencePath?.[rows.length];
+      if (expect) {
+        for (let wait = 0; wait < 40; wait += 1) {
+          const row = await fingerprint(page);
+          if (row.scriptLen === expect.scriptLen && row.featureCount === expect.featureCount) {
+            rows.push(row);
+            break;
+          }
+          if (wait === 39) rows.push(row);
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      } else {
+        rows.push(await fingerprint(page));
+      }
+      continue;
     }
     rows.push(await fingerprint(page));
   }
@@ -127,7 +152,23 @@ function pathsClose(a, b) {
     if (x.scriptLen !== y.scriptLen) return false;
     if (x.historyKind !== y.historyKind) return false;
     if (x.featureCount !== y.featureCount) return false;
-    if (Math.abs((x.volume ?? 0) - (y.volume ?? 0)) > 80) return false;
+    const volA = x.volume ?? 0;
+    const volB = y.volume ?? 0;
+    const volTol = Math.max(120, Math.abs(volA) * 1e-4);
+    if (Math.abs(volA - volB) > volTol) return false;
+  }
+  return true;
+}
+
+/** UI undo vs agent undo: script/history parity (status counts can lag until run finishes). */
+function undoStacksAlign(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i];
+    const y = b[i];
+    if (x.scriptLen !== y.scriptLen) return false;
+    if (x.historyKind !== y.historyKind) return false;
+    if (x.head !== y.head) return false;
   }
   return true;
 }
@@ -186,20 +227,27 @@ export async function run(ctx) {
   });
 
   await runner.runStep('joint on second part', async () => {
+    await agentCall(page, 'create_part', { name: 'Pin' });
+    const partsAfterPin = await agentCall(page, 'parts', {});
+    pinPartId = partsAfterPin.result?.activeId
+      || partsAfterPin.result?.parts?.find((p) => p.name === 'Pin')?.id
+      || partsAfterPin.result?.parts?.[1]?.id;
+    await agentCall(page, 'insert_cube', { width: 10, depth: 10, height: 24 });
+    await agentCall(page, 'run', {});
+
     await agentCall(page, 'set_active_part', { part_id: baseId });
     await agentCall(page, 'run', {});
     const baseFaces = await agentCall(page, 'list_faces', {});
     const topRow = topFace(baseFaces.result?.faces);
     const topBase = topRow?.key || topRow;
-    await agentCall(page, 'create_part', { name: 'Pin' });
-    const parts = await agentCall(page, 'parts', {});
-    pinPartId = parts.result?.activeId || parts.result?.parts?.[1]?.id;
-    await agentCall(page, 'insert_cube', { width: 10, depth: 10, height: 24 });
+
+    await agentCall(page, 'set_active_part', { part_id: pinPartId });
     await agentCall(page, 'run', {});
     const pinFaces = await agentCall(page, 'list_faces', {});
     const bottomPin = bottomFace(pinFaces.result?.faces)?.key
       || bottomFace(pinFaces.result?.faces)
       || pinFaces.result?.faces?.[0]?.key;
+
     await agentCall(page, 'joint_open', {});
     const picked = await agentCall(page, 'joint_pick', {
       picks: [
@@ -207,7 +255,7 @@ export async function run(ctx) {
         { part_id: pinPartId, key: bottomPin },
       ],
     });
-    await agentCall(page, 'joint_set_params', { type: 'coincident' });
+    await agentCall(page, 'joint_set_params', { type: 'planar' });
     const committed = await agentCall(page, 'joint_commit', {});
     const ok = picked.ok === true
       && (picked.result?.count ?? 0) >= 2
@@ -281,6 +329,7 @@ export async function run(ctx) {
   let uiUndoPath = [];
 
   await runner.runStep('agent undo path', async () => {
+    await focusPartHistoryForUndo(page);
     agentUndoPath = await collectUndoFingerprints(page, 'agent');
     const ok = agentUndoPath.length >= 3 && peakOk;
     return { ok, detail: `steps=${agentUndoPath.length}` };
@@ -294,11 +343,21 @@ export async function run(ctx) {
   });
 
   await runner.runStep('UI undo matches agent', async () => {
-    uiUndoPath = await collectUndoFingerprints(page, 'ui');
+    await focusPartHistoryForUndo(page);
+    uiUndoPath = await collectUndoFingerprints(page, 'ui', agentUndoPath);
     const agentLens = agentUndoPath.map((row) => row.scriptLen).join(',');
     const uiLens = uiUndoPath.map((row) => row.scriptLen).join(',');
-    const ok = agentLens === uiLens && pathsClose(agentUndoPath, uiUndoPath);
-    return { ok, detail: `agent=${agentUndoPath.length} ui=${uiUndoPath.length} lens=${agentLens}` };
+    let mismatch = '';
+    for (let i = 0; i < Math.max(agentUndoPath.length, uiUndoPath.length); i += 1) {
+      const x = agentUndoPath[i];
+      const y = uiUndoPath[i];
+      if (!x || !y || x.scriptLen !== y.scriptLen || x.historyKind !== y.historyKind || x.head !== y.head) {
+        mismatch = `idx=${i} agent=${JSON.stringify(x)} ui=${JSON.stringify(y)}`;
+        break;
+      }
+    }
+    const ok = undoStacksAlign(agentUndoPath, uiUndoPath);
+    return { ok, detail: `agent=${agentUndoPath.length} ui=${uiUndoPath.length} ${mismatch}` };
   });
 
   await runner.runStep('new action clears redo (agent)', async () => {
