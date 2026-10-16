@@ -202,7 +202,7 @@ export async function run(ctx) {
     const ok = env.ok === true
       && env.result?.kind === 'assembly'
       && (env.result?.joints ?? 0) >= 1
-      && env.result?.applied?.label;
+      && !!env.result?.applied?.label;
     return { ok, call: 'redo', args: {}, envelope: env };
   });
 

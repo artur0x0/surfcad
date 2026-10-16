@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { agentCall, saveBridgeScreenshot } from '../lib/harness.mjs';
+import { agentCall, focusPartHistoryForUndo, saveBridgeScreenshot } from '../lib/harness.mjs';
 import { createStepRunner } from '../lib/stepRunner.mjs';
 import { newPartStarterScript } from '../../../src/utils/helperPaletteSnippets.js';
 
@@ -80,6 +80,7 @@ export async function run(ctx) {
     await agentCall(page, 'sheet_edit', { chip_id: 'sheet:base' });
     await agentCall(page, 'sheet_set_params', { sku: 'ALU-125' });
     const commit = await agentCall(page, 'sheet_commit', {});
+    await focusPartHistoryForUndo(page);
     const undo = await agentCall(page, 'undo', {});
     const ok = commit.ok === true && undo.ok === true;
     return { ok, call: 'undo', envelope: undo };

@@ -1,6 +1,6 @@
 /** Plate with holes on rectangle corners + arc centre, offset workplane, undo. */
 import { join } from 'node:path';
-import { agentCall, saveBridgeScreenshot } from '../lib/harness.mjs';
+import { agentCall, focusPartHistoryForUndo, saveBridgeScreenshot } from '../lib/harness.mjs';
 import { createStepRunner } from '../lib/stepRunner.mjs';
 
 const USER_ID = 'user-playtest-plate-holes';
@@ -85,6 +85,7 @@ export async function run(ctx) {
 
   await runner.runStep('undo hole', async () => {
     const before = await agentCall(page, 'get_script', {});
+    await focusPartHistoryForUndo(page);
     const env = await agentCall(page, 'undo', {});
     const after = await agentCall(page, 'get_script', {});
     return {
