@@ -9,7 +9,6 @@
 
 export const COVERAGE_ALLOWLIST = Object.freeze([
   Object.freeze({ id: 'data-contour-entity-card', reason: 'H6 entity delete card (no sketch_delete_entity command).' }),
-  Object.freeze({ id: 'data-analyze-chip', reason: 'H13 analyze toggle (deferred).' }),
   Object.freeze({ id: 'data-axis-helper-toggle', reason: 'Viewport axis helper toggle (non-product chrome).' }),
   Object.freeze({ id: 'data-cross-section-toggle', reason: 'H13 section plane toggle (deferred).' }),
   Object.freeze({ id: 'data-cross-section-expand', reason: 'H13 section options popup (deferred).' }),

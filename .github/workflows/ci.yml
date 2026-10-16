@@ -361,6 +361,52 @@ jobs:
             exit 1
           fi
 
+  # Agent FEA bridge golden runs in its own job so the long smoke goldens
+  # cannot hit the 10-minute job limit before this step starts.
+  agent-bridge-fea-golden:
+    name: Agent bridge FEA golden
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
+
+      - name: vite build (playtest)
+        run: npm run build:playtest
+
+      - name: Install Chrome
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@v2
+        with:
+          chrome-version: stable
+          install-dependencies: true
+
+      - name: Agent bridge FEA golden
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          GOLDEN_SHOT_DIR: ${{ runner.temp }}/agent-bridge-fea
+        run: |
+          test -n "$CHROME_PATH"
+          test -x "$CHROME_PATH"
+          test -n "$GOLDEN_SHOT_DIR"
+          mkdir -p "$GOLDEN_SHOT_DIR"
+          stdbuf -oL node scripts/golden/smoke_agent_bridge_fea.mjs | tee "${RUNNER_TEMP}/agent-bridge-fea.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-fea.log"; then
+            echo "agent bridge fea golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'agent bridge fea: all checks passed' "${RUNNER_TEMP}/agent-bridge-fea.log"; then
+            echo "agent bridge fea golden did not pass (see log above)"
+            exit 1
+          fi
+
   # npm copyleft and non-commercial gate, plus a freshness check for
   # public/THIRD_PARTY_NOTICES.txt. Always runs. The cargo-deny step is a
   # separate job so it can stay a no-op until the FEA crate exists.

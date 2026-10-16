@@ -139,6 +139,24 @@ import {
   measureClearCommand,
   measureStateCommand,
 } from './measure.js';
+import {
+  feaOpenCommand,
+  feaCloseCommand,
+  feaSetMaterialCommand,
+  feaSetTargetCommand,
+  feaSetFixtureCommand,
+  feaFixCommand,
+  feaSetForceCommand,
+  feaSetPressureCommand,
+  feaRemoveFixtureCommand,
+  feaRemoveLoadCommand,
+  feaRunCommand,
+  feaCancelCommand,
+  feaBackToSetupCommand,
+  feaStateCommand,
+  feaResultsCommand,
+  feaPickCommand,
+} from './fea.js';
 import { exportPartCommand, exportDownloadCommand } from './export.js';
 
 const HELPER_COMMANDS = buildHelperPaletteCommands();
@@ -156,7 +174,7 @@ const HELPER_COMMANDS = buildHelperPaletteCommands();
  * H12 git ribbon commands follow H11.
  * H14 sheet-metal flow follows H12.
  * H13 measure and paint follow H14.
- * H16 export (STL/3MF/STEP) follows H13.
+ * FEA study bridge and H16 export (STL/3MF/STEP) follow H13.
  */
 export const V1_COMMANDS = Object.freeze([
   getScriptCommand,
@@ -271,6 +289,22 @@ export const V1_COMMANDS = Object.freeze([
   measurePickCommand,
   measureClearCommand,
   measureStateCommand,
+  feaOpenCommand,
+  feaCloseCommand,
+  feaSetMaterialCommand,
+  feaSetTargetCommand,
+  feaSetFixtureCommand,
+  feaFixCommand,
+  feaSetForceCommand,
+  feaSetPressureCommand,
+  feaRemoveFixtureCommand,
+  feaRemoveLoadCommand,
+  feaRunCommand,
+  feaCancelCommand,
+  feaBackToSetupCommand,
+  feaStateCommand,
+  feaResultsCommand,
+  feaPickCommand,
   gitMoveToRepoCommand,
   gitSaveCommand,
   gitAddToRepoCommand,

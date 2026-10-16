@@ -106,6 +106,7 @@ import { referencePickEdges, sheetContourEdges, sheetSpecInScript } from '../uti
 import { ensureBodyMaterial } from '../utils/sheetMetal/sheetMaterial';
 import { createSheetAgentHandlers } from '../agent/sheetAgentHost.js';
 import { createPaintMeasureAgentHandlers } from '../agent/paintMeasureAgentHost.js';
+import { createFeaAgentHandlers } from '../agent/feaAgentHost.js';
 import { makeDefaultPartMaterial } from '../utils/partMaterial';
 import DraftModeChip from './DraftModeChip';
 import CutModeChip from './CutModeChip';
@@ -1528,6 +1529,9 @@ const Viewport = forwardRef(({
   const [paintMode, setPaintMode] = useState(null);
   const paintModeRef = useRef(null);
   const [feaActive, setFeaActive] = useState(false);
+  const feaActiveRef = useRef(false);
+  feaActiveRef.current = feaActive;
+  const feaPanelRef = useRef(null);
   const feaPickRef = useRef(null);
   const feaTapActionRef = useRef(null);
   const feaToggleRef = useRef(() => {});
@@ -1548,6 +1552,7 @@ const Viewport = forwardRef(({
   sheetMetalPickerRef.current = sheetMetalPicker;
   const agentSheetHostRef = useRef(null);
   const agentPaintMeasureHostRef = useRef(null);
+  const agentFeaHostRef = useRef(null);
   const enterPaintModeRef = useRef(() => {});
   const acceptPaintRef = useRef(() => {});
   const patchPaintRef = useRef(() => {});
@@ -2712,6 +2717,21 @@ const Viewport = forwardRef(({
       measurePick: (args) => agentPaintMeasureHostRef.current?.measurePick(args),
       measureClear: () => agentPaintMeasureHostRef.current?.measureClear(),
       measureState: () => agentPaintMeasureHostRef.current?.measureState(),
+      feaOpen: () => agentFeaHostRef.current?.feaOpen(),
+      feaClose: () => agentFeaHostRef.current?.feaClose(),
+      feaSetMaterial: (args) => agentFeaHostRef.current?.feaSetMaterial(args),
+      feaSetTarget: (args) => agentFeaHostRef.current?.feaSetTarget(args),
+      feaSetFixture: (args) => agentFeaHostRef.current?.feaSetFixture(args),
+      feaSetForce: (args) => agentFeaHostRef.current?.feaSetForce(args),
+      feaSetPressureLoad: (args) => agentFeaHostRef.current?.feaSetPressureLoad(args),
+      feaRemoveFixture: (args) => agentFeaHostRef.current?.feaRemoveFixture(args),
+      feaRemoveLoad: (args) => agentFeaHostRef.current?.feaRemoveLoad(args),
+      feaRun: () => agentFeaHostRef.current?.feaRun(),
+      feaCancel: () => agentFeaHostRef.current?.feaCancel(),
+      feaBackToSetup: () => agentFeaHostRef.current?.feaBackToSetup(),
+      feaState: (args) => agentFeaHostRef.current?.feaState(args),
+      feaResults: (args) => agentFeaHostRef.current?.feaResults(args),
+      feaPick: (args) => agentFeaHostRef.current?.feaPick(args),
       prepareSketchDimension: (args) => agentPrepareSketchDimensionRef.current(args),
       prepareSketchConstrain: (args) => agentPrepareSketchConstrainRef.current(args),
       finishSketchGesture: () => {
@@ -13802,6 +13822,16 @@ const Viewport = forwardRef(({
     boundaryTopoRef,
     syncFeatureEdgesRef,
   });
+  agentFeaHostRef.current = createFeaAgentHandlers({
+    appMode: mode,
+    panelRef: feaPanelRef,
+    feaToggleRef,
+    feaCloseRef,
+    feaActiveRef,
+    getMesh: () => resultRef.current,
+    faceIDsRef,
+    activePartIdRef,
+  });
   const paintUnmatched = paintMode
     ? unmatchedColorCount(paintMode.session, paintSurfId(), paintFacesNow())
     : 0;
@@ -14775,6 +14805,7 @@ const Viewport = forwardRef(({
         tapActionRef={feaTapActionRef}
         toggleRef={feaToggleRef}
         closeRef={feaCloseRef}
+        panelRef={feaPanelRef}
       />
 
       {/* Paint on the shared card. Game mounts no card. */}
