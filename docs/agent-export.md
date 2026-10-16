@@ -356,4 +356,4 @@ Refusals use the same `error` objects as the in-page envelope. Non-loopback TCP 
 | `SURFCAD_PAIRING_CODE` | Optional env pairing code (same as the in-app **Local agent** panel). |
 | `SURFCAD_AGENT_BRIDGE_WS_URL` | Relay URL (default `ws://127.0.0.1:17341`). |
 
-Claude Desktop / Cursor config examples live in `packages/surfcad-mcp/README.md`.
+Claude Desktop / Cursor config examples live in `packages/surfcad-mcp/README.md`. The short agent skill for outside LLMs is `docs/agent/SKILL.md`. End-to-end MCP demo: `npm run demo:mcp`.

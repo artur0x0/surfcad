@@ -108,8 +108,14 @@ jobs:
       - name: npm ci
         run: npm ci
 
-      - name: vite build
+      - name: vite build (production)
         run: npm run build
+
+      - name: Verify production bundle omits playtest auto-approve
+        run: node --test --test-name-pattern 'production dist bundle' test/agent-bridge-playtest-build.test.mjs
+
+      - name: vite build (playtest)
+        run: npm run build:playtest
 
       - name: Install Chrome
         id: setup-chrome
@@ -117,6 +123,16 @@ jobs:
         with:
           chrome-version: stable
           install-dependencies: true
+
+      - name: Agent bridge auto-approve guard (production)
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+        run: |
+          test -n "$CHROME_PATH"
+          test -x "$CHROME_PATH"
+          npm run build
+          node --test --test-name-pattern 'localStorage auto-approve' test/agent-bridge-playtest-build.test.mjs
+          npm run build:playtest
 
       - name: App-load golden
         env:
@@ -236,6 +252,15 @@ jobs:
           fi
           if ! grep -q 'agent playtest: ok' "${RUNNER_TEMP}/agent-playtest.log"; then
             echo "agent playtest did not pass (see log above)"
+            exit 1
+          fi
+          node scripts/golden/smoke_mcp_demo.mjs | tee "${RUNNER_TEMP}/mcp-demo.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/mcp-demo.log"; then
+            echo "mcp demo golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'mcp demo golden: ok' "${RUNNER_TEMP}/mcp-demo.log"; then
+            echo "mcp demo golden did not pass (see log above)"
             exit 1
           fi
           node scripts/golden/smoke_agent_visible.mjs | tee "${RUNNER_TEMP}/agent-visible.log"

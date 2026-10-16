@@ -3,7 +3,7 @@
  * Scripted agent playtest: drives window.surfcad only (external-agent path).
  *
  * Usage:
- *   npm run build && node scripts/playtest/run.mjs
+ *   npm run build:playtest && node scripts/playtest/run.mjs
  *   node scripts/playtest/run.mjs --scenario bracket-holes-fillet
  *
  * Env:

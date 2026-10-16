@@ -2,6 +2,8 @@
 
 Stdio [Model Context Protocol](https://modelcontextprotocol.io/) server for the SurfCAD browser agent bridge. Each tool maps to one `window.surfcad` command from `src/agent/commands.json` (generated at build/export time). The server pairs to your open SurfCAD tab through the **M1** loopback WebSocket relay (`ws://127.0.0.1:17341` by default).
 
+Agent-oriented guide (pairing, loop, stable ids, errors): [`docs/agent/SKILL.md`](../../docs/agent/SKILL.md). Scripted demo: `npm run demo:mcp` from the repo root.
+
 ## Prerequisites
 
 1. Run SurfCAD with the agent bridge on (`npm run dev`, or `?agent=1` / `localStorage surfcadAgent=1`).
