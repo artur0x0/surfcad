@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { focusPartHistoryForUndo } from './lib/focusPartHistory.mjs';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
 const PORT = Number(process.env.SMOKE_PORT || 4325);
@@ -224,6 +225,7 @@ check('feature_tree hole + centres contour', (tree.result?.features || []).some(
   JSON.stringify((tree.result?.features || []).map((f) => f.kind)));
 
 const beforeUndo = await agentCall(page, 'get_script', {});
+await focusPartHistoryForUndo(page, agentCall);
 const undone = await agentCall(page, 'undo', {});
 check('undo one step', undone.ok === true && undone.result?.ok === true, JSON.stringify(undone));
 const afterUndo = await agentCall(page, 'get_script', {});

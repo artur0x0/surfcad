@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright-core';
+import { focusPartHistoryForUndo } from './lib/focusPartHistory.mjs';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
 const PORT = Number(process.env.SMOKE_PORT || 4324);
@@ -225,6 +226,7 @@ const extruded = await agentCall(page, 'slot_commit', {});
 check('slot_commit extrude', extruded.ok === true && extruded.result?.written === true,
   JSON.stringify(extruded));
 
+await focusPartHistoryForUndo(page, agentCall);
 const undo = await agentCall(page, 'undo', {});
 check('undo after extrude', undo.ok === true && undo.result?.ok === true, JSON.stringify(undo));
 
