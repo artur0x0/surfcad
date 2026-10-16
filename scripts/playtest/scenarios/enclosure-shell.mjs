@@ -1,5 +1,5 @@
 /** Enclosed box with a top opening via hollow(). */
-import { agentCall, saveBridgeScreenshot } from '../lib/harness.mjs';
+import { agentCall, focusPartHistoryForUndo, saveBridgeScreenshot } from '../lib/harness.mjs';
 import { createStepRunner } from '../lib/stepRunner.mjs';
 import { join } from 'node:path';
 
@@ -100,6 +100,7 @@ export async function run(ctx) {
   });
 
   await runner.runStep('undo back to seed cube', async () => {
+    await focusPartHistoryForUndo(page);
     const env = await agentCall(page, 'undo', {});
     const st = await agentCall(page, 'status', {});
     const ok = env.ok === true && (st.result?.featureCount ?? 0) === 1;

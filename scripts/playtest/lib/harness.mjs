@@ -231,6 +231,15 @@ export async function agentCall(page, name, args) {
   }, { name, argsJson });
 }
 
+/** Match the feature bar: part undo needs a highlighted CAD part when the joint strip is showing. */
+export async function focusPartHistoryForUndo(page) {
+  const hist = await agentCall(page, 'history', {});
+  if (hist.result?.kind === 'part') return;
+  const parts = await agentCall(page, 'parts', {});
+  const id = parts.result?.activeId || parts.result?.parts?.[0]?.id;
+  if (id) await agentCall(page, 'select_parts', { part_id: id });
+}
+
 export function createConsoleCollector(page) {
   const errors = [];
   page.on('pageerror', (err) => errors.push(String(err?.message || err)));

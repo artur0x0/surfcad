@@ -7,9 +7,18 @@ import * as sketchH7 from './sketch-dim-constrain-extrude.mjs';
 import * as plateHoles from './plate-holes-offset.mjs';
 import * as partsJoints from './parts-joints-assembly.mjs';
 import * as gitVault from './git-vault-flow.mjs';
-
 /** Scripted end-to-end scenarios (bridge-only). */
-export const scenarios = [bracket, shell, sheet, sheetBracket, assembly, sketchH7, plateHoles, partsJoints, gitVault];
+export const scenarios = [
+  bracket,
+  shell,
+  sheet,
+  sheetBracket,
+  assembly,
+  sketchH7,
+  plateHoles,
+  partsJoints,
+  gitVault,
+];
 
 export function getScenario(id) {
   return scenarios.find((row) => row.id === id) || null;

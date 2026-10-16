@@ -1,5 +1,5 @@
 /** Sheet-metal base flange via sheetMetalSolid (script-only). */
-import { agentCall, saveBridgeScreenshot } from '../lib/harness.mjs';
+import { agentCall, focusPartHistoryForUndo, saveBridgeScreenshot } from '../lib/harness.mjs';
 import { createStepRunner } from '../lib/stepRunner.mjs';
 import { join } from 'node:path';
 
@@ -107,6 +107,7 @@ export async function run(ctx) {
   });
 
   await runner.runStep('undo', async () => {
+    await focusPartHistoryForUndo(page);
     const env = await agentCall(page, 'undo', {});
     const script = await agentCall(page, 'get_script', {});
     const ok = env.ok === true && script.result?.source === SEED;

@@ -2366,6 +2366,32 @@ const Viewport = forwardRef(({
           selectedPlaneId,
         });
       },
+      readSketchHistory() {
+        const depth = sketchHistRef.current?.depth || 0;
+        const entries = [];
+        for (let index = 0; index <= depth; index += 1) {
+          entries.push({
+            index,
+            label: index === 0 ? 'Sketch start' : 'Sketch edit',
+            current: index === depth,
+          });
+        }
+        return { depth, entries };
+      },
+      agentSketchUndo() {
+        const depthBefore = sketchHistRef.current?.depth || 0;
+        if (depthBefore <= 0) return { ok: false };
+        undoContourSketchRef.current?.();
+        const depthAfter = sketchHistRef.current?.depth || 0;
+        if (depthAfter >= depthBefore) return { ok: false };
+        const tool = contourModeRef.current?.tool || null;
+        return {
+          ok: true,
+          depthBefore,
+          depthAfter,
+          tool,
+        };
+      },
       readMode() {
         return buildAgentMode({
           appMode: mode,

@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import { newPartStarterScript } from '../../src/utils/helperPaletteSnippets.js';
+import { focusPartHistoryForUndo } from './lib/focusPartHistory.mjs';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
 const PORT = Number(process.env.SMOKE_PORT || 4326);
@@ -225,6 +226,7 @@ await agentCall(page, 'sheet_set_params', { sku: 'ALU-125' });
 const thick = await agentCall(page, 'sheet_commit', {});
 check('sheet_commit thickness sku', thick.ok === true, JSON.stringify(thick));
 
+await focusPartHistoryForUndo(page, agentCall);
 const undone = await agentCall(page, 'undo', {});
 check('undo one step', undone.ok === true, JSON.stringify(undone));
 

@@ -1,5 +1,5 @@
 /** Bracket: base plate, two holes, vertical edge fillet. */
-import { agentCall, saveBridgeScreenshot } from '../lib/harness.mjs';
+import { agentCall, focusPartHistoryForUndo, saveBridgeScreenshot } from '../lib/harness.mjs';
 import { createStepRunner } from '../lib/stepRunner.mjs';
 import { join } from 'node:path';
 
@@ -223,6 +223,7 @@ return part;`,
     );
     const wrote = await agentCall(page, 'set_script', { source: bump });
     const bumped = await agentCall(page, 'status', {});
+    await focusPartHistoryForUndo(page);
     const env = await agentCall(page, 'undo', {});
     const st = await agentCall(page, 'status', {});
     const vol = st.result?.volume;

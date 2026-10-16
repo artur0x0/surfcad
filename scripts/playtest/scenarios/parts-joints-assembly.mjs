@@ -188,6 +188,24 @@ export async function run(ctx) {
     return { ok, call: 'undo', args: {}, envelope: env, detail: JSON.stringify(rev) };
   });
 
+  await runner.runStep('history after joint undo', async () => {
+    const env = await agentCall(page, 'history', {});
+    const ok = env.ok === true
+      && env.result?.kind === 'assembly'
+      && env.result?.canRedo === true
+      && (env.result?.entries?.length ?? 0) >= 2;
+    return { ok, call: 'history', args: {}, envelope: env };
+  });
+
+  await runner.runStep('redo restores joint', async () => {
+    const env = await agentCall(page, 'redo', {});
+    const ok = env.ok === true
+      && env.result?.kind === 'assembly'
+      && (env.result?.joints ?? 0) >= 1
+      && !!env.result?.applied?.label;
+    return { ok, call: 'redo', args: {}, envelope: env };
+  });
+
   await runner.runStep('failed commit does not add undo step', async () => {
     await agentCall(page, 'joint_cancel', {});
     await agentCall(page, 'joint_open', {});

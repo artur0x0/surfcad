@@ -14,6 +14,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright-core';
+import { focusPartHistoryForUndo } from './lib/focusPartHistory.mjs';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
 const PORT = Number(process.env.SMOKE_PORT || 4324);
@@ -269,6 +270,7 @@ const afterCard = (await agentCall(page, 'get_script', {})).result?.source;
 check('card accept wrote the script', afterCard !== beforeCard && /fillet/i.test(afterCard.slice(beforeCard.length - 200)),
   String(afterCard?.length));
 
+await focusPartHistoryForUndo(page, agentCall);
 const undo = await agentCall(page, 'undo', {});
 const undone = (await agentCall(page, 'get_script', {})).result?.source;
 check('one undo reverts the card accept', undo.ok === true && undone === beforeCard, JSON.stringify(undo));

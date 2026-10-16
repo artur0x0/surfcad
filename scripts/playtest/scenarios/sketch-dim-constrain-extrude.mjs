@@ -1,6 +1,6 @@
 /** Sketch on face → dimension → constraint → commit → extrude. */
 import { join } from 'node:path';
-import { agentCall, saveBridgeScreenshot } from '../lib/harness.mjs';
+import { agentCall, focusPartHistoryForUndo, saveBridgeScreenshot } from '../lib/harness.mjs';
 import { createStepRunner } from '../lib/stepRunner.mjs';
 
 const USER_ID = 'user-playtest-sketch-h7';
@@ -134,6 +134,7 @@ export async function run(ctx) {
 
   await runner.runStep('undo restores extrude', async () => {
     const before = await agentCall(page, 'status', {});
+    await focusPartHistoryForUndo(page);
     const env = await agentCall(page, 'undo', {});
     const after = await agentCall(page, 'status', {});
     const ok = env.ok === true

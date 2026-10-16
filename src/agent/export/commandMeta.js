@@ -72,10 +72,67 @@ export const COMMAND_META = {
     mutates: false,
   },
   undo: {
-    description: 'Step the active part history once and run that script.',
-    result: MUTATE_RESULT_SCHEMA,
-    errors: ['nothing_to_undo', 'internal'],
+    description: 'One undo on the feature-bar stack (sketch session, assembly joints, or active part script) and run when the part script changes.',
+    result: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        ok: { type: 'boolean' },
+        kind: { type: 'string', enum: ['sketch', 'assembly', 'part'] },
+        applied: { type: 'object', additionalProperties: true },
+        reverted: { type: 'object', additionalProperties: true },
+        status: STATUS_SCHEMA,
+        errors: { type: 'array', items: { type: 'string' } },
+      },
+    },
+    errors: ['nothing_to_undo', 'no_write_part', 'internal'],
     mutates: true,
+  },
+  redo: {
+    description: 'One redo on the feature-bar stack (assembly joints or active part; sketch has no redo).',
+    result: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        ok: { type: 'boolean' },
+        kind: { type: 'string', enum: ['assembly', 'part'] },
+        applied: { type: 'object', additionalProperties: true },
+        reverted: { type: 'object', additionalProperties: true },
+        reapplied: { type: 'object', additionalProperties: true },
+        status: STATUS_SCHEMA,
+        errors: { type: 'array', items: { type: 'string' } },
+      },
+    },
+    errors: ['nothing_to_redo', 'no_write_part', 'internal'],
+    mutates: true,
+  },
+  history: {
+    description: 'Summary of the stack the next undo/redo would use: entries, head, labels, canUndo, canRedo.',
+    result: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        kind: { type: 'string', enum: ['sketch', 'assembly', 'part'] },
+        head: { type: 'integer' },
+        canUndo: { type: 'boolean' },
+        canRedo: { type: 'boolean' },
+        partId: { type: 'string' },
+        entries: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: true,
+            properties: {
+              index: { type: 'integer' },
+              label: { type: 'string' },
+              current: { type: 'boolean' },
+            },
+          },
+        },
+      },
+    },
+    errors: ['internal'],
+    mutates: false,
   },
   list_commands: {
     description: 'List every bridge command with args schema and example.',
