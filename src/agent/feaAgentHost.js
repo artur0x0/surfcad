@@ -70,6 +70,9 @@ function compactStudyState(panel) {
 }
 
 export function createFeaAgentHandlers(deps) {
+  const runTimeoutMs = deps.runTimeoutMs ?? RUN_TIMEOUT_MS;
+  const runPollMs = deps.runPollMs ?? RUN_POLL_MS;
+  const sleepMs = deps.sleep ?? sleep;
   const meshContext = (partId) => {
     const mesh = deps.getMesh?.();
     const geometry = mesh?.geometry;
@@ -385,7 +388,7 @@ export function createFeaAgentHandlers(deps) {
           },
         };
       }
-      const deadline = Date.now() + RUN_TIMEOUT_MS;
+      const deadline = Date.now() + runTimeoutMs;
       while (Date.now() < deadline) {
         const live = deps.panelRef?.current;
         if (!live) break;
@@ -393,18 +396,25 @@ export function createFeaAgentHandlers(deps) {
         const runFinished = !live.running
           && (reportStatus === 'done' || reportStatus === 'stopped' || reportStatus === 'idle');
         if (!runFinished) {
-          await sleep(RUN_POLL_MS);
+          await sleepMs(runPollMs);
           continue;
         }
         if (reportStatus === 'done' && live.result?.source === 'tet10' && live.result?.stats == null) {
-          await sleep(RUN_POLL_MS);
+          await sleepMs(runPollMs);
           continue;
         }
         break;
       }
+      const timedOut = Date.now() >= deadline;
       const panel = deps.panelRef?.current;
       if (panel?.running) {
         return { error: { code: 'timeout', message: 'fea_run timed out before the solver finished' } };
+      }
+      const missingTet10Stats = panel?.runReport?.status === 'done'
+        && panel?.result?.source === 'tet10'
+        && panel?.result?.stats == null;
+      if (timedOut && missingTet10Stats) {
+        return { error: { code: 'timeout', message: 'stats not available' } };
       }
       return { result: summarizeResult(panel) };
     },
