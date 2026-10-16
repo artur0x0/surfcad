@@ -1,3 +1,4 @@
+/** feaAgentHost wait-loop and timeout behaviour. */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createFeaAgentHandlers } from './feaAgentHost.js';
