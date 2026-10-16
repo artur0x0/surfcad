@@ -205,6 +205,7 @@ const ContourGestureCard = ({
           {noteNode ? <span className="min-w-0">{noteNode}</span> : null}
           <button
             type="button"
+            data-ui-action="data-contour-gesture-card"
             data-contour-dimension-delete={editingDimension ? '' : undefined}
             data-contour-constraint-delete={editingConstraint ? '' : undefined}
             onClick={() => onDelete?.()}

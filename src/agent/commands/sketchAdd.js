@@ -28,7 +28,16 @@ export const sketchAddCommand = Object.freeze({
     },
   }),
   example: Object.freeze({ tool: 'rectangle', width: 30, height: 20 }),
-  uiEntry: 'rectangle',
+  uiEntry: Object.freeze([
+    'rectangle',
+    'cursor',
+    'circle',
+    'polygon',
+    'polyline',
+    'arc',
+    'dimension',
+    'constraints',
+  ]),
   checkArgs(args) {
     const tool = normalizeSketchTool(args?.tool || 'rectangle');
     if (!tool) return { code: 'bad_args', message: 'sketch_add needs a supported tool' };

@@ -9,6 +9,8 @@ import {
 } from '../utils/displayUnit';
 import { measureReadout } from '../utils/measurePicks';
 
+const UI_ACTION = 'data-measure-mode-chip';
+
 /**
  * mm | in in the card header. The model stays millimetres. This is the
  * first reader of the global display unit.
@@ -25,6 +27,7 @@ export function MeasureUnitToggle({ unit = 'mm', onChange }) {
         <button
           key={next}
           type="button"
+          data-ui-action={UI_ACTION}
           data-measure-unit-choice={next}
           aria-pressed={unit === next}
           onClick={() => onChange?.(next)}
@@ -118,6 +121,7 @@ export default function MeasureModeChip({
       ) : null}
       <button
         type="button"
+        data-ui-action={UI_ACTION}
         data-measure-clear=""
         onClick={() => onClear?.()}
         className="mt-2 min-h-[44px] w-full rounded-md bg-white/10 text-[13px] font-medium text-white hover:bg-white/15"

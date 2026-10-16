@@ -22,6 +22,7 @@ export default function ContourEntityCard({
       note={(
         <button
           type="button"
+          data-ui-action="data-contour-entity-card"
           data-contour-entity-delete=""
           onClick={() => onDelete?.()}
           className="inline-flex shrink-0 items-center gap-1 rounded-md border border-red-700/60 bg-red-950/50 px-2.5 py-1.5 text-[13px] font-medium text-red-200 hover:bg-red-900/70 hover:text-white"

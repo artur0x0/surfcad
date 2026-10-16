@@ -3,6 +3,8 @@ import { NumberField } from './controls/popupUI';
 import { FeatureDeleteButton } from './FeatureEditDelete';
 import FeatureSheet from './FeatureSheet';
 
+const UI_ACTION = 'data-draft-mode-chip';
+
 /**
  * Draft on the shared feature card.
  * First tap is the neutral face (its normal is the pull). Flip reverses that
@@ -76,6 +78,7 @@ const DraftModeChip = ({
         <div className="flex gap-1 flex-wrap" role="group" aria-label="Pull">
           <button
             type="button"
+            data-ui-action={UI_ACTION}
             onClick={() => onFlip?.(!flip)}
             aria-pressed={!!flip}
             disabled={!neutral}
@@ -93,6 +96,7 @@ const DraftModeChip = ({
             <>
               <button
                 type="button"
+                data-ui-action={UI_ACTION}
                 className="px-2.5 py-1 rounded text-[13px] text-cyan-200 underline"
                 onClick={() => onUndo?.()}
                 title="Drop the last drafted face. The neutral face stays."
@@ -102,6 +106,7 @@ const DraftModeChip = ({
               </button>
               <button
                 type="button"
+                data-ui-action={UI_ACTION}
                 className="px-2.5 py-1 rounded text-[13px] text-cyan-200 underline"
                 onClick={() => onClear?.()}
                 title="Drop drafted faces and keep the neutral face"

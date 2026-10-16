@@ -8,6 +8,7 @@ import {
   validateHelperParams,
 } from '../helperPaletteAgent.js';
 import { HELPER_PALETTE_ITEMS } from '../../utils/helperPaletteSnippets.js';
+import { helperUiEntries } from '../helperUiEntryExtras.js';
 
 async function runHelperInsert(ctx, helperId, args) {
   const item = HELPER_PALETTE_ITEMS.find((row) => row.id === helperId);
@@ -77,7 +78,7 @@ export const invokeHelperCommand = Object.freeze({
 export function buildHelperPaletteCommands() {
   return HELPER_PALETTE_ITEMS.map((item) => Object.freeze({
     name: helperCommandName(item.id),
-    uiEntry: item.id,
+    uiEntry: helperUiEntries(item.id),
     schema: Object.freeze({
       type: 'object',
       additionalProperties: false,

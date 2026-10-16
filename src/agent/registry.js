@@ -16,6 +16,8 @@
 const NAME_RE = /^[a-z][a-z0-9_]*$/;
 const DATA_ATTR_RE = /^data-[a-z0-9-]+$/;
 const HELPER_ID_RE = /^[A-Za-z][A-Za-z0-9]*$/;
+/** Sheet rail tools use `sheet-tool-*` ids (see SheetMetalRail.jsx). */
+const SHEET_TOOL_UI_RE = /^sheet-tool-[a-z]+$/;
 
 import { NO_ARGS_SCHEMA as STRICT_NO_ARGS } from './schemas/common.js';
 
@@ -48,7 +50,9 @@ function assertUiEntry(uiEntry, name) {
   if (uiEntry == null) return;
   const list = Array.isArray(uiEntry) ? uiEntry : [uiEntry];
   const ok = list.length > 0 && list.every((entry) => (
-    typeof entry === 'string' && (DATA_ATTR_RE.test(entry) || HELPER_ID_RE.test(entry))
+    typeof entry === 'string' && (
+      DATA_ATTR_RE.test(entry) || HELPER_ID_RE.test(entry) || SHEET_TOOL_UI_RE.test(entry)
+    )
   ));
   if (!ok) {
     throw new Error(`agent command ${name} uiEntry must be a data-* selector or helper id, or a list of them`);

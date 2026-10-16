@@ -42,6 +42,7 @@ import { sketchAcceptPlaneCommand } from './sketchAcceptPlane.js';
 import { sketchAddCommand } from './sketchAdd.js';
 import { sketchCommitCommand } from './sketchCommit.js';
 import { sketchCancelCommand } from './sketchCancel.js';
+import { sketchUndoCommand } from './sketchUndo.js';
 import { sketchDimensionCommand } from './sketchDimension.js';
 import { sketchConstrainCommand } from './sketchConstrain.js';
 import { slotOpenCommand } from './slotOpen.js';
@@ -74,6 +75,7 @@ import {
   workplaneSelectCommand,
   setActiveWorkplaneCommand,
 } from './plane.js';
+import { setSketchOverlayCommand } from './viewportDisplay.js';
 import { listSketchEntitiesCommand } from './listSketchEntities.js';
 import {
   createAssemblyCommand,
@@ -200,6 +202,7 @@ export const V1_COMMANDS = Object.freeze([
   sketchAddCommand,
   sketchCommitCommand,
   sketchCancelCommand,
+  sketchUndoCommand,
   sketchDimensionCommand,
   sketchConstrainCommand,
   slotOpenCommand,
@@ -225,6 +228,7 @@ export const V1_COMMANDS = Object.freeze([
   planeSetCommand,
   workplaneSelectCommand,
   setActiveWorkplaneCommand,
+  setSketchOverlayCommand,
   listSketchEntitiesCommand,
   createAssemblyCommand,
   createPartCommand,

@@ -1,4 +1,4 @@
-const VIEW_NAMES = new Set(['iso', 'front', 'right', 'top', 'back', 'left', 'bottom']);
+const VIEW_NAMES = new Set(['iso', 'front', 'right', 'top', 'back', 'left', 'bottom', 'normal_to_sketch']);
 
 export const cameraSetCommand = Object.freeze({
   name: 'camera_set',
@@ -6,14 +6,24 @@ export const cameraSetCommand = Object.freeze({
     type: 'object',
     additionalProperties: false,
     properties: {
-      view: { type: 'string', enum: ['iso', 'front', 'right', 'top', 'back', 'left', 'bottom'] },
+      view: {
+        type: 'string',
+        enum: ['iso', 'front', 'right', 'top', 'back', 'left', 'bottom', 'normal_to_sketch'],
+      },
       position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
       target: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
       fov: { type: 'number' },
     },
   },
   example: { view: 'top' },
-  uiEntry: 'data-view-snap-top',
+  uiEntry: Object.freeze([
+    'data-view-snap-top',
+    'data-view-snap-front',
+    'data-view-snap-right',
+    'data-view-snap-iso',
+    'data-view-snap-toggle',
+    'data-normal-to-sketch',
+  ]),
   immediate: true,
   checkArgs(args) {
     const hasView = typeof args?.view === 'string' && VIEW_NAMES.has(args.view);

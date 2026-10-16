@@ -2,6 +2,8 @@ import React from 'react';
 import { FeatureDeleteButton } from './FeatureEditDelete';
 import FeatureSheet from './FeatureSheet';
 
+const UI_ACTION = 'data-delete-face-mode-chip';
+
 /**
  * Delete Face on the shared feature card.
  * Tap a face to add it. Tap a selected face again to remove it. Undo drops
@@ -56,6 +58,7 @@ const DeleteFaceModeChip = ({
         <div className="mt-1.5 flex gap-1 flex-wrap font-sans" role="group" aria-label="Picked faces">
           <button
             type="button"
+            data-ui-action={UI_ACTION}
             className="px-2.5 py-1 rounded text-[13px] text-cyan-200 underline"
             onClick={() => onUndo?.()}
             title="Drop the last selected face"
@@ -65,6 +68,7 @@ const DeleteFaceModeChip = ({
           </button>
           <button
             type="button"
+            data-ui-action={UI_ACTION}
             className="px-2.5 py-1 rounded text-[13px] text-cyan-200 underline"
             onClick={() => onClear?.()}
             title="Drop every selected face"

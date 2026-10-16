@@ -93,7 +93,7 @@ const SheetMetalPicker = ({
       {state.stale && state.records.length > 0 && (
         <div className="text-xs text-amber-200 flex items-center justify-between gap-2" data-scs-status="stale">
           <span>Offline — using saved catalog{state.fetchedAt ? ` from ${new Date(state.fetchedAt).toLocaleDateString()}` : ''}.</span>
-          <button type="button" className="underline min-h-[44px] px-2" onClick={() => load(true)}>Retry</button>
+          <button type="button" className="underline min-h-[44px] px-2" data-ui-action="data-sheet-metal-picker" onClick={() => load(true)}>Retry</button>
         </div>
       )}
       {boundGone && (
