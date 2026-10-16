@@ -40,6 +40,8 @@ Optional: `SURFCAD_AGENT_BRIDGE_WS_URL` (default `ws://127.0.0.1:17341`; preview
 
 **Paint and measure (H13).** `paint_open` → `paint_set_color` / `paint_faces` `{ keys }` from `list_faces` → `paint_confirm` (session undo via `paint_undo` before confirm). `measure_open` → `measure_pick` `{ face_keys }` → `measure_state` readout → `measure_clear` / `measure_close` (no write).
 
+**FEA study.** `fea_open` → `fea_set_material` `{ id }` → `fea_set_fixture` / `fea_set_force` `{ magnitudeN, direction, keys }` (N and MPa are SI; magnitudes commit to the study) → `fea_run` → `fea_results`. `fea_state` mirrors the open sheet; `fea_back_to_setup` leaves results. Off-scope `part_id` on `fea_pick` returns an error, not a throw.
+
 ## Stable ids
 
 - **Faces** — keys from `list_faces` / `selection`: `{ at, n, area, src?, ord? }` (same as viewport fingerprints).

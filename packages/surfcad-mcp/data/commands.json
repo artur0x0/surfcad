@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 151,
+  "count": 167,
   "$defs": {
     "status": {
       "type": "object",
@@ -12345,6 +12345,1161 @@
       "immediate": true,
       "uiEntry": "data-measure-mode-chip",
       "example": {}
+    },
+    {
+      "name": "fea_open",
+      "description": "Bridge command fea_open.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-analyze-chip",
+      "example": {}
+    },
+    {
+      "name": "fea_close",
+      "description": "Bridge command fea_close.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": "data-analyze-chip",
+      "example": {}
+    },
+    {
+      "name": "fea_set_material",
+      "description": "Bridge command fea_set_material.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Material catalog id (e.g. al-6061-t6, pla)"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-fea-material",
+      "example": {
+        "id": "pla"
+      }
+    },
+    {
+      "name": "fea_set_target",
+      "description": "Bridge command fea_set_target.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target"
+        ],
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "fixture",
+              "force",
+              "pressure"
+            ]
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-fea-target",
+      "example": {
+        "target": "fixture"
+      }
+    },
+    {
+      "name": "fea_set_fixture",
+      "description": "Bridge command fea_set_fixture.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "part_id": {
+            "type": "string",
+            "description": "Part id when the study scope includes multiple parts"
+          },
+          "face_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Manifold face id on the mesh"
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "at",
+                "n",
+                "area"
+              ],
+              "properties": {
+                "at": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "n": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "area": {
+                  "type": "number"
+                },
+                "src": {
+                  "type": "integer"
+                },
+                "ord": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "face_keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "at",
+                "n",
+                "area"
+              ],
+              "properties": {
+                "at": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "n": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "area": {
+                  "type": "number"
+                },
+                "src": {
+                  "type": "integer"
+                },
+                "ord": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "key": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "at",
+              "n",
+              "area"
+            ],
+            "properties": {
+              "at": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "n": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "area": {
+                "type": "number"
+              },
+              "src": {
+                "type": "integer"
+              },
+              "ord": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": null,
+      "example": {
+        "keys": [
+          {
+            "at": [
+              0,
+              0,
+              -5
+            ],
+            "n": [
+              0,
+              0,
+              -1
+            ],
+            "area": 400
+          }
+        ]
+      }
+    },
+    {
+      "name": "fea_fix",
+      "description": "Bridge command fea_fix.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "part_id": {
+            "type": "string",
+            "description": "Part id when the study scope includes multiple parts"
+          },
+          "face_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Manifold face id on the mesh"
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "at",
+                "n",
+                "area"
+              ],
+              "properties": {
+                "at": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "n": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "area": {
+                  "type": "number"
+                },
+                "src": {
+                  "type": "integer"
+                },
+                "ord": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "face_keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "at",
+                "n",
+                "area"
+              ],
+              "properties": {
+                "at": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "n": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "area": {
+                  "type": "number"
+                },
+                "src": {
+                  "type": "integer"
+                },
+                "ord": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "key": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "at",
+              "n",
+              "area"
+            ],
+            "properties": {
+              "at": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "n": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "area": {
+                "type": "number"
+              },
+              "src": {
+                "type": "integer"
+              },
+              "ord": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": null,
+      "example": {
+        "face_id": 0
+      }
+    },
+    {
+      "name": "fea_set_force",
+      "description": "Bridge command fea_set_force.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "part_id": {
+            "type": "string",
+            "description": "Part id when the study scope includes multiple parts"
+          },
+          "face_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Manifold face id on the mesh"
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "at",
+                "n",
+                "area"
+              ],
+              "properties": {
+                "at": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "n": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "area": {
+                  "type": "number"
+                },
+                "src": {
+                  "type": "integer"
+                },
+                "ord": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "face_keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "at",
+                "n",
+                "area"
+              ],
+              "properties": {
+                "at": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "n": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "area": {
+                  "type": "number"
+                },
+                "src": {
+                  "type": "integer"
+                },
+                "ord": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "key": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "at",
+              "n",
+              "area"
+            ],
+            "properties": {
+              "at": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "n": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "area": {
+                "type": "number"
+              },
+              "src": {
+                "type": "integer"
+              },
+              "ord": {
+                "type": "integer"
+              }
+            }
+          },
+          "magnitude": {
+            "type": "number",
+            "description": "Force magnitude in newtons (N)"
+          },
+          "magnitudeN": {
+            "type": "number",
+            "description": "Alias for magnitude (N)"
+          },
+          "direction": {
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "normal",
+                  "-normal",
+                  "+x",
+                  "-x",
+                  "+y",
+                  "-y",
+                  "+z",
+                  "-z",
+                  "custom"
+                ]
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              }
+            ]
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-fea-target",
+      "example": {
+        "magnitudeN": 200,
+        "direction": "+y",
+        "keys": [
+          {
+            "at": [
+              0,
+              0,
+              5
+            ],
+            "n": [
+              0,
+              0,
+              1
+            ],
+            "area": 400
+          }
+        ]
+      }
+    },
+    {
+      "name": "fea_set_pressure",
+      "description": "Bridge command fea_set_pressure.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "part_id": {
+            "type": "string",
+            "description": "Part id when the study scope includes multiple parts"
+          },
+          "face_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Manifold face id on the mesh"
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "at",
+                "n",
+                "area"
+              ],
+              "properties": {
+                "at": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "n": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "area": {
+                  "type": "number"
+                },
+                "src": {
+                  "type": "integer"
+                },
+                "ord": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "face_keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "at",
+                "n",
+                "area"
+              ],
+              "properties": {
+                "at": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "n": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "area": {
+                  "type": "number"
+                },
+                "src": {
+                  "type": "integer"
+                },
+                "ord": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "key": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "at",
+              "n",
+              "area"
+            ],
+            "properties": {
+              "at": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "n": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "area": {
+                "type": "number"
+              },
+              "src": {
+                "type": "integer"
+              },
+              "ord": {
+                "type": "integer"
+              }
+            }
+          },
+          "pressure": {
+            "type": "number",
+            "description": "Pressure in MPa"
+          },
+          "pressureMPa": {
+            "type": "number",
+            "description": "Alias for pressure (MPa)"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": null,
+      "example": {
+        "pressureMPa": 0.5,
+        "keys": [
+          {
+            "at": [
+              0,
+              0,
+              5
+            ],
+            "n": [
+              0,
+              0,
+              1
+            ],
+            "area": 400
+          }
+        ]
+      }
+    },
+    {
+      "name": "fea_remove_fixture",
+      "description": "Bridge command fea_remove_fixture.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "index"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-fea-remove",
+      "example": {
+        "index": 0
+      }
+    },
+    {
+      "name": "fea_remove_load",
+      "description": "Bridge command fea_remove_load.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "index"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-fea-remove",
+      "example": {
+        "index": 0
+      }
+    },
+    {
+      "name": "fea_run",
+      "description": "Bridge command fea_run.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-fea-run",
+      "example": {}
+    },
+    {
+      "name": "fea_cancel",
+      "description": "Bridge command fea_cancel.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-fea-cancel",
+      "example": {}
+    },
+    {
+      "name": "fea_back_to_setup",
+      "description": "Bridge command fea_back_to_setup.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-fea-back",
+      "example": {}
+    },
+    {
+      "name": "fea_state",
+      "description": "Bridge command fea_state.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "include": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "summary",
+                "results",
+                "probes"
+              ]
+            }
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": "data-fea-sheet",
+      "example": {
+        "include": [
+          "summary"
+        ]
+      }
+    },
+    {
+      "name": "fea_results",
+      "description": "Bridge command fea_results.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "include": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "probes"
+              ]
+            }
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": "data-fea-summary",
+      "example": {}
+    },
+    {
+      "name": "fea_pick",
+      "description": "Bridge command fea_pick.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "part_id": {
+            "type": "string",
+            "description": "Part id when the study scope includes multiple parts"
+          },
+          "face_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Manifold face id on the mesh"
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "at",
+                "n",
+                "area"
+              ],
+              "properties": {
+                "at": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "n": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "area": {
+                  "type": "number"
+                },
+                "src": {
+                  "type": "integer"
+                },
+                "ord": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "face_keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "at",
+                "n",
+                "area"
+              ],
+              "properties": {
+                "at": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "n": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "area": {
+                  "type": "number"
+                },
+                "src": {
+                  "type": "integer"
+                },
+                "ord": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "key": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "at",
+              "n",
+              "area"
+            ],
+            "properties": {
+              "at": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "n": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "area": {
+                "type": "number"
+              },
+              "src": {
+                "type": "integer"
+              },
+              "ord": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": null,
+      "example": {
+        "face_id": 2
+      }
     },
     {
       "name": "git_move_to_repo",

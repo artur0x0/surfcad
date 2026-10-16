@@ -28,6 +28,7 @@ export function FeaStudyHost({
   tapActionRef,
   toggleRef,
   closeRef,
+  panelRef,
 }) {
   const panel = useFeaStudy({
     enabled,
@@ -86,6 +87,14 @@ export function FeaStudyHost({
       tapActionRef.current = null;
     };
   }, [open, tapAction, tapActionRef]);
+
+  useEffect(() => {
+    if (!panelRef) return undefined;
+    panelRef.current = panel;
+    return () => {
+      panelRef.current = null;
+    };
+  }, [panel, panelRef]);
 
   if (!open || !enabled) return null;
   if (compact) return <FeaStudySheet panel={panel} />;

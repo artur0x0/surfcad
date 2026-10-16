@@ -239,6 +239,19 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `measure_pick` | `{ face_keys }`, `{ edge_keys }`, or `{ point: [x,y,z] }` | Toggle measure picks like canvas taps. |
 | `measure_clear` | `{}` | Clear picks, stay in Measure. |
 | `measure_state` | `{}` | Picks, unit, and `measureReadout` rows. |
+| `fea_open` | `{}` | Opens Analyze (`data-analyze-chip`). |
+| `fea_close` | `{}` | Closes Analyze without cancelling an in-flight solve. |
+| `fea_set_material` | `{ id }` | Library material id on the study. |
+| `fea_set_fixture` / `fea_fix` | `{ face_id }` or `{ keys }` | Fixed support on a face (`part_id` when scoped). |
+| `fea_set_force` | `{ magnitudeN, direction?, keys? }` | Force in **newtons**; direction token or `[x,y,z]`; optional face pick. Commits magnitude to existing loads. |
+| `fea_set_pressure` | `{ pressureMPa, keys? }` | Pressure in **MPa**; optional face pick. |
+| `fea_pick` | `{ part_id?, face_id }` or `{ keys }` | Apply the current fixture/force/pressure target on a face. |
+| `fea_remove_fixture` / `fea_remove_load` | `{ index }` | Remove by list index. |
+| `fea_run` | `{}` | Run TET10/modal solve; resolves with `{ status, stale, timing, maxVonMises_MPa, … }`. |
+| `fea_cancel` | `{}` | Abort the in-flight solve. |
+| `fea_back_to_setup` | `{}` | Results → setup (same as Back to Setup). |
+| `fea_state` | `{ include?: ["summary","probes"] }` | Open/screen/material/fixtures/loads draft. |
+| `fea_results` | `{ include?: ["probes"] }` | Compact results read (no mesh arrays). |
 | `sheet_open` | `{}` | Opens the Sheet Metal picker (`data-sheet-metal-button`). |
 | `sheet_start` | `{ sku }` or `{ material }` | Binds SendCutSend stock and enters sheet-metal mode (`data-sheet-metal-start`). |
 | `sheet_set_tool` | `{ tool: "tab"\|"bend"\|"hole"\|"countersink"\|"tapped" }` | Active tool on the sheet left rail. |

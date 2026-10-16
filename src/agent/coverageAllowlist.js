@@ -26,7 +26,6 @@ export const COVERAGE_ALLOWLIST = Object.freeze([
   Object.freeze({ id: 'data-contour-gesture-card', reason: 'H7 dimension/constraint card.' }),
   Object.freeze({ id: 'data-normal-to-sketch', reason: 'H3 normal_to_sketch.' }),
   Object.freeze({ id: 'data-overlay-toggle-contour', reason: 'H6 sketch overlay toggle.' }),
-  Object.freeze({ id: 'data-analyze-chip', reason: 'H13 analyze toggle (deferred).' }),
   Object.freeze({ id: 'data-axis-helper-toggle', reason: 'Viewport axis helper toggle.' }),
   Object.freeze({ id: 'data-cross-section-toggle', reason: 'H13 section plane toggle.' }),
   Object.freeze({ id: 'data-cross-section-expand', reason: 'H13 section options popup.' }),
