@@ -744,6 +744,38 @@ export const COMMAND_META = {
     errors: ['internal'],
     mutates: false,
   },
+  export_part: {
+    description: 'Export the active (or named) part mesh as STL, 3MF, or STEP bytes, or trigger a browser download.',
+    result: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        format: { type: 'string' },
+        filename: { type: 'string' },
+        bytesBase64: { type: 'string' },
+        byteLength: { type: 'integer' },
+        downloaded: { type: 'boolean' },
+        stepSource: { type: 'string' },
+      },
+    },
+    errors: ['bad_args', 'unknown_part', 'export_failed', 'internal'],
+    mutates: false,
+  },
+  export_download: {
+    description: 'Browser-download a part mesh (defaults to 3MF like the Parts ribbon Download button).',
+    result: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        format: { type: 'string' },
+        filename: { type: 'string' },
+        byteLength: { type: 'integer' },
+        downloaded: { type: 'boolean' },
+      },
+    },
+    errors: ['bad_args', 'unknown_part', 'export_failed', 'internal'],
+    mutates: false,
+  },
 };
 
 const INSERT_HELPER_META = {
