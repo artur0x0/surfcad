@@ -12780,6 +12780,128 @@
       "immediate": true,
       "uiEntry": "data-git-branches",
       "example": {}
+    },
+    {
+      "name": "export_part",
+      "description": "Export the active (or named) part mesh as STL, 3MF, or STEP bytes, or trigger a browser download.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "stl",
+              "3mf",
+              "step"
+            ],
+            "description": "Export encoding for the part mesh."
+          },
+          "part_id": {
+            "type": "string",
+            "description": "Part id; defaults to the active CAD part."
+          },
+          "download": {
+            "type": "boolean",
+            "description": "When true, trigger a browser download instead of returning bytes."
+          }
+        },
+        "required": [
+          "format"
+        ]
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "format": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "bytesBase64": {
+            "type": "string"
+          },
+          "byteLength": {
+            "type": "integer"
+          },
+          "downloaded": {
+            "type": "boolean"
+          },
+          "stepSource": {
+            "type": "string"
+          }
+        }
+      },
+      "errors": [
+        "bad_args",
+        "unknown_part",
+        "export_failed",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-part-download",
+      "example": {
+        "format": "3mf"
+      }
+    },
+    {
+      "name": "export_download",
+      "description": "Browser-download a part mesh (defaults to 3MF like the Parts ribbon Download button).",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "stl",
+              "3mf",
+              "step"
+            ],
+            "description": "Defaults to 3mf to match the Parts ribbon Download button."
+          },
+          "part_id": {
+            "type": "string"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "format": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "byteLength": {
+            "type": "integer"
+          },
+          "downloaded": {
+            "type": "boolean"
+          }
+        }
+      },
+      "errors": [
+        "bad_args",
+        "unknown_part",
+        "export_failed",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-part-download",
+      "example": {
+        "format": "3mf"
+      }
     }
   ]
 }

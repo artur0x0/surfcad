@@ -5,6 +5,7 @@ import { saveAs } from 'file-saver';
 import manifoldContext from './ManifoldWorker';
 import { export3MF, blobToBase64 } from './model-io';
 import { meshResolveError, resolvePartMeshes } from './meshAssets.js';
+import { meshToStl, meshTo3mfBytes, meshToStepBytes } from '../lib/surfcad/export.js';
 
 /**
  * Generate a 3MF blob from the current script
@@ -135,11 +136,84 @@ export async function downloadModelFromMesh(meshData, filename = 'model') {
   }
 }
 
+const EXPORT_FORMATS = new Set(['stl', '3mf', 'step']);
+
+function normalizeExportFormat(format) {
+  const kind = String(format || '').toLowerCase();
+  if (!EXPORT_FORMATS.has(kind)) {
+    throw new Error(`export format must be stl, 3mf, or step (got ${format})`);
+  }
+  return kind;
+}
+
+/**
+ * Mesh bytes for STL / 3MF / STEP (faceted STEP from mesh).
+ * @returns {{ bytes: Uint8Array, filename: string, byteLength: number, format: string, stepSource?: string }}
+ */
+export async function meshExportBytes(meshData, format, filename = 'part') {
+  const kind = normalizeExportFormat(format);
+  const stem = String(filename || 'part').replace(/\.(stl|3mf|step|stp)$/i, '') || 'part';
+  if (kind === 'stl') {
+    const bytes = meshToStl(meshData);
+    return {
+      bytes,
+      format: kind,
+      filename: `${stem}.stl`,
+      byteLength: bytes.length,
+    };
+  }
+  if (kind === '3mf') {
+    const bytes = await meshTo3mfBytes(meshData, { name: stem });
+    return {
+      bytes,
+      format: kind,
+      filename: `${stem}.3mf`,
+      byteLength: bytes.length,
+    };
+  }
+  const step = meshToStepBytes(meshData, { name: stem });
+  return {
+    bytes: step.bytes,
+    format: kind,
+    filename: `${stem}.step`,
+    byteLength: step.bytes.length,
+    stepSource: step.stepSource,
+  };
+}
+
+export async function meshExportBase64(meshData, format, filename = 'part') {
+  const pack = await meshExportBytes(meshData, format, filename);
+  const data = await blobToBase64(new Blob([pack.bytes]));
+  return {
+    format: pack.format,
+    filename: pack.filename,
+    bytesBase64: data,
+    byteLength: pack.byteLength,
+    ...(pack.stepSource ? { stepSource: pack.stepSource } : {}),
+  };
+}
+
+/** Browser download for any supported mesh export format. */
+export async function downloadMeshExport(meshData, format, filename = 'part') {
+  const pack = await meshExportBytes(meshData, format, filename);
+  saveAs(new Blob([pack.bytes]), pack.filename);
+  return {
+    format: pack.format,
+    filename: pack.filename,
+    byteLength: pack.byteLength,
+    downloaded: true,
+    ...(pack.stepSource ? { stepSource: pack.stepSource } : {}),
+  };
+}
+
 export default {
   generate3MFBlob,
   generate3MFBlobFromMesh,
   get3MFBase64,
   get3MFBase64FromMesh,
   downloadModel,
-  downloadModelFromMesh
+  downloadModelFromMesh,
+  meshExportBytes,
+  meshExportBase64,
+  downloadMeshExport,
 };

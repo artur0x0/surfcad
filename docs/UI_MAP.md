@@ -228,8 +228,10 @@ Desktop specifics:
 - **Parts feed:** the same list as the mobile Parts stage, mounted to the left
   of the editor (`data-parts-feed-placement="desktop-left"`). The ribbon's
   left cluster is folder, **+**, then Upload (`data-part-upload`) and
-  Download (`data-part-download`). Upload adds a new part from STL, OBJ,
-  3MF, or STEP. Download saves the selected part as 3MF. Each row's Order
+  Download (`data-part-download`, agent `export_part` / `export_download`).
+  Upload adds a new part from STL, OBJ,
+  3MF, or STEP. Download saves the selected part as 3MF (agent may also
+  request STL or STEP bytes). Each row's Order
   button (`data-part-order`) opens a quote for that part. Add to cart
   (`data-quote-add`) stores the locked options, server unit price, and
   script hash, then the thumbnail flies. A signed-in row

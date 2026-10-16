@@ -1684,6 +1684,7 @@ const PartFeed = forwardRef(function PartFeed({
             className={`${STRIP_BTN} disabled:opacity-50`}
             data-part-download=""
             data-script-download=""
+            data-ui-action="data-part-download"
             title="Download the selected part as 3MF"
             aria-label="Download part"
             disabled={isDownloading}

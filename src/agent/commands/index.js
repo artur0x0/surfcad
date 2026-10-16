@@ -139,6 +139,7 @@ import {
   measureClearCommand,
   measureStateCommand,
 } from './measure.js';
+import { exportPartCommand, exportDownloadCommand } from './export.js';
 
 const HELPER_COMMANDS = buildHelperPaletteCommands();
 
@@ -155,6 +156,7 @@ const HELPER_COMMANDS = buildHelperPaletteCommands();
  * H12 git ribbon commands follow H11.
  * H14 sheet-metal flow follows H12.
  * H13 measure and paint follow H14.
+ * H16 export (STL/3MF/STEP) follows H13.
  */
 export const V1_COMMANDS = Object.freeze([
   getScriptCommand,
@@ -278,6 +280,8 @@ export const V1_COMMANDS = Object.freeze([
   gitBranchDeleteCommand,
   gitForceOverwriteCommand,
   gitListBranchesCommand,
+  exportPartCommand,
+  exportDownloadCommand,
 ]);
 
 export const v1Registry = defineCommands(V1_COMMANDS);
