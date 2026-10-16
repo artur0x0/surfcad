@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useLayoutEffect } from 'react';
 import { FeaStudyChip } from './FeaStudyChip';
 import { FeaStudySheet } from './FeaStudySheet';
 import { useFeaStudy } from '../../fea/useFeaStudy.js';
@@ -88,7 +88,7 @@ export function FeaStudyHost({
     };
   }, [open, tapAction, tapActionRef]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!panelRef) return undefined;
     panelRef.current = panel;
     return () => {

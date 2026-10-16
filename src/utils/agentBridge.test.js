@@ -542,7 +542,7 @@ test('list_commands does not wait for a queued mutation', async () => {
   assert.equal(listed.ok, true);
   assert.equal(listed.result.commands[0].name, 'get_script');
   assert.equal(listed.result.commands.find((row) => row.name === 'list_commands')?.name, 'list_commands');
-  assert.equal(listed.result.commands.at(-1).name, 'git_list_branches');
+  assert.equal(listed.result.commands.at(-1).name, 'export_download');
   release();
   await pending;
 });

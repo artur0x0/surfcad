@@ -413,6 +413,7 @@ export function createSurfcadBridge(hostSource) {
     agentOpenAssembly: (args) => hostFn('agentOpenAssembly')?.(args),
     agentOpenPart: (args) => hostFn('agentOpenPart')?.(args),
     agentInsertAssemblyParts: (args) => hostFn('agentInsertAssemblyParts')?.(args),
+    agentExportPart: (args) => hostFn('agentExportPart')?.(args),
     agentGitMoveToRepo: (args) => hostFn('agentGitMoveToRepo')?.(args),
     agentGitSave: (args) => hostFn('agentGitSave')?.(args),
     agentGitAddToRepo: (args) => hostFn('agentGitAddToRepo')?.(args),

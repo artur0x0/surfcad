@@ -246,14 +246,33 @@ jobs:
             echo "agent bridge h15 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_fea.mjs | tee "${RUNNER_TEMP}/agent-bridge-fea.log"
-          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-fea.log"; then
-            echo "agent bridge fea golden skipped because Chrome was not found; CI must launch it"
+          node scripts/golden/smoke_agent_bridge_h16.mjs | tee "${RUNNER_TEMP}/agent-bridge-h16.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h16.log"; then
+            echo "agent bridge h16 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
           node scripts/golden/smoke_agent_git_consent.mjs | tee "${RUNNER_TEMP}/agent-git-consent.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-git-consent.log"; then
             echo "agent git consent golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+
+      - name: Agent bridge FEA golden
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          GOLDEN_SHOT_DIR: ${{ runner.temp }}/agent-bridge-fea
+        run: |
+          test -n "$CHROME_PATH"
+          test -x "$CHROME_PATH"
+          test -n "$GOLDEN_SHOT_DIR"
+          mkdir -p "$GOLDEN_SHOT_DIR"
+          node scripts/golden/smoke_agent_bridge_fea.mjs | tee "${RUNNER_TEMP}/agent-bridge-fea.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-fea.log"; then
+            echo "agent bridge fea golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'agent bridge fea: all checks passed' "${RUNNER_TEMP}/agent-bridge-fea.log"; then
+            echo "agent bridge fea golden did not pass (see log above)"
             exit 1
           fi
 

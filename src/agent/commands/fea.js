@@ -28,7 +28,7 @@ const FACE_PICK_SCHEMA = Object.freeze({
   },
 });
 
-const SI_NOTE = 'SI units: force in newtons (N), pressure in megapascals (MPa), regardless of the UI display-unit toggle.';
+const UNITS_NOTE = 'Force in newtons (N) and pressure in megapascals (MPa), regardless of the display-unit toggle.';
 
 export const feaOpenCommand = Object.freeze({
   name: 'fea_open',
@@ -87,7 +87,7 @@ export const feaSetTargetCommand = Object.freeze({
 
 export const feaSetFixtureCommand = Object.freeze({
   name: 'fea_set_fixture',
-  description: `Apply a fixed support on a face. ${SI_NOTE}`,
+  description: `Apply a fixed support on a face. ${UNITS_NOTE}`,
   schema: FACE_PICK_SCHEMA,
   example: { keys: [{ at: [0, 0, -5], n: [0, 0, -1], area: 400 }] },
   checkArgs(args) {
@@ -115,7 +115,7 @@ export const feaFixCommand = Object.freeze({
 
 export const feaSetForceCommand = Object.freeze({
   name: 'fea_set_force',
-  description: `Set force magnitude/direction (commits to the study) and optionally pick a face. ${SI_NOTE}`,
+  description: `Set force magnitude/direction (commits to the study) and optionally pick a face. ${UNITS_NOTE}`,
   uiEntry: 'data-fea-target',
   schema: Object.freeze({
     type: 'object',
@@ -140,7 +140,7 @@ export const feaSetForceCommand = Object.freeze({
 
 export const feaSetPressureCommand = Object.freeze({
   name: 'fea_set_pressure',
-  description: `Set pressure (commits to the study) and optionally pick a face. ${SI_NOTE}`,
+  description: `Set pressure (commits to the study) and optionally pick a face. ${UNITS_NOTE}`,
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,
@@ -193,7 +193,7 @@ export const feaRemoveLoadCommand = Object.freeze({
 export const feaRunCommand = Object.freeze({
   name: 'fea_run',
   uiEntry: 'data-fea-run',
-  description: 'Run the study; resolves when the solver finishes or errors.',
+  description: 'Run the study; resolves when the solver finishes with status, dof, stresses (MPa), and maxDisplacement_m.',
   schema: NO_ARGS_SCHEMA,
   example: {},
   async run(ctx) {
@@ -244,7 +244,7 @@ export const feaStateCommand = Object.freeze({
 export const feaResultsCommand = Object.freeze({
   name: 'fea_results',
   uiEntry: 'data-fea-summary',
-  description: 'Read compact von Mises / displacement / safety / modal / contact summary (no mesh arrays).',
+  description: 'Read compact von Mises (MPa), maxDisplacement_m, safety, modal, and contact summary (no mesh arrays).',
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,

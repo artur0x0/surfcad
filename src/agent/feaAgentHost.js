@@ -15,19 +15,23 @@ function summarizeResult(panel) {
   const status = report?.status === 'done'
     ? 'done'
     : (report?.status === 'stopped' ? (report?.outcome || 'stopped') : (panel?.running ? 'running' : (report?.status || 'idle')));
+  const dof = report?.dofs ?? result?.stats?.dofs ?? null;
   const timing = {
     ms: result?.stats?.ms ?? null,
-    dofs: report?.dofs ?? result?.stats?.dofs ?? null,
+    dofs: dof,
     stage: report?.stage || null,
   };
+  const dispMm = result?.displacementMax;
+  const maxDisplacement_m = (typeof dispMm === 'number' && Number.isFinite(dispMm)) ? dispMm / 1000 : null;
   const summary = {
     status,
     stale: result?.stale === true,
+    dof,
     timing,
     source: result?.source || null,
     maxVonMises_MPa: result?.max ?? null,
     p95VonMises_MPa: result?.p95 ?? null,
-    maxDisplacement_mm: result?.displacementMax ?? null,
+    maxDisplacement_m,
     safetyFactor: result?.safetyFactor ?? null,
     frequenciesHz: Array.isArray(result?.frequenciesHz) ? result.frequenciesHz.slice(0, 8) : null,
     contact: result?.contactActive ? {
@@ -115,11 +119,11 @@ export function createFeaAgentHandlers(deps) {
   }
 
   function facePickFromArgs(panel, args = {}) {
-    const partId = args.part_id ?? args.partId ?? null;
-    const off = assertStudyPart(panel, partId);
-    if (off) return off;
-    const ctx = meshContext(partId);
+    const rawPartId = args.part_id ?? args.partId ?? null;
+    const ctx = meshContext(rawPartId);
     if (ctx.error) return ctx;
+    const off = assertStudyPart(panel, ctx.partId);
+    if (off) return off;
     let indices = null;
     let normal = null;
     const faceId = args.face_id ?? args.faceID;
@@ -225,7 +229,7 @@ export function createFeaAgentHandlers(deps) {
       if (req.error) return req;
       const value = magnitudeN ?? magnitude;
       if (!(typeof value === 'number' && Number.isFinite(value))) {
-        return { error: { code: 'bad_args', message: 'magnitudeN must be a finite number (newtons, SI)' } };
+        return { error: { code: 'bad_args', message: 'magnitudeN must be a finite number (newtons, N)' } };
       }
       req.panel.setMagnitude(value);
       return { result: { magnitudeN: value } };
@@ -250,7 +254,7 @@ export function createFeaAgentHandlers(deps) {
       if (req.error) return req;
       const value = pressureMPa ?? pressure;
       if (!(typeof value === 'number' && Number.isFinite(value))) {
-        return { error: { code: 'bad_args', message: 'pressureMPa must be a finite number (MPa, SI)' } };
+        return { error: { code: 'bad_args', message: 'pressureMPa must be a finite number (MPa)' } };
       }
       req.panel.setPressure(value);
       return { result: { pressureMPa: value } };
@@ -386,10 +390,17 @@ export function createFeaAgentHandlers(deps) {
         const live = deps.panelRef?.current;
         if (!live) break;
         const reportStatus = live.runReport?.status;
-        if (!live.running && (reportStatus === 'done' || reportStatus === 'stopped' || reportStatus === 'idle')) {
-          break;
+        const runFinished = !live.running
+          && (reportStatus === 'done' || reportStatus === 'stopped' || reportStatus === 'idle');
+        if (!runFinished) {
+          await sleep(RUN_POLL_MS);
+          continue;
         }
-        await sleep(RUN_POLL_MS);
+        if (reportStatus === 'done' && live.result?.source === 'tet10' && live.result?.stats == null) {
+          await sleep(RUN_POLL_MS);
+          continue;
+        }
+        break;
       }
       const panel = deps.panelRef?.current;
       if (panel?.running) {

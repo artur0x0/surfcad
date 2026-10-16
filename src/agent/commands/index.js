@@ -155,6 +155,7 @@ import {
   feaResultsCommand,
   feaPickCommand,
 } from './fea.js';
+import { exportPartCommand, exportDownloadCommand } from './export.js';
 
 const HELPER_COMMANDS = buildHelperPaletteCommands();
 
@@ -171,7 +172,7 @@ const HELPER_COMMANDS = buildHelperPaletteCommands();
  * H12 git ribbon commands follow H11.
  * H14 sheet-metal flow follows H12.
  * H13 measure and paint follow H14.
- * FEA study bridge follows H13.
+ * FEA study bridge and H16 export (STL/3MF/STEP) follow H13.
  */
 export const V1_COMMANDS = Object.freeze([
   getScriptCommand,
@@ -309,6 +310,8 @@ export const V1_COMMANDS = Object.freeze([
   gitBranchDeleteCommand,
   gitForceOverwriteCommand,
   gitListBranchesCommand,
+  exportPartCommand,
+  exportDownloadCommand,
 ]);
 
 export const v1Registry = defineCommands(V1_COMMANDS);

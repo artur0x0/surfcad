@@ -46,7 +46,11 @@ import CheckoutPage from './components/checkout/CheckoutPage';
 import { 
   importFile,
 } from './utils/importModel';
-import { downloadModelFromMesh } from './utils/exportModel';
+import {
+  downloadMeshExport,
+  downloadModelFromMesh,
+  meshExportBase64,
+} from './utils/exportModel';
 import { encodeMesh } from './utils/meshFormat';
 import {
   checkRawUpload,
@@ -7728,56 +7732,75 @@ const App = () => {
     }
   };
 
-  const handleDownloadPart = async () => {
+  const resolveActivePartExportMesh = async (partIdHint = null) => {
     const doc = assemblyRef.current;
-    const id = cadPartIdRef.current || doc?.activeId;
+    const id = partIdHint || cadPartIdRef.current || doc?.activeId;
     const part = doc?.parts?.find((row) => row.id === id) || null;
+    if (partIdHint && !part) {
+      return { error: { code: 'unknown_part', message: `Unknown part id: ${partIdHint}` } };
+    }
     const run = id ? partRunsRef.current?.[id] : null;
     const leftover = id ? partLeftoversRef.current?.[id] : null;
     let decision = selectedPartDownload({ part, run, leftover });
     if (!decision.ok && !decision.needsRun) {
-      setUploadNotice(null);
-      setUploadError(decision.message);
-      return;
+      return { error: { code: 'export_failed', message: decision.message } };
     }
+    if (!decision.ok) {
+      const scripts = { ...partScriptsRef.current };
+      const live = codeEditorRef.current?.getContent?.();
+      if (id === doc?.activeId && !suppressPartSaveRef.current && typeof live === 'string') {
+        scripts[id] = live;
+      }
+      const result = await runAssemblyParts({
+        doc,
+        scripts,
+        ids: [id],
+        execute: (script, execOpts) => {
+          const anchor = rollbackAnchorsRef.current[String(execOpts?.partId || '')];
+          if ((anchor === null || typeof anchor === 'string') && rollbackClearsPart(script, anchor)) {
+            return { ok: true, cleared: true };
+          }
+          return manifoldContext.executeScript(script, {
+            timeoutMs: 30000,
+            importedModels: execOpts?.importedModels,
+            ...(anchor === null || typeof anchor === 'string' ? { rollbackAnchor: anchor } : {}),
+          });
+        },
+      });
+      const ran = result.runs?.[id];
+      if (ran?.ok && ran.mesh?.vertProperties) {
+        partLeftoversRef.current[id] = ran.mesh;
+        decision = { ok: true, mesh: ran.mesh, filename: decision.filename || part?.name };
+      } else {
+        const why = ran?.error && ran.error !== 'failed' && ran.error !== 'missing'
+          ? ran.error
+          : (decision.message || 'No model to export');
+        return {
+          error: {
+            code: 'export_failed',
+            message: part ? `${part.name} failed: ${why}` : why,
+          },
+        };
+      }
+    }
+    return {
+      mesh: decision.mesh,
+      filename: decision.filename || part?.name || 'part',
+      partId: id,
+    };
+  };
+
+  const handleDownloadPart = async () => {
     setIsDownloading(true);
     setUploadError(null);
+    setUploadNotice(null);
     try {
-      if (!decision.ok) {
-        const scripts = { ...partScriptsRef.current };
-        const live = codeEditorRef.current?.getContent?.();
-        if (id === doc.activeId && !suppressPartSaveRef.current && typeof live === 'string') {
-          scripts[id] = live;
-        }
-        const result = await runAssemblyParts({
-          doc,
-          scripts,
-          ids: [id],
-          execute: (script, execOpts) => {
-            const anchor = rollbackAnchorsRef.current[String(execOpts?.partId || '')];
-            if ((anchor === null || typeof anchor === 'string') && rollbackClearsPart(script, anchor)) {
-              return { ok: true, cleared: true };
-            }
-            return manifoldContext.executeScript(script, {
-              timeoutMs: 30000,
-              importedModels: execOpts?.importedModels,
-              ...(anchor === null || typeof anchor === 'string' ? { rollbackAnchor: anchor } : {}),
-            });
-          },
-        });
-        const ran = result.runs?.[id];
-        if (ran?.ok && ran.mesh?.vertProperties) {
-          partLeftoversRef.current[id] = ran.mesh;
-          decision = { ok: true, mesh: ran.mesh, filename: decision.filename || part.name };
-        } else {
-          const why = ran?.error && ran.error !== 'failed' && ran.error !== 'missing'
-            ? ran.error
-            : (decision.message || 'No model to export');
-          setUploadError(part ? `${part.name} failed: ${why}` : why);
-          return;
-        }
+      const resolved = await resolveActivePartExportMesh();
+      if (resolved.error) {
+        setUploadError(resolved.error.message);
+        return;
       }
-      await downloadModelFromMesh(decision.mesh, decision.filename || part.name || 'part');
+      await downloadModelFromMesh(resolved.mesh, resolved.filename);
     } catch (error) {
       setUploadError(error?.message || 'Could not download part');
     } finally {
@@ -7900,6 +7923,42 @@ const App = () => {
       applyAgentContourRollback(prep.placement);
       if (prep.runSubtract) {
         crossPartSubtract(prep.runSubtract, codeEditorRef.current?.getContent?.() ?? '');
+      }
+    },
+    async agentExportPart({ format, part_id: partId, download } = {}) {
+      const kind = String(format || '').toLowerCase();
+      if (!['stl', '3mf', 'step'].includes(kind)) {
+        return { error: { code: 'bad_args', message: 'export_part needs format stl, 3mf, or step' } };
+      }
+      const resolved = await resolveActivePartExportMesh(
+        typeof partId === 'string' && partId ? partId : null,
+      );
+      if (resolved.error) return resolved;
+      const stem = resolved.filename || 'part';
+      try {
+        if (download === true) {
+          if (kind === '3mf') {
+            await downloadModelFromMesh(resolved.mesh, stem);
+            return {
+              result: {
+                format: kind,
+                filename: `${stem.replace(/\.(stl|3mf|step|stp)$/i, '') || 'part'}.3mf`,
+                downloaded: true,
+              },
+            };
+          }
+          const out = await downloadMeshExport(resolved.mesh, kind, stem);
+          return { result: out };
+        }
+        const out = await meshExportBase64(resolved.mesh, kind, stem);
+        return { result: out };
+      } catch (err) {
+        return {
+          error: {
+            code: 'export_failed',
+            message: err?.message || 'Could not export part',
+          },
+        };
       }
     },
   });

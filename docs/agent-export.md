@@ -247,7 +247,7 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `fea_set_pressure` | `{ pressureMPa, keys? }` | Pressure in **MPa**; optional face pick. |
 | `fea_pick` | `{ part_id?, face_id }` or `{ keys }` | Apply the current fixture/force/pressure target on a face. |
 | `fea_remove_fixture` / `fea_remove_load` | `{ index }` | Remove by list index. |
-| `fea_run` | `{}` | Run TET10/modal solve; resolves with `{ status, stale, timing, maxVonMises_MPa, … }`. |
+| `fea_run` | `{}` | Run TET10/modal solve; resolves with `{ status, stale, dof, timing, maxVonMises_MPa, maxDisplacement_m, … }`. |
 | `fea_cancel` | `{}` | Abort the in-flight solve. |
 | `fea_back_to_setup` | `{}` | Results → setup (same as Back to Setup). |
 | `fea_state` | `{ include?: ["summary","probes"] }` | Open/screen/material/fixtures/loads draft. |
@@ -274,6 +274,8 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `git_branch_delete` | `{ branch, confirm: true }` | Delete a branch ref (not `main`, not current). |
 | `git_force_overwrite` | `{ confirm: true }` | Conflict popup → Overwrite main (`handleOverwriteMain`). |
 | `git_list_branches` | `{}` | `{ branches, branch }` from `handleListBranches` (immediate). Read-only: allowed even when the real GitHub adapter is active. |
+| `export_part` | `{ format: "stl"\|"3mf"\|"step", part_id?, download? }` | Part mesh export. Default `part_id` is the active CAD part. `download: false` (default) returns `{ format, filename, bytesBase64, byteLength }`; `download: true` saves in the browser (`3mf` matches the ribbon Download writer). Resolves mesh like `selectedPartDownload` and runs the part when needed. No undo step. |
+| `export_download` | `{ format?: "stl"\|"3mf"\|"step", part_id? }` | Same as `export_part` with `download: true`; format defaults to `3mf`. `uiEntry` `data-part-download`. |
 
 **Real vault guard.** If the live adapter is GitHub (`kind: real`, e.g. a token in storage), the first agent git **write** in a tab opens a consent modal (`data-agent-git-consent-allow` / `data-agent-git-consent-deny`) naming the command and `owner/repo/branch`, e.g. “An agent wants to save to *acme/widgets/main*. Allow agent writes to your GitHub repos for this session?”. **Allow for this session** sets session opt-in and runs the pending command; **Deny** or dismiss sets a session deny flag, returns `real_repo_blocked` with a clear decline message, and does not show the modal again that session. Opt-in also works via URL `?agentGit=real`, localStorage `surfcadAgentGitReal` = `1`, or sessionStorage `surfcadAgentGitRealSession` = `1` after Allow. Headless / playtest / automation (`navigator.webdriver`) never waits on the modal: writes return `real_repo_blocked` immediately with `error.details.reason` `consent_pending`. After a deny, `details.reason` is `consent_declined`. UI Save / branch flows are unaffected.
 

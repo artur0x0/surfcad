@@ -23,13 +23,14 @@ const CHROME_CANDIDATES = [
   '/usr/bin/chromium',
 ].filter(Boolean);
 
+const PART_ID = 'local:part1';
 const ASSEMBLY = {
   format: 'surfcad.assembly',
   v: 1,
   name: 'agent-fea',
-  activeId: 'local:part1',
+  activeId: PART_ID,
   source: 'git',
-  parts: [{ id: 'local:part1', name: 'Beam', visible: true }],
+  parts: [{ id: PART_ID, name: 'Beam', visible: true }],
   joints: [],
 };
 
@@ -75,7 +76,10 @@ async function waitForServer(timeoutMs = 40000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     try {
-      const res = await fetch(`http://127.0.0.1:${PORT}/`);
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 3000);
+      const res = await fetch(`http://127.0.0.1:${PORT}/`, { signal: ctrl.signal });
+      clearTimeout(timer);
       if (res.ok) return true;
     } catch { /* not up */ }
     await new Promise((r) => setTimeout(r, 250));
@@ -86,6 +90,12 @@ async function waitForServer(timeoutMs = 40000) {
 async function seedAssembly(page) {
   await page.evaluate(async ({ doc, script }) => {
     localStorage.setItem('surfcadAgent', '1');
+    localStorage.setItem('surfcad.github.tokenBundle', JSON.stringify({
+      accessToken: 'ghu_agent_fea',
+      refreshToken: '',
+      expiresAt: Date.now() + 86_400_000,
+      refreshExpiresAt: 0,
+    }));
     localStorage.setItem('surfcad.lastAssembly', JSON.stringify({
       'user-agent-fea': {
         name: doc.name,
@@ -112,7 +122,7 @@ async function seedAssembly(page) {
         const db = req.result;
         const tx = db.transaction(['assembly', 'parts'], 'readwrite');
         tx.objectStore('assembly').put(doc, 'current');
-        tx.objectStore('parts').put({ id: 'local:part1', script, savedAt: Date.now() }, 'local:part1');
+        tx.objectStore('parts').put({ id: PART_ID, script, savedAt: Date.now() }, PART_ID);
         tx.oncomplete = () => { db.close(); resolve(); };
         tx.onerror = () => reject(tx.error);
       };
@@ -167,10 +177,9 @@ await seedAssembly(page);
 await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
 
 await page.waitForFunction(
-  () => typeof window.surfcad?.call === 'function' && !document.querySelector('[data-app-loading]'),
+  () => typeof window.surfcad?.call === 'function',
   { timeout: 120000 },
 );
-await page.waitForSelector('[data-cad-run]', { state: 'attached', timeout: 120000 });
 await page.waitForTimeout(600);
 
 const ran = await agentCall(page, 'run', {});
@@ -188,12 +197,14 @@ check('fea_set_material', mat.ok === true, JSON.stringify(mat));
 
 const faces = await agentCall(page, 'list_faces', {});
 const list = faces.result?.faces || [];
-const xs = list.map((row) => row.center?.[0] ?? 0);
-const minX = Math.min(...xs);
-const maxX = Math.max(...xs);
-const fixFace = list.find((row) => Math.abs((row.center?.[0] ?? 0) - minX) < 0.05);
-const loadFace = list.find((row) => Math.abs((row.center?.[0] ?? 0) - maxX) < 0.05);
-check('list_faces fix/load', !!fixFace?.key && !!loadFace?.key, JSON.stringify({ n: list.length }));
+const norm = (row) => row.normal || row.key?.n || row.n || [];
+// Clamp the −Y bottom face and apply −Z force on the +Y top (list_faces omits some caps).
+const fixFace = list.find((row) => norm(row)[1] < -0.9)
+  || list.find((row) => (row.center?.[1] ?? 99) < 1);
+const loadFace = list.find((row) => norm(row)[1] > 0.9)
+  || list.find((row) => (row.center?.[1] ?? 0) > 9);
+check('list_faces fix/load', !!fixFace?.key && !!loadFace?.key && fixFace.key !== loadFace.key,
+  JSON.stringify({ n: list.length, fix: fixFace?.key, load: loadFace?.key }));
 
 const fix = await agentCall(page, 'fea_set_fixture', { keys: [fixFace.key] });
 check('fea_set_fixture', fix.ok === true, JSON.stringify(fix));
@@ -206,6 +217,8 @@ await page.waitForSelector('[data-fea-load-count="1"]', { timeout: 15000 });
 
 const run1 = await agentCall(page, 'fea_run', {}, 240_000);
 check('fea_run first', run1.ok === true && run1.result?.status === 'done', JSON.stringify(run1.result));
+check('fea_run reports dof', Number.isFinite(run1.result?.dof) && run1.result.dof > 0,
+  JSON.stringify({ dof: run1.result?.dof }));
 await page.waitForFunction(() => {
   const raw = document.querySelector('[data-fea-stress]')?.textContent || '';
   const n = parseFloat(raw.replace(/[^0-9.eE+-]/g, ''));
@@ -223,14 +236,14 @@ check('magnitude write updates study script', scriptAfter.ok === true
 
 const run2 = await agentCall(page, 'fea_run', {}, 240_000);
 check('fea_run second', run2.ok === true && run2.result?.status === 'done', JSON.stringify(run2.result));
-const changed = (run2.result?.maxVonMises_MPa != null && run1.result?.maxVonMises_MPa != null
-  && run2.result.maxVonMises_MPa !== run1.result.maxVonMises_MPa)
-  || (run2.result?.maxDisplacement_mm != null && run1.result?.maxDisplacement_mm != null
-    && run2.result.maxDisplacement_mm !== run1.result.maxDisplacement_mm)
-  || (run2.result?.timing?.ms != null && run1.result?.timing?.ms != null
-    && run2.result.timing.ms !== run1.result.timing.ms);
-check('re-run after committed load change', changed === true,
-  JSON.stringify({ run1: run1.result, run2: run2.result }));
+const max1 = run1.result?.maxVonMises_MPa;
+const max2 = run2.result?.maxVonMises_MPa;
+const stressRatio = (typeof max1 === 'number' && max1 > 0 && typeof max2 === 'number')
+  ? max2 / max1
+  : NaN;
+check('peak von Mises roughly doubles when load doubles',
+  Number.isFinite(stressRatio) && stressRatio >= 1.8 && stressRatio <= 2.2,
+  JSON.stringify({ max1, max2, stressRatio }));
 
 const results = await agentCall(page, 'fea_results', {});
 check('fea_results summary', results.ok === true && Number.isFinite(results.result?.maxVonMises_MPa),

@@ -744,6 +744,81 @@ export const COMMAND_META = {
     errors: ['internal'],
     mutates: false,
   },
+  fea_run: {
+    description: 'Run the FEA study; resolves when the solver finishes with a compact results summary.',
+    result: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        status: { type: 'string' },
+        stale: { type: 'boolean' },
+        dof: { type: ['integer', 'null'], description: 'Solver degrees of freedom' },
+        timing: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ms: { type: ['number', 'null'] },
+            dofs: { type: ['integer', 'null'] },
+            stage: { type: ['string', 'null'] },
+          },
+        },
+        maxVonMises_MPa: { type: ['number', 'null'] },
+        p95VonMises_MPa: { type: ['number', 'null'] },
+        maxDisplacement_m: { type: ['number', 'null'], description: 'Peak displacement in metres' },
+        safetyFactor: { type: ['number', 'null'] },
+      },
+    },
+    errors: ['no_fea', 'busy', 'run_failed', 'timeout', 'internal'],
+    mutates: false,
+  },
+  fea_results: {
+    description: 'Read compact von Mises, displacement (m), safety, modal, and contact summary.',
+    result: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        status: { type: 'string' },
+        dof: { type: ['integer', 'null'] },
+        maxVonMises_MPa: { type: ['number', 'null'] },
+        maxDisplacement_m: { type: ['number', 'null'] },
+        screen: { type: 'string' },
+      },
+    },
+    errors: ['no_fea', 'internal'],
+    mutates: false,
+  },
+  export_part: {
+    description: 'Export the active (or named) part mesh as STL, 3MF, or STEP bytes, or trigger a browser download.',
+    result: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        format: { type: 'string' },
+        filename: { type: 'string' },
+        bytesBase64: { type: 'string' },
+        byteLength: { type: 'integer' },
+        downloaded: { type: 'boolean' },
+        stepSource: { type: 'string' },
+      },
+    },
+    errors: ['bad_args', 'unknown_part', 'export_failed', 'internal'],
+    mutates: false,
+  },
+  export_download: {
+    description: 'Browser-download a part mesh (defaults to 3MF like the Parts ribbon Download button).',
+    result: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        format: { type: 'string' },
+        filename: { type: 'string' },
+        byteLength: { type: 'integer' },
+        downloaded: { type: 'boolean' },
+      },
+    },
+    errors: ['bad_args', 'unknown_part', 'export_failed', 'internal'],
+    mutates: false,
+  },
 };
 
 const INSERT_HELPER_META = {
