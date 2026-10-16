@@ -72,3 +72,7 @@ packages/surfcad-mesh/pkg-rebuild/
 
 # Puzzle win capture (Slice 04)
 backend/data/wins.jsonl
+
+# Bug hunter output (see docs/playtest.md)
+reports/bug-hunter/*
+!reports/bug-hunter/.gitkeep

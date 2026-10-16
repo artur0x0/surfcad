@@ -33,6 +33,8 @@
         "playtest": "npm run build:playtest && node scripts/playtest/run.mjs",
         "playtest:visible": "npm run build && AGENT_VISIBLE=1 node scripts/playtest/run.mjs --scenario bracket-holes-fillet",
         "playtest:replay": "node scripts/playtest/replay.mjs",
+        "bug-hunter": "npm run build:playtest && node scripts/bug-hunter/run.mjs",
+        "bug-hunter:seeds": "npm run build:playtest && node scripts/bug-hunter/run.mjs -- --seeds-only",
         "agent-bridge:client": "node scripts/agent-bridge-ws-client.mjs",
         "demo:mcp": "node scripts/demo/mcp-demo.mjs",
         "golden:mcp-demo": "node scripts/golden/smoke_mcp_demo.mjs",
