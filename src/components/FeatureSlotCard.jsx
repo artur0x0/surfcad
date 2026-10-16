@@ -9,6 +9,7 @@ import {
 } from '../utils/featureSlotCard';
 
 const ACCENT = 'cyan';
+const UI_ACTION = 'data-feature-slot-card';
 
 function ContourSlot({
   role,
@@ -48,6 +49,7 @@ function ContourSlot({
               <button
                 key={row.id}
                 type="button"
+                data-ui-action={UI_ACTION}
                 role="option"
                 aria-selected={on}
                 data-slot-pick={row.id}
@@ -83,6 +85,7 @@ function ContourSlot({
       )}
       <button
         type="button"
+        data-ui-action={UI_ACTION}
         data-new-contour=""
         data-new-contour-role={role}
         data-new-contour-index={index}
@@ -116,6 +119,7 @@ function SenseRow({ value, onChange, attr, label = 'Sense' }) {
             <button
               key={opt.id}
               type="button"
+              data-ui-action={UI_ACTION}
               onClick={() => onChange?.(opt.id)}
               className={`flex-1 px-2 py-1 text-[13px] ${
                 active ? 'bg-cyan-600 text-white' : 'bg-cyan-950/80 text-cyan-100'
@@ -203,6 +207,7 @@ const FeatureSlotCard = ({
                 <button
                   key={opt.id}
                   type="button"
+                  data-ui-action={UI_ACTION}
                   onClick={() => onCombine?.(opt.id)}
                   aria-pressed={on}
                   data-contour-combine={opt.id}
@@ -394,6 +399,7 @@ const FeatureSlotCard = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
+              data-ui-action={UI_ACTION}
               onClick={() => onAddStation?.()}
               disabled={card.stations.length >= 8}
               className="px-2.5 py-1 rounded text-[13px] bg-cyan-950/80 text-cyan-100 border border-cyan-700/70 disabled:opacity-40"
@@ -403,6 +409,7 @@ const FeatureSlotCard = ({
             {card.stations.length > 2 && (
               <button
                 type="button"
+                data-ui-action={UI_ACTION}
                 onClick={() => onRemoveStation?.(card.stations.length - 1)}
                 className="px-2.5 py-1 rounded text-[13px] text-cyan-200 underline"
               >

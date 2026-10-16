@@ -430,6 +430,7 @@ const handleButtonClick = () => {
           title="Zoom to Fit"
           aria-label="Zoom to Fit"
           data-zoom-to-fit=""
+          data-ui-action="data-zoom-to-fit"
         >
           <Maximize2 size={20} />
         </button>
@@ -437,6 +438,7 @@ const handleButtonClick = () => {
           onClick={onAxisHelperToggle}
           className={`p-2 rounded ${axisHelperEnabled ? 'text-green-600 bg-green-100' : 'text-blue-600'} hover:bg-gray-100`}
           title={axisHelperEnabled ? 'Hide Axis Helper' : 'Show Axis Helper'}
+          data-ui-action="data-axis-helper-toggle"
         >
           <Move3d size={20} />
         </button>
@@ -449,6 +451,7 @@ const handleButtonClick = () => {
           aria-pressed={!!measurementEnabled}
           data-measure-toggle=""
           data-measure-toggle-state={measurementEnabled ? 'on' : 'off'}
+          data-ui-action="data-measure-toggle"
         >
           <Ruler size={20} />
         </button>
@@ -458,6 +461,7 @@ const handleButtonClick = () => {
           title="Dismiss — turn off cross section"
           aria-label="Dismiss cross section"
           data-cross-section-dismiss=""
+          data-ui-action="data-cross-section-toggle"
         >
           <X size={20} />
         </button>
@@ -467,6 +471,7 @@ const handleButtonClick = () => {
           className="p-2 rounded hover:bg-gray-100 text-green-600"
           title="Done — close cross-section options"
           aria-label="Done, close cross-section options"
+          data-ui-action="data-cross-section-expand"
         >
           <Check size={20} />
         </button>
@@ -483,6 +488,7 @@ const handleButtonClick = () => {
               <button
                 key={key}
                 onClick={() => handlePresetChange(key)}
+                data-ui-action="data-cross-section-plane"
                 className={`px-3 py-2 rounded text-xs font-medium transition-colors ${
                   planeType === key
                     ? 'bg-blue-600 text-white'
@@ -524,6 +530,7 @@ const handleButtonClick = () => {
             <button
               onClick={() => handleOffsetChange(offsetRange.center)}
               className="text-gray-600 hover:text-gray-900 font-medium"
+              data-ui-action="data-section-offset"
             >
               Center
             </button>

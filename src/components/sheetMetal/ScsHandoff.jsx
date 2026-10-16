@@ -86,6 +86,7 @@ const ScsHandoff = ({ script, partName = 'sheet', onQuoteInstead }) => {
       </p>
       <button
         type="button"
+        data-ui-action="data-scs-surf-quote"
         data-scs-surf-quote=""
         onClick={() => onQuoteInstead?.()}
         className="min-h-[44px] text-sm text-gray-300 underline underline-offset-2 hover:text-white"

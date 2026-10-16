@@ -10,6 +10,7 @@ import { contourStatusNote, contourStatusNoteAttrs } from '../utils/contourStatu
 import { partLengthMm } from '../utils/sliderRange';
 
 const ACCENT = 'cyan';
+const UI_ACTION = 'data-contour-mode-chip';
 
 /**
  * Slice 24/25/26/28/30 — contour-mode chip (Edge-pick pattern).
@@ -207,6 +208,7 @@ const ContourModeChip = ({
           <>
             <button
               type="button"
+              data-ui-action={UI_ACTION}
               className="text-[11px] text-cyan-200 underline"
               onClick={() => onUndoPoint?.()}
             >
@@ -214,6 +216,7 @@ const ContourModeChip = ({
             </button>
             <button
               type="button"
+              data-ui-action={UI_ACTION}
               className="text-[11px] text-cyan-200 underline"
               onClick={() => onClearPoints?.()}
             >
@@ -275,6 +278,7 @@ const ContourModeChip = ({
                   <button
                     key={opt.id}
                     type="button"
+                    data-ui-action={UI_ACTION}
                     onClick={() => onCombineChange?.(opt.id)}
                     aria-pressed={on}
                     data-contour-combine={opt.id}
@@ -322,6 +326,7 @@ const ContourModeChip = ({
               <button
                 key={axis}
                 type="button"
+                data-ui-action={UI_ACTION}
                 onClick={() => onPlanePreset?.(axis)}
                 aria-pressed={active}
                 className={`px-2.5 py-1 rounded text-[13px] uppercase ${
@@ -335,6 +340,7 @@ const ContourModeChip = ({
           })}
           <button
             type="button"
+            data-ui-action={UI_ACTION}
             onClick={() => onPickFace?.()}
             aria-pressed={planePreset === 'face'}
             className={`px-2.5 py-1 rounded text-[13px] ${
@@ -424,6 +430,7 @@ const ContourModeChip = ({
                 <button
                   key={c.id}
                   type="button"
+                  data-ui-action={UI_ACTION}
                   onClick={() => onPickSaved?.(c.id)}
                   aria-pressed={active}
                   title={`Use ${c.label}`}
@@ -492,6 +499,7 @@ const ContourModeChip = ({
                   <button
                     key={opt.id}
                     type="button"
+                    data-ui-action={UI_ACTION}
                     onClick={() => onRevolveChange?.({ ...revolve, sense: opt.id })}
                     className={`flex-1 px-2 py-1 text-[13px] ${
                       active ? 'bg-cyan-600 text-white' : 'bg-cyan-950/80 text-cyan-100'
@@ -516,6 +524,7 @@ const ContourModeChip = ({
                 <button
                   key={p.id || i}
                   type="button"
+                  data-ui-action={UI_ACTION}
                   onClick={() => onSelectLoftProfile?.(i)}
                   className={`px-2.5 py-1 rounded text-[13px] ${
                     active ? 'bg-cyan-600 text-white' : 'bg-cyan-950/80 text-cyan-100 border border-cyan-700/70'
@@ -529,6 +538,7 @@ const ContourModeChip = ({
             })}
             <button
               type="button"
+              data-ui-action={UI_ACTION}
               onClick={() => onAddLoftProfile?.()}
               className="px-2.5 py-1 rounded text-[13px] bg-cyan-950/80 text-cyan-100 border border-cyan-700/70"
               title="Add a profile on the shared plane, at the next offset"
@@ -539,6 +549,7 @@ const ContourModeChip = ({
             {loftProfiles.length > 2 && (
               <button
                 type="button"
+                data-ui-action={UI_ACTION}
                 onClick={() => onRemoveLoftProfile?.(loftSelected)}
                 className="px-2.5 py-1 rounded text-[13px] text-cyan-200 underline"
                 title="Remove selected profile"
@@ -551,6 +562,7 @@ const ContourModeChip = ({
           <div className="flex items-center gap-1 flex-wrap" data-loft-station-plane={loftOwnsPlane ? (loftStation.planeKind || 'face') : 'offset'}>
             <button
               type="button"
+              data-ui-action={UI_ACTION}
               onClick={() => onLoftUseOffset?.()}
               aria-pressed={!loftOwnsPlane && loft.picking !== 'face'}
               data-loft-plane="offset"
@@ -565,6 +577,7 @@ const ContourModeChip = ({
             </button>
             <button
               type="button"
+              data-ui-action={UI_ACTION}
               onClick={() => onLoftPickFace?.()}
               aria-pressed={loft.picking === 'face' || loftStation?.planeKind === 'face'}
               data-loft-plane="face"
@@ -662,6 +675,7 @@ const ContourModeChip = ({
             <span className="text-cyan-100">{edgeCount} edge{edgeCount === 1 ? '' : 's'}</span>
             <button
               type="button"
+              data-ui-action={UI_ACTION}
               className={`underline ${tangentOn ? 'text-cyan-300' : 'text-cyan-200/70'}`}
               onClick={() => onToggleTangent?.()}
               aria-pressed={tangentOn}
@@ -673,6 +687,7 @@ const ContourModeChip = ({
               <>
                 <button
                   type="button"
+                  data-ui-action={UI_ACTION}
                   className="text-cyan-200 underline"
                   onClick={() => onPopEdge?.()}
                   title="Remove the last path edge"
@@ -681,6 +696,7 @@ const ContourModeChip = ({
                 </button>
                 <button
                   type="button"
+                  data-ui-action={UI_ACTION}
                   className="text-cyan-200 underline"
                   onClick={() => onClearEdges?.()}
                   title="Clear the path"
@@ -693,6 +709,7 @@ const ContourModeChip = ({
           <div className="flex gap-1">
             <button
               type="button"
+              data-ui-action={UI_ACTION}
               onClick={() => onPickPath?.()}
               aria-pressed={pickMode === 'edge'}
               className={`flex-1 px-2 py-1 rounded text-[13px] ${
@@ -704,6 +721,7 @@ const ContourModeChip = ({
             </button>
             <button
               type="button"
+              data-ui-action={UI_ACTION}
               onClick={() => onPickPlane?.()}
               aria-pressed={pickMode !== 'edge'}
               className={`flex-1 px-2 py-1 rounded text-[13px] ${
@@ -772,6 +790,7 @@ const ContourModeChip = ({
                   <button
                     key={opt.id}
                     type="button"
+                    data-ui-action={UI_ACTION}
                     onClick={() => onExtrudeChange?.({ ...extrude, sense: opt.id })}
                     className={`flex-1 px-2 py-1 text-[13px] ${
                       active ? 'bg-cyan-600 text-white' : 'bg-cyan-950/80 text-cyan-100'

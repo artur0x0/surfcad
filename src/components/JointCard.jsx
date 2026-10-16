@@ -99,6 +99,7 @@ export default function JointCard({
           {note ? <span className="min-w-0">{note}</span> : null}
           <button
             type="button"
+            data-ui-action="data-joint-card"
             data-joint-delete=""
             onClick={() => onDelete?.()}
             className="inline-flex shrink-0 items-center gap-1 rounded-md border border-red-700/60 bg-red-950/50 px-2.5 py-1.5 text-[13px] font-medium text-red-200 hover:bg-red-900/70 hover:text-white"
@@ -128,6 +129,7 @@ export default function JointCard({
             <p className="text-[13px] text-cyan-50">Change one of the parts?</p>
             <button
               type="button"
+              data-ui-action="data-joint-card"
               data-joint-part-discard=""
               onClick={() => onResolvePartChange?.('discard')}
               className="min-h-[36px] rounded-md border border-cyan-700/70 bg-cyan-950/80 px-2 text-left text-[13px] text-cyan-100"
@@ -136,6 +138,7 @@ export default function JointCard({
             </button>
             <button
               type="button"
+              data-ui-action="data-joint-card"
               data-joint-part-replace="1"
               onClick={() => onResolvePartChange?.('replace-1')}
               className="min-h-[36px] rounded-md border border-cyan-700/70 bg-cyan-950/80 px-2 text-left text-[13px] text-cyan-100"
@@ -144,6 +147,7 @@ export default function JointCard({
             </button>
             <button
               type="button"
+              data-ui-action="data-joint-card"
               data-joint-part-replace="2"
               onClick={() => onResolvePartChange?.('replace-2')}
               className="min-h-[36px] rounded-md border border-cyan-700/70 bg-cyan-950/80 px-2 text-left text-[13px] text-cyan-100"
@@ -164,6 +168,7 @@ export default function JointCard({
         {card.picks?.length === 1 && (
           <button
             type="button"
+            data-ui-action="data-joint-card"
             data-joint-ground=""
             onClick={() => set({ type: 'fixed', userPickedType: true })}
             className="self-start rounded-md border border-cyan-700/70 bg-cyan-950/80 px-2 py-1 text-[12px] text-cyan-100"
@@ -217,6 +222,7 @@ export default function JointCard({
         {(distance || angle) && (
           <button
             type="button"
+            data-ui-action="data-joint-card"
             data-joint-flip=""
             onClick={() => set({ sense: card.sense === -1 ? 1 : -1 })}
             className="self-start rounded-md border border-cyan-700/70 bg-cyan-950/80 px-2 py-1 text-[12px] text-cyan-100"
