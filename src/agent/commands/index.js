@@ -119,6 +119,26 @@ import {
   sheetEditCommand,
   sheetBeginHoleCommand,
 } from './sheet.js';
+import {
+  paintOpenCommand,
+  paintCloseCommand,
+  paintSetColorCommand,
+  paintFacesCommand,
+  paintPartCommand,
+  paintUndoCommand,
+  paintClearCommand,
+  paintConfirmCommand,
+  paintCancelCommand,
+  paintStateCommand,
+} from './paint.js';
+import {
+  measureOpenCommand,
+  measureCloseCommand,
+  measureSetUnitCommand,
+  measurePickCommand,
+  measureClearCommand,
+  measureStateCommand,
+} from './measure.js';
 
 const HELPER_COMMANDS = buildHelperPaletteCommands();
 
@@ -134,6 +154,7 @@ const HELPER_COMMANDS = buildHelperPaletteCommands();
  * H11 parts, assemblies, and joints follow H10.
  * H12 git ribbon commands follow H11.
  * H14 sheet-metal flow follows H12.
+ * H13 measure and paint follow H14.
  */
 export const V1_COMMANDS = Object.freeze([
   getScriptCommand,
@@ -232,6 +253,22 @@ export const V1_COMMANDS = Object.freeze([
   sheetDoneCommand,
   sheetEditCommand,
   sheetBeginHoleCommand,
+  paintOpenCommand,
+  paintCloseCommand,
+  paintSetColorCommand,
+  paintFacesCommand,
+  paintPartCommand,
+  paintUndoCommand,
+  paintClearCommand,
+  paintConfirmCommand,
+  paintCancelCommand,
+  paintStateCommand,
+  measureOpenCommand,
+  measureCloseCommand,
+  measureSetUnitCommand,
+  measurePickCommand,
+  measureClearCommand,
+  measureStateCommand,
   gitMoveToRepoCommand,
   gitSaveCommand,
   gitAddToRepoCommand,

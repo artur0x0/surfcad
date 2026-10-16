@@ -105,6 +105,7 @@ import { buildSheetOverlay, disposeSheetOverlay, sheetPickFromHits, syncSheetEdg
 import { referencePickEdges, sheetContourEdges, sheetSpecInScript } from '../utils/sheetMetal/sheetContourEdges';
 import { ensureBodyMaterial } from '../utils/sheetMetal/sheetMaterial';
 import { createSheetAgentHandlers } from '../agent/sheetAgentHost.js';
+import { createPaintMeasureAgentHandlers } from '../agent/paintMeasureAgentHost.js';
 import { makeDefaultPartMaterial } from '../utils/partMaterial';
 import DraftModeChip from './DraftModeChip';
 import CutModeChip from './CutModeChip';
@@ -1546,6 +1547,18 @@ const Viewport = forwardRef(({
   const sheetMetalPickerRef = useRef(null);
   sheetMetalPickerRef.current = sheetMetalPicker;
   const agentSheetHostRef = useRef(null);
+  const agentPaintMeasureHostRef = useRef(null);
+  const enterPaintModeRef = useRef(() => {});
+  const acceptPaintRef = useRef(() => {});
+  const patchPaintRef = useRef(() => {});
+  const storeLivePaintRef = useRef(() => {});
+  const paintWholePartRef = useRef(() => {});
+  const undoLivePaintRef = useRef(() => {});
+  const clearLivePaintRef = useRef(() => {});
+  const paintSurfIdRef = useRef(() => null);
+  const handleMeasurementToggleRef = useRef(() => {});
+  const commitMeasurePicksRef = useRef(() => {});
+  const syncFeatureEdgesRef = useRef(() => {});
   const exitSheetMetalChromeRef = useRef(() => {});
   exitSheetMetalChromeRef.current = () => {
     if (!sheetMetalModeRef.current && !sheetMetalPicker) return;
@@ -2683,6 +2696,22 @@ const Viewport = forwardRef(({
       finishSheetCommit: (prepared) => agentSheetHostRef.current?.finishSheetCommit(prepared),
       prepareSheetDone: () => agentSheetHostRef.current?.prepareSheetDone(),
       finishSheetDone: (prepared) => agentSheetHostRef.current?.finishSheetDone(prepared),
+      paintOpen: () => agentPaintMeasureHostRef.current?.paintOpen(),
+      paintClose: () => agentPaintMeasureHostRef.current?.paintClose(),
+      paintCancel: () => agentPaintMeasureHostRef.current?.paintCancel(),
+      paintSetColor: (args) => agentPaintMeasureHostRef.current?.paintSetColor(args),
+      paintFaces: (args) => agentPaintMeasureHostRef.current?.paintFaces(args),
+      paintPart: () => agentPaintMeasureHostRef.current?.paintPart(),
+      paintUndo: () => agentPaintMeasureHostRef.current?.paintUndo(),
+      paintClear: () => agentPaintMeasureHostRef.current?.paintClear(),
+      paintConfirm: () => agentPaintMeasureHostRef.current?.paintConfirm(),
+      paintState: () => agentPaintMeasureHostRef.current?.paintState(),
+      measureOpen: () => agentPaintMeasureHostRef.current?.measureOpen(),
+      measureClose: () => agentPaintMeasureHostRef.current?.measureClose(),
+      measureSetUnit: (args) => agentPaintMeasureHostRef.current?.measureSetUnit(args),
+      measurePick: (args) => agentPaintMeasureHostRef.current?.measurePick(args),
+      measureClear: () => agentPaintMeasureHostRef.current?.measureClear(),
+      measureState: () => agentPaintMeasureHostRef.current?.measureState(),
       prepareSketchDimension: (args) => agentPrepareSketchDimensionRef.current(args),
       prepareSketchConstrain: (args) => agentPrepareSketchConstrainRef.current(args),
       finishSketchGesture: () => {
@@ -13737,6 +13766,42 @@ const Viewport = forwardRef(({
     if (!state || !surfId) return;
     storeLivePaint(livePaintUnmatched(state, { surfId, faces: paintFacesNow() }));
   };
+  enterPaintModeRef.current = enterPaintMode;
+  exitPaintModeRef.current = exitPaintMode;
+  acceptPaintRef.current = acceptPaint;
+  patchPaintRef.current = patchPaint;
+  storeLivePaintRef.current = storeLivePaint;
+  paintWholePartRef.current = paintWholePart;
+  undoLivePaintRef.current = undoLivePaint;
+  clearLivePaintRef.current = clearLivePaint;
+  paintSurfIdRef.current = paintSurfId;
+  handleMeasurementToggleRef.current = handleMeasurementToggle;
+  commitMeasurePicksRef.current = commitMeasurePicks;
+  syncFeatureEdgesRef.current = syncFeatureEdges;
+  agentPaintMeasureHostRef.current = createPaintMeasureAgentHandlers({
+    appMode: mode,
+    paintModeRef,
+    measurementEnabledRef,
+    measurePicksRef,
+    enterPaintModeRef,
+    exitPaintModeRef,
+    acceptPaintRef,
+    patchPaintRef,
+    storeLivePaintRef,
+    paintWholePartRef,
+    undoLivePaintRef,
+    clearLivePaintRef,
+    paintSurfIdRef,
+    handleMeasurementToggleRef,
+    exitMeasureModeRef,
+    commitMeasurePicksRef,
+    getMesh: () => resultRef.current,
+    faceIDsRef,
+    activePartIdRef,
+    featureEdgesRef,
+    boundaryTopoRef,
+    syncFeatureEdgesRef,
+  });
   const paintUnmatched = paintMode
     ? unmatchedColorCount(paintMode.session, paintSurfId(), paintFacesNow())
     : 0;
