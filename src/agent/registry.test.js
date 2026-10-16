@@ -19,7 +19,7 @@ test('v1 registry order is the bridge command list, with list_commands appended'
     'undo',
   ]);
   assert.deepEqual(AGENT_COMMANDS.slice(7, 10), ['redo', 'history', 'list_commands']);
-  assert.equal(AGENT_COMMANDS.at(-1), 'git_list_branches');
+  assert.equal(AGENT_COMMANDS.at(-1), 'export_download');
   assert.equal(AGENT_COMMANDS.includes('list_faces'), true);
   assert.equal(AGENT_COMMANDS.includes('list_edges'), true);
 });
