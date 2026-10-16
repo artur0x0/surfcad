@@ -1,6 +1,6 @@
 // components/CrossSectionPanel.jsx
 /* eslint-disable react-hooks/exhaustive-deps -- see Viewport note; same ref-backed pattern */
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from 'react';
 import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, X } from 'lucide-react';
 import TrianglesCenterlineDashedVertical from './icons/TrianglesCenterlineDashedVertical';
 import ViewSnapControl from './ViewSnapControl';
@@ -11,8 +11,10 @@ import { lengthFromThumb, lengthSnap, thumbFromLength, THUMB_COUNT } from '../ut
 import { formatDisplayLength, formatDisplayNumber } from '../utils/displayUnit';
 import { useDisplayUnit } from '../hooks/useDisplayUnit';
 
-const CrossSectionPanel = ({ 
+const CrossSectionPanel = forwardRef(({ 
   enabled,
+  /** Live enabled flag for agent bridge (updates before React re-render). */
+  enabledRef = null,
   onToggle,
   onPlaneChange,
   onZoomToFit,
@@ -43,7 +45,7 @@ const CrossSectionPanel = ({
   /** Stack tools vertically on the right edge. Both shells pass this now — desktop
    *  matches phone; the wrapping-row fallback is kept for any other caller. */
   verticalRail = false,
-}) => {
+}, ref) => {
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [planeType, setPlaneType] = useState('XY');
   const [offset, setOffset] = useState(0);
@@ -53,7 +55,22 @@ const CrossSectionPanel = ({
   // Thumb ends. Before bounds, the fallback box is ±100 and the outer third continues past it.
   const [offsetRange, setOffsetRange] = useState(() => sectionThumbRange(-100, 100));
   const placedBounds = useRef(false);
+  /** Agent bridge: synchronous view until React state catches up. */
+  const agentSnapRef = useRef(null);
   const [displayUnit] = useDisplayUnit();
+
+  const patchAgentSnap = (patch) => {
+    agentSnapRef.current = { ...(agentSnapRef.current || {}), ...patch };
+  };
+
+  useEffect(() => {
+    const snap = agentSnapRef.current;
+    if (!snap) return;
+    const optionsOpen = !!enabled && !isCollapsed;
+    const enabledOk = snap.enabled == null || snap.enabled === !!enabled;
+    const optionsOk = snap.optionsOpen == null || snap.optionsOpen === optionsOpen;
+    if (enabledOk && optionsOk) agentSnapRef.current = null;
+  }, [enabled, isCollapsed]);
 
   useEffect(() => {
     if (bounds) {
@@ -186,6 +203,78 @@ const handleButtonClick = () => {
       showPlane: isCollapsed // Will become true when expanding
     });
   };
+
+  const readAgentState = useCallback(() => {
+    const snap = agentSnapRef.current;
+    let liveEnabled = !!enabled;
+    if (snap?.enabled != null) liveEnabled = snap.enabled;
+    else if (enabledRef?.current != null) liveEnabled = !!enabledRef.current;
+    const optionsOpen = snap?.optionsOpen != null
+      ? snap.optionsOpen
+      : (liveEnabled && !isCollapsed);
+    const normal = isCustom ? customNormal : PLANE_PRESETS[planeType].normal;
+    return {
+      enabled: liveEnabled,
+      optionsOpen,
+      preset: isCustom ? null : planeType,
+      plane: isCustom ? 'custom' : planeType,
+      offset,
+      normal: [...normal],
+      offsetMin: offsetRange.min,
+      offsetMax: offsetRange.max,
+      offsetCenter: offsetRange.center,
+    };
+  }, [enabled, enabledRef, isCollapsed, planeType, isCustom, customNormal, offset, offsetRange]);
+
+  const agentSetEnabled = useCallback((target) => {
+    patchAgentSnap({ enabled: target, optionsOpen: target ? true : false });
+    if (target) {
+      onToggle?.(true);
+      setIsCollapsed(false);
+      handlePresetChange('XY');
+      return;
+    }
+    onToggle?.(false);
+    setIsCollapsed(true);
+  }, [onToggle, handlePresetChange]);
+
+  const agentSetOptionsOpen = useCallback((open) => {
+    const snap = agentSnapRef.current;
+    let liveEnabled = !!enabled;
+    if (snap?.enabled != null) liveEnabled = snap.enabled;
+    else if (enabledRef?.current != null) liveEnabled = !!enabledRef.current;
+    if (!liveEnabled) return false;
+    patchAgentSnap({ optionsOpen: open });
+    const nextCollapsed = !open;
+    if (nextCollapsed !== isCollapsed) {
+      setIsCollapsed(nextCollapsed);
+    }
+    const normal = isCustom ? customNormal : PLANE_PRESETS[planeType].normal;
+    onPlaneChange?.({
+      normal,
+      originOffset: offset,
+      showPlane: open,
+    });
+    return true;
+  }, [enabled, enabledRef, isCollapsed, isCustom, customNormal, planeType, offset, onPlaneChange]);
+
+  const agentSetPreset = useCallback((preset) => {
+    if (!PLANE_PRESETS[preset]) return;
+    handlePresetChange(preset);
+  }, [handlePresetChange]);
+
+  const agentSetOffset = useCallback((value) => {
+    const clamped = Math.min(offsetRange.max, Math.max(offsetRange.min, value));
+    handleOffsetChange(clamped);
+  }, [handleOffsetChange, offsetRange]);
+
+  useImperativeHandle(ref, () => ({
+    readAgentState,
+    agentSetEnabled,
+    agentSetOptionsOpen,
+    agentSetPreset,
+    agentSetOffset,
+  }), [readAgentState, agentSetEnabled, agentSetOptionsOpen, agentSetPreset, agentSetOffset]);
 
   if (isCollapsed || !enabled) {
     return (
@@ -589,6 +678,8 @@ const handleButtonClick = () => {
       </div>
     </div>
   );
-};
+});
+
+CrossSectionPanel.displayName = 'CrossSectionPanel';
 
 export default CrossSectionPanel;

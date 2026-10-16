@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 171,
+  "count": 178,
   "$defs": {
     "status": {
       "type": "object",
@@ -12448,6 +12448,219 @@
       "immediate": true,
       "uiEntry": "data-measure-mode-chip",
       "example": {}
+    },
+    {
+      "name": "cross_section_toggle",
+      "description": "Bridge command cross_section_toggle.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Turn cross-section on or off; omit to flip"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-cross-section-toggle",
+      "example": {
+        "enabled": true
+      }
+    },
+    {
+      "name": "cross_section_expand",
+      "description": "Bridge command cross_section_expand.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "open"
+        ],
+        "properties": {
+          "open": {
+            "type": "boolean",
+            "description": "Open or close the cross-section options popup"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-cross-section-expand",
+      "example": {
+        "open": true
+      }
+    },
+    {
+      "name": "cross_section_plane",
+      "description": "Bridge command cross_section_plane.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "plane"
+        ],
+        "properties": {
+          "plane": {
+            "type": "string",
+            "enum": [
+              "XY",
+              "XZ",
+              "YZ"
+            ],
+            "description": "Preset cutting plane"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-cross-section-plane",
+      "example": {
+        "plane": "XY"
+      }
+    },
+    {
+      "name": "cross_section_offset",
+      "description": "Bridge command cross_section_offset.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "offset"
+        ],
+        "properties": {
+          "offset": {
+            "type": "number",
+            "description": "Section position along the plane normal (model units)"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-section-offset",
+      "example": {
+        "offset": 0
+      }
+    },
+    {
+      "name": "cross_section_state",
+      "description": "Bridge command cross_section_state.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": "data-cross-section-toggle",
+      "example": {}
+    },
+    {
+      "name": "cad_select_all",
+      "description": "Bridge command cad_select_all.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": "data-cad-select-all",
+      "example": {}
+    },
+    {
+      "name": "sketch_delete_entity",
+      "description": "Bridge command sketch_delete_entity.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Sketch entity id from list_sketch_entities"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-contour-entity-card",
+      "example": {
+        "id": "l0"
+      }
     },
     {
       "name": "fea_open",

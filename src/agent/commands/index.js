@@ -158,6 +158,15 @@ import {
   feaPickCommand,
 } from './fea.js';
 import { exportPartCommand, exportDownloadCommand } from './export.js';
+import {
+  crossSectionToggleCommand,
+  crossSectionExpandCommand,
+  crossSectionPlaneCommand,
+  crossSectionOffsetCommand,
+  crossSectionStateCommand,
+} from './xsection.js';
+import { cadSelectAllCommand } from './cadSelectAll.js';
+import { sketchDeleteEntityCommand } from './sketchDeleteEntity.js';
 
 const HELPER_COMMANDS = buildHelperPaletteCommands();
 
@@ -175,6 +184,7 @@ const HELPER_COMMANDS = buildHelperPaletteCommands();
  * H14 sheet-metal flow follows H12.
  * H13 measure and paint follow H14.
  * FEA study bridge and H16 export (STL/3MF/STEP) follow H13.
+ * Cross-section view, editor select-all, and sketch entity delete follow FEA.
  */
 export const V1_COMMANDS = Object.freeze([
   getScriptCommand,
@@ -289,6 +299,13 @@ export const V1_COMMANDS = Object.freeze([
   measurePickCommand,
   measureClearCommand,
   measureStateCommand,
+  crossSectionToggleCommand,
+  crossSectionExpandCommand,
+  crossSectionPlaneCommand,
+  crossSectionOffsetCommand,
+  crossSectionStateCommand,
+  cadSelectAllCommand,
+  sketchDeleteEntityCommand,
   feaOpenCommand,
   feaCloseCommand,
   feaSetMaterialCommand,

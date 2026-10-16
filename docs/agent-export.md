@@ -239,6 +239,13 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `measure_pick` | `{ face_keys }`, `{ edge_keys }`, or `{ point: [x,y,z] }` | Toggle measure picks like canvas taps. |
 | `measure_clear` | `{}` | Clear picks, stay in Measure. |
 | `measure_state` | `{}` | Picks, unit, and `measureReadout` rows. |
+| `cross_section_toggle` | `{ enabled?: boolean }` | Cross-section on/off (`data-cross-section-toggle`); omit `enabled` to flip. |
+| `cross_section_expand` | `{ open: boolean }` | Options popup (`data-cross-section-expand`). |
+| `cross_section_plane` | `{ plane: "XY"\|"XZ"\|"YZ" }` | Preset plane chips (`data-cross-section-plane`). |
+| `cross_section_offset` | `{ offset: number }` | Section position along the normal (`data-section-offset`, model units). |
+| `cross_section_state` | `{}` | `{ enabled, optionsOpen, plane, offset, normal, offsetMin, offsetMax, offsetCenter }`. |
+| `cad_select_all` | `{}` | Select all script text (`data-cad-select-all`). |
+| `sketch_delete_entity` | `{ id }` | Delete one sketch entity (`data-contour-entity-card`); one sketch undo. |
 | `fea_open` | `{}` | Opens Analyze (`data-analyze-chip`). |
 | `fea_close` | `{}` | Closes Analyze without cancelling an in-flight solve. |
 | `fea_set_material` | `{ id }` | Library material id on the study. |
@@ -400,7 +407,7 @@ Refusals use the same `error` objects as the in-page envelope. Non-loopback TCP 
 | --- | --- |
 | `packages/surfcad-mcp` | Unpublished package: MCP over stdio, one tool per `commands.json` row plus `pair`. |
 | `packages/surfcad-mcp/data/commands.json` | Copy of `src/agent/commands.json`; refreshed by `npm run export:agent`. |
-| `SURFCAD_PAIRING_CODE` | Optional env pairing code (same as the in-app **Local agent** panel). |
+| `SURFCAD_PAIRING_CODE` | Optional env pairing code (same as **profile** → **Local agent** → **Show pairing code**). |
 | `SURFCAD_AGENT_BRIDGE_WS_URL` | Relay URL (default `ws://127.0.0.1:17341`). |
 
 Claude Desktop / Cursor config examples live in `packages/surfcad-mcp/README.md`. The short agent skill for outside LLMs is `docs/agent/SKILL.md`. End-to-end MCP demo: `npm run demo:mcp`.

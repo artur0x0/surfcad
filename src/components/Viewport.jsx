@@ -107,6 +107,7 @@ import { ensureBodyMaterial } from '../utils/sheetMetal/sheetMaterial';
 import { createSheetAgentHandlers } from '../agent/sheetAgentHost.js';
 import { createPaintMeasureAgentHandlers } from '../agent/paintMeasureAgentHost.js';
 import { createFeaAgentHandlers } from '../agent/feaAgentHost.js';
+import { createXsectionAgentHandlers } from '../agent/xsectionAgentHost.js';
 import { makeDefaultPartMaterial } from '../utils/partMaterial';
 import DraftModeChip from './DraftModeChip';
 import CutModeChip from './CutModeChip';
@@ -232,7 +233,7 @@ import {
   vertexHit,
 } from '../utils/contourRefPick';
 import { resolveContourScript } from '../utils/contourRefResolve';
-import { beginConstraintEdit, beginDimensionEdit } from '../utils/contourGesture';
+import { beginConstraintEdit, beginDimensionEdit, promoteContourState } from '../utils/contourGesture';
 import { applySketchConstrain, applySketchDimension } from '../agent/sketchGestureAgent.js';
 import { contourChips, deleteContourEntity } from '../utils/contourStrip';
 import { entityDeleteChip, selectSketchChip, sketchActiveId, sketchHighlightPicks } from '../utils/contourSketchStrip';
@@ -1175,6 +1176,8 @@ const Viewport = forwardRef(({
    * Flag off, the ref is still filled and nothing is mounted on screen.
    */
   agentHostRef = null,
+  /** M1 local WebSocket pairing UI (profile menu when on). */
+  agentBridgeLive = false,
 }, ref) => {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -1553,6 +1556,10 @@ const Viewport = forwardRef(({
   const agentSheetHostRef = useRef(null);
   const agentPaintMeasureHostRef = useRef(null);
   const agentFeaHostRef = useRef(null);
+  const agentXsectionHostRef = useRef(null);
+  const crossSectionPanelRef = useRef(null);
+  const crossSectionEnabledRef = useRef(false);
+  const applySketchEntityDeleteRef = useRef(null);
   const enterPaintModeRef = useRef(() => {});
   const acceptPaintRef = useRef(() => {});
   const patchPaintRef = useRef(() => {});
@@ -1880,6 +1887,7 @@ const Viewport = forwardRef(({
   
   // Cross-section state
   const [crossSectionEnabled, setCrossSectionEnabled] = useState(false);
+  crossSectionEnabledRef.current = crossSectionEnabled;
   const [crossSectionPlane, setCrossSectionPlane] = useState({
     normal: [0, 0, 1],
     originOffset: 0,
@@ -2432,7 +2440,7 @@ const Viewport = forwardRef(({
           deleteFace: !!deleteFaceMode,
           paint: !!paintMode,
           measure: measurementEnabled,
-          fea: feaActive,
+          fea: !!(feaActiveRef.current || feaPanelRef.current?.open),
           sheetMetal: sheetMetalMode,
           sheetMetalPicker: !!sheetMetalPicker,
           holeCard: !!holeCard,
@@ -2732,6 +2740,27 @@ const Viewport = forwardRef(({
       feaState: (args) => agentFeaHostRef.current?.feaState(args),
       feaResults: (args) => agentFeaHostRef.current?.feaResults(args),
       feaPick: (args) => agentFeaHostRef.current?.feaPick(args),
+      crossSectionToggle: (args) => agentXsectionHostRef.current?.crossSectionToggle(args),
+      crossSectionExpand: (args) => agentXsectionHostRef.current?.crossSectionExpand(args),
+      crossSectionPlane: (args) => agentXsectionHostRef.current?.crossSectionPlane(args),
+      crossSectionOffset: (args) => agentXsectionHostRef.current?.crossSectionOffset(args),
+      crossSectionState: () => agentXsectionHostRef.current?.crossSectionState(),
+      sketchDeleteEntity({ id } = {}) {
+        const fn = applySketchEntityDeleteRef.current;
+        if (typeof fn !== 'function') {
+          return { error: { code: 'internal', message: 'sketchDeleteEntity missing' } };
+        }
+        const contour = contourModeRef.current;
+        if (!contour) {
+          return { error: { code: 'no_sketch', message: 'No open sketch session' } };
+        }
+        const ok = fn(id);
+        if (!ok) {
+          return { error: { code: 'unknown_entity', message: `No sketch entity with id ${id}` } };
+        }
+        const hist = sketchHistRef.current?.depth ?? 0;
+        return { result: { ok: true, id, sketchDepth: hist } };
+      },
       prepareSketchDimension: (args) => agentPrepareSketchDimensionRef.current(args),
       prepareSketchConstrain: (args) => agentPrepareSketchConstrainRef.current(args),
       finishSketchGesture: () => {
@@ -4708,8 +4737,9 @@ const Viewport = forwardRef(({
 
   /** One sketch step. The script stays until the contour is confirmed. */
   const applySketchEntityDelete = useCallback((id) => {
-    const prev = contourModeRef.current;
+    let prev = contourModeRef.current;
     if (!prev || !id) return false;
+    prev = promoteContourState(prev) || prev;
     const result = deleteContourEntity(prev, id);
     if (!result.removed.length) return false;
     let next = { ...result.state, entityCard: null };
@@ -4730,6 +4760,7 @@ const Viewport = forwardRef(({
     }, 3200);
     return true;
   }, []);
+  applySketchEntityDeleteRef.current = applySketchEntityDelete;
 
   const requestSketchEntityDelete = useCallback(() => {
     const prev = contourModeRef.current;
@@ -6300,11 +6331,17 @@ const Viewport = forwardRef(({
 
   // Handle cross-section toggle
   const handleCrossSectionToggle = async (enabled) => {
-    if (enabled) {
+    const on = !!enabled;
+    crossSectionEnabledRef.current = on;
+    if (on) {
       try {
-        if (!manifoldContext.isReady || !currentScript) return;
+        if (!manifoldContext.isReady || !currentScript) {
+          crossSectionEnabledRef.current = false;
+          return;
+        }
         setCrossSectionEnabled(true);
       } catch (error) {
+        crossSectionEnabledRef.current = false;
         console.error('[CrossSection] Failed to enable:', error);
       }
     } else {
@@ -13832,6 +13869,11 @@ const Viewport = forwardRef(({
     faceIDsRef,
     activePartIdRef,
   });
+  agentXsectionHostRef.current = createXsectionAgentHandlers({
+    panelRef: crossSectionPanelRef,
+    enabledRef: crossSectionEnabledRef,
+    getMesh: () => resultRef.current,
+  });
   const paintUnmatched = paintMode
     ? unmatchedColorCount(paintMode.session, paintSurfId(), paintFacesNow())
     : 0;
@@ -13879,7 +13921,14 @@ const Viewport = forwardRef(({
       )}
       {/* G9: circular profile chip — top-right of the CAD viewport. Desktop's only chip. */}
       {mode !== 'game' && (
-        <ProfileChip variant="viewport" onAccount={onAccount} onSignedOut={onSignedOut} onClearLocalCadData={onClearLocalCadData} vaultName={profileVaultName} />
+        <ProfileChip
+          variant="viewport"
+          onAccount={onAccount}
+          onSignedOut={onSignedOut}
+          onClearLocalCadData={onClearLocalCadData}
+          vaultName={profileVaultName}
+          agentBridgeLive={agentBridgeLive}
+        />
       )}
 
       {/* Five taps in this corner enter the puzzle. The IO tray is gone, so the corner itself is the target. */}
@@ -14236,7 +14285,9 @@ const Viewport = forwardRef(({
 
       {/* Cross-Section Panel */}
         <CrossSectionPanel
+          ref={crossSectionPanelRef}
           enabled={crossSectionEnabled}
+          enabledRef={crossSectionEnabledRef}
           onToggle={handleCrossSectionToggle}
           onPlaneChange={handlePlaneChange}
           onZoomToFit={handleZoomToFit}

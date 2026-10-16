@@ -150,7 +150,6 @@ import {
 import { agentBridgeEnabled, agentFeatureCount, createSurfcadBridge } from './utils/agentBridge';
 import { buildEffectiveJointCard } from './agent/jointCardAgent.js';
 import AgentVisibleLayer from './components/AgentVisibleLayer';
-import AgentBridgePairing from './components/AgentBridgePairing';
 import { runAssemblyParts } from './utils/assemblyRun';
 import { catalogsFromRuns } from './utils/jointResolve';
 import { partPlacement } from './utils/jointSchema';
@@ -8280,6 +8279,10 @@ const App = () => {
     };
   };
   fillAgentHost(agentHostRef, {
+    cadSelectAll() {
+      handleSelectAll();
+      return { ok: true };
+    },
     readFeatureTree() {
       const doc = assemblyRef.current;
       const script = codeEditorRef.current?.getContent?.() ?? '';
@@ -9100,6 +9103,10 @@ const App = () => {
     refreshAssemblyRef.current?.(live);
   };
 
+  const agentBridgeLive = agentBridgeEnabled({ dev: import.meta.env.DEV === true })
+    && manifoldReady
+    && editorInitialScript !== null;
+
   const partFeed = appMode !== 'game' && assemblyDoc ? (
     <PartFeed
       ref={partFeedRef}
@@ -9184,6 +9191,7 @@ const App = () => {
       onSignedOut={handleProfileSignedOut}
       onClearLocalCadData={openClearLocalCache}
       profileVaultName={gitDefaultVaultName()}
+      agentBridgeLive={agentBridgeLive}
       suggestNewPartPath={
         assemblyDoc.source === 'git'
           ? suggestNewPartPath(assemblyDoc.name, assemblyDoc.parts)
@@ -9313,10 +9321,6 @@ const App = () => {
     />
   ) : null;
 
-  const agentBridgeLive = agentBridgeEnabled({ dev: import.meta.env.DEV === true })
-    && manifoldReady
-    && editorInitialScript !== null;
-
   if (isMobile) {
     // Keep h-dvh while the keyboard is closed so Monaco can take a real
     // user-gesture focus (iOS often refuses keyboard inside a fixed+overflow
@@ -9341,6 +9345,7 @@ const App = () => {
             <Viewport 
               ref={viewportRef} 
               agentHostRef={agentHostRef}
+              agentBridgeLive={agentBridgeLive}
               onAccount={handleAccount}
               onSignedOut={handleProfileSignedOut}
               onClearLocalCadData={openClearLocalCache}
@@ -9462,6 +9467,7 @@ const App = () => {
                   onSignedOut={handleProfileSignedOut}
                   onClearLocalCadData={openClearLocalCache}
                   profileVaultName={gitDefaultVaultName()}
+              agentBridgeLive={agentBridgeLive}
                 />
     );
 
@@ -9480,7 +9486,6 @@ const App = () => {
     return (
       <CartChromeProvider value={cartChrome}>
         <AgentVisibleLayer agentHostRef={agentHostRef} />
-        <AgentBridgePairing enabled={agentBridgeLive} />
         <div
           ref={splitShellRef}
           className={`relative flex flex-col bg-chrome-surface overflow-hidden ${keyboardOpen ? '' : 'h-dvh'}`}
@@ -9780,7 +9785,6 @@ const App = () => {
   return (
     <CartChromeProvider value={cartChrome}>
       <AgentVisibleLayer agentHostRef={agentHostRef} />
-      <AgentBridgePairing enabled={agentBridgeLive} />
       <div className="flex h-dvh bg-chrome-surface">
         {appMode !== 'game' && (
           <div data-parts-feed-placement="desktop-left" className="h-full shrink-0">
@@ -9815,6 +9819,7 @@ const App = () => {
               onSignedOut={handleProfileSignedOut}
               onClearLocalCadData={openClearLocalCache}
               profileVaultName={gitDefaultVaultName()}
+              agentBridgeLive={agentBridgeLive}
             />
           </div>
         </div>
@@ -9863,6 +9868,7 @@ const App = () => {
           <Viewport 
             ref={viewportRef} 
             agentHostRef={agentHostRef}
+            agentBridgeLive={agentBridgeLive}
             onAccount={handleAccount}
             onSignedOut={handleProfileSignedOut}
             onClearLocalCadData={openClearLocalCache}
@@ -9980,6 +9986,7 @@ const App = () => {
                 onSignedOut={handleProfileSignedOut}
                 onClearLocalCadData={openClearLocalCache}
                 profileVaultName={gitDefaultVaultName()}
+              agentBridgeLive={agentBridgeLive}
               />
               {/* AI prompt row is HIDDEN, not removed: it stays mounted (and keeps
                   its state and handlers) while we design a tighter integration

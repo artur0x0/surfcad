@@ -114,6 +114,7 @@ test('localStorage auto-approve flag is ignored in production build', { timeout:
       localStorage.setItem('surfcadAgentBridgeAutoApprove', '1');
     });
 
+    await page.locator('[data-profile-chip]').first().click();
     await page.click('[data-ui-action="data-agent-bridge-toggle"]');
     await page.click('[data-ui-action="data-agent-bridge-start"]');
     await page.waitForSelector('[data-agent-bridge-code]', { state: 'visible' });
