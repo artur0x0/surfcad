@@ -13,6 +13,8 @@ import { useDisplayUnit } from '../hooks/useDisplayUnit';
 
 const CrossSectionPanel = forwardRef(({ 
   enabled,
+  /** Live enabled flag for agent bridge (updates before React re-render). */
+  enabledRef = null,
   onToggle,
   onPlaneChange,
   onZoomToFit,
@@ -53,7 +55,22 @@ const CrossSectionPanel = forwardRef(({
   // Thumb ends. Before bounds, the fallback box is ±100 and the outer third continues past it.
   const [offsetRange, setOffsetRange] = useState(() => sectionThumbRange(-100, 100));
   const placedBounds = useRef(false);
+  /** Agent bridge: synchronous view until React state catches up. */
+  const agentSnapRef = useRef(null);
   const [displayUnit] = useDisplayUnit();
+
+  const patchAgentSnap = (patch) => {
+    agentSnapRef.current = { ...(agentSnapRef.current || {}), ...patch };
+  };
+
+  useEffect(() => {
+    const snap = agentSnapRef.current;
+    if (!snap) return;
+    const optionsOpen = !!enabled && !isCollapsed;
+    const enabledOk = snap.enabled == null || snap.enabled === !!enabled;
+    const optionsOk = snap.optionsOpen == null || snap.optionsOpen === optionsOpen;
+    if (enabledOk && optionsOk) agentSnapRef.current = null;
+  }, [enabled, isCollapsed]);
 
   useEffect(() => {
     if (bounds) {
@@ -188,10 +205,17 @@ const handleButtonClick = () => {
   };
 
   const readAgentState = useCallback(() => {
+    const snap = agentSnapRef.current;
+    let liveEnabled = !!enabled;
+    if (snap?.enabled != null) liveEnabled = snap.enabled;
+    else if (enabledRef?.current != null) liveEnabled = !!enabledRef.current;
+    const optionsOpen = snap?.optionsOpen != null
+      ? snap.optionsOpen
+      : (liveEnabled && !isCollapsed);
     const normal = isCustom ? customNormal : PLANE_PRESETS[planeType].normal;
     return {
-      enabled: !!enabled,
-      optionsOpen: !!enabled && !isCollapsed,
+      enabled: liveEnabled,
+      optionsOpen,
       preset: isCustom ? null : planeType,
       plane: isCustom ? 'custom' : planeType,
       offset,
@@ -200,15 +224,14 @@ const handleButtonClick = () => {
       offsetMax: offsetRange.max,
       offsetCenter: offsetRange.center,
     };
-  }, [enabled, isCollapsed, planeType, isCustom, customNormal, offset, offsetRange]);
+  }, [enabled, enabledRef, isCollapsed, planeType, isCustom, customNormal, offset, offsetRange]);
 
   const agentSetEnabled = useCallback((target) => {
+    patchAgentSnap({ enabled: target, optionsOpen: target ? true : false });
     if (target) {
       onToggle?.(true);
-      requestAnimationFrame(() => {
-        handlePresetChange('XY');
-        setIsCollapsed(false);
-      });
+      setIsCollapsed(false);
+      handlePresetChange('XY');
       return;
     }
     onToggle?.(false);
@@ -216,17 +239,24 @@ const handleButtonClick = () => {
   }, [onToggle, handlePresetChange]);
 
   const agentSetOptionsOpen = useCallback((open) => {
-    if (!enabled) return;
+    const snap = agentSnapRef.current;
+    let liveEnabled = !!enabled;
+    if (snap?.enabled != null) liveEnabled = snap.enabled;
+    else if (enabledRef?.current != null) liveEnabled = !!enabledRef.current;
+    if (!liveEnabled) return false;
+    patchAgentSnap({ optionsOpen: open });
     const nextCollapsed = !open;
-    if (nextCollapsed === isCollapsed) return;
-    setIsCollapsed(nextCollapsed);
+    if (nextCollapsed !== isCollapsed) {
+      setIsCollapsed(nextCollapsed);
+    }
     const normal = isCustom ? customNormal : PLANE_PRESETS[planeType].normal;
     onPlaneChange?.({
       normal,
       originOffset: offset,
       showPlane: open,
     });
-  }, [enabled, isCollapsed, isCustom, customNormal, planeType, offset, onPlaneChange]);
+    return true;
+  }, [enabled, enabledRef, isCollapsed, isCustom, customNormal, planeType, offset, onPlaneChange]);
 
   const agentSetPreset = useCallback((preset) => {
     if (!PLANE_PRESETS[preset]) return;

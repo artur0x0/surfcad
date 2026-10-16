@@ -6331,11 +6331,17 @@ const Viewport = forwardRef(({
 
   // Handle cross-section toggle
   const handleCrossSectionToggle = async (enabled) => {
-    if (enabled) {
+    const on = !!enabled;
+    crossSectionEnabledRef.current = on;
+    if (on) {
       try {
-        if (!manifoldContext.isReady || !currentScript) return;
+        if (!manifoldContext.isReady || !currentScript) {
+          crossSectionEnabledRef.current = false;
+          return;
+        }
         setCrossSectionEnabled(true);
       } catch (error) {
+        crossSectionEnabledRef.current = false;
         console.error('[CrossSection] Failed to enable:', error);
       }
     } else {
@@ -14281,6 +14287,7 @@ const Viewport = forwardRef(({
         <CrossSectionPanel
           ref={crossSectionPanelRef}
           enabled={crossSectionEnabled}
+          enabledRef={crossSectionEnabledRef}
           onToggle={handleCrossSectionToggle}
           onPlaneChange={handlePlaneChange}
           onZoomToFit={handleZoomToFit}
