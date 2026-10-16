@@ -34,7 +34,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, 'cursor/**']
 
 # Cancel a run when a newer commit is pushed to the same branch or PR.
 concurrency:
