@@ -77,7 +77,7 @@ async function nudgeHistoryTarget(page) {
   return false;
 }
 
-async function collectUndoFingerprints(page, via, referencePath = null) {
+async function collectUndoFingerprints(page, via) {
   const rows = [await fingerprint(page)];
   for (let guard = 0; guard < 50; guard += 1) {
     let hist = await agentCall(page, 'history', {});
@@ -326,7 +326,7 @@ export async function run(ctx) {
 
   await runner.runStep('UI undo matches agent', async () => {
     await focusPartHistoryForUndo(page);
-    uiUndoPath = await collectUndoFingerprints(page, 'ui', agentUndoPath);
+    uiUndoPath = await collectUndoFingerprints(page, 'ui');
     let mismatch = '';
     for (let i = 0; i < Math.max(agentUndoPath.length, uiUndoPath.length); i += 1) {
       const x = agentUndoPath[i];
