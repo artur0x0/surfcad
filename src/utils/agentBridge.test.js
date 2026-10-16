@@ -10,7 +10,8 @@ import {
   commitAgentStep,
   createSurfcadBridge,
 } from './agentBridge.js';
-import { emptyPartHistory, undoPartHistory } from './partHistory.js';
+import { emptyPartHistory, redoPartHistory, undoPartHistory } from './partHistory.js';
+import { summarizePartHistory } from '../agent/historyRoute.js';
 import { v1Registry } from '../agent/commands/index.js';
 
 const BOX = `// --- cube begin ---
@@ -87,6 +88,63 @@ function world(opts = {}) {
     screenshot() {
       if (Object.prototype.hasOwnProperty.call(opts, 'screenshot')) return opts.screenshot;
       return 'data:image/png;base64,iVBORw0KGgo=';
+    },
+    async agentUndo() {
+      const before = history;
+      const undone = undoPartHistory(history);
+      if (undone.code == null) return { handled: false };
+      buffer = undone.code;
+      history = { commits: undone.history.commits.slice(), head: undone.history.head };
+      calls.writeHistory += 1;
+      const outcome = await host.execute(undone.code);
+      const applied = history.commits[history.head];
+      const reverted = before.commits[before.head];
+      return {
+        handled: true,
+        result: {
+          ok: outcome.ok === true,
+          kind: 'part',
+          applied: { label: applied?.message || 'Step' },
+          reverted: { label: reverted?.message || 'Step' },
+          errors: outcome.errors || [],
+          status: {
+            volume: outcome.volume ?? null,
+            bbox: outcome.bbox ?? null,
+            partName: outcome.partName || '',
+            featureCount: agentFeatureCount(undone.code),
+          },
+        },
+      };
+    },
+    async agentRedo() {
+      const before = history;
+      const redone = redoPartHistory(history);
+      if (redone.code == null) return { handled: false };
+      buffer = redone.code;
+      history = { commits: redone.history.commits.slice(), head: redone.history.head };
+      calls.writeHistory += 1;
+      const outcome = await host.execute(redone.code);
+      const applied = history.commits[history.head];
+      const reverted = before.commits[before.head];
+      return {
+        handled: true,
+        result: {
+          ok: outcome.ok === true,
+          kind: 'part',
+          applied: { label: applied?.message || 'Step' },
+          reverted: { label: reverted?.message || 'Step' },
+          errors: outcome.errors || [],
+          status: {
+            volume: outcome.volume ?? null,
+            bbox: outcome.bbox ?? null,
+            partName: outcome.partName || '',
+            featureCount: agentFeatureCount(redone.code),
+          },
+        },
+      };
+    },
+    agentHistory() {
+      return summarizePartHistory(history.commits, history.head);
     },
   };
   return {
@@ -483,7 +541,7 @@ test('list_commands does not wait for a queued mutation', async () => {
   const listed = await api.call('list_commands', '{}');
   assert.equal(listed.ok, true);
   assert.equal(listed.result.commands[0].name, 'get_script');
-  assert.equal(listed.result.commands[7].name, 'list_commands');
+  assert.equal(listed.result.commands.find((row) => row.name === 'list_commands')?.name, 'list_commands');
   assert.equal(listed.result.commands.at(-1).name, 'git_list_branches');
   release();
   await pending;

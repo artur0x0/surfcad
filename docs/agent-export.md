@@ -148,7 +148,9 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `status` | `{}` | `Status` from the last finished `set_script`, `run`, or `undo`. |
 | `errors` | `{}` | `{ "errors": [{ "code": string, "message": string, "featureIndex"?: number }] }` — structured messages from the last finished run. `featureIndex` is set when the failing marked block is known. Empty after a good run. |
 | `screenshot` | `{ "format": "png" }` | `{ "dataUrl": string }`. `format` may be omitted and defaults to `"png"`. |
-| `undo` | `{}` | Part script: same shape as `set_script`. Assembly / joint strip: `{ ok, kind: "assembly", joints, reverted?: { historyHeadBefore, historyHeadAfter, jointsBefore, jointsAfter, jointNamesBefore, jointNamesAfter } }` when a joint-history step was undone; `handled: false` falls through to part undo or `nothing_to_undo`. Failed `joint_commit` does not push an assembly-history step. |
+| `undo` | `{}` | One feature-bar undo (sketch session, assembly joints when `cadPartId` is null, else active part script). `{ ok, kind: "sketch" \| "assembly" \| "part", applied: { label, … }, reverted: { label, … }, status?, errors? }`. Part steps include `status` like `set_script`. Assembly steps include joint `reverted` metadata (H11). Sketch steps report depth. No separate bridge stack. |
+| `redo` | `{}` | One feature-bar redo (assembly or part; sketch redo is disabled in the UI). Same `applied` / `reverted` / `reapplied` labels as undo. `nothing_to_redo` when the strip Redo button would be disabled. |
+| `history` | `{}` | `{ kind, head, canUndo, canRedo, entries: [{ index, label, current }], partId? }` for the stack the next undo/redo would use. Immediate read. |
 | `list_commands` | `{}` | `{ "commands": [{ "name": string, "schema": object, "example": object }] }` — every command, in `commands` order, including this one. `schema` is the args schema. `example` is one args object. No functions, no `uiEntry`. |
 | `agent_set_visible` | `{ "enabled"?: boolean, "stepDelayMs"?: number, "cursor"?: boolean, "highlight"?: boolean, "ripple"?: boolean, "easeCamera"?: boolean }` | `{ "options": { … } }` — toggles operator-visible cues (synthetic cursor, control flashes, pacing). Same options can be seeded with `?visible=1`, `?agent=visible`, localStorage `surfcadAgentVisible` = `1`, or env `AGENT_VISIBLE=1`. Does not change command outcomes. |
 | `feature_tree` | `{}` | `{ "features": [{ "id", "kind", "label", "chipLabel", "index", "failed", "sheet", "external", "separate" }], "rollbackAnchor": string \| null, "activeChipId": string \| null }` for the active part script. |
@@ -274,7 +276,8 @@ One session at a time. A session idle for `timeout_ms` (default 120000, 1000–1
 | `real_repo_blocked` | Agent git write while the real GitHub adapter is active without opt-in. `error.details.reason` is `consent_pending` (no answer / headless), `consent_declined` (user denied this session), or omitted when blocked by legacy query/storage-only paths. Message explains consent or decline. |
 | `git_error` | Git handler returned `{ status: "error" }` (message in `error.message`). |
 | `unsupported_format` | `screenshot` `format` is present and is not `"png"`. |
-| `nothing_to_undo` | `undo` is already at the bottom of the stack. The editor and the history do not change. Also `pick_undo` with no agent pick in the session. |
+| `nothing_to_undo` | `undo` is already at the bottom of the active stack (sketch, assembly, or part). The editor and the history do not change. Also `pick_undo` with no agent pick in the session. |
+| `nothing_to_redo` | `redo` is already at the top of the active stack, or sketch mode (no redo). |
 | `screenshot_failed` | The viewport did not return a `data:image/png` URL. |
 | `internal` | The command threw unexpectedly. |
 | `unknown_face` | `select_faces` / `pick_next` key did not match any patch. From `pick_next`, `details.index` is the failing key. |

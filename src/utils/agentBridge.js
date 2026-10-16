@@ -452,6 +452,8 @@ export function createSurfcadBridge(hostSource) {
     finishSheetDone: (prepared) => { hostFn('finishSheetDone')?.(prepared); },
     prepareSheetMutate: (prepared) => hostFn('prepareSheetMutate')?.(prepared),
     agentUndo: () => hostFn('agentUndo')?.(),
+    agentRedo: () => hostFn('agentRedo')?.(),
+    agentHistory: () => hostFn('agentHistory')?.(),
     slotOpen: (args) => hostFn('slotOpen')?.(args),
     slotAssignContour: (args) => hostFn('slotAssignContour')?.(args),
     slotSetParams: (args) => hostFn('slotSetParams')?.(args),
@@ -530,7 +532,7 @@ export function createSurfcadBridge(hostSource) {
    * Envelope `ok: false` means the command itself was refused.
    * Reads (`get_script`, `status`, `errors`, `list_commands`, and the H2
    * state readers) do not wait
-   * for a queued mutation. `set_script`, `run`, `screenshot`, and `undo` do.
+   * for a queued mutation. `set_script`, `run`, `screenshot`, `undo`, and `redo` do.
    */
   function call(name, argsJson) {
     if (typeof name !== 'string' || !AGENT_COMMANDS.includes(name)) {
@@ -585,6 +587,9 @@ export function createSurfcadBridge(hostSource) {
     },
     undo() {
       return unwrap(call('undo'));
+    },
+    redo() {
+      return unwrap(call('redo'));
     },
     syncStatusFromRun() {
       return syncStatusFromRun();

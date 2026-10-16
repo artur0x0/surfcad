@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 133,
+  "count": 135,
   "$defs": {
     "status": {
       "type": "object",
@@ -475,7 +475,7 @@
     },
     {
       "name": "undo",
-      "description": "Step the active part history once and run that script.",
+      "description": "One undo on the feature-bar stack (sketch session, assembly joints, or active part script) and run when the part script changes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -488,11 +488,21 @@
           "ok": {
             "type": "boolean"
           },
-          "errors": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+          "kind": {
+            "type": "string",
+            "enum": [
+              "sketch",
+              "assembly",
+              "part"
+            ]
+          },
+          "applied": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "reverted": {
+            "type": "object",
+            "additionalProperties": true
           },
           "status": {
             "type": "object",
@@ -541,19 +551,186 @@
               }
             }
           },
-          "unchanged": {
-            "type": "boolean"
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
       "errors": [
         "nothing_to_undo",
+        "no_write_part",
         "internal"
       ],
       "mutates": true,
       "destructive": false,
       "confirm": false,
       "immediate": false,
+      "uiEntry": null,
+      "example": {}
+    },
+    {
+      "name": "redo",
+      "description": "One redo on the feature-bar stack (assembly joints or active part; sketch has no redo).",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "assembly",
+              "part"
+            ]
+          },
+          "applied": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "reverted": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "reapplied": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "status": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "volume": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "bbox": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "min": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "max": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "partName": {
+                "type": "string"
+              },
+              "featureCount": {
+                "type": "integer"
+              }
+            }
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "errors": [
+        "nothing_to_redo",
+        "no_write_part",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": null,
+      "example": {}
+    },
+    {
+      "name": "history",
+      "description": "Summary of the stack the next undo/redo would use: entries, head, labels, canUndo, canRedo.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "sketch",
+              "assembly",
+              "part"
+            ]
+          },
+          "head": {
+            "type": "integer"
+          },
+          "canUndo": {
+            "type": "boolean"
+          },
+          "canRedo": {
+            "type": "boolean"
+          },
+          "partId": {
+            "type": "string"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "index": {
+                  "type": "integer"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "current": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "errors": [
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
       "uiEntry": null,
       "example": {}
     },

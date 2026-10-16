@@ -6,6 +6,8 @@ import { statusCommand } from './status.js';
 import { errorsCommand } from './errors.js';
 import { screenshotCommand } from './screenshot.js';
 import { undoCommand } from './undo.js';
+import { redoCommand } from './redo.js';
+import { historyCommand } from './history.js';
 import { listCommandsCommand } from './listCommands.js';
 import { featureTreeCommand } from './featureTree.js';
 import { selectionCommand } from './selection.js';
@@ -139,6 +141,8 @@ export const V1_COMMANDS = Object.freeze([
   errorsCommand,
   screenshotCommand,
   undoCommand,
+  redoCommand,
+  historyCommand,
   listCommandsCommand,
   agentSetVisibleCommand,
   featureTreeCommand,

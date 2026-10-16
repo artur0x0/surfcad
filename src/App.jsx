@@ -137,7 +137,13 @@ import { buildFeatureTree } from './agent/state/featureTree';
 import { resolveRollbackTarget, resolveStripTarget } from './agent/featureStripAgent';
 import { buildPartsState } from './agent/state/parts';
 import { buildToasts } from './agent/state/toasts';
-import { agentBridgeEnabled, createSurfcadBridge } from './utils/agentBridge';
+import {
+  historyStripTarget,
+  summarizeAssemblyHistory,
+  summarizePartHistory,
+  summarizeSketchHistory,
+} from './agent/historyRoute';
+import { agentBridgeEnabled, agentFeatureCount, createSurfcadBridge } from './utils/agentBridge';
 import { buildEffectiveJointCard } from './agent/jointCardAgent.js';
 import AgentVisibleLayer from './components/AgentVisibleLayer';
 import AgentBridgePairing from './components/AgentBridgePairing';
@@ -7147,7 +7153,7 @@ const App = () => {
       doc,
       scripts,
     });
-    if (!step.changed || step.scripts !== scripts) return;
+    if (!step.changed || step.scripts !== scripts) return false;
     assemblyHistoryRef.current = {
       key: assemblyHistoryRef.current?.key,
       ...step.history,
@@ -7155,6 +7161,7 @@ const App = () => {
     const written = rememberAssembly(step.doc);
     setAssemblyHistTick((tick) => tick + 1);
     paintAssemblyPoses(written);
+    return true;
   };
 
   const handleSelectJoint = (chip) => {
@@ -8163,6 +8170,56 @@ const App = () => {
   // Feature sheets read the editor's script, so match the failure there.
   const sheetFailedIds = failedFeatureIds(currentScript, runFailure);
   const sheetFailedTitles = failedFeatureTitles(currentScript, runFailure);
+  const agentHistoryStripContext = () => {
+    const ribbonOpen = sketchStrip == null && sheetStrip != null;
+    const jointsVisible = !ribbonOpen
+      && jointsChromeMounted({ appMode, featureSession })
+      && cadStripsShowJoints(cadPartIdRef.current);
+    return {
+      sketchOpen: sketchStrip != null,
+      showJoints: jointsVisible,
+    };
+  };
+  const agentRunOutcome = async (text) => {
+    const scriptText = typeof text === 'string' ? text : '';
+    setCurrentScript(scriptText);
+    if (appModeRef.current === 'game') {
+      return {
+        ok: false,
+        errors: ['Agent bridge drives the CAD tab'],
+        volume: null,
+        bbox: null,
+        partName: '',
+      };
+    }
+    await refreshAssemblyRef.current?.(scriptText);
+    const doc = assemblyRef.current;
+    const id = doc?.activeId;
+    const part = id ? doc.parts.find((row) => row.id === id) : null;
+    const partName = part?.name || '';
+    const run = id ? partRunsRef.current?.[id] : null;
+    if (run?.empty) {
+      return { ok: true, errors: [], volume: null, bbox: null, partName };
+    }
+    if (run?.ok === true && run.mesh?.vertProperties) {
+      const last = manifoldContext.getLastResult?.() || null;
+      return {
+        ok: true,
+        errors: [],
+        volume: last?.volume,
+        bbox: last?.boundingBox,
+        partName,
+      };
+    }
+    const message = (run && run.error) || 'Script failed';
+    return {
+      ok: false,
+      errors: [String(message)],
+      volume: null,
+      bbox: null,
+      partName,
+    };
+  };
   fillAgentHost(agentHostRef, {
     readFeatureTree() {
       const doc = assemblyRef.current;
@@ -8644,27 +8701,70 @@ const App = () => {
       handleJointCancel();
       return { result: { cancelled: true } };
     },
+    agentHistory() {
+      const ctx = agentHistoryStripContext();
+      const target = historyStripTarget(ctx);
+      if (target === 'sketch') {
+        const readSketch = agentHostRef.current?.readSketchHistory;
+        const sketch = typeof readSketch === 'function' ? readSketch() : { depth: 0, entries: [] };
+        return summarizeSketchHistory(sketch);
+      }
+      if (target === 'assembly') {
+        return summarizeAssemblyHistory(assemblyHistoryRef.current);
+      }
+      const id = historyKey();
+      const branch = historyRef.current?.branches?.main;
+      const current = partHistoriesRef.current[id] || {
+        commits: branch?.commits || [],
+        head: Number.isInteger(branch?.head) ? branch.head : -1,
+      };
+      return summarizePartHistory(current.commits, current.head, { partId: id });
+    },
     async agentUndo() {
-      if (cadStripsShowJoints(cadPartIdRef.current) && assemblyHistoryCanUndo(assemblyHistoryRef.current)) {
+      const ctx = agentHistoryStripContext();
+      const target = historyStripTarget(ctx);
+      if (target === 'sketch') {
+        const undoSketch = agentHostRef.current?.agentSketchUndo;
+        const step = typeof undoSketch === 'function' ? undoSketch() : null;
+        if (!step?.ok) return { handled: false };
+        const label = step.depthAfter === 0 ? 'Sketch start' : 'Sketch edit';
+        return {
+          handled: true,
+          result: {
+            ok: true,
+            kind: 'sketch',
+            applied: { label, depth: step.depthAfter, tool: step.tool },
+            reverted: { label: 'Sketch edit', depth: step.depthBefore },
+          },
+        };
+      }
+      if (target === 'assembly') {
+        if (!assemblyHistoryCanUndo(assemblyHistoryRef.current)) return { handled: false };
         const beforeDoc = assemblyRef.current;
         const jointsBefore = beforeDoc?.joints?.length ?? 0;
         const namesBefore = (beforeDoc?.joints || []).map((row) => row.name || row.id);
         const headBefore = assemblyHistoryRef.current?.head ?? 0;
+        const commits = assemblyHistoryRef.current?.commits || [];
+        const revertedLabel = commits[headBefore]
+          ? summarizeAssemblyHistory(assemblyHistoryRef.current).entries[headBefore]?.label
+          : 'Assembly';
         const changed = handleJointUndo();
-        if (!changed) {
-          return { handled: false };
-        }
+        if (!changed) return { handled: false };
         const afterDoc = assemblyRef.current;
         const jointsAfter = afterDoc?.joints?.length ?? 0;
         const namesAfter = (afterDoc?.joints || []).map((row) => row.name || row.id);
         const headAfter = assemblyHistoryRef.current?.head ?? 0;
+        const appliedLabel = summarizeAssemblyHistory(assemblyHistoryRef.current).entries[headAfter]?.label
+          || 'Assembly';
         return {
           handled: true,
           result: {
             ok: true,
             kind: 'assembly',
             joints: jointsAfter,
+            applied: { label: appliedLabel, historyHead: headAfter },
             reverted: {
+              label: revertedLabel,
               historyHeadBefore: headBefore,
               historyHeadAfter: headAfter,
               jointsBefore,
@@ -8675,7 +8775,115 @@ const App = () => {
           },
         };
       }
-      return { handled: false };
+      if (!focusWritePart(null)) {
+        return {
+          handled: true,
+          error: { code: 'no_write_part', message: 'No writable part for undo' },
+        };
+      }
+      const id = historyKey();
+      const branch = historyRef.current?.branches?.main;
+      const current = partHistoriesRef.current[id] || {
+        commits: branch?.commits || [],
+        head: Number.isInteger(branch?.head) ? branch.head : -1,
+      };
+      const undone = undoPartHistory(current);
+      if (undone.code == null) return { handled: false };
+      const reverted = current.commits[current.head];
+      const applied = undone.history.commits[undone.history.head];
+      partHistoriesRef.current[id] = undone.history;
+      applyPartHistory(undone.history);
+      codeEditorRef.current?.setTextOnly?.(undone.code);
+      const outcome = await agentRunOutcome(undone.code);
+      return {
+        handled: true,
+        result: {
+          ok: outcome.ok === true,
+          kind: 'part',
+          partId: id,
+          applied: { label: applied?.message || 'Step' },
+          reverted: { label: reverted?.message || 'Step' },
+          errors: outcome.errors || [],
+          status: {
+            volume: outcome.volume ?? null,
+            bbox: outcome.bbox ?? null,
+            partName: outcome.partName || '',
+            featureCount: agentFeatureCount(undone.code),
+          },
+        },
+      };
+    },
+    async agentRedo() {
+      const ctx = agentHistoryStripContext();
+      const target = historyStripTarget(ctx);
+      if (target === 'sketch') {
+        return { handled: false };
+      }
+      if (target === 'assembly') {
+        if (!assemblyHistoryCanRedo(assemblyHistoryRef.current)) return { handled: false };
+        const beforeDoc = assemblyRef.current;
+        const jointsBefore = beforeDoc?.joints?.length ?? 0;
+        const headBefore = assemblyHistoryRef.current?.head ?? 0;
+        const changed = handleJointRedo();
+        if (!changed) return { handled: false };
+        const afterDoc = assemblyRef.current;
+        const jointsAfter = afterDoc?.joints?.length ?? 0;
+        const headAfter = assemblyHistoryRef.current?.head ?? 0;
+        const appliedLabel = summarizeAssemblyHistory(assemblyHistoryRef.current).entries[headAfter]?.label
+          || 'Assembly';
+        return {
+          handled: true,
+          result: {
+            ok: true,
+            kind: 'assembly',
+            joints: jointsAfter,
+            applied: { label: appliedLabel, historyHead: headAfter },
+            reapplied: {
+              historyHeadBefore: headBefore,
+              historyHeadAfter: headAfter,
+              jointsBefore,
+              jointsAfter,
+            },
+          },
+        };
+      }
+      if (!focusWritePart(null)) {
+        return {
+          handled: true,
+          error: { code: 'no_write_part', message: 'No writable part for redo' },
+        };
+      }
+      const id = historyKey();
+      const branch = historyRef.current?.branches?.main;
+      const current = partHistoriesRef.current[id] || {
+        commits: branch?.commits || [],
+        head: Number.isInteger(branch?.head) ? branch.head : -1,
+      };
+      const redone = redoPartHistory(current);
+      if (redone.code == null) return { handled: false };
+      const reverted = current.commits[current.head];
+      const applied = redone.history.commits[redone.history.head];
+      partHistoriesRef.current[id] = redone.history;
+      applyPartHistory(redone.history);
+      codeEditorRef.current?.setTextOnly?.(redone.code);
+      const outcome = await agentRunOutcome(redone.code);
+      return {
+        handled: true,
+        result: {
+          ok: outcome.ok === true,
+          kind: 'part',
+          partId: id,
+          applied: { label: applied?.message || 'Step' },
+          reverted: { label: reverted?.message || 'Step' },
+          errors: outcome.errors || [],
+          status: {
+            volume: outcome.volume ?? null,
+            bbox: outcome.bbox ?? null,
+            partName: outcome.partName || '',
+            featureCount: agentFeatureCount(redone.code),
+          },
+        },
+      };
     },
     openFeature(args = {}) {
       if (!focusWritePart(null)) {

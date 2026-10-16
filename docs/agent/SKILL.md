@@ -33,7 +33,8 @@ Optional: `SURFCAD_AGENT_BRIDGE_WS_URL` (default `ws://127.0.0.1:17341`; preview
 3. **Make a feature** — e.g. `insert_cube`, then **`run`**; or `set_script` + `run`.
 4. **Pick** — `select_faces` / `select_edges`, or **`pick_begin`** → `pick_next` → `pick_done` `{ "accept": true }` for Fillet/Hole cards.
 5. **Commit** — helper inserts mutate the script and run; card flows end with `pick_done` `{ "accept": true }` or `confirm_feature`.
-6. **`undo`** — one step on the part (or assembly) stack.
+6. **`history`** — read the stack the feature bar would undo (sketch session, assembly joints, or active part): `entries`, `head`, labels, `canUndo` / `canRedo`.
+7. **`undo`** / **`redo`** — one step on that same stack (not a separate bridge stack). Results include `applied` / `reverted` labels. A new committed edit clears redo, like the UI.
 
 **Sheet metal (H14).** `sheet_open` → `sheet_start` `{ sku }` → `sheet_pick` `{ plane: "XY" }` → `sheet_set_params` / `sheet_commit` for base and bends; `sheet_check` / `sheet_refold` for flat pattern; `sheet_edit` on `sheet:base` to change gauge; one `undo` per committed write.
 
