@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 120,
+  "count": 133,
   "$defs": {
     "status": {
       "type": "object",
@@ -10469,6 +10469,709 @@
         "joint_id": "j1",
         "name": "Pin fit"
       }
+    },
+    {
+      "name": "sheet_open",
+      "description": "Open the Sheet Metal picker (Shape rail).",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_view",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": [
+        "data-sheet-metal-button",
+        "data-sheet-metal-picker"
+      ],
+      "example": {}
+    },
+    {
+      "name": "sheet_start",
+      "description": "Bind a SendCutSend SKU and enter sheet-metal mode.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "SendCutSend SKU from the catalog"
+          },
+          "material": {
+            "type": "string",
+            "description": "Optional material name when sku is omitted"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "unknown_sku",
+        "bind_failed",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-sheet-metal-start",
+      "example": {
+        "sku": "ALU-090"
+      }
+    },
+    {
+      "name": "sheet_set_tool",
+      "description": "Select Tab, Bend, Hole, Countersink, or Tapped on the sheet rail.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tool"
+        ],
+        "properties": {
+          "tool": {
+            "type": "string",
+            "enum": [
+              "tab",
+              "bend",
+              "hole",
+              "countersink",
+              "tapped"
+            ]
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "no_sheet_mode",
+        "bad_tool",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": null,
+      "example": {
+        "tool": "bend"
+      }
+    },
+    {
+      "name": "sheet_set_params",
+      "description": "Patch the open sheet stage (plane, base dims, bend/tab/hole draft, or spec r/k/t/sku).",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "plane": {
+            "type": "string",
+            "enum": [
+              "XY",
+              "XZ",
+              "YZ"
+            ]
+          },
+          "width": {
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          },
+          "angle": {
+            "type": "number"
+          },
+          "length": {
+            "type": "number"
+          },
+          "flip": {
+            "type": "boolean"
+          },
+          "depth": {
+            "type": "number"
+          },
+          "centered": {
+            "type": "boolean"
+          },
+          "offset": {
+            "type": "number"
+          },
+          "d": {
+            "type": "number"
+          },
+          "u": {
+            "type": "number"
+          },
+          "v": {
+            "type": "number"
+          },
+          "thread": {
+            "type": "string"
+          },
+          "cskDia": {
+            "type": "number"
+          },
+          "cskAngle": {
+            "type": "number"
+          },
+          "r": {
+            "type": "number",
+            "description": "Inner bend radius (mm) on the live spec"
+          },
+          "k": {
+            "type": "number",
+            "description": "K-factor on the live spec"
+          },
+          "t": {
+            "type": "number",
+            "description": "Thickness (mm) on the live spec"
+          },
+          "sku": {
+            "type": "string",
+            "description": "Rebind gauge / thickness from catalog"
+          },
+          "material": {
+            "type": "string"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "no_sheet_mode",
+        "bad_stage",
+        "unknown_sku",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-sheet-metal-base",
+      "example": {
+        "width": 80,
+        "height": 50
+      }
+    },
+    {
+      "name": "sheet_pick",
+      "description": "Pick a plane, sheet edge (panel+edge or ref_key), hole panel, or ribbon chip.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "plane": {
+            "type": "string",
+            "enum": [
+              "XY",
+              "XZ",
+              "YZ"
+            ]
+          },
+          "panel": {
+            "type": "string"
+          },
+          "edge": {
+            "type": "string",
+            "enum": [
+              "u+",
+              "u-",
+              "v+",
+              "v-"
+            ]
+          },
+          "ref_key": {
+            "type": "string"
+          },
+          "chip_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "hole"
+            ]
+          },
+          "picks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "plane": {
+                  "type": "string"
+                },
+                "panel": {
+                  "type": "string"
+                },
+                "edge": {
+                  "type": "string"
+                },
+                "ref_key": {
+                  "type": "string"
+                },
+                "chip_id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "no_sheet_mode",
+        "bad_pick",
+        "unknown_chip",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": null,
+      "example": {
+        "panel": "base",
+        "edge": "u+"
+      }
+    },
+    {
+      "name": "sheet_commit",
+      "description": "Confirm the open base flange or feature draft (one undo when the script changes).",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "volume": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "bbox": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "min": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "max": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "partName": {
+                "type": "string"
+              },
+              "featureCount": {
+                "type": "integer"
+              }
+            }
+          },
+          "unchanged": {
+            "type": "boolean"
+          }
+        }
+      },
+      "errors": [
+        "commit_failed",
+        "no_draft",
+        "no_write_part",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-sm-accept",
+      "example": {}
+    },
+    {
+      "name": "sheet_cancel",
+      "description": "Back out of a draft, base popup, check view, or picker.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "const": true
+          }
+        }
+      },
+      "errors": [
+        "no_sheet_mode",
+        "nothing_to_cancel",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": "data-sm-back",
+      "example": {}
+    },
+    {
+      "name": "sheet_exit",
+      "description": "Exit sheet-metal mode without Done.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "const": true
+          }
+        }
+      },
+      "errors": [
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": [
+        "data-sheet-metal-exit",
+        "data-sheet-metal-mode-chip"
+      ],
+      "example": {}
+    },
+    {
+      "name": "sheet_check",
+      "description": "Open the flat-pattern / DFM check card (unfold).",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_stage",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": "data-sm-check",
+      "example": {}
+    },
+    {
+      "name": "sheet_refold",
+      "description": "Close the check card and return to bent edit.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "const": true
+          }
+        }
+      },
+      "errors": [
+        "bad_stage",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": "data-sheet-metal-export",
+      "example": {}
+    },
+    {
+      "name": "sheet_done",
+      "description": "Write pending sheet edits if needed and close the flow.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "volume": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "bbox": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "min": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "max": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "partName": {
+                "type": "string"
+              },
+              "featureCount": {
+                "type": "integer"
+              }
+            }
+          },
+          "unchanged": {
+            "type": "boolean"
+          }
+        }
+      },
+      "errors": [
+        "bad_stage",
+        "commit_failed",
+        "no_write_part",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-sm-done",
+      "example": {}
+    },
+    {
+      "name": "sheet_edit",
+      "description": "Open a sheet ribbon chip or marker for edit; optional param patch.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "chip_id": {
+            "type": "string",
+            "description": "Sheet ribbon chip id (sheet:base, sheet:bend:b1, …)"
+          },
+          "feature_id": {
+            "type": "string",
+            "description": "Sheet-metal marker id from feature_tree"
+          },
+          "plane": {
+            "type": "string",
+            "enum": [
+              "XY",
+              "XZ",
+              "YZ"
+            ]
+          },
+          "width": {
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          },
+          "angle": {
+            "type": "number"
+          },
+          "length": {
+            "type": "number"
+          },
+          "flip": {
+            "type": "boolean"
+          },
+          "depth": {
+            "type": "number"
+          },
+          "centered": {
+            "type": "boolean"
+          },
+          "offset": {
+            "type": "number"
+          },
+          "d": {
+            "type": "number"
+          },
+          "u": {
+            "type": "number"
+          },
+          "v": {
+            "type": "number"
+          },
+          "thread": {
+            "type": "string"
+          },
+          "cskDia": {
+            "type": "number"
+          },
+          "cskAngle": {
+            "type": "number"
+          },
+          "r": {
+            "type": "number",
+            "description": "Inner bend radius (mm) on the live spec"
+          },
+          "k": {
+            "type": "number",
+            "description": "K-factor on the live spec"
+          },
+          "t": {
+            "type": "number",
+            "description": "Thickness (mm) on the live spec"
+          },
+          "sku": {
+            "type": "string",
+            "description": "Rebind gauge / thickness from catalog"
+          },
+          "material": {
+            "type": "string"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "no_sheet_mode",
+        "unknown_chip",
+        "unknown_feature",
+        "edit_failed",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": null,
+      "example": {
+        "chip_id": "sheet:base"
+      }
+    },
+    {
+      "name": "sheet_begin_hole",
+      "description": "Next on a new sheet hole: open the centres sketch on the panel.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_stage",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-sm-next",
+      "example": {}
     },
     {
       "name": "git_move_to_repo",

@@ -100,6 +100,21 @@ import {
   jointSelectCommand,
   jointEditCommand,
 } from './joint.js';
+import {
+  sheetOpenCommand,
+  sheetStartCommand,
+  sheetSetToolCommand,
+  sheetSetParamsCommand,
+  sheetPickCommand,
+  sheetCommitCommand,
+  sheetCancelCommand,
+  sheetExitCommand,
+  sheetCheckCommand,
+  sheetRefoldCommand,
+  sheetDoneCommand,
+  sheetEditCommand,
+  sheetBeginHoleCommand,
+} from './sheet.js';
 
 const HELPER_COMMANDS = buildHelperPaletteCommands();
 
@@ -114,6 +129,7 @@ const HELPER_COMMANDS = buildHelperPaletteCommands();
  * H10 hole card, plane/workplane, sketch point picks follow H9.
  * H11 parts, assemblies, and joints follow H10.
  * H12 git ribbon commands follow H11.
+ * H14 sheet-metal flow follows H12.
  */
 export const V1_COMMANDS = Object.freeze([
   getScriptCommand,
@@ -195,6 +211,19 @@ export const V1_COMMANDS = Object.freeze([
   jointCancelCommand,
   jointSelectCommand,
   jointEditCommand,
+  sheetOpenCommand,
+  sheetStartCommand,
+  sheetSetToolCommand,
+  sheetSetParamsCommand,
+  sheetPickCommand,
+  sheetCommitCommand,
+  sheetCancelCommand,
+  sheetExitCommand,
+  sheetCheckCommand,
+  sheetRefoldCommand,
+  sheetDoneCommand,
+  sheetEditCommand,
+  sheetBeginHoleCommand,
   gitMoveToRepoCommand,
   gitSaveCommand,
   gitAddToRepoCommand,

@@ -35,6 +35,8 @@ Optional: `SURFCAD_AGENT_BRIDGE_WS_URL` (default `ws://127.0.0.1:17341`; preview
 5. **Commit** — helper inserts mutate the script and run; card flows end with `pick_done` `{ "accept": true }` or `confirm_feature`.
 6. **`undo`** — one step on the part (or assembly) stack.
 
+**Sheet metal (H14).** `sheet_open` → `sheet_start` `{ sku }` → `sheet_pick` `{ plane: "XY" }` → `sheet_set_params` / `sheet_commit` for base and bends; `sheet_check` / `sheet_refold` for flat pattern; `sheet_edit` on `sheet:base` to change gauge; one `undo` per committed write.
+
 ## Stable ids
 
 - **Faces** — keys from `list_faces` / `selection`: `{ at, n, area, src?, ord? }` (same as viewport fingerprints).
