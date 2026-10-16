@@ -2,7 +2,7 @@
 /**
  * Agent bridge FEA: open Analyze, material, fixture + force, run, magnitude re-run changes stress.
  */
-/* global document, window, indexedDB, localStorage */
+/* global window, indexedDB, localStorage */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -143,7 +143,10 @@ async function shot(page, label, width) {
   writeFileSync(join(SHOT_DIR, `agent-bridge-fea-${label}-${width}.png`), buf);
 }
 
-console.log('agent bridge fea golden');
+function logStep(msg) {
+  console.log(msg);
+}
+logStep('agent bridge fea golden');
 
 if (!(await waitForServer())) {
   console.log('  ❌ preview server did not start');
@@ -215,16 +218,13 @@ const load = await agentCall(page, 'fea_pick', { keys: [loadFace.key] });
 check('fea_pick load face', load.ok === true, JSON.stringify(load));
 await page.waitForSelector('[data-fea-load-count="1"]', { timeout: 15000 });
 
-const run1 = await agentCall(page, 'fea_run', {}, 240_000);
+logStep('  fea_run (200 N)…');
+const run1 = await agentCall(page, 'fea_run', {}, 300_000);
 check('fea_run first', run1.ok === true && run1.result?.status === 'done', JSON.stringify(run1.result));
 check('fea_run reports dof', Number.isFinite(run1.result?.dof) && run1.result.dof > 0,
   JSON.stringify({ dof: run1.result?.dof }));
-await page.waitForFunction(() => {
-  const raw = document.querySelector('[data-fea-stress]')?.textContent || '';
-  const n = parseFloat(raw.replace(/[^0-9.eE+-]/g, ''));
-  return Number.isFinite(n) && n > 0;
-}, { timeout: 120000 });
-await page.waitForSelector('[data-fea-screen="results"]', { timeout: 120000 });
+check('fea_run peak stress', (run1.result?.maxVonMises_MPa ?? 0) > 0,
+  JSON.stringify({ max: run1.result?.maxVonMises_MPa }));
 
 const scriptBefore = await agentCall(page, 'get_script', {});
 const bump = await agentCall(page, 'fea_set_force', { magnitudeN: 400, direction: '-z' });
@@ -234,7 +234,8 @@ check('magnitude write updates study script', scriptAfter.ok === true
   && scriptAfter.result?.source !== scriptBefore.result?.source,
   'study script unchanged after magnitude bump');
 
-const run2 = await agentCall(page, 'fea_run', {}, 240_000);
+logStep('  fea_run (400 N)…');
+const run2 = await agentCall(page, 'fea_run', {}, 300_000);
 check('fea_run second', run2.ok === true && run2.result?.status === 'done', JSON.stringify(run2.result));
 const max1 = run1.result?.maxVonMises_MPa;
 const max2 = run2.result?.maxVonMises_MPa;

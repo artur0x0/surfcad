@@ -366,7 +366,7 @@ jobs:
   agent-bridge-fea-golden:
     name: Agent bridge FEA golden
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 

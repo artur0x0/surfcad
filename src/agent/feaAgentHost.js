@@ -400,6 +400,10 @@ export function createFeaAgentHandlers(deps) {
           continue;
         }
         if (reportStatus === 'done' && live.result?.source === 'tet10' && live.result?.stats == null) {
+          const peak = live.result?.max;
+          if (typeof peak === 'number' && Number.isFinite(peak) && peak > 0) {
+            break;
+          }
           await sleepMs(runPollMs);
           continue;
         }
