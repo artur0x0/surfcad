@@ -223,6 +223,22 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `joint_cancel` | `{}` | Dismisses the joint card without writing. |
 | `joint_select` | `{ joint_id }` | Opens an existing joint from the strip (`data-joint-chip`) in edit mode. |
 | `joint_edit` | `{ joint_id?, type?, name?, value_mm?, … }` | Patches a joint in edit mode (optional `joint_id` selects first). Commit with `joint_commit`. |
+| `paint_open` | `{}` | Opens Paint mode (`data-paint-chip`). |
+| `paint_close` | `{}` | Closes Paint without Confirm (same as ✕). |
+| `paint_set_color` | `{ color: "#RRGGBB" }` | Active paint color (swatch or hex). |
+| `paint_faces` | `{ keys: [faceKey, …] }` | Live session paint on face keys from `list_faces`. |
+| `paint_part` | `{}` | Paint whole body (Part button). |
+| `paint_undo` | `{}` | Session undo inside the Paint card. |
+| `paint_clear` | `{}` | Clear session paints. |
+| `paint_confirm` | `{}` | Confirm — writes assembly `colors` (one assembly save). |
+| `paint_cancel` | `{}` | Dismiss Paint without write. |
+| `paint_state` | `{}` | `{ open, color, pendingCount, canConfirm, … }`. |
+| `measure_open` | `{}` | Opens Measure (`data-measure-toggle`). |
+| `measure_close` | `{}` | Closes Measure without write. |
+| `measure_set_unit` | `{ unit: "mm" \| "in" }` | Global display unit (`surfcad.displayUnit`). |
+| `measure_pick` | `{ face_keys }`, `{ edge_keys }`, or `{ point: [x,y,z] }` | Toggle measure picks like canvas taps. |
+| `measure_clear` | `{}` | Clear picks, stay in Measure. |
+| `measure_state` | `{}` | Picks, unit, and `measureReadout` rows. |
 | `sheet_open` | `{}` | Opens the Sheet Metal picker (`data-sheet-metal-button`). |
 | `sheet_start` | `{ sku }` or `{ material }` | Binds SendCutSend stock and enters sheet-metal mode (`data-sheet-metal-start`). |
 | `sheet_set_tool` | `{ tool: "tab"\|"bend"\|"hole"\|"countersink"\|"tapped" }` | Active tool on the sheet left rail. |

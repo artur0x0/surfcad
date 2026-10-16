@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 137,
+  "count": 153,
   "$defs": {
     "status": {
       "type": "object",
@@ -11348,6 +11348,1002 @@
       "confirm": false,
       "immediate": false,
       "uiEntry": "data-sm-next",
+      "example": {}
+    },
+    {
+      "name": "paint_open",
+      "description": "Bridge command paint_open.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": "data-paint-chip",
+      "example": {}
+    },
+    {
+      "name": "paint_close",
+      "description": "Bridge command paint_close.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": "data-paint-chip",
+      "example": {}
+    },
+    {
+      "name": "paint_set_color",
+      "description": "Bridge command paint_set_color.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "type": "string",
+            "description": "#RRGGBB"
+          },
+          "hex": {
+            "type": "string",
+            "description": "Alias for color"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-paint-swatch",
+      "example": {
+        "color": "#3b82f6"
+      }
+    },
+    {
+      "name": "paint_faces",
+      "description": "Bridge command paint_faces.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "at",
+                "n",
+                "area"
+              ],
+              "properties": {
+                "at": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "n": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "area": {
+                  "type": "number"
+                },
+                "src": {
+                  "type": "integer"
+                },
+                "ord": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": null,
+      "example": {
+        "keys": [
+          {
+            "at": [
+              0,
+              0,
+              10
+            ],
+            "n": [
+              0,
+              0,
+              1
+            ],
+            "area": 400
+          }
+        ]
+      }
+    },
+    {
+      "name": "paint_part",
+      "description": "Bridge command paint_part.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-paint-part",
+      "example": {}
+    },
+    {
+      "name": "paint_undo",
+      "description": "Bridge command paint_undo.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-paint-undo",
+      "example": {}
+    },
+    {
+      "name": "paint_clear",
+      "description": "Bridge command paint_clear.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-paint-clear",
+      "example": {}
+    },
+    {
+      "name": "paint_confirm",
+      "description": "Bridge command paint_confirm.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-paint-mode-chip",
+      "example": {}
+    },
+    {
+      "name": "paint_cancel",
+      "description": "Bridge command paint_cancel.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": "data-paint-mode-chip",
+      "example": {}
+    },
+    {
+      "name": "paint_state",
+      "description": "Bridge command paint_state.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": null,
+      "example": {}
+    },
+    {
+      "name": "measure_open",
+      "description": "Bridge command measure_open.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": "data-measure-toggle",
+      "example": {}
+    },
+    {
+      "name": "measure_close",
+      "description": "Bridge command measure_close.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": "data-measure-mode-chip",
+      "example": {}
+    },
+    {
+      "name": "measure_set_unit",
+      "description": "Bridge command measure_set_unit.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "unit"
+        ],
+        "properties": {
+          "unit": {
+            "type": "string",
+            "enum": [
+              "mm",
+              "in"
+            ]
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-measure-unit-choice",
+      "example": {
+        "unit": "mm"
+      }
+    },
+    {
+      "name": "measure_pick",
+      "description": "Bridge command measure_pick.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "at",
+                "n",
+                "area"
+              ],
+              "properties": {
+                "at": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "n": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "area": {
+                  "type": "number"
+                },
+                "src": {
+                  "type": "integer"
+                },
+                "ord": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "face_keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "at",
+                "n",
+                "area"
+              ],
+              "properties": {
+                "at": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "n": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "area": {
+                  "type": "number"
+                },
+                "src": {
+                  "type": "integer"
+                },
+                "ord": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "face_key": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "at",
+              "n",
+              "area"
+            ],
+            "properties": {
+              "at": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "n": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "area": {
+                "type": "number"
+              },
+              "src": {
+                "type": "integer"
+              },
+              "ord": {
+                "type": "integer"
+              }
+            }
+          },
+          "edge_keys": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "Grouped boundary id (eN) or packed mesh edge key"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "faceKeyA",
+                    "faceKeyB"
+                  ],
+                  "properties": {
+                    "faceKeyA": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceKeyB": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceA": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceB": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceKeys": {
+                      "type": "array",
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "at",
+                          "n",
+                          "area"
+                        ],
+                        "properties": {
+                          "at": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "n": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "area": {
+                            "type": "number"
+                          },
+                          "src": {
+                            "type": "integer"
+                          },
+                          "ord": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "edge_key": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "Grouped boundary id (eN) or packed mesh edge key"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "faceKeyA",
+                  "faceKeyB"
+                ],
+                "properties": {
+                  "faceKeyA": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "at",
+                      "n",
+                      "area"
+                    ],
+                    "properties": {
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceKeyB": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "at",
+                      "n",
+                      "area"
+                    ],
+                    "properties": {
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceA": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "at",
+                      "n",
+                      "area"
+                    ],
+                    "properties": {
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceB": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "at",
+                      "n",
+                      "area"
+                    ],
+                    "properties": {
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceKeys": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "point": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 3,
+            "maxItems": 3
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": null,
+      "example": {
+        "face_keys": [
+          {
+            "at": [
+              0,
+              0,
+              10
+            ],
+            "n": [
+              0,
+              0,
+              1
+            ],
+            "area": 400
+          }
+        ]
+      }
+    },
+    {
+      "name": "measure_clear",
+      "description": "Bridge command measure_clear.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-measure-clear",
+      "example": {}
+    },
+    {
+      "name": "measure_state",
+      "description": "Bridge command measure_state.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": "data-measure-mode-chip",
       "example": {}
     },
     {
