@@ -27,6 +27,39 @@ export function isGpcActive(nav = navigatorRef) {
   return nav.globalPrivacyControl === true;
 }
 
+/** Whether the user has made an explicit analytics choice (banner dismissed or settings). */
+export function hasStoredConsentChoice() {
+  const raw = readRaw();
+  return raw != null && typeof raw.analytics === 'boolean';
+}
+
+/** First visit with no stored choice: show the cookie banner (not when GPC applies). */
+export function shouldShowCookieConsentBanner(nav = navigatorRef) {
+  if (isGpcActive(nav)) return false;
+  return !hasStoredConsentChoice();
+}
+
+/**
+ * GPC on first visit: treat as "Only required" and persist without showing the banner.
+ * @returns {boolean} whether a default was written
+ */
+export function applyGpcDefaultOnFirstVisit(nav = navigatorRef) {
+  if (!isGpcActive(nav)) return false;
+  if (hasStoredConsentChoice()) return false;
+  setAnalyticsConsent(false);
+  return true;
+}
+
+/**
+ * Headless / Playwright (navigator.webdriver): preset "Allow all" so goldens stay stable.
+ * @returns {boolean} whether consent was preset
+ */
+export function ensureAutomationConsentPreset(nav = navigatorRef) {
+  if (!nav || nav.webdriver !== true) return false;
+  if (hasStoredConsentChoice()) return false;
+  return writeRaw(true, new Date().toISOString()).analytics === true;
+}
+
 function readRaw() {
   if (!storage) return null;
   try {

@@ -6,9 +6,8 @@ import {
   isGpcActive,
   onConsentChange,
   readStoredRecord,
-  setAnalyticsConsent,
 } from '../utils/consent';
-import { persistConsentToServer } from '../utils/consentApi';
+import { applyAnalyticsConsentChoice } from '../utils/applyAnalyticsConsentChoice';
 import PrivacyChoicesDialog from './PrivacyChoicesDialog';
 
 /**
@@ -34,12 +33,9 @@ export default function PrivacyChoicesController({ linkClassName = '' }) {
   }, [serverConsent]);
 
   const handleAnalyticsChange = useCallback(async (next) => {
-    const record = setAnalyticsConsent(next);
+    const record = await applyAnalyticsConsentChoice(next, { isAuthenticated });
     setAnalyticsAllowed(record.analytics);
     setGpcActive(isGpcActive());
-    if (isAuthenticated) {
-      await persistConsentToServer(record.analytics);
-    }
   }, [isAuthenticated]);
 
   const effectiveOn = getAnalyticsConsent();
@@ -52,7 +48,7 @@ export default function PrivacyChoicesController({ linkClassName = '' }) {
         data-privacy-choices-link=""
         onClick={() => setOpen(true)}
       >
-        Privacy choices
+        Cookie settings
       </button>
       <PrivacyChoicesDialog
         open={open}

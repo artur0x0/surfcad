@@ -2,13 +2,17 @@ import assert from 'node:assert/strict';
 import { describe, test, beforeEach } from 'node:test';
 import {
   CONSENT_STORAGE_KEY,
+  applyGpcDefaultOnFirstVisit,
   applyServerConsent,
   configureConsentStorage,
   configureConsentNavigator,
+  ensureAutomationConsentPreset,
   getAnalyticsConsent,
+  hasStoredConsentChoice,
   onConsentChange,
   readStoredRecord,
   setAnalyticsConsent,
+  shouldShowCookieConsentBanner,
   isGpcActive,
 } from './consent.js';
 
@@ -33,6 +37,33 @@ describe('consent', () => {
   test('defaults analytics on when storage is empty', () => {
     assert.equal(getAnalyticsConsent(), true);
     assert.equal(readStoredRecord().analytics, true);
+    assert.equal(hasStoredConsentChoice(), false);
+    assert.equal(shouldShowCookieConsentBanner(), true);
+  });
+
+  test('explicit choice hides the banner until cleared', () => {
+    setAnalyticsConsent(false);
+    assert.equal(hasStoredConsentChoice(), true);
+    assert.equal(shouldShowCookieConsentBanner(), false);
+    setAnalyticsConsent(true);
+    assert.equal(shouldShowCookieConsentBanner(), false);
+  });
+
+  test('GPC skips banner and persists only-required default', () => {
+    configureConsentNavigator({ globalPrivacyControl: true });
+    assert.equal(shouldShowCookieConsentBanner(), false);
+    assert.equal(applyGpcDefaultOnFirstVisit(), true);
+    assert.equal(hasStoredConsentChoice(), true);
+    assert.equal(getAnalyticsConsent(), false);
+  });
+
+  test('automation preset stores allow-all for headless browsers', () => {
+    configureConsentNavigator({ webdriver: true });
+    assert.equal(ensureAutomationConsentPreset(), true);
+    assert.equal(hasStoredConsentChoice(), true);
+    assert.equal(getAnalyticsConsent(), true);
+    assert.equal(shouldShowCookieConsentBanner(), false);
+    assert.equal(ensureAutomationConsentPreset(), false);
   });
 
   test('GPC forces analytics off and blocks opt-in', () => {

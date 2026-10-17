@@ -101,6 +101,7 @@ describe('analytics', () => {
     setAnalyticsConsent(false);
     await new Promise((r) => setTimeout(r, 0));
     assert.ok(client.calls.some((row) => row[0] === 'opt_out'));
+    assert.ok(client.calls.some((row) => row[0] === 'reset'));
   });
 
   test('hashed identify uses SHA-256 hex', async () => {
