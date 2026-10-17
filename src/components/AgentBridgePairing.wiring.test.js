@@ -14,12 +14,13 @@ test('Allow/Deny portals onto document.body so it cannot vanish with the menu', 
   assert.match(SRC, /embedded=\{false\}/);
 });
 
-test('the body-portal Allow/Deny is bottom-center, not stacked on profile menu rows', () => {
+test('the body-portal Allow/Deny parks under the chip on narrow viewports', () => {
   const popup = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), 'AgentBridgeApprovalPopup.jsx'),
     'utf8',
   );
-  assert.match(popup, /fixed bottom-6 left-1\/2 z-\[130\] -translate-x-1\/2/);
+  assert.match(popup, /approvalPopupPositionClass/);
+  assert.match(popup, /data-agent-bridge-approval-anchor/);
   assert.match(popup, /data-agent-bridge-approval-portal=\{embedded \? undefined : ''\}/);
 });
 

@@ -30,4 +30,6 @@ test('relay-retry playtest asserts Allow/Deny does not cover the profile chrome'
   assert.match(SRC, /data-agent-bridge-approval-portal/);
   assert.match(SRC, /text-chrome-text/);
   assert.match(SRC, /rgb\(243, 244, 246\)/);
+  assert.match(SRC, /assertApprovalLayoutAtWidths/);
+  assert.match(SRC, /\[1280, 768, 390\]/);
 });

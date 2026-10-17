@@ -19,7 +19,10 @@ import {
 import { pickFreePort } from '../lib/pickFreePort.mjs';
 import { RelaySession } from '../../../packages/surfcad-mcp/src/relay.mjs';
 import { probeRelayAtUrl } from '../../../packages/surfcad-mcp/src/bridge/relayServer.mjs';
-import { rectsOverlap } from '../../../src/agent/ws/agentBridgeChrome.js';
+import {
+  APPROVAL_POPUP_WIDE_MIN_PX,
+  rectsOverlap,
+} from '../../../src/agent/ws/agentBridgeChrome.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const SERVER_BIN = join(ROOT, 'packages/surfcad-mcp/bin/surfcad-mcp.js');
@@ -135,6 +138,34 @@ async function assertApprovalClearsProfileChrome(page) {
   }
 }
 
+async function assertApprovalLayoutAtWidths(page, widths = [1280, 768, 390]) {
+  const original = page.viewportSize() || { width: 1280, height: 800 };
+  try {
+    for (const width of widths) {
+      await page.setViewportSize({ width, height: original.height });
+      const expected = width < APPROVAL_POPUP_WIDE_MIN_PX ? 'under-chip' : 'bottom-center';
+      await page.waitForFunction(
+        /* eslint-disable no-undef */
+        ({ w, a }) => window.innerWidth === w
+          && document.querySelector('[data-agent-bridge-approval]')?.getAttribute('data-agent-bridge-approval-anchor') === a,
+        /* eslint-enable no-undef */
+        { w: width, a: expected },
+        { timeout: 5000 },
+      );
+      await assertApprovalClearsProfileChrome(page);
+    }
+  } finally {
+    await page.setViewportSize(original);
+    await page.waitForFunction(
+      /* eslint-disable no-undef */
+      (w) => window.innerWidth === w,
+      /* eslint-enable no-undef */
+      original.width,
+      { timeout: 5000 },
+    );
+  }
+}
+
 export const id = 'agent-bridge-relay-retry';
 export const title = 'Agent bridge relay auto-retry';
 
@@ -211,7 +242,7 @@ export async function run(ctx) {
     const peerPromise = session.pair(token);
     peerPromise.catch(() => {});
     await page.waitForSelector('[data-agent-bridge-approval]', { timeout: 15000 });
-    await assertApprovalClearsProfileChrome(page);
+    await assertApprovalLayoutAtWidths(page, [1280, 768, 390]);
     await page.click('[data-ui-action="data-agent-bridge-approve"]');
     await peerPromise;
     await session.call('status');

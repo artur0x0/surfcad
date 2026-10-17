@@ -6,7 +6,8 @@ import { PAIR_MSG } from './relayMessages.mjs';
 
 /**
  * Resolves once the tab approves. `resume` is the key the tab handed out on
- * the previous approval; a tab that still holds it re-approves without a prompt.
+ * the previous approval; the hub matches it for that tabKey and auto-pairs
+ * without putting the secret on PAIR_REQUEST.
  *
  * @param {string} url
  * @param {string} token

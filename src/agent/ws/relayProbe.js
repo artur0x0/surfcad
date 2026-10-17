@@ -18,9 +18,10 @@ function wsUrlToHttp(url) {
 
 /**
  * Classify a failed WebSocket handshake from the HTTP follow-up.
- * 403 (or CORS-hidden 403) is origin_rejected; a live HTTP response with a
- * failed WS on https is browser_blocked; a timeout / connection error is null
- * so the poller keeps waiting.
+ * Only a visible HTTP 403 is origin_rejected. CORS-hidden + opaque OK on a
+ * secure page is what Chrome Local Network Access blocking looks like, so
+ * that is browser_blocked (insecure pages keep polling with null). A timeout
+ * / connection error is null so the poller keeps waiting.
  *
  * @param {{
  *   corsStatus?: number | null,
@@ -33,7 +34,9 @@ function wsUrlToHttp(url) {
  */
 export function classifyRelayHandshakeFailure(input = {}) {
   if (input.corsStatus === 403) return 'origin_rejected';
-  if (input.corsFailed && input.opaqueOk) return 'origin_rejected';
+  if (input.corsFailed && input.opaqueOk) {
+    return input.pageSecure === true ? 'browser_blocked' : null;
+  }
   if (input.timedOut && !input.opaqueOk) return null;
   if (!input.corsFailed && input.corsStatus != null && input.corsStatus !== 403) {
     return input.pageSecure === true ? 'browser_blocked' : null;

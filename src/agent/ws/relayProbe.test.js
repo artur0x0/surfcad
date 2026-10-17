@@ -12,7 +12,12 @@ test('classifyRelayHandshakeFailure tells 403 origin rejection apart from a time
     corsFailed: true,
     opaqueOk: true,
     pageSecure: true,
-  }), 'origin_rejected');
+  }), 'browser_blocked');
+  assert.equal(classifyRelayHandshakeFailure({
+    corsFailed: true,
+    opaqueOk: true,
+    pageSecure: false,
+  }), null);
   assert.equal(classifyRelayHandshakeFailure({
     corsFailed: true,
     opaqueOk: false,
@@ -64,7 +69,7 @@ test('probeRelayWebSocket returns ok on open without setting an issue', async ()
   assert.deepEqual(result, { ok: true, issue: null });
 });
 
-test('probeRelayWebSocket maps a CORS-hidden 403 (opaque HTTP, cors fetch throws) to origin_rejected', async () => {
+test('probeRelayWebSocket maps CORS-hidden opaque OK on https to browser_blocked, not origin_rejected', async () => {
   const result = await probeRelayWebSocket('ws://127.0.0.1:9', {
     timeoutMs: 200,
     pageSecure: true,
@@ -75,7 +80,21 @@ test('probeRelayWebSocket maps a CORS-hidden 403 (opaque HTTP, cors fetch throws
     },
   });
   assert.equal(result.ok, false);
-  assert.equal(result.issue, 'origin_rejected');
+  assert.equal(result.issue, 'browser_blocked');
+});
+
+test('classifyRelayHandshakeFailure only treats a visible 403 as origin_rejected', () => {
+  assert.equal(classifyRelayHandshakeFailure({
+    corsStatus: 403,
+    corsFailed: false,
+    opaqueOk: true,
+    pageSecure: true,
+  }), 'origin_rejected');
+  assert.equal(classifyRelayHandshakeFailure({
+    corsFailed: true,
+    opaqueOk: true,
+    pageSecure: true,
+  }), 'browser_blocked');
 });
 
 test('probeRelayWebSocket maps a 403 HTTP follow-up to origin_rejected without opening', async () => {

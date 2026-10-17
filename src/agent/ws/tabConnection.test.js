@@ -133,13 +133,27 @@ test('a resume request with the issued key is re-approved without a prompt', () 
   const ws2 = ctx.factory.latest();
   ws2.fire('open');
   ctx.states.length = 0;
-  ws2.receive({ type: PAIR_MSG.PAIR_REQUEST, token: 'ABC234', resume: resumeKey });
+  ws2.receive({ type: PAIR_MSG.PAIR_REQUEST, token: 'ABC234', resume: true });
   assert.ok(!ctx.states.includes('pending'), 'no approval popup');
   assert.equal(ws2.last(PAIR_MSG.PAIR_APPROVE).resumeKey, resumeKey);
   ws2.receive({ type: PAIR_MSG.PAIRED, token: 'ABC234' });
   assert.equal(ctx.conn.getState(), 'paired');
   assert.equal(ctx.conn.getLink(), 'connected');
   assert.deepEqual(ctx.links, ['connected', 'reconnecting', 'connected']);
+});
+
+test('a stolen string resume on PAIR_REQUEST does not auto-approve', () => {
+  const ctx = setup();
+  const { ws, resumeKey } = pair(ctx);
+  ws.fire('close', { code: 1006 });
+  ctx.timers.advance(500);
+  const ws2 = ctx.factory.latest();
+  ws2.fire('open');
+  ctx.states.length = 0;
+  ws2.receive({ type: PAIR_MSG.PAIR_REQUEST, token: 'ABC234', resume: resumeKey });
+  assert.equal(ctx.conn.getState(), 'pending');
+  assert.ok(ctx.states.includes('pending'));
+  assert.equal(ws2.last(PAIR_MSG.PAIR_APPROVE), undefined);
 });
 
 test('a pair request with a wrong or missing resume key still prompts', () => {
@@ -239,6 +253,24 @@ test('a deferred close from an old socket does not mark a newer socket idle', ()
   assert.equal(conn.getState(), 'advertising', 'stale close must not call onState(idle)');
   assert.ok(!states.includes('idle'));
   assert.equal(second.last(PAIR_MSG.REGISTER_TAB).token, 'ABC234');
+});
+
+test('a call reply is skipped once a newer socket exists', async () => {
+  let release;
+  const ctx = setup({
+    call: () => new Promise((resolve) => { release = resolve; }),
+  });
+  const { ws } = pair(ctx);
+  ws.receive({ id: 'c1', command: 'status' });
+  ws.fire('close', { code: 1006 });
+  ctx.timers.advance(500);
+  const ws2 = ctx.factory.latest();
+  ws2.fire('open');
+  release({ ok: true, result: { volume: 1 } });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(ws2.sent.filter((m) => m.id === 'c1').length, 0, 'must not reply on the newer socket');
+  assert.equal(ws.sent.filter((m) => m.id === 'c1').length, 0);
 });
 
 test('first connect to a missing relay stays idle for the pairing poller', () => {

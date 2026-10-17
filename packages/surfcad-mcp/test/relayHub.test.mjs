@@ -69,7 +69,8 @@ test('tab socket close unpairs and closes the peer, and logs a redacted drop', (
   const { hub, lines } = setup();
   const { tab, peer } = pairedTrio(hub);
   tab.emit('close', 1006, '');
-  assert.equal(hub.hasTab(TOKEN), false);
+  assert.equal(hub.hasTab(TOKEN), true, 'drop keeps a reservation so a squatter cannot take the code');
+  assert.equal(hub.isPaired(TOKEN), false);
   const unpaired = peer.last(PAIR_MSG.UNPAIRED);
   assert.equal(unpaired.reason, 'tab_disconnected');
   assert.match(unpaired.detail, /socket_closed code=1006/);
@@ -91,7 +92,8 @@ test('heartbeat terminates a tab that misses a pong and reports heartbeat_timeou
   assert.equal(tab.terminated, false, 'one sweep without a pong is tolerated');
   hub.heartbeat();
   assert.equal(tab.terminated, true);
-  assert.equal(hub.hasTab(TOKEN), false);
+  assert.equal(hub.hasTab(TOKEN), true, 'heartbeat drop still reserves the token for that tabKey');
+  assert.equal(hub.isPaired(TOKEN), false);
   assert.equal(peer.last(PAIR_MSG.UNPAIRED).detail, 'heartbeat_timeout');
   assert.ok(lines.some((l) => l.level === 'warn' && /reason=heartbeat_timeout/.test(l.line)));
 });
@@ -154,26 +156,72 @@ test('a different page cannot take over a registered code', () => {
   assert.equal(hub.isPaired(TOKEN), true);
 });
 
-test('resume key goes to the tab on pair and to the peer (only) on approve', () => {
+test('PAIR_REQUEST never carries the resume secret; matching resume auto-pairs at the hub', () => {
   const { hub } = setup();
   const tab = fakeSocket();
   const peer = fakeSocket();
   hub.attachSocket(tab);
   hub.attachSocket(peer);
   tab.receive({ type: PAIR_MSG.REGISTER_TAB, token: TOKEN, tabKey: TAB_KEY });
-  peer.receive({ type: PAIR_MSG.PAIR, token: TOKEN, resume: RESUME });
-  assert.equal(tab.last(PAIR_MSG.PAIR_REQUEST).resume, RESUME);
+  peer.receive({ type: PAIR_MSG.PAIR, token: TOKEN });
+  const firstRequest = tab.last(PAIR_MSG.PAIR_REQUEST);
+  assert.equal(firstRequest.resume, undefined);
   tab.receive({ type: PAIR_MSG.PAIR_APPROVE, resumeKey: RESUME });
   assert.equal(peer.last(PAIR_MSG.PAIRED).resumeKey, RESUME);
   assert.equal(tab.last(PAIR_MSG.PAIRED).resumeKey, undefined);
+  peer.emit('close', 1000, '');
+  assert.equal(hub.isPaired(TOKEN), false);
+
+  const peer2 = fakeSocket();
+  hub.attachSocket(peer2);
+  peer2.receive({ type: PAIR_MSG.PAIR, token: TOKEN, resume: RESUME });
+  assert.equal(peer2.last(PAIR_MSG.PAIRED).resumeKey, RESUME);
+  assert.equal(tab.last(PAIR_MSG.PAIRED).resume, true);
+  assert.ok(tab.sent.every((m) => m.resume !== RESUME), 'tab must never see the resume secret');
+});
+
+test('after drop, a different tabKey cannot register and a stolen resume is not forwarded', () => {
+  const { hub } = setup();
+  const { tab, peer } = pairedTrio(hub);
+  tab.emit('close', 1006, '');
+  assert.equal(peer.closed, true);
+
+  const squatter = fakeSocket();
+  hub.attachSocket(squatter);
+  squatter.receive({ type: PAIR_MSG.REGISTER_TAB, token: TOKEN, tabKey: 'other-key-0123456789abcdef' });
+  assert.equal(squatter.last(PAIR_MSG.ERROR).code, 'token_in_use');
+  assert.equal(squatter.closed, true);
+  assert.equal(hub.hasTab(TOKEN), true);
+
+  const other = fakeSocket();
+  const thief = fakeSocket();
+  hub.attachSocket(other);
+  hub.attachSocket(thief);
+  other.receive({ type: PAIR_MSG.REGISTER_TAB, token: 'QRS567', tabKey: 'other-key-0123456789abcdef' });
+  thief.receive({ type: PAIR_MSG.PAIR, token: 'QRS567', resume: RESUME });
+  const request = other.last(PAIR_MSG.PAIR_REQUEST);
+  assert.ok(request, 'a different tab still gets a normal Allow prompt');
+  assert.equal(request.resume, undefined);
+  assert.equal(other.last(PAIR_MSG.PAIRED), undefined, 'stolen resume must not auto-pair a different tab');
+  assert.ok(other.sent.every((m) => m.resume !== RESUME && m.resumeKey !== RESUME));
+});
+
+test('same-tabKey reconnect with the matching resume still auto-pairs', () => {
+  const { hub } = setup();
+  const { tab } = pairedTrio(hub);
+  tab.emit('close', 1006, '');
 
   const tab2 = fakeSocket();
   const peer2 = fakeSocket();
   hub.attachSocket(tab2);
   hub.attachSocket(peer2);
-  tab2.receive({ type: PAIR_MSG.REGISTER_TAB, token: 'QRS567' });
-  peer2.receive({ type: PAIR_MSG.PAIR, token: 'QRS567', resume: 'bad key!' });
-  assert.equal(tab2.last(PAIR_MSG.PAIR_REQUEST).resume, undefined, 'malformed resume keys are dropped');
+  tab2.receive({ type: PAIR_MSG.REGISTER_TAB, token: TOKEN, tabKey: TAB_KEY });
+  peer2.receive({ type: PAIR_MSG.PAIR, token: TOKEN, resume: RESUME });
+  assert.equal(hub.isPaired(TOKEN), true);
+  assert.equal(tab2.last(PAIR_MSG.PAIR_REQUEST), undefined);
+  assert.equal(tab2.last(PAIR_MSG.PAIRED).resume, true);
+  assert.equal(peer2.last(PAIR_MSG.PAIRED).resumeKey, RESUME);
+  assert.ok(tab2.sent.every((m) => m.resume !== RESUME));
 });
 
 test('origin and loopback checks still refuse before any pairing', () => {

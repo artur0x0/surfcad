@@ -141,7 +141,11 @@ test('when the relay process goes away the session restarts it and both ends re-
     await waitFor(() => session.isPaired(), 8000);
     assert.ok(restarted, 'the session took over the relay port');
     assert.deepEqual(await session.call('status', {}), { command: 'status' });
-    assert.equal(tab.prompts, 1);
+    assert.equal(
+      tab.prompts,
+      2,
+      'a replacement relay has no stored resumeKey, so Allow runs once more',
+    );
   } finally {
     session.disconnect();
     tab.close();

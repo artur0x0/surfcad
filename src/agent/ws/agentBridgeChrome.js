@@ -63,6 +63,44 @@ export function shouldDismissProfilePanelOnPointer(event, panelEl) {
   return true;
 }
 
+/** Below this width the Allow/Deny portal sits under the chip, not bottom-center. */
+export const APPROVAL_POPUP_WIDE_MIN_PX = 900;
+
+/**
+ * Body-portal Allow/Deny placement. Wide viewports: bottom-center, clear of the
+ * right-hand profile panel. Narrow viewports: under the chip / beside the
+ * panel so Privacy choices at the bottom of the menu stays uncovered.
+ *
+ * @param {number | null | undefined} viewportWidth
+ * @param {{ embedded?: boolean }} [opts]
+ */
+export function approvalPopupPositionClass(viewportWidth, opts = {}) {
+  if (opts.embedded) return 'absolute left-0 right-0 -top-2 z-10 -translate-y-full';
+  if (viewportWidth != null && viewportWidth < APPROVAL_POPUP_WIDE_MIN_PX) {
+    return 'fixed top-14 left-3 z-[130]';
+  }
+  return 'fixed bottom-6 left-1/2 z-[130] -translate-x-1/2';
+}
+
+/**
+ * Expected portal box for overlap tests (matches the Tailwind classes above).
+ *
+ * @param {{ width: number, height?: number }} viewport
+ * @param {{ width?: number, height?: number }} [popupSize]
+ */
+export function approvalPopupBox(viewport, popupSize = {}) {
+  const size = { width: popupSize.width ?? 220, height: popupSize.height ?? 48 };
+  const height = viewport.height ?? 800;
+  if (viewport.width < APPROVAL_POPUP_WIDE_MIN_PX) {
+    return { x: 12, y: 56, ...size };
+  }
+  return {
+    x: viewport.width / 2 - size.width / 2,
+    y: height - 24 - size.height,
+    ...size,
+  };
+}
+
 /**
  * Axis-aligned box overlap. Used so the body-portal Allow/Deny cannot sit on
  * the profile chip or menu rows the way the in-panel #539 popup did.

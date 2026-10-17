@@ -83,7 +83,7 @@ export function createAgentBridgeTabConnection(opts) {
   /** @type {AgentBridgeLink} */
   let link = null;
   let lastRelayErrorCode = null;
-  /** Handed to the peer on Allow; a resume request carrying it skips the prompt. */
+  /** Handed to the peer on Allow; the hub matches it. The tab auto-approves only on resume:true. */
   let resumeKey = null;
   let offeredResumeKey = null;
   let wasPaired = false;
@@ -182,15 +182,22 @@ export function createAgentBridgeTabConnection(opts) {
     const id = msg.id;
     const command = msg.command;
     const args = msg.args && typeof msg.args === 'object' ? msg.args : {};
+    const callGen = generation;
+    const callSocket = ws;
+    const reply = (payload) => {
+      if (generation !== callGen || ws !== callSocket) return;
+      if (!callSocket || callSocket.readyState !== SOCKET_OPEN) return;
+      callSocket.send(JSON.stringify(payload));
+    };
     try {
       const env = await call(command, args);
       if (env.ok) {
-        send({ id, ok: true, result: env.result });
+        reply({ id, ok: true, result: env.result });
       } else {
-        send({ id, ok: false, error: env.error || { code: 'refused', message: 'Command refused' } });
+        reply({ id, ok: false, error: env.error || { code: 'refused', message: 'Command refused' } });
       }
     } catch (err) {
-      send({
+      reply({
         id,
         ok: false,
         error: { code: 'internal', message: String(err?.message || err) },
@@ -241,7 +248,9 @@ export function createAgentBridgeTabConnection(opts) {
         lastRelayErrorCode = msg.code;
       }
       if (msg.type === PAIR_MSG.PAIR_REQUEST) {
-        if (resumeKey && typeof msg.resume === 'string' && msg.resume === resumeKey) {
+        // The hub never forwards the resume secret. A boolean resume:true is
+        // the only auto-approve signal; a string (stolen or otherwise) prompts.
+        if (resumeKey && msg.resume === true) {
           approveWith(resumeKey);
           return;
         }
