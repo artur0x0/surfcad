@@ -32,6 +32,7 @@
         "golden:agent-bridge-h14": "node scripts/golden/smoke_agent_bridge_h14.mjs",
         "golden:agent-bridge-h15": "node scripts/golden/smoke_agent_bridge_h15.mjs",
         "golden:agent-bridge-h16": "node scripts/golden/smoke_agent_bridge_h16.mjs",
+        "golden:agent-bridge-safari-popup": "node scripts/golden/smoke_agent_bridge_safari_popup.mjs",
         "golden:agent-git-consent": "node scripts/golden/smoke_agent_git_consent.mjs",
         "golden:agent-git-save-consent": "node scripts/golden/smoke_agent_git_save_consent.mjs",
         "golden:agent-playtest": "node scripts/golden/smoke_agent_playtest.mjs",
