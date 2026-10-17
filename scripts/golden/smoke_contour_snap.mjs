@@ -15,6 +15,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { emitSolveContour } from '../../src/utils/contourScript.js';
 import { emitNamedContourLine } from '../../src/utils/namedContour.js';
 import { parseSolveContour } from '../../src/utils/contourScript.js';
@@ -459,6 +460,7 @@ const browser = await chromium.launch({
   headless: true,
   args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
 });
+attachConsentPresetToBrowser(browser);
 const cases = [
   {
     name: 'cube',

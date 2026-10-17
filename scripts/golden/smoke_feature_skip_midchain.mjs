@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { register } from 'node:module';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { createServer as createVite } from 'vite';
 import { createServer } from 'node:http';
 import { markerWithId } from '../../src/utils/featureBlockId.js';
@@ -200,6 +201,7 @@ const browser = await chromium.launch({
   executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
   args: ['--headless=new', '--use-gl=angle', '--use-angle=swiftshader'],
 });
+attachConsentPresetToBrowser(browser);
 
 function chipOf(chips, id) {
   return chips.find((chip) => chip.id === id) || null;

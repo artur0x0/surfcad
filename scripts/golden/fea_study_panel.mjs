@@ -21,6 +21,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { SHEET_METALLICA_SCRIPT } from '../../src/fea/fixtures/sheetMetallica.js';
 import { feaStudyBlock } from '../../src/fea/studyScript.js';
 
@@ -1266,6 +1267,7 @@ try {
     executablePath: exe,
     args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
   for (const vp of viewports) {
     console.log(` ${vp.name}`);
     await runCase(browser, vp);

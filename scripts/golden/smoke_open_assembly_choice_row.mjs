@@ -22,6 +22,7 @@ import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
 import autoprefixer from 'autoprefixer';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 process.env.BROWSERSLIST_IGNORE_OLD_DATA = '1';
 
@@ -149,6 +150,7 @@ createRoot(document.getElementById('root')).render(
     executablePath: exe,
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
+attachConsentPresetToBrowser(browser);
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
     await page.setContent(html, { waitUntil: 'load' });

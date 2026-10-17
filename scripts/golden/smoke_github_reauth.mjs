@@ -13,6 +13,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 const PORT = Number(process.env.SMOKE_PORT || 5199);
 const APP_URL = `http://127.0.0.1:${PORT}/`;
@@ -134,6 +135,7 @@ try {
     executablePath: exe,
     args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
 
   const viewports = [
     { name: '390', width: 390, height: 844, touch: true },

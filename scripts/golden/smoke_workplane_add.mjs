@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const PORT = Number(process.env.SMOKE_PORT || 5271);
@@ -215,6 +216,7 @@ try {
     executablePath: exe,
     args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
   for (const vp of [
     { name: '390', width: 390, height: 844, touch: true },
     { name: '1280', width: 1280, height: 800, touch: false },

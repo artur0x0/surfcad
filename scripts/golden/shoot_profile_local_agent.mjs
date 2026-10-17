@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 const PORT = Number(process.env.SMOKE_PORT || 4332);
 const APP_URL = `http://localhost:${PORT}/?agent=1`;
@@ -47,6 +48,7 @@ try {
     executablePath: CHROME,
     args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await page.route('**/api/auth/me', (r) => r.fulfill({
     status: 200,

@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => readFileSync(join(ROOT, rel), 'utf8');
@@ -138,6 +139,7 @@ if (exe && failed === 0) {
         executablePath: exe,
         args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
       });
+attachConsentPresetToBrowser(browser);
       const cases = [
         ['desktop', 1280, 900],
         ['390', 390, 844],

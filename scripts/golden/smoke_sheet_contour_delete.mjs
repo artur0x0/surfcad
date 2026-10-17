@@ -17,6 +17,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { contourFromRectangle } from '../../src/utils/contourSolve.js';
 import { emitSolveContour } from '../../src/utils/contourScript.js';
 import { contourUsedByText } from '../../src/utils/contourUsers.js';
@@ -271,6 +272,7 @@ const browser = await chromium.launch({
   executablePath: exe,
   args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
 });
+attachConsentPresetToBrowser(browser);
 try {
   await runSize(browser, '390', {
     viewport: { width: 390, height: 844 },

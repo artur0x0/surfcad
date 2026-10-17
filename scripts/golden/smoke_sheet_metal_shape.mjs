@@ -18,6 +18,7 @@ import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
 import autoprefixer from 'autoprefixer';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 process.env.BROWSERSLIST_IGNORE_OLD_DATA = '1';
 
@@ -151,6 +152,7 @@ window.__sheetOpened = 0;
     executablePath: exe,
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
+attachConsentPresetToBrowser(browser);
   const views = [
     ['390px mobile feature bar', '390', 390, 844],
     ['desktop feature strip', 'desktop', 1280, 800],

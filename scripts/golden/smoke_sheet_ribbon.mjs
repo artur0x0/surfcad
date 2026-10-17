@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { panelById, panelPoint, solveSheet } from '../../src/utils/sheetMetal/sheetModel.js';
 import { readSheetMetalSpec } from '../../src/utils/sheetMetal/sheetMetalScript.js';
 import { sheetContourEdges } from '../../src/utils/sheetMetal/sheetContourEdges.js';
@@ -140,6 +141,7 @@ if (exe && failed === 0) {
         executablePath: exe,
         args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
       });
+attachConsentPresetToBrowser(browser);
       const cases = [
         ['390', 390, 844],
         ['1280', 1280, 800],

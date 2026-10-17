@@ -57,14 +57,14 @@ export function getPosthogProjectKey() {
   if (envOverride && envOverride.key !== undefined) {
     return envOverride.key || '';
   }
-  return String(import.meta.env.VITE_POSTHOG_KEY || '').trim();
+  return String(import.meta.env?.VITE_POSTHOG_KEY || '').trim();
 }
 
 export function getPosthogApiHost() {
   if (envOverride && envOverride.host !== undefined) {
     return envOverride.host || DEFAULT_POSTHOG_HOST;
   }
-  const fromEnv = String(import.meta.env.VITE_POSTHOG_HOST || '').trim();
+  const fromEnv = String(import.meta.env?.VITE_POSTHOG_HOST || '').trim();
   return fromEnv || DEFAULT_POSTHOG_HOST;
 }
 
@@ -122,6 +122,7 @@ function teardownPosthog() {
   if (posthogModule) {
     try {
       posthogModule.opt_out_capturing();
+      posthogModule.reset();
     } catch {
       /* ignore */
     }
@@ -130,12 +131,14 @@ function teardownPosthog() {
   initPromise = null;
 }
 
+export function shutdownAnalyticsCapturing() {
+  teardownPosthog();
+}
+
 export function syncAnalyticsConsent() {
   if (!getPosthogProjectKey()) return;
   if (!getAnalyticsConsent() || isGpcActive()) {
-    if (posthogModule) {
-      posthogModule.opt_out_capturing();
-    }
+    shutdownAnalyticsCapturing();
     return;
   }
   if (posthogModule) {

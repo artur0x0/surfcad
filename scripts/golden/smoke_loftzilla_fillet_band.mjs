@@ -178,6 +178,7 @@ if (process.env.LOFTZILLA_PICKER === '1') {
   const { spawn } = await import('node:child_process');
   const { existsSync, mkdirSync } = await import('node:fs');
   const { chromium } = await import('playwright-core');
+  const { attachConsentPresetToBrowser } = await import('./lib/presetConsentInit.mjs');
   const exe = [process.env.CHROME_PATH, '/usr/bin/google-chrome', '/usr/bin/chromium'].find((p) => p && existsSync(p));
   if (!exe) {
     console.log('picker shots: no Chrome, worker checks already passed');
@@ -207,6 +208,7 @@ if (process.env.LOFTZILLA_PICKER === '1') {
       executablePath: exe,
       args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
     });
+    attachConsentPresetToBrowser(browser);
     try {
       for (const [suffix, width, height] of [['desktop', 1280, 900], ['mobile', 390, 844]]) {
         const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });

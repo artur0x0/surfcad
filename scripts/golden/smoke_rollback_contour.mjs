@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { createServer as createVite } from 'vite';
 import { markerWithId } from '../../src/utils/featureBlockId.js';
 import {
@@ -93,6 +94,7 @@ const browser = await chromium.launch({
   executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
   args: ['--headless=new', '--use-gl=angle', '--use-angle=swiftshader'],
 });
+attachConsentPresetToBrowser(browser);
 
 async function dragBar(page, point) {
   const bar = page.locator('[data-rollback-bar]');

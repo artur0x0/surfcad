@@ -18,6 +18,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { MPA_PER_PSI, N_PER_LBF, formatLoadDisplay } from '../../src/fea/loadUnits.js';
 import { TRIAD_AXIS_COLORS, contrastRatio } from '../../src/utils/triadAxis.js';
 
@@ -751,6 +752,7 @@ try {
     headless: true,
     args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-webgl'],
   });
+attachConsentPresetToBrowser(browser);
   for (const vp of viewports) {
     console.log(`— ${vp.name}`);
     await runCase(browser, vp);

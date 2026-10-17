@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { register } from 'node:module';
 import { Mesh, MeshNormalMaterial, Raycaster, Vector3 } from 'three';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { createServer as createVite } from 'vite';
 import { buildSolidGeometry } from '../../src/utils/partSolidCache.js';
 import { faceFingerprints, faceColorKey } from '../../src/utils/faceColorMatch.js';
@@ -423,6 +424,7 @@ try {
     executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
     args: ['--headless=new', '--use-gl=angle', '--use-angle=swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
   const page = await browser.newPage({ viewport: { width: 390, height: 520 } });
   const errors = [];
   page.on('pageerror', (err) => errors.push(err.message));

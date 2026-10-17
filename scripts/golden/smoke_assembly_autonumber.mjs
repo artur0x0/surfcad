@@ -19,6 +19,7 @@ import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
 import autoprefixer from 'autoprefixer';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { createMockGithubAdapter } from '../../src/utils/git/mockGithubAdapter.js';
 import { findOrCreateVault } from '../../src/utils/git/vault.js';
 import {
@@ -320,6 +321,7 @@ createRoot(document.getElementById('root')).render(
       executablePath: chrome,
       args: ['--no-sandbox', '--disable-dev-shm-usage'],
     });
+attachConsentPresetToBrowser(browser);
     try {
       const page = await browser.newPage({
         viewport: { width: 390, height: 844 },
@@ -398,6 +400,7 @@ createRoot(document.getElementById('root')).render(
       executablePath: chrome,
       args: ['--no-sandbox', '--disable-dev-shm-usage'],
     });
+attachConsentPresetToBrowser(browser);
     try {
       const page = await browser.newPage({
         viewport: { width: 390, height: 844 },
