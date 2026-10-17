@@ -22,7 +22,8 @@
  *
  * Env: CHROME_PATH (Chromium runs), PLAYWRIGHT_WEBKIT_EXECUTABLE_PATH
  * (optional), BRIDGE_E2E_RUNS=webkit,chromium,chromium-popup,
- * GOLDEN_SHOT_DIR (screenshots).
+ * GOLDEN_SHOT_DIR (screenshots), GOLDEN_TRACE_DIR (Playwright trace per
+ * browser run that had a failed check).
  *
  * Needs `npm run build` (production, no playtest auto-approve) and, for
  * WebKit, `npx playwright-core install --with-deps webkit`.
