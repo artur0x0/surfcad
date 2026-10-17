@@ -2,7 +2,7 @@
  * Relay auto-retry: page open before relay starts should pair without reload.
  * Closes the profile panel before dropping the relay, then checks pairing_lost
  * fails fast and reconnect works.
- * Run: npm run build && node scripts/playtest/run.mjs --scenario agent-bridge-relay-retry
+ * Run: npm run build && node scripts/playtest/scenarios/agent-bridge-relay-retry.mjs
  */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -17,6 +17,7 @@ import {
 } from '../lib/harness.mjs';
 import { pickFreePort } from '../lib/pickFreePort.mjs';
 import { RelaySession } from '../../../packages/surfcad-mcp/src/relay.mjs';
+import { probeRelayAtUrl } from '../../../packages/surfcad-mcp/src/bridge/relayServer.mjs';
 import { rectsOverlap } from '../../../src/agent/ws/agentBridgeChrome.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -32,19 +33,34 @@ function spawnMcpRelay(port) {
       SURFCAD_MCP_START_RELAY: '1',
       SURFCAD_AGENT_BRIDGE_WS_PORT: String(port),
     },
-    stdio: ['pipe', 'ignore', 'ignore'],
-    detached: true,
+    stdio: ['pipe', 'ignore', 'pipe'],
   });
   proc.stdin?.on?.('error', () => {});
+  proc.stderr?.resume();
   return proc;
 }
 
 function stopMcpRelay(proc) {
-  if (!proc) return;
+  if (!proc) return Promise.resolve();
+  const exited = new Promise((resolve) => {
+    const timer = setTimeout(resolve, 3000);
+    proc.once('exit', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
   try { proc.stdin?.end(); } catch { /* gone */ }
-  try { process.kill(-proc.pid, 'SIGTERM'); } catch {
-    try { proc.kill('SIGTERM'); } catch { /* gone */ }
+  try { proc.kill('SIGTERM'); } catch { /* gone */ }
+  return exited;
+}
+
+async function waitUntilRelayUp(url, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await probeRelayAtUrl(url, 400)) return;
+    await new Promise((r) => setTimeout(r, 100));
   }
+  throw new Error(`relay did not listen on ${url}`);
 }
 
 async function timed(promise) {
@@ -54,22 +70,6 @@ async function timed(promise) {
     return { ms: Date.now() - start, value, error: null };
   } catch (error) {
     return { ms: Date.now() - start, value: null, error };
-  }
-}
-
-async function waitForLostCall(session, timeoutMs) {
-  const start = Date.now();
-  for (;;) {
-    const outcome = await timed(session.call('status'));
-    if (outcome.error?.code === 'pairing_lost') {
-      assert.match(String(outcome.error.hint || ''), /Chrome/);
-      assert.doesNotMatch(`${outcome.error.message}\n${outcome.error.hint || ''}`, /\bEdge\b/);
-      return Date.now() - start;
-    }
-    if (Date.now() - start > timeoutMs) {
-      throw new Error(`pairing_lost did not arrive (${outcome.error?.code || 'ok'})`);
-    }
-    await new Promise((r) => setTimeout(r, 50));
   }
 }
 
@@ -101,6 +101,17 @@ async function assertApprovalClearsProfileChrome(page) {
   }
   const portal = await page.locator('[data-agent-bridge-approval-portal]').count();
   assert.ok(portal > 0, 'Allow/Deny must render as the body portal, not inside the menu');
+  const promptColor = await page.locator('[data-agent-bridge-approval] p').evaluate(
+    /* eslint-disable no-undef */
+    (el) => getComputedStyle(el).color,
+    /* eslint-enable no-undef */
+  );
+  // chrome.text from #461: gray-100 rgb(243, 244, 246) — never inherit black on dark blue.
+  assert.equal(
+    promptColor,
+    'rgb(243, 244, 246)',
+    `Allow/Deny prompt must use text-chrome-text, got ${promptColor}`,
+  );
 }
 
 export const id = 'agent-bridge-relay-retry';
@@ -161,6 +172,7 @@ export async function run(ctx) {
   );
 
   let relayProc = spawnMcpRelay(relayPort);
+  await waitUntilRelayUp(relayUrl);
   const session = new RelaySession({
     url: relayUrl,
     onLog: () => {},
@@ -175,6 +187,7 @@ export async function run(ctx) {
     await page.waitForSelector('[data-agent-bridge-code]', { timeout: 30000 });
     const token = (await page.locator('[data-agent-bridge-code]').innerText()).trim();
     const peerPromise = session.pair(token);
+    peerPromise.catch(() => {});
     await page.waitForSelector('[data-agent-bridge-approval]', { timeout: 15000 });
     await assertApprovalClearsProfileChrome(page);
     await page.click('[data-ui-action="data-agent-bridge-approve"]');
@@ -189,13 +202,22 @@ export async function run(ctx) {
       { timeout: 5000 },
     );
 
-    stopMcpRelay(relayProc);
+    await stopMcpRelay(relayProc);
     relayProc = null;
-    const lostMs = await waitForLostCall(session, FAST_FAIL_MS);
-    assert.ok(lostMs < FAST_FAIL_MS, `pairing_lost took ${lostMs}ms`);
+    const dropDeadline = Date.now() + 5000;
+    while (session.state !== 'lost' && Date.now() < dropDeadline) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.equal(session.state, 'lost', `session.state after relay exit: ${session.state}`);
+    const lost = await timed(session.call('status'));
+    assert.equal(lost.error?.code, 'pairing_lost', lost.error?.message);
+    assert.ok(lost.ms < FAST_FAIL_MS, `pairing_lost took ${lost.ms}ms`);
+    assert.match(String(lost.error?.hint || ''), /Chrome/);
+    assert.doesNotMatch(`${lost.error?.message}\n${lost.error?.hint || ''}`, /\bEdge\b/);
     await page.waitForSelector('[data-agent-bridge-connection-ring="reconnecting"]', { timeout: 15000 });
 
     relayProc = spawnMcpRelay(relayPort);
+    await waitUntilRelayUp(relayUrl);
     const approval = page.locator('[data-agent-bridge-approval]');
     const prompted = await approval.waitFor({ timeout: 8000 }).then(() => true).catch(() => false);
     if (prompted) {
@@ -234,10 +256,26 @@ export async function run(ctx) {
     assert.ok(recovered, 'session.call should succeed after the relay returns');
   } finally {
     try { session.disconnect(); } catch { /* gone */ }
-    stopMcpRelay(relayProc);
+    await stopMcpRelay(relayProc);
     await browser.close();
     stop();
   }
 
   return { ok: true };
+}
+
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isMain) {
+  const { chromium } = await import('playwright-core');
+  const port = await pickFreePort();
+  run({ chromium, port, outDir: '/tmp' }).then((result) => {
+    if (result.skipped) {
+      console.log(`agent-bridge-relay-retry skipped: ${result.reason}`);
+      process.exit(0);
+    }
+    console.log('agent-bridge-relay-retry: ok');
+  }).catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }

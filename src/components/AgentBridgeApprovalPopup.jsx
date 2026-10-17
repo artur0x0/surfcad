@@ -8,7 +8,7 @@ export default function AgentBridgeApprovalPopup({ open, onAllow, onDeny, embedd
 
   const positionClass = embedded
     ? 'absolute left-0 right-0 -top-2 z-10 -translate-y-full'
-    : 'fixed bottom-20 right-3 z-[130]';
+    : 'fixed bottom-6 left-1/2 z-[130] -translate-x-1/2';
 
   return (
     <div

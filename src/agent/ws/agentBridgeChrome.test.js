@@ -46,7 +46,7 @@ test('body-portal Allow/Deny does not overlap the profile chip or menu rows', ()
   const panel = { x: 1040, y: 56, width: 224, height: 360 };
   const privacy = { x: 1048, y: 300, width: 208, height: 28 };
   const inPanelPopup = { x: 1048, y: 280, width: 208, height: 48 };
-  const bodyPortal = { x: 1048, y: 720, width: 220, height: 48 };
+  const bodyPortal = { x: 530, y: 720, width: 220, height: 48 };
   assert.equal(rectsOverlap(inPanelPopup, privacy), true, '#539 in-panel popup covered Privacy choices');
   assert.equal(rectsOverlap(bodyPortal, privacy), false);
   assert.equal(rectsOverlap(bodyPortal, panel), false);

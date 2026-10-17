@@ -11,7 +11,7 @@ const SRC = readFileSync(
 
 test('relay-retry playtest keeps MCP stdin open so the owned relay does not exit', () => {
   assert.match(SRC, /function spawnMcpRelay/);
-  assert.match(SRC, /stdio:\s*\[\s*'pipe',\s*'ignore',\s*'ignore'\s*\]/);
+  assert.match(SRC, /stdio:\s*\[\s*'pipe',\s*'ignore',\s*'pipe'\s*\]/);
   assert.match(SRC, /proc\.stdin\?\.end/);
 });
 
@@ -20,4 +20,6 @@ test('relay-retry playtest asserts Allow/Deny does not cover the profile chrome'
   assert.match(SRC, /rectsOverlap/);
   assert.match(SRC, /data-profile-privacy-choices/);
   assert.match(SRC, /data-agent-bridge-approval-portal/);
+  assert.match(SRC, /text-chrome-text/);
+  assert.match(SRC, /rgb\(243, 244, 246\)/);
 });
