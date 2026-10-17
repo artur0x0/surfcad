@@ -11,6 +11,7 @@
  *   const meshData = await manifold.execute(script);
  */
 import SandboxWorker from '../workers/sandboxWorker.js?worker'
+import { softRestartDecision } from './manifoldWorkerLiveness.js'
 
 class ManifoldWorker {
   constructor() {
@@ -36,7 +37,7 @@ class ManifoldWorker {
     if (this._initPromise) return this._initPromise;
 
     const INIT_TIMEOUT_MS = 60000;
-    this._initPromise = new Promise((resolve, reject) => {
+    const gate = new Promise((resolve, reject) => {
       let settled = false;
       const settle = (fn) => (value) => {
         if (settled) return;
@@ -92,11 +93,15 @@ class ManifoldWorker {
       } catch (error) {
         rejectInit(error);
       }
-    }).finally(() => {
-      this._initPromise = null;
     });
+    // A restart that supersedes this gate must not let the old finally
+    // clear the replacement init.
+    const tracked = gate.finally(() => {
+      if (this._initPromise === tracked) this._initPromise = null;
+    });
+    this._initPromise = tracked;
 
-    return this._initPromise;
+    return tracked;
   }
   
   /**
@@ -109,6 +114,7 @@ class ManifoldWorker {
    * @returns {Promise<Object>} - The mesh data result
    */
   async execute(script, options = {}) {
+    await this._waitUntilReady();
     if (!this.isReady) {
       throw new Error('ManifoldWorker not initialized. Call init() first.');
     }
@@ -512,6 +518,7 @@ class ManifoldWorker {
         reject(new Error(`${type} timed out after ${timeoutMs / 1000}s`));
       }, timeoutMs);
       this.pendingRequests.set(requestId, {
+        kind: options.kind || type,
         resolve: (result) => {
           clearTimeout(timeoutId);
           resolve(result);
@@ -714,7 +721,8 @@ class ManifoldWorker {
   async ping(timeoutMs = 2000) {
     if (!this.worker || !this.isReady) return false;
     try {
-      await this._request('ping', {}, { timeoutMs });
+      // kind:'ping' so a timeout is not counted as script work.
+      await this._request('ping', {}, { timeoutMs, kind: 'ping' });
       return true;
     } catch {
       return false;
@@ -722,12 +730,73 @@ class ManifoldWorker {
   }
 
   /**
+   * Requests other than the liveness ping. A synchronous script keeps the
+   * worker thread busy; ping cannot be answered until that script returns.
+   */
+  _pendingWorkCount() {
+    let n = 0;
+    for (const req of this.pendingRequests.values()) {
+      if (req?.kind === 'ping') continue;
+      n += 1;
+    }
+    return n;
+  }
+
+  _livenessState(pingOk) {
+    return {
+      initInFlight: !!this._initPromise,
+      restartInFlight: !!this._restartPromise,
+      pendingWork: this._pendingWorkCount(),
+      ...(pingOk === undefined ? {} : { pingOk }),
+    };
+  }
+
+  /**
+   * Block until an in-flight restart or init finishes. Does not start one.
+   */
+  async _waitUntilReady() {
+    if (this.isReady) return;
+    const restart = this._restartPromise;
+    if (restart) {
+      try { await restart; } catch { /* caller checks isReady */ }
+    }
+    if (this.isReady) return;
+    const init = this._initPromise;
+    if (init) {
+      try { await init; } catch { /* caller checks isReady */ }
+    }
+  }
+
+  /**
    * Soft-recover after page freeze / bfcache: ping, else restart in place.
    * Never calls location.reload — full remount is only if Safari discarded
    * the tab (that is a real navigation; we cannot fake surviving it).
+   *
+   * A ping timeout while a script is in flight is not death. Headless Chrome
+   * fires a late visibility/pageshow after the first layout (viewport
+   * ResizeObserver, privacy footer). Restarting there used to terminate the
+   * running fillet and leave the next call with "not initialized".
    */
   async ensureAlive(reason = 'lifecycle') {
-    if (await this.ping()) return { status: 'alive', reason };
+    let decision = softRestartDecision(this._livenessState());
+    if (decision === 'wait') {
+      await this._restartPromise;
+      return { status: 'restarted', reason };
+    }
+    if (decision === 'starting' || decision === 'busy') {
+      return { status: decision, reason };
+    }
+
+    const pingOk = await this.ping();
+    decision = softRestartDecision(this._livenessState(pingOk));
+    if (decision === 'wait') {
+      await this._restartPromise;
+      return { status: 'restarted', reason };
+    }
+    if (decision !== 'restart') {
+      return { status: decision === 'ping' ? 'alive' : decision, reason };
+    }
+
     console.warn(`[ManifoldWorker] Worker dead (${reason}); soft restart`);
     await this.restart();
     return { status: 'restarted', reason };
@@ -759,8 +828,17 @@ class ManifoldWorker {
    * @returns {Promise<void>}
    */
   async restart() {
-    this.terminate();
-    await this.init();
+    if (this._restartPromise) return this._restartPromise;
+    const run = (async () => {
+      this.terminate();
+      await this.init();
+    })();
+    this._restartPromise = run;
+    try {
+      await run;
+    } finally {
+      if (this._restartPromise === run) this._restartPromise = null;
+    }
   }
 
   /**
@@ -885,28 +963,47 @@ class ManifoldContext {
     }
     if (this._initPromise) return this._initPromise;
 
-    this._initPromise = (async () => {
+    const run = (async () => {
       this.worker = new ManifoldWorker();
       await this.worker.init();
       // Expose on window for backward compatibility
       window.ManifoldContext = this;
       console.log('[ManifoldContext] Initialized');
     })();
+    this._initPromise = run;
 
     try {
-      await this._initPromise;
+      await run;
     } finally {
-      this._initPromise = null;
+      if (this._initPromise === run) this._initPromise = null;
     }
   }
-  
+
   /**
-   * Execute a script and return mesh data
-   * @param {string} script - The script to execute
-   * @param {Object} options - Execution options
-   * @returns {Promise<Object>} - { mesh, memoryUsedMB }
+   * Resolve once the sandbox can take a call. A terminate/restart in progress
+   * (soft-recover or an assembly preempt) is awaited instead of failing the
+   * next script with "Manifold Sandbox not initialized".
    */
+  async whenReady() {
+    const restart = this.worker?._restartPromise;
+    if (restart) {
+      try { await restart; } catch { /* fall through to init */ }
+    }
+    if (this.worker?.isReady) return;
+    const workerInit = this.worker?._initPromise;
+    if (workerInit) {
+      try { await workerInit; } catch { /* fall through to init */ }
+      if (this.worker?.isReady) return;
+    }
+    if (this._initPromise) {
+      await this._initPromise;
+      if (this.worker?.isReady) return;
+    }
+    await this.init();
+  }
+
   async executeScript(script, options = {}) {
+    await this.whenReady();
     if (!this.worker || !this.worker.isReady) {
       throw new Error('ManifoldContext not initialized');
     }

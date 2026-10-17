@@ -153,8 +153,19 @@ try {
     () => document.querySelector('#root')?.children.length ?? 0,
   );
   check('#root rendered under CSP', rootChildren > 0, `children=${rootChildren}`);
-  check('canvas mounted under CSP', (await page.locator('canvas').count()) > 0);
-  check('Run button present under CSP', (await page.locator('[data-cad-run]').count()) > 0);
+
+  // #root's first paint is the "Starting CAD engine…" splash, which has no
+  // canvas and no Run button. Those mount only after the sandbox worker
+  // inits. Checking immediately reports a false failure.
+  const shellReady = await page.waitForFunction(
+    () => document.querySelector('canvas') && document.querySelector('[data-cad-run]'),
+    null,
+    { timeout: 30000 },
+  ).then(() => true).catch(() => false);
+  const loadingStatus = await page.locator('[data-app-loading-status]').textContent().catch(() => '');
+  const shellDetail = shellReady ? '' : (loadingStatus ? `still showing "${loadingStatus.trim()}"` : 'shell did not mount');
+  check('canvas mounted under CSP', shellReady && (await page.locator('canvas').count()) > 0, shellDetail);
+  check('Run button present under CSP', shellReady && (await page.locator('[data-cad-run]').count()) > 0, shellDetail);
   check('no CSP console violations', cspViolations.length === 0, cspViolations.slice(0, 3).join(' | '));
   check('no uncaught page errors', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
   check('no unexpected console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
