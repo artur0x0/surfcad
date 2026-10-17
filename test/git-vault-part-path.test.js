@@ -10,9 +10,9 @@ import { stringifySurfJson, toSurfJson, validateSurfJson } from '../src/utils/gi
 import { mintSurfId } from '../src/utils/git/surfId.js';
 
 describe('allocateVaultPartPath', () => {
-  test('bare name lands in parts/ with .js', () => {
+  test('bare name lands in the assembly folder with .js', () => {
     const path = allocateVaultPartPath('Kettle', 'Kettle Body', []);
-    assert.equal(path, sharedPartPath('Kettle Body'));
+    assert.equal(path, assemblyPartPath('Kettle', 'Kettle Body'));
     assert.ok(path.endsWith('.js'));
   });
 
@@ -48,7 +48,8 @@ describe('ensureAssemblyVaultPaths + stringifySurfJson', () => {
     };
     const { doc: fixed, scripts: fixedScripts, moved } = ensureAssemblyVaultPaths(doc, scripts);
     assert.equal(moved.length, 3);
-    assert.ok(partRowVaultPathOk(fixed.parts[0].id));
+    assert.equal(fixed.parts[0].id, 'local-body');
+    assert.ok(partRowVaultPathOk(fixed.parts[0].path));
     const text = stringifySurfJson(fixed);
     const parsed = JSON.parse(text);
     const check = validateSurfJson(parsed);
@@ -65,7 +66,7 @@ describe('ensureAssemblyVaultPaths + stringifySurfJson', () => {
       parts: [{ id: bad, name: 'Kettle Lid', visible: true, order: 0, surfId: mintSurfId() }],
     };
     const { doc: fixed } = ensureAssemblyVaultPaths(doc, { [bad]: '// x\n' });
-    assert.ok(fixed.parts[0].id.endsWith('.js'));
+    assert.ok((fixed.parts[0].path || fixed.parts[0].id).endsWith('.js'));
     assert.equal(validateSurfJson(JSON.parse(stringifySurfJson(fixed))).ok, true);
   });
 

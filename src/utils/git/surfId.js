@@ -12,8 +12,9 @@
  *
  * The id lives as the first line of the part script:
  *   // @surf-id <id>
- * `.surf.json` stores `{ id, path }`. The row id in the app stays the path
- * so scripts stay keyed by file. Blob SHA is never an identity.
+ * `.surf.json` stores `{ id, path }`. The in-app row `id` is that stable
+ * id for the part's life; `path` is the repo file. Blob SHA is never an
+ * identity.
  */
 
 const SURF_ID_BODY = String.raw`\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d{4}-[0-9a-f]{4}`;

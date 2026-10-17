@@ -21,12 +21,13 @@
  *   ]
  * }
  *
- * `id` is the stable surf id (optional on read so older repos still load).
- * `path` is a full repo path: `parts/` (the normal home), this assembly's
- * folder (a copy), or another assembly's folder (a link). Legacy
- * `assemblies/<Name>/parts/<P>.js` paths are accepted on read. The in-app
- * row id stays the path; `surfId` carries `id`. No script source in the
- * file. `groups` is optional. Each group names parts by surf id (`partIds`).
+ * `id` is the stable part id (surf id or UUID; optional on read so older
+ * repos still load). `path` is a full repo path: this assembly's folder
+ * (`assemblies/<Name>/<Part>.js`), a leftover `parts/` file, or another
+ * assembly's folder (a link). Legacy `assemblies/<Name>/parts/<P>.js`
+ * paths are accepted on read. The in-app row `id` is that stable id;
+ * `path` stays the repo file. No script source in the file. `groups` is
+ * optional. Each group names parts by surf id (`partIds`).
  * `source` is the source assembly path (`assemblies/<Name>/.surf.json`),
  * or null after that assembly is deleted. The group name stays.
  * A missing `groups` key loads as no groups. Dangling part ids are dropped
@@ -48,6 +49,7 @@ import { normalizeRepoPath } from '../assembly.js';
 import { normalizeSheetMetalBinding } from '../scs/scsCatalog.js';
 import { PART_EXT, isVaultPartPath, vaultSegment } from './vaultLayout.js';
 import { isSurfId } from './surfId.js';
+import { isStablePartId, partRepoPath, stabilizePartIdentities } from './partIdentity.js';
 import { rewriteSurfJsonLocalIds } from './localPartIdMigration.js';
 import {
   assemblyJointErrors,
@@ -149,7 +151,7 @@ export function validateSurfJson(input) {
       else if (!isVaultPartPath(path)) {
         errors.push(`${at}.path must be a vault part script`);
       }
-      if (part.id !== undefined && !isSurfId(part.id)) errors.push(`${at}.id must be a surf id`);
+      if (part.id !== undefined && !isStablePartId(part.id)) errors.push(`${at}.id must be a surf id or UUID`);
       if (part.copiedFrom !== undefined && !isSurfId(part.copiedFrom)) {
         errors.push(`${at}.copiedFrom must be a surf id`);
       }
@@ -174,7 +176,9 @@ export function validateSurfJson(input) {
         errors.push(`${at}.sheetMetal must be { sku: string, … }`);
       }
     });
-    if (raw.activeId != null && !seen.has(raw.activeId)) errors.push('activeId must be null or one of the part paths');
+    if (raw.activeId != null && !seen.has(raw.activeId) && !seenIds.has(raw.activeId)) {
+      errors.push('activeId must be null or one of the part ids or paths');
+    }
   }
   if (raw.groups !== undefined) {
     if (!Array.isArray(raw.groups)) {
@@ -232,23 +236,26 @@ export function validateSurfJson(input) {
 }
 
 /**
- * In-app assembly document -> .surf.json object. Row ids must already be
- * repo paths (git mode). Does not assign vault paths — the save path
- * (`ensureAssemblyVaultPaths` / `assembleCommitFiles`) does that first.
+ * In-app assembly document -> .surf.json object. Each row must already
+ * have a vault `path` (git mode). Does not assign vault paths — the save
+ * path (`ensureAssemblyVaultPaths` / `assembleCommitFiles`) does that first.
  * Throws when the result does not validate.
  */
 export function toSurfJson(doc) {
   const flat = serializeAssembly({ ...doc, source: 'git' });
   const name = vaultSegment(flat.name);
+  const active = (flat.parts || []).find((p) => p.id === flat.activeId);
+  const activePath = partRepoPath(active) || (flat.activeId && isVaultPartPath(flat.activeId) ? flat.activeId : null);
   const out = {
     format: SURF_JSON_FORMAT,
     version: SURF_JSON_VERSION,
     name,
-    activeId: flat.activeId,
+    activeId: activePath || null,
     parts: flat.parts.map((p) => {
       const row = {};
-      if (p.surfId) row.id = p.surfId;
-      row.path = p.id;
+      const id = isStablePartId(p.id) ? p.id : p.surfId;
+      if (id) row.id = id;
+      row.path = partRepoPath(p);
       row.name = p.name;
       row.visible = p.visible;
       row.order = p.order;
@@ -300,14 +307,15 @@ export function parseSurfJson(input) {
   const raw = pruneDanglingSurfJoints(pruneDanglingColors(pruneDanglingGroupPartIds(parsed)));
   const check = validateSurfJson(raw);
   if (!check.ok) throw new Error(`Invalid .surf.json: ${check.errors.join('; ')}`);
-  return serializeAssembly({
+  const loaded = serializeAssembly({
     version: ASSEMBLY_VERSION,
     source: 'git',
     name: raw.name,
     activeId: raw.activeId,
     parts: raw.parts.map((p) => ({
-      id: p.path,
-      surfId: p.id,
+      id: isStablePartId(p.id) ? p.id : p.path,
+      path: p.path,
+      surfId: isSurfId(p.id) ? p.id : undefined,
       copiedFrom: p.copiedFrom,
       name: p.name,
       visible: p.visible,
@@ -320,4 +328,11 @@ export function parseSurfJson(input) {
     colors: raw.colors,
     joints: raw.joints,
   });
+  const mappedActive = (loaded.parts || []).find((part) => (
+    part.id === raw.activeId || part.path === raw.activeId
+  ));
+  const withActive = mappedActive
+    ? { ...loaded, activeId: mappedActive.id }
+    : loaded;
+  return stabilizePartIdentities(withActive).doc;
 }

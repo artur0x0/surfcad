@@ -22,11 +22,13 @@ describe('promoteStrayPartsToAssemblyFolder', () => {
     const body = assemblyPartPath('Kettle', 'Kettle Body');
     const lid = assemblyPartPath('Kettle', 'Kettle Lid');
     assert.equal(moved.length, 2);
-    assert.equal(next.parts[0].id, body);
-    assert.equal(next.parts[1].id, lid);
-    assert.equal(nextScripts[body], '// body\n');
-    assert.equal(nextScripts[lid], '// lid\n');
-    assert.equal(next.activeId, body);
+    assert.equal(next.parts[0].id, 'local-a');
+    assert.equal(next.parts[1].id, 'local-b');
+    assert.equal(next.parts[0].path, body);
+    assert.equal(next.parts[1].path, lid);
+    assert.equal(nextScripts['local-a'], '// body\n');
+    assert.equal(nextScripts['local-b'], '// lid\n');
+    assert.equal(next.activeId, 'local-a');
   });
 
   test('suffixes on collision with document and remote paths', () => {
@@ -42,7 +44,8 @@ describe('promoteStrayPartsToAssemblyFolder', () => {
     });
     const alt = assemblyPartPath('Kettle', 'Kettle Handle-2');
     assert.equal(moved[0].to, alt);
-    assert.equal(next.parts[0].id, alt);
+    assert.equal(next.parts[0].id, 'local-h');
+    assert.equal(next.parts[0].path, alt);
   });
 
   test('a remote .mesh occupies the sibling .js', () => {

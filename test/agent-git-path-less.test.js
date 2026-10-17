@@ -52,8 +52,9 @@ test('git_add_to_repo core: one path-less part commits every path-less sibling i
   const body = assemblyPartPath(ASM, 'Kettle Body');
   const lid = assemblyPartPath(ASM, 'Kettle Lid');
   const handle = assemblyPartPath(ASM, 'Kettle Handle');
-  assert.equal(out.partId, body);
-  assert.deepEqual(out.siblings, [
+  assert.equal(out.partId, IDS[0]);
+  assert.equal(out.path, body);
+  assert.deepEqual(out.siblings.map((row) => ({ from: row.from, to: row.to })), [
     { from: IDS[1], to: lid },
     { from: IDS[2], to: handle },
   ]);
@@ -72,9 +73,10 @@ test('git_add_to_repo core: one path-less part commits every path-less sibling i
     assert.ok(file, `.surf.json references ${row.path}, which the commit wrote`);
   }
   assert.equal((await gh.readFile(vault.repo, lid, 'main')).content, scripts[IDS[1]]);
-  assert.deepEqual(out.doc.parts.map((p) => p.id), [body, lid, handle]);
-  for (const path of [body, lid, handle]) {
-    assert.ok(Object.prototype.hasOwnProperty.call(out.baseline.scripts, path), `${path} is clean after the commit`);
+  assert.deepEqual(out.doc.parts.map((p) => p.id), IDS);
+  assert.deepEqual(out.doc.parts.map((p) => p.path), [body, lid, handle]);
+  for (const id of IDS) {
+    assert.ok(Object.prototype.hasOwnProperty.call(out.baseline.scripts, id), `${id} is clean after the commit`);
   }
 });
 
@@ -93,7 +95,7 @@ test('git_add_to_repo core: second call per part is clean, not a validation loop
     doc: first.doc,
     scripts: first.scripts,
     baseline: first.baseline,
-    partId: first.siblings[0].to,
+    partId: first.siblings[0].id || first.siblings[0].from,
   });
   assert.equal(second.status, 'clean', JSON.stringify(second));
 });
@@ -173,6 +175,7 @@ test('parseSurfJson round-trips the sibling commit', async () => {
   const surf = await gh.readFile(vault.repo, assemblyFilePath(ASM), 'main');
   const reopened = parseSurfJson(surf.content);
   assert.deepEqual(reopened.parts.map((p) => p.id), out.doc.parts.map((p) => p.id));
+  assert.deepEqual(reopened.parts.map((p) => p.path), out.doc.parts.map((p) => p.path));
 });
 
 test('assembly save twice after adopting the first result does not mint -2 copies', async () => {
@@ -216,8 +219,8 @@ test('saving the original path-less doc again would mint -2 — callers must ado
     message: 'Save Kettle again',
   });
   assert.equal(again.status, 'ready');
-  const minted = again.files.map((f) => f.path).filter((path) => /-2\.js$/.test(path));
-  assert.equal(minted.length, 3, JSON.stringify(again.files));
+  const planned = again.doc.parts.map((part) => part.path);
+  assert.equal(planned.filter((path) => /-2\.js$/.test(path)).length, 3, JSON.stringify(planned));
 });
 
 test('assembleCommitFiles aborts when listTree fails instead of occupying nothing', async () => {

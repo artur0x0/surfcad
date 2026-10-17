@@ -74,32 +74,32 @@ const opened = await openVaultAssembly(gh, vault.repo, 'Gearbox', {
 });
 eq('opened name', opened.doc.name, 'Gearbox');
 eq('opened source', opened.doc.source, 'git');
-eq('opened part ids', opened.doc.parts.map((p) => p.id), [
+eq('opened part paths', opened.doc.parts.map((p) => p.path), [
   assemblyPartPath('Gearbox', 'Bracket'),
   sharedPartPath('M3 bolt'),
 ]);
-eq('bracket script', opened.scripts[assemblyPartPath('Gearbox', 'Bracket')],
+ok('opened part ids are stable', opened.doc.parts.every((p) => p.id && p.id !== p.path));
+eq('bracket script', opened.scripts[opened.doc.parts[0].id],
   'return Manifold.cube([10,10,10], true);');
-eq('shared bolt script', opened.scripts[sharedPartPath('M3 bolt')],
+eq('shared bolt script', opened.scripts[opened.doc.parts[1].id],
   'return Manifold.cylinder(6, 1.5, 1.5, 24);');
 eq('baseline assembly path', opened.baseline.assemblyPath, assemblyFilePath('Gearbox'));
 ok('baseline has both scripts',
-  opened.baseline.scripts[assemblyPartPath('Gearbox', 'Bracket')]?.includes('cube')
-  && opened.baseline.scripts[sharedPartPath('M3 bolt')]?.includes('cylinder'));
+  opened.baseline.scripts[opened.doc.parts[0].id]?.includes('cube')
+  && opened.baseline.scripts[opened.doc.parts[1].id]?.includes('cylinder'));
 ok('round-trip surf', parseSurfJson(opened.baseline.assemblyText).name === 'Gearbox');
 
 console.log('\ngit G2 — dirty tracking');
 const base = opened.baseline;
 ok('clean after open', !isWorkspaceDirty(opened.doc, opened.scripts, base));
 ok('assembly clean', !isAssemblyDirty(opened.doc, base));
-ok('part clean', !isPartDirty(assemblyPartPath('Gearbox', 'Bracket'),
-  opened.scripts[assemblyPartPath('Gearbox', 'Bracket')], base));
-const edited = { ...opened.scripts, [assemblyPartPath('Gearbox', 'Bracket')]: 'return Manifold.cube([11,11,11], true);' };
-ok('script edit is dirty', isPartDirty(assemblyPartPath('Gearbox', 'Bracket'),
-  edited[assemblyPartPath('Gearbox', 'Bracket')], base));
+const bracketId = opened.doc.parts[0].id;
+const boltId = opened.doc.parts[1].id;
+ok('part clean', !isPartDirty(bracketId, opened.scripts[bracketId], base));
+const edited = { ...opened.scripts, [bracketId]: 'return Manifold.cube([11,11,11], true);' };
+ok('script edit is dirty', isPartDirty(bracketId, edited[bracketId], base));
 ok('workspace dirty after edit', isWorkspaceDirty(opened.doc, edited, base));
-eq('dirtyPartIds after edit', [...dirtyPartIds(opened.doc, edited, base)],
-  [assemblyPartPath('Gearbox', 'Bracket')]);
+eq('dirtyPartIds after edit', [...dirtyPartIds(opened.doc, edited, base)], [bracketId]);
 const renamed = {
   ...opened.doc,
   parts: opened.doc.parts.map((p, i) => (i === 0 ? { ...p, name: 'Arm' } : p)),
@@ -116,28 +116,28 @@ eq('new part id is dirty', [...dirtyPartIds(withNew, scriptsNew, base)].sort(),
   [assemblyPartPath('Gearbox', 'Part 2')].sort());
 const withoutBolt = {
   ...opened.doc,
-  parts: opened.doc.parts.filter((p) => p.id !== sharedPartPath('M3 bolt')),
-  activeId: assemblyPartPath('Gearbox', 'Bracket'),
+  parts: opened.doc.parts.filter((p) => p.id !== boltId),
+  activeId: bracketId,
 };
-ok('removed part counted dirty', dirtyPartIds(withoutBolt, opened.scripts, base).has(sharedPartPath('M3 bolt')));
+ok('removed part counted dirty', dirtyPartIds(withoutBolt, opened.scripts, base).has(boltId));
 ok('no baseline → not dirty', !isWorkspaceDirty(opened.doc, edited, null));
 ok('liveScript overrides stored', dirtyPartIds(opened.doc, opened.scripts, base, {
-  liveId: assemblyPartPath('Gearbox', 'Bracket'),
+  liveId: bracketId,
   liveScript: 'CHANGED',
-}).has(assemblyPartPath('Gearbox', 'Bracket')));
+}).has(bracketId));
 
 console.log('\ngit G2 — new part name');
-eq('bare name → parts/', resolveNewPartPath('Gearbox', 'Bracket'),
-  sharedPartPath('Bracket'));
-eq('bare name collision → Bracket-2', resolveNewPartPath('Gearbox', 'Bracket', [sharedPartPath('Bracket')]),
-  sharedPartPath('Bracket-2'));
+eq('bare name → assembly folder', resolveNewPartPath('Gearbox', 'Bracket'),
+  assemblyPartPath('Gearbox', 'Bracket'));
+eq('bare name collision → Bracket-2', resolveNewPartPath('Gearbox', 'Bracket', [assemblyPartPath('Gearbox', 'Bracket')]),
+  assemblyPartPath('Gearbox', 'Bracket-2'));
 eq('full assembly path', resolveNewPartPath('Gearbox', assemblyPartPath('Gearbox', 'X')),
   assemblyPartPath('Gearbox', 'X'));
 eq('shared path allowed', resolveNewPartPath('Gearbox', 'parts/Pin.js'), sharedPartPath('Pin'));
 eq('other assembly refused (legacy)', resolveNewPartPath('Gearbox', 'assemblies/Cover/parts/Lid.js'), null);
 eq('other assembly refused (flat)', resolveNewPartPath('Gearbox', 'assemblies/Cover/Lid.js'), null);
 eq('suggest skips existing', suggestNewPartPath('Gearbox', opened.doc.parts),
-  sharedPartPath('Part (1)'));
+  assemblyPartPath('Gearbox', 'Part (1)'));
 ok('index exports G2', typeof gitIndex.openVaultAssembly === 'function'
   && typeof gitIndex.isWorkspaceDirty === 'function'
   && typeof gitIndex.suggestNewPartPath === 'function');
@@ -145,7 +145,7 @@ ok('index exports G2', typeof gitIndex.openVaultAssembly === 'function'
 console.log('\ngit G2 — add existing from vault');
 const addable = await listAddableVaultParts(gh, vault.repo, 'Gearbox', {
   branch: 'main',
-  existingIds: opened.doc.parts.map((p) => p.id),
+  existingIds: opened.doc.parts.map((p) => p.path || p.id),
 });
 eq('addable includes Spare only (not Bracket/bolt)', addable.map((a) => a.path), [
   assemblyPartPath('Gearbox', 'Spare'),
@@ -266,7 +266,7 @@ ok('App wires vault open + dirty; source follows GitHub token (G10)',
   && /createMockGithubAdapter/.test(app)
   && /findOrCreateVault/.test(app));
 ok('App new part allocateVaultPartPath in git',
-  /allocateVaultPartPath\(/.test(app) && /layout: 'shared'/.test(app));
+  /allocateVaultPartPath\(/.test(app) && /layout: 'assembly-folder'/.test(app));
 ok('Add to Repo adopts the committed doc',
   /handleAddToRepo[\s\S]*?rememberAssembly\(result\.doc\)/.test(app));
 ok('optimistic create + pending spinner', /setPendingPartIds/.test(app)
