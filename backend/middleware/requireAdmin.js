@@ -1,25 +1,11 @@
 // middleware/requireAdmin.js — ADMIN_USER_IDS allowlist (404 when not allowed)
 import config from '../config/index.js';
+import { isUserInAdminAllowlist } from '../services/adminAllowlist.js';
 
-/**
- * @param {string | undefined} raw
- * @returns {Set<string>}
- */
-export function parseAdminUserIds(raw) {
-  if (!raw || !String(raw).trim()) return new Set();
-  return new Set(
-    String(raw)
-      .split(',')
-      .map((id) => id.trim())
-      .filter(Boolean),
-  );
-}
+export { parseAdminUserIds, isUserInAdminAllowlist } from '../services/adminAllowlist.js';
 
 export function isAdminUser(user) {
-  const allow = config.adminUserIds;
-  if (!allow || allow.size === 0) return false;
-  if (!user?._id) return false;
-  return allow.has(String(user._id));
+  return isUserInAdminAllowlist(user, config.adminUserIds);
 }
 
 /**

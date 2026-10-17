@@ -14,7 +14,7 @@ import {
   fillCountSeries,
   fillLoginSeries,
 } from '../backend/services/adminStatsPeriods.js';
-import { parseAdminUserIds, isAdminUser } from '../backend/middleware/requireAdmin.js';
+import { parseAdminUserIds, isUserInAdminAllowlist } from '../backend/services/adminAllowlist.js';
 import { parseArgs } from '../backend/scripts/statsArgs.js';
 
 describe('adminStats period helpers', () => {
@@ -67,13 +67,11 @@ describe('requireAdmin allowlist', () => {
     assert.deepEqual([...ids], ['aaa', 'bbb']);
   });
 
-  test('isAdminUser respects config.adminUserIds', async () => {
-    const config = await import('../backend/config/index.js');
-    const original = config.default.adminUserIds;
-    config.default.adminUserIds = new Set(['user-1']);
-    assert.equal(isAdminUser({ _id: 'user-1' }), true);
-    assert.equal(isAdminUser({ _id: 'user-2' }), false);
-    config.default.adminUserIds = original;
+  test('isUserInAdminAllowlist checks the allow set', () => {
+    const allow = new Set(['user-1']);
+    assert.equal(isUserInAdminAllowlist({ _id: 'user-1' }, allow), true);
+    assert.equal(isUserInAdminAllowlist({ _id: 'user-2' }, allow), false);
+    assert.equal(isUserInAdminAllowlist({ _id: 'user-1' }, new Set()), false);
   });
 });
 
