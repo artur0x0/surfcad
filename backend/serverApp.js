@@ -10,7 +10,7 @@ import { connectDB } from './db/connection.js';
 
 // Auth
 import { initializePassport } from './auth/passport.js';
-import { createSessionMiddleware, enforceCredentialRevocation } from './auth/session.js';
+import { createSessionMiddleware, enforceCredentialRevocation, requireAuth } from './auth/session.js';
 import passport from 'passport';
 
 // Routes
@@ -26,7 +26,10 @@ import githubRoutes from './routes/github.js';
 import partnersRoutes from './routes/partners.js';
 import adminRoutes from './routes/admin.js';
 
-// CAD and AI 
+// CAD and AI
+import { createGenerateHandler } from './services/generateProxy.js';
+import { createRateLimiter, rateLimitMiddleware, userKey } from './services/rateLimiter.js';
+
 let SYSTEM_PROMPT = 'You are a CAD assistant.';
 try {
   const mod = await import('./systemPrompt.js');
@@ -81,36 +84,13 @@ app.use('/api/github', githubRoutes);
 app.use('/api/partners', partnersRoutes);
 app.use('/api/admin', adminRoutes);
 
-const MODEL_CONFIG = {
-  model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-  temperature: 1,
-  top_p: 1,
-  max_tokens: 2048,
-};
-app.post('/api/generate', async (req, res) => {
-  try {
-    const { messages } = req.body;
-    const messagesWithSystem = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...messages
-    ];
-    
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
-      },
-      body: JSON.stringify({ ...MODEL_CONFIG, messages: messagesWithSystem })
-    });
-    
-    if (!response.ok) throw new Error(`Groq API error: ${response.status}`);
-    res.json(await response.json());
-  } catch (error) {
-    console.error('Proxy error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+const generateLimiter = createRateLimiter({ limit: 30, windowMs: 10 * 60 * 1000 });
+app.post(
+  '/api/generate',
+  requireAuth,
+  rateLimitMiddleware(generateLimiter, userKey, 'Too many AI requests. Try again in a few minutes.'),
+  createGenerateHandler({ systemPrompt: SYSTEM_PROMPT, apiKey: process.env.GROQ_API_KEY }),
+);
 
 // ============ Config endpoint for frontend ============
 app.get('/api/config', (req, res) => {
