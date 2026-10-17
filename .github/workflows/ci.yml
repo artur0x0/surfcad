@@ -288,6 +288,11 @@ jobs:
             echo "agent git consent golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
+          node scripts/golden/smoke_agent_git_save_consent.mjs | tee "${RUNNER_TEMP}/agent-git-save-consent.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-git-save-consent.log"; then
+            echo "agent git save consent golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:

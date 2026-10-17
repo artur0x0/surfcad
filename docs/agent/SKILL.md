@@ -48,7 +48,7 @@ Optional: `SURFCAD_AGENT_BRIDGE_WS_URL` (default `ws://127.0.0.1:17341`; preview
 
 - **Faces** — `list_faces` rows: `id` (`f0`, `f1`, …, one per face a viewport click selects, same on a rerun of the same script), `type`, `center` / `normal` / `axis` / `radius`, `area`, and `key` `{ at, n, area, src?, ord? }` (same as viewport fingerprints). `joint_pick` takes `{ part_id, face_id }`; key-based tools take `key`.
 - **Edges** — prefer grouped **`e0`**, **`e1`**, … from `list_feature_edges`; raw mesh edges are not stable. Grouped `eN` expands to the UI edge chain.
-- **Parts** — assembly part ids from `parts` / `set_active_part`.
+- **Parts** — assembly part ids from `parts` / `set_active_part`. In a git assembly, `create_part` rows have no vault path until `git_save`, which paths every such part and commits them with the `.surf.json` in one commit; ids change to the vault paths, so re-read `parts` after a save or a `rename_part`.
 - **Sketch** — in-contour entities `p0`, `e0`, `a0`, …; saved contour block id is `@contour id=c1` on the script, not sketch prefixes.
 
 Full shapes: `docs/agent-export.md`.
@@ -60,7 +60,8 @@ MCP returns JSON text; bridge refusals use `isError: true` with:
 | Code | Meaning |
 | --- | --- |
 | `not_paired` | No approved relay session — pair first. |
-| `real_repo_blocked` | Git write on a real repo without consent (`details.reason`: `consent_pending` / `consent_declined`). |
+| `consent_pending` | Git write on a real repo while the consent dialog is up. Nothing was written. Ask the user to click **Allow** in SurfCAD, then retry the same call (`details.retry_after_ms`). |
+| `real_repo_blocked` | Git write on a real repo that cannot get consent: headless / automation (`details.reason` `consent_pending`) or the user denied this session (`consent_declined`). |
 | `confirm_required` | Destructive git op needs explicit user approval. |
 
 Other codes (`unknown_face`, `picker_busy`, `pick_timeout`, …) match `docs/agent-export.md`.
