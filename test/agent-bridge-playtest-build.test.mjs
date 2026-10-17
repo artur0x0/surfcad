@@ -116,9 +116,7 @@ test('localStorage auto-approve flag is ignored in production build', { timeout:
     await installApiMocks(page);
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(
-      /* eslint-disable no-undef */
       () => typeof window.surfcad?.call === 'function' && !document.querySelector('[data-app-loading]'),
-      /* eslint-enable no-undef */
       { timeout: 120000 },
     );
 
