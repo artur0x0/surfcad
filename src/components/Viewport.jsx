@@ -119,6 +119,17 @@ import MoveModeChip from './MoveModeChip';
 import MoveFaceModeChip from './MoveFaceModeChip';
 import DeleteFaceModeChip from './DeleteFaceModeChip';
 import { buildCrossSectionPreview, defaultTopPlaneFrame } from '../utils/crossSectionSubstrate';
+import {
+  applyTrimmedMeshToTarget,
+  clearCrossSectionVisuals,
+  collectCrossSectionTargets,
+  crossSectionPlaneKey,
+  getTrimCacheEntry,
+  isAssemblyCrossSectionScope,
+  setTrimCacheEntry,
+  summarizeCrossSection,
+  worldPlaneToLocalTrim,
+} from '../utils/crossSectionView.js';
 import { setFailedPartOutline } from '../utils/failedPartOutline';
 import {
   directionToPartLocal,
@@ -1563,6 +1574,10 @@ const Viewport = forwardRef(({
   const agentXsectionHostRef = useRef(null);
   const crossSectionPanelRef = useRef(null);
   const crossSectionEnabledRef = useRef(false);
+  const crossSectionApplyGenRef = useRef(0);
+  const crossSectionAppliedGenRef = useRef(0);
+  const crossSectionAppliedRef = useRef(null);
+  const crossSectionTrimCacheRef = useRef(new WeakMap());
   const applySketchEntityDeleteRef = useRef(null);
   const enterPaintModeRef = useRef(() => {});
   const acceptPaintRef = useRef(() => {});
@@ -6337,13 +6352,37 @@ const Viewport = forwardRef(({
     }
   };
 
+  const crossSectionTargets = useCallback(() => collectCrossSectionTargets({
+    assemblyRunLockRef,
+    resultRef,
+    assemblyExtrasRef,
+    solidCache: solidCacheRef.current,
+    activePartIdRef,
+  }), [assemblyRunLockRef, assemblyExtrasRef]);
+
+  const restoreCrossSectionMeshes = useCallback(() => {
+    const targets = crossSectionTargets();
+    clearCrossSectionVisuals(targets, solidCacheRef.current);
+    crossSectionTrimCacheRef.current = new WeakMap();
+    crossSectionAppliedRef.current = null;
+    for (const { mesh } of targets) {
+      if (mesh?.geometry) applyFaceSkinRef.current(mesh);
+    }
+    syncFailedPartOutlinesRef.current?.();
+    const renderer = rendererRef.current;
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    if (renderer && scene && camera) renderer.render(scene, camera);
+  }, [crossSectionTargets]);
+
   // Handle cross-section toggle
   const handleCrossSectionToggle = async (enabled) => {
     const on = !!enabled;
     crossSectionEnabledRef.current = on;
     if (on) {
       try {
-        if (!manifoldContext.isReady || !currentScript) {
+        const hasSolid = crossSectionTargets().length > 0;
+        if (!manifoldContext.isReady || !hasSolid) {
           crossSectionEnabledRef.current = false;
           return;
         }
@@ -6353,8 +6392,8 @@ const Viewport = forwardRef(({
         console.error('[CrossSection] Failed to enable:', error);
       }
     } else {
-      // Disable and restore original
       setCrossSectionEnabled(false);
+      restoreCrossSectionMeshes();
       clearCuttingPlane();
     }
   };
@@ -6362,24 +6401,52 @@ const Viewport = forwardRef(({
   // Handle plane changes for cross-section preview
   const handlePlaneChange = async (plane) => {
     setCrossSectionPlane(plane);
-    
-    if (!crossSectionEnabled || !cachedMeshData) return;
-    
-    try {
-      const normal = new Vector3(...plane.normal).normalize();
-      const normalArray = [normal.x, normal.y, normal.z];
-      
-      // Call worker to trim the cached manifold
-      const { mesh: trimmedMesh } = await manifoldContext.trimByPlane(
-        normalArray, 
-        plane.originOffset
-      );
-      if (trimmedMesh && cachedMeshDataRef.current?.sheetMetal) trimmedMesh.sheetMetal = true;
 
-      // Render the trimmed result
-      renderMeshData(trimmedMesh);
-      
-      // Update cutting plane widget visibility
+    if (!crossSectionEnabled || !cachedMeshDataRef.current) return;
+
+    const gen = ++crossSectionApplyGenRef.current;
+    try {
+      if (!manifoldContext.isReady) return;
+      const targets = crossSectionTargets();
+      if (!targets.length) return;
+      const planeKey = crossSectionPlaneKey(plane.normal, plane.originOffset);
+
+      await Promise.all(targets.map(async (target) => {
+        const local = worldPlaneToLocalTrim(target.mesh, plane.normal, plane.originOffset);
+        const source = target.meshData;
+        let trimmed = getTrimCacheEntry(crossSectionTrimCacheRef.current, source, planeKey);
+        if (!trimmed) {
+          const { mesh: trimmedMesh } = await manifoldContext.trimMeshByPlane(
+            source,
+            local.normal,
+            local.originOffset,
+          );
+          if (gen !== crossSectionApplyGenRef.current) return;
+          trimmed = trimmedMesh;
+          if (trimmed?.vertProperties) {
+            if (source?.sheetMetal) trimmed.sheetMetal = true;
+            setTrimCacheEntry(crossSectionTrimCacheRef.current, source, planeKey, trimmed);
+          }
+        }
+        if (gen !== crossSectionApplyGenRef.current) return;
+        if (!trimmed?.vertProperties) return;
+        applyTrimmedMeshToTarget(target, trimmed, solidCacheRef.current, {
+          normal: local.normal,
+          originOffset: local.originOffset,
+        });
+        ensureBodyMaterial(target.mesh, trimmed, materialsRef.current);
+        applyFaceSkinRef.current(target.mesh);
+      }));
+
+      if (gen !== crossSectionApplyGenRef.current) return;
+      const unit = new Vector3(...plane.normal).normalize();
+      crossSectionAppliedRef.current = {
+        normal: [unit.x, unit.y, unit.z],
+        originOffset: plane.originOffset,
+        planeKey,
+        gen: ++crossSectionAppliedGenRef.current,
+      };
+
       if (plane.showPlane) {
         if (cuttingPlaneWidgetRef.current) {
           updateCuttingPlaneWidget(cuttingPlaneWidgetRef.current, plane);
@@ -6387,7 +6454,7 @@ const Viewport = forwardRef(({
           const widget = createCuttingPlaneWidget({
             normal: plane.normal,
             originOffset: plane.originOffset,
-            size: Math.max(...(modelBounds?.size || [200, 200, 200]))
+            size: Math.max(...(modelBounds?.size || [200, 200, 200])),
           });
           sceneRef.current.add(widget);
           cuttingPlaneWidgetRef.current = widget;
@@ -6395,7 +6462,11 @@ const Viewport = forwardRef(({
       } else {
         clearCuttingPlane();
       }
-      
+      syncFailedPartOutlinesRef.current?.();
+      const renderer = rendererRef.current;
+      const scene = sceneRef.current;
+      const camera = cameraRef.current;
+      if (renderer && scene && camera) renderer.render(scene, camera);
     } catch (error) {
       console.error('[CrossSection] Error applying plane:', error);
       setExecutionError(error.message);
@@ -6406,11 +6477,16 @@ const Viewport = forwardRef(({
     if (crossSectionEnabled && cachedMeshData) {
       handlePlaneChange(crossSectionPlane);
     } else if (!crossSectionEnabled && cachedMeshData) {
-      // Restore original mesh when cross-section is disabled
-      renderMeshData(cachedMeshData);
+      restoreCrossSectionMeshes();
       clearCuttingPlane();
     }
   }, [crossSectionEnabled]);
+
+  useEffect(() => {
+    crossSectionTrimCacheRef.current = new WeakMap();
+    if (!crossSectionEnabled || !cachedMeshData) return;
+    handlePlaneChange(crossSectionPlane);
+  }, [cachedMeshData, overlayEpoch]);
 
   // Picked triangles plus their outline. A duplicate-vertex seam is not an outline edge.
   const highlightFace = useCallback((faceIndices, geometry, positions, index, color = 0xffff00, name = 'highlight') => {
@@ -10609,6 +10685,22 @@ const Viewport = forwardRef(({
             push(resultRef.current);
             return out;
           },
+          crossSectionTargetIds: () => collectCrossSectionTargets({
+            assemblyRunLockRef,
+            resultRef,
+            assemblyExtrasRef,
+            solidCache: solidCacheRef.current,
+            activePartIdRef,
+          }).map((t) => t.partId),
+          crossSectionTrimmedPartIds: () => collectCrossSectionTargets({
+            assemblyRunLockRef,
+            resultRef,
+            assemblyExtrasRef,
+            solidCache: solidCacheRef.current,
+            activePartIdRef,
+          })
+            .filter((t) => t.mesh?.userData?.crossSectionTrimmedMeshData)
+            .map((t) => t.partId),
           // Set this from automation to be notified the instant a mesh lands in the scene.
           // Fires from renderMeshData with the exact meshData object that was painted.
           onRendered: null,
@@ -12320,6 +12412,8 @@ const Viewport = forwardRef(({
   // Helper to render mesh data from the worker
   const renderMeshData = useCallback((meshData) => {
     if (!meshData || !resultRef.current) return;
+    delete resultRef.current.userData.crossSectionRestore;
+    delete resultRef.current.userData.crossSectionTrimmedMeshData;
     // A new script result replaces the solid. Drop any Pieces clone so the
     // viewport shows that result in the normal body color.
     clearCutPiecePreviewRef.current();
@@ -13602,6 +13696,8 @@ const Viewport = forwardRef(({
       if (mesh.geometry !== geom) {
         releaseGeometryIn(solidCacheRef.current, mesh.geometry);
         mesh.geometry = geom;
+        delete mesh.userData.crossSectionRestore;
+        delete mesh.userData.crossSectionTrimmedMeshData;
       }
       ensureBodyMaterial(mesh, solid.mesh);
       applyPartPose(mesh, solidPlacement(solid));
@@ -13627,6 +13723,8 @@ const Viewport = forwardRef(({
       if (mesh.geometry !== geom) {
         releaseGeometryIn(solidCacheRef.current, mesh.geometry);
         mesh.geometry = geom;
+        delete mesh.userData.crossSectionRestore;
+        delete mesh.userData.crossSectionTrimmedMeshData;
       }
       ensureBodyMaterial(mesh, solid.mesh);
       applyPartPose(mesh, solidPlacement(solid));
@@ -13931,7 +14029,33 @@ const Viewport = forwardRef(({
   agentXsectionHostRef.current = createXsectionAgentHandlers({
     panelRef: crossSectionPanelRef,
     enabledRef: crossSectionEnabledRef,
-    getMesh: () => resultRef.current,
+    getMesh: () => {
+      const active = resultRef.current;
+      if (active?.geometry?.attributes?.position?.count) return active;
+      for (const mesh of assemblyExtrasRef.current.values()) {
+        if (mesh?.geometry?.attributes?.position?.count) return mesh;
+      }
+      return active;
+    },
+    getAppliedPlane: () => crossSectionAppliedRef.current,
+    getAppliedGen: () => crossSectionAppliedGenRef.current,
+    getDiagnostics: () => {
+      const targets = crossSectionTargets();
+      const summary = summarizeCrossSection(targets);
+      const applied = crossSectionAppliedRef.current;
+      return {
+        assemblyScope: isAssemblyCrossSectionScope(assemblyRunLockRef, assemblyExtrasRef),
+        targetPartIds: targets.map((t) => t.partId),
+        trimmedPartIds: targets
+          .filter((t) => t.mesh?.userData?.crossSectionTrimmedMeshData)
+          .map((t) => t.partId),
+        remainingVolume: summary.remainingVolume,
+        capCount: summary.capCount,
+        parts: summary.parts,
+        appliedPlane: applied,
+        appliedGen: applied?.gen ?? crossSectionAppliedGenRef.current,
+      };
+    },
   });
   const paintUnmatched = paintMode
     ? unmatchedColorCount(paintMode.session, paintSurfId(), paintFacesNow())

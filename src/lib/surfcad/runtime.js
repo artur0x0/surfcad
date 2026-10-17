@@ -10307,6 +10307,29 @@ self.onmessage = async (event) => {
         });
         break;
       }
+
+      case 'trimMeshByPlane': {
+        if (!isInitialized) {
+          throw new Error('Worker not initialized');
+        }
+        const { mesh, normal, originOffset } = payload || {};
+        if (!mesh?.vertProperties || !mesh?.triVerts) {
+          throw new Error('trimMeshByPlane needs mesh data');
+        }
+        let solid = null;
+        let trimmed = null;
+        try {
+          solid = reconstructManifold(mesh);
+          trimmed = solid.trimByPlane(normal, originOffset);
+          const meshData = serializeResult(trimmed);
+          if (typeof trimmed.volume === 'function') meshData.volume = trimmed.volume();
+          self.postMessage({ type: 'result', id, payload: { mesh: meshData } });
+        } finally {
+          _safeDeleteManifold(trimmed);
+          _safeDeleteManifold(solid);
+        }
+        break;
+      }
       
       default:
         throw new Error(`Unknown message type: ${type}`);
