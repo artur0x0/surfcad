@@ -6,6 +6,7 @@ import {
   PAIRING_ORIGIN_REJECTED_COPY,
   PAIRING_WAITING_COPY,
   agentConnectedToastReducer,
+  createCloseMenuRegistry,
   disposePairingHost,
   isCurrentPairingConnection,
   isRelayTabConnected,
@@ -40,6 +41,28 @@ test('isRelayTabConnected tracks live tab session states', () => {
   assert.equal(isRelayTabConnected('advertising'), true);
   assert.equal(isRelayTabConnected('paired'), true);
   assert.equal(isRelayTabConnected('reconnecting'), true);
+});
+
+test('close-menu registry keeps every chip callback and drops only the unmounted one', () => {
+  const registry = createCloseMenuRegistry();
+  const calls = [];
+  const a = () => { calls.push('a'); };
+  const b = () => { calls.push('b'); };
+  const unregA = registry.register(a);
+  const unregB = registry.register(b);
+  assert.equal(registry.size(), 2);
+  registry.closeAll();
+  assert.deepEqual(calls.sort(), ['a', 'b']);
+  unregA();
+  assert.equal(registry.size(), 1);
+  calls.length = 0;
+  registry.closeAll();
+  assert.deepEqual(calls, ['b']);
+  unregB();
+  assert.equal(registry.size(), 0);
+  const noop = registry.register(null);
+  assert.equal(registry.size(), 0);
+  noop();
 });
 
 test('the pairing host stays mounted while the panel is closed', () => {

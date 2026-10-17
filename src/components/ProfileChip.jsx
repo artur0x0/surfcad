@@ -155,8 +155,8 @@ export default function ProfileChip({
 
   useEffect(() => {
     if (!agentBridgeLive) return undefined;
-    registerCloseMenu?.(() => setPanelOpen(false));
-    return () => { registerCloseMenu?.(null); };
+    const unregister = registerCloseMenu?.(() => setPanelOpen(false));
+    return () => { unregister?.(); };
   }, [agentBridgeLive, registerCloseMenu]);
 
   return (

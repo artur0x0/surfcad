@@ -160,21 +160,54 @@ async function ensureProfilePanelClosed(page) {
   await page.waitForSelector('[data-profile-panel]', { state: 'hidden', timeout: 5000 });
 }
 
+async function waitForInnerWidth(page, width) {
+  const deadline = Date.now() + 8000;
+  let inner = 0;
+  while (Date.now() < deadline) {
+    // eslint-disable-next-line no-undef -- page.evaluate runs in the browser
+    inner = await page.evaluate(() => window.innerWidth);
+    if (inner === width) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.equal(inner, width, `viewport innerWidth at ${width}: ${inner}`);
+}
+
+async function dismissPairingDialog(page) {
+  if (!(await page.locator('[data-agent-bridge-dialog]').isVisible().catch(() => false))) return;
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('[data-agent-bridge-dialog]', { state: 'hidden', timeout: 5000 });
+}
+
+async function assertConnectAgentClosesMenuAt(page, { width, height }) {
+  await page.setViewportSize({ width, height });
+  await waitForInnerWidth(page, width);
+  await dismissPairingDialog(page);
+  await ensureProfilePanelClosed(page);
+  await page.locator('[data-profile-chip]').filter({ visible: true }).first().click();
+  await page.waitForSelector('[data-ui-action="data-agent-bridge-connect"]', { timeout: 10000 });
+  await page.click('[data-ui-action="data-agent-bridge-connect"]');
+  await page.waitForSelector('[data-agent-bridge-dialog]', { timeout: 10000 });
+  await page.waitForFunction(
+    /* eslint-disable no-undef */
+    () => !document.querySelector('[data-profile-panel]'),
+    /* eslint-enable no-undef */
+    { timeout: 5000 },
+  );
+  const openMenus = await page.locator('[data-profile-panel]').filter({ visible: true }).count();
+  assert.equal(
+    openMenus,
+    0,
+    `Connect Agent must close the profile menu at ${width} (open menus=${openMenus})`,
+  );
+}
+
 async function assertApprovalLayoutAtWidths(page, widths = [1280, 768, 390]) {
   const original = page.viewportSize() || { width: 1280, height: 800 };
   try {
     for (const width of widths) {
       const height = width <= 390 ? 844 : original.height;
       await page.setViewportSize({ width, height });
-      const deadline = Date.now() + 8000;
-      let inner = 0;
-      while (Date.now() < deadline) {
-        // eslint-disable-next-line no-undef -- page.evaluate runs in the browser
-        inner = await page.evaluate(() => window.innerWidth);
-        if (inner === width) break;
-        await new Promise((r) => setTimeout(r, 50));
-      }
-      assert.equal(inner, width, `viewport innerWidth at ${width}: ${inner}`);
+      await waitForInnerWidth(page, width);
       await page.waitForSelector('[data-agent-bridge-dialog]', { timeout: 8000 });
       await ensureProfilePanelClosed(page);
       await assertPairingClearsFooterPrivacy(page, { menuOpen: false });
@@ -234,6 +267,17 @@ export async function run(ctx) {
   const shotDir = process.env.WALKTHROUGH_SHOT_DIR
     || join(ctx.outDir || '/opt/cursor/artifacts', 'connect-agent-pairing');
 
+  for (const size of [
+    { width: 1280, height: 800 },
+    { width: 768, height: 800 },
+    { width: 390, height: 844 },
+  ]) {
+    await assertConnectAgentClosesMenuAt(page, size);
+    await dismissPairingDialog(page);
+  }
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await waitForInnerWidth(page, 1280);
+
   await page.locator('[data-profile-chip]').first().click();
   await page.waitForSelector('[data-ui-action="data-agent-bridge-connect"]', { timeout: 10000 });
   await page.click('[data-ui-action="data-agent-bridge-connect"]');
@@ -288,6 +332,8 @@ export async function run(ctx) {
     await page.waitForSelector('[data-agent-bridge-dialog]', { state: 'hidden', timeout: 15000 });
     await page.waitForSelector('[data-agent-bridge-connected-toast]', { timeout: 15000 });
     await page.waitForSelector('[data-agent-bridge-connection-ring="connected"]', { timeout: 15000 });
+    const ringCount = await page.locator('[data-agent-bridge-connection-ring="connected"]').count();
+    assert.ok(ringCount >= 1, `expected at least one connected ring, got ${ringCount}`);
     await shot(page, shotDir, 'pairing-toast-1280.png');
     await shot(page, shotDir, 'pairing-ring-1280.png');
     await page.setViewportSize({ width: 390, height: 844 });

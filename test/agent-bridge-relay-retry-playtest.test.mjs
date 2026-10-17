@@ -54,6 +54,15 @@ test('relay-retry playtest asserts the pairing popup never covers footer Privacy
   assert.match(SRC, /menuOpen: true/);
 });
 
+test('Connect Agent closes the profile menu at 390, 768, and 1280', () => {
+  assert.match(SRC, /assertConnectAgentClosesMenuAt/);
+  assert.match(SRC, /Connect Agent must close the profile menu/);
+  assert.match(SRC, /\{ width: 1280, height: 800 \}/);
+  assert.match(SRC, /\{ width: 768, height: 800 \}/);
+  assert.match(SRC, /\{ width: 390, height: 844 \}/);
+  assert.match(SRC, /dismissPairingDialog/);
+});
+
 test('relay restart prompts a fresh Allow and does not persist the resume secret', () => {
   assert.match(SRC, /A process restart must prompt Allow again/);
   assert.match(SRC, /waitForSelector\('\[data-agent-bridge-approval\]'/);

@@ -119,6 +119,34 @@ export function shouldKeepAgentBridgeHostMounted(input) {
 }
 
 /**
+ * Viewport, PartFeed, and CodeEditor each mount a ProfileChip. A single
+ * close-menu callback would let the last registrant win and an unmount
+ * clear it for every chip, leaving the menu open behind the pairing dialog.
+ *
+ * @returns {{
+ *   register: (fn: unknown) => () => void,
+ *   closeAll: () => void,
+ *   size: () => number,
+ * }}
+ */
+export function createCloseMenuRegistry() {
+  const closers = new Set();
+  return {
+    register(fn) {
+      if (typeof fn !== 'function') return () => {};
+      closers.add(fn);
+      return () => { closers.delete(fn); };
+    },
+    closeAll() {
+      for (const fn of [...closers]) fn();
+    },
+    size() {
+      return closers.size;
+    },
+  };
+}
+
+/**
  * Ignore onState/onLink/onIssue from a connection that is no longer current
  * (its close may arrive after startPairing has swapped connRef).
  *

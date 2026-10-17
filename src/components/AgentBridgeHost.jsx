@@ -1,12 +1,12 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import { shouldKeepAgentBridgeHostMounted } from '../agent/ws/pairingFlow.js';
+import { createCloseMenuRegistry, shouldKeepAgentBridgeHostMounted } from '../agent/ws/pairingFlow.js';
 import AgentBridgePairing from './AgentBridgePairing';
 
 const AgentBridgeHostContext = createContext({
   link: null,
   offerSlot: () => {},
-  registerCloseMenu: () => {},
+  registerCloseMenu: () => () => {},
 });
 
 /**
@@ -21,15 +21,14 @@ export function useAgentBridgeHost() {
 export default function AgentBridgeHost({ enabled = false, children }) {
   const [link, setLink] = useState(null);
   const [slot, setSlot] = useState(null);
-  const closeMenuRef = useRef(() => {});
+  const closeMenusRef = useRef(null);
+  if (closeMenusRef.current == null) closeMenusRef.current = createCloseMenuRegistry();
   const offerSlot = useCallback((node) => {
     setSlot(node || null);
   }, []);
-  const registerCloseMenu = useCallback((fn) => {
-    closeMenuRef.current = typeof fn === 'function' ? fn : () => {};
-  }, []);
+  const registerCloseMenu = useCallback((fn) => closeMenusRef.current.register(fn), []);
   const closeProfileMenu = useCallback(() => {
-    closeMenuRef.current();
+    closeMenusRef.current.closeAll();
   }, []);
   const value = useMemo(
     () => ({ link, offerSlot, registerCloseMenu }),

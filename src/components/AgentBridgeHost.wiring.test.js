@@ -95,6 +95,10 @@ test('ProfileChip offers the panel slot and does not own the socket', () => {
   assert.match(CHIP, /offerSlot\(agentBridgeSlot\)/);
   assert.match(CHIP, /registerCloseMenu/);
   assert.match(SRC, /onBeginFlow=\{closeProfileMenu\}/);
-  assert.match(SRC, /registerCloseMenu/);
+  assert.match(SRC, /createCloseMenuRegistry/);
+  assert.match(SRC, /closeAll\(\)/);
+  assert.match(CHIP, /const unregister = registerCloseMenu/);
+  assert.match(CHIP, /unregister\?\.\(\)/);
+  assert.doesNotMatch(CHIP, /registerCloseMenu\?\.\(null\)/);
   assert.equal(CHIP.includes('<AgentBridgePairing'), false);
 });

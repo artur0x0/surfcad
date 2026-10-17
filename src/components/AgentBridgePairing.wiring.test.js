@@ -22,6 +22,12 @@ test('Connect Agent opens a body-portal dialog and closes the profile menu', () 
   assert.doesNotMatch(DIALOG, /items-end/);
 });
 
+test('Esc and backdrop tap before pairing cancel the attempt', () => {
+  assert.match(SRC, /event\.key === 'Escape'/);
+  assert.match(SRC, /handleDialogDismiss/);
+  assert.match(DIALOG, /event\.target === event\.currentTarget/);
+});
+
 test('the setup prompt is hidden once a relay is up', () => {
   assert.match(SRC, /shouldShowPairingPrompt\(stage\)/);
   assert.match(SRC, /showPrompt \?/);
