@@ -16,6 +16,9 @@
 - `git_add_to_repo` works on a multi-part assembly whose other parts have no paths. They are pathed and committed with it instead of failing `.surf.json` validation on every call.
 - Git writes on a real repo return `consent_pending` immediately (with `details.retry` and `details.retry_after_ms`) while the consent dialog waits, instead of blocking until the MCP client times out (`-32001`). Retry after the user clicks Allow. Headless tabs and a denied session still return `real_repo_blocked`.
 - `create_part` in a git assembly no longer commits on its own; `git_save` writes it behind the consent dialog.
+- Agent `create_part` places at the assembly origin (optional `position [x,y,z]` mm). New `part_get_transform` / `part_set_transform` read and set rigid placement (intrinsic XYZ Euler degrees).
+- `status` follows the active part after `set_active_part` (`runState` `not_run_yet` | `ok` | `failed`) and reports that part's own volume/bbox, not the last run of any part.
+- `set_script` preserves or re-injects the active part `// @surf-id` header.
 
 ## 0.2.0
 

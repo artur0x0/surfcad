@@ -39,6 +39,14 @@ export const createPartCommand = Object.freeze({
     properties: {
       name: { type: 'string' },
       script: { type: 'string' },
+      position: {
+        type: 'array',
+        items: { type: 'number' },
+        minItems: 3,
+        maxItems: 3,
+        description:
+          'Optional initial translation [x, y, z] mm. Agent create_part defaults to the assembly origin; UI creation still staggers along +X.',
+      },
     },
   }),
   example: { name: 'Bracket' },

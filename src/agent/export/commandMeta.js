@@ -21,7 +21,8 @@ export const COMMAND_META = {
     mutates: false,
   },
   set_script: {
-    description: 'Write the editor, run the script, and record one undo step when the text changes.',
+    description:
+      'Write the editor, run the script, and record one undo step when the text changes. Preserves or re-injects the active part `// @surf-id` header when the part has a surf id.',
     result: MUTATE_RESULT_SCHEMA,
     errors: ['bad_args', 'internal'],
     mutates: true,
@@ -33,7 +34,8 @@ export const COMMAND_META = {
     mutates: true,
   },
   status: {
-    description: 'Status from the last finished set_script, run, or undo.',
+    description:
+      'Status for the active part: id, name, editor script, runState (not_run_yet | ok | failed), and the last run volume/bbox/bodyCount when available. Updates when the active part changes without requiring another run.',
     result: STATUS_SCHEMA,
     errors: ['internal'],
     mutates: false,
@@ -535,7 +537,8 @@ export const COMMAND_META = {
     confirm: true,
   },
   create_part: {
-    description: 'Add a part row to the assembly. In a git assembly the part has no vault path until git_save.',
+    description:
+      'Add a part row to the assembly. Agent calls default to the assembly origin (identity placement); pass position [x,y,z] mm to place explicitly. The UI still staggers new parts +40 mm on X so bodies do not overlap. In a git assembly the part has no vault path until git_save.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'internal'],
     mutates: true,
@@ -544,6 +547,38 @@ export const COMMAND_META = {
     description: 'Rename a part. A vault part also moves its .js path in the same folder (-2, -3 on collision) and updates the .surf.json in one rename commit; that write needs git consent like git_save.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'unknown_part', 'name_taken', 'consent_pending', 'real_repo_blocked', 'git_error', 'internal'],
+    mutates: true,
+  },
+  part_get_transform: {
+    description:
+      'Read a part rigid placement: position [x,y,z] mm and rotation as intrinsic XYZ Euler degrees (three.js Euler XYZ order).',
+    result: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        part: { type: 'string' },
+        position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
+        rotation: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
+        eulerOrder: { type: 'string', const: 'XYZ' },
+      },
+    },
+    errors: ['bad_args', 'unknown_part', 'internal'],
+    mutates: false,
+  },
+  part_set_transform: {
+    description:
+      'Set a part rigid placement (translation mm, intrinsic XYZ Euler degrees). Records one assembly undo step like a UI move.',
+    result: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        part: { type: 'string' },
+        position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
+        rotation: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
+        eulerOrder: { type: 'string', const: 'XYZ' },
+      },
+    },
+    errors: ['bad_args', 'unknown_part', 'no_assembly', 'internal'],
     mutates: true,
   },
   open_assembly: {
