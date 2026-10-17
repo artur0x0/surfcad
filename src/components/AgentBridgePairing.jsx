@@ -58,13 +58,10 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
       }
       data-agent-bridge-panel=""
     >
-      <p className="text-chrome-text-secondary text-xs mb-2">
-        Local agent bridge (127.0.0.1). Approve each client — nothing pairs automatically.
-      </p>
       {!token && (
         <button
           type="button"
-          className="w-full rounded bg-chrome-border/80 px-3 py-2 text-left hover:bg-chrome-border"
+          className="block w-full rounded-md px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
           onClick={startPairing}
           data-ui-action="data-agent-bridge-start"
         >

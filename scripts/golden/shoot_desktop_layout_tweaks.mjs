@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 /**
- * Before/after layout + viewport aspect checks for desktop layout tweaks.
- * Usage: GOLDEN_SHOT_DIR=/path LABEL=before|after node scripts/golden/shoot_desktop_layout_tweaks.mjs
- * Requires production build and system Chrome.
+ * Layout + canvas aspect screenshots for desktop layout tweaks.
+ * LABEL=before|after GOLDEN_SHOT_DIR=... node scripts/golden/shoot_desktop_layout_tweaks.mjs
  */
 /* global document, indexedDB, window, Event */
 import { spawn } from 'node:child_process';
@@ -12,11 +11,12 @@ import { chromium } from 'playwright-core';
 import { serializeAssembly } from '../../src/utils/assembly.js';
 
 const PORT = Number(process.env.SMOKE_PORT || 4329);
-const APP_URL = `http://127.0.0.1:${PORT}/`;
+const APP_URL = `http://localhost:${PORT}/`;
 const LABEL = process.env.LABEL || 'shot';
 const OUT = process.env.GOLDEN_SHOT_DIR || join('/opt/cursor/artifacts', 'desktop-layout-tweaks');
 const CHROME = [
   process.env.CHROME_PATH,
+  '/usr/local/bin/google-chrome',
   '/usr/bin/google-chrome',
   '/usr/bin/chromium-browser',
   '/usr/bin/chromium',
@@ -42,7 +42,7 @@ if (!existsSync(new URL('../../dist/index.html', import.meta.url))) {
 
 mkdirSync(OUT, { recursive: true });
 
-const server = spawn('npx', ['vite', 'preview', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], {
+const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], {
   cwd: new URL('../../', import.meta.url).pathname,
   stdio: 'ignore',
   detached: true,
@@ -66,6 +66,19 @@ async function waitForServer() {
     await new Promise((r) => setTimeout(r, 250));
   }
   return false;
+}
+
+async function wirePage(page) {
+  await page.route('**/api/auth/me', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ authenticated: false }),
+  }));
+  await page.route('**/api/config', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({}),
+  }));
 }
 
 async function seedAssembly(page) {
@@ -97,7 +110,7 @@ async function clearAssembly(page) {
       open.onerror = () => reject(open.error);
       open.onsuccess = () => {
         const db = open.result;
-        const tx = db.transaction(['assembly', 'parts'], 'readwrite');
+        const tx = db.transaction(['assembly'], 'readwrite');
         tx.objectStore('assembly').delete('current');
         tx.oncomplete = () => { db.close(); resolve(); };
         tx.onerror = () => reject(tx.error);
@@ -106,8 +119,21 @@ async function clearAssembly(page) {
   });
 }
 
-async function waitViewportReady(page) {
-  await page.waitForFunction(() => window.__VIEWPORT__?.ready?.(), { timeout: 120000 });
+async function canvasAspectMetrics(page) {
+  return page.evaluate(() => {
+    const canvas = document.querySelector('[data-agent-viewport] canvas');
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const cssAspect = rect.width / rect.height;
+    const bufAspect = canvas.width / canvas.height;
+    return {
+      cssAspect,
+      bufAspect,
+      drift: Math.abs(bufAspect - cssAspect) / cssAspect,
+      buffer: { w: canvas.width, h: canvas.height },
+      css: { w: rect.width, h: rect.height },
+    };
+  });
 }
 
 async function togglePartsColumn(page, visible) {
@@ -116,83 +142,62 @@ async function togglePartsColumn(page, visible) {
     if (col) col.style.display = show ? '' : 'none';
     window.dispatchEvent(new Event('resize'));
   }, visible);
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(600);
 }
 
-async function measureBoxAspect(page) {
-  return page.evaluate(() => {
-    const canvas = document.querySelector('[data-agent-viewport] canvas');
-    const mesh = window.__MANIFOLD_CONTEXT__?.lastResult?.mesh;
-    if (!canvas || !mesh) return null;
-    const vp = window.__VIEWPORT__;
-    const project = vp?.stageProject?.([25, 15, 10]);
-    const project2 = vp?.stageProject?.([25, -15, 10]);
-    const project3 = vp?.stageProject?.([-25, 15, 10]);
-    if (!project || !project2 || !project3) return null;
-    const w = Math.hypot(project2.x - project.x, project2.y - project.y);
-    const h = Math.hypot(project3.x - project.x, project3.y - project.y);
-    const canvasRect = canvas.getBoundingClientRect();
-    return {
-      screenAspect: w / h,
-      canvasCss: { w: canvasRect.width, h: canvasRect.height },
-      buffer: { w: canvas.width, h: canvas.height },
-    };
-  });
-}
-
-async function capture(browser, width, height, tag) {
-  const context = await browser.newContext({ viewport: { width, height } });
-  const page = await context.newPage();
-  await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
-
+async function capture(browser, width, height) {
+  console.log(`layout shots: capture ${width}x${height}`);
   const prefix = `${LABEL}-${width}x${height}`;
+  const mobile = width < 500;
+  const context = await browser.newContext({
+    viewport: { width, height },
+    ...(mobile ? {
+      hasTouch: true,
+      isMobile: true,
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+    } : {}),
+  });
+  const page = await context.newPage();
+  await wirePage(page);
+  await page.goto(APP_URL, { waitUntil: 'load', timeout: 45000 });
+  await page.waitForFunction(() => document.querySelector('#root')?.children.length > 0, null, { timeout: 20000 }).catch(() => {});
 
-  // Fresh load: no assembly (desktop parts panel visibility).
   await clearAssembly(page);
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(1500);
-  await page.screenshot({ path: join(OUT, `${prefix}-no-assembly.png`), fullPage: false });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: join(OUT, `${prefix}-no-assembly.png`) });
 
   await seedAssembly(page);
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await waitViewportReady(page);
-  await page.waitForTimeout(800);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(8000);
+  await page.screenshot({ path: join(OUT, `${prefix}-with-assembly.png`) });
 
-  await page.screenshot({ path: join(OUT, `${prefix}-with-assembly.png`), fullPage: false });
+  const partsVisible = await canvasAspectMetrics(page);
+  await page.screenshot({ path: join(OUT, `${prefix}-canvas-parts-visible.png`) });
 
-  const beforeAspect = await measureBoxAspect(page);
-  await page.screenshot({ path: join(OUT, `${prefix}-viewport-box-parts-visible.png`), fullPage: false });
-
-  await togglePartsColumn(page, false);
-  const afterAspect = await measureBoxAspect(page);
-  await page.screenshot({ path: join(OUT, `${prefix}-viewport-box-parts-hidden.png`), fullPage: false });
-  await togglePartsColumn(page, true);
-
-  const aspectDrift = beforeAspect && afterAspect
-    ? Math.abs(beforeAspect.screenAspect - afterAspect.screenAspect) / beforeAspect.screenAspect
-    : null;
-
-  console.log(JSON.stringify({
-    tag,
-    width,
-    height,
-    beforeAspect,
-    afterAspect,
-    aspectDrift,
-  }, null, 2));
+  if (!mobile) {
+    await togglePartsColumn(page, false);
+    const partsHidden = await canvasAspectMetrics(page);
+    await page.screenshot({ path: join(OUT, `${prefix}-canvas-parts-hidden.png`) });
+    await togglePartsColumn(page, true);
+    console.log(JSON.stringify({ width, height, partsVisible, partsHidden }, null, 2));
+  } else {
+    console.log(JSON.stringify({ width, height, partsVisible }, null, 2));
+  }
 
   await context.close();
 }
 
 try {
+  console.log('layout shots: waiting for preview…');
   if (!(await waitForServer())) throw new Error('preview server timeout');
+  console.log('layout shots: launching Chrome…');
   const browser = await chromium.launch({
     executablePath: CHROME,
-    headless: true,
-    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
   });
-  await capture(browser, 1440, 900, 'desktop');
-  await capture(browser, 390, 844, 'mobile');
+  await capture(browser, 1440, 900);
+  await capture(browser, 390, 844);
   await browser.close();
   console.log(`layout shots written to ${OUT} (${LABEL})`);
 } catch (err) {
