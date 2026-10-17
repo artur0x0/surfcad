@@ -3,10 +3,27 @@
  */
 
 /**
- * @param {{ connected?: boolean }} input
+ * @typedef {'connected' | 'reconnecting' | 'lost' | null} AgentBridgeLink
  */
-export function shouldShowAgentBridgeRing(input) {
-  return input.connected === true;
+
+const RING_STATES = new Set(['connected', 'reconnecting', 'lost']);
+
+/**
+ * Profile-chip ring variant for the local agent link, or null for no ring.
+ *
+ * @param {AgentBridgeLink | undefined} link
+ * @returns {AgentBridgeLink}
+ */
+export function agentBridgeRingState(link) {
+  return RING_STATES.has(link) ? link : null;
+}
+
+/** @param {AgentBridgeLink} ring */
+export function agentBridgeRingLabel(ring) {
+  if (ring === 'connected') return 'Local agent connected';
+  if (ring === 'reconnecting') return 'Local agent reconnecting';
+  if (ring === 'lost') return 'Local agent connection lost';
+  return '';
 }
 
 /**

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Plug, PlugZap } from 'lucide-react';
 import { createPairingToken } from '../agent/ws/pairingToken.js';
 import { createAgentBridgeTabConnection } from '../agent/ws/tabConnection.js';
+import { isAgentBridgeAutoApprove } from '../agent/ws/autoApprove.js';
 import { defaultAgentBridgeWsUrl } from '../agent/ws/wsUrl.js';
 import { track } from '../utils/analytics.js';
 import {
@@ -39,6 +40,7 @@ export default function AgentBridgePairing({
   const [copied, setCopied] = useState(null);
   const [relayReachable, setRelayReachable] = useState(false);
   const [approvalUi, setApprovalUi] = useState({ open: false });
+  const [link, setLink] = useState(null);
   const connRef = useRef(null);
   const pollerRef = useRef(null);
   const flowOpenRef = useRef(flowOpen);
@@ -62,6 +64,7 @@ export default function AgentBridgePairing({
     connRef.current = null;
     setState('idle');
     setIssue(null);
+    setLink(null);
   }, []);
 
   const stopPolling = useCallback(() => {
@@ -90,8 +93,8 @@ export default function AgentBridgePairing({
   }, [state]);
 
   useEffect(() => {
-    onConnectionChange?.(state === 'paired');
-  }, [onConnectionChange, state]);
+    onConnectionChange?.(link);
+  }, [onConnectionChange, link]);
 
   useEffect(() => {
     if (state === 'pending') {
@@ -156,6 +159,8 @@ export default function AgentBridgePairing({
       call: (name, args) => window.surfcad.call(name, args),
       onState: onConnectionState,
       onIssue: setIssue,
+      onLink: setLink,
+      isAutoApprove: isAgentBridgeAutoApprove,
       pageSecure,
       suppressMissingRelayIssue: true,
     });
@@ -320,7 +325,17 @@ export default function AgentBridgePairing({
               Paired with local client
             </div>
           )}
-          {advertising && !pending && !paired && !issue && (
+          {link === 'reconnecting' && !paired && (
+            <p className="text-xs text-amber-300/90 text-center mb-2" data-agent-bridge-link="reconnecting">
+              Connection to the local agent dropped. Reconnecting…
+            </p>
+          )}
+          {link === 'lost' && !paired && (
+            <p className="text-xs text-red-300 text-center mb-2" data-agent-bridge-link="lost">
+              Lost the local agent. Keep this tab open in Chrome; it reconnects when the agent is back.
+            </p>
+          )}
+          {advertising && !pending && !paired && !issue && !link && (
             <p className="text-xs text-amber-300/90 text-center mb-2" data-agent-bridge-waiting="">
               Relay connected — waiting for local MCP client with this code…
             </p>
