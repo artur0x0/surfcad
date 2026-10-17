@@ -63,7 +63,7 @@ export async function checkoutLines({
 
     const measured = await measure({ modelFile: resolved.modelFile });
     if (!measured?.ok) {
-      return fail(400, measured?.error || 'We couldn\'t measure this part. Please re-export and try again');
+      return fail(measured?.status || 400, measured?.error || 'We couldn\'t measure this part. Please re-export and try again');
     }
 
     let extended;

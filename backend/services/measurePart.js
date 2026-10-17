@@ -4,15 +4,16 @@
  * be measured, the order is rejected — a client-supplied volume must not
  * become the price. A mesh over the vertex cap is its own error.
  */
-import JSZip from 'jszip';
 import {
   MeshMeasureError,
   geometryFromMesh,
   meshFrom3mfXml,
 } from '../../src/utils/meshMeasure.js';
+import { ZIP_LIMITS, ZipLimitError, inflateZipEntry, readZipDirectory } from './safeZip.js';
 
 export const UNMEASURABLE_PART_ERROR =
   "We couldn't measure this part. Please re-export and try again";
+export const MODEL_TOO_LARGE_ERROR = 'This model file is too large to process.';
 
 export async function measureExportedPart(modelData) {
   const raw = modelData?.modelFile?.data ?? modelData?.modelFile?.['data'];
@@ -29,6 +30,10 @@ export async function measureExportedPart(modelData) {
     return { ok: true, source: 'mesh', geometry };
   } catch (err) {
     const reason = err?.message || 'Could not read the exported mesh.';
+    if (err instanceof ZipLimitError && err.status === 413) {
+      console.error('[Orders] Rejected oversized 3MF:', reason);
+      return { ok: false, status: 413, error: MODEL_TOO_LARGE_ERROR, detail: reason };
+    }
     if (err instanceof MeshMeasureError && err.fatal) {
       console.error('[Orders] Could not measure exported 3MF:', reason);
       return { ok: false, error: reason };
@@ -42,20 +47,21 @@ function rejectMeasure(reason) {
   return { ok: false, error: UNMEASURABLE_PART_ERROR, detail: reason };
 }
 
-async function modelXmlFromPayload(raw) {
+export async function modelXmlFromPayload(raw, limits = ZIP_LIMITS) {
   const cleaned = String(raw).replace(/^data:[^,]*,/, '').replace(/\s/g, '');
   const buffer = Buffer.from(cleaned, 'base64');
   if (buffer.length === 0) {
     throw new MeshMeasureError('Empty model file');
   }
-  let zip;
+  let entries;
   try {
-    zip = await JSZip.loadAsync(buffer);
-  } catch {
+    entries = readZipDirectory(buffer, limits);
+  } catch (err) {
+    if (err instanceof ZipLimitError && err.status === 413) throw err;
     throw new MeshMeasureError('Model file is not a 3MF zip');
   }
-  const names = Object.keys(zip.files).filter((name) => !zip.files[name].dir);
-  const modelName = names.find((name) => name.toLowerCase().endsWith('.model'));
-  if (!modelName) throw new MeshMeasureError('No model file found in 3MF');
-  return zip.files[modelName].async('string');
+  const model = entries.find((entry) => !entry.name.endsWith('/') && entry.name.toLowerCase().endsWith('.model'));
+  if (!model) throw new MeshMeasureError('No model file found in 3MF');
+  const bytes = await inflateZipEntry(buffer, model, limits);
+  return bytes.toString('utf8');
 }
