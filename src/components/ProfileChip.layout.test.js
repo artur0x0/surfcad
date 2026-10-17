@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ProfileChip.jsx'), 'utf8');
+
+test('viewport wrap is absolute 36 chip positioning only', () => {
+  assert.match(
+    SRC,
+    /const wrapClass = inline\s*\n\s*\? 'pointer-events-auto relative z-10 shrink-0'\s*\n\s*: 'pointer-events-auto absolute top-4 right-4 z-50';/,
+  );
+  const wrapAssign = SRC.match(/const wrapClass = inline[\s\S]*?;/)?.[0] || '';
+  assert.equal(wrapAssign.includes("z-50 relative"), false);
+});
+
+test('viewport chip button is relative so the ring inset-0 sizes to 36x36', () => {
+  assert.match(SRC, /relative flex h-9 w-9 items-center/);
+  assert.match(
+    SRC,
+    /className="agent-bridge-profile-ring pointer-events-none absolute inset-0 rounded-full"/,
+  );
+});
