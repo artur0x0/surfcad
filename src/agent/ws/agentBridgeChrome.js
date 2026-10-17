@@ -35,3 +35,13 @@ export function approvalPopupReducer(state, action) {
   if (action === 'allow' || action === 'deny' || action === 'dismiss') return { open: false };
   return state;
 }
+
+/**
+ * Allow/Deny is a document.body portal so PAIR_REQUEST still shows when the
+ * profile menu is closed. The connection that drives it stays mounted on the chip.
+ *
+ * @param {{ body?: { nodeType?: number } | null } | null | undefined} doc
+ */
+export function approvalPopupPortalTarget(doc) {
+  return doc?.body || null;
+}

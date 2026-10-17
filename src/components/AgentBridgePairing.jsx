@@ -23,7 +23,7 @@ import {
 } from '../agent/ws/pairingFlow.js';
 import { CONNECT_AGENT_BUTTON_CLASS } from './agentBridgeConnectButton.js';
 import AgentBridgeApprovalPopup from './AgentBridgeApprovalPopup.jsx';
-import { approvalPopupReducer } from '../agent/ws/agentBridgeChrome.js';
+import { approvalPopupPortalTarget, approvalPopupReducer } from '../agent/ws/agentBridgeChrome.js';
 
 /**
  * Local WebSocket pairing for MCP / stdio clients (M1). Shown only when the
@@ -50,11 +50,13 @@ export default function AgentBridgePairing({
   const flowOpenRef = useRef(flowOpen);
   const relayReachableRef = useRef(relayReachable);
   const stateRef = useRef(state);
+  const issueRef = useRef(issue);
   const wsUrl = useMemo(() => defaultAgentBridgeWsUrl(), []);
 
   flowOpenRef.current = flowOpen;
   relayReachableRef.current = relayReachable;
   stateRef.current = state;
+  issueRef.current = issue;
 
   const pageSecure = typeof window !== 'undefined' && window.location?.protocol === 'https:';
   const webkitHttpsBlocked = typeof window !== 'undefined' && shouldPreemptWebKitHttpsPairing({
@@ -92,11 +94,9 @@ export default function AgentBridgePairing({
   }, [enabled, closeFlow]);
 
   useEffect(() => () => {
-    pollerRef.current?.stop();
-    pollerRef.current = null;
-    connRef.current?.disconnect();
-    connRef.current = null;
-  }, []);
+    stopConnection();
+    stopPolling();
+  }, [stopConnection, stopPolling]);
 
   useEffect(() => {
     if (state === 'paired') {
@@ -210,7 +210,7 @@ export default function AgentBridgePairing({
       stopPolling();
       return undefined;
     }
-    const polling = shouldPollRelay({ flowOpen, relayReachable, state });
+    const polling = shouldPollRelay({ flowOpen, relayReachable, state, issue });
     if (!polling) {
       stopPolling();
       return undefined;
@@ -222,15 +222,20 @@ export default function AgentBridgePairing({
         flowOpen: flowOpenRef.current,
         relayReachable: relayReachableRef.current,
         state: stateRef.current,
+        issue: issueRef.current,
       }),
-      probe: () => probeRelayWebSocket(wsUrl),
+      probe: () => probeRelayWebSocket(wsUrl, { pageSecure }),
+      onIssue: (next) => {
+        issueRef.current = next;
+        setIssue(next);
+      },
       onDetected: handleRelayDetected,
     });
     pollerRef.current.start();
     return () => {
       stopPolling();
     };
-  }, [flowOpen, handleRelayDetected, relayReachable, state, stopPolling, webkitHttpsBlocked, wsUrl]);
+  }, [flowOpen, handleRelayDetected, issue, pageSecure, relayReachable, state, stopPolling, webkitHttpsBlocked, wsUrl]);
 
   useEffect(() => {
     if (flowOpen && relayReachable && state === 'idle' && token && connRef.current) {
@@ -255,7 +260,8 @@ export default function AgentBridgePairing({
   const advertising = state === 'advertising';
   const browserFamily = typeof navigator !== 'undefined' ? detectBrowserFamily(navigator.userAgent) : 'unknown';
   const showCode = shouldRevealPairingCode(relayReachable) && Boolean(token);
-  const waitingForRelay = flowOpen && !relayReachable && !webkitHttpsBlocked;
+  const waitingForRelay = flowOpen && !relayReachable && !webkitHttpsBlocked
+    && issue !== 'origin_rejected' && issue !== 'browser_blocked';
   const promptPreview = pairingPromptPreview();
 
   const showRelayMissingBanner = issue === 'relay_missing' && !waitingForRelay;
@@ -446,18 +452,21 @@ export default function AgentBridgePairing({
   ) : null;
 
   const portalMode = uiTarget !== undefined;
-  const approvalPopup = (
-    <AgentBridgeApprovalPopup
-      open={approvalUi.open}
-      embedded={embedded && Boolean(uiTarget || !portalMode)}
-      onAllow={handleApprove}
-      onDeny={handleReject}
-    />
-  );
+  const bodyTarget = approvalPopupPortalTarget(typeof document !== 'undefined' ? document : null);
+  const approvalPopup = approvalUi.open && bodyTarget
+    ? createPortal(
+      <AgentBridgeApprovalPopup
+        open
+        embedded={false}
+        onAllow={handleApprove}
+        onDeny={handleReject}
+      />,
+      bodyTarget,
+    )
+    : null;
 
   const embeddedBody = (
     <div className="relative px-3 py-2 space-y-2" data-agent-bridge-pairing="">
-      {approvalPopup}
       {connectAgentButton}
       {paired && !flowOpen ? (
         <button
@@ -480,14 +489,19 @@ export default function AgentBridgePairing({
   if (portalMode) {
     return (
       <>
-        {uiTarget ? null : approvalPopup}
+        {approvalPopup}
         {uiTarget ? createPortal(embeddedBody, uiTarget) : null}
       </>
     );
   }
 
   if (embedded) {
-    return embeddedBody;
+    return (
+      <>
+        {approvalPopup}
+        {embeddedBody}
+      </>
+    );
   }
 
   return (
