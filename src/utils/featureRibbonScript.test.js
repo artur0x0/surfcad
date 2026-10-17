@@ -85,11 +85,16 @@ test('unmarked scripts still produce a Code chip on the ribbon', () => {
 test('App selects the part and syncs currentScript on agent create / open', () => {
   const add = APP.slice(APP.indexOf('const handleAddPart'), APP.indexOf('const handleDeletePart'));
   assert.match(add, /revealPartOnRibbon\(/);
+  assert.match(add, /newPartRowPosition\(order/);
   assert.match(APP, /finishOpenedPart[\s\S]*?revealPartOnRibbon\(active\.id/);
   const setEditor = APP.slice(APP.indexOf('setEditor(src)'), APP.indexOf('readHistory()'));
   assert.match(setEditor, /revealPartOnRibbon\(/);
   const openPart = APP.slice(APP.indexOf('const handleOpenVaultPart'), APP.indexOf('const handleCopyPartToAssembly'));
   assert.match(openPart, /revealPartOnRibbon\(/);
+  assert.match(
+    APP,
+    /async agentCreatePart\(\{ name, script, position \} = \{\}\) \{[\s\S]*?fromAgent: true, position/,
+  );
 });
 
 test('sketch_add writes the live contour before React setState', () => {
