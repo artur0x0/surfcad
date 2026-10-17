@@ -18,7 +18,7 @@ import { dimensionShownNumber } from '../utils/contourGesture';
 import { CONSTRAINT_LABELS } from '../utils/contourGesture';
 import { constraintAnchor, dimensionAnchor, planeUvToWorld } from '../utils/contourPick';
 import { referenceTagAnchor } from '../utils/contourRefPick';
-import { dimensionLayout, dimensionMarkup, placementFromPointer, DIM_TAP_PX } from '../utils/contourDimensionDraw';
+import { dimensionLayout, dimensionMarkup, placementFromPointer, replaceDimensionFigures, DIM_TAP_PX } from '../utils/contourDimensionDraw';
 import { plusTagsToHide } from '../utils/contourTagPlace';
 import { worldPoint } from '../utils/partPose';
 
@@ -126,7 +126,7 @@ const ContourTags = ({
         el.style.left = `${x}px`;
         el.style.top = `${y}px`;
       };
-      const markup = [];
+      const figures = [];
       if (camera && view && view.width > 0 && plane?.center) {
         const project = (uv) => {
           if (!uv) return null;
@@ -145,7 +145,7 @@ const ContourTags = ({
           const fig = dimensionLayout(model, liveDim(dim), project);
           const el = nodes.current.get(dim.id);
           if (fig) {
-            markup.push(dimensionMarkup({ ...fig, id: dim.id }));
+            figures.push({ ...fig, id: dim.id });
             if (el) {
               el.style.transform = 'translate(-50%, -50%)';
               const px = fig.label;
@@ -195,9 +195,9 @@ const ContourTags = ({
         el.dataset.contourTagSuppressed = 'plus';
       }
       const svg = svgRef.current;
-      const nextMarkup = markup.join('');
+      const nextMarkup = figures.map(dimensionMarkup).join('');
       if (svg && markupRef.current !== nextMarkup) {
-        svg.innerHTML = nextMarkup;
+        replaceDimensionFigures(svg, figures);
         markupRef.current = nextMarkup;
       }
       frame = requestAnimationFrame(tick);

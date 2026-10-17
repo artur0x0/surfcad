@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  applyDimensionFigure,
   dimensionAngle,
   dimensionEndpoints,
   dimensionLayout,
@@ -228,4 +229,67 @@ test('editing a dimension keeps a dragged placement', () => {
   assert.equal(result.error, null);
   const d0 = result.state.params.contour.dimensions.find((item) => item.id === 'd0');
   assert.equal(d0.placement, 14);
+});
+
+const XSS_DIM_ID = '"><img src=x onerror=alert(1)>';
+
+function memorySvg() {
+  const createElementNS = (_ns, name) => {
+    const attrs = Object.create(null);
+    const children = [];
+    return {
+      nodeName: name,
+      children,
+      setAttribute(key, value) { attrs[key] = String(value); },
+      getAttribute(key) { return Object.prototype.hasOwnProperty.call(attrs, key) ? attrs[key] : null; },
+      appendChild(node) { children.push(node); return node; },
+      querySelectorAll(selector) {
+        const want = String(selector).replace(/\[|\]/g, '').toLowerCase();
+        const found = [];
+        const walk = (node) => {
+          if (!node) return;
+          if (String(node.nodeName).toLowerCase() === want) found.push(node);
+          if (node.getAttribute?.(want) != null) found.push(node);
+          for (const child of node.children || []) walk(child);
+        };
+        walk(this);
+        return found;
+      },
+    };
+  };
+  return { root: createElementNS('http://www.w3.org/2000/svg', 'svg'), createElementNS };
+}
+
+function collectNames(node, out = []) {
+  if (node?.nodeName) out.push(String(node.nodeName).toLowerCase());
+  for (const child of node?.children || []) collectNames(child, out);
+  return out;
+}
+
+test('a hostile contour dimension id does not inject elements or attributes', () => {
+  const fig = dimensionLayout(model, { kind: 'length', edge: 'e0' }, project);
+  assert.ok(fig);
+  const html = dimensionMarkup({ ...fig, id: XSS_DIM_ID });
+  assert.equal(/<img\b/i.test(html), false, `innerHTML markup injected a tag: ${html}`);
+  assert.equal(/<script\b/i.test(html), false);
+  assert.match(html, /^<g\b/);
+  assert.match(
+    html,
+    /data-contour-dim="&quot;&gt;&lt;img src=x onerror=alert\(1\)&gt;"/,
+    'the id must stay one escaped attribute value',
+  );
+  const gTag = html.match(/^<g\b((?:[^>"']|"[^"]*"|'[^']*')*)>/);
+  assert.ok(gTag, 'the group tag must close without breaking out of quotes');
+  assert.equal(/\bonerror\s*=/i.test(gTag[1].replace(/="[^"]*"/g, '')), false, 'onerror must not become an attribute');
+  assert.equal(/\ssrc\s*=/i.test(gTag[1].replace(/="[^"]*"/g, '')), false, 'src must not become an attribute');
+
+  const { root, createElementNS } = memorySvg();
+  applyDimensionFigure(root, { ...fig, id: XSS_DIM_ID }, { createElementNS });
+  const names = collectNames(root);
+  assert.ok(names.every((name) => ['svg', 'g', 'line', 'path', 'polygon'].includes(name)), `injected nodes: ${names}`);
+  assert.equal(root.querySelectorAll('img').length, 0);
+  const group = root.children[0];
+  assert.equal(group.getAttribute('data-contour-dim'), XSS_DIM_ID);
+  assert.equal(group.getAttribute('onerror'), null);
+  assert.equal(group.getAttribute('src'), null);
 });
