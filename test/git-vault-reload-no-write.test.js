@@ -11,8 +11,9 @@ import { flushSyncQueue } from '../src/utils/git/syncWorker.js';
 import { fileWrite } from '../src/utils/git/githubAdapterInterface.js';
 import { assemblyFilePath, assemblyPartPath } from '../src/utils/git/vaultLayout.js';
 import { stringifySurfJson, parseSurfJson } from '../src/utils/git/surfJson.js';
-import { mintSurfId } from '../src/utils/git/surfId.js';
-import { openVaultAssembly } from '../src/utils/git/gitWorkspace.js';
+import { mintSurfId, withSurfId } from '../src/utils/git/surfId.js';
+import { captureBaseline, dirtyPartIds, isWorkspaceDirty, openVaultAssembly } from '../src/utils/git/gitWorkspace.js';
+import { rekeyWorkingCopyToTip } from '../src/utils/git/partIdentity.js';
 import { readFileSync } from 'node:fs';
 import { retireImplicitVaultWriteOps } from '../src/utils/git/vaultImplicitWrite.js';
 import { planLayoutMigration } from '../src/utils/git/layoutMigration.js';
@@ -124,7 +125,64 @@ test('queued layout/id migrations are retired and flush writes nothing', async (
   assert.equal(tree.includes('parts/Kettle Body.js'), false);
 });
 
-test('path-keyed .surf.json gets an in-memory UUID and does not write on parse', async () => {
+test('path-keyed parse does not mint; two parses keep the same ids', () => {
+  const raw = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: ASM,
+    activeId: BODY,
+    parts: [
+      { path: BODY, name: 'Kettle Body', visible: true, order: 0 },
+      { path: LID, name: 'Kettle Lid', visible: true, order: 1 },
+    ],
+  };
+  const first = parseSurfJson(raw);
+  const second = parseSurfJson(JSON.parse(JSON.stringify(raw)));
+  assert.deepEqual(first.parts.map((part) => part.id), [BODY, LID]);
+  assert.deepEqual(second.parts.map((part) => part.id), [BODY, LID]);
+  assert.deepEqual(first.parts.map((part) => part.path), [BODY, LID]);
+});
+
+test('id-less .surf.json opened twice keeps the same ids from @surf-id', async () => {
+  const gh = createMockGithubAdapter({ login: 'agent' });
+  const vault = await findOrCreateVault(gh);
+  const raw = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: ASM,
+    activeId: BODY,
+    parts: [
+      { path: BODY, name: 'Kettle Body', visible: true, order: 0 },
+      { path: LID, name: 'Kettle Lid', visible: true, order: 1 },
+    ],
+  };
+  const committed = await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'legacy path-keyed',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite(assemblyFilePath(ASM), `${JSON.stringify(raw, null, 2)}\n`),
+      fileWrite(BODY, withSurfId('return 1;\n', BODY_ID)),
+      fileWrite(LID, withSurfId('return 2;\n', LID_ID)),
+    ],
+  });
+  const writesBefore = commitsAfterSeed(gh).length;
+  const first = await openVaultAssembly(gh, vault.repo, ASM, {
+    branch: 'main',
+    headSha: committed.sha,
+  });
+  const second = await openVaultAssembly(gh, vault.repo, ASM, {
+    branch: 'main',
+    headSha: committed.sha,
+  });
+  assert.equal(commitsAfterSeed(gh).length, writesBefore);
+  assert.deepEqual(first.doc.parts.map((part) => part.id), [BODY_ID, LID_ID]);
+  assert.deepEqual(second.doc.parts.map((part) => part.id), [BODY_ID, LID_ID]);
+  const onDisk = JSON.parse((await gh.readFile(vault.repo, assemblyFilePath(ASM), 'main')).content);
+  assert.equal(onDisk.parts[0].id, undefined);
+});
+
+test('id-less .surf.json without headers reuses a local pathIndex', async () => {
   const gh = createMockGithubAdapter({ login: 'agent' });
   const vault = await findOrCreateVault(gh);
   const raw = {
@@ -148,21 +206,76 @@ test('path-keyed .surf.json gets an in-memory UUID and does not write on parse',
     ],
   });
   const writesBefore = commitsAfterSeed(gh).length;
-  const opened = await openVaultAssembly(gh, vault.repo, ASM, {
+  const first = await openVaultAssembly(gh, vault.repo, ASM, {
     branch: 'main',
     headSha: committed.sha,
   });
+  const pathIndex = Object.fromEntries(
+    (first.identities?.cached || []).map((hit) => [hit.path, hit.id]),
+  );
+  const second = await openVaultAssembly(gh, vault.repo, ASM, {
+    branch: 'main',
+    headSha: committed.sha,
+    pathIndex,
+  });
   assert.equal(commitsAfterSeed(gh).length, writesBefore);
-  assert.equal(opened.doc.parts.length, 2);
-  for (const part of opened.doc.parts) {
-    assert.notEqual(part.id, part.path);
-    assert.match(part.id, /[0-9a-f]/i);
-    assert.ok(part.path.startsWith(`assemblies/${ASM}/`));
-  }
-  const onDisk = JSON.parse((await gh.readFile(vault.repo, assemblyFilePath(ASM), 'main')).content);
-  assert.equal(onDisk.parts[0].id, undefined);
-  const reparsed = parseSurfJson(onDisk);
-  assert.ok(reparsed.parts[0].id);
+  assert.deepEqual(second.doc.parts.map((part) => part.id), first.doc.parts.map((part) => part.id));
+  assert.notEqual(first.doc.parts[0].id, BODY);
+});
+
+test('reload of an old path-keyed browser doc has zero unsaved parts', async () => {
+  const gh = createMockGithubAdapter({ login: 'agent' });
+  const vault = await findOrCreateVault(gh);
+  const bodyText = withSurfId('return 1;\n', BODY_ID);
+  const lidText = withSurfId('return 2;\n', LID_ID);
+  const raw = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: ASM,
+    activeId: BODY,
+    parts: [
+      { path: BODY, name: 'Kettle Body', visible: true, order: 0 },
+      { path: LID, name: 'Kettle Lid', visible: true, order: 1 },
+    ],
+  };
+  const committed = await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'legacy path-keyed',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite(assemblyFilePath(ASM), `${JSON.stringify(raw, null, 2)}\n`),
+      fileWrite(BODY, bodyText),
+      fileWrite(LID, lidText),
+    ],
+  });
+  const writesBefore = commitsAfterSeed(gh).length;
+  const tip = await openVaultAssembly(gh, vault.repo, ASM, {
+    branch: 'main',
+    headSha: committed.sha,
+  });
+  const browserDoc = {
+    source: 'git',
+    name: ASM,
+    activeId: BODY,
+    parts: [
+      { id: BODY, path: BODY, name: 'Kettle Body', visible: true, order: 0 },
+      { id: LID, path: LID, name: 'Kettle Lid', visible: true, order: 1 },
+    ],
+  };
+  const browserScripts = { [BODY]: bodyText, [LID]: lidText };
+  const aligned = rekeyWorkingCopyToTip(browserDoc, browserScripts, tip.doc);
+  assert.deepEqual(aligned.doc.parts.map((part) => part.id), [BODY_ID, LID_ID]);
+  const baseline = captureBaseline({
+    assemblyPath: tip.assemblyPath,
+    assemblyName: ASM,
+    doc: tip.doc,
+    scripts: tip.scripts,
+    branch: 'main',
+    headSha: committed.sha,
+  });
+  assert.equal(dirtyPartIds(aligned.doc, aligned.scripts, baseline).size, 0);
+  assert.equal(isWorkspaceDirty(aligned.doc, aligned.scripts, baseline), false);
+  assert.equal(commitsAfterSeed(gh).length, writesBefore);
 });
 
 test('leftover migrate ops are skipped even without retire', async () => {
@@ -203,8 +316,10 @@ test('App open/reload/reseed never enqueue or flush a vault write', () => {
   const adoptStart = app.indexOf('const adoptVaultOpening');
   const adoptEnd = app.indexOf('const handleOpenVaultAssembly');
   assert.ok(adoptStart >= 0 && adoptEnd > adoptStart);
-  assert.equal(/flushGitOps|flushSyncQueue/.test(app.slice(adoptStart, adoptEnd)), false);
-  assert.match(app.slice(adoptStart, adoptEnd), /retireImplicitVaultWriteOps/);
+  const adopt = app.slice(adoptStart, adoptEnd);
+  assert.equal(/flushGitOps|flushSyncQueue/.test(adopt), false);
+  assert.match(adopt, /retireImplicitVaultWriteOps/);
+  assert.match(adopt, /rekeyWorkingCopyToTip/);
 
   const reseedStart = app.indexOf('// After reload, baseline is gone');
   const reseedEnd = app.indexOf('handleFlushLocalAssembly');
@@ -212,7 +327,14 @@ test('App open/reload/reseed never enqueue or flush a vault write', () => {
   const reseed = app.slice(reseedStart, reseedEnd);
   assert.equal(/flushGitOps|flushSyncQueue|commitFiles|commitWorkspace/.test(reseed), false);
   assert.match(reseed, /reload never writes git/);
+  assert.match(reseed, /rekeyWorkingCopyToTip/);
+
+  const addStart = app.indexOf('const handleAddPart');
+  const addEnd = app.indexOf('const handleDeletePart');
+  assert.ok(addStart >= 0 && addEnd > addStart);
+  const add = app.slice(addStart, addEnd);
+  assert.equal(/fileWrite\(id,/.test(add), false);
+  assert.equal(/flushGitOps|prepareAssemblySurfWrite/.test(add), false);
 
   assert.equal(/setInterval\([\s\S]{0,200}flushGitOps/.test(app), false);
-  assert.match(app, /deferVault !== false/);
 });

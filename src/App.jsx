@@ -242,6 +242,7 @@ import {
   findAssemblyPart,
   partRepoPath,
   partRowNeedsVaultPath,
+  rekeyWorkingCopyToTip,
   retireImplicitVaultWriteOps,
   readVaultPart,
   showAddToRepo,
@@ -3369,6 +3370,10 @@ const App = () => {
   const adoptVaultOpening = async (opened, vault) => {
     const store = gitSync();
     const branch = opened.baseline?.branch || gitWorkingBranch();
+    for (const hit of opened.identities?.cached || []) {
+      if (hit.path && hit.id) await store.rememberPathId(vault.repo, hit.path, hit.id);
+    }
+    const previous = assemblyRef.current;
     const filled = backfillSurfIds(opened.doc, store.pathIndexFor(vault.repo));
     const migrated = migrateAssemblyRecords({ doc: filled.doc, scripts: opened.scripts });
     const localIds = migrateLocalPartIds({
@@ -3389,6 +3394,21 @@ const App = () => {
     const reconciled = reconcileSyncedFromTip(localIds.doc, localIds.scripts);
     const openedDocIn = reconciled.doc;
     const openedScriptsIn = localIds.scripts;
+    if (previous?.source === 'git') {
+      const aligned = rekeyWorkingCopyToTip(previous, partScriptsRef.current, openedDocIn, {
+        histories: partHistoriesRef.current,
+        meshMeta: partMeshMetaRef.current,
+        cadPartId: cadPartIdRef.current,
+      });
+      if (aligned.pairs.length) {
+        rekeyRuntime(aligned.pairs);
+        partMeshMetaRef.current = aligned.meshMeta;
+        setPartMeshMeta(aligned.meshMeta);
+        for (const { from } of aligned.pairs) {
+          try { await deletePartScript(from); } catch { /* ignore */ }
+        }
+      }
+    }
     for (const part of openedDocIn.parts || []) {
       if (part.surfId && partRepoPath(part)) store.rememberPathId(vault.repo, partRepoPath(part), part.surfId);
     }
@@ -3476,6 +3496,8 @@ const App = () => {
           if (!signal()) return;
           const branch = gitWorkingBranch();
           const tip = (await gitAdapterRef.current.getBranch(vault.repo, branch))?.sha || null;
+          const store = gitSync();
+          await store.ready();
           const opened = await openVaultAssembly(
             gitAdapterRef.current,
             vault.repo,
@@ -3483,6 +3505,7 @@ const App = () => {
             {
               branch,
               headSha: tip,
+              pathIndex: store.pathIndexFor(vault.repo),
               onProgress: (update) => progress({ ...update, name: update.name || name }),
             },
           );
@@ -3714,9 +3737,12 @@ const App = () => {
           refreshGenRef.current += 1;
           const vault = await ensureGitVault();
           if (!signal()) return null;
+          const store = gitSync();
+          await store.ready();
           const loaded = await switchVaultBranch(
             gitAdapterRef.current, vault.repo, name, branchName, {
               onProgress: (update) => progress({ ...update, name: update.name || name }),
+              pathIndex: store.pathIndexFor(vault.repo),
             },
           );
           if (!signal()) return null;
@@ -5195,13 +5221,35 @@ const App = () => {
           gitAdapterRef.current,
           vault.repo,
           name,
-          { branch, headSha: tip },
+          { branch, headSha: tip, pathIndex: store.pathIndexFor(vault.repo) },
         );
         if (cancelled || gitBaselineRef.current) return;
+        for (const hit of opened.identities?.cached || []) {
+          if (hit.path && hit.id) await store.rememberPathId(vault.repo, hit.path, hit.id);
+        }
         const beforeScripts = partScriptsRef.current || {};
-        const migrated = migrateAssemblyRecords({ doc: assemblyRef.current, scripts: beforeScripts });
-        let doc = migrated.doc;
-        let scriptsNow = migrated.scripts;
+        const aligned = rekeyWorkingCopyToTip(assemblyRef.current, beforeScripts, opened.doc, {
+          histories: partHistoriesRef.current,
+          meshMeta: partMeshMetaRef.current,
+          cadPartId: cadPartIdRef.current,
+        });
+        let doc = aligned.doc;
+        let scriptsNow = aligned.scripts;
+        if (aligned.pairs.length) {
+          rekeyRuntime(aligned.pairs);
+          partMeshMetaRef.current = aligned.meshMeta;
+          setPartMeshMeta(aligned.meshMeta);
+          rememberScripts(scriptsNow);
+          rememberAssembly(doc);
+          for (const { from, to } of aligned.pairs) {
+            const text = scriptsNow[to];
+            if (typeof text === 'string') savePartScript(to, text);
+            try { deletePartScript(from); } catch { /* ignore */ }
+          }
+        }
+        const migrated = migrateAssemblyRecords({ doc, scripts: scriptsNow });
+        doc = migrated.doc;
+        scriptsNow = migrated.scripts;
         const localIds = migrateLocalPartIds({
           doc,
           scripts: scriptsNow,
@@ -5219,14 +5267,14 @@ const App = () => {
         if (migrated.changed || localIds.changed) {
           rememberScripts(scriptsNow);
           for (const [id, text] of Object.entries(scriptsNow)) {
-            if (text !== beforeScripts[id]) savePartScript(id, text);
+            if (text !== beforeScripts[id] && text !== aligned.scripts[id]) savePartScript(id, text);
           }
           for (const { from } of localIds.pairs) {
             try { deletePartScript(from); } catch { /* ignore */ }
           }
         }
         const reconciled = reconcileSyncedFromTip(doc, opened.scripts);
-        if (reconciled.changed || migrated.changed || localIds.changed) {
+        if (reconciled.changed || migrated.changed || localIds.changed || aligned.pairs.length) {
           doc = reconciled.doc;
           rememberAssembly(doc);
           for (const part of doc.parts || []) {
@@ -5330,7 +5378,6 @@ const App = () => {
     let id;
     let name;
     const rawName = String(partName ?? '').trim();
-    const deferVault = doc.source === 'git' && opts?.deferVault !== false;
     id = doc.source === 'git' ? mintSurfId() : newLocalPartId();
     const takenNames = (doc.parts || []).map((part) => part.name);
     name = rawName
@@ -5369,38 +5416,9 @@ const App = () => {
     };
     setPendingPartIds((prev) => new Set(prev).add(id));
     try {
-      if (doc.source === 'git' && surfId && !deferVault && gitVaultRef.current?.repo) {
-        const vault = gitVaultRef.current || await ensureGitVault();
-        const prepared = await prepareAssemblySurfWrite(gitAdapterRef.current, vault.repo, {
-          doc: nextDoc,
-          scripts,
-          branch: gitWorkingBranch(),
-          extraFiles: [fileWrite(id, starter)],
-        });
-        await adoptPreparedSurfWrite(prepared, { scripts: prepared.scripts });
-        const row = prepared.doc.parts.find((p) => p.id === id) || part;
-        partSaveEpochRef.current += 1;
-        refreshGenRef.current += 1;
-        focusPartHistory(prepared.doc.activeId || id, prepared.scripts[prepared.doc.activeId || id] ?? starter);
-        suppressPartSaveRef.current = false;
-        setCurrentFilename(row.name);
-        codeEditorRef.current?.loadContent(prepared.scripts[row.id] ?? starter, row.name, false);
-        saveEditorDraft({ script: prepared.scripts[row.id] ?? starter, filename: row.name, partId: row.id });
-        await savePartScript(id, starter, { isSynced: false });
-        track('part_created');
-        await enqueueGit(vault.repo, {
-          op: 'create',
-          message: `Add ${name}`,
-          partIds: [id],
-          files: prepared.files,
-          payload: { surfId, path: id },
-        });
-        await flushGitOps();
-      } else {
-        await applyNewPart(nextDoc, scripts);
-        await savePartScript(id, starter, doc.source === 'git' ? { isSynced: false } : {});
-        track('part_created');
-      }
+      await applyNewPart(nextDoc, scripts);
+      await savePartScript(id, starter, doc.source === 'git' ? { isSynced: false } : {});
+      track('part_created');
     } catch (err) {
       const cur = assemblyRef.current;
       if (cur?.parts?.some((p) => p.id === id)) {
@@ -7255,10 +7273,6 @@ const App = () => {
     const to = prepared.to;
     nextName = prepared.name || nextName;
     const stableId = prepared.fromId || part.id;
-    if (to !== from && doc.parts.some((row) => row.id === to)) {
-      setUploadError('A part with that name is already in this assembly');
-      return { status: 'error', code: 'name_taken', error: 'A part with that name is already in this assembly' };
-    }
     await adoptPreparedSurfWrite(prepared);
     const renamed = prepared.doc?.parts?.find((row) => row.id === stableId);
     const text = prepared.scripts?.[stableId] ?? prepared.scripts?.[to] ?? '';

@@ -171,15 +171,20 @@ export function backfillSurfIds(doc, pathIndex = {}, { now, randFor } = {}) {
   const index = { ...(pathIndex || {}) };
   let minted = 0;
   const parts = (doc?.parts || []).map((part, i) => {
-    const path = String(part?.id || '');
+    const path = (typeof part?.path === 'string' && part.path) || String(part?.id || '');
     if (part?.surfId && isSurfId(part.surfId)) {
       if (path) index[path] = part.surfId;
       return part;
+    }
+    if (isSurfId(part?.id)) {
+      if (path) index[path] = part.id;
+      return { ...part, surfId: part.id };
     }
     const cached = path && index[path];
     if (cached && isSurfId(cached)) {
       return { ...part, surfId: cached };
     }
+    if (part?.id && part.id !== path) return part;
     const id = mintSurfId({
       now,
       rand: typeof randFor === 'function' ? randFor(part, i) : undefined,

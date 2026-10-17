@@ -7,7 +7,7 @@
  * the path until the next explicit save writes `{ id, path }`.
  */
 import { normalizeRepoPath } from '../assembly.js';
-import { isSurfId, mintSurfId } from './surfId.js';
+import { isSurfId, mintSurfId, readSurfId } from './surfId.js';
 import { PART_EXT, isVaultPartPath } from './vaultLayout.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -67,47 +67,7 @@ export function occupancyPathsFromParts(parts = []) {
   return (parts || []).map((part) => partRepoPath(part)).filter(Boolean);
 }
 
-/**
- * Give every row a stable id and a `path` when one is already known.
- * Minted ids stay in memory; callers write them only on an explicit save.
- * -> { doc, minted, pairs: [{ from, to }] }
- */
-export function stabilizePartIdentities(doc, {
-  now,
-  randFor,
-  pathIndex = {},
-} = {}) {
-  if (!doc) return { doc, minted: 0, pairs: [] };
-  const pairs = [];
-  let minted = 0;
-  const parts = (doc.parts || []).map((part, i) => {
-    const path = partRepoPath(part);
-    let id = part?.id;
-    if (isStablePartId(id)) {
-      return path && part.path !== path ? { ...part, path } : part;
-    }
-    if (isSurfId(part?.surfId)) {
-      const next = { ...part, id: part.surfId, surfId: part.surfId };
-      if (path) next.path = path;
-      if (id && id !== next.id) pairs.push({ from: id, to: next.id });
-      return next;
-    }
-    const cached = path && pathIndex[path];
-    const mintedId = (cached && isStablePartId(cached))
-      ? cached
-      : mintSurfId({
-        now,
-        rand: typeof randFor === 'function' ? randFor(part, i) : undefined,
-      });
-    if (!cached) minted += 1;
-    if (id && id !== mintedId) pairs.push({ from: id, to: mintedId });
-    return {
-      ...part,
-      id: mintedId,
-      surfId: isSurfId(part?.surfId) ? part.surfId : undefined,
-      ...(path ? { path } : {}),
-    };
-  });
+function applyActiveId(doc, parts, pairs) {
   const idByOld = new Map(pairs.map((pair) => [pair.from, pair.to]));
   let activeId = doc.activeId;
   if (activeId && idByOld.has(activeId)) activeId = idByOld.get(activeId);
@@ -115,7 +75,119 @@ export function stabilizePartIdentities(doc, {
     const byPath = parts.find((part) => part.path === activeId || partRepoPath(part) === activeId);
     if (byPath) activeId = byPath.id;
   }
-  return { doc: { ...doc, parts, activeId }, minted, pairs };
+  return { ...doc, parts, activeId };
+}
+
+/**
+ * After scripts are loaded: header `@surf-id` wins, then a local pathIndex
+ * cache, then a mint. Does not write git. Callers persist minted ids only
+ * in the local path index.
+ * -> { doc, scripts, minted, pairs, cached: [{ path, id }] }
+ */
+export function assignVaultPartIdentities(doc, scripts = {}, {
+  pathIndex = {},
+  now,
+  randFor,
+} = {}) {
+  if (!doc) return { doc, scripts: scripts || {}, minted: 0, pairs: [], cached: [] };
+  const pairs = [];
+  const cached = [];
+  let minted = 0;
+  const workScripts = { ...(scripts || {}) };
+  const parts = (doc.parts || []).map((part, i) => {
+    const path = partRepoPath(part);
+    const header = readSurfId(partScriptText(part, workScripts) || '');
+    let nextId = part?.id;
+    let surfId = isSurfId(part?.surfId) ? part.surfId : undefined;
+    if (isStablePartId(nextId)) {
+      if (isSurfId(header)) surfId = header;
+      else if (isSurfId(nextId) && !surfId) surfId = nextId;
+    } else if (isSurfId(header)) {
+      nextId = header;
+      surfId = header;
+    } else if (isSurfId(surfId)) {
+      nextId = surfId;
+    } else if (path && isStablePartId(pathIndex[path])) {
+      nextId = pathIndex[path];
+      if (isSurfId(nextId)) surfId = nextId;
+    } else {
+      nextId = mintSurfId({
+        now,
+        rand: typeof randFor === 'function' ? randFor(part, i) : undefined,
+      });
+      minted += 1;
+    }
+    if (part?.id && part.id !== nextId) pairs.push({ from: part.id, to: nextId });
+    if (path && isStablePartId(nextId)) cached.push({ path, id: nextId });
+    return {
+      ...part,
+      id: nextId,
+      ...(path ? { path } : {}),
+      ...(surfId ? { surfId } : {}),
+    };
+  });
+  const nextDoc = applyActiveId(doc, parts, pairs);
+  return {
+    doc: nextDoc,
+    scripts: rekeyScripts(workScripts, pairs),
+    minted,
+    pairs,
+    cached,
+  };
+}
+
+/**
+ * Rekey a browser working copy onto tip part ids, matching by vault path.
+ * Keeps local script text. Parts with no tip path stay as they are.
+ * -> { doc, scripts, pairs, histories, meshMeta, cadPartId }
+ */
+export function rekeyWorkingCopyToTip(browserDoc, browserScripts, tipDoc, {
+  histories = {},
+  meshMeta = {},
+  cadPartId = null,
+} = {}) {
+  if (!browserDoc) {
+    return {
+      doc: browserDoc,
+      scripts: browserScripts || {},
+      pairs: [],
+      histories,
+      meshMeta,
+      cadPartId,
+    };
+  }
+  const tipByPath = new Map();
+  for (const part of tipDoc?.parts || []) {
+    const path = partRepoPath(part);
+    if (path) tipByPath.set(path, part);
+  }
+  const pairs = [];
+  const parts = (browserDoc.parts || []).map((part) => {
+    const path = partRepoPath(part);
+    const tip = path ? tipByPath.get(path) : null;
+    if (!tip || part.id === tip.id) {
+      return path && !part.path ? { ...part, path } : part;
+    }
+    pairs.push({ from: part.id, to: tip.id });
+    return {
+      ...part,
+      id: tip.id,
+      path: tip.path || path,
+      surfId: tip.surfId || part.surfId,
+    };
+  });
+  const doc = applyActiveId(browserDoc, parts, pairs);
+  let nextCad = cadPartId;
+  const cadPair = pairs.find((pair) => pair.from === cadPartId);
+  if (cadPair) nextCad = cadPair.to;
+  return {
+    doc,
+    scripts: rekeyScripts(browserScripts, pairs),
+    pairs,
+    histories: rekeyScripts(histories, pairs),
+    meshMeta: rekeyScripts(meshMeta, pairs),
+    cadPartId: nextCad,
+  };
 }
 
 /** Rekey a script map through `{ from, to }` pairs. */

@@ -49,7 +49,7 @@ import { normalizeRepoPath } from '../assembly.js';
 import { normalizeSheetMetalBinding } from '../scs/scsCatalog.js';
 import { PART_EXT, isVaultPartPath, vaultSegment } from './vaultLayout.js';
 import { isSurfId } from './surfId.js';
-import { isStablePartId, partRepoPath, stabilizePartIdentities } from './partIdentity.js';
+import { isStablePartId, partRepoPath } from './partIdentity.js';
 import { rewriteSurfJsonLocalIds } from './localPartIdMigration.js';
 import {
   assemblyJointErrors,
@@ -334,5 +334,5 @@ export function parseSurfJson(input) {
   const withActive = mappedActive
     ? { ...loaded, activeId: mappedActive.id }
     : loaded;
-  return stabilizePartIdentities(withActive).doc;
+  return withActive;
 }

@@ -31,7 +31,7 @@ import {
   vaultSegment,
 } from './vaultLayout.js';
 import { allocateVaultPartPath } from './partVaultPath.js';
-import { partRepoPath, partScriptText } from './partIdentity.js';
+import { assignVaultPartIdentities, partRepoPath, partScriptText } from './partIdentity.js';
 export {
   allocateVaultPartPath,
   ensureAssemblyVaultPaths,
@@ -44,7 +44,13 @@ export {
   promoteStrayPartsToAssemblyFolder,
   resolveNewPartPath,
 } from './partVaultPath.js';
-export { partRepoPath, findAssemblyPart, isStablePartId } from './partIdentity.js';
+export {
+  assignVaultPartIdentities,
+  findAssemblyPart,
+  isStablePartId,
+  partRepoPath,
+  rekeyWorkingCopyToTip,
+} from './partIdentity.js';
 import { parseSurfJson, stringifySurfJson } from './surfJson.js';
 import { isSurfId, mintSurfId, readSurfId, stripSurfId, withSurfId } from './surfId.js';
 
@@ -278,6 +284,7 @@ export async function openVaultAssembly(adapter, repo, assemblyName, {
   branch = 'main',
   headSha = null,
   onProgress = null,
+  pathIndex = {},
 } = {}) {
   assertGithubAdapter(adapter);
   const name = vaultSegment(assemblyName);
@@ -305,16 +312,9 @@ export async function openVaultAssembly(adapter, repo, assemblyName, {
   }
   // Working copy always uses the current flat layout; legacy paths remap here.
   const migrated = migrateDocToCurrentLayout(doc, rawScripts);
-  doc = migrated.doc;
-  const scripts = migrated.scripts;
-  doc = {
-    ...doc,
-    parts: (doc.parts || []).map((part) => {
-      const header = readSurfId(partScriptText(part, scripts) || '');
-      if (!header) return part;
-      return part.surfId === header ? part : { ...part, surfId: header };
-    }),
-  };
+  const assigned = assignVaultPartIdentities(migrated.doc, migrated.scripts, { pathIndex });
+  doc = assigned.doc;
+  const scripts = assigned.scripts;
   const fromOfNew = new Map((migrated.moved || []).map((move) => [move.to, move.from]));
   const assets = await loadPartMeshes(adapter, repo, branch, doc.parts, fromOfNew);
   const assemblyPath = assemblyFilePath(name);
@@ -332,7 +332,19 @@ export async function openVaultAssembly(adapter, repo, assemblyName, {
     baseline.legacyCleanup = true;
     baseline.legacyAssemblyPath = foundPath !== assemblyPath ? foundPath : null;
   }
-  return { doc, scripts, assets, assemblyPath, baseline, migrated: migrated.changed };
+  return {
+    doc,
+    scripts,
+    assets,
+    assemblyPath,
+    baseline,
+    migrated: migrated.changed,
+    identities: {
+      minted: assigned.minted,
+      pairs: assigned.pairs,
+      cached: assigned.cached,
+    },
+  };
 }
 
 /**
@@ -637,16 +649,16 @@ export async function planInsertVaultAssemblyParts(adapter, repo, sourceAssembly
   if (!source) throw new Error('Empty source assembly');
   if (!target) throw new Error('Empty target assembly');
   const opened = await openVaultAssembly(adapter, repo, source, { branch });
-  const existing = new Set((targetDoc.parts || []).map((p) => p.id));
+  const existing = new Set((targetDoc.parts || []).map((p) => partRepoPath(p) || p.id));
   const taken = new Set(existing);
   const additions = [];
   for (const part of opened.doc.parts || []) {
-    const fromPath = part.id;
-    const content = opened.scripts[fromPath] || '';
+    const fromPath = partRepoPath(part) || part.id;
+    const content = partScriptText(part, opened.scripts) || '';
     if (taken.has(fromPath)) continue;
     taken.add(fromPath);
     additions.push({
-      id: fromPath,
+      id: part.id,
       name: part.name || fromPath.split('/').pop()?.replace(/\.js$/i, '') || fromPath,
       content,
       fromPath,

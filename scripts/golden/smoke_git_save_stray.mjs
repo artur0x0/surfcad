@@ -294,8 +294,8 @@ console.log('\ngit save stray — UI wiring');
   }));
   ok('reopen keeps committed paths',
     reopened.parts.map((p) => p.path).join(',') === `${BODY},${LID}`);
-  ok('path-keyed rows mint a stable id in memory',
-    reopened.parts.every((p) => p.id && p.id !== p.path));
+  ok('path-keyed parse keeps the path as id',
+    reopened.parts.every((p) => p.id === p.path));
 }
 
 console.log(failed ? `\n❌ FAIL (${failed} failed, ${passed} passed)` : `\n✅ PASS (${passed})`);
