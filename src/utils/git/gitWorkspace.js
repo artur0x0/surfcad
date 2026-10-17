@@ -34,8 +34,11 @@ import { allocateVaultPartPath } from './partVaultPath.js';
 export {
   allocateVaultPartPath,
   ensureAssemblyVaultPaths,
+  occupancySet,
+  occupyVaultPath,
   partRowNeedsVaultPath,
   partRowVaultPathOk,
+  pathOccupied,
   planRenameVaultPartPath,
   promoteStrayPartsToAssemblyFolder,
   resolveNewPartPath,

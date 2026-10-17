@@ -238,7 +238,6 @@ import {
   planOpenVaultPart,
   planCopyToAssembly,
   allocateVaultPartPath,
-  ensureAssemblyVaultPaths,
   partRowNeedsVaultPath,
   planRenameVaultPartPath,
   readVaultPart,
@@ -288,6 +287,7 @@ import {
   vaultSegment,
   assemblyFilePath,
   assembleCommitFiles,
+  listVaultTree,
   applyOverwriteFiles,
   commitPartToRepo,
   saveLocalOnNewBranch,
@@ -4724,21 +4724,9 @@ const App = () => {
       let liveId = (!suppressPartSaveRef.current && typeof live === 'string') ? doc.activeId : null;
       let workScripts = { ...partScriptsRef.current };
       if (liveId) workScripts[liveId] = live;
-      let tree = [];
-      try {
-        tree = await gitAdapterRef.current.listTree(vault.repo, branch) || [];
-      } catch { /* occupancy is the open document when the tree cannot be listed */ }
+      const tree = await listVaultTree(gitAdapterRef.current, vault.repo, branch);
       const remotePaths = tree.map((entry) => entry?.path ?? entry).filter((path) => typeof path === 'string');
-      let workDoc = doc;
-      const strayPlaced = ensureAssemblyVaultPaths(workDoc, workScripts, { remotePaths });
-      if (strayPlaced.moved.length) {
-        workDoc = strayPlaced.doc;
-        workScripts = strayPlaced.scripts;
-        rekeyRuntime(strayPlaced.moved);
-        const liveRemap = strayPlaced.moved.find((move) => move.from === liveId);
-        if (liveRemap) liveId = liveRemap.to;
-      }
-      const placed = placeLocalMeshParts(workDoc, workScripts, {
+      const placed = placeLocalMeshParts(doc, workScripts, {
         occupied: remotePaths,
       });
       workScripts = placed.scripts;
@@ -4761,6 +4749,8 @@ const App = () => {
         ...collected.skipped.map((item) => item.message),
       ].filter(Boolean);
       if (notes.length) setUploadNotice(notes.join(' '));
+      // Promote path-less parts once, inside assembleCommitFiles. Adopting
+      // result.doc/moved is what keeps the next Save from minting -2 copies.
       const result = await assembleCommitFiles(gitAdapterRef.current, vault.repo, {
         doc: placed.doc,
         scripts: workScripts,
@@ -4769,11 +4759,9 @@ const App = () => {
         liveId: nextLiveId,
         liveScript: nextLiveId ? workScripts[nextLiveId] : null,
         assets: collected.assets,
+        remotePaths,
       });
-      await applyMeshPlacement({
-        ...placed,
-        moved: [...strayPlaced.moved, ...placed.moved],
-      });
+      await applyMeshPlacement(placed);
       if (liveId && !movedLive) {
         savePartScript(liveId, live);
         rememberScripts(workScripts);

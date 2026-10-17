@@ -9,7 +9,13 @@ import { createMockGithubAdapter } from '../src/utils/git/mockGithubAdapter.js';
 import { findOrCreateVault } from '../src/utils/git/vault.js';
 import { assemblyFilePath, assemblyPartPath, sharedPartPath } from '../src/utils/git/vaultLayout.js';
 import { parseSurfJson, validateSurfJson } from '../src/utils/git/surfJson.js';
-import { commitPartToRepo, firstCommitBaseline } from '../src/utils/git/gitCommit.js';
+import {
+  assembleCommitFiles,
+  commitPartToRepo,
+  commitWorkspace,
+  firstCommitBaseline,
+  VAULT_TREE_UNAVAILABLE,
+} from '../src/utils/git/gitCommit.js';
 import { planRenameVaultPartPath } from '../src/utils/git/partVaultPath.js';
 import { renamePartCommand } from '../src/agent/commands/document.js';
 
@@ -166,4 +172,67 @@ test('parseSurfJson round-trips the sibling commit', async () => {
   const surf = await gh.readFile(vault.repo, assemblyFilePath(ASM), 'main');
   const reopened = parseSurfJson(surf.content);
   assert.deepEqual(reopened.parts.map((p) => p.id), out.doc.parts.map((p) => p.id));
+});
+
+test('assembly save twice after adopting the first result does not mint -2 copies', async () => {
+  const gh = createMockGithubAdapter({ login: 'agent' });
+  const vault = await findOrCreateVault(gh);
+  const { doc, scripts } = kettle();
+  const first = await commitWorkspace(gh, vault.repo, {
+    doc,
+    scripts,
+    baseline: firstCommitBaseline({ headSha: vault.headSha }),
+    message: 'Save Kettle',
+  });
+  assert.equal(first.status, 'committed');
+  assert.equal(first.files.length, 4);
+  assert.equal(first.moved.length, 3);
+  assert.equal(first.files.some((path) => /-2\.js$/.test(path)), false);
+  const second = await commitWorkspace(gh, vault.repo, {
+    doc: first.doc,
+    scripts: first.scripts,
+    baseline: first.baseline,
+    message: 'Save Kettle again',
+  });
+  assert.equal(second.status, 'clean', JSON.stringify(second));
+});
+
+test('saving the original path-less doc again would mint -2 — callers must adopt', async () => {
+  const gh = createMockGithubAdapter({ login: 'agent' });
+  const vault = await findOrCreateVault(gh);
+  const { doc, scripts } = kettle();
+  const first = await commitWorkspace(gh, vault.repo, {
+    doc,
+    scripts,
+    baseline: firstCommitBaseline({ headSha: vault.headSha }),
+    message: 'Save Kettle',
+  });
+  assert.equal(first.status, 'committed');
+  const again = await assembleCommitFiles(gh, vault.repo, {
+    doc,
+    scripts,
+    baseline: first.baseline,
+    message: 'Save Kettle again',
+  });
+  assert.equal(again.status, 'ready');
+  const minted = again.files.map((f) => f.path).filter((path) => /-2\.js$/.test(path));
+  assert.equal(minted.length, 3, JSON.stringify(again.files));
+});
+
+test('assembleCommitFiles aborts when listTree fails instead of occupying nothing', async () => {
+  const gh = createMockGithubAdapter({ login: 'agent' });
+  const vault = await findOrCreateVault(gh);
+  const { doc, scripts } = kettle();
+  gh.listTree = async () => {
+    throw new Error('network down');
+  };
+  await assert.rejects(
+    () => assembleCommitFiles(gh, vault.repo, {
+      doc,
+      scripts,
+      baseline: firstCommitBaseline({ headSha: vault.headSha }),
+      message: 'Save Kettle',
+    }),
+    (err) => err.code === VAULT_TREE_UNAVAILABLE && /not overwritten/.test(err.message),
+  );
 });

@@ -10,6 +10,7 @@ import { sharedPathForMove } from './gitDeleteAssembly.js';
 import {
   PART_EXT,
   assemblyPartPath,
+  assetPathForScript,
   isVaultPartPath,
   partPathAllowedFor,
   parseVaultPath,
@@ -17,11 +18,42 @@ import {
   vaultSegment,
 } from './vaultLayout.js';
 
+/**
+ * Occupancy for a vault write: a script path and its `.mesh` sibling are
+ * the same stem. Seeing either in the tree (or the open document) blocks
+ * allocating the other.
+ */
+export function occupyVaultPath(taken, path) {
+  if (typeof path !== 'string' || !path.trim()) return taken;
+  const p = path.trim();
+  taken.add(p);
+  const mesh = assetPathForScript(p);
+  if (mesh) taken.add(mesh);
+  const info = parseVaultPath(p);
+  if (info?.kind === 'asset' && info.script) taken.add(info.script);
+  return taken;
+}
+
+export function occupancySet(paths = []) {
+  const taken = new Set();
+  for (const item of paths || []) {
+    occupyVaultPath(taken, typeof item === 'string' ? item : item?.id);
+  }
+  return taken;
+}
+
+export function pathOccupied(taken, path) {
+  if (!path) return true;
+  if (taken.has(path)) return true;
+  const mesh = assetPathForScript(path);
+  return !!(mesh && taken.has(mesh));
+}
+
 function nextAssemblyFolderPartPath(assemblySeg, partHint, taken) {
   for (let n = 1; n < 1000; n += 1) {
     const stem = vaultPartFileStem(partHint, n);
     const path = assemblyPartPath(assemblySeg, stem);
-    if (!taken.has(path)) return path;
+    if (!pathOccupied(taken, path)) return path;
   }
   return null;
 }
@@ -36,16 +68,12 @@ export function allocateVaultPartPath(assemblyName, partName, takenPaths = [], {
 } = {}) {
   const raw = String(partName ?? '').trim();
   if (!raw) return null;
-  const taken = new Set();
-  for (const item of takenPaths || []) {
-    const path = typeof item === 'string' ? item : item?.id;
-    if (path) taken.add(path);
-  }
+  const taken = occupancySet(takenPaths);
   if (raw.includes('/') || raw.toLowerCase().endsWith('.js')) {
     const path = normalizeRepoPath(raw.endsWith('.js') ? raw : `${raw}.js`);
     if (!path) return null;
     if (!partPathAllowedFor(assemblyName, path)) return null;
-    if (taken.has(path)) {
+    if (pathOccupied(taken, path)) {
       const info = parseVaultPath(path);
       const base = info?.part || path.split('/').pop()?.replace(/\.js$/i, '') || 'Part';
       if (layout === 'assembly-folder') {
@@ -121,13 +149,10 @@ export function ensureAssemblyVaultPaths(doc, scripts = {}, { remotePaths = [] }
   const needs = (doc.parts || []).filter(partRowNeedsVaultPath);
   if (!needs.length) return { doc, scripts, moved: [] };
 
-  const taken = new Set();
-  for (const part of doc.parts || []) {
-    if (partRowVaultPathOk(part.id)) taken.add(part.id);
-  }
-  for (const path of remotePaths || []) {
-    if (typeof path === 'string' && path.trim()) taken.add(path);
-  }
+  const taken = occupancySet([
+    ...(doc.parts || []).filter((part) => partRowVaultPathOk(part.id)).map((part) => part.id),
+    ...(remotePaths || []),
+  ]);
 
   const idMap = new Map();
   const moved = [];
@@ -140,7 +165,7 @@ export function ensureAssemblyVaultPaths(doc, scripts = {}, { remotePaths = [] }
       || DEFAULT_PART_NAME;
     const path = allocateVaultPartPath(asm, hint, [...taken], { layout: 'assembly-folder' });
     if (!path) continue;
-    taken.add(path);
+    occupyVaultPath(taken, path);
     idMap.set(fromId, path);
     moved.push({ from: fromId, to: path });
     const text = workScripts[fromId];

@@ -46,7 +46,6 @@ import {
 } from '../assembly.js';
 import { normalizeRepoPath } from '../assembly.js';
 import { normalizeSheetMetalBinding } from '../scs/scsCatalog.js';
-import { ensureAssemblyVaultPaths } from './partVaultPath.js';
 import { PART_EXT, isVaultPartPath, vaultSegment } from './vaultLayout.js';
 import { isSurfId } from './surfId.js';
 import { rewriteSurfJsonLocalIds } from './localPartIdMigration.js';
@@ -238,15 +237,12 @@ export function validateSurfJson(input) {
 
 /**
  * In-app assembly document -> .surf.json object. Row ids must already be
- * repo paths (git mode). Throws when the result does not validate.
+ * repo paths (git mode). Does not assign vault paths — the save path
+ * (`ensureAssemblyVaultPaths` / `assembleCommitFiles`) does that first.
+ * Throws when the result does not validate.
  */
-export function toSurfJson(doc, opts = {}) {
-  const repaired = ensureAssemblyVaultPaths(
-    { ...doc, source: 'git' },
-    {},
-    { remotePaths: opts.remotePaths || [] },
-  );
-  const flat = serializeAssembly({ ...repaired.doc, source: 'git' });
+export function toSurfJson(doc) {
+  const flat = serializeAssembly({ ...doc, source: 'git' });
   const name = vaultSegment(flat.name);
   const out = {
     format: SURF_JSON_FORMAT,
@@ -287,8 +283,8 @@ export function toSurfJson(doc, opts = {}) {
 }
 
 /** Stable text for a commit: 2-space indent, trailing newline. */
-export function stringifySurfJson(doc, opts) {
-  return `${JSON.stringify(toSurfJson(doc, opts), null, 2)}\n`;
+export function stringifySurfJson(doc) {
+  return `${JSON.stringify(toSurfJson(doc), null, 2)}\n`;
 }
 
 /** .surf.json text or object -> in-app assembly document (source 'git'). Throws on invalid. */

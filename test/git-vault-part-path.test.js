@@ -6,7 +6,7 @@ import {
   ensureAssemblyVaultPaths,
   partRowVaultPathOk,
 } from '../src/utils/git/partVaultPath.js';
-import { stringifySurfJson, validateSurfJson } from '../src/utils/git/surfJson.js';
+import { stringifySurfJson, toSurfJson, validateSurfJson } from '../src/utils/git/surfJson.js';
 import { mintSurfId } from '../src/utils/git/surfId.js';
 
 describe('allocateVaultPartPath', () => {
@@ -67,5 +67,13 @@ describe('ensureAssemblyVaultPaths + stringifySurfJson', () => {
     const { doc: fixed } = ensureAssemblyVaultPaths(doc, { [bad]: '// x\n' });
     assert.ok(fixed.parts[0].id.endsWith('.js'));
     assert.equal(validateSurfJson(JSON.parse(stringifySurfJson(fixed))).ok, true);
+  });
+
+  test('toSurfJson stays pure: path-less ids still throw', () => {
+    assert.throws(() => toSurfJson({
+      name: 'A',
+      source: 'git',
+      parts: [{ id: 'local:123', name: 'p', visible: true, order: 0 }],
+    }));
   });
 });

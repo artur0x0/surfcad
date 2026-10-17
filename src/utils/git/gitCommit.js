@@ -39,6 +39,34 @@ export const COMMIT_BRANCH_PREFIX = 'surfcad/';
 /** Commit refused: working copy has parts without a vault path. */
 export const NO_REPO_PATH = 'no_repo_path';
 
+/** Save aborted: the vault tree could not be listed, so occupancy is unknown. */
+export const VAULT_TREE_UNAVAILABLE = 'vault_tree_unavailable';
+export const VAULT_TREE_UNAVAILABLE_MESSAGE = 'Could not list the vault tree. Save aborted so existing files are not overwritten.';
+
+function treeUnavailableError(cause) {
+  const err = new Error(VAULT_TREE_UNAVAILABLE_MESSAGE);
+  err.code = VAULT_TREE_UNAVAILABLE;
+  if (cause) err.cause = cause;
+  return err;
+}
+
+/** listTree, or VAULT_TREE_UNAVAILABLE. Never treat a failed listing as empty occupancy. */
+export async function listVaultTree(adapter, repo, ref) {
+  let tree;
+  try {
+    tree = await adapter.listTree(repo, ref);
+  } catch (err) {
+    throw treeUnavailableError(err);
+  }
+  if (!Array.isArray(tree)) throw treeUnavailableError();
+  return tree;
+}
+
+export async function listVaultTreePaths(adapter, repo, ref) {
+  const tree = await listVaultTree(adapter, repo, ref);
+  return tree.map((entry) => entry?.path ?? entry).filter((path) => typeof path === 'string');
+}
+
 /** Scripts with the live editor text folded in for the active part. */
 export function effectiveScripts(scripts, { liveId = null, liveScript = null } = {}) {
   const out = { ...(scripts || {}) };
@@ -357,13 +385,7 @@ export async function commitPartToRepo(adapter, repo, {
   let workDoc = { ...doc, source: 'git' };
   let workScripts = effectiveScripts(scripts, { liveId, liveScript });
 
-  let remotePaths = [];
-  try {
-    const tree = await adapter.listTree(repo, branch);
-    remotePaths = (tree || []).map((entry) => entry?.path ?? entry).filter((path) => typeof path === 'string');
-  } catch {
-    // The open document still blocks a collision inside this assembly.
-  }
+  const remotePaths = await listVaultTreePaths(adapter, repo, branch);
 
   const info = parseVaultPath(destId);
   const allowed = info
@@ -787,18 +809,15 @@ export async function assembleCommitFiles(adapter, repo, {
   liveId = null,
   liveScript = null,
   assets = null,
+  remotePaths = null,
 } = {}) {
   assertGithubAdapter(adapter);
   if (!baseline) throw new Error('Open an assembly from the vault before committing');
   const branch = baseline.branch || 'main';
-  let remotePaths = [];
-  try {
-    const tree = await adapter.listTree(repo, branch);
-    remotePaths = (tree || []).map((entry) => entry?.path ?? entry).filter((path) => typeof path === 'string');
-  } catch {
-    // Open-document occupancy still blocks collisions when the tree cannot be listed.
-  }
-  const promoted = ensureAssemblyVaultPaths(doc, scripts, { remotePaths });
+  const occupancy = Array.isArray(remotePaths)
+    ? remotePaths
+    : await listVaultTreePaths(adapter, repo, branch);
+  const promoted = ensureAssemblyVaultPaths(doc, scripts, { remotePaths: occupancy });
   const workDoc = promoted.doc;
   const workScripts = effectiveScripts(promoted.scripts, { liveId, liveScript });
   const built = buildCommitFiles(workDoc, workScripts, baseline, {

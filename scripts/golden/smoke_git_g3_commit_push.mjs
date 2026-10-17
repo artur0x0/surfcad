@@ -229,7 +229,11 @@ ok('commit message prompts + no iOS zoom', /Enter a commit message/.test(feed)
   && /PARTS_TEXT_INPUT_CLASS/.test(feed)
   && /partsChrome\.js/.test(feed)
   && /fontSize: '16px'/.test(readFileSync(new URL('../../src/utils/partsChrome.js', import.meta.url), 'utf8')));
-ok('assembly save promotes path-less parts (no blocking dialog)', /ensureAssemblyVaultPaths/.test(app)
+ok('assembly save promotes path-less parts once, then adopts',
+  /ensureAssemblyVaultPaths/.test(readFileSync(new URL('../../src/utils/git/gitCommit.js', import.meta.url), 'utf8'))
+  && !/ensureAssemblyVaultPaths/.test(app)
+  && /applyCommittedWorkspace\(result\)/.test(app)
+  && /result\.moved/.test(app)
   && !/runAddStrayToRepo/.test(feed) && !/No repo path for/.test(feed));
 ok('force merge ask', /data-git-force-merge-ask/.test(feed) && /data-git-force-merge=""/.test(feed)
   && /data-git-keep-branch/.test(feed) && /data-git-force-merge-warning/.test(feed));

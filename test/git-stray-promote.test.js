@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assemblyPartPath } from '../src/utils/git/vaultLayout.js';
+import { assemblyPartPath, assetPathForScript } from '../src/utils/git/vaultLayout.js';
 import {
   partRowNeedsVaultPath,
   promoteStrayPartsToAssemblyFolder,
@@ -43,6 +43,21 @@ describe('promoteStrayPartsToAssemblyFolder', () => {
     const alt = assemblyPartPath('Kettle', 'Kettle Handle-2');
     assert.equal(moved[0].to, alt);
     assert.equal(next.parts[0].id, alt);
+  });
+
+  test('a remote .mesh occupies the sibling .js', () => {
+    const body = assemblyPartPath('Kettle', 'Kettle Body');
+    const mesh = assetPathForScript(body);
+    const doc = {
+      source: 'git',
+      name: 'Kettle',
+      activeId: 'local-a',
+      parts: [{ id: 'local-a', name: 'Kettle Body', visible: true, order: 0 }],
+    };
+    const { moved } = promoteStrayPartsToAssemblyFolder(doc, { 'local-a': '// body\n' }, {
+      remotePaths: [mesh],
+    });
+    assert.equal(moved[0].to, assemblyPartPath('Kettle', 'Kettle Body-2'));
   });
 
   test('repo paths are not stray', () => {
