@@ -5,10 +5,12 @@ import react from '@vitejs/plugin-react'
 import wasm from "vite-plugin-wasm"
 import topLevelAwait from "vite-plugin-top-level-await"
 import viteAgentBridgeWs from './scripts/vite-agent-bridge-ws.mjs'
+import { surfcadBuildDefine } from './scripts/vite-surfcad-build-define.mjs'
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig({
+  define: surfcadBuildDefine(),
   // VITE_SURFCAD_PLAYTEST=1 (npm run build:playtest) enables playtest-only agent bridge
   // auto-approve in the client bundle; normal production builds omit it entirely.
   plugins: [
