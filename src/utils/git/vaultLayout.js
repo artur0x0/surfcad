@@ -93,6 +93,18 @@ function partBase(partName) {
   return String(partName ?? '').replace(/\.js$/i, '');
 }
 
+/**
+ * Filename stem for a vault part script: `Bracket`, then `Bracket-2`, `Bracket-3`, …
+ * Uses {@link vaultSegment} rules; `ordinal` is 1 for the first name, 2+ for collisions.
+ */
+export function vaultPartFileStem(partName, ordinal = 1) {
+  const seg = vaultSegment(partBase(partName));
+  if (!seg) return '';
+  const n = Number(ordinal);
+  if (!Number.isInteger(n) || n < 2) return seg;
+  return `${seg}-${n}`;
+}
+
 /** Current layout: assemblies/<Name>/<Part>.js */
 export function assemblyPartPath(assemblyName, partName) {
   return `${assemblyDir(assemblyName)}/${need(partBase(partName), 'part')}${PART_EXT}`;

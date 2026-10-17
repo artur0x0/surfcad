@@ -21,7 +21,7 @@
  * The local cache is one snapshot. Swap it only after the next tree is
  * fully built, so a failure cannot leave some paths moved and others not.
  */
-import { serializeAssembly, DEFAULT_ASSEMBLY_NAME, numberedName } from '../assembly.js';
+import { serializeAssembly, DEFAULT_ASSEMBLY_NAME } from '../assembly.js';
 import { fileDelete, fileWrite } from './githubAdapterInterface.js';
 import {
   assemblyDir,
@@ -31,6 +31,7 @@ import {
   listAssemblies,
   parseVaultPath,
   sharedPartPath,
+  vaultPartFileStem,
   vaultSegment,
 } from './vaultLayout.js';
 import { isSurfId, isSurfJsonPath, readSurfId, withSurfId } from './surfId.js';
@@ -55,13 +56,8 @@ function parseJson(text) {
 /** Next free parts/<Name>.js. `taken` includes paths already claimed. */
 export function sharedPathForMove(partName, taken) {
   const base = vaultSegment(partName) || 'Part';
-  let path = sharedPartPath(base);
-  if (!taken.has(path)) {
-    taken.add(path);
-    return path;
-  }
-  for (let n = 2; n < 1000; n += 1) {
-    path = sharedPartPath(numberedName(base, n));
+  for (let n = 1; n < 1000; n += 1) {
+    const path = sharedPartPath(vaultPartFileStem(base, n));
     if (!taken.has(path)) {
       taken.add(path);
       return path;

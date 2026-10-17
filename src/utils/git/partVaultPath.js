@@ -4,7 +4,6 @@
 import {
   DEFAULT_PART_NAME,
   normalizeRepoPath,
-  numberedName,
   serializeAssembly,
 } from '../assembly.js';
 import { sharedPathForMove } from './gitDeleteAssembly.js';
@@ -14,12 +13,22 @@ import {
   isVaultPartPath,
   partPathAllowedFor,
   parseVaultPath,
+  vaultPartFileStem,
   vaultSegment,
 } from './vaultLayout.js';
 
+function nextAssemblyFolderPartPath(assemblySeg, partHint, taken) {
+  for (let n = 1; n < 1000; n += 1) {
+    const stem = vaultPartFileStem(partHint, n);
+    const path = assemblyPartPath(assemblySeg, stem);
+    if (!taken.has(path)) return path;
+  }
+  return null;
+}
+
 /**
  * One repo script path for a new part. Bare names use `parts/<Name>.js` with
- * `(2)` suffixes on collision. Full paths are normalized to end in `.js`.
+ * `-2`, `-3`, … suffixes on collision. Full paths are normalized to end in `.js`.
  * `layout: 'assembly-folder'` lands under `assemblies/<Assembly>/`.
  */
 export function allocateVaultPartPath(assemblyName, partName, takenPaths = [], {
@@ -42,13 +51,7 @@ export function allocateVaultPartPath(assemblyName, partName, takenPaths = [], {
       if (layout === 'assembly-folder') {
         const asm = vaultSegment(assemblyName);
         if (!asm) return null;
-        let alt = assemblyPartPath(asm, base);
-        let n = 2;
-        while (taken.has(alt)) {
-          alt = assemblyPartPath(asm, numberedName(base, n));
-          n += 1;
-        }
-        return alt;
+        return nextAssemblyFolderPartPath(asm, base, taken);
       }
       return sharedPathForMove(base, taken);
     }
@@ -64,13 +67,7 @@ export function allocateVaultPartPath(assemblyName, partName, takenPaths = [], {
       return null;
     }
   }
-  let path = assemblyPartPath(asm, base);
-  let n = 2;
-  while (taken.has(path)) {
-    path = assemblyPartPath(asm, numberedName(base, n));
-    n += 1;
-  }
-  return path;
+  return nextAssemblyFolderPartPath(asm, base, taken);
 }
 
 export function resolveNewPartPath(assemblyName, partName, takenPaths = []) {
@@ -93,7 +90,7 @@ export function partRowNeedsVaultPath(part) {
 
 /**
  * Before an assembly Save, assign every invalid part id a vault script path
- * under `assemblies/<Assembly>/<Name>.js`. Collisions get `Name (2)`, etc.
+ * under `assemblies/<Assembly>/<Name>.js`. Collisions get `Name-2`, etc.
  * -> { doc, scripts, moved: [{ from, to }] }
  */
 export function ensureAssemblyVaultPaths(doc, scripts = {}, { remotePaths = [] } = {}) {
