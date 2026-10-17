@@ -922,7 +922,10 @@ class ManifoldWorker {
         const request = this.pendingRequests.get(id);
         if (request) {
           this.pendingRequests.delete(id);
-          request.resolve(payload);
+          const helpers = Array.isArray(payload)
+            ? payload
+            : (payload && Array.isArray(payload.helpers) ? payload.helpers : []);
+          request.resolve(helpers);
         }
         break;
       }

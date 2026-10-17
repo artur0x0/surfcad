@@ -171,6 +171,9 @@ export function isWorkerHostMessage(data) {
   if (data == null || typeof data !== 'object' || Array.isArray(data)) return false;
   if (typeof data.type !== 'string' || !WORKER_HOST_TYPES.includes(data.type)) return false;
   if (data.id != null && typeof data.id !== 'string') return false;
+  // Arrays are rejected: getHelperList must send { helpers: string[] }.
+  // A raw Object.keys() payload was dropped and App init never left the
+  // loading gate (golden app-loads / Agent bridge FEA).
   if (data.payload != null && (typeof data.payload !== 'object' || Array.isArray(data.payload))) {
     return false;
   }

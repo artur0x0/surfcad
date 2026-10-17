@@ -135,6 +135,22 @@ test('forged worker messages without a typed payload are dropped', () => {
   assert.equal(isWorkerHostMessage('ready'), false);
 });
 
+test('helperList is an object so App init is not dropped', () => {
+  // App awaits getHelperFunctions() after ready. A top-level array payload
+  // is rejected by isWorkerHostMessage and the loading gate never clears.
+  assert.equal(
+    isWorkerHostMessage({ type: 'helperList', id: 'req_x', payload: { helpers: ['cube'] } }),
+    true,
+  );
+  assert.equal(
+    isWorkerHostMessage({ type: 'helperList', id: 'req_x', payload: ['cube'] }),
+    false,
+  );
+  const runtime = readFileSync(new URL('../lib/surfcad/runtime.js', import.meta.url), 'utf8');
+  assert.match(runtime, /payload:\s*\{\s*helpers:\s*Object\.keys\(HELPER_FUNCTIONS\)\s*\}/);
+  assert.equal(/payload:\s*Object\.keys\(HELPER_FUNCTIONS\)/.test(runtime), false);
+});
+
 test('page CSP keeps jsdelivr for Monaco; worker CSP has connect-src none', () => {
   const page = readFileSync(new URL('../../docs/nginx-snippets/surfcad-security.conf', import.meta.url), 'utf8');
   assert.match(page, /cdn\.jsdelivr\.net/);

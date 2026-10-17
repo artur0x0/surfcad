@@ -10055,11 +10055,12 @@ export function bindWorker(self) {
       }
 
       case 'getHelperList': {
-        // Return list of available helper functions
+        // Object payload — isWorkerHostMessage rejects top-level arrays,
+        // and App init awaits this list before leaving the loading gate.
         hostPostMessage({
           type: 'helperList',
           id,
-          payload: Object.keys(HELPER_FUNCTIONS)
+          payload: { helpers: Object.keys(HELPER_FUNCTIONS) }
         });
         break;
       }
