@@ -16,7 +16,7 @@ a floating overlay inside the viewport, or a full-screen modal.
 
 Read this file to answer "where is X on screen?" and "which file do I edit?".
 For blend/fillet internals read `.claude/skills/fillets/SKILL.md`; for the
-script API read `HELPER_FUNCTIONS.md`.
+script API read `docs/HELPER_FUNCTIONS.md`.
 
 - **Mount:** `src/main.jsx` → `AuthProvider` → `App`
 - **Shell + all layout decisions:** `src/App.jsx`

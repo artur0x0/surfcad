@@ -20,7 +20,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(join(root, rel), 'utf8');
 
 const runtimeSrc = read('src/lib/surfcad/runtime.js');
-const mdSrc = read('HELPER_FUNCTIONS.md');
+const mdSrc = read('docs/HELPER_FUNCTIONS.md');
 const dtsSrc = read('built/manifold-encapsulated-types.d.ts');
 const sheetDfmSrc = read('src/utils/sheetMetal/sheetDfm.js');
 const sheetModelSrc = read('src/utils/sheetMetal/sheetModel.js');

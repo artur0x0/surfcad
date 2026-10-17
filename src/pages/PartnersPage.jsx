@@ -164,7 +164,7 @@ export default function PartnersPage() {
               Become a partner
             </h1>
             <p className="text-base leading-relaxed" style={{ color: GREY }} data-partners-lead="">
-              SurfCAD connects designers with fabricators, seamlessly. Integration is free, and we&apos;ll help set things up to fit your workflow. Get quote requests by email with the part attached and take it from there, or let us automate quoting and payment so you only receive qualified, paid orders. Have another idea for working together? Drop us a line.
+              SurfCAD seamlessly connects designers with fabricators. Integration is free, and we&apos;ll help set things up to fit your workflow. Get quote requests by email with the part attached and take it from there, or let us automate quoting and payment so you only receive qualified, paid orders. Have another idea for working together? Drop us a line.
             </p>
           </div>
         </header>

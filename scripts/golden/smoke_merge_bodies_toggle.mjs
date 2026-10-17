@@ -443,7 +443,7 @@ export { default as ContourModeChip } from './src/components/ContourModeChip.jsx
   const pkg = JSON.parse(read('package.json'));
   check('package.json registers golden:merge-bodies-toggle',
     pkg.scripts['golden:merge-bodies-toggle'] === 'node scripts/golden/smoke_merge_bodies_toggle.mjs');
-  check('golden README lists it', /smoke_merge_bodies_toggle\.mjs/.test(read('scripts/golden/README.md')));
+  check('golden README lists it', /smoke_merge_bodies_toggle\.mjs/.test(read('docs/golden/README.md')));
 }
 
 console.log(failed ? `\n${failed} check(s) failed` : '\nall checks passed');

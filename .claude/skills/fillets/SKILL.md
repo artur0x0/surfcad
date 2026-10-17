@@ -6,7 +6,7 @@ description: "How fillets and chamfers are created in this repo — the easy/har
 # Fillets — how they are created
 
 Companion docs: `docs/fillet-kernel-spike-c.md` (why these kernels; measured
-alternatives) and `VALIDATION.md` (the gate every PR must pass).
+alternatives) and `docs/VALIDATION.md` (the gate every PR must pass).
 
 Deep math, framing internals and the full guard table live in
 `references/kernel-internals.md` — read it before editing cutter construction,

@@ -25,7 +25,7 @@ The solver crate is `packages/surfcad-fea` (Apache-2.0). CalculiX is GPL-2.0-onl
 
 ## Goldens
 
-`npm run verify` runs the external harness (`cadgen-workspace/harness/verify_all.mjs`). The contract is [VALIDATION.md](VALIDATION.md). Two pilot parts are known exclusions and report `fail(expected)`: `9771f32b` (a script that wedges the worker) and `f6f416e1` (no transpiled script).
+`npm run verify` runs the external harness (`cadgen-workspace/harness/verify_all.mjs`). The contract is [VALIDATION.md](docs/VALIDATION.md). Two pilot parts are known exclusions and report `fail(expected)`: `9771f32b` (a script that wedges the worker) and `f6f416e1` (no transpiled script).
 
 In-repo smokes are `npm run golden:*` (`scripts/golden/`). `npm run golden:agent-catalog` checks the generated helper catalog.
 
@@ -38,5 +38,5 @@ In-repo smokes are `npm run golden:*` (`scripts/golden/`). `npm run golden:agent
 - [Agent export](docs/agent-export.md)
 - [Performance](docs/performance.md)
 - [Popup style](docs/POPUP_STYLE.md)
-- [Helpers](HELPER_FUNCTIONS.md)
-- [Validation](VALIDATION.md)
+- [Helpers](docs/HELPER_FUNCTIONS.md)
+- [Validation](docs/VALIDATION.md)

@@ -67,6 +67,9 @@ jobs:
       - name: lint
         run: npm run lint
 
+      - name: markdown link check
+        run: npm run check:md-links
+
       - name: vite build
         run: npm run build
 

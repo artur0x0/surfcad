@@ -114,7 +114,7 @@ const GameHintsModal = ({ onClose, puzzle = null }) => {
           </div>
 
           <p className="text-[11px] text-gray-500">
-            Full reference: HELPER_FUNCTIONS.md (repo root). Unsupported: curved
+            Full reference: docs/HELPER_FUNCTIONS.md. Unsupported: curved
             planar singleton curved-face fillets (use filletAlongPath / Strategy=sweep), open curved runs under C6, concave “fillets”, arbitrary
             fastener sizes outside the table.
           </p>
