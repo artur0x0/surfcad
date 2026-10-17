@@ -70,20 +70,24 @@ export default function ProfileChip({
     : 'border-gray-500/50 text-chrome-secondary hover:bg-gray-500/15';
 
   const inline = variant === 'inline';
-  const shell = inline
-    ? `pointer-events-auto relative z-10 flex h-7 w-7 shrink-0 items-center
-        justify-center rounded-full border surface-glass-chip bg-chrome-surface/55
-        text-[10px] font-semibold tracking-wide transition-colors
-        active:opacity-80 ${tone}`
-    : `pointer-events-auto absolute top-4 right-4 z-50 flex h-9 w-9 items-center
-        justify-center rounded-full border surface-glass-chip bg-chrome-surface/55
-        text-xs font-semibold tracking-wide shadow-lg transition-colors
-        active:opacity-80 ${tone}`;
+  const chipSizeClass = inline ? 'h-7 w-7' : 'h-9 w-9';
+  const chipTextClass = inline ? 'text-[10px]' : 'text-xs';
+  const chipShadowClass = inline ? '' : 'shadow-lg';
 
   const iconSize = inline ? 14 : 16;
-  const wrapClass = inline
+  const outerWrapClass = inline
     ? 'pointer-events-auto relative z-10 shrink-0'
-    : 'pointer-events-auto absolute top-4 right-4 z-50 relative';
+    : 'pointer-events-auto absolute top-4 right-4 z-50';
+
+  const buttonClass = [
+    'relative z-[1] flex shrink-0 items-center justify-center rounded-full border',
+    'surface-glass-chip bg-chrome-surface/55 font-semibold tracking-wide transition-colors',
+    'active:opacity-80',
+    chipSizeClass,
+    chipTextClass,
+    chipShadowClass,
+    tone,
+  ].join(' ');
 
   const startReconnect = () => {
     if (session.offerReconnect) session.reconnectInteractive();
@@ -146,32 +150,31 @@ export default function ProfileChip({
   const showAgentRing = agentBridgeLive && shouldShowAgentBridgeRing({ connected: agentBridgeConnected });
 
   return (
-    <div className={wrapClass} data-profile-chip-wrap="">
-      {showAgentRing ? (
-        <span
-          className="agent-bridge-profile-ring pointer-events-none absolute inset-0 rounded-full"
-          data-agent-bridge-connection-ring=""
-          aria-hidden="true"
-        />
-      ) : null}
-      <button
-        type="button"
-        data-profile-chip=""
-        data-profile-chip-variant={variant}
-        data-profile-chip-state={view.spinner ? 'spinning' : (view.reconnect ? 'reconnect' : view.auth)}
-        data-profile-initials={label || (signedIn ? 'user' : 'out')}
-        data-profile-auth={view.auth}
-        aria-busy={view.spinner ? 'true' : 'false'}
-        aria-expanded={showPanel ? (panelOpen ? 'true' : 'false') : undefined}
-        aria-haspopup={showPanel ? 'dialog' : undefined}
-        onClick={handleClick}
-        onPointerDown={(e) => e.stopPropagation()}
-        title={title}
-        aria-label={title}
-        className={inline
-          ? shell.replace('relative z-10 ', '')
-          : shell.replace('absolute top-4 right-4 z-50 ', '')}
-      >
+    <div className={outerWrapClass} data-profile-chip-wrap="">
+      <div className={`relative shrink-0 ${chipSizeClass}`} data-profile-chip-avatar="">
+        {showAgentRing ? (
+          <span
+            className="agent-bridge-profile-ring pointer-events-none absolute -inset-[2px] rounded-full"
+            data-agent-bridge-connection-ring=""
+            aria-hidden="true"
+          />
+        ) : null}
+        <button
+          type="button"
+          data-profile-chip=""
+          data-profile-chip-variant={variant}
+          data-profile-chip-state={view.spinner ? 'spinning' : (view.reconnect ? 'reconnect' : view.auth)}
+          data-profile-initials={label || (signedIn ? 'user' : 'out')}
+          data-profile-auth={view.auth}
+          aria-busy={view.spinner ? 'true' : 'false'}
+          aria-expanded={showPanel ? (panelOpen ? 'true' : 'false') : undefined}
+          aria-haspopup={showPanel ? 'dialog' : undefined}
+          onClick={handleClick}
+          onPointerDown={(e) => e.stopPropagation()}
+          title={title}
+          aria-label={title}
+          className={buttonClass}
+        >
         {view.spinner ? (
           <Loader2 size={iconSize} className="animate-spin" aria-hidden="true" data-profile-spinner="" />
         ) : label ? (
@@ -179,7 +182,8 @@ export default function ProfileChip({
         ) : (
           <User size={iconSize} aria-hidden="true" strokeWidth={2.25} data-profile-icon="user" />
         )}
-      </button>
+        </button>
+      </div>
       {view.badge ? (
         <span
           data-profile-badge="reauth"
