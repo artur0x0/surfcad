@@ -1494,6 +1494,8 @@ const Viewport = forwardRef(({
   const [armedContourId, setArmedContourId] = useState(null);
   const [sceneReady, setSceneReady] = useState(false);
   const contourModeRef = useRef(null);
+  /** Last agent/UI write not yet flushed through React state. */
+  const contourLiveWriteRef = useRef(null);
   const workplaneOverlayRef = useRef(null);
   const constructionPlaneRef = useRef(null);
   const savedContoursRef = useRef([]);
@@ -2114,7 +2116,13 @@ const Viewport = forwardRef(({
   showContoursRef.current = showContours;
   tangentPropRef.current = tangentProp;
   cachedMeshDataRef.current = cachedMeshData;
-  contourModeRef.current = contourMode;
+  if (contourLiveWriteRef.current != null && contourLiveWriteRef.current !== contourMode) {
+    // Keep the live sketch; a slower render of the previous tool must not
+    // clobber sketch_add (h10 pick_points arc a0).
+  } else {
+    contourModeRef.current = contourMode;
+    contourLiveWriteRef.current = null;
+  }
   contourPlaneOpenRef.current = contourPlaneOpen;
   filletModeRef.current = filletMode;
   shellModeRef.current = shellMode;
@@ -11784,6 +11792,7 @@ const Viewport = forwardRef(({
     contourState: () => contourModeRef.current,
     contourPlaneOpen: () => contourPlaneOpenRef.current,
     commitContourState: (next) => {
+      contourLiveWriteRef.current = next;
       contourModeRef.current = next;
       setContourMode(next);
     },
@@ -11982,34 +11991,34 @@ const Viewport = forwardRef(({
   };
 
   agentSketchAddRef.current = ({ tool, params }) => {
-    if (!contourModeRef.current) {
+    const prev = contourModeRef.current;
+    if (!prev) {
       return { error: { code: 'no_sketch', message: 'Contour sketch is not open' } };
     }
     if (contourPlaneOpenRef.current) {
       return { error: { code: 'plane_card_open', message: 'Call sketch_accept_plane before sketch_add' } };
     }
     if (tool === 'arc' || tool === 'dimension' || tool === 'constraints') {
-      setContourMode((prev) => {
-        if (!prev) return prev;
-        const next = armContourGesture(prev, tool);
-        contourModeRef.current = next;
-        return next;
-      });
+      const next = armContourGesture(prev, tool);
+      contourLiveWriteRef.current = next;
+      contourModeRef.current = next;
+      setContourMode(next);
       return { result: { tool, gesture: tool } };
     }
-    setContourMode((prev) => {
-      if (!prev) return prev;
-      const switched = switchContourTool(prev, tool);
-      let next = {
-        ...switched,
-        params: { ...(switched.params || {}), ...(params || {}) },
-      };
-      if (isHoleEntry(next.entry) && next.tool === 'rectangle') {
-        next = materializeHoleRectangleCenters(next);
-      }
-      contourModeRef.current = next;
-      return next;
-    });
+    const switched = switchContourTool(prev, tool);
+    let next = {
+      ...switched,
+      params: { ...(switched.params || {}), ...(params || {}) },
+    };
+    if (isHoleEntry(next.entry) && next.tool === 'rectangle') {
+      next = materializeHoleRectangleCenters(next);
+    }
+    // Write the live sketch before React flushes. pick_points reads the
+    // ref on the next agent call; cadPartId/ribbon renders must not leave
+    // it on the previous tool (unknown_entity for arc a0).
+    contourLiveWriteRef.current = next;
+    contourModeRef.current = next;
+    setContourMode(next);
     return { result: { tool } };
   };
 

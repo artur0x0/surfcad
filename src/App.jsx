@@ -132,7 +132,6 @@ import {
 } from './utils/partHistory';
 import { featureRibbonScript } from './utils/featureRibbonScript';
 import {
-  scriptNeedsCodeWrap,
   wrapRawScript,
   wrapUnmarkedPartScripts,
 } from './utils/wrapRawScript';
@@ -4801,12 +4800,16 @@ const App = () => {
         occupied: remotePaths,
       });
       const scriptsBeforeWrap = placed.scripts;
-      workScripts = wrapUnmarkedPartScripts(scriptsBeforeWrap);
+      const movedLive = placed.moved.find((move) => move.from === liveId);
+      const nextLiveId = movedLive ? movedLive.to : liveId;
+      const wrapIds = dirtyPartIds(placed.doc, scriptsBeforeWrap, baseline, {
+        liveId: nextLiveId,
+        liveScript: nextLiveId ? scriptsBeforeWrap[nextLiveId] : null,
+      });
+      workScripts = wrapUnmarkedPartScripts(scriptsBeforeWrap, wrapIds);
       const wrappedChanged = Object.keys(workScripts).some(
         (id) => workScripts[id] !== scriptsBeforeWrap[id],
       );
-      const movedLive = placed.moved.find((move) => move.from === liveId);
-      const nextLiveId = movedLive ? movedLive.to : liveId;
       const loaded = await loadPartAssets((doc.parts || []).map((part) => part.id));
       const records = remapMeshRecords({
         ...loaded,
@@ -8311,16 +8314,6 @@ const App = () => {
         }))
     )
   );
-  const wrapPending = !!(
-    assemblyDoc?.source === 'git'
-    && (assemblyDoc.parts || []).some((row) => {
-      let text = partScripts?.[row.id];
-      if (row.id === assemblyDoc.activeId && typeof liveDirtyScript === 'string') {
-        text = liveDirtyScript;
-      }
-      return typeof text === 'string' && scriptNeedsCodeWrap(text);
-    })
-  );
   const behindMarkers = (
     assemblyDoc?.source === 'git' && gitBehind
   ) ? remainingBehindMarkers(gitBehind, gitBehindResolved) : { assemblyBehind: false, partIds: [], any: false };
@@ -9514,7 +9507,7 @@ const App = () => {
       onRenameRevert={handleRenameRevert}
       syncConflict={syncConflict}
       onSyncConflictClear={() => setSyncConflict(null)}
-      canCommit={assemblyDoc?.source === 'git' && !!(sourceDirty || wrapPending) && gitSession.phase === 'connected'}
+      canCommit={assemblyDoc?.source === 'git' && !!sourceDirty && gitSession.phase === 'connected'}
       onGitCommit={handleGitCommit}
       onOverwriteMain={handleOverwriteMain}
       behindPartIds={behindPartIdSet}

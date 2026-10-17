@@ -92,3 +92,10 @@ test('App selects the part and syncs currentScript on agent create / open', () =
   assert.match(openPart, /revealPartOnRibbon\(/);
 });
 
+test('sketch_add writes the live contour before React setState', () => {
+  const vp = readFileSync(new URL('../components/Viewport.jsx', import.meta.url), 'utf8');
+  const add = vp.slice(vp.indexOf('agentSketchAddRef.current'), vp.indexOf('agentContourGesturePlan'));
+  assert.match(add, /const prev = contourModeRef\.current/);
+  assert.match(add, /contourLiveWriteRef\.current = next;\s*contourModeRef\.current = next;\s*setContourMode\(next\)/);
+});
+

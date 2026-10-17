@@ -57,10 +57,19 @@ export function wrapRawScript(script) {
   return `${header}${block}\n`;
 }
 
-export function wrapUnmarkedPartScripts(scripts) {
+/**
+ * Wrap unmarked scripts that are already in the Save set (`onlyIds`:
+ * dirty or new parts). Untouched unmarked parts are left as stored.
+ * Omitting `onlyIds` wraps nothing.
+ */
+export function wrapUnmarkedPartScripts(scripts, onlyIds) {
   if (!scripts || typeof scripts !== 'object') return {};
   const out = { ...scripts };
+  if (onlyIds == null) return out;
+  const allow = new Set([...onlyIds].map((id) => String(id)));
+  if (allow.size === 0) return out;
   for (const [id, text] of Object.entries(out)) {
+    if (!allow.has(String(id))) continue;
     if (typeof text === 'string') out[id] = wrapRawScript(text);
   }
   return out;

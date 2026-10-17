@@ -232,7 +232,7 @@ console.log('\ngit G3 — UI wiring (PartFeed + App)');
 const feed = readFileSync(new URL('../../src/components/PartFeed.jsx', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../../src/App.jsx', import.meta.url), 'utf8');
 ok('Commit button git-only, gated', /data-git-commit=""/.test(feed) && /disabled=\{!canCommit\}/.test(feed)
-  && /canCommit=\{assemblyDoc\?\.source === 'git' && !!\(sourceDirty \|\| wrapPending\)/.test(app)
+  && /canCommit=\{assemblyDoc\?\.source === 'git' && !!sourceDirty/.test(app)
   && /gitSession\.phase === 'connected'/.test(app));
 ok('commit message dialog', /data-git-commit-message/.test(feed) && /data-git-commit-confirm/.test(feed));
 ok('commit message prompts + no iOS zoom', /Enter a commit message/.test(feed)

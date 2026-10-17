@@ -182,8 +182,12 @@ test('Save of an opened unmarked part writes the wrapped script', async () => {
     headSha,
   });
   assert.equal(opened.scripts[part], RAW);
-  const wrappedScripts = wrapUnmarkedPartScripts(opened.scripts);
-  assert.notEqual(wrappedScripts[part], RAW);
+  const edited = `${RAW}// edit\n`;
+  const scripts = { ...opened.scripts, [part]: edited };
+  const wrapIds = dirtyPartIds(opened.doc, scripts, opened.baseline);
+  assert.deepEqual([...wrapIds], [part]);
+  const wrappedScripts = wrapUnmarkedPartScripts(scripts, wrapIds);
+  assert.notEqual(wrappedScripts[part], edited);
   assert.ok(wrappedScripts[part].includes(CODE_BEGIN));
   const ready = await assembleCommitFiles(gh, vault.repo, {
     doc: opened.doc,
@@ -211,6 +215,71 @@ test('Save of an opened unmarked part writes the wrapped script', async () => {
   assert.notEqual(head.sha, headSha);
 });
 
+test('Save of edited part A does not wrap or rewrite untouched unmarked part B', async () => {
+  const gh = createMockGithubAdapter({ login: 'wrap-scope' });
+  const vault = await findOrCreateVault(gh);
+  const name = 'WrapScope';
+  const partA = assemblyPartPath(name, 'Edited');
+  const partB = assemblyPartPath(name, 'Untouched');
+  const doc = {
+    source: 'git',
+    name,
+    activeId: partA,
+    parts: [
+      { id: partA, name: 'Edited', visible: true, order: 0 },
+      { id: partB, name: 'Untouched', visible: true, order: 1 },
+    ],
+  };
+  const seed = await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed two unmarked parts',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite(assemblyFilePath(name), stringifySurfJson(doc)),
+      fileWrite(partA, RAW),
+      fileWrite(partB, RAW),
+    ],
+  });
+  const opened = await openVaultAssembly(gh, vault.repo, name, {
+    branch: 'main',
+    headSha: seed.sha,
+  });
+  assert.equal(opened.scripts[partA], RAW);
+  assert.equal(opened.scripts[partB], RAW);
+  const editedA = `${RAW}// save A\n`;
+  const live = { ...opened.scripts, [partA]: editedA };
+  assert.equal(wrapUnmarkedPartScripts(live)[partA], editedA);
+  const wrapIds = dirtyPartIds(opened.doc, live, opened.baseline);
+  assert.deepEqual([...wrapIds].sort(), [partA]);
+  const wrapped = wrapUnmarkedPartScripts(live, wrapIds);
+  assert.ok(wrapped[partA].includes(CODE_BEGIN));
+  assert.equal(wrapped[partB], RAW);
+  const ready = await assembleCommitFiles(gh, vault.repo, {
+    doc: opened.doc,
+    scripts: wrapped,
+    baseline: opened.baseline,
+    message: 'save A',
+  });
+  assert.equal(ready.status, 'ready');
+  const paths = ready.files.map((row) => row.path);
+  assert.ok(paths.includes(partA));
+  assert.equal(paths.includes(partB), false);
+  const fileA = ready.files.find((row) => row.path === partA);
+  assert.ok(fileA.content.includes(CODE_BEGIN));
+  const committed = await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: ready.message,
+    files: ready.files,
+    baseSha: seed.sha,
+  });
+  const savedA = await gh.readFile(vault.repo, partA, 'main');
+  const savedB = await gh.readFile(vault.repo, partB, 'main');
+  assert.ok(savedA.content.includes(CODE_BEGIN));
+  assert.equal(savedB.content, RAW);
+  const head = await gh.getBranch(vault.repo, 'main');
+  assert.equal(head.sha, committed.sha);
+});
+
 test('App wraps on set/paste/save and never on open', () => {
   const finish = APP.slice(
     APP.indexOf('const finishOpenedPart ='),
@@ -225,12 +294,18 @@ test('App wraps on set/paste/save and never on open', () => {
   const setEditor = APP.slice(APP.indexOf('setEditor(src)'), APP.indexOf('readHistory()'));
   assert.match(setEditor, /wrapRawScript\(/);
   const save = APP.slice(APP.indexOf('const handleGitCommit'), APP.indexOf('const absorbOverwriteFiles'));
-  assert.match(save, /wrapUnmarkedPartScripts\(/);
+  assert.match(save, /wrapUnmarkedPartScripts\(scriptsBeforeWrap, wrapIds\)/);
+  assert.match(save, /dirtyPartIds\(placed\.doc, scriptsBeforeWrap, baseline/);
   assert.match(APP, /async agentGitSave\(\{ message \}\) \{[\s\S]*?return handleGitCommit\(draft\);/);
+  assert.doesNotMatch(APP, /wrapPending/);
   assert.equal([...APP.matchAll(/wrapRawScript\(/g)].length, 2);
   assert.equal([...APP.matchAll(/wrapUnmarkedPartScripts\(/g)].length, 1);
   assert.doesNotMatch(GIT_COMMIT, /wrapRawScript|wrapUnmarkedPartScripts/);
   assert.match(BRIDGE, /wrapRawScript\(/);
   assert.match(EDITOR, /onDidPaste/);
   assert.match(EDITOR, /wrapRawScript\(/);
+  assert.match(
+    EDITOR,
+    /onDidPaste\(\(\) => \{[\s\S]*?programmaticValueRef\.current = next[\s\S]*?onCodeChange\?\.\(next, 'Paste'\)/,
+  );
 });
