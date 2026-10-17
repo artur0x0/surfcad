@@ -3,11 +3,17 @@
  * bridge commands through `window.surfcad.call`.
  */
 
-import { PAIR_MSG } from './relayHub.js';
+import { PAIR_MSG } from './relayMessages.js';
 import { isAgentBridgeAutoApprove } from './autoApprove.js';
+import {
+  issueFromCloseEvent,
+  issueFromErrorEvent,
+  issueFromRelayMessage,
+} from './connectionErrors.js';
 
 /**
  * @typedef {'idle' | 'advertising' | 'pending' | 'paired'} TabPairState
+ * @typedef {'relay_missing' | 'origin_rejected' | 'browser_blocked' | 'relay_error' | null} AgentBridgeConnectionIssue
  */
 
 /**
@@ -16,17 +22,25 @@ import { isAgentBridgeAutoApprove } from './autoApprove.js';
  *   token: string,
  *   call: (name: string, args: Record<string, unknown>) => Promise<{ ok: boolean, result?: unknown, error?: { code?: string, message?: string } }>,
  *   onState?: (state: TabPairState) => void,
+ *   onIssue?: (issue: AgentBridgeConnectionIssue) => void,
+ *   pageSecure?: boolean,
  * }} opts
  */
 export function createAgentBridgeTabConnection(opts) {
-  const { url, token, call, onState } = opts;
+  const { url, token, call, onState, onIssue, pageSecure } = opts;
   /** @type {WebSocket | null} */
   let ws = null;
   let state = 'idle';
+  let sawOpen = false;
+  let lastRelayErrorCode = null;
 
   function setState(next) {
     state = next;
     onState?.(state);
+  }
+
+  function setIssue(issue) {
+    onIssue?.(issue);
   }
 
   function send(payload) {
@@ -59,9 +73,14 @@ export function createAgentBridgeTabConnection(opts) {
       try { ws.close(); } catch { /* noop */ }
       ws = null;
     }
+    sawOpen = false;
+    lastRelayErrorCode = null;
+    setIssue(null);
     setState('advertising');
     ws = new WebSocket(url);
     ws.addEventListener('open', () => {
+      sawOpen = true;
+      setIssue(null);
       send({ type: PAIR_MSG.REGISTER_TAB, token });
     });
     ws.addEventListener('message', (event) => {
@@ -72,6 +91,11 @@ export function createAgentBridgeTabConnection(opts) {
         return;
       }
       if (!msg || typeof msg !== 'object') return;
+      const relayIssue = issueFromRelayMessage(msg);
+      if (relayIssue) {
+        lastRelayErrorCode = msg.code;
+        setIssue(relayIssue);
+      }
       if (msg.type === PAIR_MSG.PAIR_REQUEST) {
         setState('pending');
         if (isAgentBridgeAutoApprove()) {
@@ -81,6 +105,7 @@ export function createAgentBridgeTabConnection(opts) {
       }
       if (msg.type === PAIR_MSG.PAIRED) {
         setState('paired');
+        setIssue(null);
         return;
       }
       if (msg.type === PAIR_MSG.UNPAIRED) {
@@ -91,8 +116,15 @@ export function createAgentBridgeTabConnection(opts) {
         void handleCall(msg);
       }
     });
-    ws.addEventListener('close', () => {
+    ws.addEventListener('error', (event) => {
+      if (!sawOpen) {
+        setIssue(issueFromErrorEvent(event, { pageSecure }));
+      }
+    });
+    ws.addEventListener('close', (event) => {
       ws = null;
+      const issue = issueFromCloseEvent(event, { sawOpen, relayErrorCode: lastRelayErrorCode });
+      if (issue) setIssue(issue);
       setState('idle');
     });
   }
@@ -111,6 +143,7 @@ export function createAgentBridgeTabConnection(opts) {
       try { ws.close(); } catch { /* noop */ }
       ws = null;
     }
+    setIssue(null);
     setState('idle');
   }
 

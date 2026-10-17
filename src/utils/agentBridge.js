@@ -51,6 +51,15 @@ const EMPTY_STATUS = Object.freeze({
 /**
  * @param {{ dev?: boolean, location?: { search?: string } | null, localStorage?: { getItem?: (key: string) => string | null } | null }} [env]
  */
+function isProdSurfCadHost(loc) {
+  try {
+    const hostname = loc && typeof loc.hostname === 'string' ? loc.hostname : '';
+    return hostname === 'surfcad.com' || hostname === 'www.surfcad.com';
+  } catch {
+    return false;
+  }
+}
+
 export function agentBridgeEnabled(env = {}) {
   if (env.dev === true) return true;
   const loc = Object.prototype.hasOwnProperty.call(env, 'location')
@@ -59,6 +68,7 @@ export function agentBridgeEnabled(env = {}) {
   const store = Object.prototype.hasOwnProperty.call(env, 'localStorage')
     ? env.localStorage
     : (typeof localStorage !== 'undefined' ? localStorage : null);
+  if (isProdSurfCadHost(loc)) return true;
   let query = false;
   try {
     const search = loc && typeof loc.search === 'string' ? loc.search : '';

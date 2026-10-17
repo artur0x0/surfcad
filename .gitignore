@@ -40,8 +40,9 @@ dist/*
 # Scripts
 *.sh
 
-# Package lock file
+# Package lock file (repo root only; backend deploy uses npm ci with its own lockfile)
 package-lock.json
+!backend/package-lock.json
 
 # Linux services
 *.service

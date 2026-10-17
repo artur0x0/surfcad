@@ -157,17 +157,21 @@ const report = {
 const { jsonPath, mdPath } = writeReport(outDir, report);
 writeReport(join(outDir, 'latest'), report);
 
-const failedInvariants = invariants.filter((row) => !row.ok);
-console.log(
-  `playtest: ${ok ? 'PASS' : 'FAIL'} — ${failedSteps} failed step(s)`
-  + (failedInvariants.length ? `, ${failedInvariants.length} failed invariant(s)` : ''),
-);
-for (const row of failedInvariants) {
-  console.log(`  invariant ${row.id}: ${String(row.detail || '').slice(0, 300)}`);
-}
-for (const scenario of scenarioReports) {
-  for (const step of scenario.steps.filter((row) => !row.ok)) {
-    console.log(`  step [${scenario.id}] ${step.id}: ${String(step.detail || '').slice(0, 300)}`);
+console.log(`playtest: ${ok ? 'PASS' : 'FAIL'} — ${failedSteps} failed step(s)`);
+if (!ok) {
+  for (const scenario of scenarioReports) {
+    for (const step of scenario.steps || []) {
+      if (step.ok) continue;
+      let extra = step.detail || '';
+      if (!extra && step.envelope) {
+        try { extra = JSON.stringify(step.envelope).slice(0, 400); } catch { extra = ''; }
+      }
+      console.log(`  failed step [${scenario.id}] ${step.id}${extra ? ` — ${extra}` : ''}`);
+    }
+  }
+  for (const inv of invariants) {
+    if (inv.ok) continue;
+    console.log(`  failed invariant ${inv.id}${inv.detail ? `: ${inv.detail}` : ''}`);
   }
 }
 console.log(`  report ${jsonPath}`);
