@@ -2,6 +2,25 @@
  * Compare live part scripts to a snapshot taken at open or last save/export.
  */
 
+/**
+ * Live editor text folded into agent snapshot / dirty.
+ *
+ * Same family as `gitDirtyLiveScript`: after open or reload the buffer can
+ * still be the previous part (or '') until Monaco is live for this id.
+ *
+ * @returns {{ liveId: string, liveScript: string } | null}
+ */
+export function liveEditorOverride({
+  editorLive = false,
+  activeId = null,
+  script = null,
+} = {}) {
+  if (editorLive !== true) return null;
+  if (activeId == null || activeId === '') return null;
+  if (typeof script !== 'string') return null;
+  return { liveId: String(activeId), liveScript: script };
+}
+
 /** @param {Record<string, string>|null|undefined} scripts */
 export function snapshotPartScripts(scripts, { liveId = null, liveScript = null } = {}) {
   const out = {};

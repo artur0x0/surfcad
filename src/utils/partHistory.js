@@ -95,6 +95,24 @@ export function editorMountSeedsHistory(history) {
   return head < 0;
 }
 
+/**
+ * After an explicit Save, the committed text is this part's history head.
+ * Existing commits stay so Undo can walk pre-save steps; identical head is
+ * a no-op. Wrap-on-Save records the wrapped file as its own step so
+ * `undoStackDirty` does not treat the rewrite as an unsaved edit.
+ */
+export function adoptSavedScript(history, script, message = 'Save') {
+  const code = typeof script === 'string' ? script : '';
+  const existing = history && Array.isArray(history.commits) && history.commits.length
+    ? history
+    : null;
+  if (!existing) {
+    const commits = featureHistoryCommits(code);
+    return { commits, head: commits.length - 1 };
+  }
+  return pushPartHistory(existing, code, message);
+}
+
 /** Append a commit. The same code as the current head is not a new step. */
 export function pushPartHistory(history, code, message) {
   const base = history && Array.isArray(history.commits) ? history : emptyPartHistory();

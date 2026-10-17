@@ -124,6 +124,7 @@ import {
 import { sheetMetalBinding } from './utils/scs/scsCatalog';
 import { composeSheetMetalCommit, readSheetMetalSpec, removeSheetMetalBlock, sheetMetalFresh, sheetStarterScript } from './utils/sheetMetal/sheetMetalScript';
 import {
+  adoptSavedScript,
   editorMountSeedsHistory,
   historyForPart,
   pushPartHistory,
@@ -147,7 +148,7 @@ import { AGENT_GIT_CONSENT_TIMEOUT_MS } from './agent/commands/git.js';
 import AgentGitConsentModal from './components/AgentGitConsentModal';
 import { buildDirtyState } from './agent/state/dirty';
 import { buildSelection } from './agent/state/selection';
-import { editedPartIdsSinceSnapshot, snapshotPartScripts } from './agent/state/editedSinceLoad';
+import { editedPartIdsSinceSnapshot, liveEditorOverride, snapshotPartScripts } from './agent/state/editedSinceLoad';
 import { buildFeatureTree } from './agent/state/featureTree';
 import { resolveRollbackTarget, resolveStripTarget } from './agent/featureStripAgent';
 import { buildPartsState } from './agent/state/parts';
@@ -1142,15 +1143,18 @@ const App = () => {
   /** Scripts at last open / save; drives agent `dirty.unsaved`. */
   const agentScriptSnapshotRef = useRef(null);
   const agentSnapshotDocKeyRef = useRef('');
-  const captureAgentScriptSnapshot = () => {
+  const captureAgentScriptSnapshot = ({ useEditor = true } = {}) => {
     const doc = assemblyRef.current;
     if (!doc) return;
     const scripts = partScriptsRef.current || {};
     const liveId = doc.activeId;
-    let liveScript = liveId ? scripts[liveId] : '';
-    const editor = codeEditorRef.current?.getContent?.();
-    if (liveId && typeof editor === 'string') liveScript = editor;
-    agentScriptSnapshotRef.current = snapshotPartScripts(scripts, { liveId, liveScript });
+    const override = liveEditorOverride({
+      editorLive: useEditor === true && editorLiveRef.current === true,
+      activeId: liveId,
+      script: codeEditorRef.current?.getContent?.(),
+    });
+    agentScriptSnapshotRef.current = snapshotPartScripts(scripts, override || {});
+    agentSnapshotDocKeyRef.current = `${doc.name ?? ''}\0${doc.source ?? ''}\0${(doc.parts || []).map((row) => row.id).join('\n')}`;
   };
   const historyRef = useRef(history);
   historyRef.current = history;
@@ -1767,7 +1771,8 @@ const App = () => {
     const key = `${assemblyDoc.name ?? ''}\0${assemblyDoc.source ?? ''}\0${(assemblyDoc.parts || []).map((row) => row.id).join('\n')}`;
     if (agentSnapshotDocKeyRef.current === key && agentScriptSnapshotRef.current) return;
     agentSnapshotDocKeyRef.current = key;
-    captureAgentScriptSnapshot();
+    // Identity changed; Monaco may still hold the previous buffer.
+    captureAgentScriptSnapshot({ useEditor: false });
   }, [assemblyDoc, editorInitialScript, appMode]);
 
   // A reload can beat the debounce (refresh mid-typing). pagehide covers the
@@ -2415,6 +2420,7 @@ const App = () => {
     } finally {
       if (assemblyOpenProgressRef.current === report) assemblyOpenProgressRef.current = null;
     }
+    captureAgentScriptSnapshot();
   };
   finishOpenedPartRef.current = finishOpenedPart;
 
@@ -3294,6 +3300,15 @@ const App = () => {
       ));
       if (remaps.length) rekeyRuntime(remaps);
     }
+    // Saved text is the undo head (wrap-on-Save must not look unsaved).
+    for (const [id, script] of Object.entries(nextScripts)) {
+      if (typeof script !== 'string') continue;
+      const key = String(id);
+      partHistoriesRef.current[key] = adoptSavedScript(
+        partHistoriesRef.current[key],
+        script,
+      );
+    }
     // Explicit Save / Move to Git must land in IndexedDB even during reauth
     // (playtest mock has no GitHub token). Otherwise reload restores the
     // pre-save seed and the assembly drops out of git mode.
@@ -3302,7 +3317,9 @@ const App = () => {
     if (active) {
       setCurrentFilename(active.name);
       const picked = scriptForRow(saved, nextScripts, active.id);
-      focusPartHistory(active.id, picked.ok ? picked.script : '');
+      const hist = partHistoriesRef.current[String(active.id)];
+      if (hist) applyPartHistory(hist);
+      else focusPartHistory(active.id, picked.ok ? picked.script : '');
       if (picked.ok) {
         suppressPartSaveRef.current = false;
         codeEditorRef.current?.loadContent(picked.script, active.name, false);
@@ -4860,7 +4877,15 @@ const App = () => {
       if (adopted.length) await applyMeshMarks(adopted);
       if (result.status === 'clean') return result;
       if (result.doc || wrappedChanged) {
-        await applyCommittedWorkspace(result);
+        const committedDoc = result.doc || assemblyRef.current;
+        const committedScripts = result.scripts || workScripts;
+        if (committedDoc && committedScripts) {
+          await applyCommittedWorkspace({
+            ...result,
+            doc: committedDoc,
+            scripts: committedScripts,
+          });
+        }
         captureAgentScriptSnapshot();
       }
       await enqueueGit(vault.repo, {
@@ -8499,22 +8524,27 @@ const App = () => {
     },
     readDirty() {
       const doc = assemblyRef.current;
-      if (!agentScriptSnapshotRef.current && doc) captureAgentScriptSnapshot();
+      if (!agentScriptSnapshotRef.current && doc) captureAgentScriptSnapshot({ useEditor: false });
       let undoStackDirty = false;
       const readHistory = agentHostRef.current?.readHistory;
-      if (typeof readHistory === 'function') {
+      const editorLive = editorLiveRef.current === true;
+      const editorText = codeEditorRef.current?.getContent?.();
+      if (editorLive && typeof readHistory === 'function') {
         const hist = readHistory();
         const head = Number.isInteger(hist?.head) ? hist.head : -1;
         const code = head >= 0 && hist?.commits?.[head] ? hist.commits[head].code : '';
-        const live = codeEditorRef.current?.getContent?.() ?? '';
+        const live = typeof editorText === 'string' ? editorText : '';
         undoStackDirty = live !== code;
       }
       const scripts = partScriptsRef.current || {};
       const liveId = doc?.activeId ?? null;
-      const liveScript = codeEditorRef.current?.getContent?.() ?? '';
+      const override = liveEditorOverride({
+        editorLive,
+        activeId: liveId,
+        script: editorText,
+      });
       const editedSinceLoad = editedPartIdsSinceSnapshot(agentScriptSnapshotRef.current, scripts, {
-        liveId,
-        liveScript,
+        ...(override || {}),
         partIds: (doc?.parts || []).map((row) => row.id),
       });
       return buildDirtyState({

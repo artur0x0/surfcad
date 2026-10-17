@@ -209,4 +209,7 @@ test('App gates live dirty on editorLive and seeds currentScript on editor seed'
   assert.match(app, /peekMockVaultName/);
   assert.match(app, /createMockGithubAdapter\(\{ login: 'local-user', persist: true \}\)/);
   assert.match(app, /rememberAssembly\(nextDoc, \{ force: true \}\)/);
+  assert.match(app, /captureAgentScriptSnapshot\(\{ useEditor: false \}\)/);
+  assert.match(app, /liveEditorOverride/);
+  assert.match(app, /adoptSavedScript/);
 });
