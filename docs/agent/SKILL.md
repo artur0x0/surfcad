@@ -58,6 +58,8 @@ MCP returns JSON text; bridge refusals use `isError: true` with:
 | Code | Meaning |
 | --- | --- |
 | `not_paired` | No approved relay session — pair first. |
+| `pairing_lost` | The tab or relay dropped; the server is re-pairing on its own. Retry in a few seconds (`retryable: true`); ask the user to keep SurfCAD open in Chrome. Do not ask for a new code. |
+| `pair_pending` | Waiting for the user to click Allow in SurfCAD. |
 | `real_repo_blocked` | Git write on a real repo without consent (`details.reason`: `consent_pending` / `consent_declined`). |
 | `confirm_required` | Destructive git op needs explicit user approval. |
 
