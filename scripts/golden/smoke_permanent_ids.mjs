@@ -587,7 +587,7 @@ export { default as PartFeed } from './src/components/PartFeed.jsx';`,
   const unsyncedText = visible(unsyncedHtml);
   ok('unsynced Parts list text has no local:', !unsyncedText.includes('local:'));
   ok('unsynced subtitle is parts/Part (1).js', unsyncedHtml.includes('data-part-subtitle="">parts/Part (1).js'));
-  ok('Add to Repo still shows', unsyncedText.includes('Add to Repo'));
+  ok('unsynced row Save offers add-to-repo', unsyncedHtml.includes('data-part-add-to-repo=""'));
   const migratedHtml = markup(clean);
   ok('migrated Parts list markup has no local:', !migratedHtml.includes('local:'));
   ok('migrated row still shows the part', migratedHtml.includes('Part (1)') && migratedHtml.includes(`data-part-row="${clean}"`));
@@ -639,7 +639,8 @@ createRoot(document.getElementById('root')).render(
       await page.setContent(html, { waitUntil: 'load' });
       await page.waitForSelector('[data-part-subtitle]');
       const text = await page.locator('[data-parts-rows]').innerText();
-      ok('390px parts list shows the repo path', text.includes('parts/Part (1).js') && text.includes('Add to Repo'));
+      ok('390px parts list shows the repo path', text.includes('parts/Part (1).js'));
+      ok('390px unsynced uses Save not Add to Repo pill', !text.includes('Add to Repo'));
       ok('390px parts list text has no local:', !text.includes('local:'));
       const shot = join(shotDir, 'parts-list-unsynced-390.png');
       await page.screenshot({ path: shot });

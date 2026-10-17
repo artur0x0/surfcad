@@ -14025,7 +14025,10 @@
       "destructive": false,
       "confirm": false,
       "immediate": false,
-      "uiEntry": "data-git-commit-add-to-repo",
+      "uiEntry": [
+        "data-git-commit-add-to-repo",
+        "data-part-add-to-repo"
+      ],
       "example": {
         "part_id": "parts/Bracket.js"
       }

@@ -237,6 +237,8 @@ import {
   planInsertVaultAssemblyParts,
   planOpenVaultPart,
   planCopyToAssembly,
+  allocateVaultPartPath,
+  ensureAssemblyVaultPaths,
   readVaultPart,
   showAddToRepo,
   isExternalPartPath,
@@ -279,7 +281,6 @@ import {
   stringifySurfJson,
   fileWrite,
   fileDelete,
-  resolveNewPartPath,
   suggestNewPartPath,
   partPathAllowedFor,
   vaultSegment,
@@ -3252,6 +3253,7 @@ const App = () => {
       if (key !== '__game__' && !keep.has(key)) delete partHistoriesRef.current[key];
     }
     rememberScripts(nextScripts);
+    if (result.moved?.length) rekeyRuntime(result.moved);
     const saved = rememberAssembly(nextDoc);
     const active = saved.parts.find((part) => part.id === saved.activeId) || saved.parts[0];
     if (active) {
@@ -4694,15 +4696,25 @@ const App = () => {
         }
       }
       const live = codeEditorRef.current?.getContent?.();
-      const liveId = (!suppressPartSaveRef.current && typeof live === 'string') ? doc.activeId : null;
+      let liveId = (!suppressPartSaveRef.current && typeof live === 'string') ? doc.activeId : null;
       let workScripts = { ...partScriptsRef.current };
       if (liveId) workScripts[liveId] = live;
       let tree = [];
       try {
         tree = await gitAdapterRef.current.listTree(vault.repo, branch) || [];
       } catch { /* occupancy is the open document when the tree cannot be listed */ }
-      const placed = placeLocalMeshParts(doc, workScripts, {
-        occupied: tree.map((entry) => entry?.path ?? entry).filter((path) => typeof path === 'string'),
+      const remotePaths = tree.map((entry) => entry?.path ?? entry).filter((path) => typeof path === 'string');
+      let workDoc = doc;
+      const strayPlaced = ensureAssemblyVaultPaths(workDoc, workScripts, { remotePaths });
+      if (strayPlaced.moved.length) {
+        workDoc = strayPlaced.doc;
+        workScripts = strayPlaced.scripts;
+        rekeyRuntime(strayPlaced.moved);
+        const liveRemap = strayPlaced.moved.find((move) => move.from === liveId);
+        if (liveRemap) liveId = liveRemap.to;
+      }
+      const placed = placeLocalMeshParts(workDoc, workScripts, {
+        occupied: remotePaths,
       });
       workScripts = placed.scripts;
       const movedLive = placed.moved.find((move) => move.from === liveId);
@@ -5396,7 +5408,12 @@ const App = () => {
           taken = [...taken, ...(tree || []).map((entry) => entry?.path ?? entry)];
         }
       } catch { /* the open document still blocks a collision */ }
-      id = resolveNewPartPath(doc.name, rawName || suggestNewPartPath(doc.name, doc.parts, taken), taken);
+      id = allocateVaultPartPath(
+        doc.name,
+        rawName || suggestNewPartPath(doc.name, doc.parts, taken),
+        taken,
+        { layout: 'shared' },
+      );
       if (!id) {
         setUploadError('Enter a part name');
         return;
@@ -7700,7 +7717,25 @@ const App = () => {
 
       const name = dedupedImportName(file.name, (doc.parts || []).map((part) => part.name));
       const assetName = meshAssetName(name);
-      const id = newLocalPartId();
+      let id;
+      if (doc.source === 'git') {
+        let taken = (doc.parts || []).map((part) => part.id);
+        try {
+          const vault = gitVaultRef.current;
+          const adapter = gitAdapterRef.current;
+          if (vault?.repo && adapter?.listTree) {
+            const tree = await adapter.listTree(vault.repo, gitWorkingBranch());
+            taken = [...taken, ...(tree || []).map((entry) => entry?.path ?? entry)];
+          }
+        } catch { /* open document still blocks collisions */ }
+        id = allocateVaultPartPath(doc.name, name, taken, { layout: 'shared' });
+        if (!id) {
+          setUploadError('Could not assign a path for this upload.');
+          return;
+        }
+      } else {
+        id = newLocalPartId();
+      }
       let starter = importMeshScript(assetName);
       let surfId = null;
       if (doc.source === 'git') {
@@ -8237,6 +8272,12 @@ const App = () => {
       };
     })
     : [];
+  const cadGitBranchLabel = (
+    !isMobile && assemblyDoc?.source === 'git'
+  ) ? (gitBaseline?.branch || 'main') : null;
+  const openCadGitBranches = () => {
+    partFeedRef.current?.openBranchPane?.();
+  };
   const stripScript = (
     cadHighlightId && assemblyDoc && cadHighlightId !== assemblyDoc.activeId
   ) ? (partScripts[cadHighlightId] || '') : currentScript;
@@ -9390,6 +9431,8 @@ const App = () => {
               showCadTitle={!!assemblyDoc}
               brandHeader={appMode !== 'game'}
               assemblyName={assemblyLabel}
+              cadGitBranch={cadGitBranchLabel}
+              onCadGitBranchClick={cadGitBranchLabel ? openCadGitBranches : null}
               onRenameFile={handleRenameFile}
               onTitlePartActivate={handleTitlePartActivate}
               onTitleAssemblyActivate={handleTitleAssemblyActivate}
@@ -9916,6 +9959,8 @@ const App = () => {
             showCadTitle={!!assemblyDoc}
             brandHeader={appMode !== 'game'}
             assemblyName={assemblyLabel}
+            cadGitBranch={cadGitBranchLabel}
+            onCadGitBranchClick={cadGitBranchLabel ? openCadGitBranches : null}
             onRenameFile={handleRenameFile}
             onTitlePartActivate={handleTitlePartActivate}
             onTitleAssemblyActivate={handleTitleAssemblyActivate}

@@ -21,7 +21,6 @@ import { assertGithubAdapter } from './githubAdapterInterface.js';
 import {
   assemblyFilePath,
   assemblyFilePathCandidates,
-  assemblyPartPath,
   assetPathForScript,
   isExternalPartPath,
   listAssemblies,
@@ -31,7 +30,15 @@ import {
   sharedPartPath,
   vaultSegment,
 } from './vaultLayout.js';
-import { sharedPathForMove } from './gitDeleteAssembly.js';
+import { allocateVaultPartPath } from './partVaultPath.js';
+export {
+  allocateVaultPartPath,
+  ensureAssemblyVaultPaths,
+  partRowNeedsVaultPath,
+  partRowVaultPathOk,
+  promoteStrayPartsToAssemblyFolder,
+  resolveNewPartPath,
+} from './partVaultPath.js';
 import { parseSurfJson, stringifySurfJson } from './surfJson.js';
 import { isSurfId, mintSurfId, readSurfId, stripSurfId, withSurfId } from './surfId.js';
 
@@ -349,33 +356,6 @@ async function loadPartMeshes(adapter, repo, branch, parts, fromOfNew) {
   return assets;
 }
 
-/**
- * Resolve a new part under this assembly.
- * A bare name lands in `parts/<Name>.js`. A name already taken becomes
- * `Name (2)`. A full repo path is still accepted when it is allowed for this
- * assembly (an assembly-folder copy, tests, or paste).
- */
-export function resolveNewPartPath(assemblyName, partName, takenPaths = []) {
-  const raw = String(partName ?? '').trim();
-  if (!raw) return null;
-  if (raw.includes('/') || raw.toLowerCase().endsWith('.js')) {
-    const path = normalizeRepoPath(raw.endsWith('.js') ? raw : `${raw}.js`);
-    if (!path) return null;
-    if (!partPathAllowedFor(assemblyName, path)) return null;
-    return path;
-  }
-  try {
-    const taken = new Set();
-    for (const item of takenPaths || []) {
-      const path = typeof item === 'string' ? item : item?.id;
-      if (path) taken.add(path);
-    }
-    return sharedPathForMove(raw, taken);
-  } catch {
-    return null;
-  }
-}
-
 /** Suggest `parts/Part (n).js` for the next empty slot. */
 export function suggestNewPartPath(assemblyName, existingParts = [], takenPaths = null) {
   void assemblyName;
@@ -592,14 +572,9 @@ export function planOpenVaultPart(doc, path, content, scripts = {}) {
 export function planCopyToAssembly(doc, part, script, { now, rand } = {}) {
   const asm = vaultSegment(doc?.name);
   if (!asm) throw new Error('Empty assembly name');
-  const base = vaultSegment(part?.name) || 'Part';
   const taken = new Set((doc?.parts || []).map((row) => row.id));
-  let path = assemblyPartPath(asm, base);
-  let n = 2;
-  while (taken.has(path)) {
-    path = assemblyPartPath(asm, numberedName(base, n));
-    n += 1;
-  }
+  const path = allocateVaultPartPath(asm, part?.name || 'Part', [...taken], { layout: 'assembly-folder' });
+  if (!path) throw new Error('Could not allocate a part path');
   const surfId = mintSurfId({ now, rand });
   const sourceId = (part?.surfId && isSurfId(part.surfId))
     ? part.surfId

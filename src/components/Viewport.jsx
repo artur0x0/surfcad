@@ -1052,6 +1052,9 @@ const Viewport = forwardRef(({
   showCadTitle = true,
   /** Assembly document name. Blank documents resolve to Assembly before this. */
   assemblyName = '',
+  /** Desktop git: current vault branch shown beside the assembly title chip. */
+  cadGitBranch = null,
+  onCadGitBranchClick = null,
   onRenameFile = null,
   /** Single tap on the part chip: select all bodies in that part. */
   onTitlePartActivate = null,
@@ -14224,6 +14227,23 @@ const Viewport = forwardRef(({
                     >
                       {titleParts.assembly}
                     </ViewportTitleChip>
+                  ) : null}
+                  {cadGitBranch && onCadGitBranchClick ? (
+                    <button
+                      type="button"
+                      data-viewer-git-branch=""
+                      data-ui-action="data-git-branches"
+                      data-git-branches=""
+                      title={`Branch: ${cadGitBranch}. Click to manage branches.`}
+                      aria-label={`On branch ${cadGitBranch}. Open branch list.`}
+                      className="pointer-events-auto max-w-[8rem] shrink-0 truncate rounded-lg border border-blue-400/40 bg-chrome-surface/80 px-2 py-1 text-[10px] font-medium text-blue-200 shadow hover:bg-white/10"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onCadGitBranchClick();
+                      }}
+                    >
+                      {cadGitBranch}
+                    </button>
                   ) : null}
                 </div>
                 {contourLegend ? (

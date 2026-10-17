@@ -273,8 +273,8 @@ ok('optimistic create + pending spinner', /setPendingPartIds/.test(app)
   && /Loader2/.test(feed)
   && /rememberAssembly\([\s\S]*?activeId: id[\s\S]*?setPendingPartIds/.test(app)
   && /handleAddToRepo[\s\S]*?setPendingPartIds/.test(app));
-ok('Add to Repo wires commit', /handleAddToRepo/.test(app) && /onAddToRepo/.test(feed)
-  && /commitPartToRepo/.test(app) && /Add to Repo/.test(feed));
+ok('part Save wires add-to-repo commit', /handleAddToRepo/.test(app) && /onAddToRepo/.test(feed)
+  && /commitPartToRepo/.test(app) && /data-part-add-to-repo/.test(feed));
 const srcFiles = ['gitWorkspace', 'githubAdapterInterface', 'mockGithubAdapter', 'vaultLayout', 'surfJson', 'vault']
   .map((f) => readFileSync(new URL(`../../src/utils/git/${f}.js`, import.meta.url), 'utf8')).join('\n');
 ok('no network or token use in G2', !/\bfetch\(|api\.github\.com|XMLHttpRequest|Authorization:\s*['"]Bearer/.test(srcFiles));
