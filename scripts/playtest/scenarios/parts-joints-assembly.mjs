@@ -120,20 +120,42 @@ export async function run(ctx) {
     pinPartId = parts.result?.activeId
       || parts.result?.parts?.find((p) => p.name === 'Pin')?.id
       || parts.result?.parts?.[1]?.id;
+    const tree = await agentCall(page, 'feature_tree', {});
+    const kinds = (tree.result?.features || []).map((row) => row.kind);
+    const chips = page.locator('[data-cad-feature-strip="desktop"] [data-feature-chip]');
+    let ribbon = [];
+    try {
+      await page.locator('[data-cad-feature-strip="desktop"] [data-feature-chip="cube"]').first().waitFor({ timeout: 8000 });
+      ribbon = await chips.evaluateAll((els) => els.map((el) => el.getAttribute('data-feature-chip') || ''));
+    } catch { /* assert below */ }
     return {
-      ok: env.ok === true && n >= 2 && !!pinPartId,
+      ok: env.ok === true && n >= 2 && !!pinPartId && kinds.includes('cube') && ribbon.includes('cube'),
       call: 'create_part',
       args: { name: 'Pin' },
       envelope: env,
-      detail: `parts=${n}`,
+      detail: `parts=${n} tree=${kinds.join(',')} ribbon=${ribbon.join(',')}`,
     };
   });
 
   await runner.runStep('insert_cube pin', async () => {
     const inserted = await agentCall(page, 'insert_cube', { width: 12, depth: 12, height: 20 });
     const env = await agentCall(page, 'run', {});
-    const ok = inserted.ok === true && env.ok === true && env.result?.ok === true;
-    return { ok, call: 'insert_cube', args: {}, envelope: env };
+    const tree = await agentCall(page, 'feature_tree', {});
+    const kinds = (tree.result?.features || []).map((row) => row.kind);
+    const cubeChips = page.locator('[data-cad-feature-strip="desktop"] [data-feature-chip="cube"]');
+    const chips = page.locator('[data-cad-feature-strip="desktop"] [data-feature-chip]');
+    let ribbon = [];
+    try {
+      await cubeChips.nth(1).waitFor({ timeout: 8000 });
+      ribbon = await chips.evaluateAll((els) => els.map((el) => el.getAttribute('data-feature-chip') || ''));
+    } catch { /* assert below */ }
+    const cubeCount = ribbon.filter((kind) => kind === 'cube').length;
+    const ok = inserted.ok === true
+      && env.ok === true
+      && env.result?.ok === true
+      && kinds.filter((kind) => kind === 'cube').length >= 2
+      && cubeCount >= 2;
+    return { ok, call: 'insert_cube', args: {}, envelope: env, detail: `tree=${kinds.join(',')} ribbon=${ribbon.join(',')}` };
   });
 
   let baseTopKey = null;

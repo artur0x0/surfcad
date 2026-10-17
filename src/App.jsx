@@ -130,6 +130,7 @@ import {
   redoPartHistory,
   undoPartHistory,
 } from './utils/partHistory';
+import { featureRibbonScript } from './utils/featureRibbonScript';
 import { fillAgentHost } from './agent/host';
 import {
   agentGitConsentInteractive,
@@ -438,6 +439,16 @@ const App = () => {
   /** CAD pick target. Monaco stays on assembly.activeId until a sync. */
   const cadPartIdRef = useRef(null);
   const [cadPartId, setCadPartId] = useState(null);
+  const rememberCadPart = (id) => {
+    const next = id || null;
+    cadPartIdRef.current = next;
+    setCadPartId(next);
+  };
+  /** Feature ribbon reads cadPartId + currentScript; keep both on the part. */
+  const revealPartOnRibbon = (partId, script) => {
+    if (partId) rememberCadPart(partId);
+    if (typeof script === 'string') setCurrentScript(script);
+  };
   const featureSessionRef = useRef(false);
   const [featureSession, setFeatureSession] = useState(false);
   /** Sketch chips after Select plane. Null keeps the part strip. */
@@ -2362,6 +2373,7 @@ const App = () => {
     setCurrentFilename(active.name);
     const picked = scriptForRow(saved, opened, active.id);
     focusPartHistory(active.id, picked.ok ? picked.script : '');
+    revealPartOnRibbon(active.id, picked.ok ? picked.script : '');
     await applyAssemblyOpenHold();
     const report = typeof progress === 'function' ? progress : null;
     assemblyOpenProgressRef.current = report;
@@ -2396,12 +2408,6 @@ const App = () => {
     }
   };
   finishOpenedPartRef.current = finishOpenedPart;
-
-  const rememberCadPart = (id) => {
-    const next = id || null;
-    cadPartIdRef.current = next;
-    setCadPartId(next);
-  };
 
   const meshForPart = (id) => {
     const run = partRunsRef.current?.[id];
@@ -3610,6 +3616,7 @@ const App = () => {
       focusPartHistory(id, got.content);
       suppressPartSaveRef.current = false;
       setCurrentFilename(id.split('/').pop() || id);
+      revealPartOnRibbon(id, got.content);
       codeEditorRef.current?.loadContent(got.content, id, false);
     } catch (err) {
       setUploadError(err.message || 'Could not add part');
@@ -4130,6 +4137,7 @@ const App = () => {
         focusPartHistory(focus.id, scripts[focus.id] || '');
         suppressPartSaveRef.current = false;
         setCurrentFilename(focus.name);
+        revealPartOnRibbon(focus.id, scripts[focus.id] || '');
         codeEditorRef.current?.loadContent(scripts[focus.id] || '', focus.id, false);
       }
       return { status: 'inserted', count: planned.additions.length, sourceName: planned.sourceName };
@@ -4189,6 +4197,7 @@ const App = () => {
         suppressPartSaveRef.current = false;
         storeRollbackAnchor(String(id), undefined);
         setCurrentFilename(id.split('/').pop() || id);
+        revealPartOnRibbon(id, content);
         codeEditorRef.current?.loadContent(content, id, false);
         await enqueueGit(gitVaultRef.current.repo, {
           op: 'save',
@@ -4207,6 +4216,7 @@ const App = () => {
         suppressPartSaveRef.current = false;
         storeRollbackAnchor(String(id), undefined);
         setCurrentFilename(id.split('/').pop() || id);
+        revealPartOnRibbon(id, content);
         codeEditorRef.current?.loadContent(content, id, false);
       }
       return { status: 'opened', path: id, mode: plan.mode };
@@ -5486,6 +5496,7 @@ const App = () => {
       suppressPartSaveRef.current = false;
       const row = appliedDoc.parts.find((p) => p.id === (appliedDoc.activeId || id)) || part;
       setCurrentFilename(row.name);
+      revealPartOnRibbon(row.id, appliedScripts[row.id] ?? starter);
       codeEditorRef.current?.loadContent(appliedScripts[row.id] ?? starter, row.name, false);
       saveEditorDraft({ script: appliedScripts[row.id] ?? starter, filename: row.name, partId: row.id });
     };
@@ -7946,7 +7957,9 @@ const App = () => {
     setEditor(src) {
       const text = typeof src === 'string' ? src : '';
       codeEditorRef.current?.setTextOnly?.(text);
-      setCurrentScript(text);
+      const id = assemblyRef.current?.activeId;
+      if (id) revealPartOnRibbon(id, text);
+      else setCurrentScript(text);
     },
     readHistory() {
       const id = appModeRef.current === 'game'
@@ -8329,9 +8342,14 @@ const App = () => {
   const openCadGitBranches = () => {
     partFeedRef.current?.openBranchPane?.();
   };
-  const stripScript = (
-    cadHighlightId && assemblyDoc && cadHighlightId !== assemblyDoc.activeId
-  ) ? (partScripts[cadHighlightId] || '') : currentScript;
+  const stripScript = featureRibbonScript({
+    cadPartId,
+    activeId: assemblyDoc?.activeId ?? null,
+    currentScript,
+    partScripts,
+    sketchOpen,
+    showJoints,
+  });
   const stripPartKey = cadHighlightId ? String(cadHighlightId) : '__cad__';
   const editorPartKey = assemblyDoc?.activeId ? String(assemblyDoc.activeId) : '__cad__';
   const anchorOf = (key) => (
@@ -9827,7 +9845,7 @@ const App = () => {
                   >
                     <FeatureStrip
                       orientation="horizontal"
-                      script={sketchOpen || showJoints ? '' : stripScript}
+                      script={stripScript}
                       joints={sketchOpen || sheetRibbonOpen ? null : liveJointChips}
                       entities={sketchOpen ? sketchStrip.entities : null}
                       bodyCount={stripBodyCount}
@@ -10153,7 +10171,7 @@ const App = () => {
             >
               <FeatureStrip
                 orientation="horizontal"
-                script={sketchOpen || showJoints ? '' : stripScript}
+                script={stripScript}
                 joints={sketchOpen || sheetRibbonOpen ? null : liveJointChips}
                 entities={sketchOpen ? sketchStrip.entities : null}
                 bodyCount={stripBodyCount}
