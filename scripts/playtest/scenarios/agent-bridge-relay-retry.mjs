@@ -51,7 +51,9 @@ export async function run(ctx) {
   await installApiMocks(page);
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(
+    /* eslint-disable no-undef */
     () => typeof window.surfcad?.call === 'function',
+    /* eslint-enable no-undef */
     { timeout: 120000 },
   );
 
