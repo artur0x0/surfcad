@@ -410,13 +410,3 @@ textarea {
     transition: none !important;
   }
 }
-
-/* Cookie consent strip: clear the fixed footer link and the mobile home pill. */
-.cookie-consent-anchor {
-  bottom: calc(max(0.35rem, env(safe-area-inset-bottom, 0px)) + 1.75rem);
-}
-@media (max-width: 639px) {
-  :root:has([data-mobile-stage-home-indicator]) .cookie-consent-anchor {
-    bottom: calc(30px + max(8px, env(safe-area-inset-bottom, 0px)) + 0.35rem);
-  }
-}

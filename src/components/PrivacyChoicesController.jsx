@@ -11,9 +11,12 @@ import { applyAnalyticsConsentChoice } from '../utils/applyAnalyticsConsentChoic
 import PrivacyChoicesDialog from './PrivacyChoicesDialog';
 
 /**
- * Footer link + dialog. Works signed out (local only) or signed in (syncs server).
+ * Footer link or profile menu item + dialog. Works signed out (local only) or signed in (syncs server).
  */
-export default function PrivacyChoicesController({ linkClassName = '' }) {
+export default function PrivacyChoicesController({
+  linkClassName = '',
+  variant = 'link',
+}) {
   const { isAuthenticated, user } = useAuth();
   const [open, setOpen] = useState(false);
   const [analyticsAllowed, setAnalyticsAllowed] = useState(() => readStoredRecord().analytics);
@@ -39,17 +42,31 @@ export default function PrivacyChoicesController({ linkClassName = '' }) {
   }, [isAuthenticated]);
 
   const effectiveOn = getAnalyticsConsent();
+  const openDialog = () => setOpen(true);
+
+  const trigger = variant === 'profileMenu' ? (
+    <button
+      type="button"
+      data-profile-privacy-choices=""
+      className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
+      onClick={openDialog}
+    >
+      Privacy choices
+    </button>
+  ) : (
+    <button
+      type="button"
+      className={linkClassName}
+      data-privacy-choices-link=""
+      onClick={openDialog}
+    >
+      Privacy choices
+    </button>
+  );
 
   return (
     <>
-      <button
-        type="button"
-        className={linkClassName}
-        data-privacy-choices-link=""
-        onClick={() => setOpen(true)}
-      >
-        Cookie settings
-      </button>
+      {trigger}
       <PrivacyChoicesDialog
         open={open}
         onClose={() => setOpen(false)}
