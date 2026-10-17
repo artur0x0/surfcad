@@ -24,10 +24,11 @@ import {
  *   onState?: (state: TabPairState) => void,
  *   onIssue?: (issue: AgentBridgeConnectionIssue) => void,
  *   pageSecure?: boolean,
+ *   suppressMissingRelayIssue?: boolean,
  * }} opts
  */
 export function createAgentBridgeTabConnection(opts) {
-  const { url, token, call, onState, onIssue, pageSecure } = opts;
+  const { url, token, call, onState, onIssue, pageSecure, suppressMissingRelayIssue } = opts;
   /** @type {WebSocket | null} */
   let ws = null;
   let state = 'idle';
@@ -40,6 +41,7 @@ export function createAgentBridgeTabConnection(opts) {
   }
 
   function setIssue(issue) {
+    if (suppressMissingRelayIssue && issue === 'relay_missing') return;
     onIssue?.(issue);
   }
 

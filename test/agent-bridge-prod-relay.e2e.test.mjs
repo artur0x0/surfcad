@@ -79,9 +79,9 @@ async function runBrowserE2E(t, browserType, executablePath) {
     );
 
     await page.locator('[data-profile-chip]').first().click();
-    await page.click('[data-ui-action="data-agent-bridge-toggle"]');
-    await page.click('[data-ui-action="data-agent-bridge-start"]');
-    await page.waitForSelector('[data-agent-bridge-code]', { state: 'visible' });
+    await page.click('[data-ui-action="data-agent-bridge-connect"]');
+    await page.waitForSelector('[data-agent-bridge-waiting-relay]', { state: 'hidden', timeout: 15000 }).catch(() => {});
+    await page.waitForSelector('[data-agent-bridge-code]', { state: 'visible', timeout: 15000 });
     const token = (await page.locator('[data-agent-bridge-code]').innerText()).trim();
 
     const transport = new StdioClientTransport({

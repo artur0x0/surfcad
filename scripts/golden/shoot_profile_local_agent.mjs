@@ -64,7 +64,7 @@ attachConsentPresetToBrowser(browser);
   await page.waitForFunction(() => document.querySelector('#root')?.children.length > 0, null, { timeout: 20000 }).catch(() => {});
   await page.waitForTimeout(5000);
   await page.locator('[data-profile-chip]').first().click();
-  await page.click('[data-ui-action="data-agent-bridge-toggle"]');
+  await page.click('[data-ui-action="data-agent-bridge-connect"]');
   await page.waitForSelector('[data-agent-bridge-panel]', { state: 'visible', timeout: 10000 });
   const panel = page.locator('[data-agent-bridge-panel]');
   await panel.screenshot({ path: join(OUT, 'profile-local-agent-section.png') });
