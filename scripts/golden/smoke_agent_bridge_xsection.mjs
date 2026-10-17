@@ -245,8 +245,8 @@ await agentCall(page, 'cross_section_expand', { open: false });
 await agentCall(page, 'cross_section_toggle', { enabled: false });
 
 await page.locator('[data-profile-chip]').first().click();
-await page.click('[data-ui-action="data-agent-bridge-toggle"]');
-await page.click('[data-ui-action="data-agent-bridge-start"]');
+await page.click('[data-ui-action="data-agent-bridge-connect"]');
+await page.waitForSelector('[data-agent-bridge-waiting-relay]', { state: 'hidden', timeout: 15000 }).catch(() => {});
 await page.waitForSelector('[data-agent-bridge-code]', { state: 'visible', timeout: 15000 });
 const code = (await page.locator('[data-agent-bridge-code]').innerText()).trim();
 check('pairing code length', code.length === 6, code);
