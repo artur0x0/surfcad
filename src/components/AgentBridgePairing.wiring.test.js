@@ -24,13 +24,16 @@ test('the body-portal Allow/Deny parks under the chip on narrow viewports', () =
   assert.match(popup, /data-agent-bridge-approval-portal=\{embedded \? undefined : ''\}/);
 });
 
-test('Allow/Deny copy uses chrome text tokens, not black on dark surface', () => {
+test('Allow/Deny copy uses shared surface/text classes, not black on dark surface', () => {
   const popup = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), 'AgentBridgeApprovalPopup.jsx'),
     'utf8',
   );
-  assert.match(popup, /<p className="text-\[11px\] text-chrome-text px-1 max-w-\[9rem\]">/);
-  assert.match(popup, /text-chrome-secondary hover:bg-gray-600 hover:text-chrome-text/);
+  assert.match(popup, /text-ui-xs text-on-dark/);
+  assert.match(popup, /surface-glass font-ui/);
+  assert.match(popup, /surface-success text-on-dark/);
+  assert.match(popup, /surface-quiet text-on-dark/);
+  assert.doesNotMatch(popup, /hover:bg-emerald-500|bg-emerald-/);
   assert.doesNotMatch(popup, /text-chrome-text-secondary/);
   assert.doesNotMatch(popup, /text-black|text-gray-900|text-gray-950|#000\b/);
   assert.doesNotMatch(SRC, /text-chrome-text-secondary/);

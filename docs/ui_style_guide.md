@@ -32,9 +32,7 @@ classes or `#000` / `#111`-style colors on the same element as a dark
 brand surface. Allow a true exception with `ui-contrast-allow` on that
 line or the line above.
 
-Do not edit `src/fea/**` or `packages/surfcad-fea/**` for style. The
-agent pairing Allow/Deny popup (`AgentBridgeApprovalPopup.jsx`) is owned
-by a separate PR — do not restyle it here.
+Do not edit `src/fea/**` or `packages/surfcad-fea/**` for style.
 
 ## Colors
 
@@ -51,6 +49,8 @@ invent a palette.
 | `--chrome-text` | `243 244 246` | `#f3f4f6` | Text on dark chrome |
 | `--chrome-text-secondary` | `156 163 175` | `#9ca3af` | Muted text on dark chrome |
 | `--chrome-divider` / `--chrome-border` | `55 65 81` | `#374151` | Hairlines |
+| `--chrome-success` | `4 120 87` | `#047857` | Allow / positive controls; `text-on-dark` ≥4.5:1 |
+| `--chrome-success-hover` | `5 150 105` | `#059669` | Allow hover; `text-on-dark` ≥3:1 (icons) |
 
 Tailwind `chrome-*` utilities (`bg-chrome-surface/80`) read those
 channels. Prefer the semantic classes below in new markup.
@@ -92,6 +92,8 @@ Defined in `src/index.css`. Keep the set small.
 | `text-muted-on-dark` | `--chrome-text-secondary` | dark surfaces |
 | `text-muted-on-light` | `--brand-grey` | light surfaces |
 | `font-ui` | system UI stack | every chrome surface |
+| `surface-success` | `--chrome-success` (hover `--chrome-success-hover`) | `text-on-dark`; Allow / positive icon buttons |
+| `surface-quiet` | `--chrome-border` (hover `--chrome-background`) | `text-on-dark`; Deny / secondary icon buttons |
 
 Existing frosted overlays (do not replace these with a flat slab):
 

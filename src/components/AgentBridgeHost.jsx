@@ -9,8 +9,9 @@ const AgentBridgeHostContext = createContext({
 });
 
 /**
- * Live pairing socket + Allow/Deny live here, not on ProfileChip, so a
- * desktop/mobile remount at 768px cannot steal the tabKey or hide the portal.
+ * Live pairing socket + Allow/Deny live here, not on ProfileChip. App mounts
+ * this once above the isMobile split so a 768px resize cannot steal the tabKey
+ * or hide the portal.
  */
 export function useAgentBridgeHost() {
   return useContext(AgentBridgeHostContext);

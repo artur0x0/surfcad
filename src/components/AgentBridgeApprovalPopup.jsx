@@ -34,19 +34,19 @@ export default function AgentBridgeApprovalPopup({ open, onAllow, onDeny, embedd
     <div
       role="dialog"
       aria-label="Approve local agent connection"
-      className={`${positionClass} flex items-center gap-2 rounded-full border border-chrome-border bg-chrome-surface/95 px-2 py-2 shadow-lg backdrop-blur-sm`}
+      className={`${positionClass} flex items-center gap-2 rounded-full border border-chrome-border surface-glass font-ui px-2 py-2 shadow-lg`}
       data-agent-bridge-approval=""
       data-agent-bridge-approval-portal={embedded ? undefined : ''}
       data-agent-bridge-approval-anchor={anchor}
       onPointerDown={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >
-      <p className="text-[11px] text-chrome-text px-1 max-w-[9rem]">
+      <p className="text-ui-xs text-on-dark px-1 max-w-[9rem]">
         Allow this agent to control SurfCAD?
       </p>
       <button
         type="button"
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+        className="flex h-9 w-9 items-center justify-center rounded-full surface-success text-on-dark"
         aria-label="Allow connection"
         onClick={onAllow}
         data-ui-action="data-agent-bridge-approve"
@@ -55,7 +55,7 @@ export default function AgentBridgeApprovalPopup({ open, onAllow, onDeny, embedd
       </button>
       <button
         type="button"
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-chrome-border text-chrome-secondary hover:bg-gray-600 hover:text-chrome-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-chrome-text"
+        className="flex h-9 w-9 items-center justify-center rounded-full surface-quiet text-on-dark"
         aria-label="Deny connection"
         onClick={onDeny}
         data-ui-action="data-agent-bridge-reject"

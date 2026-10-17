@@ -11,4 +11,4 @@ Follow [docs/ui_style_guide.md](docs/ui_style_guide.md).
 - WCAG AA: 4.5:1 body, 3:1 large text and icons.
 - User-facing copy says Chrome, never Microsoft Edge.
 - New color: token on `:root` first, then a class.
-- Do not restyle `AgentBridgeApprovalPopup.jsx` (pairing Allow/Deny) or `src/fea/**`.
+- Do not restyle `src/fea/**`.

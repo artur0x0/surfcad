@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAgentBridgeRelayHub, redactToken } from '../src/bridge/relayHub.mjs';
+import { readFileSync } from 'node:fs';
+import {
+  createAgentBridgeRelayHub,
+  redactToken,
+  DEFAULT_TAB_RESERVATION_TTL_MS,
+} from '../src/bridge/relayHub.mjs';
 import { defaultRelayLog } from '../src/bridge/relayServer.mjs';
 import { PAIR_MSG } from '../src/relayMessages.mjs';
 
@@ -222,6 +227,38 @@ test('same-tabKey reconnect with the matching resume still auto-pairs', () => {
   assert.equal(tab2.last(PAIR_MSG.PAIRED).resume, true);
   assert.equal(peer2.last(PAIR_MSG.PAIRED).resumeKey, RESUME);
   assert.ok(tab2.sent.every((m) => m.resume !== RESUME));
+});
+
+test('expired reservations leave hasTab and can be reused', (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setInterval'], now: 0 });
+  const hub = createAgentBridgeRelayHub({
+    reservationTtlMs: 1000,
+    reservationSweepMs: 500,
+  });
+  t.after(() => hub.dispose());
+  const { tab } = pairedTrio(hub);
+  tab.emit('close', 1006, '');
+  assert.equal(hub.hasTab(TOKEN), true, 'drop keeps a reservation inside the TTL');
+
+  t.mock.timers.tick(1000);
+  assert.equal(hub.hasTab(TOKEN), true, 'TTL is exclusive (> ttl, not >=)');
+
+  t.mock.timers.tick(1);
+  assert.equal(hub.hasTab(TOKEN), false, 'hasTab and liveTab respect expiry');
+  assert.equal(hub.isPaired(TOKEN), false);
+
+  const replacement = fakeSocket();
+  hub.attachSocket(replacement);
+  replacement.receive({ type: PAIR_MSG.REGISTER_TAB, token: TOKEN, tabKey: 'other-key-0123456789abcdef' });
+  assert.equal(replacement.last(PAIR_MSG.ERROR), undefined, 'expired code can be advertised by a new tabKey');
+  assert.equal(hub.hasTab(TOKEN), true);
+});
+
+test('reservation sweep is unrefed so a quiet hub does not keep the process alive', () => {
+  assert.equal(DEFAULT_TAB_RESERVATION_TTL_MS, 24 * 60 * 60 * 1000);
+  const src = readFileSync(new URL('../src/bridge/relayHub.mjs', import.meta.url), 'utf8');
+  assert.match(src, /setInterval\(sweepExpiredReservations/);
+  assert.match(src, /sweepTimer\?\.unref/);
 });
 
 test('origin and loopback checks still refuse before any pairing', () => {

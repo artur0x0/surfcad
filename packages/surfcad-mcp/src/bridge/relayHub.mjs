@@ -24,6 +24,8 @@ const SECRET_RE = /^[A-Za-z0-9_-]{16,128}$/;
 
 /** How long a dropped tab keeps its pairing code so a squatter cannot take it. */
 export const DEFAULT_TAB_RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
+/** How often expired reservations are swept from the Map (unref'd timer). */
+export const DEFAULT_TAB_RESERVATION_SWEEP_MS = 60 * 1000;
 
 function sendJson(socket, payload) {
   try {
@@ -75,12 +77,17 @@ function refuse(socket, code, message) {
 }
 
 /**
- * @param {{ onLog?: (line: string, level: RelayLogLevel) => void }} [opts]
+ * @param {{
+ *   onLog?: (line: string, level: RelayLogLevel) => void,
+ *   reservationTtlMs?: number,
+ *   reservationSweepMs?: number,
+ * }} [opts]
  */
 export function createAgentBridgeRelayHub(opts = {}) {
   /** @param {string} line @param {RelayLogLevel} [level] */
   const log = (line, level = 'info') => { opts.onLog?.(line, level); };
   const reservationTtlMs = opts.reservationTtlMs ?? DEFAULT_TAB_RESERVATION_TTL_MS;
+  const reservationSweepMs = opts.reservationSweepMs ?? DEFAULT_TAB_RESERVATION_SWEEP_MS;
 
   /**
    * @type {Map<string, {
@@ -105,10 +112,6 @@ export function createAgentBridgeRelayHub(opts = {}) {
     try { peer.close(); } catch { /* gone */ }
   }
 
-  /**
-   * @param {string} token
-   * @param {string} reason
-   */
   function reservationExpired(tab) {
     return tab.socket == null
       && tab.reservedAt != null
@@ -124,6 +127,17 @@ export function createAgentBridgeRelayHub(opts = {}) {
     }
     return tab;
   }
+
+  function sweepExpiredReservations() {
+    for (const [token, tab] of tabsByToken) {
+      if (reservationExpired(tab)) tabsByToken.delete(token);
+    }
+  }
+
+  const sweepTimer = reservationSweepMs > 0
+    ? setInterval(sweepExpiredReservations, reservationSweepMs)
+    : null;
+  if (typeof sweepTimer?.unref === 'function') sweepTimer.unref();
 
   function emptyEntry(token, extra = {}) {
     return {
@@ -414,24 +428,29 @@ export function createAgentBridgeRelayHub(opts = {}) {
   }
 
   function disconnectToken(token) {
-    const tab = tabsByToken.get(token);
+    const tab = liveTab(token);
     if (!tab) return;
     unpair(token, 'tab_disconnect');
     try { tab.socket.close(); } catch { /* gone */ }
     dropTab(token, 'disconnect_requested');
   }
 
+  function dispose() {
+    if (sweepTimer) clearInterval(sweepTimer);
+  }
+
   return {
     attachSocket,
     disconnectToken,
     heartbeat,
+    dispose,
     /** @param {string} token */
     hasTab(token) {
-      return tabsByToken.has(token);
+      return liveTab(token) != null;
     },
     /** @param {string} token */
     isPaired(token) {
-      return tabsByToken.get(token)?.pairedPeer != null;
+      return liveTab(token)?.pairedPeer != null;
     },
     PAIR_MSG,
   };

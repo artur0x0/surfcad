@@ -9620,6 +9620,7 @@ const App = () => {
     />
   ) : null;
 
+  let shell;
   if (isMobile) {
     // Keep h-dvh while the keyboard is closed so Monaco can take a real
     // user-gesture focus (iOS often refuses keyboard inside a fixed+overflow
@@ -9785,9 +9786,8 @@ const App = () => {
               </div>
     );
 
-    return (
+    shell = (
       <CartChromeProvider value={cartChrome}>
-        <AgentBridgeHost enabled={agentBridgeLive}>
         <AgentVisibleLayer agentHostRef={agentHostRef} />
         <div
           ref={splitShellRef}
@@ -10082,14 +10082,11 @@ const App = () => {
             }}
           />
         )}
-        </AgentBridgeHost>
       </CartChromeProvider>
     );
-  }
-
-  return (
-    <CartChromeProvider value={cartChrome}>
-      <AgentBridgeHost enabled={agentBridgeLive}>
+  } else {
+    shell = (
+      <CartChromeProvider value={cartChrome}>
       <AgentVisibleLayer agentHostRef={agentHostRef} />
       <div className="flex h-dvh bg-chrome-surface">
         {appMode !== 'game' && (
@@ -10460,8 +10457,16 @@ const App = () => {
           }}
         />
       )}
-      </AgentBridgeHost>
-    </CartChromeProvider>
+      </CartChromeProvider>
+    );
+  }
+
+  // One host above the isMobile split. A copy in each shell remounts at 768px
+  // and would drop the relay socket and mint a new tabKey.
+  return (
+    <AgentBridgeHost enabled={agentBridgeLive}>
+      {shell}
+    </AgentBridgeHost>
   );
 };
 

@@ -127,11 +127,11 @@ async function assertApprovalClearsProfileChrome(page, { width } = {}) {
     (el) => getComputedStyle(el).color,
     /* eslint-enable no-undef */
   );
-  // chrome.text from #461: gray-100 rgb(243, 244, 246) — never inherit black on dark blue.
+  // text-on-dark / --chrome-text: gray-100 rgb(243, 244, 246) — never inherit black on dark blue.
   assert.equal(
     promptColor,
     'rgb(243, 244, 246)',
-    `Allow/Deny prompt must use text-chrome-text, got ${promptColor}`,
+    `Allow/Deny prompt must use text-on-dark, got ${promptColor}`,
   );
   const shotDir = process.env.WALKTHROUGH_SHOT_DIR;
   if (shotDir) {

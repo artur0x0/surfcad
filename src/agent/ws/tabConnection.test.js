@@ -98,6 +98,7 @@ test('registers with a stable tabKey and hands out a resume key on Allow', () =>
   const reg = ws.last(PAIR_MSG.REGISTER_TAB);
   assert.equal(reg.token, 'ABC234');
   assert.match(reg.tabKey, /^[0-9a-f]{36}$/);
+  assert.equal(ctx.conn.getTabKey(), reg.tabKey);
   assert.match(resumeKey, /^[0-9a-f]{36}$/);
   assert.notEqual(resumeKey, reg.tabKey);
   assert.equal(ctx.conn.getLink(), 'connected');
