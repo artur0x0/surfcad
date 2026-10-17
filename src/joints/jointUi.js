@@ -695,14 +695,42 @@ export function assemblyHistoryCanRedo(history) {
   return !!history && history.head < (history.commits?.length || 0) - 1;
 }
 
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value).filter((k) => value[k] !== undefined).sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(value[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+/** True when two documents have the same joints and placements. */
+export function assemblySnapshotsEqual(beforeDoc, afterDoc) {
+  return canonicalJson(snapshotOf(beforeDoc)) === canonicalJson(snapshotOf(afterDoc));
+}
+
 /**
  * The tip becomes the live document, then the written document is one step.
  * A part-run solve that moved placements is the "before", not its own step.
+ * A write that changed no joint or placement is not a step. If live has
+ * drifted from the tip, the tip is replaced with that live snapshot so
+ * undo/redo does not restore a stale pose. Redo is kept when the tip
+ * already matches.
  */
 export function pushAssemblyHistory(history, beforeDoc, afterDoc) {
   const base = history?.commits ? history : seedAssemblyHistory(beforeDoc);
+  const beforeSnap = snapshotOf(beforeDoc);
+  if (assemblySnapshotsEqual(beforeDoc, afterDoc)) {
+    const tip = base.commits[base.head];
+    if (canonicalJson(tip) === canonicalJson(beforeSnap)) {
+      return { commits: base.commits, head: base.head };
+    }
+    const commits = base.commits.slice();
+    commits[base.head] = beforeSnap;
+    return { commits, head: base.head };
+  }
   const commits = base.commits.slice(0, base.head + 1);
-  commits[commits.length - 1] = snapshotOf(beforeDoc);
+  commits[commits.length - 1] = beforeSnap;
   commits.push(snapshotOf(afterDoc));
   return { commits, head: commits.length - 1 };
 }

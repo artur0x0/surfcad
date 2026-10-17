@@ -187,7 +187,7 @@ export const jointEditCommand = Object.freeze({
     type: 'object',
     additionalProperties: false,
     properties: {
-      joint_id: { type: 'string', description: 'Joint id to edit; omit to edit the open card target' },
+      joint_id: { type: 'string', description: 'Joint id from the assembly strip; opens that joint for editing (no joint_select needed). Omit to patch the joint already open.' },
       ...JOINT_PARAM_PROPERTIES,
     },
   }),

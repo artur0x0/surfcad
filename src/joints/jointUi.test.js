@@ -29,7 +29,9 @@ import {
   cadStripsShowJoints,
   shouldArmJointPick,
   nextJointName,
+  assemblySnapshotsEqual,
   pushAssemblyHistory,
+  redoJointStrip,
   seedAssemblyHistory,
   stripUndoLabel,
   stripUndoTarget,
@@ -581,4 +583,91 @@ test('Move Body by 10 mm is the only script change and breaks the joint', () => 
   assert.deepEqual(refreshed.doc.parts[1].placement.t, seed);
   const restored = applyAssemblySnapshot(doc, seedAssemblyHistory(doc).commits[0]);
   assert.equal(restored.joints[0].id, J);
+});
+
+test('a write that changes no joint or placement is not a history step', () => {
+  const fixed = [{ id: J, name: 'Fixed 1', type: 'fixed', a: { part: A } }];
+  const before = docWith(undefined);
+  const after = docWith(fixed);
+  const once = pushAssemblyHistory(seedAssemblyHistory(before), before, after);
+  assert.equal(once.commits.length, 2);
+  const again = pushAssemblyHistory(once, after, docWith(JSON.parse(JSON.stringify(fixed))));
+  assert.equal(again.commits.length, 2);
+  assert.equal(again.head, 1);
+  assert.equal(again.commits, once.commits);
+
+  const undone = undoJointStrip({ history: once, doc: after, scripts: {} });
+  assert.equal(undone.history.head, 0);
+  const noop = pushAssemblyHistory(undone.history, undone.doc, undone.doc);
+  assert.equal(noop.commits.length, 2, 'a no-op write keeps redo');
+  assert.equal(noop.head, 0);
+  assert.equal(redoJointStrip({ history: noop, doc: undone.doc, scripts: {} }).changed, true);
+});
+
+test('a no-op after live drift replaces a stale tip so undo does not break a solved joint', () => {
+  const empty = docWith(undefined);
+  const joint = { id: J, name: 'Fixed 1', type: 'fixed', a: { part: A } };
+  const written = docWith([joint]);
+  const solved = {
+    ...written,
+    parts: written.parts.map((part) => (
+      part.surfId === B
+        ? { ...part, placement: { t: [0, 0, 8], q: [0, 0, 0, 1] } }
+        : part
+    )),
+  };
+  const history = pushAssemblyHistory(seedAssemblyHistory(empty), empty, written);
+  assert.equal(history.commits.length, 2);
+
+  const afterNoop = pushAssemblyHistory(history, solved, solved);
+  assert.equal(afterNoop.commits.length, 2, 'no-op does not add a step');
+  assert.equal(afterNoop.head, 1);
+
+  const undone = undoJointStrip({ history: afterNoop, doc: solved, scripts: {} });
+  assert.equal(undone.changed, true);
+  assert.equal(undone.doc.joints, undefined);
+
+  const redone = redoJointStrip({ history: undone.history, doc: undone.doc, scripts: {} });
+  assert.equal(redone.changed, true);
+  assert.equal(redone.doc.joints[0].id, J);
+  assert.deepEqual(
+    redone.doc.parts.find((part) => part.surfId === B).position,
+    [0, 0, 8],
+    'redo restores the solved pose, not the stale tip',
+  );
+});
+
+test('create_part still records a history step', () => {
+  const C = '2026-10-10-03-00-00-0004-dddd';
+  const before = docWith(undefined);
+  const after = {
+    ...before,
+    activeId: 'c.js',
+    parts: [
+      ...before.parts,
+      {
+        id: 'c.js',
+        name: 'Pin',
+        visible: true,
+        order: 2,
+        surfId: C,
+        position: [40, 0, 0],
+        placement: { t: [40, 0, 0], q: [0, 0, 0, 1] },
+      },
+    ],
+  };
+  const history = pushAssemblyHistory(seedAssemblyHistory(before), before, after);
+  assert.equal(history.commits.length, 2);
+  assert.equal(history.head, 1);
+  assert.equal(assemblySnapshotsEqual(before, after), false);
+});
+
+test('snapshot equality ignores key order and reads joints and placements', () => {
+  const a = docWith([{ id: J, name: 'Fixed 1', type: 'fixed', a: { part: A } }]);
+  const b = docWith([{ type: 'fixed', a: { part: A }, name: 'Fixed 1', id: J }]);
+  assert.equal(assemblySnapshotsEqual(a, b), true);
+  const renamed = docWith([{ id: J, name: 'Seat', type: 'fixed', a: { part: A } }]);
+  assert.equal(assemblySnapshotsEqual(a, renamed), false);
+  const moved = { ...a, parts: a.parts.map((part) => (part.surfId === B ? { ...part, placement: { t: [0, 0, 6], q: [0, 0, 0, 1] } } : part)) };
+  assert.equal(assemblySnapshotsEqual(a, moved), false);
 });

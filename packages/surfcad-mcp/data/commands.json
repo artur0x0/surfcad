@@ -10611,7 +10611,7 @@
     },
     {
       "name": "joint_commit",
-      "description": "Confirm the joint card and record assembly undo.",
+      "description": "Confirm the joint card and record one assembly undo step. A refused commit, or one that changes nothing (unchanged: true), records no step.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -10622,6 +10622,8 @@
         "additionalProperties": true
       },
       "errors": [
+        "no_joint_card",
+        "commit_failed",
         "edit_failed",
         "internal"
       ],
@@ -10695,14 +10697,14 @@
     },
     {
       "name": "joint_edit",
-      "description": "Open or patch a joint on the strip (same fields as joint_set_params).",
+      "description": "Open a joint by joint_id and patch it (same fields as joint_set_params); joint_commit writes it. A refused edit changes nothing.",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "joint_id": {
             "type": "string",
-            "description": "Joint id to edit; omit to edit the open card target"
+            "description": "Joint id from the assembly strip; opens that joint for editing (no joint_select needed). Omit to patch the joint already open."
           },
           "type": {
             "type": "string",
@@ -10741,7 +10743,9 @@
       },
       "errors": [
         "bad_args",
+        "no_assembly",
         "unknown_joint",
+        "no_joint_edit",
         "edit_failed",
         "internal"
       ],

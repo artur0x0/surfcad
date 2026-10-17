@@ -579,9 +579,9 @@ export const COMMAND_META = {
     mutates: false,
   },
   joint_commit: {
-    description: 'Confirm the joint card and record assembly undo.',
+    description: 'Confirm the joint card and record one assembly undo step. A refused commit, or one that changes nothing (unchanged: true), records no step.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['edit_failed', 'internal'],
+    errors: ['no_joint_card', 'commit_failed', 'edit_failed', 'internal'],
     mutates: true,
   },
   joint_cancel: {
@@ -597,9 +597,9 @@ export const COMMAND_META = {
     mutates: false,
   },
   joint_edit: {
-    description: 'Open or patch a joint on the strip (same fields as joint_set_params).',
+    description: 'Open a joint by joint_id and patch it (same fields as joint_set_params); joint_commit writes it. A refused edit changes nothing.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'unknown_joint', 'edit_failed', 'internal'],
+    errors: ['bad_args', 'no_assembly', 'unknown_joint', 'no_joint_edit', 'edit_failed', 'internal'],
     mutates: false,
   },
   sheet_open: {
