@@ -3,6 +3,7 @@ import { Plug, PlugZap } from 'lucide-react';
 import { createPairingToken } from '../agent/ws/pairingToken.js';
 import { createAgentBridgeTabConnection } from '../agent/ws/tabConnection.js';
 import { defaultAgentBridgeWsUrl } from '../agent/ws/wsUrl.js';
+import { track } from '../utils/analytics.js';
 import {
   MCP_START_COMMAND,
   browserBlockedHint,
@@ -43,6 +44,12 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
       setOpen(false);
     }
   }, [enabled, stopConnection]);
+
+  useEffect(() => {
+    if (state === 'paired') {
+      track('local_agent_paired');
+    }
+  }, [state]);
 
   const copyMcpCommand = useCallback(async () => {
     try {

@@ -44,6 +44,7 @@ import CartSheet from './components/CartSheet';
 import CartDrop from './components/CartDrop';
 import CheckoutPage from './components/checkout/CheckoutPage';
 import SiteFooter from './components/SiteFooter';
+import { track, trackFeatureCommits } from './utils/analytics';
 import { 
   importFile,
 } from './utils/importModel';
@@ -4778,10 +4779,12 @@ const App = () => {
         return { status: 'error', error: flushed.error || 'Save failed' };
       }
       if (flushed?.status === 'offline') {
+        track('git_saved');
         return { status: 'queued', branch, files: (result.files || []).map((file) => file.path) };
       }
       rememberGitBehind(null, { showToast: false, resetResolved: true });
       setGitBehindToast(null);
+      track('git_saved');
       return {
         status: 'committed',
         sha: flushed?.sha,
@@ -5351,6 +5354,7 @@ const App = () => {
     setPendingPartIds((prev) => new Set(prev).add(seedId));
     try {
       await savePartScript(seedId, starter, source === 'git' ? { isSynced: false } : {});
+      track('assembly_created');
     } catch (err) {
       setUploadError(err?.message || 'Could not create assembly');
     } finally {
@@ -5442,6 +5446,7 @@ const App = () => {
     setPendingPartIds((prev) => new Set(prev).add(id));
     try {
       await savePartScript(id, starter, doc.source === 'git' ? { isSynced: false } : {});
+      track('part_created');
       if (doc.source === 'git' && surfId) {
         const vault = gitVaultRef.current || await ensureGitVault();
         const nextDoc = assemblyRef.current;
@@ -5832,6 +5837,9 @@ const App = () => {
       ? commitScriptAtRollback(beforeFixed, nextFixed, stored)
       : { buffer: nextFixed, anchor: stored };
     const wrote = !!codeEditorRef.current?.applyBuffer?.(placed.buffer, message);
+    if (wrote) {
+      trackFeatureCommits(beforeFixed, placed.buffer);
+    }
     if (wrote && key && (stored === null || typeof stored === 'string')) {
       storeRollbackAnchor(key, placed.anchor);
     }
@@ -5861,6 +5869,10 @@ const App = () => {
       edgeContext,
       placeAtBar ? caret : undefined,
     );
+    if (ok) {
+      const afterInsert = codeEditorRef.current?.getContent?.() ?? beforeInsert;
+      trackFeatureCommits(beforeInsert, afterInsert);
+    }
     if (ok && rollbackKey) {
       if (placeAtBar) {
         const after = codeEditorRef.current?.getContent?.() ?? beforeInsert;
@@ -7606,6 +7618,7 @@ const App = () => {
   // Cart checkout is one page. The per-line stepper stays mounted so a
   // checkout already in flight (including an OAuth return) can finish.
   onCartCheckoutRef.current = () => {
+    track('checkout_started');
     setShowCheckoutPage(true);
   };
 
