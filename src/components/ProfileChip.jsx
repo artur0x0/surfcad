@@ -13,6 +13,7 @@ import { Loader2, User } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuthState } from '../hooks/useAuthState';
 import { chipView } from '../utils/authPhase.js';
+import { shouldShowAgentBridgeRing } from '../agent/ws/agentBridgeChrome.js';
 import { profileInitials } from '../utils/profileInitials.js';
 import { clearGithubToken, loadGithubToken } from '../utils/git/githubAuth.js';
 import { DEFAULT_VAULT_NAME } from '../utils/git/vault.js';
@@ -32,6 +33,7 @@ export default function ProfileChip({
   const cartChrome = useCartChrome();
   const cartCount = session.signedIn ? (cartChrome?.count || 0) : 0;
   const [panelOpen, setPanelOpen] = useState(false);
+  const [agentBridgeConnected, setAgentBridgeConnected] = useState(false);
   const phase = session.phase;
   const motion = session.reconnecting
     ? 'spinning'
@@ -81,7 +83,7 @@ export default function ProfileChip({
   const iconSize = inline ? 14 : 16;
   const wrapClass = inline
     ? 'pointer-events-auto relative z-10 shrink-0'
-    : 'pointer-events-auto absolute top-4 right-4 z-50';
+    : 'pointer-events-auto absolute top-4 right-4 z-50 relative';
 
   const startReconnect = () => {
     if (session.offerReconnect) session.reconnectInteractive();
@@ -141,9 +143,17 @@ export default function ProfileChip({
   };
 
   const showPanel = signedIn || reauth || canClear || agentBridgeLive;
+  const showAgentRing = agentBridgeLive && shouldShowAgentBridgeRing({ connected: agentBridgeConnected });
 
   return (
     <div className={wrapClass} data-profile-chip-wrap="">
+      {showAgentRing ? (
+        <span
+          className="agent-bridge-profile-ring pointer-events-none absolute inset-0 rounded-full"
+          data-agent-bridge-connection-ring=""
+          aria-hidden="true"
+        />
+      ) : null}
       <button
         type="button"
         data-profile-chip=""
@@ -215,6 +225,7 @@ export default function ProfileChip({
           onOpenCart={session.signedIn ? () => cartChrome?.openCart?.() : null}
           align="right"
           agentBridgeLive={agentBridgeLive}
+          onAgentBridgeConnectionChange={setAgentBridgeConnected}
         />
       )}
       {variant === 'viewport' && reauth && session.bootEmpty ? (

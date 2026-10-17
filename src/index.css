@@ -410,3 +410,23 @@ textarea {
     transition: none !important;
   }
 }
+
+/* Local agent connected: slow green ring on the profile chip. */
+@keyframes agent-bridge-ring-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.agent-bridge-profile-ring {
+  box-shadow:
+    0 0 0 1px rgba(52, 211, 153, 0.55),
+    0 0 10px rgba(34, 197, 94, 0.45);
+  animation: agent-bridge-ring-spin 4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-bridge-profile-ring {
+    animation: none;
+    box-shadow:
+      0 0 0 2px rgba(52, 211, 153, 0.75),
+      0 0 12px rgba(34, 197, 94, 0.35);
+  }
+}
