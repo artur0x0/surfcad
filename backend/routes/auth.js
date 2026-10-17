@@ -8,6 +8,7 @@ import config from '../config/index.js';
 import { fetchGithubUserProfile } from '../services/githubUser.js';
 import { deleteResolvedGithubVault } from '../services/githubVaultDelete.js';
 import { confirmAndRememberVaultName, storedVaultNameFromUser } from '../services/vaultName.js';
+import { loginAndTrack, recordSuccessfulLogin } from '../services/loginTracking.js';
 
 const router = Router();
 
@@ -185,24 +186,20 @@ router.post('/verify', async (req, res) => {
     // Send admin notification for new verified user (don't await)
     email.sendAdminNewUserNotification(user).catch(console.error);
     
-    // Log the user in
-    req.login(user, (err) => {
-      if (err) {
-        console.error('[Auth] Login after verification failed:', err);
-        return res.status(500).json({ error: 'Verification successful but login failed' });
-      }
-      
-      // Clear guest session data
+    try {
+      await loginAndTrack(req, user, 'verify');
       delete req.session.guestId;
       delete req.session.guestEmail;
       delete req.session.guestAddress;
-      
       return res.json({
         success: true,
         verified: true,
         user,
       });
-    });
+    } catch (err) {
+      console.error('[Auth] Login after verification failed:', err);
+      return res.status(500).json({ error: 'Verification successful but login failed' });
+    }
     
   } catch (error) {
     console.error('[Auth] Verification error:', error);
@@ -312,25 +309,20 @@ router.post('/login', async (req, res, next) => {
       });
     }
     
-    // Log in
-    req.login(user, (err) => {
-      if (err) {
-        console.error('[Auth] Login failed:', err);
-        return res.status(500).json({ error: 'Login failed' });
-      }
-      
-      // Clear guest session data
+    try {
+      await loginAndTrack(req, user, 'password');
       delete req.session.guestId;
       delete req.session.guestEmail;
       delete req.session.guestAddress;
-      
       console.log(`[Auth] User logged in: ${normalizedEmail}`);
-      
       return res.json({
         success: true,
         user,
       });
-    });
+    } catch (err) {
+      console.error('[Auth] Login failed:', err);
+      return res.status(500).json({ error: 'Login failed' });
+    }
     
   } catch (error) {
     console.error('[Auth] Login error:', error);
@@ -438,22 +430,18 @@ router.post('/guest/convert', async (req, res) => {
     // Send admin notification for new user
     email.sendAdminNewUserNotification(user).catch(console.error);
     
-    // Log in
-    req.login(user, (err) => {
-      if (err) {
-        return res.status(500).json({ error: 'Account created but login failed' });
-      }
-      
-      // Clear guest data
+    try {
+      await loginAndTrack(req, user, 'guest_convert');
       delete req.session.guestId;
       delete req.session.guestEmail;
       delete req.session.guestAddress;
-      
       return res.json({
         success: true,
         user,
       });
-    });
+    } catch (err) {
+      return res.status(500).json({ error: 'Account created but login failed' });
+    }
   } catch (error) {
     if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 500) {
       return res.status(error.statusCode).json({ error: error.message });
@@ -488,9 +476,7 @@ router.post('/github', async (req, res) => {
       await user.save();
     }
 
-    await new Promise((resolve, reject) => {
-      req.login(user, (err) => (err ? reject(err) : resolve()));
-    });
+    await loginAndTrack(req, user, 'github');
 
     delete req.session.guestId;
     delete req.session.guestEmail;
@@ -527,12 +513,15 @@ router.get('/google/callback',
   async (req, res) => {
     const returnTo = req.session.returnTo || '/';
     delete req.session.returnTo;
-    
-    // Clear guest session
+
+    if (req.user) {
+      await recordSuccessfulLogin(req.user, 'google');
+    }
+
     delete req.session.guestId;
     delete req.session.guestEmail;
     delete req.session.guestAddress;
-    
+
     const redirectUrl = buildRedirectUrl(config.frontendUrl, returnTo, { auth: 'success' });
     res.redirect(redirectUrl);
   }
@@ -572,26 +561,20 @@ router.post('/apple/callback',
         return res.redirect(`/login?error=apple_failed&reason=${encodeURIComponent(reason)}`);
       }
 
-      // Successful authentication
-      req.login(user, (loginErr) => {
-        if (loginErr) {
+      loginAndTrack(req, user, 'apple')
+        .then(() => {
+          let returnTo = req.session.returnTo || '/';
+          delete req.session.returnTo;
+          delete req.session.guestId;
+          delete req.session.guestEmail;
+          delete req.session.guestAddress;
+          const redirectUrl = buildRedirectUrl(config.frontendUrl, returnTo, { auth: 'success' });
+          return res.redirect(redirectUrl);
+        })
+        .catch((loginErr) => {
           console.error('[Auth] req.login failed after Apple auth:', loginErr);
           return res.redirect('/login?error=apple_failed');
-        }
-
-        // Get returnTo from session
-        let returnTo = req.session.returnTo || '/';
-        delete req.session.returnTo;
-
-        // Clean guest session if exists
-        delete req.session.guestId;
-        delete req.session.guestEmail;
-        delete req.session.guestAddress;
-
-        const redirectUrl = buildRedirectUrl(config.frontendUrl, returnTo, { auth: 'success' });
-
-        return res.redirect(redirectUrl);
-      });
+        });
     })(req, res, next);
   }
 );

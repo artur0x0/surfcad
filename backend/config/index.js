@@ -106,6 +106,12 @@ const config = {
 
   // Admin
   adminEmail: process.env.ADMIN_EMAIL,
+  adminUserIds: new Set(
+    (process.env.ADMIN_USER_IDS || '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean),
+  ),
 
   // Storage
   workingFolder: process.env.WORKING_FOLDER,
