@@ -43,6 +43,7 @@ import { CartChromeProvider, useCart } from './hooks/useCart';
 import CartSheet from './components/CartSheet';
 import CartDrop from './components/CartDrop';
 import CheckoutPage from './components/checkout/CheckoutPage';
+import SiteFooter from './components/SiteFooter';
 import { 
   importFile,
 } from './utils/importModel';
@@ -8049,6 +8050,7 @@ const App = () => {
             {!manifoldReady ? 'Starting CAD engine…' : 'Restoring document…'}
           </p>
         </div>
+        <SiteFooter variant="light" />
       </div>
     );
   }
@@ -9758,6 +9760,7 @@ const App = () => {
             />
           )}
         </div>
+        <SiteFooter />
         <CartSheet />
         <CartDrop />
         {showCheckoutPage && (
@@ -10129,6 +10132,7 @@ const App = () => {
           )}
         </div>
       </div>
+      <SiteFooter />
       <CartSheet />
       <CartDrop />
       {showCheckoutPage && (
