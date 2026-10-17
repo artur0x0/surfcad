@@ -5,7 +5,10 @@
  * The assembly-parts group stays at identity, so a mesh's matrixWorld is
  * this pose and a bonded study can read it after updateMatrixWorld(true).
  */
-import { Quaternion, Vector3 } from 'three';
+import { Euler, Quaternion, Vector3 } from 'three';
+
+/** Intrinsic XYZ Euler angles in degrees (same order as three.js `Euler('XYZ')`). */
+export const AGENT_EULER_ORDER = 'XYZ';
 
 export const IDENTITY_QUATERNION = Object.freeze([0, 0, 0, 1]);
 export const IDENTITY_PLACEMENT = Object.freeze({
@@ -71,6 +74,32 @@ export function applyPartPose(object, placement) {
   if (typeof object.updateMatrix === 'function') object.updateMatrix();
   if (typeof object.updateMatrixWorld === 'function') object.updateMatrixWorld(true);
   return object;
+}
+
+/** Unit quaternion [x, y, z, w] to intrinsic XYZ Euler degrees for agent tools. */
+export function quaternionToEulerDegrees(q) {
+  const quat = new Quaternion(
+    Number(q?.[0]) || 0,
+    Number(q?.[1]) || 0,
+    Number(q?.[2]) || 0,
+    Number.isFinite(+q?.[3]) ? +q[3] : 1,
+  );
+  const euler = new Euler().setFromQuaternion(quat, AGENT_EULER_ORDER);
+  const radToDeg = 180 / Math.PI;
+  return [euler.x * radToDeg, euler.y * radToDeg, euler.z * radToDeg];
+}
+
+/** Intrinsic XYZ Euler degrees to a unit quaternion [x, y, z, w]. */
+export function eulerDegreesToQuaternion(degrees) {
+  if (!Array.isArray(degrees) || degrees.length < 3) return null;
+  const x = Number(degrees[0]);
+  const y = Number(degrees[1]);
+  const z = Number(degrees[2]);
+  if (![x, y, z].every(Number.isFinite)) return null;
+  const degToRad = Math.PI / 180;
+  const euler = new Euler(x * degToRad, y * degToRad, z * degToRad, AGENT_EULER_ORDER);
+  const quat = new Quaternion().setFromEuler(euler);
+  return [quat.x, quat.y, quat.z, quat.w];
 }
 
 /**
