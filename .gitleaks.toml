@@ -1,6 +1,10 @@
 # Gitleaks config. Extends the default rule set and allowlists the
 # product-analytics consent localStorage key (CONSENT_STORAGE_KEY /
 # surfcad.consent.v1), which is a storage name, not a secret.
+#
+# False positives flagged on:
+#   src/utils/consent.js:9
+#   scripts/golden/lib/presetConsentInit.mjs:7
 
 title = "SurfCAD"
 

@@ -9,4 +9,7 @@ test('gitleaks allowlists CONSENT_STORAGE_KEY / surfcad.consent.v1', () => {
   assert.match(toml, /src\/utils\/consent/);
   assert.match(toml, /presetConsentInit/);
   assert.match(toml, /\[allowlist\]/);
+  // Report sites: consent.js:9 and presetConsentInit.mjs:7
+  assert.match(toml, /consent\.js:9/);
+  assert.match(toml, /presetConsentInit\.mjs:7/);
 });
