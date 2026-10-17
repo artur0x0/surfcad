@@ -405,7 +405,7 @@ Refusals use the same `error` objects as the in-page envelope. Non-loopback TCP 
 
 | Piece | Role |
 | --- | --- |
-| `packages/surfcad-mcp` | Unpublished package: MCP over stdio, one tool per `commands.json` row plus `pair`. |
+| `packages/surfcad-mcp` | npm package `surfcad-mcp`: MCP over stdio, one tool per `commands.json` row plus `pair`. |
 | `packages/surfcad-mcp/data/commands.json` | Copy of `src/agent/commands.json`; refreshed by `npm run export:agent`. |
 | `SURFCAD_PAIRING_CODE` | Optional env pairing code (same as **profile** → **Local agent** → **Show pairing code**). |
 | `SURFCAD_AGENT_BRIDGE_WS_URL` | Relay URL (default `ws://127.0.0.1:17341`). |

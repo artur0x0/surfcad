@@ -36,7 +36,7 @@ try {
 const app = express();
 
 // ============ Trust Proxy for Auth Redirects ===============
-app.set('trust proxy', 1);
+app.set('trust proxy', config.trustProxyHops);
 
 // ============ Security Middleware ============
 app.use(helmet({

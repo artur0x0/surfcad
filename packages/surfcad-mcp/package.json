@@ -1,17 +1,45 @@
 {
   "name": "surfcad-mcp",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "SurfCAD agent bridge MCP server (stdio) — pairs to a browser tab via the local WebSocket relay",
   "license": "Apache-2.0",
-  "description": "SurfCAD agent bridge MCP server (stdio) — pairs to a browser tab via the M1 relay",
+  "author": "artur0x0",
+  "homepage": "https://github.com/artur0x0/surfcad/tree/main/packages/surfcad-mcp",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/artur0x0/surfcad.git",
+    "directory": "packages/surfcad-mcp"
+  },
+  "keywords": [
+    "surfcad",
+    "mcp",
+    "model-context-protocol",
+    "cad",
+    "agent",
+    "stdio",
+    "websocket"
+  ],
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "bin": {
     "surfcad-mcp": "./bin/surfcad-mcp.js"
   },
+  "files": [
+    "bin",
+    "data",
+    "src",
+    "README.md"
+  ],
   "scripts": {
-    "start": "node ./bin/surfcad-mcp.js"
+    "prepack": "node ./scripts/prepack-check.mjs",
+    "start": "node ./bin/surfcad-mcp.js",
+    "test": "node --test test/*.test.mjs",
+    "smoke:pack": "node --test test/packInstall.test.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.1"
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "ws": "^8.22.0"
   }
 }

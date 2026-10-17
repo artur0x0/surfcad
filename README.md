@@ -33,6 +33,7 @@ In-repo smokes are `npm run golden:*` (`scripts/golden/`). `npm run golden:agent
 
 - [Vault schema](docs/vault-schema.md) — how assemblies are stored
 - [Architecture](docs/architecture.md)
+- [Spark staging](docs/staging.md) — processes, ports, and ops on the spark host
 - [UI map](docs/UI_MAP.md)
 - [Agent export](docs/agent-export.md)
 - [Performance](docs/performance.md)
