@@ -8,3 +8,8 @@ export const CONNECT_AGENT_BUTTON_CLASS = [
   'surface-success',
   'disabled:opacity-50 disabled:cursor-not-allowed',
 ].join(' ');
+
+export const SECONDARY_BUTTON_CLASS = [
+  'w-full rounded-md border border-chrome-border px-3 py-2 text-ui-sm font-ui',
+  'text-on-dark surface-quiet',
+].join(' ');

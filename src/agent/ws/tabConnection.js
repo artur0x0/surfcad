@@ -4,6 +4,7 @@
  */
 
 import { PAIR_MSG } from './relayMessages.js';
+import { BRIDGE_CLOSE_REASON } from './bridgeMessages.js';
 import {
   issueFromCloseEvent,
   issueFromErrorEvent,
@@ -35,6 +36,11 @@ export const DEFAULT_LOST_AFTER_MS = 60_000;
 
 /** Relay refusals that a retry cannot fix. */
 const FATAL_RELAY_CODES = new Set(['origin_blocked', 'remote_blocked']);
+/** Popup window gone or blocked: another `window.open` needs a click. */
+const USER_ENDED_BRIDGE = new Set([
+  BRIDGE_CLOSE_REASON.BRIDGE_CLOSED,
+  BRIDGE_CLOSE_REASON.POPUP_BLOCKED,
+]);
 
 function randomKey() {
   const bytes = new Uint8Array(18);
@@ -62,6 +68,7 @@ const defaultTimers = {
  *   suppressMissingRelayIssue?: boolean,
  *   createSocket?: (url: string) => AgentBridgeSocket,
  *   isAutoApprove?: () => boolean,
+ *   onRelay?: (detected: boolean) => void,
  *   reconnectDelaysMs?: readonly number[],
  *   lostAfterMs?: number,
  *   timers?: AgentBridgeTimers,
@@ -71,6 +78,7 @@ export function createAgentBridgeTabConnection(opts) {
   const { url, token, call, onState, onIssue, onLink, pageSecure, suppressMissingRelayIssue } = opts;
   const createSocket = opts.createSocket || ((u) => new WebSocket(u));
   const isAutoApprove = opts.isAutoApprove || (() => false);
+  const onRelay = opts.onRelay || (() => {});
   const delays = opts.reconnectDelaysMs?.length ? opts.reconnectDelaysMs : DEFAULT_TAB_RECONNECT_DELAYS_MS;
   const lostAfterMs = opts.lostAfterMs ?? DEFAULT_LOST_AFTER_MS;
   const timers = opts.timers || defaultTimers;
@@ -87,6 +95,8 @@ export function createAgentBridgeTabConnection(opts) {
   let resumeKey = null;
   let offeredResumeKey = null;
   let wasPaired = false;
+  /** Next register_tab must drop the hub resume (user closed the bridge window). */
+  let forgetResume = false;
   let stopped = true;
   let attempt = 0;
   let droppedAt = 0;
@@ -220,11 +230,20 @@ export function createAgentBridgeTabConnection(opts) {
     const socket = createSocket(url);
     ws = socket;
     let opened = false;
+    socket.addEventListener('relay', () => {
+      if (generation !== myGen || ws !== socket) return;
+      onRelay(true);
+    });
     socket.addEventListener('open', () => {
       if (generation !== myGen || ws !== socket) return;
       opened = true;
       setIssue(null);
-      send({ type: PAIR_MSG.REGISTER_TAB, token, tabKey });
+      const register = { type: PAIR_MSG.REGISTER_TAB, token, tabKey };
+      if (forgetResume) {
+        register.forgetResume = true;
+        forgetResume = false;
+      }
+      send(register);
       if (!wasPaired) {
         attempt = 0;
         setState('advertising');
@@ -287,6 +306,21 @@ export function createAgentBridgeTabConnection(opts) {
     socket.addEventListener('close', (event) => {
       if (generation !== myGen || ws !== socket) return;
       ws = null;
+      const reason = typeof event?.reason === 'string' ? event.reason : '';
+      if (USER_ENDED_BRIDGE.has(reason)) {
+        stopped = true;
+        clearTimers();
+        listenForWake(false);
+        wasPaired = false;
+        resumeKey = null;
+        offeredResumeKey = null;
+        forgetResume = true;
+        const issue = issueFromCloseEvent(event, { sawOpen: opened, relayErrorCode: lastRelayErrorCode });
+        if (issue) setIssue(issue);
+        setLink(null);
+        setState('idle');
+        return;
+      }
       const fatal = FATAL_RELAY_CODES.has(lastRelayErrorCode);
       const retry = !stopped && !fatal && (wasPaired || opened || attempt > 0);
       if (retry) {
@@ -335,6 +369,7 @@ export function createAgentBridgeTabConnection(opts) {
     wasPaired = false;
     resumeKey = null;
     offeredResumeKey = null;
+    forgetResume = false;
     attempt = 0;
     setIssue(null);
     setLink(null);

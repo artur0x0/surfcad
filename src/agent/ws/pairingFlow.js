@@ -13,7 +13,12 @@ export function isRelayTabConnected(state) {
   return RELAY_LIVE_STATES.has(state);
 }
 
-const TERMINAL_PROBE_ISSUES = new Set(['origin_rejected', 'browser_blocked']);
+const TERMINAL_PROBE_ISSUES = new Set([
+  'origin_rejected',
+  'browser_blocked',
+  'bridge_closed',
+  'popup_blocked',
+]);
 
 /**
  * @param {{

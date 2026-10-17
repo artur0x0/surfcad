@@ -16,10 +16,20 @@ test('Connect Agent opens a body-portal dialog and closes the profile menu', () 
   assert.match(SRC, /onBeginFlow\?\.\(\)/);
   assert.match(SRC, /<AgentBridgePairingDialog/);
   assert.match(DIALOG, /data-agent-bridge-dialog=""/);
+  assert.match(DIALOG, /data-agent-bridge-transport=\{transport\}/);
   assert.match(DIALOG, /createPortal\(/);
   assert.match(DIALOG, /pb-14/);
   assert.match(DIALOG, /items-center justify-center/);
   assert.doesNotMatch(DIALOG, /items-end/);
+});
+
+test('popup mode starts pairing from the Connect Agent click', () => {
+  assert.match(SRC, /onBeginFlow\?\.\(\)/);
+  assert.match(SRC, /if \(popupMode\) startPairing\('popup'\)/);
+  assert.match(SRC, /<AgentBridgePopupStatus/);
+  assert.match(SRC, /issue !== 'bridge_closed' && issue !== 'popup_blocked'/);
+  assert.match(SRC, /setFlowOpen\(true\)/);
+  assert.match(SRC, /Keep the SurfCAD local agent bridge window open/);
 });
 
 test('Esc and backdrop tap before pairing cancel the attempt', () => {

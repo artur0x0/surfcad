@@ -274,6 +274,47 @@ test('a call reply is skipped once a newer socket exists', async () => {
   assert.equal(ws.sent.filter((m) => m.id === 'c1').length, 0);
 });
 
+test('closing the bridge window does not open another one from a timer', () => {
+  const ctx = setup();
+  pair(ctx);
+  ctx.factory.latest().fire('close', { code: 4000, reason: 'bridge_closed' });
+  assert.equal(ctx.conn.getState(), 'idle');
+  assert.equal(ctx.conn.getLink(), null);
+  ctx.timers.advance(60_000);
+  assert.equal(ctx.factory.sockets.length, 1, 'no reconnect createSocket — Safari needs a click');
+});
+
+test('Reconnect after the user closed the window asks the hub to forget resume', () => {
+  const ctx = setup();
+  pair(ctx);
+  ctx.factory.latest().fire('close', { code: 4000, reason: 'bridge_closed' });
+  ctx.conn.connect();
+  const ws = ctx.factory.latest();
+  ws.fire('open');
+  const reg = ws.last(PAIR_MSG.REGISTER_TAB);
+  assert.equal(reg.forgetResume, true);
+  ws.receive({ type: PAIR_MSG.PAIR_REQUEST, token: 'ABC234' });
+  assert.equal(ctx.conn.getState(), 'pending');
+  assert.equal(ws.last(PAIR_MSG.PAIR_APPROVE), undefined);
+});
+
+test('popup blocked is not retried', () => {
+  const ctx = setup();
+  ctx.conn.connect();
+  ctx.factory.latest().fire('close', { code: 4000, reason: 'popup_blocked' });
+  assert.equal(ctx.conn.getState(), 'idle');
+  ctx.timers.advance(60_000);
+  assert.equal(ctx.factory.sockets.length, 1);
+});
+
+test('relay event marks the popup bridge as reachable', () => {
+  const relays = [];
+  const ctx = setup({ onRelay: (ok) => relays.push(ok) });
+  ctx.conn.connect();
+  ctx.factory.latest().fire('relay', {});
+  assert.deepEqual(relays, [true]);
+});
+
 test('first connect to a missing relay stays idle for the pairing poller', () => {
   const ctx = setup();
   ctx.conn.connect();

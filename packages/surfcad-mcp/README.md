@@ -29,6 +29,10 @@ Environment variables:
 
 Nothing pairs silently — you must show the code and approve the connection.
 
+### Safari
+
+Safari on a Mac blocks https pages from opening `ws://127.0.0.1` directly. In Safari, **Connect Agent** also opens a small window titled **SurfCAD local agent bridge**, served by this relay at `http://127.0.0.1:17341/bridge`. It carries the connection between the tab and the relay; keep it open while the agent works. If it closes, the Local agent panel shows **Disconnected** with a **Reconnect** button, and you allow the agent again. The bridge window only talks to SurfCAD pages (https://surfcad.com, www, and local dev). If Safari blocks the window, allow pop-ups for surfcad.com and click **Reconnect**. Safari on iPhone and iPad is not supported.
+
 ## MCP client config (Cursor / Claude Desktop)
 
 ```json
