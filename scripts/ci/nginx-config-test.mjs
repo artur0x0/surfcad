@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const siteSrc = join(repoRoot, 'docs/nginx-surfcad.com.conf');
 const snippetSrc = join(repoRoot, 'docs/nginx-snippets/surfcad-security.conf');
+const workerSnippetSrc = join(repoRoot, 'docs/nginx-snippets/surfcad-worker-csp.conf');
 
 const work = mkdtempSync(join(tmpdir(), 'surfcad-nginx-test-'));
 const sslDir = join(work, 'ssl');
@@ -27,6 +28,7 @@ mkdirSync(sslDir, { recursive: true });
 mkdirSync(snippetsDir, { recursive: true });
 
 cpSync(snippetSrc, join(snippetsDir, 'surfcad-security.conf'));
+cpSync(workerSnippetSrc, join(snippetsDir, 'surfcad-worker-csp.conf'));
 
 execSync(
   `openssl req -x509 -nodes -days 1 -newkey rsa:2048 -keyout "${join(sslDir, 'privkey.pem')}" -out "${join(sslDir, 'fullchain.pem')}" -subj "/CN=surfcad.com"`,
@@ -35,6 +37,7 @@ execSync(
 
 let site = readFileSync(siteSrc, 'utf8');
 site = site.replaceAll('/etc/nginx/snippets/surfcad-security.conf', join(snippetsDir, 'surfcad-security.conf'));
+site = site.replaceAll('/etc/nginx/snippets/surfcad-worker-csp.conf', join(snippetsDir, 'surfcad-worker-csp.conf'));
 site = site.replaceAll('/etc/letsencrypt/live/surfcad.com/fullchain.pem', join(sslDir, 'fullchain.pem'));
 site = site.replaceAll('/etc/letsencrypt/live/surfcad.com/privkey.pem', join(sslDir, 'privkey.pem'));
 site = site.replaceAll('include /etc/letsencrypt/options-ssl-nginx.conf;', '');
