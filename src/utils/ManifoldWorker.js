@@ -11,7 +11,12 @@
  *   const meshData = await manifold.execute(script);
  */
 import SandboxWorker from '../workers/sandboxWorker.js?worker'
-import { acceptWorkerResult, createResultAuth } from './scriptSandbox.js'
+import {
+  acceptWorkerResult,
+  createResultAuth,
+  generateWorkerRequestId,
+  isWorkerHostMessage,
+} from './scriptSandbox.js'
 import { softRestartDecision } from './manifoldWorkerLiveness.js'
 
 class ManifoldWorker {
@@ -19,7 +24,6 @@ class ManifoldWorker {
     this.worker = null;
     this.isReady = false;
     this.pendingRequests = new Map();
-    this.requestIdCounter = 0;
     
     this.config = {
       timeoutMs: 30000,
@@ -870,11 +874,16 @@ class ManifoldWorker {
   // ========== Private Methods ==========
   
   _generateRequestId() {
-    return `req_${++this.requestIdCounter}_${Date.now()}`;
+    return generateWorkerRequestId();
   }
   
   _handleMessage(event) {
-    const { type, id, payload } = event.data;
+    const data = event.data;
+    if (!isWorkerHostMessage(data)) {
+      console.warn('[ManifoldWorker] Dropped untyped worker message');
+      return;
+    }
+    const { type, id, payload } = data;
     
     switch (type) {
       case 'ready': {

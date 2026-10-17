@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import {
   SCRIPT_SANDBOX_SHADOWS,
   acceptWorkerResult,
   createResultAuth,
   evaluateSandboxedScript,
   freezeWorkerHandlers,
+  generateWorkerRequestId,
+  isWorkerHostMessage,
   rewriteDynamicImport,
 } from './scriptSandbox.js';
 import { bindManifoldModule, executeScript } from '../lib/surfcad/runtime.js';
@@ -58,8 +61,48 @@ test('a script cannot keep a writable onmessage across runs', () => {
   freezeWorkerHandlers(self, { dispatch, rawPostMessage: rawPost });
   assert.equal(self.onmessage, dispatch);
   assert.throws(() => self.postMessage({ type: 'result' }), /not allowed/);
+  assert.throws(() => self.close(), /not allowed/);
+  assert.throws(() => self.addEventListener('message', () => {}), /not allowed/);
   rawPost({ type: 'result', payload: { ok: true } });
   assert.equal(posted.at(-1).payload.ok, true);
+});
+
+test('host messages still reach dispatch after freeze', () => {
+  const seen = [];
+  const listeners = [];
+  const self = {
+    postMessage() {},
+    onmessage: null,
+    addEventListener(type, fn) { listeners.push({ type, fn }); },
+  };
+  const dispatch = (event) => { seen.push(event); };
+  freezeWorkerHandlers(self, {
+    dispatch,
+    rawPostMessage: () => {},
+    rawAddEventListener: self.addEventListener.bind(self),
+    listen: true,
+  });
+  assert.equal(listeners.length, 1);
+  assert.equal(listeners[0].type, 'message');
+  listeners[0].fn({ data: { type: 'init', id: 'req_x' } });
+  assert.equal(seen.length, 1);
+  freezeWorkerHandlers(self, { dispatch, rawPostMessage: () => {} });
+  assert.equal(listeners.length, 1);
+});
+
+test('scripts cannot reach host globals through self or globalThis', () => {
+  assert.throws(
+    () => evaluateSandboxedScript('self.fetch("https://cdn.jsdelivr.net/npm/x")'),
+    /not (a function|allowed)|Cannot read|undefined/,
+  );
+  assert.throws(
+    () => evaluateSandboxedScript('close()'),
+    /not allowed/,
+  );
+  assert.throws(
+    () => evaluateSandboxedScript('addEventListener("message", function () {})'),
+    /not allowed/,
+  );
 });
 
 test('results without the per-run nonce are rejected', () => {
@@ -75,4 +118,31 @@ test('results without the per-run nonce are rejected', () => {
 test('sandbox shadows stay frozen', () => {
   assert.equal(Object.isFrozen(SCRIPT_SANDBOX_SHADOWS), true);
   assert.equal(Object.isFrozen(SCRIPT_SANDBOX_SHADOWS.fetch), true);
+  assert.equal(Object.isFrozen(SCRIPT_SANDBOX_SHADOWS.self), true);
+});
+
+test('request ids are UUIDs, not counter plus Date.now', () => {
+  const id = generateWorkerRequestId(() => '11111111-1111-1111-1111-111111111111');
+  assert.equal(id, 'req_11111111-1111-1111-1111-111111111111');
+  const src = readFileSync(new URL('./ManifoldWorker.js', import.meta.url), 'utf8');
+  assert.equal(/req_\$\{\+\+this\.requestIdCounter\}_\$\{Date\.now\(\)\}/.test(src), false);
+  assert.match(src, /generateWorkerRequestId/);
+});
+
+test('forged worker messages without a typed payload are dropped', () => {
+  assert.equal(isWorkerHostMessage({ type: 'result', id: 'req_x', payload: { resultAuth: 'a' } }), true);
+  assert.equal(isWorkerHostMessage({ type: 'ready', id: 'req_x' }), true);
+  assert.equal(isWorkerHostMessage({ type: 'loaded' }), true);
+  assert.equal(isWorkerHostMessage({ type: 'pwn', id: 'req_x', payload: {} }), false);
+  assert.equal(isWorkerHostMessage({ type: 'result', id: 1, payload: {} }), false);
+  assert.equal(isWorkerHostMessage({ type: 'result', id: 'req_x', payload: 'nope' }), false);
+  assert.equal(isWorkerHostMessage('ready'), false);
+});
+
+test('page CSP keeps jsdelivr for Monaco; worker CSP has connect-src none', () => {
+  const page = readFileSync(new URL('../../docs/nginx-snippets/surfcad-security.conf', import.meta.url), 'utf8');
+  assert.match(page, /cdn\.jsdelivr\.net/);
+  assert.match(page, /monaco-editor\/loader/);
+  const worker = readFileSync(new URL('../../docs/nginx-snippets/surfcad-worker-csp.conf', import.meta.url), 'utf8');
+  assert.match(worker, /connect-src 'none'/);
 });

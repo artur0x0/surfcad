@@ -52,27 +52,39 @@ import {
 } from '../../utils/scriptSandbox.js';
 
 /**
- * List of globals to block/remove in the worker context
+ * Script-visible host APIs. User scripts do not get a denylist of `self`
+ * properties: they run with SCRIPT_SANDBOX_SHADOWS (empty self/globalThis
+ * plus throwers for network / messaging). WASM still installs host
+ * properties after init; those stay for the worker, not the Function scope.
  */
-const BLOCKED_GLOBALS = [
-  // Network
+const ALLOWED_WORKER_HOST = new Set([
+  'self',
+  'globalThis',
+  'console',
+  'performance',
+  'crypto',
+  'navigator',
+  'location',
+  'WebAssembly',
+  'onmessage',
+  'postMessage',
+  'close',
+  'addEventListener',
+  'removeEventListener',
+  'dispatchEvent',
+]);
+
+/** Host APIs that remain on the worker but throw if a script reaches them. */
+const LOCKED_WORKER_HOST = [
   'fetch',
-  'XMLHttpRequest', 
+  'XMLHttpRequest',
   'WebSocket',
   'EventSource',
-  
-  // Storage
   'indexedDB',
   'caches',
-  
-  // Workers (prevent spawning nested workers)
   'Worker',
   'SharedWorker',
-  
-  // Messaging that could leak data
   'BroadcastChannel',
-  
-  // Import (dynamic) - We load Manifold before blocking
   'importScripts',
 ];
 
@@ -9133,8 +9145,9 @@ const _perfNow = (typeof performance !== 'undefined' && typeof performance.now =
  * Block dangerous globals
  */
 const lockdownGlobals = () => {
-  // Block dangerous globals by replacing with functions that throw
-  for (const name of BLOCKED_GLOBALS) {
+  // Block host APIs that are not on the script allowlist.
+  for (const name of LOCKED_WORKER_HOST) {
+    if (ALLOWED_WORKER_HOST.has(name)) continue;
     if (name in self) {
       Object.defineProperty(self, name, {
         get() {
@@ -9646,6 +9659,9 @@ export function bindWorker(self) {
   const rawPostMessage = typeof self.postMessage === 'function'
     ? self.postMessage.bind(self)
     : () => {};
+  const rawAddEventListener = typeof self.addEventListener === 'function'
+    ? self.addEventListener.bind(self)
+    : null;
   let activeResultAuth = null;
   const hostPostMessage = (msg) => {
     if (
@@ -10352,11 +10368,16 @@ export function bindWorker(self) {
     });
   } finally {
     activeResultAuth = null;
-    freezeWorkerHandlers(self, { dispatch, rawPostMessage });
+    freezeWorkerHandlers(self, { dispatch, rawPostMessage, rawAddEventListener });
   }
 };
 
-  freezeWorkerHandlers(self, { dispatch, rawPostMessage });
+  freezeWorkerHandlers(self, {
+    dispatch,
+    rawPostMessage,
+    rawAddEventListener,
+    listen: true,
+  });
   hostPostMessage({ type: 'loaded' });
 }
 

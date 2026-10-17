@@ -2,9 +2,12 @@
  * Shared CAD-script sandbox.
  *
  * User scripts run as `new Function` in the reused Manifold worker. This
- * module is the one evaluator: it shadows network / messaging APIs, rewrites
+ * module is the one evaluator: it shadows network / messaging APIs (an
+ * allowlist — scripts see CAD helpers plus empty self/globalThis), rewrites
  * `import()` so jsdelivr is not reachable, and freezes the worker handlers
  * so a script cannot keep `onmessage` or forge `postMessage` results.
+ * Host messages arrive through addEventListener; native postMessage is kept
+ * for the host protocol.
  */
 
 function blocked(name) {
@@ -15,13 +18,31 @@ function blocked(name) {
   return Object.freeze(fn);
 }
 
+/** Empty `self` / `globalThis` for the script Function scope (allowlist). */
+const LIMITED_SCRIPT_GLOBAL = Object.freeze(Object.create(null));
+
 export const SCRIPT_SANDBOX_SHADOWS = Object.freeze({
   fetch: blocked('fetch'),
   importScripts: blocked('importScripts'),
+  XMLHttpRequest: blocked('XMLHttpRequest'),
+  WebSocket: blocked('WebSocket'),
   postMessage: blocked('postMessage'),
   onmessage: null,
+  close: blocked('close'),
+  addEventListener: blocked('addEventListener'),
+  removeEventListener: blocked('removeEventListener'),
   __blockedImport: blocked('import'),
+  self: LIMITED_SCRIPT_GLOBAL,
+  globalThis: LIMITED_SCRIPT_GLOBAL,
 });
+
+export const WORKER_HOST_TYPES = Object.freeze([
+  'loaded',
+  'ready',
+  'result',
+  'error',
+  'helperList',
+]);
 
 /**
  * Replace dynamic `import(` outside strings and comments.
@@ -130,16 +151,51 @@ export function acceptWorkerResult(expectedAuth, payload) {
   return expectedAuth != null
     && payload != null
     && typeof payload === 'object'
+    && !Array.isArray(payload)
     && payload.resultAuth === expectedAuth;
 }
 
+/** crypto.randomUUID request ids — not `req_${counter}_${Date.now()}`. */
+export function generateWorkerRequestId(randomUUID) {
+  const uuid = typeof randomUUID === 'function'
+    ? randomUUID()
+    : (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : createResultAuth());
+  return `req_${uuid}`;
+}
+
+/** Drop forged / untyped worker messages before they resolve a pending request. */
+export function isWorkerHostMessage(data) {
+  if (data == null || typeof data !== 'object' || Array.isArray(data)) return false;
+  if (typeof data.type !== 'string' || !WORKER_HOST_TYPES.includes(data.type)) return false;
+  if (data.id != null && typeof data.id !== 'string') return false;
+  if (data.payload != null && (typeof data.payload !== 'object' || Array.isArray(data.payload))) {
+    return false;
+  }
+  return true;
+}
+
 /**
- * Install the real dispatch on `onmessage` (goldens call it directly) and
- * replace `postMessage` with a thrower. The handler must keep a bound copy
- * of the original `postMessage`.
+ * Receive host messages through addEventListener (browsers do not deliver
+ * through a defineProperty getter on onmessage). Then lock onmessage /
+ * postMessage / close / addEventListener so a script cannot replace them.
+ * Keep a bound copy of the native postMessage for the host protocol.
  */
-export function freezeWorkerHandlers(self, { dispatch, rawPostMessage } = {}) {
+export function freezeWorkerHandlers(self, {
+  dispatch,
+  rawPostMessage,
+  rawAddEventListener,
+  listen = false,
+} = {}) {
   if (!self || typeof self !== 'object') return rawPostMessage || null;
+  const add = typeof rawAddEventListener === 'function'
+    ? rawAddEventListener
+    : (typeof self.addEventListener === 'function' ? self.addEventListener.bind(self) : null);
+  if (listen && typeof dispatch === 'function' && add) {
+    try { add('message', dispatch); } catch { /* already listening */ }
+  }
+  let lockedOnmessage = false;
   if (typeof dispatch === 'function') {
     try {
       Object.defineProperty(self, 'onmessage', {
@@ -148,18 +204,24 @@ export function freezeWorkerHandlers(self, { dispatch, rawPostMessage } = {}) {
         configurable: false,
         enumerable: true,
       });
+      lockedOnmessage = true;
     } catch {
+      /* already frozen or an IDL attribute */
+    }
+    if (!lockedOnmessage && !listen) {
       try { self.onmessage = dispatch; } catch { /* already frozen */ }
     }
   }
-  try {
-    Object.defineProperty(self, 'postMessage', {
-      value: blocked('postMessage'),
-      writable: false,
-      configurable: false,
-    });
-  } catch {
-    /* already frozen */
+  for (const name of ['postMessage', 'close', 'addEventListener', 'removeEventListener']) {
+    try {
+      Object.defineProperty(self, name, {
+        value: blocked(name),
+        writable: false,
+        configurable: false,
+      });
+    } catch {
+      /* already frozen */
+    }
   }
   return rawPostMessage || null;
 }
