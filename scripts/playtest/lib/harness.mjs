@@ -206,18 +206,25 @@ const EMPTY_CART = Object.freeze({
  * Stub the /api calls the CAD shell hits on boot when auth/me says signed-in.
  * Playwright intercepts before the network (preview has no proxy; dev may hit a
  * real backend and return 401 when cookies do not match the stubbed session).
+ *
+ * Do not seed a GitHub token here by default. A fake `gho_*` makes git_save
+ * take the real-adapter consent path, logs 401s against GitHub, and can open
+ * the reauth profile panel over the canvas (joint picks miss). Pairing tests
+ * that need a connected chip pass `{ seedGithub: true }`.
+ *
+ * @param {import('playwright-core').Page} page
+ * @param {{ seedGithub?: boolean }} [opts]
  */
-export async function installApiMocks(page) {
+export async function installApiMocks(page, { seedGithub = false } = {}) {
   const fulfill = (route, status, body) => route.fulfill({
     status,
     contentType: 'application/json',
     body: JSON.stringify(body),
   });
 
-  // Seed a GitHub token *before* /me settles. authenticated:true without a
-  // usable token puts the profile chip in `reauth`, which swallows the click
-  // and never opens the menu with Connect Agent.
-  await seedGithubToken(page);
+  // Seed *before* /me settles. authenticated:true without a usable token puts
+  // the profile chip in `reauth`, which swallows Connect Agent.
+  if (seedGithub) await seedGithubToken(page);
 
   await page.route('**/api/auth/me', (route) => fulfill(route, 200, {
     authenticated: true,
@@ -293,13 +300,13 @@ export function createConsoleCollector(page) {
 
 /**
  * @param {import('playwright-core').Browser} browser
- * @param {{ width: number, height: number, baseUrl: string, userId: string, assembly: object, parts: Array<{id:string,script:string}> }} opts
+ * @param {{ width: number, height: number, baseUrl: string, userId: string, assembly: object, parts: Array<{id:string,script:string}>, seedGithub?: boolean }} opts
  */
 export async function openAgentPage(browser, opts) {
   const page = await browser.newPage({ viewport: { width: opts.width, height: opts.height } });
   await presetAnalyticsConsentInit(page);
   const consoleErrors = createConsoleCollector(page);
-  await installApiMocks(page);
+  await installApiMocks(page, { seedGithub: opts.seedGithub === true });
   const origin = new URL(opts.baseUrl).origin;
   await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
   await seedAssembly(page, { userId: opts.userId, assembly: opts.assembly, parts: opts.parts });

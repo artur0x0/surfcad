@@ -120,7 +120,7 @@ test('localStorage auto-approve flag is ignored in production build', { timeout:
     });
     attachConsentPresetToBrowser(browser);
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-    await installApiMocks(page);
+    await installApiMocks(page, { seedGithub: true });
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(
       () => typeof window.surfcad?.call === 'function' && !document.querySelector('[data-app-loading]'),

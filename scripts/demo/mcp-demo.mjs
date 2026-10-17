@@ -158,6 +158,7 @@ try {
     userId: USER_ID,
     assembly: seedDoc(),
     parts: seedParts(),
+    seedGithub: true,
   });
 
   if (PLAYTEST) {
