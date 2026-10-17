@@ -148,6 +148,15 @@ export const isFrontendFormat = (filename) =>
 export const isBackendFormat = (filename) => 
   BACKEND_FORMATS.includes(getExtension(filename));
 
+/** Client-safe STEP import errors. 401 is "sign in"; never show converter stdout. */
+export function stepImportErrorMessage(status, payload) {
+  if (status === 401) return 'Sign in to import STEP';
+  if (status === 429) {
+    return payload?.details || payload?.error || 'Too many STEP imports. Try again shortly.';
+  }
+  return payload?.details || payload?.error || 'STEP conversion failed';
+}
+
 // ============================================================================
 // SCRIPT GENERATION
 // ============================================================================
@@ -196,12 +205,13 @@ const convertStepToManifold = async (file, deflection = 0.1) => {
   
   const response = await fetch(`${API_URL}/api/convert/step`, {
     method: 'POST',
+    credentials: 'include',
     body: formData
   });
   
   if (!response.ok) {
     const error = await response.json().catch(() => ({ details: 'Conversion failed' }));
-    throw new Error(error.details || 'STEP conversion failed');
+    throw new Error(stepImportErrorMessage(response.status, error));
   }
   
   return response.json();

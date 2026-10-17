@@ -47,6 +47,7 @@ import SiteFooter from './components/SiteFooter';
 import { track, trackFeatureCommits } from './utils/analytics';
 import { 
   importFile,
+  isBackendFormat,
 } from './utils/importModel';
 import {
   downloadMeshExport,
@@ -7648,6 +7649,10 @@ const App = () => {
   // The mesh stays in the local asset cache. This does not commit to the vault.
   const handleImport = async (file) => {
     if (!file) return;
+    if (isBackendFormat(file.name) && !isAuthenticated) {
+      setUploadError('Sign in to import STEP');
+      return;
+    }
     if (!manifoldReady) {
       setUploadError('Manifold not ready. Please wait...');
       return;
