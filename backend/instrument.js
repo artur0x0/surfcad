@@ -6,4 +6,4 @@ import { loadBackendDotenv } from './config/loadEnv.js';
 import { initializeSentryOnce } from './monitoring/sentryInit.js';
 
 loadBackendDotenv();
-initializeSentryOnce();
+await initializeSentryOnce();

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test, afterEach } from 'node:test';
 import {
-  getSentryClient,
+  getSentryInitPayload,
   initializeSentryOnce,
 } from '../backend/monitoring/sentryInit.js';
 
@@ -17,30 +17,22 @@ describe('backend sentry instrument init', () => {
     }
   });
 
-  test('initializeSentryOnce is a no-op when SENTRY_DSN is unset', () => {
+  test('initializeSentryOnce is a no-op when SENTRY_DSN is unset', async () => {
     delete process.env.SENTRY_DSN;
-    const hadClient = getSentryClient() !== undefined;
-    const enabled = initializeSentryOnce();
-    if (!hadClient) {
-      assert.equal(enabled, false);
-      assert.equal(getSentryClient(), undefined);
-    }
+    const enabled = await initializeSentryOnce();
+    assert.equal(enabled, false);
+    assert.equal(getSentryInitPayload(), null);
   });
 
-  test('initializeSentryOnce applies production env defaults when DSN is set', () => {
+  test('getSentryInitPayload applies production env defaults when DSN is set', () => {
     process.env.SENTRY_DSN = 'https://public@o0.ingest.sentry.io/0';
     delete process.env.SENTRY_ENVIRONMENT;
     delete process.env.SENTRY_TRACES_SAMPLE_RATE;
 
-    const enabled = initializeSentryOnce();
-    assert.equal(enabled, true);
-
-    const client = getSentryClient();
-    assert.ok(client);
-    const options = client.getOptions();
-    assert.equal(options.environment, 'production');
-    assert.equal(options.tracesSampleRate, 0.2);
-
-    assert.equal(initializeSentryOnce(), true);
+    const payload = getSentryInitPayload();
+    assert.ok(payload);
+    assert.equal(payload.environment, 'production');
+    assert.equal(payload.tracesSampleRate, 0.2);
+    assert.equal(payload.sendDefaultPii, false);
   });
 });

@@ -1,47 +1,63 @@
 /**
  * Sentry SDK init (imported from instrument.js before express).
+ * @sentry/node is loaded only when a DSN is configured.
  */
 
-import * as Sentry from '@sentry/node';
-import { getClient } from '@sentry/core';
 import { readSentryEnv } from './sentryEnv.js';
 import { scrubSentryEvent } from './sentryScrub.js';
 
 /**
- * Initialize Sentry once from process env. No-op when DSN is unset or already initialized.
+ * Options passed to Sentry.init from env (no SDK import).
  *
- * @returns {boolean} whether Sentry is active after this call
+ * @returns {null | { dsn: string, environment: string, sendDefaultPii: false, tracesSampleRate: number }}
  */
-export function initializeSentryOnce() {
-  if (getClient()) {
-    return readSentryEnv() !== null;
-  }
-
+export function getSentryInitPayload() {
   const config = readSentryEnv();
-  if (!config) {
-    return false;
-  }
+  if (!config) return null;
 
-  Sentry.init({
+  return {
     dsn: config.dsn,
     environment: config.environment,
     sendDefaultPii: false,
     tracesSampleRate: config.tracesSampleRate,
-    integrations: [
-      Sentry.httpIntegration(),
-      Sentry.expressIntegration(),
-    ],
-    beforeSend(event) {
-      return scrubSentryEvent(event);
-    },
-  });
-
-  return true;
+  };
 }
 
+/** @type {Promise<void> | null} */
+let initPromise = null;
+
 /**
- * @returns {import('@sentry/core').Client | undefined}
+ * Initialize Sentry once from process env. No-op when DSN is unset or already initialized.
+ *
+ * @returns {Promise<boolean>} whether Sentry is active after this call
  */
-export function getSentryClient() {
-  return getClient();
+export async function initializeSentryOnce() {
+  const payload = getSentryInitPayload();
+  if (!payload) {
+    return false;
+  }
+
+  const { getClient } = await import('@sentry/core');
+  if (getClient()) {
+    return true;
+  }
+
+  if (!initPromise) {
+    initPromise = (async () => {
+      const Sentry = await import('@sentry/node');
+      Sentry.init({
+        ...payload,
+        integrations: [
+          Sentry.httpIntegration(),
+          Sentry.expressIntegration(),
+        ],
+        beforeSend(event) {
+          return scrubSentryEvent(event);
+        },
+      });
+    })();
+  }
+
+  await initPromise;
+  return true;
 }
