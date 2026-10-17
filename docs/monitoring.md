@@ -257,6 +257,6 @@ script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' https://challenges.cloudflare
 connect-src 'self' data: https://api.github.com https://cdn.sendcutsend.com https://api.stripe.com https://challenges.cloudflare.com https://*.stripe.com https://cdn.jsdelivr.net https://*.ingest.us.sentry.io https://us.i.posthog.com ws://127.0.0.1:17341 ws://localhost:17341
 ```
 
-Install the updated `surfcad-security.conf` on the Hostinger box and reload nginx after each CSP change.
+Install the updated `surfcad-security.conf` on the Hostinger box and reload nginx after each CSP change (`docs/ops/nginx-headers.md`).
 
 **Bootstrap order:** `src/main.jsx` calls `bootstrapSentry()` before React render (consent-independent). PostHog starts from `bootAnalytics()` inside `AuthProvider` (`src/hooks/useAuth.jsx`), which listens to `onConsentChange` from `src/utils/consent.js`. Sentry and PostHog both hash user ids for identity; neither sends email or raw Mongo ids.

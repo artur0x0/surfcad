@@ -1,6 +1,6 @@
 # Applying nginx security headers on surfcad.com (Hostinger)
 
-Artur applies this on the production box. The Cloud Agent only ships files under `docs/`; it does not SSH or reload prod.
+Artur applies this on the production box. See [README.md](./README.md) for the config file map.
 
 ## What changed
 
@@ -8,8 +8,12 @@ Artur applies this on the production box. The Cloud Agent only ships files under
 - `/api/` is proxied to Node; **helmet** on the backend sets HSTS, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and related headers. The nginx `/api/` block intentionally adds **no** duplicate security headers.
 - **COOP / COEP** were removed from nginx. The FEA wasm worker is single-threaded and does not need `crossOriginIsolated` or `SharedArrayBuffer` in the page (`src/workers/feaWorker.js`). Keeping `COEP: require-corp` would block third-party iframes (Cloudflare Turnstile, Stripe Elements) unless every embed sent `Cross-Origin-Resource-Policy`, which they do not.
 - **`connect-src` includes `data:`** so Cloudflare Turnstile on `/partners` can complete its challenge without CSP console errors. Managed/invisible behaviour is configured in the Turnstile dashboard, not via the widget `size` option.
-- **`connect-src` includes `ws://127.0.0.1:17341` and `ws://localhost:17341`** so the production **Local agent** panel can reach the loopback relay started by `npx surfcad-mcp` (see `docs/nginx-snippets/surfcad-security.conf`).
+- **`connect-src` includes `ws://127.0.0.1:17341` and `ws://localhost:17341`** so the production **Local agent** panel can reach the loopback relay started by `npx surfcad-mcp` (see [../nginx-snippets/surfcad-security.conf](../nginx-snippets/surfcad-security.conf)).
 - **`location /` no longer sets `expires 0`** alongside `Cache-Control`, so `index.html` is not sent with two conflicting `Cache-Control` values.
+
+### CSP (PostHog, Sentry, local agent)
+
+The live snippet in [../nginx-snippets/surfcad-security.conf](../nginx-snippets/surfcad-security.conf) should match [../monitoring.md](../monitoring.md) slice E (combined PostHog + Sentry + agent-bridge `connect-src` / `script-src`). When analytics or error reporting env vars change on spark, update the snippet, reinstall on prod, and reload nginx.
 
 ## Backup
 
@@ -22,7 +26,7 @@ sudo cp -a /etc/nginx/snippets/surfcad-security.conf \
 
 ## Install files from the repo
 
-From a checkout of the branch that contains this PR:
+From a checkout of the branch that contains the updated configs:
 
 ```bash
 sudo install -m 644 docs/nginx-snippets/surfcad-security.conf /etc/nginx/snippets/surfcad-security.conf
@@ -50,7 +54,7 @@ Expected (values may wrap in the terminal; the CSP is one long line in the snipp
 | `X-Content-Type-Options` | `nosniff` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `Permissions-Policy` | `accelerometer=(), camera=(), ...` |
-| `Content-Security-Policy` | starts with `default-src 'self';` and includes `challenges.cloudflare.com`, `js.stripe.com`, `api.github.com`, `wasm-unsafe-eval`, `worker-src 'self' blob:` |
+| `Content-Security-Policy` | starts with `default-src 'self';` and includes `challenges.cloudflare.com`, `js.stripe.com`, `api.github.com`, `wasm-unsafe-eval`, `worker-src 'self' blob:`, `https://*.ingest.us.sentry.io`, `https://us.i.posthog.com`, and the local agent `ws://127.0.0.1:17341` entries |
 
 `/api/` responses should **not** gain a second copy of these from nginx; check one API route if unsure:
 

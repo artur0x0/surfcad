@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * One-off idempotent migration: remove unused User.dob from MongoDB.
- * Run once on production after deploying the schema change (see docs/ops-upload-prune.md).
+ * Run once on production after deploying the schema change (see docs/ops/upload-prune.md).
  *
  * Usage:
  *   NODE_ENV=production node scripts/unset-user-dob.js [--dry-run]

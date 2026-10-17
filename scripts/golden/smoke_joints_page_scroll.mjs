@@ -82,11 +82,10 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
     && /addEventListener\('scroll', onScroll/.test(hook));
   const arch = read('docs/architecture.md');
   const map = read('docs/UI_MAP.md');
-  const judgments = read('docs/joints-judgments.md');
-  check('architecture, the UI map, and the judgments name the page-scroll lock',
+  check('architecture and the UI map name the page-scroll lock',
     /golden:joints-page-scroll/.test(arch)
     && /golden:joints-page-scroll/.test(map)
-    && /The page does not scroll/.test(judgments));
+    && /does not make the page scroll/.test(arch));
 }
 
 const exe = CHROME_CANDIDATES.find((p) => existsSync(p));
