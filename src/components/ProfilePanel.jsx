@@ -35,6 +35,7 @@ export default function ProfilePanel({
   onOpenCart = null,
   align = 'right',
   agentBridgeLive = false,
+  onAgentBridgeConnectionChange = null,
 }) {
   const { user } = useAuth();
   const ref = useRef(null);
@@ -277,7 +278,11 @@ export default function ProfilePanel({
       {agentBridgeLive ? (
         <>
           <div className="my-2 border-t border-chrome-border" data-profile-agent-bridge-divider="" />
-          <AgentBridgePairing enabled embedded />
+          <AgentBridgePairing
+            enabled
+            embedded
+            onConnectionChange={onAgentBridgeConnectionChange}
+          />
         </>
       ) : null}
     </div>

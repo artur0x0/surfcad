@@ -2,6 +2,7 @@
  * Relay auto-retry: page open before relay starts should pair without reload.
  * Run: npm run build && node scripts/playtest/run.mjs --scenario agent-bridge-relay-retry
  */
+import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +14,7 @@ import {
   waitForServer,
 } from '../lib/harness.mjs';
 import { pickFreePort } from '../lib/pickFreePort.mjs';
+import { connectPeer } from '../../../src/agent/ws/nodeClient.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const SERVER_BIN = join(ROOT, 'packages/surfcad-mcp/bin/surfcad-mcp.js');
@@ -60,6 +62,17 @@ export async function run(ctx) {
   await page.locator('[data-profile-chip]').first().click();
   await page.click('[data-ui-action="data-agent-bridge-connect"]');
   await page.waitForSelector('[data-agent-bridge-waiting-relay]', { timeout: 10000 });
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('[data-profile-panel]', { state: 'hidden', timeout: 5000 });
+  const wrapBox = await page.locator('[data-profile-chip-wrap]').first().boundingBox();
+  assert.ok(wrapBox, 'profile chip wrap should be visible');
+  assert.equal(Math.round(wrapBox.width), 36, `wrap width ${wrapBox.width}`);
+  assert.equal(Math.round(wrapBox.height), 36, `wrap height ${wrapBox.height}`);
+  assert.ok(wrapBox.y >= 12 && wrapBox.y <= 20, `wrap top ${wrapBox.y}`);
+  assert.ok(
+    wrapBox.x + wrapBox.width >= 1280 - 24,
+    `wrap should sit at top-right (x=${wrapBox.x})`,
+  );
 
   const relayProc = spawn(process.execPath, [SERVER_BIN], {
     env: {
@@ -72,11 +85,23 @@ export async function run(ctx) {
   });
 
   try {
+    await page.locator('[data-profile-chip]').first().click();
+    await page.click('[data-ui-action="data-agent-bridge-connect"]');
+    await page.waitForSelector('[data-agent-bridge-waiting-relay]', { timeout: 10000 });
     await page.waitForSelector('[data-agent-bridge-code]', { timeout: 30000 });
+    const token = (await page.locator('[data-agent-bridge-code]').innerText()).trim();
+    const peerPromise = connectPeer(relayUrl, token);
+    await page.waitForSelector('[data-agent-bridge-approval]', { timeout: 15000 });
+    await page.click('[data-ui-action="data-agent-bridge-approve"]');
+    const peer = await peerPromise;
+    await page.waitForSelector('[data-agent-bridge-connection-ring]', { timeout: 15000 });
+    try { peer.close(); } catch { /* gone */ }
+
     const stopRelay = () => {
       try { process.kill(-relayProc.pid, 'SIGTERM'); } catch { /* gone */ }
     };
     stopRelay();
+    await page.waitForSelector('[data-agent-bridge-connection-ring]', { state: 'hidden', timeout: 30000 });
     await page.waitForSelector('[data-agent-bridge-waiting-relay]', { timeout: 30000 });
 
     const relayProc2 = spawn(process.execPath, [SERVER_BIN], {

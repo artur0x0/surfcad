@@ -19,19 +19,26 @@ import {
   shouldRevealPairingCode,
 } from '../agent/ws/pairingFlow.js';
 import { CONNECT_AGENT_BUTTON_CLASS } from './agentBridgeConnectButton.js';
+import AgentBridgeApprovalPopup from './AgentBridgeApprovalPopup.jsx';
+import { approvalPopupReducer } from '../agent/ws/agentBridgeChrome.js';
 
 /**
  * Local WebSocket pairing for MCP / stdio clients (M1). Shown only when the
  * in-page agent bridge is active. No silent auto-pair: the user must open
  * pairing and approve each local client.
  */
-export default function AgentBridgePairing({ enabled, embedded = false }) {
+export default function AgentBridgePairing({
+  enabled,
+  embedded = false,
+  onConnectionChange = null,
+}) {
   const [flowOpen, setFlowOpen] = useState(false);
   const [token, setToken] = useState('');
   const [state, setState] = useState('idle');
   const [issue, setIssue] = useState(null);
   const [copied, setCopied] = useState(null);
   const [relayReachable, setRelayReachable] = useState(false);
+  const [approvalUi, setApprovalUi] = useState({ open: false });
   const connRef = useRef(null);
   const pollerRef = useRef(null);
   const flowOpenRef = useRef(flowOpen);
@@ -79,6 +86,18 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
   useEffect(() => {
     if (state === 'paired') {
       track('local_agent_paired');
+    }
+  }, [state]);
+
+  useEffect(() => {
+    onConnectionChange?.(state === 'paired');
+  }, [onConnectionChange, state]);
+
+  useEffect(() => {
+    if (state === 'pending') {
+      setApprovalUi((prev) => approvalPopupReducer(prev, 'pair_request'));
+    } else {
+      setApprovalUi((prev) => approvalPopupReducer(prev, 'dismiss'));
     }
   }, [state]);
 
@@ -195,6 +214,16 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
     }
   }, [flowOpen, relayReachable, state, token]);
 
+  const handleApprove = useCallback(() => {
+    setApprovalUi((prev) => approvalPopupReducer(prev, 'allow'));
+    connRef.current?.approvePair();
+  }, []);
+
+  const handleReject = useCallback(() => {
+    setApprovalUi((prev) => approvalPopupReducer(prev, 'deny'));
+    connRef.current?.rejectPair();
+  }, []);
+
   if (!enabled) return null;
 
   const paired = state === 'paired';
@@ -278,24 +307,9 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
             {copied === 'code' ? 'Copied' : 'Copy code'}
           </button>
           {pending && (
-            <div className="flex gap-2 mb-2">
-              <button
-                type="button"
-                className="flex-1 rounded bg-emerald-700/90 px-2 py-1.5 text-white hover:bg-emerald-600"
-                onClick={() => connRef.current?.approvePair()}
-                data-ui-action="data-agent-bridge-approve"
-              >
-                Allow connection
-              </button>
-              <button
-                type="button"
-                className="flex-1 rounded bg-chrome-border px-2 py-1.5 text-white hover:bg-gray-600"
-                onClick={() => connRef.current?.rejectPair()}
-                data-ui-action="data-agent-bridge-reject"
-              >
-                Deny
-              </button>
-            </div>
+            <p className="text-xs text-center text-chrome-text-secondary mb-2" data-agent-bridge-approval-hint="">
+              Approve or deny the connection in the popup.
+            </p>
           )}
           {paired && (
             <div
@@ -397,9 +411,19 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
     </button>
   ) : null;
 
+  const approvalPopup = (
+    <AgentBridgeApprovalPopup
+      open={approvalUi.open}
+      embedded={embedded}
+      onAllow={handleApprove}
+      onDeny={handleReject}
+    />
+  );
+
   if (embedded) {
     return (
-      <div className="px-3 py-2 space-y-2" data-agent-bridge-pairing="">
+      <div className="relative px-3 py-2 space-y-2" data-agent-bridge-pairing="">
+        {approvalPopup}
         {connectAgentButton}
         {paired && !flowOpen ? (
           <button
@@ -421,12 +445,15 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
   }
 
   return (
-    <div
-      className="fixed bottom-3 right-3 z-[120] flex flex-col items-end gap-1 max-w-[min(100vw-1rem,20rem)]"
-      data-agent-bridge-pairing=""
-    >
-      {panel}
-      {connectAgentButton || chip}
-    </div>
+    <>
+      {approvalPopup}
+      <div
+        className="fixed bottom-3 right-3 z-[120] flex flex-col items-end gap-1 max-w-[min(100vw-1rem,20rem)]"
+        data-agent-bridge-pairing=""
+      >
+        {panel}
+        {connectAgentButton || chip}
+      </div>
+    </>
   );
 }

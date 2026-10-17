@@ -13,6 +13,7 @@ import { Loader2, User } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuthState } from '../hooks/useAuthState';
 import { chipView } from '../utils/authPhase.js';
+import { shouldShowAgentBridgeRing } from '../agent/ws/agentBridgeChrome.js';
 import { profileInitials } from '../utils/profileInitials.js';
 import { clearGithubToken, loadGithubToken } from '../utils/git/githubAuth.js';
 import { DEFAULT_VAULT_NAME } from '../utils/git/vault.js';
@@ -32,6 +33,7 @@ export default function ProfileChip({
   const cartChrome = useCartChrome();
   const cartCount = session.signedIn ? (cartChrome?.count || 0) : 0;
   const [panelOpen, setPanelOpen] = useState(false);
+  const [agentBridgeConnected, setAgentBridgeConnected] = useState(false);
   const phase = session.phase;
   const motion = session.reconnecting
     ? 'spinning'
@@ -73,7 +75,7 @@ export default function ProfileChip({
         justify-center rounded-full border surface-glass-chip bg-chrome-surface/55
         text-[10px] font-semibold tracking-wide transition-colors
         active:opacity-80 ${tone}`
-    : `pointer-events-auto absolute top-4 right-4 z-50 flex h-9 w-9 items-center
+    : `pointer-events-auto relative flex h-9 w-9 items-center
         justify-center rounded-full border surface-glass-chip bg-chrome-surface/55
         text-xs font-semibold tracking-wide shadow-lg transition-colors
         active:opacity-80 ${tone}`;
@@ -141,6 +143,7 @@ export default function ProfileChip({
   };
 
   const showPanel = signedIn || reauth || canClear || agentBridgeLive;
+  const showAgentRing = agentBridgeLive && shouldShowAgentBridgeRing({ connected: agentBridgeConnected });
 
   return (
     <div className={wrapClass} data-profile-chip-wrap="">
@@ -158,10 +161,15 @@ export default function ProfileChip({
         onPointerDown={(e) => e.stopPropagation()}
         title={title}
         aria-label={title}
-        className={inline
-          ? shell.replace('relative z-10 ', '')
-          : shell.replace('absolute top-4 right-4 z-50 ', '')}
+        className={shell}
       >
+        {showAgentRing ? (
+          <span
+            className="agent-bridge-profile-ring pointer-events-none absolute inset-0 rounded-full"
+            data-agent-bridge-connection-ring=""
+            aria-hidden="true"
+          />
+        ) : null}
         {view.spinner ? (
           <Loader2 size={iconSize} className="animate-spin" aria-hidden="true" data-profile-spinner="" />
         ) : label ? (
@@ -215,6 +223,7 @@ export default function ProfileChip({
           onOpenCart={session.signedIn ? () => cartChrome?.openCart?.() : null}
           align="right"
           agentBridgeLive={agentBridgeLive}
+          onAgentBridgeConnectionChange={setAgentBridgeConnected}
         />
       )}
       {variant === 'viewport' && reauth && session.bootEmpty ? (
