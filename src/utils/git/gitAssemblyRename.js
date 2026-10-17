@@ -8,10 +8,9 @@
  * working copy and does not enqueue.
  */
 import { assemblyName, serializeAssembly } from '../assembly.js';
-import { remapAssemblyPaths } from './gitCommit.js';
+import { prepareAssemblySurfWrite, remapAssemblyPaths } from './gitCommit.js';
 import { captureBaseline, resolveAssemblyFolderName } from './gitWorkspace.js';
 import { readSurfId, withSurfId } from './surfId.js';
-import { stringifySurfJson } from './surfJson.js';
 import { assemblyDir, assemblyFilePath, parseVaultPath, vaultSegment } from './vaultLayout.js';
 
 /**
@@ -79,33 +78,54 @@ export function baselineAfterAssemblyRename(baseline, doc, scripts, { headSha = 
 /**
  * Working copy + outbox payload for one assembly rename.
  * partIds are only paths that moved with the folder. parts/ stays put.
+ * Path-less rows go through prepareAssemblySurfWrite first so .surf.json
+ * is valid and the caller can refuse before mutating the working copy.
  */
-export function planAssemblyRename({ doc, scripts = {}, nextName, baseline = null } = {}) {
+export async function planAssemblyRename({
+  doc, scripts = {}, nextName, baseline = null,
+  adapter = null, repo = null, branch = 'main',
+} = {}) {
   const oldName = vaultSegment(doc?.name) || assemblyName(doc);
   const newName = vaultSegment(nextName);
   const remapped = remapAssemblyPaths({ ...doc, name: newName }, scripts, oldName, newName);
   const nextDoc = serializeAssembly({ ...remapped.doc, name: newName, source: 'git' });
-  const moved = remapped.moved || [];
-  const localFiles = moved.map(({ to }) => {
-    const part = nextDoc.parts.find((row) => row.id === to);
-    let content = remapped.scripts[to] ?? '';
+  if (!adapter || !repo) {
+    throw new Error('Git adapter required to plan an assembly rename');
+  }
+  const prepared = await prepareAssemblySurfWrite(adapter, repo, {
+    doc: nextDoc,
+    scripts: remapped.scripts,
+    branch: branch || baseline?.branch || 'main',
+  });
+  const workDoc = prepared.doc;
+  const workScripts = prepared.scripts;
+  const moved = [...(remapped.moved || []), ...(prepared.moved || [])];
+  const localByPath = new Map();
+  for (const { to } of remapped.moved || []) {
+    const part = workDoc.parts.find((row) => row.id === to);
+    let content = workScripts[to] ?? '';
     if (part?.surfId && readSurfId(content) !== part.surfId) {
       content = withSurfId(content, part.surfId);
     }
-    return { path: to, content };
-  });
-  const assemblyPath = assemblyFilePath(newName);
-  const assemblyText = stringifySurfJson(nextDoc);
+    localByPath.set(to, { path: to, content });
+  }
+  for (const { to } of prepared.moved || []) {
+    if (!to || localByPath.has(to)) continue;
+    localByPath.set(to, { path: to, content: workScripts[to] ?? '' });
+  }
+  const localFiles = [...localByPath.values()];
+  const assemblyPath = prepared.assemblyPath || assemblyFilePath(newName);
+  const assemblyText = prepared.assemblyText;
   const moves = localFiles.map((file) => {
     const from = moved.find((pair) => pair.to === file.path)?.from || '';
-    const part = nextDoc.parts.find((row) => row.id === file.path);
+    const part = workDoc.parts.find((row) => row.id === file.path);
     return { from, to: file.path, surfId: part?.surfId || null, content: file.content };
   });
   return {
     oldName,
     newName,
-    doc: nextDoc,
-    scripts: remapped.scripts,
+    doc: workDoc,
+    scripts: workScripts,
     moved,
     message: `Rename assembly ${oldName} to ${newName}`,
     partIds: moved.map((pair) => pair.to),
@@ -118,7 +138,7 @@ export function planAssemblyRename({ doc, scripts = {}, nextName, baseline = nul
       fromName: oldName,
       toName: newName,
       label: newName,
-      partId: nextDoc.activeId,
+      partId: workDoc.activeId,
       assemblyPath,
       assemblyText,
       localFiles,
@@ -131,12 +151,13 @@ export function planAssemblyRename({ doc, scripts = {}, nextName, baseline = nul
  * Resolve the folder (including Name (2)) and either stage a commit or
  * rename locally. Does not touch the store or the network.
  */
-export function stageAssemblyRename({
+export async function stageAssemblyRename({
   doc,
   scripts = {},
   nextName,
   taken = [],
   repo = null,
+  adapter = null,
   baseline = null,
 } = {}) {
   if (!doc) return { status: 'blocked', reason: 'empty' };
@@ -150,27 +171,43 @@ export function stageAssemblyRename({
     const localDoc = serializeAssembly({ ...doc, name: resolved.name });
     return { status: 'local', name: localDoc.name, doc: localDoc, scripts, commit: false };
   }
-  const plan = planAssemblyRename({ doc, scripts, nextName: resolved.name, baseline });
-  const held = baselineAfterAssemblyRename(baseline, plan.doc, plan.scripts, {
-    headSha: baseline?.headSha || null,
-    branch: baseline?.branch || 'main',
-  });
-  held.renamePending = true;
-  return {
-    status: 'staged',
-    commit: true,
-    name: plan.newName,
-    doc: plan.doc,
-    scripts: plan.scripts,
-    plan,
-    baseline: held,
-    enqueue: {
-      op: 'rename',
-      message: plan.message,
-      partIds: plan.partIds,
-      payload: plan.payload,
-    },
-  };
+  try {
+    const plan = await planAssemblyRename({
+      doc,
+      scripts,
+      nextName: resolved.name,
+      baseline,
+      adapter,
+      repo,
+      branch: baseline?.branch || 'main',
+    });
+    const held = baselineAfterAssemblyRename(baseline, plan.doc, plan.scripts, {
+      headSha: baseline?.headSha || null,
+      branch: baseline?.branch || 'main',
+    });
+    held.renamePending = true;
+    return {
+      status: 'staged',
+      commit: true,
+      name: plan.newName,
+      doc: plan.doc,
+      scripts: plan.scripts,
+      plan,
+      baseline: held,
+      enqueue: {
+        op: 'rename',
+        message: plan.message,
+        partIds: plan.partIds,
+        payload: plan.payload,
+      },
+    };
+  } catch (err) {
+    return {
+      status: 'error',
+      error: err?.message || 'Could not rename assembly',
+      code: err?.code || 'rename_failed',
+    };
+  }
 }
 
 /**

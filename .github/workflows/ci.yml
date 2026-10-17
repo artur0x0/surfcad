@@ -103,6 +103,7 @@ jobs:
           node scripts/golden/smoke_git_g2_open_save.mjs
           node scripts/golden/smoke_git_save_stray.mjs
           node scripts/golden/smoke_git_g3_commit_push.mjs
+          node scripts/golden/smoke_git_g7_real_adapter.mjs
 
   # Cheapest existing golden that proves the bundle actually boots: a real
   # headless Chrome, vite preview, #root painted, canvas + toolbar + Run.

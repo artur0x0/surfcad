@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import { createMockGithubAdapter } from '../src/utils/git/mockGithubAdapter.js';
 import { findOrCreateVault } from '../src/utils/git/vault.js';
 import { assemblyFilePath, assemblyPartPath, sharedPartPath } from '../src/utils/git/vaultLayout.js';
+import { readFileSync } from 'node:fs';
 import { parseSurfJson, validateSurfJson } from '../src/utils/git/surfJson.js';
 import { mintSurfId } from '../src/utils/git/surfId.js';
 import { mintGroupId } from '../src/utils/partGroups.js';
@@ -15,9 +16,13 @@ import { fileWrite } from '../src/utils/git/githubAdapterInterface.js';
 import {
   PATH_LESS_PARTS,
   VAULT_TREE_UNAVAILABLE,
+  deletePartFromRepo,
   prepareAssemblySurfWrite,
   prepareVaultPartRename,
 } from '../src/utils/git/gitCommit.js';
+import { planAssemblyRename } from '../src/utils/git/gitAssemblyRename.js';
+import { commitOpenAssemblyText, projectPendingOps } from '../src/utils/git/gitDeleteAssembly.js';
+import { checkInMineToBranch } from '../src/utils/git/gitPull.js';
 import { buildRenameCommitFiles } from '../src/utils/git/gitRename.js';
 
 const ASM = 'Kettle';
@@ -247,4 +252,159 @@ test('parseSurfJson accepts a promoted delete write', async () => {
   });
   const reopened = parseSurfJson(prepared.assemblyText);
   assert.deepEqual(reopened.parts.map((p) => p.id), [LID]);
+});
+
+test('planAssemblyRename promotes a path-less sibling before writing .surf.json', async () => {
+  const { gh, vault } = await seededVault();
+  const { doc, scripts } = fixture();
+  const before = JSON.parse(JSON.stringify(doc.parts.map((part) => part.id)));
+  const plan = await planAssemblyRename({
+    doc,
+    scripts,
+    nextName: 'Pot',
+    adapter: gh,
+    repo: vault.repo,
+    branch: 'main',
+  });
+  assert.deepEqual(doc.parts.map((part) => part.id), before, 'input doc is unchanged');
+  const potLid = assemblyPartPath('Pot', 'Lid');
+  assert.ok(plan.doc.parts.some((part) => part.id === potLid));
+  assert.equal(plan.doc.parts.some((part) => part.id === STRAY), false);
+  const raw = parseSurfJson(plan.assemblyText);
+  assert.ok(raw.parts.some((part) => part.id === potLid || part.path === potLid));
+  assert.ok(
+    plan.payload.localFiles.some((file) => file.path === potLid && file.content === '// lid\n'),
+    'promoted sibling blob is in the rename payload',
+  );
+});
+
+test('checkInMineToBranch promotes a path-less sibling and does not create a branch on refuse', async () => {
+  const { gh, vault } = await seededVault();
+  const { doc, scripts } = fixture();
+  const baseline = {
+    branch: 'main',
+    headSha: vault.headSha,
+    assemblyPath: assemblyFilePath(ASM),
+  };
+  const beforeIds = JSON.parse(JSON.stringify(doc.parts.map((part) => part.id)));
+  const res = await checkInMineToBranch(gh, vault.repo, {
+    doc,
+    scripts,
+    baseline,
+    path: assemblyFilePath(ASM),
+    kind: 'assembly',
+    now: new Date('2026-10-17T00:00:00Z'),
+  });
+  assert.equal(res.status, 'branched');
+  assert.deepEqual(doc.parts.map((part) => part.id), beforeIds, 'working copy is unchanged');
+  const written = parseSurfJson((await gh.readFile(vault.repo, assemblyFilePath(ASM), res.branch)).content);
+  assert.ok(written.parts.some((part) => part.id === LID));
+  assert.equal((await gh.readFile(vault.repo, LID, res.branch)).content, '// lid\n');
+  assert.equal(await gh.readFile(vault.repo, assemblyFilePath(ASM), 'main'), null);
+
+  const leftoverDoc = {
+    source: 'git',
+    name: '',
+    activeId: STRAY,
+    parts: [{ id: STRAY, name: 'Lid', visible: true, order: 0, surfId: mintSurfId() }],
+  };
+  const branchesBefore = (await gh.listBranches(vault.repo)).map((row) => row.name).sort();
+  await assert.rejects(
+    () => checkInMineToBranch(gh, vault.repo, {
+      doc: leftoverDoc,
+      scripts: { [STRAY]: '// lid\n' },
+      baseline,
+      path: assemblyFilePath('Assembly'),
+      kind: 'assembly',
+      now: new Date('2026-10-17T00:00:00Z'),
+    }),
+    (err) => err.code === PATH_LESS_PARTS,
+  );
+  const branchesAfter = (await gh.listBranches(vault.repo)).map((row) => row.name).sort();
+  assert.deepEqual(branchesAfter, branchesBefore, 'no side branch before a prepare throw');
+});
+
+test('commitOpenAssemblyText promotes a path-less sibling and leaves the input doc alone', async () => {
+  const { gh, vault } = await seededVault();
+  const { doc, scripts } = fixture();
+  const before = JSON.parse(JSON.stringify(doc.parts.map((part) => part.id)));
+  const asmPath = assemblyFilePath(ASM);
+  const out = await commitOpenAssemblyText(
+    [fileWrite(asmPath, '{}\n'), fileWrite(BRACKET, '// bracket\n')],
+    asmPath,
+    doc,
+    { adapter: gh, repo: vault.repo, scripts, branch: 'main' },
+  );
+  assert.deepEqual(doc.parts.map((part) => part.id), before, 'input doc is unchanged');
+  assert.ok(out.doc.parts.some((part) => part.id === LID));
+  const asm = out.files.find((file) => file.path === asmPath && !file.delete);
+  assert.ok(asm);
+  const raw = parseSurfJson(asm.content);
+  assert.ok(raw.parts.some((part) => part.id === LID));
+  assert.ok(out.files.some((file) => file.path === LID && file.content === '// lid\n'));
+});
+
+test('deletePartFromRepo promotes a path-less sibling before the assembly write', async () => {
+  const { gh, vault } = await seededVault();
+  const { doc, scripts } = fixture();
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed bracket',
+    baseSha: vault.headSha,
+    files: [fileWrite(BRACKET, '// bracket\n')],
+  });
+  const before = JSON.parse(JSON.stringify(doc.parts.map((part) => part.id)));
+  const removed = await deletePartFromRepo(gh, vault.repo, {
+    doc: removePart(doc, BRACKET),
+    scripts,
+    baseline: { branch: 'main', headSha: (await gh.getBranch(vault.repo, 'main')).sha, scripts: {} },
+    partPath: BRACKET,
+  });
+  assert.equal(removed.status, 'committed', removed.error);
+  assert.deepEqual(doc.parts.map((part) => part.id), before, 'input doc is unchanged');
+  const raw = parseSurfJson((await gh.readFile(vault.repo, assemblyFilePath(ASM), 'main')).content);
+  assert.ok(raw.parts.some((part) => part.id === LID));
+  assert.equal((await gh.readFile(vault.repo, LID, 'main')).content, '// lid\n');
+  assert.equal(await gh.readFile(vault.repo, BRACKET, 'main'), null);
+});
+
+test('projectPendingOps includes a rename payload extraFiles', () => {
+  const plate = sharedPartPath('Plate');
+  const projected = projectPendingOps(
+    [
+      { path: BRACKET, content: '// bracket\n' },
+      { path: assemblyFilePath(ASM), content: '{}\n' },
+    ],
+    [{
+      op: 'rename',
+      status: 'queued',
+      payload: {
+        kind: 'part',
+        from: BRACKET,
+        to: plate,
+        content: '// bracket\n',
+        extraFiles: [fileWrite(LID, '// lid\n')],
+      },
+    }],
+  );
+  assert.ok(projected.some((entry) => entry.path === LID && entry.content === '// lid\n'));
+  assert.ok(projected.some((entry) => entry.path === plate));
+  assert.equal(projected.some((entry) => entry.path === BRACKET), false);
+});
+
+test('mesh import fails loud when the vault tree cannot be listed', () => {
+  const src = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const start = src.indexOf('const name = dedupedImportName');
+  const end = src.indexOf('id = newLocalPartId()', start);
+  assert.ok(start >= 0 && end > start, 'mesh import occupancy block');
+  const block = src.slice(start, end);
+  assert.match(block, /listVaultTreePaths/);
+  assert.match(block, /setUploadError/);
+  assert.match(block, /VAULT_TREE_UNAVAILABLE/);
+  assert.equal(/open document still blocks collisions/.test(block), false);
+});
+
+test('CI runs the G7 real-adapter golden', () => {
+  const yml = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  assert.match(yml, /smoke_git_g7_real_adapter\.mjs/);
 });

@@ -35,8 +35,8 @@ import {
   vaultSegment,
 } from './vaultLayout.js';
 import { isSurfId, isSurfJsonPath, readSurfId, withSurfId } from './surfId.js';
-import { parseSurfJson, stringifySurfJson } from './surfJson.js';
-import { buildRenameCommitFiles, projectFiles } from './gitRename.js';
+import { parseSurfJson } from './surfJson.js';
+import { buildRenameCommitFiles, projectFiles, renamePlanFromPayload } from './gitRename.js';
 
 const DELETE_MESSAGE = (name) => `Delete assembly ${name}`;
 
@@ -545,17 +545,32 @@ export function baselineAfterDelete(captured, { kind, files = [], pairs = [], pr
 /**
  * When the open assembly's .surf.json is part of the commit, write the
  * in-memory document so local edits and the baseline match that file.
+ * Path-less rows are promoted first; leftovers throw before the caller
+ * mutates the working copy.
+ * -> { files, doc, scripts, moved }
  */
-export function commitOpenAssemblyText(files, assemblyPath, doc) {
-  if (!assemblyPath || !doc) return files || [];
-  const text = stringifySurfJson(doc);
-  let found = false;
-  const next = (files || []).map((file) => {
-    if (file?.path !== assemblyPath || file.delete) return file;
-    found = true;
-    return fileWrite(assemblyPath, text);
+export async function commitOpenAssemblyText(files, assemblyPath, doc, {
+  adapter, repo, scripts = {}, branch = 'main',
+} = {}) {
+  if (!assemblyPath || !doc) return { files: files || [], doc, scripts, moved: [] };
+  if (!adapter || !repo) {
+    throw new Error('Git adapter required to write the open assembly');
+  }
+  // Dynamic import: gitCommit -> partVaultPath -> sharedPathForMove here.
+  const { prepareAssemblySurfWrite } = await import('./gitCommit.js');
+  const extras = (files || []).filter((file) => file?.path !== assemblyPath || file.delete);
+  const prepared = await prepareAssemblySurfWrite(adapter, repo, {
+    doc,
+    scripts,
+    branch,
+    extraFiles: extras,
   });
-  return found ? next : (files || []);
+  return {
+    files: prepared.files,
+    doc: prepared.doc,
+    scripts: prepared.scripts,
+    moved: prepared.moved,
+  };
 }
 
 /** Apply queued ops onto a tree so a delete sees renames that are not pushed yet. */
@@ -564,23 +579,7 @@ export function projectPendingOps(entries, ops) {
   for (const op of ops || []) {
     if (!op || op.status === 'done') continue;
     if (op.op === 'rename' && op.payload) {
-      const payload = op.payload;
-      const plan = payload.kind === 'assembly'
-        ? {
-          kind: 'assembly',
-          fromName: payload.fromName,
-          toName: payload.toName,
-          assemblyPath: payload.assemblyPath,
-          assemblyText: payload.assemblyText,
-          localFiles: payload.localFiles || [],
-        }
-        : {
-          kind: 'part',
-          surfId: payload.surfId,
-          from: payload.from,
-          to: payload.to,
-          content: payload.content,
-        };
+      const plan = renamePlanFromPayload(op.payload);
       current = projectFiles(current, buildRenameCommitFiles({ entries: current, plan }).files);
     } else if (Array.isArray(op.files) && op.files.length) {
       current = projectFiles(current, op.files);
