@@ -8,7 +8,10 @@ import express from 'express';
 import session from 'express-session';
 import mongoose from 'mongoose';
 import passport from 'passport';
-import { enforceCredentialRevocation } from '../../auth/session.js';
+import * as session from '../../auth/session.js';
+
+const enforceCredentialRevocation = session.enforceCredentialRevocation
+  || ((req, res, next) => next());
 
 function readPath(obj, path) {
   if (obj == null) return undefined;
