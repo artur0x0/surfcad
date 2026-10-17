@@ -450,37 +450,123 @@ function num(n) {
   return Number(n).toFixed(1);
 }
 
-function lineAttrs(a, b, extra) {
-  return `x1="${num(a.x)}" y1="${num(a.y)}" x2="${num(b.x)}" y2="${num(b.y)}" ${extra}`;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const HALO_ATTRS = {
+  stroke: '#0f172a',
+  'stroke-opacity': '0.55',
+  fill: 'none',
+  'stroke-width': '3.5',
+  'stroke-linecap': 'butt',
+};
+const CORE_ATTRS = {
+  stroke: '#f8fafc',
+  fill: 'none',
+  'stroke-width': '1.5',
+  'stroke-linecap': 'butt',
+};
+
+function escapeAttr(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function linePair(a, b) {
+  return { x1: num(a.x), y1: num(a.y), x2: num(b.x), y2: num(b.y) };
+}
+
+function attrsToHtml(attrs) {
+  return Object.entries(attrs)
+    .map(([key, value]) => `${key}="${escapeAttr(value == null ? '' : value)}"`)
+    .join(' ');
+}
+
+/** Serializable SVG nodes for one figure. Ids are never interpolated raw. */
+export function dimensionFigureNodes(fig) {
+  if (!fig) return null;
+  const children = [];
+  for (const ext of fig.extensions || []) {
+    children.push({ name: 'line', attrs: { ...linePair(ext.a, ext.b), ...HALO_ATTRS } });
+    children.push({ name: 'line', attrs: { 'data-contour-dim-ext': '', ...linePair(ext.a, ext.b), ...CORE_ATTRS } });
+  }
+  if (fig.shaft) {
+    const [a, b] = fig.shaft;
+    children.push({ name: 'line', attrs: { ...linePair(a, b), ...HALO_ATTRS } });
+    children.push({ name: 'line', attrs: { 'data-contour-dim-shaft': '', ...linePair(a, b), ...CORE_ATTRS } });
+  }
+  if (fig.arc?.length > 1) {
+    const d = fig.arc.map((p, i) => `${i === 0 ? 'M' : 'L'}${num(p.x)} ${num(p.y)}`).join(' ');
+    children.push({ name: 'path', attrs: { d, ...HALO_ATTRS } });
+    children.push({ name: 'path', attrs: { 'data-contour-dim-arc': '', d, ...CORE_ATTRS } });
+  }
+  for (const arrow of fig.arrows || []) {
+    const pts = `${num(arrow.tip.x)},${num(arrow.tip.y)} ${num(arrow.left.x)},${num(arrow.left.y)} ${num(arrow.right.x)},${num(arrow.right.y)}`;
+    children.push({
+      name: 'polygon',
+      attrs: { points: pts, fill: '#0f172a', 'fill-opacity': '0.55', stroke: 'none' },
+    });
+    children.push({
+      name: 'polygon',
+      attrs: { 'data-contour-dim-arrow': '', points: pts, fill: '#f8fafc', stroke: 'none' },
+    });
+  }
+  const attrs = {
+    'data-contour-dim': fig.id || '',
+    'data-contour-dim-kind': fig.kind || '',
+    'data-contour-dim-label-x': num(fig.label.x),
+    'data-contour-dim-label-y': num(fig.label.y),
+  };
+  if (Number.isFinite(Number(fig.placement))) {
+    attrs['data-contour-dim-placement'] = String(round4(fig.placement));
+  }
+  return { name: 'g', attrs, children };
 }
 
 /** SVG children for one figure. Strokes are a dark halo under a light core. */
 export function dimensionMarkup(fig) {
-  if (!fig) return '';
-  const halo = 'stroke="#0f172a" stroke-opacity="0.55" fill="none" stroke-width="3.5" stroke-linecap="butt"';
-  const core = 'stroke="#f8fafc" fill="none" stroke-width="1.5" stroke-linecap="butt"';
-  const parts = [];
-  for (const ext of fig.extensions || []) {
-    parts.push(`<line ${lineAttrs(ext.a, ext.b, halo)} />`);
-    parts.push(`<line data-contour-dim-ext="" ${lineAttrs(ext.a, ext.b, core)} />`);
+  const node = dimensionFigureNodes(fig);
+  if (!node) return '';
+  const inner = node.children.map((child) => `<${child.name} ${attrsToHtml(child.attrs)} />`).join('');
+  return `<g ${attrsToHtml(node.attrs)}>${inner}</g>`;
+}
+
+function svgCreate(parent, api) {
+  const create = api?.createElementNS
+    || parent?.ownerDocument?.createElementNS?.bind(parent.ownerDocument)
+    || (typeof document !== 'undefined' ? document.createElementNS.bind(document) : null);
+  if (typeof create !== 'function') {
+    throw new Error('applyDimensionFigure needs createElementNS');
   }
-  if (fig.shaft) {
-    const [a, b] = fig.shaft;
-    parts.push(`<line ${lineAttrs(a, b, halo)} />`);
-    parts.push(`<line data-contour-dim-shaft="" ${lineAttrs(a, b, core)} />`);
+  return create;
+}
+
+/** Append one figure with DOM APIs. Attribute values are never parsed as markup. */
+export function applyDimensionFigure(parent, fig, api) {
+  const node = dimensionFigureNodes(fig);
+  if (!node || !parent) return null;
+  const create = svgCreate(parent, api);
+  const el = (name, attrs) => {
+    const next = create(SVG_NS, name);
+    for (const [key, value] of Object.entries(attrs)) {
+      next.setAttribute(key, value == null ? '' : String(value));
+    }
+    return next;
+  };
+  const group = el(node.name, node.attrs);
+  for (const child of node.children) group.appendChild(el(child.name, child.attrs));
+  parent.appendChild(group);
+  return group;
+}
+
+/** Replace every figure on the dimension layer. Does not use innerHTML. */
+export function replaceDimensionFigures(svg, figs, api) {
+  if (!svg) return;
+  if (typeof svg.replaceChildren === 'function') svg.replaceChildren();
+  else {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
   }
-  if (fig.arc?.length > 1) {
-    const d = fig.arc.map((p, i) => `${i === 0 ? 'M' : 'L'}${num(p.x)} ${num(p.y)}`).join(' ');
-    parts.push(`<path d="${d}" ${halo} />`);
-    parts.push(`<path data-contour-dim-arc="" d="${d}" ${core} />`);
-  }
-  for (const arrow of fig.arrows || []) {
-    const pts = `${num(arrow.tip.x)},${num(arrow.tip.y)} ${num(arrow.left.x)},${num(arrow.left.y)} ${num(arrow.right.x)},${num(arrow.right.y)}`;
-    parts.push(`<polygon points="${pts}" fill="#0f172a" fill-opacity="0.55" stroke="none" />`);
-    parts.push(`<polygon data-contour-dim-arrow="" points="${pts}" fill="#f8fafc" stroke="none" />`);
-  }
-  const place = Number.isFinite(Number(fig.placement))
-    ? ` data-contour-dim-placement="${round4(fig.placement)}"`
-    : '';
-  return `<g data-contour-dim="${fig.id || ''}" data-contour-dim-kind="${fig.kind || ''}" data-contour-dim-label-x="${num(fig.label.x)}" data-contour-dim-label-y="${num(fig.label.y)}"${place}>${parts.join('')}</g>`;
+  for (const fig of figs || []) applyDimensionFigure(svg, fig, api);
 }
