@@ -102,3 +102,5 @@ https://us-assets.i.posthog.com
 ```
 
 Update `docs/nginx-snippets/surfcad-security.conf` when deploying analytics to production.
+
+Regenerate `public/THIRD_PARTY_NOTICES.txt` with `node scripts/ci/generate-third-party-notices.mjs` whenever production npm dependencies change.
