@@ -5,12 +5,45 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { bridgeToolDefinitions, loadCommandsCatalog } from './catalog.mjs';
-import { formatBridgeError, notPairedError, pairingEnvHint } from './errors.mjs';
+import {
+  formatBridgeError,
+  notPairedError,
+  pairPendingError,
+  pairingEnvHint,
+} from './errors.mjs';
 import { loadPackageVersion } from './packageVersion.mjs';
-import { ensureAgentBridgeRelay, stopAgentBridgeRelay } from './bridge/relayServer.mjs';
+import {
+  ensureAgentBridgeRelay,
+  resetAgentBridgeRelayCache,
+  stopAgentBridgeRelay,
+} from './bridge/relayServer.mjs';
 import { RelaySession } from './relay.mjs';
 
 const PAIR_TOOL_NAME = 'pair';
+
+/** A bridge call that has to pair first waits this long for Allow, then fails. */
+const AUTO_PAIR_WAIT_MS = 1000;
+/** The pair tool returns pair_pending before typical MCP client timeouts (60 s). */
+const PAIR_TOOL_WAIT_MS = 30_000;
+
+/**
+ * @param {Promise<unknown>} attempt
+ * @param {number} waitMs
+ */
+async function waitForPairing(attempt, waitMs) {
+  attempt.catch(() => {});
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(timeout), waitMs);
+  });
+  try {
+    const outcome = await Promise.race([attempt, timeout]);
+    if (outcome === timeout) throw pairPendingError();
+    return outcome;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function textResult(value, isError = false) {
   return {
@@ -25,6 +58,8 @@ function toolErrorPayload(err) {
       code: err.code,
       message: err.message,
       details: err.details,
+      hint: err.hint,
+      retryable: err.retryable,
     });
   }
   return formatBridgeError({ message: String(err?.message || err) });
@@ -80,7 +115,7 @@ export async function createSurfcadMcpServer(options = {}) {
         }, true);
       }
       try {
-        const result = await session.pair(code);
+        const result = await waitForPairing(session.pair(code), PAIR_TOOL_WAIT_MS);
         return textResult(result);
       } catch (err) {
         return textResult(toolErrorPayload(err), true);
@@ -92,15 +127,17 @@ export async function createSurfcadMcpServer(options = {}) {
       return textResult({ code: 'unknown_tool', message: `Unknown tool: ${name}` }, true);
     }
 
-    if (!session.isPaired()) {
+    // A lost session is already re-pairing in the background; session.call
+    // fails fast with pairing_lost until it is back.
+    if (!session.isPaired() && session.state !== 'lost') {
       const envCode = (process.env.SURFCAD_PAIRING_CODE || '').trim();
       if (envCode) {
         try {
-          await session.pair(envCode);
+          await waitForPairing(session.pair(envCode), AUTO_PAIR_WAIT_MS);
         } catch (err) {
           return textResult(toolErrorPayload(err), true);
         }
-      } else {
+      } else if (session.state !== 'pairing') {
         return textResult(notPairedError(), true);
       }
     }
@@ -130,16 +167,30 @@ export async function createSurfcadMcpServer(options = {}) {
 export async function runSurfcadMcpServer(options = {}) {
   /** @type {Awaited<ReturnType<typeof ensureAgentBridgeRelay>> | null} */
   let ownedRelay = null;
-  if (options.startRelay !== false && process.env.SURFCAD_MCP_START_RELAY !== '0') {
-    const relay = await ensureAgentBridgeRelay({
-      onReady: (url) => {
-        if (process.env.SURFCAD_AGENT_BRIDGE_WS_VERBOSE === '1') {
-          console.error(`[surfcad-mcp] Agent bridge relay on ${url}`);
-        }
-      },
-    });
+  const startRelay = options.startRelay !== false && process.env.SURFCAD_MCP_START_RELAY !== '0';
+  const relayOptions = {
+    onReady: (url) => {
+      if (process.env.SURFCAD_AGENT_BRIDGE_WS_VERBOSE === '1') {
+        console.error(`[surfcad-mcp] Agent bridge relay on ${url}`);
+      }
+    },
+  };
+  if (startRelay) {
+    const relay = await ensureAgentBridgeRelay(relayOptions);
     if (relay.ownsServer) ownedRelay = relay;
   }
+
+  // Another surfcad-mcp process may own the relay; when it exits, take over
+  // the port so the tab and this session can reconnect.
+  const takeOverRelay = async () => {
+    if (!startRelay || ownedRelay) return;
+    resetAgentBridgeRelayCache();
+    const relay = await ensureAgentBridgeRelay(relayOptions);
+    if (relay.ownsServer) {
+      ownedRelay = relay;
+      console.error(`${new Date().toISOString()} [surfcad-mcp] relay owner went away; now serving ${relay.url}`);
+    }
+  };
 
   const onStdinClosed = () => {
     if (ownedRelay) {
@@ -154,7 +205,9 @@ export async function runSurfcadMcpServer(options = {}) {
   };
   process.stdin.once('end', onStdinClosed);
 
-  const { server, session } = await createSurfcadMcpServer();
+  const { server, session } = await createSurfcadMcpServer({
+    session: new RelaySession({ ensureRelay: takeOverRelay }),
+  });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
