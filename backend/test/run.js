@@ -10,3 +10,4 @@ import './measure-part.test.js';
 import './multi-line-order.test.js';
 import './partner-rate-limit.test.js';
 import '../../test/backend-monitoring-stats.test.js';
+import './email-html-escape.test.js';

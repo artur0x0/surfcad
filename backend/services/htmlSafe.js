@@ -24,6 +24,30 @@ export function sanitizePersonName(raw) {
   return s;
 }
 
+/** Greeting: charset/length check, then escape. Invalid names disappear. */
+export function verificationGreeting(name) {
+  const safe = sanitizePersonName(name);
+  return safe ? ` ${escapeHtml(safe)}` : '';
+}
+
+/**
+ * Shipping-address HTML. Escape only — do not charset-filter the name
+ * ('Smith & Sons', 'c/o Jane' must remain).
+ */
+export function addressBlockHtml(address) {
+  const name = address?.name ?? '';
+  const street = address?.['address-1'] || address?.street || '';
+  const street2 = address?.['address-2'] || address?.street2 || '';
+  const city = address?.city || '';
+  const state = address?.state || '';
+  const zip = address?.zip || '';
+  const street2Html = street2 ? `${escapeHtml(street2)}<br>` : '';
+  return `${escapeHtml(name)}<br>
+        ${escapeHtml(street)}<br>
+        ${street2Html}
+        ${escapeHtml(city)}, ${escapeHtml(state)} ${escapeHtml(zip)}`;
+}
+
 /** Only http(s) URLs may go in an href. */
 export function safeHttpUrl(raw) {
   try {

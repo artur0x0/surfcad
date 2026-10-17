@@ -1,10 +1,10 @@
 // services/email.js - Azure Communication Services email (kebab-case schema)
 import { EmailClient } from '@azure/communication-email';
 import config from '../config/index.js';
-import { escapeHtml, sanitizePersonName, safeHttpUrl } from './htmlSafe.js';
+import { escapeHtml, sanitizePersonName, safeHttpUrl, verificationGreeting, addressBlockHtml } from './htmlSafe.js';
 import { lineTableHtml, lineTableText } from './orderMail.js';
 
-export { escapeHtml, sanitizePersonName } from './htmlSafe.js';
+export { escapeHtml, sanitizePersonName, verificationGreeting, addressBlockHtml } from './htmlSafe.js';
 
 let emailClient = null;
 
@@ -35,27 +35,13 @@ function getOrderFields(order) {
  */
 function getAddressFields(address) {
   return {
-    name: sanitizePersonName(address?.name),
+    name: address?.name || '',
     street: address?.['address-1'] || address?.street || '',
     street2: address?.['address-2'] || address?.street2 || '',
     city: address?.city || '',
     state: address?.state || '',
     zip: address?.zip || '',
   };
-}
-
-export function verificationGreeting(name) {
-  const safe = sanitizePersonName(name);
-  return safe ? ` ${escapeHtml(safe)}` : '';
-}
-
-export function addressBlockHtml(address) {
-  const a = getAddressFields(address);
-  const street2 = a.street2 ? `${escapeHtml(a.street2)}<br>` : '';
-  return `${escapeHtml(a.name)}<br>
-        ${escapeHtml(a.street)}<br>
-        ${street2}
-        ${escapeHtml(a.city)}, ${escapeHtml(a.state)} ${escapeHtml(a.zip)}`;
 }
 
 /**
