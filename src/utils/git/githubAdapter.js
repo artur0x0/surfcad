@@ -444,6 +444,12 @@ export function createGithubAdapter({ token, fetchImpl = globalThis.fetch, apiBa
           data?.message || 'listTree failed',
         );
       }
+      if (data?.truncated) {
+        throw new GitAdapterError(
+          'invalid',
+          data?.message || 'Repository tree listing was truncated',
+        );
+      }
       return filterTree(data?.tree, prefix);
     },
 

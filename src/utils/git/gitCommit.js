@@ -16,11 +16,16 @@
  *
  * Mock adapter only for now; nothing here talks to the network.
  */
-import { assemblyName, nextAssemblyName, serializeAssembly } from '../assembly.js';
+import { assemblyName, nextAssemblyName, renamePart, serializeAssembly } from '../assembly.js';
 import { gitBlobSha, isBinaryContent, toUint8Array } from './binaryContent.js';
 import { GitAdapterError, assertGithubAdapter, fileWrite, fileDelete } from './githubAdapterInterface.js';
 import { captureBaseline, dirtyPartIds } from './gitWorkspace.js';
-import { ensureAssemblyVaultPaths } from './partVaultPath.js';
+import { applyPartPathChange } from './gitRename.js';
+import {
+  ensureAssemblyVaultPaths,
+  partRowNeedsVaultPath,
+  planRenameVaultPartPath,
+} from './partVaultPath.js';
 import {
   ASSEMBLIES_DIR,
   assemblyFilePath,
@@ -64,6 +69,133 @@ export async function listVaultTree(adapter, repo, ref, opts = {}) {
 export async function listVaultTreePaths(adapter, repo, ref) {
   const tree = await listVaultTree(adapter, repo, ref);
   return tree.map((entry) => entry?.path ?? entry).filter((path) => typeof path === 'string');
+}
+
+/** Writer refused: a part still has no vault path after promotion. */
+export const PATH_LESS_PARTS = 'path_less_parts';
+export const PATH_LESS_PARTS_MESSAGE = 'Assembly has parts without a vault path. Write aborted so the working copy is unchanged.';
+
+function pathLessError(leftovers) {
+  const err = new Error(PATH_LESS_PARTS_MESSAGE);
+  err.code = PATH_LESS_PARTS;
+  err.parts = (leftovers || []).map((part) => part?.id).filter(Boolean);
+  return err;
+}
+
+/**
+ * Promote path-less rows (assembly-folder, Name-2 on collision) and stringify
+ * the assembly for a git write. Lists occupancy only when a row still needs
+ * a vault path, so paint/group stay fast when every id is already a path.
+ * Leftover invalid ids throw path_less_parts. Callers must not mutate the
+ * working copy until this returns.
+ * -> { status:'ready', doc, scripts, files, moved, assemblyPath, assemblyText }
+ */
+export async function prepareAssemblySurfWrite(adapter, repo, {
+  doc,
+  scripts = {},
+  branch = 'main',
+  extraFiles = [],
+  remotePaths = null,
+} = {}) {
+  assertGithubAdapter(adapter);
+  if (!doc || doc.source !== 'git') {
+    throw new Error('Not in Git mode');
+  }
+  let workDoc = { ...doc, source: 'git' };
+  let workScripts = { ...(scripts || {}) };
+  let moved = [];
+  const needs = (workDoc.parts || []).filter(partRowNeedsVaultPath);
+  if (needs.length) {
+    const occupancy = Array.isArray(remotePaths)
+      ? remotePaths
+      : await listVaultTreePaths(adapter, repo, branch);
+    const promoted = ensureAssemblyVaultPaths(workDoc, workScripts, { remotePaths: occupancy });
+    workDoc = { ...promoted.doc, source: 'git' };
+    workScripts = promoted.scripts;
+    moved = promoted.moved || [];
+  }
+  const leftovers = (workDoc.parts || []).filter(partRowNeedsVaultPath);
+  if (leftovers.length) throw pathLessError(leftovers);
+
+  const assemblyText = stringifySurfJson(workDoc);
+  const assemblyPath = assemblyFilePath(vaultSegment(workDoc.name) || workDoc.name);
+  const files = [
+    ...moved.map((move) => fileWrite(move.to, workScripts[move.to] ?? '')),
+    ...(extraFiles || []),
+    fileWrite(assemblyPath, assemblyText),
+  ];
+  return {
+    status: 'ready',
+    doc: workDoc,
+    scripts: workScripts,
+    files,
+    moved,
+    assemblyPath,
+    assemblyText,
+  };
+}
+
+/**
+ * Occupancy listing + path plan for a vault part rename. Always lists the
+ * tree (never falls back to document ids). On a listTree failure returns
+ * VAULT_TREE_UNAVAILABLE and does not produce a working-copy mutation.
+ * planRenameVaultPartPath only — no planPartPath fallback.
+ */
+export async function prepareVaultPartRename(adapter, repo, {
+  doc,
+  scripts = {},
+  from,
+  nextName,
+  branch = 'main',
+} = {}) {
+  assertGithubAdapter(adapter);
+  if (!doc || doc.source !== 'git') {
+    return { status: 'error', error: 'Not in Git mode' };
+  }
+  let remotePaths;
+  try {
+    remotePaths = await listVaultTreePaths(adapter, repo, branch);
+  } catch (err) {
+    return {
+      status: 'error',
+      error: err?.message || VAULT_TREE_UNAVAILABLE_MESSAGE,
+      code: err?.code || VAULT_TREE_UNAVAILABLE,
+    };
+  }
+  const to = planRenameVaultPartPath(from, nextName, [
+    ...(doc.parts || []).map((row) => row.id),
+    ...remotePaths,
+  ]);
+  if (!to) {
+    return { status: 'error', code: 'bad_args', error: 'Could not plan a vault path for this rename' };
+  }
+  const workScripts = { ...(scripts || {}) };
+  const movedLocal = to === from
+    ? { doc: renamePart(doc, from, nextName), scripts: workScripts }
+    : applyPartPathChange(doc, workScripts, from, to, nextName);
+  const nextDoc = serializeAssembly({ ...movedLocal.doc, source: 'git' });
+  try {
+    const prepared = await prepareAssemblySurfWrite(adapter, repo, {
+      doc: nextDoc,
+      scripts: movedLocal.scripts,
+      branch,
+      remotePaths,
+    });
+    const leaf = to.split('/').pop()?.replace(/\.js$/i, '') || nextName;
+    return {
+      status: 'ready',
+      from,
+      to,
+      name: leaf,
+      ...prepared,
+    };
+  } catch (err) {
+    return {
+      status: 'error',
+      error: err?.message || 'Could not rename part',
+      code: err?.code || 'rename_failed',
+    };
+  }
 }
 
 /** Scripts with the live editor text folded in for the active part. */
@@ -401,6 +533,9 @@ export async function commitPartToRepo(adapter, repo, {
   workScripts = promoted.scripts;
   const destId = promoted.moved.find((move) => move.from === id)?.to || id;
   const siblings = promoted.moved.filter((move) => move.from !== id);
+  if ((workDoc.parts || []).some(partRowNeedsVaultPath)) {
+    return { status: 'error', error: PATH_LESS_PARTS_MESSAGE, code: PATH_LESS_PARTS };
+  }
 
   let content = workScripts[destId];
   if (typeof content !== 'string') {
@@ -808,6 +943,9 @@ export async function assembleCommitFiles(adapter, repo, {
     : await listVaultTreePaths(adapter, repo, branch);
   const promoted = ensureAssemblyVaultPaths(doc, scripts, { remotePaths: occupancy });
   const workDoc = promoted.doc;
+  if ((workDoc.parts || []).some(partRowNeedsVaultPath)) {
+    throw pathLessError((workDoc.parts || []).filter(partRowNeedsVaultPath));
+  }
   const workScripts = effectiveScripts(promoted.scripts, { liveId, liveScript });
   const built = buildCommitFiles(workDoc, workScripts, baseline, {
     liveId: promoted.moved.some((m) => m.from === liveId)

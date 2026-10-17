@@ -57,7 +57,7 @@ eq('created repo info', created, { owner: 'artur', name: 'scratch', private: tru
 await throwsCode('duplicate name (case-insensitive)', () => mock.createRepo({ name: 'Scratch' }), 'name_exists');
 await throwsCode('bad repo name', () => mock.createRepo({ name: 'a b' }), 'invalid');
 eq('empty repo has no branches', await mock.listBranches(repo), []);
-eq('empty repo tree', await mock.listTree(repo, 'main'), []);
+await throwsCode('empty repo tree throws not_found', () => mock.listTree(repo, 'main'), 'not_found');
 const c1 = await mock.commitFiles(repo, {
   branch: 'main', message: 'one', baseSha: null,
   files: [fileWrite('a.txt', 'A'), fileWrite('dir/b.txt', 'B')],
@@ -202,7 +202,8 @@ eq('non-vault repo untouched', [v4.status, (await gh.listTree(v4.repo, 'main')).
 gh._seedRepo({ name: 'blank' });
 {
   const blank = await findOrCreateVault(gh, { name: 'blank' });
-  eq('empty repo not seeded', [blank.status, (await gh.listTree({ owner: 'artur', name: 'blank' }, 'main')).length], ['not-a-vault', 0]);
+  eq('empty repo not seeded', blank.status, 'not-a-vault');
+  await throwsCode('empty unseeded repo tree throws not_found', () => gh.listTree({ owner: 'artur', name: 'blank' }, 'main'), 'not_found');
 }
 eq('look-only missing', (await findOrCreateVault(gh, { name: 'nothing', create: false })).status, 'missing');
 eq('invalid name', (await findOrCreateVault(gh, { name: '!!' })).status, 'invalid-name');

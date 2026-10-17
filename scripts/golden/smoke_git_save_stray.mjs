@@ -148,6 +148,50 @@ console.log('\ngit save stray — real listTree throws; save aborts');
     missingErr ? `${missingErr.code} ${missingErr.message}` : 'no throw',
   );
 
+  const truncatedFetch = async (url, opts = {}) => {
+    const method = (opts.method || 'GET').toUpperCase();
+    const path = new URL(url).pathname;
+    if (path === '/user') return json(200, { login: 'octo-user' });
+    if (method === 'GET' && /\/repos\/octo-user\/vault$/.test(path)) {
+      return json(200, {
+        owner: { login: 'octo-user' }, name: 'vault', private: true,
+        default_branch: 'main', size: 1,
+      });
+    }
+    if (method === 'GET' && /\/branches\/main$/.test(path)) {
+      return json(200, { name: 'main', commit: { sha } });
+    }
+    if (method === 'GET' && path.includes('/git/commits/')) {
+      return json(200, { sha, tree: { sha: treeSha }, parents: [] });
+    }
+    if (method === 'GET' && path.includes('/git/trees/')) {
+      return json(200, {
+        sha: treeSha,
+        truncated: true,
+        tree: [{ path: 'parts/Mount.js', type: 'blob', sha: 'e'.repeat(40) }],
+      });
+    }
+    return json(404, { message: `unhandled ${method} ${path}` });
+  };
+  const truncated = createGithubAdapter({ token: 'tok', fetchImpl: truncatedFetch, apiBase: 'https://api.github.com' });
+  let truncatedErr = null;
+  try { await truncated.listTree(repo, 'main'); } catch (err) { truncatedErr = err; }
+  ok(
+    'listTree truncated throws invalid',
+    truncatedErr instanceof GitAdapterError && truncatedErr.code === 'invalid' && /truncated/i.test(truncatedErr.message),
+    truncatedErr ? `${truncatedErr.code} ${truncatedErr.message}` : 'no throw',
+  );
+
+  const emptyMock = createMockGithubAdapter({ login: 'artur' });
+  await emptyMock.createRepo({ name: 'empty-tree' });
+  let mockMissing = null;
+  try { await emptyMock.listTree({ owner: 'artur', name: 'empty-tree' }, 'main'); } catch (err) { mockMissing = err; }
+  ok(
+    'mock listTree missing SHA throws not_found',
+    mockMissing instanceof GitAdapterError && mockMissing.code === 'not_found',
+    mockMissing ? `${mockMissing.code} ${mockMissing.message}` : 'no throw',
+  );
+
   const mock = createMockGithubAdapter({ login: 'artur' });
   const vault = await findOrCreateVault(mock);
   mock.listTree = async () => { throw new Error('network down'); };
@@ -216,10 +260,22 @@ console.log('\ngit save stray — UI wiring');
   ok('handleGitCommit lists via listVaultTree',
     /listVaultTree\(gitAdapterRef\.current/.test(app)
     && /err\.code === VAULT_TREE_UNAVAILABLE/.test(app));
+  ok('git .surf.json writers use prepareAssemblySurfWrite',
+    /prepareAssemblySurfWrite/.test(app)
+    && !/stringifySurfJson\(/.test(app));
+  ok('rename_part lists via prepareVaultPartRename',
+    /prepareVaultPartRename\(gitAdapterRef\.current/.test(app)
+    && !/catch \{ \/\* the open document still blocks a collision \*\//.test(app)
+    && !/planPartPath\(from, nextName\)/.test(app));
   ok('real listTree does not return [] on failure',
     !/if \(!sha\) return \[\];/.test(adapter)
     && !/if \(!res\.ok\) return \[\];/.test(adapter)
-    && /throw new GitAdapterError/.test(adapter));
+    && /throw new GitAdapterError/.test(adapter)
+    && /data\?\.truncated/.test(adapter));
+  const mockSrc = readFileSync(new URL('../../src/utils/git/mockGithubAdapter.js', import.meta.url), 'utf8');
+  ok('mock listTree throws not_found on missing SHA',
+    !/if \(!sha\) return \[\];/.test(mockSrc)
+    && /throw new GitAdapterError\('not_found'/.test(mockSrc));
   ok('toSurfJson stays pure (no ensureAssemblyVaultPaths)',
     !/ensureAssemblyVaultPaths\(/.test(surf)
     && /Invalid \.surf\.json:/.test(surf));

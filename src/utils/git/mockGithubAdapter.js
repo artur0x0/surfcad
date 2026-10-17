@@ -184,7 +184,9 @@ export function createMockGithubAdapter(options = {}) {
     async listTree(repo, ref, { prefix = '' } = {}) {
       const state = repoState(repo);
       const sha = resolveRef(state, ref);
-      if (!sha) return [];
+      if (!sha) {
+        throw new GitAdapterError('not_found', `Ref ${ref || '(empty)'} not found`);
+      }
       const out = [];
       for (const [path, content] of state.commits.get(sha).tree) {
         if (prefix && !path.startsWith(prefix)) continue;

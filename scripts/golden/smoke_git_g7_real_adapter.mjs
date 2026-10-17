@@ -679,7 +679,7 @@ console.log('\ngit G7 — Connect wiring + no client secrets');
   const auth = readFileSync(join(root, 'src/utils/git/githubAuth.js'), 'utf8');
   const realSrc = readFileSync(join(root, 'src/utils/git/githubAdapter.js'), 'utf8');
   const cb = readFileSync(join(root, 'src/components/GitCallback.jsx'), 'utf8');
-  const srv = readFileSync(join(root, 'backend/server.js'), 'utf8');
+  const srv = readFileSync(join(root, 'backend/serverApp.js'), 'utf8');
   const route = readFileSync(join(root, 'backend/routes/github.js'), 'utf8');
   const cfg = readFileSync(join(root, 'backend/config/index.js'), 'utf8');
 
