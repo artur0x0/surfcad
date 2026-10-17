@@ -57,6 +57,7 @@ import {
 
 export const SURF_JSON_FORMAT = 'surfcad.assembly';
 export const SURF_JSON_VERSION = 1;
+
 const TOP_KEYS = new Set(['format', 'version', 'name', 'activeId', 'parts', 'groups', 'colors', 'joints']);
 const PART_KEYS = new Set(['id', 'path', 'name', 'visible', 'order', 'position', 'placement', 'sheetMetal', 'copiedFrom']);
 const GROUP_KEYS = new Set(['id', 'name', 'source', 'partIds']);
@@ -232,7 +233,9 @@ export function validateSurfJson(input) {
 
 /**
  * In-app assembly document -> .surf.json object. Row ids must already be
- * repo paths (git mode). Throws when the result does not validate.
+ * repo paths (git mode). Does not assign vault paths — the save path
+ * (`ensureAssemblyVaultPaths` / `assembleCommitFiles`) does that first.
+ * Throws when the result does not validate.
  */
 export function toSurfJson(doc) {
   const flat = serializeAssembly({ ...doc, source: 'git' });
@@ -269,7 +272,9 @@ export function toSurfJson(doc) {
   if (flat.colors) out.colors = flat.colors;
   if (flat.joints) out.joints = flat.joints;
   const check = validateSurfJson(out);
-  if (!check.ok) throw new Error(`Invalid .surf.json: ${check.errors.join('; ')}`);
+  if (!check.ok) {
+    throw new Error(`Invalid .surf.json: ${check.errors.join('; ')}`);
+  }
   return out;
 }
 

@@ -130,8 +130,17 @@ export function buildRenameCommitFiles({ entries, plan } = {}) {
         deletes.add(fromMesh);
       }
     }
+    for (const extra of plan.extraFiles || []) {
+      if (!extra?.path) continue;
+      if (extra.delete) deletes.add(extra.path);
+      else writes.set(extra.path, extra.content ?? '');
+    }
+    if (plan.assemblyPath && typeof plan.assemblyText === 'string') {
+      writes.set(plan.assemblyPath, plan.assemblyText);
+    }
     for (const [path, text] of byPath) {
       if (!isAssemblyFile(path) && !isSurfJsonPath(path)) continue;
+      if (plan.assemblyPath && path === plan.assemblyPath && typeof plan.assemblyText === 'string') continue;
       const next = rewriteSurfText(text, { surfId: plan.surfId, from: plan.from, to: plan.to });
       if (next !== text) writes.set(path, next);
     }
@@ -344,6 +353,9 @@ export async function materializeRename(adapter, repo, branch, payload) {
       to: payload?.to,
       content: payload?.content,
       asset: payload?.asset,
+      assemblyPath: payload?.assemblyPath,
+      assemblyText: payload?.assemblyText,
+      extraFiles: payload?.extraFiles || [],
     };
   return buildRenameCommitFiles({ entries, plan });
 }

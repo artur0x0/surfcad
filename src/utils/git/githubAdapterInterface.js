@@ -21,6 +21,8 @@
  *   deleteBranch(repo, branch)                   -> void
  *       Refuses 'main' and missing branches (not_found / invalid).
  *   listTree(repo, ref, { prefix }?)             -> [{ path, type: 'blob', sha }]
+ *       Throws not_found / invalid when the SHA is missing or GitHub is not OK.
+ *       Never returns [] to mean "listing failed".
  *   readFile(repo, path, ref?)                   -> { path, content, sha } | null
  *       Text only (Contents API). A `.mesh` is not read here.
  *   readBlob(repo, sha)                          -> Uint8Array | null

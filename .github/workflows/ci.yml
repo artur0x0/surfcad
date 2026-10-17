@@ -96,6 +96,14 @@ jobs:
       - name: node --test
         run: node scripts/ci/run-unit-tests.mjs
 
+      # Mock / fake-GitHub save goldens (no Chrome, no network). G2 used to
+      # expect `Bracket (2).js` and is not covered by node --test.
+      - name: git save goldens
+        run: |
+          node scripts/golden/smoke_git_g2_open_save.mjs
+          node scripts/golden/smoke_git_save_stray.mjs
+          node scripts/golden/smoke_git_g3_commit_push.mjs
+
   # Cheapest existing golden that proves the bundle actually boots: a real
   # headless Chrome, vite preview, #root painted, canvas + toolbar + Run.
   # Pixel goldens are not in this job. Chrome comes from the runner via
@@ -286,6 +294,11 @@ jobs:
           node scripts/golden/smoke_agent_git_consent.mjs | tee "${RUNNER_TEMP}/agent-git-consent.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-git-consent.log"; then
             echo "agent git consent golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          node scripts/golden/smoke_agent_git_save_consent.mjs | tee "${RUNNER_TEMP}/agent-git-save-consent.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-git-save-consent.log"; then
+            echo "agent git save consent golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
 

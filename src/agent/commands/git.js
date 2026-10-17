@@ -1,14 +1,20 @@
 import {
+  consentPendingError,
   requireDestructiveConfirm,
   gitOpResult,
   realRepoBlockedError,
 } from '../gitAgent.js';
 import { NO_ARGS_SCHEMA } from '../registry.js';
 
-/** Max wait for the in-app consent modal (interactive tabs only). */
+/** How long the in-app consent modal stays up. Bridge calls never wait on it. */
 export const AGENT_GIT_CONSENT_TIMEOUT_MS = 120_000;
 
-async function ensureAgentGitWriteConsent(ctx, commandName) {
+/**
+ * Returns null when the agent may write, else a structured refusal. Never
+ * awaits the user: an interactive tab shows the modal and the call returns
+ * `consent_pending` at once, so the MCP client can retry after Allow.
+ */
+export function ensureAgentGitWriteConsent(ctx, commandName) {
   const kind = typeof ctx.readAgentGitAdapterKind === 'function'
     ? ctx.readAgentGitAdapterKind()
     : null;
@@ -25,33 +31,23 @@ async function ensureAgentGitWriteConsent(ctx, commandName) {
     );
   }
 
-  const request = ctx.requestAgentGitWriteConsent;
-  if (typeof request !== 'function') {
-    return realRepoBlockedError(
-      'consent_pending',
-      'Agent git write consent is unavailable in this environment.',
-    );
-  }
+  const prompt = ctx.promptAgentGitWriteConsent;
   const target = typeof ctx.readAgentGitWriteTarget === 'function'
     ? ctx.readAgentGitWriteTarget()
     : { repo: 'your repo', branch: 'main' };
-  const outcome = await request({ command: commandName, ...target });
-  if (outcome === 'allow') return null;
-  if (outcome === 'deny') {
-    return realRepoBlockedError(
-      'consent_declined',
-      'You declined agent git writes for this browser session.',
-    );
-  }
+  const shown = typeof prompt === 'function'
+    ? prompt({ command: commandName, ...target })
+    : 'unavailable';
+  if (shown === 'shown') return consentPendingError(commandName, target);
   return realRepoBlockedError(
     'consent_pending',
-    'Agent git write consent timed out or is unavailable headless (playtest / automation).',
+    'Agent git write consent is unavailable headless (playtest / automation). Open SurfCAD in a regular Chrome tab and retry, or opt in with ?agentGit=real.',
   );
 }
 
 async function hostGit(ctx, name, args, { readOnly = false, commandName = '' } = {}) {
   if (!readOnly) {
-    const gate = await ensureAgentGitWriteConsent(ctx, commandName || name);
+    const gate = ensureAgentGitWriteConsent(ctx, commandName || name);
     if (gate) return { error: gate };
   }
   const fn = ctx[name];
@@ -108,7 +104,7 @@ export const gitSaveCommand = Object.freeze({
 
 export const gitAddToRepoCommand = Object.freeze({
   name: 'git_add_to_repo',
-  uiEntry: 'data-git-commit-add-to-repo',
+  uiEntry: ['data-git-commit-add-to-repo', 'data-part-add-to-repo'],
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,

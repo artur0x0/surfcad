@@ -16,10 +16,16 @@
  *
  * Mock adapter only for now; nothing here talks to the network.
  */
-import { assemblyName, nextAssemblyName, serializeAssembly } from '../assembly.js';
+import { assemblyName, nextAssemblyName, renamePart, serializeAssembly } from '../assembly.js';
 import { gitBlobSha, isBinaryContent, toUint8Array } from './binaryContent.js';
 import { GitAdapterError, assertGithubAdapter, fileWrite, fileDelete } from './githubAdapterInterface.js';
 import { captureBaseline, dirtyPartIds } from './gitWorkspace.js';
+import { applyPartPathChange } from './gitRename.js';
+import {
+  ensureAssemblyVaultPaths,
+  partRowNeedsVaultPath,
+  planRenameVaultPartPath,
+} from './partVaultPath.js';
 import {
   ASSEMBLIES_DIR,
   assemblyFilePath,
@@ -29,7 +35,6 @@ import {
   parseVaultPath,
   vaultSegment,
 } from './vaultLayout.js';
-import { sharedPathForMove } from './gitDeleteAssembly.js';
 import { parseSurfJson, stringifySurfJson } from './surfJson.js';
 import { isSurfId, readSurfId, withSurfId } from './surfId.js';
 
@@ -37,6 +42,161 @@ export const COMMIT_BRANCH_PREFIX = 'surfcad/';
 
 /** Commit refused: working copy has parts without a vault path. */
 export const NO_REPO_PATH = 'no_repo_path';
+
+/** Save aborted: the vault tree could not be listed, so occupancy is unknown. */
+export const VAULT_TREE_UNAVAILABLE = 'vault_tree_unavailable';
+export const VAULT_TREE_UNAVAILABLE_MESSAGE = 'Could not list the vault tree. Save aborted so existing files are not overwritten.';
+
+function treeUnavailableError(cause) {
+  const err = new Error(VAULT_TREE_UNAVAILABLE_MESSAGE);
+  err.code = VAULT_TREE_UNAVAILABLE;
+  if (cause) err.cause = cause;
+  return err;
+}
+
+/** listTree, or VAULT_TREE_UNAVAILABLE. Never treat a failed listing as empty occupancy. */
+export async function listVaultTree(adapter, repo, ref, opts = {}) {
+  let tree;
+  try {
+    tree = await adapter.listTree(repo, ref, opts);
+  } catch (err) {
+    throw treeUnavailableError(err);
+  }
+  if (!Array.isArray(tree)) throw treeUnavailableError();
+  return tree;
+}
+
+export async function listVaultTreePaths(adapter, repo, ref) {
+  const tree = await listVaultTree(adapter, repo, ref);
+  return tree.map((entry) => entry?.path ?? entry).filter((path) => typeof path === 'string');
+}
+
+/** Writer refused: a part still has no vault path after promotion. */
+export const PATH_LESS_PARTS = 'path_less_parts';
+export const PATH_LESS_PARTS_MESSAGE = 'Assembly has parts without a vault path. Write aborted so the working copy is unchanged.';
+
+function pathLessError(leftovers) {
+  const err = new Error(PATH_LESS_PARTS_MESSAGE);
+  err.code = PATH_LESS_PARTS;
+  err.parts = (leftovers || []).map((part) => part?.id).filter(Boolean);
+  return err;
+}
+
+/**
+ * Promote path-less rows (assembly-folder, Name-2 on collision) and stringify
+ * the assembly for a git write. Lists occupancy only when a row still needs
+ * a vault path, so paint/group stay fast when every id is already a path.
+ * Leftover invalid ids throw path_less_parts. Callers must not mutate the
+ * working copy until this returns.
+ * -> { status:'ready', doc, scripts, files, moved, assemblyPath, assemblyText }
+ */
+export async function prepareAssemblySurfWrite(adapter, repo, {
+  doc,
+  scripts = {},
+  branch = 'main',
+  extraFiles = [],
+  remotePaths = null,
+} = {}) {
+  assertGithubAdapter(adapter);
+  if (!doc || doc.source !== 'git') {
+    throw new Error('Not in Git mode');
+  }
+  let workDoc = { ...doc, source: 'git' };
+  let workScripts = { ...(scripts || {}) };
+  let moved = [];
+  const needs = (workDoc.parts || []).filter(partRowNeedsVaultPath);
+  if (needs.length) {
+    const occupancy = Array.isArray(remotePaths)
+      ? remotePaths
+      : await listVaultTreePaths(adapter, repo, branch);
+    const promoted = ensureAssemblyVaultPaths(workDoc, workScripts, { remotePaths: occupancy });
+    workDoc = { ...promoted.doc, source: 'git' };
+    workScripts = promoted.scripts;
+    moved = promoted.moved || [];
+  }
+  const leftovers = (workDoc.parts || []).filter(partRowNeedsVaultPath);
+  if (leftovers.length) throw pathLessError(leftovers);
+
+  const assemblyText = stringifySurfJson(workDoc);
+  const assemblyPath = assemblyFilePath(vaultSegment(workDoc.name) || workDoc.name);
+  const files = [
+    ...moved.map((move) => fileWrite(move.to, workScripts[move.to] ?? '')),
+    ...(extraFiles || []),
+    fileWrite(assemblyPath, assemblyText),
+  ];
+  return {
+    status: 'ready',
+    doc: workDoc,
+    scripts: workScripts,
+    files,
+    moved,
+    assemblyPath,
+    assemblyText,
+  };
+}
+
+/**
+ * Occupancy listing + path plan for a vault part rename. Always lists the
+ * tree (never falls back to document ids). On a listTree failure returns
+ * VAULT_TREE_UNAVAILABLE and does not produce a working-copy mutation.
+ * planRenameVaultPartPath only — no planPartPath fallback.
+ */
+export async function prepareVaultPartRename(adapter, repo, {
+  doc,
+  scripts = {},
+  from,
+  nextName,
+  branch = 'main',
+} = {}) {
+  assertGithubAdapter(adapter);
+  if (!doc || doc.source !== 'git') {
+    return { status: 'error', error: 'Not in Git mode' };
+  }
+  let remotePaths;
+  try {
+    remotePaths = await listVaultTreePaths(adapter, repo, branch);
+  } catch (err) {
+    return {
+      status: 'error',
+      error: err?.message || VAULT_TREE_UNAVAILABLE_MESSAGE,
+      code: err?.code || VAULT_TREE_UNAVAILABLE,
+    };
+  }
+  const to = planRenameVaultPartPath(from, nextName, [
+    ...(doc.parts || []).map((row) => row.id),
+    ...remotePaths,
+  ]);
+  if (!to) {
+    return { status: 'error', code: 'bad_args', error: 'Could not plan a vault path for this rename' };
+  }
+  const workScripts = { ...(scripts || {}) };
+  const movedLocal = to === from
+    ? { doc: renamePart(doc, from, nextName), scripts: workScripts }
+    : applyPartPathChange(doc, workScripts, from, to, nextName);
+  const nextDoc = serializeAssembly({ ...movedLocal.doc, source: 'git' });
+  try {
+    const prepared = await prepareAssemblySurfWrite(adapter, repo, {
+      doc: nextDoc,
+      scripts: movedLocal.scripts,
+      branch,
+      remotePaths,
+    });
+    const leaf = to.split('/').pop()?.replace(/\.js$/i, '') || nextName;
+    return {
+      status: 'ready',
+      from,
+      to,
+      name: leaf,
+      ...prepared,
+    };
+  } catch (err) {
+    return {
+      status: 'error',
+      error: err?.message || 'Could not rename part',
+      code: err?.code || 'rename_failed',
+    };
+  }
+}
 
 /** Scripts with the live editor text folded in for the active part. */
 export function effectiveScripts(scripts, { liveId = null, liveScript = null } = {}) {
@@ -320,7 +480,10 @@ export function baselineAfterPartSave(baseline, {
 /**
  * Instantly commit one part (plus the assembly `.surf.json`) to the working
  * branch. Used by Parts "Add to Repo" for local content not yet in the vault.
- * Remaps `local:` / foreign ids to `parts/<Name>.js` (`Name (2)` on collision).
+ * Every row without a vault path is pathed by `ensureAssemblyVaultPaths`
+ * (assembly-folder, `Name-2` on collision) and written in this same commit,
+ * so `.surf.json` never references a file the commit did not write.
+ * `toSurfJson` stays pure and rejects leftover invalid ids.
  * -> { status: 'committed'|'clean'|'repo-moved'|'error', ... }
  * `repo-moved` is a stale base (`non_fast_forward`). Nothing was written.
  */
@@ -349,37 +512,29 @@ export async function commitPartToRepo(adapter, repo, {
     headSha: baseline?.headSha || null,
   });
   const branch = base.branch || 'main';
-  let destId = id;
   let workDoc = { ...doc, source: 'git' };
   let workScripts = effectiveScripts(scripts, { liveId, liveScript });
 
-  const info = parseVaultPath(destId);
-  const allowed = info
-    && ((info.kind === 'assembly-part' && info.assembly === asmName)
-      || info.kind === 'shared-part');
-  if (!allowed) {
-    const partBase = vaultSegment(String(row.name || '').replace(/\.js$/i, '')) || 'Part';
-    const taken = new Set((workDoc.parts || []).map((p) => p.id));
-    taken.delete(id);
-    try {
-      const tree = await adapter.listTree(repo, branch);
-      for (const entry of tree || []) {
-        const path = entry?.path ?? entry;
-        if (typeof path === 'string') taken.add(path);
-      }
-    } catch {
-      // The open document still blocks a collision inside this assembly.
-    }
-    destId = sharedPathForMove(partBase, taken);
-    workDoc = {
-      ...workDoc,
-      parts: workDoc.parts.map((p) => (p.id === id ? { ...p, id: destId } : p)),
-      activeId: workDoc.activeId === id ? destId : workDoc.activeId,
+  let remotePaths;
+  try {
+    remotePaths = await listVaultTreePaths(adapter, repo, branch);
+  } catch (err) {
+    return {
+      status: 'error',
+      error: err?.message || VAULT_TREE_UNAVAILABLE_MESSAGE,
+      code: err?.code || VAULT_TREE_UNAVAILABLE,
     };
-    const text = workScripts[id];
-    workScripts = { ...workScripts };
-    delete workScripts[id];
-    workScripts[destId] = typeof text === 'string' ? text : '';
+  }
+
+  // Promote every stray — including the clicked row — so a per-row Save
+  // cannot leave sibling `local:` ids rewritten in JSON without blobs.
+  const promoted = ensureAssemblyVaultPaths(workDoc, workScripts, { remotePaths });
+  workDoc = { ...promoted.doc, source: 'git' };
+  workScripts = promoted.scripts;
+  const destId = promoted.moved.find((move) => move.from === id)?.to || id;
+  const siblings = promoted.moved.filter((move) => move.from !== id);
+  if ((workDoc.parts || []).some(partRowNeedsVaultPath)) {
+    return { status: 'error', error: PATH_LESS_PARTS_MESSAGE, code: PATH_LESS_PARTS };
   }
 
   let content = workScripts[destId];
@@ -390,10 +545,16 @@ export async function commitPartToRepo(adapter, repo, {
 
   const assemblyPath = assemblyFilePath(asmName);
   const assemblyText = stringifySurfJson(workDoc);
-  const files = [
-    fileWrite(destId, content),
-    fileWrite(assemblyPath, assemblyText),
-  ];
+  const written = new Set();
+  const files = [];
+  const addWrite = (path, text) => {
+    if (!path || written.has(path)) return;
+    written.add(path);
+    files.push(fileWrite(path, text));
+  };
+  addWrite(destId, content);
+  for (const move of siblings) addWrite(move.to, workScripts[move.to] ?? '');
+  addWrite(assemblyPath, assemblyText);
   // Skip no-op when baseline already has identical content.
   if (
     base.scripts
@@ -421,12 +582,16 @@ export async function commitPartToRepo(adapter, repo, {
       files,
       baseSha: expectedBase,
     });
-    // The commit wrote destId and the assembly file only. Sibling edits
-    // stay on their old baseline so their dirty dots stay.
+    // The commit wrote destId, every newly pathed sibling, and the assembly.
+    const saved = { [destId]: pushContent };
+    for (const move of siblings) saved[move.to] = workScripts[move.to] ?? '';
     const next = baselineAfterPartSave(base, {
       doc: workDoc,
-      saved: { [destId]: pushContent },
-      removed: id !== destId ? [id] : [],
+      saved,
+      removed: [
+        ...(id !== destId ? [id] : []),
+        ...siblings.map((move) => move.from),
+      ],
       assemblyPath,
       assemblyName: asmName,
       assets: base.assets,
@@ -439,6 +604,7 @@ export async function commitPartToRepo(adapter, repo, {
       branch,
       partId: destId,
       fromId: id !== destId ? id : null,
+      siblings,
       files: files.map((f) => f.path),
       baseline: next,
       doc: workDoc,
@@ -458,6 +624,7 @@ export async function commitPartToRepo(adapter, repo, {
         scripts: workScripts,
         partId: destId,
         fromId: id !== destId ? id : null,
+        siblings,
       };
     }
     return { status: 'error', error: err?.message || 'Add to Repo failed' };
@@ -766,33 +933,35 @@ export async function assembleCommitFiles(adapter, repo, {
   liveId = null,
   liveScript = null,
   assets = null,
+  remotePaths = null,
 } = {}) {
   assertGithubAdapter(adapter);
   if (!baseline) throw new Error('Open an assembly from the vault before committing');
-  // Refuse non-repo rows before buildCommitFiles stringifies `.surf.json`
-  // (invalid ids throw inside stringify). Linked parts in another assembly
-  // are real vault paths and are kept.
-  const stray = (doc?.parts || []).filter((p) => {
-    const info = parseVaultPath(p.id);
-    // Linked external parts are real vault paths. Only local / non-path rows are stray.
-    if (!info || (info.kind !== 'assembly-part' && info.kind !== 'shared-part')) return true;
-    return false;
-  });
-  if (stray.length) {
-    const err = new Error(`No repo path for ${stray.map((p) => p.name || p.id).join(', ')}. `
-      + 'Remove it, or add parts under this assembly\'s folder or shared parts/.');
-    err.code = NO_REPO_PATH;
-    err.stray = stray.map((p) => ({ id: p.id, name: p.name || p.id }));
-    throw err;
+  const branch = baseline.branch || 'main';
+  const occupancy = Array.isArray(remotePaths)
+    ? remotePaths
+    : await listVaultTreePaths(adapter, repo, branch);
+  const promoted = ensureAssemblyVaultPaths(doc, scripts, { remotePaths: occupancy });
+  const workDoc = promoted.doc;
+  if ((workDoc.parts || []).some(partRowNeedsVaultPath)) {
+    throw pathLessError((workDoc.parts || []).filter(partRowNeedsVaultPath));
   }
-  const built = buildCommitFiles(doc, scripts, baseline, { liveId, liveScript, assets });
-  const workDoc = built.doc || doc;
+  const workScripts = effectiveScripts(promoted.scripts, { liveId, liveScript });
+  const built = buildCommitFiles(workDoc, workScripts, baseline, {
+    liveId: promoted.moved.some((m) => m.from === liveId)
+      ? (promoted.moved.find((m) => m.from === liveId)?.to || liveId)
+      : liveId,
+    liveScript,
+    assets,
+  });
+  const mergedMoved = [...(promoted.moved || []), ...(built.moved || [])];
+  const workDocOut = built.doc || workDoc;
   // Rename move: delete any leftover blobs under the old assemblies/<old>/ tree
   // (Spare.js etc.) so the old folder does not linger after the move.
   if (built.renamed && built.oldName) {
     const ref = baseline.branch || 'main';
     const prefix = `${ASSEMBLIES_DIR}/${built.oldName}/`;
-    const tree = await adapter.listTree(repo, ref, { prefix });
+    const tree = await listVaultTree(adapter, repo, ref, { prefix });
     const scheduled = new Set(built.files.map((f) => f.path));
     for (const entry of tree) {
       const p = entry?.path;
@@ -805,8 +974,8 @@ export async function assembleCommitFiles(adapter, repo, {
   // working copy already uses the flat nameless layout.
   if (baseline.legacyCleanup) {
     const ref = baseline.branch || 'main';
-    const asmName = vaultSegment(workDoc.name) || baseline.assemblyName;
-    const tree = await adapter.listTree(repo, ref);
+    const asmName = vaultSegment(workDocOut.name) || baseline.assemblyName;
+    const tree = await listVaultTree(adapter, repo, ref);
     const scheduled = new Set(built.files.map((f) => f.path));
     const toDelete = legacyCleanupPaths(asmName, tree);
     if (baseline.legacyAssemblyPath) toDelete.push(baseline.legacyAssemblyPath);
@@ -814,29 +983,28 @@ export async function assembleCommitFiles(adapter, repo, {
       if (!path || scheduled.has(path)) continue;
       // Never delete the current assembly metadata or current part paths.
       if (path === built.assemblyPath) continue;
-      if ((workDoc.parts || []).some((part) => part.id === path)) continue;
+      if ((workDocOut.parts || []).some((part) => part.id === path)) continue;
       built.files.push(fileDelete(path));
       scheduled.add(path);
     }
     // Ensure the current .surf.json is written even when only cleanup remains.
     if (built.assemblyPath && !scheduled.has(built.assemblyPath)) {
-      built.files.push(fileWrite(built.assemblyPath, stringifySurfJson(workDoc)));
+      built.files.push(fileWrite(built.assemblyPath, stringifySurfJson(workDocOut)));
       scheduled.add(built.assemblyPath);
     }
   }
   if (!built.files.length) return { status: 'clean' };
-  const branch = baseline.branch || 'main';
-  const msg = String(message || '').trim() || `Update ${vaultSegment(workDoc.name) || 'assembly'}`;
+  const msg = String(message || '').trim() || `Update ${vaultSegment(workDocOut.name) || 'assembly'}`;
   return {
     status: 'ready',
     files: built.files,
-    doc: workDoc,
+    doc: workDocOut,
     scripts: built.scripts,
     message: msg,
     branch,
     assemblyPath: built.assemblyPath,
     renamed: built.renamed,
-    moved: built.moved,
+    moved: mergedMoved,
     partIds: built.partPaths || [],
   };
 }

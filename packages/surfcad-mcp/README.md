@@ -47,13 +47,34 @@ Nothing pairs silently — you must show the code and approve the connection.
 
 In Cursor, add the same block under **Settings → MCP** or your project `.cursor/mcp.json`.
 
+## Tools
+
+Every command in `data/commands.json` is one MCP tool with the same name and argument schema, plus `pair`. Call `list_commands` for the full catalog. The parts and git tools:
+
+| Tool | Args | What it does |
+| --- | --- | --- |
+| `parts` | `{}` | Part rows (`id`, `name`, `visible`) and the active part. |
+| `create_assembly` | `{}` | Seed a new assembly. |
+| `create_part` | `{ name?, script? }` | Add a part. In a git assembly it has no vault path until `git_save`. |
+| `rename_part` | `{ part_id, name }` | Rename a part. A vault part also moves to `<name>.js` in the same folder (`-2`, `-3` on collision) and updates the `.surf.json` in one commit. Unknown ids return `unknown_part`. |
+| `set_active_part` | `{ part_id }` | Switch the editor and mesh to a part. |
+| `git_save` | `{ message }` | Same as the app's Save: paths every path-less part, then commits those scripts, dirty parts, and the `.surf.json` in one commit. |
+| `git_add_to_repo` | `{ part_id }` | Add one part to the vault; other path-less parts are pathed and committed with it. |
+| `git_move_to_repo` | `{ vault_name? }` | Move a local assembly into the vault. |
+| `git_list_branches` | `{}` | Branches and the current one (read-only). |
+| `git_branch_create` | `{ name }` | Create and switch to a branch. |
+| `git_branch_switch` | `{ branch, confirm? }` | Switch branch; `confirm: true` when the working copy is dirty. |
+| `git_branch_delete` | `{ branch, confirm: true }` | Delete a branch. |
+| `git_behind_resolve` | `{ action, path?, kind? }` | Get latest: `keep`, or `reload` / `branch` with `confirm: true`. |
+| `git_force_overwrite` | `{ confirm: true }` | Overwrite main from the conflict prompt. |
+
 ## Safety and consent
 
 - **Commerce:** Agents cannot place orders or drive checkout. Quote/cart/checkout controls are not exposed as MCP tools.
-- **Git on real repos:** Writes may return `real_repo_blocked` until the user consents in the app.
+- **Git on real repos:** The first write (`git_*` writes, or `rename_part` on a vault part) opens a consent dialog in SurfCAD and returns `consent_pending` right away. Nothing is written. Ask the user to click **Allow**, then retry the same call (`details.retry_after_ms` is a suggested wait). If the user denies, or the tab is headless automation, writes return `real_repo_blocked`.
 - **Destructive git operations:** Need explicit approval; the bridge returns `confirm_required` unless args include `confirm: true` after the user has confirmed in SurfCAD.
 
-Bridge refusals (`real_repo_blocked`, `confirm_required`, `not_paired`, user deny, etc.) are returned as structured JSON in MCP tool errors.
+Bridge refusals (`consent_pending`, `real_repo_blocked`, `confirm_required`, `not_paired`, user deny, etc.) are returned as structured JSON in MCP tool errors.
 
 ## Monorepo maintenance
 

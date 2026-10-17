@@ -212,7 +212,8 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `set_active_workplane` | `{ plane_id }` or `{ clear: true }` | Sets or clears the construction-plane overlay highlight. |
 | `list_sketch_entities` | `{}` | `{ points, lines, arcs, refs }` in the open sketch (immediate). |
 | `create_assembly` | `{}` | Seeds a blank assembly (Parts **+** → Assembly). One assembly-history undo step when replacing an open document. |
-| `create_part` | `{ name?, script? }` | Adds a part row (Parts **+** → Part). Local parts receive a `surf-id` when missing. |
+| `create_part` | `{ name?, script? }` | Adds a part row (Parts **+** → Part). Local parts receive a `surf-id` when missing. In a git assembly the agent's part has no vault path and nothing is written until `git_save`. |
+| `rename_part` | `{ part_id, name }` | Renames a part row. A path-less or local part only changes its name. A vault part also moves its script in the same folder to `<name>.js` (`-2`, `-3`, … when taken in the assembly or the repo tree) and the `.surf.json` reference in one rename commit; that write goes through the real-vault guard below. Unknown `part_id` → `unknown_part`. One assembly-history step. |
 | `open_assembly` | `{ name }` | Opens a vault assembly (git mode). |
 | `open_part` | `{ path }` | Opens or links a vault part into the assembly (git mode). |
 | `insert_part` | `{ source_assembly }` or `{ name?, script? }` | Inserts another assembly’s parts (git) or adds a new part row (local, same as `create_part`). |
@@ -273,8 +274,8 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `sheet_edit` | `{ chip_id?, feature_id?, …params }` | Open a sheet chip for edit; optional param patch. |
 | `sheet_begin_hole` | `{}` | Next on a new sheet hole — opens centres sketch. |
 | `git_move_to_repo` | `{ vault_name? }` | G6: local assembly → vault (mock or real adapter). One assembly-history undo when promoted. |
-| `git_save` | `{ message }` | Save (commit) on the current branch — same as the ribbon Save flow after the message step. |
-| `git_add_to_repo` | `{ part_id }` | Add one stray/local part into the vault layout (`handleAddToRepo`). |
+| `git_save` | `{ message }` | Save (commit) on the current branch — same as the ribbon Save flow after the message step. Every path-less part first gets `assemblies/<Assembly>/<Name>.js` (`-2` on collision); those scripts, dirty parts, and the `.surf.json` land in one commit, and the working copy takes the new ids. |
+| `git_add_to_repo` | `{ part_id }` | Add one stray/local part into the vault layout (`handleAddToRepo`). Other path-less rows are pathed by the same core as `git_save` and committed with it, so the `.surf.json` never references a missing file. |
 | `git_behind_resolve` | `{ action: "keep" \| "reload" \| "branch", path?, kind? }` | Get-latest choice for one behind marker. `keep` needs no path when the assembly or a single part is behind. `reload` and `branch` require `confirm: true`. |
 | `git_branch_create` | `{ name }` | Create a branch from the current tip. |
 | `git_branch_switch` | `{ branch, confirm? }` | Switch working branch. `confirm: true` required when `dirty.workspaceDirty`. |
@@ -284,7 +285,7 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `export_part` | `{ format: "stl"\|"3mf"\|"step", part_id?, download? }` | Part mesh export. Default `part_id` is the active CAD part. `download: false` (default) returns `{ format, filename, bytesBase64, byteLength }`; `download: true` saves in the browser (`3mf` matches the ribbon Download writer). Resolves mesh like `selectedPartDownload` and runs the part when needed. No undo step. |
 | `export_download` | `{ format?: "stl"\|"3mf"\|"step", part_id? }` | Same as `export_part` with `download: true`; format defaults to `3mf`. `uiEntry` `data-part-download`. |
 
-**Real vault guard.** If the live adapter is GitHub (`kind: real`, e.g. a token in storage), the first agent git **write** in a tab opens a consent modal (`data-agent-git-consent-allow` / `data-agent-git-consent-deny`) naming the command and `owner/repo/branch`, e.g. “An agent wants to save to *acme/widgets/main*. Allow agent writes to your GitHub repos for this session?”. **Allow for this session** sets session opt-in and runs the pending command; **Deny** or dismiss sets a session deny flag, returns `real_repo_blocked` with a clear decline message, and does not show the modal again that session. Opt-in also works via URL `?agentGit=real`, localStorage `surfcadAgentGitReal` = `1`, or sessionStorage `surfcadAgentGitRealSession` = `1` after Allow. Headless / playtest / automation (`navigator.webdriver`) never waits on the modal: writes return `real_repo_blocked` immediately with `error.details.reason` `consent_pending`. After a deny, `details.reason` is `consent_declined`. UI Save / branch flows are unaffected.
+**Real vault guard.** If the live adapter is GitHub (`kind: real`, e.g. a token in storage), agent git **writes** (`git_*` writes and a vault `rename_part`) need session consent. A bridge call never waits on the user: the first write opens a consent modal (`data-agent-git-consent-allow` / `data-agent-git-consent-deny`) naming the command and `owner/repo/branch`, e.g. “An agent wants to save to *acme/widgets/main*. Allow agent writes to your GitHub repos for this session?”, and returns `consent_pending` at once with `details: { reason: "consent_pending", command, retry: true, retry_after_ms }`. Nothing is written. Further writes while the modal is up return the same error. After **Allow for this session**, retry the same call. **Deny** or dismiss sets a session deny flag; later writes return `real_repo_blocked` with `details.reason` `consent_declined` and the modal does not show again that session. Opt-in also works via URL `?agentGit=real`, localStorage `surfcadAgentGitReal` = `1`, or sessionStorage `surfcadAgentGitRealSession` = `1` after Allow. Headless / playtest / automation (`navigator.webdriver`) cannot show the modal: writes return `real_repo_blocked` immediately with `error.details.reason` `consent_pending`. UI Save / branch flows are unaffected.
 
 ### Pick sessions
 
@@ -311,6 +312,7 @@ One session at a time. A session idle for `timeout_ms` (default 120000, 1000–1
 | `bad_json` | `argsJson` is a string and `JSON.parse` throws. |
 | `bad_args` | Args are not a JSON object, are not serialisable (function, class instance, typed array, non-finite number), or a required field has the wrong type (`set_script` `source` must be a string). |
 | `confirm_required` | A destructive git command was called without `confirm: true` (`git_branch_delete`, `git_force_overwrite`, `git_behind_resolve` reload/branch, or `git_branch_switch` while the vault working copy is dirty). |
+| `consent_pending` | Agent git write on the real GitHub adapter while the consent modal is waiting for the user. Nothing was written. `details.retry` is `true`; retry the same call after the user clicks Allow (`details.retry_after_ms` is a suggested wait). |
 | `real_repo_blocked` | Agent git write while the real GitHub adapter is active without opt-in. `error.details.reason` is `consent_pending` (no answer / headless), `consent_declined` (user denied this session), or omitted when blocked by legacy query/storage-only paths. Message explains consent or decline. |
 | `git_error` | Git handler returned `{ status: "error" }` (message in `error.message`). |
 | `unsupported_format` | `screenshot` `format` is present and is not `"png"`. |

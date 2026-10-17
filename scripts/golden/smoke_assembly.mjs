@@ -135,7 +135,7 @@ const BAD = 'let part = Manifold.cube([10, 10, 10], true);\nreturn part.missingM
   check('a failed row is highlighted and a missing row offers find or upload',
     /data-part-status=\{status\}/.test(feed)
     && /data-part-error/.test(feed)
-    && /Add to Repo/.test(feed)
+    && /data-part-add-to-repo/.test(feed)
     && /Upload/.test(feed)
     && /data-assembly-load/.test(feed));
   check('mobile pager order is CAD then Parts, with no script button',

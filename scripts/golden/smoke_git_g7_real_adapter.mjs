@@ -581,6 +581,7 @@ function makeFakeGithub() {
   eq('read missing', await real.readFile(repo, 'nope.txt'), null);
   eq('tree', (await real.listTree(repo, 'main')).map((e) => e.path), ['a.txt', 'dir/b.txt', 'surfcad.json']);
   eq('tree prefix', (await real.listTree(repo, 'main', { prefix: 'dir/' })).map((e) => e.path), ['dir/b.txt']);
+  await throwsCode('listTree missing ref throws', () => real.listTree(repo, 'no-such-branch'), 'not_found');
   eq('empty-repo first commit is root', c1.parents, []);
   ok('empty-repo multi-file landed both paths',
     (await real.readFile(repo, 'a.txt')).content === 'A'
@@ -678,7 +679,7 @@ console.log('\ngit G7 — Connect wiring + no client secrets');
   const auth = readFileSync(join(root, 'src/utils/git/githubAuth.js'), 'utf8');
   const realSrc = readFileSync(join(root, 'src/utils/git/githubAdapter.js'), 'utf8');
   const cb = readFileSync(join(root, 'src/components/GitCallback.jsx'), 'utf8');
-  const srv = readFileSync(join(root, 'backend/server.js'), 'utf8');
+  const srv = readFileSync(join(root, 'backend/serverApp.js'), 'utf8');
   const route = readFileSync(join(root, 'backend/routes/github.js'), 'utf8');
   const cfg = readFileSync(join(root, 'backend/config/index.js'), 'utf8');
 

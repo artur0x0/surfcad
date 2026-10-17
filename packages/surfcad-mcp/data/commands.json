@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 178,
+  "count": 179,
   "$defs": {
     "status": {
       "type": "object",
@@ -10213,7 +10213,7 @@
     },
     {
       "name": "create_part",
-      "description": "Add a part row to the assembly.",
+      "description": "Add a part row to the assembly. In a git assembly the part has no vault path until git_save.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -10241,6 +10241,50 @@
       "uiEntry": "data-part-add-kind-part",
       "example": {
         "name": "Bracket"
+      }
+    },
+    {
+      "name": "rename_part",
+      "description": "Rename a part. A vault part also moves its .js path in the same folder (-2, -3 on collision) and updates the .surf.json in one rename commit; that write needs git consent like git_save.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "part_id",
+          "name"
+        ],
+        "properties": {
+          "part_id": {
+            "type": "string",
+            "description": "Part row id from parts"
+          },
+          "name": {
+            "type": "string",
+            "description": "New display name; a vault part also moves to <name>.js (-2, -3 on collision)"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "unknown_part",
+        "name_taken",
+        "consent_pending",
+        "real_repo_blocked",
+        "git_error",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-part-name-input",
+      "example": {
+        "part_id": "parts/Bracket.js",
+        "name": "Mount"
       }
     },
     {
@@ -13948,6 +13992,8 @@
       "errors": [
         "bad_args",
         "git_blocked",
+        "consent_pending",
+        "real_repo_blocked",
         "internal"
       ],
       "mutates": true,
@@ -13961,7 +14007,7 @@
     },
     {
       "name": "git_save",
-      "description": "Commit dirty parts to the current vault branch.",
+      "description": "Save like the Parts Save button: give every path-less part a vault path, then commit those parts, dirty parts, and the .surf.json in one commit on the current branch. A real repo returns consent_pending at once until the user clicks Allow; retry after.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -13982,6 +14028,8 @@
       "errors": [
         "bad_args",
         "git_blocked",
+        "consent_pending",
+        "real_repo_blocked",
         "internal"
       ],
       "mutates": true,
@@ -13998,7 +14046,7 @@
     },
     {
       "name": "git_add_to_repo",
-      "description": "Add a part row into the vault tree and commit.",
+      "description": "Add a part row into the vault tree and commit. Other path-less parts are pathed and committed with it so the .surf.json stays valid.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -14019,13 +14067,18 @@
       "errors": [
         "bad_args",
         "git_blocked",
+        "consent_pending",
+        "real_repo_blocked",
         "internal"
       ],
       "mutates": true,
       "destructive": false,
       "confirm": false,
       "immediate": false,
-      "uiEntry": "data-git-commit-add-to-repo",
+      "uiEntry": [
+        "data-git-commit-add-to-repo",
+        "data-part-add-to-repo"
+      ],
       "example": {
         "part_id": "parts/Bracket.js"
       }
@@ -14071,6 +14124,8 @@
         "bad_args",
         "confirm_required",
         "git_blocked",
+        "consent_pending",
+        "real_repo_blocked",
         "internal"
       ],
       "mutates": true,
@@ -14110,6 +14165,8 @@
       "errors": [
         "bad_args",
         "git_blocked",
+        "consent_pending",
+        "real_repo_blocked",
         "internal"
       ],
       "mutates": true,
@@ -14151,6 +14208,8 @@
         "bad_args",
         "confirm_required",
         "git_blocked",
+        "consent_pending",
+        "real_repo_blocked",
         "internal"
       ],
       "mutates": true,
@@ -14192,6 +14251,8 @@
         "bad_args",
         "confirm_required",
         "git_blocked",
+        "consent_pending",
+        "real_repo_blocked",
         "internal"
       ],
       "mutates": true,
@@ -14224,6 +14285,8 @@
       "errors": [
         "confirm_required",
         "git_blocked",
+        "consent_pending",
+        "real_repo_blocked",
         "internal"
       ],
       "mutates": true,

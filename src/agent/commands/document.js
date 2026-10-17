@@ -1,3 +1,5 @@
+import { ensureAgentGitWriteConsent } from './git.js';
+
 function hostCall(ctx, name, args) {
   const fn = ctx[name];
   if (typeof fn !== 'function') {
@@ -42,6 +44,43 @@ export const createPartCommand = Object.freeze({
   example: { name: 'Bracket' },
   async run(ctx, args) {
     return hostCall(ctx, 'agentCreatePart', args || {});
+  },
+});
+
+export const renamePartCommand = Object.freeze({
+  name: 'rename_part',
+  uiEntry: 'data-part-name-input',
+  schema: Object.freeze({
+    type: 'object',
+    additionalProperties: false,
+    required: ['part_id', 'name'],
+    properties: {
+      part_id: { type: 'string', description: 'Part row id from parts' },
+      name: { type: 'string', description: 'New display name; a vault part also moves to <name>.js (-2, -3 on collision)' },
+    },
+  }),
+  example: { part_id: 'parts/Bracket.js', name: 'Mount' },
+  checkArgs(args) {
+    if (!args?.part_id || typeof args.part_id !== 'string') {
+      return { code: 'bad_args', message: 'rename_part needs part_id' };
+    }
+    if (typeof args?.name !== 'string' || !args.name.trim()) {
+      return { code: 'bad_args', message: 'rename_part needs a non-empty name' };
+    }
+    return null;
+  },
+  async run(ctx, args) {
+    const plan = typeof ctx.readAgentPartRename === 'function'
+      ? ctx.readAgentPartRename(args.part_id)
+      : { known: true, writesGit: false };
+    if (!plan?.known) {
+      return { error: { code: 'unknown_part', message: `Unknown part id: ${args.part_id}` } };
+    }
+    if (plan.writesGit) {
+      const gate = ensureAgentGitWriteConsent(ctx, 'rename_part');
+      if (gate) return { error: gate };
+    }
+    return hostCall(ctx, 'agentRenamePart', { partId: args.part_id, name: args.name.trim() });
   },
 });
 

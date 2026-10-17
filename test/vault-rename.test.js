@@ -246,7 +246,10 @@ describe('find-or-create', () => {
     gh._seedRepo({ name: 'notes' });
     const found = await findOrCreateVault(gh, { name: 'notes' });
     assert.equal(found.status, 'not-a-vault');
-    assert.equal((await gh.listTree({ owner: 'artur', name: 'notes' }, 'main')).length, 0);
+    await assert.rejects(
+      () => gh.listTree({ owner: 'artur', name: 'notes' }, 'main'),
+      (err) => err.code === 'not_found',
+    );
     assert.equal(gh._log.filter((entry) => entry.op === 'commitFiles').length, 0);
   });
 });

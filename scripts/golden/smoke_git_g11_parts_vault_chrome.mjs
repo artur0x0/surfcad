@@ -181,6 +181,7 @@ const feed = readFileSync(new URL('../../src/components/PartFeed.jsx', import.me
 const vaultDlg = readFileSync(new URL('../../src/components/VaultPickerDialog.jsx', import.meta.url), 'utf8');
 const choiceDlg = readFileSync(new URL('../../src/components/OpenAssemblyChoiceDialog.jsx', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../../src/App.jsx', import.meta.url), 'utf8');
+const viewport = readFileSync(new URL('../../src/components/Viewport.jsx', import.meta.url), 'utf8');
 const arch = readFileSync(new URL('../../docs/architecture.md', import.meta.url), 'utf8');
 ok('Save = Commit chrome', /data-git-save=""/.test(feed) && /data-git-commit=""/.test(feed)
   && /aria-label="Save"/.test(feed) && /Save to repo/.test(feed));
@@ -192,14 +193,14 @@ ok('title chip → pane actions', /data-assembly-branch=""/.test(feed)
   && /data-git-branch-action="merge"/.test(feed)
   && !/data-git-branch-dropdown/.test(feed)
   && !/data-git-branch-section/.test(feed));
-ok('Save still on ribbon end (no Branch button)', (() => {
+ok('desktop branch chip on CAD viewer title', /data-viewer-git-branch/.test(viewport)
+  && /cadGitBranch/.test(viewport) && /openCadGitBranches/.test(app));
+ok('desktop parts ribbon hides assembly title chip', /ribbonName && placement !== 'desktop'/.test(feed));
+ok('assembly Save menu offers rename', /data-assembly-rename-menu/.test(feed) && /Rename assembly/.test(feed));
+ok('Save still on ribbon end', (() => {
   const end = feed.indexOf('data-parts-ribbon-end');
   const save = feed.indexOf('data-git-save=""', end);
-  const branchInRibbon = feed.indexOf('data-git-branches=""', end);
-  // Branch chip lives on the title, before ribbon-end.
-  const titleChip = feed.indexOf('data-assembly-branch=""');
-  return end >= 0 && save > end && (branchInRibbon < 0 || branchInRibbon < end)
-    && titleChip >= 0 && titleChip < end;
+  return end >= 0 && save > end;
 })());
 ok('merge conflict → Resolve on Git', /data-git-branch-merge-conflict/.test(feed)
   && /data-git-branch-resolve-github/.test(feed)

@@ -66,49 +66,73 @@ test('agentGitConsentPrompt names command target', () => {
 });
 
 test('git_save blocked on real adapter without opt-in (headless consent)', async () => {
-  const ctx = {
-    readAgentGitAdapterKind: () => 'real',
-    readAgentGitRealOptIn: () => false,
-    readAgentGitSessionDenied: () => false,
-    readAgentGitWriteTarget: () => ({ repo: 'o/r', branch: 'main' }),
-    requestAgentGitWriteConsent: async () => 'timeout',
-    agentGitSave: async () => ({ status: 'committed' }),
-  };
-  const out = await gitSaveCommand.run(ctx, { message: 'test' });
-  assert.equal(out.error?.code, 'real_repo_blocked');
-  assert.equal(out.error?.details?.reason, 'consent_pending');
-});
-
-test('git_save runs after session allow', async () => {
   let saved = false;
   const ctx = {
     readAgentGitAdapterKind: () => 'real',
     readAgentGitRealOptIn: () => false,
     readAgentGitSessionDenied: () => false,
     readAgentGitWriteTarget: () => ({ repo: 'o/r', branch: 'main' }),
-    requestAgentGitWriteConsent: async () => 'allow',
+    promptAgentGitWriteConsent: () => 'unavailable',
     agentGitSave: async () => {
       saved = true;
       return { status: 'committed' };
     },
   };
   const out = await gitSaveCommand.run(ctx, { message: 'test' });
-  assert.equal(saved, true);
-  assert.equal(out.result?.status, 'committed');
+  assert.equal(saved, false);
+  assert.equal(out.error?.code, 'real_repo_blocked');
+  assert.equal(out.error?.details?.reason, 'consent_pending');
 });
 
-test('git_save consent_declined when user denies', async () => {
+test('git_save returns consent_pending at once while the modal is up', async () => {
+  let saved = false;
+  const prompts = [];
   const ctx = {
     readAgentGitAdapterKind: () => 'real',
     readAgentGitRealOptIn: () => false,
     readAgentGitSessionDenied: () => false,
     readAgentGitWriteTarget: () => ({ repo: 'o/r', branch: 'main' }),
-    requestAgentGitWriteConsent: async () => 'deny',
-    agentGitSave: async () => ({ status: 'committed' }),
+    promptAgentGitWriteConsent: (args) => {
+      prompts.push(args);
+      return 'shown';
+    },
+    agentGitSave: async () => {
+      saved = true;
+      return { status: 'committed' };
+    },
   };
+  const started = Date.now();
   const out = await gitSaveCommand.run(ctx, { message: 'test' });
-  assert.equal(out.error?.code, 'real_repo_blocked');
-  assert.equal(out.error?.details?.reason, 'consent_declined');
+  assert.ok(Date.now() - started < 1000);
+  assert.equal(saved, false, 'nothing is written before Allow');
+  assert.equal(out.error?.code, 'consent_pending');
+  assert.equal(out.error?.details?.retry, true);
+  assert.equal(out.error?.details?.command, 'git_save');
+  assert.ok(out.error?.details?.retry_after_ms > 0);
+  assert.match(out.error?.message || '', /o\/r\/main/);
+  assert.deepEqual(prompts, [{ command: 'git_save', repo: 'o/r', branch: 'main' }]);
+});
+
+test('git_save runs on retry after session allow', async () => {
+  let saved = false;
+  let allowed = false;
+  const ctx = {
+    readAgentGitAdapterKind: () => 'real',
+    readAgentGitRealOptIn: () => allowed,
+    readAgentGitSessionDenied: () => false,
+    readAgentGitWriteTarget: () => ({ repo: 'o/r', branch: 'main' }),
+    promptAgentGitWriteConsent: () => 'shown',
+    agentGitSave: async () => {
+      saved = true;
+      return { status: 'committed' };
+    },
+  };
+  const first = await gitSaveCommand.run(ctx, { message: 'test' });
+  assert.equal(first.error?.code, 'consent_pending');
+  allowed = true;
+  const out = await gitSaveCommand.run(ctx, { message: 'test' });
+  assert.equal(saved, true);
+  assert.equal(out.result?.status, 'committed');
 });
 
 test('git_save skips consent when session already denied', async () => {
@@ -116,7 +140,7 @@ test('git_save skips consent when session already denied', async () => {
     readAgentGitAdapterKind: () => 'real',
     readAgentGitRealOptIn: () => false,
     readAgentGitSessionDenied: () => true,
-    requestAgentGitWriteConsent: async () => {
+    promptAgentGitWriteConsent: () => {
       throw new Error('should not show modal');
     },
     agentGitSave: async () => ({ status: 'committed' }),

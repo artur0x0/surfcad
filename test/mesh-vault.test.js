@@ -79,6 +79,19 @@ describe('mesh vault save policy', () => {
     assert.equal(placed.scripts[taken], undefined);
   });
 
+  test('a remote .mesh occupies the sibling script stem', () => {
+    const local = 'bracket-local';
+    const mesh = assetPathForScript(assemblyPartPath('Gearbox', 'Bracket'));
+    const placed = placeLocalMeshParts(
+      partDoc(local),
+      { [local]: importMeshScript('Bracket.mesh') },
+      { occupied: [mesh] },
+    );
+    assert.equal(placed.moved.length, 1);
+    assert.notEqual(placed.doc.parts[0].id, assemblyPartPath('Gearbox', 'Bracket'));
+    assert.notEqual(assetPathForScript(placed.doc.parts[0].id), mesh);
+  });
+
   test('an existing shared part path is left where it is', () => {
     const id = sharedPartPath('Bracket');
     const placed = placeLocalMeshParts(
