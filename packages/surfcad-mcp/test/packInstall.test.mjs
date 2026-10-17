@@ -49,6 +49,7 @@ test('npm pack tarball installs and lists MCP tools over stdio', { timeout: 120_
       cwd: installRoot,
       env: {
         ...process.env,
+        SURFCAD_MCP_START_RELAY: '0',
         SURFCAD_PAIRING_CODE: '',
       },
     });

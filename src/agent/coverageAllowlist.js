@@ -22,6 +22,8 @@ export const COVERAGE_ALLOWLIST = Object.freeze([
   Object.freeze({ id: 'data-agent-bridge-reject', reason: 'M1 reject local WS peer.' }),
   Object.freeze({ id: 'data-agent-bridge-disconnect', reason: 'M1 disconnect local WS peer.' }),
   Object.freeze({ id: 'data-agent-bridge-toggle', reason: 'M1 open/close pairing panel.' }),
+  Object.freeze({ id: 'data-agent-bridge-copy-mcp', reason: 'M1 copy npx surfcad-mcp hint.' }),
+  Object.freeze({ id: 'data-agent-bridge-copy-link', reason: 'M1 copy page URL for Chrome/Edge handoff.' }),
   Object.freeze({ id: 'data-agent-git-consent-allow', reason: 'H12 real-adapter write consent modal (session opt-in).' }),
   Object.freeze({ id: 'data-agent-git-consent-deny', reason: 'H12 real-adapter write consent modal (session deny).' }),
   Object.freeze({ id: 'data-privacy-choices-done', reason: 'Monitoring slice B privacy choices dialog (not agent scope).' }),

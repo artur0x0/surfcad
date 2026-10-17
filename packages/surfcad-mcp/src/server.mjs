@@ -7,6 +7,7 @@ import {
 import { bridgeToolDefinitions, loadCommandsCatalog } from './catalog.mjs';
 import { formatBridgeError, notPairedError, pairingEnvHint } from './errors.mjs';
 import { loadPackageVersion } from './packageVersion.mjs';
+import { ensureAgentBridgeRelay, stopAgentBridgeRelay } from './bridge/relayServer.mjs';
 import { RelaySession } from './relay.mjs';
 
 const PAIR_TOOL_NAME = 'pair';
@@ -127,6 +128,32 @@ export async function createSurfcadMcpServer(options = {}) {
  * @param {{ autoPairFromEnv?: boolean }} [options]
  */
 export async function runSurfcadMcpServer(options = {}) {
+  /** @type {Awaited<ReturnType<typeof ensureAgentBridgeRelay>> | null} */
+  let ownedRelay = null;
+  if (options.startRelay !== false && process.env.SURFCAD_MCP_START_RELAY !== '0') {
+    const relay = await ensureAgentBridgeRelay({
+      onReady: (url) => {
+        if (process.env.SURFCAD_AGENT_BRIDGE_WS_VERBOSE === '1') {
+          console.error(`[surfcad-mcp] Agent bridge relay on ${url}`);
+        }
+      },
+    });
+    if (relay.ownsServer) ownedRelay = relay;
+  }
+
+  const onStdinClosed = () => {
+    if (ownedRelay) {
+      const closing = ownedRelay;
+      ownedRelay = null;
+      void stopAgentBridgeRelay(closing).finally(() => {
+        setTimeout(() => process.exit(0), 0).unref();
+      });
+      return;
+    }
+    setTimeout(() => process.exit(0), 0).unref();
+  };
+  process.stdin.once('end', onStdinClosed);
+
   const { server, session } = await createSurfcadMcpServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);

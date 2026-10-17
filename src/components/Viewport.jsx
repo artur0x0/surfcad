@@ -3,7 +3,7 @@
    three.js render-loop stability (scene/camera/controls live in refs); adding the flagged
    refs would rebind listeners/materials per render. Revisit deliberately, not via lint. */
 import React, { useEffect, useMemo, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import {
   WebGLRenderer,
   Scene,
@@ -4243,11 +4243,15 @@ const Viewport = forwardRef(({
     }
     const planeOpen = !centresEdit && !sheetSketch;
     contourPlaneOpenRef.current = planeOpen;
-    setContourPlaneOpen(planeOpen);
     sketchHistRef.current = emptySketchHistory();
     setContourUndoDepth(0);
     setContourFaceAim('');
-    setContourMode(next);
+    flushSync(() => {
+      setContourPlaneOpen(planeOpen);
+      setContourMode(next);
+    });
+    contourPlaneOpenRef.current = planeOpen;
+    contourModeRef.current = next;
     if (centresEdit?.frame?.normal) {
       overlayVis.end('planes');
       requestFaceSketchAim(centresEdit.frame.normal);
@@ -11825,19 +11829,27 @@ const Viewport = forwardRef(({
     const accept = args.accept_plane !== false;
     const offset = args.offset;
     if (accept || offset != null) {
-      window.setTimeout(() => {
-        if (offset != null && contourModeRef.current) {
-          setContourMode((prev) => {
-            if (!prev) return prev;
-            const next = applyContourPlaneEdit(prev, { offset });
-            contourModeRef.current = next;
-            return next;
-          });
-        }
-        if (accept && contourPlaneOpenRef.current) {
-          startContourDrawing();
-        }
-      }, 0);
+      const scheduleAutoAcceptPlane = () => {
+        let attempts = 120;
+        const tick = () => {
+          if (!contourModeRef.current) return;
+          if (offset != null && contourPlaneOpenRef.current) {
+            setContourMode((prev) => {
+              if (!prev) return prev;
+              const next = applyContourPlaneEdit(prev, { offset });
+              contourModeRef.current = next;
+              return next;
+            });
+          }
+          if (accept && contourPlaneOpenRef.current) {
+            startContourDrawing();
+            return;
+          }
+          if (attempts-- > 0) window.setTimeout(tick, 16);
+        };
+        window.setTimeout(tick, 0);
+      };
+      scheduleAutoAcceptPlane();
     }
     return { result: { entry, accept_plane: accept } };
   };
@@ -12627,6 +12639,15 @@ const Viewport = forwardRef(({
           onRunOutcomeRef.current?.({ script: submitted, ok: false, scriptLine: null });
         }
       };
+      // A soft-restart or assembly preempt clears isReady until init()
+      // finishes. Wait for that instead of failing the next script.
+      if (!manifoldContext.isReady && typeof manifoldContext.whenReady === 'function') {
+        await manifoldContext.whenReady();
+      }
+      if (abortController.aborted) {
+        console.log('[Viewport] Execution aborted while the sandbox restarted');
+        return false;
+      }
       if (!manifoldContext.isReady) {
         throw new Error('Manifold Sandbox not initialized');
       }

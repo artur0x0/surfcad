@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { WebSocket } from 'ws';
-import { startAgentBridgeRelay } from '../scripts/vite-agent-bridge-ws.mjs';
+import { startAgentBridgeRelay, stopAgentBridgeRelay } from '../packages/surfcad-mcp/src/bridge/relayServer.mjs';
 import { PAIR_MSG } from '../src/agent/ws/relayHub.js';
 import { connectPeer, bridgeCall } from '../src/agent/ws/nodeClient.js';
 import { createPairingToken } from '../src/agent/ws/pairingToken.js';
@@ -79,5 +79,5 @@ test('M1 relay pairs tab and peer and runs list_faces', async () => {
 
   tab.close();
   peer.close();
-  await new Promise((r) => relay.server.close(r));
+  await stopAgentBridgeRelay(relay);
 });

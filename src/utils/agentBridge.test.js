@@ -167,6 +167,16 @@ async function invoke(api, name, args) {
 test('the bridge is on in dev and opt-in elsewhere', () => {
   assert.equal(agentBridgeEnabled({ dev: true, location: { search: '' }, localStorage: storage(null) }), true);
   assert.equal(agentBridgeEnabled({ dev: false, location: { search: '' }, localStorage: storage(null) }), false);
+  assert.equal(agentBridgeEnabled({
+    dev: false,
+    location: { search: '', hostname: 'surfcad.com' },
+    localStorage: storage(null),
+  }), true);
+  assert.equal(agentBridgeEnabled({
+    dev: false,
+    location: { search: '', hostname: 'www.surfcad.com' },
+    localStorage: storage(null),
+  }), true);
   assert.equal(agentBridgeEnabled({ dev: false, location: { search: '?agent=1' }, localStorage: storage(null) }), true);
   assert.equal(agentBridgeEnabled({ dev: false, location: { search: '?agent=0' }, localStorage: storage(null) }), false);
   assert.equal(agentBridgeEnabled({ dev: false, location: { search: '?foo=1' }, localStorage: storage('1') }), true);
