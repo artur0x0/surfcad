@@ -300,7 +300,9 @@ export function resolveRollback(script, anchor) {
   const ids = chips.map((chip) => chip.id);
   const known = new Set(markerIds);
   for (const chip of chips) {
-    if (chip.sheet || chip.kind === 'contour') known.add(chip.id);
+    if (chip.sheet || chip.kind === 'contour' || chip.virtual || chip.kind === 'code') {
+      known.add(chip.id);
+    }
   }
   let resolved;
   if (anchor === null) resolved = null;

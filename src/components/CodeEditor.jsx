@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 import Toolbar from './Toolbar';
 import ProfileChip from './ProfileChip';
 import { composeHelperInsert } from '../utils/helperPaletteSnippets';
+import { wrapRawScript } from '../utils/wrapRawScript';
 
 // "Select All" in the (long-press) context menu. Monaco 0.52 removed
 // registerEditorAction from the public API, so we use the internal
@@ -435,6 +436,22 @@ const CodeEditor = forwardRef(({
         editor.trigger('keybinding', 'editor.action.selectAll', null);
       }
     );
+
+    editor.onDidPaste(() => {
+      const content = editor.getValue();
+      const next = wrapRawScript(content);
+      if (next === content) return;
+      if (historyTimeoutRef.current) {
+        clearTimeout(historyTimeoutRef.current);
+        historyTimeoutRef.current = null;
+      }
+      programmaticValueRef.current = next;
+      valueRef.current = next;
+      setEditorValue(next);
+      editor.setValue(next);
+      onExecute(next);
+      onCodeChange?.(next, 'Paste');
+    });
 
     // First mount seeds the undo stack and builds the boot script. A remount
     // (mobile layout, drawer) keeps the live step — pushing the boot script

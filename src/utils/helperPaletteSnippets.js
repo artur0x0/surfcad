@@ -164,6 +164,8 @@ export const POLAR_ARRAY_BEGIN = '// --- polarArray begin ---';
 export const POLAR_ARRAY_END = '// --- polarArray end ---';
 export const WORKPLANE_BEGIN = '// --- workplane begin ---';
 export const WORKPLANE_END = '// --- workplane end ---';
+export const CODE_BEGIN = '// --- code begin ---';
+export const CODE_END = '// --- code end ---';
 
 /** All feature end-markers — inserts after a live `part` binding skip past these. */
 export const FEATURE_BLOCK_END_MARKERS = Object.freeze([
@@ -199,6 +201,7 @@ export const FEATURE_BLOCK_END_MARKERS = Object.freeze([
   ARRAY_END,
   POLAR_ARRAY_END,
   WORKPLANE_END,
+  CODE_END,
 ]);
 
 /** Wrap body lines in begin…end strip markers (Slice A). */

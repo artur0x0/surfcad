@@ -86,6 +86,7 @@ const FEATURE_ICONS = Object.freeze({
   mirror: FlipHorizontal2,
   array: Boxes,
   polarArray: Boxes,
+  code: NotebookPen,
   sheetMetal: SheetMetalPlate,
 });
 

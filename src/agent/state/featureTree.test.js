@@ -11,6 +11,14 @@ part = part.subtract(Manifold.cylinder(12, 2, 2, 12, true));
 return part;
 `;
 
+test('buildFeatureTree lists a virtual Code chip for unmarked source', () => {
+  const raw = 'let part = Manifold.cube([8, 8, 8], true);\nreturn part;\n';
+  const tree = buildFeatureTree({ script: raw });
+  assert.equal(tree.features.length, 1);
+  assert.equal(tree.features[0].kind, 'code');
+  assert.equal(tree.features[0].id, 'code-fallback');
+});
+
 test('buildFeatureTree lists features in script order with failure flags', () => {
   const tree = buildFeatureTree({
     script: SCRIPT,

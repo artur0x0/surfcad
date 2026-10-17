@@ -10,6 +10,7 @@
 
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { readSheetMetalSpec } from './sheetMetal/sheetMetalScript.js';
+import { unmarkedCodeChip } from './wrapRawScript.js';
 
 /** Kinds with real numeric writeback in Slice C. */
 export const FEATURE_SHEET_EDITABLE = Object.freeze(['extrude', 'fillet', 'revolve']);
@@ -283,7 +284,10 @@ export function pickDefaultFeatureSheetTarget(script) {
 }
 
 export function listFeatureSheetTargets(script) {
-  return parseFeatureMarkers(script);
+  const features = parseFeatureMarkers(script);
+  if (features.length) return features;
+  const fallback = unmarkedCodeChip(script);
+  return fallback ? [fallback] : [];
 }
 
 /**
@@ -296,7 +300,10 @@ export function listFeatureSheetTargets(script) {
 export function liveSheetFeature(script, feature) {
   if (!feature || typeof script !== 'string') return null;
   const list = parseFeatureMarkers(script);
-  return list.find((f) => f.id === feature.id && f.kind === feature.kind)
-    || list.find((f) => f.kind === feature.kind && f.index === feature.index)
-    || null;
+  const hit = list.find((f) => f.id === feature.id && f.kind === feature.kind)
+    || list.find((f) => f.kind === feature.kind && f.index === feature.index);
+  if (hit) return hit;
+  const fallback = unmarkedCodeChip(script);
+  if (fallback && feature.kind === 'code') return fallback;
+  return null;
 }
