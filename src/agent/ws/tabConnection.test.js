@@ -202,6 +202,44 @@ test('origin refusal is not retried', () => {
   assert.ok(issues.includes('origin_rejected'));
 });
 
+test('a deferred close from an old socket does not mark a newer socket idle', () => {
+  const factory = fakeSocketFactory();
+  const deferred = [];
+  const create = () => {
+    const socket = factory.create();
+    socket.close = function closeLater() {
+      if (this.readyState === 3) return;
+      deferred.push(() => this.fire('close', { code: 1006 }));
+    };
+    return socket;
+  };
+  const states = [];
+  const conn = createAgentBridgeTabConnection({
+    url: 'ws://127.0.0.1:17341',
+    token: 'ABC234',
+    call: async () => ({ ok: true, result: 1 }),
+    createSocket: create,
+    onState: (s) => states.push(s),
+    reconnectDelaysMs: [30_000],
+  });
+  conn.connect();
+  const first = factory.latest();
+  first.fire('open');
+  assert.equal(conn.getState(), 'advertising');
+
+  conn.connect();
+  const second = factory.latest();
+  assert.notEqual(second, first);
+  second.fire('open');
+  assert.equal(conn.getState(), 'advertising');
+  states.length = 0;
+
+  for (const flush of deferred.splice(0)) flush();
+  assert.equal(conn.getState(), 'advertising', 'stale close must not call onState(idle)');
+  assert.ok(!states.includes('idle'));
+  assert.equal(second.last(PAIR_MSG.REGISTER_TAB).token, 'ABC234');
+});
+
 test('first connect to a missing relay stays idle for the pairing poller', () => {
   const ctx = setup();
   ctx.conn.connect();

@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  isCurrentPairingConnection,
   isRelayTabConnected,
+  shouldKeepAgentBridgeHostMounted,
   shouldPollRelay,
   shouldRevealPairingCode,
 } from './pairingFlow.js';
@@ -22,4 +24,18 @@ test('isRelayTabConnected tracks live tab session states', () => {
   assert.equal(isRelayTabConnected('idle'), false);
   assert.equal(isRelayTabConnected('advertising'), true);
   assert.equal(isRelayTabConnected('paired'), true);
+  assert.equal(isRelayTabConnected('reconnecting'), true);
+});
+
+test('the pairing host stays mounted on the chip while the panel is closed', () => {
+  assert.equal(shouldKeepAgentBridgeHostMounted({ agentBridgeLive: true, panelOpen: false }), true);
+  assert.equal(shouldKeepAgentBridgeHostMounted({ agentBridgeLive: true, panelOpen: true }), true);
+  assert.equal(shouldKeepAgentBridgeHostMounted({ agentBridgeLive: false, panelOpen: true }), false);
+});
+
+test('stale connection callbacks are ignored after a swap', () => {
+  const current = { id: 2 };
+  assert.equal(isCurrentPairingConnection(current, current), true);
+  assert.equal(isCurrentPairingConnection(current, { id: 1 }), false);
+  assert.equal(isCurrentPairingConnection(null, current), false);
 });
