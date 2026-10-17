@@ -47,7 +47,9 @@ import { installSeparateBodies, overlappingBodies } from '../../workers/separate
 import { solveContour as solveContourModel } from '../../utils/contourSolve.js';
 import {
   SCRIPT_SANDBOX_SHADOWS,
+  attachHostPort,
   freezeWorkerHandlers,
+  lockScriptIntrinsics,
   rewriteDynamicImport,
 } from '../../utils/scriptSandbox.js';
 
@@ -9264,6 +9266,7 @@ const executeScript = (script, importedModels) => {
     fn = new Function(...scopeKeys, wrappedScript);
     features = [];
   }
+  lockScriptIntrinsics();
   try {
     return fn(...scopeValues);
   } catch (err) {
@@ -9656,7 +9659,7 @@ function _gameMatchCompare(attempt, target, relEps, volFloor) {
 }
 
 export function bindWorker(self) {
-  const rawPostMessage = typeof self.postMessage === 'function'
+  let rawPostMessage = typeof self.postMessage === 'function'
     ? self.postMessage.bind(self)
     : () => {};
   let activeResultAuth = null;
@@ -9676,6 +9679,10 @@ export function bindWorker(self) {
 
   const dispatch = async (event) => {
   const { type, payload, id } = event.data || {};
+  if (type === 'init') {
+    const bound = attachHostPort(event, dispatch);
+    if (bound) rawPostMessage = bound;
+  }
   activeResultAuth = payload && payload.resultAuth != null ? payload.resultAuth : null;
 
   try {
@@ -9683,6 +9690,7 @@ export function bindWorker(self) {
       case 'init': {
         await initializeManifold();
         lockdownGlobals();
+        lockScriptIntrinsics();
         hostPostMessage({ type: 'ready', id });
         break;
       }

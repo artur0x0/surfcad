@@ -22,6 +22,7 @@ import { softRestartDecision } from './manifoldWorkerLiveness.js'
 class ManifoldWorker {
   constructor() {
     this.worker = null;
+    this._hostPort = null;
     this.isReady = false;
     this.pendingRequests = new Map();
     
@@ -70,14 +71,22 @@ class ManifoldWorker {
         // Create worker using Vite's import
         this.worker = new SandboxWorker();
 
-        this.worker.onmessage = (event) => this._handleMessage(event);
+        this.worker.onmessage = (event) => {
+          if (this._hostPort) {
+            console.warn('[ManifoldWorker] Dropped worker-global message');
+            return;
+          }
+          this._handleMessage(event);
+        };
 
         this.worker.onerror = (error) => {
           console.error('[ManifoldWorker] Worker error:', error);
           rejectInit(new Error(`Worker error: ${error.message || 'unknown'}`));
         };
 
-        // Wait for 'loaded' signal, then send init
+        // Wait for 'loaded' on the worker global, then move the protocol
+        // onto a MessageChannel port so user self.postMessage / onmessage
+        // cannot forge results or steal resultAuth.
         const initHandler = (event) => {
           if (event.data.type !== 'loaded') return;
           this.worker.removeEventListener('message', initHandler);
@@ -86,12 +95,16 @@ class ManifoldWorker {
           const initId = this._generateRequestId();
           this.pendingRequests.set(initId, { resolve: resolveInit, reject: rejectInit });
 
-          // No payload needed - worker imports WASM directly
+          const channel = new MessageChannel();
+          this._hostPort = channel.port1;
+          this._hostPort.onmessage = (ev) => this._handleMessage(ev);
+          try { this._hostPort.start(); } catch { /* ignore */ }
+
           this.worker.postMessage({
             type: 'init',
             id: initId,
             payload: {}
-          });
+          }, [channel.port2]);
         };
 
         this.worker.addEventListener('message', initHandler);
@@ -153,7 +166,7 @@ class ManifoldWorker {
       });
       
       // Send execute message
-      this.worker.postMessage({
+      this._postToWorker({
         type: 'execute',
         id: requestId,
         payload: {
@@ -207,7 +220,7 @@ class ManifoldWorker {
         }
       });
       
-      this.worker.postMessage({
+      this._postToWorker({
         type: 'getModelInfo',
         id: requestId,
         payload: {}
@@ -234,7 +247,7 @@ class ManifoldWorker {
         resolve: (r) => { clearTimeout(timeoutId); resolve(r); },
         reject: (e) => { clearTimeout(timeoutId); reject(e); },
       });
-      this.worker.postMessage({ type: 'storeGameTarget', id: requestId, payload: {} });
+      this._postToWorker({ type: 'storeGameTarget', id: requestId, payload: {} });
     });
   }
 
@@ -258,7 +271,7 @@ class ManifoldWorker {
         resolve: (r) => { clearTimeout(timeoutId); resolve(r); },
         reject: (e) => { clearTimeout(timeoutId); reject(e); },
       });
-      this.worker.postMessage({
+      this._postToWorker({
         type: 'compareGameMatch',
         id: requestId,
         payload: { relEps: opts.relEps, volFloor: opts.volFloor, nonce: opts.nonce },
@@ -280,7 +293,7 @@ class ManifoldWorker {
         resolve: (r) => { clearTimeout(timeoutId); resolve(r); },
         reject: (e) => { clearTimeout(timeoutId); reject(e); },
       });
-      this.worker.postMessage({ type: 'clearResult', id: requestId, payload: {} });
+      this._postToWorker({ type: 'clearResult', id: requestId, payload: {} });
     });
   }
 
@@ -297,7 +310,7 @@ class ManifoldWorker {
         resolve: (r) => { clearTimeout(timeoutId); resolve(r); },
         reject: (e) => { clearTimeout(timeoutId); reject(e); },
       });
-      this.worker.postMessage({ type: 'clearGameTarget', id: requestId, payload: {} });
+      this._postToWorker({ type: 'clearGameTarget', id: requestId, payload: {} });
     });
   }
 
@@ -336,7 +349,7 @@ class ManifoldWorker {
         }
       });
       
-      this.worker.postMessage({
+      this._postToWorker({
         type: 'importOBJ',
         id: requestId,
         payload: { objString, filename }
@@ -364,7 +377,7 @@ class ManifoldWorker {
         resolve: (r) => { clearTimeout(timeoutId); resolve(r); },
         reject: (e) => { clearTimeout(timeoutId); reject(e); },
       });
-      this.worker.postMessage({
+      this._postToWorker({
         type: 'stageReferenceLoad', id: requestId,
         payload: { filename, objString, meshData, tolerance },
       });
@@ -376,7 +389,7 @@ class ManifoldWorker {
     return new Promise((resolve, reject) => {
       const requestId = this._generateRequestId();
       this.pendingRequests.set(requestId, { resolve, reject });
-      this.worker.postMessage({ type: 'stageReferenceList', id: requestId, payload: {} });
+      this._postToWorker({ type: 'stageReferenceList', id: requestId, payload: {} });
     });
   }
 
@@ -385,7 +398,7 @@ class ManifoldWorker {
     return new Promise((resolve, reject) => {
       const requestId = this._generateRequestId();
       this.pendingRequests.set(requestId, { resolve, reject });
-      this.worker.postMessage({ type: 'stageReferenceClear', id: requestId, payload: {} });
+      this._postToWorker({ type: 'stageReferenceClear', id: requestId, payload: {} });
     });
   }
 
@@ -402,7 +415,7 @@ class ManifoldWorker {
         resolve: (r) => { clearTimeout(timeoutId); resolve(r); },
         reject: (e) => { clearTimeout(timeoutId); reject(e); },
       });
-      this.worker.postMessage({
+      this._postToWorker({
         type: 'stageVerify', id: requestId,
         payload: { reference, passRel: opts.passRel, volGate: opts.volGate,
                    candidateMesh: opts.candidateMesh, tolerance: opts.tolerance },
@@ -423,7 +436,7 @@ class ManifoldWorker {
         resolve: (r) => { clearTimeout(timeoutId); resolve(r); },
         reject: (e) => { clearTimeout(timeoutId); reject(e); },
       });
-      this.worker.postMessage({ type: 'stageGetLastMesh', id: requestId, payload: {} });
+      this._postToWorker({ type: 'stageGetLastMesh', id: requestId, payload: {} });
     });
   }
 
@@ -449,7 +462,7 @@ class ManifoldWorker {
         reject: (error) => { clearTimeout(timeoutId); reject(error); },
       });
 
-      this.worker.postMessage({
+      this._postToWorker({
         type: 'getHelperList',
         id: requestId
       });
@@ -497,7 +510,7 @@ class ManifoldWorker {
         }
       });
       
-      this.worker.postMessage({
+      this._postToWorker({
         type: 'trimByPlane',
         id: requestId,
         payload: { normal, originOffset }
@@ -536,7 +549,7 @@ class ManifoldWorker {
           reject(error);
         },
       });
-      this.worker.postMessage({ type, id: requestId, payload });
+      this._postToWorker({ type, id: requestId, payload });
     });
   }
 
@@ -569,7 +582,7 @@ class ManifoldWorker {
           reject(error);
         }
       });
-      this.worker.postMessage({
+      this._postToWorker({
         type: 'previewBoolean',
         id: requestId,
         payload: {
@@ -603,7 +616,7 @@ class ManifoldWorker {
           reject(error);
         }
       });
-      this.worker.postMessage({
+      this._postToWorker({
         type: 'previewCut',
         id: requestId,
         payload: { plane, bodies }
@@ -641,7 +654,7 @@ class ManifoldWorker {
           reject(error);
         }
       });
-      this.worker.postMessage({
+      this._postToWorker({
         type: 'previewMoveFace',
         id: requestId,
         payload: { faces, distance, flip }
@@ -678,7 +691,7 @@ class ManifoldWorker {
           reject(error);
         }
       });
-      this.worker.postMessage({
+      this._postToWorker({
         type: 'previewBlock',
         id: requestId,
         payload: { id, params }
@@ -714,7 +727,7 @@ class ManifoldWorker {
           reject(error);
         }
       });
-      this.worker.postMessage({
+      this._postToWorker({
         type: 'previewDeleteFace',
         id: requestId,
         payload: { faces }
@@ -823,6 +836,10 @@ class ManifoldWorker {
     }
     this.pendingRequests.clear();
     this._initPromise = null;
+    if (this._hostPort) {
+      try { this._hostPort.close(); } catch { /* ignore */ }
+      this._hostPort = null;
+    }
     if (this.worker) {
       try { this.worker.terminate(); } catch { /* ignore */ }
       this.worker = null;
@@ -875,6 +892,13 @@ class ManifoldWorker {
   
   _generateRequestId() {
     return generateWorkerRequestId();
+  }
+
+  _postToWorker(message, transfer) {
+    const target = this._hostPort || this.worker;
+    if (!target) throw new Error('Manifold worker is not available');
+    if (transfer) target.postMessage(message, transfer);
+    else target.postMessage(message);
   }
   
   _handleMessage(event) {

@@ -4,11 +4,13 @@ import { readFileSync } from 'node:fs';
 import {
   SCRIPT_SANDBOX_SHADOWS,
   acceptWorkerResult,
+  attachHostPort,
   createResultAuth,
   evaluateSandboxedScript,
   freezeWorkerHandlers,
   generateWorkerRequestId,
   isWorkerHostMessage,
+  lockScriptIntrinsics,
   rewriteDynamicImport,
 } from './scriptSandbox.js';
 import { bindManifoldModule, executeScript } from '../lib/surfcad/runtime.js';
@@ -26,6 +28,14 @@ test('rewriteDynamicImport blocks import() and leaves importMesh and strings', (
   assert.equal(
     rewriteDynamicImport('const t = `n=${import("https://cdn.jsdelivr.net/npm/x")}`'),
     'const t = `n=${__blockedImport("https://cdn.jsdelivr.net/npm/x")}`',
+  );
+  assert.equal(
+    rewriteDynamicImport('const x = import/*x*/("https://cdn.jsdelivr.net/npm/x")'),
+    'const x = __blockedImport("https://cdn.jsdelivr.net/npm/x")',
+  );
+  assert.equal(
+    rewriteDynamicImport('im\\u0070ort("https://cdn.jsdelivr.net/npm/x")'),
+    '__blockedImport("https://cdn.jsdelivr.net/npm/x")',
   );
 });
 
@@ -157,4 +167,76 @@ test('page CSP keeps jsdelivr for Monaco; worker CSP has connect-src none', () =
   assert.match(page, /monaco-editor\/loader/);
   const worker = readFileSync(new URL('../../docs/nginx-snippets/surfcad-worker-csp.conf', import.meta.url), 'utf8');
   assert.match(worker, /connect-src 'none'/);
+});
+
+test('PoC A: Function constructor cannot reach import()', () => {
+  const u = 'https:' + '/' + '/cdn.jsdelivr.net/npm/lodash-es/+esm';
+  const script = [
+    'const u = ' + JSON.stringify(u) + ';',
+    "const F = []['constructor']['constructor'];",
+    'F(\'return import("\' + u + \'")\')()',
+  ].join('\n');
+  assert.throws(() => evaluateSandboxedScript(script), /not allowed/);
+  assert.throws(() => executeScript(script, {}), /not allowed/);
+  assert.throws(
+    () => evaluateSandboxedScript('import/*x*/("https://cdn.jsdelivr.net/npm/x")'),
+    /not allowed/,
+  );
+});
+
+test('PoC B: Function constructor cannot reach postMessage', () => {
+  const script = [
+    "const F = []['constructor']['constructor'];",
+    'F(\'postMessage({type:"result",id:"x",payload:{ok:1}})\')()',
+  ].join('\n');
+  assert.throws(() => evaluateSandboxedScript(script), /not allowed/);
+  assert.throws(() => executeScript(script, {}), /not allowed/);
+});
+
+test('PoC C: microtask Function cannot steal onmessage', async () => {
+  lockScriptIntrinsics();
+  const prevOnMessage = globalThis.onmessage;
+  const dispatch = function hostDispatch() {};
+  const self = { onmessage: dispatch, postMessage() {} };
+  freezeWorkerHandlers(self, { dispatch, rawPostMessage: () => {} });
+  const script = [
+    "const F = []['constructor']['constructor'];",
+    'return Promise.resolve().then(function () {',
+    "  F('onmessage = function (e) { }')()",
+    '})',
+  ].join('\n');
+  await assert.rejects(() => evaluateSandboxedScript(script), /not allowed/);
+  assert.equal(self.onmessage, dispatch);
+  assert.equal(globalThis.onmessage, prevOnMessage);
+  assert.throws(() => []['constructor']['constructor']('return 1'), /not allowed/);
+  assert.throws(
+    () => Object.getPrototypeOf(async function () {}).constructor('return 1'),
+    /not allowed/,
+  );
+});
+
+test('benign scripts still evaluate after intrinsic lockdown', () => {
+  assert.equal(evaluateSandboxedScript('return 40 + 2'), 42);
+  assert.equal(executeScript('return { ok: true }', {}).ok, true);
+});
+
+test('attachHostPort moves the protocol off self.postMessage', () => {
+  const port = {
+    sent: null,
+    onmessage: null,
+    started: false,
+    postMessage(msg) { this.sent = msg; },
+    start() { this.started = true; },
+  };
+  const dispatch = function hostDispatch() {};
+  const send = attachHostPort({ ports: [port] }, dispatch);
+  assert.equal(typeof send, 'function');
+  assert.equal(port.onmessage, dispatch);
+  assert.equal(port.started, true);
+  send({ type: 'ready', id: 'req_x' });
+  assert.equal(port.sent.type, 'ready');
+  const src = readFileSync(new URL('./ManifoldWorker.js', import.meta.url), 'utf8');
+  assert.match(src, /new MessageChannel/);
+  assert.match(src, /_hostPort/);
+  assert.match(src, /Dropped worker-global message/);
 });
