@@ -42,10 +42,14 @@ export const AGENT_BRIDGE_VERSION = 1;
 export const AGENT_COMMANDS = v1Registry.names;
 
 const EMPTY_STATUS = Object.freeze({
+  partId: '',
+  partName: '',
+  script: '',
+  runState: 'not_run_yet',
   volume: null,
   bbox: null,
-  partName: '',
   featureCount: 0,
+  bodyCount: null,
 });
 
 /**
@@ -124,25 +128,37 @@ function errorMessages(errors) {
   return out;
 }
 
-function statusFrom(outcome, script) {
+function statusFrom(outcome, script, extras = {}) {
   const text = typeof script === 'string' ? script : '';
   const ok = outcome?.ok === true;
   const volume = Number(outcome?.volume);
+  let runState = extras.runState;
+  if (runState == null) runState = ok ? 'ok' : 'failed';
   return {
+    partId: extras.partId != null ? String(extras.partId) : '',
+    partName: typeof outcome?.partName === 'string'
+      ? outcome.partName
+      : (extras.partName || ''),
+    script: text,
+    runState,
     volume: ok && Number.isFinite(volume) ? volume : null,
     bbox: ok ? cloneAgentBbox(outcome?.bbox) : null,
-    partName: typeof outcome?.partName === 'string' ? outcome.partName : '',
     featureCount: agentFeatureCount(text),
+    bodyCount: extras.bodyCount == null ? null : extras.bodyCount,
   };
 }
 
 function copyStatus(status) {
   const src = status || EMPTY_STATUS;
   return {
+    partId: src.partId || '',
+    partName: src.partName || '',
+    script: typeof src.script === 'string' ? src.script : '',
+    runState: src.runState || 'not_run_yet',
     volume: src.volume == null ? null : src.volume,
     bbox: src.bbox ? { min: src.bbox.min.slice(), max: src.bbox.max.slice() } : null,
-    partName: src.partName || '',
     featureCount: src.featureCount || 0,
+    bodyCount: src.bodyCount == null ? null : src.bodyCount,
   };
 }
 
@@ -232,7 +248,17 @@ export function createSurfcadBridge(hostSource) {
   let lastErrors = [];
   let lastStructuredErrors = [];
   let lastStatus = copyStatus(EMPTY_STATUS);
+  let lastStatusPartId = '';
   const pickSessions = createPickSessions();
+
+  function refreshStatusForActivePart() {
+    const read = hostFn('readActivePartStatus');
+    if (!read) return;
+    const snap = read();
+    if (!snap || typeof snap !== 'object') return;
+    lastStatus = copyStatus(snap);
+    lastStatusPartId = lastStatus.partId || '';
+  }
 
   function enqueue(task) {
     const run = chain.then(task, task);
@@ -251,7 +277,9 @@ export function createSurfcadBridge(hostSource) {
       script: text,
       runFailure,
     });
-    lastStatus = statusFrom(outcome, text);
+    const activeId = hostFn('readParts')?.()?.activeId ?? '';
+    lastStatusPartId = activeId != null ? String(activeId) : '';
+    lastStatus = statusFrom(outcome, text, { partId: lastStatusPartId });
     return {
       ok: outcome?.ok === true,
       errors: lastErrors.slice(),
@@ -323,7 +351,12 @@ export function createSurfcadBridge(hostSource) {
     mutate,
     remember,
     syncStatusFromRun,
-    readStatus: () => copyStatus(lastStatus),
+    readStatus: () => {
+      const activeId = ctx.readParts()?.activeId ?? '';
+      const activeKey = activeId != null ? String(activeId) : '';
+      if (activeKey !== lastStatusPartId) refreshStatusForActivePart();
+      return copyStatus(lastStatus);
+    },
     readErrors: () => lastErrors.slice(),
     readStructuredErrors: () => {
       const custom = hostFn('readStructuredErrors');
@@ -516,7 +549,11 @@ export function createSurfcadBridge(hostSource) {
     selectFaces: (args) => hostFn('selectFaces')?.(args),
     selectEdges: (args) => hostFn('selectEdges')?.(args),
     selectParts: (args) => hostFn('selectParts')?.(args),
-    setActivePart: (partId) => hostFn('setActivePart')?.(partId),
+    setActivePart: (partId) => {
+      const out = hostFn('setActivePart')?.(partId);
+      refreshStatusForActivePart();
+      return out;
+    },
     setCamera: (args) => hostFn('setCamera')?.(args),
     fitCamera: () => hostFn('fitCamera')?.(),
     zoomToSelection: () => hostFn('zoomToSelection')?.(),
