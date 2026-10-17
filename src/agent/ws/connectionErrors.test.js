@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  agentBridgePairingMode,
   browserBlockedHint,
+  canFallBackToPopupBridge,
   detectBrowserFamily,
+  isIOSLikeBrowser,
   isWebKitLoopbackPairingBrowser,
   issueFromCloseEvent,
   issueFromErrorEvent,
@@ -60,11 +63,22 @@ test('isWebKitLoopbackPairingBrowser: iOS (all engines) and desktop Safari', () 
   assert.equal(isWebKitLoopbackPairingBrowser(UA.firefox), false);
 });
 
-test('shouldPreemptWebKitHttpsPairing on https prod, not on local dev', () => {
+test('shouldPreemptWebKitHttpsPairing only for iOS / iPadOS on https prod', () => {
   assert.equal(shouldPreemptWebKitHttpsPairing({
     protocol: 'https:',
     hostname: 'surfcad.com',
     userAgent: UA.macSafari18,
+  }), false);
+  assert.equal(shouldPreemptWebKitHttpsPairing({
+    protocol: 'https:',
+    hostname: 'surfcad.com',
+    userAgent: UA.iosSafari,
+  }), true);
+  assert.equal(shouldPreemptWebKitHttpsPairing({
+    protocol: 'https:',
+    hostname: 'surfcad.com',
+    userAgent: UA.macSafari18,
+    maxTouchPoints: 5,
   }), true);
   assert.equal(shouldPreemptWebKitHttpsPairing({
     protocol: 'https:',
@@ -81,4 +95,46 @@ test('shouldPreemptWebKitHttpsPairing on https prod, not on local dev', () => {
     hostname: '127.0.0.1',
     userAgent: UA.iosSafari,
   }), false);
+});
+
+test('agentBridgePairingMode: desktop Safari on https uses the popup bridge', () => {
+  const prod = { protocol: 'https:', hostname: 'surfcad.com' };
+  assert.equal(agentBridgePairingMode({ ...prod, userAgent: UA.macSafari18, maxTouchPoints: 0 }), 'popup');
+  assert.equal(agentBridgePairingMode({ ...prod, hostname: 'www.surfcad.com', userAgent: UA.macSafari18 }), 'popup');
+  assert.equal(agentBridgePairingMode({ ...prod, userAgent: UA.desktopChrome }), 'direct');
+  assert.equal(agentBridgePairingMode({ ...prod, userAgent: UA.edge }), 'direct');
+  assert.equal(agentBridgePairingMode({ ...prod, userAgent: UA.firefox }), 'direct');
+  assert.equal(agentBridgePairingMode({ ...prod, userAgent: UA.iosSafari }), 'unsupported');
+  assert.equal(agentBridgePairingMode({ ...prod, userAgent: UA.iosChrome }), 'unsupported');
+  assert.equal(agentBridgePairingMode({ ...prod, userAgent: UA.macSafari18, maxTouchPoints: 5 }), 'unsupported');
+  assert.equal(agentBridgePairingMode({ protocol: 'http:', hostname: 'localhost', userAgent: UA.macSafari18 }), 'direct');
+  assert.equal(agentBridgePairingMode({ protocol: 'https:', hostname: '127.0.0.1', userAgent: UA.macSafari18 }), 'direct');
+});
+
+test('agentBridgePairingMode honours an explicit transport override', () => {
+  const env = { protocol: 'https:', hostname: 'surfcad.com', userAgent: UA.desktopChrome };
+  assert.equal(agentBridgePairingMode({ ...env, override: 'popup' }), 'popup');
+  assert.equal(agentBridgePairingMode({ ...env, userAgent: UA.macSafari18, override: 'direct' }), 'direct');
+  assert.equal(agentBridgePairingMode({ ...env, override: 'bogus' }), 'direct');
+});
+
+test('isIOSLikeBrowser treats a touch Mac as iPadOS', () => {
+  assert.equal(isIOSLikeBrowser(UA.macSafari18, 0), false);
+  assert.equal(isIOSLikeBrowser(UA.macSafari18, 5), true);
+  assert.equal(isIOSLikeBrowser(UA.iosSafari, 0), true);
+});
+
+test('popup fallback is offered to non-Chromium browsers only', () => {
+  assert.equal(canFallBackToPopupBridge('safari'), true);
+  assert.equal(canFallBackToPopupBridge('firefox'), true);
+  assert.equal(canFallBackToPopupBridge('unknown'), true);
+  assert.equal(canFallBackToPopupBridge('chrome'), false);
+  assert.equal(canFallBackToPopupBridge('edge'), false);
+});
+
+test('bridge close reasons map to panel issues', () => {
+  assert.equal(issueFromCloseEvent({ reason: 'popup_blocked' }, { sawOpen: false }), 'popup_blocked');
+  assert.equal(issueFromCloseEvent({ reason: 'bridge_closed' }, { sawOpen: true }), 'bridge_closed');
+  assert.equal(issueFromCloseEvent({ reason: 'bridge_unreachable' }, { sawOpen: false }), 'relay_missing');
+  assert.equal(issueFromCloseEvent({ reason: '' }, { sawOpen: true }), null);
 });

@@ -71,6 +71,7 @@ test('lint scan of src includes the pairing Allow/Deny popup and has no hits', (
   const files = collectScanFiles(ROOT).map((f) => f.split('\\').join('/'));
   assert.equal(files.some((f) => f.endsWith('ui-contrast-violation.jsx')), false);
   assert.equal(files.some((f) => f.endsWith('AgentBridgeApprovalPopup.jsx')), true);
+  assert.equal(files.some((f) => f.endsWith('AgentBridgePopupStatus.jsx')), true);
   const hits = scanFiles(collectScanFiles(ROOT), ROOT);
   assert.deepEqual(hits, []);
 });
