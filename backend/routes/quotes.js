@@ -27,7 +27,7 @@ router.post('/', requireAuth, async (req, res) => {
     const measured = await measureExportedPart({ modelFile: file });
     if (!measured.ok) {
       console.error('[Quotes] Rejected:', measured.detail || measured.error);
-      return res.status(400).json({ error: measured.error });
+      return res.status(measured.status || 400).json({ error: measured.error });
     }
 
     const fill = infill == null || infill === '' ? 20 : Number(infill);
