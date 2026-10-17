@@ -66,6 +66,7 @@ console.log('mint and Add to Repo');
   ok('unsynced offers Add to Repo', showAddToRepo({ id: GB, surfId: BODY, isSynced: false }));
   ok('synced does not', !showAddToRepo({ id: GB, surfId: BODY, isSynced: true }));
   ok('missing flag on a repo path does not', !showAddToRepo({ id: GB, surfId: BODY }));
+  ok('missing flag on a stable id + path does not', !showAddToRepo({ id: BODY, path: GB }));
   ok('local: row id still offers it', showAddToRepo({ id: 'local:abc' }));
   ok('local- row id still offers it', showAddToRepo({ id: 'local-abc' }));
   const doc = serializeAssembly({

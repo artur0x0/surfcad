@@ -31,11 +31,127 @@ export function mockSha(str) {
 
 const REPO_NAME_RE = /^[A-Za-z0-9._-]{1,100}$/;
 
+/** Tab-scoped fake GitHub so a reload can reseed against the same vault. */
+export const MOCK_GITHUB_STORE_KEY = 'surfcad.mockGithub.v1';
+
+function mockSessionStore() {
+  try {
+    return typeof sessionStorage !== 'undefined' ? sessionStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+function encodeMockContent(content) {
+  if (content instanceof Uint8Array) return { u8: Array.from(content) };
+  return content;
+}
+
+function decodeMockContent(content) {
+  if (content && typeof content === 'object' && Array.isArray(content.u8)) {
+    return Uint8Array.from(content.u8);
+  }
+  return content;
+}
+
+export function peekMockVaultName() {
+  try {
+    const raw = mockSessionStore()?.getItem(MOCK_GITHUB_STORE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (typeof data?.lastVaultName === 'string' && data.lastVaultName) return data.lastVaultName;
+    const names = (data?.repos || []).map((row) => row.name).filter(Boolean);
+    return names.length === 1 ? names[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+function readMockGithubStore() {
+  try {
+    const raw = mockSessionStore()?.getItem(MOCK_GITHUB_STORE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function dumpMockGithubStore(login, counter, lastVaultName, repos) {
+  const list = [];
+  for (const [repoKey, state] of repos) {
+    const commits = [];
+    for (const [sha, commit] of state.commits) {
+      commits.push([sha, {
+        sha: commit.sha,
+        parents: commit.parents,
+        message: commit.message,
+        tree: [...commit.tree.entries()].map(([path, content]) => [path, encodeMockContent(content)]),
+      }]);
+    }
+    list.push({
+      key: repoKey,
+      owner: state.owner,
+      name: state.name,
+      private: state.private,
+      description: state.description,
+      defaultBranch: state.defaultBranch,
+      branches: [...state.branches.entries()],
+      commits,
+    });
+  }
+  return { login, counter, lastVaultName, repos: list };
+}
+
+function loadMockGithubStore(data, repos) {
+  if (!data?.repos) return 0;
+  for (const row of data.repos) {
+    const commits = new Map();
+    for (const [sha, commit] of row.commits || []) {
+      commits.set(sha, {
+        sha: commit.sha,
+        parents: commit.parents || [],
+        message: commit.message,
+        tree: new Map((commit.tree || []).map(([path, content]) => [path, decodeMockContent(content)])),
+      });
+    }
+    repos.set(row.key, {
+      owner: row.owner,
+      name: row.name,
+      private: row.private,
+      description: row.description || '',
+      defaultBranch: row.defaultBranch || 'main',
+      commits,
+      branches: new Map(row.branches || []),
+    });
+  }
+  return Number(data.counter) || 0;
+}
+
 export function createMockGithubAdapter(options = {}) {
-  const login = options.login || 'octo-user';
+  // Opt-in: App passes persist:true so a tab reload can reseed the fake vault.
+  // Unit tests stay isolated (one node:test process, no shared sessionStorage).
+  const persistEnabled = options.persist === true;
+  const persisted = persistEnabled ? readMockGithubStore() : null;
+  const login = options.login || persisted?.login || 'octo-user';
   const repos = new Map();
   let counter = 0;
+  let lastVaultName = null;
+  if (persisted && persisted.login === login) {
+    counter = loadMockGithubStore(persisted, repos);
+    lastVaultName = persisted.lastVaultName || null;
+  }
   const log = [];
+  const persist = () => {
+    if (!persistEnabled) return;
+    const store = mockSessionStore();
+    if (!store) return;
+    try {
+      store.setItem(
+        MOCK_GITHUB_STORE_KEY,
+        JSON.stringify(dumpMockGithubStore(login, counter, lastVaultName, repos)),
+      );
+    } catch { /* quota / private mode */ }
+  };
 
   const key = (repo) => `${repo?.owner}/${repo?.name}`;
   function repoState(repo) {
@@ -141,6 +257,8 @@ export function createMockGithubAdapter(options = {}) {
         branches: new Map(),
       };
       repos.set(k, state);
+      lastVaultName = name;
+      persist();
       log.push({ op: 'createRepo', repo: k });
       return info(state);
     },
@@ -166,6 +284,7 @@ export function createMockGithubAdapter(options = {}) {
       const sha = resolveRef(state, fromSha);
       if (!sha) throw new GitAdapterError('not_found', `Commit ${fromSha} not found`);
       state.branches.set(branch, sha);
+      persist();
       log.push({ op: 'createBranch', repo: key(repo), branch, sha });
       return { name: branch, sha };
     },
@@ -178,6 +297,7 @@ export function createMockGithubAdapter(options = {}) {
         throw new GitAdapterError('not_found', `Branch ${branch} not found`);
       }
       state.branches.delete(branch);
+      persist();
       log.push({ op: 'deleteBranch', repo: key(repo), branch });
     },
 
@@ -239,6 +359,8 @@ export function createMockGithubAdapter(options = {}) {
       }
       const sha = makeCommit(state, head, tree, String(message || 'Update'));
       state.branches.set(target, sha);
+      lastVaultName = repo?.name || lastVaultName;
+      persist();
       log.push({ op: 'commitFiles', repo: key(repo), branch: target, sha, paths: files.map((f) => f.path) });
       return { sha, parents: head ? [head] : [], branch: target, largeFiles: prepared.largeFiles };
     },
@@ -258,6 +380,7 @@ export function createMockGithubAdapter(options = {}) {
       const tree = new Map(headCommit.tree);
       const sha = makeCommit(state, baseSha, tree, msg);
       state.branches.set(base, sha);
+      persist();
       log.push({ op: 'squashMerge', repo: key(repo), base, head, sha });
       return { sha, base, head, parents: [baseSha] };
     },
@@ -304,7 +427,9 @@ export function createMockGithubAdapter(options = {}) {
         defaultBranch: 'main', commits: new Map(), branches: new Map(),
       };
       repos.set(`${owner}/${name}`, state);
+      lastVaultName = name;
       if (files) seedFiles(state, files);
+      persist();
       return info(state);
     },
   };

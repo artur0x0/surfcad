@@ -81,7 +81,7 @@ import { saveEditorDraft, loadEditorDraft } from './utils/editorDraft';
 import { clearLocalCadData } from './utils/clearLocalCadData';
 import { ensurePartThumbnails } from './utils/partThumbnails';
 import { clearCachePlan, runClearLocalCache } from './utils/clearLocalCache';
-import { isAssemblyDirty } from './utils/git/gitWorkspace';
+import { gitDirtyLiveScript, isAssemblyDirty } from './utils/git/gitWorkspace';
 import { repoKeyOf } from './utils/git/syncStore';
 import ClearCacheDialog from './components/ClearCacheDialog';
 import { resolveActiveRestore } from './utils/partScriptRestore';
@@ -236,6 +236,7 @@ import {
   createMockGithubAdapter,
   createGithubAdapter,
   findOrCreateVault,
+  peekMockVaultName,
   hasGithubToken,
   loadGithubToken,
   clearGithubToken,
@@ -1704,6 +1705,7 @@ const App = () => {
             } catch { /* dot state can wait for the next flush */ }
             if (nextFilename) setCurrentFilename(nextFilename);
             setEditorInitialScript(nextScript);
+            if (typeof nextScript === 'string') setCurrentScript(nextScript);
             await finishOpenedPartRef.current(doc, scripts, progress);
           },
         });
@@ -1718,6 +1720,7 @@ const App = () => {
         const id = assemblyRef.current.activeId;
         const text = partScriptsRef.current?.[id];
         setEditorInitialScript(typeof text === 'string' ? text : '');
+        if (typeof text === 'string') setCurrentScript(text);
       }
     };
 
@@ -2376,6 +2379,8 @@ const App = () => {
     if (!active) return;
     setCurrentFilename(active.name);
     const picked = scriptForRow(saved, opened, active.id);
+    if (picked.ok) setCurrentScript(picked.script);
+    else setCurrentScript('// This part has no file yet.\n');
     focusPartHistory(active.id, picked.ok ? picked.script : '');
     revealPartOnRibbon(active.id, picked.ok ? picked.script : '');
     await applyAssemblyOpenHold();
@@ -2892,7 +2897,7 @@ const App = () => {
       gitTokenRef.current = token;
       gitAdapterRef.current = wantReal
         ? createGithubAdapter({ token })
-        : createMockGithubAdapter({ login: 'local-user' });
+        : createMockGithubAdapter({ login: 'local-user', persist: true });
       gitVaultRef.current = null; // vault belongs to the previous adapter
     }
     return gitAdapterRef.current;
@@ -2967,7 +2972,10 @@ const App = () => {
     if (gitVaultRef.current) return gitVaultRef.current;
     const VAULT_TIMEOUT_MS = 45000;
     const result = await Promise.race([
-      findOrCreateVault(gitAdapterRef.current, { storedName: storedVaultName() }),
+      findOrCreateVault(gitAdapterRef.current, {
+        storedName: storedVaultName()
+          || (gitAdapterRef.current?.kind === 'mock' ? peekMockVaultName() : null),
+      }),
       new Promise((_, reject) => {
         setTimeout(() => reject(new Error(
           'Repo lookup timed out — check network / GitHub Connect and try again',
@@ -3286,7 +3294,10 @@ const App = () => {
       ));
       if (remaps.length) rekeyRuntime(remaps);
     }
-    const saved = rememberAssembly(nextDoc);
+    // Explicit Save / Move to Git must land in IndexedDB even during reauth
+    // (playtest mock has no GitHub token). Otherwise reload restores the
+    // pre-save seed and the assembly drops out of git mode.
+    const saved = rememberAssembly(nextDoc, { force: true });
     const active = saved.parts.find((part) => part.id === saved.activeId) || saved.parts[0];
     if (active) {
       setCurrentFilename(active.name);
@@ -5271,7 +5282,9 @@ const App = () => {
   useEffect(() => {
     if (authLoading) return undefined;
     if (bootGateRef.current !== 'done') return undefined;
-    if (!githubConnected) return undefined;
+    // Playtest / offline mock has no GitHub token (`reauth`). Still reseed so
+    // a reload can compare the IndexedDB working copy to the fake vault tip.
+    if (!githubConnected && bootResume !== 'reauth') return undefined;
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') return undefined;
     if (gitBaselineRef.current) return undefined;
@@ -5392,7 +5405,7 @@ const App = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, [githubConnected, assemblyDoc, gitBaseline, authLoading, bootEpoch]); // eslint-disable-line react-hooks/exhaustive-deps -- vault helpers via refs
+  }, [githubConnected, assemblyDoc, gitBaseline, authLoading, bootEpoch, bootResume]); // eslint-disable-line react-hooks/exhaustive-deps -- vault helpers via refs
 
   /** Flush working copy to IndexedDB (local Save for assembly leave guard). */
   const handleFlushLocalAssembly = async () => {
@@ -6873,7 +6886,7 @@ const App = () => {
 
   // Read at Monaco onMount time. A render-time flag would be stale: the
   // mobile shell can mount after set_script has already committed.
-  const handleEditorSeed = () => {
+  const handleEditorSeed = (script) => {
     const id = historyKey();
     const prev = partHistoriesRef.current[id];
     const history = (prev && Array.isArray(prev.commits))
@@ -6888,6 +6901,7 @@ const App = () => {
     // The live script is already committed. Mark the buffer real so the draft
     // effect can save it, without running or recording the boot script.
     editorLiveRef.current = true;
+    if (typeof script === 'string') setCurrentScript(script);
     return false;
   };
 
@@ -8266,12 +8280,15 @@ const App = () => {
       />
     )
     : null;
-  const liveDirtyScript = (
-    assemblyDoc?.source === 'git'
-    && cadHighlightId
-    && assemblyDoc.activeId === cadHighlightId
-    && typeof currentScript === 'string'
-  ) ? currentScript : null;
+  const liveDirtyScript = gitDirtyLiveScript({
+    source: assemblyDoc?.source,
+    activeId: assemblyDoc?.activeId,
+    highlightId: cadHighlightId,
+    editorLive: editorLiveRef.current,
+    script: editorLiveRef.current
+      ? (codeEditorRef.current?.getContent?.() ?? currentScript)
+      : currentScript,
+  });
   // Yellow dots only when content differs from baseline, or the row still
   // has no vault path. Do NOT treat a null in-memory baseline as fully dirty
   // — that falsely dotted every in-repo part after reload (#215).

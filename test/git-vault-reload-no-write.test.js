@@ -328,6 +328,7 @@ test('App open/reload/reseed never enqueue or flush a vault write', () => {
   assert.equal(/flushGitOps|flushSyncQueue|commitFiles|commitWorkspace/.test(reseed), false);
   assert.match(reseed, /reload never writes git/);
   assert.match(reseed, /rekeyWorkingCopyToTip/);
+  assert.match(reseed, /bootResume !== 'reauth'/);
 
   const addStart = app.indexOf('const handleAddPart');
   const addEnd = app.indexOf('const handleDeletePart');
