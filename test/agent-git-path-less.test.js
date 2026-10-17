@@ -49,18 +49,19 @@ test('git_add_to_repo core: one path-less part commits every path-less sibling i
     partId: IDS[0],
   });
   assert.equal(out.status, 'committed', out.error);
-  assert.equal(out.partId, sharedPartPath('Kettle Body'));
+  const body = assemblyPartPath(ASM, 'Kettle Body');
   const lid = assemblyPartPath(ASM, 'Kettle Lid');
   const handle = assemblyPartPath(ASM, 'Kettle Handle');
+  assert.equal(out.partId, body);
   assert.deepEqual(out.siblings, [
     { from: IDS[1], to: lid },
     { from: IDS[2], to: handle },
   ]);
   assert.deepEqual([...out.files].sort(), [
     assemblyFilePath(ASM),
+    body,
     handle,
     lid,
-    sharedPartPath('Kettle Body'),
   ].sort());
 
   const surf = await gh.readFile(vault.repo, assemblyFilePath(ASM), 'main');
@@ -71,8 +72,8 @@ test('git_add_to_repo core: one path-less part commits every path-less sibling i
     assert.ok(file, `.surf.json references ${row.path}, which the commit wrote`);
   }
   assert.equal((await gh.readFile(vault.repo, lid, 'main')).content, scripts[IDS[1]]);
-  assert.deepEqual(out.doc.parts.map((p) => p.id), [sharedPartPath('Kettle Body'), lid, handle]);
-  for (const path of [sharedPartPath('Kettle Body'), lid, handle]) {
+  assert.deepEqual(out.doc.parts.map((p) => p.id), [body, lid, handle]);
+  for (const path of [body, lid, handle]) {
     assert.ok(Object.prototype.hasOwnProperty.call(out.baseline.scripts, path), `${path} is clean after the commit`);
   }
 });
@@ -235,4 +236,22 @@ test('assembleCommitFiles aborts when listTree fails instead of occupying nothin
     }),
     (err) => err.code === VAULT_TREE_UNAVAILABLE && /not overwritten/.test(err.message),
   );
+});
+
+test('commitPartToRepo aborts when listTree fails instead of occupying nothing', async () => {
+  const gh = createMockGithubAdapter({ login: 'agent' });
+  const vault = await findOrCreateVault(gh);
+  const { doc, scripts } = kettle();
+  gh.listTree = async () => {
+    throw new Error('network down');
+  };
+  const out = await commitPartToRepo(gh, vault.repo, {
+    doc,
+    scripts,
+    baseline: firstCommitBaseline({ headSha: vault.headSha }),
+    partId: IDS[0],
+  });
+  assert.equal(out.status, 'error');
+  assert.equal(out.code, VAULT_TREE_UNAVAILABLE);
+  assert.match(out.error, /not overwritten/);
 });

@@ -423,18 +423,27 @@ export function createGithubAdapter({ token, fetchImpl = globalThis.fetch, apiBa
 
     async listTree(repo, ref, { prefix = '' } = {}) {
       const sha = await resolveSha(repo, ref);
-      if (!sha) return [];
+      if (!sha) {
+        throw new GitAdapterError('not_found', `Ref ${ref || '(empty)'} not found`);
+      }
       let treeSha = sha;
       const commitRes = await json(`${repoPath(repo)}/git/commits/${encodeURIComponent(sha)}`);
-      if (commitRes.res.ok && commitRes.data?.tree?.sha) {
-        treeSha = commitRes.data.tree.sha;
-      } else if (!commitRes.res.ok) {
-        return [];
+      if (!commitRes.res.ok) {
+        throw new GitAdapterError(
+          commitRes.res.status === 404 ? 'not_found' : 'invalid',
+          commitRes.data?.message || 'listTree failed',
+        );
       }
+      if (commitRes.data?.tree?.sha) treeSha = commitRes.data.tree.sha;
       const { res, data } = await json(
         `${repoPath(repo)}/git/trees/${encodeURIComponent(treeSha)}?recursive=1`,
       );
-      if (!res.ok) return [];
+      if (!res.ok) {
+        throw new GitAdapterError(
+          res.status === 404 ? 'not_found' : 'invalid',
+          data?.message || 'listTree failed',
+        );
+      }
       return filterTree(data?.tree, prefix);
     },
 

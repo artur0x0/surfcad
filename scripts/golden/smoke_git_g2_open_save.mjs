@@ -129,8 +129,8 @@ ok('liveScript overrides stored', dirtyPartIds(opened.doc, opened.scripts, base,
 console.log('\ngit G2 — new part name');
 eq('bare name → parts/', resolveNewPartPath('Gearbox', 'Bracket'),
   sharedPartPath('Bracket'));
-eq('bare name collision → Bracket (2)', resolveNewPartPath('Gearbox', 'Bracket', [sharedPartPath('Bracket')]),
-  sharedPartPath('Bracket (2)'));
+eq('bare name collision → Bracket-2', resolveNewPartPath('Gearbox', 'Bracket', [sharedPartPath('Bracket')]),
+  sharedPartPath('Bracket-2'));
 eq('full assembly path', resolveNewPartPath('Gearbox', assemblyPartPath('Gearbox', 'X')),
   assemblyPartPath('Gearbox', 'X'));
 eq('shared path allowed', resolveNewPartPath('Gearbox', 'parts/Pin.js'), sharedPartPath('Pin'));
@@ -265,8 +265,10 @@ ok('App wires vault open + dirty; source follows GitHub token (G10)',
   && /source: 'git'/.test(app)
   && /createMockGithubAdapter/.test(app)
   && /findOrCreateVault/.test(app));
-ok('App new part resolveNewPartPath in git',
-  /resolveNewPartPath\(doc\.name,/.test(app));
+ok('App new part allocateVaultPartPath in git',
+  /allocateVaultPartPath\(/.test(app) && /layout: 'shared'/.test(app));
+ok('Add to Repo adopts the committed doc',
+  /handleAddToRepo[\s\S]*?rememberAssembly\(result\.doc\)/.test(app));
 ok('optimistic create + pending spinner', /setPendingPartIds/.test(app)
   && /data-part-pending/.test(feed)
   && /data-part-pending-spinner/.test(feed)

@@ -96,6 +96,13 @@ jobs:
       - name: node --test
         run: node scripts/ci/run-unit-tests.mjs
 
+      # Mock / fake-GitHub save goldens (no Chrome, no network). G2 used to
+      # expect `Bracket (2).js` and is not covered by node --test.
+      - name: git save goldens
+        run: |
+          node scripts/golden/smoke_git_g2_open_save.mjs
+          node scripts/golden/smoke_git_save_stray.mjs
+
   # Cheapest existing golden that proves the bundle actually boots: a real
   # headless Chrome, vite preview, #root painted, canvas + toolbar + Run.
   # Pixel goldens are not in this job. Chrome comes from the runner via

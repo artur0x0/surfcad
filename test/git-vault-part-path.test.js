@@ -70,10 +70,13 @@ describe('ensureAssemblyVaultPaths + stringifySurfJson', () => {
   });
 
   test('toSurfJson stays pure: path-less ids still throw', () => {
-    assert.throws(() => toSurfJson({
-      name: 'A',
-      source: 'git',
-      parts: [{ id: 'local:123', name: 'p', visible: true, order: 0 }],
-    }));
+    assert.throws(
+      () => toSurfJson({
+        name: 'A',
+        source: 'git',
+        parts: [{ id: 'local:123', name: 'p', visible: true, order: 0 }],
+      }),
+      /Invalid \.surf\.json/,
+    );
   });
 });

@@ -58,10 +58,6 @@ import {
 export const SURF_JSON_FORMAT = 'surfcad.assembly';
 export const SURF_JSON_VERSION = 1;
 
-/** User-facing message when assembly metadata still cannot be written. */
-export function friendlySurfJsonSaveError() {
-  return 'Could not save this assembly. Check part names for invalid characters, then try Save again.';
-}
 const TOP_KEYS = new Set(['format', 'version', 'name', 'activeId', 'parts', 'groups', 'colors', 'joints']);
 const PART_KEYS = new Set(['id', 'path', 'name', 'visible', 'order', 'position', 'placement', 'sheetMetal', 'copiedFrom']);
 const GROUP_KEYS = new Set(['id', 'name', 'source', 'partIds']);
@@ -277,7 +273,7 @@ export function toSurfJson(doc) {
   if (flat.joints) out.joints = flat.joints;
   const check = validateSurfJson(out);
   if (!check.ok) {
-    throw new Error(friendlySurfJsonSaveError());
+    throw new Error(`Invalid .surf.json: ${check.errors.join('; ')}`);
   }
   return out;
 }

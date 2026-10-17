@@ -286,6 +286,7 @@
         "golden:merge-bodies-toggle": "node scripts/golden/smoke_merge_bodies_toggle.mjs",
         "golden:git-g1-vault-layout": "node scripts/golden/smoke_git_g1_vault_layout.mjs",
         "golden:git-g2-open-save": "node scripts/golden/smoke_git_g2_open_save.mjs",
+        "golden:git-save-stray": "node scripts/golden/smoke_git_save_stray.mjs",
         "golden:git-g3-commit-push": "node scripts/golden/smoke_git_g3_commit_push.mjs",
         "golden:git-g4-pull-conflicts": "node scripts/golden/smoke_git_g4_pull_conflicts.mjs",
         "golden:playtest-toasts": "node scripts/golden/smoke_playtest_toasts.mjs",

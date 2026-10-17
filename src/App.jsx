@@ -288,6 +288,7 @@ import {
   assemblyFilePath,
   assembleCommitFiles,
   listVaultTree,
+  VAULT_TREE_UNAVAILABLE,
   applyOverwriteFiles,
   commitPartToRepo,
   saveLocalOnNewBranch,
@@ -3773,40 +3774,35 @@ const App = () => {
         return result;
       }
       if (result.status === 'clean') {
+        if (result.doc) rememberAssembly(result.doc);
+        if (result.scripts) rememberScripts(result.scripts);
         return result;
       }
-      const siblingMoves = result.siblings || [];
-      if (siblingMoves.length) {
-        for (const { from, to } of siblingMoves) {
-          await savePartScript(to, result.scripts?.[to] ?? '', { isSynced: true });
-          try { await deletePartScript(from); } catch { /* the new id is the record */ }
-        }
-        rekeyRuntime(siblingMoves);
-        if (!result.fromId) {
-          rememberAssembly(result.doc);
-          rememberScripts(result.scripts || scripts);
-        }
+      const moves = [
+        ...(result.fromId && result.partId ? [{ from: result.fromId, to: result.partId }] : []),
+        ...(result.siblings || []),
+      ];
+      for (const { from, to } of moves) {
+        if (!from || !to || from === to) continue;
+        await savePartScript(to, result.scripts?.[to] ?? '', { isSynced: true });
+        try { await deletePartScript(from); } catch { /* the new id is the record */ }
       }
-      if (result.doc && result.fromId) {
-        // Remapped local:/foreign id → repo path.
+      if (moves.length) rekeyRuntime(moves);
+      // The committed document, not a locally remapped subset: sibling
+      // paths in the working copy must match the blobs that landed in git.
+      if (result.doc) rememberAssembly(result.doc);
+      rememberScripts(result.scripts || scripts);
+      if (result.fromId && (doc.activeId === id || doc.activeId === result.partId)) {
         refreshGenRef.current += 1;
-        rememberAssembly(result.doc);
-        rememberScripts(result.scripts || scripts);
-        if (doc.activeId === id || doc.activeId === result.partId) {
-          const text = result.scripts?.[result.partId] ?? scripts[id];
-          focusPartHistory(result.partId, text);
-          suppressPartSaveRef.current = false;
-          setCurrentFilename(String(result.partId).split('/').pop() || result.partId);
-          codeEditorRef.current?.loadContent(text, result.partId, false);
-        }
+        const text = result.scripts?.[result.partId] ?? scripts[id];
+        focusPartHistory(result.partId, text);
+        suppressPartSaveRef.current = false;
+        setCurrentFilename(String(result.partId).split('/').pop() || result.partId);
+        codeEditorRef.current?.loadContent(text, result.partId, false);
       } else if (doc.activeId === id) {
         suppressPartSaveRef.current = false;
       } else {
         refreshAssemblyRef.current?.(codeEditorRef.current?.getContent?.());
-      }
-      if (result.doc && result.promoted && Object.keys(result.promoted).length && !result.fromId) {
-        rememberAssembly(result.doc);
-        rememberScripts(result.scripts || scripts);
       }
       if (result.baseline) {
         rememberGitBaseline(result.baseline);
@@ -3818,7 +3814,7 @@ const App = () => {
         const partId = result.partId || id;
         const marked = markPartsSynced(assemblyRef.current, [
           partId,
-          ...siblingMoves.map((move) => move.to),
+          ...moves.map((move) => move.to),
         ]);
         if (marked.changed) {
           rememberAssembly(marked.doc);
@@ -4825,7 +4821,7 @@ const App = () => {
     } catch (err) {
       const tooBig = err?.code === 'file_too_large' || err?.name === 'VaultFileTooLargeError';
       const message = err.toast || err.message || 'Commit failed';
-      if (tooBig || err.toast) setUploadError(message);
+      if (tooBig || err.toast || err.code === VAULT_TREE_UNAVAILABLE) setUploadError(message);
       return {
         status: 'error',
         error: message,

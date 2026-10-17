@@ -581,6 +581,7 @@ function makeFakeGithub() {
   eq('read missing', await real.readFile(repo, 'nope.txt'), null);
   eq('tree', (await real.listTree(repo, 'main')).map((e) => e.path), ['a.txt', 'dir/b.txt', 'surfcad.json']);
   eq('tree prefix', (await real.listTree(repo, 'main', { prefix: 'dir/' })).map((e) => e.path), ['dir/b.txt']);
+  await throwsCode('listTree missing ref throws', () => real.listTree(repo, 'no-such-branch'), 'not_found');
   eq('empty-repo first commit is root', c1.parents, []);
   ok('empty-repo multi-file landed both paths',
     (await real.readFile(repo, 'a.txt')).content === 'A'
