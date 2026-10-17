@@ -3,15 +3,17 @@ import { createPortal } from 'react-dom';
 import { Loader2, Plug, PlugZap } from 'lucide-react';
 import { createPairingToken } from '../agent/ws/pairingToken.js';
 import { createAgentBridgeTabConnection } from '../agent/ws/tabConnection.js';
+import { createAgentBridgeTransport } from '../agent/ws/agentBridgeTransport.js';
 import { isAgentBridgeAutoApprove } from '../agent/ws/autoApprove.js';
-import { defaultAgentBridgeWsUrl } from '../agent/ws/wsUrl.js';
+import { agentBridgeTransportOverride, defaultAgentBridgeWsUrl } from '../agent/ws/wsUrl.js';
 import { track } from '../utils/analytics.js';
 import {
   MCP_START_COMMAND,
+  agentBridgePairingMode,
   browserBlockedHint,
   detectBrowserFamily,
-  shouldPreemptWebKitHttpsPairing,
 } from '../agent/ws/connectionErrors.js';
+import AgentBridgePopupStatus from './AgentBridgePopupStatus.jsx';
 import { AGENT_PAIRING_PROMPT, pairingPromptPreview } from '../agent/ws/pairingPrompt.js';
 import { probeRelayWebSocket } from '../agent/ws/relayProbe.js';
 import { createRelayPoller, DEFAULT_RELAY_POLL_MS } from '../agent/ws/relayPoller.js';
@@ -31,6 +33,9 @@ import { approvalPopupPortalTarget, approvalPopupReducer } from '../agent/ws/age
  * Local WebSocket pairing for MCP / stdio clients (M1). Shown only when the
  * in-page agent bridge is active. No silent auto-pair: the user must open
  * pairing and approve each local client.
+ *
+ * Desktop Safari on https uses the loopback bridge window. Connect Agent
+ * opens it (a click is required); tab reconnects reuse that window.
  */
 export default function AgentBridgePairing({
   enabled,
@@ -47,8 +52,10 @@ export default function AgentBridgePairing({
   const [relayReachable, setRelayReachable] = useState(false);
   const [approvalUi, setApprovalUi] = useState({ open: false });
   const [link, setLink] = useState(null);
+  const [popupFallback, setPopupFallback] = useState(false);
   const connRef = useRef(null);
   const pollerRef = useRef(null);
+  const transportRef = useRef(null);
   const flowOpenRef = useRef(flowOpen);
   const relayReachableRef = useRef(relayReachable);
   const stateRef = useRef(state);
@@ -61,18 +68,31 @@ export default function AgentBridgePairing({
   issueRef.current = issue;
 
   const pageSecure = typeof window !== 'undefined' && window.location?.protocol === 'https:';
-  const webkitHttpsBlocked = typeof window !== 'undefined' && shouldPreemptWebKitHttpsPairing({
+  const detectedMode = typeof window === 'undefined' ? 'direct' : agentBridgePairingMode({
     protocol: window.location.protocol,
     hostname: window.location.hostname,
     userAgent: navigator.userAgent,
+    maxTouchPoints: navigator.maxTouchPoints,
+    override: agentBridgeTransportOverride(),
   });
+  const mode = popupFallback && detectedMode === 'direct' ? 'popup' : detectedMode;
+  const popupMode = mode === 'popup';
+  const popupModeRef = useRef(popupMode);
+  popupModeRef.current = popupMode;
+  const webkitHttpsBlocked = mode === 'unsupported';
+
+  const disposeTransport = useCallback(() => {
+    transportRef.current?.dispose?.();
+    transportRef.current = null;
+  }, []);
 
   const stopConnection = useCallback(() => {
     connRef.current = disposePairingHost({ conn: connRef.current }).conn;
+    disposeTransport();
     setState('idle');
     setIssue(null);
     setLink(null);
-  }, []);
+  }, [disposeTransport]);
 
   const stopPolling = useCallback(() => {
     pollerRef.current?.stop();
@@ -97,6 +117,8 @@ export default function AgentBridgePairing({
     const next = disposePairingHost({ conn: connRef.current, poller: pollerRef.current });
     connRef.current = next.conn;
     pollerRef.current = next.poller;
+    transportRef.current?.dispose?.();
+    transportRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -154,22 +176,27 @@ export default function AgentBridgePairing({
   const onConnectionState = useCallback((next, source) => {
     if (!isCurrentPairingConnection(connRef.current, source)) return;
     setState(next);
-    if (isRelayTabConnected(next)) {
+    // The bridge window reports the relay itself (onRelay); 'advertising'
+    // only means the window is opening.
+    if (isRelayTabConnected(next) && !popupModeRef.current) {
       setRelayReachable(true);
     } else if (next === 'idle' && flowOpenRef.current) {
       setRelayReachable(false);
     }
   }, []);
 
-  const startPairing = useCallback(() => {
+  // Popup transport: call from a click handler (first createSocket opens the window).
+  const startPairing = useCallback((transportMode = mode, code) => {
     if (webkitHttpsBlocked) return;
     if (!enabled || typeof window === 'undefined' || !window.surfcad?.call) return;
     stopConnection();
-    const code = createPairingToken(6);
-    setToken(code);
+    const nextCode = code || createPairingToken(6);
+    setToken(nextCode);
+    const transport = createAgentBridgeTransport({ mode: transportMode });
+    transportRef.current = transport;
     const conn = createAgentBridgeTabConnection({
       url: wsUrl,
-      token: code,
+      token: nextCode,
       call: (name, args) => window.surfcad.call(name, args),
       onState: (next) => onConnectionState(next, conn),
       onIssue: (issue) => {
@@ -180,13 +207,18 @@ export default function AgentBridgePairing({
         if (!isCurrentPairingConnection(connRef.current, conn)) return;
         setLink(next);
       },
+      onRelay: (detected) => {
+        if (!isCurrentPairingConnection(connRef.current, conn)) return;
+        if (detected) setRelayReachable(true);
+      },
       isAutoApprove: isAgentBridgeAutoApprove,
       pageSecure,
       suppressMissingRelayIssue: true,
+      createSocket: transport.createSocket,
     });
     connRef.current = conn;
     conn.connect();
-  }, [enabled, onConnectionState, stopConnection, pageSecure, webkitHttpsBlocked, wsUrl]);
+  }, [enabled, mode, onConnectionState, stopConnection, pageSecure, webkitHttpsBlocked, wsUrl]);
 
   const beginConnectFlow = useCallback(() => {
     if (webkitHttpsBlocked) return;
@@ -195,7 +227,19 @@ export default function AgentBridgePairing({
     setRelayReachable(false);
     setToken('');
     stopConnection();
-  }, [stopConnection, webkitHttpsBlocked]);
+    if (popupMode) startPairing('popup');
+  }, [popupMode, startPairing, stopConnection, webkitHttpsBlocked]);
+
+  const reconnectBridge = useCallback(() => {
+    if (connRef.current && token) connRef.current.connect();
+    else startPairing(mode, token || undefined);
+  }, [mode, startPairing, token]);
+
+  const switchToPopupBridge = useCallback(() => {
+    setPopupFallback(true);
+    setRelayReachable(false);
+    startPairing('popup', token || undefined);
+  }, [startPairing, token]);
 
   const handleRelayDetected = useCallback(() => {
     setRelayReachable(true);
@@ -207,7 +251,7 @@ export default function AgentBridgePairing({
   }, [flowOpen, startPairing, state, token]);
 
   useEffect(() => {
-    if (!flowOpen || webkitHttpsBlocked) {
+    if (!flowOpen || webkitHttpsBlocked || popupMode) {
       stopPolling();
       return undefined;
     }
@@ -236,13 +280,14 @@ export default function AgentBridgePairing({
     return () => {
       stopPolling();
     };
-  }, [flowOpen, handleRelayDetected, issue, pageSecure, relayReachable, state, stopPolling, webkitHttpsBlocked, wsUrl]);
+  }, [flowOpen, handleRelayDetected, issue, pageSecure, popupMode, relayReachable, state, stopPolling, webkitHttpsBlocked, wsUrl]);
 
   useEffect(() => {
+    if (popupMode) return;
     if (flowOpen && relayReachable && state === 'idle' && token && connRef.current) {
       connRef.current.connect();
     }
-  }, [flowOpen, relayReachable, state, token]);
+  }, [flowOpen, popupMode, relayReachable, state, token]);
 
   const handleApprove = useCallback(() => {
     setApprovalUi((prev) => approvalPopupReducer(prev, 'allow'));
@@ -262,7 +307,9 @@ export default function AgentBridgePairing({
   const browserFamily = typeof navigator !== 'undefined' ? detectBrowserFamily(navigator.userAgent) : 'unknown';
   const showCode = shouldRevealPairingCode(relayReachable) && Boolean(token);
   const waitingForRelay = flowOpen && !relayReachable && !webkitHttpsBlocked
-    && issue !== 'origin_rejected' && issue !== 'browser_blocked';
+    && issue !== 'origin_rejected' && issue !== 'browser_blocked'
+    && issue !== 'bridge_closed' && issue !== 'popup_blocked';
+  const waitingCopy = popupMode ? 'Waiting for the local agent…' : pairingProbeUserCopy(null);
   const promptPreview = pairingPromptPreview();
 
   const showRelayMissingBanner = issue === 'relay_missing' && !waitingForRelay;
@@ -318,7 +365,7 @@ export default function AgentBridgePairing({
           data-agent-bridge-waiting-relay=""
         >
           <Loader2 size={14} className="animate-spin shrink-0" aria-hidden />
-          {pairingProbeUserCopy(null)}
+          {waitingCopy}
         </div>
       ) : null}
       {showCode ? (
@@ -387,8 +434,20 @@ export default function AgentBridgePairing({
           : 'rounded-lg border border-chrome-border bg-chrome-surface/95 p-3 text-sm text-chrome-text shadow-lg backdrop-blur-sm'
       }
       data-agent-bridge-panel=""
+      data-agent-bridge-transport={mode}
     >
       {issueBlock}
+      <AgentBridgePopupStatus
+        mode={mode}
+        issue={issue}
+        token={token}
+        state={state}
+        browserFamily={browserFamily}
+        copied={copied}
+        onReconnect={reconnectBridge}
+        onUsePopup={switchToPopupBridge}
+        onCopyLink={copyPageLink}
+      />
       {webkitHttpsBlocked ? (
         <div
           className="rounded border border-chrome-border/80 bg-chrome-surface/60 px-2 py-2 text-xs mb-2"

@@ -26,7 +26,7 @@ export default function AgentBridgePopupStatus({
     return (
       <button
         type="button"
-        className="mb-2 w-full rounded bg-chrome-border/90 px-2 py-1.5 text-xs text-white hover:bg-gray-600"
+        className="mb-2 w-full rounded px-2 py-1.5 text-xs font-ui surface-quiet text-on-dark"
         onClick={onUsePopup}
         data-ui-action="data-agent-bridge-use-popup"
       >
@@ -40,9 +40,9 @@ export default function AgentBridgePopupStatus({
   const showReconnect = !!token && state === 'idle' && windowGone;
 
   return (
-    <div className="text-xs mb-2" data-agent-bridge-popup-status="">
+    <div className="text-ui-xs mb-2 font-ui" data-agent-bridge-popup-status="">
       {!windowGone && (
-        <p className="text-chrome-text-secondary" data-agent-bridge-popup-intro="">
+        <p className="text-muted-on-dark" data-agent-bridge-popup-intro="">
           This browser reaches the local agent through a small SurfCAD bridge window. Keep it open while the
           agent works.
         </p>
@@ -58,16 +58,16 @@ export default function AgentBridgePopupStatus({
       )}
       {issue === 'popup_blocked' && (
         <div
-          className="rounded border border-chrome-border/80 bg-chrome-surface/60 px-2 py-2 mb-2"
+          className="rounded border border-chrome-border/80 surface-panel px-2 py-2 mb-2"
           data-agent-bridge-error="popup_blocked"
         >
-          <p className="text-chrome-text mb-1.5">
+          <p className="text-on-dark mb-1.5">
             Your browser blocked the bridge window. Allow pop-ups for this site, then click Reconnect.
           </p>
-          <p className="text-chrome-text-secondary mb-2">If pop-ups must stay blocked, pairing works in Chrome for now.</p>
+          <p className="text-muted-on-dark mb-2">If pop-ups must stay blocked, pairing works in Chrome for now.</p>
           <button
             type="button"
-            className="w-full rounded border border-chrome-border px-2 py-1 text-chrome-text-secondary hover:text-chrome-text"
+            className="w-full rounded px-2 py-1 surface-quiet text-on-dark"
             onClick={onCopyLink}
             data-ui-action="data-agent-bridge-copy-link"
           >
@@ -78,7 +78,7 @@ export default function AgentBridgePopupStatus({
       {showReconnect && (
         <button
           type="button"
-          className="w-full rounded bg-chrome-border/90 px-2 py-1.5 text-white hover:bg-gray-600"
+          className="w-full rounded px-2 py-1.5 surface-quiet text-on-dark"
           onClick={onReconnect}
           data-ui-action="data-agent-bridge-reconnect"
         >

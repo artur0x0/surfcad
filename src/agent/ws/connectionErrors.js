@@ -10,7 +10,7 @@ import { BRIDGE_CLOSE_REASON } from './bridgeMessages.js';
 /** @typedef {'relay_missing' | 'origin_rejected' | 'browser_blocked' | 'relay_error' | 'bridge_closed' | 'popup_blocked' | null} AgentBridgeConnectionIssue */
 
 /**
- * `direct`: the page opens ws://127.0.0.1 itself (Chrome, Edge, Firefox, local dev).
+ * `direct`: the page opens ws://127.0.0.1 itself (Chromium browsers, Firefox, local dev).
  * `popup`: frames go through the loopback bridge window (desktop Safari on https).
  * `unsupported`: no pairing path (iOS / iPadOS on https).
  *

@@ -237,9 +237,12 @@ export function createAgentBridgeRelayHub(opts = {}) {
             return;
           }
           const stale = existing.socket;
+          // Closing the bridge window is a user action: the tab sends
+          // forgetResume so the same MCP client cannot silent-resume.
+          const forgetResume = msg.forgetResume === true;
           const kept = {
             tabKey: existing.tabKey,
-            resumeKey: existing.resumeKey,
+            resumeKey: forgetResume ? null : existing.resumeKey,
             resumeTabKey: existing.resumeTabKey || existing.tabKey,
           };
           if (stale && stale !== socket) {

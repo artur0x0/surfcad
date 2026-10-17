@@ -5,6 +5,7 @@ import {
   DEFAULT_RETRY_DELAYS_MS,
   bridgePageUrlForWsUrl,
   createBridgeNonce,
+  createPopupBridgeSession,
   createPopupBridgeSocket,
 } from './popupTransport.js';
 import { BRIDGE_CHANNEL, BRIDGE_CLOSE_REASON, BRIDGE_MSG } from './bridgeMessages.js';
@@ -195,7 +196,29 @@ test('a popup that loads some other origin cannot drive the transport', async ()
   sock.close();
 });
 
-test('transport abstraction: direct probes, popup signals relay through the socket', async () => {
+test('session: reconnect createSocket reuses the window (no second window.open)', async () => {
+  const h = harness();
+  const session = createPopupBridgeSession({ win: h.opener, nonce: NONCE, pollMs: 20 });
+  const first = session.createSocket('ws://127.0.0.1:17341');
+  h.fromPopup({ type: BRIDGE_MSG.READY });
+  h.fromPopup({ type: BRIDGE_MSG.OPEN });
+  await tick();
+  assert.equal(first.readyState, 1);
+  first.close();
+  assert.equal(h.popup.closed, false, 'logical close leaves the window');
+  assert.equal(h.opener.openCalls.length, 1);
+  const second = session.createSocket('ws://127.0.0.1:17341');
+  assert.equal(h.opener.openCalls.length, 1, 'Safari cannot window.open from a timer');
+  assert.ok(h.popup.navigations.length >= 1, 'reuse navigates the existing window');
+  h.fromPopup({ type: BRIDGE_MSG.READY });
+  h.fromPopup({ type: BRIDGE_MSG.OPEN });
+  await tick();
+  assert.equal(second.readyState, 1);
+  session.dispose();
+  assert.equal(h.popup.closed, true);
+});
+
+test('transport abstraction: direct probes, popup session reuses createSocket', async () => {
   const direct = createAgentBridgeTransport({ mode: 'direct' });
   assert.equal(direct.opensWindow, false);
   assert.equal(typeof direct.probeRelay, 'function');
@@ -204,7 +227,7 @@ test('transport abstraction: direct probes, popup signals relay through the sock
   assert.equal(popup.probeRelay, null);
   const sock = popup.createSocket('ws://127.0.0.1:17341');
   assert.equal(sock.transport, 'popup');
-  sock.close();
+  popup.dispose();
 });
 
 test('probeRelayDirect resolves true on open and false on error or timeout', async () => {
