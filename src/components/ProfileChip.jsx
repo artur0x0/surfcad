@@ -216,7 +216,7 @@ export default function ProfileChip({
         <AgentBridgePairing
           enabled
           embedded
-          uiTarget={agentBridgeSlot}
+          uiTarget={panelOpen ? agentBridgeSlot : null}
           onConnectionChange={setAgentBridgeLink}
         />
       ) : null}
