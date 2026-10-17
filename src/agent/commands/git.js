@@ -174,7 +174,10 @@ export const gitBranchCreateCommand = Object.freeze({
     additionalProperties: false,
     required: ['name'],
     properties: {
-      name: { type: 'string' },
+      name: {
+        type: 'string',
+        description: 'New branch name. Created from the current tip; the session switches to it when the working copy is clean.',
+      },
     },
   }),
   example: { name: 'feature/agent-h12' },

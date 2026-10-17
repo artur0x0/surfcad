@@ -8,6 +8,7 @@ import {
   AGENT_GIT_REAL_SESSION_KEY,
 } from './gitAgent.js';
 import {
+  gitBranchCreateCommand,
   gitBranchDeleteCommand,
   gitListBranchesCommand,
   gitSaveCommand,
@@ -147,6 +148,48 @@ test('git_save skips consent when session already denied', async () => {
   };
   const out = await gitSaveCommand.run(ctx, { message: 'test' });
   assert.equal(out.error?.details?.reason, 'consent_declined');
+});
+
+test('git_branch_create needs a non-empty name', () => {
+  assert.equal(gitBranchCreateCommand.checkArgs({})?.code, 'bad_args');
+  assert.equal(gitBranchCreateCommand.checkArgs({ name: '  ' })?.code, 'bad_args');
+  assert.equal(gitBranchCreateCommand.checkArgs({ name: 'feature/x' }), null);
+});
+
+test('git_branch_create does not require confirm', () => {
+  assert.equal(gitBranchCreateCommand.checkArgs({ name: 'feature/x' }), null);
+});
+
+test('git_branch_create host result includes switched when the session moved', async () => {
+  let args;
+  const ctx = {
+    readAgentGitAdapterKind: () => 'mock',
+    agentGitBranchCreate: async (a) => {
+      args = a;
+      return { status: 'created', branch: a.name, sha: 'abc', switched: true };
+    },
+  };
+  const out = await gitBranchCreateCommand.run(ctx, { name: ' feature/x ' });
+  assert.equal(args.name, 'feature/x');
+  assert.equal(out.result?.status, 'created');
+  assert.equal(out.result?.switched, true);
+  assert.equal(out.error, undefined);
+});
+
+test('git_branch_create dirty host result stays created without confirm', async () => {
+  const ctx = {
+    readAgentGitAdapterKind: () => 'mock',
+    agentGitBranchCreate: async () => ({
+      status: 'created',
+      branch: 'feature/dirty',
+      sha: 'def',
+      switched: false,
+    }),
+  };
+  const out = await gitBranchCreateCommand.run(ctx, { name: 'feature/dirty' });
+  assert.equal(out.result?.status, 'created');
+  assert.equal(out.result?.switched, false);
+  assert.equal(out.error, undefined);
 });
 
 test('git_list_branches allowed on real adapter without opt-in', async () => {
