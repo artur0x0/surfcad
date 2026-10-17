@@ -15,6 +15,11 @@ import {
   startPreviewServer,
   waitForServer,
 } from '../scripts/playtest/lib/harness.mjs';
+import {
+  ensureAgentBridgeRelay,
+  resetAgentBridgeRelayCache,
+  stopAgentBridgeRelay,
+} from '../packages/surfcad-mcp/src/bridge/relayServer.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST_ASSETS = join(ROOT, 'dist/assets');
@@ -86,8 +91,12 @@ test('localStorage auto-approve flag is ignored in production build', { timeout:
   const relayUrl = `ws://127.0.0.1:${relayPort}`;
   const baseUrl = `http://127.0.0.1:${port}/?agent=1&agentBridgeWs=${encodeURIComponent(relayUrl)}`;
 
+  process.env.SURFCAD_AGENT_BRIDGE_EXTRA_ORIGINS = `http://127.0.0.1:${port}`;
+  const relay = await ensureAgentBridgeRelay({ port: relayPort });
+
   const { stop } = startPreviewServer(port, {
     SURFCAD_AGENT_BRIDGE_WS_PORT: String(relayPort),
+    SURFCAD_MCP_START_RELAY: '0',
   });
 
   let browser;
@@ -107,7 +116,9 @@ test('localStorage auto-approve flag is ignored in production build', { timeout:
     await installApiMocks(page);
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(
+      /* eslint-disable no-undef */
       () => typeof window.surfcad?.call === 'function' && !document.querySelector('[data-app-loading]'),
+      /* eslint-enable no-undef */
       { timeout: 120000 },
     );
 
@@ -117,9 +128,9 @@ test('localStorage auto-approve flag is ignored in production build', { timeout:
     });
 
     await page.locator('[data-profile-chip]').first().click();
-    await page.click('[data-ui-action="data-agent-bridge-toggle"]');
-    await page.click('[data-ui-action="data-agent-bridge-start"]');
-    await page.waitForSelector('[data-agent-bridge-code]', { state: 'visible' });
+    await page.click('[data-ui-action="data-agent-bridge-connect"]');
+    await page.waitForSelector('[data-agent-bridge-waiting-relay]', { state: 'hidden', timeout: 15000 }).catch(() => {});
+    await page.waitForSelector('[data-agent-bridge-code]', { state: 'visible', timeout: 15000 });
     const token = (await page.locator('[data-agent-bridge-code]').innerText()).trim();
 
     peerWs = new WebSocket(relayUrl);
@@ -145,5 +156,7 @@ test('localStorage auto-approve flag is ignored in production build', { timeout:
     }
     if (browser) await browser.close();
     stop();
+    try { await stopAgentBridgeRelay(relay); } catch { /* noop */ }
+    resetAgentBridgeRelayCache(relayPort);
   }
 });
