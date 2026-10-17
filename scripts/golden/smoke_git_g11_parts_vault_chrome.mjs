@@ -241,12 +241,17 @@ ok('branch create optimistic pending row', /pending: true/.test(feed)
 ok('Create branch refreshes pane with ensureBranch',
   /ensureBranch:/.test(feed) && /refreshBranchPane\(/.test(feed)
   && /result\.status === 'created'/.test(feed));
+ok('create switches when clean; dirty stays put',
+  /shouldSwitchToCreatedBranch/.test(app)
+  && /handleCreateBranch[\s\S]*handleSwitchBranch\(created\.name\)/.test(app));
 ok('GitHub adapter GETs are cache no-store', /cache:\s*'no-store'/.test(
   readFileSync(new URL('../../src/utils/git/githubAdapter.js', import.meta.url), 'utf8'),
 ));
 ok('IDB hydrate skips when vault baseline / gen advanced',
   /Skipping stale IDB hydrate/.test(app) && /vault baseline already set/.test(app));
 ok('index exports G11 helpers', typeof gitIndex.createVaultBranch === 'function'
+  && typeof gitIndex.createAndSwitchVaultBranch === 'function'
+  && typeof gitIndex.shouldSwitchToCreatedBranch === 'function'
   && typeof gitIndex.deleteVaultBranch === 'function'
   && typeof gitIndex.githubCompareUrl === 'function'
   && typeof gitIndex.squashMergeVaultBranch === 'function'
