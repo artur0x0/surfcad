@@ -157,7 +157,19 @@ const report = {
 const { jsonPath, mdPath } = writeReport(outDir, report);
 writeReport(join(outDir, 'latest'), report);
 
-console.log(`playtest: ${ok ? 'PASS' : 'FAIL'} — ${failedSteps} failed step(s)`);
+const failedInvariants = invariants.filter((row) => !row.ok);
+console.log(
+  `playtest: ${ok ? 'PASS' : 'FAIL'} — ${failedSteps} failed step(s)`
+  + (failedInvariants.length ? `, ${failedInvariants.length} failed invariant(s)` : ''),
+);
+for (const row of failedInvariants) {
+  console.log(`  invariant ${row.id}: ${String(row.detail || '').slice(0, 300)}`);
+}
+for (const scenario of scenarioReports) {
+  for (const step of scenario.steps.filter((row) => !row.ok)) {
+    console.log(`  step [${scenario.id}] ${step.id}: ${String(step.detail || '').slice(0, 300)}`);
+  }
+}
 console.log(`  report ${jsonPath}`);
 console.log(`  summary ${mdPath}`);
 

@@ -26,6 +26,8 @@ const CONSOLE_ALLOW = [
   /monaco-editor.*simpleWorker\.nls/i,
   /Failed trying to load default language strings/i,
   /Error executing script:.*playtest deliberate failure/i,
+  // Soft worker restart (ensureAlive / preemptInflight) can reject in-flight runs.
+  /Error executing script:.*Worker terminated/i,
 ];
 
 /** Hard-fail unless the URL host is loopback (cloud-agent safety). */
