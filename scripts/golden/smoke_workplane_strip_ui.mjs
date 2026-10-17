@@ -7,7 +7,7 @@
  * - Contour entry 'workplane' + composeContourCommit plane-only path
  * - HelperInsertPalette routes Workplane into contour mode
  * - ContourModeChip / ContourModeRail expose plane-only UI
- * - docs/POPUP_STYLE.md + UI_MAP link
+ * - docs/ui_style_guide.md + UI_MAP link
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -126,10 +126,10 @@ console.log('workplane strip + UI');
   check('workplane has no left Plane rail',
     !/workplaneOnly/.test(rail)
       && /planeCardCommit\(contourMode\.entry\)\.rail/.test(view));
-  const docs = read('../../docs/POPUP_STYLE.md');
-  check('POPUP_STYLE.md documents ContourModeChip', /ContourModeChip/.test(docs) && /FilletModeChip/.test(docs));
+  const docs = read('../../docs/ui_style_guide.md');
+  check('ui_style_guide.md documents ContourModeChip', /ContourModeChip/.test(docs) && /FilletModeChip/.test(docs));
   const uiMap = read('../../docs/UI_MAP.md');
-  check('UI_MAP links POPUP_STYLE', /POPUP_STYLE\.md/.test(uiMap));
+  check('UI_MAP links ui_style_guide', /ui_style_guide\.md/.test(uiMap));
 }
 
 if (failed) {

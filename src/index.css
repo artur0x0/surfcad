@@ -13,6 +13,11 @@
   --chrome-text-secondary: 156 163 175; /* gray-400 #9ca3af */
   --chrome-divider: 55 65 81; /* gray-700 #374151 */
   --chrome-border: 55 65 81; /* gray-700 #374151 */
+  /* Brand from #460. Token first, then a class — see docs/ui_style_guide.md. */
+  --brand-paper: 250 250 249; /* #FAFAF9 */
+  --brand-ink: 22 23 29; /* #16171D */
+  --brand-grey: 107 110 120; /* #6B6E78 */
+  --brand-orange: 255 90 31; /* #FF5A1F */
 }
 
 body {
@@ -233,6 +238,37 @@ textarea {
    viewport overlays, and `surface-scrim` for a modal backdrop. Anything that
    sits over the 3D view should be on one of them, not a flat `bg-*`. */
 @layer components {
+  /* Semantic surfaces + text. Pair dark with text-on-dark. See docs/ui_style_guide.md. */
+  .surface-dark {
+    background-color: rgb(var(--chrome-background));
+  }
+  .surface-panel {
+    background-color: rgb(var(--chrome-surface));
+  }
+  .surface-light {
+    background-color: rgb(var(--brand-paper));
+  }
+  .text-on-dark {
+    color: rgb(var(--chrome-text));
+  }
+  .text-on-light {
+    color: rgb(var(--brand-ink));
+  }
+  .text-muted-on-dark {
+    color: rgb(var(--chrome-text-secondary));
+  }
+  .text-muted-on-light {
+    color: rgb(var(--brand-grey));
+  }
+  .font-ui {
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  }
+  .text-ui-xs { font-size: 11px; line-height: 1.4; }
+  .text-ui-sm { font-size: 12px; line-height: 1.4; }
+  .text-ui { font-size: 14px; line-height: 1.45; }
+  .text-ui-lg { font-size: 16px; line-height: 1.4; }
+
   .surface-glass,
   .surface-glass-chip,
   .surface-scrim {

@@ -1,10 +1,189 @@
-# Viewport popup style (contour / loft / fillet chips)
+# SurfCAD UI style guide
+
+Scannable rules for text, color, type, and chrome. Use this file — not
+ad-hoc hex, Tailwind color utilities, or a second style doc.
+
+This file replaces `docs/POPUP_STYLE.md`. Placement and “where is this on
+screen?” stay in [UI_MAP.md](./UI_MAP.md). Runtime map:
+[architecture.md](./architecture.md).
+
+## Hard rules
+
+1. **Use the shared classes** for text color, background, and font
+   (`surface-*`, `text-on-*`, `text-muted-on-*`, `font-ui`, `text-ui-*`).
+   Do not put ad-hoc hex values or Tailwind color utilities
+   (`text-black`, `bg-gray-900`, `text-[#16171D]`, `bg-blue-600`, …) in
+   components.
+2. **Never black or dark text on a dark surface.** Dark chrome, dark
+   blue, and other dark brand surfaces use `text-on-dark` (or
+   `text-muted-on-dark`). Light surfaces use `text-on-light` (or
+   `text-muted-on-light`).
+3. **Minimum contrast** is WCAG AA: **4.5:1** for body text, **3:1** for
+   large text (≥18pt / 14pt bold) and icons.
+4. **User-facing copy never says Microsoft Edge.** Say Chrome. Internal
+   browser detection may still classify Edge; the string the user sees
+   is Chrome.
+5. **New color = token first, then a class.** Add a `--chrome-*` or
+   `--brand-*` channel on `:root` in `src/index.css`, then a semantic
+   class in `@layer components`. Do not start from a hex in a component.
+
+The lint job runs `scripts/ci/check-ui-contrast.mjs`. It flags dark text
+classes or `#000` / `#111`-style colors on the same element as a dark
+brand surface. Allow a true exception with `ui-contrast-allow` on that
+line or the line above.
+
+Do not edit `src/fea/**` or `packages/surfcad-fea/**` for style. The
+agent pairing Allow/Deny popup (`AgentBridgeApprovalPopup.jsx`) is owned
+by a separate PR — do not restyle it here.
+
+## Colors
+
+Tokens from [#461](https://github.com/artur0x0/surfcad/pull/461) (chrome)
+and [#460](https://github.com/artur0x0/surfcad/pull/460) (brand). Do not
+invent a palette.
+
+### Chrome (CAD UI) — `#461`
+
+| Token | RGB channels | Hex | Use |
+| --- | --- | --- | --- |
+| `--chrome-background` | `30 30 30` | `#1e1e1e` | App shell, viewport ground |
+| `--chrome-surface` | `17 24 39` | `#111827` | Panels, menus, cards (gray-900) |
+| `--chrome-text` | `243 244 246` | `#f3f4f6` | Text on dark chrome |
+| `--chrome-text-secondary` | `156 163 175` | `#9ca3af` | Muted text on dark chrome |
+| `--chrome-divider` / `--chrome-border` | `55 65 81` | `#374151` | Hairlines |
+
+Tailwind `chrome-*` utilities (`bg-chrome-surface/80`) read those
+channels. Prefer the semantic classes below in new markup.
+`bg-chrome-surface` is a **dark blue-gray**. It is a dark surface.
+`text-chrome-text` is the light text class. There is no
+`text-chrome-text-secondary` utility — muted on dark is
+`text-chrome-secondary` or `text-muted-on-dark`. A typo of
+`text-chrome-text-secondary` paints default black on that blue and
+fails the hard rule.
+
+The viewport ground stays the literal `bg-[#1e1e1e]` on
+`.viewport-shell` (Three.js clear is the same). Sketch status colours
+are not these tokens (`src/utils/contourStatus.js`): free `#22d3ee`,
+locked `#000000`, conflict `#f87171`, repeated `#fbbf24`, selected
+`#ff9900`. Do not retint those.
+
+### Brand — `#460`
+
+| Token | RGB channels | Hex | Use |
+| --- | --- | --- | --- |
+| `--brand-paper` | `250 250 249` | `#FAFAF9` | Light surfaces, splash, partners |
+| `--brand-ink` | `22 23 29` | `#16171D` | Text on Paper |
+| `--brand-grey` | `107 110 120` | `#6B6E78` | Muted text on Paper |
+| `--brand-orange` | `255 90 31` | `#FF5A1F` | Splash word “CAD” only, ≥24px |
+
+Orange is never a status, sketch, or chrome colour.
+
+### Semantic classes
+
+Defined in `src/index.css`. Keep the set small.
+
+| Class | Maps to | Pair with |
+| --- | --- | --- |
+| `surface-dark` | `--chrome-background` | `text-on-dark` |
+| `surface-panel` | `--chrome-surface` | `text-on-dark` |
+| `surface-light` | `--brand-paper` | `text-on-light` |
+| `text-on-dark` | `--chrome-text` | dark surfaces |
+| `text-on-light` | `--brand-ink` | light surfaces |
+| `text-muted-on-dark` | `--chrome-text-secondary` | dark surfaces |
+| `text-muted-on-light` | `--brand-grey` | light surfaces |
+| `font-ui` | system UI stack | every chrome surface |
+
+Existing frosted overlays (do not replace these with a flat slab):
+
+| Class | Role |
+| --- | --- |
+| `surface-glass` | Panels and modal sheets over the 3D view (`chrome-surface` @ 82%) |
+| `surface-glass-chip` | Small viewport overlays — frost only; supply your own tint |
+| `surface-scrim` | Modal backdrop |
+
+They share `--surface-blur`. `@supports not (backdrop-filter)` goes more
+opaque so text stays legible. Never put a flat `bg-chrome-surface` /
+`bg-[#1e1e1e]` slab over the viewport. Exception: native `<select>` /
+`<option>` — the OS list is unreadable when translucent.
+
+Mode-chip **accents** (cyan contour, amber fillet) stay the spelled-out
+`ACCENTS` map in `src/components/controls/popupUI.jsx`. Tailwind purges
+computed class names — extend that map, never interpolate. Those tints
+are not body text on dark chrome.
+
+### How to add a color
+
+1. Add `--name: R G B;` on `:root` in `src/index.css` (comment the hex).
+2. Add one semantic class that uses `rgb(var(--name))`.
+3. Use the class. Do not add a one-off hex or a new Tailwind color
+   utility in a component.
+4. If the class is a dark surface, say so in this table and pair it
+   with `text-on-dark`.
+
+## Type
+
+**Stack** (`.font-ui`): `ui-sans-serif, system-ui, -apple-system,
+"Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif`.
+The wordmark is outlined Inter Tight 700 paths — no webfont load.
+
+**Size scale**
+
+| Class | Size | Use |
+| --- | --- | --- |
+| `text-ui-xs` | 11px | captions, chips, pairing hints |
+| `text-ui-sm` | 12px | secondary / `text-xs` chrome |
+| `text-ui` | 14px | body |
+| `text-ui-lg` | 16px | titles; **number and select fields** (iOS will not zoom) |
+
+Popup type (`POPUP_TEXT` in `popupUI.jsx`): title `text-sm font-semibold`,
+subtitle `text-xs`, caption `text-[11px] font-semibold uppercase
+tracking-wide`, value `text-[13px]`, note `text-xs`. Prefer those
+tokens inside feature popups. Parts inputs use
+`PARTS_TEXT_INPUT_*` (≥16px).
+
+`formatDisplayNumber` (`src/utils/displayUnit.js`) is the one formatter
+for calculated numbers: at most four decimals, trailing zeros removed.
+Displaying a field does not rewrite the script.
+
+## Copy
+
+- Product name is SurfCAD. Tagline: “Don't do CAD. SurfCAD.”
+- User-facing text says **Chrome**, never Microsoft Edge (or “Edge”).
+- Errors use the glass card in [Popups](#popups), not a blue pill.
+
+## Brand
+
+- CAD header (`data-viewer-header-row`): paper-tile mark
+  (`data-brand-mark="paper"`) + 16px Paper wordmark on a transparent
+  lockup (`data-brand-header`, `data-brand-wordmark`). Surf and CAD are
+  both Paper, **not orange**. Placement (rail inset, title pills) is
+  [UI_MAP.md](./UI_MAP.md).
+- `src/assets/brand/wordmark-ink.svg` is Ink-on-light.
+- Orange (`#FF5A1F`) is only the splash word “CAD”, and only at 24px or
+  taller on Paper. Loading gate (`data-app-loading`): Paper surface,
+  ink-tile mark, 40px splash wordmark, tagline and status in Grey.
+- Parts and Script stages omit the brand. Favicon and PWA icons are the
+  paper tile. `/partners` is Paper; orange only on splash CAD at 32px.
+- `golden:brand-identity` checks the header at 390 and 1280.
+
+## Surfaces over the 3D view
+
+Everything over the viewport is translucent glass (see classes above).
+Rails may still use the light frost `bg-white/60 backdrop-blur-sm` —
+that is a light surface; pair it with dark text (`text-on-light`).
+Do not copy that idiom onto dark chrome.
+
+## Popups
 
 Mobile-first pattern for short-lived **mode chips** that sit over the 3D
-viewport while the user picks geometry and tweaks params. Prefer this shell
-over inventing a new modal layout.
+viewport while the user picks geometry and tweaks params. Prefer this
+shell over inventing a new modal layout.
+`src/components/controls/popupUI.jsx` is the one type scale, field set,
+and accent map. **Every number renders a slider AND a typed box**:
+`NumberField` never gives you one without the other. Do not hand-roll
+`<input type="range">`.
 
-## References
+### References
 
 - **`ContourModeChip.jsx`** — cyan glass card; plane editor + profile / Extrude /
   Revolve / **Loft** / Sweep / **Workplane** sections. Dimension, Arc, and
@@ -114,7 +293,7 @@ over inventing a new modal layout.
   that cannot stay a closed solid throws when Confirm runs the script, not on
   the tap. Hidden in game.
 
-## Error toasts
+### Error toasts
 
 Errors use this same glass card. They are not a blue rounded pill.
 
@@ -129,7 +308,7 @@ Errors use this same glass card. They are not a blue rounded pill.
   justified, with Undo and the dismiss X right justified and a wider gap
   between those two controls. The description is the second line.
 
-## Placement
+### Placement
 
 | Context | Classes (chip root) |
 | --- | --- |
@@ -139,15 +318,22 @@ Errors use this same glass card. They are not a blue rounded pill.
 Bottom-**centre** is reserved for mode chips. Bottom corners belong to the
 helper / cross-section rails (`UI_MAP.md`).
 
-## Chrome
+Contour, Fillet, Chamfer, the standalone edge card, Shell, Draft, Move Face,
+Delete Face, Cut, Boolean, Move, Paint, and Analyze share the feature card
+(bottom center, between the rails). Analyze's footer is Run or Back to Setup.
+Boolean stays `z-20`, under the section rail.
+
+### Popup chrome
 
 - Tint + frost: `bg-cyan-950/80` (contour) or `bg-amber-950/80` (fillet) **plus**
   `surface-glass-chip` (frost only — supply your own tint).
 - Border: `border border-cyan-400/70` / `border-amber-400/70`.
 - Type: `text-xs` / `text-[13px]` controls; title in accent (`text-cyan-200`).
 - z-index: `z-20` (with other overlays; see `UI_MAP.md` ladder).
+- Text on those dark tints is the light accent (`text-cyan-100`,
+  `text-on-dark`), never `text-black` / `text-gray-900`.
 
-## Mobile height + scroll
+### Mobile height + scroll
 
 Keep the chip **below the feature strip** and leave finger clearance to pick
 faces/edges in the viewport:
@@ -158,20 +344,20 @@ faces/edges in the viewport:
   **outside** the scroll so actions stay visible.
 - Prefer `flex flex-col min-h-0` on the root so the scroll child can shrink.
 
-## Controls
+### Controls
 
 - Numbers: **`NumberField`** from `src/components/controls/popupUI.jsx` — slider
   **and** typed box, one accent (`cyan` / `amber` / `slate`). Do not hand-roll
   `<input type="range">`.
 - Segmented presets (X / Y / Z / Face, Out / In / Both): small rounded buttons
-  with `aria-pressed`, active = filled accent, idle = `bg-*-950/80 border`.
+  with `aria-pressed`, active = filled accent, idle = `bg-*-950/80` border.
 - Selects: opaque `bg-*-950/80` (native option lists are not translucent).
 - Primary action: accent **Confirm** / **Accept** with lucide `Check`.
 - Cancel: grey lucide **X** on the left rail (`ContourModeRail`) and/or chip
   corner (`FilletModeChip` `onDismiss`). Cancel must exit **without** writing
   script.
 
-## Behaviour contract
+### Behaviour contract
 
 1. Enter mode from the left rail (do not dump a one-shot insert when an
    interactive chip exists).
@@ -181,4 +367,10 @@ faces/edges in the viewport:
 4. Grey X / Back dismisses with no write.
 
 When adding a new tool, reuse this shell and `popupUI` rather than a slightly
-different card.
+different card. Game mounts no card.
+
+## Agents
+
+Cloud and repo agents follow this file. Do not add a second style guide.
+`AGENTS.md`, `.cursor/rules/ui-style.mdc`, and `docs/agent/SKILL.md` point
+here.

@@ -37,6 +37,7 @@ In-repo smokes are `npm run golden:*` (`scripts/golden/`). `npm run golden:agent
 - [UI map](docs/UI_MAP.md)
 - [Agent export](docs/agent-export.md)
 - [Performance](docs/performance.md)
-- [Popup style](docs/POPUP_STYLE.md)
+- [UI style guide](docs/ui_style_guide.md)
+- [Contributing](CONTRIBUTING.md)
 - [Helpers](docs/HELPER_FUNCTIONS.md)
 - [Validation](docs/VALIDATION.md)

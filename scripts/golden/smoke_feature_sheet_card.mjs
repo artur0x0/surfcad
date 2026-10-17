@@ -268,7 +268,7 @@ console.log('feature sheet card — source');
     && /mode !== 'game'/.test(view)
     && /yieldToFeatureEditCard/.test(view)
     && /FeatureEditSheet/.test(arch)
-    && /Game mounts no card/.test(read('docs/POPUP_STYLE.md')));
+    && /Game mounts no card/.test(read('docs/ui_style_guide.md')));
   check('camera snapshots the pose, slides up, retargets orbit, and restores it',
     /export function captureViewPose/.test(camera)
     && /export function aimOrbitAtVisibleCenter/.test(camera)

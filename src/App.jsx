@@ -8075,8 +8075,7 @@ const App = () => {
   if (!manifoldReady || editorInitialScript === null) {
     return (
       <div
-        className="flex h-screen items-center justify-center"
-        style={{ background: '#FAFAF9' }}
+        className="flex h-screen items-center justify-center surface-light font-ui"
         data-app-loading=""
       >
         <div className="flex flex-col items-center px-6 text-center">
@@ -8084,10 +8083,10 @@ const App = () => {
           <div className="mt-4">
             <BrandWordmark tone="splash" size={40} />
           </div>
-          <p className="mt-3 text-sm" style={{ color: '#6B6E78' }} data-brand-tagline="">
+          <p className="mt-3 text-sm text-muted-on-light" data-brand-tagline="">
             Don't do CAD. SurfCAD.
           </p>
-          <p className="mt-6 text-xs" style={{ color: '#6B6E78' }} data-app-loading-status="">
+          <p className="mt-6 text-xs text-muted-on-light" data-app-loading-status="">
             {!manifoldReady ? 'Starting CAD engine…' : 'Restoring document…'}
           </p>
         </div>

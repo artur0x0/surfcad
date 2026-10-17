@@ -64,7 +64,11 @@ test('chrome tokens keep today\'s colours', () => {
   assert.match(css, /--chrome-text-secondary:\s*156 163 175;\s*\/\* gray-400 #9ca3af \*\//);
   assert.match(css, /--chrome-divider:\s*55 65 81;\s*\/\* gray-700 #374151 \*\//);
   assert.match(css, /--chrome-border:\s*55 65 81;\s*\/\* gray-700 #374151 \*\//);
-  assert.equal(/#ff5a1f/i.test(css), false);
-  assert.equal(/#16171D/i.test(css), false);
-  assert.equal(/#FAFAF9/i.test(css), false);
+  assert.match(css, /--brand-paper:\s*250 250 249;\s*\/\* #FAFAF9 \*\//);
+  assert.match(css, /--brand-ink:\s*22 23 29;\s*\/\* #16171D \*\//);
+  assert.match(css, /--brand-grey:\s*107 110 120;\s*\/\* #6B6E78 \*\//);
+  assert.match(css, /--brand-orange:\s*255 90 31;\s*\/\* #FF5A1F \*\//);
+  assert.match(css, /\.surface-dark\b/);
+  assert.match(css, /\.text-on-dark\b/);
+  assert.match(css, /\.font-ui\b/);
 });
