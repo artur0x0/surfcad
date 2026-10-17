@@ -12,6 +12,8 @@
  *
  * Patterns match the previous CI step. `scripts/golden/*playtest*` is not
  * included. `backend/test` is run separately (needs backend/node_modules).
+ * Isolation uses --experimental-test-isolation=process: Node 22 rejects
+ * --test-isolation=process (that flag is not stable on 22).
  */
 import { spawn } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
@@ -186,7 +188,7 @@ export async function main() {
   const backend = (await collectBackendUnitFiles()).sort();
   if (backend.length) {
     const code = await runNode(
-      ['--test', '--test-reporter', 'spec', '--test-isolation=process', ...backend],
+      ['--test', '--test-reporter', 'spec', '--experimental-test-isolation=process', ...backend],
       { cwd: join(ROOT, 'backend') },
     );
     if (code !== 0) return code;

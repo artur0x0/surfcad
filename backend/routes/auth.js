@@ -8,7 +8,7 @@ import config from '../config/index.js';
 import { fetchGithubUserProfile } from '../services/githubUser.js';
 import { deleteResolvedGithubVault } from '../services/githubVaultDelete.js';
 import { confirmAndRememberVaultName, storedVaultNameFromUser } from '../services/vaultName.js';
-import { loginAndTrack, recordSuccessfulLogin } from '../services/loginTracking.js';
+import { loginAndTrack } from '../services/loginTracking.js';
 import { requireAuth } from '../auth/session.js';
 import Order from '../db/models/Order.js';
 import {
@@ -619,21 +619,28 @@ router.get('/google', (req, res, next) => {
  * Google OAuth callback
  */
 router.get('/google/callback',
-  passport.authenticate('google', { failureRedirect: '/login?error=google_failed' }),
-  async (req, res) => {
-    const returnTo = req.session.returnTo || '/';
-    delete req.session.returnTo;
-
-    if (req.user) {
-      await recordSuccessfulLogin(req.user, 'google');
-    }
-
-    delete req.session.guestId;
-    delete req.session.guestEmail;
-    delete req.session.guestAddress;
-
-    const redirectUrl = buildRedirectUrl(config.frontendUrl, returnTo, { auth: 'success' });
-    res.redirect(redirectUrl);
+  (req, res, next) => {
+    passport.authenticate('google', {
+      failureRedirect: '/login?error=google_failed',
+    }, (err, user) => {
+      if (err || !user) {
+        return res.redirect('/login?error=google_failed');
+      }
+      loginAndTrack(req, user, 'google')
+        .then(() => {
+          const returnTo = req.session.returnTo || '/';
+          delete req.session.returnTo;
+          delete req.session.guestId;
+          delete req.session.guestEmail;
+          delete req.session.guestAddress;
+          const redirectUrl = buildRedirectUrl(config.frontendUrl, returnTo, { auth: 'success' });
+          return res.redirect(redirectUrl);
+        })
+        .catch((loginErr) => {
+          console.error('[Auth] req.login failed after Google auth:', loginErr);
+          return res.redirect('/login?error=google_failed');
+        });
+    })(req, res, next);
   }
 );
 

@@ -177,6 +177,28 @@ describe('exploit H2', () => {
     assert.equal(login.body?.user, undefined);
   });
 
+  test('GitHub link login keeps the new session after neutralize', async () => {
+    await client(app.port)('POST', '/api/auth/register', {
+      email: VICTIM,
+      password: ATTACKER_PASSWORD,
+    });
+    const c = client(app.port);
+    const restoreFetch = patch(globalThis, {
+      fetch: githubFetch({
+        tok: { user: { id: 4242, login: 'victim', email: VICTIM, name: 'Vic Tim' } },
+      }),
+    });
+    try {
+      const gh = await c('POST', '/api/auth/github', { access_token: 'tok' });
+      assert.equal(gh.status, 200);
+      const me = await c('GET', '/api/auth/me');
+      assert.equal(me.body.authenticated, true);
+      assert.equal(me.body.user.email, VICTIM);
+    } finally {
+      restoreFetch();
+    }
+  });
+
   test('Google sign-in must not leave an attacker password on a just-verified account', async () => {
     await client(app.port)('POST', '/api/auth/register', {
       email: VICTIM,
