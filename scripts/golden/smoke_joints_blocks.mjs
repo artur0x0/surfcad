@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { cadStripsShowJoints, shouldArmJointPick } from '../../src/joints/jointUi.js';
 
 const PORT = Number(process.env.SMOKE_PORT || 5239);
@@ -300,6 +301,7 @@ try {
     executablePath: exe,
     args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
   for (const vp of [
     { name: '390', width: 390, height: 844, touch: true },
     { name: '1280', width: 1280, height: 800, touch: false },

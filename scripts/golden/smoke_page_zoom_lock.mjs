@@ -21,6 +21,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { chromium, webkit, devices } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 const PORT = Number(process.env.SMOKE_PORT || 5194);
 const APP_URL = `http://127.0.0.1:${PORT}/`;
@@ -86,6 +87,7 @@ async function launch() {
   const contextOptions = iphoneContextOptions();
   try {
     const browser = await webkit.launch({ headless: true });
+    attachConsentPresetToBrowser(browser);
     return { browser, engine: 'webkit', contextOptions };
   } catch (err) {
     const message = String(err && err.message ? err.message : err).split('\n')[0];
@@ -96,6 +98,7 @@ async function launch() {
       executablePath: exe,
       args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
     });
+    attachConsentPresetToBrowser(browser);
     return { browser, engine: 'chromium-iphone-emulation', contextOptions };
   }
 }

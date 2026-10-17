@@ -18,6 +18,7 @@ import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
 import autoprefixer from 'autoprefixer';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { sheetCheckoutRoute } from '../../src/utils/sheetMetal/sheetCheckout.js';
 import { sheetMetalBlock } from '../../src/utils/sheetMetal/sheetMetalScript.js';
 
@@ -263,6 +264,7 @@ window.fetch = async (url) => {
     executablePath: exe,
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
+attachConsentPresetToBrowser(browser);
   const pageErrors = [];
   try {
     mkdirSync(shotDir, { recursive: true });

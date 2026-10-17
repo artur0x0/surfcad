@@ -15,6 +15,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { shiftLocalPoint } from '../../src/utils/activePartOverlay.js';
 import { projectReference } from '../../src/utils/contourRef.js';
 import { chainSegments } from '../../src/utils/contourRefPick.js';
@@ -623,6 +624,7 @@ const browser = await chromium.launch({
   headless: true,
   args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
 });
+attachConsentPresetToBrowser(browser);
 try {
   if (!await waitForServer()) throw new Error('vite did not start');
   await runSize(browser, '390', { viewport: { width: 390, height: 844 } });

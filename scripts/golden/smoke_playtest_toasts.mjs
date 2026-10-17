@@ -15,6 +15,7 @@ import { mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { createServer as createVite } from 'vite';
 
 const shotDir = process.env.GOLDEN_SHOT_DIR || join(tmpdir(), 'surfcad-golden-shots');
@@ -68,6 +69,7 @@ const browser = await chromium.launch({
   executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
   args: ['--headless=new', '--use-gl=angle', '--use-angle=swiftshader'],
 });
+attachConsentPresetToBrowser(browser);
 
 function sameChoice(a, b) {
   return !!a && !!b && a.action === b.action && a.path === b.path && a.kind === b.kind;

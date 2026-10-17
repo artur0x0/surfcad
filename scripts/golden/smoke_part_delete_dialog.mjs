@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { createServer as createVite } from 'vite';
 import { partRepoDeleteConfirmCopy } from '../../src/utils/assembly.js';
 
@@ -213,6 +214,7 @@ try {
     executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
     args: ['--headless=new', '--use-gl=angle', '--use-angle=swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
   await runSize(browser, 390, 844);
   await runSize(browser, 1280, 900);
 } finally {

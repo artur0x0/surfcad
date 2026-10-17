@@ -16,6 +16,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { loftMeshSelfIntersects } from '../../src/utils/makeLoftAngled.js';
 import { runScript } from '../../src/lib/surfcad/index.js';
 import {
@@ -178,6 +179,7 @@ const browser = await chromium.launch({
   headless: true,
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
 });
+attachConsentPresetToBrowser(browser);
 
 try {
   const context = await browser.newContext({

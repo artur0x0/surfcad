@@ -12,6 +12,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { serializeAssembly } from '../../src/utils/assembly.js';
 
 const PORT = Number(process.env.SMOKE_PORT || 4324);
@@ -226,6 +227,7 @@ const browser = await chromium.launch({
   executablePath: CHROME,
   args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
 });
+attachConsentPresetToBrowser(browser);
 try {
   await capture(browser, 390, 844);
   await capture(browser, 1440, 900);

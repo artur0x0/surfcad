@@ -10,6 +10,7 @@ import { dirname, extname, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from '../golden/lib/presetConsentInit.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const snippetPath = join(repoRoot, 'docs/nginx-snippets/surfcad-security.conf');
@@ -205,6 +206,7 @@ try {
     executablePath: exe,
     args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
 
   console.log('\nPartners Turnstile verification (pass key, enforcing CSP)');
   console.log('Building with VITE_TURNSTILE_SITE_KEY=always-pass…');

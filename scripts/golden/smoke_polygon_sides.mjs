@@ -14,6 +14,7 @@ import { mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { createServer as createVite } from 'vite';
 
 const PRESETS = ['triangle', 'square', 'pentagon', 'hexagon', 'heptagon', 'octagon'];
@@ -70,6 +71,7 @@ const browser = await chromium.launch({
   executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
   args: ['--headless=new', '--use-gl=angle', '--use-angle=swiftshader'],
 });
+attachConsentPresetToBrowser(browser);
 
 async function runSize(label, width, height) {
   const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });

@@ -24,6 +24,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
 
@@ -109,6 +110,7 @@ try {
     executablePath: exe,
     args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 
   const pageErrors = [];

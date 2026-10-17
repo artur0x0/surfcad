@@ -11,6 +11,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => readFileSync(join(root, rel), 'utf8');
@@ -124,6 +125,7 @@ try {
     executablePath: exe,
     args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
 
   for (const vp of [{ w: 390, h: 844, tag: '390' }, { w: 1280, h: 800, tag: '1280' }]) {
     const context = await browser.newContext({

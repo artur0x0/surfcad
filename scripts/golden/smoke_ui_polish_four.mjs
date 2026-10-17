@@ -19,6 +19,7 @@ import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
 import autoprefixer from 'autoprefixer';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { Raycaster, Vector3 } from 'three';
 import { buildSheetOverlay, SHEET_EDGE_LINE, sheetPickFromHits } from '../../src/utils/sheetMetal/sheetOverlay.js';
 
@@ -343,6 +344,7 @@ window.__edgeReady = true;
     executablePath: exe,
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--use-gl=angle', '--use-angle=swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
   const views = [
     ['390', 390, 844],
     ['desktop', 1280, 800],

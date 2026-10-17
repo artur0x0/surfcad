@@ -9,6 +9,7 @@ import { createReadStream, existsSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from '../golden/lib/presetConsentInit.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const distRoot = join(repoRoot, 'dist');
@@ -114,6 +115,7 @@ try {
     executablePath: exe,
     args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 
   const pageErrors = [];

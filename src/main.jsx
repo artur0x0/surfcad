@@ -11,8 +11,11 @@ import { GITHUB_CALLBACK_PATH } from './utils/git/githubAuth.js';
 import SentryErrorBoundary from './components/SentryErrorBoundary.jsx';
 import SentryUserSync from './components/SentryUserSync.jsx';
 import { bootstrapSentry } from './utils/sentryClient.js';
+import CookieConsentController from './components/CookieConsentController';
+import { applyGpcDefaultOnFirstVisit } from './utils/consent.js';
 
 bootstrapSentry();
+applyGpcDefaultOnFirstVisit();
 
 const PARTNERS_PATH = '/partners';
 
@@ -57,6 +60,8 @@ function Root() {
     return () => window.removeEventListener('popstate', sync);
   }, []);
 
+  const consentBanner = <CookieConsentController />;
+
   if (gitCallback) {
     return (
       <SentryErrorBoundary>
@@ -71,6 +76,7 @@ function Root() {
         <AuthProvider>
           <SentryUserSync />
           <PartnersPage />
+          {consentBanner}
         </AuthProvider>
       </SentryErrorBoundary>
     );
@@ -84,6 +90,7 @@ function Root() {
           <GithubSessionProvider>
             <App />
           </GithubSessionProvider>
+          {consentBanner}
         </AuthProvider>
       </StrictMode>
     </SentryErrorBoundary>

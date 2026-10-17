@@ -29,6 +29,7 @@ describe('Privacy choices dialog UI', () => {
     assert.match(panel, /Allow usage analytics/);
     assert.match(footer, /data-site-footer/);
     assert.match(controller, /data-privacy-choices-link/);
+    assert.match(controller, /Cookie settings/);
     assert.match(dialog, /dataAttr="privacy-choices"/);
     assert.match(dialog, /data-privacy-choices-done/);
   });

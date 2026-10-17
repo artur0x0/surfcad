@@ -11,6 +11,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { createServer as createVite } from 'vite';
 import { joinScsCatalog, findScsSku } from '../../src/utils/scs/scsCatalog.js';
 import { createSheetSpec } from '../../src/utils/sheetMetal/sheetModel.js';
@@ -189,6 +190,7 @@ try {
     executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
     args: ['--headless=new', '--use-gl=angle', '--use-angle=swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
   const page = await browser.newPage({ viewport: { width: 390, height: 700 } });
   const errors = [];
   page.on('pageerror', (err) => errors.push(err.message));

@@ -19,6 +19,7 @@ import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
 import autoprefixer from 'autoprefixer';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { CUBE_BEGIN, CUBE_END } from '../../src/utils/helperPaletteSnippets.js';
 import { sheetCheckoutRoute } from '../../src/utils/sheetMetal/sheetCheckout.js';
 import { sheetMetalBlock } from '../../src/utils/sheetMetal/sheetMetalScript.js';
@@ -251,6 +252,7 @@ HTMLAnchorElement.prototype.click = function () {
     executablePath: exe,
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
+attachConsentPresetToBrowser(browser);
   const pageErrors = [];
   try {
     mkdirSync(shotDir, { recursive: true });

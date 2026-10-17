@@ -14,6 +14,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { serializeAssembly } from '../../src/utils/assembly.js';
 import { scriptHash } from '../../src/utils/cart.js';
 import {
@@ -504,6 +505,7 @@ const browser = await chromium.launch({
   executablePath: CHROME,
   args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
 });
+attachConsentPresetToBrowser(browser);
 try {
   await capture(browser, 390, 844);
   await capture(browser, 1440, 900);

@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
 const PORT = Number(process.env.SMOKE_PORT || 4327);
@@ -159,6 +160,7 @@ if (!(await waitForServer())) {
 }
 
 const browser = await chromium.launch({ executablePath: exe, headless: true });
+attachConsentPresetToBrowser(browser);
 const page = await browser.newPage();
 await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded' });
 await seedAssembly(page);

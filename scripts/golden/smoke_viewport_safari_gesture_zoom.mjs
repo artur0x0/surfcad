@@ -9,6 +9,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { chromium, webkit } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 const PORT = Number(process.env.SMOKE_PORT || 5195);
 const APP_URL = `http://127.0.0.1:${PORT}/`;
@@ -115,6 +116,7 @@ async function runChromium() {
     executablePath: exe,
     args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
   });
+  attachConsentPresetToBrowser(browser);
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await page.addInitScript(orbitFindInitScript());
   await page.route('**/api/**', (route) => route.fulfill({
@@ -154,6 +156,7 @@ async function runWebKitGesture() {
   let browser;
   try {
     browser = await webkit.launch({ headless: true });
+    attachConsentPresetToBrowser(browser);
   } catch (err) {
     console.log(`  WebKit unavailable (${String(err?.message || err).split('\n')[0]}) — skip gesture simulation`);
     return;

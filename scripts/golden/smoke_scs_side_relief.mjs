@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { joinScsCatalog, findScsSku } from '../../src/utils/scs/scsCatalog.js';
 import {
   bendAllowance,
@@ -217,6 +218,7 @@ if (exe && failed === 0) {
         executablePath: exe,
         args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
       });
+attachConsentPresetToBrowser(browser);
       const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
       const errors = [];
       page.on('pageerror', (err) => errors.push(String(err.message || err)));
