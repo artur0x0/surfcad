@@ -6,6 +6,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { bridgeToolDefinitions, loadCommandsCatalog } from './catalog.mjs';
 import { formatBridgeError, notPairedError, pairingEnvHint } from './errors.mjs';
+import { loadPackageVersion } from './packageVersion.mjs';
 import { RelaySession } from './relay.mjs';
 
 const PAIR_TOOL_NAME = 'pair';
@@ -37,7 +38,7 @@ export async function createSurfcadMcpServer(options = {}) {
   const bridgeTools = bridgeToolDefinitions(catalog);
 
   const server = new Server(
-    { name: 'surfcad-mcp', version: String(catalog.version || '1') },
+    { name: 'surfcad-mcp', version: loadPackageVersion() },
     { capabilities: { tools: {} } },
   );
 
