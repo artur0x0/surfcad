@@ -142,6 +142,11 @@ console.log('\nG9 — UI wiring (source)');
   ok('delete confirm warns account + GitHub repo',
     /SurfCAD account/.test(readFileSync(join(root, 'src/components/ProfilePanel.jsx'), 'utf8'))
     && /GitHub repo/.test(readFileSync(join(root, 'src/components/ProfilePanel.jsx'), 'utf8')));
+  ok('signed-in profile menu shows Mongo user id + copy',
+    /ProfileUserIdRow/.test(readFileSync(join(root, 'src/components/ProfilePanel.jsx'), 'utf8'))
+    && /data-profile-user-id/.test(readFileSync(join(root, 'src/components/ProfileUserIdRow.jsx'), 'utf8'))
+    && /data-profile-user-id-copy/.test(readFileSync(join(root, 'src/components/ProfileUserIdRow.jsx'), 'utf8'))
+    && /Copy user id/.test(readFileSync(join(root, 'src/components/ProfileUserIdRow.jsx'), 'utf8')));
   ok('DELETE /api/auth/account wired',
     /router\.delete\('\/account'/.test(readFileSync(join(root, 'backend/routes/auth.js'), 'utf8'))
     && /deleteResolvedGithubVault/.test(readFileSync(join(root, 'backend/routes/auth.js'), 'utf8')));

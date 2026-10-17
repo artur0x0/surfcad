@@ -64,6 +64,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import Toolbar from './Toolbar';
 import PuzzleUnlock from './PuzzleUnlock';
 import { BrandHeaderMark } from './brand/BrandWordmark';
+import AboutModal from './AboutModal';
 import ProfileChip from './ProfileChip';
 import CrossSectionPanel from './CrossSectionPanel';
 import HelperInsertPalette from './HelperInsertPalette';
@@ -1309,6 +1310,7 @@ const Viewport = forwardRef(({
   const [featureEditBanner, setFeatureEditBanner] = useState('');
   const [featureDeleteToast, setFeatureDeleteToast] = useState(null);
   const [featureDeleteConfirm, setFeatureDeleteConfirm] = useState(null);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const cadBodyStickyRef = useRef(false);
   const showCadBodyHighlightRef = useRef(() => false);
   const agentClearSelectionRef = useRef(() => {});
@@ -14029,8 +14031,21 @@ const Viewport = forwardRef(({
           data-viewer-header-row=""
         >
           {brandHeader ? (
-            <div className="relative z-10 inline-flex shrink-0 items-center self-center" data-brand-header-host="">
-              <BrandHeaderMark />
+            <div
+              className="relative z-10 inline-flex shrink-0 items-center self-center pointer-events-auto"
+              data-brand-header-host=""
+            >
+              <button
+                type="button"
+                data-brand-about-trigger=""
+                aria-label="About SurfCAD"
+                className="inline-flex shrink-0 items-center rounded-md p-0.5
+                  text-chrome-text hover:bg-white/10 focus-visible:outline focus-visible:outline-2
+                  focus-visible:outline-offset-2 focus-visible:outline-cyan-400/80"
+                onClick={() => setAboutOpen(true)}
+              >
+                <BrandHeaderMark />
+              </button>
             </div>
           ) : null}
           {showCadTitle ? (
@@ -15313,6 +15328,8 @@ const Viewport = forwardRef(({
           onDismiss={exitMeasureMode}
         />
       )}
+
+      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
       
       <canvas ref={canvasRef} className="absolute inset-0 z-0 h-full w-full" />
     </div>

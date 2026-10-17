@@ -8,6 +8,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import AgentBridgePairing from './AgentBridgePairing';
 import PrivacyChoicesController from './PrivacyChoicesController';
+import ProfileUserIdRow from './ProfileUserIdRow';
 
 function displayName(user) {
   if (!user) return '';
@@ -153,6 +154,7 @@ export default function ProfilePanel({
                 {name}
               </p>
             ) : null}
+            <ProfileUserIdRow user={user} signedIn={signedIn} reauth={reauth} />
             {email ? (
               <p className="truncate text-xs text-chrome-secondary" data-profile-panel-email="" title={email}>
                 {email}
@@ -225,6 +227,7 @@ export default function ProfilePanel({
                 {name}
               </p>
             ) : null}
+            <ProfileUserIdRow user={user} signedIn={signedIn} reauth={reauth} />
             {email ? (
               <p className="truncate text-xs text-chrome-secondary" data-profile-panel-email="" title={email}>
                 {email}

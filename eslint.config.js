@@ -18,6 +18,8 @@ const clean = (ns) =>
 const browserGlobals = {
   ...clean(globals.browser),
   ...clean(globals.builtin),
+  __SURFCAD_COMMIT__: 'readonly',
+  __SURFCAD_BUILD_TIME__: 'readonly',
   CompressionStream: 'readonly',
   DecompressionStream: 'readonly',
   // globals.browser marks these false (readonly) in some forks; Hermes/analysis
@@ -190,7 +192,7 @@ export default [
 
   // Golden paint shots run in a real browser (Vite serves these modules).
   {
-    files: ['scripts/golden/sheet_material_shot.js', 'scripts/golden/face_paint_shot.js', 'scripts/golden/face_skin_shot.js', 'scripts/golden/clear_cache_shot.js', 'scripts/golden/feature_edit_shot.js', 'scripts/golden/feature_edit_delete_shot.js', 'scripts/golden/feature_skip_midchain_shot.js', 'scripts/golden/rollback_bar_shot.js', 'scripts/golden/rollback_hit_shot.js', 'scripts/golden/rollback_insert_shot.js', 'scripts/golden/rollback_accept_shot.js', 'scripts/golden/rollback_sync_shot.js', 'scripts/golden/rollback_badge_shot.js', 'scripts/golden/rollback_select_shot.js', 'scripts/golden/script_return_shot.js', 'scripts/golden/part_hide_thumbnail_shot.js', 'scripts/golden/part_dirty_shot.js', 'scripts/golden/part_thumb_cache_shot.js', 'scripts/golden/playtest_toast_shot.js', 'scripts/golden/feature_card_gap_shot.js', 'scripts/golden/display_number_shot.js', 'scripts/golden/part_delete_dialog_shot.js', 'scripts/golden/polygon_sides_shot.js', 'scripts/golden/contour_shape_drag_shot.js'],
+    files: ['scripts/golden/sheet_material_shot.js', 'scripts/golden/face_paint_shot.js', 'scripts/golden/face_skin_shot.js', 'scripts/golden/clear_cache_shot.js', 'scripts/golden/feature_edit_shot.js', 'scripts/golden/feature_edit_delete_shot.js', 'scripts/golden/feature_skip_midchain_shot.js', 'scripts/golden/rollback_bar_shot.js', 'scripts/golden/rollback_hit_shot.js', 'scripts/golden/rollback_insert_shot.js', 'scripts/golden/rollback_accept_shot.js', 'scripts/golden/rollback_sync_shot.js', 'scripts/golden/rollback_badge_shot.js', 'scripts/golden/rollback_select_shot.js', 'scripts/golden/script_return_shot.js', 'scripts/golden/part_hide_thumbnail_shot.js', 'scripts/golden/part_dirty_shot.js', 'scripts/golden/part_thumb_cache_shot.js', 'scripts/golden/playtest_toast_shot.js', 'scripts/golden/feature_card_gap_shot.js', 'scripts/golden/display_number_shot.js', 'scripts/golden/part_delete_dialog_shot.js', 'scripts/golden/polygon_sides_shot.js', 'scripts/golden/contour_shape_drag_shot.js', 'scripts/golden/profile_user_id_shot.js', 'scripts/golden/about_modal_shot.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
@@ -212,6 +214,15 @@ export default [
 
   {
     files: ['test/agent-bridge-playtest-build.test.mjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...nodeGlobals, ...browserGlobals },
+    },
+  },
+
+  {
+    files: ['scripts/golden/shoot_profile_user_id_artifacts.mjs'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
