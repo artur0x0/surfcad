@@ -1,6 +1,6 @@
 import { WebSocket } from 'ws';
-import { connectPeer } from '../../../src/agent/ws/nodeClient.js';
-import { PAIR_MSG } from '../../../src/agent/ws/relayHub.js';
+import { connectPeer } from './nodeClient.mjs';
+import { PAIR_MSG } from './relayMessages.mjs';
 
 const DEFAULT_WS_URL = 'ws://127.0.0.1:17341';
 
