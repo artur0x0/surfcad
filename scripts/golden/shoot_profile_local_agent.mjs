@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global document, localStorage */
+/* global document */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
