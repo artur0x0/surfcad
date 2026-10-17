@@ -2,9 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Mesh, BufferGeometry, BufferAttribute } from 'three';
 import {
+  applyTrimmedMeshToTarget,
   collectCrossSectionTargets,
+  countCapTriangles,
   crossSectionPlaneKey,
+  getTrimCacheEntry,
   isAssemblyCrossSectionScope,
+  remainingVolumeOf,
+  setTrimCacheEntry,
+  sourceMeshData,
   worldPlaneToLocalTrim,
 } from './crossSectionView.js';
 import { buildSolidGeometry, createSolidCache } from './partSolidCache.js';
@@ -48,9 +54,6 @@ test('assembly scope follows lock or parked assembly meshes', () => {
 test('collectCrossSectionTargets: part editor clips only the active mesh', () => {
   const meshData = boxMeshData();
   const { mesh, cache } = makeHost(meshData);
-  const extraData = boxMeshData();
-  const { mesh: extra, cache: extraCache } = makeHost(extraData);
-  for (const [k, v] of extraCache.entries) cache.entries.set(k, v);
 
   const resultRef = { current: mesh };
   const assemblyExtrasRef = { current: new Map() };
@@ -94,6 +97,44 @@ test('worldPlaneToLocalTrim is identity for an unposed mesh', () => {
   assert.ok(Math.abs(out.originOffset - 5) < 1e-4);
 });
 
+test('collectCrossSectionTargets keeps the uncut source after a trim apply', () => {
+  const meshData = boxMeshData();
+  const { mesh, cache } = makeHost(meshData);
+  const trimmed = {
+    numProp: 3,
+    vertProperties: meshData.vertProperties.slice(0, 18),
+    triVerts: meshData.triVerts.slice(0, 6),
+  };
+  const { geometry: trimmedGeom } = buildSolidGeometry(trimmed);
+  cache.entries.set(trimmed, { geometry: trimmedGeom, faceIDs: null });
+  applyTrimmedMeshToTarget({ mesh, meshData, partId: 'p1' }, trimmed, cache, {
+    normal: [0, 0, 1],
+    originOffset: 5,
+  });
+  assert.equal(sourceMeshData(mesh, cache), meshData);
+  const targets = collectCrossSectionTargets({
+    assemblyRunLockRef: { current: false },
+    resultRef: { current: mesh },
+    assemblyExtrasRef: { current: new Map() },
+    solidCache: cache,
+    activePartIdRef: { current: 'p1' },
+  });
+  assert.equal(targets.length, 1);
+  assert.equal(targets[0].meshData, meshData);
+});
+
+test('trim cache is keyed by source mesh data', () => {
+  const a = boxMeshData();
+  const b = boxMeshData();
+  const cache = new Map();
+  const plane = '0,0,1:0';
+  setTrimCacheEntry(cache, a, plane, { from: 'a' });
+  setTrimCacheEntry(cache, b, plane, { from: 'b' });
+  assert.equal(getTrimCacheEntry(cache, a, plane).from, 'a');
+  assert.equal(getTrimCacheEntry(cache, b, plane).from, 'b');
+  assert.equal(getTrimCacheEntry(cache, a, '1,0,0:0'), null);
+});
+
 test('crossSectionPlaneKey normalizes direction', () => {
   const a = crossSectionPlaneKey([0, 0, 2], 1);
   const b = crossSectionPlaneKey([0, 0, 1], 1);
@@ -125,6 +166,9 @@ test('Manifold trimByPlane seals the cut with cap triangles', async () => {
     }
   }
   assert.ok(onPlane >= 1, 'expected at least one cap triangle on the cut plane');
+  const meshData = { numProp: np, vertProperties: verts, triVerts: mesh.triVerts };
+  assert.equal(countCapTriangles(meshData, [0, 0, 1], 5), onPlane);
+  assert.ok(remainingVolumeOf({ ...meshData, volume: trimmed.volume() }) > 0);
   cube.delete();
   trimmed.delete();
 });

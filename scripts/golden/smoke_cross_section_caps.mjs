@@ -176,20 +176,55 @@ await page.waitForTimeout(3000);
 
 writeFileSync(join(SHOT_DIR, 'cross-section-before.png'), await page.screenshot({ type: 'png' }));
 
+function volNear(actual, expected, frac = 0.25) {
+  if (!Number.isFinite(actual) || !Number.isFinite(expected) || expected === 0) return false;
+  return Math.abs(actual - expected) / Math.abs(expected) <= frac;
+}
+
+const CUBE_HALF = (24 * 24 * 24) / 2;
+const TWO_HALF = CUBE_HALF * 2;
+
 await agentCall(page, 'cross_section_toggle', { enabled: true });
 await agentCall(page, 'cross_section_expand', { open: true });
-const plane = await agentCall(page, 'cross_section_plane', { plane: 'XZ' });
-check('plane read-back XZ + Y normal', plane.ok === true
-  && plane.result?.plane === 'XZ'
-  && Math.abs((plane.result?.normal?.[1] ?? 0) - 1) < 0.01,
-  JSON.stringify(plane.result));
-await page.waitForTimeout(1500);
+const planeA = await agentCall(page, 'cross_section_plane', { plane: 'XZ' });
+check('plane A read-back XZ + Y normal', planeA.ok === true
+  && planeA.result?.plane === 'XZ'
+  && Math.abs((planeA.result?.normal?.[1] ?? 0) - 1) < 0.01
+  && (planeA.result?.appliedGen ?? 0) > 0,
+  JSON.stringify(planeA.result));
 
 let state = await agentCall(page, 'cross_section_state');
 check('assembly scope on', state.result?.assemblyScope === true, JSON.stringify(state.result));
-check('assembly lists two targets', (state.result?.targetPartIds?.length ?? 0) >= 2,
+check('A two targets', (state.result?.targetPartIds?.length ?? 0) >= 2,
   JSON.stringify(state.result?.targetPartIds));
-check('both parts trimmed with caps', (state.result?.trimmedPartIds?.length ?? 0) >= 2,
+check('A remaining volume ~ two half-cubes', volNear(state.result?.remainingVolume, TWO_HALF),
+  JSON.stringify({ remainingVolume: state.result?.remainingVolume, expect: TWO_HALF }));
+check('A cap count', (state.result?.capCount ?? 0) >= 4,
+  JSON.stringify({ capCount: state.result?.capCount, parts: state.result?.parts }));
+const volA = state.result?.remainingVolume;
+
+const planeB = await agentCall(page, 'cross_section_plane', { plane: 'XY' });
+check('plane B read-back XY + Z normal', planeB.ok === true
+  && planeB.result?.plane === 'XY'
+  && Math.abs((planeB.result?.normal?.[2] ?? 0) - 1) < 0.01,
+  JSON.stringify(planeB.result));
+state = await agentCall(page, 'cross_section_state');
+check('B remaining volume still ~ half (not a double-trim quarter)',
+  volNear(state.result?.remainingVolume, volA) && volNear(state.result?.remainingVolume, TWO_HALF),
+  JSON.stringify({ remainingVolume: state.result?.remainingVolume, volA, expect: TWO_HALF }));
+check('B cap count', (state.result?.capCount ?? 0) >= 4,
+  JSON.stringify({ capCount: state.result?.capCount, parts: state.result?.parts }));
+
+const planeC = await agentCall(page, 'cross_section_plane', { plane: 'XZ' });
+check('plane C different orientation back to XZ', planeC.ok === true && planeC.result?.plane === 'XZ',
+  JSON.stringify(planeC.result));
+state = await agentCall(page, 'cross_section_state');
+check('C remaining volume still ~ half',
+  volNear(state.result?.remainingVolume, volA) && volNear(state.result?.remainingVolume, TWO_HALF),
+  JSON.stringify({ remainingVolume: state.result?.remainingVolume, volA }));
+check('C cap count', (state.result?.capCount ?? 0) >= 4,
+  JSON.stringify({ capCount: state.result?.capCount, parts: state.result?.parts }));
+check('both parts still trimmed', (state.result?.trimmedPartIds?.length ?? 0) >= 2,
   JSON.stringify(state.result?.trimmedPartIds));
 
 writeFileSync(join(SHOT_DIR, 'cross-section-after-assembly.png'), await page.screenshot({ type: 'png' }));
@@ -236,6 +271,10 @@ check('part editor clips one target', state.result?.targetPartIds?.length === 1,
   JSON.stringify(state.result?.targetPartIds));
 check('only active part trimmed', state.result?.trimmedPartIds?.length === 1,
   JSON.stringify(state.result?.trimmedPartIds));
+check('solo remaining volume ~ half-cube', volNear(state.result?.remainingVolume, CUBE_HALF),
+  JSON.stringify({ remainingVolume: state.result?.remainingVolume, expect: CUBE_HALF }));
+check('solo cap count', (state.result?.capCount ?? 0) >= 2,
+  JSON.stringify({ capCount: state.result?.capCount, parts: state.result?.parts }));
 
 writeFileSync(join(SHOT_DIR, 'cross-section-after-single.png'), await page.screenshot({ type: 'png' }));
 

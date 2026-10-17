@@ -10322,6 +10322,7 @@ self.onmessage = async (event) => {
           solid = reconstructManifold(mesh);
           trimmed = solid.trimByPlane(normal, originOffset);
           const meshData = serializeResult(trimmed);
+          if (typeof trimmed.volume === 'function') meshData.volume = trimmed.volume();
           self.postMessage({ type: 'result', id, payload: { mesh: meshData } });
         } finally {
           _safeDeleteManifold(trimmed);

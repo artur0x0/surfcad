@@ -1,16 +1,24 @@
 import { PLANE_PRESETS } from '../utils/crossSection.js';
+import { crossSectionPlaneKey } from '../utils/crossSectionView.js';
 
 const PRESET_IDS = Object.freeze(Object.keys(PLANE_PRESETS));
 const SETTLE_MS = 400;
+const APPLY_MS = 2500;
 const POLL_MS = 40;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function normalsMatch(a, b) {
+  if (!a || !b) return false;
+  return crossSectionPlaneKey(a, 0) === crossSectionPlaneKey(b, 0);
+}
+
 export function createXsectionAgentHandlers(deps) {
   const sleepMs = deps.sleep ?? sleep;
   const settleMs = deps.settleMs ?? SETTLE_MS;
+  const applyMs = deps.applyMs ?? APPLY_MS;
   const pollMs = deps.pollMs ?? POLL_MS;
 
   function requirePanel() {
@@ -33,17 +41,37 @@ export function createXsectionAgentHandlers(deps) {
     return !!deps.enabledRef?.current;
   }
 
+  function readLiveState() {
+    const panel = deps.panelRef?.current;
+    const state = panel?.readAgentState?.();
+    if (!state) return null;
+    const diag = deps.getDiagnostics?.() || {};
+    const applied = deps.getAppliedPlane?.() ?? diag.appliedPlane ?? null;
+    const appliedGen = deps.getAppliedGen?.() ?? diag.appliedGen ?? applied?.gen ?? 0;
+    const merged = { ...state, ...diag, appliedPlane: applied, appliedGen };
+    if (applied?.normal) {
+      merged.normal = [...applied.normal];
+      merged.originOffset = applied.originOffset;
+      merged.offset = applied.originOffset;
+    }
+    return merged;
+  }
+
   async function waitForState(match, { timeoutMs = settleMs } = {}) {
     const attempts = Math.ceil(timeoutMs / pollMs);
     for (let i = 0; i < attempts; i += 1) {
-      const panel = deps.panelRef?.current;
-      const state = panel?.readAgentState?.();
-      if (state && match(state)) return state;
+      const state = readLiveState();
+      if (state && match(state)) {
+        deps.panelRef?.current?.clearAgentSnap?.();
+        return readLiveState() || state;
+      }
       await sleepMs(pollMs);
     }
-    const panel = deps.panelRef?.current;
-    const state = panel?.readAgentState?.();
-    if (state && match(state)) return state;
+    const state = readLiveState();
+    if (state && match(state)) {
+      deps.panelRef?.current?.clearAgentSnap?.();
+      return readLiveState() || state;
+    }
     return null;
   }
 
@@ -57,8 +85,9 @@ export function createXsectionAgentHandlers(deps) {
       const was = isEnabled();
       const target = typeof enabled === 'boolean' ? enabled : !was;
       if (target === was) {
-        return { result: panel.readAgentState() };
+        return { result: readLiveState() || panel.readAgentState() };
       }
+      const genBefore = deps.getAppliedGen?.() ?? 0;
       panel.agentSetEnabled(target);
       if (target) {
         deps.enabledRef.current = true;
@@ -67,7 +96,12 @@ export function createXsectionAgentHandlers(deps) {
       }
       const wantOptionsOpen = target;
       const state = await waitForState(
-        (row) => row.enabled === target && row.optionsOpen === wantOptionsOpen,
+        (row) => {
+          if (row.enabled !== target || row.optionsOpen !== wantOptionsOpen) return false;
+          if (!target) return true;
+          return (row.appliedGen ?? 0) > genBefore && !!row.appliedPlane;
+        },
+        { timeoutMs: target ? applyMs : settleMs },
       );
       if (!state) {
         return { error: { code: 'internal', message: 'Cross-section toggle did not settle' } };
@@ -112,9 +146,16 @@ export function createXsectionAgentHandlers(deps) {
       if (!isEnabled()) {
         return { error: { code: 'no_cross_section', message: 'Enable cross-section first' } };
       }
+      const wantNormal = PLANE_PRESETS[preset].normal;
+      const genBefore = deps.getAppliedGen?.() ?? 0;
       panel.agentSetPreset(preset);
       const state = await waitForState(
-        (row) => row.preset === preset && row.plane === preset,
+        (row) => {
+          if (row.plane !== preset && row.preset !== preset) return false;
+          if ((row.appliedGen ?? 0) <= genBefore) return false;
+          return normalsMatch(row.appliedPlane?.normal || row.normal, wantNormal);
+        },
+        { timeoutMs: applyMs },
       );
       if (!state) {
         return { error: { code: 'internal', message: 'Cross-section plane did not settle' } };
@@ -122,7 +163,7 @@ export function createXsectionAgentHandlers(deps) {
       return { result: state };
     },
 
-    crossSectionOffset({ offset } = {}) {
+    async crossSectionOffset({ offset } = {}) {
       const panelGate = requirePanel();
       if (panelGate.error) return panelGate;
       const { panel } = panelGate;
@@ -133,20 +174,29 @@ export function createXsectionAgentHandlers(deps) {
       if (!isEnabled()) {
         return { error: { code: 'no_cross_section', message: 'Enable cross-section first' } };
       }
-      const state = panel.readAgentState();
-      const clamped = Math.min(state.offsetMax, Math.max(state.offsetMin, value));
+      const snapshot = readLiveState() || panel.readAgentState();
+      const clamped = Math.min(snapshot.offsetMax, Math.max(snapshot.offsetMin, value));
+      const genBefore = deps.getAppliedGen?.() ?? 0;
       panel.agentSetOffset(clamped);
-      return { result: { ...panel.readAgentState(), offset: clamped } };
+      const state = await waitForState(
+        (row) => {
+          if ((row.appliedGen ?? 0) <= genBefore) return false;
+          const appliedOff = row.appliedPlane?.originOffset ?? row.originOffset ?? row.offset;
+          return Math.abs(appliedOff - clamped) < 1e-4
+            || Math.abs((row.offset ?? appliedOff) - clamped) < 1e-4;
+        },
+        { timeoutMs: applyMs },
+      );
+      if (!state) {
+        return { error: { code: 'internal', message: 'Cross-section offset did not settle' } };
+      }
+      return { result: state };
     },
 
     crossSectionState() {
       const panelGate = requirePanel();
       if (panelGate.error) return panelGate;
-      const { panel } = panelGate;
-      const state = panel.readAgentState();
-      const diag = deps.getDiagnostics?.();
-      if (!diag) return { result: state };
-      return { result: { ...state, ...diag } };
+      return { result: readLiveState() || panelGate.panel.readAgentState() };
     },
   };
 }

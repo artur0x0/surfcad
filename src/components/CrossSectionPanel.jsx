@@ -63,14 +63,31 @@ const CrossSectionPanel = forwardRef(({
     agentSnapRef.current = { ...(agentSnapRef.current || {}), ...patch };
   };
 
+  const normalsClose = (a, b) => {
+    if (!a || !b || a.length !== 3 || b.length !== 3) return false;
+    return Math.abs(a[0] - b[0]) < 1e-6
+      && Math.abs(a[1] - b[1]) < 1e-6
+      && Math.abs(a[2] - b[2]) < 1e-6;
+  };
+
+  const liveMatchesSnap = (snap) => {
+    if (!snap) return true;
+    const optionsOpen = !!enabled && !isCollapsed;
+    const liveNormal = isCustom ? customNormal : PLANE_PRESETS[planeType].normal;
+    const enabledOk = snap.enabled == null || snap.enabled === !!enabled;
+    const optionsOk = snap.optionsOpen == null || snap.optionsOpen === optionsOpen;
+    const planeOk = snap.preset == null || snap.isCustom || snap.preset === planeType;
+    const customOk = snap.isCustom == null || snap.isCustom === isCustom;
+    const offsetOk = snap.offset == null || snap.offset === offset;
+    const normalOk = snap.normal == null || normalsClose(snap.normal, liveNormal);
+    return enabledOk && optionsOk && planeOk && customOk && offsetOk && normalOk;
+  };
+
   useEffect(() => {
     const snap = agentSnapRef.current;
     if (!snap) return;
-    const optionsOpen = !!enabled && !isCollapsed;
-    const enabledOk = snap.enabled == null || snap.enabled === !!enabled;
-    const optionsOk = snap.optionsOpen == null || snap.optionsOpen === optionsOpen;
-    if (enabledOk && optionsOk) agentSnapRef.current = null;
-  }, [enabled, isCollapsed]);
+    if (liveMatchesSnap(snap)) agentSnapRef.current = null;
+  }, [enabled, isCollapsed, planeType, isCustom, customNormal, offset]);
 
   useEffect(() => {
     if (bounds) {
@@ -83,6 +100,11 @@ const CrossSectionPanel = forwardRef(({
       if (!placedBounds.current) {
         placedBounds.current = true;
         setOffset(range.center);
+        patchAgentSnap({
+          offset: range.center,
+          originOffset: range.center,
+          normal: [...normal],
+        });
 
         // Also notify parent of the centered position
         onPlaneChange?.({
@@ -93,6 +115,11 @@ const CrossSectionPanel = forwardRef(({
       } else if (offset < range.min || offset > range.max) {
         // If offset is out of new range, re-center
         setOffset(range.center);
+        patchAgentSnap({
+          offset: range.center,
+          originOffset: range.center,
+          normal: [...normal],
+        });
 
         onPlaneChange?.({
           normal,
@@ -180,6 +207,14 @@ const CrossSectionPanel = forwardRef(({
     setIsCustom(hasNonZero);
     
     if (hasNonZero) {
+      patchAgentSnap({
+        isCustom: true,
+        preset: null,
+        plane: 'custom',
+        normal: [...newNormal],
+        offset,
+        originOffset: offset,
+      });
       onPlaneChange?.({
         normal: newNormal,
         originOffset: offset,
@@ -296,13 +331,18 @@ const handleButtonClick = () => {
     handleOffsetChange(clamped);
   }, [handleOffsetChange, offsetRange, isCustom, customNormal, planeType]);
 
+  const clearAgentSnap = useCallback(() => {
+    agentSnapRef.current = null;
+  }, []);
+
   useImperativeHandle(ref, () => ({
     readAgentState,
     agentSetEnabled,
     agentSetOptionsOpen,
     agentSetPreset,
     agentSetOffset,
-  }), [readAgentState, agentSetEnabled, agentSetOptionsOpen, agentSetPreset, agentSetOffset]);
+    clearAgentSnap,
+  }), [readAgentState, agentSetEnabled, agentSetOptionsOpen, agentSetPreset, agentSetOffset, clearAgentSnap]);
 
   if (isCollapsed || !enabled) {
     return (
