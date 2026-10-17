@@ -31,11 +31,13 @@ test('three create_part-style local ids then save produce valid .surf.json', () 
   }
   const { doc: repaired, moved } = ensureAssemblyVaultPaths(doc, scripts);
   assert.equal(moved.length, 3);
+  assert.deepEqual(repaired.parts.map((part) => part.id), localIds);
   const raw = JSON.parse(stringifySurfJson(repaired));
   const check = validateSurfJson(raw);
   assert.equal(check.ok, true, check.errors?.join('; '));
   assert.equal(raw.parts.length, 3);
   for (const row of raw.parts) {
+    assert.ok(row.path.startsWith('assemblies/Kettle/'));
     assert.ok(row.path.endsWith('.js'));
   }
 });

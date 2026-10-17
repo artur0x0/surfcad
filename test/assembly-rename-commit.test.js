@@ -125,8 +125,12 @@ describe('assembly rename commit', () => {
     const nextText = (await gh.readFile(vault.repo, assemblyFilePath('Transmission'), 'main')).content;
     const parsed = parseSurfJson(nextText);
     assert.equal(parsed.name, 'Transmission');
-    assert.equal(parsed.parts.find((part) => part.surfId === ID_COPY).id, assemblyPartPath('Transmission', 'Shim'));
-    assert.equal(parsed.parts.find((part) => part.surfId === ID_A).id, bracket);
+    const shimRow = parsed.parts.find((part) => part.surfId === ID_COPY || part.id === ID_COPY);
+    const bracketRow = parsed.parts.find((part) => part.surfId === ID_A || part.id === ID_A);
+    assert.equal(shimRow.id, ID_COPY);
+    assert.equal(shimRow.path, assemblyPartPath('Transmission', 'Shim'));
+    assert.equal(bracketRow.id, ID_A);
+    assert.equal(bracketRow.path, bracket);
     assert.equal(await gh.readFile(vault.repo, assemblyFilePath('Gearbox'), 'main'), null);
     assert.equal(readSurfId((await gh.readFile(vault.repo, assemblyPartPath('Transmission', 'Shim'), 'main')).content), ID_COPY);
     const finished = baselineAfterAssemblyRename(staged.baseline, staged.doc, staged.scripts, {

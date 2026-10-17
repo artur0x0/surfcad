@@ -48,7 +48,7 @@ Optional: `SURFCAD_AGENT_BRIDGE_WS_URL` (default `ws://127.0.0.1:17341`; preview
 
 - **Faces** — `list_faces` rows: `id` (`f0`, `f1`, …, one per face a viewport click selects, same on a rerun of the same script), `type`, `center` / `normal` / `axis` / `radius`, `area`, and `key` `{ at, n, area, src?, ord? }` (same as viewport fingerprints). `joint_pick` takes `{ part_id, face_id }`; key-based tools take `key`.
 - **Edges** — prefer grouped **`e0`**, **`e1`**, … from `list_feature_edges`; raw mesh edges are not stable. Grouped `eN` expands to the UI edge chain.
-- **Parts** — assembly part ids from `parts` / `set_active_part`. In a git assembly, `create_part` rows have no vault path until `git_save`, which paths every such part and commits them with the `.surf.json` in one commit; ids change to the vault paths, so re-read `parts` after a save or a `rename_part`.
+- **Parts** — assembly part ids from `parts` / `set_active_part`. The id is a stable UUID for the part's life. In a git assembly, `create_part` rows have no vault path until `git_save`, which writes `assemblies/<Assembly>/<Name>.js` and stores that path beside the same id. `rename_part` moves the file and keeps the id.
 - **Sketch** — in-contour entities `p0`, `e0`, `a0`, …; saved contour block id is `@contour id=c1` on the script, not sketch prefixes.
 
 Full shapes: `docs/agent-export.md`.

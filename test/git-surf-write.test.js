@@ -76,7 +76,8 @@ test('delete with a path-less sibling promotes and writes the sibling blob', asy
   assert.equal(prepared.status, 'ready');
   assert.deepEqual(original.parts.map((p) => p.id), [BRACKET, STRAY], 'input doc is unchanged');
   assert.equal(prepared.doc.parts.length, 1);
-  assert.equal(prepared.doc.parts[0].id, LID);
+  assert.equal(prepared.doc.parts[0].id, STRAY);
+  assert.equal(prepared.doc.parts[0].path, LID);
   const raw = surfFromFiles(prepared.files);
   assert.equal(raw.parts[0].path, LID);
   assert.ok(prepared.files.some((file) => file.path === LID && file.content === '// lid\n'));
@@ -245,13 +246,14 @@ test('rename commit files include promoted sibling blobs from extraFiles', () =>
 
 test('parseSurfJson accepts a promoted delete write', async () => {
   const { gh, vault } = await seededVault();
-  const { doc, scripts } = fixture();
+  const { doc, scripts, strayId } = fixture();
   const prepared = await prepareAssemblySurfWrite(gh, vault.repo, {
     doc: removePart(doc, BRACKET),
     scripts: { [STRAY]: scripts[STRAY] },
   });
   const reopened = parseSurfJson(prepared.assemblyText);
-  assert.deepEqual(reopened.parts.map((p) => p.id), [LID]);
+  assert.deepEqual(reopened.parts.map((p) => p.path), [LID]);
+  assert.equal(reopened.parts[0].id, strayId);
 });
 
 test('planAssemblyRename promotes a path-less sibling before writing .surf.json', async () => {
@@ -268,8 +270,8 @@ test('planAssemblyRename promotes a path-less sibling before writing .surf.json'
   });
   assert.deepEqual(doc.parts.map((part) => part.id), before, 'input doc is unchanged');
   const potLid = assemblyPartPath('Pot', 'Lid');
-  assert.ok(plan.doc.parts.some((part) => part.id === potLid));
-  assert.equal(plan.doc.parts.some((part) => part.id === STRAY), false);
+  assert.ok(plan.doc.parts.some((part) => part.path === potLid || part.id === potLid));
+  assert.ok(plan.doc.parts.some((part) => part.id === STRAY || part.id === BRACKET));
   const raw = parseSurfJson(plan.assemblyText);
   assert.ok(raw.parts.some((part) => part.id === potLid || part.path === potLid));
   assert.ok(
@@ -298,7 +300,7 @@ test('checkInMineToBranch promotes a path-less sibling and does not create a bra
   assert.equal(res.status, 'branched');
   assert.deepEqual(doc.parts.map((part) => part.id), beforeIds, 'working copy is unchanged');
   const written = parseSurfJson((await gh.readFile(vault.repo, assemblyFilePath(ASM), res.branch)).content);
-  assert.ok(written.parts.some((part) => part.id === LID));
+  assert.ok(written.parts.some((part) => part.path === LID || part.id === LID));
   assert.equal((await gh.readFile(vault.repo, LID, res.branch)).content, '// lid\n');
   assert.equal(await gh.readFile(vault.repo, assemblyFilePath(ASM), 'main'), null);
 
@@ -336,11 +338,11 @@ test('commitOpenAssemblyText promotes a path-less sibling and leaves the input d
     { adapter: gh, repo: vault.repo, scripts, branch: 'main' },
   );
   assert.deepEqual(doc.parts.map((part) => part.id), before, 'input doc is unchanged');
-  assert.ok(out.doc.parts.some((part) => part.id === LID));
+  assert.ok(out.doc.parts.some((part) => part.path === LID || part.id === LID));
   const asm = out.files.find((file) => file.path === asmPath && !file.delete);
   assert.ok(asm);
   const raw = parseSurfJson(asm.content);
-  assert.ok(raw.parts.some((part) => part.id === LID));
+  assert.ok(raw.parts.some((part) => part.path === LID || part.id === LID));
   assert.ok(out.files.some((file) => file.path === LID && file.content === '// lid\n'));
 });
 
@@ -363,7 +365,7 @@ test('deletePartFromRepo promotes a path-less sibling before the assembly write'
   assert.equal(removed.status, 'committed', removed.error);
   assert.deepEqual(doc.parts.map((part) => part.id), before, 'input doc is unchanged');
   const raw = parseSurfJson((await gh.readFile(vault.repo, assemblyFilePath(ASM), 'main')).content);
-  assert.ok(raw.parts.some((part) => part.id === LID));
+  assert.ok(raw.parts.some((part) => part.path === LID || part.id === LID));
   assert.equal((await gh.readFile(vault.repo, LID, 'main')).content, '// lid\n');
   assert.equal(await gh.readFile(vault.repo, BRACKET, 'main'), null);
 });

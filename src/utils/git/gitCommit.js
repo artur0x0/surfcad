@@ -27,6 +27,14 @@ import {
   planRenameVaultPartPath,
 } from './partVaultPath.js';
 import {
+  findAssemblyPart,
+  partKeepsStableId,
+  partRepoPath,
+  partRowVaultPathOk,
+  partScriptText,
+  occupancyPathsFromParts,
+} from './partIdentity.js';
+import {
   ASSEMBLIES_DIR,
   assemblyFilePath,
   assemblyPartPath,
@@ -120,7 +128,10 @@ export async function prepareAssemblySurfWrite(adapter, repo, {
   const assemblyText = stringifySurfJson(workDoc);
   const assemblyPath = assemblyFilePath(vaultSegment(workDoc.name) || workDoc.name);
   const files = [
-    ...moved.map((move) => fileWrite(move.to, workScripts[move.to] ?? '')),
+    ...moved.map((move) => fileWrite(
+      move.to,
+      workScripts[move.id] ?? workScripts[move.from] ?? workScripts[move.to] ?? '',
+    )),
     ...(extraFiles || []),
     fileWrite(assemblyPath, assemblyText),
   ];
@@ -162,8 +173,10 @@ export async function prepareVaultPartRename(adapter, repo, {
       code: err?.code || VAULT_TREE_UNAVAILABLE,
     };
   }
-  const to = planRenameVaultPartPath(from, nextName, [
-    ...(doc.parts || []).map((row) => row.id),
+  const fromPart = findAssemblyPart(doc, from);
+  const fromPath = partRepoPath(fromPart) || from;
+  const to = planRenameVaultPartPath(fromPath, nextName, [
+    ...occupancyPathsFromParts(doc.parts),
     ...remotePaths,
   ]);
   if (!to) {
@@ -184,7 +197,8 @@ export async function prepareVaultPartRename(adapter, repo, {
     const leaf = to.split('/').pop()?.replace(/\.js$/i, '') || nextName;
     return {
       status: 'ready',
-      from,
+      from: fromPath,
+      fromId: fromPart?.id || from,
       to,
       name: leaf,
       ...prepared,
@@ -257,19 +271,26 @@ export function remapAssemblyPaths(doc, scripts, oldName, newName) {
   const nextScripts = {};
   const nextParts = [];
   for (const part of doc?.parts || []) {
-    const info = parseVaultPath(part.id);
-    let nextId = part.id;
+    const path = partRepoPath(part) || part.id;
+    const info = parseVaultPath(path);
+    let nextPath = path;
     if (info?.kind === 'assembly-part' && info.assembly === oldSeg && oldSeg !== newSeg) {
-      nextId = assemblyPartPath(newSeg, info.part);
-      if (nextId !== part.id) moved.push({ from: part.id, to: nextId });
+      nextPath = assemblyPartPath(newSeg, info.part);
+      if (nextPath !== path) moved.push({ from: path, to: nextPath, id: part.id });
     }
-    nextParts.push({ ...part, id: nextId });
-    const text = scripts?.[part.id];
-    nextScripts[nextId] = typeof text === 'string' ? text : (scripts?.[nextId] ?? '');
+    if (partKeepsStableId(part)) {
+      nextParts.push({ ...part, path: nextPath });
+      const text = partScriptText(part, scripts);
+      nextScripts[part.id] = typeof text === 'string' ? text : (scripts?.[nextPath] ?? '');
+    } else {
+      nextParts.push({ ...part, id: nextPath, path: nextPath });
+      const text = scripts?.[part.id];
+      nextScripts[nextPath] = typeof text === 'string' ? text : (scripts?.[nextPath] ?? '');
+    }
   }
   let activeId = doc?.activeId;
-  const hit = moved.find((m) => m.from === activeId);
-  if (hit) activeId = hit.to;
+  const hit = moved.find((m) => m.from === activeId || m.id === activeId);
+  if (hit && !partKeepsStableId({ id: activeId })) activeId = hit.to;
   return {
     doc: { ...doc, parts: nextParts, activeId },
     scripts: nextScripts,
@@ -302,12 +323,12 @@ export function buildCommitFiles(doc, scripts, baseline, opts = {}) {
 
   let workDoc = { ...doc, source: 'git' };
   let workScripts = eff;
-  let moved = [];
+  let moved = [...(opts.moved || [])];
   if (renaming) {
     const remapped = remapAssemblyPaths(doc, eff, oldName, newName);
     workDoc = { ...remapped.doc, source: 'git' };
     workScripts = remapped.scripts;
-    moved = remapped.moved;
+    moved = [...moved, ...remapped.moved];
   }
 
   const inDocOrig = new Set((doc.parts || []).map((p) => p.id));
@@ -316,23 +337,25 @@ export function buildCommitFiles(doc, scripts, baseline, opts = {}) {
   const writes = new Map(); // path -> content
   const deletes = new Set();
 
-  for (const { from, to } of moved) {
-    writes.set(to, workScripts[to] ?? '');
-    deletes.add(from);
+  for (const { from, to, id } of moved) {
+    const part = (workDoc.parts || []).find((row) => row.id === id || row.id === from);
+    writes.set(to, partScriptText(part, workScripts) ?? workScripts[from] ?? workScripts[to] ?? '');
+    if (from && from !== to && partRowVaultPathOk(from)) deletes.add(from);
   }
 
   const partPaths = [];
   for (const id of [...dirty].sort()) {
     if (!inDocOrig.has(id)) continue; // removed from doc — do not delete from git
-    const dest = movedFrom.get(id) || id;
-    writes.set(dest, workScripts[dest] ?? eff[id] ?? '');
+    const part = (workDoc.parts || []).find((row) => row.id === id);
+    const dest = partRepoPath(part) || movedFrom.get(id) || id;
+    writes.set(dest, partScriptText(part, workScripts) ?? workScripts[dest] ?? eff[id] ?? '');
     partPaths.push(dest);
   }
 
   if (opts.assets) {
     const fromOf = new Map(moved.map((m) => [m.to, m.from]));
     for (const part of workDoc.parts || []) {
-      const dest = part.id;
+      const dest = partRepoPath(part) || part.id;
       const from = fromOf.get(dest) || dest;
       attachPartAsset(writes, deletes, partPaths, opts.assets, baseline, from, dest);
     }
@@ -365,14 +388,15 @@ export function buildCommitFiles(doc, scripts, baseline, opts = {}) {
 
   for (const part of workDoc.parts || []) {
     if (!part?.surfId || !isSurfId(part.surfId)) continue;
-    const dest = movedFrom.get(part.id) || part.id;
+    const dest = partRepoPath(part) || movedFrom.get(part.id) || part.id;
     const info = parseVaultPath(dest);
     if (!info || (info.kind !== 'assembly-part' && info.kind !== 'shared-part')) continue;
-    const text = writes.has(dest) ? writes.get(dest) : (workScripts[dest] ?? workScripts[part.id]);
+    const text = writes.has(dest) ? writes.get(dest) : (partScriptText(part, workScripts) ?? workScripts[dest] ?? workScripts[part.id]);
     if (typeof text !== 'string' || readSurfId(text) === part.surfId) continue;
     const stamped = withSurfId(text, part.surfId);
     writes.set(dest, stamped);
-    workScripts[dest] = stamped;
+    workScripts[part.id] = stamped;
+    if (dest !== part.id) workScripts[dest] = stamped;
   }
 
   for (const path of [...deletes]) {
@@ -531,16 +555,19 @@ export async function commitPartToRepo(adapter, repo, {
   const promoted = ensureAssemblyVaultPaths(workDoc, workScripts, { remotePaths });
   workDoc = { ...promoted.doc, source: 'git' };
   workScripts = promoted.scripts;
-  const destId = promoted.moved.find((move) => move.from === id)?.to || id;
-  const siblings = promoted.moved.filter((move) => move.from !== id);
+  const destPath = promoted.moved.find((move) => move.from === id || move.id === id)?.to
+    || partRepoPath((workDoc.parts || []).find((p) => p.id === id))
+    || id;
+  const siblings = promoted.moved.filter((move) => move.from !== id && move.id !== id);
   if ((workDoc.parts || []).some(partRowNeedsVaultPath)) {
     return { status: 'error', error: PATH_LESS_PARTS_MESSAGE, code: PATH_LESS_PARTS };
   }
 
-  let content = workScripts[destId];
+  const destRow = (workDoc.parts || []).find((p) => p.id === id);
+  let content = partScriptText(destRow, workScripts);
   if (typeof content !== 'string') {
     content = '';
-    workScripts = { ...workScripts, [destId]: content };
+    workScripts = { ...workScripts, [id]: content };
   }
 
   const assemblyPath = assemblyFilePath(asmName);
@@ -552,21 +579,24 @@ export async function commitPartToRepo(adapter, repo, {
     written.add(path);
     files.push(fileWrite(path, text));
   };
-  addWrite(destId, content);
-  for (const move of siblings) addWrite(move.to, workScripts[move.to] ?? '');
+  addWrite(destPath, content);
+  for (const move of siblings) {
+    const sibling = (workDoc.parts || []).find((p) => p.id === move.id || p.id === move.from);
+    addWrite(move.to, partScriptText(sibling, workScripts) ?? workScripts[move.from] ?? workScripts[move.to] ?? '');
+  }
   addWrite(assemblyPath, assemblyText);
   // Skip no-op when baseline already has identical content.
   if (
     base.scripts
-    && Object.prototype.hasOwnProperty.call(base.scripts, destId)
-    && base.scripts[destId] === content
+    && Object.prototype.hasOwnProperty.call(base.scripts, id)
+    && base.scripts[id] === content
     && base.assemblyText === assemblyText
   ) {
-    return { status: 'clean', partId: destId, doc: workDoc, scripts: workScripts };
+    return { status: 'clean', partId: id, path: destPath, doc: workDoc, scripts: workScripts };
   }
 
   const msg = String(message || '').trim()
-    || `Add ${vaultSegment(row.name) || destId.split('/').pop() || 'part'}`;
+    || `Add ${vaultSegment(row.name) || destPath.split('/').pop() || 'part'}`;
 
   let expectedBase = base.headSha || null;
   if (!expectedBase) {
@@ -574,7 +604,7 @@ export async function commitPartToRepo(adapter, repo, {
     expectedBase = tip?.sha || null;
   }
 
-  const pushContent = workScripts[destId] ?? content;
+  const pushContent = partScriptText(destRow, workScripts) ?? content;
   try {
     const res = await adapter.commitFiles(repo, {
       branch,
@@ -582,16 +612,15 @@ export async function commitPartToRepo(adapter, repo, {
       files,
       baseSha: expectedBase,
     });
-    // The commit wrote destId, every newly pathed sibling, and the assembly.
-    const saved = { [destId]: pushContent };
-    for (const move of siblings) saved[move.to] = workScripts[move.to] ?? '';
+    const saved = { [id]: pushContent };
+    for (const move of siblings) {
+      const sibling = (workDoc.parts || []).find((p) => p.id === move.id || p.id === move.from);
+      saved[move.id || move.from] = partScriptText(sibling, workScripts) ?? workScripts[move.from] ?? '';
+    }
     const next = baselineAfterPartSave(base, {
       doc: workDoc,
       saved,
-      removed: [
-        ...(id !== destId ? [id] : []),
-        ...siblings.map((move) => move.from),
-      ],
+      removed: [],
       assemblyPath,
       assemblyName: asmName,
       assets: base.assets,
@@ -602,8 +631,9 @@ export async function commitPartToRepo(adapter, repo, {
       status: 'committed',
       sha: res.sha,
       branch,
-      partId: destId,
-      fromId: id !== destId ? id : null,
+      partId: id,
+      path: destPath,
+      fromId: null,
       siblings,
       files: files.map((f) => f.path),
       baseline: next,
@@ -622,8 +652,9 @@ export async function commitPartToRepo(adapter, repo, {
         message: msg,
         doc: workDoc,
         scripts: workScripts,
-        partId: destId,
-        fromId: id !== destId ? id : null,
+        partId: id,
+        path: destPath,
+        fromId: null,
         siblings,
       };
     }
@@ -959,13 +990,12 @@ export async function assembleCommitFiles(adapter, repo, {
   }
   const workScripts = effectiveScripts(promoted.scripts, { liveId, liveScript });
   const built = buildCommitFiles(workDoc, workScripts, baseline, {
-    liveId: promoted.moved.some((m) => m.from === liveId)
-      ? (promoted.moved.find((m) => m.from === liveId)?.to || liveId)
-      : liveId,
+    liveId,
     liveScript,
     assets,
+    moved: promoted.moved,
   });
-  const mergedMoved = [...(promoted.moved || []), ...(built.moved || [])];
+  const mergedMoved = built.moved || [];
   const workDocOut = built.doc || workDoc;
   // Rename move: delete any leftover blobs under the old assemblies/<old>/ tree
   // (Spare.js etc.) so the old folder does not linger after the move.
@@ -994,7 +1024,7 @@ export async function assembleCommitFiles(adapter, repo, {
       if (!path || scheduled.has(path)) continue;
       // Never delete the current assembly metadata or current part paths.
       if (path === built.assemblyPath) continue;
-      if ((workDocOut.parts || []).some((part) => part.id === path)) continue;
+      if ((workDocOut.parts || []).some((part) => partRepoPath(part) === path || part.id === path)) continue;
       built.files.push(fileDelete(path));
       scheduled.add(path);
     }
@@ -1006,6 +1036,12 @@ export async function assembleCommitFiles(adapter, repo, {
   }
   if (!built.files.length) return { status: 'clean' };
   const msg = String(message || '').trim() || `Update ${vaultSegment(workDocOut.name) || 'assembly'}`;
+  const destToId = new Map(
+    (workDocOut.parts || []).map((part) => [partRepoPath(part) || part.id, part.id]),
+  );
+  const partIds = [...new Set(
+    (built.partPaths || []).map((path) => destToId.get(path) || path),
+  )];
   return {
     status: 'ready',
     files: built.files,
@@ -1016,7 +1052,7 @@ export async function assembleCommitFiles(adapter, repo, {
     assemblyPath: built.assemblyPath,
     renamed: built.renamed,
     moved: mergedMoved,
-    partIds: built.partPaths || [],
+    partIds,
   };
 }
 
@@ -1109,6 +1145,13 @@ export function applyOverwriteFiles(doc, scripts, files) {
       nextScripts[path] = file.content;
       changed = true;
     }
+  }
+  for (const part of nextDoc?.parts || []) {
+    const dest = partRepoPath(part);
+    if (!dest || !Object.prototype.hasOwnProperty.call(nextScripts, dest)) continue;
+    if (nextScripts[part.id] === nextScripts[dest]) continue;
+    nextScripts[part.id] = nextScripts[dest];
+    changed = true;
   }
   return { doc: nextDoc, scripts: nextScripts, changed };
 }

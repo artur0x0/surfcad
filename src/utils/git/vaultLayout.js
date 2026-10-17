@@ -267,16 +267,22 @@ export function migrateDocToCurrentLayout(doc, scripts = {}) {
   const nextScripts = {};
   const nextParts = [];
   for (const part of doc?.parts || []) {
-    const from = part.id;
+    const from = (typeof part.path === 'string' && part.path) ? part.path : part.id;
     const to = canonicalPartPath(name, from) || from;
-    if (to !== from) moved.push({ from, to });
-    nextParts.push({ ...part, id: to });
-    const text = scripts?.[from];
-    nextScripts[to] = typeof text === 'string' ? text : (scripts?.[to] ?? '');
+    if (to !== from) moved.push({ from, to, id: part.id });
+    if (part.path || (part.id && part.id !== from)) {
+      nextParts.push({ ...part, path: to });
+      const text = scripts?.[part.id] ?? scripts?.[from];
+      nextScripts[part.id] = typeof text === 'string' ? text : (scripts?.[to] ?? '');
+    } else {
+      nextParts.push({ ...part, id: to, path: to });
+      const text = scripts?.[from];
+      nextScripts[to] = typeof text === 'string' ? text : (scripts?.[to] ?? '');
+    }
   }
   let activeId = doc?.activeId;
   const hit = moved.find((m) => m.from === activeId);
-  if (hit) activeId = hit.to;
+  if (hit) activeId = nextParts.find((part) => part.path === hit.to)?.id || hit.to;
   return {
     doc: { ...doc, parts: nextParts, activeId },
     scripts: nextScripts,

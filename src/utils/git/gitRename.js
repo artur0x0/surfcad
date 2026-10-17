@@ -7,6 +7,7 @@ import { isBinaryContent, toUint8Array } from './binaryContent.js';
 import { fileDelete, fileWrite } from './githubAdapterInterface.js';
 import { assemblyDir, assemblyFilePath, assemblyPartPath, assetPathForScript, isAssemblyFile, parseVaultPath, sharedPartPath, vaultSegment } from './vaultLayout.js';
 import { isSurfId, isSurfJsonPath, readSurfId, withSurfId } from './surfId.js';
+import { findAssemblyPart, partKeepsStableId, partRepoPath, partScriptText } from './partIdentity.js';
 
 /**
  * New repo path for a renamed part. The file stays in its current folder
@@ -225,12 +226,23 @@ export function projectFiles(entries, files) {
  */
 export function applyPartPathChange(doc, scripts, from, to, name) {
   const nextScripts = { ...(scripts || {}) };
+  const hit = findAssemblyPart(doc, from);
+  if (hit && partKeepsStableId(hit)) {
+    const text = partScriptText(hit, nextScripts);
+    if (typeof text === 'string') nextScripts[hit.id] = text;
+    const oldPath = partRepoPath(hit);
+    if (oldPath && oldPath !== hit.id) delete nextScripts[oldPath];
+    const parts = (doc?.parts || []).map((part) => (
+      part.id === hit.id ? { ...part, path: to, name: name || part.name } : part
+    ));
+    return { doc: { ...doc, parts, activeId: doc?.activeId }, scripts: nextScripts };
+  }
   if (from !== to) {
     nextScripts[to] = nextScripts[from] ?? nextScripts[to] ?? '';
     delete nextScripts[from];
   }
   const parts = (doc?.parts || []).map((part) => (
-    part.id === from ? { ...part, id: to, name: name || part.name } : part
+    part.id === from ? { ...part, id: to, path: to, name: name || part.name } : part
   ));
   const activeId = doc?.activeId === from ? to : doc?.activeId;
   return { doc: { ...doc, parts, activeId }, scripts: nextScripts };

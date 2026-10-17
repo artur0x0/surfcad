@@ -63,8 +63,9 @@ console.log('git save stray — Save local:B while local:C is also stray');
     partId: 'local:B',
   });
   eq('status committed', out.status, 'committed');
-  eq('clicked lands in the assembly folder', out.partId, BODY);
-  eq('sibling promoted', out.siblings, [{ from: 'local:C', to: LID }]);
+  eq('clicked keeps its id', out.partId, 'local:B');
+  eq('clicked lands in the assembly folder', out.path, BODY);
+  eq('sibling promoted', out.siblings, [{ from: 'local:C', to: LID, id: 'local:C' }]);
   const tree = (await gh.listTree(vault.repo, 'main')).map((e) => e.path);
   ok('tree has B.js', tree.includes(BODY));
   ok('tree has C.js (not orphaned)', tree.includes(LID));
@@ -77,7 +78,8 @@ console.log('git save stray — Save local:B while local:C is also stray');
     ok(`.surf.json ${row.path} has a blob`, !!file);
   }
   eq('C.js content', (await gh.readFile(vault.repo, LID, 'main')).content, strayScripts['local:C']);
-  ok('working copy adopted both ids', out.doc.parts.every((p) => p.id === BODY || p.id === LID));
+  ok('working copy kept stable ids', out.doc.parts.every((p) => p.id === 'local:B' || p.id === 'local:C'));
+  ok('working copy adopted both paths', out.doc.parts.every((p) => p.path === BODY || p.path === LID));
 }
 
 console.log('\ngit save stray — toSurfJson refuses leftover invalid ids');
@@ -282,15 +284,18 @@ console.log('\ngit save stray — UI wiring');
   ok('commitPartToRepo promotes every stray via ensureAssemblyVaultPaths',
     /commitPartToRepo[\s\S]*?ensureAssemblyVaultPaths\(workDoc/.test(commit)
     && !/sharedPathForMove/.test(commit));
-  ok('reopen matches committed ids',
-    parseSurfJson(JSON.stringify({
-      format: 'surfcad.assembly', version: 1, name: ASM,
-      activeId: BODY,
-      parts: [
-        { path: BODY, name: 'B', visible: true, order: 0 },
-        { path: LID, name: 'C', visible: true, order: 1 },
-      ],
-    })).parts.map((p) => p.id).join(',') === `${BODY},${LID}`);
+  const reopened = parseSurfJson(JSON.stringify({
+    format: 'surfcad.assembly', version: 1, name: ASM,
+    activeId: BODY,
+    parts: [
+      { path: BODY, name: 'B', visible: true, order: 0 },
+      { path: LID, name: 'C', visible: true, order: 1 },
+    ],
+  }));
+  ok('reopen keeps committed paths',
+    reopened.parts.map((p) => p.path).join(',') === `${BODY},${LID}`);
+  ok('path-keyed rows mint a stable id in memory',
+    reopened.parts.every((p) => p.id && p.id !== p.path));
 }
 
 console.log(failed ? `\n❌ FAIL (${failed} failed, ${passed} passed)` : `\n✅ PASS (${passed})`);

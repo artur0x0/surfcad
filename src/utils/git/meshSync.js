@@ -17,6 +17,7 @@ import {
   parseVaultPath,
   vaultSegment,
 } from './vaultLayout.js';
+import { partKeepsStableId, partRepoPath, partScriptText } from './partIdentity.js';
 
 /** Git Save may commit meshes only when the vault is writable. */
 export function meshVaultSaveAllowed({
@@ -43,7 +44,9 @@ function isSharedMesh(meshPath) {
 export function placeLocalMeshParts(doc, scripts, { occupied = [] } = {}) {
   const taken = new Set((occupied || []).filter((path) => typeof path === 'string'));
   for (const part of doc?.parts || []) {
-    if (part?.id) taken.add(part.id);
+    const existing = partRepoPath(part);
+    if (existing) taken.add(existing);
+    else if (part?.id) taken.add(part.id);
   }
   const asm = vaultSegment(doc?.name) || 'Assembly';
   const moved = [];
@@ -51,11 +54,12 @@ export function placeLocalMeshParts(doc, scripts, { occupied = [] } = {}) {
   const nextScripts = { ...(scripts || {}) };
   let activeId = doc?.activeId;
   for (const part of doc?.parts || []) {
-    const info = parseVaultPath(part.id);
+    const path = partRepoPath(part);
+    const info = parseVaultPath(path || part.id);
     const inVault = info?.kind === 'assembly-part' || info?.kind === 'shared-part';
-    const text = nextScripts[part.id] ?? '';
+    const text = partScriptText(part, nextScripts) ?? '';
     if (inVault || !meshAssetNames(text).length) {
-      parts.push(part);
+      parts.push(path && !part.path ? { ...part, path } : part);
       continue;
     }
     const base = vaultSegment(part.name) || 'Part';
@@ -81,11 +85,17 @@ export function placeLocalMeshParts(doc, scripts, { occupied = [] } = {}) {
       err.code = 'no_mesh_path';
       throw err;
     }
-    delete nextScripts[part.id];
-    nextScripts[dest] = text;
-    if (activeId === part.id) activeId = dest;
-    moved.push({ from: part.id, to: dest, name: leaf });
-    parts.push({ ...part, id: dest, name: leaf });
+    if (partKeepsStableId(part)) {
+      nextScripts[part.id] = text;
+      moved.push({ from: part.id, to: dest, name: leaf, id: part.id });
+      parts.push({ ...part, path: dest, name: leaf });
+    } else {
+      delete nextScripts[part.id];
+      nextScripts[dest] = text;
+      if (activeId === part.id) activeId = dest;
+      moved.push({ from: part.id, to: dest, name: leaf });
+      parts.push({ ...part, id: dest, path: dest, name: leaf });
+    }
   }
   return {
     doc: { ...(doc || {}), parts, activeId },
@@ -143,12 +153,12 @@ export async function collectMeshCommitAssets({
   const warnings = [];
   const skipped = [];
   for (const part of doc?.parts || []) {
-    const text = scripts?.[part.id] ?? '';
+    const text = partScriptText(part, scripts) ?? '';
     const names = meshAssetNames(text);
     if (!names.length) continue;
-    const meshPath = assetPathForScript(part.id);
+    const meshPath = assetPathForScript(partRepoPath(part) || part.id);
     if (!meshPath) continue;
-    const record = records?.[part.id];
+    const record = records?.[part.id] || records?.[partRepoPath(part)];
     if (record?.meshSynced === true) continue;
     const leaf = meshPath.split('/').pop();
     const found = shaForName(record, names, leaf);
@@ -212,10 +222,10 @@ export function partMeshRecordsFromBaseline(doc, scripts, baselineAssets) {
   const out = {};
   const shas = baselineAssets || {};
   for (const part of doc?.parts || []) {
-    const meshPath = assetPathForScript(part.id);
+    const meshPath = assetPathForScript(partRepoPath(part) || part.id);
     const sha = meshPath ? shas[meshPath] : null;
     if (!sha) continue;
-    const names = meshAssetNames(scripts?.[part.id] || '');
+    const names = meshAssetNames(partScriptText(part, scripts) ?? '');
     if (!names.length) continue;
     const leaf = meshPath.split('/').pop();
     const name = names.includes(leaf) ? leaf : names[0];

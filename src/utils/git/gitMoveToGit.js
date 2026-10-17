@@ -9,11 +9,10 @@
  * switch to Git mode with no dirty badges.
  *
  *   assemblies/<asm>/.surf.json             nameless assembly metadata
- *   parts/<part>.js                         every new part
+ *   assemblies/<asm>/<part>.js              every new part
  *
- * Row ids that are already a repo path keep it when the layout allows it
- * for this assembly (its own folder or `parts/`); anything else
- * (`local:<uuid>`, another assembly's path) goes to `parts/<Name>.js`.
+ * Row ids stay. A path that already fits this assembly's folder is kept;
+ * anything else lands at `assemblies/<asm>/<Name>.js`.
  * Name collisions get ` (2)`, ` (3)`… (case-insensitive, so the vault also
  * works on case-insensitive checkouts). An existing assembly-folder path
  * stays (a copy, or a part the layout migration has not moved yet).
@@ -28,11 +27,12 @@ import { assertGithubAdapter, fileWrite } from './githubAdapterInterface.js';
 import { captureBaseline } from './gitWorkspace.js';
 import { effectiveScripts } from './gitCommit.js';
 import { stringifySurfJson } from './surfJson.js';
+import { isStablePartId, partRepoPath } from './partIdentity.js';
 import { DEFAULT_VAULT_NAME, findOrCreateVault, sanitizeVaultName } from './vault.js';
 import {
   assemblyFilePath,
+  assemblyPartPath,
   parseVaultPath,
-  sharedPartPath,
   vaultSegment,
 } from './vaultLayout.js';
 
@@ -83,37 +83,36 @@ export function planMoveToGit(doc, scripts, {
   };
 
   const parts = clean.parts.map((row) => {
-    const repoPath = normalizeRepoPath(row.id);
-    const info = repoPath && repoPath === row.id ? parseVaultPath(repoPath) : null;
+    const existing = partRepoPath(row) || normalizeRepoPath(row.id);
+    const info = existing ? parseVaultPath(existing) : null;
     let to = null;
-    // Keep a path that already fits: parts/, or this assembly's own folder
-    // (a copy). Anything else is a new part and lands in parts/.
-    if (info?.kind === 'shared-part' && !taken.has(repoPath.toLowerCase())) to = repoPath;
-    if (!to && info?.kind === 'assembly-part' && info.assembly === assemblyName
-      && !wantShared.has(row.id) && !taken.has(repoPath.toLowerCase())) to = repoPath;
+    if (info?.kind === 'assembly-part' && info.assembly === assemblyName
+      && !wantShared.has(row.id) && !taken.has(existing.toLowerCase())) to = existing;
+    if (info?.kind === 'shared-part' && !taken.has(existing.toLowerCase())) to = existing;
     if (to) taken.add(to.toLowerCase());
     else {
       const base = partBaseFor(row);
-      to = claim((b) => sharedPartPath(b), base);
+      to = claim((b) => assemblyPartPath(assemblyName, b), base);
     }
     const destShared = parseVaultPath(to)?.kind === 'shared-part';
     idMap.push({ from: row.id, to, shared: destShared });
+    const keepId = isStablePartId(row.id) || !existing || existing !== row.id;
+    const nextId = keepId ? row.id : to;
     const text = eff[row.id];
     if (typeof text === 'string') {
-      nextScripts[to] = text;
+      nextScripts[nextId] = text;
       files.push(fileWrite(to, text));
     } else {
       missing.push(to);
     }
-    return { ...row, id: to };
+    return { ...row, id: nextId, path: to, surfId: row.surfId || (isStablePartId(nextId) ? nextId : undefined) };
   });
 
-  const byFrom = new Map(idMap.map((m) => [m.from, m.to]));
   const nextDoc = serializeAssembly({
     ...clean,
     source: 'git',
     name: assemblyName,
-    activeId: byFrom.get(clean.activeId) || parts[0]?.id || null,
+    activeId: parts.find((part) => part.id === clean.activeId)?.id || parts[0]?.id || null,
     parts,
   });
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
