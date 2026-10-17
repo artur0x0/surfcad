@@ -67,11 +67,11 @@ export const PATCH_FLAT_AREA_FRAC_OF_MAX = 0.15;
  */
 export const PATCH_FLAT_CONTINUATION_DEG = 3;
 /**
- * Locked coplanar groups that read as one tessellated wall: at least this
- * many, of one source, each pair within PATCH_FACET_AREA_RATIO of the other's
- * area, meeting at one step (spread within max(PATCH_FACET_STEP_TOL_DEG, 10%))
- * above PATCH_FLAT_CONTINUATION_DEG and at most the smooth gate. A 64-segment
- * pin steps 5.6°; a box edge is 90°.
+ * Closed prism loop: at least this many locked same-source groups, each with
+ * exactly two run-neighbors, congruent within PATCH_FACET_AREA_RATIO, meeting
+ * at one step that matches that source's facetDeg (or 360°/N). The loop must
+ * fit a cylinder. A 64-segment pin is a loop at 5.6°; an open zigzag or fold
+ * is a polyline and stays locked.
  */
 export const PATCH_FACET_RUN_MIN = 3;
 export const PATCH_FACET_AREA_RATIO = 0.8;
@@ -225,6 +225,167 @@ function triangleBodyIds(indices, numTri) {
     ids[t] = id;
   }
   return ids;
+}
+
+/**
+ * Cylinder fit for one closed facet loop. Same gates as a joint axis fit:
+ * radial normals, radius variance under 25% of the mean.
+ */
+function closedLoopFitsCylinder(positions, indices, tris) {
+  if (!tris || tris.length < 4) return false;
+  const normals = [];
+  for (let i = 0; i < tris.length; i++) {
+    const t = tris[i];
+    const i0 = indices[t * 3] * 3;
+    const i1 = indices[t * 3 + 1] * 3;
+    const i2 = indices[t * 3 + 2] * 3;
+    const ax = positions[i1] - positions[i0];
+    const ay = positions[i1 + 1] - positions[i0 + 1];
+    const az = positions[i1 + 2] - positions[i0 + 2];
+    const bx = positions[i2] - positions[i0];
+    const by = positions[i2 + 1] - positions[i0 + 1];
+    const bz = positions[i2 + 2] - positions[i0 + 2];
+    const n = [ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx];
+    if (len(n) > 1e-18) normals.push(norm(n));
+  }
+  if (normals.length < 4) return false;
+  let axis = [0, 0, 0];
+  const stepN = Math.max(1, Math.floor(normals.length / 3));
+  for (let i = 0; i < normals.length; i++) {
+    let c = cross(normals[i], normals[(i + stepN) % normals.length]);
+    if (dot(c, axis) < 0) c = [-c[0], -c[1], -c[2]];
+    axis = [axis[0] + c[0], axis[1] + c[1], axis[2] + c[2]];
+  }
+  const axisLen = len(axis);
+  if (!(axisLen > 1e-12)) return false;
+  axis = [axis[0] / axisLen, axis[1] / axisLen, axis[2] / axisLen];
+  let align = 0;
+  for (const n of normals) align += Math.abs(dot(n, axis));
+  if (align / normals.length > 0.35) return false;
+  const seen = new Set();
+  const points = [];
+  for (const t of tris) {
+    for (let k = 0; k < 3; k++) {
+      const vi = indices[t * 3 + k];
+      if (seen.has(vi)) continue;
+      seen.add(vi);
+      points.push([positions[vi * 3], positions[vi * 3 + 1], positions[vi * 3 + 2]]);
+    }
+  }
+  if (points.length < 6) return false;
+  const origin = [0, 0, 0];
+  for (const p of points) {
+    origin[0] += p[0];
+    origin[1] += p[1];
+    origin[2] += p[2];
+  }
+  origin[0] /= points.length;
+  origin[1] /= points.length;
+  origin[2] /= points.length;
+  const radii = [];
+  let radius = 0;
+  for (const p of points) {
+    const d = sub(p, origin);
+    const along = dot(d, axis);
+    const r = Math.hypot(d[0] - along * axis[0], d[1] - along * axis[1], d[2] - along * axis[2]);
+    radii.push(r);
+    radius += r;
+  }
+  radius /= radii.length;
+  if (!(radius > 1e-6)) return false;
+  let variance = 0;
+  for (const r of radii) variance += (r - radius) ** 2;
+  variance = Math.sqrt(variance / radii.length);
+  return variance <= 0.25 * radius;
+}
+
+/**
+ * Unlock only a closed prism loop. An open polyline of flats (corrugated
+ * plate, N-bend fold) stays locked. A sphere or torus grid has more than
+ * two run-neighbors per root, so it stays locked too.
+ */
+function unlockClosedPrismLoops({
+  atomCount,
+  atomAdj,
+  atomLockedFlat,
+  atomSource,
+  atomTris,
+  isOpAtom,
+  patchUF,
+  rootArea,
+  tessBySource,
+  smoothDeg,
+  positions,
+  indices,
+}) {
+  const nbs = new Map();
+  const addEdge = (a, b, step) => {
+    let row = nbs.get(a);
+    if (!row) nbs.set(a, (row = new Map()));
+    row.set(b, step);
+  };
+  for (const rec of atomAdj) {
+    if (rec.max <= PATCH_FLAT_CONTINUATION_DEG || rec.max > smoothDeg) continue;
+    if (!atomLockedFlat[rec.a] || !atomLockedFlat[rec.b]) continue;
+    if (atomSource[rec.a] !== atomSource[rec.b]) continue;
+    if (isOpAtom(rec.a) || isOpAtom(rec.b)) continue;
+    const ra = patchUF.find(rec.a);
+    const rb = patchUF.find(rec.b);
+    if (ra === rb) continue;
+    const small = Math.min(rootArea[ra], rootArea[rb]);
+    const large = Math.max(rootArea[ra], rootArea[rb]);
+    if (!(small >= large * PATCH_FACET_AREA_RATIO)) continue;
+    addEdge(ra, rb, rec.max);
+    addEdge(rb, ra, rec.max);
+  }
+  const seen = new Set();
+  const unlock = new Set();
+  for (const start of nbs.keys()) {
+    if (seen.has(start)) continue;
+    const roots = [];
+    const stack = [start];
+    seen.add(start);
+    let cyclic = true;
+    while (stack.length) {
+      const r = stack.pop();
+      roots.push(r);
+      const row = nbs.get(r);
+      if (!row || row.size !== 2) cyclic = false;
+      if (!row) continue;
+      for (const other of row.keys()) {
+        if (seen.has(other)) continue;
+        seen.add(other);
+        stack.push(other);
+      }
+    }
+    if (!cyclic || roots.length < PATCH_FACET_RUN_MIN) continue;
+    const inLoop = new Set(roots);
+    const steps = [];
+    for (const r of roots) {
+      for (const step of nbs.get(r).values()) steps.push(step);
+    }
+    const lo = Math.min(...steps);
+    const hi = Math.max(...steps);
+    if (hi - lo > Math.max(PATCH_FACET_STEP_TOL_DEG, hi * 0.1)) continue;
+    const mean = steps.reduce((sum, v) => sum + v, 0) / steps.length;
+    let source = 0;
+    const tris = [];
+    for (let a = 0; a < atomCount; a++) {
+      if (!inLoop.has(patchUF.find(a))) continue;
+      source = atomSource[a];
+      for (const t of atomTris[a]) tris.push(t);
+    }
+    const tagged = tessBySource.get(source)?.facetDeg;
+    const expected = tagged > 0 ? tagged : 360 / roots.length;
+    const tol = Math.max(PATCH_FACET_STEP_TOL_DEG, expected * 0.1);
+    if (Math.abs(mean - expected) > tol) continue;
+    if (!closedLoopFitsCylinder(positions, indices, tris)) continue;
+    for (const r of roots) unlock.add(r);
+  }
+  if (!unlock.size) return;
+  for (let a = 0; a < atomCount; a++) {
+    if (unlock.has(patchUF.find(a))) atomLockedFlat[a] = 0;
+  }
 }
 
 function makeUF(n) {
@@ -472,73 +633,24 @@ export function buildPartGraphPatches(mesh, opts = {}) {
   }
   // A tall, thin prism wall (a pin from Manifold.cylinder) has side facets
   // larger than the area gate, so each facet locked and one click picked a
-  // single facet. Those facets are congruent and meet each other at one
-  // repeated step. A run of PATCH_FACET_RUN_MIN or more such groups of one
-  // source is a tessellated curved wall, so it unlocks. A box face meets its
-  // neighbours at 90°, a flat beside a fillet meets another source, and a
-  // flat beside a smaller or larger face is not congruent with it.
-  // A run with a smooth same-source neighbour outside it (a ring of sphere
-  // facets meets the next ring) is not a prism wall and keeps its lock. A
-  // tangent fillet on the pin is another source and does not count.
+  // single facet. Unlock only a CLOSED loop of those facets: every root has
+  // two run-neighbors, the step matches that source's facetDeg (or 360°/N),
+  // and the loop fits a cylinder. An open polyline of flats stays locked.
   if (triSource) {
-    const runUF = makeUF(atomCount);
-    const stepOf = new Map();
-    for (const rec of atomAdj) {
-      if (rec.max <= PATCH_FLAT_CONTINUATION_DEG || rec.max > smoothDeg) continue;
-      if (!atomLockedFlat[rec.a] || !atomLockedFlat[rec.b]) continue;
-      if (atomSource[rec.a] !== atomSource[rec.b]) continue;
-      if (isOpAtom(rec.a) || isOpAtom(rec.b)) continue;
-      const ra = patchUF.find(rec.a);
-      const rb = patchUF.find(rec.b);
-      if (ra === rb) continue;
-      const small = Math.min(rootArea[ra], rootArea[rb]);
-      const large = Math.max(rootArea[ra], rootArea[rb]);
-      if (!(small >= large * PATCH_FACET_AREA_RATIO)) continue;
-      runUF.unite(ra, rb);
-      for (const r of [ra, rb]) {
-        let steps = stepOf.get(r);
-        if (!steps) stepOf.set(r, (steps = []));
-        steps.push(rec.max);
-      }
-    }
-    const rejected = new Set();
-    if (stepOf.size) {
-      for (const rec of atomAdj) {
-        if (rec.max <= planarDeg || rec.max > smoothDeg) continue;
-        if (atomSource[rec.a] !== atomSource[rec.b]) continue;
-        if (isOpAtom(rec.a) || isOpAtom(rec.b)) continue;
-        const ra = patchUF.find(rec.a);
-        const rb = patchUF.find(rec.b);
-        if (ra === rb) continue;
-        const runA = stepOf.has(ra) ? runUF.find(ra) : -1;
-        const runB = stepOf.has(rb) ? runUF.find(rb) : -1;
-        if (runA === runB) continue;
-        if (runA >= 0) rejected.add(runA);
-        if (runB >= 0) rejected.add(runB);
-      }
-    }
-    const runs = new Map();
-    for (const [r, steps] of stepOf) {
-      const run = runUF.find(r);
-      if (rejected.has(run)) continue;
-      let row = runs.get(run);
-      if (!row) runs.set(run, (row = { roots: [], steps: [] }));
-      row.roots.push(r);
-      row.steps.push(...steps);
-    }
-    const unlock = new Set();
-    for (const row of runs.values()) {
-      if (row.roots.length < PATCH_FACET_RUN_MIN) continue;
-      const lo = Math.min(...row.steps);
-      const hi = Math.max(...row.steps);
-      if (hi - lo > Math.max(PATCH_FACET_STEP_TOL_DEG, hi * 0.1)) continue;
-      for (const r of row.roots) unlock.add(r);
-    }
-    if (unlock.size) {
-      for (let a = 0; a < atomCount; a++) {
-        if (unlock.has(patchUF.find(a))) atomLockedFlat[a] = 0;
-      }
-    }
+    unlockClosedPrismLoops({
+      atomCount,
+      atomAdj,
+      atomLockedFlat,
+      atomSource,
+      atomTris,
+      isOpAtom,
+      patchUF,
+      rootArea,
+      tessBySource,
+      smoothDeg,
+      positions,
+      indices,
+    });
   }
   // Sharp-only islands (every neighbour dihedral > smoothDeg) used to be
   // locked flat here so a lone box faceID stayed planar. That also froze

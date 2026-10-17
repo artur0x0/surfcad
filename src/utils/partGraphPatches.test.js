@@ -42,3 +42,59 @@ test('real prism sides and box faces stay separate flats', { timeout: 60_000 }, 
   assert.equal(box.length, 6);
   assert.ok(box.every((face) => face.kind === 'planar'));
 });
+
+function ribbon(panels, panel, foldDeg, thick) {
+  return `const panels = ${panels}, panel = ${panel}, fold = ${foldDeg} * Math.PI / 180, thick = ${thick};
+const top = []; let x = 0, y = 0, sign = 1;
+for (let i = 0; i <= panels; i++) {
+  top.push([x, y]);
+  if (i < panels) { x += panel * Math.cos(sign * fold); y += panel * Math.sin(sign * fold); sign *= -1; }
+}
+const bot = top.slice().reverse().map(([px, py]) => [px, py - thick]);
+return makeExtrude([top.concat(bot)], 40);
+`;
+}
+
+function fold(panels, panel, foldDeg, thick) {
+  return `const panels = ${panels}, panel = ${panel}, fold = ${foldDeg} * Math.PI / 180, thick = ${thick};
+const top = []; let x = 0, y = 0;
+for (let i = 0; i <= panels; i++) {
+  top.push([x, y]);
+  if (i < panels) { x += panel * Math.cos(i * fold); y += panel * Math.sin(i * fold); }
+}
+const bot = top.slice().reverse().map(([px, py]) => [px, py - thick]);
+return makeExtrude([top.concat(bot)], 40);
+`;
+}
+
+test('corrugated plate keeps one planar face per panel', { timeout: 60_000 }, async () => {
+  const faces = await patchesOf(ribbon(6, 20, 4, 2));
+  assert.equal(faces.length, 16);
+  const planar = faces.filter((face) => face.kind === 'planar');
+  assert.equal(planar.length, 16);
+  assert.equal(faces.filter((face) => face.axis).length, 0);
+});
+
+test('N-bend fold keeps one planar face per panel', { timeout: 60_000 }, async () => {
+  const faces = await patchesOf(fold(3, 25, 10, 2));
+  assert.equal(faces.length, 10);
+  assert.equal(faces.filter((face) => face.kind === 'planar').length, 10);
+  assert.equal(faces.filter((face) => face.axis).length, 0);
+});
+
+test('a fine sphere does not collapse into one face', { timeout: 60_000 }, async () => {
+  const faces = await patchesOf('return Manifold.sphere(20, 32);\n');
+  assert.ok(faces.length > 8, `sphere collapsed to ${faces.length} faces`);
+});
+
+test('a torus does not collapse into one face', { timeout: 60_000 }, async () => {
+  const faces = await patchesOf(`const R = 20, r = 6, n = 24;
+const ring = [];
+for (let i = 0; i < n; i++) {
+  const a = i * 2 * Math.PI / n;
+  ring.push([R + r * Math.cos(a), r * Math.sin(a)]);
+}
+return makeRevolve([ring], 32);
+`);
+  assert.ok(faces.length > 8, `torus collapsed to ${faces.length} faces`);
+});
