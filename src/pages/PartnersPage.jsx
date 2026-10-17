@@ -10,6 +10,7 @@ import {
   runPartnerFormSubmit,
 } from '../utils/partnerTurnstileFlow.js';
 import { loadTurnstileScript, resolveTurnstileSiteKey } from '../utils/turnstile.js';
+import { track } from '../utils/analytics.js';
 
 const PAPER = '#FAFAF9';
 const INK = '#16171D';
@@ -141,6 +142,7 @@ export default function PartnersPage() {
     });
 
     if (result.ok) {
+      track('partners_form_submitted');
       setDone(true);
       form.reset();
       setPartnerType('');

@@ -6,6 +6,7 @@ import manifoldContext from './ManifoldWorker';
 import { export3MF, blobToBase64 } from './model-io';
 import { meshResolveError, resolvePartMeshes } from './meshAssets.js';
 import { meshToStl, meshTo3mfBytes, meshToStepBytes } from '../lib/surfcad/export.js';
+import { track } from './analytics.js';
 
 /**
  * Generate a 3MF blob from the current script
@@ -113,6 +114,7 @@ export async function downloadModel(currentScript, filename = 'model') {
   try {
     const blob = await generate3MFBlob(currentScript);
     saveAs(blob, `${filename}.3mf`);
+    track('export_done', { format: '3mf' });
     console.log('[Export] 3MF exported successfully');
   } catch (error) {
     console.error('[Export] Error exporting 3MF:', error);
@@ -129,6 +131,7 @@ export async function downloadModelFromMesh(meshData, filename = 'model') {
   try {
     const blob = await generate3MFBlobFromMesh(meshData);
     saveAs(blob, `${filename}.3mf`);
+    track('export_done', { format: '3mf' });
     console.log('[Export] 3MF exported successfully');
   } catch (error) {
     console.error('[Export] Error exporting 3MF:', error);
@@ -197,6 +200,7 @@ export async function meshExportBase64(meshData, format, filename = 'part') {
 export async function downloadMeshExport(meshData, format, filename = 'part') {
   const pack = await meshExportBytes(meshData, format, filename);
   saveAs(new Blob([pack.bytes]), pack.filename);
+  track('export_done', { format: pack.format });
   return {
     format: pack.format,
     filename: pack.filename,

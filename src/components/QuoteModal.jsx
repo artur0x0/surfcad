@@ -9,6 +9,7 @@ import CheckoutStepper from './CheckoutStepper';
 import QuantityStepper from './order/QuantityStepper';
 import ScsHandoff from './sheetMetal/ScsHandoff';
 import ModalFit from './ModalFit';
+import { track } from '../utils/analytics';
 
 function initialProcess(options) {
   const key = options?.process;
@@ -190,6 +191,7 @@ const QuoteModal = ({
       }
     };
 
+    track('quote_requested');
     onOrder(quoteData, modelData);
   };
 
@@ -210,6 +212,7 @@ const QuoteModal = ({
         infill,
         modelFile,
       });
+      track('quote_requested');
       const wrote = await onAddToCart({
         process: selectedProcess,
         material: selectedMaterial,

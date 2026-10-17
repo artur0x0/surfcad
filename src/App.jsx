@@ -44,6 +44,7 @@ import CartSheet from './components/CartSheet';
 import CartDrop from './components/CartDrop';
 import CheckoutPage from './components/checkout/CheckoutPage';
 import SiteFooter from './components/SiteFooter';
+import { track, trackFeatureCommits } from './utils/analytics';
 import { 
   importFile,
 } from './utils/importModel';
@@ -120,6 +121,7 @@ import {
 import { sheetMetalBinding } from './utils/scs/scsCatalog';
 import { composeSheetMetalCommit, readSheetMetalSpec, removeSheetMetalBlock, sheetMetalFresh, sheetStarterScript } from './utils/sheetMetal/sheetMetalScript';
 import {
+  editorMountSeedsHistory,
   historyForPart,
   pushPartHistory,
   redoPartHistory,
@@ -4778,10 +4780,12 @@ const App = () => {
         return { status: 'error', error: flushed.error || 'Save failed' };
       }
       if (flushed?.status === 'offline') {
+        track('git_saved');
         return { status: 'queued', branch, files: (result.files || []).map((file) => file.path) };
       }
       rememberGitBehind(null, { showToast: false, resetResolved: true });
       setGitBehindToast(null);
+      track('git_saved');
       return {
         status: 'committed',
         sha: flushed?.sha,
@@ -5351,6 +5355,7 @@ const App = () => {
     setPendingPartIds((prev) => new Set(prev).add(seedId));
     try {
       await savePartScript(seedId, starter, source === 'git' ? { isSynced: false } : {});
+      track('assembly_created');
     } catch (err) {
       setUploadError(err?.message || 'Could not create assembly');
     } finally {
@@ -5442,6 +5447,7 @@ const App = () => {
     setPendingPartIds((prev) => new Set(prev).add(id));
     try {
       await savePartScript(id, starter, doc.source === 'git' ? { isSynced: false } : {});
+      track('part_created');
       if (doc.source === 'git' && surfId) {
         const vault = gitVaultRef.current || await ensureGitVault();
         const nextDoc = assemblyRef.current;
@@ -5832,6 +5838,9 @@ const App = () => {
       ? commitScriptAtRollback(beforeFixed, nextFixed, stored)
       : { buffer: nextFixed, anchor: stored };
     const wrote = !!codeEditorRef.current?.applyBuffer?.(placed.buffer, message);
+    if (wrote) {
+      trackFeatureCommits(beforeFixed, placed.buffer);
+    }
     if (wrote && key && (stored === null || typeof stored === 'string')) {
       storeRollbackAnchor(key, placed.anchor);
     }
@@ -5861,6 +5870,10 @@ const App = () => {
       edgeContext,
       placeAtBar ? caret : undefined,
     );
+    if (ok) {
+      const afterInsert = codeEditorRef.current?.getContent?.() ?? beforeInsert;
+      trackFeatureCommits(beforeInsert, afterInsert);
+    }
     if (ok && rollbackKey) {
       if (placeAtBar) {
         const after = codeEditorRef.current?.getContent?.() ?? beforeInsert;
@@ -6796,6 +6809,26 @@ const App = () => {
     }
   };
 
+  // Read at Monaco onMount time. A render-time flag would be stale: the
+  // mobile shell can mount after set_script has already committed.
+  const handleEditorSeed = () => {
+    const id = historyKey();
+    const prev = partHistoriesRef.current[id];
+    const history = (prev && Array.isArray(prev.commits))
+      ? prev
+      : {
+        commits: historyRef.current?.branches?.main?.commits || [],
+        head: Number.isInteger(historyRef.current?.branches?.main?.head)
+          ? historyRef.current.branches.main.head
+          : -1,
+      };
+    if (editorMountSeedsHistory(history)) return true;
+    // The live script is already committed. Mark the buffer real so the draft
+    // effect can save it, without running or recording the boot script.
+    editorLiveRef.current = true;
+    return false;
+  };
+
   const handleCodeChange = (code, message = 'Code updated') => {
     if (suppressPartSaveRef.current && message === 'Manual edit') {
       suppressPartSaveRef.current = false;
@@ -6806,6 +6839,7 @@ const App = () => {
       commits: branch?.commits || [],
       head: Number.isInteger(branch?.head) ? branch.head : -1,
     };
+    if (message === 'Initial script' && !editorMountSeedsHistory(prev)) return;
     const pushed = pushPartHistory(prev, code, message);
     partHistoriesRef.current[id] = pushed;
     applyPartHistory(pushed);
@@ -7606,6 +7640,7 @@ const App = () => {
   // Cart checkout is one page. The per-line stepper stays mounted so a
   // checkout already in flight (including an OAuth return) can finish.
   onCartCheckoutRef.current = () => {
+    track('checkout_started');
     setShowCheckoutPage(true);
   };
 
@@ -9448,6 +9483,7 @@ const App = () => {
                   initialScript={appMode === 'game' ? '' : editorInitialScript}
                   onExecute={handleExecute}
                   onCodeChange={handleCodeChange}
+                  onEditorSeed={handleEditorSeed}
                   isMobile={isMobile}
                   mode={appMode}
                   onExitGame={handleExitGame}
@@ -9804,6 +9840,7 @@ const App = () => {
               initialScript=""
               onExecute={handleExecute}
               onCodeChange={handleCodeChange}
+              onEditorSeed={handleEditorSeed}
               isMobile={isMobile}
               mode={appMode}
               onExitGame={handleExitGame}
@@ -9969,6 +10006,7 @@ const App = () => {
                 initialScript={editorInitialScript}
                 onExecute={handleExecute}
                 onCodeChange={handleCodeChange}
+                onEditorSeed={handleEditorSeed}
                 isMobile={isMobile}
                 mode={appMode}
                 onExitGame={handleExitGame}
