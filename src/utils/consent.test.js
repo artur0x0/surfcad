@@ -11,7 +11,6 @@ import {
   onConsentChange,
   readStoredRecord,
   setAnalyticsConsent,
-  shouldShowCookieConsentBanner,
   isGpcActive,
 } from './consent.js';
 
@@ -37,30 +36,22 @@ describe('consent', () => {
     assert.equal(getAnalyticsConsent(), true);
     assert.equal(readStoredRecord().analytics, true);
     assert.equal(hasStoredConsentChoice(), false);
-    assert.equal(shouldShowCookieConsentBanner(), true);
   });
 
-  test('explicit choice hides the banner until cleared', () => {
+  test('explicit choice persists until cleared', () => {
     setAnalyticsConsent(false);
     assert.equal(hasStoredConsentChoice(), true);
-    assert.equal(shouldShowCookieConsentBanner(), false);
+    assert.equal(getAnalyticsConsent(), false);
     setAnalyticsConsent(true);
-    assert.equal(shouldShowCookieConsentBanner(), false);
+    assert.equal(getAnalyticsConsent(), true);
+    assert.equal(hasStoredConsentChoice(), true);
   });
 
-  test('GPC skips banner and persists only-required default', () => {
+  test('GPC persists opt-out default on first visit', () => {
     configureConsentNavigator({ globalPrivacyControl: true });
-    assert.equal(shouldShowCookieConsentBanner(), false);
     assert.equal(applyGpcDefaultOnFirstVisit(), true);
     assert.equal(hasStoredConsentChoice(), true);
     assert.equal(getAnalyticsConsent(), false);
-  });
-
-  test('cookie banner shows when there is no stored choice', () => {
-    assert.equal(hasStoredConsentChoice(), false);
-    assert.equal(shouldShowCookieConsentBanner(), true);
-    setAnalyticsConsent(true);
-    assert.equal(shouldShowCookieConsentBanner(), false);
   });
 
   test('GPC forces analytics off and blocks opt-in', () => {

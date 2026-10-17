@@ -10,7 +10,6 @@ import { globSync } from 'node:fs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 
 const SKIP = new Set([
-  'scripts/golden/shoot_cookie_consent.mjs',
   'scripts/golden/lib/wire-consent-preset-all.mjs',
   'scripts/golden/lib/presetConsentInit.mjs',
 ]);

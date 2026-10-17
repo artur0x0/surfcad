@@ -23,13 +23,16 @@ describe('Privacy choices dialog UI', () => {
     const panel = readFileSync(new URL('../src/components/PrivacyChoicesDialogPanel.jsx', import.meta.url), 'utf8');
     const footer = readFileSync(new URL('../src/components/SiteFooter.jsx', import.meta.url), 'utf8');
     const controller = readFileSync(new URL('../src/components/PrivacyChoicesController.jsx', import.meta.url), 'utf8');
+    const profile = readFileSync(new URL('../src/components/ProfilePanel.jsx', import.meta.url), 'utf8');
     const dialog = readFileSync(new URL('../src/components/PrivacyChoicesDialog.jsx', import.meta.url), 'utf8');
     assert.match(panel, /data-privacy-choices-toggle/);
     assert.match(panel, /data-privacy-choices-gpc/);
     assert.match(panel, /Allow usage analytics/);
     assert.match(footer, /data-site-footer/);
     assert.match(controller, /data-privacy-choices-link/);
-    assert.match(controller, /Cookie settings/);
+    assert.match(controller, /Privacy choices/);
+    assert.match(controller, /data-profile-privacy-choices/);
+    assert.match(profile, /variant="profileMenu"/);
     assert.match(dialog, /dataAttr="privacy-choices"/);
     assert.match(dialog, /data-privacy-choices-done/);
   });
