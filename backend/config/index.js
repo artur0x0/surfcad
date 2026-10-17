@@ -16,8 +16,25 @@ dotenv.config({ path: path.join(__dirname, '..', envFile) });
 // Also load default .env as fallback
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
+/**
+ * @param {string | undefined} raw
+ * @returns {number}
+ */
+export function parseTrustProxyHops(raw) {
+  if (raw === undefined || raw === '') return 1;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0) {
+    console.error(`Invalid TRUST_PROXY_HOPS: ${JSON.stringify(raw)} (expected a non-negative integer)`);
+    process.exit(1);
+  }
+  return n;
+}
+
+const trustProxyHops = parseTrustProxyHops(process.env.TRUST_PROXY_HOPS);
+
 const config = {
   env: process.env.NODE_ENV,
+  trustProxyHops,
   port: parseInt(process.env.PORT, 10),
   frontendUrl: process.env.FRONTEND_URL,
   backendUrl: process.env.BACKEND_URL,
