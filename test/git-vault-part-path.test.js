@@ -21,10 +21,10 @@ describe('allocateVaultPartPath', () => {
     assert.equal(path, sharedPartPath('Bracket'));
   });
 
-  test('duplicate names get (2) suffix in assembly folder', () => {
+  test('duplicate names get -2 suffix in assembly folder', () => {
     const first = assemblyPartPath('Kettle', 'Handle');
     const second = allocateVaultPartPath('Kettle', 'Handle', [first], { layout: 'assembly-folder' });
-    assert.equal(second, assemblyPartPath('Kettle', 'Handle (2)'));
+    assert.equal(second, assemblyPartPath('Kettle', 'Handle-2'));
   });
 });
 

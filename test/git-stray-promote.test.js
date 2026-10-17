@@ -40,7 +40,7 @@ describe('promoteStrayPartsToAssemblyFolder', () => {
     const { doc: next, moved } = promoteStrayPartsToAssemblyFolder(doc, { 'local-h': '// h\n' }, {
       remotePaths: [existing],
     });
-    const alt = assemblyPartPath('Kettle', 'Kettle Handle (2)');
+    const alt = assemblyPartPath('Kettle', 'Kettle Handle-2');
     assert.equal(moved[0].to, alt);
     assert.equal(next.parts[0].id, alt);
   });
