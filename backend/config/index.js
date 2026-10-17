@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { SESSION_MAX_AGE_MS } from '../../src/utils/sessionPolicy.js';
+import { parseAdminUserIds } from '../services/adminAllowlist.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -106,6 +107,7 @@ const config = {
 
   // Admin
   adminEmail: process.env.ADMIN_EMAIL,
+  adminUserIds: parseAdminUserIds(process.env.ADMIN_USER_IDS),
 
   // Storage
   workingFolder: process.env.WORKING_FOLDER,
