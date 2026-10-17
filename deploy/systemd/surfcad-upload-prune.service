@@ -1,0 +1,10 @@
+[Unit]
+Description=Prune stale SurfCAD backend upload files (24h safety net)
+After=network.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/backend
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/env node scripts/prune-uploads.js

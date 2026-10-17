@@ -45,6 +45,9 @@ package-lock.json
 
 # Linux services
 *.service
+!deploy/
+!deploy/systemd/
+!deploy/systemd/*.service
 
 # System Prompt
 systemPrompt.js

@@ -151,9 +151,6 @@ const userSchema = new mongoose.Schema({
     type: String,
     trim: true,
   },
-  dob: {
-    type: Date,
-  },
   addresses: [addressSchema],
   
   // Account status
