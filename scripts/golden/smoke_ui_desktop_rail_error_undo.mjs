@@ -51,6 +51,14 @@ console.log('ui: desktop ribbon + left rail + error Undo');
       /useLeftRailFit/.test(contour) &&
       /data-rail-fit=\{fits \? 'fits' : 'scroll'\}/.test(contour),
   );
+  const view = read('../../src/components/Viewport.jsx');
+  check(
+    '2: desktop CAD uses full-length left rail under feature strip',
+    /RAIL_FULL_LENGTH_CLASS/.test(railPair) &&
+      /leftRailPositionClasses/.test(railPair) &&
+      /desktopFullRail/.test(palette) &&
+      /desktopFullRail=\{mode !== 'game' && !isMobile\}/.test(view),
+  );
 }
 
 {

@@ -54,6 +54,7 @@ import { buildCameraState } from '../agent/state/camera';
 import { buildSelection } from '../agent/state/selection';
 import { applyTrackballFeel } from '../utils/trackballFeel';
 import { installPageZoomLock } from '../utils/pageZoomLock';
+import { readViewportContainerSize, resizeViewportRenderer } from '../utils/viewportResize';
 import { formatDisplayNumber } from '../utils/displayUnit';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
@@ -10499,12 +10500,24 @@ const Viewport = forwardRef(({
     let loopAlive = true;
     let orbitControls = null;
     
-    const getContainerSize = () => {
-      const size = {
-        width: container.clientWidth,
-        height: container.clientHeight
-      };
-      return size;
+    const getContainerSize = () => readViewportContainerSize(container);
+
+    const syncLineMaterialResolution = (width, height) => {
+      for (const root of [
+        edgeHighlightRef.current,
+        edgeHoverRef.current,
+        sheetMetalOverlayRef.current,
+        polylineDraftRef.current,
+        contourStatusRef.current,
+        xsPreviewRef.current,
+      ]) {
+        if (!root || typeof root.traverse !== 'function') continue;
+        root.traverse((child) => {
+          if (child.material?.resolution) {
+            child.material.resolution.set(width, height);
+          }
+        });
+      }
     };
 
     const initScene = () => {
@@ -10537,8 +10550,14 @@ const Viewport = forwardRef(({
         antialias: true
       });
 
-      renderer.setSize(width, height);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      resizeViewportRenderer({
+        renderer,
+        camera,
+        width,
+        height,
+        pixelRatio: Math.min(window.devicePixelRatio, 2),
+        updateStyle: false,
+      });
       renderer.setClearColor(0x1e1e1e, 1);
       rendererRef.current = renderer;
 
@@ -10922,12 +10941,17 @@ const Viewport = forwardRef(({
             return true;
           },
           stageSize: (w, h) => {
-            const r = rendererRef.current, c = cameraRef.current;
+            const r = rendererRef.current;
+            const c = cameraRef.current;
             if (!r || !c) return false;
-            r.setSize(w, h);
-            r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-            c.aspect = w / h;
-            c.updateProjectionMatrix();
+            resizeViewportRenderer({
+              renderer: r,
+              camera: c,
+              width: w,
+              height: h,
+              pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+              updateStyle: false,
+            });
             renderer.render(sceneRef.current, c);
             return true;
           },
@@ -11216,41 +11240,30 @@ const Viewport = forwardRef(({
 
     const handleResize = () => {
       if (!initialized) return;
-      
-      const { width, height } = getContainerSize();
-      
-      if (cameraRef.current) {
-        cameraRef.current.aspect = width / height;
-        cameraRef.current.updateProjectionMatrix();
-      }
-      
-      if (rendererRef.current) {
-        rendererRef.current.setSize(width, height);
 
-        // Keep LineMaterial screen-space widths correct after canvas resize.
-        for (const root of [
-          edgeHighlightRef.current,
-          edgeHoverRef.current,
-          sheetMetalOverlayRef.current,
-          polylineDraftRef.current,
-          contourStatusRef.current,
-          xsPreviewRef.current,
-        ]) {
-          if (!root || typeof root.traverse !== 'function') continue;
-          root.traverse((child) => {
-            if (child.material?.resolution) {
-              child.material.resolution.set(width, height);
-            }
-          });
-        }
-        
-        if (controlsRef.current) {
-          controlsRef.current.update();
-        }
-        
-        if (sceneRef.current && cameraRef.current) {
-          rendererRef.current.render(sceneRef.current, cameraRef.current);
-        }
+      const { width, height } = getContainerSize();
+      if (width === 0 || height === 0) return;
+
+      const renderer = rendererRef.current;
+      const camera = cameraRef.current;
+      if (!renderer || !camera) return;
+
+      resizeViewportRenderer({
+        renderer,
+        camera,
+        width,
+        height,
+        pixelRatio: Math.min(window.devicePixelRatio, 2),
+        updateStyle: false,
+      });
+      syncLineMaterialResolution(width, height);
+
+      if (controlsRef.current) {
+        controlsRef.current.update();
+      }
+
+      if (sceneRef.current) {
+        renderer.render(sceneRef.current, camera);
       }
     };
 
@@ -13968,7 +13981,7 @@ const Viewport = forwardRef(({
       )}
       {mode !== 'game' && (brandHeader || showCadTitle) && (
         <div
-          className="pointer-events-none absolute top-4 z-20 flex min-h-9 items-center left-2 right-2 lg:left-4 lg:right-4 pr-11"
+          className="pointer-events-none absolute top-4 lg:top-2 z-20 flex min-h-9 items-center left-2 right-2 lg:left-4 lg:right-4 pr-11"
           data-viewer-header-row=""
         >
           {brandHeader ? (
@@ -14047,6 +14060,7 @@ const Viewport = forwardRef(({
       {onInsertHelper && !paintMode && !feaActive && !contourMode && !filletMode && !shellMode && !draftMode && !cutMode && !booleanMode && !moveMode && !moveFaceMode && !sheetMetalPicker && !deleteFaceMode && !sheetMetalMode && (
         <HelperInsertPalette
           layout={mode === 'game' ? 'game' : 'cad'}
+          desktopFullRail={mode !== 'game' && !isMobile}
           onInsert={onInsertHelper}
           onOpen={onFeatureOpen}
           getBuffer={getHelperBuffer}
@@ -14111,6 +14125,7 @@ const Viewport = forwardRef(({
       {/* SCS sheet metal: left rail swaps like contour mode. */}
       {sheetMetalMode && !sheetMetalMode.holeSketch && mode !== 'game' && (
         <SheetMetalRail
+          desktopFullRail={!isMobile}
           onExit={() => {
             cancelFeatureEditRef.current?.('sheetMetal');
             setSheetMetalMode(null);
@@ -14267,6 +14282,7 @@ const Viewport = forwardRef(({
           Workplane writes from the card, so it has no Plane rail. */}
       {contourMode && planeCardCommit(contourMode.entry).rail && (
         <ContourModeRail
+          desktopFullRail={!isMobile}
           tool={contourMode.tool}
           gesture={contourMode.gesture || null}
           entry={contourMode.entry}
