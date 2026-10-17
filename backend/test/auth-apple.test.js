@@ -186,7 +186,7 @@ describe('regression', () => {
   test('Apple verify does not read id_token from the form-post body', () => {
     const src = readFileSync(new URL('../auth/passport.js', import.meta.url), 'utf8');
     assert.doesNotMatch(src, /req\.body\??\.(id_token|idToken)/);
-    assert.match(src, /results\.id_token from Apple's token endpoint|idToken is results\.id_token/);
+    assert.match(src, /idToken is results\.id_token from Apple's token endpoint/);
   });
 });
 

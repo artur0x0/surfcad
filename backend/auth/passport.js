@@ -112,7 +112,7 @@ export function initializePassport() {
           async (req, accessToken, refreshToken, idToken, profile, done) => {
             try {
               // idToken is results.id_token from Apple's token endpoint
-              // (passport-apple getOAuthAccessToken). Not req.body.id_token.
+              // (passport-apple getOAuthAccessToken). Not the form-post body.
               const identity = resolveAppleIdentity({
                 idToken,
                 bodyUser: req.body?.user,
