@@ -33,7 +33,8 @@ export const COMMAND_META = {
     mutates: true,
   },
   status: {
-    description: 'Status from the last finished set_script, run, or undo.',
+    description:
+      'Status for the active part: id, name, editor script, runState (not_run_yet | ok | failed), and the last run volume/bbox/bodyCount when available. Updates when the active part changes without requiring another run.',
     result: STATUS_SCHEMA,
     errors: ['internal'],
     mutates: false,
