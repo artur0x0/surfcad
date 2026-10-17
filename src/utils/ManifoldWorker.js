@@ -11,6 +11,7 @@
  *   const meshData = await manifold.execute(script);
  */
 import SandboxWorker from '../workers/sandboxWorker.js?worker'
+import { acceptWorkerResult, createResultAuth } from './scriptSandbox.js'
 import { softRestartDecision } from './manifoldWorkerLiveness.js'
 
 class ManifoldWorker {
@@ -133,8 +134,10 @@ class ManifoldWorker {
       }, timeoutMs);
       
       // Store request
+      const resultAuth = options.resultAuth ?? createResultAuth();
       this.pendingRequests.set(requestId, {
         sentAt: performance.now(),
+        resultAuth,
         resolve: (result) => {
           clearTimeout(timeoutId);
           resolve(result);
@@ -154,6 +157,7 @@ class ManifoldWorker {
           importedModels,
           memoryLimitMB,
           nonce: options.nonce ?? null,
+          resultAuth,
           ...(options.rollbackAnchor === null || typeof options.rollbackAnchor === 'string'
             ? { rollbackAnchor: options.rollbackAnchor }
             : {}),
@@ -887,6 +891,11 @@ class ManifoldWorker {
       case 'result': {
         const request = this.pendingRequests.get(id);
         if (request) {
+          if (request.resultAuth != null && !acceptWorkerResult(request.resultAuth, payload)) {
+            this.pendingRequests.delete(id);
+            request.reject(new Error('Sandboxed result rejected'));
+            break;
+          }
           this.pendingRequests.delete(id);
           if (payload && payload.timing && request.sentAt != null) {
             const roundTripMs = performance.now() - request.sentAt;
@@ -912,6 +921,11 @@ class ManifoldWorker {
       case 'error': {
         const request = this.pendingRequests.get(id);
         if (request) {
+          if (request.resultAuth != null && !acceptWorkerResult(request.resultAuth, payload)) {
+            this.pendingRequests.delete(id);
+            request.reject(new Error('Sandboxed result rejected'));
+            break;
+          }
           this.pendingRequests.delete(id);
           const error = new Error(payload.message);
           error.stack = payload.stack;

@@ -45,6 +45,11 @@ import { buildSheetMetalSolid } from '../../utils/sheetMetal/sheetSolid.js';
 import { markSheetMesh } from '../../utils/sheetMetal/sheetMeshFlag.js';
 import { installSeparateBodies, overlappingBodies } from '../../workers/separateBodies.js';
 import { solveContour as solveContourModel } from '../../utils/contourSolve.js';
+import {
+  SCRIPT_SANDBOX_SHADOWS,
+  freezeWorkerHandlers,
+  rewriteDynamicImport,
+} from '../../utils/scriptSandbox.js';
 
 /**
  * List of globals to block/remove in the worker context
@@ -9213,6 +9218,7 @@ const executeScript = (script, importedModels) => {
   // Which marked feature block is running (feature strip red border). This
   // does not depend on the engine's stack format, unlike `scriptLine`.
   const tracker = createFeatureTracker();
+  script = rewriteDynamicImport(script);
   const traced = instrumentFeatureBlocks(script);
 
   // Build the execution scope with Manifold API + helper functions
@@ -9221,6 +9227,7 @@ const executeScript = (script, importedModels) => {
     ...HELPER_FUNCTIONS,      // Extended helper functions
     window: limitedWindow,    // Limited window object for imports
     importMesh,               // return importMesh('<Part>.mesh')
+    ...SCRIPT_SANDBOX_SHADOWS,
     [FEATURE_TRACE_ENTER]: tracker.enter,
     [FEATURE_TRACE_LEAVE]: tracker.leave,
   };
@@ -9636,21 +9643,40 @@ function _gameMatchCompare(attempt, target, relEps, volFloor) {
 }
 
 export function bindWorker(self) {
-self.onmessage = async (event) => {
-  const { type, payload, id } = event.data;
-  
+  const rawPostMessage = typeof self.postMessage === 'function'
+    ? self.postMessage.bind(self)
+    : () => {};
+  let activeResultAuth = null;
+  const hostPostMessage = (msg) => {
+    if (
+      activeResultAuth != null
+      && msg
+      && msg.payload
+      && typeof msg.payload === 'object'
+      && msg.payload.resultAuth == null
+    ) {
+      rawPostMessage({ ...msg, payload: { ...msg.payload, resultAuth: activeResultAuth } });
+      return;
+    }
+    rawPostMessage(msg);
+  };
+
+  const dispatch = async (event) => {
+  const { type, payload, id } = event.data || {};
+  activeResultAuth = payload && payload.resultAuth != null ? payload.resultAuth : null;
+
   try {
     switch (type) {
       case 'init': {
         await initializeManifold();
         lockdownGlobals();
-        self.postMessage({ type: 'ready', id });
+        hostPostMessage({ type: 'ready', id });
         break;
       }
 
       // Lightweight alive check after Safari freeze / bfcache restore.
       case 'ping': {
-        self.postMessage({ type: 'result', id, payload: { ok: true } });
+        hostPostMessage({ type: 'result', id, payload: { ok: true } });
         break;
       }
       
@@ -9699,7 +9725,7 @@ self.onmessage = async (event) => {
         const bbox = result.boundingBox();
         const bodyCentroids = _kernelBodyCentroids(result);
         
-        self.postMessage({ 
+        hostPostMessage({ 
           type: 'result', 
           id,
           payload: {
@@ -9737,7 +9763,7 @@ self.onmessage = async (event) => {
         const surfaceArea = cachedManifold.surfaceArea();
         const bbox = cachedManifold.boundingBox();
         
-        self.postMessage({
+        hostPostMessage({
           type: 'result',
           id,
           payload: {
@@ -9763,7 +9789,7 @@ self.onmessage = async (event) => {
         // Own retained handle — do not alias cachedManifold (attempt Run overwrites it).
         _safeDeleteManifold(gameTargetManifold);
         gameTargetManifold = cachedManifold.clone();
-        self.postMessage({
+        hostPostMessage({
           type: 'result', id,
           payload: { ok: true, volume, boundingBox: _bboxArray(cachedManifold) },
         });
@@ -9780,7 +9806,7 @@ self.onmessage = async (event) => {
         cachedExecuteNonce = null;
         _safeDeleteManifold(gameAttemptManifold);
         gameAttemptManifold = null;
-        self.postMessage({ type: 'result', id, payload: { ok: true } });
+        hostPostMessage({ type: 'result', id, payload: { ok: true } });
         break;
       }
 
@@ -9789,7 +9815,7 @@ self.onmessage = async (event) => {
         gameTargetManifold = null;
         _safeDeleteManifold(gameAttemptManifold);
         gameAttemptManifold = null;
-        self.postMessage({ type: 'result', id, payload: { ok: true } });
+        hostPostMessage({ type: 'result', id, payload: { ok: true } });
         break;
       }
 
@@ -9800,7 +9826,7 @@ self.onmessage = async (event) => {
           throw new Error('compareGameMatch: no attempt snapshot — execute while a ghost target is stored');
         }
         if (payload?.nonce != null && payload.nonce !== cachedExecuteNonce) {
-          self.postMessage({
+          hostPostMessage({
             type: 'result', id,
             payload: {
               ignored: true, match: false, reason: 'stale_execute',
@@ -9812,7 +9838,7 @@ self.onmessage = async (event) => {
         const relEps = _positiveFinite(payload?.relEps, 0.002);
         const volFloor = _positiveFinite(payload?.volFloor, 1e-6);
         const verdict = _gameMatchCompare(gameAttemptManifold, gameTargetManifold, relEps, volFloor);
-        self.postMessage({
+        hostPostMessage({
           type: 'result', id,
           payload: { ...verdict, relEps, volFloor, nonce: cachedExecuteNonce },
         });
@@ -9899,7 +9925,7 @@ self.onmessage = async (event) => {
         const bbox = manifold.boundingBox();
         
         // FIX: Use 'result' type instead of 'success'
-        self.postMessage({
+        hostPostMessage({
           type: 'result',
           id,
           payload: {
@@ -9944,7 +9970,7 @@ self.onmessage = async (event) => {
           repair,
           source: objString ? 'obj' : 'meshData',
         });
-        self.postMessage({
+        hostPostMessage({
           type: 'result', id,
           payload: { ok: true, filename, repair, volume: _stagedReferences.get(filename).volume,
                      surfaceArea: _stagedReferences.get(filename).surfaceArea,
@@ -9961,14 +9987,14 @@ self.onmessage = async (event) => {
           list.push({ filename, volume: ref.volume, surfaceArea: ref.surfaceArea,
                       boundingBox: ref.boundingBox, tris: ref.tris, repair: ref.repair, source: ref.source });
         }
-        self.postMessage({ type: 'result', id, payload: { references: list } });
+        hostPostMessage({ type: 'result', id, payload: { references: list } });
         break;
       }
 
       case 'stageReferenceClear': {
         const n = _stagedReferences.size;
         _stagedReferences.clear();
-        self.postMessage({ type: 'result', id, payload: { ok: true, cleared: n } });
+        hostPostMessage({ type: 'result', id, payload: { ok: true, cleared: n } });
         break;
       }
 
@@ -9988,7 +10014,7 @@ self.onmessage = async (event) => {
           cand = cachedManifold;
         }
         const verdict = _stageVerify(cand, ref.manifold, { passRel, volGate });
-        self.postMessage({
+        hostPostMessage({
           type: 'result', id,
           payload: { ...verdict, reference, candidateVolume: cand.volume(),
                      referenceVolume: ref.volume },
@@ -10000,7 +10026,7 @@ self.onmessage = async (event) => {
       case 'stageGetLastMesh': {
         if (!cachedManifold) throw new Error('stageGetLastMesh: nothing executed yet');
         const m = cachedManifold.getMesh();
-        self.postMessage({
+        hostPostMessage({
           type: 'result', id,
           payload: {
             numProp: m.numProp,
@@ -10017,7 +10043,7 @@ self.onmessage = async (event) => {
 
       case 'getHelperList': {
         // Return list of available helper functions
-        self.postMessage({
+        hostPostMessage({
           type: 'helperList',
           id,
           payload: Object.keys(HELPER_FUNCTIONS)
@@ -10050,7 +10076,7 @@ self.onmessage = async (event) => {
         } finally {
           for (const m of created) _safeDeleteManifold(m);
         }
-        self.postMessage({ type: 'result', id, payload: { mesh } });
+        hostPostMessage({ type: 'result', id, payload: { mesh } });
         break;
       }
 
@@ -10077,7 +10103,7 @@ self.onmessage = async (event) => {
         } finally {
           for (const m of created) _safeDeleteManifold(m);
         }
-        self.postMessage({ type: 'result', id, payload: { mesh } });
+        hostPostMessage({ type: 'result', id, payload: { mesh } });
         break;
       }
 
@@ -10108,7 +10134,7 @@ self.onmessage = async (event) => {
         } finally {
           for (const m of created) _safeDeleteManifold(m);
         }
-        self.postMessage({
+        hostPostMessage({
           type: 'result',
           id,
           payload: { mesh, volume, boundingBox, combine: spec.combine },
@@ -10162,7 +10188,7 @@ self.onmessage = async (event) => {
         } finally {
           for (const m of created) _safeDeleteManifold(m);
         }
-        self.postMessage({ type: 'result', id, payload: { pieces } });
+        hostPostMessage({ type: 'result', id, payload: { pieces } });
         break;
       }
 
@@ -10238,7 +10264,7 @@ self.onmessage = async (event) => {
         } finally {
           for (const m of created) _safeDeleteManifold(m);
         }
-        self.postMessage({ type: 'result', id, payload: { pieces } });
+        hostPostMessage({ type: 'result', id, payload: { pieces } });
         break;
       }
 
@@ -10279,7 +10305,7 @@ self.onmessage = async (event) => {
         } finally {
           for (const m of created) _safeDeleteManifold(m);
         }
-        self.postMessage({ type: 'result', id, payload: { overlaps } });
+        hostPostMessage({ type: 'result', id, payload: { overlaps } });
         break;
       }
 
@@ -10300,7 +10326,7 @@ self.onmessage = async (event) => {
         // Serialize result
         const meshData = serializeResult(trimmed);
         
-        self.postMessage({
+        hostPostMessage({
           type: 'result',
           id,
           payload: { mesh: meshData }
@@ -10312,7 +10338,7 @@ self.onmessage = async (event) => {
         throw new Error(`Unknown message type: ${type}`);
     }
   } catch (error) {
-    self.postMessage({ 
+    hostPostMessage({ 
       type: 'error', 
       id,
       payload: {
@@ -10324,11 +10350,14 @@ self.onmessage = async (event) => {
         featureSkip: error?.featureSkip && typeof error.featureSkip === 'object' ? error.featureSkip : null,
       }
     });
+  } finally {
+    activeResultAuth = null;
+    freezeWorkerHandlers(self, { dispatch, rawPostMessage });
   }
 };
 
-// Signal that the worker is loaded
-self.postMessage({ type: 'loaded' });
+  freezeWorkerHandlers(self, { dispatch, rawPostMessage });
+  hostPostMessage({ type: 'loaded' });
 }
 
 export {
