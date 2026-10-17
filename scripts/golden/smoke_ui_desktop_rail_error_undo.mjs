@@ -90,9 +90,14 @@ console.log('ui: desktop ribbon + left rail + error Undo');
     !/Approve each client/.test(pairing) && !/nothing pairs automatically/.test(pairing),
   );
   check(
-    '4: pairing start button uses profile-panel text chrome',
-    /data-ui-action="data-agent-bridge-start"/.test(pairing)
-      && /text-chrome-text[\s\S]{0,400}data-ui-action="data-agent-bridge-start"|data-ui-action="data-agent-bridge-start"[\s\S]{0,400}text-chrome-text/.test(pairing),
+    '4: Connect Agent button uses shared white-on-emerald classes',
+    /data-ui-action="data-agent-bridge-connect"/.test(pairing)
+      && /CONNECT_AGENT_BUTTON_CLASS/.test(pairing),
+  );
+  const connectBtn = read('../../src/components/agentBridgeConnectButton.js');
+  check(
+    '4: Connect Agent class includes text-white',
+    /text-white/.test(connectBtn),
   );
 }
 

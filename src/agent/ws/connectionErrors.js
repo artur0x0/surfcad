@@ -3,6 +3,7 @@
  */
 
 import { PAIR_MSG } from './relayMessages.js';
+import { MCP_INSTALL_COMMAND } from './pairingPrompt.js';
 
 /** @typedef {'relay_missing' | 'origin_rejected' | 'browser_blocked' | 'relay_error' | null} AgentBridgeConnectionIssue */
 
@@ -117,4 +118,4 @@ export function issueFromRelayMessage(message) {
   return null;
 }
 
-export const MCP_START_COMMAND = 'npx surfcad-mcp';
+export const MCP_START_COMMAND = MCP_INSTALL_COMMAND;

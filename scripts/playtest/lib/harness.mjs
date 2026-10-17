@@ -123,8 +123,8 @@ export async function showAgentBridgePairingCode(page) {
   if (await profileChip.count()) {
     await profileChip.click();
   }
-  await page.click('[data-ui-action="data-agent-bridge-toggle"]');
-  await page.click('[data-ui-action="data-agent-bridge-start"]');
+  await page.click('[data-ui-action="data-agent-bridge-connect"]');
+  await page.waitForSelector('[data-agent-bridge-waiting-relay]', { state: 'hidden', timeout: 15000 }).catch(() => {});
   await page.waitForSelector('[data-agent-bridge-code]', { state: 'visible', timeout: 15000 });
   const code = await page.locator('[data-agent-bridge-code]').innerText();
   return String(code || '').trim();

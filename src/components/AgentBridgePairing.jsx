@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Plug, PlugZap } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Loader2, Plug, PlugZap } from 'lucide-react';
 import { createPairingToken } from '../agent/ws/pairingToken.js';
 import { createAgentBridgeTabConnection } from '../agent/ws/tabConnection.js';
 import { defaultAgentBridgeWsUrl } from '../agent/ws/wsUrl.js';
@@ -10,6 +10,15 @@ import {
   detectBrowserFamily,
   shouldPreemptWebKitHttpsPairing,
 } from '../agent/ws/connectionErrors.js';
+import { AGENT_PAIRING_PROMPT, pairingPromptPreview } from '../agent/ws/pairingPrompt.js';
+import { probeRelayWebSocket } from '../agent/ws/relayProbe.js';
+import { createRelayPoller, DEFAULT_RELAY_POLL_MS } from '../agent/ws/relayPoller.js';
+import {
+  isRelayTabConnected,
+  shouldPollRelay,
+  shouldRevealPairingCode,
+} from '../agent/ws/pairingFlow.js';
+import { CONNECT_AGENT_BUTTON_CLASS } from './agentBridgeConnectButton.js';
 
 /**
  * Local WebSocket pairing for MCP / stdio clients (M1). Shown only when the
@@ -17,12 +26,22 @@ import {
  * pairing and approve each local client.
  */
 export default function AgentBridgePairing({ enabled, embedded = false }) {
-  const [open, setOpen] = useState(false);
+  const [flowOpen, setFlowOpen] = useState(false);
   const [token, setToken] = useState('');
   const [state, setState] = useState('idle');
   const [issue, setIssue] = useState(null);
   const [copied, setCopied] = useState(null);
+  const [relayReachable, setRelayReachable] = useState(false);
   const connRef = useRef(null);
+  const pollerRef = useRef(null);
+  const flowOpenRef = useRef(flowOpen);
+  const relayReachableRef = useRef(relayReachable);
+  const stateRef = useRef(state);
+  const wsUrl = useMemo(() => defaultAgentBridgeWsUrl(), []);
+
+  flowOpenRef.current = flowOpen;
+  relayReachableRef.current = relayReachable;
+  stateRef.current = state;
 
   const pageSecure = typeof window !== 'undefined' && window.location?.protocol === 'https:';
   const webkitHttpsBlocked = typeof window !== 'undefined' && shouldPreemptWebKitHttpsPairing({
@@ -38,12 +57,24 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
     setIssue(null);
   }, []);
 
+  const stopPolling = useCallback(() => {
+    pollerRef.current?.stop();
+    pollerRef.current = null;
+  }, []);
+
+  const closeFlow = useCallback(() => {
+    setFlowOpen(false);
+    stopPolling();
+    stopConnection();
+    setToken('');
+    setRelayReachable(false);
+  }, [stopConnection, stopPolling]);
+
   useEffect(() => {
     if (!enabled) {
-      stopConnection();
-      setOpen(false);
+      closeFlow();
     }
-  }, [enabled, stopConnection]);
+  }, [enabled, closeFlow]);
 
   useEffect(() => {
     if (state === 'paired') {
@@ -51,15 +82,23 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
     }
   }, [state]);
 
-  const copyMcpCommand = useCallback(async () => {
+  const copyText = useCallback(async (text, key) => {
     try {
-      await navigator.clipboard.writeText(MCP_START_COMMAND);
-      setCopied('mcp');
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
       setTimeout(() => setCopied(null), 2000);
     } catch {
       setCopied(null);
     }
   }, []);
+
+  const copyPairingPrompt = useCallback(() => {
+    void copyText(AGENT_PAIRING_PROMPT, 'prompt');
+  }, [copyText]);
+
+  const copyMcpCommand = useCallback(() => {
+    void copyText(MCP_START_COMMAND, 'mcp');
+  }, [copyText]);
 
   const copyPageLink = useCallback(async () => {
     if (typeof window === 'undefined') return;
@@ -72,6 +111,20 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
     }
   }, []);
 
+  const copyPairingCode = useCallback(() => {
+    if (!token) return;
+    void copyText(token, 'code');
+  }, [copyText, token]);
+
+  const onConnectionState = useCallback((next) => {
+    setState(next);
+    if (isRelayTabConnected(next)) {
+      setRelayReachable(true);
+    } else if (next === 'idle' && flowOpenRef.current) {
+      setRelayReachable(false);
+    }
+  }, []);
+
   const startPairing = useCallback(() => {
     if (webkitHttpsBlocked) return;
     if (!enabled || typeof window === 'undefined' || !window.surfcad?.call) return;
@@ -79,16 +132,68 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
     const code = createPairingToken(6);
     setToken(code);
     const conn = createAgentBridgeTabConnection({
-      url: defaultAgentBridgeWsUrl(),
+      url: wsUrl,
       token: code,
       call: (name, args) => window.surfcad.call(name, args),
-      onState: setState,
+      onState: onConnectionState,
       onIssue: setIssue,
       pageSecure,
+      suppressMissingRelayIssue: true,
     });
     connRef.current = conn;
     conn.connect();
-  }, [enabled, stopConnection, pageSecure, webkitHttpsBlocked]);
+  }, [enabled, onConnectionState, stopConnection, pageSecure, webkitHttpsBlocked, wsUrl]);
+
+  const beginConnectFlow = useCallback(() => {
+    if (webkitHttpsBlocked) return;
+    setFlowOpen(true);
+    setIssue(null);
+    setRelayReachable(false);
+    setToken('');
+    stopConnection();
+  }, [stopConnection, webkitHttpsBlocked]);
+
+  const handleRelayDetected = useCallback(() => {
+    setRelayReachable(true);
+    if (!token && flowOpen) {
+      startPairing();
+    } else if (token && state === 'idle' && flowOpen) {
+      connRef.current?.connect();
+    }
+  }, [flowOpen, startPairing, state, token]);
+
+  useEffect(() => {
+    if (!flowOpen || webkitHttpsBlocked) {
+      stopPolling();
+      return undefined;
+    }
+    const polling = shouldPollRelay({ flowOpen, relayReachable, state });
+    if (!polling) {
+      stopPolling();
+      return undefined;
+    }
+    stopPolling();
+    pollerRef.current = createRelayPoller({
+      intervalMs: DEFAULT_RELAY_POLL_MS,
+      isActive: () => shouldPollRelay({
+        flowOpen: flowOpenRef.current,
+        relayReachable: relayReachableRef.current,
+        state: stateRef.current,
+      }),
+      probe: () => probeRelayWebSocket(wsUrl),
+      onDetected: handleRelayDetected,
+    });
+    pollerRef.current.start();
+    return () => {
+      stopPolling();
+    };
+  }, [flowOpen, handleRelayDetected, relayReachable, state, stopPolling, webkitHttpsBlocked, wsUrl]);
+
+  useEffect(() => {
+    if (flowOpen && relayReachable && state === 'idle' && token && connRef.current) {
+      connRef.current.connect();
+    }
+  }, [flowOpen, relayReachable, state, token]);
 
   if (!enabled) return null;
 
@@ -96,8 +201,13 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
   const pending = state === 'pending';
   const advertising = state === 'advertising';
   const browserFamily = typeof navigator !== 'undefined' ? detectBrowserFamily(navigator.userAgent) : 'unknown';
+  const showCode = shouldRevealPairingCode(relayReachable) && Boolean(token);
+  const waitingForRelay = flowOpen && !relayReachable && !webkitHttpsBlocked;
+  const promptPreview = pairingPromptPreview();
 
-  const issueBlock = issue === 'relay_missing' ? (
+  const showRelayMissingBanner = issue === 'relay_missing' && !waitingForRelay;
+
+  const issueBlock = showRelayMissingBanner ? (
     <div className="rounded border border-amber-500/40 bg-amber-950/40 px-2 py-2 text-xs text-amber-100 mb-2" data-agent-bridge-error="relay_missing">
       <p className="mb-2">Local relay not found. In your MCP client config, run:</p>
       <div className="flex gap-2 items-center">
@@ -126,53 +236,47 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
     </p>
   ) : null;
 
-  const panel = open ? (
-    <div
-      className={
-        embedded
-          ? 'mt-2 rounded-md border border-chrome-border bg-chrome-surface/80 p-3 text-sm text-chrome-text'
-          : 'rounded-lg border border-chrome-border bg-chrome-surface/95 p-3 text-sm text-chrome-text shadow-lg backdrop-blur-sm'
-      }
-      data-agent-bridge-panel=""
-    >
-      {issueBlock}
-      {webkitHttpsBlocked ? (
-        <div
-          className="rounded border border-chrome-border/80 bg-chrome-surface/60 px-2 py-2 text-xs mb-2"
-          data-agent-bridge-unsupported="webkit-https"
-        >
-          <p className="text-chrome-text mb-1.5">Pairing works in Chrome for now.</p>
-          <p className="text-chrome-text-secondary mb-2">
-            Open this page in Chrome on your computer to connect a local MCP client.
-          </p>
-          <button
-            type="button"
-            className="w-full rounded bg-chrome-border/90 px-2 py-1.5 text-white hover:bg-gray-600"
-            onClick={copyPageLink}
-            data-ui-action="data-agent-bridge-copy-link"
-          >
-            {copied === 'link' ? 'Copied' : 'Copy link'}
-          </button>
-        </div>
-      ) : null}
-      {!webkitHttpsBlocked && !token && (
+  const guidedFlow = flowOpen && !webkitHttpsBlocked ? (
+    <div className="space-y-3" data-agent-bridge-guided="">
+      <div className="rounded-md border border-chrome-border/80 bg-chrome-surface/60 px-2 py-2" data-agent-bridge-prompt="">
+        <p className="text-[11px] text-chrome-text-secondary mb-2">Send this to your AI agent:</p>
+        <p className="text-[11px] text-chrome-text leading-snug mb-2 line-clamp-3" data-agent-bridge-prompt-preview="">
+          {promptPreview}
+        </p>
         <button
           type="button"
-          className="block w-full rounded-md px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
-          onClick={startPairing}
-          data-ui-action="data-agent-bridge-start"
+          className={CONNECT_AGENT_BUTTON_CLASS}
+          onClick={copyPairingPrompt}
+          data-ui-action="data-agent-bridge-copy-prompt"
         >
-          Show pairing code
+          {copied === 'prompt' ? 'Copied' : 'Copy prompt'}
         </button>
-      )}
-      {!webkitHttpsBlocked && token && (
+      </div>
+      {waitingForRelay ? (
+        <div
+          className="flex items-center justify-center gap-2 text-xs text-chrome-text-secondary py-1"
+          data-agent-bridge-waiting-relay=""
+        >
+          <Loader2 size={14} className="animate-spin shrink-0" aria-hidden />
+          Waiting for relay…
+        </div>
+      ) : null}
+      {showCode ? (
         <>
           <div className="font-mono text-lg tracking-widest text-center py-1" data-agent-bridge-code="">
             {token}
           </div>
-          <p className="text-xs text-chrome-text-secondary text-center mb-2">
-            Enter this code in your local MCP / stdio client.
+          <p className="text-xs text-chrome-text-secondary text-center mb-1">
+            Send this pairing code to your agent so it can connect.
           </p>
+          <button
+            type="button"
+            className="w-full rounded border border-chrome-border px-2 py-1.5 text-xs text-white bg-chrome-border/90 hover:bg-gray-600"
+            onClick={copyPairingCode}
+            data-ui-action="data-agent-bridge-copy-code"
+          >
+            {copied === 'code' ? 'Copied' : 'Copy code'}
+          </button>
           {pending && (
             <div className="flex gap-2 mb-2">
               <button
@@ -210,16 +314,46 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
           <button
             type="button"
             className="w-full rounded border border-chrome-border px-2 py-1.5 text-chrome-text-secondary hover:text-chrome-text"
-            onClick={() => {
-              stopConnection();
-              setToken('');
-            }}
+            onClick={closeFlow}
             data-ui-action="data-agent-bridge-disconnect"
           >
             Disconnect
           </button>
         </>
-      )}
+      ) : null}
+    </div>
+  ) : null;
+
+  const panel = flowOpen ? (
+    <div
+      className={
+        embedded
+          ? 'mt-2 rounded-md border border-chrome-border bg-chrome-surface/80 p-3 text-sm text-chrome-text'
+          : 'rounded-lg border border-chrome-border bg-chrome-surface/95 p-3 text-sm text-chrome-text shadow-lg backdrop-blur-sm'
+      }
+      data-agent-bridge-panel=""
+    >
+      {issueBlock}
+      {webkitHttpsBlocked ? (
+        <div
+          className="rounded border border-chrome-border/80 bg-chrome-surface/60 px-2 py-2 text-xs mb-2"
+          data-agent-bridge-unsupported="webkit-https"
+        >
+          <p className="text-chrome-text mb-1.5">Pairing works in Chrome for now.</p>
+          <p className="text-chrome-text-secondary mb-2">
+            Open this page in Chrome on your computer to connect a local MCP client.
+          </p>
+          <button
+            type="button"
+            className="w-full rounded bg-chrome-border/90 px-2 py-1.5 text-white hover:bg-gray-600"
+            onClick={copyPageLink}
+            data-ui-action="data-agent-bridge-copy-link"
+          >
+            {copied === 'link' ? 'Copied' : 'Copy link'}
+          </button>
+        </div>
+      ) : null}
+      {guidedFlow}
     </div>
   ) : null;
 
@@ -235,26 +369,52 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
         : 'border-chrome-border bg-chrome-surface/90 text-chrome-text-secondary hover:text-chrome-text'
     }`;
 
-  const chip = (
+  const connectAgentButton = !flowOpen && !webkitHttpsBlocked ? (
+    <button
+      type="button"
+      className={embedded ? CONNECT_AGENT_BUTTON_CLASS : `${CONNECT_AGENT_BUTTON_CLASS} shadow-md`}
+      onClick={beginConnectFlow}
+      data-ui-action="data-agent-bridge-connect"
+      data-agent-bridge-connect=""
+    >
+      Connect Agent
+    </button>
+  ) : null;
+
+  const chip = !embedded && (flowOpen || paired) ? (
     <button
       type="button"
       title="Local agent bridge pairing"
       className={chipClass}
-      onClick={() => setOpen((v) => !v)}
+      onClick={() => (flowOpen ? closeFlow() : beginConnectFlow())}
       data-ui-action="data-agent-bridge-toggle"
       data-agent-bridge-chip=""
     >
       <span className="inline-flex items-center gap-1.5">
         {paired ? <PlugZap size={14} aria-hidden /> : <Plug size={14} aria-hidden />}
-        {paired ? 'Agent paired' : 'Local agent'}
+        {paired ? 'Agent paired' : 'Connect Agent'}
       </span>
     </button>
-  );
+  ) : null;
 
   if (embedded) {
     return (
-      <div className="px-3 py-2" data-agent-bridge-pairing="">
-        {chip}
+      <div className="px-3 py-2 space-y-2" data-agent-bridge-pairing="">
+        {connectAgentButton}
+        {paired && !flowOpen ? (
+          <button
+            type="button"
+            className={chipClass}
+            onClick={beginConnectFlow}
+            data-ui-action="data-agent-bridge-toggle"
+            data-agent-bridge-chip=""
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <PlugZap size={14} aria-hidden />
+              Agent paired
+            </span>
+          </button>
+        ) : null}
         {panel}
       </div>
     );
@@ -266,7 +426,7 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
       data-agent-bridge-pairing=""
     >
       {panel}
-      {chip}
+      {connectAgentButton || chip}
     </div>
   );
 }
