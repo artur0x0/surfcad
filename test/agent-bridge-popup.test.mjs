@@ -113,6 +113,7 @@ test('tab pairs through the popup bridge, needs Allow, and runs a bridge call', 
     assert.ok(await waitFor(() => relay.wss.clients.size <= 1));
     peer.ws.close();
 
+    session.armOpen();
     conn.connect();
     assert.equal(popups.length, 2, 'user-closed window: Reconnect may window.open from the click');
     assert.ok(await waitFor(() => popups[1].statuses.includes('connected')));

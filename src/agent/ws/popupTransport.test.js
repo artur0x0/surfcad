@@ -10,6 +10,8 @@ import {
 } from './popupTransport.js';
 import { BRIDGE_CHANNEL, BRIDGE_CLOSE_REASON, BRIDGE_MSG } from './bridgeMessages.js';
 import { issueFromCloseEvent } from './connectionErrors.js';
+import { createAgentBridgeTabConnection } from './tabConnection.js';
+import { PAIR_MSG } from './relayMessages.js';
 import { createAgentBridgeTransport, probeRelayDirect } from './agentBridgeTransport.js';
 import * as popupSide from '../../../packages/surfcad-mcp/src/bridge/bridgePopup.mjs';
 import { FakeWindow, linkWindows, tick } from '../../../packages/surfcad-mcp/test/fakeWindows.mjs';
@@ -67,7 +69,8 @@ test('opens a named popup carrying the nonce and page origin in the fragment', (
   const parsed = new URL(url);
   assert.equal(parsed.origin, BRIDGE_ORIGIN);
   assert.equal(parsed.pathname, '/bridge');
-  assert.ok(parsed.searchParams.get('s'));
+  assert.equal(parsed.searchParams.get('s'), '1');
+  assert.notEqual(parsed.searchParams.get('s'), NONCE.slice(0, 8));
   assert.deepEqual(popupSide.parseBridgeFragment(parsed.hash), { nonce: NONCE, origin: 'https://surfcad.com' });
   sock.close();
 });
@@ -218,12 +221,89 @@ test('session: reconnect createSocket reuses the window (no second window.open)'
   assert.equal(h.popup.closed, true);
 });
 
+test('a closed window is not reopened without armOpen', async () => {
+  const h = harness();
+  const session = createPopupBridgeSession({ win: h.opener, nonce: NONCE, pollMs: 20 });
+  session.createSocket('ws://127.0.0.1:17341');
+  h.fromPopup({ type: BRIDGE_MSG.READY });
+  h.fromPopup({ type: BRIDGE_MSG.OPEN });
+  await tick();
+  h.popup.closed = true;
+  const second = session.createSocket('ws://127.0.0.1:17341');
+  const secondEvents = record(second);
+  await tick(5);
+  assert.equal(h.opener.openCalls.length, 1, 'timer must not window.open');
+  assert.equal(secondEvents[0].reason, BRIDGE_CLOSE_REASON.BRIDGE_CLOSED);
+  session.armOpen();
+  const third = session.createSocket('ws://127.0.0.1:17341');
+  assert.equal(h.opener.openCalls.length, 2, 'Reconnect click may window.open');
+  third.close();
+  session.dispose();
+});
+
+test('closing the window during a reconnect wait does not window.open', async () => {
+  const h = harness();
+  const session = createPopupBridgeSession({ win: h.opener, nonce: NONCE, pollMs: 5000 });
+  const issues = [];
+  const conn = createAgentBridgeTabConnection({
+    url: 'ws://127.0.0.1:17341',
+    token: 'ABC234',
+    call: async () => ({ ok: true, result: 1 }),
+    createSocket: (u) => session.createSocket(u),
+    onIssue: (i) => issues.push(i),
+    reconnectDelaysMs: [20],
+  });
+  conn.connect();
+  assert.equal(h.opener.openCalls.length, 1);
+  h.fromPopup({ type: BRIDGE_MSG.READY });
+  h.fromPopup({ type: BRIDGE_MSG.OPEN });
+  await tick();
+  h.fromPopup({
+    type: BRIDGE_MSG.FRAME,
+    data: JSON.stringify({ type: PAIR_MSG.PAIR_REQUEST, token: 'ABC234' }),
+  });
+  await tick();
+  assert.equal(conn.getState(), 'pending');
+  conn.approvePair();
+  h.fromPopup({
+    type: BRIDGE_MSG.FRAME,
+    data: JSON.stringify({ type: PAIR_MSG.PAIRED, token: 'ABC234' }),
+  });
+  await tick();
+  assert.equal(conn.getState(), 'paired');
+
+  h.fromPopup({ type: BRIDGE_MSG.CLOSE, code: 1006, reason: '' });
+  await tick();
+  assert.equal(conn.getState(), 'reconnecting');
+  assert.equal(h.opener.openCalls.length, 1);
+
+  h.popup.closed = true;
+  await tick(80);
+  assert.equal(h.opener.openCalls.length, 1, 'reconnect timer must not window.open');
+  assert.equal(conn.getState(), 'idle');
+  assert.equal(issues.at(-1), 'bridge_closed');
+
+  session.armOpen();
+  conn.connect();
+  assert.equal(h.opener.openCalls.length, 2);
+  h.fromPopup({ type: BRIDGE_MSG.READY });
+  h.fromPopup({ type: BRIDGE_MSG.OPEN });
+  await tick();
+  const frames = h.fromOpener.filter((e) => e.data?.type === BRIDGE_MSG.FRAME);
+  const last = JSON.parse(frames.at(-1).data.data);
+  assert.equal(last.type, PAIR_MSG.REGISTER_TAB);
+  assert.equal(last.forgetResume, true);
+  conn.disconnect();
+  session.dispose();
+});
+
 test('transport abstraction: direct probes, popup session reuses createSocket', async () => {
   const direct = createAgentBridgeTransport({ mode: 'direct' });
   assert.equal(direct.opensWindow, false);
   assert.equal(typeof direct.probeRelay, 'function');
   const popup = createAgentBridgeTransport({ mode: 'popup', win: harness().opener });
   assert.equal(popup.opensWindow, true);
+  assert.equal(typeof popup.armOpen, 'function');
   assert.equal(popup.probeRelay, null);
   const sock = popup.createSocket('ws://127.0.0.1:17341');
   assert.equal(sock.transport, 'popup');

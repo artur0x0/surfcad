@@ -50,7 +50,7 @@ export default function AgentBridgePopupStatus({
       )}
       {issue === 'bridge_closed' && (
         <div
-          className="rounded border border-amber-500/40 bg-amber-950/40 px-2 py-2 text-amber-100 mb-2"
+          className="rounded border border-amber-500/40 bg-amber-950/40 px-2 py-2 text-on-dark mb-2"
           data-agent-bridge-error="bridge_closed"
         >
           <p className="font-medium mb-1">Disconnected</p>

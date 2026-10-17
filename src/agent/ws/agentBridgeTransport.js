@@ -51,6 +51,7 @@ export function probeRelayDirect(url, opts = {}) {
  *   mode: 'direct' | 'popup',
  *   opensWindow: boolean,
  *   createSocket: (url: string) => import('./tabConnection.js').AgentBridgeSocket,
+ *   armOpen?: () => void,
  *   dispose: () => void,
  *   probeRelay: ((url: string) => Promise<boolean>) | null,
  * }} AgentBridgeTransport
@@ -67,6 +68,7 @@ export function createAgentBridgeTransport(opts) {
       mode: 'popup',
       opensWindow: true,
       createSocket: (url) => session.createSocket(url),
+      armOpen: () => session.armOpen(),
       dispose: () => session.dispose(),
       probeRelay: null,
     };

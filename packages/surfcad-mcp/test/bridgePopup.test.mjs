@@ -6,6 +6,7 @@ import {
   formatBridgeFragment,
   isAllowedOpenerOrigin,
   parseBridgeFragment,
+  popupBridgeStatusText,
   startPopupBridge,
 } from '../src/bridge/bridgePopup.mjs';
 import { FakeWindow, linkWindows, tick } from './fakeWindows.mjs';
@@ -223,4 +224,10 @@ test('relay socket close is reported to the opener', async () => {
   assert.ok(close);
   assert.equal(statuses.at(-1), 'closed');
   bridge.stop();
+});
+
+test('closed status tells the user to keep the window open', () => {
+  const text = popupBridgeStatusText('closed');
+  assert.match(text, /Keep this window open/);
+  assert.doesNotMatch(text, /Close this window/);
 });

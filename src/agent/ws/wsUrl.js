@@ -21,12 +21,23 @@ export function defaultAgentBridgeWsUrl() {
 }
 
 /**
+ * Query / localStorage transport overrides are for `vite` and
+ * `npm run build:playtest` only. Production ignores them.
+ *
+ * @param {{ DEV?: boolean, VITE_SURFCAD_PLAYTEST?: string }} [env]
+ */
+export function agentBridgeTransportOverrideAllowed(env = import.meta.env) {
+  return env?.DEV === true || env?.VITE_SURFCAD_PLAYTEST === '1';
+}
+
+/**
  * Force the Local agent transport (`direct` or `popup`) for testing via
  * `?agentBridgeTransport=` or localStorage `surfcadAgentBridgeTransport`.
  *
  * @returns {'direct' | 'popup' | null}
  */
 export function agentBridgeTransportOverride() {
+  if (!agentBridgeTransportOverrideAllowed()) return null;
   if (typeof window === 'undefined') return null;
   try {
     const fromQuery = new URLSearchParams(window.location.search).get('agentBridgeTransport');

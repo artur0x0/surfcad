@@ -4,9 +4,10 @@
  * (`http://127.0.0.1:<port>/bridge`) with postMessage.
  *
  * Used where the page cannot open `ws://127.0.0.1` itself (Safari on https).
- * `window.open` runs only from a user click (first `createSocket`, or
- * Reconnect after the user closed the window). Tab reconnects reuse that
- * same window — they must not open a new one.
+ * `window.open` runs only when this session has never opened a window, or
+ * after a click calls {@link createPopupBridgeSession}'s `armOpen` (Reconnect).
+ * A timer or focus reconnect that finds a previously opened, now-closed
+ * window must not `window.open` — it ends the socket with `bridge_closed`.
  *
  * A socket emits `relay` when the bridge page first answers (the relay is
  * up). Until then it quietly reloads the window with backoff
@@ -52,7 +53,8 @@ export function createBridgeNonce(cryptoImpl = globalThis.crypto) {
 
 /**
  * One bridge window for many logical sockets. `tabConnection` calls
- * `createSocket` on every reconnect; only a missing window may `window.open`.
+ * `createSocket` on every reconnect. `window.open` is allowed only for the
+ * first window, or after `armOpen` from a click.
  *
  * @param {{
  *   win?: Window,
@@ -71,8 +73,14 @@ export function createPopupBridgeSession(opts = {}) {
   let attachCount = 0;
   let generation = 0;
   let disposed = false;
+  let openArmed = false;
   /** @type {null | (() => void)} */
   let retireActive = null;
+
+  /** Call from a click (Reconnect) before `createSocket` may `window.open` again. */
+  function armOpen() {
+    openArmed = true;
+  }
 
   function createSocket(wsUrl) {
     if (retireActive) {
@@ -197,13 +205,20 @@ export function createPopupBridgeSession(opts = {}) {
       return socket;
     }
 
+    const previouslyOpened = popup != null;
+    if (previouslyOpened && popup.closed && !openArmed) {
+      failSoon(BRIDGE_CLOSE_REASON.BRIDGE_CLOSED);
+      return socket;
+    }
+
     win.addEventListener('message', onMessage);
     attachCount += 1;
     const fragment = `nonce=${encodeURIComponent(nonce)}&origin=${encodeURIComponent(win.location.origin)}`;
-    popupUrl = `${pageUrl}?s=${nonce.slice(0, 8)}${attachCount}#${fragment}`;
+    popupUrl = `${pageUrl}?s=${attachCount}#${fragment}`;
 
     const needOpen = !popup || popup.closed;
     if (needOpen) {
+      openArmed = false;
       try {
         popup = win.open(popupUrl, BRIDGE_WINDOW_NAME, BRIDGE_WINDOW_FEATURES);
       } catch {
@@ -252,6 +267,7 @@ export function createPopupBridgeSession(opts = {}) {
 
   return {
     createSocket,
+    armOpen,
     dispose,
     get popup() { return popup; },
   };

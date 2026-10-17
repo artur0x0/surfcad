@@ -229,7 +229,7 @@ const STATUS_TEXT = {
   waiting: 'Connecting to the SurfCAD tab…',
   connecting: 'Connecting to the local agent…',
   connected: 'Connected. Keep this window open while your agent works in SurfCAD.',
-  closed: 'The local agent connection closed. Close this window, then click Reconnect in SurfCAD.',
+  closed: 'The local agent disconnected. Keep this window open — SurfCAD will reconnect.',
   opener_gone: 'The SurfCAD tab was closed. You can close this window.',
 };
 

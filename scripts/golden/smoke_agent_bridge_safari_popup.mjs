@@ -13,10 +13,13 @@
  *                     before the relay runs (35 s of Waiting for the local
  *                     agent, code hidden, no give-up),
  *                     the window detects the relay and the code appears,
- *                     Allow, ring on, create/edit/undo over MCP, close the
- *                     window → Disconnected, ring off → Reconnect, ring on.
+ *                     Allow, ring on, restart the relay on the same port
+ *                     (still one window, pairing recovers), create/edit/undo
+ *                     over MCP, close the window → Disconnected, ring off →
+ *                     Reconnect, ring on.
  *   chromium        — direct socket, no popup (path unchanged).
- *   chromium-popup  — popup bridge forced with ?agentBridgeTransport=popup.
+ *   chromium-popup  — popup path in Chromium (Safari desktop UA; the
+ *                     `?agentBridgeTransport=` override is production-inert).
  * Each run also opens the bridge from an evil https origin and checks it
  * never connects.
  *
@@ -154,6 +157,12 @@ async function startMcp(relayPort) {
 
 const CONNECT = '[data-ui-action="data-agent-bridge-connect"]';
 const RING = '[data-agent-bridge-connection-ring]';
+/** Production ignores `?agentBridgeTransport=`; Chromium-popup uses this UA. */
+const SAFARI_DESKTOP_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15';
+
+function liveBridgeWindows(context, mainPage) {
+  return context.pages().filter((p) => p !== mainPage && !p.isClosed());
+}
 
 async function openProfile(page) {
   const chip = page.locator('[data-profile-chip]').first();
@@ -223,7 +232,7 @@ async function evilOpenerCheck(context, relayPort) {
   await evil.close();
 }
 
-async function runOne(name, { browserType, launchOptions, expectPopup, forcePopup }) {
+async function runOne(name, { browserType, launchOptions, expectPopup, forcePopup, userAgent, restartRelay }) {
   console.log(`\n${name}`);
   mkdirSync(SHOT_DIR, { recursive: true });
   const relayPort = await pickFreePort();
@@ -238,7 +247,10 @@ async function runOne(name, { browserType, launchOptions, expectPopup, forcePopu
     }
 
     browser = await browserType.launch({ headless: true, ...launchOptions });
-    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      ...(userAgent ? { userAgent } : {}),
+    });
     if (browserType === chromium) {
       await context.grantPermissions(['local-network-access'], { origin: PROD_ORIGIN });
     }
@@ -306,6 +318,20 @@ async function runOne(name, { browserType, launchOptions, expectPopup, forcePopu
     await page.waitForSelector(RING, { timeout: 5000 }).catch(() => {});
     check('green ring while paired', await page.locator(RING).count() === 1);
     await page.screenshot({ path: join(SHOT_DIR, `${name}-paired.png`) });
+
+    if (restartRelay && expectPopup) {
+      const before = liveBridgeWindows(context, page);
+      check('one bridge window before relay restart', before.length === 1 && before[0] === popup);
+      await client.close();
+      client = await startMcp(relayPort);
+      check('relay restarted on the same port', await waitForRelay(relayPort));
+      await popup.waitForFunction(() => document.documentElement.dataset.status === 'connected', null, { timeout: 20000 });
+      const after = liveBridgeWindows(context, page);
+      check('relay restart reused the same window', after.length === 1 && after[0] === popup);
+      await pairWithAllow(page, client, code);
+      check('pairing recovers after relay restart', await page.locator(RING).count() === 1);
+      check('still one bridge window after recover', liveBridgeWindows(context, page).length === 1);
+    }
 
     await mcp(client, 'insert_cube', { width: 20, depth: 20, height: 20 });
     await mcp(client, 'run', {});
@@ -380,6 +406,7 @@ for (const name of wanted) {
       browserType: webkit,
       launchOptions: process.env.PLAYWRIGHT_WEBKIT_EXECUTABLE_PATH ? { executablePath: webkitPath } : {},
       expectPopup: true,
+      restartRelay: true,
     });
   } else if (name === 'chromium' || name === 'chromium-popup') {
     if (!chromePath) {
@@ -391,6 +418,7 @@ for (const name of wanted) {
       launchOptions: { executablePath: chromePath, args: ['--no-sandbox', '--disable-dev-shm-usage'] },
       expectPopup: name === 'chromium-popup',
       forcePopup: name === 'chromium-popup',
+      userAgent: name === 'chromium-popup' ? SAFARI_DESKTOP_UA : undefined,
     });
   } else {
     continue;

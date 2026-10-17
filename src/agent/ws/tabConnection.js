@@ -308,6 +308,9 @@ export function createAgentBridgeTabConnection(opts) {
       ws = null;
       const reason = typeof event?.reason === 'string' ? event.reason : '';
       if (USER_ENDED_BRIDGE.has(reason)) {
+        stopped = true;
+        clearTimers();
+        listenForWake(false);
         wasPaired = false;
         resumeKey = null;
         offeredResumeKey = null;
