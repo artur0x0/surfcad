@@ -7,19 +7,29 @@ Staging runs on the **spark** host under `~/3dculos` (SurfCAD frontend + Express
 | Process | Port | Working tree | Config |
 |--------|------|--------------|--------|
 | **Backend** (`3dculos` Express) | **3000** | `~/3dculos/backend` | `backend/.env.development` (read at startup; no auto-reload) |
-| **Frontend** (Vite dev server) | **5173** | `~/3dculos` (repo root) | Repo-root `.env*` files (`VITE_*` only) |
+| **Frontend** (Vite dev server) | **5173** | `~/3dculos` (repo root) | Repo-root `.env*` files (`VITE_*` only; no auto-reload) |
 
 Vite proxies `/api` to the backend on port 3000 (same as local `npm run dev`).
 
-## Do not start the backend by hand
+Both processes are managed by **systemd user units** (`linger` enabled on spark so they survive logout and reboot).
 
-The staging backend is managed by a **systemd user unit**. Do not run `node server.js`, `npm run dev` in `backend/`, or other one-off starts for staging—the unit owns the process and logging.
+## Do not start staging by hand
 
-After editing `backend/.env.development`, restart the unit so the backend picks up changes.
+The units own the processes and logs. Do not:
 
-## Backend: systemd user unit
+- run `node server.js` or `npm run dev` in `backend/` for staging
+- run `npm run dev` in `~/3dculos` — it conflicts with `surfcad-staging-frontend` on port **5173**
 
-Unit file on spark: `~/.config/systemd/user/surfcad-staging-backend.service` (user linger enabled so it survives logout).
+After editing `backend/.env.development` or repo-root `.env*` (`VITE_*`), restart the matching unit so the process picks up changes.
+
+## Systemd user units
+
+Unit files on spark:
+
+- `~/.config/systemd/user/surfcad-staging-backend.service`
+- `~/.config/systemd/user/surfcad-staging-frontend.service`
+
+### Backend (`surfcad-staging-backend`)
 
 ```ini
 [Unit]
@@ -43,11 +53,7 @@ StandardError=append:/tmp/3dculos-backend.log
 WantedBy=default.target
 ```
 
-**Keeps it alive:** systemd restarts the service on failure (`Restart=on-failure`).
-
-**Hermes Node:** `ExecStart` uses the Node binary installed by Hermes (`~/.hermes/node`). If Hermes upgrades or moves that install, update `ExecStart` in the unit file and run `systemctl --user daemon-reload`.
-
-### Backend commands
+**Keeps it alive:** systemd (`Restart=on-failure`).
 
 ```bash
 systemctl --user start surfcad-staging-backend
@@ -58,13 +64,40 @@ journalctl --user -u surfcad-staging-backend
 tail -f /tmp/3dculos-backend.log
 ```
 
-## Frontend
+### Frontend (`surfcad-staging-frontend`)
 
-Started manually as a detached process:
+```ini
+[Unit]
+Description=SurfCAD staging frontend (3dculos Vite :5173)
+After=network-online.target surfcad-staging-backend.service
+Wants=network-online.target
 
-```bash
-cd ~/3dculos
-setsid nohup npm run dev &
+[Service]
+Type=simple
+WorkingDirectory=%h/3dculos
+Environment=NODE_ENV=development
+Environment=PATH=/home/artur/.hermes/node/bin:/home/artur/3dculos/node_modules/.bin:/home/artur/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/artur/.hermes/node/bin/node /home/artur/3dculos/node_modules/vite/bin/vite.js --host
+Restart=on-failure
+RestartSec=3
+StandardOutput=append:/tmp/3dculos-vite.log
+StandardError=append:/tmp/3dculos-vite.log
+
+[Install]
+WantedBy=default.target
 ```
 
-**Keeps it alive:** nothing—there is no supervisor. A reboot or crash does not bring Vite back; start it again when needed.
+**Keeps it alive:** systemd (`Restart=on-failure`). Starts after the backend unit.
+
+```bash
+systemctl --user start surfcad-staging-frontend
+systemctl --user stop surfcad-staging-frontend
+systemctl --user restart surfcad-staging-frontend
+systemctl --user status surfcad-staging-frontend
+journalctl --user -u surfcad-staging-frontend
+tail -f /tmp/3dculos-vite.log
+```
+
+### Hermes Node
+
+Both units use Node from Hermes (`~/.hermes/node`). If Hermes upgrades or moves that install, update `ExecStart` (and the frontend `PATH` if needed), then `systemctl --user daemon-reload`.
