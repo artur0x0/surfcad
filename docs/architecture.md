@@ -2,7 +2,7 @@
 
 **Maintenance:** every PR that changes kernel helpers, face/edge/contour graphs, multi-body rules, or UI pickers must update this file in the same PR (or a tiny follow-up before the next feature). Drop stale sections when behavior changes.
 
-Runtime map for SurfCAD. The vault format is `docs/vault-schema.md`. Screen placement is `docs/UI_MAP.md`. Popup chrome is `docs/POPUP_STYLE.md`. Blend kernels are `.claude/skills/fillets/SKILL.md`. Fillet and graph speed is `docs/performance.md`. The agent catalog contract, and the live `window.surfcad` tab bridge, are `docs/agent-export.md`. `EDGES.md` is an older plan; the graphs below are what the code builds.
+Runtime map for SurfCAD. The vault format is `docs/vault-schema.md`. Screen placement is `docs/UI_MAP.md`. Popup chrome is `docs/POPUP_STYLE.md`. Blend kernels are `.claude/skills/fillets/SKILL.md`. Fillet and graph speed is `docs/performance.md`. The agent catalog contract, and the live `window.surfcad` tab bridge, are `docs/agent-export.md`. Spark staging host layout and ops are `docs/staging.md`. `EDGES.md` is an older plan; the graphs below are what the code builds.
 
 Two different things are called contours. **Sketch contours** are `makeCrossSection` profiles (contour mode). **Body contours** are the coherent edge chains the viewport paints and that Fillet / Sweep path picks walk. This file uses those names.
 
