@@ -5,6 +5,8 @@ import {
   agentBridgeRingState,
   approvalPopupPortalTarget,
   approvalPopupReducer,
+  rectsOverlap,
+  shouldDismissProfilePanelOnPointer,
 } from './agentBridgeChrome.js';
 
 test('connection ring follows the link state', () => {
@@ -27,6 +29,29 @@ test('approval popup portals onto document.body, not the profile menu', () => {
   assert.equal(approvalPopupPortalTarget({ body }), body);
   assert.equal(approvalPopupPortalTarget({ body: null }), null);
   assert.equal(approvalPopupPortalTarget(null), null);
+});
+
+test('a click on the Allow/Deny portal does not dismiss the profile panel', () => {
+  const panel = { contains: () => false };
+  const approval = { closest: (sel) => (sel === '[data-agent-bridge-approval]' ? approval : null) };
+  const outside = { closest: () => null };
+  assert.equal(shouldDismissProfilePanelOnPointer({ target: approval }, panel), false);
+  assert.equal(shouldDismissProfilePanelOnPointer({ target: outside }, panel), true);
+  assert.equal(shouldDismissProfilePanelOnPointer({ target: outside }, { contains: () => true }), false);
+  assert.equal(shouldDismissProfilePanelOnPointer({ target: outside }, null), false);
+});
+
+test('body-portal Allow/Deny does not overlap the profile chip or menu rows', () => {
+  const chip = { x: 1228, y: 16, width: 36, height: 36 };
+  const panel = { x: 1040, y: 56, width: 224, height: 360 };
+  const privacy = { x: 1048, y: 300, width: 208, height: 28 };
+  const inPanelPopup = { x: 1048, y: 280, width: 208, height: 48 };
+  const bodyPortal = { x: 1048, y: 720, width: 220, height: 48 };
+  assert.equal(rectsOverlap(inPanelPopup, privacy), true, '#539 in-panel popup covered Privacy choices');
+  assert.equal(rectsOverlap(bodyPortal, privacy), false);
+  assert.equal(rectsOverlap(bodyPortal, panel), false);
+  assert.equal(rectsOverlap(bodyPortal, chip), false);
+  assert.equal(rectsOverlap(null, chip), false);
 });
 
 test('approval popup closes on allow or deny', () => {

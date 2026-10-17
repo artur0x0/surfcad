@@ -6,6 +6,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { shouldDismissProfilePanelOnPointer } from '../agent/ws/agentBridgeChrome.js';
 import PrivacyChoicesController from './PrivacyChoicesController';
 import ProfileUserIdRow from './ProfileUserIdRow';
 
@@ -53,7 +54,7 @@ export default function ProfilePanel({
   useEffect(() => {
     if (!open) return undefined;
     const onDoc = (event) => {
-      if (ref.current && !ref.current.contains(event.target)) onClose?.();
+      if (shouldDismissProfilePanelOnPointer(event, ref.current)) onClose?.();
     };
     const onKey = (event) => {
       if (event.key === 'Escape') {

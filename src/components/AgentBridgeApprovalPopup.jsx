@@ -16,8 +16,11 @@ export default function AgentBridgeApprovalPopup({ open, onAllow, onDeny, embedd
       aria-label="Approve local agent connection"
       className={`${positionClass} flex items-center gap-2 rounded-full border border-chrome-border bg-chrome-surface/95 px-2 py-2 shadow-lg backdrop-blur-sm`}
       data-agent-bridge-approval=""
+      data-agent-bridge-approval-portal={embedded ? undefined : ''}
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
     >
-      <p className="text-[11px] text-chrome-text-secondary px-1 max-w-[9rem]">
+      <p className="text-[11px] text-chrome-text px-1 max-w-[9rem]">
         Allow this agent to control SurfCAD?
       </p>
       <button
@@ -31,7 +34,7 @@ export default function AgentBridgeApprovalPopup({ open, onAllow, onDeny, embedd
       </button>
       <button
         type="button"
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-chrome-border text-chrome-text-secondary hover:bg-gray-600 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400"
+        className="flex h-9 w-9 items-center justify-center rounded-full bg-chrome-border text-chrome-secondary hover:bg-gray-600 hover:text-chrome-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-chrome-text"
         aria-label="Deny connection"
         onClick={onDeny}
         data-ui-action="data-agent-bridge-reject"

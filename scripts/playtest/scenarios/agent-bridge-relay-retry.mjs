@@ -5,6 +5,9 @@
  * Run: npm run build && node scripts/playtest/run.mjs --scenario agent-bridge-relay-retry
  */
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   assertLocalhost,
   findChrome,
@@ -13,13 +16,36 @@ import {
   waitForServer,
 } from '../lib/harness.mjs';
 import { pickFreePort } from '../lib/pickFreePort.mjs';
-import {
-  startAgentBridgeRelay,
-  stopAgentBridgeRelay,
-} from '../../../packages/surfcad-mcp/src/bridge/relayServer.mjs';
 import { RelaySession } from '../../../packages/surfcad-mcp/src/relay.mjs';
+import { rectsOverlap } from '../../../src/agent/ws/agentBridgeChrome.js';
 
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
+const SERVER_BIN = join(ROOT, 'packages/surfcad-mcp/bin/surfcad-mcp.js');
 const FAST_FAIL_MS = 2000;
+
+function spawnMcpRelay(port) {
+  // MCP stdio servers exit (and stop the owned relay) when stdin ends. Keep
+  // the pipe open for the life of this process; do not use stdio: 'ignore'.
+  const proc = spawn(process.execPath, [SERVER_BIN], {
+    env: {
+      ...process.env,
+      SURFCAD_MCP_START_RELAY: '1',
+      SURFCAD_AGENT_BRIDGE_WS_PORT: String(port),
+    },
+    stdio: ['pipe', 'ignore', 'ignore'],
+    detached: true,
+  });
+  proc.stdin?.on?.('error', () => {});
+  return proc;
+}
+
+function stopMcpRelay(proc) {
+  if (!proc) return;
+  try { proc.stdin?.end(); } catch { /* gone */ }
+  try { process.kill(-proc.pid, 'SIGTERM'); } catch {
+    try { proc.kill('SIGTERM'); } catch { /* gone */ }
+  }
+}
 
 async function timed(promise) {
   const start = Date.now();
@@ -45,6 +71,36 @@ async function waitForLostCall(session, timeoutMs) {
     }
     await new Promise((r) => setTimeout(r, 50));
   }
+}
+
+async function assertApprovalClearsProfileChrome(page) {
+  const popup = await page.locator('[data-agent-bridge-approval]').boundingBox();
+  const chip = await page.locator('[data-profile-chip]').first().boundingBox();
+  const panel = await page.locator('[data-profile-panel]').boundingBox();
+  const privacy = await page.locator('[data-profile-privacy-choices]').boundingBox();
+  assert.ok(popup, 'Allow/Deny popup should be visible');
+  assert.ok(chip, 'profile chip should be visible');
+  assert.equal(
+    rectsOverlap(popup, chip),
+    false,
+    `Allow/Deny covers the profile chip popup=${JSON.stringify(popup)} chip=${JSON.stringify(chip)}`,
+  );
+  if (panel) {
+    assert.equal(
+      rectsOverlap(popup, panel),
+      false,
+      `Allow/Deny covers the profile menu popup=${JSON.stringify(popup)} panel=${JSON.stringify(panel)}`,
+    );
+  }
+  if (privacy) {
+    assert.equal(
+      rectsOverlap(popup, privacy),
+      false,
+      `Allow/Deny covers Privacy choices popup=${JSON.stringify(popup)} privacy=${JSON.stringify(privacy)}`,
+    );
+  }
+  const portal = await page.locator('[data-agent-bridge-approval-portal]').count();
+  assert.ok(portal > 0, 'Allow/Deny must render as the body portal, not inside the menu');
 }
 
 export const id = 'agent-bridge-relay-retry';
@@ -104,7 +160,7 @@ export async function run(ctx) {
     `wrap should sit at top-right (x=${wrapBox.x})`,
   );
 
-  let relay = await startAgentBridgeRelay({ port: relayPort, onLog: () => {} });
+  let relayProc = spawnMcpRelay(relayPort);
   const session = new RelaySession({
     url: relayUrl,
     onLog: () => {},
@@ -120,6 +176,7 @@ export async function run(ctx) {
     const token = (await page.locator('[data-agent-bridge-code]').innerText()).trim();
     const peerPromise = session.pair(token);
     await page.waitForSelector('[data-agent-bridge-approval]', { timeout: 15000 });
+    await assertApprovalClearsProfileChrome(page);
     await page.click('[data-ui-action="data-agent-bridge-approve"]');
     await peerPromise;
     await session.call('status');
@@ -132,16 +189,15 @@ export async function run(ctx) {
       { timeout: 5000 },
     );
 
-    const closing = relay;
-    relay = null;
-    await stopAgentBridgeRelay(closing);
+    stopMcpRelay(relayProc);
+    relayProc = null;
     const lostMs = await waitForLostCall(session, FAST_FAIL_MS);
     assert.ok(lostMs < FAST_FAIL_MS, `pairing_lost took ${lostMs}ms`);
     await page.waitForSelector('[data-agent-bridge-connection-ring="reconnecting"]', { timeout: 15000 });
 
-    relay = await startAgentBridgeRelay({ port: relayPort, onLog: () => {} });
+    relayProc = spawnMcpRelay(relayPort);
     const approval = page.locator('[data-agent-bridge-approval]');
-    const prompted = await approval.waitFor({ timeout: 4000 }).then(() => true).catch(() => false);
+    const prompted = await approval.waitFor({ timeout: 8000 }).then(() => true).catch(() => false);
     if (prompted) {
       const menuClosed = await page.evaluate(
         /* eslint-disable no-undef */
@@ -151,6 +207,13 @@ export async function run(ctx) {
       if (!menuClosed) {
         throw new Error('Allow/Deny must show while the profile menu stays closed');
       }
+      const chip = await page.locator('[data-profile-chip]').first().boundingBox();
+      const popup = await page.locator('[data-agent-bridge-approval]').boundingBox();
+      assert.equal(
+        rectsOverlap(popup, chip),
+        false,
+        'Allow/Deny must not cover the chip while the menu is closed',
+      );
       await page.click('[data-ui-action="data-agent-bridge-approve"]');
     }
     await page.waitForSelector('[data-agent-bridge-connection-ring="connected"]', { timeout: 30000 });
@@ -171,9 +234,7 @@ export async function run(ctx) {
     assert.ok(recovered, 'session.call should succeed after the relay returns');
   } finally {
     try { session.disconnect(); } catch { /* gone */ }
-    if (relay) {
-      try { await stopAgentBridgeRelay(relay); } catch { /* gone */ }
-    }
+    stopMcpRelay(relayProc);
     await browser.close();
     stop();
   }

@@ -1,0 +1,23 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const SRC = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '../scripts/playtest/scenarios/agent-bridge-relay-retry.mjs'),
+  'utf8',
+);
+
+test('relay-retry playtest keeps MCP stdin open so the owned relay does not exit', () => {
+  assert.match(SRC, /function spawnMcpRelay/);
+  assert.match(SRC, /stdio:\s*\[\s*'pipe',\s*'ignore',\s*'ignore'\s*\]/);
+  assert.match(SRC, /proc\.stdin\?\.end/);
+});
+
+test('relay-retry playtest asserts Allow/Deny does not cover the profile chrome', () => {
+  assert.match(SRC, /assertApprovalClearsProfileChrome/);
+  assert.match(SRC, /rectsOverlap/);
+  assert.match(SRC, /data-profile-privacy-choices/);
+  assert.match(SRC, /data-agent-bridge-approval-portal/);
+});

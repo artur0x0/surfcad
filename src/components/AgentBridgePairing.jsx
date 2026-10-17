@@ -299,7 +299,7 @@ export default function AgentBridgePairing({
   const guidedFlow = flowOpen && !webkitHttpsBlocked ? (
     <div className="space-y-3" data-agent-bridge-guided="">
       <div className="rounded-md border border-chrome-border/80 bg-chrome-surface/60 px-2 py-2" data-agent-bridge-prompt="">
-        <p className="text-[11px] text-chrome-text-secondary mb-2">Send this to your AI agent:</p>
+        <p className="text-[11px] text-chrome-secondary mb-2">Send this to your AI agent:</p>
         <p className="text-[11px] text-chrome-text leading-snug mb-2 line-clamp-3" data-agent-bridge-prompt-preview="">
           {promptPreview}
         </p>
@@ -314,7 +314,7 @@ export default function AgentBridgePairing({
       </div>
       {waitingForRelay ? (
         <div
-          className="flex items-center justify-center gap-2 text-xs text-chrome-text-secondary py-1"
+          className="flex items-center justify-center gap-2 text-xs text-chrome-secondary py-1"
           data-agent-bridge-waiting-relay=""
         >
           <Loader2 size={14} className="animate-spin shrink-0" aria-hidden />
@@ -326,7 +326,7 @@ export default function AgentBridgePairing({
           <div className="font-mono text-lg tracking-widest text-center py-1" data-agent-bridge-code="">
             {token}
           </div>
-          <p className="text-xs text-chrome-text-secondary text-center mb-1">
+          <p className="text-xs text-chrome-secondary text-center mb-1">
             Send this pairing code to your agent so it can connect.
           </p>
           <button
@@ -338,7 +338,7 @@ export default function AgentBridgePairing({
             {copied === 'code' ? 'Copied' : 'Copy code'}
           </button>
           {pending && (
-            <p className="text-xs text-center text-chrome-text-secondary mb-2" data-agent-bridge-approval-hint="">
+            <p className="text-xs text-center text-chrome-secondary mb-2" data-agent-bridge-approval-hint="">
               Approve or deny the connection in the popup.
             </p>
           )}
@@ -368,7 +368,7 @@ export default function AgentBridgePairing({
           )}
           <button
             type="button"
-            className="w-full rounded border border-chrome-border px-2 py-1.5 text-chrome-text-secondary hover:text-chrome-text"
+            className="w-full rounded border border-chrome-border px-2 py-1.5 text-chrome-secondary hover:text-chrome-text"
             onClick={closeFlow}
             data-ui-action="data-agent-bridge-disconnect"
           >
@@ -395,7 +395,7 @@ export default function AgentBridgePairing({
           data-agent-bridge-unsupported="webkit-https"
         >
           <p className="text-chrome-text mb-1.5">Pairing works in Chrome for now.</p>
-          <p className="text-chrome-text-secondary mb-2">
+          <p className="text-chrome-secondary mb-2">
             Open this page in Chrome on your computer to connect a local MCP client.
           </p>
           <button
@@ -416,12 +416,12 @@ export default function AgentBridgePairing({
     ? `flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-xs transition-colors ${
       paired
         ? 'border border-emerald-500/50 bg-emerald-950/40 text-emerald-300'
-        : 'border border-chrome-border text-chrome-text-secondary hover:bg-white/5 hover:text-chrome-text'
+        : 'border border-chrome-border text-chrome-secondary hover:bg-white/5 hover:text-chrome-text'
     }`
     : `flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-md backdrop-blur-sm ${
       paired
         ? 'border-emerald-500/60 bg-emerald-950/80 text-emerald-300'
-        : 'border-chrome-border bg-chrome-surface/90 text-chrome-text-secondary hover:text-chrome-text'
+        : 'border-chrome-border bg-chrome-surface/90 text-chrome-secondary hover:text-chrome-text'
     }`;
 
   const connectAgentButton = !flowOpen && !webkitHttpsBlocked ? (

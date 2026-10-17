@@ -197,6 +197,9 @@ export async function runSurfcadMcpServer(options = {}) {
     }
   };
 
+  // Intended MCP stdio lifecycle: when the client closes stdin the process
+  // (and the relay it owns) must exit. Playtests that spawn this bin have to
+  // keep stdin open; stdio: 'ignore' ends the stream immediately.
   const onStdinClosed = () => {
     if (ownedRelay) {
       const closing = ownedRelay;

@@ -22,6 +22,7 @@ import {
   resetAgentBridgeRelayCache,
   stopAgentBridgeRelay,
 } from '../packages/surfcad-mcp/src/bridge/relayServer.mjs';
+import { withViteDistLock } from './lib/viteDistLock.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PKG_ROOT = join(ROOT, 'packages/surfcad-mcp');
@@ -99,7 +100,10 @@ async function runBrowserE2E(t, browserType, executablePath) {
 
     await page.waitForSelector('[data-ui-action="data-agent-bridge-approve"]', { timeout: 15000 });
     await page.click('[data-ui-action="data-agent-bridge-approve"]');
-    await page.waitForSelector('[data-agent-bridge-paired]', { timeout: 15000 });
+    await page.waitForSelector(
+      '[data-agent-bridge-paired], [data-agent-bridge-connection-ring="connected"]',
+      { timeout: 15000 },
+    );
 
     const out = await client.callTool({ name: 'status', arguments: {} });
     assert.equal(out.isError, false, out.content?.[0]?.text);
@@ -125,8 +129,10 @@ test('production build pairs through packaged relay (Chromium)', { timeout: 300_
     t.skip('CHROME_PATH not set');
     return;
   }
-  npmPackInstall();
-  await runBrowserE2E(t, chromium, exe);
+  await withViteDistLock(async () => {
+    npmPackInstall();
+    await runBrowserE2E(t, chromium, exe);
+  });
 });
 
 test('production build pairs through packaged relay (WebKit)', { timeout: 300_000 }, async (t) => {
@@ -136,6 +142,8 @@ test('production build pairs through packaged relay (WebKit)', { timeout: 300_00
     t.skip('WebKit executable not available');
     return;
   }
-  npmPackInstall();
-  await runBrowserE2E(t, webkit, exe);
+  await withViteDistLock(async () => {
+    npmPackInstall();
+    await runBrowserE2E(t, webkit, exe);
+  });
 });
