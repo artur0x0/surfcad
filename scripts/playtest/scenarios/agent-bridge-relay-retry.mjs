@@ -94,15 +94,15 @@ export async function run(ctx) {
     await page.waitForSelector('[data-agent-bridge-approval]', { timeout: 15000 });
     await page.click('[data-ui-action="data-agent-bridge-approve"]');
     const peer = await peerPromise;
-    await page.waitForSelector('[data-agent-bridge-connection-ring]', { timeout: 15000 });
+    await page.waitForSelector('[data-agent-bridge-connection-ring="connected"]', { timeout: 15000 });
     try { peer.close(); } catch { /* gone */ }
+    await page.waitForSelector('[data-agent-bridge-connection-ring="reconnecting"]', { timeout: 15000 });
 
     const stopRelay = () => {
       try { process.kill(-relayProc.pid, 'SIGTERM'); } catch { /* gone */ }
     };
     stopRelay();
-    await page.waitForSelector('[data-agent-bridge-connection-ring]', { state: 'hidden', timeout: 30000 });
-    await page.waitForSelector('[data-agent-bridge-waiting-relay]', { timeout: 30000 });
+    await page.waitForSelector('[data-agent-bridge-connection-ring="reconnecting"]', { timeout: 15000 });
 
     const relayProc2 = spawn(process.execPath, [SERVER_BIN], {
       env: {
@@ -114,7 +114,23 @@ export async function run(ctx) {
       detached: true,
     });
     try {
-      await page.waitForSelector('[data-agent-bridge-code]', { timeout: 30000 });
+      // The tab re-registers on its own; until it does the relay answers unknown_token.
+      const peer2Promise = (async () => {
+        const deadline = Date.now() + 30000;
+        for (;;) {
+          try {
+            return await connectPeer(relayUrl, token);
+          } catch (err) {
+            if (Date.now() > deadline) throw err;
+            await new Promise((r) => setTimeout(r, 250));
+          }
+        }
+      })();
+      await page.waitForSelector('[data-agent-bridge-approval]', { timeout: 30000 });
+      await page.click('[data-ui-action="data-agent-bridge-approve"]');
+      const peer2 = await peer2Promise;
+      await page.waitForSelector('[data-agent-bridge-connection-ring="connected"]', { timeout: 15000 });
+      try { peer2.close(); } catch { /* gone */ }
     } finally {
       try { process.kill(-relayProc2.pid, 'SIGTERM'); } catch { /* gone */ }
     }
