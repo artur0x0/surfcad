@@ -1,43 +1,18 @@
-import { useEffect, useState } from 'react';
 import { Check, X } from 'lucide-react';
-import {
-  APPROVAL_POPUP_WIDE_MIN_PX,
-  approvalPopupPositionClass,
-} from '../agent/ws/agentBridgeChrome.js';
-
-function useViewportWidth() {
-  const [width, setWidth] = useState(() => (
-    typeof window === 'undefined' ? 1280 : window.innerWidth
-  ));
-  useEffect(() => {
-    const onResize = () => setWidth(window.innerWidth);
-    window.addEventListener('resize', onResize);
-    onResize();
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-  return width;
-}
 
 /**
  * Per-client allow/deny prompt for a local MCP peer.
+ * Renders in-flow inside the Connect Agent dialog (replaces the pairing code).
  */
-export default function AgentBridgeApprovalPopup({ open, onAllow, onDeny, embedded = false }) {
-  const viewportWidth = useViewportWidth();
+export default function AgentBridgeApprovalPopup({ open, onAllow, onDeny }) {
   if (!open) return null;
-
-  const positionClass = approvalPopupPositionClass(embedded ? null : viewportWidth, { embedded });
-  const anchor = embedded
-    ? undefined
-    : (viewportWidth < APPROVAL_POPUP_WIDE_MIN_PX ? 'under-chip' : 'bottom-center');
 
   return (
     <div
-      role="dialog"
+      role="group"
       aria-label="Approve local agent connection"
-      className={`${positionClass} flex items-center gap-2 rounded-full border border-chrome-border surface-glass font-ui px-2 py-2 shadow-lg`}
+      className="flex items-center gap-2 rounded-full border border-chrome-border surface-glass font-ui px-2 py-2"
       data-agent-bridge-approval=""
-      data-agent-bridge-approval-portal={embedded ? undefined : ''}
-      data-agent-bridge-approval-anchor={anchor}
       onPointerDown={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >

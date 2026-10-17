@@ -96,8 +96,8 @@ console.log('ui: desktop ribbon + left rail + error Undo');
   );
   const connectBtn = read('../../src/components/agentBridgeConnectButton.js');
   check(
-    '4: Connect Agent class includes text-white',
-    /text-white/.test(connectBtn),
+    '4: Connect Agent class includes text-on-dark',
+    /text-on-dark/.test(connectBtn),
   );
 }
 
