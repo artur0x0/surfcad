@@ -49,14 +49,15 @@ function asm(name, activeId, parts, groups) {
   });
 }
 
-console.log('parts layout — new part lands in parts/');
+console.log('parts layout — new part lands in the assembly folder');
 {
-  eq('bare name', resolveNewPartPath('Gearbox', 'Bracket'), sharedPartPath('Bracket'));
-  eq('collision suffix', resolveNewPartPath('Gearbox', 'Bracket', [sharedPartPath('Bracket')]),
-    sharedPartPath('Bracket (2)'));
-  eq('suggest', suggestNewPartPath('Gearbox', []), sharedPartPath('Part (1)'));
+  eq('bare name', resolveNewPartPath('Gearbox', 'Bracket'), assemblyPartPath('Gearbox', 'Bracket'));
+  eq('collision suffix', resolveNewPartPath('Gearbox', 'Bracket', [assemblyPartPath('Gearbox', 'Bracket')]),
+    assemblyPartPath('Gearbox', 'Bracket-2'));
+  eq('suggest', suggestNewPartPath('Gearbox', []), assemblyPartPath('Gearbox', 'Part (1)'));
   const app = readFileSync(new URL('../../src/App.jsx', import.meta.url), 'utf8');
-  ok('create calls resolveNewPartPath', /resolveNewPartPath\(/.test(app));
+  ok('create allocates an assembly-folder path', /allocateVaultPartPath\(/.test(app)
+    && /layout: 'assembly-folder'/.test(app));
 }
 
 console.log('\nparts layout — rename moves only the assembly');
@@ -159,7 +160,7 @@ console.log('\nparts layout — rename moves only the assembly');
   eq('stamp keeps the body', stripSurfId((await gh.readFile(vault.repo, nextShim, 'main')).content), shimBody);
   const coverAfter = parseSurfJson((await gh.readFile(vault.repo, assemblyFilePath('Cover'), 'main')).content);
   eq('second assembly ref still resolves', coverAfter.parts[0].surfId, ID_A);
-  eq('second assembly path stays', coverAfter.parts[0].id, bracket);
+  eq('second assembly path stays', coverAfter.parts[0].path || coverAfter.parts[0].id, bracket);
   eq('other assembly group source stays', coverAfter.groups[0].source, assemblyFilePath('Gearbox'));
   eq('other assembly group partId stays', coverAfter.groups[0].partIds, [ID_A]);
   const app = readFileSync(new URL('../../src/App.jsx', import.meta.url), 'utf8');
@@ -244,7 +245,7 @@ console.log('\nparts layout — migrate two Bracket.js files');
   const plan = planLayoutMigration(before);
   eq('one plan, both brackets, copy stays', plan.moves.map((move) => [move.from, move.to, move.surfId]), [
     [cover, sharedPartPath('Bracket'), ID_B],
-    [gear, sharedPartPath('Bracket (2)'), ID_A],
+    [gear, sharedPartPath('Bracket-2'), ID_A],
   ]);
   ok('copy is not in the plan', !plan.moves.some((move) => move.from === copy));
   const store = createSyncStore({ persist: false });
@@ -262,33 +263,28 @@ console.log('\nparts layout — migrate two Bracket.js files');
   const flushed = await flushSyncQueue({
     store, adapter: gh, repo: vault.repo, branch: 'main', online: true,
   });
-  eq('migration synced', flushed.status, 'synced');
+  eq('leftover layout migration is not written', flushed.status, 'idle');
   const commitsAfter = gh._log.filter((entry) => entry.op === 'commitFiles').length;
-  ok('migration is one commit', commitsAfter === commitsBefore + 1);
+  eq('migration flush writes no commit', commitsAfter, commitsBefore);
   const after = await tree();
   const afterJs = after.filter((entry) => entry.path.endsWith('.js')).map((entry) => entry.path).sort();
-  eq('no part file lost', afterJs.length, beforeJs.length);
-  eq('bracket ids kept', [
-    readSurfId(after.find((entry) => entry.path === sharedPartPath('Bracket')).content),
-    readSurfId(after.find((entry) => entry.path === sharedPartPath('Bracket (2)')).content),
-  ], [ID_B, ID_A]);
+  eq('assembly-folder files stay put', afterJs, beforeJs);
+  ok('no parts/ scripts were created', !after.some((entry) => entry.path.startsWith('parts/') && entry.path.endsWith('.js')));
   ok('copy stayed in the assembly folder', after.some((entry) => entry.path === copy && entry.content === copyBody));
   const gearAfter = parseSurfJson(after.find((entry) => entry.path === assemblyFilePath('Gearbox')).content);
   const coverAfter = parseSurfJson(after.find((entry) => entry.path === assemblyFilePath('Cover')).content);
-  eq('gearbox paths rewritten by id', gearAfter.parts.map((part) => [part.surfId, part.id]), [
-    [ID_A, sharedPartPath('Bracket (2)')],
-    [ID_COPY, copy],
-  ]);
-  eq('cover ref follows the surf id', coverAfter.parts.map((part) => [part.surfId, part.id]), [
-    [ID_B, sharedPartPath('Bracket')],
-    [ID_A, sharedPartPath('Bracket (2)')],
-  ]);
+  eq('gearbox paths were not rewritten', gearAfter.parts.map((part) => part.path || part.id).sort(), [
+    copy, gear,
+  ].sort());
+  eq('cover refs stay on the assembly-folder files', coverAfter.parts.map((part) => part.path || part.id).sort(), [
+    cover, gear,
+  ].sort());
   eq('cover group partId still resolves', coverAfter.groups[0].partIds, [ID_A]);
   eq('cover group source not rewritten', coverAfter.groups[0].source, assemblyFilePath('Gearbox'));
   const again = planLayoutMigration(after);
-  eq('second pass is a no-op', [again.changed, again.files], [false, []]);
+  ok('planner still describes a move because nothing was written', again.changed === true);
   const againCommit = planLayoutMigrationCommit(after, []);
-  eq('second pass with an empty outbox is a no-op', againCommit.changed, false);
+  eq('leftover planner with an empty outbox still has a plan', againCommit.changed, true);
   let refused = false;
   try {
     assertLayoutFilesPreserved(before, projectFiles(before, [

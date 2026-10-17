@@ -14,8 +14,7 @@
 import { normalizeOutboxFiles } from './binaryContent.js';
 import { materializeRename, renameFailureToast } from './gitRename.js';
 import { deleteAssemblyFailureToast } from './gitDeleteAssembly.js';
-import { assertMigrationCommitSafe, readVaultIdEntries } from './surfIdMigration.js';
-import { planLayoutMigration } from './layoutMigration.js';
+import { isImplicitVaultWriteOp } from './vaultImplicitWrite.js';
 import { GitAdapterError } from './githubAdapterInterface.js';
 import { isVaultWriteRefusal, repoHasVaultMarker, vaultWriteRefusalMessage } from './vault.js';
 
@@ -90,10 +89,17 @@ export async function flushSyncQueue({
   const meshes = [];
   const writtenFiles = [];
   let otherWrites = false;
+  let implicitSkipped = 0;
   for (const item of queued) {
     await store.setOpStatus(item.id, 'sending');
     await store.setPartsState(repo, item.partIds, 'sending', item.branch || branch);
     try {
+      if (isImplicitVaultWriteOp(item)) {
+        implicitSkipped += 1;
+        await store.setOpStatus(item.id, 'done');
+        await store.setPartsState(repo, item.partIds, 'clean', item.branch || branch);
+        continue;
+      }
       let files = item.files || [];
       if (item.op === 'rename') {
         const built = await materializeRename(adapter, writeRepo, branch, item.payload);
@@ -104,19 +110,7 @@ export async function flushSyncQueue({
         await store.setPartsState(repo, item.partIds, 'clean', item.branch || branch);
         continue;
       }
-      if (item.op === 'migrate-ids') assertMigrationCommitSafe(files);
       let plannedMoves = null;
-      if (item.op === 'migrate-layout') {
-        const entries = await readVaultIdEntries(adapter, writeRepo, branch);
-        const plan = planLayoutMigration(entries);
-        if (!plan.changed) {
-          await store.setOpStatus(item.id, 'done');
-          await store.setPartsState(repo, item.partIds, 'clean', item.branch || branch);
-          continue;
-        }
-        files = plan.files;
-        plannedMoves = plan.moves;
-      }
       const committedFiles = await normalizeOutboxFiles(files);
       const res = await adapter.commitFiles(writeRepo, {
         branch,
@@ -206,6 +200,14 @@ export async function flushSyncQueue({
         layoutMoves,
       };
     }
+  }
+  if (!writtenFiles.length && implicitSkipped > 0 && !otherWrites && !assemblyRenames.length) {
+    return {
+      status: 'idle',
+      sha: head,
+      branch,
+      implicitSkipped,
+    };
   }
   return {
     status: 'synced',

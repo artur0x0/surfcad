@@ -60,18 +60,24 @@ async function seedVault() {
 }
 const commitsOn = (gh, branch) => gh._log.filter((e) => e.op === 'commitFiles' && e.branch === branch);
 
+function partByPath(doc, path) {
+  return (doc.parts || []).find((part) => part.path === path || part.id === path);
+}
+
 console.log('git G3 — commit files');
 {
   const { opened } = await seedVault();
+  const bracketId = partByPath(opened.doc, BRACKET).id;
+  const boltId = partByPath(opened.doc, BOLT).id;
   eq('clean → no files', buildCommitFiles(opened.doc, opened.scripts, opened.baseline).files, []);
-  const edited = { ...opened.scripts, [BRACKET]: 'return Manifold.cube([12,12,12], true);' };
+  const edited = { ...opened.scripts, [bracketId]: 'return Manifold.cube([12,12,12], true);' };
   const b = buildCommitFiles(opened.doc, edited, opened.baseline);
   eq('edit → part + assembly', b.files.map((f) => f.path), [BRACKET, ASM]);
-  const live = buildCommitFiles(opened.doc, opened.scripts, opened.baseline, { liveId: BOLT, liveScript: '// live' });
+  const live = buildCommitFiles(opened.doc, opened.scripts, opened.baseline, { liveId: boltId, liveScript: '// live' });
   eq('live editor text is committed', live.files.map((f) => [f.path, f.path === BOLT ? f.content : '']), [[BOLT, '// live'], [ASM, '']]);
   const renamed = { ...opened.doc, parts: opened.doc.parts.map((p, i) => (i === 1 ? { ...p, name: 'Bolt' } : p)) };
   eq('rename → assembly only', buildCommitFiles(renamed, opened.scripts, opened.baseline).files.map((f) => f.path), [ASM]);
-  const dropped = { ...opened.doc, parts: opened.doc.parts.filter((p) => p.id !== BOLT) };
+  const dropped = { ...opened.doc, parts: opened.doc.parts.filter((p) => p.id !== boltId) };
   const d = buildCommitFiles(dropped, opened.scripts, opened.baseline);
   eq('removed part → assembly only, no delete', d.files.map((f) => [f.path, !!f.delete]), [[ASM, false]]);
   eq('branch name', commitBranchName('Gearbox', DAY), 'surfcad/Gearbox-2026-10-06');
@@ -81,28 +87,31 @@ console.log('git G3 — commit files');
 console.log('\ngit G3 — happy path: one commit to main');
 {
   const { gh, repo, opened, seedSha } = await seedVault();
-  const scripts = { ...opened.scripts, [BRACKET]: 'return Manifold.cube([12,12,12], true);' };
-  const doc = { ...opened.doc, parts: [...opened.doc.parts, { id: assemblyPartPath('Gearbox', 'Gear'), name: 'Gear', visible: true, order: 2 }] };
-  scripts[assemblyPartPath('Gearbox', 'Gear')] = 'return Manifold.sphere(5, 32);';
+  const bracketId = partByPath(opened.doc, BRACKET).id;
+  const boltId = partByPath(opened.doc, BOLT).id;
+  const GEAR = assemblyPartPath('Gearbox', 'Gear');
+  const scripts = { ...opened.scripts, [bracketId]: 'return Manifold.cube([12,12,12], true);' };
+  const doc = { ...opened.doc, parts: [...opened.doc.parts, { id: GEAR, name: 'Gear', visible: true, order: 2 }] };
+  scripts[GEAR] = 'return Manifold.sphere(5, 32);';
   const before = commitsOn(gh, 'main').length;
   eq('clean commit is a no-op', (await commitWorkspace(gh, repo, { doc: opened.doc, scripts: opened.scripts, baseline: opened.baseline })).status, 'clean');
   const res = await commitWorkspace(gh, repo, { doc, scripts, baseline: opened.baseline, message: 'Bigger bracket + gear', now: DAY });
   eq('status committed', res.status, 'committed');
   eq('exactly one commit to main', commitsOn(gh, 'main').length - before, 1);
-  eq('commit paths', res.files, [BRACKET, assemblyPartPath('Gearbox', 'Gear'), ASM]);
+  eq('commit paths', res.files, [BRACKET, GEAR, ASM]);
   const head = await gh.getBranch(repo, 'main');
   eq('main head is the commit', head.sha, res.sha);
   const cmp = await gh.compare(repo, seedSha, res.sha);
   eq('fast-forward one commit', [cmp.status, cmp.aheadBy], ['ahead', 1]);
   eq('bracket in git', (await gh.readFile(repo, BRACKET, 'main')).content, 'return Manifold.cube([12,12,12], true);');
-  eq('assembly in git has gear', parseSurfJson((await gh.readFile(repo, ASM, 'main')).content).parts.map((p) => p.id),
-    [BRACKET, BOLT, assemblyPartPath('Gearbox', 'Gear')]);
+  eq('assembly in git has gear', parseSurfJson((await gh.readFile(repo, ASM, 'main')).content).parts.map((p) => p.path),
+    [BRACKET, BOLT, GEAR]);
   eq('bolt untouched', (await gh.readFile(repo, BOLT, 'main')).content, 'return Manifold.cylinder(6, 1.5, 1.5, 24);');
-  ok('new baseline clean', !isWorkspaceDirty(doc, scripts, res.baseline));
+  ok('new baseline clean', !isWorkspaceDirty(res.doc || doc, res.scripts || scripts, res.baseline));
   eq('new baseline head', res.baseline.headSha, res.sha);
   ok('no surfcad/ branch on happy path', !(await gh.listBranches(repo)).some((b) => b.name.startsWith('surfcad/')));
   const second = await commitWorkspace(gh, repo, {
-    doc, scripts: { ...scripts, [BOLT]: '// second' }, baseline: res.baseline,
+    doc: res.doc || doc, scripts: { ...(res.scripts || scripts), [boltId]: '// second' }, baseline: res.baseline,
   });
   eq('second commit chains on new baseline', [second.status, (await gh.getBranch(repo, 'main')).sha === second.sha], ['committed', true]);
 }
@@ -117,7 +126,8 @@ console.log('\ngit G3 — moved main → conflict, nothing overwritten');
   const base = await detectCommitBase(gh, repo, { branch: 'main', baselineSha: opened.baseline.headSha });
   eq('base detected = our open', [base.baseSha, base.mainSha, base.behindBy], [seedSha, remote.sha, 1]);
   eq('remote changed files', base.remoteFiles.map((f) => f.path), [BRACKET, SPARE]);
-  const scripts = { ...opened.scripts, [BRACKET]: '// mine bracket' };
+  const bracketId = partByPath(opened.doc, BRACKET).id;
+  const scripts = { ...opened.scripts, [bracketId]: '// mine bracket' };
   const mainBefore = commitsOn(gh, 'main').length;
   const res = await commitWorkspace(gh, repo, { doc: opened.doc, scripts, baseline: opened.baseline, message: 'mine', now: DAY });
   eq('status conflict', res.status, 'conflict');
@@ -186,7 +196,8 @@ console.log('\ngit G3 — first commit of a new assembly (no Open)');
     && committed.files.includes(BODY) && committed.files.includes(LID) && committed.files.includes(HANDLE),
   JSON.stringify(committed.files));
   const reopened = await openVaultAssembly(gh, vault.repo, 'Widget');
-  eq('reopens from vault', reopened.scripts[P], 'return Manifold.cube([5,5,5], true);');
+  const body = partByPath(reopened.doc, P);
+  eq('reopens from vault', reopened.scripts[body.id], 'return Manifold.cube([5,5,5], true);');
   ok('clean vs new baseline', !isWorkspaceDirty(doc, { [P]: 'return Manifold.cube([5,5,5], true);' }, res.baseline));
   // Null baseline head (post-OAuth, no Open yet) must resolve tip — not throw
   // "main moved: head …, base null" or falsely return branched.

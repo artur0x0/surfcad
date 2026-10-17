@@ -274,7 +274,7 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `sheet_edit` | `{ chip_id?, feature_id?, …params }` | Open a sheet chip for edit; optional param patch. |
 | `sheet_begin_hole` | `{}` | Next on a new sheet hole — opens centres sketch. |
 | `git_move_to_repo` | `{ vault_name? }` | G6: local assembly → vault (mock or real adapter). One assembly-history undo when promoted. |
-| `git_save` | `{ message }` | Save (commit) on the current branch — same as the ribbon Save flow after the message step. Every path-less part first gets `assemblies/<Assembly>/<Name>.js` (`-2` on collision); those scripts, dirty parts, and the `.surf.json` land in one commit, and the working copy takes the new ids. |
+| `git_save` | `{ message }` | Save (commit) on the current branch — same as the ribbon Save flow after the message step. Every path-less part first gets `assemblies/<Assembly>/<Name>.js` (`-2` on collision); those scripts, dirty parts, and the `.surf.json` land in one commit. Part ids stay the same; `path` is stored beside each id. |
 | `git_add_to_repo` | `{ part_id }` | Add one stray/local part into the vault layout (`handleAddToRepo`). Other path-less rows are pathed by the same core as `git_save` and committed with it, so the `.surf.json` never references a missing file. |
 | `git_behind_resolve` | `{ action: "keep" \| "reload" \| "branch", path?, kind? }` | Get-latest choice for one behind marker. `keep` needs no path when the assembly or a single part is behind. `reload` and `branch` require `confirm: true`. |
 | `git_branch_create` | `{ name }` | Create a branch from the current tip. |

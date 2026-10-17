@@ -8,15 +8,21 @@ import {
 } from '../assembly.js';
 import { sharedPathForMove } from './gitDeleteAssembly.js';
 import {
-  PART_EXT,
+  occupancyPathsFromParts,
+  partKeepsStableId,
+  partRepoPath,
+  partRowNeedsVaultPath,
+} from './partIdentity.js';
+import {
   assemblyPartPath,
   assetPathForScript,
-  isVaultPartPath,
   partPathAllowedFor,
   parseVaultPath,
   vaultPartFileStem,
   vaultSegment,
 } from './vaultLayout.js';
+
+export { partRowNeedsVaultPath, partRowVaultPathOk, partRepoPath } from './partIdentity.js';
 
 /**
  * Occupancy for a vault write: a script path and its `.mesh` sibling are
@@ -37,7 +43,10 @@ export function occupyVaultPath(taken, path) {
 export function occupancySet(paths = []) {
   const taken = new Set();
   for (const item of paths || []) {
-    occupyVaultPath(taken, typeof item === 'string' ? item : item?.id);
+    if (typeof item === 'string') occupyVaultPath(taken, item);
+    else {
+      occupyVaultPath(taken, partRepoPath(item) || item?.id);
+    }
   }
   return taken;
 }
@@ -59,12 +68,13 @@ function nextAssemblyFolderPartPath(assemblySeg, partHint, taken) {
 }
 
 /**
- * One repo script path for a new part. Bare names use `parts/<Name>.js` with
- * `-2`, `-3`, … suffixes on collision. Full paths are normalized to end in `.js`.
- * `layout: 'assembly-folder'` lands under `assemblies/<Assembly>/`.
+ * One repo script path for a new part. Bare names use
+ * `assemblies/<Assembly>/<Name>.js` with `-2`, `-3`, … on collision.
+ * Full paths are normalized to end in `.js`. `layout: 'shared'` is the
+ * leftover `parts/` home and is not used for new writes.
  */
 export function allocateVaultPartPath(assemblyName, partName, takenPaths = [], {
-  layout = 'shared',
+  layout = 'assembly-folder',
 } = {}) {
   const raw = String(partName ?? '').trim();
   if (!raw) return null;
@@ -111,7 +121,7 @@ export function planRenameVaultPartPath(fromPath, newName, takenPaths = []) {
   if (!hint) return null;
   const taken = [];
   for (const item of takenPaths || []) {
-    const path = typeof item === 'string' ? item : item?.id;
+    const path = typeof item === 'string' ? item : (partRepoPath(item) || item?.path || item?.id);
     if (path && path !== fromPath) taken.push(path);
   }
   if (info.kind === 'shared-part') {
@@ -121,42 +131,35 @@ export function planRenameVaultPartPath(fromPath, newName, takenPaths = []) {
 }
 
 export function resolveNewPartPath(assemblyName, partName, takenPaths = []) {
-  return allocateVaultPartPath(assemblyName, partName, takenPaths, { layout: 'shared' });
-}
-
-/** True when a part row id is a vault script path ending in `.js`. */
-export function partRowVaultPathOk(id) {
-  const text = String(id || '').trim();
-  if (!text) return false;
-  const path = normalizeRepoPath(text);
-  if (!path || path !== text) return false;
-  if (!path.endsWith(PART_EXT)) return false;
-  return isVaultPartPath(path);
-}
-
-export function partRowNeedsVaultPath(part) {
-  return !partRowVaultPathOk(part?.id);
+  return allocateVaultPartPath(assemblyName, partName, takenPaths, { layout: 'assembly-folder' });
 }
 
 /**
- * Before an assembly Save, assign every invalid part id a vault script path
+ * Before an assembly Save, assign every path-less part a vault script path
  * under `assemblies/<Assembly>/<Name>.js`. Collisions get `Name-2`, etc.
- * -> { doc, scripts, moved: [{ from, to }] }
+ * The row id stays. Scripts stay keyed by id.
+ * -> { doc, scripts, moved: [{ from, to, id }] }
  */
 export function ensureAssemblyVaultPaths(doc, scripts = {}, { remotePaths = [] } = {}) {
   const asm = vaultSegment(doc?.name);
   if (!asm || !doc) return { doc, scripts, moved: [] };
   const needs = (doc.parts || []).filter(partRowNeedsVaultPath);
-  if (!needs.length) return { doc, scripts, moved: [] };
+  if (!needs.length) {
+    const withPaths = (doc.parts || []).map((part) => {
+      const path = partRepoPath(part);
+      return path && part.path !== path ? { ...part, path } : part;
+    });
+    return { doc: { ...doc, parts: withPaths }, scripts, moved: [] };
+  }
 
   const taken = occupancySet([
-    ...(doc.parts || []).filter((part) => partRowVaultPathOk(part.id)).map((part) => part.id),
+    ...occupancyPathsFromParts(doc.parts),
     ...(remotePaths || []),
   ]);
 
-  const idMap = new Map();
+  const pathMap = new Map();
   const moved = [];
-  let workScripts = { ...(scripts || {}) };
+  const workScripts = { ...(scripts || {}) };
 
   for (const part of needs) {
     const fromId = part.id;
@@ -166,32 +169,40 @@ export function ensureAssemblyVaultPaths(doc, scripts = {}, { remotePaths = [] }
     const path = allocateVaultPartPath(asm, hint, [...taken], { layout: 'assembly-folder' });
     if (!path) continue;
     occupyVaultPath(taken, path);
-    idMap.set(fromId, path);
-    moved.push({ from: fromId, to: path });
-    const text = workScripts[fromId];
-    delete workScripts[fromId];
-    workScripts[path] = typeof text === 'string' ? text : '';
+    pathMap.set(fromId, path);
+    moved.push({ from: fromId, to: path, id: fromId });
   }
 
-  if (!idMap.size) return { doc, scripts, moved: [] };
+  if (!pathMap.size) return { doc, scripts, moved: [] };
 
   const nextParts = (doc.parts || []).map((part) => {
-    const to = idMap.get(part.id);
+    const to = pathMap.get(part.id) || partRepoPath(part);
     if (!to) return part;
     const leaf = to.split('/').pop()?.replace(/\.js$/i, '') || part.name;
+    if (partKeepsStableId(part)) {
+      return {
+        ...part,
+        path: to,
+        name: part.name || leaf,
+        isSynced: false,
+      };
+    }
+    const text = workScripts[part.id];
+    delete workScripts[part.id];
+    workScripts[to] = typeof text === 'string' ? text : '';
     return {
       ...part,
       id: to,
+      path: to,
       name: part.name || leaf,
       isSynced: false,
     };
   });
-  const nextActive = idMap.get(doc.activeId) || doc.activeId;
   const nextDoc = serializeAssembly({
     ...doc,
     source: doc.source === 'git' ? 'git' : 'local',
     parts: nextParts,
-    activeId: nextActive,
+    activeId: doc.activeId,
   });
   return { doc: nextDoc, scripts: workScripts, moved };
 }

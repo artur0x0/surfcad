@@ -239,7 +239,11 @@ import {
   planOpenVaultPart,
   planCopyToAssembly,
   allocateVaultPartPath,
+  findAssemblyPart,
+  partRepoPath,
   partRowNeedsVaultPath,
+  rekeyWorkingCopyToTip,
+  retireImplicitVaultWriteOps,
   readVaultPart,
   showAddToRepo,
   isExternalPartPath,
@@ -250,14 +254,8 @@ import {
   applyIdPromotion,
   migrateAssemblyRecords,
   migrateLocalPartIds,
-  isVaultPartPath,
   reconcileSyncedFromTip,
   markPartsSynced,
-  planSurfIdMigrationCommit,
-  readVaultIdEntries,
-  planLayoutMigrationCommit,
-  applyLayoutMoves,
-  overlayPendingLayoutMigration,
   stageAssemblyRename,
   applyAssemblyRenameCache,
   baselineAfterAssemblyRename,
@@ -3132,40 +3130,6 @@ const App = () => {
       if (result.code === 'not_a_vault' && result.error) setUploadError(result.error);
       return result;
     }
-    if ((result.status === 'synced' || result.status === 'failed') && result.layoutMoves?.length && assemblyRef.current) {
-      const applied = applyLayoutMoves(assemblyRef.current, partScriptsRef.current, result.layoutMoves);
-      if (applied.changed) {
-        for (const { from, to } of applied.pairs) {
-          const text = applied.scripts[to];
-          if (typeof text === 'string') savePartScript(to, text);
-          try { await deletePartScript(from); } catch { /* ignore */ }
-        }
-        rekeyRuntime(applied.pairs);
-        rememberScripts(applied.scripts);
-        rememberAssembly(applied.doc);
-        const prior = gitBaselineRef.current;
-        if (prior && result.sha) {
-          const synthetic = {
-            source: 'git',
-            name: prior.assemblyName,
-            parts: (prior.partIds || []).map((id, order) => ({ id, name: 'Part', visible: true, order })),
-            activeId: null,
-          };
-          const baseApplied = applyLayoutMoves(synthetic, prior.scripts, result.layoutMoves);
-          const shifted = captureBaseline({
-            assemblyPath: prior.assemblyPath,
-            assemblyName: assemblyRef.current.name,
-            doc: assemblyRef.current,
-            scripts: baseApplied.scripts,
-            branch: prior.branch || gitWorkingBranch(),
-            headSha: result.sha,
-          });
-          if (prior.legacyCleanup) shifted.legacyCleanup = prior.legacyCleanup;
-          rememberGitBaseline(shifted);
-          result.layoutApplied = true;
-        }
-      }
-    }
     if (result.status === 'synced') {
       setRenameNotice((prev) => (prev && prev.opId ? null : prev));
       const vault = gitVaultRef.current;
@@ -3243,7 +3207,8 @@ const App = () => {
 
   /**
    * After a rename-on-Commit (or any commit that remaps paths), fold the new
-   * doc/scripts into the working copy and IndexedDB so part ids match git.
+   * doc/scripts into the working copy and IndexedDB. Stable ids stay; `path`
+   * follows the files that landed in git.
    */
   const applyCommittedWorkspace = async (result) => {
     if (!result?.doc || !result?.scripts) return;
@@ -3263,7 +3228,13 @@ const App = () => {
       if (key !== '__game__' && !keep.has(key)) delete partHistoriesRef.current[key];
     }
     rememberScripts(nextScripts);
-    if (result.moved?.length) rekeyRuntime(result.moved);
+    if (result.moved?.length) {
+      const remaps = result.moved.filter((move) => (
+        move?.from && move?.to && move.from !== move.to
+        && nextDoc.parts?.some((part) => part.id === move.to)
+      ));
+      if (remaps.length) rekeyRuntime(remaps);
+    }
     const saved = rememberAssembly(nextDoc);
     const active = saved.parts.find((part) => part.id === saved.activeId) || saved.parts[0];
     if (active) {
@@ -3391,100 +3362,18 @@ const App = () => {
   };
 
   /**
-   * Open and branch-switch share this. Backfill ids, then recapture the
-   * baseline so those ids are not dirty. Overlay only this branch's pending
-   * renames so a queued rename is still the same part. The outbox is scoped
-   * per repo+branch: another branch's ops stay queued and are not pushed here.
-   * When this branch has queued ops and the tip moved, lastSyncedSha stays
-   * put so the worker refuses to overwrite.
+   * Open and branch-switch share this. Backfill ids in memory, then recapture
+   * the baseline so those ids are not dirty. Overlay only this branch's
+   * pending user renames. Never enqueue or flush a git write — load/open
+   * are read-only.
    */
-  const queueSurfIdMigration = async (vault, branch) => {
-    const adapter = gitAdapterRef.current;
-    if (!vault?.repo || !adapter) return false;
-    const store = gitSync();
-    try {
-      await store.migrateLocalSurfIds();
-    } catch (err) {
-      console.warn('[git] local id migration failed', err?.message || err);
-    }
-    const existing = store.pending(vault.repo, branch)
-      .concat(store.failed(vault.repo, branch))
-      .find((op) => op.op === 'migrate-ids');
-    if (existing) {
-      if (existing.status === 'failed') {
-        try { await store.requeue(existing.id); } catch { /* ignore */ }
-      }
-      return true;
-    }
-    let entries;
-    try {
-      entries = await readVaultIdEntries(adapter, vault.repo, branch);
-    } catch (err) {
-      console.warn('[git] id migration scan skipped', err?.message || err);
-      return false;
-    }
-    let plan;
-    try {
-      plan = planSurfIdMigrationCommit(entries);
-    } catch (err) {
-      console.warn('[git] id migration refused', err?.message || err);
-      return false;
-    }
-    if (!plan.changed) return false;
-    await gitSync().enqueue(vault.repo, {
-      op: 'migrate-ids',
-      branch,
-      message: 'Keep part ids',
-      partIds: [],
-      files: plan.files,
-      payload: { kind: 'surf-id-migration' },
-    }, { front: true });
-    return true;
-  };
-
-  const queueLayoutMigration = async (vault, branch) => {
-    const adapter = gitAdapterRef.current;
-    if (!vault?.repo || !adapter) return null;
-    const store = gitSync();
-    const existing = store.pending(vault.repo, branch)
-      .concat(store.failed(vault.repo, branch))
-      .find((op) => op.op === 'migrate-layout');
-    if (existing) {
-      if (existing.status === 'failed') {
-        try { await store.requeue(existing.id); } catch { /* ignore */ }
-      }
-      return { changed: false, moves: existing.payload?.moves || [], queued: true };
-    }
-    let entries;
-    try {
-      entries = await readVaultIdEntries(adapter, vault.repo, branch);
-    } catch (err) {
-      console.warn('[git] layout migration scan skipped', err?.message || err);
-      return null;
-    }
-    const pending = store.pending(vault.repo, branch).concat(store.failed(vault.repo, branch));
-    let plan;
-    try {
-      plan = planLayoutMigrationCommit(entries, pending);
-    } catch (err) {
-      console.warn('[git] layout migration refused', err?.message || err);
-      return null;
-    }
-    if (!plan.changed) return { changed: false, moves: [], queued: false };
-    await gitSync().enqueue(vault.repo, {
-      op: 'migrate-layout',
-      branch,
-      message: 'Move parts into parts/',
-      partIds: [],
-      files: plan.files,
-      payload: { kind: 'parts-layout', moves: plan.moves },
-    });
-    return { changed: true, moves: plan.moves, queued: true };
-  };
-
   const adoptVaultOpening = async (opened, vault) => {
     const store = gitSync();
     const branch = opened.baseline?.branch || gitWorkingBranch();
+    for (const hit of opened.identities?.cached || []) {
+      if (hit.path && hit.id) await store.rememberPathId(vault.repo, hit.path, hit.id);
+    }
+    const previous = assemblyRef.current;
     const filled = backfillSurfIds(opened.doc, store.pathIndexFor(vault.repo));
     const migrated = migrateAssemblyRecords({ doc: filled.doc, scripts: opened.scripts });
     const localIds = migrateLocalPartIds({
@@ -3505,13 +3394,33 @@ const App = () => {
     const reconciled = reconcileSyncedFromTip(localIds.doc, localIds.scripts);
     const openedDocIn = reconciled.doc;
     const openedScriptsIn = localIds.scripts;
-    for (const part of openedDocIn.parts || []) {
-      if (part.surfId) store.rememberPathId(vault.repo, part.id, part.surfId);
+    if (previous?.source === 'git') {
+      const aligned = rekeyWorkingCopyToTip(previous, partScriptsRef.current, openedDocIn, {
+        histories: partHistoriesRef.current,
+        meshMeta: partMeshMetaRef.current,
+        cadPartId: cadPartIdRef.current,
+      });
+      if (aligned.pairs.length) {
+        rekeyRuntime(aligned.pairs);
+        partMeshMetaRef.current = aligned.meshMeta;
+        setPartMeshMeta(aligned.meshMeta);
+        for (const { from } of aligned.pairs) {
+          try { await deletePartScript(from); } catch { /* ignore */ }
+        }
+      }
     }
+    for (const part of openedDocIn.parts || []) {
+      if (part.surfId && partRepoPath(part)) store.rememberPathId(vault.repo, partRepoPath(part), part.surfId);
+    }
+    try {
+      await store.migrateLocalSurfIds();
+    } catch (err) {
+      console.warn('[git] local id migration failed', err?.message || err);
+    }
+    await retireImplicitVaultWriteOps(store, vault.repo, branch);
     const queued = store.pending(vault.repo, branch).concat(store.failed(vault.repo, branch));
     const overlaid = overlayPendingPartRenames(openedDocIn, openedScriptsIn, queued);
-    const layoutOver = overlayPendingLayoutMigration(overlaid.doc, overlaid.scripts, queued);
-    const deletedOverlay = overlayPendingAssemblyDeletes(layoutOver.doc, layoutOver.scripts, queued);
+    const deletedOverlay = overlayPendingAssemblyDeletes(overlaid.doc, overlaid.scripts, queued);
     let openedDoc = deletedOverlay.doc;
     let openedScripts = deletedOverlay.scripts;
     if (deletedOverlay.removed) {
@@ -3573,50 +3482,6 @@ const App = () => {
       });
     }
     gitVaultRef.current = { ...vault, headSha: head || vault.headSha };
-    try {
-      await queueSurfIdMigration(vault, branch);
-    } catch (err) {
-      console.warn('[git] id migration enqueue failed', err?.message || err);
-    }
-    let layout = null;
-    try {
-      layout = await queueLayoutMigration(vault, branch);
-    } catch (err) {
-      console.warn('[git] layout migration enqueue failed', err?.message || err);
-    }
-    if (layout?.moves?.length) {
-      const applied = applyLayoutMoves(saved, openedScripts, layout.moves);
-      if (applied.changed) {
-        for (const { from, to } of applied.pairs) {
-          const text = applied.scripts[to];
-          if (typeof text === 'string') {
-            const part = (applied.doc.parts || []).find((row) => row.id === to);
-            await savePartScript(
-              to,
-              text,
-              typeof part?.isSynced === 'boolean' ? { isSynced: part.isSynced } : {},
-            );
-          }
-          try { await deletePartScript(from); } catch { /* ignore */ }
-        }
-        rekeyRuntime(applied.pairs);
-        rememberScripts(applied.scripts);
-        saved = rememberAssembly(applied.doc);
-        openedScripts = applied.scripts;
-        const shifted = captureBaseline({
-          assemblyPath: baseline.assemblyPath,
-          assemblyName: saved.name,
-          doc: saved,
-          scripts: openedScripts,
-          assets: baseline.assets,
-          branch,
-          headSha: baseline.headSha,
-        });
-        if (baseline.legacyCleanup) shifted.legacyCleanup = baseline.legacyCleanup;
-        rememberGitBaseline(shifted);
-        return { saved, scripts: openedScripts, baseline: shifted, branch, held };
-      }
-    }
     return { saved, scripts: openedScripts, baseline, branch, held };
   };
 
@@ -3631,6 +3496,8 @@ const App = () => {
           if (!signal()) return;
           const branch = gitWorkingBranch();
           const tip = (await gitAdapterRef.current.getBranch(vault.repo, branch))?.sha || null;
+          const store = gitSync();
+          await store.ready();
           const opened = await openVaultAssembly(
             gitAdapterRef.current,
             vault.repo,
@@ -3638,13 +3505,13 @@ const App = () => {
             {
               branch,
               headSha: tip,
+              pathIndex: store.pathIndexFor(vault.repo),
               onProgress: (update) => progress({ ...update, name: update.name || name }),
             },
           );
           if (!signal()) return;
           const adopted = await adoptVaultOpening(opened, vault);
           if (!signal()) return;
-          if (!adopted.held) await flushGitOps();
           const saved = adopted.saved;
           const openedScripts = adopted.scripts;
           // G4: check remote on open (usually current; catches a race with a push).
@@ -3870,15 +3737,17 @@ const App = () => {
           refreshGenRef.current += 1;
           const vault = await ensureGitVault();
           if (!signal()) return null;
+          const store = gitSync();
+          await store.ready();
           const loaded = await switchVaultBranch(
             gitAdapterRef.current, vault.repo, name, branchName, {
               onProgress: (update) => progress({ ...update, name: update.name || name }),
+              pathIndex: store.pathIndexFor(vault.repo),
             },
           );
           if (!signal()) return null;
           const adopted = await adoptVaultOpening(loaded, vault);
           if (!signal()) return null;
-          if (!adopted.held) await flushGitOps();
           const saved = adopted.saved;
           rememberGitBehind(null, { showToast: false, resetResolved: true });
           setGitBehindToast(null);
@@ -4372,9 +4241,12 @@ const App = () => {
     if (scripts) rememberScripts(prepared.scripts || scripts);
     else if (prepared.scripts) rememberScripts(prepared.scripts);
     if (prepared.moved?.length) {
-      rekeyRuntime(prepared.moved);
-      for (const move of prepared.moved) {
-        if (!move?.from || !move?.to || move.from === move.to) continue;
+      const remaps = prepared.moved.filter((move) => (
+        move?.from && move?.to && move.from !== move.to
+        && prepared.doc?.parts?.some((part) => part.id === move.to)
+      ));
+      if (remaps.length) rekeyRuntime(remaps);
+      for (const move of remaps) {
         await savePartScript(move.to, prepared.scripts?.[move.to] ?? '');
         try { await deletePartScript(move.from); } catch { /* promoted id is the record */ }
       }
@@ -4882,14 +4754,16 @@ const App = () => {
       const adopted = collected.marks.filter((mark) => mark.adopted);
       if (adopted.length) await applyMeshMarks(adopted);
       if (result.status === 'clean') return result;
-      if (result.renamed || result.moved?.length) {
+      if (result.doc) {
         await applyCommittedWorkspace(result);
       }
       await enqueueGit(vault.repo, {
         op: 'save',
         branch,
         message: result.message || message,
-        partIds: result.partIds?.length ? result.partIds : (placed.doc.parts || []).map((part) => part.id),
+        partIds: result.partIds?.length
+          ? result.partIds
+          : (result.doc?.parts || placed.doc.parts || []).map((part) => part.id),
         files: result.files,
         payload: {
           assemblyPath: result.assemblyPath,
@@ -5308,7 +5182,10 @@ const App = () => {
     if (gitBaselineRef.current) return undefined;
     const parts = doc.parts || [];
     const allLocal = parts.length > 0
-      && parts.every((p) => String(p.id).startsWith('local:') || !isVaultPartPath(p.id));
+      && parts.every((p) => {
+        const path = partRepoPath(p);
+        return !path || String(p.id).startsWith('local:');
+      });
     if (allLocal) return undefined; // true first-commit; keep null baseline
     const name = vaultSegment(doc.name) || doc.name;
     if (!name) return undefined;
@@ -5324,8 +5201,7 @@ const App = () => {
           .some((op) => op.op === 'rename' && op.payload?.kind === 'assembly');
         if (queuedRename) {
           // The working copy already uses the new name. Do not open the old
-          // folder off the tip. Flush the queued move, then hold the dot if
-          // it has not landed.
+          // folder off the tip, and do not flush — reload never writes git.
           const latest = assemblyRef.current;
           const held = captureBaseline({
             assemblyPath: assemblyFilePath(vaultSegment(latest.name) || latest.name),
@@ -5336,29 +5212,8 @@ const App = () => {
             headSha: store.getLastSyncedSha(vault.repo, branch),
           });
           held.renamePending = true;
-          gitBaselineRef.current = held;
+          rememberGitBaseline(held);
           setPartSync({ ...store.partStates() });
-          const flushed = await flushGitOps();
-          if (cancelled) return;
-          if (flushed?.status === 'synced') {
-            const renamed = vaultSegment(assemblyRef.current?.name) || assemblyRef.current?.name;
-            try {
-              const opened = await openVaultAssembly(
-                gitAdapterRef.current,
-                vault.repo,
-                renamed,
-                { branch, headSha: flushed.sha },
-              );
-              if (!cancelled) {
-                rememberGitBaseline(opened.baseline);
-                gitVaultRef.current = { ...vault, headSha: opened.baseline?.headSha || flushed.sha };
-              }
-              return;
-            } catch (err) {
-              console.warn('[git] renamed assembly reseed skipped', err?.message || err);
-            }
-          }
-          rememberGitBaseline(gitBaselineRef.current?.renamePending ? gitBaselineRef.current : held);
           return;
         }
         const tip = (await gitAdapterRef.current.getBranch(vault.repo, branch))?.sha || null;
@@ -5366,13 +5221,35 @@ const App = () => {
           gitAdapterRef.current,
           vault.repo,
           name,
-          { branch, headSha: tip },
+          { branch, headSha: tip, pathIndex: store.pathIndexFor(vault.repo) },
         );
         if (cancelled || gitBaselineRef.current) return;
+        for (const hit of opened.identities?.cached || []) {
+          if (hit.path && hit.id) await store.rememberPathId(vault.repo, hit.path, hit.id);
+        }
         const beforeScripts = partScriptsRef.current || {};
-        const migrated = migrateAssemblyRecords({ doc: assemblyRef.current, scripts: beforeScripts });
-        let doc = migrated.doc;
-        let scriptsNow = migrated.scripts;
+        const aligned = rekeyWorkingCopyToTip(assemblyRef.current, beforeScripts, opened.doc, {
+          histories: partHistoriesRef.current,
+          meshMeta: partMeshMetaRef.current,
+          cadPartId: cadPartIdRef.current,
+        });
+        let doc = aligned.doc;
+        let scriptsNow = aligned.scripts;
+        if (aligned.pairs.length) {
+          rekeyRuntime(aligned.pairs);
+          partMeshMetaRef.current = aligned.meshMeta;
+          setPartMeshMeta(aligned.meshMeta);
+          rememberScripts(scriptsNow);
+          rememberAssembly(doc);
+          for (const { from, to } of aligned.pairs) {
+            const text = scriptsNow[to];
+            if (typeof text === 'string') savePartScript(to, text);
+            try { deletePartScript(from); } catch { /* ignore */ }
+          }
+        }
+        const migrated = migrateAssemblyRecords({ doc, scripts: scriptsNow });
+        doc = migrated.doc;
+        scriptsNow = migrated.scripts;
         const localIds = migrateLocalPartIds({
           doc,
           scripts: scriptsNow,
@@ -5390,14 +5267,14 @@ const App = () => {
         if (migrated.changed || localIds.changed) {
           rememberScripts(scriptsNow);
           for (const [id, text] of Object.entries(scriptsNow)) {
-            if (text !== beforeScripts[id]) savePartScript(id, text);
+            if (text !== beforeScripts[id] && text !== aligned.scripts[id]) savePartScript(id, text);
           }
           for (const { from } of localIds.pairs) {
             try { deletePartScript(from); } catch { /* ignore */ }
           }
         }
         const reconciled = reconcileSyncedFromTip(doc, opened.scripts);
-        if (reconciled.changed || migrated.changed || localIds.changed) {
+        if (reconciled.changed || migrated.changed || localIds.changed || aligned.pairs.length) {
           doc = reconciled.doc;
           rememberAssembly(doc);
           for (const part of doc.parts || []) {
@@ -5406,36 +5283,13 @@ const App = () => {
             if (typeof text === 'string') savePartScript(part.id, text, { isSynced: true });
           }
         }
-        await queueSurfIdMigration(vault, branch);
-        try {
-          await queueLayoutMigration(vault, branch);
-        } catch (err) {
-          console.warn('[git] layout migration enqueue failed', err?.message || err);
-        }
+        await retireImplicitVaultWriteOps(store, vault.repo, branch);
         if (cancelled || gitBaselineRef.current) return;
-        const flushed = await flushGitOps();
-        if (cancelled || gitBaselineRef.current) return;
-        // Tip content only — leave IDB working copy alone so real edits stay dirty.
-        if (flushed?.sha && flushed.sha !== opened.baseline?.headSha) {
-          const again = await openVaultAssembly(
-            gitAdapterRef.current,
-            vault.repo,
-            name,
-            { branch, headSha: flushed.sha },
-          );
-          if (cancelled || gitBaselineRef.current) return;
-          const baseline = again.baseline;
-          const resynced = reconcileSyncedFromTip(assemblyRef.current, again.scripts);
-          if (resynced.changed) rememberAssembly(resynced.doc);
-          rememberGitBaseline(baseline);
-          gitVaultRef.current = { ...vault, headSha: baseline.headSha };
-        } else {
-          if (!store.getLastSyncedSha(vault.repo, branch) && opened.baseline?.headSha) {
-            await store.setLastSyncedSha(vault.repo, opened.baseline.headSha, branch);
-          }
-          rememberGitBaseline(opened.baseline);
-          gitVaultRef.current = { ...vault, headSha: opened.baseline?.headSha };
+        if (!store.getLastSyncedSha(vault.repo, branch) && opened.baseline?.headSha) {
+          await store.setLastSyncedSha(vault.repo, opened.baseline.headSha, branch);
         }
+        rememberGitBaseline(opened.baseline);
+        gitVaultRef.current = { ...vault, headSha: opened.baseline?.headSha };
         void checkGitRemoteBehind({ showToast: true, reason: 'reseed' });
       } catch (err) {
         // Missing assembly on tip → stay without baseline (local: chrome / first commit).
@@ -5524,53 +5378,18 @@ const App = () => {
     let id;
     let name;
     const rawName = String(partName ?? '').trim();
-    const deferVault = doc.source === 'git' && opts?.deferVault === true;
-    if (doc.source === 'git' && !deferVault) {
-      // Name-only UX: a bare name lands in parts/<Name>.js. A full allowed
-      // path (an assembly-folder copy, tests, paste) is kept. Never ask
-      // the user for a path.
-      let taken = (doc.parts || []).map((part) => part.id);
-      const vault = gitVaultRef.current;
-      if (vault?.repo && gitAdapterRef.current) {
-        try {
-          taken = [
-            ...taken,
-            ...(await listVaultTreePaths(gitAdapterRef.current, vault.repo, gitWorkingBranch())),
-          ];
-        } catch (err) {
-          setUploadError(err?.message || VAULT_TREE_UNAVAILABLE_MESSAGE);
-          return { status: 'error', code: err?.code || VAULT_TREE_UNAVAILABLE, error: err?.message };
-        }
-      }
-      id = allocateVaultPartPath(
-        doc.name,
-        rawName || suggestNewPartPath(doc.name, doc.parts, taken),
-        taken,
-        { layout: 'shared' },
-      );
-      if (!id) {
-        setUploadError('Enter a part name');
-        return;
-      }
-      if (doc.parts.some((part) => part.id === id)) {
-        setUploadError(`Part already in assembly: ${id.split('/').pop()?.replace(/\.js$/i, '') || id}`);
-        return;
-      }
-      name = id.split('/').pop()?.replace(/\.js$/i, '') || id;
-    } else {
-      id = newLocalPartId();
-      const takenNames = (doc.parts || []).map((part) => part.name);
-      name = rawName
-        ? nextNumberedName(rawName, takenNames, { bareFirst: true })
-        : nextNumberedName('Part', takenNames);
-    }
+    id = doc.source === 'git' ? mintSurfId() : newLocalPartId();
+    const takenNames = (doc.parts || []).map((part) => part.name);
+    name = rawName
+      ? nextNumberedName(rawName, takenNames, { bareFirst: true })
+      : nextNumberedName('Part', takenNames);
     const order = doc.parts.length;
     let starter = typeof opts?.script === 'string' && opts.script.trim()
       ? opts.script
       : newPartStarterScript();
     let surfId = null;
     if (doc.source === 'git') {
-      surfId = mintSurfId();
+      surfId = id;
       starter = withSurfId(starter, surfId);
     }
     const part = {
@@ -5597,38 +5416,9 @@ const App = () => {
     };
     setPendingPartIds((prev) => new Set(prev).add(id));
     try {
-      if (doc.source === 'git' && surfId && !deferVault && gitVaultRef.current?.repo) {
-        const vault = gitVaultRef.current || await ensureGitVault();
-        const prepared = await prepareAssemblySurfWrite(gitAdapterRef.current, vault.repo, {
-          doc: nextDoc,
-          scripts,
-          branch: gitWorkingBranch(),
-          extraFiles: [fileWrite(id, starter)],
-        });
-        await adoptPreparedSurfWrite(prepared, { scripts: prepared.scripts });
-        const row = prepared.doc.parts.find((p) => p.id === id) || part;
-        partSaveEpochRef.current += 1;
-        refreshGenRef.current += 1;
-        focusPartHistory(prepared.doc.activeId || id, prepared.scripts[prepared.doc.activeId || id] ?? starter);
-        suppressPartSaveRef.current = false;
-        setCurrentFilename(row.name);
-        codeEditorRef.current?.loadContent(prepared.scripts[row.id] ?? starter, row.name, false);
-        saveEditorDraft({ script: prepared.scripts[row.id] ?? starter, filename: row.name, partId: row.id });
-        await savePartScript(id, starter, { isSynced: false });
-        track('part_created');
-        await enqueueGit(vault.repo, {
-          op: 'create',
-          message: `Add ${name}`,
-          partIds: [id],
-          files: prepared.files,
-          payload: { surfId, path: id },
-        });
-        await flushGitOps();
-      } else {
-        await applyNewPart(nextDoc, scripts);
-        await savePartScript(id, starter, doc.source === 'git' ? { isSynced: false } : {});
-        track('part_created');
-      }
+      await applyNewPart(nextDoc, scripts);
+      await savePartScript(id, starter, doc.source === 'git' ? { isSynced: false } : {});
+      track('part_created');
     } catch (err) {
       const cur = assemblyRef.current;
       if (cur?.parts?.some((p) => p.id === id)) {
@@ -5739,9 +5529,10 @@ const App = () => {
       void (async () => {
         try {
           const extraFiles = [];
-          if (fromRepo && isVaultPartPath(key) && !key.startsWith('local:') && !key.startsWith('local-')) {
-            extraFiles.push(fileDelete(key));
-            const meshPath = assetPathForScript(key);
+          const repoPath = partRepoPath(doc.parts.find((row) => row.id === key));
+          if (fromRepo && repoPath) {
+            extraFiles.push(fileDelete(repoPath));
+            const meshPath = assetPathForScript(repoPath);
             if (meshPath) extraFiles.push(fileDelete(meshPath));
           }
           const prepared = await prepareAssemblySurfWrite(gitAdapterRef.current, gitVaultRef.current.repo, {
@@ -7481,13 +7272,19 @@ const App = () => {
     }
     const to = prepared.to;
     nextName = prepared.name || nextName;
-    if (to !== from && doc.parts.some((row) => row.id === to)) {
-      setUploadError('A part with that name is already in this assembly');
-      return { status: 'error', code: 'name_taken', error: 'A part with that name is already in this assembly' };
-    }
+    const stableId = prepared.fromId || part.id;
     await adoptPreparedSurfWrite(prepared);
-    if (to !== from) {
-      const text = prepared.scripts[to] ?? '';
+    const renamed = prepared.doc?.parts?.find((row) => row.id === stableId);
+    const text = prepared.scripts?.[stableId] ?? prepared.scripts?.[to] ?? '';
+    if (renamed && renamed.id === part.id) {
+      savePartScript(stableId, text);
+      if (renameTargetId(prepared.doc, cadPartIdRef.current) === id) {
+        setCurrentFilename(nextName);
+        if (doc.activeId === id) {
+          codeEditorRef.current?.loadContent(text, nextName, false);
+        }
+      }
+    } else if (to !== from) {
       const prevMesh = partMeshMetaRef.current[from];
       savePartScript(to, text, prevMesh
         ? { assets: prevMesh.assets, meshSynced: prevMesh.meshSynced === true }
@@ -7515,23 +7312,23 @@ const App = () => {
     const written = (async () => {
       const vault = gitVaultRef.current;
       await gitSync().putPart(vault.repo, {
-        surfId: part.surfId || to,
+        surfId: part.surfId || stableId,
         path: to,
-        previousPath: from,
-        content: prepared.scripts[to] ?? '',
+        previousPath: partRepoPath(part) || from,
+        content: text,
       });
       await enqueueGit(vault.repo, {
         op: 'rename',
         message: `Rename ${part.name} to ${nextName}`,
-        partIds: [to],
+        partIds: [stableId],
         payload: {
           kind: 'part',
           surfId: part.surfId || null,
-          from,
+          from: partRepoPath(part) || from,
           to,
-          content: prepared.scripts[to] ?? '',
+          content: text,
           label: nextName,
-          partId: to,
+          partId: stableId,
           before,
           assemblyPath: prepared.assemblyPath,
           assemblyText: prepared.assemblyText,
@@ -7541,7 +7338,7 @@ const App = () => {
       setPartSync({ ...gitSync().partStates() });
       return flushGitOps();
     })();
-    return { status: 'renamed', from, to, name: nextName, git: true, written };
+    return { status: 'renamed', from: stableId, to: stableId, path: to, name: nextName, git: true, written };
   };
 
   // Rename from the viewer title chip. It lands on the part the title shows:
@@ -7890,8 +7687,9 @@ const App = () => {
       const name = dedupedImportName(file.name, (doc.parts || []).map((part) => part.name));
       const assetName = meshAssetName(name);
       let id;
+      let path;
       if (doc.source === 'git') {
-        let taken = (doc.parts || []).map((part) => part.id);
+        let taken = (doc.parts || []).map((part) => partRepoPath(part) || part.id);
         const vault = gitVaultRef.current;
         if (vault?.repo && gitAdapterRef.current) {
           try {
@@ -7904,23 +7702,25 @@ const App = () => {
             return { status: 'error', code: err?.code || VAULT_TREE_UNAVAILABLE, error: err?.message };
           }
         }
-        id = allocateVaultPartPath(doc.name, name, taken, { layout: 'shared' });
-        if (!id) {
+        path = allocateVaultPartPath(doc.name, name, taken, { layout: 'assembly-folder' });
+        if (!path) {
           setUploadError('Could not assign a path for this upload.');
           return;
         }
+        id = mintSurfId();
       } else {
         id = newLocalPartId();
       }
       let starter = importMeshScript(assetName);
       let surfId = null;
       if (doc.source === 'git') {
-        surfId = mintSurfId();
+        surfId = id;
         starter = withSurfId(starter, surfId);
       }
       const order = doc.parts.length;
       const part = {
         id,
+        ...(path ? { path } : {}),
         name,
         visible: true,
         order,
@@ -8370,12 +8170,12 @@ const App = () => {
     && assemblyDoc.activeId === cadHighlightId
     && typeof currentScript === 'string'
   ) ? currentScript : null;
-  // Yellow dots only when content differs from baseline, or the row is still
-  // local: / missing from the vault. Do NOT treat a null in-memory baseline as
-  // fully dirty — that falsely dotted every in-repo part after reload (#215).
-  // firstCommitBaseline is for true first-commit chrome (local: rows only).
+  // Yellow dots only when content differs from baseline, or the row still
+  // has no vault path. Do NOT treat a null in-memory baseline as fully dirty
+  // — that falsely dotted every in-repo part after reload (#215).
+  // firstCommitBaseline is for a true first commit (path-less rows only).
   const gitParts = assemblyDoc?.parts || [];
-  const hasLocalPartIds = gitParts.some((p) => String(p.id).startsWith('local:') || !isVaultPartPath(p.id));
+  const hasLocalPartIds = gitParts.some((p) => !partRepoPath(p));
   const needsFirstCommitChrome = (
     assemblyDoc?.source === 'git'
     && !gitBaseline
@@ -8398,7 +8198,7 @@ const App = () => {
     // Awaiting tip reseed: only local: rows; repo paths stay clean until
     // baseline arrives and a real content diff can run.
     assemblyDoc?.source === 'git'
-      ? new Set(gitParts.filter((p) => String(p.id).startsWith('local:') || !isVaultPartPath(p.id)).map((p) => p.id))
+      ? new Set(gitParts.filter((p) => !partRepoPath(p)).map((p) => p.id))
       : new Set()
   );
   const sourceDirty = (
@@ -8633,15 +8433,17 @@ const App = () => {
           id: row.id,
           name: row.name,
           visible: row.visible,
+          ...(partRepoPath(row) ? { path: partRepoPath(row) } : {}),
         })),
       });
     },
     setActivePart(partId) {
       const doc = assemblyRef.current;
-      if (!doc?.parts?.some((row) => row.id === partId)) {
+      const part = findAssemblyPart(doc, partId);
+      if (!part) {
         return { error: { code: 'unknown_part', message: `Unknown part id: ${partId}` } };
       }
-      handleSelectPart(partId);
+      handleSelectPart(part.id);
       return { ok: true };
     },
     selectParts({ partIds }) {
@@ -8650,10 +8452,11 @@ const App = () => {
       const ids = Array.isArray(partIds) ? partIds : [];
       const resolved = [];
       for (const id of ids) {
-        if (!doc.parts.some((row) => row.id === id)) {
+        const part = findAssemblyPart(doc, id);
+        if (!part) {
           return { error: { code: 'unknown_part', message: `Unknown part id: ${id}` } };
         }
-        resolved.push(id);
+        resolved.push(part.id);
       }
       const last = resolved[resolved.length - 1];
       rememberCadPart(last);
@@ -8768,15 +8571,16 @@ const App = () => {
     },
     async agentGitAddToRepo({ partId }) {
       if (!partId) return { status: 'error', error: 'part_id required' };
-      if (!assemblyRef.current?.parts?.some((row) => row.id === partId)) {
+      const part = findAssemblyPart(assemblyRef.current, partId);
+      if (!part) {
         return { status: 'error', code: 'unknown_part', error: `Unknown part id: ${partId}` };
       }
-      return handleAddToRepo(partId);
+      return handleAddToRepo(part.id);
     },
     /** -> { known, writesGit } — writesGit when the rename moves a vault file. */
     readAgentPartRename(partId) {
       const doc = assemblyRef.current;
-      const part = doc?.parts?.find((row) => row.id === partId);
+      const part = findAssemblyPart(doc, partId);
       if (!part) return { known: false, writesGit: false };
       return {
         known: true,
@@ -8785,10 +8589,11 @@ const App = () => {
     },
     async agentRenamePart({ partId, name }) {
       const before = assemblyRef.current;
-      if (!before?.parts?.some((row) => row.id === partId)) {
+      const part = findAssemblyPart(before, partId);
+      if (!part) {
         return { error: { code: 'unknown_part', message: `Unknown part id: ${partId}` } };
       }
-      const out = await handleRenamePart(partId, name);
+      const out = await handleRenamePart(part.id, name);
       if (out?.status === 'error') {
         return { error: { code: out.code || 'rename_failed', message: out.error || 'Could not rename part' } };
       }
@@ -8808,13 +8613,17 @@ const App = () => {
       }
       if (out?.status === 'renamed') recordAgentAssemblyStep(before);
       const after = assemblyRef.current;
+      const afterPart = findAssemblyPart(after, part.id);
+      const previousPath = partRepoPath(part);
+      const nextPath = out?.path || partRepoPath(afterPart);
       return {
         result: {
           status: out?.status || 'renamed',
-          partId: out?.to ?? partId,
-          previousId: out?.from ?? partId,
-          name: after?.parts?.find((row) => row.id === (out?.to ?? partId))?.name ?? out?.name ?? null,
-          moved: !!out && out.from !== out.to,
+          partId: part.id,
+          previousId: part.id,
+          name: afterPart?.name ?? out?.name ?? null,
+          ...(nextPath ? { path: nextPath } : {}),
+          moved: !!(nextPath && previousPath && nextPath !== previousPath),
           git: out?.git === true,
           ...(sync ? { sync } : {}),
         },

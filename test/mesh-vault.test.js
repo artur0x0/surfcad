@@ -70,10 +70,11 @@ describe('mesh vault save policy', () => {
       { occupied: [taken, assetPathForScript(taken)] },
     );
     assert.equal(placed.moved.length, 1);
-    assert.equal(placed.doc.parts[0].id, assemblyPartPath('Gearbox', 'Bracket (2)'));
+    assert.equal(placed.doc.parts[0].id, local);
+    assert.equal(placed.doc.parts[0].path, assemblyPartPath('Gearbox', 'Bracket (2)'));
     assert.equal(placed.doc.parts[0].name, 'Bracket (2)');
     assert.equal(
-      assetPathForScript(placed.doc.parts[0].id),
+      assetPathForScript(placed.doc.parts[0].path),
       'assemblies/Gearbox/Bracket (2).mesh',
     );
     assert.equal(placed.scripts[taken], undefined);
@@ -88,8 +89,9 @@ describe('mesh vault save policy', () => {
       { occupied: [mesh] },
     );
     assert.equal(placed.moved.length, 1);
-    assert.notEqual(placed.doc.parts[0].id, assemblyPartPath('Gearbox', 'Bracket'));
-    assert.notEqual(assetPathForScript(placed.doc.parts[0].id), mesh);
+    assert.equal(placed.doc.parts[0].id, local);
+    assert.notEqual(placed.doc.parts[0].path, assemblyPartPath('Gearbox', 'Bracket'));
+    assert.notEqual(assetPathForScript(placed.doc.parts[0].path), mesh);
   });
 
   test('an existing shared part path is left where it is', () => {

@@ -31,6 +31,7 @@ import {
   vaultSegment,
 } from './vaultLayout.js';
 import { allocateVaultPartPath } from './partVaultPath.js';
+import { assignVaultPartIdentities, partRepoPath, partScriptText } from './partIdentity.js';
 export {
   allocateVaultPartPath,
   ensureAssemblyVaultPaths,
@@ -43,6 +44,13 @@ export {
   promoteStrayPartsToAssemblyFolder,
   resolveNewPartPath,
 } from './partVaultPath.js';
+export {
+  assignVaultPartIdentities,
+  findAssemblyPart,
+  isStablePartId,
+  partRepoPath,
+  rekeyWorkingCopyToTip,
+} from './partIdentity.js';
 import { parseSurfJson, stringifySurfJson } from './surfJson.js';
 import { isSurfId, mintSurfId, readSurfId, stripSurfId, withSurfId } from './surfId.js';
 
@@ -60,11 +68,12 @@ function baselineAssetMap(parts, assets) {
   const assetMap = {};
   if (!assets || typeof assets !== 'object') return assetMap;
   for (const part of parts || []) {
-    const mesh = assetPathForScript(part.id);
+    const scriptPath = partRepoPath(part) || part.id;
+    const mesh = assetPathForScript(scriptPath);
     if (!mesh) continue;
     const value = Object.prototype.hasOwnProperty.call(assets, mesh)
       ? assets[mesh]
-      : (Object.prototype.hasOwnProperty.call(assets, part.id) ? assets[part.id] : undefined);
+      : (Object.prototype.hasOwnProperty.call(assets, scriptPath) ? assets[scriptPath] : undefined);
     if (value == null) continue;
     const sha = assetShaValue(value);
     if (sha) assetMap[mesh] = sha;
@@ -84,7 +93,7 @@ export function captureBaseline({
   const clean = serializeAssembly({ ...doc, source: 'git' });
   const scriptMap = {};
   for (const part of clean.parts) {
-    const text = scripts?.[part.id];
+    const text = partScriptText(part, scripts);
     scriptMap[part.id] = typeof text === 'string' ? text : '';
   }
   return {
@@ -133,8 +142,10 @@ export function dirtyPartIds(doc, scripts, baseline, { liveId = null, liveScript
   for (const part of parts) {
     const id = part.id;
     seen.add(id);
-    let text = scripts?.[id];
-    if (liveId && id === liveId && typeof liveScript === 'string') text = liveScript;
+    let text = partScriptText(part, scripts);
+    if (liveId && (id === liveId || partRepoPath(part) === liveId) && typeof liveScript === 'string') {
+      text = liveScript;
+    }
     if (isPartDirty(id, text, baseline)) out.add(id);
   }
   for (const id of baseline.partIds || []) {
@@ -142,7 +153,7 @@ export function dirtyPartIds(doc, scripts, baseline, { liveId = null, liveScript
   }
   if (assets) {
     for (const part of parts) {
-      if (isAssetDirty(part.id, assets, baseline)) out.add(part.id);
+      if (isAssetDirty(partRepoPath(part) || part.id, assets, baseline)) out.add(part.id);
     }
   }
   return out;
@@ -273,6 +284,7 @@ export async function openVaultAssembly(adapter, repo, assemblyName, {
   branch = 'main',
   headSha = null,
   onProgress = null,
+  pathIndex = {},
 } = {}) {
   assertGithubAdapter(adapter);
   const name = vaultSegment(assemblyName);
@@ -293,21 +305,16 @@ export async function openVaultAssembly(adapter, repo, assemblyName, {
   for (let i = 0; i < partTotal; i += 1) {
     const part = doc.parts[i];
     onProgress?.({ index: i + 1, total: partTotal, phase: 'script', name: doc.name });
-    const got = await adapter.readFile(repo, part.id, branch);
+    const path = partRepoPath(part) || part.id;
+    const got = await adapter.readFile(repo, path, branch);
     rawScripts[part.id] = got ? got.content : '';
+    if (path && path !== part.id) rawScripts[path] = rawScripts[part.id];
   }
   // Working copy always uses the current flat layout; legacy paths remap here.
   const migrated = migrateDocToCurrentLayout(doc, rawScripts);
-  doc = migrated.doc;
-  const scripts = migrated.scripts;
-  doc = {
-    ...doc,
-    parts: (doc.parts || []).map((part) => {
-      const header = readSurfId(scripts[part.id] || '');
-      if (!header) return part;
-      return part.surfId === header ? part : { ...part, surfId: header };
-    }),
-  };
+  const assigned = assignVaultPartIdentities(migrated.doc, migrated.scripts, { pathIndex });
+  doc = assigned.doc;
+  const scripts = assigned.scripts;
   const fromOfNew = new Map((migrated.moved || []).map((move) => [move.to, move.from]));
   const assets = await loadPartMeshes(adapter, repo, branch, doc.parts, fromOfNew);
   const assemblyPath = assemblyFilePath(name);
@@ -325,7 +332,19 @@ export async function openVaultAssembly(adapter, repo, assemblyName, {
     baseline.legacyCleanup = true;
     baseline.legacyAssemblyPath = foundPath !== assemblyPath ? foundPath : null;
   }
-  return { doc, scripts, assets, assemblyPath, baseline, migrated: migrated.changed };
+  return {
+    doc,
+    scripts,
+    assets,
+    assemblyPath,
+    baseline,
+    migrated: migrated.changed,
+    identities: {
+      minted: assigned.minted,
+      pairs: assigned.pairs,
+      cached: assigned.cached,
+    },
+  };
 }
 
 /**
@@ -338,9 +357,10 @@ async function loadPartMeshes(adapter, repo, branch, parts, fromOfNew) {
   const tree = await adapter.listTree(repo, branch);
   const shaByPath = new Map((tree || []).filter((entry) => entry?.path).map((entry) => [entry.path, entry.sha]));
   for (const part of parts || []) {
-    const mesh = assetPathForScript(part.id);
+    const scriptPath = partRepoPath(part) || part.id;
+    const mesh = assetPathForScript(scriptPath);
     if (!mesh) continue;
-    const legacyId = fromOfNew?.get(part.id);
+    const legacyId = fromOfNew?.get(scriptPath) || fromOfNew?.get(part.id);
     const legacyMesh = legacyId ? assetPathForScript(legacyId) : null;
     let located = null;
     if (shaByPath.has(mesh)) located = mesh;
@@ -362,16 +382,21 @@ async function loadPartMeshes(adapter, repo, branch, parts, fromOfNew) {
 
 /** Suggest `parts/Part (n).js` for the next empty slot. */
 export function suggestNewPartPath(assemblyName, existingParts = [], takenPaths = null) {
-  void assemblyName;
   const used = new Set(
     takenPaths
-      || (existingParts || []).map((part) => (typeof part === 'string' ? part : part?.id)),
+      || (existingParts || []).map((part) => (
+        typeof part === 'string' ? part : (partRepoPath(part) || part?.id)
+      )),
   );
   for (let n = 1; n < 1000; n += 1) {
-    const path = sharedPartPath(numberedName('Part', n));
-    if (!used.has(path)) return path;
+    const path = allocateVaultPartPath(assemblyName, numberedName('Part', n), [...used], {
+      layout: 'assembly-folder',
+    });
+    if (path && !used.has(path)) return path;
   }
-  return sharedPartPath(numberedName('Part', Date.now()));
+  return allocateVaultPartPath(assemblyName, numberedName('Part', Date.now()), [...used], {
+    layout: 'assembly-folder',
+  });
 }
 
 /**
@@ -387,7 +412,13 @@ export async function listAddableVaultParts(adapter, repo, assemblyName, {
   const name = vaultSegment(assemblyName);
   const tree = await adapter.listTree(repo, branch);
   const { shared, byAssembly } = listPartScripts(tree);
-  const have = new Set(existingIds);
+  const have = new Set(
+    (existingIds || []).flatMap((item) => {
+      if (typeof item === 'string') return [item];
+      const path = partRepoPath(item);
+      return [item?.id, item?.path, path].filter(Boolean);
+    }),
+  );
   const out = [];
   for (const path of byAssembly[name] || []) {
     if (have.has(path)) continue;
@@ -618,16 +649,16 @@ export async function planInsertVaultAssemblyParts(adapter, repo, sourceAssembly
   if (!source) throw new Error('Empty source assembly');
   if (!target) throw new Error('Empty target assembly');
   const opened = await openVaultAssembly(adapter, repo, source, { branch });
-  const existing = new Set((targetDoc.parts || []).map((p) => p.id));
+  const existing = new Set((targetDoc.parts || []).map((p) => partRepoPath(p) || p.id));
   const taken = new Set(existing);
   const additions = [];
   for (const part of opened.doc.parts || []) {
-    const fromPath = part.id;
-    const content = opened.scripts[fromPath] || '';
+    const fromPath = partRepoPath(part) || part.id;
+    const content = partScriptText(part, opened.scripts) || '';
     if (taken.has(fromPath)) continue;
     taken.add(fromPath);
     additions.push({
-      id: fromPath,
+      id: part.id,
       name: part.name || fromPath.split('/').pop()?.replace(/\.js$/i, '') || fromPath,
       content,
       fromPath,
