@@ -182,8 +182,8 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
       codeInputRefs.current[index + 1]?.focus();
     }
     
-    // Auto-submit when all digits entered
-    if (value && index === 5 && newCode.every(d => d !== '')) {
+    // Auto-submit when all digits entered and we still have the password in memory.
+    if (value && index === 5 && newCode.every(d => d !== '') && formData.password.length >= 8) {
       handleVerifyCode(newCode.join(''));
     }
   };
@@ -191,7 +191,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
   // Handle paste for verification code
   const handleCodePaste = (e) => {
     e.preventDefault();
-    const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+      const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
     
     if (pastedData.length === 6) {
       const newCode = pastedData.split('');
@@ -199,8 +199,9 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
       setVerificationError('');
       codeInputRefs.current[5]?.focus();
       
-      // Auto-submit
-      handleVerifyCode(pastedData);
+      if (formData.password.length >= 8) {
+        handleVerifyCode(pastedData);
+      }
     }
   };
 
@@ -213,6 +214,11 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
 
   // Verify the code
   const handleVerifyCode = async (code) => {
+    if (!formData.password || formData.password.length < 8) {
+      setVerificationError('Password must be at least 8 characters');
+      return;
+    }
+
     setIsLoading(true);
     setVerificationError('');
     
@@ -224,6 +230,7 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
         body: JSON.stringify({
           email: verificationEmail,
           code: code || verificationCode.join(''),
+          password: formData.password,
         }),
       });
       
@@ -434,6 +441,39 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
         {/* Error */}
         {verificationError && (
           <p className="text-red-400 text-sm text-center">{verificationError}</p>
+        )}
+
+        {formData.password.length < 8 && (
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Password</label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={formData.password}
+                onChange={(e) => handleInputChange('password', e.target.value)}
+                className="w-full bg-gray-800/50 border border-chrome-border rounded-xl py-3 px-10 pr-12 text-white placeholder-gray-500 focus:outline-none focus:border-gray-300 transition-colors"
+                placeholder="At least 8 characters"
+                autoComplete="new-password"
+                minLength={8}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleVerifyCode()}
+              disabled={isLoading}
+              className="w-full mt-3 py-3 bg-gray-300 text-black rounded-xl font-medium hover:bg-gray-100 transition-colors disabled:opacity-50"
+            >
+              Verify
+            </button>
+          </div>
         )}
         
         {/* Resend */}

@@ -80,18 +80,26 @@ export function convertCodeResendWait(sentAt, now = Date.now()) {
   return Math.ceil((CONVERT_CODE_RESEND_MS - elapsed) / 1000);
 }
 
-export function convertCooldownSentAt(session, email) {
-  const stamp = session?.guestConvertCooldown?.[String(email || '').toLowerCase()];
-  return Number.isFinite(stamp) ? stamp : 0;
+export function convertCooldownKey(email, guestId) {
+  return `${String(guestId || '')}:${String(email || '').toLowerCase()}`;
 }
 
-export function recordConvertCodeSent(session, email, now = Date.now()) {
+export function convertCooldownSentAt(session, email, guestId) {
+  const map = session?.guestConvertCooldown;
+  if (!map || typeof map !== 'object') return 0;
+  const keyed = map[convertCooldownKey(email, guestId)];
+  if (Number.isFinite(keyed)) return keyed;
+  const legacy = map[String(email || '').toLowerCase()];
+  return Number.isFinite(legacy) ? legacy : 0;
+}
+
+export function recordConvertCodeSent(session, email, guestId, now = Date.now()) {
   const prev = session.guestConvertCooldown && typeof session.guestConvertCooldown === 'object'
     ? session.guestConvertCooldown
     : {};
   session.guestConvertCooldown = {
     ...prev,
-    [String(email).toLowerCase()]: now,
+    [convertCooldownKey(email, guestId)]: now,
   };
 }
 

@@ -21,21 +21,15 @@ export function canReadOrder(req, order) {
   const ownerId = orderOwnerId(order);
   const authenticated = Boolean(req.isAuthenticated?.() && req.user?._id);
   if (ownerId) {
-    if (!authenticated) {
+    if (!authenticated || String(req.user._id) !== ownerId) {
       return { ok: false, status: 404, error: 'Order not found' };
-    }
-    if (String(req.user._id) !== ownerId) {
-      return { ok: false, status: 403, error: 'Not authorized' };
     }
     return { ok: true };
   }
 
   const guestEmail = typeof req.query?.email === 'string' ? req.query.email : '';
   if (!emailsMatch(order['guest-email'], guestEmail)) {
-    if (!authenticated) {
-      return { ok: false, status: 404, error: 'Order not found' };
-    }
-    return { ok: false, status: 403, error: 'Email verification required' };
+    return { ok: false, status: 404, error: 'Order not found' };
   }
   return { ok: true };
 }

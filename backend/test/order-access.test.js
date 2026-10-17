@@ -13,6 +13,7 @@ import authRoutes from '../routes/auth.js';
 import orderRoutes from '../routes/orders.js';
 import { initializePassport } from '../auth/passport.js';
 import { createOrderLookupLimiter } from '../auth/orderAccess.js';
+import { resetRegisterCooldowns } from '../auth/registerCooldown.js';
 import { client, installFakeModel, patch, startApp } from './helpers/fakeDb.js';
 
 const OWNER_EMAIL = 'owner@example.com';
@@ -86,7 +87,11 @@ function orderDoc(orderNumber, extra = {}) {
 async function registerVerifyLogin() {
   const c = client(app.port);
   await c('POST', '/api/auth/register', { email: OWNER_EMAIL, password: OWNER_PASSWORD, firstName: 'Ada' });
-  await c('POST', '/api/auth/verify', { email: OWNER_EMAIL, code: sentCodes.at(-1).code });
+  await c('POST', '/api/auth/verify', {
+    email: OWNER_EMAIL,
+    code: sentCodes.at(-1).code,
+    password: OWNER_PASSWORD,
+  });
   return c;
 }
 
@@ -118,6 +123,7 @@ beforeEach(async () => {
   users.rows.length = 0;
   orders.rows.length = 0;
   sentCodes = [];
+  resetRegisterCooldowns();
 });
 
 describe('exploit H1', () => {
@@ -130,9 +136,9 @@ describe('exploit H1', () => {
     await orders.insert(orderDoc(OWNER_ORDER, { 'user-id': owner._id }));
 
     const r = await client(app.port)('GET', `/api/orders/${OWNER_ORDER}`);
-    assert.notEqual(r.status, 200, 'must not return the order');
+    assert.equal(r.status, 404);
+    assert.equal(r.body?.error, 'Order not found');
     assert.equal(r.body?.order, undefined);
-    assert.ok(r.status === 401 || r.status === 403 || r.status === 404);
   });
 });
 

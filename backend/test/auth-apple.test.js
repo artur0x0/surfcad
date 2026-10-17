@@ -111,7 +111,7 @@ describe('exploit C2', () => {
     assert.equal(users.find({ email: VICTIM }).authProvider, 'local');
   });
 
-  test('Apple must not link to an account whose email was never verified', async () => {
+  test('Apple claims a never-verified local row when the token email is verified', async () => {
     await users.insert({
       email: VICTIM,
       authProvider: 'local',
@@ -122,12 +122,12 @@ describe('exploit C2', () => {
       { body: {} },
       fakeIdToken({ sub: 'apple-victim', email: VICTIM, email_verified: true }),
     );
-    assert.ok(!user);
-    assert.ok(err);
+    assert.equal(err, null, err?.message);
+    assert.equal(user.email, VICTIM);
     const row = users.find({ email: VICTIM });
-    assert.equal(row.providerId, null);
-    assert.equal(row.passwordHash, 'planted-hash');
-    assert.equal(row.emailVerified, false);
+    assert.equal(row.providerId, 'apple-victim');
+    assert.equal(row.passwordHash, null);
+    assert.equal(row.emailVerified, true);
   });
 });
 

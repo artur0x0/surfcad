@@ -289,7 +289,8 @@ userSchema.methods.generateVerificationCode = function() {
   
   // Reset attempts
   this.verificationAttempts = 0;
-  
+  this.lastVerificationAttempt = new Date();
+
   return code;
 };
 
@@ -351,18 +352,18 @@ userSchema.methods.neutralizeUnverifiedForOAuth = function() {
 
 // Instance method: Check if can resend code (rate limiting)
 userSchema.methods.canResendCode = function() {
-  if (!this.lastVerificationAttempt) return true;
-  
+  if (!this.lastVerificationAttempt) return { allowed: true, secondsRemaining: 0 };
+
   // Allow resend after 60 seconds
   const cooldown = 60 * 1000; // 1 minute
   const timeSinceLastAttempt = Date.now() - this.lastVerificationAttempt.getTime();
-  
+
   if (timeSinceLastAttempt < cooldown) {
     const secondsRemaining = Math.ceil((cooldown - timeSinceLastAttempt) / 1000);
     return { allowed: false, secondsRemaining };
   }
-  
-  return { allowed: true };
+
+  return { allowed: true, secondsRemaining: 0 };
 };
 
 // The address book is capped. Checkout used to append a duplicate on every
@@ -523,12 +524,16 @@ userSchema.statics.findOrCreateOAuth = async function(profile, provider) {
   user = await this.findOne({ email });
   
   if (user) {
-    // Auto-link only when the provider email is positively verified and
-    // the existing account already is. Missing verified is refuse, not allow.
-    if (emails?.[0]?.verified !== true || !user.emailVerified) {
+    // Unverified provider email never links. A verified provider email
+    // matching a never-verified local row is the inbox owner: neutralize
+    // the planted password and claim the row. Verified-to-verified links.
+    if (emails?.[0]?.verified !== true) {
       const err = new Error('This email is already used. Sign in instead.');
       err.statusCode = 409;
       throw err;
+    }
+    if (!user.emailVerified) {
+      user.neutralizeUnverifiedForOAuth();
     }
     user.authProvider = provider;
     user.providerId = id;

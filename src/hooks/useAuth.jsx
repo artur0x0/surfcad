@@ -98,6 +98,10 @@ export const AuthProvider = ({ children }) => {
     if (!response.ok) {
       throw new Error(data.error || 'Registration failed');
     }
+
+    if (data.pendingVerification) {
+      return { pendingVerification: true, email: data.email };
+    }
     
     applyServerConsent(data.user?.consent);
     setUser(data.user);

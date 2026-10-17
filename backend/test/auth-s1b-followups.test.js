@@ -13,6 +13,7 @@ import { fetchGithubUserProfile } from '../services/githubUser.js';
 import authRoutes from '../routes/auth.js';
 import orderRoutes from '../routes/orders.js';
 import { initializePassport } from '../auth/passport.js';
+import { resetRegisterCooldowns } from '../auth/registerCooldown.js';
 import { client, installFakeModel, patch, startApp } from './helpers/fakeDb.js';
 
 const VICTIM = 'victim@example.com';
@@ -120,38 +121,59 @@ after(async () => {
   for (const restore of restores.reverse()) restore();
 });
 
+function clearRegisterCooldown(email) {
+  resetRegisterCooldowns();
+  const row = users.find({ email });
+  if (row) row.lastVerificationAttempt = null;
+}
+
 beforeEach(() => {
   users.rows.length = 0;
   orders.rows.length = 0;
   sentCodes = [];
+  resetRegisterCooldowns();
 });
 
 describe('exploit S1b-1 register/verify planted password', () => {
-  test('victim re-register + verify must rotate the planted password', async () => {
+  test('the last-register-wins race must not leave a planted password', async () => {
     const attacker = client(app.port);
+    const victim = client(app.port);
+
     const planted = await attacker('POST', '/api/auth/register', {
       email: VICTIM,
       password: PLANTED,
     });
     assert.equal(planted.status, 201);
-    assert.equal(planted.body.pendingVerification, true);
+    assert.equal(users.find({ email: VICTIM }).passwordHash, null);
 
-    const victim = client(app.port);
+    clearRegisterCooldown(VICTIM);
     const rereg = await victim('POST', '/api/auth/register', {
       email: VICTIM,
       password: OWNER_PASSWORD,
     });
     assert.equal(rereg.status, 200);
-    assert.equal(rereg.body.pendingVerification, true);
+
+    clearRegisterCooldown(VICTIM);
+    const again = await attacker('POST', '/api/auth/register', {
+      email: VICTIM,
+      password: PLANTED,
+    });
+    assert.equal(again.status, 200);
+    assert.equal(users.find({ email: VICTIM }).passwordHash, null);
+
     const code = sentCodes.at(-1).code;
-    const verified = await victim('POST', '/api/auth/verify', { email: VICTIM, code });
+    const verified = await victim('POST', '/api/auth/verify', {
+      email: VICTIM,
+      code,
+      password: OWNER_PASSWORD,
+    });
     assert.equal(verified.status, 200);
 
     const withPlanted = await client(app.port)('POST', '/api/auth/login', {
       email: VICTIM,
       password: PLANTED,
     });
-    assert.notEqual(withPlanted.status, 200, 'planted password must not survive re-register');
+    assert.notEqual(withPlanted.status, 200);
     assert.equal(withPlanted.body?.user, undefined);
 
     const withOwner = await client(app.port)('POST', '/api/auth/login', {
@@ -160,6 +182,52 @@ describe('exploit S1b-1 register/verify planted password', () => {
     });
     assert.equal(withOwner.status, 200);
     assert.equal(withOwner.body.user.email, VICTIM);
+  });
+
+  test('re-register after verify is a no-op on the verified row', async () => {
+    const victim = client(app.port);
+    await victim('POST', '/api/auth/register', { email: VICTIM, password: OWNER_PASSWORD });
+    await victim('POST', '/api/auth/verify', {
+      email: VICTIM,
+      code: sentCodes.at(-1).code,
+      password: OWNER_PASSWORD,
+    });
+
+    const attacker = client(app.port);
+    const again = await attacker('POST', '/api/auth/register', {
+      email: VICTIM,
+      password: PLANTED,
+    });
+    assert.equal(again.status, 409);
+    assert.equal(users.find({ email: VICTIM }).emailVerified, true);
+
+    const withPlanted = await client(app.port)('POST', '/api/auth/login', {
+      email: VICTIM,
+      password: PLANTED,
+    });
+    assert.equal(withPlanted.status, 401);
+    const withOwner = await client(app.port)('POST', '/api/auth/login', {
+      email: VICTIM,
+      password: OWNER_PASSWORD,
+    });
+    assert.equal(withOwner.status, 200);
+  });
+
+  test('unverified login never succeeds, and register codes have a cooldown', async () => {
+    const c = client(app.port);
+    assert.equal((await c('POST', '/api/auth/register', {
+      email: VICTIM,
+      password: PLANTED,
+    })).status, 201);
+    const login = await c('POST', '/api/auth/login', { email: VICTIM, password: PLANTED });
+    assert.equal(login.status, 401);
+    assert.equal(login.body?.user, undefined);
+
+    const second = await c('POST', '/api/auth/register', {
+      email: VICTIM,
+      password: OWNER_PASSWORD,
+    });
+    assert.equal(second.status, 429);
   });
 });
 
@@ -212,6 +280,36 @@ describe('exploit S1b-2 GitHub unverified email link', () => {
       const row = users.find({ email: VICTIM });
       assert.equal(row.authProvider, provider, provider);
       assert.equal(row.passwordHash, 'keep-me', provider);
+    }
+  });
+
+  test('verified OAuth email claims a never-verified local row and drops the planted hash', async () => {
+    for (const provider of ['github', 'google', 'apple']) {
+      users.rows.length = 0;
+      await users.insert({
+        email: VICTIM,
+        authProvider: 'local',
+        emailVerified: false,
+        passwordHash: 'planted-hash',
+        addresses: [{
+          name: 'Mallory',
+          street: '1 Evil St',
+          city: 'Austin',
+          state: 'TX',
+          zip: '78701',
+        }],
+      });
+
+      const claimed = await User.findOrCreateOAuth(
+        oauthProfile(`${provider}-recover`, VICTIM, true),
+        provider,
+      );
+      assert.equal(claimed.isNew, false, provider);
+      const row = users.find({ email: VICTIM });
+      assert.equal(row.authProvider, provider, provider);
+      assert.equal(row.emailVerified, true, provider);
+      assert.equal(row.passwordHash, null, provider);
+      assert.equal(row.addresses.length, 0, provider);
     }
   });
 
@@ -284,6 +382,30 @@ describe('exploit S1b-3 order existence oracle', () => {
       assert.equal(r.body?.order, undefined);
     }
   });
+
+  test('an authenticated stranger gets the same 404 as a missing order', async () => {
+    await seedOrders();
+    const stranger = client(app.port);
+    await stranger('POST', '/api/auth/register', {
+      email: 'stranger@example.com',
+      password: OWNER_PASSWORD,
+    });
+    await stranger('POST', '/api/auth/verify', {
+      email: 'stranger@example.com',
+      code: sentCodes.at(-1).code,
+      password: OWNER_PASSWORD,
+    });
+
+    const theirs = await stranger('GET', `/api/orders/${OWNER_ORDER}`);
+    const missing = await stranger('GET', `/api/orders/${MISSING_ORDER}`);
+    const guestWrong = await stranger('GET', `/api/orders/${GUEST_ORDER}?email=${encodeURIComponent('other@example.com')}`);
+    assert.equal(theirs.status, 404);
+    assert.equal(missing.status, 404);
+    assert.equal(guestWrong.status, 404);
+    assert.equal(theirs.body?.error, missing.body?.error);
+    assert.equal(theirs.body?.error, 'Order not found');
+    assert.equal(theirs.body?.order, undefined);
+  });
 });
 
 describe('exploit S1b-4 convert/code existence oracle', () => {
@@ -306,6 +428,32 @@ describe('exploit S1b-4 convert/code existence oracle', () => {
     assert.equal(unknownCode.status, 403);
     assert.equal(existingCode.body?.error, unknownCode.body?.error);
     assert.equal(sentCodes.length, 0);
+  });
+
+  test('unpaid convert cannot tell whether the email already exists', async () => {
+    await users.insert({
+      email: VICTIM,
+      authProvider: 'local',
+      emailVerified: true,
+    });
+
+    const existing = client(app.port);
+    await existing('POST', '/api/auth/guest', { email: VICTIM });
+    const existingConvert = await existing('POST', '/api/auth/guest/convert', {
+      password: OWNER_PASSWORD,
+      code: '123456',
+    });
+
+    const unknown = client(app.port);
+    await unknown('POST', '/api/auth/guest', { email: 'nobody@example.com' });
+    const unknownConvert = await unknown('POST', '/api/auth/guest/convert', {
+      password: OWNER_PASSWORD,
+      code: '123456',
+    });
+
+    assert.equal(existingConvert.status, 403);
+    assert.equal(unknownConvert.status, 403);
+    assert.equal(existingConvert.body?.error, unknownConvert.body?.error);
   });
 });
 
