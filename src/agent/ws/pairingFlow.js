@@ -13,13 +13,21 @@ export function isRelayTabConnected(state) {
   return RELAY_LIVE_STATES.has(state);
 }
 
+const TERMINAL_PROBE_ISSUES = new Set(['origin_rejected', 'browser_blocked']);
+
 /**
- * @param {{ flowOpen: boolean, relayReachable: boolean, state: TabPairState }} input
+ * @param {{
+ *   flowOpen: boolean,
+ *   relayReachable: boolean,
+ *   state: TabPairState,
+ *   issue?: string | null,
+ * }} input
  */
 export function shouldPollRelay(input) {
   if (!input.flowOpen) return false;
   if (input.relayReachable) return false;
   if (isRelayTabConnected(input.state)) return false;
+  if (TERMINAL_PROBE_ISSUES.has(input.issue)) return false;
   return true;
 }
 

@@ -6,10 +6,11 @@ export const DEFAULT_RELAY_POLL_MS = 5000;
 
 /**
  * @param {{
- *   probe: () => Promise<boolean>,
+ *   probe: () => Promise<boolean | { ok?: boolean, issue?: string | null }>,
  *   intervalMs?: number,
  *   isActive: () => boolean,
  *   onDetected: () => void,
+ *   onIssue?: (issue: string) => void,
  * }} options
  */
 export function createRelayPoller(options) {
@@ -20,10 +21,12 @@ export function createRelayPoller(options) {
 
   async function tick() {
     if (!options.isActive()) return;
-    const ok = await options.probe();
-    if (ok && options.isActive()) {
-      options.onDetected();
-    }
+    const result = await options.probe();
+    if (!options.isActive()) return;
+    const issue = result && typeof result === 'object' ? result.issue : null;
+    if (issue) options.onIssue?.(issue);
+    const ok = result === true || (result && typeof result === 'object' && result.ok === true);
+    if (ok) options.onDetected();
   }
 
   function start() {

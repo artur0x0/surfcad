@@ -13,6 +13,9 @@ test('shouldPollRelay only while flow is open and relay is not reachable', () =>
   assert.equal(shouldPollRelay({ flowOpen: true, relayReachable: true, state: 'idle' }), false);
   assert.equal(shouldPollRelay({ flowOpen: true, relayReachable: false, state: 'advertising' }), false);
   assert.equal(shouldPollRelay({ flowOpen: true, relayReachable: false, state: 'idle' }), true);
+  assert.equal(shouldPollRelay({ flowOpen: true, relayReachable: false, state: 'idle', issue: 'origin_rejected' }), false);
+  assert.equal(shouldPollRelay({ flowOpen: true, relayReachable: false, state: 'idle', issue: 'browser_blocked' }), false);
+  assert.equal(shouldPollRelay({ flowOpen: true, relayReachable: false, state: 'idle', issue: null }), true);
 });
 
 test('pairing code stays hidden until relay is reachable', () => {
