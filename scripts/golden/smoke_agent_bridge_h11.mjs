@@ -214,6 +214,39 @@ await agentCall(page, 'joint_set_params', { type: 'coincident' });
 const committed = await agentCall(page, 'joint_commit', {});
 check('joint_commit', committed.ok === true, JSON.stringify(committed));
 
+const jointId = committed.result?.jointId;
+const assemblySteps = async () => {
+  const hist = await agentCall(page, 'history', {});
+  return hist.result?.kind === 'assembly' ? hist.result.entries.length : -1;
+};
+const stepsBefore = await assemblySteps();
+check('assembly history readable', stepsBefore >= 2, String(stepsBefore));
+
+const editedById = await agentCall(page, 'joint_edit', { joint_id: jointId, name: 'Seat' });
+check('joint_edit by id without joint_select', editedById.ok === true && editedById.result?.name === 'Seat', JSON.stringify(editedById));
+const editCommitted = await agentCall(page, 'joint_commit', {});
+check('edit joint_commit', editCommitted.ok === true && editCommitted.result?.jointId === jointId, JSON.stringify(editCommitted));
+check('edit is one history step', (await assemblySteps()) === stepsBefore + 1);
+const stepsAfterEdit = stepsBefore + 1;
+
+const badEdit = await agentCall(page, 'joint_edit', { joint_id: 'no-such-joint', name: 'Ghost' });
+check('joint_edit unknown id refused', badEdit.ok === false && badEdit.error?.code === 'unknown_joint', JSON.stringify(badEdit));
+const commitAfterBadEdit = await agentCall(page, 'joint_commit', {});
+check('commit after a refused edit is refused', commitAfterBadEdit.ok === false, JSON.stringify(commitAfterBadEdit));
+check('refused edit writes no history', (await assemblySteps()) === stepsAfterEdit);
+
+const misfit = await agentCall(page, 'joint_edit', { joint_id: jointId, type: 'concentric' });
+check('joint_edit to a type the picks do not fit', misfit.ok === true, JSON.stringify(misfit));
+const misfitCommit = await agentCall(page, 'joint_commit', {});
+check('misfit joint_commit refused', misfitCommit.ok === false && misfitCommit.error?.code === 'commit_failed', JSON.stringify(misfitCommit));
+check('refused commit writes no history', (await assemblySteps()) === stepsAfterEdit);
+await agentCall(page, 'joint_cancel', {});
+
+const sameEdit = await agentCall(page, 'joint_edit', { joint_id: jointId });
+const sameCommit = await agentCall(page, 'joint_commit', {});
+check('unchanged edit commit', sameEdit.ok === true && sameCommit.ok === true && sameCommit.result?.unchanged === true, JSON.stringify(sameCommit));
+check('unchanged commit writes no history', (await assemblySteps()) === stepsAfterEdit);
+
 const undone = await agentCall(page, 'undo', {});
 check('undo assembly joint', undone.ok === true && undone.result?.kind === 'assembly', JSON.stringify(undone));
 
