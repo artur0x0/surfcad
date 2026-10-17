@@ -35,6 +35,12 @@ const CodeEditor = forwardRef(({
   initialScript,
   onExecute, 
   onCodeChange,
+  /**
+   * Called with the boot script when Monaco mounts. Return false to skip
+   * the initial run and the "Initial script" history step (a remount).
+   * Omitted means seed, which is the first-mount behavior.
+   */
+  onEditorSeed = null,
   isMobile,
   // Slice 08: action bar lives in this mid-strip (between Monaco and the
   // viewport on the mobile stack; Monaco header on desktop). Game renders its
@@ -430,10 +436,16 @@ const CodeEditor = forwardRef(({
       }
     );
 
-    // Execute initial script and add to history
-    onExecute(valueRef.current, true);
-    
-    onCodeChange?.(valueRef.current, 'Initial script');
+    // First mount seeds the undo stack and builds the boot script. A remount
+    // (mobile layout, drawer) keeps the live step — pushing the boot script
+    // here used to make the next undo restore the wrong commit.
+    const seed = typeof onEditorSeed === 'function'
+      ? onEditorSeed(valueRef.current) !== false
+      : true;
+    if (seed) {
+      onExecute(valueRef.current, true);
+      onCodeChange?.(valueRef.current, 'Initial script');
+    }
   };
 
   // The easy select-all: keyboard-only flow isn't discoverable on mobile.

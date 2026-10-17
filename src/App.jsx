@@ -121,6 +121,7 @@ import {
 import { sheetMetalBinding } from './utils/scs/scsCatalog';
 import { composeSheetMetalCommit, readSheetMetalSpec, removeSheetMetalBlock, sheetMetalFresh, sheetStarterScript } from './utils/sheetMetal/sheetMetalScript';
 import {
+  editorMountSeedsHistory,
   historyForPart,
   pushPartHistory,
   redoPartHistory,
@@ -6808,6 +6809,26 @@ const App = () => {
     }
   };
 
+  // Read at Monaco onMount time. A render-time flag would be stale: the
+  // mobile shell can mount after set_script has already committed.
+  const handleEditorSeed = () => {
+    const id = historyKey();
+    const prev = partHistoriesRef.current[id];
+    const history = (prev && Array.isArray(prev.commits))
+      ? prev
+      : {
+        commits: historyRef.current?.branches?.main?.commits || [],
+        head: Number.isInteger(historyRef.current?.branches?.main?.head)
+          ? historyRef.current.branches.main.head
+          : -1,
+      };
+    if (editorMountSeedsHistory(history)) return true;
+    // The live script is already committed. Mark the buffer real so the draft
+    // effect can save it, without running or recording the boot script.
+    editorLiveRef.current = true;
+    return false;
+  };
+
   const handleCodeChange = (code, message = 'Code updated') => {
     if (suppressPartSaveRef.current && message === 'Manual edit') {
       suppressPartSaveRef.current = false;
@@ -6818,6 +6839,7 @@ const App = () => {
       commits: branch?.commits || [],
       head: Number.isInteger(branch?.head) ? branch.head : -1,
     };
+    if (message === 'Initial script' && !editorMountSeedsHistory(prev)) return;
     const pushed = pushPartHistory(prev, code, message);
     partHistoriesRef.current[id] = pushed;
     applyPartHistory(pushed);
@@ -9461,6 +9483,7 @@ const App = () => {
                   initialScript={appMode === 'game' ? '' : editorInitialScript}
                   onExecute={handleExecute}
                   onCodeChange={handleCodeChange}
+                  onEditorSeed={handleEditorSeed}
                   isMobile={isMobile}
                   mode={appMode}
                   onExitGame={handleExitGame}
@@ -9817,6 +9840,7 @@ const App = () => {
               initialScript=""
               onExecute={handleExecute}
               onCodeChange={handleCodeChange}
+              onEditorSeed={handleEditorSeed}
               isMobile={isMobile}
               mode={appMode}
               onExitGame={handleExitGame}
@@ -9982,6 +10006,7 @@ const App = () => {
                 initialScript={editorInitialScript}
                 onExecute={handleExecute}
                 onCodeChange={handleCodeChange}
+                onEditorSeed={handleEditorSeed}
                 isMobile={isMobile}
                 mode={appMode}
                 onExitGame={handleExitGame}
