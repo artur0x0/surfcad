@@ -695,12 +695,31 @@ export function assemblyHistoryCanRedo(history) {
   return !!history && history.head < (history.commits?.length || 0) - 1;
 }
 
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value).filter((k) => value[k] !== undefined).sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(value[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+/** True when two documents have the same joints and placements. */
+export function assemblySnapshotsEqual(beforeDoc, afterDoc) {
+  return canonicalJson(snapshotOf(beforeDoc)) === canonicalJson(snapshotOf(afterDoc));
+}
+
 /**
  * The tip becomes the live document, then the written document is one step.
  * A part-run solve that moved placements is the "before", not its own step.
+ * A write that changed no joint or placement is not a step: the history,
+ * including redo, is returned as it was.
  */
 export function pushAssemblyHistory(history, beforeDoc, afterDoc) {
   const base = history?.commits ? history : seedAssemblyHistory(beforeDoc);
+  if (assemblySnapshotsEqual(beforeDoc, afterDoc)) {
+    return { commits: base.commits, head: base.head };
+  }
   const commits = base.commits.slice(0, base.head + 1);
   commits[commits.length - 1] = snapshotOf(beforeDoc);
   commits.push(snapshotOf(afterDoc));

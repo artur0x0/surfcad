@@ -29,7 +29,9 @@ import {
   cadStripsShowJoints,
   shouldArmJointPick,
   nextJointName,
+  assemblySnapshotsEqual,
   pushAssemblyHistory,
+  redoJointStrip,
   seedAssemblyHistory,
   stripUndoLabel,
   stripUndoTarget,
@@ -581,4 +583,33 @@ test('Move Body by 10 mm is the only script change and breaks the joint', () => 
   assert.deepEqual(refreshed.doc.parts[1].placement.t, seed);
   const restored = applyAssemblySnapshot(doc, seedAssemblyHistory(doc).commits[0]);
   assert.equal(restored.joints[0].id, J);
+});
+
+test('a write that changes no joint or placement is not a history step', () => {
+  const fixed = [{ id: J, name: 'Fixed 1', type: 'fixed', a: { part: A } }];
+  const before = docWith(undefined);
+  const after = docWith(fixed);
+  const once = pushAssemblyHistory(seedAssemblyHistory(before), before, after);
+  assert.equal(once.commits.length, 2);
+  const again = pushAssemblyHistory(once, after, docWith(JSON.parse(JSON.stringify(fixed))));
+  assert.equal(again.commits.length, 2);
+  assert.equal(again.head, 1);
+  assert.equal(again.commits, once.commits);
+
+  const undone = undoJointStrip({ history: once, doc: after, scripts: {} });
+  assert.equal(undone.history.head, 0);
+  const noop = pushAssemblyHistory(undone.history, undone.doc, undone.doc);
+  assert.equal(noop.commits.length, 2, 'a no-op write keeps redo');
+  assert.equal(noop.head, 0);
+  assert.equal(redoJointStrip({ history: noop, doc: undone.doc, scripts: {} }).changed, true);
+});
+
+test('snapshot equality ignores key order and reads joints and placements', () => {
+  const a = docWith([{ id: J, name: 'Fixed 1', type: 'fixed', a: { part: A } }]);
+  const b = docWith([{ type: 'fixed', a: { part: A }, name: 'Fixed 1', id: J }]);
+  assert.equal(assemblySnapshotsEqual(a, b), true);
+  const renamed = docWith([{ id: J, name: 'Seat', type: 'fixed', a: { part: A } }]);
+  assert.equal(assemblySnapshotsEqual(a, renamed), false);
+  const moved = { ...a, parts: a.parts.map((part) => (part.surfId === B ? { ...part, placement: { t: [0, 0, 6], q: [0, 0, 0, 1] } } : part)) };
+  assert.equal(assemblySnapshotsEqual(a, moved), false);
 });
