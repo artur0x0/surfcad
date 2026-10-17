@@ -473,6 +473,64 @@ describe('reconnect attempt', () => {
       else globalThis.sessionStorage = prevSession;
     }
   });
+
+  test('silent popup ignores a message that omits origin or comes from another window', async () => {
+    const prevLocal = globalThis.localStorage;
+    const prevSession = globalThis.sessionStorage;
+    const local = memoryStorage();
+    const session = memoryStorage();
+    globalThis.localStorage = local;
+    globalThis.sessionStorage = session;
+    const popup = {
+      location: { href: 'about:blank' },
+      closed: false,
+      close() { this.closed = true; },
+    };
+    let listener = null;
+    try {
+      const pending = runReconnectAttempt({
+        refresh: async () => ({ ok: false, unsupported: true, failure: 'unsupported', accessToken: '' }),
+        openWindow: () => popup,
+        clientId: 'Iv1.cid',
+        origin: 'https://surfcad.test',
+        timeoutMs: 80,
+        addEventListener(_type, fn) { listener = fn; },
+        removeEventListener() { listener = null; },
+      });
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+      assert.equal(typeof listener, 'function');
+      local.setItem('surfcad.github.tokenBundle', JSON.stringify({
+        accessToken: 'ghu_silent',
+        refreshToken: 'ghr_silent',
+        expiresAt: 0,
+        refreshExpiresAt: 0,
+      }));
+      listener({
+        origin: '',
+        source: popup,
+        data: { type: OAUTH_MESSAGE_TYPE, ok: true },
+      });
+      listener({
+        origin: 'https://surfcad.test',
+        source: null,
+        data: { type: OAUTH_MESSAGE_TYPE, ok: true },
+      });
+      listener({
+        origin: 'https://evil.test',
+        source: popup,
+        data: { type: OAUTH_MESSAGE_TYPE, ok: true },
+      });
+      const result = await pending;
+      assert.equal(result.ok, false);
+      assert.equal(result.via, 'needs-user');
+      assert.equal(session.getItem('surfcad.github.token'), null);
+    } finally {
+      if (prevLocal === undefined) delete globalThis.localStorage;
+      else globalThis.localStorage = prevLocal;
+      if (prevSession === undefined) delete globalThis.sessionStorage;
+      else globalThis.sessionStorage = prevSession;
+    }
+  });
 });
 
 describe('shared auth snapshot', () => {

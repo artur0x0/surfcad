@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { X, User, Mail, Loader2, Phone } from 'lucide-react';
 import { displayOrderLines } from '../utils/checkoutPage.js';
+import { httpsOnlyHref } from '../utils/httpsOnlyHref.js';
 import ModalFit from './ModalFit';
 
 const AccountModal = ({ onClose, user, selectedTab = 'info' }) => {
@@ -370,7 +371,9 @@ const AccountModal = ({ onClose, user, selectedTab = 'info' }) => {
                 <div className="text-chrome-secondary text-center py-4">No orders yet</div>
               ) : (
                 <div className="space-y-4">
-                  {orders.map(order => (
+                  {orders.map(order => {
+                    const trackingHref = httpsOnlyHref(order.shipping?.['tracking-url']);
+                    return (
                     <div key={order['order-number']} className="p-4 bg-gray-800/50 rounded-xl space-y-2">
                       <div className="flex justify-between items-center">
                         <span className="font-medium text-white">{order['order-number']}</span>
@@ -388,9 +391,11 @@ const AccountModal = ({ onClose, user, selectedTab = 'info' }) => {
                       <div className="text-sm text-chrome-secondary">Total: ${Number(order.quote?.total || 0).toFixed(2)}</div>
                       {order.shipping && order.shipping['tracking-number'] && (
                         <div className="text-sm text-chrome-secondary">
-                          Tracking: <a href={order.shipping['tracking-url']} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
-                            {order.shipping['tracking-number']}
-                          </a>
+                          Tracking: {trackingHref ? (
+                            <a href={trackingHref} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+                              {order.shipping['tracking-number']}
+                            </a>
+                          ) : order.shipping['tracking-number']}
                         </div>
                       )}
                       <div className="space-y-1" data-order-lines="">
@@ -405,7 +410,8 @@ const AccountModal = ({ onClose, user, selectedTab = 'info' }) => {
                         ))}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </>
