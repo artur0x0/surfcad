@@ -227,6 +227,7 @@ export async function ensureAgentBridgeRelay(options = {}) {
  * @param {{ server?: import('node:http').Server | null, wss?: import('ws').WebSocketServer | null, port?: number, ownsServer?: boolean } | null | undefined} relay
  */
 export function stopAgentBridgeRelay(relay) {
+  relay?.hub?.dispose?.();
   if (!relay || !relay.ownsServer) {
     return Promise.resolve();
   }

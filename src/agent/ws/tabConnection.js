@@ -344,6 +344,7 @@ export function createAgentBridgeTabConnection(opts) {
   return {
     getState: () => state,
     getLink: () => link,
+    getTabKey: () => tabKey,
     connect,
     approvePair,
     rejectPair,

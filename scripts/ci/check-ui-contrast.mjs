@@ -15,9 +15,8 @@ const SKIP_DIR = new Set([
   'node_modules', 'dist', 'dist-ssr', 'built', '.git', 'fea', 'surfcad-fea',
 ]);
 
-/** Files owned by the pairing Allow/Deny PR — do not restyle or fail here. */
+/** Pairing panel chrome still uses accent utilities; Allow/Deny is scanned. */
 const SKIP_FILE = new Set([
-  'src/components/AgentBridgeApprovalPopup.jsx',
   'src/components/AgentBridgePairing.jsx',
 ]);
 

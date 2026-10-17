@@ -9,6 +9,24 @@ import {
   scanFiles,
 } from '../scripts/ci/check-ui-contrast.mjs';
 
+function channelLuminance(value) {
+  const s = value / 255;
+  return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+}
+
+function contrastRatio(foreground, background) {
+  const lum = (hex) => (
+    0.2126 * channelLuminance((hex >> 16) & 255)
+    + 0.7152 * channelLuminance((hex >> 8) & 255)
+    + 0.0722 * channelLuminance(hex & 255)
+  );
+  const a = lum(foreground);
+  const b = lum(background);
+  const hi = Math.max(a, b);
+  const lo = Math.min(a, b);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURE = join(ROOT, 'scripts/ci/fixtures/ui-contrast-violation.jsx');
 
@@ -42,10 +60,17 @@ test('known-bad text-chrome-text-secondary typo on chrome surface is a hit', () 
   assert.equal(hits.length, 1);
 });
 
-test('lint scan of src does not include the fixture or pairing popup', () => {
+test('Allow success surfaces meet WCAG against chrome text', () => {
+  const text = 0xf3f4f6; // --chrome-text / text-on-dark
+  assert.ok(contrastRatio(text, 0x047857) >= 4.5, 'surface-success rest');
+  assert.ok(contrastRatio(text, 0x059669) >= 3, 'surface-success hover');
+  assert.ok(contrastRatio(text, 0x10b981) < 3, 'emerald-500 hover is the failing rest state');
+});
+
+test('lint scan of src includes the pairing Allow/Deny popup and has no hits', () => {
   const files = collectScanFiles(ROOT).map((f) => f.split('\\').join('/'));
   assert.equal(files.some((f) => f.endsWith('ui-contrast-violation.jsx')), false);
-  assert.equal(files.some((f) => f.endsWith('AgentBridgeApprovalPopup.jsx')), false);
+  assert.equal(files.some((f) => f.endsWith('AgentBridgeApprovalPopup.jsx')), true);
   const hits = scanFiles(collectScanFiles(ROOT), ROOT);
   assert.deepEqual(hits, []);
 });
