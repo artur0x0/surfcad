@@ -194,6 +194,18 @@ const userSchema = new mongoose.Schema({
     },
   },
 
+  // Anonymous usage analytics opt-out (PostHog). Error reporting is not stored here.
+  consent: {
+    analytics: {
+      type: Boolean,
+      default: true,
+    },
+    updatedAt: {
+      type: Date,
+      default: null,
+    },
+  },
+
   // Live part references. Not the vault. Missing on old users; defaults apply
   // on the next read/save. Readers still use `user.cart || []`.
   cart: {
@@ -207,6 +219,17 @@ const userSchema = new mongoose.Schema({
   cartTombstones: {
     type: [cartTombstoneSchema],
     default: () => [],
+  },
+
+  /** Last successful app session sign-in (password or OAuth). Not backfilled. */
+  lastLoginAt: {
+    type: Date,
+    default: null,
+  },
+  loginCount: {
+    type: Number,
+    default: 0,
+    min: 0,
   },
 }, {
   timestamps: true,

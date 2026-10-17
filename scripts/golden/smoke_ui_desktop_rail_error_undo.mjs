@@ -51,6 +51,14 @@ console.log('ui: desktop ribbon + left rail + error Undo');
       /useLeftRailFit/.test(contour) &&
       /data-rail-fit=\{fits \? 'fits' : 'scroll'\}/.test(contour),
   );
+  const view = read('../../src/components/Viewport.jsx');
+  check(
+    '2: desktop CAD uses full-length left rail under feature strip',
+    /RAIL_FULL_LENGTH_CLASS/.test(railPair) &&
+      /leftRailPositionClasses/.test(railPair) &&
+      /desktopFullRail/.test(palette) &&
+      /desktopFullRail=\{mode !== 'game' && !isMobile\}/.test(view),
+  );
 }
 
 {
@@ -72,6 +80,19 @@ console.log('ui: desktop ribbon + left rail + error Undo');
     (app.match(/<ErrorPopup\b/g) || []).length >= 4 &&
       /onUndo=\{handleUndo\}/.test(app) &&
       /canUndo=\{canUndo\(\)\}/.test(app),
+  );
+}
+
+{
+  const pairing = read('../../src/components/AgentBridgePairing.jsx');
+  check(
+    '4: local agent panel drops loopback helper copy',
+    !/Approve each client/.test(pairing) && !/nothing pairs automatically/.test(pairing),
+  );
+  check(
+    '4: pairing start button uses profile-panel text chrome',
+    /data-ui-action="data-agent-bridge-start"/.test(pairing)
+      && /text-chrome-text[\s\S]{0,400}data-ui-action="data-agent-bridge-start"|data-ui-action="data-agent-bridge-start"[\s\S]{0,400}text-chrome-text/.test(pairing),
   );
 }
 

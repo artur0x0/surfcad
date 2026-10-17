@@ -2,6 +2,7 @@
 /* eslint-disable react-hooks/exhaustive-deps -- checkAuth is a stable useCallback([]);
    effect must bind once on mount */
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import { applyServerConsent } from '../utils/consent';
 
 const AuthContext = createContext(null);
 
@@ -25,6 +26,7 @@ export const AuthProvider = ({ children }) => {
       const data = await response.json();
       
       if (data.authenticated) {
+        applyServerConsent(data.user?.consent);
         setUser(data.user);
         setIsAuthenticated(true);
         setGuest(null);
@@ -61,6 +63,7 @@ export const AuthProvider = ({ children }) => {
       throw new Error(data.error || 'Login failed');
     }
     
+    applyServerConsent(data.user?.consent);
     setUser(data.user);
     setIsAuthenticated(true);
     setGuest(null);
@@ -82,6 +85,7 @@ export const AuthProvider = ({ children }) => {
       throw new Error(data.error || 'Registration failed');
     }
     
+    applyServerConsent(data.user?.consent);
     setUser(data.user);
     setIsAuthenticated(true);
     setGuest(null);
@@ -136,6 +140,7 @@ export const AuthProvider = ({ children }) => {
       throw new Error(data.error || 'Failed to create account');
     }
     
+    applyServerConsent(data.user?.consent);
     setUser(data.user);
     setIsAuthenticated(true);
     setGuest(null);
