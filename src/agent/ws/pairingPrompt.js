@@ -8,7 +8,7 @@ export const AGENT_PAIRING_PROMPT = `Install and run the SurfCAD MCP server on m
 
 ${MCP_INSTALL_COMMAND}
 
-When SurfCAD shows a pairing code in the profile menu, send me that code so I can approve the connection.`;
+When SurfCAD shows a pairing code, send me that code so I can approve the connection.`;
 
 /**
  * @param {number} [maxLen]

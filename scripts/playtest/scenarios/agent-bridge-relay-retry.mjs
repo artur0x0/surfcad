@@ -15,14 +15,12 @@ import {
   installApiMocks,
   startPreviewServer,
   waitForServer,
+  waitForSignedInChip,
 } from '../lib/harness.mjs';
 import { pickFreePort } from '../lib/pickFreePort.mjs';
 import { RelaySession } from '../../../packages/surfcad-mcp/src/relay.mjs';
 import { probeRelayAtUrl } from '../../../packages/surfcad-mcp/src/bridge/relayServer.mjs';
-import {
-  APPROVAL_POPUP_WIDE_MIN_PX,
-  rectsOverlap,
-} from '../../../src/agent/ws/agentBridgeChrome.js';
+import { rectsOverlap } from '../../../src/agent/ws/agentBridgeChrome.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const SERVER_BIN = join(ROOT, 'packages/surfcad-mcp/bin/surfcad-mcp.js');
@@ -92,96 +90,97 @@ async function timed(promise) {
   }
 }
 
-async function assertApprovalClearsProfileChrome(page, { width } = {}) {
-  const popup = await page.locator('[data-agent-bridge-approval]').boundingBox();
+async function shot(page, shotDir, name) {
+  if (!shotDir) return;
+  await mkdir(shotDir, { recursive: true });
+  await page.screenshot({ path: join(shotDir, name) });
+}
+
+async function assertPairingClearsFooterPrivacy(page, { menuOpen = false } = {}) {
+  await page.waitForSelector('[data-privacy-choices-link]', { timeout: 5000 });
+  const dialog = await page.locator('[data-agent-bridge-dialog-card]').boundingBox();
+  const approval = await page.locator('[data-agent-bridge-approval]').boundingBox();
+  const footer = await page.locator('[data-privacy-choices-link]').boundingBox();
   const chip = await page.locator('[data-profile-chip]').first().boundingBox();
-  const panel = await page.locator('[data-profile-panel]').boundingBox();
-  const privacy = await page.locator('[data-profile-privacy-choices]').boundingBox();
-  assert.ok(popup, 'Allow/Deny popup should be visible');
+  assert.ok(dialog, 'pairing dialog card should be visible');
+  assert.ok(footer, 'page-footer Privacy choices should be visible');
   assert.ok(chip, 'profile chip should be visible');
-  assert.ok(privacy, 'Privacy choices should be visible');
   assert.equal(
-    rectsOverlap(popup, chip),
+    rectsOverlap(dialog, footer),
     false,
-    `Allow/Deny covers the profile chip popup=${JSON.stringify(popup)} chip=${JSON.stringify(chip)}`,
+    `pairing dialog covers footer Privacy choices dialog=${JSON.stringify(dialog)} footer=${JSON.stringify(footer)}`,
   );
-  assert.equal(
-    rectsOverlap(popup, privacy),
-    false,
-    `Allow/Deny covers Privacy choices popup=${JSON.stringify(popup)} privacy=${JSON.stringify(privacy)}`,
-  );
-  // 768+ has gutter beside the panel. 390 cannot fit a ~220px portal beside w-64,
-  // so it parks under the chip and may clip the panel header — never Privacy.
-  if (width == null || width >= 768) {
-    assert.ok(panel, 'profile menu should be visible');
+  if (approval) {
     assert.equal(
-      rectsOverlap(popup, panel),
+      rectsOverlap(approval, footer),
       false,
-      `Allow/Deny covers the profile menu popup=${JSON.stringify(popup)} panel=${JSON.stringify(panel)}`,
+      `Allow/Deny covers footer Privacy choices approval=${JSON.stringify(approval)} footer=${JSON.stringify(footer)}`,
+    );
+    assert.equal(rectsOverlap(approval, chip), false, 'Allow/Deny covers the profile chip');
+  }
+  const portal = await page.locator('[data-agent-bridge-dialog]').count();
+  assert.ok(portal > 0, 'pairing dialog must render as a body portal, not inside the menu');
+  if (await page.locator('[data-agent-bridge-approval] p').count()) {
+    const promptColor = await page.locator('[data-agent-bridge-approval] p').evaluate(
+      /* eslint-disable no-undef */
+      (el) => getComputedStyle(el).color,
+      /* eslint-enable no-undef */
+    );
+    assert.equal(
+      promptColor,
+      'rgb(243, 244, 246)',
+      `Allow/Deny prompt must use text-on-dark, got ${promptColor}`,
     );
   }
-  const portal = await page.locator('[data-agent-bridge-approval-portal]').count();
-  assert.ok(portal > 0, 'Allow/Deny must render as the body portal, not inside the menu');
-  const promptColor = await page.locator('[data-agent-bridge-approval] p').evaluate(
-    /* eslint-disable no-undef */
-    (el) => getComputedStyle(el).color,
-    /* eslint-enable no-undef */
-  );
-  // text-on-dark / --chrome-text: gray-100 rgb(243, 244, 246) — never inherit black on dark blue.
-  assert.equal(
-    promptColor,
-    'rgb(243, 244, 246)',
-    `Allow/Deny prompt must use text-on-dark, got ${promptColor}`,
-  );
-  const shotDir = process.env.WALKTHROUGH_SHOT_DIR;
-  if (shotDir) {
-    await mkdir(shotDir, { recursive: true });
-    await page.screenshot({ path: join(shotDir, 'allow-deny-chrome-text.png') });
+  if (menuOpen) {
+    assert.ok(
+      await page.locator('[data-profile-panel]').isVisible(),
+      'profile menu should stay open for the footer overlap check',
+    );
+    const menuPrivacy = await page.locator('[data-profile-privacy-choices]').boundingBox();
+    assert.ok(menuPrivacy, 'in-menu Privacy choices should be visible when the menu is open');
   }
+}
+
+async function clickProfileChip(page) {
+  // Dispatch on the node. A hit-tested click would land on the pairing scrim
+  // (z-130 vs chip z-50) and Deny the pending pair.
+  await page.locator('[data-profile-chip]').filter({ visible: true }).first().evaluate((el) => el.click());
 }
 
 async function ensureProfilePanelOpen(page) {
   if (await page.locator('[data-profile-panel]').isVisible()) return;
-  await page.locator('[data-profile-chip]').filter({ visible: true }).first().click();
+  await clickProfileChip(page);
   await page.waitForSelector('[data-profile-panel]', { timeout: 10000 });
+}
+
+async function ensureProfilePanelClosed(page) {
+  if (!(await page.locator('[data-profile-panel]').isVisible().catch(() => false))) return;
+  await clickProfileChip(page);
+  await page.waitForSelector('[data-profile-panel]', { state: 'hidden', timeout: 5000 });
 }
 
 async function assertApprovalLayoutAtWidths(page, widths = [1280, 768, 390]) {
   const original = page.viewportSize() || { width: 1280, height: 800 };
   try {
     for (const width of widths) {
-      await page.setViewportSize({ width, height: original.height });
-      const expected = width < APPROVAL_POPUP_WIDE_MIN_PX ? 'under-chip' : 'bottom-center';
+      const height = width <= 390 ? 844 : original.height;
+      await page.setViewportSize({ width, height });
       const deadline = Date.now() + 8000;
-      let got = { inner: 0, anchor: null };
+      let inner = 0;
       while (Date.now() < deadline) {
-        got = await page.evaluate(
-          /* eslint-disable no-undef */
-          () => ({ inner: window.innerWidth, anchor: null }),
-          /* eslint-enable no-undef */
-        );
-        if (got.inner === width) break;
+        // eslint-disable-next-line no-undef -- page.evaluate runs in the browser
+        inner = await page.evaluate(() => window.innerWidth);
+        if (inner === width) break;
         await new Promise((r) => setTimeout(r, 50));
       }
-      assert.equal(got.inner, width, `viewport innerWidth at ${width}: ${JSON.stringify(got)}`);
+      assert.equal(inner, width, `viewport innerWidth at ${width}: ${inner}`);
+      await page.waitForSelector('[data-agent-bridge-dialog]', { timeout: 8000 });
+      await ensureProfilePanelClosed(page);
+      await assertPairingClearsFooterPrivacy(page, { menuOpen: false });
       await ensureProfilePanelOpen(page);
-      while (Date.now() < deadline) {
-        got = await page.evaluate(
-          /* eslint-disable no-undef */
-          () => {
-            const el = document.querySelector('[data-agent-bridge-approval]');
-            return {
-              inner: window.innerWidth,
-              anchor: el ? el.getAttribute('data-agent-bridge-approval-anchor') : null,
-            };
-          },
-          /* eslint-enable no-undef */
-        );
-        if (got.inner === width && got.anchor === expected) break;
-        await new Promise((r) => setTimeout(r, 50));
-      }
-      assert.equal(got.anchor, expected, `Allow/Deny anchor at ${width}: ${JSON.stringify(got)}`);
-      await assertApprovalClearsProfileChrome(page, { width });
+      await assertPairingClearsFooterPrivacy(page, { menuOpen: true });
+      await ensureProfilePanelClosed(page);
     }
   } finally {
     await page.setViewportSize(original);
@@ -228,14 +227,19 @@ export async function run(ctx) {
     /* eslint-enable no-undef */
     { timeout: 120000 },
   );
+  await waitForSignedInChip(page);
+  const chipState = await page.locator('[data-profile-chip]').first().getAttribute('data-profile-chip-state');
+  assert.equal(chipState, 'signed-in', `Connect Agent needs a signed-in chip, got ${chipState}`);
+
+  const shotDir = process.env.WALKTHROUGH_SHOT_DIR
+    || join(ctx.outDir || '/opt/cursor/artifacts', 'connect-agent-pairing');
 
   await page.locator('[data-profile-chip]').first().click();
   await page.waitForSelector('[data-ui-action="data-agent-bridge-connect"]', { timeout: 10000 });
   await page.click('[data-ui-action="data-agent-bridge-connect"]');
-  // Preview may already have bound the relay; the missing-relay spinner is racy.
-  await page.waitForSelector('[data-agent-bridge-waiting-relay], [data-agent-bridge-code]', { timeout: 15000 });
-  await page.keyboard.press('Escape');
+  await page.waitForSelector('[data-agent-bridge-dialog]', { timeout: 10000 });
   await page.waitForSelector('[data-profile-panel]', { state: 'hidden', timeout: 5000 });
+  await page.waitForSelector('[data-agent-bridge-prompt], [data-agent-bridge-code]', { timeout: 15000 });
   const wrapBox = await page.locator('[data-profile-chip-wrap]').first().boundingBox();
   assert.ok(wrapBox, 'profile chip wrap should be visible');
   assert.equal(Math.round(wrapBox.width), 36, `wrap width ${wrapBox.width}`);
@@ -255,21 +259,43 @@ export async function run(ctx) {
   });
 
   try {
-    await page.locator('[data-profile-chip]').first().click();
-    const connect = page.locator('[data-ui-action="data-agent-bridge-connect"]');
-    if (await connect.count()) await connect.click();
-    await page.waitForSelector('[data-agent-bridge-waiting-relay], [data-agent-bridge-code]', { timeout: 15000 });
+    if (await page.locator('[data-agent-bridge-prompt]').count()) {
+      await shot(page, shotDir, 'pairing-no-relay-1280.png');
+      await page.setViewportSize({ width: 390, height: 844 });
+      await shot(page, shotDir, 'pairing-no-relay-390.png');
+      await page.setViewportSize({ width: 1280, height: 800 });
+    }
     await page.waitForSelector('[data-agent-bridge-code]', { timeout: 30000 });
+    assert.equal(await page.locator('[data-agent-bridge-prompt]').count(), 0, 'prompt must hide once a relay is up');
+    assert.equal(await page.locator('[data-agent-bridge-code]').count(), 1);
+    await shot(page, shotDir, 'pairing-code-1280.png');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await shot(page, shotDir, 'pairing-code-390.png');
+    await page.setViewportSize({ width: 1280, height: 800 });
     const token = (await page.locator('[data-agent-bridge-code]').innerText()).trim();
     const peerPromise = session.pair(token);
     peerPromise.catch(() => {});
     await page.waitForSelector('[data-agent-bridge-approval]', { timeout: 15000 });
+    assert.equal(await page.locator('[data-agent-bridge-code]').count(), 0, 'approval must replace the pairing code');
+    await shot(page, shotDir, 'pairing-approval-1280.png');
     await assertApprovalLayoutAtWidths(page, [1280, 768, 390]);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await shot(page, shotDir, 'pairing-approval-390.png');
+    await page.setViewportSize({ width: 1280, height: 800 });
     await page.click('[data-ui-action="data-agent-bridge-approve"]');
     await peerPromise;
     await session.call('status');
+    await page.waitForSelector('[data-agent-bridge-dialog]', { state: 'hidden', timeout: 15000 });
+    await page.waitForSelector('[data-agent-bridge-connected-toast]', { timeout: 15000 });
     await page.waitForSelector('[data-agent-bridge-connection-ring="connected"]', { timeout: 15000 });
-    await page.keyboard.press('Escape');
+    await shot(page, shotDir, 'pairing-toast-1280.png');
+    await shot(page, shotDir, 'pairing-ring-1280.png');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await shot(page, shotDir, 'pairing-toast-390.png');
+    await shot(page, shotDir, 'pairing-ring-390.png');
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.locator('[data-agent-bridge-connected-toast] [data-error-dismiss]').click();
+    await page.waitForSelector('[data-agent-bridge-connected-toast]', { state: 'hidden', timeout: 5000 });
     await page.waitForFunction(
       /* eslint-disable no-undef */
       () => !document.querySelector('[data-profile-panel]'),
@@ -294,26 +320,25 @@ export async function run(ctx) {
 
     relayProc = spawnMcpRelay(relayPort);
     await waitUntilRelayUp(relayUrl);
-    const approval = page.locator('[data-agent-bridge-approval]');
-    const prompted = await approval.waitFor({ timeout: 8000 }).then(() => true).catch(() => false);
-    if (prompted) {
-      const menuClosed = await page.evaluate(
-        /* eslint-disable no-undef */
-        () => !document.querySelector('[data-profile-panel]'),
-        /* eslint-enable no-undef */
-      );
-      if (!menuClosed) {
-        throw new Error('Allow/Deny must show while the profile menu stays closed');
-      }
-      const chip = await page.locator('[data-profile-chip]').first().boundingBox();
-      const popup = await page.locator('[data-agent-bridge-approval]').boundingBox();
-      assert.equal(
-        rectsOverlap(popup, chip),
-        false,
-        'Allow/Deny must not cover the chip while the menu is closed',
-      );
-      await page.click('[data-ui-action="data-agent-bridge-approve"]');
+    // Resume lives only in relay memory. A process restart must prompt Allow again.
+    await page.waitForSelector('[data-agent-bridge-approval]', { timeout: 15000 });
+    const menuClosed = await page.evaluate(
+      /* eslint-disable no-undef */
+      () => !document.querySelector('[data-profile-panel]'),
+      /* eslint-enable no-undef */
+    );
+    if (!menuClosed) {
+      throw new Error('Allow/Deny must show while the profile menu stays closed');
     }
+    assert.equal(await page.locator('[data-agent-bridge-code]').count(), 0);
+    const chip = await page.locator('[data-profile-chip]').first().boundingBox();
+    const popup = await page.locator('[data-agent-bridge-approval]').boundingBox();
+    assert.equal(
+      rectsOverlap(popup, chip),
+      false,
+      'Allow/Deny must not cover the chip while the menu is closed',
+    );
+    await page.click('[data-ui-action="data-agent-bridge-approve"]');
     await page.waitForSelector('[data-agent-bridge-connection-ring="connected"]', { timeout: 30000 });
     const deadline = Date.now() + 15000;
     let recovered = false;

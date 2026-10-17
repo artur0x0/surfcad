@@ -9,18 +9,20 @@ const SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ProfileC
 test('viewport wrap is absolute 36 chip positioning only', () => {
   assert.match(
     SRC,
-    /const wrapClass = inline\s*\n\s*\? 'pointer-events-auto relative z-10 shrink-0'\s*\n\s*: 'pointer-events-auto absolute top-4 right-4 z-50';/,
+    /const wrapClass = inline\s*\n\s*\? 'pointer-events-auto relative z-10 shrink-0 overflow-visible'\s*\n\s*: 'pointer-events-auto absolute top-4 right-4 z-50 overflow-visible';/,
   );
   const wrapAssign = SRC.match(/const wrapClass = inline[\s\S]*?;/)?.[0] || '';
   assert.equal(wrapAssign.includes("z-50 relative"), false);
 });
 
-test('viewport chip button is relative so the ring inset-0 sizes to 36x36', () => {
+test('viewport chip button is relative; the ring is a wrap sibling so backdrop-filter cannot clip it', () => {
   assert.match(SRC, /relative flex h-9 w-9 items-center/);
   assert.match(
     SRC,
-    /agent-bridge-profile-ring agent-bridge-profile-ring--\$\{agentRing\} pointer-events-none absolute inset-0 rounded-full/,
+    /className=\{`agent-bridge-profile-ring agent-bridge-profile-ring--\$\{agentRing\} pointer-events-none`\}/,
   );
+  const buttonBlock = SRC.slice(SRC.indexOf('<button'), SRC.indexOf('</button>'));
+  assert.equal(buttonBlock.includes('agent-bridge-profile-ring'), false);
 });
 
 test('connection ring is driven by the live agentBridgeLink, not a boolean', () => {

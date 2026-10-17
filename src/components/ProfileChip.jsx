@@ -35,7 +35,7 @@ export default function ProfileChip({
   const cartCount = session.signedIn ? (cartChrome?.count || 0) : 0;
   const [panelOpen, setPanelOpen] = useState(false);
   const [agentBridgeSlot, setAgentBridgeSlot] = useState(null);
-  const { link: agentBridgeLink, offerSlot } = useAgentBridgeHost();
+  const { link: agentBridgeLink, offerSlot, registerCloseMenu } = useAgentBridgeHost();
   const phase = session.phase;
   const motion = session.reconnecting
     ? 'spinning'
@@ -84,8 +84,8 @@ export default function ProfileChip({
 
   const iconSize = inline ? 14 : 16;
   const wrapClass = inline
-    ? 'pointer-events-auto relative z-10 shrink-0'
-    : 'pointer-events-auto absolute top-4 right-4 z-50';
+    ? 'pointer-events-auto relative z-10 shrink-0 overflow-visible'
+    : 'pointer-events-auto absolute top-4 right-4 z-50 overflow-visible';
 
   const startReconnect = () => {
     if (session.offerReconnect) session.reconnectInteractive();
@@ -153,8 +153,22 @@ export default function ProfileChip({
     return () => { offerSlot(null); };
   }, [agentBridgeLive, panelOpen, agentBridgeSlot, offerSlot]);
 
+  useEffect(() => {
+    if (!agentBridgeLive) return undefined;
+    registerCloseMenu?.(() => setPanelOpen(false));
+    return () => { registerCloseMenu?.(null); };
+  }, [agentBridgeLive, registerCloseMenu]);
+
   return (
     <div className={wrapClass} data-profile-chip-wrap="">
+      {agentRing ? (
+        <span
+          className={`agent-bridge-profile-ring agent-bridge-profile-ring--${agentRing} pointer-events-none`}
+          data-agent-bridge-connection-ring={agentRing}
+          title={agentBridgeRingLabel(agentRing)}
+          aria-hidden="true"
+        />
+      ) : null}
       <button
         type="button"
         data-profile-chip=""
@@ -171,14 +185,6 @@ export default function ProfileChip({
         aria-label={title}
         className={shell}
       >
-        {agentRing ? (
-          <span
-            className={`agent-bridge-profile-ring agent-bridge-profile-ring--${agentRing} pointer-events-none absolute inset-0 rounded-full`}
-            data-agent-bridge-connection-ring={agentRing}
-            title={agentBridgeRingLabel(agentRing)}
-            aria-hidden="true"
-          />
-        ) : null}
         {view.spinner ? (
           <Loader2 size={iconSize} className="animate-spin" aria-hidden="true" data-profile-spinner="" />
         ) : label ? (

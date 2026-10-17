@@ -1,15 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  AGENT_CONNECTED_TOAST_COPY,
+  AGENT_CONNECTED_TOAST_MS,
   PAIRING_ORIGIN_REJECTED_COPY,
   PAIRING_WAITING_COPY,
+  agentConnectedToastReducer,
   disposePairingHost,
   isCurrentPairingConnection,
   isRelayTabConnected,
+  pairingDialogStage,
   pairingProbeUserCopy,
+  shouldClosePairingDialogOnConnect,
   shouldKeepAgentBridgeHostMounted,
   shouldPollRelay,
   shouldRevealPairingCode,
+  shouldShowPairingApproval,
+  shouldShowPairingCode,
+  shouldShowPairingPrompt,
 } from './pairingFlow.js';
 
 test('shouldPollRelay only while flow is open and relay is not reachable', () => {
@@ -56,6 +64,43 @@ test('disposePairingHost disconnects the socket and stops the poller', () => {
   assert.equal(poller.stopCalls, 1);
   assert.deepEqual(disposePairingHost(null), { conn: null, poller: null });
   assert.deepEqual(disposePairingHost({}), { conn: null, poller: null });
+});
+
+test('pairing dialog stages: prompt only before relay; approval replaces the code', () => {
+  assert.equal(pairingDialogStage({ flowOpen: false }), 'closed');
+  assert.equal(pairingDialogStage({ flowOpen: true, relayReachable: false }), 'prompt');
+  assert.equal(pairingDialogStage({ flowOpen: true, relayReachable: true }), 'code');
+  assert.equal(pairingDialogStage({
+    flowOpen: true, relayReachable: true, pending: true,
+  }), 'approval');
+  assert.equal(pairingDialogStage({ flowOpen: true, webkitHttpsBlocked: true }), 'unsupported');
+  const stages = ['closed', 'unsupported', 'prompt', 'code', 'approval'];
+  for (const stage of stages) {
+    const together = [shouldShowPairingCode(stage), shouldShowPairingApproval(stage)]
+      .filter(Boolean).length;
+    assert.ok(together <= 1, `${stage} must not show code and approval together`);
+    if (stage !== 'prompt') assert.equal(shouldShowPairingPrompt(stage), false);
+  }
+  assert.equal(shouldShowPairingPrompt('prompt'), true);
+  assert.equal(shouldShowPairingCode('code'), true);
+  assert.equal(shouldShowPairingApproval('approval'), true);
+});
+
+test('dialog auto-closes once Allow has connected the agent', () => {
+  assert.equal(shouldClosePairingDialogOnConnect({ paired: true, link: 'connected' }), true);
+  assert.equal(shouldClosePairingDialogOnConnect({ paired: true, link: 'reconnecting' }), false);
+  assert.equal(shouldClosePairingDialogOnConnect({ paired: false, link: 'connected' }), false);
+});
+
+test('Agent connected toast auto-dismisses at 5 s and closes with X', () => {
+  assert.equal(AGENT_CONNECTED_TOAST_MS, 5000);
+  assert.equal(AGENT_CONNECTED_TOAST_COPY, 'Agent connected');
+  const shown = agentConnectedToastReducer({ open: false }, 'show', 1000);
+  assert.deepEqual(shown, { open: true, hideAt: 6000 });
+  assert.deepEqual(agentConnectedToastReducer(shown, 'tick', 5999), shown);
+  assert.deepEqual(agentConnectedToastReducer(shown, 'tick', 6000), { open: false, hideAt: 0 });
+  assert.deepEqual(agentConnectedToastReducer(shown, 'dismiss', 2000), { open: false, hideAt: 0 });
+  assert.deepEqual(agentConnectedToastReducer(shown, 'timeout'), { open: false, hideAt: 0 });
 });
 
 test('a 403 origin rejection and a probe timeout have distinct user messages', () => {

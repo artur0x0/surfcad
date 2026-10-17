@@ -93,5 +93,8 @@ test('resizing across 768px keeps the same socket and tabKey', () => {
 test('ProfileChip offers the panel slot and does not own the socket', () => {
   assert.match(CHIP, /useAgentBridgeHost\(\)/);
   assert.match(CHIP, /offerSlot\(agentBridgeSlot\)/);
+  assert.match(CHIP, /registerCloseMenu/);
+  assert.match(SRC, /onBeginFlow=\{closeProfileMenu\}/);
+  assert.match(SRC, /registerCloseMenu/);
   assert.equal(CHIP.includes('<AgentBridgePairing'), false);
 });

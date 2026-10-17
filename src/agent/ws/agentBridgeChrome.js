@@ -37,8 +37,8 @@ export function approvalPopupReducer(state, action) {
 }
 
 /**
- * Allow/Deny is a document.body portal so PAIR_REQUEST still shows when the
- * profile menu is closed. The connection that drives it stays mounted on the chip.
+ * Pairing dialog, Allow/Deny, and the connected toast portal onto document.body
+ * so they survive the profile menu closing. The socket stays on AgentBridgeHost.
  *
  * @param {{ body?: { nodeType?: number } | null } | null | undefined} doc
  */
@@ -47,8 +47,8 @@ export function approvalPopupPortalTarget(doc) {
 }
 
 /**
- * Clicks on the body-portal Allow/Deny must not count as "outside the profile
- * panel" — that would close the menu and unmount the pairing UI.
+ * Clicks on the pairing dialog (or its Allow/Deny) must not count as "outside
+ * the profile panel".
  *
  * @param {{ target?: { closest?: (sel: string) => unknown } | null } | null | undefined} event
  * @param {{ contains?: (node: unknown) => boolean } | null | undefined} panelEl
@@ -57,47 +57,61 @@ export function shouldDismissProfilePanelOnPointer(event, panelEl) {
   const target = event?.target;
   if (!panelEl || !target) return false;
   if (typeof panelEl.contains === 'function' && panelEl.contains(target)) return false;
-  if (typeof target.closest === 'function' && target.closest('[data-agent-bridge-approval]')) {
-    return false;
+  if (typeof target.closest === 'function') {
+    if (target.closest('[data-agent-bridge-approval]')) return false;
+    if (target.closest('[data-agent-bridge-dialog]')) return false;
+    if (target.closest('[data-agent-bridge-connected-toast]')) return false;
   }
   return true;
 }
 
-/** Below this width the Allow/Deny portal sits under the chip, not bottom-center. */
-export const APPROVAL_POPUP_WIDE_MIN_PX = 900;
+/**
+ * Pairing dialog chrome. `p-4 pb-14` on a centered scrim so the card stays
+ * above the page-footer Privacy choices link (`SiteFooter` is `bottom-0`).
+ * The old Allow/Deny pill used `bottom-6` (~24px) and overlapped that link
+ * by ~4px at 1280×800.
+ */
+export const PAIRING_DIALOG_PAD_TOP_PX = 16;
+export const PAIRING_DIALOG_PAD_BOTTOM_PX = 56;
+export const PAIRING_DIALOG_MAX_WIDTH_PX = 384;
 
 /**
- * Body-portal Allow/Deny placement. Wide viewports: bottom-center, clear of the
- * right-hand profile panel. Narrow viewports: under the chip / beside the
- * panel so Privacy choices at the bottom of the menu stays uncovered.
+ * Centered pairing-dialog card inside the padded scrim.
  *
- * @param {number | null | undefined} viewportWidth
- * @param {{ embedded?: boolean }} [opts]
+ * @param {{ width: number, height?: number }} viewport
+ * @param {{ width?: number, height?: number }} [cardSize]
  */
-export function approvalPopupPositionClass(viewportWidth, opts = {}) {
-  if (opts.embedded) return 'absolute left-0 right-0 -top-2 z-10 -translate-y-full';
-  if (viewportWidth != null && viewportWidth < APPROVAL_POPUP_WIDE_MIN_PX) {
-    return 'fixed top-14 left-3 z-[130]';
-  }
-  return 'fixed bottom-6 left-1/2 z-[130] -translate-x-1/2';
+export function pairingDialogBox(viewport, cardSize = {}) {
+  const vw = viewport.width;
+  const vh = viewport.height ?? 800;
+  const width = Math.min(cardSize.width ?? PAIRING_DIALOG_MAX_WIDTH_PX, Math.max(0, vw - 32));
+  const innerH = Math.max(0, vh - PAIRING_DIALOG_PAD_TOP_PX - PAIRING_DIALOG_PAD_BOTTOM_PX);
+  const height = Math.min(cardSize.height ?? 280, innerH);
+  return {
+    x: (vw - width) / 2,
+    y: PAIRING_DIALOG_PAD_TOP_PX + Math.max(0, (innerH - height) / 2),
+    width,
+    height,
+  };
 }
 
 /**
- * Expected portal box for overlap tests (matches the Tailwind classes above).
+ * Page-footer Privacy choices (`[data-privacy-choices-link]`), not the
+ * in-menu `[data-profile-privacy-choices]` row.
  *
  * @param {{ width: number, height?: number }} viewport
- * @param {{ width?: number, height?: number }} [popupSize]
  */
-export function approvalPopupBox(viewport, popupSize = {}) {
-  const size = { width: popupSize.width ?? 220, height: popupSize.height ?? 48 };
-  const height = viewport.height ?? 800;
-  if (viewport.width < APPROVAL_POPUP_WIDE_MIN_PX) {
-    return { x: 12, y: 56, ...size };
-  }
+/** Measured top of `[data-privacy-choices-link]` at 1280×800 in the #556 playtest. */
+export const FOOTER_PRIVACY_HEIGHT_PX = 28;
+
+export function footerPrivacyChoicesBox(viewport) {
+  const vh = viewport.height ?? 800;
+  const vw = viewport.width;
   return {
-    x: viewport.width / 2 - size.width / 2,
-    y: height - 24 - size.height,
-    ...size,
+    x: vw / 2 - 70,
+    y: vh - FOOTER_PRIVACY_HEIGHT_PX,
+    width: 140,
+    height: FOOTER_PRIVACY_HEIGHT_PX,
   };
 }
 
