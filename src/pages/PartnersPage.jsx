@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { BrandWordmark } from '../components/brand/BrandWordmark.jsx';
+import SiteFooter from '../components/SiteFooter.jsx';
 import { PARTNER_TYPES } from '../utils/partnerForm.js';
 import {
   TURNSTILE_LOAD_ERROR,
@@ -330,11 +331,11 @@ export default function PartnersPage() {
           </form>
         )}
 
-        <footer className="mt-12 text-center text-sm" style={{ color: GREY }}>
+        <SiteFooter variant="light">
           <a href="/" className="underline underline-offset-4" data-partners-home="">
             Back to SurfCAD
           </a>
-        </footer>
+        </SiteFooter>
       </div>
     </div>
   );
