@@ -2,9 +2,9 @@
  * Pure helpers for local agent pairing UI state (unit-tested).
  */
 
-/** @typedef {'idle' | 'advertising' | 'pending' | 'paired'} TabPairState */
+/** @typedef {'idle' | 'advertising' | 'pending' | 'paired' | 'reconnecting'} TabPairState */
 
-const RELAY_LIVE_STATES = new Set(['advertising', 'pending', 'paired']);
+const RELAY_LIVE_STATES = new Set(['advertising', 'pending', 'paired', 'reconnecting']);
 
 /**
  * @param {TabPairState} state
@@ -28,4 +28,26 @@ export function shouldPollRelay(input) {
  */
 export function shouldRevealPairingCode(relayReachable) {
   return relayReachable;
+}
+
+/**
+ * The tab WebSocket lives in AgentBridgePairing. That host must stay mounted
+ * on ProfileChip for the whole time `agentBridgeLive` is on; closing the
+ * account panel must not unmount it (an orphan socket cannot update the ring).
+ *
+ * @param {{ agentBridgeLive?: boolean, panelOpen?: boolean }} input
+ */
+export function shouldKeepAgentBridgeHostMounted(input) {
+  return input.agentBridgeLive === true;
+}
+
+/**
+ * Ignore onState/onLink/onIssue from a connection that is no longer current
+ * (its close may arrive after startPairing has swapped connRef).
+ *
+ * @param {unknown} current
+ * @param {unknown} source
+ */
+export function isCurrentPairingConnection(current, source) {
+  return current != null && current === source;
 }

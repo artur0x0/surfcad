@@ -93,6 +93,8 @@ export function createAgentBridgeTabConnection(opts) {
   let droppedAt = 0;
   let reconnectTimer = null;
   let lostTimer = null;
+  /** Bumped on every `open()` / `disconnect()` so a deferred close from an old socket is ignored. */
+  let generation = 0;
 
   function setState(next) {
     state = next;
@@ -203,11 +205,8 @@ export function createAgentBridgeTabConnection(opts) {
   }
 
   function open() {
-    if (ws) {
-      const prev = ws;
-      ws = null;
-      try { prev.close(); } catch { /* noop */ }
-    }
+    const prev = ws;
+    const myGen = ++generation;
     const reconnecting = wasPaired || attempt > 0;
     sawOpen = false;
     lastRelayErrorCode = null;
@@ -215,8 +214,10 @@ export function createAgentBridgeTabConnection(opts) {
     setState(reconnecting ? 'reconnecting' : 'advertising');
     const socket = createSocket(url);
     ws = socket;
+    let opened = false;
     socket.addEventListener('open', () => {
-      if (ws !== socket) return;
+      if (generation !== myGen || ws !== socket) return;
+      opened = true;
       sawOpen = true;
       setIssue(null);
       send({ type: PAIR_MSG.REGISTER_TAB, token, tabKey });
@@ -226,7 +227,7 @@ export function createAgentBridgeTabConnection(opts) {
       }
     });
     socket.addEventListener('message', (event) => {
-      if (ws !== socket) return;
+      if (generation !== myGen || ws !== socket) return;
       let msg;
       try {
         msg = JSON.parse(String(event.data));
@@ -272,26 +273,29 @@ export function createAgentBridgeTabConnection(opts) {
       }
     });
     socket.addEventListener('error', (event) => {
-      if (ws !== socket) return;
-      if (!sawOpen && !wasPaired) {
+      if (generation !== myGen || ws !== socket) return;
+      if (!opened && !wasPaired) {
         setIssue(issueFromErrorEvent(event, { pageSecure }));
       }
     });
     socket.addEventListener('close', (event) => {
-      if (ws !== socket) return;
+      if (generation !== myGen || ws !== socket) return;
       ws = null;
       const fatal = FATAL_RELAY_CODES.has(lastRelayErrorCode);
-      const retry = !stopped && !fatal && (wasPaired || sawOpen || attempt > 0);
+      const retry = !stopped && !fatal && (wasPaired || opened || attempt > 0);
       if (retry) {
         setState('reconnecting');
         markDropped();
         scheduleReconnect();
         return;
       }
-      const issue = issueFromCloseEvent(event, { sawOpen, relayErrorCode: lastRelayErrorCode });
+      const issue = issueFromCloseEvent(event, { sawOpen: opened, relayErrorCode: lastRelayErrorCode });
       if (issue) setIssue(issue);
       setState('idle');
     });
+    if (prev && prev !== socket) {
+      try { prev.close(); } catch { /* noop */ }
+    }
   }
 
   function connect() {
@@ -314,6 +318,7 @@ export function createAgentBridgeTabConnection(opts) {
 
   function disconnect() {
     stopped = true;
+    generation += 1;
     clearTimers();
     listenForWake(false);
     if (ws) {
