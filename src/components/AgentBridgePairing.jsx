@@ -3,6 +3,12 @@ import { Plug, PlugZap } from 'lucide-react';
 import { createPairingToken } from '../agent/ws/pairingToken.js';
 import { createAgentBridgeTabConnection } from '../agent/ws/tabConnection.js';
 import { defaultAgentBridgeWsUrl } from '../agent/ws/wsUrl.js';
+import {
+  MCP_START_COMMAND,
+  browserBlockedHint,
+  detectBrowserFamily,
+  shouldPreemptWebKitHttpsPairing,
+} from '../agent/ws/connectionErrors.js';
 
 /**
  * Local WebSocket pairing for MCP / stdio clients (M1). Shown only when the
@@ -13,12 +19,22 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
   const [open, setOpen] = useState(false);
   const [token, setToken] = useState('');
   const [state, setState] = useState('idle');
+  const [issue, setIssue] = useState(null);
+  const [copied, setCopied] = useState(null);
   const connRef = useRef(null);
+
+  const pageSecure = typeof window !== 'undefined' && window.location?.protocol === 'https:';
+  const webkitHttpsBlocked = typeof window !== 'undefined' && shouldPreemptWebKitHttpsPairing({
+    protocol: window.location.protocol,
+    hostname: window.location.hostname,
+    userAgent: navigator.userAgent,
+  });
 
   const stopConnection = useCallback(() => {
     connRef.current?.disconnect();
     connRef.current = null;
     setState('idle');
+    setIssue(null);
   }, []);
 
   useEffect(() => {
@@ -28,7 +44,29 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
     }
   }, [enabled, stopConnection]);
 
+  const copyMcpCommand = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(MCP_START_COMMAND);
+      setCopied('mcp');
+      setTimeout(() => setCopied(null), 2000);
+    } catch {
+      setCopied(null);
+    }
+  }, []);
+
+  const copyPageLink = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied('link');
+      setTimeout(() => setCopied(null), 2000);
+    } catch {
+      setCopied(null);
+    }
+  }, []);
+
   const startPairing = useCallback(() => {
+    if (webkitHttpsBlocked) return;
     if (!enabled || typeof window === 'undefined' || !window.surfcad?.call) return;
     stopConnection();
     const code = createPairingToken(6);
@@ -38,16 +76,48 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
       token: code,
       call: (name, args) => window.surfcad.call(name, args),
       onState: setState,
+      onIssue: setIssue,
+      pageSecure,
     });
     connRef.current = conn;
     conn.connect();
-  }, [enabled, stopConnection]);
+  }, [enabled, stopConnection, pageSecure, webkitHttpsBlocked]);
 
   if (!enabled) return null;
 
   const paired = state === 'paired';
   const pending = state === 'pending';
   const advertising = state === 'advertising';
+  const browserFamily = typeof navigator !== 'undefined' ? detectBrowserFamily(navigator.userAgent) : 'unknown';
+
+  const issueBlock = issue === 'relay_missing' ? (
+    <div className="rounded border border-amber-500/40 bg-amber-950/40 px-2 py-2 text-xs text-amber-100 mb-2" data-agent-bridge-error="relay_missing">
+      <p className="mb-2">Local relay not found. In your MCP client config, run:</p>
+      <div className="flex gap-2 items-center">
+        <code className="flex-1 rounded bg-black/40 px-2 py-1 font-mono text-[11px]">{MCP_START_COMMAND}</code>
+        <button
+          type="button"
+          className="shrink-0 rounded bg-chrome-border/90 px-2 py-1 text-white hover:bg-gray-600"
+          onClick={copyMcpCommand}
+          data-ui-action="data-agent-bridge-copy-mcp"
+        >
+          {copied === 'mcp' ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+    </div>
+  ) : issue === 'origin_rejected' ? (
+    <p className="text-xs text-red-300 mb-2" data-agent-bridge-error="origin_rejected">
+      This page origin was rejected by the local relay. Open https://surfcad.com (not a copy) and try again.
+    </p>
+  ) : issue === 'browser_blocked' ? (
+    <p className="text-xs text-red-300 mb-2" data-agent-bridge-error="browser_blocked">
+      {browserBlockedHint(browserFamily)}
+    </p>
+  ) : issue === 'relay_error' ? (
+    <p className="text-xs text-red-300 mb-2" data-agent-bridge-error="relay_error">
+      The local relay closed the connection. Restart <code className="font-mono">{MCP_START_COMMAND}</code> and try again.
+    </p>
+  ) : null;
 
   const panel = open ? (
     <div
@@ -58,7 +128,27 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
       }
       data-agent-bridge-panel=""
     >
-      {!token && (
+      {issueBlock}
+      {webkitHttpsBlocked ? (
+        <div
+          className="rounded border border-chrome-border/80 bg-chrome-surface/60 px-2 py-2 text-xs mb-2"
+          data-agent-bridge-unsupported="webkit-https"
+        >
+          <p className="text-chrome-text mb-1.5">Pairing works in Chrome or Edge for now.</p>
+          <p className="text-chrome-text-secondary mb-2">
+            Open this page in Chrome or Edge on your computer to connect a local MCP client.
+          </p>
+          <button
+            type="button"
+            className="w-full rounded bg-chrome-border/90 px-2 py-1.5 text-white hover:bg-gray-600"
+            onClick={copyPageLink}
+            data-ui-action="data-agent-bridge-copy-link"
+          >
+            {copied === 'link' ? 'Copied' : 'Copy link'}
+          </button>
+        </div>
+      ) : null}
+      {!webkitHttpsBlocked && !token && (
         <button
           type="button"
           className="block w-full rounded-md px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
@@ -68,7 +158,7 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
           Show pairing code
         </button>
       )}
-      {token && (
+      {!webkitHttpsBlocked && token && (
         <>
           <div className="font-mono text-lg tracking-widest text-center py-1" data-agent-bridge-code="">
             {token}
@@ -88,7 +178,7 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
               </button>
               <button
                 type="button"
-                className="flex-1 rounded bg-chrome-border px-2 py-1.5 hover:bg-gray-600"
+                className="flex-1 rounded bg-chrome-border px-2 py-1.5 text-white hover:bg-gray-600"
                 onClick={() => connRef.current?.rejectPair()}
                 data-ui-action="data-agent-bridge-reject"
               >
@@ -105,8 +195,10 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
               Paired with local client
             </div>
           )}
-          {advertising && !pending && !paired && (
-            <p className="text-xs text-amber-300/90 text-center mb-2">Waiting for local client…</p>
+          {advertising && !pending && !paired && !issue && (
+            <p className="text-xs text-amber-300/90 text-center mb-2" data-agent-bridge-waiting="">
+              Relay connected — waiting for local MCP client with this code…
+            </p>
           )}
           <button
             type="button"

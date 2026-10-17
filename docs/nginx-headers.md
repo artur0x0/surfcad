@@ -8,6 +8,7 @@ Artur applies this on the production box. The Cloud Agent only ships files under
 - `/api/` is proxied to Node; **helmet** on the backend sets HSTS, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and related headers. The nginx `/api/` block intentionally adds **no** duplicate security headers.
 - **COOP / COEP** were removed from nginx. The FEA wasm worker is single-threaded and does not need `crossOriginIsolated` or `SharedArrayBuffer` in the page (`src/workers/feaWorker.js`). Keeping `COEP: require-corp` would block third-party iframes (Cloudflare Turnstile, Stripe Elements) unless every embed sent `Cross-Origin-Resource-Policy`, which they do not.
 - **`connect-src` includes `data:`** so Cloudflare Turnstile on `/partners` can complete its challenge without CSP console errors. Managed/invisible behaviour is configured in the Turnstile dashboard, not via the widget `size` option.
+- **`connect-src` includes `ws://127.0.0.1:17341` and `ws://localhost:17341`** so the production **Local agent** panel can reach the loopback relay started by `npx surfcad-mcp` (see `docs/nginx-snippets/surfcad-security.conf`).
 - **`location /` no longer sets `expires 0`** alongside `Cache-Control`, so `index.html` is not sent with two conflicting `Cache-Control` values.
 
 ## Backup
