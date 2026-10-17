@@ -80,6 +80,7 @@ import { listSketchEntitiesCommand } from './listSketchEntities.js';
 import {
   createAssemblyCommand,
   createPartCommand,
+  renamePartCommand,
   openAssemblyCommand,
   openPartCommand,
   insertPartCommand,
@@ -260,6 +261,7 @@ export const V1_COMMANDS = Object.freeze([
   listSketchEntitiesCommand,
   createAssemblyCommand,
   createPartCommand,
+  renamePartCommand,
   openAssemblyCommand,
   openPartCommand,
   insertPartCommand,

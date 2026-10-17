@@ -321,7 +321,10 @@ export function baselineAfterPartSave(baseline, {
 /**
  * Instantly commit one part (plus the assembly `.surf.json`) to the working
  * branch. Used by Parts "Add to Repo" for local content not yet in the vault.
- * Remaps `local:` / foreign ids to `parts/<Name>.js` (`Name (2)` on collision).
+ * Remaps `local:` / foreign ids to `parts/<Name>.js` (`Name-2` on collision).
+ * Other rows without a vault path are pathed by `ensureAssemblyVaultPaths`
+ * and land in the same commit (`siblings: [{ from, to }]`), so the
+ * `.surf.json` never references a file the commit did not write.
  * -> { status: 'committed'|'clean'|'repo-moved'|'error', ... }
  * `repo-moved` is a stale base (`non_fast_forward`). Nothing was written.
  */
@@ -354,6 +357,14 @@ export async function commitPartToRepo(adapter, repo, {
   let workDoc = { ...doc, source: 'git' };
   let workScripts = effectiveScripts(scripts, { liveId, liveScript });
 
+  let remotePaths = [];
+  try {
+    const tree = await adapter.listTree(repo, branch);
+    remotePaths = (tree || []).map((entry) => entry?.path ?? entry).filter((path) => typeof path === 'string');
+  } catch {
+    // The open document still blocks a collision inside this assembly.
+  }
+
   const info = parseVaultPath(destId);
   const allowed = info
     && ((info.kind === 'assembly-part' && info.assembly === asmName)
@@ -362,15 +373,7 @@ export async function commitPartToRepo(adapter, repo, {
     const partBase = vaultSegment(String(row.name || '').replace(/\.js$/i, '')) || 'Part';
     const taken = new Set((workDoc.parts || []).map((p) => p.id));
     taken.delete(id);
-    try {
-      const tree = await adapter.listTree(repo, branch);
-      for (const entry of tree || []) {
-        const path = entry?.path ?? entry;
-        if (typeof path === 'string') taken.add(path);
-      }
-    } catch {
-      // The open document still blocks a collision inside this assembly.
-    }
+    for (const path of remotePaths) taken.add(path);
     destId = sharedPathForMove(partBase, taken);
     workDoc = {
       ...workDoc,
@@ -389,10 +392,20 @@ export async function commitPartToRepo(adapter, repo, {
     workScripts = { ...workScripts, [destId]: content };
   }
 
+  // `.surf.json` lists every row, so a sibling without a vault path is
+  // pathed by the assembly-Save core and written in this same commit.
+  const siblings = ensureAssemblyVaultPaths(workDoc, workScripts, {
+    remotePaths: [...remotePaths, destId],
+  });
+  workDoc = { ...siblings.doc, source: 'git' };
+  workScripts = siblings.scripts;
+  const siblingPaths = siblings.moved.map((move) => move.to).sort();
+
   const assemblyPath = assemblyFilePath(asmName);
   const assemblyText = stringifySurfJson(workDoc);
   const files = [
     fileWrite(destId, content),
+    ...siblingPaths.map((path) => fileWrite(path, workScripts[path] ?? '')),
     fileWrite(assemblyPath, assemblyText),
   ];
   // Skip no-op when baseline already has identical content.
@@ -422,12 +435,17 @@ export async function commitPartToRepo(adapter, repo, {
       files,
       baseSha: expectedBase,
     });
-    // The commit wrote destId and the assembly file only. Sibling edits
-    // stay on their old baseline so their dirty dots stay.
+    // The commit wrote destId, newly pathed siblings, and the assembly file.
+    // Other sibling edits stay on their old baseline so their dirty dots stay.
+    const saved = { [destId]: pushContent };
+    for (const path of siblingPaths) saved[path] = workScripts[path] ?? '';
     const next = baselineAfterPartSave(base, {
       doc: workDoc,
-      saved: { [destId]: pushContent },
-      removed: id !== destId ? [id] : [],
+      saved,
+      removed: [
+        ...(id !== destId ? [id] : []),
+        ...siblings.moved.map((move) => move.from),
+      ],
       assemblyPath,
       assemblyName: asmName,
       assets: base.assets,
@@ -440,6 +458,7 @@ export async function commitPartToRepo(adapter, repo, {
       branch,
       partId: destId,
       fromId: id !== destId ? id : null,
+      siblings: siblings.moved,
       files: files.map((f) => f.path),
       baseline: next,
       doc: workDoc,
@@ -459,6 +478,7 @@ export async function commitPartToRepo(adapter, repo, {
         scripts: workScripts,
         partId: destId,
         fromId: id !== destId ? id : null,
+        siblings: siblings.moved,
       };
     }
     return { status: 'error', error: err?.message || 'Add to Repo failed' };

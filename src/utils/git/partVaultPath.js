@@ -70,6 +70,28 @@ export function allocateVaultPartPath(assemblyName, partName, takenPaths = [], {
   return nextAssemblyFolderPartPath(asm, base, taken);
 }
 
+/**
+ * New script path for a renamed vault part. Stays in the same folder
+ * (`parts/` or `assemblies/<Assembly>/`); a taken path gets `-2`, `-3`, ….
+ * The part's own current path is never counted as taken.
+ * -> path | null (not a vault part path, or no usable name)
+ */
+export function planRenameVaultPartPath(fromPath, newName, takenPaths = []) {
+  const info = parseVaultPath(fromPath);
+  if (!info || (info.kind !== 'shared-part' && info.kind !== 'assembly-part')) return null;
+  const hint = vaultSegment(String(newName ?? '').replace(/\.js$/i, ''));
+  if (!hint) return null;
+  const taken = [];
+  for (const item of takenPaths || []) {
+    const path = typeof item === 'string' ? item : item?.id;
+    if (path && path !== fromPath) taken.push(path);
+  }
+  if (info.kind === 'shared-part') {
+    return allocateVaultPartPath(info.assembly || 'Assembly', hint, taken, { layout: 'shared' });
+  }
+  return allocateVaultPartPath(info.assembly, hint, taken, { layout: 'assembly-folder' });
+}
+
 export function resolveNewPartPath(assemblyName, partName, takenPaths = []) {
   return allocateVaultPartPath(assemblyName, partName, takenPaths, { layout: 'shared' });
 }

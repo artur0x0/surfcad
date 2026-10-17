@@ -110,7 +110,12 @@ export async function createSurfcadMcpServer(options = {}) {
       return textResult(result);
     } catch (err) {
       const code = err?.code;
-      if (code === 'real_repo_blocked' || code === 'confirm_required' || code === 'pair_rejected') {
+      if (
+        code === 'real_repo_blocked'
+        || code === 'consent_pending'
+        || code === 'confirm_required'
+        || code === 'pair_rejected'
+      ) {
         return textResult(formatBridgeError({
           code,
           message: err.message,

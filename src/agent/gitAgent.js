@@ -58,6 +58,7 @@ export function agentGitConsentVerb(commandName) {
     case 'git_branch_switch': return 'switch branch on';
     case 'git_branch_delete': return 'delete a branch on';
     case 'git_force_overwrite': return 'overwrite the remote for';
+    case 'rename_part': return 'rename a part in';
     default: return 'write to';
   }
 }
@@ -66,6 +67,27 @@ export function agentGitConsentPrompt(commandName, repo, branch) {
   const verb = agentGitConsentVerb(commandName);
   const target = `${repo || 'your repo'}/${branch || 'main'}`;
   return `An agent wants to ${verb} ${target}. Allow agent writes to your GitHub repos for this session?`;
+}
+
+/** Suggested wait before an agent retries a write that is waiting on consent. */
+export const AGENT_GIT_CONSENT_RETRY_MS = 3000;
+
+/**
+ * The consent modal is up in the tab; nothing was written. The agent should
+ * ask the user to click Allow, then call the same command again.
+ */
+export function consentPendingError(commandName, target = {}) {
+  const where = `${target.repo || 'your repo'}/${target.branch || 'main'}`;
+  return {
+    code: 'consent_pending',
+    message: `Waiting for the user to allow agent git writes to ${where} in the SurfCAD tab. Nothing was written. Retry ${commandName || 'this call'} after they click Allow.`,
+    details: {
+      reason: 'consent_pending',
+      command: commandName || null,
+      retry: true,
+      retry_after_ms: AGENT_GIT_CONSENT_RETRY_MS,
+    },
+  };
 }
 
 export function realRepoBlockedError(reason, message) {

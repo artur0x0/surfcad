@@ -239,6 +239,8 @@ import {
   planCopyToAssembly,
   allocateVaultPartPath,
   ensureAssemblyVaultPaths,
+  partRowNeedsVaultPath,
+  planRenameVaultPartPath,
   readVaultPart,
   showAddToRepo,
   isExternalPartPath,
@@ -3022,12 +3024,17 @@ const App = () => {
     setAgentGitConsentUi(null);
   };
 
-  const requestAgentGitWriteConsent = async ({ command, repo, branch }) => {
-    if (!agentGitConsentInteractive()) return 'timeout';
-    return new Promise((resolve) => {
-      agentGitConsentQueueRef.current.push({ command, repo, branch, resolve });
-      pumpAgentGitConsent();
-    });
+  /**
+   * Show the consent modal and return at once. The bridge call never waits
+   * on the user: Allow / Deny land in sessionStorage and the agent retries.
+   * -> 'shown' | 'unavailable' (headless / automation)
+   */
+  const promptAgentGitWriteConsent = ({ command, repo, branch }) => {
+    if (!agentGitConsentInteractive()) return 'unavailable';
+    if (agentGitConsentActiveRef.current) return 'shown';
+    agentGitConsentQueueRef.current.push({ command, repo, branch, resolve: () => {} });
+    pumpAgentGitConsent();
+    return 'shown';
   };
 
   const noteRecentAssembly = (name) => {
@@ -3754,7 +3761,10 @@ const App = () => {
           fromBranch: result.branch,
           partId: result.partId,
           fromId: result.fromId,
-          partIds: result.partId ? [result.partId] : [],
+          partIds: [
+            ...(result.partId ? [result.partId] : []),
+            ...(result.siblings || []).map((move) => move.to),
+          ],
         });
         return result;
       }
@@ -3764,6 +3774,18 @@ const App = () => {
       }
       if (result.status === 'clean') {
         return result;
+      }
+      const siblingMoves = result.siblings || [];
+      if (siblingMoves.length) {
+        for (const { from, to } of siblingMoves) {
+          await savePartScript(to, result.scripts?.[to] ?? '', { isSynced: true });
+          try { await deletePartScript(from); } catch { /* the new id is the record */ }
+        }
+        rekeyRuntime(siblingMoves);
+        if (!result.fromId) {
+          rememberAssembly(result.doc);
+          rememberScripts(result.scripts || scripts);
+        }
       }
       if (result.doc && result.fromId) {
         // Remapped local:/foreign id → repo path.
@@ -3794,7 +3816,10 @@ const App = () => {
       if (result.sha) await gitSync().setLastSyncedSha(vault.repo, result.sha, gitWorkingBranch());
       if (result.status === 'committed' || result.status === 'clean') {
         const partId = result.partId || id;
-        const marked = markPartsSynced(assemblyRef.current, [partId]);
+        const marked = markPartsSynced(assemblyRef.current, [
+          partId,
+          ...siblingMoves.map((move) => move.to),
+        ]);
         if (marked.changed) {
           rememberAssembly(marked.doc);
           const text = (result.scripts || partScriptsRef.current)[partId];
@@ -4745,7 +4770,10 @@ const App = () => {
         liveScript: nextLiveId ? workScripts[nextLiveId] : null,
         assets: collected.assets,
       });
-      await applyMeshPlacement(placed);
+      await applyMeshPlacement({
+        ...placed,
+        moved: [...strayPlaced.moved, ...placed.moved],
+      });
       if (liveId && !movedLive) {
         savePartScript(liveId, live);
         rememberScripts(workScripts);
@@ -5395,7 +5423,8 @@ const App = () => {
     let id;
     let name;
     const rawName = String(partName ?? '').trim();
-    if (doc.source === 'git') {
+    const deferVault = doc.source === 'git' && opts?.deferVault === true;
+    if (doc.source === 'git' && !deferVault) {
       // Name-only UX: a bare name lands in parts/<Name>.js. A full allowed
       // path (an assembly-folder copy, tests, paste) is kept. Never ask
       // the user for a path.
@@ -5467,7 +5496,7 @@ const App = () => {
     try {
       await savePartScript(id, starter, doc.source === 'git' ? { isSynced: false } : {});
       track('part_created');
-      if (doc.source === 'git' && surfId) {
+      if (doc.source === 'git' && surfId && !deferVault) {
         const vault = gitVaultRef.current || await ensureGitVault();
         const nextDoc = assemblyRef.current;
         await enqueueGit(vault.repo, {
@@ -7287,31 +7316,46 @@ const App = () => {
   // Rename one part by id (Parts feed row). The title follows when that part
   // is the one it shows. The name is read by save/export and by the
   // OAuth-redirect snapshot, so nothing else to write.
-  const handleRenamePart = (id, name) => {
+  const handleRenamePart = (id, name, { takenPaths = [] } = {}) => {
     const doc = assemblyRef.current;
-    if (!doc) return;
+    if (!doc) return { status: 'error', code: 'no_assembly', error: 'No assembly loaded' };
     let nextName = sanitizePartName(name);
-    if (!nextName) return;
+    if (!nextName) return { status: 'error', code: 'bad_args', error: 'Enter a part name' };
     const part = (doc.parts || []).find((row) => row.id === id);
-    if (!part || part.name === nextName) return;
-    const otherNames = (doc.parts || []).filter((row) => row.id !== id).map((row) => row.name);
-    if (otherNames.includes(nextName)) {
-      nextName = nextNumberedName(nextName, otherNames, { bareFirst: true });
+    if (!part) return { status: 'error', code: 'unknown_part', error: `Unknown part id: ${id}` };
+    if (part.name === nextName) {
+      return { status: 'unchanged', from: id, to: id, name: nextName };
     }
-    if (doc.source !== 'git' || !gitVaultRef.current?.repo) {
+    const otherNames = (doc.parts || []).filter((row) => row.id !== id).map((row) => row.name);
+    const vaultRename = doc.source === 'git'
+      && !!gitVaultRef.current?.repo
+      && !partRowNeedsVaultPath(part);
+    if (!vaultRename) {
+      if (otherNames.includes(nextName)) {
+        nextName = nextNumberedName(nextName, otherNames, { bareFirst: true });
+      }
       const nextDoc = renamePart(doc, id, nextName);
-      if (nextDoc === doc) return;
+      if (nextDoc === doc) return { status: 'unchanged', from: id, to: id, name: part.name };
       rememberAssembly(nextDoc);
       if (renameTargetId(nextDoc, cadPartIdRef.current) === id) {
         setCurrentFilename(nextDoc.parts.find((row) => row.id === id)?.name || null);
       }
-      return;
+      return { status: 'renamed', from: id, to: id, name: nextName, git: false };
     }
     const from = part.id;
-    const to = planPartPath(from, nextName) || from;
+    const to = planRenameVaultPartPath(from, nextName, [
+      ...(doc.parts || []).map((row) => row.id),
+      ...takenPaths,
+    ]) || planPartPath(from, nextName) || from;
     if (to !== from && doc.parts.some((row) => row.id === to)) {
       setUploadError('A part with that name is already in this assembly');
-      return;
+      return { status: 'error', code: 'name_taken', error: 'A part with that name is already in this assembly' };
+    }
+    if (otherNames.includes(nextName)) {
+      const leaf = to.split('/').pop()?.replace(/\.js$/i, '');
+      nextName = leaf && !otherNames.includes(leaf)
+        ? leaf
+        : nextNumberedName(nextName, otherNames, { bareFirst: true });
     }
     const scripts = { ...partScriptsRef.current };
     const before = { doc, scripts, filename: part.name };
@@ -7347,7 +7391,7 @@ const App = () => {
       setCurrentFilename(nextName);
     }
     const asmPath = assemblyFilePath(vaultSegment(nextDoc.name) || nextDoc.name);
-    void (async () => {
+    const written = (async () => {
       const vault = gitVaultRef.current;
       await gitSync().putPart(vault.repo, {
         surfId: part.surfId || to,
@@ -7373,8 +7417,9 @@ const App = () => {
         },
       });
       setPartSync({ ...gitSync().partStates() });
-      await flushGitOps();
+      return flushGitOps();
     })();
+    return { status: 'renamed', from, to, name: nextName, git: true, written };
   };
 
   // Rename from the viewer title chip. It lands on the part the title shows:
@@ -8513,7 +8558,9 @@ const App = () => {
       if (!before) {
         return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
       }
-      await handleAddPart(name, { script });
+      // Agent parts stay path-less in a git assembly: git_save (behind the
+      // write consent) paths and commits them with the assembly.
+      await handleAddPart(name, { script, deferVault: true });
       await ensureLocalSurfIds();
       const after = assemblyRef.current;
       recordAgentAssemblyStep(before);
@@ -8570,8 +8617,8 @@ const App = () => {
     readAgentGitWriteTarget() {
       return readAgentGitWriteTarget();
     },
-    requestAgentGitWriteConsent(args) {
-      return requestAgentGitWriteConsent(args);
+    promptAgentGitWriteConsent(args) {
+      return promptAgentGitWriteConsent(args);
     },
     async agentGitMoveToRepo({ vault_name } = {}) {
       const before = assemblyRef.current;
@@ -8590,7 +8637,65 @@ const App = () => {
     },
     async agentGitAddToRepo({ partId }) {
       if (!partId) return { status: 'error', error: 'part_id required' };
+      if (!assemblyRef.current?.parts?.some((row) => row.id === partId)) {
+        return { status: 'error', code: 'unknown_part', error: `Unknown part id: ${partId}` };
+      }
       return handleAddToRepo(partId);
+    },
+    /** -> { known, writesGit } — writesGit when the rename moves a vault file. */
+    readAgentPartRename(partId) {
+      const doc = assemblyRef.current;
+      const part = doc?.parts?.find((row) => row.id === partId);
+      if (!part) return { known: false, writesGit: false };
+      return {
+        known: true,
+        writesGit: doc.source === 'git' && !!gitVaultRef.current?.repo && !partRowNeedsVaultPath(part),
+      };
+    },
+    async agentRenamePart({ partId, name }) {
+      const before = assemblyRef.current;
+      if (!before?.parts?.some((row) => row.id === partId)) {
+        return { error: { code: 'unknown_part', message: `Unknown part id: ${partId}` } };
+      }
+      let takenPaths = [];
+      const vault = gitVaultRef.current;
+      if (before.source === 'git' && vault?.repo && gitAdapterRef.current?.listTree) {
+        try {
+          const tree = await gitAdapterRef.current.listTree(vault.repo, gitWorkingBranch());
+          takenPaths = (tree || []).map((entry) => entry?.path ?? entry).filter((path) => typeof path === 'string');
+        } catch { /* the open document still blocks a collision */ }
+      }
+      const out = handleRenamePart(partId, name, { takenPaths });
+      if (out?.status === 'error') {
+        return { error: { code: out.code || 'rename_failed', message: out.error || 'Could not rename part' } };
+      }
+      let sync = null;
+      if (out?.written) {
+        const flushed = await out.written;
+        sync = flushed?.status || null;
+        if (flushed?.status === 'conflict' || flushed?.status === 'failed') {
+          return {
+            error: {
+              code: 'git_error',
+              message: flushed.error || 'The rename is queued but the repo refused it',
+              details: { from: out.from, to: out.to, sync },
+            },
+          };
+        }
+      }
+      if (out?.status === 'renamed') recordAgentAssemblyStep(before);
+      const after = assemblyRef.current;
+      return {
+        result: {
+          status: out?.status || 'renamed',
+          partId: out?.to ?? partId,
+          previousId: out?.from ?? partId,
+          name: after?.parts?.find((row) => row.id === (out?.to ?? partId))?.name ?? out?.name ?? null,
+          moved: !!out && out.from !== out.to,
+          git: out?.git === true,
+          ...(sync ? { sync } : {}),
+        },
+      };
     },
     async agentGitBehindResolve({ action, path, kind }) {
       const doc = assemblyRef.current;

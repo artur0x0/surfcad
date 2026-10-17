@@ -36,6 +36,7 @@ export {
   ensureAssemblyVaultPaths,
   partRowNeedsVaultPath,
   partRowVaultPathOk,
+  planRenameVaultPartPath,
   promoteStrayPartsToAssemblyFolder,
   resolveNewPartPath,
 } from './partVaultPath.js';
