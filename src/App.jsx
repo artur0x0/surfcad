@@ -154,6 +154,7 @@ import {
 import { agentBridgeEnabled, agentFeatureCount, createSurfcadBridge } from './utils/agentBridge';
 import { buildEffectiveJointCard, jointEditCard } from './agent/jointCardAgent.js';
 import AgentVisibleLayer from './components/AgentVisibleLayer';
+import AgentBridgeHost from './components/AgentBridgeHost';
 import { runAssemblyParts } from './utils/assemblyRun';
 import { catalogsFromRuns } from './utils/jointResolve';
 import { partPlacement } from './utils/jointSchema';
@@ -9761,6 +9762,7 @@ const App = () => {
 
     return (
       <CartChromeProvider value={cartChrome}>
+        <AgentBridgeHost enabled={agentBridgeLive}>
         <AgentVisibleLayer agentHostRef={agentHostRef} />
         <div
           ref={splitShellRef}
@@ -10055,12 +10057,14 @@ const App = () => {
             }}
           />
         )}
+        </AgentBridgeHost>
       </CartChromeProvider>
     );
   }
 
   return (
     <CartChromeProvider value={cartChrome}>
+      <AgentBridgeHost enabled={agentBridgeLive}>
       <AgentVisibleLayer agentHostRef={agentHostRef} />
       <div className="flex h-dvh bg-chrome-surface">
         {appMode !== 'game' && (
@@ -10431,6 +10435,7 @@ const App = () => {
           }}
         />
       )}
+      </AgentBridgeHost>
     </CartChromeProvider>
   );
 };

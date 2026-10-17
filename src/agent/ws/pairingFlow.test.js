@@ -34,7 +34,7 @@ test('isRelayTabConnected tracks live tab session states', () => {
   assert.equal(isRelayTabConnected('reconnecting'), true);
 });
 
-test('the pairing host stays mounted on the chip while the panel is closed', () => {
+test('the pairing host stays mounted while the panel is closed', () => {
   assert.equal(shouldKeepAgentBridgeHostMounted({ agentBridgeLive: true, panelOpen: false }), true);
   assert.equal(shouldKeepAgentBridgeHostMounted({ agentBridgeLive: true, panelOpen: true }), true);
   assert.equal(shouldKeepAgentBridgeHostMounted({ agentBridgeLive: false, panelOpen: true }), false);

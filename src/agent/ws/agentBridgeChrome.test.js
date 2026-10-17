@@ -93,7 +93,20 @@ test('Allow/Deny portal stays off Privacy choices at 390, 768, and 1280', () => 
       false,
       `covers chip at ${width}`,
     );
+    if (width >= 768) {
+      assert.equal(
+        rectsOverlap(popup, chrome.panel),
+        false,
+        `covers panel at ${width}`,
+      );
+    }
   }
+  const phone = typicalProfileChrome(390);
+  assert.equal(
+    rectsOverlap(approvalPopupBox({ width: 390, height: 800 }), phone.panel),
+    true,
+    '390 cannot fit beside a w-64 panel; park under the chip and clip the header, not Privacy',
+  );
 });
 
 test('approval popup closes on allow or deny', () => {

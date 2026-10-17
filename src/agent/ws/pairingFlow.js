@@ -39,9 +39,10 @@ export function shouldRevealPairingCode(relayReachable) {
 }
 
 /**
- * The tab WebSocket lives in AgentBridgePairing. That host must stay mounted
- * on ProfileChip for the whole time `agentBridgeLive` is on; closing the
- * account panel must not unmount it (an orphan socket cannot update the ring).
+ * The tab WebSocket lives in AgentBridgePairing, hosted once on App via
+ * AgentBridgeHost for the whole time `agentBridgeLive` is on. Closing the
+ * account panel, or a desktop/mobile remount at 768px, must not unmount it
+ * (an orphan socket cannot update the ring, and Allow/Deny would vanish).
  *
  * @param {{ agentBridgeLive?: boolean, panelOpen?: boolean }} input
  */

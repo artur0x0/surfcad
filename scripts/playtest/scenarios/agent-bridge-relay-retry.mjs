@@ -92,30 +92,32 @@ async function timed(promise) {
   }
 }
 
-async function assertApprovalClearsProfileChrome(page) {
+async function assertApprovalClearsProfileChrome(page, { width } = {}) {
   const popup = await page.locator('[data-agent-bridge-approval]').boundingBox();
   const chip = await page.locator('[data-profile-chip]').first().boundingBox();
   const panel = await page.locator('[data-profile-panel]').boundingBox();
   const privacy = await page.locator('[data-profile-privacy-choices]').boundingBox();
   assert.ok(popup, 'Allow/Deny popup should be visible');
   assert.ok(chip, 'profile chip should be visible');
+  assert.ok(privacy, 'Privacy choices should be visible');
   assert.equal(
     rectsOverlap(popup, chip),
     false,
     `Allow/Deny covers the profile chip popup=${JSON.stringify(popup)} chip=${JSON.stringify(chip)}`,
   );
-  if (panel) {
+  assert.equal(
+    rectsOverlap(popup, privacy),
+    false,
+    `Allow/Deny covers Privacy choices popup=${JSON.stringify(popup)} privacy=${JSON.stringify(privacy)}`,
+  );
+  // 768+ has gutter beside the panel. 390 cannot fit a ~220px portal beside w-64,
+  // so it parks under the chip and may clip the panel header — never Privacy.
+  if (width == null || width >= 768) {
+    assert.ok(panel, 'profile menu should be visible');
     assert.equal(
       rectsOverlap(popup, panel),
       false,
       `Allow/Deny covers the profile menu popup=${JSON.stringify(popup)} panel=${JSON.stringify(panel)}`,
-    );
-  }
-  if (privacy) {
-    assert.equal(
-      rectsOverlap(popup, privacy),
-      false,
-      `Allow/Deny covers Privacy choices popup=${JSON.stringify(popup)} privacy=${JSON.stringify(privacy)}`,
     );
   }
   const portal = await page.locator('[data-agent-bridge-approval-portal]').count();
@@ -138,31 +140,51 @@ async function assertApprovalClearsProfileChrome(page) {
   }
 }
 
+async function ensureProfilePanelOpen(page) {
+  if (await page.locator('[data-profile-panel]').isVisible()) return;
+  await page.locator('[data-profile-chip]').filter({ visible: true }).first().click();
+  await page.waitForSelector('[data-profile-panel]', { timeout: 10000 });
+}
+
 async function assertApprovalLayoutAtWidths(page, widths = [1280, 768, 390]) {
   const original = page.viewportSize() || { width: 1280, height: 800 };
   try {
     for (const width of widths) {
       await page.setViewportSize({ width, height: original.height });
       const expected = width < APPROVAL_POPUP_WIDE_MIN_PX ? 'under-chip' : 'bottom-center';
-      await page.waitForFunction(
-        /* eslint-disable no-undef */
-        ({ w, a }) => window.innerWidth === w
-          && document.querySelector('[data-agent-bridge-approval]')?.getAttribute('data-agent-bridge-approval-anchor') === a,
-        /* eslint-enable no-undef */
-        { w: width, a: expected },
-        { timeout: 5000 },
-      );
-      await assertApprovalClearsProfileChrome(page);
+      const deadline = Date.now() + 8000;
+      let got = { inner: 0, anchor: null };
+      while (Date.now() < deadline) {
+        got = await page.evaluate(
+          /* eslint-disable no-undef */
+          () => ({ inner: window.innerWidth, anchor: null }),
+          /* eslint-enable no-undef */
+        );
+        if (got.inner === width) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      assert.equal(got.inner, width, `viewport innerWidth at ${width}: ${JSON.stringify(got)}`);
+      await ensureProfilePanelOpen(page);
+      while (Date.now() < deadline) {
+        got = await page.evaluate(
+          /* eslint-disable no-undef */
+          () => {
+            const el = document.querySelector('[data-agent-bridge-approval]');
+            return {
+              inner: window.innerWidth,
+              anchor: el ? el.getAttribute('data-agent-bridge-approval-anchor') : null,
+            };
+          },
+          /* eslint-enable no-undef */
+        );
+        if (got.inner === width && got.anchor === expected) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      assert.equal(got.anchor, expected, `Allow/Deny anchor at ${width}: ${JSON.stringify(got)}`);
+      await assertApprovalClearsProfileChrome(page, { width });
     }
   } finally {
     await page.setViewportSize(original);
-    await page.waitForFunction(
-      /* eslint-disable no-undef */
-      (w) => window.innerWidth === w,
-      /* eslint-enable no-undef */
-      original.width,
-      { timeout: 5000 },
-    );
   }
 }
 

@@ -27,6 +27,7 @@ test('connection ring is driven by the live agentBridgeLink, not a boolean', () 
   assert.match(SRC, /agentBridgeRingState\(agentBridgeLink\)/);
   assert.match(SRC, /data-agent-bridge-connection-ring=\{agentRing\}/);
   assert.equal(SRC.includes('showAgentRing'), false);
-  assert.match(SRC, /uiTarget=\{panelOpen \? agentBridgeSlot : null\}/);
-  assert.match(SRC, /shouldKeepAgentBridgeHostMounted\(\{ agentBridgeLive, panelOpen \}\)/);
+  assert.match(SRC, /useAgentBridgeHost\(\)/);
+  assert.match(SRC, /offerSlot\(agentBridgeSlot\)/);
+  assert.equal(SRC.includes('<AgentBridgePairing'), false);
 });
