@@ -4055,9 +4055,25 @@ const App = () => {
       const next = workingCopyAfterDelete(doc, scripts, projected, plan, {
         recent: recentAssembliesRef.current,
       });
-      const files = next.kind === 'update'
-        ? commitOpenAssemblyText(plan.files, assemblyFilePath(vaultSegment(doc.name) || doc.name), next.doc)
-        : plan.files;
+      const written = next.kind === 'update'
+        ? await commitOpenAssemblyText(
+          plan.files,
+          assemblyFilePath(vaultSegment(doc.name) || doc.name),
+          next.doc,
+          {
+            adapter: gitAdapterRef.current,
+            repo: vault.repo,
+            scripts: next.scripts || scripts,
+            branch,
+          },
+        )
+        : { files: plan.files, doc: next.doc, scripts: next.scripts };
+      const files = written.files;
+      if (written.doc) next.doc = written.doc;
+      if (written.scripts) next.scripts = written.scripts;
+      if (written.moved?.length) {
+        next.pairs = [...(next.pairs || []), ...written.moved];
+      }
       const cacheBefore = entries.map((entry) => ({ path: entry.path, content: entry.content ?? '' }));
       const cacheAfter = projectFiles(entries, files);
       const baselineBefore = gitBaselineRef.current;
@@ -7556,14 +7572,19 @@ const App = () => {
     const scripts = { ...partScriptsRef.current };
     const repo = gitVaultRef.current?.repo || null;
     const baseline = gitBaselineRef.current;
-    const staged = stageAssemblyRename({
+    const staged = await stageAssemblyRename({
       doc,
       scripts,
       nextName: resolved.name,
       taken,
       repo,
+      adapter: gitAdapterRef.current,
       baseline,
     });
+    if (staged.status === 'error') {
+      setUploadError(staged.error || 'Could not rename assembly');
+      return;
+    }
     if (staged.status === 'unchanged') return;
     if (staged.status !== 'staged') {
       rememberAssembly(staged.doc || { ...doc, name: resolved.name });
@@ -7870,14 +7891,18 @@ const App = () => {
       let id;
       if (doc.source === 'git') {
         let taken = (doc.parts || []).map((part) => part.id);
-        try {
-          const vault = gitVaultRef.current;
-          const adapter = gitAdapterRef.current;
-          if (vault?.repo && adapter?.listTree) {
-            const tree = await adapter.listTree(vault.repo, gitWorkingBranch());
-            taken = [...taken, ...(tree || []).map((entry) => entry?.path ?? entry)];
+        const vault = gitVaultRef.current;
+        if (vault?.repo && gitAdapterRef.current) {
+          try {
+            taken = [
+              ...taken,
+              ...(await listVaultTreePaths(gitAdapterRef.current, vault.repo, gitWorkingBranch())),
+            ];
+          } catch (err) {
+            setUploadError(err?.message || VAULT_TREE_UNAVAILABLE_MESSAGE);
+            return { status: 'error', code: err?.code || VAULT_TREE_UNAVAILABLE, error: err?.message };
           }
-        } catch { /* open document still blocks collisions */ }
+        }
         id = allocateVaultPartPath(doc.name, name, taken, { layout: 'shared' });
         if (!id) {
           setUploadError('Could not assign a path for this upload.');

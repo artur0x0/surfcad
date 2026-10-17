@@ -330,6 +330,32 @@ function isPartScriptPath(path) {
   return info?.kind === 'assembly-part' || info?.kind === 'shared-part';
 }
 
+/** Outbox rename payload -> buildRenameCommitFiles plan (includes extraFiles). */
+export function renamePlanFromPayload(payload) {
+  if (payload?.kind === 'assembly') {
+    return {
+      kind: 'assembly',
+      fromName: payload.fromName,
+      toName: payload.toName,
+      assemblyPath: payload.assemblyPath,
+      assemblyText: payload.assemblyText,
+      localFiles: payload.localFiles || [],
+      extraFiles: payload.extraFiles || [],
+    };
+  }
+  return {
+    kind: 'part',
+    surfId: payload?.surfId || readSurfId(payload?.content || '') || null,
+    from: payload?.from,
+    to: payload?.to,
+    content: payload?.content,
+    asset: payload?.asset,
+    assemblyPath: payload?.assemblyPath,
+    assemblyText: payload?.assemblyText,
+    extraFiles: payload?.extraFiles || [],
+  };
+}
+
 /**
  * Build the rename commit from the remote tree, with local script bytes
  * winning for the moved part. Used by the sync worker at flush time so an
@@ -337,27 +363,7 @@ function isPartScriptPath(path) {
  */
 export async function materializeRename(adapter, repo, branch, payload) {
   const entries = await readRenameEntries(adapter, repo, branch);
-  const plan = payload?.kind === 'assembly'
-    ? {
-      kind: 'assembly',
-      fromName: payload.fromName,
-      toName: payload.toName,
-      assemblyPath: payload.assemblyPath,
-      assemblyText: payload.assemblyText,
-      localFiles: payload.localFiles || [],
-    }
-    : {
-      kind: 'part',
-      surfId: payload?.surfId || readSurfId(payload?.content || '') || null,
-      from: payload?.from,
-      to: payload?.to,
-      content: payload?.content,
-      asset: payload?.asset,
-      assemblyPath: payload?.assemblyPath,
-      assemblyText: payload?.assemblyText,
-      extraFiles: payload?.extraFiles || [],
-    };
-  return buildRenameCommitFiles({ entries, plan });
+  return buildRenameCommitFiles({ entries, plan: renamePlanFromPayload(payload) });
 }
 
 export function renameFailureToast(item, err) {

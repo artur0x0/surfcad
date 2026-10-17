@@ -638,6 +638,7 @@ export async function commitPartToRepo(adapter, repo, {
  */
 export async function deletePartFromRepo(adapter, repo, {
   doc,
+  scripts = {},
   baseline,
   partPath,
   message = null,
@@ -667,14 +668,24 @@ export async function deletePartFromRepo(adapter, repo, {
     assemblyText: '',
   };
   const branch = base.branch || 'main';
-  const assemblyPath = assemblyFilePath(asmName);
-  const assemblyText = stringifySurfJson(doc);
   const mesh = assetPathForScript(path);
-  const files = [
-    fileDelete(path),
-    ...(mesh ? [fileDelete(mesh)] : []),
-    fileWrite(assemblyPath, assemblyText),
-  ];
+  let prepared;
+  try {
+    prepared = await prepareAssemblySurfWrite(adapter, repo, {
+      doc,
+      scripts,
+      branch,
+      extraFiles: [
+        fileDelete(path),
+        ...(mesh ? [fileDelete(mesh)] : []),
+      ],
+    });
+  } catch (err) {
+    return { status: 'error', error: err?.message || 'Delete from repo failed', code: err?.code };
+  }
+  const files = prepared.files;
+  const assemblyPath = prepared.assemblyPath;
+  const workDoc = prepared.doc;
   const leaf = path.split('/').pop()?.replace(/\.js$/i, '') || 'part';
   const msg = String(message || '').trim() || `Delete ${leaf}`;
 
@@ -692,7 +703,7 @@ export async function deletePartFromRepo(adapter, repo, {
       baseSha: expectedBase,
     });
     const next = baselineAfterPartSave(base, {
-      doc,
+      doc: workDoc,
       removed: [path],
       assemblyPath,
       assemblyName: asmName,

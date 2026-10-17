@@ -91,12 +91,13 @@ describe('assembly rename commit', () => {
     const { gh, vault, store, gearbox, scripts, baseline, shim, bracket } = world;
     const seen = watchCommits(gh);
     const before = gh._log.filter((entry) => entry.op === 'commitFiles').length;
-    const staged = stageAssemblyRename({
+    const staged = await stageAssemblyRename({
       doc: gearbox,
       scripts,
       nextName: 'Transmission',
       taken: ['Gearbox', 'Cover'],
       repo: vault.repo,
+      adapter: gh,
       baseline,
     });
     assert.equal(staged.status, 'staged');
@@ -141,12 +142,13 @@ describe('assembly rename commit', () => {
     const world = await seedVault();
     const { gh, vault, store, gearbox, scripts, baseline } = world;
     const seen = watchCommits(gh);
-    const staged = stageAssemblyRename({
+    const staged = await stageAssemblyRename({
       doc: gearbox,
       scripts,
       nextName: 'Transmission',
       taken: ['Gearbox', 'Cover'],
       repo: vault.repo,
+      adapter: gh,
       baseline,
     });
     await applyAssemblyRenameCache(store, vault.repo, 'main', staged.plan);
@@ -197,12 +199,13 @@ describe('assembly rename commit', () => {
       }
       return inner(repo, opts);
     };
-    const staged = stageAssemblyRename({
+    const staged = await stageAssemblyRename({
       doc: gearbox,
       scripts,
       nextName: 'Transmission',
       taken: ['Gearbox', 'Cover'],
       repo: vault.repo,
+      adapter: gh,
       baseline,
     });
     await store.enqueue(vault.repo, { branch: 'main', ...staged.enqueue });
@@ -236,12 +239,13 @@ describe('assembly rename commit', () => {
     });
     const tree = await gh.listTree(vault.repo, 'main');
     const taken = takenAssemblyNames({ tree, except: 'Cover' });
-    const staged = stageAssemblyRename({
+    const staged = await stageAssemblyRename({
       doc: cover,
       scripts,
       nextName: 'Gearbox',
       taken,
       repo: vault.repo,
+      adapter: gh,
       baseline: coverBase,
     });
     assert.equal(staged.status, 'staged');
@@ -268,7 +272,7 @@ describe('assembly rename commit', () => {
 
   test('cache rows follow the new folder and a reload does not see the old one', async () => {
     const world = await seedVault();
-    const { vault, store, gearbox, scripts, baseline, shim, shimBody, bracket, bracketBody } = world;
+    const { gh, vault, store, gearbox, scripts, baseline, shim, shimBody, bracket, bracketBody } = world;
     await store.putAssembly(vault.repo, assemblyFilePath('Gearbox'), stringifySurfJson(gearbox));
     await store.putPart(vault.repo, {
       surfId: ID_COPY, path: shim, previousPath: null, content: shimBody,
@@ -283,12 +287,13 @@ describe('assembly rename commit', () => {
       { path: shim, content: shimBody },
       { path: bracket, content: bracketBody },
     ]);
-    const staged = stageAssemblyRename({
+    const staged = await stageAssemblyRename({
       doc: gearbox,
       scripts,
       nextName: 'Transmission',
       taken: ['Gearbox'],
       repo: vault.repo,
+      adapter: gh,
       baseline,
     });
     await applyAssemblyRenameCache(store, vault.repo, 'main', staged.plan);
@@ -310,7 +315,7 @@ describe('assembly rename commit', () => {
   test('an unsynced or local-only assembly renames without a commit', async () => {
     const gh = createMockGithubAdapter({ login: 'artur' });
     const vault = await findOrCreateVault(gh);
-    const local = stageAssemblyRename({
+    const local = await stageAssemblyRename({
       doc: { source: 'local', name: 'Assembly', parts: [] },
       scripts: {},
       nextName: 'Widget',
@@ -322,7 +327,7 @@ describe('assembly rename commit', () => {
     assert.equal(local.commit, false);
     assert.equal(local.doc.name, 'Widget');
 
-    const unsynced = stageAssemblyRename({
+    const unsynced = await stageAssemblyRename({
       doc: {
         source: 'git',
         name: 'Assembly',

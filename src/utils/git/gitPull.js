@@ -14,9 +14,9 @@ import { putAsset } from './assetCache.js';
 import { isBinaryContent } from './binaryContent.js';
 import { GitAdapterError, assertGithubAdapter, fileWrite } from './githubAdapterInterface.js';
 import { readVaultAsset } from './githubAdapter.js';
-import { detectCommitBase, commitBranchName, freeBranchName } from './gitCommit.js';
+import { detectCommitBase, commitBranchName, freeBranchName, prepareAssemblySurfWrite } from './gitCommit.js';
 import { captureBaseline } from './gitWorkspace.js';
-import { parseSurfJson, stringifySurfJson } from './surfJson.js';
+import { parseSurfJson } from './surfJson.js';
 import { assetPathForScript, vaultSegment } from './vaultLayout.js';
 
 /**
@@ -314,21 +314,31 @@ export async function checkInMineToBranch(adapter, repo, {
   assertGithubAdapter(adapter);
   if (!path || !baseline || !doc) throw new Error('Nothing to check in');
   const branch = baseline.branch || 'main';
+  let assemblyWrite = null;
+  if (kind === 'assembly') {
+    assemblyWrite = await prepareAssemblySurfWrite(adapter, repo, {
+      doc,
+      scripts: scripts || {},
+      branch,
+    });
+  }
   const base = await detectCommitBase(adapter, repo, {
     branch,
     baselineSha: baseline.headSha,
   });
   const sideName = await freeBranchName(adapter, repo, commitBranchName(doc.name, now));
   await adapter.createBranch(repo, sideName, base.baseSha);
-  const content = kind === 'assembly'
-    ? stringifySurfJson({ ...doc, source: 'git' })
-    : (scripts?.[path] ?? '');
   const msg = String(message || '').trim()
     || `Keep mine: ${path.split('/').pop() || path}`;
-  const files = [fileWrite(path, content)];
-  const mesh = kind === 'part' ? assetPathForScript(path) : null;
-  const meshBytes = mesh && assets ? (assets[mesh] ?? assets[path]) : null;
-  if (mesh && isBinaryContent(meshBytes)) files.push(fileWrite(mesh, meshBytes));
+  const files = [];
+  if (kind === 'assembly') {
+    files.push(...(assemblyWrite?.files || []));
+  } else {
+    files.push(fileWrite(path, scripts?.[path] ?? ''));
+    const mesh = assetPathForScript(path);
+    const meshBytes = mesh && assets ? (assets[mesh] ?? assets[path]) : null;
+    if (mesh && isBinaryContent(meshBytes)) files.push(fileWrite(mesh, meshBytes));
+  }
   const side = await adapter.commitFiles(repo, {
     branch: sideName,
     message: msg,
