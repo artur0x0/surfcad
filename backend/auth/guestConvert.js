@@ -73,11 +73,34 @@ export function evaluateGuestConvertProof(proof, { email, guestId, code, now = D
   return { ok: true };
 }
 
-export function convertCodeResendWait(proof, now = Date.now()) {
-  if (!proof?.sentAt) return 0;
-  const elapsed = now - proof.sentAt;
+export function convertCodeResendWait(sentAt, now = Date.now()) {
+  if (!Number.isFinite(sentAt) || sentAt <= 0) return 0;
+  const elapsed = now - sentAt;
   if (elapsed >= CONVERT_CODE_RESEND_MS) return 0;
   return Math.ceil((CONVERT_CODE_RESEND_MS - elapsed) / 1000);
+}
+
+export function convertCooldownKey(email, guestId) {
+  return `${String(guestId || '')}:${String(email || '').toLowerCase()}`;
+}
+
+export function convertCooldownSentAt(session, email, guestId) {
+  const map = session?.guestConvertCooldown;
+  if (!map || typeof map !== 'object') return 0;
+  const keyed = map[convertCooldownKey(email, guestId)];
+  if (Number.isFinite(keyed)) return keyed;
+  const legacy = map[String(email || '').toLowerCase()];
+  return Number.isFinite(legacy) ? legacy : 0;
+}
+
+export function recordConvertCodeSent(session, email, guestId, now = Date.now()) {
+  const prev = session.guestConvertCooldown && typeof session.guestConvertCooldown === 'object'
+    ? session.guestConvertCooldown
+    : {};
+  session.guestConvertCooldown = {
+    ...prev,
+    [convertCooldownKey(email, guestId)]: now,
+  };
 }
 
 export function newGuestConvertCode() {

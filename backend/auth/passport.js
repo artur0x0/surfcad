@@ -35,9 +35,13 @@ export function initializePassport() {
     },
     async (email, password, done) => {
       try {
-        const user = await User.findOne({ email: email.toLowerCase() });
+        const user = await User.findOne({ email: String(email || '').trim().toLowerCase() });
         
         if (!user) {
+          return done(null, false, { message: 'Invalid email or password' });
+        }
+
+        if (user.authProvider === 'local' && !user.emailVerified) {
           return done(null, false, { message: 'Invalid email or password' });
         }
         
@@ -141,11 +145,11 @@ export function initializePassport() {
                 ));
               }
 
-              const existingByEmail = await User.findOne({ email: email.toLowerCase() });
+              const existingByEmail = await User.findOne({ email: String(email).trim().toLowerCase() });
               if (existingByEmail) {
                 const sameApple = existingByEmail.authProvider === 'apple'
                   && existingByEmail.providerId === appleId;
-                if (!sameApple && (!emailVerified || !existingByEmail.emailVerified)) {
+                if (!sameApple && !emailVerified) {
                   return done(new Error('This email is already used. Sign in instead.'));
                 }
               }

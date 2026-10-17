@@ -13,6 +13,7 @@ import email from '../services/email.js';
 import config from '../config/index.js';
 import authRoutes from '../routes/auth.js';
 import { initializePassport } from '../auth/passport.js';
+import { resetRegisterCooldowns } from '../auth/registerCooldown.js';
 import { installFakeModel, patch, startApp, client } from './helpers/fakeDb.js';
 
 const VICTIM = 'victim@example.com';
@@ -116,6 +117,7 @@ beforeEach(() => {
   users.rows.length = 0;
   orders.rows.length = 0;
   sentCodes = [];
+  resetRegisterCooldowns();
 });
 
 describe('exploit C1', () => {
@@ -158,16 +160,17 @@ describe('exploit H2', () => {
       password: ATTACKER_PASSWORD,
     });
     assert.equal(reg.body.pendingVerification, true);
-    assert.ok(users.find({ email: VICTIM }).passwordHash);
+    assert.equal(users.find({ email: VICTIM }).passwordHash, null);
 
     const gh = await githubSignIn('victim-token', {
       user: { id: 4242, login: 'victim', email: VICTIM, name: 'Vic Tim' },
+      emails: [{ email: VICTIM, primary: true, verified: true }],
     });
-    assert.notEqual(gh.status, 200, 'must refuse the link to a never-verified account');
+    assert.equal(gh.status, 200);
     const row = users.find({ email: VICTIM });
-    assert.equal(row.emailVerified, false);
-    assert.equal(row.githubId, null);
-    assert.ok(row.passwordHash);
+    assert.equal(row.emailVerified, true);
+    assert.equal(row.githubId, '4242');
+    assert.equal(row.passwordHash, null);
 
     const login = await client(app.port)('POST', '/api/auth/login', {
       email: VICTIM,
@@ -185,7 +188,10 @@ describe('exploit H2', () => {
     const c = client(app.port);
     const restoreFetch = patch(globalThis, {
       fetch: githubFetch({
-        tok: { user: { id: 4242, login: 'victim', email: VICTIM, name: 'Vic Tim' } },
+        tok: {
+          user: { id: 4242, login: 'victim', email: VICTIM, name: 'Vic Tim' },
+          emails: [{ email: VICTIM, primary: true, verified: true }],
+        },
       }),
     });
     try {
@@ -205,15 +211,15 @@ describe('exploit H2', () => {
       password: ATTACKER_PASSWORD,
     });
     const { err, user } = await runGoogleVerify(googleProfile('g-victim', VICTIM));
-    assert.ok(err);
-    assert.ok(!user);
+    assert.equal(err, null);
+    assert.equal(user.email, VICTIM);
     const row = users.find({ email: VICTIM });
-    assert.equal(row.emailVerified, false);
-    assert.equal(row.authProvider, 'local');
-    assert.ok(row.passwordHash);
+    assert.equal(row.emailVerified, true);
+    assert.equal(row.authProvider, 'google');
+    assert.equal(row.passwordHash, null);
   });
 
-  test('findOrCreateOAuth refuses a never-verified account for GitHub, Google, and Apple', async () => {
+  test('findOrCreateOAuth claims a never-verified account when the provider email is verified', async () => {
     for (const provider of ['github', 'google', 'apple']) {
       users.rows.length = 0;
       await users.insert({
@@ -230,15 +236,13 @@ describe('exploit H2', () => {
         }],
       });
 
-      await assert.rejects(
-        () => User.findOrCreateOAuth(googleProfile(`${provider}-1`, VICTIM), provider),
-        (e) => e.statusCode === 409,
-        provider,
-      );
+      const claimed = await User.findOrCreateOAuth(googleProfile(`${provider}-1`, VICTIM), provider);
+      assert.equal(claimed.isNew, false, provider);
       const row = users.find({ email: VICTIM });
-      assert.equal(row.passwordHash, 'planted-hash', provider);
-      assert.equal(row.emailVerified, false, provider);
-      assert.equal(row.authProvider, 'local', provider);
+      assert.equal(row.passwordHash, null, provider);
+      assert.equal(row.emailVerified, true, provider);
+      assert.equal(row.authProvider, provider, provider);
+      assert.equal(row.addresses.length, 0, provider);
     }
   });
 });
@@ -248,7 +252,10 @@ describe('regression', () => {
     const c = client(app.port);
     const restoreFetch = patch(globalThis, {
       fetch: githubFetch({
-        tok: { user: { id: 7, login: 'octo', email: 'octo@example.com', name: 'Octo Cat' } },
+        tok: {
+          user: { id: 7, login: 'octo', email: 'octo@example.com', name: 'Octo Cat' },
+          emails: [{ email: 'octo@example.com', primary: true, verified: true }],
+        },
       }),
     });
     try {
@@ -276,6 +283,7 @@ describe('regression', () => {
     });
     const r = await githubSignIn('tok', {
       user: { id: 8, login: 'octo', email: 'octo@example.com', name: 'Octo' },
+      emails: [{ email: 'octo@example.com', primary: true, verified: true }],
     });
     assert.equal(r.status, 200);
     assert.equal(r.body.isNew, false);
@@ -323,12 +331,15 @@ describe('regression', () => {
       email: 'ada@example.com',
       password: 'ada-pass-12',
     });
-    assert.equal(early.status, 200);
-    assert.equal(early.body.pendingVerification, true);
+    assert.equal(early.status, 401);
     assert.equal(early.body.user, undefined);
 
     const code = sentCodes.at(-1).code;
-    const verified = await c('POST', '/api/auth/verify', { email: 'ada@example.com', code });
+    const verified = await c('POST', '/api/auth/verify', {
+      email: 'ada@example.com',
+      code,
+      password: 'ada-pass-12',
+    });
     assert.equal(verified.status, 200);
     assert.equal(verified.body.verified, true);
     assert.equal(verified.body.user.email, 'ada@example.com');

@@ -14,14 +14,28 @@ import Order from '../db/models/Order.js';
 import {
   EXISTING_ACCOUNT_MESSAGE,
   convertCodeResendWait,
+  convertCooldownSentAt,
   createGuestConvertProof,
   evaluateGuestConvertProof,
   newGuestConvertCode,
   paidOrderQuery,
+  recordConvertCodeSent,
 } from '../auth/guestConvert.js';
+import { recordRegisterIp, registerIpWait } from '../auth/registerCooldown.js';
 import { appleOAuthUnavailable } from '../auth/appleIdentity.js';
 
 const router = Router();
+
+function normalizeEmail(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function registerCodeCooldownResponse(wait) {
+  return {
+    error: `Please wait ${wait} seconds before requesting a new code`,
+    retryAfter: wait,
+  };
+}
 
 function plainConsent(consent) {
   if (!consent || typeof consent.analytics !== 'boolean') return null;
@@ -123,16 +137,26 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
     
-    const normalizedEmail = userEmail.toLowerCase();
+    const normalizedEmail = normalizeEmail(userEmail);
     
     // Check if user exists
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
-      // If user exists but is not verified, allow re-registration (resend code)
+      // If user exists but is not verified, allow re-registration (resend code).
+      // Never store a register-time password on an unverified row.
       if (!existingUser.emailVerified && existingUser.authProvider === 'local') {
-        // Generate new verification code
+        const emailWait = existingUser.canResendCode();
+        if (!emailWait.allowed) {
+          return res.status(429).json(registerCodeCooldownResponse(emailWait.secondsRemaining));
+        }
+        const ipWait = registerIpWait(req.ip);
+        if (ipWait > 0) {
+          return res.status(429).json(registerCodeCooldownResponse(ipWait));
+        }
+        existingUser.passwordHash = null;
         const code = existingUser.generateVerificationCode();
         await existingUser.save();
+        recordRegisterIp(req.ip);
         
         // Get display name for email
         const displayName = existingUser.firstName || existingUser.name || '';
@@ -157,6 +181,11 @@ router.post('/register', async (req, res) => {
       : name || null;
     
     // Create user with separate name fields
+    const ipWait = registerIpWait(req.ip);
+    if (ipWait > 0) {
+      return res.status(429).json(registerCodeCooldownResponse(ipWait));
+    }
+
     const user = new User({
       email: normalizedEmail,
       firstName: firstName || null,
@@ -165,8 +194,8 @@ router.post('/register', async (req, res) => {
       authProvider: 'local',
       emailVerified: false,
     });
-    
-    await user.setPassword(password);
+
+    // Password is set at /verify, after the inbox owner proves the code.
     
     // Add address if provided
     if (address) {
@@ -177,6 +206,7 @@ router.post('/register', async (req, res) => {
     const code = user.generateVerificationCode();
     
     await user.save();
+    recordRegisterIp(req.ip);
     
     // Send verification email (don't await, fire and forget)
     const displayName = firstName || fullName || '';
@@ -204,13 +234,17 @@ router.post('/register', async (req, res) => {
  */
 router.post('/verify', async (req, res) => {
   try {
-    const { email: userEmail, code } = req.body;
+    const { email: userEmail, code, password } = req.body;
     
     if (!userEmail || !code) {
       return res.status(400).json({ error: 'Email and verification code are required' });
     }
+
+    if (!password || password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
     
-    const normalizedEmail = userEmail.toLowerCase();
+    const normalizedEmail = normalizeEmail(userEmail);
     const user = await User.findOne({ email: normalizedEmail });
     
     if (!user) {
@@ -221,13 +255,15 @@ router.post('/verify', async (req, res) => {
       return res.status(400).json({ error: 'Email is already verified' });
     }
     
-    // Verify the code
+    // Verify the code, then set the password the inbox owner just sent.
     const result = user.verifyCode(code);
-    await user.save();
-    
     if (!result.valid) {
+      await user.save();
       return res.status(400).json({ error: result.error });
     }
+
+    await user.setPassword(password);
+    await user.save();
     
     console.log(`[Auth] Email verified: ${normalizedEmail}`);
     
@@ -267,7 +303,7 @@ router.post('/resend-verification', async (req, res) => {
       return res.status(400).json({ error: 'Email is required' });
     }
     
-    const normalizedEmail = userEmail.toLowerCase();
+    const normalizedEmail = normalizeEmail(userEmail);
     const user = await User.findOne({ email: normalizedEmail });
     
     if (!user) {
@@ -327,10 +363,14 @@ router.post('/login', async (req, res, next) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
     
-    const normalizedEmail = userEmail.toLowerCase();
+    const normalizedEmail = normalizeEmail(userEmail);
     const user = await User.findOne({ email: normalizedEmail });
     
     if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (user.authProvider === 'local' && !user.emailVerified) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
@@ -338,23 +378,6 @@ router.post('/login', async (req, res, next) => {
     const isValid = await user.verifyPassword(password);
     if (!isValid) {
       return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    
-    // Check if email is verified (only for local auth)
-    if (user.authProvider === 'local' && !user.emailVerified) {
-      // Generate and send new verification code
-      const code = user.generateVerificationCode();
-      await user.save();
-      
-      const displayName = user.firstName || user.name || '';
-      email.sendVerificationEmail(normalizedEmail, code, displayName).catch(console.error);
-      
-      return res.status(200).json({
-        success: true,
-        pendingVerification: true,
-        email: normalizedEmail,
-        message: 'Please verify your email. A new code has been sent.',
-      });
     }
     
     try {
@@ -410,7 +433,7 @@ router.post('/guest', (req, res) => {
     return res.status(400).json({ error: 'Email is required for guest checkout' });
   }
 
-  const normalizedEmail = String(guestEmail).toLowerCase().trim();
+  const normalizedEmail = normalizeEmail(guestEmail);
   
   // Create guest session
   if (!req.session.guestId) {
@@ -454,16 +477,18 @@ router.post('/guest/convert/code', async (req, res) => {
       return res.status(400).json({ error: 'No guest session found' });
     }
 
+    if (!(await guestHasPaidOrder(req))) {
+      return res.status(403).json({ error: 'Pay for an order first, then create an account.' });
+    }
+
     const existing = await User.findOne({ email: req.session.guestEmail });
     if (existing) {
       return res.status(409).json({ error: EXISTING_ACCOUNT_MESSAGE });
     }
 
-    if (!(await guestHasPaidOrder(req))) {
-      return res.status(403).json({ error: 'Pay for an order first, then create an account.' });
-    }
-
-    const wait = convertCodeResendWait(req.session.guestConvert);
+    const wait = convertCodeResendWait(
+      convertCooldownSentAt(req.session, req.session.guestEmail, req.session.guestId),
+    );
     if (wait > 0) {
       return res.status(429).json({
         error: `Please wait ${wait} seconds before requesting a new code`,
@@ -477,6 +502,7 @@ router.post('/guest/convert/code', async (req, res) => {
       guestId: req.session.guestId,
       code,
     });
+    recordConvertCodeSent(req.session, req.session.guestEmail, req.session.guestId);
 
     const displayName = req.session.guestAddress?.name || '';
     email.sendVerificationEmail(req.session.guestEmail, code, displayName).catch(console.error);
@@ -507,6 +533,10 @@ router.post('/guest/convert', async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
+    if (!(await guestHasPaidOrder(req))) {
+      return res.status(403).json({ error: 'Pay for an order first, then create an account.' });
+    }
+
     const existing = await User.findOne({ email: req.session.guestEmail });
     if (existing) {
       return res.status(409).json({ error: EXISTING_ACCOUNT_MESSAGE });
@@ -519,10 +549,6 @@ router.post('/guest/convert', async (req, res) => {
     });
     if (!proof.ok) {
       return res.status(proof.status).json({ error: proof.error });
-    }
-
-    if (!(await guestHasPaidOrder(req))) {
-      return res.status(403).json({ error: 'Pay for an order first, then create an account.' });
     }
 
     const user = new User({

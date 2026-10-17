@@ -393,7 +393,7 @@ router.get('/:orderNumber', orderLookupLimiter, async (req, res) => {
 
     const access = canReadOrder(req, order);
     if (!access.ok) {
-      return res.status(access.status).json({ error: access.error });
+      return res.status(404).json({ error: 'Order not found' });
     }
     
     return res.json({
@@ -427,9 +427,7 @@ router.get('/lookup/:orderNumber', orderLookupLimiter, async (req, res) => {
 
     const access = canReadOrder(req, order);
     if (!access.ok) {
-      return res.status(access.status === 401 ? 404 : access.status).json({
-        error: access.status === 401 ? 'Order not found' : access.error,
-      });
+      return res.status(404).json({ error: 'Order not found' });
     }
     
     return res.json({
