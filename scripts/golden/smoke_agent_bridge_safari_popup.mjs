@@ -13,10 +13,11 @@
  *                     before the relay runs (35 s of Waiting for the local
  *                     agent, code hidden, no give-up),
  *                     the window detects the relay and the code appears,
- *                     Allow, ring on, restart the relay on the same port
- *                     (still one window, pairing recovers), create/edit/undo
- *                     over MCP, close the window → Disconnected, ring off →
- *                     Reconnect, ring on.
+ *                     Allow, connected toast / ring on, restart the relay
+ *                     on the same port (still one window, pairing recovers),
+ *                     create/edit/undo over MCP, close the window →
+ *                     Disconnected (dialog re-opens), ring off → Reconnect,
+ *                     ring on.
  *   chromium        — direct socket, no popup (path unchanged).
  *   chromium-popup  — popup path in Chromium (Safari desktop UA; the
  *                     `?agentBridgeTransport=` override is production-inert).
@@ -195,7 +196,10 @@ async function pairWithAllow(page, client, code) {
   await approve.click();
   const out = await pairPromise;
   check('MCP pair succeeds after Allow', !out.isError, out.content?.[0]?.text);
-  await page.waitForSelector('[data-agent-bridge-paired]', { timeout: 15000 });
+  await page.waitForSelector(
+    '[data-agent-bridge-connected-toast], [data-agent-bridge-connection-ring="connected"]',
+    { timeout: 15000 },
+  );
 }
 
 async function evilOpenerCheck(context, relayPort) {
@@ -358,7 +362,7 @@ async function runOne(name, { browserType, launchOptions, expectPopup, forcePopu
       await popup.close();
       await page.waitForSelector('[data-agent-bridge-error="bridge_closed"]', { timeout: 10000 });
       check('closing the bridge window shows Disconnected', await page.locator('[data-agent-bridge-error="bridge_closed"]').isVisible());
-      check('chip no longer says paired', await page.locator('[data-agent-bridge-paired]').count() === 0);
+      check('closing the window re-opens the pairing dialog', await page.locator('[data-agent-bridge-dialog]').isVisible());
       check('ring clears when the bridge window closes', await page.locator(RING).count() === 0);
       check('no Waiting for relay spinner after close', await page.locator('[data-agent-bridge-waiting-relay]').count() === 0);
       const blocked = await client.callTool({ name: 'status', arguments: {} });
