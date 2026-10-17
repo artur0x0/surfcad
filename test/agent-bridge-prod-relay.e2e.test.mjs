@@ -17,7 +17,11 @@ import {
   startPreviewServer,
   waitForServer,
 } from '../scripts/playtest/lib/harness.mjs';
-import { ensureAgentBridgeRelay } from '../packages/surfcad-mcp/src/bridge/relayServer.mjs';
+import {
+  ensureAgentBridgeRelay,
+  resetAgentBridgeRelayCache,
+  stopAgentBridgeRelay,
+} from '../packages/surfcad-mcp/src/bridge/relayServer.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PKG_ROOT = join(ROOT, 'packages/surfcad-mcp');
@@ -108,9 +112,8 @@ async function runBrowserE2E(t, browserType, executablePath) {
     if (client) await client.close().catch(() => {});
     if (browser) await browser.close();
     stop();
-    if (relay.ownsServer && relay.server) {
-      await new Promise((r) => relay.server.close(r));
-    }
+    await stopAgentBridgeRelay(relay);
+    if (relay?.port != null) resetAgentBridgeRelayCache(relay.port);
   }
 }
 

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { startAgentBridgeRelay } from '../../../scripts/vite-agent-bridge-ws.mjs';
+import { startAgentBridgeRelay, stopAgentBridgeRelay } from '../src/bridge/relayServer.mjs';
 import { PAIR_MSG } from '../src/relayMessages.mjs';
 import { createPairingToken } from '../../../src/agent/ws/pairingToken.js';
 import { loadCommandsCatalog } from '../src/catalog.mjs';
@@ -95,7 +95,7 @@ test('surfcad-mcp lists bridge tools and calls status through a mocked relay', a
 
   await client.close();
   tab.close();
-  await new Promise((r) => relay.server.close(r));
+  await stopAgentBridgeRelay(relay);
 });
 
 test('surfcad-mcp returns not_paired without a code', async () => {

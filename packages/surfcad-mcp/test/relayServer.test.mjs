@@ -4,14 +4,26 @@ import { WebSocket } from 'ws';
 import {
   ensureAgentBridgeRelay,
   probeRelayAtUrl,
+  resetAgentBridgeRelayCache,
   startAgentBridgeRelay,
+  stopAgentBridgeRelay,
 } from '../src/bridge/relayServer.mjs';
+
+test.after(() => {
+  resetAgentBridgeRelayCache();
+});
+
+async function closeRelay(relay) {
+  await stopAgentBridgeRelay(relay);
+  if (relay?.port != null) resetAgentBridgeRelayCache(relay.port);
+}
+
 test('startAgentBridgeRelay binds loopback only', async () => {
   const relay = await startAgentBridgeRelay({ port: 0 });
   const addr = relay.server.address();
   assert.ok(addr && typeof addr === 'object');
   assert.equal(addr.address, '127.0.0.1');
-  await new Promise((r) => relay.server.close(r));
+  await closeRelay(relay);
 });
 
 test('ensureAgentBridgeRelay reuses an existing listener', async () => {
@@ -24,7 +36,8 @@ test('ensureAgentBridgeRelay reuses an existing listener', async () => {
   assert.equal(second.url, url);
   assert.equal(second.reused, true);
 
-  await new Promise((r) => relay.server.close(r));
+  await closeRelay(relay);
+  resetAgentBridgeRelayCache(port);
 });
 
 test('origin allowlist rejects disallowed browser origins on upgrade', async () => {
@@ -38,7 +51,7 @@ test('origin allowlist rejects disallowed browser origins on upgrade', async () 
     ws.once('open', () => reject(new Error('disallowed origin should not connect')));
   });
 
-  await new Promise((r) => relay.server.close(r));
+  await closeRelay(relay);
 });
 
 test('OPTIONS preflight returns Access-Control-Allow-Private-Network for surfcad.com', async () => {
@@ -57,5 +70,5 @@ test('OPTIONS preflight returns Access-Control-Allow-Private-Network for surfcad
   assert.equal(res.headers.get('access-control-allow-origin'), origin);
   assert.equal(res.headers.get('access-control-allow-private-network'), 'true');
 
-  await new Promise((r) => relay.server.close(r));
+  await closeRelay(relay);
 });

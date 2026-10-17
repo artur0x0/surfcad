@@ -52,6 +52,7 @@ export function probeRelayAtUrl(url, timeoutMs = 1500) {
       try { ws.close(); } catch { /* noop */ }
       finish(false);
     }, timeoutMs);
+    if (typeof timer.unref === 'function') timer.unref();
     ws.once('open', () => {
       clearTimeout(timer);
       try { ws.close(); } catch { /* noop */ }
@@ -185,4 +186,38 @@ export async function ensureAgentBridgeRelay(options = {}) {
 
   sharedRelayByPort.set(port, promise);
   return promise;
+}
+
+/**
+ * Close relay HTTP/WebSocket listeners started by {@link startAgentBridgeRelay}.
+ *
+ * @param {{ server?: import('node:http').Server | null, wss?: import('ws').WebSocketServer | null, port?: number, ownsServer?: boolean } | null | undefined} relay
+ */
+export function stopAgentBridgeRelay(relay) {
+  if (!relay || !relay.ownsServer) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const finish = () => resolve();
+    const wss = relay.wss;
+    const server = relay.server;
+    if (wss) {
+      wss.close(() => {
+        if (server) server.close(finish);
+        else finish();
+      });
+      return;
+    }
+    if (server) server.close(finish);
+    else finish();
+  });
+}
+
+/** @param {number} [port] */
+export function resetAgentBridgeRelayCache(port) {
+  if (port == null) {
+    sharedRelayByPort.clear();
+    return;
+  }
+  sharedRelayByPort.delete(port);
 }

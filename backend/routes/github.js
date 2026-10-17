@@ -44,6 +44,7 @@ router.post('/oauth/token', async (req, res) => {
  * POST /oauth/refresh
  * Body: { refresh_token: string }
  * Quiet renewal of an expiring GitHub App user token. Stores nothing.
+ * Does not record a SurfCAD login event (no new express session).
  */
 router.post('/oauth/refresh', async (req, res) => {
   const refreshToken = typeof req.body?.refresh_token === 'string'

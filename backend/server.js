@@ -2,6 +2,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import { initSentryForExpress, installSentryErrorHandler } from './monitoring/sentry.js';
 
 // Config and DB
 import config from './config/index.js';
@@ -23,6 +24,7 @@ import convertRoutes from './routes/convert.js';
 import winsRoutes from './routes/wins.js';
 import githubRoutes from './routes/github.js';
 import partnersRoutes from './routes/partners.js';
+import adminRoutes from './routes/admin.js';
 
 // CAD and AI 
 let SYSTEM_PROMPT = 'You are a CAD assistant.';
@@ -34,6 +36,7 @@ try {
 }
 
 const app = express();
+const sentryEnabled = initSentryForExpress(app);
 
 // ============ Trust Proxy for Auth Redirects ===============
 app.set('trust proxy', config.trustProxyHops);
@@ -75,6 +78,7 @@ app.use('/api/convert', convertRoutes);
 app.use('/api/wins', winsRoutes);
 app.use('/api/github', githubRoutes);
 app.use('/api/partners', partnersRoutes);
+app.use('/api/admin', adminRoutes);
 
 const MODEL_CONFIG = {
   model: 'meta-llama/llama-4-scout-17b-16e-instruct',
@@ -128,8 +132,15 @@ app.get('/api/health', (req, res) => {
 });
 
 // ============ Error Handler ============
+if (sentryEnabled) {
+  installSentryErrorHandler(app);
+}
+
 app.use((err, req, res, next) => {
   console.error('[Server] Unhandled error:', err);
+  if (res.headersSent) {
+    return next(err);
+  }
   res.status(500).json({ 
     error: 'Internal server error',
     ...(config.env === 'development' && { details: err.message }),

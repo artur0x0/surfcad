@@ -220,6 +220,17 @@ const userSchema = new mongoose.Schema({
     type: [cartTombstoneSchema],
     default: () => [],
   },
+
+  /** Last successful app session sign-in (password or OAuth). Not backfilled. */
+  lastLoginAt: {
+    type: Date,
+    default: null,
+  },
+  loginCount: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
 }, {
   timestamps: true,
 });

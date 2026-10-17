@@ -8,6 +8,11 @@ import PartnersPage from './pages/PartnersPage.jsx';
 import { AuthProvider } from './hooks/useAuth';
 import { GithubSessionProvider } from './hooks/useGithubSession';
 import { GITHUB_CALLBACK_PATH } from './utils/git/githubAuth.js';
+import SentryErrorBoundary from './components/SentryErrorBoundary.jsx';
+import SentryUserSync from './components/SentryUserSync.jsx';
+import { bootstrapSentry } from './utils/sentryClient.js';
+
+bootstrapSentry();
 
 const PARTNERS_PATH = '/partners';
 
@@ -53,25 +58,35 @@ function Root() {
   }, []);
 
   if (gitCallback) {
-    return <GitCallback onComplete={goHome} />;
+    return (
+      <SentryErrorBoundary>
+        <GitCallback onComplete={goHome} />
+      </SentryErrorBoundary>
+    );
   }
 
   if (partnersPage) {
     return (
-      <AuthProvider>
-        <PartnersPage />
-      </AuthProvider>
+      <SentryErrorBoundary>
+        <AuthProvider>
+          <SentryUserSync />
+          <PartnersPage />
+        </AuthProvider>
+      </SentryErrorBoundary>
     );
   }
 
   return (
-    <StrictMode>
-      <AuthProvider>
-        <GithubSessionProvider>
-          <App />
-        </GithubSessionProvider>
-      </AuthProvider>
-    </StrictMode>
+    <SentryErrorBoundary>
+      <StrictMode>
+        <AuthProvider>
+          <SentryUserSync />
+          <GithubSessionProvider>
+            <App />
+          </GithubSessionProvider>
+        </AuthProvider>
+      </StrictMode>
+    </SentryErrorBoundary>
   );
 }
 
