@@ -12,8 +12,10 @@ import { PAIR_MSG } from '../src/agent/ws/relayHub.js';
 import { pickFreePort } from '../scripts/playtest/lib/pickFreePort.mjs';
 import {
   installApiMocks,
+  seedGithubToken,
   startPreviewServer,
   waitForServer,
+  waitForSignedInChip,
 } from '../scripts/playtest/lib/harness.mjs';
 import {
   ensureAgentBridgeRelay,
@@ -120,6 +122,9 @@ test('localStorage auto-approve flag is ignored in production build', { timeout:
     attachConsentPresetToBrowser(browser);
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     await installApiMocks(page);
+    const origin = new URL(baseUrl).origin;
+    await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
+    await seedGithubToken(page);
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(
       () => typeof window.surfcad?.call === 'function' && !document.querySelector('[data-app-loading]'),
@@ -131,8 +136,10 @@ test('localStorage auto-approve flag is ignored in production build', { timeout:
       localStorage.setItem('surfcadAgentBridgeAutoApprove', '1');
     });
 
+    await waitForSignedInChip(page);
     await page.locator('[data-profile-chip]').first().click();
     await page.click('[data-ui-action="data-agent-bridge-connect"]');
+    await page.waitForSelector('[data-agent-bridge-dialog]', { state: 'visible', timeout: 10000 }).catch(() => {});
     await page.waitForSelector('[data-agent-bridge-waiting-relay]', { state: 'hidden', timeout: 15000 }).catch(() => {});
     await page.waitForSelector('[data-agent-bridge-code]', { state: 'visible', timeout: 15000 });
     const token = (await page.locator('[data-agent-bridge-code]').innerText()).trim();
@@ -148,7 +155,10 @@ test('localStorage auto-approve flag is ignored in production build', { timeout:
 
     let pairedEarly = false;
     try {
-      await page.waitForSelector('[data-agent-bridge-paired]', { state: 'visible', timeout: 1500 });
+      await page.waitForSelector(
+        '[data-agent-bridge-connected-toast], [data-agent-bridge-connection-ring="connected"]',
+        { state: 'visible', timeout: 1500 },
+      );
       pairedEarly = true;
     } catch {
       pairedEarly = false;

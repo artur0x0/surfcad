@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Loader2, Plug, PlugZap } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { createPairingToken } from '../agent/ws/pairingToken.js';
 import { createAgentBridgeTabConnection } from '../agent/ws/tabConnection.js';
 import { isAgentBridgeAutoApprove } from '../agent/ws/autoApprove.js';
@@ -16,16 +16,29 @@ import { AGENT_PAIRING_PROMPT, pairingPromptPreview } from '../agent/ws/pairingP
 import { probeRelayWebSocket } from '../agent/ws/relayProbe.js';
 import { createRelayPoller, DEFAULT_RELAY_POLL_MS } from '../agent/ws/relayPoller.js';
 import {
+  AGENT_CONNECTED_TOAST_COPY,
+  AGENT_CONNECTED_TOAST_MS,
   disposePairingHost,
   isCurrentPairingConnection,
   isRelayTabConnected,
+  pairingDialogStage,
   pairingProbeUserCopy,
+  shouldClosePairingDialogOnConnect,
   shouldPollRelay,
-  shouldRevealPairingCode,
+  shouldShowPairingApproval,
+  shouldShowPairingCode,
+  shouldShowPairingPrompt,
 } from '../agent/ws/pairingFlow.js';
 import { CONNECT_AGENT_BUTTON_CLASS } from './agentBridgeConnectButton.js';
 import AgentBridgeApprovalPopup from './AgentBridgeApprovalPopup.jsx';
+import AgentBridgePairingDialog from './AgentBridgePairingDialog.jsx';
+import ErrorPopup from './ErrorPopup.jsx';
 import { approvalPopupPortalTarget, approvalPopupReducer } from '../agent/ws/agentBridgeChrome.js';
+
+const SECONDARY_BUTTON_CLASS = [
+  'w-full rounded-md border border-chrome-border px-3 py-2 text-ui-sm font-ui',
+  'text-on-dark surface-quiet',
+].join(' ');
 
 /**
  * Local WebSocket pairing for MCP / stdio clients (M1). Shown only when the
@@ -36,8 +49,10 @@ export default function AgentBridgePairing({
   enabled,
   embedded = false,
   onConnectionChange = null,
-  /** When passed (even as null), UI portals into this node and stays mounted without it. */
+  /** When passed (even as null), menu chrome portals into this node. */
   uiTarget = undefined,
+  /** Close the profile menu when Connect Agent opens the dialog. */
+  onBeginFlow = null,
 }) {
   const [flowOpen, setFlowOpen] = useState(false);
   const [token, setToken] = useState('');
@@ -47,6 +62,7 @@ export default function AgentBridgePairing({
   const [relayReachable, setRelayReachable] = useState(false);
   const [approvalUi, setApprovalUi] = useState({ open: false });
   const [link, setLink] = useState(null);
+  const [toastOpen, setToastOpen] = useState(false);
   const connRef = useRef(null);
   const pollerRef = useRef(null);
   const flowOpenRef = useRef(flowOpen);
@@ -79,7 +95,10 @@ export default function AgentBridgePairing({
     pollerRef.current = null;
   }, []);
 
-  const closeFlow = useCallback(() => {
+  const disconnectPairing = useCallback(() => {
+    if (stateRef.current === 'pending') {
+      connRef.current?.rejectPair();
+    }
     setFlowOpen(false);
     stopPolling();
     stopConnection();
@@ -89,9 +108,9 @@ export default function AgentBridgePairing({
 
   useEffect(() => {
     if (!enabled) {
-      closeFlow();
+      disconnectPairing();
     }
-  }, [enabled, closeFlow]);
+  }, [enabled, disconnectPairing]);
 
   useEffect(() => () => {
     const next = disposePairingHost({ conn: connRef.current, poller: pollerRef.current });
@@ -112,10 +131,25 @@ export default function AgentBridgePairing({
   useEffect(() => {
     if (state === 'pending') {
       setApprovalUi((prev) => approvalPopupReducer(prev, 'pair_request'));
+      setFlowOpen(true);
     } else {
       setApprovalUi((prev) => approvalPopupReducer(prev, 'dismiss'));
     }
   }, [state]);
+
+  useEffect(() => {
+    if (!flowOpen) return;
+    if (shouldClosePairingDialogOnConnect({ paired: state === 'paired', link })) {
+      setFlowOpen(false);
+      setToastOpen(true);
+    }
+  }, [state, link, flowOpen]);
+
+  useEffect(() => {
+    if (!toastOpen) return undefined;
+    const id = setTimeout(() => setToastOpen(false), AGENT_CONNECTED_TOAST_MS);
+    return () => clearTimeout(id);
+  }, [toastOpen]);
 
   const copyText = useCallback(async (text, key) => {
     try {
@@ -172,9 +206,9 @@ export default function AgentBridgePairing({
       token: code,
       call: (name, args) => window.surfcad.call(name, args),
       onState: (next) => onConnectionState(next, conn),
-      onIssue: (issue) => {
+      onIssue: (nextIssue) => {
         if (!isCurrentPairingConnection(connRef.current, conn)) return;
-        setIssue(issue);
+        setIssue(nextIssue);
       },
       onLink: (next) => {
         if (!isCurrentPairingConnection(connRef.current, conn)) return;
@@ -189,13 +223,17 @@ export default function AgentBridgePairing({
   }, [enabled, onConnectionState, stopConnection, pageSecure, webkitHttpsBlocked, wsUrl]);
 
   const beginConnectFlow = useCallback(() => {
-    if (webkitHttpsBlocked) return;
+    onBeginFlow?.();
+    if (webkitHttpsBlocked) {
+      setFlowOpen(true);
+      return;
+    }
     setFlowOpen(true);
     setIssue(null);
     setRelayReachable(false);
     setToken('');
     stopConnection();
-  }, [stopConnection, webkitHttpsBlocked]);
+  }, [onBeginFlow, stopConnection, webkitHttpsBlocked]);
 
   const handleRelayDetected = useCallback(() => {
     setRelayReachable(true);
@@ -254,27 +292,54 @@ export default function AgentBridgePairing({
     connRef.current?.rejectPair();
   }, []);
 
+  const handleDialogDismiss = useCallback(() => {
+    if (state === 'pending') handleReject();
+    if (state === 'paired' && link === 'connected') {
+      setFlowOpen(false);
+      return;
+    }
+    disconnectPairing();
+  }, [disconnectPairing, handleReject, link, state]);
+
+  useEffect(() => {
+    if (!flowOpen) return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        handleDialogDismiss();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [flowOpen, handleDialogDismiss]);
+
   if (!enabled) return null;
 
   const paired = state === 'paired';
   const pending = state === 'pending';
-  const advertising = state === 'advertising';
   const browserFamily = typeof navigator !== 'undefined' ? detectBrowserFamily(navigator.userAgent) : 'unknown';
-  const showCode = shouldRevealPairingCode(relayReachable) && Boolean(token);
-  const waitingForRelay = flowOpen && !relayReachable && !webkitHttpsBlocked
+  const stage = pairingDialogStage({
+    flowOpen,
+    webkitHttpsBlocked,
+    relayReachable,
+    pending,
+  });
+  const showPrompt = shouldShowPairingPrompt(stage);
+  const showCode = shouldShowPairingCode(stage) && Boolean(token);
+  const showApproval = shouldShowPairingApproval(stage) && approvalUi.open;
+  const waitingForRelay = stage === 'prompt'
     && issue !== 'origin_rejected' && issue !== 'browser_blocked';
   const promptPreview = pairingPromptPreview();
-
-  const showRelayMissingBanner = issue === 'relay_missing' && !waitingForRelay;
+  const showRelayMissingBanner = issue === 'relay_missing' && !waitingForRelay && flowOpen;
 
   const issueBlock = showRelayMissingBanner ? (
-    <div className="rounded border border-amber-500/40 bg-amber-950/40 px-2 py-2 text-xs text-amber-100 mb-2" data-agent-bridge-error="relay_missing">
+    <div className="rounded border border-amber-500/40 bg-amber-950/40 px-2 py-2 text-ui-xs text-on-dark" data-agent-bridge-error="relay_missing">
       <p className="mb-2">Local relay not found. In your MCP client config, run:</p>
       <div className="flex gap-2 items-center">
-        <code className="flex-1 rounded bg-black/40 px-2 py-1 font-mono text-[11px]">{MCP_START_COMMAND}</code>
+        <code className="flex-1 rounded bg-black/40 px-2 py-1 font-mono text-ui-xs text-on-dark">{MCP_START_COMMAND}</code>
         <button
           type="button"
-          className="shrink-0 rounded bg-chrome-border/90 px-2 py-1 text-white hover:bg-gray-600"
+          className={SECONDARY_BUTTON_CLASS}
           onClick={copyMcpCommand}
           data-ui-action="data-agent-bridge-copy-mcp"
         >
@@ -283,148 +348,116 @@ export default function AgentBridgePairing({
       </div>
     </div>
   ) : issue === 'origin_rejected' ? (
-    <p className="text-xs text-red-300 mb-2" data-agent-bridge-error="origin_rejected">
+    <p className="text-ui-xs text-red-300" data-agent-bridge-error="origin_rejected">
       {pairingProbeUserCopy('origin_rejected')}
     </p>
   ) : issue === 'browser_blocked' ? (
-    <p className="text-xs text-red-300 mb-2" data-agent-bridge-error="browser_blocked">
+    <p className="text-ui-xs text-red-300" data-agent-bridge-error="browser_blocked">
       {browserBlockedHint(browserFamily)}
     </p>
   ) : issue === 'relay_error' ? (
-    <p className="text-xs text-red-300 mb-2" data-agent-bridge-error="relay_error">
+    <p className="text-ui-xs text-red-300" data-agent-bridge-error="relay_error">
       The local relay closed the connection. Restart <code className="font-mono">{MCP_START_COMMAND}</code> and try again.
     </p>
   ) : null;
 
-  const guidedFlow = flowOpen && !webkitHttpsBlocked ? (
-    <div className="space-y-3" data-agent-bridge-guided="">
-      <div className="rounded-md border border-chrome-border/80 bg-chrome-surface/60 px-2 py-2" data-agent-bridge-prompt="">
-        <p className="text-[11px] text-chrome-secondary mb-2">Send this to your AI agent:</p>
-        <p className="text-[11px] text-chrome-text leading-snug mb-2 line-clamp-3" data-agent-bridge-prompt-preview="">
-          {promptPreview}
-        </p>
-        <button
-          type="button"
-          className={CONNECT_AGENT_BUTTON_CLASS}
-          onClick={copyPairingPrompt}
-          data-ui-action="data-agent-bridge-copy-prompt"
-        >
-          {copied === 'prompt' ? 'Copied' : 'Copy prompt'}
-        </button>
-      </div>
-      {waitingForRelay ? (
-        <div
-          className="flex items-center justify-center gap-2 text-xs text-chrome-secondary py-1"
-          data-agent-bridge-waiting-relay=""
-        >
-          <Loader2 size={14} className="animate-spin shrink-0" aria-hidden />
-          {pairingProbeUserCopy(null)}
-        </div>
-      ) : null}
-      {showCode ? (
-        <>
-          <div className="font-mono text-lg tracking-widest text-center py-1" data-agent-bridge-code="">
-            {token}
-          </div>
-          <p className="text-xs text-chrome-secondary text-center mb-1">
-            Send this pairing code to your agent so it can connect.
-          </p>
-          <button
-            type="button"
-            className="w-full rounded border border-chrome-border px-2 py-1.5 text-xs text-white bg-chrome-border/90 hover:bg-gray-600"
-            onClick={copyPairingCode}
-            data-ui-action="data-agent-bridge-copy-code"
-          >
-            {copied === 'code' ? 'Copied' : 'Copy code'}
-          </button>
-          {pending && (
-            <p className="text-xs text-center text-chrome-secondary mb-2" data-agent-bridge-approval-hint="">
-              Approve or deny the connection in the popup.
-            </p>
-          )}
-          {paired && (
-            <div
-              className="flex items-center justify-center gap-1.5 text-emerald-400 text-xs mb-2"
-              data-agent-bridge-paired=""
-            >
-              <PlugZap size={14} aria-hidden />
-              Paired with local client
-            </div>
-          )}
-          {link === 'reconnecting' && !paired && (
-            <p className="text-xs text-amber-300/90 text-center mb-2" data-agent-bridge-link="reconnecting">
-              Connection to the local agent dropped. Reconnecting…
-            </p>
-          )}
-          {link === 'lost' && !paired && (
-            <p className="text-xs text-red-300 text-center mb-2" data-agent-bridge-link="lost">
-              Lost the local agent. Keep this tab open in Chrome; it reconnects when the agent is back.
-            </p>
-          )}
-          {advertising && !pending && !paired && !issue && !link && (
-            <p className="text-xs text-amber-300/90 text-center mb-2" data-agent-bridge-waiting="">
-              Relay connected — waiting for local MCP client with this code…
-            </p>
-          )}
-          <button
-            type="button"
-            className="w-full rounded border border-chrome-border px-2 py-1.5 text-chrome-secondary hover:text-chrome-text"
-            onClick={closeFlow}
-            data-ui-action="data-agent-bridge-disconnect"
-          >
-            Disconnect
-          </button>
-        </>
-      ) : null}
-    </div>
-  ) : null;
-
-  const panel = flowOpen ? (
-    <div
-      className={
-        embedded
-          ? 'mt-2 rounded-md border border-chrome-border bg-chrome-surface/80 p-3 text-sm text-chrome-text'
-          : 'rounded-lg border border-chrome-border bg-chrome-surface/95 p-3 text-sm text-chrome-text shadow-lg backdrop-blur-sm'
-      }
-      data-agent-bridge-panel=""
-    >
+  const dialogBody = (
+    <>
       {issueBlock}
       {webkitHttpsBlocked ? (
         <div
-          className="rounded border border-chrome-border/80 bg-chrome-surface/60 px-2 py-2 text-xs mb-2"
+          className="rounded border border-chrome-border/80 px-2 py-2 text-ui-xs"
           data-agent-bridge-unsupported="webkit-https"
         >
-          <p className="text-chrome-text mb-1.5">Pairing works in Chrome for now.</p>
-          <p className="text-chrome-secondary mb-2">
+          <p className="text-on-dark mb-1.5">Pairing works in Chrome for now.</p>
+          <p className="text-muted-on-dark mb-2">
             Open this page in Chrome on your computer to connect a local MCP client.
           </p>
           <button
             type="button"
-            className="w-full rounded bg-chrome-border/90 px-2 py-1.5 text-white hover:bg-gray-600"
+            className={SECONDARY_BUTTON_CLASS}
             onClick={copyPageLink}
             data-ui-action="data-agent-bridge-copy-link"
           >
             {copied === 'link' ? 'Copied' : 'Copy link'}
           </button>
         </div>
-      ) : null}
-      {guidedFlow}
-    </div>
-  ) : null;
+      ) : (
+        <div className="space-y-3" data-agent-bridge-guided="">
+          {showPrompt ? (
+            <div className="rounded-md border border-chrome-border/80 px-2 py-2" data-agent-bridge-prompt="">
+              <p className="text-ui-xs text-muted-on-dark mb-2">Send this to your AI agent:</p>
+              <p className="text-ui-xs text-on-dark leading-snug mb-2 line-clamp-3" data-agent-bridge-prompt-preview="">
+                {promptPreview}
+              </p>
+              <button
+                type="button"
+                className={CONNECT_AGENT_BUTTON_CLASS}
+                onClick={copyPairingPrompt}
+                data-ui-action="data-agent-bridge-copy-prompt"
+              >
+                {copied === 'prompt' ? 'Copied' : 'Copy prompt'}
+              </button>
+            </div>
+          ) : null}
+          {waitingForRelay ? (
+            <div
+              className="flex items-center justify-center gap-2 text-ui-xs text-muted-on-dark py-1"
+              data-agent-bridge-waiting-relay=""
+            >
+              <Loader2 size={14} className="animate-spin shrink-0" aria-hidden />
+              {pairingProbeUserCopy(null)}
+            </div>
+          ) : null}
+          {showCode ? (
+            <>
+              <div className="font-mono text-lg tracking-widest text-center py-1 text-on-dark" data-agent-bridge-code="">
+                {token}
+              </div>
+              <p className="text-ui-xs text-muted-on-dark text-center">
+                Send this pairing code to your agent so it can connect.
+              </p>
+              <button
+                type="button"
+                className={SECONDARY_BUTTON_CLASS}
+                onClick={copyPairingCode}
+                data-ui-action="data-agent-bridge-copy-code"
+              >
+                {copied === 'code' ? 'Copied' : 'Copy code'}
+              </button>
+            </>
+          ) : null}
+          {showApproval ? (
+            <AgentBridgeApprovalPopup
+              open
+              onAllow={handleApprove}
+              onDeny={handleReject}
+            />
+          ) : null}
+          {link === 'reconnecting' && !paired ? (
+            <p className="text-ui-xs text-amber-300/90 text-center" data-agent-bridge-link="reconnecting">
+              Connection to the local agent dropped. Reconnecting…
+            </p>
+          ) : null}
+          {link === 'lost' && !paired ? (
+            <p className="text-ui-xs text-red-300 text-center" data-agent-bridge-link="lost">
+              Lost the local agent. Keep this tab open in Chrome; it reconnects when the agent is back.
+            </p>
+          ) : null}
+          <button
+            type="button"
+            className={SECONDARY_BUTTON_CLASS}
+            onClick={disconnectPairing}
+            data-ui-action="data-agent-bridge-disconnect"
+          >
+            Disconnect
+          </button>
+        </div>
+      )}
+    </>
+  );
 
-  const chipClass = embedded
-    ? `flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-xs transition-colors ${
-      paired
-        ? 'border border-emerald-500/50 bg-emerald-950/40 text-emerald-300'
-        : 'border border-chrome-border text-chrome-secondary hover:bg-white/5 hover:text-chrome-text'
-    }`
-    : `flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-md backdrop-blur-sm ${
-      paired
-        ? 'border-emerald-500/60 bg-emerald-950/80 text-emerald-300'
-        : 'border-chrome-border bg-chrome-surface/90 text-chrome-secondary hover:text-chrome-text'
-    }`;
-
-  const connectAgentButton = !flowOpen && !webkitHttpsBlocked ? (
+  const connectAgentButton = !flowOpen && !paired ? (
     <button
       type="button"
       className={embedded ? CONNECT_AGENT_BUTTON_CLASS : `${CONNECT_AGENT_BUTTON_CLASS} shadow-md`}
@@ -436,62 +469,56 @@ export default function AgentBridgePairing({
     </button>
   ) : null;
 
-  const chip = !embedded && (flowOpen || paired) ? (
+  const menuDisconnect = paired && !flowOpen ? (
     <button
       type="button"
-      title="Local agent bridge pairing"
-      className={chipClass}
-      onClick={() => (flowOpen ? closeFlow() : beginConnectFlow())}
-      data-ui-action="data-agent-bridge-toggle"
+      className={SECONDARY_BUTTON_CLASS}
+      onClick={disconnectPairing}
+      data-ui-action="data-agent-bridge-disconnect"
       data-agent-bridge-chip=""
     >
-      <span className="inline-flex items-center gap-1.5">
-        {paired ? <PlugZap size={14} aria-hidden /> : <Plug size={14} aria-hidden />}
-        {paired ? 'Agent paired' : 'Connect Agent'}
-      </span>
+      Disconnect
     </button>
   ) : null;
 
-  const portalMode = uiTarget !== undefined;
   const bodyTarget = approvalPopupPortalTarget(typeof document !== 'undefined' ? document : null);
-  const approvalPopup = approvalUi.open && bodyTarget
+  const toastPortal = toastOpen && bodyTarget
     ? createPortal(
-      <AgentBridgeApprovalPopup
-        open
-        embedded={false}
-        onAllow={handleApprove}
-        onDeny={handleReject}
-      />,
+      <div
+        className="fixed top-16 left-1/2 z-[140] -translate-x-1/2"
+        data-agent-bridge-connected-toast=""
+      >
+        <ErrorPopup
+          tone="success"
+          onDismiss={() => setToastOpen(false)}
+        >
+          {AGENT_CONNECTED_TOAST_COPY}
+        </ErrorPopup>
+      </div>,
       bodyTarget,
     )
     : null;
 
-  const embeddedBody = (
+  const dialog = (
+    <AgentBridgePairingDialog open={flowOpen} onDismiss={handleDialogDismiss}>
+      {dialogBody}
+    </AgentBridgePairingDialog>
+  );
+
+  const menuBody = (
     <div className="relative px-3 py-2 space-y-2" data-agent-bridge-pairing="">
       {connectAgentButton}
-      {paired && !flowOpen ? (
-        <button
-          type="button"
-          className={chipClass}
-          onClick={beginConnectFlow}
-          data-ui-action="data-agent-bridge-toggle"
-          data-agent-bridge-chip=""
-        >
-          <span className="inline-flex items-center gap-1.5">
-            <PlugZap size={14} aria-hidden />
-            Agent paired
-          </span>
-        </button>
-      ) : null}
-      {panel}
+      {menuDisconnect}
     </div>
   );
 
+  const portalMode = uiTarget !== undefined;
   if (portalMode) {
     return (
       <>
-        {approvalPopup}
-        {uiTarget ? createPortal(embeddedBody, uiTarget) : null}
+        {dialog}
+        {toastPortal}
+        {uiTarget ? createPortal(menuBody, uiTarget) : null}
       </>
     );
   }
@@ -499,21 +526,22 @@ export default function AgentBridgePairing({
   if (embedded) {
     return (
       <>
-        {approvalPopup}
-        {embeddedBody}
+        {dialog}
+        {toastPortal}
+        {menuBody}
       </>
     );
   }
 
   return (
     <>
-      {approvalPopup}
+      {dialog}
+      {toastPortal}
       <div
         className="fixed bottom-3 right-3 z-[120] flex flex-col items-end gap-1 max-w-[min(100vw-1rem,20rem)]"
         data-agent-bridge-pairing=""
       >
-        {panel}
-        {connectAgentButton || chip}
+        {connectAgentButton || menuDisconnect}
       </div>
     </>
   );

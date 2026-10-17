@@ -2,7 +2,7 @@
  * Shared Playwright harness for window.surfcad scripted playtests.
  * Frontend-only: vite preview on localhost. Never staging or production hosts.
  */
-/* global indexedDB, localStorage, window, document */
+/* global indexedDB, localStorage, sessionStorage, window, document */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -92,10 +92,11 @@ export function startPreviewServer(port, extraEnv = {}) {
 }
 
 /**
- * @param {import('playwright-core').Page} page
- * @param {{ userId: string, assembly: object, parts: Array<{ id: string, script: string }> }} seed
+ * Fake GitHub token so mock vault Save is allowed (never hits the network).
+ * One-time `evaluate` on the current origin — not `addInitScript`, which would
+ * re-plant the token on every later reload and send other playtests onto the
+ * real-GitHub path. Call after the page has landed on the app origin.
  */
-/** Fake GitHub token so mock vault Save is allowed (never hits the network). */
 export async function seedGithubToken(page) {
   await page.evaluate(() => {
     localStorage.setItem('surfcad.github.tokenBundle', JSON.stringify({
@@ -103,8 +104,16 @@ export async function seedGithubToken(page) {
       expiresAt: Date.now() + 3_600_000,
     }));
     localStorage.removeItem('surfcad.github.token');
-    globalThis.sessionStorage?.removeItem('surfcad.github.token');
+    try { sessionStorage.removeItem('surfcad.github.token'); } catch { /* private mode */ }
   });
+}
+
+/** Profile chip in the connected (green) phase — not pending, reauth, or signed-out. */
+export async function waitForSignedInChip(page) {
+  await page.waitForFunction(
+    () => document.querySelector('[data-profile-chip]')?.getAttribute('data-profile-chip-state') === 'signed-in',
+    { timeout: 20000 },
+  );
 }
 
 /** Playtest / MCP demo: auto-approve M1 pairing (never set in normal use). */
@@ -119,17 +128,27 @@ export async function enableAgentBridgeAutoApprove(page) {
  * @param {import('playwright-core').Page} page
  */
 export async function showAgentBridgePairingCode(page) {
+  await seedGithubToken(page);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await waitForBridge(page);
+  await waitForSignedInChip(page);
   const profileChip = page.locator('[data-profile-chip]').first();
   if (await profileChip.count()) {
     await profileChip.click();
   }
   await page.click('[data-ui-action="data-agent-bridge-connect"]');
+  await page.waitForSelector('[data-profile-panel]', { state: 'hidden', timeout: 5000 }).catch(() => {});
+  await page.waitForSelector('[data-agent-bridge-dialog]', { state: 'visible', timeout: 10000 });
   await page.waitForSelector('[data-agent-bridge-waiting-relay]', { state: 'hidden', timeout: 15000 }).catch(() => {});
   await page.waitForSelector('[data-agent-bridge-code]', { state: 'visible', timeout: 15000 });
   const code = await page.locator('[data-agent-bridge-code]').innerText();
   return String(code || '').trim();
 }
 
+/**
+ * @param {import('playwright-core').Page} page
+ * @param {{ userId: string, assembly: object, parts: Array<{ id: string, script: string }> }} seed
+ */
 export async function seedAssembly(page, seed) {
   const { userId, assembly, parts } = seed;
   await page.evaluate(async ({ doc, partRows, uid }) => {
@@ -180,6 +199,9 @@ const EMPTY_CART = Object.freeze({
  * Stub the /api calls the CAD shell hits on boot when auth/me says signed-in.
  * Playwright intercepts before the network (preview has no proxy; dev may hit a
  * real backend and return 401 when cookies do not match the stubbed session).
+ *
+ * Does not plant a GitHub token. Pairing tests that need a connected chip call
+ * `seedGithubToken` once after the first app-origin navigation.
  */
 export async function installApiMocks(page) {
   const fulfill = (route, status, body) => route.fulfill({

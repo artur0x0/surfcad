@@ -38,6 +38,73 @@ export function shouldRevealPairingCode(relayReachable) {
   return relayReachable;
 }
 
+/** @typedef {'closed' | 'unsupported' | 'prompt' | 'code' | 'approval'} PairingDialogStage */
+
+/**
+ * Guided pairing lives in its own dialog, not the profile menu.
+ * Prompt (Copy prompt) only while no relay is up; Allow/Deny replaces the
+ * pairing code — the two never share the dialog.
+ *
+ * @param {{
+ *   flowOpen?: boolean,
+ *   webkitHttpsBlocked?: boolean,
+ *   relayReachable?: boolean,
+ *   pending?: boolean,
+ * }} input
+ * @returns {PairingDialogStage}
+ */
+export function pairingDialogStage(input = {}) {
+  if (!input.flowOpen) return 'closed';
+  if (input.webkitHttpsBlocked) return 'unsupported';
+  if (input.pending) return 'approval';
+  if (input.relayReachable) return 'code';
+  return 'prompt';
+}
+
+/** @param {PairingDialogStage} stage */
+export function shouldShowPairingPrompt(stage) {
+  return stage === 'prompt';
+}
+
+/** @param {PairingDialogStage} stage */
+export function shouldShowPairingCode(stage) {
+  return stage === 'code';
+}
+
+/** @param {PairingDialogStage} stage */
+export function shouldShowPairingApproval(stage) {
+  return stage === 'approval';
+}
+
+/**
+ * After Allow, the dialog closes itself once the link is connected.
+ *
+ * @param {{ paired?: boolean, link?: string | null }} input
+ */
+export function shouldClosePairingDialogOnConnect(input = {}) {
+  return input.paired === true && input.link === 'connected';
+}
+
+export const AGENT_CONNECTED_TOAST_MS = 5000;
+export const AGENT_CONNECTED_TOAST_COPY = 'Agent connected';
+
+/**
+ * @param {{ open?: boolean, hideAt?: number }} state
+ * @param {'show' | 'dismiss' | 'timeout' | 'tick'} action
+ * @param {number} [now]
+ */
+export function agentConnectedToastReducer(state, action, now = 0) {
+  const current = state && typeof state === 'object'
+    ? { open: !!state.open, hideAt: Number(state.hideAt) || 0 }
+    : { open: false, hideAt: 0 };
+  if (action === 'show') return { open: true, hideAt: now + AGENT_CONNECTED_TOAST_MS };
+  if (action === 'dismiss' || action === 'timeout') return { open: false, hideAt: 0 };
+  if (action === 'tick' && current.open && now >= current.hideAt) {
+    return { open: false, hideAt: 0 };
+  }
+  return current;
+}
+
 /**
  * The tab WebSocket lives in AgentBridgePairing, hosted once on App via
  * AgentBridgeHost (above the isMobile split) for the whole time
@@ -49,6 +116,34 @@ export function shouldRevealPairingCode(relayReachable) {
  */
 export function shouldKeepAgentBridgeHostMounted(input) {
   return input.agentBridgeLive === true;
+}
+
+/**
+ * Viewport, PartFeed, and CodeEditor each mount a ProfileChip. A single
+ * close-menu callback would let the last registrant win and an unmount
+ * clear it for every chip, leaving the menu open behind the pairing dialog.
+ *
+ * @returns {{
+ *   register: (fn: unknown) => () => void,
+ *   closeAll: () => void,
+ *   size: () => number,
+ * }}
+ */
+export function createCloseMenuRegistry() {
+  const closers = new Set();
+  return {
+    register(fn) {
+      if (typeof fn !== 'function') return () => {};
+      closers.add(fn);
+      return () => { closers.delete(fn); };
+    },
+    closeAll() {
+      for (const fn of [...closers]) fn();
+    },
+    size() {
+      return closers.size;
+    },
+  };
 }
 
 /**

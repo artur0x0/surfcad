@@ -471,16 +471,41 @@ textarea {
   }
 }
 
-/* Local agent connected: 2px green ring hugging the profile avatar. */
-@keyframes agent-bridge-ring-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+/*
+  Local agent connected: slow-glowing green ring around the profile avatar.
+
+  The ring is a *sibling* of the chip button (not a child). `surface-glass-chip`
+  uses `backdrop-filter`, which in Chrome and Safari creates a containing
+  block that clips overflow to the border-radius — so an inset child ring's
+  box-shadow never painted, and the 2px border sat on the chip's own
+  `border-green-500/50`. A `transform: rotate` on a uniform circle was also a
+  no-op (and WebKit can drop painting of transformed border+shadow children
+  inside a backdrop-filter ancestor). Glow the box-shadow instead; no rotate.
+*/
+@keyframes agent-bridge-ring-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgb(16 185 129 / 0.35),
+      0 0 6px rgb(34 197 94 / 0.45);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgb(52 211 153 / 0.6),
+      0 0 14px rgb(34 197 94 / 0.85);
+  }
 }
-.agent-bridge-profile-ring {
+.agent-bridge-profile-ring,
+.agent-bridge-profile-ring--connected {
+  position: absolute;
+  inset: -3px;
+  border-radius: 9999px;
   box-sizing: border-box;
-  border: 2px solid rgba(52, 211, 153, 0.88);
-  box-shadow: 0 0 4px rgba(34, 197, 94, 0.4);
-  animation: agent-bridge-ring-spin 4s linear infinite;
+  pointer-events: none;
+  border: 2px solid rgb(52 211 153 / 0.95);
+  box-shadow:
+    0 0 0 1px rgb(16 185 129 / 0.35),
+    0 0 10px rgb(34 197 94 / 0.65);
+  animation: agent-bridge-ring-glow 2.8s ease-in-out infinite;
 }
 /* Link dropped, retrying: amber pulse. Gave up for now: steady red. */
 @keyframes agent-bridge-ring-pulse {
@@ -488,31 +513,37 @@ textarea {
   50% { opacity: 0.35; }
 }
 .agent-bridge-profile-ring--reconnecting {
+  border-color: rgb(251 191 36 / 0.9);
   box-shadow:
-    0 0 0 1px rgba(251, 191, 36, 0.7),
-    0 0 10px rgba(245, 158, 11, 0.45);
+    0 0 0 1px rgb(251 191 36 / 0.7),
+    0 0 10px rgb(245 158 11 / 0.45);
   animation: agent-bridge-ring-pulse 1.2s ease-in-out infinite;
 }
 .agent-bridge-profile-ring--lost {
+  border-color: rgb(248 113 113 / 0.95);
   box-shadow:
-    0 0 0 2px rgba(248, 113, 113, 0.8),
-    0 0 8px rgba(239, 68, 68, 0.4);
+    0 0 0 2px rgb(248 113 113 / 0.8),
+    0 0 8px rgb(239 68 68 / 0.4);
   animation: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .agent-bridge-profile-ring {
+  .agent-bridge-profile-ring,
+  .agent-bridge-profile-ring--connected {
     animation: none;
-    border-color: rgba(52, 211, 153, 0.92);
-    box-shadow: 0 0 5px rgba(34, 197, 94, 0.45);
+    border-color: rgb(52 211 153 / 0.95);
+    box-shadow:
+      0 0 0 2px rgb(52 211 153 / 0.7),
+      0 0 10px rgb(34 197 94 / 0.55);
   }
   .agent-bridge-profile-ring--reconnecting {
+    animation: none;
     box-shadow:
-      0 0 0 2px rgba(251, 191, 36, 0.8),
-      0 0 12px rgba(245, 158, 11, 0.35);
+      0 0 0 2px rgb(251 191 36 / 0.8),
+      0 0 12px rgb(245 158 11 / 0.35);
   }
   .agent-bridge-profile-ring--lost {
     box-shadow:
-      0 0 0 2px rgba(248, 113, 113, 0.85),
-      0 0 10px rgba(239, 68, 68, 0.35);
+      0 0 0 2px rgb(248 113 113 / 0.85),
+      0 0 10px rgb(239 68 68 / 0.35);
   }
 }

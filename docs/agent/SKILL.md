@@ -7,8 +7,8 @@ UI text and color: [docs/ui_style_guide.md](../ui_style_guide.md). Shared classe
 ## Pair
 
 1. Open [https://surfcad.com](https://surfcad.com) (or local dev / `?agent=1`).
-2. Open the **profile** chip (top-right AR initials) → **Local agent** → **Show pairing code** (six characters).
-3. Run `npx surfcad-mcp` in your MCP client with that code (`SURFCAD_PAIRING_CODE` or the `pair` tool); click **Allow connection** in the tab.
+2. Open the **profile** chip (top-right AR initials) → **Connect Agent**. The profile menu closes and a pairing popup opens. Copy the setup prompt if the relay is not running yet; once the relay is found the prompt hides and the six-character pairing code appears. Esc or a backdrop tap before pairing cancels the attempt.
+3. Run `npx surfcad-mcp` in your MCP client with that code (`SURFCAD_PAIRING_CODE` or the `pair` tool). **Allow** (green check) / **Deny** (grey X) replace the code in the same popup — they never show together. After Allow the popup closes and a green **Agent connected** toast appears.
 
 **Cursor** (`.cursor/mcp.json` or Settings → MCP):
 

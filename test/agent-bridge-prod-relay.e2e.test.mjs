@@ -14,8 +14,10 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { pickFreePort } from '../scripts/playtest/lib/pickFreePort.mjs';
 import {
   installApiMocks,
+  seedGithubToken,
   startPreviewServer,
   waitForServer,
+  waitForSignedInChip,
 } from '../scripts/playtest/lib/harness.mjs';
 import {
   ensureAgentBridgeRelay,
@@ -73,6 +75,8 @@ async function runBrowserE2E(t, browserType, executablePath) {
     });
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     await installApiMocks(page);
+    await page.goto(`${pageOrigin}/`, { waitUntil: 'domcontentloaded' });
+    await seedGithubToken(page);
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(
       /* eslint-disable no-undef */
@@ -81,6 +85,7 @@ async function runBrowserE2E(t, browserType, executablePath) {
       { timeout: 120000 },
     );
 
+    await waitForSignedInChip(page);
     await page.locator('[data-profile-chip]').first().click();
     await page.click('[data-ui-action="data-agent-bridge-connect"]');
     await page.waitForSelector('[data-agent-bridge-waiting-relay]', { state: 'hidden', timeout: 15000 }).catch(() => {});
@@ -103,7 +108,7 @@ async function runBrowserE2E(t, browserType, executablePath) {
     await page.waitForSelector('[data-ui-action="data-agent-bridge-approve"]', { timeout: 15000 });
     await page.click('[data-ui-action="data-agent-bridge-approve"]');
     await page.waitForSelector(
-      '[data-agent-bridge-paired], [data-agent-bridge-connection-ring="connected"]',
+      '[data-agent-bridge-connected-toast], [data-agent-bridge-connection-ring="connected"]',
       { timeout: 15000 },
     );
 
