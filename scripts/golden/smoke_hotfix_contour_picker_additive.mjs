@@ -192,7 +192,7 @@ return part;
     && (wp.match(/Manifold\.cube\s*\(/g) || []).length === 1
     && !/facesByNormal/.test(wp));
 
-  const docs = readFileSync(join(here, '../../HELPER_FUNCTIONS.md'), 'utf8');
+  const docs = readFileSync(join(here, '../../docs/HELPER_FUNCTIONS.md'), 'utf8');
   check('HELPER notes additive Confirm',
     /when `part` already exists/i.test(docs) && /part\.add\(placeInFrame/.test(docs));
   const palette = readFileSync(join(here, '../../src/utils/helperPaletteSnippets.js'), 'utf8');

@@ -43,6 +43,7 @@
         "demo:mcp": "node scripts/demo/mcp-demo.mjs",
         "golden:mcp-demo": "node scripts/golden/smoke_mcp_demo.mjs",
         "lint": "eslint . --max-warnings 0 --report-unused-disable-directives",
+        "check:md-links": "node scripts/ci/check-md-links.mjs",
         "preview": "vite preview",
         "verify": "node ${CADGEN_HARNESS:-/home/artur/cadgen-workspace}/harness/verify_all.mjs",
         "golden:slice01": "node scripts/golden/smoke_slice01.mjs",

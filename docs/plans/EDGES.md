@@ -14,7 +14,7 @@ Decisions taken (Artur, this round):
 - work **chunked into playtestable PRs**
 
 Companion docs: `.claude/skills/fillets/SKILL.md` (blend kernels — unchanged),
-`docs/fillet-kernel-spike-c.md`, `VALIDATION.md`.
+`docs/fillet-kernel-spike-c.md`, `docs/VALIDATION.md`.
 
 ---
 
