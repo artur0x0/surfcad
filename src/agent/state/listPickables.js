@@ -1,5 +1,6 @@
 import { faceColorKey } from '../../utils/faceColorMatch.js';
 import { edgeKey } from '../../utils/selectEdge.js';
+import { realizeAgentFaceCatalog } from '../faceCatalog.js';
 
 function vec3(value) {
   if (!Array.isArray(value) || value.length < 3) return null;
@@ -23,10 +24,11 @@ function topoFaceToKey(face) {
 }
 
 /**
- * @param {Array<{ at: number[], n: number[], area: number, tris?: number[] }>} fingerprints
+ * @param {Array<{ faceId?: string, type?: string, at: number[], n: number[], area: number, tris?: number[], axis?: object }>} catalog
+ *   rows from `agentFaceCatalog`
  */
-export function buildFaceList(fingerprints) {
-  const list = Array.isArray(fingerprints) ? fingerprints : [];
+export function buildFaceList(catalog) {
+  const list = realizeAgentFaceCatalog(catalog);
   const faces = [];
   for (const face of list) {
     const key = serializeFaceKey(face);
@@ -34,19 +36,23 @@ export function buildFaceList(fingerprints) {
     const center = vec3(face.at);
     const normal = vec3(face.n);
     const tris = Array.isArray(face.tris) ? face.tris : [];
-    const row = {
-      key,
-      center,
-      normal,
-      area: Number(face.area),
-      triangleCount: tris.length,
-    };
+    const row = {};
+    if (face.faceId) row.id = face.faceId;
+    row.type = face.type || 'planar';
+    row.kind = row.type;
+    row.key = key;
+    row.center = center;
+    row.normal = normal;
+    row.area = Number(face.area);
+    row.triangleCount = tris.length;
     const axisAt = vec3(face.axis?.at);
     const axisDir = vec3(face.axis?.dir);
     const axisRadius = Number(face.axis?.radius);
     if (axisAt && axisDir && axisRadius > 0) {
+      row.type = 'cylindrical';
       row.kind = 'cylindrical';
       row.axis = { at: axisAt, dir: axisDir, radius: axisRadius };
+      row.radius = axisRadius;
     }
     faces.push(row);
   }

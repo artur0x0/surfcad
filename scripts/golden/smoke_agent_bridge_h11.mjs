@@ -217,6 +217,82 @@ check('joint_commit', committed.ok === true, JSON.stringify(committed));
 const undone = await agentCall(page, 'undo', {});
 check('undo assembly joint', undone.ok === true && undone.result?.kind === 'assembly', JSON.stringify(undone));
 
+// Kettle: a handle with two pegs (bosses) and a body with two sockets.
+const KETTLE_BODY = `const body = Manifold.cube([40, 60, 90], true);
+const s1 = Manifold.cylinder(30, 4, 4, 48).rotate([0, 90, 0]).translate([0, 0, 25]);
+const s2 = Manifold.cylinder(30, 4, 4, 48).rotate([0, 90, 0]).translate([0, 0, -25]);
+let part = body.subtract(s1).subtract(s2);
+return part;
+`;
+const KETTLE_HANDLE = `const grip = Manifold.cube([10, 12, 80], true).translate([30, 0, 0]);
+const peg1 = Manifold.cylinder(20, 4, 4, 48).rotate([0, 90, 0]).translate([5, 0, 25]);
+const peg2 = Manifold.cylinder(20, 4, 4, 48).rotate([0, 90, 0]).translate([5, 0, -25]);
+let part = grip.add(peg1).add(peg2);
+return part;
+`;
+
+async function partWithScript(name, source) {
+  await agentCall(page, 'create_part', { name });
+  const id = (await agentCall(page, 'parts', {})).result?.activeId;
+  const current = (await agentCall(page, 'get_script', {})).result?.source || '';
+  const header = current.split('\n').find((line) => line.startsWith('// @surf-id')) || '';
+  await agentCall(page, 'set_script', { source: header ? `${header}\n${source}` : source });
+  const ran = await agentCall(page, 'run', {});
+  check(`${name} runs`, ran.ok === true && ran.result?.ok === true, JSON.stringify(ran.result?.error || ''));
+  return id;
+}
+
+function pegFaces(faces, z) {
+  return (faces || []).filter((row) => row.type === 'cylindrical'
+    && Math.abs((row.radius ?? 0) - 4) < 0.1
+    && Math.abs(Math.abs(row.axis?.dir?.[0] ?? 0) - 1) < 1e-3
+    && Math.abs((row.axis?.at?.[2] ?? 0) - z) < 0.1);
+}
+
+function capFaces(faces, x, z) {
+  return (faces || []).filter((row) => row.type === 'planar'
+    && Math.abs(Math.abs(row.normal?.[0] ?? 0) - 1) < 1e-3
+    && Math.abs(row.center[0] - x) < 0.1
+    && Math.abs(row.center[2] - z) < 0.1);
+}
+
+const kettleBodyId = await partWithScript('Kettle body', KETTLE_BODY);
+const kettleBodyFaces = (await agentCall(page, 'list_faces', {})).result?.faces || [];
+const kettleHandleId = await partWithScript('Kettle handle', KETTLE_HANDLE);
+const kettleHandleFaces = (await agentCall(page, 'list_faces', {})).result?.faces || [];
+for (const z of [25, -25]) {
+  check(`socket wall z=${z} listed`, pegFaces(kettleBodyFaces, z).length === 1);
+  check(`socket floor z=${z} listed`, capFaces(kettleBodyFaces, 0, z).length === 1);
+  check(`peg wall z=${z} listed`, pegFaces(kettleHandleFaces, z).length === 1);
+  check(`peg cap z=${z} listed`, capFaces(kettleHandleFaces, 5, z).length === 1);
+}
+check('every face row has an id', [...kettleBodyFaces, ...kettleHandleFaces].every((row) => /^f\d+$/.test(row.id || '')));
+
+await agentCall(page, 'run', {});
+const rerunFaces = (await agentCall(page, 'list_faces', {})).result?.faces || [];
+const faceShape = (row) => `${row.id}:${row.type}:${row.center.map((v) => v.toFixed(3)).join(',')}`;
+check(
+  'face ids stable across a rerun',
+  rerunFaces.length === kettleHandleFaces.length
+    && rerunFaces.map(faceShape).join('|') === kettleHandleFaces.map(faceShape).join('|'),
+);
+
+const socketTop = pegFaces(kettleBodyFaces, 25)[0];
+const pegTop = pegFaces(kettleHandleFaces, 25)[0];
+await agentCall(page, 'joint_cancel', {});
+await agentCall(page, 'joint_open', {});
+const kettlePicked = await agentCall(page, 'joint_pick', {
+  picks: [
+    { part_id: kettleBodyId, face_id: socketTop?.id, key: socketTop?.key },
+    { part_id: kettleHandleId, face_id: pegTop?.id, key: pegTop?.key },
+  ],
+});
+check('joint_pick by face_id', kettlePicked.ok === true && kettlePicked.result?.count === 2, JSON.stringify(kettlePicked));
+const kettleParams = await agentCall(page, 'joint_set_params', { type: 'concentric' });
+check('concentric type', kettleParams.result?.type === 'concentric', JSON.stringify(kettleParams));
+const kettleCommitted = await agentCall(page, 'joint_commit', {});
+check('concentric joint_commit', kettleCommitted.ok === true && !!kettleCommitted.result?.jointId, JSON.stringify(kettleCommitted));
+
 await shot(page, 'after-undo', 1280);
 await shot(page, 'after-undo', 390);
 

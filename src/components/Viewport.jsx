@@ -415,6 +415,7 @@ import {
   featureGraphFor,
   pruneSolidCacheIn,
   releaseGeometryIn,
+  liveSolidEntryForGeometry,
   solidEntryForGeometry,
 } from '../utils/partSolidCache';
 import {
@@ -540,7 +541,7 @@ import { createSketchPickHandlers } from '../agent/pick/sketchViewportPicks.js';
 import { planePatchFromArgs } from '../agent/sketchPlaneAgent.js';
 import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from '../agent/state/listPickables.js';
 import { describeJointPick } from '../agent/jointPickDescribe.js';
-import { catalogFingerprintsForAgent } from '../agent/faceCatalog.js';
+import { agentFaceCatalog } from '../agent/faceCatalog.js';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -11853,24 +11854,34 @@ const Viewport = forwardRef(({
     return attr?.array?.length ? attr.array : null;
   };
 
-  agentListFacesRef.current = ({ partId } = {}) => {
+  const agentCatalogForPart = (partId) => {
     const geom = meshGeometryForAgentPart(partId);
     if (!geom) return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
-    const fingerprints = catalogFingerprintsForAgent(geom, faceIDsForAgentPart(partId, geom));
-    const listed = buildFaceList(fingerprints);
+    const faceIDs = faceIDsForAgentPart(partId, geom);
+    const cacheEntry = liveSolidEntryForGeometry(solidCacheRef.current, geom);
+    return { geom, faceIDs, catalog: agentFaceCatalog(geom, faceIDs, cacheEntry) };
+  };
+
+  agentListFacesRef.current = ({ partId } = {}) => {
+    const resolved = agentCatalogForPart(partId);
+    if (resolved.error) return resolved;
+    const listed = buildFaceList(resolved.catalog);
     return {
       partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
       ...listed,
     };
   };
 
-  agentDescribeJointPickRef.current = ({ partId, key, kind } = {}) => {
-    const geom = meshGeometryForAgentPart(partId);
+  agentDescribeJointPickRef.current = ({ partId, key, kind, faceId } = {}) => {
+    const resolved = agentCatalogForPart(partId);
+    if (resolved.error) return resolved;
     return describeJointPick({
       key,
       kind,
-      geometry: geom,
-      faceIDs: faceIDsForAgentPart(partId, geom),
+      faceId,
+      geometry: resolved.geom,
+      faceIDs: resolved.faceIDs,
+      catalog: resolved.catalog,
     });
   };
 

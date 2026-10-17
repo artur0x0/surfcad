@@ -993,7 +993,7 @@
     },
     {
       "name": "list_faces",
-      "description": "Face fingerprints for the active or named part mesh.",
+      "description": "Every pickable face on the active or named part mesh (one row per face a viewport click selects, all bodies): id (f0, f1, …), type (planar, cylindrical, curved), center, normal, axis and radius for cylinders, area, and key. The id is the patch index on this mesh and is only valid until the next remesh; a rerun of the same script keeps every id. Pass the key with the id to joint_pick so a stale id cannot silently pick another face.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -10428,13 +10428,18 @@
     },
     {
       "name": "joint_pick",
-      "description": "Feed face picks on parts into the joint card.",
+      "description": "Feed face picks on parts into the joint card. Pass face_id from list_faces together with the key from that row (ids are only valid until the next remesh; a stale pair returns unknown_face). A cylindrical face becomes an axis pick, as a viewport tap does.",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "part_id": {
             "type": "string"
+          },
+          "face_id": {
+            "type": "string",
+            "pattern": "^f[0-9]+$",
+            "description": "Face id from list_faces on that part (e.g. f7). Valid only until the next remesh; pass the key from the same list_faces row with the id."
           },
           "key": {
             "type": "object",
@@ -10486,12 +10491,16 @@
               "type": "object",
               "additionalProperties": false,
               "required": [
-                "part_id",
-                "key"
+                "part_id"
               ],
               "properties": {
                 "part_id": {
                   "type": "string"
+                },
+                "face_id": {
+                  "type": "string",
+                  "pattern": "^f[0-9]+$",
+                  "description": "Face id from list_faces on that part (e.g. f7). Valid only until the next remesh; pass the key from the same list_faces row with the id."
                 },
                 "key": {
                   "type": "object",
@@ -10551,6 +10560,9 @@
         "bad_args",
         "unknown_part",
         "unknown_face",
+        "ambiguous_face",
+        "pick_failed",
+        "no_mesh",
         "internal"
       ],
       "mutates": false,
@@ -10562,34 +10574,36 @@
         "picks": [
           {
             "part_id": "local:base",
+            "face_id": "f4",
             "key": {
               "at": [
                 0,
                 0,
-                10
+                5
               ],
               "n": [
                 0,
                 0,
                 1
               ],
-              "area": 2000
+              "area": 400
             }
           },
           {
             "part_id": "local:pin",
+            "face_id": "f2",
             "key": {
               "at": [
                 0,
                 0,
-                10
+                0
               ],
               "n": [
                 0,
                 0,
-                -1
+                1
               ],
-              "area": 200
+              "area": 50.27
             }
           }
         ]

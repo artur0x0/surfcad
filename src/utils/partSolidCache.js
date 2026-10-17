@@ -229,6 +229,15 @@ export function pruneSolidCacheIn(cache, pickMesh, extras) {
 /** Parts above this many triangles are not pre-built in idle time. */
 export const PREWARM_MAX_TRIS = 40000;
 
+/** The live cache entry that owns this geometry, or null. */
+export function liveSolidEntryForGeometry(cache, geom) {
+  if (!geom || !cache?.entries) return null;
+  for (const entry of cache.entries.values()) {
+    if (entry.geometry === geom) return entry;
+  }
+  return null;
+}
+
 /** The cache entry (and its mesh data) that owns this geometry, or null. */
 export function solidEntryForGeometry(cache, geom) {
   if (!geom) return null;

@@ -14,6 +14,25 @@ test('buildFaceList returns keys agents can pass to select_faces', () => {
   assert.equal(out.faces[0].triangleCount, 3);
 });
 
+test('buildFaceList carries the face id, type, and cylinder axis and radius', () => {
+  const out = buildFaceList([
+    { faceId: 'f0', type: 'planar', at: [0, 0, 10], n: [0, 0, 1], area: 100, tris: [0, 1] },
+    {
+      faceId: 'f1',
+      type: 'cylindrical',
+      at: [0, 0, 5],
+      n: [1, 0, 0],
+      area: 250,
+      tris: [2, 3, 4, 5],
+      axis: { at: [0, 0, 5], dir: [0, 0, 1], radius: 4 },
+    },
+  ]);
+  assert.deepEqual(out.faces.map((row) => [row.id, row.type]), [['f0', 'planar'], ['f1', 'cylindrical']]);
+  assert.equal(out.faces[0].radius, undefined);
+  assert.equal(out.faces[1].radius, 4);
+  assert.deepEqual(out.faces[1].axis.dir, [0, 0, 1]);
+});
+
 test('buildEdgeList attaches adjacent face keys when tri0/tri1 are present', () => {
   const fingerprints = [
     { at: [20, 0, 0], n: [1, 0, 0], area: 600, tris: [0] },
