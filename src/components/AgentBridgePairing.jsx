@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Loader2, Plug, PlugZap } from 'lucide-react';
 import { createPairingToken } from '../agent/ws/pairingToken.js';
 import { createAgentBridgeTabConnection } from '../agent/ws/tabConnection.js';
+import { isAgentBridgeAutoApprove } from '../agent/ws/autoApprove.js';
 import { defaultAgentBridgeWsUrl } from '../agent/ws/wsUrl.js';
 import { track } from '../utils/analytics.js';
 import {
@@ -14,13 +16,16 @@ import { AGENT_PAIRING_PROMPT, pairingPromptPreview } from '../agent/ws/pairingP
 import { probeRelayWebSocket } from '../agent/ws/relayProbe.js';
 import { createRelayPoller, DEFAULT_RELAY_POLL_MS } from '../agent/ws/relayPoller.js';
 import {
+  disposePairingHost,
+  isCurrentPairingConnection,
   isRelayTabConnected,
+  pairingProbeUserCopy,
   shouldPollRelay,
   shouldRevealPairingCode,
 } from '../agent/ws/pairingFlow.js';
 import { CONNECT_AGENT_BUTTON_CLASS } from './agentBridgeConnectButton.js';
 import AgentBridgeApprovalPopup from './AgentBridgeApprovalPopup.jsx';
-import { approvalPopupReducer } from '../agent/ws/agentBridgeChrome.js';
+import { approvalPopupPortalTarget, approvalPopupReducer } from '../agent/ws/agentBridgeChrome.js';
 
 /**
  * Local WebSocket pairing for MCP / stdio clients (M1). Shown only when the
@@ -31,6 +36,8 @@ export default function AgentBridgePairing({
   enabled,
   embedded = false,
   onConnectionChange = null,
+  /** When passed (even as null), UI portals into this node and stays mounted without it. */
+  uiTarget = undefined,
 }) {
   const [flowOpen, setFlowOpen] = useState(false);
   const [token, setToken] = useState('');
@@ -39,16 +46,19 @@ export default function AgentBridgePairing({
   const [copied, setCopied] = useState(null);
   const [relayReachable, setRelayReachable] = useState(false);
   const [approvalUi, setApprovalUi] = useState({ open: false });
+  const [link, setLink] = useState(null);
   const connRef = useRef(null);
   const pollerRef = useRef(null);
   const flowOpenRef = useRef(flowOpen);
   const relayReachableRef = useRef(relayReachable);
   const stateRef = useRef(state);
+  const issueRef = useRef(issue);
   const wsUrl = useMemo(() => defaultAgentBridgeWsUrl(), []);
 
   flowOpenRef.current = flowOpen;
   relayReachableRef.current = relayReachable;
   stateRef.current = state;
+  issueRef.current = issue;
 
   const pageSecure = typeof window !== 'undefined' && window.location?.protocol === 'https:';
   const webkitHttpsBlocked = typeof window !== 'undefined' && shouldPreemptWebKitHttpsPairing({
@@ -58,10 +68,10 @@ export default function AgentBridgePairing({
   });
 
   const stopConnection = useCallback(() => {
-    connRef.current?.disconnect();
-    connRef.current = null;
+    connRef.current = disposePairingHost({ conn: connRef.current }).conn;
     setState('idle');
     setIssue(null);
+    setLink(null);
   }, []);
 
   const stopPolling = useCallback(() => {
@@ -83,6 +93,12 @@ export default function AgentBridgePairing({
     }
   }, [enabled, closeFlow]);
 
+  useEffect(() => () => {
+    const next = disposePairingHost({ conn: connRef.current, poller: pollerRef.current });
+    connRef.current = next.conn;
+    pollerRef.current = next.poller;
+  }, []);
+
   useEffect(() => {
     if (state === 'paired') {
       track('local_agent_paired');
@@ -90,8 +106,8 @@ export default function AgentBridgePairing({
   }, [state]);
 
   useEffect(() => {
-    onConnectionChange?.(state === 'paired');
-  }, [onConnectionChange, state]);
+    onConnectionChange?.(link);
+  }, [onConnectionChange, link]);
 
   useEffect(() => {
     if (state === 'pending') {
@@ -135,7 +151,8 @@ export default function AgentBridgePairing({
     void copyText(token, 'code');
   }, [copyText, token]);
 
-  const onConnectionState = useCallback((next) => {
+  const onConnectionState = useCallback((next, source) => {
+    if (!isCurrentPairingConnection(connRef.current, source)) return;
     setState(next);
     if (isRelayTabConnected(next)) {
       setRelayReachable(true);
@@ -154,8 +171,16 @@ export default function AgentBridgePairing({
       url: wsUrl,
       token: code,
       call: (name, args) => window.surfcad.call(name, args),
-      onState: onConnectionState,
-      onIssue: setIssue,
+      onState: (next) => onConnectionState(next, conn),
+      onIssue: (issue) => {
+        if (!isCurrentPairingConnection(connRef.current, conn)) return;
+        setIssue(issue);
+      },
+      onLink: (next) => {
+        if (!isCurrentPairingConnection(connRef.current, conn)) return;
+        setLink(next);
+      },
+      isAutoApprove: isAgentBridgeAutoApprove,
       pageSecure,
       suppressMissingRelayIssue: true,
     });
@@ -186,7 +211,7 @@ export default function AgentBridgePairing({
       stopPolling();
       return undefined;
     }
-    const polling = shouldPollRelay({ flowOpen, relayReachable, state });
+    const polling = shouldPollRelay({ flowOpen, relayReachable, state, issue });
     if (!polling) {
       stopPolling();
       return undefined;
@@ -198,15 +223,20 @@ export default function AgentBridgePairing({
         flowOpen: flowOpenRef.current,
         relayReachable: relayReachableRef.current,
         state: stateRef.current,
+        issue: issueRef.current,
       }),
-      probe: () => probeRelayWebSocket(wsUrl),
+      probe: () => probeRelayWebSocket(wsUrl, { pageSecure }),
+      onIssue: (next) => {
+        issueRef.current = next;
+        setIssue(next);
+      },
       onDetected: handleRelayDetected,
     });
     pollerRef.current.start();
     return () => {
       stopPolling();
     };
-  }, [flowOpen, handleRelayDetected, relayReachable, state, stopPolling, webkitHttpsBlocked, wsUrl]);
+  }, [flowOpen, handleRelayDetected, issue, pageSecure, relayReachable, state, stopPolling, webkitHttpsBlocked, wsUrl]);
 
   useEffect(() => {
     if (flowOpen && relayReachable && state === 'idle' && token && connRef.current) {
@@ -231,7 +261,8 @@ export default function AgentBridgePairing({
   const advertising = state === 'advertising';
   const browserFamily = typeof navigator !== 'undefined' ? detectBrowserFamily(navigator.userAgent) : 'unknown';
   const showCode = shouldRevealPairingCode(relayReachable) && Boolean(token);
-  const waitingForRelay = flowOpen && !relayReachable && !webkitHttpsBlocked;
+  const waitingForRelay = flowOpen && !relayReachable && !webkitHttpsBlocked
+    && issue !== 'origin_rejected' && issue !== 'browser_blocked';
   const promptPreview = pairingPromptPreview();
 
   const showRelayMissingBanner = issue === 'relay_missing' && !waitingForRelay;
@@ -253,7 +284,7 @@ export default function AgentBridgePairing({
     </div>
   ) : issue === 'origin_rejected' ? (
     <p className="text-xs text-red-300 mb-2" data-agent-bridge-error="origin_rejected">
-      This page origin was rejected by the local relay. Open https://surfcad.com (not a copy) and try again.
+      {pairingProbeUserCopy('origin_rejected')}
     </p>
   ) : issue === 'browser_blocked' ? (
     <p className="text-xs text-red-300 mb-2" data-agent-bridge-error="browser_blocked">
@@ -268,7 +299,7 @@ export default function AgentBridgePairing({
   const guidedFlow = flowOpen && !webkitHttpsBlocked ? (
     <div className="space-y-3" data-agent-bridge-guided="">
       <div className="rounded-md border border-chrome-border/80 bg-chrome-surface/60 px-2 py-2" data-agent-bridge-prompt="">
-        <p className="text-[11px] text-chrome-text-secondary mb-2">Send this to your AI agent:</p>
+        <p className="text-[11px] text-chrome-secondary mb-2">Send this to your AI agent:</p>
         <p className="text-[11px] text-chrome-text leading-snug mb-2 line-clamp-3" data-agent-bridge-prompt-preview="">
           {promptPreview}
         </p>
@@ -283,11 +314,11 @@ export default function AgentBridgePairing({
       </div>
       {waitingForRelay ? (
         <div
-          className="flex items-center justify-center gap-2 text-xs text-chrome-text-secondary py-1"
+          className="flex items-center justify-center gap-2 text-xs text-chrome-secondary py-1"
           data-agent-bridge-waiting-relay=""
         >
           <Loader2 size={14} className="animate-spin shrink-0" aria-hidden />
-          Waiting for relay…
+          {pairingProbeUserCopy(null)}
         </div>
       ) : null}
       {showCode ? (
@@ -295,7 +326,7 @@ export default function AgentBridgePairing({
           <div className="font-mono text-lg tracking-widest text-center py-1" data-agent-bridge-code="">
             {token}
           </div>
-          <p className="text-xs text-chrome-text-secondary text-center mb-1">
+          <p className="text-xs text-chrome-secondary text-center mb-1">
             Send this pairing code to your agent so it can connect.
           </p>
           <button
@@ -307,7 +338,7 @@ export default function AgentBridgePairing({
             {copied === 'code' ? 'Copied' : 'Copy code'}
           </button>
           {pending && (
-            <p className="text-xs text-center text-chrome-text-secondary mb-2" data-agent-bridge-approval-hint="">
+            <p className="text-xs text-center text-chrome-secondary mb-2" data-agent-bridge-approval-hint="">
               Approve or deny the connection in the popup.
             </p>
           )}
@@ -320,14 +351,24 @@ export default function AgentBridgePairing({
               Paired with local client
             </div>
           )}
-          {advertising && !pending && !paired && !issue && (
+          {link === 'reconnecting' && !paired && (
+            <p className="text-xs text-amber-300/90 text-center mb-2" data-agent-bridge-link="reconnecting">
+              Connection to the local agent dropped. Reconnecting…
+            </p>
+          )}
+          {link === 'lost' && !paired && (
+            <p className="text-xs text-red-300 text-center mb-2" data-agent-bridge-link="lost">
+              Lost the local agent. Keep this tab open in Chrome; it reconnects when the agent is back.
+            </p>
+          )}
+          {advertising && !pending && !paired && !issue && !link && (
             <p className="text-xs text-amber-300/90 text-center mb-2" data-agent-bridge-waiting="">
               Relay connected — waiting for local MCP client with this code…
             </p>
           )}
           <button
             type="button"
-            className="w-full rounded border border-chrome-border px-2 py-1.5 text-chrome-text-secondary hover:text-chrome-text"
+            className="w-full rounded border border-chrome-border px-2 py-1.5 text-chrome-secondary hover:text-chrome-text"
             onClick={closeFlow}
             data-ui-action="data-agent-bridge-disconnect"
           >
@@ -354,7 +395,7 @@ export default function AgentBridgePairing({
           data-agent-bridge-unsupported="webkit-https"
         >
           <p className="text-chrome-text mb-1.5">Pairing works in Chrome for now.</p>
-          <p className="text-chrome-text-secondary mb-2">
+          <p className="text-chrome-secondary mb-2">
             Open this page in Chrome on your computer to connect a local MCP client.
           </p>
           <button
@@ -375,12 +416,12 @@ export default function AgentBridgePairing({
     ? `flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-xs transition-colors ${
       paired
         ? 'border border-emerald-500/50 bg-emerald-950/40 text-emerald-300'
-        : 'border border-chrome-border text-chrome-text-secondary hover:bg-white/5 hover:text-chrome-text'
+        : 'border border-chrome-border text-chrome-secondary hover:bg-white/5 hover:text-chrome-text'
     }`
     : `flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-md backdrop-blur-sm ${
       paired
         ? 'border-emerald-500/60 bg-emerald-950/80 text-emerald-300'
-        : 'border-chrome-border bg-chrome-surface/90 text-chrome-text-secondary hover:text-chrome-text'
+        : 'border-chrome-border bg-chrome-surface/90 text-chrome-secondary hover:text-chrome-text'
     }`;
 
   const connectAgentButton = !flowOpen && !webkitHttpsBlocked ? (
@@ -411,36 +452,56 @@ export default function AgentBridgePairing({
     </button>
   ) : null;
 
-  const approvalPopup = (
-    <AgentBridgeApprovalPopup
-      open={approvalUi.open}
-      embedded={embedded}
-      onAllow={handleApprove}
-      onDeny={handleReject}
-    />
+  const portalMode = uiTarget !== undefined;
+  const bodyTarget = approvalPopupPortalTarget(typeof document !== 'undefined' ? document : null);
+  const approvalPopup = approvalUi.open && bodyTarget
+    ? createPortal(
+      <AgentBridgeApprovalPopup
+        open
+        embedded={false}
+        onAllow={handleApprove}
+        onDeny={handleReject}
+      />,
+      bodyTarget,
+    )
+    : null;
+
+  const embeddedBody = (
+    <div className="relative px-3 py-2 space-y-2" data-agent-bridge-pairing="">
+      {connectAgentButton}
+      {paired && !flowOpen ? (
+        <button
+          type="button"
+          className={chipClass}
+          onClick={beginConnectFlow}
+          data-ui-action="data-agent-bridge-toggle"
+          data-agent-bridge-chip=""
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <PlugZap size={14} aria-hidden />
+            Agent paired
+          </span>
+        </button>
+      ) : null}
+      {panel}
+    </div>
   );
+
+  if (portalMode) {
+    return (
+      <>
+        {approvalPopup}
+        {uiTarget ? createPortal(embeddedBody, uiTarget) : null}
+      </>
+    );
+  }
 
   if (embedded) {
     return (
-      <div className="relative px-3 py-2 space-y-2" data-agent-bridge-pairing="">
+      <>
         {approvalPopup}
-        {connectAgentButton}
-        {paired && !flowOpen ? (
-          <button
-            type="button"
-            className={chipClass}
-            onClick={beginConnectFlow}
-            data-ui-action="data-agent-bridge-toggle"
-            data-agent-bridge-chip=""
-          >
-            <span className="inline-flex items-center gap-1.5">
-              <PlugZap size={14} aria-hidden />
-              Agent paired
-            </span>
-          </button>
-        ) : null}
-        {panel}
-      </div>
+        {embeddedBody}
+      </>
     );
   }
 

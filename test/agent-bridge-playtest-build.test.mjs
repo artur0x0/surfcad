@@ -20,6 +20,7 @@ import {
   resetAgentBridgeRelayCache,
   stopAgentBridgeRelay,
 } from '../packages/surfcad-mcp/src/bridge/relayServer.mjs';
+import { withViteDistLock } from './lib/viteDistLock.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST_ASSETS = join(ROOT, 'dist/assets');
@@ -54,23 +55,25 @@ function waitOpen(ws) {
   });
 }
 
-test('production dist bundle must not contain playtest auto-approve storage key', (t) => {
-  if (!existsSync(join(ROOT, 'dist/index.html'))) {
-    t.skip('dist/ missing — run `npm run build` first');
-    return;
-  }
-  const hits = distJsFiles().filter((name) => readFileSync(join(DIST_ASSETS, name), 'utf8').includes(FORBIDDEN));
-  assert.deepEqual(
-    hits,
-    [],
-    `forbidden string "${FORBIDDEN}" found in: ${hits.join(', ') || '(none)'}`,
-  );
+test('production dist bundle must not contain playtest auto-approve storage key', async () => {
+  await withViteDistLock(async () => {
+    const result = npmRun('build');
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const hits = distJsFiles().filter((name) => readFileSync(join(DIST_ASSETS, name), 'utf8').includes(FORBIDDEN));
+    assert.deepEqual(
+      hits,
+      [],
+      `forbidden string "${FORBIDDEN}" found in: ${hits.join(', ') || '(none)'}`,
+    );
+  });
 });
 
-test('playtest build includes auto-approve storage key', () => {
-  const result = npmRun('build:playtest');
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.equal(distContainsForbiddenKey(), true, 'expected playtest dist to retain auto-approve hook');
+test('playtest build includes auto-approve storage key', async () => {
+  await withViteDistLock(async () => {
+    const result = npmRun('build:playtest');
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(distContainsForbiddenKey(), true, 'expected playtest dist to retain auto-approve hook');
+  });
 });
 
 test('localStorage auto-approve flag is ignored in production build', { timeout: 180_000 }, async (t) => {
@@ -82,11 +85,14 @@ test('localStorage auto-approve flag is ignored in production build', { timeout:
     return;
   }
 
+  await withViteDistLock(async () => {
   const prodBuild = npmRun('build');
   assert.equal(prodBuild.status, 0, prodBuild.stderr || prodBuild.stdout);
   assert.equal(distContainsForbiddenKey(), false, 'production build must not ship auto-approve key');
 
-  const port = Number(process.env.SMOKE_PORT || 4193);
+  const port = process.env.SMOKE_PORT
+    ? Number(process.env.SMOKE_PORT)
+    : await pickFreePort();
   const relayPort = await pickFreePort();
   const relayUrl = `ws://127.0.0.1:${relayPort}`;
   const baseUrl = `http://127.0.0.1:${port}/?agent=1&agentBridgeWs=${encodeURIComponent(relayUrl)}`;
@@ -157,4 +163,5 @@ test('localStorage auto-approve flag is ignored in production build', { timeout:
     try { await stopAgentBridgeRelay(relay); } catch { /* noop */ }
     resetAgentBridgeRelayCache(relayPort);
   }
+  });
 });

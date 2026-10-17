@@ -7,11 +7,30 @@ import { PAIR_MSG } from '../relayMessages.mjs';
 import { isAllowedHttpOrigin, isLoopbackAddress } from './localAddress.mjs';
 
 /**
- * @typedef {{ send: (data: string) => void, close: () => void, on: (event: string, cb: (...args: unknown[]) => void) => void, remoteAddress?: string, origin?: string }} RelaySocket
+ * @typedef {{
+ *   send: (data: string) => void,
+ *   close: () => void,
+ *   on: (event: string, cb: (...args: unknown[]) => void) => void,
+ *   ping?: () => void,
+ *   terminate?: () => void,
+ *   remoteAddress?: string,
+ *   origin?: string,
+ * }} RelaySocket
+ * @typedef {'info' | 'warn'} RelayLogLevel
  */
 
+/** Opaque secrets (tab key, resume key) are random URL-safe strings. */
+const SECRET_RE = /^[A-Za-z0-9_-]{16,128}$/;
+
+/** How long a dropped tab keeps its pairing code so a squatter cannot take it. */
+export const DEFAULT_TAB_RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
+
 function sendJson(socket, payload) {
-  socket.send(JSON.stringify(payload));
+  try {
+    socket.send(JSON.stringify(payload));
+  } catch {
+    /* socket already gone */
+  }
 }
 
 function parseMessage(raw) {
@@ -25,6 +44,26 @@ function parseMessage(raw) {
   }
 }
 
+function secretOrNull(value) {
+  return typeof value === 'string' && SECRET_RE.test(value) ? value : null;
+}
+
+/**
+ * Logs must never carry a full pairing code: keep the first two characters.
+ * @param {string} token
+ */
+export function redactToken(token) {
+  const t = String(token || '');
+  if (!t) return '-';
+  return `${t.slice(0, 2)}${'*'.repeat(Math.max(2, t.length - 2))}`;
+}
+
+function closeReason(code, reason) {
+  const text = reason == null ? '' : String(reason);
+  if (code == null) return 'socket_closed';
+  return text ? `socket_closed code=${code} (${text.slice(0, 80)})` : `socket_closed code=${code}`;
+}
+
 /**
  * @param {RelaySocket} socket
  * @param {string} code
@@ -36,29 +75,93 @@ function refuse(socket, code, message) {
 }
 
 /**
- * @param {{ onLog?: (line: string) => void }} [opts]
+ * @param {{ onLog?: (line: string, level: RelayLogLevel) => void }} [opts]
  */
 export function createAgentBridgeRelayHub(opts = {}) {
-  const log = (line) => { opts.onLog?.(line); };
+  /** @param {string} line @param {RelayLogLevel} [level] */
+  const log = (line, level = 'info') => { opts.onLog?.(line, level); };
+  const reservationTtlMs = opts.reservationTtlMs ?? DEFAULT_TAB_RESERVATION_TTL_MS;
 
-  /** @type {Map<string, { socket: RelaySocket, token: string, pairedPeer: RelaySocket | null, pendingPeer: RelaySocket | null }>} */
+  /**
+   * @type {Map<string, {
+   *   socket: RelaySocket | null,
+   *   token: string,
+   *   tabKey: string | null,
+   *   resumeKey: string | null,
+   *   resumeTabKey: string | null,
+   *   pairedPeer: RelaySocket | null,
+   *   pendingPeer: RelaySocket | null,
+   *   reservedAt: number | null,
+   * }>}
+   */
   const tabsByToken = new Map();
   /** @type {Map<RelaySocket, { role: 'tab' | 'peer', token: string }>} */
   const socketMeta = new Map();
+  /** @type {Map<RelaySocket, { alive: boolean, dropReason: string | null }>} */
+  const liveness = new Map();
 
-  function dropTab(token) {
+  function closePeer(peer) {
+    socketMeta.delete(peer);
+    try { peer.close(); } catch { /* gone */ }
+  }
+
+  /**
+   * @param {string} token
+   * @param {string} reason
+   */
+  function reservationExpired(tab) {
+    return tab.socket == null
+      && tab.reservedAt != null
+      && (Date.now() - tab.reservedAt) > reservationTtlMs;
+  }
+
+  function liveTab(token) {
+    const tab = tabsByToken.get(token);
+    if (!tab) return null;
+    if (reservationExpired(tab)) {
+      tabsByToken.delete(token);
+      return null;
+    }
+    return tab;
+  }
+
+  function emptyEntry(token, extra = {}) {
+    return {
+      socket: null,
+      token,
+      tabKey: extra.tabKey ?? null,
+      resumeKey: extra.resumeKey ?? null,
+      resumeTabKey: extra.resumeTabKey ?? extra.tabKey ?? null,
+      pairedPeer: null,
+      pendingPeer: null,
+      reservedAt: extra.reservedAt ?? null,
+    };
+  }
+
+  function dropTab(token, reason) {
     const tab = tabsByToken.get(token);
     if (!tab) return;
-    tabsByToken.delete(token);
+    if (tab.socket) socketMeta.delete(tab.socket);
+    const peerState = tab.pairedPeer ? 'paired' : (tab.pendingPeer ? 'pending' : 'none');
+    log(`tab dropped token=${redactToken(token)} reason=${reason} peer=${peerState}`, 'warn');
     if (tab.pairedPeer) {
-      sendJson(tab.pairedPeer, { type: PAIR_MSG.UNPAIRED, reason: 'tab_disconnected' });
-      socketMeta.delete(tab.pairedPeer);
+      sendJson(tab.pairedPeer, { type: PAIR_MSG.UNPAIRED, reason: 'tab_disconnected', detail: reason });
+      closePeer(tab.pairedPeer);
     }
     if (tab.pendingPeer) {
       sendJson(tab.pendingPeer, { type: PAIR_MSG.ERROR, code: 'pair_cancelled', message: 'Tab disconnected' });
-      socketMeta.delete(tab.pendingPeer);
+      closePeer(tab.pendingPeer);
     }
-    socketMeta.delete(tab.socket);
+    if (tab.tabKey) {
+      tabsByToken.set(token, emptyEntry(token, {
+        tabKey: tab.tabKey,
+        resumeKey: tab.resumeKey,
+        resumeTabKey: tab.resumeTabKey || tab.tabKey,
+        reservedAt: Date.now(),
+      }));
+      return;
+    }
+    tabsByToken.delete(token);
   }
 
   function unpair(token, reason = 'disconnect') {
@@ -66,10 +169,10 @@ export function createAgentBridgeRelayHub(opts = {}) {
     if (!tab || !tab.pairedPeer) return;
     const peer = tab.pairedPeer;
     tab.pairedPeer = null;
+    log(`pairing ended token=${redactToken(token)} reason=${reason}`, 'warn');
     sendJson(tab.socket, { type: PAIR_MSG.UNPAIRED, reason });
     sendJson(peer, { type: PAIR_MSG.UNPAIRED, reason });
-    socketMeta.delete(peer);
-    try { peer.close(); } catch { /* gone */ }
+    closePeer(peer);
   }
 
   /**
@@ -86,7 +189,12 @@ export function createAgentBridgeRelayHub(opts = {}) {
       return;
     }
 
+    const live = { alive: true, dropReason: null };
+    if (typeof socket.ping === 'function') liveness.set(socket, live);
+    socket.on('pong', () => { live.alive = true; });
+
     socket.on('message', (raw) => {
+      live.alive = true;
       const msg = parseMessage(typeof raw === 'string' ? raw : String(raw));
       if (!msg || typeof msg !== 'object') {
         refuse(socket, 'bad_message', 'Expected JSON object');
@@ -104,14 +212,35 @@ export function createAgentBridgeRelayHub(opts = {}) {
           refuse(socket, 'bad_token', 'register_tab requires token');
           return;
         }
-        const existing = tabsByToken.get(token);
+        const tabKey = secretOrNull(msg.tabKey);
+        const existing = liveTab(token);
         if (existing) {
-          refuse(socket, 'token_in_use', 'Another tab is already advertising this pairing code');
+          // A reconnecting tab can beat the heartbeat to its own stale socket;
+          // only the tab that registered the code knows its tabKey. After a
+          // drop the entry is a reservation (socket null) for that same key.
+          if (!tabKey || existing.tabKey !== tabKey) {
+            refuse(socket, 'token_in_use', 'Another tab is already advertising this pairing code');
+            return;
+          }
+          const stale = existing.socket;
+          const kept = {
+            tabKey: existing.tabKey,
+            resumeKey: existing.resumeKey,
+            resumeTabKey: existing.resumeTabKey || existing.tabKey,
+          };
+          if (stale && stale !== socket) {
+            dropTab(token, 'replaced_by_reconnect');
+            liveness.delete(stale);
+            try { (stale.terminate || stale.close).call(stale); } catch { /* gone */ }
+          }
+          tabsByToken.set(token, { ...emptyEntry(token, kept), socket });
+          socketMeta.set(socket, { role: 'tab', token });
+          log(`tab registered token=${redactToken(token)} (reconnect)`);
           return;
         }
-        tabsByToken.set(token, { socket, token, pairedPeer: null, pendingPeer: null });
+        tabsByToken.set(token, { ...emptyEntry(token, { tabKey }), socket });
         socketMeta.set(socket, { role: 'tab', token });
-        log(`tab registered token=${token}`);
+        log(`tab registered token=${redactToken(token)}`);
         return;
       }
 
@@ -121,8 +250,8 @@ export function createAgentBridgeRelayHub(opts = {}) {
           return;
         }
         const token = typeof msg.token === 'string' ? msg.token.trim().toUpperCase() : '';
-        const tab = tabsByToken.get(token);
-        if (!tab) {
+        const tab = liveTab(token);
+        if (!tab || !tab.socket) {
           refuse(socket, 'unknown_token', 'No SurfCAD tab is advertising this pairing code');
           return;
         }
@@ -134,10 +263,27 @@ export function createAgentBridgeRelayHub(opts = {}) {
           refuse(socket, 'pair_pending', 'Tab is already reviewing another pairing request');
           return;
         }
-        tab.pendingPeer = socket;
+        const offered = secretOrNull(msg.resume);
+        const silentResume = Boolean(
+          offered
+          && tab.resumeKey
+          && offered === tab.resumeKey
+          && tab.tabKey
+          && tab.resumeTabKey
+          && tab.tabKey === tab.resumeTabKey,
+        );
         socketMeta.set(socket, { role: 'peer', token });
+        if (silentResume) {
+          tab.pendingPeer = null;
+          tab.pairedPeer = socket;
+          sendJson(tab.socket, { type: PAIR_MSG.PAIRED, token, resume: true });
+          sendJson(socket, { type: PAIR_MSG.PAIRED, token, resumeKey: tab.resumeKey });
+          log(`paired token=${redactToken(token)} (resume)`);
+          return;
+        }
+        tab.pendingPeer = socket;
         sendJson(tab.socket, { type: PAIR_MSG.PAIR_REQUEST, token });
-        log(`pair request token=${token}`);
+        log(`pair request token=${redactToken(token)}`);
         return;
       }
 
@@ -146,7 +292,7 @@ export function createAgentBridgeRelayHub(opts = {}) {
         return;
       }
 
-      const tab = tabsByToken.get(meta.token);
+      const tab = liveTab(meta.token);
       if (!tab) {
         refuse(socket, 'session_gone', 'Pairing session ended');
         return;
@@ -162,11 +308,16 @@ export function createAgentBridgeRelayHub(opts = {}) {
           sendJson(socket, { type: PAIR_MSG.ERROR, code: 'no_request', message: 'No pairing request to approve' });
           return;
         }
+        const resumeKey = secretOrNull(msg.resumeKey);
         tab.pendingPeer = null;
         tab.pairedPeer = peer;
+        tab.resumeKey = resumeKey;
+        tab.resumeTabKey = tab.tabKey;
         sendJson(socket, { type: PAIR_MSG.PAIRED, token: meta.token });
-        sendJson(peer, { type: PAIR_MSG.PAIRED, token: meta.token });
-        log(`paired token=${meta.token}`);
+        sendJson(peer, resumeKey
+          ? { type: PAIR_MSG.PAIRED, token: meta.token, resumeKey }
+          : { type: PAIR_MSG.PAIRED, token: meta.token });
+        log(`paired token=${redactToken(meta.token)}`);
         return;
       }
 
@@ -179,8 +330,7 @@ export function createAgentBridgeRelayHub(opts = {}) {
         tab.pendingPeer = null;
         if (peer) {
           sendJson(peer, { type: PAIR_MSG.ERROR, code: 'pair_rejected', message: 'Pairing rejected in SurfCAD' });
-          socketMeta.delete(peer);
-          try { peer.close(); } catch { /* gone */ }
+          closePeer(peer);
         }
         return;
       }
@@ -219,17 +369,19 @@ export function createAgentBridgeRelayHub(opts = {}) {
       refuse(socket, 'unknown_type', `Unknown message type: ${msg.type}`);
     });
 
-    socket.on('close', () => {
+    socket.on('close', (code, reason) => {
+      liveness.delete(socket);
       const m = socketMeta.get(socket);
       if (!m) return;
+      const why = live.dropReason || closeReason(code, reason);
       const tabEntry = tabsByToken.get(m.token);
       if (!tabEntry) {
         socketMeta.delete(socket);
         return;
       }
       if (m.role === 'tab') {
-        dropTab(m.token);
-        log(`tab closed token=${m.token}`);
+        if (tabEntry.socket === socket) dropTab(m.token, why);
+        else socketMeta.delete(socket);
         return;
       }
       if (tabEntry.pendingPeer === socket) {
@@ -238,10 +390,27 @@ export function createAgentBridgeRelayHub(opts = {}) {
         return;
       }
       if (tabEntry.pairedPeer === socket) {
-        unpair(m.token, 'peer_disconnected');
+        unpair(m.token, live.dropReason ? `peer_${live.dropReason}` : 'peer_disconnected');
       }
       socketMeta.delete(socket);
     });
+  }
+
+  /**
+   * One heartbeat sweep: terminate sockets that did not answer the previous
+   * ping, then ping the rest. Call every `heartbeatMs`.
+   */
+  function heartbeat() {
+    for (const [socket, live] of liveness) {
+      if (!live.alive) {
+        live.dropReason = 'heartbeat_timeout';
+        liveness.delete(socket);
+        try { (socket.terminate || socket.close).call(socket); } catch { /* gone */ }
+        continue;
+      }
+      live.alive = false;
+      try { socket.ping?.(); } catch { /* gone; next sweep terminates */ }
+    }
   }
 
   function disconnectToken(token) {
@@ -249,15 +418,20 @@ export function createAgentBridgeRelayHub(opts = {}) {
     if (!tab) return;
     unpair(token, 'tab_disconnect');
     try { tab.socket.close(); } catch { /* gone */ }
-    dropTab(token);
+    dropTab(token, 'disconnect_requested');
   }
 
   return {
     attachSocket,
     disconnectToken,
+    heartbeat,
     /** @param {string} token */
     hasTab(token) {
       return tabsByToken.has(token);
+    },
+    /** @param {string} token */
+    isPaired(token) {
+      return tabsByToken.get(token)?.pairedPeer != null;
     },
     PAIR_MSG,
   };

@@ -13,8 +13,9 @@ import { Loader2, User } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useAuthState } from '../hooks/useAuthState';
 import { chipView } from '../utils/authPhase.js';
-import { shouldShowAgentBridgeRing } from '../agent/ws/agentBridgeChrome.js';
+import { agentBridgeRingLabel, agentBridgeRingState } from '../agent/ws/agentBridgeChrome.js';
 import { profileInitials } from '../utils/profileInitials.js';
+import { useAgentBridgeHost } from './AgentBridgeHost';
 import { clearGithubToken, loadGithubToken } from '../utils/git/githubAuth.js';
 import { DEFAULT_VAULT_NAME } from '../utils/git/vault.js';
 import ProfilePanel from './ProfilePanel';
@@ -33,7 +34,8 @@ export default function ProfileChip({
   const cartChrome = useCartChrome();
   const cartCount = session.signedIn ? (cartChrome?.count || 0) : 0;
   const [panelOpen, setPanelOpen] = useState(false);
-  const [agentBridgeConnected, setAgentBridgeConnected] = useState(false);
+  const [agentBridgeSlot, setAgentBridgeSlot] = useState(null);
+  const { link: agentBridgeLink, offerSlot } = useAgentBridgeHost();
   const phase = session.phase;
   const motion = session.reconnecting
     ? 'spinning'
@@ -143,7 +145,13 @@ export default function ProfileChip({
   };
 
   const showPanel = signedIn || reauth || canClear || agentBridgeLive;
-  const showAgentRing = agentBridgeLive && shouldShowAgentBridgeRing({ connected: agentBridgeConnected });
+  const agentRing = agentBridgeLive ? agentBridgeRingState(agentBridgeLink) : null;
+
+  useEffect(() => {
+    if (!agentBridgeLive || !panelOpen || !agentBridgeSlot) return undefined;
+    offerSlot(agentBridgeSlot);
+    return () => { offerSlot(null); };
+  }, [agentBridgeLive, panelOpen, agentBridgeSlot, offerSlot]);
 
   return (
     <div className={wrapClass} data-profile-chip-wrap="">
@@ -163,10 +171,11 @@ export default function ProfileChip({
         aria-label={title}
         className={shell}
       >
-        {showAgentRing ? (
+        {agentRing ? (
           <span
-            className="agent-bridge-profile-ring pointer-events-none absolute inset-0 rounded-full"
-            data-agent-bridge-connection-ring=""
+            className={`agent-bridge-profile-ring agent-bridge-profile-ring--${agentRing} pointer-events-none absolute inset-0 rounded-full`}
+            data-agent-bridge-connection-ring={agentRing}
+            title={agentBridgeRingLabel(agentRing)}
             aria-hidden="true"
           />
         ) : null}
@@ -223,7 +232,7 @@ export default function ProfileChip({
           onOpenCart={session.signedIn ? () => cartChrome?.openCart?.() : null}
           align="right"
           agentBridgeLive={agentBridgeLive}
-          onAgentBridgeConnectionChange={setAgentBridgeConnected}
+          agentBridgeSlotRef={setAgentBridgeSlot}
         />
       )}
       {variant === 'viewport' && reauth && session.bootEmpty ? (

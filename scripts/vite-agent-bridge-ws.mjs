@@ -12,7 +12,14 @@ function parsePort(value) {
   return Number.isInteger(n) && n > 0 && n < 65536 ? n : DEFAULT_RELAY_PORT;
 }
 
+function shouldStartRelay() {
+  // Same flag as surfcad-mcp: '0' means another process owns the relay
+  // (playtest MCP bin, or a test-started server). Preview must not bind the port.
+  return process.env.SURFCAD_MCP_START_RELAY !== '0';
+}
+
 function ensureRelay() {
+  if (!shouldStartRelay()) return Promise.resolve(null);
   return ensureAgentBridgeRelay({
     onReady: (url) => {
       console.log(`[surfcad] Agent bridge WebSocket relay on ${url} (127.0.0.1 only)`);
