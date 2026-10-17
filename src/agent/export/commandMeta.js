@@ -750,7 +750,7 @@ export const COMMAND_META = {
     confirm: true,
   },
   git_branch_create: {
-    description: 'Create and switch to a new vault branch.',
+    description: 'Create and switch to a new vault branch from the current tip. If the working copy has uncommitted changes, the branch is created but the session stays on the current branch (same as Parts Create, which does not discard unsaved edits); use git_branch_switch with confirm: true to switch while dirty. If create succeeds but switch fails, the result is still status created with switched: false and switchError set.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
     mutates: true,

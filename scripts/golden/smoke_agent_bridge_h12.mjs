@@ -196,7 +196,9 @@ const saved = await agentCall(page, 'git_save', { message: 'h12 golden save' });
 check('git_save', saved.ok === true && ['committed', 'queued', 'clean'].includes(saved.result?.status), JSON.stringify(saved));
 
 const created = await agentCall(page, 'git_branch_create', { name: 'feature/h12-golden' });
-check('git_branch_create', created.ok === true && created.result?.status === 'created', JSON.stringify(created));
+check('git_branch_create', created.ok === true && created.result?.status === 'created' && created.result?.switched === true, JSON.stringify(created));
+const listed = await agentCall(page, 'git_list_branches', {});
+check('git_branch_create switched session', listed.result?.branch === 'feature/h12-golden', JSON.stringify(listed));
 
 const switched = await agentCall(page, 'git_branch_switch', { branch: 'feature/h12-golden' });
 check('git_branch_switch', switched.ok === true, JSON.stringify(switched));

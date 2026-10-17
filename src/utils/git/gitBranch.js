@@ -87,6 +87,16 @@ export async function createVaultBranch(adapter, repo, branchName, {
 }
 
 /**
+ * Parts Create / `git_branch_create` checkout the new ref when the working
+ * copy is clean. A dirty working copy stays on the current branch: switch
+ * reloads the tip and would discard unsaved edits. Only Switch confirms
+ * that reload (`git_branch_switch` + `confirm: true`).
+ */
+export function shouldSwitchToCreatedBranch({ dirty = false } = {}) {
+  return dirty !== true;
+}
+
+/**
  * Delete a branch. Refuses `main` and the current working branch.
  */
 export async function deleteVaultBranch(adapter, repo, branchName, {
