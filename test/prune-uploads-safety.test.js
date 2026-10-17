@@ -6,7 +6,6 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
-import { isMissingConfigValue } from '../backend/config/index.js';
 import {
   assertUploadAwayFromWorking,
   isKnownUploadName,
@@ -32,9 +31,6 @@ describe('M5 prune safety', () => {
       () => requireUploadFolder('undefined', { production: true, workingFolder: '/opt/work' }),
       /required in production|literal string "undefined"/,
     );
-    assert.equal(isMissingConfigValue(undefined), true);
-    assert.equal(isMissingConfigValue('undefined'), true);
-    assert.equal(isMissingConfigValue('/tmp/surfcad-uploads'), false);
   });
 
   test('refuses equal folders and a parent of WORKING_FOLDER', async () => {

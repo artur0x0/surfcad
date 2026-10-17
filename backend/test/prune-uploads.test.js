@@ -6,6 +6,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
+import { isMissingConfigValue } from '../config/index.js';
 import {
   assertSafeUploadDir,
   assertUploadAwayFromWorking,
@@ -47,6 +48,12 @@ describe('assertSafeUploadDir', () => {
 });
 
 describe('requireUploadFolder / working folder', () => {
+  test('treats unset and the literal string undefined as missing', () => {
+    assert.equal(isMissingConfigValue(undefined), true);
+    assert.equal(isMissingConfigValue('undefined'), true);
+    assert.equal(isMissingConfigValue('/tmp/surfcad-uploads'), false);
+  });
+
   test('refuses a missing UPLOAD_FOLDER in production', () => {
     assert.throws(
       () => requireUploadFolder(undefined, { production: true, workingFolder: '/tmp/work' }),
