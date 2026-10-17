@@ -193,9 +193,17 @@ ok('title chip → pane actions', /data-assembly-branch=""/.test(feed)
   && /data-git-branch-action="merge"/.test(feed)
   && !/data-git-branch-dropdown/.test(feed)
   && !/data-git-branch-section/.test(feed));
-ok('desktop branch chip on CAD viewer title', /data-viewer-git-branch/.test(viewport)
-  && /cadGitBranch/.test(viewport) && /openCadGitBranches/.test(app));
+ok('desktop branch chip in parts list header', /data-parts-ribbon-branch/.test(feed)
+  && /placement === 'desktop' && source === 'git'/.test(feed)
+  && /RibbonBranchButton/.test(feed)
+  && !/data-viewer-git-branch/.test(viewport)
+  && !/cadGitBranch/.test(viewport)
+  && !/onCadGitBranchClick/.test(app));
 ok('desktop parts ribbon hides assembly title chip', /ribbonName && placement !== 'desktop'/.test(feed));
+ok('mobile ribbon still shows assembly name with branch chip',
+  /RibbonAssemblyName[\s\S]{0,200}onBranchClick/.test(feed)
+  && /placement !== 'desktop'/.test(feed)
+  && /data-assembly-branch=""/.test(feed));
 ok('assembly Save menu offers rename', /data-assembly-rename-menu/.test(feed) && /Rename assembly/.test(feed));
 ok('Save still on ribbon end', (() => {
   const end = feed.indexOf('data-parts-ribbon-end');

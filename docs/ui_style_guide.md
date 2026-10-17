@@ -147,11 +147,15 @@ tokens inside feature popups. Parts inputs use
 for calculated numbers: at most four decimals, trailing zeros removed.
 Displaying a field does not rewrite the script.
 
-## Copy
+## Feature strip height
 
-- Product name is SurfCAD. Tagline: “Don't do CAD. SurfCAD.”
-- User-facing text says **Chrome**, never Microsoft Edge (or “Edge”).
-- Errors use the glass card in [Popups](#popups), not a blue pill.
+The horizontal CAD feature ribbon (`FeatureStrip` under the viewer title on
+desktop, under the CAD header on mobile) is **46px** in every state:
+assembly joints, part features, and empty (undo/redo only). Token
+`--feature-strip-height: 2.875rem` on `:root`; class `feature-strip-bar` on
+the strip root. Chips share `feature-strip-chip` (32px). Do not set a
+per-state height. Switching assembly ↔ part ↔ empty must not jump the bar
+or shift the viewport.
 
 ## Brand
 

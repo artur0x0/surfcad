@@ -44,6 +44,46 @@ const STRIP_ICON = 18;
  * that part. Load lives in this pane.
  */
 
+/** Git branch chip. Desktop header truncates in the leftover ribbon gap. */
+function RibbonBranchButton({
+  branchLabel,
+  onBranchClick = null,
+  desktop = false,
+}) {
+  const label = typeof branchLabel === 'string' ? branchLabel.trim() : '';
+  if (!label) return null;
+  const width = desktop ? 'min-w-0 max-w-full' : 'max-w-[40%]';
+  if (onBranchClick) {
+    return (
+      <button
+        type="button"
+        data-ui-action="data-git-branches"
+        data-assembly-branch=""
+        data-parts-ribbon-branch={desktop ? '' : undefined}
+        data-git-branches=""
+        title={`Branch: ${label}. Click to manage branches.`}
+        aria-label={`On branch ${label}. Open branch list.`}
+        className={`pointer-events-auto ${width} truncate rounded px-1 text-xs font-medium text-blue-300 hover:bg-white/10 hover:text-blue-200`}
+        onClick={(event) => {
+          event.stopPropagation();
+          onBranchClick();
+        }}
+      >
+        {label}
+      </button>
+    );
+  }
+  return (
+    <span
+      className={`${width} truncate px-1 text-xs font-medium text-blue-300/80`}
+      data-assembly-branch=""
+      data-parts-ribbon-branch={desktop ? '' : undefined}
+    >
+      {label}
+    </span>
+  );
+}
+
 /**
  * Assembly name in the ribbon. Same commit rules as the CAD title chip:
  * click edits, Enter or blur commits, Escape reverts, empty commits nothing.
@@ -139,27 +179,7 @@ function RibbonAssemblyName({
   const branchChip = branchLabel ? (
     <>
       <span className="shrink-0 px-0.5 text-xs text-gray-500" aria-hidden="true">on</span>
-      {onBranchClick ? (
-        <button
-          type="button"
-          data-ui-action="data-git-branches"
-          data-assembly-branch=""
-          data-git-branches=""
-          title={`Branch: ${branchLabel}. Click to manage branches.`}
-          aria-label={`On branch ${branchLabel}. Open branch list.`}
-          className="pointer-events-auto max-w-[40%] truncate rounded px-1 text-xs font-medium text-blue-300 hover:bg-white/10 hover:text-blue-200"
-          onClick={(event) => {
-            event.stopPropagation();
-            onBranchClick();
-          }}
-        >
-          {branchLabel}
-        </button>
-      ) : (
-        <span className="max-w-[40%] truncate px-1 text-xs font-medium text-blue-300/80" data-assembly-branch="">
-          {branchLabel}
-        </span>
-      )}
+      <RibbonBranchButton branchLabel={branchLabel} onBranchClick={onBranchClick} />
     </>
   ) : null;
 
@@ -1714,7 +1734,7 @@ const PartFeed = forwardRef(function PartFeed({
           </button>
         </div>
         <div
-          className="relative z-10 flex min-w-0 flex-1 items-center justify-center px-1"
+          className="relative z-10 flex min-w-0 flex-1 items-center justify-center overflow-hidden px-1"
           data-parts-ribbon-center=""
         >
           {ribbonName && placement !== 'desktop' ? (
@@ -1725,6 +1745,13 @@ const PartFeed = forwardRef(function PartFeed({
               onBranchClick={source === 'git' ? () => { void openBranchPane(); } : null}
               behind={!!assemblyBehind}
               onBehindClick={() => openConflict(assemblyPath || '', 'assembly', ribbonName)}
+            />
+          ) : null}
+          {placement === 'desktop' && source === 'git' ? (
+            <RibbonBranchButton
+              branchLabel={currentBranch || 'main'}
+              onBranchClick={() => { void openBranchPane(); }}
+              desktop
             />
           ) : null}
         </div>

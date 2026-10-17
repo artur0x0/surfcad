@@ -22,6 +22,9 @@
      and ≥3:1 on hover (emerald-500 hover was ~2.5:1). */
   --chrome-success: 4 120 87; /* emerald-700 #047857 */
   --chrome-success-hover: 5 150 105; /* emerald-600 #059669 */
+  /* Horizontal CAD feature ribbon (assembly / part / empty). 46px:
+     32px chip + 12px py-1.5 + 2px border. See docs/ui_style_guide.md. */
+  --feature-strip-height: 2.875rem;
 }
 
 body {
@@ -291,6 +294,17 @@ textarea {
   .surface-quiet:focus-visible {
     outline: 2px solid rgb(var(--chrome-text));
     outline-offset: 2px;
+  }
+  /* One height for the horizontal CAD feature ribbon in every state. */
+  .feature-strip-bar {
+    height: var(--feature-strip-height);
+    min-height: var(--feature-strip-height);
+    box-sizing: border-box;
+  }
+  .feature-strip-chip {
+    height: 2rem;
+    min-height: 2rem;
+    box-sizing: border-box;
   }
 
   .surface-glass,
