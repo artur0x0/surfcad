@@ -28,6 +28,22 @@ test('relay poller starts and stops with flow active flag', async () => {
   assert.equal(detected, 0);
 });
 
+test('relay poller reports a handshake issue without treating it as reachable', async () => {
+  const issues = [];
+  let detected = 0;
+  const poller = createRelayPoller({
+    isActive: () => true,
+    probe: async () => ({ ok: false, issue: 'origin_rejected' }),
+    onDetected: () => { detected += 1; },
+    onIssue: (issue) => { issues.push(issue); },
+  });
+  poller.start();
+  await new Promise((r) => setTimeout(r, 5));
+  poller.stop();
+  assert.deepEqual(issues, ['origin_rejected']);
+  assert.equal(detected, 0);
+});
+
 test('relay poller calls onDetected when probe succeeds', async () => {
   let active = true;
   let detected = 0;
