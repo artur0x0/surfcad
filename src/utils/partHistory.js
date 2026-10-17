@@ -82,6 +82,19 @@ export function historyForPart(histories, partId, script) {
   };
 }
 
+/**
+ * True only when this part has no commits yet.
+ *
+ * Monaco calls this from `editorDidMount`. A later mount — the mobile shell
+ * after a narrow viewport, or the drawer — must not record the boot script
+ * as "Initial script". That commit lands on top of the live step, so the
+ * next undo restores the step underneath (the one that was just applied).
+ */
+export function editorMountSeedsHistory(history) {
+  const head = history && Number.isInteger(history.head) ? history.head : -1;
+  return head < 0;
+}
+
 /** Append a commit. The same code as the current head is not a new step. */
 export function pushPartHistory(history, code, message) {
   const base = history && Array.isArray(history.commits) ? history : emptyPartHistory();
