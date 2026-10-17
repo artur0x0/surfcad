@@ -6,6 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -43,7 +44,13 @@ function spawnMcpRelay(port) {
 function stopMcpRelay(proc) {
   if (!proc) return Promise.resolve();
   const exited = new Promise((resolve) => {
-    const timer = setTimeout(resolve, 3000);
+    if (proc.exitCode != null || proc.signalCode != null) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(() => {
+      try { proc.kill('SIGKILL'); } catch { /* gone */ }
+    }, 400);
     proc.once('exit', () => {
       clearTimeout(timer);
       resolve();
@@ -52,6 +59,15 @@ function stopMcpRelay(proc) {
   try { proc.stdin?.end(); } catch { /* gone */ }
   try { proc.kill('SIGTERM'); } catch { /* gone */ }
   return exited;
+}
+
+async function waitUntilRelayDown(url, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!(await probeRelayAtUrl(url, 200))) return;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  throw new Error(`relay still listening on ${url}`);
 }
 
 async function waitUntilRelayUp(url, timeoutMs = 10000) {
@@ -112,6 +128,11 @@ async function assertApprovalClearsProfileChrome(page) {
     'rgb(243, 244, 246)',
     `Allow/Deny prompt must use text-chrome-text, got ${promptColor}`,
   );
+  const shotDir = process.env.WALKTHROUGH_SHOT_DIR;
+  if (shotDir) {
+    await mkdir(shotDir, { recursive: true });
+    await page.screenshot({ path: join(shotDir, 'allow-deny-chrome-text.png') });
+  }
 }
 
 export const id = 'agent-bridge-relay-retry';
@@ -132,6 +153,7 @@ export async function run(ctx) {
 
   const { stop } = startPreviewServer(ctx.port, {
     SURFCAD_AGENT_BRIDGE_WS_PORT: String(relayPort),
+    // Preview must not bind this port; the MCP child owns the relay.
     SURFCAD_MCP_START_RELAY: '0',
   });
   if (!(await waitForServer(baseUrl))) {
@@ -204,6 +226,7 @@ export async function run(ctx) {
 
     await stopMcpRelay(relayProc);
     relayProc = null;
+    await waitUntilRelayDown(relayUrl);
     const dropDeadline = Date.now() + 5000;
     while (session.state !== 'lost' && Date.now() < dropDeadline) {
       await new Promise((r) => setTimeout(r, 50));

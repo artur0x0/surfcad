@@ -9,6 +9,14 @@ const SRC = readFileSync(
   'utf8',
 );
 
+test('vite preview does not steal the MCP-owned relay port when START_RELAY=0', () => {
+  const plugin = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '../scripts/vite-agent-bridge-ws.mjs'),
+    'utf8',
+  );
+  assert.match(plugin, /SURFCAD_MCP_START_RELAY !== '0'/);
+});
+
 test('relay-retry playtest keeps MCP stdin open so the owned relay does not exit', () => {
   assert.match(SRC, /function spawnMcpRelay/);
   assert.match(SRC, /stdio:\s*\[\s*'pipe',\s*'ignore',\s*'pipe'\s*\]/);
