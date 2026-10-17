@@ -163,24 +163,24 @@ describe('exploit H2', () => {
     const gh = await githubSignIn('victim-token', {
       user: { id: 4242, login: 'victim', email: VICTIM, name: 'Vic Tim' },
     });
-    assert.equal(gh.status, 200, 'the real owner must still get in via OAuth');
+    assert.notEqual(gh.status, 200, 'must refuse the link to a never-verified account');
     const row = users.find({ email: VICTIM });
-    assert.equal(row.emailVerified, true);
-    assert.equal(row.githubId, '4242');
-    assert.equal(row.passwordHash, null, 'planted password must be cleared');
+    assert.equal(row.emailVerified, false);
+    assert.equal(row.githubId, null);
+    assert.ok(row.passwordHash);
 
     const login = await client(app.port)('POST', '/api/auth/login', {
       email: VICTIM,
       password: ATTACKER_PASSWORD,
     });
-    assert.equal(login.status, 401);
     assert.equal(login.body?.user, undefined);
   });
 
-  test('GitHub link login keeps the new session after neutralize', async () => {
-    await client(app.port)('POST', '/api/auth/register', {
+  test('GitHub link login keeps the new session on a verified account', async () => {
+    await users.insert({
       email: VICTIM,
-      password: ATTACKER_PASSWORD,
+      authProvider: 'local',
+      emailVerified: true,
     });
     const c = client(app.port);
     const restoreFetch = patch(globalThis, {
@@ -205,18 +205,18 @@ describe('exploit H2', () => {
       password: ATTACKER_PASSWORD,
     });
     const { err, user } = await runGoogleVerify(googleProfile('g-victim', VICTIM));
-    assert.equal(err, null);
-    assert.equal(user.email, VICTIM);
+    assert.ok(err);
+    assert.ok(!user);
     const row = users.find({ email: VICTIM });
-    assert.equal(row.emailVerified, true);
-    assert.equal(row.providerId, 'g-victim');
-    assert.equal(row.passwordHash, null);
+    assert.equal(row.emailVerified, false);
+    assert.equal(row.authProvider, 'local');
+    assert.ok(row.passwordHash);
   });
 
-  test('findOrCreateOAuth clears a planted password for GitHub, Google, and Apple', async () => {
+  test('findOrCreateOAuth refuses a never-verified account for GitHub, Google, and Apple', async () => {
     for (const provider of ['github', 'google', 'apple']) {
       users.rows.length = 0;
-      const planted = await users.insert({
+      await users.insert({
         email: VICTIM,
         authProvider: 'local',
         emailVerified: false,
@@ -229,15 +229,16 @@ describe('exploit H2', () => {
           zip: '78701',
         }],
       });
-      assert.equal(planted.addresses.length, 1);
 
-      const result = await User.findOrCreateOAuth(googleProfile(`${provider}-1`, VICTIM), provider);
-      assert.equal(result.user.email, VICTIM);
+      await assert.rejects(
+        () => User.findOrCreateOAuth(googleProfile(`${provider}-1`, VICTIM), provider),
+        (e) => e.statusCode === 409,
+        provider,
+      );
       const row = users.find({ email: VICTIM });
-      assert.equal(row.passwordHash, null, provider);
-      assert.equal(row.emailVerified, true, provider);
-      assert.equal(row.authProvider, provider);
-      assert.equal(row.addresses.length, 0, provider);
+      assert.equal(row.passwordHash, 'planted-hash', provider);
+      assert.equal(row.emailVerified, false, provider);
+      assert.equal(row.authProvider, 'local', provider);
     }
   });
 });

@@ -523,14 +523,19 @@ userSchema.statics.findOrCreateOAuth = async function(profile, provider) {
   user = await this.findOne({ email });
   
   if (user) {
-    // Link accounts. A never-verified row may be a planted password;
-    // neutralize it before the OAuth identity takes over.
+    // Refuse before neutralize: unverified provider email, or an existing
+    // account that was never verified. Neutralize only remaining cases.
+    if (emails?.[0]?.verified === false || !user.emailVerified) {
+      const err = new Error('This email is already used. Sign in instead.');
+      err.statusCode = 409;
+      throw err;
+    }
     if (!user.emailVerified) {
       user.neutralizeUnverifiedForOAuth();
     }
     user.authProvider = provider;
     user.providerId = id;
-    user.emailVerified = true; // OAuth emails are verified
+    user.emailVerified = true;
     if (provider === 'github') {
       user.githubId = String(id);
     }
