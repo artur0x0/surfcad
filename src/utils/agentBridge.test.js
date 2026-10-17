@@ -11,6 +11,7 @@ import {
   createSurfcadBridge,
 } from './agentBridge.js';
 import { emptyPartHistory, redoPartHistory, undoPartHistory } from './partHistory.js';
+import { wrapRawScript } from './wrapRawScript.js';
 import { summarizePartHistory } from '../agent/historyRoute.js';
 import { v1Registry } from '../agent/commands/index.js';
 
@@ -250,6 +251,22 @@ test('each set_script is exactly one undo step', async () => {
   const undone = undoPartHistory(env.history());
   assert.equal(undone.code, BOX);
   assert.equal(undone.history.head, 0);
+});
+
+test('set_script wraps unmarked source as the same undo step', async () => {
+  const env = world();
+  const api = createSurfcadBridge(env.host);
+  const raw = 'let part = Manifold.cube([40, 30, 20], true);\nreturn part;\n';
+  const wrapped = wrapRawScript(raw);
+  assert.notEqual(wrapped, raw);
+  await invoke(api, 'set_script', { source: BOX });
+  const wrote = await invoke(api, 'set_script', { source: raw });
+  assert.equal(wrote.ok, true);
+  assert.equal(env.buffer(), wrapped);
+  assert.equal(env.history().commits.length, 2);
+  assert.equal(env.history().commits[1].code, wrapped);
+  const undone = undoPartHistory(env.history());
+  assert.equal(undone.code, BOX);
 });
 
 test('run of the script set_script just wrote is not a second undo step', async () => {

@@ -75,6 +75,8 @@ import {
   POLAR_ARRAY_END,
   WORKPLANE_BEGIN,
   WORKPLANE_END,
+  CODE_BEGIN,
+  CODE_END,
 } from './helperPaletteSnippets.js';
 import { SHEET_METAL_BEGIN, SHEET_METAL_END } from './sheetMetal/sheetMetalScript.js';
 import { findFeatureBlocks } from './featureBlockId.js';
@@ -130,6 +132,7 @@ export const FEATURE_MARKER_KINDS = Object.freeze([
   { begin: POLAR_ARRAY_BEGIN, end: POLAR_ARRAY_END, kind: 'polarArray', label: 'Polar' },
   { begin: WORKPLANE_BEGIN, end: WORKPLANE_END, kind: 'workplane', label: 'Workplane' },
   { begin: SHEET_METAL_BEGIN, end: SHEET_METAL_END, kind: 'sheetMetal', label: 'Sheet' },
+  { begin: CODE_BEGIN, end: CODE_END, kind: 'code', label: 'Code' },
 ]);
 
 /**

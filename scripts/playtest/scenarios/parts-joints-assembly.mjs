@@ -251,11 +251,31 @@ export async function run(ctx) {
     await agentCall(page, 'set_script', { source: BASE_HOLE_SCRIPT });
     const baseRun = await agentCall(page, 'run', {});
     await agentCall(page, 'set_active_part', { part_id: pinPartId });
-    await agentCall(page, 'set_script', { source: PIN_CYL_SCRIPT });
+    const pinSet = await agentCall(page, 'set_script', { source: PIN_CYL_SCRIPT });
     const pinRun = await agentCall(page, 'run', {});
+    const tree = await agentCall(page, 'feature_tree', {});
+    const kinds = (tree.result?.features || []).map((row) => row.kind);
+    const got = await agentCall(page, 'get_script', {});
+    const source = got.result?.source || '';
+    const chips = page.locator('[data-cad-feature-strip="desktop"] [data-feature-chip="code"]');
+    let ribbon = false;
+    try {
+      await chips.first().waitFor({ timeout: 8000 });
+      ribbon = true;
+    } catch { /* assert below */ }
     const ok = baseRun.ok === true && baseRun.result?.ok === true
-      && pinRun.ok === true && pinRun.result?.ok === true;
-    return { ok, call: 'run', args: {}, envelope: pinRun };
+      && pinSet.ok === true
+      && pinRun.ok === true && pinRun.result?.ok === true
+      && kinds.includes('code')
+      && /\/\/ --- code begin ---/.test(source)
+      && ribbon;
+    return {
+      ok,
+      call: 'run',
+      args: {},
+      envelope: pinRun,
+      detail: `tree=${kinds.join(',')} wrapped=${/code begin/.test(source)} ribbon=${ribbon}`,
+    };
   });
 
   let concentricJointId = null;

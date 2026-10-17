@@ -131,6 +131,11 @@ import {
   undoPartHistory,
 } from './utils/partHistory';
 import { featureRibbonScript } from './utils/featureRibbonScript';
+import {
+  scriptNeedsCodeWrap,
+  wrapRawScript,
+  wrapUnmarkedPartScripts,
+} from './utils/wrapRawScript';
 import { fillAgentHost } from './agent/host';
 import {
   agentGitConsentInteractive,
@@ -4795,7 +4800,11 @@ const App = () => {
       const placed = placeLocalMeshParts(doc, workScripts, {
         occupied: remotePaths,
       });
-      workScripts = placed.scripts;
+      const scriptsBeforeWrap = placed.scripts;
+      workScripts = wrapUnmarkedPartScripts(scriptsBeforeWrap);
+      const wrappedChanged = Object.keys(workScripts).some(
+        (id) => workScripts[id] !== scriptsBeforeWrap[id],
+      );
       const movedLive = placed.moved.find((move) => move.from === liveId);
       const nextLiveId = movedLive ? movedLive.to : liveId;
       const loaded = await loadPartAssets((doc.parts || []).map((part) => part.id));
@@ -4829,14 +4838,16 @@ const App = () => {
       });
       await applyMeshPlacement(placed);
       if (liveId && !movedLive) {
-        savePartScript(liveId, live);
+        const savedLive = workScripts[liveId] ?? live;
+        savePartScript(liveId, savedLive);
         rememberScripts(workScripts);
       }
       const adopted = collected.marks.filter((mark) => mark.adopted);
       if (adopted.length) await applyMeshMarks(adopted);
       if (result.status === 'clean') return result;
-      if (result.doc) {
+      if (result.doc || wrappedChanged) {
         await applyCommittedWorkspace(result);
+        captureAgentScriptSnapshot();
       }
       await enqueueGit(vault.repo, {
         op: 'save',
@@ -5470,7 +5481,7 @@ const App = () => {
       position: opts.position,
     });
     let starter = typeof opts?.script === 'string' && opts.script.trim()
-      ? opts.script
+      ? wrapRawScript(opts.script)
       : newPartStarterScript();
     let surfId = null;
     if (doc.source === 'git') {
@@ -7955,7 +7966,7 @@ const App = () => {
       return codeEditorRef.current?.getContent?.() ?? '';
     },
     setEditor(src) {
-      const text = typeof src === 'string' ? src : '';
+      const text = wrapRawScript(typeof src === 'string' ? src : '');
       codeEditorRef.current?.setTextOnly?.(text);
       const id = assemblyRef.current?.activeId;
       if (id) revealPartOnRibbon(id, text);
@@ -8299,6 +8310,16 @@ const App = () => {
           liveScript: liveDirtyScript,
         }))
     )
+  );
+  const wrapPending = !!(
+    assemblyDoc?.source === 'git'
+    && (assemblyDoc.parts || []).some((row) => {
+      let text = partScripts?.[row.id];
+      if (row.id === assemblyDoc.activeId && typeof liveDirtyScript === 'string') {
+        text = liveDirtyScript;
+      }
+      return typeof text === 'string' && scriptNeedsCodeWrap(text);
+    })
   );
   const behindMarkers = (
     assemblyDoc?.source === 'git' && gitBehind
@@ -9493,7 +9514,7 @@ const App = () => {
       onRenameRevert={handleRenameRevert}
       syncConflict={syncConflict}
       onSyncConflictClear={() => setSyncConflict(null)}
-      canCommit={assemblyDoc?.source === 'git' && !!sourceDirty && gitSession.phase === 'connected'}
+      canCommit={assemblyDoc?.source === 'git' && !!(sourceDirty || wrapPending) && gitSession.phase === 'connected'}
       onGitCommit={handleGitCommit}
       onOverwriteMain={handleOverwriteMain}
       behindPartIds={behindPartIdSet}

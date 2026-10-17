@@ -74,6 +74,14 @@ test('a highlighted non-active part reads its stored script', () => {
   );
 });
 
+test('unmarked scripts still produce a Code chip on the ribbon', () => {
+  const raw = 'let part = Manifold.cube([8, 8, 8], true);\nreturn part;\n';
+  const chips = featureStripChips(raw);
+  assert.equal(chips.length, 1);
+  assert.equal(chips[0].kind, 'code');
+  assert.equal(chips[0].virtual, true);
+});
+
 test('App selects the part and syncs currentScript on agent create / open', () => {
   const add = APP.slice(APP.indexOf('const handleAddPart'), APP.indexOf('const handleDeletePart'));
   assert.match(add, /revealPartOnRibbon\(/);

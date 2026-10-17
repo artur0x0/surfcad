@@ -101,6 +101,7 @@ const FEATURE_ICONS = Object.freeze({
   array: Boxes,
   polarArray: Boxes,
   workplane: Layers3,
+  code: NotebookPen,
   sheetMetal: SheetMetalPlate,
   sheetBase: SheetMetalPlate,
   sheetBend: Angle,

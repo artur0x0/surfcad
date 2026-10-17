@@ -29,6 +29,7 @@ import { createPickSessions } from '../agent/pick/session.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { emptyPartHistory, pushPartHistory } from './partHistory.js';
 import { bytesAfterHeaderLine, headerLineEnding } from './git/surfId.js';
+import { wrapRawScript } from './wrapRawScript.js';
 
 export const AGENT_STORAGE_KEY = 'surfcadAgent';
 
@@ -328,15 +329,16 @@ export function createSurfcadBridge(hostSource) {
     const execute = hostFn('execute');
     const writeHistory = hostFn('writeHistory');
     const before = cloneAgentHistory(readHistory ? readHistory() : emptyPartHistory());
-    if (setEditor) setEditor(normalized);
+    const source = wrapRawScript(normalized);
+    if (setEditor) setEditor(source);
     let outcome;
     try {
-      outcome = execute ? await execute(normalized) : failedExecute(new Error('execute missing'));
+      outcome = execute ? await execute(source) : failedExecute(new Error('execute missing'));
     } catch (err) {
       outcome = failedExecute(err);
     }
-    if (writeHistory) writeHistory(commitAgentStep(before, normalized, message));
-    return remember(outcome, normalized);
+    if (writeHistory) writeHistory(commitAgentStep(before, source, message));
+    return remember(outcome, source);
   }
 
   function failedExecute(err) {

@@ -11,6 +11,7 @@
  * `buildSheetBrep` pieces). The chip does not rename them.
  */
 import { featuresWithContours } from '../contourUsers.js';
+import { unmarkedCodeChip } from '../wrapRawScript.js';
 import { readSheetMetalSpec } from './sheetMetalScript.js';
 
 function baseChip() {
@@ -99,6 +100,10 @@ function withBlock(chip, marker, first) {
 export function featureStripChips(script, { spec = null } = {}) {
   const text = String(script || '');
   const markers = featuresWithContours(text);
+  if (!markers.length) {
+    const fallback = unmarkedCodeChip(text);
+    return fallback ? [fallback] : [];
+  }
   const live = spec && typeof spec === 'object' ? spec : null;
   const usedLive = { current: false };
   const out = [];
