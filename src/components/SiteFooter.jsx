@@ -5,14 +5,14 @@ import PrivacyChoicesController from './PrivacyChoicesController';
  */
 export default function SiteFooter({ variant = 'dark', children = null }) {
   const linkClass = variant === 'light'
-    ? 'underline underline-offset-4 hover:text-[#16171D]'
+    ? 'underline underline-offset-4 hover:text-on-light'
     : 'text-[11px] text-gray-500 underline underline-offset-2 hover:text-gray-300';
 
   return (
     <footer
       className={
         variant === 'light'
-          ? 'mt-12 flex flex-col items-center gap-3 text-center text-sm text-[#6B6E78]'
+          ? 'mt-12 flex flex-col items-center gap-3 text-center text-sm text-muted-on-light'
           : 'pointer-events-none fixed inset-x-0 bottom-0 z-[6] flex justify-center pb-[max(0.35rem,env(safe-area-inset-bottom))]'
       }
       data-site-footer=""

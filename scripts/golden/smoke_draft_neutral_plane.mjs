@@ -137,7 +137,7 @@ const Yp = { center: [0, 15, 0], normal: [0, 1, 0] };
     /data-draft-flip/.test(chip) && /data-draft-undo/.test(chip) && /data-draft-clear/.test(chip));
   check('chip default angle is signed', /min=\{-45\}/.test(chip) && /id="draft-angle"/.test(chip));
   check('chip does not ask for shift-click', !/shift-click/.test(chip) && !/shiftKey/.test(chip));
-  check('POPUP_STYLE documents DraftModeChip', /DraftModeChip/.test(read('../../docs/POPUP_STYLE.md')));
+  check('ui_style_guide documents DraftModeChip', /DraftModeChip/.test(read('../../docs/ui_style_guide.md')));
 }
 
 const pending = new Map();

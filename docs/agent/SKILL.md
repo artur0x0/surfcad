@@ -2,6 +2,8 @@
 
 Drive an open SurfCAD tab through **`packages/surfcad-mcp`**: stdio MCP → loopback WebSocket relay (M1) → `window.surfcad.call`. Tool names match `src/agent/commands.json` (`npm run export:agent`).
 
+UI text and color: [docs/ui_style_guide.md](../ui_style_guide.md). Shared classes only; never dark text on dark chrome; user-facing copy says Chrome, not Edge.
+
 ## Pair
 
 1. Open [https://surfcad.com](https://surfcad.com) (or local dev / `?agent=1`).

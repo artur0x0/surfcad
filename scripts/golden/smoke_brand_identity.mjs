@@ -108,11 +108,11 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
     && /data-brand-header/.test(headerMark));
   check('splash is paper, mark, 40px wordmark, grey tagline',
     /data-app-loading/.test(loading)
-    && /background: '#FAFAF9'/.test(loading)
+    && /surface-light/.test(loading)
     && /<BrandMark /.test(loading)
     && /tone="splash" size=\{40\}/.test(loading)
     && /Don't do CAD\. SurfCAD\./.test(loading)
-    && /color: '#6B6E78'/.test(loading)
+    && /text-muted-on-light/.test(loading)
     && !/#FF5A1F/.test(loading)
     && !/FF5A1F/i.test(loading));
   const ribbon = feed.slice(feed.indexOf('data-parts-feed-ribbon'), feed.indexOf('data-parts-rows'));

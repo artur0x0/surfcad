@@ -60,6 +60,7 @@ export default [
       // scope and redeclare `const func` per example — unparseable as a unit,
       // yet correct for each snippet's real life (pasted alone into the editor).
       'codeSamples.js',
+      'scripts/ci/fixtures/**', // contrast-guard violation sample (JSX, not app code)
     ],
   },
 
