@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,6 +52,13 @@ test('npm pack tarball installs and lists MCP tools over stdio', { timeout: 120_
 
     const client = new Client({ name: 'surfcad-mcp-pack-smoke', version: '1.0.0' });
     await client.connect(transport);
+
+    const pkgVersion = JSON.parse(
+      readFileSync(join(installRoot, 'node_modules/surfcad-mcp/package.json'), 'utf8'),
+    ).version;
+    const serverInfo = client.getServerVersion();
+    assert.equal(serverInfo?.name, 'surfcad-mcp');
+    assert.equal(serverInfo?.version, pkgVersion, 'initialize serverInfo.version matches package.json');
 
     const { tools } = await client.listTools();
     assert.equal(tools.length, catalog.count + 1, 'bridge commands plus pair tool');
