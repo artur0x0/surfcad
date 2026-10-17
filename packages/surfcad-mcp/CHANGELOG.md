@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Safari (macOS) can pair. The relay serves a small **SurfCAD local agent bridge** page at `http://127.0.0.1:17341/bridge`; SurfCAD opens it as a pop-up from **Connect Agent** and passes relay traffic through it, because Safari blocks `ws://127.0.0.1` from https pages. The page only talks to allowlisted SurfCAD origins, needs a per-session nonce, cannot be framed, and answers only for a loopback `Host`. If the relay is not running yet, the window keeps retrying (every few seconds, no time limit) and connects once `npx surfcad-mcp` starts. Tab reconnects reuse that same window — they do not open a new one. Pairing still needs **Allow connection** in SurfCAD. Safari on iPhone and iPad is still not supported.
 - `git_branch_create` creates the branch and switches the working session to it when the working copy is clean. If there are uncommitted changes, the branch is still created but the session stays on the current branch (same as the Parts Create flow, which does not discard unsaved edits). A failed switch still returns `status: 'created'` with `switched: false` and `switchError`.
 - `AgentBridgeHost` is mounted once above App's desktop/mobile split, so a 768px resize does not remount the pairing socket or mint a new `tabKey`.
 - Dropped-tab reservations now expire in `hasTab` / `liveTab` (24 h TTL) and an unref'd sweep drops stale Map entries; a later `register_tab` can reuse the code.

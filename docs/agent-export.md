@@ -386,7 +386,9 @@ Loopback-only relay for a local MCP / stdio process to drive the same bridge as 
 | `scripts/vite-agent-bridge-ws.mjs` | Vite plugin: starts the relay on `127.0.0.1` (port `SURFCAD_AGENT_BRIDGE_WS_PORT`, default **17341**) during `vite` dev and `vite preview`. |
 | `src/components/AgentBridgePairing.jsx` | In-app UI: user must **Show pairing code**, then **Allow connection** when a client connects. Paired state and **Disconnect** are visible. |
 | `src/agent/ws/relayHub.js` | Pairing state machine and message routing. |
-| `src/agent/ws/tabConnection.js` | Tab side: forwards `{ id, command, args }` to `window.surfcad.call`. |
+| `src/agent/ws/tabConnection.js` | Tab side: forwards `{ id, command, args }` to `window.surfcad.call`. Takes `createSocket` for the transport. |
+| `src/agent/ws/popupTransport.js` | Safari transport: frames go through the loopback bridge window (`http://127.0.0.1:17341/bridge`) with postMessage. |
+| `packages/surfcad-mcp/src/bridge/bridgePage.mjs`, `bridgePopup.mjs` | Relay-served bridge page and its script (`/bridge`, `/bridge.js`). |
 | `scripts/agent-bridge-ws-client.mjs` | Tiny Node client: `npm run agent-bridge:client -- --token CODE --command list_faces`. |
 
 **Pairing (control messages use `type`):**
