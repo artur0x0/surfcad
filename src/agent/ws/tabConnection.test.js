@@ -249,3 +249,46 @@ test('first connect to a missing relay stays idle for the pairing poller', () =>
   ctx.timers.advance(60_000);
   assert.equal(ctx.factory.sockets.length, 1);
 });
+
+test('refuses commands until pairing is approved', async () => {
+  const calls = [];
+  const ctx = setup({
+    call: async (name, args) => {
+      calls.push({ name, args });
+      return { ok: true, result: { ran: name } };
+    },
+  });
+  ctx.conn.connect();
+  const ws = ctx.factory.latest();
+  ws.fire('open');
+  assert.equal(ctx.conn.getState(), 'advertising');
+
+  ws.receive({ id: 'c0', command: 'list_faces', args: {} });
+  await Promise.resolve();
+  assert.equal(calls.length, 0);
+  const refused = [...ws.sent].reverse().find((m) => m.id === 'c0');
+  assert.equal(refused?.ok, false);
+  assert.equal(refused?.error?.code, 'not_paired');
+
+  ws.receive({ type: PAIR_MSG.PAIR_REQUEST, token: 'ABC234' });
+  assert.equal(ctx.conn.getState(), 'pending');
+  ws.receive({ id: 'c1', command: 'list_faces', args: {} });
+  await Promise.resolve();
+  assert.equal(calls.length, 0);
+  assert.equal([...ws.sent].reverse().find((m) => m.id === 'c1')?.error?.code, 'not_paired');
+
+  ctx.conn.approvePair();
+  ws.receive({ type: PAIR_MSG.PAIRED, token: 'ABC234' });
+  assert.equal(ctx.conn.getState(), 'paired');
+  ws.receive({ id: 'c2', command: 'list_faces', args: { partId: 'p0' } });
+  await Promise.resolve();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'list_faces');
+  assert.equal([...ws.sent].reverse().find((m) => m.id === 'c2')?.ok, true);
+
+  ws.receive({ type: PAIR_MSG.UNPAIRED, reason: 'peer_disconnected' });
+  ws.receive({ id: 'c3', command: 'list_faces', args: {} });
+  await Promise.resolve();
+  assert.equal(calls.length, 1);
+  assert.equal([...ws.sent].reverse().find((m) => m.id === 'c3')?.error?.code, 'not_paired');
+});
