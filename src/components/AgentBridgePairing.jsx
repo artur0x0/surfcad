@@ -16,8 +16,10 @@ import { AGENT_PAIRING_PROMPT, pairingPromptPreview } from '../agent/ws/pairingP
 import { probeRelayWebSocket } from '../agent/ws/relayProbe.js';
 import { createRelayPoller, DEFAULT_RELAY_POLL_MS } from '../agent/ws/relayPoller.js';
 import {
+  disposePairingHost,
   isCurrentPairingConnection,
   isRelayTabConnected,
+  pairingProbeUserCopy,
   shouldPollRelay,
   shouldRevealPairingCode,
 } from '../agent/ws/pairingFlow.js';
@@ -66,9 +68,7 @@ export default function AgentBridgePairing({
   });
 
   const stopConnection = useCallback(() => {
-    const conn = connRef.current;
-    connRef.current = null;
-    conn?.disconnect();
+    connRef.current = disposePairingHost({ conn: connRef.current }).conn;
     setState('idle');
     setIssue(null);
     setLink(null);
@@ -94,9 +94,10 @@ export default function AgentBridgePairing({
   }, [enabled, closeFlow]);
 
   useEffect(() => () => {
-    stopConnection();
-    stopPolling();
-  }, [stopConnection, stopPolling]);
+    const next = disposePairingHost({ conn: connRef.current, poller: pollerRef.current });
+    connRef.current = next.conn;
+    pollerRef.current = next.poller;
+  }, []);
 
   useEffect(() => {
     if (state === 'paired') {
@@ -283,7 +284,7 @@ export default function AgentBridgePairing({
     </div>
   ) : issue === 'origin_rejected' ? (
     <p className="text-xs text-red-300 mb-2" data-agent-bridge-error="origin_rejected">
-      This page origin was rejected by the local relay. Open https://surfcad.com (not a copy) and try again.
+      {pairingProbeUserCopy('origin_rejected')}
     </p>
   ) : issue === 'browser_blocked' ? (
     <p className="text-xs text-red-300 mb-2" data-agent-bridge-error="browser_blocked">
@@ -317,7 +318,7 @@ export default function AgentBridgePairing({
           data-agent-bridge-waiting-relay=""
         >
           <Loader2 size={14} className="animate-spin shrink-0" aria-hidden />
-          Waiting for relay…
+          {pairingProbeUserCopy(null)}
         </div>
       ) : null}
       {showCode ? (

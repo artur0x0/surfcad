@@ -180,8 +180,9 @@ test('reconnectNow skips the backoff wait', () => {
 
 test('disconnect stops retries and clears the link', () => {
   const ctx = setup();
-  pair(ctx);
+  const { ws } = pair(ctx);
   ctx.conn.disconnect();
+  assert.equal(ws.readyState, 3, 'live socket must close on unmount/disconnect');
   assert.equal(ctx.conn.getLink(), null);
   assert.equal(ctx.conn.getState(), 'idle');
   ctx.timers.advance(60_000);

@@ -1,11 +1,10 @@
 /**
  * Relay auto-retry: page open before relay starts should pair without reload.
+ * Closes the profile panel before dropping the relay, then checks pairing_lost
+ * fails fast and reconnect works.
  * Run: npm run build && node scripts/playtest/run.mjs --scenario agent-bridge-relay-retry
  */
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   assertLocalhost,
   findChrome,
@@ -14,10 +13,39 @@ import {
   waitForServer,
 } from '../lib/harness.mjs';
 import { pickFreePort } from '../lib/pickFreePort.mjs';
-import { connectPeer } from '../../../src/agent/ws/nodeClient.js';
+import {
+  startAgentBridgeRelay,
+  stopAgentBridgeRelay,
+} from '../../../packages/surfcad-mcp/src/bridge/relayServer.mjs';
+import { RelaySession } from '../../../packages/surfcad-mcp/src/relay.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
-const SERVER_BIN = join(ROOT, 'packages/surfcad-mcp/bin/surfcad-mcp.js');
+const FAST_FAIL_MS = 2000;
+
+async function timed(promise) {
+  const start = Date.now();
+  try {
+    const value = await promise;
+    return { ms: Date.now() - start, value, error: null };
+  } catch (error) {
+    return { ms: Date.now() - start, value: null, error };
+  }
+}
+
+async function waitForLostCall(session, timeoutMs) {
+  const start = Date.now();
+  for (;;) {
+    const outcome = await timed(session.call('status'));
+    if (outcome.error?.code === 'pairing_lost') {
+      assert.match(String(outcome.error.hint || ''), /Chrome/);
+      assert.doesNotMatch(`${outcome.error.message}\n${outcome.error.hint || ''}`, /\bEdge\b/);
+      return Date.now() - start;
+    }
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`pairing_lost did not arrive (${outcome.error?.code || 'ok'})`);
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
 
 export const id = 'agent-bridge-relay-retry';
 export const title = 'Agent bridge relay auto-retry';
@@ -76,26 +104,25 @@ export async function run(ctx) {
     `wrap should sit at top-right (x=${wrapBox.x})`,
   );
 
-  const relayProc = spawn(process.execPath, [SERVER_BIN], {
-    env: {
-      ...process.env,
-      SURFCAD_MCP_START_RELAY: '1',
-      SURFCAD_AGENT_BRIDGE_WS_PORT: String(relayPort),
-    },
-    stdio: 'ignore',
-    detached: true,
+  let relay = await startAgentBridgeRelay({ port: relayPort, onLog: () => {} });
+  const session = new RelaySession({
+    url: relayUrl,
+    onLog: () => {},
+    reconnectDelaysMs: [250, 500, 1000, 2000],
   });
 
   try {
     await page.locator('[data-profile-chip]').first().click();
-    await page.click('[data-ui-action="data-agent-bridge-connect"]');
+    const connect = page.locator('[data-ui-action="data-agent-bridge-connect"]');
+    if (await connect.count()) await connect.click();
     await page.waitForSelector('[data-agent-bridge-waiting-relay], [data-agent-bridge-code]', { timeout: 15000 });
     await page.waitForSelector('[data-agent-bridge-code]', { timeout: 30000 });
     const token = (await page.locator('[data-agent-bridge-code]').innerText()).trim();
-    const peerPromise = connectPeer(relayUrl, token);
+    const peerPromise = session.pair(token);
     await page.waitForSelector('[data-agent-bridge-approval]', { timeout: 15000 });
     await page.click('[data-ui-action="data-agent-bridge-approve"]');
-    const peer = await peerPromise;
+    await peerPromise;
+    await session.call('status');
     await page.waitForSelector('[data-agent-bridge-connection-ring="connected"]', { timeout: 15000 });
     await page.keyboard.press('Escape');
     await page.waitForFunction(
@@ -105,38 +132,17 @@ export async function run(ctx) {
       { timeout: 5000 },
     );
 
-    try { peer.close(); } catch { /* gone */ }
+    const closing = relay;
+    relay = null;
+    await stopAgentBridgeRelay(closing);
+    const lostMs = await waitForLostCall(session, FAST_FAIL_MS);
+    assert.ok(lostMs < FAST_FAIL_MS, `pairing_lost took ${lostMs}ms`);
     await page.waitForSelector('[data-agent-bridge-connection-ring="reconnecting"]', { timeout: 15000 });
 
-    const stopRelay = () => {
-      try { process.kill(-relayProc.pid, 'SIGTERM'); } catch { /* gone */ }
-    };
-    stopRelay();
-    await page.waitForSelector('[data-agent-bridge-connection-ring="reconnecting"]', { timeout: 15000 });
-
-    const relayProc2 = spawn(process.execPath, [SERVER_BIN], {
-      env: {
-        ...process.env,
-        SURFCAD_MCP_START_RELAY: '1',
-        SURFCAD_AGENT_BRIDGE_WS_PORT: String(relayPort),
-      },
-      stdio: 'ignore',
-      detached: true,
-    });
-    try {
-      // The tab re-registers on its own; until it does the relay answers unknown_token.
-      const peer2Promise = (async () => {
-        const deadline = Date.now() + 30000;
-        for (;;) {
-          try {
-            return await connectPeer(relayUrl, token);
-          } catch (err) {
-            if (Date.now() > deadline) throw err;
-            await new Promise((r) => setTimeout(r, 250));
-          }
-        }
-      })();
-      await page.waitForSelector('[data-agent-bridge-approval]', { timeout: 30000 });
+    relay = await startAgentBridgeRelay({ port: relayPort, onLog: () => {} });
+    const approval = page.locator('[data-agent-bridge-approval]');
+    const prompted = await approval.waitFor({ timeout: 4000 }).then(() => true).catch(() => false);
+    if (prompted) {
       const menuClosed = await page.evaluate(
         /* eslint-disable no-undef */
         () => !document.querySelector('[data-profile-panel]'),
@@ -146,14 +152,28 @@ export async function run(ctx) {
         throw new Error('Allow/Deny must show while the profile menu stays closed');
       }
       await page.click('[data-ui-action="data-agent-bridge-approve"]');
-      const peer2 = await peer2Promise;
-      await page.waitForSelector('[data-agent-bridge-connection-ring="connected"]', { timeout: 15000 });
-      try { peer2.close(); } catch { /* gone */ }
-    } finally {
-      try { process.kill(-relayProc2.pid, 'SIGTERM'); } catch { /* gone */ }
     }
+    await page.waitForSelector('[data-agent-bridge-connection-ring="connected"]', { timeout: 30000 });
+    const deadline = Date.now() + 15000;
+    let recovered = false;
+    while (Date.now() < deadline) {
+      try {
+        await session.call('status');
+        recovered = true;
+        break;
+      } catch (err) {
+        if (err?.code !== 'pairing_lost' && err?.code !== 'pair_pending' && err?.code !== 'not_paired') {
+          throw err;
+        }
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    }
+    assert.ok(recovered, 'session.call should succeed after the relay returns');
   } finally {
-    try { process.kill(-relayProc.pid, 'SIGTERM'); } catch { /* gone */ }
+    try { session.disconnect(); } catch { /* gone */ }
+    if (relay) {
+      try { await stopAgentBridgeRelay(relay); } catch { /* gone */ }
+    }
     await browser.close();
     stop();
   }

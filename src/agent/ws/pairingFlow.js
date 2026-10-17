@@ -59,3 +59,33 @@ export function shouldKeepAgentBridgeHostMounted(input) {
 export function isCurrentPairingConnection(current, source) {
   return current != null && current === source;
 }
+
+/**
+ * Tear down the tab socket and poller. Used from unmount so a dropped host
+ * cannot leave a live WebSocket behind.
+ *
+ * @param {{ conn?: { disconnect?: () => void } | null, poller?: { stop?: () => void } | null } | null | undefined} host
+ * @returns {{ conn: null, poller: null }}
+ */
+export function disposePairingHost(host) {
+  host?.conn?.disconnect?.();
+  host?.poller?.stop?.();
+  return { conn: null, poller: null };
+}
+
+export const PAIRING_WAITING_COPY = 'Waiting for relay…';
+export const PAIRING_ORIGIN_REJECTED_COPY =
+  'This page origin was rejected by the local relay. Open https://surfcad.com (not a copy) and try again.';
+
+/**
+ * Distinct user-facing copy for a 403 origin rejection vs a probe timeout
+ * (timeout keeps the waiting spinner; origin rejection is a hard error).
+ *
+ * @param {string | null | undefined} issue
+ * @returns {string | null}
+ */
+export function pairingProbeUserCopy(issue) {
+  if (issue === 'origin_rejected') return PAIRING_ORIGIN_REJECTED_COPY;
+  if (issue == null || issue === '') return PAIRING_WAITING_COPY;
+  return null;
+}

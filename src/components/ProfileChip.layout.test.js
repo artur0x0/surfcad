@@ -19,6 +19,14 @@ test('viewport chip button is relative so the ring inset-0 sizes to 36x36', () =
   assert.match(SRC, /relative flex h-9 w-9 items-center/);
   assert.match(
     SRC,
-    /className="agent-bridge-profile-ring pointer-events-none absolute inset-0 rounded-full"/,
+    /agent-bridge-profile-ring agent-bridge-profile-ring--\$\{agentRing\} pointer-events-none absolute inset-0 rounded-full/,
   );
+});
+
+test('connection ring is driven by the live agentBridgeLink, not a boolean', () => {
+  assert.match(SRC, /agentBridgeRingState\(agentBridgeLink\)/);
+  assert.match(SRC, /data-agent-bridge-connection-ring=\{agentRing\}/);
+  assert.equal(SRC.includes('showAgentRing'), false);
+  assert.match(SRC, /uiTarget=\{panelOpen \? agentBridgeSlot : null\}/);
+  assert.match(SRC, /shouldKeepAgentBridgeHostMounted\(\{ agentBridgeLive, panelOpen \}\)/);
 });

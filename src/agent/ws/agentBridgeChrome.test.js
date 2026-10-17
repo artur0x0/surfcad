@@ -14,8 +14,12 @@ test('connection ring follows the link state', () => {
   assert.equal(agentBridgeRingState('reconnecting'), 'reconnecting');
   assert.equal(agentBridgeRingState('lost'), 'lost');
   assert.equal(agentBridgeRingState('bogus'), null);
+  assert.equal(agentBridgeRingState(true), null);
+  assert.equal(agentBridgeRingLabel('connected'), 'Local agent connected');
+  assert.equal(agentBridgeRingLabel('reconnecting'), 'Local agent reconnecting');
   assert.equal(agentBridgeRingLabel('lost'), 'Local agent connection lost');
   assert.equal(agentBridgeRingLabel(null), '');
+  assert.doesNotMatch(agentBridgeRingLabel('lost'), /\bEdge\b/);
 });
 
 test('approval popup portals onto document.body, not the profile menu', () => {
