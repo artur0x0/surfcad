@@ -70,6 +70,12 @@ jobs:
       - name: vite build
         run: npm run build
 
+      - name: nginx config syntax (docs)
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nginx openssl
+          node scripts/ci/nginx-config-test.mjs
+
       # Bare `node --test` also matches scripts/golden/*playtest*, which are
       # browser goldens (the default pattern is *test*). The script keeps
       # the same explicit trees and leaves those goldens out:
@@ -144,6 +150,11 @@ jobs:
           test -n "$GOLDEN_SHOT_DIR"
           mkdir -p "$GOLDEN_SHOT_DIR"
           "$CHROME_PATH" --version
+          node scripts/ci/smoke_csp_app_loads.mjs | tee "${RUNNER_TEMP}/csp-smoke.log"
+          if grep -q 'no system Chrome' "${RUNNER_TEMP}/csp-smoke.log"; then
+            echo "CSP smoke skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
           node scripts/golden/smoke_app_loads.mjs | tee "${RUNNER_TEMP}/app-loads.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/app-loads.log"; then
             echo "app-load golden skipped because Chrome was not found; CI must launch it"
