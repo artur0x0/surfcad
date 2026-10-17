@@ -90,7 +90,9 @@ test('localStorage auto-approve flag is ignored in production build', { timeout:
   assert.equal(prodBuild.status, 0, prodBuild.stderr || prodBuild.stdout);
   assert.equal(distContainsForbiddenKey(), false, 'production build must not ship auto-approve key');
 
-  const port = Number(process.env.SMOKE_PORT || 4193);
+  const port = process.env.SMOKE_PORT
+    ? Number(process.env.SMOKE_PORT)
+    : await pickFreePort();
   const relayPort = await pickFreePort();
   const relayUrl = `ws://127.0.0.1:${relayPort}`;
   const baseUrl = `http://127.0.0.1:${port}/?agent=1&agentBridgeWs=${encodeURIComponent(relayUrl)}`;

@@ -43,7 +43,9 @@ async function runBrowserE2E(t, browserType, executablePath) {
   const prodBuild = spawnSync('npm', ['run', 'build'], { cwd: ROOT, encoding: 'utf8' });
   assert.equal(prodBuild.status, 0, prodBuild.stderr || prodBuild.stdout);
 
-  const httpPort = Number(process.env.SMOKE_PORT || 4194);
+  const httpPort = process.env.SMOKE_PORT
+    ? Number(process.env.SMOKE_PORT)
+    : await pickFreePort();
   const relayPort = await pickFreePort();
   const relayUrl = `ws://127.0.0.1:${relayPort}`;
   const pageOrigin = `http://127.0.0.1:${httpPort}`;
