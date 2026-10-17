@@ -12,7 +12,11 @@ export function faceIDsForGeometry(geometry) {
   return arr?.length ? arr : null;
 }
 
-/** `f<patch id>`: the face-graph patch a single viewport click selects. */
+/**
+ * `f<patch id>`: the face-graph patch a single viewport click selects.
+ * The number is the patch index on this mesh. It is only valid until the
+ * next remesh — pass the key from the same list_faces row with the id.
+ */
 export function agentFaceId(patchId) {
   return `f${patchId}`;
 }
@@ -29,31 +33,83 @@ function faceType(face, axis) {
   return 'curved';
 }
 
+function staleFaceError(id) {
+  return {
+    error: {
+      code: 'unknown_face',
+      message: `Face ${agentFaceId(id)} is stale after a remesh. Call list_faces for current ids.`,
+    },
+  };
+}
+
+/**
+ * Fit an axis only when the patch might be a cylinder. Planar faces skip
+ * the fit (a perforated plate's big faces are the expensive ones).
+ */
+function ensureCatalogAxis(row, positions, indices) {
+  if (row._axisReady) return row;
+  row._axisReady = true;
+  if (row.kind === 'planar') {
+    row.axis = null;
+    row.type = 'planar';
+    return row;
+  }
+  const axis = (positions && indices && row.tris?.length >= 4)
+    ? (fitJointAxis(positions, indices, row.tris) || null)
+    : null;
+  row.axis = axis;
+  row.type = faceType(row, axis);
+  return row;
+}
+
+function catalogRows(geometry, ids) {
+  const positions = geometry?.attributes?.position?.array;
+  const indexArr = geometry?.index?.array;
+  if (!positions || !indexArr?.length) return [];
+  const fingerprints = fingerprintsFromGeometry(geometry, ids);
+  return fingerprints.map((face) => {
+    const row = {
+      ...face,
+      faceId: agentFaceId(face.id),
+      type: face.kind === 'planar' ? 'planar' : 'curved',
+      axis: null,
+      _axisReady: face.kind === 'planar',
+    };
+    row.ensureAxis = () => ensureCatalogAxis(row, positions, indexArr);
+    return row;
+  });
+}
+
 /**
  * The agent face catalog: one row per face-graph patch, across every body in
  * the mesh, with no size filter. It is the graph a viewport click, a paint
  * tap, and the joint refresh catalog (`catalogFromMeshData`) read, so a row
- * is exactly one pickable face and its key matches the joint catalog. The
- * patch id is deterministic for a given mesh, so a rerun of the same script
- * keeps every id.
+ * is exactly one pickable face and its key matches the joint catalog.
  *
- * @returns {Array<{ id: number, faceId: string, tris: number[], at: number[], n: number[], area: number, kind: string, type: string, axis: object|null, src?: number, ord?: number }>}
+ * `f<n>` is the patch index on this mesh and is only valid until the next
+ * remesh. A rerun of the same script keeps every id. When `cacheEntry` is
+ * the solid-cache row for this geometry, the catalog is stored there.
+ *
+ * @returns {Array<{ id: number, faceId: string, tris: number[], at: number[], n: number[], area: number, kind: string, type: string, axis: object|null, src?: number, ord?: number, ensureAxis: Function }>}
  */
-export function agentFaceCatalog(geometry, faceIDs = null) {
-  const positions = geometry?.attributes?.position?.array;
-  const indices = geometry?.index?.array;
-  if (!positions || !indices?.length) return [];
+export function agentFaceCatalog(geometry, faceIDs = null, cacheEntry = null) {
   const ids = faceIDs || faceIDsForGeometry(geometry);
-  const fingerprints = fingerprintsFromGeometry(geometry, ids);
-  return fingerprints.map((face) => {
-    const axis = fitJointAxis(positions, indices, face.tris) || null;
-    return {
-      ...face,
-      faceId: agentFaceId(face.id),
-      type: faceType(face, axis),
-      axis,
-    };
-  });
+  if (cacheEntry?.agentCatalog && cacheEntry.agentCatalogIds === ids) {
+    return cacheEntry.agentCatalog;
+  }
+  const rows = catalogRows(geometry, ids);
+  if (cacheEntry) {
+    cacheEntry.agentCatalog = rows;
+    cacheEntry.agentCatalogIds = ids;
+  }
+  return rows;
+}
+
+/** Classify cylinders on a catalog (list_faces). Planar rows stay skipped. */
+export function realizeAgentFaceCatalog(catalog) {
+  const rows = Array.isArray(catalog) ? catalog : [];
+  for (const row of rows) row.ensureAxis?.();
+  return rows;
 }
 
 /** The catalog row for a `face_id` or a face key. */
@@ -68,6 +124,11 @@ export function findAgentFace(catalog, { faceId = null, key = null } = {}) {
     if (!face) {
       return { error: { code: 'unknown_face', message: `Face ${agentFaceId(id)} is not on this part. Call list_faces for current ids.` } };
     }
+    if (key && typeof key === 'object') {
+      const hit = matchFaceKeys([face], [{ key }]);
+      if (!hit.matched.length) return staleFaceError(id);
+    }
+    face.ensureAxis?.();
     return { face };
   }
   if (!key || typeof key !== 'object') {
@@ -81,6 +142,7 @@ export function findAgentFace(catalog, { faceId = null, key = null } = {}) {
   if (!face) {
     return { error: { code: 'unknown_face', message: 'Face key not found on this part mesh. Call list_faces for current faces.' } };
   }
+  face.ensureAxis?.();
   return { face };
 }
 
@@ -93,6 +155,7 @@ export function jointPickForFace(face) {
   if (!face) {
     return { error: { code: 'unknown_face', message: 'Face not found on this part mesh' } };
   }
+  face.ensureAxis?.();
   if (face.axis) {
     return {
       kind: 'axis',

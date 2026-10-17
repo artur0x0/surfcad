@@ -1,5 +1,6 @@
 import { faceColorKey } from '../../utils/faceColorMatch.js';
 import { edgeKey } from '../../utils/selectEdge.js';
+import { realizeAgentFaceCatalog } from '../faceCatalog.js';
 
 function vec3(value) {
   if (!Array.isArray(value) || value.length < 3) return null;
@@ -27,7 +28,7 @@ function topoFaceToKey(face) {
  *   rows from `agentFaceCatalog`
  */
 export function buildFaceList(catalog) {
-  const list = Array.isArray(catalog) ? catalog : [];
+  const list = realizeAgentFaceCatalog(catalog);
   const faces = [];
   for (const face of list) {
     const key = serializeFaceKey(face);

@@ -278,3 +278,52 @@ test('joint_pick refuses an unknown face id', { timeout: 60_000 }, async () => {
   );
   assert.equal(jointPickCommand.checkArgs({ part_id: 'local:handle', face_id: 'f3' }), null);
 });
+
+test('a stale face_id plus key is unknown_face after a remesh', { timeout: 60_000 }, async () => {
+  const box = await build('return Manifold.cube([20, 20, 20], true);\n');
+  const holed = await build('return Manifold.cube([20, 20, 20], true).subtract(Manifold.cylinder(30, 3, 3, 32));\n');
+  const listed = listFaces(box);
+  const f0 = listed.find((row) => row.id === 'f0');
+  assert.ok(f0?.key);
+  const holedCatalog = agentFaceCatalog(holed.geometry, holed.faceIDs);
+  const stale = findAgentFace(holedCatalog, { faceId: 'f0', key: f0.key });
+  assert.equal(stale.error?.code, 'unknown_face');
+  assert.match(stale.error.message, /stale/i);
+  const sameMesh = findAgentFace(agentFaceCatalog(box.geometry, box.faceIDs), { faceId: 'f0', key: f0.key });
+  assert.equal(sameMesh.face?.faceId, 'f0');
+  const byIdOnly = findAgentFace(holedCatalog, { faceId: 'f0' });
+  assert.equal(byIdOnly.error, undefined);
+  assert.ok(byIdOnly.face);
+});
+
+test('fold panel ids stay planar so joint_pick does not fail', { timeout: 60_000 }, async () => {
+  const part = await build(`const panels = 3, panel = 25, fold = 10 * Math.PI / 180, thick = 2;
+const top = []; let x = 0, y = 0;
+for (let i = 0; i <= panels; i++) {
+  top.push([x, y]);
+  if (i < panels) { x += panel * Math.cos(i * fold); y += panel * Math.sin(i * fold); }
+}
+const bot = top.slice().reverse().map(([px, py]) => [px, py - thick]);
+return makeExtrude([top.concat(bot)], 40);
+`);
+  const faces = listFaces(part);
+  assert.equal(faces.length, 10);
+  assert.ok(faces.every((row) => row.type === 'planar'));
+  const catalog = agentFaceCatalog(part.geometry, part.faceIDs);
+  for (const row of faces) {
+    const pick = describeJointPick({ faceId: row.id, key: row.key, geometry: part.geometry, faceIDs: part.faceIDs });
+    assert.equal(pick.error, undefined, JSON.stringify(pick.error));
+    assert.equal(pick.kind, 'face');
+    const found = findAgentFace(catalog, { faceId: row.id, key: row.key });
+    assert.equal(found.face?.faceId, row.id);
+  }
+});
+
+test('catalog is stored on the solid-cache entry', { timeout: 60_000 }, async () => {
+  const { handle } = await load();
+  const entry = {};
+  const first = agentFaceCatalog(handle.geometry, handle.faceIDs, entry);
+  const second = agentFaceCatalog(handle.geometry, handle.faceIDs, entry);
+  assert.equal(first, second);
+  assert.equal(entry.agentCatalog, first);
+});

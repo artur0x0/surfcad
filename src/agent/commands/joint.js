@@ -32,7 +32,7 @@ const JOINT_PICK_KINDS = Object.freeze(['face', 'axis', 'edge']);
 const FACE_ID_SCHEMA = Object.freeze({
   type: 'string',
   pattern: '^f[0-9]+$',
-  description: 'Face id from list_faces on that part (e.g. f7)',
+  description: 'Face id from list_faces on that part (e.g. f7). Valid only until the next remesh; pass the key from the same list_faces row with the id.',
 });
 
 const JOINT_PICK_ROW_SCHEMA = Object.freeze({
@@ -115,8 +115,8 @@ export const jointPickCommand = Object.freeze({
   }),
   example: {
     picks: [
-      { part_id: 'local:base', face_id: 'f4' },
-      { part_id: 'local:pin', face_id: 'f2' },
+      { part_id: 'local:base', face_id: 'f4', key: { at: [0, 0, 5], n: [0, 0, 1], area: 400 } },
+      { part_id: 'local:pin', face_id: 'f2', key: { at: [0, 0, 0], n: [0, 0, 1], area: 50.27 } },
     ],
   },
   checkArgs(args) {

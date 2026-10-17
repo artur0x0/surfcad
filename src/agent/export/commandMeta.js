@@ -212,7 +212,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   list_faces: {
-    description: 'Every pickable face on the active or named part mesh (one row per face a viewport click selects, all bodies): id (f0, f1, …, stable across reruns of the same script), type (planar, cylindrical, curved), center, normal, axis and radius for cylinders, area, and key.',
+    description: 'Every pickable face on the active or named part mesh (one row per face a viewport click selects, all bodies): id (f0, f1, …), type (planar, cylindrical, curved), center, normal, axis and radius for cylinders, area, and key. The id is the patch index on this mesh and is only valid until the next remesh; a rerun of the same script keeps every id. Pass the key with the id to joint_pick so a stale id cannot silently pick another face.',
     result: { type: 'object', additionalProperties: true },
     errors: ['no_mesh', 'unknown_part', 'internal'],
     mutates: false,
@@ -573,7 +573,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   joint_pick: {
-    description: 'Feed face picks on parts into the joint card. Pass face_id from list_faces (or its key); a cylindrical face becomes an axis pick, as a viewport tap does.',
+    description: 'Feed face picks on parts into the joint card. Pass face_id from list_faces together with the key from that row (ids are only valid until the next remesh; a stale pair returns unknown_face). A cylindrical face becomes an axis pick, as a viewport tap does.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'unknown_part', 'unknown_face', 'ambiguous_face', 'pick_failed', 'no_mesh', 'internal'],
     mutates: false,

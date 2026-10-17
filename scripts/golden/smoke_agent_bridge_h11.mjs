@@ -283,8 +283,8 @@ await agentCall(page, 'joint_cancel', {});
 await agentCall(page, 'joint_open', {});
 const kettlePicked = await agentCall(page, 'joint_pick', {
   picks: [
-    { part_id: kettleBodyId, face_id: socketTop?.id },
-    { part_id: kettleHandleId, face_id: pegTop?.id },
+    { part_id: kettleBodyId, face_id: socketTop?.id, key: socketTop?.key },
+    { part_id: kettleHandleId, face_id: pegTop?.id, key: pegTop?.key },
   ],
 });
 check('joint_pick by face_id', kettlePicked.ok === true && kettlePicked.result?.count === 2, JSON.stringify(kettlePicked));

@@ -415,6 +415,7 @@ import {
   featureGraphFor,
   pruneSolidCacheIn,
   releaseGeometryIn,
+  liveSolidEntryForGeometry,
   solidEntryForGeometry,
 } from '../utils/partSolidCache';
 import {
@@ -11853,10 +11854,18 @@ const Viewport = forwardRef(({
     return attr?.array?.length ? attr.array : null;
   };
 
-  agentListFacesRef.current = ({ partId } = {}) => {
+  const agentCatalogForPart = (partId) => {
     const geom = meshGeometryForAgentPart(partId);
     if (!geom) return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
-    const listed = buildFaceList(agentFaceCatalog(geom, faceIDsForAgentPart(partId, geom)));
+    const faceIDs = faceIDsForAgentPart(partId, geom);
+    const cacheEntry = liveSolidEntryForGeometry(solidCacheRef.current, geom);
+    return { geom, faceIDs, catalog: agentFaceCatalog(geom, faceIDs, cacheEntry) };
+  };
+
+  agentListFacesRef.current = ({ partId } = {}) => {
+    const resolved = agentCatalogForPart(partId);
+    if (resolved.error) return resolved;
+    const listed = buildFaceList(resolved.catalog);
     return {
       partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
       ...listed,
@@ -11864,13 +11873,15 @@ const Viewport = forwardRef(({
   };
 
   agentDescribeJointPickRef.current = ({ partId, key, kind, faceId } = {}) => {
-    const geom = meshGeometryForAgentPart(partId);
+    const resolved = agentCatalogForPart(partId);
+    if (resolved.error) return resolved;
     return describeJointPick({
       key,
       kind,
       faceId,
-      geometry: geom,
-      faceIDs: faceIDsForAgentPart(partId, geom),
+      geometry: resolved.geom,
+      faceIDs: resolved.faceIDs,
+      catalog: resolved.catalog,
     });
   };
 
