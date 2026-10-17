@@ -1,7 +1,10 @@
 // services/email.js - Azure Communication Services email (kebab-case schema)
 import { EmailClient } from '@azure/communication-email';
 import config from '../config/index.js';
+import { escapeHtml, sanitizePersonName, safeHttpUrl, verificationGreeting, addressBlockHtml } from './htmlSafe.js';
 import { lineTableHtml, lineTableText } from './orderMail.js';
+
+export { escapeHtml, sanitizePersonName, verificationGreeting, addressBlockHtml } from './htmlSafe.js';
 
 let emailClient = null;
 
@@ -32,12 +35,12 @@ function getOrderFields(order) {
  */
 function getAddressFields(address) {
   return {
-    name: address.name,
-    street: address['address-1'] || address.street,
-    street2: address['address-2'] || address.street2,
-    city: address.city,
-    state: address.state,
-    zip: address.zip,
+    name: address?.name || '',
+    street: address?.['address-1'] || address?.street || '',
+    street2: address?.['address-2'] || address?.street2 || '',
+    city: address?.city || '',
+    state: address?.state || '',
+    zip: address?.zip || '',
   };
 }
 
@@ -78,11 +81,11 @@ export async function sendVerificationEmail(email, code, name) {
       <h1>Verify Your Email</h1>
     </div>
     <div class="content">
-      <p>Hi${name ? ` ${name}` : ''},</p>
+      <p>Hi${verificationGreeting(name)},</p>
       <p>Thanks for signing up! Please use the verification code below to complete your registration:</p>
       
       <div class="code-box">
-        <div class="code">${code}</div>
+        <div class="code">${escapeHtml(code)}</div>
       </div>
       
       <p>This code will expire in <strong>15 minutes</strong>.</p>
@@ -102,7 +105,7 @@ export async function sendVerificationEmail(email, code, name) {
   const plainTextContent = `
 Your SurfCAD Verification Code
 
-Hi${name ? ` ${name}` : ''},
+Hi${sanitizePersonName(name) ? ` ${sanitizePersonName(name)}` : ''},
 
 Thanks for signing up! Your verification code is:
 
@@ -167,15 +170,15 @@ export async function sendAdminNewUserNotification(user) {
     <h2>👤 New User Verified</h2>
     
     <table>
-      <tr><th>Email</th><td>${user.email}</td></tr>
-      <tr><th>Name</th><td>${user.name || 'Not provided'}</td></tr>
-      <tr><th>Auth Provider</th><td>${user.authProvider}</td></tr>
-      <tr><th>Verified At</th><td>${new Date().toLocaleString()}</td></tr>
-      <tr><th>Created At</th><td>${new Date(user.createdAt).toLocaleString()}</td></tr>
+      <tr><th>Email</th><td>${escapeHtml(user.email)}</td></tr>
+      <tr><th>Name</th><td>${escapeHtml(sanitizePersonName(user.name) || 'Not provided')}</td></tr>
+      <tr><th>Auth Provider</th><td>${escapeHtml(user.authProvider)}</td></tr>
+      <tr><th>Verified At</th><td>${escapeHtml(new Date().toLocaleString())}</td></tr>
+      <tr><th>Created At</th><td>${escapeHtml(new Date(user.createdAt).toLocaleString())}</td></tr>
     </table>
     
     <p style="color: #666; font-size: 12px; margin-top: 20px;">
-      User ID: ${user._id}
+      User ID: ${escapeHtml(user._id)}
     </p>
   </div>
 </body>
@@ -255,25 +258,22 @@ export async function sendOrderConfirmation(order, customerEmail) {
         <h3 style="margin-top: 0;">Order Details</h3>
         <div class="detail-row">
           <span class="label">Order Number</span>
-          <span class="value">${orderNumber}</span>
+          <span class="value">${escapeHtml(orderNumber)}</span>
         </div>
         ${linesHtml}
         <div class="detail-row">
           <span class="label">Shipping</span>
-          <span class="value">${order.shipping.service || 'Standard'}</span>
+          <span class="value">${escapeHtml(order.shipping.service || 'Standard')}</span>
         </div>
         <div class="detail-row total-row">
           <span class="label">Total</span>
-          <span class="value">$${order.quote.total.toFixed(2)}</span>
+          <span class="value">$${escapeHtml(order.quote.total.toFixed(2))}</span>
         </div>
       </div>
       
       <h3>Shipping Address</h3>
       <p>
-        ${address.name}<br>
-        ${address.street}<br>
-        ${address.street2 ? address.street2 + '<br>' : ''}
-        ${address.city}, ${address.state} ${address.zip}
+        ${addressBlockHtml(order.shipping.address)}
       </p>
       
       <p>We'll send you another email with tracking information once your order ships.</p>
@@ -343,7 +343,6 @@ export async function sendAdminOrderNotification(order, customerEmail) {
   }
   
   const { orderNumber } = getOrderFields(order);
-  const address = getAddressFields(order.shipping.address);
   const linesHtml = lineTableHtml(order, { downloads: true });
   const boxCount = Number(order.shipping?.['package-count']) || 1;
   
@@ -366,10 +365,10 @@ export async function sendAdminOrderNotification(order, customerEmail) {
     <h2>🔔 New Order Received</h2>
     
     <table>
-      <tr><th>Order #</th><td>${orderNumber}</td></tr>
-      <tr><th>Customer</th><td>${customerEmail}</td></tr>
-      <tr><th>Status</th><td>${order.status}</td></tr>
-      ${boxCount > 1 ? `<tr><th>Boxes</th><td>${boxCount}</td></tr>` : ''}
+      <tr><th>Order #</th><td>${escapeHtml(orderNumber)}</td></tr>
+      <tr><th>Customer</th><td>${escapeHtml(customerEmail)}</td></tr>
+      <tr><th>Status</th><td>${escapeHtml(order.status)}</td></tr>
+      ${boxCount > 1 ? `<tr><th>Boxes</th><td>${escapeHtml(boxCount)}</td></tr>` : ''}
     </table>
 
     <h3>Parts</h3>
@@ -377,25 +376,22 @@ export async function sendAdminOrderNotification(order, customerEmail) {
     
     <h3>Pricing</h3>
     <table>
-      <tr><th>Material Cost</th><td>$${order.quote['material-cost']?.toFixed(2) || order.quote.material?.toFixed(2)}</td></tr>
-      <tr><th>Machine Cost</th><td>$${order.quote['machine-cost']?.toFixed(2) || order.quote.machine?.toFixed(2)}</td></tr>
-      <tr><th>Shipping</th><td>$${order.quote['shipping-cost']?.toFixed(2) || order.quote.shipping?.toFixed(2)}</td></tr>
-      <tr><th>Tax</th><td>$${order.quote.tax.toFixed(2)}</td></tr>
-      <tr><th><strong>Total</strong></th><td><strong>$${order.quote.total.toFixed(2)}</strong></td></tr>
+      <tr><th>Material Cost</th><td>$${escapeHtml(order.quote['material-cost']?.toFixed(2) || order.quote.material?.toFixed(2))}</td></tr>
+      <tr><th>Machine Cost</th><td>$${escapeHtml(order.quote['machine-cost']?.toFixed(2) || order.quote.machine?.toFixed(2))}</td></tr>
+      <tr><th>Shipping</th><td>$${escapeHtml(order.quote['shipping-cost']?.toFixed(2) || order.quote.shipping?.toFixed(2))}</td></tr>
+      <tr><th>Tax</th><td>$${escapeHtml(order.quote.tax.toFixed(2))}</td></tr>
+      <tr><th><strong>Total</strong></th><td><strong>$${escapeHtml(order.quote.total.toFixed(2))}</strong></td></tr>
     </table>
     
     <h3>Shipping</h3>
     <p>
-      ${address.name}<br>
-      ${address.street}<br>
-      ${address.street2 || ''}<br>
-      ${address.city}, ${address.state} ${address.zip}<br>
-      ${order.shipping.address.phone || 'No phone'}
+      ${addressBlockHtml(order.shipping.address)}<br>
+      ${escapeHtml(order.shipping.address.phone || 'No phone')}
     </p>
-    <p><strong>Method:</strong> ${order.shipping.service || order.shipping.method}</p>
+    <p><strong>Method:</strong> ${escapeHtml(order.shipping.service || order.shipping.method)}</p>
     
     <p style="color: #666; font-size: 12px;">
-      Received: ${new Date(order['created-at'] || order.createdAt).toLocaleString()}
+      Received: ${escapeHtml(new Date(order['created-at'] || order.createdAt).toLocaleString())}
     </p>
   </div>
 </body>
@@ -437,11 +433,12 @@ export async function sendShippingNotification(order, customerEmail) {
   }
   
   const { orderNumber } = getOrderFields(order);
-  const address = getAddressFields(order.shipping.address);
   const linesHtml = lineTableHtml(order);
   const trackingNumber = order.shipping['tracking-number'] || order.shipping.trackingNumber;
-  const trackingUrl = order.shipping['tracking-url'] || order.shipping.trackingUrl || 
-    `https://www.ups.com/track?tracknum=${trackingNumber}`;
+  const trackingUrl = safeHttpUrl(
+    order.shipping['tracking-url'] || order.shipping.trackingUrl ||
+    `https://www.ups.com/track?tracknum=${encodeURIComponent(trackingNumber || '')}`,
+  );
   
   const subject = `Your Order Has Shipped: ${orderNumber}`;
   
@@ -466,26 +463,24 @@ export async function sendShippingNotification(order, customerEmail) {
       <h1>📦 Your Order Has Shipped!</h1>
     </div>
     <div class="content">
-      <p>Great news! Your order <strong>${orderNumber}</strong> is on its way.</p>
+      <p>Great news! Your order <strong>${escapeHtml(orderNumber)}</strong> is on its way.</p>
       ${linesHtml}
       
       <div class="tracking-box">
         <p style="margin: 0 0 10px 0;">Tracking Number</p>
-        <div class="tracking-number">${trackingNumber}</div>
+        <div class="tracking-number">${escapeHtml(trackingNumber)}</div>
         <p style="margin: 15px 0 0 0;">
-          <a href="${trackingUrl}" class="button">Track Package</a>
+          ${trackingUrl ? `<a href="${escapeHtml(trackingUrl)}" class="button">Track Package</a>` : ''}
         </p>
       </div>
       
       <h3>Shipping To</h3>
       <p>
-        ${address.name}<br>
-        ${address.street}<br>
-        ${address.city}, ${address.state} ${address.zip}
+        ${addressBlockHtml(order.shipping.address)}
       </p>
       
-      <p><strong>Carrier:</strong> ${order.shipping.carrier}<br>
-      <strong>Service:</strong> ${order.shipping.service}</p>
+      <p><strong>Carrier:</strong> ${escapeHtml(order.shipping.carrier)}<br>
+      <strong>Service:</strong> ${escapeHtml(order.shipping.service)}</p>
     </div>
     <div class="footer">
       <p>&copy; ${new Date().getFullYear()} SurfCAD. All rights reserved.</p>
@@ -558,31 +553,31 @@ export async function sendAdminDisputeNotification(order, dispute, customerEmail
     <h2>🚨 STRIPE DISPUTE OPENED</h2>
     
     <div class="alert">
-      A customer has opened a dispute for $${disputeAmount}
+      A customer has opened a dispute for $${escapeHtml(disputeAmount)}
     </div>
 
     <table>
-      <tr><th>Order #</th><td>${orderNumber}</td></tr>
-      <tr><th>Customer</th><td>${customerEmail}</td></tr>
-      <tr><th>Dispute Amount</th><td>$${disputeAmount}</td></tr>
-      <tr><th>Reason</th><td>${disputeReason}</td></tr>
-      <tr><th>Status</th><td>${disputeStatus}</td></tr>
-      <tr><th>Dispute ID</th><td>${dispute.id}</td></tr>
-      <tr><th>Payment Intent</th><td>${dispute.payment_intent || '—'}</td></tr>
+      <tr><th>Order #</th><td>${escapeHtml(orderNumber)}</td></tr>
+      <tr><th>Customer</th><td>${escapeHtml(customerEmail)}</td></tr>
+      <tr><th>Dispute Amount</th><td>$${escapeHtml(disputeAmount)}</td></tr>
+      <tr><th>Reason</th><td>${escapeHtml(disputeReason)}</td></tr>
+      <tr><th>Status</th><td>${escapeHtml(disputeStatus)}</td></tr>
+      <tr><th>Dispute ID</th><td>${escapeHtml(dispute.id)}</td></tr>
+      <tr><th>Payment Intent</th><td>${escapeHtml(dispute.payment_intent || '—')}</td></tr>
     </table>
 
     <h3>Order Summary</h3>
     ${linesHtml}
-    <p>Created: ${new Date(order['created-at'] || order.createdAt).toLocaleString()}</p>
+    <p>Created: ${escapeHtml(new Date(order['created-at'] || order.createdAt).toLocaleString())}</p>
 
     <p style="margin-top: 24px; color: #555;">
       <strong>Action required:</strong> Review evidence requirements and respond within the deadline.<br>
-      Stripe Dashboard → Disputes → ${dispute.id}
+      Stripe Dashboard → Disputes → ${escapeHtml(dispute.id)}
     </p>
 
     <p style="color: #666; font-size: 12px; margin-top: 24px;">
-      Order ID: ${order._id}<br>
-      Dispute opened: ${new Date().toLocaleString()}
+      Order ID: ${escapeHtml(order._id)}<br>
+      Dispute opened: ${escapeHtml(new Date().toLocaleString())}
     </p>
   </div>
 </body>
@@ -610,14 +605,6 @@ export async function sendAdminDisputeNotification(order, dispute, customerEmail
     console.error('[Email] Failed to send admin dispute notification:', error);
     return false;
   }
-}
-
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 /**
@@ -660,7 +647,7 @@ export async function sendPartnerLeadNotification(lead) {
       <tr><th>Website</th><td>${escapeHtml(lead.website || '—')}</td></tr>
       <tr><th>Partner type</th><td>${escapeHtml(typeLabel)}</td></tr>
       <tr><th>Message</th><td><pre>${escapeHtml(lead.message)}</pre></td></tr>
-      <tr><th>Submitted</th><td>${new Date(lead.createdAt || Date.now()).toLocaleString()}</td></tr>
+      <tr><th>Submitted</th><td>${escapeHtml(new Date(lead.createdAt || Date.now()).toLocaleString())}</td></tr>
     </table>
     <p style="color: #666; font-size: 12px; margin-top: 20px;">
       Lead ID: ${escapeHtml(lead._id)}
