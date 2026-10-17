@@ -1,25 +1,30 @@
 # Gitleaks config. Extends the default rule set and allowlists the
-# product-analytics consent localStorage key (CONSENT_STORAGE_KEY /
-# surfcad.consent.v1), which is a storage name, not a secret.
+# product-analytics consent localStorage key (surfcad.consent.v1),
+# which is a storage name, not a secret.
 #
 # False positives flagged on:
 #   src/utils/consent.js:9
 #   scripts/golden/lib/presetConsentInit.mjs:7
+#
+# Global [[allowlists]] paths skip the whole file (OR file-exclude).
+# [[rules.allowlists]] condition = "AND" is finding-scoped: path AND
+# secret. A planted ghp_ in consent.js still reports.
 
 title = "SurfCAD"
 
 [extend]
 useDefault = true
 
-[allowlist]
-description = "CONSENT_STORAGE_KEY is a localStorage name, not a secret"
-paths = [
-    '''src/utils/consent\.js''',
-    '''src/utils/consent\.test\.js''',
-    '''scripts/golden/lib/presetConsentInit\.mjs''',
-]
-regexes = [
-    '''CONSENT_STORAGE_KEY''',
-    '''SURFCAD_CONSENT_STORAGE_KEY''',
-    '''surfcad\.consent\.v1''',
-]
+[[rules]]
+id = "generic-api-key"
+
+    [[rules.allowlists]]
+    description = "consent storage key name, not a secret"
+    condition = "AND"
+    paths = [
+        '''src/utils/consent\.js$''',
+        '''scripts/golden/lib/presetConsentInit\.mjs$''',
+    ]
+    regexes = [
+        '''surfcad\.consent\.v1''',
+    ]
