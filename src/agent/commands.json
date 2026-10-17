@@ -11268,7 +11268,7 @@
         "properties": {
           "part": {
             "type": "string",
-            "description": "Part row id (local id or vault path)."
+            "description": "Stable part id or vault path."
           }
         }
       },
@@ -11327,7 +11327,7 @@
         "properties": {
           "part": {
             "type": "string",
-            "description": "Part row id to move."
+            "description": "Stable part id or vault path to move."
           },
           "position": {
             "type": "array",
