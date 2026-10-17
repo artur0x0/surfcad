@@ -6,6 +6,14 @@ import { Send, Loader2, X, Play } from 'lucide-react';
 
 const MAX_HISTORY = 42;
 
+function generateErrorMessage(status) {
+  if (status === 401) return 'Sign in to use AI generation.';
+  if (status === 413) return 'This request is too long. Clear the conversation or shorten the script and try again.';
+  if (status === 429) return 'Rate limit exceeded. Please wait a moment and try again.';
+  if (status === 503) return 'AI generation is not available right now.';
+  return `AI request failed (${status}). Please try again.`;
+}
+
 const PromptInput = ({ onCodeGenerated, currentCode, selectedFace, onClearFaceSelection, isMobile }) => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -107,6 +115,7 @@ You can choose to modify the existing code or create something completely new ba
       
       const response = await fetch('/api/generate', {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json'
         },
@@ -114,7 +123,7 @@ You can choose to modify the existing code or create something completely new ba
       });
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        throw new Error(generateErrorMessage(response.status));
       }
 
       const data = await response.json();
@@ -143,13 +152,7 @@ You can choose to modify the existing code or create something completely new ba
       }
     } catch (err) {
       console.error('Error generating code:', err);
-      if (err.message.includes('401')) {
-        setError('Invalid API key. Please check your GROQ_API_KEY');
-      } else if (err.message.includes('429')) {
-        setError('Rate limit exceeded. Please wait a moment and try again.');
-      } else {
-        setError(err.message || 'Failed to generate code. Please try again.');
-      }
+      setError(err.message || 'Failed to generate code. Please try again.');
     } finally {
       setIsLoading(false);
     }
