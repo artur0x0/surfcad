@@ -182,6 +182,14 @@ export function createAgentBridgeTabConnection(opts) {
     const id = msg.id;
     const command = msg.command;
     const args = msg.args && typeof msg.args === 'object' ? msg.args : {};
+    if (state !== 'paired') {
+      send({
+        id,
+        ok: false,
+        error: { code: 'not_paired', message: 'Pair before sending bridge commands' },
+      });
+      return;
+    }
     try {
       const env = await call(command, args);
       if (env.ok) {
