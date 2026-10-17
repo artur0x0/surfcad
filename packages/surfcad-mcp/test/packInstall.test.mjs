@@ -8,6 +8,7 @@ import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { loadCommandsCatalog } from '../src/catalog.mjs';
+import { packTarballEntry, parseNpmPackStdout } from './npmPackJson.mjs';
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -15,7 +16,11 @@ function npm(args, opts = {}) {
   const res = spawnSync('npm', args, {
     encoding: 'utf8',
     cwd: opts.cwd || PKG_ROOT,
-    env: { ...process.env, ...opts.env },
+    env: {
+      ...process.env,
+      NPM_CONFIG_UPDATE_NOTIFIER: 'false',
+      ...opts.env,
+    },
   });
   if (res.status !== 0) {
     const err = new Error(`npm ${args.join(' ')} failed (${res.status})\n${res.stdout}\n${res.stderr}`);
@@ -28,10 +33,8 @@ function npm(args, opts = {}) {
 
 test('npm pack tarball installs and lists MCP tools over stdio', { timeout: 120_000 }, async () => {
   const catalog = loadCommandsCatalog();
-  const pack = npm(['pack', '--json', '--pack-destination', PKG_ROOT]);
-  const jsonStart = pack.stdout.indexOf('[');
-  const packed = JSON.parse(pack.stdout.slice(jsonStart));
-  const entry = Array.isArray(packed) ? packed[0] : packed;
+  const pack = npm(['pack', '--loglevel=error', '--json', '--pack-destination', PKG_ROOT]);
+  const entry = packTarballEntry(parseNpmPackStdout(pack.stdout));
   const tgzName = entry.filename;
   const tgzPath = join(PKG_ROOT, tgzName);
 
