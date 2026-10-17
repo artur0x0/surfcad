@@ -59,8 +59,10 @@ export async function run(ctx) {
   );
 
   await page.locator('[data-profile-chip]').first().click();
+  await page.waitForSelector('[data-ui-action="data-agent-bridge-connect"]', { timeout: 10000 });
   await page.click('[data-ui-action="data-agent-bridge-connect"]');
-  await page.waitForSelector('[data-agent-bridge-waiting-relay]', { timeout: 10000 });
+  // Preview may already have bound the relay; the missing-relay spinner is racy.
+  await page.waitForSelector('[data-agent-bridge-waiting-relay], [data-agent-bridge-code]', { timeout: 15000 });
 
   const relayProc = spawn(process.execPath, [SERVER_BIN], {
     env: {
