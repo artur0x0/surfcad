@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Loader2, Plug, PlugZap } from 'lucide-react';
 import { createPairingToken } from '../agent/ws/pairingToken.js';
 import { createAgentBridgeTabConnection } from '../agent/ws/tabConnection.js';
@@ -15,6 +16,7 @@ import { AGENT_PAIRING_PROMPT, pairingPromptPreview } from '../agent/ws/pairingP
 import { probeRelayWebSocket } from '../agent/ws/relayProbe.js';
 import { createRelayPoller, DEFAULT_RELAY_POLL_MS } from '../agent/ws/relayPoller.js';
 import {
+  isCurrentPairingConnection,
   isRelayTabConnected,
   shouldPollRelay,
   shouldRevealPairingCode,
@@ -32,6 +34,8 @@ export default function AgentBridgePairing({
   enabled,
   embedded = false,
   onConnectionChange = null,
+  /** When passed (even as null), UI portals into this node and stays mounted without it. */
+  uiTarget = undefined,
 }) {
   const [flowOpen, setFlowOpen] = useState(false);
   const [token, setToken] = useState('');
@@ -60,8 +64,9 @@ export default function AgentBridgePairing({
   });
 
   const stopConnection = useCallback(() => {
-    connRef.current?.disconnect();
+    const conn = connRef.current;
     connRef.current = null;
+    conn?.disconnect();
     setState('idle');
     setIssue(null);
     setLink(null);
@@ -85,6 +90,13 @@ export default function AgentBridgePairing({
       closeFlow();
     }
   }, [enabled, closeFlow]);
+
+  useEffect(() => () => {
+    pollerRef.current?.stop();
+    pollerRef.current = null;
+    connRef.current?.disconnect();
+    connRef.current = null;
+  }, []);
 
   useEffect(() => {
     if (state === 'paired') {
@@ -138,7 +150,8 @@ export default function AgentBridgePairing({
     void copyText(token, 'code');
   }, [copyText, token]);
 
-  const onConnectionState = useCallback((next) => {
+  const onConnectionState = useCallback((next, source) => {
+    if (!isCurrentPairingConnection(connRef.current, source)) return;
     setState(next);
     if (isRelayTabConnected(next)) {
       setRelayReachable(true);
@@ -157,9 +170,15 @@ export default function AgentBridgePairing({
       url: wsUrl,
       token: code,
       call: (name, args) => window.surfcad.call(name, args),
-      onState: onConnectionState,
-      onIssue: setIssue,
-      onLink: setLink,
+      onState: (next) => onConnectionState(next, conn),
+      onIssue: (issue) => {
+        if (!isCurrentPairingConnection(connRef.current, conn)) return;
+        setIssue(issue);
+      },
+      onLink: (next) => {
+        if (!isCurrentPairingConnection(connRef.current, conn)) return;
+        setLink(next);
+      },
       isAutoApprove: isAgentBridgeAutoApprove,
       pageSecure,
       suppressMissingRelayIssue: true,
@@ -426,37 +445,49 @@ export default function AgentBridgePairing({
     </button>
   ) : null;
 
+  const portalMode = uiTarget !== undefined;
   const approvalPopup = (
     <AgentBridgeApprovalPopup
       open={approvalUi.open}
-      embedded={embedded}
+      embedded={embedded && Boolean(uiTarget || !portalMode)}
       onAllow={handleApprove}
       onDeny={handleReject}
     />
   );
 
-  if (embedded) {
+  const embeddedBody = (
+    <div className="relative px-3 py-2 space-y-2" data-agent-bridge-pairing="">
+      {approvalPopup}
+      {connectAgentButton}
+      {paired && !flowOpen ? (
+        <button
+          type="button"
+          className={chipClass}
+          onClick={beginConnectFlow}
+          data-ui-action="data-agent-bridge-toggle"
+          data-agent-bridge-chip=""
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <PlugZap size={14} aria-hidden />
+            Agent paired
+          </span>
+        </button>
+      ) : null}
+      {panel}
+    </div>
+  );
+
+  if (portalMode) {
     return (
-      <div className="relative px-3 py-2 space-y-2" data-agent-bridge-pairing="">
-        {approvalPopup}
-        {connectAgentButton}
-        {paired && !flowOpen ? (
-          <button
-            type="button"
-            className={chipClass}
-            onClick={beginConnectFlow}
-            data-ui-action="data-agent-bridge-toggle"
-            data-agent-bridge-chip=""
-          >
-            <span className="inline-flex items-center gap-1.5">
-              <PlugZap size={14} aria-hidden />
-              Agent paired
-            </span>
-          </button>
-        ) : null}
-        {panel}
-      </div>
+      <>
+        {uiTarget ? null : approvalPopup}
+        {uiTarget ? createPortal(embeddedBody, uiTarget) : null}
+      </>
     );
+  }
+
+  if (embedded) {
+    return embeddedBody;
   }
 
   return (

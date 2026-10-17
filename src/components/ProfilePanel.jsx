@@ -6,7 +6,6 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import AgentBridgePairing from './AgentBridgePairing';
 import PrivacyChoicesController from './PrivacyChoicesController';
 import ProfileUserIdRow from './ProfileUserIdRow';
 
@@ -35,7 +34,7 @@ export default function ProfilePanel({
   onOpenCart = null,
   align = 'right',
   agentBridgeLive = false,
-  onAgentBridgeConnectionChange = null,
+  agentBridgeSlotRef = null,
 }) {
   const { user } = useAuth();
   const ref = useRef(null);
@@ -278,11 +277,7 @@ export default function ProfilePanel({
       {agentBridgeLive ? (
         <>
           <div className="my-2 border-t border-chrome-border" data-profile-agent-bridge-divider="" />
-          <AgentBridgePairing
-            enabled
-            embedded
-            onConnectionChange={onAgentBridgeConnectionChange}
-          />
+          <div ref={agentBridgeSlotRef} data-agent-bridge-slot="" />
         </>
       ) : null}
     </div>
