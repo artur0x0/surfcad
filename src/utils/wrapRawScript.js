@@ -13,12 +13,17 @@ import {
   CODE_END,
   wrapFeatureBlock,
 } from './helperPaletteSnippets.js';
-import { stripSurfId } from './git/surfId.js';
+import { bytesAfterHeaderLine, headerLineEnding } from './git/surfId.js';
 
+/**
+ * Split a leading `// @surf-id …` line without the mint-id regex, so UUID
+ * part ids from set_script stay outside the Code block the same way
+ * timestamp ids do (`normalizeAgentScript` prefix detection).
+ */
 function splitSurfHeaderBytes(script) {
   const text = String(script ?? '');
-  const body = stripSurfId(text);
-  if (body === text) return { header: '', body: text };
+  if (headerLineEnding(text) == null) return { header: '', body: text };
+  const body = bytesAfterHeaderLine(text);
   return { header: text.slice(0, text.length - body.length), body };
 }
 

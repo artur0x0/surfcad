@@ -329,6 +329,7 @@ export function createSurfcadBridge(hostSource) {
     const execute = hostFn('execute');
     const writeHistory = hostFn('writeHistory');
     const before = cloneAgentHistory(readHistory ? readHistory() : emptyPartHistory());
+    // Header first (prefix, not mint regex), then one Code wrap around the body.
     const source = wrapRawScript(normalized);
     if (setEditor) setEditor(source);
     let outcome;

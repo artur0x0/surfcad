@@ -100,6 +100,14 @@ test('wrapRawScript keeps a surf-id header above the Code block', () => {
   assert.ok(wrapped.startsWith(`// @surf-id ${id}`));
   assert.ok(wrapped.indexOf('// @surf-id') < wrapped.indexOf(CODE_BEGIN));
   assert.equal(parseFeatureMarkers(wrapped).length, 1);
+  assert.equal(wrapRawScript(wrapped), wrapped);
+  const uuid = '550e8400-e29b-41d4-a716-446655440000';
+  const uuidHeadered = `// @surf-id ${uuid}\n${RAW}`;
+  const uuidWrapped = wrapRawScript(uuidHeadered);
+  assert.ok(uuidWrapped.startsWith(`// @surf-id ${uuid}\n`));
+  assert.ok(uuidWrapped.indexOf(CODE_BEGIN) > uuidWrapped.indexOf('// @surf-id'));
+  assert.equal(uuidWrapped.slice(uuidWrapped.indexOf(CODE_BEGIN)).includes('@surf-id'), false);
+  assert.equal(wrapRawScript(uuidWrapped), uuidWrapped);
 });
 
 test('already-marked and partially marked scripts are left alone', () => {
@@ -302,7 +310,8 @@ test('App wraps on set/paste/save and never on open', () => {
   assert.equal([...APP.matchAll(/wrapRawScript\(/g)].length, 2);
   assert.equal([...APP.matchAll(/wrapUnmarkedPartScripts\(/g)].length, 1);
   assert.doesNotMatch(GIT_COMMIT, /wrapRawScript|wrapUnmarkedPartScripts/);
-  assert.match(BRIDGE, /wrapRawScript\(/);
+  assert.match(BRIDGE, /wrapRawScript\(normalized\)/);
+  assert.match(BRIDGE, /function normalizeAgentScript/);
   assert.match(EDITOR, /onDidPaste/);
   assert.match(EDITOR, /wrapRawScript\(/);
   assert.match(
