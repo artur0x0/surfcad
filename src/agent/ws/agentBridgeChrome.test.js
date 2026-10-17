@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   agentBridgeRingLabel,
   agentBridgeRingState,
+  approvalPopupPortalTarget,
   approvalPopupReducer,
 } from './agentBridgeChrome.js';
 
@@ -15,6 +16,13 @@ test('connection ring follows the link state', () => {
   assert.equal(agentBridgeRingState('bogus'), null);
   assert.equal(agentBridgeRingLabel('lost'), 'Local agent connection lost');
   assert.equal(agentBridgeRingLabel(null), '');
+});
+
+test('approval popup portals onto document.body, not the profile menu', () => {
+  const body = { nodeType: 1 };
+  assert.equal(approvalPopupPortalTarget({ body }), body);
+  assert.equal(approvalPopupPortalTarget({ body: null }), null);
+  assert.equal(approvalPopupPortalTarget(null), null);
 });
 
 test('approval popup closes on allow or deny', () => {
