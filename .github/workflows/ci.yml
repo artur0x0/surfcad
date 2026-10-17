@@ -63,6 +63,9 @@ jobs:
       - name: npm ci
         run: npm ci
 
+      - name: backend npm ci
+        run: npm ci --prefix backend
+
       # Clean on main. A failure here is a real regression, not a known baseline.
       - name: lint
         run: npm run lint

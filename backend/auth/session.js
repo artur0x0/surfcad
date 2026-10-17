@@ -68,4 +68,24 @@ export function requireGuestOrAuth(req, res, next) {
   return res.status(401).json({ error: 'Session required' });
 }
 
+/**
+ * Drop sessions minted before user.credentialsRevokedAt (OAuth neutralize).
+ * Sessions without authAt are treated as older than any revocation.
+ */
+export function enforceCredentialRevocation(req, res, next) {
+  if (!req.isAuthenticated?.() || !req.user?.credentialsRevokedAt) {
+    return next();
+  }
+  const revokedAt = new Date(req.user.credentialsRevokedAt).getTime();
+  if (!Number.isFinite(revokedAt)) return next();
+  const authAt = Number(req.session?.authAt) || 0;
+  if (authAt >= revokedAt) return next();
+
+  req.logout((err) => {
+    if (err) return next(err);
+    if (!req.session) return next();
+    req.session.regenerate((regenErr) => next(regenErr));
+  });
+}
+
 export default createSessionMiddleware;

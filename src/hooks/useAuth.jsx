@@ -143,12 +143,12 @@ export const AuthProvider = ({ children }) => {
     return data.guest;
   }, []);
 
-  const convertGuestToUser = useCallback(async (password) => {
+  const convertGuestToUser = useCallback(async (password, code) => {
     const response = await fetch('/api/auth/guest/convert', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ password, code }),
     });
     
     const data = await response.json();

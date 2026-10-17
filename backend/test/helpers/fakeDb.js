@@ -8,6 +8,7 @@ import express from 'express';
 import session from 'express-session';
 import mongoose from 'mongoose';
 import passport from 'passport';
+import { enforceCredentialRevocation } from '../../auth/session.js';
 
 function readPath(obj, path) {
   if (obj == null) return undefined;
@@ -182,6 +183,7 @@ export async function startApp(mount, { trustProxy = 1 } = {}) {
   }));
   app.use(passport.initialize());
   app.use(passport.session());
+  app.use(enforceCredentialRevocation);
   mount(app);
   app.use((err, req, res, next) => {
     if (res.headersSent) return next(err);

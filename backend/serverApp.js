@@ -10,7 +10,7 @@ import { connectDB } from './db/connection.js';
 
 // Auth
 import { initializePassport } from './auth/passport.js';
-import { createSessionMiddleware } from './auth/session.js';
+import { createSessionMiddleware, enforceCredentialRevocation } from './auth/session.js';
 import passport from 'passport';
 
 // Routes
@@ -67,6 +67,7 @@ app.use(createSessionMiddleware());
 initializePassport();
 app.use(passport.initialize());
 app.use(passport.session());
+app.use(enforceCredentialRevocation);
 
 // ============ API Routes ============
 app.use('/api/auth', authRoutes);

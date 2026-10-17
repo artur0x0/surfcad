@@ -1,15 +1,52 @@
 // components/order/ConvertAccountStep.jsx - Convert guest to account
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Lock, Loader2, UserPlus, Check } from 'lucide-react';
 
 const ConvertAccountStep = ({ email, address, onComplete, onSkip, onError }) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [sendingCode, setSendingCode] = useState(false);
   const [errors, setErrors] = useState({});
+
+  const requestCode = async () => {
+    setSendingCode(true);
+    try {
+      const response = await fetch('/api/auth/guest/convert/code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({}),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        onError(data.error || 'Could not send a verification code');
+        return false;
+      }
+      setCodeSent(true);
+      return true;
+    } catch {
+      onError('Could not send a verification code');
+      return false;
+    } finally {
+      setSendingCode(false);
+    }
+  };
+
+  useEffect(() => {
+    requestCode();
+    // Send once when this step opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const validateForm = () => {
     const newErrors = {};
+
+    if (!code || String(code).trim().length < 6) {
+      newErrors.code = 'Enter the 6-digit code from your email';
+    }
 
     if (!password) {
       newErrors.password = 'Password is required';
@@ -37,7 +74,7 @@ const ConvertAccountStep = ({ email, address, onComplete, onSkip, onError }) => 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password, code: String(code).trim() }),
       });
 
       const data = await response.json();
@@ -65,7 +102,7 @@ const ConvertAccountStep = ({ email, address, onComplete, onSkip, onError }) => 
           Create Your Account
         </h3>
         <p className="text-chrome-secondary text-sm">
-          Just add a password to save your information for future orders
+          We emailed a code to confirm this address, then add a password
         </p>
       </div>
 
@@ -92,6 +129,37 @@ const ConvertAccountStep = ({ email, address, onComplete, onSkip, onError }) => 
 
       {/* Password Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Verification code
+          </label>
+          <input
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            value={code}
+            onChange={(e) => {
+              setCode(e.target.value);
+              if (errors.code) setErrors({ ...errors, code: null });
+            }}
+            className={`w-full bg-gray-800/50 border rounded-xl py-3 px-4 text-white placeholder-gray-500 focus:outline-none transition-colors ${
+              errors.code ? 'border-red-500' : 'border-chrome-border focus:border-blue-500'
+            }`}
+            placeholder="6-digit code"
+          />
+          {errors.code && (
+            <p className="text-red-400 text-xs mt-1">{errors.code}</p>
+          )}
+          <button
+            type="button"
+            onClick={requestCode}
+            disabled={sendingCode}
+            className="mt-2 text-sm text-blue-400 hover:text-blue-300 disabled:opacity-50"
+          >
+            {sendingCode ? 'Sending…' : codeSent ? 'Resend code' : 'Send code'}
+          </button>
+        </div>
+
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
             Create Password

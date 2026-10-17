@@ -221,6 +221,15 @@ const userSchema = new mongoose.Schema({
     default: () => [],
   },
 
+  /**
+   * Set when credentials are revoked (OAuth link onto a never-verified
+   * account). Sessions whose authAt is older than this are dropped.
+   */
+  credentialsRevokedAt: {
+    type: Date,
+    default: null,
+  },
+
   /** Last successful app session sign-in (password or OAuth). Not backfilled. */
   lastLoginAt: {
     type: Date,
@@ -321,6 +330,23 @@ userSchema.methods.verifyCode = function(code) {
   this.verificationAttempts = 0;
   
   return { valid: true };
+};
+
+/**
+ * An unverified local row can be an attacker planting a password on the
+ * victim's email. OAuth has now proven the email (provider-side). Drop the
+ * planted password, saved addresses, and outstanding sessions so the owner
+ * gets in and the attacker does not keep a key.
+ */
+userSchema.methods.neutralizeUnverifiedForOAuth = function() {
+  if (this.emailVerified) return this;
+  this.passwordHash = null;
+  this.addresses = [];
+  this.verificationCode = null;
+  this.verificationCodeExpires = null;
+  this.verificationAttempts = 0;
+  this.credentialsRevokedAt = new Date();
+  return this;
 };
 
 // Instance method: Check if can resend code (rate limiting)
@@ -497,7 +523,11 @@ userSchema.statics.findOrCreateOAuth = async function(profile, provider) {
   user = await this.findOne({ email });
   
   if (user) {
-    // Link accounts - update existing user with OAuth
+    // Link accounts. A never-verified row may be a planted password;
+    // neutralize it before the OAuth identity takes over.
+    if (!user.emailVerified) {
+      user.neutralizeUnverifiedForOAuth();
+    }
     user.authProvider = provider;
     user.providerId = id;
     user.emailVerified = true; // OAuth emails are verified

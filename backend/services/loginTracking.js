@@ -54,6 +54,7 @@ export function loginAndTrack(req, user, method) {
         return;
       }
       try {
+        if (req.session) req.session.authAt = Date.now();
         await recordSuccessfulLogin(user, method);
         resolve();
       } catch (trackErr) {
