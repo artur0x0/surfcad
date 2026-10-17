@@ -57,3 +57,15 @@ Bridge refusals (`real_repo_blocked`, `confirm_required`, `not_paired`, user den
 In the [SurfCAD monorepo](https://github.com/artur0x0/surfcad), `npm run export:agent` regenerates `data/commands.json` from `src/agent/commands.json`. CI fails if that copy is stale (`test/commandsFreshness.test.mjs`). Before publishing, run `export:agent` and `npm run smoke:pack` in this package.
 
 Agent-oriented guide: [`docs/agent/SKILL.md`](https://github.com/artur0x0/surfcad/blob/main/docs/agent/SKILL.md). Scripted demo from a full checkout: `npm run demo:mcp` at the repo root.
+
+## Releasing to npm
+
+The [`surfcad-mcp`](https://www.npmjs.com/package/surfcad-mcp) package is published from GitHub Actions (workflow [`.github/workflows/publish-mcp.yml`](../../.github/workflows/publish-mcp.yml)) using [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers) (OIDC). The trusted publisher is configured on npm for this repository and workflow file — no `NPM_TOKEN` is stored in GitHub.
+
+Ways to release a new version:
+
+1. **Version bump on `main`** — In a PR, bump `version` in `packages/surfcad-mcp/package.json`. After merge, when the **CI** workflow completes successfully on `main` and the version differs from the parent commit, publish runs automatically (skipped if that version is already on npm).
+2. **Git tag** — Push a tag `surfcad-mcp-vX.Y.Z` that exactly matches the `version` field at that commit (for example `surfcad-mcp-v0.2.0` for `"version": "0.2.0"`).
+3. **Manual** — In GitHub → Actions → **Publish surfcad-mcp** → **Run workflow** on branch `main`.
+
+Before bumping, run `npm run export:agent` at the repo root if the command catalog changed, and `npm test` plus `npm run smoke:pack` in this package.
