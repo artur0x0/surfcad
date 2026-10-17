@@ -544,7 +544,7 @@ export const COMMAND_META = {
     mutates: true,
   },
   rename_part: {
-    description: 'Rename a part. A vault part also moves its .js path in the same folder (-2, -3 on collision) and updates the .surf.json in one rename commit; that write needs git consent like git_save.',
+    description: 'Rename a part. A vault part moves its committed .js in the same folder (-2, -3 on collision) and updates that part path/name in .surf.json in one rename commit. Pending script, placement, and other edits stay for the next Save. Path-less parts rename locally with no commit. That write needs git consent like git_save.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'unknown_part', 'name_taken', 'consent_pending', 'real_repo_blocked', 'git_error', 'internal'],
     mutates: true,

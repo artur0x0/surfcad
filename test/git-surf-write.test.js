@@ -24,6 +24,7 @@ import { planAssemblyRename } from '../src/utils/git/gitAssemblyRename.js';
 import { commitOpenAssemblyText, projectPendingOps } from '../src/utils/git/gitDeleteAssembly.js';
 import { checkInMineToBranch } from '../src/utils/git/gitPull.js';
 import { buildRenameCommitFiles } from '../src/utils/git/gitRename.js';
+import { partRepoPath } from '../src/utils/git/partIdentity.js';
 
 const ASM = 'Kettle';
 const BRACKET = sharedPartPath('Bracket');
@@ -84,7 +85,7 @@ test('delete with a path-less sibling promotes and writes the sibling blob', asy
   assert.ok(prepared.files.some((file) => file.path === BRACKET && file.delete));
 });
 
-test('rename with a path-less sibling promotes and writes the sibling blob', async () => {
+test('rename does not promote a path-less sibling or stringify the live assembly', async () => {
   const { gh, vault } = await seededVault();
   const { doc, scripts } = fixture();
   const beforeId = doc.parts[0].id;
@@ -98,11 +99,14 @@ test('rename with a path-less sibling promotes and writes the sibling blob', asy
   assert.equal(doc.parts[0].id, beforeId, 'input doc is unchanged');
   assert.equal(prepared.from, BRACKET);
   assert.equal(prepared.to, sharedPartPath('Plate'));
-  assert.ok(prepared.moved.some((move) => move.from === STRAY && move.to === LID));
-  const raw = surfFromFiles(prepared.files);
-  assert.ok(raw.parts.some((part) => part.path === sharedPartPath('Plate')));
-  assert.ok(raw.parts.some((part) => part.path === LID));
-  assert.ok(prepared.files.some((file) => file.path === LID && file.content === '// lid\n'));
+  assert.equal(prepared.files, undefined);
+  assert.equal(prepared.assemblyText, undefined);
+  assert.equal(prepared.moved, undefined);
+  const stray = prepared.doc.parts.find((part) => part.id === STRAY || part.name === 'Lid');
+  assert.ok(stray);
+  assert.equal(partRepoPath(stray), null, 'path-less sibling stays unsaved');
+  const plate = prepared.doc.parts.find((part) => part.path === sharedPartPath('Plate'));
+  assert.ok(plate);
 });
 
 test('paint with a path-less sibling promotes and writes', async () => {

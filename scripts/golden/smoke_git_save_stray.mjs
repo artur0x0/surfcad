@@ -265,8 +265,8 @@ console.log('\ngit save stray — UI wiring');
   ok('git .surf.json writers use prepareAssemblySurfWrite',
     /prepareAssemblySurfWrite/.test(app)
     && !/stringifySurfJson\(/.test(app));
-  ok('rename_part lists via prepareVaultPartRename',
-    /prepareVaultPartRename\(gitAdapterRef\.current/.test(app)
+  ok('rename_part lists via stagePartRename',
+    /stagePartRename\(\{/.test(app)
     && !/catch \{ \/\* the open document still blocks a collision \*\//.test(app)
     && !/planPartPath\(from, nextName\)/.test(app));
   ok('real listTree does not return [] on failure',

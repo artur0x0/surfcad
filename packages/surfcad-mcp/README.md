@@ -60,7 +60,7 @@ Every command in `data/commands.json` is one MCP tool with the same name and arg
 | `parts` | `{}` | Part rows (`id`, `name`, `visible`) and the active part. |
 | `create_assembly` | `{}` | Seed a new assembly. |
 | `create_part` | `{ name?, script?, position? }` | Add a part at the assembly origin (optional `[x,y,z]` mm). In a git assembly it has no vault path until `git_save`. |
-| `rename_part` | `{ part_id, name }` | Rename a part. A vault part also moves to `<name>.js` in the same folder (`-2`, `-3` on collision) and updates the `.surf.json` in one commit. Unknown ids return `unknown_part`. |
+| `rename_part` | `{ part_id, name }` | Rename a part. A vault part moves its committed `.js` to `<name>.js` in the same folder (`-2`, `-3` on collision) and updates that part's path/name in `.surf.json` in one commit. Pending script, placement, and other edits stay for the next Save. A part with no repo path renames locally and does not commit. Unknown ids return `unknown_part`. |
 | `part_get_transform` | `{ part }` | Read placement: `position` mm and intrinsic XYZ Euler degrees (`eulerOrder: "XYZ"`). |
 | `part_set_transform` | `{ part, position?, rotation? }` | Set placement (undoable assembly step). |
 | `set_active_part` | `{ part_id }` | Switch the editor and mesh to a part. `status` then reports that part. |
