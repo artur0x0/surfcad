@@ -1,41 +1,23 @@
 /**
- * Express Sentry bootstrap — only imported from server.js (not root unit tests).
+ * Express Sentry error handler — SDK init runs in instrument.js before express loads.
  */
 
 import * as Sentry from '@sentry/node';
-import { readSentryEnv } from './sentryEnv.js';
-import { scrubSentryEvent } from './sentryScrub.js';
+import { getClient } from '@sentry/core';
+import { isSentryConfigured } from './sentryEnv.js';
 
 /**
- * @param {import('express').Express} app
  * @returns {boolean}
  */
-export function initSentryForExpress(app) {
-  const config = readSentryEnv();
-  if (!config) return false;
-
-  Sentry.init({
-    dsn: config.dsn,
-    environment: config.environment,
-    sendDefaultPii: false,
-    tracesSampleRate: config.tracesSampleRate,
-    integrations: [
-      Sentry.httpIntegration(),
-      Sentry.expressIntegration({ app }),
-    ],
-    beforeSend(event) {
-      return scrubSentryEvent(event);
-    },
-  });
-
-  return true;
+export function isSentryEnabled() {
+  return isSentryConfigured() && getClient() !== undefined;
 }
 
 /**
  * @param {import('express').Express} app
  */
 export function installSentryErrorHandler(app) {
-  if (!readSentryEnv()) return;
+  if (!isSentryEnabled()) return;
   Sentry.setupExpressErrorHandler(app);
 }
 
