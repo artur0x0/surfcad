@@ -211,6 +211,22 @@ test('after drop, a different tabKey cannot register and a stolen resume is not 
   assert.ok(other.sent.every((m) => m.resume !== RESUME && m.resumeKey !== RESUME));
 });
 
+test('reconnect with forgetResume does not silent-resume a matching key', () => {
+  const { hub } = setup();
+  const { tab } = pairedTrio(hub);
+  tab.emit('close', 1006, '');
+
+  const tab2 = fakeSocket();
+  const peer2 = fakeSocket();
+  hub.attachSocket(tab2);
+  hub.attachSocket(peer2);
+  tab2.receive({ type: PAIR_MSG.REGISTER_TAB, token: TOKEN, tabKey: TAB_KEY, forgetResume: true });
+  peer2.receive({ type: PAIR_MSG.PAIR, token: TOKEN, resume: RESUME });
+  assert.equal(hub.isPaired(TOKEN), false);
+  assert.ok(tab2.last(PAIR_MSG.PAIR_REQUEST), 'user-closed bridge must prompt Allow again');
+  assert.equal(tab2.last(PAIR_MSG.PAIRED), undefined);
+});
+
 test('same-tabKey reconnect with the matching resume still auto-pairs', () => {
   const { hub } = setup();
   const { tab } = pairedTrio(hub);

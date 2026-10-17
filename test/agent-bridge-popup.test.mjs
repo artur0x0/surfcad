@@ -9,9 +9,10 @@ import { WebSocket } from 'ws';
 import { startAgentBridgeRelay, stopAgentBridgeRelay } from '../packages/surfcad-mcp/src/bridge/relayServer.mjs';
 import { startPopupBridge } from '../packages/surfcad-mcp/src/bridge/bridgePopup.mjs';
 import { FakeWindow, linkWindows, tick } from '../packages/surfcad-mcp/test/fakeWindows.mjs';
-import { createPopupBridgeSocket } from '../src/agent/ws/popupTransport.js';
+import { createPopupBridgeSession } from '../src/agent/ws/popupTransport.js';
 import { createAgentBridgeTabConnection } from '../src/agent/ws/tabConnection.js';
-import { connectPeer, bridgeCall } from '../src/agent/ws/nodeClient.js';
+import { bridgeCall } from '../src/agent/ws/nodeClient.js';
+import { connectPeer } from '../packages/surfcad-mcp/src/nodeClient.mjs';
 import { createPairingToken } from '../src/agent/ws/pairingToken.js';
 
 async function waitFor(predicate, timeoutMs = 3000) {
@@ -64,6 +65,7 @@ test('tab pairs through the popup bridge, needs Allow, and runs a bridge call', 
   const issues = [];
   const calls = [];
   const token = createPairingToken(6);
+  const session = createPopupBridgeSession({ win: opener, pollMs: 20 });
   const conn = createAgentBridgeTabConnection({
     url,
     token,
@@ -74,7 +76,7 @@ test('tab pairs through the popup bridge, needs Allow, and runs a bridge call', 
     },
     onState: (s) => states.push(s),
     onIssue: (i) => issues.push(i),
-    createSocket: (u) => createPopupBridgeSocket({ wsUrl: u, win: opener, pollMs: 20 }),
+    createSocket: (u) => session.createSocket(u),
   });
 
   try {
@@ -94,12 +96,12 @@ test('tab pairs through the popup bridge, needs Allow, and runs a bridge call', 
     const peer = await peerPromise;
     assert.ok(await waitFor(() => conn.getState() === 'paired'));
 
-    const result = await bridgeCall(peer, 'list_faces', {}, 'p1');
+    const result = await bridgeCall(peer.ws, 'list_faces', {}, 'p1');
     assert.deepEqual(result, { partId: 'p0', faces: [] });
     assert.deepEqual(calls, [['list_faces', {}]]);
 
     const unpaired = new Promise((resolve) => {
-      peer.on('message', (raw) => {
+      peer.ws.on('message', (raw) => {
         const msg = JSON.parse(String(raw));
         if (msg.type === 'unpaired') resolve(msg);
       });
@@ -109,19 +111,20 @@ test('tab pairs through the popup bridge, needs Allow, and runs a bridge call', 
     assert.equal(conn.getState(), 'idle');
     assert.equal((await unpaired).reason, 'tab_disconnected');
     assert.ok(await waitFor(() => relay.wss.clients.size <= 1));
-    peer.close();
+    peer.ws.close();
 
     conn.connect();
-    assert.equal(popups.length, 2, 'reconnect opens a fresh bridge window');
+    assert.equal(popups.length, 2, 'user-closed window: Reconnect may window.open from the click');
     assert.ok(await waitFor(() => popups[1].statuses.includes('connected')));
     assert.ok(await waitFor(() => conn.getState() === 'advertising'));
-    const peer2Promise = connectPeer(url, token);
-    assert.ok(await waitFor(() => conn.getState() === 'pending'), 'reconnect still needs Allow');
+    const peer2Promise = connectPeer(url, token, { resume: peer.resumeKey });
+    assert.ok(await waitFor(() => conn.getState() === 'pending'), 'user-closed window still needs Allow');
     conn.approvePair();
     const peer2 = await peer2Promise;
-    peer2.close();
+    peer2.ws.close();
   } finally {
     conn.disconnect();
+    session.dispose();
     for (const { bridge } of popups) bridge.stop();
     await stopAgentBridgeRelay(relay);
   }

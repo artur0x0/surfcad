@@ -28,6 +28,8 @@ test('shouldPollRelay only while flow is open and relay is not reachable', () =>
   assert.equal(shouldPollRelay({ flowOpen: true, relayReachable: false, state: 'idle' }), true);
   assert.equal(shouldPollRelay({ flowOpen: true, relayReachable: false, state: 'idle', issue: 'origin_rejected' }), false);
   assert.equal(shouldPollRelay({ flowOpen: true, relayReachable: false, state: 'idle', issue: 'browser_blocked' }), false);
+  assert.equal(shouldPollRelay({ flowOpen: true, relayReachable: false, state: 'idle', issue: 'bridge_closed' }), false);
+  assert.equal(shouldPollRelay({ flowOpen: true, relayReachable: false, state: 'idle', issue: 'popup_blocked' }), false);
   assert.equal(shouldPollRelay({ flowOpen: true, relayReachable: false, state: 'idle', issue: null }), true);
 });
 
