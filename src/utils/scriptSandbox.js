@@ -178,26 +178,16 @@ export function isWorkerHostMessage(data) {
 }
 
 /**
- * Install the host dispatch on the IDL `onmessage` slot (Chrome delivers
- * here; a defineProperty getter/setter shadows it and init never lands).
- * Reset that slot after every run. Lock postMessage / close /
- * addEventListener. Keep a bound copy of the native postMessage.
+ * Reinstall the host dispatch on the IDL `onmessage` slot after every run.
+ * Chrome delivers worker host messages through that slot. defineProperty on
+ * onmessage / postMessage / addEventListener / close breaks it (init never
+ * lands, the app stays on the loading gate). Scripts are isolated by
+ * SCRIPT_SANDBOX_SHADOWS instead. Keep a bound copy of native postMessage.
  */
 export function freezeWorkerHandlers(self, { dispatch, rawPostMessage } = {}) {
   if (!self || typeof self !== 'object') return rawPostMessage || null;
   if (typeof dispatch === 'function') {
     try { self.onmessage = dispatch; } catch { /* already frozen */ }
-  }
-  for (const name of ['postMessage', 'close', 'addEventListener', 'removeEventListener']) {
-    try {
-      Object.defineProperty(self, name, {
-        value: blocked(name),
-        writable: false,
-        configurable: false,
-      });
-    } catch {
-      /* already frozen */
-    }
   }
   return rawPostMessage || null;
 }

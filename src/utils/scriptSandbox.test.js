@@ -61,16 +61,16 @@ test('a script cannot keep a writable onmessage across runs', () => {
   evaluateSandboxedScript('try { onmessage = function () {} } catch (e) {}');
   freezeWorkerHandlers(self, { dispatch, rawPostMessage: rawPost });
   assert.equal(self.onmessage, dispatch);
-  assert.throws(() => self.postMessage({ type: 'result' }), /not allowed/);
-  assert.throws(() => self.close(), /not allowed/);
-  assert.throws(() => self.addEventListener('message', () => {}), /not allowed/);
+  assert.throws(() => evaluateSandboxedScript('postMessage({ type: "result" })'), /not allowed/);
+  assert.throws(() => evaluateSandboxedScript('close()'), /not allowed/);
+  assert.throws(() => evaluateSandboxedScript('addEventListener("message", function () {})'), /not allowed/);
   rawPost({ type: 'result', payload: { ok: true } });
   assert.equal(posted.at(-1).payload.ok, true);
 });
 
-test('freezeWorkerHandlers does not defineProperty onmessage', () => {
+test('freezeWorkerHandlers does not defineProperty worker host slots', () => {
   const src = readFileSync(new URL('./scriptSandbox.js', import.meta.url), 'utf8');
-  assert.equal(/defineProperty\(\s*self\s*,\s*['"]onmessage['"]/.test(src), false);
+  assert.equal(/defineProperty\(\s*self\s*,/.test(src), false);
 });
 
 test('host messages still reach dispatch after freeze', () => {
