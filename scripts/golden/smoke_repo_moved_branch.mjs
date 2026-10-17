@@ -588,7 +588,7 @@ try {
         const branch = await page.locator('[data-repo-saved-toast]').getAttribute('data-repo-saved-branch');
         const savedTone = await page.locator('[data-repo-saved-toast] [data-error-tone]').getAttribute('data-error-tone');
         const savedText = await page.locator('[data-repo-saved-toast]').innerText();
-        const chip = (await page.locator('[data-assembly-branch]').first().innerText()).trim();
+        const chip = (await page.locator('[data-viewer-git-branch], [data-assembly-branch]').first().innerText()).trim();
         const landed = git.file(branch)?.get(PART) || '';
         const remoteFile = git.file('main')?.get(PART) || '';
         check(`${label} success toast`, savedTone === 'success' && savedText.includes(branch), savedText);

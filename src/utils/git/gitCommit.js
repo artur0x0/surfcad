@@ -20,6 +20,7 @@ import { assemblyName, nextAssemblyName, serializeAssembly } from '../assembly.j
 import { gitBlobSha, isBinaryContent, toUint8Array } from './binaryContent.js';
 import { GitAdapterError, assertGithubAdapter, fileWrite, fileDelete } from './githubAdapterInterface.js';
 import { captureBaseline, dirtyPartIds } from './gitWorkspace.js';
+import { ensureAssemblyVaultPaths } from './partVaultPath.js';
 import {
   ASSEMBLIES_DIR,
   assemblyFilePath,
@@ -769,24 +770,26 @@ export async function assembleCommitFiles(adapter, repo, {
 } = {}) {
   assertGithubAdapter(adapter);
   if (!baseline) throw new Error('Open an assembly from the vault before committing');
-  // Refuse non-repo rows before buildCommitFiles stringifies `.surf.json`
-  // (invalid ids throw inside stringify). Linked parts in another assembly
-  // are real vault paths and are kept.
-  const stray = (doc?.parts || []).filter((p) => {
-    const info = parseVaultPath(p.id);
-    // Linked external parts are real vault paths. Only local / non-path rows are stray.
-    if (!info || (info.kind !== 'assembly-part' && info.kind !== 'shared-part')) return true;
-    return false;
-  });
-  if (stray.length) {
-    const err = new Error(`No repo path for ${stray.map((p) => p.name || p.id).join(', ')}. `
-      + 'Remove it, or add parts under this assembly\'s folder or shared parts/.');
-    err.code = NO_REPO_PATH;
-    err.stray = stray.map((p) => ({ id: p.id, name: p.name || p.id }));
-    throw err;
+  const branch = baseline.branch || 'main';
+  let remotePaths = [];
+  try {
+    const tree = await adapter.listTree(repo, branch);
+    remotePaths = (tree || []).map((entry) => entry?.path ?? entry).filter((path) => typeof path === 'string');
+  } catch {
+    // Open-document occupancy still blocks collisions when the tree cannot be listed.
   }
-  const built = buildCommitFiles(doc, scripts, baseline, { liveId, liveScript, assets });
-  const workDoc = built.doc || doc;
+  const promoted = ensureAssemblyVaultPaths(doc, scripts, { remotePaths });
+  const workDoc = promoted.doc;
+  const workScripts = effectiveScripts(promoted.scripts, { liveId, liveScript });
+  const built = buildCommitFiles(workDoc, workScripts, baseline, {
+    liveId: promoted.moved.some((m) => m.from === liveId)
+      ? (promoted.moved.find((m) => m.from === liveId)?.to || liveId)
+      : liveId,
+    liveScript,
+    assets,
+  });
+  const mergedMoved = [...(promoted.moved || []), ...(built.moved || [])];
+  const workDocOut = built.doc || workDoc;
   // Rename move: delete any leftover blobs under the old assemblies/<old>/ tree
   // (Spare.js etc.) so the old folder does not linger after the move.
   if (built.renamed && built.oldName) {
@@ -805,7 +808,7 @@ export async function assembleCommitFiles(adapter, repo, {
   // working copy already uses the flat nameless layout.
   if (baseline.legacyCleanup) {
     const ref = baseline.branch || 'main';
-    const asmName = vaultSegment(workDoc.name) || baseline.assemblyName;
+    const asmName = vaultSegment(workDocOut.name) || baseline.assemblyName;
     const tree = await adapter.listTree(repo, ref);
     const scheduled = new Set(built.files.map((f) => f.path));
     const toDelete = legacyCleanupPaths(asmName, tree);
@@ -814,29 +817,28 @@ export async function assembleCommitFiles(adapter, repo, {
       if (!path || scheduled.has(path)) continue;
       // Never delete the current assembly metadata or current part paths.
       if (path === built.assemblyPath) continue;
-      if ((workDoc.parts || []).some((part) => part.id === path)) continue;
+      if ((workDocOut.parts || []).some((part) => part.id === path)) continue;
       built.files.push(fileDelete(path));
       scheduled.add(path);
     }
     // Ensure the current .surf.json is written even when only cleanup remains.
     if (built.assemblyPath && !scheduled.has(built.assemblyPath)) {
-      built.files.push(fileWrite(built.assemblyPath, stringifySurfJson(workDoc)));
+      built.files.push(fileWrite(built.assemblyPath, stringifySurfJson(workDocOut)));
       scheduled.add(built.assemblyPath);
     }
   }
   if (!built.files.length) return { status: 'clean' };
-  const branch = baseline.branch || 'main';
-  const msg = String(message || '').trim() || `Update ${vaultSegment(workDoc.name) || 'assembly'}`;
+  const msg = String(message || '').trim() || `Update ${vaultSegment(workDocOut.name) || 'assembly'}`;
   return {
     status: 'ready',
     files: built.files,
-    doc: workDoc,
+    doc: workDocOut,
     scripts: built.scripts,
     message: msg,
     branch,
     assemblyPath: built.assemblyPath,
     renamed: built.renamed,
-    moved: built.moved,
+    moved: mergedMoved,
     partIds: built.partPaths || [],
   };
 }

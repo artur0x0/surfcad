@@ -108,7 +108,7 @@ export const gitSaveCommand = Object.freeze({
 
 export const gitAddToRepoCommand = Object.freeze({
   name: 'git_add_to_repo',
-  uiEntry: 'data-git-commit-add-to-repo',
+  uiEntry: ['data-git-commit-add-to-repo', 'data-part-add-to-repo'],
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,

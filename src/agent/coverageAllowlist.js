@@ -27,4 +27,6 @@ export const COVERAGE_ALLOWLIST = Object.freeze([
   Object.freeze({ id: 'data-agent-git-consent-allow', reason: 'H12 real-adapter write consent modal (session opt-in).' }),
   Object.freeze({ id: 'data-agent-git-consent-deny', reason: 'H12 real-adapter write consent modal (session deny).' }),
   Object.freeze({ id: 'data-privacy-choices-done', reason: 'Monitoring slice B privacy choices dialog (not agent scope).' }),
+  Object.freeze({ id: 'data-assembly-save-menu', reason: 'Desktop assembly Save split-button menu (rename / branches).' }),
+  Object.freeze({ id: 'data-assembly-rename-menu', reason: 'Rename assembly from Parts Save menu.' }),
 ]);
