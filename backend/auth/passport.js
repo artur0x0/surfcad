@@ -6,6 +6,7 @@ import { Strategy as AppleStrategy } from 'passport-apple';
 import fs from 'fs';
 import User from '../db/models/User.js';
 import config from '../config/index.js';
+import { resolveAppleIdentity } from './appleIdentity.js';
 
 /**
  * Initialize Passport with all authentication strategies
@@ -110,67 +111,19 @@ export function initializePassport() {
           },
           async (req, accessToken, refreshToken, idToken, profile, done) => {
             try {
-              // Decode idToken if it's a string
-              let decodedIdToken = null;
-              if (typeof idToken === 'string') {
-                try {
-                  const payload = idToken.split('.')[1];
-                  const decoded = Buffer.from(payload, 'base64').toString('utf8');
-                  decodedIdToken = JSON.parse(decoded);
-                } catch (e) {
-                  console.error('[Apple] Failed to decode idToken:', e);
-                  return done(new Error('Invalid idToken'));
-                }
-              } else {
-                decodedIdToken = idToken;
+              // idToken is results.id_token from Apple's token endpoint
+              // (passport-apple getOAuthAccessToken). Not the form-post body.
+              const identity = resolveAppleIdentity({
+                idToken,
+                bodyUser: req.body?.user,
+                profile,
+              });
+
+              if (!identity.appleId && !identity.email) {
+                return done(new Error('Invalid idToken'));
               }
 
-              const appleId = decodedIdToken?.sub || profile?.id;
-              
-              // Email priority order:
-              // 1. From req.body.user (first login)
-              // 2. From idToken (subsequent logins)
-              // 3. From profile (rare)
-              let email;
-
-              if (req.body?.user) {
-                try {
-                  const userData = JSON.parse(req.body.user);
-                  email = userData.email;
-                } catch (e) {
-                  console.warn('[Apple] Failed to parse req.body.user for email:', e);
-                }
-              }
-
-              if (!email && decodedIdToken?.email) {
-                email = decodedIdToken.email;
-              }
-
-              if (!email && profile?.email) {
-                email = profile.email;
-              }
-
-              // Name handling (only available on first login)
-              let firstName = '';
-              let lastName = '';
-
-              if (req.body?.user) {
-                try {
-                  const userData = JSON.parse(req.body.user);
-                  firstName = userData.name?.firstName || '';
-                  lastName = userData.name?.lastName || '';
-                  if (!email) {
-                    email = userData.email;
-                  }
-                } catch (e) {
-                  console.warn('[Apple] Could not parse Apple user data:', e);
-                }
-              }
-
-              const displayName = [firstName, lastName]
-                .filter(Boolean)
-                .join(' ')
-                .trim() || null;
+              const { appleId, email, emailVerified, firstName, lastName, displayName } = identity;
 
               if (!email) {
                 const existingUser = await User.findOne({
@@ -184,14 +137,22 @@ export function initializePassport() {
 
                 return done(new Error(
                   'Email is required for Apple Sign In. ' +
-                  'Please ensure you shared your email with the app during sign in.'
+                  'Please share your email with the app during sign in.'
                 ));
               }
 
-              // Build normalized profile with separate name fields
+              const existingByEmail = await User.findOne({ email: email.toLowerCase() });
+              if (existingByEmail) {
+                const sameApple = existingByEmail.authProvider === 'apple'
+                  && existingByEmail.providerId === appleId;
+                if (!sameApple && (!emailVerified || !existingByEmail.emailVerified)) {
+                  return done(new Error('This email is already used. Sign in instead.'));
+                }
+              }
+
               const normalizedProfile = {
                 id: appleId,
-                emails: [{ value: email }],
+                emails: [{ value: email, verified: emailVerified }],
                 displayName,
                 name: {
                   givenName: firstName || null,

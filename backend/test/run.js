@@ -10,4 +10,6 @@ import './measure-part.test.js';
 import './multi-line-order.test.js';
 import './partner-rate-limit.test.js';
 import './auth-account-linking.test.js';
+import './auth-apple.test.js';
+import './auth-apple-unconfigured.test.js';
 import '../../test/backend-monitoring-stats.test.js';

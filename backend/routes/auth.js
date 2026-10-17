@@ -19,6 +19,7 @@ import {
   newGuestConvertCode,
   paidOrderQuery,
 } from '../auth/guestConvert.js';
+import { appleOAuthUnavailable } from '../auth/appleIdentity.js';
 
 const router = Router();
 
@@ -598,6 +599,9 @@ router.post('/github', async (req, res) => {
       user,
     });
   } catch (error) {
+    if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 500) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     console.error('[Auth] GitHub session upsert error:', error);
     return res.status(500).json({ error: error?.message || 'Failed to sign in with GitHub' });
   }
@@ -649,7 +653,9 @@ router.get('/google/callback',
  * Initiate Apple OAuth
  */
 router.get('/apple', (req, res, next) => {
-  // Store returnTo in session
+  if (!passport._strategy('apple')) {
+    return res.status(404).json(appleOAuthUnavailable());
+  }
   const returnTo = req.query.returnTo || '/';
   req.session.returnTo = returnTo;
 
@@ -663,6 +669,9 @@ router.get('/apple', (req, res, next) => {
  */
 router.post('/apple/callback',
   (req, res, next) => {
+    if (!passport._strategy('apple')) {
+      return res.status(404).json(appleOAuthUnavailable());
+    }
     passport.authenticate('apple', { 
       failureRedirect: '/login?error=apple_failed',
       failureMessage: true 
