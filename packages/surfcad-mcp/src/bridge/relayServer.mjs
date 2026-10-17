@@ -65,19 +65,39 @@ export function probeRelayAtUrl(url, timeoutMs = 1500) {
   });
 }
 
+export const DEFAULT_HEARTBEAT_MS = 5000;
+
+function parseHeartbeatMs(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 50 ? n : DEFAULT_HEARTBEAT_MS;
+}
+
 /**
- * @param {{ port?: number, host?: string, onReady?: (url: string) => void, onLog?: (line: string) => void }} [options]
+ * Drops and heartbeat timeouts always go to stderr (stdout is the MCP stdio
+ * channel); routine pairing lines only with SURFCAD_AGENT_BRIDGE_WS_VERBOSE=1.
+ *
+ * @param {string} line
+ * @param {'info' | 'warn'} [level]
+ */
+export function defaultRelayLog(line, level = 'info') {
+  if (level !== 'warn' && process.env.SURFCAD_AGENT_BRIDGE_WS_VERBOSE !== '1') return;
+  console.error(`${new Date().toISOString()} [surfcad-relay] ${level === 'warn' ? 'WARN ' : ''}${line}`);
+}
+
+/**
+ * @param {{
+ *   port?: number,
+ *   host?: string,
+ *   heartbeatMs?: number,
+ *   onReady?: (url: string) => void,
+ *   onLog?: (line: string, level: 'info' | 'warn') => void,
+ * }} [options]
  */
 export function startAgentBridgeRelay(options = {}) {
   const host = options.host || '127.0.0.1';
   const port = options.port ?? parsePort(process.env.SURFCAD_AGENT_BRIDGE_WS_PORT);
-  const hub = createAgentBridgeRelayHub({
-    onLog: options.onLog || ((line) => {
-      if (process.env.SURFCAD_AGENT_BRIDGE_WS_VERBOSE === '1') {
-        console.log(`[agent-bridge-ws] ${line}`);
-      }
-    }),
-  });
+  const heartbeatMs = options.heartbeatMs ?? parseHeartbeatMs(process.env.SURFCAD_AGENT_BRIDGE_HEARTBEAT_MS);
+  const hub = createAgentBridgeRelayHub({ onLog: options.onLog || defaultRelayLog });
 
   const server = createServer((req, res) => {
     const origin = req.headers.origin;
@@ -130,12 +150,25 @@ export function startAgentBridgeRelay(options = {}) {
       hub.attachSocket({
         send: (data) => { ws.send(data); },
         close: () => { ws.close(); },
-        on: (event, cb) => { ws.on(event, cb); },
+        ping: () => { ws.ping(); },
+        terminate: () => { ws.terminate(); },
+        on: (event, cb) => {
+          if (event === 'close') {
+            ws.on('close', (code, reason) => cb(code, reason?.toString?.() || ''));
+            return;
+          }
+          ws.on(event, cb);
+        },
         remoteAddress: remote,
         origin,
       });
     });
   });
+
+  const heartbeatTimer = setInterval(() => { hub.heartbeat(); }, heartbeatMs);
+  if (typeof heartbeatTimer.unref === 'function') heartbeatTimer.unref();
+  wss.on('close', () => { clearInterval(heartbeatTimer); });
+  server.on('close', () => { clearInterval(heartbeatTimer); });
 
   return new Promise((resolve, reject) => {
     server.listen(port, host, () => {
@@ -202,6 +235,9 @@ export function stopAgentBridgeRelay(relay) {
     const wss = relay.wss;
     const server = relay.server;
     if (wss) {
+      for (const client of wss.clients) {
+        try { client.terminate(); } catch { /* gone */ }
+      }
       wss.close(() => {
         if (server) server.close(finish);
         else finish();
