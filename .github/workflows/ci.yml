@@ -102,7 +102,12 @@ jobs:
   smoke:
     name: golden app-loads
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
+    defaults:
+      run:
+        # bash -e does not fail a pipeline when the left side fails.
+        # `node script | tee log` was exiting 0 and hiding golden failures.
+        shell: bash -eo pipefail {0}
     steps:
       - uses: actions/checkout@v4
 
@@ -381,8 +386,16 @@ jobs:
             exit 1
           fi
 
-  # Agent FEA bridge golden runs in its own job so the long smoke goldens
-  # cannot hit the 10-minute job limit before this step starts.
+      - name: Upload agent playtest report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-playtest
+          path: ${{ runner.temp }}/agent-playtest
+          if-no-files-found: ignore
+
+  # Agent FEA bridge golden runs in its own job so a long smoke job
+  # cannot cancel it at the smoke timeout.
   agent-bridge-fea-golden:
     name: Agent bridge FEA golden
     runs-on: ubuntu-latest

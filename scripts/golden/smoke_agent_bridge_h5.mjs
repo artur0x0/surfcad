@@ -140,7 +140,13 @@ if (!(await waitForServer())) {
 const browser = await chromium.launch({
   executablePath: exe,
   headless: true,
-  args: ['--no-sandbox', '--disable-dev-shm-usage'],
+  args: [
+    '--no-sandbox',
+    '--disable-dev-shm-usage',
+    '--use-gl=angle',
+    '--use-angle=swiftshader',
+    '--enable-unsafe-swiftshader',
+  ],
 });
 
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
