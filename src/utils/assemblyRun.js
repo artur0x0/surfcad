@@ -6,6 +6,7 @@
 import { shouldClearViewportScript } from './helperPaletteSnippets.js';
 import {
   composeViewportParts,
+  geometryFromExecuteResult,
   recordPartRun,
   resolvePartId,
   sortParts,
@@ -59,11 +60,9 @@ export async function runAssemblyParts({ doc, scripts, execute, ids = null }) {
         continue;
       }
       const mesh = result?.mesh && result.mesh.vertProperties ? result.mesh : null;
-      const bodyCount = Array.isArray(result?.bodyCentroids)
-        ? result.bodyCentroids.length
-        : (Number.isFinite(result?.bodyCount) ? result.bodyCount : undefined);
+      const geom = geometryFromExecuteResult(result);
       outcome = mesh
-        ? { ok: true, mesh, bodyCount }
+        ? { ok: true, mesh, ...geom }
         : { ok: false, error: 'Script must return a Manifold object' };
     } catch (err) {
       outcome = { ok: false, error: err?.message || String(err) };

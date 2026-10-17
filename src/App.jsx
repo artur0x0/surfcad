@@ -95,6 +95,7 @@ import {
   parseAssemblyDocument,
   partPosition,
   newPartRowPosition,
+  geometryFromExecuteResult,
   removePart,
   renamePart,
   renameTargetId,
@@ -155,7 +156,6 @@ import {
 import {
   agentBridgeEnabled,
   agentFeatureCount,
-  cloneAgentBbox,
   createSurfcadBridge,
 } from './utils/agentBridge';
 import { buildEffectiveJointCard, jointEditCard } from './agent/jointCardAgent.js';
@@ -2242,10 +2242,18 @@ const App = () => {
         if (run?.cleared) {
           runs[viewId] = { ok: false, mesh: null, empty: true, error: null };
         } else if (run?.ok && run.mesh?.vertProperties) {
-          const bodyCount = Number.isFinite(run.bodyCount)
-            ? run.bodyCount
+          const geom = geometryFromExecuteResult(run);
+          const bodyCount = geom.bodyCount != null
+            ? geom.bodyCount
             : (Array.isArray(run.bodyCentroids) ? run.bodyCentroids.length : undefined);
-          runs[viewId] = { ok: true, mesh: run.mesh, error: null, bodyCount };
+          runs[viewId] = {
+            ok: true,
+            mesh: run.mesh,
+            error: null,
+            bodyCount,
+            volume: geom.volume,
+            bbox: geom.bbox,
+          };
         } else if (run && run.ok === false) {
           runs[viewId] = { ok: false, mesh: null, error: run.error || 'Script failed' };
           manifoldContext.clearResult().catch(() => {});
@@ -8129,12 +8137,12 @@ const App = () => {
         return { ok: true, errors: [], volume: null, bbox: null, partName };
       }
       if (run?.ok === true && run.mesh?.vertProperties) {
-        const last = manifoldContext.getLastResult?.() || null;
+        const geom = geometryFromExecuteResult(run);
         return {
           ok: true,
           errors: [],
-          volume: last?.volume,
-          bbox: last?.boundingBox,
+          volume: geom.volume,
+          bbox: geom.bbox,
           partName,
         };
       }
@@ -8534,12 +8542,12 @@ const App = () => {
       return { ok: true, errors: [], volume: null, bbox: null, partName };
     }
     if (run?.ok === true && run.mesh?.vertProperties) {
-      const last = manifoldContext.getLastResult?.() || null;
+      const geom = geometryFromExecuteResult(run);
       return {
         ok: true,
         errors: [],
-        volume: last?.volume,
-        bbox: last?.boundingBox,
+        volume: geom.volume,
+        bbox: geom.bbox,
         partName,
       };
     }
@@ -8680,15 +8688,15 @@ const App = () => {
         return { ...base, runState: 'ok' };
       }
       if (run.ok === true && run.mesh?.vertProperties) {
-        const last = manifoldContext.getLastResult?.() || null;
-        const bodyCount = Number.isFinite(run.bodyCount)
-          ? run.bodyCount
+        const geom = geometryFromExecuteResult(run);
+        const bodyCount = geom.bodyCount != null
+          ? geom.bodyCount
           : bodyCountOfWorkerMesh(run.mesh);
         return {
           ...base,
           runState: 'ok',
-          volume: Number.isFinite(last?.volume) ? last.volume : null,
-          bbox: cloneAgentBbox(last?.boundingBox),
+          volume: geom.volume,
+          bbox: geom.bbox,
           bodyCount: Number.isFinite(bodyCount) ? bodyCount : null,
         };
       }
@@ -8768,11 +8776,15 @@ const App = () => {
         return { error: { code: 'unknown_part', message: `Unknown part id: ${partId}` } };
       }
       const current = partPlacement(part);
-      const t = position != null
-        ? [Number(position[0]) || 0, Number(position[1]) || 0, Number(position[2]) || 0]
-        : current.t.slice();
-      if (position != null && !t.every(Number.isFinite)) {
-        return { error: { code: 'bad_args', message: 'position must be [x, y, z] numbers in mm' } };
+      let t = current.t.slice();
+      if (position != null) {
+        if (!Array.isArray(position) || position.length < 3) {
+          return { error: { code: 'bad_args', message: 'position must be [x, y, z] numbers in mm' } };
+        }
+        t = [Number(position[0]), Number(position[1]), Number(position[2])];
+        if (!t.every(Number.isFinite)) {
+          return { error: { code: 'bad_args', message: 'position must be [x, y, z] numbers in mm' } };
+        }
       }
       let q = current.q.slice();
       if (rotation != null) {

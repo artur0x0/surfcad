@@ -13045,6 +13045,8 @@ const Viewport = forwardRef(({
         mesh: meshData,
         bodyCount: bodyCentroidsRef.current.length,
         volume: Number.isFinite(result?.volume) ? result.volume : null,
+        boundingBox: result?.boundingBox ?? null,
+        bbox: result?.boundingBox ?? null,
         rolledBack,
       };
 

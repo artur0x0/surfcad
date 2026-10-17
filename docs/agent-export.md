@@ -143,9 +143,9 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | Command | Args | Result |
 | --- | --- | --- |
 | `get_script` | `{}` | `{ "source": string }` — the editor buffer. |
-| `set_script` | `{ "source": string }` | `{ "ok": boolean, "errors": string[], "status": Status }` — writes `source`, runs it, and records one undo step when the text differs from the head. |
+| `set_script` | `{ "source": string }` | `{ "ok": boolean, "errors": string[], "status": Status }` — writes `source`, runs it, and records one undo step when the text differs from the head. Re-injects the active part `// @surf-id` header when the text lacks it. |
 | `run` | `{}` | Same shape as `set_script`. Runs the current buffer. One undo step when that buffer is not already the head. The text `set_script` just wrote is not a second step, so undo once removes that edit. |
-| `status` | `{}` | `Status` from the last finished `set_script`, `run`, or `undo`. |
+| `status` | `{}` | `Status` for the **active** part (`partId`, `partName`, `script`, `runState`: `not_run_yet` \| `ok` \| `failed`, plus last-run `volume` / `bbox` / `bodyCount` for that part). Updates on `set_active_part` without requiring another `run`. |
 | `errors` | `{}` | `{ "errors": [{ "code": string, "message": string, "featureIndex"?: number }] }` — structured messages from the last finished run. `featureIndex` is set when the failing marked block is known. Empty after a good run. |
 | `screenshot` | `{ "format": "png" }` | `{ "dataUrl": string }`. `format` may be omitted and defaults to `"png"`. |
 | `undo` | `{}` | One feature-bar undo (sketch session, assembly joints when `cadPartId` is null, else active part script). `{ ok, kind: "sketch" \| "assembly" \| "part", applied: { label, … }, reverted: { label, … }, status?, errors? }`. Part steps include `status` like `set_script`. Assembly steps include joint `reverted` metadata (H11). Sketch steps report depth. No separate bridge stack. |
@@ -212,8 +212,10 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `set_active_workplane` | `{ plane_id }` or `{ clear: true }` | Sets or clears the construction-plane overlay highlight. |
 | `list_sketch_entities` | `{}` | `{ points, lines, arcs, refs }` in the open sketch (immediate). |
 | `create_assembly` | `{}` | Seeds a blank assembly (Parts **+** → Assembly). One assembly-history undo step when replacing an open document. |
-| `create_part` | `{ name?, script? }` | Adds a part row (Parts **+** → Part). Local parts receive a `surf-id` when missing. In a git assembly the agent's part has no vault path and nothing is written until `git_save`. |
+| `create_part` | `{ name?, script?, position? }` | Adds a part row (Parts **+** → Part). Agent default is the assembly origin; optional `position` is `[x,y,z]` mm. The UI still staggers new parts +40 mm on X. Local parts receive a `surf-id` when missing. In a git assembly the agent's part has no vault path and nothing is written until `git_save`. |
 | `rename_part` | `{ part_id, name }` | Renames a part row. A path-less or local part only changes its name. A vault part also moves its script in the same folder to `<name>.js` (`-2`, `-3`, … when taken in the assembly or the repo tree) and the `.surf.json` reference in one rename commit; that write goes through the real-vault guard below. Unknown `part_id` → `unknown_part`. One assembly-history step. |
+| `part_get_transform` | `{ part }` | Rigid placement: `position` `[x,y,z]` mm and `rotation` as intrinsic XYZ Euler degrees (`eulerOrder: "XYZ"`). |
+| `part_set_transform` | `{ part, position?, rotation? }` | Sets translation and/or rotation. One assembly-history undo step, same as a UI move. |
 | `open_assembly` | `{ name }` | Opens a vault assembly (git mode). |
 | `open_part` | `{ path }` | Opens or links a vault part into the assembly (git mode). |
 | `insert_part` | `{ source_assembly }` or `{ name?, script? }` | Inserts another assembly’s parts (git) or adds a new part row (local, same as `create_part`). |
@@ -300,7 +302,7 @@ One session at a time. A session idle for `timeout_ms` (default 120000, 1000–1
 
 `pick_done { accept: true }` runs the card's Accept unchanged: its gates, its compose, and its edit path. If the card stays open, the result is `accept_refused` with the card's toast as the message, and the session stays open so the agent can fix the picks. On an edit card this is the way to commit changed edge or face picks; `confirm_feature` there writes only the fields.
 
-`Status` is `{ "volume": number \| null, "bbox": { "min": number[3], "max": number[3] } \| null, "partName": string, "featureCount": number }`. `volume` and `bbox` are null when the run failed. `bbox` is millimetres. `featureCount` is the number of marked feature blocks in the script that ran. Before any run, `volume` is null, `bbox` is null, `partName` is `""`, and `featureCount` is `0`.
+`Status` is `{ "partId": string, "partName": string, "script": string, "runState": "not_run_yet" \| "ok" \| "failed", "volume": number \| null, "bbox": { "min": number[3], "max": number[3] } \| null, "featureCount": number, "bodyCount": number \| null }`. `volume` and `bbox` are millimetres and come from that part’s last cached run, not the worker’s last execute of any part. `runState` is `not_run_yet` when this part has never been run.
 
 `set_script`, `run`, and `undo` resolve only after the viewport has run. The editor shows the same text. The stack is the part history the Undo button already uses (`src/utils/partHistory.js`). The first real run may seed an assembly and replace that stack; the bridge snapshots the stack first and writes exactly one step back.
 

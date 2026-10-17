@@ -756,12 +756,42 @@ export function scriptForRow(doc, scripts, id) {
  * `previousMesh` and a mesh attached to a failed outcome are ignored,
  * including a mesh already stored for this id.
  */
+/** Plain `{ min, max }` mm box, or null when any coordinate is missing. */
+export function cloneRunBbox(bbox) {
+  if (!bbox || bbox.min == null || bbox.max == null) return null;
+  const min = [Number(bbox.min[0]), Number(bbox.min[1]), Number(bbox.min[2])];
+  const max = [Number(bbox.max[0]), Number(bbox.max[1]), Number(bbox.max[2])];
+  if (![...min, ...max].every(Number.isFinite)) return null;
+  return { min, max };
+}
+
+/** Volume / bbox / bodyCount from a worker or viewport execute result (or a cached run). */
+export function geometryFromExecuteResult(result) {
+  const volume = Number(result?.volume);
+  const bodyCount = Number.isFinite(result?.bodyCount)
+    ? result.bodyCount
+    : (Array.isArray(result?.bodyCentroids) ? result.bodyCentroids.length : null);
+  return {
+    volume: Number.isFinite(volume) ? volume : null,
+    bbox: cloneRunBbox(result?.boundingBox || result?.bbox),
+    bodyCount: Number.isFinite(bodyCount) ? bodyCount : null,
+  };
+}
+
 export function recordPartRun(runs, id, outcome) {
   const next = { ...(runs || {}) };
   const mesh = outcome?.mesh;
   const ok = outcome?.ok === true && !!(mesh && mesh.vertProperties);
+  const geom = geometryFromExecuteResult(outcome);
   next[id] = ok
-    ? { ok: true, mesh, error: null }
+    ? {
+      ok: true,
+      mesh,
+      error: null,
+      volume: geom.volume,
+      bbox: geom.bbox,
+      ...(geom.bodyCount != null ? { bodyCount: geom.bodyCount } : {}),
+    }
     : {
       ok: false,
       mesh: null,
@@ -769,6 +799,8 @@ export function recordPartRun(runs, id, outcome) {
       missing: !!outcome?.missing,
       empty: !!outcome?.empty,
       skipped: !!outcome?.skipped,
+      volume: null,
+      bbox: null,
     };
   return next;
 }
