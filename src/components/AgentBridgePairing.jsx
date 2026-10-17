@@ -141,9 +141,9 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
           className="rounded border border-chrome-border/80 bg-chrome-surface/60 px-2 py-2 text-xs mb-2"
           data-agent-bridge-unsupported="webkit-https"
         >
-          <p className="text-chrome-text mb-1.5">Pairing works in Chrome or Edge for now.</p>
+          <p className="text-chrome-text mb-1.5">Pairing works in Chrome for now.</p>
           <p className="text-chrome-text-secondary mb-2">
-            Open this page in Chrome or Edge on your computer to connect a local MCP client.
+            Open this page in Chrome on your computer to connect a local MCP client.
           </p>
           <button
             type="button"
