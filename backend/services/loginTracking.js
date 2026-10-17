@@ -41,6 +41,10 @@ export async function recordSuccessfulLogin(user, method) {
 
 /**
  * Wrap req.login to record tracking after passport establishes the session.
+ * Sets session.authAt so enforceCredentialRevocation keeps this login.
+ * Every path that creates a signed-in session must call this (password,
+ * verify, guest convert, GitHub, Google, Apple) — not recordSuccessfulLogin
+ * alone, which does not stamp authAt.
  * @param {import('express').Request} req
  * @param {import('../db/models/User.js').default} user
  * @param {import('../db/models/LoginEvent.js').LoginMethod} method
@@ -54,6 +58,7 @@ export function loginAndTrack(req, user, method) {
         return;
       }
       try {
+        if (req.session) req.session.authAt = Date.now();
         await recordSuccessfulLogin(user, method);
         resolve();
       } catch (trackErr) {

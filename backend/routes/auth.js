@@ -8,8 +8,17 @@ import config from '../config/index.js';
 import { fetchGithubUserProfile } from '../services/githubUser.js';
 import { deleteResolvedGithubVault } from '../services/githubVaultDelete.js';
 import { confirmAndRememberVaultName, storedVaultNameFromUser } from '../services/vaultName.js';
-import { loginAndTrack, recordSuccessfulLogin } from '../services/loginTracking.js';
+import { loginAndTrack } from '../services/loginTracking.js';
 import { requireAuth } from '../auth/session.js';
+import Order from '../db/models/Order.js';
+import {
+  EXISTING_ACCOUNT_MESSAGE,
+  convertCodeResendWait,
+  createGuestConvertProof,
+  evaluateGuestConvertProof,
+  newGuestConvertCode,
+  paidOrderQuery,
+} from '../auth/guestConvert.js';
 
 const router = Router();
 
@@ -399,13 +408,19 @@ router.post('/guest', (req, res) => {
   if (!guestEmail) {
     return res.status(400).json({ error: 'Email is required for guest checkout' });
   }
+
+  const normalizedEmail = String(guestEmail).toLowerCase().trim();
   
   // Create guest session
   if (!req.session.guestId) {
     req.session.guestId = crypto.randomUUID();
   }
+
+  if (req.session.guestEmail && req.session.guestEmail !== normalizedEmail) {
+    delete req.session.guestConvert;
+  }
   
-  req.session.guestEmail = guestEmail.toLowerCase();
+  req.session.guestEmail = normalizedEmail;
   
   if (address) {
     req.session.guestAddress = address;
@@ -421,51 +436,107 @@ router.post('/guest', (req, res) => {
   });
 });
 
+async function guestHasPaidOrder(req) {
+  if (!req.session?.guestEmail || !req.session?.guestId) return false;
+  const hit = await Order.exists(paidOrderQuery(req.session.guestEmail, req.session.guestId));
+  return !!hit;
+}
+
+/**
+ * POST /api/auth/guest/convert/code
+ * Email a one-time conversion code. Requires a paid order in this session.
+ * Never sent when the email already belongs to an account.
+ */
+router.post('/guest/convert/code', async (req, res) => {
+  try {
+    if (!req.session.guestEmail || !req.session.guestId) {
+      return res.status(400).json({ error: 'No guest session found' });
+    }
+
+    const existing = await User.findOne({ email: req.session.guestEmail });
+    if (existing) {
+      return res.status(409).json({ error: EXISTING_ACCOUNT_MESSAGE });
+    }
+
+    if (!(await guestHasPaidOrder(req))) {
+      return res.status(403).json({ error: 'Pay for an order first, then create an account.' });
+    }
+
+    const wait = convertCodeResendWait(req.session.guestConvert);
+    if (wait > 0) {
+      return res.status(429).json({
+        error: `Please wait ${wait} seconds before requesting a new code`,
+        retryAfter: wait,
+      });
+    }
+
+    const code = newGuestConvertCode();
+    req.session.guestConvert = createGuestConvertProof({
+      email: req.session.guestEmail,
+      guestId: req.session.guestId,
+      code,
+    });
+
+    const displayName = req.session.guestAddress?.name || '';
+    email.sendVerificationEmail(req.session.guestEmail, code, displayName).catch(console.error);
+
+    return res.json({
+      success: true,
+      message: 'Verification code sent',
+    });
+  } catch (error) {
+    console.error('[Auth] Guest convert code error:', error);
+    return res.status(500).json({ error: 'Failed to send verification code' });
+  }
+});
+
 /**
  * POST /api/auth/guest/convert
  * Convert guest to registered user (after order)
  */
 router.post('/guest/convert', async (req, res) => {
   try {
-    const { password } = req.body;
+    const { password, code } = req.body;
     
-    if (!req.session.guestEmail) {
+    if (!req.session.guestEmail || !req.session.guestId) {
       return res.status(400).json({ error: 'No guest session found' });
     }
     
     if (!password || password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
-    
-    // Check if user already exists
-    let user = await User.findOne({ email: req.session.guestEmail });
-    
-    if (user) {
-      // User exists - could be from a previous order
-      if (user.passwordHash) {
-        return res.status(409).json({ error: 'Account already exists. Please log in.' });
-      }
-      // User exists without password (e.g., from guest order), set password
-      await user.setPassword(password);
-      user.emailVerified = true; // Guest conversion after order - email is implicitly verified
-    } else {
-      // Create new user
-      user = new User({
-        email: req.session.guestEmail,
-        authProvider: 'local',
-        emailVerified: true, // Guest conversion - email verified through order process
-      });
-      await user.setPassword(password);
+
+    const existing = await User.findOne({ email: req.session.guestEmail });
+    if (existing) {
+      return res.status(409).json({ error: EXISTING_ACCOUNT_MESSAGE });
     }
+
+    const proof = evaluateGuestConvertProof(req.session.guestConvert, {
+      email: req.session.guestEmail,
+      guestId: req.session.guestId,
+      code,
+    });
+    if (!proof.ok) {
+      return res.status(proof.status).json({ error: proof.error });
+    }
+
+    if (!(await guestHasPaidOrder(req))) {
+      return res.status(403).json({ error: 'Pay for an order first, then create an account.' });
+    }
+
+    const user = new User({
+      email: req.session.guestEmail,
+      authProvider: 'local',
+      emailVerified: true,
+    });
+    await user.setPassword(password);
     
-    // Add guest address if available
     if (req.session.guestAddress) {
       user.upsertAddress(req.session.guestAddress, true);
     }
     
     await user.save();
     
-    // Send admin notification for new user
     email.sendAdminNewUserNotification(user).catch(console.error);
     
     try {
@@ -473,6 +544,7 @@ router.post('/guest/convert', async (req, res) => {
       delete req.session.guestId;
       delete req.session.guestEmail;
       delete req.session.guestAddress;
+      delete req.session.guestConvert;
       return res.json({
         success: true,
         user,
@@ -547,21 +619,28 @@ router.get('/google', (req, res, next) => {
  * Google OAuth callback
  */
 router.get('/google/callback',
-  passport.authenticate('google', { failureRedirect: '/login?error=google_failed' }),
-  async (req, res) => {
-    const returnTo = req.session.returnTo || '/';
-    delete req.session.returnTo;
-
-    if (req.user) {
-      await recordSuccessfulLogin(req.user, 'google');
-    }
-
-    delete req.session.guestId;
-    delete req.session.guestEmail;
-    delete req.session.guestAddress;
-
-    const redirectUrl = buildRedirectUrl(config.frontendUrl, returnTo, { auth: 'success' });
-    res.redirect(redirectUrl);
+  (req, res, next) => {
+    passport.authenticate('google', {
+      failureRedirect: '/login?error=google_failed',
+    }, (err, user) => {
+      if (err || !user) {
+        return res.redirect('/login?error=google_failed');
+      }
+      loginAndTrack(req, user, 'google')
+        .then(() => {
+          const returnTo = req.session.returnTo || '/';
+          delete req.session.returnTo;
+          delete req.session.guestId;
+          delete req.session.guestEmail;
+          delete req.session.guestAddress;
+          const redirectUrl = buildRedirectUrl(config.frontendUrl, returnTo, { auth: 'success' });
+          return res.redirect(redirectUrl);
+        })
+        .catch((loginErr) => {
+          console.error('[Auth] req.login failed after Google auth:', loginErr);
+          return res.redirect('/login?error=google_failed');
+        });
+    })(req, res, next);
   }
 );
 

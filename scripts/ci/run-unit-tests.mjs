@@ -11,7 +11,9 @@
  * fTetWild and the rotated-bar solve.
  *
  * Patterns match the previous CI step. `scripts/golden/*playtest*` is not
- * included. `backend/test` is not included.
+ * included. `backend/test` is run separately (needs backend/node_modules).
+ * Isolation uses --experimental-test-isolation=process: Node 22 rejects
+ * --test-isolation=process (that flag is not stable on 22).
  */
 import { spawn } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
@@ -57,6 +59,14 @@ async function walk(dir, predicate, out) {
     else if (predicate(entry.name)) out.push(full);
   }
   return out;
+}
+
+export async function collectBackendUnitFiles() {
+  return walk(
+    join(ROOT, 'backend/test'),
+    (name) => /\.test\.(js|mjs|cjs)$/.test(name),
+    [],
+  );
 }
 
 export async function collectUnitFiles() {
@@ -121,9 +131,9 @@ export function timeoutMessage(file, timeoutMs) {
   ].join('\n');
 }
 
-export function runNode(args, { timeoutMs = 0, label = '' } = {}) {
+export function runNode(args, { timeoutMs = 0, label = '', cwd = ROOT } = {}) {
   return new Promise((resolvePromise) => {
-    const child = spawn(process.execPath, args, { cwd: ROOT, stdio: 'inherit' });
+    const child = spawn(process.execPath, args, { cwd, stdio: 'inherit' });
     let killed = false;
     const timer = timeoutMs > 0
       ? setTimeout(() => {
@@ -172,6 +182,15 @@ export async function main() {
 
   if (rest.length) {
     const code = await runNode(['--test', '--test-reporter', 'spec', ...rest]);
+    if (code !== 0) return code;
+  }
+
+  const backend = (await collectBackendUnitFiles()).sort();
+  if (backend.length) {
+    const code = await runNode(
+      ['--test', '--test-reporter', 'spec', '--experimental-test-isolation=process', ...backend],
+      { cwd: join(ROOT, 'backend') },
+    );
     if (code !== 0) return code;
   }
 
