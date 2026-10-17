@@ -45,6 +45,12 @@ test('browserBlockedHint mentions Safari mixed content', () => {
   assert.match(browserBlockedHint('safari'), /Safari/i);
 });
 
+test('browserBlockedHint does not mention Edge as a browser', () => {
+  for (const family of ['safari', 'firefox', 'chrome', 'edge', 'unknown']) {
+    assert.doesNotMatch(browserBlockedHint(family), /\bEdge\b/);
+  }
+});
+
 test('isWebKitLoopbackPairingBrowser: iOS (all engines) and desktop Safari', () => {
   assert.equal(isWebKitLoopbackPairingBrowser(UA.macSafari18), true);
   assert.equal(isWebKitLoopbackPairingBrowser(UA.iosSafari), true);

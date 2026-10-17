@@ -60,14 +60,14 @@ export function detectBrowserFamily(userAgent) {
 export function browserBlockedHint(family) {
   switch (family) {
     case 'safari':
-      return 'Safari blocks secure pages from opening ws://127.0.0.1 (mixed content). Use Chrome or Edge on desktop, or pair from a local dev build.';
+      return 'Safari blocks secure pages from opening ws://127.0.0.1 (mixed content). Use Chrome on desktop, or pair from a local dev build.';
     case 'firefox':
-      return 'Firefox may block this connection from an HTTPS page. Try Chrome or Edge, or check about:config private-network restrictions.';
+      return 'Firefox may block this connection from an HTTPS page. Try Chrome, or check about:config private-network restrictions.';
     case 'chrome':
     case 'edge':
       return 'Chrome may block loopback WebSockets until Local Network Access is allowed. Check the address-bar permission icon, or enterprise policy LoopbackNetworkAllowedForUrls for surfcad.com.';
     default:
-      return 'Your browser blocked the connection from this HTTPS page to ws://127.0.0.1. Try Chrome or Edge on desktop.';
+      return 'Your browser blocked the connection from this HTTPS page to ws://127.0.0.1. Try Chrome on desktop.';
   }
 }
 
