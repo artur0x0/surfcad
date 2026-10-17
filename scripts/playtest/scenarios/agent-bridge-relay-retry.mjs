@@ -80,6 +80,14 @@ export async function run(ctx) {
     await page.click('[data-ui-action="data-agent-bridge-approve"]');
     const peer = await peerPromise;
     await page.waitForSelector('[data-agent-bridge-connection-ring="connected"]', { timeout: 15000 });
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(
+      /* eslint-disable no-undef */
+      () => !document.querySelector('[data-profile-panel]'),
+      /* eslint-enable no-undef */
+      { timeout: 5000 },
+    );
+
     try { peer.close(); } catch { /* gone */ }
     await page.waitForSelector('[data-agent-bridge-connection-ring="reconnecting"]', { timeout: 15000 });
 
@@ -112,6 +120,14 @@ export async function run(ctx) {
         }
       })();
       await page.waitForSelector('[data-agent-bridge-approval]', { timeout: 30000 });
+      const menuClosed = await page.evaluate(
+        /* eslint-disable no-undef */
+        () => !document.querySelector('[data-profile-panel]'),
+        /* eslint-enable no-undef */
+      );
+      if (!menuClosed) {
+        throw new Error('Allow/Deny must show while the profile menu stays closed');
+      }
       await page.click('[data-ui-action="data-agent-bridge-approve"]');
       const peer2 = await peer2Promise;
       await page.waitForSelector('[data-agent-bridge-connection-ring="connected"]', { timeout: 15000 });
