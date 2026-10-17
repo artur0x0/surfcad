@@ -8,7 +8,9 @@ Stdio [Model Context Protocol](https://modelcontextprotocol.io/) server for the 
 npx surfcad-mcp
 ```
 
-The process speaks MCP over **stdio**. Pair it to a running SurfCAD tab (see below), then your MCP client can call bridge tools (`status`, `set_script`, `run`, …) plus a `pair` helper.
+The process speaks MCP over **stdio** and **starts the local relay** on `127.0.0.1:17341` (loopback only). If another process is already listening there (a second MCP client or the SurfCAD dev server), it reuses that relay instead of failing.
+
+Pair it to a running SurfCAD tab (see below), then your MCP client can call bridge tools (`status`, `set_script`, `run`, …) plus a `pair` helper.
 
 Environment variables:
 
@@ -16,15 +18,16 @@ Environment variables:
 | --- | --- |
 | `SURFCAD_PAIRING_CODE` | 6-character code from the SurfCAD **Local agent** panel (optional if you use the `pair` tool). |
 | `SURFCAD_AGENT_BRIDGE_WS_URL` | Relay URL (default `ws://127.0.0.1:17341`). |
+| `SURFCAD_MCP_START_RELAY` | Set to `0` to skip starting the relay (tests only). |
 
 ## Pair with SurfCAD (Local agent)
 
-1. Run SurfCAD with the agent bridge on (`npm run dev` in the [SurfCAD repo](https://github.com/artur0x0/surfcad), or open the app with `?agent=1` / `localStorage surfcadAgent=1`).
+1. Open [https://surfcad.com](https://surfcad.com) (or local dev).
 2. Open the **profile** menu → **Local agent** → **Show pairing code** and leave the tab open.
-3. Start `surfcad-mcp` with that code in `SURFCAD_PAIRING_CODE`, or call the MCP **`pair`** tool with `{ "code": "ABCDEF" }`.
+3. Add `surfcad-mcp` to your MCP client (`npx surfcad-mcp`), set `SURFCAD_PAIRING_CODE` to that code, or call the MCP **`pair`** tool with `{ "code": "ABCDEF" }`.
 4. Click **Allow connection** in SurfCAD when prompted.
 
-The Vite dev/preview server starts the relay automatically. Nothing pairs silently — you must show the code and approve the connection.
+Nothing pairs silently — you must show the code and approve the connection.
 
 ## MCP client config (Cursor / Claude Desktop)
 

@@ -1,8 +1,11 @@
 /**
- * Localhost-only checks for the agent-bridge WebSocket relay (M1).
+ * Localhost binding and browser Origin allowlist for the M1 agent-bridge relay.
+ * Kept in sync with `packages/surfcad-mcp/src/bridge/localAddress.mjs`.
  */
 
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+const PROD_SURFCAD_HOSTS = new Set(['surfcad.com', 'www.surfcad.com']);
 
 /**
  * @param {string | undefined | null} address
@@ -24,8 +27,12 @@ export function isAllowedHttpOrigin(origin) {
   try {
     const url = new URL(origin);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
-    return LOCAL_HOSTNAMES.has(url.hostname) || url.hostname.startsWith('127.');
+    if (LOCAL_HOSTNAMES.has(url.hostname) || url.hostname.startsWith('127.')) return true;
+    if (PROD_SURFCAD_HOSTS.has(url.hostname)) return true;
+    return false;
   } catch {
     return false;
   }
 }
+
+export { PROD_SURFCAD_HOSTS, LOCAL_HOSTNAMES };

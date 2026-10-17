@@ -53,6 +53,7 @@ test('surfcad-mcp lists bridge tools and calls status through a mocked relay', a
     args: [SERVER_BIN],
     env: {
       ...process.env,
+      SURFCAD_MCP_START_RELAY: '0',
       SURFCAD_AGENT_BRIDGE_WS_URL: url,
       SURFCAD_PAIRING_CODE: token,
     },
@@ -103,6 +104,7 @@ test('surfcad-mcp returns not_paired without a code', async () => {
     args: [SERVER_BIN],
     env: {
       ...process.env,
+      SURFCAD_MCP_START_RELAY: '0',
       SURFCAD_PAIRING_CODE: '',
     },
   });

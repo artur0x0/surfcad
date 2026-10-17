@@ -4,9 +4,9 @@ Drive an open SurfCAD tab through **`packages/surfcad-mcp`**: stdio MCP → loop
 
 ## Pair
 
-1. Run SurfCAD with the bridge on (`npm run dev`, or `?agent=1` / `localStorage surfcadAgent=1`).
+1. Open [https://surfcad.com](https://surfcad.com) (or local dev / `?agent=1`).
 2. Open the **profile** chip (top-right AR initials) → **Local agent** → **Show pairing code** (six characters).
-3. Start `surfcad-mcp` with that code; click **Allow connection** in the tab.
+3. Run `npx surfcad-mcp` in your MCP client with that code (`SURFCAD_PAIRING_CODE` or the `pair` tool); click **Allow connection** in the tab.
 
 **Cursor** (`.cursor/mcp.json` or Settings → MCP):
 
