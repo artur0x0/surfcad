@@ -26,8 +26,17 @@ const DEFAULT_ROTATE_SPEED = 1;
 const DEFAULT_ZOOM_SPEED = 1.2;
 const DEFAULT_PAN_SPEED = 0.3;
 
-/** 2× TrackballControls' default rotateSpeed. */
-export const TRACKBALL_ROTATE_SPEED = DEFAULT_ROTATE_SPEED * 2;
+/** 2× TrackballControls' default rotateSpeed — touch drags on phones/tablets. */
+export const TRACKBALL_TOUCH_ROTATE_SPEED = DEFAULT_ROTATE_SPEED * 2;
+
+/** @deprecated alias for touch rotate speed */
+export const TRACKBALL_ROTATE_SPEED = TRACKBALL_TOUCH_ROTATE_SPEED;
+
+/**
+ * Desktop mouse / pen / trackpad drag orbit. 1.5× touch so a short drag covers
+ * more of the part without changing phone one-finger rotate.
+ */
+export const TRACKBALL_DESKTOP_ROTATE_SPEED = TRACKBALL_TOUCH_ROTATE_SPEED * 1.5;
 
 /** 2× TrackballControls' default zoomSpeed. */
 export const TRACKBALL_ZOOM_SPEED = DEFAULT_ZOOM_SPEED * 2;
@@ -41,8 +50,13 @@ export const TRACKBALL_PAN_SPEED = DEFAULT_PAN_SPEED * 2;
  */
 export const TRACKBALL_DYNAMIC_DAMPING_FACTOR = 0.36;
 
+export function trackballRotateSpeedForPointer(pointerType) {
+  if (pointerType === 'touch') return TRACKBALL_TOUCH_ROTATE_SPEED;
+  return TRACKBALL_DESKTOP_ROTATE_SPEED;
+}
+
 export function applyTrackballFeel(controls) {
-  controls.rotateSpeed = TRACKBALL_ROTATE_SPEED;
+  controls.rotateSpeed = TRACKBALL_DESKTOP_ROTATE_SPEED;
   controls.zoomSpeed = TRACKBALL_ZOOM_SPEED;
   controls.panSpeed = TRACKBALL_PAN_SPEED;
   controls.dynamicDampingFactor = TRACKBALL_DYNAMIC_DAMPING_FACTOR;
