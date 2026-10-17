@@ -295,12 +295,29 @@ class Parser {
   }
 }
 
+/** Dimension / entity ids that may land in SVG attributes. */
+export const CONTOUR_ITEM_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+export function isContourItemId(id) {
+  return typeof id === 'string' && CONTOUR_ITEM_ID_RE.test(id);
+}
+
 function keepSeq(item) {
   if (!item || typeof item !== 'object') return item;
   const n = Number(item.seq);
   if (Number.isFinite(n) && n >= 1) item.seq = Math.round(n);
   else delete item.seq;
   return item;
+}
+
+function assertItemIds(list, kind) {
+  if (!Array.isArray(list)) return;
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    if (!isContourItemId(item.id)) {
+      throw new Error(`solveContour: ${kind} id must match ${CONTOUR_ITEM_ID_RE}`);
+    }
+  }
 }
 
 function objectOf(value) {
@@ -346,5 +363,11 @@ export function parseSolveContour(source) {
   };
   if (value.polyline) spec.polyline = true;
   if (value.centers) spec.centers = true;
+  assertItemIds(spec.points, 'point');
+  assertItemIds(spec.lines, 'line');
+  assertItemIds(spec.arcs, 'arc');
+  assertItemIds(spec.dimensions, 'dimension');
+  assertItemIds(spec.constraints, 'constraint');
+  assertItemIds(spec.refs, 'ref');
   return spec;
 }
