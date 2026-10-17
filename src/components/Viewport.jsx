@@ -12627,6 +12627,15 @@ const Viewport = forwardRef(({
           onRunOutcomeRef.current?.({ script: submitted, ok: false, scriptLine: null });
         }
       };
+      // A soft-restart or assembly preempt clears isReady until init()
+      // finishes. Wait for that instead of failing the next script.
+      if (!manifoldContext.isReady && typeof manifoldContext.whenReady === 'function') {
+        await manifoldContext.whenReady();
+      }
+      if (abortController.aborted) {
+        console.log('[Viewport] Execution aborted while the sandbox restarted');
+        return false;
+      }
       if (!manifoldContext.isReady) {
         throw new Error('Manifold Sandbox not initialized');
       }
