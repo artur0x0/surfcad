@@ -67,28 +67,29 @@ export async function fetchGithubUserProfile({
     };
   }
 
-  let email = typeof user.email === 'string' && user.email.trim()
-    ? user.email.trim()
-    : null;
+  const login = String(user.login || '').trim();
 
-  if (!email) {
-    try {
-      const emRes = await fetchImpl(emailsUrl, { headers });
-      if (emRes.ok) {
-        const emails = await emRes.json();
-        if (Array.isArray(emails)) {
-          const primary = emails.find((e) => e.primary && e.verified && e.email)
-            || emails.find((e) => e.verified && e.email)
-            || emails.find((e) => e.email);
-          if (primary?.email) email = String(primary.email).trim();
+  // user.email is public and may be unverified. Only /user/emails entries
+  // with verified:true are safe to treat as identity.
+  let email = null;
+  let emailVerified = false;
+  try {
+    const emRes = await fetchImpl(emailsUrl, { headers });
+    if (emRes.ok) {
+      const emails = await emRes.json();
+      if (Array.isArray(emails)) {
+        const primary = emails.find((e) => e.primary && e.verified && e.email)
+          || emails.find((e) => e.verified && e.email);
+        if (primary?.email) {
+          email = String(primary.email).trim();
+          emailVerified = true;
         }
       }
-    } catch {
-      // fall through to noreply
     }
+  } catch {
+    // fall through to noreply
   }
 
-  const login = String(user.login || '').trim();
   if (!email) {
     if (!login) {
       return { ok: false, status: 400, error: 'GitHub account has no email or login' };
@@ -109,7 +110,7 @@ export async function fetchGithubUserProfile({
         givenName,
         familyName,
       },
-      emails: [{ value: email }],
+      emails: emailVerified ? [{ value: email, verified: true }] : [{ value: email }],
     },
   };
 }

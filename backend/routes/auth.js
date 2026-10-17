@@ -14,10 +14,12 @@ import Order from '../db/models/Order.js';
 import {
   EXISTING_ACCOUNT_MESSAGE,
   convertCodeResendWait,
+  convertCooldownSentAt,
   createGuestConvertProof,
   evaluateGuestConvertProof,
   newGuestConvertCode,
   paidOrderQuery,
+  recordConvertCodeSent,
 } from '../auth/guestConvert.js';
 import { appleOAuthUnavailable } from '../auth/appleIdentity.js';
 
@@ -130,7 +132,8 @@ router.post('/register', async (req, res) => {
     if (existingUser) {
       // If user exists but is not verified, allow re-registration (resend code)
       if (!existingUser.emailVerified && existingUser.authProvider === 'local') {
-        // Generate new verification code
+        // Last register attempt owns the password once the inbox verifies.
+        await existingUser.setPassword(password);
         const code = existingUser.generateVerificationCode();
         await existingUser.save();
         
@@ -454,16 +457,16 @@ router.post('/guest/convert/code', async (req, res) => {
       return res.status(400).json({ error: 'No guest session found' });
     }
 
+    if (!(await guestHasPaidOrder(req))) {
+      return res.status(403).json({ error: 'Pay for an order first, then create an account.' });
+    }
+
     const existing = await User.findOne({ email: req.session.guestEmail });
     if (existing) {
       return res.status(409).json({ error: EXISTING_ACCOUNT_MESSAGE });
     }
 
-    if (!(await guestHasPaidOrder(req))) {
-      return res.status(403).json({ error: 'Pay for an order first, then create an account.' });
-    }
-
-    const wait = convertCodeResendWait(req.session.guestConvert);
+    const wait = convertCodeResendWait(convertCooldownSentAt(req.session, req.session.guestEmail));
     if (wait > 0) {
       return res.status(429).json({
         error: `Please wait ${wait} seconds before requesting a new code`,
@@ -477,6 +480,7 @@ router.post('/guest/convert/code', async (req, res) => {
       guestId: req.session.guestId,
       code,
     });
+    recordConvertCodeSent(req.session, req.session.guestEmail);
 
     const displayName = req.session.guestAddress?.name || '';
     email.sendVerificationEmail(req.session.guestEmail, code, displayName).catch(console.error);

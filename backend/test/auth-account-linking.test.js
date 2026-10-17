@@ -162,6 +162,7 @@ describe('exploit H2', () => {
 
     const gh = await githubSignIn('victim-token', {
       user: { id: 4242, login: 'victim', email: VICTIM, name: 'Vic Tim' },
+      emails: [{ email: VICTIM, primary: true, verified: true }],
     });
     assert.notEqual(gh.status, 200, 'must refuse the link to a never-verified account');
     const row = users.find({ email: VICTIM });
@@ -185,7 +186,10 @@ describe('exploit H2', () => {
     const c = client(app.port);
     const restoreFetch = patch(globalThis, {
       fetch: githubFetch({
-        tok: { user: { id: 4242, login: 'victim', email: VICTIM, name: 'Vic Tim' } },
+        tok: {
+          user: { id: 4242, login: 'victim', email: VICTIM, name: 'Vic Tim' },
+          emails: [{ email: VICTIM, primary: true, verified: true }],
+        },
       }),
     });
     try {
@@ -248,7 +252,10 @@ describe('regression', () => {
     const c = client(app.port);
     const restoreFetch = patch(globalThis, {
       fetch: githubFetch({
-        tok: { user: { id: 7, login: 'octo', email: 'octo@example.com', name: 'Octo Cat' } },
+        tok: {
+          user: { id: 7, login: 'octo', email: 'octo@example.com', name: 'Octo Cat' },
+          emails: [{ email: 'octo@example.com', primary: true, verified: true }],
+        },
       }),
     });
     try {
@@ -276,6 +283,7 @@ describe('regression', () => {
     });
     const r = await githubSignIn('tok', {
       user: { id: 8, login: 'octo', email: 'octo@example.com', name: 'Octo' },
+      emails: [{ email: 'octo@example.com', primary: true, verified: true }],
     });
     assert.equal(r.status, 200);
     assert.equal(r.body.isNew, false);

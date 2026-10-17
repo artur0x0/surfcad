@@ -13,6 +13,7 @@ import './auth-account-linking.test.js';
 import './auth-apple.test.js';
 import './auth-apple-unconfigured.test.js';
 import './order-access.test.js';
+import './auth-s1b-followups.test.js';
 import './generate-route.test.js';
 import './convert-route.test.js';
 import '../../test/backend-monitoring-stats.test.js';

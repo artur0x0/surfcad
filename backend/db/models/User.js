@@ -523,15 +523,12 @@ userSchema.statics.findOrCreateOAuth = async function(profile, provider) {
   user = await this.findOne({ email });
   
   if (user) {
-    // Refuse before neutralize: unverified provider email, or an existing
-    // account that was never verified. Neutralize only remaining cases.
-    if (emails?.[0]?.verified === false || !user.emailVerified) {
+    // Auto-link only when the provider email is positively verified and
+    // the existing account already is. Missing verified is refuse, not allow.
+    if (emails?.[0]?.verified !== true || !user.emailVerified) {
       const err = new Error('This email is already used. Sign in instead.');
       err.statusCode = 409;
       throw err;
-    }
-    if (!user.emailVerified) {
-      user.neutralizeUnverifiedForOAuth();
     }
     user.authProvider = provider;
     user.providerId = id;

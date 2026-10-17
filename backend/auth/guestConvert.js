@@ -73,11 +73,26 @@ export function evaluateGuestConvertProof(proof, { email, guestId, code, now = D
   return { ok: true };
 }
 
-export function convertCodeResendWait(proof, now = Date.now()) {
-  if (!proof?.sentAt) return 0;
-  const elapsed = now - proof.sentAt;
+export function convertCodeResendWait(sentAt, now = Date.now()) {
+  if (!Number.isFinite(sentAt) || sentAt <= 0) return 0;
+  const elapsed = now - sentAt;
   if (elapsed >= CONVERT_CODE_RESEND_MS) return 0;
   return Math.ceil((CONVERT_CODE_RESEND_MS - elapsed) / 1000);
+}
+
+export function convertCooldownSentAt(session, email) {
+  const stamp = session?.guestConvertCooldown?.[String(email || '').toLowerCase()];
+  return Number.isFinite(stamp) ? stamp : 0;
+}
+
+export function recordConvertCodeSent(session, email, now = Date.now()) {
+  const prev = session.guestConvertCooldown && typeof session.guestConvertCooldown === 'object'
+    ? session.guestConvertCooldown
+    : {};
+  session.guestConvertCooldown = {
+    ...prev,
+    [String(email).toLowerCase()]: now,
+  };
 }
 
 export function newGuestConvertCode() {
