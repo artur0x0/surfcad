@@ -199,6 +199,7 @@
         "golden:error-toast-undo": "node scripts/golden/smoke_error_toast_undo.mjs",
         "golden:app-loads": "npm run build && node scripts/golden/smoke_app_loads.mjs",
         "golden:viewport-orbit": "node scripts/golden/smoke_viewport_orbit_loop.mjs",
+        "golden:viewport-safari-gesture-zoom": "node scripts/golden/smoke_viewport_safari_gesture_zoom.mjs",
         "golden:page-zoom-lock": "node scripts/golden/smoke_page_zoom_lock.mjs",
         "golden:hook-dep-tdz": "node scripts/golden/smoke_hook_dep_tdz.mjs",
         "golden:ui-polish": "node scripts/golden/smoke_ui_polish_icons_layout.mjs",
