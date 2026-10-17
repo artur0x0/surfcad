@@ -1,9 +1,9 @@
 import React from 'react';
 import { Circle, Cone, Drill, FoldVertical, PanelTop, X } from 'lucide-react';
 import {
-  RAIL_PAIR_HEIGHT_CLASS,
-  RAIL_SCROLL_CLASS,
   RAIL_PAIR_HEIGHT_ATTR,
+  RAIL_DESKTOP_FULL_ATTR,
+  leftRailPositionClasses,
   useLeftRailFit,
 } from '../../utils/railPair';
 
@@ -25,18 +25,20 @@ const SHEET_TOOL_UI_ACTION = {
  * tools = sheetToolsFor(spec): only features SendCutSend makes on this SKU,
  * Tab first. Empty before the base flange exists.
  */
-const SheetMetalRail = ({ onExit, tools = [], tool = null, onSelectTool, children }) => {
+const SheetMetalRail = ({
+  onExit, tools = [], tool = null, onSelectTool, children, desktopFullRail = false,
+}) => {
   const { railRef, fits, widthClass } = useLeftRailFit();
   return (
     <div
       ref={railRef}
-      className={`absolute left-2 lg:left-4 bottom-2.5 z-10 flex flex-col gap-1
+      className={`absolute left-2 lg:left-4 z-10 flex flex-col gap-1
         bg-white/60 backdrop-blur-sm rounded-lg shadow-lg
-        ${widthClass} ${RAIL_PAIR_HEIGHT_CLASS} ${RAIL_SCROLL_CLASS} p-2`}
+        ${widthClass} ${leftRailPositionClasses({ desktopFull: desktopFullRail })} p-2`}
       role="group"
       aria-label="Sheet metal tools"
       data-rail-pair="left"
-      data-rail-height={RAIL_PAIR_HEIGHT_ATTR}
+      data-rail-height={desktopFullRail ? RAIL_DESKTOP_FULL_ATTR : RAIL_PAIR_HEIGHT_ATTR}
       data-rail-fit={fits ? 'fits' : 'scroll'}
       data-sheet-metal-rail="1"
     >

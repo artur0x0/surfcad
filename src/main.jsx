@@ -57,7 +57,11 @@ function Root() {
   }
 
   if (partnersPage) {
-    return <PartnersPage />;
+    return (
+      <AuthProvider>
+        <PartnersPage />
+      </AuthProvider>
+    );
   }
 
   return (
