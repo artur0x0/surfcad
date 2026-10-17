@@ -6,8 +6,9 @@
  * allowlist — scripts see CAD helpers plus empty self/globalThis), rewrites
  * `import()` so jsdelivr is not reachable, and freezes the worker handlers
  * so a script cannot keep `onmessage` or forge `postMessage` results.
- * Host messages arrive through addEventListener; native postMessage is kept
- * for the host protocol.
+ * Chrome delivers host messages through the IDL `onmessage` slot — do not
+ * defineProperty that attribute. Reset it from a captured closure after
+ * every run. Native postMessage is kept for the host protocol.
  */
 
 function blocked(name) {
@@ -177,40 +178,15 @@ export function isWorkerHostMessage(data) {
 }
 
 /**
- * Receive host messages through addEventListener (browsers do not deliver
- * through a defineProperty getter on onmessage). Then lock onmessage /
- * postMessage / close / addEventListener so a script cannot replace them.
- * Keep a bound copy of the native postMessage for the host protocol.
+ * Install the host dispatch on the IDL `onmessage` slot (Chrome delivers
+ * here; a defineProperty getter/setter shadows it and init never lands).
+ * Reset that slot after every run. Lock postMessage / close /
+ * addEventListener. Keep a bound copy of the native postMessage.
  */
-export function freezeWorkerHandlers(self, {
-  dispatch,
-  rawPostMessage,
-  rawAddEventListener,
-  listen = false,
-} = {}) {
+export function freezeWorkerHandlers(self, { dispatch, rawPostMessage } = {}) {
   if (!self || typeof self !== 'object') return rawPostMessage || null;
-  const add = typeof rawAddEventListener === 'function'
-    ? rawAddEventListener
-    : (typeof self.addEventListener === 'function' ? self.addEventListener.bind(self) : null);
-  if (listen && typeof dispatch === 'function' && add) {
-    try { add('message', dispatch); } catch { /* already listening */ }
-  }
-  let lockedOnmessage = false;
   if (typeof dispatch === 'function') {
-    try {
-      Object.defineProperty(self, 'onmessage', {
-        get() { return dispatch; },
-        set() { throw new Error("Access to 'onmessage' is not allowed in scripts"); },
-        configurable: false,
-        enumerable: true,
-      });
-      lockedOnmessage = true;
-    } catch {
-      /* already frozen or an IDL attribute */
-    }
-    if (!lockedOnmessage && !listen) {
-      try { self.onmessage = dispatch; } catch { /* already frozen */ }
-    }
+    try { self.onmessage = dispatch; } catch { /* already frozen */ }
   }
   for (const name of ['postMessage', 'close', 'addEventListener', 'removeEventListener']) {
     try {

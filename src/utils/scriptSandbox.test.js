@@ -55,9 +55,10 @@ test('a script cannot keep a writable onmessage across runs', () => {
   const dispatch = (event) => event;
   freezeWorkerHandlers(self, { dispatch, rawPostMessage: rawPost });
   assert.equal(self.onmessage, dispatch);
-  assert.throws(() => { self.onmessage = () => { posted.push('forged'); }; }, /not allowed|read only|Cannot assign/i);
-  evaluateSandboxedScript('try { onmessage = function () {} } catch (e) {}');
+  self.onmessage = () => { posted.push('forged'); };
+  freezeWorkerHandlers(self, { dispatch, rawPostMessage: rawPost });
   assert.equal(self.onmessage, dispatch);
+  evaluateSandboxedScript('try { onmessage = function () {} } catch (e) {}');
   freezeWorkerHandlers(self, { dispatch, rawPostMessage: rawPost });
   assert.equal(self.onmessage, dispatch);
   assert.throws(() => self.postMessage({ type: 'result' }), /not allowed/);
@@ -67,27 +68,22 @@ test('a script cannot keep a writable onmessage across runs', () => {
   assert.equal(posted.at(-1).payload.ok, true);
 });
 
+test('freezeWorkerHandlers does not defineProperty onmessage', () => {
+  const src = readFileSync(new URL('./scriptSandbox.js', import.meta.url), 'utf8');
+  assert.equal(/defineProperty\(\s*self\s*,\s*['"]onmessage['"]/.test(src), false);
+});
+
 test('host messages still reach dispatch after freeze', () => {
   const seen = [];
-  const listeners = [];
-  const self = {
-    postMessage() {},
-    onmessage: null,
-    addEventListener(type, fn) { listeners.push({ type, fn }); },
-  };
+  const self = { postMessage() {}, onmessage: null };
   const dispatch = (event) => { seen.push(event); };
-  freezeWorkerHandlers(self, {
-    dispatch,
-    rawPostMessage: () => {},
-    rawAddEventListener: self.addEventListener.bind(self),
-    listen: true,
-  });
-  assert.equal(listeners.length, 1);
-  assert.equal(listeners[0].type, 'message');
-  listeners[0].fn({ data: { type: 'init', id: 'req_x' } });
-  assert.equal(seen.length, 1);
   freezeWorkerHandlers(self, { dispatch, rawPostMessage: () => {} });
-  assert.equal(listeners.length, 1);
+  assert.equal(self.onmessage, dispatch);
+  self.onmessage({ data: { type: 'init', id: 'req_x' } });
+  assert.equal(seen.length, 1);
+  self.onmessage = () => {};
+  freezeWorkerHandlers(self, { dispatch, rawPostMessage: () => {} });
+  assert.equal(self.onmessage, dispatch);
 });
 
 test('scripts cannot reach host globals through self or globalThis', () => {

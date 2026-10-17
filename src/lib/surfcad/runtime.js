@@ -9659,9 +9659,6 @@ export function bindWorker(self) {
   const rawPostMessage = typeof self.postMessage === 'function'
     ? self.postMessage.bind(self)
     : () => {};
-  const rawAddEventListener = typeof self.addEventListener === 'function'
-    ? self.addEventListener.bind(self)
-    : null;
   let activeResultAuth = null;
   const hostPostMessage = (msg) => {
     if (
@@ -10368,16 +10365,11 @@ export function bindWorker(self) {
     });
   } finally {
     activeResultAuth = null;
-    freezeWorkerHandlers(self, { dispatch, rawPostMessage, rawAddEventListener });
+    freezeWorkerHandlers(self, { dispatch, rawPostMessage });
   }
 };
 
-  freezeWorkerHandlers(self, {
-    dispatch,
-    rawPostMessage,
-    rawAddEventListener,
-    listen: true,
-  });
+  freezeWorkerHandlers(self, { dispatch, rawPostMessage });
   hostPostMessage({ type: 'loaded' });
 }
 
