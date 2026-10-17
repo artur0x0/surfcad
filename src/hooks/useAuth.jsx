@@ -3,6 +3,12 @@
    effect must bind once on mount */
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import { applyServerConsent } from '../utils/consent';
+import {
+  bootAnalytics,
+  resetAnalyticsIdentity,
+  syncAnalyticsIdentity,
+  track,
+} from '../utils/analytics';
 
 const AuthContext = createContext(null);
 
@@ -14,8 +20,15 @@ export const AuthProvider = ({ children }) => {
 
   // Check auth status on mount
   useEffect(() => {
+    bootAnalytics();
     checkAuth();
   }, []);
+
+  useEffect(() => {
+    if (isLoading) return undefined;
+    void syncAnalyticsIdentity(user, isAuthenticated);
+    return undefined;
+  }, [user, isAuthenticated, isLoading]);
 
   const checkAuth = useCallback(async () => {
     try {
@@ -67,6 +80,7 @@ export const AuthProvider = ({ children }) => {
     setUser(data.user);
     setIsAuthenticated(true);
     setGuest(null);
+    track('logged_in');
     
     return data.user;
   }, []);
@@ -89,6 +103,8 @@ export const AuthProvider = ({ children }) => {
     setUser(data.user);
     setIsAuthenticated(true);
     setGuest(null);
+    track('signed_up');
+    track('logged_in');
     
     return data.user;
   }, []);
@@ -106,6 +122,7 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setGuest(null);
     setIsAuthenticated(false);
+    resetAnalyticsIdentity();
   }, []);
 
   const startGuestSession = useCallback(async (email) => {
@@ -144,6 +161,8 @@ export const AuthProvider = ({ children }) => {
     setUser(data.user);
     setIsAuthenticated(true);
     setGuest(null);
+    track('signed_up');
+    track('logged_in');
     
     return data.user;
   }, []);

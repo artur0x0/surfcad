@@ -3,6 +3,7 @@ import { Plug, PlugZap } from 'lucide-react';
 import { createPairingToken } from '../agent/ws/pairingToken.js';
 import { createAgentBridgeTabConnection } from '../agent/ws/tabConnection.js';
 import { defaultAgentBridgeWsUrl } from '../agent/ws/wsUrl.js';
+import { track } from '../utils/analytics.js';
 
 /**
  * Local WebSocket pairing for MCP / stdio clients (M1). Shown only when the
@@ -27,6 +28,12 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
       setOpen(false);
     }
   }, [enabled, stopConnection]);
+
+  useEffect(() => {
+    if (state === 'paired') {
+      track('local_agent_paired');
+    }
+  }, [state]);
 
   const startPairing = useCallback(() => {
     if (!enabled || typeof window === 'undefined' || !window.surfcad?.call) return;
