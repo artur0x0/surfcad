@@ -95,6 +95,7 @@ import {
   parseAssemblyDocument,
   partPosition,
   newPartRowPosition,
+  geometryFromExecuteResult,
   removePart,
   renamePart,
   renameTargetId,
@@ -155,7 +156,6 @@ import {
 import {
   agentBridgeEnabled,
   agentFeatureCount,
-  cloneAgentBbox,
   createSurfcadBridge,
 } from './utils/agentBridge';
 import { buildEffectiveJointCard, jointEditCard } from './agent/jointCardAgent.js';
@@ -2240,10 +2240,18 @@ const App = () => {
         if (run?.cleared) {
           runs[viewId] = { ok: false, mesh: null, empty: true, error: null };
         } else if (run?.ok && run.mesh?.vertProperties) {
-          const bodyCount = Number.isFinite(run.bodyCount)
-            ? run.bodyCount
+          const geom = geometryFromExecuteResult(run);
+          const bodyCount = geom.bodyCount != null
+            ? geom.bodyCount
             : (Array.isArray(run.bodyCentroids) ? run.bodyCentroids.length : undefined);
-          runs[viewId] = { ok: true, mesh: run.mesh, error: null, bodyCount };
+          runs[viewId] = {
+            ok: true,
+            mesh: run.mesh,
+            error: null,
+            bodyCount,
+            volume: geom.volume,
+            bbox: geom.bbox,
+          };
         } else if (run && run.ok === false) {
           runs[viewId] = { ok: false, mesh: null, error: run.error || 'Script failed' };
           manifoldContext.clearResult().catch(() => {});
@@ -7929,12 +7937,12 @@ const App = () => {
         return { ok: true, errors: [], volume: null, bbox: null, partName };
       }
       if (run?.ok === true && run.mesh?.vertProperties) {
-        const last = manifoldContext.getLastResult?.() || null;
+        const geom = geometryFromExecuteResult(run);
         return {
           ok: true,
           errors: [],
-          volume: last?.volume,
-          bbox: last?.boundingBox,
+          volume: geom.volume,
+          bbox: geom.bbox,
           partName,
         };
       }
@@ -8334,12 +8342,12 @@ const App = () => {
       return { ok: true, errors: [], volume: null, bbox: null, partName };
     }
     if (run?.ok === true && run.mesh?.vertProperties) {
-      const last = manifoldContext.getLastResult?.() || null;
+      const geom = geometryFromExecuteResult(run);
       return {
         ok: true,
         errors: [],
-        volume: last?.volume,
-        bbox: last?.boundingBox,
+        volume: geom.volume,
+        bbox: geom.bbox,
         partName,
       };
     }
@@ -8481,15 +8489,15 @@ const App = () => {
         return { ...base, runState: 'ok' };
       }
       if (run.ok === true && run.mesh?.vertProperties) {
-        const last = manifoldContext.getLastResult?.() || null;
-        const bodyCount = Number.isFinite(run.bodyCount)
-          ? run.bodyCount
+        const geom = geometryFromExecuteResult(run);
+        const bodyCount = geom.bodyCount != null
+          ? geom.bodyCount
           : bodyCountOfWorkerMesh(run.mesh);
         return {
           ...base,
           runState: 'ok',
-          volume: Number.isFinite(last?.volume) ? last.volume : null,
-          bbox: cloneAgentBbox(last?.boundingBox),
+          volume: geom.volume,
+          bbox: geom.bbox,
           bodyCount: Number.isFinite(bodyCount) ? bodyCount : null,
         };
       }
@@ -8547,14 +8555,14 @@ const App = () => {
     },
     agentGetPartTransform({ partId }) {
       const doc = assemblyRef.current;
-      const part = doc?.parts?.find((row) => row.id === partId);
+      const part = findAssemblyPart(doc, partId);
       if (!part) {
         return { error: { code: 'unknown_part', message: `Unknown part id: ${partId}` } };
       }
       const pose = partPlacement(part);
       return {
         result: {
-          part: partId,
+          part: part.id,
           position: pose.t.slice(),
           rotation: quaternionToEulerDegrees(pose.q),
           eulerOrder: AGENT_EULER_ORDER,
@@ -8566,16 +8574,20 @@ const App = () => {
       if (!doc) {
         return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
       }
-      const part = doc.parts.find((row) => row.id === partId);
+      const part = findAssemblyPart(doc, partId);
       if (!part) {
         return { error: { code: 'unknown_part', message: `Unknown part id: ${partId}` } };
       }
       const current = partPlacement(part);
-      const t = position != null
-        ? [Number(position[0]) || 0, Number(position[1]) || 0, Number(position[2]) || 0]
-        : current.t.slice();
-      if (position != null && !t.every(Number.isFinite)) {
-        return { error: { code: 'bad_args', message: 'position must be [x, y, z] numbers in mm' } };
+      let t = current.t.slice();
+      if (position != null) {
+        if (!Array.isArray(position) || position.length < 3) {
+          return { error: { code: 'bad_args', message: 'position must be [x, y, z] numbers in mm' } };
+        }
+        t = [Number(position[0]), Number(position[1]), Number(position[2])];
+        if (!t.every(Number.isFinite)) {
+          return { error: { code: 'bad_args', message: 'position must be [x, y, z] numbers in mm' } };
+        }
       }
       let q = current.q.slice();
       if (rotation != null) {
@@ -8597,15 +8609,15 @@ const App = () => {
       const before = doc;
       const written = rememberAssembly({
         ...doc,
-        parts: doc.parts.map((row) => (row.id === partId ? nextPart : row)),
+        parts: doc.parts.map((row) => (row.id === part.id ? nextPart : row)),
       });
       recordAgentAssemblyStep(before);
       paintAssemblyPoses(written);
-      if (written.activeId === partId) {
-        const mesh = meshForPart(partId);
+      if (written.activeId === part.id) {
+        const mesh = meshForPart(part.id);
         if (mesh?.vertProperties) {
           viewportRef.current?.swapPickPart?.({
-            partId,
+            partId: part.id,
             mesh,
             position: partPosition(nextPart) || [0, 0, 0],
             placement: partPlacement(nextPart),
@@ -8615,7 +8627,7 @@ const App = () => {
       const poseOut = partPlacement(nextPart);
       return {
         result: {
-          part: partId,
+          part: part.id,
           position: poseOut.t.slice(),
           rotation: quaternionToEulerDegrees(poseOut.q),
           eulerOrder: AGENT_EULER_ORDER,

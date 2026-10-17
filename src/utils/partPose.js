@@ -76,17 +76,13 @@ export function applyPartPose(object, placement) {
   return object;
 }
 
-/**
- * Column-major matrixWorld, the same copy a bonded study takes from
- * feaPartFrame when the matrix is present.
- */
 /** Unit quaternion [x, y, z, w] to intrinsic XYZ Euler degrees for agent tools. */
 export function quaternionToEulerDegrees(q) {
   const quat = new Quaternion(
     Number(q?.[0]) || 0,
     Number(q?.[1]) || 0,
     Number(q?.[2]) || 0,
-    Number(q?.[3]) ?? 1,
+    Number.isFinite(+q?.[3]) ? +q[3] : 1,
   );
   const euler = new Euler().setFromQuaternion(quat, AGENT_EULER_ORDER);
   const radToDeg = 180 / Math.PI;
@@ -106,6 +102,10 @@ export function eulerDegreesToQuaternion(degrees) {
   return [quat.x, quat.y, quat.z, quat.w];
 }
 
+/**
+ * Column-major matrixWorld, the same copy a bonded study takes from
+ * feaPartFrame when the matrix is present.
+ */
 export function frameElements(mesh) {
   if (typeof mesh?.updateMatrixWorld === 'function') mesh.updateMatrixWorld(true);
   const elements = mesh?.matrixWorld?.elements;

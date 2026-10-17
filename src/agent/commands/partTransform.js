@@ -28,7 +28,7 @@ export const partGetTransformCommand = Object.freeze({
     additionalProperties: false,
     required: ['part'],
     properties: {
-      part: { type: 'string', description: 'Part row id (local id or vault path).' },
+      part: { type: 'string', description: 'Stable part id or vault path.' },
     },
   }),
   example: { part: 'local:part1' },
@@ -51,7 +51,7 @@ export const partSetTransformCommand = Object.freeze({
     additionalProperties: false,
     required: ['part'],
     properties: {
-      part: { type: 'string', description: 'Part row id to move.' },
+      part: { type: 'string', description: 'Stable part id or vault path to move.' },
       position: {
         ...VEC3,
         description: 'Translation [x, y, z] in mm. Omitted keeps the current translation.',

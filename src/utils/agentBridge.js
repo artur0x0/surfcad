@@ -28,7 +28,7 @@ import { formatAgentErrors } from '../agent/state/formatErrors.js';
 import { createPickSessions } from '../agent/pick/session.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { emptyPartHistory, pushPartHistory } from './partHistory.js';
-import { readSurfId, withSurfId } from './git/surfId.js';
+import { bytesAfterHeaderLine, headerLineEnding } from './git/surfId.js';
 
 export const AGENT_STORAGE_KEY = 'surfcadAgent';
 
@@ -312,9 +312,13 @@ export function createSurfcadBridge(hostSource) {
     const readSurf = hostFn('readActivePartSurfId');
     const surfId = readSurf ? readSurf() : null;
     if (!surfId) return raw;
-    const current = readSurfId(raw);
-    if (current === surfId) return raw;
-    return withSurfId(raw, surfId);
+    const prefix = `// @surf-id ${surfId}`;
+    const afterPrefix = raw.length > prefix.length ? raw[prefix.length] : '';
+    if (raw === prefix || (raw.startsWith(prefix) && /[ \t\r\n]/.test(afterPrefix))) return raw;
+    const ending = headerLineEnding(raw);
+    if (ending != null) return `${prefix}${ending}${bytesAfterHeaderLine(raw)}`;
+    const sep = raw.length && !raw.startsWith('\n') && !raw.startsWith('\r') ? '\n' : '';
+    return `${prefix}${sep}${raw}`;
   }
 
   async function mutate(text, message) {

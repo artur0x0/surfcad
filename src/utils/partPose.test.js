@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Group, Mesh } from 'three';
 import { shiftLocalPoint } from './activePartOverlay.js';
-import { applyPartPose, frameElements, worldPoint } from './partPose.js';
+import {
+  applyPartPose,
+  eulerDegreesToQuaternion,
+  frameElements,
+  quaternionToEulerDegrees,
+  worldPoint,
+} from './partPose.js';
 import { quatFromOmega } from '../joints/rigid.js';
 
 test('a 90 degree Z pose matches the column-major matrixWorld', () => {
@@ -37,4 +43,16 @@ test('a 90 degree Z pose matches the column-major matrixWorld', () => {
   assert.ok(Math.abs(shifted[0] - fitted[0]) < 1e-9);
   assert.ok(Math.abs(shifted[1] - fitted[1]) < 1e-9);
   assert.ok(Math.abs(shifted[2] - fitted[2]) < 1e-9);
+});
+
+test('quaternionToEulerDegrees treats a missing w as 1 and keeps w=0', () => {
+  const identity = quaternionToEulerDegrees([0, 0, 0]);
+  assert.ok(Math.abs(identity[0]) < 1e-9);
+  assert.ok(Math.abs(identity[1]) < 1e-9);
+  assert.ok(Math.abs(identity[2]) < 1e-9);
+  const flipped = quaternionToEulerDegrees([0, 1, 0, 0]);
+  assert.ok(Math.hypot(flipped[0], flipped[1], flipped[2]) > 90);
+  const q = eulerDegreesToQuaternion([0, 90, 0]);
+  const back = quaternionToEulerDegrees(q);
+  assert.ok(Math.abs(back[1] - 90) < 1e-6);
 });

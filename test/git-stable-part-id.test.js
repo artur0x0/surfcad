@@ -88,6 +88,7 @@ test('create -> git_save -> reload keeps the same id', async () => {
   });
   assert.deepEqual(opened.doc.parts.map((part) => part.id), IDS);
   assert.equal(findAssemblyPart(opened.doc, IDS[0])?.name, 'Kettle Body');
+  assert.equal(findAssemblyPart(opened.doc, opened.doc.parts[0].path)?.id, IDS[0]);
   const listed = buildPartsState({
     activeId: opened.doc.activeId,
     assemblyName: opened.doc.name,

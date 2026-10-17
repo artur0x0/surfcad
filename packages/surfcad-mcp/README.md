@@ -55,9 +55,11 @@ Every command in `data/commands.json` is one MCP tool with the same name and arg
 | --- | --- | --- |
 | `parts` | `{}` | Part rows (`id`, `name`, `visible`) and the active part. |
 | `create_assembly` | `{}` | Seed a new assembly. |
-| `create_part` | `{ name?, script? }` | Add a part. In a git assembly it has no vault path until `git_save`. |
+| `create_part` | `{ name?, script?, position? }` | Add a part at the assembly origin (optional `[x,y,z]` mm). In a git assembly it has no vault path until `git_save`. |
 | `rename_part` | `{ part_id, name }` | Rename a part. A vault part also moves to `<name>.js` in the same folder (`-2`, `-3` on collision) and updates the `.surf.json` in one commit. Unknown ids return `unknown_part`. |
-| `set_active_part` | `{ part_id }` | Switch the editor and mesh to a part. |
+| `part_get_transform` | `{ part }` | Read placement: `position` mm and intrinsic XYZ Euler degrees (`eulerOrder: "XYZ"`). |
+| `part_set_transform` | `{ part, position?, rotation? }` | Set placement (undoable assembly step). |
+| `set_active_part` | `{ part_id }` | Switch the editor and mesh to a part. `status` then reports that part. |
 | `git_save` | `{ message }` | Same as the app's Save: paths every path-less part, then commits those scripts, dirty parts, and the `.surf.json` in one commit. |
 | `git_add_to_repo` | `{ part_id }` | Add one part to the vault; other path-less parts are pathed and committed with it. |
 | `git_move_to_repo` | `{ vault_name? }` | Move a local assembly into the vault. |
