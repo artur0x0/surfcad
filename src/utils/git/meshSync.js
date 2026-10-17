@@ -222,10 +222,10 @@ export function partMeshRecordsFromBaseline(doc, scripts, baselineAssets) {
   const out = {};
   const shas = baselineAssets || {};
   for (const part of doc?.parts || []) {
-    const meshPath = assetPathForScript(part.id);
+    const meshPath = assetPathForScript(partRepoPath(part) || part.id);
     const sha = meshPath ? shas[meshPath] : null;
     if (!sha) continue;
-    const names = meshAssetNames(scripts?.[part.id] || '');
+    const names = meshAssetNames(partScriptText(part, scripts) ?? '');
     if (!names.length) continue;
     const leaf = meshPath.split('/').pop();
     const name = names.includes(leaf) ? leaf : names[0];

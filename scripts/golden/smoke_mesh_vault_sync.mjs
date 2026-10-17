@@ -14,6 +14,7 @@ import { fileDelete, fileWrite } from '../../src/utils/git/githubAdapterInterfac
 import { assembleCommitFiles } from '../../src/utils/git/gitCommit.js';
 import { planPartPath } from '../../src/utils/git/gitRename.js';
 import { openVaultAssembly } from '../../src/utils/git/gitWorkspace.js';
+import { partRepoPath } from '../../src/utils/git/partIdentity.js';
 import { createMockGithubAdapter } from '../../src/utils/git/mockGithubAdapter.js';
 import { createSyncStore } from '../../src/utils/git/syncStore.js';
 import { flushSyncQueue } from '../../src/utils/git/syncWorker.js';
@@ -102,8 +103,9 @@ export async function meshVaultSyncScenario() {
     occupied: tree.map((entry) => entry.path),
   });
   const partId = placed.doc.parts[0].id;
-  const meshPath = assetPathForScript(partId);
-  assert.equal(parseVaultPath(partId).kind, 'assembly-part');
+  const partPath = partRepoPath(placed.doc.parts[0]);
+  const meshPath = assetPathForScript(partPath);
+  assert.equal(parseVaultPath(partPath).kind, 'assembly-part');
   assert.equal(meshPath, 'assemblies/Gearbox/Bracket.mesh');
   const movedRecords = remapMeshRecords(records, placed.moved);
   const collected = await collectMeshCommitAssets({
@@ -124,7 +126,7 @@ export async function meshVaultSyncScenario() {
   });
   assert.equal(assembled.status, 'ready');
   const savePaths = assembled.files.filter((file) => !file.delete).map((file) => file.path);
-  assert.ok(savePaths.includes(partId));
+  assert.ok(savePaths.includes(partPath));
   assert.ok(savePaths.includes(meshPath));
   const commitsBefore = gh._log.filter((entry) => entry.op === 'commitFiles').length;
   await store.enqueue(repo, {
@@ -147,7 +149,7 @@ export async function meshVaultSyncScenario() {
   assert.equal(flushed.status, 'synced');
   const saveCommits = gh._log.filter((entry) => entry.op === 'commitFiles').slice(commitsBefore);
   assert.equal(saveCommits.length, 1);
-  assert.ok(saveCommits[0].paths.includes(partId));
+  assert.ok(saveCommits[0].paths.includes(partPath));
   assert.ok(saveCommits[0].paths.includes(meshPath));
   assert.equal(flushed.meshes.length, 1);
   assert.equal(flushed.meshes[0].meshSynced, undefined);
@@ -170,7 +172,8 @@ export async function meshVaultSyncScenario() {
   const again = await openVaultAssembly(gh, repo, 'Gearbox');
   assert.ok(blobReads >= 1, 'reopen reads the mesh with readBlob');
   const readsAfterOpen = blobReads;
-  const againMesh = assetPathForScript(again.doc.parts[0].id);
+  const againPath = partRepoPath(again.doc.parts[0]);
+  const againMesh = assetPathForScript(againPath);
   const cached = await readMeshBytes(
     gh, repo, 'main', againMesh, again.baseline.assets[againMesh],
   );
@@ -193,19 +196,20 @@ export async function meshVaultSyncScenario() {
   assert.equal(mesh.vertProperties[3], 1);
   assert.deepEqual(Array.from(mesh.triVerts), [0, 1, 2]);
 
-  const from = again.doc.parts[0].id;
+  const fromId = again.doc.parts[0].id;
+  const from = againPath;
   const to = planPartPath(from, 'Plate');
   const plateMesh = assetPathForScript(to);
   await store.enqueue(repo, {
     op: 'rename',
     branch: 'main',
     message: 'Rename Bracket to Plate',
-    partIds: [to],
+    partIds: [fromId],
     payload: {
       kind: 'part',
       from,
       to,
-      content: again.scripts[from],
+      content: again.scripts[fromId] || again.scripts[from],
       label: 'Plate',
     },
   });
