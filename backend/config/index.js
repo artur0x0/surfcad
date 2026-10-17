@@ -99,7 +99,7 @@ const config = {
 
   // Storage
   workingFolder: process.env.WORKING_FOLDER,
-  uploadFolder: process.env.UPLOAD_FOLDER
+  uploadFolder: process.env.UPLOAD_FOLDER,
 };
 
 // Validation
@@ -108,13 +108,22 @@ const requiredInProd = [
   'session.secret',
   'stripe.secretKey',
   'stripe.webhookSecret',
+  'uploadFolder',
 ];
+
+/** Unset env vars and the literal string "undefined" are both missing. */
+export function isMissingConfigValue(value) {
+  return value == null || value === '' || value === 'undefined';
+}
 
 if (config.env === 'production') {
   for (const key of requiredInProd) {
     const value = key.split('.').reduce((obj, k) => obj?.[k], config);
-    if (!value) {
-      console.error(`Missing required config: ${key}`);
+    if (isMissingConfigValue(value)) {
+      const hint = key === 'uploadFolder'
+        ? ' — set UPLOAD_FOLDER to a real directory (an unset value becomes the path "undefined")'
+        : '';
+      console.error(`Missing required config: ${key}${hint}`);
       process.exit(1);
     }
   }
