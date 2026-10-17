@@ -19,13 +19,23 @@ export const RAIL_PAIR_HEIGHT_CLASS = 'max-h-[min(26rem,calc(100%-5.5rem))]';
 
 /**
  * Desktop left rail: full length instead of a 26rem block floating at the
- * bottom. Anchored top AND bottom, so the height is whatever is left between
- * them — it stops just under the part-name chip (which sits at top-4 and is
- * ~30px tall) and 10px off the bottom edge, matching the other viewport
- * chrome. Phones keep RAIL_PAIR_HEIGHT_CLASS: there the viewport is short and
- * a full-length rail would swallow the model.
+ * bottom. Top sits one gap-2 (8px) below the horizontal feature strip
+ * (title row at top-14 + ~2.5rem strip). Bottom matches other viewport chrome
+ * (bottom-2.5). Phones keep RAIL_PAIR_HEIGHT_CLASS.
  */
-export const RAIL_FULL_LENGTH_CLASS = 'top-14 bottom-2.5';
+export const RAIL_FULL_LENGTH_CLASS = 'top-[calc(3.5rem+2.5rem+0.5rem)] bottom-2.5';
+
+/** data-rail-height for desktop full-length rails (goldens / playtest). */
+export const RAIL_DESKTOP_FULL_ATTR = 'desktop-full';
+
+/**
+ * Position classes for a left viewport rail.
+ * @param {{ desktopFull?: boolean }} o
+ */
+export function leftRailPositionClasses({ desktopFull = false } = {}) {
+  if (desktopFull) return `${RAIL_FULL_LENGTH_CLASS} ${RAIL_SCROLL_CLASS}`;
+  return `bottom-2.5 ${RAIL_PAIR_HEIGHT_CLASS} ${RAIL_SCROLL_CLASS}`;
+}
 
 /**
  * Left rails share one width so ContourModeRail matches HelperInsertPalette

@@ -8,8 +8,19 @@ import config from '../config/index.js';
 import { fetchGithubUserProfile } from '../services/githubUser.js';
 import { deleteResolvedGithubVault } from '../services/githubVaultDelete.js';
 import { confirmAndRememberVaultName, storedVaultNameFromUser } from '../services/vaultName.js';
+import { requireAuth } from '../auth/session.js';
 
 const router = Router();
+
+function plainConsent(consent) {
+  if (!consent || typeof consent.analytics !== 'boolean') return null;
+  const updatedAt = consent.updatedAt ? new Date(consent.updatedAt) : null;
+  if (updatedAt && !Number.isFinite(updatedAt.getTime())) return null;
+  return {
+    analytics: consent.analytics,
+    updatedAt: updatedAt ? updatedAt.toISOString() : null,
+  };
+}
 
 /**
  * Helper to build redirect URL with proper query param handling
@@ -54,6 +65,33 @@ router.get('/me', (req, res) => {
   }
   
   return res.json({ authenticated: false });
+});
+
+/**
+ * PUT /api/auth/consent
+ * Persist signed-in user's usage-analytics preference.
+ */
+router.put('/consent', requireAuth, async (req, res) => {
+  try {
+    const { analytics } = req.body ?? {};
+    if (typeof analytics !== 'boolean') {
+      return res.status(400).json({ error: 'analytics must be a boolean' });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(401).json({ error: 'Authentication required' });
+
+    user.consent = {
+      analytics,
+      updatedAt: new Date(),
+    };
+    await user.save();
+
+    return res.json({ consent: plainConsent(user.consent) });
+  } catch (error) {
+    console.error('[Auth] Consent update error:', error);
+    return res.status(500).json({ error: 'Failed to save consent' });
+  }
 });
 
 /**
