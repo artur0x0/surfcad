@@ -101,3 +101,18 @@ tail -f /tmp/3dculos-vite.log
 ### Hermes Node
 
 Both units use Node from Hermes (`~/.hermes/node`). If Hermes upgrades or moves that install, update `ExecStart` (and the frontend `PATH` if needed), then `systemctl --user daemon-reload`.
+
+## Production-only monitoring env (not staging)
+
+Sentry is enabled only on the US production hosts. **Do not** set these in `~/3dculos` staging env files or local dev `.env*`.
+
+| Variable | Where | Purpose |
+| --- | --- | --- |
+| `VITE_SENTRY_DSN` | spark `~/surfcad-prod-build/.env.production` | Frontend DSN (US ingest). Empty = no-op. |
+| `VITE_SENTRY_ENVIRONMENT` | same file | `production` |
+| `VITE_SENTRY_TRACES_SAMPLE_RATE` | same file (optional) | Default `0.2` |
+| `SENTRY_DSN` | prod API `/home/ubuntu/backend/.env.production` | Backend DSN. Empty = no-op. |
+| `SENTRY_ENVIRONMENT` | same file | `production` |
+| `SENTRY_TRACES_SAMPLE_RATE` | same file (optional) | Default `0.2` |
+
+See `docs/monitoring.md` for scrubbing rules and nginx CSP (`connect-src` → `https://*.ingest.us.sentry.io`).
