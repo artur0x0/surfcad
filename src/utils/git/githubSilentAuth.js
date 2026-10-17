@@ -138,8 +138,8 @@ function waitForPopupResult({
       resolve(result);
     };
     const onMessage = (event) => {
-      if (origin && event?.origin && event.origin !== origin) return;
-      if (popup && event?.source && event.source !== popup) return;
+      if (!origin || event?.origin !== origin) return;
+      if (!popup || event?.source !== popup) return;
       const data = event?.data;
       if (!data || data.type !== OAUTH_MESSAGE_TYPE) return;
       if (!data.ok) {
