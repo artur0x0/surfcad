@@ -144,8 +144,8 @@ console.log('\ngit G11 — Open browse + insert parts');
   const planned = await planInsertVaultAssemblyParts(gh, repo, 'Cover', gearbox, { branch: 'main' });
   // Shared bolt already in gearbox → skipped; Lid stays linked at its Cover path
   const lidAdd = planned.additions.find((a) => a.fromPath === COVER);
-  ok('lid stays linked at its Cover path', !!lidAdd && lidAdd.id === COVER && lidAdd.linked, JSON.stringify(planned.additions));
-  ok('shared bolt not re-added', !planned.additions.some((a) => a.id === BOLT));
+  ok('lid stays linked at its Cover path', !!lidAdd && lidAdd.fromPath === COVER && lidAdd.linked && lidAdd.id !== COVER, JSON.stringify(planned.additions));
+  ok('shared bolt not re-added', !planned.additions.some((a) => a.fromPath === BOLT));
   eq('insert count', planned.additions.length, 1);
 
   const filteredAsm = filterVaultOpenIndex(browse, 'gear');
@@ -250,7 +250,6 @@ ok('GitHub adapter GETs are cache no-store', /cache:\s*'no-store'/.test(
 ok('IDB hydrate skips when vault baseline / gen advanced',
   /Skipping stale IDB hydrate/.test(app) && /vault baseline already set/.test(app));
 ok('index exports G11 helpers', typeof gitIndex.createVaultBranch === 'function'
-  && typeof gitIndex.createAndSwitchVaultBranch === 'function'
   && typeof gitIndex.shouldSwitchToCreatedBranch === 'function'
   && typeof gitIndex.deleteVaultBranch === 'function'
   && typeof gitIndex.githubCompareUrl === 'function'

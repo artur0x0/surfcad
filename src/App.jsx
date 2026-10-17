@@ -2974,7 +2974,8 @@ const App = () => {
     const baseline = gitBaselineRef.current;
     const parts = doc.parts || [];
     if (!baseline) {
-      return parts.some((p) => String(p.id).startsWith('local:') || !isVaultPartPath(p.id));
+      // Path-less rows (stable id, no vault `path` yet) are first-commit dirty.
+      return parts.some((p) => !partRepoPath(p));
     }
     let liveScript = null;
     if (!suppressPartSaveRef.current) {
@@ -4542,6 +4543,8 @@ const App = () => {
    * and switch onto it when the working copy is clean (Parts Create).
    * Dirty Create leaves the session on the current branch so unsaved edits
    * are not discarded; Switch still confirms then reloads.
+   * A failed switch still returns status 'created' with switched: false and
+   * switchError (the ref exists; the session did not move).
    */
   const handleCreateBranch = async (branchName) => {
     try {

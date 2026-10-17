@@ -192,6 +192,24 @@ test('git_branch_create dirty host result stays created without confirm', async 
   assert.equal(out.error, undefined);
 });
 
+test('git_branch_create failed switch stays created with switchError', async () => {
+  const ctx = {
+    readAgentGitAdapterKind: () => 'mock',
+    agentGitBranchCreate: async () => ({
+      status: 'created',
+      branch: 'feature/x',
+      sha: 'abc',
+      switched: false,
+      switchError: 'Could not switch to the new branch',
+    }),
+  };
+  const out = await gitBranchCreateCommand.run(ctx, { name: 'feature/x' });
+  assert.equal(out.result?.status, 'created');
+  assert.equal(out.result?.switched, false);
+  assert.equal(out.result?.switchError, 'Could not switch to the new branch');
+  assert.equal(out.error, undefined);
+});
+
 test('git_list_branches allowed on real adapter without opt-in', async () => {
   const ctx = {
     readAgentGitAdapterKind: () => 'real',

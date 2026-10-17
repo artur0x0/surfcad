@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- `git_branch_create` creates the branch and switches the working session to it when the working copy is clean. If there are uncommitted changes, the branch is still created but the session stays on the current branch (same as the Parts Create flow, which does not discard unsaved edits).
+- `git_branch_create` creates the branch and switches the working session to it when the working copy is clean. If there are uncommitted changes, the branch is still created but the session stays on the current branch (same as the Parts Create flow, which does not discard unsaved edits). A failed switch still returns `status: 'created'` with `switched: false` and `switchError`.
 - `AgentBridgeHost` is mounted once above App's desktop/mobile split, so a 768px resize does not remount the pairing socket or mint a new `tabKey`.
 - Dropped-tab reservations now expire in `hasTab` / `liveTab` (24 h TTL) and an unref'd sweep drops stale Map entries; a later `register_tab` can reuse the code.
 - Pairing Allow uses the shared `surface-success` class (`text-on-dark` contrast ≥4.5:1 rest, ≥3:1 hover) instead of `hover:bg-emerald-500`.

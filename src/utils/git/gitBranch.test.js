@@ -9,11 +9,12 @@ import { findOrCreateVault } from './vault.js';
 import { assemblyFilePath, assemblyPartPath } from './vaultLayout.js';
 import { stringifySurfJson } from './surfJson.js';
 import { openVaultAssembly } from './gitWorkspace.js';
+import { partRepoPath } from './partIdentity.js';
 import {
-  createAndSwitchVaultBranch,
   createVaultBranch,
   listVaultBranches,
   shouldSwitchToCreatedBranch,
+  switchVaultBranch,
 } from './gitBranch.js';
 
 const BRACKET = assemblyPartPath('Gearbox', 'Bracket');
@@ -50,36 +51,45 @@ describe('shouldSwitchToCreatedBranch', () => {
   test('dirty working copy stays on the current branch', () => {
     assert.equal(shouldSwitchToCreatedBranch({ dirty: true }), false);
   });
+
+  test('path-less parts are first-commit dirty (stable ids, no vault path)', () => {
+    const pathLess = { id: '2026-10-07-20-56-31-0423-a3f9', name: 'Seed' };
+    const pathed = { id: '2026-10-07-20-56-31-0423-b4e0', name: 'Bracket', path: BRACKET };
+    assert.equal(partRepoPath(pathLess), null);
+    assert.equal(partRepoPath(pathed), BRACKET);
+    const dirty = [pathLess, pathed].some((p) => !partRepoPath(p));
+    assert.equal(dirty, true);
+    assert.equal(shouldSwitchToCreatedBranch({ dirty }), false);
+  });
 });
 
-describe('createAndSwitchVaultBranch (mock adapter)', () => {
+describe('create then switch (mock adapter)', () => {
   test('creates and checks out the new branch when clean', async () => {
     const { gh, repo } = await seedVault();
-    const created = await createAndSwitchVaultBranch(
-      gh, repo, 'Gearbox', 'feature/agent-create',
-      { fromBranch: 'main', dirty: false },
-    );
-    assert.equal(created.status, 'created');
+    const created = await createVaultBranch(gh, repo, 'feature/agent-create', {
+      fromBranch: 'main',
+    });
     assert.equal(created.name, 'feature/agent-create');
-    assert.equal(created.switched, true);
-    assert.equal(created.baseline?.branch, 'feature/agent-create');
-    assert.equal(created.scripts[BRACKET], SEED_SCRIPT);
+    assert.equal(shouldSwitchToCreatedBranch({ dirty: false }), true);
+    const opened = await switchVaultBranch(gh, repo, 'Gearbox', created.name);
+    assert.equal(opened.baseline?.branch, 'feature/agent-create');
+    const bracket = (opened.doc?.parts || []).find((p) => partRepoPath(p) === BRACKET);
+    assert.ok(bracket, 'opened assembly has the bracket part');
+    assert.equal(opened.scripts[bracket.id], SEED_SCRIPT);
 
-    const listed = await listVaultBranches(gh, repo, { current: created.baseline.branch });
+    const listed = await listVaultBranches(gh, repo, { current: opened.baseline.branch });
     assert.equal(listed.find((b) => b.name === 'feature/agent-create')?.current, true);
     assert.equal(listed.find((b) => b.name === 'main')?.current, false);
   });
 
   test('creates without checkout when the working copy is dirty', async () => {
     const { gh, repo, seedSha } = await seedVault();
-    const created = await createAndSwitchVaultBranch(
-      gh, repo, 'Gearbox', 'feature/keep-dirty',
-      { fromBranch: 'main', fromSha: seedSha, dirty: true },
-    );
-    assert.equal(created.status, 'created');
+    const created = await createVaultBranch(gh, repo, 'feature/keep-dirty', {
+      fromBranch: 'main',
+      fromSha: seedSha,
+    });
     assert.equal(created.name, 'feature/keep-dirty');
-    assert.equal(created.switched, false);
-    assert.equal(created.baseline, undefined);
+    assert.equal(shouldSwitchToCreatedBranch({ dirty: true }), false);
 
     const listed = await listVaultBranches(gh, repo, { current: 'main' });
     assert.ok(listed.some((b) => b.name === 'feature/keep-dirty'));
