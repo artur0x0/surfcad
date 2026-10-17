@@ -13,7 +13,7 @@
  *                     before the relay runs (35 s of Waiting for the local
  *                     agent, code hidden, no give-up),
  *                     the window detects the relay and the code appears,
- *                     Allow, connected toast / ring on, restart the relay
+ *                     Allow, connected ring on, restart the relay
  *                     on the same port (still one window, pairing recovers),
  *                     create/edit/undo over MCP, close the window →
  *                     Disconnected (dialog re-opens), ring off → Reconnect,
@@ -196,10 +196,9 @@ async function pairWithAllow(page, client, code) {
   await approve.click();
   const out = await pairPromise;
   check('MCP pair succeeds after Allow', !out.isError, out.content?.[0]?.text);
-  await page.waitForSelector(
-    '[data-agent-bridge-connected-toast], [data-agent-bridge-connection-ring="connected"]',
-    { timeout: 15000 },
-  );
+  // The 5 s connected toast can still be up from an earlier Allow, so it is
+  // not a durable paired signal. The profile ring is.
+  await page.waitForSelector('[data-agent-bridge-connection-ring="connected"]', { timeout: 15000 });
 }
 
 async function evilOpenerCheck(context, relayPort) {
@@ -377,6 +376,7 @@ async function runOne(name, { browserType, launchOptions, expectPopup, forcePopu
       await pairWithAllow(page, client, code2);
       const st2 = await mcp(client, 'status', {});
       check('agent drives the tab after Reconnect', typeof st2 === 'object' && st2.volume != null);
+      await page.waitForSelector(RING, { timeout: 5000 }).catch(() => {});
       check('ring returns after Reconnect', await page.locator(RING).count() === 1);
     }
 
