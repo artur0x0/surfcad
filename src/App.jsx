@@ -9109,12 +9109,13 @@ const App = () => {
     && manifoldReady
     && editorInitialScript !== null;
 
-  const partFeed = appMode !== 'game' && assemblyDoc ? (
+  const showPartFeed = appMode !== 'game' && (assemblyDoc || !isMobile);
+  const partFeed = showPartFeed ? (
     <PartFeed
       ref={partFeedRef}
       placement={isMobile ? 'mobile' : 'desktop'}
       isMobile={isMobile}
-      source={assemblyDoc.source}
+      source={assemblyDoc?.source ?? 'local'}
       assemblyName={assemblyLabel}
       onRenameAssembly={handleRenameAssembly}
       onRenamePart={handleRenamePart}
@@ -9134,7 +9135,7 @@ const App = () => {
       isDownloading={isDownloading}
       onNewAssembly={handleNewAssembly}
       onFlushLocalAssembly={handleFlushLocalAssembly}
-      assemblyLeaveSafe={!needsAssemblyLeaveGuard(assemblyDoc, {
+      assemblyLeaveSafe={assemblyDoc ? !needsAssemblyLeaveGuard(assemblyDoc, {
         sourceDirty: !!sourceDirty,
         hasBaseline: !!gitBaseline,
         source: assemblyDoc.source,
@@ -9142,7 +9143,7 @@ const App = () => {
         defaultScripts: [DEFAULT_SCRIPT, newPartStarterScript()],
         liveId: assemblyDoc.activeId,
         liveScript: liveDirtyScript,
-      })}
+      }) : true}
       onDeletePart={handleDeletePart}
       onToggleSource={handleToggleSource}
       onPlanMoveToGit={handlePlanMoveToGit}
@@ -9158,7 +9159,7 @@ const App = () => {
       onInsertVaultAssemblyParts={handleInsertVaultAssemblyParts}
       onOpenVaultPart={handleOpenVaultPart}
       onCopyPartToAssembly={handleCopyPartToAssembly}
-      groups={assemblyDoc.groups || []}
+      groups={assemblyDoc?.groups || []}
       onRenameGroup={handleRenameGroup}
       onUngroup={handleUngroup}
       onCopyGroup={handleCopyGroup}
@@ -9170,14 +9171,14 @@ const App = () => {
       onRenameRevert={handleRenameRevert}
       syncConflict={syncConflict}
       onSyncConflictClear={() => setSyncConflict(null)}
-      canCommit={assemblyDoc.source === 'git' && !!sourceDirty && gitSession.phase === 'connected'}
+      canCommit={assemblyDoc?.source === 'git' && !!sourceDirty && gitSession.phase === 'connected'}
       onGitCommit={handleGitCommit}
       onOverwriteMain={handleOverwriteMain}
       behindPartIds={behindPartIdSet}
       assemblyBehind={!!behindMarkers.assemblyBehind}
       assemblyPath={gitAssemblyPath || ''}
       onBehindChoice={handleBehindChoice}
-      currentBranch={assemblyDoc.source === 'git' ? (gitBaseline?.branch || 'main') : ''}
+      currentBranch={assemblyDoc?.source === 'git' ? (gitBaseline?.branch || 'main') : ''}
       onListBranches={handleListBranches}
       onSwitchBranch={handleSwitchBranch}
       onCreateBranch={handleCreateBranch}
@@ -9195,7 +9196,7 @@ const App = () => {
       profileVaultName={gitDefaultVaultName()}
       agentBridgeLive={agentBridgeLive}
       suggestNewPartPath={
-        assemblyDoc.source === 'git'
+        assemblyDoc?.source === 'git'
           ? suggestNewPartPath(assemblyDoc.name, assemblyDoc.parts)
           : ''
       }
