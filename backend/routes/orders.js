@@ -13,6 +13,13 @@ import { checkoutLines, idempotentReplay } from '../services/multiLineCheckout.j
 import { pickModelFile } from '../services/orderLines.js';
 import { verifyModelLink } from '../services/modelLink.js';
 import { requireAuth, requireGuestOrAuth } from '../auth/session.js';
+import {
+  canReadOrder,
+  createOrderLookupLimiter,
+  publicOrderView,
+} from '../auth/orderAccess.js';
+
+const orderLookupLimiter = createOrderLookupLimiter();
 
 function copyCount(order) {
   const n = Number(order?.['model-data']?.quantity);
@@ -374,7 +381,7 @@ router.get('/', requireAuth, async (req, res) => {
  * GET /api/orders/:orderNumber
  * Get single order by order number
  */
-router.get('/:orderNumber', async (req, res) => {
+router.get('/:orderNumber', orderLookupLimiter, async (req, res) => {
   try {
     const { orderNumber } = req.params;
     
@@ -383,23 +390,15 @@ router.get('/:orderNumber', async (req, res) => {
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    
-    // Verify access
-    if (req.isAuthenticated()) {
-      if (order['user-id']?.toString() !== req.user._id.toString()) {
-        return res.status(403).json({ error: 'Not authorized' });
-      }
-    } else {
-      // Guests can look up their order by number + email
-      const { email: guestEmail } = req.query;
-      if (order['guest-email'] !== guestEmail?.toLowerCase()) {
-        return res.status(403).json({ error: 'Email verification required' });
-      }
+
+    const access = canReadOrder(req, order);
+    if (!access.ok) {
+      return res.status(access.status).json({ error: access.error });
     }
     
     return res.json({
       success: true,
-      order,
+      order: publicOrderView(order),
     });
   } catch (error) {
     console.error('[Orders] Get error:', error);
@@ -411,12 +410,12 @@ router.get('/:orderNumber', async (req, res) => {
  * GET /api/orders/lookup/:orderNumber
  * Guest order lookup by order number and email
  */
-router.get('/lookup/:orderNumber', async (req, res) => {
+router.get('/lookup/:orderNumber', orderLookupLimiter, async (req, res) => {
   try {
     const { orderNumber } = req.params;
-    const { email: guestEmail } = req.query;
-    
-    if (!guestEmail) {
+    const guestEmail = typeof req.query.email === 'string' ? req.query.email : '';
+
+    if (!guestEmail.trim()) {
       return res.status(400).json({ error: 'Email is required for order lookup' });
     }
     
@@ -425,31 +424,17 @@ router.get('/lookup/:orderNumber', async (req, res) => {
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    
-    // Verify email matches
-    const orderEmail = order['guest-email'] || 
-      (await order.populate('user-id'))['user-id']?.email;
-    
-    if (orderEmail !== guestEmail.toLowerCase()) {
-      return res.status(404).json({ error: 'Order not found' });
+
+    const access = canReadOrder(req, order);
+    if (!access.ok) {
+      return res.status(access.status === 401 ? 404 : access.status).json({
+        error: access.status === 401 ? 'Order not found' : access.error,
+      });
     }
     
     return res.json({
       success: true,
-      order: {
-        orderNumber: order['order-number'],
-        status: order.status,
-        createdAt: order['created-at'],
-        quantity: copyCount(order),
-        quote: order.quote,
-        shipping: {
-          method: order.shipping.method,
-          service: order.shipping.service,
-          'tracking-number': order.shipping['tracking-number'],
-          'tracking-url': order.shipping['tracking-url'],
-        },
-        timeline: order.timeline,
-      },
+      order: publicOrderView(order),
     });
   } catch (error) {
     console.error('[Orders] Lookup error:', error);
