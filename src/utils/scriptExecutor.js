@@ -1,6 +1,6 @@
 // utils/scriptExecutor.js
 import { validateScript, formatValidationErrors } from './scriptValidator';
-import { parseImportedModels, getCachedManifoldData, reconstructManifold } from './stepImport';
+import { parseImportedModels, getCachedManifoldData } from './stepImport';
 
 /**
  * Default execution limits
@@ -191,61 +191,6 @@ class ScriptExecutor {
     });
   }
 }
-
-/**
- * Create a simpler inline executor for when worker isolation isn't needed.
- * Still provides validation and timeout, but runs in main thread.
- */
-export const createInlineExecutor = (manifoldModule) => {
-  return {
-    async execute(script, options = {}) {
-      const limits = { ...DEFAULT_LIMITS, ...options.limits };
-      
-      // Validate
-      const validation = validateScript(script);
-      if (!validation.valid) {
-        throw new Error(formatValidationErrors(validation.errors));
-      }
-      
-      // Preload imports into window.__importedManifolds
-      const filenames = parseImportedModels(script);
-      if (!window.__importedManifolds) {
-        window.__importedManifolds = {};
-      }
-      
-      for (const filename of filenames) {
-        if (!window.__importedManifolds[filename]) {
-          const data = await getCachedManifoldData(filename);
-          if (data) {
-            window.__importedManifolds[filename] = reconstructManifold(data);
-          }
-        }
-      }
-      
-      // Execute with timeout using AbortController pattern
-      return new Promise((resolve, reject) => {
-        const timeoutId = setTimeout(() => {
-          reject(new Error(`Script execution timed out after ${limits.timeoutMs / 1000}s`));
-        }, limits.timeoutMs);
-        
-        try {
-          const wasm = manifoldModule;
-          const wasmKeys = Object.keys(wasm);
-          const wasmValues = Object.values(wasm);
-          
-          const fn = new Function(...wasmKeys, script);
-          const result = fn(...wasmValues);
-          
-          clearTimeout(timeoutId);
-          resolve({ result, memoryUsedMB: null });
-        } catch (error) {
-          clearTimeout(timeoutId);
-          reject(error);
-        }
-      });
-    }
-  };
-};
 
 /**
  * Validate a script without executing it
