@@ -82,7 +82,6 @@ export function createAgentBridgeTabConnection(opts) {
   let state = 'idle';
   /** @type {AgentBridgeLink} */
   let link = null;
-  let sawOpen = false;
   let lastRelayErrorCode = null;
   /** Handed to the peer on Allow; a resume request carrying it skips the prompt. */
   let resumeKey = null;
@@ -208,7 +207,6 @@ export function createAgentBridgeTabConnection(opts) {
     const prev = ws;
     const myGen = ++generation;
     const reconnecting = wasPaired || attempt > 0;
-    sawOpen = false;
     lastRelayErrorCode = null;
     if (!reconnecting) setIssue(null);
     setState(reconnecting ? 'reconnecting' : 'advertising');
@@ -218,7 +216,6 @@ export function createAgentBridgeTabConnection(opts) {
     socket.addEventListener('open', () => {
       if (generation !== myGen || ws !== socket) return;
       opened = true;
-      sawOpen = true;
       setIssue(null);
       send({ type: PAIR_MSG.REGISTER_TAB, token, tabKey });
       if (!wasPaired) {
