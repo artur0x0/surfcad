@@ -84,6 +84,7 @@ import {
   openPartCommand,
   insertPartCommand,
 } from './document.js';
+import { partGetTransformCommand, partSetTransformCommand } from './partTransform.js';
 import {
   gitMoveToRepoCommand,
   gitSaveCommand,
@@ -260,6 +261,8 @@ export const V1_COMMANDS = Object.freeze([
   listSketchEntitiesCommand,
   createAssemblyCommand,
   createPartCommand,
+  partGetTransformCommand,
+  partSetTransformCommand,
   openAssemblyCommand,
   openPartCommand,
   insertPartCommand,

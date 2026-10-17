@@ -535,9 +535,42 @@ export const COMMAND_META = {
     confirm: true,
   },
   create_part: {
-    description: 'Add a part row to the assembly.',
+    description:
+      'Add a part row to the assembly. Agent calls default to the assembly origin (identity placement); pass position [x,y,z] mm to place explicitly. The UI still staggers new parts +40 mm on X so bodies do not overlap.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'internal'],
+    mutates: true,
+  },
+  part_get_transform: {
+    description:
+      'Read a part rigid placement: position [x,y,z] mm and rotation as intrinsic XYZ Euler degrees (three.js Euler XYZ order).',
+    result: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        part: { type: 'string' },
+        position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
+        rotation: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
+        eulerOrder: { type: 'string', const: 'XYZ' },
+      },
+    },
+    errors: ['bad_args', 'unknown_part', 'internal'],
+    mutates: false,
+  },
+  part_set_transform: {
+    description:
+      'Set a part rigid placement (translation mm, intrinsic XYZ Euler degrees). Records one assembly undo step like a UI move.',
+    result: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        part: { type: 'string' },
+        position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
+        rotation: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
+        eulerOrder: { type: 'string', const: 'XYZ' },
+      },
+    },
+    errors: ['bad_args', 'unknown_part', 'no_assembly', 'internal'],
     mutates: true,
   },
   open_assembly: {
