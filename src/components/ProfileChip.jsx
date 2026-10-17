@@ -14,6 +14,8 @@ import { useAuth } from '../hooks/useAuth';
 import { useAuthState } from '../hooks/useAuthState';
 import { chipView } from '../utils/authPhase.js';
 import { agentBridgeRingLabel, agentBridgeRingState } from '../agent/ws/agentBridgeChrome.js';
+import { shouldKeepAgentBridgeHostMounted } from '../agent/ws/pairingFlow.js';
+import AgentBridgePairing from './AgentBridgePairing';
 import { profileInitials } from '../utils/profileInitials.js';
 import { clearGithubToken, loadGithubToken } from '../utils/git/githubAuth.js';
 import { DEFAULT_VAULT_NAME } from '../utils/git/vault.js';
@@ -34,6 +36,7 @@ export default function ProfileChip({
   const cartCount = session.signedIn ? (cartChrome?.count || 0) : 0;
   const [panelOpen, setPanelOpen] = useState(false);
   const [agentBridgeLink, setAgentBridgeLink] = useState(null);
+  const [agentBridgeSlot, setAgentBridgeSlot] = useState(null);
   const phase = session.phase;
   const motion = session.reconnecting
     ? 'spinning'
@@ -83,7 +86,7 @@ export default function ProfileChip({
   const iconSize = inline ? 14 : 16;
   const wrapClass = inline
     ? 'pointer-events-auto relative z-10 shrink-0'
-    : 'pointer-events-auto absolute top-4 right-4 z-50 relative';
+    : 'pointer-events-auto absolute top-4 right-4 z-50';
 
   const startReconnect = () => {
     if (session.offerReconnect) session.reconnectInteractive();
@@ -143,6 +146,7 @@ export default function ProfileChip({
   };
 
   const showPanel = signedIn || reauth || canClear || agentBridgeLive;
+  const mountAgentBridge = shouldKeepAgentBridgeHostMounted({ agentBridgeLive, panelOpen });
   const agentRing = agentBridgeLive ? agentBridgeRingState(agentBridgeLink) : null;
 
   return (
@@ -208,6 +212,14 @@ export default function ProfileChip({
           {cartCount > 99 ? '99+' : cartCount}
         </button>
       ) : null}
+      {mountAgentBridge ? (
+        <AgentBridgePairing
+          enabled
+          embedded
+          uiTarget={agentBridgeSlot}
+          onConnectionChange={setAgentBridgeLink}
+        />
+      ) : null}
       {showPanel && (
         <ProfilePanel
           open={panelOpen}
@@ -226,7 +238,7 @@ export default function ProfileChip({
           onOpenCart={session.signedIn ? () => cartChrome?.openCart?.() : null}
           align="right"
           agentBridgeLive={agentBridgeLive}
-          onAgentBridgeConnectionChange={setAgentBridgeLink}
+          agentBridgeSlotRef={setAgentBridgeSlot}
         />
       )}
       {variant === 'viewport' && reauth && session.bootEmpty ? (
