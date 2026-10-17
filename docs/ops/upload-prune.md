@@ -2,6 +2,8 @@
 
 `POST /api/convert/step` writes multer uploads and OBJ output under `UPLOAD_FOLDER` (`config.uploadFolder`). The convert route deletes each request's input and output in a `finally` block on success and on error. The systemd timer below is a **safety net** for leftovers when the Node process dies without running that cleanup (kill -9, OOM, host crash).
 
+**Status:** timer units are in the repo; Artur has not enabled them on prod yet.
+
 ## What runs
 
 - **Script:** `backend/scripts/prune-uploads.js` (shipped with the backend rsync; no extra npm deps).
@@ -26,6 +28,12 @@ Dry-run (lists candidates, deletes nothing):
 ```bash
 cd /home/ubuntu/backend
 sudo -u ubuntu NODE_ENV=production node scripts/prune-uploads.js --dry-run
+```
+
+Real run (same as the timer):
+
+```bash
+sudo -u ubuntu NODE_ENV=production node scripts/prune-uploads.js
 ```
 
 Verify the timer and recent runs:

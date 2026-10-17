@@ -6173,7 +6173,7 @@ function _s23ProbeKnotNormals(part, points, closed, carried = null) {
  *
  * opts.singleRun (C3.2) forced one continuous sweep at the MEDIAN θ. It cured
  * the loft saw-tooth by replacing many small θ errors with one large one, and
- * gouged instead (see docs/fillet-kernel-spike-c.md § C3.3). The hard path now
+ * gouged instead (see `.claude/skills/fillets/SKILL.md` and `golden:fillet-c3.3-varying-profile`). The hard path now
  * uses _s23VaryingProfileCutter, which needs no θ collapse at all. The option
  * is kept only because this helper still serves the easy dihedral path; do not
  * reach for it as a loft fix.

@@ -53,12 +53,11 @@ check('four candidates documented', FILLET_KERNEL_CANDIDATES.length >= 4);
 }
 
 {
-  const doc = read('../../docs/fillet-kernel-spike-c.md');
-  check('spike doc exists', /Recommended|rolling-ball/i.test(doc));
-  check('doc keeps easy path', /easy/i.test(doc) && /sweep/i.test(doc));
-  check('doc rules out naive sphere-hull', /over-cut|12×|sausage/i.test(doc));
-  check('doc notes hard Accept path', /C2|C3|Accept|variable-profile|relaxPlanar/i.test(doc));
-  check('doc notes production flag on', /FILLET_HARD_KERNEL_TRIAL\s*=\s*true/i.test(doc));
+  const doc = read('../../.claude/skills/fillets/SKILL.md');
+  check('fillet skill documents kernels', /easy|hard/i.test(doc) && /variable-profile|sweep/i.test(doc));
+  check('skill keeps easy path', /easy/i.test(doc) && /sweep/i.test(doc));
+  check('skill documents hard Accept path', /Accept|variableProfile|relaxPlanar/i.test(doc));
+  check('skill references C3 golden', /C3\.3|golden:fillet-c3/i.test(doc));
 }
 
 {

@@ -1,99 +1,347 @@
-# Slice 01 golden cases (in-repo)
+# In-repo golden smokes
 
 Authoritative geometry regression lives in **cadgen-workspace** (`npm run verify`).
-These files are the in-repo puzzle vocabulary smoke + copy-paste scripts for
-review while the private harness may be unavailable.
+These scripts live under `scripts/golden/` and run without that private harness.
 
-| File | What it proves |
-|---|---|
-| `smoke_slice01.mjs` | Fastener diameter tables + clearance/tap/cbore/csk/fillet/chamfer loud-fail via `manifold-3d` (npm) |
-| `puzzle_clearance_plate.js` | Copy-paste SurfCAD script: plate + M3 clearance + M4 cbore + chamfer |
-| `puzzle_fillet_box.js` | Copy-paste SurfCAD script: filleted box (convexEdges) |
-
-Run smoke (no cadgen-workspace required):
+## Run
 
 ```bash
-node scripts/golden/smoke_slice01.mjs
+npm run golden:<name>
 ```
 
-Note: npm `manifold-3d` ≠ bundled `built/manifold.wasm`. Gate acceptance still
-requires `test_real_worker.mjs` via `npm run verify` once the harness is present.
+Example:
 
-| `smoke_slice21_cross_section.mjs` | Slice 21 cross-section substrate: plane from planar face, profiles, preview, compose |
-| `smoke_slice23_fillet_via_sweep.mjs` | Slice 23 sweep fillet: wedge contours, palette Strategy=sweep, closed-rim + post-fillet geometry via worker |
-| `smoke_slice24_contour_mode.mjs` | Slice 24 contour-mode shell: plane refuse, Profile-in-mode compose (no Extrude), update-in-place, #30 fillet sweep default |
-| `smoke_slice25_extrude.mjs` | Slice 25 Extrude solid: live preview params, Confirm compose (makeExtrude + placeInFrame replace), update-in-place, Back/no-orphan, #30 fillet sweep default |
-| `smoke_slice26_revolve.mjs` | Slice 26 Revolve solid: identity (u,v)→(radial,height) remap (centered circle → sphere; washer → torus), live preview params, Confirm compose (makeRevolve + placeInFrame replace), update-in-place, Back/no-orphan, Extrude/Profile/Loft unchanged, #30 fillet sweep default |
-| `smoke_slice28_loft.mjs` | Slice 28 Loft: named contours, station offset along the contour normal, block id, rewrite versus append, Extrude and Revolve leave the loft, #30 fillet sweep default |
-| `smoke_hotfix_frame_only_plane_undo_autorun.mjs` | Hotfix: empty Confirm is frame-only (no host cube / no part.add); existing part unions; Undo/Redo Auto-Run via setTextOnly + handleGameRun |
-| `smoke_hotfix_contour_picker_additive.mjs` | Hotfix: saved contours list + ghosts, auto-pick last, Profile/Workplane in Advanced, additive Confirm keeps cube volume |
-| `smoke_polish_adv_ux.mjs` | Polish: loft circle↔rect sharp corners + view-aligned default, Confirm exits contour mode, Sweep path selector inside the popup, Workplane is a plane (no host cube), blank/plane-only script clears the viewport |
-| `smoke_slice27_fillet_mode.mjs` | Slice 27 Fillet-in-mode: enter without edges, live blend preview as edges accumulate, Accept compose (makeSweepPath + filletAlongPath) + replace-in-place, Back/no-commit, disjoint edges → independent fillets (2+ components), #27–#30 sweep stack |
-| `smoke_fillet_followup.mjs` | Fillet follow-up: loft overlay stays bounded, blend strips are not candidates, sequential sharp-edge Accept appends, blend-only Accept fails loud |
-| `smoke_fillet_easy_hard.mjs` | Slice B: box / extrude edges easy (no warn reason); circle↔square loft generator hard with a stable reason; Accept stays allowed; huge radius and long chains warn |
-| `smoke_fillet_box_corners.mjs` | Four vertical corners of a plain box: picker Accept and a script fillet both run, and fail if `no boundary between faces` would toast |
-| `smoke_edge_contour_identity.mjs` | Edge and contour graphs: same chains, edge counts, and contour counts on Artur's mesh and on the pre-#154 dense mesh |
-| `smoke_fillet_kernel_spike_c.mjs` | Slice C/C2: hard kernel recommendation + production flag; hard Accept emits filletEdges+relaxPlanar; pick-mode restore + selector gap |
-| `smoke_fillet_c2_rolling_ball.mjs` | Slice C2/C3: hard loft Accept path + scrap guard; C3 supersedes rolling-ball with variableProfile; known-scrap relaxPlanar loud-fails /sliver scraps/ |
-| `smoke_fillet_c3_variable_sweep.mjs` | Slice C3: tangency field G1 vs zig-zag; loft Tangent-on human-scale; hard Accept → variableProfile sweep; R≈1.6 no zero-area banner delta; easy cube clean |
-| `smoke_fillet_c3_1_along_path_tangency.mjs` | Slice C3.1: along-path frame transport; gut transport → staircase RED; hard loft WASM transport meta + C3 volume pin |
-| `smoke_fillet_c3_2_tighter_continuity.mjs` | Slice C3.2: single-run variableProfile cutter + denser/curvature densify + tighter damp; loft-like θ-run staircase pin; hard loft WASM runCount=1 |
-| `smoke_fillet_c3_3_varying_profile.mjs` | Slice C3.3: per-knot varying cross-section for hard variableProfile; **distribution net** — removed volume per quarter must follow the dihedral ramp (total-only guards cannot tell a median-θ gouge from a correct blend) |
-| `smoke_fillet_c4_signed_concave.mjs` | Slice C4: signed local convexity (no per-edge CSG ball probe), per-knot sign, concave = material-ADD filler; mixed-sign chain splits into cutter + filler runs; zero face-group normal fallback |
-| `smoke_cad_palette_overlays.mjs` | CAD Model section promotes Profile/Workplane/Extrude/Revolve/Sweep/Loft (game Advanced rail unchanged); Plane/Contour toggles default off and gate overlay paint and picking |
-| `smoke_overlay_visibility.mjs` | Plane/sketch overlays default off; Extrude forces both on (toggles show ON); X, Esc, and Paint restore; an already-on choice stays; a tap off during the tool stays off |
-| `smoke_cad_mobile_chrome.mjs` | CAD phone shell matches puzzle: viewport top, Monaco bottom budget, keyboard pin, mid-strip actions, vertical right rail |
+```bash
+npm run golden:slice01
+# same as: node scripts/golden/smoke_slice01.mjs
+```
 
-| `smoke_fillet_chamfer_rounded_wrap.mjs` | Fillet-on-fillet rounded-rect wrap + path chamfer quality |
-| `smoke_block_pose_preview.mjs` | Block pop: position and rotation on all six solids, preview mesh matches the script, identity pose is omitted, Subtract preview is the cutter and does not replace the cached solid; Add and Subtract paint with the previewStyle cyan skin + crease outline (Loft's look), never the CAD normal material |
-| `smoke_cross_part_clone.mjs` | Edit-touch C: cross-part Boolean (union / difference / intersect with piece delete) and Subtract Block copies via `externalBody`, frozen and posed into the target frame; yellow external chip; copy deleted with the feature; one undo step per written part |
-| `smoke_part_script_restore.mjs` | New part keeps its own script across IDB/draft restore: draft bound to part id; stale other-part draft cannot clobber active row; App epoch bump + immediate draft rebind on New/Select |
-| `smoke_fillet_three_corner_wrap.mjs` | Three-fillet corner wrap (r=3.73 variable-profile chain through three r=2 fillets): true ~90° per-knot θ, one genus-0 body, volume window, no nested shell inside, every picked edge rounded, flat walls solid |
-| `smoke_multi_part_easy_fillet.mjs` | Multi-part easy fillet: each part of a multi-part Fillet Accept matches its solo Fillet (untouched seed 2 mm, a 4 mm plate clamps to 1.8, radius + class from its own solid unless typed; volume, area, tris, genus), both active directions, plate + rim, typed radius |
-| `smoke_part_overlays_stick.mjs` | Contours and work planes stick to their part: per-part sources (editor = live buffer, hidden skipped), per-part anchors (pick mesh / own solid / row), A's plane + contour stay on A across a switch and follow A's move; editor-only picks |
-| `smoke_feature_failed_chip.mjs` | Failed feature → red strip chip border: worker `scriptLine` of the failing call, mapped to that marked block only; no frame / outside a block marks nothing; edit clears; red-400 wins over yellow; successful tones unchanged |
-| `smoke_feature_failed_chip_safari.mjs` | Failed chip without a V8 stack frame (WebKit-shaped stack): worker tracks the open marked block (`featureId`), maps to exactly the failing chip; no mark for syntax / bad return / outside blocks; V8 line path still works; renders FeatureStrip (both layouts) + FeatureSheet (identity, picker) red via react-dom/server; WebKit `feature-failed-ring` CSS |
-| `smoke_failed_part_outline.mjs` | Failing part in the viewer: red-400 outline + tint + glow rim on its last good solid, no raycast, rebuilt / disposed with geometry; same failed ids as the Parts feed; App → viewport wiring |
-| `smoke_fillet_default_radius.mjs` | Fillet and chamfer default is 2 mm in every unit (inches show 0.0787), including a thin sheet; a typed radius is shared and a typed 40 mm is kept |
-| `smoke_feature_sliders.mjs` | Feature-card length sliders are shaped thumbs; joint angle is ±90° at 1°. 390 and 1280 |
-| `smoke_part_rename_target.mjs` | Two-part rename: title rename lands on the part the title shows (viewer pick, not activeId), feed row renames its own id, stale/blank/unknown no-ops; App / title chip / feed row wiring |
-| `smoke_empty_part_pill.mjs` | No part selected: the title is the assembly name only. The part-name pill is not drawn (desktop and 390). Selecting the part shows it; an empty canvas click hides it again |
-| `smoke_viewer_title_actions.mjs` | Title chips at 390 and 1280: part/assembly spacing, part tap selects all bodies, assembly tap enters assembly mode (no rename), part rename on double-click |
-| `smoke_multi_part_block_drop.mjs` | Two parts, B picked, editor on A: Block Confirm writes B only (script, strip, volume), Undo/Redo on B's stack, A untouched; `featureWriteTarget` rules; stale sheet offsets refused (`liveSheetFeature`); `focusWritePart` wiring on every writer, Undo/Redo, sheets, palette open, session start, commit `partId`s |
-| `smoke_fillet_chamfer_multi_rotation.mjs` | FilletKiller chain that turns 360° through four R=2 arcs (fixtures `artur_playtest_chamfer_multi_rotation.txt`, `artur_playtest_fillet_three_corner_wrap.txt`): chamfer r=2 has no lip/step on the y=−10 top leg (ball probes, −x and vertical-leg controls); fillet r=3.73 has θ 88°..92°, no inverted top facets, volume window; sliver-safe ray / planar normal / tight-arc split wiring |
-| `smoke_merge_bodies_toggle.mjs` | Merge bodies toggle: on by default on every Block and Shape (hidden in Subtract); off writes `part.add(x, { merge: false })` (compose). FilletKiller + overlapping Block: off → 2 bodies, Boolean union → 1, on → 1; viewer body split, face/edge graphs, Pieces; per-body subtract/add/hollow/draft/Move Face/Delete Face, fillet/chamfer/cut/move/cross-part clone on the 2-body part; strip separate-body marker from live bodyCount (clears after Boolean union) |
-| `smoke_assembly_open_spinner.mjs` | Assembly open spinner: delayed vault open shows a centered `Opening <name>…` / `part 3 of 7` spinner then clears; failure and the safety timeout clear it and show the Retry toast; a fast open does not flash; reduced motion stops the ring |
-| `smoke_contour_solve.mjs` | Constrained contour solver: full rectangle, under-defined is not a conflict, repeated horizontal warning, parallel+perpendicular names both, 128 point cap, close at the third point, circle tessellation, two- and three-segment corner arc, name stays inside the call, angle branch |
-| `smoke_contour_dimension.mjs` | Dimension and Arc: suggestion table, inch at the field, name stays a string, Confirm writes the profile and keeps an extrude distance, arc corner, loft station isolation, sticky pick, rail order, number input with no slider |
-| `smoke_contour_constraints.mjs` | Constraints: suggestion bands at 15° and 20°, all eight kinds, equal of a line and an arc is refused, tangent stores side, icons, Confirm stays |
-| `smoke_contour_status.mjs` | Status colours, conflict note, repeated word, nullspace drag, script write on pointer-up only, saved ghost colour |
-| `smoke_sketch_status_colours.mjs` | Touch at 390 and 1280: an unconstrained rectangle is blue and draggable, a fully dimensioned one is black and not, a half-constrained one is mixed |
-| `smoke_contour_perpendicular.mjs` | Touch at 390 and 1280: a perpendicular on two polyline segments leaves those lines neither amber nor red, the angle is 90°, and every segment keeps its length |
-| `smoke_sketch_face_camera.mjs` | Sketch-on-face at 390px: Select plane aims along the picked face normal and frames the face, the highlight is off, and Back undoes one polyline point while X still exits |
-| `smoke_contour_tap_offset.mjs` | Touch taps at 390 and 1280 place a polyline point within 2px of the finger, at the corners and the center, with the plane card open and closed, and with the part posed. The plane card draws no circle, and a tap where that rim sat still selects the face |
-| `smoke_contour_normal.mjs` | Contour drag and Normal to sketch at 390 and 1280: dragging a point leaves the camera quaternion unchanged, an empty-space drag still orbits, and Normal to sketch aims along the plane and zoom-fits |
-| `smoke_contour_normal_fit.mjs` | Editing c1 used by Extrude 1 at 390 and 1280: with the part placed off the origin, Normal to sketch aims along the plane and the part bbox is centred and in frame |
-| `smoke_contour_keep_edit.mjs` | Touch taps at 390 and 1280: the plane card says Select plane, circle rectangle and polygon handles edit their sizes, a dimensioned polyline stays draggable after a tool change, a fixed point does not move, and a distance on the negative side of an edge displays positive while typing positive keeps that side |
-| `smoke_contour_strip.mjs` | Touch taps at 390 and 1280: the plane card draws no circle, after Select plane the pressed tool is Cursor and the strip reads No sketch entities, choosing Circle adds that chip and Cursor keeps it, an empty polyline reads No sketch entities, a dimension or constraint chip opens its edit card, a canvas tap selects the same line, a two-pick dimension clears the chip, double-tap removal leaves a broken constraint chip, a geometry chip deletes at once or confirms Delete along with N as one sketch undo, Undo follows sketch history, and Redo stays disabled |
-| `smoke_contour_legend.mjs` | At 390 and 1280 the status legend is centred on the part-in-assembly pill within 1px, the pill is hidden in contour mode and returns on exit, and the perpendicular sketch chip uses Lucide `angle` |
-| `smoke_contour_entry.mjs` | Contour entry at 390px and 1280px: the plane card slides the part up and is titled Contour, Select plane aims normal to the plane and closes the card with the rail still up, Back undoes one point then reopens the plane card, and Confirm finishes |
-| `smoke_contour_plane_offset.mjs` | Contour plane offset at 390 and 1280: Offset is on the plane card, a value moves the live frame along Z and along X, Confirm bakes the center and `offset=`, reopen shows the same value, a second edit does not apply it twice, and the hole plane card shows the same field |
-| `smoke_workplane_add.mjs` | Workplane at 390 and 1280: the card says Add plane, has no helper line and no left Plane rail, X writes nothing, and Add plane stores the X reference, a Z angle, and the offset in one step |
-| `smoke_joints_blocks.mjs` | Joints button: Lucide Blocks is the last Move-rail button at 390px and 1280px, it opens the StickyPickApply joint card, a tap with nothing selected selects the part, and the strip stays on assembly joints while nothing is selected |
-| `smoke_contour_dimension_drive.mjs` | Dimension values drive the polyline: a point distance keeps the first point and moves the second, length angle offset and radius re-solve live, and a 390px page shows the portaled tag |
-| `smoke_contour_distance_drag.mjs` | Touch at 390 and 1280: a distance on two points leaves both blue, dragging one moves the other, and the distance holds |
-| `smoke_contour_reopen.mjs` | Reopen restores a named `solveContour` and an old point list, loft stations stay separate, an unchanged Confirm is byte-identical, a dimension name is not a script binding |
-| `smoke_named_contour.mjs` | A contour is `const c1 = makeCrossSection(frame, profile); // @contour id=c1`. The id survives a byte shift, a second Confirm appends c2, rename updates references, and Confirm at 390 and 1280 writes that statement |
-| `smoke_sheet_contour_delete.mjs` | Unused contour inside a Sheet Metallica-like sheet block, with edge refs: Delete at 390 and 1280 shows no refuse toast, an Undo toast, and Undo restores the contour and the sheet block |
-| `smoke_sheet_contour_refs.mjs` | Sheet Metallica: touch taps at 390 and 1280 dimension a point to a flange edge and constrain a line parallel to it. Lengthening that flange rewrites the reference instead of breaking it. |
-| `smoke_sheet_extrude.mjs` | Extrude on a sheet part whose study follows `return part`, and on a regular cube: Confirm at 390 and 1280 writes the block before that return, outside the sheet span, and the volume and triangle count both increase |
-| `smoke_loft_by_reference.mjs` | Loft Confirm names contours and writes `makeLoft` by those names inside `id=loft1`. A second Confirm appends `loft2`. The id survives a prepended comment. Confirm at 390 and 1280 writes that block |
-| `smoke_contour_plane_dim.mjs` | Plane preview and dimension placement at 390 and 1280. Workplane quads show on the plane card and hide after Select plane. A chip move under 6px opens edit. Dragging a length chip and an angle chip stores `placement` on the dimension, and reopen keeps both with the preview still hidden |
-| `smoke_feature_slot_open.mjs` | Extrude, Revolve, Loft, and Sweep open the slot card from the shape rail and from a strip chip. Touch taps at 390 and 1280. Confirm, Pick a contour as plain text, saved contours plus New contour. Picking one highlights only that button. No Select plane, plane fields, or No contour row |
-| `smoke_slot_preview.mjs` | Touch at 390 and 1280: after the rail checkmark returns a new contour to Extrude, the extrude preview mesh is in the scene, and a one-finger drag on the canvas rotates the camera while that card is open |
-| `smoke_contour_cursor.mjs` | Cursor, polyline, and arc icons, point drag, and double-tap point removal at 390 and 1280. Cursor does not add a point. A drag on a line translates the whole polyline as one undo, and Back restores it. A point drag moves one point. A second tap removes one dot, and the next removal under three points deletes the shape as one undo |
-| `smoke_polygon_sides.mjs` | Polygon options at 390 and 1280: the contour card select lists triangle through octagon, heptagon draws 7 corners, octagon draws 8, and choosing octagon updates the select |
-| `smoke_polyline_entity.mjs` | Touch at 390 and mouse at 1280: Select plane leaves Cursor pressed on an empty sketch with no circle chip, a polyline stays one strip chip across Cursor and Dimension, a segment tap inserts a point, a fast double-tap removes one, a point drag moves only that point, a cursor line drag translates the whole polyline as one undo and Back restores it, and the polyline chip Delete clears the chain |
-| `smoke_contour_shape_drag.mjs` | Shape drag at 390 and 1280. A free quad, a locked rectangle, and a fixed point with a length are drawn from the solver. In the app, a hexagon, circle, rectangle, and polyline translate when the grab misses the points, a fully locked rectangle does not, and each move is one undo |
-| `smoke_playtest_toasts.mjs` | Remote-ahead toast at 390 and 1280 has Get latest and Keep mine. Get latest opens the shared Parts conflict dialog. Keep mine runs that dialog's keep handler and dismisses the toast. The delete Undo toast stays one line at 2× its previous height, with the same gap between Undo and X |
-| `smoke_feature_card_gap.mjs` | Fillet and Delete Face at 390 and 1280: the Tangent/Clear/Undo (or Undo/Clear) row sits clear of Delete and Confirm by the shared feature-card footer gap |
+npm `manifold-3d` (used by some smokes) is not the bundled `built/manifold.wasm`.
+Gate acceptance still requires `test_real_worker.mjs` via `npm run verify` when the harness is present.
+
+## npm scripts → smoke files
+
+| npm script | File |
+| --- | --- |
+| `golden:agent-bridge` | `smoke_agent_bridge_flag.mjs` |
+| `golden:agent-bridge-block-edit` | `smoke_agent_bridge_block_edit.mjs` |
+| `golden:agent-bridge-fea` | `smoke_agent_bridge_fea.mjs` |
+| `golden:agent-bridge-h10` | `smoke_agent_bridge_h10.mjs` |
+| `golden:agent-bridge-h11` | `smoke_agent_bridge_h11.mjs` |
+| `golden:agent-bridge-h12` | `smoke_agent_bridge_h12.mjs` |
+| `golden:agent-bridge-h13` | `smoke_agent_bridge_h13.mjs` |
+| `golden:agent-bridge-h14` | `smoke_agent_bridge_h14.mjs` |
+| `golden:agent-bridge-h15` | `smoke_agent_bridge_h15.mjs` |
+| `golden:agent-bridge-h16` | `smoke_agent_bridge_h16.mjs` |
+| `golden:agent-bridge-h3` | `smoke_agent_bridge_h3.mjs` |
+| `golden:agent-bridge-h4` | `smoke_agent_bridge_h4.mjs` |
+| `golden:agent-bridge-h5` | `smoke_agent_bridge_h5.mjs` |
+| `golden:agent-bridge-h6-h8` | `smoke_agent_bridge_h6_h8.mjs` |
+| `golden:agent-bridge-h7` | `smoke_agent_bridge_h7.mjs` |
+| `golden:agent-bridge-h9` | `smoke_agent_bridge_h9.mjs` |
+| `golden:agent-bridge-readers` | `smoke_agent_bridge_readers.mjs` |
+| `golden:agent-bridge-xsection` | `smoke_agent_bridge_xsection.mjs` |
+| `golden:agent-catalog` | `smoke_agent_catalog.mjs` |
+| `golden:agent-commands` | `smoke_agent_commands_json.mjs` |
+| `golden:agent-git-consent` | `smoke_agent_git_consent.mjs` |
+| `golden:agent-headless` | `smoke_agent_headless.mjs` |
+| `golden:agent-playtest` | `smoke_agent_playtest.mjs` |
+| `golden:agent-visible` | `smoke_agent_visible.mjs` |
+| `golden:app-loads` | `smoke_app_loads.mjs` |
+| `golden:artur-bend-fillet` | `smoke_artur_bend_fillet.mjs` |
+| `golden:artur-playtest-box-stack-sliver` | `smoke_artur_playtest_box_stack_sliver.mjs` |
+| `golden:artur-playtest-fillet-after-hollow` | `smoke_artur_playtest_fillet_after_hollow.mjs` |
+| `golden:artur-playtest-shell-after-fillets` | `smoke_artur_playtest_shell_after_fillets.mjs` |
+| `golden:artur-playtest-variable-wrap-pinch` | `smoke_artur_playtest_variable_wrap_pinch.mjs` |
+| `golden:artur-playtest-wrap-chamfer` | `smoke_artur_playtest_wrap_chamfer.mjs` |
+| `golden:assembly` | `smoke_assembly.mjs` |
+| `golden:assembly-autonumber` | `smoke_assembly_autonumber.mjs` |
+| `golden:assembly-open-clears` | `smoke_assembly_open_clears.mjs` |
+| `golden:assembly-open-spinner` | `smoke_assembly_open_spinner.mjs` |
+| `golden:bend-root-fillet` | `smoke_bend_root_fillet.mjs` |
+| `golden:block-pose-preview` | `smoke_block_pose_preview.mjs` |
+| `golden:block-shape-boolean` | `smoke_block_shape_boolean.mjs` |
+| `golden:blocks-artur-fixes` | `smoke_blocks_artur_fixes.mjs` |
+| `golden:cad-mobile-chrome` | `smoke_cad_mobile_chrome.mjs` |
+| `golden:cad-palette` | `smoke_cad_palette_overlays.mjs` |
+| `golden:cart` | `smoke_cart.mjs` |
+| `golden:cart-checkout` | `smoke_cart_checkout.mjs` |
+| `golden:cart-remove-confirm` | `smoke_cart_remove_confirm.mjs` |
+| `golden:checkout-page` | `smoke_checkout_page.mjs` |
+| `golden:clear-local-cache` | `smoke_clear_local_cache.mjs` |
+| `golden:clear-local-cad` | `smoke_clear_local_cad.mjs` |
+| `golden:contour-broken-delete` | `smoke_contour_broken_delete.mjs` |
+| `golden:contour-constraints` | `smoke_contour_constraints.mjs` |
+| `golden:contour-cursor` | `smoke_contour_cursor.mjs` |
+| `golden:contour-delete` | `smoke_contour_delete.mjs` |
+| `golden:contour-dimension` | `smoke_contour_dimension.mjs` |
+| `golden:contour-dimension-drive` | `smoke_contour_dimension_drive.mjs` |
+| `golden:contour-distance-drag` | `smoke_contour_distance_drag.mjs` |
+| `golden:contour-edit` | `smoke_contour_edit.mjs` |
+| `golden:contour-entry` | `smoke_contour_entry.mjs` |
+| `golden:contour-keep-edit` | `smoke_contour_keep_edit.mjs` |
+| `golden:contour-legend` | `smoke_contour_legend.mjs` |
+| `golden:contour-normal` | `smoke_contour_normal.mjs` |
+| `golden:contour-normal-fit` | `smoke_contour_normal_fit.mjs` |
+| `golden:contour-perpendicular` | `smoke_contour_perpendicular.mjs` |
+| `golden:contour-plane-dim` | `smoke_contour_plane_dim.mjs` |
+| `golden:contour-plane-offset` | `smoke_contour_plane_offset.mjs` |
+| `golden:contour-ref-resolve` | `smoke_contour_ref_resolve.mjs` |
+| `golden:contour-refs` | `smoke_contour_refs.mjs` |
+| `golden:contour-reopen` | `smoke_contour_reopen.mjs` |
+| `golden:contour-shape-drag` | `smoke_contour_shape_drag.mjs` |
+| `golden:contour-snap` | `smoke_contour_snap.mjs` |
+| `golden:contour-solve` | `smoke_contour_solve.mjs` |
+| `golden:contour-stale-preview` | `smoke_contour_stale_preview.mjs` |
+| `golden:contour-status` | `smoke_contour_status.mjs` |
+| `golden:contour-strip` | `smoke_contour_strip.mjs` |
+| `golden:contour-tap-offset` | `smoke_contour_tap_offset.mjs` |
+| `golden:contour-visuals` | `smoke_contour_visuals.mjs` |
+| `golden:cross-part-clone` | `smoke_cross_part_clone.mjs` |
+| `golden:cut-plane` | `smoke_cut_plane.mjs` |
+| `golden:delete-assembly` | `smoke_delete_assembly.mjs` |
+| `golden:delete-face` | `smoke_delete_face.mjs` |
+| `golden:delete-last-feature` | `smoke_delete_last_feature.mjs` |
+| `golden:desktop-feature-strip` | `smoke_desktop_feature_strip_between_panes.mjs` |
+| `golden:dimension-done` | `smoke_dimension_done.mjs` |
+| `golden:dimension-feedback` | `smoke_dimension_feedback.mjs` |
+| `golden:display-number` | `smoke_display_number.mjs` |
+| `golden:draft-fillet-tangency` | `smoke_draft_fillet_tangency.mjs` |
+| `golden:draft-neutral` | `smoke_draft_neutral_plane.mjs` |
+| `golden:edge-contour-identity` | `smoke_edge_contour_identity.mjs` |
+| `golden:edges-pr2-patches` | `smoke_edges_pr2_patches.mjs` |
+| `golden:editor-draft` | `smoke_editor_draft_persist.mjs` |
+| `golden:empty-part-pill` | `smoke_empty_part_pill.mjs` |
+| `golden:empty-run-clears` | `smoke_empty_run_clears.mjs` |
+| `golden:error-toast-undo` | `smoke_error_toast_undo.mjs` |
+| `golden:face-click` | `smoke_face_click_graph.mjs` |
+| `golden:face-colors` | `smoke_face_colors.mjs` |
+| `golden:face-match` | `smoke_face_match.mjs` |
+| `golden:face-paint` | `smoke_face_paint.mjs` |
+| `golden:face-paint-tap-pixels` | `smoke_face_paint_tap_pixels.mjs` |
+| `golden:face-select-boundaries` | `smoke_face_select_boundaries.mjs` |
+| `golden:face-skin` | `smoke_face_skin.mjs` |
+| `golden:failed-part-outline` | `smoke_failed_part_outline.mjs` |
+| `golden:fea-analyze-playtest` | `fea_analyze_playtest.mjs` |
+| `golden:fea-bonded` | `fea_bonded.mjs` |
+| `golden:fea-face-highlight` | `fea_face_highlight.mjs` |
+| `golden:fea-friction` | `fea_friction.mjs` |
+| `golden:fea-load-arrows` | `fea_load_arrows.mjs` |
+| `golden:fea-probe` | `fea_probe.mjs` |
+| `golden:fea-stress` | `fea_stress_pixels.mjs` |
+| `golden:fea-study` | `fea_study_panel.mjs` |
+| `golden:feature-card-gap` | `smoke_feature_card_gap.mjs` |
+| `golden:feature-edit-delete` | `smoke_feature_edit_delete.mjs` |
+| `golden:feature-edit-roundtrip` | `smoke_feature_edit_roundtrip.mjs` |
+| `golden:feature-failed-chip` | `smoke_feature_failed_chip.mjs` |
+| `golden:feature-failed-chip-safari` | `smoke_feature_failed_chip_safari.mjs` |
+| `golden:feature-field-edit` | `smoke_feature_field_edit.mjs` |
+| `golden:feature-sheet` | `smoke_feature_sheet_card.mjs` |
+| `golden:feature-skip-midchain` | `smoke_feature_skip_midchain.mjs` |
+| `golden:feature-sliders` | `smoke_feature_sliders.mjs` |
+| `golden:feature-slot-open` | `smoke_feature_slot_open.mjs` |
+| `golden:feature-slots` | `smoke_feature_slots.mjs` |
+| `golden:fillet-after-cut` | `smoke_fillet_after_cut.mjs` |
+| `golden:fillet-box-corners` | `smoke_fillet_box_corners.mjs` |
+| `golden:fillet-box-stack-and-loft` | `smoke_fillet_box_stack_and_loft.mjs` |
+| `golden:fillet-c2-rolling-ball` | `smoke_fillet_c2_rolling_ball.mjs` |
+| `golden:fillet-c3-variable-sweep` | `smoke_fillet_c3_variable_sweep.mjs` |
+| `golden:fillet-c3.1-along-path-tangency` | `smoke_fillet_c3_1_along_path_tangency.mjs` |
+| `golden:fillet-c3.2-tighter-continuity` | `smoke_fillet_c3_2_tighter_continuity.mjs` |
+| `golden:fillet-c3.3-varying-profile` | `smoke_fillet_c3_3_varying_profile.mjs` |
+| `golden:fillet-c4-signed-concave` | `smoke_fillet_c4_signed_concave.mjs` |
+| `golden:fillet-cap-move` | `smoke_fillet_cap_move.mjs` |
+| `golden:fillet-chamfer-multi-rotation` | `smoke_fillet_chamfer_multi_rotation.mjs` |
+| `golden:fillet-chamfer-rounded-wrap` | `smoke_fillet_chamfer_rounded_wrap.mjs` |
+| `golden:fillet-default-radius` | `smoke_fillet_default_radius.mjs` |
+| `golden:fillet-dihedral` | `smoke_fillet_dihedral.mjs` |
+| `golden:fillet-easy-hard` | `smoke_fillet_easy_hard.mjs` |
+| `golden:fillet-edge-hit` | `smoke_fillet_edge_hit.mjs` |
+| `golden:fillet-face-pick` | `smoke_fillet_face_pick.mjs` |
+| `golden:fillet-followup` | `smoke_fillet_followup.mjs` |
+| `golden:fillet-join-body` | `smoke_fillet_join_body.mjs` |
+| `golden:fillet-kernel-spike-c` | `smoke_fillet_kernel_spike_c.mjs` |
+| `golden:fillet-move-seam` | `smoke_fillet_move_seam.mjs` |
+| `golden:fillet-sweep-quality` | `smoke_fillet_sweep_quality.mjs` |
+| `golden:fillet-tangent-round-wrap` | `smoke_fillet_tangent_round_wrap.mjs` |
+| `golden:fillet-three-corner-wrap` | `smoke_fillet_three_corner_wrap.mjs` |
+| `golden:fillet-wrap-draft` | `smoke_fillet_wrap_draft.mjs` |
+| `golden:fit-color-scroll` | `smoke_fit_color_scroll.mjs` |
+| `golden:flange-bend-fillet-step` | `smoke_flange_bend_fillet_step.mjs` |
+| `golden:flange-outer-fillet` | `smoke_flange_outer_fillet.mjs` |
+| `golden:git-cache-sync` | `smoke_git_cache_sync.mjs` |
+| `golden:git-g1-vault-layout` | `smoke_git_g1_vault_layout.mjs` |
+| `golden:git-g11-parts-vault-chrome` | `smoke_git_g11_parts_vault_chrome.mjs` |
+| `golden:git-g12-script-upload-download` | `smoke_git_g12_script_upload_download.mjs` |
+| `golden:git-g13-vault-create-conflict` | `smoke_git_g13_vault_create_conflict.mjs` |
+| `golden:git-g2-open-save` | `smoke_git_g2_open_save.mjs` |
+| `golden:git-g3-commit-push` | `smoke_git_g3_commit_push.mjs` |
+| `golden:git-g4-pull-conflicts` | `smoke_git_g4_pull_conflicts.mjs` |
+| `golden:git-g5-branch-view` | `smoke_git_g5_branch_view.mjs` |
+| `golden:git-g6-move-to-git` | `smoke_git_g6_move_to_git.mjs` |
+| `golden:git-g7-real-adapter` | `smoke_git_g7_real_adapter.mjs` |
+| `golden:git-g8-github-signin` | `smoke_git_g8_github_signin.mjs` |
+| `golden:git-open-lists` | `smoke_git_open_lists.mjs` |
+| `golden:github-reauth` | `smoke_github_reauth.mjs` |
+| `golden:helper-binding-clash` | `smoke_helper_binding_clash.mjs` |
+| `golden:helper-sliders` | `smoke_helper_sliders.mjs` |
+| `golden:hidden-script-editor` | `smoke_hidden_script_editor.mjs` |
+| `golden:hole-contour` | `smoke_hole_contour.mjs` |
+| `golden:hole-edit` | `smoke_hole_edit.mjs` |
+| `golden:hole-rectangle` | `smoke_hole_rectangle.mjs` |
+| `golden:hook-dep-tdz` | `smoke_hook_dep_tdz.mjs` |
+| `golden:hotfix-contour-picker` | `smoke_hotfix_contour_picker_additive.mjs` |
+| `golden:hotfix-frame-only` | `smoke_hotfix_frame_only_plane_undo_autorun.mjs` |
+| `golden:hotfix-occ` | `smoke_hotfix_occlusion_tangent_hole.mjs` |
+| `golden:hotfix-sweep-path` | `smoke_hotfix_sweep_path_disconnect.mjs` |
+| `golden:joints-blocks` | `smoke_joints_blocks.mjs` |
+| `golden:joints-card` | `smoke_joints_card.mjs` |
+| `golden:joints-page-scroll` | `smoke_joints_page_scroll.mjs` |
+| `golden:joints-planes` | `smoke_joints_planes.mjs` |
+| `golden:joints-reopen` | `smoke_joints_reopen.mjs` |
+| `golden:joints-resolve` | `smoke_joints_resolve.mjs` |
+| `golden:joints-schema` | `smoke_joints_schema.mjs` |
+| `golden:joints-solver` | `smoke_joints_solver.mjs` |
+| `golden:joints-strip` | `smoke_joints_strip.mjs` |
+| `golden:joints-types` | `smoke_joints_types.mjs` |
+| `golden:loft-angled` | `smoke_loft_angled.mjs` |
+| `golden:loft-by-reference` | `smoke_loft_by_reference.mjs` |
+| `golden:loft-card` | `smoke_loft_card_elbow.mjs` |
+| `golden:loft-edge-pick` | `smoke_loft_edge_pick.mjs` |
+| `golden:loftzilla` | `smoke_loftzilla_fillet_band.mjs` |
+| `golden:mcp-demo` | `smoke_mcp_demo.mjs` |
+| `golden:measure-feature-sheet` | `smoke_measure_feature_sheet_390.mjs` |
+| `golden:merge-bodies-toggle` | `smoke_merge_bodies_toggle.mjs` |
+| `golden:mesh-upload-reload` | `smoke_mesh_upload_reload.mjs` |
+| `golden:mesh-vault-sync` | `smoke_mesh_vault_sync.mjs` |
+| `golden:mobile-a-stages` | `smoke_mobile_a_cad_script_stages.mjs` |
+| `golden:mobile-b-home-indicator` | `smoke_mobile_b_home_indicator_feature_strip.mjs` |
+| `golden:mobile-b1-strip-icons-face-popup-zoom` | `smoke_mobile_b1_strip_icons_face_popup_zoom.mjs` |
+| `golden:mobile-c-feature-sheets` | `smoke_mobile_c_feature_sheets.mjs` |
+| `golden:mobile-c1-strip-polish` | `smoke_mobile_c1_strip_polish.mjs` |
+| `golden:mobile-c2-popup-shift-fillet-tangent` | `smoke_mobile_c2_popup_shift_fillet_tangent.mjs` |
+| `golden:mobile-c3-roundedbox-fillet-tangent` | `smoke_mobile_c3_roundedbox_fillet_tangent.mjs` |
+| `golden:mobile-c3-sheet-delete-ribbon-z-gap` | `smoke_mobile_c3_sheet_delete_ribbon_z_gap.mjs` |
+| `golden:mobile-c4-strip-z-rounded-edge-pick` | `smoke_mobile_c4_strip_z_rounded_edge_pick.mjs` |
+| `golden:mobile-feature-bar` | `smoke_mobile_feature_bar_layout.mjs` |
+| `golden:mobile-modal-fit` | `smoke_mobile_modal_fit.mjs` |
+| `golden:move-artur-fixes` | `smoke_move_artur_fixes.mjs` |
+| `golden:move-body` | `smoke_move_body.mjs` |
+| `golden:move-face` | `smoke_move_face.mjs` |
+| `golden:move-one-axis` | `smoke_move_one_axis.mjs` |
+| `golden:multi-face-shell` | `smoke_multi_face_shell.mjs` |
+| `golden:multi-part-block-drop` | `smoke_multi_part_block_drop.mjs` |
+| `golden:multi-part-easy-fillet` | `smoke_multi_part_easy_fillet.mjs` |
+| `golden:multi-part-fillet` | `smoke_multi_part_fillet.mjs` |
+| `golden:named-contour` | `smoke_named_contour.mjs` |
+| `golden:open-assembly-choice-row` | `smoke_open_assembly_choice_row.mjs` |
+| `golden:overlay-visibility` | `smoke_overlay_visibility.mjs` |
+| `golden:page-zoom-lock` | `smoke_page_zoom_lock.mjs` |
+| `golden:part-delete-dialog` | `smoke_part_delete_dialog.mjs` |
+| `golden:part-dirty` | `smoke_part_dirty.mjs` |
+| `golden:part-groups` | `smoke_part_groups.mjs` |
+| `golden:part-hide-thumbnail` | `smoke_part_hide_thumbnail.mjs` |
+| `golden:part-overlays-stick` | `smoke_part_overlays_stick.mjs` |
+| `golden:part-rename-target` | `smoke_part_rename_target.mjs` |
+| `golden:part-script-restore` | `smoke_part_script_restore.mjs` |
+| `golden:part-thumb-cache` | `smoke_part_thumb_cache.mjs` |
+| `golden:partners-page` | `smoke_partners_page.mjs` |
+| `golden:parts-layout` | `smoke_parts_layout.mjs` |
+| `golden:per-part-undo` | `smoke_per_part_undo.mjs` |
+| `golden:permanent-ids` | `smoke_permanent_ids.mjs` |
+| `golden:pick-retarget` | `smoke_pick_retarget.mjs` |
+| `golden:plane-tool` | `smoke_plane_tool_preview.mjs` |
+| `golden:playtest-concave-fillet-tangency` | `smoke_playtest_concave_fillet_tangency.mjs` |
+| `golden:playtest-draft-fillet-tear` | `smoke_playtest_draft_fillet_tear.mjs` |
+| `golden:playtest-toasts` | `smoke_playtest_toasts.mjs` |
+| `golden:polish-adv-ux` | `smoke_polish_adv_ux.mjs` |
+| `golden:polygon-sides` | `smoke_polygon_sides.mjs` |
+| `golden:polyline-entity` | `smoke_polyline_entity.mjs` |
+| `golden:polyline-points` | `smoke_polyline_point_drag.mjs` |
+| `golden:profile-chip` | `smoke_profile_chip.mjs` |
+| `golden:puzzle-unlock` | `smoke_puzzle_unlock.mjs` |
+| `golden:quote-then-add` | `smoke_quote_then_add.mjs` |
+| `golden:repo-moved` | `smoke_repo_moved_branch.mjs` |
+| `golden:rollback-accept` | `smoke_rollback_accept.mjs` |
+| `golden:rollback-badge` | `smoke_rollback_badge.mjs` |
+| `golden:rollback-bar` | `smoke_rollback_bar.mjs` |
+| `golden:rollback-contour` | `smoke_rollback_contour.mjs` |
+| `golden:rollback-hit` | `smoke_rollback_hit.mjs` |
+| `golden:rollback-insert` | `smoke_rollback_insert.mjs` |
+| `golden:rollback-select` | `smoke_rollback_select.mjs` |
+| `golden:rollback-start` | `smoke_rollback_start.mjs` |
+| `golden:rollback-sync` | `smoke_rollback_sync.mjs` |
+| `golden:safari-page-lifecycle` | `smoke_safari_page_lifecycle.mjs` |
+| `golden:script-insert-part-binding` | `smoke_script_insert_part_binding.mjs` |
+| `golden:script-return` | `smoke_script_return.mjs` |
+| `golden:scs-bend-return` | `smoke_scs_bend_return.mjs` |
+| `golden:scs-handoff` | `smoke_scs_handoff.mjs` |
+| `golden:scs-s1` | `smoke_scs_s1_catalog.mjs` |
+| `golden:scs-s2` | `smoke_scs_s2_base_flange.mjs` |
+| `golden:scs-s3` | `smoke_scs_s3_bends.mjs` |
+| `golden:scs-s4` | `smoke_scs_s4_sidebar.mjs` |
+| `golden:scs-s5` | `smoke_scs_s5_dfm_export.mjs` |
+| `golden:scs-sheet-chip` | `smoke_scs_sheet_chip.mjs` |
+| `golden:scs-sheet-material` | `smoke_scs_sheet_material.mjs` |
+| `golden:scs-side-bend` | `smoke_scs_side_bend.mjs` |
+| `golden:scs-side-relief` | `smoke_scs_side_relief.mjs` |
+| `golden:scs-step-brep` | `smoke_scs_true_curve_step.mjs` |
+| `golden:session-identity` | `smoke_session_identity.mjs` |
+| `golden:sheet-bend-fillet-cut` | `smoke_sheet_bend_fillet_cut.mjs` |
+| `golden:sheet-contour-delete` | `smoke_sheet_contour_delete.mjs` |
+| `golden:sheet-contour-refs` | `smoke_sheet_contour_refs.mjs` |
+| `golden:sheet-cutout-fillet` | `smoke_sheet_cutout_fillet.mjs` |
+| `golden:sheet-extrude` | `smoke_sheet_extrude.mjs` |
+| `golden:sheet-feature-mix` | `smoke_sheet_feature_mix.mjs` |
+| `golden:sheet-hole` | `smoke_sheet_hole.mjs` |
+| `golden:sheet-insert-append` | `smoke_sheet_insert_append.mjs` |
+| `golden:sheet-metal-reopen` | `smoke_sheet_metal_reopen.mjs` |
+| `golden:sheet-metal-shape` | `smoke_sheet_metal_shape.mjs` |
+| `golden:sheet-ribbon` | `smoke_sheet_ribbon.mjs` |
+| `golden:sheet-sliders` | `smoke_sheet_sliders.mjs` |
+| `golden:sheet-start-designing` | `smoke_sheet_start_designing.mjs` |
+| `golden:shell-draft-tube` | `smoke_shell_draft_tube.mjs` |
+| `golden:shell-face-pick` | `smoke_shell_face_pick_ui.mjs` |
+| `golden:sketch-face-camera` | `smoke_sketch_face_camera.mjs` |
+| `golden:sketch-status-colours` | `smoke_sketch_status_colours.mjs` |
+| `golden:slice-a-feature-ribbon` | `smoke_slice_a_feature_ribbon.mjs` |
+| `golden:slice-bc-edge-chip-tracking` | `smoke_slice_bc_edge_chip_tracking.mjs` |
+| `golden:slice01` | `smoke_slice01.mjs` |
+| `golden:slice03` | `smoke_slice03_format.mjs` |
+| `golden:slice04` | `smoke_slice04_pack.mjs` |
+| `golden:slice09` | `smoke_slice09_helper_compose.mjs` |
+| `golden:slice10` | `smoke_slice10_palette_v2.mjs` |
+| `golden:slice11` | `smoke_slice11_face_feature.mjs` |
+| `golden:slice12` | `smoke_slice12_edge_center.mjs` |
+| `golden:slice21` | `smoke_slice21_cross_section.mjs` |
+| `golden:slice22` | `smoke_slice22_edge_sweep_path.mjs` |
+| `golden:slice23` | `smoke_slice23_fillet_via_sweep.mjs` |
+| `golden:slice24` | `smoke_slice24_contour_mode.mjs` |
+| `golden:slice25` | `smoke_slice25_extrude.mjs` |
+| `golden:slice26` | `smoke_slice26_revolve.mjs` |
+| `golden:slice27` | `smoke_slice27_fillet_mode.mjs` |
+| `golden:slice28` | `smoke_slice28_loft.mjs` |
+| `golden:slice30` | `smoke_slice30_sweep.mjs` |
+| `golden:slot-preview` | `smoke_slot_preview.mjs` |
+| `golden:solids-by-reference` | `smoke_solids_by_reference.mjs` |
+| `golden:ui-desktop-rail-error-undo` | `smoke_ui_desktop_rail_error_undo.mjs` |
+| `golden:ui-polish` | `smoke_ui_polish_icons_layout.mjs` |
+| `golden:ui-polish-four` | `smoke_ui_polish_four.mjs` |
+| `golden:ui-six-tweaks` | `smoke_ui_six_tweaks_strip_viewport.mjs` |
+| `golden:viewer-title-actions` | `smoke_viewer_title_actions.mjs` |
+| `golden:viewport-orbit` | `smoke_viewport_orbit_loop.mjs` |
+| `golden:viewport-safari-gesture-zoom` | `smoke_viewport_safari_gesture_zoom.mjs` |
+| `golden:workplane` | `smoke_workplane_strip_ui.mjs` |
+| `golden:workplane-add` | `smoke_workplane_add.mjs` |
+
+## Helper assets (no npm script)
+
+Playwright screenshot helpers (`*_shot.js`), copy-paste puzzle scripts (`puzzle_*.js`), and other utilities in `scripts/golden/` are imported by the smokes above. Run the parent `npm run golden:*` entry, not these files directly.
+
+| File | Role |
+| --- | --- |
+| `puzzle_clearance_plate.js` | Copy-paste SurfCAD script: plate + M3 clearance + M4 cbore + chamfer |
+| `puzzle_fillet_box.js` | Copy-paste SurfCAD script: filleted box (convexEdges) |
+| `manifold-resolve-hook.mjs` | Shared hook for smokes that need npm `manifold-3d` |
+| `scs_sandbox.mjs` | Shared SCS test harness |
+| `scripts/golden/lib/` | Playwright consent preset and shared browser helpers |

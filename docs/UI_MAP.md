@@ -222,8 +222,8 @@ Desktop specifics:
   and the slider runs from 0.5 mm to 25 mm on a log curve (`src/utils/blendSize.js`).
   A typed size outside that range is kept and the thumb sits on the nearer end.
   Other length sliders use the curve and the thumb snap in
-  `src/utils/sliderMap.js` (0.1 mm, or 1/16 in). The contract is
-  `docs/plans/slider-plan.md`.
+  `src/utils/sliderMap.js` (0.1 mm, or 1/16 in). See `docs/architecture.md`
+  (**Characteristic length**, **Slider curve and snap**).
 - CAD title is the same "part in assembly" line as mobile. No toolbar carries it.
 - **Parts feed:** the same list as the mobile Parts stage, mounted to the left
   of the editor (`data-parts-feed-placement="desktop-left"`). The ribbon's
