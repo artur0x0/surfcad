@@ -53,12 +53,16 @@ export function createRateLimiter({ limit, windowMs, maxKeys = 10_000, now = () 
  * @param {(req: any) => string} keyFor
  * @param {string} message
  */
-export function rateLimitMiddleware(limiter, keyFor, message) {
+export function rateLimitMiddleware(limiter, keyFor, message, extras = {}) {
   return (req, res, next) => {
     const verdict = limiter.check(keyFor(req));
     if (!verdict.allowed) {
       res.set('Retry-After', String(verdict.retryAfterSec));
-      return res.status(429).json({ error: message, retryAfterSec: verdict.retryAfterSec });
+      return res.status(429).json({
+        error: message,
+        retryAfterSec: verdict.retryAfterSec,
+        ...extras,
+      });
     }
     return next();
   };

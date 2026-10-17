@@ -37,6 +37,7 @@ const nodeGlobals = {
   FormData: 'readonly',
   AbortController: 'readonly',
   AbortSignal: 'readonly',
+  Blob: 'readonly',
 }
 
 export default [
