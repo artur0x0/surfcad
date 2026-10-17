@@ -28,6 +28,7 @@ import { formatAgentErrors } from '../agent/state/formatErrors.js';
 import { createPickSessions } from '../agent/pick/session.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { emptyPartHistory, pushPartHistory } from './partHistory.js';
+import { readSurfId, withSurfId } from './git/surfId.js';
 
 export const AGENT_STORAGE_KEY = 'surfcadAgent';
 
@@ -306,21 +307,32 @@ export function createSurfcadBridge(hostSource) {
     }
   }
 
+  function normalizeAgentScript(text) {
+    const raw = typeof text === 'string' ? text : '';
+    const readSurf = hostFn('readActivePartSurfId');
+    const surfId = readSurf ? readSurf() : null;
+    if (!surfId) return raw;
+    const current = readSurfId(raw);
+    if (current === surfId) return raw;
+    return withSurfId(raw, surfId);
+  }
+
   async function mutate(text, message) {
+    const normalized = normalizeAgentScript(text);
     const readHistory = hostFn('readHistory');
     const setEditor = hostFn('setEditor');
     const execute = hostFn('execute');
     const writeHistory = hostFn('writeHistory');
     const before = cloneAgentHistory(readHistory ? readHistory() : emptyPartHistory());
-    if (setEditor) setEditor(text);
+    if (setEditor) setEditor(normalized);
     let outcome;
     try {
-      outcome = execute ? await execute(text) : failedExecute(new Error('execute missing'));
+      outcome = execute ? await execute(normalized) : failedExecute(new Error('execute missing'));
     } catch (err) {
       outcome = failedExecute(err);
     }
-    if (writeHistory) writeHistory(commitAgentStep(before, text, message));
-    return remember(outcome, text);
+    if (writeHistory) writeHistory(commitAgentStep(before, normalized, message));
+    return remember(outcome, normalized);
   }
 
   function failedExecute(err) {

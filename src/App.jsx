@@ -8651,6 +8651,11 @@ const App = () => {
         })),
       });
     },
+    readActivePartSurfId() {
+      const doc = assemblyRef.current;
+      const part = doc?.parts?.find((row) => row.id === doc?.activeId);
+      return part?.surfId || null;
+    },
     readActivePartStatus() {
       const doc = assemblyRef.current;
       const id = doc?.activeId != null ? String(doc.activeId) : '';

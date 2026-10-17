@@ -21,7 +21,8 @@ export const COMMAND_META = {
     mutates: false,
   },
   set_script: {
-    description: 'Write the editor, run the script, and record one undo step when the text changes.',
+    description:
+      'Write the editor, run the script, and record one undo step when the text changes. Preserves or re-injects the active part `// @surf-id` header when the part has a surf id.',
     result: MUTATE_RESULT_SCHEMA,
     errors: ['bad_args', 'internal'],
     mutates: true,
