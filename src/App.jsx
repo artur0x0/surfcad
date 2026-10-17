@@ -307,6 +307,7 @@ import {
   listVaultBranches,
   switchVaultBranch,
   createVaultBranch,
+  shouldSwitchToCreatedBranch,
   deleteVaultBranch,
   githubCompareUrl,
   canDeleteVaultBranch,
@@ -2966,6 +2967,26 @@ const App = () => {
     return baseline?.branch || vault?.defaultBranch || 'main';
   };
 
+  /** True when git Save would be enabled (content ≠ tip, or first-commit chrome). */
+  const isGitWorkingCopyDirty = () => {
+    const doc = assemblyRef.current;
+    if (!doc || doc.source !== 'git') return false;
+    const baseline = gitBaselineRef.current;
+    const parts = doc.parts || [];
+    if (!baseline) {
+      return parts.some((p) => String(p.id).startsWith('local:') || !isVaultPartPath(p.id));
+    }
+    let liveScript = null;
+    if (!suppressPartSaveRef.current) {
+      const live = codeEditorRef.current?.getContent?.();
+      if (typeof live === 'string') liveScript = live;
+    }
+    return isWorkspaceDirty(doc, partScriptsRef.current, baseline, {
+      liveId: doc.activeId,
+      liveScript,
+    });
+  };
+
   const readAgentGitWriteTarget = () => {
     const vault = gitVaultRef.current;
     const repo = vault?.repo
@@ -4516,7 +4537,12 @@ const App = () => {
     setPartSync({ ...gitSync().partStates() });
   };
 
-  /** G11: create a branch from the current working tip. */
+  /**
+   * G11 / git_branch_create: create a branch from the current working tip
+   * and switch onto it when the working copy is clean (Parts Create).
+   * Dirty Create leaves the session on the current branch so unsaved edits
+   * are not discarded; Switch still confirms then reloads.
+   */
   const handleCreateBranch = async (branchName) => {
     try {
       const vault = await ensureGitVault();
@@ -4525,7 +4551,30 @@ const App = () => {
         gitAdapterRef.current, vault.repo, branchName,
         { fromBranch: from },
       );
-      return { status: 'created', branch: created.name, sha: created.sha };
+      if (!shouldSwitchToCreatedBranch({ dirty: isGitWorkingCopyDirty() })) {
+        return {
+          status: 'created',
+          branch: created.name,
+          sha: created.sha,
+          switched: false,
+        };
+      }
+      const switched = await handleSwitchBranch(created.name);
+      if (switched.status === 'error') {
+        return {
+          status: 'created',
+          branch: created.name,
+          sha: created.sha,
+          switched: false,
+          switchError: switched.error || 'Could not switch to the new branch',
+        };
+      }
+      return {
+        status: 'created',
+        branch: created.name,
+        sha: created.sha,
+        switched: true,
+      };
     } catch (err) {
       return { status: 'error', error: err.message || 'Could not create branch' };
     }
