@@ -2,6 +2,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import { initSentryForExpress, installSentryErrorHandler } from './monitoring/sentry.js';
 
 // Config and DB
 import config from './config/index.js';
@@ -34,6 +35,7 @@ try {
 }
 
 const app = express();
+const sentryEnabled = initSentryForExpress(app);
 
 // ============ Trust Proxy for Auth Redirects ===============
 app.set('trust proxy', config.trustProxyHops);
@@ -128,8 +130,15 @@ app.get('/api/health', (req, res) => {
 });
 
 // ============ Error Handler ============
+if (sentryEnabled) {
+  installSentryErrorHandler(app);
+}
+
 app.use((err, req, res, next) => {
   console.error('[Server] Unhandled error:', err);
+  if (res.headersSent) {
+    return next(err);
+  }
   res.status(500).json({ 
     error: 'Internal server error',
     ...(config.env === 'development' && { details: err.message }),
