@@ -22,7 +22,7 @@ export function isLoopbackAddress(address) {
  * Extra origins (full origin strings) allowed in tests via env.
  * @returns {Set<string>}
  */
-function extraAllowedOrigins() {
+export function extraAllowedOrigins() {
   const raw = process.env.SURFCAD_AGENT_BRIDGE_EXTRA_ORIGINS || '';
   const set = new Set();
   for (const part of raw.split(',')) {

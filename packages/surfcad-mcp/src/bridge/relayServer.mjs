@@ -1,13 +1,15 @@
 /**
  * Loopback HTTP/WebSocket server for the M1 agent-bridge relay.
  * Binds 127.0.0.1 only. Handles CORS / Private Network Access preflight for
- * https://surfcad.com → ws://127.0.0.1 upgrades.
+ * https://surfcad.com → ws://127.0.0.1 upgrades, and serves the `/bridge`
+ * popup page for browsers that block that upgrade (Safari).
  */
 
 import { createServer } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { createAgentBridgeRelayHub } from './relayHub.mjs';
-import { isAllowedHttpOrigin, isLoopbackAddress } from './localAddress.mjs';
+import { extraAllowedOrigins, isAllowedHttpOrigin, isLoopbackAddress } from './localAddress.mjs';
+import { handleBridgeRequest } from './bridgePage.mjs';
 
 export const DEFAULT_RELAY_PORT = 17341;
 
@@ -116,6 +118,12 @@ export function startAgentBridgeRelay(options = {}) {
         'Access-Control-Max-Age': '86400',
       });
       res.end();
+      return;
+    }
+
+    const bound = server.address();
+    const boundPort = bound && typeof bound === 'object' ? bound.port : port;
+    if (handleBridgeRequest(req, res, { port: boundPort, extraOrigins: [...extraAllowedOrigins()] })) {
       return;
     }
 
