@@ -9,6 +9,42 @@ import { PAIR_MSG } from './relayMessages.js';
 /**
  * @param {string | undefined} userAgent
  */
+/**
+ * @param {string | undefined} hostname
+ */
+export function isLocalDevPageHostname(hostname) {
+  if (!hostname || typeof hostname !== 'string') return false;
+  const h = hostname.trim().toLowerCase();
+  return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1' || h.startsWith('127.');
+}
+
+/**
+ * iOS (all browsers use WebKit) or desktop Safari.
+ *
+ * @param {string | undefined} userAgent
+ */
+export function isWebKitLoopbackPairingBrowser(userAgent) {
+  const ua = String(userAgent || '');
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  if (/Safari/i.test(ua) && !/Chrome|Chromium|Edg\/|CriOS|FxiOS|EdgiOS/i.test(ua)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * On https non-localhost pages, Safari/WebKit cannot open ws://127.0.0.1 — skip pairing.
+ *
+ * @param {{ protocol?: string, hostname?: string, userAgent?: string }} [env]
+ */
+export function shouldPreemptWebKitHttpsPairing(env = {}) {
+  const protocol = typeof env.protocol === 'string' ? env.protocol : '';
+  const hostname = typeof env.hostname === 'string' ? env.hostname : '';
+  if (protocol !== 'https:') return false;
+  if (isLocalDevPageHostname(hostname)) return false;
+  return isWebKitLoopbackPairingBrowser(env.userAgent);
+}
+
 export function detectBrowserFamily(userAgent) {
   const ua = String(userAgent || '');
   if (/Safari/i.test(ua) && !/Chrome|Chromium|Edg\//i.test(ua)) return 'safari';

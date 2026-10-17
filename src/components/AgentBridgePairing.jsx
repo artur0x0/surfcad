@@ -7,6 +7,7 @@ import {
   MCP_START_COMMAND,
   browserBlockedHint,
   detectBrowserFamily,
+  shouldPreemptWebKitHttpsPairing,
 } from '../agent/ws/connectionErrors.js';
 
 /**
@@ -19,10 +20,15 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
   const [token, setToken] = useState('');
   const [state, setState] = useState('idle');
   const [issue, setIssue] = useState(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(null);
   const connRef = useRef(null);
 
   const pageSecure = typeof window !== 'undefined' && window.location?.protocol === 'https:';
+  const webkitHttpsBlocked = typeof window !== 'undefined' && shouldPreemptWebKitHttpsPairing({
+    protocol: window.location.protocol,
+    hostname: window.location.hostname,
+    userAgent: navigator.userAgent,
+  });
 
   const stopConnection = useCallback(() => {
     connRef.current?.disconnect();
@@ -41,14 +47,26 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
   const copyMcpCommand = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(MCP_START_COMMAND);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopied('mcp');
+      setTimeout(() => setCopied(null), 2000);
     } catch {
-      setCopied(false);
+      setCopied(null);
+    }
+  }, []);
+
+  const copyPageLink = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied('link');
+      setTimeout(() => setCopied(null), 2000);
+    } catch {
+      setCopied(null);
     }
   }, []);
 
   const startPairing = useCallback(() => {
+    if (webkitHttpsBlocked) return;
     if (!enabled || typeof window === 'undefined' || !window.surfcad?.call) return;
     stopConnection();
     const code = createPairingToken(6);
@@ -63,7 +81,7 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
     });
     connRef.current = conn;
     conn.connect();
-  }, [enabled, stopConnection, pageSecure]);
+  }, [enabled, stopConnection, pageSecure, webkitHttpsBlocked]);
 
   if (!enabled) return null;
 
@@ -83,7 +101,7 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
           onClick={copyMcpCommand}
           data-ui-action="data-agent-bridge-copy-mcp"
         >
-          {copied ? 'Copied' : 'Copy'}
+          {copied === 'mcp' ? 'Copied' : 'Copy'}
         </button>
       </div>
     </div>
@@ -114,7 +132,26 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
         Local agent bridge (127.0.0.1). Approve each client — nothing pairs automatically.
       </p>
       {issueBlock}
-      {!token && (
+      {webkitHttpsBlocked ? (
+        <div
+          className="rounded border border-chrome-border/80 bg-chrome-surface/60 px-2 py-2 text-xs mb-2"
+          data-agent-bridge-unsupported="webkit-https"
+        >
+          <p className="text-chrome-text mb-1.5">Pairing works in Chrome or Edge for now.</p>
+          <p className="text-chrome-text-secondary mb-2">
+            Open this page in Chrome or Edge on your computer to connect a local MCP client.
+          </p>
+          <button
+            type="button"
+            className="w-full rounded bg-chrome-border/90 px-2 py-1.5 text-white hover:bg-gray-600"
+            onClick={copyPageLink}
+            data-ui-action="data-agent-bridge-copy-link"
+          >
+            {copied === 'link' ? 'Copied' : 'Copy link'}
+          </button>
+        </div>
+      ) : null}
+      {!webkitHttpsBlocked && !token && (
         <button
           type="button"
           className="w-full rounded bg-chrome-border/80 px-3 py-2 text-left text-white hover:bg-chrome-border"
@@ -124,7 +161,7 @@ export default function AgentBridgePairing({ enabled, embedded = false }) {
           Show pairing code
         </button>
       )}
-      {token && (
+      {!webkitHttpsBlocked && token && (
         <>
           <div className="font-mono text-lg tracking-widest text-center py-1" data-agent-bridge-code="">
             {token}
