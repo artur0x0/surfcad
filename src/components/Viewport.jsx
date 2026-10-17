@@ -52,9 +52,10 @@ import { fillAgentHost } from '../agent/host';
 import { buildAgentMode } from '../agent/state/mode';
 import { buildCameraState } from '../agent/state/camera';
 import { buildSelection } from '../agent/state/selection';
-import { applyTrackballFeel } from '../utils/trackballFeel';
+import { applyTrackballFeel, trackballRotateSpeedForPointer } from '../utils/trackballFeel';
 import { installPageZoomLock } from '../utils/pageZoomLock';
 import { readViewportContainerSize, resizeViewportRenderer } from '../utils/viewportResize';
+import { installViewportGestureZoom } from '../utils/viewportGestureZoom';
 import { formatDisplayNumber } from '../utils/displayUnit';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
@@ -10486,6 +10487,15 @@ const Viewport = forwardRef(({
     return installPageZoomLock(canvas);
   }, []);
 
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    return installViewportGestureZoom(canvas, {
+      getCamera: () => cameraRef.current,
+      getControls: () => controlsRef.current,
+    });
+  }, []);
+
   // Initialize Three.js scene
   useEffect(() => {
     console.log('[Viewport] Initializing Three.js scene');
@@ -10499,7 +10509,9 @@ const Viewport = forwardRef(({
     let rafId = 0;
     let loopAlive = true;
     let orbitControls = null;
-    
+    let orbitPointerDom = null;
+    let onPointerDownRotateSpeed = null;
+
     const getContainerSize = () => readViewportContainerSize(container);
 
     const syncLineMaterialResolution = (width, height) => {
@@ -11196,6 +11208,12 @@ const Viewport = forwardRef(({
       orbitControls = controls;
       controlsRef.current = controls;
 
+      onPointerDownRotateSpeed = (event) => {
+        controls.rotateSpeed = trackballRotateSpeedForPointer(event.pointerType);
+      };
+      orbitPointerDom = renderer.domElement;
+      orbitPointerDom.addEventListener('pointerdown', onPointerDownRotateSpeed);
+
       // Add axis helper. Origin colors are the shared triad constant.
       const axisHelper = new AxesHelper(50);
       applyTriadAxisColors(axisHelper);
@@ -11284,6 +11302,11 @@ const Viewport = forwardRef(({
       loopAlive = false;
       cancelAnimationFrame(rafId);
       rafId = 0;
+      if (orbitPointerDom && onPointerDownRotateSpeed) {
+        orbitPointerDom.removeEventListener('pointerdown', onPointerDownRotateSpeed);
+        orbitPointerDom = null;
+        onPointerDownRotateSpeed = null;
+      }
       if (orbitControls) {
         orbitControls.dispose();
         if (controlsRef.current === orbitControls) controlsRef.current = null;

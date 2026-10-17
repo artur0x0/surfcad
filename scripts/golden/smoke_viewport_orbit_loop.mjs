@@ -19,7 +19,7 @@ import { chromium } from 'playwright-core';
 import {
   TRACKBALL_DYNAMIC_DAMPING_FACTOR,
   TRACKBALL_PAN_SPEED,
-  TRACKBALL_ROTATE_SPEED,
+  TRACKBALL_DESKTOP_ROTATE_SPEED,
   TRACKBALL_ZOOM_SPEED,
 } from '../../src/utils/trackballFeel.js';
 
@@ -44,7 +44,7 @@ function check(name, cond, detail = '') {
 
 console.log('viewport orbit loop');
 
-check('rotateSpeed is 2× the TrackballControls default', TRACKBALL_ROTATE_SPEED === 2);
+check('desktop rotateSpeed is 3× the TrackballControls default', TRACKBALL_DESKTOP_ROTATE_SPEED === 3);
 check('zoomSpeed is 2× the TrackballControls default', TRACKBALL_ZOOM_SPEED === 2.4);
 check('panSpeed is 2× the TrackballControls default', TRACKBALL_PAN_SPEED === 0.6);
 check('dynamicDampingFactor matches two 0.2 steps', TRACKBALL_DYNAMIC_DAMPING_FACTOR === 0.36);
@@ -250,7 +250,7 @@ try {
       expect: { rotate, zoom, pan, damp },
     };
   }, {
-    rotate: TRACKBALL_ROTATE_SPEED,
+    rotate: TRACKBALL_DESKTOP_ROTATE_SPEED,
     zoom: TRACKBALL_ZOOM_SPEED,
     pan: TRACKBALL_PAN_SPEED,
     damp: TRACKBALL_DYNAMIC_DAMPING_FACTOR,

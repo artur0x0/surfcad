@@ -1,6 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { BrandWordmark } from '../components/brand/BrandWordmark.jsx';
 import { PARTNER_TYPES } from '../utils/partnerForm.js';
+import {
+  TURNSTILE_LOAD_ERROR,
+  TURNSTILE_VERIFY_ERROR,
+  buildTurnstileRenderConfig,
+  acquireTurnstileToken,
+  runPartnerFormSubmit,
+} from '../utils/partnerTurnstileFlow.js';
 import { loadTurnstileScript, resolveTurnstileSiteKey } from '../utils/turnstile.js';
 
 const PAPER = '#FAFAF9';
@@ -11,9 +18,6 @@ const MIST = '#E6E7EB';
 const fieldClass =
   'w-full rounded-lg border bg-white px-3 py-2.5 text-base text-[#16171D] outline-none transition focus:border-[#16171D] focus:ring-2 focus:ring-[#16171D]/10';
 
-const TURNSTILE_RETRY =
-  'We could not verify your submission. Please refresh the page and try again.';
-
 export default function PartnersPage() {
   const [partnerType, setPartnerType] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -22,9 +26,11 @@ export default function PartnersPage() {
   const turnstileSiteKey = resolveTurnstileSiteKey();
   const turnstileContainerRef = useRef(null);
   const turnstileWidgetIdRef = useRef(null);
+  const turnstileTokenRef = useRef(null);
 
   useEffect(() => {
-    if (!turnstileSiteKey || !turnstileContainerRef.current) return undefined;
+    const container = turnstileContainerRef.current;
+    if (!turnstileSiteKey || !container) return undefined;
     let cancelled = false;
 
     loadTurnstileScript()
@@ -37,14 +43,30 @@ export default function PartnersPage() {
             /* stale widget */
           }
         }
-        turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current, {
-          sitekey: turnstileSiteKey,
-          size: 'invisible',
-        });
+        turnstileTokenRef.current = null;
+        const widgetId = window.turnstile.render(
+          turnstileContainerRef.current,
+          buildTurnstileRenderConfig(turnstileSiteKey, {
+            onToken: (token) => {
+              turnstileTokenRef.current = token;
+            },
+            onError: () => {
+              turnstileTokenRef.current = null;
+            },
+            onExpired: () => {
+              turnstileTokenRef.current = null;
+            },
+            onTimeout: () => {
+              turnstileTokenRef.current = null;
+            },
+          }),
+        );
+        turnstileWidgetIdRef.current = widgetId;
+        turnstileContainerRef.current.setAttribute('data-turnstile-widget-id', String(widgetId));
       })
       .catch(() => {
         if (!cancelled) {
-          setError('Could not load form protection. Check your connection and refresh.');
+          setError(TURNSTILE_LOAD_ERROR);
         }
       });
 
@@ -58,25 +80,41 @@ export default function PartnersPage() {
         }
         turnstileWidgetIdRef.current = null;
       }
+      container.removeAttribute('data-turnstile-widget-id');
+      turnstileTokenRef.current = null;
     };
   }, [turnstileSiteKey]);
+
+  function resetTurnstileWidget() {
+    turnstileTokenRef.current = null;
+    if (turnstileWidgetIdRef.current != null && window.turnstile) {
+      try {
+        window.turnstile.reset(turnstileWidgetIdRef.current);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  function retryAfterError() {
+    setError('');
+    resetTurnstileWidget();
+  }
 
   async function requestTurnstileToken() {
     if (!turnstileSiteKey) {
       if (import.meta.env.DEV) return '';
-      throw new Error(TURNSTILE_RETRY);
+      throw new Error(TURNSTILE_VERIFY_ERROR);
     }
     await loadTurnstileScript();
     if (!window.turnstile || turnstileWidgetIdRef.current == null) {
-      throw new Error(TURNSTILE_RETRY);
+      throw new Error(TURNSTILE_VERIFY_ERROR);
     }
-    return new Promise((resolve, reject) => {
-      window.turnstile.execute(turnstileWidgetIdRef.current, {
-        callback: (token) => resolve(token),
-        'error-callback': () => reject(new Error(TURNSTILE_RETRY)),
-        'expired-callback': () => reject(new Error(TURNSTILE_RETRY)),
-      });
-    });
+    const widgetId = turnstileWidgetIdRef.current;
+    const cached = turnstileTokenRef.current;
+    turnstileTokenRef.current = null;
+    if (cached) return cached;
+    return acquireTurnstileToken(window.turnstile, widgetId);
   }
 
   async function onSubmit(event) {
@@ -95,33 +133,21 @@ export default function PartnersPage() {
       company_fax: String(data.get('company_fax') || ''),
     };
 
-    setSubmitting(true);
-    try {
-      const turnstileToken = await requestTurnstileToken();
-      const res = await fetch('/api/partners', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, turnstileToken }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(body.error || 'Could not send your message');
-      }
+    const result = await runPartnerFormSubmit({
+      payload,
+      requestTurnstileToken,
+      setSubmitting,
+    });
+
+    if (result.ok) {
       setDone(true);
       form.reset();
       setPartnerType('');
-      if (turnstileWidgetIdRef.current != null && window.turnstile) {
-        try {
-          window.turnstile.reset(turnstileWidgetIdRef.current);
-        } catch {
-          /* ignore */
-        }
-      }
-    } catch (err) {
-      setError(err?.message || 'Could not send your message');
-    } finally {
-      setSubmitting(false);
+      resetTurnstileWidget();
+      return;
     }
+
+    setError(result.error || TURNSTILE_VERIFY_ERROR);
   }
 
   return (
@@ -138,7 +164,7 @@ export default function PartnersPage() {
               Become a partner
             </h1>
             <p className="text-base leading-relaxed" style={{ color: GREY }} data-partners-lead="">
-              Tell us what you offer and how you would like to work with SurfCAD. We read every note.
+              SurfCAD connects designers with fabricators, seamlessly. Integration is free, and we&apos;ll help set things up to fit your workflow. Get quote requests by email with the part attached and take it from there, or let us automate quoting and payment so you only receive qualified, paid orders. Have another idea for working together? Drop us a line.
             </p>
           </div>
         </header>
@@ -178,8 +204,7 @@ export default function PartnersPage() {
             <div
               ref={turnstileContainerRef}
               data-partners-turnstile=""
-              className="sr-only"
-              aria-hidden="true"
+              className="min-h-[65px]"
             />
 
             <label className="block space-y-1.5">
@@ -280,9 +305,17 @@ export default function PartnersPage() {
             </label>
 
             {error && (
-              <p className="text-sm text-red-700" role="alert" data-partners-error="">
-                {error}
-              </p>
+              <div className="flex flex-wrap items-center gap-3 text-sm text-red-700" role="alert" data-partners-error="">
+                <span>{error}</span>
+                <button
+                  type="button"
+                  className="font-semibold underline underline-offset-2"
+                  data-partners-retry=""
+                  onClick={retryAfterError}
+                >
+                  Retry
+                </button>
+              </div>
             )}
 
             <button

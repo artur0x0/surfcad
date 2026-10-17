@@ -1,0 +1,140 @@
+# Publishes packages/surfcad-mcp to npm via Trusted Publishing (OIDC).
+# npm trusted publisher: owner artur0x0, repo surfcad, workflow publish-mcp.yml.
+
+name: Publish surfcad-mcp
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  push:
+    tags:
+      - surfcad-mcp-v*
+  workflow_dispatch:
+
+concurrency:
+  group: publish-surfcad-mcp
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    name: npm publish surfcad-mcp
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    steps:
+      - name: Resolve checkout ref
+        id: refs
+        run: |
+          set -euo pipefail
+          case "${GITHUB_EVENT_NAME}" in
+            workflow_run)
+              echo "ref=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "ref=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.refs.outputs.ref }}
+          fetch-depth: 2
+
+      - name: Validate trigger and decide whether to publish
+        id: gate
+        run: |
+          set -euo pipefail
+          PKG=packages/surfcad-mcp/package.json
+          VERSION="$(jq -r .version "$PKG")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          case "${GITHUB_EVENT_NAME}" in
+            workflow_run)
+              PARENT_JSON="$(git show HEAD^:"$PKG" 2>/dev/null || true)"
+              if [[ -z "$PARENT_JSON" ]]; then
+                PARENT_VERSION=""
+              else
+                PARENT_VERSION="$(jq -r .version <<<"$PARENT_JSON")"
+              fi
+              if [[ "$VERSION" == "$PARENT_VERSION" ]]; then
+                echo "Package version unchanged ($VERSION); skipping publish for workflow_run."
+                echo "should_publish=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              echo "Version bumped $PARENT_VERSION -> $VERSION (workflow_run on main after CI success)."
+              ;;
+            push)
+              TAG="${GITHUB_REF#refs/tags/}"
+              EXPECTED="surfcad-mcp-v${VERSION}"
+              if [[ "$TAG" != "$EXPECTED" ]]; then
+                echo "Tag $TAG must equal $EXPECTED for package version $VERSION"
+                exit 1
+              fi
+              echo "Tag $TAG matches package version $VERSION."
+              ;;
+            workflow_dispatch)
+              if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+                echo "workflow_dispatch must be run on branch main (got ${GITHUB_REF})."
+                exit 1
+              fi
+              echo "Manual publish requested on main for version $VERSION."
+              ;;
+            *)
+              echo "Unexpected event: ${GITHUB_EVENT_NAME}"
+              exit 1
+              ;;
+          esac
+          echo "should_publish=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.should_publish == 'true'
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Upgrade npm for OIDC trusted publishing
+        if: steps.gate.outputs.should_publish == 'true'
+        run: |
+          set -euo pipefail
+          npm i -g npm@latest
+          npm --version
+
+      - name: Install monorepo dependencies
+        if: steps.gate.outputs.should_publish == 'true'
+        run: npm ci
+
+      - name: Test surfcad-mcp package
+        if: steps.gate.outputs.should_publish == 'true'
+        working-directory: packages/surfcad-mcp
+        run: |
+          set -euo pipefail
+          npm test
+          npm run smoke:pack
+
+      - name: Skip when version already on npm
+        if: steps.gate.outputs.should_publish == 'true'
+        id: npm_exists
+        working-directory: packages/surfcad-mcp
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.gate.outputs.version }}"
+          if npm view "surfcad-mcp@${VERSION}" version 2>/dev/null | grep -q .; then
+            echo "surfcad-mcp@${VERSION} is already on npm; skipping publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "surfcad-mcp@${VERSION} not found on npm; will publish."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm
+        if: steps.gate.outputs.should_publish == 'true' && steps.npm_exists.outputs.publish == 'true'
+        working-directory: packages/surfcad-mcp
+        run: npm publish --access public
