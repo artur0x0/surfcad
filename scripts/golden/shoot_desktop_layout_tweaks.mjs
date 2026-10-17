@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { serializeAssembly } from '../../src/utils/assembly.js';
 
 const PORT = Number(process.env.SMOKE_PORT || 4329);
@@ -196,6 +197,7 @@ try {
     executablePath: CHROME,
     args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
   await capture(browser, 1440, 900);
   await capture(browser, 390, 844);
   await browser.close();

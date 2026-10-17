@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { newPartStarterScript } from '../../src/utils/helperPaletteSnippets.js';
 import { focusPartHistoryForUndo } from './lib/focusPartHistory.mjs';
 
@@ -147,6 +148,7 @@ const browser = await chromium.launch({
   headless: true,
   args: ['--no-sandbox', '--disable-dev-shm-usage'],
 });
+attachConsentPresetToBrowser(browser);
 
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 await page.route('**/api/auth/me', (route) => route.fulfill({

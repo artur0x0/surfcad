@@ -12,14 +12,10 @@ import SentryErrorBoundary from './components/SentryErrorBoundary.jsx';
 import SentryUserSync from './components/SentryUserSync.jsx';
 import { bootstrapSentry } from './utils/sentryClient.js';
 import CookieConsentController from './components/CookieConsentController';
-import {
-  applyGpcDefaultOnFirstVisit,
-  ensureAutomationConsentPreset,
-} from './utils/consent.js';
+import { applyGpcDefaultOnFirstVisit } from './utils/consent.js';
 
 bootstrapSentry();
 applyGpcDefaultOnFirstVisit();
-ensureAutomationConsentPreset();
 
 const PARTNERS_PATH = '/partners';
 

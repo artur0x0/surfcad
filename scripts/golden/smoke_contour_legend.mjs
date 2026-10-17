@@ -15,6 +15,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 const PORT = Number(process.env.SMOKE_PORT || 5341);
 const APP_URL = `http://127.0.0.1:${PORT}/`;
@@ -447,6 +448,7 @@ const browser = await chromium.launch({
   headless: true,
   args: ['--no-sandbox', '--disable-dev-shm-usage'],
 });
+attachConsentPresetToBrowser(browser);
 try {
   await runSize(browser, { name: '390', width: 390, height: 844, mobile: true });
   await runSize(browser, { name: '1280', width: 1280, height: 800, mobile: false });

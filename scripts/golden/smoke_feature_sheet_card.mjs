@@ -19,6 +19,7 @@ import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
 import autoprefixer from 'autoprefixer';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { PerspectiveCamera, Vector3 } from 'three';
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 import { applyTrackballFeel } from '../../src/utils/trackballFeel.js';
@@ -799,6 +800,7 @@ html, body, #root { margin: 0; height: 100%; background: #111; }
     executablePath: exe,
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
+attachConsentPresetToBrowser(browser);
   const pageErrors = [];
   try {
     mkdirSync(shotDir, { recursive: true });

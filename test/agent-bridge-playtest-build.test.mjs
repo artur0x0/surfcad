@@ -6,6 +6,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from '../scripts/golden/lib/presetConsentInit.mjs';
 import { WebSocket } from 'ws';
 import { PAIR_MSG } from '../src/agent/ws/relayHub.js';
 import { pickFreePort } from '../scripts/playtest/lib/pickFreePort.mjs';
@@ -101,6 +102,7 @@ test('localStorage auto-approve flag is ignored in production build', { timeout:
       headless: true,
       args: ['--no-sandbox', '--disable-dev-shm-usage'],
     });
+    attachConsentPresetToBrowser(browser);
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     await installApiMocks(page);
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });

@@ -23,6 +23,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { migrateLocalPartIds } from '../../src/utils/git/localPartIdMigration.js';
 import { parseSurfJson } from '../../src/utils/git/surfJson.js';
 
@@ -799,6 +800,7 @@ try {
     executablePath: exe,
     args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
   await runCase(browser, { name: '390', width: 390, height: 844, touch: true });
   await runCase(browser, { name: 'desktop', width: 1280, height: 800, touch: false });
   await runLegacyColor(browser);

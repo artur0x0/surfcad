@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { newPartStarterScript } from '../../src/utils/helperPaletteSnippets.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -110,6 +111,7 @@ if (!(await waitForServer())) {
 }
 
 const browser = await chromium.launch({ executablePath: exe, headless: true });
+attachConsentPresetToBrowser(browser);
 try {
   for (const vp of VIEWS) {
     const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height } });

@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { createMockGithubAdapter } from '../../src/utils/git/mockGithubAdapter.js';
 import { findOrCreateVault, vaultMarkerContent } from '../../src/utils/git/vault.js';
 import { assemblyFilePath, sharedPartPath } from '../../src/utils/git/vaultLayout.js';
@@ -503,6 +504,7 @@ try {
     executablePath: exe,
     args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
   const viewports = [
     { name: '390', width: 390, height: 844, touch: true },
     { name: '1280', width: 1280, height: 800, touch: false },

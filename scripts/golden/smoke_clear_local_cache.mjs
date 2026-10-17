@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { createServer as createVite } from 'vite';
 import { clearCachePlan, runClearLocalCache } from '../../src/utils/clearLocalCache.js';
 
@@ -389,6 +390,7 @@ try {
     executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
     args: ['--headless=new', '--use-gl=angle', '--use-angle=swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
   const shots = [
     ['clear-cache-confirm-warning-390.png', 390, 700],
     ['clear-cache-confirm-warning-desktop.png', 1100, 720],

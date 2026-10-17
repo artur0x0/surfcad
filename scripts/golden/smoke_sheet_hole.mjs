@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { newPartStarterScript } from '../../src/utils/helperPaletteSnippets.js';
 import { readSheetMetalSpec } from '../../src/utils/sheetMetal/sheetMetalScript.js';
 
@@ -227,6 +228,7 @@ const browser = await chromium.launch({
   executablePath: exe,
   args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
 });
+attachConsentPresetToBrowser(browser);
 try {
   await runSize(browser, '390', {
     viewport: { width: 390, height: 844 },

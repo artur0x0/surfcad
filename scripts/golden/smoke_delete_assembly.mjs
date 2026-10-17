@@ -20,6 +20,7 @@ import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
 import autoprefixer from 'autoprefixer';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { createMockGithubAdapter } from '../../src/utils/git/mockGithubAdapter.js';
 import { findOrCreateVault } from '../../src/utils/git/vault.js';
 import { assemblyFilePath, assemblyPartPath, sharedPartPath } from '../../src/utils/git/vaultLayout.js';
@@ -717,6 +718,7 @@ createRoot(document.getElementById('root')).render(<Harness />);
     executablePath: exe,
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
+attachConsentPresetToBrowser(browser);
   const shotDir = process.env.GOLDEN_SHOT_DIR || join(tmpdir(), 'surfcad-golden-shots');
   mkdirSync(shotDir, { recursive: true });
   try {

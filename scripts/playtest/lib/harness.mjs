@@ -9,6 +9,10 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import {
+  attachConsentPresetToBrowser,
+  presetAnalyticsConsentInit,
+} from '../../golden/lib/presetConsentInit.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 
@@ -262,6 +266,7 @@ export function createConsoleCollector(page) {
  */
 export async function openAgentPage(browser, opts) {
   const page = await browser.newPage({ viewport: { width: opts.width, height: opts.height } });
+  await presetAnalyticsConsentInit(page);
   const consoleErrors = createConsoleCollector(page);
   await installApiMocks(page);
   const origin = new URL(opts.baseUrl).origin;
@@ -292,7 +297,7 @@ export async function savePageScreenshot(page, outPath) {
 }
 
 export async function launchBrowser(exe) {
-  return chromium.launch({
+  const browser = await chromium.launch({
     executablePath: exe,
     headless: true,
     args: [
@@ -303,4 +308,6 @@ export async function launchBrowser(exe) {
       '--enable-unsafe-swiftshader',
     ],
   });
+  attachConsentPresetToBrowser(browser);
+  return browser;
 }

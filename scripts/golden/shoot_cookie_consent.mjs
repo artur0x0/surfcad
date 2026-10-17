@@ -85,7 +85,6 @@ try {
     }));
     await page.addInitScript(() => {
       try {
-        Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true });
         localStorage.removeItem('surfcad.consent.v1');
       } catch { /* private */ }
     });

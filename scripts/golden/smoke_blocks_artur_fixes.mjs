@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { register } from 'node:module';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { composeHelperInsert } from '../../src/utils/helperPaletteSnippets.js';
 import { confirmFeatureEdit, openFeatureEdit } from '../../src/utils/featureEdit.js';
 import { parseFeatureMarkers } from '../../src/utils/featureMarkers.js';
@@ -162,6 +163,7 @@ if (!exe) {
   };
   if (await waitForServer()) {
     const browser = await chromium.launch({ executablePath: exe, headless: true });
+attachConsentPresetToBrowser(browser);
     try {
       for (const vp of VIEWS) {
         const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height } });

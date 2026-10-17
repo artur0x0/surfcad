@@ -17,6 +17,7 @@ import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
 import autoprefixer from 'autoprefixer';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 process.env.BROWSERSLIST_IGNORE_OLD_DATA = '1';
 
@@ -345,6 +346,7 @@ const browser = await chromium.launch({
   executablePath: exe,
   args: ['--no-sandbox', '--disable-dev-shm-usage'],
 });
+attachConsentPresetToBrowser(browser);
 
 try {
   mkdirSync(shotDir, { recursive: true });

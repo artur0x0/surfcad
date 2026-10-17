@@ -23,6 +23,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 const PORT = Number(process.env.SMOKE_PORT || 5293);
 const APP_URL = `http://127.0.0.1:${PORT}/`;
@@ -598,6 +599,7 @@ if (!(await waitForServer())) {
 }
 
 const browser = await chromium.launch({ executablePath: exe, headless: true });
+attachConsentPresetToBrowser(browser);
 try {
   await runSize(browser, '390', { viewport: { width: 390, height: 844 } });
   await runSize(browser, '1280', { viewport: { width: 1280, height: 800 } });

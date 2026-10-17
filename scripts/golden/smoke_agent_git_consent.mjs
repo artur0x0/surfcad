@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { GITHUB_TOKEN_STORAGE_KEY } from '../../src/utils/git/githubAuth.js';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
@@ -150,6 +151,7 @@ const browser = await chromium.launch({
   headless: true,
   args: ['--no-sandbox', '--disable-dev-shm-usage'],
 });
+attachConsentPresetToBrowser(browser);
 
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 await page.route('**/api/auth/me', (route) => route.fulfill({

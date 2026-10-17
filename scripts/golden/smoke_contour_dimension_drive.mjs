@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build } from 'esbuild';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { emitSolveContour, parseSolveContour } from '../../src/utils/contourScript.js';
 import { solveContour } from '../../src/utils/contourSolve.js';
 import { dimensionAnchor } from '../../src/utils/contourPick.js';
@@ -268,6 +269,7 @@ window.renderDistanceTag = (model) => {
       logLevel: 'error',
     });
     const browser = await chromium.launch({ executablePath: exe, headless: true });
+attachConsentPresetToBrowser(browser);
     try {
       const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
       await page.setContent(`<!doctype html><html><head><meta name="viewport" content="width=390"></head>

@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { markerWithId } from '../../src/utils/featureBlockId.js';
 import {
   CONTOUR_EXTRUDE_BEGIN,
@@ -131,6 +132,7 @@ if (exe && failed === 0) {
         executablePath: exe,
         args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
       });
+attachConsentPresetToBrowser(browser);
       const cases = [
         ['390', 390, 844],
         ['1280', 1280, 800],

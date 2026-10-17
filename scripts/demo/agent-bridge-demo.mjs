@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, writeFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from '../golden/lib/presetConsentInit.mjs';
 
 const OUT_DIR = process.env.AGENT_DEMO_DIR
   || (existsSync('/opt/cursor/artifacts') ? '/opt/cursor/artifacts' : join(tmpdir(), 'agent-bridge-demo'));
@@ -143,6 +144,7 @@ try {
     executablePath: exe,
     args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
   });
+attachConsentPresetToBrowser(browser);
   context = await browser.newContext({
     viewport: { width: 1280, height: 800 },
     recordVideo: { dir: videoDir, size: { width: 1280, height: 800 } },

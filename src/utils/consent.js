@@ -50,16 +50,6 @@ export function applyGpcDefaultOnFirstVisit(nav = navigatorRef) {
   return true;
 }
 
-/**
- * Headless / Playwright (navigator.webdriver): preset "Allow all" so goldens stay stable.
- * @returns {boolean} whether consent was preset
- */
-export function ensureAutomationConsentPreset(nav = navigatorRef) {
-  if (!nav || nav.webdriver !== true) return false;
-  if (hasStoredConsentChoice()) return false;
-  return writeRaw(true, new Date().toISOString()).analytics === true;
-}
-
 function readRaw() {
   if (!storage) return null;
   try {

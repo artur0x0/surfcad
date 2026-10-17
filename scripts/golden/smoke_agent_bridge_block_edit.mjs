@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright-core';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 const PORT = Number(process.env.SMOKE_PORT || 4329);
 const APP_URL = `http://127.0.0.1:${PORT}/?agent=1`;
@@ -130,6 +131,7 @@ const browser = await chromium.launch({
   headless: true,
   args: ['--no-sandbox', '--disable-dev-shm-usage'],
 });
+attachConsentPresetToBrowser(browser);
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 await page.route('**/api/auth/me', (route) => route.fulfill({
   status: 200,
