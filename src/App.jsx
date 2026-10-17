@@ -8659,6 +8659,7 @@ const App = () => {
           partId: part.id,
           key: row.key,
           kind: row.kind,
+          faceId: row.face_id,
         });
         if (!described || described.error) {
           return {

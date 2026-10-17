@@ -540,7 +540,7 @@ import { createSketchPickHandlers } from '../agent/pick/sketchViewportPicks.js';
 import { planePatchFromArgs } from '../agent/sketchPlaneAgent.js';
 import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from '../agent/state/listPickables.js';
 import { describeJointPick } from '../agent/jointPickDescribe.js';
-import { catalogFingerprintsForAgent } from '../agent/faceCatalog.js';
+import { agentFaceCatalog } from '../agent/faceCatalog.js';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -11856,19 +11856,19 @@ const Viewport = forwardRef(({
   agentListFacesRef.current = ({ partId } = {}) => {
     const geom = meshGeometryForAgentPart(partId);
     if (!geom) return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
-    const fingerprints = catalogFingerprintsForAgent(geom, faceIDsForAgentPart(partId, geom));
-    const listed = buildFaceList(fingerprints);
+    const listed = buildFaceList(agentFaceCatalog(geom, faceIDsForAgentPart(partId, geom)));
     return {
       partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
       ...listed,
     };
   };
 
-  agentDescribeJointPickRef.current = ({ partId, key, kind } = {}) => {
+  agentDescribeJointPickRef.current = ({ partId, key, kind, faceId } = {}) => {
     const geom = meshGeometryForAgentPart(partId);
     return describeJointPick({
       key,
       kind,
+      faceId,
       geometry: geom,
       faceIDs: faceIDsForAgentPart(partId, geom),
     });

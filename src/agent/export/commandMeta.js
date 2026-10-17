@@ -212,7 +212,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   list_faces: {
-    description: 'Face fingerprints for the active or named part mesh.',
+    description: 'Every pickable face on the active or named part mesh (one row per face a viewport click selects, all bodies): id (f0, f1, …, stable across reruns of the same script), type (planar, cylindrical, curved), center, normal, axis and radius for cylinders, area, and key.',
     result: { type: 'object', additionalProperties: true },
     errors: ['no_mesh', 'unknown_part', 'internal'],
     mutates: false,
@@ -573,9 +573,9 @@ export const COMMAND_META = {
     mutates: false,
   },
   joint_pick: {
-    description: 'Feed face picks on parts into the joint card.',
+    description: 'Feed face picks on parts into the joint card. Pass face_id from list_faces (or its key); a cylindrical face becomes an axis pick, as a viewport tap does.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'unknown_part', 'unknown_face', 'internal'],
+    errors: ['bad_args', 'unknown_part', 'unknown_face', 'ambiguous_face', 'pick_failed', 'no_mesh', 'internal'],
     mutates: false,
   },
   joint_commit: {

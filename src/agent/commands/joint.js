@@ -29,12 +29,19 @@ const JOINT_PARAM_PROPERTIES = Object.freeze({
 
 const JOINT_PICK_KINDS = Object.freeze(['face', 'axis', 'edge']);
 
+const FACE_ID_SCHEMA = Object.freeze({
+  type: 'string',
+  pattern: '^f[0-9]+$',
+  description: 'Face id from list_faces on that part (e.g. f7)',
+});
+
 const JOINT_PICK_ROW_SCHEMA = Object.freeze({
   type: 'object',
   additionalProperties: false,
-  required: ['part_id', 'key'],
+  required: ['part_id'],
   properties: {
     part_id: { type: 'string' },
+    face_id: FACE_ID_SCHEMA,
     key: FACE_KEY_SCHEMA,
     kind: {
       type: 'string',
@@ -43,6 +50,20 @@ const JOINT_PICK_ROW_SCHEMA = Object.freeze({
     },
   },
 });
+
+function hasFaceId(row) {
+  return row?.face_id != null && row.face_id !== '';
+}
+
+function jointPickRows(args) {
+  if (Array.isArray(args?.picks)) return args.picks;
+  if (!args?.part_id || (!args?.key && !hasFaceId(args))) return [];
+  const row = { part_id: args.part_id };
+  if (hasFaceId(args)) row.face_id = args.face_id;
+  if (args.key) row.key = args.key;
+  if (args.kind) row.kind = args.kind;
+  return [row];
+}
 
 export const jointOpenCommand = Object.freeze({
   name: 'joint_open',
@@ -83,6 +104,7 @@ export const jointPickCommand = Object.freeze({
     additionalProperties: false,
     properties: {
       part_id: { type: 'string' },
+      face_id: FACE_ID_SCHEMA,
       key: FACE_KEY_SCHEMA,
       kind: { type: 'string', enum: JOINT_PICK_KINDS.slice() },
       picks: {
@@ -93,29 +115,24 @@ export const jointPickCommand = Object.freeze({
   }),
   example: {
     picks: [
-      { part_id: 'local:base', key: { at: [0, 0, 10], n: [0, 0, 1], area: 2000 } },
-      { part_id: 'local:pin', key: { at: [0, 0, 10], n: [0, 0, -1], area: 200 } },
+      { part_id: 'local:base', face_id: 'f4' },
+      { part_id: 'local:pin', face_id: 'f2' },
     ],
   },
   checkArgs(args) {
-    const rows = Array.isArray(args?.picks)
-      ? args.picks
-      : (args?.part_id && args?.key ? [{ part_id: args.part_id, key: args.key, kind: args.kind }] : []);
+    const rows = jointPickRows(args);
     if (!rows.length) {
-      return { code: 'bad_args', message: 'joint_pick needs part_id+key or picks[]' };
+      return { code: 'bad_args', message: 'joint_pick needs part_id with face_id or key, or picks[]' };
     }
     for (const row of rows) {
-      if (!row?.part_id || !row?.key) {
-        return { code: 'bad_args', message: 'each joint pick needs part_id and key' };
+      if (!row?.part_id || (!row?.key && !hasFaceId(row))) {
+        return { code: 'bad_args', message: 'each joint pick needs part_id and face_id (or key)' };
       }
     }
     return null;
   },
   run(ctx, args) {
-    const rows = Array.isArray(args?.picks)
-      ? args.picks
-      : [{ part_id: args.part_id, key: args.key, kind: args.kind }];
-    return hostCall(ctx, 'jointApplyPicks', { picks: rows });
+    return hostCall(ctx, 'jointApplyPicks', { picks: jointPickRows(args) });
   },
 });
 

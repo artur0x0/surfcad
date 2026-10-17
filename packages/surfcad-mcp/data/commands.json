@@ -993,7 +993,7 @@
     },
     {
       "name": "list_faces",
-      "description": "Face fingerprints for the active or named part mesh.",
+      "description": "Every pickable face on the active or named part mesh (one row per face a viewport click selects, all bodies): id (f0, f1, …, stable across reruns of the same script), type (planar, cylindrical, curved), center, normal, axis and radius for cylinders, area, and key.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -10428,13 +10428,18 @@
     },
     {
       "name": "joint_pick",
-      "description": "Feed face picks on parts into the joint card.",
+      "description": "Feed face picks on parts into the joint card. Pass face_id from list_faces (or its key); a cylindrical face becomes an axis pick, as a viewport tap does.",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "part_id": {
             "type": "string"
+          },
+          "face_id": {
+            "type": "string",
+            "pattern": "^f[0-9]+$",
+            "description": "Face id from list_faces on that part (e.g. f7)"
           },
           "key": {
             "type": "object",
@@ -10486,12 +10491,16 @@
               "type": "object",
               "additionalProperties": false,
               "required": [
-                "part_id",
-                "key"
+                "part_id"
               ],
               "properties": {
                 "part_id": {
                   "type": "string"
+                },
+                "face_id": {
+                  "type": "string",
+                  "pattern": "^f[0-9]+$",
+                  "description": "Face id from list_faces on that part (e.g. f7)"
                 },
                 "key": {
                   "type": "object",
@@ -10551,6 +10560,9 @@
         "bad_args",
         "unknown_part",
         "unknown_face",
+        "ambiguous_face",
+        "pick_failed",
+        "no_mesh",
         "internal"
       ],
       "mutates": false,
@@ -10562,35 +10574,11 @@
         "picks": [
           {
             "part_id": "local:base",
-            "key": {
-              "at": [
-                0,
-                0,
-                10
-              ],
-              "n": [
-                0,
-                0,
-                1
-              ],
-              "area": 2000
-            }
+            "face_id": "f4"
           },
           {
             "part_id": "local:pin",
-            "key": {
-              "at": [
-                0,
-                0,
-                10
-              ],
-              "n": [
-                0,
-                0,
-                -1
-              ],
-              "area": 200
-            }
+            "face_id": "f2"
           }
         ]
       }
