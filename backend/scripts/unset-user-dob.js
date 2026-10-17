@@ -6,7 +6,6 @@
  * Usage:
  *   NODE_ENV=production node scripts/unset-user-dob.js [--dry-run]
  */
-import mongoose from 'mongoose';
 import config from '../config/index.js';
 import { connectDB, disconnectDB } from '../db/connection.js';
 import User from '../db/models/User.js';
