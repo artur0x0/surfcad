@@ -1,21 +1,9 @@
 // config/index.js - Configuration loader
-import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { SESSION_MAX_AGE_MS } from '../../src/utils/sessionPolicy.js';
 import { parseAdminUserIds } from '../services/adminAllowlist.js';
+import { loadBackendDotenv } from './loadEnv.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// Load environment-specific .env file
-const envFile = process.env.NODE_ENV === 'production' 
-  ? '.env.production' 
-  : '.env.development';
-
-dotenv.config({ path: path.join(__dirname, '..', envFile) });
-
-// Also load default .env as fallback
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
+loadBackendDotenv();
 
 /**
  * @param {string | undefined} raw
