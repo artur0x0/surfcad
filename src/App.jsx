@@ -152,7 +152,7 @@ import {
   summarizeSketchHistory,
 } from './agent/historyRoute';
 import { agentBridgeEnabled, agentFeatureCount, createSurfcadBridge } from './utils/agentBridge';
-import { buildEffectiveJointCard } from './agent/jointCardAgent.js';
+import { buildEffectiveJointCard, jointEditCard } from './agent/jointCardAgent.js';
 import AgentVisibleLayer from './components/AgentVisibleLayer';
 import { runAssemblyParts } from './utils/assemblyRun';
 import { catalogsFromRuns } from './utils/jointResolve';
@@ -163,6 +163,7 @@ import {
   assemblyHistoryCanRedo,
   assemblyHistoryCanUndo,
   assemblyHistoryKey,
+  assemblySnapshotsEqual,
   cadStripsShowJoints,
   acceptJointPick,
   cardFromJoint,
@@ -8707,51 +8708,36 @@ const App = () => {
       if (!joint) {
         return { error: { code: 'unknown_joint', message: `Unknown joint id: ${id}` } };
       }
+      const card = cardFromJoint(joint, doc);
+      jointPicksRef.current = card.picks;
       rememberCadPart(null);
-      handleSelectJoint({ id });
-      const card = jointCardRef.current;
+      publishJointCard(card);
       return {
         result: {
           joint_id: id,
-          type: card?.type ?? joint.type,
-          name: card?.name ?? joint.name,
-          mode: card?.mode ?? 'edit',
-          pickCount: (card?.picks || jointPicksRef.current || []).length,
+          type: card.type ?? joint.type,
+          name: card.name ?? joint.name,
+          mode: card.mode,
+          pickCount: (card.picks || []).length,
         },
       };
     },
     jointEdit({ joint_id, patch } = {}) {
-      const doc = assemblyRef.current;
-      if (!doc) return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
-      if (joint_id != null) {
-        const id = String(joint_id);
-        const joint = (doc.joints || []).find((row) => row.id === id);
-        if (!joint) {
-          return { error: { code: 'unknown_joint', message: `Unknown joint id: ${id}` } };
-        }
-        rememberCadPart(null);
-        handleSelectJoint({ id });
-      }
-      const card = jointCardRef.current;
-      if (!card || card.mode !== 'edit') {
-        return {
-          error: {
-            code: 'no_joint_edit',
-            message: 'Call joint_select with joint_id before joint_edit',
-          },
-        };
-      }
-      const bag = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
-      let next = { ...card, ...bag };
-      if (next.userPickedType && next.type && !next.userNamed) {
-        const named = nextJointName(next.type, doc?.joints || []);
-        next = { ...next, name: next.name && next.userNamed ? next.name : named };
-      }
-      handleJointCardChange(next);
+      const edited = jointEditCard({
+        doc: assemblyRef.current,
+        card: jointCardAgentRef.current ?? jointCardRef.current,
+        jointId: joint_id,
+        patch,
+      });
+      if (edited.error) return { error: edited.error };
+      const next = edited.card;
+      if (edited.selected) jointPicksRef.current = next.picks;
+      rememberCadPart(null);
+      publishJointCard(next);
       return {
         result: {
           ok: true,
-          joint_id: card.id ?? null,
+          joint_id: next.id ?? null,
           type: next.type ?? null,
           name: next.name ?? null,
           valueMm: next.valueMm ?? null,
@@ -8788,12 +8774,13 @@ const App = () => {
       if (!result.ok) {
         return { ok: false, message: result.message || 'Joint commit refused' };
       }
+      const unchanged = assemblySnapshotsEqual(doc, result.doc);
       finishJointWrite(result, scripts, { resetPicks: card.mode !== 'edit' });
       rememberCadPart(null);
       const written = assemblyRef.current;
       const joints = written?.joints || [];
-      const jointId = joints[joints.length - 1]?.id ?? null;
-      return { ok: true, jointId, jointCount: joints.length };
+      const jointId = card.mode === 'edit' && card.id ? card.id : (joints[joints.length - 1]?.id ?? null);
+      return { ok: true, jointId, jointCount: joints.length, unchanged };
     },
     finishJointCommit() {
       if (jointCardRef.current || jointCardAgentRef.current) {
