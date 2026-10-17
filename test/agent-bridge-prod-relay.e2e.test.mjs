@@ -14,6 +14,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { pickFreePort } from '../scripts/playtest/lib/pickFreePort.mjs';
 import {
   installApiMocks,
+  seedGithubToken,
   startPreviewServer,
   waitForServer,
   waitForSignedInChip,
@@ -73,7 +74,9 @@ async function runBrowserE2E(t, browserType, executablePath) {
       args: browserType === chromium ? ['--no-sandbox', '--disable-dev-shm-usage'] : [],
     });
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-    await installApiMocks(page, { seedGithub: true });
+    await installApiMocks(page);
+    await page.goto(`${pageOrigin}/`, { waitUntil: 'domcontentloaded' });
+    await seedGithubToken(page);
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(
       /* eslint-disable no-undef */

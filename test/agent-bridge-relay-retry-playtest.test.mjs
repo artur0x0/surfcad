@@ -29,13 +29,14 @@ test('relay-retry playtest keeps MCP stdin open so the owned relay does not exit
 });
 
 test('fake backend seeds a signed-in GitHub user before /me settles', () => {
-  assert.match(HARNESS, /if \(seedGithub\) await seedGithubToken\(page\)/);
-  assert.match(HARNESS, /addInitScript\(applyGithubPlaytestToken\)/);
+  assert.match(HARNESS, /export async function seedGithubToken/);
   assert.match(HARNESS, /surfcad\.github\.tokenBundle/);
-  assert.match(HARNESS, /sessionStorage\.setItem\('surfcad\.github\.token'/);
-  assert.doesNotMatch(HARNESS, /sessionStorage\?\.removeItem\('surfcad\.github\.token'\)/);
+  assert.match(HARNESS, /sessionStorage\.removeItem\('surfcad\.github\.token'\)/);
+  assert.doesNotMatch(HARNESS, /addInitScript\(applyGithubPlaytestToken\)/);
+  assert.doesNotMatch(HARNESS, /sessionStorage\.setItem\('surfcad\.github\.token'/);
+  assert.doesNotMatch(HARNESS, /if \(seedGithub\) await seedGithubToken/);
   assert.match(HARNESS, /data-profile-chip-state.*=.*signed-in/);
-  assert.match(SRC, /installApiMocks\(page, \{ seedGithub: true \}\)/);
+  assert.match(SRC, /await seedGithubToken\(page\)/);
   assert.match(SRC, /waitForSignedInChip/);
   assert.match(SRC, /Connect Agent needs a signed-in chip/);
 });

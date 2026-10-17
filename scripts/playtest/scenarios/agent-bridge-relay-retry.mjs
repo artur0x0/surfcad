@@ -13,6 +13,7 @@ import {
   assertLocalhost,
   findChrome,
   installApiMocks,
+  seedGithubToken,
   startPreviewServer,
   waitForServer,
   waitForSignedInChip,
@@ -252,7 +253,10 @@ export async function run(ctx) {
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await installApiMocks(page, { seedGithub: true });
+  await installApiMocks(page);
+  const origin = new URL(baseUrl).origin;
+  await page.goto(`${origin}/`, { waitUntil: 'domcontentloaded' });
+  await seedGithubToken(page);
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(
     /* eslint-disable no-undef */
