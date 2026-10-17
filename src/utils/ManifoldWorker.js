@@ -498,6 +498,38 @@ class ManifoldWorker {
   }
 
   /**
+   * Trim mesh data by a plane without using the cached Run solid.
+   */
+  async trimMeshByPlane(mesh, normal, originOffset, options = {}) {
+    if (!this.isReady) {
+      throw new Error('ManifoldWorker not initialized');
+    }
+    const timeoutMs = options.timeoutMs || this.config.timeoutMs;
+    return new Promise((resolve, reject) => {
+      const requestId = this._generateRequestId();
+      const timeoutId = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error(`trimMeshByPlane timed out after ${timeoutMs / 1000}s`));
+      }, timeoutMs);
+      this.pendingRequests.set(requestId, {
+        resolve: (result) => {
+          clearTimeout(timeoutId);
+          resolve(result);
+        },
+        reject: (error) => {
+          clearTimeout(timeoutId);
+          reject(error);
+        },
+      });
+      this.worker.postMessage({
+        type: 'trimMeshByPlane',
+        id: requestId,
+        payload: { mesh, normal, originOffset },
+      });
+    });
+  }
+
+  /**
    * Split a clone of the cached solid for the Pieces preview.
    * Does not replace the cached manifold and does not write the script.
    *
@@ -1127,6 +1159,17 @@ class ManifoldContext {
     }
     
     return await this.worker.trimByPlane(normal, originOffset);
+  }
+
+  /**
+   * Trim arbitrary mesh data by a plane (assembly extras, or active part without
+   * touching the cached manifold from the last Run).
+   */
+  async trimMeshByPlane(mesh, normal, originOffset, options = {}) {
+    if (!this.worker || !this.worker.isReady) {
+      throw new Error('ManifoldContext not initialized');
+    }
+    return await this.worker.trimMeshByPlane(mesh, normal, originOffset, options);
   }
 
   /**

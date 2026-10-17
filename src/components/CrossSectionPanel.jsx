@@ -139,6 +139,14 @@ const CrossSectionPanel = forwardRef(({
     // Re-center position
     const newOffset = offsetRange.center;
     setOffset(newOffset);
+    patchAgentSnap({
+      preset,
+      plane: preset,
+      isCustom: false,
+      normal: [...normal],
+      offset: newOffset,
+      originOffset: newOffset,
+    });
     
     onPlaneChange?.({
       normal,
@@ -148,12 +156,14 @@ const CrossSectionPanel = forwardRef(({
   };
 
   const handleOffsetChange = (newOffset) => {
-    setOffset(parseFloat(newOffset));
+    const value = parseFloat(newOffset);
+    setOffset(value);
     
     const normal = isCustom ? customNormal : PLANE_PRESETS[planeType].normal;
+    patchAgentSnap({ offset: value, originOffset: value, normal: [...normal] });
     onPlaneChange?.({
       normal,
-      originOffset: parseFloat(newOffset),
+      originOffset: value,
       showPlane: !isCollapsed
     });
   };
@@ -212,14 +222,20 @@ const handleButtonClick = () => {
     const optionsOpen = snap?.optionsOpen != null
       ? snap.optionsOpen
       : (liveEnabled && !isCollapsed);
-    const normal = isCustom ? customNormal : PLANE_PRESETS[planeType].normal;
+    const liveCustom = snap?.isCustom != null ? snap.isCustom : isCustom;
+    const livePreset = snap?.preset != null ? snap.preset : planeType;
+    const liveNormal = snap?.normal != null
+      ? snap.normal
+      : (liveCustom ? customNormal : PLANE_PRESETS[livePreset].normal);
+    const liveOffset = snap?.offset != null ? snap.offset : offset;
     return {
       enabled: liveEnabled,
       optionsOpen,
-      preset: isCustom ? null : planeType,
-      plane: isCustom ? 'custom' : planeType,
-      offset,
-      normal: [...normal],
+      preset: liveCustom ? null : livePreset,
+      plane: liveCustom ? 'custom' : livePreset,
+      offset: liveOffset,
+      originOffset: snap?.originOffset != null ? snap.originOffset : liveOffset,
+      normal: [...liveNormal],
       offsetMin: offsetRange.min,
       offsetMax: offsetRange.max,
       offsetCenter: offsetRange.center,
@@ -260,13 +276,25 @@ const handleButtonClick = () => {
 
   const agentSetPreset = useCallback((preset) => {
     if (!PLANE_PRESETS[preset]) return;
+    const normal = PLANE_PRESETS[preset].normal;
+    const newOffset = offsetRange.center;
+    patchAgentSnap({
+      preset,
+      plane: preset,
+      isCustom: false,
+      normal: [...normal],
+      offset: newOffset,
+      originOffset: newOffset,
+    });
     handlePresetChange(preset);
-  }, [handlePresetChange]);
+  }, [handlePresetChange, offsetRange]);
 
   const agentSetOffset = useCallback((value) => {
     const clamped = Math.min(offsetRange.max, Math.max(offsetRange.min, value));
+    const normal = isCustom ? customNormal : PLANE_PRESETS[planeType].normal;
+    patchAgentSnap({ offset: clamped, originOffset: clamped, normal: [...normal] });
     handleOffsetChange(clamped);
-  }, [handleOffsetChange, offsetRange]);
+  }, [handleOffsetChange, offsetRange, isCustom, customNormal, planeType]);
 
   useImperativeHandle(ref, () => ({
     readAgentState,

@@ -96,7 +96,7 @@ export function createXsectionAgentHandlers(deps) {
       return { result: state };
     },
 
-    crossSectionPlane({ plane } = {}) {
+    async crossSectionPlane({ plane } = {}) {
       const panelGate = requirePanel();
       if (panelGate.error) return panelGate;
       const { panel } = panelGate;
@@ -113,8 +113,13 @@ export function createXsectionAgentHandlers(deps) {
         return { error: { code: 'no_cross_section', message: 'Enable cross-section first' } };
       }
       panel.agentSetPreset(preset);
-      const state = panel.readAgentState();
-      return { result: { ...state, preset, plane: preset } };
+      const state = await waitForState(
+        (row) => row.preset === preset && row.plane === preset,
+      );
+      if (!state) {
+        return { error: { code: 'internal', message: 'Cross-section plane did not settle' } };
+      }
+      return { result: state };
     },
 
     crossSectionOffset({ offset } = {}) {
@@ -138,7 +143,10 @@ export function createXsectionAgentHandlers(deps) {
       const panelGate = requirePanel();
       if (panelGate.error) return panelGate;
       const { panel } = panelGate;
-      return { result: panel.readAgentState() };
+      const state = panel.readAgentState();
+      const diag = deps.getDiagnostics?.();
+      if (!diag) return { result: state };
+      return { result: { ...state, ...diag } };
     },
   };
 }
