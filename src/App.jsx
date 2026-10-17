@@ -152,7 +152,12 @@ import {
   summarizePartHistory,
   summarizeSketchHistory,
 } from './agent/historyRoute';
-import { agentBridgeEnabled, agentFeatureCount, createSurfcadBridge } from './utils/agentBridge';
+import {
+  agentBridgeEnabled,
+  agentFeatureCount,
+  cloneAgentBbox,
+  createSurfcadBridge,
+} from './utils/agentBridge';
 import { buildEffectiveJointCard, jointEditCard } from './agent/jointCardAgent.js';
 import AgentVisibleLayer from './components/AgentVisibleLayer';
 import AgentBridgeHost from './components/AgentBridgeHost';
@@ -8645,6 +8650,44 @@ const App = () => {
           visible: row.visible,
         })),
       });
+    },
+    readActivePartStatus() {
+      const doc = assemblyRef.current;
+      const id = doc?.activeId != null ? String(doc.activeId) : '';
+      const part = id ? doc?.parts?.find((row) => row.id === id) : null;
+      const partName = part?.name || '';
+      const script = id
+        ? (codeEditorRef.current?.getContent?.() ?? partScriptsRef.current[id] ?? '')
+        : '';
+      const base = {
+        partId: id,
+        partName,
+        script,
+        runState: 'not_run_yet',
+        volume: null,
+        bbox: null,
+        featureCount: agentFeatureCount(script),
+        bodyCount: null,
+      };
+      const run = id ? partRunsRef.current?.[id] : null;
+      if (!run) return base;
+      if (run.empty) {
+        return { ...base, runState: 'ok' };
+      }
+      if (run.ok === true && run.mesh?.vertProperties) {
+        const last = manifoldContext.getLastResult?.() || null;
+        const bodyCount = Number.isFinite(run.bodyCount)
+          ? run.bodyCount
+          : bodyCountOfWorkerMesh(run.mesh);
+        return {
+          ...base,
+          runState: 'ok',
+          volume: Number.isFinite(last?.volume) ? last.volume : null,
+          bbox: cloneAgentBbox(last?.boundingBox),
+          bodyCount: Number.isFinite(bodyCount) ? bodyCount : null,
+        };
+      }
+      return { ...base, runState: 'failed' };
     },
     setActivePart(partId) {
       const doc = assemblyRef.current;

@@ -95,10 +95,14 @@ export const STATUS_SCHEMA = Object.freeze({
   type: 'object',
   additionalProperties: false,
   properties: {
+    partId: { type: 'string' },
+    partName: { type: 'string' },
+    script: { type: 'string' },
+    runState: { type: 'string', enum: ['not_run_yet', 'ok', 'failed'] },
     volume: { type: ['number', 'null'] },
     bbox: { oneOf: [BBOX_SCHEMA, { type: 'null' }] },
-    partName: { type: 'string' },
     featureCount: { type: 'integer' },
+    bodyCount: { type: ['integer', 'null'] },
   },
 });
 
