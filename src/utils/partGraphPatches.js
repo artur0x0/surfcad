@@ -67,6 +67,16 @@ export const PATCH_FLAT_AREA_FRAC_OF_MAX = 0.15;
  */
 export const PATCH_FLAT_CONTINUATION_DEG = 3;
 /**
+ * Locked coplanar groups that read as one tessellated wall: at least this
+ * many, of one source, each pair within PATCH_FACET_AREA_RATIO of the other's
+ * area, meeting at one step (spread within max(PATCH_FACET_STEP_TOL_DEG, 10%))
+ * above PATCH_FLAT_CONTINUATION_DEG and at most the smooth gate. A 64-segment
+ * pin steps 5.6°; a box edge is 90°.
+ */
+export const PATCH_FACET_RUN_MIN = 3;
+export const PATCH_FACET_AREA_RATIO = 0.8;
+export const PATCH_FACET_STEP_TOL_DEG = 0.5;
+/**
  * Gate for one feature's curved faces, from the tessellation the worker
  * stored with that source. `facetDeg` is the circular step (360°/segments,
  * or 90°/segs of a right-angle fillet wedge — the same angle). `cornerDeg`
@@ -458,6 +468,76 @@ export function buildPartGraphPatches(mesh, opts = {}) {
     }
     for (let a = 0; a < atomCount; a++) {
       if (continuation[patchUF.find(a)]) atomLockedFlat[a] = 0;
+    }
+  }
+  // A tall, thin prism wall (a pin from Manifold.cylinder) has side facets
+  // larger than the area gate, so each facet locked and one click picked a
+  // single facet. Those facets are congruent and meet each other at one
+  // repeated step. A run of PATCH_FACET_RUN_MIN or more such groups of one
+  // source is a tessellated curved wall, so it unlocks. A box face meets its
+  // neighbours at 90°, a flat beside a fillet meets another source, and a
+  // flat beside a smaller or larger face is not congruent with it.
+  // A run with a smooth same-source neighbour outside it (a ring of sphere
+  // facets meets the next ring) is not a prism wall and keeps its lock. A
+  // tangent fillet on the pin is another source and does not count.
+  if (triSource) {
+    const runUF = makeUF(atomCount);
+    const stepOf = new Map();
+    for (const rec of atomAdj) {
+      if (rec.max <= PATCH_FLAT_CONTINUATION_DEG || rec.max > smoothDeg) continue;
+      if (!atomLockedFlat[rec.a] || !atomLockedFlat[rec.b]) continue;
+      if (atomSource[rec.a] !== atomSource[rec.b]) continue;
+      if (isOpAtom(rec.a) || isOpAtom(rec.b)) continue;
+      const ra = patchUF.find(rec.a);
+      const rb = patchUF.find(rec.b);
+      if (ra === rb) continue;
+      const small = Math.min(rootArea[ra], rootArea[rb]);
+      const large = Math.max(rootArea[ra], rootArea[rb]);
+      if (!(small >= large * PATCH_FACET_AREA_RATIO)) continue;
+      runUF.unite(ra, rb);
+      for (const r of [ra, rb]) {
+        let steps = stepOf.get(r);
+        if (!steps) stepOf.set(r, (steps = []));
+        steps.push(rec.max);
+      }
+    }
+    const rejected = new Set();
+    if (stepOf.size) {
+      for (const rec of atomAdj) {
+        if (rec.max <= planarDeg || rec.max > smoothDeg) continue;
+        if (atomSource[rec.a] !== atomSource[rec.b]) continue;
+        if (isOpAtom(rec.a) || isOpAtom(rec.b)) continue;
+        const ra = patchUF.find(rec.a);
+        const rb = patchUF.find(rec.b);
+        if (ra === rb) continue;
+        const runA = stepOf.has(ra) ? runUF.find(ra) : -1;
+        const runB = stepOf.has(rb) ? runUF.find(rb) : -1;
+        if (runA === runB) continue;
+        if (runA >= 0) rejected.add(runA);
+        if (runB >= 0) rejected.add(runB);
+      }
+    }
+    const runs = new Map();
+    for (const [r, steps] of stepOf) {
+      const run = runUF.find(r);
+      if (rejected.has(run)) continue;
+      let row = runs.get(run);
+      if (!row) runs.set(run, (row = { roots: [], steps: [] }));
+      row.roots.push(r);
+      row.steps.push(...steps);
+    }
+    const unlock = new Set();
+    for (const row of runs.values()) {
+      if (row.roots.length < PATCH_FACET_RUN_MIN) continue;
+      const lo = Math.min(...row.steps);
+      const hi = Math.max(...row.steps);
+      if (hi - lo > Math.max(PATCH_FACET_STEP_TOL_DEG, hi * 0.1)) continue;
+      for (const r of row.roots) unlock.add(r);
+    }
+    if (unlock.size) {
+      for (let a = 0; a < atomCount; a++) {
+        if (unlock.has(patchUF.find(a))) atomLockedFlat[a] = 0;
+      }
     }
   }
   // Sharp-only islands (every neighbour dihedral > smoothDeg) used to be
