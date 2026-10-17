@@ -712,16 +712,25 @@ export function assemblySnapshotsEqual(beforeDoc, afterDoc) {
 /**
  * The tip becomes the live document, then the written document is one step.
  * A part-run solve that moved placements is the "before", not its own step.
- * A write that changed no joint or placement is not a step: the history,
- * including redo, is returned as it was.
+ * A write that changed no joint or placement is not a step. If live has
+ * drifted from the tip, the tip is replaced with that live snapshot so
+ * undo/redo does not restore a stale pose. Redo is kept when the tip
+ * already matches.
  */
 export function pushAssemblyHistory(history, beforeDoc, afterDoc) {
   const base = history?.commits ? history : seedAssemblyHistory(beforeDoc);
+  const beforeSnap = snapshotOf(beforeDoc);
   if (assemblySnapshotsEqual(beforeDoc, afterDoc)) {
-    return { commits: base.commits, head: base.head };
+    const tip = base.commits[base.head];
+    if (canonicalJson(tip) === canonicalJson(beforeSnap)) {
+      return { commits: base.commits, head: base.head };
+    }
+    const commits = base.commits.slice();
+    commits[base.head] = beforeSnap;
+    return { commits, head: base.head };
   }
   const commits = base.commits.slice(0, base.head + 1);
-  commits[commits.length - 1] = snapshotOf(beforeDoc);
+  commits[commits.length - 1] = beforeSnap;
   commits.push(snapshotOf(afterDoc));
   return { commits, head: commits.length - 1 };
 }
