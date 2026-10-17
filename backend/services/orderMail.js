@@ -5,6 +5,7 @@ import config from '../config/index.js';
 import { readOrderLines } from './orderLines.js';
 import { buildModelDownloadUrl } from './modelLink.js';
 import { roundMoney } from '../../src/utils/quoteMath.js';
+import { escapeHtml } from './htmlSafe.js';
 
 export function mailLines(order) {
   return readOrderLines(order).map((line) => {
@@ -90,12 +91,4 @@ function downloadCell(order, line, opts) {
 
 function money(value) {
   return Number.isFinite(Number(value)) ? `$${Number(value).toFixed(2)}` : '—';
-}
-
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
