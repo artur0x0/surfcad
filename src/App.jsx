@@ -94,6 +94,7 @@ import {
   normalizeRepoPath,
   parseAssemblyDocument,
   partPosition,
+  newPartRowPosition,
   removePart,
   renamePart,
   renameTargetId,
@@ -157,7 +158,12 @@ import AgentVisibleLayer from './components/AgentVisibleLayer';
 import AgentBridgeHost from './components/AgentBridgeHost';
 import { runAssemblyParts } from './utils/assemblyRun';
 import { catalogsFromRuns } from './utils/jointResolve';
-import { partPlacement } from './utils/jointSchema';
+import { jointedSurfIds, partPlacement, poseFieldsForPart } from './utils/jointSchema';
+import {
+  AGENT_EULER_ORDER,
+  eulerDegreesToQuaternion,
+  quaternionToEulerDegrees,
+} from './utils/partPose';
 import { refreshAssemblyJoints } from './joints/refreshJoints';
 import {
   applyJointCard,
@@ -5384,6 +5390,10 @@ const App = () => {
       ? nextNumberedName(rawName, takenNames, { bareFirst: true })
       : nextNumberedName('Part', takenNames);
     const order = doc.parts.length;
+    const rowPosition = newPartRowPosition(order, {
+      fromAgent: opts.fromAgent,
+      position: opts.position,
+    });
     let starter = typeof opts?.script === 'string' && opts.script.trim()
       ? opts.script
       : newPartStarterScript();
@@ -5397,7 +5407,7 @@ const App = () => {
       name,
       visible: true,
       order,
-      position: order === 0 ? undefined : [order * 40, 0, 0],
+      ...(rowPosition != null ? { position: rowPosition } : {}),
       ...(surfId ? { surfId, isSynced: false } : {}),
     };
     scripts[id] = starter;
@@ -8487,14 +8497,91 @@ const App = () => {
         },
       };
     },
-    async agentCreatePart({ name, script } = {}) {
+    agentGetPartTransform({ partId }) {
+      const doc = assemblyRef.current;
+      const part = doc?.parts?.find((row) => row.id === partId);
+      if (!part) {
+        return { error: { code: 'unknown_part', message: `Unknown part id: ${partId}` } };
+      }
+      const pose = partPlacement(part);
+      return {
+        result: {
+          part: partId,
+          position: pose.t.slice(),
+          rotation: quaternionToEulerDegrees(pose.q),
+          eulerOrder: AGENT_EULER_ORDER,
+        },
+      };
+    },
+    agentSetPartTransform({ partId, position, rotation }) {
+      const doc = assemblyRef.current;
+      if (!doc) {
+        return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+      }
+      const part = doc.parts.find((row) => row.id === partId);
+      if (!part) {
+        return { error: { code: 'unknown_part', message: `Unknown part id: ${partId}` } };
+      }
+      const current = partPlacement(part);
+      const t = position != null
+        ? [Number(position[0]) || 0, Number(position[1]) || 0, Number(position[2]) || 0]
+        : current.t.slice();
+      if (position != null && !t.every(Number.isFinite)) {
+        return { error: { code: 'bad_args', message: 'position must be [x, y, z] numbers in mm' } };
+      }
+      let q = current.q.slice();
+      if (rotation != null) {
+        const nextQ = eulerDegreesToQuaternion(rotation);
+        if (!nextQ) {
+          return {
+            error: {
+              code: 'bad_args',
+              message: `rotation must be intrinsic ${AGENT_EULER_ORDER} Euler degrees [rx, ry, rz]`,
+            },
+          };
+        }
+        q = nextQ;
+      }
+      const jointed = jointedSurfIds(doc.joints);
+      const draft = { ...part, placement: { t, q } };
+      const pose = poseFieldsForPart(draft, jointed.has(part.surfId), t);
+      const nextPart = { ...part, ...pose };
+      const before = doc;
+      const written = rememberAssembly({
+        ...doc,
+        parts: doc.parts.map((row) => (row.id === partId ? nextPart : row)),
+      });
+      recordAgentAssemblyStep(before);
+      paintAssemblyPoses(written);
+      if (written.activeId === partId) {
+        const mesh = meshForPart(partId);
+        if (mesh?.vertProperties) {
+          viewportRef.current?.swapPickPart?.({
+            partId,
+            mesh,
+            position: partPosition(nextPart) || [0, 0, 0],
+            placement: partPlacement(nextPart),
+          });
+        }
+      }
+      const poseOut = partPlacement(nextPart);
+      return {
+        result: {
+          part: partId,
+          position: poseOut.t.slice(),
+          rotation: quaternionToEulerDegrees(poseOut.q),
+          eulerOrder: AGENT_EULER_ORDER,
+        },
+      };
+    },
+    async agentCreatePart({ name, script, position } = {}) {
       const before = assemblyRef.current;
       if (!before) {
         return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
       }
       // Agent parts stay path-less in a git assembly: git_save (behind the
       // write consent) paths and commits them with the assembly.
-      await handleAddPart(name, { script, deferVault: true });
+      await handleAddPart(name, { script, deferVault: true, fromAgent: true, position });
       await ensureLocalSurfIds();
       const after = assemblyRef.current;
       recordAgentAssemblyStep(before);

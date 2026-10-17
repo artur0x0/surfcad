@@ -420,6 +420,8 @@ export function createSurfcadBridge(hostSource) {
     listSketchEntities: () => hostFn('listSketchEntities')?.(),
     agentCreateAssembly: (args) => hostFn('agentCreateAssembly')?.(args),
     agentCreatePart: (args) => hostFn('agentCreatePart')?.(args),
+    agentGetPartTransform: (args) => hostFn('agentGetPartTransform')?.(args),
+    agentSetPartTransform: (args) => hostFn('agentSetPartTransform')?.(args),
     agentOpenAssembly: (args) => hostFn('agentOpenAssembly')?.(args),
     agentOpenPart: (args) => hostFn('agentOpenPart')?.(args),
     agentInsertAssemblyParts: (args) => hostFn('agentInsertAssemblyParts')?.(args),

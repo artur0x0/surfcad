@@ -40,6 +40,20 @@ export function partPosition(part) {
   return [x, y, z];
 }
 
+/**
+ * Initial translation for a new part row. UI creation staggers along +X so
+ * bodies do not overlap in the viewport. Agent `create_part` defaults to the
+ * assembly origin unless `position` is set.
+ */
+export function newPartRowPosition(order, { fromAgent = false, position = null } = {}) {
+  if (Array.isArray(position) && position.length >= 3) {
+    const t = [Number(position[0]), Number(position[1]), Number(position[2])];
+    if (t.every(Number.isFinite)) return t;
+  }
+  if (fromAgent) return undefined;
+  return order === 0 ? undefined : [order * 40, 0, 0];
+}
+
 export function missingRowAction(source) {
   return source === 'git' ? 'add-to-repo' : 'upload';
 }
