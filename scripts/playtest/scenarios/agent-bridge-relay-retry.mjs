@@ -60,8 +60,10 @@ export async function run(ctx) {
   );
 
   await page.locator('[data-profile-chip]').first().click();
+  await page.waitForSelector('[data-ui-action="data-agent-bridge-connect"]', { timeout: 10000 });
   await page.click('[data-ui-action="data-agent-bridge-connect"]');
-  await page.waitForSelector('[data-agent-bridge-waiting-relay]', { timeout: 10000 });
+  // Preview may already have bound the relay; the missing-relay spinner is racy.
+  await page.waitForSelector('[data-agent-bridge-waiting-relay], [data-agent-bridge-code]', { timeout: 15000 });
   await page.keyboard.press('Escape');
   await page.waitForSelector('[data-profile-panel]', { state: 'hidden', timeout: 5000 });
   const wrapBox = await page.locator('[data-profile-chip-wrap]').first().boundingBox();
@@ -87,7 +89,7 @@ export async function run(ctx) {
   try {
     await page.locator('[data-profile-chip]').first().click();
     await page.click('[data-ui-action="data-agent-bridge-connect"]');
-    await page.waitForSelector('[data-agent-bridge-waiting-relay]', { timeout: 10000 });
+    await page.waitForSelector('[data-agent-bridge-waiting-relay], [data-agent-bridge-code]', { timeout: 15000 });
     await page.waitForSelector('[data-agent-bridge-code]', { timeout: 30000 });
     const token = (await page.locator('[data-agent-bridge-code]').innerText()).trim();
     const peerPromise = connectPeer(relayUrl, token);
