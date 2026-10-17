@@ -10,6 +10,7 @@
 import { assemblyName, serializeAssembly } from '../assembly.js';
 import { prepareAssemblySurfWrite, remapAssemblyPaths } from './gitCommit.js';
 import { captureBaseline, resolveAssemblyFolderName } from './gitWorkspace.js';
+import { partRepoPath, partScriptText } from './partIdentity.js';
 import { readSurfId, withSurfId } from './surfId.js';
 import { assemblyDir, assemblyFilePath, parseVaultPath, vaultSegment } from './vaultLayout.js';
 
@@ -101,24 +102,34 @@ export async function planAssemblyRename({
   const workScripts = prepared.scripts;
   const moved = [...(remapped.moved || []), ...(prepared.moved || [])];
   const localByPath = new Map();
-  for (const { to } of remapped.moved || []) {
-    const part = workDoc.parts.find((row) => row.id === to);
-    let content = workScripts[to] ?? '';
+  const scriptForMove = (move) => {
+    const part = workDoc.parts.find((row) => (
+      row.id === move.id || row.id === move.from || partRepoPath(row) === move.to
+    ));
+    return partScriptText(part, workScripts)
+      ?? workScripts[move.id]
+      ?? workScripts[move.from]
+      ?? workScripts[move.to]
+      ?? '';
+  };
+  for (const move of remapped.moved || []) {
+    const part = workDoc.parts.find((row) => row.id === move.id || partRepoPath(row) === move.to);
+    let content = scriptForMove(move);
     if (part?.surfId && readSurfId(content) !== part.surfId) {
       content = withSurfId(content, part.surfId);
     }
-    localByPath.set(to, { path: to, content });
+    localByPath.set(move.to, { path: move.to, content });
   }
-  for (const { to } of prepared.moved || []) {
-    if (!to || localByPath.has(to)) continue;
-    localByPath.set(to, { path: to, content: workScripts[to] ?? '' });
+  for (const move of prepared.moved || []) {
+    if (!move.to || localByPath.has(move.to)) continue;
+    localByPath.set(move.to, { path: move.to, content: scriptForMove(move) });
   }
   const localFiles = [...localByPath.values()];
   const assemblyPath = prepared.assemblyPath || assemblyFilePath(newName);
   const assemblyText = prepared.assemblyText;
   const moves = localFiles.map((file) => {
     const from = moved.find((pair) => pair.to === file.path)?.from || '';
-    const part = workDoc.parts.find((row) => row.id === file.path);
+    const part = workDoc.parts.find((row) => partRepoPath(row) === file.path || row.id === file.path);
     return { from, to: file.path, surfId: part?.surfId || null, content: file.content };
   });
   return {

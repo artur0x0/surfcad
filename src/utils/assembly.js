@@ -2,7 +2,8 @@
  * Assembly document and the rules that turn rows into a viewport.
  *
  * The saved JSON lists parts by id. It never contains script source.
- * Git ids are repo paths. Local ids are bare IndexedDB keys, with no sync prefix.
+ * The row id is a stable id for the part's life. Git parts also store a
+ * repo `path`. Local ids are bare IndexedDB keys, with no sync prefix.
  * A position, when present, is the translation. A placement, when present,
  * is that translation plus a unit quaternion. Joints name parts by surf id
  * and live on this document. Part scripts are not modified.
@@ -46,7 +47,7 @@ export function missingRowAction(source) {
 /**
  * Resolve a row id to script text.
  * The script map is separate from the assembly document.
- * Git: id is a repo path. Local: id is an IndexedDB key.
+ * Scripts are keyed by the part row id.
  */
 export function resolvePartId(source, id, scripts) {
   const key = id == null ? '' : String(id);
@@ -86,7 +87,7 @@ export function newLocalPartId() {
  *   source: 'git' | 'local',
  *   name: string,
  *   activeId: string | null,
- *   parts: [{ id, name, visible, order, position?, placement?, surfId?, isSynced? }]
+ *   parts: [{ id, name, visible, order, path?, position?, placement?, surfId?, isSynced? }]
  *   groups?: [{ id, name, source, partIds }]
  *   colors?: { [surfId]: { part?: '#rrggbb', faces?: [...] } }
  *   joints?: [{ id, name, type, value?, sense?, opposed?, a, b? }]
@@ -358,7 +359,9 @@ export function assemblyNameFromFile(filename) {
  */
 export function normalizeGroups(groups, parts) {
   const live = new Set(
-    (parts || []).map((part) => part?.surfId).filter((id) => isSurfId(id)),
+    (parts || [])
+      .map((part) => part?.surfId || (isSurfId(part?.id) ? part.id : null))
+      .filter((id) => isSurfId(id)),
   );
   const seenParts = new Set();
   const seenIds = new Set();
@@ -547,7 +550,7 @@ function canonicalColorEntry(entry) {
  */
 export function normalizeAssemblyColors(colors, parts) {
   if (!colors || typeof colors !== 'object' || Array.isArray(colors)) return null;
-  const live = (parts || []).map((part) => part?.surfId).filter((id) => isSurfId(id));
+  const live = (parts || []).map((part) => part?.surfId || (isSurfId(part?.id) ? part.id : null)).filter(Boolean);
   const pruned = pruneColorMap(colors, live);
   if (!pruned || typeof pruned !== 'object' || Array.isArray(pruned)) return null;
   const liveSet = new Set(live);
@@ -571,6 +574,7 @@ export function serializeAssembly(doc) {
     };
     const sheetMetal = normalizeSheetMetalBinding(part?.sheetMetal);
     if (sheetMetal) row.sheetMetal = sheetMetal;
+    if (typeof part?.path === 'string' && part.path) row.path = part.path;
     if (typeof part?.surfId === 'string' && part.surfId) row.surfId = part.surfId;
     if (typeof part?.copiedFrom === 'string' && part.copiedFrom) row.copiedFrom = part.copiedFrom;
     if (typeof part?.isSynced === 'boolean') row.isSynced = part.isSynced;
@@ -619,6 +623,7 @@ export function parseAssemblyDocument(input) {
       name: part?.name,
       visible: part?.visible,
       order: part?.order ?? index,
+      path: part?.path,
       position: part?.position,
       placement: part?.placement,
       sheetMetal: part?.sheetMetal,

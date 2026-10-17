@@ -351,7 +351,7 @@ console.log('\nsync store keys and a delete guard on the worker');
     files: [{ path: GB, delete: true }],
   });
   const refused = await flushSyncQueue({ store: guarded, adapter: gh, repo: vault.repo, branch: 'main', online: true });
-  eq('delete during migration fails', refused.status, 'failed');
+  eq('id migration is not written', refused.status, 'idle');
   ok('part file is still in the repo', !!(await gh.readFile(vault.repo, GB, 'main')));
   eq('part bytes were not replaced', (await gh.readFile(vault.repo, GB, 'main')).content, withSurfId(BRACKET_BODY, OTHER));
 }

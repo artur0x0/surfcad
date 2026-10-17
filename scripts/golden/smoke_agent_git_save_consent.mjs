@@ -237,10 +237,14 @@ check(
 
 const after = await agentCall(page, 'parts', {});
 const afterParts = after.out.result?.parts || [];
+const beforeIds = beforeParts.map((p) => p.id).sort();
 check(
-  'working copy now uses the committed paths',
-  JSON.stringify(afterParts.map((p) => p.id).sort()) === JSON.stringify(scriptsWritten.map((f) => f.path).sort()),
-  JSON.stringify(afterParts.map((p) => p.id)),
+  'working copy keeps the same ids and stores assembly-folder paths',
+  JSON.stringify(afterParts.map((p) => p.id).sort()) === JSON.stringify(beforeIds)
+    && afterParts.every((p) => p.id && p.path && p.id !== p.path && String(p.path).startsWith('assemblies/'))
+    && JSON.stringify(afterParts.map((p) => p.path).sort())
+      === JSON.stringify(scriptsWritten.map((f) => f.path).sort()),
+  JSON.stringify(afterParts),
 );
 
 const clean = await agentCall(page, 'git_save', { message: 'Save Kettle again' });
@@ -253,10 +257,13 @@ check(
 const lidRow = afterParts.find((p) => p.name === 'Kettle Lid');
 const handleRow = afterParts.find((p) => p.name === 'Kettle Handle');
 const moved = await agentCall(page, 'rename_part', { part_id: lidRow?.id, name: 'Kettle Handle' });
-const expectedPath = handleRow?.id?.replace(/\.js$/, '-2.js');
+const expectedPath = String(handleRow?.path || '').replace(/\.js$/, '-2.js');
 check(
-  'rename_part moves a vault part with the -2 rule',
-  moved.out.ok === true && moved.out.result?.moved === true && moved.out.result?.partId === expectedPath,
+  'rename_part keeps the id and moves the path with the -2 rule',
+  moved.out.ok === true
+    && moved.out.result?.partId === lidRow?.id
+    && moved.out.result?.path === expectedPath
+    && moved.out.result?.moved === true,
   JSON.stringify(moved.out),
 );
 const renameCommit = fake.log()[0];
@@ -264,7 +271,7 @@ const renameFiles = renameCommit?.files || [];
 check(
   'rename is one commit: old .js removed, new .js added, .surf.json updated',
   fake.log().length === seedCommits + 2
-    && renameFiles.some((f) => f.path === lidRow?.id && f.status === 'removed')
+    && renameFiles.some((f) => f.path === lidRow?.path && f.status === 'removed')
     && renameFiles.some((f) => f.path === expectedPath && f.status === 'added')
     && renameFiles.some((f) => f.path.endsWith('.surf.json')),
   JSON.stringify(renameCommit),
@@ -273,7 +280,7 @@ const surfAfter = JSON.parse(fake.readFile(surfWritten[0]?.path) || '{}');
 check(
   '.surf.json reference follows the rename',
   (surfAfter.parts || []).some((p) => p.path === expectedPath)
-    && !(surfAfter.parts || []).some((p) => p.path === lidRow?.id),
+    && !(surfAfter.parts || []).some((p) => p.path === lidRow?.path),
   JSON.stringify(surfAfter.parts),
 );
 const histAfter = await agentCall(page, 'history', {});
