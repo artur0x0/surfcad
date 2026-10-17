@@ -27,20 +27,14 @@ export function isGpcActive(nav = navigatorRef) {
   return nav.globalPrivacyControl === true;
 }
 
-/** Whether the user has made an explicit analytics choice (banner dismissed or settings). */
+/** Whether the user has made an explicit analytics choice (privacy choices or prior opt-out). */
 export function hasStoredConsentChoice() {
   const raw = readRaw();
   return raw != null && typeof raw.analytics === 'boolean';
 }
 
-/** First visit with no stored choice: show the cookie banner (not when GPC applies). */
-export function shouldShowCookieConsentBanner(nav = navigatorRef) {
-  if (isGpcActive(nav)) return false;
-  return !hasStoredConsentChoice();
-}
-
 /**
- * GPC on first visit: treat as "Only required" and persist without showing the banner.
+ * GPC on first visit: treat as opt-out and persist without prompting.
  * @returns {boolean} whether a default was written
  */
 export function applyGpcDefaultOnFirstVisit(nav = navigatorRef) {

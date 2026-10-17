@@ -6,7 +6,6 @@ import {
   configureConsentStorage,
   getAnalyticsConsent,
   hasStoredConsentChoice,
-  shouldShowCookieConsentBanner,
 } from './consent.js';
 import { resetAnalyticsForTests } from './analytics.js';
 
@@ -26,24 +25,27 @@ describe('applyAnalyticsConsentChoice', () => {
     configureConsentNavigator({});
   });
 
-  test('allow all and only required dismiss the first-visit banner', async () => {
-    assert.equal(shouldShowCookieConsentBanner(), true);
-    await applyAnalyticsConsentChoice(true, { isAuthenticated: false });
-    assert.equal(hasStoredConsentChoice(), true);
-    assert.equal(shouldShowCookieConsentBanner(), false);
+  test('defaults analytics on until the user opts out', async () => {
     assert.equal(getAnalyticsConsent(), true);
+    assert.equal(hasStoredConsentChoice(), false);
 
-    configureConsentStorage(memoryStorage());
-    assert.equal(shouldShowCookieConsentBanner(), true);
     await applyAnalyticsConsentChoice(false, { isAuthenticated: false });
+    assert.equal(hasStoredConsentChoice(), true);
     assert.equal(getAnalyticsConsent(), false);
-    assert.equal(shouldShowCookieConsentBanner(), false);
   });
 
-  test('reopen via settings can flip preference', async () => {
+  test('privacy choices can flip preference back on', async () => {
     await applyAnalyticsConsentChoice(false, { isAuthenticated: false });
     assert.equal(getAnalyticsConsent(), false);
     await applyAnalyticsConsentChoice(true, { isAuthenticated: false });
     assert.equal(getAnalyticsConsent(), true);
+  });
+
+  test('GPC keeps analytics off even when opting in', async () => {
+    configureConsentNavigator({ globalPrivacyControl: true });
+    await applyAnalyticsConsentChoice(true, { isAuthenticated: false });
+    assert.equal(getAnalyticsConsent(), false);
+    await applyAnalyticsConsentChoice(false, { isAuthenticated: false });
+    assert.equal(getAnalyticsConsent(), false);
   });
 });
