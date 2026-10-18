@@ -281,8 +281,8 @@ console.log('face paint — cancel writes nothing');
   const app = readFileSync(new URL('../../src/App.jsx', import.meta.url), 'utf8');
   const handlerAt = app.indexOf('const handleCommitPaint');
   const handler = app.slice(handlerAt, app.indexOf('const handleCommitShell', handlerAt));
-  check('confirm saves through the assembly path', /rememberAssembly\(/.test(handler) && /enqueueAssemblySave\(/.test(handler)
-    && /payload\.op === 'session'/.test(handler) && /op: 'session'/.test(view));
+  check('confirm writes the working copy only', /rememberAssembly\(/.test(handler) && !/enqueueAssemblySave\(/.test(handler)
+    && !/flushGitOps/.test(handler) && /payload\.op === 'session'/.test(handler) && /op: 'session'/.test(view));
   const css = readFileSync(new URL('../../src/index.css', import.meta.url), 'utf8');
   const dblAt = view.indexOf('const onDblClick = (event) => {');
   check('a double tap does not zoom the page',

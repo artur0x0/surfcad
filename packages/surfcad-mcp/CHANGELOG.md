@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Git writes happen only on an explicit user Save or a consented `git_save`. Paint, group edits, insert/open/copy/delete/rename, New Assembly, and coming back online no longer commit, push, assign vault paths, or create the vault repo. Path-less working copies no longer toast `parts[N].path must be a repo-relative path` when capturing a baseline.
+- Delete from assembly & repo records the part and mesh paths in a working-copy sidecar (IndexedDB / sync store, not `.surf.json`). Save emits those `fileDelete`s in the same commit. Assembly rename stores the old vault name next to the working copy so a reload reseeds the baseline from the old folder and Save moves it. Browse / branches / toggle do not create a vault (`No repo yet. Save creates it.`). Copy does not assign a repo path until Save. An offline Save stays queued until the next Save.
 - The loopback probe uses only the WebSocket handshake (no HTTP GET to 127.0.0.1, which prod CSP `connect-src` blocks). A policy close 1008 / `origin_blocked` is origin rejection; timeouts and close 1006 stay `issue: null` so polling continues. A disallowed Origin completes the upgrade and closes with that policy code instead of HTTP 403, so the browser can tell it apart from a missing relay.
 
 ## 0.2.1 — 2026-10-17

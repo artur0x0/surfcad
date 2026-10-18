@@ -947,6 +947,7 @@ class ManifoldWorker {
           this.pendingRequests.delete(id);
           const error = new Error(payload.message);
           error.stack = payload.stack;
+          if (typeof payload.name === 'string' && payload.name) error.name = payload.name;
           // Script line of the failing call (feature strip red border).
           if (Number.isFinite(payload.scriptLine)) error.scriptLine = payload.scriptLine;
           // Marked feature block that was running (engine-independent).

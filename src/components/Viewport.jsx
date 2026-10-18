@@ -48,6 +48,8 @@ import {
 } from '../utils/previewStyle';
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 import { fillAgentHost } from '../agent/host';
+import { kernelExceptionDetail } from '../agent/state/formatErrors';
+import { viewportToastRows } from '../agent/state/toasts';
 import { buildAgentMode } from '../agent/state/mode';
 import { buildCameraState } from '../agent/state/camera';
 import { buildSelection } from '../agent/state/selection';
@@ -2250,6 +2252,7 @@ const Viewport = forwardRef(({
       setSelectedEdges([]);
       onFaceSelected?.(null);
       setCachedMeshData(null);
+      stageExecErrorRef.current = null;
       setExecutionError(null);
       setModelBounds(null);
       if (resultRef.current) {
@@ -2495,8 +2498,10 @@ const Viewport = forwardRef(({
         });
       },
       readViewportToasts() {
-        if (!shellToast) return [];
-        return [{ id: 'viewport-toast', kind: 'info', message: String(shellToast) }];
+        return viewportToastRows({
+          executionError: stageExecErrorRef.current || executionError,
+          shellToast,
+        });
       },
       clearSelection: () => agentClearSelectionRef.current(),
       selectFaces: (args) => agentSelectFacesRef.current(args),
@@ -6484,6 +6489,7 @@ const Viewport = forwardRef(({
       if (renderer && scene && camera) renderer.render(scene, camera);
     } catch (error) {
       console.error('[CrossSection] Error applying plane:', error);
+      stageExecErrorRef.current = error.message || null;
       setExecutionError(error.message);
     }
   };
@@ -10737,13 +10743,17 @@ const Viewport = forwardRef(({
           // caller can tell a fresh build from a failure without reading React state.
           executeScript: async (s, opts) => {
             stageExecErrorRef.current = null;
+            let ran;
             try {
-              await executeScript(s, opts);
+              ran = await executeScript(s, opts);
             } catch (e) {
               stageExecErrorRef.current = String(e?.message || e);
             }
-            const err = stageExecErrorRef.current;
-            const mesh = err ? null : (window.__MANIFOLD_CONTEXT__?.lastResult?.mesh ?? null);
+            // A skipped feature still returns the recovered solid and sets the
+            // popup text. That text is for the agent toast, not a hard fail.
+            const recovered = !!(ran && ran.ok === true && ran.mesh);
+            const err = recovered ? null : stageExecErrorRef.current;
+            const mesh = err ? null : (ran?.mesh ?? window.__MANIFOLD_CONTEXT__?.lastResult?.mesh ?? null);
             // Identity check against the render choke point: the object we painted is the
             // object the worker just returned, or this run did not reach the screen at all.
             const solidBounds = () => {
@@ -12683,6 +12693,7 @@ const Viewport = forwardRef(({
     // A bar at the start blanks `let part` and the trailing `return part`.
     // That copy is an empty part: clear the solid, do not ask the worker.
     if (shouldClearViewportScript(script) || rollbackClearsPart(script, anchor)) {
+      stageExecErrorRef.current = null;
       onRunOutcomeRef.current?.({ script, ok: true, scriptLine: null });
       setExecutionError(null);
       setCachedMeshData(null);
@@ -12739,6 +12750,7 @@ const Viewport = forwardRef(({
     executionAbortRef.current = abortController;
     
     setIsExecuting(true);
+    stageExecErrorRef.current = null;
     setExecutionError(null);
 
     // Do NOT clear face/edge selection here — a failed Auto-Run must keep the
@@ -12769,7 +12781,12 @@ const Viewport = forwardRef(({
         setExecutionError(msg);
         publishRefDisplay(outcome?.displays);
         if (!opts.editPreview) {
-          onRunOutcomeRef.current?.({ script: submitted, ok: false, scriptLine: null });
+          onRunOutcomeRef.current?.({
+            script: submitted,
+            ok: false,
+            scriptLine: null,
+            message: msg,
+          });
         }
       };
       // A soft-restart or assembly preempt clears isReady until init()
@@ -13047,6 +13064,7 @@ const Viewport = forwardRef(({
             featureId: skip.featureId,
             featureBlock: typeof skip.featureBlock === 'string' ? skip.featureBlock : null,
             skipped: Array.isArray(skip.skipped) ? skip.skipped : [],
+            message: msg,
           });
         } else {
           onRunOutcomeRef.current?.({
@@ -13081,6 +13099,7 @@ const Viewport = forwardRef(({
       filletQualityWatchRef.current = null;
       console.error('Error executing script:', error);
       const msg = error.message || 'Script execution failed';
+      const detail = kernelExceptionDetail(error, msg);
       stageExecErrorRef.current = msg;
       setExecutionError(msg);
       // The worker names the marked feature block that was running
@@ -13094,6 +13113,8 @@ const Viewport = forwardRef(({
           featureId: typeof error?.featureId === 'string' ? error.featureId : null,
           featureBlock: typeof error?.featureBlock === 'string' ? error.featureBlock : null,
           skipped: Array.isArray(error?.featureSkip?.skipped) ? error.featureSkip.skipped : [],
+          message: msg,
+          detail,
         });
       }
 
@@ -14584,7 +14605,10 @@ const Viewport = forwardRef(({
             tone="error"
             layout="stacked"
             title="Error"
-            onDismiss={() => setExecutionError(null)}
+            onDismiss={() => {
+              stageExecErrorRef.current = null;
+              setExecutionError(null);
+            }}
             onUndo={onUndo}
             canUndo={canUndo}
             className="p-3"

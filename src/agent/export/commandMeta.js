@@ -41,7 +41,8 @@ export const COMMAND_META = {
     mutates: false,
   },
   errors: {
-    description: 'Structured errors from the last finished geometry run.',
+    description:
+      'Structured errors from the last finished geometry run. message is the same text the viewport shows. featureType, featureLabel, and featureIndex identify the failed feature when known. detail is the exception name, a Manifold status, or the kernel message when that text is not already in message. Stack frames and URLs are omitted, and detail is absent when there is nothing further. Cleared on the next successful run. Feature and kernel failures use code feature_failed.',
     result: {
       type: 'object',
       additionalProperties: false,
@@ -55,6 +56,10 @@ export const COMMAND_META = {
               code: { type: 'string' },
               message: { type: 'string' },
               featureIndex: { type: 'integer' },
+              featureId: { type: 'string' },
+              featureType: { type: 'string' },
+              featureLabel: { type: 'string' },
+              detail: { type: 'string' },
             },
           },
         },

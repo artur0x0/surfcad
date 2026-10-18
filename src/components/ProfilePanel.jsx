@@ -293,7 +293,7 @@ export default function ProfilePanel({
         </>
       )}
       <div className="my-2 border-t border-chrome-border" data-profile-privacy-divider="" />
-      <PrivacyChoicesController variant="profileMenu" />
+      <PrivacyChoicesController variant="profileMenu" onPicked={onClose} />
       {agentBridgeLive ? (
         <>
           <div className="my-2 border-t border-chrome-border" data-profile-agent-bridge-divider="" />

@@ -253,6 +253,7 @@ describe('regression', () => {
     assert.equal(me.status, 200);
     assert.equal(me.body.authenticated, false);
     assert.equal(me.body.isAdmin, false);
+    assert.equal(me.body.isInternal, false);
   });
 
   test('GET /me isAdmin is true when githubLogin is allowlisted', async () => {
@@ -273,7 +274,9 @@ describe('regression', () => {
         const me = await c('GET', '/api/auth/me');
         assert.equal(me.body.isAdmin, true);
         assert.equal(me.body.user.isAdmin, true);
-        assert.equal(me.body.user.githubLogin, 'Octo');
+        assert.equal(me.body.isInternal, false);
+        assert.equal(me.body.user.isInternal, false);
+        assert.equal(me.body.user.githubLogin, 'octo');
       } finally {
         restoreFetch();
       }

@@ -10,6 +10,12 @@ import { deleteResolvedGithubVault } from '../services/githubVaultDelete.js';
 import { confirmAndRememberVaultName, storedVaultNameFromUser } from '../services/vaultName.js';
 import { loginAndTrack } from '../services/loginTracking.js';
 import { requireAuth } from '../auth/session.js';
+import { isInternalUser } from '../services/internalUsers.js';
+import {
+  parseRequestedAnalyticsConsent,
+  seedUserConsent,
+  stashRequestedAnalyticsConsent,
+} from '../services/posthog.js';
 import Order from '../db/models/Order.js';
 import {
   EXISTING_ACCOUNT_MESSAGE,
@@ -36,6 +42,13 @@ function registerCodeCooldownResponse(wait) {
     error: `Please wait ${wait} seconds before requesting a new code`,
     retryAfter: wait,
   };
+}
+
+function publicAuthUser(user) {
+  const json = typeof user?.toJSON === 'function' ? user.toJSON() : { ...user };
+  json.isAdmin = isAdmin(user);
+  json.isInternal = isInternalUser(user, config.internalUsers);
+  return json;
 }
 
 function plainConsent(consent) {
@@ -72,6 +85,7 @@ function presentAuthedUser(reqUser) {
   // schema default here — resolution must still be free to adopt a legacy vault.
   user.vaultName = storedVaultNameFromUser(reqUser);
   user.isAdmin = isAdmin(reqUser);
+  user.isInternal = isInternalUser(reqUser, config.internalUsers);
   return user;
 }
 
@@ -82,6 +96,7 @@ router.get('/me', (req, res) => {
       authenticated: true,
       user,
       isAdmin: user.isAdmin,
+      isInternal: user.isInternal,
     });
   }
   
@@ -90,6 +105,7 @@ router.get('/me', (req, res) => {
     return res.json({
       authenticated: false,
       isAdmin: false,
+      isInternal: false,
       guest: {
         id: req.session.guestId,
         email: req.session.guestEmail,
@@ -98,7 +114,7 @@ router.get('/me', (req, res) => {
     });
   }
   
-  return res.json({ authenticated: false, isAdmin: false });
+  return res.json({ authenticated: false, isAdmin: false, isInternal: false });
 });
 
 /**
@@ -203,6 +219,7 @@ router.post('/register', async (req, res) => {
       authProvider: 'local',
       emailVerified: false,
     });
+    seedUserConsent(user, parseRequestedAnalyticsConsent(req.body?.analyticsConsent));
 
     // Password is set at /verify, after the inbox owner proves the code.
     
@@ -287,7 +304,7 @@ router.post('/verify', async (req, res) => {
       return res.json({
         success: true,
         verified: true,
-        user,
+        user: publicAuthUser(user),
       });
     } catch (err) {
       console.error('[Auth] Login after verification failed:', err);
@@ -397,7 +414,7 @@ router.post('/login', async (req, res, next) => {
       console.log(`[Auth] User logged in: ${normalizedEmail}`);
       return res.json({
         success: true,
-        user,
+        user: publicAuthUser(user),
       });
     } catch (err) {
       console.error('[Auth] Login failed:', err);
@@ -583,7 +600,7 @@ router.post('/guest/convert', async (req, res) => {
       delete req.session.guestConvert;
       return res.json({
         success: true,
-        user,
+        user: publicAuthUser(user),
       });
     } catch (err) {
       return res.status(500).json({ error: 'Account created but login failed' });
@@ -615,6 +632,7 @@ router.post('/github', async (req, res) => {
 
     const { profile } = looked;
     const { user, isNew } = await User.findOrCreateOAuth(profile, 'github');
+    stashRequestedAnalyticsConsent(req);
 
     // Ensure githubId / githubLogin are set (older linked accounts)
     let githubDirty = false;
@@ -622,14 +640,14 @@ router.post('/github', async (req, res) => {
       user.githubId = profile.id;
       githubDirty = true;
     }
-    const login = String(profile.login || '').trim();
+    const login = String(profile.login || '').trim().toLowerCase();
     if (login && user.githubLogin !== login) {
       user.githubLogin = login;
       githubDirty = true;
     }
     if (githubDirty) await user.save();
 
-    await loginAndTrack(req, user, 'github');
+    await loginAndTrack(req, user, 'github', { isNew: !!isNew });
 
     delete req.session.guestId;
     delete req.session.guestEmail;
@@ -638,7 +656,7 @@ router.post('/github', async (req, res) => {
     return res.json({
       success: true,
       isNew: !!isNew,
-      user,
+      user: publicAuthUser(user),
     });
   } catch (error) {
     if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 500) {
@@ -657,6 +675,7 @@ router.post('/github', async (req, res) => {
  */
 router.get('/google', (req, res, next) => {
   req.session.returnTo = req.query.returnTo || '/';
+  stashRequestedAnalyticsConsent(req);
   passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
 });
 
@@ -668,11 +687,11 @@ router.get('/google/callback',
   (req, res, next) => {
     passport.authenticate('google', {
       failureRedirect: '/login?error=google_failed',
-    }, (err, user) => {
+    }, (err, user, info) => {
       if (err || !user) {
         return res.redirect('/login?error=google_failed');
       }
-      loginAndTrack(req, user, 'google')
+      loginAndTrack(req, user, 'google', { isNew: !!info?.isNew })
         .then(() => {
           const returnTo = req.session.returnTo || '/';
           delete req.session.returnTo;
@@ -700,6 +719,7 @@ router.get('/apple', (req, res, next) => {
   }
   const returnTo = req.query.returnTo || '/';
   req.session.returnTo = returnTo;
+  stashRequestedAnalyticsConsent(req);
 
   passport.authenticate('apple', {
   })(req, res, next);
@@ -729,7 +749,7 @@ router.post('/apple/callback',
         return res.redirect(`/login?error=apple_failed&reason=${encodeURIComponent(reason)}`);
       }
 
-      loginAndTrack(req, user, 'apple')
+      loginAndTrack(req, user, 'apple', { isNew: !!info?.isNew })
         .then(() => {
           let returnTo = req.session.returnTo || '/';
           delete req.session.returnTo;

@@ -11,6 +11,7 @@ import {
   onConsentChange,
   readStoredRecord,
   setAnalyticsConsent,
+  shouldShowPrivacyConsentPopup,
   isGpcActive,
 } from './consent.js';
 
@@ -32,26 +33,41 @@ describe('consent', () => {
     configureConsentNavigator({});
   });
 
-  test('defaults analytics on when storage is empty', () => {
-    assert.equal(getAnalyticsConsent(), true);
-    assert.equal(readStoredRecord().analytics, true);
+  test('first visit: no stored choice, analytics off, popup shown', () => {
     assert.equal(hasStoredConsentChoice(), false);
+    assert.equal(getAnalyticsConsent(), false);
+    assert.equal(readStoredRecord().analytics, false);
+    assert.equal(shouldShowPrivacyConsentPopup(), true);
   });
 
-  test('explicit choice persists until cleared', () => {
+  test('stored Accept all hides the popup and allows analytics', () => {
+    setAnalyticsConsent(true);
+    assert.equal(hasStoredConsentChoice(), true);
+    assert.equal(getAnalyticsConsent(), true);
+    assert.equal(shouldShowPrivacyConsentPopup(), false);
+    assert.equal(readStoredRecord().source, 'user');
+  });
+
+  test('stored Required only hides the popup and keeps analytics off', () => {
     setAnalyticsConsent(false);
     assert.equal(hasStoredConsentChoice(), true);
     assert.equal(getAnalyticsConsent(), false);
-    setAnalyticsConsent(true);
-    assert.equal(getAnalyticsConsent(), true);
-    assert.equal(hasStoredConsentChoice(), true);
+    assert.equal(shouldShowPrivacyConsentPopup(), false);
+    assert.equal(readStoredRecord().source, 'user');
   });
 
-  test('GPC persists opt-out default on first visit', () => {
+  test('GPC on first visit skips popup, stores Required only with source gpc', () => {
     configureConsentNavigator({ globalPrivacyControl: true });
+    assert.equal(shouldShowPrivacyConsentPopup(), false);
     assert.equal(applyGpcDefaultOnFirstVisit(), true);
     assert.equal(hasStoredConsentChoice(), true);
     assert.equal(getAnalyticsConsent(), false);
+    const rec = readStoredRecord();
+    assert.equal(rec.analytics, false);
+    assert.equal(rec.source, 'gpc');
+    const raw = JSON.parse(storage.getItem(CONSENT_STORAGE_KEY));
+    assert.equal(raw.source, 'gpc');
+    assert.equal(applyGpcDefaultOnFirstVisit(), false);
   });
 
   test('GPC forces analytics off and blocks opt-in', () => {

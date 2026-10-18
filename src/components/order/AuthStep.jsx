@@ -6,6 +6,7 @@ import {
   resolveGithubClientId,
   GITHUB_SIGNIN_SUBTITLE,
 } from '../../utils/git/githubAuth.js';
+import { oauthStartPath, withAnalyticsConsent } from '../../utils/analyticsConsentAuth.js';
 
 const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
   const [mode, setMode] = useState('options'); // 'options', 'login', 'signup', 'guest', 'verify'
@@ -78,8 +79,10 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
     if (onOAuthRedirect) {
       onOAuthRedirect(provider);
     } else {
-      const returnUrl = encodeURIComponent(window.location.pathname + '?checkout=true');
-      window.location.href = `/api/auth/${provider}?returnTo=${returnUrl}`;
+      window.location.href = oauthStartPath(
+        provider,
+        `${window.location.pathname}?checkout=true`,
+      );
     }
   };
 
@@ -95,10 +98,10 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
+        body: JSON.stringify(withAnalyticsConsent({
           email: formData.email,
           password: formData.password,
-        }),
+        })),
       });
       
       const data = await response.json();
@@ -137,12 +140,12 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
+        body: JSON.stringify(withAnalyticsConsent({
           email: formData.email,
           password: formData.password,
           firstName: formData.firstName,
           lastName: formData.lastName,
-        }),
+        })),
       });
       
       const data = await response.json();
@@ -227,11 +230,11 @@ const AuthStep = ({ onComplete, onOAuthRedirect, onError, orderContext }) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
+        body: JSON.stringify(withAnalyticsConsent({
           email: verificationEmail,
           code: code || verificationCode.join(''),
           password: formData.password,
-        }),
+        })),
       });
       
       const data = await response.json();

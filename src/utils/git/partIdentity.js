@@ -7,7 +7,7 @@
  * the path until the next explicit save writes `{ id, path }`.
  */
 import { normalizeRepoPath } from '../assembly.js';
-import { isSurfId, mintSurfId, readSurfId } from './surfId.js';
+import { isSurfId, mintSurfId, readSurfId, withSurfId } from './surfId.js';
 import { PART_EXT, isVaultPartPath } from './vaultLayout.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -40,6 +40,32 @@ export function partRepoPath(part) {
 
 export function partRowNeedsVaultPath(part) {
   return !partRepoPath(part);
+}
+
+/**
+ * Stamp a surf id on path-less rows that still lack one. Working copy only:
+ * no repo path and no git write. Git rows that already have a vault path
+ * keep waiting for Open / Save.
+ */
+export function stampMissingSurfIds(doc, scripts = {}, { now, randFor } = {}) {
+  if (!doc) return { doc, scripts: scripts || {}, changed: false };
+  const nextScripts = { ...(scripts || {}) };
+  let changed = false;
+  const parts = (doc.parts || []).map((row, index) => {
+    if (!row || row.surfId || partRepoPath(row)) return row;
+    const surfId = mintSurfId({
+      now,
+      rand: typeof randFor === 'function' ? randFor(row, index) : undefined,
+    });
+    nextScripts[row.id] = withSurfId(nextScripts[row.id] || '', surfId);
+    changed = true;
+    return { ...row, surfId };
+  });
+  return {
+    doc: changed ? { ...doc, parts } : doc,
+    scripts: nextScripts,
+    changed,
+  };
 }
 
 /** True when `id` is the identity, not a repo path. */

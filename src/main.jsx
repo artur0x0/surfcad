@@ -5,11 +5,13 @@ import './index.css';
 import App from './App';
 import GitCallback from './components/GitCallback';
 import PartnersPage from './pages/PartnersPage.jsx';
+import PrivacyPage from './pages/PrivacyPage.jsx';
 import { AuthProvider } from './hooks/useAuth';
 import { GithubSessionProvider } from './hooks/useGithubSession';
 import { GITHUB_CALLBACK_PATH } from './utils/git/githubAuth.js';
 import SentryErrorBoundary from './components/SentryErrorBoundary.jsx';
 import SentryUserSync from './components/SentryUserSync.jsx';
+import PrivacyConsentController from './components/PrivacyConsentController.jsx';
 import { bootstrapSentry } from './utils/sentryClient.js';
 import { applyGpcDefaultOnFirstVisit } from './utils/consent.js';
 
@@ -20,6 +22,7 @@ bootstrapSentry();
 applyGpcDefaultOnFirstVisit();
 
 const PARTNERS_PATH = '/partners';
+const PRIVACY_PATH = '/privacy';
 const ADMIN_PATH = '/admin';
 
 function pathIsGitCallback(pathname = window.location.pathname) {
@@ -28,6 +31,10 @@ function pathIsGitCallback(pathname = window.location.pathname) {
 
 function pathIsPartners(pathname = window.location.pathname) {
   return String(pathname || '').replace(/\/$/, '') === PARTNERS_PATH;
+}
+
+function pathIsPrivacy(pathname = window.location.pathname) {
+  return String(pathname || '').replace(/\/$/, '') === PRIVACY_PATH;
 }
 
 function pathIsAdmin(pathname = window.location.pathname) {
@@ -49,6 +56,7 @@ function pathIsAdmin(pathname = window.location.pathname) {
 function Root() {
   const [gitCallback, setGitCallback] = useState(() => pathIsGitCallback());
   const [partnersPage, setPartnersPage] = useState(() => pathIsPartners());
+  const [privacyPage, setPrivacyPage] = useState(() => pathIsPrivacy());
   const [adminPage, setAdminPage] = useState(() => pathIsAdmin());
 
   const goHome = useCallback(() => {
@@ -57,6 +65,7 @@ function Root() {
     }
     setGitCallback(false);
     setPartnersPage(pathIsPartners());
+    setPrivacyPage(pathIsPrivacy());
     setAdminPage(pathIsAdmin());
   }, []);
 
@@ -64,6 +73,7 @@ function Root() {
     const sync = () => {
       setGitCallback(pathIsGitCallback());
       setPartnersPage(pathIsPartners());
+      setPrivacyPage(pathIsPrivacy());
       setAdminPage(pathIsAdmin());
     };
     window.addEventListener('popstate', sync);
@@ -84,6 +94,19 @@ function Root() {
         <AuthProvider>
           <SentryUserSync />
           <PartnersPage />
+          <PrivacyConsentController />
+        </AuthProvider>
+      </SentryErrorBoundary>
+    );
+  }
+
+  if (privacyPage) {
+    return (
+      <SentryErrorBoundary>
+        <AuthProvider>
+          <SentryUserSync />
+          <PrivacyPage />
+          <PrivacyConsentController />
         </AuthProvider>
       </SentryErrorBoundary>
     );
@@ -116,6 +139,7 @@ function Root() {
           <GithubSessionProvider>
             <App />
           </GithubSessionProvider>
+          <PrivacyConsentController />
         </AuthProvider>
       </StrictMode>
     </SentryErrorBoundary>
