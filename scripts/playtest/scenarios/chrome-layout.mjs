@@ -14,7 +14,8 @@ export const id = 'chrome-layout';
 export const title = 'Parts-header branch chip and feature ribbon height';
 export const userId = USER_ID;
 
-const EMPTY_SCRIPT = 'return Manifold.cube([8, 8, 8], true);\n';
+/** Empty source: unmarked cubes wrap into Code/Cube chips after parse. */
+const EMPTY_SCRIPT = '';
 
 export function seedDoc() {
   return {
@@ -60,8 +61,8 @@ async function metrics(page) {
       strip: box(strip),
       shell: box(shell),
       joints: !!document.querySelector('[data-assembly-joints]'),
-      empty: document.querySelector('[data-feature-strip]')?.hasAttribute('data-feature-strip-empty') === true,
-      chips: document.querySelectorAll('[data-feature-chip]').length,
+      empty: strip?.hasAttribute('data-feature-strip-empty') === true,
+      chips: strip ? strip.querySelectorAll('[data-feature-chip]').length : document.querySelectorAll('[data-feature-chip]').length,
       viewerBranch: !!document.querySelector('[data-viewer-git-branch]'),
       ribbonBranch: !!document.querySelector('[data-parts-ribbon-branch]'),
       assemblyBranch: !!document.querySelector('[data-parts-ribbon-center] [data-assembly-branch]'),
@@ -109,6 +110,36 @@ function railsClearRibbon(rows) {
   return { ok: true, detail: gaps.join(',') };
 }
 
+async function waitRecorded(page, name, fn, timeout = 15000) {
+  try {
+    await page.waitForFunction(fn, null, { timeout });
+    return { name, ok: true };
+  } catch (err) {
+    return { name, ok: false, error: err?.message || String(err) };
+  }
+}
+
+function waitDetail(pass, waits) {
+  return waits.map((w) => {
+    if (w.ok) return `${pass}.${w.name}=ok`;
+    const err = String(w.error || 'timeout').replace(/\s+/g, ' ').slice(0, 120);
+    return `${pass}.${w.name}=timeout (${err})`;
+  }).join(' ');
+}
+
+function partIdByName(partsEnv, name) {
+  return partsEnv.result?.parts?.find((p) => p.name === name)?.id || null;
+}
+
+async function resolveNamedPartIds(page) {
+  const parts = await agentCall(page, 'parts', {});
+  return {
+    seedId: partIdByName(parts, 'Seed'),
+    blankId: partIdByName(parts, 'Blank'),
+    parts,
+  };
+}
+
 async function showCad(page) {
   const btn = page.locator('[data-stage-btn="cad"]');
   if (await btn.count()) {
@@ -147,38 +178,84 @@ export async function run(ctx) {
 
   await runner.runStep('create empty part', async () => {
     const env = await agentCall(page, 'create_part', { name: 'Blank', script: EMPTY_SCRIPT });
-    const parts = await agentCall(page, 'parts', {});
-    blankId = env.result?.partId
-      || parts.result?.parts?.find((p) => p.name === 'Blank')?.id
-      || parts.result?.activeId;
+    const resolved = await resolveNamedPartIds(page);
+    blankId = env.result?.partId || resolved.blankId || resolved.parts.result?.activeId;
+    seedId = resolved.seedId || seedId;
+    if (blankId) await agentCall(page, 'set_active_part', { part_id: blankId });
+    // create_part treats a blank script as the marked cube starter; clear it.
+    const cleared = await agentCall(page, 'set_script', { source: EMPTY_SCRIPT });
+    const tree = await agentCall(page, 'feature_tree', {});
+    const featureCount = Array.isArray(tree.result?.features) ? tree.result.features.length : -1;
     return {
-      ok: !!blankId,
+      ok: !!blankId && cleared.ok === true && featureCount === 0,
       call: 'create_part',
       args: { name: 'Blank' },
       envelope: env,
+      detail: `blankId=${blankId} features=${featureCount}`,
     };
   });
 
-  async function cycleStates() {
+  async function activateBlankEmpty() {
+    const switched = await agentCall(page, 'set_active_part', { part_id: blankId });
+    const now = await resolveNamedPartIds(page);
+    const active = now.parts.result?.activeId;
+    const onBlank = active === blankId || active === now.blankId;
+    if (onBlank) {
+      // After git_move the editor buffer can still hold Seed; that keeps Code/Cube
+      // chips on the ribbon even though Blank's stored script is header-only.
+      await agentCall(page, 'set_script', { source: EMPTY_SCRIPT });
+    }
+    return { switched, onBlank, active };
+  }
+
+  async function cycleStates(pass) {
+    const resolved = await resolveNamedPartIds(page);
+    if (resolved.seedId) seedId = resolved.seedId;
+    if (resolved.blankId) blankId = resolved.blankId;
     await agentCall(page, 'set_active_part', { part_id: seedId });
-    await page.waitForFunction(
-      () => document.querySelectorAll('[data-feature-chip]').length > 0,
-      { timeout: 15000 },
-    ).catch(() => {});
+    const waitPartChips = await waitRecorded(
+      page,
+      'partChips',
+      () => {
+        const strip = document.querySelector(
+          '[data-desktop-feature-strip] [data-feature-strip], [data-cad-feature-strip] [data-feature-strip]',
+        );
+        const n = strip
+          ? strip.querySelectorAll('[data-feature-chip]').length
+          : document.querySelectorAll('[data-feature-chip]').length;
+        return n > 0;
+      },
+    );
     const part = await metrics(page);
     await page.locator('[data-title-role="assembly"][data-title-chip="button"]').first().click({ timeout: 8000 });
-    await page.waitForFunction(
+    const waitJoints = await waitRecorded(
+      page,
+      'joints',
       () => !!document.querySelector('[data-assembly-joints]'),
-      { timeout: 15000 },
-    ).catch(() => {});
+    );
     const assembly = await metrics(page);
-    await agentCall(page, 'set_active_part', { part_id: blankId });
-    await page.waitForFunction(
-      () => document.querySelector('[data-feature-strip]')?.hasAttribute('data-feature-strip-empty') === true,
-      { timeout: 15000 },
-    ).catch(() => {});
+    const blank = await activateBlankEmpty();
+    const waitEmpty = await waitRecorded(
+      page,
+      'empty',
+      () => {
+        const strip = document.querySelector(
+          '[data-desktop-feature-strip] [data-feature-strip], [data-cad-feature-strip] [data-feature-strip]',
+        );
+        return strip?.hasAttribute('data-feature-strip-empty') === true;
+      },
+    );
     const empty = await metrics(page);
-    return { part, assembly, empty };
+    const waits = [waitPartChips, waitJoints, waitEmpty];
+    return {
+      part,
+      assembly,
+      empty,
+      seedId,
+      blankId,
+      waits,
+      waitDetail: `${waitDetail(pass, waits)} blankActive=${blank.onBlank}`,
+    };
   }
 
   let desktop = null;
@@ -186,14 +263,15 @@ export async function run(ctx) {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.waitForTimeout(120);
     await showCad(page);
-    desktop = await cycleStates();
+    desktop = await cycleStates('1280');
     const h = equalHeights([desktop.part, desktop.assembly, desktop.empty]);
     const s = noShift([desktop.part, desktop.assembly, desktop.empty]);
     const g = railsClearRibbon([desktop.part, desktop.assembly, desktop.empty]);
     await savePageScreenshot(page, join(shotDir, 'after-1280-empty.png'));
+    const statesOk = desktop.part.chips > 0 && desktop.assembly.joints && desktop.empty.empty;
     return {
-      ok: h.ok && s.ok && g.ok && desktop.part.chips > 0 && desktop.assembly.joints && desktop.empty.empty,
-      detail: `h=${h.detail} shift=${s.detail} gap=${g.detail} chips=${desktop.part.chips}`,
+      ok: h.ok && s.ok && g.ok && statesOk,
+      detail: `${desktop.waitDetail} h=${h.detail} shift=${s.detail} gap=${g.detail} chips=${desktop.part.chips} joints=${desktop.assembly.joints} empty=${desktop.empty.empty} seed=${desktop.seedId} blank=${desktop.blankId}`,
     };
   });
 
@@ -230,7 +308,7 @@ export async function run(ctx) {
     );
     await page.waitForTimeout(120);
     await showCad(page);
-    const mobile = await cycleStates();
+    const mobile = await cycleStates('390');
     const h = equalHeights([mobile.part, mobile.assembly, mobile.empty]);
     const s = noShift([mobile.part, mobile.assembly, mobile.empty]);
     const g = railsClearRibbon([mobile.part, mobile.assembly, mobile.empty]);
@@ -241,9 +319,10 @@ export async function run(ctx) {
     const mobileBranchOk = header.assemblyBranch === true
       && header.viewerBranch === false
       && header.ribbonBranch === false;
+    const statesOk = mobile.part.chips > 0 && mobile.assembly.joints && mobile.empty.empty;
     return {
-      ok: h.ok && s.ok && g.ok && mobileBranchOk,
-      detail: `h=${h.detail} shift=${s.detail} gap=${g.detail} assemblyBranch=${header.assemblyBranch} ribbon=${header.ribbonBranch} viewer=${header.viewerBranch}`,
+      ok: h.ok && s.ok && g.ok && statesOk && mobileBranchOk,
+      detail: `${mobile.waitDetail} h=${h.detail} shift=${s.detail} gap=${g.detail} chips=${mobile.part.chips} joints=${mobile.assembly.joints} empty=${mobile.empty.empty} seed=${mobile.seedId} blank=${mobile.blankId} assemblyBranch=${header.assemblyBranch} ribbon=${header.ribbonBranch} viewer=${header.viewerBranch}`,
     };
   });
 
