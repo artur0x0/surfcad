@@ -261,6 +261,7 @@ import {
   githubRedirectUri,
   dirtyPartIds,
   isWorkspaceDirty,
+  isUpgradeWorkingCopyDirty,
   listVaultAssemblies,
   takenAssemblyNames,
   resolveAssemblyFolderName,
@@ -5155,16 +5156,20 @@ const App = () => {
       const adapter = gitAdapterRef.current;
       const branch = gitWorkingBranch();
       const store = gitSync();
-      const live = codeEditorRef.current?.getContent?.();
       const scripts = { ...partScriptsRef.current };
-      if (typeof live === 'string' && doc.activeId) scripts[doc.activeId] = live;
-      const dirty = !!(
-        sidecarIsDirty(gitSidecarRef.current)
-        || (gitBaselineRef.current && isWorkspaceDirty(doc, scripts, gitBaselineRef.current, {
-          liveId: doc.activeId,
-          liveScript: typeof live === 'string' ? live : null,
-        }))
-      );
+      const live = codeEditorRef.current?.getContent?.();
+      const dirty = isUpgradeWorkingCopyDirty({
+        sidecar: gitSidecarRef.current,
+        doc,
+        scripts,
+        baseline: gitBaselineRef.current,
+        liveId: doc.activeId,
+        liveScript: typeof live === 'string' ? live : null,
+        editorLive: editorLiveRef.current === true,
+      });
+      if (dirty && typeof live === 'string' && doc.activeId && editorLiveRef.current === true) {
+        scripts[doc.activeId] = live;
+      }
       const assets = await loadPartAssets((doc.parts || []).map((part) => part.id));
       const result = await executeUpgrade({
         adapter,

@@ -58,6 +58,7 @@ import {
   UnsupportedVaultLayoutError,
 } from './legacyVault/index.js';
 import { captureBaseline, captureBaselineFromTip, remapTipDocThroughPairs } from './gitBaseline.js';
+import { sidecarIsDirty } from './workingSidecar.js';
 export { captureBaseline, captureBaselineFromTip, remapTipDocThroughPairs };
 
 function assemblyTextIgnoringActive(text) {
@@ -171,6 +172,36 @@ export function isWorkspaceDirty(doc, scripts, baseline, opts) {
   if (baseline.renamePending) return true;
   if (isAssemblyDirty(doc, baseline)) return true;
   return dirtyPartIds(doc, scripts, baseline, opts).size > 0;
+}
+
+/**
+ * Follow-up Save after Upgrade: dirty vs the post-open baseline (ids after
+ * collapse), not vs the pre-upgrade v1 path tree. Empty editor buffers are
+ * not live edits — same rule as gitDirtyLiveScript / Save.
+ * §4.3: a clean WC stops after the Upgrade commit.
+ */
+export function isUpgradeWorkingCopyDirty({
+  sidecar = null,
+  doc = null,
+  scripts = null,
+  baseline = null,
+  liveId = null,
+  liveScript = null,
+  editorLive = false,
+} = {}) {
+  if (sidecarIsDirty(sidecar)) return true;
+  if (!doc || !baseline) return false;
+  const live = gitDirtyLiveScript({
+    source: doc.source,
+    activeId: doc.activeId,
+    highlightId: liveId != null ? liveId : doc.activeId,
+    editorLive: editorLive === true,
+    script: liveScript,
+  });
+  return isWorkspaceDirty(doc, scripts, baseline, {
+    liveId: doc.activeId,
+    liveScript: live,
+  });
 }
 
 /** Assembly names in the vault on `ref` (default branch). */

@@ -82,23 +82,51 @@ function asV2Id(value) {
   return isV2SurfId(id) ? id : null;
 }
 
+function reservedRowIdsOf(assemblies) {
+  const reserved = new Set();
+  for (const row of assemblies || []) {
+    for (const part of row?.parsed?.parts || []) {
+      const id = asV2Id(part?.id);
+      if (id) reserved.add(id);
+    }
+  }
+  return reserved;
+}
+
+function copiedFromFromWorkingCopy(workingCopy) {
+  const byPath = new Map();
+  const byId = new Map();
+  for (const part of workingCopy?.doc?.parts || []) {
+    const copied = asV2Id(part?.copiedFrom);
+    if (!copied) continue;
+    const path = scriptPathOf(part);
+    if (path) byPath.set(path, copied);
+    const id = asV2Id(part?.id);
+    if (id) byId.set(id, copied);
+  }
+  return { byPath, byId };
+}
+
 /**
- * Row `parts[].id` wins. A copy file may still carry the original's
- * `// @surf-id` (PinCopy.js naming Pin); restamp to the row id.
- * Header is used only when the row has no id. Duplicate ids in one
- * `.surf.json` mint a copy with `copiedFrom`. The same id in two
- * assemblies is a shared reference when it is the same file.
+ * Row `parts[].id` wins. Collect every explicit row id first so a copy's
+ * duplicated `// @surf-id` cannot claim an id another row already owns
+ * (Scenario L: 'Pin copy' listed before Pin). Header is used only when
+ * the row has no id and that id is free. Duplicate ids in one `.surf.json`
+ * mint a copy with `copiedFrom`. The same id in two assemblies is a
+ * shared reference when it is the same file.
  */
-function pickPartId(part, script, pathIndex, used, seenInAssembly, mintOpts) {
+function pickPartId(part, script, pathIndex, used, seenInAssembly, mintOpts, reservedRowIds) {
   const path = scriptPathOf(part);
   const rowId = asV2Id(part?.id);
   const header = asV2Id(readSurfId(script || ''));
   const cached = path ? asV2Id(pathIndex[path]) : null;
+  const reserved = reservedRowIds || new Set();
 
-  const keep = (id, restamp) => {
+  const keep = (id, restamp, source) => {
     if (!id) return null;
     if (seenInAssembly.has(id)) return null;
     if (used.has(id) && cached !== id) return null;
+    if (source === 'header' && reserved.has(id) && rowId !== id) return null;
     return { id, minted: false, restamp: !!restamp };
   };
 
@@ -112,15 +140,18 @@ function pickPartId(part, script, pathIndex, used, seenInAssembly, mintOpts) {
       restamp: true,
     };
   }
-  const fromHeader = keep(header, false);
+  const fromHeader = keep(header, false, 'header');
   if (fromHeader) return fromHeader;
   const fromCache = keep(cached, header != null && cached != null && header !== cached);
   if (fromCache) return fromCache;
+  const colliding = header && (seenInAssembly.has(header) || used.has(header) || reserved.has(header))
+    ? header
+    : null;
   return {
     id: mintUnused(used, mintOpts),
     minted: true,
     restamp: true,
-    copiedFrom: header && (seenInAssembly.has(header) || used.has(header)) ? header : null,
+    copiedFrom: colliding,
   };
 }
 
@@ -315,8 +346,10 @@ function assertCopiedBytes(plan, files) {
 /**
  * Pure planner. `files` is path → UTF-8 string or Uint8Array from the tip.
  * Ids: `.surf.json` `parts[].id` wins over a stale blob header (copies);
- * fall back to `// @surf-id` when the row has no id; mint when neither
- * is usable. Duplicate ids in one file become a copy + `copiedFrom`.
+ * fall back to `// @surf-id` when the row has no id and no other row
+ * already owns that id; mint when neither is usable. Duplicate ids in
+ * one file become a copy + `copiedFrom`. `workingCopy.doc.parts[].copiedFrom`
+ * is carried onto matching rows so commit 2 does not churn `.surf.json`.
  * One assembly id per legacy folder (reuse `assemblyIdByFolder`).
  */
 export function planUpgrade({
@@ -328,6 +361,7 @@ export function planUpgrade({
   repoName = null,
   now,
   randFor,
+  workingCopy = null,
 } = {}) {
   const paths = (tree || []).map((entry) => entry?.path ?? entry).filter(Boolean);
   const usedPart = new Set();
@@ -346,8 +380,9 @@ export function planUpgrade({
     now,
     rand: typeof randFor === 'function' ? randFor(token, index) : undefined,
   });
+  const wcCopied = copiedFromFromWorkingCopy(workingCopy);
 
-  const bindPart = (part, index, seenInAssembly) => {
+  const bindPart = (part, index, seenInAssembly, reservedIds) => {
     const path = scriptPathOf(part);
     const hasFile = !!(path && hasOwn(files, path) && typeof files[path] === 'string');
     const script = hasFile ? files[path] : '';
@@ -358,6 +393,7 @@ export function planUpgrade({
       usedPart,
       seenInAssembly,
       mintOptsFor(part, index),
+      reservedIds,
     );
     usedPart.add(picked.id);
     seenInAssembly.add(picked.id);
@@ -408,6 +444,8 @@ export function planUpgrade({
     };
   }
 
+  const reservedRowIds = reservedRowIdsOf(parsedMeta);
+
   for (const { folder } of parsedMeta) {
     if (!folderToId[folder] || !isV2SurfId(folderToId[folder])) {
       const id = mintUnused(usedAsm, mintOptsFor({ id: '$assembly', name: folder }, -1));
@@ -425,7 +463,7 @@ export function planUpgrade({
     const nextParts = [];
     const seenInAssembly = new Set();
     (parsed.parts || []).forEach((part, i) => {
-      const bound = bindPart(part, i, seenInAssembly);
+      const bound = bindPart(part, i, seenInAssembly, reservedRowIds);
       if (part?.id && part.id !== bound.id && !nextParts.some((row) => row.id === asV2Id(part.id))) {
         idMap.set(part.id, bound.id);
       }
@@ -440,7 +478,11 @@ export function planUpgrade({
       if (part.position) row.position = part.position;
       if (part.placement) row.placement = part.placement;
       if (part.sheetMetal) row.sheetMetal = part.sheetMetal;
-      const copied = bound.copiedFrom || asV2Id(part.copiedFrom);
+      const copied = bound.copiedFrom
+        || asV2Id(part.copiedFrom)
+        || (bound.path && wcCopied.byPath.get(bound.path))
+        || wcCopied.byId.get(bound.id)
+        || wcCopied.byId.get(asV2Id(part.id));
       if (copied && copied !== bound.id) row.copiedFrom = copied;
       nextParts.push(row);
 
@@ -535,6 +577,7 @@ export function planUpgrade({
       usedPart,
       usedPart,
       mintOptsFor({ path }, 0),
+      reservedRowIds,
     );
     usedPart.add(picked.id);
     partIdByPath[path] = picked.id;
@@ -1022,6 +1065,7 @@ export async function executeUpgrade({
       repoName: ref?.name,
       now: clock,
       randFor,
+      workingCopy,
     });
   } catch (err) {
     return hostError(

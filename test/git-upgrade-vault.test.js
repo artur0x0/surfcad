@@ -30,9 +30,11 @@ import {
   mapWorkingCopyToPlan,
   applyUpgradeReload,
   isKnownReadmeSeed,
+  openLegacyAssembly,
   SURFCAD_JSON_V2,
 } from '../src/utils/git/legacyVault/index.js';
 import { upgradeVaultEnabled, UPGRADE_UNAVAILABLE } from '../src/utils/git/upgradeVaultEnabled.js';
+import { isUpgradeWorkingCopyDirty } from '../src/utils/git/gitWorkspace.js';
 import { replaceScriptKeys } from '../src/utils/git/wcIdentity.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -59,6 +61,12 @@ const MISSING_PATH = 'parts/MissingGear.js';
 const BLANK_PATH = 'parts/Blank.js';
 const PIN_PATH = 'parts/Pin.js';
 const PIN_COPY_PATH = 'assemblies/Box/PinCopy.js';
+const PIN_COPY_SCENARIO_PATH = 'assemblies/Box/Pin copy.js';
+const SCENARIO_L_PIN_ID = mintSurfId({ now: new Date('2026-10-18T00:00:02.000Z'), rand: 'b1a0' });
+const SCENARIO_L_COPY_ID = mintSurfId({ now: NOW, rand: 'c0c1' });
+const SCENARIO_L_JOINT_ID = mintSurfId({ now: NOW, rand: 'j01a' });
+const SCENARIO_L_BLOCK_ID = mintSurfId({ now: NOW, rand: 'b10c' });
+const BLOCK_PATH = 'parts/Block.js';
 const SHAFT_MESH = Uint8Array.from([7, 7, 7, 9]);
 
 function v1Surf(name, parts, extra = {}) {
@@ -91,6 +99,8 @@ function randFor(part) {
   if (path === MISSING_PATH) return 'ffff';
   if (path === BLANK_PATH) return 'b1a0';
   if (path === PIN_COPY_PATH) return 'd0d0';
+  if (path === PIN_COPY_SCENARIO_PATH) return 'c0c1';
+  if (path === BLOCK_PATH) return 'b10c';
   if (part?.id === '$assembly') {
     if (part.name === 'Cover') return '0002';
     if (part.name === 'Gearbox') return '0001';
@@ -368,13 +378,51 @@ test('clean working copy is one commit; dirty working copy is two', async () => 
   const clean = await seedGearboxVault();
   const cleanStore = await storeFor(clean.repo);
   const cleanWrites = commits(clean.gh).length;
-  const cleanOut = await executeUpgrade(upgradeOpts(clean.gh, clean.repo, { store: cleanStore }));
+  const opened = await openLegacyAssembly(clean.gh, clean.repo, 'Gearbox', {
+    branch: 'main',
+    pathIndex: cleanStore.pathIndexFor(clean.repo),
+  });
+  assert.equal(isUpgradeWorkingCopyDirty({
+    doc: opened.doc,
+    scripts: opened.scripts,
+    baseline: opened.baseline,
+    liveScript: '',
+    editorLive: false,
+  }), false);
+  const cleanOut = await executeUpgrade(upgradeOpts(clean.gh, clean.repo, {
+    store: cleanStore,
+    workingCopy: {
+      dirty: isUpgradeWorkingCopyDirty({
+        doc: opened.doc,
+        scripts: opened.scripts,
+        baseline: opened.baseline,
+      }),
+      doc: opened.doc,
+      scripts: opened.scripts,
+    },
+  }));
   assert.equal(cleanOut.status, 'upgraded');
   assert.equal(cleanOut.commits, 1);
   assert.equal(commits(clean.gh).length, cleanWrites + 1);
 
   const dirty = await seedGearboxVault();
   const dirtyStore = await storeFor(dirty.repo);
+  const dirtyOpened = await openLegacyAssembly(dirty.gh, dirty.repo, 'Gearbox', {
+    branch: 'main',
+    pathIndex: dirtyStore.pathIndexFor(dirty.repo),
+    knownAssemblyId: GEARBOX_ID,
+    assemblyIdIndex: { Gearbox: GEARBOX_ID, Cover: COVER_ID },
+  });
+  const shaftRow = dirtyOpened.doc.parts.find((p) => p.name === 'Shaft');
+  const editedScripts = {
+    ...dirtyOpened.scripts,
+    [shaftRow.id]: withSurfId('return "dirty-shaft";\n', shaftRow.id),
+  };
+  assert.equal(isUpgradeWorkingCopyDirty({
+    doc: dirtyOpened.doc,
+    scripts: editedScripts,
+    baseline: dirtyOpened.baseline,
+  }), true);
   const snapshots = [];
   const orig = dirty.gh.commitFiles.bind(dirty.gh);
   dirty.gh.commitFiles = async (dest, opts) => {
@@ -496,6 +544,122 @@ test('duplicate ids in one v1 .surf.json mint a copy with copiedFrom', async () 
   assert.equal(readSurfId(await readText(gh, vault.repo, partIdPath(PIN_ID))), PIN_ID);
   assert.equal(readSurfId(await readText(gh, vault.repo, partIdPath(DUP_COPY_ID))), DUP_COPY_ID);
   assert.equal(box.activeId, PIN_ID);
+});
+
+test('Scenario L: a copy header never steals a row-owned Pin id', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const raw = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Box',
+    activeId: PIN_PATH,
+    parts: [
+      { path: PIN_COPY_SCENARIO_PATH, name: 'Pin copy', visible: true, order: 0 },
+      { id: SCENARIO_L_PIN_ID, path: PIN_PATH, name: 'Pin', visible: true, order: 1 },
+      { id: SCENARIO_L_BLOCK_ID, path: BLOCK_PATH, name: 'Block', visible: true, order: 2 },
+    ],
+    groups: [{
+      id: GROUP_ID,
+      name: 'Hardware',
+      partIds: [SCENARIO_L_PIN_ID],
+    }],
+    colors: { [SCENARIO_L_PIN_ID]: { part: '#cc0000' } },
+    joints: [{
+      id: SCENARIO_L_JOINT_ID,
+      name: 'Fixed 1',
+      type: 'fixed',
+      a: { part: SCENARIO_L_PIN_ID },
+    }],
+  };
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed scenario L',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Box/.surf.json', `${JSON.stringify(raw, null, 2)}\n`),
+      fileWrite(PIN_PATH, withSurfId('return "pin";\n', SCENARIO_L_PIN_ID)),
+      fileWrite(PIN_COPY_SCENARIO_PATH, withSurfId('return "pin-copy";\n', SCENARIO_L_PIN_ID)),
+      fileWrite(BLOCK_PATH, withSurfId('return "block";\n', SCENARIO_L_BLOCK_ID)),
+    ],
+  });
+  const store = await storeFor(vault.repo, { Box: BOX_ID });
+  const result = await executeUpgrade(upgradeOpts(gh, vault.repo, { store }));
+  assert.equal(result.status, 'upgraded');
+  const box = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(BOX_ID)));
+  assert.equal(validateSurfJsonV2(box).ok, true, validateSurfJsonV2(box).errors?.join('; '));
+  const pin = box.parts.find((p) => p.name === 'Pin');
+  const copy = box.parts.find((p) => p.name === 'Pin copy');
+  assert.equal(pin.id, SCENARIO_L_PIN_ID);
+  assert.equal(copy.id, SCENARIO_L_COPY_ID);
+  assert.notEqual(copy.id, pin.id);
+  assert.equal(copy.copiedFrom, SCENARIO_L_PIN_ID);
+  assert.equal(pin.copiedFrom, undefined);
+  assert.notEqual(copy.copiedFrom, copy.id);
+  assert.deepEqual(box.groups[0].partIds, [SCENARIO_L_PIN_ID]);
+  assert.equal(box.colors[SCENARIO_L_PIN_ID].part, '#cc0000');
+  assert.equal(Object.hasOwn(box.colors, copy.id), false);
+  assert.equal(box.joints[0].a.part, SCENARIO_L_PIN_ID);
+  assert.equal(readSurfId(await readText(gh, vault.repo, partIdPath(SCENARIO_L_PIN_ID))), SCENARIO_L_PIN_ID);
+  assert.equal(readSurfId(await readText(gh, vault.repo, partIdPath(SCENARIO_L_COPY_ID))), SCENARIO_L_COPY_ID);
+  assert.match(await readText(gh, vault.repo, partIdPath(SCENARIO_L_COPY_ID)), /pin-copy/);
+});
+
+test('planUpgrade carries working-copy copiedFrom so commit 2 does not churn', () => {
+  const pinScript = withSurfId('return "pin";\n', PIN_ID);
+  const copyScript = withSurfId('return "pin-copy";\n', COPY_ID);
+  const json = v1Surf('Box', [
+    { id: PIN_ID, path: PIN_PATH, name: 'Pin' },
+    { id: COPY_ID, path: PIN_COPY_PATH, name: 'PinCopy' },
+  ]);
+  const plan = planUpgrade({
+    tree: [
+      { path: 'assemblies/Box/.surf.json' },
+      { path: PIN_PATH },
+      { path: PIN_COPY_PATH },
+    ],
+    files: {
+      'assemblies/Box/.surf.json': json,
+      [PIN_PATH]: pinScript,
+      [PIN_COPY_PATH]: withSurfId('return "pin-copy";\n', PIN_ID),
+    },
+    assemblyIdByFolder: { Box: BOX_ID },
+    now: NOW,
+    randFor,
+    workingCopy: {
+      doc: {
+        id: BOX_ID,
+        name: 'Box',
+        activeId: PIN_ID,
+        parts: [
+          { id: PIN_ID, path: PIN_PATH, name: 'Pin', visible: true, order: 0 },
+          { id: COPY_ID, path: PIN_COPY_PATH, name: 'PinCopy', visible: true, order: 1, copiedFrom: PIN_ID },
+        ],
+      },
+      scripts: { [PIN_ID]: pinScript, [COPY_ID]: copyScript },
+    },
+  });
+  const box = JSON.parse(plan.writes[assemblyIdPath(BOX_ID)]);
+  const copy = box.parts.find((p) => p.name === 'PinCopy');
+  assert.equal(copy.id, COPY_ID);
+  assert.equal(copy.copiedFrom, PIN_ID);
+  const followup = planWorkingCopyFollowup(plan, {
+    dirty: true,
+    doc: {
+      id: BOX_ID,
+      name: 'Box',
+      activeId: PIN_ID,
+      parts: [
+        { id: PIN_ID, path: PIN_PATH, name: 'Pin', visible: true, order: 0 },
+        { id: COPY_ID, path: PIN_COPY_PATH, name: 'PinCopy', visible: true, order: 1, copiedFrom: PIN_ID },
+      ],
+    },
+    scripts: {
+      [PIN_ID]: pinScript,
+      [COPY_ID]: copyScript,
+    },
+  });
+  assert.equal(followup.some((f) => f.path === assemblyIdPath(BOX_ID)), false);
 });
 
 test('planWorkingCopyFollowup is empty when the WC is clean', () => {
@@ -1130,6 +1294,14 @@ test('Upgrade re-key verifies writes before deleting from', async () => {
   });
   assert.equal(live.get(to), 'typed during upgrade');
   assert.equal(live.has(from), false);
+});
+
+test('handleUpgradeVault uses isUpgradeWorkingCopyDirty vs the open baseline', () => {
+  const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const start = app.indexOf('const handleUpgradeVault');
+  const slice = app.slice(start, app.indexOf('const handleUpgradeConflict', start));
+  assert.match(slice, /isUpgradeWorkingCopyDirty\(/);
+  assert.equal(/scripts\[doc\.activeId\] = live/.test(slice.split('isUpgradeWorkingCopyDirty')[0]), false);
 });
 
 test('already_upgraded does not mark a dirty working copy clean', () => {

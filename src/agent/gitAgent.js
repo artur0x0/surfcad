@@ -163,6 +163,51 @@ export function requireDestructiveConfirm(args, label) {
 }
 
 /**
+ * Agent-facing git_upgrade_vault payload: status, SHAs, assembly ids,
+ * counts, leftover paths, warnings. No plan, file bytes, meshes,
+ * partBindings paths, or rekey.scripts.
+ */
+export function summarizeUpgradeVaultResult(result) {
+  if (!result || typeof result !== 'object') {
+    return { status: 'error', error: 'No result' };
+  }
+  const plan = result.plan && typeof result.plan === 'object' ? result.plan : null;
+  const leftoverFiles = Array.isArray(result.leftoverFiles)
+    ? result.leftoverFiles.filter((path) => typeof path === 'string' && path)
+    : (Array.isArray(plan?.leftoverFiles)
+      ? plan.leftoverFiles.filter((path) => typeof path === 'string' && path)
+      : []);
+  const assemblyIds = Array.isArray(result.assemblyIds)
+    ? result.assemblyIds.filter((id) => typeof id === 'string' && id)
+    : (plan?.assemblies || []).map((row) => row?.id).filter((id) => typeof id === 'string' && id);
+  const warnings = [];
+  if (Array.isArray(result.warnings)) {
+    for (const row of result.warnings) {
+      if (typeof row === 'string' && row) warnings.push(row);
+    }
+  }
+  if (plan?.readmeKept) warnings.push('README.md was not a known seed and was left in the vault');
+  const out = { status: result.status || 'error' };
+  if (typeof result.sha === 'string' && result.sha) out.sha = result.sha;
+  if (typeof result.upgradeSha === 'string' && result.upgradeSha) out.upgradeSha = result.upgradeSha;
+  if (typeof result.branch === 'string' && result.branch) out.branch = result.branch;
+  if (typeof result.layout === 'string' && result.layout) out.layout = result.layout;
+  if (Number.isInteger(result.commits)) out.commits = result.commits;
+  if (assemblyIds.length) out.assemblyIds = assemblyIds;
+  out.counts = {
+    commits: Number.isInteger(result.commits) ? result.commits : 0,
+    assemblies: assemblyIds.length,
+    partsKept: Array.isArray(plan?.keptPartIds) ? plan.keptPartIds.length : 0,
+    partsMinted: Array.isArray(plan?.mintedPartIds) ? plan.mintedPartIds.length : 0,
+    files: Array.isArray(result.files) ? result.files.length : (Array.isArray(plan?.files) ? plan.files.length : 0),
+    leftoverFiles: leftoverFiles.length,
+  };
+  if (leftoverFiles.length) out.leftoverFiles = leftoverFiles;
+  if (warnings.length) out.warnings = warnings;
+  return out;
+}
+
+/**
  * Shape a host git result for the agent. `status: 'conflict'` is a real
  * payload for git_move_to_repo (paths / assemblyExists) and other writers
  * — same as main. Only git_upgrade_vault maps conflict to `{ error }`.
@@ -188,6 +233,9 @@ export function gitOpResult(result, { commandName } = {}) {
     };
     if (typeof result.hint === 'string' && result.hint) error.hint = result.hint;
     return { error };
+  }
+  if (commandName === 'git_upgrade_vault') {
+    return { result: summarizeUpgradeVaultResult(result) };
   }
   return { result };
 }
