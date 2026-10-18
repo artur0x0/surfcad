@@ -9,6 +9,7 @@ Operational sign-up and login metrics for the US launch are sourced from **our M
 | API | Purpose |
 | --- | --- |
 | `getAnalyticsConsent()` | `true` when anonymous usage analytics may run in this browser tab. |
+| `hasStoredConsentChoice()` | `true` when `surfcad.consent.v1` already has an analytics boolean. |
 | `setAnalyticsConsent(boolean)` | Saves preference to `localStorage` (`surfcad.consent.v1`: `{ analytics, updatedAt, source? }`). |
 | `shouldShowPrivacyConsentPopup()` | `true` on a first visit with no stored choice and GPC off. |
 | `openPrivacyChoices()` | Re-opens the Accept all / Required only popup (`src/utils/privacyChoicesUi.js`). |
