@@ -184,9 +184,9 @@ await page.waitForSelector('[data-cad-run]', { state: 'attached', timeout: 12000
 await page.waitForTimeout(600);
 
 await agentCall(page, 'run', {});
-const listed = await agentCall(page, 'parts', {});
-const partId = listed.result?.activeId;
-check('parts.activeId', typeof partId === 'string' && partId.length > 0, JSON.stringify(listed));
+const partsListed = await agentCall(page, 'parts', {});
+const partId = partsListed.result?.activeId;
+check('parts.activeId', typeof partId === 'string' && partId.length > 0, JSON.stringify(partsListed));
 const cur = await agentCall(page, 'get_script', {});
 const edited = await agentCall(page, 'set_script', {
   part_id: partId,
