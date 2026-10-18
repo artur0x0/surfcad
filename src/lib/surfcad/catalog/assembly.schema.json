@@ -762,8 +762,8 @@
         "name": {
           "type": "string",
           "minLength": 1,
-          "pattern": "^[^\u0000-\u001f  ]+$",
-          "description": "Display label. Not unique. Control characters and line separators are rejected."
+          "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f\\u2028\\u2029]+$",
+          "description": "Display label. Not unique. Control characters, line separators, and whitespace-only names are rejected."
         },
         "activeId": {
           "anyOf": [
@@ -797,8 +797,8 @@
               "name": {
                 "type": "string",
                 "minLength": 1,
-                "pattern": "^[^\u0000-\u001f  ]+$",
-                "description": "Display label. Not unique. Control characters and line separators are rejected."
+                "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f\\u2028\\u2029]+$",
+                "description": "Display label. Not unique. Control characters, line separators, and whitespace-only names are rejected."
               },
               "visible": {
                 "type": "boolean"
@@ -897,8 +897,8 @@
               "name": {
                 "type": "string",
                 "minLength": 1,
-                "pattern": "^[^\u0000-\u001f  ]+$",
-                "description": "Display label. Not unique. Control characters and line separators are rejected."
+                "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f\\u2028\\u2029]+$",
+                "description": "Display label. Not unique. Control characters, line separators, and whitespace-only names are rejected."
               },
               "source": {
                 "anyOf": [
@@ -979,7 +979,7 @@
                           },
                           "minItems": 3,
                           "maxItems": 3,
-                          "description": "Area-weighted face centroid, mm."
+                          "description": "Area-weighted face centroid, mm, in the part frame."
                         },
                         "n": {
                           "type": "array",
@@ -988,7 +988,7 @@
                           },
                           "minItems": 3,
                           "maxItems": 3,
-                          "description": "Area-weighted face normal."
+                          "description": "Area-weighted face normal, in the part frame."
                         },
                         "area": {
                           "type": "number",
@@ -1036,8 +1036,8 @@
               "name": {
                 "type": "string",
                 "minLength": 1,
-                "pattern": "^[^\u0000-\u001f  ]+$",
-                "description": "Display label. Not unique. Control characters and line separators are rejected."
+                "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f\\u2028\\u2029]+$",
+                "description": "Display label. Not unique. Control characters, line separators, and whitespace-only names are rejected."
               },
               "type": {
                 "enum": [

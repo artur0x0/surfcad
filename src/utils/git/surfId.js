@@ -26,6 +26,32 @@ export const SURF_ID_V2_RE = new RegExp(`^${SURF_ID_BODY}$`);
 const HEADER_RE = /^\/\/ @surf-id (\S+)([ \t]*)(\r\n|\n|\r)?/;
 // Display name may contain spaces. Capture the rest of the line; trim on read.
 const NAME_HEADER_RE = /^\/\/ @name ([^\r\n]*?)[ \t]*(\r\n|\n|\r|$)/;
+// Same class the v2 validator rejects: C0 controls (tabs included), DEL, LS, PS.
+// eslint-disable-next-line no-control-regex
+const SURF_NAME_CONTROL_RE = /[\u0000-\u001f\u007f\u2028\u2029]/;
+
+/** Collapse control characters and line separators to a space, then trim. */
+export function sanitizeSurfName(name) {
+  return String(name ?? '').replace(new RegExp(`${SURF_NAME_CONTROL_RE.source}+`, 'g'), ' ').trim();
+}
+
+/** Non-empty after trim, and no control characters or line separators. */
+export function isLabelName(value) {
+  return typeof value === 'string' && !!value.trim() && !SURF_NAME_CONTROL_RE.test(value);
+}
+
+/** First `\r\n`, `\n`, or `\r` in `text`. */
+function firstLineBreak(text, from = 0) {
+  const cr = text.indexOf('\r', from);
+  const lf = text.indexOf('\n', from);
+  if (cr < 0 && lf < 0) return null;
+  if (cr >= 0 && (lf < 0 || cr < lf)) {
+    return lf === cr + 1
+      ? { index: cr, ending: '\r\n' }
+      : { index: cr, ending: '\r' };
+  }
+  return { index: lf, ending: '\n' };
+}
 
 export function isSurfId(value) {
   return SURF_ID_RE.test(String(value || ''));
@@ -113,19 +139,17 @@ export function stripSurfId(script) {
 export function bytesAfterHeaderLine(script) {
   const text = String(script ?? '');
   if (!text.startsWith('// @surf-id ')) return text;
-  const lf = text.indexOf('\n');
-  if (lf < 0) return '';
-  return text.slice(lf + 1);
+  const br = firstLineBreak(text);
+  if (!br) return '';
+  return text.slice(br.index + br.ending.length);
 }
 
-/** Line ending of a header line: `\r\n`, `\n`, ``, or null when there is no header. */
+/** Line ending of a header line: `\r\n`, `\n`, `\r`, ``, or null when there is no header. */
 export function headerLineEnding(script) {
   const text = String(script ?? '');
   if (!text.startsWith('// @surf-id ')) return null;
-  const lf = text.indexOf('\n');
-  if (lf < 0) return '';
-  if (lf > 0 && text[lf - 1] === '\r') return '\r\n';
-  return '\n';
+  const br = firstLineBreak(text);
+  return br ? br.ending : '';
 }
 
 /**
@@ -156,13 +180,12 @@ function splitLeadingSurfComment(script) {
     };
   }
   if (!text.startsWith('// @surf-id ')) return { surf: null, prefix: '', rest: text };
-  const lf = text.indexOf('\n');
-  if (lf < 0) return { surf: { ending: '' }, prefix: text, rest: '' };
-  const ending = lf > 0 && text[lf - 1] === '\r' ? '\r\n' : '\n';
+  const br = firstLineBreak(text);
+  if (!br) return { surf: { ending: '' }, prefix: text, rest: '' };
   return {
-    surf: { ending },
-    prefix: text.slice(0, lf + 1),
-    rest: text.slice(lf + 1),
+    surf: { ending: br.ending },
+    prefix: text.slice(0, br.index + br.ending.length),
+    rest: text.slice(br.index + br.ending.length),
   };
 }
 
@@ -193,7 +216,7 @@ export function readSurfName(script) {
  * its line ending. Bytes after the name line stay.
  */
 export function withSurfName(script, name) {
-  const display = String(name ?? '').replace(/[\r\n\u2028\u2029]+/g, ' ').trim();
+  const display = sanitizeSurfName(name);
   if (!display) throw new Error(`Bad surf name: ${name}`);
   const split = splitNameHeader(script);
   const nl = (split.surf && split.surf.ending) || (split.found && split.ending) || '\n';

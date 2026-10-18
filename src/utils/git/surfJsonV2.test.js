@@ -11,7 +11,13 @@ const ASM = mintSurfId({ now: new Date('2026-10-18T02:50:00.001Z'), rand: 'aa01'
 const PART = mintSurfId({ now: new Date('2026-10-18T02:50:00.002Z'), rand: 'bb02' });
 const OTHER = mintSurfId({ now: new Date('2026-10-18T02:50:00.003Z'), rand: 'cc03' });
 const GROUP = mintSurfId({ now: new Date('2026-10-18T02:50:00.004Z'), rand: 'dd04' });
+const JOINT = mintSurfId({ now: new Date('2026-10-18T02:50:00.005Z'), rand: 'ee05' });
 const LOCAL = `local-${PART}`;
+const LOCAL_JOINT = `local-${JOINT}`;
+
+function fixedJoint(id = JOINT) {
+  return { id, name: 'Ground 1', type: 'fixed', a: { part: PART } };
+}
 
 function v1Fixture() {
   return {
@@ -196,6 +202,29 @@ test('parseSurfJsonV2 keeps activeId null', () => {
   assert.equal(doc.parts[0].id, PART);
 });
 
+test('parseSurfJsonV2 treats a missing activeId key as null', () => {
+  const { activeId: _drop, ...raw } = v2Fixture();
+  assert.equal(Object.prototype.hasOwnProperty.call(raw, 'activeId'), false);
+  const check = validateSurfJsonV2(raw);
+  assert.equal(check.ok, true, check.errors?.join('; '));
+  const doc = parseSurfJsonV2(raw);
+  assert.equal(doc.activeId, null);
+  assert.equal(doc.parts[0].id, PART);
+});
+
+test('v2 joint ids reject a local- prefix that v1 still accepts', () => {
+  const local = validateSurfJsonV2(v2Fixture({ joints: [fixedJoint(LOCAL_JOINT)] }));
+  assert.equal(local.ok, false);
+  has(local.errors, 'id must be a surf id');
+  const ok = validateSurfJsonV2(v2Fixture({ joints: [fixedJoint()] }));
+  assert.equal(ok.ok, true, ok.errors?.join('; '));
+  const v1 = validateSurfJson({
+    ...v1Fixture(),
+    joints: [fixedJoint(LOCAL_JOINT)],
+  });
+  assert.equal(v1.ok, true, v1.errors?.join('; '));
+});
+
 test('v2 validation covers version, duplicates, activeId, copiedFrom, and source', () => {
   has(validateSurfJsonV2(v2Fixture({ version: 3 })).errors, 'version must be 2');
   const { version: _v, ...noVersion } = v2Fixture();
@@ -221,20 +250,24 @@ test('v2 validation covers version, duplicates, activeId, copiedFrom, and source
     }],
   })).errors, 'source must be a surf id or null');
   has(validateSurfJsonV2(v2Fixture({ name: `Gearbox\u2028Cover` })).errors, 'name must be a non-empty string');
+  has(validateSurfJsonV2(v2Fixture({ name: '   ' })).errors, 'name must be a non-empty string');
 });
 
 test('catalog defs.v2 matches v2 fixtures', () => {
   const catalogPath = join(dirname(fileURLToPath(import.meta.url)), '../../lib/surfcad/catalog/assembly.schema.json');
   const v2 = JSON.parse(readFileSync(catalogPath, 'utf8')).defs.v2;
   assert.equal(v2.properties.parts.items.properties.name.minLength, 1);
+  assert.ok(v2.properties.parts.items.properties.name.pattern.includes('\\S'));
   assert.equal(v2.properties.id.pattern.includes('local-'), false);
 
   const valid = [
     v2Fixture(),
     v2Fixture({ name: 'Kettle Lid', activeId: null }),
+    (() => { const { activeId: _omit, ...raw } = v2Fixture(); return raw; })(),
     v2Fixture({
       groups: [{ id: GROUP, name: 'Cover', source: OTHER, partIds: [PART] }],
     }),
+    v2Fixture({ joints: [fixedJoint()] }),
   ];
   for (const raw of valid) {
     assert.equal(validateSurfJsonV2(raw).ok, true, validateSurfJsonV2(raw).errors?.join('; '));
@@ -255,7 +288,9 @@ test('catalog defs.v2 matches v2 fixtures', () => {
       }],
     }),
     v2Fixture({ name: `Gearbox\u2028Cover` }),
+    v2Fixture({ name: '   ' }),
     v2Fixture({ activeId: 'not-an-id' }),
+    v2Fixture({ joints: [fixedJoint(LOCAL_JOINT)] }),
   ];
   for (const raw of invalid) {
     assert.equal(validateSurfJsonV2(raw).ok, false, `validator accepted ${JSON.stringify(raw)}`);

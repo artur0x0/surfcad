@@ -45,6 +45,16 @@ test('withSurfName does not insert above an invalid @surf-id line', () => {
   assert.equal(readSurfName(next), 'Bracket');
 });
 
+test('withSurfName splits CR-only and CR-LF bogus @surf-id headers', () => {
+  const cr = withSurfName('// @surf-id bogus\rbody\r', 'Bracket');
+  assert.equal(cr, '// @surf-id bogus\r// @name Bracket\rbody\r');
+  assert.equal(readSurfName(cr), 'Bracket');
+
+  const crlf = withSurfName('// @surf-id bogus\r\nbody\r\n', 'Bracket');
+  assert.equal(crlf, '// @surf-id bogus\r\n// @name Bracket\r\nbody\r\n');
+  assert.equal(readSurfName(crlf), 'Bracket');
+});
+
 test('withSurfName preserves CRLF and strips line separators', () => {
   const crlf = `// @surf-id ${ID}\r\n${BODY.replace('\n', '\r\n')}`;
   const named = withSurfName(crlf, 'Kettle Lid');
@@ -52,9 +62,12 @@ test('withSurfName preserves CRLF and strips line separators', () => {
   assert.equal(readSurfName(named), 'Kettle Lid');
   const sep = withSurfName(BODY, `A\u2028B\u2029C`);
   assert.equal(readSurfName(sep), 'A B C');
+  const tabbed = withSurfName(BODY, 'A\tB');
+  assert.equal(readSurfName(tabbed), 'A B');
 });
 
 test('withSurfName throws on a blank name', () => {
   assert.throws(() => withSurfName(BODY, '   '), /Bad surf name/);
   assert.throws(() => withSurfName(BODY, ''), /Bad surf name/);
+  assert.throws(() => withSurfName(BODY, '\t\t'), /Bad surf name/);
 });

@@ -26,7 +26,7 @@ import {
   serializeAssembly,
 } from '../assembly.js';
 import { normalizeSheetMetalBinding } from '../scs/scsCatalog.js';
-import { isV2SurfId } from './surfId.js';
+import { isLabelName, isSurfId, isV2SurfId } from './surfId.js';
 import {
   SURF_JSON_FORMAT,
   pruneDanglingColors,
@@ -43,12 +43,6 @@ export const SURF_JSON_VERSION_V2 = 2;
 const TOP_KEYS = new Set(['format', 'version', 'id', 'name', 'activeId', 'parts', 'groups', 'colors', 'joints']);
 const PART_KEYS = new Set(['id', 'name', 'visible', 'order', 'position', 'placement', 'sheetMetal', 'copiedFrom']);
 const GROUP_KEYS = new Set(['id', 'name', 'source', 'partIds']);
-// eslint-disable-next-line no-control-regex
-const LABEL_NAME_RE = /[\u0000-\u001f\u007f\u2028\u2029]/;
-
-function isLabelName(value) {
-  return typeof value === 'string' && !!value.trim() && !LABEL_NAME_RE.test(value);
-}
 
 function asObject(input) {
   if (typeof input === 'string') {
@@ -171,6 +165,14 @@ export function validateSurfJsonV2(input) {
       .map((part) => part?.id)
       .filter((id) => isV2SurfId(id));
     errors.push(...assemblyJointErrors(raw.joints, live));
+    if (Array.isArray(raw.joints)) {
+      raw.joints.forEach((joint, i) => {
+        if (!joint || typeof joint !== 'object' || Array.isArray(joint)) return;
+        if (joint.id != null && isSurfId(joint.id) && !isV2SurfId(joint.id)) {
+          errors.push(`joints[${i}].id must be a surf id`);
+        }
+      });
+    }
   }
   return { ok: errors.length === 0, errors };
 }
@@ -205,6 +207,6 @@ export function parseSurfJsonV2(input) {
   return {
     ...loaded,
     id: raw.id,
-    activeId: raw.activeId === null ? null : loaded.activeId,
+    activeId: raw.activeId == null ? null : loaded.activeId,
   };
 }

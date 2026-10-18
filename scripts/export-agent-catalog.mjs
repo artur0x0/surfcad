@@ -368,8 +368,8 @@ function assemblySchema() {
   const labelName = {
     type: 'string',
     minLength: 1,
-    pattern: '^[^\\u0000-\\u001f\\u007f\\u2028\\u2029]+$',
-    description: 'Display label. Not unique. Control characters and line separators are rejected.',
+    pattern: '^(?=.*\\S)[^\\u0000-\\u001f\\u007f\\u2028\\u2029]+$',
+    description: 'Display label. Not unique. Control characters, line separators, and whitespace-only names are rejected.',
   };
   const vec3 = {
     type: 'array',
