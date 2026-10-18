@@ -5,8 +5,8 @@
  */
 import { serializeAssembly } from '../assembly.js';
 import { gitBlobSha, isBinaryContent, toUint8Array } from './binaryContent.js';
-import { partRepoPath, partScriptText } from './partIdentity.js';
-import { rewriteColorMap, rewriteJointSurfIds } from './surfId.js';
+import { isUuidPartId, partRepoPath, partScriptText } from './partIdentity.js';
+import { isSurfId, rewriteColorMap, rewriteJointSurfIds } from './surfId.js';
 import { stringifySurfJson } from './surfJson.js';
 import { assemblyFilePath, assetPathForScript, vaultSegment } from './vaultLayout.js';
 
@@ -44,6 +44,47 @@ function pairIdMap(pairs = [], failedFrom = []) {
     map.set(String(from), to);
   }
   return map;
+}
+
+function tipScriptForPart(part, tipScripts, fromByTo) {
+  if (!part || !tipScripts) return undefined;
+  const id = part.id;
+  if (id && typeof tipScripts[id] === 'string') return tipScripts[id];
+  const path = partRepoPath(part);
+  if (path && typeof tipScripts[path] === 'string') return tipScripts[path];
+  const from = id ? fromByTo.get(id) : undefined;
+  if (from && typeof tipScripts[from] === 'string') return tipScripts[from];
+  return undefined;
+}
+
+/**
+ * Baseline script map that keeps git-tip bytes when open-time collapse
+ * remapped a study id the next `.surf.json` rewrite will drop: UUID row id
+ * → header surf-id (U → S). A v1 path-id study is remapped in memory on
+ * every open and must not look dirty. When `pairs` is empty (App recapture),
+ * keep tip bytes wherever they already differ so the reader's choice
+ * survives. `tipScripts` may be keyed by collapsed id, repo path, or
+ * pre-collapse id. Does not write git.
+ */
+export function baselineScriptsKeepingTip(parts, wcScripts, tipScripts, pairs = []) {
+  const fromByTo = new Map();
+  const uuidTargets = new Set();
+  for (const { from, to } of pairs || []) {
+    if (!from || !to || from === to) continue;
+    fromByTo.set(to, from);
+    if (isUuidPartId(from) && isSurfId(to)) uuidTargets.add(to);
+  }
+  const restrictToUuidStudyRemap = (pairs || []).length > 0;
+  const out = { ...(wcScripts || {}) };
+  for (const part of parts || []) {
+    if (!part?.id || part.missing === true) continue;
+    const wc = out[part.id];
+    if (typeof wc !== 'string') continue;
+    if (restrictToUuidStudyRemap && !uuidTargets.has(part.id)) continue;
+    const tip = tipScriptForPart(part, tipScripts, fromByTo);
+    if (typeof tip === 'string' && tip !== wc) out[part.id] = tip;
+  }
+  return out;
 }
 
 function remapGroupIds(groups, map) {

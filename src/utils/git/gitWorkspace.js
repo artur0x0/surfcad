@@ -57,9 +57,14 @@ import {
   openLegacyAssembly,
   UnsupportedVaultLayoutError,
 } from './legacyVault/index.js';
-import { captureBaseline, captureBaselineFromTip, remapTipDocThroughPairs } from './gitBaseline.js';
+import {
+  baselineScriptsKeepingTip,
+  captureBaseline,
+  captureBaselineFromTip,
+  remapTipDocThroughPairs,
+} from './gitBaseline.js';
 import { sidecarIsDirty } from './workingSidecar.js';
-export { captureBaseline, captureBaselineFromTip, remapTipDocThroughPairs };
+export { baselineScriptsKeepingTip, captureBaseline, captureBaselineFromTip, remapTipDocThroughPairs };
 
 function assemblyTextIgnoringActive(text) {
   const obj = JSON.parse(text);
