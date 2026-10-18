@@ -378,6 +378,10 @@ import {
   executeUpgrade,
   executeUpgradeConflictChoice,
   applyUpgradeReload,
+  adoptUpgradeWorkingCopy,
+  upgradePersistIncomplete,
+  orphanUpgradeScriptIds,
+  workingCopyUnpersistedResult,
   openLegacyAssembly,
   UnsupportedVaultLayoutError,
 } from './utils/git/legacyVault';
@@ -5203,6 +5207,10 @@ const App = () => {
     if (persisted.docSaved === false) {
       persistFlightPairsRef.current = [];
       persistFlightToOnlyRef.current = false;
+      const orphans = orphanUpgradeScriptIds(persisted, sourceDoc);
+      for (const id of orphans) {
+        try { await deletePartScript(id); } catch { /* unreferenced to-key */ }
+      }
     }
     return persisted;
   };
@@ -5253,65 +5261,69 @@ const App = () => {
       ].filter(Boolean))];
       const snapshotScripts = await loadPartScripts(snapshotIds);
       const assets = await loadPartAssets((doc.parts || []).map((part) => part.id));
+      const workingCopy = { dirty, doc, scripts, assets, message };
       const result = await executeUpgrade({
         adapter,
         repo: vault.repo,
         branch,
         store,
-        workingCopy: { dirty, doc, scripts, assets, message },
+        workingCopy,
         followupOverwrite: overwrite === true,
       });
-      if (result.status === 'already_upgraded') {
-        rememberAssembly({ ...assemblyRef.current, vaultLayout: 'v2' });
-        return result;
-      }
-      const adopted = result.status === 'upgraded'
-        || result.status === 'upgraded_and_saved'
-        || (result.status === 'conflict' && result.phase === 'save');
-      if (adopted && result.rekey) {
-        const nextDoc = {
-          ...(result.rekey.doc || assemblyRef.current),
-          source: 'git',
-          vaultLayout: 'v2',
-        };
-        const persisted = await persistUpgradeWorkingCopy({
+      const adopted = await adoptUpgradeWorkingCopy({
+        result,
+        workingCopy,
+        adapter,
+        repo: vault.repo,
+        branch,
+        store,
+        sourceDoc: snapshotDoc,
+        journalPairs: reusePairsFromJournal(await loadRekeyJournal(), doc),
+        persist: ({ nextDoc, nextScripts, pairs, assets: partAssets }) => persistUpgradeWorkingCopy({
           nextDoc,
-          nextScripts: result.rekey.scripts || {},
-          pairs: result.rekey.pairs || [],
+          nextScripts,
+          pairs,
           sourceDoc: snapshotDoc,
           sourceScripts: snapshotScripts,
-          partAssets: result.rekey.assets || assets,
-        });
-        if (persisted.docSaved === false) {
-          setUploadError('Could not save the upgraded working copy. The previous working copy was kept.');
-          return {
-            status: 'error',
-            code: 'working_copy_unpersisted',
-            error: 'Could not save the upgraded working copy. The previous working copy was kept.',
-            message: 'Could not save the upgraded working copy. The previous working copy was kept.',
-            hint: 'The vault is already v2. Retry Upgrade vault to persist the working copy.',
-            sha: result.sha,
-            upgradeSha: result.upgradeSha || result.sha,
-          };
-        }
-        rememberScripts(persisted.scripts);
-        rememberAssembly({ ...persisted.doc, source: 'git', vaultLayout: 'v2' });
-        if (result.status !== 'conflict') {
+          partAssets: partAssets || assets,
+        }),
+        removeOrphans: async (ids) => {
+          for (const id of ids || []) {
+            try { await deletePartScript(id); } catch { /* unreferenced to-key */ }
+          }
+        },
+      });
+      if (adopted.status === 'error') {
+        setUploadError(adopted.result?.error || adopted.result?.message || 'Could not save the upgraded working copy.');
+        return adopted.result;
+      }
+      if (adopted.persisted) {
+        rememberScripts(adopted.persisted.scripts);
+        rememberAssembly({ ...adopted.persisted.doc, source: 'git', vaultLayout: 'v2' });
+        const recapture = result.status !== 'conflict'
+          && (result.status !== 'already_upgraded' || !dirty);
+        if (recapture) {
           const head = (await adapter.getBranch(vault.repo, branch))?.sha || result.sha || null;
           rememberGitBaseline(captureBaseline({
-            assemblyPath: assemblyFilePath(vaultSegment(persisted.doc.name) || persisted.doc.name),
-            assemblyName: persisted.doc.name,
-            doc: persisted.doc,
-            scripts: persisted.scripts,
-            assets: result.rekey.assets || assets,
+            assemblyPath: assemblyFilePath(vaultSegment(adopted.persisted.doc.name) || adopted.persisted.doc.name),
+            assemblyName: adopted.persisted.doc.name,
+            doc: adopted.persisted.doc,
+            scripts: adopted.persisted.scripts,
+            assets: adopted.rekey?.assets || assets,
             branch,
             headSha: head,
           }));
           await clearWorkingCopySidecar();
         }
+      } else if (result.status === 'already_upgraded') {
+        rememberAssembly({ ...assemblyRef.current, vaultLayout: 'v2' });
       }
       return result;
     } catch (err) {
+      if (err?.name === 'PersistCrash') {
+        setUploadError('Could not save the upgraded working copy. The previous working copy was kept.');
+        return workingCopyUnpersistedResult();
+      }
       return gitOpCatchResult(err, 'Upgrade vault failed');
     }
   };
@@ -5355,15 +5367,9 @@ const App = () => {
           sourceDoc: snapshotDoc,
           sourceScripts: snapshotScripts,
         });
-        if (persisted.docSaved === false) {
+        if (upgradePersistIncomplete(persisted)) {
           setUploadError('Could not save the upgraded working copy. The previous working copy was kept.');
-          return {
-            status: 'error',
-            code: 'working_copy_unpersisted',
-            error: 'Could not save the upgraded working copy. The previous working copy was kept.',
-            message: 'Could not save the upgraded working copy. The previous working copy was kept.',
-            hint: 'Retry the Upgrade conflict choice. The previous working copy was kept.',
-          };
+          return workingCopyUnpersistedResult();
         }
         rememberScripts(persisted.scripts);
         rememberAssembly({ ...persisted.doc, source: 'git', vaultLayout: 'v2' });
