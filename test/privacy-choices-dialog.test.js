@@ -45,7 +45,14 @@ describe('Privacy choices dialog UI', () => {
     assert.match(privacyPage, /Your browser(?:'s|&apos;s) Global Privacy Control signal is honored/);
     assert.match(main, /pathIsPrivacy/);
     assert.match(main, /PrivacyConsentController/);
-    assert.doesNotMatch(loading, /data-app-loading[\s\S]{0,800}data-privacy-choices-link/);
+    const loadingSlice = loading.slice(
+      loading.indexOf('if (!manifoldReady || editorInitialScript === null)'),
+      loading.indexOf('Phone shell:'),
+    );
+    assert.match(loadingSlice, /data-app-loading/);
+    assert.equal(/SiteFooter/.test(loadingSlice), false);
+    assert.equal(/Privacy choices/.test(loadingSlice), false);
+    assert.match(loading, /<SiteFooter \/>/);
     assert.doesNotMatch(popup, /\bEdge\b/);
     assert.doesNotMatch(privacyPage, /\bEdge\b/);
   });
