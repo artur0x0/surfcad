@@ -18,6 +18,7 @@ import { profileInitials } from '../utils/profileInitials.js';
 import { useAgentBridgeHost } from './AgentBridgeHost';
 import { clearGithubToken, loadGithubToken } from '../utils/git/githubAuth.js';
 import { DEFAULT_VAULT_NAME } from '../utils/git/vault.js';
+import AccountPane from './AccountPane';
 import ProfilePanel from './ProfilePanel';
 import { useCartChrome } from '../hooks/useCart';
 
@@ -34,6 +35,7 @@ export default function ProfileChip({
   const cartChrome = useCartChrome();
   const cartCount = session.signedIn ? (cartChrome?.count || 0) : 0;
   const [panelOpen, setPanelOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [agentBridgeSlot, setAgentBridgeSlot] = useState(null);
   const { link: agentBridgeLink, offerSlot, registerCloseMenu } = useAgentBridgeHost();
   const phase = session.phase;
@@ -93,6 +95,7 @@ export default function ProfileChip({
   };
 
   const handleClick = () => {
+    if (accountOpen) setAccountOpen(false);
     if (reauth) {
       if (session.reconnecting) return;
       if (session.offerReconnect) {
@@ -225,7 +228,6 @@ export default function ProfileChip({
           open={panelOpen}
           onClose={() => setPanelOpen(false)}
           onSignOut={handleSignOut}
-          onDeleteAccount={handleDeleteAccount}
           onSignIn={canClear ? () => { onAccount?.(); } : null}
           onClearLocalCadData={canClear ? onClearLocalCadData : null}
           onReconnect={startReconnect}
@@ -236,11 +238,20 @@ export default function ProfileChip({
           showCart={session.signedIn}
           cartCount={cartCount}
           onOpenCart={session.signedIn ? () => cartChrome?.openCart?.() : null}
+          onOpenAccount={(signedIn || reauth) ? () => setAccountOpen(true) : null}
           align="right"
           agentBridgeLive={agentBridgeLive}
           agentBridgeSlotRef={setAgentBridgeSlot}
         />
       )}
+      <AccountPane
+        open={accountOpen}
+        onClose={() => setAccountOpen(false)}
+        onDeleteAccount={handleDeleteAccount}
+        onClearLocalCadData={canClear ? onClearLocalCadData : null}
+        signedIn={signedIn}
+        reauth={reauth}
+      />
       {variant === 'viewport' && reauth && session.bootEmpty ? (
         <div
           data-reauth-empty=""

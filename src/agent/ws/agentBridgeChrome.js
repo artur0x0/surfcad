@@ -61,6 +61,8 @@ export function shouldDismissProfilePanelOnPointer(event, panelEl) {
     if (target.closest('[data-agent-bridge-approval]')) return false;
     if (target.closest('[data-agent-bridge-dialog]')) return false;
     if (target.closest('[data-agent-bridge-connected-toast]')) return false;
+    if (target.closest('[data-git-dialog="account"]')) return false;
+    if (target.closest('[data-profile-account-pane]')) return false;
   }
   return true;
 }

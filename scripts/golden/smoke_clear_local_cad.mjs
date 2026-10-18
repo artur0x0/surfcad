@@ -29,6 +29,7 @@ console.log('clear-local-cad — source wiring');
   const assembly = readFileSync(join(root, 'src/utils/assemblyStore.js'), 'utf8');
   const chip = readFileSync(join(root, 'src/components/ProfileChip.jsx'), 'utf8');
   const panel = readFileSync(join(root, 'src/components/ProfilePanel.jsx'), 'utf8');
+  const account = readFileSync(join(root, 'src/components/AccountPane.jsx'), 'utf8');
   const dialog = readFileSync(join(root, 'src/components/ClearCacheDialog.jsx'), 'utf8');
   const app = readFileSync(join(root, 'src/App.jsx'), 'utf8');
   const feed = readFileSync(join(root, 'src/components/PartFeed.jsx'), 'utf8');
@@ -56,17 +57,20 @@ console.log('clear-local-cad — source wiring');
     && /data-profile-clear-local/.test(panel)
     && /data-clear-cache/.test(panel)
     && /data-profile-panel-mode/.test(panel));
+  ok('signed-in Account pane keeps Clear local cache',
+    /data-profile-clear-local/.test(account)
+    && /data-clear-cache/.test(account));
   ok('a chip with Clear opens the panel when signed out',
     /canClear/.test(chip)
     && /onClearLocalCadData/.test(chip)
-    && /if \(canClear\)/.test(chip)
+    && /if \(canClear \|\| agentBridgeLive\)/.test(chip)
     && /setPanelOpen/.test(chip));
   ok('Sign in still reaches onAccount',
     /onAccount\?\.|onAccount\(/.test(chip)
     && /if \(signedIn\)/.test(chip)
     && /onSignIn=\{canClear \? \(\) => \{ onAccount\?\.\(\); \} : null\}/.test(chip));
   {
-    const m = view.match(/<ProfileChip variant="viewport"[^/]*\/>/);
+    const m = view.match(/<ProfileChip[\s\S]*?variant="viewport"[\s\S]*?\/>/);
     ok('viewport chip JSX includes onClearLocalCadData',
       m && /onClearLocalCadData/.test(m[0]));
   }

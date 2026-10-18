@@ -100,3 +100,21 @@ test('Disconnect during an Allow prompt rejects the peer instead of dropping the
   assert.match(SRC, /stateRef\.current === 'pending'/);
   assert.match(SRC, /rejectPair\(\)/);
 });
+
+test('Connect agent is an inline plug-icon menu row, not a big emerald button', () => {
+  assert.match(SRC, /from 'lucide-react'/);
+  assert.match(SRC, /<Plug /);
+  assert.match(SRC, /PROFILE_MENU_ITEM_CLASS/);
+  assert.match(SRC, /Connect agent/);
+  assert.match(SRC, /shouldShowAgentBridgeDisconnect/);
+  const connectIdx = SRC.indexOf('data-agent-bridge-connect=""');
+  const connectBlock = SRC.slice(Math.max(0, connectIdx - 280), connectIdx + 180);
+  assert.match(connectBlock, /PROFILE_MENU_ITEM_CLASS/);
+  assert.doesNotMatch(connectBlock, /CONNECT_AGENT_BUTTON_CLASS/);
+  assert.doesNotMatch(connectBlock, /shadow-md/);
+});
+
+test('menu and dialog Disconnect are hidden until the agent is paired', () => {
+  assert.match(SRC, /shouldShowAgentBridgeDisconnect\(\{ paired, link \}\)/);
+  assert.equal((SRC.match(/shouldShowAgentBridgeDisconnect/g) || []).length >= 2, true);
+});

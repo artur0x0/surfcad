@@ -90,6 +90,17 @@ export function shouldClosePairingDialogOnConnect(input = {}) {
   return input.paired === true && input.link === 'connected';
 }
 
+/**
+ * Disconnect in the profile menu / Connect Agent dialog drops the local
+ * WebSocket relay (`disconnectPairing`), not the GitHub write-grant.
+ * Show it only while a client is paired or the link is connected.
+ *
+ * @param {{ paired?: boolean, link?: string | null }} input
+ */
+export function shouldShowAgentBridgeDisconnect(input = {}) {
+  return input.paired === true || input.link === 'connected';
+}
+
 export const AGENT_CONNECTED_TOAST_MS = 5000;
 export const AGENT_CONNECTED_TOAST_COPY = 'Agent connected';
 

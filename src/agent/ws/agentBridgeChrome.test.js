@@ -40,9 +40,11 @@ test('a click on the pairing dialog does not dismiss the profile panel', () => {
   const panel = { contains: () => false };
   const approval = { closest: (sel) => (sel === '[data-agent-bridge-approval]' ? approval : null) };
   const dialog = { closest: (sel) => (sel === '[data-agent-bridge-dialog]' ? dialog : null) };
+  const account = { closest: (sel) => (sel === '[data-git-dialog="account"]' ? account : null) };
   const outside = { closest: () => null };
   assert.equal(shouldDismissProfilePanelOnPointer({ target: approval }, panel), false);
   assert.equal(shouldDismissProfilePanelOnPointer({ target: dialog }, panel), false);
+  assert.equal(shouldDismissProfilePanelOnPointer({ target: account }, panel), false);
   assert.equal(shouldDismissProfilePanelOnPointer({ target: outside }, panel), true);
   assert.equal(shouldDismissProfilePanelOnPointer({ target: outside }, { contains: () => true }), false);
   assert.equal(shouldDismissProfilePanelOnPointer({ target: outside }, null), false);

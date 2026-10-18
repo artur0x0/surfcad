@@ -45,7 +45,7 @@ test('relay-retry playtest asserts the pairing popup never covers footer Privacy
   assert.match(SRC, /assertPairingClearsFooterPrivacy/);
   assert.match(SRC, /rectsOverlap/);
   assert.match(SRC, /data-privacy-choices-link/);
-  assert.match(SRC, /data-profile-privacy-choices/);
+  assert.match(SRC, /data-profile-account/);
   assert.match(SRC, /data-profile-panel/);
   assert.match(SRC, /data-agent-bridge-dialog-card/);
   assert.match(SRC, /text-on-dark/);

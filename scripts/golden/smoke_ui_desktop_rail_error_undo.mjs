@@ -90,14 +90,26 @@ console.log('ui: desktop ribbon + left rail + error Undo');
     !/Approve each client/.test(pairing) && !/nothing pairs automatically/.test(pairing),
   );
   check(
-    '4: Connect Agent button uses shared white-on-emerald classes',
+    '4: Connect agent menu row uses inline profile-menu classes and a Plug icon',
     /data-ui-action="data-agent-bridge-connect"/.test(pairing)
-      && /CONNECT_AGENT_BUTTON_CLASS/.test(pairing),
+      && /PROFILE_MENU_ITEM_CLASS/.test(pairing)
+      && /<Plug /.test(pairing),
+  );
+  check(
+    '4: pairing dialog Copy prompt still uses shared white-on-emerald classes',
+    /CONNECT_AGENT_BUTTON_CLASS/.test(pairing),
   );
   const connectBtn = read('../../src/components/agentBridgeConnectButton.js');
   check(
     '4: Connect Agent class includes text-on-dark',
     /text-on-dark/.test(connectBtn),
+  );
+  const menuChrome = read('../../src/components/profileMenuChrome.js');
+  check(
+    '4: profile menu item class is white on dark, not a big button',
+    /PROFILE_MENU_ITEM_CLASS/.test(menuChrome)
+      && /text-on-dark/.test(menuChrome)
+      && /px-3 py-1\.5/.test(menuChrome),
   );
 }
 

@@ -138,8 +138,8 @@ async function assertPairingClearsFooterPrivacy(page, { menuOpen = false } = {})
       await page.locator('[data-profile-panel]').isVisible(),
       'profile menu should stay open for the footer overlap check',
     );
-    const menuPrivacy = await page.locator('[data-profile-privacy-choices]').boundingBox();
-    assert.ok(menuPrivacy, 'in-menu Privacy choices should be visible when the menu is open');
+    const menuAccount = await page.locator('[data-profile-account]').boundingBox();
+    assert.ok(menuAccount, 'Account menu item should be visible when the signed-in menu is open');
   }
 }
 
