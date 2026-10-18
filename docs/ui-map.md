@@ -11,8 +11,10 @@ a floating overlay inside the viewport, or a full-screen modal.
 |------|--------|------|
 | `/git/callback` | GitHub OAuth hand-off | `GitCallback.jsx` |
 | `/partners` | Become a partner form + thank-you | `src/pages/PartnersPage.jsx` (`data-partners-page`) |
+| `/privacy` | Privacy policy and Change privacy choices | `src/pages/PrivacyPage.jsx` (`data-privacy-page`) |
 
 `golden:partners-page` screenshots the form and thank-you state at 390 and 1280.
+`golden:privacy-consent` checks the first-visit popup at 1280 and 390: it appears with no stored choice, sits above the CAD toolbar / home pill, and **Accept all** hides it and persists. The privacy page always shows that Global Privacy Control is honored and **Change privacy choices** re-opens the same popup.
 
 Read this file to answer "where is X on screen?" and "which file do I edit?".
 For text, color, and popup chrome read [docs/ui-style-guide.md](./ui-style-guide.md).
@@ -62,7 +64,7 @@ one shell you must change the other.
 - **Phone sheet** (`data-script-sheet`, 390px): full-screen over the home pill. Back is an ArrowLeft icon only (`data-script-editor-close`, `aria-label="Back to parts"`, 44×44) and returns to Parts with the same close-save. A stored or linked Script stage opens Parts.
 - **CAD corner.** There is no `data-cad-io-tray`. Upload and Download are on the Parts ribbon. Order is the part-row cart button (`data-part-order`). Run, Select all, Undo, and Redo stay in the editor.
 - **Puzzle easter egg** (`data-puzzle-unlock`, 44×44, viewport top-left): five taps in three seconds while `useAuthState().signedIn` (grey reauth counts) call `handleStartGame` and show `data-puzzle-unlock-toast` ("Puzzle unlocked"). The taps are not stored. Signed-out and pending sessions have no target and no toast. Nothing covers that corner.
-- **Identity.** Brand colors and splash copy: [docs/ui-style-guide.md](./ui-style-guide.md#brand). The CAD viewport header row (`data-viewer-header-row`, `top-4`, `left-2` / `lg:left-4`, same inset as the helper rail) shows the paper-tile mark (`data-brand-mark="paper"`) and the outlined SurfCAD wordmark at 16px on a transparent lockup (`data-brand-header`, `data-brand-wordmark`). The assembly title pills sit centred on the same row (`data-viewer-title`), with truncation so long names stay readable and the row clears the AR profile chip (`pr-11`). Parts and Script stages do not draw the brand. `golden:brand-identity` checks 390 and 1280.
+- **Identity.** Brand colors and splash copy: [docs/ui-style-guide.md](./ui-style-guide.md#brand). The CAD viewport header row (`data-viewer-header-row`, `top-4`, `left-2` / `lg:left-4`, same inset as the helper rail) shows the paper-tile mark (`data-brand-mark="paper"`) and the outlined SurfCAD wordmark at 16px on a transparent lockup (`data-brand-header`, `data-brand-wordmark`). The assembly title pills sit centred on the same row (`data-viewer-title`), with truncation so long names stay readable and the row clears the AR profile chip (`pr-11`). Parts and Script stages do not draw the brand. The loading gate (`data-app-loading`) is wall-clock light/dark (`data-app-loading-theme`) and has no Privacy choices link. `golden:brand-identity` checks 390 and 1280.
 
 **The seam between the two panes is draggable** in both shells
 (`SplitDivider.jsx`, pointer-capture based): left/right on desktop

@@ -419,6 +419,10 @@ export function remapAssemblyPaths(doc, scripts, oldName, newName) {
  * remapped assembly-owned parts, and delete the old assembly file (plus old
  * part paths that moved). Shared `parts/…` stay. Orphan files left under the
  * old `assemblies/<old>/` tree are deleted by `commitWorkspace` via listTree.
+ *
+ * `opts.deletePaths` is an explicit list of repo paths to delete (a part
+ * dropped from the assembly *and* the repo). Paths still used by a current
+ * part are skipped. A removed part with no entry here stays in git.
  * -> { files, partPaths, assemblyPath, scripts, doc, renamed, oldName, moved }
  */
 export function buildCommitFiles(doc, scripts, baseline, opts = {}) {
@@ -470,6 +474,20 @@ export function buildCommitFiles(doc, scripts, baseline, opts = {}) {
       const from = fromOf.get(dest) || dest;
       attachPartAsset(writes, deletes, partPaths, opts.assets, baseline, from, dest);
     }
+  }
+
+  const livePaths = new Set();
+  for (const part of workDoc.parts || []) {
+    const dest = partRepoPath(part) || movedFrom.get(part.id);
+    if (dest) livePaths.add(dest);
+    if (part?.id) livePaths.add(part.id);
+    const mesh = dest ? assetPathForScript(dest) : null;
+    if (mesh) livePaths.add(mesh);
+  }
+  for (const raw of Array.isArray(opts.deletePaths) ? opts.deletePaths : []) {
+    const path = String(raw || '').trim();
+    if (!path || livePaths.has(path) || writes.has(path)) continue;
+    deletes.add(path);
   }
 
   const assemblyText = stringifySurfJson(workDoc);
@@ -1087,6 +1105,7 @@ export async function assembleCommitFiles(adapter, repo, {
   liveScript = null,
   assets = null,
   remotePaths = null,
+  deletePaths = null,
 } = {}) {
   assertGithubAdapter(adapter);
   if (!baseline) throw new Error('Open an assembly from the vault before committing');
@@ -1105,6 +1124,7 @@ export async function assembleCommitFiles(adapter, repo, {
     liveScript,
     assets,
     moved: promoted.moved,
+    deletePaths,
   });
   const mergedMoved = built.moved || [];
   const workDocOut = built.doc || workDoc;
@@ -1283,6 +1303,7 @@ export async function forceMergeCommit(adapter, repo, {
   doc = null,
   scripts = null,
   baseline = null,
+  deletePaths = null,
 } = {}) {
   assertGithubAdapter(adapter);
   let list = Array.isArray(files) ? files.filter((file) => file?.path) : [];
@@ -1296,6 +1317,7 @@ export async function forceMergeCommit(adapter, repo, {
       scripts,
       baseline,
       message: msg,
+      deletePaths,
     });
     if (assembled.status === 'clean') return assembled;
     list = assembled.files;

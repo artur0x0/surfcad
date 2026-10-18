@@ -114,7 +114,7 @@ export function pruneDanglingColors(raw) {
 }
 
 /** { ok, errors: [string] } — every problem, not just the first. */
-export function validateSurfJson(input) {
+export function validateSurfJson(input, { allowMissingPaths = false } = {}) {
   const errors = [];
   let raw = input;
   if (typeof input === 'string') {
@@ -146,8 +146,11 @@ export function validateSurfJson(input) {
       }
       for (const k of Object.keys(part)) if (!PART_KEYS.has(k)) errors.push(`${at} unknown key "${k}"`);
       const path = normalizeRepoPath(part.path);
-      if (!path || path !== part.path) errors.push(`${at}.path must be a repo-relative path`);
-      else if (!path.endsWith(PART_EXT)) errors.push(`${at}.path must end in ${PART_EXT}`);
+      if (!path || path !== part.path) {
+        if (!(allowMissingPaths && (part.path == null || part.path === ''))) {
+          errors.push(`${at}.path must be a repo-relative path`);
+        }
+      } else if (!path.endsWith(PART_EXT)) errors.push(`${at}.path must end in ${PART_EXT}`);
       else if (!isVaultPartPath(path)) {
         errors.push(`${at}.path must be a vault part script`);
       }
@@ -236,12 +239,13 @@ export function validateSurfJson(input) {
 }
 
 /**
- * In-app assembly document -> .surf.json object. Each row must already
- * have a vault `path` (git mode). Does not assign vault paths — the save
- * path (`ensureAssemblyVaultPaths` / `assembleCommitFiles`) does that first.
- * Throws when the result does not validate.
+ * In-app assembly document -> .surf.json object. Does not assign vault
+ * paths — the save path (`ensureAssemblyVaultPaths` / `assembleCommitFiles`)
+ * does that first. Commits keep `validate: true` (default) and throw when a
+ * row has no path. Working-copy baselines pass `{ validate: false }` so a
+ * path-less part does not throw `parts[N].path must be a repo-relative path`.
  */
-export function toSurfJson(doc) {
+export function toSurfJson(doc, { validate = true } = {}) {
   const flat = serializeAssembly({ ...doc, source: 'git' });
   const name = vaultSegment(flat.name);
   const active = (flat.parts || []).find((p) => p.id === flat.activeId);
@@ -250,12 +254,13 @@ export function toSurfJson(doc) {
     format: SURF_JSON_FORMAT,
     version: SURF_JSON_VERSION,
     name,
-    activeId: activePath || null,
+    activeId: activePath || (flat.activeId && isStablePartId(flat.activeId) ? flat.activeId : null),
     parts: flat.parts.map((p) => {
       const row = {};
       const id = isStablePartId(p.id) ? p.id : p.surfId;
       if (id) row.id = id;
-      row.path = partRepoPath(p);
+      const path = partRepoPath(p);
+      if (path) row.path = path;
       row.name = p.name;
       row.visible = p.visible;
       row.order = p.order;
@@ -278,7 +283,7 @@ export function toSurfJson(doc) {
   }
   if (flat.colors) out.colors = flat.colors;
   if (flat.joints) out.joints = flat.joints;
-  const check = validateSurfJson(out);
+  const check = validateSurfJson(out, { allowMissingPaths: validate === false });
   if (!check.ok) {
     throw new Error(`Invalid .surf.json: ${check.errors.join('; ')}`);
   }
@@ -286,8 +291,8 @@ export function toSurfJson(doc) {
 }
 
 /** Stable text for a commit: 2-space indent, trailing newline. */
-export function stringifySurfJson(doc) {
-  return `${JSON.stringify(toSurfJson(doc), null, 2)}\n`;
+export function stringifySurfJson(doc, opts) {
+  return `${JSON.stringify(toSurfJson(doc, opts), null, 2)}\n`;
 }
 
 /** .surf.json text or object -> in-app assembly document (source 'git'). Throws on invalid. */

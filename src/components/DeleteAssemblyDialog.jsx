@@ -7,6 +7,7 @@ import {
   PARTS_TEXT_INPUT_CLASS,
   PARTS_TEXT_INPUT_STYLE,
 } from '../utils/partsChrome.js';
+import { NO_REPO_YET_COPY } from '../utils/git/workingSidecar.js';
 
 const ROW_TRASH = 'shrink-0 rounded p-1 text-gray-500 hover:bg-red-500/15 hover:text-red-300';
 const DANGER_BTN = 'rounded-md bg-red-600 text-xs font-medium text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:hover:bg-red-600';
@@ -224,7 +225,15 @@ export default function DeleteAssemblyDialog({
         </>
       )}
       {error && (
-        <p className="mt-2 text-xs text-amber-300" data-assembly-delete-error="">{error}</p>
+        <p
+          className={error === NO_REPO_YET_COPY
+            ? 'mt-2 font-ui text-ui-sm text-on-dark'
+            : 'mt-2 text-xs text-amber-300'}
+          data-assembly-delete-error=""
+          data-git-no-repo={error === NO_REPO_YET_COPY ? '' : undefined}
+        >
+          {error}
+        </p>
       )}
     </VaultPickerDialog>
   );

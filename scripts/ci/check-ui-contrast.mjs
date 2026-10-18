@@ -20,7 +20,7 @@ const SKIP_FILE = new Set([
   'src/components/AgentBridgePairing.jsx',
 ]);
 
-const DARK_SURFACE = /\b(?:surface-dark|surface-panel|surface-glass|bg-chrome-surface|bg-chrome-background|bg-gray-900|bg-gray-950|bg-slate-900|bg-slate-950|bg-blue-900|bg-blue-950|bg-\[#(?:0{3,8}|111|111111|111827|1e1e1e|16171[Dd])\])\b/i;
+const DARK_SURFACE = /\b(?:surface-dark|surface-panel|surface-splash-dark|surface-glass|bg-chrome-surface|bg-chrome-background|bg-gray-900|bg-gray-950|bg-slate-900|bg-slate-950|bg-blue-900|bg-blue-950|bg-\[#(?:0{3,8}|111|111111|111827|1e1e1e|16171[Dd]|0[Ff]172[Aa])\])\b/i;
 
 const DARK_TEXT = /\b(?:text-black|text-gray-900|text-gray-800|text-gray-700|text-slate-900|text-slate-800|text-chrome-text-secondary|text-\[#(?:0{3,8}|111|111111|16171[Dd]|1e1e1e)\])\b/i;
 

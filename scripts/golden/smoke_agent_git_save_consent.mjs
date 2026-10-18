@@ -6,9 +6,9 @@
  * (lib/fakeGithubApi.mjs) — never a real repo. An agent makes three parts
  * with no vault paths in a new assembly, git_save returns consent_pending at
  * once, the user clicks Allow, the retry commits exactly 4 files (3 part
- * scripts + .surf.json) in one commit. Then rename_part moves a vault part
- * with the -2 rule and refuses an unknown id. Every bridge call must answer
- * within a few seconds.
+ * scripts + .surf.json) in one commit. Then rename_part updates the working
+ * copy only (no vault path move, no commit) and refuses an unknown id.
+ * Every bridge call must answer within a few seconds.
  */
 /* global document, window, indexedDB, localStorage, sessionStorage, navigator */
 import { spawn } from 'node:child_process';
@@ -255,32 +255,27 @@ check(
 );
 
 const lidRow = afterParts.find((p) => p.name === 'Kettle Lid');
-const handleRow = afterParts.find((p) => p.name === 'Kettle Handle');
 const moved = await agentCall(page, 'rename_part', { part_id: lidRow?.id, name: 'Kettle Handle' });
-const expectedPath = String(handleRow?.path || '').replace(/\.js$/, '-2.js');
 check(
-  'rename_part keeps the id and moves the path with the -2 rule',
+  'rename_part updates the working copy and does not move the vault path',
   moved.out.ok === true
     && moved.out.result?.partId === lidRow?.id
-    && moved.out.result?.path === expectedPath
-    && moved.out.result?.moved === true,
+    && moved.out.result?.name === 'Kettle Handle (2)'
+    && moved.out.result?.path === lidRow?.path
+    && moved.out.result?.moved !== true
+    && moved.out.result?.git === false,
   JSON.stringify(moved.out),
 );
-const renameCommit = fake.log()[0];
-const renameFiles = renameCommit?.files || [];
 check(
-  'rename is one commit: old .js removed, new .js added, .surf.json updated',
-  fake.log().length === seedCommits + 2
-    && renameFiles.some((f) => f.path === lidRow?.path && f.status === 'removed')
-    && renameFiles.some((f) => f.path === expectedPath && f.status === 'added')
-    && renameFiles.some((f) => f.path.endsWith('.surf.json')),
-  JSON.stringify(renameCommit),
+  'rename does not add a commit',
+  fake.log().length === seedCommits + 1,
+  JSON.stringify(fake.log()[0]),
 );
 const surfAfter = JSON.parse(fake.readFile(surfWritten[0]?.path) || '{}');
 check(
-  '.surf.json reference follows the rename',
-  (surfAfter.parts || []).some((p) => p.path === expectedPath)
-    && !(surfAfter.parts || []).some((p) => p.path === lidRow?.path),
+  'vault .surf.json still names the lid',
+  (surfAfter.parts || []).some((p) => p.path === lidRow?.path && p.name === 'Kettle Lid')
+    && !(surfAfter.parts || []).some((p) => /Handle-2|Handle \(2\)/.test(p.path || '')),
   JSON.stringify(surfAfter.parts),
 );
 const histAfter = await agentCall(page, 'history', {});

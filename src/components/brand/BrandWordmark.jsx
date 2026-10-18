@@ -4,9 +4,10 @@ import React from 'react';
  * Outlined SurfCAD wordmark (Inter Tight 700 paths). No font load.
  *
  * Orange (#FF5A1F) is only the splash "CAD", and only at 24px or taller
- * on Paper. The CAD viewport header is 16px Paper (#FAFAF9) on a
- * transparent lockup over the dark chrome — Surf and CAD are both white
- * there, not orange. wordmark-ink.svg is the Ink variant for light surfaces.
+ * (`splash` on Paper, `splash-dark` on navy). The CAD viewport header is
+ * 16px Paper (#FAFAF9) on a transparent lockup over the dark chrome —
+ * Surf and CAD are both white there, not orange. wordmark-ink.svg is the
+ * Ink variant for light surfaces.
  *
  * glyph box from the brand SVG: x 1.999-333.258, y 14.492-80.890.
  */
@@ -16,8 +17,14 @@ const CAD_D = 'M191.4028763771057 80.83984375Q183.07164072990417 80.83984375 176
 const VIEW_BOX = '1.5 14 332.3 67.4';
 
 function fillsFor(tone, size) {
-  const orangeOk = tone === 'splash' && size >= 24;
-  if (orangeOk) return { surf: '#16171D', cad: '#FF5A1F', cadName: 'orange' };
+  const orangeOk = (tone === 'splash' || tone === 'splash-dark') && size >= 24;
+  if (orangeOk) {
+    return {
+      surf: tone === 'splash-dark' ? '#FAFAF9' : '#16171D',
+      cad: '#FF5A1F',
+      cadName: 'orange',
+    };
+  }
   if (tone === 'on-light') return { surf: '#16171D', cad: '#16171D', cadName: 'ink' };
   return { surf: '#FAFAF9', cad: '#FAFAF9', cadName: 'paper' };
 }
@@ -95,8 +102,11 @@ export function BrandHeaderMark() {
   );
 }
 
-/** Ink tile: paper board, ink stringer. For the Paper splash, where a paper tile would disappear. */
-export function BrandMark({ size = 72 }) {
+/** Ink tile on Paper (paper board, ink stringer). Paper-tile tone is the
+ * navy splash mark (paper tile, ink board, white stringer) — option B.
+ */
+export function BrandMark({ size = 72, tone = 'ink' }) {
+  const paperTile = tone === 'paper-tile';
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -104,21 +114,21 @@ export function BrandMark({ size = 72 }) {
       height={size}
       viewBox="0 0 512 512"
       aria-hidden="true"
-      data-brand-mark="ink"
+      data-brand-mark={paperTile ? 'paper-tile' : 'ink'}
       className="block shrink-0"
     >
-      <rect width="512" height="512" rx="116" fill="#16171D" />
+      <rect width="512" height="512" rx="116" fill={paperTile ? '#FAFAF9' : '#16171D'} />
       <g transform="translate(256 256) rotate(-30) translate(-256 -256)">
         <path
           d="M256 52 C 334 128 344 300 318 404 C 302 452 210 452 194 404 C 168 300 178 128 256 52 Z"
-          fill="#FAFAF9"
+          fill={paperTile ? '#16171D' : '#FAFAF9'}
         />
         <line
           x1="256"
           y1="92"
           x2="256"
           y2="424"
-          stroke="#16171D"
+          stroke={paperTile ? '#FFFFFF' : '#16171D'}
           strokeWidth="20"
           strokeLinecap="round"
         />
