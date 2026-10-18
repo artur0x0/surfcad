@@ -149,6 +149,20 @@ function parseFilesMap(files) {
   return out;
 }
 
+/** Known-stale f(id) paths this Save skipped; empty / missing is none. */
+function parseStalePaths(value) {
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const raw of value) {
+    const path = normalizeRepoPath(raw);
+    if (!path || !parseIdPath(path) || seen.has(path)) continue;
+    seen.add(path);
+    out.push(path);
+  }
+  return out.sort();
+}
+
 /** BranchTip or null when the row is missing / corrupt. */
 export function parseBranchTip(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -186,13 +200,16 @@ export function parseAssemblyCommit(value) {
   }
   const capturedAt = Number(value.capturedAt);
   if (!Number.isFinite(capturedAt)) return null;
-  return {
+  const stalePaths = parseStalePaths(value.stalePaths);
+  const record = {
     schemaVersion: LAST_COMMIT_SCHEMA_VERSION,
     assemblyId,
     files,
     json,
     capturedAt,
   };
+  if (stalePaths.length) record.stalePaths = stalePaths;
+  return record;
 }
 
 export function makeBranchTip({ repo, branch, tipSha = null } = {}) {
@@ -209,6 +226,7 @@ export function makeAssemblyCommit({
   files = {},
   json = null,
   capturedAt = Date.now(),
+  stalePaths,
 } = {}) {
   return parseAssemblyCommit({
     schemaVersion: LAST_COMMIT_SCHEMA_VERSION,
@@ -216,6 +234,7 @@ export function makeAssemblyCommit({
     files,
     json,
     capturedAt,
+    stalePaths,
   });
 }
 

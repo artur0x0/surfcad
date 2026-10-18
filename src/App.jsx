@@ -339,6 +339,7 @@ import {
   sidecarAssemblyKeys,
   repoDeletePathsFor,
   NO_REPO_YET_COPY,
+  NO_REPO_YET_CODE,
   SAVE_QUEUED_COPY,
   noRepoYetError,
   gitOpCatchResult,
@@ -371,6 +372,15 @@ import {
   collectMeshCommitAssets,
   partMeshRecordsFromBaseline,
   meshVaultSaveAllowed,
+  executePlanSave,
+  executePlanSaveConflictChoice,
+  applySaveReload,
+  isV2PlanSaveDoc,
+  meshesFromPartRecords,
+  deleteFromRepoIdsFromPaths,
+  repoDeletePathsForV2Part,
+  mainMovedPlanSavePaths,
+  SAVE_CONFLICT_COPY,
 } from './utils/git';
 import { scheduleLastCommitFromApp } from './utils/git/lastCommit';
 import {
@@ -470,6 +480,8 @@ const App = () => {
   const [gitBehindResolved, setGitBehindResolved] = useState([]); // path strings
   const gitBehindResolvedRef = useRef([]);
   const [gitBehindToast, setGitBehindToast] = useState(null); // { message, behindBy } | null
+  const [planSaveConflict, setPlanSaveConflict] = useState(null);
+  const v2SaveMessageRef = useRef('Save');
   const partFeedRef = useRef(null);
   /** Part ids with an in-flight create or assembly rename (spinner on the row Save icon). */
   const [pendingPartIds, setPendingPartIds] = useState(() => new Set());
@@ -3012,7 +3024,44 @@ const App = () => {
   const checkGitRemoteBehind = async ({ showToast = true, reason = 'manual' } = {}) => {
     const doc = assemblyRef.current;
     const baseline = gitBaselineRef.current;
-    if (!doc || doc.source !== 'git' || !baseline?.headSha) return null;
+    if (!doc || doc.source !== 'git') return null;
+    if (isV2PlanSaveDoc(doc)) {
+      const gen = ++gitCheckGenRef.current;
+      try {
+        const vault = await ensureGitVault({ create: false });
+        const store = gitSync();
+        const branch = gitWorkingBranch();
+        const moved = await mainMovedPlanSavePaths({
+          adapter: gitAdapterRef.current,
+          repo: vault.repo,
+          branch,
+          store,
+          assemblyId: doc.id,
+        });
+        if (gen !== gitCheckGenRef.current) return null;
+        rememberGitBehind(null, { showToast: false, resetResolved: true });
+        setGitBehindToast(null);
+        if (!moved.paths.length && !moved.truncated) {
+          setPlanSaveConflict(null);
+          return null;
+        }
+        const conflict = {
+          model: 'v2',
+          status: 'conflict',
+          conflict: true,
+          paths: moved.paths,
+          truncated: moved.truncated === true,
+          error: SAVE_CONFLICT_COPY,
+          message: SAVE_CONFLICT_COPY,
+        };
+        if (showToast) setPlanSaveConflict(conflict);
+        return conflict;
+      } catch (err) {
+        console.warn('[git] behind check failed', reason, err);
+        return null;
+      }
+    }
+    if (!baseline?.headSha) return null;
     const gen = ++gitCheckGenRef.current;
     try {
       const vault = await ensureGitVault({ create: false });
@@ -3156,6 +3205,36 @@ const App = () => {
     return vault;
   };
   ensureGitVaultRef.current = ensureGitVault;
+
+  /**
+   * v2 first Save may create the repo through writeVaultCommit. Do not call
+   * findOrCreateVault({ create: true }) — that still seeds a README index.
+   */
+  const resolveVaultForPlanSave = async () => {
+    if (gitVaultRef.current?.repo) {
+      return { vault: gitVaultRef.current, create: false };
+    }
+    try {
+      const vault = await ensureGitVault({ create: false });
+      return { vault, create: false };
+    } catch (err) {
+      if (err?.message !== NO_REPO_YET_COPY && err?.code !== NO_REPO_YET_CODE) throw err;
+      const adapter = ensureGitAdapter();
+      const { login } = await adapter.getViewer();
+      const name = storedVaultName()
+        || (adapter?.kind === 'mock' ? peekMockVaultName() : null)
+        || DEFAULT_VAULT_NAME;
+      return {
+        vault: {
+          repo: { owner: login, name },
+          defaultBranch: 'main',
+          headSha: null,
+          private: true,
+        },
+        create: true,
+      };
+    }
+  };
 
   /** Branch the working copy is on (baseline), else the vault default. */
   const gitWorkingBranch = () => {
@@ -3444,12 +3523,8 @@ const App = () => {
   };
 
   const flushGitOps = async ({ surfaceConflict = true } = {}) => {
-    if (assemblyRef.current?.vaultLayout === 'v2' && upgradeVaultEnabled()) {
-      return {
-        status: 'error',
-        code: 'unsupported_vault_version',
-        error: 'This vault is v2. The leftover outbox still writes the old folder layout and was left unflushed.',
-      };
+    if (assemblyRef.current?.vaultLayout === 'v2') {
+      return { status: 'idle' };
     }
     const vault = gitVaultRef.current;
     const adapter = gitAdapterRef.current;
@@ -3975,12 +4050,31 @@ const App = () => {
     if (!doc || doc.source !== 'git' || !id) {
       return { status: 'error', error: 'Not in Git mode' };
     }
-    if (doc.vaultLayout === 'v2' && upgradeVaultEnabled()) {
-      return {
-        status: 'error',
-        code: 'unsupported_vault_version',
-        error: 'This vault is v2. Add to repo still writes the old folder layout and is blocked until v2 Save lands. Nothing was written.',
-      };
+    if (isV2PlanSaveDoc(doc)) {
+      setPendingPartIds((prev) => new Set(prev).add(String(id)));
+      try {
+        const live = codeEditorRef.current?.getContent?.();
+        const liveId = (!suppressPartSaveRef.current && typeof live === 'string')
+          ? doc.activeId : null;
+        if (liveId === id && typeof live === 'string') {
+          await savePartScript(id, live);
+          rememberScripts({ ...partScriptsRef.current, [id]: live });
+        }
+        if (typeof partScriptsRef.current[id] !== 'string') {
+          const starter = newPartStarterScript();
+          await savePartScript(id, starter);
+          rememberScripts({ ...partScriptsRef.current, [id]: starter });
+        }
+        return await handleGitCommit('Add to repo');
+      } catch (err) {
+        return gitOpCatchResult(err, 'Add to Repo failed');
+      } finally {
+        setPendingPartIds((prev) => {
+          const next = new Set(prev);
+          next.delete(String(id));
+          return next;
+        });
+      }
     }
     setPendingPartIds((prev) => new Set(prev).add(String(id)));
     try {
@@ -4951,6 +5045,182 @@ const App = () => {
     }
   };
 
+  const v2WorkingCopy = async (doc) => {
+    const live = codeEditorRef.current?.getContent?.();
+    const scripts = { ...partScriptsRef.current };
+    if (!suppressPartSaveRef.current && typeof live === 'string' && doc.activeId) {
+      scripts[doc.activeId] = live;
+    }
+    const loaded = await loadPartAssets((doc.parts || []).map((part) => part.id));
+    const meshes = meshesFromPartRecords({
+      ...loaded,
+      ...partMeshMetaRef.current,
+    });
+    const sidecar = gitSidecarRef.current;
+    return {
+      doc,
+      scripts,
+      meshes,
+      now: Date.now(),
+      deleteFromRepo: deleteFromRepoIdsFromPaths(sidecar?.pendingDeletes),
+    };
+  };
+
+  const adoptV2SaveResult = async (result, { repo, branch, create }) => {
+    if (result.status === 'pending') {
+      setUploadNotice(SAVE_QUEUED_COPY);
+      return { ...result, status: 'queued' };
+    }
+    if (result.status === 'conflict') {
+      return result;
+    }
+    if (result.status !== 'committed' && result.status !== 'clean' && result.status !== 'branched') {
+      return result;
+    }
+    if (repo) {
+      gitVaultRef.current = {
+        ...(gitVaultRef.current || {}),
+        repo,
+        defaultBranch: gitVaultRef.current?.defaultBranch || 'main',
+        headSha: result.sha || gitVaultRef.current?.headSha || null,
+        private: gitVaultRef.current?.private !== false,
+      };
+      if (create && !gitVaultRef.current.repo) gitVaultRef.current.repo = repo;
+    }
+    const nextBranch = result.branch || branch;
+    const baseline = gitBaselineRef.current;
+    if (baseline && (result.sha || nextBranch)) {
+      rememberGitBaseline({
+        ...baseline,
+        branch: nextBranch || baseline.branch,
+        headSha: result.sha || baseline.headSha,
+      });
+    } else if (result.sha && repo) {
+      rememberGitBaseline(firstCommitBaseline({
+        branch: nextBranch || 'main',
+        headSha: result.sha,
+      }));
+    }
+    if (result.status === 'committed' || result.status === 'branched') {
+      await clearWorkingCopySidecar();
+      rememberGitBehind(null, { showToast: false, resetResolved: true });
+      setGitBehindToast(null);
+      setPlanSaveConflict(null);
+      track('git_saved');
+    }
+    if (result.partStillReferenced?.length) {
+      const names = result.partStillReferenced
+        .map((row) => row.assemblies?.map((item) => item.name || item.id).filter(Boolean).join(', '))
+        .filter(Boolean);
+      if (names.length) {
+        setUploadNotice(`Part file kept; still referenced by ${names.join('; ')}.`);
+      }
+    }
+    return result;
+  };
+
+  const handleV2PlanSave = async (message, { force = false } = {}) => {
+    const doc = assemblyRef.current;
+    if (!isV2PlanSaveDoc(doc)) return { status: 'error', error: 'Not a v2 git assembly' };
+    const adapter = ensureGitAdapter();
+    if (!meshVaultSaveAllowed({
+      source: doc.source,
+      readOnly: bootReadOnlyRef.current,
+      githubConnected,
+      adapterKind: adapter?.kind,
+    })) {
+      return { status: 'error', error: 'Reconnect GitHub before saving this assembly.' };
+    }
+    const msg = typeof message === 'string' ? message.trim() : '';
+    if (msg) v2SaveMessageRef.current = msg;
+    try {
+      const { vault, create } = await resolveVaultForPlanSave();
+      const branch = gitWorkingBranch();
+      const store = gitSync();
+      const workingCopy = await v2WorkingCopy(doc);
+      workingCopy.repo = vault.repo;
+      workingCopy.branch = branch;
+      workingCopy.saveTarget = { repo: vault.repo, branch };
+      const online = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+      const result = await executePlanSave({
+        adapter: gitAdapterRef.current,
+        repo: vault.repo,
+        branch,
+        store,
+        workingCopy,
+        message: msg || v2SaveMessageRef.current,
+        force,
+        create,
+        online,
+      });
+      return adoptV2SaveResult(result, { repo: vault.repo, branch, create });
+    } catch (err) {
+      const tooBig = err?.code === 'file_too_large' || err?.name === 'VaultFileTooLargeError';
+      const text = err.toast || err.message || 'Commit failed';
+      if (tooBig || err.toast || err.code === VAULT_TREE_UNAVAILABLE) setUploadError(text);
+      return {
+        status: 'error',
+        error: text,
+        code: err.code || null,
+      };
+    }
+  };
+
+  const handlePlanSaveConflict = async ({ action, paths, message } = {}) => {
+    const doc = assemblyRef.current;
+    if (!isV2PlanSaveDoc(doc)) {
+      return { status: 'error', error: 'Not a v2 git assembly' };
+    }
+    if (action === 'dismiss') {
+      setPlanSaveConflict(null);
+      return { status: 'dismissed' };
+    }
+    try {
+      const { vault } = await resolveVaultForPlanSave();
+      const branch = gitWorkingBranch();
+      const store = gitSync();
+      const workingCopy = await v2WorkingCopy(doc);
+      workingCopy.repo = vault.repo;
+      workingCopy.branch = branch;
+      workingCopy.saveTarget = { repo: vault.repo, branch };
+      const result = await executePlanSaveConflictChoice({
+        action,
+        adapter: gitAdapterRef.current,
+        repo: vault.repo,
+        branch,
+        store,
+        workingCopy,
+        message: (typeof message === 'string' && message.trim()) || v2SaveMessageRef.current,
+        paths: paths || planSaveConflict?.paths || [],
+      });
+      if (result.status === 'reloaded' && result.contents) {
+        const applied = applySaveReload(assemblyRef.current, partScriptsRef.current, result.contents);
+        rememberScripts(applied.scripts);
+        if (applied.doc) rememberAssembly(applied.doc);
+        for (const [id, script] of Object.entries(applied.scripts || {})) {
+          if (typeof script === 'string') await savePartScript(id, script);
+        }
+        const active = applied.doc?.parts?.find((part) => part.id === applied.doc.activeId)
+          || applied.doc?.parts?.[0];
+        if (active && typeof applied.scripts[active.id] === 'string') {
+          focusPartHistory(active.id, applied.scripts[active.id]);
+          setCurrentFilename(active.name);
+          setCurrentScript(applied.scripts[active.id]);
+          codeEditorRef.current?.loadContent(applied.scripts[active.id], active.name, false);
+        }
+        setPlanSaveConflict(null);
+        return result;
+      }
+      if (result.status === 'dismissed') {
+        setPlanSaveConflict(null);
+        return result;
+      }
+      return adoptV2SaveResult(result, { repo: vault.repo, branch, create: false });
+    } catch (err) {
+      return gitOpCatchResult(err, 'Could not resolve');
+    }
+  };
+
   const handleGitCommit = async (message) => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') return { status: 'error', error: 'Not in Git mode' };
@@ -4963,6 +5233,7 @@ const App = () => {
     })) {
       return { status: 'error', error: 'Reconnect GitHub before saving this assembly.' };
     }
+    if (isV2PlanSaveDoc(doc)) return handleV2PlanSave(message);
     if (doc.vaultLayout === 'legacy' && upgradeVaultEnabled()) {
       return {
         status: 'upgrade_required',
@@ -4970,15 +5241,6 @@ const App = () => {
         error: 'This vault is still v1. Confirm Upgrade vault to rewrite it to v2. Nothing was written.',
         message: 'This vault is still v1. Confirm Upgrade vault to rewrite it to v2. Nothing was written.',
         hint: 'git_upgrade_vault { confirm: true } after the user agrees',
-      };
-    }
-    if (doc.vaultLayout === 'v2' && upgradeVaultEnabled()) {
-      return {
-        status: 'error',
-        code: 'git_error',
-        error: 'Saving a v2 vault is not wired yet. The vault is already upgraded; local edits stay in the working copy.',
-        message: 'Saving a v2 vault is not wired yet. The vault is already upgraded; local edits stay in the working copy.',
-        hint: 'v2 Save lands in a later PR.',
       };
     }
     try {
@@ -5460,6 +5722,9 @@ const App = () => {
    * the dirty dots clear. No second confirm.
    */
   const handleOverwriteMain = async () => {
+    if (isV2PlanSaveDoc(assemblyRef.current)) {
+      return handlePlanSaveConflict({ action: 'overwrite' });
+    }
     const vault = gitVaultRef.current;
     const adapter = gitAdapterRef.current;
     if (!vault?.repo || !adapter) return { status: 'error', error: 'No repo' };
@@ -6099,8 +6364,12 @@ const App = () => {
     const part = doc.parts.find((row) => row.id === key);
     if (!part) return;
     if (opts.fromRepo && doc.source === 'git') {
-      const repoPath = partRepoPath(part);
-      if (repoPath) persistPendingDeletes(repoDeletePathsFor(repoPath));
+      if (isV2PlanSaveDoc(doc)) {
+        persistPendingDeletes(repoDeletePathsForV2Part(part.id));
+      } else {
+        const repoPath = partRepoPath(part);
+        if (repoPath) persistPendingDeletes(repoDeletePathsFor(repoPath));
+      }
     }
 
     const live = codeEditorRef.current?.getContent?.();
@@ -10016,7 +10285,10 @@ const App = () => {
       onRenameRevert={handleRenameRevert}
       syncConflict={syncConflict}
       onSyncConflictClear={() => setSyncConflict(null)}
-      canCommit={assemblyDoc?.source === 'git' && !!sourceDirty && gitSession.phase === 'connected' || (upgradeVaultEnabled() && assemblyDoc?.source === 'git' && assemblyDoc?.vaultLayout === 'legacy' && gitSession.phase === 'connected')}
+      planSaveConflict={planSaveConflict}
+      onPlanSaveConflict={handlePlanSaveConflict}
+      onPlanSaveConflictClear={() => setPlanSaveConflict(null)}
+      canCommit={assemblyDoc?.source === 'git' && !!sourceDirty && gitSession.phase === 'connected' || (assemblyDoc?.source === 'git' && assemblyDoc?.vaultLayout === 'v2' && gitSession.phase === 'connected') || (upgradeVaultEnabled() && assemblyDoc?.source === 'git' && assemblyDoc?.vaultLayout === 'legacy' && gitSession.phase === 'connected')}
       vaultLayout={assemblyDoc?.vaultLayout || null}
       upgradeAvailable={upgradeVaultEnabled()}
       onGitCommit={handleGitCommit}

@@ -1824,10 +1824,10 @@ test('Save on a legacy vault prompts Upgrade and does not write v1', () => {
     app.indexOf('const handleGitCommit'),
     app.indexOf('const handleUpgradeVault'),
   );
-  const legacyGate = gitCommit.slice(
-    gitCommit.indexOf("doc.vaultLayout === 'legacy'"),
-    gitCommit.indexOf("doc.vaultLayout === 'v2'"),
-  );
+  assert.match(gitCommit, /isV2PlanSaveDoc\(doc\)\) return handleV2PlanSave/);
+  const legacyAt = gitCommit.indexOf("doc.vaultLayout === 'legacy'");
+  assert.ok(legacyAt >= 0);
+  const legacyGate = gitCommit.slice(legacyAt, gitCommit.indexOf('try {', legacyAt));
   assert.match(legacyGate, /upgradeVaultEnabled\(\)/);
   assert.match(legacyGate, /upgrade_required/);
   assert.match(legacyGate, /git_upgrade_vault \{ confirm: true \}/);
@@ -2380,11 +2380,13 @@ test('already_upgraded does not mark a dirty working copy clean', () => {
 test('v2 vault refuses leftover v1 writers and leaves the outbox unflushed', () => {
   const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
   const flush = app.slice(app.indexOf('const flushGitOps'), app.indexOf('flushGitSyncRef.current'));
-  assert.match(flush, /vaultLayout === 'v2' && upgradeVaultEnabled\(\)/);
-  assert.match(flush, /left unflushed/);
+  assert.match(flush, /vaultLayout === 'v2'/);
+  assert.match(flush, /status: 'idle'/);
+  assert.equal(/flushSyncQueue/.test(flush.slice(0, flush.indexOf("vaultLayout === 'v2'"))), false);
   const addStart = app.indexOf('const handleAddToRepo');
-  const add = app.slice(addStart, app.indexOf('setPendingPartIds', addStart));
-  assert.match(add, /vaultLayout === 'v2' && upgradeVaultEnabled\(\)/);
+  const add = app.slice(addStart, app.indexOf('const handleListBranches', addStart));
+  assert.match(add, /isV2PlanSaveDoc\(doc\)/);
+  assert.match(add, /handleGitCommit\('Add to repo'\)/);
   const delStart = app.indexOf('const handleDeleteAssembly');
   const del = app.slice(delStart, app.indexOf('if (assemblyOpenLockRef.current)', delStart));
   assert.match(del, /vaultLayout === 'v2' && upgradeVaultEnabled\(\)/);
@@ -2393,21 +2395,21 @@ test('v2 vault refuses leftover v1 writers and leaves the outbox unflushed', () 
   assert.match(rename, /vaultLayout === 'v2' && upgradeVaultEnabled\(\)/);
 });
 
-test('flag-off Save and Add to Repo keep main v1 writers', () => {
+test('flag-off v2 Save uses planSave; leftover v1 writers stay for non-v2 docs', () => {
   const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
   const feed = readFileSync(join(ROOT, 'src/components/PartFeed.jsx'), 'utf8');
   const gitCommit = app.slice(
     app.indexOf('const handleGitCommit'),
     app.indexOf('const handleUpgradeVault'),
   );
+  assert.match(gitCommit, /isV2PlanSaveDoc\(doc\)\) return handleV2PlanSave/);
   assert.match(gitCommit, /doc\.vaultLayout === 'legacy' && upgradeVaultEnabled\(\)/);
-  assert.match(gitCommit, /doc\.vaultLayout === 'v2' && upgradeVaultEnabled\(\)/);
   assert.match(gitCommit, /ensureGitVault\(\{\s*create:\s*true\s*\}\)/);
   const addStart = app.indexOf('const handleAddToRepo');
   const add = app.slice(addStart, app.indexOf('const handleListBranches', addStart));
   assert.match(add, /commitPartToRepo/);
   assert.equal(/upgrade_required/.test(add), false);
-  assert.match(add, /vaultLayout === 'v2' && upgradeVaultEnabled\(\)/);
+  assert.match(add, /isV2PlanSaveDoc\(doc\)/);
   const startCommit = feed.slice(
     feed.indexOf('const startCommit'),
     feed.indexOf('const runNewAssembly'),
@@ -2422,6 +2424,17 @@ test('flag-off Save and Add to Repo keep main v1 writers', () => {
   assert.match(busy, /phase === 'upgrade'/);
   assert.match(busy, /phase === 'save'/);
   assert.match(busy, /className="text-xs text-chrome-secondary" data-git-dialog-loading="">Committing…/);
+  assert.match(feed, /data-git-save-dismiss=""/);
+  const dismissAt = feed.indexOf('data-git-save-dismiss');
+  assert.ok(dismissAt >= 0);
+  const saveBtns = feed.slice(dismissAt - 500, dismissAt + 1800);
+  assert.match(saveBtns, /data-git-behind-reload/);
+  assert.match(saveBtns, /data-git-behind-branch/);
+  assert.match(saveBtns, /data-git-conflict-overwrite/);
+  assert.match(saveBtns, /text-on-dark/);
+  assert.match(saveBtns, /surface-quiet/);
+  assert.equal(/Edge/.test(saveBtns), false);
+  assert.match(feed, /data-git-save-conflict=""/);
 });
 
 function staticRelativeImports(file) {

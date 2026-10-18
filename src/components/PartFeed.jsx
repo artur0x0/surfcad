@@ -393,6 +393,9 @@ const PartFeed = forwardRef(function PartFeed({
   onRenameRevert = null,
   syncConflict = null,
   onSyncConflictClear = null,
+  planSaveConflict = null,
+  onPlanSaveConflict = null,
+  onPlanSaveConflictClear = null,
   onFindInRepo = null,
   suggestNewPartPath = '',
   canCommit = false,
@@ -479,6 +482,15 @@ const PartFeed = forwardRef(function PartFeed({
       error: '',
     });
   }, [syncConflict]);
+  useEffect(() => {
+    if (!planSaveConflict) return;
+    setCommitFlow({
+      stage: 'save-conflict',
+      draft: '',
+      result: planSaveConflict,
+      error: '',
+    });
+  }, [planSaveConflict]);
   const commitInputRef = useRef(null);
   // G4 conflict choice: null | { path, kind: 'part'|'assembly', name, stage, error, result }
   const [conflictFlow, setConflictFlow] = useState(null);
@@ -831,6 +843,7 @@ const PartFeed = forwardRef(function PartFeed({
 
   const closeCommit = () => {
     if (commitFlow?.result?.syncHold) onSyncConflictClear?.();
+    if (commitFlow?.stage === 'save-conflict') onPlanSaveConflictClear?.();
     setCommitFlow(null);
     if (leaveGuard?.stage === 'commit') {
       setLeaveGuard({ pending: leaveGuard.pending, stage: 'ask', error: '' });
@@ -1175,6 +1188,33 @@ const PartFeed = forwardRef(function PartFeed({
     setCommitFlow({ stage: 'done', draft: '', result, error: '' });
   };
 
+    const runPlanSaveConflict = async (action) => {
+      if (action === 'dismiss') {
+        onPlanSaveConflictClear?.();
+        closeCommit();
+        return;
+      }
+      const prior = commitFlow?.result || null;
+      const draft = commitFlow?.draft || '';
+      setCommitFlow({ stage: 'busy', draft, result: prior, error: '' });
+      const result = (await onPlanSaveConflict?.({
+        action,
+        paths: prior?.paths,
+        message: draft || prior?.message,
+      })) || { status: 'error', error: 'Action unavailable' };
+      if (result.status === 'error' || result.status === 'conflict') {
+        setCommitFlow({
+          stage: 'error',
+          draft,
+          result: prior,
+          error: result.error || result.message || 'Could not resolve',
+        });
+        return;
+      }
+      onPlanSaveConflictClear?.();
+      setCommitFlow({ stage: 'done', draft, result, error: '' });
+    };
+
     const runCommit = async () => {
     const draft = commitFlow?.draft || '';
     setCommitFlow({ stage: 'busy', draft, result: null, error: '' });
@@ -1184,6 +1224,10 @@ const PartFeed = forwardRef(function PartFeed({
       if (leaveGuard?.stage === 'commit') {
         setLeaveGuard((prev) => (prev ? { ...prev, stage: 'ask' } : prev));
       }
+      return;
+    }
+    if (result.status === 'conflict' && (result.model === 'v2' || vaultLayout === 'v2')) {
+      setCommitFlow({ stage: 'save-conflict', draft, result, error: '' });
       return;
     }
     if (result.status === 'branched' || result.status === 'conflict' || result.syncHold) {
@@ -2304,6 +2348,7 @@ const PartFeed = forwardRef(function PartFeed({
           ) ? 'Upgrade vault'
             : (
               commitFlow.stage === 'ask-force'
+              || commitFlow.stage === 'save-conflict'
               || (commitFlow.result?.syncHold && (commitFlow.stage === 'busy' || commitFlow.stage === 'error'))
             ) ? 'Conflict with main' : 'Save to repo'}
           labelledBy="git-commit-title"
@@ -2371,6 +2416,46 @@ const PartFeed = forwardRef(function PartFeed({
                     data-git-conflict-overwrite=""
                     className="rounded-md px-3 py-1.5 text-xs font-ui font-medium text-on-dark surface-quiet"
                     onClick={() => { void runUpgradeConflict('overwrite'); }}
+                  >
+                    Overwrite
+                  </button>
+                </>
+              )}
+              {commitFlow.stage === 'save-conflict' && (
+                <>
+                  <button
+                    type="button"
+                    className="rounded-md px-3 py-1.5 text-xs font-ui text-on-dark surface-quiet"
+                    onClick={() => { void runPlanSaveConflict('dismiss'); }}
+                    data-ui-action="data-git-save-dismiss"
+                    data-git-save-dismiss=""
+                  >
+                    Dismiss
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md px-3 py-1.5 text-xs font-ui text-on-dark surface-quiet"
+                    data-ui-action="data-git-behind-reload"
+                    data-git-behind-reload=""
+                    onClick={() => { void runPlanSaveConflict('reload'); }}
+                  >
+                    Get latest
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md px-3 py-1.5 text-xs font-ui text-on-dark surface-quiet"
+                    data-ui-action="data-git-behind-branch"
+                    data-git-behind-branch=""
+                    onClick={() => { void runPlanSaveConflict('branch'); }}
+                  >
+                    Save mine to a new branch
+                  </button>
+                  <button
+                    type="button"
+                    data-ui-action="data-git-conflict-overwrite"
+                    data-git-conflict-overwrite=""
+                    className="rounded-md px-3 py-1.5 text-xs font-ui font-medium text-on-dark surface-quiet"
+                    onClick={() => { void runPlanSaveConflict('overwrite'); }}
                   >
                     Overwrite
                   </button>
@@ -2448,6 +2533,15 @@ const PartFeed = forwardRef(function PartFeed({
             <div data-git-upgrade-conflict="" className="font-ui text-on-dark">
               <p className="text-xs">
                 The vault is already v2. The follow-up Save overlaps files changed on the remote. Overwrite, Get latest, Save mine to a new branch, or Dismiss. Get latest does not write git.
+              </p>
+            </div>
+          )}
+          {commitFlow.stage === 'save-conflict' && (
+            <div data-git-save-conflict="" className="font-ui text-on-dark">
+              <p className="text-xs">
+                {commitFlow.result?.error
+                  || commitFlow.result?.message
+                  || 'These files also changed on the remote. Nothing was written. Overwrite, Get latest, Save mine to a new branch, or Dismiss. Get latest does not write git.'}
               </p>
             </div>
           )}

@@ -6,9 +6,8 @@
  * `assemblies/.gitkeep`, `parts/.gitkeep`) in the same commit. No README index.
  * Repo creation is opt-in (`create: true`). Read paths keep `create: false`.
  *
- * User Save / Add to Repo stay on today's callers until PR 7; those sites are
- * routed through this wrapper with `create` off so behaviour matches main
- * when `upgradeVaultEnabled` is off.
+ * v2 user Save / git_save go through executePlanSave → this function.
+ * Repo creation stays opt-in (`create: true`) on that first Save.
  */
 import { assertGithubAdapter, GitAdapterError } from './githubAdapterInterface.js';
 import { ASSEMBLIES_DIR, SHARED_PARTS_DIR, VAULT_MARKER_PATH } from './vaultLayout.js';

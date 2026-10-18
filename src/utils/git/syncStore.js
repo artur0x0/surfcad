@@ -113,6 +113,7 @@ export function createSyncStore({ persist = true } = {}) {
   const pendingDeletes = new Map();
   const branchTips = new Map();
   const assemblyCommits = new Map();
+  const pendingSaves = new Map();
   const listeners = new Set();
   let persistOn = !!persist && idbAvailable();
 
@@ -146,6 +147,7 @@ export function createSyncStore({ persist = true } = {}) {
       else if (key.startsWith('del:')) pendingDeletes.set(key.slice(4), Array.isArray(value) ? value : []);
       else if (key.startsWith('branchTip:')) branchTips.set(key.slice(10), value);
       else if (key.startsWith('commit:')) assemblyCommits.set(key.slice(7), value);
+      else if (key.startsWith('pendingSave:')) pendingSaves.set(key.slice(12), value);
     });
   })();
 
@@ -471,6 +473,7 @@ export function createSyncStore({ persist = true } = {}) {
       return { ...parsed, repo: { owner: toRepo.owner, name: toRepo.name } };
     });
     moved += await rekeyMap(assemblyCommits, from, to, 'commit:');
+    moved += await rekeyMap(pendingSaves, from, to, 'pendingSave:');
     if (moved) emit();
     return { moved, from, to };
   }
@@ -518,6 +521,38 @@ export function createSyncStore({ persist = true } = {}) {
 
   function getAssemblyCommit(repo, branch, assemblyId) {
     return parseAssemblyCommit(assemblyCommits.get(assemblyCommitSlot(repo, branch, assemblyId)));
+  }
+
+  function listAssemblyCommits(repo, branch = 'main') {
+    const prefix = `${branchKeyOf(repo, branch)}\0`;
+    const out = [];
+    for (const [slot, value] of assemblyCommits) {
+      if (!slot.startsWith(prefix)) continue;
+      const parsed = parseAssemblyCommit(value);
+      if (parsed) out.push(parsed);
+    }
+    return out;
+  }
+
+  async function putPendingSave(repo, branch, value) {
+    await ready;
+    const key = branchKeyOf(repo, branch);
+    if (value == null) {
+      pendingSaves.delete(key);
+      await persistKv(`pendingSave:${key}`, null);
+      return null;
+    }
+    pendingSaves.set(key, value);
+    await persistKv(`pendingSave:${key}`, value);
+    return value;
+  }
+
+  function getPendingSave(repo, branch = 'main') {
+    return pendingSaves.get(branchKeyOf(repo, branch)) || null;
+  }
+
+  async function clearPendingSave(repo, branch) {
+    return putPendingSave(repo, branch, null);
   }
 
   async function addPendingDeletes(repo, branch, assembly, paths) {
@@ -620,6 +655,10 @@ export function createSyncStore({ persist = true } = {}) {
     getBranchTip,
     putAssemblyCommit,
     getAssemblyCommit,
+    listAssemblyCommits,
+    putPendingSave,
+    getPendingSave,
+    clearPendingSave,
     migrateLocalSurfIds,
     rekeyRepo,
     partStates,
