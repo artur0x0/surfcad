@@ -104,16 +104,18 @@ parts/<part-id>.mesh                    sidecar; same stem as the script
 
 **Path = `f(id)` only.** There is no occupancy, no `-2` suffix, no folder, no `vaultSegment` in a path. Two assemblies or two parts may share a display name.
 
-**Names never appear in paths.** Rename is an edit of a name field, never a move. No other file duplicates names — no README index, no catalog, no `surfcad.json` name list. Save does **not** write or regenerate `README.md`. A leftover seed/legacy `README.md` is left alone and is never a planned file.
+**Names never appear in paths.** Rename is an edit of a name field, never a move. No other file duplicates names — no README index, no catalog, no `surfcad.json` name list. Save does **not** write or regenerate `README.md`. A leftover `README.md` is never a planned file; Upgrade deletes it only when its bytes match a known old seed (§4.3).
 
-**Part file header** (first lines; exact token in §11):
+Pickers and the Parts list show **names raw**. A muted short id suffix is added only when two **visible** rows share a name.
+
+**Part file header** — two lines; `@name` is its own line so the display name may contain spaces:
 
 ```
 // @surf-id 2026-10-07-20-56-31-0423-a3f9
 // @name Bracket
 ```
 
-The id line stays `// @surf-id <id>` (`mintSurfId` / `isSurfId` in `src/utils/git/surfId.js`). The display name sits next to it. Bytes after the header block are the script. Rename rewrites the `@name` line and this assembly’s `parts[].name`; the path does not change.
+The id line stays `// @surf-id <id>` (`mintSurfId` / `isSurfId` in `src/utils/git/surfId.js`). Bytes after the header block are the script. Rename rewrites the `@name` line and this assembly’s `parts[].name`; the path does not change.
 
 **Assembly file** (`version` **2**; incompatible with v1):
 
@@ -266,7 +268,7 @@ A **reference** is another assembly on this branch: its tip `.surf.json` `parts[
 | Keep parts | Delete `assemblies/<id>.surf.json`. Part files stay (`parts/<id>.js` already). |
 | Delete parts | Delete the assembly file. Delete a part file only when no other assembly references that id. |
 
-No folder, no “move copy into `parts/`”, no rewrite of other assemblies’ paths. A group on another assembly whose `source` was this assembly id keeps its name and `source` becomes `null` **when that other assembly is next Saved** (or during Upgrade vault, which may rewrite every v2 file it writes). Delete-assembly does not have to rewrite siblings.
+No folder, no “move copy into `parts/`”, no rewrite of other assemblies’ paths. A group on another assembly whose `source` was this assembly id is a **dangling label** (`source` stays the deleted id). That sibling is cleaned (`source` → `null`) on **its next Save**. Delete-assembly does not rewrite siblings. Upgrade does not rewrite siblings either (it migrates remote bytes only).
 
 ### 2.8 One write function
 
@@ -284,9 +286,10 @@ After success: set `BranchTip.tipSha` to the new sha; replace this `AssemblyComm
 | --- | --- |
 | User Save (`data-git-save`) | planner + `writeVaultCommit` |
 | Agent `git_save` after consent | same |
-| Overwrite (Save conflict) | re-plan against current remote tip, then same write, `baseSha = remote tip` |
+| Overwrite (Save / main-moved conflict) | re-plan against current remote tip, then same write, `baseSha = remote tip` |
+| Get latest | **not a git write** — replace WC conflicting files from the remote tip (§2.9) |
 | Save mine to a new branch | create branch from `branchTip.tipSha` (or merge base), write planned files, switch |
-| Upgrade vault | own plan (§4) + `writeVaultCommit`; user confirm; agent `confirm: true` |
+| Upgrade vault | remote-bytes layout commit (§4.3); if WC is dirty, a normal Save follows under the same confirm (two commits) |
 | Explicit branch create / switch / delete | branch APIs; dirty switch needs `confirm: true` |
 | Explicit delete-assembly / delete-repo | own plan + `writeVaultCommit` / GitHub delete; confirms stay |
 | Move to Git | first Save of a local assembly (creates vault if needed) |
@@ -295,17 +298,20 @@ After success: set `BranchTip.tipSha` to the new sha; replace this `AssemblyComm
 
 Per-part Save / Add to Repo: same planner, same write (full diff of this assembly). No second commit API. **No per-part overwrite.**
 
-### 2.9 Conflict (only on explicit Save; file-level)
+### 2.9 Conflict (file-level; Save or “main moved”)
 
-Conflict UI opens only when §2.5 step 1 finds an overlap. Open, reload, and `online` never open it. A read-only “main moved” toast on focus may stay; it must not flush.
+The four-button dialog opens when §2.5 step 1 finds an overlap **or** when the user opens the read-only **main moved** notice on focus. `online` never opens it and never flushes. The notice itself offers the same choices.
+
+**Conflicting files.** On Save: `planned files ∩ compare.files`. On the main-moved notice: this assembly’s `.surf.json` and/or its part files that appear in `compare(branchTip.tipSha, remoteTip)`.
 
 | Button | Meaning |
 | --- | --- |
 | **Overwrite** | “My changed files win.” Re-plan against the **current remote tip** just before the forced write (`baseSha = remote tip`). Local bytes for planned paths; other remote files stay. Not per-part. Agent: `git_force_overwrite` + `confirm: true`. |
+| **Get latest** | Replace the WC’s **conflicting files** (assembly file and/or part files) from the remote tip. Rebuild `AssemblyCommit` and `BranchTip` from that tip. **Never writes git.** Destructive: agents need `confirm: true` (`git_behind_resolve { action: "reload" }`). The UI confirms if the WC has unsaved changes to those files; if those files are clean, no extra UI confirm. |
 | **Save mine to a new branch** | Write the planned files on a new branch and switch. Agent: `git_behind_resolve { action: "branch" }` + `confirm: true`. |
 | **Dismiss** | No write. Close the dialog. WC unchanged. |
 
-No “Overwrite main” / “Keep mine” / “Get latest” labels on this dialog. Reloading remote bytes into WC is not a Save-conflict button (open / explicit reload).
+No “Overwrite main” / “Keep mine” labels. No per-part overwrite chrome.
 
 ### 2.10 Offline, seed, missing part
 
@@ -339,17 +345,17 @@ Self-contained. The MCP Lead can implement tools against this section alone. Vau
 There is no `surfId` and no UUID `id` after host open. Copy mints a new `part_id` and sets `copiedFrom`.
 
 - **Uniqueness.** Part id is unique among part scripts in the vault (one file). Assembly id is unique among assemblies. **Names are not unique** and must not be used as keys.
-- **Lookup.** Tools target `{ part_id }` and `{ assembly_id }`. Missing or unknown → `{ code: "unknown_part" }` or `{ code: "unknown_assembly" }`. **Do not** accept a vault path, a display name, or a UUID as either id. **Do not** fall back to the active part when the caller passed a different `part_id`. **Do not** write the active part because `selection.cadPartId` moved.
+- **Lookup.** Tools target `{ part_id }` and `{ assembly_id }`. Missing or unknown → `{ code: "unknown_part" }` or `{ code: "unknown_assembly" }`. **Do not** accept a display name or a UUID as either id. **Do not** fall back to the active part when the caller passed a different `part_id`. **Do not** write the active part because `selection.cadPartId` moved. For **one MCP release**, `path` is a deprecated alias: the host derives the id from `parts/<id>.js` / `assemblies/<id>.surf.json` (v2) or the legacy reader (v1) and returns a deprecation warning on the result. After that release, `path` as identity is `unknown_part` / `unknown_assembly`.
 
 Writers that mutate a part script or placement **MUST take `part_id`** and refuse a mismatch (`code: "part_mismatch"`). `create_part` atomically sets `parts.activeId` **and** `selection.cadPartId` to the new id before return.
 
 `create_assembly` returns `{ assemblyId, assemblyName, activeId, partCount }`. `open_assembly` takes `assembly_id`. `name` is **not** a v2 lookup (names collide). On a **legacy** vault only, `name` may match the folder until Upgrade; after Upgrade, name-only open is `unknown_assembly`. `list_assemblies` / `rename_assembly` / `delete_assembly` use `assembly_id`.
 
-`open_part` / `insert_part` take `part_id` and/or `assembly_id` (insert-as-reference = list that `part_id` in the open assembly). Do not take a vault path as identity.
+`open_part` / `insert_part` take `part_id` and/or `assembly_id` (insert-as-reference = list that `part_id` in the open assembly). `path` is accepted as a deprecated alias for one MCP release (see Lookup).
 
 ### 3.2 Paths are informational
 
-`parts/<part-id>.js` and `assemblies/<assembly-id>.surf.json` are `f(id)`. Tools may **see** `parts[].path` as that string. They must never send `path` or `name` as `part_id` / `assembly_id`, persist a guessed path, or treat a missing blob as “create empty script.”
+`parts/<part-id>.js` and `assemblies/<assembly-id>.surf.json` are `f(id)`. Tools may **see** `parts[].path` as that string. Prefer `part_id` / `assembly_id`. Sending `path` instead is the one-release deprecated alias (§3.1) and comes back with a warning; do not persist a guessed path or treat a missing blob as “create empty script.” Never send `name` as an id.
 
 `rename_part` / `rename_assembly` change **display name** only (WC). Response: `{ partId, name, path: "parts/<id>.js", moved: false }`. No git. The committed header / `.surf.json` name updates on the next Save.
 
@@ -361,20 +367,23 @@ A git write of vault content happens only when:
 
 1. The user clicks Save, or
 2. The agent calls `git_save { message }` after write consent, or
-3. The user confirms **Upgrade vault** / the agent calls `git_upgrade_vault { confirm: true }` after consent, or
-4. The user confirms a Save-conflict **Overwrite** / **Save mine to a new branch** (agent: `git_force_overwrite` / `git_behind_resolve` + `confirm: true`).
+3. The user confirms **Upgrade vault** / the agent calls `git_upgrade_vault { confirm: true }` after consent (layout commit of remote bytes; a dirty WC then gets a normal Save under the same confirmation), or
+4. The user confirms **Overwrite** / **Save mine to a new branch** from the Save-conflict or main-moved dialog (agent: `git_force_overwrite` / `git_behind_resolve { action: "branch" }` + `confirm: true`).
+
+**Get latest** is not a git write. It still needs `confirm: true` for agents (`git_behind_resolve { action: "reload" }`).
 
 No other tool may `commitFiles`, push, `createRepo`, seed, enqueue, or flush — including `create_assembly`, `create_part`, `rename_*`, `open_*`, `insert_part`, `paint_confirm`, groups, `set_script`, `insert_*`, `run`, and **coming back online**.
 
 | Tool | Git? |
 | --- | --- |
 | `git_save` | Yes — planner + one commit. Message required. On a **legacy** vault: do not write v1; return `upgrade_required` and let the host prompt Upgrade vault. |
-| `git_upgrade_vault` | Yes — one commit, new layout + deletes. `confirm: true`. Consent. |
+| `git_upgrade_vault` | Yes — one commit of **remote** bytes to v2 + deletes. `confirm: true`. Consent. If the WC is dirty, the host then runs a normal Save (second commit) under that same confirmation. |
 | `git_add_to_repo` | Alias of `git_save`. Prefer `git_save`. |
 | `git_list_branches` | Read only. |
 | `git_branch_create` / `switch` / `delete` | Branch APIs only. Switch while dirty and delete need `confirm: true`. Create switches when clean (or with confirm if dirty). |
 | `git_force_overwrite` | Destructive; `confirm: true`. Overwrite as §2.9. |
-| `git_behind_resolve { action: "branch" }` | Destructive; `confirm: true`. **Save mine to a new branch.** `action: "keep"` / `"reload"` are **removed** (Dismiss is not a tool; reload is `open_assembly`). |
+| `git_behind_resolve { action: "reload" }` | **Get latest.** Not a git write. Destructive; `confirm: true`. Replaces WC conflicting files from the remote tip; rebuilds lastCommit. |
+| `git_behind_resolve { action: "branch" }` | Destructive; `confirm: true`. **Save mine to a new branch.** `action: "keep"` is **removed** (Dismiss is not a tool). |
 | `git_move_to_repo` | First Save of a **local** assembly. Consent. |
 | Everything else | Working copy only. |
 
@@ -385,7 +394,7 @@ Vault repo creation happens on the first explicit Save / `git_move_to_repo`, not
 | State | Tools may | Tools must not |
 | --- | --- | --- |
 | Working copy (doc + scripts + `rev`) | create/rename/delete part or assembly (local), paint, groups, joints, transforms, `set_script`, insert/open (local rows) | Remint ids; commit; replace the doc from a stale snapshot; invent an empty script for a missing part |
-| `BranchTip` / `AssemblyCommit` | — | Any tool except the Save / Upgrade write path |
+| `BranchTip` / `AssemblyCommit` | Get latest (rebuild from remote tip) | Any other tool; Save / Upgrade write the records after a commit |
 | Git adapter | `git_*` listed above | Any other command |
 
 ```
@@ -425,7 +434,8 @@ dirty: {
 - **`create_part`.** One row, one `id`, `activeId` + `cadPartId` set, then return. No git.
 - **`open_assembly`.** Requires `assembly_id` on v2. Unknown → `unknown_assembly`. Legacy `name` only while `vaultLayout === "legacy"`; missing folder → `not_found`. Read-only vs git.
 - **Idempotent Save.** `git_save` when `dirty.unsaved === false` and not `pendingSave` → `{ status: "clean" }`, no commit. `pendingSave` + Save again → push (or re-plan / conflict).
-- **Upgrade.** `git_upgrade_vault` without `confirm: true` → `confirm_required`. On v2 → `{ status: "already_upgraded" }`, no commit.
+- **Upgrade.** `git_upgrade_vault` without `confirm: true` → `confirm_required`. On v2 → `{ status: "already_upgraded" }`, no commit. The Upgrade commit is remote bytes only. A dirty WC then gets a normal `git_save` (or the host Save) as a second commit under that same confirmation.
+- **Get latest.** Confirmed replace of conflicting WC files from the remote tip. Allowed even if `rev` moved for those files. Does not `commitFiles`.
 
 ### 3.7 Error contract
 
@@ -446,18 +456,18 @@ Bridge refusals stay `isError: true` with `code` + `message` (+ `details`).
 | `consent_pending` | Real-repo write; Allow dialog up | Wait `retry_after_ms`, same call |
 | `real_repo_blocked` | Headless or session Deny | Tell the user; do not loop |
 | `confirm_required` | Destructive git without `confirm: true` | Ask the user; only then pass `confirm: true` |
-| `conflict` / `repo-moved` | Save and compare overlaps planned files | `git_force_overwrite` or `git_behind_resolve { action: "branch" }` with confirm; or stop (Dismiss) |
+| `conflict` / `repo-moved` | Save (or main-moved) and compare overlaps planned files | `git_force_overwrite`, `git_behind_resolve { action: "reload" }` (Get latest), or `{ action: "branch" }` with confirm; or stop (Dismiss) |
 | `pending_save` | Offline plan waiting | Tell the user to Save again when online |
 | `feature_failed` | Kernel/script error | Same text the UI shows (T16 — MCP batch; contract still requires it) |
 
-Never return a generic `"Feature failed"` as the only message. Never pass `confirm: true` unless the user asked for that destructive action. **Do not** return `path_less_parts` or `vault_tree_unavailable` for occupancy (occupancy is gone). `listTree` may still be used to scan references on delete; failure there is fail-closed (`part_still_referenced` / refuse delete), not “empty tree.”
+A deprecated `path` lookup that still resolves adds `warning: "path is deprecated; use part_id"` or `warning: "path is deprecated; use assembly_id"` on the success result (and still returns the derived id). Never return a generic `"Feature failed"` as the only message. Never pass `confirm: true` unless the user asked for that destructive action. **Do not** return `path_less_parts` or `vault_tree_unavailable` for occupancy (occupancy is gone). `listTree` may still be used to scan references on delete; failure there is fail-closed (`part_still_referenced` / refuse delete), not “empty tree.”
 
 ### 3.8 Stop relying on these current behaviours
 
 | Today | Stop |
 | --- | --- |
 | Dual `id` (UUID) + `surfId` | One part `id` (surf-id) |
-| `part_id` that is a vault path or a UUID | Surf-id `part_id` only |
+| `part_id` that is a UUID | Surf-id `part_id` only. `path` is a one-release deprecated alias (§3.1) |
 | Assemblies identified by folder `name` | `assembly_id`; name is a non-unique label |
 | `assemblies/<Name>/<Part>.js` and `-2` suffixes | `parts/<id>.js`; no occupancy |
 | Rename as a git move | WC name edit; Save writes the same path |
@@ -468,7 +478,7 @@ Never return a generic `"Feature failed"` as the only message. Never pass `confi
 | `create_part` leaving active ids on the old part | Atomic activate |
 | `set_script` / `insert_*` without `part_id` | Require `part_id` |
 | `git_add_to_repo` as a second commit shape | `git_save` |
-| `git_behind_resolve` keep/reload; per-part overwrite | Dismiss / Overwrite / Save mine to a new branch |
+| `git_behind_resolve` keep; per-part overwrite | Overwrite / Get latest / Save mine to a new branch / Dismiss |
 | `online` flushing | Never |
 | Tip-vs-tip conflict | File-level compare of **this** Save’s paths |
 | Auto layout/id migrate commits | Explicit Upgrade vault only |
@@ -500,18 +510,23 @@ A missing legacy blob is a `missing` row, not an empty script, not auto-removed.
 
 One-time, explicit, user-confirmed. Agents: `git_upgrade_vault { confirm: true }` after consent. **Never** runs on load, reload, connect, or a quiet Save.
 
-**Save on a legacy vault** does not write v1. It **prompts Upgrade vault**. Dismiss → no write. Confirm → Upgrade (and may include current WC dirty state in that same commit).
+**Save on a legacy vault** does not write v1. It **prompts Upgrade vault**. Dismiss → no write. Confirm → the split below.
 
-Upgrade is **one commit**:
+**Split (two commits when the WC is dirty):**
 
-1. Keep part ids from `// @surf-id` headers. Mint where missing (no header, no `parts[].id`). Assembly ids: mint one per legacy folder; persist on IDB.
+1. **Upgrade** is a **pure layout migration of the remote / tip bytes** in one commit. It does not fold WC edits into that commit.
+2. If the WC has edits, a **normal Save** runs right after, under the **same** confirmation (second commit: WC vs the new v2 `AssemblyCommit`). If the WC is clean, stop after the Upgrade commit.
+
+Upgrade commit:
+
+1. Keep part ids from `// @surf-id` headers in the **remote** blobs. Mint where missing (no header, no `parts[].id`). Assembly ids: mint one per legacy folder; persist on IDB.
 2. Write `surfcad.json` version `2`.
-3. Write every `parts/<part-id>.js` (header id + `@name` from the row) and sidecar `parts/<part-id>.mesh` from the old blob.
+3. Write every `parts/<part-id>.js` (header id + `@name` from the remote row/header) and sidecar `parts/<part-id>.mesh` from the remote blob.
 4. Write every `assemblies/<assembly-id>.surf.json` (v2, no paths, `groups[].source` → minted assembly id when that folder still exists).
-5. **Delete** every legacy path in the same commit: `assemblies/<Name>/…`, name-based `parts/<Name>.js`, leftover `.gitkeep` optional. Do not invent a README index. Do not delete an existing `README.md` unless it is the only way to avoid a leftover name list we wrote (we didn’t).
+5. **Delete** every legacy path in the same commit: `assemblies/<Name>/…`, name-based `parts/<Name>.js`, leftover `.gitkeep` optional. Do not invent a README index. **Delete `README.md` only if it is byte-identical to a known old seed text**; otherwise leave it. Save never writes README.
 6. Build `BranchTip` + every `AssemblyCommit` from the new tree.
 
-A second Upgrade is a no-op (`already_upgraded`). Partial failure: do not adopt v2 lastCommit; WC stays; user retries Upgrade (idempotent: writing the same `f(id)` bytes, deletes of already-gone paths are fine).
+A second Upgrade is a no-op (`already_upgraded`). Partial failure: do not adopt v2 lastCommit; WC stays; user retries Upgrade (idempotent: writing the same `f(id)` bytes, deletes of already-gone paths are fine). If Upgrade succeeded and the follow-up Save conflicts, show §2.9 on that second commit only.
 
 ### 4.4 leftover outbox / #585 flags
 
@@ -532,10 +547,10 @@ After the sequence below is green:
 - Auto `migrate-layout` / `migrate-ids`; `vaultImplicitWrite` skip list
 - Dual `part.surfId` vs `part.id`; UUID mint for parts (`newLocalPartId` for parts)
 - lastCommit / last-opened keyed by folder name
-- Per-part overwrite chrome; `git_behind_resolve` keep/reload
+- Per-part overwrite chrome; `git_behind_resolve` `keep`
 - README name index (never added)
 
-**Keep:** `mintSurfId` / `isSurfId` as **the** id; adapter (`compare` used for conflict); list/open (legacy reader until Upgrade); consent modal; conflict UI (Save only, new labels); delete-assembly / delete-repo confirms; reference-counting on delete; copy-or-reference prompt.
+**Keep:** `mintSurfId` / `isSurfId` as **the** id; adapter (`compare` used for conflict); list/open (legacy reader until Upgrade); consent modal; conflict UI (Overwrite / Get latest / Save mine to a new branch / Dismiss); delete-assembly / delete-repo confirms; reference-counting on delete; copy-or-reference prompt.
 
 ---
 
@@ -549,11 +564,11 @@ Each PR has tests, keeps CI green, does not touch `src/fea/**` or `surfcad-fea/*
 | **1** | v2 `validateSurfJson` + `f(id)` path helpers + header `@name`. No git write. Catalog / `assembly.schema.json` grows a v2 branch. | S | v2 fixtures validate; v1 fixtures still validate in the legacy parser; v2 file rejected by v1 parser |
 | **2** | Legacy reader: open v1 tree into WC by id; `missing` row; `vaultLayout: "legacy"`; **no write**. IDB identity collapse (UUID/path → surf-id). | M | Open Gearbox-style vault; ids stable across reload; no `commitFiles` |
 | **3** | Persist `BranchTip` + `AssemblyCommit`; capture from open/tip. No write-path change. | S | Reload restores hashes; path-less capture does not throw |
-| **4** | **Upgrade vault** UI + `git_upgrade_vault` (confirm). One commit: new layout + deletes. Idempotent retry. Save on legacy **prompts** Upgrade (no v1 write). | M | One commit; old paths gone; ids from headers; no write on load |
+| **4** | **Upgrade vault** UI + `git_upgrade_vault` (confirm). One commit of **remote** bytes → v2 + deletes. Dirty WC → normal Save as a second commit under the same confirm. Delete README only if it matches a known old seed. Idempotent retry. Save on legacy **prompts** Upgrade (no v1 write). | M | Remote tree is v2; WC edits land only in commit 2; no write on load |
 | **5** | `writeVaultCommit` + adapter spy (allowlist shrinks). Seed without README index; seed-retry if createRepo succeeded. | S | Harness exists; seed retry unit |
 | **6** | Pure `planSave` + unit tests for the **12 cases** (§7). No moves. Shared-part adopt. Delete-from-repo reference rule. File-level compare input. | M | Tests pass; not wired |
-| **7** | Wire user Save + `git_save` on **v2** vaults. Conflict UI: Overwrite / Save mine to a new branch / Dismiss. Offline pending (second Save pushes). `online` not a writer. No repo create before first Save. | L | One commit; rename is not a move; sibling Save does not conflict |
-| **8** | Agent contract: `part_id` / `assembly_id`; `unknown_*`; `upgrade_required`; writers require `part_id`; single-flight `create_assembly`; versioned writes; `open_part` by id. | M | Agent goldens; T3/T17/T19 host-side |
+| **7** | Wire user Save + `git_save` on **v2** vaults. Conflict UI: Overwrite / Get latest / Save mine to a new branch / Dismiss (Save and main-moved). Offline pending (second Save pushes). `online` not a writer. No repo create before first Save. | L | One commit; rename is not a move; sibling Save does not conflict; Get latest writes no git |
+| **8** | Agent contract: `part_id` / `assembly_id`; `path` deprecated alias + warning for one release; `unknown_*`; `upgrade_required`; writers require `part_id`; single-flight `create_assembly`; versioned writes; `open_part` by id. | M | Agent goldens; T3/T17/T19 host-side |
 | **9** | Delete dead APIs: path planning, `planRenameVaultPartPath`, `gitRename`, `gitAssemblyRename`, outbox write path, dual-id helpers. Goldens expect WC-only then `git_save`. | M | Spy allowlist = `writeVaultCommit` + tests + Upgrade |
 
 Do not combine 7+8. Host contract (8) can start once 7 is on a branch. PR 1+2 must precede Upgrade (4). Do not write v2 until 1 is in.
@@ -572,11 +587,11 @@ Do not combine 7+8. Host contract (8) can start once 7 is on a branch. PR 1+2 mu
 | 4 | **Part rename, one parent** | `parts/<P>.js` (`// @name`) + `assemblies/<A>.surf.json` (`parts[].name`) | If remote changed either | Same path. Not a move. |
 | 5 | **Part rename, several parents** | Same as #4 for the Save of `A`. **Do not** write `assemblies/<B>.surf.json` | If remote changed `parts/<P>.js` or `A`’s file | Rename applies everywhere via the shared file. `B` adopts the new part hash (not a conflict). `B`’s committed `parts[].name` catches up on `B`’s next Save. |
 | 6 | **Existing part added** (reference) | `assemblies/<A>.surf.json` only (new row, same `P`) | If remote changed `A`’s file | No new part file. Copy instead → case #3 with new id + `copiedFrom`. |
-| 7 | **Remote changed part-only** | If this Save touches `parts/<P>.js` → **conflict**. If this Save is assembly-only (paint, group, add other part) → **no conflict** | File-level | Unrelated part edits do not block an assembly-only Save. |
-| 8 | **Remote changed assembly** | If this Save writes `assemblies/<A>.surf.json` → **conflict**. Save of `B` → **no conflict** | File-level | Saving `A` never makes `B` conflict with `A`’s own commit (`BranchTip` advanced). |
-| 9 | **Overwrite assembly** | Re-plan vs current remote tip; write **my** `assemblies/<A>.surf.json` | n/a (forced) | Remote part files stay if not in the plan. |
-| 10 | **Overwrite part** | Re-plan; write **my** `parts/<P>.js` | n/a | Remote assembly file stays if not in the plan. No per-part overwrite UI. |
-| 11 | **Overwrite both** | Re-plan; write my assembly file **and** my part file(s) | n/a | Other remote files stay. |
+| 7 | **Remote changed part-only** | If this Save touches `parts/<P>.js` → **conflict**. If this Save is assembly-only (paint, group, add other part) → **no conflict** | File-level | Unrelated part edits do not block an assembly-only Save. Get latest on a part overlap replaces that part in the WC only. |
+| 8 | **Remote changed assembly** | If this Save writes `assemblies/<A>.surf.json` → **conflict**. Save of `B` → **no conflict** | File-level | Saving `A` never makes `B` conflict with `A`’s own commit (`BranchTip` advanced). Get latest on an assembly overlap replaces `A`’s `.surf.json` in the WC only. |
+| 9 | **Overwrite assembly** | Re-plan vs current remote tip; write **my** `assemblies/<A>.surf.json` | n/a (forced) | Remote part files stay if not in the plan. Get latest is the no-write counterpart (WC takes remote `A`). |
+| 10 | **Overwrite part** | Re-plan; write **my** `parts/<P>.js` | n/a | Remote assembly file stays if not in the plan. No per-part overwrite UI. Get latest replaces that part in the WC. |
+| 11 | **Overwrite both** | Re-plan; write my assembly file **and** my part file(s) | n/a | Other remote files stay. Get latest replaces both in the WC; no git write. |
 | 12 | **Normal save** | Union of dirty assembly file + dirty part files + deletes (§2.7) | No — tip matches, or compare has no overlap | One commit. Advance `BranchTip` + this `AssemblyCommit` + adopt shared part hashes. |
 
 ---
@@ -585,7 +600,8 @@ Do not combine 7+8. Host contract (8) can start once 7 is on a branch. PR 1+2 mu
 
 - **Harness.** Test adapter records `commitFiles` / `createRepo` / `compare`. Production import graph: only `writeVaultCommit` (plus test seed). CI fails on a new call site.
 - **Planner units.** All 12 cases. Delete last parent vs still-referenced. Shared-part adopt (B clean vs B dirty). Offline pending (no `online` flush). Seed retry. Missing part (no empty script). Legacy Save → no v1 write.
-- **Upgrade.** Header ids kept; minted where missing; one commit of adds+deletes; second pass no-op; no write on open.
+- **Upgrade.** Remote bytes only in commit 1; dirty WC → commit 2 is a normal Save. Header ids kept; minted where missing; README deleted only when it matches a known old seed; second Upgrade no-op; no write on open.
+- **Get latest.** Replaces only conflicting WC files; rebuilds `AssemblyCommit` + `BranchTip`; `commitFiles` count unchanged. UI confirm when those files are dirty; agent always `confirm: true`.
 - **Identity.** UUID/path rows → one surf-id on open, no git write. Source flip keeps ids. Copy mints + `copiedFrom`. v2 validator rejects `path` and missing `id`.
 - **Host.** Paint / group / create_* / `online` / reload: `commitFiles` count unchanged. Save: one commit. `create_assembly` overlap: one document. Stale `rev` write-back rejected.
 - **Goldens.** `smoke_face_paint`, `smoke_agent_part_rename_commit`, `golden:agent-bridge-h12`: rename is local; `git_save` is the commit; **no move**. Keep `git-vault-reload-no-write`.
@@ -603,8 +619,8 @@ Do not combine 7+8. Host contract (8) can start once 7 is on a branch. PR 1+2 mu
 | Compare API truncated file list | If `compare.files` is incomplete, fail-closed: treat as conflict. |
 | Offline pending then remote overlap | Second Save re-plans / conflicts; `online` does not push. |
 | Upgrade crash mid-commit | Git commit is atomic. If the request failed, tree is still v1; retry Upgrade. |
-| MCP team still sends paths as ids | §3; host rejects with `unknown_part` / `unknown_assembly`. |
-| leftover README from old seed | Not planned, not an index. Leave it. |
+| MCP team still sends paths as ids | One release: host derives id + deprecation warning. Then `unknown_part` / `unknown_assembly`. |
+| leftover README from old seed | Delete on Upgrade only if byte-identical to a known old seed; otherwise leave it. Save never touches it. |
 
 Rollback: revert PRs 9→4 in reverse. lastCommit in IDB is advisory. A vault that never ran Upgrade is still v1. A vault that ran Upgrade is v2; rolling back the app without the v2 reader cannot open it — say so in the Upgrade confirm.
 
@@ -630,13 +646,13 @@ T7 / T8 / T9 are MCP-batch product work; §3 already requires `assembly_id`, `un
 
 ## 11. Open questions
 
-Resolved in this draft unless Artur overrides: surf-id format (not UUID); `.surf.json` **version 2** (v1 cannot express “no path”); `surfcad.json` version 2 as the upgrade marker; `groups[].source` becomes an assembly id; mesh sidecar stays `.mesh`; one row per part id per assembly; Save never touches `README.md`; conflict dialog is Overwrite / Save mine to a new branch / Dismiss (no Get latest, no per-part overwrite); `online` never writes.
+**Resolved.** Surf-id format (not UUID). `.surf.json` **version 2** (v1 cannot express “no path”). `surfcad.json` version 2 is the upgrade marker. `groups[].source` is an assembly id. Mesh sidecar stays `.mesh`. One row per part id per assembly. Save never writes or regenerates `README.md`. `online` never writes. Conflict dialog (Save and the main-moved notice) is **Overwrite / Get latest / Save mine to a new branch / Dismiss**; Get latest never writes git; no per-part overwrite.
 
-Still open:
+1. Header is a separate `// @name <display>` line under `// @surf-id`.
+2. Upgrade is a pure layout migration of the **remote** bytes in one commit. If the WC has edits, a normal Save runs right after under the same confirmation (two commits).
+3. A deleted assembly’s id in a sibling’s `groups[].source` is a dangling label, cleaned on that sibling’s next Save.
+4. On Upgrade, delete `README.md` only if it is byte-identical to a known old seed text; otherwise leave it.
+5. Accept `path` as a deprecated alias for one MCP release; the host derives the id from `parts/<id>.js` / `assemblies/<id>.surf.json` (or the legacy reader) and returns a deprecation warning.
+6. The picker shows names raw, adding a muted short id suffix only when two visible rows share a name.
 
-1. **Header token.** Draft uses a second line `// @name <display>` so names can contain spaces. Alternative: same line as `@surf-id`. Which token?
-2. **Upgrade + dirty WC.** Draft includes current WC edits in the Upgrade commit (user already confirmed a write). Split into Upgrade-then-Save instead?
-3. **Sibling `groups[].source` on delete-assembly.** Draft waits until that sibling is Saved (or Upgrade). Rewrite every sibling in the delete-assembly commit?
-4. **Seed `README.md`.** Draft does not write one. Leave a pre-existing file forever, or delete it on Upgrade because the old seed text describes the folder layout?
-5. **`insert_part` / `open_part` args.** Draft switches to `part_id` / `assembly_id` only. Keep `path` as a deprecated informational alias for one MCP cycle?
-6. **Same display name in the UI.** Draft allows two “Gearbox” rows. Should the picker disambiguate with a short id suffix, or show names raw?
+**Still open:** none.
