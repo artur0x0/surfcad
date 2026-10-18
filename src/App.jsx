@@ -9511,6 +9511,8 @@ const App = () => {
         : false;
       let unsaved;
       let pendingSave = false;
+      let workspaceDirty = !!sourceDirty;
+      let v2EditedSinceLoad = editedSinceLoad;
       if (doc && isV2PlanSaveDoc(doc)) {
         const vault = gitVaultRef.current;
         const store = gitSync();
@@ -9531,15 +9533,17 @@ const App = () => {
         unsaved = compared.unsaved;
         assemblyDirty = compared.assemblyDirty;
         partIds = compared.partIds;
+        v2EditedSinceLoad = compared.partIds;
+        workspaceDirty = compared.unsaved;
       }
       return buildDirtyState({
-        workspaceDirty: !!sourceDirty,
+        workspaceDirty,
         partIds,
         assemblyDirty,
         renamePending: !!dirtyBaseline?.renamePending,
         legacyCleanup: !!dirtyBaseline?.legacyCleanup,
         undoStackDirty,
-        editedSinceLoad,
+        editedSinceLoad: v2EditedSinceLoad,
         pendingSave,
         ...(unsaved === true || unsaved === false ? { unsaved } : {}),
         ...(doc?.vaultLayout === 'legacy' && upgradeVaultEnabled()

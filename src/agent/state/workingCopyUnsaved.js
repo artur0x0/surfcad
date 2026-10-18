@@ -5,6 +5,7 @@
 import { gitBlobSha } from '../../utils/git/binaryContent.js';
 import { assemblyIdPath, parseIdPath, partIdPath } from '../../utils/git/idPaths.js';
 import { toSurfJsonV2 } from '../../utils/git/surfJsonV2.js';
+import { sanitizeSurfName, withSurfId, withSurfName } from '../../utils/git/surfId.js';
 
 function textBlobSha(text) {
   return gitBlobSha(new TextEncoder().encode(String(text ?? '')));
@@ -46,6 +47,25 @@ function committedPartIds(assemblyCommit) {
     }
   }
   return ids;
+}
+
+/**
+ * Save stamps `// @surf-id` / `// @name` on the blob. The working copy may
+ * still be the pre-stamp editor bytes, so treat either hash as a match.
+ */
+function stampedPartScript(text, id, name) {
+  try {
+    return withSurfName(withSurfId(text, id), sanitizeSurfName(name) || 'Part');
+  } catch {
+    return text;
+  }
+}
+
+function partScriptMatchesCommit(text, committedHash, id, name) {
+  if (!committedHash || typeof text !== 'string') return false;
+  if (textBlobSha(text) === committedHash) return true;
+  const stamped = stampedPartScript(text, id, name);
+  return stamped !== text && textBlobSha(stamped) === committedHash;
 }
 
 function instanceDirty(wcPart, committedPart) {
@@ -130,7 +150,9 @@ export function compareWorkingCopyToCommit(input = {}) {
       const committedHash = path && files[path] ? files[path].contentHash : null;
       const text = scripts[id];
       if (typeof text === 'string') {
-        if (!committedHash || textBlobSha(text) !== committedHash) partIds.push(id);
+        if (!committedHash || !partScriptMatchesCommit(text, committedHash, id, row.name)) {
+          partIds.push(id);
+        }
       } else if (committedHash && row.missing !== true) {
         partIds.push(id);
       }

@@ -5,9 +5,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { gitBlobSha } from '../../utils/git/binaryContent.js';
+import { captureBaseline } from '../../utils/git/gitBaseline.js';
+import { isWorkspaceDirty } from '../../utils/git/gitWorkspace.js';
 import { assemblyIdPath, partIdPath } from '../../utils/git/idPaths.js';
+import { executePlanSave } from '../../utils/git/executePlanSave.js';
 import { makeAssemblyCommit } from '../../utils/git/lastCommit.js';
+import { createMockGithubAdapter } from '../../utils/git/mockGithubAdapter.js';
+import { withSurfId, withSurfName } from '../../utils/git/surfId.js';
 import { toSurfJsonV2 } from '../../utils/git/surfJsonV2.js';
+import { createSyncStore } from '../../utils/git/syncStore.js';
+import { buildDirtyState } from './dirty.js';
+import { snapshotPartScripts } from './editedSinceLoad.js';
 import { compareWorkingCopyToCommit } from './workingCopyUnsaved.js';
 
 const ASM = '2026-10-18-02-50-00-0001-aa01';
@@ -161,4 +169,107 @@ test('dirty.unsaved survives a reload of the same AssemblyCommit', () => {
   assert.equal(before.unsaved, true);
   assert.equal(afterReload.unsaved, true);
   assert.equal(afterReload.assemblyDirty, true);
+});
+
+test('Save-stamped commit hashes match the unstamped working-copy script', () => {
+  const doc = assemblyDoc(CLEAN_PARTS);
+  const stamped = {
+    [PART]: withSurfName(withSurfId(SCRIPT, PART), 'Bracket'),
+    [OTHER]: withSurfName(withSurfId(OTHER_SCRIPT, OTHER), 'Cover'),
+  };
+  const commit = seedCommit(doc, stamped);
+  const out = compareWorkingCopyToCommit({
+    doc,
+    scripts: CLEAN_SCRIPTS,
+    assemblyCommit: commit,
+  });
+  assert.equal(out.unsaved, false);
+  assert.deepEqual(out.partIds, []);
+});
+
+function v2AgentDirty({ doc, scripts, assemblyCommit, pendingSave = false }) {
+  const compared = compareWorkingCopyToCommit({
+    doc,
+    scripts,
+    assemblyCommit,
+    pendingSave,
+  });
+  return buildDirtyState({
+    workspaceDirty: compared.unsaved,
+    partIds: compared.partIds,
+    assemblyDirty: compared.assemblyDirty,
+    editedSinceLoad: compared.partIds,
+    pendingSave: compared.pendingSave,
+    unsaved: compared.unsaved,
+  });
+}
+
+test('edit, first git_save, dirty.unsaved is false; a later edit is unsaved', async () => {
+  const repo = { owner: 'artur', name: 'surfcad-vault' };
+  const adapter = createMockGithubAdapter({ login: 'artur' });
+  const store = createSyncStore({ persist: false });
+  await store.ready();
+  const original = 'return 1;\n';
+  const edited = 'return 9;\n';
+  const again = 'return 10;\n';
+  const doc = assemblyDoc([{ id: PART, name: 'Bracket', visible: true, order: 0 }]);
+  const snapshot = snapshotPartScripts({ [PART]: original });
+  const before = v2AgentDirty({
+    doc,
+    scripts: { [PART]: edited },
+    assemblyCommit: null,
+  });
+  assert.equal(before.unsaved, true);
+  assert.deepEqual(before.partIds, [PART]);
+  assert.notEqual(snapshot[PART], edited);
+
+  const saved = await executePlanSave({
+    adapter,
+    repo,
+    branch: 'main',
+    store,
+    workingCopy: {
+      doc,
+      scripts: { [PART]: edited },
+      now: 1_700_000_000_000,
+      repo,
+      branch: 'main',
+      saveTarget: { repo, branch: 'main' },
+    },
+    message: 'Save Gearbox v2',
+    create: true,
+  });
+  assert.equal(saved.status, 'committed', saved.error);
+  const assemblyCommit = store.getAssemblyCommit(repo, 'main', ASM);
+  const afterSave = v2AgentDirty({
+    doc,
+    scripts: { [PART]: edited },
+    assemblyCommit,
+  });
+  assert.equal(afterSave.unsaved, false);
+  assert.equal(afterSave.workspaceDirty, false);
+  assert.equal(afterSave.assemblyDirty, false);
+  assert.deepEqual(afterSave.partIds, []);
+  assert.deepEqual(afterSave.editedSinceLoad, []);
+  assert.equal(snapshotPartScripts({ [PART]: edited })[PART], edited);
+
+  const savedScripts = { [PART]: edited };
+  const baseline = captureBaseline({
+    assemblyPath: assemblyIdPath(ASM),
+    assemblyName: doc.name,
+    doc,
+    scripts: savedScripts,
+    branch: 'main',
+    headSha: saved.sha,
+  });
+  assert.equal(isWorkspaceDirty(doc, savedScripts, baseline), false);
+
+  const afterEdit = v2AgentDirty({
+    doc,
+    scripts: { [PART]: again },
+    assemblyCommit,
+  });
+  assert.equal(afterEdit.unsaved, true);
+  assert.deepEqual(afterEdit.partIds, [PART]);
+  assert.equal(afterEdit.workspaceDirty, true);
 });
