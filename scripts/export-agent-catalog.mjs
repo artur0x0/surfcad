@@ -438,7 +438,7 @@ function assemblySchema() {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     $id: 'https://github.com/artur0x0/3dculos/schema/surf-assembly.json',
     title: 'SurfCAD assembly (.surf.json)',
-    description: 'Assembly document stored at assemblies/<Name>/.surf.json. Part rows reference scripts by repo path. The stable id is // @surf-id in the script and { id, path } here. The id is permanent. Optional groups list inserted parts by those ids. validateSurfJson also requires each part visible boolean and order integer.',
+    description: 'v1 assembly document stored at assemblies/<Name>/.surf.json. Part rows reference scripts by repo path. The stable id is // @surf-id in the script and { id, path } here. The id is permanent. Optional groups list inserted parts by those ids. validateSurfJson also requires each part visible boolean and order integer. The v2 branch is defs.v2 (assemblies/<id>.surf.json, required top-level id, no parts[].path).',
     type: 'object',
     additionalProperties: false,
     required: ['format', 'version', 'name', 'parts'],
@@ -667,6 +667,206 @@ function assemblySchema() {
       surfIdHeader: {
         description: 'First line of a part script.',
         pattern: '^// @surf-id (?:local-)?\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}\\s*$',
+      },
+      surfNameHeader: {
+        description: 'Second line of a v2 part script. Display name may contain spaces.',
+        pattern: '^// @name .+$',
+      },
+      v2: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['format', 'version', 'id', 'name', 'parts'],
+        description: 'v2 assembly document at assemblies/<id>.surf.json. validateSurfJsonV2 rejects a missing top-level id and any parts[].path. Name is a label, not a path segment. groups[].source is an assembly id or null.',
+        properties: {
+          format: { const: SURF_JSON_FORMAT },
+          version: { const: 2 },
+          id: {
+            type: 'string',
+            pattern: id,
+            description: 'Permanent assembly surf id. Filename is assemblies/<id>.surf.json.',
+          },
+          name: {
+            type: 'string',
+            minLength: 1,
+            description: 'Display label. Not unique and not required to be path-safe.',
+          },
+          activeId: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            description: 'Part id of the active part, or null.',
+          },
+          parts: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['id', 'name', 'visible', 'order'],
+              properties: {
+                id: {
+                  type: 'string',
+                  pattern: id,
+                  description: 'Required part surf id. Filename is parts/<id>.js. path is forbidden.',
+                },
+                name: { type: 'string' },
+                visible: { type: 'boolean' },
+                order: {
+                  type: 'integer',
+                  minimum: 0,
+                  description: 'Non-negative integer. validateSurfJsonV2 rejects a non-integer.',
+                },
+                position: {
+                  type: 'array',
+                  items: { type: 'number' },
+                  minItems: 3,
+                  maxItems: 3,
+                  description: 'Translation [x, y, z] in mm. Equals placement.t when both are present. Omitted when the translation is the origin, except a legacy row that already stored [0, 0, 0].',
+                },
+                placement: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['t', 'q'],
+                  description: 'Rigid pose. Written when the quaternion is not identity, or when a joint names this part. Omitted on a pre-joints row. t equals position when both are present.',
+                  properties: {
+                    t: {
+                      type: 'array',
+                      items: { type: 'number' },
+                      minItems: 3,
+                      maxItems: 3,
+                      description: 'Translation in mm.',
+                    },
+                    q: {
+                      type: 'array',
+                      items: { type: 'number' },
+                      minItems: 4,
+                      maxItems: 4,
+                      description: 'Unit quaternion [x, y, z, w].',
+                    },
+                  },
+                },
+                sheetMetal: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['sku'],
+                  properties: {
+                    sku: { type: 'string' },
+                    name: { type: 'string' },
+                    thicknessIn: { type: 'number' },
+                    gauge: { type: 'number' },
+                  },
+                  description: 'SendCutSend binding snapshot. sku is the key.',
+                },
+                copiedFrom: {
+                  type: 'string',
+                  pattern: id,
+                  description: 'Surf id this row was copied from, when set.',
+                },
+              },
+            },
+          },
+          groups: {
+            type: 'array',
+            description: 'Optional. Parts inserted from another assembly, shown together in the Parts list. A part id is in at most one group.',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['id', 'name', 'source', 'partIds'],
+              properties: {
+                id: {
+                  type: 'string',
+                  pattern: id,
+                  description: 'Stable group id. Not a part id.',
+                },
+                name: {
+                  type: 'string',
+                  minLength: 1,
+                  description: 'Label in the Parts list. Starts as the source assembly name.',
+                },
+                source: {
+                  anyOf: [
+                    { type: 'string', pattern: id },
+                    { type: 'null' },
+                  ],
+                  description: 'Source assembly id. Null after that assembly is deleted; the group name stays.',
+                },
+                partIds: {
+                  type: 'array',
+                  minItems: 1,
+                  items: { type: 'string', pattern: id },
+                  description: 'Surf ids of the member parts. Dangling ids are dropped on load and save.',
+                },
+              },
+            },
+          },
+          colors: {
+            type: 'object',
+            minProperties: 1,
+            propertyNames: { pattern: id },
+            additionalProperties: {
+              type: 'object',
+              additionalProperties: false,
+              minProperties: 1,
+              properties: {
+                part: {
+                  type: 'string',
+                  pattern: '^#[0-9a-f]{6}$',
+                  description: 'Whole-part color. A face color wins on that face.',
+                },
+                faces: {
+                  type: 'array',
+                  minItems: 1,
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['color', 'key'],
+                    properties: {
+                      color: { type: 'string', pattern: '^#[0-9a-f]{6}$' },
+                      key: faceKey,
+                    },
+                  },
+                },
+              },
+              description: 'part, faces, or both. Unknown keys are rejected.',
+            },
+            description: 'Optional face colors for this assembly, keyed by surf id. Omitted when empty. A key whose surf id is not in parts is dropped on load and save.',
+          },
+          joints: {
+            type: 'array',
+            minItems: 1,
+            description: 'Optional assembly joints. Omitted when empty. A joint names parts by surf id. A joint whose part surf id is not in parts is dropped on load and save.',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['id', 'name', 'type', 'a'],
+              properties: {
+                id: {
+                  type: 'string',
+                  pattern: id,
+                  description: 'Surf id of this joint. Unique in the file. Not a part id and not a group id.',
+                },
+                name: { type: 'string', minLength: 1 },
+                type: {
+                  enum: ['coincident', 'concentric', 'distance', 'angle', 'fixed'],
+                },
+                value: {
+                  type: 'number',
+                  description: 'Distance in millimetres, or angle in degrees. Required on distance and angle. Omitted on the other types.',
+                },
+                sense: {
+                  enum: [1, -1],
+                  description: 'Which side of the reference the value sits on. Required on distance and angle. Omitted on the other types.',
+                },
+                opposed: {
+                  type: 'boolean',
+                  description: 'Coincident only. True means the face normals are opposed. Omitted means true. Always written for coincident. Rejected on other types.',
+                },
+                a: jointRef,
+                b: {
+                  ...jointRef,
+                  description: 'Second reference. Omitted on fixed. a.part and b.part are different surf ids.',
+                },
+              },
+            },
+          },
+        },
       },
     },
   };

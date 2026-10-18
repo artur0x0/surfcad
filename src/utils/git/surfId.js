@@ -22,6 +22,8 @@ export const SURF_ID_RE = new RegExp(`^(?:local-)?${SURF_ID_BODY}$`);
 // Spaces and tabs only. `\s` would eat the blank line after the header and
 // any indent on the next line. The line ending is captured so CRLF stays CRLF.
 const HEADER_RE = /^\/\/ @surf-id (\S+)([ \t]*)(\r\n|\n|\r)?/;
+// Display name may contain spaces. Capture the rest of the line; trim on read.
+const NAME_HEADER_RE = /^\/\/ @name ([^\r\n]*?)[ \t]*(\r\n|\n|\r|$)/;
 
 export function isSurfId(value) {
   return SURF_ID_RE.test(String(value || ''));
@@ -131,6 +133,55 @@ export function withSurfId(script, id) {
   const text = String(script ?? '');
   const sep = text.length && !text.startsWith('\n') && !text.startsWith('\r') ? '\n' : '';
   return `// @surf-id ${id}${sep}${text}`;
+}
+
+function splitNameHeader(script) {
+  const text = String(script ?? '');
+  const surf = splitSurfHeader(text);
+  const rest = surf ? surf.body : text;
+  const prefix = surf ? text.slice(0, text.length - rest.length) : '';
+  const match = NAME_HEADER_RE.exec(rest);
+  if (!match) return { found: false, name: null, prefix, rest, ending: '', body: rest, surf };
+  const name = match[1].trim();
+  if (!name) return { found: false, name: null, prefix, rest, ending: match[2] || '', body: rest.slice(match[0].length), surf };
+  return {
+    found: true,
+    name,
+    prefix,
+    rest,
+    ending: match[2] || '',
+    body: rest.slice(match[0].length),
+    surf,
+  };
+}
+
+/** Display name from `// @name`, or null when the header is missing. */
+export function readSurfName(script) {
+  return splitNameHeader(script).name;
+}
+
+/**
+ * First or second line is `// @name <display>`. Sits under `// @surf-id`
+ * when that header is present. Replaces an existing name line and keeps
+ * its line ending. Bytes after the name line stay.
+ */
+export function withSurfName(script, name) {
+  const display = String(name ?? '').replace(/[\r\n]+/g, ' ').trim();
+  if (!display) throw new Error(`Bad surf name: ${name}`);
+  const split = splitNameHeader(script);
+  const nl = (split.surf && split.surf.ending) || (split.found && split.ending) || '\n';
+  if (split.found) {
+    return `${split.prefix}// @name ${display}${split.ending || nl}${split.body}`;
+  }
+  if (split.surf) {
+    const prefix = split.prefix.endsWith('\n') || split.prefix.endsWith('\r')
+      ? split.prefix
+      : `${split.prefix}${nl}`;
+    return `${prefix}// @name ${display}${nl}${split.rest}`;
+  }
+  const text = String(script ?? '');
+  const sep = text.length && !text.startsWith('\n') && !text.startsWith('\r') ? nl : '';
+  return `// @name ${display}${sep}${text}`;
 }
 
 /**

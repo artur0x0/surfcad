@@ -67,6 +67,16 @@ check('assembly schema is surfcad.assembly v1', assembly.properties?.format?.con
   && assembly.properties?.colors?.additionalProperties?.additionalProperties === false
   && assembly.properties?.colors?.additionalProperties?.properties?.part?.pattern === '^#[0-9a-f]{6}$');
 
+const v2 = assembly.defs?.v2;
+check('assembly schema has a v2 branch', v2?.properties?.version?.const === 2
+  && Array.isArray(v2.required) && v2.required.includes('id')
+  && v2.properties?.id
+  && v2.properties?.parts?.items?.required?.includes('id')
+  && !v2.properties?.parts?.items?.required?.includes('path')
+  && !v2.properties?.parts?.items?.properties?.path
+  && v2.properties?.groups?.items?.properties?.source?.anyOf?.some((row) => row.type === 'null')
+  && assembly.defs?.surfNameHeader?.pattern?.includes('@name'));
+
 const sample = {
   format: 'surfcad.assembly',
   version: 1,
