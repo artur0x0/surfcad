@@ -68,6 +68,53 @@ test('open / insert / list / delete / rename stay on the working copy', () => {
   assert.match(renameGate, /writesGit: false/);
 });
 
+test('git_move_to_repo is v2 first Save and does not re-key rows to vault paths', () => {
+  const move = sliceFn('const handleMoveToGit', 'const handleListVaultAssemblies');
+  assert.match(move, /handleV2PlanSave\(/);
+  assert.match(move, /vaultLayout: 'v2'/);
+  assert.match(move, /collapseWorkingCopyIds\(/);
+  assert.match(move, /status: 'moved'/);
+  assert.equal(/moveToGit\(/.test(move), false, move);
+  assert.equal(/idMap/.test(move), false, move);
+  assert.equal(/applyCommittedWorkspace/.test(move), false, move);
+  assert.equal(/assemblies\//.test(move), false, move);
+});
+
+test('git_branch_switch on v2 opens by assembly id, not leftover folder name', () => {
+  const sw = sliceFn('const handleSwitchBranch', 'const handleListVaultBrowse');
+  assert.match(sw, /isV2PlanSaveDoc\(doc\)/);
+  const v2 = sw.slice(sw.indexOf('isV2PlanSaveDoc'), sw.indexOf('switchVaultBranch'));
+  assert.match(v2, /openV2Assembly\(/);
+  assert.equal(/openNamedVaultAssembly/.test(v2), false, v2);
+  assert.equal(/switchVaultBranch/.test(v2), false, v2);
+  assert.match(sw, /ensureGitVault\(\{\s*create:\s*false\s*\}\)/);
+  assert.equal(/\bensureGitVault\(\s*\)/.test(sw), false);
+});
+
+test('git_branch_switch same-branch is a no-op and does not demand confirm', () => {
+  const sw = sliceFn('async agentGitBranchSwitch({ branch, confirm })', 'async agentGitBranchDelete({ branch })');
+  assert.match(sw, /target === gitWorkingBranch\(\)/);
+  const confirm = sw.slice(sw.indexOf('target === gitWorkingBranch()'), sw.indexOf('sourceDirty'));
+  assert.match(confirm, /return handleSwitchBranch\(target\)/);
+});
+
+test('git_branch_create copies lastCommit onto the new ref before switch', () => {
+  const create = sliceFn('const handleCreateBranch', 'const handleBranchUiClose');
+  assert.match(create, /putAssemblyCommit/);
+  assert.match(create, /putBranchTip/);
+  assert.match(create, /isV2PlanSaveDoc\(doc\)/);
+  const beforeSwitch = create.slice(0, create.indexOf('handleSwitchBranch(created.name)'));
+  assert.match(beforeSwitch, /putAssemblyCommit/);
+});
+
+test('isGitWorkingCopyDirty for v2 uses AssemblyCommit, not path-less first-commit', () => {
+  const fn = sliceFn('const isGitWorkingCopyDirty', 'const readAgentGitWriteTarget');
+  assert.match(fn, /isV2PlanSaveDoc\(doc\)/);
+  assert.match(fn, /compareWorkingCopyToCommit/);
+  const v2 = fn.slice(fn.indexOf('isV2PlanSaveDoc'), fn.indexOf('const baseline'));
+  assert.equal(/!partRepoPath/.test(v2), false, v2);
+});
+
 test('git_save uses handleGitCommit -> handleV2PlanSave -> executePlanSave', () => {
   const save = sliceFn('async agentGitSave({ message })', 'async agentGitUpgradeVault()');
   assert.match(save, /handleGitCommit\(draft\)/);

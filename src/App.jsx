@@ -373,7 +373,6 @@ import {
   storedVaultNameFromUser,
   sanitizeVaultName,
   planMoveToGit,
-  moveToGit,
   putAsset,
   placeLocalMeshParts,
   remapMeshRecords,
@@ -391,7 +390,7 @@ import {
   SAVE_CONFLICT_COPY,
 } from './utils/git';
 import { partScriptMatchesCommitted } from './utils/git/planSave';
-import { scheduleLastCommitFromApp } from './utils/git/lastCommit';
+import { makeBranchTip, scheduleLastCommitFromApp } from './utils/git/lastCommit';
 import {
   detectVaultLayout,
   executeUpgrade,
@@ -3221,9 +3220,23 @@ const App = () => {
    * v2 first Save may create the repo through writeVaultCommit. Do not call
    * findOrCreateVault({ create: true }) — that still seeds a README index.
    */
-  const resolveVaultForPlanSave = async () => {
-    if (gitVaultRef.current?.repo) {
+  const resolveVaultForPlanSave = async ({ vaultName } = {}) => {
+    if (gitVaultRef.current?.repo && !sanitizeVaultName(vaultName)) {
       return { vault: gitVaultRef.current, create: false };
+    }
+    const requested = sanitizeVaultName(vaultName);
+    if (requested && !gitVaultRef.current?.repo) {
+      const adapter = ensureGitAdapter();
+      const { login } = await adapter.getViewer();
+      return {
+        vault: {
+          repo: { owner: login, name: requested },
+          defaultBranch: 'main',
+          headSha: null,
+          private: true,
+        },
+        create: true,
+      };
     }
     try {
       const vault = await ensureGitVault({ create: false });
@@ -3232,7 +3245,8 @@ const App = () => {
       if (err?.message !== NO_REPO_YET_COPY && err?.code !== NO_REPO_YET_CODE) throw err;
       const adapter = ensureGitAdapter();
       const { login } = await adapter.getViewer();
-      const name = storedVaultName()
+      const name = requested
+        || storedVaultName()
         || (adapter?.kind === 'mock' ? peekMockVaultName() : null)
         || DEFAULT_VAULT_NAME;
       return {
@@ -3258,6 +3272,32 @@ const App = () => {
   const isGitWorkingCopyDirty = () => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') return false;
+    if (isV2PlanSaveDoc(doc)) {
+      // v2 rows are path-less by design. leftover first-commit (no `path`)
+      // would keep Create from switching after a clean Save. Same compare
+      // as chrome / `dirty` (AssemblyCommit, not leftover baseline).
+      const vault = gitVaultRef.current;
+      const branch = gitWorkingBranch();
+      const store = gitSync();
+      const assemblyCommit = vault?.repo
+        ? store.getAssemblyCommit(vault.repo, branch, doc.id)
+        : null;
+      let liveScript = null;
+      if (!suppressPartSaveRef.current) {
+        const live = codeEditorRef.current?.getContent?.();
+        if (typeof live === 'string') liveScript = live;
+      }
+      const compared = compareWorkingCopyToCommit({
+        doc,
+        scripts: partScriptsRef.current,
+        liveId: doc.activeId,
+        liveScript,
+        assemblyCommit,
+        pendingSave: !!(vault?.repo && store.getPendingSave(vault.repo, branch)),
+        sidecarDirty: sidecarIsDirty(gitSidecarRef.current),
+      });
+      return compared.unsaved === true || compared.pendingSave === true;
+    }
     const baseline = gitBaselineRef.current;
     const parts = doc.parts || [];
     if (sidecarIsDirty(gitSidecarRef.current)) return true;
@@ -3664,62 +3704,66 @@ const App = () => {
   };
 
   /**
-   * G6 Move to Git: find-or-create the vault (rename field), write the
-   * IndexedDB parts + assembly into the layout as one commit, then switch the
-   * working copy to Git mode with a clean baseline.
+   * First Save of a local assembly (§3.3 / §3.5 / §6 PR 8): promote the WC to
+   * git v2 without assigning vault paths as row ids, then the same planSave /
+   * writeVaultCommit path as the Save button (`parts/<id>.js`). Leftover
+   * moveToGit still writes v1 folder paths and must not be used here.
+   *
+   * Reauth boot is read-only, so load-time collapse may not have run. Call it
+   * here (do not edit the migrator): keep existing surf-ids, mint only when a
+   * row still has a leftover local key like `seed`. Switching source never
+   * remints a permanent id and never replaces one with a path.
    */
-  const handleMoveToGit = async ({ vaultName = DEFAULT_VAULT_NAME, sharedIds = [] } = {}) => {
-    const doc = assemblyRef.current;
-    if (!doc) return { status: 'error', error: 'No assembly' };
-    if (doc.source === 'git') return { status: 'error', error: 'Already in Git mode' };
-    try {
-      const live = liveEditorScript(doc);
-      if (live.liveId) {
-        savePartScript(live.liveId, live.liveScript);
-        rememberScripts({ ...partScriptsRef.current, [live.liveId]: live.liveScript });
+  const handleMoveToGit = async ({ vaultName = DEFAULT_VAULT_NAME } = {}) => {
+    const before = assemblyRef.current;
+    if (!before) return { status: 'error', error: 'No assembly' };
+    if (before.source === 'git') return { status: 'error', error: 'Already in Git mode' };
+    if (!before.parts?.length) return { status: 'empty' };
+    const name = sanitizeVaultName(vaultName);
+    if (!name) return { status: 'invalid-name', vaultName };
+    const beforeScripts = { ...partScriptsRef.current };
+    let collapsePairs = [];
+    const restoreLocal = () => {
+      if (collapsePairs.length) {
+        rekeyRuntime(collapsePairs.map(({ from, to }) => ({ from: to, to: from })));
       }
-      const result = await moveToGit(ensureGitAdapter(), {
-        vaultName,
-        storedName: storedVaultName(),
-        doc,
-        scripts: partScriptsRef.current,
-        sharedIds,
-        ...live,
-      });
-      if (result.status !== 'moved') return result;
-      // Carry runs / leftovers / undo history / CAD pick over to the new ids.
-      const remap = (map) => {
-        const next = { ...(map || {}) };
-        for (const { from, to } of result.idMap) {
-          if (from !== to && Object.prototype.hasOwnProperty.call(next, from)) {
-            next[to] = next[from];
-            delete next[from];
-          }
-        }
-        return next;
-      };
-      commitPartRuns(remap(partRunsRef.current));
-      partLeftoversRef.current = remap(partLeftoversRef.current);
-      const histories = remap(partHistoriesRef.current);
-      for (const key of Object.keys(partHistoriesRef.current)) delete partHistoriesRef.current[key];
-      Object.assign(partHistoriesRef.current, histories);
-      const pick = result.idMap.find((m) => m.from === cadPartIdRef.current);
-      if (pick) rememberCadPart(pick.to);
-      gitVaultRef.current = {
-        repo: result.vault.repo,
-        defaultBranch: result.vault.defaultBranch,
-        headSha: result.sha,
-        private: result.vault.private,
-      };
-      await noteResolvedVault(result.vault.repo);
-      await applyCommittedWorkspace({ doc: result.doc, scripts: result.scripts });
-      rememberGitBaseline(result.baseline);
-      if (result.sha) await gitSync().setLastSyncedSha(result.vault.repo, result.sha, 'main');
-      rememberGitBehind(null, { showToast: false, resetResolved: true });
-      setGitBehindToast(null);
+      rememberScripts(beforeScripts);
+      rememberAssembly(before);
+    };
+    try {
+      const live = liveEditorScript(before);
+      const scripts = { ...beforeScripts };
+      if (live.liveId) {
+        scripts[live.liveId] = live.liveScript;
+        savePartScript(live.liveId, live.liveScript);
+      }
+      const collapsed = collapseWorkingCopyIds(before, scripts);
+      collapsePairs = collapsed.pairs || [];
+      if (collapsePairs.length) rekeyRuntime(collapsePairs);
+      rememberScripts(collapsed.scripts);
+      const assemblyId = isV2SurfId(collapsed.doc.id) ? collapsed.doc.id : mintSurfId();
+      rememberAssembly(serializeAssembly({
+        ...collapsed.doc,
+        id: assemblyId,
+        source: 'git',
+        vaultLayout: 'v2',
+      }));
+      const saved = await handleV2PlanSave(
+        `Move ${assemblyName(before) || name} to Git`,
+        { vaultName: name },
+      );
+      if (saved.status !== 'committed' && saved.status !== 'clean' && saved.status !== 'branched') {
+        restoreLocal();
+        return saved;
+      }
       refreshAssemblyRef.current?.(undefined, { persistActive: false });
-      return result;
+      return {
+        ...saved,
+        status: 'moved',
+        vault: gitVaultRef.current,
+      };
     } catch (err) {
+      restoreLocal();
       return { status: 'error', error: err.message || 'Move to Git failed' };
     }
   };
@@ -4220,18 +4264,73 @@ const App = () => {
   /**
    * G5: switch working branch — reload the open assembly from that tip.
    * Dirty working copy is replaced (PartFeed confirms first when dirty).
+   * v2 opens by assembly id (openV2Assembly). leftover switchVaultBranch
+   * opens by folder name and throws UnsupportedVaultLayoutError on v2.
    */
   const handleSwitchBranch = async (branchName) => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') {
       return { status: 'error', error: 'Not in Git mode' };
     }
-    const name = vaultSegment(doc.name) || doc.name;
-    if (!name) return { status: 'error', error: 'No assembly open' };
     const current = gitWorkingBranch();
     if (!branchName || branchName === current) {
       return { status: 'same', branch: current };
     }
+    if (isV2PlanSaveDoc(doc)) {
+      const id = doc.id;
+      try {
+        const opened = await runTrackedAssemblyOpen(assemblyOpenCtrlRef.current, {
+          name: id,
+          retry: () => { void handleSwitchBranch(branchName); },
+          load: async ({ progress, signal }) => {
+            refreshGenRef.current += 1;
+            const vault = await ensureGitVault({ create: false });
+            if (!signal()) return null;
+            const store = gitSync();
+            await store.ready();
+            const git = gitAdapterRef.current;
+            const tip = (await git.getBranch(vault.repo, branchName))?.sha || null;
+            if (!tip) throw new Error(`Branch not found: ${branchName}`);
+            const loaded = await openV2Assembly(git, vault.repo, id, {
+              branch: branchName,
+              headSha: tip,
+            });
+            if (!signal()) return null;
+            const adopted = await adoptVaultOpening(loaded, vault);
+            if (!signal()) return null;
+            await scheduleLastCommitFromApp({
+              adapter: git,
+              repo: vault.repo,
+              branch: branchName,
+              store,
+              opened: loaded,
+              adopted,
+              tip,
+              liveSession: () => ({
+                repo: gitVaultRef.current?.repo || vault.repo,
+                branch: gitWorkingBranch(),
+              }),
+            });
+            rememberGitBehind(null, { showToast: false, resetResolved: true });
+            setGitBehindToast(null);
+            void checkGitRemoteBehind({ showToast: true, reason: 'branch-switch' });
+            const saved = adopted.saved;
+            const keep = new Set(saved.parts.map((part) => String(part.id)));
+            for (const key of Object.keys(partHistoriesRef.current)) {
+              if (key !== '__game__' && !keep.has(key)) delete partHistoriesRef.current[key];
+            }
+            await finishOpenedPartRef.current(saved, adopted.scripts, progress);
+            return loaded;
+          },
+        });
+        if (!opened) return { status: 'error', error: 'Could not switch branch' };
+        return { status: 'switched', branch: branchName, baseline: opened.baseline };
+      } catch (err) {
+        return gitOpCatchResult(err, 'Could not switch branch');
+      }
+    }
+    const name = vaultSegment(doc.name) || doc.name;
+    if (!name) return { status: 'error', error: 'No assembly open' };
     try {
       const opened = await runTrackedAssemblyOpen(assemblyOpenCtrlRef.current, {
         name,
@@ -4877,6 +4976,25 @@ const App = () => {
         gitAdapterRef.current, vault.repo, branchName,
         { fromBranch: from },
       );
+      const doc = assemblyRef.current;
+      // A new ref at the same SHA carries the same AssemblyCommit. Copy it
+      // before switch so v2 chrome / confirm gates are not "first-commit dirty"
+      // on a branch that has no lastCommit row yet.
+      if (isV2PlanSaveDoc(doc) && vault.repo && created?.sha) {
+        const store = gitSync();
+        await store.ready();
+        const fromTip = store.getBranchTip(vault.repo, from);
+        if (!fromTip?.tipSha || fromTip.tipSha === created.sha) {
+          const tip = makeBranchTip({
+            repo: vault.repo,
+            branch: created.name,
+            tipSha: created.sha,
+          });
+          if (tip) await store.putBranchTip(vault.repo, created.name, tip);
+          const commit = store.getAssemblyCommit(vault.repo, from, doc.id);
+          if (commit) await store.putAssemblyCommit(vault.repo, created.name, commit);
+        }
+      }
       if (!shouldSwitchToCreatedBranch({ dirty: isGitWorkingCopyDirty() })) {
         return {
           status: 'created',
@@ -5099,14 +5217,14 @@ const App = () => {
       if (create && !gitVaultRef.current.repo) gitVaultRef.current.repo = repo;
     }
     const nextBranch = result.branch || branch;
+    const savedDoc = assemblyRef.current;
+    const live = codeEditorRef.current?.getContent?.();
+    const savedScripts = { ...(partScriptsRef.current || {}) };
+    if (savedDoc?.activeId && typeof live === 'string' && !suppressPartSaveRef.current) {
+      savedScripts[savedDoc.activeId] = live;
+    }
     if (result.status === 'committed' || result.status === 'branched') {
-      const savedDoc = assemblyRef.current;
       const prevBaseline = gitBaselineRef.current;
-      const live = codeEditorRef.current?.getContent?.();
-      const savedScripts = { ...(partScriptsRef.current || {}) };
-      if (savedDoc?.activeId && typeof live === 'string' && !suppressPartSaveRef.current) {
-        savedScripts[savedDoc.activeId] = live;
-      }
       const writes = (result.files || []).filter((file) => (
         file && typeof file === 'object' && typeof file.path === 'string'
       ));
@@ -5157,6 +5275,15 @@ const App = () => {
       setPlanSaveConflict(null);
       track('git_saved');
     }
+    if (savedDoc) {
+      // Explicit Save / Move to Git must land in IndexedDB even during reauth
+      // (playtest mock has no GitHub token). Do not replace row ids from
+      // committed paths — the WC ids stay opaque.
+      rememberAssembly(savedDoc, { force: true });
+      for (const [id, text] of Object.entries(savedScripts)) {
+        if (typeof text === 'string') await savePartScript(id, text);
+      }
+    }
     if (result.partStillReferenced?.length) {
       const names = result.partStillReferenced
         .map((row) => row.assemblies?.map((item) => item.name || item.id).filter(Boolean).join(', '))
@@ -5173,7 +5300,7 @@ const App = () => {
     };
   };
 
-  const handleV2PlanSave = async (message, { force = false } = {}) => {
+  const handleV2PlanSave = async (message, { force = false, vaultName } = {}) => {
     const doc = assemblyRef.current;
     if (!isV2PlanSaveDoc(doc)) return { status: 'error', error: 'Not a v2 git assembly' };
     const adapter = ensureGitAdapter();
@@ -5188,7 +5315,7 @@ const App = () => {
     const msg = typeof message === 'string' ? message.trim() : '';
     if (msg) v2SaveMessageRef.current = msg;
     try {
-      const { vault, create } = await resolveVaultForPlanSave();
+      const { vault, create } = await resolveVaultForPlanSave({ vaultName });
       const branch = gitWorkingBranch();
       const store = gitSync();
       const workingCopy = await v2WorkingCopy(doc);
@@ -6089,6 +6216,54 @@ const App = () => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') return undefined;
     if (gitBaselineRef.current) return undefined;
+    if (isV2PlanSaveDoc(doc)) {
+      // v2 rows are path-less by design. leftover allLocal / open-by-name
+      // would skip reseed or look up assemblies/<Name>/, then lastCommit
+      // never binds and every id looks unsaved. Restore the vault handle
+      // only; do not replace WC ids from committed paths.
+      if (gitVaultRef.current?.repo) return undefined;
+      let cancelled = false;
+      (async () => {
+        try {
+          const vault = await ensureGitVault({ create: false });
+          if (cancelled) return;
+          const store = gitSync();
+          await store.ready();
+          const branch = gitWorkingBranch();
+          const tip = store.getBranchTip(vault.repo, branch);
+          const headSha = (typeof tip?.tipSha === 'string' && tip.tipSha)
+            || (await gitAdapterRef.current.getBranch(vault.repo, branch))?.sha
+            || vault.headSha
+            || null;
+          gitVaultRef.current = { ...vault, headSha };
+          if (isV2SurfId(doc.id) && !store.getAssemblyCommit(vault.repo, branch, doc.id)) {
+            const opened = await openV2Assembly(gitAdapterRef.current, vault.repo, doc.id, {
+              branch,
+              headSha,
+            });
+            if (cancelled) return;
+            scheduleLastCommitFromApp({
+              adapter: gitAdapterRef.current,
+              repo: vault.repo,
+              branch,
+              store,
+              opened,
+              workingCopyId: doc.id,
+              tip: headSha,
+              reload: true,
+              liveSession: () => ({
+                repo: gitVaultRef.current?.repo || vault.repo,
+                branch: gitWorkingBranch(),
+              }),
+            });
+          }
+          if (!cancelled) setBootEpoch((n) => n + 1);
+        } catch (err) {
+          console.warn('[git] v2 vault reseed skipped', err?.message || err);
+        }
+      })();
+      return () => { cancelled = true; };
+    }
     const parts = doc.parts || [];
     const allLocal = parts.length > 0
       && parts.every((p) => {
@@ -9299,11 +9474,12 @@ const App = () => {
   // — that falsely dotted every in-repo part after reload (#215).
   // firstCommitBaseline is for a true first commit (path-less rows only).
   const gitParts = assemblyDoc?.parts || [];
-  const hasLocalPartIds = gitParts.some((p) => !partRepoPath(p));
+  const hasLocalPartIds = gitParts.some((p) => !partRepoPath(p) && !isV2SurfId(p?.id));
   const needsFirstCommitChrome = (
     assemblyDoc?.source === 'git'
     && !gitBaseline
     && hasLocalPartIds
+    && !isV2PlanSaveDoc(assemblyDoc)
   );
   const dirtyBaseline = gitBaseline || (
     needsFirstCommitChrome
@@ -9313,19 +9489,19 @@ const App = () => {
       })
       : null
   );
-  const gitDirtyIds = (
+  let gitDirtyIds = (
     assemblyDoc?.source === 'git' && dirtyBaseline
   ) ? dirtyPartIds(assemblyDoc, partScripts, dirtyBaseline, {
     liveId: assemblyDoc.activeId,
     liveScript: liveDirtyScript,
   }) : (
     // Awaiting tip reseed: only local: rows; repo paths stay clean until
-    // baseline arrives and a real content diff can run.
+    // baseline arrives and a real content diff can run. v2 ids are not paths.
     assemblyDoc?.source === 'git'
-      ? new Set(gitParts.filter((p) => !partRepoPath(p)).map((p) => p.id))
+      ? new Set(gitParts.filter((p) => !partRepoPath(p) && !isV2SurfId(p?.id)).map((p) => p.id))
       : new Set()
   );
-  const sourceDirty = (
+  let sourceDirty = (
     assemblyDoc?.source === 'git'
     && (
       needsFirstCommitChrome
@@ -9337,6 +9513,27 @@ const App = () => {
         }))
     )
   );
+  if (isV2PlanSaveDoc(assemblyDoc)) {
+    const vault = gitVaultRef.current;
+    const branch = gitWorkingBranch();
+    const store = gitSync();
+    const assemblyCommit = vault?.repo
+      ? store.getAssemblyCommit(vault.repo, branch, assemblyDoc.id)
+      : null;
+    const compared = compareWorkingCopyToCommit({
+      doc: assemblyDoc,
+      scripts: partScripts,
+      liveId: assemblyDoc.activeId,
+      liveScript: liveDirtyScript,
+      assemblyCommit,
+      pendingSave: !!(vault?.repo && store.getPendingSave(vault.repo, branch)),
+      sidecarDirty: sidecarIsDirty(gitSidecar),
+    });
+    gitDirtyIds = new Set(compared.partIds || []);
+    sourceDirty = compared.unsaved === true
+      || compared.assemblyDirty === true
+      || compared.pendingSave === true;
+  }
   const behindMarkers = (
     assemblyDoc?.source === 'git' && gitBehind
   ) ? remainingBehindMarkers(gitBehind, gitBehindResolved) : { assemblyBehind: false, partIds: [], any: false };
@@ -10127,6 +10324,11 @@ const App = () => {
     async agentGitBranchSwitch({ branch, confirm }) {
       const target = String(branch || '').trim();
       if (!target) return { status: 'error', error: 'Branch required' };
+      // Already on this branch: no reload, nothing discarded — confirm is
+      // only for a dirty *switch* that would replace the working copy.
+      if (target === gitWorkingBranch()) {
+        return handleSwitchBranch(target);
+      }
       if (sourceDirty && confirm !== true) {
         return {
           status: 'error',

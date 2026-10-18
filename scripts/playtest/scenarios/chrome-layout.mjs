@@ -9,8 +9,6 @@ const USER_ID = 'user-playtest-chrome-layout';
 const VAULT = 'playtest-chrome-layout-vault';
 const HEIGHT_TOL = 0.5;
 const SHIFT_TOL = 1;
-/** Surf-id so leftover git_move_to_repo keeps the row id (not a vault path). */
-const SEED_ID = '2026-10-18-20-00-00-0002-c4ad';
 
 export const id = 'chrome-layout';
 export const title = 'Parts-header branch chip and feature ribbon height';
@@ -24,19 +22,17 @@ export function seedDoc() {
     format: 'surfcad.assembly',
     v: 1,
     name: 'playtest-chrome-layout',
-    activeId: SEED_ID,
+    activeId: 'local:seed',
     source: 'local',
-    parts: [{ id: SEED_ID, name: 'Seed', visible: true, order: 0 }],
+    parts: [{ id: 'local:seed', name: 'Seed', visible: true, order: 0 }],
     joints: [],
   };
 }
 
 export function seedParts() {
   return [{
-    id: SEED_ID,
-    script: `// @surf-id ${SEED_ID}
-// @name Seed
-// --- cube begin ---
+    id: 'local:seed',
+    script: `// --- cube begin ---
 let part = Manifold.cube([20, 20, 10], true);
 // --- cube end ---
 return part;
@@ -166,7 +162,7 @@ export async function run(ctx) {
   const shotDir = join(outDir, 'chrome-layout');
   mkdirSync(shotDir, { recursive: true });
   let blankId = null;
-  let seedId = SEED_ID;
+  let seedId = 'local:seed';
 
   await runner.runStep('insert_cube on seed (part features)', async () => {
     const parts = await agentCall(page, 'parts', {});
