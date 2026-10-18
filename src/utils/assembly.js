@@ -593,12 +593,14 @@ export function serializeAssembly(doc) {
     if (typeof part?.surfId === 'string' && part.surfId) row.surfId = part.surfId;
     if (typeof part?.copiedFrom === 'string' && part.copiedFrom) row.copiedFrom = part.copiedFrom;
     if (typeof part?.isSynced === 'boolean') row.isSynced = part.isSynced;
+    if (part?.missing === true) row.missing = true;
     return { row, part };
   }).filter((item) => item.row.id);
   const joints = normalizeAssemblyJoints(doc?.joints, drafted.map((item) => item.row));
   const jointed = jointedSurfIds(joints);
   const parts = drafted.map(({ row, part }) => {
-    const pose = poseFieldsForPart(part, jointed.has(row.surfId), partPosition(part));
+    const poseId = isSurfId(row.id) ? row.id : row.surfId;
+    const pose = poseFieldsForPart(part, jointed.has(poseId), partPosition(part));
     if (pose.position) row.position = pose.position;
     if (pose.placement) row.placement = pose.placement;
     return row;
@@ -617,6 +619,10 @@ export function serializeAssembly(doc) {
     activeId,
     parts,
   };
+  if (isSurfId(doc?.id)) out.id = doc.id;
+  if (doc?.vaultLayout === 'legacy' || doc?.vaultLayout === 'v2') {
+    out.vaultLayout = doc.vaultLayout;
+  }
   if (groups.length) out.groups = groups;
   if (colors) out.colors = colors;
   if (joints) out.joints = joints;
@@ -633,6 +639,8 @@ export function parseAssemblyDocument(input) {
     source: raw.source,
     name: raw.name,
     activeId: raw.activeId,
+    id: raw.id,
+    vaultLayout: raw.vaultLayout,
     parts: raw.parts.map((part, index) => ({
       id: part?.id,
       name: part?.name,
@@ -645,6 +653,7 @@ export function parseAssemblyDocument(input) {
       surfId: part?.surfId,
       copiedFrom: part?.copiedFrom,
       isSynced: part?.isSynced,
+      missing: part?.missing === true,
     })),
     groups: raw.groups,
     colors: raw.colors,
@@ -872,7 +881,7 @@ export function feedRows(doc, runs, scripts) {
   return sortParts(doc?.parts).map((part) => {
     const hasScript = !!(scripts && typeof scripts[part.id] === 'string');
     const run = runs?.[part.id] || null;
-    const missing = !hasScript;
+    const missing = part.missing === true || !hasScript;
     const error = !missing && !!run && run.ok === false && !run.empty && !run.skipped;
     return {
       id: part.id,

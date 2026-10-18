@@ -19,6 +19,7 @@ export * from './localPartIdMigration.js';
 export * from './partListSubtitle.js';
 export * from './layoutMigration.js';
 export * from './partIdentity.js';
+export * from './wcIdentity.js';
 export * from './vaultImplicitWrite.js';
 export * from './gitRename.js';
 export * from './gitDeleteAssembly.js';

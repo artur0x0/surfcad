@@ -13,3 +13,18 @@ test('buildPartsState normalizes part rows', () => {
     parts: [{ id: 'p1', name: 'Part 1', visible: false }],
   });
 });
+
+test('buildPartsState keeps vaultLayout and missing rows', () => {
+  assert.deepEqual(buildPartsState({
+    activeId: 'p1',
+    assemblyName: 'Gearbox',
+    vaultLayout: 'legacy',
+    parts: [{ id: 'p1', name: 'Missing gear', visible: true, missing: true }],
+  }), {
+    activeId: 'p1',
+    assemblyName: 'Gearbox',
+    vaultLayout: 'legacy',
+    parts: [{ id: 'p1', name: 'Missing gear', visible: true, missing: true }],
+  });
+  assert.equal(Object.hasOwn(buildPartsState({ vaultLayout: 'other' }), 'vaultLayout'), false);
+});

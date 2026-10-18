@@ -276,6 +276,8 @@ import {
   applyIdPromotion,
   migrateAssemblyRecords,
   migrateLocalPartIds,
+  collapseWorkingCopyIds,
+  isSurfId,
   reconcileSyncedFromTip,
   markPartsSynced,
   baselineAfterAssemblyRename,
@@ -353,6 +355,7 @@ import {
   partMeshRecordsFromBaseline,
   meshVaultSaveAllowed,
 } from './utils/git';
+import { detectVaultLayout, openLegacyAssembly } from './utils/git/legacyVault';
 import PartFeed from './components/PartFeed';
 import manifoldContext from './utils/ManifoldWorker';
 import DEFAULT_SCRIPT from './utils/defaultScript';
@@ -1685,11 +1688,32 @@ const App = () => {
                 }
               }
             }
+            const collapsed = collapseWorkingCopyIds(doc, scripts);
+            if (collapsed.changed) {
+              doc = collapsed.doc;
+              scripts = collapsed.scripts;
+              if (collapsed.pairs.length) {
+                const hist = { ...partHistoriesRef.current };
+                for (const { from, to } of collapsed.pairs) {
+                  if (from && to && from !== to && hist[from] && hist[to] == null) {
+                    hist[to] = hist[from];
+                    delete hist[from];
+                  }
+                  if (cadPartIdRef.current === from) cadPartIdRef.current = to;
+                }
+                partHistoriesRef.current = hist;
+              }
+              if (draft?.partId) {
+                const hit = collapsed.pairs.find((pair) => pair.from === draft.partId);
+                if (hit) draft = { ...draft, partId: hit.to };
+              }
+            }
             const readOnly = plan.readOnly === true || bootReadOnlyRef.current;
-            if (!readOnly && !bootWouldClobber(loaded.doc, doc) && (migrated.changed || localIds.changed || Object.keys(flags).length)) {
+            const idsChanged = migrated.changed || localIds.changed || collapsed.changed;
+            if (!readOnly && !bootWouldClobber(loaded.doc, doc) && (idsChanged || Object.keys(flags).length)) {
               try {
                 await saveAssemblyDocument(doc);
-                if (migrated.changed || localIds.changed) {
+                if (idsChanged) {
                   for (const [id, text] of Object.entries(scripts)) {
                     const part = (doc.parts || []).find((row) => row.id === id);
                     await savePartScript(
@@ -1699,8 +1723,8 @@ const App = () => {
                     );
                   }
                 }
-                if (localIds.changed) {
-                  for (const { from } of localIds.pairs) {
+                if (localIds.changed || collapsed.changed) {
+                  for (const { from } of [...localIds.pairs, ...collapsed.pairs]) {
                     try { await deletePartScript(from); } catch { /* ignore */ }
                   }
                 }
@@ -3551,7 +3575,9 @@ const App = () => {
       if (hit.path && hit.id) await store.rememberPathId(vault.repo, hit.path, hit.id);
     }
     const previous = assemblyRef.current;
-    const filled = backfillSurfIds(opened.doc, store.pathIndexFor(vault.repo));
+    const filled = opened.vaultLayout === 'legacy'
+      ? { doc: opened.doc }
+      : backfillSurfIds(opened.doc, store.pathIndexFor(vault.repo));
     const migrated = migrateAssemblyRecords({ doc: filled.doc, scripts: opened.scripts });
     const localIds = migrateLocalPartIds({
       doc: migrated.doc,
@@ -3568,9 +3594,18 @@ const App = () => {
         try { deletePartScript(from); } catch { /* ignore */ }
       }
     }
-    const reconciled = reconcileSyncedFromTip(localIds.doc, localIds.scripts);
+    const collapsed = collapseWorkingCopyIds(localIds.doc, localIds.scripts, {
+      pathIndex: store.pathIndexFor(vault.repo),
+    });
+    if (collapsed.changed) {
+      if (collapsed.pairs.length) rekeyRuntime(collapsed.pairs);
+      for (const { from } of collapsed.pairs) {
+        try { deletePartScript(from); } catch { /* ignore */ }
+      }
+    }
+    const reconciled = reconcileSyncedFromTip(collapsed.doc, collapsed.scripts);
     const openedDocIn = reconciled.doc;
-    const openedScriptsIn = localIds.scripts;
+    const openedScriptsIn = collapsed.scripts;
     if (previous?.source === 'git') {
       const aligned = rekeyWorkingCopyToTip(previous, partScriptsRef.current, openedDocIn, {
         histories: partHistoriesRef.current,
@@ -3663,6 +3698,22 @@ const App = () => {
     return { saved, scripts: openedScripts, baseline, branch, held };
   };
 
+  const openNamedVaultAssembly = async (adapter, repo, name, opts = {}) => {
+    const branch = opts.branch || 'main';
+    const cached = assemblyRef.current;
+    const knownAssemblyId = opts.knownAssemblyId
+      || (cached
+        && vaultSegment(cached.name) === vaultSegment(name)
+        && isSurfId(cached.id)
+        ? cached.id
+        : undefined);
+    const detected = await detectVaultLayout(adapter, repo, branch);
+    if (detected.layout === 'legacy') {
+      return openLegacyAssembly(adapter, repo, name, { ...opts, knownAssemblyId });
+    }
+    return openVaultAssembly(adapter, repo, name, opts);
+  };
+
   const handleOpenVaultAssembly = async (name) => {
     try {
       await runTrackedAssemblyOpen(assemblyOpenCtrlRef.current, {
@@ -3676,7 +3727,7 @@ const App = () => {
           const tip = (await gitAdapterRef.current.getBranch(vault.repo, branch))?.sha || null;
           const store = gitSync();
           await store.ready();
-          const opened = await openVaultAssembly(
+          const opened = await openNamedVaultAssembly(
             gitAdapterRef.current,
             vault.repo,
             name,
@@ -3925,6 +3976,7 @@ const App = () => {
             gitAdapterRef.current, vault.repo, name, branchName, {
               onProgress: (update) => progress({ ...update, name: update.name || name }),
               pathIndex: store.pathIndexFor(vault.repo),
+              openAssembly: openNamedVaultAssembly,
             },
           );
           if (!signal()) return null;
@@ -5262,7 +5314,7 @@ const App = () => {
         const renameFrom = gitSidecarRef.current.renameFrom;
         const openName = renameFrom || name;
         const tip = (await gitAdapterRef.current.getBranch(vault.repo, branch))?.sha || null;
-        const opened = await openVaultAssembly(
+        const opened = await openNamedVaultAssembly(
           gitAdapterRef.current,
           vault.repo,
           openName,
@@ -5309,17 +5361,25 @@ const App = () => {
             cadPartIdRef.current = localIds.selection.cadPartId;
           }
         }
-        if (migrated.changed || localIds.changed) {
+        const collapsed = collapseWorkingCopyIds(doc, scriptsNow, {
+          pathIndex: store.pathIndexFor(vault.repo),
+        });
+        if (collapsed.changed) {
+          doc = collapsed.doc;
+          scriptsNow = collapsed.scripts;
+          if (collapsed.pairs.length) rekeyRuntime(collapsed.pairs);
+        }
+        if (migrated.changed || localIds.changed || collapsed.changed) {
           rememberScripts(scriptsNow);
           for (const [id, text] of Object.entries(scriptsNow)) {
             if (text !== beforeScripts[id] && text !== aligned.scripts[id]) savePartScript(id, text);
           }
-          for (const { from } of localIds.pairs) {
+          for (const { from } of [...localIds.pairs, ...collapsed.pairs]) {
             try { deletePartScript(from); } catch { /* ignore */ }
           }
         }
         const reconciled = reconcileSyncedFromTip(doc, opened.scripts);
-        if (reconciled.changed || migrated.changed || localIds.changed || aligned.pairs.length) {
+        if (reconciled.changed || migrated.changed || localIds.changed || collapsed.changed || aligned.pairs.length) {
           doc = reconciled.doc;
           rememberAssembly(doc);
           for (const part of doc.parts || []) {
@@ -5365,6 +5425,7 @@ const App = () => {
     const source = githubConnected ? 'git' : 'local';
     const name = nextAssemblyName(await collectTakenAssemblyNames());
     const seedDoc = serializeAssembly({
+      id: mintSurfId(),
       source,
       name,
       activeId: seedId,
@@ -6319,6 +6380,7 @@ const App = () => {
     const name = nextAssemblyName(await collectTakenAssemblyNames());
     const text = typeof script === 'string' ? script : '';
     const seedDoc = serializeAssembly({
+      id: mintSurfId(),
       source,
       name,
       activeId: seedId,
@@ -8303,6 +8365,7 @@ const App = () => {
         legacyCleanup: !!dirtyBaseline?.legacyCleanup,
         undoStackDirty,
         editedSinceLoad,
+        upgradeRequired: doc?.vaultLayout === 'legacy',
       });
     },
     readToasts() {
@@ -8329,18 +8392,20 @@ const App = () => {
       return buildPartsState({
         activeId: doc.activeId,
         assemblyName: assemblyName(doc),
+        vaultLayout: doc.vaultLayout,
         parts: doc.parts.map((row) => ({
           id: row.id,
           name: row.name,
           visible: row.visible,
           ...(partRepoPath(row) ? { path: partRepoPath(row) } : {}),
+          ...(row.missing === true ? { missing: true } : {}),
         })),
       });
     },
     readActivePartSurfId() {
       const doc = assemblyRef.current;
       const part = doc?.parts?.find((row) => row.id === doc?.activeId);
-      return part?.surfId || null;
+      return part?.surfId || (isSurfId(part?.id) ? part.id : null);
     },
     readActivePartStatus() {
       const doc = assemblyRef.current;

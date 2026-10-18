@@ -43,3 +43,9 @@ test('buildDirtyState sets unsaved from editedSinceLoad', () => {
     editedSinceLoad: ['p1'],
   });
 });
+
+test('buildDirtyState sets upgradeRequired only when a legacy vault is open', () => {
+  assert.equal(Object.hasOwn(buildDirtyState({}), 'upgradeRequired'), false);
+  assert.equal(buildDirtyState({ upgradeRequired: true }).upgradeRequired, true);
+  assert.equal(Object.hasOwn(buildDirtyState({ upgradeRequired: false }), 'upgradeRequired'), false);
+});
