@@ -180,32 +180,50 @@ function chooseOwnerPath(id, claim, files) {
   return { path: pool[0], rank: 10 };
 }
 
+function isRowClaimRank(rank) {
+  return rank < 10;
+}
+
 /**
  * One owner path per id, decided before any mint. A path that wins two
- * ids keeps a header match over a non-match, then the lower rank.
+ * ids keeps the explicit row-id claim over a header-only claim. Header
+ * match only breaks ties between two row-id claims.
  */
 function resolvePathOwners(claimants, files) {
   const ownerPathById = new Map();
   const ownerIdByPath = new Map();
   const rankByPath = new Map();
+  const take = (id, path, rank) => {
+    ownerPathById.set(id, path);
+    ownerIdByPath.set(path, id);
+    rankByPath.set(path, rank);
+  };
   for (const id of [...(claimants?.keys?.() || [])].sort()) {
     const chosen = chooseOwnerPath(id, claimants.get(id), files);
     if (!chosen) continue;
-    ownerPathById.set(id, chosen.path);
     const prevId = ownerIdByPath.get(chosen.path);
     if (!prevId) {
-      ownerIdByPath.set(chosen.path, id);
-      rankByPath.set(chosen.path, chosen.rank);
+      take(id, chosen.path, chosen.rank);
       continue;
     }
     const prevRank = rankByPath.get(chosen.path);
-    const headerNow = headerIdOf(files, chosen.path) === id;
-    const headerPrev = headerIdOf(files, chosen.path) === prevId;
-    if ((headerNow && !headerPrev)
-      || (headerNow === headerPrev && chosen.rank < prevRank)
-      || (headerNow === headerPrev && chosen.rank === prevRank && id < prevId)) {
-      ownerIdByPath.set(chosen.path, id);
-      rankByPath.set(chosen.path, chosen.rank);
+    const nowRow = isRowClaimRank(chosen.rank);
+    const prevRow = isRowClaimRank(prevRank);
+    let steal = false;
+    if (nowRow && !prevRow) steal = true;
+    else if (!nowRow && prevRow) steal = false;
+    else if (nowRow && prevRow) {
+      const headerNow = headerIdOf(files, chosen.path) === id;
+      const headerPrev = headerIdOf(files, chosen.path) === prevId;
+      if (headerNow && !headerPrev) steal = true;
+      else if (headerNow === headerPrev && chosen.rank < prevRank) steal = true;
+      else if (headerNow === headerPrev && chosen.rank === prevRank && id < prevId) steal = true;
+    } else if (chosen.rank < prevRank || (chosen.rank === prevRank && id < prevId)) {
+      steal = true;
+    }
+    if (steal) {
+      ownerPathById.delete(prevId);
+      take(id, chosen.path, chosen.rank);
     }
   }
   return { ownerPathById, ownerIdByPath };
@@ -244,30 +262,21 @@ function assignAllPathIds({
   return { pathToId, mintedPaths };
 }
 
-function copiedFromFromWorkingCopy(workingCopy) {
-  const byPath = new Map();
-  const byId = new Map();
-  for (const part of workingCopy?.doc?.parts || []) {
-    const copied = asV2Id(part?.copiedFrom);
-    if (!copied) continue;
-    const path = scriptPathOf(part);
-    if (path) byPath.set(path, copied);
-    const id = asV2Id(part?.id);
-    if (id) byId.set(id, copied);
-  }
-  return { byPath, byId };
-}
-
 /**
  * `copiedFrom` only from the v1 row, or from an explicit row id this
- * path lost under ownership (a true duplicate). Header-only losers mint
- * with no copiedFrom, so lineage never runs backwards from a header.
+ * path lost to a DIFFERENT file (a true duplicate). Folding a row id
+ * into the same file's final id does not set copiedFrom — that id is
+ * not a live part. Header-only losers mint with none.
  */
-function copiedFromForRow(part, finalId) {
+function copiedFromForRow(part, finalId, pathToId) {
   const existing = asV2Id(part?.copiedFrom);
   if (existing && existing !== finalId) return existing;
   const rowId = asV2Id(part?.id);
-  if (rowId && rowId !== finalId) return rowId;
+  if (!rowId || rowId === finalId) return null;
+  const thisPath = scriptPathOf(part);
+  for (const [path, id] of Object.entries(pathToId || {})) {
+    if (id === rowId && path !== thisPath) return rowId;
+  }
   return null;
 }
 
@@ -491,10 +500,10 @@ function assertCopiedBytes(plan, files) {
  * when no row carries the id, and only for files some row references.
  * One final id per legacy path is minted once and reused in every
  * assembly. `copiedFrom` is the v1 value, or an explicit row id the
- * path lost (a true duplicate). A header-only loser mints with none.
- * `workingCopy.doc.parts[].copiedFrom` is carried onto matching rows so
- * commit 2 does not churn `.surf.json`. One assembly id per legacy folder
- * (reuse `assemblyIdByFolder`).
+ * path lost to a different file (a true duplicate). A header-only loser
+ * mints with none. Working-copy `copiedFrom` is used only when those
+ * rule-4 cases already apply; collapse tags are not carried. One assembly
+ * id per legacy folder (reuse `assemblyIdByFolder`).
  */
 export function planUpgrade({
   tree = [],
@@ -505,7 +514,6 @@ export function planUpgrade({
   repoName = null,
   now,
   randFor,
-  workingCopy = null,
 } = {}) {
   const paths = (tree || []).map((entry) => entry?.path ?? entry).filter(Boolean);
   const usedPart = new Set();
@@ -524,8 +532,6 @@ export function planUpgrade({
     now,
     rand: typeof randFor === 'function' ? randFor(token, index) : undefined,
   });
-  const wcCopied = copiedFromFromWorkingCopy(workingCopy);
-
   const metaPaths = [];
   const seenFolder = new Set();
   for (const path of paths) {
@@ -581,7 +587,7 @@ export function planUpgrade({
       id = mintUnused(usedPart, mintOptsFor(part, index));
       minted = true;
       usedPart.add(id);
-      const copiedFrom = copiedFromForRow(part, id) || fallbackCopied;
+      const copiedFrom = copiedFromForRow(part, id, pathToId) || fallbackCopied;
       seenInAssembly.add(id);
       if (path && !partIdByPath[path]) partIdByPath[path] = id;
       partBindings.push({ path, id, minted, copiedFrom: copiedFrom || null });
@@ -597,7 +603,7 @@ export function planUpgrade({
     }
     usedPart.add(id);
     seenInAssembly.add(id);
-    const copiedFrom = copiedFromForRow(part, id);
+    const copiedFrom = copiedFromForRow(part, id, pathToId);
     partBindings.push({ path, id, minted, copiedFrom });
     if (minted) mintedPartIds.push(id);
     else keptPartIds.push(id);
@@ -640,11 +646,7 @@ export function planUpgrade({
       if (part.position) row.position = part.position;
       if (part.placement) row.placement = part.placement;
       if (part.sheetMetal) row.sheetMetal = part.sheetMetal;
-      const copied = bound.copiedFrom
-        || asV2Id(part.copiedFrom)
-        || (bound.path && wcCopied.byPath.get(bound.path))
-        || wcCopied.byId.get(bound.id)
-        || wcCopied.byId.get(asV2Id(part.id));
+      const copied = bound.copiedFrom || copiedFromForRow(part, bound.id, pathToId);
       if (copied && copied !== bound.id) row.copiedFrom = copied;
       nextParts.push(row);
 
@@ -951,6 +953,21 @@ export function mapWorkingCopyToPlan(plan, workingCopy) {
   };
 }
 
+function jsonWithoutPartCopiedFrom(text) {
+  if (typeof text !== 'string') return text;
+  try {
+    const obj = JSON.parse(text);
+    if (Array.isArray(obj?.parts)) {
+      for (const part of obj.parts) {
+        if (part && typeof part === 'object') delete part.copiedFrom;
+      }
+    }
+    return JSON.stringify(obj);
+  } catch {
+    return text;
+  }
+}
+
 function assemblyJsonFromPlan(plan, assemblyId) {
   if (!assemblyId) return null;
   try {
@@ -966,6 +983,8 @@ function assemblyJsonFromPlan(plan, assemblyId) {
  * TEMPORARY: PR 7 replaces this with planSave against AssemblyCommit.
  * Second commit only: WC edits relative to the v2 bytes from commit 1.
  * Never used for the Upgrade commit. Writes only files whose bytes differ.
+ * `copiedFrom`-only differences in `.surf.json` are ignored so a collapse
+ * tag does not rewrite the assembly on commit 2.
  */
 export function planWorkingCopyFollowup(plan, workingCopy) {
   if (!workingCopy?.dirty || !workingCopy?.doc || !plan?.writes) return [];
@@ -1024,7 +1043,10 @@ export function planWorkingCopyFollowup(plan, workingCopy) {
 
   const out = [];
   const asmPath = assemblyIdPath(assemblyId);
-  if (jsonText !== plan.writes[asmPath]) out.push(fileWrite(asmPath, jsonText));
+  const prevText = plan.writes[asmPath];
+  if (jsonWithoutPartCopiedFrom(jsonText) !== jsonWithoutPartCopiedFrom(prevText)) {
+    out.push(fileWrite(asmPath, jsonText));
+  }
 
   for (const part of parts) {
     const script = scripts[part.id];
