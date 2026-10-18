@@ -130,13 +130,6 @@ function splitSurfHeader(script) {
   };
 }
 
-/** First line is a `// @surf-id` comment, including a bare marker with no id. */
-function isSurfIdCommentStart(text) {
-  if (!text.startsWith('// @surf-id')) return false;
-  const next = text.slice('// @surf-id'.length);
-  return !next || next[0] === ' ' || next[0] === '\t' || next[0] === '\n' || next[0] === '\r';
-}
-
 /** Id from the first line, or null when the header is missing or invalid. */
 export function readSurfId(script) {
   return splitSurfHeader(script)?.id || null;
@@ -170,18 +163,17 @@ export function headerLineEnding(script) {
 }
 
 /**
- * First line is `// @surf-id <id>`. Replaces an existing header and keeps
- * the trailing spaces and the original line ending. Bytes after that line stay.
+ * First line is `// @surf-id <id>`. Replaces an existing *valid* header and
+ * keeps the trailing spaces and the original line ending. Bytes after that
+ * line stay. An invalid or bare `// @surf-id` line is stacked (a new header
+ * is prepended) so flag-off callers never drop user text on that line.
+ * Upgrade restamps invalid/bare headers itself.
  */
 export function withSurfId(script, id) {
   if (!isSurfId(id)) throw new Error(`Bad surf id: ${id}`);
   const split = splitSurfHeader(script);
   if (split) return `// @surf-id ${id}${split.trailing}${split.ending}${split.body}`;
   const text = String(script ?? '');
-  if (isSurfIdCommentStart(text)) {
-    const leading = splitLeadingSurfComment(text);
-    return `// @surf-id ${id}${leading.surf?.ending ?? ''}${leading.rest}`;
-  }
   const sep = text.length && !text.startsWith('\n') && !text.startsWith('\r') ? '\n' : '';
   return `// @surf-id ${id}${sep}${text}`;
 }
@@ -200,7 +192,11 @@ function splitLeadingSurfComment(script) {
       rest: valid.body,
     };
   }
-  if (!isSurfIdCommentStart(text)) return { surf: null, prefix: '', rest: text };
+  // Flag-off (dc0e2764): only a `// @surf-id ` line (space after the marker)
+  // is a leading surf comment. A bare `// @surf-id` newline is ordinary text
+  // so `readSurfName` / `withSurfName` do not skip it. Upgrade rewrites
+  // invalid/bare headers itself.
+  if (!text.startsWith('// @surf-id ')) return { surf: null, prefix: '', rest: text };
   const br = firstLineBreak(text);
   if (!br) return { surf: { ending: '' }, prefix: text, rest: '' };
   return {

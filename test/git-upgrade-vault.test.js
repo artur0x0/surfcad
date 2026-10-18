@@ -15,11 +15,13 @@ import {
   withSurfId,
   readSurfId,
   readSurfName,
+  partSurfId,
 } from '../src/utils/git/surfId.js';
 import { validateSurfJson } from '../src/utils/git/surfJson.js';
 import { assemblyIdPath, partIdPath, partMeshIdPath } from '../src/utils/git/idPaths.js';
 import { parseBranchTip, parseAssemblyCommit } from '../src/utils/git/lastCommit.js';
-import { validateSurfJsonV2 } from '../src/utils/git/surfJsonV2.js';
+import { stringifySurfJsonV2, validateSurfJsonV2 } from '../src/utils/git/surfJsonV2.js';
+import { partRepoPath } from '../src/utils/git/partIdentity.js';
 import {
   detectVaultLayout,
   executeUpgrade,
@@ -28,6 +30,15 @@ import {
   planUpgrade,
   planWorkingCopyFollowup,
   mapWorkingCopyToPlan,
+  mapWorkingCopyToV2Tip,
+  adoptUpgradeWorkingCopy,
+  upgradePersistIncomplete,
+  orphanUpgradeScriptIds,
+  rollbackFailedUpgradeDocSave,
+  workingCopyUnpersistedResult,
+  workingCopyUnmappedResult,
+  workingCopyMatchesVaultTip,
+  WORKING_COPY_UNPERSISTED_HINT,
   applyUpgradeReload,
   isKnownReadmeSeed,
   openLegacyAssembly,
@@ -35,7 +46,8 @@ import {
 } from '../src/utils/git/legacyVault/index.js';
 import { upgradeVaultEnabled, UPGRADE_UNAVAILABLE } from '../src/utils/git/upgradeVaultEnabled.js';
 import { isUpgradeWorkingCopyDirty } from '../src/utils/git/gitWorkspace.js';
-import { replaceScriptKeys } from '../src/utils/git/wcIdentity.js';
+import { persistCollapsedWorkingCopy } from '../src/utils/git/wcIdentity.js';
+import { rewriteFeaStudyPartIds } from '../src/utils/git/feaStudyIds.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const NOW = new Date('2026-10-18T12:00:00.000Z');
@@ -89,6 +101,7 @@ const SCENARIO_L_PIN_ID = mintSurfId({ now: new Date('2026-10-18T00:00:02.000Z')
 const SCENARIO_L_COPY_ID = mintSurfId({ now: NOW, rand: 'c0c1' });
 const SCENARIO_L_JOINT_ID = mintSurfId({ now: NOW, rand: 'j01a' });
 const SCENARIO_L_BLOCK_ID = mintSurfId({ now: NOW, rand: 'b10c' });
+const LOCAL_BLOCK_ID = mintSurfId({ now: NOW, rand: 'add1' });
 const BLOCK_PATH = 'parts/Block.js';
 const A3_COPY_PATH = 'assemblies/A3/Copy.js';
 const DELETED_ID = mintSurfId({ now: NOW, rand: 'de1e' });
@@ -1078,6 +1091,39 @@ test('empty or invalid @surf-id headers restamp without stacking', async () => {
     assert.equal(readSurfId(text), part.id);
     assert.equal(text.startsWith(`// @surf-id ${part.id}\n`), true);
   }
+});
+
+test('Upgrade restamp keeps extra text on an invalid @surf-id line', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const raw = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Box',
+    activeId: BOGUS_HEADER_PATH,
+    parts: [
+      { path: BOGUS_HEADER_PATH, name: 'Bogus', visible: true, order: 0 },
+    ],
+  };
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed invalid header with extra text',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Box/.surf.json', `${JSON.stringify(raw, null, 2)}\n`),
+      fileWrite(BOGUS_HEADER_PATH, '// @surf-id not-an-id keep this\nreturn "bogus";\n'),
+    ],
+  });
+  const store = await storeFor(vault.repo, { Box: BOX_ID });
+  const result = await executeUpgrade(upgradeOpts(gh, vault.repo, { store }));
+  assert.equal(result.status, 'upgraded');
+  const box = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(BOX_ID)));
+  const text = await readText(gh, vault.repo, partIdPath(box.parts[0].id));
+  assert.equal((text.match(/\/\/ @surf-id/g) || []).length, 1);
+  assert.equal(readSurfId(text), box.parts[0].id);
+  assert.equal(text.includes('keep this'), true, 'extra text on the invalid header line must survive');
+  assert.equal(text.includes('not-an-id'), false);
+  assert.match(text, /return "bogus"/);
 });
 
 test('explicit row id beats the same file\'s header-only id (G1)', async () => {
@@ -2275,83 +2321,40 @@ test('upgradeVaultEnabled is off in prod even with VITE_ or localStorage', () =>
   assert.equal(typeof UPGRADE_UNAVAILABLE.hint, 'string');
 });
 
-test('App Upgrade re-key uses verified replaceScriptKeys', () => {
+test('App Upgrade re-key uses persistCollapsedWorkingCopy after an IDB snapshot', () => {
   const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const persistHelper = app.slice(
+    app.indexOf('const persistUpgradeWorkingCopy'),
+    app.indexOf('const handleUpgradeVault'),
+  );
+  assert.match(persistHelper, /persistCollapsedWorkingCopy\(/);
+  assert.match(persistHelper, /heldScripts: sourceScripts/);
+  assert.match(persistHelper, /saveDoc: saveAssemblyDocument/);
+  assert.match(persistHelper, /load: loadPartScript/);
+  assert.match(persistHelper, /rollbackFailedUpgradeDocSave/);
   const upgrade = app.slice(
     app.indexOf('const handleUpgradeVault'),
     app.indexOf('const handleUpgradeConflict'),
   );
-  assert.match(upgrade, /pairs: rekeyPairs/);
-  assert.match(upgrade, /heldScripts: \{ \.\.\.partScriptsRef\.current \}/);
-  assert.match(upgrade, /load: loadPartScript/);
-  assert.match(upgrade, /save: \(id, script\) => savePartScript\(id, script\)/);
+  assert.match(upgrade, /loadAssemblyDocumentStatus\(/);
+  assert.match(upgrade, /loadPartScripts\(snapshotIds\)/);
+  assert.ok(upgrade.indexOf('loadAssemblyDocumentStatus') < upgrade.indexOf('executeUpgrade'));
+  assert.match(upgrade, /persistUpgradeWorkingCopy\(/);
+  assert.match(upgrade, /adoptUpgradeWorkingCopy\(/);
+  assert.match(upgrade, /workingCopyUnpersistedResult/);
+  assert.equal(/replaceScriptKeys/.test(upgrade), false);
+  assert.match(upgrade, /already_upgraded/);
+  assert.match(upgrade, /journalPairs/);
   const conflict = app.slice(
     app.indexOf('const handleUpgradeConflict'),
     app.indexOf('const absorbOverwriteFiles'),
   );
-  assert.match(conflict, /pairs: \[\]/);
-  assert.match(conflict, /heldScripts: \{ \.\.\.partScriptsRef\.current \}/);
-  assert.match(conflict, /load: loadPartScript/);
-  assert.match(conflict, /save: \(id, script\) => savePartScript\(id, script\)/);
-});
-
-test('Upgrade re-key verifies writes before deleting from', async () => {
-  const from = PIN_ID;
-  const to = COPY_ID;
-  const store = new Map([[from, 'old pin']]);
-  const order = [];
-  const heldScripts = { [from]: 'old pin' };
-  // Same shape as handleUpgradeVault after executeUpgrade returns rekey.
-  await replaceScriptKeys({
-    nextScripts: { [to]: 'new copy' },
-    staleIds: [from],
-    pairs: [{ from, to }],
-    heldScripts,
-    save: (id, script) => {
-      order.push(['save', id]);
-      store.set(id, script);
-      return true;
-    },
-    load: (id) => store.get(id),
-    remove: (id) => {
-      order.push(['delete', id]);
-      store.delete(id);
-    },
-  });
-  assert.deepEqual(order[0], ['save', to]);
-  assert.ok(order.findIndex((step) => step[0] === 'delete' && step[1] === from) > 0);
-  assert.equal(store.get(to), 'new copy');
-  assert.equal(store.has(from), false);
-
-  const kept = new Map([[from, 'old pin']]);
-  await replaceScriptKeys({
-    nextScripts: { [to]: 'new copy' },
-    staleIds: [from],
-    pairs: [{ from, to }],
-    heldScripts: { [from]: 'old pin' },
-    save: async () => false,
-    load: (id) => kept.get(id),
-    remove: (id) => { kept.delete(id); },
-  });
-  assert.equal(kept.has(from), true, 'unverified to must not delete from');
-  assert.equal(kept.has(to), false);
-
-  const live = new Map([[from, 'old pin']]);
-  await replaceScriptKeys({
-    nextScripts: { [to]: 'new copy' },
-    staleIds: [from],
-    pairs: [{ from, to }],
-    heldScripts: { [from]: 'old pin' },
-    save: (id, script) => {
-      live.set(id, script);
-      if (id === to && script === 'new copy') live.set(from, 'typed during upgrade');
-      return true;
-    },
-    load: (id) => live.get(id),
-    remove: (id) => { live.delete(id); },
-  });
-  assert.equal(live.get(to), 'typed during upgrade');
-  assert.equal(live.has(from), false);
+  assert.match(conflict, /persistUpgradeWorkingCopy\(/);
+  assert.match(conflict, /persistConflictWorkingCopy/);
+  assert.equal(/replaceScriptKeys/.test(conflict), false);
+  assert.match(conflict, /action === 'overwrite'|status === 'committed'/);
+  assert.match(conflict, /status === 'reloaded'/);
+  assert.match(conflict, /status === 'branched'/);
 });
 
 test('handleUpgradeVault uses isUpgradeWorkingCopyDirty vs the open baseline', () => {
@@ -2368,11 +2371,10 @@ test('already_upgraded does not mark a dirty working copy clean', () => {
   const end = app.indexOf('const handleUpgradeConflict', start);
   const slice = app.slice(start, end);
   assert.match(slice, /result\.status === 'already_upgraded'/);
-  const adopt = slice.slice(slice.indexOf("result.status === 'already_upgraded'"));
-  const adoptedBlock = adopt.slice(0, adopt.indexOf('const adopted'));
-  assert.equal(/clearWorkingCopySidecar/.test(adoptedBlock), false);
-  assert.equal(/captureBaseline/.test(adoptedBlock), false);
-  assert.match(adoptedBlock, /return result/);
+  assert.match(slice, /result\.status !== 'already_upgraded' \|\| !dirty/);
+  const recapture = slice.slice(slice.indexOf('const recapture'));
+  const recaptureBlock = recapture.slice(0, recapture.indexOf('} else if'));
+  assert.match(recaptureBlock, /already_upgraded' \|\| !dirty/);
 });
 
 test('v2 vault refuses leftover v1 writers and leaves the outbox unflushed', () => {
@@ -2506,5 +2508,1004 @@ test('mapWorkingCopyToPlan uses the plan path map, not WC header ids', () => {
   });
   assert.equal(mapped.ok, false);
   assert.equal(mapped.code, 'working_copy_unmapped');
+});
+
+test('executeUpgrade does not pass workingCopy to planUpgrade', () => {
+  const text = readFileSync(join(ROOT, 'src/utils/git/legacyVault/upgrade.js'), 'utf8');
+  const call = text.slice(text.indexOf('plan = planUpgrade({'), text.indexOf('});', text.indexOf('plan = planUpgrade({')) + 2);
+  assert.equal(/workingCopy/.test(call), false);
+});
+
+function studyBlock(partId) {
+  return `// --- fea-study begin ---\n// @fea-study ${JSON.stringify({
+    fixtures: [{ faces: [{ part: partId, faceID: 0, at: [0, 0, 0], n: [0, 0, 1], area: 1 }] }],
+    contacts: [{ a: { part: partId }, b: { part: partId } }],
+    scope: { ids: [partId] },
+    parts: [{ id: partId }],
+  })}\n// --- fea-study end ---\n`;
+}
+
+test('mapWorkingCopyToPlan rewrites studies and copiedFrom from the plan', () => {
+  const planJson = {
+    format: 'surfcad.assembly',
+    version: 2,
+    id: BOX_ID,
+    name: 'Box',
+    parts: [
+      { id: PIN_ID, name: 'Pin' },
+      { id: COPY_ID, name: 'Copy', copiedFrom: PIN_ID },
+    ],
+  };
+  const plan = {
+    partIdByPath: { [PIN_PATH]: PIN_ID, [PIN_COPY_PATH]: COPY_ID },
+    keptPartIds: [PIN_ID],
+    mintedPartIds: [COPY_ID],
+    folderToId: { Box: BOX_ID },
+    writes: { [assemblyIdPath(BOX_ID)]: `${JSON.stringify(planJson)}\n` },
+  };
+  const wcCopyId = mintSurfId({ now: NOW, rand: 'wcc0' });
+  const script = `return "copy";\n${studyBlock(wcCopyId)}`;
+  const mapped = mapWorkingCopyToPlan(plan, {
+    doc: {
+      id: BOX_ID,
+      name: 'Box',
+      parts: [
+        { id: PIN_ID, path: PIN_PATH, name: 'Pin' },
+        { id: wcCopyId, path: PIN_COPY_PATH, name: 'Copy', copiedFrom: wcCopyId },
+      ],
+      groups: [{ id: GROUP_ID, partIds: [PIN_ID, wcCopyId] }],
+      colors: { [wcCopyId]: { part: '#cc0000' } },
+      joints: [{ id: SCENARIO_L_JOINT_ID, a: { part: wcCopyId } }],
+    },
+    scripts: {
+      [PIN_ID]: 'return "pin";\n',
+      [wcCopyId]: script,
+    },
+  });
+  assert.equal(mapped.ok, true);
+  const copy = mapped.doc.parts.find((part) => part.name === 'Copy');
+  assert.equal(copy.id, COPY_ID);
+  assert.equal(copy.copiedFrom, PIN_ID);
+  assert.deepEqual(mapped.doc.groups[0].partIds, [PIN_ID, COPY_ID]);
+  assert.equal(mapped.doc.colors[COPY_ID].part, '#cc0000');
+  assert.equal(mapped.doc.joints[0].a.part, COPY_ID);
+  const rewritten = rewriteFeaStudyPartIds(mapped.scripts[COPY_ID], new Map([[wcCopyId, COPY_ID]]));
+  assert.equal(rewritten, mapped.scripts[COPY_ID]);
+  assert.equal(mapped.scripts[COPY_ID].includes(wcCopyId), false);
+  assert.equal(mapped.scripts[COPY_ID].includes(COPY_ID), true);
+  assert.equal(readSurfId(mapped.scripts[COPY_ID]), COPY_ID);
+});
+
+async function persistUpgradeRekey({
+  nextDoc,
+  nextScripts,
+  pairs,
+  sourceDoc,
+  sourceScripts,
+  save,
+  load,
+  remove,
+  saveDoc,
+  apply,
+}) {
+  return persistCollapsedWorkingCopy({
+    collapsed: { doc: nextDoc, scripts: nextScripts, pairs },
+    sourceDoc,
+    sourceScripts,
+    heldScripts: sourceScripts,
+    save,
+    load,
+    remove,
+    saveDoc,
+    apply,
+  });
+}
+
+function cloneDoc(doc) {
+  return JSON.parse(JSON.stringify(doc));
+}
+
+/** Same as App.jsx vault-open: remember each WC row's surf id at its path. */
+async function seedAppPathIndex(store, repo, doc) {
+  for (const part of doc?.parts || []) {
+    const sid = partSurfId(part);
+    const path = partRepoPath(part);
+    if (sid && path) await store.rememberPathId(repo, path, sid);
+  }
+}
+
+function f1AppOpenDoc() {
+  return {
+    id: BOX_ID,
+    name: 'Box',
+    source: 'git',
+    vaultLayout: 'legacy',
+    activeId: SCENARIO_L_PIN_ID,
+    parts: [
+      {
+        id: SCENARIO_L_PIN_ID,
+        path: PIN_COPY_SCENARIO_PATH,
+        name: 'Pin copy',
+        visible: true,
+        order: 0,
+      },
+      {
+        id: F1_PIN_MINTED_ID,
+        path: PIN_PATH,
+        name: 'Pin',
+        visible: true,
+        order: 1,
+        copiedFrom: SCENARIO_L_PIN_ID,
+      },
+    ],
+  };
+}
+
+function f1AppOpenScripts() {
+  return {
+    [SCENARIO_L_PIN_ID]: withSurfId('return "pin-copy";\n', SCENARIO_L_PIN_ID),
+    [F1_PIN_MINTED_ID]: withSurfId('return "pin";\n', F1_PIN_MINTED_ID),
+  };
+}
+
+async function seedF1AppOpenHost() {
+  const env = await seedF1BoxVault();
+  const sourceDoc = f1AppOpenDoc();
+  const sourceScripts = f1AppOpenScripts();
+  await seedAppPathIndex(env.store, env.repo, sourceDoc);
+  env.workingCopy = { dirty: false, doc: sourceDoc, scripts: sourceScripts };
+  env.ctx = {
+    idb: new Map(Object.entries(sourceScripts)),
+    savedDoc: cloneDoc(sourceDoc),
+    memory: { doc: cloneDoc(sourceDoc), scripts: { ...sourceScripts } },
+    journal: [],
+    idbOps: 0,
+    baseline: null,
+  };
+  return env;
+}
+
+async function seedF1BoxVault() {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const raw = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Box',
+    activeId: PIN_COPY_SCENARIO_PATH,
+    parts: [
+      { id: SCENARIO_L_PIN_ID, path: PIN_COPY_SCENARIO_PATH, name: 'Pin copy', visible: true, order: 0 },
+      { path: PIN_PATH, name: 'Pin', visible: true, order: 1 },
+    ],
+  };
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed F1 for WC rekey persist',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Box/.surf.json', `${JSON.stringify(raw, null, 2)}\n`),
+      fileWrite(PIN_PATH, withSurfId('return "pin";\n', SCENARIO_L_PIN_ID)),
+      fileWrite(PIN_COPY_SCENARIO_PATH, withSurfId('return "pin-copy";\n', SCENARIO_L_PIN_ID)),
+    ],
+  });
+  const store = await storeFor(vault.repo, { Box: BOX_ID });
+  const sourceDoc = {
+    id: BOX_ID,
+    name: 'Box',
+    source: 'git',
+    activeId: SCENARIO_L_PIN_ID,
+    parts: [
+      { id: SCENARIO_L_PIN_ID, path: PIN_COPY_SCENARIO_PATH, name: 'Pin copy', visible: true, order: 0 },
+      { id: PIN_PATH, path: PIN_PATH, name: 'Pin', visible: true, order: 1 },
+    ],
+  };
+  const sourceScripts = {
+    [SCENARIO_L_PIN_ID]: withSurfId('return "pin-copy";\n', SCENARIO_L_PIN_ID),
+    [PIN_PATH]: withSurfId('return "pin";\n', SCENARIO_L_PIN_ID),
+  };
+  return {
+    gh,
+    repo: vault.repo,
+    store,
+    workingCopy: { dirty: false, doc: sourceDoc, scripts: sourceScripts },
+    ctx: {
+      idb: new Map(Object.entries(sourceScripts)),
+      savedDoc: cloneDoc(sourceDoc),
+      memory: { doc: cloneDoc(sourceDoc), scripts: { ...sourceScripts } },
+      journal: [],
+    },
+  };
+}
+
+async function seedTwoMintHost() {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const raw = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Box',
+    activeId: PIN_PATH,
+    parts: [
+      { path: PIN_PATH, name: 'Pin', visible: true, order: 0 },
+      { path: BLOCK_PATH, name: 'Block', visible: true, order: 1 },
+    ],
+  };
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed two minted WC rows',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Box/.surf.json', `${JSON.stringify(raw, null, 2)}\n`),
+      fileWrite(PIN_PATH, 'return "pin";\n'),
+      fileWrite(BLOCK_PATH, 'return "block";\n'),
+    ],
+  });
+  const store = await storeFor(vault.repo, { Box: BOX_ID });
+  const sourceDoc = {
+    id: BOX_ID,
+    name: 'Box',
+    source: 'git',
+    activeId: PIN_PATH,
+    parts: [
+      { id: PIN_PATH, path: PIN_PATH, name: 'Pin', visible: true, order: 0 },
+      { id: BLOCK_PATH, path: BLOCK_PATH, name: 'Block', visible: true, order: 1 },
+    ],
+  };
+  const sourceScripts = {
+    [PIN_PATH]: 'return "pin";\n',
+    [BLOCK_PATH]: 'return "block";\n',
+  };
+  return {
+    gh,
+    repo: vault.repo,
+    store,
+    workingCopy: { dirty: false, doc: sourceDoc, scripts: sourceScripts },
+    ctx: {
+      idb: new Map(Object.entries(sourceScripts)),
+      savedDoc: cloneDoc(sourceDoc),
+      memory: { doc: cloneDoc(sourceDoc), scripts: { ...sourceScripts } },
+      journal: [],
+    },
+    minted: { pin: F1_PIN_MINTED_ID, block: SCENARIO_L_BLOCK_ID },
+  };
+}
+
+async function hostUpgradeOnce(env, {
+  failPutFor = new Set(),
+  saveDocFails = false,
+  saveDocThrows = false,
+  crashAfter,
+} = {}) {
+  const workingCopy = {
+    ...env.workingCopy,
+    doc: env.ctx.memory.doc,
+    scripts: env.ctx.memory.scripts,
+  };
+  const snapshotDoc = cloneDoc(env.ctx.savedDoc);
+  const snapshotScripts = Object.fromEntries(env.ctx.idb);
+  const memoryIds = (env.ctx.memory.doc?.parts || []).map((part) => part.id).filter(Boolean);
+  for (const id of memoryIds) {
+    if (typeof env.ctx.memory.scripts[id] === 'string' && !snapshotScripts[id]) {
+      snapshotScripts[id] = env.ctx.memory.scripts[id];
+    }
+  }
+  env.ctx.idbOps = 0;
+  const restoreIdb = async (id, bytes) => {
+    env.ctx.idbOps += 1;
+    env.ctx.idb.set(id, bytes);
+  };
+  const removeIdb = async (id) => {
+    env.ctx.idbOps += 1;
+    env.ctx.idb.delete(id);
+  };
+  const result = await executeUpgrade(upgradeOpts(env.gh, env.repo, {
+    store: env.store,
+    workingCopy,
+  }));
+  const adopted = await adoptUpgradeWorkingCopy({
+    result,
+    workingCopy,
+    adapter: env.gh,
+    repo: env.repo,
+    branch: 'main',
+    store: env.store,
+    sourceDoc: snapshotDoc,
+    journalPairs: env.ctx.journal,
+    persist: async ({ nextDoc, nextScripts, pairs }) => {
+      const persisted = await persistCollapsedWorkingCopy({
+        collapsed: { doc: nextDoc, scripts: nextScripts, pairs },
+        sourceDoc: snapshotDoc,
+        sourceScripts: snapshotScripts,
+        heldScripts: snapshotScripts,
+        save: async (id, script) => {
+          env.ctx.idbOps += 1;
+          if (failPutFor.has(id)) return false;
+          env.ctx.idb.set(id, script);
+          return true;
+        },
+        load: async (id) => env.ctx.idb.get(id),
+        remove: async (id) => { await removeIdb(id); },
+        saveDoc: async (doc) => {
+          if (saveDocThrows) throw new Error('saveDoc boom');
+          if (saveDocFails) return null;
+          env.ctx.savedDoc = cloneDoc(doc);
+          return doc;
+        },
+        apply: ({ doc, scripts }) => {
+          env.ctx.memory.doc = cloneDoc(doc);
+          env.ctx.memory.scripts = { ...scripts };
+        },
+        saveJournal: async (journal) => {
+          env.ctx.journal = Array.isArray(journal?.pairs) ? journal.pairs.map((row) => ({ ...row })) : [];
+        },
+        clearJournal: async () => { env.ctx.journal = []; },
+        crashAfter,
+      });
+      await rollbackFailedUpgradeDocSave(persisted, {
+        sourceDoc: snapshotDoc,
+        restore: restoreIdb,
+        remove: removeIdb,
+      });
+      return persisted;
+    },
+    restoreScripts: restoreIdb,
+    removeOrphans: async (ids) => {
+      for (const id of ids || []) await removeIdb(id);
+    },
+  });
+  if (adopted.status === 'ok' && adopted.persisted) {
+    env.ctx.memory.doc = cloneDoc(adopted.persisted.doc);
+    env.ctx.memory.scripts = { ...adopted.persisted.scripts };
+    env.ctx.savedDoc = cloneDoc(adopted.persisted.doc);
+    env.ctx.baseline = {
+      doc: cloneDoc(adopted.persisted.doc),
+      scripts: { ...adopted.persisted.scripts },
+    };
+  }
+  return { result, adopted };
+}
+
+async function assertHostWcBytesEqualVault(env, { assemblyId = BOX_ID } = {}) {
+  const vaultJson = await readText(env.gh, env.repo, assemblyIdPath(assemblyId));
+  assert.equal(stringifySurfJsonV2(env.ctx.memory.doc), vaultJson);
+  assert.equal(stringifySurfJsonV2(env.ctx.savedDoc), vaultJson);
+  const box = JSON.parse(vaultJson);
+  const vaultIds = box.parts.map((part) => part.id).sort();
+  assert.deepEqual([...env.ctx.memory.doc.parts.map((part) => part.id)].sort(), vaultIds);
+  assert.deepEqual([...env.ctx.idb.keys()].sort(), vaultIds);
+  assert.equal(workingCopyMatchesVaultTip(
+    env.ctx.memory.doc,
+    env.ctx.memory.scripts,
+    { assemblyText: vaultJson, json: box, partScripts: Object.fromEntries(await Promise.all(
+      box.parts.map(async (part) => [part.id, await readText(env.gh, env.repo, partIdPath(part.id))]),
+    )) },
+  ), true);
+  for (const part of box.parts) {
+    const vaultScript = await readText(env.gh, env.repo, partIdPath(part.id));
+    assert.equal(env.ctx.idb.get(part.id), vaultScript, `${part.name} IDB script`);
+    assert.equal(env.ctx.memory.scripts[part.id], vaultScript, `${part.name} memory script`);
+    assert.equal(readSurfName(vaultScript), part.name);
+  }
+}
+
+async function assertHostWcEqualsVault(env, { pinId, copyId, pinName = 'Pin', copyName = 'Pin copy' } = {}) {
+  const box = JSON.parse(await readText(env.gh, env.repo, assemblyIdPath(BOX_ID)));
+  const byName = Object.fromEntries(box.parts.map((part) => [part.name, part]));
+  const pin = env.ctx.memory.doc.parts.find((part) => part.name === pinName);
+  const copy = env.ctx.memory.doc.parts.find((part) => part.name === copyName);
+  assert.equal(pin.id, pinId || byName[pinName].id);
+  if (copyName) assert.equal(copy.id, copyId || byName[copyName].id);
+  const vaultIds = box.parts.map((part) => part.id).sort();
+  assert.deepEqual([...env.ctx.memory.doc.parts.map((part) => part.id)].sort(), vaultIds);
+  assert.deepEqual([...env.ctx.idb.keys()].sort(), vaultIds);
+  for (const id of vaultIds) {
+    assert.equal(readSurfId(env.ctx.idb.get(id)), id);
+    assert.equal(readSurfId(env.ctx.memory.scripts[id]), id);
+  }
+}
+
+test('clean Upgrade rekey maps F1 WC ids onto vault minted ids', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const raw = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Box',
+    activeId: PIN_COPY_SCENARIO_PATH,
+    parts: [
+      { id: SCENARIO_L_PIN_ID, path: PIN_COPY_SCENARIO_PATH, name: 'Pin copy', visible: true, order: 0 },
+      { path: PIN_PATH, name: 'Pin', visible: true, order: 1 },
+    ],
+  };
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed F1 for WC rekey',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Box/.surf.json', `${JSON.stringify(raw, null, 2)}\n`),
+      fileWrite(PIN_PATH, withSurfId('return "pin";\n', SCENARIO_L_PIN_ID)),
+      fileWrite(PIN_COPY_SCENARIO_PATH, withSurfId('return "pin-copy";\n', SCENARIO_L_PIN_ID)),
+    ],
+  });
+  const store = await storeFor(vault.repo, { Box: BOX_ID });
+  const result = await executeUpgrade(upgradeOpts(gh, vault.repo, {
+    store,
+    workingCopy: {
+      dirty: false,
+      doc: {
+        id: BOX_ID,
+        name: 'Box',
+        activeId: SCENARIO_L_PIN_ID,
+        parts: [
+          { id: SCENARIO_L_PIN_ID, path: PIN_COPY_SCENARIO_PATH, name: 'Pin copy', visible: true, order: 0 },
+          { id: PIN_PATH, path: PIN_PATH, name: 'Pin', visible: true, order: 1 },
+        ],
+      },
+      scripts: {
+        [SCENARIO_L_PIN_ID]: withSurfId('return "pin-copy";\n', SCENARIO_L_PIN_ID),
+        [PIN_PATH]: withSurfId('return "pin";\n', SCENARIO_L_PIN_ID),
+      },
+    },
+  }));
+  assert.equal(result.status, 'upgraded');
+  assert.equal(result.commits, 1);
+  const copy = result.rekey.doc.parts.find((part) => part.name === 'Pin copy');
+  const pin = result.rekey.doc.parts.find((part) => part.name === 'Pin');
+  assert.equal(copy.id, SCENARIO_L_PIN_ID);
+  assert.equal(pin.id, F1_PIN_MINTED_ID);
+  assert.equal(readSurfId(result.rekey.scripts[copy.id]), SCENARIO_L_PIN_ID);
+  assert.equal(readSurfId(result.rekey.scripts[pin.id]), F1_PIN_MINTED_ID);
+  const sourceScripts = {
+    [SCENARIO_L_PIN_ID]: withSurfId('return "pin-copy";\n', SCENARIO_L_PIN_ID),
+    [PIN_PATH]: withSurfId('return "pin";\n', SCENARIO_L_PIN_ID),
+  };
+  const idb = new Map(Object.entries(sourceScripts));
+  let savedDoc = {
+    parts: [
+      { id: SCENARIO_L_PIN_ID, name: 'Pin copy' },
+      { id: PIN_PATH, name: 'Pin' },
+    ],
+  };
+  const persisted = await persistUpgradeRekey({
+    nextDoc: result.rekey.doc,
+    nextScripts: result.rekey.scripts,
+    pairs: result.rekey.pairs,
+    sourceDoc: savedDoc,
+    sourceScripts: Object.fromEntries(idb),
+    save: async (id, script) => { idb.set(id, script); return true; },
+    load: async (id) => idb.get(id),
+    remove: async (id) => { idb.delete(id); },
+    saveDoc: async (doc) => { savedDoc = doc; return doc; },
+  });
+  assert.equal(persisted.docSaved, true);
+  assert.equal(persisted.doc.parts.find((part) => part.name === 'Pin copy').id, SCENARIO_L_PIN_ID);
+  assert.equal(persisted.doc.parts.find((part) => part.name === 'Pin').id, F1_PIN_MINTED_ID);
+  assert.equal(idb.get(SCENARIO_L_PIN_ID) != null, true);
+  assert.equal(idb.get(F1_PIN_MINTED_ID) != null, true);
+  assert.equal(idb.has(PIN_PATH), false);
+});
+
+test('dirty Upgrade persist writes new keys before deleting from', async () => {
+  const from = PIN_ID;
+  const to = COPY_ID;
+  const idb = new Map([[from, 'old pin']]);
+  const order = [];
+  let savedDoc = { parts: [{ id: from, name: 'Pin' }] };
+  const persisted = await persistUpgradeRekey({
+    nextDoc: { parts: [{ id: to, name: 'Copy' }], activeId: to },
+    nextScripts: { [to]: 'new copy' },
+    pairs: [{ from, to }],
+    sourceDoc: savedDoc,
+    sourceScripts: { [from]: 'old pin' },
+    save: async (id, script) => {
+      order.push(['save', id]);
+      idb.set(id, script);
+      return true;
+    },
+    load: async (id) => idb.get(id),
+    remove: async (id) => {
+      order.push(['delete', id]);
+      idb.delete(id);
+    },
+    saveDoc: async (doc) => {
+      order.push(['saveDoc']);
+      savedDoc = doc;
+      return doc;
+    },
+  });
+  assert.equal(persisted.docSaved, true);
+  assert.deepEqual(order[0], ['save', to]);
+  const saveDocAt = order.findIndex((step) => step[0] === 'saveDoc');
+  const deleteAt = order.findIndex((step) => step[0] === 'delete' && step[1] === from);
+  assert.ok(saveDocAt > 0, 'saveDoc must run after putting the new key');
+  assert.ok(deleteAt > saveDocAt, 'from is deleted only after saveDoc');
+  assert.equal(idb.get(to), 'new copy');
+  assert.equal(idb.has(from), false);
+  assert.equal(savedDoc.parts[0].id, to);
+});
+
+test('failed putVerified leaves the old Upgrade WC', async () => {
+  const from = PIN_ID;
+  const to = COPY_ID;
+  const idb = new Map([[from, 'old pin']]);
+  let savedDoc = { parts: [{ id: from, name: 'Pin' }], activeId: from };
+  const persisted = await persistUpgradeRekey({
+    nextDoc: { parts: [{ id: to, name: 'Copy' }], activeId: to },
+    nextScripts: { [to]: 'new copy' },
+    pairs: [{ from, to }],
+    sourceDoc: savedDoc,
+    sourceScripts: { [from]: 'old pin' },
+    save: async () => false,
+    load: async (id) => idb.get(id),
+    remove: async (id) => { idb.delete(id); },
+    saveDoc: async (doc) => { savedDoc = doc; return doc; },
+  });
+  assert.equal(persisted.doc.parts[0].id, from);
+  assert.equal(idb.has(from), true);
+  assert.equal(idb.has(to), false);
+});
+
+test('failed saveDoc leaves the old Upgrade WC', async () => {
+  const from = PIN_ID;
+  const to = COPY_ID;
+  const idb = new Map([[from, 'old pin']]);
+  let savedDoc = { parts: [{ id: from, name: 'Pin' }], activeId: from };
+  const memory = { doc: savedDoc, scripts: { [from]: 'old pin' } };
+  const persisted = await persistUpgradeRekey({
+    nextDoc: { parts: [{ id: to, name: 'Copy' }], activeId: to },
+    nextScripts: { [to]: 'new copy' },
+    pairs: [{ from, to }],
+    sourceDoc: savedDoc,
+    sourceScripts: { [from]: 'old pin' },
+    save: async (id, script) => { idb.set(id, script); return true; },
+    load: async (id) => idb.get(id),
+    remove: async (id) => { idb.delete(id); },
+    saveDoc: async () => null,
+    apply: ({ doc, scripts }) => {
+      memory.doc = doc;
+      memory.scripts = scripts;
+    },
+  });
+  assert.equal(persisted.docSaved, false);
+  assert.equal(persisted.doc.parts[0].id, from);
+  assert.equal(memory.doc.parts[0].id, from);
+  assert.equal(idb.get(from), 'old pin');
+});
+
+test('saveDoc fails after the Upgrade commit, then retry: WC == vault, no orphan keys, no extra git writes', async () => {
+  const env = await seedF1BoxVault();
+  const writesAfterSeed = commits(env.gh).length;
+  const first = await hostUpgradeOnce(env, { saveDocFails: true });
+  assert.equal(first.result.status, 'upgraded');
+  assert.equal(first.adopted.status, 'error');
+  assert.equal(first.adopted.result.code, 'working_copy_unpersisted');
+  assert.equal(first.adopted.result.hint, WORKING_COPY_UNPERSISTED_HINT);
+  assert.equal(commits(env.gh).length, writesAfterSeed + 1);
+  assert.equal(env.ctx.idb.has(PIN_PATH), true);
+  assert.equal(env.ctx.idb.has(F1_PIN_MINTED_ID), false, 'orphan to-key cleaned after saveDoc fail');
+  assert.equal(env.ctx.memory.doc.parts.find((part) => part.name === 'Pin').id, PIN_PATH);
+
+  const retry = await hostUpgradeOnce(env);
+  assert.equal(retry.result.status, 'already_upgraded');
+  assert.equal(retry.adopted.status, 'ok');
+  assert.equal(commits(env.gh).length, writesAfterSeed + 1, 'retry must not write git');
+  await assertHostWcEqualsVault(env, { pinId: F1_PIN_MINTED_ID, copyId: SCENARIO_L_PIN_ID });
+});
+
+test('put fails for one to-key: working_copy_unpersisted, then retry gives WC == vault', async () => {
+  const env = await seedTwoMintHost();
+  const writesAfterSeed = commits(env.gh).length;
+  const first = await hostUpgradeOnce(env, { failPutFor: new Set([env.minted.block]) });
+  assert.equal(first.result.status, 'upgraded');
+  assert.equal(first.adopted.status, 'error');
+  assert.equal(first.adopted.result.code, 'working_copy_unpersisted');
+  assert.equal(first.adopted.result.hint, WORKING_COPY_UNPERSISTED_HINT);
+  assert.equal(upgradePersistIncomplete(first.adopted.persisted), true);
+  assert.ok(first.adopted.persisted.failedFrom.size > 0);
+  const pin = env.ctx.memory.doc.parts.find((part) => part.name === 'Pin');
+  const block = env.ctx.memory.doc.parts.find((part) => part.name === 'Block');
+  assert.equal(pin.id, env.minted.pin);
+  assert.equal(block.id, BLOCK_PATH);
+  assert.equal(env.ctx.idb.has(env.minted.pin), true);
+  assert.equal(env.ctx.idb.has(env.minted.block), false);
+  assert.equal(commits(env.gh).length, writesAfterSeed + 1);
+
+  const retry = await hostUpgradeOnce(env);
+  assert.equal(retry.result.status, 'already_upgraded');
+  assert.equal(retry.adopted.status, 'ok');
+  assert.equal(commits(env.gh).length, writesAfterSeed + 1);
+  await assertHostWcEqualsVault(env, {
+    pinId: env.minted.pin,
+    copyId: env.minted.block,
+    copyName: 'Block',
+  });
+});
+
+test('crash after each persist step, then retry: WC == vault', async () => {
+  for (const step of [0, 1, 2, 3]) {
+    const env = await seedF1BoxVault();
+    const writesAfterSeed = commits(env.gh).length;
+    const first = await hostUpgradeOnce(env, { crashAfter: step });
+    assert.equal(first.result.status, 'upgraded', `crashAfter ${step}: upgrade committed`);
+    assert.equal(first.adopted.status, 'error', `crashAfter ${step}: persist incomplete`);
+    assert.equal(first.adopted.result.code, 'working_copy_unpersisted', `crashAfter ${step}`);
+    assert.equal(commits(env.gh).length, writesAfterSeed + 1, `crashAfter ${step}: no extra git write`);
+
+    const retry = await hostUpgradeOnce(env);
+    assert.equal(retry.result.status, 'already_upgraded', `crashAfter ${step}: retry is already_upgraded`);
+    assert.equal(retry.adopted.status, 'ok', `crashAfter ${step}: retry persist ok`);
+    assert.equal(commits(env.gh).length, writesAfterSeed + 1, `crashAfter ${step}: retry writes no git`);
+    await assertHostWcEqualsVault(env, { pinId: F1_PIN_MINTED_ID, copyId: SCENARIO_L_PIN_ID });
+  }
+});
+
+test('orphanUpgradeScriptIds lists unreferenced to-keys only when saveDoc failed', () => {
+  const sourceDoc = { parts: [{ id: PIN_PATH }] };
+  assert.deepEqual(orphanUpgradeScriptIds({
+    docSaved: false,
+    saved: new Set([PIN_PATH, F1_PIN_MINTED_ID]),
+  }, sourceDoc), [F1_PIN_MINTED_ID]);
+  assert.deepEqual(orphanUpgradeScriptIds({
+    docSaved: false,
+    saved: new Set([PIN_PATH]),
+    snapshot: { [PIN_PATH]: 'unstamped' },
+  }, sourceDoc), [], 'same-key snapshot writes are not orphans');
+  assert.deepEqual(orphanUpgradeScriptIds({
+    docSaved: true,
+    saved: new Set([F1_PIN_MINTED_ID]),
+    failedFrom: new Set([PIN_PATH]),
+  }, sourceDoc), []);
+  assert.equal(workingCopyUnpersistedResult().hint, WORKING_COPY_UNPERSISTED_HINT);
+  assert.equal(workingCopyUnmappedResult({ missing: ['x'] }).code, 'working_copy_unmapped');
+  assert.equal(upgradePersistIncomplete({
+    docSaved: true,
+    failedFrom: new Set(),
+    saved: new Set([SCENARIO_L_PIN_ID]),
+    scripts: {
+      [SCENARIO_L_PIN_ID]: '// @name Pin copy\n',
+      [F1_PIN_MINTED_ID]: '// @name Pin\n',
+    },
+  }), true, 'same-key put miss is incomplete');
+  assert.equal(upgradePersistIncomplete({
+    docSaved: true,
+    failedFrom: new Set(),
+    saved: new Set([SCENARIO_L_PIN_ID, F1_PIN_MINTED_ID]),
+    scripts: {
+      [SCENARIO_L_PIN_ID]: '// @name Pin copy\n',
+      [F1_PIN_MINTED_ID]: '// @name Pin\n',
+    },
+  }), false);
+});
+
+test('already_upgraded with a vault part missing from the WC is working_copy_unmapped', async () => {
+  const { gh, repo } = await seedGearboxVault();
+  const store = await storeFor(repo);
+  const first = await executeUpgrade(upgradeOpts(gh, repo, { store }));
+  assert.equal(first.status, 'upgraded');
+  const writes = commits(gh).length;
+  const workingCopy = {
+    dirty: false,
+    doc: { id: GEARBOX_ID, name: 'Gearbox', parts: [{ id: SHAFT_ID, name: 'Shaft' }] },
+    scripts: { [SHAFT_ID]: 'return 1;\n' },
+  };
+  const second = await executeUpgrade(upgradeOpts(gh, repo, { store, workingCopy }));
+  assert.equal(second.status, 'already_upgraded');
+  assert.equal(second.rekey, undefined);
+  assert.equal(commits(gh).length, writes);
+  let persisted = false;
+  const adopted = await adoptUpgradeWorkingCopy({
+    result: second,
+    workingCopy,
+    adapter: gh,
+    repo,
+    branch: 'main',
+    store,
+    persist: async () => {
+      persisted = true;
+      return { docSaved: true, failedFrom: new Set(), saved: new Set() };
+    },
+  });
+  assert.equal(adopted.status, 'error');
+  assert.equal(adopted.result.code, 'working_copy_unmapped');
+  assert.match(adopted.result.message, /missing from the working copy/);
+  assert.equal(adopted.persisted, undefined);
+  assert.equal(persisted, false);
+  assert.equal(commits(gh).length, writes);
+});
+
+test('Upgrade conflict overwrite, reload, and branch persist through persistUpgradeWorkingCopy', () => {
+  const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const conflict = app.slice(
+    app.indexOf('const handleUpgradeConflict'),
+    app.indexOf('const absorbOverwriteFiles'),
+  );
+  assert.match(conflict, /persistConflictWorkingCopy/);
+  assert.match(conflict, /upgradePersistIncomplete/);
+  assert.match(conflict, /result\.status === 'reloaded'/);
+  assert.match(conflict, /result\.status === 'committed'/);
+  assert.match(conflict, /result\.status === 'branched'/);
+  assert.equal(/replaceScriptKeys/.test(conflict), false);
+});
+
+test('mapWorkingCopyToV2Tip remaps leftover WC ids from the v2 tip and path index', async () => {
+  const env = await seedF1BoxVault();
+  const upgraded = await executeUpgrade(upgradeOpts(env.gh, env.repo, {
+    store: env.store,
+    workingCopy: env.workingCopy,
+  }));
+  assert.equal(upgraded.status, 'upgraded');
+  const writes = commits(env.gh).length;
+  const mapped = await mapWorkingCopyToV2Tip({
+    adapter: env.gh,
+    repo: env.repo,
+    branch: 'main',
+    store: env.store,
+    workingCopy: env.workingCopy,
+  });
+  assert.equal(mapped.ok, true);
+  const pin = mapped.doc.parts.find((part) => part.name === 'Pin');
+  const copy = mapped.doc.parts.find((part) => part.name === 'Pin copy');
+  assert.equal(pin.id, F1_PIN_MINTED_ID);
+  assert.equal(copy.id, SCENARIO_L_PIN_ID);
+  assert.equal(mapped.pairs.some((row) => row.from === PIN_PATH && row.to === F1_PIN_MINTED_ID), true);
+  assert.equal(commits(env.gh).length, writes);
+});
+
+test('App Upgrade persist restores same-key snapshot bytes and recaptures after persist', () => {
+  const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const persist = app.slice(
+    app.indexOf('const persistUpgradeWorkingCopy'),
+    app.indexOf('const handleUpgradeVault'),
+  );
+  assert.match(persist, /rollbackFailedUpgradeDocSave/);
+  assert.match(persist, /savePartScript\(id, bytes\)/);
+  const upgrade = app.slice(
+    app.indexOf('const handleUpgradeVault'),
+    app.indexOf('const handleUpgradeConflict'),
+  );
+  assert.match(upgrade, /restoreScripts/);
+  assert.match(upgrade, /adopted\.persisted/);
+  assert.match(upgrade, /rememberGitBaseline/);
+  assert.match(app, /rememberPathId\(vault\.repo, partRepoPath\(part\), sid\)/);
+});
+
+test('App-seeded path index (M3 A): saveDoc fail then retry, WC stringify and scripts equal vault', async () => {
+  for (const fail of [{ saveDocFails: true }, { saveDocThrows: true }]) {
+    const env = await seedF1AppOpenHost();
+    const writesAfterSeed = commits(env.gh).length;
+    const first = await hostUpgradeOnce(env, fail);
+    assert.equal(first.result.status, 'upgraded', JSON.stringify(fail));
+    assert.deepEqual(first.result.rekey.pairs, [], 'App-seeded WC ids reuse vault ids');
+    assert.equal(first.adopted.status, 'error');
+    assert.equal(first.adopted.result.code, 'working_copy_unpersisted');
+    assert.equal(commits(env.gh).length, writesAfterSeed + 1);
+    const pin = env.ctx.memory.doc.parts.find((part) => part.name === 'Pin');
+    assert.equal(pin.copiedFrom, SCENARIO_L_PIN_ID, 'backward copiedFrom kept after saveDoc fail');
+
+    const retry = await hostUpgradeOnce(env);
+    assert.equal(retry.result.status, 'already_upgraded');
+    assert.equal(retry.adopted.status, 'ok', JSON.stringify(fail));
+    assert.ok(retry.adopted.persisted, 'retry must persist copiedFrom/@name, not skip on ids');
+    assert.equal(commits(env.gh).length, writesAfterSeed + 1, 'retry writes no git');
+    await assertHostWcBytesEqualVault(env);
+    const vaultPin = JSON.parse(stringifySurfJsonV2(env.ctx.memory.doc)).parts.find((part) => part.name === 'Pin');
+    assert.equal(vaultPin.copiedFrom, undefined);
+
+    const third = await hostUpgradeOnce(env);
+    assert.equal(third.result.status, 'already_upgraded');
+    assert.equal(third.adopted.status, 'ok');
+    assert.equal(third.adopted.persisted, null, 'already equal to vault: skip persist');
+    assert.equal(commits(env.gh).length, writesAfterSeed + 1);
+  }
+});
+
+test('App-seeded path index (M3 B): crash after snapshot then retry stamps @name to match vault', async () => {
+  const env = await seedF1AppOpenHost();
+  const writesAfterSeed = commits(env.gh).length;
+  const first = await hostUpgradeOnce(env, { crashAfter: 0 });
+  assert.equal(first.result.status, 'upgraded');
+  assert.deepEqual(first.result.rekey.pairs, []);
+  assert.equal(first.adopted.status, 'error');
+  assert.equal(first.adopted.result.code, 'working_copy_unpersisted');
+  assert.equal(env.ctx.idbOps, 0, 'crash after step 0 writes no IDB');
+  assert.equal(readSurfName(env.ctx.idb.get(F1_PIN_MINTED_ID)), null);
+  assert.equal(readSurfName(env.ctx.idb.get(SCENARIO_L_PIN_ID)), null);
+  assert.equal(commits(env.gh).length, writesAfterSeed + 1);
+
+  const retry = await hostUpgradeOnce(env);
+  assert.equal(retry.result.status, 'already_upgraded');
+  assert.equal(retry.adopted.status, 'ok');
+  assert.ok(retry.adopted.persisted);
+  assert.ok(env.ctx.idbOps > 0, 'retry must persist stamped scripts');
+  assert.equal(commits(env.gh).length, writesAfterSeed + 1);
+  await assertHostWcBytesEqualVault(env);
+  assert.equal(readSurfName(env.ctx.memory.scripts[F1_PIN_MINTED_ID]), 'Pin');
+  assert.equal(readSurfName(env.ctx.memory.scripts[SCENARIO_L_PIN_ID]), 'Pin copy');
+});
+
+test('App-seeded path index (L4): saveDoc fail restores same-key snapshot bytes, then retry equals vault', async () => {
+  const env = await seedF1AppOpenHost();
+  const original = f1AppOpenScripts();
+  const writesAfterSeed = commits(env.gh).length;
+  const first = await hostUpgradeOnce(env, { saveDocFails: true });
+  assert.equal(first.result.status, 'upgraded');
+  assert.deepEqual(first.result.rekey.pairs, []);
+  assert.equal(first.adopted.status, 'error');
+  assert.equal(first.adopted.result.code, 'working_copy_unpersisted');
+  assert.equal(env.ctx.idb.get(F1_PIN_MINTED_ID), original[F1_PIN_MINTED_ID]);
+  assert.equal(env.ctx.idb.get(SCENARIO_L_PIN_ID), original[SCENARIO_L_PIN_ID]);
+  assert.equal(readSurfName(env.ctx.idb.get(F1_PIN_MINTED_ID)), null);
+  assert.equal(env.ctx.memory.doc.parts.find((part) => part.name === 'Pin').copiedFrom, SCENARIO_L_PIN_ID);
+  assert.deepEqual([...env.ctx.idb.keys()].sort(), [F1_PIN_MINTED_ID, SCENARIO_L_PIN_ID].sort());
+  assert.equal(commits(env.gh).length, writesAfterSeed + 1);
+
+  const retry = await hostUpgradeOnce(env);
+  assert.equal(retry.result.status, 'already_upgraded');
+  assert.equal(retry.adopted.status, 'ok');
+  assert.equal(commits(env.gh).length, writesAfterSeed + 1);
+  await assertHostWcBytesEqualVault(env);
+});
+
+test('App-seeded path index (L5): missing vault Pin is working_copy_unmapped, then full WC retry equals vault', async () => {
+  const env = await seedF1AppOpenHost();
+  const writesAfterSeed = commits(env.gh).length;
+  const first = await hostUpgradeOnce(env);
+  assert.equal(first.result.status, 'upgraded');
+  assert.equal(first.adopted.status, 'ok');
+  assert.equal(commits(env.gh).length, writesAfterSeed + 1);
+  await assertHostWcBytesEqualVault(env);
+
+  const copyOnlyDoc = {
+    ...f1AppOpenDoc(),
+    parts: f1AppOpenDoc().parts.filter((part) => part.name === 'Pin copy'),
+  };
+  const copyOnlyScripts = { [SCENARIO_L_PIN_ID]: env.ctx.memory.scripts[SCENARIO_L_PIN_ID] };
+  env.workingCopy = { dirty: false, doc: copyOnlyDoc, scripts: copyOnlyScripts };
+  env.ctx.memory = { doc: cloneDoc(copyOnlyDoc), scripts: { ...copyOnlyScripts } };
+  env.ctx.savedDoc = cloneDoc(copyOnlyDoc);
+  await seedAppPathIndex(env.store, env.repo, copyOnlyDoc);
+
+  const missing = await hostUpgradeOnce(env);
+  assert.equal(missing.result.status, 'already_upgraded');
+  assert.equal(missing.adopted.status, 'error');
+  assert.equal(missing.adopted.result.code, 'working_copy_unmapped');
+  assert.ok(missing.adopted.result.missing.includes(F1_PIN_MINTED_ID));
+  assert.equal(missing.adopted.persisted, undefined);
+  assert.equal(commits(env.gh).length, writesAfterSeed + 1);
+
+  const fullDoc = f1AppOpenDoc();
+  const fullScripts = f1AppOpenScripts();
+  env.workingCopy = { dirty: false, doc: fullDoc, scripts: fullScripts };
+  env.ctx.memory = { doc: cloneDoc(fullDoc), scripts: { ...fullScripts } };
+  env.ctx.savedDoc = cloneDoc(fullDoc);
+  env.ctx.idb = new Map(Object.entries(fullScripts));
+  await seedAppPathIndex(env.store, env.repo, fullDoc);
+
+  const retry = await hostUpgradeOnce(env);
+  assert.equal(retry.result.status, 'already_upgraded');
+  assert.equal(retry.adopted.status, 'ok');
+  assert.equal(commits(env.gh).length, writesAfterSeed + 1);
+  await assertHostWcBytesEqualVault(env);
+});
+
+async function runSameKeyPutFailAppFlow({ dirty }) {
+  const env = await seedF1AppOpenHost();
+  if (dirty) {
+    const dirtyPin = withSurfId('return "dirty-pin";\n', F1_PIN_MINTED_ID);
+    env.ctx.memory.scripts[F1_PIN_MINTED_ID] = dirtyPin;
+    env.ctx.idb.set(F1_PIN_MINTED_ID, dirtyPin);
+    env.workingCopy = {
+      dirty: true,
+      doc: cloneDoc(env.ctx.memory.doc),
+      scripts: { ...env.ctx.memory.scripts },
+    };
+  }
+  const originalDoc = cloneDoc(env.ctx.memory.doc);
+  const originalIdb = new Map(env.ctx.idb);
+  const writesAfterSeed = commits(env.gh).length;
+  const first = await hostUpgradeOnce(env, { failPutFor: new Set([F1_PIN_MINTED_ID]) });
+  assert.equal(first.result.status, dirty ? 'upgraded_and_saved' : 'upgraded');
+  assert.deepEqual(first.result.rekey.pairs, []);
+  assert.equal(first.adopted.status, 'error');
+  assert.equal(first.adopted.result.code, 'working_copy_unpersisted');
+  assert.equal(upgradePersistIncomplete(first.adopted.persisted), true);
+  assert.equal(env.ctx.idb.get(F1_PIN_MINTED_ID), originalIdb.get(F1_PIN_MINTED_ID));
+  assert.equal(readSurfName(env.ctx.idb.get(F1_PIN_MINTED_ID)), null);
+  assert.equal(env.ctx.baseline, null, 'baseline not recaptured');
+  const gitAfterFirst = commits(env.gh).length;
+  assert.equal(gitAfterFirst, writesAfterSeed + (dirty ? 2 : 1));
+
+  env.ctx.memory = { doc: cloneDoc(originalDoc), scripts: Object.fromEntries(env.ctx.idb) };
+  env.ctx.savedDoc = cloneDoc(originalDoc);
+  env.workingCopy = {
+    dirty: dirty === true,
+    doc: env.ctx.memory.doc,
+    scripts: env.ctx.memory.scripts,
+  };
+
+  const retry = await hostUpgradeOnce(env);
+  assert.equal(retry.result.status, 'already_upgraded');
+  assert.equal(retry.adopted.status, 'ok');
+  assert.ok(retry.adopted.persisted);
+  assert.equal(commits(env.gh).length, gitAfterFirst, 'retry writes no git');
+  await assertHostWcBytesEqualVault(env);
+  assert.ok(env.ctx.baseline);
+  assert.equal(env.ctx.baseline.scripts[F1_PIN_MINTED_ID], env.ctx.memory.scripts[F1_PIN_MINTED_ID]);
+
+  const third = await hostUpgradeOnce(env);
+  assert.equal(third.result.status, 'already_upgraded');
+  assert.equal(third.adopted.status, 'ok');
+  assert.equal(third.adopted.persisted, null, 'third press no-op');
+  assert.equal(commits(env.gh).length, gitAfterFirst);
+}
+
+test('App-seeded path index (N1 clean): same-key put fail is unpersisted, retry equals vault, third no-op', async () => {
+  await runSameKeyPutFailAppFlow({ dirty: false });
+});
+
+test('App-seeded path index (N1 dirty): same-key put fail is unpersisted, retry equals vault, third no-op', async () => {
+  await runSameKeyPutFailAppFlow({ dirty: true });
+});
+
+async function runAlreadyUpgradedLocalEditAppFlow(mutateMemory) {
+  const env = await seedF1AppOpenHost();
+  const first = await hostUpgradeOnce(env);
+  assert.equal(first.result.status, 'upgraded');
+  assert.equal(first.adopted.status, 'ok');
+  const writesAfterUpgrade = commits(env.gh).length;
+
+  mutateMemory(env);
+  env.workingCopy = {
+    dirty: true,
+    doc: cloneDoc(env.ctx.memory.doc),
+    scripts: { ...env.ctx.memory.scripts },
+  };
+
+  const second = await hostUpgradeOnce(env);
+  assert.equal(second.result.status, 'already_upgraded');
+  assert.equal(second.adopted.status, 'ok');
+  assert.equal(second.adopted.result?.code, undefined);
+  assert.equal(commits(env.gh).length, writesAfterUpgrade, 'already_upgraded writes no git');
+  return env;
+}
+
+test('already_upgraded with a local script edit stays ok; edit kept; 0 git writes (R1)', async () => {
+  const env = await runAlreadyUpgradedLocalEditAppFlow((host) => {
+    const current = host.ctx.memory.scripts[F1_PIN_MINTED_ID];
+    assert.equal(typeof current, 'string');
+    const edited = current.replace('return "pin";', 'return "edited-pin";');
+    assert.match(edited, /edited-pin/);
+    host.ctx.memory.scripts[F1_PIN_MINTED_ID] = edited;
+    host.ctx.idb.set(F1_PIN_MINTED_ID, edited);
+  });
+  assert.match(env.ctx.memory.scripts[F1_PIN_MINTED_ID], /edited-pin/);
+  assert.match(env.ctx.idb.get(F1_PIN_MINTED_ID), /edited-pin/);
+  const vaultPin = await readText(env.gh, env.repo, partIdPath(F1_PIN_MINTED_ID));
+  assert.equal(vaultPin.includes('edited-pin'), false, 'vault tip does not include the local edit');
+});
+
+test('already_upgraded with a new local part stays ok; part kept; 0 git writes (R1)', async () => {
+  const localScript = withSurfId('return "local-block";\n', LOCAL_BLOCK_ID);
+  const env = await runAlreadyUpgradedLocalEditAppFlow((host) => {
+    host.ctx.memory.doc = cloneDoc(host.ctx.memory.doc);
+    host.ctx.memory.doc.parts = [
+      ...host.ctx.memory.doc.parts,
+      {
+        id: LOCAL_BLOCK_ID,
+        name: 'Block',
+        visible: true,
+        order: 2,
+      },
+    ];
+    host.ctx.memory.scripts[LOCAL_BLOCK_ID] = localScript;
+    host.ctx.idb.set(LOCAL_BLOCK_ID, localScript);
+  });
+  const block = env.ctx.memory.doc.parts.find((part) => part.id === LOCAL_BLOCK_ID);
+  assert.equal(block?.name, 'Block');
+  assert.match(env.ctx.memory.scripts[LOCAL_BLOCK_ID], /local-block/);
+  assert.match(env.ctx.idb.get(LOCAL_BLOCK_ID), /local-block/);
+  assert.equal(env.ctx.idb.has(LOCAL_BLOCK_ID), true);
+  const vaultJson = JSON.parse(await readText(env.gh, env.repo, assemblyIdPath(BOX_ID)));
+  assert.equal(vaultJson.parts.some((part) => part.id === LOCAL_BLOCK_ID), false);
 });
 

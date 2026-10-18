@@ -27,6 +27,7 @@ import {
   withSurfId,
   withSurfName,
 } from '../surfId.js';
+import { rewriteFeaStudyPartIds } from '../feaStudyIds.js';
 import { pruneDanglingColors, pruneDanglingGroupPartIds } from '../surfJson.js';
 import { parseSurfJsonV2, stringifySurfJsonV2 } from '../surfJsonV2.js';
 import { jointedSurfIds, poseFieldsForPart, pruneDanglingSurfJoints } from '../../jointSchema.js';
@@ -366,9 +367,46 @@ function rewriteIds(list, map) {
   return list.map((id) => map.get(id) || id);
 }
 
+function headerLineBreak(text) {
+  const cr = text.indexOf('\r');
+  const lf = text.indexOf('\n');
+  if (cr < 0 && lf < 0) return { index: text.length, ending: '' };
+  if (cr >= 0 && (lf < 0 || cr < lf)) {
+    return lf === cr + 1
+      ? { index: cr, ending: '\r\n' }
+      : { index: cr, ending: '\r' };
+  }
+  return { index: lf, ending: '\n' };
+}
+
+function isSurfIdCommentStart(text) {
+  if (!text.startsWith('// @surf-id')) return false;
+  const next = text.slice('// @surf-id'.length);
+  return !next || next[0] === ' ' || next[0] === '\t' || next[0] === '\n' || next[0] === '\r';
+}
+
+/**
+ * Upgrade-only. Rewrite an invalid or bare `// @surf-id` line and keep any
+ * extra text on that line. Valid headers go through `withSurfId` (which
+ * stacks when the first line is not a valid header).
+ */
+function rewriteUpgradeSurfIdHeader(script, id) {
+  const text = String(script ?? '');
+  if (readSurfId(text)) return withSurfId(text, id);
+  if (!isSurfIdCommentStart(text)) return withSurfId(text, id);
+  const br = headerLineBreak(text);
+  const firstLine = text.slice(0, br.index);
+  const rest = br.ending ? text.slice(br.index + br.ending.length) : '';
+  const after = firstLine.slice('// @surf-id'.length);
+  const extraMatch = after.match(/^([ \t]*)(\S*)(.*)$/);
+  const extra = extraMatch ? extraMatch[3] : '';
+  const line = `// @surf-id ${id}${extra}`;
+  return br.ending ? `${line}${br.ending}${rest}` : line;
+}
+
 function stampScript(script, id, name) {
   const display = sanitizeSurfName(name) || 'Part';
-  return withSurfName(withSurfId(typeof script === 'string' ? script : '', id), display);
+  return withSurfName(rewriteUpgradeSurfIdHeader(typeof script === 'string' ? script : '', id), display);
 }
 
 function displayNameFor(part, script, path) {
@@ -529,9 +567,9 @@ function assertCopiedBytes(plan, files) {
  * One final id per legacy path is minted once and reused in every
  * assembly. `copiedFrom` is the v1 value remapped through the fold, or
  * an explicit row id the path lost to a different file (a true duplicate).
- * A header-only loser mints with none. Working-copy `copiedFrom` is used
- * only when those rule-4 cases already apply; collapse tags are not
- * carried. One assembly id per legacy folder (reuse `assemblyIdByFolder`).
+ * A header-only loser mints with none. Collapse tags from a working copy
+ * are not inputs to this planner. One assembly id per legacy folder
+ * (reuse `assemblyIdByFolder`).
  */
 export function planUpgrade({
   tree = [],
@@ -874,14 +912,24 @@ function wcScriptOf(part, scripts) {
   return undefined;
 }
 
+function remapAssetKeys(assets, idMap) {
+  if (!assets || typeof assets !== 'object') return assets;
+  const next = {};
+  for (const [id, value] of Object.entries(assets)) {
+    next[idMap.get(id) || id] = value;
+  }
+  return next;
+}
+
 /**
- * Map a dirty WC onto the upgrade plan's ids via the plan's legacy-path
- * map (not WC header ids). Rekeys in memory only — callers persist IDB.
- * A WC part whose id is not in the plan and that has no mapped legacy
- * path is an add (`parts/<id>.js`). Refuse only true ambiguity: two WC
- * rows mapping to one plan id.
+ * Map a WC onto the upgrade plan's ids via the plan's legacy-path map
+ * (not WC header ids). Clean and dirty callers both use this. Rekeys in
+ * memory only — callers persist IDB. Studies and `copiedFrom` follow the
+ * plan. A WC part whose id is not in the plan and that has no mapped
+ * legacy path is an add (`parts/<id>.js`). Refuse only true ambiguity:
+ * two WC rows mapping to one plan id.
  */
-export function mapWorkingCopyToPlan(plan, workingCopy) {
+export function mapWorkingCopyToPlan(plan, workingCopy, { allowMint = true } = {}) {
   if (!workingCopy?.doc) {
     return { ok: true, doc: null, scripts: {}, pairs: [], assets: workingCopy?.assets || null };
   }
@@ -892,6 +940,11 @@ export function mapWorkingCopyToPlan(plan, workingCopy) {
   const claimed = new Map();
   const ambiguous = [];
   const used = new Set(planIds);
+  const assemblyId = asV2Id(workingCopy.doc.id)
+    || folderToId[workingCopy.doc.name]
+    || folderToId[Object.keys(folderToId).find((name) => name.toLowerCase() === String(workingCopy.doc.name || '').toLowerCase())]
+    || null;
+  const planJson = assemblyJsonFromPlan(plan, assemblyId);
 
   const resolve = (part) => {
     const path = scriptPathOf(part);
@@ -900,6 +953,7 @@ export function mapWorkingCopyToPlan(plan, workingCopy) {
     if (fromPath && isV2SurfId(fromPath)) return fromPath;
     if (fromId && planIds.has(fromId)) return fromId;
     if (fromId) return fromId;
+    if (allowMint === false) return part?.id || null;
     return mintUnused(used);
   };
 
@@ -934,15 +988,36 @@ export function mapWorkingCopyToPlan(plan, workingCopy) {
   const nextScripts = {};
   const scripts = workingCopy.scripts || {};
   const nextParts = parts.map((part, i) => {
-    const planId = resolvedIds[i];
-    if (part?.id && part.id !== planId) pairs.push({ from: part.id, to: planId });
+    const planId = resolvedIds[i] || part?.id;
+    if (part?.id && planId && part.id !== planId) pairs.push({ from: part.id, to: planId });
     const script = wcScriptOf(part, scripts);
-    if (typeof script === 'string') nextScripts[planId] = script;
-    return { ...part, id: planId };
+    const name = sanitizeSurfName(part.name) || displayNameFor(part, script, part.path);
+    if (typeof script === 'string' && planId) {
+      nextScripts[planId] = isSurfId(planId) ? stampScript(script, planId, name) : script;
+    }
+    const planRow = Array.isArray(planJson?.parts)
+      ? planJson.parts.find((row) => row?.id === planId)
+      : null;
+    const copied = planRow ? asV2Id(planRow.copiedFrom) : asV2Id(part?.copiedFrom);
+    const next = { ...part, id: planId };
+    if (copied && copied !== planId) next.copiedFrom = copied;
+    else delete next.copiedFrom;
+    return next;
   });
 
   const idMap = new Map(pairs.map((row) => [row.from, row.to]));
-  let activeId = asV2Id(workingCopy.doc.activeId);
+  if (idMap.size) {
+    for (const [id, text] of Object.entries(nextScripts)) {
+      nextScripts[id] = rewriteFeaStudyPartIds(text, idMap);
+    }
+  }
+  const rawActive = workingCopy.doc.activeId;
+  let activeId = asV2Id(rawActive);
+  if (rawActive && idMap.has(rawActive)) activeId = idMap.get(rawActive);
+  if (!activeId && rawActive) {
+    const idx = parts.findIndex((part) => part?.id === rawActive || scriptPathOf(part) === rawActive);
+    if (idx >= 0) activeId = resolvedIds[idx] || nextParts[idx]?.id || null;
+  }
   if (activeId && idMap.has(activeId)) activeId = idMap.get(activeId);
   if (activeId && !nextParts.some((p) => p.id === activeId)) activeId = nextParts[0]?.id || null;
 
@@ -953,11 +1028,6 @@ export function mapWorkingCopyToPlan(plan, workingCopy) {
       partIds: (group.partIds || []).map((id) => idMap.get(id) || asV2Id(id) || id).filter((id) => isV2SurfId(id)),
     }))
     : undefined;
-
-  const assemblyId = asV2Id(workingCopy.doc.id)
-    || folderToId[workingCopy.doc.name]
-    || folderToId[Object.keys(folderToId).find((name) => name.toLowerCase() === String(workingCopy.doc.name || '').toLowerCase())]
-    || null;
 
   const nextDoc = {
     ...workingCopy.doc,
@@ -970,7 +1040,7 @@ export function mapWorkingCopyToPlan(plan, workingCopy) {
   };
 
   const assets = workingCopy.assets && typeof workingCopy.assets === 'object'
-    ? { ...workingCopy.assets }
+    ? remapAssetKeys(workingCopy.assets, idMap)
     : workingCopy.assets;
 
   return {
@@ -980,6 +1050,432 @@ export function mapWorkingCopyToPlan(plan, workingCopy) {
     pairs,
     assets,
   };
+}
+
+/** Retry re-keys leftover WC ids onto the v2 vault. It does not write git. */
+export const WORKING_COPY_UNPERSISTED_HINT = 'The vault is already v2. Retry Upgrade vault to re-key the working copy onto the vault ids. That retry does not write git.';
+
+export function workingCopyUnpersistedResult({ sha, upgradeSha } = {}) {
+  const message = 'Could not save the upgraded working copy. The previous working copy was kept.';
+  const out = {
+    status: 'error',
+    code: 'working_copy_unpersisted',
+    error: message,
+    message,
+    hint: WORKING_COPY_UNPERSISTED_HINT,
+  };
+  if (typeof sha === 'string' && sha) out.sha = sha;
+  if (typeof upgradeSha === 'string' && upgradeSha) out.upgradeSha = upgradeSha;
+  else if (out.sha) out.upgradeSha = out.sha;
+  return out;
+}
+
+export function workingCopyIdsMatchVault(wcDoc, vaultDoc) {
+  const wc = new Set((wcDoc?.parts || []).map((part) => part?.id).filter(Boolean));
+  const vault = new Set((vaultDoc?.parts || []).map((part) => part?.id).filter(Boolean));
+  if (wc.size !== vault.size) return false;
+  for (const id of wc) {
+    if (!vault.has(id)) return false;
+  }
+  return true;
+}
+
+function vaultTipForAssembly(writes, assemblyId) {
+  if (!assemblyId || !isV2SurfId(assemblyId) || !writes) return null;
+  let assemblyPath;
+  try { assemblyPath = assemblyIdPath(assemblyId); } catch { return null; }
+  const assemblyText = writes[assemblyPath];
+  if (typeof assemblyText !== 'string') return null;
+  let json = null;
+  try { json = JSON.parse(assemblyText); } catch { return null; }
+  const partScripts = {};
+  for (const part of json?.parts || []) {
+    if (!isV2SurfId(part?.id)) continue;
+    let scriptPath;
+    try { scriptPath = partIdPath(part.id); } catch { continue; }
+    if (typeof writes[scriptPath] === 'string') partScripts[part.id] = writes[scriptPath];
+  }
+  return { assemblyText, json, partScripts };
+}
+
+/**
+ * Byte compare of a WC against a v2 tip. `stringifySurfJsonV2` drops
+ * legacy `path`. Scripts must match the tip files for every vault part.
+ */
+export function workingCopyMatchesVaultTip(doc, scripts, vaultTip) {
+  if (!doc || !vaultTip?.assemblyText) return false;
+  let json;
+  try { json = stringifySurfJsonV2(doc); } catch { return false; }
+  if (json !== vaultTip.assemblyText) return false;
+  const vaultIds = Object.keys(vaultTip.partScripts || {});
+  const wcIds = (doc.parts || []).map((part) => part?.id).filter(Boolean);
+  if (vaultIds.length !== wcIds.length) return false;
+  const have = new Set(wcIds);
+  for (const id of vaultIds) {
+    if (!have.has(id)) return false;
+    if (typeof scripts?.[id] !== 'string' || scripts[id] !== vaultTip.partScripts[id]) return false;
+  }
+  return true;
+}
+
+export function missingVaultPartIds(doc, vaultTip) {
+  const have = new Set((doc?.parts || []).map((part) => part?.id).filter(Boolean));
+  return (vaultTip?.json?.parts || [])
+    .map((part) => part?.id)
+    .filter((id) => id && !have.has(id));
+}
+
+export function workingCopyUnmappedResult({ missing = [], ambiguous = [], sha, upgradeSha } = {}) {
+  const names = missing.length
+    ? `vault part${missing.length > 1 ? 's' : ''} missing from the working copy (${missing.join(', ')})`
+    : (ambiguous.length
+      ? `more than one working-copy part maps to the same upgraded id (${ambiguous.join(', ')})`
+      : 'the working copy does not map onto the upgraded vault');
+  const message = `Cannot map the working copy onto the upgraded vault: ${names}. The vault is v2; nothing was written.`;
+  const out = {
+    status: 'error',
+    code: 'working_copy_unmapped',
+    error: message,
+    message,
+    hint: 'Give the working copy a row for each vault part, then retry Upgrade vault. Retry does not write git.',
+    missing,
+    ambiguous,
+  };
+  if (typeof sha === 'string' && sha) out.sha = sha;
+  if (typeof upgradeSha === 'string' && upgradeSha) out.upgradeSha = upgradeSha;
+  else if (out.sha) out.upgradeSha = out.sha;
+  return out;
+}
+
+export function upgradePersistIncomplete(persisted) {
+  if (!persisted || persisted.docSaved === false) return true;
+  const failed = persisted.failedFrom;
+  if (failed && typeof failed.size === 'number' && failed.size > 0) return true;
+  if (Array.isArray(failed) && failed.length > 0) return true;
+  const saved = persisted.saved instanceof Set
+    ? persisted.saved
+    : new Set(Array.isArray(persisted.saved) ? persisted.saved : []);
+  const scripts = persisted.scripts && typeof persisted.scripts === 'object' ? persisted.scripts : {};
+  for (const [id, text] of Object.entries(scripts)) {
+    if (typeof text !== 'string' || !id) continue;
+    if (!saved.has(id)) return true;
+  }
+  return false;
+}
+
+/** New `to` keys written before a failed saveDoc, not referenced by the old WC. */
+export function orphanUpgradeScriptIds(persisted, sourceDoc) {
+  if (!persisted || persisted.docSaved !== false) return [];
+  const sourceIds = new Set((sourceDoc?.parts || []).map((part) => part?.id).filter(Boolean));
+  const snapshot = persisted.snapshot && typeof persisted.snapshot === 'object' ? persisted.snapshot : {};
+  const saved = persisted.saved instanceof Set
+    ? [...persisted.saved]
+    : (Array.isArray(persisted.saved) ? persisted.saved : []);
+  return saved.filter((id) => id && !sourceIds.has(id) && typeof snapshot[id] !== 'string');
+}
+
+/**
+ * After a failed saveDoc: restore snapshot bytes for same-key overwrites
+ * and delete unreferenced `to` keys. App/upgrade side — not wcIdentity.js.
+ */
+export async function rollbackFailedUpgradeDocSave(persisted, { sourceDoc, restore, remove } = {}) {
+  if (!persisted || persisted.docSaved !== false) return;
+  const snapshot = persisted.snapshot && typeof persisted.snapshot === 'object' ? persisted.snapshot : {};
+  const sourceIds = new Set((sourceDoc?.parts || []).map((part) => part?.id).filter(Boolean));
+  const saved = persisted.saved instanceof Set
+    ? [...persisted.saved]
+    : (Array.isArray(persisted.saved) ? persisted.saved : []);
+  for (const id of saved) {
+    if (!id) continue;
+    if (typeof snapshot[id] === 'string' && typeof restore === 'function') {
+      await restore(id, snapshot[id]);
+      continue;
+    }
+    if (!sourceIds.has(id) && typeof remove === 'function') {
+      await remove(id);
+    }
+  }
+}
+
+function pathIndexWithJournal(pathIndex, workingCopy, journalPairs) {
+  const next = { ...(pathIndex || {}) };
+  if (!Array.isArray(journalPairs) || !journalPairs.length) return next;
+  const toByFrom = new Map();
+  for (const row of journalPairs) {
+    if (row?.from && row?.to && row.from !== row.to) toByFrom.set(row.from, row.to);
+  }
+  for (const part of workingCopy?.doc?.parts || []) {
+    const to = toByFrom.get(part?.id);
+    if (!to || !isV2SurfId(to)) continue;
+    const path = scriptPathOf(part);
+    if (path && !next[path]) next[path] = to;
+    if (part?.id && String(part.id).includes('/') && !next[part.id]) next[part.id] = to;
+  }
+  return next;
+}
+
+function fileTextOf(content) {
+  if (typeof content === 'string') return content;
+  if (content instanceof Uint8Array) return utf8FromBytes(content);
+  return null;
+}
+
+/**
+ * Read-only: map a leftover v1 WC onto the v2 tip via `parts[]`, `@surf-id`
+ * headers, the persisted legacy path index, and optional replay pairs.
+ * Zero git writes. Does not mint.
+ */
+export async function mapWorkingCopyToV2Tip({
+  adapter,
+  repo,
+  branch = 'main',
+  store = null,
+  workingCopy = null,
+  journalPairs = [],
+} = {}) {
+  if (!workingCopy?.doc) {
+    return { ok: true, doc: null, scripts: {}, pairs: [], assets: workingCopy?.assets || null };
+  }
+  assertGithubAdapter(adapter);
+  const branchName = (typeof branch === 'string' && branch.trim()) ? branch.trim() : 'main';
+  const tree = await adapter.listTree(repo, branchName);
+  const writes = {};
+  const keptPartIds = [];
+  const partBindings = [];
+  for (const entry of tree || []) {
+    const path = entry?.path;
+    const parsed = parseIdPath(path);
+    if (!parsed || (parsed.kind !== 'assembly' && parsed.kind !== 'part')) continue;
+    let text = null;
+    try {
+      const got = await adapter.readFile(repo, path, branchName);
+      text = fileTextOf(got?.content);
+    } catch {
+      text = null;
+    }
+    if (typeof text !== 'string') continue;
+    writes[path] = text;
+    if (parsed.kind === 'assembly') {
+      try {
+        const json = JSON.parse(text);
+        for (const part of json?.parts || []) {
+          if (isV2SurfId(part?.id)) {
+            keptPartIds.push(part.id);
+            partBindings.push({ id: part.id, path: null });
+          }
+        }
+      } catch { /* skip unreadable assembly json */ }
+    } else {
+      const header = readSurfId(text);
+      const id = (header && isV2SurfId(header)) ? header : parsed.id;
+      if (isV2SurfId(id)) {
+        keptPartIds.push(id);
+        partBindings.push({ id, path: null });
+      }
+    }
+  }
+  const pathToId = pathIndexWithJournal(
+    store?.pathIndexFor?.(repo) || {},
+    workingCopy,
+    journalPairs,
+  );
+  for (const id of Object.values(pathToId)) {
+    if (isV2SurfId(id)) keptPartIds.push(id);
+  }
+  const mintedPartIds = [];
+  for (const row of journalPairs || []) {
+    if (row?.to && isV2SurfId(row.to)) mintedPartIds.push(row.to);
+  }
+  const plan = {
+    partIdByPath: pathToId,
+    keptPartIds,
+    mintedPartIds,
+    partBindings,
+    folderToId: store?.assemblyIdIndexFor?.(repo) || {},
+    writes,
+  };
+  const mapped = mapWorkingCopyToPlan(plan, workingCopy, { allowMint: false });
+  const assemblyId = mapped?.doc?.id || workingCopy?.doc?.id;
+  return { ...mapped, vaultTip: vaultTipForAssembly(writes, assemblyId) };
+}
+
+function overlayJournalPairs(mapped, journalPairs) {
+  if (!mapped || typeof mapped !== 'object') return mapped;
+  const pairs = [...(mapped.pairs || [])];
+  const froms = new Set(pairs.map((row) => row?.from).filter(Boolean));
+  for (const row of journalPairs || []) {
+    if (!row?.from || !row?.to || row.from === row.to || froms.has(row.from)) continue;
+    pairs.push({ from: row.from, to: row.to });
+    froms.add(row.from);
+  }
+  return { ...mapped, pairs };
+}
+
+function overlayFollowupWrites(writes, followup) {
+  if (!writes) return writes;
+  if (!Array.isArray(followup) || !followup.length) return writes;
+  const next = { ...writes };
+  for (const row of followup) {
+    if (!row?.path || row.delete) continue;
+    const text = fileTextOf(row.content);
+    if (typeof text === 'string') next[row.path] = text;
+  }
+  return next;
+}
+
+function vaultTipOf(mapped, result) {
+  if (mapped?.vaultTip) return mapped.vaultTip;
+  const writes = overlayFollowupWrites(result?.plan?.writes, result?.followupFiles);
+  return vaultTipForAssembly(writes, mapped?.doc?.id);
+}
+
+function restoreRemoveFn(removeOrphans, remove) {
+  if (typeof remove === 'function') return remove;
+  if (typeof removeOrphans === 'function') {
+    return async (id) => { await removeOrphans([id]); };
+  }
+  return undefined;
+}
+
+/**
+ * Persist the Upgrade WC re-key. On `already_upgraded`, remap leftover ids
+ * through the v2 tip + path index (no git writes). Treat a failed put
+ * (`failedFrom`) like a failed saveDoc.
+ */
+export async function adoptUpgradeWorkingCopy({
+  result,
+  workingCopy,
+  adapter,
+  repo,
+  branch = 'main',
+  store = null,
+  persist,
+  sourceDoc,
+  journalPairs = [],
+  removeOrphans,
+  restoreScripts,
+  remove,
+} = {}) {
+  if (!result || typeof result !== 'object') {
+    return { status: 'error', result: workingCopyUnpersistedResult() };
+  }
+  const shaFields = { sha: result.sha, upgradeSha: result.upgradeSha || result.sha };
+  const rollback = async (persisted) => {
+    await rollbackFailedUpgradeDocSave(persisted, {
+      sourceDoc,
+      restore: restoreScripts,
+      remove: restoreRemoveFn(removeOrphans, remove),
+    });
+  };
+  const unmappedFrom = (mapped, extra = {}) => workingCopyUnmappedResult({
+    missing: extra.missing || mapped?.unmapped || [],
+    ambiguous: extra.ambiguous || mapped?.ambiguous || [],
+    ...shaFields,
+  });
+  const adopted = result.status === 'upgraded'
+    || result.status === 'upgraded_and_saved'
+    || (result.status === 'conflict' && result.phase === 'save');
+  let rekey = result.rekey || null;
+  if (result.status === 'already_upgraded') {
+    if (!workingCopy?.doc) return { status: 'ok', result, persisted: null };
+    let mapped = rekey;
+    if (!mapped?.doc) {
+      mapped = await mapWorkingCopyToV2Tip({
+        adapter,
+        repo,
+        branch,
+        store,
+        workingCopy,
+        journalPairs,
+      });
+    }
+    if (!mapped?.ok) {
+      return { status: 'error', result: unmappedFrom(mapped) };
+    }
+    mapped = overlayJournalPairs(mapped, journalPairs);
+    const vaultTip = vaultTipOf(mapped, result);
+    if (vaultTip) mapped = { ...mapped, vaultTip };
+    const missing = missingVaultPartIds(mapped.doc, mapped.vaultTip);
+    if (missing.length) {
+      return { status: 'error', result: unmappedFrom(mapped, { missing }) };
+    }
+    const needsPairs = (mapped.pairs || []).some((row) => row?.from && row?.to && row.from !== row.to);
+    if (
+      mapped.vaultTip
+      && !needsPairs
+      && workingCopyMatchesVaultTip(workingCopy.doc, workingCopy.scripts, mapped.vaultTip)
+    ) {
+      return { status: 'ok', result, persisted: null, rekey: mapped };
+    }
+    rekey = mapped;
+  } else if (!adopted || !rekey?.doc) {
+    return { status: 'ok', result, persisted: null };
+  }
+
+  if (rekey?.doc && !rekey.vaultTip) {
+    const vaultTip = vaultTipOf(rekey, result);
+    if (vaultTip) rekey = { ...rekey, vaultTip };
+  }
+
+  if (typeof persist !== 'function') {
+    return { status: 'error', result: workingCopyUnpersistedResult(shaFields) };
+  }
+
+  let persisted;
+  try {
+    persisted = await persist({
+      nextDoc: { ...rekey.doc, source: 'git', vaultLayout: 'v2' },
+      nextScripts: rekey.scripts || {},
+      pairs: rekey.pairs || [],
+      assets: rekey.assets,
+    });
+  } catch (err) {
+    if (err?.name === 'PersistCrash') {
+      return {
+        status: 'error',
+        result: workingCopyUnpersistedResult(shaFields),
+      };
+    }
+    throw err;
+  }
+
+  if (upgradePersistIncomplete(persisted)) {
+    await rollback(persisted);
+    return {
+      status: 'error',
+      result: workingCopyUnpersistedResult(shaFields),
+      persisted,
+    };
+  }
+  // Byte-check against this call's tip when we just produced the upgrade
+  // (tip includes the follow-up Save). Skip already_upgraded + dirty: the
+  // last commit does not include local edits; the agent continues with git_save.
+  const producedUpgrade = result.status === 'upgraded'
+    || result.status === 'upgraded_and_saved';
+  const checkPersistedBytes = producedUpgrade
+    || (result.status === 'already_upgraded' && workingCopy?.dirty !== true);
+  if (
+    checkPersistedBytes
+    && rekey?.vaultTip
+    && !workingCopyMatchesVaultTip(persisted.doc, persisted.scripts, rekey.vaultTip)
+  ) {
+    const missing = missingVaultPartIds(persisted.doc, rekey.vaultTip);
+    if (missing.length) {
+      return {
+        status: 'error',
+        result: unmappedFrom(rekey, { missing }),
+        persisted,
+        rekey,
+      };
+    }
+    return {
+      status: 'error',
+      result: workingCopyUnpersistedResult(shaFields),
+      persisted,
+      rekey,
+    };
+  }
+  return { status: 'ok', result, persisted, rekey };
 }
 
 function jsonWithoutPartCopiedFrom(text) {
@@ -1290,7 +1786,6 @@ export async function executeUpgrade({
       repoName: ref?.name,
       now: clock,
       randFor,
-      workingCopy,
     });
   } catch (err) {
     return hostError(
@@ -1349,8 +1844,10 @@ export async function executeUpgrade({
     console.warn('[git] lastCommit after Upgrade skipped', err?.message || err);
   }
 
-  const mapped = workingCopy?.dirty ? mapWorkingCopyToPlan(plan, workingCopy) : { ok: true, doc: workingCopy?.doc, scripts: workingCopy?.scripts, pairs: [], assets: workingCopy?.assets };
-  if (workingCopy?.dirty && !mapped.ok) {
+  const mapped = workingCopy?.doc
+    ? mapWorkingCopyToPlan(plan, workingCopy)
+    : { ok: true, doc: workingCopy?.doc, scripts: workingCopy?.scripts || {}, pairs: [], assets: workingCopy?.assets };
+  if (workingCopy?.doc && !mapped.ok) {
     return hostError(
       mapped.code || 'working_copy_unmapped',
       mapped.message,
@@ -1375,6 +1872,7 @@ export async function executeUpgrade({
     doc: mapped.doc,
     scripts: mapped.scripts,
     pairs: mapped.pairs || [],
+    vaultTip: vaultTipForAssembly(plan.writes, mapped.doc?.id),
   };
   if (!followup.length) {
     return {
@@ -1467,8 +1965,15 @@ export async function executeUpgrade({
       upgradeFiles: plan.files.map((f) => f.path),
       leftoverFiles: plan.leftoverFiles,
       plan,
+      followupFiles: followup,
       commits: 2,
-      rekey,
+      rekey: {
+        ...rekey,
+        vaultTip: vaultTipForAssembly(
+          overlayFollowupWrites(plan.writes, followup),
+          mapped.doc?.id,
+        ) || rekey.vaultTip,
+      },
     };
   } catch (err) {
     if (err instanceof GitAdapterError && err.code === 'non_fast_forward') {

@@ -9,6 +9,7 @@ import {
   summarizeUpgradeVaultResult,
   AGENT_GIT_REAL_SESSION_KEY,
 } from './gitAgent.js';
+import { COMMAND_META } from './export/commandMeta.js';
 import {
   gitBranchCreateCommand,
   gitBranchDeleteCommand,
@@ -332,6 +333,32 @@ test('gitOpResult passes already_upgraded and upgraded through as success', () =
   assert.equal(gitOpResult({ status: 'already_upgraded' }).result?.status, 'already_upgraded');
   assert.equal(gitOpResult({ status: 'upgraded', sha: 'abc' }).result?.sha, 'abc');
   assert.equal(gitOpResult({ status: 'already_upgraded' }).error, undefined);
+});
+
+function resultMatchesSchema(schema, value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (schema.additionalProperties === false) {
+    const props = schema.properties || {};
+    for (const key of Object.keys(value)) {
+      if (!Object.prototype.hasOwnProperty.call(props, key)) return false;
+      const expected = props[key]?.type;
+      if (!expected) continue;
+      const types = Array.isArray(expected) ? expected : [expected];
+      const actual = Array.isArray(value[key]) ? 'array' : typeof value[key];
+      if (!types.includes(actual)) return false;
+    }
+  }
+  return true;
+}
+
+test('git_upgrade_vault result schema accepts the {status, error} fallback', () => {
+  const schema = COMMAND_META.git_upgrade_vault.result;
+  const fallback = summarizeUpgradeVaultResult(null);
+  assert.deepEqual(fallback, { status: 'error', error: 'No result' });
+  assert.equal(resultMatchesSchema(schema, fallback), true, 'summarize fallback must match the catalog schema');
+  const shaped = gitOpResult(null, { commandName: 'git_upgrade_vault' });
+  assert.deepEqual(shaped.result, { status: 'error', error: 'No result' });
+  assert.equal(resultMatchesSchema(schema, shaped.result), true, 'gitOpResult fallback must match the catalog schema');
 });
 
 test('git_upgrade_vault result is a summary without plan or rekey scripts', () => {

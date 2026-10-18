@@ -15370,6 +15370,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "error": {
+            "type": "string"
           }
         }
       },
@@ -15381,6 +15384,7 @@
         "consent_pending",
         "real_repo_blocked",
         "git_error",
+        "working_copy_unpersisted",
         "internal"
       ],
       "mutates": true,

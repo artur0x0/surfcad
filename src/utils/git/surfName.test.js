@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mintSurfId, readSurfName, withSurfId, withSurfName } from './surfId.js';
+import { mintSurfId, readSurfName, stampPartHeaders, withSurfId, withSurfName } from './surfId.js';
 
 const ID = mintSurfId({ now: new Date('2026-10-18T02:50:00.001Z'), rand: 'aa01' });
 const BODY = 'return Manifold.cube([10, 10, 10], true);\n';
@@ -37,25 +37,73 @@ test('withSurfName replaces a blank @name line instead of duplicating it', () =>
   assert.equal(readSurfName(next), 'Bracket');
 });
 
-test('withSurfId replaces an invalid @surf-id line instead of stacking a second header', () => {
-  const next = withSurfId(`// @surf-id bogus\n${BODY}`, ID);
-  assert.equal(next, `// @surf-id ${ID}\n${BODY}`);
-  assert.equal((next.match(/\/\/ @surf-id/g) || []).length, 1);
+test('withSurfId flag-off stacks an invalid header and keeps extra line text (bytes match main)', () => {
+  const invalid = `// @surf-id bogus extra\n${BODY}`;
+  const next = withSurfId(invalid, ID);
+  assert.equal(next, `// @surf-id ${ID}\n${invalid}`);
+  assert.equal(next.includes('bogus extra'), true);
 
-  const crlf = withSurfId('// @surf-id not-an-id\r\nreturn 1;\r\n', ID);
-  assert.equal(crlf, `// @surf-id ${ID}\r\nreturn 1;\r\n`);
+  const crlf = withSurfId('// @surf-id not-an-id keep me\r\nreturn 1;\r\n', ID);
+  assert.equal(crlf, `// @surf-id ${ID}\n// @surf-id not-an-id keep me\r\nreturn 1;\r\n`);
 });
 
-test('withSurfId replaces a bare // @surf-id line instead of stacking', () => {
+test('withSurfId flag-off stacks a bare // @surf-id line (bytes match main)', () => {
   const next = withSurfId(`// @surf-id\n${BODY}`, ID);
-  assert.equal(next, `// @surf-id ${ID}\n${BODY}`);
-  assert.equal((next.match(/\/\/ @surf-id/g) || []).length, 1);
+  assert.equal(next, `// @surf-id ${ID}\n// @surf-id\n${BODY}`);
 
   const eof = withSurfId('// @surf-id', ID);
-  assert.equal(eof, `// @surf-id ${ID}`);
+  assert.equal(eof, `// @surf-id ${ID}\n// @surf-id`);
 
   const crlf = withSurfId('// @surf-id\r\nreturn 1;\r\n', ID);
-  assert.equal(crlf, `// @surf-id ${ID}\r\nreturn 1;\r\n`);
+  assert.equal(crlf, `// @surf-id ${ID}\n// @surf-id\r\nreturn 1;\r\n`);
+});
+
+test('flag-off withSurfId / withSurfName / readSurfName / stampPartHeaders match dc0e2764', () => {
+  const old = mintSurfId({ now: new Date('2026-10-18T02:50:00.002Z'), rand: 'aa02' });
+  const rows = [
+    {
+      name: 'valid first line',
+      input: `// @surf-id ${old}\n// @name Pin\n${BODY}`,
+      withSurfId: `// @surf-id ${ID}\n// @name Pin\n${BODY}`,
+      withSurfName: `// @surf-id ${old}\n// @name Bracket\n${BODY}`,
+      readSurfName: 'Pin',
+      stampPartHeaders: `// @surf-id ${ID}\n// @name Bracket\n${BODY}`,
+    },
+    {
+      name: 'invalid first line',
+      input: `// @surf-id bogus extra\n// @name Pin\n${BODY}`,
+      withSurfId: `// @surf-id ${ID}\n// @surf-id bogus extra\n// @name Pin\n${BODY}`,
+      withSurfName: `// @surf-id bogus extra\n// @name Bracket\n${BODY}`,
+      readSurfName: 'Pin',
+      stampPartHeaders: `// @surf-id ${ID}\n// @name Bracket\n${BODY}`,
+    },
+    {
+      name: 'bare // @surf-id (no space before newline)',
+      input: `// @surf-id\n// @name Pin\n${BODY}`,
+      withSurfId: `// @surf-id ${ID}\n// @surf-id\n// @name Pin\n${BODY}`,
+      withSurfName: `// @name Bracket\n// @surf-id\n// @name Pin\n${BODY}`,
+      readSurfName: null,
+      stampPartHeaders: `// @surf-id ${ID}\n// @surf-id\n// @name Pin\n${BODY}`,
+    },
+    {
+      name: 'bare // @surf-id with trailing space',
+      input: `// @surf-id \n// @name Pin\n${BODY}`,
+      withSurfId: `// @surf-id ${ID}\n// @surf-id \n// @name Pin\n${BODY}`,
+      withSurfName: `// @surf-id \n// @name Bracket\n${BODY}`,
+      readSurfName: 'Pin',
+      stampPartHeaders: `// @surf-id ${ID}\n// @name Bracket\n${BODY}`,
+    },
+  ];
+  for (const row of rows) {
+    assert.equal(withSurfId(row.input, ID), row.withSurfId, `${row.name}: withSurfId`);
+    assert.equal(withSurfName(row.input, 'Bracket'), row.withSurfName, `${row.name}: withSurfName`);
+    assert.equal(readSurfName(row.input), row.readSurfName, `${row.name}: readSurfName`);
+    assert.equal(
+      stampPartHeaders(row.input, { id: ID, name: 'Bracket' }),
+      row.stampPartHeaders,
+      `${row.name}: stampPartHeaders`,
+    );
+  }
 });
 
 test('withSurfId keeps a valid header byte-identical except the id', () => {
