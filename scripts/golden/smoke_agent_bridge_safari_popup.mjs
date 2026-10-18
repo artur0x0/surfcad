@@ -42,6 +42,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { findChrome, installApiMocks, seedAssembly, waitForBridge } from '../playtest/lib/harness.mjs';
 import { pickFreePort } from '../playtest/lib/pickFreePort.mjs';
+import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const DIST = join(ROOT, 'dist');
@@ -250,6 +251,7 @@ async function runOne(name, { browserType, launchOptions, expectPopup, forcePopu
     }
 
     browser = await browserType.launch({ headless: true, ...launchOptions });
+    attachConsentPresetToBrowser(browser);
     const context = await browser.newContext({
       viewport: { width: 1280, height: 800 },
       ...(userAgent ? { userAgent } : {}),

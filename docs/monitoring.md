@@ -1,6 +1,6 @@
 # Monitoring and privacy
 
-SurfCAD’s US launch uses an **opt-out** model for product analytics: usage analytics are **on by default**, there is **no cookie banner**, and people can change their mind any time from **Privacy choices** in the site footer.
+SurfCAD asks for analytics consent on first visit. Optional tracking (PostHog) stays off until **Accept all**. **Required only** stores an opt-out. People can change their mind from **Change privacy choices** on `/privacy`, **Privacy choices** in the signed-out profile menu, or the site footer.
 
 Operational sign-up and login metrics for the US launch are sourced from **our MongoDB data** (slice A below) — no third-party analytics SDK in that slice.
 
@@ -9,11 +9,13 @@ Operational sign-up and login metrics for the US launch are sourced from **our M
 | API | Purpose |
 | --- | --- |
 | `getAnalyticsConsent()` | `true` when anonymous usage analytics may run in this browser tab. |
-| `setAnalyticsConsent(boolean)` | Saves preference to `localStorage` (`surfcad.consent.v1`: `{ analytics, updatedAt }`). |
+| `setAnalyticsConsent(boolean)` | Saves preference to `localStorage` (`surfcad.consent.v1`: `{ analytics, updatedAt, source? }`). |
+| `shouldShowPrivacyConsentPopup()` | `true` on a first visit with no stored choice and GPC off. |
+| `openPrivacyChoices()` | Re-opens the Accept all / Required only popup (`src/utils/privacyChoicesUi.js`). |
 | `onConsentChange(cb)` | Fires when the effective consent value changes. |
 | `isGpcActive()` | `true` when `navigator.globalPrivacyControl === true`. |
 
-**Defaults:** analytics allowed unless the stored record says otherwise. **Global Privacy Control (GPC)** always counts as opt-out: `getAnalyticsConsent()` is `false` while GPC is set, and `setAnalyticsConsent(true)` cannot override that.
+**Defaults:** analytics off until the user stores a choice. **Global Privacy Control (GPC)** is Required only: the popup is not shown, `{ analytics: false, source: 'gpc' }` is stored, `getAnalyticsConsent()` is `false` while GPC is set, and `setAnalyticsConsent(true)` cannot override that.
 
 **Not gated by this toggle:** error and crash reporting (e.g. Sentry) — treated as essential operational telemetry so production issues can be diagnosed. PostHog and any other usage analytics must call `getAnalyticsConsent()` before sending events.
 
@@ -27,13 +29,15 @@ Works with **no API keys** and **no network**: preferences live in `localStorage
 
 ## UI
 
-**Privacy choices** opens a small dialog (footer on the CAD app and `/partners`):
+A small non-blocking popup (`data-privacy-consent-popup`, bottom of the screen, above the CAD toolbar and the mobile home pill) asks on first visit:
 
-- Toggle: **Allow usage analytics**
-- Plain-language summary: anonymous usage events and page performance; no session recording; no ads
-- When GPC is detected, a note explains that SurfCAD honours it and the toggle is disabled
+- **Accept all** (green primary) — optional analytics may load
+- **Required only** (grey secondary) — analytics stay off
+- One line of copy plus a link to `/privacy`
 
-Later monitoring slices (PostHog, Sentry) should import `src/utils/consent.js` only — do not add parallel consent state.
+`/privacy` (`src/pages/PrivacyPage.jsx`) always shows “Your browser's Global Privacy Control signal is honored” and **Change privacy choices**, which calls `openPrivacyChoices()`. The signed-out profile chip has a **Privacy choices** row that uses the same handler.
+
+Later monitoring slices (PostHog, Sentry) should import `src/utils/consent.js` only — do not add parallel consent state. If gitleaks flags the storage key name `surfcad.consent.v1`, PR #566 handles the allowlist.
 
 ---
 

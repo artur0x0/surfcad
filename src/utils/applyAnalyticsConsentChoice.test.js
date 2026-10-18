@@ -25,13 +25,13 @@ describe('applyAnalyticsConsentChoice', () => {
     configureConsentNavigator({});
   });
 
-  test('defaults analytics on until the user opts out', async () => {
-    assert.equal(getAnalyticsConsent(), true);
+  test('defaults analytics off until the user accepts', async () => {
+    assert.equal(getAnalyticsConsent(), false);
     assert.equal(hasStoredConsentChoice(), false);
 
-    await applyAnalyticsConsentChoice(false, { isAuthenticated: false });
+    await applyAnalyticsConsentChoice(true, { isAuthenticated: false });
     assert.equal(hasStoredConsentChoice(), true);
-    assert.equal(getAnalyticsConsent(), false);
+    assert.equal(getAnalyticsConsent(), true);
   });
 
   test('privacy choices can flip preference back on', async () => {

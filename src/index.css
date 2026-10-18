@@ -637,3 +637,17 @@ textarea {
       0 0 10px rgb(239 68 68 / 0.35);
   }
 }
+
+/* First-visit privacy consent popup: above the footer and the mobile
+   home-indicator pill, inset between the left/right rails so it never
+   covers the CAD toolbar. */
+.privacy-consent-anchor {
+  bottom: calc(max(0.35rem, env(safe-area-inset-bottom, 0px)) + 1.75rem);
+}
+@media (max-width: 768px) {
+  :root:has([data-mobile-stage-home-indicator]) .privacy-consent-anchor {
+    bottom: calc(30px + max(8px, env(safe-area-inset-bottom, 0px)) + 0.5rem);
+    padding-left: 4.75rem;
+    padding-right: 4.75rem;
+  }
+}
