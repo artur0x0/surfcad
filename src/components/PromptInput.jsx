@@ -11,6 +11,12 @@ import {
   shouldShowAgentPrompt,
 } from '../agent/agentPromptDemo.js';
 import { registerAgentPromptHandler } from '../agent/agentPromptHost.js';
+import {
+  AGENT_PROMPT_WORKING_TIMEOUT_MS,
+  ackNotice,
+  bindAgentPromptTransport,
+  shouldUseLiveAgentPrompt,
+} from '../agent/agentPromptLive.js';
 import { AGENT_PROMPT_MAX_CHARS, sendAgentPromptText } from '../agent/agentPromptStub.js';
 import { shouldShowAgentBridgeDisconnect } from '../agent/ws/pairingFlow.js';
 import { useAgentBridgeHost } from './AgentBridgeHost.jsx';
@@ -57,19 +63,25 @@ export default function PromptInput({
   captureViewer = null,
   demoSearch = undefined,
   promptEnv = undefined,
+  promptContext = undefined,
 }) {
-  const { paired, link } = useAgentBridgeHost();
+  const { paired, link, promptTransport } = useAgentBridgeHost();
   const demoAllowed = agentPromptDemoAllowed(promptEnv);
   const demo = useMemo(
     () => readAgentPromptDemo(demoSearch, promptEnv),
     [demoSearch, promptEnv],
   );
+  const liveSession = shouldUseLiveAgentPrompt({ paired, link });
 
-  const transportRef = useRef(undefined);
-  if (transportRef.current === undefined && transportProp == null) {
-    transportRef.current = createAgentPrompt(undefined, promptEnv);
+  const stubRef = useRef(undefined);
+  if (stubRef.current === undefined) {
+    stubRef.current = createAgentPrompt(undefined, promptEnv);
   }
-  const transport = transportProp || transportRef.current;
+  // Paired (or still-connected) sessions use the real transport in DEV and
+  // prod. The echo stub is DEV-only and only when nothing is paired.
+  const transport = transportProp
+    || (liveSession ? promptTransport : stubRef.current)
+    || null;
   const visible = shouldShowAgentPrompt({
     paired,
     link,
@@ -86,11 +98,12 @@ export default function PromptInput({
     seed.reply ? [{ id: 'demo', text: seed.reply }] : [],
   );
   const [replyOpen, setReplyOpen] = useState(Boolean(seed.reply));
-  const [ackFailed, setAckFailed] = useState(false);
+  const [ack, setAck] = useState(null);
   const [shot, setShot] = useState(null);
   const [shotOn, setShotOn] = useState(seed.shotOn);
   const textareaRef = useRef(null);
   const pendingIdRef = useRef(null);
+  const notice = ackNotice(ack);
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -109,25 +122,41 @@ export default function PromptInput({
 
   useEffect(() => {
     if (!visible || !transport) return undefined;
-    const offReply = transport.onReply((msg) => {
-      if (!msg || typeof msg !== 'object') return;
-      setReplies((prev) => appendReply(prev, msg));
-      setReplyOpen(true);
-      if (msg.final === true) setWorking(false);
+    return bindAgentPromptTransport(transport, {
+      onReply(msg) {
+        if (!msg || typeof msg !== 'object') return;
+        const text = typeof msg.text === 'string' ? msg.text : '';
+        setReplies((prev) => appendReply(prev, { id: msg.id, text }));
+        setReplyOpen(true);
+        if (msg.final === true) setWorking(false);
+      },
+      onWorking(on) {
+        setWorking(on === true);
+      },
+      onAck(event) {
+        if (!event || typeof event !== 'object') return;
+        if (pendingIdRef.current && event.id !== pendingIdRef.current) return;
+        setAck(event);
+        if (event.delivery === 'failed') setWorking(false);
+      },
     });
-    const offWorking = transport.onWorking((on) => {
-      setWorking(on === true);
-    });
-    const offAck = transport.onAck?.((ack) => {
-      if (!ack || typeof ack !== 'object') return;
-      setAckFailed(ack.delivery === 'failed');
-    });
-    return () => {
-      offReply?.();
-      offWorking?.();
-      offAck?.();
-    };
   }, [transport, visible]);
+
+  useEffect(() => {
+    if (visible) return undefined;
+    setWorking(false);
+    setReplies([]);
+    setReplyOpen(false);
+    setAck(null);
+    pendingIdRef.current = null;
+    return undefined;
+  }, [visible]);
+
+  useEffect(() => {
+    if (!working) return undefined;
+    const timer = setTimeout(() => setWorking(false), AGENT_PROMPT_WORKING_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [working]);
 
   const discardShot = useCallback(() => {
     setShot(null);
@@ -142,21 +171,23 @@ export default function PromptInput({
     if (trimmed.length > AGENT_PROMPT_MAX_CHARS) {
       return { ok: false, reason: 'too_long' };
     }
+    setAck(null);
     const sent = sendAgentPromptText(
       transport,
       trimmed,
-      shot ? { screenshot: shot } : {},
+      {
+        ...(shot ? { screenshot: shot } : {}),
+        ...(promptContext ? { context: promptContext } : {}),
+      },
       { working },
     );
     if (!sent.ok) return sent;
-    setAckFailed(false);
-    setWorking(true);
     pendingIdRef.current = sent.id;
     setInput('');
     discardShot();
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     return sent;
-  }, [discardShot, input, shot, transport, working]);
+  }, [discardShot, input, promptContext, shot, transport, working]);
 
   const stopAgent = useCallback(() => {
     transport?.abort?.();
@@ -167,7 +198,7 @@ export default function PromptInput({
   const dismissReply = useCallback(() => {
     setReplyOpen(false);
     setReplies([]);
-    setAckFailed(false);
+    setAck(null);
     return { ok: true };
   }, []);
 
@@ -254,7 +285,9 @@ export default function PromptInput({
               <X size={14} aria-hidden />
             </button>
           </div>
-          <div className="agent-prompt-reply-body text-ui text-on-dark">{replyText}</div>
+          <div className="agent-prompt-reply-body text-ui text-on-dark" data-agent-reply-body="">
+            {replyText}
+          </div>
         </div>
       ) : null}
 
@@ -265,9 +298,15 @@ export default function PromptInput({
         </div>
       ) : null}
 
-      {ackFailed ? (
-        <p className="agent-prompt-ack text-ui-xs text-muted-on-dark" data-agent-prompt-ack="failed">
-          Agent not listening
+      {notice?.kind === 'failed' ? (
+        <p className="agent-prompt-ack text-ui-xs text-on-dark" data-agent-prompt-ack="failed">
+          {notice.text}
+        </p>
+      ) : null}
+
+      {notice?.kind === 'queued' && !working ? (
+        <p className="agent-prompt-ack text-ui-xs text-muted-on-dark" data-agent-prompt-ack="queued">
+          Waiting for agent
         </p>
       ) : null}
 

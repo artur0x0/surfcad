@@ -93,8 +93,10 @@ test('resizing across 768px keeps the same socket and tabKey', () => {
 test('host publishes paired so the floating prompt matches Disconnect', () => {
   assert.match(SRC, /const \[paired, setPaired\] = useState\(false\)/);
   assert.match(SRC, /onPairingChange=\{onPairingChange\}/);
-  assert.match(SRC, /\{ link, paired, offerSlot, registerCloseMenu \}/);
+  assert.match(SRC, /\{ link, paired, promptTransport, offerSlot, registerCloseMenu \}/);
   assert.match(SRC, /setPaired\(nextPaired === true\)/);
+  assert.match(SRC, /createLiveAgentPromptTransport/);
+  assert.match(SRC, /shouldUseLiveAgentPrompt/);
 });
 
 test('ProfileChip offers the panel slot and does not own the socket', () => {

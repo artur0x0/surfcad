@@ -1,17 +1,12 @@
 /**
- * PR 1 stub for the in-viewer agent prompt.
+ * DEV-only echo stub for the in-viewer agent prompt.
  *
- * The MCP Lead owns `src/agent/agentPromptTransport.js` and will export
- * `createAgentPromptTransport()` later. This file is the only implementation
- * shipped in PR 1. The UI imports through `createAgentPrompt.js` so PR 2 is
- * a one-import swap.
- *
- * DEV and unit tests only (`createAgentPrompt` returns null when
- * `import.meta.env.DEV` is not true). Production pairing waits for the
- * real transport and must never echo.
+ * Paired sessions use `createAgentPromptTransport(bridge)` from the MCP
+ * Lead's adapter. This stub stays for DEV with no pairing and for tests.
+ * Production with no paired agent must never call it.
  *
  * Interface:
- *   send(text, { screenshot? }) → page-made uuid
+ *   send(text, { screenshot?, context? }) → page-made uuid
  *   onReply(cb)  cb({ id, text, final })   — multiple replies per id append
  *   onWorking(cb) cb(boolean)
  *   onAck(cb)    cb({ id, delivery: 'webhook'|'queued'|'failed', error? })
@@ -21,18 +16,23 @@
 export const AGENT_PROMPT_MAX_CHARS = 8000;
 
 /**
- * UI-side send: trim, enforce the char cap, attach an optional screenshot.
- * The caller discards the attached shot after a successful send.
+ * UI-side send: trim, enforce the char cap, attach an optional screenshot
+ * and part/assembly context. The caller discards the attached shot after
+ * a successful send.
  */
 export function sendAgentPromptText(transport, text, extras = {}, options = {}) {
   const trimmed = typeof text === 'string' ? text.trim() : '';
   const maxChars = Number.isFinite(options.maxChars) ? options.maxChars : AGENT_PROMPT_MAX_CHARS;
   if (!trimmed || options.working === true) return { ok: false, reason: 'empty' };
   if (trimmed.length > maxChars) return { ok: false, reason: 'too_long' };
-  const shot = extras && extras.screenshot && typeof extras.screenshot === 'object'
-    ? extras.screenshot
-    : null;
-  const id = transport.send(trimmed, shot ? { screenshot: shot } : {});
+  const payload = {};
+  if (extras && extras.screenshot && typeof extras.screenshot === 'object') {
+    payload.screenshot = extras.screenshot;
+  }
+  if (extras && extras.context && typeof extras.context === 'object') {
+    payload.context = extras.context;
+  }
+  const id = transport.send(trimmed, payload);
   return { ok: true, id };
 }
 

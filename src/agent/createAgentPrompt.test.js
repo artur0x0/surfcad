@@ -33,7 +33,7 @@ test('non-DEV build with no transport keeps the prompt hidden', () => {
   }), false);
 });
 
-test('DEV still gets the stub so local pairing can be playtested', () => {
+test('DEV still gets the stub so local unpaired playtest can echo', () => {
   const transport = createAgentPrompt({ delayMs: 0, reply: 'Echo: hi' }, { DEV: true });
   assert.ok(transport);
   const replies = [];

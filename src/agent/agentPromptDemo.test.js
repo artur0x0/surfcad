@@ -58,6 +58,16 @@ test('shouldShowAgentPrompt matches Disconnect unless a demo state overrides', (
   }), false);
 });
 
+test('prod with a live transport shows the prompt when paired', () => {
+  assert.equal(shouldShowAgentPrompt({
+    paired: true,
+    link: 'connected',
+    hasTransport: true,
+    demoAllowed: false,
+    shouldShowDisconnect: shouldShowAgentBridgeDisconnect,
+  }), true);
+});
+
 test('prod with no transport hides the prompt even when paired', () => {
   assert.equal(shouldShowAgentPrompt({
     paired: true,

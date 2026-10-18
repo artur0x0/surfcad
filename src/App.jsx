@@ -6,7 +6,7 @@ import Viewport from './components/Viewport';
 import { BrandMark, BrandWordmark } from './components/brand/BrandWordmark';
 import { clearLoadingTheme, readLoadingTheme } from './utils/loadingTheme';
 import PromptInput from './components/PromptInput';
-import { agentPromptStubAllowed } from './agent/createAgentPrompt.js';
+import { agentPromptContext } from './agent/agentPromptLive.js';
 import SplitDivider from './components/SplitDivider';
 import ScriptEditorDrawer from './components/ScriptEditorDrawer';
 import MobileStageToggle from './components/MobileStageToggle';
@@ -10484,9 +10484,15 @@ const App = () => {
   ) : null;
 
   const captureViewerShot = () => viewportRef.current?.capturePng?.({ format: 'png' }) ?? null;
-  // No transport in prod for this PR — do not mount the card at all.
-  const agentPromptNode = appMode !== 'game' && agentPromptStubAllowed() ? (
-    <PromptInput isMobile={isMobile} captureViewer={captureViewerShot} />
+  const agentPromptNode = appMode !== 'game' ? (
+    <PromptInput
+      isMobile={isMobile}
+      captureViewer={captureViewerShot}
+      promptContext={agentPromptContext({
+        partId: cadPartId || assemblyDoc?.activeId || '',
+        assemblyId: assemblyDoc?.id || '',
+      })}
+    />
   ) : null;
 
   let shell;

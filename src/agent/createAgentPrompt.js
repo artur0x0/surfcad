@@ -1,10 +1,10 @@
 /**
- * Injection point for the in-viewer agent prompt transport.
+ * DEV-only echo stub for the in-viewer agent prompt.
  *
- * PR 1: the stub is DEV / test only. Production builds return null so the
- * UI never echoes a fake reply. PR 2 (MCP Lead): swap the DEV branch to
- * `createAgentPromptTransport` from `./agentPromptTransport.js`.
- * Do not create or edit `agentPromptTransport.js` in this PR.
+ * Paired sessions use `createLiveAgentPromptTransport()` (real
+ * `createAgentPromptTransport(bridge)`). This stub is for DEV with no
+ * pairing and for `?agentPromptDemo=1`. Production with no paired agent
+ * returns null and never echoes.
  */
 import { createAgentPromptStub } from './agentPromptStub.js';
 

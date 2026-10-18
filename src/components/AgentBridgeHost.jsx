@@ -1,11 +1,16 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createLiveAgentPromptTransport,
+  shouldUseLiveAgentPrompt,
+} from '../agent/agentPromptLive.js';
 import { createCloseMenuRegistry, shouldKeepAgentBridgeHostMounted } from '../agent/ws/pairingFlow.js';
 import AgentBridgePairing from './AgentBridgePairing';
 
 const AgentBridgeHostContext = createContext({
   link: null,
   paired: false,
+  promptTransport: null,
   offerSlot: () => {},
   registerCloseMenu: () => () => {},
 });
@@ -36,9 +41,31 @@ export default function AgentBridgeHost({ enabled = false, children }) {
     setPaired(nextPaired === true);
     if (nextLink !== undefined) setLink(nextLink);
   }, []);
+  const livePrompt = shouldUseLiveAgentPrompt({ paired, link });
+  const [promptTransport, setPromptTransport] = useState(null);
+  useEffect(() => {
+    if (!livePrompt) {
+      setPromptTransport(null);
+      return undefined;
+    }
+    let cancelled = false;
+    let created = null;
+    const assign = () => {
+      if (cancelled || created) return;
+      created = createLiveAgentPromptTransport();
+      if (created) setPromptTransport(created);
+    };
+    assign();
+    const retry = setTimeout(assign, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(retry);
+      setPromptTransport(null);
+    };
+  }, [livePrompt]);
   const value = useMemo(
-    () => ({ link, paired, offerSlot, registerCloseMenu }),
-    [link, paired, offerSlot, registerCloseMenu],
+    () => ({ link, paired, promptTransport, offerSlot, registerCloseMenu }),
+    [link, paired, promptTransport, offerSlot, registerCloseMenu],
   );
   const mount = shouldKeepAgentBridgeHostMounted({ agentBridgeLive: enabled });
 
