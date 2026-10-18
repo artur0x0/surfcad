@@ -9,10 +9,12 @@ const SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ProfileC
 test('viewport wrap is absolute 36 chip positioning only', () => {
   assert.match(
     SRC,
-    /const wrapClass = inline\s*\n\s*\? 'pointer-events-auto relative z-10 shrink-0 overflow-visible'\s*\n\s*: 'pointer-events-auto absolute top-4 right-4 z-50 overflow-visible';/,
+    /const wrapClass = inline\s*\n\s*\? 'pointer-events-auto relative z-10 shrink-0 overflow-visible'\s*\n\s*: 'pointer-events-auto absolute top-4 lg:top-2 right-4 z-50 overflow-visible';/,
   );
   const wrapAssign = SRC.match(/const wrapClass = inline[\s\S]*?;/)?.[0] || '';
   assert.equal(wrapAssign.includes("z-50 relative"), false);
+  // Desktop (lg, ≥1024) matches data-viewer-header-row `top-4 lg:top-2`.
+  assert.match(wrapAssign, /lg:top-2/);
 });
 
 test('viewport chip button is relative; the ring is a wrap sibling so backdrop-filter cannot clip it', () => {
