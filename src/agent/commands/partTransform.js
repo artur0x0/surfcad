@@ -1,3 +1,5 @@
+import { rejectPartId } from '../state/identity.js';
+
 const VEC3 = Object.freeze({
   type: 'array',
   items: { type: 'number' },
@@ -26,21 +28,18 @@ export const partGetTransformCommand = Object.freeze({
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,
-    required: ['part'],
+    required: ['part_id'],
     properties: {
-      part: { type: 'string', description: 'Stable part id or vault path.' },
+      part_id: { type: 'string', description: 'Part id from parts. Not a vault path.' },
     },
   }),
-  example: { part: 'local:part1' },
+  example: { part_id: '2026-10-07-20-56-31-0423-a3f9' },
   immediate: true,
   checkArgs(args) {
-    if (typeof args?.part !== 'string' || !args.part) {
-      return { code: 'bad_args', message: 'part_get_transform part must be a non-empty string' };
-    }
-    return null;
+    return rejectPartId(args?.part_id);
   },
   run(ctx, args) {
-    return hostCall(ctx, 'agentGetPartTransform', { partId: args.part });
+    return hostCall(ctx, 'agentGetPartTransform', { partId: args.part_id });
   },
 });
 
@@ -49,9 +48,9 @@ export const partSetTransformCommand = Object.freeze({
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,
-    required: ['part'],
+    required: ['part_id'],
     properties: {
-      part: { type: 'string', description: 'Stable part id or vault path to move.' },
+      part_id: { type: 'string', description: 'Part id from parts. Not a vault path.' },
       position: {
         ...VEC3,
         description: 'Translation [x, y, z] in mm. Omitted keeps the current translation.',
@@ -63,11 +62,10 @@ export const partSetTransformCommand = Object.freeze({
       },
     },
   }),
-  example: { part: 'local:part1', position: [10, 0, 0] },
+  example: { part_id: '2026-10-07-20-56-31-0423-a3f9', position: [10, 0, 0] },
   checkArgs(args) {
-    if (typeof args?.part !== 'string' || !args.part) {
-      return { code: 'bad_args', message: 'part_set_transform part must be a non-empty string' };
-    }
+    const bad = rejectPartId(args?.part_id);
+    if (bad) return bad;
     if (args.position == null && args.rotation == null) {
       return { code: 'bad_args', message: 'part_set_transform needs position or rotation' };
     }
@@ -75,7 +73,7 @@ export const partSetTransformCommand = Object.freeze({
   },
   async run(ctx, args) {
     return hostCall(ctx, 'agentSetPartTransform', {
-      partId: args.part,
+      partId: args.part_id,
       position: args.position,
       rotation: args.rotation,
     });

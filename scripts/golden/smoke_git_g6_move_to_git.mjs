@@ -196,8 +196,12 @@ ok('G13 slim vault create: name + Save/Cancel only', /data-git-vault-create/.tes
   && !/data-git-move-plan/.test(feed) && !/data-git-move-shared=/.test(feed)
   && !/data-git-move-switch-only/.test(feed) && !/Switch only/.test(feed));
 ok('App wires plan + move', /onPlanMoveToGit=\{handlePlanMoveToGit\}/.test(app)
-  && /onMoveToGit=\{handleMoveToGit\}/.test(app) && /moveToGit\(ensureGitAdapter\(\)/.test(app)
-  && /rememberGitBaseline\(result\.baseline\)/.test(app) && /applyCommittedWorkspace\(\{ doc: result\.doc/.test(app));
+  && /onMoveToGit=\{handleMoveToGit\}/.test(app));
+ok('Move to Git is v2 first Save (ids stay opaque)',
+  /const handleMoveToGit[\s\S]*handleV2PlanSave\(/.test(app)
+  && /vaultLayout: 'v2'/.test(app.slice(app.indexOf('const handleMoveToGit'), app.indexOf('const handleListVaultAssemblies')))
+  && !/moveToGit\(ensureGitAdapter\(\)/.test(app)
+  && !/applyCommittedWorkspace\(\{ doc: result\.doc/.test(app));
 ok('default vault name from vault / surfcad', /defaultVaultName=\{gitDefaultVaultName\(\)\}/.test(app)
   && /DEFAULT_VAULT_NAME/.test(app));
 ok('Connect gated on client id / connected (G10)',

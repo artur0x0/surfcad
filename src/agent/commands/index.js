@@ -85,6 +85,10 @@ import {
   openAssemblyCommand,
   openPartCommand,
   insertPartCommand,
+  listAssembliesCommand,
+  deletePartCommand,
+  deleteAssemblyCommand,
+  renameAssemblyCommand,
 } from './document.js';
 import { partGetTransformCommand, partSetTransformCommand } from './partTransform.js';
 import {
@@ -268,11 +272,15 @@ export const V1_COMMANDS = Object.freeze([
   createAssemblyCommand,
   createPartCommand,
   renamePartCommand,
+  renameAssemblyCommand,
   partGetTransformCommand,
   partSetTransformCommand,
   openAssemblyCommand,
   openPartCommand,
   insertPartCommand,
+  listAssembliesCommand,
+  deletePartCommand,
+  deleteAssemblyCommand,
   jointOpenCommand,
   jointSetParamsCommand,
   jointPickCommand,

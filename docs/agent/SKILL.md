@@ -32,7 +32,7 @@ Optional: `SURFCAD_AGENT_BRIDGE_WS_URL` (default `ws://127.0.0.1:17341`; preview
 
 1. **`status`** — volume, bbox, feature count (nulls if nothing ran yet).
 2. **`list_faces`** / **`list_feature_edges`** — stable pick ids (see below).
-3. **Make a feature** — e.g. `insert_cube`, then **`run`**; or `set_script` + `run`.
+3. **Make a feature** — e.g. `insert_cube`, then **`run`**; or `set_script` `{ part_id, source }` (part_id must be the active part) + `run`.
 4. **Pick** — `select_faces` / `select_edges`, or **`pick_begin`** → `pick_next` → `pick_done` `{ "accept": true }` for Fillet/Hole cards.
 5. **Commit** — helper inserts mutate the script and run; card flows end with `pick_done` `{ "accept": true }` or `confirm_feature`.
 6. **`history`** — read the stack the feature bar would undo (sketch session, assembly joints, or active part): `entries`, `head`, labels, `canUndo` / `canRedo`.
@@ -48,7 +48,7 @@ Optional: `SURFCAD_AGENT_BRIDGE_WS_URL` (default `ws://127.0.0.1:17341`; preview
 
 - **Faces** — `list_faces` rows: `id` (`f0`, `f1`, …, one per face a viewport click selects, same on a rerun of the same script), `type`, `center` / `normal` / `axis` / `radius`, `area`, and `key` `{ at, n, area, src?, ord? }` (same as viewport fingerprints). `joint_pick` takes `{ part_id, face_id }`; key-based tools take `key`.
 - **Edges** — prefer grouped **`e0`**, **`e1`**, … from `list_feature_edges`; raw mesh edges are not stable. Grouped `eN` expands to the UI edge chain.
-- **Parts** — assembly part ids from `parts` / `set_active_part`. The id is a stable UUID for the part's life. Agent `create_part` sits at the origin unless `position` is set; `part_get_transform` / `part_set_transform` read and set placement (intrinsic XYZ Euler degrees; look up by stable id or vault path). `status` is for the active part (including `not_run_yet`). `set_script` keeps `// @surf-id`. In a git assembly, `create_part` rows have no vault path until `git_save`, which writes `assemblies/<Assembly>/<Name>.js` and stores that path beside the same id. Paint, rename, and other edits stay on the working copy; only Save or consented `git_save` commits.
+- **Parts / assemblies** — ids from `parts` (`assemblyId`, `parts[].id`) and `list_assemblies` (`[{ id, name }]`). Shape `yyyy-mm-dd-hh-mm-ss-SSSS-xxxx`. Tools take `part_id` / `assembly_id` only — never a vault path, display name, or UUID alias. A path is `unknown_part` / `unknown_assembly`. `create_part` sits at the origin unless `position` is set; `part_get_transform` / `part_set_transform` / `set_active_part` / `set_script` look up by that id (`set_script` must match the active part or it returns `part_mismatch`). `status` is for the active part (including `not_run_yet`). `set_script` keeps `// @surf-id`. `open_assembly` takes `assembly_id` only. `rename_part` / `rename_assembly` change the working-copy display name (`moved: false`); Save writes the same `parts/<id>.js` / `assemblies/<id>.surf.json`. `delete_part` `{ scope: "assembly" | "repo" }` and `delete_assembly` are working-copy only (`repo` / `delete_parts` plan file deletes for the next Save; `scope: "repo"` needs `confirm: true` and returns `part_still_referenced` if another assembly lists the id). `git_save { message }` is the same planSave / writeVaultCommit path as the Save button. `dirty.unsaved` is WC vs last AssemblyCommit (survives reload; rename / hide / remove count; changing `activeId` does not). Paint and other edits stay on the working copy until Save or consented `git_save`.
 - **Sketch** — in-contour entities `p0`, `e0`, `a0`, …; saved contour block id is `@contour id=c1` on the script, not sketch prefixes.
 
 Full shapes: `docs/agent-export.md`.
@@ -64,11 +64,16 @@ MCP returns JSON text; bridge refusals use `isError: true` with:
 | `pair_pending` | Waiting for the user to click Allow in SurfCAD. |
 | `consent_pending` | Git write on a real repo while the consent dialog is up. Nothing was written. Ask the user to click **Allow** in SurfCAD, then retry the same call (`details.retry_after_ms`). |
 | `real_repo_blocked` | Git write on a real repo that cannot get consent: headless / automation (`details.reason` `consent_pending`) or the user denied this session (`consent_declined`). |
-| `confirm_required` | Destructive git op needs explicit user approval. |
+| `confirm_required` | Destructive op needs explicit user approval (`confirm: true`). |
+| `unknown_part` / `unknown_assembly` | Id not in the open document / vault. Call `parts` or `list_assemblies`. A path argument is this, not a lookup. |
+| `part_mismatch` | Writer `part_id` is not the active part. |
+| `part_still_referenced` | `delete_part` scope `repo` but another assembly still lists the id. |
+| `conflict` / `repo-moved` | `git_save` overlaps the remote tip (or the repo moved). No `path` fields. Use `git_force_overwrite` or `git_behind_resolve` with confirm, or stop. |
+| `pending_save` | Offline planned write. Ask the user to Save again when online. |
 
 Other codes (`unknown_face`, `picker_busy`, `pick_timeout`, …) match `docs/agent-export.md`.
 
-**Never** pass `confirm: true` on `git_branch_delete`, `git_force_overwrite`, `git_behind_resolve`, or dirty `git_branch_switch` unless the user explicitly asked for that destructive action.
+**Never** pass `confirm: true` unless the user explicitly asked for that destructive action. That covers `delete_assembly`, `delete_part` `{ scope: "repo" }`, `git_upgrade_vault`, `git_branch_delete`, `git_force_overwrite`, `git_behind_resolve`, and dirty `git_branch_switch`.
 
 ## Local demo
 

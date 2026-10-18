@@ -20,6 +20,11 @@ test('set_script and run pass through droppedPaints from the host', async () => 
       readHistory: () => ({ commits: [], head: -1 }),
       writeHistory() {},
       readActivePartSurfId: () => SURF,
+      readParts: () => ({
+        activeId: SURF,
+        assemblyName: 'Asm',
+        parts: [{ id: SURF, name: 'Cube', visible: true }],
+      }),
       async execute() {
         return {
           ok: true,
@@ -33,7 +38,7 @@ test('set_script and run pass through droppedPaints from the host', async () => 
     }),
   });
 
-  const ran = await api.call('set_script', { source: BODY });
+  const ran = await api.call('set_script', { part_id: SURF, source: BODY });
   assert.equal(ran.ok, true);
   assert.equal(ran.result.ok, true);
   assert.deepEqual(ran.result.droppedPaints, dropped);

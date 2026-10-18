@@ -1,7 +1,7 @@
 /**
  * create_part and open_assembly stay on the working copy.
- * Listing vault names for a missing open is a read inside the existing
- * list handler. These host functions must not commit, enqueue, or flush.
+ * open_assembly is id-only (v2). These host functions must not commit,
+ * enqueue, or flush.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -35,18 +35,10 @@ test('agentCreatePart and agentOpenAssembly do not call git', () => {
   assert.match(create, /agentRunOutcome\(text\)/);
   assert.match(APP, /bodyCount: finishedRunBodyCount\(run, bodyCountOfWorkerMesh\(run\.mesh\)\)/);
   assert.equal(/geom\.bodyCount === 0/.test(APP), false);
-  assert.match(open, /resolveAssemblyOpenName\(requested, names\)/);
-  assert.match(open, /inner\.getBranch\(vault\.repo, branch\)/);
-  assert.ok(open.indexOf('inner.getBranch(vault.repo, branch)') < open.indexOf('cacheVaultReads(inner, { branch, tip })'));
-  assert.ok(open.indexOf('cacheVaultReads(inner, { branch, tip })') < open.indexOf('handleListVaultAssemblies(cached)'));
-  assert.match(open, /cacheVaultReads\(inner, \{ branch, tip \}\)/);
-  assert.match(open, /handleListVaultAssemblies\(cached\)/);
-  assert.match(open, /setUploadNotice\(NO_REPO_YET_COPY\)/);
-  assert.match(open, /if \(decision\?\.error\) return \{ error: decision\.error \}/);
-  assert.match(
-    open,
-    /const opened = await handleOpenVaultAssembly\(openName, cached\);\s*if \(opened\?\.status === 'error'\) \{\s*return \{ error:/,
-  );
+  assert.match(open, /agentGitReadContext\('open_assembly'\)/);
+  assert.match(open, /handleOpenV2VaultAssembly\(assemblyId/);
+  assert.match(open, /unknownAssemblyError\(assemblyId\)/);
+  assert.equal(/resolveAssemblyOpenName/.test(open), false);
   assert.equal(/gitAdapterRef\.current\s*=/.test(open), false, open);
   const list = sliceFn('const handleListVaultAssemblies', 'const adoptVaultOpening');
   assert.match(list, /listVaultAssemblies\(adapter \|\| gitAdapterRef\.current/);

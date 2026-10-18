@@ -1,3 +1,5 @@
+import { rejectPartId } from '../state/identity.js';
+
 export const setActivePartCommand = Object.freeze({
   name: 'set_active_part',
   schema: {
@@ -5,16 +7,13 @@ export const setActivePartCommand = Object.freeze({
     additionalProperties: false,
     required: ['part_id'],
     properties: {
-      part_id: { type: 'string' },
+      part_id: { type: 'string', description: 'Part id from parts. Not a vault path.' },
     },
   },
-  example: { part_id: 'local:part1' },
+  example: { part_id: '2026-10-07-20-56-31-0423-a3f9' },
   immediate: true,
   checkArgs(args) {
-    if (typeof args?.part_id !== 'string' || !args.part_id) {
-      return { code: 'bad_args', message: 'set_active_part part_id must be a non-empty string' };
-    }
-    return null;
+    return rejectPartId(args?.part_id);
   },
   run(ctx, args) {
     const setActive = ctx.setActivePart;

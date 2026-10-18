@@ -1,8 +1,8 @@
 /* global window, document */
 /**
  * open_assembly with no repo shows "No repo yet. Save creates it."
- * A name lookup against a real adapter reuses the open's vault reads,
- * so it does not add a second surfcad.json read or a second tree listing.
+ * open_assembly { assembly_id } against a real adapter does not write git.
+ * A missing id is unknown_assembly.
  *
  *   npm run build:playtest && node scripts/playtest/run.mjs --scenario open-assembly-no-repo
  */
@@ -13,13 +13,16 @@ import { createStepRunner } from '../lib/stepRunner.mjs';
 import { createFakeGithub } from '../../golden/lib/fakeGithubApi.mjs';
 
 export const id = 'open-assembly-no-repo';
-export const title = 'open_assembly no-repo notice and shared vault reads';
+export const title = 'open_assembly no-repo notice and v2 id open';
 export const userId = 'user-playtest-open-notice';
 
 const LOGIN = 'playtest-open';
 const NOTICE = 'No repo yet. Save creates it.';
 const CUBE_ID = '2026-10-18-12-00-00-0001-a1b2';
 const PIN_ID = '2026-10-18-12-00-00-0002-c3d4';
+const BRACKET_ASM = '2026-10-18-12-00-00-0003-bb01';
+const HOUSING_ASM = '2026-10-18-12-00-00-0004-hh01';
+const MISSING_ASM = '2026-10-18-12-00-00-0009-dead';
 const CUBE = `// @surf-id ${CUBE_ID}\nlet part = Manifold.cube([20, 20, 20], true);\nreturn part;\n`;
 const PIN = `// @surf-id ${PIN_ID}\nlet part = Manifold.cylinder(12, 4, 4, 32, true);\nreturn part;\n`;
 
@@ -50,13 +53,14 @@ export function seedParts() {
   }];
 }
 
-function surfJson(name, partId, partPath, partName) {
+function v2Surf(id, name, partId, partName) {
   return `${JSON.stringify({
     format: 'surfcad.assembly',
-    version: 1,
+    version: 2,
+    id,
     name,
     activeId: partId,
-    parts: [{ id: partId, path: partPath, name: partName, visible: true, order: 0 }],
+    parts: [{ id: partId, name: partName, visible: true, order: 0 }],
   }, null, 2)}\n`;
 }
 
@@ -153,7 +157,7 @@ export async function run(ctx) {
     const beforeShot = join(shotDir, 'before-open-no-repo.png');
     await savePageScreenshot(page, beforeShot);
     const beforeText = await page.locator('body').innerText();
-    const opened = await agentCall(page, 'open_assembly', { name: 'Assembly' });
+    const opened = await agentCall(page, 'open_assembly', { assembly_id: MISSING_ASM });
     const toast = page.locator('[data-upload-toast]');
     await toast.waitFor({ state: 'visible', timeout: 10000 });
     const toastText = await toast.innerText();
@@ -170,59 +174,49 @@ export async function run(ctx) {
     return {
       ok,
       call: 'open_assembly',
-      args: { name: 'Assembly' },
+      args: { assembly_id: MISSING_ASM },
       envelope: opened,
       detail: `toast=${JSON.stringify(toastText)} toasts=${JSON.stringify(listed)}`,
     };
   });
 
-  await runner.runStep('missing name lists the vault assemblies', async () => {
+  await runner.runStep('unknown assembly_id is unknown_assembly', async () => {
     gate.noVault = false;
     commitFiles(fake, {
-      'assemblies/Bracket/.surf.json': surfJson('Bracket', CUBE_ID, 'assemblies/Bracket/Cube.js', 'Cube'),
-      'assemblies/Bracket/Cube.js': CUBE,
-      'assemblies/Housing/.surf.json': surfJson('Housing', PIN_ID, 'assemblies/Housing/Pin.js', 'Pin'),
-      'assemblies/Housing/Pin.js': PIN,
-    }, 'seed assemblies');
-    const opened = await agentCall(page, 'open_assembly', { name: 'does-not-exist' });
-    const names = opened.error?.details?.assemblies || [];
-    const ok = opened.ok === false
-      && opened.error?.code === 'not_found'
-      && /does-not-exist/.test(opened.error?.message || '')
-      && names.includes('Bracket')
-      && names.includes('Housing');
+      'surfcad.json': `${JSON.stringify({ kind: 'surfcad-vault', version: 2 }, null, 2)}\n`,
+      [`assemblies/${BRACKET_ASM}.surf.json`]: v2Surf(BRACKET_ASM, 'Bracket', CUBE_ID, 'Cube'),
+      [`parts/${CUBE_ID}.js`]: CUBE,
+      [`assemblies/${HOUSING_ASM}.surf.json`]: v2Surf(HOUSING_ASM, 'Housing', PIN_ID, 'Pin'),
+      [`parts/${PIN_ID}.js`]: PIN,
+    }, 'seed v2 assemblies');
+    const missing = await agentCall(page, 'open_assembly', { assembly_id: MISSING_ASM });
+    const ok = missing.ok === false && missing.error?.code === 'unknown_assembly';
     return {
       ok,
       call: 'open_assembly',
-      args: { name: 'does-not-exist' },
-      envelope: opened,
-      detail: `assemblies=${JSON.stringify(names)}`,
+      args: { assembly_id: MISSING_ASM },
+      envelope: missing,
+      detail: `code=${missing.error?.code}`,
     };
   });
 
-  await runner.runStep('opening a known name reuses the vault listing', async () => {
+  await runner.runStep('opening a known assembly_id does not write git', async () => {
     recorded.length = 0;
     gate.record = true;
-    const opened = await agentCall(page, 'open_assembly', { name: 'Bracket' });
+    const opened = await agentCall(page, 'open_assembly', { assembly_id: BRACKET_ASM });
     await page.waitForTimeout(3000);
     gate.record = false;
     const counts = tally(recorded);
-    const surf = counts.byRoute['GET /repos/:o/:r/contents/surfcad.json'] || 0;
-    const trees = counts.byRoute['GET /repos/:o/:r/git/trees/:sha'] || 0;
-    // #601 listed before opening: 2 surfcad.json reads and 5 tree listings
-    // on a comparable open (lead playtest a2). The shared cache keeps the
-    // marker to one read and the trees to the open plus lastCommit.
     const ok = opened.ok === true
-      && opened.result?.name === 'Bracket'
-      && counts.writes === 0
-      && surf <= 1
-      && trees <= 2;
+      && opened.result?.assemblyId === BRACKET_ASM
+      && opened.result?.assemblyName === 'Bracket'
+      && counts.writes === 0;
     return {
       ok,
       call: 'open_assembly',
-      args: { name: 'Bracket' },
-      envelope: { name: opened.result?.name, error: opened.error || null },
-      detail: `gets=${counts.gets} writes=${counts.writes} surfcad.json=${surf} trees=${trees} ${JSON.stringify(counts.byRoute)}`,
+      args: { assembly_id: BRACKET_ASM },
+      envelope: { assemblyId: opened.result?.assemblyId, error: opened.error || null },
+      detail: `gets=${counts.gets} writes=${counts.writes} ${JSON.stringify(counts.byRoute)}`,
     };
   });
 

@@ -1,7 +1,7 @@
 /* global window, document, sessionStorage */
 /**
  * create_part runs the script and returns the new part id.
- * open_assembly of a missing name is not_found and does not commit.
+ * open_assembly of a missing assembly_id is unknown_assembly and does not commit.
  *
  *   npm run build:playtest && node scripts/playtest/run.mjs --scenario create-part-open-assembly
  */
@@ -24,7 +24,7 @@ return part;
 `;
 
 export const id = 'create-part-open-assembly';
-export const title = 'create_part runs the new part; open_assembly misses are not_found';
+export const title = 'create_part runs the new part; open_assembly misses are unknown_assembly';
 export const userId = USER_ID;
 
 export function seedDoc() {
@@ -181,16 +181,17 @@ export async function run(ctx) {
     };
   });
 
-  await runner.runStep('open_assembly of a missing name is not_found', async () => {
+  await runner.runStep('open_assembly of a missing id is unknown_assembly', async () => {
     const commitsBefore = await mockCommitCount(page);
     const before = await agentCall(page, 'parts', {});
-    const env = await agentCall(page, 'open_assembly', { name: 'does-not-exist' });
+    const missingId = '2026-10-18-02-50-00-0001-dead';
+    const env = await agentCall(page, 'open_assembly', { assembly_id: missingId });
     const after = await agentCall(page, 'parts', {});
     writeJson(join(shotDir, 'open-assembly-missing.json'), env);
     const text = JSON.stringify(env);
     const ok = env.ok === false
-      && env.error?.code === 'not_found'
-      && /does-not-exist/.test(env.error?.message || '')
+      && env.error?.code === 'unknown_assembly'
+      && text.includes(missingId)
       && typeof env.error?.details?.hint === 'string'
       && env.error.details.hint.length > 0
       && !text.includes('assemblies/')
@@ -200,7 +201,7 @@ export async function run(ctx) {
     return {
       ok,
       call: 'open_assembly',
-      args: { name: 'does-not-exist' },
+      args: { assembly_id: missingId },
       envelope: env,
       detail: `hint=${env.error?.details?.hint || ''}`,
     };

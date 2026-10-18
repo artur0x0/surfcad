@@ -103,12 +103,6 @@ function scriptOf(wc, partId) {
   const scripts = wc.scripts;
   if (!scripts || typeof scripts !== 'object') return undefined;
   if (typeof scripts[partId] === 'string') return scripts[partId];
-  try {
-    const path = partIdPath(partId);
-    if (typeof scripts[path] === 'string') return scripts[path];
-  } catch {
-    /* not a v2 id */
-  }
   return undefined;
 }
 

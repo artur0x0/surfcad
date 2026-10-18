@@ -11,6 +11,7 @@ import {
 } from './gitAgent.js';
 import { COMMAND_META } from './export/commandMeta.js';
 import {
+  gitBehindResolveCommand,
   gitBranchCreateCommand,
   gitBranchDeleteCommand,
   gitListBranchesCommand,
@@ -33,6 +34,11 @@ test('git_branch_delete checkArgs enforces confirm', () => {
   const missing = gitBranchDeleteCommand.checkArgs({ branch: 'x' });
   assert.equal(missing?.code, 'confirm_required');
   assert.equal(gitBranchDeleteCommand.checkArgs({ branch: 'x', confirm: true }), null);
+});
+
+test('git_behind_resolve checkArgs enforces confirm', () => {
+  assert.equal(gitBehindResolveCommand.checkArgs({ action: 'reload' })?.code, 'confirm_required');
+  assert.equal(gitBehindResolveCommand.checkArgs({ action: 'branch', confirm: true }), null);
 });
 
 test('agentGitRealOptIn reads query, storage, and session', () => {
@@ -410,6 +416,61 @@ test('git_upgrade_vault result is a summary without plan or rekey scripts', () =
 test('git_upgrade_vault consent prompt names the vault', () => {
   const text = agentGitConsentPrompt('git_upgrade_vault', 'acme/vault', 'main');
   assert.match(text, /upgrade the vault on acme\/vault\/main/);
+});
+
+test('git_save conflict and repo-moved are typed errors without path fields', () => {
+  const conflict = gitOpResult({
+    status: 'conflict',
+    code: 'conflict',
+    error: 'Save overlaps the remote tip',
+    hint: 'git_behind_resolve { action: "reload", confirm: true }',
+    files: ['parts/x.js'],
+    paths: ['parts/x.js'],
+  }, { commandName: 'git_save' });
+  assert.equal(conflict.error?.code, 'conflict');
+  assert.match(conflict.error?.hint || '', /git_behind_resolve/);
+  assert.equal(JSON.stringify(conflict).includes('parts/'), false);
+  assert.equal(conflict.result, undefined);
+
+  const moved = gitOpResult({
+    status: 'repo-moved',
+    code: 'repo-moved',
+    error: 'The vault repo moved',
+    files: ['assemblies/Box/.surf.json'],
+  }, { commandName: 'git_save' });
+  assert.equal(moved.error?.code, 'repo-moved');
+  assert.equal(JSON.stringify(moved).includes('assemblies/'), false);
+});
+
+test('git_save host conflict is an envelope error', async () => {
+  const out = await gitSaveCommand.run({
+    readAgentGitAdapterKind: () => 'mock',
+    agentGitSave: async () => ({
+      status: 'conflict',
+      code: 'conflict',
+      error: 'Save overlaps the remote tip',
+      hint: 'git_force_overwrite or git_behind_resolve',
+      files: ['parts/x.js'],
+    }),
+  }, { message: 'Save' });
+  assert.equal(out.error?.code, 'conflict');
+  assert.equal(JSON.stringify(out).includes('parts/'), false);
+});
+
+test('git_save pending_save stays a result without path fields', async () => {
+  const out = await gitSaveCommand.run({
+    readAgentGitAdapterKind: () => 'mock',
+    agentGitSave: async () => ({
+      status: 'pending',
+      code: 'pending_save',
+      message: 'Save queued until online',
+      files: ['parts/x.js'],
+    }),
+  }, { message: 'Save' });
+  assert.equal(out.error, undefined);
+  assert.equal(out.result?.status, 'pending');
+  assert.equal(out.result?.code, 'pending_save');
+  assert.equal(Object.hasOwn(out.result, 'files'), false);
 });
 
 test('git_list_branches allowed on real adapter without opt-in', async () => {

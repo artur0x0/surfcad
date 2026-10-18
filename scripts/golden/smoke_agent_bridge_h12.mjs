@@ -9,6 +9,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
+import { wrapAgentCall } from '../playtest/lib/wrapAgentCall.mjs';
+import { isV2SurfId } from '../../src/utils/git/surfId.js';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
 const PORT = Number(process.env.SMOKE_PORT || 4327);
@@ -127,12 +129,13 @@ return part;
   }, { doc: ASSEMBLY });
 }
 
-async function agentCall(page, name, args) {
+async function rawAgentCall(page, name, args) {
   return page.evaluate(async ({ name, argsJson }) => window.surfcad.call(name, argsJson), {
     name,
     argsJson: JSON.stringify(args ?? {}),
   });
 }
+const agentCall = wrapAgentCall(rawAgentCall);
 
 async function shot(page, label, width) {
   await page.setViewportSize({ width, height: Math.round(width * 0.62) });
@@ -181,16 +184,43 @@ await page.waitForFunction(
 await page.waitForSelector('[data-cad-run]', { state: 'attached', timeout: 120000 });
 await page.waitForTimeout(600);
 
-const moved = await agentCall(page, 'git_move_to_repo', { vault_name: VAULT });
-check('git_move_to_repo', moved.ok === true && moved.result?.status === 'moved', JSON.stringify(moved));
-
 await agentCall(page, 'run', {});
+const partsListed = await agentCall(page, 'parts', {});
+const partId = partsListed.result?.activeId;
+check('parts.activeId', typeof partId === 'string' && partId.length > 0, JSON.stringify(partsListed));
 const cur = await agentCall(page, 'get_script', {});
 const edited = await agentCall(page, 'set_script', {
+  part_id: partId,
   source: `${cur.result?.source || ''}\n// h12 golden\n`,
 });
-check('set_script edit', edited.ok === true);
+check('set_script edit', edited.ok === true, JSON.stringify(edited));
+
+const moved = await agentCall(page, 'git_move_to_repo', { vault_name: VAULT });
+check('git_move_to_repo', moved.ok === true && moved.result?.status === 'moved', JSON.stringify(moved));
 await agentCall(page, 'run', {});
+
+const afterMove = await agentCall(page, 'parts', {});
+const movedRows = afterMove.result?.parts || [];
+const movedIds = movedRows.map((row) => row?.id).filter(Boolean);
+check(
+  'after move, parts ids are v2 surf-ids',
+  movedIds.length > 0 && movedIds.every((id) => isV2SurfId(id)),
+  JSON.stringify(movedIds),
+);
+check(
+  'after move, parts ids are not vault paths',
+  movedIds.every((id) => !String(id).includes('/') && !String(id).includes('\\')),
+  JSON.stringify(movedIds),
+);
+const listedId = afterMove.result?.activeId || movedIds[0];
+const afterScript = await agentCall(page, 'get_script', { part_id: listedId });
+const setListed = await agentCall(page, 'set_script', {
+  part_id: listedId,
+  source: `${afterScript.result?.source || ''}\n// after-move listed id\n`,
+});
+check('set_script with listed surf-id', setListed.ok === true, JSON.stringify(setListed));
+const activateListed = await agentCall(page, 'set_active_part', { part_id: listedId });
+check('set_active_part with listed surf-id', activateListed.ok === true, JSON.stringify(activateListed));
 
 const saved = await agentCall(page, 'git_save', { message: 'h12 golden save' });
 check('git_save', saved.ok === true && ['committed', 'queued', 'clean'].includes(saved.result?.status), JSON.stringify(saved));

@@ -141,26 +141,26 @@ export const gitAddToRepoCommand = Object.freeze({
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,
-    required: ['part_id'],
+    required: ['message'],
     properties: {
-      part_id: { type: 'string', description: 'Part row id to add under the vault layout' },
+      message: { type: 'string', description: 'Commit message. Alias of git_save; prefer git_save.' },
     },
   }),
-  example: { part_id: 'parts/Bracket.js' },
+  example: { message: 'Add to repo' },
   checkArgs(args) {
-    if (!args?.part_id || typeof args.part_id !== 'string') {
-      return { code: 'bad_args', message: 'git_add_to_repo needs part_id' };
-    }
+    const message = typeof args?.message === 'string' ? args.message.trim() : '';
+    if (!message) return { code: 'bad_args', message: 'git_add_to_repo needs a non-empty message' };
     return null;
   },
   async run(ctx, args) {
-    return hostGit(ctx, 'agentGitAddToRepo', { partId: args.part_id }, { commandName: 'git_add_to_repo' });
+    const message = String(args?.message || '').trim();
+    return hostGit(ctx, 'agentGitSave', { message }, { commandName: 'git_add_to_repo' });
   },
 });
 
 export const gitBehindResolveCommand = Object.freeze({
   name: 'git_behind_resolve',
-  uiEntry: ['data-git-behind-keep', 'data-git-behind-reload', 'data-git-behind-branch'],
+  uiEntry: ['data-git-behind-reload', 'data-git-behind-branch'],
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,
@@ -168,33 +168,25 @@ export const gitBehindResolveCommand = Object.freeze({
     properties: {
       action: {
         type: 'string',
-        enum: ['keep', 'reload', 'branch'],
-        description: 'Get latest choice: keep mine, reload remote, or park mine on a branch',
+        enum: ['reload', 'branch'],
+        description: 'reload = Get latest (no git write). branch = Save mine to a new branch. keep is removed.',
       },
-      path: { type: 'string', description: 'Vault path (assembly or part file)' },
-      kind: { type: 'string', enum: ['part', 'assembly'], description: 'Defaults from path when omitted' },
+      confirm: { type: 'boolean', description: 'Must be true.' },
     },
   }),
-  example: { action: 'keep', path: 'assemblies/demo.surf.json', kind: 'assembly' },
+  example: { action: 'reload', confirm: true },
   checkArgs(args) {
     const action = args?.action;
-    if (action !== 'keep' && action !== 'reload' && action !== 'branch') {
-      return { code: 'bad_args', message: 'git_behind_resolve action must be keep, reload, or branch' };
+    if (action !== 'reload' && action !== 'branch') {
+      return { code: 'bad_args', message: 'git_behind_resolve action must be reload or branch' };
     }
-    if ((action === 'reload' || action === 'branch') && !args?.path) {
-      return { code: 'bad_args', message: 'git_behind_resolve needs path for reload or branch' };
-    }
-    return null;
+    return requireDestructiveConfirm(args, `git_behind_resolve ${action}`);
   },
   async run(ctx, args) {
-    if (args.action === 'reload' || args.action === 'branch') {
-      const gate = requireDestructiveConfirm(args, `git_behind_resolve ${args.action}`);
-      if (gate) return { error: gate };
-    }
+    const gate = requireDestructiveConfirm(args, `git_behind_resolve ${args.action}`);
+    if (gate) return { error: gate };
     return hostGit(ctx, 'agentGitBehindResolve', {
       action: args.action,
-      path: args.path,
-      kind: args.kind,
     }, { commandName: 'git_behind_resolve' });
   },
 });

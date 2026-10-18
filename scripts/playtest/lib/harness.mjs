@@ -13,6 +13,7 @@ import {
   attachConsentPresetToBrowser,
   presetAnalyticsConsentInit,
 } from '../../golden/lib/presetConsentInit.mjs';
+import { wrapAgentCall } from './wrapAgentCall.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 
@@ -255,13 +256,15 @@ export async function waitForBridge(page) {
 }
 
 /** Relay-style call: args are JSON-serialised like an external agent. */
-export async function agentCall(page, name, args) {
+async function rawAgentCall(page, name, args) {
   const argsJson = JSON.stringify(args ?? {});
   return page.evaluate(async ({ name, argsJson }) => {
     const env = await window.surfcad.call(name, argsJson);
     return JSON.parse(JSON.stringify(env));
   }, { name, argsJson });
 }
+
+export const agentCall = wrapAgentCall(rawAgentCall);
 
 /** Match the feature bar: part undo needs a highlighted CAD part when the joint strip is showing. */
 export async function focusPartHistoryForUndo(page) {

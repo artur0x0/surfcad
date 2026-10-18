@@ -207,10 +207,26 @@ export function summarizeUpgradeVaultResult(result) {
   return out;
 }
 
+const TYPED_CONFLICT_COMMANDS = new Set([
+  'git_save',
+  'git_add_to_repo',
+  'git_force_overwrite',
+  'git_behind_resolve',
+]);
+
+function stripGitPathFields(result) {
+  if (!result || typeof result !== 'object') return result;
+  const next = { ...result };
+  delete next.files;
+  delete next.paths;
+  return next;
+}
+
 /**
  * Shape a host git result for the agent. `status: 'conflict'` is a real
- * payload for git_move_to_repo (paths / assemblyExists) and other writers
- * — same as main. Only git_upgrade_vault maps conflict to `{ error }`.
+ * payload for git_move_to_repo (paths / assemblyExists).
+ * git_save / git_add_to_repo / git_force_overwrite / git_behind_resolve
+ * map conflict and repo-moved to `{ error }` and omit path fields.
  *
  * @param {Record<string, unknown>} result
  * @param {{ commandName?: string }} [opts]
@@ -226,9 +242,13 @@ export function gitOpResult(result, { commandName } = {}) {
     || code === 'upgrade_unavailable';
   const upgradeConflict = commandName === 'git_upgrade_vault'
     && (result.status === 'conflict' || code === 'conflict');
-  if (result.status === 'error' || upgradeFailed || upgradeConflict) {
+  const typedConflict = TYPED_CONFLICT_COMMANDS.has(commandName)
+    && (result.status === 'conflict' || result.status === 'repo-moved'
+      || code === 'conflict' || code === 'repo-moved');
+  if (result.status === 'error' || upgradeFailed || upgradeConflict || typedConflict) {
     const error = {
-      code: code || (result.status === 'conflict' ? 'conflict' : 'git_error'),
+      code: code
+        || (result.status === 'conflict' || result.status === 'repo-moved' ? result.status : 'git_error'),
       message: result.error || result.message || 'Git operation failed',
     };
     if (typeof result.hint === 'string' && result.hint) error.hint = result.hint;
@@ -236,6 +256,9 @@ export function gitOpResult(result, { commandName } = {}) {
   }
   if (commandName === 'git_upgrade_vault') {
     return { result: summarizeUpgradeVaultResult(result) };
+  }
+  if (TYPED_CONFLICT_COMMANDS.has(commandName)) {
+    return { result: stripGitPathFields(result) };
   }
   return { result };
 }

@@ -124,41 +124,29 @@ test('planRenameVaultPartPath stays in its folder and uses -2 on collision', () 
 test('rename_part refuses an unknown id cleanly', async () => {
   let called = false;
   const ctx = {
-    readAgentPartRename: () => ({ known: false, writesGit: false }),
-    agentRenamePart: async () => { called = true; return { result: {} }; },
+    agentRenamePart: async () => {
+      called = true;
+      return { error: { code: 'unknown_part', message: 'Unknown part id: nope' } };
+    },
   };
   const out = await renamePartCommand.run(ctx, { part_id: 'nope', name: 'X' });
   assert.equal(out.error?.code, 'unknown_part');
-  assert.equal(called, false);
+  assert.equal(called, true);
   assert.equal(renamePartCommand.checkArgs({ part_id: 'a', name: '  ' })?.code, 'bad_args');
   assert.equal(renamePartCommand.checkArgs({ name: 'X' })?.code, 'bad_args');
 });
 
-test('rename_part on a vault part needs git consent; path-less rename does not', async () => {
+test('rename_part is working-copy only; a vault path is unknown_part', async () => {
   const renamed = [];
-  const base = {
-    readAgentGitAdapterKind: () => 'real',
-    readAgentGitRealOptIn: () => false,
-    readAgentGitSessionDenied: () => false,
-    readAgentGitWriteTarget: () => ({ repo: 'o/r', branch: 'main' }),
-    promptAgentGitWriteConsent: () => 'shown',
+  const ctx = {
     agentRenamePart: async (args) => {
       renamed.push(args);
-      return { result: { status: 'renamed', partId: args.partId } };
+      return { result: { partId: args.partId, name: args.name, moved: false } };
     },
   };
-  const vaultPart = await renamePartCommand.run(
-    { ...base, readAgentPartRename: () => ({ known: true, writesGit: true }) },
-    { part_id: 'parts/Bracket.js', name: 'Mount' },
-  );
-  assert.equal(vaultPart.error?.code, 'consent_pending');
-  assert.deepEqual(renamed, [], 'nothing renamed before Allow');
-
-  const local = await renamePartCommand.run(
-    { ...base, readAgentPartRename: () => ({ known: true, writesGit: false }) },
-    { part_id: IDS[0], name: 'Kettle Body' },
-  );
-  assert.equal(local.result?.status, 'renamed');
+  assert.equal(renamePartCommand.checkArgs({ part_id: 'parts/Bracket.js', name: 'Mount' })?.code, 'unknown_part');
+  const local = await renamePartCommand.run(ctx, { part_id: IDS[0], name: 'Kettle Body' });
+  assert.equal(local.result?.moved, false);
   assert.deepEqual(renamed, [{ partId: IDS[0], name: 'Kettle Body' }]);
 });
 

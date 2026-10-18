@@ -350,7 +350,7 @@ test('App wraps on set/paste/save and never on open', () => {
   );
   assert.match(apply, /adoptSavedScript/);
   assert.match(finish, /captureAgentScriptSnapshot\(\)/);
-  assert.match(APP, /async agentGitSave\(\{ message \}\) \{[\s\S]*?return handleGitCommit\(draft\);/);
+  assert.match(APP, /async agentGitSave\(\{ message \}\) \{[\s\S]*?handleGitCommit\(draft\)/);
   assert.doesNotMatch(APP, /wrapPending/);
   assert.equal([...APP.matchAll(/wrapRawScript\(/g)].length, 2);
   assert.equal([...APP.matchAll(/wrapUnmarkedPartScripts\(/g)].length, 1);

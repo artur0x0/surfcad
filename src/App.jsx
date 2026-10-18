@@ -113,6 +113,8 @@ import {
   assemblyNameForImport,
   nextNumberedName,
   DEFAULT_PART_NAME,
+  DEFAULT_ASSEMBLY_NAME,
+  sanitizeAssemblyName,
   needsAssemblyLeaveGuard,
 } from './utils/assembly';
 import {
@@ -155,11 +157,13 @@ import { editedPartIdsSinceSnapshot, liveEditorOverride, snapshotPartScripts } f
 import { buildFeatureTree } from './agent/state/featureTree';
 import { resolveRollbackTarget, resolveStripTarget } from './agent/featureStripAgent';
 import { buildPartsState } from './agent/state/parts';
+import { compareWorkingCopyToCommit } from './agent/state/workingCopyUnsaved';
+import { findPartById, unknownAssemblyError, unknownPartError } from './agent/state/identity';
 import { decidePartVisible } from './agent/state/partVisible';
+import { listV2Assemblies, listPartParentAssemblies, openV2Assembly } from './utils/git/v2VaultRead';
+import { assemblyIdPath, partIdPath, parseIdPath } from './utils/git/idPaths';
 import { createdPartFromDocs, scriptRequestsRun } from './agent/state/createPart.js';
 import { finishedRunBodyCount } from './agent/state/runBodyCount.js';
-import { assemblyOpenFailure, resolveAssemblyOpenName } from './agent/state/openAssemblyName.js';
-import { cacheVaultReads } from './agent/state/vaultReadCache.js';
 import { buildToasts } from './agent/state/toasts';
 import {
   historyStripTarget,
@@ -271,7 +275,6 @@ import {
   planOpenVaultPart,
   planCopyToAssembly,
   allocateVaultPartPath,
-  findAssemblyPart,
   partRepoPath,
   stampMissingSurfIds,
   rekeyWorkingCopyToTip,
@@ -281,7 +284,9 @@ import {
   isExternalPartPath,
   mintSurfId,
   withSurfId,
+  stripSurfId,
   readSurfId,
+  isV2SurfId,
   backfillSurfIds,
   applyIdPromotion,
   migrateAssemblyRecords,
@@ -294,7 +299,6 @@ import {
   assemblyRekeyKey,
   WORKING_COPY_DOC_UNSAVED,
   isSurfId,
-  isV2SurfId,
   partSurfId,
   reconcileSyncedFromTip,
   markPartsSynced,
@@ -368,7 +372,6 @@ import {
   storedVaultNameFromUser,
   sanitizeVaultName,
   planMoveToGit,
-  moveToGit,
   putAsset,
   placeLocalMeshParts,
   remapMeshRecords,
@@ -385,9 +388,8 @@ import {
   mainMovedPlanSavePaths,
   SAVE_CONFLICT_COPY,
 } from './utils/git';
-import { assemblyIdPath, parseIdPath } from './utils/git/idPaths';
 import { partScriptMatchesCommitted } from './utils/git/planSave';
-import { scheduleLastCommitFromApp } from './utils/git/lastCommit';
+import { makeBranchTip, scheduleLastCommitFromApp } from './utils/git/lastCommit';
 import {
   detectVaultLayout,
   executeUpgrade,
@@ -462,6 +464,8 @@ const App = () => {
   const [partScripts, setPartScripts] = useState({});
   const [partRuns, setPartRuns] = useState({});
   const assemblyRef = useRef(null);
+  /** Overlapping agent create_assembly calls join this promise (§3.6). */
+  const createAssemblyInFlightRef = useRef(null);
   /** Re-key persist pairs: autosave writes both `from` and `to` while in flight. */
   const persistFlightPairsRef = useRef([]);
   const persistFlightToOnlyRef = useRef(false);
@@ -3215,9 +3219,23 @@ const App = () => {
    * v2 first Save may create the repo through writeVaultCommit. Do not call
    * findOrCreateVault({ create: true }) — that still seeds a README index.
    */
-  const resolveVaultForPlanSave = async () => {
-    if (gitVaultRef.current?.repo) {
+  const resolveVaultForPlanSave = async ({ vaultName } = {}) => {
+    if (gitVaultRef.current?.repo && !sanitizeVaultName(vaultName)) {
       return { vault: gitVaultRef.current, create: false };
+    }
+    const requested = sanitizeVaultName(vaultName);
+    if (requested && !gitVaultRef.current?.repo) {
+      const adapter = ensureGitAdapter();
+      const { login } = await adapter.getViewer();
+      return {
+        vault: {
+          repo: { owner: login, name: requested },
+          defaultBranch: 'main',
+          headSha: null,
+          private: true,
+        },
+        create: true,
+      };
     }
     try {
       const vault = await ensureGitVault({ create: false });
@@ -3226,7 +3244,8 @@ const App = () => {
       if (err?.message !== NO_REPO_YET_COPY && err?.code !== NO_REPO_YET_CODE) throw err;
       const adapter = ensureGitAdapter();
       const { login } = await adapter.getViewer();
-      const name = storedVaultName()
+      const name = requested
+        || storedVaultName()
         || (adapter?.kind === 'mock' ? peekMockVaultName() : null)
         || DEFAULT_VAULT_NAME;
       return {
@@ -3252,6 +3271,32 @@ const App = () => {
   const isGitWorkingCopyDirty = () => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') return false;
+    if (isV2PlanSaveDoc(doc)) {
+      // v2 rows are path-less by design. leftover first-commit (no `path`)
+      // would keep Create from switching after a clean Save. Same compare
+      // as chrome / `dirty` (AssemblyCommit, not leftover baseline).
+      const vault = gitVaultRef.current;
+      const branch = gitWorkingBranch();
+      const store = gitSync();
+      const assemblyCommit = vault?.repo
+        ? store.getAssemblyCommit(vault.repo, branch, doc.id)
+        : null;
+      let liveScript = null;
+      if (!suppressPartSaveRef.current) {
+        const live = codeEditorRef.current?.getContent?.();
+        if (typeof live === 'string') liveScript = live;
+      }
+      const compared = compareWorkingCopyToCommit({
+        doc,
+        scripts: partScriptsRef.current,
+        liveId: doc.activeId,
+        liveScript,
+        assemblyCommit,
+        pendingSave: !!(vault?.repo && store.getPendingSave(vault.repo, branch)),
+        sidecarDirty: sidecarIsDirty(gitSidecarRef.current),
+      });
+      return compared.unsaved === true || compared.pendingSave === true;
+    }
     const baseline = gitBaselineRef.current;
     const parts = doc.parts || [];
     if (sidecarIsDirty(gitSidecarRef.current)) return true;
@@ -3658,62 +3703,78 @@ const App = () => {
   };
 
   /**
-   * G6 Move to Git: find-or-create the vault (rename field), write the
-   * IndexedDB parts + assembly into the layout as one commit, then switch the
-   * working copy to Git mode with a clean baseline.
+   * First Save of a local assembly (§3.3 / §3.5 / §6 PR 8): promote the WC to
+   * git v2 without assigning vault paths as row ids, then the same planSave /
+   * writeVaultCommit path as the Save button (`parts/<id>.js`). Leftover
+   * moveToGit still writes v1 folder paths and must not be used here.
+   *
+   * Reauth boot is read-only, so load-time collapse may not have run. Stamp
+   * with ensureLocalSurfIds (same mint as source-toggle), then collapse
+   * leftover keys like `seed` / `part1` onto those opaque ids. Switching
+   * source never remints a permanent id and never replaces one with a path.
    */
-  const handleMoveToGit = async ({ vaultName = DEFAULT_VAULT_NAME, sharedIds = [] } = {}) => {
-    const doc = assemblyRef.current;
-    if (!doc) return { status: 'error', error: 'No assembly' };
-    if (doc.source === 'git') return { status: 'error', error: 'Already in Git mode' };
-    try {
-      const live = liveEditorScript(doc);
-      if (live.liveId) {
-        savePartScript(live.liveId, live.liveScript);
-        rememberScripts({ ...partScriptsRef.current, [live.liveId]: live.liveScript });
+  const handleMoveToGit = async ({ vaultName = DEFAULT_VAULT_NAME } = {}) => {
+    const before = assemblyRef.current;
+    if (!before) return { status: 'error', error: 'No assembly' };
+    if (before.source === 'git') return { status: 'error', error: 'Already in Git mode' };
+    if (!before.parts?.length) return { status: 'empty' };
+    const name = sanitizeVaultName(vaultName);
+    if (!name) return { status: 'invalid-name', vaultName };
+    const beforeScripts = { ...partScriptsRef.current };
+    let collapsePairs = [];
+    const restoreLocal = () => {
+      if (collapsePairs.length) {
+        rekeyRuntime(collapsePairs.map(({ from, to }) => ({ from: to, to: from })));
       }
-      const result = await moveToGit(ensureGitAdapter(), {
-        vaultName,
-        storedName: storedVaultName(),
-        doc,
-        scripts: partScriptsRef.current,
-        sharedIds,
-        ...live,
-      });
-      if (result.status !== 'moved') return result;
-      // Carry runs / leftovers / undo history / CAD pick over to the new ids.
-      const remap = (map) => {
-        const next = { ...(map || {}) };
-        for (const { from, to } of result.idMap) {
-          if (from !== to && Object.prototype.hasOwnProperty.call(next, from)) {
-            next[to] = next[from];
-            delete next[from];
-          }
+      rememberScripts(beforeScripts);
+      rememberAssembly(before);
+    };
+    try {
+      await ensureLocalSurfIds();
+      const stamped = assemblyRef.current || before;
+      const live = liveEditorScript(stamped);
+      const scripts = { ...partScriptsRef.current };
+      if (live.liveId) {
+        scripts[live.liveId] = live.liveScript;
+        savePartScript(live.liveId, live.liveScript);
+      }
+      const collapsed = collapseWorkingCopyIds(stamped, scripts);
+      collapsePairs = collapsed.pairs || [];
+      if (collapsePairs.length) rekeyRuntime(collapsePairs);
+      rememberScripts(collapsed.scripts);
+      const assemblyId = isV2SurfId(collapsed.doc.id) ? collapsed.doc.id : mintSurfId();
+      // v2 WC is id-only: do not keep a leftover vault path on the row.
+      const v2Parts = (collapsed.doc.parts || []).map((part) => {
+        if (!part || typeof part !== 'object' || !Object.prototype.hasOwnProperty.call(part, 'path')) {
+          return part;
         }
+        const next = { ...part };
+        delete next.path;
         return next;
-      };
-      commitPartRuns(remap(partRunsRef.current));
-      partLeftoversRef.current = remap(partLeftoversRef.current);
-      const histories = remap(partHistoriesRef.current);
-      for (const key of Object.keys(partHistoriesRef.current)) delete partHistoriesRef.current[key];
-      Object.assign(partHistoriesRef.current, histories);
-      const pick = result.idMap.find((m) => m.from === cadPartIdRef.current);
-      if (pick) rememberCadPart(pick.to);
-      gitVaultRef.current = {
-        repo: result.vault.repo,
-        defaultBranch: result.vault.defaultBranch,
-        headSha: result.sha,
-        private: result.vault.private,
-      };
-      await noteResolvedVault(result.vault.repo);
-      await applyCommittedWorkspace({ doc: result.doc, scripts: result.scripts });
-      rememberGitBaseline(result.baseline);
-      if (result.sha) await gitSync().setLastSyncedSha(result.vault.repo, result.sha, 'main');
-      rememberGitBehind(null, { showToast: false, resetResolved: true });
-      setGitBehindToast(null);
+      });
+      rememberAssembly(serializeAssembly({
+        ...collapsed.doc,
+        parts: v2Parts,
+        id: assemblyId,
+        source: 'git',
+        vaultLayout: 'v2',
+      }));
+      const saved = await handleV2PlanSave(
+        `Move ${assemblyName(before) || name} to Git`,
+        { vaultName: name },
+      );
+      if (saved.status !== 'committed' && saved.status !== 'clean' && saved.status !== 'branched') {
+        restoreLocal();
+        return saved;
+      }
       refreshAssemblyRef.current?.(undefined, { persistActive: false });
-      return result;
+      return {
+        ...saved,
+        status: 'moved',
+        vault: gitVaultRef.current,
+      };
     } catch (err) {
+      restoreLocal();
       return { status: 'error', error: err.message || 'Move to Git failed' };
     }
   };
@@ -4214,18 +4275,73 @@ const App = () => {
   /**
    * G5: switch working branch — reload the open assembly from that tip.
    * Dirty working copy is replaced (PartFeed confirms first when dirty).
+   * v2 opens by assembly id (openV2Assembly). leftover switchVaultBranch
+   * opens by folder name and throws UnsupportedVaultLayoutError on v2.
    */
   const handleSwitchBranch = async (branchName) => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') {
       return { status: 'error', error: 'Not in Git mode' };
     }
-    const name = vaultSegment(doc.name) || doc.name;
-    if (!name) return { status: 'error', error: 'No assembly open' };
     const current = gitWorkingBranch();
     if (!branchName || branchName === current) {
       return { status: 'same', branch: current };
     }
+    if (isV2PlanSaveDoc(doc)) {
+      const id = doc.id;
+      try {
+        const opened = await runTrackedAssemblyOpen(assemblyOpenCtrlRef.current, {
+          name: id,
+          retry: () => { void handleSwitchBranch(branchName); },
+          load: async ({ progress, signal }) => {
+            refreshGenRef.current += 1;
+            const vault = await ensureGitVault({ create: false });
+            if (!signal()) return null;
+            const store = gitSync();
+            await store.ready();
+            const git = gitAdapterRef.current;
+            const tip = (await git.getBranch(vault.repo, branchName))?.sha || null;
+            if (!tip) throw new Error(`Branch not found: ${branchName}`);
+            const loaded = await openV2Assembly(git, vault.repo, id, {
+              branch: branchName,
+              headSha: tip,
+            });
+            if (!signal()) return null;
+            const adopted = await adoptVaultOpening(loaded, vault);
+            if (!signal()) return null;
+            await scheduleLastCommitFromApp({
+              adapter: git,
+              repo: vault.repo,
+              branch: branchName,
+              store,
+              opened: loaded,
+              adopted,
+              tip,
+              liveSession: () => ({
+                repo: gitVaultRef.current?.repo || vault.repo,
+                branch: gitWorkingBranch(),
+              }),
+            });
+            rememberGitBehind(null, { showToast: false, resetResolved: true });
+            setGitBehindToast(null);
+            void checkGitRemoteBehind({ showToast: true, reason: 'branch-switch' });
+            const saved = adopted.saved;
+            const keep = new Set(saved.parts.map((part) => String(part.id)));
+            for (const key of Object.keys(partHistoriesRef.current)) {
+              if (key !== '__game__' && !keep.has(key)) delete partHistoriesRef.current[key];
+            }
+            await finishOpenedPartRef.current(saved, adopted.scripts, progress);
+            return loaded;
+          },
+        });
+        if (!opened) return { status: 'error', error: 'Could not switch branch' };
+        return { status: 'switched', branch: branchName, baseline: opened.baseline };
+      } catch (err) {
+        return gitOpCatchResult(err, 'Could not switch branch');
+      }
+    }
+    const name = vaultSegment(doc.name) || doc.name;
+    if (!name) return { status: 'error', error: 'No assembly open' };
     try {
       const opened = await runTrackedAssemblyOpen(assemblyOpenCtrlRef.current, {
         name,
@@ -4871,6 +4987,25 @@ const App = () => {
         gitAdapterRef.current, vault.repo, branchName,
         { fromBranch: from },
       );
+      const doc = assemblyRef.current;
+      // A new ref at the same SHA carries the same AssemblyCommit. Copy it
+      // before switch so v2 chrome / confirm gates are not "first-commit dirty"
+      // on a branch that has no lastCommit row yet.
+      if (isV2PlanSaveDoc(doc) && vault.repo && created?.sha) {
+        const store = gitSync();
+        await store.ready();
+        const fromTip = store.getBranchTip(vault.repo, from);
+        if (!fromTip?.tipSha || fromTip.tipSha === created.sha) {
+          const tip = makeBranchTip({
+            repo: vault.repo,
+            branch: created.name,
+            tipSha: created.sha,
+          });
+          if (tip) await store.putBranchTip(vault.repo, created.name, tip);
+          const commit = store.getAssemblyCommit(vault.repo, from, doc.id);
+          if (commit) await store.putAssemblyCommit(vault.repo, created.name, commit);
+        }
+      }
       if (!shouldSwitchToCreatedBranch({ dirty: isGitWorkingCopyDirty() })) {
         return {
           status: 'created',
@@ -5093,14 +5228,14 @@ const App = () => {
       if (create && !gitVaultRef.current.repo) gitVaultRef.current.repo = repo;
     }
     const nextBranch = result.branch || branch;
+    const savedDoc = assemblyRef.current;
+    const live = codeEditorRef.current?.getContent?.();
+    const savedScripts = { ...(partScriptsRef.current || {}) };
+    if (savedDoc?.activeId && typeof live === 'string' && !suppressPartSaveRef.current) {
+      savedScripts[savedDoc.activeId] = live;
+    }
     if (result.status === 'committed' || result.status === 'branched') {
-      const savedDoc = assemblyRef.current;
       const prevBaseline = gitBaselineRef.current;
-      const live = codeEditorRef.current?.getContent?.();
-      const savedScripts = { ...(partScriptsRef.current || {}) };
-      if (savedDoc?.activeId && typeof live === 'string' && !suppressPartSaveRef.current) {
-        savedScripts[savedDoc.activeId] = live;
-      }
       const writes = (result.files || []).filter((file) => (
         file && typeof file === 'object' && typeof file.path === 'string'
       ));
@@ -5151,6 +5286,15 @@ const App = () => {
       setPlanSaveConflict(null);
       track('git_saved');
     }
+    if (savedDoc) {
+      // Explicit Save / Move to Git must land in IndexedDB even during reauth
+      // (playtest mock has no GitHub token). Do not replace row ids from
+      // committed paths — the WC ids stay opaque.
+      rememberAssembly(savedDoc, { force: true });
+      for (const [id, text] of Object.entries(savedScripts)) {
+        if (typeof text === 'string') await savePartScript(id, text);
+      }
+    }
     if (result.partStillReferenced?.length) {
       const names = result.partStillReferenced
         .map((row) => row.assemblies?.map((item) => item.name || item.id).filter(Boolean).join(', '))
@@ -5167,7 +5311,7 @@ const App = () => {
     };
   };
 
-  const handleV2PlanSave = async (message, { force = false } = {}) => {
+  const handleV2PlanSave = async (message, { force = false, vaultName } = {}) => {
     const doc = assemblyRef.current;
     if (!isV2PlanSaveDoc(doc)) return { status: 'error', error: 'Not a v2 git assembly' };
     const adapter = ensureGitAdapter();
@@ -5182,7 +5326,7 @@ const App = () => {
     const msg = typeof message === 'string' ? message.trim() : '';
     if (msg) v2SaveMessageRef.current = msg;
     try {
-      const { vault, create } = await resolveVaultForPlanSave();
+      const { vault, create } = await resolveVaultForPlanSave({ vaultName });
       const branch = gitWorkingBranch();
       const store = gitSync();
       const workingCopy = await v2WorkingCopy(doc);
@@ -6083,6 +6227,54 @@ const App = () => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') return undefined;
     if (gitBaselineRef.current) return undefined;
+    if (isV2PlanSaveDoc(doc)) {
+      // v2 rows are path-less by design. leftover allLocal / open-by-name
+      // would skip reseed or look up assemblies/<Name>/, then lastCommit
+      // never binds and every id looks unsaved. Restore the vault handle
+      // only; do not replace WC ids from committed paths.
+      if (gitVaultRef.current?.repo) return undefined;
+      let cancelled = false;
+      (async () => {
+        try {
+          const vault = await ensureGitVault({ create: false });
+          if (cancelled) return;
+          const store = gitSync();
+          await store.ready();
+          const branch = gitWorkingBranch();
+          const tip = store.getBranchTip(vault.repo, branch);
+          const headSha = (typeof tip?.tipSha === 'string' && tip.tipSha)
+            || (await gitAdapterRef.current.getBranch(vault.repo, branch))?.sha
+            || vault.headSha
+            || null;
+          gitVaultRef.current = { ...vault, headSha };
+          if (isV2SurfId(doc.id) && !store.getAssemblyCommit(vault.repo, branch, doc.id)) {
+            const opened = await openV2Assembly(gitAdapterRef.current, vault.repo, doc.id, {
+              branch,
+              headSha,
+            });
+            if (cancelled) return;
+            scheduleLastCommitFromApp({
+              adapter: gitAdapterRef.current,
+              repo: vault.repo,
+              branch,
+              store,
+              opened,
+              workingCopyId: doc.id,
+              tip: headSha,
+              reload: true,
+              liveSession: () => ({
+                repo: gitVaultRef.current?.repo || vault.repo,
+                branch: gitWorkingBranch(),
+              }),
+            });
+          }
+          if (!cancelled) setBootEpoch((n) => n + 1);
+        } catch (err) {
+          console.warn('[git] v2 vault reseed skipped', err?.message || err);
+        }
+      })();
+      return () => { cancelled = true; };
+    }
     const parts = doc.parts || [];
     const allLocal = parts.length > 0
       && parts.every((p) => {
@@ -6326,6 +6518,290 @@ const App = () => {
         return next;
       });
     }
+  };
+
+  const applySeededAssembly = async (seedDoc, starter, seedId) => {
+    refreshGenRef.current += 1;
+    partMeshMetaRef.current = {};
+    setPartMeshMeta({});
+    rememberScripts({ [seedId]: starter });
+    rememberSidecar(emptyWorkingSidecar());
+    rememberAssembly(seedDoc);
+    rememberGitBaseline(null);
+    rememberGitBehind(null, { showToast: false, resetResolved: true });
+    setGitBehindToast(null);
+    for (const key of Object.keys(partHistoriesRef.current)) {
+      if (key !== '__game__') delete partHistoriesRef.current[key];
+    }
+    partSaveEpochRef.current += 1;
+    focusPartHistory(seedId, starter);
+    suppressPartSaveRef.current = false;
+    setCurrentFilename(DEFAULT_PART_NAME);
+    codeEditorRef.current?.loadContent(starter, DEFAULT_PART_NAME, false);
+    saveEditorDraft({ script: starter, filename: DEFAULT_PART_NAME, partId: seedId });
+    setPendingPartIds((prev) => new Set(prev).add(seedId));
+    try {
+      await savePartScript(seedId, starter, seedDoc.source === 'git' ? { isSynced: false } : {});
+      track('assembly_created');
+    } catch (err) {
+      setUploadError(err?.message || 'Could not create assembly');
+    } finally {
+      setPendingPartIds((prev) => {
+        const next = new Set(prev);
+        next.delete(seedId);
+        return next;
+      });
+    }
+    await ensureLocalSurfIds();
+    return assemblyRef.current;
+  };
+
+  /** Agent create_assembly: optional label, no uniquify, no git write. */
+  const seedAgentAssembly = async ({ name } = {}) => {
+    const seedId = mintSurfId();
+    const source = githubConnected ? 'git' : 'local';
+    const starter = source === 'git' ? withSurfId(DEFAULT_SCRIPT, seedId) : DEFAULT_SCRIPT;
+    const raw = typeof name === 'string' ? name.trim() : '';
+    const label = raw || DEFAULT_ASSEMBLY_NAME;
+    const vaultLayout = source === 'git'
+      ? (assemblyRef.current?.vaultLayout === 'legacy' ? 'legacy' : 'v2')
+      : undefined;
+    const seedDoc = serializeAssembly({
+      id: mintSurfId(),
+      source,
+      name: label,
+      activeId: seedId,
+      ...(vaultLayout ? { vaultLayout } : {}),
+      parts: [{
+        id: seedId,
+        name: DEFAULT_PART_NAME,
+        visible: true,
+        order: 0,
+        ...(source === 'git' ? { isSynced: false, surfId: seedId } : {}),
+      }],
+    });
+    return applySeededAssembly(seedDoc, starter, seedId);
+  };
+
+  const agentGitReadContext = async (label) => {
+    const doc = assemblyRef.current;
+    if (!doc || doc.source !== 'git') {
+      return { error: { code: 'git_only', message: `${label} needs a git-backed assembly` } };
+    }
+    try {
+      const adapter = ensureGitAdapter();
+      const vault = await ensureGitVault({ create: false });
+      return { doc, adapter, vault, branch: gitWorkingBranch() };
+    } catch (err) {
+      if (err?.message === NO_REPO_YET_COPY || err?.code === 'git_blocked') {
+        setUploadNotice(NO_REPO_YET_COPY);
+        return { error: { code: 'git_blocked', message: NO_REPO_YET_COPY } };
+      }
+      return { error: { code: 'internal', message: err?.message || 'Vault unavailable' } };
+    }
+  };
+
+  const handleOpenV2VaultAssembly = async (assemblyId, adapter = null) => {
+    const id = typeof assemblyId === 'string' ? assemblyId.trim() : '';
+    try {
+      await runTrackedAssemblyOpen(assemblyOpenCtrlRef.current, {
+        name: id || 'assembly',
+        retry: () => { void handleOpenV2VaultAssembly(id); },
+        load: async ({ progress, signal }) => {
+          refreshGenRef.current += 1;
+          const vault = await ensureGitVault({ create: false });
+          if (!signal()) return;
+          const branch = gitWorkingBranch();
+          const git = adapter || gitAdapterRef.current;
+          const tip = (await git.getBranch(vault.repo, branch))?.sha || null;
+          const store = gitSync();
+          await store.ready();
+          const opened = await openV2Assembly(git, vault.repo, id, {
+            branch,
+            headSha: tip,
+          });
+          if (!signal()) return;
+          const adopted = await adoptVaultOpening(opened, vault);
+          if (!signal()) return;
+          scheduleLastCommitFromApp({
+            adapter: git,
+            repo: vault.repo,
+            branch,
+            store,
+            opened,
+            adopted,
+            tip,
+            liveSession: () => ({
+              repo: gitVaultRef.current?.repo || vault.repo,
+              branch: gitWorkingBranch(),
+            }),
+          });
+          const saved = adopted.saved;
+          const openedScripts = adopted.scripts;
+          void checkGitRemoteBehind({ showToast: true, reason: 'open' });
+          const keep = new Set(saved.parts.map((part) => String(part.id)));
+          for (const key of Object.keys(partHistoriesRef.current)) {
+            if (key !== '__game__' && !keep.has(key)) delete partHistoriesRef.current[key];
+          }
+          await finishOpenedPartRef.current(saved, openedScripts, progress);
+        },
+      });
+      return { status: 'opened', assemblyId: id };
+    } catch (err) {
+      console.warn('[App] Open assembly failed:', err?.message || err);
+      if (err?.message === NO_REPO_YET_COPY) setUploadNotice(NO_REPO_YET_COPY);
+      if (err?.code === 'unknown_assembly') {
+        return { status: 'error', code: 'unknown_assembly', error: err.message };
+      }
+      return gitOpCatchResult(err, 'Could not open assembly');
+    }
+  };
+
+  const flushLivePartScript = () => {
+    const doc = assemblyRef.current;
+    if (!doc) return { ...partScriptsRef.current };
+    const live = codeEditorRef.current?.getContent?.();
+    const prev = doc.activeId;
+    const scripts = { ...partScriptsRef.current };
+    if (prev && !suppressPartSaveRef.current && typeof live === 'string') {
+      scripts[prev] = live;
+      savePartScript(prev, live);
+      stashPartHistory(prev, live);
+    }
+    rememberScripts(scripts);
+    return scripts;
+  };
+
+  const insertReferencedParts = async ({ rows, copy = false } = {}) => {
+    const doc = assemblyRef.current;
+    if (!doc) {
+      return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+    }
+    const scripts = flushLivePartScript();
+    let parts = [...doc.parts];
+    let activeId = doc.activeId;
+    const added = [];
+    for (const row of rows || []) {
+      if (!row?.id) continue;
+      if (copy) {
+        const newId = mintSurfId();
+        const content = withSurfId(stripSurfId(row.script || ''), newId);
+        scripts[newId] = content;
+        await savePartScript(newId, content, doc.source === 'git' ? { isSynced: false } : {});
+        parts = [...parts, {
+          id: newId,
+          name: row.name || DEFAULT_PART_NAME,
+          visible: true,
+          order: parts.length,
+          copiedFrom: row.id,
+          ...(doc.source === 'git' ? { surfId: newId, isSynced: false } : {}),
+        }];
+        activeId = newId;
+        added.push(newId);
+        continue;
+      }
+      if (parts.some((part) => part.id === row.id)) {
+        activeId = row.id;
+        if (typeof row.script === 'string' && scripts[row.id] == null) scripts[row.id] = row.script;
+        continue;
+      }
+      if (row.missing === true) {
+        parts = [...parts, {
+          id: row.id,
+          name: row.name || DEFAULT_PART_NAME,
+          visible: true,
+          order: parts.length,
+          missing: true,
+        }];
+        activeId = row.id;
+        added.push(row.id);
+        continue;
+      }
+      if (typeof row.script === 'string') {
+        scripts[row.id] = row.script;
+        await savePartScript(row.id, row.script);
+      }
+      parts = [...parts, {
+        id: row.id,
+        name: row.name || DEFAULT_PART_NAME,
+        visible: true,
+        order: parts.length,
+        ...(doc.source === 'git' ? { surfId: row.id } : {}),
+      }];
+      activeId = row.id;
+      added.push(row.id);
+    }
+    const nextDoc = { ...doc, activeId, parts };
+    rememberScripts(scripts);
+    const saved = rememberAssembly(nextDoc);
+    refreshGenRef.current += 1;
+    const focus = saved.parts.find((part) => part.id === activeId) || saved.parts[saved.parts.length - 1];
+    if (focus) {
+      const text = scripts[focus.id] || '';
+      focusPartHistory(focus.id, text);
+      suppressPartSaveRef.current = false;
+      setCurrentFilename(focus.name);
+      revealPartOnRibbon(focus.id, text);
+      codeEditorRef.current?.loadContent(text, focus.id, false);
+    }
+    return { result: { saved, added, activeId, partCount: saved.parts.length } };
+  };
+
+  const loadVaultPartRows = async ({ partId, assemblyId } = {}) => {
+    const before = assemblyRef.current;
+    const ctx = await agentGitReadContext(partId || assemblyId ? 'insert_part' : 'open_part');
+    if (ctx.error) return { error: ctx.error };
+    const rows = [];
+    if (assemblyId) {
+      try {
+        const opened = await openV2Assembly(ctx.adapter, ctx.vault.repo, assemblyId, {
+          branch: ctx.branch,
+        });
+        for (const part of opened.doc?.parts || []) {
+          rows.push({
+            id: part.id,
+            name: part.name,
+            script: opened.scripts?.[part.id],
+            missing: part.missing === true,
+          });
+        }
+      } catch (err) {
+        if (err?.code === 'unknown_assembly') return { error: unknownAssemblyError(assemblyId) };
+        return { error: { code: 'internal', message: err?.message || 'Could not read assembly' } };
+      }
+    }
+    if (partId) {
+      const existing = findPartById(before, partId);
+      let script = existing ? (partScriptsRef.current[partId] || null) : null;
+      let missing = existing?.missing === true;
+      if (script == null && !missing) {
+        let path = null;
+        try { path = partIdPath(partId); } catch { /* not a v2 id */ }
+        if (!path) return { error: unknownPartError(partId) };
+        try {
+          const file = await ctx.adapter.readFile(ctx.vault.repo, path, ctx.branch);
+          if (file && typeof file.content === 'string') script = file.content;
+          else missing = true;
+        } catch {
+          missing = true;
+        }
+      }
+      if (!existing && script == null) {
+        return { error: unknownPartError(partId) };
+      }
+      if (!rows.some((row) => row.id === partId)) {
+        rows.push({
+          id: partId,
+          name: existing?.name || DEFAULT_PART_NAME,
+          script,
+          missing: script == null,
+        });
+      }
+    }
+    if (!rows.length) {
+      return { error: { code: 'bad_args', message: 'open_part / insert_part needs part_id and/or assembly_id' } };
+    }
+    return { rows };
   };
 
   const handleAddPart = async (partName, opts = {}) => {
@@ -8151,9 +8627,8 @@ const App = () => {
     if (!doc) return { status: 'error', code: 'no_assembly', error: 'No assembly loaded' };
     let nextName = sanitizePartName(name);
     if (!nextName) return { status: 'error', code: 'bad_args', error: 'Enter a part name' };
-    const part = findAssemblyPart(doc, id);
+    const part = (doc.parts || []).find((row) => row && row.id === id);
     if (!part) return { status: 'error', code: 'unknown_part', error: `Unknown part id: ${id}` };
-    id = part.id;
     if (part.name === nextName) {
       return { status: 'unchanged', from: id, to: id, name: nextName };
     }
@@ -9009,11 +9484,12 @@ const App = () => {
   // — that falsely dotted every in-repo part after reload (#215).
   // firstCommitBaseline is for a true first commit (path-less rows only).
   const gitParts = assemblyDoc?.parts || [];
-  const hasLocalPartIds = gitParts.some((p) => !partRepoPath(p));
+  const hasLocalPartIds = gitParts.some((p) => !partRepoPath(p) && !isV2SurfId(p?.id));
   const needsFirstCommitChrome = (
     assemblyDoc?.source === 'git'
     && !gitBaseline
     && hasLocalPartIds
+    && !isV2PlanSaveDoc(assemblyDoc)
   );
   const dirtyBaseline = gitBaseline || (
     needsFirstCommitChrome
@@ -9023,19 +9499,19 @@ const App = () => {
       })
       : null
   );
-  const gitDirtyIds = (
+  let gitDirtyIds = (
     assemblyDoc?.source === 'git' && dirtyBaseline
   ) ? dirtyPartIds(assemblyDoc, partScripts, dirtyBaseline, {
     liveId: assemblyDoc.activeId,
     liveScript: liveDirtyScript,
   }) : (
     // Awaiting tip reseed: only local: rows; repo paths stay clean until
-    // baseline arrives and a real content diff can run.
+    // baseline arrives and a real content diff can run. v2 ids are not paths.
     assemblyDoc?.source === 'git'
-      ? new Set(gitParts.filter((p) => !partRepoPath(p)).map((p) => p.id))
+      ? new Set(gitParts.filter((p) => !partRepoPath(p) && !isV2SurfId(p?.id)).map((p) => p.id))
       : new Set()
   );
-  const sourceDirty = (
+  let sourceDirty = (
     assemblyDoc?.source === 'git'
     && (
       needsFirstCommitChrome
@@ -9047,6 +9523,27 @@ const App = () => {
         }))
     )
   );
+  if (isV2PlanSaveDoc(assemblyDoc)) {
+    const vault = gitVaultRef.current;
+    const branch = gitWorkingBranch();
+    const store = gitSync();
+    const assemblyCommit = vault?.repo
+      ? store.getAssemblyCommit(vault.repo, branch, assemblyDoc.id)
+      : null;
+    const compared = compareWorkingCopyToCommit({
+      doc: assemblyDoc,
+      scripts: partScripts,
+      liveId: assemblyDoc.activeId,
+      liveScript: liveDirtyScript,
+      assemblyCommit,
+      pendingSave: !!(vault?.repo && store.getPendingSave(vault.repo, branch)),
+      sidecarDirty: sidecarIsDirty(gitSidecar),
+    });
+    gitDirtyIds = new Set(compared.partIds || []);
+    sourceDirty = compared.unsaved === true
+      || compared.assemblyDirty === true
+      || compared.pendingSave === true;
+  }
   const behindMarkers = (
     assemblyDoc?.source === 'git' && gitBehind
   ) ? remainingBehindMarkers(gitBehind, gitBehindResolved) : { assemblyBehind: false, partIds: [], any: false };
@@ -9213,16 +9710,43 @@ const App = () => {
         ...(override || {}),
         partIds: (doc?.parts || []).map((row) => row.id),
       });
+      let partIds = gitDirtyIds;
+      let assemblyDirty = dirtyBaseline && assemblyDoc
+        ? isAssemblyDirty(assemblyDoc, dirtyBaseline)
+        : false;
+      let unsaved;
+      let pendingSave = false;
+      if (doc && isV2PlanSaveDoc(doc)) {
+        const vault = gitVaultRef.current;
+        const store = gitSync();
+        const branch = gitWorkingBranch();
+        const assemblyCommit = vault?.repo
+          ? store.getAssemblyCommit(vault.repo, branch, doc.id)
+          : null;
+        pendingSave = !!(vault?.repo && store.getPendingSave(vault.repo, branch));
+        const compared = compareWorkingCopyToCommit({
+          doc,
+          scripts,
+          liveId,
+          liveScript: typeof editorText === 'string' ? editorText : null,
+          assemblyCommit,
+          pendingSave,
+          sidecarDirty: sidecarIsDirty(gitSidecarRef.current),
+        });
+        unsaved = compared.unsaved;
+        assemblyDirty = compared.assemblyDirty;
+        partIds = compared.partIds;
+      }
       return buildDirtyState({
         workspaceDirty: !!sourceDirty,
-        partIds: gitDirtyIds,
-        assemblyDirty: dirtyBaseline && assemblyDoc
-          ? isAssemblyDirty(assemblyDoc, dirtyBaseline)
-          : false,
+        partIds,
+        assemblyDirty,
         renamePending: !!dirtyBaseline?.renamePending,
         legacyCleanup: !!dirtyBaseline?.legacyCleanup,
         undoStackDirty,
         editedSinceLoad,
+        pendingSave,
+        ...(unsaved === true || unsaved === false ? { unsaved } : {}),
         ...(doc?.vaultLayout === 'legacy' && upgradeVaultEnabled()
           ? { upgradeRequired: true }
           : {}),
@@ -9250,6 +9774,7 @@ const App = () => {
       const doc = assemblyRef.current;
       if (!doc) return buildPartsState({});
       return buildPartsState({
+        assemblyId: doc.id,
         activeId: doc.activeId,
         assemblyName: assemblyName(doc),
         vaultLayout: doc.vaultLayout,
@@ -9257,7 +9782,7 @@ const App = () => {
           id: row.id,
           name: row.name,
           visible: row.visible,
-          ...(partRepoPath(row) ? { path: partRepoPath(row) } : {}),
+          ...(typeof row.group === 'string' ? { group: row.group } : {}),
           ...(row.missing === true ? { missing: true } : {}),
         })),
       });
@@ -9307,9 +9832,9 @@ const App = () => {
     },
     setActivePart(partId) {
       const doc = assemblyRef.current;
-      const part = findAssemblyPart(doc, partId);
+      const part = findPartById(doc, partId);
       if (!part) {
-        return { error: { code: 'unknown_part', message: `Unknown part id: ${partId}` } };
+        return { error: unknownPartError(partId) };
       }
       handleSelectPart(part.id);
       return { ok: true };
@@ -9333,9 +9858,9 @@ const App = () => {
       const ids = Array.isArray(partIds) ? partIds : [];
       const resolved = [];
       for (const id of ids) {
-        const part = findAssemblyPart(doc, id);
+        const part = findPartById(doc, id);
         if (!part) {
-          return { error: { code: 'unknown_part', message: `Unknown part id: ${id}` } };
+          return { error: unknownPartError(id) };
         }
         resolved.push(part.id);
       }
@@ -9354,25 +9879,35 @@ const App = () => {
       viewportRef.current?.showCadBodyHighlight?.();
       return { partIds: resolved };
     },
-    async agentCreateAssembly() {
-      const before = assemblyRef.current;
-      await handleNewAssembly();
-      await ensureLocalSurfIds();
-      const after = assemblyRef.current;
-      if (before && after) recordAgentAssemblyStep(before);
-      return {
-        result: {
-          assemblyName: after?.name ?? '',
-          activeId: after?.activeId ?? null,
-          partCount: after?.parts?.length ?? 0,
-        },
-      };
+    async agentCreateAssembly({ name } = {}) {
+      if (createAssemblyInFlightRef.current) {
+        return createAssemblyInFlightRef.current;
+      }
+      const work = (async () => {
+        const before = assemblyRef.current;
+        const after = await seedAgentAssembly({ name });
+        if (before && after) recordAgentAssemblyStep(before);
+        return {
+          result: {
+            assemblyId: after?.id ?? null,
+            assemblyName: after?.name ?? '',
+            activeId: after?.activeId ?? null,
+            partCount: after?.parts?.length ?? 0,
+          },
+        };
+      })();
+      createAssemblyInFlightRef.current = work;
+      try {
+        return await work;
+      } finally {
+        if (createAssemblyInFlightRef.current === work) createAssemblyInFlightRef.current = null;
+      }
     },
     agentGetPartTransform({ partId }) {
       const doc = assemblyRef.current;
-      const part = findAssemblyPart(doc, partId);
+      const part = findPartById(doc, partId);
       if (!part) {
-        return { error: { code: 'unknown_part', message: `Unknown part id: ${partId}` } };
+        return { error: unknownPartError(partId) };
       }
       const pose = partPlacement(part);
       return {
@@ -9389,9 +9924,9 @@ const App = () => {
       if (!doc) {
         return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
       }
-      const part = findAssemblyPart(doc, partId);
+      const part = findPartById(doc, partId);
       if (!part) {
-        return { error: { code: 'unknown_part', message: `Unknown part id: ${partId}` } };
+        return { error: unknownPartError(partId) };
       }
       const current = partPlacement(part);
       let t = current.t.slice();
@@ -9496,82 +10031,192 @@ const App = () => {
       }
       return { result: { partId, partCount, run: outcome, script: text } };
     },
-    async agentOpenAssembly({ name }) {
+    async agentOpenAssembly({ assemblyId }) {
       const before = assemblyRef.current;
       if (!before || before.source !== 'git') {
         return { error: { code: 'git_only', message: 'open_assembly needs a git-backed assembly' } };
       }
-      const requested = typeof name === 'string' ? name : '';
-      // Read the tip before the name lookup so the cached tree is that
-      // sha. The cache stays an argument: the shared adapter is untouched,
-      // and a Save during this await reads the live repo. The open's
-      // getBranch is live; a newer sha drops the memo before the sidecar
-      // list. lastCommit on this open uses the same cache.
-      const inner = ensureGitAdapter();
-      let branch = 'main';
-      let tip = null;
+      const ctx = await agentGitReadContext('open_assembly');
+      if (ctx.error) return { error: ctx.error };
+      let layout = 'v2';
       try {
-        const vault = await ensureGitVault({ create: false });
-        branch = gitWorkingBranch();
-        tip = (await inner.getBranch(vault.repo, branch))?.sha || null;
+        const detected = await detectVaultLayout(ctx.adapter, ctx.vault.repo, ctx.branch);
+        layout = detected.layout;
       } catch (err) {
         if (err?.message === NO_REPO_YET_COPY || err?.code === 'git_blocked') {
           setUploadNotice(NO_REPO_YET_COPY);
           return { error: { code: 'git_blocked', message: NO_REPO_YET_COPY } };
         }
-        tip = null;
       }
-      const cached = cacheVaultReads(inner, { branch, tip });
-      let names = null;
-      try {
-        const listed = await handleListVaultAssemblies(cached);
-        names = Array.isArray(listed) ? listed : null;
-      } catch (err) {
-        if (err?.message === NO_REPO_YET_COPY || err?.code === 'git_blocked') {
-          // Listing returns before handleOpenVaultAssembly, which is what
-          // used to put this sentence on the toast.
-          setUploadNotice(NO_REPO_YET_COPY);
-          return { error: { code: 'git_blocked', message: NO_REPO_YET_COPY } };
-        }
-        names = null;
+      if (layout !== 'v2' || !isV2SurfId(assemblyId)) {
+        return { error: unknownAssemblyError(assemblyId) };
       }
-      let openName = requested;
-      if (names) {
-        const decision = resolveAssemblyOpenName(requested, names);
-        if (decision?.error) return { error: decision.error };
-        openName = decision.name;
-      }
-      const opened = await handleOpenVaultAssembly(openName, cached);
+      const opened = await handleOpenV2VaultAssembly(assemblyId, ctx.adapter);
       if (opened?.status === 'error') {
-        return { error: assemblyOpenFailure(opened, requested, names) };
+        if (opened.code === 'unknown_assembly' || opened.code === 'git_blocked') {
+          return {
+            error: opened.code === 'unknown_assembly'
+              ? unknownAssemblyError(assemblyId)
+              : { code: 'git_blocked', message: opened.error || NO_REPO_YET_COPY },
+          };
+        }
+        return { error: { code: opened.code || 'open_failed', message: opened.error || 'Could not open assembly' } };
       }
       const after = assemblyRef.current;
       if (after && after !== before) recordAgentAssemblyStep(before);
-      return { result: { name: after?.name || openName, activeId: after?.activeId ?? null } };
+      return {
+        result: {
+          assemblyId: after?.id || assemblyId,
+          assemblyName: after?.name || '',
+          activeId: after?.activeId ?? null,
+          partCount: after?.parts?.length ?? 0,
+        },
+      };
     },
-    async agentOpenPart({ path }) {
+    async agentOpenPart({ partId, assemblyId } = {}) {
       const before = assemblyRef.current;
-      if (!before || before.source !== 'git') {
-        return { error: { code: 'git_only', message: 'open_part needs a git-backed assembly' } };
-      }
-      const opened = await handleOpenVaultPart(path);
-      if (opened?.status === 'error') {
-        return { error: { code: opened.code || 'open_failed', message: opened.error || 'Could not open part' } };
-      }
-      recordAgentAssemblyStep(before);
-      return { result: { path: opened.path, mode: opened.mode } };
+      const loaded = await loadVaultPartRows({ partId, assemblyId });
+      if (loaded.error) return { error: loaded.error };
+      const inserted = await insertReferencedParts({ rows: loaded.rows, copy: false });
+      if (inserted.error) return { error: inserted.error };
+      if (inserted.result?.added?.length) recordAgentAssemblyStep(before);
+      const after = assemblyRef.current;
+      return {
+        result: {
+          partId: inserted.result?.activeId ?? null,
+          added: inserted.result?.added || [],
+          partCount: after?.parts?.length ?? 0,
+        },
+      };
     },
-    async agentInsertAssemblyParts({ sourceName }) {
+    async agentInsertPart({ partId, assemblyId, copy } = {}) {
       const before = assemblyRef.current;
-      if (!before || before.source !== 'git') {
-        return { error: { code: 'git_only', message: 'insert_part with source_assembly needs git mode' } };
+      const loaded = await loadVaultPartRows({ partId, assemblyId });
+      if (loaded.error) return { error: loaded.error };
+      const inserted = await insertReferencedParts({ rows: loaded.rows, copy: copy === true });
+      if (inserted.error) return { error: inserted.error };
+      if (inserted.result?.added?.length) recordAgentAssemblyStep(before);
+      const after = assemblyRef.current;
+      return {
+        result: {
+          partId: inserted.result?.activeId ?? null,
+          added: inserted.result?.added || [],
+          partCount: after?.parts?.length ?? 0,
+          copy: copy === true,
+        },
+      };
+    },
+    async agentListAssemblies() {
+      const ctx = await agentGitReadContext('list_assemblies');
+      if (ctx.error) return { error: ctx.error };
+      try {
+        const detected = await detectVaultLayout(ctx.adapter, ctx.vault.repo, ctx.branch);
+        if (detected.layout !== 'v2') {
+          return { result: { assemblies: [] } };
+        }
+        const rows = await listV2Assemblies(ctx.adapter, ctx.vault.repo, ctx.branch);
+        const open = assemblyRef.current;
+        if (open?.id && isV2SurfId(open.id) && !rows.some((row) => row.id === open.id)) {
+          rows.push({ id: open.id, name: assemblyName(open) });
+        }
+        return { result: { assemblies: rows } };
+      } catch (err) {
+        if (err?.message === NO_REPO_YET_COPY || err?.code === 'git_blocked') {
+          setUploadNotice(NO_REPO_YET_COPY);
+          return { error: { code: 'git_blocked', message: NO_REPO_YET_COPY } };
+        }
+        return { error: { code: 'internal', message: err?.message || 'Could not list assemblies' } };
       }
-      const inserted = await handleInsertVaultAssemblyParts(sourceName);
-      if (inserted?.status === 'error') {
-        return { error: { code: inserted.code || 'insert_failed', message: inserted.error || 'Could not insert parts' } };
+    },
+    async agentDeletePart({ partId, scope } = {}) {
+      const doc = assemblyRef.current;
+      if (!doc) {
+        return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
       }
-      if (inserted?.status === 'inserted') recordAgentAssemblyStep(before);
-      return { result: inserted };
+      const part = findPartById(doc, partId);
+      if (!part) return { error: unknownPartError(partId) };
+      if (scope === 'repo') {
+        if (doc.source === 'git' && isV2PlanSaveDoc(doc)) {
+          const ctx = await agentGitReadContext('delete_part');
+          if (ctx.error) return { error: ctx.error };
+          const parents = await listPartParentAssemblies(
+            ctx.adapter,
+            ctx.vault.repo,
+            partId,
+            { branch: ctx.branch, exceptAssemblyId: doc.id },
+          );
+          if (!parents.ok || parents.assemblies.length) {
+            return {
+              error: {
+                code: 'part_still_referenced',
+                message: 'This part is still listed in another assembly. Use scope assembly, or delete those parents first.',
+                details: { assemblies: parents.ok ? parents.assemblies : [] },
+              },
+            };
+          }
+        }
+        handleDeletePart(part.id, { fromRepo: true });
+      } else {
+        handleDeletePart(part.id);
+      }
+      return { result: { partId: part.id, scope, status: 'removed' } };
+    },
+    async agentDeleteAssembly({ assemblyId, deleteParts } = {}) {
+      const doc = assemblyRef.current;
+      if (!doc) {
+        return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+      }
+      if (doc.id !== assemblyId) {
+        return { error: unknownAssemblyError(assemblyId) };
+      }
+      const previousId = doc.id;
+      if (deleteParts && doc.source === 'git' && isV2PlanSaveDoc(doc)) {
+        const ctx = await agentGitReadContext('delete_assembly');
+        if (ctx.error) return { error: ctx.error };
+        for (const row of doc.parts || []) {
+          const parents = await listPartParentAssemblies(
+            ctx.adapter,
+            ctx.vault.repo,
+            row.id,
+            { branch: ctx.branch, exceptAssemblyId: doc.id },
+          );
+          if (parents.ok && !parents.assemblies.length) {
+            persistPendingDeletes(repoDeletePathsForV2Part(row.id));
+          }
+        }
+        try {
+          persistPendingDeletes([assemblyIdPath(previousId)]);
+        } catch {
+          /* id was not v2-shaped */
+        }
+      }
+      const after = await seedAgentAssembly({});
+      if (doc) recordAgentAssemblyStep(doc);
+      return {
+        result: {
+          assemblyId: previousId,
+          status: 'deleted',
+          nextAssemblyId: after?.id ?? null,
+        },
+      };
+    },
+    async agentRenameAssembly({ assemblyId, name } = {}) {
+      const doc = assemblyRef.current;
+      if (!doc) {
+        return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+      }
+      if (doc.id !== assemblyId) {
+        return { error: unknownAssemblyError(assemblyId) };
+      }
+      const nextName = sanitizeAssemblyName(name);
+      if (!nextName) {
+        return { error: { code: 'bad_args', message: 'rename_assembly needs a non-empty name' } };
+      }
+      if (doc.name !== nextName) {
+        rememberAssembly({ ...doc, name: nextName });
+        recordAgentAssemblyStep(doc);
+      }
+      return { result: { assemblyId: doc.id, name: nextName } };
     },
     readAgentGitAdapterKind() {
       return ensureGitAdapter()?.kind ?? null;
@@ -9601,23 +10246,31 @@ const App = () => {
     async agentGitSave({ message }) {
       const draft = String(message || '').trim();
       if (!draft) return { status: 'error', error: 'Commit message required' };
-      return handleGitCommit(draft);
+      const out = await handleGitCommit(draft);
+      if (out?.status === 'queued' || out?.status === 'pending') {
+        return {
+          status: 'pending',
+          code: 'pending_save',
+          message: out.error || out.message || SAVE_QUEUED_COPY,
+        };
+      }
+      return out;
     },
     async agentGitUpgradeVault() {
       return handleUpgradeVault();
     },
     async agentGitAddToRepo({ partId }) {
       if (!partId) return { status: 'error', error: 'part_id required' };
-      const part = findAssemblyPart(assemblyRef.current, partId);
+      const part = findPartById(assemblyRef.current, partId);
       if (!part) {
         return { status: 'error', code: 'unknown_part', error: `Unknown part id: ${partId}` };
       }
       return handleAddToRepo(part.id);
     },
-    /** -> { known, writesGit } — writesGit when the rename moves a vault file. */
+    /** Rename is working-copy only; never a git move. */
     readAgentPartRename(partId) {
       const doc = assemblyRef.current;
-      const part = findAssemblyPart(doc, partId);
+      const part = findPartById(doc, partId);
       if (!part) return { known: false, writesGit: false };
       return {
         known: true,
@@ -9626,61 +10279,44 @@ const App = () => {
     },
     async agentRenamePart({ partId, name }) {
       const before = assemblyRef.current;
-      const part = findAssemblyPart(before, partId);
+      if (!before) {
+        return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+      }
+      const part = findPartById(before, partId);
       if (!part) {
-        return { error: { code: 'unknown_part', message: `Unknown part id: ${partId}` } };
+        return { error: unknownPartError(partId) };
       }
       const out = await handleRenamePart(part.id, name);
       if (out?.status === 'error') {
         return { error: { code: out.code || 'rename_failed', message: out.error || 'Could not rename part' } };
       }
-      let sync = null;
-      if (out?.written) {
-        const flushed = await out.written;
-        sync = flushed?.status || null;
-        if (flushed?.status === 'conflict' || flushed?.status === 'failed') {
-          return {
-            error: {
-              code: 'git_error',
-              message: flushed.error || 'The rename is queued but the repo refused it',
-              details: { from: out.from, to: out.to, sync },
-            },
-          };
-        }
-      }
       if (out?.status === 'renamed') recordAgentAssemblyStep(before);
       const after = assemblyRef.current;
-      const afterPart = findAssemblyPart(after, part.id);
-      const previousPath = partRepoPath(part);
-      const nextPath = out?.path || partRepoPath(afterPart);
+      const afterPart = findPartById(after, part.id);
       return {
         result: {
-          status: out?.status || 'renamed',
           partId: part.id,
-          previousId: part.id,
           name: afterPart?.name ?? out?.name ?? null,
-          ...(nextPath ? { path: nextPath } : {}),
-          moved: !!(nextPath && previousPath && nextPath !== previousPath),
-          git: out?.git === true,
-          ...(sync ? { sync } : {}),
+          moved: false,
         },
       };
     },
-    async agentGitBehindResolve({ action, path, kind }) {
+    async agentGitBehindResolve({ action }) {
       const doc = assemblyRef.current;
       if (!doc || doc.source !== 'git') {
         return { status: 'error', error: 'Not in Git mode' };
       }
-      let resolvedPath = path;
-      let resolvedKind = kind === 'assembly' ? 'assembly' : (kind === 'part' ? 'part' : null);
-      if (!resolvedPath) {
-        if (behindMarkers.assemblyBehind && gitAssemblyPath) {
-          resolvedPath = gitAssemblyPath;
-          resolvedKind = 'assembly';
-        } else if (behindPartIdSet.size) {
-          resolvedPath = behindPartIdSet.values().next().value;
-          resolvedKind = 'part';
-        }
+      if (isV2PlanSaveDoc(doc)) {
+        return handlePlanSaveConflict({ action });
+      }
+      let resolvedPath = null;
+      let resolvedKind = null;
+      if (behindMarkers.assemblyBehind && gitAssemblyPath) {
+        resolvedPath = gitAssemblyPath;
+        resolvedKind = 'assembly';
+      } else if (behindPartIdSet.size) {
+        resolvedPath = behindPartIdSet.values().next().value;
+        resolvedKind = 'part';
       }
       if (!resolvedPath) {
         return { status: 'error', error: 'No behind marker for this assembly' };
@@ -9698,6 +10334,11 @@ const App = () => {
     async agentGitBranchSwitch({ branch, confirm }) {
       const target = String(branch || '').trim();
       if (!target) return { status: 'error', error: 'Branch required' };
+      // Already on this branch: no reload, nothing discarded — confirm is
+      // only for a dirty *switch* that would replace the working copy.
+      if (target === gitWorkingBranch()) {
+        return handleSwitchBranch(target);
+      }
       if (sourceDirty && confirm !== true) {
         return {
           status: 'error',

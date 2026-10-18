@@ -620,6 +620,7 @@ export function serializeAssembly(doc) {
   if (doc?.vaultLayout === 'legacy' || doc?.vaultLayout === 'v2') {
     out.vaultLayout = doc.vaultLayout;
   }
+  if (Number.isInteger(doc?.rev) && doc.rev >= 0) out.rev = doc.rev;
   if (groups.length) out.groups = groups;
   if (colors) out.colors = colors;
   if (joints) out.joints = joints;
@@ -638,6 +639,7 @@ export function parseAssemblyDocument(input) {
     activeId: raw.activeId,
     id: raw.id,
     vaultLayout: raw.vaultLayout,
+    rev: raw.rev,
     parts: raw.parts.map((part, index) => ({
       id: part?.id,
       name: part?.name,

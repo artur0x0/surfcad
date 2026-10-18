@@ -15,9 +15,9 @@
  *   2. A granted set_script changes the editor and sets dirty.unsaved, and
  *      still does not commit.
  *   3. git_save then commits exactly once. dirty.unsaved goes back to false.
- *   4. An overlapping remote edit makes the next git_save return the host's
- *      conflict payload (status/code "conflict" from executePlanSave, passed
- *      through gitOpResult). Nothing else is committed.
+ *   4. An overlapping remote edit makes the next git_save an error with
+ *      code "conflict" (executePlanSave status/code, mapped by gitOpResult).
+ *      Nothing else is committed.
  */
 /* global localStorage, navigator, sessionStorage */
 import { existsSync } from 'node:fs';
@@ -246,7 +246,7 @@ try {
     JSON.stringify(opened.parsed),
   );
 
-  const edited = await mcp(client, 'set_script', { source: EDITED_SCRIPT });
+  const edited = await mcp(client, 'set_script', { part_id: PART_ID, source: EDITED_SCRIPT });
   const afterEdit = await mcp(client, 'dirty');
   const scriptAfterEdit = await mcp(client, 'get_script');
   check(
@@ -331,7 +331,8 @@ try {
     sessionStorage.setItem('surfcadAgentGitRealSession', '1');
     sessionStorage.removeItem('surfcadAgentGitDenied');
   });
-  const granted = await mcp(client, 'set_script', { source: GRANTED_SCRIPT });
+  await mcp(client, 'set_active_part', { part_id: PART_ID });
+  const granted = await mcp(client, 'set_script', { part_id: PART_ID, source: GRANTED_SCRIPT });
   const dirtyGranted = await mcp(client, 'dirty');
   const scriptGranted = await mcp(client, 'get_script');
   check(
@@ -380,16 +381,19 @@ try {
     JSON.stringify(dirtyAfterSave.parsed),
   );
 
-  const committedLid = fake.readFile(`parts/${lidId}.js`) || '';
-  pushRemoteFile(fake, `parts/${lidId}.js`, `${committedLid}\n// remote edit\n`, 'remote overlap');
+  // planSave conflicts only on overlapping planned paths. Bracket is the
+  // part this golden edits (`part_id: PART_ID`); overlapping Lid would
+  // commit as a non-overlapping remote change.
+  const committedBracket = fake.readFile(`parts/${PART_ID}.js`) || '';
+  pushRemoteFile(fake, `parts/${PART_ID}.js`, `${committedBracket}\n// remote edit\n`, 'remote overlap');
   const remoteCount = fake.log().length;
-  const conflictEdit = await mcp(client, 'set_script', { source: CONFLICT_SCRIPT });
+  await mcp(client, 'set_active_part', { part_id: PART_ID });
+  const conflictEdit = await mcp(client, 'set_script', { part_id: PART_ID, source: CONFLICT_SCRIPT });
   const conflict = await mcp(client, 'git_save', { message: CONFLICT_MESSAGE });
   check(
     'rule4 git_save conflict is the host conflict code',
     conflictEdit.isError !== true
-      && conflict.isError !== true
-      && conflict.parsed?.status === 'conflict'
+      && conflict.isError === true
       && conflict.parsed?.code === 'conflict',
     JSON.stringify(conflict.parsed),
   );

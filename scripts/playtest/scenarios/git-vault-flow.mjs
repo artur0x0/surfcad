@@ -2,6 +2,7 @@
  * Uses the in-memory mock GitHub adapter only (no token, no real repo). */
 import { agentCall, waitForBridge } from '../lib/harness.mjs';
 import { createStepRunner } from '../lib/stepRunner.mjs';
+import { isV2SurfId } from '../../../src/utils/git/surfId.js';
 
 const USER_ID = 'user-playtest-git-h12';
 const VAULT = 'playtest-git-h12-vault';
@@ -105,6 +106,28 @@ export async function run(ctx) {
       args: { vault_name: VAULT },
       envelope: env,
       detail: `workspaceDirty=${dirty.result?.workspaceDirty} adapter=${adapter}`,
+    };
+  });
+
+  await runner.runStep('listed ids are surf-ids and id tools accept them', async () => {
+    const listed = await agentCall(page, 'parts', {});
+    const rows = listed.result?.parts || [];
+    const ids = rows.map((row) => row?.id).filter(Boolean);
+    const allSurf = ids.length > 0 && ids.every((id) => isV2SurfId(id));
+    const noPath = ids.every((id) => !String(id).includes('/') && !String(id).includes('\\'));
+    const partId = listed.result?.activeId || ids[0];
+    const cur = await agentCall(page, 'get_script', { part_id: partId });
+    const set = await agentCall(page, 'set_script', {
+      part_id: partId,
+      source: `${cur.result?.source || ''}\n// listed-id\n`,
+    });
+    const activate = await agentCall(page, 'set_active_part', { part_id: partId });
+    return {
+      ok: allSurf && noPath && set.ok === true && activate.ok === true,
+      call: 'set_script',
+      args: { part_id: partId },
+      envelope: set.ok === true ? activate : set,
+      detail: `ids=${JSON.stringify(ids)} set=${set.ok} activate=${activate.ok}`,
     };
   });
 

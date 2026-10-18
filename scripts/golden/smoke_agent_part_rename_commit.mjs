@@ -14,6 +14,8 @@ import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import { GITHUB_TOKEN_STORAGE_KEY } from '../../src/utils/git/githubAuth.js';
 import { createFakeGithub, installFakeGithub } from './lib/fakeGithubApi.mjs';
+import { wrapAgentCall } from '../playtest/lib/wrapAgentCall.mjs';
+import { partIdPath } from '../../src/utils/git/idPaths.js';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
 const PORT = Number(process.env.SMOKE_PORT || 4333);
@@ -75,12 +77,13 @@ async function waitForServer(timeoutMs = 40000) {
   return false;
 }
 
-async function agentCall(page, name, args) {
+async function rawAgentCall(page, name, args) {
   return page.evaluate(async ({ name, argsJson }) => window.surfcad.call(name, argsJson), {
     name,
     argsJson: JSON.stringify(args ?? {}),
   });
 }
+const agentCall = wrapAgentCall(rawAgentCall);
 
 async function shot(page, label) {
   const buf = await page.screenshot({ type: 'png' });
@@ -144,7 +147,7 @@ const seedId = created.result?.activeId;
 const renamedSeed = await agentCall(page, 'rename_part', { part_id: seedId, name: 'Body' });
 check(
   'path-less rename is local (no git commit)',
-  renamedSeed.ok === true && renamedSeed.result?.git === false && userCommits(fake).length === 0,
+  renamedSeed.ok === true && renamedSeed.result?.moved === false && userCommits(fake).length === 0,
   JSON.stringify({ renamed: renamedSeed, log: fake.log().map((c) => c.message) }),
 );
 
@@ -161,14 +164,14 @@ const afterSave = userCommits(fake);
 check('exactly one save commit so far', afterSave.length === 1, JSON.stringify(afterSave.map((c) => c.message)));
 const listed = await agentCall(page, 'parts', {});
 const row = (listed.result?.parts || []).find((part) => part.id === seedId) || listed.result?.parts?.[0];
-check('saved part has a vault path', !!(row?.id && row?.path), JSON.stringify(row));
-const tipPath = row?.path;
+check('saved part keeps its id and has no path field', !!(row?.id) && !('path' in (row || {})), JSON.stringify(row));
+const tipPath = row?.id ? partIdPath(row.id) : null;
 const tipText = tipPath ? fake.readFile(tipPath) : null;
 check('tip script is the saved body', typeof tipText === 'string' && tipText.includes('Manifold.cube([40, 40, 30]'), tipText?.slice(0, 120));
 
 const edited = await agentCall(page, 'set_script', { source: EDIT_SCRIPT });
 check('set_script pending edit', edited.ok === true, JSON.stringify(edited));
-const moved = await agentCall(page, 'part_set_transform', { part: row.id, position: [25, 0, 0] });
+const moved = await agentCall(page, 'part_set_transform', { part_id: row.id, position: [25, 0, 0] });
 check('part_set_transform placement', moved.ok === true, JSON.stringify(moved));
 const dirtyBefore = await agentCall(page, 'dirty', {});
 check(
@@ -185,8 +188,7 @@ check(
   'rename_part updates the working copy and does not commit',
   renamed.ok === true
     && renamed.result?.partId === row.id
-    && renamed.result?.git === false
-    && renamed.result?.moved !== true
+    && renamed.result?.moved === false
     && renamed.result?.name === 'Mount',
   JSON.stringify(renamed),
 );

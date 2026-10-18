@@ -1,4 +1,5 @@
-import { ensureAgentGitWriteConsent } from './git.js';
+import { requireDestructiveConfirm } from '../gitAgent.js';
+import { rejectAssemblyId, rejectPartId } from '../state/identity.js';
 
 function hostCall(ctx, name, args) {
   const fn = ctx[name];
@@ -51,11 +52,14 @@ export const createAssemblyCommand = Object.freeze({
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,
-    properties: {},
+    properties: {
+      name: { type: 'string', description: 'Optional display label. Names are not unique and are not used as keys.' },
+    },
   }),
-  example: {},
-  async run(ctx) {
-    return hostCall(ctx, 'agentCreateAssembly', {});
+  example: { name: 'Gearbox' },
+  async run(ctx, args) {
+    const name = typeof args?.name === 'string' ? args.name.trim() : '';
+    return hostCall(ctx, 'agentCreateAssembly', name ? { name } : {});
   },
 });
 
@@ -92,31 +96,20 @@ export const renamePartCommand = Object.freeze({
     additionalProperties: false,
     required: ['part_id', 'name'],
     properties: {
-      part_id: { type: 'string', description: 'Part row id from parts' },
-      name: { type: 'string', description: 'New display name; a vault part moves the committed <name>.js (-2, -3 on collision). Pending edits stay for Save.' },
+      part_id: { type: 'string', description: 'Part id from parts. Not a vault path.' },
+      name: { type: 'string', description: 'New display name. Working copy only; Save writes the same f(id) file.' },
     },
   }),
-  example: { part_id: 'parts/Bracket.js', name: 'Mount' },
+  example: { part_id: '2026-10-07-20-56-31-0423-a3f9', name: 'Mount' },
   checkArgs(args) {
-    if (!args?.part_id || typeof args.part_id !== 'string') {
-      return { code: 'bad_args', message: 'rename_part needs part_id' };
-    }
+    const bad = rejectPartId(args?.part_id);
+    if (bad) return bad;
     if (typeof args?.name !== 'string' || !args.name.trim()) {
       return { code: 'bad_args', message: 'rename_part needs a non-empty name' };
     }
     return null;
   },
   async run(ctx, args) {
-    const plan = typeof ctx.readAgentPartRename === 'function'
-      ? ctx.readAgentPartRename(args.part_id)
-      : { known: true, writesGit: false };
-    if (!plan?.known) {
-      return { error: { code: 'unknown_part', message: `Unknown part id: ${args.part_id}` } };
-    }
-    if (plan.writesGit) {
-      const gate = ensureAgentGitWriteConsent(ctx, 'rename_part');
-      if (gate) return { error: gate };
-    }
     return hostCall(ctx, 'agentRenamePart', { partId: args.part_id, name: args.name.trim() });
   },
 });
@@ -127,20 +120,17 @@ export const openAssemblyCommand = Object.freeze({
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,
-    required: ['name'],
+    required: ['assembly_id'],
     properties: {
-      name: { type: 'string', description: 'Vault assembly name' },
+      assembly_id: { type: 'string', description: 'Assembly surf-id from list_assemblies. Not a name or path.' },
     },
   }),
-  example: { name: 'my-assembly' },
+  example: { assembly_id: '2026-10-18-02-50-00-0001-aa01' },
   checkArgs(args) {
-    if (!args?.name || typeof args.name !== 'string') {
-      return { code: 'bad_args', message: 'open_assembly needs name' };
-    }
-    return null;
+    return rejectAssemblyId(args?.assembly_id);
   },
   async run(ctx, args) {
-    return hostCall(ctx, 'agentOpenAssembly', { name: args.name });
+    return hostCall(ctx, 'agentOpenAssembly', { assemblyId: args.assembly_id });
   },
 });
 
@@ -150,20 +140,31 @@ export const openPartCommand = Object.freeze({
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,
-    required: ['path'],
     properties: {
-      path: { type: 'string', description: 'Vault part path' },
+      part_id: { type: 'string', description: 'Part surf-id to open by reference into the current assembly.' },
+      assembly_id: { type: 'string', description: 'Assembly surf-id whose parts are opened by reference.' },
     },
   }),
-  example: { path: 'parts/Bracket.js' },
+  example: { part_id: '2026-10-07-20-56-31-0423-a3f9' },
   checkArgs(args) {
-    if (!args?.path || typeof args.path !== 'string') {
-      return { code: 'bad_args', message: 'open_part needs path' };
+    if (args?.part_id != null) {
+      const bad = rejectPartId(args.part_id);
+      if (bad) return bad;
+    }
+    if (args?.assembly_id != null) {
+      const bad = rejectAssemblyId(args.assembly_id);
+      if (bad) return bad;
+    }
+    if (!args?.part_id && !args?.assembly_id) {
+      return { code: 'bad_args', message: 'open_part needs part_id and/or assembly_id' };
     }
     return null;
   },
   async run(ctx, args) {
-    return hostCall(ctx, 'agentOpenPart', { path: args.path });
+    return hostCall(ctx, 'agentOpenPart', {
+      partId: args.part_id || null,
+      assemblyId: args.assembly_id || null,
+    });
   },
 });
 
@@ -174,16 +175,147 @@ export const insertPartCommand = Object.freeze({
     type: 'object',
     additionalProperties: false,
     properties: {
-      source_assembly: { type: 'string', description: 'Git vault assembly to insert from' },
+      part_id: { type: 'string', description: 'Part surf-id to insert as a reference (same id).' },
+      assembly_id: { type: 'string', description: 'Insert every part of this assembly as references.' },
+      copy: { type: 'boolean', description: 'Mint a new part id and set copiedFrom (independent file).' },
       name: { type: 'string', description: 'Local: new part name (same as create_part)' },
       script: { type: 'string' },
     },
   }),
-  example: { name: 'Pin' },
+  example: { part_id: '2026-10-07-20-56-31-0423-a3f9' },
+  checkArgs(args) {
+    if (args?.part_id != null) {
+      const bad = rejectPartId(args.part_id);
+      if (bad) return bad;
+    }
+    if (args?.assembly_id != null) {
+      const bad = rejectAssemblyId(args.assembly_id);
+      if (bad) return bad;
+    }
+    return null;
+  },
   async run(ctx, args) {
-    if (args?.source_assembly) {
-      return hostCall(ctx, 'agentInsertAssemblyParts', { sourceName: args.source_assembly });
+    if (args?.part_id || args?.assembly_id) {
+      return hostCall(ctx, 'agentInsertPart', {
+        partId: args.part_id || null,
+        assemblyId: args.assembly_id || null,
+        copy: args?.copy === true,
+      });
     }
     return attachRun(ctx, await hostCall(ctx, 'agentCreatePart', args || {}));
+  },
+});
+
+export const listAssembliesCommand = Object.freeze({
+  name: 'list_assemblies',
+  schema: Object.freeze({
+    type: 'object',
+    additionalProperties: false,
+    properties: {},
+  }),
+  example: {},
+  immediate: true,
+  async run(ctx) {
+    return hostCall(ctx, 'agentListAssemblies', {});
+  },
+});
+
+export const deletePartCommand = Object.freeze({
+  name: 'delete_part',
+  schema: Object.freeze({
+    type: 'object',
+    additionalProperties: false,
+    required: ['part_id', 'scope'],
+    properties: {
+      part_id: { type: 'string', description: 'Part id from parts. Not a vault path.' },
+      scope: {
+        type: 'string',
+        enum: ['assembly', 'repo'],
+        description: 'assembly drops the row; repo also plans a file delete on the next Save.',
+      },
+      confirm: { type: 'boolean', description: 'Required true when scope is repo.' },
+    },
+  }),
+  example: { part_id: '2026-10-07-20-56-31-0423-a3f9', scope: 'assembly' },
+  checkArgs(args) {
+    const bad = rejectPartId(args?.part_id);
+    if (bad) return bad;
+    if (args?.scope !== 'assembly' && args?.scope !== 'repo') {
+      return { code: 'bad_args', message: 'delete_part scope must be assembly or repo' };
+    }
+    if (args.scope === 'repo') {
+      const gate = requireDestructiveConfirm(args, 'delete_part scope repo');
+      if (gate) return gate;
+    }
+    return null;
+  },
+  async run(ctx, args) {
+    if (args.scope === 'repo') {
+      const gate = requireDestructiveConfirm(args, 'delete_part scope repo');
+      if (gate) return { error: gate };
+    }
+    return hostCall(ctx, 'agentDeletePart', {
+      partId: args.part_id,
+      scope: args.scope,
+      confirm: args.confirm === true,
+    });
+  },
+});
+
+export const deleteAssemblyCommand = Object.freeze({
+  name: 'delete_assembly',
+  schema: Object.freeze({
+    type: 'object',
+    additionalProperties: false,
+    required: ['assembly_id'],
+    properties: {
+      assembly_id: { type: 'string', description: 'Assembly surf-id. Not a name or path.' },
+      confirm: { type: 'boolean', description: 'Must be true.' },
+      delete_parts: { type: 'boolean', description: 'When true, plan part-file deletes on the next Save if unreferenced.' },
+    },
+  }),
+  example: { assembly_id: '2026-10-18-02-50-00-0001-aa01', confirm: true },
+  checkArgs(args) {
+    const bad = rejectAssemblyId(args?.assembly_id);
+    if (bad) return bad;
+    return requireDestructiveConfirm(args, 'delete_assembly');
+  },
+  async run(ctx, args) {
+    const gate = requireDestructiveConfirm(args, 'delete_assembly');
+    if (gate) return { error: gate };
+    return hostCall(ctx, 'agentDeleteAssembly', {
+      assemblyId: args.assembly_id,
+      confirm: true,
+      deleteParts: args.delete_parts === true,
+    });
+  },
+});
+
+export const renameAssemblyCommand = Object.freeze({
+  name: 'rename_assembly',
+  uiEntry: 'data-assembly-rename-menu',
+  schema: Object.freeze({
+    type: 'object',
+    additionalProperties: false,
+    required: ['assembly_id', 'name'],
+    properties: {
+      assembly_id: { type: 'string', description: 'Assembly surf-id from parts / list_assemblies.' },
+      name: { type: 'string', description: 'New display label. Working copy only; not unique.' },
+    },
+  }),
+  example: { assembly_id: '2026-10-18-02-50-00-0001-aa01', name: 'Gearbox' },
+  checkArgs(args) {
+    const bad = rejectAssemblyId(args?.assembly_id);
+    if (bad) return bad;
+    if (typeof args?.name !== 'string' || !args.name.trim()) {
+      return { code: 'bad_args', message: 'rename_assembly needs a non-empty name' };
+    }
+    return null;
+  },
+  async run(ctx, args) {
+    return hostCall(ctx, 'agentRenameAssembly', {
+      assemblyId: args.assembly_id,
+      name: args.name.trim(),
+    });
   },
 });

@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import { chromium } from 'playwright-core';
 import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { focusPartHistoryForUndo } from './lib/focusPartHistory.mjs';
+import { wrapAgentCall } from '../playtest/lib/wrapAgentCall.mjs';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
 // Not 4324: h7 already uses that port, and a leftover preview races this wait.
@@ -127,12 +128,13 @@ async function seedAssembly(page) {
   }, { doc: ASSEMBLY });
 }
 
-async function agentCall(page, name, args) {
+async function rawAgentCall(page, name, args) {
   return page.evaluate(async ({ name, argsJson }) => window.surfcad.call(name, argsJson), {
     name,
     argsJson: JSON.stringify(args ?? {}),
   });
 }
+const agentCall = wrapAgentCall(rawAgentCall);
 
 /**
  * The box edge whose midpoint is `mid`. Grouped rows are matched by `mid`,

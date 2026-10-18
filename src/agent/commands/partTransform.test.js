@@ -54,11 +54,11 @@ function host(overrides = {}) {
 
 test('part_get_transform and part_set_transform round-trip through the bridge', async () => {
   const api = createSurfcadBridge({ resolve: () => host() });
-  const read = await api.call('part_get_transform', { part: 'b' });
+  const read = await api.call('part_get_transform', { part_id: 'b' });
   assert.equal(read.ok, true);
   assert.deepEqual(read.result.position, [40, 0, 0]);
 
-  const moved = await api.call('part_set_transform', { part: 'b', position: [12, 0, 0] });
+  const moved = await api.call('part_set_transform', { part_id: 'b', position: [12, 0, 0] });
   assert.equal(moved.ok, true);
   assert.deepEqual(moved.result.position, [12, 0, 0]);
 });

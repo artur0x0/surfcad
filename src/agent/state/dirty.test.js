@@ -16,6 +16,7 @@ test('buildDirtyState copies part ids and flags', () => {
     partIds: ['a', 'b'],
     unsaved: false,
     editedSinceLoad: [],
+    pendingSave: false,
   });
 });
 
@@ -28,6 +29,7 @@ test('buildDirtyState folds undoStackDirty into workspaceDirty', () => {
     partIds: [],
     unsaved: true,
     editedSinceLoad: [],
+    pendingSave: false,
     undoStackDirty: true,
   });
 });
@@ -41,7 +43,13 @@ test('buildDirtyState sets unsaved from editedSinceLoad', () => {
     partIds: [],
     unsaved: true,
     editedSinceLoad: ['p1'],
+    pendingSave: false,
   });
+});
+
+test('buildDirtyState sets unsaved from pendingSave', () => {
+  assert.equal(buildDirtyState({ pendingSave: true }).unsaved, true);
+  assert.equal(buildDirtyState({ pendingSave: true }).pendingSave, true);
 });
 
 test('buildDirtyState omits upgradeRequired unless it is true', () => {

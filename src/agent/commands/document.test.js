@@ -77,21 +77,17 @@ function world() {
         },
       };
     },
-    async agentOpenAssembly({ name }) {
-      gitLog.push(`open:${name}`);
-      if (name === 'does-not-exist') {
+    async agentOpenAssembly({ assemblyId }) {
+      gitLog.push(`open:${assemblyId}`);
+      if (assemblyId === 'missing-id') {
         return {
           error: {
-            code: 'not_found',
-            message: 'No assembly named "does-not-exist".',
-            details: {
-              hint: 'Available assemblies: Bracket.',
-              assemblies: ['Bracket'],
-            },
+            code: 'unknown_assembly',
+            message: 'Unknown assembly id: missing-id. Call list_assemblies and retry with a listed assembly_id.',
           },
         };
       }
-      return { result: { name, activeId: active } };
+      return { result: { assemblyId, assemblyName: 'Asm', activeId: active, partCount: parts.length } };
     },
     commitFiles() { gitLog.push('commitFiles'); },
     enqueueGit() { gitLog.push('enqueueGit'); },
@@ -146,15 +142,19 @@ test('a failed create_part script keeps the new id and feature_failed', async ()
   assert.equal(host.gitLog.includes('commitFiles'), false);
 });
 
-test('open_assembly of a missing name is not_found and makes no git write', async () => {
+test('open_assembly of a missing id is unknown_assembly and makes no git write', async () => {
   const host = world();
   const api = createSurfcadBridge({ resolve: () => host });
-  const opened = await api.call('open_assembly', { name: 'does-not-exist' });
+  const opened = await api.call('open_assembly', { assembly_id: 'missing-id' });
   assert.equal(opened.ok, false);
-  assert.equal(opened.error.code, 'not_found');
-  assert.match(opened.error.message, /does-not-exist/);
-  assert.match(opened.error.details.hint, /Bracket/);
+  assert.equal(opened.error.code, 'unknown_assembly');
+  assert.match(opened.error.message, /missing-id/);
   assert.equal(JSON.stringify(opened).includes('assemblies/'), false);
   assert.equal(host.gitLog.includes('commitFiles'), false);
   assert.equal(host.gitLog.includes('enqueueGit'), false);
+
+  const byName = await api.call('open_assembly', { name: 'does-not-exist' });
+  assert.equal(byName.ok, false);
+  assert.equal(byName.error.code, 'bad_args');
+  assert.equal(host.gitLog.includes('commitFiles'), false);
 });
