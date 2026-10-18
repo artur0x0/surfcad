@@ -81,10 +81,10 @@ console.log('\nG9 — UI wiring (source)');
     && /data-profile-auth/.test(chip));
   ok('chip is circular absolute top-right',
     /rounded-full/.test(chip)
-    && /absolute top-4 right-4/.test(chip));
+    && /absolute top-4 lg:top-2 right-4/.test(chip));
   // Viewport wrap must sit above CAD feature strip (z-20) so ProfilePanel is clickable.
   ok('viewport chip z above feature strip',
-    /absolute top-4 right-4 z-50/.test(chip)
+    /absolute top-4 lg:top-2 right-4 z-50/.test(chip)
     && /z-\[60\]/.test(readFileSync(join(root, 'src/components/ProfilePanel.jsx'), 'utf8')));
   ok('chip uses surface-glass-chip', /surface-glass-chip/.test(chip));
   ok('chip calls onAccount', /onAccount\?\.|onAccount\(/.test(chip));
