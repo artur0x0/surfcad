@@ -5,8 +5,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { gitBlobSha } from '../../utils/git/binaryContent.js';
-import { captureBaseline } from '../../utils/git/gitBaseline.js';
-import { isWorkspaceDirty } from '../../utils/git/gitWorkspace.js';
 import { assemblyIdPath, partIdPath } from '../../utils/git/idPaths.js';
 import { executePlanSave } from '../../utils/git/executePlanSave.js';
 import { makeAssemblyCommit } from '../../utils/git/lastCommit.js';
@@ -15,7 +13,7 @@ import { withSurfId, withSurfName } from '../../utils/git/surfId.js';
 import { toSurfJsonV2 } from '../../utils/git/surfJsonV2.js';
 import { createSyncStore } from '../../utils/git/syncStore.js';
 import { buildDirtyState } from './dirty.js';
-import { snapshotPartScripts } from './editedSinceLoad.js';
+import { editedPartIdsSinceSnapshot, snapshotPartScripts } from './editedSinceLoad.js';
 import { compareWorkingCopyToCommit } from './workingCopyUnsaved.js';
 
 const ASM = '2026-10-18-02-50-00-0001-aa01';
@@ -187,25 +185,47 @@ test('Save-stamped commit hashes match the unstamped working-copy script', () =>
   assert.deepEqual(out.partIds, []);
 });
 
-function v2AgentDirty({ doc, scripts, assemblyCommit, pendingSave = false }) {
+function v2AgentDirty({ doc, scripts, assemblyCommit, snapshot, pendingSave = false }) {
   const compared = compareWorkingCopyToCommit({
     doc,
     scripts,
     assemblyCommit,
     pendingSave,
   });
+  const editedSinceLoad = editedPartIdsSinceSnapshot(snapshot, scripts, {
+    partIds: (doc.parts || []).map((row) => row.id),
+  });
   return buildDirtyState({
-    workspaceDirty: compared.unsaved,
     partIds: compared.partIds,
     assemblyDirty: compared.assemblyDirty,
-    editedSinceLoad: compared.partIds,
+    editedSinceLoad,
     pendingSave: compared.pendingSave,
     unsaved: compared.unsaved,
   });
 }
 
-test('edit, first git_save, dirty.unsaved is false; a later edit is unsaved', async () => {
-  const repo = { owner: 'artur', name: 'surfcad-vault' };
+const REPO = { owner: 'artur', name: 'surfcad-vault' };
+
+async function gitSave(adapter, store, doc, scripts, { message, create }) {
+  return executePlanSave({
+    adapter,
+    repo: REPO,
+    branch: 'main',
+    store,
+    workingCopy: {
+      doc,
+      scripts,
+      now: 1_700_000_000_000,
+      repo: REPO,
+      branch: 'main',
+      saveTarget: { repo: REPO, branch: 'main' },
+    },
+    message,
+    create,
+  });
+}
+
+async function saveDirtyCycle({ opened }) {
   const adapter = createMockGithubAdapter({ login: 'artur' });
   const store = createSyncStore({ persist: false });
   await store.ready();
@@ -213,63 +233,73 @@ test('edit, first git_save, dirty.unsaved is false; a later edit is unsaved', as
   const edited = 'return 9;\n';
   const again = 'return 10;\n';
   const doc = assemblyDoc([{ id: PART, name: 'Bracket', visible: true, order: 0 }]);
-  const snapshot = snapshotPartScripts({ [PART]: original });
+  let snapshot = snapshotPartScripts({ [PART]: original });
+  let assemblyCommit = null;
+
+  if (opened) {
+    const seed = await gitSave(adapter, store, doc, { [PART]: original }, {
+      message: 'Open Gearbox',
+      create: true,
+    });
+    assert.equal(seed.status, 'committed', seed.error);
+    assemblyCommit = store.getAssemblyCommit(REPO, 'main', ASM);
+    snapshot = snapshotPartScripts({ [PART]: original });
+    assert.equal(v2AgentDirty({
+      doc,
+      scripts: { [PART]: original },
+      assemblyCommit,
+      snapshot,
+    }).unsaved, false);
+  }
+
   const before = v2AgentDirty({
     doc,
     scripts: { [PART]: edited },
-    assemblyCommit: null,
+    assemblyCommit,
+    snapshot,
   });
   assert.equal(before.unsaved, true);
-  assert.deepEqual(before.partIds, [PART]);
-  assert.notEqual(snapshot[PART], edited);
 
-  const saved = await executePlanSave({
-    adapter,
-    repo,
-    branch: 'main',
-    store,
-    workingCopy: {
-      doc,
-      scripts: { [PART]: edited },
-      now: 1_700_000_000_000,
-      repo,
-      branch: 'main',
-      saveTarget: { repo, branch: 'main' },
-    },
+  const saved = await gitSave(adapter, store, doc, { [PART]: edited }, {
     message: 'Save Gearbox v2',
-    create: true,
+    create: !opened,
   });
   assert.equal(saved.status, 'committed', saved.error);
-  const assemblyCommit = store.getAssemblyCommit(repo, 'main', ASM);
+  assemblyCommit = store.getAssemblyCommit(REPO, 'main', ASM);
+
+  const stale = v2AgentDirty({
+    doc,
+    scripts: { [PART]: edited },
+    assemblyCommit,
+    snapshot,
+  });
+  assert.equal(stale.unsaved, true, 'stale agent snapshot still marks unsaved');
+
+  snapshot = snapshotPartScripts({ [PART]: edited });
   const afterSave = v2AgentDirty({
     doc,
     scripts: { [PART]: edited },
     assemblyCommit,
+    snapshot,
   });
   assert.equal(afterSave.unsaved, false);
-  assert.equal(afterSave.workspaceDirty, false);
-  assert.equal(afterSave.assemblyDirty, false);
   assert.deepEqual(afterSave.partIds, []);
   assert.deepEqual(afterSave.editedSinceLoad, []);
-  assert.equal(snapshotPartScripts({ [PART]: edited })[PART], edited);
-
-  const savedScripts = { [PART]: edited };
-  const baseline = captureBaseline({
-    assemblyPath: assemblyIdPath(ASM),
-    assemblyName: doc.name,
-    doc,
-    scripts: savedScripts,
-    branch: 'main',
-    headSha: saved.sha,
-  });
-  assert.equal(isWorkspaceDirty(doc, savedScripts, baseline), false);
 
   const afterEdit = v2AgentDirty({
     doc,
     scripts: { [PART]: again },
     assemblyCommit,
+    snapshot,
   });
   assert.equal(afterEdit.unsaved, true);
   assert.deepEqual(afterEdit.partIds, [PART]);
-  assert.equal(afterEdit.workspaceDirty, true);
+}
+
+test('first commit: edit, git_save, dirty.unsaved is false; a later edit is unsaved', async () => {
+  await saveDirtyCycle({ opened: false });
+});
+
+test('opened assembly: edit, git_save, dirty.unsaved is false; a later edit is unsaved', async () => {
+  await saveDirtyCycle({ opened: true });
 });

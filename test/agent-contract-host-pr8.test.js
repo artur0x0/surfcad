@@ -80,9 +80,9 @@ test('git_save uses handleGitCommit -> handleV2PlanSave -> executePlanSave', () 
   assert.match(plan, /writeVaultCommit|executePlanSave/);
 });
 
-test('adoptV2SaveResult recaptures snapshot and a full Save baseline', () => {
+test('adoptV2SaveResult recaptures snapshot after a committed or branched v2 save', () => {
   const adopt = sliceFn('const adoptV2SaveResult', 'const handleV2PlanSave');
-  assert.match(adopt, /captureAgentScriptSnapshot\(\)/);
+  assert.match(adopt, /if \(result\.status === 'committed' \|\| result\.status === 'branched'\) \{[\s\S]*captureAgentScriptSnapshot\(\)/);
   assert.match(adopt, /rememberGitBaseline\(captureBaseline\(/);
   assert.match(adopt, /scripts: savedScripts/);
   assert.equal(/rememberGitBaseline\(\{[\s\S]*?headSha: result\.sha/.test(adopt), false);
@@ -93,9 +93,6 @@ test('readDirty compares WC to AssemblyCommit; parts has assemblyId and no path'
   assert.match(dirty, /compareWorkingCopyToCommit/);
   assert.match(dirty, /assemblyCommit/);
   assert.match(dirty, /pendingSave/);
-  assert.match(dirty, /v2EditedSinceLoad = compared\.partIds/);
-  assert.match(dirty, /workspaceDirty = compared\.unsaved/);
-  assert.match(dirty, /editedSinceLoad: v2EditedSinceLoad/);
   const parts = sliceFn('readParts()', 'readActivePartSurfId()');
   assert.match(parts, /assemblyId: doc\.id/);
   assert.equal(/path:/.test(parts), false, parts);
