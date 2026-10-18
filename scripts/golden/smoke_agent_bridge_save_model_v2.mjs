@@ -374,28 +374,11 @@ try {
     JSON.stringify({ savePaths, surf }),
   );
   const dirtyAfterSave = await mcp(client, 'dirty');
-  // Host bug (do not fix here): v2 git_save commits, then adoptV2SaveResult
-  // stores a head-sha baseline and does not recapture the agent script
-  // snapshot. readDirty therefore stays unsaved (editedSinceLoad, partIds,
-  // workspaceDirty, assemblyDirty). A later git_save of the same bytes is
-  // still clean — the planner is idempotent; only the flag is stale.
-  if (dirtyAfterSave.parsed?.unsaved === false) {
-    check('rule3 dirty.unsaved is false after git_save', true);
-  } else {
-    const again = await mcp(client, 'git_save', { message: 'Save Gearbox v2 again' });
-    const extra = commitMessages(fake).filter((message) => message === 'Save Gearbox v2 again');
-    console.log('  ⚠️ expected-fail rule3 dirty.unsaved is false after git_save');
-    console.log(`     dirty after the commit: ${JSON.stringify(dirtyAfterSave.parsed)}`);
-    console.log(`     second git_save status=${again.parsed?.status} extraCommits=${extra.length}`);
-    console.log('     host bug: adoptV2SaveResult does not recapture the agent snapshot');
-    console.log('     and rememberGitBaseline(firstCommitBaseline) has no file hashes,');
-    console.log('     so dirty.unsaved stays true after a successful v2 Save.');
-    check(
-      'rule3 a stale dirty flag does not cause a second commit',
-      again.parsed?.status === 'clean' && extra.length === 0 && fake.log().length === seedCommits + 1,
-      JSON.stringify({ again: again.parsed, log: commitMessages(fake) }),
-    );
-  }
+  check(
+    'rule3 dirty.unsaved is false after git_save',
+    dirtyAfterSave.parsed?.unsaved === false,
+    JSON.stringify(dirtyAfterSave.parsed),
+  );
 
   const committedLid = fake.readFile(`parts/${lidId}.js`) || '';
   pushRemoteFile(fake, `parts/${lidId}.js`, `${committedLid}\n// remote edit\n`, 'remote overlap');

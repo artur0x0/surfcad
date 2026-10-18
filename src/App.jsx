@@ -292,6 +292,7 @@ import {
   assemblyRekeyKey,
   WORKING_COPY_DOC_UNSAVED,
   isSurfId,
+  isV2SurfId,
   partSurfId,
   reconcileSyncedFromTip,
   markPartsSynced,
@@ -382,6 +383,8 @@ import {
   mainMovedPlanSavePaths,
   SAVE_CONFLICT_COPY,
 } from './utils/git';
+import { assemblyIdPath, parseIdPath } from './utils/git/idPaths';
+import { partScriptMatchesCommitted } from './utils/git/planSave';
 import { scheduleLastCommitFromApp } from './utils/git/lastCommit';
 import {
   detectVaultLayout,
@@ -5088,20 +5091,58 @@ const App = () => {
       if (create && !gitVaultRef.current.repo) gitVaultRef.current.repo = repo;
     }
     const nextBranch = result.branch || branch;
-    const baseline = gitBaselineRef.current;
-    if (baseline && (result.sha || nextBranch)) {
-      rememberGitBaseline({
-        ...baseline,
-        branch: nextBranch || baseline.branch,
-        headSha: result.sha || baseline.headSha,
-      });
-    } else if (result.sha && repo) {
-      rememberGitBaseline(firstCommitBaseline({
-        branch: nextBranch || 'main',
-        headSha: result.sha,
-      }));
-    }
     if (result.status === 'committed' || result.status === 'branched') {
+      const savedDoc = assemblyRef.current;
+      const prevBaseline = gitBaselineRef.current;
+      const live = codeEditorRef.current?.getContent?.();
+      const savedScripts = { ...(partScriptsRef.current || {}) };
+      if (savedDoc?.activeId && typeof live === 'string' && !suppressPartSaveRef.current) {
+        savedScripts[savedDoc.activeId] = live;
+      }
+      const writes = (result.files || []).filter((file) => (
+        file && typeof file === 'object' && typeof file.path === 'string'
+      ));
+      const committed = {};
+      const asmPath = savedDoc && isV2SurfId(savedDoc.id)
+        ? assemblyIdPath(savedDoc.id)
+        : prevBaseline?.assemblyPath;
+      let assemblyWritten = false;
+      for (const file of writes) {
+        if (file.delete) continue;
+        if (asmPath && file.path === asmPath) assemblyWritten = true;
+        if (typeof file.content !== 'string') continue;
+        const parsed = parseIdPath(file.path);
+        if (parsed?.kind === 'part') committed[parsed.id] = file.content;
+      }
+      if (savedDoc) {
+        rememberGitBaseline(baselineAfterPartSave(prevBaseline, {
+          doc: savedDoc,
+          saved: committed,
+          assemblyPath: asmPath,
+          assemblyName: savedDoc.name,
+          assets: prevBaseline?.assets ?? null,
+          branch: nextBranch || prevBaseline?.branch || 'main',
+          headSha: result.sha || prevBaseline?.headSha || null,
+          assemblyWritten,
+        }));
+        const nextSnap = { ...(agentScriptSnapshotRef.current || {}) };
+        for (const part of savedDoc.parts || []) {
+          const id = part.id;
+          const liveText = savedScripts[id];
+          const committedText = committed[id];
+          if (typeof committedText !== 'string' || typeof liveText !== 'string') continue;
+          if (partScriptMatchesCommitted(liveText, committedText, id, part.name)) {
+            nextSnap[id] = liveText;
+          }
+        }
+        agentScriptSnapshotRef.current = nextSnap;
+        agentSnapshotDocKeyRef.current = `${savedDoc.name ?? ''}\0${savedDoc.source ?? ''}\0${(savedDoc.parts || []).map((row) => row.id).join('\n')}`;
+      } else if (result.sha && repo) {
+        rememberGitBaseline(firstCommitBaseline({
+          branch: nextBranch || 'main',
+          headSha: result.sha,
+        }));
+      }
       await clearWorkingCopySidecar();
       rememberGitBehind(null, { showToast: false, resetResolved: true });
       setGitBehindToast(null);
@@ -5116,7 +5157,12 @@ const App = () => {
         setUploadNotice(`Part file kept; still referenced by ${names.join('; ')}.`);
       }
     }
-    return result;
+    return {
+      ...result,
+      files: (result.files || []).map((file) => (
+        file && typeof file === 'object' && typeof file.path === 'string' ? file.path : file
+      )),
+    };
   };
 
   const handleV2PlanSave = async (message, { force = false } = {}) => {

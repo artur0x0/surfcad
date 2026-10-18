@@ -64,6 +64,7 @@ import {
   remapTipDocThroughPairs,
 } from './gitBaseline.js';
 import { sidecarIsDirty } from './workingSidecar.js';
+import { partScriptMatchesCommitted } from './planSave.js';
 export { baselineScriptsKeepingTip, captureBaseline, captureBaselineFromTip, remapTipDocThroughPairs };
 
 function assemblyTextIgnoringActive(text) {
@@ -113,14 +114,17 @@ export function gitDirtyLiveScript({
 }
 
 /** True when one part's script differs from the baseline (missing = dirty). */
-export function isPartDirty(path, script, baseline) {
+export function isPartDirty(path, script, baseline, { name } = {}) {
   if (!baseline) return false;
   const id = String(path || '');
   if (!id) return false;
   const had = Object.prototype.hasOwnProperty.call(baseline.scripts, id);
   if (!had) return true; // added since open
   const base = baseline.scripts[id] ?? '';
-  return String(script ?? '') !== base;
+  const live = String(script ?? '');
+  if (live === base) return false;
+  if (partScriptMatchesCommitted(live, base, id, name)) return false;
+  return true;
 }
 
 /**
@@ -139,7 +143,7 @@ export function dirtyPartIds(doc, scripts, baseline, { liveId = null, liveScript
     if (liveId && (id === liveId || partRepoPath(part) === liveId) && typeof liveScript === 'string') {
       text = liveScript;
     }
-    if (isPartDirty(id, text, baseline)) out.add(id);
+    if (isPartDirty(id, text, baseline, { name: part.name })) out.add(id);
   }
   for (const id of baseline.partIds || []) {
     if (!seen.has(id)) out.add(id);

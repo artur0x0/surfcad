@@ -57,9 +57,21 @@ function contentHash(content) {
   return gitBlobSha(toUint8Array(content));
 }
 
-function stampPartScript(script, id, name) {
+export function stampPartScript(script, id, name) {
   const display = sanitizeSurfName(name) || 'Part';
   return withSurfName(withSurfId(typeof script === 'string' ? script : '', id), display);
+}
+
+/** Working-copy bytes match committed bytes, including Save-stamped headers. */
+export function partScriptMatchesCommitted(text, committed, id, name) {
+  if (typeof committed !== 'string' || typeof text !== 'string') return false;
+  if (text === committed) return true;
+  try {
+    const stamped = stampPartScript(text, id, name);
+    return stamped !== text && stamped === committed;
+  } catch {
+    return false;
+  }
 }
 
 function workingCopyOf(input) {
