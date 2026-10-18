@@ -2189,7 +2189,7 @@ const App = () => {
     setAssemblyDoc(clean);
     syncAssemblyHistory(clean);
     // Reauth boot is read-only, but an explicit upload is a user write.
-    if (!bootReadOnlyRef.current || opts.force) {
+    if (opts.persist !== false && (!bootReadOnlyRef.current || opts.force)) {
       assemblyDocPersistRef.current = saveAssemblyDocument(clean);
       const id = bootUserId(user);
       if (id) {
@@ -5632,10 +5632,11 @@ const App = () => {
         const idsChanged = migrated.changed || localIds.changed || collapsed.changed || aligned.pairs.length;
         if (idsChanged) {
           rememberScripts(scriptsNow);
-          rememberAssembly(doc);
+          rememberAssembly(doc, { persist: false });
         }
         // Baseline and re-keyed scripts together so dirty never sees mixed ids.
-        // Load/reload still do not write git.
+        // Load/reload still do not write git. IDB doc waits until script puts
+        // are verified (including any reverted rows).
         if (!gitBaselineRef.current) {
           if (!store.getLastSyncedSha(vault.repo, branch) && opened.baseline?.headSha) {
             await store.setLastSyncedSha(vault.repo, opened.baseline.headSha, branch);
@@ -5656,6 +5657,7 @@ const App = () => {
             remove: async (id) => {
               try { await deletePartScript(id); } catch { /* ignore */ }
             },
+            saveDoc: saveAssemblyDocument,
           });
           doc = persisted.doc;
           scriptsNow = mergeLiveEdits(
@@ -5663,6 +5665,7 @@ const App = () => {
             persisted.scripts,
             persistPairs,
             persistSource.scripts,
+            persisted.failedFrom,
           );
           rememberScripts(scriptsNow);
           rememberAssembly(doc);

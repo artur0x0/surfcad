@@ -650,6 +650,31 @@ test('persist does not rewrite an unchanged key so a later edit is kept', async 
   assert.equal(persisted.doc.parts[0].id, SURF);
 });
 
+test('vault open does not copy a stale path-key record over the tip', async () => {
+  const pathKey = 'assemblies/A/Pin.js';
+  const store = new Map([[pathKey, 'OLD path-key record']]);
+  const doc = {
+    source: 'git',
+    name: 'A',
+    activeId: SURF,
+    parts: [{ id: SURF, path: pathKey, name: 'Pin', visible: true, order: 0, isSynced: true }],
+  };
+  await persistCollapsedWorkingCopy({
+    collapsed: {
+      doc,
+      scripts: { [SURF]: 'tip pin' },
+      pairs: [{ from: pathKey, to: SURF }],
+    },
+    sourceDoc: doc,
+    sourceScripts: { [SURF]: 'tip pin' },
+    save: async (id, script) => { store.set(id, script); return true; },
+    load: async (id) => store.get(id),
+    remove: async (id) => { store.delete(id); },
+  });
+  assert.equal(store.get(SURF), 'tip pin');
+  assert.equal(store.has(pathKey), false);
+});
+
 test('vault open writes every tip script over a stale IDB edit', async () => {
   const baseId = mintSurfId({ now: NOW, rand: 'ba5e' });
   const pinTip = withSurfId('return pin-tip;\n', SURF);
@@ -711,6 +736,86 @@ test('put that reports success without storing keeps the old key', async () => {
   assert.equal(persisted.doc.parts[0].id, UUID);
   assert.equal(store.get(UUID), 'return keep-me;\n');
   assert.equal(store.has(collapsed.doc.parts[0].id), false);
+});
+
+test('IDB doc stays on old ids if persist is killed before writes', async () => {
+  const store = new Map([[UUID, 'return unsaved;\n']]);
+  let idbDoc = {
+    source: 'local',
+    name: 'Assembly',
+    activeId: UUID,
+    parts: [{ id: UUID, name: 'Part', visible: true, order: 0 }],
+  };
+  const scripts = { [UUID]: 'return unsaved;\n' };
+  const collapsed = collapseWorkingCopyIds(idbDoc, scripts, { now: NOW, randFor: () => 'b10c' });
+  assert.notEqual(collapsed.doc.parts[0].id, UUID);
+  const persisted = await persistCollapsedWorkingCopy({
+    collapsed,
+    sourceDoc: idbDoc,
+    sourceScripts: scripts,
+    heldScripts: scripts,
+    save: async () => { throw new Error('killed'); },
+    load: async (id) => store.get(id),
+    remove: async (id) => { store.delete(id); },
+    saveDoc: async (doc) => { idbDoc = doc; },
+  });
+  assert.equal(persisted.doc.parts[0].id, UUID);
+  assert.equal(idbDoc.parts[0].id, UUID);
+  assert.equal(store.get(UUID), 'return unsaved;\n');
+});
+
+test('failed from read-back keeps the old key', async () => {
+  const store = new Map([[UUID, 'return keep-me;\n']]);
+  const doc = {
+    source: 'local',
+    name: 'Assembly',
+    activeId: UUID,
+    parts: [{ id: UUID, name: 'Part', visible: true, order: 0 }],
+  };
+  const scripts = { [UUID]: store.get(UUID) };
+  const collapsed = collapseWorkingCopyIds(doc, scripts, { now: NOW, randFor: () => 'b10c' });
+  const nextId = collapsed.doc.parts[0].id;
+  await persistCollapsedWorkingCopy({
+    collapsed,
+    sourceDoc: doc,
+    sourceScripts: scripts,
+    heldScripts: scripts,
+    save: async (id, script) => { store.set(id, script); return true; },
+    load: async (id) => {
+      if (id === UUID) throw new Error('read failed');
+      return store.get(id);
+    },
+    remove: async (id) => { store.delete(id); },
+  });
+  assert.equal(store.get(UUID), 'return keep-me;\n');
+  assert.equal(store.get(nextId), 'return keep-me;\n');
+});
+
+test('merge after a failed write keeps U1 and its in-memory script', async () => {
+  const store = new Map([[UUID, 'return u1;\n']]);
+  const doc = {
+    source: 'local',
+    name: 'Assembly',
+    activeId: UUID,
+    parts: [{ id: UUID, name: 'Part', visible: true, order: 0 }],
+  };
+  const scripts = { [UUID]: 'return u1;\n' };
+  const collapsed = collapseWorkingCopyIds(doc, scripts, { now: NOW, randFor: () => 'b10c' });
+  const nextId = collapsed.doc.parts[0].id;
+  const persisted = await persistCollapsedWorkingCopy({
+    collapsed,
+    sourceDoc: doc,
+    sourceScripts: scripts,
+    heldScripts: scripts,
+    save: async () => false,
+    load: async (id) => store.get(id),
+    remove: async (id) => { store.delete(id); },
+  });
+  assert.equal(persisted.doc.parts[0].id, UUID);
+  const live = { [nextId]: 'return u1;\n' };
+  const merged = mergeLiveEdits(live, persisted.scripts, collapsed.pairs, scripts, persisted.failedFrom);
+  assert.equal(merged[UUID], 'return u1;\n');
+  assert.equal(merged[nextId], undefined);
 });
 
 test('edit injected mid-persist lands under the new id and stays dirty', async () => {

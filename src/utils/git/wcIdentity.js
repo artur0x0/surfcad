@@ -142,7 +142,7 @@ export async function replaceScriptKeys({
   nextScripts,
   staleIds,
   pairs = [],
-  sourceScripts = {},
+  heldScripts,
   save,
   load,
   remove,
@@ -160,14 +160,20 @@ export async function replaceScriptKeys({
     const to = toByFrom.get(id);
     if (to && !saved.has(to)) continue;
     if (to == null && !allSaved) continue;
-    const current = await readScript(load, id);
-    const source = sourceScripts?.[id];
-    if (typeof current === 'string' && current !== source) {
-      if (to && saved.has(to)) {
-        const moved = await putVerified({ save, load, id: to, script: current });
-        if (!moved) continue;
-      } else {
-        continue;
+    if (typeof load === 'function') {
+      const current = await readScript(load, id);
+      // Failed read-back is unknown: keep `from` rather than deleting it.
+      if (typeof current !== 'string') continue;
+      // Only bytes that changed during this persist (vs the IDB snapshot)
+      // count as an edit. Vault open omits heldScripts, so a stale path-key
+      // record is not copied over the tip.
+      if (heldScripts && current !== heldScripts[id]) {
+        if (to && saved.has(to)) {
+          const moved = await putVerified({ save, load, id: to, script: current });
+          if (!moved) continue;
+        } else {
+          continue;
+        }
       }
     }
     try { await remove(id); } catch { /* ignore */ }
@@ -177,21 +183,29 @@ export async function replaceScriptKeys({
 
 /**
  * Fold live edits onto collapsed ids. An edit typed under `from` while
- * persist is in flight lands on `to`.
+ * persist is in flight lands on `to`. A pair whose write failed stays on
+ * `from` and keeps that script.
  */
-export function mergeLiveEdits(live, persisted, pairs = [], sourceScripts = {}) {
+export function mergeLiveEdits(live, persisted, pairs = [], sourceScripts = {}, failedFrom = new Set()) {
+  const failed = failedFrom instanceof Set ? failedFrom : new Set(failedFrom || []);
   const toByFrom = new Map();
+  const fromByTo = new Map();
   for (const { from, to } of pairs) {
-    if (from && to && from !== to) toByFrom.set(from, to);
+    if (!from || !to || from === to) continue;
+    if (failed.has(from)) fromByTo.set(to, from);
+    else toByFrom.set(from, to);
   }
   const merged = { ...(persisted || {}) };
   for (const [id, text] of Object.entries(live || {})) {
     if (typeof text !== 'string') continue;
     if (sourceScripts[id] === text) continue;
-    merged[toByFrom.get(id) || id] = text;
+    const dest = failed.has(id) ? id : (fromByTo.get(id) || toByFrom.get(id) || id);
+    merged[dest] = text;
   }
   for (const { from, to } of pairs) {
-    if (from && to && from !== to) delete merged[from];
+    if (!from || !to || from === to) continue;
+    if (failed.has(from)) delete merged[to];
+    else delete merged[from];
   }
   return merged;
 }
@@ -252,7 +266,7 @@ export async function persistCollapsedWorkingCopy({
     nextScripts: putScripts,
     staleIds: pairs.map((pair) => pair.from),
     pairs,
-    sourceScripts,
+    heldScripts,
     save,
     load,
     remove,
