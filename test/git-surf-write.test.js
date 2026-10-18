@@ -401,7 +401,7 @@ test('projectPendingOps includes a rename payload extraFiles', () => {
 test('mesh import fails loud when the vault tree cannot be listed', () => {
   const src = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const start = src.indexOf('const name = dedupedImportName');
-  const end = src.indexOf('id = newLocalPartId()', start);
+  const end = src.indexOf('id = mintSurfId()', start);
   assert.ok(start >= 0 && end > start, 'mesh import occupancy block');
   const block = src.slice(start, end);
   assert.match(block, /listVaultTreePaths/);
