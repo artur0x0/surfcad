@@ -4848,7 +4848,7 @@ const App = () => {
         hint: 'git_upgrade_vault { confirm: true } after the user agrees',
       };
     }
-    if (doc.vaultLayout === 'v2') {
+    if (doc.vaultLayout === 'v2' && upgradeVaultEnabled()) {
       return {
         status: 'error',
         code: 'git_error',
@@ -8597,7 +8597,9 @@ const App = () => {
         legacyCleanup: !!dirtyBaseline?.legacyCleanup,
         undoStackDirty,
         editedSinceLoad,
-        upgradeRequired: doc?.vaultLayout === 'legacy' && upgradeVaultEnabled(),
+        ...(doc?.vaultLayout === 'legacy' && upgradeVaultEnabled()
+          ? { upgradeRequired: true }
+          : {}),
       });
     },
     readToasts() {

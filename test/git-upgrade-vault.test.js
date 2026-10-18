@@ -978,6 +978,7 @@ test('Get latest applies remote bytes and writes no git; branch starts from tipS
     adapter: gh,
     repo,
     files: [fileWrite(partIdPath(SHAFT_ID), withSurfId('return "local-shaft";\n', SHAFT_ID))],
+    paths: [partIdPath(SHAFT_ID)],
     store,
     assemblyId: GEARBOX_ID,
   });
@@ -1000,6 +1001,39 @@ test('Get latest applies remote bytes and writes no git; branch starts from tipS
   assert.match(mine, /mine-shaft/);
   const main = await readText(gh, repo, partIdPath(SHAFT_ID), 'main');
   assert.match(main, /remote-shaft/);
+});
+
+test('Get latest with no paths returns an error and writes nothing', async () => {
+  const { gh, repo } = await seedGearboxVault();
+  const writes = commits(gh).length;
+  let listed = false;
+  const origList = gh.listTree.bind(gh);
+  gh.listTree = async (...args) => {
+    listed = true;
+    return origList(...args);
+  };
+  const missing = await executeUpgradeConflictChoice({
+    action: 'reload',
+    adapter: gh,
+    repo,
+    files: [fileWrite(partIdPath(SHAFT_ID), withSurfId('return "local-shaft";\n', SHAFT_ID))],
+  });
+  assert.equal(missing.status, 'error');
+  assert.equal(missing.code, 'bad_args');
+  assert.equal(listed, false);
+  assert.equal(commits(gh).length, writes);
+
+  const empty = await executeUpgradeConflictChoice({
+    action: 'reload',
+    adapter: gh,
+    repo,
+    files: [fileWrite(partIdPath(SHAFT_ID), withSurfId('return "local-shaft";\n', SHAFT_ID))],
+    paths: [],
+  });
+  assert.equal(empty.status, 'error');
+  assert.equal(empty.code, 'bad_args');
+  assert.equal(listed, false);
+  assert.equal(commits(gh).length, writes);
 });
 
 test('upgradeVaultEnabled is off in prod even with VITE_ or localStorage', () => {
@@ -1055,6 +1089,7 @@ test('flag-off Save and Add to Repo keep main v1 writers', () => {
     app.indexOf('const handleUpgradeVault'),
   );
   assert.match(gitCommit, /doc\.vaultLayout === 'legacy' && upgradeVaultEnabled\(\)/);
+  assert.match(gitCommit, /doc\.vaultLayout === 'v2' && upgradeVaultEnabled\(\)/);
   assert.match(gitCommit, /ensureGitVault\(\{\s*create:\s*true\s*\}\)/);
   const addStart = app.indexOf('const handleAddToRepo');
   const add = app.slice(addStart, app.indexOf('const handleListBranches', addStart));
@@ -1067,14 +1102,27 @@ test('flag-off Save and Add to Repo keep main v1 writers', () => {
   );
   assert.match(startCommit, /stage: 'message'/);
   assert.match(startCommit, /upgradeAvailable/);
+  const committingAt = feed.indexOf('>Committing…</p>');
+  assert.ok(committingAt >= 0);
+  const busy = feed.slice(feed.lastIndexOf('{commitFlow.stage === \'busy\'', committingAt), committingAt + 20);
+  assert.match(busy, /upgradeAvailable/);
+  assert.match(busy, /phase === 'upgrade'/);
+  assert.match(busy, /phase === 'save'/);
+  assert.match(busy, /className="text-xs text-chrome-secondary" data-git-dialog-loading="">Committing…/);
 });
 
 function staticRelativeImports(file) {
   const specs = [];
   const text = readFileSync(file, 'utf8');
-  const re = /(?:^|\n)\s*(?:export\s+)?import\s[\s\S]*?from\s+['"](\.[^'"]+)['"]/g;
-  let m;
-  while ((m = re.exec(text))) specs.push(m[1]);
+  const patterns = [
+    /(?:^|\n)\s*import(?:\s+type)?[\s\S]*?from\s+['"](\.[^'"]+)['"]/g,
+    /(?:^|\n)\s*export\s+\{[\s\S]*?\}\s*from\s+['"](\.[^'"]+)['"]/g,
+    /(?:^|\n)\s*export\s+\*(?:\s+as\s+\w+)?\s+from\s+['"](\.[^'"]+)['"]/g,
+  ];
+  for (const re of patterns) {
+    let m;
+    while ((m = re.exec(text))) specs.push(m[1]);
+  }
   return specs;
 }
 
@@ -1107,8 +1155,16 @@ test('lastCommit import graph never reaches upgrade.js', () => {
   const last = join(ROOT, 'src/utils/git/lastCommit.js');
   const upgrade = join(ROOT, 'src/utils/git/legacyVault/upgrade.js');
   const reader = join(ROOT, 'src/utils/git/legacyVault/reader.js');
+  const index = join(ROOT, 'src/utils/git/legacyVault/index.js');
+  const lastText = readFileSync(last, 'utf8');
+  assert.equal(/legacyVault\/index/.test(lastText), false);
+  assert.equal(/from ['"][^'"]*legacyVault['"]/.test(lastText), false);
+  assert.match(lastText, /from ['"][^'"]*legacyVault\/reader\.js['"]/);
+  const fromIndex = reachableFrom(index);
+  assert.equal(fromIndex.has(upgrade), true, 'export { … } from upgrade.js must be followed');
   const fromLast = reachableFrom(last);
   assert.equal(fromLast.has(upgrade), false);
+  assert.equal(fromLast.has(index), false);
   assert.equal(fromLast.has(reader), true);
   const fromUpgrade = reachableFrom(upgrade);
   assert.equal(fromUpgrade.has(last), true);

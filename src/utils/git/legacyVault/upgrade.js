@@ -1266,13 +1266,9 @@ export async function executeUpgradeFollowup({
   return { status: 'committed', sha: committed.sha, branch: branchName, files: files.map((f) => f.path) };
 }
 
-function conflictReloadPaths({ files, paths }) {
-  if (Array.isArray(paths)) {
-    return paths.filter((path) => typeof path === 'string' && path);
-  }
-  return (files || [])
-    .map((row) => (typeof row === 'string' ? row : row?.path))
-    .filter((path) => typeof path === 'string' && path);
+function conflictReloadPaths(paths) {
+  if (!Array.isArray(paths)) return [];
+  return paths.filter((path) => typeof path === 'string' && path);
 }
 
 /**
@@ -1300,12 +1296,19 @@ export async function executeUpgradeConflictChoice({
     });
   }
   if (action === 'reload') {
+    const want = conflictReloadPaths(paths);
+    if (!want.length) {
+      return hostError(
+        'bad_args',
+        'Get latest needs the conflicting paths.',
+        'Retry Get latest from the Upgrade conflict dialog. Other local edits were not touched.',
+      );
+    }
     assertGithubAdapter(adapter);
     const branchName = (typeof branch === 'string' && branch.trim()) ? branch.trim() : 'main';
     const head = await adapter.getBranch(repo, branchName);
     const headSha = head?.sha || null;
     const contents = {};
-    const want = conflictReloadPaths({ files, paths });
     if (headSha) {
       const tree = await adapter.listTree(repo, headSha);
       const shaByPath = new Map((tree || []).filter((item) => item?.path).map((item) => [item.path, item.sha]));

@@ -25,8 +25,8 @@ export function buildDirtyState(input = {}) {
     partIds,
     unsaved,
     editedSinceLoad,
-    upgradeRequired: input.upgradeRequired === true,
   };
+  if (input.upgradeRequired === true) out.upgradeRequired = true;
   if (undoStackDirty) out.undoStackDirty = true;
   return out;
 }

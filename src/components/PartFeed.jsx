@@ -1131,7 +1131,7 @@ const PartFeed = forwardRef(function PartFeed({
   }, [assemblyRenameFlow]);
 
   const runUpgrade = async () => {
-    setCommitFlow({ stage: 'busy', draft: '', result: null, error: '' });
+    setCommitFlow({ stage: 'busy', draft: '', result: { phase: 'upgrade' }, error: '' });
     const result = (await onUpgradeVault?.()) || { status: 'error', error: 'Upgrade unavailable' };
     if (result.status === 'conflict' && result.phase === 'save') {
       setCommitFlow({ stage: 'upgrade-conflict', draft: '', result, error: '' });
@@ -2474,9 +2474,9 @@ const PartFeed = forwardRef(function PartFeed({
             </>
           )}
           {commitFlow.stage === 'busy' && (
-            <p className="text-xs text-muted-on-dark font-ui" data-git-dialog-loading="">
-              {vaultLayout === 'legacy' || commitFlow.result?.phase === 'save' ? 'Upgrading…' : 'Committing…'}
-            </p>
+            upgradeAvailable && (commitFlow.result?.phase === 'upgrade' || commitFlow.result?.phase === 'save')
+              ? <p className="text-xs text-muted-on-dark font-ui" data-git-dialog-loading="">Upgrading…</p>
+              : <p className="text-xs text-chrome-secondary" data-git-dialog-loading="">Committing…</p>
           )}
           {commitFlow.stage === 'ask-force' && (
             <div

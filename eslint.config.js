@@ -148,9 +148,12 @@ export default [
   },
 
   // Isolated v1 reader: import the entry point only. PR 10 deletes the folder.
+  // lastCommit.js is excluded here and restricted below so it can import
+  // reader.js without also being allowed to import the barrel (index.js
+  // re-exports upgrade.js).
   {
     files: ['src/**/*.{js,jsx}', 'test/**/*.{js,mjs}'],
-    ignores: ['src/utils/git/legacyVault/**'],
+    ignores: ['src/utils/git/legacyVault/**', 'src/utils/git/lastCommit.js'],
     rules: {
       'no-restricted-imports': ['error', {
         patterns: [{
@@ -160,16 +163,17 @@ export default [
       }],
     },
   },
-  // lastCommit reads v1 blobSources from the reader, not the barrel, so it
-  // never loads upgrade.js (lastCommit → index → upgrade → lastCommit).
   {
     files: ['src/utils/git/lastCommit.js'],
     rules: {
       'no-restricted-imports': ['error', {
-        patterns: [{
-          group: ['**/legacyVault/*', '!**/legacyVault', '!**/legacyVault/index.js', '!**/legacyVault/reader.js'],
-          message: "lastCommit may import legacyVault/reader.js; other internals still go through index.js.",
-        }],
+        paths: [
+          { name: './legacyVault', message: 'lastCommit may import legacyVault/reader.js only, never the barrel (index.js loads upgrade.js).' },
+          { name: './legacyVault/index.js', message: 'lastCommit may import legacyVault/reader.js only, never the barrel (index.js loads upgrade.js).' },
+          { name: './legacyVault/upgrade.js', message: 'lastCommit may import legacyVault/reader.js only, never the barrel (index.js loads upgrade.js).' },
+          { name: './legacyVault/detect.js', message: 'lastCommit may import legacyVault/reader.js only, never the barrel (index.js loads upgrade.js).' },
+          { name: './legacyVault/knownReadmeSeeds.js', message: 'lastCommit may import legacyVault/reader.js only, never the barrel (index.js loads upgrade.js).' },
+        ],
       }],
     },
   },
