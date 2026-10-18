@@ -46,6 +46,25 @@ test('withSurfId replaces an invalid @surf-id line instead of stacking a second 
   assert.equal(crlf, `// @surf-id ${ID}\r\nreturn 1;\r\n`);
 });
 
+test('withSurfId replaces a bare // @surf-id line instead of stacking', () => {
+  const next = withSurfId(`// @surf-id\n${BODY}`, ID);
+  assert.equal(next, `// @surf-id ${ID}\n${BODY}`);
+  assert.equal((next.match(/\/\/ @surf-id/g) || []).length, 1);
+
+  const eof = withSurfId('// @surf-id', ID);
+  assert.equal(eof, `// @surf-id ${ID}`);
+
+  const crlf = withSurfId('// @surf-id\r\nreturn 1;\r\n', ID);
+  assert.equal(crlf, `// @surf-id ${ID}\r\nreturn 1;\r\n`);
+});
+
+test('withSurfId keeps a valid header byte-identical except the id', () => {
+  const other = mintSurfId({ now: new Date('2026-10-18T02:50:00.002Z'), rand: 'aa02' });
+  const spaced = `// @surf-id ${ID}  \r\n${BODY}`;
+  assert.equal(withSurfId(spaced, ID), spaced);
+  assert.equal(withSurfId(spaced, other), `// @surf-id ${other}  \r\n${BODY}`);
+});
+
 test('withSurfName does not insert above an invalid @surf-id line', () => {
   const bogus = `// @surf-id bogus\n${BODY}`;
   const next = withSurfName(bogus, 'Bracket');

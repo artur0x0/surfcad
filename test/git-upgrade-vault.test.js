@@ -54,6 +54,14 @@ const BOX_ID = mintSurfId({ now: NOW, rand: 'b0x1' });
 const DUP_COPY_ID = mintSurfId({ now: NOW, rand: 'd0d0' });
 const ALPHA_ID = mintSurfId({ now: NOW, rand: 'a1fa' });
 const BETA_ID = mintSurfId({ now: NOW, rand: 'b3fa' });
+const GAMMA_ID = mintSurfId({ now: NOW, rand: 'c3fa' });
+const X_ID = mintSurfId({ now: NOW, rand: 'aaa1' });
+const Y_ID = mintSurfId({ now: NOW, rand: 'bbb1' });
+const GEAR_B_ID = mintSurfId({ now: new Date('2026-10-18T04:00:00.000Z'), rand: '9eb2' });
+const GEAR_A_ID = mintSurfId({ now: NOW, rand: '9ea1' });
+const F1_PIN_MINTED_ID = mintSurfId({ now: NOW, rand: '9999' });
+const N5_COPY_ID = mintSurfId({ now: NOW, rand: 'c0c2' });
+const N6_ORPHAN_ID = mintSurfId({ now: NOW, rand: '0f0a' });
 
 const SHAFT_PATH = 'parts/Shaft.js';
 const BRACKET_PATH = 'parts/Bracket.js';
@@ -64,6 +72,13 @@ const BLANK_PATH = 'parts/Blank.js';
 const PIN_PATH = 'parts/Pin.js';
 const PIN_COPY_PATH = 'assemblies/Box/PinCopy.js';
 const PIN_COPY_SCENARIO_PATH = 'assemblies/Box/Pin copy.js';
+const BOX_PIN_PATH = 'assemblies/Box/Pin.js';
+const PIN_COPY_SHARED_PATH = 'parts/PinCopy.js';
+const ORPHAN_PATH = 'parts/Orphan.js';
+const GEAR_A_PATH = 'parts/GearA.js';
+const GEAR_B_PATH = 'parts/GearB.js';
+const EMPTY_HEADER_PATH = 'parts/Empty.js';
+const BOGUS_HEADER_PATH = 'parts/Bogus.js';
 const SCENARIO_L_PIN_ID = mintSurfId({ now: new Date('2026-10-18T00:00:02.000Z'), rand: 'b1a0' });
 const SCENARIO_L_COPY_ID = mintSurfId({ now: NOW, rand: 'c0c1' });
 const SCENARIO_L_JOINT_ID = mintSurfId({ now: NOW, rand: 'j01a' });
@@ -103,16 +118,26 @@ function randFor(part) {
   if (path === PIN_COPY_PATH) return 'd0d0';
   if (path === PIN_COPY_SCENARIO_PATH) return 'c0c1';
   if (path === BLOCK_PATH) return 'b10c';
+  if (path === GEAR_A_PATH) return '9ea1';
+  if (path === PIN_COPY_SHARED_PATH) return 'c0c2';
+  if (path === ORPHAN_PATH) return '0f0a';
   if (part?.id === '$assembly') {
     if (part.name === 'Cover') return '0002';
     if (part.name === 'Gearbox') return '0001';
     if (part.name === 'Box') return 'b0x1';
     if (part.name === 'Alpha') return 'a1fa';
     if (part.name === 'Beta') return 'b3fa';
+    if (part.name === 'Gamma') return 'c3fa';
+    if (part.name === 'X') return 'aaa1';
+    if (part.name === 'Y') return 'bbb1';
     return 'aa00';
   }
   if (part?.id === '$group') return 'eeee';
   return '9999';
+}
+
+function v2PartJs(plan) {
+  return Object.keys(plan.writes || {}).filter((path) => /^parts\/[^/]+\.js$/.test(path)).sort();
 }
 
 async function seedGearboxVault({ readme, extraFiles = [] } = {}) {
@@ -597,9 +622,8 @@ test('Scenario L: a copy header never steals a row-owned Pin id', async () => {
   assert.equal(pin.id, SCENARIO_L_PIN_ID);
   assert.equal(copy.id, SCENARIO_L_COPY_ID);
   assert.notEqual(copy.id, pin.id);
-  assert.equal(copy.copiedFrom, SCENARIO_L_PIN_ID);
+  assert.equal(copy.copiedFrom, undefined);
   assert.equal(pin.copiedFrom, undefined);
-  assert.notEqual(copy.copiedFrom, copy.id);
   assert.deepEqual(box.groups[0].partIds, [SCENARIO_L_PIN_ID]);
   assert.equal(box.colors[SCENARIO_L_PIN_ID].part, '#cc0000');
   assert.equal(Object.hasOwn(box.colors, copy.id), false);
@@ -729,14 +753,14 @@ test('Scenario L variant: copy listed first with Pin id still mints (ownership B
   }
 });
 
-test('shared Pin header outranks a local copy row that also claims Pin id', async () => {
+test('copy row that carries Pin id owns it when the shared Pin row has no id (F1)', async () => {
   const gh = createMockGithubAdapter({ login: 'artur' });
   const vault = await findOrCreateVault(gh);
   const raw = {
     format: 'surfcad.assembly',
     version: 1,
     name: 'Box',
-    activeId: PIN_PATH,
+    activeId: PIN_COPY_SCENARIO_PATH,
     parts: [
       { id: SCENARIO_L_PIN_ID, path: PIN_COPY_SCENARIO_PATH, name: 'Pin copy', visible: true, order: 0 },
       { path: PIN_PATH, name: 'Pin', visible: true, order: 1 },
@@ -744,7 +768,7 @@ test('shared Pin header outranks a local copy row that also claims Pin id', asyn
   };
   await gh.commitFiles(vault.repo, {
     branch: 'main',
-    message: 'seed shared header-only Pin vs local copy row',
+    message: 'seed F1 copy row vs shared header-only Pin',
     baseSha: vault.headSha,
     files: [
       fileWrite('assemblies/Box/.surf.json', `${JSON.stringify(raw, null, 2)}\n`),
@@ -759,17 +783,289 @@ test('shared Pin header outranks a local copy row that also claims Pin id', asyn
   assert.equal(validateSurfJsonV2(box).ok, true, validateSurfJsonV2(box).errors?.join('; '));
   const pin = box.parts.find((p) => p.name === 'Pin');
   const copy = box.parts.find((p) => p.name === 'Pin copy');
-  assert.equal(pin.id, SCENARIO_L_PIN_ID);
-  assert.equal(copy.id, SCENARIO_L_COPY_ID);
-  assert.equal(copy.copiedFrom, SCENARIO_L_PIN_ID);
+  assert.equal(copy.id, SCENARIO_L_PIN_ID);
+  assert.equal(pin.id, F1_PIN_MINTED_ID);
+  assert.equal(copy.copiedFrom, undefined);
   assert.equal(pin.copiedFrom, undefined);
+  const ownedText = await readText(gh, vault.repo, partIdPath(SCENARIO_L_PIN_ID));
+  const mintedText = await readText(gh, vault.repo, partIdPath(F1_PIN_MINTED_ID));
+  assert.equal(readSurfId(ownedText), SCENARIO_L_PIN_ID);
+  assert.match(ownedText, /pin-copy/);
+  assert.equal(readSurfId(mintedText), F1_PIN_MINTED_ID);
+  assert.match(mintedText, /return "pin"/);
+  assert.equal(mintedText.includes('pin-copy'), false);
+  assert.deepEqual(v2PartJs(result.plan), [partIdPath(F1_PIN_MINTED_ID), partIdPath(SCENARIO_L_PIN_ID)].sort());
+});
+
+test('assembly-folder Pin with a row id beats a shared header-only copy (N5)', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const raw = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Box',
+    activeId: BOX_PIN_PATH,
+    parts: [
+      { id: SCENARIO_L_PIN_ID, path: BOX_PIN_PATH, name: 'Pin', visible: true, order: 0 },
+      { path: PIN_COPY_SHARED_PATH, name: 'PinCopy', visible: true, order: 1 },
+    ],
+    groups: [{
+      id: GROUP_ID,
+      name: 'Hardware',
+      partIds: [SCENARIO_L_PIN_ID],
+    }],
+    colors: { [SCENARIO_L_PIN_ID]: { part: '#cc0000' } },
+  };
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed N5 assembly Pin vs shared header-only copy',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Box/.surf.json', `${JSON.stringify(raw, null, 2)}\n`),
+      fileWrite(BOX_PIN_PATH, withSurfId('return "pin";\n', SCENARIO_L_PIN_ID)),
+      fileWrite(PIN_COPY_SHARED_PATH, withSurfId('return "pin-copy";\n', SCENARIO_L_PIN_ID)),
+    ],
+  });
+  const store = await storeFor(vault.repo, { Box: BOX_ID });
+  const result = await executeUpgrade(upgradeOpts(gh, vault.repo, { store }));
+  assert.equal(result.status, 'upgraded');
+  const box = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(BOX_ID)));
+  assert.equal(validateSurfJsonV2(box).ok, true, validateSurfJsonV2(box).errors?.join('; '));
+  const pin = box.parts.find((p) => p.name === 'Pin');
+  const copy = box.parts.find((p) => p.name === 'PinCopy');
+  assert.equal(pin.id, SCENARIO_L_PIN_ID);
+  assert.equal(copy.id, N5_COPY_ID);
+  assert.equal(copy.copiedFrom, undefined);
+  assert.equal(pin.copiedFrom, undefined);
+  assert.deepEqual(box.groups[0].partIds, [SCENARIO_L_PIN_ID]);
+  assert.equal(box.colors[SCENARIO_L_PIN_ID].part, '#cc0000');
+  assert.equal(Object.hasOwn(box.colors, copy.id), false);
   const pinText = await readText(gh, vault.repo, partIdPath(SCENARIO_L_PIN_ID));
-  const copyText = await readText(gh, vault.repo, partIdPath(SCENARIO_L_COPY_ID));
-  assert.equal(readSurfId(pinText), SCENARIO_L_PIN_ID);
   assert.match(pinText, /return "pin"/);
   assert.equal(pinText.includes('pin-copy'), false);
-  assert.equal(readSurfId(copyText), SCENARIO_L_COPY_ID);
-  assert.match(copyText, /pin-copy/);
+  assert.match(await readText(gh, vault.repo, partIdPath(N5_COPY_ID)), /pin-copy/);
+});
+
+test('unreferenced header-only file does not claim a row-owned id (N6)', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const raw = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Box',
+    activeId: BOX_PIN_PATH,
+    parts: [
+      { id: SCENARIO_L_PIN_ID, path: BOX_PIN_PATH, name: 'Pin', visible: true, order: 0 },
+    ],
+  };
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed N6 orphan header next to row-owned Pin',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Box/.surf.json', `${JSON.stringify(raw, null, 2)}\n`),
+      fileWrite(BOX_PIN_PATH, withSurfId('return "pin";\n', SCENARIO_L_PIN_ID)),
+      fileWrite(ORPHAN_PATH, withSurfId('return "orphan";\n', SCENARIO_L_PIN_ID)),
+    ],
+  });
+  const store = await storeFor(vault.repo, { Box: BOX_ID });
+  const result = await executeUpgrade(upgradeOpts(gh, vault.repo, { store }));
+  assert.equal(result.status, 'upgraded');
+  const box = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(BOX_ID)));
+  assert.equal(validateSurfJsonV2(box).ok, true, validateSurfJsonV2(box).errors?.join('; '));
+  assert.equal(box.parts[0].id, SCENARIO_L_PIN_ID);
+  assert.equal(box.parts[0].copiedFrom, undefined);
+  const pinText = await readText(gh, vault.repo, partIdPath(SCENARIO_L_PIN_ID));
+  assert.match(pinText, /return "pin"/);
+  assert.equal(pinText.includes('orphan'), false);
+  const orphanText = await readText(gh, vault.repo, partIdPath(N6_ORPHAN_ID));
+  assert.equal(readSurfId(orphanText), N6_ORPHAN_ID);
+  assert.match(orphanText, /orphan/);
+  assert.equal(result.plan.partIdByPath[ORPHAN_PATH], N6_ORPHAN_ID);
+  assert.equal(result.plan.partIdByPath[BOX_PIN_PATH], SCENARIO_L_PIN_ID);
+});
+
+test('shared sibling files mint once across assemblies when one row owns the id (N3)', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const x = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'X',
+    activeId: GEAR_B_PATH,
+    parts: [
+      { path: GEAR_A_PATH, name: 'GearA', visible: true, order: 0 },
+      { id: GEAR_B_ID, path: GEAR_B_PATH, name: 'GearB', visible: true, order: 1 },
+    ],
+  };
+  const y = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Y',
+    activeId: GEAR_B_PATH,
+    parts: [
+      { path: GEAR_A_PATH, name: 'GearA', visible: true, order: 0 },
+      { id: GEAR_B_ID, path: GEAR_B_PATH, name: 'GearB', visible: true, order: 1 },
+    ],
+  };
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed N3 shared GearA/GearB across X and Y',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/X/.surf.json', `${JSON.stringify(x, null, 2)}\n`),
+      fileWrite('assemblies/Y/.surf.json', `${JSON.stringify(y, null, 2)}\n`),
+      fileWrite(GEAR_A_PATH, withSurfId('return "gear-a";\n', GEAR_B_ID)),
+      fileWrite(GEAR_B_PATH, withSurfId('return "gear-b";\n', GEAR_B_ID)),
+    ],
+  });
+  const store = await storeFor(vault.repo, { X: X_ID, Y: Y_ID });
+  const result = await executeUpgrade(upgradeOpts(gh, vault.repo, { store }));
+  assert.equal(result.status, 'upgraded');
+  const xDoc = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(X_ID)));
+  const yDoc = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(Y_ID)));
+  assert.equal(validateSurfJsonV2(xDoc).ok, true, validateSurfJsonV2(xDoc).errors?.join('; '));
+  assert.equal(validateSurfJsonV2(yDoc).ok, true, validateSurfJsonV2(yDoc).errors?.join('; '));
+  const xA = xDoc.parts.find((p) => p.name === 'GearA');
+  const xB = xDoc.parts.find((p) => p.name === 'GearB');
+  const yA = yDoc.parts.find((p) => p.name === 'GearA');
+  const yB = yDoc.parts.find((p) => p.name === 'GearB');
+  assert.equal(xB.id, GEAR_B_ID);
+  assert.equal(yB.id, GEAR_B_ID);
+  assert.equal(xA.id, GEAR_A_ID);
+  assert.equal(yA.id, GEAR_A_ID);
+  assert.equal(xA.copiedFrom, undefined);
+  assert.equal(yA.copiedFrom, undefined);
+  assert.equal(xB.copiedFrom, undefined);
+  assert.deepEqual(v2PartJs(result.plan), [partIdPath(GEAR_A_ID), partIdPath(GEAR_B_ID)].sort());
+  const treeJs = (await treePaths(gh, vault.repo)).filter((path) => /^parts\/[^/]+\.js$/.test(path));
+  assert.deepEqual(treeJs, [partIdPath(GEAR_A_ID), partIdPath(GEAR_B_ID)].sort());
+  assert.match(await readText(gh, vault.repo, partIdPath(GEAR_B_ID)), /gear-b/);
+  assert.match(await readText(gh, vault.repo, partIdPath(GEAR_A_ID)), /gear-a/);
+});
+
+test('F1 Pin stays one minted file when a second assembly also uses it (N7)', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const box = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Box',
+    activeId: PIN_COPY_SCENARIO_PATH,
+    parts: [
+      { id: SCENARIO_L_PIN_ID, path: PIN_COPY_SCENARIO_PATH, name: 'Pin copy', visible: true, order: 0 },
+      { path: PIN_PATH, name: 'Pin', visible: true, order: 1 },
+    ],
+  };
+  const alpha = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Alpha',
+    activeId: PIN_PATH,
+    parts: [
+      { path: PIN_PATH, name: 'Pin', visible: true, order: 0 },
+    ],
+  };
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed N7 F1 plus second assembly sharing Pin',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Box/.surf.json', `${JSON.stringify(box, null, 2)}\n`),
+      fileWrite('assemblies/Alpha/.surf.json', `${JSON.stringify(alpha, null, 2)}\n`),
+      fileWrite(PIN_PATH, withSurfId('return "pin";\n', SCENARIO_L_PIN_ID)),
+      fileWrite(PIN_COPY_SCENARIO_PATH, withSurfId('return "pin-copy";\n', SCENARIO_L_PIN_ID)),
+    ],
+  });
+  const store = await storeFor(vault.repo, { Box: BOX_ID, Alpha: ALPHA_ID });
+  const result = await executeUpgrade(upgradeOpts(gh, vault.repo, { store }));
+  assert.equal(result.status, 'upgraded');
+  const boxDoc = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(BOX_ID)));
+  const alphaDoc = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(ALPHA_ID)));
+  assert.equal(validateSurfJsonV2(boxDoc).ok, true, validateSurfJsonV2(boxDoc).errors?.join('; '));
+  assert.equal(validateSurfJsonV2(alphaDoc).ok, true, validateSurfJsonV2(alphaDoc).errors?.join('; '));
+  const boxCopy = boxDoc.parts.find((p) => p.name === 'Pin copy');
+  const boxPin = boxDoc.parts.find((p) => p.name === 'Pin');
+  assert.equal(boxCopy.id, SCENARIO_L_PIN_ID);
+  assert.equal(boxPin.id, F1_PIN_MINTED_ID);
+  assert.equal(alphaDoc.parts[0].id, F1_PIN_MINTED_ID);
+  assert.equal(boxPin.copiedFrom, undefined);
+  assert.equal(alphaDoc.parts[0].copiedFrom, undefined);
+  assert.deepEqual(v2PartJs(result.plan), [partIdPath(F1_PIN_MINTED_ID), partIdPath(SCENARIO_L_PIN_ID)].sort());
+});
+
+test('three assemblies sharing one file keep one id', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const make = (name) => ({
+    format: 'surfcad.assembly',
+    version: 1,
+    name,
+    activeId: PIN_PATH,
+    parts: [{ path: PIN_PATH, name: 'Pin', visible: true, order: 0 }],
+  });
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed three assemblies sharing Pin',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Alpha/.surf.json', `${JSON.stringify(make('Alpha'), null, 2)}\n`),
+      fileWrite('assemblies/Beta/.surf.json', `${JSON.stringify(make('Beta'), null, 2)}\n`),
+      fileWrite('assemblies/Gamma/.surf.json', `${JSON.stringify(make('Gamma'), null, 2)}\n`),
+      fileWrite(PIN_PATH, withSurfId('return "pin";\n', SCENARIO_L_PIN_ID)),
+    ],
+  });
+  const store = await storeFor(vault.repo, { Alpha: ALPHA_ID, Beta: BETA_ID, Gamma: GAMMA_ID });
+  const result = await executeUpgrade(upgradeOpts(gh, vault.repo, { store }));
+  assert.equal(result.status, 'upgraded');
+  const docs = [];
+  for (const id of [ALPHA_ID, BETA_ID, GAMMA_ID]) {
+    const doc = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(id)));
+    assert.equal(validateSurfJsonV2(doc).ok, true, validateSurfJsonV2(doc).errors?.join('; '));
+    assert.equal(doc.parts[0].id, SCENARIO_L_PIN_ID);
+    assert.equal(doc.parts[0].copiedFrom, undefined);
+    docs.push(doc);
+  }
+  assert.equal(result.plan.mintedPartIds.length, 0);
+  assert.deepEqual(v2PartJs(result.plan), [partIdPath(SCENARIO_L_PIN_ID)]);
+});
+
+test('empty or invalid @surf-id headers restamp without stacking', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const raw = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Box',
+    activeId: EMPTY_HEADER_PATH,
+    parts: [
+      { path: EMPTY_HEADER_PATH, name: 'Empty', visible: true, order: 0 },
+      { path: BOGUS_HEADER_PATH, name: 'Bogus', visible: true, order: 1 },
+    ],
+  };
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed empty and invalid surf-id headers',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Box/.surf.json', `${JSON.stringify(raw, null, 2)}\n`),
+      fileWrite(EMPTY_HEADER_PATH, '// @surf-id\nreturn "empty";\n'),
+      fileWrite(BOGUS_HEADER_PATH, '// @surf-id not-an-id\nreturn "bogus";\n'),
+    ],
+  });
+  const store = await storeFor(vault.repo, { Box: BOX_ID });
+  const result = await executeUpgrade(upgradeOpts(gh, vault.repo, { store }));
+  assert.equal(result.status, 'upgraded');
+  const box = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(BOX_ID)));
+  assert.equal(validateSurfJsonV2(box).ok, true, validateSurfJsonV2(box).errors?.join('; '));
+  assert.equal(box.parts.length, 2);
+  assert.equal(new Set(box.parts.map((p) => p.id)).size, 2);
+  for (const part of box.parts) {
+    const text = await readText(gh, vault.repo, partIdPath(part.id));
+    assert.equal((text.match(/\/\/ @surf-id/g) || []).length, 1);
+    assert.equal(readSurfId(text), part.id);
+    assert.equal(text.startsWith(`// @surf-id ${part.id}\n`), true);
+  }
 });
 
 test('planUpgrade carries working-copy copiedFrom so commit 2 does not churn', () => {
