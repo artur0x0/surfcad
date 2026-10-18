@@ -158,6 +158,7 @@ import { decidePartVisible } from './agent/state/partVisible';
 import { createdPartFromDocs, scriptRequestsRun } from './agent/state/createPart.js';
 import { finishedRunBodyCount } from './agent/state/runBodyCount.js';
 import { assemblyOpenFailure, resolveAssemblyOpenName } from './agent/state/openAssemblyName.js';
+import { cacheVaultReads } from './agent/state/vaultReadCache.js';
 import { buildToasts } from './agent/state/toasts';
 import {
   historyStripTarget,
@@ -8681,29 +8682,42 @@ const App = () => {
         return { error: { code: 'git_only', message: 'open_assembly needs a git-backed assembly' } };
       }
       const requested = typeof name === 'string' ? name : '';
-      let names = null;
+      // The name lookup and the open share one marker read and one tree.
+      // The wrapper lasts for this call, including the lastCommit capture
+      // started before we return. A later call sees the live adapter.
+      const inner = ensureGitAdapter();
+      const cached = cacheVaultReads(inner);
+      gitAdapterRef.current = cached;
       try {
-        const listed = await handleListVaultAssemblies();
-        names = Array.isArray(listed) ? listed : null;
-      } catch (err) {
-        if (err?.message === NO_REPO_YET_COPY || err?.code === 'git_blocked') {
-          return { error: { code: 'git_blocked', message: NO_REPO_YET_COPY } };
+        let names = null;
+        try {
+          const listed = await handleListVaultAssemblies();
+          names = Array.isArray(listed) ? listed : null;
+        } catch (err) {
+          if (err?.message === NO_REPO_YET_COPY || err?.code === 'git_blocked') {
+            // Listing returns before handleOpenVaultAssembly, which is what
+            // used to put this sentence on the toast.
+            setUploadNotice(NO_REPO_YET_COPY);
+            return { error: { code: 'git_blocked', message: NO_REPO_YET_COPY } };
+          }
+          names = null;
         }
-        names = null;
+        let openName = requested;
+        if (names) {
+          const decision = resolveAssemblyOpenName(requested, names);
+          if (decision?.error) return { error: decision.error };
+          openName = decision.name;
+        }
+        const opened = await handleOpenVaultAssembly(openName);
+        if (opened?.status === 'error') {
+          return { error: assemblyOpenFailure(opened, requested, names) };
+        }
+        const after = assemblyRef.current;
+        if (after && after !== before) recordAgentAssemblyStep(before);
+        return { result: { name: after?.name || openName, activeId: after?.activeId ?? null } };
+      } finally {
+        if (gitAdapterRef.current === cached) gitAdapterRef.current = inner;
       }
-      let openName = requested;
-      if (names) {
-        const decision = resolveAssemblyOpenName(requested, names);
-        if (decision?.error) return { error: decision.error };
-        openName = decision.name;
-      }
-      const opened = await handleOpenVaultAssembly(openName);
-      if (opened?.status === 'error') {
-        return { error: assemblyOpenFailure(opened, requested, names) };
-      }
-      const after = assemblyRef.current;
-      if (after && after !== before) recordAgentAssemblyStep(before);
-      return { result: { name: after?.name || openName, activeId: after?.activeId ?? null } };
     },
     async agentOpenPart({ path }) {
       const before = assemblyRef.current;
