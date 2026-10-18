@@ -249,11 +249,6 @@ describe('assembly Save that adds a part', () => {
     const gh = createMockGithubAdapter({ login: 'artur' });
     const vault = await findOrCreateVault(gh);
     const doc = trioDoc();
-    const scripts = {
-      [ALPHA]: ALPHA_TEXT,
-      [BETA]: BETA_TEXT,
-      [GAMMA]: GAMMA_TEXT,
-    };
     const seeded = await gh.commitFiles(vault.repo, {
       branch: 'main',
       message: 'seed trio',
