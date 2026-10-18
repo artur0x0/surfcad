@@ -6,6 +6,10 @@ import { gitBlobSha } from '../../utils/git/binaryContent.js';
 import { assemblyIdPath, parseIdPath, partIdPath } from '../../utils/git/idPaths.js';
 import { toSurfJsonV2 } from '../../utils/git/surfJsonV2.js';
 
+function textBlobSha(text) {
+  return gitBlobSha(new TextEncoder().encode(String(text ?? '')));
+}
+
 function cloneJson(value) {
   try {
     return JSON.parse(JSON.stringify(value));
@@ -126,7 +130,7 @@ export function compareWorkingCopyToCommit(input = {}) {
       const committedHash = path && files[path] ? files[path].contentHash : null;
       const text = scripts[id];
       if (typeof text === 'string') {
-        if (!committedHash || gitBlobSha(text) !== committedHash) partIds.push(id);
+        if (!committedHash || textBlobSha(text) !== committedHash) partIds.push(id);
       } else if (committedHash && row.missing !== true) {
         partIds.push(id);
       }
@@ -148,7 +152,7 @@ export function compareWorkingCopyToCommit(input = {}) {
     } else {
       const asmPath = assemblyIdPath(doc.id);
       const hash = files[asmPath]?.contentHash;
-      if (hash && gitBlobSha(`${JSON.stringify(wcJson, null, 2)}\n`) !== hash) {
+      if (hash && textBlobSha(`${JSON.stringify(wcJson, null, 2)}\n`) !== hash) {
         assemblyDirty = true;
       }
     }
