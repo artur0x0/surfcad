@@ -60,7 +60,13 @@ export async function run(ctx) {
     if (byName.Base) baseId = byName.Base;
     if (byName.Pin) pinId = byName.Pin;
     const n = rows.length;
-    return { ok: env.ok === true && n === 2 && baseId && pinId, call: 'parts', args: {}, envelope: env, detail: `parts=${n}` };
+    return {
+      ok: env.ok === true && n === 2 && Boolean(baseId) && Boolean(pinId),
+      call: 'parts',
+      args: {},
+      envelope: env,
+      detail: `parts=${n} base=${baseId} pin=${pinId}`,
+    };
   });
 
   await runner.runStep('set_script base', async () => {
