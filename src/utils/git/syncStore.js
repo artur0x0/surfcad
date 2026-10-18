@@ -8,6 +8,7 @@
  */
 import { idbWithTimeout, IDB_OP_TIMEOUT_MS } from '../idbWithTimeout.js';
 import { isBinaryContent, normalizeOutboxFiles, toUint8Array } from './binaryContent.js';
+import { parseAssemblyCommit, parseBranchTip } from './lastCommit.js';
 import { canonicalSurfId, migrateOutboxOp, rewriteVaultFile } from './surfIdMigration.js';
 
 const DB_NAME = 'surfcad-sync';
@@ -110,6 +111,8 @@ export function createSyncStore({ persist = true } = {}) {
   const trees = new Map();
   const repoSha = new Map();
   const pendingDeletes = new Map();
+  const branchTips = new Map();
+  const assemblyCommits = new Map();
   const listeners = new Set();
   let persistOn = !!persist && idbAvailable();
 
@@ -141,6 +144,8 @@ export function createSyncStore({ persist = true } = {}) {
       else if (key.startsWith('asmId:')) assemblyIds.set(key.slice(6), value);
       else if (key.startsWith('tree:')) trees.set(key.slice(5), value);
       else if (key.startsWith('del:')) pendingDeletes.set(key.slice(4), Array.isArray(value) ? value : []);
+      else if (key.startsWith('branchTip:')) branchTips.set(key.slice(10), value);
+      else if (key.startsWith('commit:')) assemblyCommits.set(key.slice(7), value);
     });
   })();
 
@@ -416,14 +421,17 @@ export function createSyncStore({ persist = true } = {}) {
     return null;
   }
 
-  async function rekeyMap(map, fromKey, toKey, persistPrefix) {
+  async function rekeyMap(map, fromKey, toKey, persistPrefix, rewriteValue) {
     let moved = 0;
     for (const [slot, value] of [...map.entries()]) {
       const next = rekeySlot(slot, fromKey, toKey);
       if (next == null) continue;
+      const nextValue = typeof rewriteValue === 'function'
+        ? (rewriteValue(value) ?? value)
+        : value;
       if (!map.has(next)) {
-        map.set(next, value);
-        if (persistPrefix) await persistKv(`${persistPrefix}${next}`, value);
+        map.set(next, nextValue);
+        if (persistPrefix) await persistKv(`${persistPrefix}${next}`, nextValue);
       }
       map.delete(slot);
       if (persistPrefix) await persistKv(`${persistPrefix}${slot}`, null);
@@ -457,6 +465,12 @@ export function createSyncStore({ persist = true } = {}) {
     moved += await rekeyMap(assemblyIds, from, to, 'asmId:');
     moved += await rekeyMap(trees, from, to, 'tree:');
     moved += await rekeyMap(pendingDeletes, from, to, 'del:');
+    moved += await rekeyMap(branchTips, from, to, 'branchTip:', (value) => {
+      const parsed = parseBranchTip(value);
+      if (!parsed) return value;
+      return { ...parsed, repo: { owner: toRepo.owner, name: toRepo.name } };
+    });
+    moved += await rekeyMap(assemblyCommits, from, to, 'commit:');
     if (moved) emit();
     return { moved, from, to };
   }
@@ -471,6 +485,39 @@ export function createSyncStore({ persist = true } = {}) {
 
   function deleteSlot(repo, branch, assembly) {
     return `${repoKeyOf(repo)}\0${branch || 'main'}\0${String(assembly || '')}`;
+  }
+
+  function assemblyCommitSlot(repo, branch, assemblyId) {
+    return `${branchKeyOf(repo, branch)}\0${String(assemblyId || '')}`;
+  }
+
+  async function putBranchTip(repo, branch, value) {
+    await ready;
+    const parsed = parseBranchTip(value);
+    if (!parsed) return null;
+    const key = branchKeyOf(repo, branch);
+    branchTips.set(key, parsed);
+    await persistKv(`branchTip:${key}`, parsed);
+    return parsed;
+  }
+
+  function getBranchTip(repo, branch = 'main') {
+    return parseBranchTip(branchTips.get(branchKeyOf(repo, branch)));
+  }
+
+  async function putAssemblyCommit(repo, branch, value) {
+    await ready;
+    const parsed = parseAssemblyCommit(value);
+    const id = parsed?.assemblyId;
+    if (!id) return null;
+    const slot = assemblyCommitSlot(repo, branch, id);
+    assemblyCommits.set(slot, parsed);
+    await persistKv(`commit:${slot}`, parsed);
+    return parsed;
+  }
+
+  function getAssemblyCommit(repo, branch, assemblyId) {
+    return parseAssemblyCommit(assemblyCommits.get(assemblyCommitSlot(repo, branch, assemblyId)));
   }
 
   async function addPendingDeletes(repo, branch, assembly, paths) {
@@ -569,6 +616,10 @@ export function createSyncStore({ persist = true } = {}) {
     addPendingDeletes,
     getPendingDeletes,
     clearPendingDeletes,
+    putBranchTip,
+    getBranchTip,
+    putAssemblyCommit,
+    getAssemblyCommit,
     migrateLocalSurfIds,
     rekeyRepo,
     partStates,

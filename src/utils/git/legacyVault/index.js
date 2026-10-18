@@ -6,7 +6,7 @@
  * Import this entry point only — not `reader.js` / `detect.js`.
  */
 export { detectVaultLayout, isLegacyVaultTree, listLegacyAssemblyNames } from './detect.js';
-export { openLegacyAssembly, listLegacyAssemblies } from './reader.js';
+export { openLegacyAssembly, listLegacyAssemblies, lastCommitBlobSources } from './reader.js';
 
 /** v2 open lands in a later PR. Do not fall through to the v1 reader. */
 export class UnsupportedVaultLayoutError extends Error {

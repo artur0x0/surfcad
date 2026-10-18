@@ -1,3 +1,4 @@
+/* eslint-disable no-use-before-define -- callback bodies close over later consts; re-enabled at lastCommit reload */
 import React, { useState, useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import CodeEditor from './components/CodeEditor';
@@ -356,6 +357,7 @@ import {
   partMeshRecordsFromBaseline,
   meshVaultSaveAllowed,
 } from './utils/git';
+import { scheduleLastCommitFromApp } from './utils/git/lastCommit';
 import { detectVaultLayout, openLegacyAssembly, UnsupportedVaultLayoutError } from './utils/git/legacyVault';
 import PartFeed from './components/PartFeed';
 import manifoldContext from './utils/ManifoldWorker';
@@ -3754,6 +3756,7 @@ const App = () => {
           if (!signal()) return;
           const adopted = await adoptVaultOpening(opened, vault);
           if (!signal()) return;
+          scheduleLastCommitFromApp({ adapter: gitAdapterRef.current, repo: vault.repo, branch, store, opened, adopted, tip, liveSession: () => ({ repo: gitVaultRef.current?.repo || vault.repo, branch: gitWorkingBranch() }) });
           const saved = adopted.saved;
           const openedScripts = adopted.scripts;
           // G4: check remote on open (usually current; catches a race with a push).
@@ -5327,6 +5330,7 @@ const App = () => {
     if (allLocal) return undefined; // true first-commit; keep null baseline
     const name = vaultSegment(doc.name) || doc.name;
     if (!name) return undefined;
+    const workingCopyId = doc.id || null;
     let cancelled = false;
     (async () => {
       try {
@@ -5347,6 +5351,9 @@ const App = () => {
           { branch, headSha: tip, pathIndex: store.pathIndexFor(vault.repo) },
         );
         if (cancelled || gitBaselineRef.current) return;
+        /* eslint-enable no-use-before-define -- lastCommit reload: do not read inner `let doc` */
+        scheduleLastCommitFromApp({ adapter: gitAdapterRef.current, repo: vault.repo, branch, store, opened, workingCopyId, tip, reload: true, liveSession: () => ({ repo: gitVaultRef.current?.repo || vault.repo, branch: gitWorkingBranch() }) });
+        /* eslint-disable no-use-before-define */
         for (const hit of opened.identities?.cached || []) {
           if (hit.path && hit.id) await store.rememberPathId(vault.repo, hit.path, hit.id);
         }

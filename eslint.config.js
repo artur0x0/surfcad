@@ -137,6 +137,16 @@ export default [
     },
   },
 
+  // App.jsx lastCommit reload must not read an uninitialised assembly id (TDZ).
+  // The file disables this rule for hook/callback bodies (see smoke_hook_dep_tdz)
+  // and re-enables it around the reload call. functions/classes stay off (hoisted).
+  {
+    files: ['src/App.jsx'],
+    rules: {
+      'no-use-before-define': ['error', { functions: false, classes: false, variables: true }],
+    },
+  },
+
   // Isolated v1 reader: import the entry point only. PR 10 deletes the folder.
   {
     files: ['src/**/*.{js,jsx}', 'test/**/*.{js,mjs}'],
