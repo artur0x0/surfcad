@@ -15,9 +15,8 @@ import { isBinaryContent } from './binaryContent.js';
 import { GitAdapterError, assertGithubAdapter, fileWrite } from './githubAdapterInterface.js';
 import { readVaultAsset } from './githubAdapter.js';
 import { detectCommitBase, commitBranchName, freeBranchName, prepareAssemblySurfWrite } from './gitCommit.js';
-import { captureBaseline } from './gitWorkspace.js';
-import { parseSurfJson } from './surfJson.js';
-import { assetPathForScript, vaultSegment } from './vaultLayout.js';
+import { openVaultAssembly } from './gitWorkspace.js';
+import { assetPathForScript, parseVaultPath, vaultSegment } from './vaultLayout.js';
 
 /**
  * Paths in our document that main changed since the baseline head.
@@ -220,36 +219,41 @@ export async function reloadFromRemote(adapter, repo, {
   branch = 'main',
   scripts,
   baseline,
+  pathIndex = {},
+  knownAssemblyId = null,
+  assemblyIdIndex = {},
 } = {}) {
   assertGithubAdapter(adapter);
   if (!path || !baseline) throw new Error('Nothing to reload');
+  if (kind === 'assembly') {
+    const info = parseVaultPath(path);
+    const name = info?.assembly || vaultSegment(baseline.assemblyName);
+    if (!name) throw new Error(`Cannot reload assembly: ${path}`);
+    const opened = await openVaultAssembly(adapter, repo, name, {
+      branch,
+      headSha: baseline.headSha,
+      pathIndex,
+      knownAssemblyId,
+      assemblyIdIndex,
+    });
+    const baselineNext = {
+      ...opened.baseline,
+      headSha: baseline.headSha,
+      assets: opened.baseline?.assets || baseline.assets,
+    };
+    return {
+      kind: 'assembly',
+      path: opened.assemblyPath || path,
+      content: baselineNext.assemblyText,
+      doc: opened.doc,
+      scripts: opened.scripts,
+      baseline: baselineNext,
+      vaultLayout: opened.vaultLayout,
+    };
+  }
   const file = await adapter.readFile(repo, path, branch);
   if (!file) throw new Error(`Missing on remote: ${path}`);
   const content = file.content ?? '';
-  if (kind === 'assembly') {
-    const nextDoc = { ...parseSurfJson(content), source: 'git' };
-    const nextScripts = { ...(scripts || {}) };
-    const baselineNext = captureBaseline({
-      assemblyPath: path,
-      assemblyName: vaultSegment(nextDoc.name) || baseline.assemblyName,
-      doc: nextDoc,
-      scripts: nextScripts,
-      assets: baseline.assets,
-      branch: baseline.branch || branch,
-      headSha: baseline.headSha,
-    });
-    // Exact remote bytes so dirty clears even if serializeAssembly reorders.
-    baselineNext.assemblyText = content;
-    baselineNext.assemblyPath = path;
-    return {
-      kind: 'assembly',
-      path,
-      content,
-      doc: nextDoc,
-      scripts: nextScripts,
-      baseline: baselineNext,
-    };
-  }
   const nextScripts = { ...(scripts || {}), [path]: content };
   const mesh = assetPathForScript(path);
   const asset = mesh ? await cacheRemoteAsset(adapter, repo, mesh, branch) : null;

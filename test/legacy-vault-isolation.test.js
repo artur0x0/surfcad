@@ -15,6 +15,14 @@ const DEFINED = /export (?:async )?function (parseLegacyVaultPath|detectVaultLay
 const INTERNAL_IMPORT = /from ['"][^'"]*legacyVault\/(detect|reader)(?:\.js)?['"]/;
 const WRITE_API = /\b(commitFiles|createRepo)\b/;
 const V1_PARSE_HELPERS = /\b(parseLegacyVaultPath|parseLegacySurfJson|assemblyMetaCandidates)\b/;
+const PARSE_SURF_JSON = /\bparseSurfJson\b/;
+const PARSE_SURF_JSON_ALLOWED = new Set([
+  'src/utils/git/surfJson.js',
+  // Writers parse committed v1 they themselves wrote — not vault OPEN.
+  'src/utils/git/gitCommit.js',
+  'src/utils/git/gitDeleteAssembly.js',
+  'src/utils/git/layoutMigration.js',
+]);
 
 function walk(dir, out, skip = new Set()) {
   for (const name of readdirSync(dir)) {
@@ -96,4 +104,59 @@ test('App.jsx is the production call site for detect/open', () => {
   assert.match(app, /openLegacyAssembly/);
   assert.match(app, /vaultLayout: doc\.vaultLayout/);
   assert.match(app, /openAssembly: openNamedVaultAssembly/);
+});
+
+test('parseSurfJson is not used to open a vault outside legacyVault/', () => {
+  const files = walk(join(ROOT, 'src'), []);
+  const offenders = [];
+  for (const file of files) {
+    const path = rel(file);
+    if (inLegacy(file) || /\.test\./.test(path) || PARSE_SURF_JSON_ALLOWED.has(path)) continue;
+    const text = readFileSync(file, 'utf8');
+    if (PARSE_SURF_JSON.test(text)) offenders.push(path);
+  }
+  assert.deepEqual(offenders, []);
+});
+
+test('openVaultAssembly dispatches to the legacy reader and refuses v2', () => {
+  const text = readFileSync(join(ROOT, 'src/utils/git/gitWorkspace.js'), 'utf8');
+  assert.equal(PARSE_SURF_JSON.test(text), false, 'gitWorkspace must not parse v1 trees');
+  assert.match(text, /openLegacyAssembly/);
+  assert.match(text, /UnsupportedVaultLayoutError/);
+  assert.match(text, /listLegacyAssemblies/);
+});
+
+test('gitPull Get-latest reopens through the vault opener, not parseSurfJson', () => {
+  const text = readFileSync(join(ROOT, 'src/utils/git/gitPull.js'), 'utf8');
+  assert.equal(PARSE_SURF_JSON.test(text), false);
+  assert.match(text, /openVaultAssembly/);
+});
+
+test('gitBranch switch/list do not parse v1 trees themselves', () => {
+  const text = readFileSync(join(ROOT, 'src/utils/git/gitBranch.js'), 'utf8');
+  assert.equal(PARSE_SURF_JSON.test(text), false);
+  assert.match(text, /openVaultAssembly|openAssembly/);
+  assert.match(text, /listVaultAssemblies/);
+});
+
+test('App open/list/reload pass create:false so they never POST /user/repos', () => {
+  const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const slice = (startNeedle, endNeedle) => {
+    const start = app.indexOf(startNeedle);
+    assert.ok(start >= 0, `missing ${startNeedle}`);
+    const end = app.indexOf(endNeedle, start + startNeedle.length);
+    assert.ok(end > start, `missing end ${endNeedle} after ${startNeedle}`);
+    return app.slice(start, end);
+  };
+  const open = slice('const handleOpenVaultAssembly', 'openVaultAssemblyRef.current');
+  assert.match(open, /ensureGitVault\(\{\s*create:\s*false\s*\}\)/);
+  assert.equal(/\bensureGitVault\(\s*\)/.test(open), false);
+  const list = slice('const handleListVaultAssemblies', 'const adoptVaultOpening');
+  assert.match(list, /ensureGitVault\(\{\s*create:\s*false\s*\}\)/);
+  const browse = slice('const handleListVaultBrowse', 'const vaultEntriesForDelete');
+  assert.match(browse, /ensureGitVault\(\{\s*create:\s*false\s*\}\)/);
+  const switchBranch = slice('const handleSwitchBranch', 'const handleListVaultBrowse');
+  assert.match(switchBranch, /ensureGitVault\(\{\s*create:\s*false\s*\}\)/);
+  assert.equal(/\bensureGitVault\(\s*\)/.test(switchBranch), false);
+  assert.match(app, /ensureGitVaultRef\.current\(\{\s*create:\s*false\s*\}\)/);
 });

@@ -271,6 +271,14 @@ test('local→git switch stamps surfIds on legacy path-less parts with 0 adapter
   assert.equal(skipped.doc.parts[0].surfId, undefined);
   assert.equal(skipped.doc.parts[0].path, 'assemblies/Assembly/Has Path.js');
 
+  const collapsedId = '2026-10-18-03-00-00-0000-cccc';
+  const alreadyCollapsed = stampMissingSurfIds({
+    source: 'local',
+    name: 'Assembly',
+    parts: [{ id: collapsedId, name: 'Bracket', visible: true, order: 0 }],
+  }, { [collapsedId]: 'return 1;\n' });
+  assert.equal(alreadyCollapsed.changed, false, 'collapsed surf-id row must not grow a second id');
+
   assert.equal(writes(), 0);
   assert.equal(gh._log.length, 0);
 });

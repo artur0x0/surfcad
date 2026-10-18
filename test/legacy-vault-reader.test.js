@@ -6,13 +6,19 @@ import { test } from 'node:test';
 import { createMockGithubAdapter } from '../src/utils/git/mockGithubAdapter.js';
 import { findOrCreateVault } from '../src/utils/git/vault.js';
 import { fileWrite } from '../src/utils/git/githubAdapterInterface.js';
-import { mintSurfId, withSurfId, readSurfId } from '../src/utils/git/surfId.js';
+import { mintSurfId, withSurfId, readSurfId, isSurfId } from '../src/utils/git/surfId.js';
 import { validateSurfJson } from '../src/utils/git/surfJson.js';
 import { switchVaultBranch } from '../src/utils/git/gitBranch.js';
+import { createSyncStore } from '../src/utils/git/syncStore.js';
+import { listVaultAssemblies, openVaultAssembly, planInsertVaultAssemblyParts } from '../src/utils/git/gitWorkspace.js';
+import { reloadFromRemote } from '../src/utils/git/gitPull.js';
+import { buildCommitFiles } from '../src/utils/git/gitCommit.js';
+import { captureBaseline } from '../src/utils/git/gitBaseline.js';
 import {
   detectVaultLayout,
   openLegacyAssembly,
   listLegacyAssemblies,
+  UnsupportedVaultLayoutError,
 } from '../src/utils/git/legacyVault/index.js';
 
 const NOW = new Date('2026-10-18T12:00:00.000Z');
@@ -222,4 +228,126 @@ test('detectVaultLayout treats a v2 id-named tree as v2', async () => {
   const detected = await detectVaultLayout(gh, vault.repo, 'main');
   assert.equal(detected.layout, 'v2');
   assert.equal(detected.markerVersion, 2);
+  await assert.rejects(
+    () => openVaultAssembly(gh, vault.repo, 'Gearbox'),
+    (err) => {
+      assert.equal(err instanceof UnsupportedVaultLayoutError, true);
+      assert.equal(err.code, 'unsupported_vault_version');
+      assert.match(String(err.message), /not yet implemented/i);
+      return true;
+    },
+  );
 });
+
+test('folder→assembly id persists across Gearbox → Cover → Gearbox', async () => {
+  const { gh, repo, headSha } = await seedGearboxVault();
+  const writesBefore = commits(gh).length;
+  const store = createSyncStore({ persist: false });
+  await store.ready();
+  const first = await openLegacyAssembly(gh, repo, 'Gearbox', {
+    ...openOpts,
+    headSha,
+    assemblyIdIndex: store.assemblyIdIndexFor(repo),
+  });
+  await store.rememberAssemblyId(repo, 'Gearbox', first.doc.id);
+  for (const part of first.doc.parts || []) {
+    if (part.path && part.id) await store.rememberPathId(repo, part.path, part.id);
+  }
+  const cover = await openLegacyAssembly(gh, repo, 'Cover', {
+    ...openOpts,
+    headSha,
+    assemblyIdIndex: store.assemblyIdIndexFor(repo),
+  });
+  await store.rememberAssemblyId(repo, 'Cover', cover.doc.id);
+  for (const part of cover.doc.parts || []) {
+    if (part.path && part.id) await store.rememberPathId(repo, part.path, part.id);
+  }
+  assert.equal(first.doc.id, ASM_ID);
+  assert.notEqual(cover.doc.id, first.doc.id);
+  assert.equal(isSurfId(cover.doc.id), true);
+  const again = await openLegacyAssembly(gh, repo, 'Gearbox', {
+    ...openOpts,
+    headSha,
+    knownAssemblyId: store.assemblyIdFor(repo, 'Gearbox'),
+    assemblyIdIndex: store.assemblyIdIndexFor(repo),
+    pathIndex: store.pathIndexFor(repo),
+  });
+  assert.equal(again.doc.id, first.doc.id);
+  assert.deepEqual(
+    again.doc.parts.map((part) => part.id),
+    first.doc.parts.map((part) => part.id),
+  );
+  assert.equal(commits(gh).length, writesBefore, 'open/list/reload must not create or write the repo');
+});
+
+test('insert and Get-latest keep missing rows instead of empty scripts', async () => {
+  const { gh, repo, headSha } = await seedGearboxVault();
+  const opened = await openLegacyAssembly(gh, repo, 'Gearbox', { ...openOpts, headSha });
+  const missing = opened.doc.parts.find((part) => part.missing);
+  assert.equal(missing?.id, MISSING_ID);
+  assert.equal(Object.hasOwn(opened.scripts, MISSING_ID), false);
+
+  const target = {
+    source: 'git',
+    name: 'Cover',
+    parts: [],
+  };
+  const planned = await planInsertVaultAssemblyParts(gh, repo, 'Gearbox', target, { branch: 'main' });
+  const insertedMissing = planned.additions.find((add) => add.name === 'Missing gear');
+  assert.equal(insertedMissing?.missing, true);
+  assert.notEqual(insertedMissing?.content, '');
+  assert.equal(insertedMissing?.content == null, true);
+  assert.equal(planned.additions.some((add) => add.content === ''), false);
+
+  const reloaded = await reloadFromRemote(gh, repo, {
+    path: opened.assemblyPath,
+    kind: 'assembly',
+    branch: 'main',
+    scripts: opened.scripts,
+    baseline: opened.baseline,
+  });
+  const reloadedMissing = reloaded.doc.parts.find((part) => part.name === 'Missing gear');
+  assert.equal(reloadedMissing?.missing, true);
+  assert.equal(Object.hasOwn(reloaded.scripts, reloadedMissing.id), false);
+  assert.equal(Object.values(reloaded.scripts).some((text) => text === ''), false);
+});
+
+test('openVaultAssembly and listVaultAssemblies route v1 trees through legacyVault', async () => {
+  const { gh, repo, headSha } = await seedGearboxVault();
+  const names = await listVaultAssemblies(gh, repo, 'main');
+  assert.deepEqual(names, ['Cover', 'Gearbox']);
+  const opened = await openVaultAssembly(gh, repo, 'Gearbox', { ...openOpts, headSha });
+  assert.equal(opened.vaultLayout, 'legacy');
+  assert.equal(opened.doc.parts.find((part) => part.missing)?.id, MISSING_ID);
+  assert.equal(Object.values(opened.scripts).some((text) => text === ''), false);
+});
+
+test('buildCommitFiles does not write an empty blob for a missing row', () => {
+  const doc = {
+    source: 'git',
+    name: 'Gearbox',
+    parts: [{
+      id: MISSING_ID,
+      path: MISSING_PATH,
+      name: 'Missing gear',
+      visible: true,
+      order: 0,
+      missing: true,
+    }],
+  };
+  const baseline = captureBaseline({
+    assemblyPath: 'assemblies/Gearbox/.surf.json',
+    assemblyName: 'Gearbox',
+    doc,
+    scripts: { [MISSING_ID]: 'return 1;\n' },
+    branch: 'main',
+    headSha: 'abc',
+  });
+  const built = buildCommitFiles(doc, {}, baseline);
+  assert.equal(
+    built.files.some((file) => file.path === MISSING_PATH && (file.content === '' || file.content == null)),
+    false,
+  );
+  assert.equal(built.files.some((file) => file.path === MISSING_PATH && !file.delete), false);
+});
+

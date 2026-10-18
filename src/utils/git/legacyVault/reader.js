@@ -7,7 +7,7 @@ import { serializeAssembly } from '../../assembly.js';
 import { assertGithubAdapter } from '../githubAdapterInterface.js';
 import { parseSurfJson } from '../surfJson.js';
 import { readMeshBytes } from '../meshSync.js';
-import { captureBaseline } from '../gitWorkspace.js';
+import { captureBaseline } from '../gitBaseline.js';
 import { collapseWorkingCopyIds } from '../wcIdentity.js';
 import { partRepoPath } from '../partIdentity.js';
 import { vaultSegment } from '../vaultLayout.js';
@@ -64,12 +64,17 @@ export async function openLegacyAssembly(adapter, repo, assemblyName, {
   onProgress = null,
   pathIndex = {},
   knownAssemblyId = null,
+  assemblyIdIndex = {},
+  usedAssemblyIds = null,
   now,
   randFor,
 } = {}) {
   assertGithubAdapter(adapter);
   const name = vaultSegment(assemblyName);
   if (!name) throw new Error('Empty assembly name');
+  const persistedId = knownAssemblyId || assemblyIdIndex?.[name] || null;
+  const usedAsm = new Set(usedAssemblyIds || Object.values(assemblyIdIndex || {}));
+  if (persistedId) usedAsm.delete(persistedId);
 
   let file = null;
   let foundPath = null;
@@ -110,10 +115,10 @@ export async function openLegacyAssembly(adapter, repo, assemblyName, {
     {
       ...parsed,
       source: 'git',
-      ...(knownAssemblyId ? { id: knownAssemblyId } : {}),
+      ...(persistedId ? { id: persistedId } : {}),
     },
     rawScripts,
-    { pathIndex, now, randFor },
+    { pathIndex, now, randFor, usedAssemblyIds: usedAsm },
   );
   const parts = (collapsed.doc.parts || []).map((part) => {
     const path = scriptPathOf(part) || partRepoPath(part);

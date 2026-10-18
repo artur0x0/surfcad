@@ -6,6 +6,7 @@
  * a tighter client cap would tombstone lines the server still keeps.
  */
 import { scriptForRow } from './assembly.js';
+import { partSurfId } from './git/surfId.js';
 
 export const CART_MAX_LINES = 100;
 export const CART_QTY_MIN = 1;
@@ -445,12 +446,13 @@ export function makeCartDraft({
   const iso = toCartIso(now);
   const source = doc?.source === 'git' ? 'git' : 'local';
   const assemblyName = String(doc?.name || '').trim() || 'Assembly';
+  const sid = partSurfId(part);
   return {
     lineId: newCartLineId(),
     source,
     assemblyName,
     partId: String(part?.id || ''),
-    surfId: part?.surfId ? String(part.surfId) : null,
+    surfId: sid ? String(sid) : null,
     partName: String(part?.name || '').trim() || 'Part',
     scriptHash: scriptHash(script),
     thumbDataUrl: capThumb(thumbDataUrl),
@@ -477,7 +479,7 @@ export function resolveCartLine(doc, scripts, line) {
     return { missing: false, reason: null, script: direct.script, part: direct.part, renamed: false };
   }
   if (line.surfId) {
-    const renamed = (doc?.parts || []).find((part) => part && part.surfId === line.surfId);
+    const renamed = (doc?.parts || []).find((part) => part && partSurfId(part) === line.surfId);
     if (renamed && renamed.id !== line.partId) {
       const via = scriptForRow(doc, scripts, renamed.id);
       if (via.ok) {

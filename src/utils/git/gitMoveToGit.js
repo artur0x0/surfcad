@@ -28,6 +28,7 @@ import { captureBaseline } from './gitWorkspace.js';
 import { effectiveScripts } from './gitCommit.js';
 import { stringifySurfJson } from './surfJson.js';
 import { isStablePartId, partRepoPath } from './partIdentity.js';
+import { partSurfId } from './surfId.js';
 import { DEFAULT_VAULT_NAME, findOrCreateVault, sanitizeVaultName } from './vault.js';
 import {
   assemblyFilePath,
@@ -105,7 +106,7 @@ export function planMoveToGit(doc, scripts, {
     } else {
       missing.push(to);
     }
-    return { ...row, id: nextId, path: to, surfId: row.surfId || (isStablePartId(nextId) ? nextId : undefined) };
+    return { ...row, id: nextId, path: to, surfId: partSurfId(row) || (isStablePartId(nextId) ? nextId : undefined) };
   });
 
   const nextDoc = serializeAssembly({
@@ -190,7 +191,7 @@ export async function moveToGit(adapter, {
     assemblyPath: plan.assemblyPath,
     assemblyName: plan.assemblyName,
     doc: plan.doc,
-    // Missing rows are '' in the baseline, matching openVaultAssembly.
+    // captureBaseline stores '' for a missing row so dirty checks stay quiet.
     scripts: plan.scripts,
     branch,
     headSha: commit.sha,

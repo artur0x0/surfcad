@@ -45,7 +45,15 @@ import {
   vaultSegment,
 } from './vaultLayout.js';
 import { parseSurfJson, stringifySurfJson } from './surfJson.js';
-import { isSurfId, readSurfId, withSurfId } from './surfId.js';
+import { isSurfId, partSurfId, readSurfId, withSurfId } from './surfId.js';
+
+/** Missing rows never become an empty git blob. */
+function partFileContent(part, text) {
+  if (part?.missing === true && !(typeof text === 'string' && text.length > 0)) {
+    return null;
+  }
+  return typeof text === 'string' ? text : '';
+}
 
 export const COMMIT_BRANCH_PREFIX = 'surfcad/';
 
@@ -128,11 +136,14 @@ export async function prepareAssemblySurfWrite(adapter, repo, {
 
   const assemblyText = stringifySurfJson(workDoc);
   const assemblyPath = assemblyFilePath(vaultSegment(workDoc.name) || workDoc.name);
-  const files = [
-    ...moved.map((move) => fileWrite(
-      move.to,
-      workScripts[move.id] ?? workScripts[move.from] ?? workScripts[move.to] ?? '',
-    )),
+    const files = [
+    ...moved.map((move) => {
+      const part = (workDoc.parts || []).find((row) => row.id === move.id || row.id === move.from);
+      const text = workScripts[move.id] ?? workScripts[move.from] ?? workScripts[move.to];
+      const body = partFileContent(part, text);
+      if (body == null) return null;
+      return fileWrite(move.to, body);
+    }).filter(Boolean),
     ...(extraFiles || []),
     fileWrite(assemblyPath, assemblyText),
   ];
@@ -293,7 +304,7 @@ export async function stagePartRename({
     branch,
   });
   if (prepared.status === 'error') return prepared;
-  const surfId = fromPart.surfId || (isStablePartId(fromPart.id) ? fromPart.id : null);
+  const surfId = partSurfId(fromPart) || (isStablePartId(fromPart.id) ? fromPart.id : null);
   const payload = {
     kind: 'part',
     surfId,
@@ -392,11 +403,15 @@ export function remapAssemblyPaths(doc, scripts, oldName, newName) {
     if (partKeepsStableId(part)) {
       nextParts.push({ ...part, path: nextPath });
       const text = partScriptText(part, scripts);
-      nextScripts[part.id] = typeof text === 'string' ? text : (scripts?.[nextPath] ?? '');
+      if (typeof text === 'string') nextScripts[part.id] = text;
+      else if (typeof scripts?.[nextPath] === 'string') nextScripts[part.id] = scripts[nextPath];
+      else if (part?.missing !== true) nextScripts[part.id] = '';
     } else {
       nextParts.push({ ...part, id: nextPath, path: nextPath });
       const text = scripts?.[part.id];
-      nextScripts[nextPath] = typeof text === 'string' ? text : (scripts?.[nextPath] ?? '');
+      if (typeof text === 'string') nextScripts[nextPath] = text;
+      else if (typeof scripts?.[nextPath] === 'string') nextScripts[nextPath] = scripts[nextPath];
+      else if (part?.missing !== true) nextScripts[nextPath] = '';
     }
   }
   let activeId = doc?.activeId;
@@ -454,7 +469,14 @@ export function buildCommitFiles(doc, scripts, baseline, opts = {}) {
 
   for (const { from, to, id } of moved) {
     const part = (workDoc.parts || []).find((row) => row.id === id || row.id === from);
-    writes.set(to, partScriptText(part, workScripts) ?? workScripts[from] ?? workScripts[to] ?? '');
+    const body = partFileContent(
+      part,
+      partScriptText(part, workScripts) ?? workScripts[from] ?? workScripts[to],
+    );
+    if (body == null) {
+      throw new Error(`Refusing empty write for missing part ${id || from}`);
+    }
+    writes.set(to, body);
     if (from && from !== to && partRowVaultPathOk(from)) deletes.add(from);
   }
 
@@ -463,7 +485,12 @@ export function buildCommitFiles(doc, scripts, baseline, opts = {}) {
     if (!inDocOrig.has(id)) continue; // removed from doc — do not delete from git
     const part = (workDoc.parts || []).find((row) => row.id === id);
     const dest = partRepoPath(part) || movedFrom.get(id) || id;
-    writes.set(dest, partScriptText(part, workScripts) ?? workScripts[dest] ?? eff[id] ?? '');
+    const body = partFileContent(
+      part,
+      partScriptText(part, workScripts) ?? workScripts[dest] ?? eff[id],
+    );
+    if (body == null) continue;
+    writes.set(dest, body);
     partPaths.push(dest);
   }
 
@@ -516,13 +543,15 @@ export function buildCommitFiles(doc, scripts, baseline, opts = {}) {
   }
 
   for (const part of workDoc.parts || []) {
-    if (!part?.surfId || !isSurfId(part.surfId)) continue;
+    const stampId = partSurfId(part);
+    if (!stampId || !isSurfId(stampId) || part?.missing === true) continue;
     const dest = partRepoPath(part) || movedFrom.get(part.id) || part.id;
+    if (!writes.has(dest)) continue;
     const info = parseVaultPath(dest);
     if (!info || (info.kind !== 'assembly-part' && info.kind !== 'shared-part')) continue;
-    const text = writes.has(dest) ? writes.get(dest) : (partScriptText(part, workScripts) ?? workScripts[dest] ?? workScripts[part.id]);
-    if (typeof text !== 'string' || readSurfId(text) === part.surfId) continue;
-    const stamped = withSurfId(text, part.surfId);
+    const text = writes.get(dest);
+    if (typeof text !== 'string' || readSurfId(text) === stampId) continue;
+    const stamped = withSurfId(text, stampId);
     writes.set(dest, stamped);
     workScripts[part.id] = stamped;
     if (dest !== part.id) workScripts[dest] = stamped;
@@ -694,6 +723,9 @@ export async function commitPartToRepo(adapter, repo, {
 
   const destRow = (workDoc.parts || []).find((p) => p.id === id);
   let content = partScriptText(destRow, workScripts);
+  if (destRow?.missing === true && !(typeof content === 'string' && content.length > 0)) {
+    return { status: 'error', error: 'Refusing empty write for missing part', code: 'missing_part' };
+  }
   if (typeof content !== 'string') {
     content = '';
     workScripts = { ...workScripts, [id]: content };
@@ -711,7 +743,12 @@ export async function commitPartToRepo(adapter, repo, {
   addWrite(destPath, content);
   for (const move of siblings) {
     const sibling = (workDoc.parts || []).find((p) => p.id === move.id || p.id === move.from);
-    addWrite(move.to, partScriptText(sibling, workScripts) ?? workScripts[move.from] ?? workScripts[move.to] ?? '');
+    const siblingText = partScriptText(sibling, workScripts) ?? workScripts[move.from] ?? workScripts[move.to];
+    const siblingBody = partFileContent(sibling, siblingText);
+    if (siblingBody == null) {
+      throw new Error(`Refusing empty write for missing part ${move.id || move.from}`);
+    }
+    addWrite(move.to, siblingBody);
   }
   addWrite(assemblyPath, assemblyText);
   // Skip no-op when baseline already has identical content.

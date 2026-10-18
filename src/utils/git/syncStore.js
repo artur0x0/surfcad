@@ -106,6 +106,7 @@ export function createSyncStore({ persist = true } = {}) {
   const aliases = new Map();
   const assemblies = new Map();
   const pathIndex = new Map();
+  const assemblyIds = new Map();
   const trees = new Map();
   const repoSha = new Map();
   const pendingDeletes = new Map();
@@ -137,6 +138,7 @@ export function createSyncStore({ persist = true } = {}) {
       else if (key.startsWith('alias:')) aliases.set(key.slice(6), value);
       else if (key.startsWith('asm:')) assemblies.set(key.slice(4), value);
       else if (key.startsWith('path:')) pathIndex.set(key.slice(5), value);
+      else if (key.startsWith('asmId:')) assemblyIds.set(key.slice(6), value);
       else if (key.startsWith('tree:')) trees.set(key.slice(5), value);
       else if (key.startsWith('del:')) pendingDeletes.set(key.slice(4), Array.isArray(value) ? value : []);
     });
@@ -452,6 +454,7 @@ export function createSyncStore({ persist = true } = {}) {
     moved += await rekeyMap(aliases, from, to, 'alias:');
     moved += await rekeyMap(assemblies, from, to, 'asm:');
     moved += await rekeyMap(pathIndex, from, to, 'path:');
+    moved += await rekeyMap(assemblyIds, from, to, 'asmId:');
     moved += await rekeyMap(trees, from, to, 'tree:');
     moved += await rekeyMap(pendingDeletes, from, to, 'del:');
     if (moved) emit();
@@ -509,6 +512,30 @@ export function createSyncStore({ persist = true } = {}) {
     return out;
   }
 
+  async function rememberAssemblyId(repo, folder, id) {
+    await ready;
+    const name = String(folder || '').trim();
+    if (!name || !id) return;
+    const slot = `${repoKeyOf(repo)}\0${name}`;
+    assemblyIds.set(slot, id);
+    await persistKv(`asmId:${slot}`, id);
+  }
+
+  function assemblyIdFor(repo, folder) {
+    const name = String(folder || '').trim();
+    if (!name) return null;
+    return assemblyIds.get(`${repoKeyOf(repo)}\0${name}`) || null;
+  }
+
+  function assemblyIdIndexFor(repo) {
+    const prefix = `${repoKeyOf(repo)}\0`;
+    const out = {};
+    for (const [slot, id] of assemblyIds) {
+      if (slot.startsWith(prefix)) out[slot.slice(prefix.length)] = id;
+    }
+    return out;
+  }
+
   function subscribe(fn) {
     listeners.add(fn);
     return () => listeners.delete(fn);
@@ -534,6 +561,9 @@ export function createSyncStore({ persist = true } = {}) {
     rememberPathId,
     dropPathId,
     pathIndexFor,
+    rememberAssemblyId,
+    assemblyIdFor,
+    assemblyIdIndexFor,
     putTree,
     getTree,
     addPendingDeletes,

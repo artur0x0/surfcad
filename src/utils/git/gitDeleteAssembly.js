@@ -34,7 +34,7 @@ import {
   vaultPartFileStem,
   vaultSegment,
 } from './vaultLayout.js';
-import { isSurfId, isSurfJsonPath, readSurfId, withSurfId } from './surfId.js';
+import { isSurfId, isSurfJsonPath, partSurfId, readSurfId, withSurfId } from './surfId.js';
 import { parseSurfJson } from './surfJson.js';
 import { buildRenameCommitFiles, projectFiles, renamePlanFromPayload } from './gitRename.js';
 
@@ -86,7 +86,7 @@ function otherAssemblyFiles(entries, name) {
  */
 export function refMatchesPart(ref, part) {
   if (!ref || !part) return false;
-  if (ref.id && part.surfId && ref.id === part.surfId) return true;
+  if (ref.id && partSurfId(part) && ref.id === partSurfId(part)) return true;
   if (ref.id) return false;
   return !!ref.path && ref.path === part.path;
 }
@@ -182,8 +182,8 @@ function rawFromOpenDoc(doc) {
   return {
     name: doc?.name,
     parts: (doc?.parts || []).map((part) => ({
-      id: part?.surfId,
-      path: part?.id,
+      id: partSurfId(part) || part?.id,
+      path: part?.path || part?.id,
       name: part?.name,
     })),
     groups: doc?.groups || [],
@@ -259,7 +259,10 @@ function externalRefs(entries, name, { openDoc = null, tipEntries = null } = {})
 
 function refHits(ref, part) {
   if (!ref) return false;
-  if (ref.via === 'group') return !!(ref.id && part?.surfId && ref.id === part.surfId);
+  if (ref.via === 'group') {
+    const sid = partSurfId(part) || part?.surfId;
+    return !!(ref.id && sid && ref.id === sid);
+  }
   return refMatchesPart(ref, part);
 }
 
@@ -589,8 +592,9 @@ export function projectPendingOps(entries, ops) {
 }
 
 function matchMove(part, moves) {
-  if (part?.surfId) {
-    const byId = moves.find((move) => move.surfId && move.surfId === part.surfId);
+  const sid = partSurfId(part);
+  if (sid) {
+    const byId = moves.find((move) => move.surfId && move.surfId === sid);
     if (byId) return byId;
   }
   return moves.find((move) => move.from === part?.id) || null;

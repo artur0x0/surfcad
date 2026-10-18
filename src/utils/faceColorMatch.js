@@ -330,7 +330,9 @@ export function matchFaceColors(parts, colors) {
   const list = Array.isArray(parts) ? parts : [];
   for (let i = 0; i < list.length; i++) {
     const part = list[i];
-    if (part && part.surfId != null) byId.set(String(part.surfId), part.faces || []);
+    if (part && (part.surfId != null || part.id != null)) {
+      byId.set(String(part.surfId != null ? part.surfId : part.id), part.faces || []);
+    }
   }
   const matched = [];
   const ambiguous = [];

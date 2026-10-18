@@ -256,7 +256,6 @@ import {
   takenAssemblyNames,
   resolveAssemblyFolderName,
   listVaultBrowseItems,
-  openVaultAssembly,
   planInsertVaultAssemblyParts,
   planOpenVaultPart,
   planCopyToAssembly,
@@ -277,6 +276,7 @@ import {
   migrateAssemblyRecords,
   migrateLocalPartIds,
   collapseWorkingCopyIds,
+  replaceScriptKeys,
   isSurfId,
   partSurfId,
   reconcileSyncedFromTip,
@@ -356,7 +356,7 @@ import {
   partMeshRecordsFromBaseline,
   meshVaultSaveAllowed,
 } from './utils/git';
-import { detectVaultLayout, openLegacyAssembly } from './utils/git/legacyVault';
+import { detectVaultLayout, openLegacyAssembly, UnsupportedVaultLayoutError } from './utils/git/legacyVault';
 import PartFeed from './components/PartFeed';
 import manifoldContext from './utils/ManifoldWorker';
 import DEFAULT_SCRIPT from './utils/defaultScript';
@@ -1594,7 +1594,7 @@ const App = () => {
       let plan = decide(github ? 'idle' : 'unavailable');
       if (plan.action === 'wait' && plan.reason === 'vault-pending') {
         try {
-          await ensureGitVaultRef.current();
+          await ensureGitVaultRef.current({ create: false });
           if (cancelled) return;
           plan = decide('ready');
         } catch (err) {
@@ -2942,7 +2942,7 @@ const App = () => {
     if (!doc || doc.source !== 'git' || !baseline?.headSha) return null;
     const gen = ++gitCheckGenRef.current;
     try {
-      const vault = await ensureGitVault();
+      const vault = await ensureGitVault({ create: false });
       const asmPath = baseline.assemblyPath
         || assemblyFilePath(vaultSegment(doc.name) || doc.name);
       const check = await checkRemoteBehind(gitAdapterRef.current, vault.repo, {
@@ -3580,6 +3580,7 @@ const App = () => {
       ? { doc: opened.doc }
       : backfillSurfIds(opened.doc, store.pathIndexFor(vault.repo));
     const migrated = migrateAssemblyRecords({ doc: filled.doc, scripts: opened.scripts });
+    const staleScriptIds = [];
     const localIds = migrateLocalPartIds({
       doc: migrated.doc,
       scripts: migrated.scripts,
@@ -3591,18 +3592,15 @@ const App = () => {
       if (localIds.selection?.cadPartId && localIds.selection.cadPartId !== cadPartIdRef.current) {
         cadPartIdRef.current = localIds.selection.cadPartId;
       }
-      for (const { from } of localIds.pairs) {
-        try { deletePartScript(from); } catch { /* ignore */ }
-      }
+      for (const { from } of localIds.pairs) staleScriptIds.push(from);
     }
     const collapsed = collapseWorkingCopyIds(localIds.doc, localIds.scripts, {
       pathIndex: store.pathIndexFor(vault.repo),
+      usedAssemblyIds: Object.values(store.assemblyIdIndexFor(vault.repo)),
     });
     if (collapsed.changed) {
       if (collapsed.pairs.length) rekeyRuntime(collapsed.pairs);
-      for (const { from } of collapsed.pairs) {
-        try { deletePartScript(from); } catch { /* ignore */ }
-      }
+      for (const { from } of collapsed.pairs) staleScriptIds.push(from);
     }
     const reconciled = reconcileSyncedFromTip(collapsed.doc, collapsed.scripts);
     const openedDocIn = reconciled.doc;
@@ -3617,13 +3615,12 @@ const App = () => {
         rekeyRuntime(aligned.pairs);
         partMeshMetaRef.current = aligned.meshMeta;
         setPartMeshMeta(aligned.meshMeta);
-        for (const { from } of aligned.pairs) {
-          try { await deletePartScript(from); } catch { /* ignore */ }
-        }
+        for (const { from } of aligned.pairs) staleScriptIds.push(from);
       }
     }
     for (const part of openedDocIn.parts || []) {
-      if (part.surfId && partRepoPath(part)) store.rememberPathId(vault.repo, partRepoPath(part), part.surfId);
+      const sid = partSurfId(part);
+      if (sid && partRepoPath(part)) store.rememberPathId(vault.repo, partRepoPath(part), sid);
     }
     try {
       await store.migrateLocalSurfIds();
@@ -3649,15 +3646,22 @@ const App = () => {
       openedScripts = next.scripts;
     }
     const meshRecords = partMeshRecordsFromBaseline(openedDoc, openedScripts, opened.baseline?.assets);
-    for (const [id, script] of Object.entries(openedScripts)) {
-      const part = (openedDoc.parts || []).find((row) => row.id === id);
-      const mesh = meshRecords[id];
-      await savePartScript(id, script, {
-        ...(typeof part?.isSynced === 'boolean' ? { isSynced: part.isSynced } : {}),
-        ...(mesh || {}),
-      });
-      if (mesh?.assets) rememberPartAssets(id, mesh.assets);
-    }
+    await replaceScriptKeys({
+      nextScripts: openedScripts,
+      staleIds: staleScriptIds,
+      save: async (id, script) => {
+        const part = (openedDoc.parts || []).find((row) => row.id === id);
+        const mesh = meshRecords[id];
+        await savePartScript(id, script, {
+          ...(typeof part?.isSynced === 'boolean' ? { isSynced: part.isSynced } : {}),
+          ...(mesh || {}),
+        });
+        if (mesh?.assets) rememberPartAssets(id, mesh.assets);
+      },
+      remove: async (id) => {
+        try { await deletePartScript(id); } catch { /* ignore */ }
+      },
+    });
     if (Object.keys(meshRecords).length) {
       const nextMeta = { ...partMeshMetaRef.current, ...meshRecords };
       partMeshMetaRef.current = nextMeta;
@@ -3666,6 +3670,9 @@ const App = () => {
     rememberScripts(openedScripts);
     rememberSidecar(emptyWorkingSidecar());
     let saved = rememberAssembly(openedDoc);
+    if (isSurfId(saved.id)) {
+      await store.rememberAssemblyId(vault.repo, vaultSegment(saved.name), saved.id);
+    }
     noteRecentAssembly(saved.name);
     const baseline = captureBaseline({
       assemblyPath: deletedOverlay.removed ? assemblyFilePath(saved.name) : opened.baseline.assemblyPath,
@@ -3701,18 +3708,26 @@ const App = () => {
 
   const openNamedVaultAssembly = async (adapter, repo, name, opts = {}) => {
     const branch = opts.branch || 'main';
+    const store = gitSync();
+    const folder = vaultSegment(name);
     const cached = assemblyRef.current;
     const knownAssemblyId = opts.knownAssemblyId
+      || store.assemblyIdFor(repo, folder)
       || (cached
-        && vaultSegment(cached.name) === vaultSegment(name)
+        && vaultSegment(cached.name) === folder
         && isSurfId(cached.id)
         ? cached.id
         : undefined);
+    const assemblyIdIndex = opts.assemblyIdIndex || store.assemblyIdIndexFor(repo);
     const detected = await detectVaultLayout(adapter, repo, branch);
-    if (detected.layout === 'legacy') {
-      return openLegacyAssembly(adapter, repo, name, { ...opts, knownAssemblyId });
+    if (detected.layout !== 'legacy') {
+      throw new UnsupportedVaultLayoutError(detected.layout);
     }
-    return openVaultAssembly(adapter, repo, name, opts);
+    return openLegacyAssembly(adapter, repo, name, {
+      ...opts,
+      knownAssemblyId,
+      assemblyIdIndex,
+    });
   };
 
   const handleOpenVaultAssembly = async (name) => {
@@ -3722,7 +3737,7 @@ const App = () => {
         retry: () => { void handleOpenVaultAssembly(name); },
         load: async ({ progress, signal }) => {
           refreshGenRef.current += 1;
-          const vault = await ensureGitVault();
+          const vault = await ensureGitVault({ create: false });
           if (!signal()) return;
           const branch = gitWorkingBranch();
           const tip = (await gitAdapterRef.current.getBranch(vault.repo, branch))?.sha || null;
@@ -3766,7 +3781,7 @@ const App = () => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') return;
     try {
-      const vault = await ensureGitVault();
+      const vault = await ensureGitVault({ create: false });
       const id = normalizeRepoPath(path);
       if (!id || !partPathAllowedFor(doc.name, id)) {
         setUploadError('That path is not allowed for this assembly');
@@ -3969,7 +3984,7 @@ const App = () => {
         retry: () => { void handleSwitchBranch(branchName); },
         load: async ({ progress, signal }) => {
           refreshGenRef.current += 1;
-          const vault = await ensureGitVault();
+          const vault = await ensureGitVault({ create: false });
           if (!signal()) return null;
           const store = gitSync();
           await store.ready();
@@ -4252,7 +4267,7 @@ const App = () => {
       return { status: 'error', error: 'Not in Git mode' };
     }
     try {
-      const vault = await ensureGitVault();
+      const vault = await ensureGitVault({ create: false });
       const planned = await planInsertVaultAssemblyParts(
         gitAdapterRef.current, vault.repo, sourceName, doc,
         { branch: gitWorkingBranch() },
@@ -4271,7 +4286,9 @@ const App = () => {
       let parts = [...doc.parts];
       let activeId = doc.activeId;
       for (const add of planned.additions) {
-        scripts[add.id] = add.content;
+        if (add.missing !== true && typeof add.content === 'string') {
+          scripts[add.id] = add.content;
+        }
         if (!parts.some((p) => p.id === add.id)) {
           parts = [...parts, {
             id: add.id,
@@ -4281,6 +4298,7 @@ const App = () => {
             ...(add.surfId ? { surfId: add.surfId } : {}),
             // Existing linked path, not a newly assigned copy path.
             ...(add.fromPath ? { path: add.fromPath } : {}),
+            ...(add.missing === true ? { missing: true } : {}),
           }];
         }
         activeId = add.id;
@@ -4290,12 +4308,13 @@ const App = () => {
         {
           name: planned.sourceName,
           source: planned.sourcePath,
-          partIds: planned.additions.map((add) => add.surfId).filter(Boolean),
+          partIds: planned.additions.map((add) => add.surfId || add.id).filter(Boolean),
         },
       );
       rememberScripts(scripts);
       const saved = rememberAssembly(inserted);
       for (const add of planned.additions) {
+        if (add.missing === true || typeof add.content !== 'string') continue;
         await savePartScript(add.id, add.content);
       }
       refreshGenRef.current += 1;
@@ -4320,7 +4339,7 @@ const App = () => {
       return { status: 'error', error: 'Not in Git mode' };
     }
     try {
-      const vault = await ensureGitVault();
+      const vault = await ensureGitVault({ create: false });
       const branch = gitWorkingBranch();
       const got = await readVaultPart(gitAdapterRef.current, vault.repo, path, branch);
       if (!got) return { status: 'error', error: `Missing in vault: ${path}` };
@@ -4387,7 +4406,7 @@ const App = () => {
       isSynced: false,
     } : row));
     const activeId = doc.activeId === partId ? plan.id : doc.activeId;
-    const groups = replaceGroupPartId(doc.groups, part.surfId, plan.surfId);
+    const groups = replaceGroupPartId(doc.groups, partSurfId(part), plan.surfId);
     const nextDoc = { ...doc, source: 'git', activeId, parts, groups };
     rememberAssembly(nextDoc);
     rememberScripts(scripts);
@@ -4797,7 +4816,7 @@ const App = () => {
       if (!baseline && sidecar.renameFrom && sidecar.renameFrom !== vaultSegment(doc.name)) {
         try {
           const tip = (await gitAdapterRef.current.getBranch(vault.repo, branch))?.sha || vault.headSha || null;
-          const opened = await openVaultAssembly(
+          const opened = await openNamedVaultAssembly(
             gitAdapterRef.current,
             vault.repo,
             sidecar.renameFrom,
@@ -5142,20 +5161,29 @@ const App = () => {
           doc,
           scripts,
           baseline,
+          pathIndex: gitSync().pathIndexFor(vault.repo),
+          knownAssemblyId: isSurfId(doc?.id) ? doc.id : gitSync().assemblyIdFor(vault.repo, vaultSegment(doc?.name)),
+          assemblyIdIndex: gitSync().assemblyIdIndexFor(vault.repo),
         });
         if (reloaded.kind === 'assembly') {
           // Replace assembly document; keep scripts for ids still present.
           const nextDoc = reloaded.doc;
           const keepScripts = {};
           for (const part of nextDoc.parts || []) {
-            keepScripts[part.id] = reloaded.scripts[part.id] ?? scripts[part.id] ?? '';
+            if (part.missing === true) continue;
+            const have = reloaded.scripts[part.id] ?? scripts[part.id];
+            if (typeof have === 'string') keepScripts[part.id] = have;
           }
           // Fetch any part scripts the remote assembly lists that we do not have.
           for (const part of nextDoc.parts || []) {
-            if (keepScripts[part.id] === '' || keepScripts[part.id] == null) {
-              const got = await readVaultPart(gitAdapterRef.current, vault.repo, part.id, branch);
-              if (got) keepScripts[part.id] = got.content;
-            }
+            if (part.missing === true || typeof keepScripts[part.id] === 'string') continue;
+            const got = await readVaultPart(
+              gitAdapterRef.current,
+              vault.repo,
+              partRepoPath(part) || part.id,
+              branch,
+            );
+            if (got && typeof got.content === 'string') keepScripts[part.id] = got.content;
           }
           for (const [id, script] of Object.entries(keepScripts)) {
             await savePartScript(id, script);

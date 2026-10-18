@@ -7,7 +7,7 @@
  * the path until the next explicit save writes `{ id, path }`.
  */
 import { normalizeRepoPath } from '../assembly.js';
-import { isSurfId, mintSurfId, readSurfId, withSurfId } from './surfId.js';
+import { isSurfId, mintSurfId, partSurfId, readSurfId, withSurfId } from './surfId.js';
 import { PART_EXT, isVaultPartPath } from './vaultLayout.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -52,7 +52,7 @@ export function stampMissingSurfIds(doc, scripts = {}, { now, randFor } = {}) {
   const nextScripts = { ...(scripts || {}) };
   let changed = false;
   const parts = (doc.parts || []).map((row, index) => {
-    if (!row || row.surfId || partRepoPath(row)) return row;
+    if (!row || partSurfId(row) || partRepoPath(row)) return row;
     const surfId = mintSurfId({
       now,
       rand: typeof randFor === 'function' ? randFor(row, index) : undefined,
@@ -77,7 +77,7 @@ export function findAssemblyPart(doc, hint) {
   if (!doc || hint == null) return null;
   const key = String(hint);
   return (doc.parts || []).find((part) => (
-    part.id === key || part.surfId === key || part.path === key
+    part.id === key || part.surfId === key || partSurfId(part) === key || part.path === key
   )) || null;
 }
 

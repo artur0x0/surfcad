@@ -29,6 +29,7 @@ import {
   noteCartSignIn,
 } from '../utils/cartSync.js';
 import { scriptForRow } from '../utils/assembly.js';
+import { partSurfId } from '../utils/git/surfId.js';
 
 const CartChromeContext = createContext(null);
 
@@ -248,7 +249,7 @@ export function useCart({
       part: {
         id: picked.part.id,
         name: picked.part.name,
-        surfId: picked.part.surfId || null,
+        surfId: partSurfId(picked.part),
       },
       script: picked.script,
       filename: `${name}.js`,
