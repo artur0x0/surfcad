@@ -26,7 +26,7 @@ import {
   serializeAssembly,
 } from '../assembly.js';
 import { normalizeSheetMetalBinding } from '../scs/scsCatalog.js';
-import { isSurfId } from './surfId.js';
+import { isV2SurfId } from './surfId.js';
 import {
   SURF_JSON_FORMAT,
   pruneDanglingColors,
@@ -43,6 +43,12 @@ export const SURF_JSON_VERSION_V2 = 2;
 const TOP_KEYS = new Set(['format', 'version', 'id', 'name', 'activeId', 'parts', 'groups', 'colors', 'joints']);
 const PART_KEYS = new Set(['id', 'name', 'visible', 'order', 'position', 'placement', 'sheetMetal', 'copiedFrom']);
 const GROUP_KEYS = new Set(['id', 'name', 'source', 'partIds']);
+// eslint-disable-next-line no-control-regex
+const LABEL_NAME_RE = /[\u0000-\u001f\u007f\u2028\u2029]/;
+
+function isLabelName(value) {
+  return typeof value === 'string' && !!value.trim() && !LABEL_NAME_RE.test(value);
+}
 
 function asObject(input) {
   if (typeof input === 'string') {
@@ -68,8 +74,8 @@ export function validateSurfJsonV2(input) {
   if (raw.format !== SURF_JSON_FORMAT) errors.push(`format must be "${SURF_JSON_FORMAT}"`);
   if (raw.version !== SURF_JSON_VERSION_V2) errors.push(`version must be ${SURF_JSON_VERSION_V2}`);
   if (raw.id === undefined) errors.push('id is required');
-  else if (!isSurfId(raw.id)) errors.push('id must be a surf id');
-  if (typeof raw.name !== 'string' || !raw.name.trim()) {
+  else if (!isV2SurfId(raw.id)) errors.push('id must be a surf id');
+  if (!isLabelName(raw.name)) {
     errors.push('name must be a non-empty string');
   }
   if (!Array.isArray(raw.parts)) {
@@ -90,13 +96,13 @@ export function validateSurfJsonV2(input) {
         if (!PART_KEYS.has(k)) errors.push(`${at} unknown key "${k}"`);
       }
       if (part.id === undefined) errors.push(`${at}.id is required`);
-      else if (!isSurfId(part.id)) errors.push(`${at}.id must be a surf id`);
-      if (part.copiedFrom !== undefined && !isSurfId(part.copiedFrom)) {
+      else if (!isV2SurfId(part.id)) errors.push(`${at}.id must be a surf id`);
+      if (part.copiedFrom !== undefined && !isV2SurfId(part.copiedFrom)) {
         errors.push(`${at}.copiedFrom must be a surf id`);
       }
       if (part.id && seenIds.has(part.id)) errors.push(`${at}.id duplicates ${part.id}`);
       if (part.id) seenIds.add(part.id);
-      if (typeof part.name !== 'string' || !part.name.trim()) errors.push(`${at}.name must be a non-empty string`);
+      if (!isLabelName(part.name)) errors.push(`${at}.name must be a non-empty string`);
       if (typeof part.visible !== 'boolean') errors.push(`${at}.visible must be a boolean`);
       if (!Number.isInteger(part.order) || part.order < 0) errors.push(`${at}.order must be a non-negative integer`);
       if (part.position !== undefined && !partPosition(part)) errors.push(`${at}.position must be [x, y, z] numbers`);
@@ -113,7 +119,7 @@ export function validateSurfJsonV2(input) {
         errors.push(`${at}.sheetMetal must be { sku: string, … }`);
       }
     });
-    if (raw.activeId != null && !seenIds.has(raw.activeId)) {
+    if (raw.activeId != null && (!isV2SurfId(raw.activeId) || !seenIds.has(raw.activeId))) {
       errors.push('activeId must be null or one of the part ids');
     }
   }
@@ -130,20 +136,20 @@ export function validateSurfJsonV2(input) {
           return;
         }
         for (const k of Object.keys(group)) if (!GROUP_KEYS.has(k)) errors.push(`${at} unknown key "${k}"`);
-        if (!isSurfId(group.id)) errors.push(`${at}.id must be a surf id`);
+        if (!isV2SurfId(group.id)) errors.push(`${at}.id must be a surf id`);
         if (group.id && seenGroups.has(group.id)) errors.push(`${at}.id duplicates ${group.id}`);
         if (group.id) seenGroups.add(group.id);
-        if (typeof group.name !== 'string' || !group.name.trim()) errors.push(`${at}.name must be a non-empty string`);
+        if (!isLabelName(group.name)) errors.push(`${at}.name must be a non-empty string`);
         if (group.source == null) {
           if (group.source !== null) errors.push(`${at}.source must be a surf id or null`);
-        } else if (!isSurfId(group.source)) {
+        } else if (!isV2SurfId(group.source)) {
           errors.push(`${at}.source must be a surf id or null`);
         }
         if (!Array.isArray(group.partIds) || !group.partIds.length) {
           errors.push(`${at}.partIds must be a non-empty array`);
         } else {
           group.partIds.forEach((pid, j) => {
-            if (!isSurfId(pid)) errors.push(`${at}.partIds[${j}] must be a surf id`);
+            if (!isV2SurfId(pid)) errors.push(`${at}.partIds[${j}] must be a surf id`);
             else if (seenPartIds.has(pid)) errors.push(`${at}.partIds[${j}] duplicates a grouped part`);
             else seenPartIds.add(pid);
           });
@@ -156,14 +162,14 @@ export function validateSurfJsonV2(input) {
   }
   if (raw.colors !== undefined) {
     const live = new Set(
-      (Array.isArray(raw.parts) ? raw.parts : []).map((part) => part?.id).filter((id) => isSurfId(id)),
+      (Array.isArray(raw.parts) ? raw.parts : []).map((part) => part?.id).filter((id) => isV2SurfId(id)),
     );
     errors.push(...assemblyColorErrors(raw.colors, live));
   }
   if (raw.joints !== undefined) {
     const live = (Array.isArray(raw.parts) ? raw.parts : [])
       .map((part) => part?.id)
-      .filter((id) => isSurfId(id));
+      .filter((id) => isV2SurfId(id));
     errors.push(...assemblyJointErrors(raw.joints, live));
   }
   return { ok: errors.length === 0, errors };
@@ -182,6 +188,7 @@ export function parseSurfJsonV2(input) {
     activeId: raw.activeId,
     parts: raw.parts.map((p) => ({
       id: p.id,
+      // TODO(PR 2): drop surfId; v2 row id is the only id after WC migration (§2.2).
       surfId: p.id,
       copiedFrom: p.copiedFrom,
       name: p.name,
@@ -195,5 +202,9 @@ export function parseSurfJsonV2(input) {
     colors: raw.colors,
     joints: raw.joints,
   });
-  return { ...loaded, id: raw.id };
+  return {
+    ...loaded,
+    id: raw.id,
+    activeId: raw.activeId === null ? null : loaded.activeId,
+  };
 }

@@ -19,6 +19,8 @@
 
 const SURF_ID_BODY = String.raw`\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d{4}-[0-9a-f]{4}`;
 export const SURF_ID_RE = new RegExp(`^(?:local-)?${SURF_ID_BODY}$`);
+/** v2 ids never carry a `local-` prefix. v1 `isSurfId` still accepts one. */
+export const SURF_ID_V2_RE = new RegExp(`^${SURF_ID_BODY}$`);
 // Spaces and tabs only. `\s` would eat the blank line after the header and
 // any indent on the next line. The line ending is captured so CRLF stays CRLF.
 const HEADER_RE = /^\/\/ @surf-id (\S+)([ \t]*)(\r\n|\n|\r)?/;
@@ -27,6 +29,10 @@ const NAME_HEADER_RE = /^\/\/ @name ([^\r\n]*?)[ \t]*(\r\n|\n|\r|$)/;
 
 export function isSurfId(value) {
   return SURF_ID_RE.test(String(value || ''));
+}
+
+export function isV2SurfId(value) {
+  return SURF_ID_V2_RE.test(String(value || ''));
 }
 
 export function isLocalSurfId(value) {
@@ -135,15 +141,36 @@ export function withSurfId(script, id) {
   return `// @surf-id ${id}${sep}${text}`;
 }
 
-function splitNameHeader(script) {
+/**
+ * Split a leading `// @surf-id` line even when the id is invalid, so
+ * `@name` is never inserted above a bogus id comment.
+ */
+function splitLeadingSurfComment(script) {
   const text = String(script ?? '');
-  const surf = splitSurfHeader(text);
-  const rest = surf ? surf.body : text;
-  const prefix = surf ? text.slice(0, text.length - rest.length) : '';
+  const valid = splitSurfHeader(text);
+  if (valid) {
+    return {
+      surf: valid,
+      prefix: text.slice(0, text.length - valid.body.length),
+      rest: valid.body,
+    };
+  }
+  if (!text.startsWith('// @surf-id ')) return { surf: null, prefix: '', rest: text };
+  const lf = text.indexOf('\n');
+  if (lf < 0) return { surf: { ending: '' }, prefix: text, rest: '' };
+  const ending = lf > 0 && text[lf - 1] === '\r' ? '\r\n' : '\n';
+  return {
+    surf: { ending },
+    prefix: text.slice(0, lf + 1),
+    rest: text.slice(lf + 1),
+  };
+}
+
+function splitNameHeader(script) {
+  const { surf, prefix, rest } = splitLeadingSurfComment(script);
   const match = NAME_HEADER_RE.exec(rest);
   if (!match) return { found: false, name: null, prefix, rest, ending: '', body: rest, surf };
-  const name = match[1].trim();
-  if (!name) return { found: false, name: null, prefix, rest, ending: match[2] || '', body: rest.slice(match[0].length), surf };
+  const name = match[1].trim() || null;
   return {
     found: true,
     name,
@@ -166,14 +193,14 @@ export function readSurfName(script) {
  * its line ending. Bytes after the name line stay.
  */
 export function withSurfName(script, name) {
-  const display = String(name ?? '').replace(/[\r\n]+/g, ' ').trim();
+  const display = String(name ?? '').replace(/[\r\n\u2028\u2029]+/g, ' ').trim();
   if (!display) throw new Error(`Bad surf name: ${name}`);
   const split = splitNameHeader(script);
   const nl = (split.surf && split.surf.ending) || (split.found && split.ending) || '\n';
   if (split.found) {
     return `${split.prefix}// @name ${display}${split.ending || nl}${split.body}`;
   }
-  if (split.surf) {
+  if (split.prefix) {
     const prefix = split.prefix.endsWith('\n') || split.prefix.endsWith('\r')
       ? split.prefix
       : `${split.prefix}${nl}`;

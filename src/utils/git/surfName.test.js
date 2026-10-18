@@ -29,6 +29,31 @@ test('withSurfName inserts under @surf-id and replaces an existing name', () => 
   assert.equal(readSurfName(withSurfName(named, 'Housing')), 'Housing');
 });
 
+test('withSurfName replaces a blank @name line instead of duplicating it', () => {
+  const blank = `// @surf-id ${ID}\n// @name   \n${BODY}`;
+  const next = withSurfName(blank, 'Bracket');
+  assert.equal(next, `// @surf-id ${ID}\n// @name Bracket\n${BODY}`);
+  assert.equal((next.match(/\/\/ @name/g) || []).length, 1);
+  assert.equal(readSurfName(next), 'Bracket');
+});
+
+test('withSurfName does not insert above an invalid @surf-id line', () => {
+  const bogus = `// @surf-id bogus\n${BODY}`;
+  const next = withSurfName(bogus, 'Bracket');
+  assert.equal(next, `// @surf-id bogus\n// @name Bracket\n${BODY}`);
+  assert.ok(next.startsWith('// @surf-id bogus\n'));
+  assert.equal(readSurfName(next), 'Bracket');
+});
+
+test('withSurfName preserves CRLF and strips line separators', () => {
+  const crlf = `// @surf-id ${ID}\r\n${BODY.replace('\n', '\r\n')}`;
+  const named = withSurfName(crlf, 'Kettle Lid');
+  assert.equal(named, `// @surf-id ${ID}\r\n// @name Kettle Lid\r\n${BODY.replace('\n', '\r\n')}`);
+  assert.equal(readSurfName(named), 'Kettle Lid');
+  const sep = withSurfName(BODY, `A\u2028B\u2029C`);
+  assert.equal(readSurfName(sep), 'A B C');
+});
+
 test('withSurfName throws on a blank name', () => {
   assert.throws(() => withSurfName(BODY, '   '), /Bad surf name/);
   assert.throws(() => withSurfName(BODY, ''), /Bad surf name/);

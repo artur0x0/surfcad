@@ -13,7 +13,7 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'n
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SURF_JSON_FORMAT, SURF_JSON_VERSION } from '../src/utils/git/surfJson.js';
-import { SURF_ID_RE } from '../src/utils/git/surfId.js';
+import { SURF_ID_RE, SURF_ID_V2_RE } from '../src/utils/git/surfId.js';
 import { SHEET_METAL_BEGIN, SHEET_METAL_END } from '../src/utils/sheetMetal/sheetMetalScript.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -364,6 +364,13 @@ function parseDts(src) {
 
 function assemblySchema() {
   const id = SURF_ID_RE.source;
+  const idV2 = SURF_ID_V2_RE.source;
+  const labelName = {
+    type: 'string',
+    minLength: 1,
+    pattern: '^[^\\u0000-\\u001f\\u007f\\u2028\\u2029]+$',
+    description: 'Display label. Not unique. Control characters and line separators are rejected.',
+  };
   const vec3 = {
     type: 'array',
     items: { type: 'number' },
@@ -676,22 +683,21 @@ function assemblySchema() {
         type: 'object',
         additionalProperties: false,
         required: ['format', 'version', 'id', 'name', 'parts'],
-        description: 'v2 assembly document at assemblies/<id>.surf.json. validateSurfJsonV2 rejects a missing top-level id and any parts[].path. Name is a label, not a path segment. groups[].source is an assembly id or null.',
+        description: 'v2 assembly document at assemblies/<id>.surf.json. validateSurfJsonV2 rejects a missing top-level id and any parts[].path. Name is a label, not a path segment. groups[].source is an assembly id or null. Ids never carry a local- prefix.',
         properties: {
           format: { const: SURF_JSON_FORMAT },
           version: { const: 2 },
           id: {
             type: 'string',
-            pattern: id,
+            pattern: idV2,
             description: 'Permanent assembly surf id. Filename is assemblies/<id>.surf.json.',
           },
-          name: {
-            type: 'string',
-            minLength: 1,
-            description: 'Display label. Not unique and not required to be path-safe.',
-          },
+          name: labelName,
           activeId: {
-            anyOf: [{ type: 'string' }, { type: 'null' }],
+            anyOf: [
+              { type: 'string', pattern: idV2 },
+              { type: 'null' },
+            ],
             description: 'Part id of the active part, or null.',
           },
           parts: {
@@ -703,10 +709,10 @@ function assemblySchema() {
               properties: {
                 id: {
                   type: 'string',
-                  pattern: id,
+                  pattern: idV2,
                   description: 'Required part surf id. Filename is parts/<id>.js. path is forbidden.',
                 },
-                name: { type: 'string' },
+                name: labelName,
                 visible: { type: 'boolean' },
                 order: {
                   type: 'integer',
@@ -756,7 +762,7 @@ function assemblySchema() {
                 },
                 copiedFrom: {
                   type: 'string',
-                  pattern: id,
+                  pattern: idV2,
                   description: 'Surf id this row was copied from, when set.',
                 },
               },
@@ -772,17 +778,13 @@ function assemblySchema() {
               properties: {
                 id: {
                   type: 'string',
-                  pattern: id,
+                  pattern: idV2,
                   description: 'Stable group id. Not a part id.',
                 },
-                name: {
-                  type: 'string',
-                  minLength: 1,
-                  description: 'Label in the Parts list. Starts as the source assembly name.',
-                },
+                name: labelName,
                 source: {
                   anyOf: [
-                    { type: 'string', pattern: id },
+                    { type: 'string', pattern: idV2 },
                     { type: 'null' },
                   ],
                   description: 'Source assembly id. Null after that assembly is deleted; the group name stays.',
@@ -790,7 +792,7 @@ function assemblySchema() {
                 partIds: {
                   type: 'array',
                   minItems: 1,
-                  items: { type: 'string', pattern: id },
+                  items: { type: 'string', pattern: idV2 },
                   description: 'Surf ids of the member parts. Dangling ids are dropped on load and save.',
                 },
               },
@@ -799,7 +801,7 @@ function assemblySchema() {
           colors: {
             type: 'object',
             minProperties: 1,
-            propertyNames: { pattern: id },
+            propertyNames: { pattern: idV2 },
             additionalProperties: {
               type: 'object',
               additionalProperties: false,
@@ -839,10 +841,10 @@ function assemblySchema() {
               properties: {
                 id: {
                   type: 'string',
-                  pattern: id,
+                  pattern: idV2,
                   description: 'Surf id of this joint. Unique in the file. Not a part id and not a group id.',
                 },
-                name: { type: 'string', minLength: 1 },
+                name: labelName,
                 type: {
                   enum: ['coincident', 'concentric', 'distance', 'angle', 'fixed'],
                 },
@@ -858,9 +860,19 @@ function assemblySchema() {
                   type: 'boolean',
                   description: 'Coincident only. True means the face normals are opposed. Omitted means true. Always written for coincident. Rejected on other types.',
                 },
-                a: jointRef,
+                a: {
+                  ...jointRef,
+                  properties: {
+                    ...jointRef.properties,
+                    part: { ...jointRef.properties.part, pattern: idV2 },
+                  },
+                },
                 b: {
                   ...jointRef,
+                  properties: {
+                    ...jointRef.properties,
+                    part: { ...jointRef.properties.part, pattern: idV2 },
+                  },
                   description: 'Second reference. Omitted on fixed. a.part and b.part are different surf ids.',
                 },
               },

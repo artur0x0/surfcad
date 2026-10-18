@@ -746,7 +746,7 @@
         "name",
         "parts"
       ],
-      "description": "v2 assembly document at assemblies/<id>.surf.json. validateSurfJsonV2 rejects a missing top-level id and any parts[].path. Name is a label, not a path segment. groups[].source is an assembly id or null.",
+      "description": "v2 assembly document at assemblies/<id>.surf.json. validateSurfJsonV2 rejects a missing top-level id and any parts[].path. Name is a label, not a path segment. groups[].source is an assembly id or null. Ids never carry a local- prefix.",
       "properties": {
         "format": {
           "const": "surfcad.assembly"
@@ -756,18 +756,20 @@
         },
         "id": {
           "type": "string",
-          "pattern": "^(?:local-)?\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$",
           "description": "Permanent assembly surf id. Filename is assemblies/<id>.surf.json."
         },
         "name": {
           "type": "string",
           "minLength": 1,
-          "description": "Display label. Not unique and not required to be path-safe."
+          "pattern": "^[^\u0000-\u001f  ]+$",
+          "description": "Display label. Not unique. Control characters and line separators are rejected."
         },
         "activeId": {
           "anyOf": [
             {
-              "type": "string"
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$"
             },
             {
               "type": "null"
@@ -789,11 +791,14 @@
             "properties": {
               "id": {
                 "type": "string",
-                "pattern": "^(?:local-)?\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$",
                 "description": "Required part surf id. Filename is parts/<id>.js. path is forbidden."
               },
               "name": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\u0000-\u001f  ]+$",
+                "description": "Display label. Not unique. Control characters and line separators are rejected."
               },
               "visible": {
                 "type": "boolean"
@@ -865,7 +870,7 @@
               },
               "copiedFrom": {
                 "type": "string",
-                "pattern": "^(?:local-)?\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$",
                 "description": "Surf id this row was copied from, when set."
               }
             }
@@ -886,19 +891,20 @@
             "properties": {
               "id": {
                 "type": "string",
-                "pattern": "^(?:local-)?\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$",
                 "description": "Stable group id. Not a part id."
               },
               "name": {
                 "type": "string",
                 "minLength": 1,
-                "description": "Label in the Parts list. Starts as the source assembly name."
+                "pattern": "^[^\u0000-\u001f  ]+$",
+                "description": "Display label. Not unique. Control characters and line separators are rejected."
               },
               "source": {
                 "anyOf": [
                   {
                     "type": "string",
-                    "pattern": "^(?:local-)?\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$"
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$"
                   },
                   {
                     "type": "null"
@@ -911,7 +917,7 @@
                 "minItems": 1,
                 "items": {
                   "type": "string",
-                  "pattern": "^(?:local-)?\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$"
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$"
                 },
                 "description": "Surf ids of the member parts. Dangling ids are dropped on load and save."
               }
@@ -922,7 +928,7 @@
           "type": "object",
           "minProperties": 1,
           "propertyNames": {
-            "pattern": "^(?:local-)?\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$"
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$"
           },
           "additionalProperties": {
             "type": "object",
@@ -1024,12 +1030,14 @@
             "properties": {
               "id": {
                 "type": "string",
-                "pattern": "^(?:local-)?\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$",
                 "description": "Surf id of this joint. Unique in the file. Not a part id and not a group id."
               },
               "name": {
                 "type": "string",
-                "minLength": 1
+                "minLength": 1,
+                "pattern": "^[^\u0000-\u001f  ]+$",
+                "description": "Display label. Not unique. Control characters and line separators are rejected."
               },
               "type": {
                 "enum": [
@@ -1064,7 +1072,7 @@
                 "properties": {
                   "part": {
                     "type": "string",
-                    "pattern": "^(?:local-)?\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$",
                     "description": "Surf id of the part. A path is not stored."
                   },
                   "kind": {
@@ -1263,7 +1271,7 @@
                 "properties": {
                   "part": {
                     "type": "string",
-                    "pattern": "^(?:local-)?\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$",
                     "description": "Surf id of the part. A path is not stored."
                   },
                   "kind": {
