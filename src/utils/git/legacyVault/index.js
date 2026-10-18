@@ -14,6 +14,8 @@ export {
   SURFCAD_JSON_V2,
   planUpgrade,
   planWorkingCopyFollowup,
+  mapWorkingCopyToPlan,
+  applyUpgradeReload,
   executeUpgrade,
   executeUpgradeFollowup,
   executeUpgradeConflictChoice,

@@ -13,8 +13,7 @@ import {
   fileWrite,
   GitAdapterError,
 } from '../githubAdapterInterface.js';
-import { assemblyIdPath, partIdPath, partMeshIdPath } from '../idPaths.js';
-import { captureLastCommit } from '../lastCommit.js';
+import { assemblyIdPath, parseIdPath, partIdPath, partMeshIdPath } from '../idPaths.js';
 import {
   isSurfId,
   isV2SurfId,
@@ -29,7 +28,7 @@ import {
   withSurfName,
 } from '../surfId.js';
 import { pruneDanglingColors, pruneDanglingGroupPartIds } from '../surfJson.js';
-import { stringifySurfJsonV2 } from '../surfJsonV2.js';
+import { parseSurfJsonV2, stringifySurfJsonV2 } from '../surfJsonV2.js';
 import { pruneDanglingSurfJoints } from '../../jointSchema.js';
 import { VAULT_MARKER_KIND, VAULT_MARKER_PATH } from '../vaultNames.js';
 import { VAULT_README_PATH } from '../vaultLayout.js';
@@ -166,6 +165,22 @@ function displayNameFor(part, script, path) {
   return sanitizeSurfName(readSurfName(script) || part?.name || stemName(path)) || 'Part';
 }
 
+function utf8FromBytes(bytes) {
+  if (!(bytes instanceof Uint8Array)) return '';
+  if (bytes.byteLength === 0) return '';
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
+function hasOwn(obj, key) {
+  return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function isPresentEmpty(content) {
+  if (typeof content === 'string') return content.length === 0;
+  if (isBinaryContent(content)) return toUint8Array(content).byteLength === 0;
+  return false;
+}
+
 /**
  * Remote v1 bytes, including files the strict v1 validator rejects
  * (duplicate `parts[].id`). Do not run `parseSurfJson` here — that
@@ -184,7 +199,8 @@ function parseLegacyJson(content) {
   }
 }
 
-function isLegacyTreePath(path) {
+/** Legacy SurfCAD paths Upgrade may delete. Images/notes under the folder stay. */
+function isDeletedLegacyPath(path) {
   const info = parseLegacyVaultPath(path);
   if (!info) return false;
   if (info.kind === 'assembly-meta' || info.kind === 'assembly-part' || info.kind === 'shared-part') {
@@ -198,9 +214,12 @@ function isLegacyTreePath(path) {
     const jsInfo = parseLegacyVaultPath(js);
     return jsInfo?.kind === 'assembly-part' || jsInfo?.kind === 'shared-part';
   }
-  const segs = p.split('/');
-  if (segs[0] === 'assemblies' && segs.length >= 3) return true;
   return false;
+}
+
+function shouldLoadForUpgrade(path) {
+  if (path === VAULT_README_PATH || path === VAULT_MARKER_PATH) return true;
+  return isDeletedLegacyPath(path);
 }
 
 function filePayload(path, content) {
@@ -210,8 +229,8 @@ function filePayload(path, content) {
 
 function contentsEqual(a, b) {
   if (isBinaryContent(a) || isBinaryContent(b)) {
-    const left = isBinaryContent(a) ? toUint8Array(a) : null;
-    const right = isBinaryContent(b) ? toUint8Array(b) : null;
+    const left = isBinaryContent(a) ? toUint8Array(a) : (typeof a === 'string' ? new TextEncoder().encode(a) : null);
+    const right = isBinaryContent(b) ? toUint8Array(b) : (typeof b === 'string' ? new TextEncoder().encode(b) : null);
     return !!(left && right && bytesEqual(left, right));
   }
   return String(a ?? '') === String(b ?? '');
@@ -233,6 +252,63 @@ function meshBytesOf(assets, partId) {
     if (isBinaryContent(val?.bytes)) return toUint8Array(val.bytes);
   }
   return null;
+}
+
+function writeScript(writes, dest, script, id, name) {
+  if (typeof script !== 'string') return;
+  writes[dest] = script.length ? stampScript(script, id, name) : '';
+}
+
+function expectedScriptBytes(script, id, name) {
+  if (typeof script !== 'string') return null;
+  return script.length ? stampScript(script, id, name) : '';
+}
+
+function assertCopiedBytes(plan, files) {
+  const missing = [];
+  const mismatched = [];
+  for (const path of plan.deletes || []) {
+    if (!/\.(js|mesh)$/i.test(path)) continue;
+    if (!hasOwn(files, path)) continue;
+    const source = files[path];
+    const jsPath = /\.mesh$/i.test(path) ? path.replace(/\.mesh$/i, '.js') : path;
+    const id = plan.partIdByPath?.[jsPath];
+    if (!id) {
+      if (!isPresentEmpty(source)) missing.push(path);
+      continue;
+    }
+    const dest = /\.mesh$/i.test(path) ? partMeshIdPath(id) : partIdPath(id);
+    if (!hasOwn(plan.writes, dest)) {
+      missing.push(path);
+      continue;
+    }
+    if (/\.mesh$/i.test(path)) {
+      if (!contentsEqual(source, plan.writes[dest])) mismatched.push(`${path} -> ${dest}`);
+      continue;
+    }
+    const destText = plan.writes[dest];
+    if (typeof destText !== 'string') {
+      mismatched.push(`${path} -> ${dest}`);
+      continue;
+    }
+    if (isPresentEmpty(source)) {
+      if (destText.length !== 0) mismatched.push(`${path} -> ${dest}`);
+      continue;
+    }
+    const expected = expectedScriptBytes(
+      source,
+      id,
+      readSurfName(destText) || displayNameFor({ name: stemName(path) }, source, path),
+    );
+    if (destText !== expected) mismatched.push(`${path} -> ${dest}`);
+  }
+  if (!missing.length && !mismatched.length) return;
+  const bits = [];
+  if (missing.length) bits.push(`missing v2 copy of ${missing.join(', ')}`);
+  if (mismatched.length) bits.push(`byte mismatch ${mismatched.join(', ')}`);
+  const err = new Error(`Upgrade copy check failed: ${bits.join('; ')}. Nothing was written.`);
+  err.code = 'upgrade_copy_mismatch';
+  throw err;
 }
 
 /**
@@ -272,7 +348,8 @@ export function planUpgrade({
 
   const bindPart = (part, index, seenInAssembly) => {
     const path = scriptPathOf(part);
-    const script = path && typeof files[path] === 'string' ? files[path] : '';
+    const hasFile = !!(path && hasOwn(files, path) && typeof files[path] === 'string');
+    const script = hasFile ? files[path] : '';
     const picked = pickPartId(
       part,
       script,
@@ -293,6 +370,7 @@ export function planUpgrade({
       id: picked.id,
       path,
       script,
+      hasFile,
       minted: picked.minted,
       copiedFrom: picked.copiedFrom || null,
     };
@@ -310,7 +388,26 @@ export function planUpgrade({
   }
   metaPaths.sort((a, b) => a.folder.localeCompare(b.folder));
 
-  for (const { folder } of metaPaths) {
+  const unreadable = [];
+  const parsedMeta = [];
+  for (const row of metaPaths) {
+    const parsed = parseLegacyJson(files[row.path]);
+    if (!parsed) unreadable.push(row.path);
+    else parsedMeta.push({ ...row, parsed });
+  }
+  if (unreadable.length) {
+    const list = unreadable.join(', ');
+    return {
+      error: {
+        code: 'unreadable_legacy_json',
+        message: `Cannot parse legacy assembly file${unreadable.length > 1 ? 's' : ''}: ${list}. Upgrade aborted; nothing was written.`,
+        hint: 'Fix or remove the unreadable .surf.json, then retry Upgrade vault.',
+        paths: unreadable,
+      },
+    };
+  }
+
+  for (const { folder } of parsedMeta) {
     if (!folderToId[folder] || !isV2SurfId(folderToId[folder])) {
       const id = mintUnused(usedAsm, mintOptsFor({ id: '$assembly', name: folder }, -1));
       usedAsm.add(id);
@@ -321,9 +418,7 @@ export function planUpgrade({
     }
   }
 
-  for (const { folder, path: metaPath } of metaPaths) {
-    const parsed = parseLegacyJson(files[metaPath]);
-    if (!parsed) continue;
+  for (const { folder, parsed } of parsedMeta) {
     const assemblyId = folderToId[folder];
     const idMap = new Map();
     const nextParts = [];
@@ -348,13 +443,14 @@ export function planUpgrade({
       if (copied && copied !== bound.id) row.copiedFrom = copied;
       nextParts.push(row);
 
-      if (typeof bound.script === 'string' && bound.script.length) {
-        const dest = partIdPath(bound.id);
-        writes[dest] = stampScript(bound.script, bound.id, name);
+      if (bound.hasFile) {
+        writeScript(writes, partIdPath(bound.id), bound.script, bound.id, name);
       }
       const meshPath = sidecarMeshPath(bound.path);
-      if (meshPath && isBinaryContent(files[meshPath])) {
+      if (meshPath && hasOwn(files, meshPath) && isBinaryContent(files[meshPath])) {
         writes[partMeshIdPath(bound.id)] = toUint8Array(files[meshPath]);
+      } else if (meshPath && hasOwn(files, meshPath) && isPresentEmpty(files[meshPath])) {
+        writes[partMeshIdPath(bound.id)] = new Uint8Array(0);
       }
     });
 
@@ -412,22 +508,25 @@ export function planUpgrade({
   for (const path of paths) {
     const info = parseLegacyVaultPath(path);
     if (info?.kind !== 'shared-part' && info?.kind !== 'assembly-part') continue;
+    const hasFile = hasOwn(files, path) && typeof files[path] === 'string';
     if (partIdByPath[path]) {
       const id = partIdByPath[path];
       const dest = partIdPath(id);
-      if (writes[dest]) continue;
-      const script = typeof files[path] === 'string' ? files[path] : '';
-      if (!script) continue;
+      if (writes[dest] !== undefined) continue;
+      if (!hasFile) continue;
+      const script = files[path];
       usedPart.add(id);
-      writes[dest] = stampScript(script, id, displayNameFor({ name: stemName(path) }, script, path));
+      writeScript(writes, dest, script, id, displayNameFor({ name: stemName(path) }, script, path));
       const meshPath = sidecarMeshPath(path);
-      if (meshPath && isBinaryContent(files[meshPath])) {
+      if (meshPath && hasOwn(files, meshPath) && isBinaryContent(files[meshPath])) {
         writes[partMeshIdPath(id)] = toUint8Array(files[meshPath]);
+      } else if (meshPath && hasOwn(files, meshPath) && isPresentEmpty(files[meshPath])) {
+        writes[partMeshIdPath(id)] = new Uint8Array(0);
       }
       continue;
     }
-    const script = typeof files[path] === 'string' ? files[path] : '';
-    if (!script) continue;
+    if (!hasFile) continue;
+    const script = files[path];
     const picked = pickPartId(
       { path, name: stemName(path) },
       script,
@@ -441,14 +540,18 @@ export function planUpgrade({
     partBindings.push({ path, id: picked.id, minted: picked.minted });
     if (picked.minted) mintedPartIds.push(picked.id);
     else keptPartIds.push(picked.id);
-    writes[partIdPath(picked.id)] = stampScript(
+    writeScript(
+      writes,
+      partIdPath(picked.id),
       script,
       picked.id,
       displayNameFor({ name: stemName(path) }, script, path),
     );
     const meshPath = sidecarMeshPath(path);
-    if (meshPath && isBinaryContent(files[meshPath])) {
+    if (meshPath && hasOwn(files, meshPath) && isBinaryContent(files[meshPath])) {
       writes[partMeshIdPath(picked.id)] = toUint8Array(files[meshPath]);
+    } else if (meshPath && hasOwn(files, meshPath) && isPresentEmpty(files[meshPath])) {
+      writes[partMeshIdPath(picked.id)] = new Uint8Array(0);
     }
   }
 
@@ -456,6 +559,7 @@ export function planUpgrade({
 
   const writePaths = new Set(Object.keys(writes));
   const deletes = [];
+  const leftoverFiles = [];
   let readmeDeleted = false;
   let readmeKept = false;
   for (const path of paths) {
@@ -466,27 +570,31 @@ export function planUpgrade({
         readmeDeleted = true;
       } else if (files[path] != null) {
         readmeKept = true;
+        leftoverFiles.push(path);
       }
       continue;
     }
-    if (isLegacyTreePath(path)) deletes.push(path);
+    if (isDeletedLegacyPath(path)) deletes.push(path);
+    else leftoverFiles.push(path);
   }
 
   for (const path of [...writePaths].sort()) {
     writeFiles.push(filePayload(path, writes[path]));
   }
   deletes.sort();
+  leftoverFiles.sort();
   const filesOut = [
     ...writeFiles,
     ...deletes.map((path) => fileDelete(path)),
   ];
 
-  return {
+  const plan = {
     alreadyUpgraded: false,
     baseSha: baseSha || null,
     files: filesOut,
     writes,
     deletes,
+    leftoverFiles,
     assemblies,
     partBindings,
     folderToId,
@@ -497,20 +605,164 @@ export function planUpgrade({
     readmeDeleted,
     readmeKept,
   };
+  assertCopiedBytes(plan, files);
+  return plan;
+}
+
+function planIdsOf(plan) {
+  const ids = new Set();
+  for (const id of Object.values(plan?.partIdByPath || {})) {
+    if (isV2SurfId(id)) ids.add(id);
+  }
+  for (const id of plan?.keptPartIds || []) ids.add(id);
+  for (const id of plan?.mintedPartIds || []) ids.add(id);
+  for (const row of plan?.partBindings || []) {
+    if (isV2SurfId(row?.id)) ids.add(row.id);
+  }
+  return ids;
+}
+
+function wcScriptOf(part, scripts) {
+  if (!scripts) return undefined;
+  if (typeof scripts[part?.id] === 'string') return scripts[part.id];
+  const path = scriptPathOf(part);
+  if (path && typeof scripts[path] === 'string') return scripts[path];
+  return undefined;
+}
+
+/**
+ * Map a dirty WC onto the upgrade plan's ids via the plan's legacy-path
+ * map (not WC header ids). Rekeys in memory only — callers persist IDB.
+ * Ambiguous / unmapped parts refuse the follow-up.
+ */
+export function mapWorkingCopyToPlan(plan, workingCopy) {
+  if (!workingCopy?.doc) {
+    return { ok: true, doc: null, scripts: {}, pairs: [], assets: workingCopy?.assets || null };
+  }
+  const pathToId = plan?.partIdByPath || {};
+  const planIds = planIdsOf(plan);
+  const folderToId = plan?.folderToId || {};
+  const parts = workingCopy.doc.parts || [];
+  const claimed = new Map();
+  const unmapped = [];
+  const ambiguous = [];
+
+  const resolve = (part) => {
+    const path = scriptPathOf(part);
+    const fromPath = path ? pathToId[path] : null;
+    const fromId = asV2Id(part?.id);
+    if (fromPath && isV2SurfId(fromPath)) return fromPath;
+    if (fromId && planIds.has(fromId) && !path) return fromId;
+    return null;
+  };
+
+  for (const part of parts) {
+    const planId = resolve(part);
+    const label = part?.name || part?.id || scriptPathOf(part) || '(unnamed)';
+    if (!planId) {
+      unmapped.push(label);
+      continue;
+    }
+    if (claimed.has(planId)) {
+      ambiguous.push(label);
+      continue;
+    }
+    claimed.set(planId, part);
+  }
+
+  if (unmapped.length || ambiguous.length) {
+    const why = ambiguous.length
+      ? `more than one working-copy part maps to the same upgraded id (${ambiguous.join(', ')})`
+      : `working-copy part(s) have no unique path on the upgrade plan (${unmapped.join(', ')})`;
+    return {
+      ok: false,
+      code: 'working_copy_unmapped',
+      message: `Cannot save the working copy after Upgrade: ${why}. The vault is v2; the follow-up was not written.`,
+      hint: 'Re-open the assembly from the upgraded vault, then Save. Local edits stay in IndexedDB.',
+      unmapped,
+      ambiguous,
+    };
+  }
+
+  const pairs = [];
+  const nextScripts = {};
+  const scripts = workingCopy.scripts || {};
+  const nextParts = parts.map((part) => {
+    const planId = resolve(part);
+    if (part?.id && part.id !== planId) pairs.push({ from: part.id, to: planId });
+    const script = wcScriptOf(part, scripts);
+    if (typeof script === 'string') nextScripts[planId] = script;
+    const next = { ...part, id: planId };
+    return next;
+  });
+
+  const idMap = new Map(pairs.map((row) => [row.from, row.to]));
+  let activeId = asV2Id(workingCopy.doc.activeId);
+  if (activeId && idMap.has(activeId)) activeId = idMap.get(activeId);
+  if (activeId && !nextParts.some((p) => p.id === activeId)) activeId = nextParts[0]?.id || null;
+
+  const groups = Array.isArray(workingCopy.doc.groups)
+    ? workingCopy.doc.groups.map((group) => ({
+      ...group,
+      source: mapGroupSource(group.source, folderToId),
+      partIds: (group.partIds || []).map((id) => idMap.get(id) || asV2Id(id) || id).filter((id) => isV2SurfId(id)),
+    }))
+    : undefined;
+
+  const assemblyId = asV2Id(workingCopy.doc.id)
+    || folderToId[workingCopy.doc.name]
+    || folderToId[Object.keys(folderToId).find((name) => name.toLowerCase() === String(workingCopy.doc.name || '').toLowerCase())]
+    || null;
+
+  const nextDoc = {
+    ...workingCopy.doc,
+    id: assemblyId || workingCopy.doc.id,
+    activeId,
+    parts: nextParts,
+    groups,
+    colors: workingCopy.doc.colors ? rewriteColorMap(workingCopy.doc.colors, idMap) : workingCopy.doc.colors,
+    joints: workingCopy.doc.joints ? rewriteJointSurfIds(workingCopy.doc.joints, idMap) : workingCopy.doc.joints,
+  };
+
+  const assets = workingCopy.assets && typeof workingCopy.assets === 'object'
+    ? { ...workingCopy.assets }
+    : workingCopy.assets;
+
+  return {
+    ok: true,
+    doc: nextDoc,
+    scripts: nextScripts,
+    pairs,
+    assets,
+  };
+}
+
+function assemblyJsonFromPlan(plan, assemblyId) {
+  if (!assemblyId) return null;
+  try {
+    const text = plan?.writes?.[assemblyIdPath(assemblyId)];
+    if (typeof text !== 'string') return null;
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 /**
  * TEMPORARY: PR 7 replaces this with planSave against AssemblyCommit.
  * Second commit only: WC edits relative to the v2 bytes from commit 1.
- * Never used for the Upgrade commit.
+ * Never used for the Upgrade commit. Writes only files whose bytes differ.
  */
 export function planWorkingCopyFollowup(plan, workingCopy) {
   if (!workingCopy?.dirty || !workingCopy?.doc || !plan?.writes) return [];
-  const doc = workingCopy.doc;
+  const mapped = mapWorkingCopyToPlan(plan, workingCopy);
+  if (!mapped.ok) return [];
+  const doc = mapped.doc;
   const assemblyId = asV2Id(doc.id);
   if (!assemblyId) return [];
-  const scripts = workingCopy.scripts || {};
+  const scripts = mapped.scripts || {};
   const folderToId = plan.folderToId || {};
+  const prevJson = assemblyJsonFromPlan(plan, assemblyId);
   const parts = (doc.parts || []).map((part, i) => {
     const id = asV2Id(part.id);
     if (!id) return null;
@@ -530,26 +782,27 @@ export function planWorkingCopyFollowup(plan, workingCopy) {
     return row;
   }).filter(Boolean);
 
-  const groups = Array.isArray(doc.groups)
+  const fromWcGroups = Array.isArray(doc.groups)
     ? doc.groups.map((group) => ({
       id: asV2Id(group.id) || group.id,
       name: sanitizeSurfName(group.name) || 'Group',
       source: mapGroupSource(group.source, folderToId),
       partIds: (group.partIds || []).map((id) => asV2Id(id) || id).filter((id) => isV2SurfId(id)),
     })).filter((group) => isV2SurfId(group.id) && group.partIds.length)
-    : undefined;
+    : null;
+  const groups = fromWcGroups && fromWcGroups.length ? fromWcGroups : prevJson?.groups;
 
   let activeId = asV2Id(doc.activeId);
   if (activeId && !parts.some((p) => p.id === activeId)) activeId = parts[0]?.id || null;
 
   const jsonText = stringifySurfJsonV2({
     id: assemblyId,
-    name: sanitizeSurfName(doc.name) || 'Assembly',
+    name: sanitizeSurfName(doc.name) || prevJson?.name || 'Assembly',
     activeId,
     parts,
     groups,
-    colors: doc.colors,
-    joints: doc.joints,
+    colors: doc.colors !== undefined ? doc.colors : prevJson?.colors,
+    joints: doc.joints !== undefined ? doc.joints : prevJson?.joints,
   });
 
   const out = [];
@@ -562,7 +815,7 @@ export function planWorkingCopyFollowup(plan, workingCopy) {
     const stamped = stampScript(script, part.id, part.name);
     const dest = partIdPath(part.id);
     if (stamped !== plan.writes[dest]) out.push(fileWrite(dest, stamped));
-    const mesh = meshBytesOf(workingCopy.assets, part.id);
+    const mesh = meshBytesOf(mapped.assets || workingCopy.assets, part.id);
     if (mesh) {
       const meshPath = partMeshIdPath(part.id);
       const prev = plan.writes[meshPath];
@@ -570,6 +823,32 @@ export function planWorkingCopyFollowup(plan, workingCopy) {
     }
   }
   return out;
+}
+
+/**
+ * Apply Get-latest contents (v2 paths) onto the open working copy.
+ * Does not write git.
+ */
+export function applyUpgradeReload(doc, scripts, contents) {
+  let nextDoc = doc;
+  const nextScripts = { ...(scripts || {}) };
+  for (const [path, content] of Object.entries(contents || {})) {
+    const parsed = parseIdPath(path);
+    if (!parsed) continue;
+    if (parsed.kind === 'part' && typeof content === 'string') {
+      nextScripts[parsed.id] = content;
+      continue;
+    }
+    if (parsed.kind === 'assembly' && typeof content === 'string') {
+      try {
+        const loaded = parseSurfJsonV2(content);
+        if (!doc?.id || loaded.id === doc.id) {
+          nextDoc = { ...loaded, source: 'git', vaultLayout: 'v2' };
+        }
+      } catch { /* keep the open document */ }
+    }
+  }
+  return { doc: nextDoc, scripts: nextScripts };
 }
 
 function overlapPaths(planned, compareFiles) {
@@ -582,18 +861,38 @@ function overlapPaths(planned, compareFiles) {
   return hit.sort();
 }
 
-async function loadTreeContents(adapter, repo, ref, tree) {
+async function loadTreeContents(adapter, repo, tree) {
   const files = {};
+  const failed = [];
   for (const entry of tree || []) {
     const path = entry?.path;
-    if (!path) continue;
-    if (/\.mesh$/i.test(path) && entry.sha) {
-      const bytes = await adapter.readBlob(repo, entry.sha);
-      if (bytes instanceof Uint8Array) files[path] = bytes;
+    if (!path || !shouldLoadForUpgrade(path)) continue;
+    if (!entry.sha) {
+      failed.push(path);
       continue;
     }
-    const got = await adapter.readFile(repo, path, ref);
-    if (got && got.content != null) files[path] = got.content;
+    let bytes;
+    try {
+      bytes = await adapter.readBlob(repo, entry.sha);
+    } catch (err) {
+      const wrapped = new Error(`Failed to read ${path}: ${err?.message || err}`);
+      wrapped.code = 'git_error';
+      wrapped.path = path;
+      throw wrapped;
+    }
+    if (bytes == null) {
+      failed.push(path);
+      continue;
+    }
+    const u8 = bytes instanceof Uint8Array ? bytes : toUint8Array(bytes);
+    if (/\.mesh$/i.test(path)) files[path] = u8;
+    else files[path] = utf8FromBytes(u8);
+  }
+  if (failed.length) {
+    const err = new Error(`Could not read vault file${failed.length > 1 ? 's' : ''}: ${failed.join(', ')}. Upgrade aborted; nothing was written.`);
+    err.code = 'git_error';
+    err.paths = failed;
+    throw err;
   }
   return files;
 }
@@ -612,9 +911,15 @@ async function persistPlanIds(store, repo, plan) {
   }
 }
 
+async function loadCaptureLastCommit() {
+  const mod = await import('../lastCommit.js');
+  return mod.captureLastCommit;
+}
+
 async function captureAllLastCommit({
   adapter, repo, branch, store, sha, assemblies, now,
 }) {
+  const captureLastCommit = await loadCaptureLastCommit();
   const rows = assemblies || [];
   if (!rows.length) {
     return [await captureLastCommit({
@@ -694,18 +999,47 @@ export async function executeUpgrade({
     );
   }
 
-  const tree = await adapter.listTree(ref, baseSha);
-  const files = await loadTreeContents(adapter, ref, baseSha, tree);
-  const plan = planUpgrade({
-    tree,
-    files,
-    baseSha,
-    assemblyIdByFolder: store?.assemblyIdIndexFor?.(ref) || {},
-    pathIndex: store?.pathIndexFor?.(ref) || {},
-    repoName: ref?.name,
-    now: clock,
-    randFor,
-  });
+  let tree;
+  let files;
+  try {
+    tree = await adapter.listTree(ref, baseSha);
+    files = await loadTreeContents(adapter, ref, tree);
+  } catch (err) {
+    return hostError(
+      err?.code || 'git_error',
+      err?.message || 'Could not read the vault tree',
+      'Upgrade aborted; nothing was written. Retry Upgrade vault.',
+      { paths: err?.paths || (err?.path ? [err.path] : []) },
+    );
+  }
+
+  let plan;
+  try {
+    plan = planUpgrade({
+      tree,
+      files,
+      baseSha,
+      assemblyIdByFolder: store?.assemblyIdIndexFor?.(ref) || {},
+      pathIndex: store?.pathIndexFor?.(ref) || {},
+      repoName: ref?.name,
+      now: clock,
+      randFor,
+    });
+  } catch (err) {
+    return hostError(
+      err?.code || 'git_error',
+      err?.message || 'Upgrade plan failed',
+      'Upgrade aborted; nothing was written.',
+    );
+  }
+  if (plan.error) {
+    return hostError(
+      plan.error.code || 'git_error',
+      plan.error.message,
+      plan.error.hint,
+      { paths: plan.error.paths || [] },
+    );
+  }
 
   await persistPlanIds(store, ref, plan);
 
@@ -748,15 +1082,43 @@ export async function executeUpgrade({
     console.warn('[git] lastCommit after Upgrade skipped', err?.message || err);
   }
 
-  const followup = planWorkingCopyFollowup(plan, workingCopy);
+  const mapped = workingCopy?.dirty ? mapWorkingCopyToPlan(plan, workingCopy) : { ok: true, doc: workingCopy?.doc, scripts: workingCopy?.scripts, pairs: [], assets: workingCopy?.assets };
+  if (workingCopy?.dirty && !mapped.ok) {
+    return hostError(
+      mapped.code || 'working_copy_unmapped',
+      mapped.message,
+      mapped.hint,
+      {
+        phase: 'save',
+        sha: upgradeSha,
+        upgradeSha,
+        commits: 1,
+        leftoverFiles: plan.leftoverFiles,
+        plan,
+        unmapped: mapped.unmapped,
+        ambiguous: mapped.ambiguous,
+      },
+    );
+  }
+  const followupWc = workingCopy?.dirty
+    ? { ...workingCopy, doc: mapped.doc, scripts: mapped.scripts, assets: mapped.assets }
+    : workingCopy;
+  const followup = planWorkingCopyFollowup(plan, followupWc);
+  const rekey = {
+    doc: mapped.doc,
+    scripts: mapped.scripts,
+    pairs: mapped.pairs || [],
+  };
   if (!followup.length) {
     return {
       status: 'upgraded',
       sha: upgradeSha,
       branch: branchName,
       files: plan.files.map((f) => f.path),
+      leftoverFiles: plan.leftoverFiles,
       plan,
       commits: 1,
+      rekey,
     };
   }
 
@@ -777,6 +1139,9 @@ export async function executeUpgrade({
           files: followup,
           upgradeSha,
           remoteSha,
+          tipSha: upgradeSha,
+          leftoverFiles: plan.leftoverFiles,
+          rekey,
         },
       );
     }
@@ -792,6 +1157,9 @@ export async function executeUpgrade({
           files: followup,
           upgradeSha,
           remoteSha,
+          tipSha: upgradeSha,
+          leftoverFiles: plan.leftoverFiles,
+          rekey,
         },
       );
     }
@@ -807,7 +1175,7 @@ export async function executeUpgrade({
       baseSha: remoteSha,
     });
     try {
-      const openId = asV2Id(workingCopy?.doc?.id);
+      const openId = asV2Id(followupWc?.doc?.id);
       const rows = openId
         ? plan.assemblies.filter((row) => row.id === openId)
         : plan.assemblies;
@@ -830,8 +1198,10 @@ export async function executeUpgrade({
       branch: branchName,
       files: followup.map((f) => f.path),
       upgradeFiles: plan.files.map((f) => f.path),
+      leftoverFiles: plan.leftoverFiles,
       plan,
       commits: 2,
+      rekey,
     };
   } catch (err) {
     if (err instanceof GitAdapterError && err.code === 'non_fast_forward') {
@@ -844,6 +1214,9 @@ export async function executeUpgrade({
           paths: followup.map((f) => f.path),
           files: followup,
           upgradeSha,
+          tipSha: upgradeSha,
+          leftoverFiles: plan.leftoverFiles,
+          rekey,
         },
       );
     }
@@ -851,7 +1224,7 @@ export async function executeUpgrade({
       err?.code || 'git_error',
       err?.message || 'Follow-up Save failed',
       'The vault is v2. Retry Save, or Overwrite / Get latest / Save mine to a new branch / Dismiss.',
-      { phase: 'save', upgradeSha, files: followup },
+      { phase: 'save', upgradeSha, files: followup, leftoverFiles: plan.leftoverFiles, rekey },
     );
   }
 }
@@ -880,6 +1253,7 @@ export async function executeUpgradeFollowup({
     baseSha: head?.sha || null,
   });
   if (assemblyId && store) {
+    const captureLastCommit = await loadCaptureLastCommit();
     await captureLastCommit({
       adapter,
       repo,
@@ -898,6 +1272,8 @@ export async function executeUpgradeFollowup({
 /**
  * TEMPORARY: §2.9 on the follow-up Save only. PR 7 replaces this with the
  * shared conflict dialog + planSave. Get latest never writes git.
+ * Save mine to a new branch starts from tipSha (the Upgrade commit), not
+ * the moved remote head.
  */
 export async function executeUpgradeConflictChoice({
   action,
@@ -909,6 +1285,7 @@ export async function executeUpgradeConflictChoice({
   store = null,
   assemblyId = null,
   now,
+  tipSha = null,
 } = {}) {
   if (action === 'overwrite') {
     return executeUpgradeFollowup({
@@ -921,23 +1298,22 @@ export async function executeUpgradeConflictChoice({
     const head = await adapter.getBranch(repo, branchName);
     const headSha = head?.sha || null;
     const contents = {};
-    for (const row of files || []) {
-      const path = row?.path;
-      if (!path) continue;
-      if (/\.mesh$/i.test(path)) {
-        if (!headSha) continue;
-        const tree = await adapter.listTree(repo, headSha);
-        const entry = (tree || []).find((item) => item?.path === path);
-        if (entry?.sha) {
-          const bytes = await adapter.readBlob(repo, entry.sha);
-          if (bytes instanceof Uint8Array) contents[path] = bytes;
-        }
-        continue;
+    if (headSha) {
+      const tree = await adapter.listTree(repo, headSha);
+      const shaByPath = new Map((tree || []).filter((item) => item?.path).map((item) => [item.path, item.sha]));
+      for (const row of files || []) {
+        const path = row?.path;
+        if (!path) continue;
+        const sha = shaByPath.get(path);
+        if (!sha) continue;
+        const bytes = await adapter.readBlob(repo, sha);
+        if (bytes == null) continue;
+        const u8 = bytes instanceof Uint8Array ? bytes : toUint8Array(bytes);
+        contents[path] = /\.mesh$/i.test(path) ? u8 : utf8FromBytes(u8);
       }
-      const got = await adapter.readFile(repo, path, headSha || branchName);
-      if (got?.content != null) contents[path] = got.content;
     }
     if (store && headSha) {
+      const captureLastCommit = await loadCaptureLastCommit();
       await captureLastCommit({
         adapter,
         repo,
@@ -963,7 +1339,7 @@ export async function executeUpgradeConflictChoice({
     }
     const branchName = (typeof branch === 'string' && branch.trim()) ? branch.trim() : 'main';
     const head = await adapter.getBranch(repo, branchName);
-    const fromSha = head?.sha || null;
+    const fromSha = tipSha || head?.sha || null;
     const stamp = typeof now === 'number' ? now : Date.now();
     const next = `save-after-upgrade-${stamp.toString(36)}`;
     const created = await adapter.createBranch(repo, next, fromSha);
@@ -974,6 +1350,7 @@ export async function executeUpgradeConflictChoice({
       baseSha: created?.sha || fromSha,
     });
     if (assemblyId && store) {
+      const captureLastCommit = await loadCaptureLastCommit();
       await captureLastCommit({
         adapter,
         repo,
@@ -991,6 +1368,8 @@ export async function executeUpgradeConflictChoice({
       branch: next,
       sha: committed.sha,
       files: files.map((f) => f.path),
+      switched: true,
+      fromSha,
     };
   }
   return hostError(

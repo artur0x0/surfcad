@@ -171,7 +171,9 @@ export function gitOpResult(result) {
   const failed = result.status === 'error'
     || result.status === 'conflict'
     || result.status === 'upgrade_required'
+    || result.status === 'upgrade_unavailable'
     || code === 'upgrade_required'
+    || code === 'upgrade_unavailable'
     || code === 'conflict';
   if (failed) {
     const error = {

@@ -234,6 +234,34 @@ test('git_upgrade_vault run refuses without confirm and does not call the host',
   assert.equal(out.error?.code, 'confirm_required');
 });
 
+test('git_upgrade_vault with confirm is upgrade_unavailable when the flag is off', async () => {
+  let called = false;
+  const ctx = {
+    readAgentGitAdapterKind: () => 'mock',
+    upgradeVaultEnv: { enabled: false },
+    agentGitUpgradeVault: async () => {
+      called = true;
+      return { status: 'upgraded' };
+    },
+  };
+  const out = await gitUpgradeVaultCommand.run(ctx, { confirm: true });
+  assert.equal(called, false);
+  assert.equal(out.error?.code, 'upgrade_unavailable');
+  assert.match(out.error?.message || '', /not available/);
+});
+
+test('gitOpResult treats upgrade_unavailable as an error with a hint', () => {
+  const out = gitOpResult({
+    status: 'error',
+    code: 'upgrade_unavailable',
+    message: 'Upgrade vault is not available in this build.',
+    hint: 'opt in from dev',
+  });
+  assert.equal(out.error?.code, 'upgrade_unavailable');
+  assert.equal(out.error?.hint, 'opt in from dev');
+  assert.equal(out.result, undefined);
+});
+
 test('git_upgrade_vault with confirm: true calls the host', async () => {
   let args;
   const ctx = {

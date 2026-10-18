@@ -5,6 +5,7 @@ import {
   realRepoBlockedError,
 } from '../gitAgent.js';
 import { NO_ARGS_SCHEMA } from '../registry.js';
+import { upgradeVaultEnabled, UPGRADE_UNAVAILABLE } from '../../utils/git/upgradeVaultEnabled.js';
 
 /** How long the in-app consent modal stays up. Bridge calls never wait on it. */
 export const AGENT_GIT_CONSENT_TIMEOUT_MS = 120_000;
@@ -121,6 +122,15 @@ export const gitUpgradeVaultCommand = Object.freeze({
   async run(ctx, args) {
     const gate = requireDestructiveConfirm(args, 'git_upgrade_vault');
     if (gate) return { error: gate };
+    if (!upgradeVaultEnabled(ctx?.upgradeVaultEnv)) {
+      return {
+        error: {
+          code: UPGRADE_UNAVAILABLE.code,
+          message: UPGRADE_UNAVAILABLE.message,
+          hint: UPGRADE_UNAVAILABLE.hint,
+        },
+      };
+    }
     return hostGit(ctx, 'agentGitUpgradeVault', { confirm: true }, { commandName: 'git_upgrade_vault' });
   },
 });

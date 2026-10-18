@@ -398,6 +398,7 @@ const PartFeed = forwardRef(function PartFeed({
   canCommit = false,
   onGitCommit = null,
   vaultLayout = null,
+  upgradeAvailable = false,
   onUpgradeVault = null,
   onUpgradeConflict = null,
   onOverwriteMain = null,
@@ -1159,6 +1160,7 @@ const PartFeed = forwardRef(function PartFeed({
       action,
       files: prior?.files,
       message: prior?.message,
+      tipSha: prior?.tipSha || prior?.upgradeSha || null,
     })) || { status: 'error', error: 'Action unavailable' };
     if (result.status === 'error' || result.status === 'conflict') {
       setCommitFlow({
@@ -1822,7 +1824,7 @@ const PartFeed = forwardRef(function PartFeed({
                 data-git-dirty={sourceDirty ? 'true' : 'false'}
                 disabled={!canCommit}
                 title={vaultLayout === 'legacy'
-                  ? 'Upgrade vault to v2'
+                  ? (upgradeAvailable ? 'Upgrade vault to v2' : 'This vault is still v1. Upgrade is not available yet.')
                   : (canCommit ? `Save (commit) to ${currentBranch || 'main'}` : 'Nothing to save')}
                 aria-label="Save"
                 onClick={startCommit}
@@ -2319,16 +2321,18 @@ const PartFeed = forwardRef(function PartFeed({
                   >
                     Dismiss
                   </button>
-                  <button
-                    type="button"
-                    data-ui-action="data-git-upgrade-confirm"
-                    data-git-upgrade-confirm=""
-                    data-git-upgrade-vault=""
-                    className="rounded-md px-3 py-1.5 text-xs font-ui font-medium text-on-dark surface-success"
-                    onClick={() => { void runUpgrade(); }}
-                  >
-                    Upgrade vault
-                  </button>
+                  {upgradeAvailable ? (
+                    <button
+                      type="button"
+                      data-ui-action="data-git-upgrade-confirm"
+                      data-git-upgrade-confirm=""
+                      data-git-upgrade-vault=""
+                      className="rounded-md px-3 py-1.5 text-xs font-ui font-medium text-on-dark surface-success"
+                      onClick={() => { void runUpgrade(); }}
+                    >
+                      Upgrade vault
+                    </button>
+                  ) : null}
                 </>
               )}
               {commitFlow.stage === 'upgrade-conflict' && (
@@ -2364,7 +2368,7 @@ const PartFeed = forwardRef(function PartFeed({
                     type="button"
                     data-ui-action="data-git-conflict-overwrite"
                     data-git-conflict-overwrite=""
-                    className="rounded-md px-3 py-1.5 text-xs font-ui font-medium text-on-dark surface-success"
+                    className="rounded-md px-3 py-1.5 text-xs font-ui font-medium text-on-dark surface-quiet"
                     onClick={() => { void runUpgradeConflict('overwrite'); }}
                   >
                     Overwrite
@@ -2428,12 +2432,15 @@ const PartFeed = forwardRef(function PartFeed({
         >
           {commitFlow.stage === 'upgrade' && (
             <div data-git-upgrade-prompt="" className="font-ui text-on-dark">
-              <p className="text-xs">
-                This vault still uses the old folder layout. Upgrade rewrites the remote to the v2 id layout in one commit. A dirty working copy is saved as a second commit under this confirmation. Older SurfCAD builds cannot open a v2 vault. Dismiss writes nothing.
-              </p>
-              <p className="mt-2 text-[11px] text-muted-on-dark">
-                Open SurfCAD in Chrome to confirm. Never runs on load.
-              </p>
+              {upgradeAvailable ? (
+                <p className="text-xs">
+                  This vault still uses the old folder layout. Upgrade rewrites the remote to the v2 id layout in one commit. A dirty working copy is saved as a second commit under this confirmation. Dismiss writes nothing. Never runs on load.
+                </p>
+              ) : (
+                <p className="text-xs">
+                  This vault still uses the old folder layout. Save does not write the v1 tree. Upgrade vault is not available in this build yet, so nothing was written. Dismiss closes this prompt. Local edits stay in the working copy.
+                </p>
+              )}
             </div>
           )}
           {commitFlow.stage === 'upgrade-conflict' && (
@@ -2498,13 +2505,21 @@ const PartFeed = forwardRef(function PartFeed({
                 ? 'Nothing to commit.'
                 : commitFlow.result?.status === 'already_upgraded'
                   ? 'This vault is already v2.'
-                  : commitFlow.result?.status === 'upgraded' || commitFlow.result?.status === 'upgraded_and_saved'
-                    ? `Upgraded to v2${commitFlow.result?.commits === 2 ? ' and saved working-copy edits' : ''} (${String(commitFlow.result?.sha || '').slice(0, 7)}).`
-                    : commitFlow.result?.status === 'queued'
-                      ? SAVE_QUEUED_COPY
-                      : commitFlow.result?.addedNames
-                        ? `Added ${commitFlow.result.addedNames} to the repo.`
-                        : `Committed ${(commitFlow.result?.files || []).length} file(s) to ${commitFlow.result?.branch || 'main'} (${String(commitFlow.result?.sha || '').slice(0, 7)}).`}
+                  : commitFlow.result?.status === 'upgraded'
+                    ? `Upgraded to v2 (${String(commitFlow.result?.sha || '').slice(0, 7)}).`
+                    : commitFlow.result?.status === 'upgraded_and_saved'
+                      ? `Upgraded to v2 and saved working-copy edits (${String(commitFlow.result?.sha || '').slice(0, 7)}).`
+                      : commitFlow.result?.status === 'reloaded'
+                        ? 'Loaded the remote versions of the conflicting files. Nothing was written to git.'
+                        : commitFlow.result?.status === 'branched'
+                          ? `Saved on ${commitFlow.result?.branch || 'a new branch'} and switched the working copy.`
+                          : commitFlow.result?.status === 'committed'
+                            ? `Overwrote the conflicting files on ${commitFlow.result?.branch || 'main'} (${String(commitFlow.result?.sha || '').slice(0, 7)}).`
+                            : commitFlow.result?.status === 'queued'
+                              ? SAVE_QUEUED_COPY
+                              : commitFlow.result?.addedNames
+                                ? `Added ${commitFlow.result.addedNames} to the repo.`
+                                : `Committed ${(commitFlow.result?.files || []).length} file(s) to ${commitFlow.result?.branch || 'main'} (${String(commitFlow.result?.sha || '').slice(0, 7)}).`}
             </p>
           )}
           {commitFlow.stage === 'error' && (

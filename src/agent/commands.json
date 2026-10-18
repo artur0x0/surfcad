@@ -15296,7 +15296,7 @@
     },
     {
       "name": "git_upgrade_vault",
-      "description": "Upgrade a legacy (v1 folder-layout) vault to v2 in one commit of remote tip bytes, then Save a dirty working copy as a second commit under the same confirmation. Requires confirm: true. Never runs on load. On v2 returns already_upgraded.",
+      "description": "Upgrade a legacy (v1 folder-layout) vault to v2 in one commit of remote tip bytes, then Save a dirty working copy as a second commit under the same confirmation. Requires confirm: true. Never runs on load. Off by default in this build (upgrade_unavailable) until v2 open/save land; tests and the Vite dev server can opt in. On v2 returns already_upgraded.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -15313,6 +15313,7 @@
       },
       "errors": [
         "confirm_required",
+        "upgrade_unavailable",
         "conflict",
         "git_blocked",
         "consent_pending",

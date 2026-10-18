@@ -23,11 +23,15 @@ import { validateSurfJsonV2 } from '../src/utils/git/surfJsonV2.js';
 import {
   detectVaultLayout,
   executeUpgrade,
+  executeUpgradeConflictChoice,
   knownReadmeSeedFor,
   planUpgrade,
   planWorkingCopyFollowup,
+  mapWorkingCopyToPlan,
+  isKnownReadmeSeed,
   SURFCAD_JSON_V2,
 } from '../src/utils/git/legacyVault/index.js';
+import { upgradeVaultEnabled, UPGRADE_UNAVAILABLE } from '../src/utils/git/upgradeVaultEnabled.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const NOW = new Date('2026-10-18T12:00:00.000Z');
@@ -393,8 +397,11 @@ test('clean working copy is one commit; dirty working copy is two', async () => 
         name: 'Gearbox',
         activeId: SHAFT_ID,
         parts: [
-          { id: SHAFT_ID, name: 'Shaft', visible: true, order: 0 },
-          { id: LID_ID, name: 'Lid', visible: true, order: 1 },
+          { id: SHAFT_ID, name: 'Shaft', visible: true, order: 0, path: SHAFT_PATH },
+          { id: LID_ID, name: 'Lid', visible: true, order: 1, path: LID_PATH },
+          { id: MISSING_ID, name: 'Missing gear', visible: true, order: 2, path: MISSING_PATH },
+          { id: BRACKET_ID, name: 'Bracket', visible: true, order: 3, path: BRACKET_PATH },
+          { id: BLANK_ID, name: 'Blank', visible: true, order: 4, path: BLANK_PATH },
         ],
       },
       scripts: { [SHAFT_ID]: dirtyScript },
@@ -409,6 +416,11 @@ test('clean working copy is one commit; dirty working copy is two', async () => 
   assert.equal(String(firstShaft).includes('dirty-shaft'), false, 'commit 1 is remote bytes only');
   assert.match(String(secondShaft), /dirty-shaft/);
   assert.equal(readSurfId(await readText(dirty.gh, dirty.repo, partIdPath(SHAFT_ID))), SHAFT_ID);
+  const followupPaths = snapshots[1].files.filter((f) => !f.delete).map((f) => f.path).sort();
+  assert.deepEqual(followupPaths, [partIdPath(SHAFT_ID)]);
+  const gearboxAfter = JSON.parse(await readText(dirty.gh, dirty.repo, assemblyIdPath(GEARBOX_ID)));
+  assert.equal(gearboxAfter.groups[0].id, GROUP_ID, 'commit 2 keeps groups from the Upgrade commit');
+  assert.equal(await readText(dirty.gh, dirty.repo, partIdPath(LID_ID)).then((t) => t.includes('dirty-shaft')), false);
 });
 
 test('copied PinCopy.js restamps a stale original header to the row id', async () => {
@@ -512,18 +524,29 @@ test('Save on a legacy vault prompts Upgrade and does not write v1', () => {
   );
   assert.match(legacyGate, /upgrade_required/);
   assert.match(legacyGate, /git_upgrade_vault \{ confirm: true \}/);
+  assert.match(legacyGate, /upgradeVaultEnabled/);
   assert.equal(/ensureGitVault/.test(legacyGate), false);
   assert.equal(/assembleCommitFiles/.test(legacyGate), false);
 
   assert.match(feed, /data-git-upgrade-confirm=""/);
   assert.match(feed, /data-git-upgrade-dismiss=""/);
+  assert.match(feed, /upgradeAvailable/);
   const promptAt = feed.indexOf('data-git-upgrade-prompt');
   assert.ok(promptAt >= 0);
-  const prompt = feed.slice(promptAt, promptAt + 900);
-  assert.match(prompt, /Chrome/);
+  const prompt = feed.slice(promptAt, promptAt + 1600);
+  assert.match(prompt, /not available in this build/);
+  assert.equal(/Open SurfCAD in Chrome to confirm/.test(feed), false);
+  assert.equal(/Older SurfCAD builds cannot open a v2 vault/.test(feed), false);
   assert.equal(/Edge/.test(prompt), false);
-  assert.match(feed, /surface-success/);
   assert.match(feed, /text-on-dark/);
+  const overwriteAt = feed.indexOf("void runUpgradeConflict('overwrite')");
+  assert.ok(overwriteAt > 0);
+  const overwriteBtn = feed.slice(overwriteAt - 400, overwriteAt);
+  assert.match(overwriteBtn, /data-git-conflict-overwrite/);
+  assert.match(overwriteBtn, /surface-quiet/);
+  assert.equal(/surface-success/.test(overwriteBtn), false);
+  assert.match(feed, /Nothing was written to git/);
+  assert.match(feed, /switched the working copy/);
 
   const open = app.slice(
     app.indexOf('const handleOpenVaultAssembly'),
@@ -531,3 +554,343 @@ test('Save on a legacy vault prompts Upgrade and does not write v1', () => {
   );
   assert.equal(/executeUpgrade\(\{/.test(open), false);
 });
+
+test('PinCopy stale WC header does not write PinCopy script into Pin on commit 2', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const json = v1Surf('Box', [
+    { id: PIN_ID, path: PIN_PATH, name: 'Pin' },
+    { id: COPY_ID, path: PIN_COPY_PATH, name: 'PinCopy' },
+    { id: SHAFT_ID, path: SHAFT_PATH, name: 'Shaft' },
+  ]);
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed pin copy + shaft',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Box/.surf.json', json),
+      fileWrite(PIN_PATH, withSurfId('return "pin";\n', PIN_ID)),
+      fileWrite(PIN_COPY_PATH, withSurfId('return "pin-copy";\n', PIN_ID)),
+      fileWrite(SHAFT_PATH, withSurfId('return Manifold.cylinder(40, 6, 6, 24, true);\n', SHAFT_ID)),
+    ],
+  });
+  const store = await storeFor(vault.repo, { Box: BOX_ID });
+  const snapshots = [];
+  const orig = gh.commitFiles.bind(gh);
+  gh.commitFiles = async (dest, opts) => {
+    snapshots.push({
+      message: opts.message,
+      files: (opts.files || []).map((f) => ({
+        path: f.path,
+        delete: !!f.delete,
+        content: typeof f.content === 'string' ? f.content : f.content,
+      })),
+    });
+    return orig(dest, opts);
+  };
+  const stolenHeaderScript = withSurfId('return "pin-copy";\n', PIN_ID);
+  const dirtyShaft = withSurfId('return "dirty-shaft";\n', SHAFT_ID);
+  const pinWcId = mintSurfId({ now: NOW, rand: 'wcpn' });
+  const out = await executeUpgrade(upgradeOpts(gh, vault.repo, {
+    store,
+    workingCopy: {
+      dirty: true,
+      doc: {
+        id: BOX_ID,
+        name: 'Box',
+        activeId: pinWcId,
+        parts: [
+          { id: pinWcId, path: PIN_PATH, name: 'Pin', visible: true, order: 0 },
+          { id: PIN_ID, path: PIN_COPY_PATH, name: 'PinCopy', visible: true, order: 1 },
+          { id: SHAFT_ID, path: SHAFT_PATH, name: 'Shaft', visible: true, order: 2 },
+        ],
+      },
+      scripts: {
+        [PIN_ID]: stolenHeaderScript,
+        [pinWcId]: withSurfId('return "pin";\n', pinWcId),
+        [SHAFT_ID]: dirtyShaft,
+      },
+    },
+  }));
+  assert.equal(out.status, 'upgraded_and_saved');
+  assert.equal(out.commits, 2);
+  assert.equal(snapshots.length, 2);
+  const firstPin = snapshots[0].files.find((f) => f.path === partIdPath(PIN_ID))?.content;
+  const second = snapshots[1].files.filter((f) => !f.delete);
+  assert.match(String(firstPin), /return "pin"/);
+  assert.equal(String(firstPin).includes('pin-copy'), false);
+  assert.equal(second.some((f) => f.path === partIdPath(PIN_ID)), false, 'commit 2 must not rewrite Pin');
+  const secondCopy = second.find((f) => f.path === partIdPath(COPY_ID));
+  assert.equal(secondCopy, undefined, 'untouched PinCopy bytes are not rewritten');
+  const secondShaft = second.find((f) => f.path === partIdPath(SHAFT_ID));
+  assert.match(String(secondShaft?.content), /dirty-shaft/);
+  assert.match(await readText(gh, vault.repo, partIdPath(PIN_ID)), /return "pin"/);
+  assert.equal((await readText(gh, vault.repo, partIdPath(PIN_ID))).includes('pin-copy'), false);
+  assert.match(await readText(gh, vault.repo, partIdPath(COPY_ID)), /pin-copy/);
+  assert.equal(readSurfId(await readText(gh, vault.repo, partIdPath(COPY_ID))), COPY_ID);
+  assert.equal(out.rekey.pairs.some((row) => row.from === PIN_ID && row.to === COPY_ID), true);
+});
+
+test('follow-up is refused when a WC part cannot be mapped unambiguously', async () => {
+  const { gh, repo } = await seedGearboxVault();
+  const store = await storeFor(repo);
+  const writesBefore = commits(gh).length;
+  const stray = mintSurfId({ now: NOW, rand: 'zzzz' });
+  const out = await executeUpgrade(upgradeOpts(gh, repo, {
+    store,
+    workingCopy: {
+      dirty: true,
+      doc: {
+        id: GEARBOX_ID,
+        name: 'Gearbox',
+        parts: [{ id: stray, name: 'Stray', visible: true, order: 0 }],
+      },
+      scripts: { [stray]: 'return 1;\n' },
+    },
+  }));
+  assert.equal(out.status, 'error');
+  assert.equal(out.code, 'working_copy_unmapped');
+  assert.match(out.message, /no unique path/);
+  assert.equal(out.commits, 1);
+  assert.equal(out.sha, out.upgradeSha);
+  assert.equal(commits(gh).length, writesBefore + 1);
+  assert.equal((await detectVaultLayout(gh, repo, 'main')).layout, 'v2');
+});
+
+test('unparseable legacy .surf.json aborts the whole upgrade', async () => {
+  const { gh, repo } = await seedGearboxVault({
+    extraFiles: [fileWrite('assemblies/Broken/.surf.json', '{ not json')],
+  });
+  const store = await storeFor(repo, { Gearbox: GEARBOX_ID, Cover: COVER_ID });
+  const writes = commits(gh).length;
+  const out = await executeUpgrade(upgradeOpts(gh, repo, { store }));
+  assert.equal(out.status, 'error');
+  assert.equal(out.code, 'unreadable_legacy_json');
+  assert.match(out.message, /assemblies\/Broken\/\.surf\.json/);
+  assert.equal(commits(gh).length, writes);
+  assert.equal((await detectVaultLayout(gh, repo, 'main')).layout, 'legacy');
+  assert.equal(await readText(gh, repo, 'assemblies/Broken/.surf.json'), '{ not json');
+});
+
+test('reads blobs by sha so a 1 MB file is copied; empty files stay empty', async () => {
+  const big = `return ${'x'.repeat(1024 * 1024)};\n`;
+  const emptyId = mintSurfId({ now: NOW, rand: 'emp0' });
+  const bigId = mintSurfId({ now: NOW, rand: 'big0' });
+  const { gh, repo } = await seedGearboxVault({
+    extraFiles: [
+      fileWrite('parts/Empty.js', ''),
+      fileWrite('parts/Huge.js', withSurfId(big, bigId)),
+    ],
+  });
+  const origReadFile = gh.readFile.bind(gh);
+  gh.readFile = async (dest, path, ref) => {
+    const got = await origReadFile(dest, path, ref);
+    if (got && typeof got.content === 'string' && got.content.length > 1024 * 1024) {
+      return { ...got, content: '' };
+    }
+    return got;
+  };
+  const store = await storeFor(repo);
+  const tree = await gh.listTree(repo, 'main');
+  const files = {};
+  for (const entry of tree) {
+    const got = await origReadFile(repo, entry.path, 'main');
+    files[entry.path] = got.content;
+  }
+  const plan = planUpgrade({
+    tree,
+    files,
+    assemblyIdByFolder: { Gearbox: GEARBOX_ID, Cover: COVER_ID },
+    now: NOW,
+    randFor: (part) => {
+      if (part?.path === 'parts/Empty.js') return 'emp0';
+      if (part?.path === 'parts/Huge.js') return 'big0';
+      return randFor(part);
+    },
+  });
+  assert.equal(plan.writes[partIdPath(emptyId)], '');
+  assert.equal(typeof plan.writes[partIdPath(bigId)], 'string');
+  assert.ok(plan.writes[partIdPath(bigId)].length > 1024 * 1024);
+
+  const result = await executeUpgrade(upgradeOpts(gh, repo, {
+    store,
+    randFor: (part) => {
+      if (part?.path === 'parts/Empty.js') return 'emp0';
+      if (part?.path === 'parts/Huge.js') return 'big0';
+      return randFor(part);
+    },
+  }));
+  assert.equal(result.status, 'upgraded');
+  gh.readFile = origReadFile;
+  assert.equal(await readText(gh, repo, partIdPath(emptyId)), '');
+  const huge = await readText(gh, repo, partIdPath(bigId));
+  assert.ok(huge.length > 1024 * 1024);
+  assert.match(huge, /return x/);
+  assert.equal(readSurfId(huge), bigId);
+});
+
+test('a failed blob read aborts upgrade and writes nothing', async () => {
+  const { gh, repo } = await seedGearboxVault();
+  const store = await storeFor(repo);
+  const writes = commits(gh).length;
+  gh.readBlob = async () => null;
+  const out = await executeUpgrade(upgradeOpts(gh, repo, { store }));
+  assert.equal(out.status, 'error');
+  assert.equal(out.code, 'git_error');
+  assert.match(out.message, /Could not read vault file/);
+  assert.equal(commits(gh).length, writes);
+  assert.equal((await detectVaultLayout(gh, repo, 'main')).layout, 'legacy');
+});
+
+test('non-SurfCAD files under assemblies/<Name>/ are kept and listed', async () => {
+  const { gh, repo } = await seedGearboxVault({
+    extraFiles: [
+      fileWrite('assemblies/Gearbox/notes.txt', 'keep me\n'),
+      fileWrite('assemblies/Gearbox/photo.png', 'png-bytes'),
+    ],
+  });
+  const store = await storeFor(repo);
+  const result = await executeUpgrade(upgradeOpts(gh, repo, { store }));
+  assert.equal(result.status, 'upgraded');
+  assert.deepEqual(result.leftoverFiles, [
+    'assemblies/Gearbox/notes.txt',
+    'assemblies/Gearbox/photo.png',
+  ]);
+  assert.equal(await readText(gh, repo, 'assemblies/Gearbox/notes.txt'), 'keep me\n');
+  assert.equal(await readText(gh, repo, 'assemblies/Gearbox/photo.png'), 'png-bytes');
+  const paths = await treePaths(gh, repo);
+  assert.equal(paths.includes('assemblies/Gearbox/.surf.json'), false);
+  assert.equal(paths.includes('assemblies/Gearbox/Lid.js'), false);
+});
+
+test('historical README seeds from vaultSeedFiles are deleted', () => {
+  assert.equal(isKnownReadmeSeed(knownReadmeSeedFor('surfcad-vault'), 'surfcad-vault'), true);
+  assert.equal(isKnownReadmeSeed(
+    '# surfcad\n\nSurfCAD vault.\n\n- `assemblies/<name>/<name>.surf.json` assembly, with its `parts/<part>.js`\n- `parts/<part>.js` shared parts, referenced by path\n',
+    'surfcad',
+  ), true);
+  assert.equal(isKnownReadmeSeed(
+    '# surfcad-vault\n\nSurfCAD vault.\n\n- `assemblies/<name>/.surf.json` assembly metadata; part scripts live in the same folder\n- `parts/<part>.js` shared parts, referenced by path\n',
+    'surfcad-vault',
+  ), true);
+});
+
+test('Get latest applies remote bytes and writes no git; branch starts from tipSha', async () => {
+  const { gh, repo } = await seedGearboxVault();
+  const store = await storeFor(repo);
+  const upgraded = await executeUpgrade(upgradeOpts(gh, repo, { store }));
+  const upgradeSha = upgraded.sha;
+  const orig = gh.commitFiles.bind(gh);
+  await orig(repo, {
+    branch: 'main',
+    message: 'remote edit',
+    files: [fileWrite(partIdPath(SHAFT_ID), withSurfId('return "remote-shaft";\n', SHAFT_ID))],
+    baseSha: upgradeSha,
+  });
+  const writes = commits(gh).length;
+  const reloaded = await executeUpgradeConflictChoice({
+    action: 'reload',
+    adapter: gh,
+    repo,
+    files: [fileWrite(partIdPath(SHAFT_ID), withSurfId('return "local-shaft";\n', SHAFT_ID))],
+    store,
+    assemblyId: GEARBOX_ID,
+  });
+  assert.equal(reloaded.status, 'reloaded');
+  assert.match(String(reloaded.contents[partIdPath(SHAFT_ID)]), /remote-shaft/);
+  assert.equal(commits(gh).length, writes);
+
+  const branched = await executeUpgradeConflictChoice({
+    action: 'branch',
+    adapter: gh,
+    repo,
+    files: [fileWrite(partIdPath(SHAFT_ID), withSurfId('return "mine-shaft";\n', SHAFT_ID))],
+    tipSha: upgradeSha,
+    now: NOW.getTime(),
+  });
+  assert.equal(branched.status, 'branched');
+  assert.equal(branched.fromSha, upgradeSha);
+  assert.equal(branched.switched, true);
+  const mine = await readText(gh, repo, partIdPath(SHAFT_ID), branched.branch);
+  assert.match(mine, /mine-shaft/);
+  const main = await readText(gh, repo, partIdPath(SHAFT_ID), 'main');
+  assert.match(main, /remote-shaft/);
+});
+
+test('upgradeVaultEnabled is off in prod even with VITE_ or localStorage', () => {
+  assert.equal(upgradeVaultEnabled({ enabled: false }), false);
+  assert.equal(upgradeVaultEnabled({
+    vite: { DEV: false, MODE: 'production', VITE_SURFCAD_UPGRADE_VAULT: '1' },
+    localStorage: { getItem: () => '1' },
+  }), false);
+  assert.equal(upgradeVaultEnabled({
+    vite: { DEV: true, MODE: 'development', VITE_SURFCAD_UPGRADE_VAULT: '1' },
+  }), true);
+  assert.equal(upgradeVaultEnabled({
+    vite: { DEV: true, MODE: 'development' },
+    localStorage: { getItem: (k) => (k === 'surfcadUpgradeVault' ? '1' : null) },
+  }), true);
+  assert.equal(typeof UPGRADE_UNAVAILABLE.hint, 'string');
+});
+
+test('already_upgraded does not mark a dirty working copy clean', () => {
+  const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const start = app.indexOf('const handleUpgradeVault');
+  const end = app.indexOf('const handleUpgradeConflict', start);
+  const slice = app.slice(start, end);
+  assert.match(slice, /result\.status === 'already_upgraded'/);
+  const adopt = slice.slice(slice.indexOf("result.status === 'already_upgraded'"));
+  const adoptedBlock = adopt.slice(0, adopt.indexOf('const adopted'));
+  assert.equal(/clearWorkingCopySidecar/.test(adoptedBlock), false);
+  assert.equal(/captureBaseline/.test(adoptedBlock), false);
+  assert.match(adoptedBlock, /return result/);
+});
+
+test('v2 vault refuses leftover v1 writers and leaves the outbox unflushed', () => {
+  const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const flush = app.slice(app.indexOf('const flushGitOps'), app.indexOf('flushGitSyncRef.current'));
+  assert.match(flush, /vaultLayout === 'v2'/);
+  assert.match(flush, /left unflushed/);
+  const addStart = app.indexOf('const handleAddToRepo');
+  const add = app.slice(addStart, app.indexOf('setPendingPartIds', addStart));
+  assert.match(add, /vaultLayout === 'v2'/);
+  const delStart = app.indexOf('const handleDeleteAssembly');
+  const del = app.slice(delStart, app.indexOf('if (assemblyOpenLockRef.current)', delStart));
+  assert.match(del, /vaultLayout === 'v2'/);
+  const renameStart = app.indexOf('const handleRenameAssembly');
+  const rename = app.slice(renameStart, app.indexOf('const current = assemblyName(doc)', renameStart));
+  assert.match(rename, /vaultLayout === 'v2'/);
+});
+
+test('lastCommit and upgrade do not import each other', () => {
+  const last = readFileSync(join(ROOT, 'src/utils/git/lastCommit.js'), 'utf8');
+  const up = readFileSync(join(ROOT, 'src/utils/git/legacyVault/upgrade.js'), 'utf8');
+  assert.equal(/from ['"].*legacyVault\/upgrade/.test(last), false);
+  assert.equal(/from ['"].*lastCommit/.test(up), false);
+  assert.match(up, /await import\('\.\.\/lastCommit\.js'\)/);
+});
+
+test('mapWorkingCopyToPlan uses the plan path map, not WC header ids', () => {
+  const plan = {
+    partIdByPath: { [PIN_COPY_PATH]: COPY_ID, [PIN_PATH]: PIN_ID },
+    keptPartIds: [PIN_ID, COPY_ID],
+    mintedPartIds: [],
+    folderToId: { Box: BOX_ID },
+    writes: {},
+  };
+  const mapped = mapWorkingCopyToPlan(plan, {
+    dirty: true,
+    doc: {
+      id: BOX_ID,
+      name: 'Box',
+      parts: [
+        { id: PIN_ID, path: PIN_PATH, name: 'Pin' },
+        { id: COPY_ID, path: PIN_PATH, name: 'PinCopy' },
+      ],
+    },
+    scripts: { [PIN_ID]: 'stolen' },
+  });
+  assert.equal(mapped.ok, false);
+  assert.equal(mapped.code, 'working_copy_unmapped');
+});
+
