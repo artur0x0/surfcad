@@ -2,7 +2,7 @@
 
 Scope for a later implementation. No code in this change.
 
-This file sits next to [docs/monitoring.md](monitoring.md). A `docs/monitoring/` folder cannot exist beside that file.
+Privacy, consent, and the existing Sentry client are in [docs/monitoring.md](../monitoring.md).
 
 Today the only browser report is the crash boundary: `SentryErrorBoundary` calls `captureSentryException` in `src/utils/sentryClient.js`. Every error toast is shown and then dropped.
 
@@ -195,7 +195,7 @@ Script reports may include error name, a scrubbed message, and numeric line/colu
 
 Rename, delete-assembly, and assembly-open copy include names. Those call sites pass `reason` and the underlying `Error`, not the toast sentence.
 
-No new env vars. Do not put `VITE_SENTRY_DSN`, `SENTRY_DSN`, or analytics keys in dev or staging env files. Production keys stay where [docs/monitoring.md](monitoring.md) already says.
+No new env vars. Do not put `VITE_SENTRY_DSN`, `SENTRY_DSN`, or analytics keys in dev or staging env files. Production keys stay where [docs/monitoring.md](../monitoring.md) already says.
 
 ## Noise
 
