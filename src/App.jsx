@@ -226,6 +226,7 @@ import {
   loadAssemblyDocumentStatus,
   loadAssemblySidecar,
   loadPartAssets,
+  loadPartScript,
   loadPartScripts,
   loadPartSyncFlags,
   saveAssemblyDocument,
@@ -282,6 +283,7 @@ import {
   migrateLocalPartIds,
   collapseWorkingCopyIds,
   persistCollapsedWorkingCopy,
+  mergeLiveEdits,
   isSurfId,
   partSurfId,
   reconcileSyncedFromTip,
@@ -1737,6 +1739,7 @@ const App = () => {
                     },
                     sourceDoc: persistSource.doc,
                     sourceScripts: persistSource.scripts,
+                    heldScripts: persistSource.scripts,
                     save: async (id, text) => {
                       const part = (doc.parts || []).find((row) => row.id === id);
                       return savePartScript(
@@ -1745,6 +1748,7 @@ const App = () => {
                         typeof part?.isSynced === 'boolean' ? { isSynced: part.isSynced } : {},
                       );
                     },
+                    load: loadPartScript,
                     remove: async (id) => {
                       try { await deletePartScript(id); } catch { /* ignore */ }
                     },
@@ -3699,6 +3703,7 @@ const App = () => {
         if (ok !== false && mesh?.assets) rememberPartAssets(id, mesh.assets);
         return ok;
       },
+      load: loadPartScript,
       remove: async (id) => {
         try { await deletePartScript(id); } catch { /* ignore */ }
       },
@@ -5624,8 +5629,13 @@ const App = () => {
         }
         await retireImplicitVaultWriteOps(store, vault.repo, branch);
         if (cancelled) return;
-        // Baseline first so a user edit after reload is dirty even if IDB
-        // persist is still in flight. Load/reload still do not write git.
+        const idsChanged = migrated.changed || localIds.changed || collapsed.changed || aligned.pairs.length;
+        if (idsChanged) {
+          rememberScripts(scriptsNow);
+          rememberAssembly(doc);
+        }
+        // Baseline and re-keyed scripts together so dirty never sees mixed ids.
+        // Load/reload still do not write git.
         if (!gitBaselineRef.current) {
           if (!store.getLastSyncedSha(vault.repo, branch) && opened.baseline?.headSha) {
             await store.setLastSyncedSha(vault.repo, opened.baseline.headSha, branch);
@@ -5635,26 +5645,27 @@ const App = () => {
           void checkGitRemoteBehind({ showToast: true, reason: 'reseed' });
         }
         if (cancelled) return;
-        if (migrated.changed || localIds.changed || collapsed.changed || aligned.pairs.length) {
+        if (idsChanged) {
           const persisted = await persistCollapsedWorkingCopy({
             collapsed: { doc, scripts: scriptsNow, pairs: persistPairs },
             sourceDoc: persistSource.doc,
             sourceScripts: persistSource.scripts,
+            heldScripts: persistSource.scripts,
             save: async (id, text) => savePartScript(id, text),
+            load: loadPartScript,
             remove: async (id) => {
               try { await deletePartScript(id); } catch { /* ignore */ }
             },
           });
           doc = persisted.doc;
-          const live = partScriptsRef.current || {};
-          const merged = { ...(persisted.scripts || {}) };
-          for (const [id, text] of Object.entries(live)) {
-            if (typeof text !== 'string') continue;
-            if (persistSource.scripts?.[id] === text) continue;
-            merged[id] = text;
-          }
-          scriptsNow = merged;
+          scriptsNow = mergeLiveEdits(
+            partScriptsRef.current,
+            persisted.scripts,
+            persistPairs,
+            persistSource.scripts,
+          );
           rememberScripts(scriptsNow);
+          rememberAssembly(doc);
         }
         const reconciled = reconcileSyncedFromTip(doc, opened.scripts);
         if (reconciled.changed || migrated.changed || localIds.changed || collapsed.changed || aligned.pairs.length) {

@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mintSurfId, isSurfId, readSurfId, withSurfId } from '../src/utils/git/surfId.js';
-import { collapseWorkingCopyIds, persistCollapsedWorkingCopy, pickCollapsedPartId, replaceScriptKeys } from '../src/utils/git/wcIdentity.js';
+import { collapseWorkingCopyIds, mergeLiveEdits, persistCollapsedWorkingCopy, pickCollapsedPartId, replaceScriptKeys } from '../src/utils/git/wcIdentity.js';
 import { rewriteFeaStudyPartIds } from '../src/utils/git/feaStudyIds.js';
 import { serializeAssembly, parseAssemblyDocument, composeViewportParts } from '../src/utils/assembly.js';
 import { partSurfId, readSurfName, withSurfName } from '../src/utils/git/surfId.js';
@@ -641,11 +641,180 @@ test('persist does not rewrite an unchanged key so a later edit is kept', async 
     collapsed,
     sourceDoc: doc,
     sourceScripts: scripts,
+    heldScripts: scripts,
     save: async (id, script) => { store.set(id, script); return true; },
+    load: async (id) => store.get(id),
     remove: async (id) => { store.delete(id); },
   });
   assert.equal(store.get(SURF), 'return edited;\n');
   assert.equal(persisted.doc.parts[0].id, SURF);
+});
+
+test('vault open writes every tip script over a stale IDB edit', async () => {
+  const baseId = mintSurfId({ now: NOW, rand: 'ba5e' });
+  const pinTip = withSurfId('return pin-tip;\n', SURF);
+  const pinStale = withSurfId('return pin-stale;\n', SURF);
+  const baseTip = withSurfId('return base-tip;\n', baseId);
+  const store = new Map([[SURF, pinStale]]);
+  const synced = {};
+  const remembered = {};
+  const pinAssets = { 'parts/Pin.mesh': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' };
+  const tipScripts = { [SURF]: pinTip, [baseId]: baseTip };
+  const doc = {
+    source: 'git',
+    name: 'Assembly',
+    activeId: SURF,
+    parts: [
+      { id: SURF, path: 'parts/Pin.js', name: 'Pin', visible: true, order: 0, isSynced: true },
+      { id: baseId, path: 'parts/Base.js', name: 'Base', visible: true, order: 1, isSynced: true },
+    ],
+  };
+  await persistCollapsedWorkingCopy({
+    collapsed: { doc, scripts: tipScripts, pairs: [] },
+    sourceDoc: doc,
+    sourceScripts: tipScripts,
+    save: async (id, script) => {
+      store.set(id, script);
+      synced[id] = true;
+      if (id === SURF) remembered[id] = pinAssets;
+      return true;
+    },
+    load: async (id) => store.get(id),
+    remove: async (id) => { store.delete(id); },
+  });
+  assert.equal(store.get(SURF), pinTip);
+  assert.equal(store.get(baseId), baseTip);
+  assert.equal(synced[SURF], true);
+  assert.equal(synced[baseId], true);
+  assert.deepEqual(remembered[SURF], pinAssets);
+});
+
+test('put that reports success without storing keeps the old key', async () => {
+  const store = new Map([[UUID, 'return keep-me;\n']]);
+  const doc = {
+    source: 'local',
+    name: 'Assembly',
+    activeId: UUID,
+    parts: [{ id: UUID, name: 'Part', visible: true, order: 0 }],
+  };
+  const scripts = { [UUID]: store.get(UUID) };
+  const collapsed = collapseWorkingCopyIds(doc, scripts, { now: NOW, randFor: () => 'b10c' });
+  const persisted = await persistCollapsedWorkingCopy({
+    collapsed,
+    sourceDoc: doc,
+    sourceScripts: scripts,
+    heldScripts: scripts,
+    save: async () => true,
+    load: async (id) => store.get(id),
+    remove: async (id) => { store.delete(id); },
+  });
+  assert.equal(persisted.doc.parts[0].id, UUID);
+  assert.equal(store.get(UUID), 'return keep-me;\n');
+  assert.equal(store.has(collapsed.doc.parts[0].id), false);
+});
+
+test('edit injected mid-persist lands under the new id and stays dirty', async () => {
+  const store = new Map([[UUID, 'return keep-me;\n']]);
+  const live = { [UUID]: 'return keep-me;\n' };
+  const doc = {
+    source: 'git',
+    name: 'Assembly',
+    activeId: UUID,
+    parts: [{ id: UUID, path: 'parts/Pin.js', name: 'Pin', visible: true, order: 0 }],
+  };
+  const scripts = { [UUID]: 'return keep-me;\n' };
+  const collapsed = collapseWorkingCopyIds(doc, scripts, { now: NOW, randFor: () => 'b10c' });
+  const nextId = collapsed.doc.parts[0].id;
+  assert.notEqual(nextId, UUID);
+  const baseline = captureBaseline({
+    assemblyPath: 'assemblies/Assembly/.surf.json',
+    assemblyName: 'Assembly',
+    doc: collapsed.doc,
+    scripts: collapsed.scripts,
+  });
+  const persisted = await persistCollapsedWorkingCopy({
+    collapsed,
+    sourceDoc: doc,
+    sourceScripts: scripts,
+    heldScripts: scripts,
+    save: async (id, script) => {
+      if (id === nextId) {
+        const edited = 'return keep-me;\n// mid-persist\n';
+        live[UUID] = edited;
+        store.set(UUID, edited);
+      }
+      store.set(id, script);
+      return true;
+    },
+    load: async (id) => store.get(id),
+    remove: async (id) => { store.delete(id); },
+  });
+  const merged = mergeLiveEdits(live, persisted.scripts, collapsed.pairs, scripts);
+  assert.equal(merged[nextId].includes('mid-persist'), true);
+  assert.equal(merged[UUID], undefined);
+  assert.equal(store.get(nextId).includes('mid-persist'), true);
+  assert.equal(store.has(UUID), false);
+  assert.equal(isPartDirty(nextId, merged[nextId], baseline), true);
+});
+
+test('failed write reverts C by id after the first row is dropped', async () => {
+  const uuidB = '5f0c3c1e-0000-4000-8000-0000000000b2';
+  const uuidC = '5f0c3c1e-0000-4000-8000-0000000000c3';
+  const store = new Map([
+    [UUID, 'return a;\n'],
+    [uuidB, 'return b;\n'],
+    [uuidC, 'return c;\n'],
+  ]);
+  const sourceDoc = {
+    source: 'local',
+    name: 'Assembly',
+    activeId: UUID,
+    parts: [
+      { id: UUID, name: 'A', visible: true, order: 0 },
+      { id: uuidB, name: 'B', visible: true, order: 1 },
+      { id: uuidC, name: 'C', visible: true, order: 2 },
+    ],
+  };
+  const sourceScripts = {
+    [UUID]: 'return a;\n',
+    [uuidB]: 'return b;\n',
+    [uuidC]: 'return c;\n',
+  };
+  const collapsedAll = collapseWorkingCopyIds(sourceDoc, sourceScripts, {
+    now: NOW,
+    randFor: (part) => {
+      if (part?.id === '$assembly') return 'aa01';
+      if (part?.id === UUID) return 'a00a';
+      if (part?.id === uuidB) return 'b00b';
+      return 'c00c';
+    },
+  });
+  const idC = collapsedAll.doc.parts[2].id;
+  const dropped = {
+    ...collapsedAll,
+    doc: {
+      ...collapsedAll.doc,
+      parts: collapsedAll.doc.parts.slice(1),
+      activeId: collapsedAll.doc.parts[1].id,
+    },
+  };
+  const persisted = await persistCollapsedWorkingCopy({
+    collapsed: dropped,
+    sourceDoc,
+    sourceScripts,
+    heldScripts: sourceScripts,
+    save: async (id, script) => {
+      if (id === idC) return false;
+      store.set(id, script);
+      return true;
+    },
+    load: async (id) => store.get(id),
+    remove: async (id) => { store.delete(id); },
+  });
+  const rowC = persisted.doc.parts.find((part) => part.name === 'C');
+  assert.equal(rowC.id, uuidC);
+  assert.equal(store.get(uuidC), 'return c;\n');
+  assert.equal(store.has(idC), false);
 });
 
 test('IDB put failure keeps the old key and leaves the row un-collapsed', async () => {
@@ -748,6 +917,36 @@ test('Save writes a copied part file with its own @surf-id and @name', () => {
   assert.equal(readSurfName(file.content), 'PinCopy');
   const json = built.files.find((row) => String(row.path).endsWith('.surf.json'));
   assert.ok(json?.content.includes(copyId));
+});
+
+test('Save restamps a non-surf @surf-id header and updates @name', () => {
+  const copyId = mintSurfId({ now: NOW, rand: 'c0c0' });
+  const pinPath = 'parts/Pin.js';
+  const copyPath = 'parts/PinCopy.js';
+  const pinScript = withSurfName(withSurfId('return pin;\n', SURF), 'Pin');
+  const bogus = '// @surf-id bogus\n// @name Pin\nreturn copy;\n';
+  const doc = {
+    source: 'git',
+    name: 'Assembly',
+    activeId: SURF,
+    parts: [
+      { id: SURF, path: pinPath, name: 'Pin', visible: true, order: 0 },
+      { id: copyId, path: copyPath, name: 'PinCopy', visible: true, order: 1, copiedFrom: SURF },
+    ],
+  };
+  const pinEdited = `${pinScript}// edited\n`;
+  const baseline = captureBaseline({
+    assemblyPath: 'assemblies/Assembly/.surf.json',
+    assemblyName: 'Assembly',
+    doc,
+    scripts: { [SURF]: pinScript, [copyId]: bogus },
+  });
+  const built = buildCommitFiles(doc, { [SURF]: pinEdited, [copyId]: bogus }, baseline);
+  const file = built.files.find((row) => row.path === copyPath);
+  assert.ok(file, 'copy file must be in the Save');
+  assert.equal(readSurfId(file.content), copyId);
+  assert.equal(String(file.content).includes('// @surf-id bogus'), false);
+  assert.equal(readSurfName(file.content), 'PinCopy');
 });
 
 test('pasted header must not take another live part\'s surfId', () => {

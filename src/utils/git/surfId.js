@@ -226,7 +226,17 @@ export function readSurfName(script) {
  */
 export function stampPartHeaders(script, { id, name } = {}) {
   let text = String(script ?? '');
-  if (isSurfId(id) && readSurfId(text) !== id) text = withSurfId(text, id);
+  if (isSurfId(id) && readSurfId(text) !== id) {
+    if (text.startsWith('// @surf-id ')) {
+      const ending = headerLineEnding(text);
+      const body = bytesAfterHeaderLine(text);
+      text = ending == null || ending === ''
+        ? `// @surf-id ${id}`
+        : `// @surf-id ${id}${ending}${body}`;
+    } else {
+      text = withSurfId(text, id);
+    }
+  }
   if (readSurfName(text) != null) {
     const display = sanitizeSurfName(name);
     if (display && readSurfName(text) !== display) text = withSurfName(text, display);

@@ -560,11 +560,12 @@ export function buildCommitFiles(doc, scripts, baseline, opts = {}) {
     const stamped = stampPartHeaders(text, { id: stampId, name: part.name });
     if (stamped === text) continue;
     if (!had) {
-      // Copy whose blob still carries the source @surf-id: include it even
-      // when the script body was not otherwise dirty. Do not newly stamp
-      // headerless files that were not part of this Save.
+      // A file whose @surf-id line differs from this part's id (including a
+      // non-surf `// @surf-id bogus`) goes out with this Save. Do not newly
+      // stamp headerless files that were not otherwise dirty.
       const header = readSurfId(text);
-      if (!header || header === stampId) continue;
+      if (!String(text).startsWith('// @surf-id ')) continue;
+      if (header === stampId) continue;
     }
     writes.set(dest, stamped);
     workScripts[part.id] = stamped;

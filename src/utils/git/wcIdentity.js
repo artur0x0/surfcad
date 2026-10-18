@@ -103,22 +103,54 @@ export function pickCollapsedPartId(part, script, pathIndex = {}, {
   };
 }
 
+async function readScript(load, id) {
+  if (typeof load !== 'function' || !id) return undefined;
+  try {
+    const got = await load(id);
+    return typeof got === 'string' ? got : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function putVerified({ save, load, id, script }) {
+  if (!id || typeof script !== 'string') return false;
+  try {
+    const ok = await save(id, script);
+    if (ok === false) return false;
+    if (typeof load === 'function') {
+      const got = await readScript(load, id);
+      if (got !== script) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Persist new IndexedDB script keys, then drop the old ones. Never delete
  * first — a crash between delete and save would drop the script. Only delete
- * an old key after its script was loaded and the put under the new key
- * succeeded. `save` should return `false` on failure (as `savePartScript` does).
+ * an old key after its script was loaded, the put under the new key
+ * succeeded, and a read-back matches the bytes written. `save` should
+ * return `false` on failure (as `savePartScript` does).
+ *
+ * If `from` was edited after the source snapshot, those newer bytes move
+ * to `to` instead of being deleted.
  */
-export async function replaceScriptKeys({ nextScripts, staleIds, pairs = [], save, remove } = {}) {
+export async function replaceScriptKeys({
+  nextScripts,
+  staleIds,
+  pairs = [],
+  sourceScripts = {},
+  save,
+  load,
+  remove,
+} = {}) {
   const scripts = nextScripts || {};
   const saved = new Set();
   for (const [id, script] of Object.entries(scripts)) {
-    try {
-      const ok = await save(id, script);
-      if (ok !== false) saved.add(id);
-    } catch {
-      /* put failed — keep the old key */
-    }
+    if (await putVerified({ save, load, id, script })) saved.add(id);
   }
   const toByFrom = new Map((pairs || []).map((pair) => [pair.from, pair.to]));
   const keep = new Set(Object.keys(scripts));
@@ -128,20 +160,75 @@ export async function replaceScriptKeys({ nextScripts, staleIds, pairs = [], sav
     const to = toByFrom.get(id);
     if (to && !saved.has(to)) continue;
     if (to == null && !allSaved) continue;
+    const current = await readScript(load, id);
+    const source = sourceScripts?.[id];
+    if (typeof current === 'string' && current !== source) {
+      if (to && saved.has(to)) {
+        const moved = await putVerified({ save, load, id: to, script: current });
+        if (!moved) continue;
+      } else {
+        continue;
+      }
+    }
     try { await remove(id); } catch { /* ignore */ }
   }
   return { saved };
 }
 
 /**
+ * Fold live edits onto collapsed ids. An edit typed under `from` while
+ * persist is in flight lands on `to`.
+ */
+export function mergeLiveEdits(live, persisted, pairs = [], sourceScripts = {}) {
+  const toByFrom = new Map();
+  for (const { from, to } of pairs) {
+    if (from && to && from !== to) toByFrom.set(from, to);
+  }
+  const merged = { ...(persisted || {}) };
+  for (const [id, text] of Object.entries(live || {})) {
+    if (typeof text !== 'string') continue;
+    if (sourceScripts[id] === text) continue;
+    merged[toByFrom.get(id) || id] = text;
+  }
+  for (const { from, to } of pairs) {
+    if (from && to && from !== to) delete merged[from];
+  }
+  return merged;
+}
+
+function sourcePartForRow(sourceDoc, part, fromId) {
+  const parts = sourceDoc?.parts || [];
+  if (fromId) {
+    const byId = parts.find((row) => row?.id === fromId);
+    if (byId) return byId;
+  }
+  if (part?.id) {
+    const byId = parts.find((row) => row?.id === part.id);
+    if (byId) return byId;
+  }
+  const path = partPath(part);
+  if (path) {
+    const byPath = parts.find((row) => partPath(row) === path);
+    if (byPath) return byPath;
+  }
+  return null;
+}
+
+/**
  * Write collapsed script keys, then the assembly document. A part whose
  * script was never loaded, or whose put failed, keeps its old id and key.
+ *
+ * `heldScripts` is the IndexedDB snapshot. Skip a put only when that
+ * snapshot already holds the same bytes (boot). Omit it on vault open so
+ * every tip script is written (isSynced / assets).
  */
 export async function persistCollapsedWorkingCopy({
   collapsed,
   sourceDoc,
   sourceScripts,
+  heldScripts,
   save,
+  load,
   remove,
   saveDoc,
 } = {}) {
@@ -151,7 +238,7 @@ export async function persistCollapsedWorkingCopy({
   const already = new Set();
   for (const [id, script] of Object.entries(nextScripts)) {
     if (typeof script !== 'string') continue;
-    if (sourceScripts && sourceScripts[id] === script) {
+    if (heldScripts && heldScripts[id] === script) {
       already.add(id);
       continue;
     }
@@ -165,7 +252,9 @@ export async function persistCollapsedWorkingCopy({
     nextScripts: putScripts,
     staleIds: pairs.map((pair) => pair.from),
     pairs,
+    sourceScripts,
     save,
+    load,
     remove,
   });
   const saved = new Set([...(persisted?.saved || []), ...already]);
@@ -177,8 +266,13 @@ export async function persistCollapsedWorkingCopy({
   let doc = collapsed?.doc;
   let scripts = nextScripts;
   if (failedFrom.size && sourceDoc?.parts) {
-    const parts = (doc?.parts || []).map((part, i) => {
-      const src = sourceDoc.parts[i];
+    const fromByTo = new Map();
+    for (const { from, to } of pairs) {
+      if (failedFrom.has(from) && to) fromByTo.set(to, from);
+    }
+    const parts = (doc?.parts || []).map((part) => {
+      const from = fromByTo.get(part.id);
+      const src = sourcePartForRow(sourceDoc, part, from);
       if (!src || !failedFrom.has(src.id)) return part;
       const original = sourceScripts?.[src.id];
       if (typeof original === 'string') scripts[src.id] = original;
