@@ -6,8 +6,9 @@
  * not stored here.
  */
 import { normalizeRepoPath, sanitizeAssemblyName, serializeAssembly } from './assembly.js';
-import { isExternalPartPath } from './git/vaultLayout.js';
+import { isExternalPartPath, parseVaultPath, vaultSegment } from './git/vaultLayout.js';
 import { planCopyToAssembly } from './git/gitWorkspace.js';
+import { partRepoPath, partScriptText } from './git/partIdentity.js';
 import { isSurfId, mintSurfId } from './git/surfId.js';
 
 /** Group ids use the surf-id shape so they are stable and unique. They are not part ids. */
@@ -136,6 +137,19 @@ export function removeGroupParts(doc, groupId) {
   };
 }
 
+/**
+ * Linked members live in another assembly's folder (or, before a path is
+ * recorded, in a group whose `source` is that folder). Path-less copies
+ * (`copiedFrom`) wait for Save to assign a path here and are not external.
+ */
+export function groupMemberIsExternal(doc, group, part) {
+  const path = partRepoPath(part);
+  if (path) return isExternalPartPath(doc?.name, path);
+  if (part?.copiedFrom) return false;
+  const info = parseVaultPath(group?.source);
+  return info?.kind === 'assembly' && info.assembly !== vaultSegment(doc?.name);
+}
+
 /** Point a grouped surf id at the id of a copy. Other groups are unchanged. */
 export function replaceGroupPartId(groups, fromSurfId, toSurfId) {
   if (!Array.isArray(groups) || !fromSurfId || !toSurfId || fromSurfId === toSurfId) return groups;
@@ -161,20 +175,23 @@ export function copyGroupToAssembly(doc, scripts, groupId, { now, randFor } = {}
   const copies = [];
   (group.partIds || []).forEach((surfId, index) => {
     const part = parts.find((row) => row.surfId === surfId);
-    if (!part || !isExternalPartPath(doc?.name, part.id)) return;
+    if (!part || !groupMemberIsExternal(doc, group, part)) return;
     const plan = planCopyToAssembly(
       { ...doc, parts, groups, activeId },
       part,
-      nextScripts[part.id] || '',
+      partScriptText(part, nextScripts) || '',
       { now, rand: typeof randFor === 'function' ? randFor(index, part) : undefined },
     );
-    nextScripts[plan.path] = plan.content;
+    nextScripts[plan.id] = plan.content;
     delete nextScripts[part.id];
+    const oldPath = partRepoPath(part);
+    if (oldPath && oldPath !== plan.id) delete nextScripts[oldPath];
     parts = parts.map((row) => (row.id === part.id ? {
       ...row,
-      id: plan.path,
+      id: plan.id,
       name: plan.name,
       surfId: plan.surfId,
+      path: undefined,
       copiedFrom: plan.copiedFrom || undefined,
       isSynced: false,
     } : row));
@@ -182,7 +199,7 @@ export function copyGroupToAssembly(doc, scripts, groupId, { now, randFor } = {}
       ...row,
       partIds: row.partIds.map((id) => (id === surfId ? plan.surfId : id)),
     }));
-    if (activeId === part.id) activeId = plan.path;
+    if (activeId === part.id) activeId = plan.id;
     copies.push({ from: part.id, ...plan });
   });
   return {

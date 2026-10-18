@@ -273,7 +273,8 @@ ok('null baseline head resolves tip before commit', /expectedBase = opts\.baseli
   && /adapter\.getBranch\(repo, branch\)/.test(commitSrc));
 ok('vault findOrCreate prefers getBranch over size===0', /inspectRepo/.test(vaultSrc)
   && /getBranch/.test(vaultSrc) && /size === 0/.test(vaultSrc) && /non_fast_forward/.test(vaultSrc));
-ok('G10 suppresses Upload Error for main-moved vault race', /moved:\\s\*head/i.test(app));
+ok('G10 does not seed a vault (no main-moved race)', /ensureGitVault\(\{\s*create:\s*false\s*\}\)/.test(app)
+  && !/main moved: head/.test(app));
 ok('Connect still git-only (G7 gates on client id)',
   /data-git-connect=""/.test(feed) && /source === 'git'/.test(feed)
   && /githubConnectReady/.test(feed));

@@ -349,12 +349,13 @@ export function partRepoDeleteConfirmCopy(partId) {
 }
 
 /** True when Parts delete can offer "Delete from assembly & repo". */
-export function partCanDeleteFromRepo(source, partId) {
+export function partCanDeleteFromRepo(source, partId, path) {
   if (source !== 'git') return false;
-  const id = String(partId || '');
-  if (!id || id.startsWith('local:')) return false;
-  // Vault part scripts only (assembly-owned or shared).
-  return /\.(js)$/i.test(id) && !id.includes('..');
+  const candidate = String(path || partId || '');
+  if (!candidate || candidate.startsWith('local:')) return false;
+  // Vault part scripts only (assembly-owned or shared). After stable surf
+  // ids the row id is not a `.js` path — callers pass `row.path`.
+  return /\.(js)$/i.test(candidate) && !candidate.includes('..');
 }
 
 /**

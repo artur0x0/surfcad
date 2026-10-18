@@ -108,6 +108,7 @@ export function createSyncStore({ persist = true } = {}) {
   const pathIndex = new Map();
   const trees = new Map();
   const repoSha = new Map();
+  const pendingDeletes = new Map();
   const listeners = new Set();
   let persistOn = !!persist && idbAvailable();
 
@@ -137,6 +138,7 @@ export function createSyncStore({ persist = true } = {}) {
       else if (key.startsWith('asm:')) assemblies.set(key.slice(4), value);
       else if (key.startsWith('path:')) pathIndex.set(key.slice(5), value);
       else if (key.startsWith('tree:')) trees.set(key.slice(5), value);
+      else if (key.startsWith('del:')) pendingDeletes.set(key.slice(4), Array.isArray(value) ? value : []);
     });
   })();
 
@@ -451,6 +453,7 @@ export function createSyncStore({ persist = true } = {}) {
     moved += await rekeyMap(assemblies, from, to, 'asm:');
     moved += await rekeyMap(pathIndex, from, to, 'path:');
     moved += await rekeyMap(trees, from, to, 'tree:');
+    moved += await rekeyMap(pendingDeletes, from, to, 'del:');
     if (moved) emit();
     return { moved, from, to };
   }
@@ -461,6 +464,40 @@ export function createSyncStore({ persist = true } = {}) {
     const slot = `${repoKeyOf(repo)}\0${path}`;
     pathIndex.delete(slot);
     await persistKv(`path:${slot}`, null);
+  }
+
+  function deleteSlot(repo, branch, assembly) {
+    return `${repoKeyOf(repo)}\0${branch || 'main'}\0${String(assembly || '')}`;
+  }
+
+  async function addPendingDeletes(repo, branch, assembly, paths) {
+    await ready;
+    const slot = deleteSlot(repo, branch, assembly);
+    const prev = pendingDeletes.get(slot) || [];
+    const seen = new Set(prev);
+    const next = [...prev];
+    for (const path of paths || []) {
+      const text = String(path || '').trim();
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      next.push(text);
+    }
+    next.sort();
+    pendingDeletes.set(slot, next);
+    await persistKv(`del:${slot}`, next);
+    return next.slice();
+  }
+
+  function getPendingDeletes(repo, branch, assembly) {
+    const rows = pendingDeletes.get(deleteSlot(repo, branch, assembly));
+    return Array.isArray(rows) ? rows.slice() : [];
+  }
+
+  async function clearPendingDeletes(repo, branch, assembly) {
+    await ready;
+    const slot = deleteSlot(repo, branch, assembly);
+    pendingDeletes.delete(slot);
+    await persistKv(`del:${slot}`, null);
   }
 
   function pathIndexFor(repo) {
@@ -499,6 +536,9 @@ export function createSyncStore({ persist = true } = {}) {
     pathIndexFor,
     putTree,
     getTree,
+    addPendingDeletes,
+    getPendingDeletes,
+    clearPendingDeletes,
     migrateLocalSurfIds,
     rekeyRepo,
     partStates,
