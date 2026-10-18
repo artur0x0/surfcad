@@ -6,6 +6,7 @@ import {
   AGENT_PROMPT_REPLY_LONG,
   AGENT_PROMPT_REPLY_SHORT,
   AGENT_PROMPT_TYPED,
+  agentPromptDemoAllowed,
   readAgentPromptDemo,
   shouldShowAgentPrompt,
 } from '../agent/agentPromptDemo.js';
@@ -58,13 +59,14 @@ export default function PromptInput({
   promptEnv = undefined,
 }) {
   const { paired, link } = useAgentBridgeHost();
+  const demoAllowed = agentPromptDemoAllowed(promptEnv);
   const demo = useMemo(
-    () => readAgentPromptDemo(demoSearch),
-    [demoSearch],
+    () => readAgentPromptDemo(demoSearch, promptEnv),
+    [demoSearch, promptEnv],
   );
 
-  const transportRef = useRef(null);
-  if (transportRef.current == null && transportProp == null) {
+  const transportRef = useRef(undefined);
+  if (transportRef.current === undefined && transportProp == null) {
     transportRef.current = createAgentPrompt(undefined, promptEnv);
   }
   const transport = transportProp || transportRef.current;
@@ -74,6 +76,7 @@ export default function PromptInput({
     demo,
     shouldShowDisconnect: shouldShowAgentBridgeDisconnect,
     hasTransport: Boolean(transport),
+    demoAllowed,
   });
 
   const seed = demoSeed(demo?.state);

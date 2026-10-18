@@ -6,7 +6,7 @@ import {
 } from './createAgentPrompt.js';
 import { createAgentPromptStub } from './agentPromptStub.js';
 import { shouldShowAgentBridgeDisconnect } from './ws/pairingFlow.js';
-import { shouldShowAgentPrompt } from './agentPromptDemo.js';
+import { readAgentPromptDemo, shouldShowAgentPrompt } from './agentPromptDemo.js';
 
 test('non-DEV build with no transport does not create a stub or echo', () => {
   const prod = { DEV: false };
@@ -27,6 +27,8 @@ test('non-DEV build with no transport keeps the prompt hidden', () => {
     paired: true,
     link: 'connected',
     hasTransport: Boolean(transport),
+    demo: readAgentPromptDemo('?agentPromptDemo=1', { DEV: false }),
+    demoAllowed: false,
     shouldShowDisconnect: shouldShowAgentBridgeDisconnect,
   }), false);
 });

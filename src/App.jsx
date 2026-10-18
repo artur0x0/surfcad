@@ -6,6 +6,7 @@ import Viewport from './components/Viewport';
 import { BrandMark, BrandWordmark } from './components/brand/BrandWordmark';
 import { clearLoadingTheme, readLoadingTheme } from './utils/loadingTheme';
 import PromptInput from './components/PromptInput';
+import { agentPromptStubAllowed } from './agent/createAgentPrompt.js';
 import SplitDivider from './components/SplitDivider';
 import ScriptEditorDrawer from './components/ScriptEditorDrawer';
 import MobileStageToggle from './components/MobileStageToggle';
@@ -10437,7 +10438,8 @@ const App = () => {
   ) : null;
 
   const captureViewerShot = () => viewportRef.current?.capturePng?.({ format: 'png' }) ?? null;
-  const agentPromptNode = appMode !== 'game' ? (
+  // No transport in prod for this PR — do not mount the card at all.
+  const agentPromptNode = appMode !== 'game' && agentPromptStubAllowed() ? (
     <PromptInput isMobile={isMobile} captureViewer={captureViewerShot} />
   ) : null;
 
@@ -11068,8 +11070,9 @@ const App = () => {
             onFeatureEditDismiss={() => setFeatureSheet((cur) => (cur ? null : cur))}
           />
           {agentPromptNode}
-          {assemblyOpenSpinner}
-          {appMode !== 'game' && (
+        </div>
+        {assemblyOpenSpinner}
+        {appMode !== 'game' && (
             <ScriptEditorDrawer open={scriptEditorOpen}>
               <CodeEditor
                 ref={codeEditorRef}
@@ -11102,7 +11105,6 @@ const App = () => {
               />
             </ScriptEditorDrawer>
           )}
-        </div>
 
         {clearCacheDialog}
         {agentGitConsentModal}

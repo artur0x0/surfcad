@@ -25,6 +25,8 @@ test('PromptInput tags send/stop/dismiss/screenshot and uses the outline send + 
   assert.match(SRC, /disabled=\{!canCapture && !shotCue\}/);
   assert.match(SRC, /shouldShowAgentPrompt/);
   assert.match(SRC, /shouldShowAgentBridgeDisconnect/);
+  assert.match(SRC, /demoAllowed/);
+  assert.match(SRC, /agentPromptDemoAllowed/);
   assert.doesNotMatch(SRC, /\/api\/generate/);
 });
 

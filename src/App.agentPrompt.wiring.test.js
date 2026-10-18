@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 const APP = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'App.jsx'), 'utf8');
 
 test('both shells mount the floating prompt on the CAD viewer, not the hidden editor row', () => {
-  assert.match(APP, /const agentPromptNode = appMode !== 'game'/);
+  assert.match(APP, /import \{ agentPromptStubAllowed \} from '\.\/agent\/createAgentPrompt\.js'/);
+  assert.match(APP, /const agentPromptNode = appMode !== 'game' && agentPromptStubAllowed\(\)/);
   assert.match(APP, /<PromptInput isMobile=\{isMobile\} captureViewer=\{captureViewerShot\} \/>/);
   assert.match(APP, /capturePng\?\.\(\{ format: 'png' \}\)/);
   assert.equal((APP.match(/\{agentPromptNode\}/g) || []).length, 2);

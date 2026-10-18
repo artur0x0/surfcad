@@ -76,12 +76,13 @@ clamped so neither pane collapses; an open keyboard still overrides it).
 mode-chip slot at the bottom of the CAD viewer, between the rails — max 640px
 on desktop, rail-capped on a 390px phone. It shows only while an agent is
 paired (the same `shouldShowAgentBridgeDisconnect({ paired, link })` test as
-Disconnect) or when `?agentPromptDemo=1` pins a golden / screenshot state.
-It is not mounted in game mode. The camera toggle (`data-agent-prompt-screenshot`)
+Disconnect) or when a DEV build pins `?agentPromptDemo=1` for goldens / screenshots.
+It is not mounted in game mode, and a production build with no injected transport
+does not mount the card at all. The camera toggle (`data-agent-prompt-screenshot`)
 captures the viewer canvas only and attaches a PNG to the next send. PR 1 talks
 to `createAgentPrompt()` in `src/agent/createAgentPrompt.js`: the echo stub
-runs only when `import.meta.env.DEV` is true (or a test passes `{ DEV: true }`).
-A production build with no injected transport hides the card and never echoes.
+and the demo query run only when `import.meta.env.DEV` is true (or a test
+passes `{ DEV: true }`). A production build never echoes and never shows canned replies.
 PR 2 swaps that one import to the MCP transport. Do not add
 `src/agent/agentPromptTransport.js` here. The `agent_prompt` bridge command
 stays on the page (`action: 'screenshot'` turns the camera on); it is not

@@ -42,7 +42,21 @@ export const AGENT_PROMPT_REPLY_LONG = [
   'Want me to add a 2 mm fillet on the cut-out corners to bring that stress peak down, or export a STEP for quoting?',
 ].join('\n');
 
-export function readAgentPromptDemo(search = '') {
+function readImportMetaEnv() {
+  try {
+    return import.meta.env;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Demo pins canned replies. Prod builds must never show those. */
+export function agentPromptDemoAllowed(env = readImportMetaEnv()) {
+  return env?.DEV === true;
+}
+
+export function readAgentPromptDemo(search = '', env = readImportMetaEnv()) {
+  if (!agentPromptDemoAllowed(env)) return null;
   let q = search;
   if (!q && typeof window !== 'undefined') {
     try { q = window.location.search || ''; } catch { q = ''; }
@@ -60,9 +74,11 @@ export function shouldShowAgentPrompt({
   demo,
   shouldShowDisconnect,
   hasTransport = false,
+  demoAllowed = false,
 } = {}) {
-  if (demo?.enabled && demo.state === 'hidden') return false;
-  if (demo?.enabled) return true;
+  const pinDemo = demoAllowed === true && demo?.enabled === true;
+  if (pinDemo && demo.state === 'hidden') return false;
+  if (pinDemo) return true;
   if (hasTransport !== true) return false;
   return shouldShowDisconnect({ paired, link }) === true;
 }
