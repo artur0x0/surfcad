@@ -99,7 +99,7 @@ export function captureBaseline({
   return {
     assemblyPath: assemblyPath || assemblyFilePath(assemblyName || clean.name),
     assemblyName: vaultSegment(assemblyName || clean.name),
-    assemblyText: stringifySurfJson(clean),
+    assemblyText: stringifySurfJson(clean, { validate: false }),
     scripts: scriptMap,
     assets: baselineAssetMap(clean.parts, assets),
     partIds: clean.parts.map((p) => p.id),
@@ -122,7 +122,7 @@ function assemblyTextIgnoringActive(text) {
 export function isAssemblyDirty(doc, baseline) {
   if (!baseline) return false;
   try {
-    const text = stringifySurfJson({ ...doc, source: 'git' });
+    const text = stringifySurfJson({ ...doc, source: 'git' }, { validate: false });
     if (text === baseline.assemblyText) return false;
     return assemblyTextIgnoringActive(text) !== assemblyTextIgnoringActive(baseline.assemblyText);
   } catch {

@@ -259,7 +259,6 @@ import {
   allocateVaultPartPath,
   findAssemblyPart,
   partRepoPath,
-  partRowNeedsVaultPath,
   rekeyWorkingCopyToTip,
   retireImplicitVaultWriteOps,
   readVaultPart,
@@ -274,8 +273,6 @@ import {
   migrateLocalPartIds,
   reconcileSyncedFromTip,
   markPartsSynced,
-  stageAssemblyRename,
-  applyAssemblyRenameCache,
   baselineAfterAssemblyRename,
   partRowGitChrome,
   overlayPendingPartRenames,
@@ -294,9 +291,6 @@ import {
   captureBaseline,
   baselineAfterPartSave,
   baselineAfterPartRename,
-  stagePartRename,
-  fileWrite,
-  fileDelete,
   suggestNewPartPath,
   partPathAllowedFor,
   vaultSegment,
@@ -304,8 +298,6 @@ import {
   assembleCommitFiles,
   listVaultTree,
   listVaultTreePaths,
-  prepareAssemblySurfWrite,
-  PATH_LESS_PARTS,
   VAULT_TREE_UNAVAILABLE,
   VAULT_TREE_UNAVAILABLE_MESSAGE,
   applyOverwriteFiles,
@@ -343,7 +335,6 @@ import {
   collectMeshCommitAssets,
   partMeshRecordsFromBaseline,
   meshVaultSaveAllowed,
-  assetPathForScript,
 } from './utils/git';
 import PartFeed from './components/PartFeed';
 import manifoldContext from './utils/ManifoldWorker';
@@ -2968,7 +2959,7 @@ const App = () => {
     }
   };
 
-  const ensureGitVault = async () => {
+  const ensureGitVault = async ({ create = true } = {}) => {
     const fresh = await refreshGithubAccessToken();
     if (fresh.refreshed || (fresh.ok && fresh.accessToken && fresh.accessToken !== gitTokenRef.current)) {
       gitAdapterRef.current = null;
@@ -2982,6 +2973,7 @@ const App = () => {
       findOrCreateVault(gitAdapterRef.current, {
         storedName: storedVaultName()
           || (gitAdapterRef.current?.kind === 'mock' ? peekMockVaultName() : null),
+        create,
       }),
       new Promise((_, reject) => {
         setTimeout(() => reject(new Error(
@@ -3126,13 +3118,11 @@ const App = () => {
       for (const name of recentAssembliesRef.current) local.push(name);
     }
     let tree = [];
-    if (githubConnected) {
+    const vault = gitVaultRef.current;
+    const adapter = gitAdapterRef.current;
+    if (vault?.repo && adapter?.listTree) {
       try {
-        const vault = gitVaultRef.current || await ensureGitVault();
-        const adapter = gitAdapterRef.current;
-        if (vault?.repo && adapter?.listTree) {
-          tree = await adapter.listTree(vault.repo, gitWorkingBranch()) || [];
-        }
+        tree = await adapter.listTree(vault.repo, gitWorkingBranch()) || [];
       } catch (err) {
         console.warn('[git] assembly names unavailable', err?.message || err);
       }
@@ -3277,12 +3267,6 @@ const App = () => {
     return adoptSyncResult(result, { surfaceConflict });
   };
   flushGitSyncRef.current = flushGitOps;
-
-  useEffect(() => {
-    const kick = () => { void flushGitSyncRef.current(); };
-    window.addEventListener('online', kick);
-    return () => window.removeEventListener('online', kick);
-  }, []);
 
   /**
    * After a rename-on-Commit (or any commit that remaps paths), fold the new
@@ -4150,32 +4134,10 @@ const App = () => {
           partIds: planned.additions.map((add) => add.surfId).filter(Boolean),
         },
       );
-      let saved = inserted;
-      if (gitVaultRef.current?.repo) {
-        const prepared = await prepareAssemblySurfWrite(gitAdapterRef.current, gitVaultRef.current.repo, {
-          doc: inserted,
-          scripts,
-          branch: gitWorkingBranch(),
-        });
-        await adoptPreparedSurfWrite(prepared, { scripts });
-        saved = prepared.doc;
-        for (const add of planned.additions) {
-          await savePartScript(add.id, add.content);
-        }
-        await enqueueGit(gitVaultRef.current.repo, {
-          op: 'save',
-          message: `Link parts from ${planned.sourceName}`,
-          partIds: planned.additions.map((add) => add.id),
-          files: prepared.files,
-          payload: { sourceName: planned.sourceName },
-        });
-        void flushGitOps();
-      } else {
-        rememberScripts(scripts);
-        rememberAssembly(inserted);
-        for (const add of planned.additions) {
-          await savePartScript(add.id, add.content);
-        }
+      rememberScripts(scripts);
+      const saved = rememberAssembly(inserted);
+      for (const add of planned.additions) {
+        await savePartScript(add.id, add.content);
       }
       refreshGenRef.current += 1;
       const focus = saved.parts.find((p) => p.id === activeId) || saved.parts[saved.parts.length - 1];
@@ -4230,41 +4192,16 @@ const App = () => {
           ...(header ? { surfId: header } : {}),
         }];
       const nextDoc = { ...doc, source: 'git', activeId: id, parts };
-      if (!existing && gitVaultRef.current?.repo) {
-        const prepared = await prepareAssemblySurfWrite(gitAdapterRef.current, gitVaultRef.current.repo, {
-          doc: nextDoc,
-          scripts,
-          branch: gitWorkingBranch(),
-        });
-        await adoptPreparedSurfWrite(prepared, { scripts });
-        await savePartScript(id, content);
-        refreshGenRef.current += 1;
-        focusPartHistory(id, content);
-        suppressPartSaveRef.current = false;
-        storeRollbackAnchor(String(id), undefined);
-        setCurrentFilename(id.split('/').pop() || id);
-        revealPartOnRibbon(id, content);
-        codeEditorRef.current?.loadContent(content, id, false);
-        await enqueueGit(gitVaultRef.current.repo, {
-          op: 'save',
-          message: plan.mode === 'link' ? `Link ${id.split('/').pop()}` : `Add ${id.split('/').pop()}`,
-          partIds: [id],
-          files: prepared.files,
-          payload: { path: id, surfId: header || null, mode: plan.mode },
-        });
-        void flushGitOps();
-      } else {
-        rememberScripts(scripts);
-        rememberAssembly(nextDoc);
-        await savePartScript(id, content);
-        refreshGenRef.current += 1;
-        focusPartHistory(id, content);
-        suppressPartSaveRef.current = false;
-        storeRollbackAnchor(String(id), undefined);
-        setCurrentFilename(id.split('/').pop() || id);
-        revealPartOnRibbon(id, content);
-        codeEditorRef.current?.loadContent(content, id, false);
-      }
+      rememberScripts(scripts);
+      rememberAssembly(nextDoc);
+      await savePartScript(id, content);
+      refreshGenRef.current += 1;
+      focusPartHistory(id, content);
+      suppressPartSaveRef.current = false;
+      storeRollbackAnchor(String(id), undefined);
+      setCurrentFilename(id.split('/').pop() || id);
+      revealPartOnRibbon(id, content);
+      codeEditorRef.current?.loadContent(content, id, false);
       return { status: 'opened', path: id, mode: plan.mode };
     } catch (err) {
       return { status: 'error', error: err.message || 'Could not open part' };
@@ -4292,85 +4229,17 @@ const App = () => {
     const activeId = doc.activeId === partId ? plan.path : doc.activeId;
     const groups = replaceGroupPartId(doc.groups, part.surfId, plan.surfId);
     const nextDoc = { ...doc, source: 'git', activeId, parts, groups };
-    if (gitVaultRef.current?.repo) {
-      const prepared = await prepareAssemblySurfWrite(gitAdapterRef.current, gitVaultRef.current.repo, {
-        doc: nextDoc,
-        scripts,
-        branch: gitWorkingBranch(),
-        extraFiles: [fileWrite(plan.path, plan.content)],
-      });
-      await adoptPreparedSurfWrite(prepared, { scripts: prepared.scripts });
-      await savePartScript(plan.path, plan.content, { isSynced: false });
-      await deletePartScript(partId);
-      rekeyRuntime([
-        { from: partId, to: plan.path },
-        ...(prepared.moved || []),
-      ]);
-      if (doc.activeId === partId) {
-        focusPartHistory(plan.path, plan.content);
-        setCurrentFilename(plan.name);
-        codeEditorRef.current?.loadContent(plan.content, plan.name, false);
-      }
-      await enqueueGit(gitVaultRef.current.repo, {
-        op: 'copy',
-        message: `Copy ${plan.name} into ${prepared.doc.name}`,
-        partIds: [plan.path],
-        files: prepared.files,
-        payload: { surfId: plan.surfId, copiedFrom: plan.copiedFrom, from: partId, to: plan.path },
-      });
-      await flushGitOps();
-    } else {
-      rememberAssembly(nextDoc);
-      rememberScripts(scripts);
-      await savePartScript(plan.path, plan.content, { isSynced: false });
-      await deletePartScript(partId);
-      rekeyRuntime([{ from: partId, to: plan.path }]);
-      if (doc.activeId === partId) {
-        focusPartHistory(plan.path, plan.content);
-        setCurrentFilename(plan.name);
-        codeEditorRef.current?.loadContent(plan.content, plan.name, false);
-      }
+    rememberAssembly(nextDoc);
+    rememberScripts(scripts);
+    await savePartScript(plan.path, plan.content, { isSynced: false });
+    await deletePartScript(partId);
+    rekeyRuntime([{ from: partId, to: plan.path }]);
+    if (doc.activeId === partId) {
+      focusPartHistory(plan.path, plan.content);
+      setCurrentFilename(plan.name);
+      codeEditorRef.current?.loadContent(plan.content, plan.name, false);
     }
     return { status: 'copied', path: plan.path, surfId: plan.surfId, copiedFrom: plan.copiedFrom };
-  };
-
-  const adoptPreparedSurfWrite = async (prepared, { scripts = null } = {}) => {
-    if (scripts) rememberScripts(prepared.scripts || scripts);
-    else if (prepared.scripts) rememberScripts(prepared.scripts);
-    if (prepared.moved?.length) {
-      const remaps = prepared.moved.filter((move) => (
-        move?.from && move?.to && move.from !== move.to
-        && prepared.doc?.parts?.some((part) => part.id === move.to)
-      ));
-      if (remaps.length) rekeyRuntime(remaps);
-      for (const move of remaps) {
-        await savePartScript(move.to, prepared.scripts?.[move.to] ?? '');
-        try { await deletePartScript(move.from); } catch { /* promoted id is the record */ }
-      }
-    }
-    return rememberAssembly(prepared.doc);
-  };
-
-  const enqueueAssemblySave = async (doc, {
-    op = 'save', message, partIds = [], extraFiles = [], payload, scripts = null,
-  } = {}) => {
-    if (!doc || doc.source !== 'git' || !gitVaultRef.current?.repo) return null;
-    const prepared = await prepareAssemblySurfWrite(gitAdapterRef.current, gitVaultRef.current.repo, {
-      doc,
-      scripts: scripts || { ...partScriptsRef.current },
-      branch: gitWorkingBranch(),
-      extraFiles,
-    });
-    const saved = await adoptPreparedSurfWrite(prepared);
-    await enqueueGit(gitVaultRef.current.repo, {
-      op,
-      message,
-      partIds: [...new Set([...(partIds || []), ...(prepared.moved || []).map((move) => move.to)])],
-      files: prepared.files,
-      ...(payload ? { payload } : {}),
-    });
-    const flushed = await flushGitOps();
-    return { ...flushed, doc: saved, prepared };
   };
 
   const handleRenameGroup = async (groupId, name) => {
@@ -4380,19 +4249,7 @@ const App = () => {
     const next = renameGroup(doc, groupId, name);
     const after = (next.groups || []).find((group) => group.id === groupId)?.name;
     if (!after || after === before) return { status: 'unchanged' };
-    if (doc.source !== 'git' || !gitVaultRef.current?.repo) {
-      rememberAssembly(next);
-      return { status: 'renamed', name: after };
-    }
-    try {
-      await enqueueAssemblySave(next, {
-        message: `Rename group ${after}`,
-        payload: { groupId, name: after },
-      });
-    } catch (err) {
-      setUploadError(err?.message || 'Could not rename group');
-      return { status: 'error', code: err?.code || PATH_LESS_PARTS, error: err?.message };
-    }
+    rememberAssembly(next);
     return { status: 'renamed', name: after };
   };
 
@@ -4402,19 +4259,7 @@ const App = () => {
     const group = (doc.groups || []).find((row) => row.id === groupId);
     if (!group) return { status: 'error', error: 'Group not found' };
     const next = ungroupParts(doc, groupId);
-    if (doc.source !== 'git' || !gitVaultRef.current?.repo) {
-      rememberAssembly(next);
-      return { status: 'ungrouped', name: group.name };
-    }
-    try {
-      await enqueueAssemblySave(next, {
-        message: `Ungroup ${group.name}`,
-        payload: { groupId },
-      });
-    } catch (err) {
-      setUploadError(err?.message || 'Could not ungroup');
-      return { status: 'error', code: err?.code || PATH_LESS_PARTS, error: err?.message };
-    }
+    rememberAssembly(next);
     return { status: 'ungrouped', name: group.name };
   };
 
@@ -4426,27 +4271,8 @@ const App = () => {
     if (!group) return { status: 'error', error: 'Group not found' };
     const result = copyGroupToAssembly(doc, partScriptsRef.current, groupId);
     if (!result.copies.length) return { status: 'noop', name: group.name };
-    try {
-      await enqueueAssemblySave(result.doc, {
-        op: 'copy',
-        message: `Copy ${group.name} into ${result.doc.name}`,
-        partIds: result.copies.map((copy) => copy.path),
-        extraFiles: result.copies.map((copy) => fileWrite(copy.path, copy.content)),
-        scripts: result.scripts,
-        payload: {
-          groupId,
-          copies: result.copies.map((copy) => ({
-            from: copy.from,
-            to: copy.path,
-            surfId: copy.surfId,
-            copiedFrom: copy.copiedFrom,
-          })),
-        },
-      });
-    } catch (err) {
-      setUploadError(err?.message || 'Could not copy group');
-      return { status: 'error', code: err?.code || PATH_LESS_PARTS, error: err?.message };
-    }
+    rememberScripts(result.scripts);
+    rememberAssembly(result.doc);
     for (const copy of result.copies) {
       await savePartScript(copy.path, copy.content);
       await deletePartScript(copy.from);
@@ -4469,7 +4295,6 @@ const App = () => {
   const handleRemoveGroup = async (groupId) => {
     const doc = assemblyRef.current;
     if (!doc || groupId == null) return { status: 'error', error: 'No assembly' };
-    const groupName = (doc.groups || []).find((row) => row.id === groupId)?.name || 'group';
     const { doc: nextDoc, removed } = removeGroupParts(doc, groupId);
     if (!removed.length) return { status: 'empty' };
     refreshGenRef.current += 1;
@@ -4489,25 +4314,8 @@ const App = () => {
     for (const part of removed) {
       scripts = dropPartRecord(scripts, part.id);
     }
-    let saved = nextDoc;
-    try {
-      if (doc.source === 'git' && gitVaultRef.current?.repo) {
-        const result = await enqueueAssemblySave(nextDoc, {
-          message: `Remove group ${groupName}`,
-          partIds: removed.map((part) => part.id),
-          scripts,
-          payload: { groupId, unlink: true },
-        });
-        if (result?.status === 'failed') setUploadError(result.error || 'Could not remove group');
-        saved = result?.doc || assemblyRef.current || nextDoc;
-      } else {
-        rememberScripts(scripts);
-        saved = rememberAssembly(nextDoc);
-      }
-    } catch (err) {
-      setUploadError(err?.message || 'Could not remove group');
-      return { status: 'error', code: err?.code || PATH_LESS_PARTS, error: err?.message };
-    }
+    rememberScripts(scripts);
+    const saved = rememberAssembly(nextDoc);
     for (const part of removed) {
       deletePartScript(part.id);
       dropPartHistory(part.id);
@@ -5263,40 +5071,12 @@ const App = () => {
     if (!doc) return undefined;
     if (githubConnected) {
       if (doc.source === 'git') return undefined;
-      let cancelled = false;
-      (async () => {
-        try {
-          await ensureGitVault();
-        } catch (err) {
-          // Vault seed used to throw "main moved: head …, base null" when
-          // GitHub size===0 lied about an existing vault. findOrCreateVault
-          // recovers now; if a race still surfaces, never toast as Upload Error.
-          const msg = err?.message || 'Could not open repo';
-          if (!cancelled && /moved:\s*head/i.test(msg)) {
-            console.warn('[App] Repo open hit main-moved race; clearing vault cache', msg);
-            gitVaultRef.current = null;
-            try {
-              await ensureGitVault();
-            } catch (err2) {
-              if (!cancelled && !/moved:\s*head/i.test(err2?.message || '')) {
-                setUploadError(err2.message || 'Could not open repo');
-              }
-              return;
-            }
-          } else {
-            if (!cancelled) setUploadError(msg);
-            return;
-          }
-        }
-        if (cancelled) return;
-        const latest = assemblyRef.current;
-        if (!latest || latest.source === 'git') return;
-        rememberAssembly({ ...latest, source: 'git' });
-        rememberGitBaseline(null);
-        rememberGitBehind(null, { showToast: false, resetResolved: true });
-        setGitBehindToast(null);
-      })();
-      return () => { cancelled = true; };
+      // Do not create or seed the vault here. Save / git_save does that.
+      rememberAssembly({ ...doc, source: 'git' });
+      rememberGitBaseline(null);
+      rememberGitBehind(null, { showToast: false, resetResolved: true });
+      setGitBehindToast(null);
+      return undefined;
     }
     if (doc.source === 'git') {
       rememberAssembly({ ...doc, source: 'local' });
@@ -5331,7 +5111,7 @@ const App = () => {
     let cancelled = false;
     (async () => {
       try {
-        const vault = await ensureGitVault();
+        const vault = await ensureGitVault({ create: false });
         if (cancelled || gitBaselineRef.current) return;
         const branch = gitWorkingBranch();
         const store = gitSync();
@@ -5585,7 +5365,7 @@ const App = () => {
     if (!doc || id == null) return;
     const key = String(id);
     if (!doc.parts.some((part) => part.id === key)) return;
-    const fromRepo = !!opts?.fromRepo;
+    void opts;
 
     const live = codeEditorRef.current?.getContent?.();
     const prevActive = doc.activeId;
@@ -5669,39 +5449,6 @@ const App = () => {
 
     const tentativeDoc = removePart(doc, key);
     const tentativeScripts = dropPartRecord(scripts, key);
-    if (doc.source === 'git' && gitVaultRef.current?.repo) {
-      void (async () => {
-        try {
-          const extraFiles = [];
-          const repoPath = partRepoPath(doc.parts.find((row) => row.id === key));
-          if (fromRepo && repoPath) {
-            extraFiles.push(fileDelete(repoPath));
-            const meshPath = assetPathForScript(repoPath);
-            if (meshPath) extraFiles.push(fileDelete(meshPath));
-          }
-          const prepared = await prepareAssemblySurfWrite(gitAdapterRef.current, gitVaultRef.current.repo, {
-            doc: tentativeDoc,
-            scripts: tentativeScripts,
-            branch: gitWorkingBranch(),
-            extraFiles,
-          });
-          applyDeleteLocal(prepared.doc, prepared.scripts);
-          if (prepared.moved?.length) rekeyRuntime(prepared.moved);
-          await enqueueGit(gitVaultRef.current.repo, {
-            op: 'delete',
-            message: fromRepo ? `Delete ${key.split('/').pop()}` : `Remove ${key.split('/').pop()} from assembly`,
-            partIds: [key],
-            files: prepared.files,
-            payload: { path: key, fromRepo },
-          });
-          const result = await flushGitOps();
-          if (result.status === 'failed') setUploadError(result.error || 'Delete from repo failed');
-        } catch (err) {
-          setUploadError(err?.message || 'Delete from repo failed');
-        }
-      })();
-      return;
-    }
     applyDeleteLocal(tentativeDoc, tentativeScripts);
   };
 
@@ -6563,9 +6310,8 @@ const App = () => {
   };
 
   /**
-   * Paint Confirm. One session write: the working copy, the local document,
-   * and the git outbox when the assembly is in Git mode. Cancel never calls
-   * this. Part scripts and isSynced are left as they are.
+   * Paint Confirm. Working-copy only. Save / git_save is the git write.
+   * Cancel never calls this. Part scripts and isSynced are left as they are.
    */
   const handleCommitPaint = (payload) => {
     const doc = assemblyRef.current;
@@ -6573,16 +6319,7 @@ const App = () => {
     if (payload.op === 'session') {
       const next = serializeAssembly({ ...doc, colors: payload.colors || null });
       if (JSON.stringify(next.colors || null) === JSON.stringify(doc.colors || null)) return true;
-      if (doc.source !== 'git' || !gitVaultRef.current?.repo) {
-        rememberAssembly(next);
-        return true;
-      }
-      enqueueAssemblySave(next, {
-        message: 'Paint',
-        payload: { paint: 'session' },
-      }).catch((err) => {
-        setUploadError(err?.message || 'Could not save colors');
-      });
+      rememberAssembly(next);
       return true;
     }
     if (!payload.surfId) return false;
@@ -6604,17 +6341,7 @@ const App = () => {
       });
     }
     if (JSON.stringify(colors || null) === JSON.stringify(before || null)) return true;
-    const next = { ...doc, colors };
-    if (doc.source !== 'git' || !gitVaultRef.current?.repo) {
-      rememberAssembly(next);
-      return true;
-    }
-    enqueueAssemblySave(next, {
-      message: `Paint ${payload.surfId}`,
-      payload: { surfId: payload.surfId, paint: payload.op || 'faces' },
-    }).catch((err) => {
-      setUploadError(err?.message || 'Could not save colors');
-    });
+    rememberAssembly({ ...doc, colors });
     return true;
   };
 
@@ -7387,98 +7114,16 @@ const App = () => {
       return { status: 'unchanged', from: id, to: id, name: nextName };
     }
     const otherNames = (doc.parts || []).filter((row) => row.id !== id).map((row) => row.name);
-    const vaultRename = doc.source === 'git'
-      && !!gitVaultRef.current?.repo
-      && !partRowNeedsVaultPath(part);
-    if (!vaultRename) {
-      if (otherNames.includes(nextName)) {
-        nextName = nextNumberedName(nextName, otherNames, { bareFirst: true });
-      }
-      const nextDoc = renamePart(doc, id, nextName);
-      if (nextDoc === doc) return { status: 'unchanged', from: id, to: id, name: part.name };
-      rememberAssembly(nextDoc);
-      if (renameTargetId(nextDoc, cadPartIdRef.current) === id) {
-        setCurrentFilename(nextDoc.parts.find((row) => row.id === id)?.name || null);
-      }
-      return { status: 'renamed', from: id, to: id, name: nextName, git: false };
+    if (otherNames.includes(nextName)) {
+      nextName = nextNumberedName(nextName, otherNames, { bareFirst: true });
     }
-    const from = part.id;
-    const live = codeEditorRef.current?.getContent?.();
-    const scripts = { ...partScriptsRef.current };
-    if (doc.activeId && typeof live === 'string' && !suppressPartSaveRef.current) {
-      scripts[doc.activeId] = live;
+    const nextDoc = renamePart(doc, id, nextName);
+    if (nextDoc === doc) return { status: 'unchanged', from: id, to: id, name: part.name };
+    rememberAssembly(nextDoc);
+    if (renameTargetId(nextDoc, cadPartIdRef.current) === id) {
+      setCurrentFilename(nextDoc.parts.find((row) => row.id === id)?.name || null);
     }
-    const staged = await stagePartRename({
-      adapter: gitAdapterRef.current,
-      repo: gitVaultRef.current.repo,
-      doc,
-      scripts,
-      from,
-      nextName,
-      branch: gitWorkingBranch(),
-    });
-    if (staged.status === 'error') {
-      setUploadError(staged.error || VAULT_TREE_UNAVAILABLE_MESSAGE);
-      return staged;
-    }
-    if (staged.status !== 'staged') {
-      return { status: 'error', error: 'Could not rename part' };
-    }
-    const to = staged.to;
-    nextName = staged.name || nextName;
-    const stableId = staged.fromId || part.id;
-    rememberScripts(staged.scripts);
-    rememberAssembly(staged.doc);
-    const renamed = staged.doc?.parts?.find((row) => row.id === stableId);
-    const text = staged.scripts?.[stableId] ?? staged.scripts?.[to] ?? '';
-    if (renamed && renamed.id === part.id) {
-      savePartScript(stableId, text);
-      if (renameTargetId(staged.doc, cadPartIdRef.current) === id) {
-        setCurrentFilename(nextName);
-        if (doc.activeId === id) {
-          codeEditorRef.current?.loadContent(text, nextName, false);
-        }
-      }
-    } else if (to !== from) {
-      const prevMesh = partMeshMetaRef.current[from];
-      savePartScript(to, text, prevMesh
-        ? { assets: prevMesh.assets, meshSynced: prevMesh.meshSynced === true }
-        : {});
-      deletePartScript(from);
-      if (prevMesh?.assets) {
-        rememberPartAssets(to, prevMesh.assets);
-        forgetPartAssets(from);
-        const nextMeta = { ...partMeshMetaRef.current, [to]: prevMesh };
-        delete nextMeta[from];
-        partMeshMetaRef.current = nextMeta;
-        setPartMeshMeta(nextMeta);
-      }
-      rekeyRuntime([{ from, to }]);
-      if (doc.activeId === from || cadPartIdRef.current === from) {
-        setCurrentFilename(nextName);
-        if (doc.activeId === from) {
-          codeEditorRef.current?.loadContent(text, nextName, false);
-        }
-      }
-    } else if (renameTargetId(staged.doc, cadPartIdRef.current) === id) {
-      setCurrentFilename(nextName);
-    }
-    const tipText = gitBaselineRef.current?.scripts?.[stableId]
-      ?? gitBaselineRef.current?.scripts?.[partRepoPath(part) || from]
-      ?? '';
-    const written = (async () => {
-      const vault = gitVaultRef.current;
-      await gitSync().putPart(vault.repo, {
-        surfId: part.surfId || stableId,
-        path: to,
-        previousPath: partRepoPath(part) || from,
-        content: tipText,
-      });
-      await enqueueGit(vault.repo, staged.enqueue);
-      setPartSync({ ...gitSync().partStates() });
-      return flushGitOps();
-    })();
-    return { status: 'renamed', from: stableId, to: stableId, path: to, name: nextName, git: true, written };
+    return { status: 'renamed', from: id, to: id, name: nextName, git: false };
   };
 
   // Rename from the viewer title chip. It lands on the part the title shows:
@@ -7507,62 +7152,7 @@ const App = () => {
       }
       return;
     }
-    const scripts = { ...partScriptsRef.current };
-    const repo = gitVaultRef.current?.repo || null;
-    const baseline = gitBaselineRef.current;
-    const staged = await stageAssemblyRename({
-      doc,
-      scripts,
-      nextName: resolved.name,
-      taken,
-      repo,
-      adapter: gitAdapterRef.current,
-      baseline,
-    });
-    if (staged.status === 'error') {
-      setUploadError(staged.error || 'Could not rename assembly');
-      return;
-    }
-    if (staged.status === 'unchanged') return;
-    if (staged.status !== 'staged') {
-      rememberAssembly(staged.doc || { ...doc, name: resolved.name });
-      return;
-    }
-    const remapped = staged.plan;
-    rememberScripts(remapped.scripts);
-    rememberAssembly(remapped.doc);
-    for (const { from, to } of remapped.moved || []) {
-      savePartScript(to, remapped.scripts[to] ?? '');
-      deletePartScript(from);
-    }
-    if (remapped.moved?.length) rekeyRuntime(remapped.moved);
-    const pendingIds = (remapped.doc.parts || []).map((part) => part.id);
-    setPendingPartIds((prev) => {
-      const next = new Set(prev);
-      for (const id of pendingIds) next.add(id);
-      return next;
-    });
-    try {
-      const vault = gitVaultRef.current;
-      await applyAssemblyRenameCache(gitSync(), vault.repo, gitWorkingBranch(), remapped);
-      if (staged.baseline) rememberGitBaseline(staged.baseline);
-      await enqueueGit(vault.repo, {
-        op: 'rename',
-        message: `Rename assembly ${remapped.oldName} to ${remapped.newName}`,
-        partIds: (remapped.moved || []).map((pair) => pair.to),
-        payload: remapped.payload,
-      });
-      setPartSync({ ...gitSync().partStates() });
-      await flushGitOps();
-    } catch (err) {
-      setUploadError(err?.message || 'Could not rename assembly');
-    } finally {
-      setPendingPartIds((prev) => {
-        const next = new Set(prev);
-        for (const id of pendingIds) next.delete(id);
-        return next;
-      });
-    }
+    rememberAssembly({ ...doc, name: resolved.name });
   };
 
   // Handle account button click
@@ -8857,7 +8447,7 @@ const App = () => {
       if (!part) return { known: false, writesGit: false };
       return {
         known: true,
-        writesGit: doc.source === 'git' && !!gitVaultRef.current?.repo && !partRowNeedsVaultPath(part),
+        writesGit: false,
       };
     },
     async agentRenamePart({ partId, name }) {

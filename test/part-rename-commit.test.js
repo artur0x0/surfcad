@@ -314,16 +314,15 @@ test('never-committed part rename is local; prepareVaultPartRename does not writ
   assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, before);
 });
 
-test('UI and agent share stagePartRename and omit live bytes from the payload', () => {
+test('UI and agent rename the working copy and do not commit', () => {
   const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const start = app.indexOf('const handleRenamePart');
   const end = app.indexOf('const handleRenameFile');
   assert.ok(start >= 0 && end > start);
   const block = app.slice(start, end);
-  assert.match(block, /stagePartRename\(/);
+  assert.match(block, /rememberAssembly\(nextDoc\)/);
+  assert.equal(/stagePartRename\(|flushGitOps|enqueueGit/.test(block), false);
   assert.equal(/assemblyText:/.test(block), false);
-  assert.equal(/content: text/.test(block), false);
-  assert.equal(/extraFiles/.test(block), false);
   assert.equal(/wrapUnmarkedPartScripts|wrapRawScript/.test(block), false);
   assert.match(app, /async agentRenamePart\(\{ partId, name \}\) \{[\s\S]*?handleRenamePart\(part\.id, name\)/);
 });
