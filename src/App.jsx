@@ -45,7 +45,7 @@ import CartSheet from './components/CartSheet';
 import CartDrop from './components/CartDrop';
 import CheckoutPage from './components/checkout/CheckoutPage';
 import SiteFooter from './components/SiteFooter';
-import { track, trackFeatureCommits } from './utils/analytics';
+import { track, trackFeatureCommits, trackPaletteFeature } from './utils/analytics';
 import { 
   importFile,
   isBackendFormat,
@@ -2661,6 +2661,7 @@ const App = () => {
         changed,
         source: changed ? result.buffer : buf,
         featureId: holePayload.featureId,
+        kind: 'hole',
         message: 'Hole',
       };
     }
@@ -2674,6 +2675,7 @@ const App = () => {
         changed: !!result.changed,
         source: result.changed ? result.buffer : buf,
         featureId: live.id,
+        kind: live.kind || null,
         message: `Edit ${live.label || live.kind || 'feature'}`,
       };
     }
@@ -2689,6 +2691,7 @@ const App = () => {
         changed,
         source: result.buffer,
         featureId: live.id,
+        kind: live.kind || null,
         message: `${live.label || 'Feature'} sheet`,
       };
     }
@@ -2702,6 +2705,7 @@ const App = () => {
         changed: !!result.changed,
         source: result.changed ? result.buffer : buf,
         featureId: live.id,
+        kind: live.kind || null,
         message: `Edit ${live.label || live.kind || 'feature'}`,
       };
     }
@@ -5843,8 +5847,7 @@ const App = () => {
       placeAtBar ? caret : undefined,
     );
     if (ok) {
-      const afterInsert = codeEditorRef.current?.getContent?.() ?? beforeInsert;
-      trackFeatureCommits(beforeInsert, afterInsert);
+      trackPaletteFeature(helperId);
     }
     if (ok && rollbackKey) {
       if (placeAtBar) {
@@ -7492,8 +7495,9 @@ const App = () => {
 
   // Cart checkout is one page. The per-line stepper stays mounted so a
   // checkout already in flight (including an OAuth return) can finish.
-  onCartCheckoutRef.current = () => {
-    track('checkout_started');
+  onCartCheckoutRef.current = (plan) => {
+    const payable = Array.isArray(plan?.payable) ? plan.payable.length : undefined;
+    track('checkout_started', payable != null ? { line_count: payable } : {});
     setShowCheckoutPage(true);
   };
 

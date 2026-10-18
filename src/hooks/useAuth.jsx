@@ -7,8 +7,8 @@ import {
   bootAnalytics,
   resetAnalyticsIdentity,
   syncAnalyticsIdentity,
-  track,
 } from '../utils/analytics';
+import { withAnalyticsConsent } from '../utils/analyticsConsentAuth';
 
 const AuthContext = createContext(null);
 
@@ -26,7 +26,9 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     if (isLoading) return undefined;
-    void syncAnalyticsIdentity(user, isAuthenticated);
+    void syncAnalyticsIdentity(user, isAuthenticated, {
+      isInternal: !!user?.isInternal,
+    });
     return undefined;
   }, [user, isAuthenticated, isLoading]);
 
@@ -40,7 +42,7 @@ export const AuthProvider = ({ children }) => {
       
       if (data.authenticated) {
         applyServerConsent(data.user?.consent);
-        setUser(data.user);
+        setUser({ ...data.user, isInternal: !!data.user?.isInternal });
         setIsAuthenticated(true);
         setGuest(null);
       } else if (data.guest) {
@@ -67,7 +69,7 @@ export const AuthProvider = ({ children }) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify(withAnalyticsConsent({ email, password })),
     });
     
     const data = await response.json();
@@ -77,10 +79,9 @@ export const AuthProvider = ({ children }) => {
     }
     
     applyServerConsent(data.user?.consent);
-    setUser(data.user);
+    setUser({ ...data.user, isInternal: !!data.user?.isInternal });
     setIsAuthenticated(true);
     setGuest(null);
-    track('logged_in');
     
     return data.user;
   }, []);
@@ -90,7 +91,7 @@ export const AuthProvider = ({ children }) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ email, password, name }),
+      body: JSON.stringify(withAnalyticsConsent({ email, password, name })),
     });
     
     const data = await response.json();
@@ -104,11 +105,9 @@ export const AuthProvider = ({ children }) => {
     }
     
     applyServerConsent(data.user?.consent);
-    setUser(data.user);
+    setUser({ ...data.user, isInternal: !!data.user?.isInternal });
     setIsAuthenticated(true);
     setGuest(null);
-    track('signed_up');
-    track('logged_in');
     
     return data.user;
   }, []);
@@ -152,7 +151,7 @@ export const AuthProvider = ({ children }) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ password, code }),
+      body: JSON.stringify(withAnalyticsConsent({ password, code })),
     });
     
     const data = await response.json();
@@ -162,11 +161,9 @@ export const AuthProvider = ({ children }) => {
     }
     
     applyServerConsent(data.user?.consent);
-    setUser(data.user);
+    setUser({ ...data.user, isInternal: !!data.user?.isInternal });
     setIsAuthenticated(true);
     setGuest(null);
-    track('signed_up');
-    track('logged_in');
     
     return data.user;
   }, []);

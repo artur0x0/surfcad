@@ -134,6 +134,13 @@ const userSchema = new mongoose.Schema({
     index: true,
     sparse: true,
   },
+  // GitHub login (username). Used only to flag internal analytics traffic.
+  githubLogin: {
+    type: String,
+    default: null,
+    trim: true,
+    lowercase: true,
+  },
   // Name fields - support both single name and first/last
   name: {
     type: String,
@@ -480,10 +487,17 @@ userSchema.methods.deleteAddress = function(id) {
   return this.addresses;
 };
 
+function githubLoginFromProfile(provider, profile) {
+  if (provider !== 'github') return null;
+  const login = String(profile?.login || '').trim().toLowerCase();
+  return login || null;
+}
+
 // Static method: Find or create OAuth user
 userSchema.statics.findOrCreateOAuth = async function(profile, provider) {
   const { id, emails, displayName, name } = profile;
   const email = emails?.[0]?.value;
+  const githubLogin = githubLoginFromProfile(provider, profile);
   
   if (!email) {
     throw new Error('Email is required for OAuth signup');
@@ -501,6 +515,10 @@ userSchema.statics.findOrCreateOAuth = async function(profile, provider) {
     let dirty = false;
     if (provider === 'github' && !user.githubId) {
       user.githubId = String(id);
+      dirty = true;
+    }
+    if (githubLogin && user.githubLogin !== githubLogin) {
+      user.githubLogin = githubLogin;
       dirty = true;
     }
     // Backfill names from GitHub / OAuth profile when missing.
@@ -540,6 +558,7 @@ userSchema.statics.findOrCreateOAuth = async function(profile, provider) {
     user.emailVerified = true;
     if (provider === 'github') {
       user.githubId = String(id);
+      if (githubLogin) user.githubLogin = githubLogin;
     }
     if (!user.firstName && name?.givenName) {
       user.firstName = name.givenName;
@@ -560,6 +579,7 @@ userSchema.statics.findOrCreateOAuth = async function(profile, provider) {
     authProvider: provider,
     providerId: id,
     githubId: provider === 'github' ? String(id) : null,
+    githubLogin,
     firstName: name?.givenName || displayName?.split(' ')[0],
     lastName: name?.familyName || displayName?.split(' ').slice(1).join(' '),
     name: displayName || (name ? `${name.givenName || ''} ${name.familyName || ''}`.trim() : null),

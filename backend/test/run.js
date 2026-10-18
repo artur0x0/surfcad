@@ -19,3 +19,5 @@ import './convert-route.test.js';
 import '../../test/backend-monitoring-stats.test.js';
 import './email-html-escape.test.js';
 import './prune-uploads.test.js';
+import './internal-users.test.js';
+import './posthog.test.js';
