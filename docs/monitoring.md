@@ -1,6 +1,6 @@
 # Monitoring and privacy
 
-SurfCAD asks for analytics consent on first visit. Optional tracking (PostHog) stays off until **Accept all**. **Required only** stores an opt-out. People can change their mind from **Change privacy choices** on `/privacy`, **Privacy choices** in the signed-out profile menu, or the site footer.
+SurfCAD asks for analytics consent on first visit. Optional tracking (PostHog) stays off until **Accept all**. **Required only** stores an opt-out. People can change their mind from **Change privacy choices** on `/privacy`, **Privacy choices** in the profile menu, the Account pane, or the site footer.
 
 Operational sign-up and login metrics for the US launch are sourced from **our MongoDB data** (slice A below) — no third-party analytics SDK in that slice.
 
@@ -36,7 +36,7 @@ A small non-blocking popup (`data-privacy-consent-popup`, bottom of the screen, 
 - **Required only** (grey secondary) — analytics stay off
 - One line of copy plus a link to `/privacy`
 
-`/privacy` (`src/pages/PrivacyPage.jsx`) always shows “Your browser's Global Privacy Control signal is honored” and **Change privacy choices**, which calls `openPrivacyChoices()`. The signed-out profile chip has a **Privacy choices** row that uses the same handler.
+`/privacy` (`src/pages/PrivacyPage.jsx`) always shows “Your browser's Global Privacy Control signal is honored” and **Change privacy choices**, which calls `openPrivacyChoices()`. The profile menu and Account pane **Privacy choices** rows use the same handler.
 
 Later monitoring slices (PostHog, Sentry) should import `src/utils/consent.js` only — do not add parallel consent state. If gitleaks flags the storage key name `surfcad.consent.v1`, PR #566 handles the allowlist.
 

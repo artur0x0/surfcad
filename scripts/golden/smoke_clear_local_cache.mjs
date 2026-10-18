@@ -298,7 +298,9 @@ console.log('clear local cache — chips and docs');
     && /onClearLocalCadData=\{openClearLocalCache\}/.test(app));
   ok('menu action is Clear local cache',
     /Clear local cache/.test(read('src/components/ProfilePanel.jsx'))
-    && /data-clear-cache/.test(read('src/components/ProfilePanel.jsx')));
+    && /data-clear-cache/.test(read('src/components/ProfilePanel.jsx'))
+    && /Clear local cache/.test(read('src/components/AccountPane.jsx'))
+    && /data-clear-cache/.test(read('src/components/AccountPane.jsx')));
   ok('popup warns and offers Push first',
     /data-clear-cache-dialog/.test(dialog)
     && /data-clear-cache-warning/.test(dialog)

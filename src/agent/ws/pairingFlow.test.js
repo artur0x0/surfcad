@@ -14,6 +14,7 @@ import {
   pairingProbeUserCopy,
   shouldClosePairingDialogOnConnect,
   shouldKeepAgentBridgeHostMounted,
+  shouldShowAgentBridgeDisconnect,
   shouldPollRelay,
   shouldRevealPairingCode,
   shouldShowPairingApproval,
@@ -115,6 +116,15 @@ test('dialog auto-closes once Allow has connected the agent', () => {
   assert.equal(shouldClosePairingDialogOnConnect({ paired: true, link: 'connected' }), true);
   assert.equal(shouldClosePairingDialogOnConnect({ paired: true, link: 'reconnecting' }), false);
   assert.equal(shouldClosePairingDialogOnConnect({ paired: false, link: 'connected' }), false);
+});
+
+test('Disconnect shows only while the local agent relay is paired or connected', () => {
+  assert.equal(shouldShowAgentBridgeDisconnect({}), false);
+  assert.equal(shouldShowAgentBridgeDisconnect({ paired: false, link: null }), false);
+  assert.equal(shouldShowAgentBridgeDisconnect({ paired: false, link: 'lost' }), false);
+  assert.equal(shouldShowAgentBridgeDisconnect({ paired: true }), true);
+  assert.equal(shouldShowAgentBridgeDisconnect({ paired: false, link: 'connected' }), true);
+  assert.equal(shouldShowAgentBridgeDisconnect({ paired: true, link: 'reconnecting' }), true);
 });
 
 test('Agent connected toast auto-dismisses at 5 s and closes with X', () => {

@@ -1,30 +1,23 @@
 /**
  * Profile panel from ProfileChip.
- * Signed in: user info, Sign out, Clear local cache, Danger zone → Delete account.
- * Signed out: Sign in + Clear local cache.
- * Clear local cache opens the confirm popup in App (ClearCacheDialog).
+ * Signed in: username header, Connect agent, Cart, Account, Admin (isAdmin),
+ * Sign out, Privacy choices. Signed out: Sign in + Clear local cache + Privacy.
+ * Account opens AccountPane (clear cache, danger zone, privacy).
  */
-import React, { useEffect, useRef, useState } from 'react';
-import { BarChart3 } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
+import { BarChart3, LogOut, ShoppingCart, User } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { shouldDismissProfilePanelOnPointer } from '../agent/ws/agentBridgeChrome.js';
 import PrivacyChoicesController from './PrivacyChoicesController';
 import ProfileUserIdRow from './ProfileUserIdRow';
+import { profileDisplayName } from './profileAccount.js';
+import { PROFILE_MENU_ITEM_CLASS } from './profileMenuChrome.js';
 import { profileAdminVisible } from '../utils/adminAccess.js';
-
-function displayName(user) {
-  if (!user) return '';
-  if (user.firstName && user.lastName) return `${user.firstName} ${user.lastName}`;
-  if (user.firstName || user.lastName) return user.firstName || user.lastName;
-  if (user.name) return user.name;
-  return user.email || '';
-}
 
 export default function ProfilePanel({
   open,
   onClose,
   onSignOut,
-  onDeleteAccount,
   onSignIn = null,
   onClearLocalCadData = null,
   onReconnect = null,
@@ -35,23 +28,13 @@ export default function ProfilePanel({
   showCart = false,
   cartCount = 0,
   onOpenCart = null,
+  onOpenAccount = null,
   align = 'right',
   agentBridgeLive = false,
   agentBridgeSlotRef = null,
 }) {
   const { user } = useAuth();
   const ref = useRef(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (!open) {
-      setConfirmDelete(false);
-      setBusy(false);
-      setError('');
-    }
-  }, [open]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -59,10 +42,7 @@ export default function ProfilePanel({
       if (shouldDismissProfilePanelOnPointer(event, ref.current)) onClose?.();
     };
     const onKey = (event) => {
-      if (event.key === 'Escape') {
-        if (confirmDelete) setConfirmDelete(false);
-        else onClose?.();
-      }
+      if (event.key === 'Escape') onClose?.();
     };
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);
@@ -70,28 +50,13 @@ export default function ProfilePanel({
       document.removeEventListener('mousedown', onDoc);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open, onClose, confirmDelete]);
+  }, [open, onClose]);
 
   if (!open) return null;
 
-  const name = displayName(user) || (user ? '' : 'GitHub connected');
-  const email = user?.email || '';
-  const loginHint = user?.githubId
-    ? 'GitHub linked'
-    : (!user ? 'Signed in with GitHub' : null);
+  const name = profileDisplayName(user) || (user ? '' : 'GitHub connected');
   const canClear = typeof onClearLocalCadData === 'function';
-
-  const runDelete = async () => {
-    setBusy(true);
-    setError('');
-    try {
-      await onDeleteAccount?.();
-      onClose?.();
-    } catch (err) {
-      setError(err?.message || 'Could not delete account');
-      setBusy(false);
-    }
-  };
+  const showAccount = (signedIn || reauth) && typeof onOpenAccount === 'function';
 
   const alignClass = align === 'left' ? 'left-0' : 'right-0';
   const cartLabel = cartCount > 0 ? `Cart (${cartCount})` : 'Cart';
@@ -99,10 +64,27 @@ export default function ProfilePanel({
     <button
       type="button"
       data-profile-cart=""
-      className="block w-full px-3 py-1.5 text-left text-xs font-medium text-emerald-200 hover:bg-white/10"
+      className={PROFILE_MENU_ITEM_CLASS}
       onClick={() => { onOpenCart?.(); onClose?.(); }}
     >
+      <ShoppingCart size={14} aria-hidden="true" />
       {cartLabel}
+    </button>
+  ) : null;
+
+  const agentSlot = agentBridgeLive ? (
+    <div ref={agentBridgeSlotRef} data-agent-bridge-slot="" />
+  ) : null;
+
+  const accountButton = showAccount ? (
+    <button
+      type="button"
+      data-profile-account=""
+      className={PROFILE_MENU_ITEM_CLASS}
+      onClick={() => { onOpenAccount?.(); onClose?.(); }}
+    >
+      <User size={14} aria-hidden="true" />
+      Account
     </button>
   ) : null;
 
@@ -110,16 +92,44 @@ export default function ProfilePanel({
     <button
       type="button"
       data-profile-admin=""
-      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-on-dark hover:bg-white/10"
+      className={PROFILE_MENU_ITEM_CLASS}
       onClick={() => {
         onClose?.();
         window.location.assign('/admin');
       }}
     >
-      <BarChart3 size={14} className="text-on-dark" aria-hidden="true" />
+      <BarChart3 size={14} aria-hidden="true" />
       Admin
     </button>
   ) : null;
+
+  const identityHeader = (
+    <div className="px-3 pb-2 pt-1" data-profile-panel-info="">
+      {name ? (
+        <p className="truncate text-sm font-medium text-on-dark" data-profile-panel-name="">
+          {name}
+        </p>
+      ) : null}
+      <ProfileUserIdRow user={user} signedIn={signedIn} reauth={reauth} />
+      {reauth ? (
+        <>
+          <p className="mt-1 text-xs text-on-dark" data-profile-reauth-copy="">
+            GitHub needs a reconnect to open your repo.
+          </p>
+          {reconnectError ? (
+            <p className="mt-1 text-xs text-amber-300" data-profile-reconnect-error="">{reconnectError}</p>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+
+  const privacyRow = (
+    <>
+      <div className="my-2 border-t border-chrome-border" data-profile-privacy-divider="" />
+      <PrivacyChoicesController variant="profileMenu" onPicked={onClose} />
+    </>
+  );
 
   return (
     <div
@@ -127,65 +137,17 @@ export default function ProfilePanel({
       data-profile-panel=""
       data-profile-panel-mode={reauth ? 'reauth' : (signedIn ? 'signed-in' : 'signed-out')}
       role="dialog"
-      aria-label="Account"
+      aria-label="Profile"
       className={`absolute ${alignClass} top-full z-[60] mt-1 w-64 rounded-md border border-gray-600
         surface-panel text-on-dark font-ui py-2 shadow-xl`}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      {confirmDelete ? (
-        <div className="px-3 py-1" data-profile-delete-confirm="">
-          <p className="text-xs text-gray-200">
-            This deletes your SurfCAD account and your GitHub repo
-            (usually <span className="font-mono text-chrome-text">surfcad-vault</span>).
-            This cannot be undone.
-          </p>
-          {error ? (
-            <p className="mt-2 text-xs text-amber-300" data-profile-delete-error="">{error}</p>
-          ) : null}
-          <div className="mt-3 flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              data-profile-delete-cancel=""
-              className="rounded-md px-2.5 py-1 text-xs text-gray-200 hover:bg-white/10"
-              disabled={busy}
-              onClick={() => { setConfirmDelete(false); setError(''); }}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              data-profile-delete-confirm-btn=""
-              className="rounded-md bg-red-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-600
-                disabled:opacity-50"
-              disabled={busy}
-              onClick={() => { void runDelete(); }}
-            >
-              {busy ? 'Deleting…' : 'Delete account'}
-            </button>
-          </div>
-        </div>
-      ) : reauth ? (
+      {reauth ? (
         <>
-          <div className="px-3 pb-2 pt-1" data-profile-panel-info="">
-            {name ? (
-              <p className="truncate text-sm font-medium text-chrome-text" data-profile-panel-name="">
-                {name}
-              </p>
-            ) : null}
-            <ProfileUserIdRow user={user} signedIn={signedIn} reauth={reauth} />
-            {email ? (
-              <p className="truncate text-xs text-chrome-secondary" data-profile-panel-email="" title={email}>
-                {email}
-              </p>
-            ) : null}
-            <p className="mt-1 text-xs text-gray-300" data-profile-reauth-copy="">
-              GitHub needs a reconnect to open your repo.
-            </p>
-            {reconnectError ? (
-              <p className="mt-1 text-xs text-amber-300" data-profile-reconnect-error="">{reconnectError}</p>
-            ) : null}
-          </div>
+          {identityHeader}
+          {agentSlot}
           {cartButton}
+          {accountButton}
           {adminButton}
           <button
             type="button"
@@ -199,33 +161,25 @@ export default function ProfilePanel({
           <button
             type="button"
             data-profile-sign-out=""
-            className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
+            className={PROFILE_MENU_ITEM_CLASS}
             onClick={() => { void onSignOut?.(); onClose?.(); }}
           >
+            <LogOut size={14} aria-hidden="true" />
             Sign out
           </button>
-          {canClear ? (
-            <button
-              type="button"
-              data-profile-clear-local=""
-              data-clear-cache=""
-              className="block w-full px-3 py-1.5 text-left text-xs text-amber-200/90 hover:bg-amber-500/15"
-              onClick={() => { onClose?.(); void onClearLocalCadData?.(); }}
-            >
-              Clear local cache
-            </button>
-          ) : null}
+          {privacyRow}
         </>
       ) : !signedIn ? (
         <>
           <button
             type="button"
             data-profile-sign-in=""
-            className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
+            className={PROFILE_MENU_ITEM_CLASS}
             onClick={() => { onSignIn?.(); onClose?.(); }}
           >
             Sign in
           </button>
+          {agentSlot}
           {canClear ? (
             <button
               type="button"
@@ -237,69 +191,27 @@ export default function ProfilePanel({
               Clear local cache
             </button>
           ) : null}
+          {privacyRow}
         </>
       ) : (
         <>
-          <div className="px-3 pb-2 pt-1" data-profile-panel-info="">
-            {name ? (
-              <p className="truncate text-sm font-medium text-chrome-text" data-profile-panel-name="">
-                {name}
-              </p>
-            ) : null}
-            <ProfileUserIdRow user={user} signedIn={signedIn} reauth={reauth} />
-            {email ? (
-              <p className="truncate text-xs text-chrome-secondary" data-profile-panel-email="" title={email}>
-                {email}
-              </p>
-            ) : null}
-            {loginHint ? (
-              <p className="mt-0.5 text-[10px] text-gray-500" data-profile-panel-github="">{loginHint}</p>
-            ) : null}
-          </div>
+          {identityHeader}
+          {agentSlot}
           {cartButton}
+          {accountButton}
           {adminButton}
           <button
             type="button"
             data-profile-sign-out=""
-            className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
+            className={PROFILE_MENU_ITEM_CLASS}
             onClick={() => { void onSignOut?.(); onClose?.(); }}
           >
+            <LogOut size={14} aria-hidden="true" />
             Sign out
           </button>
-          {canClear ? (
-            <button
-              type="button"
-              data-profile-clear-local=""
-              data-clear-cache=""
-              className="block w-full px-3 py-1.5 text-left text-xs text-amber-200/90 hover:bg-amber-500/15"
-              onClick={() => { onClose?.(); void onClearLocalCadData?.(); }}
-            >
-              Clear local cache
-            </button>
-          ) : null}
-          <div className="my-2 border-t border-chrome-border" data-profile-danger-divider="" />
-          <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-red-400/90"
-            data-profile-danger-zone="">
-            Danger zone
-          </p>
-          <button
-            type="button"
-            data-profile-delete-account=""
-            className="block w-full px-3 py-1.5 text-left text-xs text-red-300 hover:bg-red-500/15"
-            onClick={() => setConfirmDelete(true)}
-          >
-            Delete account
-          </button>
+          {privacyRow}
         </>
       )}
-      <div className="my-2 border-t border-chrome-border" data-profile-privacy-divider="" />
-      <PrivacyChoicesController variant="profileMenu" onPicked={onClose} />
-      {agentBridgeLive ? (
-        <>
-          <div className="my-2 border-t border-chrome-border" data-profile-agent-bridge-divider="" />
-          <div ref={agentBridgeSlotRef} data-agent-bridge-slot="" />
-        </>
-      ) : null}
     </div>
   );
 }

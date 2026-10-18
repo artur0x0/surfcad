@@ -23,6 +23,7 @@ describe('Privacy choices dialog UI', () => {
     const footer = readFileSync(new URL('../src/components/SiteFooter.jsx', import.meta.url), 'utf8');
     const controller = readFileSync(new URL('../src/components/PrivacyChoicesController.jsx', import.meta.url), 'utf8');
     const profile = readFileSync(new URL('../src/components/ProfilePanel.jsx', import.meta.url), 'utf8');
+    const account = readFileSync(new URL('../src/components/AccountPane.jsx', import.meta.url), 'utf8');
     const popup = readFileSync(new URL('../src/components/PrivacyConsentPopup.jsx', import.meta.url), 'utf8');
     const opener = readFileSync(new URL('../src/utils/privacyChoicesUi.js', import.meta.url), 'utf8');
     const privacyPage = readFileSync(new URL('../src/pages/PrivacyPage.jsx', import.meta.url), 'utf8');
@@ -34,6 +35,7 @@ describe('Privacy choices dialog UI', () => {
     assert.match(controller, /data-profile-privacy-choices/);
     assert.match(controller, /openPrivacyChoices/);
     assert.match(profile, /variant="profileMenu"/);
+    assert.match(account, /variant="profileMenu"/);
     assert.match(opener, /export function openPrivacyChoices/);
     assert.match(popup, /Accept all/);
     assert.match(popup, /Required only/);
@@ -55,5 +57,7 @@ describe('Privacy choices dialog UI', () => {
     assert.match(loading, /<SiteFooter \/>/);
     assert.doesNotMatch(popup, /\bEdge\b/);
     assert.doesNotMatch(privacyPage, /\bEdge\b/);
+    assert.doesNotMatch(profile, /\bEdge\b/);
+    assert.doesNotMatch(account, /\bEdge\b/);
   });
 });

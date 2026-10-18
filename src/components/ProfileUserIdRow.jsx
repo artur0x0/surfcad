@@ -25,7 +25,7 @@ export default function ProfileUserIdRow({ user, signedIn = false, reauth = fals
   return (
     <div className="mt-0.5 flex min-w-0 items-center gap-1" data-profile-user-id-row="">
       <span
-        className="min-w-0 flex-1 truncate font-mono text-[10px] text-gray-500"
+        className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-on-dark"
         data-profile-user-id=""
         title={userId}
       >
@@ -35,8 +35,8 @@ export default function ProfileUserIdRow({ user, signedIn = false, reauth = fals
         type="button"
         data-profile-user-id-copy=""
         aria-label="Copy user id"
-        className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-gray-400
-          hover:bg-white/10 hover:text-chrome-text"
+        className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-muted-on-dark
+          hover:bg-white/10 hover:text-on-dark"
         onClick={() => { void handleCopy(); }}
       >
         {copied ? (

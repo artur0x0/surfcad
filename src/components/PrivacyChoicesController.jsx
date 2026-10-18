@@ -16,6 +16,7 @@ import { openPrivacyChoices } from '../utils/privacyChoicesUi';
  */
 export default function PrivacyChoicesController({
   linkClassName = '',
+  buttonClassName = '',
   variant = 'link',
   onPicked,
 }) {
@@ -43,7 +44,7 @@ export default function PrivacyChoicesController({
     <button
       type="button"
       data-profile-privacy-choices=""
-      className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
+      className={buttonClassName || 'block w-full px-3 py-1.5 text-left text-xs text-on-dark hover:bg-white/10'}
       onClick={openChoices}
     >
       Privacy choices

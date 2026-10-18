@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Plug } from 'lucide-react';
 import { createPairingToken } from '../agent/ws/pairingToken.js';
 import { createAgentBridgeTabConnection } from '../agent/ws/tabConnection.js';
 import { createAgentBridgeTransport } from '../agent/ws/agentBridgeTransport.js';
@@ -27,11 +27,13 @@ import {
   pairingProbeUserCopy,
   shouldClosePairingDialogOnConnect,
   shouldPollRelay,
+  shouldShowAgentBridgeDisconnect,
   shouldShowPairingApproval,
   shouldShowPairingCode,
   shouldShowPairingPrompt,
 } from '../agent/ws/pairingFlow.js';
 import { CONNECT_AGENT_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from './agentBridgeConnectButton.js';
+import { PROFILE_MENU_ITEM_CLASS } from './profileMenuChrome.js';
 import AgentBridgeApprovalPopup from './AgentBridgeApprovalPopup.jsx';
 import AgentBridgePairingDialog from './AgentBridgePairingDialog.jsx';
 import ErrorPopup from './ErrorPopup.jsx';
@@ -507,14 +509,16 @@ export default function AgentBridgePairing({
                 : 'Lost the local agent. Keep this tab open in Chrome; it reconnects when the agent is back.'}
             </p>
           ) : null}
-          <button
-            type="button"
-            className={SECONDARY_BUTTON_CLASS}
-            onClick={disconnectPairing}
-            data-ui-action="data-agent-bridge-disconnect"
-          >
-            Disconnect
-          </button>
+          {shouldShowAgentBridgeDisconnect({ paired, link }) ? (
+            <button
+              type="button"
+              className={SECONDARY_BUTTON_CLASS}
+              onClick={disconnectPairing}
+              data-ui-action="data-agent-bridge-disconnect"
+            >
+              Disconnect
+            </button>
+          ) : null}
         </div>
       )}
     </>
@@ -523,19 +527,20 @@ export default function AgentBridgePairing({
   const connectAgentButton = !flowOpen && !paired ? (
     <button
       type="button"
-      className={embedded ? CONNECT_AGENT_BUTTON_CLASS : `${CONNECT_AGENT_BUTTON_CLASS} shadow-md`}
+      className={PROFILE_MENU_ITEM_CLASS}
       onClick={beginConnectFlow}
       data-ui-action="data-agent-bridge-connect"
       data-agent-bridge-connect=""
     >
-      Connect Agent
+      <Plug size={14} aria-hidden />
+      Connect agent
     </button>
   ) : null;
 
-  const menuDisconnect = paired && !flowOpen ? (
+  const menuDisconnect = shouldShowAgentBridgeDisconnect({ paired, link }) && !flowOpen ? (
     <button
       type="button"
-      className={SECONDARY_BUTTON_CLASS}
+      className={PROFILE_MENU_ITEM_CLASS}
       onClick={disconnectPairing}
       data-ui-action="data-agent-bridge-disconnect"
       data-agent-bridge-chip=""
@@ -569,7 +574,7 @@ export default function AgentBridgePairing({
   );
 
   const menuBody = (
-    <div className="relative px-3 py-2 space-y-2" data-agent-bridge-pairing="">
+    <div data-agent-bridge-pairing="">
       {connectAgentButton}
       {menuDisconnect}
     </div>

@@ -5,7 +5,7 @@
  * - profileInitials helper (name / email / guest / signed-out)
  * - ProfileChip mounted in Viewport (not game), top-right absolute
  * - Toolbar CAD strip no longer has Account / User icon
- * - Signed out → onAccount (Login); signed in → ProfilePanel (Sign out / Delete)
+ * - Signed out → onAccount (Login); signed in → ProfilePanel (Account / Sign out)
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -81,10 +81,10 @@ console.log('\nG9 — UI wiring (source)');
     && /data-profile-auth/.test(chip));
   ok('chip is circular absolute top-right',
     /rounded-full/.test(chip)
-    && /absolute top-4 right-4/.test(chip));
+    && /absolute top-4 lg:top-2 right-4/.test(chip));
   // Viewport wrap must sit above CAD feature strip (z-20) so ProfilePanel is clickable.
   ok('viewport chip z above feature strip',
-    /absolute top-4 right-4 z-50/.test(chip)
+    /absolute top-4 lg:top-2 right-4 z-50/.test(chip)
     && /z-\[60\]/.test(readFileSync(join(root, 'src/components/ProfilePanel.jsx'), 'utf8')));
   ok('chip uses surface-glass-chip', /surface-glass-chip/.test(chip));
   ok('chip calls onAccount', /onAccount\?\.|onAccount\(/.test(chip));
@@ -106,7 +106,7 @@ console.log('\nG9 — UI wiring (source)');
     && /variant="inline"/.test(readFileSync(join(root, 'src/components/PartFeed.jsx'), 'utf8')));
   ok('Script toolbar mounts inline ProfileChip',
     /data-script-profile-chip/.test(readFileSync(join(root, 'src/components/CodeEditor.jsx'), 'utf8'))
-    && /ProfileChip variant="inline"/.test(readFileSync(join(root, 'src/components/CodeEditor.jsx'), 'utf8'))
+    && /<ProfileChip[\s\S]*?variant="inline"/.test(readFileSync(join(root, 'src/components/CodeEditor.jsx'), 'utf8'))
     && /onAccount=\{handleAccount\}/.test(app));
   ok('chip falls back to User icon when no initials',
     /from 'lucide-react'/.test(chip) && /<User /.test(chip));
@@ -126,12 +126,26 @@ console.log('\nG9 — UI wiring (source)');
     && /setShowLoginModal\(true\)/.test(app)
     && /setShowAccountModal\(true\)/.test(app));
 
-  ok('signed-in chip opens ProfilePanel', /ProfilePanel/.test(chip)
-    && /data-profile-panel/.test(readFileSync(join(root, 'src/components/ProfilePanel.jsx'), 'utf8'))
-    && /data-profile-sign-out/.test(readFileSync(join(root, 'src/components/ProfilePanel.jsx'), 'utf8'))
-    && /data-profile-danger-zone/.test(readFileSync(join(root, 'src/components/ProfilePanel.jsx'), 'utf8'))
-    && /data-profile-delete-account/.test(readFileSync(join(root, 'src/components/ProfilePanel.jsx'), 'utf8'))
-    && /data-profile-delete-confirm/.test(readFileSync(join(root, 'src/components/ProfilePanel.jsx'), 'utf8')));
+  {
+    const panel = readFileSync(join(root, 'src/components/ProfilePanel.jsx'), 'utf8');
+    const account = readFileSync(join(root, 'src/components/AccountPane.jsx'), 'utf8');
+    ok('signed-in chip opens ProfilePanel', /ProfilePanel/.test(chip)
+      && /data-profile-panel/.test(panel)
+      && /data-profile-sign-out/.test(panel)
+      && /data-profile-account/.test(panel)
+      && /AccountPane/.test(chip));
+    ok('Account pane holds danger zone, delete confirm, and clear cache',
+      /data-profile-danger-zone/.test(account)
+      && /data-profile-delete-account/.test(account)
+      && /data-profile-delete-confirm/.test(account)
+      && /data-clear-cache/.test(account)
+      && /data-profile-privacy-divider/.test(account));
+    ok('signed-in dropdown drops email, GitHub linked, and the old danger block',
+      !/data-profile-panel-email/.test(panel)
+      && !/GitHub linked/.test(panel)
+      && !/data-profile-delete-account/.test(panel)
+      && !/data-profile-danger-zone/.test(panel));
+  }
   // Green chip (session OR GitHub token) must open the panel — never Login.
   ok('green chip click uses signedIn (not only isAuthenticated)',
     /if \(signedIn\)/.test(chip)
@@ -140,10 +154,11 @@ console.log('\nG9 — UI wiring (source)');
     && /<ProfilePanel/.test(chip)
     && !/if \(isAuthenticated\) \{[\s\S]*?setPanelOpen/.test(chip));
   ok('delete confirm warns account + GitHub repo',
-    /SurfCAD account/.test(readFileSync(join(root, 'src/components/ProfilePanel.jsx'), 'utf8'))
-    && /GitHub repo/.test(readFileSync(join(root, 'src/components/ProfilePanel.jsx'), 'utf8')));
+    /SurfCAD account/.test(readFileSync(join(root, 'src/components/AccountPane.jsx'), 'utf8'))
+    && /GitHub repo/.test(readFileSync(join(root, 'src/components/AccountPane.jsx'), 'utf8')));
   ok('signed-in profile menu shows Mongo user id + copy',
     /ProfileUserIdRow/.test(readFileSync(join(root, 'src/components/ProfilePanel.jsx'), 'utf8'))
+    && /ProfileUserIdRow/.test(readFileSync(join(root, 'src/components/AccountPane.jsx'), 'utf8'))
     && /data-profile-user-id/.test(readFileSync(join(root, 'src/components/ProfileUserIdRow.jsx'), 'utf8'))
     && /data-profile-user-id-copy/.test(readFileSync(join(root, 'src/components/ProfileUserIdRow.jsx'), 'utf8'))
     && /Copy user id/.test(readFileSync(join(root, 'src/components/ProfileUserIdRow.jsx'), 'utf8')));
