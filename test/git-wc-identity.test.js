@@ -4,12 +4,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mintSurfId, isSurfId, readSurfId, withSurfId } from '../src/utils/git/surfId.js';
-import { collapseWorkingCopyIds, pickCollapsedPartId, replaceScriptKeys } from '../src/utils/git/wcIdentity.js';
+import { collapseWorkingCopyIds, persistCollapsedWorkingCopy, pickCollapsedPartId, replaceScriptKeys } from '../src/utils/git/wcIdentity.js';
 import { rewriteFeaStudyPartIds } from '../src/utils/git/feaStudyIds.js';
 import { serializeAssembly, parseAssemblyDocument, composeViewportParts } from '../src/utils/assembly.js';
-import { partSurfId } from '../src/utils/git/surfId.js';
+import { partSurfId, readSurfName, withSurfName } from '../src/utils/git/surfId.js';
 import { normalizeAssemblyJoints } from '../src/utils/jointSchema.js';
 import { seedAssemblyHistory } from '../src/joints/jointUi.js';
+import { captureBaseline } from '../src/utils/git/gitBaseline.js';
+import { isPartDirty, isWorkspaceDirty } from '../src/utils/git/gitWorkspace.js';
+import { buildCommitFiles } from '../src/utils/git/gitCommit.js';
+import { partListSubtitles } from '../src/utils/git/partListSubtitle.js';
 
 const UUID = '5f0c3c1e-0000-4000-8000-000000000001';
 const PATH = 'assemblies/Gearbox/Bracket.js';
@@ -596,6 +600,175 @@ test('rewriteFeaStudyPartIds only touches known study fields', () => {
   assert.equal(rewritten.scope.ids[0], next);
   assert.equal(rewritten.parts[0].id, next);
   assert.equal(rewriteFeaStudyPartIds(out, map), out);
+});
+
+test('IDB get failure leaves the old key and does not collapse the row', async () => {
+  const store = new Map([[UUID, 'return keep-me;\n']]);
+  const doc = {
+    source: 'local',
+    name: 'Assembly',
+    activeId: UUID,
+    parts: [{ id: UUID, name: 'Part', visible: true, order: 0 }],
+  };
+  const scripts = {};
+  const collapsed = collapseWorkingCopyIds(doc, scripts, { now: NOW, randFor: () => 'b10c' });
+  assert.equal(collapsed.doc.parts[0].id, UUID);
+  assert.equal(collapsed.pairs.length, 0);
+  const persisted = await persistCollapsedWorkingCopy({
+    collapsed,
+    sourceDoc: doc,
+    sourceScripts: Object.fromEntries(store),
+    save: async (id, script) => { store.set(id, script); return true; },
+    remove: async (id) => { store.delete(id); },
+  });
+  assert.equal(persisted.doc.parts[0].id, UUID);
+  assert.equal(store.get(UUID), 'return keep-me;\n');
+  assert.equal(store.size, 1);
+});
+
+test('IDB put failure keeps the old key and leaves the row un-collapsed', async () => {
+  const store = new Map([[UUID, 'return keep-me;\n']]);
+  const doc = {
+    source: 'local',
+    name: 'Assembly',
+    activeId: UUID,
+    parts: [{ id: UUID, name: 'Part', visible: true, order: 0 }],
+  };
+  const scripts = { [UUID]: store.get(UUID) };
+  const collapsed = collapseWorkingCopyIds(doc, scripts, { now: NOW, randFor: () => 'b10c' });
+  assert.notEqual(collapsed.doc.parts[0].id, UUID);
+  const persisted = await persistCollapsedWorkingCopy({
+    collapsed,
+    sourceDoc: doc,
+    sourceScripts: scripts,
+    save: async () => false,
+    remove: async (id) => { store.delete(id); },
+  });
+  assert.equal(persisted.doc.parts[0].id, UUID);
+  assert.equal(store.get(UUID), 'return keep-me;\n');
+  assert.equal(store.has(collapsed.doc.parts[0].id), false);
+});
+
+test('copy with a cached colliding header is stable and not dirty on reload', () => {
+  const copyId = mintSurfId({ now: NOW, rand: 'c0c0' });
+  const pinPath = 'parts/Pin.js';
+  const copyPath = 'parts/PinCopy.js';
+  const pinScript = withSurfId('return pin;\n', SURF);
+  const copyScript = withSurfId('return copy;\n', SURF);
+  const original = {
+    id: ASM,
+    source: 'git',
+    name: 'Assembly',
+    activeId: SURF,
+    parts: [
+      { id: SURF, path: pinPath, name: 'Pin', visible: true, order: 0 },
+      { id: copyId, path: copyPath, name: 'PinCopy', visible: true, order: 1 },
+    ],
+  };
+  const originalScripts = { [SURF]: pinScript, [copyId]: copyScript };
+  const first = collapseWorkingCopyIds(original, originalScripts, { now: NOW, randFor: () => 'dead' });
+  assert.equal(first.doc.parts[1].id, copyId);
+  assert.equal(first.doc.parts[1].copiedFrom, SURF);
+  assert.equal(readSurfId(first.scripts[copyId]), copyId);
+  const baseline = captureBaseline({
+    assemblyPath: 'assemblies/Assembly/.surf.json',
+    assemblyName: 'Assembly',
+    doc: first.doc,
+    scripts: first.scripts,
+  });
+  const pathIndex = Object.fromEntries((first.cached || []).map((hit) => [hit.path, hit.id]));
+  const reload = collapseWorkingCopyIds(first.doc, first.scripts, {
+    now: new Date('2026-10-21T00:00:00.000Z'),
+    randFor: () => 'ffff',
+    pathIndex,
+  });
+  assert.equal(reload.doc.parts[1].id, copyId);
+  assert.equal(readSurfId(reload.scripts[copyId]), copyId);
+  assert.equal(isPartDirty(copyId, reload.scripts[copyId], baseline), false);
+  assert.equal(isWorkspaceDirty(reload.doc, reload.scripts, baseline), false);
+  const reload2 = collapseWorkingCopyIds(reload.doc, reload.scripts, {
+    now: new Date('2026-10-22T00:00:00.000Z'),
+    randFor: () => 'eeee',
+    pathIndex,
+  });
+  assert.equal(reload2.doc.parts[1].id, copyId);
+  assert.equal(isPartDirty(copyId, reload2.scripts[copyId], baseline), false);
+  assert.equal(isWorkspaceDirty(reload2.doc, reload2.scripts, baseline), false);
+});
+
+test('Save writes a copied part file with its own @surf-id and @name', () => {
+  const copyId = mintSurfId({ now: NOW, rand: 'c0c0' });
+  const pinPath = 'parts/Pin.js';
+  const copyPath = 'parts/PinCopy.js';
+  const pinScript = withSurfName(withSurfId('return pin;\n', SURF), 'Pin');
+  const doc = {
+    source: 'git',
+    name: 'Assembly',
+    activeId: SURF,
+    parts: [
+      { id: SURF, path: pinPath, name: 'Pin', visible: true, order: 0 },
+      { id: copyId, path: copyPath, name: 'PinCopy', visible: true, order: 1, copiedFrom: SURF },
+    ],
+  };
+  const pinEdited = `${pinScript}// edited\n`;
+  const baseline = captureBaseline({
+    assemblyPath: 'assemblies/Assembly/.surf.json',
+    assemblyName: 'Assembly',
+    doc,
+    scripts: { [SURF]: pinScript, [copyId]: pinScript },
+  });
+  // Pin is dirty; PinCopy.js bytes still match git (Pin's header). Save must
+  // still rewrite PinCopy.js so GitHub does not keep Pin's @surf-id.
+  const built = buildCommitFiles(doc, { [SURF]: pinEdited, [copyId]: pinScript }, baseline);
+  const file = built.files.find((row) => row.path === copyPath);
+  assert.ok(file, 'copy file must be in the Save');
+  assert.equal(readSurfId(file.content), copyId);
+  assert.equal(readSurfName(file.content), 'PinCopy');
+  const json = built.files.find((row) => String(row.path).endsWith('.surf.json'));
+  assert.ok(json?.content.includes(copyId));
+});
+
+test('pasted header must not take another live part\'s surfId', () => {
+  const uuid2 = '5f0c3c1e-0000-4000-8000-0000000000b2';
+  const groupId = mintSurfId({ now: NOW, rand: 'cc04' });
+  const jointId = mintSurfId({ now: NOW, rand: 'j02b' });
+  const out = collapseWorkingCopyIds(
+    {
+      id: ASM,
+      source: 'local',
+      name: 'Assembly',
+      activeId: UUID,
+      parts: [
+        { id: uuid2, name: 'Pasted', visible: true, order: 0 },
+        { id: UUID, surfId: SURF, name: 'Original', visible: true, order: 1 },
+      ],
+      colors: { [SURF]: { part: '#ff00aa' } },
+      groups: [{ id: groupId, name: 'Hardware', source: null, partIds: [SURF] }],
+      joints: [{ id: jointId, name: 'Fixed 1', type: 'fixed', a: { part: SURF } }],
+    },
+    {
+      [uuid2]: withSurfId('return pasted;\n', SURF),
+      [UUID]: 'return original;\n',
+    },
+    { now: NOW, randFor: (part) => (part?.id === '$assembly' ? 'aa01' : 'b10c') },
+  );
+  assert.equal(out.doc.parts[1].id, SURF);
+  assert.notEqual(out.doc.parts[0].id, SURF);
+  assert.equal(out.doc.parts[0].copiedFrom, SURF);
+  assert.equal(out.scripts[SURF].includes('return original'), true);
+  assert.equal(out.scripts[out.doc.parts[0].id].includes('return pasted'), true);
+  assert.deepEqual(out.doc.colors[SURF], { part: '#ff00aa' });
+  assert.deepEqual(out.doc.groups[0].partIds, [SURF]);
+  assert.equal(out.doc.joints[0].a.part, SURF);
+});
+
+test('nested legacy part list shows the name, not parts/Pin.js', () => {
+  const nested = 'assemblies/Gearbox/parts/Pin.js';
+  const titles = partListSubtitles([
+    { id: SURF, path: nested, name: 'Pin', visible: true, order: 0 },
+  ]);
+  assert.equal(titles.get(SURF), 'Pin');
+  assert.equal(String(titles.get(SURF)).includes('parts/Pin.js'), false);
 });
 
 test('read-only collapse does not mint and is stable across unsaved boots', () => {

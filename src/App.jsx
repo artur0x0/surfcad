@@ -281,7 +281,7 @@ import {
   migrateAssemblyRecords,
   migrateLocalPartIds,
   collapseWorkingCopyIds,
-  replaceScriptKeys,
+  persistCollapsedWorkingCopy,
   isSurfId,
   partSurfId,
   reconcileSyncedFromTip,
@@ -1682,6 +1682,7 @@ const App = () => {
                 )),
               };
             }
+            const persistSource = { doc, scripts };
             const localIds = migrateLocalPartIds({
               doc,
               scripts,
@@ -1727,21 +1728,32 @@ const App = () => {
             const idsChanged = migrated.changed || localIds.changed || collapsed.changed;
             if (!readOnly && !bootWouldClobber(loaded.doc, doc) && (idsChanged || Object.keys(flags).length)) {
               try {
-                await saveAssemblyDocument(doc);
                 if (idsChanged) {
-                  for (const [id, text] of Object.entries(scripts)) {
-                    const part = (doc.parts || []).find((row) => row.id === id);
-                    await savePartScript(
-                      id,
-                      text,
-                      typeof part?.isSynced === 'boolean' ? { isSynced: part.isSynced } : {},
-                    );
-                  }
-                }
-                if (localIds.changed || collapsed.changed) {
-                  for (const { from } of [...localIds.pairs, ...collapsed.pairs]) {
-                    try { await deletePartScript(from); } catch { /* ignore */ }
-                  }
+                  const persisted = await persistCollapsedWorkingCopy({
+                    collapsed: {
+                      doc,
+                      scripts,
+                      pairs: [...localIds.pairs, ...collapsed.pairs],
+                    },
+                    sourceDoc: persistSource.doc,
+                    sourceScripts: persistSource.scripts,
+                    save: async (id, text) => {
+                      const part = (doc.parts || []).find((row) => row.id === id);
+                      return savePartScript(
+                        id,
+                        text,
+                        typeof part?.isSynced === 'boolean' ? { isSynced: part.isSynced } : {},
+                      );
+                    },
+                    remove: async (id) => {
+                      try { await deletePartScript(id); } catch { /* ignore */ }
+                    },
+                    saveDoc: saveAssemblyDocument,
+                  });
+                  doc = persisted.doc;
+                  scripts = persisted.scripts;
+                } else {
+                  await saveAssemblyDocument(doc);
                 }
               } catch (err) {
                 console.warn('[App] Part id migration persist failed:', err?.message || err);
@@ -3602,7 +3614,8 @@ const App = () => {
       ? { doc: opened.doc }
       : backfillSurfIds(opened.doc, store.pathIndexFor(vault.repo));
     const migrated = migrateAssemblyRecords({ doc: filled.doc, scripts: opened.scripts });
-    const staleScriptIds = [];
+    const persistSource = { doc: migrated.doc, scripts: migrated.scripts };
+    const stalePairs = [];
     const localIds = migrateLocalPartIds({
       doc: migrated.doc,
       scripts: migrated.scripts,
@@ -3614,7 +3627,7 @@ const App = () => {
       if (localIds.selection?.cadPartId && localIds.selection.cadPartId !== cadPartIdRef.current) {
         cadPartIdRef.current = localIds.selection.cadPartId;
       }
-      for (const { from } of localIds.pairs) staleScriptIds.push(from);
+      stalePairs.push(...localIds.pairs);
     }
     const collapsed = collapseWorkingCopyIds(localIds.doc, localIds.scripts, {
       pathIndex: store.pathIndexFor(vault.repo),
@@ -3622,7 +3635,7 @@ const App = () => {
     });
     if (collapsed.changed) {
       if (collapsed.pairs.length) rekeyRuntime(collapsed.pairs);
-      for (const { from } of collapsed.pairs) staleScriptIds.push(from);
+      stalePairs.push(...collapsed.pairs);
     }
     const reconciled = reconcileSyncedFromTip(collapsed.doc, collapsed.scripts);
     const openedDocIn = reconciled.doc;
@@ -3637,7 +3650,7 @@ const App = () => {
         rekeyRuntime(aligned.pairs);
         partMeshMetaRef.current = aligned.meshMeta;
         setPartMeshMeta(aligned.meshMeta);
-        for (const { from } of aligned.pairs) staleScriptIds.push(from);
+        stalePairs.push(...aligned.pairs);
       }
     }
     for (const part of openedDocIn.parts || []) {
@@ -3668,22 +3681,30 @@ const App = () => {
       openedScripts = next.scripts;
     }
     const meshRecords = partMeshRecordsFromBaseline(openedDoc, openedScripts, opened.baseline?.assets);
-    await replaceScriptKeys({
-      nextScripts: openedScripts,
-      staleIds: staleScriptIds,
+    const persisted = await persistCollapsedWorkingCopy({
+      collapsed: {
+        doc: openedDoc,
+        scripts: openedScripts,
+        pairs: stalePairs,
+      },
+      sourceDoc: persistSource.doc,
+      sourceScripts: persistSource.scripts,
       save: async (id, script) => {
         const part = (openedDoc.parts || []).find((row) => row.id === id);
         const mesh = meshRecords[id];
-        await savePartScript(id, script, {
+        const ok = await savePartScript(id, script, {
           ...(typeof part?.isSynced === 'boolean' ? { isSynced: part.isSynced } : {}),
           ...(mesh || {}),
         });
-        if (mesh?.assets) rememberPartAssets(id, mesh.assets);
+        if (ok !== false && mesh?.assets) rememberPartAssets(id, mesh.assets);
+        return ok;
       },
       remove: async (id) => {
         try { await deletePartScript(id); } catch { /* ignore */ }
       },
     });
+    openedDoc = persisted.doc;
+    openedScripts = persisted.scripts;
     if (Object.keys(meshRecords).length) {
       const nextMeta = { ...partMeshMetaRef.current, ...meshRecords };
       partMeshMetaRef.current = nextMeta;
@@ -5559,6 +5580,7 @@ const App = () => {
           if (hit.path && hit.id) await store.rememberPathId(vault.repo, hit.path, hit.id);
         }
         const beforeScripts = partScriptsRef.current || {};
+        const persistSource = { doc: assemblyRef.current, scripts: beforeScripts };
         const aligned = rekeyWorkingCopyToTip(assemblyRef.current, beforeScripts, opened.doc, {
           histories: partHistoriesRef.current,
           meshMeta: partMeshMetaRef.current,
@@ -5566,17 +5588,12 @@ const App = () => {
         });
         let doc = aligned.doc;
         let scriptsNow = aligned.scripts;
+        const persistPairs = [...aligned.pairs];
         if (aligned.pairs.length) {
           rekeyRuntime(aligned.pairs);
           partMeshMetaRef.current = aligned.meshMeta;
           setPartMeshMeta(aligned.meshMeta);
           rememberScripts(scriptsNow);
-          rememberAssembly(doc);
-          for (const { from, to } of aligned.pairs) {
-            const text = scriptsNow[to];
-            if (typeof text === 'string') savePartScript(to, text);
-            try { deletePartScript(from); } catch { /* ignore */ }
-          }
         }
         const migrated = migrateAssemblyRecords({ doc, scripts: scriptsNow });
         doc = migrated.doc;
@@ -5594,6 +5611,7 @@ const App = () => {
           if (localIds.selection?.cadPartId && localIds.selection.cadPartId !== cadPartIdRef.current) {
             cadPartIdRef.current = localIds.selection.cadPartId;
           }
+          persistPairs.push(...localIds.pairs);
         }
         const collapsed = collapseWorkingCopyIds(doc, scriptsNow, {
           pathIndex: store.pathIndexFor(vault.repo),
@@ -5602,15 +5620,21 @@ const App = () => {
           doc = collapsed.doc;
           scriptsNow = collapsed.scripts;
           if (collapsed.pairs.length) rekeyRuntime(collapsed.pairs);
+          persistPairs.push(...collapsed.pairs);
         }
-        if (migrated.changed || localIds.changed || collapsed.changed) {
+        if (migrated.changed || localIds.changed || collapsed.changed || aligned.pairs.length) {
+          const persisted = await persistCollapsedWorkingCopy({
+            collapsed: { doc, scripts: scriptsNow, pairs: persistPairs },
+            sourceDoc: persistSource.doc,
+            sourceScripts: persistSource.scripts,
+            save: async (id, text) => savePartScript(id, text),
+            remove: async (id) => {
+              try { await deletePartScript(id); } catch { /* ignore */ }
+            },
+          });
+          doc = persisted.doc;
+          scriptsNow = persisted.scripts;
           rememberScripts(scriptsNow);
-          for (const [id, text] of Object.entries(scriptsNow)) {
-            if (text !== beforeScripts[id] && text !== aligned.scripts[id]) savePartScript(id, text);
-          }
-          for (const { from } of [...localIds.pairs, ...collapsed.pairs]) {
-            try { deletePartScript(from); } catch { /* ignore */ }
-          }
         }
         const reconciled = reconcileSyncedFromTip(doc, opened.scripts);
         if (reconciled.changed || migrated.changed || localIds.changed || collapsed.changed || aligned.pairs.length) {

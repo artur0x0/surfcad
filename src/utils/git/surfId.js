@@ -221,6 +221,20 @@ export function readSurfName(script) {
 }
 
 /**
+ * Stamp `// @surf-id` to `id`. If a `// @name` line is already present,
+ * rewrite it to `name`. Does not insert a name header.
+ */
+export function stampPartHeaders(script, { id, name } = {}) {
+  let text = String(script ?? '');
+  if (isSurfId(id) && readSurfId(text) !== id) text = withSurfId(text, id);
+  if (readSurfName(text) != null) {
+    const display = sanitizeSurfName(name);
+    if (display && readSurfName(text) !== display) text = withSurfName(text, display);
+  }
+  return text;
+}
+
+/**
  * First or second line is `// @name <display>`. Sits under `// @surf-id`
  * when that header is present. Replaces an existing name line and keeps
  * its line ending. Bytes after the name line stay.

@@ -45,7 +45,7 @@ import {
   vaultSegment,
 } from './vaultLayout.js';
 import { parseSurfJson, stringifySurfJson } from './surfJson.js';
-import { isSurfId, partSurfId, readSurfId, withSurfId } from './surfId.js';
+import { isSurfId, partSurfId, readSurfId, stampPartHeaders } from './surfId.js';
 
 /** Missing rows never become an empty git blob. */
 function partFileContent(part, text) {
@@ -547,12 +547,25 @@ export function buildCommitFiles(doc, scripts, baseline, opts = {}) {
     const stampId = partSurfId(part);
     if (!stampId || !isSurfId(stampId) || part?.missing === true) continue;
     const dest = partRepoPath(part) || movedFrom.get(part.id) || part.id;
-    if (!writes.has(dest)) continue;
     const info = parseVaultPath(dest);
     if (!info || (info.kind !== 'assembly-part' && info.kind !== 'shared-part')) continue;
-    const text = writes.get(dest);
-    if (typeof text !== 'string' || readSurfId(text) === stampId) continue;
-    const stamped = withSurfId(text, stampId);
+    const had = writes.has(dest);
+    const text = had
+      ? writes.get(dest)
+      : partFileContent(
+        part,
+        partScriptText(part, workScripts) ?? workScripts[dest] ?? eff[part.id],
+      );
+    if (typeof text !== 'string') continue;
+    const stamped = stampPartHeaders(text, { id: stampId, name: part.name });
+    if (stamped === text) continue;
+    if (!had) {
+      // Copy whose blob still carries the source @surf-id: include it even
+      // when the script body was not otherwise dirty. Do not newly stamp
+      // headerless files that were not part of this Save.
+      const header = readSurfId(text);
+      if (!header || header === stampId) continue;
+    }
     writes.set(dest, stamped);
     workScripts[part.id] = stamped;
     if (dest !== part.id) workScripts[dest] = stamped;

@@ -20,9 +20,10 @@ function partPath(part) {
 
 function scriptForPart(part, scripts) {
   if (!part || !scripts) return undefined;
-  if (typeof scripts[part.id] === 'string') return scripts[part.id];
+  // Path first: two rows can share an id (v1 duplicate) with different files.
   const path = partPath(part);
   if (path && typeof scripts[path] === 'string') return scripts[path];
+  if (typeof scripts[part.id] === 'string') return scripts[part.id];
   if (part.surfId && typeof scripts[part.surfId] === 'string') return scripts[part.surfId];
   return undefined;
 }
@@ -45,9 +46,10 @@ function mintUnusedSurfId({ now, rand, used } = {}) {
 function firstOwnerIndex(parts) {
   const owners = new Map();
   (parts || []).forEach((part, i) => {
-    const id = part?.id;
-    if (id == null || id === '') return;
-    if (!owners.has(id)) owners.set(id, i);
+    for (const id of [part?.id, part?.surfId]) {
+      if (id == null || id === '') continue;
+      if (!owners.has(id)) owners.set(id, i);
+    }
   });
   return owners;
 }
@@ -81,7 +83,9 @@ export function pickCollapsedPartId(part, script, pathIndex = {}, {
   for (const candidate of candidates) {
     if (!isSurfId(candidate)) continue;
     if (!taken(candidate)) {
-      return { id: candidate, minted: false, copiedFrom: undefined };
+      // A later free candidate (own id / pathIndex) after a header clash is
+      // still this row's copy identity — keep copiedFrom so we restamp.
+      return { id: candidate, minted: false, copiedFrom: colliding || undefined };
     }
     if (!colliding) colliding = candidate;
   }
@@ -101,18 +105,83 @@ export function pickCollapsedPartId(part, script, pathIndex = {}, {
 
 /**
  * Persist new IndexedDB script keys, then drop the old ones. Never delete
- * first — a crash between delete and save would drop the script.
+ * first — a crash between delete and save would drop the script. Only delete
+ * an old key after its script was loaded and the put under the new key
+ * succeeded. `save` should return `false` on failure (as `savePartScript` does).
  */
-export async function replaceScriptKeys({ nextScripts, staleIds, save, remove } = {}) {
+export async function replaceScriptKeys({ nextScripts, staleIds, pairs = [], save, remove } = {}) {
   const scripts = nextScripts || {};
+  const saved = new Set();
   for (const [id, script] of Object.entries(scripts)) {
-    await save(id, script);
+    try {
+      const ok = await save(id, script);
+      if (ok !== false) saved.add(id);
+    } catch {
+      /* put failed — keep the old key */
+    }
   }
+  const toByFrom = new Map((pairs || []).map((pair) => [pair.from, pair.to]));
   const keep = new Set(Object.keys(scripts));
+  const allSaved = Object.keys(scripts).every((id) => saved.has(id));
   for (const id of staleIds || []) {
-    if (!id || keep.has(id)) continue;
-    await remove(id);
+    if (!id || keep.has(id) || saved.has(id)) continue;
+    const to = toByFrom.get(id);
+    if (to && !saved.has(to)) continue;
+    if (to == null && !allSaved) continue;
+    try { await remove(id); } catch { /* ignore */ }
   }
+  return { saved };
+}
+
+/**
+ * Write collapsed script keys, then the assembly document. A part whose
+ * script was never loaded, or whose put failed, keeps its old id and key.
+ */
+export async function persistCollapsedWorkingCopy({
+  collapsed,
+  sourceDoc,
+  sourceScripts,
+  save,
+  remove,
+  saveDoc,
+} = {}) {
+  const pairs = collapsed?.pairs || [];
+  const nextScripts = { ...(collapsed?.scripts || {}) };
+  const persisted = await replaceScriptKeys({
+    nextScripts,
+    staleIds: pairs.map((pair) => pair.from),
+    pairs,
+    save,
+    remove,
+  });
+  const saved = persisted?.saved || new Set();
+  const failedFrom = new Set();
+  for (const { from, to } of pairs) {
+    if (!from || !to || from === to) continue;
+    if (typeof nextScripts[to] !== 'string' || !saved.has(to)) failedFrom.add(from);
+  }
+  let doc = collapsed?.doc;
+  let scripts = nextScripts;
+  if (failedFrom.size && sourceDoc?.parts) {
+    const parts = (doc?.parts || []).map((part, i) => {
+      const src = sourceDoc.parts[i];
+      if (!src || !failedFrom.has(src.id)) return part;
+      const original = sourceScripts?.[src.id];
+      if (typeof original === 'string') scripts[src.id] = original;
+      if (part.id !== src.id) delete scripts[part.id];
+      return src;
+    });
+    let activeId = doc?.activeId;
+    if (failedFrom.has(sourceDoc.activeId)) activeId = sourceDoc.activeId;
+    else if (activeId && !parts.some((part) => part.id === activeId)) {
+      activeId = parts[0]?.id || sourceDoc.activeId || null;
+    }
+    doc = { ...doc, parts, activeId };
+  }
+  if (typeof saveDoc === 'function' && doc) {
+    try { await saveDoc(doc); } catch { /* caller still has the in-memory doc */ }
+  }
+  return { doc, scripts, failedFrom, saved };
 }
 
 function rewriteGroupIds(groups, map) {
@@ -169,6 +238,22 @@ export function collapseWorkingCopyIds(doc, scripts = {}, {
   for (let i = 0; i < sourceParts.length; i += 1) {
     const part = sourceParts[i];
     let script = scriptForPart(part, sourceScripts);
+    const loaded = typeof script === 'string';
+    // Local/IDB rows with no script: do not remint and drop the old key.
+    // Vault rows with a path and no blob still collapse (then mark missing).
+    if (!loaded && part?.missing !== true && !partPath(part)) {
+      if (part?.id) used.add(part.id);
+      if (part?.surfId) used.add(part.surfId);
+      assignments.push({
+        part,
+        nextId: part.id,
+        script: undefined,
+        picked: { id: part.id, minted: false, copiedFrom: undefined },
+        path: partPath(part),
+        frozen: true,
+      });
+      continue;
+    }
     const picked = pickCollapsedPartId(part, script, pathIndex, {
       now,
       rand: typeof randFor === 'function' ? randFor(part, i) : undefined,
@@ -194,7 +279,8 @@ export function collapseWorkingCopyIds(doc, scripts = {}, {
   const cached = [];
   const map = new Map();
   const nextScripts = {};
-  const parts = assignments.map(({ part, nextId, script, picked, path }) => {
+  const parts = assignments.map(({ part, nextId, script, picked, path, frozen }) => {
+    if (frozen) return part;
     if (part?.id && part.id !== nextId && !liveIds.has(part.id)) {
       pairs.push({ from: part.id, to: nextId });
       map.set(part.id, nextId);

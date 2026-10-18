@@ -114,7 +114,7 @@ export function pruneDanglingColors(raw) {
 }
 
 /** v1 / legacy reader. Rejects a v2 file. See `validateSurfJsonV2`. */
-export function validateSurfJson(input, { allowMissingPaths = false } = {}) {
+export function validateSurfJson(input, { allowMissingPaths = false, allowDuplicatePartIds = false } = {}) {
   const errors = [];
   let raw = input;
   if (typeof input === 'string') {
@@ -158,7 +158,9 @@ export function validateSurfJson(input, { allowMissingPaths = false } = {}) {
       if (part.copiedFrom !== undefined && !isSurfId(part.copiedFrom)) {
         errors.push(`${at}.copiedFrom must be a surf id`);
       }
-      if (part.id && seenIds.has(part.id)) errors.push(`${at}.id duplicates ${part.id}`);
+      if (part.id && seenIds.has(part.id) && !allowDuplicatePartIds) {
+        errors.push(`${at}.id duplicates ${part.id}`);
+      }
       if (part.id) seenIds.add(part.id);
       if (path && seen.has(path)) errors.push(`${at}.path duplicates ${path}`);
       if (path) seen.add(path);
@@ -296,7 +298,7 @@ export function stringifySurfJson(doc, opts) {
 }
 
 /** .surf.json text or object -> in-app assembly document (source 'git'). Throws on invalid. */
-export function parseSurfJson(input) {
+export function parseSurfJson(input, { allowDuplicatePartIds = false } = {}) {
   // A legacy `local:` path or color key fails validation. Strip it before
   // the check. Surf ids that use the older `local-` prefix stay for the
   // surf-id migration.
@@ -310,7 +312,7 @@ export function parseSurfJson(input) {
   }
   const parsed = typeof prepared === 'string' ? JSON.parse(prepared) : prepared;
   const raw = pruneDanglingSurfJoints(pruneDanglingColors(pruneDanglingGroupPartIds(parsed)));
-  const check = validateSurfJson(raw);
+  const check = validateSurfJson(raw, { allowDuplicatePartIds });
   if (!check.ok) throw new Error(`Invalid .surf.json: ${check.errors.join('; ')}`);
   const loaded = serializeAssembly({
     version: ASSEMBLY_VERSION,
