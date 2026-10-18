@@ -99,7 +99,7 @@ The [`surfcad-mcp`](https://www.npmjs.com/package/surfcad-mcp) package is publis
 Ways to release a new version:
 
 1. **Version bump on `main`** — In a PR, bump `version` in `packages/surfcad-mcp/package.json`. After merge, when the **CI** workflow completes successfully on `main` and the version differs from the parent commit, publish runs automatically (skipped if that version is already on npm).
-2. **Git tag** — Push a tag `surfcad-mcp-vX.Y.Z` that exactly matches the `version` field at that commit (for example `surfcad-mcp-v0.2.0` for `"version": "0.2.0"`).
+2. **Git tag** — Push a tag `surfcad-mcp-vX.Y.Z` that exactly matches the `version` field at that commit (for example `surfcad-mcp-v0.2.1` for `"version": "0.2.1"`).
 3. **Manual** — In GitHub → Actions → **Publish surfcad-mcp** → **Run workflow** on branch `main`.
 
 Before bumping, run `npm run export:agent` at the repo root if the command catalog changed, and `npm test` plus `npm run smoke:pack` in this package.
