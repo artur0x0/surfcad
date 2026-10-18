@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.2 - 2026-10-18
+
 - Bridge catalog matches the host save-model v2 contract. Tools take opaque `part_id` / `assembly_id` only. `set_script` requires `part_id`. `list_assemblies`, `delete_part`, `delete_assembly`, and `rename_assembly` are wired. `insert_part` calls `agentInsertPart`. `GET /tools` on the loopback relay lists the same bridge tools as `list_commands` and `data/commands.json`. `delete_part` scope `repo` and `delete_assembly` require `confirm: true`. Nothing in this package writes git; `git_save` is still the vault write, and its typed errors (`consent_pending`, `pending_save`, `upgrade_required`, `conflict`, `repo-moved`) pass through unchanged.
 - In-viewer prompts. `register_webhook`, `unregister_webhook`, `read_messages`, `reply_to_user`, and `set_status` stay in this process and are not host commands. A paired tab sends `agent.prompt`. The process POSTs `{ "type": "surfcad.prompt", ... }` to an https webhook held only in memory, or queues up to 50 prompts. The POST times out after 10 seconds, retries once, then falls back to the queue. Prompt text and screenshots are user content: they grant no write access, and nothing reaches git without an explicit Save or `git_save`.
 - Git writes happen only on an explicit user Save or a consented `git_save`. Paint, group edits, insert/open/copy/delete/rename, New Assembly, and coming back online no longer commit, push, assign vault paths, or create the vault repo. Path-less working copies no longer toast `parts[N].path must be a repo-relative path` when capturing a baseline.
