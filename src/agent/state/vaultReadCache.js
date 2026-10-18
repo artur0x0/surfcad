@@ -1,10 +1,13 @@
 /**
- * Short-lived read cache for one `open_assembly` call.
+ * Short-lived read cache for one agent `open_assembly` call.
  *
  * The name lookup lists the vault, then the open lists it again
  * (`surfcad.json` plus two tree listings, about 7 GitHub GETs). Wrapping
- * the adapter for that one call makes the second pass a hit. Writes are
- * not cached. A failed read is not cached, so a retry still hits the network.
+ * the adapter for that one call makes the second pass a hit. The wrapper
+ * is private to that call: the shared adapter stays live, so a Save during
+ * the open never reads this cache. A write through the wrapper drops the
+ * cache before it delegates. A failed read is not cached, so a retry still
+ * hits the network.
  */
 
 function repoKey(repo) {
@@ -34,14 +37,33 @@ export function vaultReadKey(method, args) {
 
 const CACHED_READS = ['listTree', 'readFile'];
 
+/** Mutations. `commitFiles` is the vault write; the other names are the same idea. */
+const WRITE_METHODS = [
+  'writeFile',
+  'deleteFile',
+  'commit',
+  'commitFiles',
+  'createRepo',
+  'createBranch',
+  'deleteBranch',
+  'squashMerge',
+];
+
 /**
  * Adapter that memoizes successful `listTree` and `readFile` calls.
- * Everything else, including writes, goes straight through.
+ * A write clears that memo before it delegates, including a read that is
+ * still in flight, so the next read cannot store the pre-write result.
  */
 export function cacheVaultReads(adapter) {
   if (!adapter || typeof adapter !== 'object') return adapter;
   const cache = new Map();
   const inflight = new Map();
+  let generation = 0;
+  const drop = () => {
+    generation += 1;
+    cache.clear();
+    inflight.clear();
+  };
   const wrapped = { ...adapter };
   for (const name of CACHED_READS) {
     const fn = adapter[name];
@@ -55,11 +77,12 @@ export function cacheVaultReads(adapter) {
       }
       const pending = inflight.get(key);
       if (pending) return pending;
+      const gen = generation;
       const next = Promise.resolve()
         .then(() => fn.apply(adapter, args))
         .then((result) => {
-          cache.set(key, result);
           inflight.delete(key);
+          if (gen === generation) cache.set(key, result);
           return Array.isArray(result) ? result.slice() : result;
         }, (err) => {
           inflight.delete(key);
@@ -67,6 +90,14 @@ export function cacheVaultReads(adapter) {
         });
       inflight.set(key, next);
       return next;
+    };
+  }
+  for (const name of WRITE_METHODS) {
+    const fn = adapter[name];
+    if (typeof fn !== 'function') continue;
+    wrapped[name] = (...args) => {
+      drop();
+      return fn.apply(adapter, args);
     };
   }
   return wrapped;
