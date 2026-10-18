@@ -1,0 +1,106 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { WebGLRenderer } from 'three';
+import {
+  createViewportWebGLRenderer,
+  disposeViewportRenderer,
+  installWebglContextLossHandlers,
+  resetViewportWebglReports,
+  WebGLUnavailableNotice,
+} from './viewportWebgl.js';
+
+function nullContextCanvas() {
+  return {
+    width: 300,
+    height: 150,
+    style: {},
+    setAttribute() {},
+    addEventListener() {},
+    removeEventListener() {},
+    getContext() {
+      return null;
+    },
+  };
+}
+
+class ThrowingRenderer {
+  constructor() {
+    throw new Error('Error creating WebGL context.');
+  }
+}
+
+test('createViewportWebGLRenderer returns null when the constructor throws', () => {
+  const canvas = nullContextCanvas();
+  assert.equal(createViewportWebGLRenderer(canvas, ThrowingRenderer, () => {}), null);
+  assert.equal(createViewportWebGLRenderer(null, ThrowingRenderer, () => {}), null);
+});
+
+test('createViewportWebGLRenderer reports unavailable once across two failures', () => {
+  resetViewportWebglReports();
+  const calls = [];
+  const report = (error, hint) => {
+    calls.push({ message: error && error.message, hint });
+  };
+  const canvas = nullContextCanvas();
+  assert.equal(createViewportWebGLRenderer(canvas, ThrowingRenderer, report), null);
+  assert.equal(createViewportWebGLRenderer(canvas, ThrowingRenderer, report), null);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].message, 'Error creating WebGL context.');
+  assert.equal(calls[0].hint.level, 'warning');
+  assert.deepEqual(calls[0].hint.tags, { webgl: 'unavailable', gpu: 'none' });
+  assert.deepEqual(calls[0].hint.fingerprint, ['webgl-unavailable']);
+});
+
+test('createViewportWebGLRenderer survives three.js when getContext returns null', () => {
+  const canvas = nullContextCanvas();
+  let thrown = null;
+  try {
+    new WebGLRenderer({ canvas, antialias: true });
+  } catch (error) {
+    thrown = error;
+  }
+  assert.equal(thrown && thrown.message, 'Error creating WebGL context.');
+  assert.equal(createViewportWebGLRenderer(canvas, WebGLRenderer, () => {}), null);
+});
+
+test('disposeViewportRenderer ignores a missing renderer and a throwing dispose', () => {
+  assert.doesNotThrow(() => disposeViewportRenderer(null));
+  assert.doesNotThrow(() => disposeViewportRenderer(undefined));
+  assert.doesNotThrow(() => disposeViewportRenderer({}));
+  assert.doesNotThrow(() => disposeViewportRenderer({
+    dispose() {
+      throw new Error('dispose failed');
+    },
+  }));
+});
+
+test('WebGLUnavailableNotice renders the fallback copy', () => {
+  const html = renderToStaticMarkup(React.createElement(WebGLUnavailableNotice));
+  assert.match(html, /data-webgl-unavailable="true"/);
+  assert.match(html, /pointer-events-none/);
+  assert.equal(html.includes('pointer-events-auto'), false);
+  assert.match(html, /role="status"/);
+  assert.match(html, /WebGL is unavailable/);
+  assert.match(html, /Enable hardware acceleration/);
+  assert.match(html, /another browser such as Chrome/);
+  assert.equal(html.includes('Edge'), false);
+});
+
+test('context loss listeners call lost then restored and remove detaches both', () => {
+  const canvas = new EventTarget();
+  const calls = [];
+  const remove = installWebglContextLossHandlers(canvas, {
+    onLost: () => calls.push('lost'),
+    onRestored: () => calls.push('restored'),
+    report: () => {},
+  });
+  canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+  canvas.dispatchEvent(new Event('webglcontextrestored'));
+  assert.deepEqual(calls, ['lost', 'restored']);
+  remove();
+  canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+  canvas.dispatchEvent(new Event('webglcontextrestored'));
+  assert.deepEqual(calls, ['lost', 'restored']);
+});
