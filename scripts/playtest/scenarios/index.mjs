@@ -8,6 +8,7 @@ import * as plateHoles from './plate-holes-offset.mjs';
 import * as partsJoints from './parts-joints-assembly.mjs';
 import * as gitVault from './git-vault-flow.mjs';
 import * as historyUndo from './history-interleave-undo.mjs';
+import * as chromeLayout from './chrome-layout.mjs';
 
 /** Scripted end-to-end scenarios (bridge-only). */
 export const scenarios = [
@@ -21,6 +22,7 @@ export const scenarios = [
   partsJoints,
   gitVault,
   historyUndo,
+  chromeLayout,
 ];
 
 export function getScenario(id) {

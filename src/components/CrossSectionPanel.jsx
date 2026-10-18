@@ -5,7 +5,7 @@ import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d
 import TrianglesCenterlineDashedVertical from './icons/TrianglesCenterlineDashedVertical';
 import ViewSnapControl from './ViewSnapControl';
 import { PLANE_PRESETS } from '../utils/crossSection';
-import { RAIL_NO_CLIP_CLASS, RAIL_PAIR_HEIGHT_ATTR } from '../utils/railPair';
+import { RAIL_NO_CLIP_CLASS, RAIL_PAIR_HEIGHT_ATTR, RAIL_RIGHT_MAX_CLASS } from '../utils/railPair';
 import { sectionThumbRange } from '../utils/sliderRange';
 import { lengthFromThumb, lengthSnap, thumbFromLength, THUMB_COUNT } from '../utils/sliderMap';
 import { formatDisplayLength, formatDisplayNumber } from '../utils/displayUnit';
@@ -354,7 +354,7 @@ const handleButtonClick = () => {
           // Content height, NOT the paired 26rem: a fixed cap cropped
           // Cross-section off the bottom (bottom-anchored). It grows upward, so
           // its natural height is the correct one.
-          ? `flex flex-col gap-1 ${RAIL_NO_CLIP_CLASS} max-h-[calc(100%-1.25rem)]`
+          ? `flex flex-col gap-1 ${RAIL_NO_CLIP_CLASS} ${RAIL_RIGHT_MAX_CLASS}`
           : 'flex flex-wrap justify-end gap-2 max-w-[calc(100%-1rem)]'
       }`}>
         <ViewSnapControl onSnap={onSnapView} />

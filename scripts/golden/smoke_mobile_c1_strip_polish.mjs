@@ -64,23 +64,22 @@ console.log('mobile C.1: strip polish + UI reorg');
   const railPair = read('../../src/utils/railPair.js');
   check(
     'C: left palette bottom matches right rail (bottom-2.5) + content-max height',
-    /bottom-2\.5/.test(palette) &&
-      /RAIL_PAIR_HEIGHT_CLASS/.test(palette) &&
-      /max-h-\[min\(26rem,calc\(100%-5\.5rem\)\)\]/.test(railPair) &&
+    /leftRailPositionClasses/.test(palette) &&
+      /bottom-2\.5/.test(railPair) &&
+      /RAIL_PAIR_HEIGHT_CLASS = 'rail-max-below-strip'/.test(railPair) &&
       /data-rail-pair="left"/.test(palette) &&
       /data-rail-pair="right"/.test(rightRail) &&
       // The right rail is content-height now: 10 tools (~422px) did not fit
       // the shared 26rem cap, so Cross-section was cropped off the bottom.
       !/RAIL_PAIR_HEIGHT_CLASS/.test(rightRail) &&
-      /max-h-\[calc\(100%-1\.25rem\)\]/.test(rightRail) &&
+      /RAIL_RIGHT_MAX_CLASS/.test(rightRail) &&
       /bottom-2\.5 right-2\.5/.test(rightRail) &&
       !/max-h-\[min\(72%/.test(palette),
   );
   check(
     'C: contour left rail uses the same content-max height',
     /data-rail-pair="left"/.test(contourRail) &&
-      /RAIL_PAIR_HEIGHT_CLASS/.test(contourRail) &&
-      /bottom-2\.5/.test(contourRail),
+      /leftRailPositionClasses/.test(contourRail),
   );
 
   // D

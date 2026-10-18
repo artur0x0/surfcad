@@ -163,7 +163,8 @@ Desktop specifics:
   When no part is selected the same bar shows assembly joints
   (`data-assembly-joints`), or **No assembly joints**
   (`data-feature-strip-empty`), and Undo is titled **Undo joint**.
-  The empty caption is the same height as a joint chip (`h-8`).
+  The bar is `--feature-strip-height` (46px) in assembly, part, and empty.
+  Left and right tool rails stay `--feature-strip-rail-gap` (10px) below it.
   A chip tap reopens that joint in the card, with its picks highlighted,
   its type, and its value. That edit card has Confirm, a red Delete
   opposite it, and X. Confirm saves and closes. X writes nothing. Create
@@ -242,7 +243,13 @@ Desktop specifics:
   and clears the badge. Signed out, the badge is hidden and the mesh stays
   on this device. Without GitHub the badge stays (reconnect title) and Save
   does not commit. The assembly
-  name sits in the middle of the ribbon (`data-parts-ribbon-center`).
+  name sits in the middle of the ribbon (`data-parts-ribbon-center`) on
+  mobile. Desktop git puts the branch chip there instead
+  (`data-parts-ribbon-branch`, class `parts-branch-chip`, same pane as
+  `data-git-branches`); the assembly name stays off the desktop ribbon.
+  The chip is a 1px `currentColor` outline, `rounded-lg`, with the same
+  `text-blue-400` as the Parts header icons. Truncate a long branch name
+  so the header does not wrap.
   Signed out (local, no GitHub token), the **+** menu (`data-part-add-dropdown`)
   and the folder menu (`data-part-open-dropdown`) both offer **Part** and
   **Assembly**. Part opens the name dialog and creates a local-only part
@@ -498,10 +505,13 @@ Mobile specifics:
   (`left-1/2 -translate-x-1/2`, `bottom-20` mobile / `bottom-14` desktop) so it
   clears the right rail and home-indicator / CAD|Script dots. Buttons: Tangent / Undo / Clear. Undo removes the last selected edge only.
 - **Left ↔ right rail height (C.1 → content-max):** helper / contour left rail
-  uses the same bottom inset as the right cluster (`bottom-2.5`) and
-  `max-h-[min(26rem,calc(100%-5.5rem))]` (shared `RAIL_PAIR_HEIGHT_CLASS`) —
-  content-height up to just below the part-name chip; scrolls when the window
-  is too short; when buttons fit, width yields to `w-14` (`data-rail-fit`).
+  uses the same bottom inset as the right cluster (`bottom-2.5` / 10px) and
+  `rail-max-below-strip` (shared `RAIL_PAIR_HEIGHT_CLASS`) — content-height up
+  to 10px below the CAD feature ribbon; scrolls when the window is too short;
+  when buttons fit, width yields to `w-14` (`data-rail-fit`). Desktop CAD
+  stretches the left rail with `rail-full-below-strip` (`RAIL_FULL_LENGTH_CLASS`).
+  The right rail uses `rail-right-below-strip` (same 10px ribbon clearance, no
+  26rem cap).
   Edge-pick **Tangent on** (C.3): seed-plane G1 + same-face parallel bridge so a
   `roundedBox` top rim floods the full coherent loop (not 1 leftover segment).
   C.4: `buildCoherentEdges` traces tagged vs untagged sharp pools separately so

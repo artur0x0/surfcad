@@ -117,8 +117,8 @@ const JOINT_ICONS = Object.freeze({
   fixed: Focus,
 });
 
-/** Same box for an empty joints caption and a joint chip, so the bar does not jump. */
-const JOINT_CHIP_BOX = 'relative shrink-0 rounded-lg p-1.5 h-8 box-border flex items-center justify-center border';
+/** Same box for empty captions, joint chips, and feature chips. Bar height is `--feature-strip-height`. */
+const STRIP_CHIP_BOX = 'relative shrink-0 rounded-lg p-1.5 feature-strip-chip box-border flex items-center justify-center border';
 
 const SKETCH_SHAPE_ICONS = Object.freeze({
   circle: Circle,
@@ -703,8 +703,7 @@ export default function FeatureStrip({
         aria-description={dimmed ? 'rolled back' : (f.external ? 'External copy, not linked' : undefined)}
         title={dimmed ? `${f.chipLabel} — rolled back` : chipTitle(f, failed, bodyCount, failedTitles)}
         onClick={() => (sheet ? onSelectSheet?.(f) : onJump?.(f))}
-        className={`relative shrink-0 rounded-lg p-1.5 flex items-center justify-center
-          border transition-colors active:opacity-80 ${chipTone(active, f.external, failed, dimmed)}`}
+        className={`${STRIP_CHIP_BOX} transition-colors active:opacity-80 ${chipTone(active, f.external, failed, dimmed)}`}
       >
         <FeatureGlyph kind={f.kind} size={16} />
         <UnusedMark on={f.unused} />
@@ -756,11 +755,11 @@ export default function FeatureStrip({
   }
 
   if (horizontal) {
-    const historyBtn = 'shrink-0 rounded-lg p-1.5 flex items-center justify-center text-blue-400 hover:bg-chrome-border/60 disabled:opacity-30 active:opacity-80';
+    const historyBtn = 'shrink-0 rounded-lg p-1.5 feature-strip-chip flex items-center justify-center text-blue-400 hover:bg-chrome-border/60 disabled:opacity-30 active:opacity-80';
     return (
       <div
         ref={stripRef}
-        className="relative flex w-full min-w-0 flex-row items-center
+        className="feature-strip-bar relative flex w-full min-w-0 flex-row items-center
           border border-chrome-border/40 bg-chrome-surface/70 surface-glass-chip"
         data-feature-strip=""
         data-feature-strip-orientation="horizontal"
@@ -797,7 +796,7 @@ export default function FeatureStrip({
         >
           <div
             ref={scrollRef}
-            className={`flex flex-row items-center overflow-x-auto rail-scroll py-1.5 ${
+            className={`flex flex-row items-center overflow-x-auto overflow-y-hidden rail-scroll py-1.5 ${
               featureWindow === 'tail' ? 'justify-start' : 'justify-center'
             }`}
             data-feature-bar-scroller=""
@@ -809,7 +808,7 @@ export default function FeatureStrip({
             >
             {jointMode && joints.length === 0 && (
               <div
-                className={`${JOINT_CHIP_BOX} border-transparent px-2 text-[9px] text-chrome-secondary font-sans whitespace-nowrap`}
+                className={`${STRIP_CHIP_BOX} border-transparent px-2 text-[9px] text-chrome-secondary font-sans whitespace-nowrap`}
                 data-assembly-joints-empty=""
               >
                 No assembly joints
@@ -817,14 +816,16 @@ export default function FeatureStrip({
             )}
             {entityMode && entities.length === 0 && (
               <div
-                className={`${JOINT_CHIP_BOX} border-transparent px-2 text-[9px] text-chrome-secondary font-sans whitespace-nowrap`}
+                className={`${STRIP_CHIP_BOX} border-transparent px-2 text-[9px] text-chrome-secondary font-sans whitespace-nowrap`}
                 data-sketch-entities-empty=""
               >
                 No sketch entities
               </div>
             )}
             {!jointMode && !entityMode && features.length === 0 && !hideWhenEmpty && (
-              <div className="text-[9px] text-chrome-secondary font-sans whitespace-nowrap px-1">
+              <div
+                className={`${STRIP_CHIP_BOX} border-transparent px-2 text-[9px] text-chrome-secondary font-sans whitespace-nowrap`}
+              >
                 No features
               </div>
             )}
@@ -846,7 +847,7 @@ export default function FeatureStrip({
                   aria-invalid={invalid || undefined}
                   title={joint.title || joint.name}
                   onClick={() => onSelectJoint?.(joint)}
-                  className={`${JOINT_CHIP_BOX} transition-colors active:opacity-80 ${chipTone(false, false, invalid)}`}
+                  className={`${STRIP_CHIP_BOX} transition-colors active:opacity-80 ${chipTone(false, false, invalid)}`}
                 >
                   <JointGlyph type={joint.type} size={16} />
                 </button>
@@ -868,7 +869,7 @@ export default function FeatureStrip({
                   aria-invalid={failed || undefined}
                   title={entity.title || entity.label}
                   onClick={() => onSelectEntity?.(entity)}
-                  className={`${JOINT_CHIP_BOX} transition-colors active:opacity-80 ${chipTone(active, false, failed)}`}
+                  className={`${STRIP_CHIP_BOX} transition-colors active:opacity-80 ${chipTone(active, false, failed)}`}
                 >
                   <SketchGlyph entity={entity} size={16} />
                   <TypeBadge index={entity.index} />
@@ -941,7 +942,7 @@ export default function FeatureStrip({
             aria-invalid={invalid || undefined}
             title={joint.title || joint.name}
             onClick={() => onSelectJoint?.(joint)}
-            className={`${JOINT_CHIP_BOX} transition-colors active:opacity-80 ${chipTone(false, false, invalid)}`}
+            className={`${STRIP_CHIP_BOX} transition-colors active:opacity-80 ${chipTone(false, false, invalid)}`}
           >
             <JointGlyph type={joint.type} size={16} />
           </button>
