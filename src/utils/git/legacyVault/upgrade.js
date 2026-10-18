@@ -1011,7 +1011,13 @@ export function mapWorkingCopyToPlan(plan, workingCopy, { allowMint = true } = {
       nextScripts[id] = rewriteFeaStudyPartIds(text, idMap);
     }
   }
-  let activeId = asV2Id(workingCopy.doc.activeId);
+  const rawActive = workingCopy.doc.activeId;
+  let activeId = asV2Id(rawActive);
+  if (rawActive && idMap.has(rawActive)) activeId = idMap.get(rawActive);
+  if (!activeId && rawActive) {
+    const idx = parts.findIndex((part) => part?.id === rawActive || scriptPathOf(part) === rawActive);
+    if (idx >= 0) activeId = resolvedIds[idx] || nextParts[idx]?.id || null;
+  }
   if (activeId && idMap.has(activeId)) activeId = idMap.get(activeId);
   if (activeId && !nextParts.some((p) => p.id === activeId)) activeId = nextParts[0]?.id || null;
 
@@ -1074,6 +1080,73 @@ export function workingCopyIdsMatchVault(wcDoc, vaultDoc) {
   return true;
 }
 
+function vaultTipForAssembly(writes, assemblyId) {
+  if (!assemblyId || !isV2SurfId(assemblyId) || !writes) return null;
+  let assemblyPath;
+  try { assemblyPath = assemblyIdPath(assemblyId); } catch { return null; }
+  const assemblyText = writes[assemblyPath];
+  if (typeof assemblyText !== 'string') return null;
+  let json = null;
+  try { json = JSON.parse(assemblyText); } catch { return null; }
+  const partScripts = {};
+  for (const part of json?.parts || []) {
+    if (!isV2SurfId(part?.id)) continue;
+    let scriptPath;
+    try { scriptPath = partIdPath(part.id); } catch { continue; }
+    if (typeof writes[scriptPath] === 'string') partScripts[part.id] = writes[scriptPath];
+  }
+  return { assemblyText, json, partScripts };
+}
+
+/**
+ * Byte compare of a WC against a v2 tip. `stringifySurfJsonV2` drops
+ * legacy `path`. Scripts must match the tip files for every vault part.
+ */
+export function workingCopyMatchesVaultTip(doc, scripts, vaultTip) {
+  if (!doc || !vaultTip?.assemblyText) return false;
+  let json;
+  try { json = stringifySurfJsonV2(doc); } catch { return false; }
+  if (json !== vaultTip.assemblyText) return false;
+  const vaultIds = Object.keys(vaultTip.partScripts || {});
+  const wcIds = (doc.parts || []).map((part) => part?.id).filter(Boolean);
+  if (vaultIds.length !== wcIds.length) return false;
+  const have = new Set(wcIds);
+  for (const id of vaultIds) {
+    if (!have.has(id)) return false;
+    if (typeof scripts?.[id] !== 'string' || scripts[id] !== vaultTip.partScripts[id]) return false;
+  }
+  return true;
+}
+
+export function missingVaultPartIds(doc, vaultTip) {
+  const have = new Set((doc?.parts || []).map((part) => part?.id).filter(Boolean));
+  return (vaultTip?.json?.parts || [])
+    .map((part) => part?.id)
+    .filter((id) => id && !have.has(id));
+}
+
+export function workingCopyUnmappedResult({ missing = [], ambiguous = [], sha, upgradeSha } = {}) {
+  const names = missing.length
+    ? `vault part${missing.length > 1 ? 's' : ''} missing from the working copy (${missing.join(', ')})`
+    : (ambiguous.length
+      ? `more than one working-copy part maps to the same upgraded id (${ambiguous.join(', ')})`
+      : 'the working copy does not map onto the upgraded vault');
+  const message = `Cannot map the working copy onto the upgraded vault: ${names}. The vault is v2; nothing was written.`;
+  const out = {
+    status: 'error',
+    code: 'working_copy_unmapped',
+    error: message,
+    message,
+    hint: 'Give the working copy a row for each vault part, then retry Upgrade vault. Retry does not write git.',
+    missing,
+    ambiguous,
+  };
+  if (typeof sha === 'string' && sha) out.sha = sha;
+  if (typeof upgradeSha === 'string' && upgradeSha) out.upgradeSha = upgradeSha;
+  else if (out.sha) out.upgradeSha = out.sha;
+  return out;
+}
+
 export function upgradePersistIncomplete(persisted) {
   if (!persisted || persisted.docSaved === false) return true;
   const failed = persisted.failedFrom;
@@ -1087,10 +1160,34 @@ export function upgradePersistIncomplete(persisted) {
 export function orphanUpgradeScriptIds(persisted, sourceDoc) {
   if (!persisted || persisted.docSaved !== false) return [];
   const sourceIds = new Set((sourceDoc?.parts || []).map((part) => part?.id).filter(Boolean));
+  const snapshot = persisted.snapshot && typeof persisted.snapshot === 'object' ? persisted.snapshot : {};
   const saved = persisted.saved instanceof Set
     ? [...persisted.saved]
     : (Array.isArray(persisted.saved) ? persisted.saved : []);
-  return saved.filter((id) => id && !sourceIds.has(id));
+  return saved.filter((id) => id && !sourceIds.has(id) && typeof snapshot[id] !== 'string');
+}
+
+/**
+ * After a failed saveDoc: restore snapshot bytes for same-key overwrites
+ * and delete unreferenced `to` keys. App/upgrade side — not wcIdentity.js.
+ */
+export async function rollbackFailedUpgradeDocSave(persisted, { sourceDoc, restore, remove } = {}) {
+  if (!persisted || persisted.docSaved !== false) return;
+  const snapshot = persisted.snapshot && typeof persisted.snapshot === 'object' ? persisted.snapshot : {};
+  const sourceIds = new Set((sourceDoc?.parts || []).map((part) => part?.id).filter(Boolean));
+  const saved = persisted.saved instanceof Set
+    ? [...persisted.saved]
+    : (Array.isArray(persisted.saved) ? persisted.saved : []);
+  for (const id of saved) {
+    if (!id) continue;
+    if (typeof snapshot[id] === 'string' && typeof restore === 'function') {
+      await restore(id, snapshot[id]);
+      continue;
+    }
+    if (!sourceIds.has(id) && typeof remove === 'function') {
+      await remove(id);
+    }
+  }
 }
 
 function pathIndexWithJournal(pathIndex, workingCopy, journalPairs) {
@@ -1150,8 +1247,8 @@ export async function mapWorkingCopyToV2Tip({
       text = null;
     }
     if (typeof text !== 'string') continue;
+    writes[path] = text;
     if (parsed.kind === 'assembly') {
-      writes[path] = text;
       try {
         const json = JSON.parse(text);
         for (const part of json?.parts || []) {
@@ -1190,7 +1287,9 @@ export async function mapWorkingCopyToV2Tip({
     folderToId: store?.assemblyIdIndexFor?.(repo) || {},
     writes,
   };
-  return mapWorkingCopyToPlan(plan, workingCopy, { allowMint: false });
+  const mapped = mapWorkingCopyToPlan(plan, workingCopy, { allowMint: false });
+  const assemblyId = mapped?.doc?.id || workingCopy?.doc?.id;
+  return { ...mapped, vaultTip: vaultTipForAssembly(writes, assemblyId) };
 }
 
 function overlayJournalPairs(mapped, journalPairs) {
@@ -1205,10 +1304,17 @@ function overlayJournalPairs(mapped, journalPairs) {
   return { ...mapped, pairs };
 }
 
-function rekeyNeedsPersist(workingCopy, mapped) {
-  if (!mapped?.ok || !mapped.doc) return false;
-  if ((mapped.pairs || []).some((row) => row?.from && row?.to && row.from !== row.to)) return true;
-  return !workingCopyIdsMatchVault(workingCopy?.doc, mapped.doc);
+function vaultTipOf(mapped, result) {
+  if (mapped?.vaultTip) return mapped.vaultTip;
+  return vaultTipForAssembly(result?.plan?.writes, mapped?.doc?.id);
+}
+
+function restoreRemoveFn(removeOrphans, remove) {
+  if (typeof remove === 'function') return remove;
+  if (typeof removeOrphans === 'function') {
+    return async (id) => { await removeOrphans([id]); };
+  }
+  return undefined;
 }
 
 /**
@@ -1227,10 +1333,25 @@ export async function adoptUpgradeWorkingCopy({
   sourceDoc,
   journalPairs = [],
   removeOrphans,
+  restoreScripts,
+  remove,
 } = {}) {
   if (!result || typeof result !== 'object') {
     return { status: 'error', result: workingCopyUnpersistedResult() };
   }
+  const shaFields = { sha: result.sha, upgradeSha: result.upgradeSha || result.sha };
+  const rollback = async (persisted) => {
+    await rollbackFailedUpgradeDocSave(persisted, {
+      sourceDoc,
+      restore: restoreScripts,
+      remove: restoreRemoveFn(removeOrphans, remove),
+    });
+  };
+  const unmappedFrom = (mapped, extra = {}) => workingCopyUnmappedResult({
+    missing: extra.missing || mapped?.unmapped || [],
+    ambiguous: extra.ambiguous || mapped?.ambiguous || [],
+    ...shaFields,
+  });
   const adopted = result.status === 'upgraded'
     || result.status === 'upgraded_and_saved'
     || (result.status === 'conflict' && result.phase === 'save');
@@ -1249,19 +1370,21 @@ export async function adoptUpgradeWorkingCopy({
       });
     }
     if (!mapped?.ok) {
-      return {
-        status: 'error',
-        result: {
-          status: 'error',
-          code: mapped?.code || 'working_copy_unmapped',
-          error: mapped?.message || 'Cannot map the working copy onto the upgraded vault',
-          message: mapped?.message || 'Cannot map the working copy onto the upgraded vault',
-          hint: mapped?.hint || WORKING_COPY_UNPERSISTED_HINT,
-        },
-      };
+      return { status: 'error', result: unmappedFrom(mapped) };
     }
     mapped = overlayJournalPairs(mapped, journalPairs);
-    if (!rekeyNeedsPersist(workingCopy, mapped)) {
+    const vaultTip = vaultTipOf(mapped, result);
+    if (vaultTip) mapped = { ...mapped, vaultTip };
+    const missing = missingVaultPartIds(mapped.doc, mapped.vaultTip);
+    if (missing.length) {
+      return { status: 'error', result: unmappedFrom(mapped, { missing }) };
+    }
+    const needsPairs = (mapped.pairs || []).some((row) => row?.from && row?.to && row.from !== row.to);
+    if (
+      mapped.vaultTip
+      && !needsPairs
+      && workingCopyMatchesVaultTip(workingCopy.doc, workingCopy.scripts, mapped.vaultTip)
+    ) {
       return { status: 'ok', result, persisted: null, rekey: mapped };
     }
     rekey = mapped;
@@ -1269,8 +1392,13 @@ export async function adoptUpgradeWorkingCopy({
     return { status: 'ok', result, persisted: null };
   }
 
+  if (rekey?.doc && !rekey.vaultTip) {
+    const vaultTip = vaultTipOf(rekey, result);
+    if (vaultTip) rekey = { ...rekey, vaultTip };
+  }
+
   if (typeof persist !== 'function') {
-    return { status: 'error', result: workingCopyUnpersistedResult({ sha: result.sha, upgradeSha: result.upgradeSha || result.sha }) };
+    return { status: 'error', result: workingCopyUnpersistedResult(shaFields) };
   }
 
   let persisted;
@@ -1285,27 +1413,39 @@ export async function adoptUpgradeWorkingCopy({
     if (err?.name === 'PersistCrash') {
       return {
         status: 'error',
-        result: workingCopyUnpersistedResult({
-          sha: result.sha,
-          upgradeSha: result.upgradeSha || result.sha,
-        }),
+        result: workingCopyUnpersistedResult(shaFields),
       };
     }
     throw err;
   }
 
   if (upgradePersistIncomplete(persisted)) {
-    const orphans = orphanUpgradeScriptIds(persisted, sourceDoc);
-    if (orphans.length && typeof removeOrphans === 'function') {
-      await removeOrphans(orphans);
+    await rollback(persisted);
+    return {
+      status: 'error',
+      result: workingCopyUnpersistedResult(shaFields),
+      persisted,
+    };
+  }
+  if (
+    rekey?.vaultTip
+    && workingCopy?.dirty !== true
+    && !workingCopyMatchesVaultTip(persisted.doc, persisted.scripts, rekey.vaultTip)
+  ) {
+    const missing = missingVaultPartIds(persisted.doc, rekey.vaultTip);
+    if (missing.length) {
+      return {
+        status: 'error',
+        result: unmappedFrom(rekey, { missing }),
+        persisted,
+        rekey,
+      };
     }
     return {
       status: 'error',
-      result: workingCopyUnpersistedResult({
-        sha: result.sha,
-        upgradeSha: result.upgradeSha || result.sha,
-      }),
+      result: workingCopyUnpersistedResult(shaFields),
       persisted,
+      rekey,
     };
   }
   return { status: 'ok', result, persisted, rekey };
@@ -1705,6 +1845,7 @@ export async function executeUpgrade({
     doc: mapped.doc,
     scripts: mapped.scripts,
     pairs: mapped.pairs || [],
+    vaultTip: vaultTipForAssembly(plan.writes, mapped.doc?.id),
   };
   if (!followup.length) {
     return {

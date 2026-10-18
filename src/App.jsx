@@ -380,7 +380,7 @@ import {
   applyUpgradeReload,
   adoptUpgradeWorkingCopy,
   upgradePersistIncomplete,
-  orphanUpgradeScriptIds,
+  rollbackFailedUpgradeDocSave,
   workingCopyUnpersistedResult,
   openLegacyAssembly,
   UnsupportedVaultLayoutError,
@@ -5207,10 +5207,15 @@ const App = () => {
     if (persisted.docSaved === false) {
       persistFlightPairsRef.current = [];
       persistFlightToOnlyRef.current = false;
-      const orphans = orphanUpgradeScriptIds(persisted, sourceDoc);
-      for (const id of orphans) {
-        try { await deletePartScript(id); } catch { /* unreferenced to-key */ }
-      }
+      await rollbackFailedUpgradeDocSave(persisted, {
+        sourceDoc,
+        restore: async (id, bytes) => {
+          try { await savePartScript(id, bytes); } catch { /* same-key snapshot */ }
+        },
+        remove: async (id) => {
+          try { await deletePartScript(id); } catch { /* unreferenced to-key */ }
+        },
+      });
     }
     return persisted;
   };
@@ -5287,6 +5292,9 @@ const App = () => {
           sourceScripts: snapshotScripts,
           partAssets: partAssets || assets,
         }),
+        restoreScripts: async (id, bytes) => {
+          try { await savePartScript(id, bytes); } catch { /* same-key snapshot */ }
+        },
         removeOrphans: async (ids) => {
           for (const id of ids || []) {
             try { await deletePartScript(id); } catch { /* unreferenced to-key */ }
