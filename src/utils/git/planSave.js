@@ -6,7 +6,7 @@
  *
  * No I/O. Compare is an input (file list), not a GitHub call.
  * Paths are f(id) only — no moves. README.md is never planned.
- * Not wired into App / Save (PR 7).
+ * Wired into v2 Save by executePlanSave (PR 7).
  *
  * PR 7 required extras on `workingCopy` (or the `{ doc, … }` wrapper):
  *   - `branchAssemblies` — tip `.surf.json` rows for every other assembly

@@ -14,13 +14,17 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 /**
  * Production writers that still call adapter.commitFiles.
  *
- * Routed through writeVaultCommit in this PR (byte-identical; not listed):
- *   vault.js createAndSeed — PR 7 wires Save and replaces the v1+README seed
+ * Routed through writeVaultCommit (not listed):
+ *   executePlanSave.js — PR 7 v2 Save / git_save / conflict overwrite / Save mine
+ *   vault.js createAndSeed — leftover v1+README seed; v2 first Save uses
+ *     writeVaultCommit({ create }) instead of this path
  *   gitCommit.js commitPartToRepo, deletePartFromRepo, saveLocalOnNewBranch,
  *     commitWorkspace, forceMergeCommit — PR 9 deletes the dead APIs
  *   syncWorker.js flushSyncQueue — PR 9 deletes the outbox write path
- *   gitMoveToGit.js moveToGit — PR 7 first Save of a local assembly
- *   gitPull.js checkInMineToBranch — PR 7/9 "Save mine to a new branch"
+ *   gitMoveToGit.js moveToGit — leftover; v2 first Save of a local assembly
+ *     is planSave + writeVaultCommit
+ *   gitPull.js checkInMineToBranch — leftover v1 behind-branch; v2 Save mine
+ *     is executePlanSaveConflictChoice({ action: 'branch' })
  *
  * Remaining adapter.commitFiles call sites (allowlist may only shrink):
  */
@@ -285,9 +289,12 @@ test('production createRepo call sites match the shrinking allowlist', () => {
   assert.deepEqual(found, [...ALLOWED_CREATE_REPO]);
 });
 
-test('production writeVaultCommit({ create: true }) call sites are none yet', () => {
+test('production writeVaultCommit({ create: true }) literals stay empty; v2 Save passes create as a variable', () => {
   const found = summarize(collectCreateTrueSites(productionFiles()));
   assert.deepEqual(found, [...ALLOWED_CREATE_TRUE]);
+  const text = readFileSync(join(ROOT, 'src/utils/git/executePlanSave.js'), 'utf8');
+  assert.match(text, /writeVaultCommit\(/);
+  assert.match(text, /\bcreate,/);
 });
 
 test('writeVaultCommit is the production wrapper around commitFiles', () => {
