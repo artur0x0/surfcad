@@ -27,7 +27,7 @@ Works with **no API keys** and **no network**: preferences live in `localStorage
 
 ## UI
 
-**Privacy choices** opens a small dialog (footer on the CAD app, loading gate, and `/partners`):
+**Privacy choices** opens a small dialog (footer on the CAD app and `/partners`):
 
 - Toggle: **Allow usage analytics**
 - Plain-language summary: anonymous usage events and page performance; no session recording; no ads

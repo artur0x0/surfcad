@@ -18,6 +18,8 @@
   --brand-ink: 22 23 29; /* #16171D */
   --brand-grey: 107 110 120; /* #6B6E78 */
   --brand-orange: 255 90 31; /* #FF5A1F */
+  --brand-navy: 15 23 42; /* #0F172A splash-dark background */
+  --brand-grey-on-navy: 163 166 174; /* #A3A6AE muted on splash-dark */
   /* Allow / success control. White/chrome-text is ≥4.5:1 on the rest state
      and ≥3:1 on hover (emerald-500 hover was ~2.5:1). */
   --chrome-success: 4 120 87; /* emerald-700 #047857 */
@@ -33,6 +35,15 @@
 
 body {
   background: rgb(var(--chrome-background));
+}
+
+html[data-loading-theme="light"],
+html[data-loading-theme="light"] body {
+  background-color: rgb(var(--brand-paper));
+}
+html[data-loading-theme="dark"],
+html[data-loading-theme="dark"] body {
+  background-color: rgb(var(--brand-navy));
 }
 
 /* The document is not a scroll container. useModalViewport hides overflow
@@ -259,6 +270,10 @@ textarea {
   .surface-light {
     background-color: rgb(var(--brand-paper));
   }
+  /* Dark loading gate. Pair with text-on-dark / text-muted-on-splash-dark. */
+  .surface-splash-dark {
+    background-color: rgb(var(--brand-navy));
+  }
   .text-on-dark {
     color: rgb(var(--chrome-text));
   }
@@ -270,6 +285,9 @@ textarea {
   }
   .text-muted-on-light {
     color: rgb(var(--brand-grey));
+  }
+  .text-muted-on-splash-dark {
+    color: rgb(var(--brand-grey-on-navy));
   }
   .font-ui {
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,

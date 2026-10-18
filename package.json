@@ -204,6 +204,7 @@
         "golden:artur-playtest-variable-wrap-pinch": "node scripts/golden/smoke_artur_playtest_variable_wrap_pinch.mjs",
         "golden:error-toast-undo": "node scripts/golden/smoke_error_toast_undo.mjs",
         "golden:app-loads": "npm run build && node scripts/golden/smoke_app_loads.mjs",
+        "golden:brand-identity": "node scripts/golden/smoke_brand_identity.mjs",
         "golden:viewport-orbit": "node scripts/golden/smoke_viewport_orbit_loop.mjs",
         "golden:viewport-safari-gesture-zoom": "node scripts/golden/smoke_viewport_safari_gesture_zoom.mjs",
         "golden:page-zoom-lock": "node scripts/golden/smoke_page_zoom_lock.mjs",

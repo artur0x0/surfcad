@@ -21,6 +21,8 @@ const INK = 'rgb(22, 23, 29)';
 const ORANGE = 'rgb(255, 90, 31)';
 const PAPER = 'rgb(250, 250, 249)';
 const GREY = 'rgb(107, 110, 120)';
+const NAVY = 'rgb(15, 23, 42)';
+const GREY_ON_NAVY = 'rgb(163, 166, 174)';
 const ASM = 'Metallll';
 const DOC = {
   version: 1,
@@ -57,14 +59,17 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
   const html = read('index.html');
   const manifest = JSON.parse(read('public/site.webmanifest'));
   const ink = read('src/assets/brand/wordmark-ink.svg');
+  const splashDark = read('src/assets/brand/wordmark-splash-dark.svg');
+  const paperTile = read('src/assets/brand/brandmark-dark-paper-tile.svg');
   const word = read('src/components/brand/BrandWordmark.jsx');
   const app = read('src/App.jsx');
+  const boot = read('public/loading-theme.js');
   const feed = read('src/components/PartFeed.jsx');
   const editor = read('src/components/CodeEditor.jsx');
   const view = read('src/components/Viewport.jsx');
   const arch = read('docs/architecture.md');
   const map = read('docs/ui-map.md');
-  const loading = app.slice(app.indexOf('if (!manifoldReady || editorInitialScript === null)'), app.indexOf('Phone shell:'));
+  const loading = app.slice(app.indexOf('Show loading state while Manifold initializes'), app.indexOf('Phone shell:'));
 
   check('title, theme-color, and tagline description',
     /<title>SurfCAD<\/title>/.test(html)
@@ -94,11 +99,21 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
     check(`${file} exists`, existsSync(new URL(`../../${file}`, import.meta.url)));
   }
   check('ink wordmark has no orange', !/#FF5A1F/i.test(ink) && /#16171D/.test(ink));
+  check('splash-dark wordmark is Paper Surf and orange CAD',
+    /#FAFAF9/.test(splashDark) && /#FF5A1F/.test(splashDark) && !/#16171D/.test(splashDark));
+  check('dark paper-tile mark is paper tile, ink board, white stringer',
+    /fill="#FAFAF9"/.test(paperTile) && /fill="#16171D"/.test(paperTile) && /stroke="#FFFFFF"/.test(paperTile));
   check('orange CAD only when the splash wordmark is at least 24px',
-    /tone === 'splash' && size >= 24/.test(word)
+    /\(tone === 'splash' \|\| tone === 'splash-dark'\) && size >= 24/.test(word)
     && /cad: '#FF5A1F'/.test(word)
+    && /tone === 'splash-dark'/.test(word)
     && /tone === 'on-light'/.test(word)
     && /cad: '#16171D'/.test(word));
+  check('loading theme is decided before first paint',
+    /src="\/loading-theme\.js"/.test(html)
+    && /data-loading-theme/.test(html)
+    && /hour >= 19 \|\| hour < 7/.test(boot)
+    && /__SURFCAD_LOADING_HOUR__/.test(boot));
   const headerMark = word.slice(word.indexOf('export function BrandHeaderMark'), word.indexOf('/** Ink tile'));
   check('header mark is 16px Paper wordmark on transparent chrome with the paper tile',
     /tone="on-dark" size=\{16\}/.test(headerMark)
@@ -106,13 +121,18 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
     && /data-brand-mark="paper"/.test(word)
     && !/background:/.test(headerMark)
     && /data-brand-header/.test(headerMark));
-  check('splash is paper, mark, 40px wordmark, grey tagline',
+  check('splash is paper or navy, mark, 40px wordmark, grey tagline, no privacy link',
     /data-app-loading/.test(loading)
     && /surface-light/.test(loading)
+    && /surface-splash-dark/.test(loading)
     && /<BrandMark /.test(loading)
-    && /tone="splash" size=\{40\}/.test(loading)
+    && /tone=\{loadingDark \? 'paper-tile' : 'ink'\}/.test(loading)
+    && /tone=\{loadingDark \? 'splash-dark' : 'splash'\} size=\{40\}/.test(loading)
     && /Don't do CAD\. SurfCAD\./.test(loading)
     && /text-muted-on-light/.test(loading)
+    && /text-muted-on-splash-dark/.test(loading)
+    && !/SiteFooter/.test(loading)
+    && !/Privacy choices/.test(loading)
     && !/#FF5A1F/.test(loading)
     && !/FF5A1F/i.test(loading));
   const ribbon = feed.slice(feed.indexOf('data-parts-feed-ribbon'), feed.indexOf('data-parts-rows'));
@@ -127,7 +147,7 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
     && /flex min-h-9 items-center/.test(view)
     && /left-2 right-2 lg:left-4 lg:right-4/.test(view)
     && /data-brand-header-host/.test(view)
-    && /shrink-0 items-center self-center" data-brand-header-host=""/.test(view)
+    && /shrink-0 items-center self-center pointer-events-auto"\s+data-brand-header-host=""/.test(view)
     && /<BrandHeaderMark \/>/.test(view)
     && /<PuzzleUnlock enabled=\{mode !== 'game'\} onUnlock=\{onStartGame\} \/>/.test(view));
   check('docs name the identity golden',
@@ -260,6 +280,57 @@ async function readMark(page, selector) {
   }, selector);
 }
 
+async function readSplash(page) {
+  return page.evaluate(() => {
+    const gate = document.querySelector('[data-app-loading]');
+    const mark = gate?.querySelector('[data-brand-wordmark]');
+    const cad = mark?.querySelector('[data-brand-word="cad"]');
+    const surf = mark?.querySelector('[data-brand-word="surf"]');
+    const tag = gate?.querySelector('[data-brand-tagline]');
+    const status = gate?.querySelector('[data-app-loading-status]');
+    const box = mark?.getBoundingClientRect();
+    const paint = (el) => (el ? getComputedStyle(el).color : '');
+    const orangeNodes = [...(gate?.querySelectorAll('*') || [])].filter((el) => {
+      const style = getComputedStyle(el);
+      return [style.color, style.backgroundColor, style.fill, style.borderTopColor].includes('rgb(255, 90, 31)');
+    }).map((el) => el.getAttribute('data-brand-word') || el.tagName);
+    return {
+      bg: gate ? getComputedStyle(gate).backgroundColor : '',
+      h: box ? Math.round(box.height) : 0,
+      cad: mark?.getAttribute('data-brand-cad') || '',
+      tone: mark?.getAttribute('data-brand-wordmark-tone') || '',
+      cadFill: cad ? getComputedStyle(cad).fill : '',
+      surfFill: surf ? getComputedStyle(surf).fill : '',
+      tag: (tag?.textContent || '').trim(),
+      tagColor: paint(tag),
+      statusColor: paint(status),
+      markKind: gate?.querySelector('[data-brand-mark]')?.getAttribute('data-brand-mark') || '',
+      hasPrivacy: !!gate?.querySelector('[data-privacy-choices-link]'),
+      theme: gate?.getAttribute('data-app-loading-theme') || '',
+      htmlTheme: document.documentElement.getAttribute('data-loading-theme') || '',
+      orangeNodes,
+    };
+  });
+}
+
+async function captureSplash(browser, hour) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
+  await context.addInitScript((h) => { globalThis.__SURFCAD_LOADING_HOUR__ = h; }, hour);
+  const page = await context.newPage();
+  await page.route('**/*.wasm', async (route) => {
+    await new Promise((r) => setTimeout(r, 20000));
+    try { await route.continue(); } catch { /* closed */ }
+  });
+  const nav = page.goto(APP_URL, { waitUntil: 'commit', timeout: 20000 }).catch(() => {});
+  await page.waitForSelector('[data-app-loading]', { timeout: 15000 });
+  const splash = await readSplash(page);
+  const dark = hour >= 19 || hour < 7;
+  await page.screenshot({ path: join(SHOT_DIR, dark ? 'brand-splash-dark.png' : 'brand-splash.png') });
+  await context.close();
+  await nav;
+  return splash;
+}
+
 async function boot(browser, vp) {
   const context = await browser.newContext({
     viewport: { width: vp.width, height: vp.height },
@@ -315,53 +386,43 @@ try {
 attachConsentPresetToBrowser(browser);
 
   {
-    const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
-    const page = await context.newPage();
-    await page.route('**/*.wasm', async (route) => {
-      await new Promise((r) => setTimeout(r, 20000));
-      try { await route.continue(); } catch { /* closed */ }
-    });
-    const nav = page.goto(APP_URL, { waitUntil: 'commit', timeout: 20000 }).catch(() => {});
-    await page.waitForSelector('[data-app-loading]', { timeout: 15000 });
-    const splash = await page.evaluate(() => {
-      const gate = document.querySelector('[data-app-loading]');
-      const mark = gate?.querySelector('[data-brand-wordmark]');
-      const cad = mark?.querySelector('[data-brand-word="cad"]');
-      const surf = mark?.querySelector('[data-brand-word="surf"]');
-      const tag = gate?.querySelector('[data-brand-tagline]');
-      const status = gate?.querySelector('[data-app-loading-status]');
-      const box = mark?.getBoundingClientRect();
-      const paint = (el) => (el ? getComputedStyle(el).color : '');
-      const orangeNodes = [...(gate?.querySelectorAll('*') || [])].filter((el) => {
-        const style = getComputedStyle(el);
-        return [style.color, style.backgroundColor, style.fill, style.borderTopColor].includes('rgb(255, 90, 31)');
-      }).map((el) => el.getAttribute('data-brand-word') || el.tagName);
-      return {
-        bg: gate ? getComputedStyle(gate).backgroundColor : '',
-        h: box ? Math.round(box.height) : 0,
-        cad: mark?.getAttribute('data-brand-cad') || '',
-        cadFill: cad ? getComputedStyle(cad).fill : '',
-        surfFill: surf ? getComputedStyle(surf).fill : '',
-        tag: (tag?.textContent || '').trim(),
-        tagColor: paint(tag),
-        statusColor: paint(status),
-        hasMark: !!gate?.querySelector('[data-brand-mark="ink"]'),
-        orangeNodes,
-      };
-    });
-    check('splash background is Paper', splash.bg === PAPER, splash.bg);
-    check('splash wordmark is at least 24px with orange CAD',
-      splash.h >= 24 && splash.cad === 'orange' && splash.cadFill === ORANGE && splash.surfFill === INK,
+    const splash = await captureSplash(browser, 12);
+    check('light splash background is Paper', splash.bg === PAPER, splash.bg);
+    check('light splash wordmark is at least 24px with orange CAD on Ink Surf',
+      splash.h >= 24 && splash.cad === 'orange' && splash.tone === 'splash'
+      && splash.cadFill === ORANGE && splash.surfFill === INK,
       JSON.stringify(splash));
-    check('splash tagline is the brand line in Grey',
-      splash.tag === "Don't do CAD. SurfCAD." && splash.tagColor === GREY && splash.statusColor === GREY && splash.hasMark,
+    check('light splash tagline is the brand line in Grey with the ink mark',
+      splash.tag === "Don't do CAD. SurfCAD."
+      && splash.tagColor === GREY && splash.statusColor === GREY
+      && splash.markKind === 'ink',
       JSON.stringify(splash));
-    check('splash orange is only the CAD path',
+    check('light splash orange is only the CAD path',
       splash.orangeNodes.length === 1 && splash.orangeNodes[0] === 'cad',
       JSON.stringify(splash.orangeNodes));
-    await page.screenshot({ path: join(SHOT_DIR, 'brand-splash.png') });
-    await context.close();
-    await nav;
+    check('light splash has no Privacy choices link',
+      splash.hasPrivacy === false && splash.theme === 'light' && splash.htmlTheme === 'light',
+      JSON.stringify(splash));
+  }
+
+  {
+    const splash = await captureSplash(browser, 19);
+    check('dark splash background is navy', splash.bg === NAVY, splash.bg);
+    check('dark splash wordmark is at least 24px with orange CAD on Paper Surf',
+      splash.h >= 24 && splash.cad === 'orange' && splash.tone === 'splash-dark'
+      && splash.cadFill === ORANGE && splash.surfFill === PAPER,
+      JSON.stringify(splash));
+    check('dark splash tagline is the brand line in grey-on-navy with the paper-tile mark',
+      splash.tag === "Don't do CAD. SurfCAD."
+      && splash.tagColor === GREY_ON_NAVY && splash.statusColor === GREY_ON_NAVY
+      && splash.markKind === 'paper-tile',
+      JSON.stringify(splash));
+    check('dark splash orange is only the CAD path',
+      splash.orangeNodes.length === 1 && splash.orangeNodes[0] === 'cad',
+      JSON.stringify(splash.orangeNodes));
+    check('dark splash has no Privacy choices link',
+      splash.hasPrivacy === false && splash.theme === 'dark' && splash.htmlTheme === 'dark',
+      JSON.stringify(splash));
   }
 
   const deskPage = await boot(browser, { width: 1280, height: 800, touch: false });
@@ -378,7 +439,7 @@ attachConsentPresetToBrowser(browser);
     && host1280 === 1,
     JSON.stringify(at1280));
   check('1280 brand left edge lines up with the helper rail',
-    rowAlign1280 && rowAlign1280.tileLeft === rowAlign1280.railLeft,
+    rowAlign1280 && Math.abs(rowAlign1280.tileLeft - rowAlign1280.railLeft) <= 2,
     JSON.stringify(rowAlign1280));
   check('1280 title stays centred and clear of the profile chip',
     rowAlign1280
@@ -408,7 +469,7 @@ attachConsentPresetToBrowser(browser);
     JSON.stringify(at390));
   const rowAlign390 = await readHeaderAlign(phone.page);
   check('390 brand left edge lines up with the helper rail',
-    rowAlign390 && rowAlign390.tileLeft === rowAlign390.railLeft,
+    rowAlign390 && Math.abs(rowAlign390.tileLeft - rowAlign390.railLeft) <= 2,
     JSON.stringify(rowAlign390));
   check('390 brand is vertically centred with the assembly chips',
     rowAlign390

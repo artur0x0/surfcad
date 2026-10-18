@@ -68,6 +68,10 @@ test('chrome tokens keep today\'s colours', () => {
   assert.match(css, /--brand-ink:\s*22 23 29;\s*\/\* #16171D \*\//);
   assert.match(css, /--brand-grey:\s*107 110 120;\s*\/\* #6B6E78 \*\//);
   assert.match(css, /--brand-orange:\s*255 90 31;\s*\/\* #FF5A1F \*\//);
+  assert.match(css, /--brand-navy:\s*15 23 42;\s*\/\* #0F172A splash-dark background \*\//);
+  assert.match(css, /--brand-grey-on-navy:\s*163 166 174;\s*\/\* #A3A6AE muted on splash-dark \*\//);
+  assert.match(css, /\.surface-splash-dark\b/);
+  assert.match(css, /\.text-muted-on-splash-dark\b/);
   assert.match(css, /--chrome-success:\s*4 120 87;\s*\/\* emerald-700 #047857 \*\//);
   assert.match(css, /--chrome-success-hover:\s*5 150 105;\s*\/\* emerald-600 #059669 \*\//);
   assert.match(css, /\.surface-dark\b/);
