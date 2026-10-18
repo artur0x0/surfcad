@@ -9,7 +9,7 @@ import { normalizeRepoPath, sanitizeAssemblyName, serializeAssembly } from './as
 import { isExternalPartPath, parseVaultPath, vaultSegment } from './git/vaultLayout.js';
 import { planCopyToAssembly } from './git/gitWorkspace.js';
 import { partRepoPath, partScriptText } from './git/partIdentity.js';
-import { isSurfId, mintSurfId } from './git/surfId.js';
+import { isSurfId, mintSurfId, partSurfId } from './git/surfId.js';
 
 /** Group ids use the surf-id shape so they are stable and unique. They are not part ids. */
 export function mintGroupId(opts = {}) {
@@ -32,7 +32,8 @@ export function layoutPartFeed(rows, groups) {
   const emitted = new Set();
   const items = [];
   list.forEach((row, index) => {
-    const group = row?.surfId ? membership.get(row.surfId) : null;
+    const sid = partSurfId(row);
+    const group = sid ? membership.get(sid) : null;
     if (!group) {
       items.push({ kind: 'part', row, index });
       return;
@@ -41,7 +42,8 @@ export function layoutPartFeed(rows, groups) {
     emitted.add(group.id);
     const parts = [];
     list.forEach((member, memberIndex) => {
-      if (member?.surfId && (group.partIds || []).includes(member.surfId)) {
+      const memberId = partSurfId(member);
+      if (memberId && (group.partIds || []).includes(memberId)) {
         parts.push({ row: member, index: memberIndex });
       }
     });
@@ -125,7 +127,10 @@ export function removeGroupParts(doc, groupId) {
   const group = (doc?.groups || []).find((row) => row.id === groupId);
   if (!group) return { doc: serializeAssembly(doc), removed: [] };
   const ids = new Set(group.partIds || []);
-  const removed = (doc?.parts || []).filter((part) => part?.surfId && ids.has(part.surfId));
+  const removed = (doc?.parts || []).filter((part) => {
+    const sid = partSurfId(part);
+    return sid && ids.has(sid);
+  });
   const drop = new Set(removed.map((part) => part.id));
   const parts = (doc?.parts || []).filter((part) => !drop.has(part.id));
   const groups = (doc?.groups || []).filter((row) => row.id !== groupId);
@@ -174,7 +179,7 @@ export function copyGroupToAssembly(doc, scripts, groupId, { now, randFor } = {}
   const nextScripts = { ...(scripts || {}) };
   const copies = [];
   (group.partIds || []).forEach((surfId, index) => {
-    const part = parts.find((row) => row.surfId === surfId);
+    const part = parts.find((row) => partSurfId(row) === surfId);
     if (!part || !groupMemberIsExternal(doc, group, part)) return;
     const plan = planCopyToAssembly(
       { ...doc, parts, groups, activeId },

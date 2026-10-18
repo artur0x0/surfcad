@@ -197,7 +197,8 @@ export function ensureAssemblyVaultPaths(doc, scripts = {}, { remotePaths = [] }
     }
     const text = workScripts[part.id];
     delete workScripts[part.id];
-    workScripts[assigned] = typeof text === 'string' ? text : '';
+    if (typeof text === 'string') workScripts[assigned] = text;
+    else if (part?.missing !== true) workScripts[assigned] = '';
     return {
       ...part,
       id: assigned,

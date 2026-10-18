@@ -11,6 +11,7 @@
  * stay pickable.
  */
 import { composeViewportParts } from './assembly.js';
+import { partSurfId } from './git/surfId.js';
 import { partPlacement } from './jointSchema.js';
 
 /** Hits closer than this along the ray (model units) are the same seam. */
@@ -143,7 +144,7 @@ export function leftoverPickSolids(doc, runs, stored) {
     const pose = partPlacement(part);
     out.push({
       id: part.id,
-      surfId: part.surfId || null,
+      surfId: partSurfId(part),
       mesh,
       position: pose.t,
       placement: pose,

@@ -61,6 +61,16 @@ export function isV2SurfId(value) {
   return SURF_ID_V2_RE.test(String(value || ''));
 }
 
+/**
+ * Permanent paint / joint / color identity for a working-copy row.
+ * After collapse, `id` is the surf-id and `surfId` is gone.
+ */
+export function partSurfId(part) {
+  if (isSurfId(part?.surfId)) return part.surfId;
+  if (isSurfId(part?.id)) return part.id;
+  return null;
+}
+
 export function isLocalSurfId(value) {
   return isSurfId(value) && String(value).startsWith('local-');
 }

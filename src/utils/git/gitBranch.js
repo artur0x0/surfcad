@@ -33,6 +33,7 @@ export async function listVaultBranches(adapter, repo, { current = null } = {}) 
 export async function switchVaultBranch(adapter, repo, assemblyName, branch, {
   onProgress = null,
   pathIndex = {},
+  openAssembly = openVaultAssembly,
 } = {}) {
   assertGithubAdapter(adapter);
   const name = vaultSegment(assemblyName);
@@ -40,8 +41,9 @@ export async function switchVaultBranch(adapter, repo, assemblyName, branch, {
   if (!branch) throw new Error('Empty branch name');
   const tip = await adapter.getBranch(repo, branch);
   if (!tip) throw new Error(`Branch not found: ${branch}`);
+  const open = typeof openAssembly === 'function' ? openAssembly : openVaultAssembly;
   try {
-    return await openVaultAssembly(adapter, repo, name, {
+    return await open(adapter, repo, name, {
       branch, headSha: tip.sha, onProgress, pathIndex,
     });
   } catch (err) {
@@ -54,7 +56,7 @@ export async function switchVaultBranch(adapter, repo, assemblyName, branch, {
   const available = await listVaultAssemblies(adapter, repo, branch);
   if (available.length) {
     const pick = available.includes(name) ? name : available[0];
-    const opened = await openVaultAssembly(adapter, repo, pick, {
+    const opened = await open(adapter, repo, pick, {
       branch, headSha: tip.sha, onProgress, pathIndex,
     });
     return {

@@ -16,6 +16,7 @@ import {
   faceFingerprints,
   matchFaceKeys,
 } from './faceColorMatch.js';
+import { partSurfId } from './git/surfId.js';
 import { jointPlanesFromScript } from './jointPlanes.js';
 import { dropPlanarFins } from './planarSeam.js';
 import { triangleSources } from './partSolidCache.js';
@@ -319,7 +320,7 @@ export function catalogFromMeshData(mesh) {
 export function catalogsFromRuns({ parts, runs, leftovers, scripts } = {}) {
   const catalogs = {};
   for (const part of parts || []) {
-    const sid = part?.surfId;
+    const sid = partSurfId(part);
     if (!sid) continue;
     const run = runs?.[part.id];
     const failed = !!(

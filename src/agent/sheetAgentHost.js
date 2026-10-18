@@ -47,6 +47,13 @@ export function createSheetAgentHandlers(deps) {
 
   const length = () => characteristicLengthMm?.({ bounds: modelBoundsRef?.current }) ?? 100;
 
+  // Consecutive agent calls (sheet_check then sheet_refold) read modeRef
+  // before React flushes setState. Keep the ref in lockstep with the write.
+  const applyMode = (next) => {
+    modeRef.current = next ?? null;
+    setMode(next);
+  };
+
   function readScript() {
     const read = getHelperBuffer;
     return typeof read === 'function' ? read() : '';
@@ -75,7 +82,7 @@ export function createSheetAgentHandlers(deps) {
           next = { ...next, spec };
         }
       }
-      setMode(next);
+      applyMode(next);
       return { result: { sku: rec.sku, stage: next.stage } };
     });
   }
@@ -114,7 +121,7 @@ export function createSheetAgentHandlers(deps) {
         if (next?.stage === 'edit' && next.spec && bound.partId) {
           onCommitSheetMetal?.(next.spec, { partId: bound.partId, step: 'rebind' });
         }
-        setMode(next);
+        applyMode(next);
         return { result: { ok: true, stage: next?.stage, partId: bound.partId } };
       };
       if (start && typeof start.then === 'function') {
@@ -131,7 +138,7 @@ export function createSheetAgentHandlers(deps) {
       if (next === mode) {
         return { error: { code: 'bad_tool', message: `Tool ${tool} is not available on this SKU` } };
       }
-      setMode(next);
+      applyMode(next);
       return { result: { tool: next.tool } };
     },
 
@@ -157,7 +164,7 @@ export function createSheetAgentHandlers(deps) {
       } else {
         return { error: { code: 'bad_stage', message: 'No sheet params apply at this stage' } };
       }
-      setMode(next);
+      applyMode(next);
       return { result: { ok: true, stage: next.stage, draft: next.draft?.kind || null } };
     },
 
@@ -203,7 +210,7 @@ export function createSheetAgentHandlers(deps) {
       if (next === mode) {
         return { result: { ok: true, unchanged: true } };
       }
-      setMode(next);
+      applyMode(next);
       return {
         result: {
           ok: true,
@@ -261,7 +268,7 @@ export function createSheetAgentHandlers(deps) {
 
     finishSheetCommit(prepared) {
       if (!prepared?.ok) return;
-      if (prepared.nextMode) setMode(prepared.nextMode);
+      if (prepared.nextMode) applyMode(prepared.nextMode);
     },
 
     sheetCancel() {
@@ -272,15 +279,15 @@ export function createSheetAgentHandlers(deps) {
       }
       if (!mode) return { error: { code: 'no_sheet_mode', message: 'Sheet metal is not open' } };
       if (mode.exportOpen) {
-        setMode(closeSheetExport(mode));
+        applyMode(closeSheetExport(mode));
         return { result: { cancelled: true, check: true } };
       }
       if (mode.draft) {
-        setMode(cancelDraft(mode));
+        applyMode(cancelDraft(mode));
         return { result: { cancelled: true, draft: true } };
       }
       if (mode.stage === 'base') {
-        setMode(backToPlanePick(mode));
+        applyMode(backToPlanePick(mode));
         return { result: { cancelled: true, base: true } };
       }
       return { error: { code: 'nothing_to_cancel', message: 'Nothing to cancel in sheet metal' } };
@@ -289,7 +296,7 @@ export function createSheetAgentHandlers(deps) {
     sheetExit() {
       cancelFeatureEdit?.('sheetMetal');
       setPicker(null);
-      setMode(null);
+      applyMode(null);
       return { result: { exited: true } };
     },
 
@@ -298,7 +305,7 @@ export function createSheetAgentHandlers(deps) {
       if (!mode || mode.stage !== 'edit' || mode.draft) {
         return { error: { code: 'bad_stage', message: 'Check is only available in sheet edit with no open draft' } };
       }
-      setMode(openSheetExport(mode));
+      applyMode(openSheetExport(mode));
       return { result: { check: true } };
     },
 
@@ -307,7 +314,7 @@ export function createSheetAgentHandlers(deps) {
       if (!mode?.exportOpen) {
         return { error: { code: 'bad_stage', message: 'Flat pattern check is not open' } };
       }
-      setMode(closeSheetExport(mode));
+      applyMode(closeSheetExport(mode));
       return { result: { refold: true } };
     },
 
@@ -334,7 +341,7 @@ export function createSheetAgentHandlers(deps) {
     finishSheetDone() {
       cancelFeatureEdit?.('sheetMetal');
       setPicker(null);
-      setMode(null);
+      applyMode(null);
     },
 
     sheetBeginHole() {
@@ -343,7 +350,7 @@ export function createSheetAgentHandlers(deps) {
       if (!draft || draft.kind !== 'hole' || !draft.isNew) {
         return { error: { code: 'bad_stage', message: 'Open a new sheet hole draft first' } };
       }
-      setMode({
+      applyMode({
         ...mode,
         draft: null,
         toast: null,

@@ -249,7 +249,7 @@ test('rename commit is tip move + surf.json path/name; Save takes the edit and p
     headSha: flushed.sha,
   });
   assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writesBefore + 1);
-  assert.equal(findAssemblyPart(open.doc, IDS[0])?.path, staged.to);
+  assert.equal(findAssemblyPart(open.doc, staged.to)?.path, staged.to);
 
   const assembled = await assembleCommitFiles(gh, vault.repo, {
     doc: staged.doc,

@@ -8,14 +8,19 @@
  * opening they write nothing and do not preempt the run.
  */
 import { serializeAssembly } from '../utils/assembly.js';
+import { partSurfId } from '../utils/git/surfId.js';
 import { jointRefs, partPlacement } from '../utils/jointSchema.js';
 import { referenceFailure, resolveReference } from '../utils/jointResolve.js';
 import { solveJoints } from './solveJoints.js';
 
 export const JOINT_OPEN_LOCK_MESSAGE = 'An assembly is opening — confirm the joint again once it finishes.';
 
+function livePartId(part) {
+  return partSurfId(part) || part?.surfId || part?.id || null;
+}
+
 function partName(doc, surfId) {
-  const part = (doc?.parts || []).find((row) => row?.surfId === surfId);
+  const part = (doc?.parts || []).find((row) => livePartId(row) === surfId);
   return part?.name || surfId;
 }
 
@@ -82,7 +87,7 @@ function classifyJoint(doc, joint, catalogs) {
 function withPlacements(doc, placements) {
   let moved = false;
   const parts = (doc.parts || []).map((part) => {
-    const next = placements?.[part.surfId];
+    const next = placements?.[livePartId(part)];
     if (!next) return part;
     const prev = partPlacement(part);
     if (poseClose(prev, next)) return part;
@@ -121,7 +126,7 @@ export function refreshAssemblyJoints({ doc, catalogs = {}, locked = false } = {
     return { ok: true, doc, statuses, messages, message: null, changed: false };
   }
   const parts = (doc.parts || []).map((part) => ({
-    surfId: part.surfId,
+    surfId: livePartId(part),
     placement: partPlacement(part),
   }));
   const solved = solveJoints({ parts, joints: active });

@@ -15,7 +15,7 @@
  */
 import { nextNumberedName, serializeAssembly } from '../utils/assembly.js';
 import { matchFaceKeys } from '../utils/faceColorMatch.js';
-import { mintSurfId } from '../utils/git/surfId.js';
+import { mintSurfId, partSurfId } from '../utils/git/surfId.js';
 import { partPlacement } from '../utils/jointSchema.js';
 import { worldPoint } from '../utils/partPose.js';
 import { commitJointEdit } from './refreshJoints.js';
@@ -332,7 +332,7 @@ export function resolvePartChange(picks, pending, action) {
 function worldNormal(pick, doc) {
   const n = unitNormal(pick);
   if (!n) return null;
-  const part = (doc?.parts || []).find((row) => row?.surfId === pick.surfId);
+  const part = (doc?.parts || []).find((row) => partSurfId(row) === pick.surfId);
   return rotateByQuat(partPlacement(part).q, n);
 }
 
@@ -390,7 +390,7 @@ export function stickyJointPick(pick, index = 0) {
 export function jointTagAnchor(doc, joint) {
   const atOf = (ref) => {
     if (!ref?.part) return null;
-    const part = (doc?.parts || []).find((row) => row?.surfId === ref.part);
+    const part = (doc?.parts || []).find((row) => partSurfId(row) === ref.part);
     if (!part) return null;
     const local = ref.key?.at || [0, 0, 0];
     return worldPoint(local, partPlacement(part));
@@ -524,7 +524,7 @@ export function draftFromPicks(previous, picks, { joints = [] } = {}) {
 }
 
 export function cardFromJoint(joint, doc, message = '') {
-  const partOf = (surfId) => (doc?.parts || []).find((part) => part.surfId === surfId);
+  const partOf = (surfId) => (doc?.parts || []).find((part) => partSurfId(part) === surfId);
   const pickOf = (ref) => {
     if (!ref) return null;
     const part = partOf(ref.part);
@@ -567,7 +567,7 @@ export function jointHighlightEntries(card, doc, catalogs) {
   const out = [];
   for (const pick of card?.picks || []) {
     if (!pick?.key || pick.kind === 'axis' || pick.kind === 'edge' || pick.kind === 'plane') continue;
-    const part = parts.find((row) => row?.surfId === pick.surfId);
+    const part = parts.find((row) => partSurfId(row) === pick.surfId);
     const faces = catalogs?.[pick.surfId]?.faces;
     if (!part || !Array.isArray(faces)) continue;
     const hit = matchFaceKeys(faces, [{ key: pick.key }]);
@@ -672,9 +672,10 @@ export function applyJointCard({
 function snapshotOf(doc) {
   const placements = {};
   for (const part of doc?.parts || []) {
-    if (!part?.surfId) continue;
+    const sid = partSurfId(part);
+    if (!sid) continue;
     const pose = partPlacement(part);
-    placements[part.surfId] = { t: pose.t.slice(), q: pose.q.slice() };
+    placements[sid] = { t: pose.t.slice(), q: pose.q.slice() };
   }
   return {
     joints: JSON.parse(JSON.stringify(doc?.joints || [])),
@@ -750,7 +751,7 @@ export function redoAssemblyHistory(history) {
 export function applyAssemblySnapshot(doc, snapshot) {
   if (!doc || !snapshot) return doc;
   const parts = (doc.parts || []).map((part) => {
-    const pose = snapshot.placements?.[part.surfId];
+    const pose = snapshot.placements?.[partSurfId(part)];
     if (!pose) return part;
     return { ...part, placement: { t: pose.t.slice(), q: pose.q.slice() } };
   });
@@ -787,6 +788,6 @@ export function redoJointStrip({ history, doc, scripts }) {
 }
 
 export function assemblyHistoryKey(doc) {
-  const ids = (doc?.parts || []).map((part) => part?.surfId || part?.id || '').sort().join(',');
+  const ids = (doc?.parts || []).map((part) => partSurfId(part) || part?.id || '').sort().join(',');
   return `${doc?.source || ''}\0${doc?.name || ''}\0${ids}`;
 }

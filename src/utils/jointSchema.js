@@ -9,7 +9,7 @@
  * `position` stays the translation. `placement` is `{ t, q }` with a
  * unit quaternion, vector part first. Version stays 1.
  */
-import { isSurfId } from './git/surfId.js';
+import { isSurfId, partSurfId } from './git/surfId.js';
 
 export const JOINT_TYPES = Object.freeze([
   'coincident', 'concentric', 'distance', 'angle', 'symmetric', 'fixed',
@@ -392,7 +392,7 @@ function cleanJoint(joint) {
  */
 export function normalizeAssemblyJoints(joints, parts) {
   if (!Array.isArray(joints) || !joints.length) return null;
-  const live = new Set((parts || []).map((part) => part?.surfId).filter(isSurfId));
+  const live = new Set((parts || []).map((part) => partSurfId(part)).filter(Boolean));
   const seen = new Set();
   const out = [];
   for (const joint of joints) {

@@ -137,6 +137,20 @@ export default [
     },
   },
 
+  // Isolated v1 reader: import the entry point only. PR 10 deletes the folder.
+  {
+    files: ['src/**/*.{js,jsx}', 'test/**/*.{js,mjs}'],
+    ignores: ['src/utils/git/legacyVault/**'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [{
+          group: ['**/legacyVault/*', '!**/legacyVault', '!**/legacyVault/index.js'],
+          message: "Import only src/utils/git/legacyVault (index.js). PR 10 deletes this module.",
+        }],
+      }],
+    },
+  },
+
   // ── Web app: plain JS (utils, kernel helpers, worker bridge) ──
   {
     files: ['src/**/*.js'],

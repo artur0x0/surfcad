@@ -266,8 +266,10 @@ describe('assembly Save that adds a part', () => {
     });
     const gamma = opened.doc.parts.find((part) => part.name === 'Gamma');
     const alpha = opened.doc.parts.find((part) => part.name === 'Alpha');
-    assert.equal(gamma.id, GAMMA);
-    assert.equal(alpha.id, ALPHA);
+    const beta = opened.doc.parts.find((part) => part.name === 'Beta');
+    assert.ok(gamma.id);
+    assert.ok(alpha.id);
+    assert.ok(beta.id);
 
     const editedAlpha = `${ALPHA_TEXT}// alpha edit\n`;
     const liveDoc = {
@@ -279,13 +281,13 @@ describe('assembly Save that adds a part', () => {
     };
     const liveScripts = {
       ...opened.scripts,
-      [ALPHA]: editedAlpha,
+      [alpha.id]: editedAlpha,
       [DELTA]: DELTA_TEXT,
     };
     const wrapIds = dirtyPartIds(liveDoc, liveScripts, opened.baseline);
-    assert.equal(wrapIds.has(GAMMA), false);
+    assert.equal(wrapIds.has(gamma.id), false);
     const wrapped = wrapUnmarkedPartScripts(liveScripts, wrapIds);
-    assert.equal(wrapped[GAMMA], GAMMA_TEXT);
+    assert.equal(wrapped[gamma.id], GAMMA_TEXT);
 
     const assembled = await assembleCommitFiles(gh, vault.repo, {
       doc: liveDoc,
@@ -294,10 +296,10 @@ describe('assembly Save that adds a part', () => {
       message: 'Save trio plus Delta',
     });
     assert.equal(assembled.status, 'ready');
-    assert.equal(assembled.partIds.includes(GAMMA), false);
-    assert.equal(assembled.partIds.includes(ALPHA), true);
+    assert.equal(assembled.partIds.includes(gamma.id), false);
+    assert.equal(assembled.partIds.includes(alpha.id), true);
     assert.equal(assembled.partIds.includes(DELTA), true);
-    assert.equal(assembled.scripts[GAMMA], GAMMA_TEXT);
+    assert.equal(assembled.scripts[gamma.id], GAMMA_TEXT);
 
     const committed = await gh.commitFiles(vault.repo, {
       branch: 'main',
@@ -323,17 +325,17 @@ describe('assembly Save that adds a part', () => {
     assert.equal(dirtyPartIds(marked.doc, assembled.scripts, nextBaseline).size, 0);
     const dots = rowDots(marked.doc, assembled.scripts, nextBaseline);
     assert.deepEqual(dots.filter((row) => row.showsDot).map((row) => row.name), []);
-    assert.equal(dots.find((row) => row.id === GAMMA).showsDot, false);
-    assert.equal(showAddToRepo(marked.doc.parts.find((part) => part.id === GAMMA)), false);
+    assert.equal(dots.find((row) => row.id === gamma.id).showsDot, false);
+    assert.equal(showAddToRepo(marked.doc.parts.find((part) => part.id === gamma.id)), false);
 
     const gammaEdit = `${GAMMA_TEXT}// gamma edit\n`;
-    const afterEdit = { ...assembled.scripts, [GAMMA]: gammaEdit };
+    const afterEdit = { ...assembled.scripts, [gamma.id]: gammaEdit };
     const dirtyAfter = dirtyPartIds(marked.doc, afterEdit, nextBaseline);
-    assert.deepEqual([...dirtyAfter], [GAMMA]);
+    assert.deepEqual([...dirtyAfter], [gamma.id]);
     const dotsAfter = rowDots(marked.doc, afterEdit, nextBaseline);
-    assert.equal(dotsAfter.find((row) => row.id === GAMMA).showsDot, true);
-    assert.equal(dotsAfter.find((row) => row.id === ALPHA).showsDot, false);
-    assert.equal(dotsAfter.find((row) => row.id === BETA).showsDot, false);
+    assert.equal(dotsAfter.find((row) => row.id === gamma.id).showsDot, true);
+    assert.equal(dotsAfter.find((row) => row.id === alpha.id).showsDot, false);
+    assert.equal(dotsAfter.find((row) => row.id === beta.id).showsDot, false);
     assert.equal(dotsAfter.find((row) => row.id === DELTA).showsDot, false);
   });
 });

@@ -16,23 +16,20 @@ import {
   sanitizePartName,
   serializeAssembly,
 } from '../assembly.js';
-import { readMeshBytes } from './meshSync.js';
 import { gitBlobSha, isBinaryContent, toUint8Array } from './binaryContent.js';
 import { assertGithubAdapter } from './githubAdapterInterface.js';
 import {
   assemblyFilePath,
-  assemblyFilePathCandidates,
   assetPathForScript,
   isExternalPartPath,
   listAssemblies,
   listPartScripts,
-  migrateDocToCurrentLayout,
   partPathAllowedFor,
   sharedPartPath,
   vaultSegment,
 } from './vaultLayout.js';
 import { allocateVaultPartPath } from './partVaultPath.js';
-import { assignVaultPartIdentities, partRepoPath, partScriptText } from './partIdentity.js';
+import { partRepoPath, partScriptText } from './partIdentity.js';
 export {
   allocateVaultPartPath,
   ensureAssemblyVaultPaths,
@@ -52,62 +49,16 @@ export {
   partRepoPath,
   rekeyWorkingCopyToTip,
 } from './partIdentity.js';
-import { parseSurfJson, stringifySurfJson } from './surfJson.js';
-import { isSurfId, mintSurfId, readSurfId, stripSurfId, withSurfId } from './surfId.js';
-
-/** Working-copy baseline taken at the last vault open (or explicit reset). */
-function assetShaValue(value) {
-  if (value == null) return null;
-  if (typeof value === 'string' && /^[0-9a-f]{40}$/i.test(value)) return value.toLowerCase();
-  if (isBinaryContent(value)) return gitBlobSha(toUint8Array(value));
-  if (isBinaryContent(value?.bytes)) return value.sha || gitBlobSha(toUint8Array(value.bytes));
-  if (typeof value?.sha === 'string' && /^[0-9a-f]{40}$/i.test(value.sha)) return value.sha.toLowerCase();
-  return null;
-}
-
-function baselineAssetMap(parts, assets) {
-  const assetMap = {};
-  if (!assets || typeof assets !== 'object') return assetMap;
-  for (const part of parts || []) {
-    const scriptPath = partRepoPath(part) || part.id;
-    const mesh = assetPathForScript(scriptPath);
-    if (!mesh) continue;
-    const value = Object.prototype.hasOwnProperty.call(assets, mesh)
-      ? assets[mesh]
-      : (Object.prototype.hasOwnProperty.call(assets, scriptPath) ? assets[scriptPath] : undefined);
-    if (value == null) continue;
-    const sha = assetShaValue(value);
-    if (sha) assetMap[mesh] = sha;
-  }
-  return assetMap;
-}
-
-export function captureBaseline({
-  assemblyPath,
-  assemblyName,
-  doc,
-  scripts,
-  assets = null,
-  branch = 'main',
-  headSha = null,
-} = {}) {
-  const clean = serializeAssembly({ ...doc, source: 'git' });
-  const scriptMap = {};
-  for (const part of clean.parts) {
-    const text = partScriptText(part, scripts);
-    scriptMap[part.id] = typeof text === 'string' ? text : '';
-  }
-  return {
-    assemblyPath: assemblyPath || assemblyFilePath(assemblyName || clean.name),
-    assemblyName: vaultSegment(assemblyName || clean.name),
-    assemblyText: stringifySurfJson(clean, { validate: false }),
-    scripts: scriptMap,
-    assets: baselineAssetMap(clean.parts, assets),
-    partIds: clean.parts.map((p) => p.id),
-    branch,
-    headSha,
-  };
-}
+import { stringifySurfJson } from './surfJson.js';
+import { mintSurfId, partSurfId, readSurfId, stripSurfId, withSurfId } from './surfId.js';
+import {
+  detectVaultLayout,
+  listLegacyAssemblies,
+  openLegacyAssembly,
+  UnsupportedVaultLayoutError,
+} from './legacyVault/index.js';
+import { captureBaseline } from './gitBaseline.js';
+export { captureBaseline };
 
 function assemblyTextIgnoringActive(text) {
   const obj = JSON.parse(text);
@@ -225,8 +176,11 @@ export function isWorkspaceDirty(doc, scripts, baseline, opts) {
 /** Assembly names in the vault on `ref` (default branch). */
 export async function listVaultAssemblies(adapter, repo, ref) {
   assertGithubAdapter(adapter);
-  const tree = await adapter.listTree(repo, ref);
-  return listAssemblies(tree);
+  const detected = await detectVaultLayout(adapter, repo, ref || 'main');
+  if (detected.layout === 'legacy') {
+    return listLegacyAssemblies(adapter, repo, ref);
+  }
+  throw new UnsupportedVaultLayoutError(detected.layout);
 }
 
 /**
@@ -312,108 +266,17 @@ export function seedEmptyVaultAssembly(assemblyName, {
 }
 
 /**
- * Load one assembly from the vault: parse `.surf.json`, read every part
- * script by path. Missing scripts become '' (row shows Find in repo).
- * -> { doc, scripts, assemblyPath, baseline }
+ * Open one vault assembly. v1 trees go through the isolated legacy reader
+ * (missing blob → `missing` row, never ''). v2 open is not in this PR.
  */
-export async function openVaultAssembly(adapter, repo, assemblyName, {
-  branch = 'main',
-  headSha = null,
-  onProgress = null,
-  pathIndex = {},
-} = {}) {
+export async function openVaultAssembly(adapter, repo, assemblyName, opts = {}) {
   assertGithubAdapter(adapter);
-  const name = vaultSegment(assemblyName);
-  if (!name) throw new Error('Empty assembly name');
-  let file = null;
-  let foundPath = null;
-  for (const candidate of assemblyFilePathCandidates(name)) {
-    file = await adapter.readFile(repo, candidate, branch);
-    if (file) { foundPath = candidate; break; }
+  const branch = opts.branch || 'main';
+  const detected = await detectVaultLayout(adapter, repo, branch);
+  if (detected.layout === 'legacy') {
+    return openLegacyAssembly(adapter, repo, assemblyName, opts);
   }
-  if (!file || !foundPath) {
-    throw new Error(`Assembly not found: ${assemblyFilePath(name)}`);
-  }
-  let doc = parseSurfJson(file.content);
-  const rawScripts = {};
-  const partTotal = (doc.parts || []).length;
-  onProgress?.({ index: 0, total: partTotal, phase: 'document' });
-  for (let i = 0; i < partTotal; i += 1) {
-    const part = doc.parts[i];
-    onProgress?.({ index: i + 1, total: partTotal, phase: 'script', name: doc.name });
-    const path = partRepoPath(part) || part.id;
-    const got = await adapter.readFile(repo, path, branch);
-    rawScripts[part.id] = got ? got.content : '';
-    if (path && path !== part.id) rawScripts[path] = rawScripts[part.id];
-  }
-  // Working copy always uses the current flat layout; legacy paths remap here.
-  const migrated = migrateDocToCurrentLayout(doc, rawScripts);
-  const assigned = assignVaultPartIdentities(migrated.doc, migrated.scripts, { pathIndex });
-  doc = assigned.doc;
-  const scripts = assigned.scripts;
-  const fromOfNew = new Map((migrated.moved || []).map((move) => [move.to, move.from]));
-  const assets = await loadPartMeshes(adapter, repo, branch, doc.parts, fromOfNew);
-  const assemblyPath = assemblyFilePath(name);
-  const head = headSha || (await adapter.getBranch(repo, branch))?.sha || null;
-  const baseline = captureBaseline({
-    assemblyPath,
-    assemblyName: name,
-    doc,
-    scripts,
-    assets,
-    branch,
-    headSha: head,
-  });
-  if (foundPath !== assemblyPath || migrated.changed) {
-    baseline.legacyCleanup = true;
-    baseline.legacyAssemblyPath = foundPath !== assemblyPath ? foundPath : null;
-  }
-  return {
-    doc,
-    scripts,
-    assets,
-    assemblyPath,
-    baseline,
-    migrated: migrated.changed,
-    identities: {
-      minted: assigned.minted,
-      pairs: assigned.pairs,
-      cached: assigned.cached,
-    },
-  };
-}
-
-/**
- * Download each part's `<Part>.mesh` through the blob API into the asset
- * cache. Bytes are also returned, keyed by the current (flat) mesh path.
- */
-async function loadPartMeshes(adapter, repo, branch, parts, fromOfNew) {
-  const assets = {};
-  if (typeof adapter?.listTree !== 'function') return assets;
-  const tree = await adapter.listTree(repo, branch);
-  const shaByPath = new Map((tree || []).filter((entry) => entry?.path).map((entry) => [entry.path, entry.sha]));
-  for (const part of parts || []) {
-    const scriptPath = partRepoPath(part) || part.id;
-    const mesh = assetPathForScript(scriptPath);
-    if (!mesh) continue;
-    const legacyId = fromOfNew?.get(scriptPath) || fromOfNew?.get(part.id);
-    const legacyMesh = legacyId ? assetPathForScript(legacyId) : null;
-    let located = null;
-    if (shaByPath.has(mesh)) located = mesh;
-    else if (legacyMesh && shaByPath.has(legacyMesh)) located = legacyMesh;
-    if (!located) continue;
-    const sha = shaByPath.get(located);
-    if (!sha) continue;
-    let got = null;
-    try {
-      got = await readMeshBytes(adapter, repo, branch, located, sha);
-    } catch {
-      got = null;
-    }
-    if (!(got?.bytes instanceof Uint8Array)) continue;
-    assets[mesh] = got.bytes;
-  }
-  return assets;
+  throw new UnsupportedVaultLayoutError(detected.layout);
 }
 
 /** Suggest `parts/Part (n).js` for the next empty slot. */
@@ -645,9 +508,7 @@ export function planCopyToAssembly(doc, part, script, { now, rand } = {}) {
   const asm = vaultSegment(doc?.name);
   if (!asm) throw new Error('Empty assembly name');
   const surfId = mintSurfId({ now, rand });
-  const sourceId = (part?.surfId && isSurfId(part.surfId))
-    ? part.surfId
-    : readSurfId(script);
+  const sourceId = partSurfId(part) || readSurfId(script);
   const content = withSurfId(stripSurfId(script || ''), surfId);
   const name = sanitizePartName(part?.name || DEFAULT_PART_NAME) || DEFAULT_PART_NAME;
   return {
@@ -688,7 +549,8 @@ export async function planInsertVaultAssemblyParts(adapter, repo, sourceAssembly
   const additions = [];
   for (const part of opened.doc.parts || []) {
     const fromPath = partRepoPath(part) || part.id;
-    const content = partScriptText(part, opened.scripts) || '';
+    const missing = part.missing === true;
+    const content = missing ? null : (partScriptText(part, opened.scripts) ?? null);
     if (taken.has(fromPath)) continue;
     taken.add(fromPath);
     additions.push({
@@ -696,7 +558,8 @@ export async function planInsertVaultAssemblyParts(adapter, repo, sourceAssembly
       name: part.name || fromPath.split('/').pop()?.replace(/\.js$/i, '') || fromPath,
       content,
       fromPath,
-      surfId: part.surfId || readSurfId(content) || null,
+      surfId: partSurfId(part) || (typeof content === 'string' ? readSurfId(content) : null) || null,
+      missing,
       linked: isExternalPartPath(target, fromPath) || !partPathAllowedFor(target, fromPath),
     });
   }

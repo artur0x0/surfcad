@@ -7,6 +7,7 @@
  * placement stays at the seed. Nothing here deletes a joint or edits a script.
  */
 import { solveResiduals } from '../solver/residual.js';
+import { partSurfId } from '../utils/git/surfId.js';
 import { jointRefs } from '../utils/jointSchema.js';
 import { evaluateJoints, localFrame, seedDrops } from './equations.js';
 import {
@@ -19,7 +20,7 @@ import {
 export const JOINT_TOL = 1e-3;
 
 function partId(part) {
-  return part?.surfId || part?.id;
+  return partSurfId(part) || part?.surfId || part?.id || null;
 }
 
 function seedPose(part) {

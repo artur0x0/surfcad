@@ -25,13 +25,14 @@ const CHROME_CANDIDATES = [
   '/usr/bin/chromium',
 ].filter(Boolean);
 
+const SURF_ID = '2026-10-18-12-00-00-0014-a014';
 const ASSEMBLY = {
   format: 'surfcad.assembly',
   v: 1,
   name: 'agent-h14',
   activeId: 'local:part1',
   source: 'git',
-  parts: [{ id: 'local:part1', name: 'Part (1)', visible: true }],
+  parts: [{ id: 'local:part1', name: 'Part (1)', visible: true, surfId: SURF_ID }],
   joints: [],
 };
 
@@ -119,7 +120,7 @@ async function seedAssembly(page) {
         tx.onerror = () => reject(tx.error);
       };
     });
-  }, { doc: ASSEMBLY, script: newPartStarterScript() });
+  }, { doc: ASSEMBLY, script: `// @surf-id ${SURF_ID}\n${newPartStarterScript()}` });
 }
 
 async function agentCall(page, name, args) {

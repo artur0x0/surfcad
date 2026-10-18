@@ -26,8 +26,8 @@ const PORT = Number(process.env.SMOKE_PORT || 4343);
 const APP_URL = `http://127.0.0.1:${PORT}/`;
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
 const PREVIEW = process.env.FEA_PREVIEW === '1';
-const CUBE = 'const part = Manifold.cube([40, 40, 40], false);\nreturn part;\n';
-const PART_ID = 'fea-arrows';
+const PART_ID = '2026-10-18-12-00-00-0003-cc03';
+const CUBE = `// @surf-id ${PART_ID}\nconst part = Manifold.cube([40, 40, 40], false);\nreturn part;\n`;
 const USER_ID = 'user-fea-arrows';
 const YELLOW = { r: 234, g: 179, b: 8 };
 

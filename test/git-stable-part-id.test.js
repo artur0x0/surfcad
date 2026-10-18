@@ -16,6 +16,7 @@ import {
 } from '../src/utils/git/gitCommit.js';
 import { ensureAssemblyVaultPaths, allocateVaultPartPath } from '../src/utils/git/partVaultPath.js';
 import { findAssemblyPart, isStablePartId } from '../src/utils/git/partIdentity.js';
+import { isSurfId } from '../src/utils/git/surfId.js';
 import { openVaultAssembly } from '../src/utils/git/gitWorkspace.js';
 import { renamePartCommand } from '../src/agent/commands/document.js';
 import { buildPartsState } from '../src/agent/state/parts.js';
@@ -86,9 +87,18 @@ test('create -> git_save -> reload keeps the same id', async () => {
     branch: 'main',
     headSha: first.sha,
   });
-  assert.deepEqual(opened.doc.parts.map((part) => part.id), IDS);
-  assert.equal(findAssemblyPart(opened.doc, IDS[0])?.name, 'Kettle Body');
-  assert.equal(findAssemblyPart(opened.doc, opened.doc.parts[0].path)?.id, IDS[0]);
+  const openedIds = opened.doc.parts.map((part) => part.id);
+  assert.equal(openedIds.every((id) => isSurfId(id)), true);
+  assert.equal(opened.doc.parts[0].name, 'Kettle Body');
+  assert.equal(findAssemblyPart(opened.doc, opened.doc.parts[0].path)?.id, openedIds[0]);
+  const pathIndex = Object.fromEntries((opened.identities?.cached || []).map((hit) => [hit.path, hit.id]));
+  const reloaded = await openVaultAssembly(gh, vault.repo, ASM, {
+    branch: 'main',
+    headSha: first.sha,
+    pathIndex,
+    knownAssemblyId: opened.doc.id,
+  });
+  assert.deepEqual(reloaded.doc.parts.map((part) => part.id), openedIds);
   const listed = buildPartsState({
     activeId: opened.doc.activeId,
     assemblyName: opened.doc.name,
@@ -99,7 +109,7 @@ test('create -> git_save -> reload keeps the same id', async () => {
       path: row.path,
     })),
   });
-  assert.deepEqual(listed.parts.map((row) => row.id), IDS);
+  assert.deepEqual(listed.parts.map((row) => row.id), openedIds);
   assert.ok(listed.parts[0].path.startsWith(`assemblies/${ASM}/`));
 });
 

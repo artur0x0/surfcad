@@ -6,7 +6,7 @@
 import { isBinaryContent, toUint8Array } from './binaryContent.js';
 import { fileDelete, fileWrite } from './githubAdapterInterface.js';
 import { assemblyDir, assemblyFilePath, assemblyPartPath, assetPathForScript, isAssemblyFile, parseVaultPath, sharedPartPath, vaultSegment } from './vaultLayout.js';
-import { isSurfId, isSurfJsonPath, readSurfId, withSurfId } from './surfId.js';
+import { isSurfId, isSurfJsonPath, partSurfId, readSurfId, withSurfId } from './surfId.js';
 import { findAssemblyPart, partKeepsStableId, partRepoPath, partScriptText } from './partIdentity.js';
 
 /**
@@ -130,6 +130,9 @@ export function buildRenameCommitFiles({ entries, plan } = {}) {
       : (byPath.has(plan.to)
         ? (byPath.get(plan.to) ?? '')
         : (plan.content != null ? plan.content : ''));
+    if (plan.missing === true && !(typeof body === 'string' && body.length > 0)) {
+      throw new Error(`Refusing empty write for missing part ${plan.from || plan.to || ''}`);
+    }
     if (plan.to) writes.set(plan.to, body);
     if (plan.from && plan.from !== plan.to) deletes.add(plan.from);
     const fromMesh = assetPathForScript(plan.from);
@@ -314,7 +317,7 @@ export function overlayPendingPartRenames(doc, scripts, ops) {
     if (!from || !to || from === to) continue;
     const parts = nextDoc?.parts || [];
     const hasTo = parts.some((part) => part.id === to);
-    const hit = parts.find((part) => part.id === from || (surfId && part.surfId === surfId && part.id !== to));
+    const hit = parts.find((part) => part.id === from || (surfId && partSurfId(part) === surfId && part.id !== to));
     if (!hit) continue;
     if (hasTo && hit.id !== to) {
       const dropped = parts.filter((part) => part.id !== hit.id);
