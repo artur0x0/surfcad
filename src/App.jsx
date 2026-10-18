@@ -5713,6 +5713,10 @@ const App = () => {
           gitVaultRef.current = { ...vault, headSha: opened.baseline?.headSha };
           void checkGitRemoteBehind({ showToast: true, reason: 'reseed' });
         };
+        // Tip baseline first, while WC ids still match git. Path-keyed rows
+        // look clean when gitBaseline is null, so waitForGitClean can pass
+        // and a following set_script never badges dirty.
+        await adoptReseedBaseline();
         const switchReseedMemory = async ({ doc: nextDoc, scripts: nextScripts }) => {
           if (aligned.pairs.length) {
             rekeyRuntime(aligned.pairs);
@@ -5730,10 +5734,21 @@ const App = () => {
           scriptsNow = nextScripts;
           rememberScripts(nextScripts);
           rememberAssembly(nextDoc, { persist: false });
-          await adoptReseedBaseline();
+          // Recapture under collapsed ids from the tip scripts, not nextScripts
+          // (those may already hold a live reload edit via mergeLiveEdits).
+          rememberGitBaseline(captureBaseline({
+            assemblyPath: opened.baseline?.assemblyPath,
+            assemblyName: nextDoc.name,
+            doc: nextDoc,
+            scripts: opened.baseline?.scripts,
+            assets: opened.baseline?.assets,
+            branch,
+            headSha: opened.baseline?.headSha,
+          }));
+          gitVaultRef.current = { ...vault, headSha: opened.baseline?.headSha };
         };
-        // Load/reload still do not write git. Memory and baseline switch only
-        // after the IDB doc is saved with the final ids (step 3).
+        // Load/reload still do not write git. Memory and collapsed baseline
+        // switch only after the IDB doc is saved with the final ids (step 3).
         if (idsChanged) {
           const persisted = await persistCollapsedWorkingCopy({
             collapsed: { doc, scripts: scriptsNow, pairs: persistPairs },
@@ -5746,7 +5761,15 @@ const App = () => {
               try { await deletePartScript(id); } catch { /* ignore */ }
             },
             saveDoc: saveAssemblyDocument,
-            live: () => partScriptsRef.current,
+            live: () => {
+              const scripts = { ...partScriptsRef.current };
+              const id = assemblyRef.current?.activeId;
+              const text = codeEditorRef.current?.getContent?.();
+              if (id && typeof text === 'string' && !suppressPartSaveRef.current) {
+                scripts[id] = text;
+              }
+              return scripts;
+            },
             assemblyKey: assemblyRekeyKey(persistSource.doc),
             saveJournal: saveRekeyJournal,
             clearJournal: clearRekeyJournal,

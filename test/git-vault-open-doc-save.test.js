@@ -6,6 +6,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { serializeAssembly } from '../src/utils/assembly.js';
+import { captureBaseline } from '../src/utils/git/gitBaseline.js';
+import { isWorkspaceDirty } from '../src/utils/git/gitWorkspace.js';
 import { mintSurfId } from '../src/utils/git/surfId.js';
 import {
   assemblyRekeyKey,
@@ -161,6 +163,103 @@ test('App reseed skips adoptReseedBaseline when docSaved is false', () => {
   const baselineAt = reseed.lastIndexOf('await adoptReseedBaseline()');
   assert.ok(persistAt >= 0 && skipAt > persistAt);
   assert.ok(baselineAt > skipAt, 'adoptReseedBaseline must be after the docSaved skip');
+});
+
+test('App reseed adopts tip baseline before persist and recaptures from tip scripts', () => {
+  const reseed = sliceBetween(APP, '// After reload, baseline is gone', 'handleFlushLocalAssembly');
+  const persistAt = reseed.indexOf('const persisted = await persistCollapsedWorkingCopy');
+  const earlyAt = reseed.indexOf('await adoptReseedBaseline()');
+  const switchAt = reseed.indexOf('const switchReseedMemory');
+  const liveAt = reseed.indexOf('codeEditorRef.current?.getContent?.()');
+  assert.ok(persistAt >= 0 && earlyAt >= 0 && switchAt >= 0 && liveAt >= 0);
+  assert.ok(earlyAt < persistAt, 'tip baseline must land before persist so reload is not falsely clean');
+  const switchBody = reseed.slice(switchAt, persistAt);
+  const recapture = switchBody.slice(switchBody.indexOf('rememberGitBaseline(captureBaseline'));
+  assert.match(recapture, /rememberGitBaseline\(captureBaseline\(/);
+  assert.match(
+    recapture,
+    /scripts:\s*opened\.baseline\?\.scripts/,
+    'recapture must use tip scripts, not live nextScripts',
+  );
+  assert.equal(
+    /scripts:\s*nextScripts/.test(recapture),
+    false,
+    'folding live nextScripts into the baseline would hide a reload edit',
+  );
+  assert.ok(liveAt > persistAt, 'persist live() must fold the editor so a reload edit moves to the new key');
+});
+
+test('a reload edit on the old key stays dirty after collapse persist', async () => {
+  const tip = 'return tip;\n';
+  const edited = `${tip}// dirty-check\n`;
+  const sourceDoc = {
+    source: 'git',
+    name: 'A',
+    activeId: PATH,
+    parts: [{ id: PATH, path: PATH, name: 'Pin', visible: true, order: 0 }],
+  };
+  const sourceScripts = { [PATH]: tip };
+  const tipBaseline = captureBaseline({
+    assemblyPath: 'assemblies/A/.surf.json',
+    assemblyName: 'A',
+    doc: sourceDoc,
+    scripts: sourceScripts,
+    branch: 'main',
+    headSha: 'tip',
+  });
+  assert.equal(isWorkspaceDirty(sourceDoc, sourceScripts, null), false);
+  assert.equal(isWorkspaceDirty(sourceDoc, { [PATH]: edited }, null), false);
+  assert.equal(isWorkspaceDirty(sourceDoc, sourceScripts, tipBaseline), false);
+  assert.equal(isWorkspaceDirty(sourceDoc, { [PATH]: edited }, tipBaseline, {
+    liveId: PATH,
+    liveScript: edited,
+  }), true);
+
+  const live = { [PATH]: edited };
+  const collapsed = collapseWorkingCopyIds(sourceDoc, sourceScripts);
+  const idb = new Map(Object.entries(sourceScripts));
+  const persisted = await persistCollapsedWorkingCopy({
+    collapsed: { doc: collapsed.doc, scripts: collapsed.scripts, pairs: collapsed.pairs },
+    sourceDoc,
+    sourceScripts,
+    save: async (id, script) => { idb.set(id, script); return true; },
+    load: async (id) => idb.get(id),
+    remove: async (id) => { idb.delete(id); },
+    saveDoc: async (doc) => doc,
+    live: () => live,
+  });
+  assert.equal(persisted.docSaved, true);
+  const nextId = persisted.doc.parts[0].id;
+  assert.notEqual(nextId, PATH);
+  assert.equal(String(persisted.scripts[nextId] || '').includes('dirty-check'), true);
+
+  const recapturedFromTip = captureBaseline({
+    assemblyPath: 'assemblies/A/.surf.json',
+    assemblyName: 'A',
+    doc: persisted.doc,
+    scripts: tipBaseline.scripts,
+    branch: 'main',
+    headSha: 'tip',
+  });
+  assert.equal(
+    isWorkspaceDirty(persisted.doc, persisted.scripts, recapturedFromTip),
+    true,
+    'tip recapture must keep the live reload edit dirty',
+  );
+
+  const recapturedFromLive = captureBaseline({
+    assemblyPath: 'assemblies/A/.surf.json',
+    assemblyName: 'A',
+    doc: persisted.doc,
+    scripts: persisted.scripts,
+    branch: 'main',
+    headSha: 'tip',
+  });
+  assert.equal(
+    isWorkspaceDirty(persisted.doc, persisted.scripts, recapturedFromLive),
+    false,
+    'capturing the baseline from live/persisted scripts would hide the edit',
+  );
 });
 
 test('App reseed keeps mixed ids out of memory when saveDoc fails', async () => {
