@@ -71,7 +71,7 @@ console.log('mobile modal fit — source');
   const page = read('src/components/checkout/CheckoutPage.jsx');
   const login = read('src/components/LoginModal.jsx');
   const order = read('src/components/OrderModal.jsx');
-  const ui = read('docs/UI_MAP.md');
+  const ui = read('docs/ui-map.md');
   const shell = css.slice(css.indexOf('.modal-fit {'));
   const quoteBody = quote.slice(quote.indexOf('flex-1 overflow-y-auto'), quote.lastIndexOf('</ModalFit>'));
 

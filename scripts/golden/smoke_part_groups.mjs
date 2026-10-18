@@ -347,7 +347,7 @@ console.log('\nwiring');
   const app = readFileSync(new URL('../../src/App.jsx', import.meta.url), 'utf8');
   const feed = readFileSync(new URL('../../src/components/PartFeed.jsx', import.meta.url), 'utf8');
   const arch = readFileSync(new URL('../../docs/architecture.md', import.meta.url), 'utf8');
-  const map = readFileSync(new URL('../../docs/UI_MAP.md', import.meta.url), 'utf8');
+  const map = readFileSync(new URL('../../docs/ui-map.md', import.meta.url), 'utf8');
   ok('insert files the group', /withInsertedGroup\(/.test(app) && /planned\.sourcePath/.test(app));
   ok('group actions are wired', /onRenameGroup=\{handleRenameGroup\}/.test(app)
     && /onUngroup=\{handleUngroup\}/.test(app)

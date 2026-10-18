@@ -39,7 +39,7 @@ console.log('\ncart — UI wiring (source)');
   const cart = read('src/utils/cart.js');
   const hook = read('src/hooks/useCart.jsx');
   const clear = read('src/utils/clearLocalCadData.js');
-  const ui = read('docs/UI_MAP.md');
+  const ui = read('docs/ui-map.md');
   const arch = read('docs/architecture.md');
   const pkg = read('package.json');
   const row = feed.slice(feed.indexOf('const renderPartRow'));

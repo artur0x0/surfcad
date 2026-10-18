@@ -4,7 +4,7 @@ Scannable rules for text, color, type, and chrome. Use this file — not
 ad-hoc hex, Tailwind color utilities, or a second style doc.
 
 This file replaces `docs/POPUP_STYLE.md`. Placement and “where is this on
-screen?” stay in [UI_MAP.md](./UI_MAP.md). Runtime map:
+screen?” stay in [ui-map.md](./ui-map.md). Runtime map:
 [architecture.md](./architecture.md).
 
 ## Hard rules
@@ -179,7 +179,7 @@ header icons (`STRIP_ICON_BLUE`).
   (`data-brand-mark="paper"`) + 16px Paper wordmark on a transparent
   lockup (`data-brand-header`, `data-brand-wordmark`). Surf and CAD are
   both Paper, **not orange**. Placement (rail inset, title pills) is
-  [UI_MAP.md](./UI_MAP.md).
+  [ui-map.md](./ui-map.md).
 - `src/assets/brand/wordmark-ink.svg` is Ink-on-light.
 - Orange (`#FF5A1F`) is only the splash word “CAD”, and only at 24px or
   taller. Loading gate (`data-app-loading`): wall-clock theme from
@@ -343,7 +343,7 @@ Errors use this same glass card. They are not a blue rounded pill.
 | Mobile (`compact`) | `bottom-14 left-1/2 -translate-x-1/2 max-w-[min(16rem,calc(100%-9rem))]` — raised above the home-indicator stage pill; leave room for left/right rails |
 
 Bottom-**centre** is reserved for mode chips. Bottom corners belong to the
-helper / cross-section rails (`UI_MAP.md`).
+helper / cross-section rails (`ui-map.md`).
 
 Contour, Fillet, Chamfer, the standalone edge card, Shell, Draft, Move Face,
 Delete Face, Cut, Boolean, Move, Paint, and Analyze share the feature card
@@ -356,7 +356,7 @@ Boolean stays `z-20`, under the section rail.
   `surface-glass-chip` (frost only — supply your own tint).
 - Border: `border border-cyan-400/70` / `border-amber-400/70`.
 - Type: `text-xs` / `text-[13px]` controls; title in accent (`text-cyan-200`).
-- z-index: `z-20` (with other overlays; see `UI_MAP.md` ladder).
+- z-index: `z-20` (with other overlays; see `ui-map.md` ladder).
 - Text on those dark tints is the light accent (`text-cyan-100`,
   `text-on-dark`), never `text-black` / `text-gray-900`.
 

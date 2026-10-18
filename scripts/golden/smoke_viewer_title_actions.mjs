@@ -56,7 +56,7 @@ mkdirSync(SHOT_DIR, { recursive: true });
   check('App handlers are passed to Viewport',
     /handleTitlePartActivate/.test(app) && /handleTitleAssemblyActivate/.test(app));
   const arch = read('docs/architecture.md');
-  const map = read('docs/UI_MAP.md');
+  const map = read('docs/ui-map.md');
   check('docs mention golden:viewer-title-actions',
     /golden:viewer-title-actions/.test(arch) && /golden:viewer-title-actions/.test(map));
 }

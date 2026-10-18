@@ -372,9 +372,9 @@ console.log('face skin — wiring');
   check('highlights render above the skin', new RegExp(`FACE_HIGHLIGHT_RENDER_ORDER`).test(view) && FACE_HIGHLIGHT_RENDER_ORDER > FACE_SKIN_RENDER_ORDER);
   check('the rainbow is not a rail button', !/debugFaces/.test(panel));
   const arch = readFileSync(new URL('../../docs/architecture.md', import.meta.url), 'utf8');
-  const map = readFileSync(new URL('../../docs/UI_MAP.md', import.meta.url), 'utf8');
+  const map = readFileSync(new URL('../../docs/ui-map.md', import.meta.url), 'utf8');
   check('architecture.md names the skin order', /Face color skin/.test(arch) && /render order 2/.test(arch));
-  check('UI_MAP.md names the debug flag', /debugFaces=1/.test(map) && /surfcad\.debugFaces/.test(map));
+  check('ui-map.md names the debug flag', /debugFaces=1/.test(map) && /surfcad\.debugFaces/.test(map));
 }
 
 console.log('face skin — pixels, 390 px, dark and light');

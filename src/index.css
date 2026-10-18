@@ -13,7 +13,7 @@
   --chrome-text-secondary: 156 163 175; /* gray-400 #9ca3af */
   --chrome-divider: 55 65 81; /* gray-700 #374151 */
   --chrome-border: 55 65 81; /* gray-700 #374151 */
-  /* Brand from #460. Token first, then a class — see docs/ui_style_guide.md. */
+  /* Brand from #460. Token first, then a class — see docs/ui-style-guide.md. */
   --brand-paper: 250 250 249; /* #FAFAF9 */
   --brand-ink: 22 23 29; /* #16171D */
   --brand-grey: 107 110 120; /* #6B6E78 */
@@ -25,7 +25,7 @@
   --chrome-success: 4 120 87; /* emerald-700 #047857 */
   --chrome-success-hover: 5 150 105; /* emerald-600 #059669 */
   /* Horizontal CAD feature ribbon (assembly / part / empty). 46px:
-     32px chip + 12px py-1.5 + 2px border. See docs/ui_style_guide.md. */
+     32px chip + 12px py-1.5 + 2px border. See docs/ui-style-guide.md. */
   --feature-strip-height: 2.875rem;
   /* 10px between the ribbon bottom and the left/right tool rails. */
   --feature-strip-rail-gap: 0.625rem;
@@ -260,7 +260,7 @@ textarea {
    viewport overlays, and `surface-scrim` for a modal backdrop. Anything that
    sits over the 3D view should be on one of them, not a flat `bg-*`. */
 @layer components {
-  /* Semantic surfaces + text. Pair dark with text-on-dark. See docs/ui_style_guide.md. */
+  /* Semantic surfaces + text. Pair dark with text-on-dark. See docs/ui-style-guide.md. */
   .surface-dark {
     background-color: rgb(var(--chrome-background));
   }
