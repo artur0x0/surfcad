@@ -61,5 +61,7 @@ describe('part delete dialog', () => {
     assert.equal(partCanDeleteFromRepo('git', 'local:abc'), false);
     assert.equal(partCanDeleteFromRepo('local', FILE), false);
     assert.equal(partCanDeleteFromRepo('git', 'assemblies/Widget/../FilletKilla.js'), false);
+    assert.equal(partCanDeleteFromRepo('git', '2026-10-18-00-00-00-0000-aaaa', FILE), true);
+    assert.equal(partCanDeleteFromRepo('git', '2026-10-18-00-00-00-0000-aaaa'), false);
   });
 });

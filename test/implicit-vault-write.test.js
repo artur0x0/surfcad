@@ -81,9 +81,29 @@ test('App implicit edits do not enqueue or flush a vault write', () => {
 
   assert.equal(/addEventListener\(\s*'online'/.test(APP), false, 'online must not flush');
 
+  const toggle = sliceBetween(APP, 'const handleToggleSource', 'const gitDefaultVaultName');
+  assert.match(toggle, /ensureGitVault\(\{\s*create:\s*false\s*\}\)/);
+  assert.match(toggle, /NO_REPO_YET_COPY/);
+
+  const listAsm = sliceBetween(APP, 'const handleListVaultAssemblies', 'const adoptVaultOpening');
+  assert.match(listAsm, /ensureGitVault\(\{\s*create:\s*false\s*\}\)/);
+
+  const listBrowse = sliceBetween(APP, 'const handleListVaultBrowse', 'const vaultEntriesForDelete');
+  assert.match(listBrowse, /ensureGitVault\(\{\s*create:\s*false\s*\}\)/);
+
+  const listBranches = sliceBetween(APP, 'const handleListBranches', 'const handleSwitchBranch');
+  assert.match(listBranches, /ensureGitVault\(\{\s*create:\s*false\s*\}\)/);
+
+  const delEntries = sliceBetween(APP, 'const vaultEntriesForDelete', 'const showEmptyAssembly');
+  assert.match(delEntries, /ensureGitVault\(\{\s*create:\s*false\s*\}\)/);
+
+  assert.match(APP, /NO_REPO_YET_COPY/);
+  assert.equal(/queuedRename/.test(APP), false);
+
   const save = sliceBetween(APP, 'const handleGitCommit', 'const absorbOverwriteFiles');
   assert.match(save, /flushGitOps\(\{ surfaceConflict: false \}\)/);
   assert.match(save, /enqueueGit\(vault\.repo/);
+  assert.match(save, /deletePaths/);
   assert.match(APP, /async agentGitSave\(\{ message \}\) \{[\s\S]*?return handleGitCommit\(draft\);/);
 });
 

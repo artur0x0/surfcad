@@ -9,6 +9,7 @@
  */
 import { serializeAssembly } from './assembly.js';
 import { LOCAL_ROW_PREFIX, remapLocalColorKeys, stripLocalRowPrefix } from './git/localPartIdMigration.js';
+import { emptyWorkingSidecar, normalizeWorkingSidecar } from './git/workingSidecar.js';
 import { idbWithTimeout, IDB_OP_TIMEOUT_MS } from './idbWithTimeout.js';
 import { forgetPartThumbnails } from './partThumbnailStore.js';
 
@@ -17,6 +18,7 @@ const DB_VERSION = 1;
 const DOC_STORE = 'assembly';
 const PART_STORE = 'parts';
 const DOC_KEY = 'current';
+const SIDECAR_KEY = 'sidecar';
 
 let dbPromise = null;
 
@@ -151,6 +153,23 @@ export async function loadAssemblyDocument() {
 export async function saveAssemblyDocument(doc) {
   const clean = serializeAssembly(doc);
   const { ok } = await runTx(DOC_STORE, 'readwrite', (store) => store.put(clean, DOC_KEY));
+  return ok ? clean : null;
+}
+
+/**
+ * Working-copy sidecar (pending repo deletes, pre-rename vault name).
+ * Same database as the document, a different key — `serializeAssembly`
+ * never sees these fields and they never land in `.surf.json`.
+ */
+export async function loadAssemblySidecar() {
+  const { ok, value, reason } = await runTx(DOC_STORE, 'readonly', (store) => store.get(SIDECAR_KEY));
+  if (reason === 'timeout' || !ok || !value) return emptyWorkingSidecar();
+  return normalizeWorkingSidecar(value);
+}
+
+export async function saveAssemblySidecar(sidecar) {
+  const clean = normalizeWorkingSidecar(sidecar);
+  const { ok } = await runTx(DOC_STORE, 'readwrite', (store) => store.put(clean, SIDECAR_KEY));
   return ok ? clean : null;
 }
 

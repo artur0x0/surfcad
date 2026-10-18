@@ -57,8 +57,8 @@ const BRACKET_SRC = withSurfId('return Manifold.cube([10,10,10], true);\n', BRAC
 const LID_SRC = withSurfId('return Manifold.cube([20,20,2], true);\n', LID_ID);
 const BOLT_SRC = withSurfId('return Manifold.cylinder(6, 1.5, 1.5, 24);\n', BOLT_ID);
 
-function part(id, name, order, surfId) {
-  return { id, name, visible: true, order, surfId };
+function part(id, name, order, surfId, path) {
+  return { id, name, visible: true, order, surfId, ...(path ? { path } : {}) };
 }
 
 async function seed() {
@@ -96,7 +96,7 @@ let grouped;
   ok('bolt already in the doc is skipped', !planned.additions.some((row) => row.id === BOLT));
   const parts = [
     ...gearbox.parts,
-    part(lid.id, lid.name, gearbox.parts.length, lid.surfId),
+    part(lid.id, lid.name, gearbox.parts.length, lid.surfId, lid.fromPath),
   ];
   grouped = withInsertedGroup(
     { ...gearbox, parts, activeId: lid.id },
@@ -156,25 +156,27 @@ console.log('\nrename, ungroup, copy all, remove');
   });
   eq('one copy', copied.copies.length, 1);
   const copy = copied.copies[0];
-  eq('copy lands in this assembly', copy.path, assemblyPartPath('Gearbox', 'Lid'));
+  eq('copy stays path-less until Save', copy.path, null);
+  eq('copy id is the new surf id', copy.id, copy.surfId);
   ok('copy has a new bare id', !String(copy.surfId).startsWith('local-') && copy.surfId !== LID_ID && copy.isSynced === false);
   eq('copy records copiedFrom', copy.copiedFrom, LID_ID);
   eq('copy header is the new id', readSurfId(copy.content), copy.surfId);
   eq('group kept, part id follows the copy', [copied.doc.groups[0].id, copied.doc.groups[0].name, copied.doc.groups[0].partIds],
     [GROUP_ID, 'Cover', [copy.surfId]]);
-  ok('old path left the document', !copied.doc.parts.some((row) => row.id === CV_LID)
-    && copied.scripts[copy.path] === copy.content
+  ok('old path left the document', !copied.doc.parts.some((row) => row.id === CV_LID || row.path === CV_LID)
+    && copied.scripts[copy.id] === copy.content
     && copied.scripts[CV_LID] == null);
   const owned = copyGroupToAssembly(copied.doc, copied.scripts, GROUP_ID, { now: WHEN, randFor: () => 'ffff' });
   eq('already-local member is not copied again', owned.copies.length, 0);
   eq('group still holds the copy', owned.doc.groups[0].partIds, [copy.surfId]);
+  const lidRow = grouped.parts.find((row) => row.surfId === LID_ID);
   const removed = removeGroupParts(grouped, GROUP_ID);
   eq('remove drops the grouped part and the group', [
     removed.removed.map((row) => row.id),
     removed.doc.parts.map((row) => row.id),
     removed.doc.groups || null,
-  ], [[CV_LID], [GB, BOLT], null]);
-  const afterDelete = removePart(grouped, CV_LID);
+  ], [[lidRow.id], [GB, BOLT], null]);
+  const afterDelete = removePart(grouped, lidRow.id);
   ok('deleting the last member drops the group', !afterDelete.groups
     && afterDelete.parts.every((row) => row.surfId !== LID_ID));
 }
@@ -355,7 +357,8 @@ console.log('\nwiring');
     && /onRemoveGroup=\{handleRemoveGroup\}/.test(app)
     && /copyGroupToAssembly\(/.test(app));
   const removeFn = app.slice(app.indexOf('const handleRemoveGroup'), app.indexOf('const handleRenameRetry'));
-  ok('remove group does not delete vault files', removeFn.includes('unlink: true') && !/fileDelete/.test(removeFn));
+  ok('remove group does not delete vault files', /rememberAssembly\(nextDoc\)/.test(removeFn)
+    && !/fileDelete|flushGitOps|flushSyncQueue|enqueueGit|enqueueAssemblySave/.test(removeFn));
   ok('feed lays groups out and confirms remove', /layoutPartFeed\(rows, groups\)/.test(feed)
     && /data-part-group-remove-dialog/.test(feed)
     && /data-part-group-remove-confirm/.test(feed)
