@@ -87,7 +87,7 @@ GitHub does not enforce these as required checks, so read every job's result you
 
 ## Monitoring
 
-Error toasts should be reported to Sentry with a category tag. The crash boundary is the only report today. Scope and the raise-site list are in [docs/monitoring/error-toasts-to-sentry.md](docs/monitoring/error-toasts-to-sentry.md).
+Error toasts should be reported to Sentry with a category tag. The crash boundary is the only report today. Scope and the raise-site list are in [docs/error-toasts-to-sentry.md](docs/error-toasts-to-sentry.md).
 
 ## UI rules (summary; the style guide wins)
 
