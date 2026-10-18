@@ -5,6 +5,7 @@
 
 import { PAIR_MSG } from './relayMessages.js';
 import { BRIDGE_CLOSE_REASON } from './bridgeMessages.js';
+import { createAgentPromptTransport } from '../agentPromptTransport.js';
 import {
   issueFromCloseEvent,
   issueFromErrorEvent,
@@ -104,6 +105,8 @@ export function createAgentBridgeTabConnection(opts) {
   let lostTimer = null;
   /** Bumped on every `open()` / `disconnect()` so a deferred close from an old socket is ignored. */
   let generation = 0;
+  /** Prompt adapter listeners. Replies, acks, and status only. */
+  const promptListeners = new Set();
 
   function setState(next) {
     state = next;
@@ -124,6 +127,36 @@ export function createAgentBridgeTabConnection(opts) {
   function send(payload) {
     if (!ws || ws.readyState !== SOCKET_OPEN) return;
     ws.send(JSON.stringify(payload));
+  }
+
+  /**
+   * Page → agent prompt frames. Only while this tab is paired.
+   * Replies and status are not accepted from the page.
+   * @param {object} message
+   * @returns {boolean}
+   */
+  function sendPrompt(message) {
+    if (state !== 'paired' || !ws || ws.readyState !== SOCKET_OPEN) return false;
+    if (!message || message.type !== PAIR_MSG.AGENT_PROMPT) return false;
+    send(message);
+    return true;
+  }
+
+  /**
+   * @param {(message: object) => void} cb
+   */
+  function subscribePrompt(cb) {
+    promptListeners.add(cb);
+    return () => { promptListeners.delete(cb); };
+  }
+
+  /**
+   * @param {object} msg
+   */
+  function emitPrompt(msg) {
+    for (const cb of [...promptListeners]) {
+      try { cb(msg); } catch { /* listener */ }
+    }
   }
 
   function clearTimers() {
@@ -293,6 +326,10 @@ export function createAgentBridgeTabConnection(opts) {
         markDropped();
         return;
       }
+      if (msg.type === PAIR_MSG.AGENT_REPLY || msg.type === PAIR_MSG.AGENT_STATUS || msg.type === PAIR_MSG.AGENT_PROMPT_ACK) {
+        emitPrompt(msg);
+        return;
+      }
       if (typeof msg.command === 'string') {
         void handleCall(msg);
       }
@@ -374,9 +411,10 @@ export function createAgentBridgeTabConnection(opts) {
     setIssue(null);
     setLink(null);
     setState('idle');
+    unpublishPromptBridge(api);
   }
 
-  return {
+  const api = {
     getState: () => state,
     getLink: () => link,
     getTabKey: () => tabKey,
@@ -385,5 +423,37 @@ export function createAgentBridgeTabConnection(opts) {
     rejectPair,
     disconnect,
     reconnectNow,
+    send: sendPrompt,
+    subscribe: subscribePrompt,
   };
+  publishPromptBridge(api);
+  return api;
+}
+
+/**
+ * The prompt UI imports `createAgentPromptTransport` and passes the tab
+ * connection. The built page also exposes that factory so a paired tab can
+ * be driven without a second import site.
+ * @param {{ send: (message: object) => boolean, subscribe: (cb: (message: object) => void) => (() => void) }} api
+ */
+function publishPromptBridge(api) {
+  if (typeof window === 'undefined') return;
+  window.surfcadAgentPrompt = {
+    createTransport(bridge) {
+      return createAgentPromptTransport(bridge || api);
+    },
+    getBridge() {
+      return api;
+    },
+  };
+}
+
+/**
+ * @param {{ send: Function, subscribe: Function }} api
+ */
+function unpublishPromptBridge(api) {
+  if (typeof window === 'undefined') return;
+  if (window.surfcadAgentPrompt?.getBridge?.() === api) {
+    delete window.surfcadAgentPrompt;
+  }
 }

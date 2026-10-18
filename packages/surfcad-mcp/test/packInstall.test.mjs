@@ -8,6 +8,7 @@ import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { loadCommandsCatalog } from '../src/catalog.mjs';
+import { PROMPT_TOOL_NAMES } from '../src/prompt/promptTools.mjs';
 import { packTarballEntry, parseNpmPackStdout } from './npmPackJson.mjs';
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -65,7 +66,7 @@ test('npm pack tarball installs and lists MCP tools over stdio', { timeout: 120_
     assert.equal(serverInfo?.version, pkgVersion, 'initialize serverInfo.version matches package.json');
 
     const { tools } = await client.listTools();
-    assert.equal(tools.length, catalog.count + 1, 'bridge commands plus pair tool');
+    assert.equal(tools.length, catalog.count + 1 + PROMPT_TOOL_NAMES.length, 'bridge commands, pair, and local prompt tools');
 
     await client.close();
   } finally {

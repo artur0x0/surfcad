@@ -315,6 +315,15 @@ jobs:
             echo "agent bridge save-model v2 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
+          node scripts/golden/smoke_agent_bridge_prompt.mjs | tee "${RUNNER_TEMP}/agent-bridge-prompt.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-prompt.log"; then
+            echo "agent bridge prompt golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'agent bridge prompt: all checks passed' "${RUNNER_TEMP}/agent-bridge-prompt.log"; then
+            echo "agent bridge prompt golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:

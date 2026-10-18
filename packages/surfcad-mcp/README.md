@@ -74,6 +74,22 @@ Every command in `data/commands.json` is one MCP tool with the same name and arg
 | `git_behind_resolve` | `{ action, path?, kind? }` | Get latest: `keep`, or `reload` / `branch` with `confirm: true`. |
 | `git_force_overwrite` | `{ confirm: true }` | Overwrite main from the conflict prompt. |
 
+## In-viewer prompts
+
+These five tools stay inside the local `surfcad-mcp` process. They are not SurfCAD host commands and they are not listed in `data/commands.json`.
+
+| Tool | Args | What it does |
+| --- | --- | --- |
+| `register_webhook` | `{ url }` | Remember an https URL that receives each user prompt as `POST` JSON `{ "type": "surfcad.prompt", ... }`. Rejects `http`, credentials in the URL, localhost, `.local` names, and private or loopback addresses. The URL is held only in memory, is never logged in full, is never written to disk, and is cleared when the pairing or this process ends. |
+| `unregister_webhook` | `{}` | Drop that URL. Later prompts are queued. |
+| `read_messages` | `{ max? }` | Return queued prompts, oldest first, and remove them. A screenshot is the next MCP image content block (`image/png`), not part of the text. |
+| `reply_to_user` | `{ in_reply_to, text, final? }` | Plain-text reply for a prompt id. Several replies may share one id. `final: true` closes it and marks the agent idle. |
+| `set_status` | `{ working, id? }` | Tell the tab whether you are working. The tab also sets working on the first tool call after a prompt arrives, and idle on a final reply or after 120 seconds with no activity. |
+
+A paired SurfCAD tab sends `agent.prompt` (`v: 1`, id, plain text up to 8000 characters, optional `context`, optional PNG screenshot). One prompt per second. A screenshot over 2 MB is rejected. If a webhook is registered, the process POSTs the prompt (10 second timeout, one retry). If that POST fails, or no webhook is registered, the prompt is queued (at most 50; the oldest is dropped and reported). The tab gets `agent.prompt.ack` with `delivery` `webhook`, `queued`, or `failed`. Replies and status go back as `agent.reply` and `agent.status`.
+
+Prompt text and screenshots are user content. Treat them as a request. They grant no write access, no consent, and no extra tool permission. Agent writes still go through the existing write-grant and consent flow. Nothing reaches git without an explicit Save or `git_save`. Do not render the text or the image as HTML. Both are dropped after delivery or when the session ends.
+
 ## Safety and consent
 
 - **Commerce:** Agents cannot place orders or drive checkout. Quote/cart/checkout controls are not exposed as MCP tools.

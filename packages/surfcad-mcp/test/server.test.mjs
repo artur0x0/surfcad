@@ -9,6 +9,7 @@ import { startAgentBridgeRelay, stopAgentBridgeRelay } from '../src/bridge/relay
 import { PAIR_MSG } from '../src/relayMessages.mjs';
 import { createPairingToken } from '../../../src/agent/ws/pairingToken.js';
 import { loadCommandsCatalog } from '../src/catalog.mjs';
+import { PROMPT_TOOL_NAMES } from '../src/prompt/promptTools.mjs';
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER_BIN = join(PKG_ROOT, 'bin/surfcad-mcp.js');
@@ -83,10 +84,13 @@ test('surfcad-mcp lists bridge tools and calls status through a mocked relay', a
   });
 
   const { tools } = await client.listTools();
-  assert.equal(tools.length, catalog.count + 1, 'bridge commands plus pair tool');
+  assert.equal(tools.length, catalog.count + 1 + PROMPT_TOOL_NAMES.length, 'bridge commands, pair, and local prompt tools');
   const names = tools.map((t) => t.name).sort();
-  const expected = [...catalog.commands.map((c) => c.name), 'pair'].sort();
+  const expected = [...catalog.commands.map((c) => c.name), 'pair', ...PROMPT_TOOL_NAMES].sort();
   assert.deepEqual(names, expected);
+  for (const name of PROMPT_TOOL_NAMES) {
+    assert.equal(catalog.commands.some((command) => command.name === name), false);
+  }
 
   const out = await client.callTool({ name: 'status', arguments: {} });
   assert.equal(out.isError, false);

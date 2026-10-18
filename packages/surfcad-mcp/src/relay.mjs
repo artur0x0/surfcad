@@ -3,6 +3,7 @@ import { connectPeer } from './nodeClient.mjs';
 import { PAIR_MSG } from './relayMessages.mjs';
 import { redactToken } from './bridge/relayHub.mjs';
 import { RECONNECT_HINT, pairPendingError, pairingLostError } from './errors.mjs';
+import { createPromptSession } from './prompt/promptSession.mjs';
 
 const DEFAULT_WS_URL = 'ws://127.0.0.1:17341';
 
@@ -77,6 +78,8 @@ export class RelaySession {
   #ensureRelay;
   /** @type {(line: string) => void} */
   #log;
+  /** @type {ReturnType<typeof createPromptSession>} */
+  #prompts;
 
   /**
    * @param {{
@@ -84,6 +87,13 @@ export class RelaySession {
    *   reconnectDelaysMs?: readonly number[],
    *   ensureRelay?: () => Promise<unknown>,
    *   onLog?: (line: string) => void,
+   *   promptSession?: ReturnType<typeof createPromptSession>,
+   *   postWebhook?: (url: string, body: object, meta: { pinAddress?: string, insecureTls: boolean }) => Promise<{ ok: boolean, error?: string }>,
+   *   testWebhookOverride?: () => boolean,
+   *   resolveHost?: (hostname: string) => Promise<string[]>,
+   *   now?: () => number,
+   *   setTimer?: (fn: () => void, ms: number) => unknown,
+   *   clearTimer?: (timer: unknown) => void,
    * }} [options]
    */
   constructor(options = {}) {
@@ -91,6 +101,15 @@ export class RelaySession {
     this.#delays = options.reconnectDelaysMs?.length ? options.reconnectDelaysMs : DEFAULT_RECONNECT_DELAYS_MS;
     this.#ensureRelay = options.ensureRelay || null;
     this.#log = options.onLog || defaultSessionLog;
+    this.#prompts = options.promptSession || createPromptSession({
+      send: (payload) => this.#sendToTab(payload),
+      postWebhook: options.postWebhook,
+      testWebhookOverride: options.testWebhookOverride,
+      resolveHost: options.resolveHost,
+      now: options.now,
+      setTimer: options.setTimer,
+      clearTimer: options.clearTimer,
+    });
   }
 
   get url() {
@@ -116,6 +135,32 @@ export class RelaySession {
 
   isPaired() {
     return this.#state === 'paired' && this.#ws != null && this.#ws.readyState === WebSocket.OPEN;
+  }
+
+  /** In-memory prompt queue and webhook for this pairing. */
+  get prompts() {
+    return this.#prompts;
+  }
+
+  /**
+   * First tool call after a prompt arrives marks the agent working.
+   * Best-effort: a dead socket does not fail the tool call.
+   */
+  noteAgentToolCall() {
+    try {
+      this.#prompts.noteToolCall();
+    } catch {
+      /* status is advisory */
+    }
+  }
+
+  /**
+   * @param {object} payload
+   */
+  #sendToTab(payload) {
+    if (!this.isPaired()) throw notPaired();
+    const ws = /** @type {WebSocket} */ (this.#ws);
+    ws.send(JSON.stringify(payload));
   }
 
   /**
@@ -197,6 +242,10 @@ export class RelaySession {
         this.#lose(ws, typeof msg.detail === 'string' ? `${msg.reason}: ${msg.detail}` : String(msg.reason || 'unpaired'));
         return;
       }
+      if (msg.type === PAIR_MSG.AGENT_PROMPT) {
+        void this.#prompts.acceptPrompt(msg);
+        return;
+      }
       const id = typeof msg.id === 'string' ? msg.id : null;
       const waiter = id ? this.#pending.get(id) : undefined;
       if (waiter) {
@@ -228,6 +277,7 @@ export class RelaySession {
    */
   #lose(ws, reason) {
     if (this.#ws !== ws) return;
+    this.#prompts.clear();
     this.#ws = null;
     try { ws.close(); } catch { /* noop */ }
     this.#state = 'lost';
@@ -282,8 +332,10 @@ export class RelaySession {
    * @param {string} code
    */
   #detach(reason, code) {
+    const endPrompts = this.#state === 'paired' || this.#state === 'lost';
     this.#generation += 1;
     this.#pairing = null;
+    if (endPrompts) this.#prompts.clear();
     const ws = this.#ws;
     this.#ws = null;
     if (ws) {

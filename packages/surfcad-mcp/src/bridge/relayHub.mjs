@@ -26,6 +26,11 @@ const SECRET_RE = /^[A-Za-z0-9_-]{16,128}$/;
 export const DEFAULT_TAB_RESERVATION_TTL_MS = 24 * 60 * 60 * 1000;
 /** How often expired reservations are swept from the Map (unref'd timer). */
 export const DEFAULT_TAB_RESERVATION_SWEEP_MS = 60 * 1000;
+/**
+ * A 2 MiB PNG is about 2.8 MB of base64 plus a short JSON envelope.
+ * Larger prompt frames are refused before they are forwarded.
+ */
+export const DEFAULT_MAX_AGENT_PROMPT_FRAME_CHARS = 4 * 1024 * 1024;
 
 function sendJson(socket, payload) {
   try {
@@ -81,6 +86,7 @@ function refuse(socket, code, message) {
  *   onLog?: (line: string, level: RelayLogLevel) => void,
  *   reservationTtlMs?: number,
  *   reservationSweepMs?: number,
+ *   maxPromptFrameChars?: number,
  * }} [opts]
  */
 export function createAgentBridgeRelayHub(opts = {}) {
@@ -88,6 +94,7 @@ export function createAgentBridgeRelayHub(opts = {}) {
   const log = (line, level = 'info') => { opts.onLog?.(line, level); };
   const reservationTtlMs = opts.reservationTtlMs ?? DEFAULT_TAB_RESERVATION_TTL_MS;
   const reservationSweepMs = opts.reservationSweepMs ?? DEFAULT_TAB_RESERVATION_SWEEP_MS;
+  const maxPromptFrameChars = opts.maxPromptFrameChars ?? DEFAULT_MAX_AGENT_PROMPT_FRAME_CHARS;
 
   /**
    * @type {Map<string, {
@@ -209,7 +216,8 @@ export function createAgentBridgeRelayHub(opts = {}) {
 
     socket.on('message', (raw) => {
       live.alive = true;
-      const msg = parseMessage(typeof raw === 'string' ? raw : String(raw));
+      const rawText = typeof raw === 'string' ? raw : String(raw);
+      const msg = parseMessage(rawText);
       if (!msg || typeof msg !== 'object') {
         refuse(socket, 'bad_message', 'Expected JSON object');
         return;
@@ -349,6 +357,50 @@ export function createAgentBridgeRelayHub(opts = {}) {
           sendJson(peer, { type: PAIR_MSG.ERROR, code: 'pair_rejected', message: 'Pairing rejected in SurfCAD' });
           closePeer(peer);
         }
+        return;
+      }
+
+      if (msg.type === PAIR_MSG.AGENT_PROMPT || msg.type === PAIR_MSG.AGENT_PROMPT_ACK
+        || msg.type === PAIR_MSG.AGENT_REPLY || msg.type === PAIR_MSG.AGENT_STATUS) {
+        if (msg.type === PAIR_MSG.AGENT_PROMPT) {
+          if (meta.role !== 'tab') {
+            sendJson(socket, { type: PAIR_MSG.ERROR, code: 'forbidden', message: 'Only the paired tab sends prompts' });
+            return;
+          }
+          const promptId = typeof msg.id === 'string' ? msg.id : undefined;
+          if (rawText.length > maxPromptFrameChars) {
+            sendJson(socket, {
+              type: PAIR_MSG.AGENT_PROMPT_ACK,
+              id: promptId,
+              delivery: 'failed',
+              error: 'screenshot_too_large',
+            });
+            return;
+          }
+          if (tab.pairedPeer == null) {
+            sendJson(socket, {
+              type: PAIR_MSG.AGENT_PROMPT_ACK,
+              id: promptId,
+              delivery: 'failed',
+              error: 'not_paired',
+            });
+            return;
+          }
+          sendJson(tab.pairedPeer, msg);
+          return;
+        }
+        if (meta.role !== 'peer' || tab.pairedPeer !== socket || tab.socket == null) {
+          const wrongRole = meta.role !== 'peer';
+          sendJson(socket, {
+            type: PAIR_MSG.ERROR,
+            code: wrongRole ? 'forbidden' : 'not_paired',
+            message: wrongRole
+              ? 'Only the paired agent sends replies and status'
+              : 'Pair before sending agent messages',
+          });
+          return;
+        }
+        sendJson(tab.socket, msg);
         return;
       }
 
