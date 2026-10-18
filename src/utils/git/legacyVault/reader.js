@@ -5,11 +5,13 @@
  */
 import { serializeAssembly } from '../../assembly.js';
 import { assertGithubAdapter } from '../githubAdapterInterface.js';
+import { assemblyIdPath, partIdPath, partMeshIdPath } from '../idPaths.js';
 import { parseSurfJson } from '../surfJson.js';
 import { readMeshBytes } from '../meshSync.js';
 import { captureBaseline } from '../gitBaseline.js';
 import { collapseWorkingCopyIds } from '../wcIdentity.js';
 import { partRepoPath } from '../partIdentity.js';
+import { isV2SurfId } from '../surfId.js';
 import { vaultSegment } from '../vaultLayout.js';
 import { assemblyMetaCandidates, listLegacyAssemblyNames } from './detect.js';
 
@@ -176,4 +178,31 @@ export async function listLegacyAssemblies(adapter, repo, ref = 'main') {
   assertGithubAdapter(adapter);
   const tree = await adapter.listTree(repo, ref);
   return listLegacyAssemblyNames(tree);
+}
+
+/**
+ * f(id) path → v1 blob path for lastCommit capture. files keys stay f(id);
+ * the tree still has folder names. Callers outside this folder must not
+ * parse v1 paths themselves.
+ */
+export function lastCommitBlobSources(opened) {
+  const sources = {};
+  const assemblyId = opened?.doc?.id;
+  const assemblyBlob = typeof opened?.assemblyPath === 'string'
+    ? opened.assemblyPath.trim()
+    : '';
+  if (isV2SurfId(assemblyId) && assemblyBlob) {
+    try { sources[assemblyIdPath(assemblyId)] = assemblyBlob; } catch { /* skip */ }
+  }
+  for (const hit of opened?.identities?.cached || []) {
+    const id = hit?.id;
+    const blob = typeof hit?.path === 'string' ? hit.path.trim() : '';
+    if (!isV2SurfId(id) || !blob) continue;
+    try {
+      sources[partIdPath(id)] = blob;
+      const mesh = sidecarMeshPath(blob);
+      if (mesh) sources[partMeshIdPath(id)] = mesh;
+    } catch { /* skip */ }
+  }
+  return sources;
 }
