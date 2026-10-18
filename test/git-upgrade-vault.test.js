@@ -52,6 +52,8 @@ const PIN_ID = mintSurfId({ now: new Date('2026-10-18T03:00:00.000Z'), rand: 'p1
 const COPY_ID = mintSurfId({ now: new Date('2026-10-18T03:00:01.000Z'), rand: 'c0c0' });
 const BOX_ID = mintSurfId({ now: NOW, rand: 'b0x1' });
 const DUP_COPY_ID = mintSurfId({ now: NOW, rand: 'd0d0' });
+const ALPHA_ID = mintSurfId({ now: NOW, rand: 'a1fa' });
+const BETA_ID = mintSurfId({ now: NOW, rand: 'b3fa' });
 
 const SHAFT_PATH = 'parts/Shaft.js';
 const BRACKET_PATH = 'parts/Bracket.js';
@@ -105,6 +107,8 @@ function randFor(part) {
     if (part.name === 'Cover') return '0002';
     if (part.name === 'Gearbox') return '0001';
     if (part.name === 'Box') return 'b0x1';
+    if (part.name === 'Alpha') return 'a1fa';
+    if (part.name === 'Beta') return 'b3fa';
     return 'aa00';
   }
   if (part?.id === '$group') return 'eeee';
@@ -605,6 +609,126 @@ test('Scenario L: a copy header never steals a row-owned Pin id', async () => {
   assert.match(await readText(gh, vault.repo, partIdPath(SCENARIO_L_COPY_ID)), /pin-copy/);
 });
 
+test('shared Pin path keeps one id across assemblies with no minted copy (ownership A)', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const alpha = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Alpha',
+    activeId: PIN_PATH,
+    parts: [
+      { path: PIN_PATH, name: 'Pin', visible: true, order: 0 },
+    ],
+  };
+  const beta = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Beta',
+    activeId: PIN_PATH,
+    parts: [
+      { id: SCENARIO_L_PIN_ID, path: PIN_PATH, name: 'Pin', visible: true, order: 0 },
+    ],
+  };
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed shared pin across Alpha and Beta',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Alpha/.surf.json', `${JSON.stringify(alpha, null, 2)}\n`),
+      fileWrite('assemblies/Beta/.surf.json', `${JSON.stringify(beta, null, 2)}\n`),
+      fileWrite(PIN_PATH, withSurfId('return "pin";\n', SCENARIO_L_PIN_ID)),
+    ],
+  });
+  const store = await storeFor(vault.repo, { Alpha: ALPHA_ID, Beta: BETA_ID });
+  const result = await executeUpgrade(upgradeOpts(gh, vault.repo, { store }));
+  assert.equal(result.status, 'upgraded');
+  const alphaDoc = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(ALPHA_ID)));
+  const betaDoc = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(BETA_ID)));
+  assert.equal(validateSurfJsonV2(alphaDoc).ok, true, validateSurfJsonV2(alphaDoc).errors?.join('; '));
+  assert.equal(validateSurfJsonV2(betaDoc).ok, true, validateSurfJsonV2(betaDoc).errors?.join('; '));
+  assert.equal(alphaDoc.parts[0].id, SCENARIO_L_PIN_ID);
+  assert.equal(betaDoc.parts[0].id, SCENARIO_L_PIN_ID);
+  assert.equal(alphaDoc.parts[0].copiedFrom, undefined);
+  assert.equal(betaDoc.parts[0].copiedFrom, undefined);
+  assert.equal(result.plan.mintedPartIds.length, 0);
+  const pinDest = partIdPath(SCENARIO_L_PIN_ID);
+  const partJs = Object.keys(result.plan.writes).filter((path) => /^parts\/[^/]+\.js$/.test(path));
+  assert.deepEqual(partJs, [pinDest]);
+  assert.equal(readSurfId(await readText(gh, vault.repo, pinDest)), SCENARIO_L_PIN_ID);
+  const treeJs = (await treePaths(gh, vault.repo)).filter((path) => /^parts\/[^/]+\.js$/.test(path));
+  assert.deepEqual(treeJs, [pinDest]);
+});
+
+test('Scenario L variant: copy listed first with Pin id still mints (ownership B)', async () => {
+  for (const copyExtra of [{}, { copiedFrom: SCENARIO_L_PIN_ID }]) {
+    const label = Object.hasOwn(copyExtra, 'copiedFrom') ? 'id+copiedFrom' : 'id';
+    const gh = createMockGithubAdapter({ login: 'artur' });
+    const vault = await findOrCreateVault(gh);
+    const raw = {
+      format: 'surfcad.assembly',
+      version: 1,
+      name: 'Box',
+      activeId: PIN_PATH,
+      parts: [
+        {
+          id: SCENARIO_L_PIN_ID,
+          ...copyExtra,
+          path: PIN_COPY_SCENARIO_PATH,
+          name: 'Pin copy',
+          visible: true,
+          order: 0,
+        },
+        { id: SCENARIO_L_PIN_ID, path: PIN_PATH, name: 'Pin', visible: true, order: 1 },
+        { id: SCENARIO_L_BLOCK_ID, path: BLOCK_PATH, name: 'Block', visible: true, order: 2 },
+      ],
+      groups: [{
+        id: GROUP_ID,
+        name: 'Hardware',
+        partIds: [SCENARIO_L_PIN_ID],
+      }],
+      colors: { [SCENARIO_L_PIN_ID]: { part: '#cc0000' } },
+      joints: [{
+        id: SCENARIO_L_JOINT_ID,
+        name: 'Fixed 1',
+        type: 'fixed',
+        a: { part: SCENARIO_L_PIN_ID },
+      }],
+    };
+    await gh.commitFiles(vault.repo, {
+      branch: 'main',
+      message: `seed scenario L variant ${label}`,
+      baseSha: vault.headSha,
+      files: [
+        fileWrite('assemblies/Box/.surf.json', `${JSON.stringify(raw, null, 2)}\n`),
+        fileWrite(PIN_PATH, withSurfId('return "pin";\n', SCENARIO_L_PIN_ID)),
+        fileWrite(PIN_COPY_SCENARIO_PATH, withSurfId('return "pin-copy";\n', SCENARIO_L_PIN_ID)),
+        fileWrite(BLOCK_PATH, withSurfId('return "block";\n', SCENARIO_L_BLOCK_ID)),
+      ],
+    });
+    const store = await storeFor(vault.repo, { Box: BOX_ID });
+    const result = await executeUpgrade(upgradeOpts(gh, vault.repo, { store }));
+    assert.equal(result.status, 'upgraded', label);
+    const box = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(BOX_ID)));
+    assert.equal(validateSurfJsonV2(box).ok, true, `${label}: ${validateSurfJsonV2(box).errors?.join('; ')}`);
+    const pin = box.parts.find((p) => p.name === 'Pin');
+    const copy = box.parts.find((p) => p.name === 'Pin copy');
+    assert.equal(pin.id, SCENARIO_L_PIN_ID, label);
+    assert.equal(copy.id, SCENARIO_L_COPY_ID, label);
+    assert.notEqual(copy.id, pin.id, label);
+    assert.equal(copy.copiedFrom, SCENARIO_L_PIN_ID, label);
+    assert.equal(pin.copiedFrom, undefined, label);
+    assert.notEqual(copy.copiedFrom, copy.id, label);
+    assert.deepEqual(box.groups[0].partIds, [SCENARIO_L_PIN_ID], label);
+    assert.equal(box.colors[SCENARIO_L_PIN_ID].part, '#cc0000', label);
+    assert.equal(Object.hasOwn(box.colors, copy.id), false, label);
+    assert.equal(box.joints[0].a.part, SCENARIO_L_PIN_ID, label);
+    assert.equal(readSurfId(await readText(gh, vault.repo, partIdPath(SCENARIO_L_PIN_ID))), SCENARIO_L_PIN_ID, label);
+    assert.equal(readSurfId(await readText(gh, vault.repo, partIdPath(SCENARIO_L_COPY_ID))), SCENARIO_L_COPY_ID, label);
+    assert.match(await readText(gh, vault.repo, partIdPath(SCENARIO_L_COPY_ID)), /pin-copy/);
+  }
+});
+
 test('planUpgrade carries working-copy copiedFrom so commit 2 does not churn', () => {
   const pinScript = withSurfId('return "pin";\n', PIN_ID);
   const copyScript = withSurfId('return "pin-copy";\n', COPY_ID);
@@ -658,6 +782,60 @@ test('planUpgrade carries working-copy copiedFrom so commit 2 does not churn', (
       [PIN_ID]: pinScript,
       [COPY_ID]: copyScript,
     },
+  });
+  assert.equal(followup.some((f) => f.path === assemblyIdPath(BOX_ID)), false);
+});
+
+test('jointed default placement is normalized so commit 2 does not rewrite .surf.json', () => {
+  const pinScript = withSurfId('return "pin";\n', PIN_ID);
+  const raw = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Box',
+    activeId: PIN_PATH,
+    parts: [
+      { id: PIN_ID, path: PIN_PATH, name: 'Pin', visible: true, order: 0 },
+    ],
+    joints: [{
+      id: SCENARIO_L_JOINT_ID,
+      name: 'Fixed 1',
+      type: 'fixed',
+      a: { part: PIN_ID },
+    }],
+  };
+  const plan = planUpgrade({
+    tree: [
+      { path: 'assemblies/Box/.surf.json' },
+      { path: PIN_PATH },
+    ],
+    files: {
+      'assemblies/Box/.surf.json': `${JSON.stringify(raw, null, 2)}\n`,
+      [PIN_PATH]: pinScript,
+    },
+    assemblyIdByFolder: { Box: BOX_ID },
+    now: NOW,
+    randFor,
+  });
+  const box = JSON.parse(plan.writes[assemblyIdPath(BOX_ID)]);
+  assert.equal(validateSurfJsonV2(box).ok, true, validateSurfJsonV2(box).errors?.join('; '));
+  assert.deepEqual(box.parts[0].placement, { t: [0, 0, 0], q: [0, 0, 0, 1] });
+  const followup = planWorkingCopyFollowup(plan, {
+    dirty: true,
+    doc: {
+      id: BOX_ID,
+      name: 'Box',
+      activeId: PIN_ID,
+      parts: [{
+        id: PIN_ID,
+        path: PIN_PATH,
+        name: 'Pin',
+        visible: true,
+        order: 0,
+        placement: { t: [0, 0, 0], q: [0, 0, 0, 1] },
+      }],
+      joints: box.joints,
+    },
+    scripts: { [PIN_ID]: pinScript },
   });
   assert.equal(followup.some((f) => f.path === assemblyIdPath(BOX_ID)), false);
 });
@@ -1358,6 +1536,7 @@ test('flag-off Save and Add to Repo keep main v1 writers', () => {
   assert.ok(committingAt >= 0);
   const busy = feed.slice(feed.lastIndexOf('{commitFlow.stage === \'busy\'', committingAt), committingAt + 20);
   assert.match(busy, /upgradeAvailable/);
+  assert.match(busy, /commitFlow.upgrading/);
   assert.match(busy, /phase === 'upgrade'/);
   assert.match(busy, /phase === 'save'/);
   assert.match(busy, /className="text-xs text-chrome-secondary" data-git-dialog-loading="">Committing…/);
