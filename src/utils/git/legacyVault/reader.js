@@ -21,9 +21,22 @@ function scriptPathOf(part) {
   return id.includes('/') && id.endsWith('.js') ? id : null;
 }
 
+function legacyPartName(part) {
+  const name = typeof part?.name === 'string' ? part.name.trim() : '';
+  if (name && !name.includes('/')) return name;
+  const path = typeof part?.path === 'string' ? part.path : '';
+  const leaf = path.split('/').pop()?.replace(/\.js$/i, '') || '';
+  return leaf || name || 'Part';
+}
+
 /** v1 `.surf.json` parse for open. Do not call `parseSurfJson` on a v1 tree outside this folder. */
 function parseLegacySurfJson(input) {
-  return parseSurfJson(input);
+  const doc = parseSurfJson(input, { allowDuplicatePartIds: true });
+  const parts = (doc.parts || []).map((part) => {
+    const name = legacyPartName(part);
+    return name === part.name ? part : { ...part, name };
+  });
+  return parts === doc.parts ? doc : { ...doc, parts };
 }
 
 function sidecarMeshPath(scriptPath) {

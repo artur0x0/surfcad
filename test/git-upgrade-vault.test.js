@@ -33,6 +33,7 @@ import {
   SURFCAD_JSON_V2,
 } from '../src/utils/git/legacyVault/index.js';
 import { upgradeVaultEnabled, UPGRADE_UNAVAILABLE } from '../src/utils/git/upgradeVaultEnabled.js';
+import { replaceScriptKeys } from '../src/utils/git/wcIdentity.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const NOW = new Date('2026-10-18T12:00:00.000Z');
@@ -1050,6 +1051,85 @@ test('upgradeVaultEnabled is off in prod even with VITE_ or localStorage', () =>
     localStorage: { getItem: (k) => (k === 'surfcadUpgradeVault' ? '1' : null) },
   }), true);
   assert.equal(typeof UPGRADE_UNAVAILABLE.hint, 'string');
+});
+
+test('App Upgrade re-key uses verified replaceScriptKeys', () => {
+  const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const upgrade = app.slice(
+    app.indexOf('const handleUpgradeVault'),
+    app.indexOf('const handleUpgradeConflict'),
+  );
+  assert.match(upgrade, /pairs: rekeyPairs/);
+  assert.match(upgrade, /heldScripts: \{ \.\.\.partScriptsRef\.current \}/);
+  assert.match(upgrade, /load: loadPartScript/);
+  assert.match(upgrade, /save: \(id, script\) => savePartScript\(id, script\)/);
+  const conflict = app.slice(
+    app.indexOf('const handleUpgradeConflict'),
+    app.indexOf('const absorbOverwriteFiles'),
+  );
+  assert.match(conflict, /pairs: \[\]/);
+  assert.match(conflict, /heldScripts: \{ \.\.\.partScriptsRef\.current \}/);
+  assert.match(conflict, /load: loadPartScript/);
+  assert.match(conflict, /save: \(id, script\) => savePartScript\(id, script\)/);
+});
+
+test('Upgrade re-key verifies writes before deleting from', async () => {
+  const from = PIN_ID;
+  const to = COPY_ID;
+  const store = new Map([[from, 'old pin']]);
+  const order = [];
+  const heldScripts = { [from]: 'old pin' };
+  // Same shape as handleUpgradeVault after executeUpgrade returns rekey.
+  await replaceScriptKeys({
+    nextScripts: { [to]: 'new copy' },
+    staleIds: [from],
+    pairs: [{ from, to }],
+    heldScripts,
+    save: (id, script) => {
+      order.push(['save', id]);
+      store.set(id, script);
+      return true;
+    },
+    load: (id) => store.get(id),
+    remove: (id) => {
+      order.push(['delete', id]);
+      store.delete(id);
+    },
+  });
+  assert.deepEqual(order[0], ['save', to]);
+  assert.ok(order.findIndex((step) => step[0] === 'delete' && step[1] === from) > 0);
+  assert.equal(store.get(to), 'new copy');
+  assert.equal(store.has(from), false);
+
+  const kept = new Map([[from, 'old pin']]);
+  await replaceScriptKeys({
+    nextScripts: { [to]: 'new copy' },
+    staleIds: [from],
+    pairs: [{ from, to }],
+    heldScripts: { [from]: 'old pin' },
+    save: async () => false,
+    load: (id) => kept.get(id),
+    remove: (id) => { kept.delete(id); },
+  });
+  assert.equal(kept.has(from), true, 'unverified to must not delete from');
+  assert.equal(kept.has(to), false);
+
+  const live = new Map([[from, 'old pin']]);
+  await replaceScriptKeys({
+    nextScripts: { [to]: 'new copy' },
+    staleIds: [from],
+    pairs: [{ from, to }],
+    heldScripts: { [from]: 'old pin' },
+    save: (id, script) => {
+      live.set(id, script);
+      if (id === to && script === 'new copy') live.set(from, 'typed during upgrade');
+      return true;
+    },
+    load: (id) => live.get(id),
+    remove: (id) => { live.delete(id); },
+  });
+  assert.equal(live.get(to), 'typed during upgrade');
+  assert.equal(live.has(from), false);
 });
 
 test('already_upgraded does not mark a dirty working copy clean', () => {

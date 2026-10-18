@@ -443,3 +443,43 @@ test('buildCommitFiles does not write an empty blob for a missing row', () => {
   assert.equal(built.files.some((file) => file.path === MISSING_PATH && !file.delete), false);
 });
 
+test('v1 duplicate part ids open as a copy instead of failing validation', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const pinPath = 'assemblies/Pins/parts/Pin.js';
+  const copyPath = 'assemblies/Pins/parts/PinCopy.js';
+  const raw = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Pins',
+    activeId: pinPath,
+    parts: [
+      { id: SHAFT_ID, path: pinPath, name: 'parts/Pin.js', visible: true, order: 0 },
+      { id: SHAFT_ID, path: copyPath, name: 'PinCopy', visible: true, order: 1 },
+    ],
+  };
+  assert.equal(validateSurfJson(raw).ok, false, 'v1 validator still rejects duplicates');
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'duplicate ids',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Pins/.surf.json', `${JSON.stringify(raw, null, 2)}\n`),
+      fileWrite(pinPath, withSurfId('return pin;\n', SHAFT_ID)),
+      fileWrite(copyPath, withSurfId('return copy;\n', SHAFT_ID)),
+    ],
+  });
+  const opened = await openLegacyAssembly(gh, vault.repo, 'Pins', {
+    branch: 'main',
+    now: NOW,
+    randFor: (part) => (part?.id === '$assembly' ? '0001' : 'b10c'),
+  });
+  assert.equal(opened.doc.parts[0].id, SHAFT_ID);
+  assert.equal(opened.doc.parts[0].name, 'Pin');
+  assert.notEqual(opened.doc.parts[1].id, SHAFT_ID);
+  assert.equal(opened.doc.parts[1].copiedFrom, SHAFT_ID);
+  assert.equal(opened.doc.parts[1].name, 'PinCopy');
+  assert.equal(opened.scripts[SHAFT_ID].includes('return pin'), true);
+  assert.equal(opened.scripts[opened.doc.parts[1].id].includes('return copy'), true);
+});
+

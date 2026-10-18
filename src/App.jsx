@@ -226,11 +226,15 @@ import {
   loadAssemblyDocumentStatus,
   loadAssemblySidecar,
   loadPartAssets,
+  loadPartScript,
   loadPartScripts,
   loadPartSyncFlags,
   saveAssemblyDocument,
   saveAssemblySidecar,
   savePartScript,
+  loadRekeyJournal,
+  saveRekeyJournal,
+  clearRekeyJournal,
 } from './utils/assemblyStore';
 import {
   bootUserId,
@@ -281,7 +285,13 @@ import {
   migrateAssemblyRecords,
   migrateLocalPartIds,
   collapseWorkingCopyIds,
+  persistCollapsedWorkingCopy,
   replaceScriptKeys,
+  dualWriteTargets,
+  remapFeaForPersist,
+  reusePairsFromJournal,
+  assemblyRekeyKey,
+  WORKING_COPY_DOC_UNSAVED,
   isSurfId,
   partSurfId,
   reconcileSyncedFromTip,
@@ -302,6 +312,7 @@ import {
   createSyncStore,
   flushSyncQueue,
   captureBaseline,
+  captureBaselineFromTip,
   baselineAfterPartSave,
   baselineAfterPartRename,
   suggestNewPartPath,
@@ -432,6 +443,9 @@ const App = () => {
   const [partScripts, setPartScripts] = useState({});
   const [partRuns, setPartRuns] = useState({});
   const assemblyRef = useRef(null);
+  /** Re-key persist pairs: autosave writes both `from` and `to` while in flight. */
+  const persistFlightPairsRef = useRef([]);
+  const persistFlightToOnlyRef = useRef(false);
   // rememberAssembly starts the IndexedDB write and returns the doc.
   // Callers that need the write to finish await this promise.
   const assemblyDocPersistRef = useRef(Promise.resolve(null));
@@ -1682,6 +1696,7 @@ const App = () => {
                 )),
               };
             }
+            const persistSource = { doc, scripts };
             const localIds = migrateLocalPartIds({
               doc,
               scripts,
@@ -1704,7 +1719,11 @@ const App = () => {
               }
             }
             const readOnly = plan.readOnly === true || bootReadOnlyRef.current;
-            const collapsed = collapseWorkingCopyIds(doc, scripts, { readOnly });
+            const rekeyJournal = readOnly ? null : await loadRekeyJournal();
+            const collapsed = collapseWorkingCopyIds(doc, scripts, {
+              readOnly,
+              reusePairs: reusePairsFromJournal(rekeyJournal, persistSource.doc),
+            });
             if (collapsed.changed) {
               doc = collapsed.doc;
               scripts = collapsed.scripts;
@@ -1725,23 +1744,51 @@ const App = () => {
               }
             }
             const idsChanged = migrated.changed || localIds.changed || collapsed.changed;
+            if (!readOnly && !idsChanged && rekeyJournal) {
+              try { await clearRekeyJournal(); } catch { /* leftover from a finished persist */ }
+            }
             if (!readOnly && !bootWouldClobber(loaded.doc, doc) && (idsChanged || Object.keys(flags).length)) {
               try {
-                await saveAssemblyDocument(doc);
                 if (idsChanged) {
-                  for (const [id, text] of Object.entries(scripts)) {
-                    const part = (doc.parts || []).find((row) => row.id === id);
-                    await savePartScript(
-                      id,
-                      text,
-                      typeof part?.isSynced === 'boolean' ? { isSynced: part.isSynced } : {},
-                    );
-                  }
-                }
-                if (localIds.changed || collapsed.changed) {
-                  for (const { from } of [...localIds.pairs, ...collapsed.pairs]) {
-                    try { await deletePartScript(from); } catch { /* ignore */ }
-                  }
+                  const persisted = await persistCollapsedWorkingCopy({
+                    collapsed: {
+                      doc,
+                      scripts,
+                      pairs: [...localIds.pairs, ...collapsed.pairs],
+                    },
+                    sourceDoc: persistSource.doc,
+                    sourceScripts: persistSource.scripts,
+                    heldScripts: persistSource.scripts,
+                    save: async (id, text) => {
+                      const part = (doc.parts || []).find((row) => row.id === id);
+                      return savePartScript(
+                        id,
+                        text,
+                        typeof part?.isSynced === 'boolean' ? { isSynced: part.isSynced } : {},
+                      );
+                    },
+                    load: loadPartScript,
+                    remove: async (id) => {
+                      try { await deletePartScript(id); } catch { /* ignore */ }
+                    },
+                    saveDoc: saveAssemblyDocument,
+                    live: () => persistSource.scripts,
+                    assemblyKey: assemblyRekeyKey(persistSource.doc),
+                    saveJournal: saveRekeyJournal,
+                    clearJournal: clearRekeyJournal,
+                    onFlight: (pairs, opts) => {
+                      persistFlightPairsRef.current = Array.isArray(pairs) ? pairs : [];
+                      persistFlightToOnlyRef.current = !!(opts && opts.toOnly);
+                    },
+                    apply: ({ doc: nextDoc, scripts: nextScripts }) => {
+                      doc = nextDoc;
+                      scripts = nextScripts;
+                    },
+                  });
+                  doc = persisted.doc;
+                  scripts = persisted.scripts;
+                } else {
+                  await saveAssemblyDocument(doc);
                 }
               } catch (err) {
                 console.warn('[App] Part id migration persist failed:', err?.message || err);
@@ -1842,7 +1889,11 @@ const App = () => {
       const next = { ...partScriptsRef.current, [idAtSchedule]: scriptAtSchedule };
       partScriptsRef.current = next;
       setPartScripts(next);
-      savePartScript(idAtSchedule, scriptAtSchedule);
+      const flightPairs = persistFlightPairsRef.current;
+      const toOnly = persistFlightToOnlyRef.current;
+      for (const id of dualWriteTargets(idAtSchedule, flightPairs, toOnly)) {
+        savePartScript(id, remapFeaForPersist(scriptAtSchedule, flightPairs, id));
+      }
     }, 600);
     return () => clearTimeout(timer);
   }, [currentScript, currentFilename, manifoldReady, editorInitialScript, appMode]);
@@ -1873,7 +1924,11 @@ const App = () => {
       }
       if (id && !suppressPartSaveRef.current && typeof live === 'string') {
         partScriptsRef.current = { ...partScriptsRef.current, [id]: live };
-        savePartScript(id, live);
+        const flightPairs = persistFlightPairsRef.current;
+        const toOnly = persistFlightToOnlyRef.current;
+        for (const key of dualWriteTargets(id, flightPairs, toOnly)) {
+          savePartScript(key, remapFeaForPersist(live, flightPairs, key));
+        }
       }
     };
     const onPageHide = (event) => {
@@ -2173,7 +2228,7 @@ const App = () => {
     setAssemblyDoc(clean);
     syncAssemblyHistory(clean);
     // Reauth boot is read-only, but an explicit upload is a user write.
-    if (!bootReadOnlyRef.current || opts.force) {
+    if (opts.persist !== false && (!bootReadOnlyRef.current || opts.force)) {
       assemblyDocPersistRef.current = saveAssemblyDocument(clean);
       const id = bootUserId(user);
       if (id) {
@@ -3602,7 +3657,8 @@ const App = () => {
       ? { doc: opened.doc }
       : backfillSurfIds(opened.doc, store.pathIndexFor(vault.repo));
     const migrated = migrateAssemblyRecords({ doc: filled.doc, scripts: opened.scripts });
-    const staleScriptIds = [];
+    const persistSource = { doc: migrated.doc, scripts: migrated.scripts };
+    const stalePairs = [];
     const localIds = migrateLocalPartIds({
       doc: migrated.doc,
       scripts: migrated.scripts,
@@ -3614,19 +3670,21 @@ const App = () => {
       if (localIds.selection?.cadPartId && localIds.selection.cadPartId !== cadPartIdRef.current) {
         cadPartIdRef.current = localIds.selection.cadPartId;
       }
-      for (const { from } of localIds.pairs) staleScriptIds.push(from);
+      stalePairs.push(...localIds.pairs);
     }
+    const rekeyJournal = await loadRekeyJournal();
     const collapsed = collapseWorkingCopyIds(localIds.doc, localIds.scripts, {
       pathIndex: store.pathIndexFor(vault.repo),
       usedAssemblyIds: Object.values(store.assemblyIdIndexFor(vault.repo)),
+      reusePairs: reusePairsFromJournal(rekeyJournal, persistSource.doc),
     });
     if (collapsed.changed) {
-      if (collapsed.pairs.length) rekeyRuntime(collapsed.pairs);
-      for (const { from } of collapsed.pairs) staleScriptIds.push(from);
+      stalePairs.push(...collapsed.pairs);
     }
     const reconciled = reconcileSyncedFromTip(collapsed.doc, collapsed.scripts);
     const openedDocIn = reconciled.doc;
     const openedScriptsIn = collapsed.scripts;
+    let alignedMeshMeta = null;
     if (previous?.source === 'git') {
       const aligned = rekeyWorkingCopyToTip(previous, partScriptsRef.current, openedDocIn, {
         histories: partHistoriesRef.current,
@@ -3634,10 +3692,8 @@ const App = () => {
         cadPartId: cadPartIdRef.current,
       });
       if (aligned.pairs.length) {
-        rekeyRuntime(aligned.pairs);
-        partMeshMetaRef.current = aligned.meshMeta;
-        setPartMeshMeta(aligned.meshMeta);
-        for (const { from } of aligned.pairs) staleScriptIds.push(from);
+        alignedMeshMeta = aligned.meshMeta;
+        stalePairs.push(...aligned.pairs);
       }
     }
     for (const part of openedDocIn.parts || []) {
@@ -3668,22 +3724,69 @@ const App = () => {
       openedScripts = next.scripts;
     }
     const meshRecords = partMeshRecordsFromBaseline(openedDoc, openedScripts, opened.baseline?.assets);
-    await replaceScriptKeys({
-      nextScripts: openedScripts,
-      staleIds: staleScriptIds,
+    const fromIds = [...new Set(stalePairs.map((pair) => pair.from).filter(Boolean))];
+    const heldFrom = fromIds.length ? await loadPartScripts(fromIds) : {};
+    let saved = null;
+    const persisted = await persistCollapsedWorkingCopy({
+      collapsed: {
+        doc: openedDoc,
+        scripts: openedScripts,
+        pairs: stalePairs,
+      },
+      sourceDoc: persistSource.doc,
+      sourceScripts: persistSource.scripts,
+      heldScripts: heldFrom,
       save: async (id, script) => {
         const part = (openedDoc.parts || []).find((row) => row.id === id);
         const mesh = meshRecords[id];
-        await savePartScript(id, script, {
+        const ok = await savePartScript(id, script, {
           ...(typeof part?.isSynced === 'boolean' ? { isSynced: part.isSynced } : {}),
           ...(mesh || {}),
         });
-        if (mesh?.assets) rememberPartAssets(id, mesh.assets);
+        if (ok !== false && mesh?.assets) rememberPartAssets(id, mesh.assets);
+        return ok;
       },
+      load: loadPartScript,
       remove: async (id) => {
         try { await deletePartScript(id); } catch { /* ignore */ }
       },
+      saveDoc: saveAssemblyDocument,
+      assemblyKey: assemblyRekeyKey(persistSource.doc),
+      saveJournal: saveRekeyJournal,
+      clearJournal: clearRekeyJournal,
+      onFlight: (pairs, opts) => {
+        persistFlightPairsRef.current = Array.isArray(pairs) ? pairs : [];
+        persistFlightToOnlyRef.current = !!(opts && opts.toOnly);
+      },
+      apply: ({ doc: nextDoc, scripts: nextScripts }) => {
+        if (stalePairs.length) rekeyRuntime(stalePairs);
+        if (alignedMeshMeta) {
+          partMeshMetaRef.current = alignedMeshMeta;
+          setPartMeshMeta(alignedMeshMeta);
+        }
+        openedDoc = nextDoc;
+        openedScripts = nextScripts;
+        rememberScripts(nextScripts);
+        rememberSidecar(emptyWorkingSidecar());
+        saved = rememberAssembly(nextDoc, { persist: false });
+        rememberGitBaseline(captureBaseline({
+          assemblyPath: deletedOverlay.removed ? assemblyFilePath(saved.name) : opened.baseline.assemblyPath,
+          assemblyName: saved.name,
+          doc: saved,
+          scripts: nextScripts,
+          assets: opened.baseline?.assets,
+          branch,
+          headSha: opened.baseline.headSha,
+        }));
+      },
     });
+    if (persisted.docSaved === false) {
+      persistFlightPairsRef.current = [];
+      persistFlightToOnlyRef.current = false;
+      throw new Error(WORKING_COPY_DOC_UNSAVED);
+    }
+    openedDoc = persisted.doc;
+    openedScripts = persisted.scripts;
     if (Object.keys(meshRecords).length) {
       const nextMeta = { ...partMeshMetaRef.current, ...meshRecords };
       partMeshMetaRef.current = nextMeta;
@@ -3691,7 +3794,7 @@ const App = () => {
     }
     rememberScripts(openedScripts);
     rememberSidecar(emptyWorkingSidecar());
-    let saved = rememberAssembly(openedDoc);
+    saved = rememberAssembly(openedDoc);
     noteRecentAssembly(saved.name);
     const baseline = captureBaseline({
       assemblyPath: deletedOverlay.removed ? assemblyFilePath(saved.name) : opened.baseline.assemblyPath,
@@ -5075,10 +5178,14 @@ const App = () => {
         const nextDoc = result.rekey.doc
           ? { ...result.rekey.doc, source: 'git', vaultLayout: 'v2' }
           : null;
+        const rekeyPairs = result.rekey.pairs || [];
         await replaceScriptKeys({
           nextScripts: result.rekey.scripts,
-          staleIds: (result.rekey.pairs || []).map((row) => row.from),
-          save: async (id, script) => { await savePartScript(id, script); },
+          staleIds: rekeyPairs.map((row) => row.from),
+          pairs: rekeyPairs,
+          heldScripts: { ...partScriptsRef.current },
+          save: (id, script) => savePartScript(id, script),
+          load: loadPartScript,
           remove: async (id) => { try { await deletePartScript(id); } catch { /* keep the new key */ } },
         });
         rememberScripts(result.rekey.scripts);
@@ -5148,7 +5255,10 @@ const App = () => {
         await replaceScriptKeys({
           nextScripts: applied.scripts,
           staleIds: [],
-          save: async (id, script) => { await savePartScript(id, script); },
+          pairs: [],
+          heldScripts: { ...partScriptsRef.current },
+          save: (id, script) => savePartScript(id, script),
+          load: loadPartScript,
           remove: async () => {},
         });
         const active = applied.doc?.parts?.find((part) => part.id === applied.doc.activeId)
@@ -5559,6 +5669,7 @@ const App = () => {
           if (hit.path && hit.id) await store.rememberPathId(vault.repo, hit.path, hit.id);
         }
         const beforeScripts = partScriptsRef.current || {};
+        const persistSource = { doc: assemblyRef.current, scripts: beforeScripts };
         const aligned = rekeyWorkingCopyToTip(assemblyRef.current, beforeScripts, opened.doc, {
           histories: partHistoriesRef.current,
           meshMeta: partMeshMetaRef.current,
@@ -5566,18 +5677,7 @@ const App = () => {
         });
         let doc = aligned.doc;
         let scriptsNow = aligned.scripts;
-        if (aligned.pairs.length) {
-          rekeyRuntime(aligned.pairs);
-          partMeshMetaRef.current = aligned.meshMeta;
-          setPartMeshMeta(aligned.meshMeta);
-          rememberScripts(scriptsNow);
-          rememberAssembly(doc);
-          for (const { from, to } of aligned.pairs) {
-            const text = scriptsNow[to];
-            if (typeof text === 'string') savePartScript(to, text);
-            try { deletePartScript(from); } catch { /* ignore */ }
-          }
-        }
+        const persistPairs = [...aligned.pairs];
         const migrated = migrateAssemblyRecords({ doc, scripts: scriptsNow });
         doc = migrated.doc;
         scriptsNow = migrated.scripts;
@@ -5590,28 +5690,108 @@ const App = () => {
         if (localIds.changed) {
           doc = localIds.doc;
           scriptsNow = localIds.scripts;
-          partHistoriesRef.current = localIds.histories || partHistoriesRef.current;
-          if (localIds.selection?.cadPartId && localIds.selection.cadPartId !== cadPartIdRef.current) {
-            cadPartIdRef.current = localIds.selection.cadPartId;
-          }
+          persistPairs.push(...localIds.pairs);
         }
+        const rekeyJournal = await loadRekeyJournal();
         const collapsed = collapseWorkingCopyIds(doc, scriptsNow, {
           pathIndex: store.pathIndexFor(vault.repo),
+          reusePairs: reusePairsFromJournal(rekeyJournal, persistSource.doc),
         });
         if (collapsed.changed) {
           doc = collapsed.doc;
           scriptsNow = collapsed.scripts;
+          persistPairs.push(...collapsed.pairs);
+        }
+        await retireImplicitVaultWriteOps(store, vault.repo, branch);
+        if (cancelled) return;
+        const idsChanged = migrated.changed || localIds.changed || collapsed.changed || aligned.pairs.length;
+        const adoptReseedBaseline = async () => {
+          if (gitBaselineRef.current) return;
+          if (!store.getLastSyncedSha(vault.repo, branch) && opened.baseline?.headSha) {
+            await store.setLastSyncedSha(vault.repo, opened.baseline.headSha, branch);
+          }
+          rememberGitBaseline(opened.baseline);
+          gitVaultRef.current = { ...vault, headSha: opened.baseline?.headSha };
+          void checkGitRemoteBehind({ showToast: true, reason: 'reseed' });
+        };
+        // Tip baseline first, while WC ids still match git. Path-keyed rows
+        // look clean when gitBaseline is null, so waitForGitClean can pass
+        // and a following set_script never badges dirty.
+        await adoptReseedBaseline();
+        const switchReseedMemory = async ({ doc: nextDoc, scripts: nextScripts, failedFrom } = {}) => {
+          if (aligned.pairs.length) {
+            rekeyRuntime(aligned.pairs);
+            partMeshMetaRef.current = aligned.meshMeta;
+            setPartMeshMeta(aligned.meshMeta);
+          }
+          if (localIds.changed) {
+            partHistoriesRef.current = localIds.histories || partHistoriesRef.current;
+            if (localIds.selection?.cadPartId && localIds.selection.cadPartId !== cadPartIdRef.current) {
+              cadPartIdRef.current = localIds.selection.cadPartId;
+            }
+          }
           if (collapsed.pairs.length) rekeyRuntime(collapsed.pairs);
+          doc = nextDoc;
+          scriptsNow = nextScripts;
+          rememberScripts(nextScripts);
+          rememberAssembly(nextDoc, { persist: false });
+          // Tip doc + persistPairs (skip failed rows). Never stringify nextDoc:
+          // that would make a pre-reload rename/hide/removal look clean.
+          rememberGitBaseline(captureBaselineFromTip({
+            tipDoc: opened.doc,
+            tipBaseline: opened.baseline,
+            pairs: persistPairs,
+            failedFrom,
+          }));
+          gitVaultRef.current = { ...vault, headSha: opened.baseline?.headSha };
+        };
+        // Load/reload still do not write git. Memory and collapsed baseline
+        // switch only after the IDB doc is saved with the final ids (step 3).
+        if (idsChanged) {
+          const persisted = await persistCollapsedWorkingCopy({
+            collapsed: { doc, scripts: scriptsNow, pairs: persistPairs },
+            sourceDoc: persistSource.doc,
+            sourceScripts: persistSource.scripts,
+            heldScripts: persistSource.scripts,
+            save: async (id, text) => savePartScript(id, text),
+            load: loadPartScript,
+            remove: async (id) => {
+              try { await deletePartScript(id); } catch { /* ignore */ }
+            },
+            saveDoc: saveAssemblyDocument,
+            live: () => {
+              const scripts = { ...partScriptsRef.current };
+              const id = assemblyRef.current?.activeId;
+              const text = codeEditorRef.current?.getContent?.();
+              if (
+                id
+                && typeof text === 'string'
+                && !suppressPartSaveRef.current
+                && editorLiveRef.current
+                && appModeRef.current !== 'game'
+              ) {
+                scripts[id] = text;
+              }
+              return scripts;
+            },
+            assemblyKey: assemblyRekeyKey(persistSource.doc),
+            saveJournal: saveRekeyJournal,
+            clearJournal: clearRekeyJournal,
+            onFlight: (pairs, opts) => {
+              persistFlightPairsRef.current = Array.isArray(pairs) ? pairs : [];
+              persistFlightToOnlyRef.current = !!(opts && opts.toOnly);
+            },
+            apply: async ({ doc: nextDoc, scripts: nextScripts, failedFrom }) => {
+              await switchReseedMemory({ doc: nextDoc, scripts: nextScripts, failedFrom });
+            },
+          });
+          if (persisted.docSaved === false) return;
+          doc = persisted.doc;
+          scriptsNow = persisted.scripts;
+        } else if (rekeyJournal) {
+          try { await clearRekeyJournal(); } catch { /* leftover from a finished persist */ }
         }
-        if (migrated.changed || localIds.changed || collapsed.changed) {
-          rememberScripts(scriptsNow);
-          for (const [id, text] of Object.entries(scriptsNow)) {
-            if (text !== beforeScripts[id] && text !== aligned.scripts[id]) savePartScript(id, text);
-          }
-          for (const { from } of [...localIds.pairs, ...collapsed.pairs]) {
-            try { deletePartScript(from); } catch { /* ignore */ }
-          }
-        }
+        await adoptReseedBaseline();
         const reconciled = reconcileSyncedFromTip(doc, opened.scripts);
         if (reconciled.changed || migrated.changed || localIds.changed || collapsed.changed || aligned.pairs.length) {
           doc = reconciled.doc;
@@ -5622,14 +5802,6 @@ const App = () => {
             if (typeof text === 'string') savePartScript(part.id, text, { isSynced: true });
           }
         }
-        await retireImplicitVaultWriteOps(store, vault.repo, branch);
-        if (cancelled || gitBaselineRef.current) return;
-        if (!store.getLastSyncedSha(vault.repo, branch) && opened.baseline?.headSha) {
-          await store.setLastSyncedSha(vault.repo, opened.baseline.headSha, branch);
-        }
-        rememberGitBaseline(opened.baseline);
-        gitVaultRef.current = { ...vault, headSha: opened.baseline?.headSha };
-        void checkGitRemoteBehind({ showToast: true, reason: 'reseed' });
       } catch (err) {
         // Missing assembly on tip → stay without baseline (local: chrome / first commit).
         console.warn('[git] baseline reseed skipped', err?.message || err);
