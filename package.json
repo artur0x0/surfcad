@@ -47,6 +47,7 @@
         "demo:mcp": "node scripts/demo/mcp-demo.mjs",
         "golden:mcp-demo": "node scripts/golden/smoke_mcp_demo.mjs",
         "lint": "eslint . --max-warnings 0 --report-unused-disable-directives && node scripts/ci/check-ui-contrast.mjs",
+        "test": "node scripts/ci/run-unit-tests.mjs",
         "check:md-links": "node scripts/ci/check-md-links.mjs",
         "preview": "vite preview",
         "verify": "node ${CADGEN_HARNESS:-/home/artur/cadgen-workspace}/harness/verify_all.mjs",
