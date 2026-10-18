@@ -5,13 +5,14 @@ Three.js viewport. There is no in-app router and no page list inside the CAD
 shell. Everything the user sees in the editor is either one of those two panes,
 a floating overlay inside the viewport, or a full-screen modal.
 
-**Public routes** (`src/main.jsx`, path-based, no sign-in):
+**Path-based routes** (`src/main.jsx`, outside the CAD shell):
 
 | Path | Screen | Code |
 |------|--------|------|
-| `/git/callback` | GitHub OAuth hand-off | `GitCallback.jsx` |
-| `/partners` | Become a partner form + thank-you | `src/pages/PartnersPage.jsx` (`data-partners-page`) |
+| `/git/callback` | GitHub OAuth hand-off (no sign-in) | `GitCallback.jsx` |
+| `/partners` | Become a partner form + thank-you (no sign-in) | `src/pages/PartnersPage.jsx` (`data-partners-page`) |
 | `/privacy` | Privacy policy and Change privacy choices | `src/pages/PrivacyPage.jsx` (`data-privacy-page`) |
+| `/admin` | Operator stats (7/30/120-day charts). Lazy-loaded. Signed-out and non-admin users see the 404 page. **Admin** in the profile menu (`data-profile-admin`) only when `/api/auth/me` has `isAdmin`. | `src/pages/AdminPage.jsx` (`data-admin-page`), `src/pages/NotFoundPage.jsx` (`data-not-found-page`) |
 
 `golden:partners-page` screenshots the form and thank-you state at 390 and 1280.
 `golden:privacy-consent` checks the first-visit popup at 1280 and 390: it appears with no stored choice, sits above the CAD toolbar / home pill, and **Accept all** hides it and persists. The privacy page always shows that Global Privacy Control is honored and **Change privacy choices** re-opens the same popup.
