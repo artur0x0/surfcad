@@ -86,6 +86,7 @@ export async function flushSyncQueue({
   const syncedPartIds = [];
   const layoutMoves = [];
   const assemblyRenames = [];
+  const partRenames = [];
   const meshes = [];
   const writtenFiles = [];
   let otherWrites = false;
@@ -127,6 +128,14 @@ export async function flushSyncQueue({
         assemblyRenames.push({
           fromName: item.payload.fromName,
           toName: item.payload.toName,
+        });
+      } else if (item.op === 'rename' && item.payload?.kind === 'part') {
+        partRenames.push({
+          from: item.payload.from,
+          to: item.payload.to,
+          name: item.payload.name || item.payload.label || null,
+          surfId: item.payload.surfId || null,
+          partId: item.payload.partId || null,
         });
       } else {
         otherWrites = true;
@@ -201,7 +210,8 @@ export async function flushSyncQueue({
       };
     }
   }
-  if (!writtenFiles.length && implicitSkipped > 0 && !otherWrites && !assemblyRenames.length) {
+  if (!writtenFiles.length && implicitSkipped > 0 && !otherWrites
+    && !assemblyRenames.length && !partRenames.length) {
     return {
       status: 'idle',
       sha: head,
@@ -217,8 +227,10 @@ export async function flushSyncQueue({
     partIds: syncedPartIds,
     layoutMoves,
     assemblyRenames,
+    partRenames,
     meshes,
     files: writtenFiles,
     assemblyRenameOnly: assemblyRenames.length > 0 && !otherWrites,
+    partRenameOnly: partRenames.length > 0 && assemblyRenames.length === 0 && !otherWrites,
   };
 }

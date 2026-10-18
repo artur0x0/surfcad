@@ -64,7 +64,7 @@ export const renamePartCommand = Object.freeze({
     required: ['part_id', 'name'],
     properties: {
       part_id: { type: 'string', description: 'Part row id from parts' },
-      name: { type: 'string', description: 'New display name; a vault part also moves to <name>.js (-2, -3 on collision)' },
+      name: { type: 'string', description: 'New display name; a vault part moves the committed <name>.js (-2, -3 on collision). Pending edits stay for Save.' },
     },
   }),
   example: { part_id: 'parts/Bracket.js', name: 'Mount' },

@@ -27,12 +27,14 @@ export function planPartPath(fromPath, newName) {
  * Rewrite paths (and an assembly display name) inside one `.surf.json`.
  * `pathMap` is old path → new path. A part rename can also pass surfId +
  * from/to so a reference is updated even when the stored path drifted.
+ * `name` updates that part's display name; other rows are left alone.
  */
 export function rewriteSurfText(text, {
   pathMap = null,
   surfId = null,
   from = null,
   to = null,
+  name = null,
   renameAssembly = null,
 } = {}) {
   let raw;
@@ -51,10 +53,15 @@ export function rewriteSurfText(text, {
   if (Array.isArray(raw.parts)) {
     for (const part of raw.parts) {
       const byId = !!(surfId && part?.id === surfId);
+      const isTarget = byId || !!(from && part?.path === from);
       const mapped = mapPath(part?.path);
-      const next = byId && to ? to : mapped;
+      const next = (isTarget && to) ? to : mapped;
       if (next && next !== part.path) {
         part.path = next;
+        changed = true;
+      }
+      if (isTarget && name && part.name !== name) {
+        part.name = name;
         changed = true;
       }
     }
@@ -116,7 +123,13 @@ export function buildRenameCommitFiles({ entries, plan } = {}) {
   const deletes = new Set();
 
   if (plan?.kind === 'part') {
-    const body = plan.content != null ? plan.content : (byPath.get(plan.from) ?? '');
+    // Tip bytes win. Live buffer in `plan.content` is only a fallback when
+    // the tree has not seen this file yet (retry after the move already landed).
+    const body = byPath.has(plan.from)
+      ? (byPath.get(plan.from) ?? '')
+      : (byPath.has(plan.to)
+        ? (byPath.get(plan.to) ?? '')
+        : (plan.content != null ? plan.content : ''));
     if (plan.to) writes.set(plan.to, body);
     if (plan.from && plan.from !== plan.to) deletes.add(plan.from);
     const fromMesh = assetPathForScript(plan.from);
@@ -142,7 +155,12 @@ export function buildRenameCommitFiles({ entries, plan } = {}) {
     for (const [path, text] of byPath) {
       if (!isAssemblyFile(path) && !isSurfJsonPath(path)) continue;
       if (plan.assemblyPath && path === plan.assemblyPath && typeof plan.assemblyText === 'string') continue;
-      const next = rewriteSurfText(text, { surfId: plan.surfId, from: plan.from, to: plan.to });
+      const next = rewriteSurfText(text, {
+        surfId: plan.surfId,
+        from: plan.from,
+        to: plan.to,
+        name: plan.name,
+      });
       if (next !== text) writes.set(path, next);
     }
   } else if (plan?.kind === 'assembly') {
@@ -360,6 +378,7 @@ export function renamePlanFromPayload(payload) {
     surfId: payload?.surfId || readSurfId(payload?.content || '') || null,
     from: payload?.from,
     to: payload?.to,
+    name: payload?.name || payload?.label || null,
     content: payload?.content,
     asset: payload?.asset,
     assemblyPath: payload?.assemblyPath,
@@ -369,9 +388,11 @@ export function renamePlanFromPayload(payload) {
 }
 
 /**
- * Build the rename commit from the remote tree, with local script bytes
- * winning for the moved part. Used by the sync worker at flush time so an
- * offline rename still rewrites every assembly that references the id.
+ * Build the rename commit from the remote tree. A part rename uses the
+ * committed tip bytes of the moved file (not the live buffer) and rewrites
+ * every `.surf.json` that references that id: path and display name only.
+ * Used by the sync worker at flush time so an offline rename still rewrites
+ * every assembly that references the id.
  */
 export async function materializeRename(adapter, repo, branch, payload) {
   const entries = await readRenameEntries(adapter, repo, branch);

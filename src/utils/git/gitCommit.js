@@ -20,7 +20,7 @@ import { assemblyName, nextAssemblyName, renamePart, serializeAssembly } from '.
 import { gitBlobSha, isBinaryContent, toUint8Array } from './binaryContent.js';
 import { GitAdapterError, assertGithubAdapter, fileWrite, fileDelete } from './githubAdapterInterface.js';
 import { captureBaseline, dirtyPartIds } from './gitWorkspace.js';
-import { applyPartPathChange } from './gitRename.js';
+import { applyPartPathChange, rewriteSurfText } from './gitRename.js';
 import {
   ensureAssemblyVaultPaths,
   partRowNeedsVaultPath,
@@ -28,6 +28,7 @@ import {
 } from './partVaultPath.js';
 import {
   findAssemblyPart,
+  isStablePartId,
   partKeepsStableId,
   partRepoPath,
   partRowVaultPathOk,
@@ -151,6 +152,10 @@ export async function prepareAssemblySurfWrite(adapter, repo, {
  * tree (never falls back to document ids). On a listTree failure returns
  * VAULT_TREE_UNAVAILABLE and does not produce a working-copy mutation.
  * planRenameVaultPartPath only — no planPartPath fallback.
+ *
+ * Mutates only that part's path and name in the working copy. Does not
+ * stringify the live assembly or promote path-less siblings: those stay
+ * for Save. The rename commit is built later from the tip tree.
  */
 export async function prepareVaultPartRename(adapter, repo, {
   doc,
@@ -183,33 +188,139 @@ export async function prepareVaultPartRename(adapter, repo, {
     return { status: 'error', code: 'bad_args', error: 'Could not plan a vault path for this rename' };
   }
   const workScripts = { ...(scripts || {}) };
-  const movedLocal = to === from
-    ? { doc: renamePart(doc, from, nextName), scripts: workScripts }
+  const movedLocal = to === fromPath
+    ? { doc: renamePart(doc, fromPart?.id || from, nextName), scripts: workScripts }
     : applyPartPathChange(doc, workScripts, from, to, nextName);
   const nextDoc = serializeAssembly({ ...movedLocal.doc, source: 'git' });
-  try {
-    const prepared = await prepareAssemblySurfWrite(adapter, repo, {
-      doc: nextDoc,
-      scripts: movedLocal.scripts,
-      branch,
-      remotePaths,
-    });
-    const leaf = to.split('/').pop()?.replace(/\.js$/i, '') || nextName;
-    return {
-      status: 'ready',
-      from: fromPath,
-      fromId: fromPart?.id || from,
+  const leaf = to.split('/').pop()?.replace(/\.js$/i, '') || nextName;
+  return {
+    status: 'ready',
+    from: fromPath,
+    fromId: fromPart?.id || from,
+    to,
+    name: leaf,
+    doc: nextDoc,
+    scripts: movedLocal.scripts,
+  };
+}
+
+/** True when a part rename should enqueue a git commit (vault file exists). */
+export function partRenameNeedsCommit({ doc, part, repo } = {}) {
+  if (!doc || doc.source !== 'git') return false;
+  if (!repo?.owner || !repo?.name) return false;
+  if (!part || partRowNeedsVaultPath(part)) return false;
+  return true;
+}
+
+/**
+ * Baseline after a part rename commit: `.surf.json` is the previous tip with
+ * only that part's path and name rewritten. Script baselines stay at the tip
+ * bytes (not the live buffer), so a pending edit and placement stay dirty.
+ */
+export function baselineAfterPartRename(baseline, {
+  from = null,
+  to = null,
+  name = null,
+  surfId = null,
+  headSha = null,
+  branch = null,
+} = {}) {
+  if (!baseline) return baseline;
+  const next = {
+    ...baseline,
+    headSha: headSha || baseline.headSha,
+    branch: branch || baseline.branch,
+  };
+  if (typeof baseline.assemblyText === 'string' && (from || surfId)) {
+    next.assemblyText = rewriteSurfText(baseline.assemblyText, {
+      surfId,
+      from,
       to,
-      name: leaf,
-      ...prepared,
-    };
-  } catch (err) {
+      name,
+    });
+  }
+  const fromMesh = from ? assetPathForScript(from) : null;
+  const toMesh = to ? assetPathForScript(to) : null;
+  if (
+    fromMesh && toMesh && fromMesh !== toMesh
+    && baseline.assets
+    && Object.prototype.hasOwnProperty.call(baseline.assets, fromMesh)
+  ) {
+    const assets = { ...baseline.assets };
+    assets[toMesh] = assets[fromMesh];
+    delete assets[fromMesh];
+    next.assets = assets;
+  }
+  return next;
+}
+
+/**
+ * Shared UI / agent path: plan the vault move and the outbox payload.
+ * The payload has no live script and no live `.surf.json` — flush reads the
+ * tip tree. Path-less parts return `local` (no commit).
+ */
+export async function stagePartRename({
+  adapter = null,
+  repo = null,
+  doc,
+  scripts = {},
+  from,
+  nextName,
+  branch = 'main',
+} = {}) {
+  const fromPart = findAssemblyPart(doc, from);
+  if (!fromPart) {
+    return { status: 'error', code: 'unknown_part', error: `Unknown part id: ${from}` };
+  }
+  if (!partRenameNeedsCommit({ doc, part: fromPart, repo })) {
     return {
-      status: 'error',
-      error: err?.message || 'Could not rename part',
-      code: err?.code || 'rename_failed',
+      status: 'local',
+      commit: false,
+      fromId: fromPart.id,
+      name: nextName,
+      doc,
+      scripts,
     };
   }
+  if (!adapter) {
+    return { status: 'error', error: 'Git adapter required to rename a vault part' };
+  }
+  const prepared = await prepareVaultPartRename(adapter, repo, {
+    doc,
+    scripts,
+    from,
+    nextName,
+    branch,
+  });
+  if (prepared.status === 'error') return prepared;
+  const surfId = fromPart.surfId || (isStablePartId(fromPart.id) ? fromPart.id : null);
+  const payload = {
+    kind: 'part',
+    surfId,
+    from: prepared.from,
+    to: prepared.to,
+    name: prepared.name,
+    label: prepared.name,
+    partId: prepared.fromId,
+    before: { doc, scripts },
+  };
+  return {
+    status: 'staged',
+    commit: true,
+    from: prepared.from,
+    fromId: prepared.fromId,
+    to: prepared.to,
+    name: prepared.name,
+    doc: prepared.doc,
+    scripts: prepared.scripts,
+    payload,
+    enqueue: {
+      op: 'rename',
+      message: `Rename ${fromPart.name} to ${prepared.name}`,
+      partIds: [prepared.fromId],
+      payload,
+    },
+  };
 }
 
 /** Scripts with the live editor text folded in for the active part. */
