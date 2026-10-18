@@ -10340,6 +10340,7 @@ self.onmessage = async (event) => {
       id,
       payload: {
         message: error.message,
+        name: error && typeof error === 'object' && typeof error.name === 'string' ? error.name : '',
         stack: error.stack,
         scriptLine: Number.isFinite(error?.scriptLine) ? error.scriptLine : null,
         featureId: typeof error?.featureId === 'string' ? error.featureId : null,
