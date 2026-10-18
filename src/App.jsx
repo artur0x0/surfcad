@@ -8393,12 +8393,6 @@ const App = () => {
       };
     })
     : [];
-  const cadGitBranchLabel = (
-    !isMobile && assemblyDoc?.source === 'git'
-  ) ? (gitBaseline?.branch || 'main') : null;
-  const openCadGitBranches = () => {
-    partFeedRef.current?.openBranchPane?.();
-  };
   const stripScript = featureRibbonScript({
     cadPartId,
     activeId: assemblyDoc?.activeId ?? null,
@@ -9748,8 +9742,6 @@ const App = () => {
               showCadTitle={!!assemblyDoc}
               brandHeader={appMode !== 'game'}
               assemblyName={assemblyLabel}
-              cadGitBranch={cadGitBranchLabel}
-              onCadGitBranchClick={cadGitBranchLabel ? openCadGitBranches : null}
               onRenameFile={handleRenameFile}
               onTitlePartActivate={handleTitlePartActivate}
               onTitleAssemblyActivate={handleTitleAssemblyActivate}
@@ -10275,8 +10267,6 @@ const App = () => {
             showCadTitle={!!assemblyDoc}
             brandHeader={appMode !== 'game'}
             assemblyName={assemblyLabel}
-            cadGitBranch={cadGitBranchLabel}
-            onCadGitBranchClick={cadGitBranchLabel ? openCadGitBranches : null}
             onRenameFile={handleRenameFile}
             onTitlePartActivate={handleTitlePartActivate}
             onTitleAssemblyActivate={handleTitleAssemblyActivate}

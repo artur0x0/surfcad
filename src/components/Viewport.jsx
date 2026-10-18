@@ -5,7 +5,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import {
-  WebGLRenderer,
   Scene,
   PerspectiveCamera,
   PointLight,
@@ -55,6 +54,12 @@ import { buildSelection } from '../agent/state/selection';
 import { applyTrackballFeel, trackballRotateSpeedForPointer } from '../utils/trackballFeel';
 import { installPageZoomLock } from '../utils/pageZoomLock';
 import { readViewportContainerSize, resizeViewportRenderer } from '../utils/viewportResize';
+import {
+  createViewportWebGLRenderer,
+  disposeViewportRenderer,
+  installWebglContextLossHandlers,
+  WebGLUnavailableNotice,
+} from '../utils/viewportWebgl.js';
 import { installViewportGestureZoom } from '../utils/viewportGestureZoom';
 import { formatDisplayNumber } from '../utils/displayUnit';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
@@ -1052,9 +1057,6 @@ const Viewport = forwardRef(({
   showCadTitle = true,
   /** Assembly document name. Blank documents resolve to Assembly before this. */
   assemblyName = '',
-  /** Desktop git: current vault branch shown beside the assembly title chip. */
-  cadGitBranch = null,
-  onCadGitBranchClick = null,
   onRenameFile = null,
   /** Single tap on the part chip: select all bodies in that part. */
   onTitlePartActivate = null,
@@ -1493,6 +1495,7 @@ const Viewport = forwardRef(({
   const [selectedPlaneId, setSelectedPlaneId] = useState(null);
   const [armedContourId, setArmedContourId] = useState(null);
   const [sceneReady, setSceneReady] = useState(false);
+  const [webglUnavailable, setWebglUnavailable] = useState(false);
   const contourModeRef = useRef(null);
   /** Last agent/UI write not yet flushed through React state. */
   const contourLiveWriteRef = useRef(null);
@@ -10602,6 +10605,7 @@ const Viewport = forwardRef(({
     // controls instead of controlsRef (a later mount overwrites the ref).
     let rafId = 0;
     let loopAlive = true;
+    let removeWebglContextLoss = () => {};
     let orbitControls = null;
     let orbitPointerDom = null;
     let onPointerDownRotateSpeed = null;
@@ -10651,9 +10655,18 @@ const Viewport = forwardRef(({
       cameraRef.current = camera;
       setSceneReady(true);
 
-      const renderer = new WebGLRenderer({
-        canvas: canvasRef.current,
-        antialias: true
+      // three.js throws "Error creating WebGL context." when the browser
+      // cannot make a context (no GPU, acceleration off, blocklisted driver).
+      // Stay inside this effect so the app-wide error boundary does not
+      // replace the editor. Scene and camera stay; the draw loop does not start.
+      const renderer = createViewportWebGLRenderer(canvasRef.current);
+      if (!renderer) {
+        setWebglUnavailable(true);
+        return;
+      }
+      removeWebglContextLoss = installWebglContextLossHandlers(canvasRef.current, {
+        onLost: () => setWebglUnavailable(true),
+        onRestored: () => setWebglUnavailable(false),
       });
 
       resizeViewportRenderer({
@@ -11424,9 +11437,10 @@ const Viewport = forwardRef(({
       }
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
-      if (rendererRef.current) {
-        rendererRef.current.dispose();
-      }
+      removeWebglContextLoss();
+      removeWebglContextLoss = () => {};
+      disposeViewportRenderer(rendererRef.current);
+      rendererRef.current = null;
       if (resultRef.current?.geometry) {
         resultRef.current.geometry.dispose();
       }
@@ -14239,23 +14253,6 @@ const Viewport = forwardRef(({
                       {titleParts.assembly}
                     </ViewportTitleChip>
                   ) : null}
-                  {cadGitBranch && onCadGitBranchClick ? (
-                    <button
-                      type="button"
-                      data-viewer-git-branch=""
-                      data-ui-action="data-git-branches"
-                      data-git-branches=""
-                      title={`Branch: ${cadGitBranch}. Click to manage branches.`}
-                      aria-label={`On branch ${cadGitBranch}. Open branch list.`}
-                      className="pointer-events-auto max-w-[8rem] shrink-0 truncate rounded-lg border border-blue-400/40 bg-chrome-surface/80 px-2 py-1 text-[10px] font-medium text-blue-200 shadow hover:bg-white/10"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onCadGitBranchClick();
-                      }}
-                    >
-                      {cadGitBranch}
-                    </button>
-                  ) : null}
                 </div>
                 {contourLegend ? (
                   <ContourStatusLegend className="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2" />
@@ -15497,6 +15494,7 @@ const Viewport = forwardRef(({
 
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
       
+      {webglUnavailable ? <WebGLUnavailableNotice /> : null}
       <canvas ref={canvasRef} className="absolute inset-0 z-0 h-full w-full" />
     </div>
   );

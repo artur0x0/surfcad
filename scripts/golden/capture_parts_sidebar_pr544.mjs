@@ -300,7 +300,7 @@ async function main() {
       await seedLongParts(branchPage);
       await branchPage.reload({ waitUntil: 'domcontentloaded' });
       await waitForApp(branchPage);
-      const branchChip = branchPage.locator('[data-viewer-git-branch]');
+      const branchChip = branchPage.locator('[data-parts-ribbon-branch], [data-assembly-branch]');
       if (await branchChip.count()) {
         const box = await branchChip.boundingBox();
         if (box) {

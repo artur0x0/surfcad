@@ -147,11 +147,27 @@ tokens inside feature popups. Parts inputs use
 for calculated numbers: at most four decimals, trailing zeros removed.
 Displaying a field does not rewrite the script.
 
-## Copy
+## Feature strip height
 
-- Product name is SurfCAD. Tagline: “Don't do CAD. SurfCAD.”
-- User-facing text says **Chrome**, never Microsoft Edge (or “Edge”).
-- Errors use the glass card in [Popups](#popups), not a blue pill.
+The horizontal CAD feature ribbon (`FeatureStrip` under the viewer title on
+desktop, under the CAD header on mobile) is **46px** in every state:
+assembly joints, part features, and empty (undo/redo only). Token
+`--feature-strip-height: 2.875rem` on `:root`; class `feature-strip-bar` on
+the strip root. Chips share `feature-strip-chip` (32px). Do not set a
+per-state height. Switching assembly ↔ part ↔ empty must not jump the bar
+or shift the viewport.
+
+Leave **10px** (`--feature-strip-rail-gap`) between the ribbon bottom and the
+top of the left helper rail and the right view rail. Desktop full-length
+left rail: class `rail-full-below-strip`. Mobile content-max left rail:
+`rail-max-below-strip`. Right rail: `rail-right-below-strip` (same 10px
+clearance, no 26rem cap). Rails keep a 10px bottom inset so they do not
+overflow the pane.
+
+The Parts-header git branch chip (`data-parts-ribbon-branch`, class
+`parts-branch-chip`) is a 1px `currentColor` outline, `rounded-lg`, on
+`chrome-surface`. Text and border use the same `text-blue-400` as the Parts
+header icons (`STRIP_ICON_BLUE`).
 
 ## Brand
 

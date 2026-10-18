@@ -22,6 +22,13 @@
      and ≥3:1 on hover (emerald-500 hover was ~2.5:1). */
   --chrome-success: 4 120 87; /* emerald-700 #047857 */
   --chrome-success-hover: 5 150 105; /* emerald-600 #059669 */
+  /* Horizontal CAD feature ribbon (assembly / part / empty). 46px:
+     32px chip + 12px py-1.5 + 2px border. See docs/ui_style_guide.md. */
+  --feature-strip-height: 2.875rem;
+  /* 10px between the ribbon bottom and the left/right tool rails. */
+  --feature-strip-rail-gap: 0.625rem;
+  --feature-strip-offset-desktop: 3.5rem; /* top-14 under the title row */
+  --feature-strip-offset-mobile: 5rem; /* top-20 under the CAD header */
 }
 
 body {
@@ -291,6 +298,71 @@ textarea {
   .surface-quiet:focus-visible {
     outline: 2px solid rgb(var(--chrome-text));
     outline-offset: 2px;
+  }
+  /* One height for the horizontal CAD feature ribbon in every state. */
+  .feature-strip-bar {
+    height: var(--feature-strip-height);
+    min-height: var(--feature-strip-height);
+    box-sizing: border-box;
+  }
+  .feature-strip-chip {
+    height: 2rem;
+    min-height: 2rem;
+    box-sizing: border-box;
+  }
+  /* Desktop CAD: pin the left helper rail 10px under the ribbon. */
+  .rail-full-below-strip {
+    top: calc(
+      var(--feature-strip-offset-desktop)
+      + var(--feature-strip-height)
+      + var(--feature-strip-rail-gap)
+    );
+    bottom: var(--feature-strip-rail-gap);
+  }
+  /* Mobile / game: content-max height that stops 10px under the ribbon. */
+  .rail-max-below-strip {
+    max-height: min(
+      26rem,
+      calc(
+        100%
+        - var(--feature-strip-offset-mobile)
+        - var(--feature-strip-height)
+        - var(--feature-strip-rail-gap)
+        - var(--feature-strip-rail-gap)
+      )
+    );
+  }
+  /* Right view rail: same 10px clearance, no 26rem cap (tools must fit). */
+  .rail-right-below-strip {
+    max-height: calc(
+      100%
+      - var(--feature-strip-offset-desktop)
+      - var(--feature-strip-height)
+      - var(--feature-strip-rail-gap)
+      - var(--feature-strip-rail-gap)
+    );
+  }
+  @media (max-width: 768px) {
+    .rail-right-below-strip {
+      max-height: calc(
+        100%
+        - var(--feature-strip-offset-mobile)
+        - var(--feature-strip-height)
+        - var(--feature-strip-rail-gap)
+        - var(--feature-strip-rail-gap)
+      );
+    }
+  }
+  /* Parts-header git branch chip. 1px outline in the same blue as the ribbon
+     icons (`text-blue-400`); color comes from that class via currentColor. */
+  .parts-branch-chip {
+    box-sizing: border-box;
+    border: 1px solid currentColor;
+    border-radius: 0.5rem;
+    background-color: rgb(var(--chrome-surface) / 0.8);
+  }
+  .parts-branch-chip:hover {
+    background-color: rgb(var(--chrome-text) / 0.1);
   }
 
   .surface-glass,
