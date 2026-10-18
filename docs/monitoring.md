@@ -1,6 +1,6 @@
 # Monitoring and privacy
 
-SurfCAD asks for analytics consent on first visit. Optional tracking (PostHog) stays off until **Accept all**. **Required only** stores an opt-out. People can change their mind from **Change privacy choices** on `/privacy`, **Privacy choices** in the profile menu, the Account pane, or the site footer.
+SurfCAD asks for analytics consent on first visit. Optional tracking (PostHog) stays off until **Accept all**. **Required only** stores an opt-out. People can change their mind from **Change privacy choices** on `/privacy`, **Privacy choices** in the profile menu, the Account pane, or the footer on public pages. The CAD viewer does not show that footer link.
 
 Operational sign-up and login metrics for the US launch are sourced from **our MongoDB data** (slice A below) — no third-party analytics SDK in that slice.
 

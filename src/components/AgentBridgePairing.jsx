@@ -35,6 +35,7 @@ import {
 import { CONNECT_AGENT_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from './agentBridgeConnectButton.js';
 import { PROFILE_MENU_ITEM_CLASS } from './profileMenuChrome.js';
 import AgentBridgeApprovalPopup from './AgentBridgeApprovalPopup.jsx';
+import AgentBridgeDisconnectMenuItem from './AgentBridgeDisconnectMenuItem.jsx';
 import AgentBridgePairingDialog from './AgentBridgePairingDialog.jsx';
 import ErrorPopup from './ErrorPopup.jsx';
 import { approvalPopupPortalTarget, approvalPopupReducer } from '../agent/ws/agentBridgeChrome.js';
@@ -538,15 +539,7 @@ export default function AgentBridgePairing({
   ) : null;
 
   const menuDisconnect = shouldShowAgentBridgeDisconnect({ paired, link }) && !flowOpen ? (
-    <button
-      type="button"
-      className={PROFILE_MENU_ITEM_CLASS}
-      onClick={disconnectPairing}
-      data-ui-action="data-agent-bridge-disconnect"
-      data-agent-bridge-chip=""
-    >
-      Disconnect
-    </button>
+    <AgentBridgeDisconnectMenuItem onDisconnect={disconnectPairing} />
   ) : null;
 
   const bodyTarget = approvalPopupPortalTarget(typeof document !== 'undefined' ? document : null);

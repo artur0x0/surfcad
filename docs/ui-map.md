@@ -207,13 +207,14 @@ Desktop specifics:
   **Account** (`data-profile-account`, user icon), **Admin** (`data-profile-admin`,
   only when `/api/auth/me` has `isAdmin`), **Sign out**, then **Privacy choices**
   (`data-profile-privacy-choices`, same Accept all / Required only popup as
-  first visit). **Disconnect** (`data-agent-bridge-disconnect`) is the local
+  first visit). **Disconnect** (`data-agent-bridge-disconnect`, unplug icon) is the local
   agent relay and appears only while an agent is paired or connected — not
   GitHub write-grant (that stays the sr-only Parts **Disconnect GitHub**
   control). **Account** opens a scrollable pane (`data-profile-account-pane`,
   VaultPickerDialog `account`) with read-only user info, **Privacy choices**,
   **Clear local cache** (`data-clear-cache`), and Danger zone → **Delete
-  account**. The footer Privacy link and the signed-out menu Privacy row stay.
+  account**. The CAD viewer has no footer Privacy choices link on desktop or
+  mobile. The signed-out menu Privacy row stays, and public pages keep theirs.
   GitHub Sign-in uses the runtime Client ID cache from `/api/config`.
 - **The Toolbar is portaled into the editor mid-strip, exactly like mobile.**
   There is no floating overlay bar and no collapse chevron for CAD any more;

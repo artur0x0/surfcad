@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import {
   privacyChoicesAnalyticsAttr,
   privacyChoicesEffective,
 } from '../src/components/privacyChoicesMarkup.js';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { importJsxSource } from './jsxTestModule.js';
 
 describe('Privacy choices dialog UI', () => {
   test('toggle reflects allowed state when GPC is off', () => {
@@ -55,9 +60,37 @@ describe('Privacy choices dialog UI', () => {
     assert.equal(/SiteFooter/.test(loadingSlice), false);
     assert.equal(/Privacy choices/.test(loadingSlice), false);
     assert.match(loading, /<SiteFooter \/>/);
+    assert.match(footer, /variant !== 'light'/);
     assert.doesNotMatch(popup, /\bEdge\b/);
     assert.doesNotMatch(privacyPage, /\bEdge\b/);
     assert.doesNotMatch(profile, /\bEdge\b/);
     assert.doesNotMatch(account, /\bEdge\b/);
+  });
+
+  test('the CAD viewer footer has no Privacy choices link and /privacy still does', async () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+    const { SiteFooter, PrivacyPage, AuthProvider } = await importJsxSource(`
+      import SiteFooter from './src/components/SiteFooter.jsx';
+      import PrivacyPage from './src/pages/PrivacyPage.jsx';
+      import { AuthProvider } from './src/hooks/useAuth.jsx';
+      export { SiteFooter, PrivacyPage, AuthProvider };
+    `, root);
+
+    const viewer = renderToStaticMarkup(React.createElement(SiteFooter));
+    assert.equal(viewer, '');
+    assert.equal(viewer.includes('Privacy choices'), false);
+    assert.equal(viewer.includes('data-privacy-choices-link'), false);
+
+    const mobile = renderToStaticMarkup(React.createElement(SiteFooter, { variant: 'dark' }));
+    assert.equal(mobile.includes('data-privacy-choices-link'), false);
+
+    const page = renderToStaticMarkup(
+      React.createElement(AuthProvider, null, React.createElement(PrivacyPage)),
+    );
+    assert.match(page, /data-privacy-page/);
+    assert.match(page, /Change privacy choices/);
+    assert.match(page, /data-privacy-change-choices/);
+    assert.match(page, /data-privacy-choices-link/);
+    assert.match(page, /Privacy choices/);
   });
 });
