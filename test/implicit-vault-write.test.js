@@ -9,7 +9,8 @@ import { createMockGithubAdapter } from '../src/utils/git/mockGithubAdapter.js';
 import { findOrCreateVault } from '../src/utils/git/vault.js';
 import { captureBaseline, isAssemblyDirty } from '../src/utils/git/gitWorkspace.js';
 import { stringifySurfJson, toSurfJson, validateSurfJson } from '../src/utils/git/surfJson.js';
-import { mintSurfId } from '../src/utils/git/surfId.js';
+import { isSurfId, mintSurfId } from '../src/utils/git/surfId.js';
+import { stampMissingSurfIds } from '../src/utils/git/partIdentity.js';
 import { assembleCommitFiles, commitWorkspace, firstCommitBaseline } from '../src/utils/git/gitCommit.js';
 import { assemblyFilePath } from '../src/utils/git/vaultLayout.js';
 
@@ -76,14 +77,22 @@ test('App implicit edits do not enqueue or flush a vault write', () => {
   const collect = sliceBetween(APP, 'const collectTakenAssemblyNames', 'const gitSync =');
   assert.equal(/ensureGitVault/.test(collect), false, 'name listing must not create a vault');
 
+  const ensure = sliceBetween(APP, 'const ensureLocalSurfIds = async', 'const historyKey =');
+  assert.match(ensure, /stampMissingSurfIds/);
+  assert.equal(/source\s*===\s*'git'/.test(ensure), false, 'ensureLocalSurfIds must stamp git path-less rows');
+
+  const stampThenGit = /await ensureLocalSurfIds\(\);[\s\S]*?rememberAssembly\(\{\s*\.\.\.\w+,\s*source:\s*'git'\s*\}\)/;
+
   const flip = sliceBetween(APP, '// G10: GitHub token enables vault/git source', '// After reload, baseline is gone');
   assert.equal(/ensureGitVault/.test(flip), false, 'GitHub connect must not seed a vault');
+  assert.match(flip, stampThenGit, 'G10 must stamp surf ids before flipping to git');
 
   assert.equal(/addEventListener\(\s*'online'/.test(APP), false, 'online must not flush');
 
   const toggle = sliceBetween(APP, 'const handleToggleSource', 'const gitDefaultVaultName');
   assert.match(toggle, /ensureGitVault\(\{\s*create:\s*false\s*\}\)/);
   assert.match(toggle, /NO_REPO_YET_COPY/);
+  assert.match(toggle, stampThenGit, 'toggle must stamp surf ids before flipping to git');
 
   const listAsm = sliceBetween(APP, 'const handleListVaultAssemblies', 'const adoptVaultOpening');
   assert.match(listAsm, /ensureGitVault\(\{\s*create:\s*false\s*\}\)/);
@@ -169,4 +178,71 @@ test('implicit working-copy snapshot does not call commitFiles; Save still does'
   });
   assert.equal(committed.status, 'committed', committed.error);
   assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, afterCreate + 1);
+});
+
+test('local→git switch stamps surfIds on legacy path-less parts with 0 adapter writes', async () => {
+  const gh = createMockGithubAdapter({ login: 'hotfix' });
+  const writes = () => gh._log.filter((row) => (
+    row.op === 'commitFiles' || row.op === 'createRepo' || row.op === 'createBranch'
+  )).length;
+  assert.equal(writes(), 0);
+
+  // mcp-demo seed after local: prefix strip: id part1, no surfId, no path.
+  const localDoc = {
+    source: 'local',
+    name: 'mcp-demo',
+    activeId: 'part1',
+    parts: [
+      { id: 'part1', name: 'Part (1)', visible: true, order: 0 },
+      { id: 'part2', name: 'Part (2)', visible: true, order: 1 },
+    ],
+  };
+  const scripts = {
+    part1: 'return Manifold.cube([10, 10, 10], true);\n',
+    part2: 'return Manifold.cube([6, 6, 6], true);\n',
+  };
+  const stamped = stampMissingSurfIds(localDoc, scripts, {
+    now: new Date('2026-10-18T03:00:00.000Z'),
+    randFor: (_row, index) => (index === 0 ? 'aaaa' : 'bbbb'),
+  });
+  assert.equal(stamped.changed, true);
+  assert.ok(stamped.doc.parts.every((part) => isSurfId(part.surfId)));
+  assert.equal(stamped.doc.parts[0].id, 'part1');
+  assert.equal(stamped.doc.parts[1].id, 'part2');
+  assert.equal(stamped.doc.parts[0].path, undefined);
+  assert.equal(stamped.doc.parts[1].path, undefined);
+  assert.match(stamped.scripts.part1, /^\/\/ @surf-id 2026-10-18-03-00-00-0000-aaaa\n/);
+  assert.match(stamped.scripts.part2, /^\/\/ @surf-id 2026-10-18-03-00-00-0000-bbbb\n/);
+
+  const switched = { ...stamped.doc, source: 'git' };
+  assert.equal(switched.source, 'git');
+  assert.ok(switched.parts.every((part) => isSurfId(part.surfId)));
+  assert.equal(switched.parts.every((part) => !part.path), true);
+
+  // G10 used to flip first; ensureLocalSurfIds must still stamp a git doc.
+  const alreadyGit = { ...localDoc, source: 'git' };
+  const stampedGit = stampMissingSurfIds(alreadyGit, scripts, {
+    now: new Date('2026-10-18T03:00:00.000Z'),
+    randFor: (_row, index) => (index === 0 ? 'aaaa' : 'bbbb'),
+  });
+  assert.ok(stampedGit.doc.parts.every((part) => isSurfId(part.surfId)));
+  assert.equal(stampedGit.doc.parts.every((part) => !part.path), true);
+
+  // Vault-path rows wait for Open / Save — no surfId, no path rewrite.
+  const withPath = {
+    source: 'git',
+    name: 'Assembly',
+    parts: [{
+      id: 'part1',
+      name: 'Has Path',
+      path: 'assemblies/Assembly/Has Path.js',
+    }],
+  };
+  const skipped = stampMissingSurfIds(withPath, {});
+  assert.equal(skipped.changed, false);
+  assert.equal(skipped.doc.parts[0].surfId, undefined);
+  assert.equal(skipped.doc.parts[0].path, 'assemblies/Assembly/Has Path.js');
+
+  assert.equal(writes(), 0);
+  assert.equal(gh._log.length, 0);
 });

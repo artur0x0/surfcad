@@ -261,6 +261,7 @@ import {
   allocateVaultPartPath,
   findAssemblyPart,
   partRepoPath,
+  stampMissingSurfIds,
   rekeyWorkingCopyToTip,
   retireImplicitVaultWriteOps,
   readVaultPart,
@@ -2139,26 +2140,20 @@ const App = () => {
 
   const ensureLocalSurfIds = async () => {
     const doc = assemblyRef.current;
-    if (!doc || doc.source === 'git') return;
-    let scripts = { ...partScriptsRef.current };
-    let parts = [...(doc.parts || [])];
-    let changed = false;
-    for (const row of parts) {
-      if (row.surfId) continue;
-      const surfId = mintSurfId();
-      const text = withSurfId(scripts[row.id] || '', surfId);
-      scripts[row.id] = text;
-      await savePartScript(row.id, text);
-      parts = parts.map((part) => (part.id === row.id ? { ...part, surfId } : part));
-      changed = true;
+    if (!doc) return;
+    const stamped = stampMissingSurfIds(doc, partScriptsRef.current);
+    if (!stamped.changed) return;
+    for (const part of stamped.doc.parts) {
+      const before = (doc.parts || []).find((row) => row.id === part.id);
+      if (before?.surfId === part.surfId) continue;
+      await savePartScript(part.id, stamped.scripts[part.id] || '');
     }
-    if (!changed) return;
-    rememberScripts(scripts);
-    rememberAssembly({ ...doc, parts });
-    const active = doc.activeId;
-    if (active && scripts[active]) {
-      codeEditorRef.current?.setTextOnly?.(scripts[active]);
-      setCurrentScript(scripts[active]);
+    rememberScripts(stamped.scripts);
+    rememberAssembly(stamped.doc);
+    const active = stamped.doc.activeId;
+    if (active && stamped.scripts[active]) {
+      codeEditorRef.current?.setTextOnly?.(stamped.scripts[active]);
+      setCurrentScript(stamped.scripts[active]);
     }
   };
 
@@ -3410,8 +3405,11 @@ const App = () => {
         return false;
       }
     }
+    // Stamp path-less rows before the source flip so joints/paint keep working.
+    await ensureLocalSurfIds();
+    const live = assemblyRef.current || doc;
     // Keep current rows; paths that are not repo-safe stay until Open replaces them.
-    rememberAssembly({ ...doc, source: 'git' });
+    rememberAssembly({ ...live, source: 'git' });
     // No baseline until Open / tip reseed — local: rows show first-commit dirty.
     rememberGitBaseline(null);
     rememberGitBehind(null, { showToast: false, resetResolved: true });
@@ -5170,11 +5168,19 @@ const App = () => {
     if (githubConnected) {
       if (doc.source === 'git') return undefined;
       // Do not create or seed the vault here. Save / git_save does that.
-      rememberAssembly({ ...doc, source: 'git' });
-      rememberGitBaseline(null);
-      rememberGitBehind(null, { showToast: false, resetResolved: true });
-      setGitBehindToast(null);
-      return undefined;
+      // Stamp surf ids while still local so legacy rows stay joint/paint-able.
+      let cancelled = false;
+      (async () => {
+        await ensureLocalSurfIds();
+        if (cancelled) return;
+        const live = assemblyRef.current;
+        if (!live || live.source === 'git') return;
+        rememberAssembly({ ...live, source: 'git' });
+        rememberGitBaseline(null);
+        rememberGitBehind(null, { showToast: false, resetResolved: true });
+        setGitBehindToast(null);
+      })();
+      return () => { cancelled = true; };
     }
     if (doc.source === 'git') {
       rememberAssembly({ ...doc, source: 'local' });
