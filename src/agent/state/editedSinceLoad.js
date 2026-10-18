@@ -21,6 +21,14 @@ export function liveEditorOverride({
   return { liveId: String(activeId), liveScript: script };
 }
 
+/**
+ * Identity for the agent dirty snapshot. Name + source only — adding a part
+ * must not reset the baseline (that dropped earlier edits from editedSinceLoad).
+ */
+export function agentSnapshotDocKey(doc) {
+  return `${doc?.name ?? ''}\0${doc?.source ?? ''}`;
+}
+
 /** @param {Record<string, string>|null|undefined} scripts */
 export function snapshotPartScripts(scripts, { liveId = null, liveScript = null } = {}) {
   const out = {};
