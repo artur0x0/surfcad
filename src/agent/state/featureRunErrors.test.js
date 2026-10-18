@@ -4,7 +4,11 @@ import { createSurfcadBridge } from '../../utils/agentBridge.js';
 import { buildToasts, viewportToastRows } from './toasts.js';
 
 const UI = 'Hole failed: result is not a valid solid (NotManifold)';
-const DETAIL = 'at hole (runtime.js:12:3)';
+const STACK = [
+  'at eval (eval at executeScript (http://127.0.0.1:4178/src/lib/surfcad/runtime.js:9241:16), <anonymous>:5:7)',
+  'at executeSkippingFailedFeatures (http://127.0.0.1:4178/src/lib/surfcad/runtime.js:9301:47)',
+].join('\n');
+const DETAIL = `RuntimeError\n${STACK}`;
 
 const SCRIPT = `// --- cube begin id=cube1 ---
 let part = Manifold.cube([10, 10, 10], true);
@@ -83,7 +87,7 @@ function failingHost() {
         staleFailure = failure;
         return {
           ok: false,
-          errors: [UI],
+          errors: [UI, STACK],
           volume: null,
           bbox: null,
           partName: 'Part',
@@ -134,9 +138,31 @@ function assertFeatureError(row) {
   assert.equal(row.featureType, 'hole');
   assert.equal(row.featureLabel, 'Hole');
   assert.equal(row.featureIndex, 1);
-  assert.equal(row.detail, DETAIL);
+  assert.equal(row.detail, 'RuntimeError');
   assert.equal(row.message.includes('Feature failed'), false);
 }
+
+function assertNoStackOrUrl(value) {
+  const text = JSON.stringify(value);
+  assert.equal(/https?:\/\//.test(text), false, text);
+  assert.equal(/\bat\s+\S+/.test(text), false, text);
+  assert.equal(/\.js:\d+/.test(text), false, text);
+  assert.equal(/<anonymous>/.test(text), false, text);
+}
+
+test('errors and failures never include stack frames or URLs', async () => {
+  const world = failingHost();
+  const api = createSurfcadBridge({ resolve: () => world.host });
+  const ran = await api.call('set_script', { source: SCRIPT });
+  assert.deepEqual(ran.result.errors, [UI]);
+  assert.equal(ran.result.failures[0].detail, 'RuntimeError');
+  assertNoStackOrUrl(ran.result.errors);
+  assertNoStackOrUrl(ran.result.failures);
+  const listed = await api.call('errors', {});
+  assertNoStackOrUrl(listed.result.errors);
+  assert.equal(listed.result.errors[0].message, UI);
+  assert.equal(listed.result.errors[0].detail, 'RuntimeError');
+});
 
 test('a failing feature returns the viewport message, type, and label', async () => {
   const world = failingHost();

@@ -24,7 +24,7 @@
  */
 
 import { v1Registry } from '../agent/commands/index.js';
-import { formatAgentErrors } from '../agent/state/formatErrors.js';
+import { formatAgentErrors, scrubPublishedError } from '../agent/state/formatErrors.js';
 import { createPickSessions } from '../agent/pick/session.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { emptyPartHistory, pushPartHistory } from './partHistory.js';
@@ -306,6 +306,7 @@ export function createSurfcadBridge(hostSource) {
     const uiMessage = typeof recorded?.message === 'string' ? recorded.message : '';
     let errors = errorMessages(outcome?.errors);
     if (uiMessage && !errors.includes(uiMessage)) errors = [uiMessage, ...errors];
+    errors = errors.map((row) => scrubPublishedError(row)).filter(Boolean);
     // A recovered mesh is still a failed feature. `outcome.ok` alone is not
     // enough — the viewport keeps that solid and returns ok.
     const ok = outcome?.ok === true && !recorded;

@@ -252,10 +252,19 @@ export async function run(ctx) {
 
 const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
+function popupMessage(text) {
+  return String(text || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && line !== 'Error' && line !== 'Undo' && line !== 'Dismiss')
+    .join('\n')
+    .trim();
+}
+
 async function popupText(page) {
   const loc = page.locator('[data-execution-error]');
   await loc.waitFor({ state: 'visible', timeout: 20000 });
-  return (await loc.innerText()).replace(/^Error\s*/, '').trim();
+  return popupMessage(await loc.innerText());
 }
 
 async function shotWithJson(page, outPath, payload) {

@@ -63,7 +63,7 @@ test('formatAgentErrors prefers the viewport message and keeps kernel detail', (
       id: 'hole1',
       kind: 'hole',
       message: 'Hole failed: not a solid',
-      detail: 'at hole (runtime.js:12)',
+      detail: 'RuntimeError',
     },
   });
   assert.equal(rows.length, 1);
@@ -71,17 +71,56 @@ test('formatAgentErrors prefers the viewport message and keeps kernel detail', (
   assert.equal(rows[0].message, 'Hole failed: not a solid');
   assert.equal(rows[0].featureType, 'hole');
   assert.equal(rows[0].featureLabel, 'Hole');
-  assert.equal(rows[0].detail, 'at hole (runtime.js:12)');
+  assert.equal(rows[0].detail, 'RuntimeError');
   assert.equal(rows[0].message.includes('Feature failed'), false);
 });
 
-test('kernelExceptionDetail drops the popup line and keeps the stack frame', () => {
+const STACK = [
+  'at eval (eval at executeScript (http://127.0.0.1:4178/src/lib/surfcad/runtime.js:9241:16), <anonymous>:5:7)',
+  'at executeScript (http://127.0.0.1:4178/src/lib/surfcad/runtime.js:9248:12)',
+  'at executeSkippingFailedFeatures (http://127.0.0.1:4178/src/lib/surfcad/runtime.js:9301:47)',
+].join('\n');
+
+test('formatAgentErrors omits detail when the only extra text is a stack', () => {
+  const rows = formatAgentErrors({
+    messages: ['Cube failed: result is not a valid solid (NotManifold)', STACK],
+    script: SCRIPT,
+    runFailure: {
+      id: 'cube1',
+      message: 'Cube failed: result is not a valid solid (NotManifold)',
+      detail: STACK,
+    },
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].message, 'Cube failed: result is not a valid solid (NotManifold)');
+  assert.equal(rows[0].detail, undefined);
+  assert.equal(/https?:\/\//.test(JSON.stringify(rows)), false);
+  assert.equal(/\bat\s+/.test(JSON.stringify(rows)), false);
+  assert.equal(/\.js:\d+/.test(JSON.stringify(rows)), false);
+});
+
+test('kernelExceptionDetail keeps a class, status, or kernel message and drops stacks', () => {
   const error = new Error('Hole failed: not a solid');
-  error.stack = 'Error: Hole failed: not a solid\n    at hole (runtime.js:12:3)';
+  error.stack = `Error: Hole failed: not a solid\n${STACK}`;
+  assert.equal(kernelExceptionDetail(error, 'Hole failed: not a solid'), null);
+
+  error.name = 'RuntimeError';
+  assert.equal(kernelExceptionDetail(error, 'Hole failed: not a solid'), 'RuntimeError');
+
+  const status = new Error('Hole failed: not a solid');
+  status.status = 'NotManifold';
+  assert.equal(kernelExceptionDetail(status, 'Hole failed: not a solid'), 'NotManifold');
+
+  const wasm = new Error('Fillet failed');
+  wasm.cause = new Error('memory access out of bounds');
+  assert.equal(kernelExceptionDetail(wasm, 'Fillet failed'), 'memory access out of bounds');
+
+  const shown = new Error('Cube failed: result is not a valid solid (NotManifold)');
+  shown.stack = STACK;
+  shown.detail = STACK;
+  shown.status = 'NotManifold';
   assert.equal(
-    kernelExceptionDetail(error, 'Hole failed: not a solid'),
-    'at hole (runtime.js:12:3)',
+    kernelExceptionDetail(shown, 'Cube failed: result is not a valid solid (NotManifold)'),
+    null,
   );
-  error.detail = 'manifold status NotManifold';
-  assert.equal(kernelExceptionDetail(error, 'Hole failed: not a solid'), 'manifold status NotManifold');
 });
