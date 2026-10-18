@@ -23,7 +23,7 @@
   --chrome-success: 4 120 87; /* emerald-700 #047857 */
   --chrome-success-hover: 5 150 105; /* emerald-600 #059669 */
   /* Horizontal CAD feature ribbon (assembly / part / empty). 46px:
-     32px chip + 12px py-1.5 + 2px border. See docs/ui_style_guide.md. */
+     32px chip + 12px py-1.5 + 2px border. See docs/ui-style-guide.md. */
   --feature-strip-height: 2.875rem;
   /* 10px between the ribbon bottom and the left/right tool rails. */
   --feature-strip-rail-gap: 0.625rem;
