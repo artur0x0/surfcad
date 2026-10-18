@@ -75,6 +75,8 @@ locked `#000000`, conflict `#f87171`, repeated `#fbbf24`, selected
 | `--brand-ink` | `22 23 29` | `#16171D` | Text on Paper |
 | `--brand-grey` | `107 110 120` | `#6B6E78` | Muted text on Paper |
 | `--brand-orange` | `255 90 31` | `#FF5A1F` | Splash word “CAD” only, ≥24px |
+| `--brand-navy` | `15 23 42` | `#0F172A` | Dark loading gate. Dark surface |
+| `--brand-grey-on-navy` | `163 166 174` | `#A3A6AE` | Muted text on the dark loading gate |
 
 Orange is never a status, sketch, or chrome colour.
 
@@ -87,10 +89,12 @@ Defined in `src/index.css`. Keep the set small.
 | `surface-dark` | `--chrome-background` | `text-on-dark` |
 | `surface-panel` | `--chrome-surface` | `text-on-dark` |
 | `surface-light` | `--brand-paper` | `text-on-light` |
+| `surface-splash-dark` | `--brand-navy` | `text-on-dark` / `text-muted-on-splash-dark`. Dark surface |
 | `text-on-dark` | `--chrome-text` | dark surfaces |
 | `text-on-light` | `--brand-ink` | light surfaces |
 | `text-muted-on-dark` | `--chrome-text-secondary` | dark surfaces |
 | `text-muted-on-light` | `--brand-grey` | light surfaces |
+| `text-muted-on-splash-dark` | `--brand-grey-on-navy` | dark loading gate |
 | `font-ui` | system UI stack | every chrome surface |
 | `surface-success` | `--chrome-success` (hover `--chrome-success-hover`) | `text-on-dark`; Allow / positive icon buttons |
 | `surface-quiet` | `--chrome-border` (hover `--chrome-background`) | `text-on-dark`; Deny / secondary icon buttons |
@@ -178,8 +182,13 @@ header icons (`STRIP_ICON_BLUE`).
   [UI_MAP.md](./UI_MAP.md).
 - `src/assets/brand/wordmark-ink.svg` is Ink-on-light.
 - Orange (`#FF5A1F`) is only the splash word “CAD”, and only at 24px or
-  taller on Paper. Loading gate (`data-app-loading`): Paper surface,
-  ink-tile mark, 40px splash wordmark, tagline and status in Grey.
+  taller. Loading gate (`data-app-loading`): wall-clock theme from
+  `loadingThemeForHour` (dark 19:00–06:59 local, light 07:00–18:59),
+  decided before first paint (`public/loading-theme.js`). Light: Paper
+  surface, ink-tile mark, 40px `splash` wordmark, Grey tagline. Dark:
+  `surface-splash-dark`, paper-tile mark, 40px `splash-dark` wordmark
+  (Surf Paper, CAD orange), `text-muted-on-splash-dark`. No Privacy
+  choices link on this gate.
 - Parts and Script stages omit the brand. Favicon and PWA icons are the
   paper tile. `/partners` is Paper; orange only on splash CAD at 32px.
 - `golden:brand-identity` checks the header at 390 and 1280.

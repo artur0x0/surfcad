@@ -64,6 +64,7 @@ Gate acceptance still requires `test_real_worker.mjs` via `npm run verify` when 
 | `golden:block-pose-preview` | `smoke_block_pose_preview.mjs` |
 | `golden:block-shape-boolean` | `smoke_block_shape_boolean.mjs` |
 | `golden:blocks-artur-fixes` | `smoke_blocks_artur_fixes.mjs` |
+| `golden:brand-identity` | `smoke_brand_identity.mjs` |
 | `golden:cad-mobile-chrome` | `smoke_cad_mobile_chrome.mjs` |
 | `golden:cad-palette` | `smoke_cad_palette_overlays.mjs` |
 | `golden:cart` | `smoke_cart.mjs` |

@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom';
 import CodeEditor from './components/CodeEditor';
 import Viewport from './components/Viewport';
 import { BrandMark, BrandWordmark } from './components/brand/BrandWordmark';
+import { clearLoadingTheme, readLoadingTheme } from './utils/loadingTheme';
 import PromptInput from './components/PromptInput';
 import SplitDivider from './components/SplitDivider';
 import ScriptEditorDrawer from './components/ScriptEditorDrawer';
@@ -8205,6 +8206,12 @@ const App = () => {
     return () => clearTimeout(id);
   }, [manifoldReady, editorInitialScript, initError]);
 
+  useEffect(() => {
+    if (!manifoldReady || editorInitialScript === null) return undefined;
+    clearLoadingTheme();
+    return undefined;
+  }, [manifoldReady, editorInitialScript]);
+
   // Show error state if initialization failed
   if (initError) {
     return (
@@ -8226,24 +8233,27 @@ const App = () => {
 
   // Show loading state while Manifold initializes
   if (!manifoldReady || editorInitialScript === null) {
+    const loadingTheme = readLoadingTheme();
+    const loadingDark = loadingTheme === 'dark';
+    const muted = loadingDark ? 'text-muted-on-splash-dark' : 'text-muted-on-light';
     return (
       <div
-        className="flex h-screen items-center justify-center surface-light font-ui"
+        className={`flex h-screen items-center justify-center font-ui ${loadingDark ? 'surface-splash-dark' : 'surface-light'}`}
         data-app-loading=""
+        data-app-loading-theme={loadingTheme}
       >
         <div className="flex flex-col items-center px-6 text-center">
-          <BrandMark size={72} />
+          <BrandMark size={72} tone={loadingDark ? 'paper-tile' : 'ink'} />
           <div className="mt-4">
-            <BrandWordmark tone="splash" size={40} />
+            <BrandWordmark tone={loadingDark ? 'splash-dark' : 'splash'} size={40} />
           </div>
-          <p className="mt-3 text-sm text-muted-on-light" data-brand-tagline="">
+          <p className={`mt-3 text-sm ${muted}`} data-brand-tagline="">
             Don't do CAD. SurfCAD.
           </p>
-          <p className="mt-6 text-xs text-muted-on-light" data-app-loading-status="">
+          <p className={`mt-6 text-xs ${muted}`} data-app-loading-status="">
             {!manifoldReady ? 'Starting CAD engine…' : 'Restoring document…'}
           </p>
         </div>
-        <SiteFooter variant="light" />
       </div>
     );
   }

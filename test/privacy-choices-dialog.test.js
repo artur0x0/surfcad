@@ -35,5 +35,14 @@ describe('Privacy choices dialog UI', () => {
     assert.match(profile, /variant="profileMenu"/);
     assert.match(dialog, /dataAttr="privacy-choices"/);
     assert.match(dialog, /data-privacy-choices-done/);
+    const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+    const loading = app.slice(
+      app.indexOf('if (!manifoldReady || editorInitialScript === null)'),
+      app.indexOf('Phone shell:'),
+    );
+    assert.match(loading, /data-app-loading/);
+    assert.equal(/SiteFooter/.test(loading), false);
+    assert.equal(/Privacy choices/.test(loading), false);
+    assert.match(app, /<SiteFooter \/>/);
   });
 });
