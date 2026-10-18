@@ -36,11 +36,20 @@ test('agentCreatePart and agentOpenAssembly do not call git', () => {
   assert.match(APP, /bodyCount: finishedRunBodyCount\(run, bodyCountOfWorkerMesh\(run\.mesh\)\)/);
   assert.equal(/geom\.bodyCount === 0/.test(APP), false);
   assert.match(open, /resolveAssemblyOpenName\(requested, names\)/);
+  assert.match(open, /cacheVaultReads\(inner\)/);
+  assert.match(open, /handleListVaultAssemblies\(cached\)/);
+  assert.match(open, /setUploadNotice\(NO_REPO_YET_COPY\)/);
   assert.match(open, /if \(decision\?\.error\) return \{ error: decision\.error \}/);
   assert.match(
     open,
-    /const opened = await handleOpenVaultAssembly\(openName\);\s*if \(opened\?\.status === 'error'\) \{\s*return \{ error:/,
+    /const opened = await handleOpenVaultAssembly\(openName, cached\);\s*if \(opened\?\.status === 'error'\) \{\s*return \{ error:/,
   );
+  assert.equal(/gitAdapterRef\.current\s*=/.test(open), false, open);
+  const list = sliceFn('const handleListVaultAssemblies', 'const adoptVaultOpening');
+  assert.match(list, /listVaultAssemblies\(adapter \|\| gitAdapterRef\.current/);
+  const openHandler = sliceFn('const handleOpenVaultAssembly', 'openVaultAssemblyRef.current');
+  assert.match(openHandler, /const git = adapter \|\| gitAdapterRef\.current/);
+  assert.match(openHandler, /retry: \(\) => \{ void handleOpenVaultAssembly\(name\); \}/);
   const createIdx = create.indexOf('agentRunOutcome(text)');
   const earlyReturn = create.indexOf('if (!runScript) return');
   assert.ok(earlyReturn >= 0 && earlyReturn < createIdx);

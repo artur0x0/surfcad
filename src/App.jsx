@@ -158,6 +158,7 @@ import { decidePartVisible } from './agent/state/partVisible';
 import { createdPartFromDocs, scriptRequestsRun } from './agent/state/createPart.js';
 import { finishedRunBodyCount } from './agent/state/runBodyCount.js';
 import { assemblyOpenFailure, resolveAssemblyOpenName } from './agent/state/openAssemblyName.js';
+import { cacheVaultReads } from './agent/state/vaultReadCache.js';
 import { buildToasts } from './agent/state/toasts';
 import {
   historyStripTarget,
@@ -3563,9 +3564,10 @@ const App = () => {
     }
   };
 
-  const handleListVaultAssemblies = async () => {
+  const handleListVaultAssemblies = async (adapter = null) => {
     const vault = await ensureGitVault({ create: false });
-    return listVaultAssemblies(gitAdapterRef.current, vault.repo, gitWorkingBranch());
+    // The feed omits `adapter` and reads the live one. Agent open passes its cache.
+    return listVaultAssemblies(adapter || gitAdapterRef.current, vault.repo, gitWorkingBranch());
   };
 
   /**
@@ -3675,9 +3677,6 @@ const App = () => {
     rememberScripts(openedScripts);
     rememberSidecar(emptyWorkingSidecar());
     let saved = rememberAssembly(openedDoc);
-    if (isSurfId(saved.id)) {
-      await store.rememberAssemblyId(vault.repo, vaultSegment(saved.name), saved.id);
-    }
     noteRecentAssembly(saved.name);
     const baseline = captureBaseline({
       assemblyPath: deletedOverlay.removed ? assemblyFilePath(saved.name) : opened.baseline.assemblyPath,
@@ -3688,7 +3687,13 @@ const App = () => {
       branch,
       headSha: opened.baseline.headSha,
     });
+    // The reload reseed opens the live adapter when the document changes
+    // and this ref is still empty. Set it before the await so that reseed
+    // does not start a second vault read during this open.
     rememberGitBaseline(baseline);
+    if (isSurfId(saved.id)) {
+      await store.rememberAssemblyId(vault.repo, vaultSegment(saved.name), saved.id);
+    }
     const head = opened.baseline.headSha || null;
     const stored = store.getLastSyncedSha(vault.repo, branch);
     const held = queued.length > 0 && !!(stored && head && stored !== head);
@@ -3732,7 +3737,7 @@ const App = () => {
     });
   };
 
-  const handleOpenVaultAssembly = async (name) => {
+  const handleOpenVaultAssembly = async (name, adapter = null) => {
     try {
       await runTrackedAssemblyOpen(assemblyOpenCtrlRef.current, {
         name: name || 'assembly',
@@ -3742,11 +3747,13 @@ const App = () => {
           const vault = await ensureGitVault({ create: false });
           if (!signal()) return;
           const branch = gitWorkingBranch();
-          const tip = (await gitAdapterRef.current.getBranch(vault.repo, branch))?.sha || null;
+          // Retry and the feed omit `adapter`, so they stay on the live adapter.
+          const git = adapter || gitAdapterRef.current;
+          const tip = (await git.getBranch(vault.repo, branch))?.sha || null;
           const store = gitSync();
           await store.ready();
           const opened = await openNamedVaultAssembly(
-            gitAdapterRef.current,
+            git,
             vault.repo,
             name,
             {
@@ -3759,7 +3766,7 @@ const App = () => {
           if (!signal()) return;
           const adopted = await adoptVaultOpening(opened, vault);
           if (!signal()) return;
-          scheduleLastCommitFromApp({ adapter: gitAdapterRef.current, repo: vault.repo, branch, store, opened, adopted, tip, liveSession: () => ({ repo: gitVaultRef.current?.repo || vault.repo, branch: gitWorkingBranch() }) });
+          scheduleLastCommitFromApp({ adapter: git, repo: vault.repo, branch, store, opened, adopted, tip, liveSession: () => ({ repo: gitVaultRef.current?.repo || vault.repo, branch: gitWorkingBranch() }) });
           const saved = adopted.saved;
           const openedScripts = adopted.scripts;
           // G4: check remote on open (usually current; catches a race with a push).
@@ -8681,12 +8688,20 @@ const App = () => {
         return { error: { code: 'git_only', message: 'open_assembly needs a git-backed assembly' } };
       }
       const requested = typeof name === 'string' ? name : '';
+      // The name lookup and the open share one marker read and one tree.
+      // The cache is an argument, not the shared adapter, so a Save during
+      // this await reads the live repo. lastCommit on this open uses it too.
+      const inner = ensureGitAdapter();
+      const cached = cacheVaultReads(inner);
       let names = null;
       try {
-        const listed = await handleListVaultAssemblies();
+        const listed = await handleListVaultAssemblies(cached);
         names = Array.isArray(listed) ? listed : null;
       } catch (err) {
         if (err?.message === NO_REPO_YET_COPY || err?.code === 'git_blocked') {
+          // Listing returns before handleOpenVaultAssembly, which is what
+          // used to put this sentence on the toast.
+          setUploadNotice(NO_REPO_YET_COPY);
           return { error: { code: 'git_blocked', message: NO_REPO_YET_COPY } };
         }
         names = null;
@@ -8697,7 +8712,7 @@ const App = () => {
         if (decision?.error) return { error: decision.error };
         openName = decision.name;
       }
-      const opened = await handleOpenVaultAssembly(openName);
+      const opened = await handleOpenVaultAssembly(openName, cached);
       if (opened?.status === 'error') {
         return { error: assemblyOpenFailure(opened, requested, names) };
       }
