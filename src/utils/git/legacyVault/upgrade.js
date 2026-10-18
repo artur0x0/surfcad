@@ -27,6 +27,7 @@ import {
   withSurfId,
   withSurfName,
 } from '../surfId.js';
+import { rewriteFeaStudyPartIds } from '../feaStudyIds.js';
 import { pruneDanglingColors, pruneDanglingGroupPartIds } from '../surfJson.js';
 import { parseSurfJsonV2, stringifySurfJsonV2 } from '../surfJsonV2.js';
 import { jointedSurfIds, poseFieldsForPart, pruneDanglingSurfJoints } from '../../jointSchema.js';
@@ -366,9 +367,46 @@ function rewriteIds(list, map) {
   return list.map((id) => map.get(id) || id);
 }
 
+function headerLineBreak(text) {
+  const cr = text.indexOf('\r');
+  const lf = text.indexOf('\n');
+  if (cr < 0 && lf < 0) return { index: text.length, ending: '' };
+  if (cr >= 0 && (lf < 0 || cr < lf)) {
+    return lf === cr + 1
+      ? { index: cr, ending: '\r\n' }
+      : { index: cr, ending: '\r' };
+  }
+  return { index: lf, ending: '\n' };
+}
+
+function isSurfIdCommentStart(text) {
+  if (!text.startsWith('// @surf-id')) return false;
+  const next = text.slice('// @surf-id'.length);
+  return !next || next[0] === ' ' || next[0] === '\t' || next[0] === '\n' || next[0] === '\r';
+}
+
+/**
+ * Upgrade-only. Rewrite an invalid or bare `// @surf-id` line and keep any
+ * extra text on that line. Valid headers go through `withSurfId` (which
+ * stacks when the first line is not a valid header).
+ */
+function rewriteUpgradeSurfIdHeader(script, id) {
+  const text = String(script ?? '');
+  if (readSurfId(text)) return withSurfId(text, id);
+  if (!isSurfIdCommentStart(text)) return withSurfId(text, id);
+  const br = headerLineBreak(text);
+  const firstLine = text.slice(0, br.index);
+  const rest = br.ending ? text.slice(br.index + br.ending.length) : '';
+  const after = firstLine.slice('// @surf-id'.length);
+  const extraMatch = after.match(/^([ \t]*)(\S*)(.*)$/);
+  const extra = extraMatch ? extraMatch[3] : '';
+  const line = `// @surf-id ${id}${extra}`;
+  return br.ending ? `${line}${br.ending}${rest}` : line;
+}
+
 function stampScript(script, id, name) {
   const display = sanitizeSurfName(name) || 'Part';
-  return withSurfName(withSurfId(typeof script === 'string' ? script : '', id), display);
+  return withSurfName(rewriteUpgradeSurfIdHeader(typeof script === 'string' ? script : '', id), display);
 }
 
 function displayNameFor(part, script, path) {
@@ -529,9 +567,9 @@ function assertCopiedBytes(plan, files) {
  * One final id per legacy path is minted once and reused in every
  * assembly. `copiedFrom` is the v1 value remapped through the fold, or
  * an explicit row id the path lost to a different file (a true duplicate).
- * A header-only loser mints with none. Working-copy `copiedFrom` is used
- * only when those rule-4 cases already apply; collapse tags are not
- * carried. One assembly id per legacy folder (reuse `assemblyIdByFolder`).
+ * A header-only loser mints with none. Collapse tags from a working copy
+ * are not inputs to this planner. One assembly id per legacy folder
+ * (reuse `assemblyIdByFolder`).
  */
 export function planUpgrade({
   tree = [],
@@ -874,12 +912,22 @@ function wcScriptOf(part, scripts) {
   return undefined;
 }
 
+function remapAssetKeys(assets, idMap) {
+  if (!assets || typeof assets !== 'object') return assets;
+  const next = {};
+  for (const [id, value] of Object.entries(assets)) {
+    next[idMap.get(id) || id] = value;
+  }
+  return next;
+}
+
 /**
- * Map a dirty WC onto the upgrade plan's ids via the plan's legacy-path
- * map (not WC header ids). Rekeys in memory only — callers persist IDB.
- * A WC part whose id is not in the plan and that has no mapped legacy
- * path is an add (`parts/<id>.js`). Refuse only true ambiguity: two WC
- * rows mapping to one plan id.
+ * Map a WC onto the upgrade plan's ids via the plan's legacy-path map
+ * (not WC header ids). Clean and dirty callers both use this. Rekeys in
+ * memory only — callers persist IDB. Studies and `copiedFrom` follow the
+ * plan. A WC part whose id is not in the plan and that has no mapped
+ * legacy path is an add (`parts/<id>.js`). Refuse only true ambiguity:
+ * two WC rows mapping to one plan id.
  */
 export function mapWorkingCopyToPlan(plan, workingCopy) {
   if (!workingCopy?.doc) {
@@ -892,6 +940,11 @@ export function mapWorkingCopyToPlan(plan, workingCopy) {
   const claimed = new Map();
   const ambiguous = [];
   const used = new Set(planIds);
+  const assemblyId = asV2Id(workingCopy.doc.id)
+    || folderToId[workingCopy.doc.name]
+    || folderToId[Object.keys(folderToId).find((name) => name.toLowerCase() === String(workingCopy.doc.name || '').toLowerCase())]
+    || null;
+  const planJson = assemblyJsonFromPlan(plan, assemblyId);
 
   const resolve = (part) => {
     const path = scriptPathOf(part);
@@ -937,11 +990,24 @@ export function mapWorkingCopyToPlan(plan, workingCopy) {
     const planId = resolvedIds[i];
     if (part?.id && part.id !== planId) pairs.push({ from: part.id, to: planId });
     const script = wcScriptOf(part, scripts);
-    if (typeof script === 'string') nextScripts[planId] = script;
-    return { ...part, id: planId };
+    const name = sanitizeSurfName(part.name) || displayNameFor(part, script, part.path);
+    if (typeof script === 'string') nextScripts[planId] = stampScript(script, planId, name);
+    const planRow = Array.isArray(planJson?.parts)
+      ? planJson.parts.find((row) => row?.id === planId)
+      : null;
+    const copied = planRow ? asV2Id(planRow.copiedFrom) : asV2Id(part?.copiedFrom);
+    const next = { ...part, id: planId };
+    if (copied && copied !== planId) next.copiedFrom = copied;
+    else delete next.copiedFrom;
+    return next;
   });
 
   const idMap = new Map(pairs.map((row) => [row.from, row.to]));
+  if (idMap.size) {
+    for (const [id, text] of Object.entries(nextScripts)) {
+      nextScripts[id] = rewriteFeaStudyPartIds(text, idMap);
+    }
+  }
   let activeId = asV2Id(workingCopy.doc.activeId);
   if (activeId && idMap.has(activeId)) activeId = idMap.get(activeId);
   if (activeId && !nextParts.some((p) => p.id === activeId)) activeId = nextParts[0]?.id || null;
@@ -954,11 +1020,6 @@ export function mapWorkingCopyToPlan(plan, workingCopy) {
     }))
     : undefined;
 
-  const assemblyId = asV2Id(workingCopy.doc.id)
-    || folderToId[workingCopy.doc.name]
-    || folderToId[Object.keys(folderToId).find((name) => name.toLowerCase() === String(workingCopy.doc.name || '').toLowerCase())]
-    || null;
-
   const nextDoc = {
     ...workingCopy.doc,
     id: assemblyId || workingCopy.doc.id,
@@ -970,7 +1031,7 @@ export function mapWorkingCopyToPlan(plan, workingCopy) {
   };
 
   const assets = workingCopy.assets && typeof workingCopy.assets === 'object'
-    ? { ...workingCopy.assets }
+    ? remapAssetKeys(workingCopy.assets, idMap)
     : workingCopy.assets;
 
   return {
@@ -1290,7 +1351,6 @@ export async function executeUpgrade({
       repoName: ref?.name,
       now: clock,
       randFor,
-      workingCopy,
     });
   } catch (err) {
     return hostError(
@@ -1349,8 +1409,10 @@ export async function executeUpgrade({
     console.warn('[git] lastCommit after Upgrade skipped', err?.message || err);
   }
 
-  const mapped = workingCopy?.dirty ? mapWorkingCopyToPlan(plan, workingCopy) : { ok: true, doc: workingCopy?.doc, scripts: workingCopy?.scripts, pairs: [], assets: workingCopy?.assets };
-  if (workingCopy?.dirty && !mapped.ok) {
+  const mapped = workingCopy?.doc
+    ? mapWorkingCopyToPlan(plan, workingCopy)
+    : { ok: true, doc: workingCopy?.doc, scripts: workingCopy?.scripts || {}, pairs: [], assets: workingCopy?.assets };
+  if (workingCopy?.doc && !mapped.ok) {
     return hostError(
       mapped.code || 'working_copy_unmapped',
       mapped.message,

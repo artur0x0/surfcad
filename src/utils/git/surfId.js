@@ -170,18 +170,17 @@ export function headerLineEnding(script) {
 }
 
 /**
- * First line is `// @surf-id <id>`. Replaces an existing header and keeps
- * the trailing spaces and the original line ending. Bytes after that line stay.
+ * First line is `// @surf-id <id>`. Replaces an existing *valid* header and
+ * keeps the trailing spaces and the original line ending. Bytes after that
+ * line stay. An invalid or bare `// @surf-id` line is stacked (a new header
+ * is prepended) so flag-off callers never drop user text on that line.
+ * Upgrade restamps invalid/bare headers itself.
  */
 export function withSurfId(script, id) {
   if (!isSurfId(id)) throw new Error(`Bad surf id: ${id}`);
   const split = splitSurfHeader(script);
   if (split) return `// @surf-id ${id}${split.trailing}${split.ending}${split.body}`;
   const text = String(script ?? '');
-  if (isSurfIdCommentStart(text)) {
-    const leading = splitLeadingSurfComment(text);
-    return `// @surf-id ${id}${leading.surf?.ending ?? ''}${leading.rest}`;
-  }
   const sep = text.length && !text.startsWith('\n') && !text.startsWith('\r') ? '\n' : '';
   return `// @surf-id ${id}${sep}${text}`;
 }

@@ -286,7 +286,6 @@ import {
   migrateLocalPartIds,
   collapseWorkingCopyIds,
   persistCollapsedWorkingCopy,
-  replaceScriptKeys,
   dualWriteTargets,
   remapFeaForPersist,
   reusePairsFromJournal,
@@ -5143,6 +5142,72 @@ const App = () => {
   };
 
   /**
+   * Crash-safe Upgrade re-key: snapshot was taken from IDB, then persist
+   * writes `to` and saveDoc before deleting `from`.
+   */
+  const persistUpgradeWorkingCopy = async ({
+    nextDoc,
+    nextScripts,
+    pairs = [],
+    sourceDoc,
+    sourceScripts,
+    partAssets = null,
+  }) => {
+    const persisted = await persistCollapsedWorkingCopy({
+      collapsed: { doc: nextDoc, scripts: nextScripts, pairs },
+      sourceDoc,
+      sourceScripts,
+      heldScripts: sourceScripts,
+      save: async (id, script) => {
+        const part = (nextDoc.parts || []).find((row) => row.id === id);
+        const from = pairs.find((row) => row.to === id)?.from || id;
+        const mesh = partAssets?.[id] || partAssets?.[from];
+        return savePartScript(id, script, {
+          ...(typeof part?.isSynced === 'boolean' ? { isSynced: part.isSynced } : {}),
+          ...(mesh || {}),
+        });
+      },
+      load: loadPartScript,
+      remove: async (id) => {
+        try { await deletePartScript(id); } catch { /* keep the new key */ }
+      },
+      saveDoc: saveAssemblyDocument,
+      live: () => {
+        const liveScripts = { ...partScriptsRef.current };
+        const id = assemblyRef.current?.activeId;
+        const text = codeEditorRef.current?.getContent?.();
+        if (
+          id
+          && typeof text === 'string'
+          && !suppressPartSaveRef.current
+          && editorLiveRef.current
+          && appModeRef.current !== 'game'
+        ) {
+          liveScripts[id] = text;
+        }
+        return liveScripts;
+      },
+      assemblyKey: assemblyRekeyKey(sourceDoc),
+      saveJournal: saveRekeyJournal,
+      clearJournal: clearRekeyJournal,
+      onFlight: (flightPairs, opts) => {
+        persistFlightPairsRef.current = Array.isArray(flightPairs) ? flightPairs : [];
+        persistFlightToOnlyRef.current = !!(opts && opts.toOnly);
+      },
+      apply: ({ doc: appliedDoc, scripts: appliedScripts }) => {
+        if (pairs.length) rekeyRuntime(pairs);
+        rememberScripts(appliedScripts);
+        rememberAssembly(appliedDoc, { persist: false });
+      },
+    });
+    if (persisted.docSaved === false) {
+      persistFlightPairsRef.current = [];
+      persistFlightToOnlyRef.current = false;
+    }
+    return persisted;
+  };
+
+  /**
    * Upgrade vault: one commit of remote bytes. Dirty WC → a second commit
    * inside legacyVault/ (PR 7 replaces that follow-up with planSave).
    * Never createRepo. Never flush the outbox.
@@ -5180,6 +5245,13 @@ const App = () => {
       if (dirty && typeof live === 'string' && doc.activeId && editorLiveRef.current === true) {
         scripts[doc.activeId] = live;
       }
+      const snapshotStatus = await loadAssemblyDocumentStatus();
+      const snapshotDoc = snapshotStatus.status === 'hit' ? snapshotStatus.doc : doc;
+      const snapshotIds = [...new Set([
+        ...(snapshotDoc?.parts || []).map((part) => part.id),
+        ...(doc.parts || []).map((part) => part.id),
+      ].filter(Boolean))];
+      const snapshotScripts = await loadPartScripts(snapshotIds);
       const assets = await loadPartAssets((doc.parts || []).map((part) => part.id));
       const result = await executeUpgrade({
         adapter,
@@ -5189,23 +5261,6 @@ const App = () => {
         workingCopy: { dirty, doc, scripts, assets, message },
         followupOverwrite: overwrite === true,
       });
-      if (result.rekey?.scripts) {
-        const nextDoc = result.rekey.doc
-          ? { ...result.rekey.doc, source: 'git', vaultLayout: 'v2' }
-          : null;
-        const rekeyPairs = result.rekey.pairs || [];
-        await replaceScriptKeys({
-          nextScripts: result.rekey.scripts,
-          staleIds: rekeyPairs.map((row) => row.from),
-          pairs: rekeyPairs,
-          heldScripts: { ...partScriptsRef.current },
-          save: (id, script) => savePartScript(id, script),
-          load: loadPartScript,
-          remove: async (id) => { try { await deletePartScript(id); } catch { /* keep the new key */ } },
-        });
-        rememberScripts(result.rekey.scripts);
-        if (nextDoc) rememberAssembly(nextDoc);
-      }
       if (result.status === 'already_upgraded') {
         rememberAssembly({ ...assemblyRef.current, vaultLayout: 'v2' });
         return result;
@@ -5213,17 +5268,42 @@ const App = () => {
       const adopted = result.status === 'upgraded'
         || result.status === 'upgraded_and_saved'
         || (result.status === 'conflict' && result.phase === 'save');
-      if (adopted) {
-        const next = { ...assemblyRef.current, vaultLayout: 'v2' };
-        rememberAssembly(next);
+      if (adopted && result.rekey) {
+        const nextDoc = {
+          ...(result.rekey.doc || assemblyRef.current),
+          source: 'git',
+          vaultLayout: 'v2',
+        };
+        const persisted = await persistUpgradeWorkingCopy({
+          nextDoc,
+          nextScripts: result.rekey.scripts || {},
+          pairs: result.rekey.pairs || [],
+          sourceDoc: snapshotDoc,
+          sourceScripts: snapshotScripts,
+          partAssets: result.rekey.assets || assets,
+        });
+        if (persisted.docSaved === false) {
+          setUploadError('Could not save the upgraded working copy. The previous working copy was kept.');
+          return {
+            status: 'error',
+            code: 'working_copy_unpersisted',
+            error: 'Could not save the upgraded working copy. The previous working copy was kept.',
+            message: 'Could not save the upgraded working copy. The previous working copy was kept.',
+            hint: 'The vault is already v2. Retry Upgrade vault to persist the working copy.',
+            sha: result.sha,
+            upgradeSha: result.upgradeSha || result.sha,
+          };
+        }
+        rememberScripts(persisted.scripts);
+        rememberAssembly({ ...persisted.doc, source: 'git', vaultLayout: 'v2' });
         if (result.status !== 'conflict') {
           const head = (await adapter.getBranch(vault.repo, branch))?.sha || result.sha || null;
           rememberGitBaseline(captureBaseline({
-            assemblyPath: assemblyFilePath(vaultSegment(next.name) || next.name),
-            assemblyName: next.name,
-            doc: next,
-            scripts: { ...partScriptsRef.current },
-            assets,
+            assemblyPath: assemblyFilePath(vaultSegment(persisted.doc.name) || persisted.doc.name),
+            assemblyName: persisted.doc.name,
+            doc: persisted.doc,
+            scripts: persisted.scripts,
+            assets: result.rekey.assets || assets,
             branch,
             headSha: head,
           }));
@@ -5251,6 +5331,10 @@ const App = () => {
       const vault = await ensureGitVault({ create: false });
       const store = gitSync();
       const branch = gitWorkingBranch();
+      const snapshotStatus = await loadAssemblyDocumentStatus();
+      const snapshotDoc = snapshotStatus.status === 'hit' ? snapshotStatus.doc : doc;
+      const snapshotIds = [...new Set((snapshotDoc?.parts || []).map((part) => part.id).filter(Boolean))];
+      const snapshotScripts = await loadPartScripts(snapshotIds);
       const result = await executeUpgradeConflictChoice({
         action,
         adapter: gitAdapterRef.current,
@@ -5263,27 +5347,52 @@ const App = () => {
         assemblyId: doc.id,
         tipSha: tipSha || store.getBranchTip?.(vault.repo, branch)?.tipSha || null,
       });
+      const persistConflictWorkingCopy = async (nextDoc, nextScripts, pairs = []) => {
+        const persisted = await persistUpgradeWorkingCopy({
+          nextDoc: { ...nextDoc, source: 'git', vaultLayout: 'v2' },
+          nextScripts,
+          pairs,
+          sourceDoc: snapshotDoc,
+          sourceScripts: snapshotScripts,
+        });
+        if (persisted.docSaved === false) {
+          setUploadError('Could not save the upgraded working copy. The previous working copy was kept.');
+          return {
+            status: 'error',
+            code: 'working_copy_unpersisted',
+            error: 'Could not save the upgraded working copy. The previous working copy was kept.',
+            message: 'Could not save the upgraded working copy. The previous working copy was kept.',
+            hint: 'Retry the Upgrade conflict choice. The previous working copy was kept.',
+          };
+        }
+        rememberScripts(persisted.scripts);
+        rememberAssembly({ ...persisted.doc, source: 'git', vaultLayout: 'v2' });
+        return persisted;
+      };
       if (result.status === 'reloaded' && result.contents) {
         const applied = applyUpgradeReload(assemblyRef.current, partScriptsRef.current, result.contents);
-        rememberScripts(applied.scripts);
-        if (applied.doc) rememberAssembly({ ...applied.doc, vaultLayout: 'v2' });
-        await replaceScriptKeys({
-          nextScripts: applied.scripts,
-          staleIds: [],
-          pairs: [],
-          heldScripts: { ...partScriptsRef.current },
-          save: (id, script) => savePartScript(id, script),
-          load: loadPartScript,
-          remove: async () => {},
-        });
-        const active = applied.doc?.parts?.find((part) => part.id === applied.doc.activeId)
-          || applied.doc?.parts?.[0];
-        if (active && typeof applied.scripts[active.id] === 'string') {
-          focusPartHistory(active.id, applied.scripts[active.id]);
+        const nextDoc = applied.doc
+          ? { ...applied.doc, vaultLayout: 'v2' }
+          : { ...assemblyRef.current, vaultLayout: 'v2' };
+        const persisted = await persistConflictWorkingCopy(nextDoc, applied.scripts, []);
+        if (persisted.status === 'error') return persisted;
+        const active = nextDoc?.parts?.find((part) => part.id === nextDoc.activeId)
+          || nextDoc?.parts?.[0];
+        const text = persisted.scripts?.[active?.id];
+        if (active && typeof text === 'string') {
+          focusPartHistory(active.id, text);
           setCurrentFilename(active.name);
-          setCurrentScript(applied.scripts[active.id]);
-          codeEditorRef.current?.loadContent(applied.scripts[active.id], active.name, false);
+          setCurrentScript(text);
+          codeEditorRef.current?.loadContent(text, active.name, false);
         }
+      }
+      if (result.status === 'committed' || result.status === 'branched') {
+        const persisted = await persistConflictWorkingCopy(
+          { ...assemblyRef.current, vaultLayout: 'v2' },
+          { ...partScriptsRef.current },
+          [],
+        );
+        if (persisted.status === 'error') return persisted;
       }
       if (result.status === 'branched' && result.branch) {
         const baseline = gitBaselineRef.current;
