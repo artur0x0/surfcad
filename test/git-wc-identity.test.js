@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mintSurfId, isSurfId, readSurfId, withSurfId } from '../src/utils/git/surfId.js';
 import { collapseWorkingCopyIds, pickCollapsedPartId, replaceScriptKeys } from '../src/utils/git/wcIdentity.js';
+import { rewriteFeaStudyPartIds } from '../src/utils/git/feaStudyIds.js';
 import { serializeAssembly, parseAssemblyDocument, composeViewportParts } from '../src/utils/assembly.js';
 import { partSurfId } from '../src/utils/git/surfId.js';
 import { normalizeAssemblyJoints } from '../src/utils/jointSchema.js';
@@ -501,4 +502,123 @@ test('pathIndex reuses a minted id on the next collapse', () => {
   );
   assert.equal(second.doc.parts[0].id, MINTED);
   assert.equal(second.minted, 0);
+});
+
+function studyBlock(study) {
+  return `// --- fea-study begin ---\n// @fea-study ${JSON.stringify(study)}\n// --- fea-study end ---\n`;
+}
+
+function readStudy(script) {
+  const tag = '// @fea-study ';
+  const line = String(script || '').split('\n').find((row) => row.startsWith(tag));
+  assert.ok(line, 'missing @fea-study line');
+  return JSON.parse(line.slice(tag.length));
+}
+
+function multiPartStudy(idA, idB) {
+  const face = (part, faceID) => ({
+    faceID,
+    at: [0, 0, 0],
+    n: [0, 0, 1],
+    area: 10,
+    part,
+  });
+  return {
+    v: 1,
+    id: 's1',
+    name: 'Static 1',
+    type: 'linear-static',
+    material: { id: 'al-6061-t6' },
+    fixtures: [{ kind: 'fixed', faces: [face(idA, 1)] }],
+    loads: [{ kind: 'force', faces: [face(idB, 2)], vector: [0, 0, -1] }],
+    scope: { kind: 'parts', ids: [idA, idB] },
+    parts: [{ id: idA, material: { id: 'al-6061-t6' } }, { id: idB, material: { id: 'al-6061-t6' } }],
+    contacts: [{
+      kind: 'bonded',
+      a: { part: idA, faceID: 1 },
+      b: { part: idB, faceID: 2 },
+    }],
+    result: null,
+  };
+}
+
+test('FEA study face.part, contacts, scope.ids, and body ids follow collapse', () => {
+  const uuid2 = '5f0c3c1e-0000-4000-8000-0000000000fe';
+  const study = multiPartStudy(UUID, uuid2);
+  const source = `// keep ${UUID} in a comment\nreturn 1;\n${studyBlock(study)}`;
+  const { first, second } = collapseTwice(
+    {
+      id: ASM,
+      source: 'git',
+      name: 'Study',
+      activeId: UUID,
+      parts: [
+        { id: UUID, name: 'Left', visible: true, order: 0 },
+        { id: uuid2, name: 'Right', visible: true, order: 1 },
+      ],
+    },
+    {
+      [UUID]: source,
+      [uuid2]: 'return 2;\n',
+    },
+    { randFor: (part) => (part?.id === '$assembly' ? 'aa01' : (part?.id === uuid2 ? 'c0de' : 'b10c')) },
+  );
+  const left = first.doc.parts[0].id;
+  const right = first.doc.parts[1].id;
+  assert.ok(isSurfId(left));
+  assert.ok(isSurfId(right));
+  assert.notEqual(left, UUID);
+  assert.notEqual(right, uuid2);
+  const rewritten = readStudy(first.scripts[left]);
+  assert.equal(rewritten.fixtures[0].faces[0].part, left);
+  assert.equal(rewritten.loads[0].faces[0].part, right);
+  assert.deepEqual(rewritten.scope.ids, [left, right]);
+  assert.equal(rewritten.contacts[0].a.part, left);
+  assert.equal(rewritten.contacts[0].b.part, right);
+  assert.equal(rewritten.parts[0].id, left);
+  assert.equal(rewritten.parts[1].id, right);
+  assert.equal(rewritten.id, 's1');
+  assert.match(first.scripts[left], new RegExp(`keep ${UUID}`));
+  assert.equal(second.changed, false);
+  assert.equal(second.scripts[left], first.scripts[left]);
+});
+
+test('rewriteFeaStudyPartIds only touches known study fields', () => {
+  const next = mintSurfId({ now: NOW, rand: 'd00d' });
+  const map = new Map([[UUID, next]]);
+  const study = multiPartStudy(UUID, UUID);
+  const script = `const old = '${UUID}';\n${studyBlock(study)}`;
+  const out = rewriteFeaStudyPartIds(script, map);
+  assert.match(out, new RegExp(`const old = '${UUID}'`));
+  const rewritten = readStudy(out);
+  assert.equal(rewritten.fixtures[0].faces[0].part, next);
+  assert.equal(rewritten.contacts[0].a.part, next);
+  assert.equal(rewritten.scope.ids[0], next);
+  assert.equal(rewritten.parts[0].id, next);
+  assert.equal(rewriteFeaStudyPartIds(out, map), out);
+});
+
+test('read-only collapse does not mint and is stable across unsaved boots', () => {
+  const doc = {
+    source: 'local',
+    name: 'Assembly',
+    activeId: UUID,
+    parts: [{ id: UUID, name: 'Part', visible: true, order: 0 }],
+  };
+  const scripts = { [UUID]: 'return 1;\n' };
+  const first = collapseWorkingCopyIds(doc, scripts, {
+    readOnly: true,
+    now: NOW,
+    randFor: () => 'b10c',
+  });
+  assert.equal(first.changed, false);
+  assert.equal(first.doc.parts[0].id, UUID);
+  const later = collapseWorkingCopyIds(doc, scripts, {
+    readOnly: true,
+    now: new Date('2026-10-21T00:00:00.000Z'),
+    randFor: () => 'ffff',
+  });
+  assert.equal(later.changed, false);
+  assert.equal(later.doc.parts[0].id, UUID);
+  assert.equal(later.doc.parts[0].id, first.doc.parts[0].id);
 });

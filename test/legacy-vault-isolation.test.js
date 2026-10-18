@@ -165,3 +165,22 @@ test('App open/list/reload pass create:false so they never POST /user/repos', ()
   assert.equal(/\bensureGitVault\(\s*\)/.test(behind), false);
   assert.match(behind, /scripts\[part\.id\]\s*\?\?\s*reloaded\.scripts\[part\.id\]/);
 });
+
+test('reauth/read-only boot passes readOnly so collapse does not mint', () => {
+  const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const start = app.indexOf('const localIds = migrateLocalPartIds({');
+  assert.ok(start >= 0, 'missing boot migrateLocalPartIds');
+  const end = app.indexOf('const idsChanged = migrated.changed || localIds.changed || collapsed.changed', start);
+  assert.ok(end > start, 'missing boot idsChanged');
+  const boot = app.slice(start, end);
+  assert.match(boot, /const readOnly = plan\.readOnly === true \|\| bootReadOnlyRef\.current/);
+  assert.match(boot, /collapseWorkingCopyIds\(doc, scripts, \{\s*readOnly\s*\}\)/);
+});
+
+test('identity collapse does not import src/fea or surfcad-fea', () => {
+  const FEA_IMPORT = /from ['"][^'"]*(?:\/fea\/|surfcad-fea)/;
+  for (const file of ['src/utils/git/wcIdentity.js', 'src/utils/git/feaStudyIds.js']) {
+    const text = readFileSync(join(ROOT, file), 'utf8');
+    assert.equal(FEA_IMPORT.test(text), false, `${file} must read the study shape without importing src/fea`);
+  }
+});

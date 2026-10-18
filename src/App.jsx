@@ -1689,7 +1689,8 @@ const App = () => {
                 }
               }
             }
-            const collapsed = collapseWorkingCopyIds(doc, scripts);
+            const readOnly = plan.readOnly === true || bootReadOnlyRef.current;
+            const collapsed = collapseWorkingCopyIds(doc, scripts, { readOnly });
             if (collapsed.changed) {
               doc = collapsed.doc;
               scripts = collapsed.scripts;
@@ -1709,7 +1710,6 @@ const App = () => {
                 if (hit) draft = { ...draft, partId: hit.to };
               }
             }
-            const readOnly = plan.readOnly === true || bootReadOnlyRef.current;
             const idsChanged = migrated.changed || localIds.changed || collapsed.changed;
             if (!readOnly && !bootWouldClobber(loaded.doc, doc) && (idsChanged || Object.keys(flags).length)) {
               try {

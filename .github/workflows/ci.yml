@@ -106,6 +106,7 @@ jobs:
           node scripts/golden/smoke_git_delete_from_repo.mjs
           node scripts/golden/smoke_git_assembly_rename_reload.mjs
           node scripts/golden/smoke_git_g7_real_adapter.mjs
+          node scripts/golden/smoke_wc_identity_reload.mjs
 
   # Cheapest existing golden that proves the bundle actually boots: a real
   # headless Chrome, vite preview, #root painted, canvas + toolbar + Run.

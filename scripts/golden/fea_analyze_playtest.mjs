@@ -573,8 +573,6 @@ async function livePartIds(page) {
       if (/\bLeft\b/.test(label)) byName.left = id;
       if (/\bRight\b/.test(label)) byName.right = id;
     }
-    if (!byName.left) byName.left = rows[0]?.getAttribute('data-part-row') || '';
-    if (!byName.right) byName.right = rows[1]?.getAttribute('data-part-row') || '';
     return byName;
   });
 }
@@ -611,8 +609,10 @@ async function runCase(browser, vp) {
   await solidReady(page);
   await installProbe(page);
   const ids = await livePartIds(page);
-  const idA = ids.left || ID_A;
-  const idB = ids.right || ID_B;
+  check(`${vp.name} found Left and Right by name`, !!(ids.left && ids.right), JSON.stringify(ids));
+  const idA = ids.left;
+  const idB = ids.right;
+  if (!idA || !idB) return;
   await page.locator('[data-analyze-chip]').click();
   await page.locator('[data-fea-sheet="1"]').waitFor({ timeout: 8000 });
   await domClick(page, '[data-fea-target="fixture"]');
@@ -620,10 +620,8 @@ async function runCase(browser, vp) {
 
   let targets = await partTargets(page);
   const active = () => targets.find((part) => part.id === 'active' && part.faces?.length)
-    || targets.find((part) => part.id === 'active')
-    || targets.find((part) => part.id === idA);
-  const other = () => targets.find((part) => part.id === idB)
-    || targets.find((part) => part.id !== 'active' && part.id !== idA);
+    || targets.find((part) => part.id === 'active');
+  const other = () => targets.find((part) => part.id === idB);
   if (!(active()?.faces?.length && other()?.faces?.length)) {
     await page.locator('[aria-label="View snaps"]').click().catch(() => {});
     await page.locator('[aria-label="Snap to Isometric"]').click().catch(() => {});

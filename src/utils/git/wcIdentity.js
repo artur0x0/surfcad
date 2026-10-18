@@ -9,6 +9,7 @@
  * §4.1 of docs/git-save-model.md.
  */
 import { isSurfId, mintSurfId, readSurfId, rewriteColorMap, rewriteJointSurfIds, withSurfId } from './surfId.js';
+import { rewriteFeaStudyPartIds } from './feaStudyIds.js';
 
 function partPath(part) {
   if (typeof part?.path === 'string' && part.path.trim()) return part.path;
@@ -145,8 +146,9 @@ export function collapseWorkingCopyIds(doc, scripts = {}, {
   now,
   randFor,
   usedAssemblyIds = null,
+  readOnly = false,
 } = {}) {
-  if (!doc) {
+  if (!doc || readOnly) {
     return {
       doc,
       scripts: scripts || {},
@@ -248,9 +250,20 @@ export function collapseWorkingCopyIds(doc, scripts = {}, {
   if (groups !== doc.groups) nextDoc.groups = groups;
   if (colors !== doc.colors) nextDoc.colors = colors;
   if (joints !== doc.joints) nextDoc.joints = joints;
+  let studiesRewritten = false;
+  if (map.size) {
+    for (const [id, text] of Object.entries(nextScripts)) {
+      const next = rewriteFeaStudyPartIds(text, map);
+      if (next !== text) {
+        nextScripts[id] = next;
+        studiesRewritten = true;
+      }
+    }
+  }
   const changed = assemblyMinted
     || minted > 0
     || restamped
+    || studiesRewritten
     || pairs.length > 0
     || parts.some((part, i) => part !== (doc.parts || [])[i])
     || nextDoc.groups !== doc.groups
