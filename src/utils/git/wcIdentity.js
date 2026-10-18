@@ -129,6 +129,61 @@ async function putVerified({ save, load, id, script }) {
 }
 
 /**
+ * Test-only: persist throws after the named step so crash-and-boot
+ * coverage can inject a kill at 0 (snapshot), 1 (put), 2 (saveDoc),
+ * 3 (apply), or 4 (delete).
+ */
+export class PersistCrash extends Error {
+  constructor(step) {
+    super(`persist crash after step ${step}`);
+    this.name = 'PersistCrash';
+    this.step = step;
+  }
+}
+
+function crashAfterStep(crashAfter, step) {
+  if (crashAfter === step) throw new PersistCrash(step);
+}
+
+async function deleteStaleKeys({
+  staleIds,
+  pairs = [],
+  saved,
+  allSaved,
+  snapshot,
+  keep,
+  save,
+  load,
+  remove,
+} = {}) {
+  const toByFrom = new Map((pairs || []).map((pair) => [pair.from, pair.to]));
+  const snap = snapshot && typeof snapshot === 'object' ? snapshot : null;
+  for (const id of staleIds || []) {
+    if (!id || keep?.has(id) || saved.has(id)) continue;
+    const to = toByFrom.get(id);
+    if (to && !saved.has(to)) continue;
+    if (to == null && !allSaved) continue;
+    if (typeof load === 'function') {
+      const current = await readScript(load, id);
+      // Failed read-back is unknown: keep `from` rather than deleting it.
+      if (typeof current !== 'string') continue;
+      const haveSnap = !!(snap && Object.prototype.hasOwnProperty.call(snap, id));
+      if (haveSnap && current !== snap[id]) {
+        if (to && saved.has(to)) {
+          const moved = await putVerified({ save, load, id: to, script: current });
+          if (!moved) continue;
+        } else {
+          continue;
+        }
+      } else if (snap && !haveSnap) {
+        continue;
+      }
+    }
+    try { await remove(id); } catch { /* ignore */ }
+  }
+}
+
+/**
  * Persist new IndexedDB script keys, then drop the old ones. Never delete
  * first — a crash between delete and save would drop the script. Only delete
  * an old key after its script was loaded, the put under the new key
@@ -152,32 +207,19 @@ export async function replaceScriptKeys({
   for (const [id, script] of Object.entries(scripts)) {
     if (await putVerified({ save, load, id, script })) saved.add(id);
   }
-  const toByFrom = new Map((pairs || []).map((pair) => [pair.from, pair.to]));
   const keep = new Set(Object.keys(scripts));
   const allSaved = Object.keys(scripts).every((id) => saved.has(id));
-  for (const id of staleIds || []) {
-    if (!id || keep.has(id) || saved.has(id)) continue;
-    const to = toByFrom.get(id);
-    if (to && !saved.has(to)) continue;
-    if (to == null && !allSaved) continue;
-    if (typeof load === 'function') {
-      const current = await readScript(load, id);
-      // Failed read-back is unknown: keep `from` rather than deleting it.
-      if (typeof current !== 'string') continue;
-      // Only bytes that changed during this persist (vs the IDB snapshot)
-      // count as an edit. Vault open omits heldScripts, so a stale path-key
-      // record is not copied over the tip.
-      if (heldScripts && current !== heldScripts[id]) {
-        if (to && saved.has(to)) {
-          const moved = await putVerified({ save, load, id: to, script: current });
-          if (!moved) continue;
-        } else {
-          continue;
-        }
-      }
-    }
-    try { await remove(id); } catch { /* ignore */ }
-  }
+  await deleteStaleKeys({
+    staleIds,
+    pairs,
+    saved,
+    allSaved,
+    snapshot: heldScripts,
+    keep,
+    save,
+    load,
+    remove,
+  });
   return { saved };
 }
 
@@ -229,12 +271,21 @@ function sourcePartForRow(sourceDoc, part, fromId) {
 }
 
 /**
- * Write collapsed script keys, then the assembly document. A part whose
- * script was never loaded, or whose put failed, keeps its old id and key.
+ * One crash-safe re-key for boot, vault open, and reseed:
  *
- * `heldScripts` is the IndexedDB snapshot. Skip a put only when that
- * snapshot already holds the same bytes (boot). Omit it on vault open so
+ * 0. Snapshot IDB bytes of every `from` key.
+ * 1. Write and verify every `to` key. A failed write reverts that row to `from`.
+ * 2. Save the IDB document with the final ids. Nothing has been deleted yet.
+ * 3. Map live edits (still under old ids) onto `to`, write them, then switch
+ *    in-memory doc/scripts via `apply` (caller also switches the baseline).
+ * 4. Delete each `from` only if it still equals the snapshot. A real edit
+ *    moves to `to` first. A failed read keeps `from`.
+ *
+ * Skip a put only when the snapshot already holds the same bytes at that
+ * id (boot). Vault-open `to` keys are not in the from-key snapshot, so
  * every tip script is written (isSynced / assets).
+ *
+ * `crashAfter` is test-only (0–4).
  */
 export async function persistCollapsedWorkingCopy({
   collapsed,
@@ -245,14 +296,28 @@ export async function persistCollapsedWorkingCopy({
   load,
   remove,
   saveDoc,
+  live,
+  apply,
+  crashAfter,
 } = {}) {
   const pairs = collapsed?.pairs || [];
   const nextScripts = { ...(collapsed?.scripts || {}) };
+
+  // 0. Snapshot the current IDB bytes of every `from` key.
+  const snapshot = { ...(heldScripts || {}) };
+  for (const { from } of pairs) {
+    if (!from || typeof load !== 'function') continue;
+    const got = await readScript(load, from);
+    if (typeof got === 'string') snapshot[from] = got;
+  }
+  crashAfterStep(crashAfter, 0);
+
+  // 1. Write and verify every `to` key. Revert a row whose put failed.
   const putScripts = {};
   const already = new Set();
   for (const [id, script] of Object.entries(nextScripts)) {
     if (typeof script !== 'string') continue;
-    if (heldScripts && heldScripts[id] === script) {
+    if (snapshot[id] === script) {
       already.add(id);
       continue;
     }
@@ -262,16 +327,10 @@ export async function persistCollapsedWorkingCopy({
     if (!to || from === to) continue;
     if (typeof nextScripts[to] === 'string') putScripts[to] = nextScripts[to];
   }
-  const persisted = await replaceScriptKeys({
-    nextScripts: putScripts,
-    staleIds: pairs.map((pair) => pair.from),
-    pairs,
-    heldScripts,
-    save,
-    load,
-    remove,
-  });
-  const saved = new Set([...(persisted?.saved || []), ...already]);
+  const saved = new Set([...already]);
+  for (const [id, script] of Object.entries(putScripts)) {
+    if (await putVerified({ save, load, id, script })) saved.add(id);
+  }
   const failedFrom = new Set();
   for (const { from, to } of pairs) {
     if (!from || !to || from === to) continue;
@@ -300,10 +359,58 @@ export async function persistCollapsedWorkingCopy({
     }
     doc = { ...doc, parts, activeId };
   }
+  crashAfterStep(crashAfter, 1);
+
+  const foldLiveEditsOntoTo = async () => {
+    const liveScripts = typeof live === 'function' ? live() : live;
+    if (!liveScripts || typeof liveScripts !== 'object') return;
+    scripts = mergeLiveEdits(liveScripts, scripts, pairs, sourceScripts || {}, failedFrom);
+    for (const { from, to } of pairs) {
+      if (!from || !to || from === to || failedFrom.has(from)) continue;
+      const text = scripts[to];
+      if (typeof text !== 'string') continue;
+      if (text === nextScripts[to] && saved.has(to)) continue;
+      if (await putVerified({ save, load, id: to, script: text })) saved.add(to);
+    }
+  };
+
+  // Fold edits typed during puts onto `to` before the IDB doc switches ids,
+  // so a crash after saveDoc still has the latest bytes under the new keys.
+  await foldLiveEditsOntoTo();
+
+  // 2. Save the IDB doc with the final ids (including reverted rows).
   if (typeof saveDoc === 'function' && doc) {
     try { await saveDoc(doc); } catch { /* caller still has the in-memory doc */ }
   }
-  return { doc, scripts, failedFrom, saved };
+  crashAfterStep(crashAfter, 2);
+
+  // 3. Fold edits typed during saveDoc, then switch in-memory doc/scripts.
+  await foldLiveEditsOntoTo();
+  if (typeof apply === 'function') {
+    try {
+      await apply({ doc, scripts, failedFrom, saved });
+    } catch (err) {
+      if (err instanceof PersistCrash) throw err;
+    }
+  }
+  crashAfterStep(crashAfter, 3);
+
+  // 4. Delete each `from` only if it still equals the snapshot.
+  const keep = new Set(Object.keys(scripts));
+  await deleteStaleKeys({
+    staleIds: pairs.map((pair) => pair.from),
+    pairs,
+    saved,
+    allSaved: true,
+    snapshot,
+    keep,
+    save,
+    load,
+    remove,
+  });
+  crashAfterStep(crashAfter, 4);
+
+  return { doc, scripts, failedFrom, saved, snapshot };
 }
 
 function rewriteGroupIds(groups, map) {

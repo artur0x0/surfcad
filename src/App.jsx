@@ -283,7 +283,6 @@ import {
   migrateLocalPartIds,
   collapseWorkingCopyIds,
   persistCollapsedWorkingCopy,
-  mergeLiveEdits,
   isSurfId,
   partSurfId,
   reconcileSyncedFromTip,
@@ -1753,6 +1752,11 @@ const App = () => {
                       try { await deletePartScript(id); } catch { /* ignore */ }
                     },
                     saveDoc: saveAssemblyDocument,
+                    live: () => persistSource.scripts,
+                    apply: ({ doc: nextDoc, scripts: nextScripts }) => {
+                      doc = nextDoc;
+                      scripts = nextScripts;
+                    },
                   });
                   doc = persisted.doc;
                   scripts = persisted.scripts;
@@ -3638,12 +3642,12 @@ const App = () => {
       usedAssemblyIds: Object.values(store.assemblyIdIndexFor(vault.repo)),
     });
     if (collapsed.changed) {
-      if (collapsed.pairs.length) rekeyRuntime(collapsed.pairs);
       stalePairs.push(...collapsed.pairs);
     }
     const reconciled = reconcileSyncedFromTip(collapsed.doc, collapsed.scripts);
     const openedDocIn = reconciled.doc;
     const openedScriptsIn = collapsed.scripts;
+    let alignedMeshMeta = null;
     if (previous?.source === 'git') {
       const aligned = rekeyWorkingCopyToTip(previous, partScriptsRef.current, openedDocIn, {
         histories: partHistoriesRef.current,
@@ -3651,9 +3655,7 @@ const App = () => {
         cadPartId: cadPartIdRef.current,
       });
       if (aligned.pairs.length) {
-        rekeyRuntime(aligned.pairs);
-        partMeshMetaRef.current = aligned.meshMeta;
-        setPartMeshMeta(aligned.meshMeta);
+        alignedMeshMeta = aligned.meshMeta;
         stalePairs.push(...aligned.pairs);
       }
     }
@@ -3685,6 +3687,9 @@ const App = () => {
       openedScripts = next.scripts;
     }
     const meshRecords = partMeshRecordsFromBaseline(openedDoc, openedScripts, opened.baseline?.assets);
+    const fromIds = [...new Set(stalePairs.map((pair) => pair.from).filter(Boolean))];
+    const heldFrom = fromIds.length ? await loadPartScripts(fromIds) : {};
+    let saved = null;
     const persisted = await persistCollapsedWorkingCopy({
       collapsed: {
         doc: openedDoc,
@@ -3693,6 +3698,7 @@ const App = () => {
       },
       sourceDoc: persistSource.doc,
       sourceScripts: persistSource.scripts,
+      heldScripts: heldFrom,
       save: async (id, script) => {
         const part = (openedDoc.parts || []).find((row) => row.id === id);
         const mesh = meshRecords[id];
@@ -3707,6 +3713,28 @@ const App = () => {
       remove: async (id) => {
         try { await deletePartScript(id); } catch { /* ignore */ }
       },
+      saveDoc: saveAssemblyDocument,
+      apply: ({ doc: nextDoc, scripts: nextScripts }) => {
+        if (stalePairs.length) rekeyRuntime(stalePairs);
+        if (alignedMeshMeta) {
+          partMeshMetaRef.current = alignedMeshMeta;
+          setPartMeshMeta(alignedMeshMeta);
+        }
+        openedDoc = nextDoc;
+        openedScripts = nextScripts;
+        rememberScripts(nextScripts);
+        rememberSidecar(emptyWorkingSidecar());
+        saved = rememberAssembly(nextDoc, { persist: false });
+        rememberGitBaseline(captureBaseline({
+          assemblyPath: deletedOverlay.removed ? assemblyFilePath(saved.name) : opened.baseline.assemblyPath,
+          assemblyName: saved.name,
+          doc: saved,
+          scripts: nextScripts,
+          assets: opened.baseline?.assets,
+          branch,
+          headSha: opened.baseline.headSha,
+        }));
+      },
     });
     openedDoc = persisted.doc;
     openedScripts = persisted.scripts;
@@ -3717,7 +3745,7 @@ const App = () => {
     }
     rememberScripts(openedScripts);
     rememberSidecar(emptyWorkingSidecar());
-    let saved = rememberAssembly(openedDoc);
+    saved = rememberAssembly(openedDoc);
     noteRecentAssembly(saved.name);
     const baseline = captureBaseline({
       assemblyPath: deletedOverlay.removed ? assemblyFilePath(saved.name) : opened.baseline.assemblyPath,
@@ -5594,12 +5622,6 @@ const App = () => {
         let doc = aligned.doc;
         let scriptsNow = aligned.scripts;
         const persistPairs = [...aligned.pairs];
-        if (aligned.pairs.length) {
-          rekeyRuntime(aligned.pairs);
-          partMeshMetaRef.current = aligned.meshMeta;
-          setPartMeshMeta(aligned.meshMeta);
-          rememberScripts(scriptsNow);
-        }
         const migrated = migrateAssemblyRecords({ doc, scripts: scriptsNow });
         doc = migrated.doc;
         scriptsNow = migrated.scripts;
@@ -5612,10 +5634,6 @@ const App = () => {
         if (localIds.changed) {
           doc = localIds.doc;
           scriptsNow = localIds.scripts;
-          partHistoriesRef.current = localIds.histories || partHistoriesRef.current;
-          if (localIds.selection?.cadPartId && localIds.selection.cadPartId !== cadPartIdRef.current) {
-            cadPartIdRef.current = localIds.selection.cadPartId;
-          }
           persistPairs.push(...localIds.pairs);
         }
         const collapsed = collapseWorkingCopyIds(doc, scriptsNow, {
@@ -5624,28 +5642,41 @@ const App = () => {
         if (collapsed.changed) {
           doc = collapsed.doc;
           scriptsNow = collapsed.scripts;
-          if (collapsed.pairs.length) rekeyRuntime(collapsed.pairs);
           persistPairs.push(...collapsed.pairs);
         }
         await retireImplicitVaultWriteOps(store, vault.repo, branch);
         if (cancelled) return;
         const idsChanged = migrated.changed || localIds.changed || collapsed.changed || aligned.pairs.length;
-        if (idsChanged) {
-          rememberScripts(scriptsNow);
-          rememberAssembly(doc, { persist: false });
-        }
-        // Baseline and re-keyed scripts together so dirty never sees mixed ids.
-        // Load/reload still do not write git. IDB doc waits until script puts
-        // are verified (including any reverted rows).
-        if (!gitBaselineRef.current) {
+        const adoptReseedBaseline = async () => {
+          if (gitBaselineRef.current) return;
           if (!store.getLastSyncedSha(vault.repo, branch) && opened.baseline?.headSha) {
             await store.setLastSyncedSha(vault.repo, opened.baseline.headSha, branch);
           }
           rememberGitBaseline(opened.baseline);
           gitVaultRef.current = { ...vault, headSha: opened.baseline?.headSha };
           void checkGitRemoteBehind({ showToast: true, reason: 'reseed' });
-        }
-        if (cancelled) return;
+        };
+        const switchReseedMemory = async ({ doc: nextDoc, scripts: nextScripts }) => {
+          if (aligned.pairs.length) {
+            rekeyRuntime(aligned.pairs);
+            partMeshMetaRef.current = aligned.meshMeta;
+            setPartMeshMeta(aligned.meshMeta);
+          }
+          if (localIds.changed) {
+            partHistoriesRef.current = localIds.histories || partHistoriesRef.current;
+            if (localIds.selection?.cadPartId && localIds.selection.cadPartId !== cadPartIdRef.current) {
+              cadPartIdRef.current = localIds.selection.cadPartId;
+            }
+          }
+          if (collapsed.pairs.length) rekeyRuntime(collapsed.pairs);
+          doc = nextDoc;
+          scriptsNow = nextScripts;
+          rememberScripts(nextScripts);
+          rememberAssembly(nextDoc, { persist: false });
+          await adoptReseedBaseline();
+        };
+        // Load/reload still do not write git. Memory and baseline switch only
+        // after the IDB doc is saved with the final ids (step 3).
         if (idsChanged) {
           const persisted = await persistCollapsedWorkingCopy({
             collapsed: { doc, scripts: scriptsNow, pairs: persistPairs },
@@ -5658,18 +5689,15 @@ const App = () => {
               try { await deletePartScript(id); } catch { /* ignore */ }
             },
             saveDoc: saveAssemblyDocument,
+            live: () => partScriptsRef.current,
+            apply: async ({ doc: nextDoc, scripts: nextScripts }) => {
+              await switchReseedMemory({ doc: nextDoc, scripts: nextScripts });
+            },
           });
           doc = persisted.doc;
-          scriptsNow = mergeLiveEdits(
-            partScriptsRef.current,
-            persisted.scripts,
-            persistPairs,
-            persistSource.scripts,
-            persisted.failedFrom,
-          );
-          rememberScripts(scriptsNow);
-          rememberAssembly(doc);
+          scriptsNow = persisted.scripts;
         }
+        await adoptReseedBaseline();
         const reconciled = reconcileSyncedFromTip(doc, opened.scripts);
         if (reconciled.changed || migrated.changed || localIds.changed || collapsed.changed || aligned.pairs.length) {
           doc = reconciled.doc;
