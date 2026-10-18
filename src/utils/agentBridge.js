@@ -540,6 +540,7 @@ export function createSurfcadBridge(hostSource) {
     agentExportPart: (args) => hostFn('agentExportPart')?.(args),
     agentGitMoveToRepo: (args) => hostFn('agentGitMoveToRepo')?.(args),
     agentGitSave: (args) => hostFn('agentGitSave')?.(args),
+    agentGitUpgradeVault: (args) => hostFn('agentGitUpgradeVault')?.(args),
     agentGitAddToRepo: (args) => hostFn('agentGitAddToRepo')?.(args),
     agentGitBehindResolve: (args) => hostFn('agentGitBehindResolve')?.(args),
     agentGitBranchCreate: (args) => hostFn('agentGitBranchCreate')?.(args),

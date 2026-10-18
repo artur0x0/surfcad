@@ -7,8 +7,8 @@
  * missing or corrupt row is empty, not a throw.
  *
  * files keys are f(id) paths (assemblyIdPath / partIdPath / partMeshIdPath).
- * v1 blob paths arrive as blobSources from legacyVault — this module does
- * not parse v1 trees.
+ * v1 blob paths arrive as blobSources from the legacy reader — import that
+ * module directly so lastCommit never loads upgrade.js (cycle).
  */
 import { normalizeRepoPath } from '../assembly.js';
 import { assertGithubAdapter } from './githubAdapterInterface.js';
@@ -18,7 +18,7 @@ import {
   partIdPath,
   partMeshIdPath,
 } from './idPaths.js';
-import { lastCommitBlobSources } from './legacyVault/index.js';
+import { lastCommitBlobSources } from './legacyVault/reader.js';
 import { isV2SurfId } from './surfId.js';
 
 export const LAST_COMMIT_SCHEMA_VERSION = 1;

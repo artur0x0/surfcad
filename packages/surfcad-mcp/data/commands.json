@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 182,
+  "count": 183,
   "$defs": {
     "status": {
       "type": "object",
@@ -15256,7 +15256,7 @@
     },
     {
       "name": "git_save",
-      "description": "Save like the Parts Save button: give every path-less part a vault path, then commit those parts, dirty parts, and the .surf.json in one commit on the current branch. A real repo returns consent_pending at once until the user clicks Allow; retry after.",
+      "description": "Save like the Parts Save button: give every path-less part a vault path, then commit those parts, dirty parts, and the .surf.json in one commit on the current branch. When Upgrade vault is enabled, a legacy vault does not write v1: it returns upgrade_required and prompts Upgrade vault. With the flag off (production), Save on a legacy vault still writes v1 as on main. A real repo returns consent_pending at once until the user clicks Allow; retry after.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -15276,6 +15276,7 @@
       },
       "errors": [
         "bad_args",
+        "upgrade_required",
         "git_blocked",
         "consent_pending",
         "real_repo_blocked",
@@ -15291,6 +15292,45 @@
       ],
       "example": {
         "message": "Update bracket"
+      }
+    },
+    {
+      "name": "git_upgrade_vault",
+      "description": "Upgrade a legacy (v1 folder-layout) vault to v2 in one commit of remote tip bytes, then Save a dirty working copy as a second commit under the same confirmation. Requires confirm: true. Never runs on load. Off by default in this build (upgrade_unavailable) until v2 open/save land; tests and the Vite dev server can opt in. On v2 returns already_upgraded.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be true"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "confirm_required",
+        "upgrade_unavailable",
+        "conflict",
+        "git_blocked",
+        "consent_pending",
+        "real_repo_blocked",
+        "git_error",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": true,
+      "confirm": true,
+      "immediate": false,
+      "uiEntry": [
+        "data-git-upgrade-confirm",
+        "data-git-upgrade-vault"
+      ],
+      "example": {
+        "confirm": true
       }
     },
     {

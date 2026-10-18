@@ -210,3 +210,59 @@ export function parseSurfJsonV2(input) {
     activeId: raw.activeId == null ? null : loaded.activeId,
   };
 }
+
+/**
+ * Working-copy / upgrade doc → v2 `.surf.json` object. No `path`. Throws
+ * when the result would not validate.
+ */
+export function toSurfJsonV2(doc) {
+  const parts = Array.isArray(doc?.parts) ? doc.parts : [];
+  const out = {
+    format: SURF_JSON_FORMAT,
+    version: SURF_JSON_VERSION_V2,
+    id: doc?.id,
+    name: typeof doc?.name === 'string' ? doc.name.trim() : '',
+    activeId: doc?.activeId == null ? null : doc.activeId,
+    parts: parts.map((p, i) => {
+      const row = {
+        id: p.id,
+        name: p.name,
+        visible: p.visible !== false,
+        order: Number.isInteger(p.order) ? p.order : i,
+      };
+      if (p.position !== undefined) row.position = p.position;
+      if (p.placement !== undefined) {
+        row.placement = {
+          t: p.placement.t.slice(),
+          q: p.placement.q.slice(),
+        };
+      }
+      if (p.sheetMetal !== undefined) row.sheetMetal = p.sheetMetal;
+      if (p.copiedFrom !== undefined) row.copiedFrom = p.copiedFrom;
+      return row;
+    }),
+  };
+  if (Array.isArray(doc?.groups) && doc.groups.length) {
+    out.groups = doc.groups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      source: group.source == null ? null : group.source,
+      partIds: Array.isArray(group.partIds) ? group.partIds.slice() : [],
+    }));
+  }
+  if (doc?.colors && typeof doc.colors === 'object' && !Array.isArray(doc.colors)
+    && Object.keys(doc.colors).length) {
+    out.colors = doc.colors;
+  }
+  if (Array.isArray(doc?.joints) && doc.joints.length) {
+    out.joints = doc.joints;
+  }
+  const check = validateSurfJsonV2(out);
+  if (!check.ok) throw new Error(`Invalid .surf.json: ${check.errors.join('; ')}`);
+  return out;
+}
+
+/** Stable text for a v2 commit: 2-space indent, trailing newline. */
+export function stringifySurfJsonV2(doc) {
+  return `${JSON.stringify(toSurfJsonV2(doc), null, 2)}\n`;
+}

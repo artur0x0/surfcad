@@ -90,6 +90,7 @@ import { partGetTransformCommand, partSetTransformCommand } from './partTransfor
 import {
   gitMoveToRepoCommand,
   gitSaveCommand,
+  gitUpgradeVaultCommand,
   gitAddToRepoCommand,
   gitBehindResolveCommand,
   gitBranchCreateCommand,
@@ -331,6 +332,7 @@ export const V1_COMMANDS = Object.freeze([
   feaPickCommand,
   gitMoveToRepoCommand,
   gitSaveCommand,
+  gitUpgradeVaultCommand,
   gitAddToRepoCommand,
   gitBehindResolveCommand,
   gitBranchCreateCommand,

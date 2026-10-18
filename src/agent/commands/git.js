@@ -5,6 +5,7 @@ import {
   realRepoBlockedError,
 } from '../gitAgent.js';
 import { NO_ARGS_SCHEMA } from '../registry.js';
+import { upgradeVaultEnabled, UPGRADE_UNAVAILABLE } from '../../utils/git/upgradeVaultEnabled.js';
 
 /** How long the in-app consent modal stays up. Bridge calls never wait on it. */
 export const AGENT_GIT_CONSENT_TIMEOUT_MS = 120_000;
@@ -58,7 +59,7 @@ async function hostGit(ctx, name, args, { readOnly = false, commandName = '' } =
   if (out && typeof out === 'object' && out.error != null && typeof out.error === 'object') {
     return { error: out.error };
   }
-  const shaped = gitOpResult(out?.result ?? out);
+  const shaped = gitOpResult(out?.result ?? out, { commandName: commandName || name });
   if (shaped.error) return shaped;
   return shaped;
 }
@@ -99,6 +100,38 @@ export const gitSaveCommand = Object.freeze({
   async run(ctx, args) {
     const message = String(args?.message || '').trim();
     return hostGit(ctx, 'agentGitSave', { message }, { commandName: 'git_save' });
+  },
+});
+
+export const gitUpgradeVaultCommand = Object.freeze({
+  name: 'git_upgrade_vault',
+  uiEntry: ['data-git-upgrade-confirm', 'data-git-upgrade-vault'],
+  schema: Object.freeze({
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      confirm: { type: 'boolean', description: 'Must be true' },
+    },
+  }),
+  example: { confirm: true },
+  checkArgs(args) {
+    const gate = requireDestructiveConfirm(args, 'git_upgrade_vault');
+    if (gate) return gate;
+    return null;
+  },
+  async run(ctx, args) {
+    const gate = requireDestructiveConfirm(args, 'git_upgrade_vault');
+    if (gate) return { error: gate };
+    if (!upgradeVaultEnabled(ctx?.upgradeVaultEnv)) {
+      return {
+        error: {
+          code: UPGRADE_UNAVAILABLE.code,
+          message: UPGRADE_UNAVAILABLE.message,
+          hint: UPGRADE_UNAVAILABLE.hint,
+        },
+      };
+    }
+    return hostGit(ctx, 'agentGitUpgradeVault', { confirm: true }, { commandName: 'git_upgrade_vault' });
   },
 });
 

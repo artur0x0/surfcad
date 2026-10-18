@@ -12,8 +12,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const LEGACY_DIR = join(ROOT, 'src/utils/git/legacyVault');
 const BANNER = '// TEMPORARY: remove after Artur\'s vault is upgraded';
 const DEFINED = /export (?:async )?function (parseLegacyVaultPath|detectVaultLayout|openLegacyAssembly|isLegacyVaultTree|assemblyMetaCandidates|listLegacyAssemblies|listLegacyAssemblyNames|parseLegacySurfJson)\b/;
-const INTERNAL_IMPORT = /from ['"][^'"]*legacyVault\/(detect|reader)(?:\.js)?['"]/;
-const WRITE_API = /\b(commitFiles|createRepo)\b/;
+const INTERNAL_IMPORT = /from ['"][^'"]*legacyVault\/(detect|reader|upgrade|knownReadmeSeeds)(?:\.js)?['"]/;
+const COMMIT_FILES = /\bcommitFiles\s*\(/;
+const CREATE_REPO = /\bcreateRepo\s*\(/;
 const V1_PARSE_HELPERS = /\b(parseLegacyVaultPath|parseLegacySurfJson|assemblyMetaCandidates)\b/;
 const PARSE_SURF_JSON = /\bparseSurfJson\b/;
 const PARSE_SURF_JSON_ALLOWED = new Set([
@@ -71,18 +72,37 @@ test('callers import only the legacyVault entry point', () => {
   const offenders = [];
   for (const file of files) {
     if (inLegacy(file)) continue;
+    const path = rel(file);
     const text = readFileSync(file, 'utf8');
-    if (INTERNAL_IMPORT.test(text)) offenders.push(rel(file));
+    // lastCommit imports reader.js directly to break lastCommit → index → upgrade.
+    if (path === 'src/utils/git/lastCommit.js') {
+      if (/legacyVault\/(detect|upgrade|knownReadmeSeeds)/.test(text)) offenders.push(path);
+      continue;
+    }
+    if (INTERNAL_IMPORT.test(text)) offenders.push(path);
   }
   assert.deepEqual(offenders, []);
 });
 
-test('legacyVault never calls commitFiles or createRepo', () => {
+test('legacyVault createRepo is forbidden; commitFiles lives only in upgrade.js', () => {
   const files = walk(LEGACY_DIR, []);
   for (const file of files) {
+    const path = rel(file);
     const text = readFileSync(file, 'utf8');
-    assert.equal(WRITE_API.test(text), false, `${rel(file)} must not write git`);
+    assert.equal(CREATE_REPO.test(text), false, `${path} must not call createRepo`);
+    if (path === 'src/utils/git/legacyVault/upgrade.js') {
+      assert.equal(COMMIT_FILES.test(text), true, 'upgrade.js is the Upgrade writer');
+      continue;
+    }
+    assert.equal(COMMIT_FILES.test(text), false, `${path} must not call commitFiles`);
   }
+});
+
+test('git/index.js does not barrel-export upgrade', () => {
+  const text = readFileSync(join(ROOT, 'src/utils/git/index.js'), 'utf8');
+  assert.equal(/legacyVault/.test(text), false);
+  assert.equal(/\bplanUpgrade\b/.test(text), false);
+  assert.equal(/\bexecuteUpgrade\b/.test(text), false);
 });
 
 test('v1 path parse helpers are not used outside legacyVault/', () => {
@@ -97,13 +117,31 @@ test('v1 path parse helpers are not used outside legacyVault/', () => {
   assert.deepEqual(offenders, []);
 });
 
-test('App.jsx is the production call site for detect/open', () => {
+test('App.jsx is the production call site for detect/open/upgrade', () => {
   const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
   assert.match(app, /from '\.\/utils\/git\/legacyVault'/);
   assert.match(app, /detectVaultLayout/);
   assert.match(app, /openLegacyAssembly/);
+  assert.match(app, /executeUpgrade/);
   assert.match(app, /vaultLayout: doc\.vaultLayout/);
   assert.match(app, /openAssembly: openNamedVaultAssembly/);
+  const upgrade = (() => {
+    const start = app.indexOf('const handleUpgradeVault');
+    assert.ok(start >= 0, 'missing handleUpgradeVault');
+    const end = app.indexOf('const handleUpgradeConflict', start);
+    assert.ok(end > start, 'missing handleUpgradeConflict');
+    return app.slice(start, end);
+  })();
+  assert.match(upgrade, /ensureGitVault\(\{\s*create:\s*false\s*\}\)/);
+  assert.equal(/\bensureGitVault\(\s*\)/.test(upgrade), false);
+  assert.equal(/flushGitOps|enqueueGit/.test(upgrade), false);
+  const conflict = (() => {
+    const start = app.indexOf('const handleUpgradeConflict');
+    const end = app.indexOf('const absorbOverwriteFiles', start);
+    assert.ok(end > start, 'missing absorbOverwriteFiles after handleUpgradeConflict');
+    return app.slice(start, end);
+  })();
+  assert.match(conflict, /ensureGitVault\(\{\s*create:\s*false\s*\}\)/);
 });
 
 test('parseSurfJson is not used to open a vault outside legacyVault/', () => {

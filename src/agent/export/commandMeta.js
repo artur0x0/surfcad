@@ -757,10 +757,18 @@ export const COMMAND_META = {
     confirm: true,
   },
   git_save: {
-    description: 'Save like the Parts Save button: give every path-less part a vault path, then commit those parts, dirty parts, and the .surf.json in one commit on the current branch. A real repo returns consent_pending at once until the user clicks Allow; retry after.',
+    description: 'Save like the Parts Save button: give every path-less part a vault path, then commit those parts, dirty parts, and the .surf.json in one commit on the current branch. When Upgrade vault is enabled, a legacy vault does not write v1: it returns upgrade_required and prompts Upgrade vault. With the flag off (production), Save on a legacy vault still writes v1 as on main. A real repo returns consent_pending at once until the user clicks Allow; retry after.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
+    errors: ['bad_args', 'upgrade_required', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
     mutates: true,
+  },
+  git_upgrade_vault: {
+    description: 'Upgrade a legacy (v1 folder-layout) vault to v2 in one commit of remote tip bytes, then Save a dirty working copy as a second commit under the same confirmation. Requires confirm: true. Never runs on load. Off by default in this build (upgrade_unavailable) until v2 open/save land; tests and the Vite dev server can opt in. On v2 returns already_upgraded.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['confirm_required', 'upgrade_unavailable', 'conflict', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'git_error', 'internal'],
+    mutates: true,
+    destructive: true,
+    confirm: true,
   },
   git_add_to_repo: {
     description: 'Add a part row into the vault tree and commit. Other path-less parts are pathed and committed with it so the .surf.json stays valid.',

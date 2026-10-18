@@ -34,4 +34,5 @@ export const COVERAGE_ALLOWLIST = Object.freeze([
   Object.freeze({ id: 'data-privacy-consent-required-only', reason: 'First-visit privacy consent popup (not agent scope).' }),
   Object.freeze({ id: 'data-assembly-save-menu', reason: 'Desktop assembly Save split-button menu (rename / branches).' }),
   Object.freeze({ id: 'data-assembly-rename-menu', reason: 'Rename assembly from Parts Save menu.' }),
+  Object.freeze({ id: 'data-git-upgrade-dismiss', reason: 'PR 4 Upgrade vault Dismiss writes nothing (not an agent command).' }),
 ]);

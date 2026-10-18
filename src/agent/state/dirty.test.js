@@ -44,7 +44,8 @@ test('buildDirtyState sets unsaved from editedSinceLoad', () => {
   });
 });
 
-test('buildDirtyState does not set upgradeRequired (PR 4/8)', () => {
-  assert.equal(Object.hasOwn(buildDirtyState({}), 'upgradeRequired'), false);
-  assert.equal(Object.hasOwn(buildDirtyState({ upgradeRequired: true }), 'upgradeRequired'), false);
+test('buildDirtyState omits upgradeRequired unless it is true', () => {
+  assert.equal('upgradeRequired' in buildDirtyState({}), false);
+  assert.equal('upgradeRequired' in buildDirtyState({ upgradeRequired: false }), false);
+  assert.equal(buildDirtyState({ upgradeRequired: true }).upgradeRequired, true);
 });
