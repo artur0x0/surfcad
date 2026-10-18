@@ -37,6 +37,15 @@ test('withSurfName replaces a blank @name line instead of duplicating it', () =>
   assert.equal(readSurfName(next), 'Bracket');
 });
 
+test('withSurfId replaces an invalid @surf-id line instead of stacking a second header', () => {
+  const next = withSurfId(`// @surf-id bogus\n${BODY}`, ID);
+  assert.equal(next, `// @surf-id ${ID}\n${BODY}`);
+  assert.equal((next.match(/\/\/ @surf-id/g) || []).length, 1);
+
+  const crlf = withSurfId('// @surf-id not-an-id\r\nreturn 1;\r\n', ID);
+  assert.equal(crlf, `// @surf-id ${ID}\r\nreturn 1;\r\n`);
+});
+
 test('withSurfName does not insert above an invalid @surf-id line', () => {
   const bogus = `// @surf-id bogus\n${BODY}`;
   const next = withSurfName(bogus, 'Bracket');

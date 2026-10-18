@@ -127,13 +127,16 @@ function collectIdClaimants(parsedMeta, paths, files) {
   return byId;
 }
 
+function isSharedPartPath(path) {
+  return parseLegacyVaultPath(path)?.kind === 'shared-part';
+}
+
 function preferOwnerPaths(paths) {
-  return [...paths].sort((a, b) => {
-    const aShared = parseLegacyVaultPath(a)?.kind === 'shared-part' ? 0 : 1;
-    const bShared = parseLegacyVaultPath(b)?.kind === 'shared-part' ? 0 : 1;
-    if (aShared !== bShared) return aShared - bShared;
-    return a.localeCompare(b);
-  });
+  return [...paths].sort((a, b) => a.localeCompare(b));
+}
+
+function firstPreferred(paths) {
+  return preferOwnerPaths(paths)[0] || null;
 }
 
 function chooseOwnerPath(claim) {
@@ -141,27 +144,32 @@ function chooseOwnerPath(claim) {
   const headerPaths = [...(claim?.headerPaths || [])].filter((path) => !blocked.has(path));
   const rowClaims = (claim?.rowClaims || []).filter((row) => !blocked.has(row.path));
   const rowPaths = new Set(rowClaims.map((row) => row.path));
-  // (a) header + row claimant. Shared-part wins ties so parts/Pin.js
-  // beats an assembly-local copy even when the copy is listed first.
-  const headerAndRow = preferOwnerPaths(headerPaths.filter((path) => rowPaths.has(path)));
-  if (headerAndRow[0]) return { path: headerAndRow[0], rank: 0 };
-  // (b) header claimant
-  const headerOnly = preferOwnerPaths(headerPaths);
-  if (headerOnly[0]) return { path: headerOnly[0], rank: 1 };
-  // (c) first row claimant by assembly folder + row index
+  const sharedHeaders = headerPaths.filter(isSharedPartPath);
+  const localHeaders = headerPaths.filter((path) => !isSharedPartPath(path));
+  // Shared parts/ outranks a local copy before the header+row vs header-only
+  // tiebreak: shared header+row, shared header-only, local header+row,
+  // local header-only, then row claimants.
+  const sharedHeaderRow = firstPreferred(sharedHeaders.filter((path) => rowPaths.has(path)));
+  if (sharedHeaderRow) return { path: sharedHeaderRow, rank: 0 };
+  const sharedHeaderOnly = firstPreferred(sharedHeaders);
+  if (sharedHeaderOnly) return { path: sharedHeaderOnly, rank: 1 };
+  const localHeaderRow = firstPreferred(localHeaders.filter((path) => rowPaths.has(path)));
+  if (localHeaderRow) return { path: localHeaderRow, rank: 2 };
+  const localHeaderOnly = firstPreferred(localHeaders);
+  if (localHeaderOnly) return { path: localHeaderOnly, rank: 3 };
   const rows = rowClaims.slice().sort((a, b) => {
     const folderCmp = String(a.folder || '').localeCompare(String(b.folder || ''));
     if (folderCmp) return folderCmp;
     if (a.index !== b.index) return a.index - b.index;
     return String(a.path).localeCompare(String(b.path));
   });
-  if (rows[0]) return { path: rows[0].path, rank: 2 };
+  if (rows[0]) return { path: rows[0].path, rank: 4 };
   return null;
 }
 
 /**
  * One owner path per id, decided before any row mints. A path that wins
- * two ids keeps the better rank (a, then b, then c).
+ * two ids keeps the better (lower) rank.
  */
 function resolvePathOwners(claimants) {
   const ownerPathById = new Map();
@@ -436,7 +444,8 @@ function assertCopiedBytes(plan, files) {
  * Pure planner. `files` is path → UTF-8 string or Uint8Array from the tip.
  * Ids are resolved per legacy file path in one pass before any mint:
  * claimants are row ids and `// @surf-id` headers; the owner path is
- * (a) header+row, else (b) header, else (c) first row by folder+index.
+ * shared header+row, else shared header-only, else local header+row,
+ * else local header-only, else first row by folder+index.
  * Rows pointing at the owner path keep the id (shared file = one part).
  * Non-owner paths mint with `copiedFrom` set to the owner id.
  * Duplicate ids in one file become a copy + `copiedFrom`.

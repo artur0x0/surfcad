@@ -729,6 +729,49 @@ test('Scenario L variant: copy listed first with Pin id still mints (ownership B
   }
 });
 
+test('shared Pin header outranks a local copy row that also claims Pin id', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const raw = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Box',
+    activeId: PIN_PATH,
+    parts: [
+      { id: SCENARIO_L_PIN_ID, path: PIN_COPY_SCENARIO_PATH, name: 'Pin copy', visible: true, order: 0 },
+      { path: PIN_PATH, name: 'Pin', visible: true, order: 1 },
+    ],
+  };
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed shared header-only Pin vs local copy row',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Box/.surf.json', `${JSON.stringify(raw, null, 2)}\n`),
+      fileWrite(PIN_PATH, withSurfId('return "pin";\n', SCENARIO_L_PIN_ID)),
+      fileWrite(PIN_COPY_SCENARIO_PATH, withSurfId('return "pin-copy";\n', SCENARIO_L_PIN_ID)),
+    ],
+  });
+  const store = await storeFor(vault.repo, { Box: BOX_ID });
+  const result = await executeUpgrade(upgradeOpts(gh, vault.repo, { store }));
+  assert.equal(result.status, 'upgraded');
+  const box = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(BOX_ID)));
+  assert.equal(validateSurfJsonV2(box).ok, true, validateSurfJsonV2(box).errors?.join('; '));
+  const pin = box.parts.find((p) => p.name === 'Pin');
+  const copy = box.parts.find((p) => p.name === 'Pin copy');
+  assert.equal(pin.id, SCENARIO_L_PIN_ID);
+  assert.equal(copy.id, SCENARIO_L_COPY_ID);
+  assert.equal(copy.copiedFrom, SCENARIO_L_PIN_ID);
+  assert.equal(pin.copiedFrom, undefined);
+  const pinText = await readText(gh, vault.repo, partIdPath(SCENARIO_L_PIN_ID));
+  const copyText = await readText(gh, vault.repo, partIdPath(SCENARIO_L_COPY_ID));
+  assert.equal(readSurfId(pinText), SCENARIO_L_PIN_ID);
+  assert.match(pinText, /return "pin"/);
+  assert.equal(pinText.includes('pin-copy'), false);
+  assert.equal(readSurfId(copyText), SCENARIO_L_COPY_ID);
+  assert.match(copyText, /pin-copy/);
+});
+
 test('planUpgrade carries working-copy copiedFrom so commit 2 does not churn', () => {
   const pinScript = withSurfId('return "pin";\n', PIN_ID);
   const copyScript = withSurfId('return "pin-copy";\n', COPY_ID);

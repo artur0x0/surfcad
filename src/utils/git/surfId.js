@@ -171,6 +171,10 @@ export function withSurfId(script, id) {
   const split = splitSurfHeader(script);
   if (split) return `// @surf-id ${id}${split.trailing}${split.ending}${split.body}`;
   const text = String(script ?? '');
+  if (text.startsWith('// @surf-id ')) {
+    const leading = splitLeadingSurfComment(text);
+    return `// @surf-id ${id}${leading.surf?.ending ?? ''}${leading.rest}`;
+  }
   const sep = text.length && !text.startsWith('\n') && !text.startsWith('\r') ? '\n' : '';
   return `// @surf-id ${id}${sep}${text}`;
 }
