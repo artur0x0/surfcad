@@ -5,6 +5,8 @@ import { createStepRunner } from '../lib/stepRunner.mjs';
 
 const USER_ID = 'user-playtest-git-h12';
 const VAULT = 'playtest-git-h12-vault';
+/** Surf-id so leftover git_move_to_repo keeps the row id (not a vault path). */
+const SEED_ID = '2026-10-18-20-00-00-0001-a11e';
 
 async function readGitBadge(page) {
   return page.evaluate(() => {
@@ -71,17 +73,19 @@ export function seedDoc() {
     format: 'surfcad.assembly',
     v: 1,
     name: 'playtest-git-seed',
-    activeId: 'local:seed',
+    activeId: SEED_ID,
     source: 'local',
-    parts: [{ id: 'local:seed', name: 'Seed', visible: true, order: 0 }],
+    parts: [{ id: SEED_ID, name: 'Seed', visible: true, order: 0 }],
     joints: [],
   };
 }
 
 export function seedParts() {
   return [{
-    id: 'local:seed',
-    script: `// --- cube begin ---
+    id: SEED_ID,
+    script: `// @surf-id ${SEED_ID}
+// @name Seed
+// --- cube begin ---
 let part = Manifold.cube([20, 20, 10], true);
 // --- cube end ---
 return part;
@@ -109,15 +113,17 @@ export async function run(ctx) {
   });
 
   await runner.runStep('edit script for save', async () => {
+    const listed = await agentCall(page, 'parts', {});
+    const partId = listed.result?.activeId;
     const cur = await agentCall(page, 'get_script', {});
     const next = `${cur.result?.source || ''}\n// agent edit\n`;
-    const set = await agentCall(page, 'set_script', { source: next });
+    const set = await agentCall(page, 'set_script', { part_id: partId, source: next });
     const run = await agentCall(page, 'run', {});
     return {
       ok: set.ok === true && run.ok === true,
       call: 'set_script',
-      args: {},
-      envelope: run,
+      args: { part_id: partId },
+      envelope: set.ok === true ? run : set,
     };
   });
 
@@ -203,9 +209,11 @@ export async function run(ctx) {
   });
 
   await runner.runStep('real edit dirties after reload', async () => {
+    const listed = await agentCall(page, 'parts', {});
+    const partId = listed.result?.activeId;
     const cur = await agentCall(page, 'get_script', {});
     const next = `${cur.result?.source || ''}// dirty-check\n`;
-    const set = await agentCall(page, 'set_script', { source: next });
+    const set = await agentCall(page, 'set_script', { part_id: partId, source: next });
     const dirty = await agentCall(page, 'dirty', {});
     const badge = await readGitBadge(page);
     const ok = set.ok === true
@@ -269,8 +277,11 @@ export async function run(ctx) {
   });
 
   await runner.runStep('git_branch_create dirty stays on current branch', async () => {
+    const partsListed = await agentCall(page, 'parts', {});
+    const partId = partsListed.result?.activeId;
     const cur = await agentCall(page, 'get_script', {});
     const set = await agentCall(page, 'set_script', {
+      part_id: partId,
       source: `${cur.result?.source || ''}\n// unsaved dirty create\n`,
     });
     await agentCall(page, 'run', {});
