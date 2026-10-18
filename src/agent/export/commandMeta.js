@@ -26,7 +26,7 @@ export const COMMAND_META = {
   },
   set_script: {
     description:
-      `Write the editor of part_id, run the script, and record one undo step when the text changes. part_id is required and must be the active part (part_mismatch otherwise). A vault path is unknown_part. Preserves or re-injects the active part \`// @surf-id\` header when the part has a surf id.${RESERVED_HELPERS}`,
+      `Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects \`// @surf-id\`.${RESERVED_HELPERS}`,
     result: MUTATE_RESULT_SCHEMA,
     errors: ['bad_args', 'unknown_part', 'part_mismatch', 'no_assembly', 'internal'],
     mutates: true,
@@ -151,7 +151,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   list_commands: {
-    description: 'List every bridge command with args schema and example.',
+    description: 'List every bridge command with args schema and example. Same names as GET /tools and the MCP bridge tools.',
     result: {
       type: 'object',
       additionalProperties: false,
@@ -175,7 +175,7 @@ export const COMMAND_META = {
   },
   agent_prompt: {
     description:
-      'Send a prompt from the floating in-viewer agent field, or stop / dismiss / attach a viewer screenshot. Same controls as the paired-agent prompt card.',
+      'Send a prompt from the floating in-viewer field, or stop, dismiss, or attach a viewer screenshot. Does not edit a part and does not write git.',
     result: {
       type: 'object',
       additionalProperties: false,
@@ -232,7 +232,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   parts: {
-    description: `Open assembly: assemblyId, assemblyName, vaultLayout, activeId, and parts [{ id, name, visible, missing?, group? }]. No path field. featureCount and bodyCount are on status, not here.${FEATURE_COUNT_NOTE}`,
+    description: `Open assembly: assemblyId, assemblyName, vaultLayout, activeId, and parts [{ id, name, visible, missing?, group? }]. Part and assembly ids are opaque surf ids, never a path or display name. No path field. featureCount and bodyCount are on status, not here.${FEATURE_COUNT_NOTE}`,
     result: { type: 'object', additionalProperties: true },
     errors: ['internal'],
     mutates: false,
@@ -257,7 +257,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   list_faces: {
-    description: 'Every pickable face on the active or named part mesh (one row per face a viewport click selects, all bodies): id (f0, f1, …), type (planar, cylindrical, curved), center, normal, axis and radius for cylinders, area, and key. The id is the patch index on this mesh and is only valid until the next remesh; a rerun of the same script keeps every id. Pass the key with the id to joint_pick so a stale id cannot silently pick another face.',
+    description: 'Every pickable face on the active part, or on part_id when set (an opaque surf id, never a path or display name). One row per face a viewport click selects, all bodies: id (f0, f1, …), type (planar, cylindrical, curved), center, normal, axis and radius for cylinders, area, and key. The id is the patch index on this mesh and is only valid until the next remesh; a rerun of the same script keeps every id. Pass the key with the id to joint_pick so a stale id cannot silently pick another face.',
     result: { type: 'object', additionalProperties: true },
     errors: ['no_mesh', 'unknown_part', 'internal'],
     mutates: false,
@@ -275,7 +275,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   invoke_helper: {
-    description: 'Insert a helper palette item through the same compose path as the UI.',
+    description: 'Prefer this or insert_* over freehand set_script. Insert a helper palette item on the active part, the same compose path as the UI. Working copy only; git_save commits.',
     result: {
       type: 'object',
       additionalProperties: true,
@@ -362,7 +362,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   set_active_part: {
-    description: 'Switch the editor and mesh to a part row.',
+    description: 'Switch the editor and mesh to a part row. part_id is an opaque surf id from parts, never a path or name.',
     result: { type: 'object', additionalProperties: false, properties: { partId: { type: 'string' } } },
     errors: ['bad_args', 'unknown_part', 'internal'],
     mutates: false,
@@ -579,26 +579,26 @@ export const COMMAND_META = {
   },
   create_part: {
     description:
-      'Add a part and make it the active part before returning. The result partId is the new part, not the previously active one. When script is set, that script runs before the call returns and the result also includes the same run outcome as run (ok, errors, failures, status). A failed script still leaves the part in place. Without script, the call only creates and activates the part. Agent calls default to the assembly origin (identity placement); pass position [x,y,z] mm to place explicitly. The UI still staggers new parts +40 mm on X so bodies do not overlap. No git write. The part id is a surf-id.',
+      'Add a part and make it the active part before returning. The result partId is a new opaque surf id, not the previously active part. When script is set, that script runs before the call returns (ok, errors, failures, status); a failed script still leaves the part. Agent calls default to the assembly origin; pass position [x,y,z] mm to place it. Working copy only: nothing reaches git without git_save.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'no_assembly', 'internal'],
     mutates: true,
   },
   rename_part: {
-    description: 'Rename a part display name on the working copy. Response { partId, name, moved: false }. No git write; the committed header updates on the next Save. A vault path is unknown_part.',
+    description: 'Rename a part display name on the working copy. part_id is an opaque surf id; a path or name is unknown_part. Response { partId, name, moved: false }. No git write; the committed header updates on the next git_save.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'unknown_part', 'no_assembly', 'internal'],
     mutates: true,
   },
   rename_assembly: {
-    description: 'Rename the open assembly display name on the working copy. assembly_id required. Names are not unique. No git write.',
+    description: 'Rename the open assembly display name. assembly_id is an opaque surf id, not the current name. Names may collide. Working copy only; moved is false. git_save writes the same assemblies/<id>.surf.json.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'unknown_assembly', 'no_assembly', 'internal'],
     mutates: true,
   },
   part_get_transform: {
     description:
-      'Read a part rigid placement by part_id: position [x,y,z] mm and rotation as intrinsic XYZ Euler degrees (three.js Euler XYZ order). A vault path is unknown_part.',
+      'Read rigid placement by opaque part_id: position [x,y,z] mm and intrinsic XYZ Euler degrees. A vault path or display name is unknown_part. Does not fall back to the active part.',
     result: {
       type: 'object',
       additionalProperties: false,
@@ -615,7 +615,7 @@ export const COMMAND_META = {
   },
   part_set_transform: {
     description:
-      'Set a part rigid placement by part_id (translation mm, intrinsic XYZ Euler degrees). Records one assembly undo step like a UI move. A vault path is unknown_part.',
+      'Set rigid placement by opaque part_id (translation mm, intrinsic XYZ Euler degrees). One assembly undo step. A vault path or display name is unknown_part. Working copy only.',
     result: {
       type: 'object',
       additionalProperties: false,
@@ -631,31 +631,31 @@ export const COMMAND_META = {
     mutates: true,
   },
   open_assembly: {
-    description: 'Open a vault assembly by assembly_id only (git mode). A name or path is unknown_assembly. Does not write git.',
+    description: 'Open a vault assembly by opaque assembly_id only. A name or path is unknown_assembly. Does not write git.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'unknown_assembly', 'git_only', 'git_blocked', 'internal'],
     mutates: true,
   },
   open_part: {
-    description: 'Open a vault part by part_id and/or assembly_id into the current assembly (reference). No path argument. Does not write git.',
+    description: 'Open a vault part by opaque part_id and/or assembly_id into the current assembly (reference). No path or name lookup. Does not write git.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'unknown_part', 'unknown_assembly', 'git_only', 'internal'],
     mutates: true,
   },
   insert_part: {
-    description: 'Insert-as-reference by part_id or assembly_id (all parts, same ids). copy:true mints a new part id and sets copiedFrom. No path. Local name/script still creates a new part. Does not write git.',
+    description: 'Insert-as-reference by opaque part_id, or every part of assembly_id (same ids). copy:true mints a new part id and sets copiedFrom. A path or name is unknown_part / unknown_assembly. Does not write git.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'unknown_part', 'unknown_assembly', 'git_only', 'internal'],
     mutates: true,
   },
   list_assemblies: {
-    description: 'List vault assemblies as [{ id, name }]. No path field.',
+    description: 'List vault assemblies as [{ id, name }]. id is an opaque surf id; name is a label, not a key. No path field. Git-only.',
     result: { type: 'object', additionalProperties: true },
     errors: ['git_only', 'git_blocked', 'internal'],
     mutates: false,
   },
   delete_part: {
-    description: 'Drop a part from the working copy. scope assembly removes the row; scope repo also plans a file delete on the next Save and requires confirm: true. Neither scope commits. part_still_referenced if another assembly lists the id.',
+    description: 'Drop a part by opaque part_id (a path or name is unknown_part). scope assembly removes the row. scope repo also plans a file delete on the next Save and requires confirm: true. Neither scope commits. part_still_referenced if another assembly lists the id.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'unknown_part', 'confirm_required', 'part_still_referenced', 'no_assembly', 'internal'],
     mutates: true,
@@ -663,7 +663,7 @@ export const COMMAND_META = {
     confirm: true,
   },
   delete_assembly: {
-    description: 'Delete an assembly from the working copy. Requires confirm: true. delete_parts plans unreferenced part-file deletes on the next Save. No git write in this command.',
+    description: 'Delete the open assembly by opaque assembly_id. Requires confirm: true. delete_parts plans unreferenced part-file deletes on the next Save. No git write until git_save.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'unknown_assembly', 'confirm_required', 'upgrade_required', 'no_assembly', 'internal'],
     mutates: true,
@@ -799,7 +799,7 @@ export const COMMAND_META = {
     confirm: true,
   },
   git_save: {
-    description: 'Save like the Parts Save button: the same planSave / writeVaultCommit path. Message required. Results omit path fields. On a legacy vault with Upgrade enabled, returns upgrade_required (no v1 write). A queued/offline plan returns status pending with code pending_save. conflict and repo-moved are typed errors. A real repo returns consent_pending at once until the user clicks Allow; retry after.',
+    description: 'The only vault content write, same planSave path as the Save button. message required. Working-copy tools do not commit. consent_pending: Allow dialog is up; retry the same call after the user clicks Allow. pending_save: an offline plan is waiting; Save again when online. upgrade_required: legacy vault; call git_upgrade_vault { confirm: true } after the user agrees. conflict or repo-moved: a remote edit overlaps this Save; git_force_overwrite, or git_behind_resolve { action: "reload" | "branch", confirm: true }, or stop. Results omit path fields.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'upgrade_required', 'conflict', 'repo-moved', 'pending_save', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
     mutates: true,
@@ -933,7 +933,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   export_part: {
-    description: 'Export the active (or named) part mesh as STL, 3MF, or STEP bytes, or trigger a browser download.',
+    description: 'Export the active part mesh, or part_id when set (an opaque surf id, never a path or display name), as STL, 3MF, or STEP bytes, or trigger a browser download.',
     result: {
       type: 'object',
       additionalProperties: true,
@@ -967,7 +967,7 @@ export const COMMAND_META = {
 };
 
 const INSERT_HELPER_META = {
-  description: 'Insert this helper through composeHelperInsert and mutate.',
+  description: 'Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.',
   result: {
     type: 'object',
     additionalProperties: true,

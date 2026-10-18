@@ -2,9 +2,6 @@ import { AGENT_PROMPT_MAX_CHARS } from '../agentPromptStub.js';
 
 export const agentPromptCommand = Object.freeze({
   name: 'agent_prompt',
-  // Page / window.surfcad only in this PR. The MCP catalog copy is owned by
-  // the MCP Lead; they will add this row in their transport PR.
-  catalog: false,
   uiEntry: [
     'data-agent-prompt-send',
     'data-agent-prompt-stop',

@@ -536,7 +536,11 @@ export function createSurfcadBridge(hostSource) {
     agentSetPartTransform: (args) => hostFn('agentSetPartTransform')?.(args),
     agentOpenAssembly: (args) => hostFn('agentOpenAssembly')?.(args),
     agentOpenPart: (args) => hostFn('agentOpenPart')?.(args),
-    agentInsertAssemblyParts: (args) => hostFn('agentInsertAssemblyParts')?.(args),
+    agentInsertPart: (args) => hostFn('agentInsertPart')?.(args),
+    agentListAssemblies: (args) => hostFn('agentListAssemblies')?.(args),
+    agentDeletePart: (args) => hostFn('agentDeletePart')?.(args),
+    agentDeleteAssembly: (args) => hostFn('agentDeleteAssembly')?.(args),
+    agentRenameAssembly: (args) => hostFn('agentRenameAssembly')?.(args),
     agentExportPart: (args) => hostFn('agentExportPart')?.(args),
     agentGitMoveToRepo: (args) => hostFn('agentGitMoveToRepo')?.(args),
     agentGitSave: (args) => hostFn('agentGitSave')?.(args),
@@ -742,8 +746,8 @@ export function createSurfcadBridge(hostSource) {
     getScript() {
       return unwrap(call('get_script')).then((result) => result.source);
     },
-    setScript(source) {
-      return unwrap(call('set_script', { source }));
+    setScript(source, partId) {
+      return unwrap(call('set_script', { source, part_id: partId }));
     },
     run() {
       return unwrap(call('run'));

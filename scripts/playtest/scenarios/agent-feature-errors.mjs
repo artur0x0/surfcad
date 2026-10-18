@@ -130,7 +130,7 @@ export async function run(ctx) {
   const runner = createStepRunner();
 
   await runner.runStep('failing feature matches the popup', async () => {
-    const ran = await agentCall(page, 'set_script', { source: HARD_FAIL });
+    const ran = await agentCall(page, 'set_script', { part_id: 'local:part1', source: HARD_FAIL });
     const errs = await agentCall(page, 'errors', {});
     const status = await agentCall(page, 'status', {});
     const toasts = await agentCall(page, 'toasts', {});
@@ -172,7 +172,7 @@ export async function run(ctx) {
   });
 
   await runner.runStep('successful run clears the feature error', async () => {
-    const ran = await agentCall(page, 'set_script', { source: GOOD });
+    const ran = await agentCall(page, 'set_script', { part_id: 'local:part1', source: GOOD });
     const errs = await agentCall(page, 'errors', {});
     const status = await agentCall(page, 'status', {});
     const popupGone = await page.locator('[data-execution-error]').count() === 0;
@@ -207,7 +207,7 @@ export async function run(ctx) {
   });
 
   await runner.runStep('recovered solid is not a successful run', async () => {
-    const ran = await agentCall(page, 'set_script', { source: PARTIAL });
+    const ran = await agentCall(page, 'set_script', { part_id: 'local:part1', source: PARTIAL });
     const errs = await agentCall(page, 'errors', {});
     const status = await agentCall(page, 'status', {});
     const toasts = await agentCall(page, 'toasts', {});
@@ -414,7 +414,10 @@ async function main() {
     const pairedText = paired?.content?.[0]?.text || '';
     check('paired through surfcad-mcp', !paired?.isError, pairedText.slice(0, 180));
 
-    const ran = await tool('set_script', { source: HARD_FAIL });
+    const listed = await tool('parts', {});
+    const partId = listed.body?.activeId;
+    check('parts returns an opaque part id', typeof partId === 'string' && partId.length > 0 && !partId.includes('/'), JSON.stringify(listed.body));
+    const ran = await tool('set_script', { part_id: partId, source: HARD_FAIL });
     const popup = await popupText(page);
     const errs = await tool('errors', {});
     const status = await tool('status', {});
@@ -450,7 +453,7 @@ async function main() {
       status: { runState: stillStatus.body?.runState },
     });
 
-    const cleared = await tool('set_script', { source: GOOD });
+    const cleared = await tool('set_script', { part_id: partId, source: GOOD });
     const clearedErrors = await tool('errors', {});
     const clearedStatus = await tool('status', {});
     await page.locator('[data-execution-error]').waitFor({ state: 'hidden', timeout: 20000 }).catch(() => {});
@@ -472,7 +475,7 @@ async function main() {
     );
     await shotWithJson(page, join(outDir, 'insert-move-bad-args.png'), moved.body);
 
-    const partial = await tool('set_script', { source: PARTIAL });
+    const partial = await tool('set_script', { part_id: partId, source: PARTIAL });
     const partialPopup = await popupText(page);
     const partialErrors = await tool('errors', {});
     const partialStatus = await tool('status', {});

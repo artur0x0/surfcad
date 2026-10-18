@@ -10,6 +10,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { createAgentBridgeRelayHub } from './relayHub.mjs';
 import { extraAllowedOrigins, isAllowedHttpOrigin, isLoopbackAddress } from './localAddress.mjs';
 import { handleBridgeRequest } from './bridgePage.mjs';
+import { loadCommandsCatalog, toolsCatalogPayload } from '../catalog.mjs';
 
 export const DEFAULT_RELAY_PORT = 17341;
 
@@ -124,6 +125,24 @@ export function startAgentBridgeRelay(options = {}) {
     const bound = server.address();
     const boundPort = bound && typeof bound === 'object' ? bound.port : port;
     if (handleBridgeRequest(req, res, { port: boundPort, extraOrigins: [...extraAllowedOrigins()] })) {
+      return;
+    }
+
+    let pathname = '/';
+    try {
+      pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;
+    } catch {
+      pathname = '/';
+    }
+    if (req.method === 'GET' && pathname === '/tools') {
+      const body = JSON.stringify(toolsCatalogPayload(loadCommandsCatalog()));
+      res.writeHead(200, {
+        ...cors,
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'Content-Length': Buffer.byteLength(body),
+      });
+      res.end(body);
       return;
     }
 

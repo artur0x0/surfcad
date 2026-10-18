@@ -24,3 +24,13 @@ export function bridgeToolDefinitions(doc) {
     inputSchema: row.args,
   }));
 }
+
+/** JSON body for GET /tools. Same rows as the MCP bridge tools and commands.json. */
+export function toolsCatalogPayload(doc) {
+  const tools = bridgeToolDefinitions(doc);
+  return {
+    version: doc.version,
+    count: tools.length,
+    tools,
+  };
+}

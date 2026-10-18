@@ -197,6 +197,8 @@ try {
   const st0 = await mcpCall(client, 'status', {});
   logStep('status (start)', `features=${st0.featureCount ?? 0}`);
 
+  // Feature edits go through insert_* first. set_script is the freehand
+  // fallback and must pass part_id from parts (an opaque surf id, never a path).
   await mcpCall(client, 'insert_cube', { width: 40, depth: 30, height: 20, center: true });
   await mcpCall(client, 'run', {});
   logStep('insert_cube + run');
@@ -220,12 +222,10 @@ try {
   await mcpCall(client, 'run', {});
   logStep('fillet', `edge ${edgeKey}`);
 
-  await mcpCall(client, 'create_part', { name: 'Pin' });
+  const createdPin = await mcpCall(client, 'create_part', { name: 'Pin' });
   const partsEnv = await mcpCall(client, 'parts', {});
-  const pinPartId = partsEnv.activeId
-    || partsEnv.parts?.find((p) => p.name === 'Pin')?.id
-    || partsEnv.parts?.[1]?.id;
-  const basePartId = partsEnv.parts?.[0]?.id;
+  const pinPartId = createdPin.partId || partsEnv.activeId;
+  const basePartId = partsEnv.parts?.find((p) => p.id && p.id !== pinPartId)?.id;
   await mcpCall(client, 'insert_cube', { width: 12, depth: 12, height: 20, center: true });
   await mcpCall(client, 'run', {});
   logStep('create_part + pin cube');

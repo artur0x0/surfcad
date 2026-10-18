@@ -117,9 +117,7 @@ export async function run(ctx) {
     const env = await agentCall(page, 'create_part', { name: 'Pin' });
     const parts = await agentCall(page, 'parts', {});
     const n = parts.result?.parts?.length ?? 0;
-    pinPartId = parts.result?.activeId
-      || parts.result?.parts?.find((p) => p.name === 'Pin')?.id
-      || parts.result?.parts?.[1]?.id;
+    pinPartId = env.result?.partId || parts.result?.activeId;
     const tree = await agentCall(page, 'feature_tree', {});
     const kinds = (tree.result?.features || []).map((row) => row.kind);
     const chips = page.locator('[data-cad-feature-strip="desktop"] [data-feature-chip]');

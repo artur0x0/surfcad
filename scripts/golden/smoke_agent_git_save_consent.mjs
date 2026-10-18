@@ -270,12 +270,12 @@ check(
   JSON.stringify(clean.out),
 );
 
-const lidRow = afterParts.find((p) => p.name === 'Kettle Lid');
-const moved = await agentCall(page, 'rename_part', { part_id: lidRow?.id, name: 'Kettle Handle' });
+const lidId = lid.out.result?.partId;
+const moved = await agentCall(page, 'rename_part', { part_id: lidId, name: 'Kettle Handle' });
 check(
   'rename_part updates the working copy and does not move a vault path',
   moved.out.ok === true
-    && moved.out.result?.partId === lidRow?.id
+    && moved.out.result?.partId === lidId
     && moved.out.result?.name === 'Kettle Handle (2)'
     && moved.out.result?.moved === false
     && !('path' in (moved.out.result || {})),
@@ -289,7 +289,7 @@ check(
 const surfAfter = JSON.parse(fake.readFile(surfWritten[0]?.path) || '{}');
 check(
   'vault .surf.json still names the lid',
-  (surfAfter.parts || []).some((p) => p.id === lidRow?.id && p.name === 'Kettle Lid')
+  (surfAfter.parts || []).some((p) => p.id === lidId && p.name === 'Kettle Lid')
     && !(surfAfter.parts || []).some((p) => p.name === 'Kettle Handle (2)'),
   JSON.stringify(surfAfter.parts),
 );

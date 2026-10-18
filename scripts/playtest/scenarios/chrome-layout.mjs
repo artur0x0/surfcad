@@ -127,17 +127,9 @@ function waitDetail(pass, waits) {
   }).join(' ');
 }
 
-function partIdByName(partsEnv, name) {
-  return partsEnv.result?.parts?.find((p) => p.name === name)?.id || null;
-}
-
-async function resolveNamedPartIds(page) {
+async function readActiveId(page) {
   const parts = await agentCall(page, 'parts', {});
-  return {
-    seedId: partIdByName(parts, 'Seed'),
-    blankId: partIdByName(parts, 'Blank'),
-    parts,
-  };
+  return parts.result?.activeId || null;
 }
 
 async function showCad(page) {
@@ -178,9 +170,7 @@ export async function run(ctx) {
 
   await runner.runStep('create empty part', async () => {
     const env = await agentCall(page, 'create_part', { name: 'Blank', script: EMPTY_SCRIPT });
-    const resolved = await resolveNamedPartIds(page);
-    blankId = env.result?.partId || resolved.blankId || resolved.parts.result?.activeId;
-    seedId = resolved.seedId || seedId;
+    blankId = env.result?.partId || await readActiveId(page);
     if (blankId) await agentCall(page, 'set_active_part', { part_id: blankId });
     // create_part treats a blank script as the marked cube starter; clear it.
     const cleared = await agentCall(page, 'set_script', { source: EMPTY_SCRIPT });
@@ -197,9 +187,8 @@ export async function run(ctx) {
 
   async function activateBlankEmpty() {
     const switched = await agentCall(page, 'set_active_part', { part_id: blankId });
-    const now = await resolveNamedPartIds(page);
-    const active = now.parts.result?.activeId;
-    const onBlank = active === blankId || active === now.blankId;
+    const active = await readActiveId(page);
+    const onBlank = active === blankId;
     if (onBlank) {
       // After git_move the editor buffer can still hold Seed; that keeps Code/Cube
       // chips on the ribbon even though Blank's stored script is header-only.
@@ -209,9 +198,6 @@ export async function run(ctx) {
   }
 
   async function cycleStates(pass) {
-    const resolved = await resolveNamedPartIds(page);
-    if (resolved.seedId) seedId = resolved.seedId;
-    if (resolved.blankId) blankId = resolved.blankId;
     await agentCall(page, 'set_active_part', { part_id: seedId });
     const waitPartChips = await waitRecorded(
       page,

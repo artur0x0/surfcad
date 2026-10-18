@@ -209,11 +209,9 @@ export async function run(ctx) {
   });
 
   await runner.runStep('joint on second part', async () => {
-    await agentCall(page, 'create_part', { name: 'Pin' });
+    const createdPin = await agentCall(page, 'create_part', { name: 'Pin' });
     const partsAfterPin = await agentCall(page, 'parts', {});
-    pinPartId = partsAfterPin.result?.activeId
-      || partsAfterPin.result?.parts?.find((p) => p.name === 'Pin')?.id
-      || partsAfterPin.result?.parts?.[1]?.id;
+    pinPartId = createdPin.result?.partId || partsAfterPin.result?.activeId;
     await agentCall(page, 'insert_cube', { width: 10, depth: 10, height: 24 });
     await agentCall(page, 'run', {});
 

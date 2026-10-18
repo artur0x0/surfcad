@@ -143,7 +143,7 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | Command | Args | Result |
 | --- | --- | --- |
 | `get_script` | `{}` | `{ "source": string }` — the editor buffer. |
-| `set_script` | `{ "source": string }` | `{ "ok": boolean, "errors": string[], "failures"?: ErrorRow[], "status": Status }` — writes `source`, runs it, and records one undo step when the text differs from the head. Re-injects the active part `// @surf-id` header when the text lacks it. `errors` is the viewport popup text. `failures` repeats the structured rows from `errors` (code, feature type, label, index, detail). A run that keeps a recovered mesh after a feature throw is still `ok: false`. |
+| `set_script` | `{ "part_id": string, "source": string }` | `{ "ok": boolean, "errors": string[], "failures"?: ErrorRow[], "status": Status }` — freehand fallback after `insert_*`. `part_id` is required and must be the active part's opaque surf id (a path or name is `unknown_part`; another id is `part_mismatch`). Writes `source`, runs it, and records one undo step when the text differs from the head. Re-injects `// @surf-id` when the text lacks it. Working copy only. `errors` is the viewport popup text. `failures` repeats the structured rows from `errors` (code, feature type, label, index, detail). A run that keeps a recovered mesh after a feature throw is still `ok: false`. |
 | `run` | `{}` | Same shape as `set_script`. Runs the current buffer. One undo step when that buffer is not already the head. The text `set_script` just wrote is not a second step, so undo once removes that edit. |
 | `status` | `{}` | `Status` for the **active** part (`partId`, `partName`, `script`, `runState`: `not_run_yet` \| `ok` \| `failed`, plus last-run `volume` / `bbox` / `bodyCount` for that part). Updates on `set_active_part` without requiring another `run`. |
 | `errors` | `{}` | `{ "errors": [{ "code": "feature_failed" \| "build_failed", "message": string, "featureId"?: string, "featureType"?: string, "featureLabel"?: string, "featureIndex"?: number, "detail"?: string }] }` — `message` is the same text the viewport shows. `feature_failed` is a kernel or feature error; type, label, and index are set when the marked block is known. `detail`, when present, is the exception name, a Manifold status, or the kernel message, and only when that text is not already in `message`. Stack frames and URLs are omitted. Empty after the next successful run. |
@@ -212,13 +212,17 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `set_active_workplane` | `{ plane_id }` or `{ clear: true }` | Sets or clears the construction-plane overlay highlight. |
 | `list_sketch_entities` | `{}` | `{ points, lines, arcs, refs }` in the open sketch (immediate). |
 | `create_assembly` | `{}` | Seeds a blank assembly (Parts **+** → Assembly). One assembly-history undo step when replacing an open document. |
-| `create_part` | `{ name?, script?, position? }` | Adds a part row (Parts **+** → Part). Agent default is the assembly origin; optional `position` is `[x,y,z]` mm. The UI still staggers new parts +40 mm on X. Local parts receive a `surf-id` when missing. In a git assembly the agent's part has no vault path and nothing is written until `git_save`. |
-| `rename_part` | `{ part_id, name }` | Renames a part row. A path-less or local part only changes its name (no commit). A vault part moves its committed script in the same folder to `<name>.js` (`-2`, `-3`, … when taken in the assembly or the repo tree) and that part's path/name in `.surf.json` in one rename commit; pending script, placement, and other dirty rows stay for the next Save. That write goes through the real-vault guard below. Unknown `part_id` → `unknown_part`. One assembly-history step. |
-| `part_get_transform` | `{ part }` | Rigid placement: `position` `[x,y,z]` mm and `rotation` as intrinsic XYZ Euler degrees (`eulerOrder: "XYZ"`). |
-| `part_set_transform` | `{ part, position?, rotation? }` | Sets translation and/or rotation. One assembly-history undo step, same as a UI move. |
-| `open_assembly` | `{ name }` | Opens a vault assembly (git mode). |
-| `open_part` | `{ path }` | Opens or links a vault part into the assembly (git mode). |
-| `insert_part` | `{ source_assembly }` or `{ name?, script? }` | Inserts another assembly’s parts (git) or adds a new part row (local, same as `create_part`). |
+| `create_part` | `{ name?, script?, position? }` | Adds a part row (Parts **+** → Part) and returns its new opaque surf id. Agent default is the assembly origin; optional `position` is `[x,y,z]` mm. Working copy only. |
+| `rename_part` | `{ part_id, name }` | Working-copy display name. `{ partId, name, moved: false }`. A path or name is `unknown_part`. The committed header updates on the next `git_save`. |
+| `rename_assembly` | `{ assembly_id, name }` | Working-copy assembly label. `assembly_id` is an opaque id, not the current name. Names may collide. No git write. |
+| `part_get_transform` | `{ part_id }` | Rigid placement by opaque id: `position` `[x,y,z]` mm and `rotation` as intrinsic XYZ Euler degrees (`eulerOrder: "XYZ"`). A path or name is `unknown_part`. |
+| `part_set_transform` | `{ part_id, position?, rotation? }` | Sets translation and/or rotation for that id. One assembly-history undo step. Working copy only. |
+| `open_assembly` | `{ assembly_id }` | Opens a vault assembly by opaque id (git mode). A name or path is `unknown_assembly`. |
+| `open_part` | `{ part_id? , assembly_id? }` | Opens a vault part by id into the current assembly (reference). No path argument. |
+| `insert_part` | `{ part_id? , assembly_id?, copy? }` | Insert-as-reference by part id, or every part of an assembly id. `copy: true` mints a new id. No git write. |
+| `list_assemblies` | `{}` | Vault assemblies as `[{ id, name }]`. No path field. |
+| `delete_part` | `{ part_id, scope, confirm? }` | `scope: "assembly"` drops the row. `scope: "repo"` also plans a file delete and requires `confirm: true`. Neither scope commits. |
+| `delete_assembly` | `{ assembly_id, confirm: true, delete_parts? }` | Deletes the open assembly. `confirm: true` required. Save commits later. |
 | `joint_open` | `{}` | Opens the Joints create card (`data-joints-button`). Clears CAD part highlight for the joint strip. |
 | `joint_set_params` | `{ type?, name?, value_mm?, sense?, opposed? }` | Patches the open joint card (mate type and fields). Returns the merged card fields (`type`, `name`, `valueMm`, …). `planar` is an alias for `coincident`. |
 | `joint_pick` | `{ part_id, face_id }` or `{ picks: [{ part_id, face_id }] }` (`key` / `kind` instead of `face_id` also work) | `face_id` is a `list_faces` id on that part, or pass its face key, or an explicit axis/edge key. Resolved on the same catalog `list_faces` returns and classified like a canvas tap: a cylindrical face becomes an axis pick (concentric), a flat a face pick. A curved face with no axis is `pick_failed`; an id not on the part is `unknown_face`. |
@@ -276,9 +280,9 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `sheet_edit` | `{ chip_id?, feature_id?, …params }` | Open a sheet chip for edit; optional param patch. |
 | `sheet_begin_hole` | `{}` | Next on a new sheet hole — opens centres sketch. |
 | `git_move_to_repo` | `{ vault_name? }` | G6: local assembly → vault (mock or real adapter). One assembly-history undo when promoted. |
-| `git_save` | `{ message }` | Save (commit) on the current branch — same as the ribbon Save flow after the message step. Every path-less part first gets `assemblies/<Assembly>/<Name>.js` (`-2` on collision); those scripts, dirty parts, and the `.surf.json` land in one commit. Part ids stay the same; `path` is stored beside each id. |
-| `git_add_to_repo` | `{ part_id }` | Add one stray/local part into the vault layout (`handleAddToRepo`). Other path-less rows are pathed by the same core as `git_save` and committed with it, so the `.surf.json` never references a missing file. |
-| `git_behind_resolve` | `{ action: "keep" \| "reload" \| "branch", path?, kind? }` | Get-latest choice for one behind marker. `keep` needs no path when the assembly or a single part is behind. `reload` and `branch` require `confirm: true`. |
+| `git_save` | `{ message }` | The vault write, same planSave path as the Save button. `consent_pending` while the Allow dialog is up (retry the same call). `pending_save` when an offline plan is waiting. `upgrade_required` on a legacy vault (`git_upgrade_vault { confirm: true }` after the user agrees). `conflict` or `repo-moved` when a remote edit overlaps this Save. Results omit path fields. |
+| `git_add_to_repo` | `{ message }` | Alias of `git_save`. Prefer `git_save`. |
+| `git_behind_resolve` | `{ action: "reload" \| "branch", confirm: true }` | `reload` is Get latest (not a git write). `branch` saves mine to a new branch. Both require `confirm: true`. `keep` is removed. No path argument. |
 | `git_branch_create` | `{ name }` | Create a branch from the current tip and switch to it. Uncommitted working-copy edits stay on the current branch (no switch; same as Parts Create). Use `git_branch_switch` with `confirm: true` to move a dirty copy. If the branch is created but switch fails, the result is `{ status: "created", switched: false, switchError }`. |
 | `git_branch_switch` | `{ branch, confirm? }` | Switch working branch. `confirm: true` required when `dirty.workspaceDirty`. |
 | `git_branch_delete` | `{ branch, confirm: true }` | Delete a branch ref (not `main`, not current). |
@@ -367,7 +371,7 @@ These are thin wrappers over `call()`. They pass a plain object as `argsJson`, u
 | Method | Relays | Returns |
 | --- | --- | --- |
 | `getScript()` | `get_script` | `source` string |
-| `setScript(source)` | `set_script` `{ source }` | `{ ok, errors, failures?, status }` |
+| `setScript(source, partId)` | `set_script` `{ source, part_id }` | `{ ok, errors, failures?, status }` |
 | `run()` | `run` | `{ ok, errors, failures?, status }` |
 | `status()` | `status` | `Status` |
 | `errors()` | `errors` | `{ code, message, featureId?, featureType?, featureLabel?, featureIndex?, detail? }[]` |
@@ -412,7 +416,7 @@ Refusals use the same `error` objects as the in-page envelope. Non-loopback TCP 
 | Piece | Role |
 | --- | --- |
 | `packages/surfcad-mcp` | npm package `surfcad-mcp`: MCP over stdio, one tool per `commands.json` row plus `pair`. |
-| `packages/surfcad-mcp/data/commands.json` | Copy of `src/agent/commands.json`; refreshed by `npm run export:agent`. |
+| `packages/surfcad-mcp/data/commands.json` | Copy of `src/agent/commands.json`; refreshed by `npm run export:agent`. `GET /tools` on the loopback relay returns the same bridge tools (`name`, `description`, `inputSchema`). `list_commands` and the MCP bridge tools match that list. `pair` and the in-process prompt tools are MCP-only. |
 | `SURFCAD_PAIRING_CODE` | Optional env pairing code (same as **profile** → **Local agent** → **Show pairing code**). |
 | `SURFCAD_AGENT_BRIDGE_WS_URL` | Relay URL (default `ws://127.0.0.1:17341`). |
 
