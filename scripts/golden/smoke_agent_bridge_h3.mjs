@@ -11,6 +11,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright-core';
 import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
+import { wrapAgentCall } from '../playtest/lib/wrapAgentCall.mjs';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
 const PORT = Number(process.env.SMOKE_PORT || 4320);
@@ -126,12 +127,13 @@ async function seedAssembly(page) {
   }, { doc: ASSEMBLY, script: BOX });
 }
 
-async function agentCall(page, name, args) {
+async function rawAgentCall(page, name, args) {
   return page.evaluate(async ({ name, argsJson }) => {
     const env = await window.surfcad.call(name, argsJson);
     return env;
   }, { name, argsJson: JSON.stringify(args ?? {}) });
 }
+const agentCall = wrapAgentCall(rawAgentCall);
 
 console.log('agent bridge h3 golden');
 

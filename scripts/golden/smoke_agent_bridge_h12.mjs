@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
+import { wrapAgentCall } from '../playtest/lib/wrapAgentCall.mjs';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
 const PORT = Number(process.env.SMOKE_PORT || 4327);
@@ -127,12 +128,13 @@ return part;
   }, { doc: ASSEMBLY });
 }
 
-async function agentCall(page, name, args) {
+async function rawAgentCall(page, name, args) {
   return page.evaluate(async ({ name, argsJson }) => window.surfcad.call(name, argsJson), {
     name,
     argsJson: JSON.stringify(args ?? {}),
   });
 }
+const agentCall = wrapAgentCall(rawAgentCall);
 
 async function shot(page, label, width) {
   await page.setViewportSize({ width, height: Math.round(width * 0.62) });

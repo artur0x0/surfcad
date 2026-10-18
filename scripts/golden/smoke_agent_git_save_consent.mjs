@@ -5,9 +5,9 @@
  * Real GitHub adapter against a throwaway in-memory GitHub REST fake
  * (lib/fakeGithubApi.mjs) — never a real repo. An agent makes three parts
  * with no vault paths in a new assembly, git_save returns consent_pending at
- * once, the user clicks Allow, the retry commits exactly 4 files (3 part
- * scripts + .surf.json) in one commit. Then rename_part updates the working
- * copy only (no vault path move, no commit) and refuses an unknown id.
+ * once, the user clicks Allow, the retry commits v2 files (surfcad.json,
+ * assemblies/<id>.surf.json, parts/<id>.js). Then rename_part updates the
+ * working copy only (moved: false, no commit) and refuses a path as unknown_id.
  * Every bridge call must answer within a few seconds.
  */
 /* global document, window, indexedDB, localStorage, sessionStorage, navigator */
@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import { GITHUB_TOKEN_STORAGE_KEY } from '../../src/utils/git/githubAuth.js';
 import { createFakeGithub, installFakeGithub } from './lib/fakeGithubApi.mjs';
+import { wrapAgentCall } from '../playtest/lib/wrapAgentCall.mjs';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
 const PORT = Number(process.env.SMOKE_PORT || 4331);
@@ -79,7 +80,7 @@ async function waitForServer(timeoutMs = 40000) {
 }
 
 const timings = [];
-async function agentCall(page, name, args) {
+async function rawAgentCall(page, name, args) {
   const started = Date.now();
   const out = await page.evaluate(async ({ name, argsJson }) => window.surfcad.call(name, argsJson), {
     name,
@@ -89,6 +90,7 @@ async function agentCall(page, name, args) {
   timings.push({ name, ms });
   return { out, ms };
 }
+const agentCall = wrapAgentCall(rawAgentCall, (listed) => listed.out?.result);
 
 async function shot(page, label) {
   const buf = await page.screenshot({ type: 'png' });
@@ -156,7 +158,7 @@ const seedId = created.out.result?.activeId;
 const renamedSeed = await agentCall(page, 'rename_part', { part_id: seedId, name: 'Kettle Body' });
 check(
   'rename_part on a path-less part renames locally',
-  renamedSeed.out.ok === true && renamedSeed.out.result?.status === 'renamed' && renamedSeed.out.result?.git === false,
+  renamedSeed.out.ok === true && renamedSeed.out.result?.moved === false && renamedSeed.out.result?.name === 'Kettle Body',
   JSON.stringify(renamedSeed.out),
 );
 const body = await agentCall(page, 'set_script', {
@@ -216,16 +218,23 @@ const commitFiles = history[0]?.files || [];
 const scriptsWritten = commitFiles.filter((f) => f.path.endsWith('.js'));
 const surfWritten = commitFiles.filter((f) => f.path.endsWith('.surf.json'));
 check(
-  'commit has exactly 4 files: 3 part .js + .surf.json',
-  commitFiles.length === 4 && scriptsWritten.length === 3 && surfWritten.length === 1,
+  'commit is v2 f(id): marker + assembly surf + 3 part scripts',
+  commitFiles.some((f) => f.path === 'surfcad.json')
+    && surfWritten.length === 1
+    && /^assemblies\/[^/]+\.surf\.json$/.test(surfWritten[0]?.path || '')
+    && scriptsWritten.length === 3
+    && scriptsWritten.every((f) => /^parts\/[^/]+\.js$/.test(f.path))
+    && !commitFiles.some((f) => f.path === 'README.md'),
   JSON.stringify(commitFiles),
 );
 const surfText = surfWritten[0] ? fake.readFile(surfWritten[0].path) : null;
 const surf = surfText ? JSON.parse(surfText) : null;
 check(
-  '.surf.json references exactly the committed scripts',
-  !!surf && JSON.stringify(surf.parts.map((p) => p.path).sort())
-    === JSON.stringify(scriptsWritten.map((f) => f.path).sort()),
+  '.surf.json lists the committed part ids and has no path fields',
+  !!surf && surf.version === 2
+    && surf.parts.every((p) => p.id && !('path' in p))
+    && JSON.stringify(surf.parts.map((p) => p.id).sort())
+      === JSON.stringify(beforeParts.map((p) => p.id).sort()),
   JSON.stringify(surf?.parts),
 );
 check(
@@ -239,11 +248,9 @@ const after = await agentCall(page, 'parts', {});
 const afterParts = after.out.result?.parts || [];
 const beforeIds = beforeParts.map((p) => p.id).sort();
 check(
-  'working copy keeps the same ids and stores assembly-folder paths',
+  'working copy keeps the same ids and omits path',
   JSON.stringify(afterParts.map((p) => p.id).sort()) === JSON.stringify(beforeIds)
-    && afterParts.every((p) => p.id && p.path && p.id !== p.path && String(p.path).startsWith('assemblies/'))
-    && JSON.stringify(afterParts.map((p) => p.path).sort())
-      === JSON.stringify(scriptsWritten.map((f) => f.path).sort()),
+    && afterParts.every((p) => p.id && !('path' in p)),
   JSON.stringify(afterParts),
 );
 
@@ -257,13 +264,12 @@ check(
 const lidRow = afterParts.find((p) => p.name === 'Kettle Lid');
 const moved = await agentCall(page, 'rename_part', { part_id: lidRow?.id, name: 'Kettle Handle' });
 check(
-  'rename_part updates the working copy and does not move the vault path',
+  'rename_part updates the working copy and does not move a vault path',
   moved.out.ok === true
     && moved.out.result?.partId === lidRow?.id
     && moved.out.result?.name === 'Kettle Handle (2)'
-    && moved.out.result?.path === lidRow?.path
-    && moved.out.result?.moved !== true
-    && moved.out.result?.git === false,
+    && moved.out.result?.moved === false
+    && !('path' in (moved.out.result || {})),
   JSON.stringify(moved.out),
 );
 check(
@@ -274,8 +280,8 @@ check(
 const surfAfter = JSON.parse(fake.readFile(surfWritten[0]?.path) || '{}');
 check(
   'vault .surf.json still names the lid',
-  (surfAfter.parts || []).some((p) => p.path === lidRow?.path && p.name === 'Kettle Lid')
-    && !(surfAfter.parts || []).some((p) => /Handle-2|Handle \(2\)/.test(p.path || '')),
+  (surfAfter.parts || []).some((p) => p.id === lidRow?.id && p.name === 'Kettle Lid')
+    && !(surfAfter.parts || []).some((p) => p.name === 'Kettle Handle (2)'),
   JSON.stringify(surfAfter.parts),
 );
 const histAfter = await agentCall(page, 'history', {});
