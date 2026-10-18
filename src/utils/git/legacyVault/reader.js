@@ -13,7 +13,7 @@ import {
 } from '../surfJson.js';
 import { pruneDanglingSurfJoints } from '../../jointSchema.js';
 import { readMeshBytes } from '../meshSync.js';
-import { captureBaseline } from '../gitBaseline.js';
+import { baselineScriptsKeepingTip, captureBaseline } from '../gitBaseline.js';
 import { collapseWorkingCopyIds } from '../wcIdentity.js';
 import { partRepoPath } from '../partIdentity.js';
 import { isV2SurfId } from '../surfId.js';
@@ -190,7 +190,9 @@ export async function openLegacyAssembly(adapter, repo, assemblyName, {
     assemblyPath: foundPath,
     assemblyName: doc.name,
     doc,
-    scripts,
+    scripts: baselineScriptsKeepingTip(parts, scripts, rawScripts, {
+      pairs: collapsed.pairs,
+    }),
     assets,
     branch,
     headSha: head,
