@@ -3,7 +3,7 @@
  * Print sign-up / login monitoring aggregates (JSON or table).
  *
  * Usage:
- *   NODE_ENV=production node scripts/stats.js [--format json|table]
+ *   NODE_ENV=production node scripts/stats.js [--format json|table] [--days 7|30|120]
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +16,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export { parseArgs } from './statsArgs.js';
 
 function printHelp() {
-  console.log(`Usage: node scripts/stats.js [--format json|table]
+  console.log(`Usage: node scripts/stats.js [--format json|table] [--days 7|30|120]
 
 Reads MongoDB (MONGODB_URI via backend config). No secrets are printed.
 `);
@@ -24,17 +24,17 @@ Reads MongoDB (MONGODB_URI via backend config). No secrets are printed.
 
 function printTable(stats) {
   console.log(`Generated: ${stats.generatedAt}`);
-  console.log(`Total users: ${stats.totalUsers}`);
-  console.log(`Active signed-in users (last ${30}d session window): ${stats.activeSignedInUsers}`);
+  console.log(`Window: ${stats.days} day(s)`);
+  console.log(`Totals: signups=${stats.totals.signups} logins=${stats.totals.logins} activeUsers=${stats.totals.activeUsers} quotes=${stats.totals.quotes} orders=${stats.totals.orders} partnerSubmissions=${stats.totals.partnerSubmissions}`);
   console.log('');
 
   const sections = [
-    ['Sign-ups / day (last 30)', stats.signups.perDay],
-    ['Sign-ups / week (last 12)', stats.signups.perWeek],
-    ['Sign-ups / month (last 12)', stats.signups.perMonth],
-    ['Logins / day (last 30)', stats.logins.perDay],
-    ['Logins / week (last 12)', stats.logins.perWeek],
-    ['Logins / month (last 12)', stats.logins.perMonth],
+    ['Sign-ups', stats.series.signups],
+    ['Logins', stats.series.logins],
+    ['Active users', stats.series.activeUsers],
+    ['Quotes', stats.series.quotes],
+    ['Orders', stats.series.orders],
+    ['Partner submissions', stats.series.partnerSubmissions],
   ];
 
   for (const [title, rows] of sections) {
@@ -43,17 +43,9 @@ function printTable(stats) {
       console.log('  (no data)');
       continue;
     }
-    const hasDistinct = rows[0].distinctUsers !== undefined;
-    if (hasDistinct) {
-      console.log('  period          logins  distinct_users');
-      for (const row of rows) {
-        console.log(`  ${row.period.padEnd(14)}  ${String(row.logins).padStart(6)}  ${String(row.distinctUsers).padStart(15)}`);
-      }
-    } else {
-      console.log('  period          count');
-      for (const row of rows) {
-        console.log(`  ${row.period.padEnd(14)}  ${String(row.count).padStart(6)}`);
-      }
+    console.log('  date            count');
+    for (const row of rows) {
+      console.log(`  ${String(row.date).padEnd(14)}  ${String(row.count).padStart(6)}`);
     }
     console.log('');
   }
@@ -68,7 +60,7 @@ export async function main(argv = process.argv) {
 
   await connectDB();
   try {
-    const stats = await fetchAdminStats();
+    const stats = await fetchAdminStats({ days: opts.days });
     if (opts.format === 'table') {
       printTable(stats);
     } else {

@@ -248,6 +248,40 @@ describe('exploit H2', () => {
 });
 
 describe('regression', () => {
+  test('signed-out /me includes isAdmin false', async () => {
+    const me = await client(app.port)('GET', '/api/auth/me');
+    assert.equal(me.status, 200);
+    assert.equal(me.body.authenticated, false);
+    assert.equal(me.body.isAdmin, false);
+  });
+
+  test('GET /me isAdmin is true when githubLogin is allowlisted', async () => {
+    const previous = config.adminGithubLogins;
+    config.adminGithubLogins = new Set(['octo']);
+    try {
+      const c = client(app.port);
+      const restoreFetch = patch(globalThis, {
+        fetch: githubFetch({
+          tok: {
+            user: { id: 7, login: 'Octo', email: 'octo@example.com', name: 'Octo Cat' },
+            emails: [{ email: 'octo@example.com', primary: true, verified: true }],
+          },
+        }),
+      });
+      try {
+        assert.equal((await c('POST', '/api/auth/github', { access_token: 'tok' })).status, 200);
+        const me = await c('GET', '/api/auth/me');
+        assert.equal(me.body.isAdmin, true);
+        assert.equal(me.body.user.isAdmin, true);
+        assert.equal(me.body.user.githubLogin, 'Octo');
+      } finally {
+        restoreFetch();
+      }
+    } finally {
+      config.adminGithubLogins = previous;
+    }
+  });
+
   test('GitHub sign-in creates a new account', async () => {
     const c = client(app.port);
     const restoreFetch = patch(globalThis, {
@@ -264,7 +298,11 @@ describe('regression', () => {
       assert.equal(r.body.isNew, true);
       assert.equal(r.body.user.email, 'octo@example.com');
       assert.equal(users.find({ email: 'octo@example.com' }).githubId, '7');
-      assert.equal((await c('GET', '/api/auth/me')).body.authenticated, true);
+      assert.equal(users.find({ email: 'octo@example.com' }).githubLogin, 'octo');
+      const me = await c('GET', '/api/auth/me');
+      assert.equal(me.body.authenticated, true);
+      assert.equal(me.body.isAdmin, false);
+      assert.equal(me.body.user.isAdmin, false);
 
       const again = await client(app.port)('POST', '/api/auth/github', { access_token: 'tok' });
       assert.equal(again.status, 200);

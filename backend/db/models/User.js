@@ -134,6 +134,16 @@ const userSchema = new mongoose.Schema({
     index: true,
     sparse: true,
   },
+  // GitHub login (username). Used only for ADMIN_GITHUB_LOGINS. Updated on
+  // GitHub sign-in / Connect; not a display name.
+  githubLogin: {
+    type: String,
+    default: null,
+    trim: true,
+    maxlength: 39,
+    index: true,
+    sparse: true,
+  },
   // Name fields - support both single name and first/last
   name: {
     type: String,
@@ -503,6 +513,13 @@ userSchema.statics.findOrCreateOAuth = async function(profile, provider) {
       user.githubId = String(id);
       dirty = true;
     }
+    if (provider === 'github') {
+      const login = String(profile.login || '').trim();
+      if (login && user.githubLogin !== login) {
+        user.githubLogin = login;
+        dirty = true;
+      }
+    }
     // Backfill names from GitHub / OAuth profile when missing.
     if (!user.firstName && name?.givenName) {
       user.firstName = name.givenName;
@@ -540,6 +557,8 @@ userSchema.statics.findOrCreateOAuth = async function(profile, provider) {
     user.emailVerified = true;
     if (provider === 'github') {
       user.githubId = String(id);
+      const login = String(profile.login || '').trim();
+      if (login) user.githubLogin = login;
     }
     if (!user.firstName && name?.givenName) {
       user.firstName = name.givenName;
@@ -560,6 +579,7 @@ userSchema.statics.findOrCreateOAuth = async function(profile, provider) {
     authProvider: provider,
     providerId: id,
     githubId: provider === 'github' ? String(id) : null,
+    githubLogin: provider === 'github' ? (String(profile.login || '').trim() || null) : null,
     firstName: name?.givenName || displayName?.split(' ')[0],
     lastName: name?.familyName || displayName?.split(' ').slice(1).join(' '),
     name: displayName || (name ? `${name.givenName || ''} ${name.familyName || ''}`.trim() : null),

@@ -1,5 +1,5 @@
 // main.js
-import { StrictMode, useCallback, useEffect, useState } from 'react';
+import { StrictMode, Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App';
@@ -13,10 +13,14 @@ import SentryUserSync from './components/SentryUserSync.jsx';
 import { bootstrapSentry } from './utils/sentryClient.js';
 import { applyGpcDefaultOnFirstVisit } from './utils/consent.js';
 
+// eslint-disable-next-line react-refresh/only-export-components -- Entry shell, not an HMR boundary.
+const AdminPage = lazy(() => import('./pages/AdminPage.jsx'));
+
 bootstrapSentry();
 applyGpcDefaultOnFirstVisit();
 
 const PARTNERS_PATH = '/partners';
+const ADMIN_PATH = '/admin';
 
 function pathIsGitCallback(pathname = window.location.pathname) {
   return String(pathname || '').replace(/\/$/, '') === GITHUB_CALLBACK_PATH;
@@ -24,6 +28,10 @@ function pathIsGitCallback(pathname = window.location.pathname) {
 
 function pathIsPartners(pathname = window.location.pathname) {
   return String(pathname || '').replace(/\/$/, '') === PARTNERS_PATH;
+}
+
+function pathIsAdmin(pathname = window.location.pathname) {
+  return String(pathname || '').replace(/\/$/, '') === ADMIN_PATH;
 }
 
 /**
@@ -41,6 +49,7 @@ function pathIsPartners(pathname = window.location.pathname) {
 function Root() {
   const [gitCallback, setGitCallback] = useState(() => pathIsGitCallback());
   const [partnersPage, setPartnersPage] = useState(() => pathIsPartners());
+  const [adminPage, setAdminPage] = useState(() => pathIsAdmin());
 
   const goHome = useCallback(() => {
     if (pathIsGitCallback()) {
@@ -48,12 +57,14 @@ function Root() {
     }
     setGitCallback(false);
     setPartnersPage(pathIsPartners());
+    setAdminPage(pathIsAdmin());
   }, []);
 
   useEffect(() => {
     const sync = () => {
       setGitCallback(pathIsGitCallback());
       setPartnersPage(pathIsPartners());
+      setAdminPage(pathIsAdmin());
     };
     window.addEventListener('popstate', sync);
     return () => window.removeEventListener('popstate', sync);
@@ -73,6 +84,25 @@ function Root() {
         <AuthProvider>
           <SentryUserSync />
           <PartnersPage />
+        </AuthProvider>
+      </SentryErrorBoundary>
+    );
+  }
+
+  if (adminPage) {
+    return (
+      <SentryErrorBoundary>
+        <AuthProvider>
+          <SentryUserSync />
+          <Suspense
+            fallback={(
+              <div className="surface-light text-on-light font-ui flex h-dvh items-center justify-center">
+                Loading…
+              </div>
+            )}
+          >
+            <AdminPage />
+          </Suspense>
         </AuthProvider>
       </SentryErrorBoundary>
     );

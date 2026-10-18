@@ -16,6 +16,7 @@ import './order-access.test.js';
 import './auth-s1b-followups.test.js';
 import './generate-route.test.js';
 import './convert-route.test.js';
+import './admin-stats.test.js';
 import '../../test/backend-monitoring-stats.test.js';
 import './email-html-escape.test.js';
 import './prune-uploads.test.js';

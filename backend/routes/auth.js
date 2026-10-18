@@ -23,6 +23,7 @@ import {
 } from '../auth/guestConvert.js';
 import { recordRegisterIp, registerIpWait } from '../auth/registerCooldown.js';
 import { appleOAuthUnavailable } from '../auth/appleIdentity.js';
+import { isAdmin } from '../middleware/requireAdmin.js';
 
 const router = Router();
 
@@ -65,15 +66,22 @@ function buildRedirectUrl(baseUrl, returnPath, additionalParams = {}) {
  * GET /api/auth/me
  * Get current authenticated user
  */
+function presentAuthedUser(reqUser) {
+  const user = reqUser.toJSON();
+  // Null when the Mongo document never stored a name. Do not substitute the
+  // schema default here — resolution must still be free to adopt a legacy vault.
+  user.vaultName = storedVaultNameFromUser(reqUser);
+  user.isAdmin = isAdmin(reqUser);
+  return user;
+}
+
 router.get('/me', (req, res) => {
   if (req.isAuthenticated()) {
-    const user = req.user.toJSON();
-    // Null when the Mongo document never stored a name. Do not substitute the
-    // schema default here — resolution must still be free to adopt a legacy vault.
-    user.vaultName = storedVaultNameFromUser(req.user);
+    const user = presentAuthedUser(req.user);
     return res.json({
       authenticated: true,
       user,
+      isAdmin: user.isAdmin,
     });
   }
   
@@ -81,6 +89,7 @@ router.get('/me', (req, res) => {
   if (req.session.guestId) {
     return res.json({
       authenticated: false,
+      isAdmin: false,
       guest: {
         id: req.session.guestId,
         email: req.session.guestEmail,
@@ -89,7 +98,7 @@ router.get('/me', (req, res) => {
     });
   }
   
-  return res.json({ authenticated: false });
+  return res.json({ authenticated: false, isAdmin: false });
 });
 
 /**
@@ -607,11 +616,18 @@ router.post('/github', async (req, res) => {
     const { profile } = looked;
     const { user, isNew } = await User.findOrCreateOAuth(profile, 'github');
 
-    // Ensure githubId is always set (older linked accounts)
+    // Ensure githubId / githubLogin are set (older linked accounts)
+    let githubDirty = false;
     if (user.githubId !== profile.id) {
       user.githubId = profile.id;
-      await user.save();
+      githubDirty = true;
     }
+    const login = String(profile.login || '').trim();
+    if (login && user.githubLogin !== login) {
+      user.githubLogin = login;
+      githubDirty = true;
+    }
+    if (githubDirty) await user.save();
 
     await loginAndTrack(req, user, 'github');
 

@@ -73,25 +73,34 @@ We append an event and bump `lastLoginAt` / `loginCount` only when Passport esta
 - `POST /api/github/oauth/refresh` (GitHub token renewal; browser session unchanged)
 - Guest checkout sessions
 
-### Active signed-in users
+### Active users
 
-`activeSignedInUsers` counts users whose `lastLoginAt` falls within the rolling session window (`SESSION_MAX_AGE_MS`, 30 days in `src/utils/sessionPolicy.js`). This approximates users who could still have a valid server session, not live socket counts.
+The admin report’s `activeUsers` total is distinct `login_events.userId` values in the requested window. Daily `series.activeUsers` is distinct users who logged in that UTC day. This is not a live socket count.
+
+Assemblies and parts live in GitHub, and STEP conversions are files on disk — they are not Mongo collections, so they are omitted.
+
+Quotes older than seven days may already have been TTL-deleted; the report counts whatever is still in `quotes`.
 
 ### Admin HTTP API
 
-`GET /api/admin/stats` — JSON report:
+`GET /api/admin/stats?days=7|30|120` — JSON report of **counts only** (no emails, addresses, or other personal data):
 
-- Sign-ups per day (last 30), week (last 12), month (last 12) from `User.createdAt`
-- Logins and distinct logging-in users per day/week/month from `login_events`
-- `totalUsers`, `activeSignedInUsers`, `generatedAt`
+- Daily UTC buckets for the window, zero-filled
+- Totals for the window: sign-ups (`User.createdAt`), logins (`login_events`), active users (distinct login user ids), quotes (`quotedAt`), orders (`created-at`), partner form submissions (`partners.createdAt`)
 
-**Auth:** caller must be signed in and their Mongo `_id` must appear in `ADMIN_USER_IDS` (comma-separated in `.env.production`). If the allowlist is empty or the user is not listed, the route returns **404** (not 401).
+Any other `days` value (including missing) returns **400**.
+
+**Auth:** `isAdmin(user)` is true when the signed-in user’s `githubLogin` appears in `ADMIN_GITHUB_LOGINS` (comma-separated GitHub logins, case-insensitive). The list defaults to empty, so nobody is an admin until it is set in the production env file. If the allowlist is empty or the caller is not listed — including signed-out users — the route returns **404** (not 403), so it is not discoverable. The handler is rate-limited like other authenticated routes.
+
+`GET /api/auth/me` includes `isAdmin: boolean` (also on `user.isAdmin`).
 
 Example (browser session cookie):
 
 ```bash
-curl -sS -b cookies.txt https://api.surfcad.com/api/admin/stats | jq .
+curl -sS -b cookies.txt 'https://api.surfcad.com/api/admin/stats?days=7' | jq .
 ```
+
+The in-app view is `/admin` (lazily loaded). Non-admins see the 404 page.
 
 ### CLI script (production)
 
@@ -99,13 +108,13 @@ From the backend deploy directory (same env as the API):
 
 ```bash
 cd /home/ubuntu/backend
-sudo -u ubuntu NODE_ENV=production node scripts/stats.js
+sudo -u ubuntu NODE_ENV=production node scripts/stats.js --days 30
 ```
 
 Table output:
 
 ```bash
-sudo -u ubuntu NODE_ENV=production node scripts/stats.js --format table
+sudo -u ubuntu NODE_ENV=production node scripts/stats.js --format table --days 7
 ```
 
 Requires `MONGODB_URI` (loaded via `backend/config/index.js` and `.env.production`).
@@ -113,11 +122,10 @@ Requires `MONGODB_URI` (loaded via `backend/config/index.js` and `.env.productio
 ### Environment
 
 ```env
-# Comma-separated Mongo User _id values for GET /api/admin/stats
-ADMIN_USER_IDS=507f1f77bcf86cd799439011,507f191e810c19729de860ea
+# Comma-separated GitHub logins for GET /api/admin/stats and /admin
+# Empty means no admins. Set only in the server env file, not in git.
+ADMIN_GITHUB_LOGINS=
 ```
-
-Find your `_id` in MongoDB or from an admin session’s `/api/auth/me` response.
 
 ---
 
