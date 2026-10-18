@@ -113,8 +113,34 @@ export function pruneDanglingColors(raw) {
   return { ...raw, colors };
 }
 
+function liveSurfIds(raw) {
+  return (Array.isArray(raw?.parts) ? raw.parts : []).map((part) => part?.id).filter((id) => isSurfId(id));
+}
+
+function danglingRefLiveIds(raw, base) {
+  const live = new Set(base);
+  for (const id of Object.keys(raw?.colors || {})) {
+    if (isSurfId(id)) live.add(id);
+  }
+  for (const group of Array.isArray(raw?.groups) ? raw.groups : []) {
+    for (const id of Array.isArray(group?.partIds) ? group.partIds : []) {
+      if (isSurfId(id)) live.add(id);
+    }
+  }
+  for (const joint of Array.isArray(raw?.joints) ? raw.joints : []) {
+    for (const ref of [joint?.a, joint?.b, joint?.a2, joint?.b2]) {
+      if (isSurfId(ref?.part)) live.add(ref.part);
+    }
+  }
+  return live;
+}
+
 /** v1 / legacy reader. Rejects a v2 file. See `validateSurfJsonV2`. */
-export function validateSurfJson(input, { allowMissingPaths = false, allowDuplicatePartIds = false } = {}) {
+export function validateSurfJson(input, {
+  allowMissingPaths = false,
+  allowDuplicatePartIds = false,
+  allowDanglingRefs = false,
+} = {}) {
   const errors = [];
   let raw = input;
   if (typeof input === 'string') {
@@ -226,15 +252,11 @@ export function validateSurfJson(input, { allowMissingPaths = false, allowDuplic
     errors.push('activeId must be a string or null');
   }
   if (raw.colors !== undefined) {
-    const live = new Set(
-      (Array.isArray(raw.parts) ? raw.parts : []).map((part) => part?.id).filter((id) => isSurfId(id)),
-    );
+    const live = allowDanglingRefs ? danglingRefLiveIds(raw, liveSurfIds(raw)) : new Set(liveSurfIds(raw));
     errors.push(...assemblyColorErrors(raw.colors, live));
   }
   if (raw.joints !== undefined) {
-    const live = (Array.isArray(raw.parts) ? raw.parts : [])
-      .map((part) => part?.id)
-      .filter((id) => isSurfId(id));
+    const live = allowDanglingRefs ? danglingRefLiveIds(raw, liveSurfIds(raw)) : liveSurfIds(raw);
     errors.push(...assemblyJointErrors(raw.joints, live));
   }
   return { ok: errors.length === 0, errors };
@@ -298,7 +320,7 @@ export function stringifySurfJson(doc, opts) {
 }
 
 /** .surf.json text or object -> in-app assembly document (source 'git'). Throws on invalid. */
-export function parseSurfJson(input, { allowDuplicatePartIds = false } = {}) {
+export function parseSurfJson(input, { allowDuplicatePartIds = false, pruneDangling = true } = {}) {
   // A legacy `local:` path or color key fails validation. Strip it before
   // the check. Surf ids that use the older `local-` prefix stay for the
   // surf-id migration.
@@ -311,8 +333,13 @@ export function parseSurfJson(input, { allowDuplicatePartIds = false } = {}) {
     prepared = rewritten === text ? input : JSON.parse(rewritten);
   }
   const parsed = typeof prepared === 'string' ? JSON.parse(prepared) : prepared;
-  const raw = pruneDanglingSurfJoints(pruneDanglingColors(pruneDanglingGroupPartIds(parsed)));
-  const check = validateSurfJson(raw, { allowDuplicatePartIds });
+  const raw = pruneDangling
+    ? pruneDanglingSurfJoints(pruneDanglingColors(pruneDanglingGroupPartIds(parsed)))
+    : parsed;
+  const check = validateSurfJson(raw, {
+    allowDuplicatePartIds,
+    allowDanglingRefs: pruneDangling === false,
+  });
   if (!check.ok) throw new Error(`Invalid .surf.json: ${check.errors.join('; ')}`);
   const loaded = serializeAssembly({
     version: ASSEMBLY_VERSION,
@@ -331,9 +358,7 @@ export function parseSurfJson(input, { allowDuplicatePartIds = false } = {}) {
       placement: p.placement,
       sheetMetal: p.sheetMetal,
     })),
-    groups: raw.groups,
-    colors: raw.colors,
-    joints: raw.joints,
+    ...(pruneDangling ? { groups: raw.groups, colors: raw.colors, joints: raw.joints } : {}),
   });
   const mappedActive = (loaded.parts || []).find((part) => (
     part.id === raw.activeId || part.path === raw.activeId
@@ -341,5 +366,14 @@ export function parseSurfJson(input, { allowDuplicatePartIds = false } = {}) {
   const withActive = mappedActive
     ? { ...loaded, activeId: mappedActive.id }
     : loaded;
-  return withActive;
+  if (pruneDangling) return withActive;
+  // UUID rows: keep header-keyed groups/colors/joints until collapse remaps.
+  const kept = { ...withActive };
+  if (Array.isArray(parsed.groups)) kept.groups = parsed.groups;
+  else delete kept.groups;
+  if (parsed.colors != null) kept.colors = parsed.colors;
+  else delete kept.colors;
+  if (Array.isArray(parsed.joints)) kept.joints = parsed.joints;
+  else delete kept.joints;
+  return kept;
 }

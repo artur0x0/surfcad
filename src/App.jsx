@@ -92,7 +92,6 @@ import {
   composeViewportParts,
   dropPartRecord,
   feedRows,
-  newLocalPartId,
   normalizeRepoPath,
   parseAssemblyDocument,
   partPosition,
@@ -5831,9 +5830,9 @@ const App = () => {
 
   /** Seed a blank assembly (Parts + → Assembly). The folder menu imports or opens. */
   const handleNewAssembly = async () => {
-    const seedId = newLocalPartId();
-    const starter = DEFAULT_SCRIPT;
+    const seedId = mintSurfId();
     const source = githubConnected ? 'git' : 'local';
+    const starter = source === 'git' ? withSurfId(DEFAULT_SCRIPT, seedId) : DEFAULT_SCRIPT;
     const name = nextAssemblyName(await collectTakenAssemblyNames());
     const seedDoc = serializeAssembly({
       id: mintSurfId(),
@@ -5845,7 +5844,7 @@ const App = () => {
         name: DEFAULT_PART_NAME,
         visible: true,
         order: 0,
-        ...(source === 'git' ? { isSynced: false } : {}),
+        ...(source === 'git' ? { isSynced: false, surfId: seedId } : {}),
       }],
     });
     refreshGenRef.current += 1;
@@ -5896,7 +5895,7 @@ const App = () => {
     let id;
     let name;
     const rawName = String(partName ?? '').trim();
-    id = doc.source === 'git' ? mintSurfId() : newLocalPartId();
+    id = mintSurfId();
     const takenNames = (doc.parts || []).map((part) => part.name);
     name = rawName
       ? nextNumberedName(rawName, takenNames, { bareFirst: true })
@@ -6786,10 +6785,11 @@ const App = () => {
    * The fresh and busy rules below then decide if that buffer becomes the flange.
    */
   const seedOpenAssembly = async (script) => {
-    const seedId = newLocalPartId();
+    const seedId = mintSurfId();
     const source = githubConnected ? 'git' : 'local';
     const name = nextAssemblyName(await collectTakenAssemblyNames());
-    const text = typeof script === 'string' ? script : '';
+    let text = typeof script === 'string' ? script : '';
+    if (source === 'git') text = withSurfId(text, seedId);
     const seedDoc = serializeAssembly({
       id: mintSurfId(),
       source,
@@ -6800,7 +6800,7 @@ const App = () => {
         name: DEFAULT_PART_NAME,
         visible: true,
         order: 0,
-        ...(source === 'git' ? { isSynced: false } : {}),
+        ...(source === 'git' ? { isSynced: false, surfId: seedId } : {}),
       }],
     });
     refreshGenRef.current += 1;
@@ -8055,10 +8055,8 @@ const App = () => {
           setUploadError('Could not assign a path for this upload.');
           return;
         }
-        id = mintSurfId();
-      } else {
-        id = newLocalPartId();
       }
+      id = mintSurfId();
       let starter = importMeshScript(assetName);
       let surfId = null;
       if (doc.source === 'git') {
