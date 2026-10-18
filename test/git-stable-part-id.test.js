@@ -15,7 +15,7 @@ import {
   prepareVaultPartRename,
 } from '../src/utils/git/gitCommit.js';
 import { ensureAssemblyVaultPaths, allocateVaultPartPath } from '../src/utils/git/partVaultPath.js';
-import { findAssemblyPart, isStablePartId } from '../src/utils/git/partIdentity.js';
+import { findAssemblyPart } from '../src/utils/git/partIdentity.js';
 import { isSurfId } from '../src/utils/git/surfId.js';
 import { openVaultAssembly } from '../src/utils/git/gitWorkspace.js';
 import { renamePartCommand } from '../src/agent/commands/document.js';
@@ -110,7 +110,7 @@ test('create -> git_save -> reload keeps the same id', async () => {
     })),
   });
   assert.deepEqual(listed.parts.map((row) => row.id), openedIds);
-  assert.ok(listed.parts[0].path.startsWith(`assemblies/${ASM}/`));
+  assert.equal('path' in listed.parts[0], false);
 });
 
 test('second save after adopt does not mint -2 copies', async () => {
@@ -161,12 +161,12 @@ test('rename_part keeps the id and only moves the path', async () => {
 test('list_parts and rename_part resolve the stable id', async () => {
   let seen = null;
   const out = await renamePartCommand.run({
-    readAgentPartRename: (id) => {
-      seen = id;
-      return { known: isStablePartId(id) || id === IDS[0], writesGit: false };
+    agentRenamePart: async (args) => {
+      seen = args.partId;
+      return { result: { partId: args.partId, name: args.name, moved: false } };
     },
-    agentRenamePart: async (args) => ({ result: { status: 'renamed', partId: args.partId } }),
   }, { part_id: IDS[0], name: 'Body' });
   assert.equal(seen, IDS[0]);
   assert.equal(out.result?.partId, IDS[0]);
+  assert.equal(out.result?.moved, false);
 });

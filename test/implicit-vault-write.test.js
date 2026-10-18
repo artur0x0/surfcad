@@ -71,8 +71,10 @@ test('App implicit edits do not enqueue or flush a vault write', () => {
   const add = sliceBetween(APP, 'const handleAddPart', 'const handleDeletePart');
   assertNoGitWrite('handleAddPart', add);
 
-  const created = sliceBetween(APP, 'const handleNewAssembly', 'const handleAddPart');
+  const created = sliceBetween(APP, 'const handleNewAssembly', 'const applySeededAssembly');
   assert.equal(/ensureGitVault/.test(created), false, 'New Assembly must not create a vault');
+  const seed = sliceBetween(APP, 'const seedAgentAssembly', 'const agentGitReadContext');
+  assert.equal(/ensureGitVault/.test(seed), false, 'create_assembly must not create a vault');
 
   const collect = sliceBetween(APP, 'const collectTakenAssemblyNames', 'const gitSync =');
   assert.equal(/ensureGitVault/.test(collect), false, 'name listing must not create a vault');
@@ -134,14 +136,14 @@ test('App implicit edits do not enqueue or flush a vault write', () => {
   );
   assert.match(
     APP,
-    /async agentOpenAssembly\(\{ name \}\) \{[\s\S]*?if \(opened\?\.status === 'error'\) \{\s*return \{ error:/,
+    /async agentOpenAssembly\(\{ assemblyId \}\) \{[\s\S]*?if \(opened\?\.status === 'error'\) \{[\s\S]*?return \{ error:/,
   );
 
   const save = sliceBetween(APP, 'const handleGitCommit', 'const absorbOverwriteFiles');
   assert.match(save, /flushGitOps\(\{ surfaceConflict: false \}\)/);
   assert.match(save, /enqueueGit\(vault\.repo/);
   assert.match(save, /deletePaths/);
-  assert.match(APP, /async agentGitSave\(\{ message \}\) \{[\s\S]*?return handleGitCommit\(draft\);/);
+  assert.match(APP, /async agentGitSave\(\{ message \}\) \{[\s\S]*?handleGitCommit\(draft\)/);
 });
 
 test('path-less working copy serializes for baselines and is dirty until Save', () => {

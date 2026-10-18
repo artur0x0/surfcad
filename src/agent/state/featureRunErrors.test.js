@@ -153,7 +153,7 @@ function assertNoStackOrUrl(value) {
 test('errors and failures never include stack frames or URLs', async () => {
   const world = failingHost();
   const api = createSurfcadBridge({ resolve: () => world.host });
-  const ran = await api.call('set_script', { source: SCRIPT });
+  const ran = await api.call('set_script', { part_id: 'p1', source: SCRIPT });
   assert.deepEqual(ran.result.errors, [UI]);
   assert.equal(ran.result.failures[0].detail, 'RuntimeError');
   assertNoStackOrUrl(ran.result.errors);
@@ -167,7 +167,7 @@ test('errors and failures never include stack frames or URLs', async () => {
 test('a failing feature returns the viewport message, type, and label', async () => {
   const world = failingHost();
   const api = createSurfcadBridge({ resolve: () => world.host });
-  const ran = await api.call('set_script', { source: SCRIPT });
+  const ran = await api.call('set_script', { part_id: 'p1', source: SCRIPT });
   assert.equal(ran.ok, true);
   assert.equal(ran.result.ok, false);
   assert.deepEqual(ran.result.errors, [UI]);
@@ -251,7 +251,7 @@ test('a successful run ignores a stale failure ref', async () => {
   const api = createSurfcadBridge({ resolve: () => world.host });
   await api.call('run', {});
   world.setMode('ok');
-  const ran = await api.call('set_script', { source: SCRIPT });
+  const ran = await api.call('set_script', { part_id: 'p1', source: SCRIPT });
   assert.equal(ran.result.ok, true);
   assert.deepEqual((await api.call('errors', {})).result.errors, []);
   assert.equal((await api.call('status', {})).result.runState, 'ok');

@@ -159,7 +159,7 @@ test('Save is not blocked by unsaved parts and shows no extra dialog', () => {
   assert.equal(/PATH_LESS_PARTS/.test(commit), false);
   assert.equal(/unsaved parts|Save parts first|Add to Repo first|runAddStrayToRepo/.test(commit), false);
   assert.equal(/setCommitFlow|setLeaveGuard/.test(commit), false);
-  assert.match(app, /async agentGitSave\(\{ message \}\) \{[\s\S]*?return handleGitCommit\(draft\);/);
+  assert.match(app, /async agentGitSave\(\{ message \}\) \{[\s\S]*?handleGitCommit\(draft\)/);
 
   assert.match(feed, /data-git-save=""/);
   assert.match(feed, /onClick=\{startCommit\}/);

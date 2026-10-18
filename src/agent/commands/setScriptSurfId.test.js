@@ -19,6 +19,11 @@ test('set_script keeps the surf-id header for the active part', async () => {
       readHistory: () => ({ commits: [], head: -1 }),
       writeHistory() {},
       readActivePartSurfId: () => SURF_ID,
+      readParts: () => ({
+        activeId: SURF_ID,
+        assemblyName: 'Asm',
+        parts: [{ id: SURF_ID, name: 'Part', visible: true }],
+      }),
       async execute() {
         return {
           ok: true,
@@ -32,7 +37,7 @@ test('set_script keeps the surf-id header for the active part', async () => {
     }),
   });
 
-  await api.call('set_script', { source: BODY });
+  await api.call('set_script', { part_id: SURF_ID, source: BODY });
   const read = await api.call('get_script', {});
   assert.equal(read.ok, true);
   assert.match(read.result.source, /^\/\/ @surf-id /);
@@ -52,13 +57,18 @@ test('set_script injects a non-timestamp surf id without requiring the mint rege
       readHistory: () => ({ commits: [], head: -1 }),
       writeHistory() {},
       readActivePartSurfId: () => uuid,
+      readParts: () => ({
+        activeId: uuid,
+        assemblyName: 'Asm',
+        parts: [{ id: uuid, name: 'Part', visible: true }],
+      }),
       async execute() {
         return { ok: true, errors: [], volume: 8, bbox: null, partName: 'Part' };
       },
       screenshot: () => 'data:image/png;base64,',
     }),
   });
-  await api.call('set_script', { source: BODY });
+  await api.call('set_script', { part_id: uuid, source: BODY });
   const read = await api.call('get_script', {});
   assert.match(read.result.source, new RegExp(`^// @surf-id ${uuid}`));
 });
@@ -76,21 +86,26 @@ test('set_script wrap keeps @surf-id first, outside Code, and is idempotent', as
       readHistory: () => ({ commits: [], head: -1 }),
       writeHistory() {},
       readActivePartSurfId: () => uuid,
+      readParts: () => ({
+        activeId: uuid,
+        assemblyName: 'Asm',
+        parts: [{ id: uuid, name: 'Part', visible: true }],
+      }),
       async execute() {
         return { ok: true, errors: [], volume: 512, bbox: null, partName: 'Part' };
       },
       screenshot: () => 'data:image/png;base64,',
     }),
   });
-  await api.call('set_script', { source: raw });
+  await api.call('set_script', { part_id: uuid, source: raw });
   const first = (await api.call('get_script', {})).result.source;
   assert.match(first, new RegExp(`^// @surf-id ${uuid}\\n`));
   assert.ok(first.indexOf('// @surf-id') < first.indexOf(CODE_BEGIN));
   assert.ok(first.includes(CODE_BEGIN));
   assert.ok(first.includes(CODE_END));
   assert.equal(first.slice(first.indexOf(CODE_BEGIN)).includes('@surf-id'), false);
-  await api.call('set_script', { source: first });
+  await api.call('set_script', { part_id: uuid, source: first });
   assert.equal((await api.call('get_script', {})).result.source, first);
-  await api.call('set_script', { source: raw });
+  await api.call('set_script', { part_id: uuid, source: raw });
   assert.equal((await api.call('get_script', {})).result.source, first);
 });

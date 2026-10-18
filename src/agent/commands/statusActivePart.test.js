@@ -92,7 +92,7 @@ function host() {
 test('status follows the active part after create and switch without another run', async () => {
   const h = host();
   const api = createSurfcadBridge({ resolve: () => h });
-  await api.call('set_script', { source: BOX });
+  await api.call('set_script', { part_id: 'part-a', source: BOX });
   const afterRun = await api.call('status', {});
   assert.equal(afterRun.result.partId, 'part-a');
   assert.equal(afterRun.result.partName, 'Cube');
@@ -115,13 +115,13 @@ test('status follows the active part after create and switch without another run
 test('status after running A then B then switching to A keeps A\'s volume and bbox', async () => {
   const h = host();
   const api = createSurfcadBridge({ resolve: () => h });
-  await api.call('set_script', { source: BOX });
+  await api.call('set_script', { part_id: 'part-a', source: BOX });
   const afterA = await api.call('status', {});
   assert.equal(afterA.result.volume, 1000);
   assert.deepEqual(afterA.result.bbox.max, [5, 5, 5]);
 
   await api.call('set_active_part', { part_id: 'part-b' });
-  await api.call('set_script', { source: SPHERE });
+  await api.call('set_script', { part_id: 'part-b', source: SPHERE });
   const afterB = await api.call('status', {});
   assert.equal(afterB.result.partId, 'part-b');
   assert.equal(afterB.result.volume, 523.6);

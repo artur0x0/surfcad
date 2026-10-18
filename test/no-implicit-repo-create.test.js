@@ -82,6 +82,7 @@ const READ_HANDLERS = [
   'handleListBranches',
   'handleListVaultBrowse',
   'handleListVaultAssemblies',
+  'handleOpenV2VaultAssembly',
   'handleUpgradeVault',
   'handleUpgradeConflict',
 ];

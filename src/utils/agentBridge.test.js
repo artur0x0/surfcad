@@ -90,6 +90,11 @@ function world(opts = {}) {
       if (Object.prototype.hasOwnProperty.call(opts, 'screenshot')) return opts.screenshot;
       return 'data:image/png;base64,iVBORw0KGgo=';
     },
+    readParts: () => ({
+      activeId: 'part-1',
+      assemblyName: 'Asm',
+      parts: [{ id: 'part-1', name: 'Part (1)', visible: true }],
+    }),
     async agentUndo() {
       const before = history;
       const undone = undoPartHistory(history);
@@ -225,7 +230,7 @@ test('version and commands are the v1 tool list', () => {
 test('each set_script is exactly one undo step', async () => {
   const env = world();
   const api = createSurfcadBridge(env.host);
-  const box = await invoke(api, 'set_script', { source: BOX });
+  const box = await invoke(api, 'set_script', { part_id: 'part-1', source: BOX });
   assert.equal(box.ok, true);
   assert.equal(box.result.ok, true);
   assert.deepEqual(box.result.errors, []);
@@ -240,7 +245,7 @@ test('each set_script is exactly one undo step', async () => {
   assert.equal(env.calls.writeHistory, 1);
   assert.equal(env.buffer(), BOX);
 
-  const hole = await invoke(api, 'set_script', { source: HOLE, future: true });
+  const hole = await invoke(api, 'set_script', { part_id: 'part-1', source: HOLE, future: true });
   assert.equal(hole.ok, true);
   assert.equal(hole.result.status.featureCount, 2);
   assert.equal(hole.result.status.volume, 21738);
@@ -259,8 +264,8 @@ test('set_script wraps unmarked source as the same undo step', async () => {
   const raw = 'let part = Manifold.cube([40, 30, 20], true);\nreturn part;\n';
   const wrapped = wrapRawScript(raw);
   assert.notEqual(wrapped, raw);
-  await invoke(api, 'set_script', { source: BOX });
-  const wrote = await invoke(api, 'set_script', { source: raw });
+  await invoke(api, 'set_script', { part_id: 'part-1', source: BOX });
+  const wrote = await invoke(api, 'set_script', { part_id: 'part-1', source: raw });
   assert.equal(wrote.ok, true);
   assert.equal(env.buffer(), wrapped);
   assert.equal(env.history().commits.length, 2);
@@ -272,7 +277,7 @@ test('set_script wraps unmarked source as the same undo step', async () => {
 test('run of the script set_script just wrote is not a second undo step', async () => {
   const env = world();
   const api = createSurfcadBridge(env.host);
-  await invoke(api, 'set_script', { source: BOX });
+  await invoke(api, 'set_script', { part_id: 'part-1', source: BOX });
   const head = env.history().head;
   const ran = await invoke(api, 'run');
   assert.equal(ran.ok, true);
@@ -286,7 +291,7 @@ test('run of the script set_script just wrote is not a second undo step', async 
 test('run of a dirty editor buffer is exactly one undo step', async () => {
   const env = world();
   const api = createSurfcadBridge(env.host);
-  await invoke(api, 'set_script', { source: BOX });
+  await invoke(api, 'set_script', { part_id: 'part-1', source: BOX });
   env.setBuffer(HOLE);
   const ran = await invoke(api, 'run');
   assert.equal(ran.ok, true);
@@ -304,12 +309,12 @@ test('run of a dirty editor buffer is exactly one undo step', async () => {
 test('a seed wipe during the run does not turn one call into many undo steps', async () => {
   const env = world({ wipeOnExecute: true });
   const api = createSurfcadBridge(env.host);
-  await invoke(api, 'set_script', { source: BOX });
+  await invoke(api, 'set_script', { part_id: 'part-1', source: BOX });
   assert.equal(env.history().commits.length, 1);
   assert.equal(env.history().head, 0);
   assert.equal(env.history().commits[0].code, BOX);
 
-  await invoke(api, 'set_script', { source: HOLE });
+  await invoke(api, 'set_script', { part_id: 'part-1', source: HOLE });
   assert.equal(env.history().commits.length, 2);
   assert.equal(env.history().head, 1);
   assert.equal(env.history().commits[0].code, BOX);
@@ -320,8 +325,8 @@ test('a seed wipe during the run does not turn one call into many undo steps', a
 test('queued set_script calls stay one undo each and finish in order', async () => {
   const env = world();
   const api = createSurfcadBridge(env.host);
-  const first = invoke(api, 'set_script', { source: BOX });
-  const second = invoke(api, 'set_script', { source: HOLE });
+  const first = invoke(api, 'set_script', { part_id: 'part-1', source: BOX });
+  const second = invoke(api, 'set_script', { part_id: 'part-1', source: HOLE });
   const [a, b] = await Promise.all([first, second]);
   assert.equal(a.result.status.featureCount, 1);
   assert.equal(b.result.status.featureCount, 2);
@@ -334,7 +339,7 @@ test('queued set_script calls stay one undo each and finish in order', async () 
 test('a typed-array bbox leaves the envelope as plain JSON', async () => {
   const env = world({ typedBbox: true });
   const api = createSurfcadBridge(env.host);
-  const wrote = await invoke(api, 'set_script', { source: BOX });
+  const wrote = await invoke(api, 'set_script', { part_id: 'part-1', source: BOX });
   const min = wrote.result.status.bbox.min;
   assert.equal(Array.isArray(min), true);
   assert.equal(Object.prototype.toString.call(min), '[object Array]');
@@ -354,8 +359,8 @@ test('status, errors, screenshot, and undo follow the last run', async () => {
   assert.equal(emptyStatus.result.bbox, null);
   assert.equal(emptyScript.result.source, '');
 
-  await invoke(api, 'set_script', { source: BOX });
-  await invoke(api, 'set_script', { source: HOLE });
+  await invoke(api, 'set_script', { part_id: 'part-1', source: BOX });
+  await invoke(api, 'set_script', { part_id: 'part-1', source: HOLE });
   const status = await invoke(api, 'status');
   assert.equal(status.result.featureCount, 2);
   const shot = await invoke(api, 'screenshot', { format: 'png' });
@@ -374,7 +379,7 @@ test('status, errors, screenshot, and undo follow the last run', async () => {
   assert.equal(env.history().head, 0);
   assert.deepEqual((await invoke(api, 'errors')).result.errors, []);
 
-  const bad = await invoke(api, 'set_script', { source: `${BOX}\nthrow new Error('agent bridge demo');\n` });
+  const bad = await invoke(api, 'set_script', { part_id: 'part-1', source: `${BOX}\nthrow new Error('agent bridge demo');\n` });
   assert.equal(bad.ok, true);
   assert.equal(bad.result.ok, false);
   assert.deepEqual(bad.result.errors, ['agent bridge demo']);
@@ -397,7 +402,7 @@ test('status, errors, screenshot, and undo follow the last run', async () => {
 test('refused commands return an error envelope and do not commit', async () => {
   const env = world();
   const api = createSurfcadBridge(env.host);
-  await invoke(api, 'set_script', { source: BOX });
+  await invoke(api, 'set_script', { part_id: 'part-1', source: BOX });
 
   const unknown = await invoke(api, 'getScript');
   assert.equal(unknown.ok, false);
@@ -425,7 +430,7 @@ test('refused commands return an error envelope and do not commit', async () => 
   assert.equal(missing.ok, false);
   assert.equal(missing.error.code, 'bad_args');
 
-  const wrong = await invoke(api, 'set_script', { source: 1 });
+  const wrong = await invoke(api, 'set_script', { part_id: 'part-1', source: 1 });
   assert.equal(wrong.error.code, 'bad_args');
 
   const format = await invoke(api, 'screenshot', { format: 'jpg' });
@@ -459,10 +464,9 @@ test('convenience methods unwrap call() and throw on a refused command', async (
   assert.deepEqual(await api.errors(), []);
   assert.equal((await api.status()).volume, null);
 
-  const viaCall = await api.call('set_script', { source: BOX });
-  const viaWrap = await api.setScript(BOX);
+  const viaCall = await api.call('set_script', { part_id: 'part-1', source: BOX });
   assert.equal(viaCall.ok, true);
-  assert.deepEqual(viaWrap, viaCall.result);
+  await assert.rejects(api.setScript(BOX), (err) => err.code === 'bad_args');
   assert.equal(env.history().head, 0);
   assert.equal(env.history().commits.length, 1);
 
@@ -477,7 +481,7 @@ test('convenience methods unwrap call() and throw on a refused command', async (
   assert.equal(env.history().head, 0);
   assert.equal(env.buffer(), BOX);
 
-  await api.setScript(HOLE);
+  await api.call('set_script', { part_id: 'part-1', source: HOLE });
   const undone = await api.undo();
   assert.equal(undone.ok, true);
   assert.equal(await api.getScript(), BOX);
@@ -488,7 +492,7 @@ test('convenience methods unwrap call() and throw on a refused command', async (
 test('a host throw during execute stays a CAD result, and a throw outside it is internal', async () => {
   const executed = world();
   executed.host.execute = async () => { throw new Error('kernel'); };
-  const ran = await invoke(createSurfcadBridge(executed.host), 'set_script', { source: BOX });
+  const ran = await invoke(createSurfcadBridge(executed.host), 'set_script', { part_id: 'part-1', source: BOX });
   assert.equal(ran.ok, true);
   assert.equal(ran.result.ok, false);
   assert.deepEqual(ran.result.errors, ['kernel']);
@@ -511,7 +515,7 @@ test('reads do not wait for a queued mutation', async () => {
     return orig(src);
   };
   const api = createSurfcadBridge(env.host);
-  const pending = api.call('set_script', JSON.stringify({ source: BOX }));
+  const pending = api.call('set_script', JSON.stringify({ part_id: 'part-1', source: BOX }));
   await new Promise((resolve) => setTimeout(resolve, 0));
   const status = await api.call('status', '{}');
   assert.equal(status.ok, true);
@@ -527,7 +531,7 @@ test('reads do not wait for a queued mutation', async () => {
 test('list_commands returns name, schema, and example and does not commit', async () => {
   const env = world();
   const api = createSurfcadBridge(env.host);
-  await invoke(api, 'set_script', { source: BOX });
+  await invoke(api, 'set_script', { part_id: 'part-1', source: BOX });
   const listed = await invoke(api, 'list_commands', { extra: true });
   assert.equal(listed.ok, true);
   assert.equal(listed.result.commands.length, COMMANDS.length);
@@ -541,7 +545,7 @@ test('list_commands returns name, schema, and example and does not commit', asyn
     assert.equal('run' in command, false);
   }
   const setScript = listed.result.commands.find((command) => command.name === 'set_script');
-  assert.deepEqual(setScript.schema.required, ['source']);
+  assert.deepEqual(setScript.schema.required, ['part_id', 'source']);
   assert.equal(setScript.schema.properties.source.type, 'string');
   assert.equal(typeof setScript.example.source, 'string');
   const shot = listed.result.commands.find((command) => command.name === 'screenshot');
@@ -563,7 +567,7 @@ test('list_commands does not wait for a queued mutation', async () => {
     return orig(src);
   };
   const api = createSurfcadBridge(env.host);
-  const pending = api.call('set_script', JSON.stringify({ source: BOX }));
+  const pending = api.call('set_script', JSON.stringify({ part_id: 'part-1', source: BOX }));
   await new Promise((resolve) => setTimeout(resolve, 0));
   const listed = await api.call('list_commands', '{}');
   assert.equal(listed.ok, true);
@@ -633,12 +637,12 @@ test('visible director pacing does not change mutate results', async () => {
     async after() { cued += 1; },
   };
   const visibleApi = createSurfcadBridge({ resolve: () => env.host });
-  const visibleRun = await invoke(visibleApi, 'set_script', { source: BOX });
+  const visibleRun = await invoke(visibleApi, 'set_script', { part_id: 'part-1', source: BOX });
   assert.ok(cued >= 2);
 
   const plainEnv = world();
   const plainApi = createSurfcadBridge(plainEnv.host);
-  const plainRun = await invoke(plainApi, 'set_script', { source: BOX });
+  const plainRun = await invoke(plainApi, 'set_script', { part_id: 'part-1', source: BOX });
   assert.deepEqual(visibleRun.result.status, plainRun.result.status);
   assert.equal(visibleRun.result.ok, plainRun.result.ok);
 });

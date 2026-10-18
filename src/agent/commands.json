@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 183,
+  "count": 187,
   "$defs": {
     "status": {
       "type": "object",
@@ -192,14 +192,19 @@
     },
     {
       "name": "set_script",
-      "description": "Write the editor, run the script, and record one undo step when the text changes. Preserves or re-injects the active part `// @surf-id` header when the part has a surf id. Do not declare a reserved SurfCAD helper name with const, let, class, or function — the runtime passes these as function parameters: addDraft, align, array3D, booleanBodies, boundaryEdges, cboreHole, center, chamferEdges, clearanceHole, concaveEdges, convexEdges, cskHole, cut, deleteFace, draftFaces, edge, edgesBetween, edgesByOrientation, externalBody, facesByNormal, fastenerClearanceDia, fastenerMajorDia, fastenerTapDrillDia, filletAlongPath, filletEdges, getDimensions, getScaleRatio, hexPrism, hole, holePattern, holeSpan, holesOnContour, hollow, listFastenerSizes, loft, makeCrossSection, makeExtrude, makeLoft, makeRevolve, makeSweepPath, mirror, move, moveFace, offsetPlaneFrame, placeInFrame, placeOnFace, planarFaceAt, polarArray, profileCircle, profilePolygon, profileRectangle, rectTube, resolveFastenerSize, rotateContour, roundedBox, sheetMetalSolid, shell, signedFeatureEdges, solveContour, sumSqDist, sweep, sweepPoints, tapDrillHole, transformByFrame, tube, vecAdd, vecCross, vecDot, vecMul, vecNorm, vecNormalize, vecSub, workplaneFromFace. A redeclaration fails; rename your variable (for example `const cut`).",
+      "description": "Write the editor of part_id, run the script, and record one undo step when the text changes. part_id is required and must be the active part (part_mismatch otherwise). A vault path is unknown_part. Preserves or re-injects the active part `// @surf-id` header when the part has a surf id. Do not declare a reserved SurfCAD helper name with const, let, class, or function — the runtime passes these as function parameters: addDraft, align, array3D, booleanBodies, boundaryEdges, cboreHole, center, chamferEdges, clearanceHole, concaveEdges, convexEdges, cskHole, cut, deleteFace, draftFaces, edge, edgesBetween, edgesByOrientation, externalBody, facesByNormal, fastenerClearanceDia, fastenerMajorDia, fastenerTapDrillDia, filletAlongPath, filletEdges, getDimensions, getScaleRatio, hexPrism, hole, holePattern, holeSpan, holesOnContour, hollow, listFastenerSizes, loft, makeCrossSection, makeExtrude, makeLoft, makeRevolve, makeSweepPath, mirror, move, moveFace, offsetPlaneFrame, placeInFrame, placeOnFace, planarFaceAt, polarArray, profileCircle, profilePolygon, profileRectangle, rectTube, resolveFastenerSize, rotateContour, roundedBox, sheetMetalSolid, shell, signedFeatureEdges, solveContour, sumSqDist, sweep, sweepPoints, tapDrillHole, transformByFrame, tube, vecAdd, vecCross, vecDot, vecMul, vecNorm, vecNormalize, vecSub, workplaneFromFace. A redeclaration fails; rename your variable (for example `const cut`).",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "required": [
+          "part_id",
           "source"
         ],
         "properties": {
+          "part_id": {
+            "type": "string",
+            "description": "Part id to write. Must match the active part. Not a vault path."
+          },
           "source": {
             "type": "string",
             "description": "Script text written into the editor and run."
@@ -293,6 +298,9 @@
       },
       "errors": [
         "bad_args",
+        "unknown_part",
+        "part_mismatch",
+        "no_assembly",
         "internal"
       ],
       "mutates": true,
@@ -301,6 +309,7 @@
       "immediate": false,
       "uiEntry": null,
       "example": {
+        "part_id": "2026-10-07-20-56-31-0423-a3f9",
         "source": "let part = Manifold.cube([20, 20, 20], true);\nreturn part;\n"
       }
     },
@@ -1089,7 +1098,7 @@
     },
     {
       "name": "dirty",
-      "description": "Workspace and per-part dirty flags.",
+      "description": "Working-copy dirty flags. unsaved is true when the WC differs from the last AssemblyCommit (survives reload; covers rename, hide, and remove). pendingSave is an offline planned write waiting for a second Save. Changing activeId does not set assemblyDirty.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -1133,7 +1142,7 @@
     },
     {
       "name": "parts",
-      "description": "Assembly parts list (id, name, visible) and the active editor part. featureCount and bodyCount are on status, not here. featureCount counts insert_* feature blocks, so a freehand set_script is one feature. bodyCount is null until the first run; a finished run that produced no bodies reports 0.",
+      "description": "Open assembly: assemblyId, assemblyName, vaultLayout, activeId, and parts [{ id, name, visible, missing?, group? }]. No path field. featureCount and bodyCount are on status, not here. featureCount counts insert_* feature blocks, so a freehand set_script is one feature. bodyCount is null until the first run; a finished run that produced no bodies reports 0.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -7148,7 +7157,8 @@
         ],
         "properties": {
           "part_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Part id from parts. Not a vault path."
           }
         }
       },
@@ -7172,7 +7182,7 @@
       "immediate": true,
       "uiEntry": null,
       "example": {
-        "part_id": "local:part1"
+        "part_id": "2026-10-07-20-56-31-0423-a3f9"
       }
     },
     {
@@ -11244,11 +11254,16 @@
     },
     {
       "name": "create_assembly",
-      "description": "Seed a blank assembly document.",
+      "description": "Seed a blank local assembly. Single-flight per tab: overlapping calls return the same assemblyId. Optional name is a non-unique label. No git write. Returns { assemblyId, assemblyName, activeId, partCount }.",
       "args": {
         "type": "object",
         "additionalProperties": false,
-        "properties": {}
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Optional display label. Names are not unique and are not used as keys."
+          }
+        }
       },
       "result": {
         "type": "object",
@@ -11258,15 +11273,17 @@
         "internal"
       ],
       "mutates": true,
-      "destructive": true,
-      "confirm": true,
+      "destructive": false,
+      "confirm": false,
       "immediate": false,
       "uiEntry": "data-part-add-kind-assembly",
-      "example": {}
+      "example": {
+        "name": "Gearbox"
+      }
     },
     {
       "name": "create_part",
-      "description": "Add a part and make it the active part before returning. The result partId is the new part, not the previously active one. When script is set, that script runs before the call returns and the result also includes the same run outcome as run (ok, errors, failures, status). A failed script still leaves the part in place. Without script, the call only creates and activates the part. Agent calls default to the assembly origin (identity placement); pass position [x,y,z] mm to place explicitly. The UI still staggers new parts +40 mm on X so bodies do not overlap. In a git assembly the part has no vault path until git_save.",
+      "description": "Add a part and make it the active part before returning. The result partId is the new part, not the previously active one. When script is set, that script runs before the call returns and the result also includes the same run outcome as run (ok, errors, failures, status). A failed script still leaves the part in place. Without script, the call only creates and activates the part. Agent calls default to the assembly origin (identity placement); pass position [x,y,z] mm to place explicitly. The UI still staggers new parts +40 mm on X so bodies do not overlap. No git write. The part id is a surf-id.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -11308,7 +11325,7 @@
     },
     {
       "name": "rename_part",
-      "description": "Rename a part. A vault part moves its committed .js in the same folder (-2, -3 on collision) and updates that part path/name in .surf.json in one rename commit. Pending script, placement, and other edits stay for the next Save. Path-less parts rename locally with no commit. That write needs git consent like git_save.",
+      "description": "Rename a part display name on the working copy. Response { partId, name, moved: false }. No git write; the committed header updates on the next Save. A vault path is unknown_part.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -11319,11 +11336,11 @@
         "properties": {
           "part_id": {
             "type": "string",
-            "description": "Part row id from parts"
+            "description": "Part id from parts. Not a vault path."
           },
           "name": {
             "type": "string",
-            "description": "New display name; a vault part moves the committed <name>.js (-2, -3 on collision). Pending edits stay for Save."
+            "description": "New display name. Working copy only; Save writes the same f(id) file."
           }
         }
       },
@@ -11334,10 +11351,7 @@
       "errors": [
         "bad_args",
         "unknown_part",
-        "name_taken",
-        "consent_pending",
-        "real_repo_blocked",
-        "git_error",
+        "no_assembly",
         "internal"
       ],
       "mutates": true,
@@ -11346,23 +11360,64 @@
       "immediate": false,
       "uiEntry": "data-part-name-input",
       "example": {
-        "part_id": "parts/Bracket.js",
+        "part_id": "2026-10-07-20-56-31-0423-a3f9",
         "name": "Mount"
       }
     },
     {
-      "name": "part_get_transform",
-      "description": "Read a part rigid placement: position [x,y,z] mm and rotation as intrinsic XYZ Euler degrees (three.js Euler XYZ order).",
+      "name": "rename_assembly",
+      "description": "Rename the open assembly display name on the working copy. assembly_id required. Names are not unique. No git write.",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "part"
+          "assembly_id",
+          "name"
         ],
         "properties": {
-          "part": {
+          "assembly_id": {
             "type": "string",
-            "description": "Stable part id or vault path."
+            "description": "Assembly surf-id from parts / list_assemblies."
+          },
+          "name": {
+            "type": "string",
+            "description": "New display label. Working copy only; not unique."
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "unknown_assembly",
+        "no_assembly",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "data-assembly-rename-menu",
+      "example": {
+        "assembly_id": "2026-10-18-02-50-00-0001-aa01",
+        "name": "Gearbox"
+      }
+    },
+    {
+      "name": "part_get_transform",
+      "description": "Read a part rigid placement by part_id: position [x,y,z] mm and rotation as intrinsic XYZ Euler degrees (three.js Euler XYZ order). A vault path is unknown_part.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "part_id"
+        ],
+        "properties": {
+          "part_id": {
+            "type": "string",
+            "description": "Part id from parts. Not a vault path."
           }
         }
       },
@@ -11371,6 +11426,9 @@
         "additionalProperties": false,
         "properties": {
           "part": {
+            "type": "string"
+          },
+          "partId": {
             "type": "string"
           },
           "position": {
@@ -11406,22 +11464,22 @@
       "immediate": true,
       "uiEntry": null,
       "example": {
-        "part": "local:part1"
+        "part_id": "2026-10-07-20-56-31-0423-a3f9"
       }
     },
     {
       "name": "part_set_transform",
-      "description": "Set a part rigid placement (translation mm, intrinsic XYZ Euler degrees). Records one assembly undo step like a UI move.",
+      "description": "Set a part rigid placement by part_id (translation mm, intrinsic XYZ Euler degrees). Records one assembly undo step like a UI move. A vault path is unknown_part.",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "part"
+          "part_id"
         ],
         "properties": {
-          "part": {
+          "part_id": {
             "type": "string",
-            "description": "Stable part id or vault path to move."
+            "description": "Part id from parts. Not a vault path."
           },
           "position": {
             "type": "array",
@@ -11448,6 +11506,9 @@
         "additionalProperties": false,
         "properties": {
           "part": {
+            "type": "string"
+          },
+          "partId": {
             "type": "string"
           },
           "position": {
@@ -11484,7 +11545,7 @@
       "immediate": false,
       "uiEntry": null,
       "example": {
-        "part": "local:part1",
+        "part_id": "2026-10-07-20-56-31-0423-a3f9",
         "position": [
           10,
           0,
@@ -11494,17 +11555,17 @@
     },
     {
       "name": "open_assembly",
-      "description": "Open a vault assembly by its exact name (git mode). A name that is not in the vault returns not_found and lists the available names. More than one match returns ambiguous instead of opening one. Does not write git.",
+      "description": "Open a vault assembly by assembly_id only (git mode). A name or path is unknown_assembly. Does not write git.",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "name"
+          "assembly_id"
         ],
         "properties": {
-          "name": {
+          "assembly_id": {
             "type": "string",
-            "description": "Vault assembly name"
+            "description": "Assembly surf-id from list_assemblies. Not a name or path."
           }
         }
       },
@@ -11514,37 +11575,37 @@
       },
       "errors": [
         "bad_args",
-        "not_found",
-        "ambiguous",
+        "unknown_assembly",
         "git_only",
         "git_blocked",
         "internal"
       ],
       "mutates": true,
-      "destructive": true,
-      "confirm": true,
+      "destructive": false,
+      "confirm": false,
       "immediate": false,
       "uiEntry": [
         "data-part-open-action-assembly",
         "data-git-open-replace"
       ],
       "example": {
-        "name": "my-assembly"
+        "assembly_id": "2026-10-18-02-50-00-0001-aa01"
       }
     },
     {
       "name": "open_part",
-      "description": "Open or link a vault part into the assembly.",
+      "description": "Open a vault part by part_id and/or assembly_id into the current assembly (reference). No path argument. Does not write git.",
       "args": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "path"
-        ],
         "properties": {
-          "path": {
+          "part_id": {
             "type": "string",
-            "description": "Vault part path"
+            "description": "Part surf-id to open by reference into the current assembly."
+          },
+          "assembly_id": {
+            "type": "string",
+            "description": "Assembly surf-id whose parts are opened by reference."
           }
         }
       },
@@ -11554,6 +11615,9 @@
       },
       "errors": [
         "bad_args",
+        "unknown_part",
+        "unknown_assembly",
+        "git_only",
         "internal"
       ],
       "mutates": true,
@@ -11562,19 +11626,27 @@
       "immediate": false,
       "uiEntry": "data-part-open-action-part",
       "example": {
-        "path": "parts/Bracket.js"
+        "part_id": "2026-10-07-20-56-31-0423-a3f9"
       }
     },
     {
       "name": "insert_part",
-      "description": "Insert another assembly or add a new local part row.",
+      "description": "Insert-as-reference by part_id or assembly_id (all parts, same ids). copy:true mints a new part id and sets copiedFrom. No path. Local name/script still creates a new part. Does not write git.",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "source_assembly": {
+          "part_id": {
             "type": "string",
-            "description": "Git vault assembly to insert from"
+            "description": "Part surf-id to insert as a reference (same id)."
+          },
+          "assembly_id": {
+            "type": "string",
+            "description": "Insert every part of this assembly as references."
+          },
+          "copy": {
+            "type": "boolean",
+            "description": "Mint a new part id and set copiedFrom (independent file)."
           },
           "name": {
             "type": "string",
@@ -11591,6 +11663,9 @@
       },
       "errors": [
         "bad_args",
+        "unknown_part",
+        "unknown_assembly",
+        "git_only",
         "internal"
       ],
       "mutates": true,
@@ -11599,7 +11674,128 @@
       "immediate": false,
       "uiEntry": "data-git-open-insert",
       "example": {
-        "name": "Pin"
+        "part_id": "2026-10-07-20-56-31-0423-a3f9"
+      }
+    },
+    {
+      "name": "list_assemblies",
+      "description": "List vault assemblies as [{ id, name }]. No path field.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "git_only",
+        "git_blocked",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": null,
+      "example": {}
+    },
+    {
+      "name": "delete_part",
+      "description": "Drop a part from the working copy. scope assembly removes the row; scope repo also plans a file delete on the next Save and requires confirm: true. Neither scope commits. part_still_referenced if another assembly lists the id.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "part_id",
+          "scope"
+        ],
+        "properties": {
+          "part_id": {
+            "type": "string",
+            "description": "Part id from parts. Not a vault path."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "assembly",
+              "repo"
+            ],
+            "description": "assembly drops the row; repo also plans a file delete on the next Save."
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Required true when scope is repo."
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "unknown_part",
+        "confirm_required",
+        "part_still_referenced",
+        "no_assembly",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": true,
+      "confirm": true,
+      "immediate": false,
+      "uiEntry": null,
+      "example": {
+        "part_id": "2026-10-07-20-56-31-0423-a3f9",
+        "scope": "assembly"
+      }
+    },
+    {
+      "name": "delete_assembly",
+      "description": "Delete an assembly from the working copy. Requires confirm: true. delete_parts plans unreferenced part-file deletes on the next Save. No git write in this command.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "assembly_id"
+        ],
+        "properties": {
+          "assembly_id": {
+            "type": "string",
+            "description": "Assembly surf-id. Not a name or path."
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be true."
+          },
+          "delete_parts": {
+            "type": "boolean",
+            "description": "When true, plan part-file deletes on the next Save if unreferenced."
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "unknown_assembly",
+        "confirm_required",
+        "upgrade_required",
+        "no_assembly",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": true,
+      "confirm": true,
+      "immediate": false,
+      "uiEntry": null,
+      "example": {
+        "assembly_id": "2026-10-18-02-50-00-0001-aa01",
+        "confirm": true
       }
     },
     {
@@ -15256,7 +15452,7 @@
     },
     {
       "name": "git_save",
-      "description": "Save like the Parts Save button: give every path-less part a vault path, then commit those parts, dirty parts, and the .surf.json in one commit on the current branch. When Upgrade vault is enabled, a legacy vault does not write v1: it returns upgrade_required and prompts Upgrade vault. With the flag off (production), Save on a legacy vault still writes v1 as on main. A real repo returns consent_pending at once until the user clicks Allow; retry after.",
+      "description": "Save like the Parts Save button: the same planSave / writeVaultCommit path. Message required. Results omit path fields. On a legacy vault with Upgrade enabled, returns upgrade_required (no v1 write). A queued/offline plan returns status pending with code pending_save. conflict and repo-moved are typed errors. A real repo returns consent_pending at once until the user clicks Allow; retry after.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -15277,6 +15473,9 @@
       "errors": [
         "bad_args",
         "upgrade_required",
+        "conflict",
+        "repo-moved",
+        "pending_save",
         "git_blocked",
         "consent_pending",
         "real_repo_blocked",
@@ -15401,17 +15600,17 @@
     },
     {
       "name": "git_add_to_repo",
-      "description": "Add a part row into the vault tree and commit. Other path-less parts are pathed and committed with it so the .surf.json stays valid.",
+      "description": "Alias of git_save. Prefer git_save. Same planSave / writeVaultCommit path. Message required. Results omit path fields.",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "part_id"
+          "message"
         ],
         "properties": {
-          "part_id": {
+          "message": {
             "type": "string",
-            "description": "Part row id to add under the vault layout"
+            "description": "Commit message. Alias of git_save; prefer git_save."
           }
         }
       },
@@ -15421,6 +15620,10 @@
       },
       "errors": [
         "bad_args",
+        "upgrade_required",
+        "conflict",
+        "repo-moved",
+        "pending_save",
         "git_blocked",
         "consent_pending",
         "real_repo_blocked",
@@ -15435,12 +15638,12 @@
         "data-part-add-to-repo"
       ],
       "example": {
-        "part_id": "parts/Bracket.js"
+        "message": "Add to repo"
       }
     },
     {
       "name": "git_behind_resolve",
-      "description": "Resolve behind-remote: keep mine, reload, or branch.",
+      "description": "Conflict / main-moved choice. action reload = Get latest (not a git write). action branch = Save mine to a new branch. Both require confirm: true. action keep is removed (Dismiss is not a tool). No path argument.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -15451,23 +15654,14 @@
           "action": {
             "type": "string",
             "enum": [
-              "keep",
               "reload",
               "branch"
             ],
-            "description": "Get latest choice: keep mine, reload remote, or park mine on a branch"
+            "description": "reload = Get latest (no git write). branch = Save mine to a new branch. keep is removed."
           },
-          "path": {
-            "type": "string",
-            "description": "Vault path (assembly or part file)"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "part",
-              "assembly"
-            ],
-            "description": "Defaults from path when omitted"
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be true."
           }
         }
       },
@@ -15478,6 +15672,8 @@
       "errors": [
         "bad_args",
         "confirm_required",
+        "conflict",
+        "repo-moved",
         "git_blocked",
         "consent_pending",
         "real_repo_blocked",
@@ -15488,14 +15684,12 @@
       "confirm": true,
       "immediate": false,
       "uiEntry": [
-        "data-git-behind-keep",
         "data-git-behind-reload",
         "data-git-behind-branch"
       ],
       "example": {
-        "action": "keep",
-        "path": "assemblies/demo.surf.json",
-        "kind": "assembly"
+        "action": "reload",
+        "confirm": true
       }
     },
     {
@@ -15640,6 +15834,8 @@
       },
       "errors": [
         "confirm_required",
+        "conflict",
+        "repo-moved",
         "git_blocked",
         "consent_pending",
         "real_repo_blocked",

@@ -799,9 +799,9 @@ export const COMMAND_META = {
     confirm: true,
   },
   git_save: {
-    description: 'Save like the Parts Save button: give every path-less part a vault path, then commit those parts, dirty parts, and the .surf.json in one commit on the current branch. When Upgrade vault is enabled, a legacy vault does not write v1: it returns upgrade_required and prompts Upgrade vault. With the flag off (production), Save on a legacy vault still writes v1 as on main. A real repo returns consent_pending at once until the user clicks Allow; retry after.',
+    description: 'Save like the Parts Save button: the same planSave / writeVaultCommit path. Message required. Results omit path fields. On a legacy vault with Upgrade enabled, returns upgrade_required (no v1 write). A queued/offline plan returns status pending with code pending_save. conflict and repo-moved are typed errors. A real repo returns consent_pending at once until the user clicks Allow; retry after.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'upgrade_required', 'conflict', 'repo-moved', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
+    errors: ['bad_args', 'upgrade_required', 'conflict', 'repo-moved', 'pending_save', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
     mutates: true,
   },
   git_upgrade_vault: {
@@ -840,9 +840,9 @@ export const COMMAND_META = {
     confirm: true,
   },
   git_add_to_repo: {
-    description: 'Alias of git_save. Prefer git_save. Same planner and one commit. Message required.',
+    description: 'Alias of git_save. Prefer git_save. Same planSave / writeVaultCommit path. Message required. Results omit path fields.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'upgrade_required', 'conflict', 'repo-moved', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
+    errors: ['bad_args', 'upgrade_required', 'conflict', 'repo-moved', 'pending_save', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
     mutates: true,
   },
   git_behind_resolve: {

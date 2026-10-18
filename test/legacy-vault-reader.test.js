@@ -18,7 +18,6 @@ import {
   detectVaultLayout,
   openLegacyAssembly,
   listLegacyAssemblies,
-  UnsupportedVaultLayoutError,
 } from '../src/utils/git/legacyVault/index.js';
 
 const NOW = new Date('2026-10-18T12:00:00.000Z');
@@ -231,9 +230,7 @@ test('detectVaultLayout treats a v2 id-named tree as v2', async () => {
   await assert.rejects(
     () => openVaultAssembly(gh, vault.repo, 'Gearbox'),
     (err) => {
-      assert.equal(err instanceof UnsupportedVaultLayoutError, true);
-      assert.equal(err.code, 'unsupported_vault_version');
-      assert.match(String(err.message), /not yet implemented/i);
+      assert.equal(err.code, 'unknown_assembly');
       return true;
     },
   );
