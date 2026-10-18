@@ -128,9 +128,12 @@ async function partBodySamples(page) {
 export async function run(ctx) {
   const { page, findings } = ctx;
   const runner = createStepRunner();
+  const listed = await agentCall(page, 'parts', {});
+  // Load strips a legacy `local:` prefix, so the live id is the opaque row id.
+  const partId = listed.result?.activeId;
 
   await runner.runStep('failing feature matches the popup', async () => {
-    const ran = await agentCall(page, 'set_script', { part_id: 'local:part1', source: HARD_FAIL });
+    const ran = await agentCall(page, 'set_script', { part_id: partId, source: HARD_FAIL });
     const errs = await agentCall(page, 'errors', {});
     const status = await agentCall(page, 'status', {});
     const toasts = await agentCall(page, 'toasts', {});
@@ -172,7 +175,7 @@ export async function run(ctx) {
   });
 
   await runner.runStep('successful run clears the feature error', async () => {
-    const ran = await agentCall(page, 'set_script', { part_id: 'local:part1', source: GOOD });
+    const ran = await agentCall(page, 'set_script', { part_id: partId, source: GOOD });
     const errs = await agentCall(page, 'errors', {});
     const status = await agentCall(page, 'status', {});
     const popupGone = await page.locator('[data-execution-error]').count() === 0;
@@ -207,7 +210,7 @@ export async function run(ctx) {
   });
 
   await runner.runStep('recovered solid is not a successful run', async () => {
-    const ran = await agentCall(page, 'set_script', { part_id: 'local:part1', source: PARTIAL });
+    const ran = await agentCall(page, 'set_script', { part_id: partId, source: PARTIAL });
     const errs = await agentCall(page, 'errors', {});
     const status = await agentCall(page, 'status', {});
     const toasts = await agentCall(page, 'toasts', {});
