@@ -109,6 +109,34 @@ test('App implicit edits do not enqueue or flush a vault write', () => {
   assert.match(APP, /NO_REPO_YET_COPY/);
   assert.equal(/queuedRename/.test(APP), false);
 
+  assert.match(
+    sliceBetween(APP, 'const ensureGitVault = async', 'ensureGitVaultRef.current'),
+    /create = false/,
+    'ensureGitVault must default to create:false',
+  );
+  const createTrue = [...APP.matchAll(/ensureGitVault\(\{\s*create:\s*true\s*\}\)/g)];
+  assert.equal(createTrue.length, 3, 'only Save, Add to repo, and Save on new branch may create a repo');
+  assert.match(
+    sliceBetween(APP, 'const handleGitCommit', 'const absorbOverwriteFiles'),
+    /ensureGitVault\(\{\s*create:\s*true\s*\}\)/,
+  );
+  assert.match(
+    sliceBetween(APP, 'const handleAddToRepo', 'const handleListBranches'),
+    /ensureGitVault\(\{\s*create:\s*true\s*\}\)/,
+  );
+  assert.match(
+    sliceBetween(APP, 'const handleSaveOnNewBranch', 'const handleBehindChoice'),
+    /ensureGitVault\(\{\s*create:\s*true\s*\}\)/,
+  );
+  assert.match(
+    sliceBetween(APP, 'const handleOpenVaultAssembly', 'const handleAddExistingPart'),
+    /gitOpCatchResult/,
+  );
+  assert.match(
+    APP,
+    /async agentOpenAssembly\(\{ name \}\) \{[\s\S]*?if \(opened\?\.status === 'error'\) \{\s*return \{ error:/,
+  );
+
   const save = sliceBetween(APP, 'const handleGitCommit', 'const absorbOverwriteFiles');
   assert.match(save, /flushGitOps\(\{ surfaceConflict: false \}\)/);
   assert.match(save, /enqueueGit\(vault\.repo/);
