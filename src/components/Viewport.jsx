@@ -5,7 +5,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import {
-  WebGLRenderer,
   Scene,
   PerspectiveCamera,
   PointLight,
@@ -55,6 +54,12 @@ import { buildSelection } from '../agent/state/selection';
 import { applyTrackballFeel, trackballRotateSpeedForPointer } from '../utils/trackballFeel';
 import { installPageZoomLock } from '../utils/pageZoomLock';
 import { readViewportContainerSize, resizeViewportRenderer } from '../utils/viewportResize';
+import {
+  createViewportWebGLRenderer,
+  disposeViewportRenderer,
+  installWebglContextLossHandlers,
+  WebGLUnavailableNotice,
+} from '../utils/viewportWebgl.js';
 import { installViewportGestureZoom } from '../utils/viewportGestureZoom';
 import { formatDisplayNumber } from '../utils/displayUnit';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
@@ -1490,6 +1495,7 @@ const Viewport = forwardRef(({
   const [selectedPlaneId, setSelectedPlaneId] = useState(null);
   const [armedContourId, setArmedContourId] = useState(null);
   const [sceneReady, setSceneReady] = useState(false);
+  const [webglUnavailable, setWebglUnavailable] = useState(false);
   const contourModeRef = useRef(null);
   /** Last agent/UI write not yet flushed through React state. */
   const contourLiveWriteRef = useRef(null);
@@ -10599,6 +10605,7 @@ const Viewport = forwardRef(({
     // controls instead of controlsRef (a later mount overwrites the ref).
     let rafId = 0;
     let loopAlive = true;
+    let removeWebglContextLoss = () => {};
     let orbitControls = null;
     let orbitPointerDom = null;
     let onPointerDownRotateSpeed = null;
@@ -10648,9 +10655,18 @@ const Viewport = forwardRef(({
       cameraRef.current = camera;
       setSceneReady(true);
 
-      const renderer = new WebGLRenderer({
-        canvas: canvasRef.current,
-        antialias: true
+      // three.js throws "Error creating WebGL context." when the browser
+      // cannot make a context (no GPU, acceleration off, blocklisted driver).
+      // Stay inside this effect so the app-wide error boundary does not
+      // replace the editor. Scene and camera stay; the draw loop does not start.
+      const renderer = createViewportWebGLRenderer(canvasRef.current);
+      if (!renderer) {
+        setWebglUnavailable(true);
+        return;
+      }
+      removeWebglContextLoss = installWebglContextLossHandlers(canvasRef.current, {
+        onLost: () => setWebglUnavailable(true),
+        onRestored: () => setWebglUnavailable(false),
       });
 
       resizeViewportRenderer({
@@ -11421,9 +11437,10 @@ const Viewport = forwardRef(({
       }
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
-      if (rendererRef.current) {
-        rendererRef.current.dispose();
-      }
+      removeWebglContextLoss();
+      removeWebglContextLoss = () => {};
+      disposeViewportRenderer(rendererRef.current);
+      rendererRef.current = null;
       if (resultRef.current?.geometry) {
         resultRef.current.geometry.dispose();
       }
@@ -15477,6 +15494,7 @@ const Viewport = forwardRef(({
 
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
       
+      {webglUnavailable ? <WebGLUnavailableNotice /> : null}
       <canvas ref={canvasRef} className="absolute inset-0 z-0 h-full w-full" />
     </div>
   );
