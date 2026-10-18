@@ -151,16 +151,35 @@ function hasOwn(obj, key) {
   return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
 }
 
+const REFERENCE_KEYS = ['branchAssemblies', 'openWorkingCopies', 'otherAssemblyCommits'];
+
+function listedReferenceInputs(input) {
+  const listed = [];
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return listed;
+  const sources = [input];
+  if (input.doc && typeof input.doc === 'object' && !Array.isArray(input.doc)) {
+    sources.push(input.doc);
+  }
+  for (const src of sources) {
+    for (const key of REFERENCE_KEYS) {
+      if (hasOwn(src, key)) listed.push({ key, value: src[key] });
+    }
+  }
+  return listed;
+}
+
+/** Present keys must be arrays. Empty array counts as a supplied reference set. */
+function assertReferenceInputTypes(input) {
+  for (const { key, value } of listedReferenceInputs(input)) {
+    if (!Array.isArray(value)) {
+      throw new Error(`planSave: ${key} must be an array`);
+    }
+  }
+}
+
 /** True when the caller supplied the §2.7 reference set (empty array counts). */
 function referenceInputsProvided(input) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return false;
-  const keys = ['branchAssemblies', 'openWorkingCopies', 'otherAssemblyCommits'];
-  if (keys.some((key) => hasOwn(input, key))) return true;
-  const doc = input.doc;
-  if (doc && typeof doc === 'object' && !Array.isArray(doc)) {
-    return keys.some((key) => hasOwn(doc, key));
-  }
-  return false;
+  return listedReferenceInputs(input).some(({ value }) => Array.isArray(value));
 }
 
 function parentAssemblies(partId, wc, selfId) {
@@ -265,6 +284,7 @@ export function planSave(branchTip, assemblyCommit, workingCopy, remoteTip, comp
   const wc = workingCopyOf(workingCopy);
   const assemblyId = typeof wc.id === 'string' ? wc.id.trim() : '';
   if (!isV2SurfId(assemblyId)) throw new Error('planSave: working copy needs a v2 assembly id');
+  assertReferenceInputTypes(workingCopy);
 
   const tip = parseBranchTip(branchTip);
   const prev = parseAssemblyCommit(assemblyCommit);

@@ -632,6 +632,18 @@ test('M2: omitted reference inputs refuse a part-file delete', () => {
   );
 });
 
+test('L-a: present-but-non-array reference inputs throw', () => {
+  const before = doc(A, 'Gearbox', [row(P, 'Bracket'), row(Q, 'Shaft', { order: 1 })]);
+  const after = doc(A, 'Gearbox', [row(Q, 'Shaft')]);
+  const committed = commitFrom(before, { [P]: BODY, [Q]: BODY_Q });
+  for (const bad of [undefined, null, 'oops']) {
+    assert.throws(
+      () => plan(tip(), committed, wc(after, { [Q]: BODY_Q }, { branchAssemblies: bad }), TIP, []),
+      /branchAssemblies must be an array/,
+    );
+  }
+});
+
 test('M3: assemblyCommit for another assembly throws', () => {
   const ofB = commitFrom(doc(B, 'Cover', [row(Q, 'Lid')]), { [Q]: BODY_Q });
   const ofA = wc(doc(A, 'Gearbox', [row(P, 'Bracket')]), { [P]: BODY });
