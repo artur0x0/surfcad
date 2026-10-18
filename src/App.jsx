@@ -3384,7 +3384,7 @@ const App = () => {
   };
 
   const flushGitOps = async ({ surfaceConflict = true } = {}) => {
-    if (assemblyRef.current?.vaultLayout === 'v2') {
+    if (assemblyRef.current?.vaultLayout === 'v2' && upgradeVaultEnabled()) {
       return {
         status: 'error',
         code: 'unsupported_vault_version',
@@ -3851,7 +3851,7 @@ const App = () => {
     if (!doc || doc.source !== 'git' || !id) {
       return { status: 'error', error: 'Not in Git mode' };
     }
-    if (doc.vaultLayout === 'v2') {
+    if (doc.vaultLayout === 'v2' && upgradeVaultEnabled()) {
       return {
         status: 'error',
         code: 'unsupported_vault_version',
@@ -4160,7 +4160,7 @@ const App = () => {
   const handleDeleteAssembly = async (name, mode = 'keep') => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') return { status: 'error', error: 'Not in Git mode' };
-    if (doc.vaultLayout === 'v2') {
+    if (doc.vaultLayout === 'v2' && upgradeVaultEnabled()) {
       return {
         status: 'error',
         code: 'unsupported_vault_version',
@@ -4839,16 +4839,7 @@ const App = () => {
     })) {
       return { status: 'error', error: 'Reconnect GitHub before saving this assembly.' };
     }
-    if (doc.vaultLayout === 'legacy') {
-      if (!upgradeVaultEnabled()) {
-        return {
-          status: 'upgrade_required',
-          code: 'upgrade_required',
-          error: 'This vault is still v1. Save does not write the old folder layout. Upgrade vault is not available in this build yet. Nothing was written.',
-          message: 'This vault is still v1. Save does not write the old folder layout. Upgrade vault is not available in this build yet. Nothing was written.',
-          hint: UPGRADE_UNAVAILABLE.hint,
-        };
-      }
+    if (doc.vaultLayout === 'legacy' && upgradeVaultEnabled()) {
       return {
         status: 'upgrade_required',
         code: 'upgrade_required',
@@ -5117,7 +5108,7 @@ const App = () => {
   };
 
   /** §2.9 on the follow-up Save only. Get latest never writes git. */
-  const handleUpgradeConflict = async ({ action, files, message, tipSha } = {}) => {
+  const handleUpgradeConflict = async ({ action, files, paths, message, tipSha } = {}) => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') {
       return {
@@ -5137,6 +5128,7 @@ const App = () => {
         repo: vault.repo,
         branch,
         files,
+        paths,
         message,
         store,
         assemblyId: doc.id,
@@ -7571,7 +7563,7 @@ const App = () => {
   const handleRenameAssembly = async (name) => {
     const doc = assemblyRef.current;
     if (!doc) return;
-    if (doc.source === 'git' && doc.vaultLayout === 'v2') {
+    if (doc.source === 'git' && doc.vaultLayout === 'v2' && upgradeVaultEnabled()) {
       setUploadError('This vault is v2. Rename still writes the old folder layout and is blocked until v2 Save lands. Nothing was written.');
       return { status: 'error', code: 'unsupported_vault_version' };
     }
@@ -8605,7 +8597,7 @@ const App = () => {
         legacyCleanup: !!dirtyBaseline?.legacyCleanup,
         undoStackDirty,
         editedSinceLoad,
-        upgradeRequired: doc?.vaultLayout === 'legacy',
+        upgradeRequired: doc?.vaultLayout === 'legacy' && upgradeVaultEnabled(),
       });
     },
     readToasts() {
@@ -9680,7 +9672,7 @@ const App = () => {
       onRenameRevert={handleRenameRevert}
       syncConflict={syncConflict}
       onSyncConflictClear={() => setSyncConflict(null)}
-      canCommit={assemblyDoc?.source === 'git' && !!sourceDirty && gitSession.phase === 'connected' || (assemblyDoc?.source === 'git' && assemblyDoc?.vaultLayout === 'legacy' && gitSession.phase === 'connected')}
+      canCommit={assemblyDoc?.source === 'git' && !!sourceDirty && gitSession.phase === 'connected' || (upgradeVaultEnabled() && assemblyDoc?.source === 'git' && assemblyDoc?.vaultLayout === 'legacy' && gitSession.phase === 'connected')}
       vaultLayout={assemblyDoc?.vaultLayout || null}
       upgradeAvailable={upgradeVaultEnabled()}
       onGitCommit={handleGitCommit}

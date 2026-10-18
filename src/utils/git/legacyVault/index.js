@@ -4,6 +4,8 @@
  * PR 10 deletes this folder.
  *
  * Import this entry point only — not `reader.js` / `detect.js` / `upgrade.js`.
+ * Exception: lastCommit.js imports reader.js directly so it never loads
+ * upgrade.js (lastCommit → index → upgrade → lastCommit).
  */
 export { detectVaultLayout, isLegacyVaultTree, listLegacyAssemblyNames } from './detect.js';
 export { openLegacyAssembly, listLegacyAssemblies, lastCommitBlobSources } from './reader.js';

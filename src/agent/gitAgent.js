@@ -162,23 +162,29 @@ export function requireDestructiveConfirm(args, label) {
   };
 }
 
-/** @param {Record<string, unknown>} result */
-export function gitOpResult(result) {
+/**
+ * Shape a host git result for the agent. `status: 'conflict'` is a real
+ * payload for git_move_to_repo (paths / assemblyExists) and other writers
+ * — same as main. Only git_upgrade_vault maps conflict to `{ error }`.
+ *
+ * @param {Record<string, unknown>} result
+ * @param {{ commandName?: string }} [opts]
+ */
+export function gitOpResult(result, { commandName } = {}) {
   if (!result || typeof result !== 'object') {
     return { result: { status: 'error', error: 'No result' } };
   }
   const code = result.code;
-  const failed = result.status === 'error'
-    || result.status === 'conflict'
-    || result.status === 'upgrade_required'
+  const upgradeFailed = result.status === 'upgrade_required'
     || result.status === 'upgrade_unavailable'
     || code === 'upgrade_required'
-    || code === 'upgrade_unavailable'
-    || code === 'conflict';
-  if (failed) {
+    || code === 'upgrade_unavailable';
+  const upgradeConflict = commandName === 'git_upgrade_vault'
+    && (result.status === 'conflict' || code === 'conflict');
+  if (result.status === 'error' || upgradeFailed || upgradeConflict) {
     const error = {
       code: code || (result.status === 'conflict' ? 'conflict' : 'git_error'),
-      message: result.message || result.error || 'Git operation failed',
+      message: result.error || result.message || 'Git operation failed',
     };
     if (typeof result.hint === 'string' && result.hint) error.hint = result.hint;
     return { error };

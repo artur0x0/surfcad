@@ -2,7 +2,7 @@
  * save-model v2 PR 4: Upgrade vault. Mock GitHub only — no network.
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
@@ -28,6 +28,7 @@ import {
   planUpgrade,
   planWorkingCopyFollowup,
   mapWorkingCopyToPlan,
+  applyUpgradeReload,
   isKnownReadmeSeed,
   SURFCAD_JSON_V2,
 } from '../src/utils/git/legacyVault/index.js';
@@ -502,6 +503,42 @@ test('planWorkingCopyFollowup is empty when the WC is clean', () => {
   assert.deepEqual(planWorkingCopyFollowup(plan, null), []);
 });
 
+test('planWorkingCopyFollowup keeps an explicit empty groups list', () => {
+  const prev = {
+    version: 2,
+    id: GEARBOX_ID,
+    name: 'Gearbox',
+    parts: [{ id: SHAFT_ID, name: 'Shaft', visible: true, order: 0 }],
+    groups: [{ id: GROUP_ID, name: 'Hardware', partIds: [SHAFT_ID] }],
+  };
+  const prevText = `${JSON.stringify(prev, null, 2)}\n`;
+  const plan = {
+    writes: {
+      [assemblyIdPath(GEARBOX_ID)]: prevText,
+      [partIdPath(SHAFT_ID)]: withSurfId('return 1;\n', SHAFT_ID),
+    },
+    folderToId: { Gearbox: GEARBOX_ID },
+    partIdByPath: { [SHAFT_PATH]: SHAFT_ID },
+    keptPartIds: [SHAFT_ID],
+  };
+  const files = planWorkingCopyFollowup(plan, {
+    dirty: true,
+    doc: {
+      id: GEARBOX_ID,
+      name: 'Gearbox',
+      activeId: SHAFT_ID,
+      parts: [{ id: SHAFT_ID, name: 'Shaft', visible: true, order: 0 }],
+      groups: [],
+    },
+    scripts: { [SHAFT_ID]: withSurfId('return 1;\n', SHAFT_ID) },
+  });
+  const jsonFile = files.find((f) => f.path === assemblyIdPath(GEARBOX_ID));
+  assert.ok(jsonFile, 'empty groups must still rewrite the assembly vs the plan');
+  const parsed = JSON.parse(jsonFile.content);
+  assert.equal((parsed.groups || []).length, 0);
+  assert.equal((parsed.groups || []).some((g) => g.id === GROUP_ID), false);
+});
+
 test('Save on a legacy vault prompts Upgrade and does not write v1', () => {
   const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
   const feed = readFileSync(join(ROOT, 'src/components/PartFeed.jsx'), 'utf8');
@@ -510,7 +547,7 @@ test('Save on a legacy vault prompts Upgrade and does not write v1', () => {
     feed.indexOf('const startCommit'),
     feed.indexOf('const runNewAssembly'),
   );
-  assert.match(startCommit, /vaultLayout === 'legacy'/);
+  assert.match(startCommit, /vaultLayout === 'legacy' && upgradeAvailable/);
   assert.match(startCommit, /stage: 'upgrade'/);
   assert.equal(/onGitCommit/.test(startCommit), false);
 
@@ -522,9 +559,9 @@ test('Save on a legacy vault prompts Upgrade and does not write v1', () => {
     gitCommit.indexOf("doc.vaultLayout === 'legacy'"),
     gitCommit.indexOf("doc.vaultLayout === 'v2'"),
   );
+  assert.match(legacyGate, /upgradeVaultEnabled\(\)/);
   assert.match(legacyGate, /upgrade_required/);
   assert.match(legacyGate, /git_upgrade_vault \{ confirm: true \}/);
-  assert.match(legacyGate, /upgradeVaultEnabled/);
   assert.equal(/ensureGitVault/.test(legacyGate), false);
   assert.equal(/assembleCommitFiles/.test(legacyGate), false);
 
@@ -545,8 +582,14 @@ test('Save on a legacy vault prompts Upgrade and does not write v1', () => {
   assert.match(overwriteBtn, /data-git-conflict-overwrite/);
   assert.match(overwriteBtn, /surface-quiet/);
   assert.equal(/surface-success/.test(overwriteBtn), false);
+  assert.match(feed, /Other local edits stay in the working copy/);
   assert.match(feed, /Nothing was written to git/);
   assert.match(feed, /switched the working copy/);
+  const runConflict = feed.slice(
+    feed.indexOf('const runUpgradeConflict'),
+    feed.indexOf('const runCommit'),
+  );
+  assert.match(runConflict, /paths: prior\?\.paths/);
 
   const open = app.slice(
     app.indexOf('const handleOpenVaultAssembly'),
@@ -631,11 +674,19 @@ test('PinCopy stale WC header does not write PinCopy script into Pin on commit 2
   assert.equal(out.rekey.pairs.some((row) => row.from === PIN_ID && row.to === COPY_ID), true);
 });
 
-test('follow-up is refused when a WC part cannot be mapped unambiguously', async () => {
+test('a WC part with no legacy path is added on commit 2', async () => {
   const { gh, repo } = await seedGearboxVault();
   const store = await storeFor(repo);
-  const writesBefore = commits(gh).length;
-  const stray = mintSurfId({ now: NOW, rand: 'zzzz' });
+  const addedId = mintSurfId({ now: NOW, rand: 'add0' });
+  const snapshots = [];
+  const orig = gh.commitFiles.bind(gh);
+  gh.commitFiles = async (dest, opts) => {
+    snapshots.push({
+      message: opts.message,
+      files: (opts.files || []).map((f) => ({ path: f.path, delete: !!f.delete, content: f.content })),
+    });
+    return orig(dest, opts);
+  };
   const out = await executeUpgrade(upgradeOpts(gh, repo, {
     store,
     workingCopy: {
@@ -643,14 +694,56 @@ test('follow-up is refused when a WC part cannot be mapped unambiguously', async
       doc: {
         id: GEARBOX_ID,
         name: 'Gearbox',
-        parts: [{ id: stray, name: 'Stray', visible: true, order: 0 }],
+        activeId: SHAFT_ID,
+        parts: [
+          { id: SHAFT_ID, path: SHAFT_PATH, name: 'Shaft', visible: true, order: 0 },
+          { id: addedId, name: 'New', visible: true, order: 1 },
+        ],
       },
-      scripts: { [stray]: 'return 1;\n' },
+      scripts: {
+        [SHAFT_ID]: withSurfId('return Manifold.cylinder(40, 6, 6, 24, true);\n', SHAFT_ID),
+        [addedId]: withSurfId('return "new-part";\n', addedId),
+      },
+    },
+  }));
+  assert.equal(out.status, 'upgraded_and_saved');
+  assert.equal(out.commits, 2);
+  assert.equal(snapshots.length, 2);
+  const second = snapshots[1].files.filter((f) => !f.delete);
+  const addedFile = second.find((f) => f.path === partIdPath(addedId));
+  assert.match(String(addedFile?.content), /new-part/);
+  const jsonFile = second.find((f) => f.path === assemblyIdPath(GEARBOX_ID));
+  assert.ok(jsonFile, 'commit 2 writes the assembly so the new part is listed');
+  const json = JSON.parse(jsonFile.content);
+  assert.equal(json.parts.some((part) => part.id === addedId && part.name === 'New'), true);
+  assert.match(await readText(gh, repo, partIdPath(addedId)), /new-part/);
+});
+
+test('follow-up is refused when two WC rows map to the same plan id', async () => {
+  const { gh, repo } = await seedGearboxVault();
+  const store = await storeFor(repo);
+  const writesBefore = commits(gh).length;
+  const out = await executeUpgrade(upgradeOpts(gh, repo, {
+    store,
+    workingCopy: {
+      dirty: true,
+      doc: {
+        id: GEARBOX_ID,
+        name: 'Gearbox',
+        parts: [
+          { id: SHAFT_ID, path: SHAFT_PATH, name: 'Shaft', visible: true, order: 0 },
+          { id: LID_ID, path: SHAFT_PATH, name: 'AlsoShaft', visible: true, order: 1 },
+        ],
+      },
+      scripts: {
+        [SHAFT_ID]: withSurfId('return "a";\n', SHAFT_ID),
+        [LID_ID]: withSurfId('return "b";\n', LID_ID),
+      },
     },
   }));
   assert.equal(out.status, 'error');
   assert.equal(out.code, 'working_copy_unmapped');
-  assert.match(out.message, /no unique path/);
+  assert.match(out.message, /same upgraded id/);
   assert.equal(out.commits, 1);
   assert.equal(out.sha, out.upgradeSha);
   assert.equal(commits(gh).length, writesBefore + 1);
@@ -775,6 +868,98 @@ test('historical README seeds from vaultSeedFiles are deleted', () => {
   ), true);
 });
 
+test('Get latest after a commit-2 conflict keeps a non-conflicting Pin edit', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const json = v1Surf('Box', [
+    { id: PIN_ID, path: PIN_PATH, name: 'Pin' },
+    { id: SHAFT_ID, path: SHAFT_PATH, name: 'Shaft' },
+  ]);
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed pin + shaft',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Box/.surf.json', json),
+      fileWrite(PIN_PATH, withSurfId('return "pin";\n', PIN_ID)),
+      fileWrite(SHAFT_PATH, withSurfId('return Manifold.cylinder(40, 6, 6, 24, true);\n', SHAFT_ID)),
+    ],
+  });
+  const store = await storeFor(vault.repo, { Box: BOX_ID });
+  const orig = gh.commitFiles.bind(gh);
+  let upgrades = 0;
+  gh.commitFiles = async (dest, opts) => {
+    const committed = await orig(dest, opts);
+    upgrades += 1;
+    if (upgrades === 1) {
+      await orig(dest, {
+        branch: 'main',
+        message: 'remote shaft',
+        files: [fileWrite(partIdPath(SHAFT_ID), withSurfId('return "remote-shaft";\n', SHAFT_ID))],
+        baseSha: committed.sha,
+      });
+    }
+    return committed;
+  };
+  const localPin = withSurfId('return "local-pin";\n', PIN_ID);
+  const localShaft = withSurfId('return "local-shaft";\n', SHAFT_ID);
+  const conflicted = await executeUpgrade(upgradeOpts(gh, vault.repo, {
+    store,
+    workingCopy: {
+      dirty: true,
+      doc: {
+        id: BOX_ID,
+        name: 'Box',
+        activeId: PIN_ID,
+        parts: [
+          { id: PIN_ID, path: PIN_PATH, name: 'Pin', visible: true, order: 0 },
+          { id: SHAFT_ID, path: SHAFT_PATH, name: 'Shaft', visible: true, order: 1 },
+        ],
+      },
+      scripts: {
+        [PIN_ID]: localPin,
+        [SHAFT_ID]: localShaft,
+      },
+    },
+  }));
+  assert.equal(conflicted.status, 'conflict');
+  assert.equal(conflicted.phase, 'save');
+  assert.equal((conflicted.paths || []).includes(partIdPath(SHAFT_ID)), true);
+  assert.equal((conflicted.paths || []).includes(partIdPath(PIN_ID)), false);
+  assert.equal((conflicted.files || []).some((f) => f.path === partIdPath(PIN_ID)), true);
+
+  const writes = commits(gh).length;
+  const reloaded = await executeUpgradeConflictChoice({
+    action: 'reload',
+    adapter: gh,
+    repo: vault.repo,
+    files: conflicted.files,
+    paths: conflicted.paths,
+  });
+  assert.equal(reloaded.status, 'reloaded');
+  assert.equal(commits(gh).length, writes);
+  assert.match(String(reloaded.contents[partIdPath(SHAFT_ID)]), /remote-shaft/);
+  assert.equal(reloaded.contents[partIdPath(PIN_ID)], undefined);
+
+  const applied = applyUpgradeReload(
+    {
+      id: BOX_ID,
+      name: 'Box',
+      source: 'git',
+      vaultLayout: 'v2',
+      activeId: PIN_ID,
+      parts: [
+        { id: PIN_ID, name: 'Pin', visible: true, order: 0 },
+        { id: SHAFT_ID, name: 'Shaft', visible: true, order: 1 },
+      ],
+    },
+    { [PIN_ID]: localPin, [SHAFT_ID]: localShaft },
+    reloaded.contents,
+  );
+  assert.match(applied.scripts[PIN_ID], /local-pin/);
+  assert.match(applied.scripts[SHAFT_ID], /remote-shaft/);
+});
+
 test('Get latest applies remote bytes and writes no git; branch starts from tipSha', async () => {
   const { gh, repo } = await seedGearboxVault();
   const store = await storeFor(repo);
@@ -849,25 +1034,87 @@ test('already_upgraded does not mark a dirty working copy clean', () => {
 test('v2 vault refuses leftover v1 writers and leaves the outbox unflushed', () => {
   const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
   const flush = app.slice(app.indexOf('const flushGitOps'), app.indexOf('flushGitSyncRef.current'));
-  assert.match(flush, /vaultLayout === 'v2'/);
+  assert.match(flush, /vaultLayout === 'v2' && upgradeVaultEnabled\(\)/);
   assert.match(flush, /left unflushed/);
   const addStart = app.indexOf('const handleAddToRepo');
   const add = app.slice(addStart, app.indexOf('setPendingPartIds', addStart));
-  assert.match(add, /vaultLayout === 'v2'/);
+  assert.match(add, /vaultLayout === 'v2' && upgradeVaultEnabled\(\)/);
   const delStart = app.indexOf('const handleDeleteAssembly');
   const del = app.slice(delStart, app.indexOf('if (assemblyOpenLockRef.current)', delStart));
-  assert.match(del, /vaultLayout === 'v2'/);
+  assert.match(del, /vaultLayout === 'v2' && upgradeVaultEnabled\(\)/);
   const renameStart = app.indexOf('const handleRenameAssembly');
   const rename = app.slice(renameStart, app.indexOf('const current = assemblyName(doc)', renameStart));
-  assert.match(rename, /vaultLayout === 'v2'/);
+  assert.match(rename, /vaultLayout === 'v2' && upgradeVaultEnabled\(\)/);
 });
 
-test('lastCommit and upgrade do not import each other', () => {
-  const last = readFileSync(join(ROOT, 'src/utils/git/lastCommit.js'), 'utf8');
-  const up = readFileSync(join(ROOT, 'src/utils/git/legacyVault/upgrade.js'), 'utf8');
-  assert.equal(/from ['"].*legacyVault\/upgrade/.test(last), false);
-  assert.equal(/from ['"].*lastCommit/.test(up), false);
-  assert.match(up, /await import\('\.\.\/lastCommit\.js'\)/);
+test('flag-off Save and Add to Repo keep main v1 writers', () => {
+  const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const feed = readFileSync(join(ROOT, 'src/components/PartFeed.jsx'), 'utf8');
+  const gitCommit = app.slice(
+    app.indexOf('const handleGitCommit'),
+    app.indexOf('const handleUpgradeVault'),
+  );
+  assert.match(gitCommit, /doc\.vaultLayout === 'legacy' && upgradeVaultEnabled\(\)/);
+  assert.match(gitCommit, /ensureGitVault\(\{\s*create:\s*true\s*\}\)/);
+  const addStart = app.indexOf('const handleAddToRepo');
+  const add = app.slice(addStart, app.indexOf('const handleListBranches', addStart));
+  assert.match(add, /commitPartToRepo/);
+  assert.equal(/upgrade_required/.test(add), false);
+  assert.match(add, /vaultLayout === 'v2' && upgradeVaultEnabled\(\)/);
+  const startCommit = feed.slice(
+    feed.indexOf('const startCommit'),
+    feed.indexOf('const runNewAssembly'),
+  );
+  assert.match(startCommit, /stage: 'message'/);
+  assert.match(startCommit, /upgradeAvailable/);
+});
+
+function staticRelativeImports(file) {
+  const specs = [];
+  const text = readFileSync(file, 'utf8');
+  const re = /(?:^|\n)\s*(?:export\s+)?import\s[\s\S]*?from\s+['"](\.[^'"]+)['"]/g;
+  let m;
+  while ((m = re.exec(text))) specs.push(m[1]);
+  return specs;
+}
+
+function resolveImport(fromFile, spec) {
+  let next = join(dirname(fromFile), spec);
+  if (existsSync(next)) return next;
+  if (existsSync(`${next}.js`)) return `${next}.js`;
+  if (existsSync(`${next}.jsx`)) return `${next}.jsx`;
+  const indexJs = join(next, 'index.js');
+  if (existsSync(indexJs)) return indexJs;
+  return next;
+}
+
+function reachableFrom(start) {
+  const srcRoot = join(ROOT, 'src');
+  const seen = new Set();
+  const queue = [start];
+  while (queue.length) {
+    const file = queue.pop();
+    if (seen.has(file) || !existsSync(file) || !file.startsWith(srcRoot)) continue;
+    seen.add(file);
+    for (const spec of staticRelativeImports(file)) {
+      queue.push(resolveImport(file, spec));
+    }
+  }
+  return seen;
+}
+
+test('lastCommit import graph never reaches upgrade.js', () => {
+  const last = join(ROOT, 'src/utils/git/lastCommit.js');
+  const upgrade = join(ROOT, 'src/utils/git/legacyVault/upgrade.js');
+  const reader = join(ROOT, 'src/utils/git/legacyVault/reader.js');
+  const fromLast = reachableFrom(last);
+  assert.equal(fromLast.has(upgrade), false);
+  assert.equal(fromLast.has(reader), true);
+  const fromUpgrade = reachableFrom(upgrade);
+  assert.equal(fromUpgrade.has(last), true);
+  const upText = readFileSync(upgrade, 'utf8');
+  assert.equal(/import\(['"]\.\.\/lastCommit\.js['"]\)/.test(upText), false);
+  assert.match(upText, /from ['"]\.\.\/lastCommit\.js['"]/);
 });
 
 test('mapWorkingCopyToPlan uses the plan path map, not WC header ids', () => {

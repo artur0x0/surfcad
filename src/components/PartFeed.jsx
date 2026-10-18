@@ -756,7 +756,7 @@ const PartFeed = forwardRef(function PartFeed({
 
   const startCommit = () => {
     if (source !== 'git' || !canCommit) return;
-    if (vaultLayout === 'legacy') {
+    if (vaultLayout === 'legacy' && upgradeAvailable) {
       setCommitFlow({ stage: 'upgrade', draft: '', result: null, error: '' });
       return;
     }
@@ -1159,6 +1159,7 @@ const PartFeed = forwardRef(function PartFeed({
     const result = (await onUpgradeConflict?.({
       action,
       files: prior?.files,
+      paths: prior?.paths,
       message: prior?.message,
       tipSha: prior?.tipSha || prior?.upgradeSha || null,
     })) || { status: 'error', error: 'Action unavailable' };
@@ -1823,8 +1824,8 @@ const PartFeed = forwardRef(function PartFeed({
                 data-git-save=""
                 data-git-dirty={sourceDirty ? 'true' : 'false'}
                 disabled={!canCommit}
-                title={vaultLayout === 'legacy'
-                  ? (upgradeAvailable ? 'Upgrade vault to v2' : 'This vault is still v1. Upgrade is not available yet.')
+                title={vaultLayout === 'legacy' && upgradeAvailable
+                  ? 'Upgrade vault to v2'
                   : (canCommit ? `Save (commit) to ${currentBranch || 'main'}` : 'Nothing to save')}
                 aria-label="Save"
                 onClick={startCommit}
@@ -2510,7 +2511,7 @@ const PartFeed = forwardRef(function PartFeed({
                     : commitFlow.result?.status === 'upgraded_and_saved'
                       ? `Upgraded to v2 and saved working-copy edits (${String(commitFlow.result?.sha || '').slice(0, 7)}).`
                       : commitFlow.result?.status === 'reloaded'
-                        ? 'Loaded the remote versions of the conflicting files. Nothing was written to git.'
+                        ? 'Loaded the remote versions of the conflicting files. Other local edits stay in the working copy. Nothing was written to git.'
                         : commitFlow.result?.status === 'branched'
                           ? `Saved on ${commitFlow.result?.branch || 'a new branch'} and switched the working copy.`
                           : commitFlow.result?.status === 'committed'

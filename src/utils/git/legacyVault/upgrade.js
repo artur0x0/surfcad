@@ -31,6 +31,7 @@ import { pruneDanglingColors, pruneDanglingGroupPartIds } from '../surfJson.js';
 import { parseSurfJsonV2, stringifySurfJsonV2 } from '../surfJsonV2.js';
 import { pruneDanglingSurfJoints } from '../../jointSchema.js';
 import { VAULT_MARKER_KIND, VAULT_MARKER_PATH } from '../vaultNames.js';
+import { captureLastCommit } from '../lastCommit.js';
 import { VAULT_README_PATH } from '../vaultLayout.js';
 import {
   detectVaultLayout,
@@ -633,7 +634,9 @@ function wcScriptOf(part, scripts) {
 /**
  * Map a dirty WC onto the upgrade plan's ids via the plan's legacy-path
  * map (not WC header ids). Rekeys in memory only — callers persist IDB.
- * Ambiguous / unmapped parts refuse the follow-up.
+ * A WC part whose id is not in the plan and that has no mapped legacy
+ * path is an add (`parts/<id>.js`). Refuse only true ambiguity: two WC
+ * rows mapping to one plan id.
  */
 export function mapWorkingCopyToPlan(plan, workingCopy) {
   if (!workingCopy?.doc) {
@@ -644,42 +647,42 @@ export function mapWorkingCopyToPlan(plan, workingCopy) {
   const folderToId = plan?.folderToId || {};
   const parts = workingCopy.doc.parts || [];
   const claimed = new Map();
-  const unmapped = [];
   const ambiguous = [];
+  const used = new Set(planIds);
 
   const resolve = (part) => {
     const path = scriptPathOf(part);
     const fromPath = path ? pathToId[path] : null;
     const fromId = asV2Id(part?.id);
     if (fromPath && isV2SurfId(fromPath)) return fromPath;
-    if (fromId && planIds.has(fromId) && !path) return fromId;
-    return null;
+    if (fromId && planIds.has(fromId)) return fromId;
+    if (fromId) return fromId;
+    return mintUnused(used);
   };
 
-  for (const part of parts) {
-    const planId = resolve(part);
+  const resolvedIds = parts.map((part) => {
+    const id = resolve(part);
+    used.add(id);
+    return id;
+  });
+
+  parts.forEach((part, i) => {
+    const planId = resolvedIds[i];
     const label = part?.name || part?.id || scriptPathOf(part) || '(unnamed)';
-    if (!planId) {
-      unmapped.push(label);
-      continue;
-    }
     if (claimed.has(planId)) {
       ambiguous.push(label);
-      continue;
+      return;
     }
     claimed.set(planId, part);
-  }
+  });
 
-  if (unmapped.length || ambiguous.length) {
-    const why = ambiguous.length
-      ? `more than one working-copy part maps to the same upgraded id (${ambiguous.join(', ')})`
-      : `working-copy part(s) have no unique path on the upgrade plan (${unmapped.join(', ')})`;
+  if (ambiguous.length) {
     return {
       ok: false,
       code: 'working_copy_unmapped',
-      message: `Cannot save the working copy after Upgrade: ${why}. The vault is v2; the follow-up was not written.`,
-      hint: 'Re-open the assembly from the upgraded vault, then Save. Local edits stay in IndexedDB.',
-      unmapped,
+      message: `Cannot save the working copy after Upgrade: more than one working-copy part maps to the same upgraded id (${ambiguous.join(', ')}). The vault is v2; the follow-up was not written.`,
+      hint: 'Give each working-copy part its own id, then retry Save. Local edits stay in IndexedDB.',
+      unmapped: [],
       ambiguous,
     };
   }
@@ -687,13 +690,12 @@ export function mapWorkingCopyToPlan(plan, workingCopy) {
   const pairs = [];
   const nextScripts = {};
   const scripts = workingCopy.scripts || {};
-  const nextParts = parts.map((part) => {
-    const planId = resolve(part);
+  const nextParts = parts.map((part, i) => {
+    const planId = resolvedIds[i];
     if (part?.id && part.id !== planId) pairs.push({ from: part.id, to: planId });
     const script = wcScriptOf(part, scripts);
     if (typeof script === 'string') nextScripts[planId] = script;
-    const next = { ...part, id: planId };
-    return next;
+    return { ...part, id: planId };
   });
 
   const idMap = new Map(pairs.map((row) => [row.from, row.to]));
@@ -790,7 +792,9 @@ export function planWorkingCopyFollowup(plan, workingCopy) {
       partIds: (group.partIds || []).map((id) => asV2Id(id) || id).filter((id) => isV2SurfId(id)),
     })).filter((group) => isV2SurfId(group.id) && group.partIds.length)
     : null;
-  const groups = fromWcGroups && fromWcGroups.length ? fromWcGroups : prevJson?.groups;
+  // Explicit `groups: []` means the WC removed them. Only fall back to the
+  // upgrade plan when the WC omitted the field.
+  const groups = Array.isArray(doc.groups) ? fromWcGroups : prevJson?.groups;
 
   let activeId = asV2Id(doc.activeId);
   if (activeId && !parts.some((p) => p.id === activeId)) activeId = parts[0]?.id || null;
@@ -911,15 +915,9 @@ async function persistPlanIds(store, repo, plan) {
   }
 }
 
-async function loadCaptureLastCommit() {
-  const mod = await import('../lastCommit.js');
-  return mod.captureLastCommit;
-}
-
 async function captureAllLastCommit({
   adapter, repo, branch, store, sha, assemblies, now,
 }) {
-  const captureLastCommit = await loadCaptureLastCommit();
   const rows = assemblies || [];
   if (!rows.length) {
     return [await captureLastCommit({
@@ -1253,7 +1251,6 @@ export async function executeUpgradeFollowup({
     baseSha: head?.sha || null,
   });
   if (assemblyId && store) {
-    const captureLastCommit = await loadCaptureLastCommit();
     await captureLastCommit({
       adapter,
       repo,
@@ -1269,6 +1266,15 @@ export async function executeUpgradeFollowup({
   return { status: 'committed', sha: committed.sha, branch: branchName, files: files.map((f) => f.path) };
 }
 
+function conflictReloadPaths({ files, paths }) {
+  if (Array.isArray(paths)) {
+    return paths.filter((path) => typeof path === 'string' && path);
+  }
+  return (files || [])
+    .map((row) => (typeof row === 'string' ? row : row?.path))
+    .filter((path) => typeof path === 'string' && path);
+}
+
 /**
  * TEMPORARY: §2.9 on the follow-up Save only. PR 7 replaces this with the
  * shared conflict dialog + planSave. Get latest never writes git.
@@ -1281,6 +1287,7 @@ export async function executeUpgradeConflictChoice({
   repo,
   branch = 'main',
   files,
+  paths,
   message,
   store = null,
   assemblyId = null,
@@ -1298,12 +1305,11 @@ export async function executeUpgradeConflictChoice({
     const head = await adapter.getBranch(repo, branchName);
     const headSha = head?.sha || null;
     const contents = {};
+    const want = conflictReloadPaths({ files, paths });
     if (headSha) {
       const tree = await adapter.listTree(repo, headSha);
       const shaByPath = new Map((tree || []).filter((item) => item?.path).map((item) => [item.path, item.sha]));
-      for (const row of files || []) {
-        const path = row?.path;
-        if (!path) continue;
+      for (const path of want) {
         const sha = shaByPath.get(path);
         if (!sha) continue;
         const bytes = await adapter.readBlob(repo, sha);
@@ -1313,7 +1319,6 @@ export async function executeUpgradeConflictChoice({
       }
     }
     if (store && headSha) {
-      const captureLastCommit = await loadCaptureLastCommit();
       await captureLastCommit({
         adapter,
         repo,
@@ -1350,7 +1355,6 @@ export async function executeUpgradeConflictChoice({
       baseSha: created?.sha || fromSha,
     });
     if (assemblyId && store) {
-      const captureLastCommit = await loadCaptureLastCommit();
       await captureLastCommit({
         adapter,
         repo,

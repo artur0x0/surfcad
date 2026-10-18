@@ -59,7 +59,7 @@ async function hostGit(ctx, name, args, { readOnly = false, commandName = '' } =
   if (out && typeof out === 'object' && out.error != null && typeof out.error === 'object') {
     return { error: out.error };
   }
-  const shaped = gitOpResult(out?.result ?? out);
+  const shaped = gitOpResult(out?.result ?? out, { commandName: commandName || name });
   if (shaped.error) return shaped;
   return shaped;
 }

@@ -160,6 +160,19 @@ export default [
       }],
     },
   },
+  // lastCommit reads v1 blobSources from the reader, not the barrel, so it
+  // never loads upgrade.js (lastCommit → index → upgrade → lastCommit).
+  {
+    files: ['src/utils/git/lastCommit.js'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [{
+          group: ['**/legacyVault/*', '!**/legacyVault', '!**/legacyVault/index.js', '!**/legacyVault/reader.js'],
+          message: "lastCommit may import legacyVault/reader.js; other internals still go through index.js.",
+        }],
+      }],
+    },
+  },
 
   // ── Web app: plain JS (utils, kernel helpers, worker bridge) ──
   {

@@ -72,8 +72,14 @@ test('callers import only the legacyVault entry point', () => {
   const offenders = [];
   for (const file of files) {
     if (inLegacy(file)) continue;
+    const path = rel(file);
     const text = readFileSync(file, 'utf8');
-    if (INTERNAL_IMPORT.test(text)) offenders.push(rel(file));
+    // lastCommit imports reader.js directly to break lastCommit → index → upgrade.
+    if (path === 'src/utils/git/lastCommit.js') {
+      if (/legacyVault\/(detect|upgrade|knownReadmeSeeds)/.test(text)) offenders.push(path);
+      continue;
+    }
+    if (INTERNAL_IMPORT.test(text)) offenders.push(path);
   }
   assert.deepEqual(offenders, []);
 });

@@ -12,6 +12,7 @@ import {
   gitBranchCreateCommand,
   gitBranchDeleteCommand,
   gitListBranchesCommand,
+  gitMoveToRepoCommand,
   gitSaveCommand,
   gitUpgradeVaultCommand,
 } from './commands/git.js';
@@ -277,7 +278,7 @@ test('git_upgrade_vault with confirm: true calls the host', async () => {
   assert.equal(out.error, undefined);
 });
 
-test('gitOpResult treats upgrade_required and conflict as errors with hints', () => {
+test('gitOpResult treats upgrade_required and upgrade conflict as errors with hints', () => {
   const required = gitOpResult({
     status: 'upgrade_required',
     code: 'upgrade_required',
@@ -293,9 +294,37 @@ test('gitOpResult treats upgrade_required and conflict as errors with hints', ()
     code: 'conflict',
     message: 'Remote tip moved',
     hint: 'Retry Upgrade vault',
-  });
+  }, { commandName: 'git_upgrade_vault' });
   assert.equal(conflict.error?.code, 'conflict');
   assert.equal(conflict.error?.hint, 'Retry Upgrade vault');
+});
+
+test('gitOpResult keeps git_move_to_repo conflict paths and assemblyExists', () => {
+  const out = gitOpResult({
+    status: 'conflict',
+    vault: { repo: { owner: 'acme', name: 'vault' } },
+    paths: ['assemblies/Box/.surf.json'],
+    assemblyExists: true,
+  });
+  assert.equal(out.error, undefined);
+  assert.equal(out.result.status, 'conflict');
+  assert.deepEqual(out.result.paths, ['assemblies/Box/.surf.json']);
+  assert.equal(out.result.assemblyExists, true);
+});
+
+test('git_move_to_repo conflict is not a bare Git operation failed error', async () => {
+  const out = await gitMoveToRepoCommand.run({
+    readAgentGitAdapterKind: () => 'mock',
+    agentGitMoveToRepo: async () => ({
+      status: 'conflict',
+      paths: ['assemblies/Box/.surf.json'],
+      assemblyExists: true,
+    }),
+  }, {});
+  assert.equal(out.error, undefined);
+  assert.equal(out.result.status, 'conflict');
+  assert.deepEqual(out.result.paths, ['assemblies/Box/.surf.json']);
+  assert.equal(out.result.assemblyExists, true);
 });
 
 test('gitOpResult passes already_upgraded and upgraded through as success', () => {
