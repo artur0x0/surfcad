@@ -212,7 +212,8 @@ test('reauth/read-only boot passes readOnly so collapse does not mint', () => {
   assert.ok(end > start, 'missing boot idsChanged');
   const boot = app.slice(start, end);
   assert.match(boot, /const readOnly = plan\.readOnly === true \|\| bootReadOnlyRef\.current/);
-  assert.match(boot, /collapseWorkingCopyIds\(doc, scripts, \{\s*readOnly\s*\}\)/);
+  assert.match(boot, /collapseWorkingCopyIds\(doc, scripts, \{[\s\S]*?readOnly,/);
+  assert.match(boot, /reusePairs: reusePairsFromJournal\(rekeyJournal, persistSource\.doc\)/);
 });
 
 test('identity collapse does not import src/fea or surfcad-fea', () => {
