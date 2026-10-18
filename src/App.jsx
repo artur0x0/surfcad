@@ -292,6 +292,7 @@ import {
   assemblyRekeyKey,
   WORKING_COPY_DOC_UNSAVED,
   isSurfId,
+  isV2SurfId,
   partSurfId,
   reconcileSyncedFromTip,
   markPartsSynced,
@@ -382,6 +383,7 @@ import {
   mainMovedPlanSavePaths,
   SAVE_CONFLICT_COPY,
 } from './utils/git';
+import { assemblyIdPath } from './utils/git/idPaths';
 import { scheduleLastCommitFromApp } from './utils/git/lastCommit';
 import {
   detectVaultLayout,
@@ -5088,20 +5090,31 @@ const App = () => {
       if (create && !gitVaultRef.current.repo) gitVaultRef.current.repo = repo;
     }
     const nextBranch = result.branch || branch;
-    const baseline = gitBaselineRef.current;
-    if (baseline && (result.sha || nextBranch)) {
-      rememberGitBaseline({
-        ...baseline,
-        branch: nextBranch || baseline.branch,
-        headSha: result.sha || baseline.headSha,
-      });
-    } else if (result.sha && repo) {
-      rememberGitBaseline(firstCommitBaseline({
-        branch: nextBranch || 'main',
-        headSha: result.sha,
-      }));
-    }
     if (result.status === 'committed' || result.status === 'branched') {
+      const savedDoc = assemblyRef.current;
+      const prevBaseline = gitBaselineRef.current;
+      const live = codeEditorRef.current?.getContent?.();
+      const savedScripts = { ...(partScriptsRef.current || {}) };
+      if (savedDoc?.activeId && typeof live === 'string' && !suppressPartSaveRef.current) {
+        savedScripts[savedDoc.activeId] = live;
+      }
+      if (savedDoc) {
+        rememberGitBaseline(captureBaseline({
+          assemblyPath: isV2SurfId(savedDoc.id) ? assemblyIdPath(savedDoc.id) : prevBaseline?.assemblyPath,
+          assemblyName: savedDoc.name,
+          doc: savedDoc,
+          scripts: savedScripts,
+          assets: prevBaseline?.assets ?? null,
+          branch: nextBranch || prevBaseline?.branch || 'main',
+          headSha: result.sha || prevBaseline?.headSha || null,
+        }));
+      } else if (result.sha && repo) {
+        rememberGitBaseline(firstCommitBaseline({
+          branch: nextBranch || 'main',
+          headSha: result.sha,
+        }));
+      }
+      captureAgentScriptSnapshot();
       await clearWorkingCopySidecar();
       rememberGitBehind(null, { showToast: false, resetResolved: true });
       setGitBehindToast(null);
