@@ -27,6 +27,19 @@ test('mobile parts ribbon still shows assembly name on branch', () => {
   assert.match(feed, /onBranchClick=\{source === 'git'/);
 });
 
+test('Parts Save has no split-button dropdown; divider is mobile-only', () => {
+  const feed = read('src/components/PartFeed.jsx');
+  assert.match(feed, /data-git-save=""/);
+  assert.match(feed, /data-git-dirty-badge=""/);
+  assert.doesNotMatch(feed, /data-assembly-save-menu/);
+  assert.doesNotMatch(feed, /data-assembly-save-dropdown/);
+  assert.doesNotMatch(feed, /data-assembly-rename-menu/);
+  const end = feed.slice(feed.indexOf('data-parts-ribbon-end'));
+  const saveBlock = end.slice(0, end.indexOf('data-git-move-open'));
+  assert.match(saveBlock, /isMobile \? <div className=\{STRIP_DIVIDER\} \/> : null/);
+  assert.doesNotMatch(saveBlock, /<div className=\{STRIP_DIVIDER\} \/>\s*<button/);
+});
+
 test('feature ribbon uses one shared height token in every state', () => {
   const css = read('src/index.css');
   const strip = read('src/components/FeatureStrip.jsx');

@@ -204,7 +204,15 @@ ok('mobile ribbon still shows assembly name with branch chip',
   /RibbonAssemblyName[\s\S]{0,200}onBranchClick/.test(feed)
   && /placement !== 'desktop'/.test(feed)
   && /data-assembly-branch=""/.test(feed));
-ok('assembly Save menu offers rename', /data-assembly-rename-menu/.test(feed) && /Rename assembly/.test(feed));
+ok('Save has no split-button dropdown',
+  !/data-assembly-save-menu/.test(feed)
+  && !/data-assembly-save-dropdown/.test(feed)
+  && !/data-assembly-rename-menu/.test(feed)
+  && !/Save options/.test(feed));
+ok('assembly rename stays on the mobile ribbon title',
+  /data-assembly-rename="button"/.test(feed)
+  && /RibbonAssemblyName/.test(feed)
+  && /Click to rename this assembly/.test(feed));
 ok('Save still on ribbon end', (() => {
   const end = feed.indexOf('data-parts-ribbon-end');
   const save = feed.indexOf('data-git-save=""', end);

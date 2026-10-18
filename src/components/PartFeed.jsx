@@ -1,6 +1,6 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Download, Eye, EyeOff, FolderOpen, GripVertical, Loader2, Pencil, Plus, Save, Trash2, Truck, Upload } from 'lucide-react';
+import { Download, Eye, EyeOff, FolderOpen, GripVertical, Loader2, Pencil, Plus, Save, Trash2, Truck, Upload } from 'lucide-react';
 import { partCanDeleteFromRepo, partDeleteChoice, partListDeleteAction, partRepoDeleteConfirmCopy, sanitizeAssemblyName, sanitizePartName } from '../utils/assembly.js';
 import { partListSubtitles } from '../utils/git/partListSubtitle.js';
 import {
@@ -511,10 +511,6 @@ const PartFeed = forwardRef(function PartFeed({
   const [leaveGuard, setLeaveGuard] = useState(null);
   const plusMenuRef = useRef(null);
   const folderMenuRef = useRef(null);
-  const saveMenuRef = useRef(null);
-  const assemblyRenameInputRef = useRef(null);
-  const [saveMenuOpen, setSaveMenuOpen] = useState(false);
-  const [assemblyRenameFlow, setAssemblyRenameFlow] = useState(null);
   const branchCreateInputRef = useRef(null);
   const behindSet = behindPartIds instanceof Set
     ? behindPartIds
@@ -1123,7 +1119,7 @@ const PartFeed = forwardRef(function PartFeed({
   }, [branchFlow?.stage]);
 
   useEffect(() => {
-    if (!plusMenuOpen && !folderMenuOpen && !saveMenuOpen) return undefined;
+    if (!plusMenuOpen && !folderMenuOpen) return undefined;
     const onDoc = (event) => {
       if (plusMenuRef.current && !plusMenuRef.current.contains(event.target)) {
         setPlusMenuOpen(false);
@@ -1131,17 +1127,10 @@ const PartFeed = forwardRef(function PartFeed({
       if (folderMenuRef.current && !folderMenuRef.current.contains(event.target)) {
         setFolderMenuOpen(false);
       }
-      if (saveMenuRef.current && !saveMenuRef.current.contains(event.target)) {
-        setSaveMenuOpen(false);
-      }
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
-  }, [plusMenuOpen, folderMenuOpen, saveMenuOpen]);
-
-  useEffect(() => {
-    if (assemblyRenameFlow) assemblyRenameInputRef.current?.focus();
-  }, [assemblyRenameFlow]);
+  }, [plusMenuOpen, folderMenuOpen]);
 
   const runUpgrade = async () => {
     setCommitFlow({ stage: 'busy', draft: '', result: { phase: 'upgrade' }, error: '', upgrading: true });
@@ -1859,7 +1848,7 @@ const PartFeed = forwardRef(function PartFeed({
           className="relative z-10 flex shrink-0 items-center"
         >
           {source === 'git' && (
-            <div className="relative flex items-center" ref={saveMenuRef} data-assembly-save-control="">
+            <div className="relative flex items-center" data-assembly-save-control="">
               <button
                 type="button"
                 className={`relative ${STRIP_BTN} disabled:cursor-not-allowed disabled:opacity-40`}
@@ -1883,64 +1872,9 @@ const PartFeed = forwardRef(function PartFeed({
                   />
                 ) : null}
               </button>
-              {placement === 'desktop' && (onRenameAssembly || source === 'git') ? (
-                <>
-                  <button
-                    type="button"
-                    className={`${STRIP_BTN} -ml-0.5 rounded-l-none border-l border-chrome-border/40`}
-                    data-assembly-save-menu=""
-                    data-ui-action="data-assembly-save-menu"
-                    title="Save options"
-                    aria-label="Save options"
-                    aria-expanded={saveMenuOpen ? 'true' : 'false'}
-                    aria-haspopup="menu"
-                    onClick={() => setSaveMenuOpen((open) => !open)}
-                  >
-                    <ChevronDown size={14} />
-                  </button>
-                  {saveMenuOpen && (
-                    <div
-                      role="menu"
-                      data-assembly-save-dropdown=""
-                      className="absolute right-0 top-full z-50 mt-1 min-w-[10rem] rounded-md border border-gray-600 bg-chrome-surface py-1 shadow-lg"
-                    >
-                      {onRenameAssembly ? (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          data-assembly-rename-menu=""
-                          data-ui-action="data-assembly-rename-menu"
-                          className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
-                          onClick={() => {
-                            setSaveMenuOpen(false);
-                            setAssemblyRenameFlow({ draft: ribbonName || '' });
-                          }}
-                        >
-                          Rename assembly
-                        </button>
-                      ) : null}
-                      {source === 'git' ? (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          data-ui-action="data-git-branches"
-                          data-git-branches=""
-                          className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
-                          onClick={() => {
-                            setSaveMenuOpen(false);
-                            void openBranchPane();
-                          }}
-                        >
-                          Branches ({currentBranch || 'main'})
-                        </button>
-                      ) : null}
-                    </div>
-                  )}
-                </>
-              ) : null}
             </div>
           )}
-          <div className={STRIP_DIVIDER} />
+          {isMobile ? <div className={STRIP_DIVIDER} /> : null}
           {/* G6 Move-to-Git kept available off-strip (not a mode toggle). */}
           <button
             type="button"
@@ -2285,59 +2219,6 @@ const PartFeed = forwardRef(function PartFeed({
             className={PARTS_TEXT_INPUT_CLASS}
             style={PARTS_TEXT_INPUT_STYLE}
             placeholder="Bracket"
-          />
-        </VaultPickerDialog>
-      )}
-      {assemblyRenameFlow && typeof document !== 'undefined' && (
-        <VaultPickerDialog
-          title="Rename assembly"
-          labelledBy="assembly-rename-menu-title"
-          dataAttr="assembly-rename-menu"
-          onClose={() => setAssemblyRenameFlow(null)}
-          footer={(
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-md px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10"
-                onClick={() => setAssemblyRenameFlow(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                data-assembly-rename-menu-confirm=""
-                data-ui-action="data-assembly-rename-menu"
-                className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
-                onClick={() => {
-                  const next = sanitizeAssemblyName(assemblyRenameFlow.draft || '');
-                  setAssemblyRenameFlow(null);
-                  if (next && next !== ribbonName) onRenameAssembly?.(next);
-                }}
-              >
-                Rename
-              </button>
-            </div>
-          )}
-        >
-          <p className="mb-2 text-[11px] text-chrome-secondary">
-            Assembly folder name in the vault
-          </p>
-          <input
-            ref={assemblyRenameInputRef}
-            data-assembly-rename-menu-input=""
-            value={assemblyRenameFlow.draft || ''}
-            onChange={(e) => setAssemblyRenameFlow({ draft: e.target.value })}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                const next = sanitizeAssemblyName(assemblyRenameFlow.draft || '');
-                setAssemblyRenameFlow(null);
-                if (next && next !== ribbonName) onRenameAssembly?.(next);
-              }
-            }}
-            className={PARTS_TEXT_INPUT_CLASS}
-            style={PARTS_TEXT_INPUT_STYLE}
-            placeholder="Assembly"
           />
         </VaultPickerDialog>
       )}
