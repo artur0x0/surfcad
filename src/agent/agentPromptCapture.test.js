@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   AGENT_PROMPT_SHOT_MAX_BYTES,
   AGENT_PROMPT_SHOT_MIME,
+  attachViewerShot,
   base64DecodedBytes,
   capAgentPromptScreenshot,
   screenshotFromDataUrl,
@@ -47,6 +48,23 @@ test('screenshotFromDataUrl builds the transport payload without a data: prefix'
     height: 8,
   });
   assert.equal(shot.data.startsWith('data:'), false);
+});
+
+test('attachViewerShot does not invent an empty placeholder when capture is missing', () => {
+  assert.deepEqual(attachViewerShot(null), {
+    ok: false,
+    reason: 'capture_unavailable',
+    attached: false,
+    shot: null,
+  });
+  assert.deepEqual(attachViewerShot(undefined), {
+    ok: false,
+    reason: 'capture_unavailable',
+    attached: false,
+    shot: null,
+  });
+  assert.equal(attachViewerShot(() => null).ok, false);
+  assert.equal(attachViewerShot(() => ({ dataUrl: '', width: 0, height: 0 })).ok, false);
 });
 
 test('viewerShotToPayload accepts a capturePng result and a raw data URL', () => {

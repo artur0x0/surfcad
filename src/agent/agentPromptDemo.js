@@ -54,8 +54,15 @@ export function readAgentPromptDemo(search = '') {
   return { enabled: true, state };
 }
 
-export function shouldShowAgentPrompt({ paired, link, demo, shouldShowDisconnect }) {
+export function shouldShowAgentPrompt({
+  paired,
+  link,
+  demo,
+  shouldShowDisconnect,
+  hasTransport = false,
+} = {}) {
   if (demo?.enabled && demo.state === 'hidden') return false;
   if (demo?.enabled) return true;
+  if (hasTransport !== true) return false;
   return shouldShowDisconnect({ paired, link }) === true;
 }

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { v1Registry } from './commands/index.js';
+import { V1_COMMANDS, v1Registry } from './commands/index.js';
 import {
   buildCommandsDocument,
   COMMANDS_JSON_PATH,
@@ -18,8 +18,15 @@ const COMMITTED = join(ROOT, COMMANDS_JSON_PATH);
 test('commands.json matches export and every command has a strict schema', () => {
   const { document, schemaErrors } = buildCommandsDocument();
   assert.equal(schemaErrors.length, 0, schemaErrors.join('\n'));
-  assert.equal(document.count, v1Registry.names.length);
-  assert.deepEqual(document.commands.map((row) => row.name), v1Registry.names);
+  // defineCommands does not copy `catalog`; export skips catalog:false from V1_COMMANDS.
+  const catalogNames = V1_COMMANDS
+    .filter((command) => command.catalog !== false)
+    .map((command) => command.name);
+  assert.equal(document.count, catalogNames.length);
+  assert.deepEqual(document.commands.map((row) => row.name), catalogNames);
+  assert.equal(v1Registry.names.includes('agent_prompt'), true);
+  assert.equal(catalogNames.includes('agent_prompt'), false);
+  assert.equal(document.commands.some((row) => row.name === 'agent_prompt'), false);
 
   for (const row of document.commands) {
     assert.equal(typeof row.description, 'string');

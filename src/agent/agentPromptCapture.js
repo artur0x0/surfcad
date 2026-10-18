@@ -111,6 +111,39 @@ function makeSourceFromDataUrl(dataUrl, width, height, createCanvas) {
 }
 
 /**
+ * Pressing the camera on with no viewer capture must not invent an empty
+ * placeholder. The toggle stays off until a real PNG exists.
+ */
+export function attachViewerShot(captureViewer, opts = {}) {
+  if (typeof captureViewer !== 'function') {
+    return { ok: false, reason: 'capture_unavailable', attached: false, shot: null };
+  }
+  let raw;
+  try {
+    raw = captureViewer();
+  } catch {
+    return { ok: false, reason: 'capture_failed', attached: false, shot: null };
+  }
+  if (raw && typeof raw.then === 'function') {
+    return Promise.resolve(raw).then((value) => payloadFromViewerShot(value, opts), () => ({
+      ok: false,
+      reason: 'capture_failed',
+      attached: false,
+      shot: null,
+    }));
+  }
+  return payloadFromViewerShot(raw, opts);
+}
+
+function payloadFromViewerShot(raw, opts) {
+  const shot = viewerShotToPayload(raw, opts);
+  if (!shot || !shot.data) {
+    return { ok: false, reason: 'capture_failed', attached: false, shot: null };
+  }
+  return { ok: true, attached: true, shot };
+}
+
+/**
  * Turn a Viewport `capturePng` result into a transport screenshot.
  * Accepts a data URL string or `{ dataUrl, width, height }`.
  */

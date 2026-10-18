@@ -79,9 +79,13 @@ paired (the same `shouldShowAgentBridgeDisconnect({ paired, link })` test as
 Disconnect) or when `?agentPromptDemo=1` pins a golden / screenshot state.
 It is not mounted in game mode. The camera toggle (`data-agent-prompt-screenshot`)
 captures the viewer canvas only and attaches a PNG to the next send. PR 1 talks
-to `createAgentPrompt()` in `src/agent/createAgentPrompt.js` (the stub); PR 2
-swaps that one import to the MCP transport. Do not add
-`src/agent/agentPromptTransport.js` here.
+to `createAgentPrompt()` in `src/agent/createAgentPrompt.js`: the echo stub
+runs only when `import.meta.env.DEV` is true (or a test passes `{ DEV: true }`).
+A production build with no injected transport hides the card and never echoes.
+PR 2 swaps that one import to the MCP transport. Do not add
+`src/agent/agentPromptTransport.js` here. The `agent_prompt` bridge command
+stays on the page (`action: 'screenshot'` turns the camera on); it is not
+copied into `packages/surfcad-mcp/data/commands.json` in this PR.
 
 **The CAD title reads "part in assembly".** Part name, the word in, then the
 assembly name (`data-viewer-title`, `data-title-in`, `data-viewer-title-text`).

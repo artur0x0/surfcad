@@ -6,9 +6,9 @@
  * shipped in PR 1. The UI imports through `createAgentPrompt.js` so PR 2 is
  * a one-import swap.
  *
- * Dev / tests / playtest only. Production pairing waits for the real
- * transport; the stub still implements the agreed interface so the UI and
- * tests can run without the bridge.
+ * DEV and unit tests only (`createAgentPrompt` returns null when
+ * `import.meta.env.DEV` is not true). Production pairing waits for the
+ * real transport and must never echo.
  *
  * Interface:
  *   send(text, { screenshot? }) → page-made uuid

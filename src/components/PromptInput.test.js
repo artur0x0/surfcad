@@ -20,7 +20,9 @@ test('PromptInput tags send/stop/dismiss/screenshot and uses the outline send + 
   assert.match(SRC, /Screenshot attached/);
   assert.match(SRC, /discardShot\(\)/);
   assert.match(SRC, /sendAgentPromptText\(/);
-  assert.match(SRC, /viewerShotToPayload/);
+  assert.match(SRC, /attachViewerShot/);
+  assert.doesNotMatch(SRC, /data: '',/);
+  assert.match(SRC, /disabled=\{!canCapture && !shotCue\}/);
   assert.match(SRC, /shouldShowAgentPrompt/);
   assert.match(SRC, /shouldShowAgentBridgeDisconnect/);
   assert.doesNotMatch(SRC, /\/api\/generate/);

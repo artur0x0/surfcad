@@ -50,6 +50,7 @@ export function buildCommandsDocument() {
   const ambiguous = [];
 
   for (const command of V1_COMMANDS) {
+    if (command.catalog === false) continue;
     const reg = command;
     const name = reg.name;
     const policy = validateArgsSchema(name, reg.schema);

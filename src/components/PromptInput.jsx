@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, Loader2, Send, Square, X } from 'lucide-react';
 import { createAgentPrompt } from '../agent/createAgentPrompt.js';
-import { viewerShotToPayload } from '../agent/agentPromptCapture.js';
+import { attachViewerShot } from '../agent/agentPromptCapture.js';
 import {
   AGENT_PROMPT_REPLY_LONG,
   AGENT_PROMPT_REPLY_SHORT,
@@ -55,24 +55,26 @@ export default function PromptInput({
   transport: transportProp = null,
   captureViewer = null,
   demoSearch = undefined,
+  promptEnv = undefined,
 }) {
   const { paired, link } = useAgentBridgeHost();
   const demo = useMemo(
     () => readAgentPromptDemo(demoSearch),
     [demoSearch],
   );
+
+  const transportRef = useRef(null);
+  if (transportRef.current == null && transportProp == null) {
+    transportRef.current = createAgentPrompt(undefined, promptEnv);
+  }
+  const transport = transportProp || transportRef.current;
   const visible = shouldShowAgentPrompt({
     paired,
     link,
     demo,
     shouldShowDisconnect: shouldShowAgentBridgeDisconnect,
+    hasTransport: Boolean(transport),
   });
-
-  const transportRef = useRef(null);
-  if (transportRef.current == null) {
-    transportRef.current = transportProp || createAgentPrompt();
-  }
-  const transport = transportProp || transportRef.current;
 
   const seed = demoSeed(demo?.state);
   const [input, setInput] = useState(seed.input);
@@ -132,6 +134,7 @@ export default function PromptInput({
   const sendText = useCallback((raw) => {
     const text = typeof raw === 'string' ? raw : input;
     const trimmed = text.trim();
+    if (!transport) return { ok: false, reason: 'no_transport' };
     if (!trimmed || working) return { ok: false, reason: 'empty' };
     if (trimmed.length > AGENT_PROMPT_MAX_CHARS) {
       return { ok: false, reason: 'too_long' };
@@ -153,7 +156,7 @@ export default function PromptInput({
   }, [discardShot, input, shot, transport, working]);
 
   const stopAgent = useCallback(() => {
-    transport.abort?.();
+    transport?.abort?.();
     setWorking(false);
     return { ok: true };
   }, [transport]);
@@ -170,29 +173,14 @@ export default function PromptInput({
       discardShot();
       return { ok: true, attached: false };
     }
-    setShotOn(true);
-    if (typeof captureViewer !== 'function') {
-      setShot({
-        mime: 'image/png',
-        data: '',
-        width: 0,
-        height: 0,
-      });
-      return { ok: true, attached: true, preview: true };
-    }
-    try {
-      const raw = await Promise.resolve(captureViewer());
-      const payload = viewerShotToPayload(raw);
-      if (!payload) {
-        discardShot();
-        return { ok: false, reason: 'capture_failed' };
-      }
-      setShot(payload);
-      return { ok: true, attached: true };
-    } catch {
+    const attached = await Promise.resolve(attachViewerShot(captureViewer));
+    if (!attached.ok) {
       discardShot();
-      return { ok: false, reason: 'capture_failed' };
+      return attached;
     }
+    setShot(attached.shot);
+    setShotOn(true);
+    return { ok: true, attached: true };
   }, [captureViewer, discardShot, shot, shotOn]);
 
   useEffect(() => {
@@ -222,6 +210,7 @@ export default function PromptInput({
   const overLimit = input.length > AGENT_PROMPT_MAX_CHARS;
   const remaining = AGENT_PROMPT_MAX_CHARS - input.length;
   const shotCue = shotOn || shot;
+  const canCapture = typeof captureViewer === 'function';
   const shotPreview = shot?.data
     ? `data:image/png;base64,${shot.data}`
     : '';
@@ -335,6 +324,7 @@ export default function PromptInput({
           data-agent-prompt-screenshot=""
           aria-label={shotCue ? 'Discard screenshot' : 'Attach screenshot'}
           aria-pressed={shotCue}
+          disabled={!canCapture && !shotCue}
         >
           <Camera size={18} aria-hidden />
         </button>
