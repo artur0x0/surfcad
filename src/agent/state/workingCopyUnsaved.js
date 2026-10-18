@@ -4,8 +4,8 @@
  */
 import { gitBlobSha } from '../../utils/git/binaryContent.js';
 import { assemblyIdPath, parseIdPath, partIdPath } from '../../utils/git/idPaths.js';
+import { partScriptMatchesCommitted, stampPartScript } from '../../utils/git/planSave.js';
 import { toSurfJsonV2 } from '../../utils/git/surfJsonV2.js';
-import { sanitizeSurfName, withSurfId, withSurfName } from '../../utils/git/surfId.js';
 
 function textBlobSha(text) {
   return gitBlobSha(new TextEncoder().encode(String(text ?? '')));
@@ -53,19 +53,16 @@ function committedPartIds(assemblyCommit) {
  * Save stamps `// @surf-id` / `// @name` on the blob. The working copy may
  * still be the pre-stamp editor bytes, so treat either hash as a match.
  */
-function stampedPartScript(text, id, name) {
-  try {
-    return withSurfName(withSurfId(text, id), sanitizeSurfName(name) || 'Part');
-  } catch {
-    return text;
-  }
-}
-
 function partScriptMatchesCommit(text, committedHash, id, name) {
   if (!committedHash || typeof text !== 'string') return false;
   if (textBlobSha(text) === committedHash) return true;
-  const stamped = stampedPartScript(text, id, name);
-  return stamped !== text && textBlobSha(stamped) === committedHash;
+  try {
+    const stamped = stampPartScript(text, id, name);
+    return partScriptMatchesCommitted(text, stamped, id, name)
+      && textBlobSha(stamped) === committedHash;
+  } catch {
+    return false;
+  }
 }
 
 function instanceDirty(wcPart, committedPart) {

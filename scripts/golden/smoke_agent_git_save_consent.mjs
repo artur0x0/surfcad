@@ -222,7 +222,9 @@ const surfWritten = commitFiles.filter((f) => f.path.endsWith('.surf.json'));
 const markerOnTree = fake.readFile('surfcad.json');
 check(
   'commit is v2 f(id): assembly surf + 3 part scripts (no README)',
-  surfWritten.length === 1
+  commitFiles.length === 4
+    && !commitFiles.some((f) => f.path === 'surfcad.json')
+    && surfWritten.length === 1
     && /^assemblies\/[^/]+\.surf\.json$/.test(surfWritten[0]?.path || '')
     && scriptsWritten.length === 3
     && scriptsWritten.every((f) => /^parts\/[^/]+\.js$/.test(f.path))
