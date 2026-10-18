@@ -286,6 +286,7 @@ import {
   migrateLocalPartIds,
   collapseWorkingCopyIds,
   persistCollapsedWorkingCopy,
+  replaceScriptKeys,
   dualWriteTargets,
   remapFeaForPersist,
   reusePairsFromJournal,
@@ -5176,10 +5177,14 @@ const App = () => {
         const nextDoc = result.rekey.doc
           ? { ...result.rekey.doc, source: 'git', vaultLayout: 'v2' }
           : null;
+        const rekeyPairs = result.rekey.pairs || [];
         await replaceScriptKeys({
           nextScripts: result.rekey.scripts,
-          staleIds: (result.rekey.pairs || []).map((row) => row.from),
-          save: async (id, script) => { await savePartScript(id, script); },
+          staleIds: rekeyPairs.map((row) => row.from),
+          pairs: rekeyPairs,
+          heldScripts: { ...partScriptsRef.current },
+          save: (id, script) => savePartScript(id, script),
+          load: loadPartScript,
           remove: async (id) => { try { await deletePartScript(id); } catch { /* keep the new key */ } },
         });
         rememberScripts(result.rekey.scripts);
@@ -5249,7 +5254,10 @@ const App = () => {
         await replaceScriptKeys({
           nextScripts: applied.scripts,
           staleIds: [],
-          save: async (id, script) => { await savePartScript(id, script); },
+          pairs: [],
+          heldScripts: { ...partScriptsRef.current },
+          save: (id, script) => savePartScript(id, script),
+          load: loadPartScript,
           remove: async () => {},
         });
         const active = applied.doc?.parts?.find((part) => part.id === applied.doc.activeId)
