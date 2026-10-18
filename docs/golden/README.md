@@ -40,6 +40,7 @@ Gate acceptance still requires `test_real_worker.mjs` via `npm run verify` when 
 | `golden:agent-bridge-h7` | `smoke_agent_bridge_h7.mjs` |
 | `golden:agent-bridge-h9` | `smoke_agent_bridge_h9.mjs` |
 | `golden:agent-bridge-readers` | `smoke_agent_bridge_readers.mjs` |
+| `golden:agent-bridge-save-model` | `smoke_agent_bridge_save_model_v2.mjs` |
 | `golden:agent-bridge-xsection` | `smoke_agent_bridge_xsection.mjs` |
 | `golden:agent-catalog` | `smoke_agent_catalog.mjs` |
 | `golden:agent-commands` | `smoke_agent_commands_json.mjs` |
