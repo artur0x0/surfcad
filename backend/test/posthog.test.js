@@ -234,7 +234,10 @@ describe('auth routes emit PostHog events with consent', () => {
       });
       const me = await http('GET', '/api/auth/me');
       assert.equal(me.status, 200);
+      assert.equal(me.body.isInternal, true);
       assert.equal(me.body.user.isInternal, true);
+      assert.equal(me.body.isAdmin, false);
+      assert.equal(me.body.user.isAdmin, false);
       assert.equal(JSON.stringify(me.body).includes('internalUsers'), false);
     } finally {
       config.internalUsers = previous;

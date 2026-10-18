@@ -134,12 +134,17 @@ const userSchema = new mongoose.Schema({
     index: true,
     sparse: true,
   },
-  // GitHub login (username). Used only to flag internal analytics traffic.
+  // GitHub login (username). Used for ADMIN_GITHUB_LOGINS and to flag
+  // internal analytics traffic. Updated on GitHub sign-in / Connect;
+  // not a display name.
   githubLogin: {
     type: String,
     default: null,
     trim: true,
     lowercase: true,
+    maxlength: 39,
+    index: true,
+    sparse: true,
   },
   // Name fields - support both single name and first/last
   name: {

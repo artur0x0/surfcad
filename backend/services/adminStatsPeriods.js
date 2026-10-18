@@ -67,6 +67,14 @@ export function fillCountSeries(keys, countMap) {
   }));
 }
 
+/** Daily buckets keyed as `date` (UTC YYYY-MM-DD). */
+export function fillDateCountSeries(keys, countMap) {
+  return keys.map((date) => ({
+    date,
+    count: countMap.get(date) ?? 0,
+  }));
+}
+
 export function fillLoginSeries(keys, loginMap, distinctMap) {
   return keys.map((period) => ({
     period,

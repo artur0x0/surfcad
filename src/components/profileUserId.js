@@ -2,7 +2,7 @@ import { cartUserId } from '../utils/cart.js';
 
 export const PROFILE_USER_ID_COPIED_MS = 1500;
 
-/** Mongo User `_id` string — matches `ADMIN_USER_IDS` / adminAllowlist (`String(user._id)`). */
+/** Mongo User `_id` string (profile copy row). Admin allowlist is GitHub login, not this id. */
 export function profileMongoUserId(user) {
   return cartUserId(user);
 }

@@ -5,10 +5,12 @@
  * Clear local cache opens the confirm popup in App (ClearCacheDialog).
  */
 import React, { useEffect, useRef, useState } from 'react';
+import { BarChart3 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { shouldDismissProfilePanelOnPointer } from '../agent/ws/agentBridgeChrome.js';
 import PrivacyChoicesController from './PrivacyChoicesController';
 import ProfileUserIdRow from './ProfileUserIdRow';
+import { profileAdminVisible } from '../utils/adminAccess.js';
 
 function displayName(user) {
   if (!user) return '';
@@ -104,6 +106,21 @@ export default function ProfilePanel({
     </button>
   ) : null;
 
+  const adminButton = profileAdminVisible(user) ? (
+    <button
+      type="button"
+      data-profile-admin=""
+      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-medium text-on-dark hover:bg-white/10"
+      onClick={() => {
+        onClose?.();
+        window.location.assign('/admin');
+      }}
+    >
+      <BarChart3 size={14} className="text-on-dark" aria-hidden="true" />
+      Admin
+    </button>
+  ) : null;
+
   return (
     <div
       ref={ref}
@@ -169,6 +186,7 @@ export default function ProfilePanel({
             ) : null}
           </div>
           {cartButton}
+          {adminButton}
           <button
             type="button"
             data-profile-reconnect=""
@@ -239,6 +257,7 @@ export default function ProfilePanel({
             ) : null}
           </div>
           {cartButton}
+          {adminButton}
           <button
             type="button"
             data-profile-sign-out=""
