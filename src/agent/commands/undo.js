@@ -30,6 +30,11 @@ export const undoCommand = Object.freeze({
         volume: base.status.volume,
         bbox: base.status.bbox,
         partName: base.status.partName,
+        // Explicit null clears a previous failure. Omitting the key would
+        // re-read a stale viewport ref and keep the last error.
+        ...(Object.prototype.hasOwnProperty.call(base, 'runFailure')
+          ? { runFailure: base.runFailure }
+          : {}),
       }, script);
       return {
         result: {

@@ -113,7 +113,7 @@ export function pruneDanglingColors(raw) {
   return { ...raw, colors };
 }
 
-/** { ok, errors: [string] } — every problem, not just the first. */
+/** v1 / legacy reader. Rejects a v2 file. See `validateSurfJsonV2`. */
 export function validateSurfJson(input, { allowMissingPaths = false } = {}) {
   const errors = [];
   let raw = input;
