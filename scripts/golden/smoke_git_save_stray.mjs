@@ -262,12 +262,13 @@ console.log('\ngit save stray — UI wiring');
   ok('handleGitCommit lists via listVaultTree',
     /listVaultTree\(gitAdapterRef\.current/.test(app)
     && /err\.code === VAULT_TREE_UNAVAILABLE/.test(app));
-  ok('git .surf.json writers use prepareAssemblySurfWrite',
-    /prepareAssemblySurfWrite/.test(app)
-    && !/stringifySurfJson\(/.test(app));
-  ok('rename_part lists via stagePartRename',
-    /stagePartRename\(\{/.test(app)
-    && !/catch \{ \/\* the open document still blocks a collision \*\//.test(app)
+  ok('Save assigns vault paths; App does not stringify .surf.json',
+    /assembleCommitFiles\(/.test(app)
+    && !/stringifySurfJson\(/.test(app)
+    && !/prepareAssemblySurfWrite/.test(app));
+  ok('rename_part updates the working copy only',
+    /const handleRenamePart[\s\S]*?rememberAssembly\(nextDoc\)/.test(app)
+    && !/stagePartRename\(\{/.test(app)
     && !/planPartPath\(from, nextName\)/.test(app));
   ok('real listTree does not return [] on failure',
     !/if \(!sha\) return \[\];/.test(adapter)

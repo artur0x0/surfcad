@@ -2,9 +2,9 @@
 /**
  * Agent rename_part commit isolation (Artur product decision).
  *
- * Fake GitHub only. Edit a saved part's script, move it, rename it: the
- * rename commit is the tip file move + `.surf.json` path/name. The edit and
- * placement stay dirty, then Save writes them at the new path.
+ * Fake GitHub only. Edit a saved part's script, move it, rename it: rename
+ * is working-copy only (no commit). The edit and placement stay dirty, then
+ * Save writes the new name plus those pending edits.
  */
 /* global document, window, indexedDB, localStorage, sessionStorage */
 import { spawn } from 'node:child_process';
@@ -182,48 +182,23 @@ check(
 
 const renamed = await agentCall(page, 'rename_part', { part_id: row.id, name: 'Mount' });
 check(
-  'rename_part moves the vault path and keeps the id',
+  'rename_part updates the working copy and does not commit',
   renamed.ok === true
     && renamed.result?.partId === row.id
-    && renamed.result?.git === true
-    && renamed.result?.moved === true
-    && typeof renamed.result?.path === 'string'
-    && renamed.result.path !== tipPath,
+    && renamed.result?.git === false
+    && renamed.result?.moved !== true
+    && renamed.result?.name === 'Mount',
   JSON.stringify(renamed),
 );
-const newPath = renamed.result?.path;
 const afterRename = userCommits(fake);
-check('exactly one rename commit after the save', afterRename.length === 2, JSON.stringify(afterRename.map((c) => c.message)));
-const renameCommit = afterRename[0];
+check('rename does not add a commit', afterRename.length === 1, JSON.stringify(afterRename.map((c) => c.message)));
+const tipAfterRename = tipPath ? fake.readFile(tipPath) : null;
 check(
-  'rename commit is the file move plus .surf.json',
-  renameCommit
-    && /Rename /.test(renameCommit.message)
-    && renameCommit.files.some((f) => f.path === tipPath && f.status === 'removed')
-    && renameCommit.files.some((f) => f.path === newPath && (f.status === 'added' || f.status === 'modified'))
-    && renameCommit.files.some((f) => f.path.endsWith('.surf.json'))
-    && !renameCommit.files.some((f) => f.path !== tipPath && f.path !== newPath && !f.path.endsWith('.surf.json')),
-  JSON.stringify(renameCommit),
-);
-const renamedBytes = newPath ? fake.readFile(newPath) : null;
-check(
-  'rename commit wrote tip content, not the live edit',
-  typeof renamedBytes === 'string'
-    && renamedBytes === tipText
-    && !renamedBytes.includes('pending rename isolation edit'),
-  renamedBytes?.slice(0, 180),
-);
-const surfPath = renameCommit?.files.find((f) => f.path.endsWith('.surf.json'))?.path;
-const surfAfter = JSON.parse(fake.readFile(surfPath) || '{}');
-const surfRow = (surfAfter.parts || []).find((part) => part.id === row.id || part.path === newPath);
-check(
-  '.surf.json differs from the tip only in that part path and name',
-  !!surfRow
-    && surfRow.path === newPath
-    && surfRow.name === 'Mount'
-    && surfRow.position == null
-    && surfRow.placement == null,
-  JSON.stringify(surfRow),
+  'vault file still has the tip content',
+  typeof tipAfterRename === 'string'
+    && tipAfterRename === tipText
+    && !tipAfterRename.includes('pending rename isolation edit'),
+  tipAfterRename?.slice(0, 180),
 );
 
 const dirtyAfter = await agentCall(page, 'dirty', {});
@@ -247,28 +222,28 @@ check(
   JSON.stringify(savedAgain),
 );
 const afterSecondSave = userCommits(fake);
-check('exactly one more commit after Save', afterSecondSave.length === 3, JSON.stringify(afterSecondSave.map((c) => c.message)));
+check('exactly one more commit after Save', afterSecondSave.length === 2, JSON.stringify(afterSecondSave.map((c) => c.message)));
 const saveCommit = afterSecondSave[0];
+const surfPath = saveCommit?.files.find((f) => f.path.endsWith('.surf.json'))?.path;
+const savedPath = (saveCommit?.files || []).map((f) => f.path).find((path) => path.endsWith('.js'));
 check(
-  'Save commit holds the edit and placement at the new path',
+  'Save commit holds the edit, placement, and new name',
   saveCommit
     && saveCommit.message === 'Save edit and placement'
-    && saveCommit.files.some((f) => f.path === newPath)
-    && !saveCommit.files.some((f) => f.path === tipPath),
+    && !!surfPath,
   JSON.stringify(saveCommit),
 );
-const savedBytes = fake.readFile(newPath);
+const savedBytes = (savedPath && fake.readFile(savedPath)) || (tipPath && fake.readFile(tipPath));
 check(
-  'new path has the pending edit',
+  'saved script has the pending edit',
   typeof savedBytes === 'string' && savedBytes.includes('pending rename isolation edit'),
   savedBytes?.slice(0, 180),
 );
 const surfSaved = JSON.parse(fake.readFile(surfPath) || '{}');
-const savedRow = (surfSaved.parts || []).find((part) => part.id === row.id || part.path === newPath);
+const savedRow = (surfSaved.parts || []).find((part) => part.id === row.id);
 check(
-  'saved .surf.json has placement at the new path',
+  'saved .surf.json has the new name and placement',
   !!savedRow
-    && savedRow.path === newPath
     && savedRow.name === 'Mount'
     && Array.isArray(savedRow.position)
     && savedRow.position[0] === 25,

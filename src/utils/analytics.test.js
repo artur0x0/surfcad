@@ -22,6 +22,8 @@ import { analyticsKindForPaletteId } from './featureAnalytics.js';
 import {
   configureConsentNavigator,
   configureConsentStorage,
+  getAnalyticsConsent,
+  hasStoredConsentChoice,
   setAnalyticsConsent,
 } from './consent.js';
 import { HELPER_PALETTE_ITEMS } from './helperPaletteSnippets.js';
@@ -70,6 +72,22 @@ describe('analytics', () => {
       return { default: mockPosthog() };
     });
     track('app_loaded', { load_ms: 1 });
+    await syncAnalyticsConsent();
+    assert.equal(imported, false);
+    assert.equal(analyticsWouldLoad(), false);
+  });
+
+  test('does not load optional analytics before a stored choice', async () => {
+    configureConsentStorage(memoryStorage());
+    configureAnalyticsEnv({ key: 'phk_test', host: 'https://us.i.posthog.com' });
+    let imported = false;
+    configurePosthogImporter(async () => {
+      imported = true;
+      return { default: mockPosthog() };
+    });
+    assert.equal(hasStoredConsentChoice(), false);
+    assert.equal(getAnalyticsConsent(), false);
+    track('logged_in');
     await syncAnalyticsConsent();
     assert.equal(imported, false);
     assert.equal(analyticsWouldLoad(), false);

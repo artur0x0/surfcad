@@ -1,12 +1,15 @@
 /**
- * Product usage analytics consent (US launch, opt-out by default).
+ * Product usage analytics consent.
  *
  * PostHog and similar tools must call getAnalyticsConsent() before sending events.
- * Error reporting (e.g. Sentry) is essential operational telemetry and is NOT
- * gated by this toggle — only anonymous usage analytics and page performance.
+ * Nothing optional loads until the user has a stored choice (Accept all) or GPC
+ * has been recorded as Required only. Error reporting (e.g. Sentry) is essential
+ * operational telemetry and is NOT gated by this toggle.
  */
 
 export const CONSENT_STORAGE_KEY = 'surfcad.consent.v1';
+
+export { openPrivacyChoices } from './privacyChoicesUi.js';
 
 const listeners = new Set();
 
@@ -33,14 +36,20 @@ export function hasStoredConsentChoice() {
   return raw != null && typeof raw.analytics === 'boolean';
 }
 
+/** First visit with no stored choice: show the privacy consent popup (not when GPC applies). */
+export function shouldShowPrivacyConsentPopup(nav = navigatorRef) {
+  if (isGpcActive(nav)) return false;
+  return !hasStoredConsentChoice();
+}
+
 /**
- * GPC on first visit: treat as opt-out and persist without prompting.
+ * GPC on first visit: treat as Required only, persist with source `gpc`, no popup.
  * @returns {boolean} whether a default was written
  */
 export function applyGpcDefaultOnFirstVisit(nav = navigatorRef) {
   if (!isGpcActive(nav)) return false;
   if (hasStoredConsentChoice()) return false;
-  setAnalyticsConsent(false);
+  setAnalyticsConsent(false, { source: 'gpc' });
   return true;
 }
 
@@ -57,11 +66,12 @@ function readRaw() {
   }
 }
 
-function writeRaw(analytics, updatedAt) {
+function writeRaw(analytics, updatedAt, source) {
   const payload = {
     analytics: !!analytics,
     updatedAt: updatedAt || new Date().toISOString(),
   };
+  if (source) payload.source = String(source);
   if (storage) {
     try {
       storage.setItem(CONSENT_STORAGE_KEY, JSON.stringify(payload));
@@ -97,29 +107,38 @@ export function getAnalyticsConsent() {
   if (isGpcActive()) return false;
   const raw = readRaw();
   if (raw && typeof raw.analytics === 'boolean') return raw.analytics;
-  return true;
+  return false;
+}
+
+function recordFromRaw(raw, fallbackUpdatedAt) {
+  const rec = {
+    analytics: !!raw.analytics,
+    updatedAt: raw.updatedAt || fallbackUpdatedAt || null,
+  };
+  if (raw.source) rec.source = String(raw.source);
+  return rec;
 }
 
 /**
  * Persist the user's analytics preference. When GPC is active, opting in is ignored.
- * @returns {{ analytics: boolean, updatedAt: string }}
+ * @param {boolean} allow
+ * @param {{ source?: string }} [opts]
+ * @returns {{ analytics: boolean, updatedAt: string, source?: string }}
  */
-export function setAnalyticsConsent(allow) {
+export function setAnalyticsConsent(allow, { source } = {}) {
   if (isGpcActive() && allow === true) {
     return readStoredRecord();
   }
-  return writeRaw(!!allow, new Date().toISOString());
+  const resolvedSource = source || (isGpcActive() ? 'gpc' : 'user');
+  return writeRaw(!!allow, new Date().toISOString(), resolvedSource);
 }
 
 export function readStoredRecord() {
   const raw = readRaw();
-  if (raw && typeof raw.analytics === 'boolean' && raw.updatedAt) {
-    return { analytics: raw.analytics, updatedAt: raw.updatedAt };
-  }
   if (raw && typeof raw.analytics === 'boolean') {
-    return { analytics: raw.analytics, updatedAt: new Date().toISOString() };
+    return recordFromRaw(raw, raw.updatedAt ? null : new Date().toISOString());
   }
-  return { analytics: true, updatedAt: null };
+  return { analytics: false, updatedAt: null };
 }
 
 /**
@@ -145,6 +164,6 @@ export function applyServerConsent(serverConsent) {
   if (serverAt <= localAt) return false;
 
   const updatedAt = new Date(serverAt).toISOString();
-  writeRaw(serverConsent.analytics, updatedAt);
+  writeRaw(serverConsent.analytics, updatedAt, 'server');
   return true;
 }
