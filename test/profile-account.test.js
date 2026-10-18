@@ -54,7 +54,13 @@ describe('profile Account pane', () => {
     assert.match(pane, /variant="profileMenu"/);
     assert.match(pane, /max-h-\[calc\(100dvh-7rem\)\]/);
     assert.match(pane, /overflow-y-auto rail-scroll/);
+    assert.match(pane, /'Linked'/);
+    assert.doesNotMatch(pane, /GitHub linked/);
     assert.doesNotMatch(pane, /\bEdge\b/);
+    const privacyIdx = pane.indexOf('variant="profileMenu"');
+    const clearIdx = pane.indexOf('data-profile-clear-local');
+    const dangerIdx = pane.indexOf('data-profile-danger-zone');
+    assert.ok(privacyIdx > 0 && privacyIdx < clearIdx && clearIdx < dangerIdx);
     assert.match(panel, /data-profile-account/);
     assert.match(panel, /PROFILE_MENU_ITEM_CLASS/);
     assert.doesNotMatch(panel, /data-profile-panel-email/);

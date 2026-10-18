@@ -205,8 +205,8 @@ Desktop specifics:
   while an agent is paired or connected — not GitHub write-grant (that stays
   the sr-only Parts **Disconnect GitHub** control). **Account** opens a
   scrollable pane (`data-profile-account-pane`, VaultPickerDialog `account`)
-  with read-only user info, **Clear local cache** (`data-clear-cache`), Danger
-  zone → **Delete account**, and **Privacy choices**. The footer Privacy link
+  with read-only user info, **Privacy choices**, **Clear local cache**
+  (`data-clear-cache`), and Danger zone → **Delete account**. The footer Privacy link
   and the signed-out menu Privacy row stay. GitHub Sign-in uses the runtime
   Client ID cache from `/api/config`.
 - **The Toolbar is portaled into the editor mid-strip, exactly like mobile.**
@@ -660,7 +660,7 @@ Order-flow sheets share `ModalFit` (`modal-fit`): max-height is `100dvh` or `vis
 | Modal | Opened by | File | Notes |
 | --- | --- | --- | --- |
 | Login | Profile chip → Sign in (signed out / guest) | `LoginModal.jsx` / `ProfileChip.jsx` | `/api/auth/login`, `/register` |
-| Account | Profile menu → Account (`data-profile-account`) | `AccountPane.jsx` / `ProfileChip.jsx` | read-only user info, Clear local cache, Delete account, Privacy choices; scrolls on 390 |
+| Account | Profile menu → Account (`data-profile-account`) | `AccountPane.jsx` / `ProfileChip.jsx` | read-only user info, Privacy choices, Clear local cache, Delete account; scrolls on 390 |
 | Account (orders) | order-flow return / `handleAccount` when already authenticated | `AccountModal.jsx` | tabs `info` / `orders` |
 | Cart | part row Order (`data-part-order`); profile menu Cart (`data-profile-cart`); chip count (`data-cart-badge`) | `CartSheet.jsx` | signed-in lines only. Each quoted line shows its server unit price (`data-cart-unit-price`) and a stale badge (`data-cart-stale`) when the script hash changed or the quote expired (7 days, or no quote id). Remove (`data-cart-remove`) asks first (`data-cart-remove-dialog`) and names the part. Cancel is the default. Remove is destructive. Quantity does not ask. Checkout (`data-cart-checkout`) opens one page. Part missing and Not in this assembly stay in the cart. |
 | Checkout | cart Checkout | `checkout/CheckoutPage.jsx` | one page (`data-checkout-page`): qty, remove (same confirm as the cart sheet), stale / expired badges, address picker, one shipping quote (box count when more than one box), one pay. It charges the quote Add to cart stored. `priceUpdated` (`data-price-updated`) disables Pay until confirm. Paid lines are tombstoned. |

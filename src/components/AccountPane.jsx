@@ -1,6 +1,6 @@
 /**
  * Signed-in Account pane from the profile menu.
- * Read-only user info, then Clear local cache, Danger zone, Privacy choices.
+ * Read-only user info, then Privacy choices, Clear local cache, Danger zone.
  */
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
@@ -70,7 +70,7 @@ export default function AccountPane({
   };
 
   const githubStatus = githubLinked
-    ? 'GitHub linked'
+    ? 'Linked'
     : (provider === 'GitHub' ? 'Signed in with GitHub' : 'Not linked');
 
   return (
@@ -149,6 +149,11 @@ export default function AccountPane({
               <InfoRow label="Email" value={email} attr="email" />
               <InfoRow label="Created" value={created} attr="created" />
             </div>
+            <div className="my-2 border-t border-chrome-border" data-profile-privacy-divider="" />
+            <PrivacyChoicesController
+              variant="profileMenu"
+              buttonClassName="block w-full px-0 py-1.5 text-left text-xs text-on-dark hover:bg-white/10"
+            />
             {canClear ? (
               <button
                 type="button"
@@ -173,11 +178,6 @@ export default function AccountPane({
             >
               Delete account
             </button>
-            <div className="my-2 border-t border-chrome-border" data-profile-privacy-divider="" />
-            <PrivacyChoicesController
-              variant="profileMenu"
-              buttonClassName="block w-full px-0 py-1.5 text-left text-xs text-on-dark hover:bg-white/10"
-            />
           </>
         )}
       </div>

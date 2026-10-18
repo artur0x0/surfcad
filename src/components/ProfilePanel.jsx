@@ -5,7 +5,7 @@
  * Account opens AccountPane (clear cache, danger zone, privacy).
  */
 import React, { useEffect, useRef } from 'react';
-import { User } from 'lucide-react';
+import { LogOut, ShoppingCart, User } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { shouldDismissProfilePanelOnPointer } from '../agent/ws/agentBridgeChrome.js';
 import PrivacyChoicesController from './PrivacyChoicesController';
@@ -66,6 +66,7 @@ export default function ProfilePanel({
       className={PROFILE_MENU_ITEM_CLASS}
       onClick={() => { onOpenCart?.(); onClose?.(); }}
     >
+      <ShoppingCart size={14} aria-hidden="true" />
       {cartLabel}
     </button>
   ) : null;
@@ -139,6 +140,7 @@ export default function ProfilePanel({
             className={PROFILE_MENU_ITEM_CLASS}
             onClick={() => { void onSignOut?.(); onClose?.(); }}
           >
+            <LogOut size={14} aria-hidden="true" />
             Sign out
           </button>
         </>
@@ -179,6 +181,7 @@ export default function ProfilePanel({
             className={PROFILE_MENU_ITEM_CLASS}
             onClick={() => { void onSignOut?.(); onClose?.(); }}
           >
+            <LogOut size={14} aria-hidden="true" />
             Sign out
           </button>
         </>
