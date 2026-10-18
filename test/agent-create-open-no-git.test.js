@@ -36,7 +36,10 @@ test('agentCreatePart and agentOpenAssembly do not call git', () => {
   assert.match(APP, /bodyCount: finishedRunBodyCount\(run, bodyCountOfWorkerMesh\(run\.mesh\)\)/);
   assert.equal(/geom\.bodyCount === 0/.test(APP), false);
   assert.match(open, /resolveAssemblyOpenName\(requested, names\)/);
-  assert.match(open, /cacheVaultReads\(inner\)/);
+  assert.match(open, /inner\.getBranch\(vault\.repo, branch\)/);
+  assert.ok(open.indexOf('inner.getBranch(vault.repo, branch)') < open.indexOf('cacheVaultReads(inner, { branch, tip })'));
+  assert.ok(open.indexOf('cacheVaultReads(inner, { branch, tip })') < open.indexOf('handleListVaultAssemblies(cached)'));
+  assert.match(open, /cacheVaultReads\(inner, \{ branch, tip \}\)/);
   assert.match(open, /handleListVaultAssemblies\(cached\)/);
   assert.match(open, /setUploadNotice\(NO_REPO_YET_COPY\)/);
   assert.match(open, /if \(decision\?\.error\) return \{ error: decision\.error \}/);
