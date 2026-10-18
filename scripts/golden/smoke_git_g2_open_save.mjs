@@ -12,12 +12,21 @@ import {
 } from '../../src/utils/git/vaultLayout.js';
 import { stringifySurfJson, parseSurfJson } from '../../src/utils/git/surfJson.js';
 import { fileWrite } from '../../src/utils/git/githubAdapterInterface.js';
+import { feedRows } from '../../src/utils/assembly.js';
+import { wrapUnmarkedPartScripts } from '../../src/utils/wrapRawScript.js';
+import { partRowGitChrome } from '../../src/utils/git/gitAssemblyRename.js';
+import { showAddToRepo } from '../../src/utils/git/surfId.js';
+import { markPartsSynced } from '../../src/utils/git/surfIdMigration.js';
 import {
   dirtyPartIds, isAssemblyDirty, isPartDirty, isWorkspaceDirty,
   listVaultAssemblies, listAddableVaultParts, openVaultAssembly, readVaultPart,
   resolveNewPartPath, suggestNewPartPath,
 } from '../../src/utils/git/gitWorkspace.js';
-import { commitPartToRepo } from '../../src/utils/git/gitCommit.js';
+import {
+  assembleCommitFiles,
+  baselineAfterPartSave,
+  commitPartToRepo,
+} from '../../src/utils/git/gitCommit.js';
 import * as gitIndex from '../../src/utils/git/index.js';
 
 let failed = 0;
@@ -196,6 +205,116 @@ console.log('\ngit G2 — Add to Repo (instant single-part commit)');
     'return Manifold.cube([2,2,2], true);');
   ok('baseline has new part', Object.prototype.hasOwnProperty.call(added.baseline.scripts, NEWP));
   ok('index exports commitPartToRepo', typeof gitIndex.commitPartToRepo === 'function');
+}
+
+console.log('\ngit G2 — Save that adds a part leaves untouched sibling rows clean');
+{
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const ASM = 'Trio';
+  const ALPHA = '5f0c3c1e-0000-4000-8000-0000000000aa';
+  const BETA = '5f0c3c1e-0000-4000-8000-0000000000bb';
+  const GAMMA = '5f0c3c1e-0000-4000-8000-0000000000cc';
+  const DELTA = '5f0c3c1e-0000-4000-8000-0000000000dd';
+  const ALPHA_PATH = assemblyPartPath(ASM, 'Alpha');
+  const BETA_PATH = assemblyPartPath(ASM, 'Beta');
+  const GAMMA_PATH = assemblyPartPath(ASM, 'Gamma');
+  const ALPHA_TEXT = 'return Manifold.cube([10,10,10], true);\n';
+  const BETA_TEXT = 'return Manifold.cube([20,8,8], true);\n';
+  const GAMMA_TEXT = 'return Manifold.cube([6,6,30], true);\n';
+  const DELTA_TEXT = 'return Manifold.cube([4,4,4], true);\n';
+  const seedDoc = {
+    source: 'git',
+    name: ASM,
+    activeId: ALPHA,
+    parts: [
+      { id: ALPHA, name: 'Alpha', visible: true, order: 0, path: ALPHA_PATH },
+      { id: BETA, name: 'Beta', visible: true, order: 1, path: BETA_PATH },
+      { id: GAMMA, name: 'Gamma', visible: true, order: 2, path: GAMMA_PATH },
+    ],
+  };
+  const seed = await gh.commitFiles(vault.repo, {
+    branch: 'main', message: 'seed trio', baseSha: vault.headSha,
+    files: [
+      fileWrite(assemblyFilePath(ASM), stringifySurfJson(seedDoc)),
+      fileWrite(ALPHA_PATH, ALPHA_TEXT),
+      fileWrite(BETA_PATH, BETA_TEXT),
+      fileWrite(GAMMA_PATH, GAMMA_TEXT),
+    ],
+  });
+  const opened = await openVaultAssembly(gh, vault.repo, ASM, {
+    branch: 'main', headSha: seed.sha,
+  });
+  const liveDoc = {
+    ...opened.doc,
+    parts: [
+      ...opened.doc.parts,
+      { id: DELTA, name: 'Delta', visible: true, order: 3, isSynced: false },
+    ],
+  };
+  const liveScripts = {
+    ...opened.scripts,
+    [ALPHA]: `${ALPHA_TEXT}// edit\n`,
+    [DELTA]: DELTA_TEXT,
+  };
+  const wrapIds = dirtyPartIds(liveDoc, liveScripts, opened.baseline);
+  ok('wrap-on-Save skips untouched Gamma', !wrapIds.has(GAMMA));
+  const wrapped = wrapUnmarkedPartScripts(liveScripts, wrapIds);
+  eq('Gamma script stays unmarked', wrapped[GAMMA], GAMMA_TEXT);
+  const assembled = await assembleCommitFiles(gh, vault.repo, {
+    doc: liveDoc,
+    scripts: wrapped,
+    baseline: opened.baseline,
+    message: 'Save trio plus Delta',
+  });
+  eq('assemble ready', assembled.status, 'ready');
+  ok('save set is Alpha + Delta, not Gamma',
+    assembled.partIds.includes(ALPHA)
+    && assembled.partIds.includes(DELTA)
+    && !assembled.partIds.includes(GAMMA));
+  const committed = await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: assembled.message,
+    files: assembled.files,
+    baseSha: opened.baseline.headSha,
+  });
+  const saved = {};
+  for (const id of assembled.partIds) {
+    saved[id] = typeof assembled.scripts[id] === 'string' ? assembled.scripts[id] : '';
+  }
+  const nextBaseline = baselineAfterPartSave(opened.baseline, {
+    doc: assembled.doc,
+    saved,
+    assemblyPath: assembled.assemblyPath,
+    assemblyName: assembled.doc.name,
+    branch: 'main',
+    headSha: committed.sha,
+  });
+  const marked = markPartsSynced(assembled.doc, assembled.partIds);
+  ok('workspace dirty clean after Save',
+    !isWorkspaceDirty(marked.doc, assembled.scripts, nextBaseline));
+  eq('dirtyPartIds empty after Save', [...dirtyPartIds(marked.doc, assembled.scripts, nextBaseline)], []);
+  const dots = feedRows(marked.doc, {}, assembled.scripts).map((row) => {
+    const chrome = partRowGitChrome({
+      contentDirty: dirtyPartIds(marked.doc, assembled.scripts, nextBaseline).has(row.id),
+    });
+    return !!(chrome.dirty || showAddToRepo(row));
+  });
+  ok('no parts-list row shows a dirty dot', dots.every((dot) => dot === false));
+  ok('Gamma isSynced is not false',
+    marked.doc.parts.find((part) => part.id === GAMMA).isSynced !== false);
+  const gammaEdited = { ...assembled.scripts, [GAMMA]: `${GAMMA_TEXT}// gamma\n` };
+  eq('editing Gamma dirties only Gamma',
+    [...dirtyPartIds(marked.doc, gammaEdited, nextBaseline)], [GAMMA]);
+  const gammaDot = feedRows(marked.doc, {}, gammaEdited).map((row) => {
+    const chrome = partRowGitChrome({
+      contentDirty: dirtyPartIds(marked.doc, gammaEdited, nextBaseline).has(row.id),
+    });
+    return { id: row.id, dot: !!(chrome.dirty || showAddToRepo(row)) };
+  });
+  ok('Gamma row shows a dot after a real edit', gammaDot.find((row) => row.id === GAMMA)?.dot === true);
+  ok('Alpha/Beta/Delta stay clean after Gamma edit',
+    gammaDot.filter((row) => row.id !== GAMMA).every((row) => row.dot === false));
 }
 
 console.log('\ngit G2 — UI wiring (PartFeed + App)');
