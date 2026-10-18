@@ -51,6 +51,7 @@ export function agentGitConsentInteractive(env = {}) {
 export function agentGitConsentVerb(commandName) {
   switch (commandName) {
     case 'git_save': return 'save to';
+    case 'git_upgrade_vault': return 'upgrade the vault on';
     case 'git_move_to_repo': return 'move this assembly to';
     case 'git_add_to_repo': return 'add a part to';
     case 'git_behind_resolve': return 'sync';
@@ -166,13 +167,19 @@ export function gitOpResult(result) {
   if (!result || typeof result !== 'object') {
     return { result: { status: 'error', error: 'No result' } };
   }
-  if (result.status === 'error') {
-    return {
-      error: {
-        code: result.code || 'git_error',
-        message: result.error || 'Git operation failed',
-      },
+  const code = result.code;
+  const failed = result.status === 'error'
+    || result.status === 'conflict'
+    || result.status === 'upgrade_required'
+    || code === 'upgrade_required'
+    || code === 'conflict';
+  if (failed) {
+    const error = {
+      code: code || (result.status === 'conflict' ? 'conflict' : 'git_error'),
+      message: result.message || result.error || 'Git operation failed',
     };
+    if (typeof result.hint === 'string' && result.hint) error.hint = result.hint;
+    return { error };
   }
   return { result };
 }

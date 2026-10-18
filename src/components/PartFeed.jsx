@@ -397,6 +397,9 @@ const PartFeed = forwardRef(function PartFeed({
   suggestNewPartPath = '',
   canCommit = false,
   onGitCommit = null,
+  vaultLayout = null,
+  onUpgradeVault = null,
+  onUpgradeConflict = null,
   onOverwriteMain = null,
   // G4 pull/conflicts
   behindPartIds = null,
@@ -752,6 +755,10 @@ const PartFeed = forwardRef(function PartFeed({
 
   const startCommit = () => {
     if (source !== 'git' || !canCommit) return;
+    if (vaultLayout === 'legacy') {
+      setCommitFlow({ stage: 'upgrade', draft: '', result: null, error: '' });
+      return;
+    }
     setCommitFlow({ stage: 'message', draft: '', result: null, error: '' });
   };
 
@@ -1121,6 +1128,49 @@ const PartFeed = forwardRef(function PartFeed({
   useEffect(() => {
     if (assemblyRenameFlow) assemblyRenameInputRef.current?.focus();
   }, [assemblyRenameFlow]);
+
+  const runUpgrade = async () => {
+    setCommitFlow({ stage: 'busy', draft: '', result: null, error: '' });
+    const result = (await onUpgradeVault?.()) || { status: 'error', error: 'Upgrade unavailable' };
+    if (result.status === 'conflict' && result.phase === 'save') {
+      setCommitFlow({ stage: 'upgrade-conflict', draft: '', result, error: '' });
+      return;
+    }
+    if (result.status === 'error' || result.status === 'conflict') {
+      setCommitFlow({
+        stage: 'error',
+        draft: '',
+        result,
+        error: result.error || result.message || 'Upgrade failed',
+      });
+      return;
+    }
+    setCommitFlow({ stage: 'done', draft: '', result, error: '' });
+  };
+
+  const runUpgradeConflict = async (action) => {
+    if (action === 'dismiss') {
+      closeCommit();
+      return;
+    }
+    const prior = commitFlow?.result || null;
+    setCommitFlow({ stage: 'busy', draft: '', result: prior, error: '' });
+    const result = (await onUpgradeConflict?.({
+      action,
+      files: prior?.files,
+      message: prior?.message,
+    })) || { status: 'error', error: 'Action unavailable' };
+    if (result.status === 'error' || result.status === 'conflict') {
+      setCommitFlow({
+        stage: 'error',
+        draft: '',
+        result: prior,
+        error: result.error || result.message || 'Could not resolve',
+      });
+      return;
+    }
+    setCommitFlow({ stage: 'done', draft: '', result, error: '' });
+  };
 
     const runCommit = async () => {
     const draft = commitFlow?.draft || '';
@@ -1771,7 +1821,9 @@ const PartFeed = forwardRef(function PartFeed({
                 data-git-save=""
                 data-git-dirty={sourceDirty ? 'true' : 'false'}
                 disabled={!canCommit}
-                title={canCommit ? `Save (commit) to ${currentBranch || 'main'}` : 'Nothing to save'}
+                title={vaultLayout === 'legacy'
+                  ? 'Upgrade vault to v2'
+                  : (canCommit ? `Save (commit) to ${currentBranch || 'main'}` : 'Nothing to save')}
                 aria-label="Save"
                 onClick={startCommit}
               >
@@ -2245,14 +2297,80 @@ const PartFeed = forwardRef(function PartFeed({
       {commitFlow && typeof document !== 'undefined' && (
         <VaultPickerDialog
           title={(
-            commitFlow.stage === 'ask-force'
-            || (commitFlow.result?.syncHold && (commitFlow.stage === 'busy' || commitFlow.stage === 'error'))
-          ) ? 'Conflict with main' : 'Save to repo'}
+            commitFlow.stage === 'upgrade' || commitFlow.stage === 'upgrade-conflict'
+          ) ? 'Upgrade vault'
+            : (
+              commitFlow.stage === 'ask-force'
+              || (commitFlow.result?.syncHold && (commitFlow.stage === 'busy' || commitFlow.stage === 'error'))
+            ) ? 'Conflict with main' : 'Save to repo'}
           labelledBy="git-commit-title"
-          dataAttr="commit"
+          dataAttr={commitFlow.stage === 'upgrade' || commitFlow.stage === 'upgrade-conflict' ? 'upgrade' : 'commit'}
           onClose={commitFlow.stage === 'busy' ? undefined : closeCommit}
           footer={(
-            <div className="mt-4 flex justify-end gap-2" data-git-commit-stage={commitFlow.stage}>
+            <div className="mt-4 flex flex-wrap justify-end gap-2" data-git-commit-stage={commitFlow.stage}>
+              {commitFlow.stage === 'upgrade' && (
+                <>
+                  <button
+                    type="button"
+                    className="rounded-md px-3 py-1.5 text-xs font-ui text-on-dark surface-quiet"
+                    onClick={closeCommit}
+                    data-ui-action="data-git-upgrade-dismiss"
+                    data-git-upgrade-dismiss=""
+                  >
+                    Dismiss
+                  </button>
+                  <button
+                    type="button"
+                    data-ui-action="data-git-upgrade-confirm"
+                    data-git-upgrade-confirm=""
+                    data-git-upgrade-vault=""
+                    className="rounded-md px-3 py-1.5 text-xs font-ui font-medium text-on-dark surface-success"
+                    onClick={() => { void runUpgrade(); }}
+                  >
+                    Upgrade vault
+                  </button>
+                </>
+              )}
+              {commitFlow.stage === 'upgrade-conflict' && (
+                <>
+                  <button
+                    type="button"
+                    className="rounded-md px-3 py-1.5 text-xs font-ui text-on-dark surface-quiet"
+                    onClick={() => { void runUpgradeConflict('dismiss'); }}
+                    data-ui-action="data-git-upgrade-dismiss"
+                    data-git-upgrade-dismiss=""
+                  >
+                    Dismiss
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md px-3 py-1.5 text-xs font-ui text-on-dark surface-quiet"
+                    data-ui-action="data-git-behind-reload"
+                    data-git-behind-reload=""
+                    onClick={() => { void runUpgradeConflict('reload'); }}
+                  >
+                    Get latest
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md px-3 py-1.5 text-xs font-ui text-on-dark surface-quiet"
+                    data-ui-action="data-git-behind-branch"
+                    data-git-behind-branch=""
+                    onClick={() => { void runUpgradeConflict('branch'); }}
+                  >
+                    Save mine to a new branch
+                  </button>
+                  <button
+                    type="button"
+                    data-ui-action="data-git-conflict-overwrite"
+                    data-git-conflict-overwrite=""
+                    className="rounded-md px-3 py-1.5 text-xs font-ui font-medium text-on-dark surface-success"
+                    onClick={() => { void runUpgradeConflict('overwrite'); }}
+                  >
+                    Overwrite
+                  </button>
+                </>
+              )}
               {commitFlow.stage === 'message' && (
                 <>
                   <button type="button" className="rounded-md px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10" onClick={closeCommit} data-git-dialog-cancel="">
@@ -2308,6 +2426,23 @@ const PartFeed = forwardRef(function PartFeed({
             </div>
           )}
         >
+          {commitFlow.stage === 'upgrade' && (
+            <div data-git-upgrade-prompt="" className="font-ui text-on-dark">
+              <p className="text-xs">
+                This vault still uses the old folder layout. Upgrade rewrites the remote to the v2 id layout in one commit. A dirty working copy is saved as a second commit under this confirmation. Older SurfCAD builds cannot open a v2 vault. Dismiss writes nothing.
+              </p>
+              <p className="mt-2 text-[11px] text-muted-on-dark">
+                Open SurfCAD in Chrome to confirm. Never runs on load.
+              </p>
+            </div>
+          )}
+          {commitFlow.stage === 'upgrade-conflict' && (
+            <div data-git-upgrade-conflict="" className="font-ui text-on-dark">
+              <p className="text-xs">
+                The vault is already v2. The follow-up Save overlaps files changed on the remote. Overwrite, Get latest, Save mine to a new branch, or Dismiss. Get latest does not write git.
+              </p>
+            </div>
+          )}
           {commitFlow.stage === 'message' && (
             <>
               <p className="mb-2 text-[11px] text-chrome-secondary">
@@ -2330,7 +2465,11 @@ const PartFeed = forwardRef(function PartFeed({
               />
             </>
           )}
-          {commitFlow.stage === 'busy' && <p className="text-xs text-chrome-secondary" data-git-dialog-loading="">Committing…</p>}
+          {commitFlow.stage === 'busy' && (
+            <p className="text-xs text-muted-on-dark font-ui" data-git-dialog-loading="">
+              {vaultLayout === 'legacy' || commitFlow.result?.phase === 'save' ? 'Upgrading…' : 'Committing…'}
+            </p>
+          )}
           {commitFlow.stage === 'ask-force' && (
             <div
               data-git-force-merge-ask=""
@@ -2357,11 +2496,15 @@ const PartFeed = forwardRef(function PartFeed({
             <p className="text-xs text-gray-300" data-git-commit-done={commitFlow.result?.status || ''}>
               {commitFlow.result?.status === 'clean'
                 ? 'Nothing to commit.'
-                : commitFlow.result?.status === 'queued'
-                  ? SAVE_QUEUED_COPY
-                  : commitFlow.result?.addedNames
-                    ? `Added ${commitFlow.result.addedNames} to the repo.`
-                    : `Committed ${(commitFlow.result?.files || []).length} file(s) to ${commitFlow.result?.branch || 'main'} (${String(commitFlow.result?.sha || '').slice(0, 7)}).`}
+                : commitFlow.result?.status === 'already_upgraded'
+                  ? 'This vault is already v2.'
+                  : commitFlow.result?.status === 'upgraded' || commitFlow.result?.status === 'upgraded_and_saved'
+                    ? `Upgraded to v2${commitFlow.result?.commits === 2 ? ' and saved working-copy edits' : ''} (${String(commitFlow.result?.sha || '').slice(0, 7)}).`
+                    : commitFlow.result?.status === 'queued'
+                      ? SAVE_QUEUED_COPY
+                      : commitFlow.result?.addedNames
+                        ? `Added ${commitFlow.result.addedNames} to the repo.`
+                        : `Committed ${(commitFlow.result?.files || []).length} file(s) to ${commitFlow.result?.branch || 'main'} (${String(commitFlow.result?.sha || '').slice(0, 7)}).`}
             </p>
           )}
           {commitFlow.stage === 'error' && (

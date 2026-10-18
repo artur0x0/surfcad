@@ -361,7 +361,13 @@ import {
   meshVaultSaveAllowed,
 } from './utils/git';
 import { scheduleLastCommitFromApp } from './utils/git/lastCommit';
-import { detectVaultLayout, openLegacyAssembly, UnsupportedVaultLayoutError } from './utils/git/legacyVault';
+import {
+  detectVaultLayout,
+  executeUpgrade,
+  executeUpgradeConflictChoice,
+  openLegacyAssembly,
+  UnsupportedVaultLayoutError,
+} from './utils/git/legacyVault';
 import PartFeed from './components/PartFeed';
 import manifoldContext from './utils/ManifoldWorker';
 import DEFAULT_SCRIPT from './utils/defaultScript';
@@ -4810,6 +4816,24 @@ const App = () => {
     })) {
       return { status: 'error', error: 'Reconnect GitHub before saving this assembly.' };
     }
+    if (doc.vaultLayout === 'legacy') {
+      return {
+        status: 'upgrade_required',
+        code: 'upgrade_required',
+        error: 'This vault is still v1. Confirm Upgrade vault to rewrite it to v2. Nothing was written.',
+        message: 'This vault is still v1. Confirm Upgrade vault to rewrite it to v2. Nothing was written.',
+        hint: 'git_upgrade_vault { confirm: true } after the user agrees',
+      };
+    }
+    if (doc.vaultLayout === 'v2') {
+      return {
+        status: 'error',
+        code: 'git_error',
+        error: 'Saving a v2 vault is not wired yet. The vault is already upgraded; local edits stay in the working copy.',
+        message: 'Saving a v2 vault is not wired yet. The vault is already upgraded; local edits stay in the working copy.',
+        hint: 'v2 Save lands in a later PR.',
+      };
+    }
     try {
       const vault = await ensureGitVault({ create: true });
       const branch = gitWorkingBranch();
@@ -4971,6 +4995,101 @@ const App = () => {
         code: err.code || null,
         stray: Array.isArray(err.stray) ? err.stray : null,
       };
+    }
+  };
+
+  /**
+   * Upgrade vault: one commit of remote bytes. Dirty WC → a second commit
+   * inside legacyVault/ (PR 7 replaces that follow-up with planSave).
+   * Never createRepo. Never flush the outbox.
+   */
+  const handleUpgradeVault = async ({ overwrite = false, message } = {}) => {
+    const doc = assemblyRef.current;
+    if (!doc || doc.source !== 'git') {
+      return {
+        status: 'error',
+        code: 'git_error',
+        error: 'Not in Git mode',
+        message: 'Not in Git mode',
+        hint: 'Open a git-backed assembly, then retry Upgrade vault.',
+      };
+    }
+    try {
+      const vault = await ensureGitVault({ create: false });
+      const adapter = gitAdapterRef.current;
+      const branch = gitWorkingBranch();
+      const store = gitSync();
+      const live = codeEditorRef.current?.getContent?.();
+      const scripts = { ...partScriptsRef.current };
+      if (typeof live === 'string' && doc.activeId) scripts[doc.activeId] = live;
+      const dirty = !!(
+        sidecarIsDirty(gitSidecarRef.current)
+        || (gitBaselineRef.current && isWorkspaceDirty(doc, scripts, gitBaselineRef.current, {
+          liveId: doc.activeId,
+          liveScript: typeof live === 'string' ? live : null,
+        }))
+      );
+      const assets = await loadPartAssets((doc.parts || []).map((part) => part.id));
+      const result = await executeUpgrade({
+        adapter,
+        repo: vault.repo,
+        branch,
+        store,
+        workingCopy: { dirty, doc, scripts, assets, message },
+        followupOverwrite: overwrite === true,
+      });
+      const adopted = result.status === 'upgraded'
+        || result.status === 'upgraded_and_saved'
+        || result.status === 'already_upgraded'
+        || (result.status === 'conflict' && result.phase === 'save');
+      if (adopted) {
+        const next = { ...assemblyRef.current, vaultLayout: 'v2' };
+        rememberAssembly(next);
+        if (result.status !== 'conflict') {
+          const head = (await adapter.getBranch(vault.repo, branch))?.sha || result.sha || null;
+          rememberGitBaseline(captureBaseline({
+            assemblyPath: assemblyFilePath(vaultSegment(next.name) || next.name),
+            assemblyName: next.name,
+            doc: next,
+            scripts: { ...partScriptsRef.current },
+            assets,
+            branch,
+            headSha: head,
+          }));
+          await clearWorkingCopySidecar();
+        }
+      }
+      return result;
+    } catch (err) {
+      return gitOpCatchResult(err, 'Upgrade vault failed');
+    }
+  };
+
+  /** §2.9 on the follow-up Save only. Get latest never writes git. */
+  const handleUpgradeConflict = async ({ action, files, message } = {}) => {
+    const doc = assemblyRef.current;
+    if (!doc || doc.source !== 'git') {
+      return {
+        status: 'error',
+        code: 'git_error',
+        error: 'Not in Git mode',
+        message: 'Not in Git mode',
+      };
+    }
+    try {
+      const vault = await ensureGitVault({ create: false });
+      return executeUpgradeConflictChoice({
+        action,
+        adapter: gitAdapterRef.current,
+        repo: vault.repo,
+        branch: gitWorkingBranch(),
+        files,
+        message,
+        store: gitSync(),
+        assemblyId: doc.id,
+      });
+    } catch (err) {
+      return gitOpCatchResult(err, 'Upgrade follow-up failed');
     }
   };
 
@@ -8402,6 +8521,7 @@ const App = () => {
         legacyCleanup: !!dirtyBaseline?.legacyCleanup,
         undoStackDirty,
         editedSinceLoad,
+        upgradeRequired: doc?.vaultLayout === 'legacy',
       });
     },
     readToasts() {
@@ -8755,6 +8875,9 @@ const App = () => {
       const draft = String(message || '').trim();
       if (!draft) return { status: 'error', error: 'Commit message required' };
       return handleGitCommit(draft);
+    },
+    async agentGitUpgradeVault() {
+      return handleUpgradeVault();
     },
     async agentGitAddToRepo({ partId }) {
       if (!partId) return { status: 'error', error: 'part_id required' };
@@ -9473,8 +9596,11 @@ const App = () => {
       onRenameRevert={handleRenameRevert}
       syncConflict={syncConflict}
       onSyncConflictClear={() => setSyncConflict(null)}
-      canCommit={assemblyDoc?.source === 'git' && !!sourceDirty && gitSession.phase === 'connected'}
+      canCommit={assemblyDoc?.source === 'git' && !!sourceDirty && gitSession.phase === 'connected' || (assemblyDoc?.source === 'git' && assemblyDoc?.vaultLayout === 'legacy' && gitSession.phase === 'connected')}
+      vaultLayout={assemblyDoc?.vaultLayout || null}
       onGitCommit={handleGitCommit}
+      onUpgradeVault={handleUpgradeVault}
+      onUpgradeConflict={handleUpgradeConflict}
       onOverwriteMain={handleOverwriteMain}
       behindPartIds={behindPartIdSet}
       assemblyBehind={!!behindMarkers.assemblyBehind}

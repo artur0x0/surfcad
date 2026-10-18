@@ -36,6 +36,7 @@
     "src/utils/featureSkip.js",
     "src/utils/filletAlongPath.js",
     "src/utils/filletSliverGuard.js",
+    "src/utils/git/surfId.js",
     "src/utils/helperPaletteSnippets.js",
     "src/utils/loftReference.js",
     "src/utils/makeLoft.js",
@@ -63,6 +64,7 @@
     "src/utils/shellMode.js",
     "src/utils/solidReference.js",
     "src/utils/stickyPick.js",
+    "src/utils/wrapRawScript.js",
     "src/workers/fastenerSizes.js",
     "src/workers/separateBodies.js"
   ],

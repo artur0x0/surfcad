@@ -102,6 +102,29 @@ export const gitSaveCommand = Object.freeze({
   },
 });
 
+export const gitUpgradeVaultCommand = Object.freeze({
+  name: 'git_upgrade_vault',
+  uiEntry: ['data-git-upgrade-confirm', 'data-git-upgrade-vault'],
+  schema: Object.freeze({
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      confirm: { type: 'boolean', description: 'Must be true' },
+    },
+  }),
+  example: { confirm: true },
+  checkArgs(args) {
+    const gate = requireDestructiveConfirm(args, 'git_upgrade_vault');
+    if (gate) return gate;
+    return null;
+  },
+  async run(ctx, args) {
+    const gate = requireDestructiveConfirm(args, 'git_upgrade_vault');
+    if (gate) return { error: gate };
+    return hostGit(ctx, 'agentGitUpgradeVault', { confirm: true }, { commandName: 'git_upgrade_vault' });
+  },
+});
+
 export const gitAddToRepoCommand = Object.freeze({
   name: 'git_add_to_repo',
   uiEntry: ['data-git-commit-add-to-repo', 'data-part-add-to-repo'],

@@ -16,6 +16,7 @@ test('buildDirtyState copies part ids and flags', () => {
     partIds: ['a', 'b'],
     unsaved: false,
     editedSinceLoad: [],
+    upgradeRequired: false,
   });
 });
 
@@ -29,6 +30,7 @@ test('buildDirtyState folds undoStackDirty into workspaceDirty', () => {
     unsaved: true,
     editedSinceLoad: [],
     undoStackDirty: true,
+    upgradeRequired: false,
   });
 });
 
@@ -41,10 +43,11 @@ test('buildDirtyState sets unsaved from editedSinceLoad', () => {
     partIds: [],
     unsaved: true,
     editedSinceLoad: ['p1'],
+    upgradeRequired: false,
   });
 });
 
-test('buildDirtyState does not set upgradeRequired (PR 4/8)', () => {
-  assert.equal(Object.hasOwn(buildDirtyState({}), 'upgradeRequired'), false);
-  assert.equal(Object.hasOwn(buildDirtyState({ upgradeRequired: true }), 'upgradeRequired'), false);
+test('buildDirtyState sets upgradeRequired for a legacy vault', () => {
+  assert.equal(buildDirtyState({}).upgradeRequired, false);
+  assert.equal(buildDirtyState({ upgradeRequired: true }).upgradeRequired, true);
 });

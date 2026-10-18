@@ -5,6 +5,7 @@ import {
   agentGitRealOptIn,
   agentGitRealWriteBlocked,
   agentGitConsentPrompt,
+  gitOpResult,
   AGENT_GIT_REAL_SESSION_KEY,
 } from './gitAgent.js';
 import {
@@ -12,6 +13,7 @@ import {
   gitBranchDeleteCommand,
   gitListBranchesCommand,
   gitSaveCommand,
+  gitUpgradeVaultCommand,
 } from './commands/git.js';
 
 test('requireDestructiveConfirm refuses without confirm', () => {
@@ -208,6 +210,75 @@ test('git_branch_create failed switch stays created with switchError', async () 
   assert.equal(out.result?.switched, false);
   assert.equal(out.result?.switchError, 'Could not switch to the new branch');
   assert.equal(out.error, undefined);
+});
+
+test('git_upgrade_vault without confirm is refused', () => {
+  const missing = gitUpgradeVaultCommand.checkArgs({});
+  assert.equal(missing?.code, 'confirm_required');
+  assert.match(missing?.message || '', /confirm: true/);
+  assert.equal(gitUpgradeVaultCommand.checkArgs({ confirm: false })?.code, 'confirm_required');
+  assert.equal(gitUpgradeVaultCommand.checkArgs({ confirm: true }), null);
+});
+
+test('git_upgrade_vault run refuses without confirm and does not call the host', async () => {
+  let called = false;
+  const ctx = {
+    readAgentGitAdapterKind: () => 'mock',
+    agentGitUpgradeVault: async () => {
+      called = true;
+      return { status: 'upgraded' };
+    },
+  };
+  const out = await gitUpgradeVaultCommand.run(ctx, {});
+  assert.equal(called, false);
+  assert.equal(out.error?.code, 'confirm_required');
+});
+
+test('git_upgrade_vault with confirm: true calls the host', async () => {
+  let args;
+  const ctx = {
+    readAgentGitAdapterKind: () => 'mock',
+    agentGitUpgradeVault: async (a) => {
+      args = a;
+      return { status: 'upgraded', sha: 'abc' };
+    },
+  };
+  const out = await gitUpgradeVaultCommand.run(ctx, { confirm: true });
+  assert.equal(args.confirm, true);
+  assert.equal(out.result?.status, 'upgraded');
+  assert.equal(out.error, undefined);
+});
+
+test('gitOpResult treats upgrade_required and conflict as errors with hints', () => {
+  const required = gitOpResult({
+    status: 'upgrade_required',
+    code: 'upgrade_required',
+    message: 'This vault is still v1',
+    hint: 'git_upgrade_vault { confirm: true } after the user agrees',
+  });
+  assert.equal(required.error?.code, 'upgrade_required');
+  assert.equal(required.error?.hint, 'git_upgrade_vault { confirm: true } after the user agrees');
+  assert.equal(required.result, undefined);
+
+  const conflict = gitOpResult({
+    status: 'conflict',
+    code: 'conflict',
+    message: 'Remote tip moved',
+    hint: 'Retry Upgrade vault',
+  });
+  assert.equal(conflict.error?.code, 'conflict');
+  assert.equal(conflict.error?.hint, 'Retry Upgrade vault');
+});
+
+test('gitOpResult passes already_upgraded and upgraded through as success', () => {
+  assert.equal(gitOpResult({ status: 'already_upgraded' }).result?.status, 'already_upgraded');
+  assert.equal(gitOpResult({ status: 'upgraded', sha: 'abc' }).result?.sha, 'abc');
+  assert.equal(gitOpResult({ status: 'already_upgraded' }).error, undefined);
+});
+
+test('git_upgrade_vault consent prompt names the vault', () => {
+  const text = agentGitConsentPrompt('git_upgrade_vault', 'acme/vault', 'main');
+  assert.match(text, /upgrade the vault on acme\/vault\/main/);
 });
 
 test('git_list_branches allowed on real adapter without opt-in', async () => {

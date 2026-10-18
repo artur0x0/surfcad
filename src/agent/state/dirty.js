@@ -7,6 +7,7 @@
  *   legacyCleanup?: boolean,
  *   undoStackDirty?: boolean,
  *   editedSinceLoad?: Iterable<string>,
+ *   upgradeRequired?: boolean,
  * }} input
  */
 export function buildDirtyState(input = {}) {
@@ -24,6 +25,7 @@ export function buildDirtyState(input = {}) {
     partIds,
     unsaved,
     editedSinceLoad,
+    upgradeRequired: input.upgradeRequired === true,
   };
   if (undoStackDirty) out.undoStackDirty = true;
   return out;
