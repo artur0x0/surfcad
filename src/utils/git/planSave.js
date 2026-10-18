@@ -116,13 +116,20 @@ function knownHash(path, commit, wc) {
   return null;
 }
 
-function partIdsOf(row) {
+function partRowIds(row) {
   const ids = new Set();
   if (!row || typeof row !== 'object') return ids;
   const parts = Array.isArray(row.parts) ? row.parts : (Array.isArray(row.json?.parts) ? row.json.parts : []);
   for (const part of parts) {
     if (isV2SurfId(part?.id)) ids.add(part.id);
   }
+  return ids;
+}
+
+/** Other assemblies: parts[].id, groups[].partIds, or a flat partIds list. */
+function referencedPartIds(row) {
+  const ids = partRowIds(row);
+  if (!row || typeof row !== 'object') return ids;
   const groups = Array.isArray(row.groups) ? row.groups : (Array.isArray(row.json?.groups) ? row.json.groups : []);
   for (const group of groups) {
     for (const id of Array.isArray(group?.partIds) ? group.partIds : []) {
@@ -135,13 +142,25 @@ function partIdsOf(row) {
   return ids;
 }
 
+/** This assembly’s lastCommit ownership is parts[] rows only — not groups or files. */
 function lastCommitPartIds(commit) {
-  const ids = partIdsOf(commit?.json);
-  for (const path of Object.keys(commit?.files || {})) {
-    const parsed = parseIdPath(path);
-    if (parsed?.kind === 'part' || parsed?.kind === 'mesh') ids.add(parsed.id);
+  return partRowIds(commit?.json);
+}
+
+function hasOwn(obj, key) {
+  return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+/** True when the caller supplied the §2.7 reference set (empty array counts). */
+function referenceInputsProvided(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return false;
+  const keys = ['branchAssemblies', 'openWorkingCopies', 'otherAssemblyCommits'];
+  if (keys.some((key) => hasOwn(input, key))) return true;
+  const doc = input.doc;
+  if (doc && typeof doc === 'object' && !Array.isArray(doc)) {
+    return keys.some((key) => hasOwn(doc, key));
   }
-  return ids;
+  return false;
 }
 
 function parentAssemblies(partId, wc, selfId) {
@@ -152,15 +171,15 @@ function parentAssemblies(partId, wc, selfId) {
     if (!found.has(id)) found.set(id, { id, name: name || id });
   };
   for (const row of wc.branchAssemblies || []) {
-    consider(row.id || row.assemblyId, row.name || row.json?.name, partIdsOf(row));
+    consider(row.id || row.assemblyId, row.name || row.json?.name, referencedPartIds(row));
   }
   for (const row of wc.openWorkingCopies || []) {
     const doc = row.doc && typeof row.doc === 'object' ? row.doc : row;
-    consider(doc.id || row.assemblyId, doc.name || row.name, partIdsOf(doc));
+    consider(doc.id || row.assemblyId, doc.name || row.name, referencedPartIds(doc));
   }
   for (const row of wc.otherAssemblyCommits || []) {
     const parsed = parseAssemblyCommit(row) || row;
-    consider(parsed.assemblyId, parsed.json?.name, partIdsOf(parsed.json || parsed));
+    consider(parsed.assemblyId, parsed.json?.name, referencedPartIds(parsed.json || parsed));
   }
   return [...found.values()];
 }
@@ -249,6 +268,12 @@ export function planSave(branchTip, assemblyCommit, workingCopy, remoteTip, comp
 
   const tip = parseBranchTip(branchTip);
   const prev = parseAssemblyCommit(assemblyCommit);
+  if (assemblyCommit != null && typeof assemblyCommit === 'object' && !Array.isArray(assemblyCommit)) {
+    const claimed = typeof assemblyCommit.assemblyId === 'string' ? assemblyCommit.assemblyId.trim() : '';
+    if (isV2SurfId(claimed) && claimed !== assemblyId) {
+      throw new Error('planSave: assemblyCommit.assemblyId does not match workingCopy.id');
+    }
+  }
   const json = toSurfJsonV2(wc);
   const jsonText = stringifySurfJsonV2(wc);
   const asmPath = assemblyIdPath(assemblyId);
@@ -328,6 +353,9 @@ export function planSave(branchTip, assemblyCommit, workingCopy, remoteTip, comp
   for (const path of deletes) {
     if (isPlannablePath(path)) plannedDeletes.push(path);
   }
+  if (plannedDeletes.length && !referenceInputsProvided(workingCopy)) {
+    throw new Error('planSave: part file delete requires branchAssemblies, openWorkingCopies, or otherAssemblyCommits');
+  }
 
   const plannedPaths = [
     ...planned.map(plannedPathOf),
@@ -336,8 +364,12 @@ export function planSave(branchTip, assemblyCommit, workingCopy, remoteTip, comp
 
   const tipSha = tip?.tipSha ?? null;
   const remoteSha = shaOf(remoteTip);
-  const needCheck = !!(tipSha && remoteSha && tipSha !== remoteSha);
-  if (needCheck && plannedPaths.length) {
+  // §2.5: tipSha set and remoteTip !== tipSha → compare. Unknown / invalid
+  // remote tip is the same fail-closed refusal as a truncated compare.
+  if (tipSha && plannedPaths.length && remoteSha !== tipSha) {
+    if (!remoteSha) {
+      return { conflict: true, paths: [...plannedPaths].sort() };
+    }
     const cmp = compareInput(compareFiles);
     if (cmp.truncated) {
       return { conflict: true, paths: [...plannedPaths].sort() };
