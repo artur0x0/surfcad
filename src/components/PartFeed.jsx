@@ -1883,7 +1883,7 @@ const PartFeed = forwardRef(function PartFeed({
                   />
                 ) : null}
               </button>
-              {placement === 'desktop' && (onRenameAssembly || source === 'git') ? (
+              {placement === 'desktop' && onRenameAssembly ? (
                 <>
                   <button
                     type="button"
@@ -1904,43 +1904,26 @@ const PartFeed = forwardRef(function PartFeed({
                       data-assembly-save-dropdown=""
                       className="absolute right-0 top-full z-50 mt-1 min-w-[10rem] rounded-md border border-gray-600 bg-chrome-surface py-1 shadow-lg"
                     >
-                      {onRenameAssembly ? (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          data-assembly-rename-menu=""
-                          data-ui-action="data-assembly-rename-menu"
-                          className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
-                          onClick={() => {
-                            setSaveMenuOpen(false);
-                            setAssemblyRenameFlow({ draft: ribbonName || '' });
-                          }}
-                        >
-                          Rename assembly
-                        </button>
-                      ) : null}
-                      {source === 'git' ? (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          data-ui-action="data-git-branches"
-                          data-git-branches=""
-                          className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
-                          onClick={() => {
-                            setSaveMenuOpen(false);
-                            void openBranchPane();
-                          }}
-                        >
-                          Branches ({currentBranch || 'main'})
-                        </button>
-                      ) : null}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        data-assembly-rename-menu=""
+                        data-ui-action="data-assembly-rename-menu"
+                        className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
+                        onClick={() => {
+                          setSaveMenuOpen(false);
+                          setAssemblyRenameFlow({ draft: ribbonName || '' });
+                        }}
+                      >
+                        Rename assembly
+                      </button>
                     </div>
                   )}
                 </>
               ) : null}
             </div>
           )}
-          <div className={STRIP_DIVIDER} />
+          {isMobile ? <div className={STRIP_DIVIDER} /> : null}
           {/* G6 Move-to-Git kept available off-strip (not a mode toggle). */}
           <button
             type="button"

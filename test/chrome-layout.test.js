@@ -27,6 +27,26 @@ test('mobile parts ribbon still shows assembly name on branch', () => {
   assert.match(feed, /onBranchClick=\{source === 'git'/);
 });
 
+test('desktop Save menu is rename-only; divider is mobile-only', () => {
+  const feed = read('src/components/PartFeed.jsx');
+  assert.match(feed, /data-git-save=""/);
+  assert.match(feed, /data-git-dirty-badge=""/);
+  assert.match(feed, /data-assembly-save-menu=""/);
+  assert.match(feed, /data-assembly-save-dropdown=""/);
+  assert.match(feed, /data-assembly-rename-menu=""/);
+  assert.match(feed, /Rename assembly/);
+  const menuStart = feed.indexOf('data-assembly-save-dropdown');
+  const menuEnd = feed.indexOf('data-git-move-open', menuStart);
+  const menu = feed.slice(menuStart, menuEnd);
+  assert.match(feed, /placement === 'desktop' && onRenameAssembly/);
+  assert.doesNotMatch(menu, /Branches \(/);
+  assert.doesNotMatch(menu, /data-git-branches=""/);
+  const end = feed.slice(feed.indexOf('data-parts-ribbon-end'));
+  const saveBlock = end.slice(0, end.indexOf('data-git-move-open'));
+  assert.match(saveBlock, /isMobile \? <div className=\{STRIP_DIVIDER\} \/> : null/);
+  assert.doesNotMatch(saveBlock, /<div className=\{STRIP_DIVIDER\} \/>\s*<button/);
+});
+
 test('feature ribbon uses one shared height token in every state', () => {
   const css = read('src/index.css');
   const strip = read('src/components/FeatureStrip.jsx');
