@@ -77,7 +77,7 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
   const app = read('src/App.jsx');
   const feed = read('src/components/PartFeed.jsx');
   const arch = read('docs/architecture.md');
-  const map = read('docs/UI_MAP.md');
+  const map = read('docs/ui-map.md');
   check('the old red Upload Error sentence is gone', !/Save the assembly \(or resolve the conflict\)/.test(commitSrc + app));
   check('part save returns repo-moved, not an error toast', /status: 'repo-moved'/.test(commitSrc)
     && /result\.status === 'repo-moved'/.test(app)

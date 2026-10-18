@@ -5,7 +5,7 @@ description: "How fillets and chamfers are created in this repo — the easy/har
 
 # Fillets — how they are created
 
-Companion doc: `docs/VALIDATION.md` (the gate every PR must pass). Kernel
+Companion doc: `docs/validation.md` (the gate every PR must pass). Kernel
 history and measured alternatives are in `references/kernel-internals.md` below.
 
 Deep math, framing internals and the full guard table live in

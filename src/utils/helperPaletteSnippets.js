@@ -1,6 +1,6 @@
 /**
  * Slice 09/10/11 — Helper insert palette snippets.
- * Source of truth: HELPER_FUNCTIONS.md allowlist + gamePuzzles / GameHintsModal.
+ * Source of truth: helper-functions.md allowlist + gamePuzzles / GameHintsModal.
  * Do NOT invent APIs.
  *
  * Slice 10: params schema per button, unique var allocator, numbered body lets

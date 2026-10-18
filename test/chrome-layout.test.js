@@ -30,7 +30,7 @@ test('mobile parts ribbon still shows assembly name on branch', () => {
 test('feature ribbon uses one shared height token in every state', () => {
   const css = read('src/index.css');
   const strip = read('src/components/FeatureStrip.jsx');
-  const guide = read('docs/ui_style_guide.md');
+  const guide = read('docs/ui-style-guide.md');
   assert.match(css, /--feature-strip-height:\s*2\.875rem/);
   assert.match(css, /\.feature-strip-bar\s*\{/);
   assert.match(css, /height:\s*var\(--feature-strip-height\)/);

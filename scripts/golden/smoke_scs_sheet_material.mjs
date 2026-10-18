@@ -118,9 +118,9 @@ console.log('sheet material — wiring');
     && !/MeshLambertMaterial/.test(overlay));
   check('worker tags sheet meshes', /markSheetMesh\(serializeResult\(result\), script\)/.test(runtime));
   const arch = read('docs/architecture.md');
-  const map = read('docs/UI_MAP.md');
+  const map = read('docs/ui-map.md');
   check('architecture.md names the sheet material', /Sheet material/.test(arch) && /#c8ccd2/.test(arch));
-  check('UI_MAP.md names the sheet material', /#c8ccd2/.test(map) && /Sheet-metal parts are the exception/.test(map));
+  check('ui-map.md names the sheet material', /#c8ccd2/.test(map) && /Sheet-metal parts are the exception/.test(map));
 }
 
 console.log('sheet material — mesh flag + outward normals');

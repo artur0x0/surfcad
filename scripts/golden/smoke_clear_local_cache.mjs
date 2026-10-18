@@ -280,7 +280,7 @@ console.log('clear local cache — chips and docs');
   const dialog = read('src/components/ClearCacheDialog.jsx');
   const util = read('src/utils/clearLocalCadData.js');
   const arch = read('docs/architecture.md');
-  const map = read('docs/UI_MAP.md');
+  const map = read('docs/ui-map.md');
   const pkg = read('package.json');
 
   const before = (src, attr) => {
@@ -327,7 +327,7 @@ console.log('clear local cache — chips and docs');
     && /window\.location\.reload\(\)/.test(app)
     && /runClearLocalCache/.test(app)
     && /flushGitOps/.test(app));
-  ok('UI_MAP.md places the chip per breakpoint',
+  ok('ui-map.md places the chip per breakpoint',
     /desktop \(above the 768px mobile breakpoint\) shows only/.test(map)
     && /Mobile shows that chip plus one on the/.test(map)
     && /Clear local cache/.test(map));

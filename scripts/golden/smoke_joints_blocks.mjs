@@ -64,7 +64,7 @@ check('the joints strip still follows an empty selection', cadStripsShowJoints(n
     app.includes('handleOpenJoints') && app.includes('jointPicking={jointCreateOpen}')
     && app.includes('onOpenJoints={handleOpenJoints}'));
   const arch = read('docs/architecture.md');
-  const map = read('docs/UI_MAP.md');
+  const map = read('docs/ui-map.md');
   check('architecture and UI map name the Blocks button',
     /golden:joints-blocks/.test(arch) && /data-joints-button/.test(arch) && /data-joints-button/.test(map));
 }
