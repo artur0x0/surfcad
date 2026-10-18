@@ -264,9 +264,10 @@ function assignAllPathIds({
 
 /**
  * Old v1 row id → this path's final id. Live finals map to themselves
- * so a copiedFrom that already names a surviving part stays. A row id
- * that folded into another file's id remaps; an id that never owned a
- * path is omitted (deleted part).
+ * so a copiedFrom that already names a surviving part stays. A later
+ * duplicate-id copy row must not overwrite that mapping. A row id that
+ * folded into another file's id remaps; an id that never owned a path
+ * is omitted (deleted part).
  */
 function foldMapForCopiedFrom(parsedMeta, pathToId) {
   const fold = new Map();
@@ -278,7 +279,7 @@ function foldMapForCopiedFrom(parsedMeta, pathToId) {
       const rowId = asV2Id(part?.id);
       const path = scriptPathOf(part);
       const finalId = path ? pathToId[path] : null;
-      if (rowId && finalId) fold.set(rowId, finalId);
+      if (rowId && finalId && !fold.has(rowId)) fold.set(rowId, finalId);
     }
   }
   return fold;

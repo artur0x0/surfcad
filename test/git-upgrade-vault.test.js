@@ -1512,6 +1512,103 @@ test('v1 copiedFrom remaps through a folded row id (H2)', async () => {
   assert.equal(result.plan.writes[partIdPath(G1_ROW_ID)], undefined);
 });
 
+test('duplicate copy row after Pin does not steal v1 copiedFrom PIN (I1 same assembly)', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const raw = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Box',
+    activeId: PIN_PATH,
+    parts: [
+      { id: PIN_ID, path: PIN_PATH, name: 'Pin', visible: true, order: 0 },
+      { id: PIN_ID, path: PIN_COPY_PATH, name: 'Copy', visible: true, order: 1 },
+      {
+        id: SCENARIO_L_BLOCK_ID,
+        path: BLOCK_PATH,
+        name: 'Other',
+        visible: true,
+        order: 2,
+        copiedFrom: PIN_ID,
+      },
+    ],
+  };
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed I1 same-assembly duplicate copy after Pin',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Box/.surf.json', `${JSON.stringify(raw, null, 2)}\n`),
+      fileWrite(PIN_PATH, withSurfId('return "pin";\n', PIN_ID)),
+      fileWrite(PIN_COPY_PATH, withSurfId('return "pin-copy";\n', PIN_ID)),
+      fileWrite(BLOCK_PATH, withSurfId('return "other";\n', SCENARIO_L_BLOCK_ID)),
+    ],
+  });
+  const store = await storeFor(vault.repo, { Box: BOX_ID });
+  const result = await executeUpgrade(upgradeOpts(gh, vault.repo, { store }));
+  assert.equal(result.status, 'upgraded');
+  const box = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(BOX_ID)));
+  assert.equal(validateSurfJsonV2(box).ok, true, validateSurfJsonV2(box).errors?.join('; '));
+  const pin = box.parts.find((p) => p.name === 'Pin');
+  const copy = box.parts.find((p) => p.name === 'Copy');
+  const other = box.parts.find((p) => p.name === 'Other');
+  assert.equal(pin.id, PIN_ID);
+  assert.equal(pin.copiedFrom, undefined);
+  assert.notEqual(copy.id, PIN_ID);
+  assert.equal(other.id, SCENARIO_L_BLOCK_ID);
+  assert.equal(other.copiedFrom, PIN_ID, 'v1 copiedFrom PIN still names Pin, not the copy');
+});
+
+test('duplicate copy row after Pin does not steal v1 copiedFrom PIN (I1 across assemblies)', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const make = (name, parts) => ({
+    format: 'surfcad.assembly',
+    version: 1,
+    name,
+    activeId: parts[0].path,
+    parts,
+  });
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed I1 cross-assembly duplicate copy after Pin',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Alpha/.surf.json', `${JSON.stringify(make('Alpha', [
+        { id: PIN_ID, path: PIN_PATH, name: 'Pin', visible: true, order: 0 },
+      ]), null, 2)}\n`),
+      fileWrite('assemblies/Beta/.surf.json', `${JSON.stringify(make('Beta', [
+        { id: PIN_ID, path: PIN_COPY_PATH, name: 'Copy', visible: true, order: 0 },
+        {
+          id: SCENARIO_L_BLOCK_ID,
+          path: BLOCK_PATH,
+          name: 'Other',
+          visible: true,
+          order: 1,
+          copiedFrom: PIN_ID,
+        },
+      ]), null, 2)}\n`),
+      fileWrite(PIN_PATH, withSurfId('return "pin";\n', PIN_ID)),
+      fileWrite(PIN_COPY_PATH, withSurfId('return "pin-copy";\n', PIN_ID)),
+      fileWrite(BLOCK_PATH, withSurfId('return "other";\n', SCENARIO_L_BLOCK_ID)),
+    ],
+  });
+  const store = await storeFor(vault.repo, { Alpha: ALPHA_ID, Beta: BETA_ID });
+  const result = await executeUpgrade(upgradeOpts(gh, vault.repo, { store }));
+  assert.equal(result.status, 'upgraded');
+  const alpha = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(ALPHA_ID)));
+  const beta = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(BETA_ID)));
+  assert.equal(validateSurfJsonV2(alpha).ok, true, validateSurfJsonV2(alpha).errors?.join('; '));
+  assert.equal(validateSurfJsonV2(beta).ok, true, validateSurfJsonV2(beta).errors?.join('; '));
+  assert.equal(alpha.parts[0].id, PIN_ID);
+  assert.equal(alpha.parts[0].copiedFrom, undefined);
+  const copy = beta.parts.find((p) => p.name === 'Copy');
+  const other = beta.parts.find((p) => p.name === 'Other');
+  assert.notEqual(copy.id, PIN_ID);
+  assert.equal(other.id, SCENARIO_L_BLOCK_ID);
+  assert.equal(other.copiedFrom, PIN_ID, 'v1 copiedFrom PIN still names Pin, not the copy');
+});
+
 test('follow-up ignores copiedFrom-only differences so commit 2 does not churn', () => {
   const pinScript = withSurfId('return "pin";\n', PIN_ID);
   const copyScript = withSurfId('return "pin-copy";\n', COPY_ID);
