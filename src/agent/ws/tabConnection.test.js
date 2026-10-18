@@ -307,6 +307,31 @@ test('popup blocked is not retried', () => {
   assert.equal(ctx.factory.sockets.length, 1);
 });
 
+test('prompt frames are sent only while paired and replies unsubscribe', () => {
+  const ctx = setup();
+  ctx.conn.connect();
+  const early = ctx.factory.latest();
+  early.fire('open');
+  assert.equal(ctx.conn.send({ type: PAIR_MSG.AGENT_PROMPT, v: 1, id: 'x', text: 'no' }), false);
+  assert.equal(early.sent.some((msg) => msg.type === PAIR_MSG.AGENT_PROMPT), false);
+
+  const { ws } = pair(ctx);
+  const seen = [];
+  const off = ctx.conn.subscribe((msg) => seen.push(msg));
+  const id = '22222222-2222-4222-8222-222222222222';
+  assert.equal(ctx.conn.send({
+    type: PAIR_MSG.AGENT_PROMPT, v: 1, id, text: 'hi', ts: '2026-10-18T00:00:00.000Z',
+  }), true);
+  assert.equal(ws.last(PAIR_MSG.AGENT_PROMPT).text, 'hi');
+  ws.receive({ type: PAIR_MSG.AGENT_REPLY, v: 1, id, text: 'answer', final: true });
+  ws.receive({ type: PAIR_MSG.AGENT_STATUS, v: 1, working: false });
+  off();
+  ws.receive({ type: PAIR_MSG.AGENT_REPLY, v: 1, id, text: 'ignored', final: true });
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0].text, 'answer');
+  assert.equal(seen[1].working, false);
+});
+
 test('relay event marks the popup bridge as reachable', () => {
   const relays = [];
   const ctx = setup({ onRelay: (ok) => relays.push(ok) });

@@ -289,6 +289,49 @@ test('origin and loopback checks still refuse before any pairing', () => {
   assert.equal(remote.last(PAIR_MSG.ERROR).code, 'remote_blocked');
 });
 
+test('agent prompt frames flow only while paired, and the wrong role cannot spoof them', () => {
+  const { hub } = setup();
+  const tab = fakeSocket();
+  const peer = fakeSocket();
+  hub.attachSocket(tab);
+  hub.attachSocket(peer);
+  tab.receive({ type: PAIR_MSG.REGISTER_TAB, token: TOKEN, tabKey: TAB_KEY });
+  tab.receive({ type: PAIR_MSG.AGENT_PROMPT, v: 1, id: 'p1', text: 'early' });
+  assert.equal(tab.last(PAIR_MSG.AGENT_PROMPT_ACK).delivery, 'failed');
+  assert.equal(tab.last(PAIR_MSG.AGENT_PROMPT_ACK).error, 'not_paired');
+  assert.equal(peer.sent.some((msg) => msg.type === PAIR_MSG.AGENT_PROMPT), false);
+
+  peer.receive({ type: PAIR_MSG.PAIR, token: TOKEN });
+  tab.receive({ type: PAIR_MSG.PAIR_APPROVE, resumeKey: RESUME });
+  tab.receive({ type: PAIR_MSG.AGENT_PROMPT, v: 1, id: 'p2', text: 'hello' });
+  assert.equal(peer.last(PAIR_MSG.AGENT_PROMPT).text, 'hello');
+  peer.receive({ type: PAIR_MSG.AGENT_REPLY, v: 1, id: 'p2', text: 'ok', final: true, ts: '2026-10-18T00:00:00.000Z' });
+  assert.equal(tab.last(PAIR_MSG.AGENT_REPLY).text, 'ok');
+  peer.receive({ type: PAIR_MSG.AGENT_STATUS, v: 1, working: true, id: 'p2' });
+  assert.equal(tab.last(PAIR_MSG.AGENT_STATUS).working, true);
+
+  tab.receive({ type: PAIR_MSG.AGENT_REPLY, v: 1, id: 'p2', text: 'spoof' });
+  assert.equal(tab.last(PAIR_MSG.ERROR).code, 'forbidden');
+  peer.receive({ type: PAIR_MSG.AGENT_PROMPT, v: 1, id: 'p3', text: 'nope' });
+  assert.equal(peer.last(PAIR_MSG.ERROR).code, 'forbidden');
+  assert.equal(tab.sent.some((msg) => msg.type === PAIR_MSG.AGENT_PROMPT && msg.id === 'p3'), false);
+});
+
+test('an oversized agent prompt is refused and not forwarded', () => {
+  const hub = createAgentBridgeRelayHub({ maxPromptFrameChars: 80 });
+  const tab = fakeSocket();
+  const peer = fakeSocket();
+  hub.attachSocket(tab);
+  hub.attachSocket(peer);
+  tab.receive({ type: PAIR_MSG.REGISTER_TAB, token: TOKEN, tabKey: TAB_KEY });
+  peer.receive({ type: PAIR_MSG.PAIR, token: TOKEN });
+  tab.receive({ type: PAIR_MSG.PAIR_APPROVE });
+  tab.receive({ type: PAIR_MSG.AGENT_PROMPT, v: 1, id: 'big', text: 'x'.repeat(200) });
+  assert.equal(tab.last(PAIR_MSG.AGENT_PROMPT_ACK).error, 'screenshot_too_large');
+  assert.equal(peer.sent.some((msg) => msg.type === PAIR_MSG.AGENT_PROMPT), false);
+  hub.dispose();
+});
+
 test('defaultRelayLog writes timestamped warn lines to stderr, info only when verbose', (t) => {
   const written = [];
   t.mock.method(console, 'error', (line) => { written.push(line); });

@@ -19,6 +19,7 @@ import {
 } from './bridge/relayServer.mjs';
 import { RelaySession } from './relay.mjs';
 import { augmentScreenshotTool, callPairedBridgeTool } from './screenshotFile.mjs';
+import { callPromptTool, isPromptTool, promptToolDefinitions } from './prompt/promptTools.mjs';
 
 const PAIR_TOOL_NAME = 'pair';
 
@@ -95,6 +96,7 @@ export async function createSurfcadMcpServer(options = {}) {
           },
         },
       },
+      ...promptToolDefinitions(),
       ...bridgeTools,
     ],
   }));
@@ -104,6 +106,17 @@ export async function createSurfcadMcpServer(options = {}) {
     const args = request.params.arguments && typeof request.params.arguments === 'object'
       ? request.params.arguments
       : {};
+
+    if (isPromptTool(name)) {
+      if (name !== 'set_status') session.noteAgentToolCall();
+      try {
+        const out = await callPromptTool(session.prompts, name, args);
+        if (out.isError) return textResult(out.error, true);
+        return { content: out.content, isError: false };
+      } catch (err) {
+        return textResult(toolErrorPayload(err), true);
+      }
+    }
 
     if (name === PAIR_TOOL_NAME) {
       const code = typeof args.code === 'string' && args.code.trim()
@@ -144,6 +157,7 @@ export async function createSurfcadMcpServer(options = {}) {
     }
 
     try {
+      session.noteAgentToolCall();
       const out = await callPairedBridgeTool(session, name, args);
       return textResult(out.value, out.isError === true);
     } catch (err) {

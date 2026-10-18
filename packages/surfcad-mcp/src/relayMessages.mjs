@@ -13,4 +13,12 @@ export const PAIR_MSG = Object.freeze({
   UNPAIRED: 'unpaired',
   CALL: 'call',
   RESPONSE: 'response',
+  /** Page → paired agent. Contract v:1. */
+  AGENT_PROMPT: 'agent.prompt',
+  /** Agent → page. `{ id, delivery, error? }`. */
+  AGENT_PROMPT_ACK: 'agent.prompt.ack',
+  /** Agent → page. Contract v:1. Several replies may share one prompt id. */
+  AGENT_REPLY: 'agent.reply',
+  /** Agent → page. Contract v:1. */
+  AGENT_STATUS: 'agent.status',
 });
