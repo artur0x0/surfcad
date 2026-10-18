@@ -8,6 +8,7 @@ export * from './vaultLayout.js';
 export * from './surfJson.js';
 export * from './surfJsonV2.js';
 export * from './vault.js';
+export * from './writeVaultCommit.js';
 export * from './gitWorkspace.js';
 export * from './gitCommit.js';
 export * from './gitPull.js';

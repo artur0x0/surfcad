@@ -19,6 +19,7 @@
 import { assemblyName, nextAssemblyName, renamePart, serializeAssembly } from '../assembly.js';
 import { gitBlobSha, isBinaryContent, toUint8Array } from './binaryContent.js';
 import { GitAdapterError, assertGithubAdapter, fileWrite, fileDelete } from './githubAdapterInterface.js';
+import { writeVaultCommit } from './writeVaultCommit.js';
 import { captureBaseline, dirtyPartIds } from './gitWorkspace.js';
 import { applyPartPathChange, rewriteSurfText } from './gitRename.js';
 import {
@@ -788,7 +789,9 @@ export async function commitPartToRepo(adapter, repo, {
 
   const pushContent = partScriptText(destRow, workScripts) ?? content;
   try {
-    const res = await adapter.commitFiles(repo, {
+    const res = await writeVaultCommit({
+      adapter,
+      repo,
       branch,
       message: msg,
       files,
@@ -909,7 +912,9 @@ export async function deletePartFromRepo(adapter, repo, {
   }
 
   try {
-    const res = await adapter.commitFiles(repo, {
+    const res = await writeVaultCommit({
+      adapter,
+      repo,
       branch,
       message: msg,
       files,
@@ -1045,7 +1050,9 @@ export async function saveLocalOnNewBranch(adapter, repo, {
   await adapter.createBranch(repo, branch, baseSha);
   const msg = String(message || '').trim()
     || `Update ${vaultSegment(doc?.name) || baseline?.assemblyName || 'assembly'}`;
-  const res = await adapter.commitFiles(repo, {
+  const res = await writeVaultCommit({
+    adapter,
+    repo,
     branch,
     message: msg,
     files: list,
@@ -1256,7 +1263,9 @@ export async function commitWorkspace(adapter, repo, opts = {}) {
     expectedBase = tip?.sha || null;
   }
   try {
-    const res = await adapter.commitFiles(repo, {
+    const res = await writeVaultCommit({
+      adapter,
+      repo,
       branch,
       message: assembled.message,
       files: assembled.files,
@@ -1383,7 +1392,9 @@ export async function forceMergeCommit(adapter, repo, {
   if (!list.length) return { status: 'error', error: 'Nothing to overwrite' };
   const tip = await adapter.getBranch(repo, branch);
   const head = tip?.sha || null;
-  const res = await adapter.commitFiles(repo, {
+  const res = await writeVaultCommit({
+    adapter,
+    repo,
     branch,
     message: msg,
     files: list,
