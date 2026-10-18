@@ -13,6 +13,7 @@ Where it links to a doc, follow that doc. Do not copy its content here.
   - Fillet/chamfer/blend code: load [.claude/skills/fillets/SKILL.md](.claude/skills/fillets/SKILL.md) first.
 - Kernel and goldens contract: [docs/validation.md](docs/validation.md).
 - Git vault on-disk format: [docs/vault-schema.md](docs/vault-schema.md).
+- Git save lessons learned: [docs/git-integration.md](docs/git-integration.md). Read it before changing the git save path.
 - Agent catalog and `window.surfcad` bridge: [docs/agent-export.md](docs/agent-export.md).
 - MCP pairing loop: [docs/agent/SKILL.md](docs/agent/SKILL.md).
 - Playtest and bug hunter: [docs/playtest.md](docs/playtest.md).
