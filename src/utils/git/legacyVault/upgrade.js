@@ -263,14 +263,41 @@ function assignAllPathIds({
 }
 
 /**
- * `copiedFrom` only from the v1 row, or from an explicit row id this
- * path lost to a DIFFERENT file (a true duplicate). Folding a row id
- * into the same file's final id does not set copiedFrom — that id is
- * not a live part. Header-only losers mint with none.
+ * Old v1 row id → this path's final id. Live finals map to themselves
+ * so a copiedFrom that already names a surviving part stays. A row id
+ * that folded into another file's id remaps; an id that never owned a
+ * path is omitted (deleted part).
  */
-function copiedFromForRow(part, finalId, pathToId) {
+function foldMapForCopiedFrom(parsedMeta, pathToId) {
+  const fold = new Map();
+  for (const id of Object.values(pathToId || {})) {
+    if (id) fold.set(id, id);
+  }
+  for (const { parsed } of parsedMeta || []) {
+    for (const part of parsed?.parts || []) {
+      const rowId = asV2Id(part?.id);
+      const path = scriptPathOf(part);
+      const finalId = path ? pathToId[path] : null;
+      if (rowId && finalId) fold.set(rowId, finalId);
+    }
+  }
+  return fold;
+}
+
+/**
+ * `copiedFrom` only from the v1 row (remapped through the fold), or from
+ * an explicit row id this path lost to a DIFFERENT file (a true duplicate).
+ * Folding a row id into the same file's final id does not set copiedFrom —
+ * that id is not a live part. A remapped v1 copiedFrom that lands on this
+ * row's own final id is dropped. A v1 copiedFrom that names a deleted
+ * part is kept. Header-only losers mint with none.
+ */
+function copiedFromForRow(part, finalId, pathToId, foldMap) {
   const existing = asV2Id(part?.copiedFrom);
-  if (existing && existing !== finalId) return existing;
+  if (existing) {
+    const remapped = foldMap?.has(existing) ? foldMap.get(existing) : existing;
+    if (remapped && remapped !== finalId) return remapped;
+  }
   const rowId = asV2Id(part?.id);
   if (!rowId || rowId === finalId) return null;
   const thisPath = scriptPathOf(part);
@@ -499,11 +526,11 @@ function assertCopiedBytes(plan, files) {
  * row id says which file owns that id. Header-only claims apply only
  * when no row carries the id, and only for files some row references.
  * One final id per legacy path is minted once and reused in every
- * assembly. `copiedFrom` is the v1 value, or an explicit row id the
- * path lost to a different file (a true duplicate). A header-only loser
- * mints with none. Working-copy `copiedFrom` is used only when those
- * rule-4 cases already apply; collapse tags are not carried. One assembly
- * id per legacy folder (reuse `assemblyIdByFolder`).
+ * assembly. `copiedFrom` is the v1 value remapped through the fold, or
+ * an explicit row id the path lost to a different file (a true duplicate).
+ * A header-only loser mints with none. Working-copy `copiedFrom` is used
+ * only when those rule-4 cases already apply; collapse tags are not
+ * carried. One assembly id per legacy folder (reuse `assemblyIdByFolder`).
  */
 export function planUpgrade({
   tree = [],
@@ -574,6 +601,7 @@ export function planUpgrade({
     mintOptsFor,
   });
   Object.assign(partIdByPath, pathToId);
+  const foldMap = foldMapForCopiedFrom(parsedMeta, pathToId);
 
   const bindPart = (part, index, seenInAssembly) => {
     const path = scriptPathOf(part);
@@ -587,7 +615,7 @@ export function planUpgrade({
       id = mintUnused(usedPart, mintOptsFor(part, index));
       minted = true;
       usedPart.add(id);
-      const copiedFrom = copiedFromForRow(part, id, pathToId) || fallbackCopied;
+      const copiedFrom = copiedFromForRow(part, id, pathToId, foldMap) || fallbackCopied;
       seenInAssembly.add(id);
       if (path && !partIdByPath[path]) partIdByPath[path] = id;
       partBindings.push({ path, id, minted, copiedFrom: copiedFrom || null });
@@ -603,7 +631,7 @@ export function planUpgrade({
     }
     usedPart.add(id);
     seenInAssembly.add(id);
-    const copiedFrom = copiedFromForRow(part, id, pathToId);
+    const copiedFrom = copiedFromForRow(part, id, pathToId, foldMap);
     partBindings.push({ path, id, minted, copiedFrom });
     if (minted) mintedPartIds.push(id);
     else keptPartIds.push(id);
@@ -646,7 +674,7 @@ export function planUpgrade({
       if (part.position) row.position = part.position;
       if (part.placement) row.placement = part.placement;
       if (part.sheetMetal) row.sheetMetal = part.sheetMetal;
-      const copied = bound.copiedFrom || copiedFromForRow(part, bound.id, pathToId);
+      const copied = bound.copiedFrom || copiedFromForRow(part, bound.id, pathToId, foldMap);
       if (copied && copied !== bound.id) row.copiedFrom = copied;
       nextParts.push(row);
 
@@ -984,7 +1012,9 @@ function assemblyJsonFromPlan(plan, assemblyId) {
  * Second commit only: WC edits relative to the v2 bytes from commit 1.
  * Never used for the Upgrade commit. Writes only files whose bytes differ.
  * `copiedFrom`-only differences in `.surf.json` are ignored so a collapse
- * tag does not rewrite the assembly on commit 2.
+ * tag does not rewrite the assembly on commit 2. Mapped parts take
+ * `copiedFrom` from the plan's commit-1 row; only parts new in the
+ * working copy keep the WC value.
  */
 export function planWorkingCopyFollowup(plan, workingCopy) {
   if (!workingCopy?.dirty || !workingCopy?.doc || !plan?.writes) return [];
@@ -996,6 +1026,7 @@ export function planWorkingCopyFollowup(plan, workingCopy) {
   const scripts = mapped.scripts || {};
   const folderToId = plan.folderToId || {};
   const prevJson = assemblyJsonFromPlan(plan, assemblyId);
+  const planParts = prevJson?.parts || [];
   const parts = (doc.parts || []).map((part, i) => {
     const id = asV2Id(part.id);
     if (!id) return null;
@@ -1010,7 +1041,8 @@ export function planWorkingCopyFollowup(plan, workingCopy) {
     if (part.position) row.position = part.position;
     if (part.placement) row.placement = part.placement;
     if (part.sheetMetal) row.sheetMetal = part.sheetMetal;
-    const copied = asV2Id(part.copiedFrom);
+    const planRow = planParts.find((p) => p.id === id);
+    const copied = planRow ? asV2Id(planRow.copiedFrom) : asV2Id(part.copiedFrom);
     if (copied && copied !== id) row.copiedFrom = copied;
     return row;
   }).filter(Boolean);

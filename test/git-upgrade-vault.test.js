@@ -90,6 +90,8 @@ const SCENARIO_L_COPY_ID = mintSurfId({ now: NOW, rand: 'c0c1' });
 const SCENARIO_L_JOINT_ID = mintSurfId({ now: NOW, rand: 'j01a' });
 const SCENARIO_L_BLOCK_ID = mintSurfId({ now: NOW, rand: 'b10c' });
 const BLOCK_PATH = 'parts/Block.js';
+const A3_COPY_PATH = 'assemblies/A3/Copy.js';
+const DELETED_ID = mintSurfId({ now: NOW, rand: 'de1e' });
 const SHAFT_MESH = Uint8Array.from([7, 7, 7, 9]);
 
 function v1Surf(name, parts, extra = {}) {
@@ -1287,6 +1289,227 @@ test('clean and dirty Upgrade agree on F1 ids and copiedFrom (G3)', async () => 
   assert.equal(dirtyCopy.copiedFrom, cleanCopy.copiedFrom);
   assert.equal(dirtyPin.copiedFrom, cleanPin.copiedFrom);
   assert.equal(dirtyPin.copiedFrom, undefined);
+});
+
+async function seedF1WithBlock() {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const raw = {
+    format: 'surfcad.assembly',
+    version: 1,
+    name: 'Box',
+    activeId: PIN_COPY_SCENARIO_PATH,
+    parts: [
+      { id: SCENARIO_L_PIN_ID, path: PIN_COPY_SCENARIO_PATH, name: 'Pin copy', visible: true, order: 0 },
+      { path: PIN_PATH, name: 'Pin', visible: true, order: 1 },
+      { id: SCENARIO_L_BLOCK_ID, path: BLOCK_PATH, name: 'Block', visible: true, order: 2 },
+    ],
+  };
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed F1 with Block',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/Box/.surf.json', `${JSON.stringify(raw, null, 2)}\n`),
+      fileWrite(PIN_PATH, withSurfId('return "pin";\n', SCENARIO_L_PIN_ID)),
+      fileWrite(PIN_COPY_SCENARIO_PATH, withSurfId('return "pin-copy";\n', SCENARIO_L_PIN_ID)),
+      fileWrite(BLOCK_PATH, withSurfId('return "block";\n', SCENARIO_L_BLOCK_ID)),
+    ],
+  });
+  return { gh, repo: vault.repo };
+}
+
+function f1PartIdentity(doc) {
+  const pin = doc.parts.find((p) => p.name === 'Pin');
+  const copy = doc.parts.find((p) => p.name === 'Pin copy');
+  const block = doc.parts.find((p) => p.id === SCENARIO_L_BLOCK_ID);
+  return {
+    pinId: pin?.id,
+    pinCopied: pin?.copiedFrom,
+    copyId: copy?.id,
+    copyCopied: copy?.copiedFrom,
+    blockId: block?.id,
+    blockCopied: block?.copiedFrom,
+  };
+}
+
+async function cleanF1WithBlockIds() {
+  const seed = await seedF1WithBlock();
+  const store = await storeFor(seed.repo, { Box: BOX_ID });
+  const out = await executeUpgrade(upgradeOpts(seed.gh, seed.repo, { store }));
+  assert.equal(out.status, 'upgraded');
+  const box = JSON.parse(await readText(seed.gh, seed.repo, assemblyIdPath(BOX_ID)));
+  assert.equal(validateSurfJsonV2(box).ok, true, validateSurfJsonV2(box).errors?.join('; '));
+  const ids = f1PartIdentity(box);
+  assert.equal(ids.copyId, SCENARIO_L_PIN_ID);
+  assert.equal(ids.pinId, F1_PIN_MINTED_ID);
+  assert.equal(ids.blockId, SCENARIO_L_BLOCK_ID);
+  assert.equal(ids.pinCopied, undefined);
+  assert.equal(ids.copyCopied, undefined);
+  assert.equal(ids.blockCopied, undefined);
+  return ids;
+}
+
+async function dirtyF1WithBlockEdit(edit, assertCommit2) {
+  const cleanIds = await cleanF1WithBlockIds();
+  const seed = await seedF1WithBlock();
+  const store = await storeFor(seed.repo, { Box: BOX_ID });
+  const opened = await openLegacyAssembly(seed.gh, seed.repo, 'Box', {
+    branch: 'main',
+    pathIndex: store.pathIndexFor(seed.repo),
+    knownAssemblyId: BOX_ID,
+    assemblyIdIndex: { Box: BOX_ID },
+  });
+  const collapsedPin = opened.doc.parts.find((p) => p.name === 'Pin');
+  assert.equal(collapsedPin.copiedFrom, SCENARIO_L_PIN_ID, 'collapse tags Pin with copiedFrom PIN');
+  const doc = {
+    ...opened.doc,
+    parts: opened.doc.parts.map((part) => ({ ...part })),
+  };
+  edit(doc);
+  const snapshots = [];
+  const orig = seed.gh.commitFiles.bind(seed.gh);
+  seed.gh.commitFiles = async (dest, opts) => {
+    snapshots.push({
+      message: opts.message,
+      files: (opts.files || []).map((f) => ({
+        path: f.path,
+        delete: !!f.delete,
+        content: typeof f.content === 'string' ? f.content : f.content,
+      })),
+    });
+    return orig(dest, opts);
+  };
+  const out = await executeUpgrade(upgradeOpts(seed.gh, seed.repo, {
+    store,
+    workingCopy: {
+      dirty: true,
+      doc,
+      scripts: opened.scripts,
+    },
+  }));
+  assert.equal(out.status, 'upgraded_and_saved');
+  assert.equal(out.commits, 2);
+  assert.equal(snapshots.length, 2);
+  const asmFile = snapshots[1].files.find((f) => f.path === assemblyIdPath(BOX_ID));
+  assert.ok(asmFile, 'commit 2 rewrites the assembly for the working-copy edit');
+  const commit2 = JSON.parse(asmFile.content);
+  assert.equal(validateSurfJsonV2(commit2).ok, true, validateSurfJsonV2(commit2).errors?.join('; '));
+  const dirtyIds = f1PartIdentity(commit2);
+  assert.equal(dirtyIds.pinId, cleanIds.pinId);
+  assert.equal(dirtyIds.copyId, cleanIds.copyId);
+  assert.equal(dirtyIds.blockId, cleanIds.blockId);
+  assert.equal(dirtyIds.pinCopied, cleanIds.pinCopied);
+  assert.equal(dirtyIds.copyCopied, cleanIds.copyCopied);
+  assert.equal(dirtyIds.blockCopied, cleanIds.blockCopied);
+  assert.equal(dirtyIds.pinCopied, undefined);
+  const pin = commit2.parts.find((p) => p.name === 'Pin');
+  assert.equal(Object.hasOwn(pin, 'copiedFrom'), false);
+  assertCommit2(commit2);
+}
+
+test('F1 dirty rename matches clean Upgrade ids and copiedFrom (H1)', async () => {
+  await dirtyF1WithBlockEdit((doc) => {
+    const block = doc.parts.find((p) => p.name === 'Block');
+    block.name = 'Block renamed';
+  }, (json) => {
+    const block = json.parts.find((p) => p.id === SCENARIO_L_BLOCK_ID);
+    assert.equal(block.name, 'Block renamed');
+  });
+});
+
+test('F1 dirty visibility change matches clean Upgrade ids and copiedFrom (H1)', async () => {
+  await dirtyF1WithBlockEdit((doc) => {
+    const block = doc.parts.find((p) => p.name === 'Block');
+    block.visible = false;
+  }, (json) => {
+    const block = json.parts.find((p) => p.id === SCENARIO_L_BLOCK_ID);
+    assert.equal(block.visible, false);
+  });
+});
+
+test('F1 dirty placement change matches clean Upgrade ids and copiedFrom (H1)', async () => {
+  const placement = { t: [4, 5, 6], q: [0, 0, 0.6, 0.8] };
+  await dirtyF1WithBlockEdit((doc) => {
+    const block = doc.parts.find((p) => p.name === 'Block');
+    block.placement = { t: placement.t.slice(), q: placement.q.slice() };
+    block.position = placement.t.slice();
+  }, (json) => {
+    const block = json.parts.find((p) => p.id === SCENARIO_L_BLOCK_ID);
+    assert.deepEqual(block.position, [4, 5, 6]);
+    assert.deepEqual(block.placement, placement);
+  });
+});
+
+test('v1 copiedFrom remaps through a folded row id (H2)', async () => {
+  const gh = createMockGithubAdapter({ login: 'artur' });
+  const vault = await findOrCreateVault(gh);
+  const make = (name, parts) => ({
+    format: 'surfcad.assembly',
+    version: 1,
+    name,
+    activeId: PIN_PATH,
+    parts,
+  });
+  await gh.commitFiles(vault.repo, {
+    branch: 'main',
+    message: 'seed H2 A3 Copy copiedFrom R1 folds to PIN',
+    baseSha: vault.headSha,
+    files: [
+      fileWrite('assemblies/A1/.surf.json', `${JSON.stringify(make('A1', [
+        { id: PIN_ID, path: PIN_PATH, name: 'Pin', visible: true, order: 0 },
+      ]), null, 2)}\n`),
+      fileWrite('assemblies/A3/.surf.json', `${JSON.stringify(make('A3', [
+        {
+          id: G1_ROW_ID,
+          path: PIN_PATH,
+          name: 'Pin',
+          visible: true,
+          order: 0,
+          copiedFrom: G1_ROW_ID,
+        },
+        {
+          id: COPY_ID,
+          path: A3_COPY_PATH,
+          name: 'Copy',
+          visible: true,
+          order: 1,
+          copiedFrom: G1_ROW_ID,
+        },
+        {
+          id: N6_ORPHAN_ID,
+          path: ORPHAN_PATH,
+          name: 'Ghost',
+          visible: true,
+          order: 2,
+          copiedFrom: DELETED_ID,
+        },
+      ]), null, 2)}\n`),
+      fileWrite(PIN_PATH, withSurfId('return "pin";\n', PIN_ID)),
+      fileWrite(A3_COPY_PATH, withSurfId('return "copy";\n', COPY_ID)),
+      fileWrite(ORPHAN_PATH, withSurfId('return "ghost";\n', N6_ORPHAN_ID)),
+    ],
+  });
+  const store = await storeFor(vault.repo, { A1: A1_ID, A3: A3_ID });
+  const result = await executeUpgrade(upgradeOpts(gh, vault.repo, { store }));
+  assert.equal(result.status, 'upgraded');
+  const a1 = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(A1_ID)));
+  const a3 = JSON.parse(await readText(gh, vault.repo, assemblyIdPath(A3_ID)));
+  assert.equal(validateSurfJsonV2(a1).ok, true, validateSurfJsonV2(a1).errors?.join('; '));
+  assert.equal(validateSurfJsonV2(a3).ok, true, validateSurfJsonV2(a3).errors?.join('; '));
+  assert.equal(a1.parts[0].id, PIN_ID);
+  assert.equal(a1.parts[0].copiedFrom, undefined);
+  const pin = a3.parts.find((p) => p.name === 'Pin');
+  const copy = a3.parts.find((p) => p.name === 'Copy');
+  const ghost = a3.parts.find((p) => p.name === 'Ghost');
+  assert.equal(pin.id, PIN_ID);
+  assert.equal(pin.copiedFrom, undefined, 'remapped copiedFrom equal to own final id is dropped');
+  assert.equal(copy.id, COPY_ID);
+  assert.equal(copy.copiedFrom, PIN_ID, 'R1 folded into PIN');
+  assert.equal(ghost.id, N6_ORPHAN_ID);
+  assert.equal(ghost.copiedFrom, DELETED_ID, 'copiedFrom naming a deleted part is kept');
+  assert.equal(readSurfId(await readText(gh, vault.repo, partIdPath(PIN_ID))), PIN_ID);
+  assert.equal(result.plan.writes[partIdPath(G1_ROW_ID)], undefined);
 });
 
 test('follow-up ignores copiedFrom-only differences so commit 2 does not churn', () => {
