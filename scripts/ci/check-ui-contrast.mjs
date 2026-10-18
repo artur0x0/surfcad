@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Flag black / dark text on a dark brand surface in the same class or style
- * string. Cheap same-element scan — see docs/ui_style_guide.md.
+ * string. Cheap same-element scan — see docs/ui-style-guide.md.
  *
  * Allow a true exception with `ui-contrast-allow` on that line or the one above.
  */
@@ -134,7 +134,7 @@ function main() {
   const files = collectScanFiles(ROOT);
   const violations = scanFiles(files, ROOT);
   if (violations.length) {
-    console.error(`UI contrast: ${violations.length} dark-on-dark hit(s). See docs/ui_style_guide.md`);
+    console.error(`UI contrast: ${violations.length} dark-on-dark hit(s). See docs/ui-style-guide.md`);
     for (const v of violations) {
       console.error(`  ${v.file}:${v.line}: ${v.excerpt}`);
     }

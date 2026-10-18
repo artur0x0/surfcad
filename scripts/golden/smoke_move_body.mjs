@@ -39,7 +39,7 @@ function check(name, cond, detail = '') {
   const app = read('src/App.jsx');
   const chip = read('src/components/MoveModeChip.jsx');
   const worker = read('src/workers/sandboxWorker.js') + '\n' + read('src/lib/surfcad/runtime.js');
-  const popup = read('docs/ui_style_guide.md');
+  const popup = read('docs/ui-style-guide.md');
   const palette = read('src/components/HelperInsertPalette.jsx');
   const hi = view.indexOf('const highlightFace = useCallback');
   const note = view.indexOf('Below highlightFace on purpose');
@@ -70,7 +70,7 @@ function check(name, cond, detail = '') {
     /function move\(manifold, delta/.test(worker) && /manifold\.translate\(d\)/.test(worker)
     && /_cutBodiesOf\(manifold\)/.test(worker) && /_cutSelected\(bodies/.test(worker)
     && /Manifold\.compose\(kept\)/.test(worker));
-  check('ui_style_guide documents MoveModeChip', /MoveModeChip/.test(popup) && /No\s*\n\s*viewport arrows/.test(popup));
+  check('ui-style-guide documents MoveModeChip', /MoveModeChip/.test(popup) && /No\s*\n\s*viewport arrows/.test(popup));
   check('slider motion previews the body and dismiss does not commit',
     /name = 'move-preview'/.test(view) && /onDismiss=\{exitMoveMode\}/.test(view)
     && !/onDismiss=\{[^}]*onCommitMove/.test(view));
