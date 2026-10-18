@@ -47,6 +47,8 @@ app.set('trust proxy', config.trustProxyHops);
 // ============ Security Middleware ============
 app.use(helmet({
   contentSecurityPolicy: config.env === 'production' ? undefined : false,
+  // Helmet 8 default is same-origin, which severs Safari's loopback popup opener.
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
 }));
 
 // ============ CORS ============
