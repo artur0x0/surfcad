@@ -1447,8 +1447,16 @@ export async function adoptUpgradeWorkingCopy({
       persisted,
     };
   }
+  // Byte-check against this call's tip when we just produced the upgrade
+  // (tip includes the follow-up Save). Skip already_upgraded + dirty: the
+  // last commit does not include local edits; the agent continues with git_save.
+  const producedUpgrade = result.status === 'upgraded'
+    || result.status === 'upgraded_and_saved';
+  const checkPersistedBytes = producedUpgrade
+    || (result.status === 'already_upgraded' && workingCopy?.dirty !== true);
   if (
-    rekey?.vaultTip
+    checkPersistedBytes
+    && rekey?.vaultTip
     && !workingCopyMatchesVaultTip(persisted.doc, persisted.scripts, rekey.vaultTip)
   ) {
     const missing = missingVaultPartIds(persisted.doc, rekey.vaultTip);

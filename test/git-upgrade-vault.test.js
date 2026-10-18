@@ -101,6 +101,7 @@ const SCENARIO_L_PIN_ID = mintSurfId({ now: new Date('2026-10-18T00:00:02.000Z')
 const SCENARIO_L_COPY_ID = mintSurfId({ now: NOW, rand: 'c0c1' });
 const SCENARIO_L_JOINT_ID = mintSurfId({ now: NOW, rand: 'j01a' });
 const SCENARIO_L_BLOCK_ID = mintSurfId({ now: NOW, rand: 'b10c' });
+const LOCAL_BLOCK_ID = mintSurfId({ now: NOW, rand: 'add1' });
 const BLOCK_PATH = 'parts/Block.js';
 const A3_COPY_PATH = 'assemblies/A3/Copy.js';
 const DELETED_ID = mintSurfId({ now: NOW, rand: 'de1e' });
@@ -3444,5 +3445,67 @@ test('App-seeded path index (N1 clean): same-key put fail is unpersisted, retry 
 
 test('App-seeded path index (N1 dirty): same-key put fail is unpersisted, retry equals vault, third no-op', async () => {
   await runSameKeyPutFailAppFlow({ dirty: true });
+});
+
+async function runAlreadyUpgradedLocalEditAppFlow(mutateMemory) {
+  const env = await seedF1AppOpenHost();
+  const first = await hostUpgradeOnce(env);
+  assert.equal(first.result.status, 'upgraded');
+  assert.equal(first.adopted.status, 'ok');
+  const writesAfterUpgrade = commits(env.gh).length;
+
+  mutateMemory(env);
+  env.workingCopy = {
+    dirty: true,
+    doc: cloneDoc(env.ctx.memory.doc),
+    scripts: { ...env.ctx.memory.scripts },
+  };
+
+  const second = await hostUpgradeOnce(env);
+  assert.equal(second.result.status, 'already_upgraded');
+  assert.equal(second.adopted.status, 'ok');
+  assert.equal(second.adopted.result?.code, undefined);
+  assert.equal(commits(env.gh).length, writesAfterUpgrade, 'already_upgraded writes no git');
+  return env;
+}
+
+test('already_upgraded with a local script edit stays ok; edit kept; 0 git writes (R1)', async () => {
+  const env = await runAlreadyUpgradedLocalEditAppFlow((host) => {
+    const current = host.ctx.memory.scripts[F1_PIN_MINTED_ID];
+    assert.equal(typeof current, 'string');
+    const edited = current.replace('return "pin";', 'return "edited-pin";');
+    assert.match(edited, /edited-pin/);
+    host.ctx.memory.scripts[F1_PIN_MINTED_ID] = edited;
+    host.ctx.idb.set(F1_PIN_MINTED_ID, edited);
+  });
+  assert.match(env.ctx.memory.scripts[F1_PIN_MINTED_ID], /edited-pin/);
+  assert.match(env.ctx.idb.get(F1_PIN_MINTED_ID), /edited-pin/);
+  const vaultPin = await readText(env.gh, env.repo, partIdPath(F1_PIN_MINTED_ID));
+  assert.equal(vaultPin.includes('edited-pin'), false, 'vault tip does not include the local edit');
+});
+
+test('already_upgraded with a new local part stays ok; part kept; 0 git writes (R1)', async () => {
+  const localScript = withSurfId('return "local-block";\n', LOCAL_BLOCK_ID);
+  const env = await runAlreadyUpgradedLocalEditAppFlow((host) => {
+    host.ctx.memory.doc = cloneDoc(host.ctx.memory.doc);
+    host.ctx.memory.doc.parts = [
+      ...host.ctx.memory.doc.parts,
+      {
+        id: LOCAL_BLOCK_ID,
+        name: 'Block',
+        visible: true,
+        order: 2,
+      },
+    ];
+    host.ctx.memory.scripts[LOCAL_BLOCK_ID] = localScript;
+    host.ctx.idb.set(LOCAL_BLOCK_ID, localScript);
+  });
+  const block = env.ctx.memory.doc.parts.find((part) => part.id === LOCAL_BLOCK_ID);
+  assert.equal(block?.name, 'Block');
+  assert.match(env.ctx.memory.scripts[LOCAL_BLOCK_ID], /local-block/);
+  assert.match(env.ctx.idb.get(LOCAL_BLOCK_ID), /local-block/);
+  assert.equal(env.ctx.idb.has(LOCAL_BLOCK_ID), true);
+  const vaultJson = JSON.parse(await readText(env.gh, env.repo, assemblyIdPath(BOX_ID)));
+  assert.equal(vaultJson.parts.some((part) => part.id === LOCAL_BLOCK_ID), false);
 });
 
