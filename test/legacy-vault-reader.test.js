@@ -10,9 +10,9 @@ import { mintSurfId, withSurfId, readSurfId, isSurfId } from '../src/utils/git/s
 import { validateSurfJson } from '../src/utils/git/surfJson.js';
 import { switchVaultBranch } from '../src/utils/git/gitBranch.js';
 import { createSyncStore } from '../src/utils/git/syncStore.js';
-import { listVaultAssemblies, openVaultAssembly, planInsertVaultAssemblyParts } from '../src/utils/git/gitWorkspace.js';
+import { isAssemblyDirty, listVaultAssemblies, openVaultAssembly, planInsertVaultAssemblyParts } from '../src/utils/git/gitWorkspace.js';
 import { reloadFromRemote } from '../src/utils/git/gitPull.js';
-import { buildCommitFiles } from '../src/utils/git/gitCommit.js';
+import { buildCommitFiles, commitPartToRepo } from '../src/utils/git/gitCommit.js';
 import { captureBaseline } from '../src/utils/git/gitBaseline.js';
 import {
   detectVaultLayout,
@@ -320,6 +320,98 @@ test('openVaultAssembly and listVaultAssemblies route v1 trees through legacyVau
   assert.equal(opened.vaultLayout, 'legacy');
   assert.equal(opened.doc.parts.find((part) => part.missing)?.id, MISSING_ID);
   assert.equal(Object.values(opened.scripts).some((text) => text === ''), false);
+});
+
+test('Get latest keeps unsaved local scripts and does not false-dirty the assembly', async () => {
+  const { gh, repo, headSha } = await seedGearboxVault();
+  const opened = await openLegacyAssembly(gh, repo, 'Gearbox', { ...openOpts, headSha });
+  const remote = (await gh.readFile(repo, opened.assemblyPath, 'main')).content;
+  const local = `${opened.scripts[SHAFT_ID]}\n// unsaved local edit\n`;
+  const reloaded = await reloadFromRemote(gh, repo, {
+    path: opened.assemblyPath,
+    kind: 'assembly',
+    branch: 'main',
+    scripts: { ...opened.scripts, [SHAFT_ID]: local },
+    baseline: opened.baseline,
+  });
+  assert.equal(reloaded.scripts[SHAFT_ID], local, 'Get latest must not overwrite unsaved local scripts');
+  assert.equal(reloaded.content, remote, 'returns the exact remote .surf.json bytes');
+  assert.equal(isAssemblyDirty(reloaded.doc, reloaded.baseline), false);
+  assert.equal(reloaded.scripts[SHAFT_ID].includes('unsaved local edit'), true);
+});
+
+test('commitPartToRepo skips a missing sibling instead of failing Save', async () => {
+  const { gh, repo, headSha } = await seedGearboxVault();
+  const opened = await openLegacyAssembly(gh, repo, 'Gearbox', { ...openOpts, headSha });
+  const nextDoc = {
+    ...opened.doc,
+    parts: [
+      ...opened.doc.parts,
+      {
+        id: 'local:ghost',
+        name: 'Ghost',
+        visible: true,
+        order: opened.doc.parts.length,
+        missing: true,
+      },
+    ],
+  };
+  const warns = [];
+  const orig = console.warn;
+  console.warn = (...args) => warns.push(args.map(String).join(' '));
+  let saved;
+  try {
+    saved = await commitPartToRepo(gh, repo, {
+      doc: nextDoc,
+      scripts: opened.scripts,
+      baseline: opened.baseline,
+      partId: SHAFT_ID,
+    });
+  } finally {
+    console.warn = orig;
+  }
+  assert.equal(saved.status, 'committed');
+  assert.match(warns.join('\n'), /skipping missing part/);
+});
+
+test('buildCommitFiles skips a missing moved row instead of throwing', () => {
+  const doc = {
+    source: 'git',
+    name: 'Gearbox',
+    parts: [{
+      id: MISSING_ID,
+      path: MISSING_PATH,
+      name: 'Missing gear',
+      visible: true,
+      order: 0,
+      missing: true,
+    }],
+  };
+  const baseline = captureBaseline({
+    assemblyPath: 'assemblies/Gearbox/.surf.json',
+    assemblyName: 'Gearbox',
+    doc,
+    scripts: {},
+    branch: 'main',
+    headSha: 'abc',
+  });
+  const warns = [];
+  const orig = console.warn;
+  console.warn = (...args) => warns.push(args.map(String).join(' '));
+  let built;
+  try {
+    built = buildCommitFiles(doc, {}, baseline, {
+      moved: [{ from: MISSING_PATH, to: 'assemblies/Gearbox/Moved.js', id: MISSING_ID }],
+    });
+  } finally {
+    console.warn = orig;
+  }
+  assert.ok(built);
+  assert.equal(
+    built.files.some((file) => file.path === 'assemblies/Gearbox/Moved.js' && !file.delete),
+    false,
+  );
+  assert.match(warns.join('\n'), /skipping missing part/);
 });
 
 test('buildCommitFiles does not write an empty blob for a missing row', () => {

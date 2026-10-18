@@ -159,6 +159,7 @@ export async function openLegacyAssembly(adapter, repo, assemblyName, {
     scripts,
     assets,
     assemblyPath: foundPath,
+    rawAssemblyText: file.content ?? '',
     baseline,
     vaultLayout: 'legacy',
     identities: {

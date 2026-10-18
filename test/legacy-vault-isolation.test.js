@@ -159,4 +159,9 @@ test('App open/list/reload pass create:false so they never POST /user/repos', ()
   assert.match(switchBranch, /ensureGitVault\(\{\s*create:\s*false\s*\}\)/);
   assert.equal(/\bensureGitVault\(\s*\)/.test(switchBranch), false);
   assert.match(app, /ensureGitVaultRef\.current\(\{\s*create:\s*false\s*\}\)/);
+  const behind = slice('const handleBehindChoice', '// G4: re-check remote');
+  assert.match(behind, /action === 'reload'/);
+  assert.match(behind, /ensureGitVault\(\{\s*create:\s*false\s*\}\)/);
+  assert.equal(/\bensureGitVault\(\s*\)/.test(behind), false);
+  assert.match(behind, /scripts\[part\.id\]\s*\?\?\s*reloaded\.scripts\[part\.id\]/);
 });

@@ -201,7 +201,8 @@ test('duplicate @surf-id headers keep the first and mint the other with copiedFr
   assert.equal(out.doc.parts[1].id, MINTED);
   assert.equal(out.doc.parts[1].copiedFrom, SURF);
   assert.equal(out.scripts[SURF], script);
-  assert.equal(out.scripts[MINTED], script);
+  assert.equal(readSurfId(out.scripts[MINTED]), MINTED);
+  assert.equal(out.scripts[MINTED].includes('return 1'), true);
   assert.equal(Object.hasOwn(out.scripts, UUID), false);
   assert.equal(Object.hasOwn(out.scripts, uuid2), false);
 });
@@ -317,6 +318,162 @@ test('replaceScriptKeys writes new keys before deleting old ones', async () => {
   assert.ok(order.findIndex((step) => step[0] === 'delete') > 0);
   assert.equal(store.get(SURF), 'new');
   assert.equal(store.has(UUID), false);
+});
+
+function collapseTwice(doc, scripts, opts = {}) {
+  const first = collapseWorkingCopyIds(doc, scripts, { now: NOW, randFor: () => 'b10c', ...opts });
+  const later = new Date('2026-10-21T00:00:00.000Z');
+  const pathIndex = Object.fromEntries((first.cached || []).map((hit) => [hit.path, hit.id]));
+  const second = collapseWorkingCopyIds(first.doc, first.scripts, {
+    ...opts,
+    now: later,
+    randFor: () => 'ffff',
+    pathIndex,
+  });
+  assert.deepEqual(
+    second.doc.parts.map((part) => part.id),
+    first.doc.parts.map((part) => part.id),
+    'ids must stay stable across a second collapse',
+  );
+  assert.equal(second.changed, false);
+  return { first, second };
+}
+
+test('2a: colliding header keeps a free surf-id row id and is stable on reload', () => {
+  const copyId = mintSurfId({ now: NOW, rand: 'c0c0' });
+  const doc = {
+    id: ASM,
+    source: 'local',
+    name: 'Assembly',
+    activeId: SURF,
+    parts: [
+      { id: SURF, name: 'Original', visible: true, order: 0 },
+      { id: copyId, name: 'Copy', visible: true, order: 1 },
+    ],
+  };
+  const scripts = {
+    [SURF]: withSurfId('return original;\n', SURF),
+    [copyId]: withSurfId('return copy;\n', SURF),
+  };
+  const { first } = collapseTwice(doc, scripts);
+  assert.equal(first.doc.parts[0].id, SURF);
+  assert.equal(first.doc.parts[1].id, copyId);
+  assert.equal(first.scripts[SURF].includes('return original'), true);
+  assert.equal(first.scripts[copyId].includes('return copy'), true);
+});
+
+test('2a: UUID copy with colliding header mints once and is stable on reload', () => {
+  const uuid2 = '5f0c3c1e-0000-4000-8000-000000000002';
+  const doc = {
+    id: ASM,
+    source: 'local',
+    name: 'Assembly',
+    activeId: UUID,
+    parts: [
+      { id: UUID, name: 'Original', visible: true, order: 0 },
+      { id: uuid2, name: 'Copy', visible: true, order: 1 },
+    ],
+  };
+  const scripts = {
+    [UUID]: withSurfId('return original;\n', SURF),
+    [uuid2]: withSurfId('return copy;\n', SURF),
+  };
+  const { first, second } = collapseTwice(doc, scripts, {
+    randFor: (part) => (part?.id === '$assembly' ? 'aa01' : 'b10c'),
+  });
+  assert.equal(first.doc.parts[0].id, SURF);
+  assert.equal(first.doc.parts[1].id, MINTED);
+  assert.equal(first.doc.parts[1].copiedFrom, SURF);
+  assert.equal(second.changed, false);
+  assert.deepEqual(second.doc.parts.map((part) => part.id), [SURF, MINTED]);
+});
+
+test('2b: header matching another row id never overwrites that row\'s script', () => {
+  const uuidY = '5f0c3c1e-0000-4000-8000-00000000000a';
+  const doc = {
+    id: ASM,
+    source: 'local',
+    name: 'Assembly',
+    activeId: SURF,
+    parts: [
+      { id: uuidY, name: 'Y', visible: true, order: 0 },
+      { id: SURF, name: 'Original', visible: true, order: 1 },
+    ],
+    colors: { [SURF]: { part: '#ff0000' } },
+  };
+  const scripts = {
+    [uuidY]: withSurfId('return Y;\n', SURF),
+    [SURF]: withSurfId('return original;\n', SURF),
+  };
+  const { first } = collapseTwice(doc, scripts, {
+    randFor: (part) => (part?.id === '$assembly' ? 'aa01' : 'b10c'),
+  });
+  assert.equal(first.doc.parts[1].id, SURF);
+  assert.notEqual(first.doc.parts[0].id, SURF);
+  assert.equal(first.scripts[SURF].includes('return original'), true);
+  assert.equal(first.scripts[SURF].includes('return Y'), false);
+  assert.equal(first.scripts[first.doc.parts[0].id].includes('return Y'), true);
+  assert.deepEqual(first.doc.colors[SURF], { part: '#ff0000' });
+});
+
+test('2c: duplicate row id keeps the first script, colors, and groups', () => {
+  const groupId = mintSurfId({ now: NOW, rand: 'cc02' });
+  const doc = {
+    id: ASM,
+    source: 'local',
+    name: 'Assembly',
+    activeId: SURF,
+    parts: [
+      { id: SURF, name: 'First', visible: true, order: 0 },
+      { id: SURF, name: 'Copy', visible: true, order: 1 },
+    ],
+    groups: [{ id: groupId, name: 'Hardware', source: null, partIds: [SURF] }],
+    colors: { [SURF]: { part: '#00ff00' } },
+  };
+  const scripts = { [SURF]: withSurfId('return first;\n', SURF) };
+  const { first } = collapseTwice(doc, scripts, {
+    randFor: (part) => (part?.id === '$assembly' ? 'aa01' : 'b10c'),
+  });
+  assert.equal(first.doc.parts[0].id, SURF);
+  assert.notEqual(first.doc.parts[1].id, SURF);
+  assert.equal(first.doc.parts[1].copiedFrom, SURF);
+  assert.equal(first.scripts[SURF].includes('return first'), true);
+  assert.equal(typeof first.scripts[first.doc.parts[1].id], 'string');
+  assert.deepEqual(first.doc.colors[SURF], { part: '#00ff00' });
+  assert.equal(Object.hasOwn(first.doc.colors, first.doc.parts[1].id), false);
+  assert.deepEqual(first.doc.groups[0].partIds, [SURF]);
+});
+
+test('2d: two UUID rows sharing surfId S keep S on the original', () => {
+  const uuid2 = '5f0c3c1e-0000-4000-8000-00000000000d';
+  const groupId = mintSurfId({ now: NOW, rand: 'cc03' });
+  const doc = {
+    id: ASM,
+    source: 'local',
+    name: 'Assembly',
+    activeId: UUID,
+    parts: [
+      { id: UUID, surfId: SURF, name: 'Original', visible: true, order: 0 },
+      { id: uuid2, surfId: SURF, name: 'Copy', visible: true, order: 1 },
+    ],
+    groups: [{ id: groupId, name: 'Hardware', source: null, partIds: [SURF] }],
+    colors: { [SURF]: { part: '#0000ff' } },
+  };
+  const scripts = {
+    [UUID]: withSurfId('return orig;\n', SURF),
+    [uuid2]: withSurfId('return copy;\n', SURF),
+  };
+  const { first } = collapseTwice(doc, scripts, {
+    randFor: (part) => (part?.id === '$assembly' ? 'aa01' : 'b10c'),
+  });
+  assert.equal(first.doc.parts[0].id, SURF);
+  assert.notEqual(first.doc.parts[1].id, SURF);
+  assert.equal(first.doc.parts[1].copiedFrom, SURF);
+  assert.equal(first.scripts[SURF].includes('return orig'), true);
+  assert.equal(first.scripts[first.doc.parts[1].id].includes('return copy'), true);
+  assert.deepEqual(first.doc.colors[SURF], { part: '#0000ff' });
+  assert.equal(Object.hasOwn(first.doc.colors, first.doc.parts[1].id), false);
+  assert.deepEqual(first.doc.groups[0].partIds, [SURF]);
 });
 
 test('pathIndex reuses a minted id on the next collapse', () => {

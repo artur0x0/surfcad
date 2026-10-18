@@ -3683,9 +3683,6 @@ const App = () => {
       branch,
       headSha: opened.baseline.headSha,
     });
-    if (!deletedOverlay.removed && opened.baseline.legacyCleanup) {
-      baseline.legacyCleanup = opened.baseline.legacyCleanup;
-    }
     rememberGitBaseline(baseline);
     const head = opened.baseline.headSha || null;
     const stored = store.getLastSyncedSha(vault.repo, branch);
@@ -5126,7 +5123,7 @@ const App = () => {
       return { status: 'error', error: 'Not in Git mode' };
     }
     try {
-      const vault = await ensureGitVault();
+      const vault = await ensureGitVault({ create: false });
       const branch = baseline.branch || vault.defaultBranch || 'main';
       if (action === 'keep') {
         markBehindResolved(path);
@@ -5171,7 +5168,7 @@ const App = () => {
           const keepScripts = {};
           for (const part of nextDoc.parts || []) {
             if (part.missing === true) continue;
-            const have = reloaded.scripts[part.id] ?? scripts[part.id];
+            const have = scripts[part.id] ?? reloaded.scripts[part.id];
             if (typeof have === 'string') keepScripts[part.id] = have;
           }
           // Fetch any part scripts the remote assembly lists that we do not have.
@@ -8395,7 +8392,6 @@ const App = () => {
         legacyCleanup: !!dirtyBaseline?.legacyCleanup,
         undoStackDirty,
         editedSinceLoad,
-        upgradeRequired: doc?.vaultLayout === 'legacy',
       });
     },
     readToasts() {

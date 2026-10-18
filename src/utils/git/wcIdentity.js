@@ -2,12 +2,13 @@
  * Collapse working-copy identity onto one surf-id per part (and one per
  * assembly). UUID row ids and path-as-id rows take this once. `surfId` is
  * dropped; the row `id` is the surf-id. Does not write git and does not
- * stamp `// @surf-id` / `// @name` — that happens on Save or Upgrade.
+ * stamp `// @surf-id` / `// @name` on clean files — that happens on Save
+ * or Upgrade. A copy whose header collides is restamped in the working
+ * copy only (no git write) so the next open is stable.
  *
  * §4.1 of docs/git-save-model.md.
  */
-import { isSurfId, mintSurfId, readSurfId, rewriteColorMap, rewriteJointSurfIds } from './surfId.js';
-import { rekeyScripts } from './partIdentity.js';
+import { isSurfId, mintSurfId, readSurfId, rewriteColorMap, rewriteJointSurfIds, withSurfId } from './surfId.js';
 
 function partPath(part) {
   if (typeof part?.path === 'string' && part.path.trim()) return part.path;
@@ -40,35 +41,61 @@ function mintUnusedSurfId({ now, rand, used } = {}) {
   return mintSurfId({ now });
 }
 
+function firstOwnerIndex(parts) {
+  const owners = new Map();
+  (parts || []).forEach((part, i) => {
+    const id = part?.id;
+    if (id == null || id === '') return;
+    if (!owners.has(id)) owners.set(id, i);
+  });
+  return owners;
+}
+
 /**
  * Pick the permanent part id: header, then `surfId`, then a surf-id-shaped
- * row id, then a pathIndex hit, else mint. A collision with an id already
- * used in this assembly keeps the first row and mints + `copiedFrom`.
+ * row id, then a pathIndex hit, else mint. A candidate already owned by
+ * another row in this assembly is skipped — the first row keeps it; a copy
+ * keeps its own free surf-id or mints + `copiedFrom`. Never steal another
+ * row's id just because the header still names it.
  */
-export function pickCollapsedPartId(part, script, pathIndex = {}, { now, rand, used } = {}) {
+export function pickCollapsedPartId(part, script, pathIndex = {}, {
+  now,
+  rand,
+  used,
+  index = 0,
+  firstOwner = null,
+} = {}) {
+  const taken = (id) => {
+    if (!id) return false;
+    if (used?.has(id)) return true;
+    if (firstOwner && firstOwner.get(id) != null && firstOwner.get(id) !== index) return true;
+    return false;
+  };
+
   const header = readSurfId(script || '');
-  let id = null;
-  let minted = false;
-  if (isSurfId(header)) id = header;
-  else if (isSurfId(part?.surfId)) id = part.surfId;
-  else if (isSurfId(part?.id)) id = part.id;
-  else {
-    const path = partPath(part);
-    const cached = path ? pathIndex[path] : null;
-    if (isSurfId(cached)) id = cached;
-    else {
-      id = mintUnusedSurfId({ now, rand, used });
-      minted = true;
+  const path = partPath(part);
+  const cached = path ? pathIndex[path] : null;
+  const candidates = [header, part?.surfId, part?.id, cached];
+  let colliding = null;
+  for (const candidate of candidates) {
+    if (!isSurfId(candidate)) continue;
+    if (!taken(candidate)) {
+      return { id: candidate, minted: false, copiedFrom: undefined };
     }
+    if (!colliding) colliding = candidate;
   }
-  if (used?.has(id)) {
-    return {
-      id: mintUnusedSurfId({ now, rand, used }),
-      minted: true,
-      copiedFrom: id,
-    };
+
+  // Header (or surfId) collided. Keep this row's own free surf-id so a
+  // copy does not remint on every open (§2.2 ids stay stable across reload).
+  if (isSurfId(part?.id) && !taken(part.id)) {
+    return { id: part.id, minted: false, copiedFrom: colliding || undefined };
   }
-  return { id, minted, copiedFrom: undefined };
+
+  return {
+    id: mintUnusedSurfId({ now, rand, used }),
+    minted: true,
+    copiedFrom: colliding || undefined,
+  };
 }
 
 /**
@@ -109,6 +136,8 @@ function rewriteGroupIds(groups, map) {
 /**
  * Rekey a working copy so every part `id` is a surf-id and `surfId` is gone.
  * Scripts that lack a header are not rewritten (Save / Upgrade stamp them).
+ * A colliding copy is restamped in WC only so the next open is stable.
+ * Never overwrite an occupied script slot; never map an id a live row still holds.
  * -> { doc, scripts, pairs, cached, minted, changed }
  */
 export function collapseWorkingCopyIds(doc, scripts = {}, {
@@ -127,31 +156,55 @@ export function collapseWorkingCopyIds(doc, scripts = {}, {
       changed: false,
     };
   }
-  const pairs = [];
-  const cached = [];
-  const map = new Map();
+  const sourceScripts = scripts || {};
+  const sourceParts = doc.parts || [];
+  const owners = firstOwnerIndex(sourceParts);
   const used = new Set();
+  const assignments = [];
   let minted = 0;
-  const nextScripts = { ...(scripts || {}) };
-  const parts = (doc.parts || []).map((part, i) => {
-    const script = scriptForPart(part, nextScripts);
+  let restamped = false;
+
+  for (let i = 0; i < sourceParts.length; i += 1) {
+    const part = sourceParts[i];
+    let script = scriptForPart(part, sourceScripts);
     const picked = pickCollapsedPartId(part, script, pathIndex, {
       now,
       rand: typeof randFor === 'function' ? randFor(part, i) : undefined,
       used,
+      index: i,
+      firstOwner: owners,
     });
     if (picked.minted) minted += 1;
     const nextId = picked.id;
     used.add(nextId);
-    const path = partPath(part);
-    if (part?.id && part.id !== nextId) {
+    if (picked.copiedFrom && typeof script === 'string') {
+      const header = readSurfId(script);
+      if (header && header !== nextId) {
+        script = withSurfId(script, nextId);
+        restamped = true;
+      }
+    }
+    assignments.push({ part, nextId, script, picked, path: partPath(part) });
+  }
+
+  const liveIds = new Set(assignments.map((row) => row.nextId));
+  const pairs = [];
+  const cached = [];
+  const map = new Map();
+  const nextScripts = {};
+  const parts = assignments.map(({ part, nextId, script, picked, path }) => {
+    if (part?.id && part.id !== nextId && !liveIds.has(part.id)) {
       pairs.push({ from: part.id, to: nextId });
       map.set(part.id, nextId);
     }
-    if (part?.surfId && part.surfId !== nextId) map.set(part.surfId, nextId);
-    if (path && path !== nextId) map.set(path, nextId);
+    if (part?.surfId && part.surfId !== nextId && !liveIds.has(part.surfId)) {
+      map.set(part.surfId, nextId);
+    }
+    if (path && path !== nextId && !liveIds.has(path)) map.set(path, nextId);
     if (path && isSurfId(nextId)) cached.push({ path, id: nextId });
-    if (typeof script === 'string') nextScripts[nextId] = script;
+    if (typeof script === 'string' && !Object.prototype.hasOwnProperty.call(nextScripts, nextId)) {
+      nextScripts[nextId] = script;
+    }
     const sameId = part.id === nextId;
     const noSurfField = part.surfId == null;
     const pathOk = !path || part.path === path;
@@ -165,14 +218,7 @@ export function collapseWorkingCopyIds(doc, scripts = {}, {
     else delete row.missing;
     return row;
   });
-  for (const { from, to } of pairs) {
-    if (from && from !== to) delete nextScripts[from];
-  }
-  for (const part of parts) {
-    const path = partPath(part);
-    if (path && path !== part.id) delete nextScripts[path];
-  }
-  const keyedScripts = pairs.length ? rekeyScripts(nextScripts, pairs) : nextScripts;
+
   let activeId = doc.activeId;
   if (activeId && map.has(String(activeId))) activeId = map.get(String(activeId));
   else if (activeId && !parts.some((part) => part.id === activeId)) {
@@ -204,6 +250,7 @@ export function collapseWorkingCopyIds(doc, scripts = {}, {
   if (joints !== doc.joints) nextDoc.joints = joints;
   const changed = assemblyMinted
     || minted > 0
+    || restamped
     || pairs.length > 0
     || parts.some((part, i) => part !== (doc.parts || [])[i])
     || nextDoc.groups !== doc.groups
@@ -214,7 +261,7 @@ export function collapseWorkingCopyIds(doc, scripts = {}, {
     || parts.some((part) => part.surfId);
   return {
     doc: nextDoc,
-    scripts: keyedScripts,
+    scripts: nextScripts,
     pairs,
     cached,
     minted,

@@ -15,8 +15,36 @@ import { isBinaryContent } from './binaryContent.js';
 import { GitAdapterError, assertGithubAdapter, fileWrite } from './githubAdapterInterface.js';
 import { readVaultAsset } from './githubAdapter.js';
 import { detectCommitBase, commitBranchName, freeBranchName, prepareAssemblySurfWrite } from './gitCommit.js';
+import { captureBaseline } from './gitBaseline.js';
 import { openVaultAssembly } from './gitWorkspace.js';
+import { stringifySurfJson } from './surfJson.js';
 import { assetPathForScript, parseVaultPath, vaultSegment } from './vaultLayout.js';
+
+function assemblyTextIgnoringActive(text) {
+  const obj = JSON.parse(text);
+  obj.activeId = null;
+  return JSON.stringify(obj);
+}
+
+/**
+ * Prefer the exact remote `.surf.json` bytes so a serializeAssembly reorder
+ * does not false-dirty Get latest. After identity collapse those bytes may
+ * not JSON-equal the working copy; keep the WC stringify in that case.
+ */
+function overlayRemoteAssemblyText(baselineNext, remoteText, doc) {
+  if (typeof remoteText !== 'string') return baselineNext;
+  const wc = stringifySurfJson({ ...doc, source: 'git' }, { validate: false });
+  let assemblyText = remoteText;
+  try {
+    if (assemblyTextIgnoringActive(wc) !== assemblyTextIgnoringActive(remoteText)) {
+      assemblyText = wc;
+    }
+  } catch {
+    assemblyText = wc;
+  }
+  baselineNext.assemblyText = assemblyText;
+  return baselineNext;
+}
 
 /**
  * Paths in our document that main changed since the baseline head.
@@ -236,17 +264,31 @@ export async function reloadFromRemote(adapter, repo, {
       knownAssemblyId,
       assemblyIdIndex,
     });
-    const baselineNext = {
-      ...opened.baseline,
-      headSha: baseline.headSha,
+    const nextDoc = opened.doc;
+    // Keep unsaved local scripts. Get latest of the assembly file must not
+    // overwrite part bodies the user has edited but not Saved.
+    const nextScripts = { ...(scripts || {}) };
+    const baselineNext = captureBaseline({
+      assemblyPath: opened.assemblyPath || path,
+      assemblyName: vaultSegment(nextDoc?.name) || baseline.assemblyName,
+      doc: nextDoc,
+      scripts: nextScripts,
       assets: opened.baseline?.assets || baseline.assets,
-    };
+      branch: baseline.branch || branch,
+      headSha: baseline.headSha,
+    });
+    // Exact remote bytes so dirty clears even if serializeAssembly reorders.
+    overlayRemoteAssemblyText(
+      baselineNext,
+      opened.rawAssemblyText ?? opened.baseline?.assemblyText,
+      nextDoc,
+    );
     return {
       kind: 'assembly',
       path: opened.assemblyPath || path,
-      content: baselineNext.assemblyText,
-      doc: opened.doc,
-      scripts: opened.scripts,
+      content: opened.rawAssemblyText ?? baselineNext.assemblyText,
+      doc: nextDoc,
+      scripts: nextScripts,
       baseline: baselineNext,
       vaultLayout: opened.vaultLayout,
     };

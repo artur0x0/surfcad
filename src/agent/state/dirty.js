@@ -7,7 +7,6 @@
  *   legacyCleanup?: boolean,
  *   undoStackDirty?: boolean,
  *   editedSinceLoad?: Iterable<string>,
- *   upgradeRequired?: boolean,
  * }} input
  */
 export function buildDirtyState(input = {}) {
@@ -27,6 +26,5 @@ export function buildDirtyState(input = {}) {
     editedSinceLoad,
   };
   if (undoStackDirty) out.undoStackDirty = true;
-  if (input.upgradeRequired === true) out.upgradeRequired = true;
   return out;
 }

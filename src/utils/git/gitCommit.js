@@ -474,7 +474,8 @@ export function buildCommitFiles(doc, scripts, baseline, opts = {}) {
       partScriptText(part, workScripts) ?? workScripts[from] ?? workScripts[to],
     );
     if (body == null) {
-      throw new Error(`Refusing empty write for missing part ${id || from}`);
+      console.warn(`[git] skipping missing part ${id || from} (refusing empty blob)`);
+      continue;
     }
     writes.set(to, body);
     if (from && from !== to && partRowVaultPathOk(from)) deletes.add(from);
@@ -746,7 +747,8 @@ export async function commitPartToRepo(adapter, repo, {
     const siblingText = partScriptText(sibling, workScripts) ?? workScripts[move.from] ?? workScripts[move.to];
     const siblingBody = partFileContent(sibling, siblingText);
     if (siblingBody == null) {
-      throw new Error(`Refusing empty write for missing part ${move.id || move.from}`);
+      console.warn(`[git] skipping missing part ${move.id || move.from} (refusing empty blob)`);
+      continue;
     }
     addWrite(move.to, siblingBody);
   }

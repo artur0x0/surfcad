@@ -44,8 +44,7 @@ test('buildDirtyState sets unsaved from editedSinceLoad', () => {
   });
 });
 
-test('buildDirtyState sets upgradeRequired only when a legacy vault is open', () => {
+test('buildDirtyState does not set upgradeRequired (PR 4/8)', () => {
   assert.equal(Object.hasOwn(buildDirtyState({}), 'upgradeRequired'), false);
-  assert.equal(buildDirtyState({ upgradeRequired: true }).upgradeRequired, true);
-  assert.equal(Object.hasOwn(buildDirtyState({ upgradeRequired: false }), 'upgradeRequired'), false);
+  assert.equal(Object.hasOwn(buildDirtyState({ upgradeRequired: true }), 'upgradeRequired'), false);
 });
