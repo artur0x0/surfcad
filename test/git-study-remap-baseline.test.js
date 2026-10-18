@@ -93,6 +93,7 @@ function recaptureFromOpened(opened, wcScripts) {
       opened.doc.parts,
       wcScripts,
       opened.baseline.scripts,
+      { openedScripts: opened.scripts },
     ),
     assets: opened.baseline.assets,
     branch: opened.baseline.branch,
@@ -100,8 +101,28 @@ function recaptureFromOpened(opened, wcScripts) {
   });
 }
 
-async function seedVault({ name = ASM, parts, scriptsByPath }) {
-  const gh = createMockGithubAdapter({ login: 'artur' });
+function reseedFromOpened(opened) {
+  return captureBaselineFromTip({
+    tipDoc: opened.doc,
+    tipBaseline: opened.baseline,
+  });
+}
+
+function jsWritePaths(planned) {
+  return planned.files
+    .filter((file) => !file.delete && typeof file.path === 'string' && file.path.endsWith('.js'))
+    .map((file) => file.path)
+    .sort();
+}
+
+function assertOpenClean(opened, gh, writesBefore) {
+  assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writesBefore);
+  assert.deepEqual([...dirtyPartIds(opened.doc, opened.scripts, opened.baseline)], []);
+  assert.equal(isWorkspaceDirty(opened.doc, opened.scripts, opened.baseline), false);
+}
+
+async function seedVault({ name = ASM, parts, scriptsByPath, login = 'artur' }) {
+  const gh = createMockGithubAdapter({ login });
   const vault = await findOrCreateVault(gh);
   const raw = {
     format: 'surfcad.assembly',
@@ -141,8 +162,10 @@ test('App adoptVaultOpening recapture keeps tip scripts that collapse changed', 
   const afterBody = adopt.slice(afterAt, adopt.indexOf('rememberGitBaseline(baseline)'));
   assert.match(applyBody, /baselineScriptsKeepingTip\(/);
   assert.match(applyBody, /opened\.baseline\?\.scripts/);
+  assert.match(applyBody, /openedScripts:\s*opened\.scripts/);
   assert.match(afterBody, /baselineScriptsKeepingTip\(/);
   assert.match(afterBody, /opened\.baseline\?\.scripts/);
+  assert.match(afterBody, /openedScripts:\s*opened\.scripts/);
   assert.equal(/scripts:\s*nextScripts,/.test(applyBody), false);
   assert.equal(/scripts:\s*openedScripts,/.test(afterBody), false);
 });
@@ -206,11 +229,7 @@ test('UUID row plus unedited study: open, edit the other part, Save, re-open', a
     message: 'Save Other',
   });
   assert.equal(planned.status, 'ready', planned.error);
-  const jsWrites = planned.files
-    .filter((file) => !file.delete && typeof file.path === 'string' && file.path.endsWith('.js'))
-    .map((file) => file.path)
-    .sort();
-  assert.deepEqual(jsWrites, [basePath, otherPath].sort());
+  assert.deepEqual(jsWritePaths(planned), [basePath, otherPath].sort());
   const asmWrite = planned.files.find((file) => file.path === assemblyFilePath(ASM) && !file.delete);
   assert.ok(asmWrite, 'Save must rewrite .surf.json with the remapped row id');
   const nextRaw = JSON.parse(asmWrite.content);
@@ -317,12 +336,127 @@ test('v1 path-id study is not dirty after open; Save of another part skips it', 
     message: 'Save Other',
   });
   assert.equal(planned.status, 'ready', planned.error);
-  const jsWrites = planned.files
-    .filter((file) => !file.delete && typeof file.path === 'string' && file.path.endsWith('.js'))
-    .map((file) => file.path)
-    .sort();
-  assert.deepEqual(jsWrites, [otherPath]);
+  assert.deepEqual(jsWritePaths(planned), [otherPath]);
   assert.equal(planned.files.some((file) => file.path === basePath && !file.delete), false);
+});
+
+test('surf-id rows plus path-keyed study in another part stay clean after open', async () => {
+  const name = 'Gear';
+  const basePath = assemblyPartPath(name, 'Base');
+  const pinPath = assemblyPartPath(name, 'Pin');
+  const tipBase = withSurfId(CUBE, FIRST);
+  const tipPin = withSurfId(`${OTHER}${studyBlock(basePath)}`, SECOND);
+  const { gh, repo, headSha } = await seedVault({
+    name,
+    login: 'path-keyed-open',
+    parts: [
+      { id: FIRST, path: basePath, name: 'Base', visible: true, order: 0 },
+      { id: SECOND, path: pinPath, name: 'Pin', visible: true, order: 1 },
+    ],
+    scriptsByPath: { [basePath]: tipBase, [pinPath]: tipPin },
+  });
+
+  const writesBefore = gh._log.filter((row) => row.op === 'commitFiles').length;
+  const opened = await openLegacyAssembly(gh, repo, name, {
+    branch: 'main',
+    headSha,
+    now: NOW,
+  });
+  assertOpenClean(opened, gh, writesBefore);
+  assert.equal(opened.doc.parts.find((row) => row.name === 'Pin')?.id, SECOND);
+  assertStudyMatchesRow(opened.scripts[SECOND], FIRST);
+  assert.notEqual(opened.scripts[SECOND], tipPin);
+  assert.equal(opened.scripts[SECOND], opened.baseline.scripts[SECOND]);
+  const recaptured = recaptureFromOpened(opened, opened.scripts);
+  assert.equal(isWorkspaceDirty(opened.doc, opened.scripts, recaptured), false);
+
+  const edited = `${opened.scripts[FIRST]}\n// edit\n`;
+  const scripts = { ...opened.scripts, [FIRST]: edited };
+  const planned = await assembleCommitFiles(gh, repo, {
+    doc: opened.doc,
+    scripts,
+    baseline: opened.baseline,
+    message: 'Save Base',
+  });
+  assert.equal(planned.status, 'ready', planned.error);
+  assert.deepEqual(jsWritePaths(planned), [basePath]);
+  assert.equal(planned.files.some((file) => file.path === pinPath && !file.delete), false);
+});
+
+test('open, Save Base, re-open: path-keyed study in Pin stays clean', async () => {
+  const name = 'Gear';
+  const basePath = assemblyPartPath(name, 'Base');
+  const pinPath = assemblyPartPath(name, 'Pin');
+  const tipBase = withSurfId(CUBE, FIRST);
+  const tipPin = withSurfId(`${OTHER}${studyBlock(basePath)}`, SECOND);
+  const { gh, repo, headSha } = await seedVault({
+    name,
+    login: 'path-keyed-reopen',
+    parts: [
+      { id: basePath, path: basePath, name: 'Base', visible: true, order: 0 },
+      { id: SECOND, path: pinPath, name: 'Pin', visible: true, order: 1 },
+    ],
+    scriptsByPath: { [basePath]: tipBase, [pinPath]: tipPin },
+  });
+
+  const writesBefore = gh._log.filter((row) => row.op === 'commitFiles').length;
+  const opened = await openLegacyAssembly(gh, repo, name, {
+    branch: 'main',
+    headSha,
+    now: NOW,
+  });
+  assertOpenClean(opened, gh, writesBefore);
+
+  const edited = `${opened.scripts[FIRST]}\n// edit\n`;
+  const saved = await commitWorkspace(gh, repo, {
+    doc: opened.doc,
+    scripts: { ...opened.scripts, [FIRST]: edited },
+    baseline: opened.baseline,
+    message: 'Save Base',
+  });
+  assert.equal(saved.status, 'committed', saved.error);
+  const tipAfter = await gh.readFile(repo, pinPath, 'main');
+  assert.equal(tipAfter.content, tipPin);
+
+  const reopened = await openLegacyAssembly(gh, repo, name, {
+    branch: 'main',
+    headSha: saved.sha,
+    now: NOW,
+  });
+  assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writesBefore + 1);
+  assert.deepEqual([...dirtyPartIds(reopened.doc, reopened.scripts, reopened.baseline)], []);
+  assert.equal(isWorkspaceDirty(reopened.doc, reopened.scripts, reopened.baseline), false);
+});
+
+test('reload reseed keeps a path-keyed study clean', async () => {
+  const name = 'Gear';
+  const basePath = assemblyPartPath(name, 'Base');
+  const pinPath = assemblyPartPath(name, 'Pin');
+  const tipBase = withSurfId(CUBE, FIRST);
+  const tipPin = withSurfId(`${OTHER}${studyBlock(basePath)}`, SECOND);
+  const { gh, repo, headSha } = await seedVault({
+    name,
+    login: 'path-keyed-reseed',
+    parts: [
+      { id: FIRST, path: basePath, name: 'Base', visible: true, order: 0 },
+      { id: SECOND, path: pinPath, name: 'Pin', visible: true, order: 1 },
+    ],
+    scriptsByPath: { [basePath]: tipBase, [pinPath]: tipPin },
+  });
+
+  const writesBefore = gh._log.filter((row) => row.op === 'commitFiles').length;
+  const opened = await openLegacyAssembly(gh, repo, name, {
+    branch: 'main',
+    headSha,
+    now: NOW,
+  });
+  assertOpenClean(opened, gh, writesBefore);
+  const reseed = reseedFromOpened(opened);
+  assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writesBefore);
+  assert.deepEqual([...dirtyPartIds(opened.doc, opened.scripts, reseed)], []);
+  assert.equal(isWorkspaceDirty(opened.doc, opened.scripts, reseed), false);
+  const recaptured = recaptureFromOpened(opened, opened.scripts);
+  assert.equal(isWorkspaceDirty(opened.doc, opened.scripts, recaptured), false);
 });
 
 test('baselineScriptsKeepingTip keeps tip bytes only for UUID → surf-id remaps', () => {
@@ -346,12 +480,27 @@ test('baselineScriptsKeepingTip keeps tip bytes only for UUID → surf-id remaps
     [{ from: path, to: FIRST }],
   );
   assert.equal(pathKept[FIRST], pathWc);
+  const emptyPairs = baselineScriptsKeepingTip(
+    parts,
+    { [FIRST]: pathWc },
+    { [path]: pathTip, [FIRST]: pathTip },
+    [],
+  );
+  assert.equal(emptyPairs[FIRST], pathWc);
   const carried = baselineScriptsKeepingTip(
     parts,
     { [FIRST]: wc },
     { [FIRST]: tip },
+    { openedScripts: { [FIRST]: wc } },
   );
   assert.equal(carried[FIRST], tip);
+  const readerChoseWc = baselineScriptsKeepingTip(
+    parts,
+    { [FIRST]: pathWc },
+    { [FIRST]: pathWc },
+    { openedScripts: { [FIRST]: pathWc } },
+  );
+  assert.equal(readerChoseWc[FIRST], pathWc);
   const same = baselineScriptsKeepingTip(
     parts,
     { [FIRST]: tip },

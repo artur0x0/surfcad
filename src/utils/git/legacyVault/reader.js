@@ -190,7 +190,9 @@ export async function openLegacyAssembly(adapter, repo, assemblyName, {
     assemblyPath: foundPath,
     assemblyName: doc.name,
     doc,
-    scripts: baselineScriptsKeepingTip(parts, scripts, rawScripts, collapsed.pairs),
+    scripts: baselineScriptsKeepingTip(parts, scripts, rawScripts, {
+      pairs: collapsed.pairs,
+    }),
     assets,
     branch,
     headSha: head,

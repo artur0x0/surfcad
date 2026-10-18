@@ -5,6 +5,7 @@
  */
 import { serializeAssembly } from '../assembly.js';
 import { gitBlobSha, isBinaryContent, toUint8Array } from './binaryContent.js';
+import { rewriteFeaStudyPartIds } from './feaStudyIds.js';
 import { isUuidPartId, partRepoPath, partScriptText } from './partIdentity.js';
 import { isSurfId, rewriteColorMap, rewriteJointSurfIds } from './surfId.js';
 import { stringifySurfJson } from './surfJson.js';
@@ -57,32 +58,52 @@ function tipScriptForPart(part, tipScripts, fromByTo) {
   return undefined;
 }
 
-/**
- * Baseline script map that keeps git-tip bytes when open-time collapse
- * remapped a study id the next `.surf.json` rewrite will drop: UUID row id
- * → header surf-id (U → S). A v1 path-id study is remapped in memory on
- * every open and must not look dirty. When `pairs` is empty (App recapture),
- * keep tip bytes wherever they already differ so the reader's choice
- * survives. `tipScripts` may be keyed by collapsed id, repo path, or
- * pre-collapse id. Does not write git.
- */
-export function baselineScriptsKeepingTip(parts, wcScripts, tipScripts, pairs = []) {
-  const fromByTo = new Map();
-  const uuidTargets = new Set();
+function uuidToSurfMap(pairs = []) {
+  const map = new Map();
   for (const { from, to } of pairs || []) {
     if (!from || !to || from === to) continue;
-    fromByTo.set(to, from);
-    if (isUuidPartId(from) && isSurfId(to)) uuidTargets.add(to);
+    if (isUuidPartId(from) && isSurfId(to)) map.set(from, to);
   }
-  const restrictToUuidStudyRemap = (pairs || []).length > 0;
+  return map;
+}
+
+/**
+ * Baseline script map for open-time study remaps. The reader always runs in
+ * UUID→surf-id mode: keep git-tip bytes only when collapse remapped a study
+ * id from a non-surf / unsaved UUID to a surf id (the next `.surf.json`
+ * rewrite drops that UUID). Empty `pairs` means no such remap — a path-keyed
+ * study is rewritten in memory on every open and must not look dirty.
+ * App recapture passes `openedScripts` and keeps tip bytes only where the
+ * reader already chose them (`tipScripts[id] !== openedScripts[id]`).
+ * `tipScripts` may be keyed by collapsed id, repo path, or pre-collapse id.
+ * Does not write git.
+ */
+export function baselineScriptsKeepingTip(parts, wcScripts, tipScripts, opts = {}) {
+  const options = Array.isArray(opts) ? { pairs: opts } : (opts || {});
+  const pairs = options.pairs || [];
+  const openedScripts = options.openedScripts;
+  const fromByTo = new Map();
+  for (const { from, to } of pairs) {
+    if (from && to && from !== to) fromByTo.set(to, from);
+  }
+  const uuidMap = uuidToSurfMap(pairs);
   const out = { ...(wcScripts || {}) };
   for (const part of parts || []) {
     if (!part?.id || part.missing === true) continue;
     const wc = out[part.id];
     if (typeof wc !== 'string') continue;
-    if (restrictToUuidStudyRemap && !uuidTargets.has(part.id)) continue;
+    if (openedScripts && typeof openedScripts === 'object') {
+      const readerBase = tipScripts?.[part.id];
+      const readerWc = openedScripts[part.id];
+      if (typeof readerBase === 'string' && typeof readerWc === 'string' && readerBase !== readerWc) {
+        out[part.id] = readerBase;
+      }
+      continue;
+    }
     const tip = tipScriptForPart(part, tipScripts, fromByTo);
-    if (typeof tip === 'string' && tip !== wc) out[part.id] = tip;
+    if (typeof tip !== 'string' || tip === wc) continue;
+    if (!uuidMap.size || rewriteFeaStudyPartIds(tip, uuidMap) === tip) continue;
+    out[part.id] = tip;
   }
   return out;
 }
