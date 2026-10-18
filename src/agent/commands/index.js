@@ -171,6 +171,7 @@ import {
 } from './xsection.js';
 import { cadSelectAllCommand } from './cadSelectAll.js';
 import { sketchDeleteEntityCommand } from './sketchDeleteEntity.js';
+import { agentPromptCommand } from './agentPrompt.js';
 
 const HELPER_COMMANDS = buildHelperPaletteCommands();
 
@@ -189,6 +190,7 @@ const HELPER_COMMANDS = buildHelperPaletteCommands();
  * H13 measure and paint follow H14.
  * FEA study bridge and H16 export (STL/3MF/STEP) follow H13.
  * Cross-section view, editor select-all, and sketch entity delete follow FEA.
+ * The in-viewer agent prompt follows those.
  */
 export const V1_COMMANDS = Object.freeze([
   getScriptCommand,
@@ -314,6 +316,7 @@ export const V1_COMMANDS = Object.freeze([
   crossSectionStateCommand,
   cadSelectAllCommand,
   sketchDeleteEntityCommand,
+  agentPromptCommand,
   feaOpenCommand,
   feaCloseCommand,
   feaSetMaterialCommand,

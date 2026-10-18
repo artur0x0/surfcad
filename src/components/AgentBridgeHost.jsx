@@ -5,6 +5,7 @@ import AgentBridgePairing from './AgentBridgePairing';
 
 const AgentBridgeHostContext = createContext({
   link: null,
+  paired: false,
   offerSlot: () => {},
   registerCloseMenu: () => () => {},
 });
@@ -20,6 +21,7 @@ export function useAgentBridgeHost() {
 
 export default function AgentBridgeHost({ enabled = false, children }) {
   const [link, setLink] = useState(null);
+  const [paired, setPaired] = useState(false);
   const [slot, setSlot] = useState(null);
   const closeMenusRef = useRef(null);
   if (closeMenusRef.current == null) closeMenusRef.current = createCloseMenuRegistry();
@@ -30,9 +32,13 @@ export default function AgentBridgeHost({ enabled = false, children }) {
   const closeProfileMenu = useCallback(() => {
     closeMenusRef.current.closeAll();
   }, []);
+  const onPairingChange = useCallback(({ paired: nextPaired, link: nextLink } = {}) => {
+    setPaired(nextPaired === true);
+    if (nextLink !== undefined) setLink(nextLink);
+  }, []);
   const value = useMemo(
-    () => ({ link, offerSlot, registerCloseMenu }),
-    [link, offerSlot, registerCloseMenu],
+    () => ({ link, paired, offerSlot, registerCloseMenu }),
+    [link, paired, offerSlot, registerCloseMenu],
   );
   const mount = shouldKeepAgentBridgeHostMounted({ agentBridgeLive: enabled });
 
@@ -44,6 +50,7 @@ export default function AgentBridgeHost({ enabled = false, children }) {
           embedded
           uiTarget={slot}
           onConnectionChange={setLink}
+          onPairingChange={onPairingChange}
           onBeginFlow={closeProfileMenu}
         />
       ) : null}

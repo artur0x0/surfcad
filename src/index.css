@@ -31,6 +31,25 @@
   --feature-strip-rail-gap: 0.625rem;
   --feature-strip-offset-desktop: 3.5rem; /* top-14 under the title row */
   --feature-strip-offset-mobile: 5rem; /* top-20 under the CAD header */
+  /* Floating agent prompt (PR 1). Dark values today; a future light theme
+     swaps these aliases without restructuring the card. */
+  --agent-prompt-fg: var(--chrome-text);
+  --agent-prompt-muted: var(--chrome-text-secondary);
+  --agent-prompt-border: var(--chrome-border);
+  --agent-prompt-surface: var(--chrome-surface);
+  --agent-prompt-success: var(--chrome-success);
+  --agent-prompt-success-hover: var(--chrome-success-hover);
+  --agent-prompt-radius: 16px;
+  --agent-prompt-pad: 6px;
+  --agent-prompt-btn: 36px;
+  --agent-prompt-line: 24px;
+  --agent-prompt-max-input: min(144px, 40vh);
+  --agent-prompt-max-reply: min(360px, 40vh);
+  --agent-prompt-max-reply-mobile: min(320px, 40vh);
+  --agent-prompt-desktop-bottom: 48px;
+  --agent-prompt-mobile-bottom: 56px;
+  --agent-prompt-desktop-width: min(640px, calc(100% - 12rem));
+  --agent-prompt-mobile-width: min(16rem, calc(100% - 9.5rem));
 }
 
 body {
@@ -307,6 +326,13 @@ textarea {
     outline: 2px solid rgb(var(--chrome-success-hover));
     outline-offset: 2px;
   }
+  /* Outline / icon success (Send, camera-on). Pair with a dark surface. */
+  .text-success {
+    color: rgb(var(--chrome-success));
+  }
+  .text-success:hover {
+    color: rgb(var(--chrome-success-hover));
+  }
   .surface-quiet {
     background-color: rgb(var(--chrome-border));
   }
@@ -402,6 +428,140 @@ textarea {
   .surface-scrim {
     --surface-blur: 4px;
     background-color: rgb(0 0 0 / 0.45);
+  }
+
+  /* Floating agent prompt — mode-chip slot, between the rails. Dark surface. */
+  .agent-prompt {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    bottom: var(--agent-prompt-desktop-bottom);
+    width: var(--agent-prompt-desktop-width);
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--agent-prompt-radius);
+    overflow: hidden;
+    border: 1px solid rgb(var(--agent-prompt-border));
+    color: rgb(var(--agent-prompt-fg));
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.25), 0 4px 6px -4px rgb(0 0 0 / 0.2);
+    pointer-events: auto;
+  }
+  .agent-prompt--compact {
+    bottom: var(--agent-prompt-mobile-bottom);
+    width: var(--agent-prompt-mobile-width);
+  }
+  .agent-prompt-reply {
+    position: relative;
+    padding: 12px 14px;
+    max-height: var(--agent-prompt-max-reply);
+    overflow-y: auto;
+    border-bottom: 1px solid rgb(var(--agent-prompt-border));
+    scrollbar-width: thin;
+  }
+  .agent-prompt--compact .agent-prompt-reply {
+    max-height: var(--agent-prompt-max-reply-mobile);
+    padding: 10px 12px;
+  }
+  .agent-prompt-cap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .agent-prompt-reply-body {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 20px;
+  }
+  .agent-prompt-working,
+  .agent-prompt-ack,
+  .agent-prompt-shot-cue {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-bottom: 1px solid rgb(var(--agent-prompt-border));
+  }
+  .agent-prompt-ack {
+    margin: 0;
+  }
+  .agent-prompt-thumb {
+    width: 28px;
+    height: 20px;
+    border-radius: 4px;
+    object-fit: cover;
+    border: 1px solid rgb(var(--agent-prompt-border));
+    flex: none;
+  }
+  .agent-prompt-thumb--empty {
+    background-color: rgb(var(--agent-prompt-border) / 0.55);
+  }
+  .agent-prompt-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    padding: var(--agent-prompt-pad);
+  }
+  .agent-prompt-input {
+    box-sizing: border-box;
+    min-height: 36px;
+    flex: 1;
+    min-width: 0;
+    resize: none;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: rgb(var(--agent-prompt-fg));
+    font-size: 16px;
+    line-height: var(--agent-prompt-line);
+    padding: 6px 8px;
+    max-height: var(--agent-prompt-max-input);
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  .agent-prompt-input::placeholder {
+    color: rgb(var(--agent-prompt-muted));
+  }
+  .agent-prompt-counter {
+    flex: none;
+    padding-bottom: 8px;
+  }
+  .agent-prompt-icon-btn {
+    flex: none;
+    width: var(--agent-prompt-btn);
+    height: var(--agent-prompt-btn);
+    border: 0;
+    background: transparent;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+  }
+  .agent-prompt-send {
+    flex: none;
+    width: var(--agent-prompt-btn);
+    height: var(--agent-prompt-btn);
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: rgb(var(--agent-prompt-success));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .agent-prompt-send:hover:not(:disabled) {
+    color: rgb(var(--agent-prompt-success-hover));
+  }
+  .agent-prompt-send:disabled {
+    opacity: 0.4;
+  }
+}
+
+@media (max-width: 768px) {
+  .agent-prompt:not(.agent-prompt--compact) {
+    bottom: var(--agent-prompt-mobile-bottom);
+    width: var(--agent-prompt-mobile-width);
   }
 }
 

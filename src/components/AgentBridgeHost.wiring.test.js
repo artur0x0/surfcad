@@ -90,6 +90,13 @@ test('resizing across 768px keeps the same socket and tabKey', () => {
   if (afterResize !== session) afterResize.conn.disconnect();
 });
 
+test('host publishes paired so the floating prompt matches Disconnect', () => {
+  assert.match(SRC, /const \[paired, setPaired\] = useState\(false\)/);
+  assert.match(SRC, /onPairingChange=\{onPairingChange\}/);
+  assert.match(SRC, /\{ link, paired, offerSlot, registerCloseMenu \}/);
+  assert.match(SRC, /setPaired\(nextPaired === true\)/);
+});
+
 test('ProfileChip offers the panel slot and does not own the socket', () => {
   assert.match(CHIP, /useAgentBridgeHost\(\)/);
   assert.match(CHIP, /offerSlot\(agentBridgeSlot\)/);

@@ -601,6 +601,7 @@ export function createSurfcadBridge(hostSource) {
     crossSectionOffset: (args) => hostFn('crossSectionOffset')?.(args),
     crossSectionState: () => hostFn('crossSectionState')?.(),
     cadSelectAll: () => hostFn('cadSelectAll')?.(),
+    agentPrompt: (args) => hostFn('agentPrompt')?.(args),
     sketchDeleteEntity: (args) => hostFn('sketchDeleteEntity')?.(args),
     feaOpen: () => hostFn('feaOpen')?.(),
     feaClose: () => hostFn('feaClose')?.(),

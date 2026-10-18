@@ -12,6 +12,11 @@ const CSS = readFileSync(join(dir, '../index.css'), 'utf8');
 const CHIP = readFileSync(join(dir, 'ProfileChip.jsx'), 'utf8');
 const TAB = readFileSync(join(dir, '../agent/ws/tabConnection.js'), 'utf8');
 
+test('pairing reports paired plus link so the in-viewer prompt can show', () => {
+  assert.match(SRC, /onPairingChange = null/);
+  assert.match(SRC, /onPairingChange\?\.\(\{ paired: state === 'paired', link \}\)/);
+});
+
 test('Connect Agent opens a body-portal dialog and closes the profile menu', () => {
   assert.match(SRC, /onBeginFlow\?\.\(\)/);
   assert.match(SRC, /<AgentBridgePairingDialog/);
