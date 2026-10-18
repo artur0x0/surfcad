@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The loopback probe uses only the WebSocket handshake (no HTTP GET to 127.0.0.1, which prod CSP `connect-src` blocks). A policy close 1008 / `origin_blocked` is origin rejection; timeouts and close 1006 stay `issue: null` so polling continues. A disallowed Origin completes the upgrade and closes with that policy code instead of HTTP 403, so the browser can tell it apart from a missing relay.
+
 ## 0.2.1 — 2026-10-17
 
 - Safari (macOS) can pair. The relay serves a small **SurfCAD local agent bridge** page at `http://127.0.0.1:17341/bridge`; SurfCAD opens it as a pop-up from **Connect Agent** and passes relay traffic through it, because Safari blocks `ws://127.0.0.1` from https pages. The page only talks to allowlisted SurfCAD origins, needs a per-session nonce, cannot be framed, and answers only for a loopback `Host`. If the relay is not running yet, the window keeps retrying (every few seconds, no time limit) and connects once `npx surfcad-mcp` starts. Tab reconnects reuse that same window — they do not open a new one. Closing the window stays **Disconnected** until **Reconnect** (a timer must not reopen it). Pairing still needs **Allow connection** in SurfCAD. Safari on iPhone and iPad is still not supported.

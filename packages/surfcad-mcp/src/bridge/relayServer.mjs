@@ -149,8 +149,12 @@ export function startAgentBridgeRelay(options = {}) {
     }
     const origin = req.headers.origin;
     if (origin && !isAllowedHttpOrigin(origin)) {
-      socket.write('HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nOrigin not allowed\r\n');
-      socket.destroy();
+      // Complete the handshake and policy-close so the browser probe can
+      // read close 1008 / reason origin_blocked. A raw HTTP 403 never
+      // becomes a WebSocket (browsers report 1006, same as ECONNREFUSED).
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        ws.close(1008, 'origin_blocked');
+      });
       return;
     }
     wss.handleUpgrade(req, socket, head, (ws) => {

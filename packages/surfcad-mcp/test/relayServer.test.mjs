@@ -42,16 +42,21 @@ test('ensureAgentBridgeRelay reuses an existing listener', async () => {
   resetAgentBridgeRelayCache(port);
 });
 
-test('origin allowlist rejects disallowed browser origins on upgrade', async () => {
+test('origin allowlist rejects disallowed browser origins with a policy close', async () => {
   const relay = await startAgentBridgeRelay({ port: 0 });
   const port = relay.server.address().port;
   const url = `ws://127.0.0.1:${port}`;
 
   const ws = new WebSocket(url, { headers: { Origin: 'https://evil.example' } });
-  await new Promise((resolve, reject) => {
-    ws.once('error', resolve);
-    ws.once('open', () => reject(new Error('disallowed origin should not connect')));
+  const closed = await new Promise((resolve, reject) => {
+    ws.once('close', (code, reason) => {
+      resolve({ code, reason: String(reason || '') });
+    });
+    ws.once('error', () => { /* Node may emit error around a policy close */ });
+    setTimeout(() => reject(new Error('timed out waiting for origin policy close')), 2000);
   });
+  assert.equal(closed.code, 1008);
+  assert.equal(closed.reason, 'origin_blocked');
 
   await closeRelay(relay);
 });
@@ -142,10 +147,15 @@ test('the bridge page origin may open the relay socket; evil origins still may n
   });
   ok.close();
   const evil = new WebSocket(url, { headers: { Origin: 'https://surfcad.com.evil.example' } });
-  await new Promise((resolve, reject) => {
-    evil.once('error', resolve);
-    evil.once('open', () => reject(new Error('evil origin connected')));
+  const evilClosed = await new Promise((resolve, reject) => {
+    evil.once('close', (code, reason) => {
+      resolve({ code, reason: String(reason || '') });
+    });
+    evil.once('error', () => { /* Node may emit error around a policy close */ });
+    setTimeout(() => reject(new Error('evil origin was not policy-closed')), 2000);
   });
+  assert.equal(evilClosed.code, 1008);
+  assert.equal(evilClosed.reason, 'origin_blocked');
   await closeRelay(relay);
 });
 
