@@ -1,4 +1,6 @@
 // serverApp.js — loaded after instrument.js so express/http patch before import.
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -38,7 +40,7 @@ try {
   console.warn('[Server] systemPrompt.js missing — using stub');
 }
 
-const app = express();
+export const app = express();
 const sentryEnabled = isSentryEnabled();
 
 // ============ Trust Proxy for Auth Redirects ===============
@@ -133,7 +135,7 @@ app.use((err, req, res, next) => {
 // ============ Start Server ============
 const PORT = config.port;
 
-async function startServer() {
+export async function startServer() {
   try {
     // Connect to MongoDB
     await connectDB();
@@ -149,4 +151,7 @@ async function startServer() {
   }
 }
 
-startServer();
+const isDirectRun = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isDirectRun) {
+  startServer();
+}
