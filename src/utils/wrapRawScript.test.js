@@ -6,6 +6,7 @@ import { parseFeatureMarkers } from './featureMarkers.js';
 import { featureStripChips } from './sheetMetal/sheetRibbon.js';
 import { buildDirtyState } from '../agent/state/dirty.js';
 import { editedPartIdsSinceSnapshot, snapshotPartScripts } from '../agent/state/editedSinceLoad.js';
+import { adoptSavedScript, historyForPart } from './partHistory.js';
 import { buildFeatureTree } from '../agent/state/featureTree.js';
 import { runScript } from '../lib/surfcad/index.js';
 import { createMockGithubAdapter } from './git/mockGithubAdapter.js';
@@ -289,6 +290,44 @@ test('Save of edited part A does not wrap or rewrite untouched unmarked part B',
   assert.equal(head.sha, committed.sha);
 });
 
+test('wrap-on-Save adopts wrapped text as undo head and leaves dirty clean', () => {
+  const wrapped = wrapRawScript(RAW);
+  assert.notEqual(wrapped, RAW);
+  const unwrappedHistory = historyForPart({}, 'p', RAW);
+  const liveAfterSave = wrapped;
+  assert.equal(liveAfterSave !== unwrappedHistory.commits[unwrappedHistory.head].code, true);
+
+  const adopted = adoptSavedScript(unwrappedHistory, wrapped);
+  assert.equal(adopted.commits[adopted.head].code, wrapped);
+  const undoStackDirty = liveAfterSave !== adopted.commits[adopted.head].code;
+  assert.equal(undoStackDirty, false);
+
+  const snapStale = snapshotPartScripts({ p: RAW });
+  assert.deepEqual(
+    editedPartIdsSinceSnapshot(snapStale, { p: wrapped }, { liveId: 'p', liveScript: wrapped }),
+    ['p'],
+  );
+  const snapSaved = snapshotPartScripts({ p: wrapped }, { liveId: 'p', liveScript: wrapped });
+  assert.deepEqual(
+    editedPartIdsSinceSnapshot(snapSaved, { p: wrapped }, { liveId: 'p', liveScript: wrapped }),
+    [],
+  );
+
+  const dirty = buildDirtyState({
+    editedSinceLoad: [],
+    undoStackDirty,
+    workspaceDirty: false,
+  });
+  assert.equal(dirty.unsaved, false);
+  assert.equal(dirty.workspaceDirty, false);
+  assert.equal(dirty.undoStackDirty, undefined);
+
+  const markedHistory = historyForPart({}, 'p', wrapped);
+  const markedAdopt = adoptSavedScript(markedHistory, wrapped);
+  assert.equal(markedAdopt.head, markedHistory.head);
+  assert.equal(markedAdopt.commits[markedAdopt.head].code, wrapped);
+});
+
 test('App wraps on set/paste/save and never on open', () => {
   const finish = APP.slice(
     APP.indexOf('const finishOpenedPart ='),
@@ -305,6 +344,12 @@ test('App wraps on set/paste/save and never on open', () => {
   const save = APP.slice(APP.indexOf('const handleGitCommit'), APP.indexOf('const absorbOverwriteFiles'));
   assert.match(save, /wrapUnmarkedPartScripts\(scriptsBeforeWrap, wrapIds\)/);
   assert.match(save, /dirtyPartIds\(placed\.doc, scriptsBeforeWrap, baseline/);
+  const apply = APP.slice(
+    APP.indexOf('const applyCommittedWorkspace'),
+    APP.indexOf('const handleToggleSource'),
+  );
+  assert.match(apply, /adoptSavedScript/);
+  assert.match(finish, /captureAgentScriptSnapshot\(\)/);
   assert.match(APP, /async agentGitSave\(\{ message \}\) \{[\s\S]*?return handleGitCommit\(draft\);/);
   assert.doesNotMatch(APP, /wrapPending/);
   assert.equal([...APP.matchAll(/wrapRawScript\(/g)].length, 2);

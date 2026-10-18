@@ -157,7 +157,9 @@ export function showAddToRepo(part) {
   if (!part) return false;
   if (part.isSynced === true) return false;
   if (part.isSynced === false) return true;
-  return !isRepoPartRow(part.id);
+  // Stable part ids are not repo paths. Prefer `path` (same as partRepoPath).
+  const path = typeof part.path === 'string' && part.path.trim() ? part.path : part.id;
+  return !isRepoPartRow(path);
 }
 
 /**

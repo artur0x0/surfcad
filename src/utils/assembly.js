@@ -875,6 +875,7 @@ export function feedRows(doc, runs, scripts) {
     const error = !missing && !!run && run.ok === false && !run.empty && !run.skipped;
     return {
       id: part.id,
+      path: typeof part.path === 'string' ? part.path : null,
       name: part.name,
       visible: part.visible !== false,
       order: part.order,

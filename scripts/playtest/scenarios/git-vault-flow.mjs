@@ -1,10 +1,66 @@
 /** Mock vault: move to repo, save, branch create/switch, confirm gate.
  * Uses the in-memory mock GitHub adapter only (no token, no real repo). */
-import { agentCall } from '../lib/harness.mjs';
+import { agentCall, waitForBridge } from '../lib/harness.mjs';
 import { createStepRunner } from '../lib/stepRunner.mjs';
 
 const USER_ID = 'user-playtest-git-h12';
 const VAULT = 'playtest-git-h12-vault';
+
+async function readGitBadge(page) {
+  return page.evaluate(() => {
+    /* eslint-disable no-undef */
+    const save = document.querySelector('[data-git-save]');
+    const partDirty = [...document.querySelectorAll('[data-part-row][data-part-dirty="true"]')]
+      .map((el) => el.getAttribute('data-part-row') || '')
+      .filter(Boolean);
+    return {
+      gitDirty: save?.getAttribute('data-git-dirty') || null,
+      hasBadge: !!document.querySelector('[data-git-dirty-badge]'),
+      partDirty,
+    };
+    /* eslint-enable no-undef */
+  });
+}
+
+function gitCleanDetail(dirty, badge) {
+  const result = dirty?.result || {};
+  return [
+    `workspaceDirty=${result.workspaceDirty}`,
+    `assemblyDirty=${result.assemblyDirty}`,
+    `unsaved=${result.unsaved}`,
+    `partIds=${JSON.stringify(result.partIds || [])}`,
+    `gitDirty=${badge.gitDirty}`,
+    `hasBadge=${badge.hasBadge}`,
+    `partDirty=${JSON.stringify(badge.partDirty)}`,
+  ].join(' ');
+}
+
+function isGitClean(dirty, badge) {
+  const result = dirty?.result || {};
+  return dirty?.ok === true
+    && result.workspaceDirty !== true
+    && result.assemblyDirty !== true
+    && result.unsaved !== true
+    && (result.partIds || []).length === 0
+    && badge.gitDirty === 'false'
+    && badge.hasBadge === false
+    && badge.partDirty.length === 0;
+}
+
+async function waitForGitClean(page, timeoutMs = 20000) {
+  const started = Date.now();
+  let dirty = { ok: false };
+  let badge = { gitDirty: null, hasBadge: true, partDirty: ['?'] };
+  while (Date.now() - started < timeoutMs) {
+    dirty = await agentCall(page, 'dirty', {});
+    badge = await readGitBadge(page);
+    if (isGitClean(dirty, badge)) {
+      return { ok: true, dirty, detail: gitCleanDetail(dirty, badge) };
+    }
+    await new Promise((resolve) => { setTimeout(resolve, 200); });
+  }
+  return { ok: false, dirty, detail: gitCleanDetail(dirty, badge) };
+}
 
 export const id = 'git-vault-flow';
 export const title = 'Git vault save and branches (mock adapter)';
@@ -72,6 +128,115 @@ export async function run(ctx) {
         || env.result?.status === 'queued'
         || env.result?.status === 'clean');
     return { ok, call: 'git_save', args: { message: 'playtest agent save' }, envelope: env };
+  });
+
+  await runner.runStep('create_part for reload switch', async () => {
+    const env = await agentCall(page, 'create_part', { name: 'Lid' });
+    const parts = await agentCall(page, 'parts', {});
+    const n = parts.result?.parts?.length ?? 0;
+    return {
+      ok: env.ok === true && n >= 2,
+      call: 'create_part',
+      args: { name: 'Lid' },
+      envelope: env,
+      detail: `parts=${n}`,
+    };
+  });
+
+  await runner.runStep('git_save after second part', async () => {
+    const env = await agentCall(page, 'git_save', { message: 'playtest add lid' });
+    const ok = env.ok === true
+      && (env.result?.status === 'committed'
+        || env.result?.status === 'queued'
+        || env.result?.status === 'clean');
+    return { ok, call: 'git_save', args: { message: 'playtest add lid' }, envelope: env };
+  });
+
+  await runner.runStep('clean after save', async () => {
+    const snap = await waitForGitClean(page);
+    return {
+      ok: snap.ok,
+      call: 'dirty',
+      args: {},
+      envelope: snap.dirty,
+      detail: snap.detail,
+    };
+  });
+
+  await runner.runStep('reload stays clean', async () => {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForBridge(page);
+    const started = Date.now();
+    let n = 0;
+    while (Date.now() - started < 20000) {
+      const parts = await agentCall(page, 'parts', {});
+      n = parts.result?.parts?.length ?? 0;
+      if (n >= 2) break;
+      await new Promise((resolve) => { setTimeout(resolve, 200); });
+    }
+    const snap = await waitForGitClean(page);
+    return {
+      ok: n >= 2 && snap.ok,
+      call: 'dirty',
+      args: {},
+      envelope: snap.dirty,
+      detail: `parts=${n} ${snap.detail}`,
+    };
+  });
+
+  await runner.runStep('switch part still clean', async () => {
+    const parts = await agentCall(page, 'parts', {});
+    const rows = parts.result?.parts || [];
+    const active = parts.result?.activeId;
+    const other = rows.find((row) => row.id && row.id !== active) || rows[1];
+    const switched = other?.id
+      ? await agentCall(page, 'set_active_part', { part_id: other.id })
+      : { ok: false };
+    const snap = await waitForGitClean(page);
+    return {
+      ok: switched.ok === true && snap.ok,
+      call: 'set_active_part',
+      args: { part_id: other?.id },
+      envelope: snap.dirty,
+      detail: snap.detail,
+    };
+  });
+
+  await runner.runStep('real edit dirties after reload', async () => {
+    const cur = await agentCall(page, 'get_script', {});
+    const next = `${cur.result?.source || ''}// dirty-check\n`;
+    const set = await agentCall(page, 'set_script', { source: next });
+    const dirty = await agentCall(page, 'dirty', {});
+    const badge = await readGitBadge(page);
+    const ok = set.ok === true
+      && dirty.result?.workspaceDirty === true
+      && badge.gitDirty === 'true';
+    return {
+      ok,
+      call: 'set_script',
+      args: {},
+      envelope: dirty,
+      detail: `workspaceDirty=${dirty.result?.workspaceDirty} gitDirty=${badge.gitDirty}`,
+    };
+  });
+
+  await runner.runStep('git_save after dirty-check edit', async () => {
+    const env = await agentCall(page, 'git_save', { message: 'playtest dirty-check' });
+    const ok = env.ok === true
+      && (env.result?.status === 'committed'
+        || env.result?.status === 'queued'
+        || env.result?.status === 'clean');
+    if (!ok) {
+      return { ok, call: 'git_save', args: { message: 'playtest dirty-check' }, envelope: env };
+    }
+    const snap = await waitForGitClean(page);
+    return {
+      ok: snap.ok,
+      call: 'git_save',
+      args: { message: 'playtest dirty-check' },
+      envelope: env,
+      detail: snap.detail,
+    };
   });
 
   await runner.runStep('git_branch_create switches when clean', async () => {

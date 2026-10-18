@@ -108,15 +108,50 @@ export function captureBaseline({
   };
 }
 
-/** True when the assembly document (rows / order / name / active) changed. */
+function assemblyTextIgnoringActive(text) {
+  const obj = JSON.parse(text);
+  obj.activeId = null;
+  return JSON.stringify(obj);
+}
+
+/**
+ * True when rows / order / name / joints / colors changed.
+ * Which part is open (`activeId` in `.surf.json`) is view state — switching
+ * parts after a clean reload must not badge the assembly.
+ */
 export function isAssemblyDirty(doc, baseline) {
   if (!baseline) return false;
   try {
     const text = stringifySurfJson({ ...doc, source: 'git' });
-    return text !== baseline.assemblyText;
+    if (text === baseline.assemblyText) return false;
+    return assemblyTextIgnoringActive(text) !== assemblyTextIgnoringActive(baseline.assemblyText);
   } catch {
     return true;
   }
+}
+
+/**
+ * Live editor text folded into git dirty checks.
+ *
+ * App's `currentScript` starts as `''`. After reload, part history already
+ * has the boot script, so Monaco's seed skips `onExecute` and never replaces
+ * that empty string. Passing it as `liveScript` marks the active part dirty
+ * even when the editor buffer matches git. Only fold the live buffer in after
+ * the editor has reported a real one.
+ */
+export function gitDirtyLiveScript({
+  source = null,
+  activeId = null,
+  highlightId = null,
+  editorLive = false,
+  script = null,
+} = {}) {
+  if (source !== 'git') return null;
+  if (editorLive !== true) return null;
+  if (activeId == null || highlightId == null) return null;
+  if (String(activeId) !== String(highlightId)) return null;
+  if (typeof script !== 'string') return null;
+  return script;
 }
 
 /** True when one part's script differs from the baseline (missing = dirty). */
