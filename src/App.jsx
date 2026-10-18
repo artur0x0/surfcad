@@ -5622,6 +5622,19 @@ const App = () => {
           if (collapsed.pairs.length) rekeyRuntime(collapsed.pairs);
           persistPairs.push(...collapsed.pairs);
         }
+        await retireImplicitVaultWriteOps(store, vault.repo, branch);
+        if (cancelled) return;
+        // Baseline first so a user edit after reload is dirty even if IDB
+        // persist is still in flight. Load/reload still do not write git.
+        if (!gitBaselineRef.current) {
+          if (!store.getLastSyncedSha(vault.repo, branch) && opened.baseline?.headSha) {
+            await store.setLastSyncedSha(vault.repo, opened.baseline.headSha, branch);
+          }
+          rememberGitBaseline(opened.baseline);
+          gitVaultRef.current = { ...vault, headSha: opened.baseline?.headSha };
+          void checkGitRemoteBehind({ showToast: true, reason: 'reseed' });
+        }
+        if (cancelled) return;
         if (migrated.changed || localIds.changed || collapsed.changed || aligned.pairs.length) {
           const persisted = await persistCollapsedWorkingCopy({
             collapsed: { doc, scripts: scriptsNow, pairs: persistPairs },
@@ -5633,7 +5646,14 @@ const App = () => {
             },
           });
           doc = persisted.doc;
-          scriptsNow = persisted.scripts;
+          const live = partScriptsRef.current || {};
+          const merged = { ...(persisted.scripts || {}) };
+          for (const [id, text] of Object.entries(live)) {
+            if (typeof text !== 'string') continue;
+            if (persistSource.scripts?.[id] === text) continue;
+            merged[id] = text;
+          }
+          scriptsNow = merged;
           rememberScripts(scriptsNow);
         }
         const reconciled = reconcileSyncedFromTip(doc, opened.scripts);
@@ -5646,14 +5666,6 @@ const App = () => {
             if (typeof text === 'string') savePartScript(part.id, text, { isSynced: true });
           }
         }
-        await retireImplicitVaultWriteOps(store, vault.repo, branch);
-        if (cancelled || gitBaselineRef.current) return;
-        if (!store.getLastSyncedSha(vault.repo, branch) && opened.baseline?.headSha) {
-          await store.setLastSyncedSha(vault.repo, opened.baseline.headSha, branch);
-        }
-        rememberGitBaseline(opened.baseline);
-        gitVaultRef.current = { ...vault, headSha: opened.baseline?.headSha };
-        void checkGitRemoteBehind({ showToast: true, reason: 'reseed' });
       } catch (err) {
         // Missing assembly on tip → stay without baseline (local: chrome / first commit).
         console.warn('[git] baseline reseed skipped', err?.message || err);

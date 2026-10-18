@@ -147,14 +147,28 @@ export async function persistCollapsedWorkingCopy({
 } = {}) {
   const pairs = collapsed?.pairs || [];
   const nextScripts = { ...(collapsed?.scripts || {}) };
+  const putScripts = {};
+  const already = new Set();
+  for (const [id, script] of Object.entries(nextScripts)) {
+    if (typeof script !== 'string') continue;
+    if (sourceScripts && sourceScripts[id] === script) {
+      already.add(id);
+      continue;
+    }
+    putScripts[id] = script;
+  }
+  for (const { from, to } of pairs) {
+    if (!to || from === to) continue;
+    if (typeof nextScripts[to] === 'string') putScripts[to] = nextScripts[to];
+  }
   const persisted = await replaceScriptKeys({
-    nextScripts,
+    nextScripts: putScripts,
     staleIds: pairs.map((pair) => pair.from),
     pairs,
     save,
     remove,
   });
-  const saved = persisted?.saved || new Set();
+  const saved = new Set([...(persisted?.saved || []), ...already]);
   const failedFrom = new Set();
   for (const { from, to } of pairs) {
     if (!from || !to || from === to) continue;

@@ -626,6 +626,28 @@ test('IDB get failure leaves the old key and does not collapse the row', async (
   assert.equal(store.size, 1);
 });
 
+test('persist does not rewrite an unchanged key so a later edit is kept', async () => {
+  const store = new Map([[SURF, 'return keep-me;\n']]);
+  const doc = {
+    source: 'local',
+    name: 'Assembly',
+    activeId: SURF,
+    parts: [{ id: SURF, name: 'Part', visible: true, order: 0 }],
+  };
+  const scripts = { [SURF]: 'return keep-me;\n' };
+  const collapsed = collapseWorkingCopyIds(doc, scripts, { now: NOW, randFor: () => 'b10c' });
+  store.set(SURF, 'return edited;\n');
+  const persisted = await persistCollapsedWorkingCopy({
+    collapsed,
+    sourceDoc: doc,
+    sourceScripts: scripts,
+    save: async (id, script) => { store.set(id, script); return true; },
+    remove: async (id) => { store.delete(id); },
+  });
+  assert.equal(store.get(SURF), 'return edited;\n');
+  assert.equal(persisted.doc.parts[0].id, SURF);
+});
+
 test('IDB put failure keeps the old key and leaves the row un-collapsed', async () => {
   const store = new Map([[UUID, 'return keep-me;\n']]);
   const doc = {
