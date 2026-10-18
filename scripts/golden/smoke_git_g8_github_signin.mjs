@@ -107,7 +107,8 @@ console.log('\ngit G8 — establishGithubSession');
   eq('session sends access_token', body.access_token, 'tok_x');
   ok('session body keys are access_token plus optional consent',
     Object.keys(body).every((key) => key === 'access_token' || key === 'analyticsConsent'));
-  ok('session sends analyticsConsent boolean', typeof body.analyticsConsent === 'boolean');
+  ok('session omits or sends analyticsConsent boolean',
+    body.analyticsConsent === undefined || typeof body.analyticsConsent === 'boolean');
 }
 {
   const r = await establishGithubSession({ accessToken: '' });

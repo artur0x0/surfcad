@@ -44,4 +44,12 @@ describe('analyticsConsentAuth', () => {
     assert.match(url, /analyticsConsent=false/);
     assert.match(url, /returnTo=%2Fcad/);
   });
+
+  test('unknown stored choice omits analyticsConsent so the server can skip', () => {
+    configureConsentStorage(memoryStorage());
+    assert.equal(analyticsConsentField(), undefined);
+    assert.equal('analyticsConsent' in withAnalyticsConsent({ email: 'a@b.c' }), false);
+    assert.equal(oauthStartPath('google', '/cad'), '/api/auth/google?returnTo=%2Fcad');
+    assert.equal(oauthStartPath('apple'), '/api/auth/apple');
+  });
 });

@@ -149,7 +149,7 @@ Find your `_id` in MongoDB or from an admin session’s `/api/auth/me` response.
 - Internal traffic: `GET /api/auth/me` returns `user.isInternal` from `POSTHOG_INTERNAL_USERS` (server-side). The client also registers `is_internal: true` on localhost / Vite dev.
 - Web Vitals: one `web_vitals` event per page load (LCP, INP, CLS, FCP, TTFB) via the `web-vitals` package. CLS is the unrounded value (including `0`).
 - Product events: `track(name, props)` with an allowlisted name set; props must not include user content (part names, filenames, code).
-- Auth conversions: `signed_up` and `logged_in` are captured **server-side** (distinct id = SHA-256 of the user id). The client passes `analyticsConsent` on the auth request; unknown consent skips the events.
+- Auth conversions: `signed_up` and `logged_in` are captured **server-side** (distinct id = SHA-256 of the user id). The client passes `analyticsConsent` from `getAnalyticsConsent()` only when `hasStoredConsentChoice()` is true; unknown (no stored choice) omits the field and the server skips unless Mongo already has a choice.
 
 ### Explicit events (`track`)
 
