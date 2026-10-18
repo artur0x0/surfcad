@@ -11,8 +11,10 @@ a floating overlay inside the viewport, or a full-screen modal.
 |------|--------|------|
 | `/git/callback` | GitHub OAuth hand-off | `GitCallback.jsx` |
 | `/partners` | Become a partner form + thank-you | `src/pages/PartnersPage.jsx` (`data-partners-page`) |
+| `/privacy` | Privacy policy and Change privacy choices | `src/pages/PrivacyPage.jsx` (`data-privacy-page`) |
 
 `golden:partners-page` screenshots the form and thank-you state at 390 and 1280.
+`golden:privacy-consent` checks the first-visit popup at 1280 and 390: it appears with no stored choice, sits above the CAD toolbar / home pill, and **Accept all** hides it and persists. The privacy page always shows that Global Privacy Control is honored and **Change privacy choices** re-opens the same popup.
 
 Read this file to answer "where is X on screen?" and "which file do I edit?".
 For text, color, and popup chrome read [docs/ui_style_guide.md](./ui_style_guide.md).

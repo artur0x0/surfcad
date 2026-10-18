@@ -260,6 +260,7 @@ Gate acceptance still requires `test_real_worker.mjs` via `npm run verify` when 
 | `golden:polygon-sides` | `smoke_polygon_sides.mjs` |
 | `golden:polyline-entity` | `smoke_polyline_entity.mjs` |
 | `golden:polyline-points` | `smoke_polyline_point_drag.mjs` |
+| `golden:privacy-consent` | `smoke_privacy_consent.mjs` |
 | `golden:profile-chip` | `smoke_profile_chip.mjs` |
 | `golden:puzzle-unlock` | `smoke_puzzle_unlock.mjs` |
 | `golden:quote-then-add` | `smoke_quote_then_add.mjs` |

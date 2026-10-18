@@ -87,7 +87,7 @@ attachConsentPresetToBrowser(browser);
     }));
     await page.goto(APP_URL, { waitUntil: 'load', timeout: 45000 });
     await page.locator('[data-privacy-choices-link]').click();
-    await page.waitForSelector('[data-git-dialog="privacy-choices"]', { timeout: 10000 });
+    await page.waitForSelector('[data-privacy-consent-popup]', { timeout: 10000 });
     await page.screenshot({ path: join(SHOT_DIR, `privacy-choices-${label}-${width}.png`) });
     await page.close();
     console.log(`wrote ${join(SHOT_DIR, `privacy-choices-${label}-${width}.png`)}`);
