@@ -7,11 +7,11 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { buildDirtyState } from '../src/agent/state/dirty.js';
 import { editedPartIdsSinceSnapshot, snapshotPartScripts } from '../src/agent/state/editedSinceLoad.js';
-import { captureBaseline } from '../src/utils/git/gitBaseline.js';
-import { firstCommitBaseline } from '../src/utils/git/gitCommit.js';
-import { dirtyPartIds, isAssemblyDirty, isWorkspaceDirty } from '../src/utils/git/gitWorkspace.js';
+import { baselineAfterPartSave, firstCommitBaseline } from '../src/utils/git/gitCommit.js';
+import { dirtyPartIds, isAssemblyDirty, isPartDirty, isWorkspaceDirty } from '../src/utils/git/gitWorkspace.js';
 import { fileWrite } from '../src/utils/git/githubAdapterInterface.js';
-import { assemblyIdPath, partIdPath } from '../src/utils/git/idPaths.js';
+import { assemblyIdPath, parseIdPath, partIdPath } from '../src/utils/git/idPaths.js';
+import { partScriptMatchesCommitted, stampPartScript } from '../src/utils/git/planSave.js';
 import {
   executePlanSave,
   executePlanSaveConflictChoice,
@@ -122,19 +122,42 @@ async function gitSave(adapter, store, doc, scripts, {
   });
 }
 
+function committedPartScripts(files) {
+  const saved = {};
+  for (const file of files || []) {
+    if (!file || file.delete || typeof file.content !== 'string') continue;
+    const parsed = parseIdPath(file.path);
+    if (parsed?.kind === 'part') saved[parsed.id] = file.content;
+  }
+  return saved;
+}
+
 function adoptV2Save(result, { doc, scripts, snapshot, gitBaseline }) {
   if (result.status !== 'committed' && result.status !== 'branched') {
     return { snapshot, gitBaseline };
   }
+  const committed = committedPartScripts(result.files);
+  const nextSnap = { ...(snapshot || {}) };
+  for (const part of doc.parts || []) {
+    const liveText = scripts[part.id];
+    const committedText = committed[part.id];
+    if (typeof committedText !== 'string' || typeof liveText !== 'string') continue;
+    if (partScriptMatchesCommitted(liveText, committedText, part.id, part.name)) {
+      nextSnap[part.id] = liveText;
+    }
+  }
   return {
-    snapshot: snapshotPartScripts(scripts),
-    gitBaseline: captureBaseline({
+    snapshot: nextSnap,
+    gitBaseline: baselineAfterPartSave(gitBaseline, {
+      doc,
+      saved: committed,
       assemblyPath: assemblyIdPath(doc.id),
       assemblyName: doc.name,
-      doc,
-      scripts,
       branch: result.branch || gitBaseline?.branch || 'main',
       headSha: result.sha || gitBaseline?.headSha || null,
+      assemblyWritten: (result.files || []).some((file) => (
+        file?.path === assemblyIdPath(doc.id) && !file.delete
+      )),
     }),
   };
 }
@@ -283,13 +306,15 @@ test('adoptV2SaveResult recaptures snapshot after a committed or branched v2 sav
   const adopt = sliceFn('const adoptV2SaveResult', 'const handleV2PlanSave');
   assert.match(
     adopt,
-    /if \(result\.status === 'committed' \|\| result\.status === 'branched'\) \{[\s\S]*rememberGitBaseline\(captureBaseline\([\s\S]*captureAgentScriptSnapshot\(\)/,
+    /if \(result\.status === 'committed' \|\| result\.status === 'branched'\) \{[\s\S]*rememberGitBaseline\(baselineAfterPartSave\([\s\S]*partScriptMatchesCommitted\(/,
   );
-  assert.match(adopt, /scripts: savedScripts/);
+  assert.match(adopt, /saved: committed/);
+  assert.match(APP, /from '\.\/utils\/git\/planSave'/);
   assert.equal(/rememberGitBaseline\(\{[\s\S]*?headSha: result\.sha/.test(adopt), false);
   const beforeWrite = adopt.slice(0, adopt.indexOf("result.status === 'committed' || result.status === 'branched'"));
   assert.equal(/captureAgentScriptSnapshot/.test(beforeWrite), false);
   assert.equal(/rememberGitBaseline/.test(beforeWrite), false);
+  assert.equal(/captureAgentScriptSnapshot\(\)/.test(adopt), false);
 });
 
 test('first commit: edit, git_save, dirty.unsaved is false; a later edit is unsaved', async () => {
@@ -465,3 +490,47 @@ test('pending_save, refused, and failed saves leave dirty state unchanged', asyn
   });
   assert.deepEqual(dirtyMarks(afterFailed), dirtyMarks(failedCtx.before));
 });
+
+test('unstamped working copy matches Save-stamped committed baseline bytes', () => {
+  const original = 'return 1;\n';
+  const stamped = stampPartScript(original, PART, 'Bracket');
+  assert.notEqual(stamped, original);
+  assert.equal(partScriptMatchesCommitted(original, stamped, PART, 'Bracket'), true);
+  const doc = assemblyDoc([{ id: PART, name: 'Bracket', visible: true, order: 0 }]);
+  const baseline = baselineAfterPartSave(null, {
+    doc,
+    saved: { [PART]: stamped },
+    assemblyPath: assemblyIdPath(ASM),
+    assemblyName: 'Gearbox',
+    assemblyWritten: true,
+  });
+  assert.equal(isPartDirty(PART, original, baseline, { name: 'Bracket' }), false);
+  assert.equal([...dirtyPartIds(doc, { [PART]: original }, baseline)].length, 0);
+});
+
+test('an edit typed while Save is in flight keeps its dirty dot', async () => {
+  const ctx = await seededEdit();
+  const saved = await gitSave(ctx.adapter, ctx.store, ctx.doc, ctx.editedScripts, {
+    message: 'Save Gearbox v2',
+  });
+  assert.equal(saved.status, 'committed', saved.error);
+  const inFlight = { ...ctx.editedScripts, [PART]: 'return 10;\n' };
+  const adopted = adoptV2Save(saved, {
+    doc: ctx.doc,
+    scripts: inFlight,
+    snapshot: ctx.snapshot,
+    gitBaseline: ctx.gitBaseline,
+  });
+  const after = dirtyView({
+    doc: ctx.doc,
+    scripts: inFlight,
+    snapshot: adopted.snapshot,
+    gitBaseline: adopted.gitBaseline,
+  });
+  assert.equal(after.unsaved, true);
+  assert.deepEqual(after.chromePartIds, [PART]);
+  assert.equal(after.sourceDirty, true);
+  assert.ok(String(adopted.gitBaseline.scripts[PART] || '').startsWith('// @surf-id '));
+  assert.equal(inFlight[PART].startsWith('// @surf-id '), false);
+});
+
