@@ -75,6 +75,54 @@ function showsMessage(popup, message, ...blobs) {
 }
 
 /**
+ * Vertex count from the dev automation hooks. The playtest bundle leaves
+ * those hooks out, so a production preview returns 0 even when the solid
+ * is on screen.
+ */
+async function devMeshCount(page) {
+  return page.evaluate(() => {
+    const painted = window.__VIEWPORT__?._lastRenderedMesh;
+    return painted?.geometry?.attributes?.position?.count
+      || window.__MANIFOLD_CONTEXT__?.lastResult?.mesh?.vertProperties?.length
+      || 0;
+  });
+}
+
+/**
+ * Off-white body samples in a viewport screenshot. The playtest bundle has
+ * no `__VIEWPORT__` hook; the agent screenshot is the canvas after a render.
+ * The clear color is #1e1e1e, so a recovered cube shows up as low-chroma light pixels.
+ */
+async function partBodySamples(page) {
+  return page.evaluate(async () => {
+    const env = await window.surfcad.call('screenshot', '{}');
+    const dataUrl = env?.result?.dataUrl || '';
+    if (!dataUrl.startsWith('data:image/png')) return 0;
+    const img = document.createElement('img');
+    await new Promise((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('screenshot decode failed'));
+      img.src = dataUrl;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const data = ctx.getImageData(0, 0, img.width, img.height).data;
+    let samples = 0;
+    for (let i = 0; i < data.length; i += 16) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+      if (r + g + b > 360 && chroma < 40) samples += 1;
+    }
+    return samples;
+  });
+}
+
+/**
  * @param {{ page: import('playwright-core').Page, outDir: string, findings: string[] }} ctx
  */
 export async function run(ctx) {
@@ -165,27 +213,30 @@ export async function run(ctx) {
     const toasts = await agentCall(page, 'toasts', {});
     const popup = await page.locator('[data-execution-error]').innerText();
     const row = featureRow(errs);
-    const mesh = await page.evaluate(() => {
-      const painted = window.__VIEWPORT__?._lastRenderedMesh;
-      const count = painted?.geometry?.attributes?.position?.count
-        || window.__MANIFOLD_CONTEXT__?.lastResult?.mesh?.vertProperties?.length
-        || 0;
-      return count;
-    });
-    const ok = ran.result?.ok === false
-      && status.result?.runState === 'failed'
-      && row?.code === 'feature_failed'
-      && row?.featureType === 'fillet'
-      && !!row?.featureLabel
-      && mesh > 0
-      && showsMessage(popup, row.message, ran.result, errs.result, toasts.result);
-    if (!ok) findings.push(`partial failure mismatch popup=${JSON.stringify(popup)} row=${JSON.stringify(row)} mesh=${mesh}`);
+    const mesh = await devMeshCount(page);
+    const bodySamples = mesh > 0 ? null : await partBodySamples(page);
+    const solid = mesh > 0 || bodySamples >= 40;
+    const checks = {
+      resultOk: ran.result?.ok === false,
+      runState: status.result?.runState === 'failed',
+      code: row?.code === 'feature_failed',
+      featureType: row?.featureType === 'fillet',
+      featureLabel: !!row?.featureLabel,
+      solid,
+      message: showsMessage(popup, row?.message, ran.result, errs.result, toasts.result),
+    };
+    const ok = Object.values(checks).every(Boolean);
+    if (!ok) {
+      findings.push(`partial failure mismatch popup=${JSON.stringify(popup)} row=${JSON.stringify(row)} mesh=${mesh} bodySamples=${bodySamples}`);
+    }
     return {
       ok,
       call: 'set_script',
       args: { source: PARTIAL },
-      envelope: { ran, errs, status, toasts, popup, mesh },
-      detail: popup,
+      envelope: { ran, errs, status, toasts, popup, mesh, bodySamples },
+      detail: ok
+        ? `${row?.featureType} ${row?.featureLabel}`
+        : JSON.stringify({ checks, featureType: row?.featureType, featureLabel: row?.featureLabel, mesh, bodySamples, message: row?.message }),
     };
   });
 
