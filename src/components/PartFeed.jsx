@@ -7,6 +7,7 @@ import {
   filterVaultOpenIndex, filterVaultPartItems, groupVaultOpenPartRows, vaultOpenAssemblies, vaultOpenPartRows,
 } from '../utils/git/gitWorkspace.js';
 import { DEFAULT_VAULT_NAME } from '../utils/git/vault.js';
+import { NO_REPO_YET_COPY, SAVE_QUEUED_COPY } from '../utils/git/workingSidecar.js';
 import { layoutPartFeed } from '../utils/partGroups.js';
 import PartGroupBlock from './PartGroupBlock';
 import { PARTS_TEXT_INPUT_CLASS, PARTS_TEXT_INPUT_STYLE } from '../utils/partsChrome.js';
@@ -1240,8 +1241,8 @@ const PartFeed = forwardRef(function PartFeed({
     if (pendingDelete) cancelBtnRef.current?.focus();
   }, [pendingDelete]);
 
-  const askDeletePart = (partId, name) => {
-    setPendingDelete({ id: partId, name: name || 'this part', step: 'choose' });
+  const askDeletePart = (partId, name, path = null) => {
+    setPendingDelete({ id: partId, name: name || 'this part', path: path || null, step: 'choose' });
   };
 
   const cancelDeletePart = () => {
@@ -1252,7 +1253,7 @@ const PartFeed = forwardRef(function PartFeed({
   const confirmDeletePart = (choice = 'assembly') => {
     const pending = pendingDelete;
     if (!pending?.id) return;
-    if (choice === 'repo' && !partCanDeleteFromRepo(source, pending.id)) return;
+    if (choice === 'repo' && !partCanDeleteFromRepo(source, pending.id, pending.path)) return;
     const next = partDeleteChoice(pending.step, choice);
     if (next.step === 'confirm-repo') {
       setPendingDelete({ ...pending, step: 'confirm-repo' });
@@ -1396,7 +1397,7 @@ const PartFeed = forwardRef(function PartFeed({
           onKeyDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
-            askDeletePart(row.id, row.name);
+            askDeletePart(row.id, row.name, row.path);
           }}
         >
           <Trash2 size={16} />
@@ -2050,7 +2051,15 @@ const PartFeed = forwardRef(function PartFeed({
                 )}
                 {openPicker.loading && <p className="text-xs text-chrome-secondary" data-git-dialog-loading="">Loading…</p>}
                 {openPicker.error && !openPicker.loading && (
-                  <p className="text-xs text-amber-300" data-git-dialog-empty="">{openPicker.error}</p>
+                  <p
+                    className={openPicker.error === NO_REPO_YET_COPY
+                      ? 'font-ui text-ui-sm text-on-dark'
+                      : 'text-xs text-amber-300'}
+                    data-git-dialog-empty=""
+                    data-git-no-repo={openPicker.error === NO_REPO_YET_COPY ? '' : undefined}
+                  >
+                    {openPicker.error}
+                  </p>
                 )}
                 {openEmptyFilter && (
                   <p className="text-xs text-amber-300" data-git-open-search-empty="">No matches.</p>
@@ -2349,7 +2358,7 @@ const PartFeed = forwardRef(function PartFeed({
               {commitFlow.result?.status === 'clean'
                 ? 'Nothing to commit.'
                 : commitFlow.result?.status === 'queued'
-                  ? 'Saved locally. It will sync when you are back online.'
+                  ? SAVE_QUEUED_COPY
                   : commitFlow.result?.addedNames
                     ? `Added ${commitFlow.result.addedNames} to the repo.`
                     : `Committed ${(commitFlow.result?.files || []).length} file(s) to ${commitFlow.result?.branch || 'main'} (${String(commitFlow.result?.sha || '').slice(0, 7)}).`}
@@ -2692,7 +2701,15 @@ const PartFeed = forwardRef(function PartFeed({
                 <p className="text-xs text-chrome-secondary" data-git-branch-loading="">Loading…</p>
               )}
               {branchFlow.error && !branchFlow.loading && (
-                <p className="text-xs text-amber-300" data-git-branch-list-error="">{branchFlow.error}</p>
+                <p
+                  className={branchFlow.error === NO_REPO_YET_COPY
+                    ? 'font-ui text-ui-sm text-on-dark'
+                    : 'text-xs text-amber-300'}
+                  data-git-branch-list-error=""
+                  data-git-no-repo={branchFlow.error === NO_REPO_YET_COPY ? '' : undefined}
+                >
+                  {branchFlow.error}
+                </p>
               )}
               {!branchFlow.loading && (branchFlow.items || []).length > 0 && (
                 <ul className="max-h-56 space-y-1 overflow-y-auto" data-git-branch-dialog-list="">
@@ -2899,7 +2916,7 @@ const PartFeed = forwardRef(function PartFeed({
             {pendingDelete.step === 'confirm-repo' ? (
               <>
                 <p className="mt-2 text-xs text-gray-300" data-part-delete-repo-message="">
-                  {partRepoDeleteConfirmCopy(pendingDelete.id)}
+                  {partRepoDeleteConfirmCopy(pendingDelete.path || pendingDelete.id)}
                 </p>
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
                   <button
@@ -2924,7 +2941,7 @@ const PartFeed = forwardRef(function PartFeed({
             ) : (
               <>
                 <p className="mt-2 text-xs text-gray-300">
-                  {partCanDeleteFromRepo(source, pendingDelete.id)
+                  {partCanDeleteFromRepo(source, pendingDelete.id, pendingDelete.path)
                     ? `Remove ${pendingDelete.name} from this assembly only, or also delete its file from the repo.`
                     : `Remove ${pendingDelete.name} from this assembly?`}
                 </p>
@@ -2948,7 +2965,7 @@ const PartFeed = forwardRef(function PartFeed({
                     >
                       Delete from assembly
                     </button>
-                    {partCanDeleteFromRepo(source, pendingDelete.id) && (
+                    {partCanDeleteFromRepo(source, pendingDelete.id, pendingDelete.path) && (
                       <button
                         type="button"
                         data-part-delete-confirm-repo=""

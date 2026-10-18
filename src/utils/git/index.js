@@ -25,3 +25,4 @@ export * from './syncStore.js';
 export * from './syncWorker.js';
 export * from './gitAssemblyRename.js';
 export * from './meshSync.js';
+export * from './workingSidecar.js';

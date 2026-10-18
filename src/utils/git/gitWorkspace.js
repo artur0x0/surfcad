@@ -13,6 +13,7 @@ import {
   normalizeRepoPath,
   numberedName,
   sanitizeAssemblyName,
+  sanitizePartName,
   serializeAssembly,
 } from '../assembly.js';
 import { readMeshBytes } from './meshSync.js';
@@ -99,7 +100,7 @@ export function captureBaseline({
   return {
     assemblyPath: assemblyPath || assemblyFilePath(assemblyName || clean.name),
     assemblyName: vaultSegment(assemblyName || clean.name),
-    assemblyText: stringifySurfJson(clean),
+    assemblyText: stringifySurfJson(clean, { validate: false }),
     scripts: scriptMap,
     assets: baselineAssetMap(clean.parts, assets),
     partIds: clean.parts.map((p) => p.id),
@@ -122,7 +123,7 @@ function assemblyTextIgnoringActive(text) {
 export function isAssemblyDirty(doc, baseline) {
   if (!baseline) return false;
   try {
-    const text = stringifySurfJson({ ...doc, source: 'git' });
+    const text = stringifySurfJson({ ...doc, source: 'git' }, { validate: false });
     if (text === baseline.assemblyText) return false;
     return assemblyTextIgnoringActive(text) !== assemblyTextIgnoringActive(baseline.assemblyText);
   } catch {
@@ -632,29 +633,27 @@ export function planOpenVaultPart(doc, path, content, scripts = {}) {
 }
 
 /**
- * Copy an external (or any) part into this assembly's folder.
+ * Copy an external (or any) part into this assembly.
  * New surf id, `copiedFrom` records the source id, the reference repoints
- * at the new path. The source file is left in place. Colors stay keyed by
- * surf id on the assembly, so this new id starts uncolored. The old key is
- * dropped on save because that surf id left the document.
+ * at the new row. The repo path is assigned on Save (`ensureAssemblyVaultPaths`),
+ * not here. The source file is left in place. Colors stay keyed by surf id
+ * on the assembly, so this new id starts uncolored. The old key is dropped
+ * on save because that surf id left the document.
  * -> { fromPath, path, id, surfId, copiedFrom, content, name, isSynced }
  */
 export function planCopyToAssembly(doc, part, script, { now, rand } = {}) {
   const asm = vaultSegment(doc?.name);
   if (!asm) throw new Error('Empty assembly name');
-  const taken = new Set((doc?.parts || []).map((row) => row.id));
-  const path = allocateVaultPartPath(asm, part?.name || 'Part', [...taken], { layout: 'assembly-folder' });
-  if (!path) throw new Error('Could not allocate a part path');
   const surfId = mintSurfId({ now, rand });
   const sourceId = (part?.surfId && isSurfId(part.surfId))
     ? part.surfId
     : readSurfId(script);
   const content = withSurfId(stripSurfId(script || ''), surfId);
-  const name = path.split('/').pop().replace(/\.js$/i, '');
+  const name = sanitizePartName(part?.name || DEFAULT_PART_NAME) || DEFAULT_PART_NAME;
   return {
-    fromPath: part?.id,
-    path,
-    id: path,
+    fromPath: partRepoPath(part) || part?.id || null,
+    path: null,
+    id: surfId,
     surfId,
     copiedFrom: sourceId || null,
     content,

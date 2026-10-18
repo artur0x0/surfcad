@@ -121,13 +121,13 @@ console.log('\nrename with a cross-assembly reference survives reload');
   ok('old path is gone', !(await gh.readFile(repo, GB, 'main')));
   const gb = parseSurfJson((await gh.readFile(repo, assemblyFilePath('Gearbox'), 'main')).content);
   const cv = parseSurfJson((await gh.readFile(repo, assemblyFilePath('Cover'), 'main')).content);
-  eq('gearbox path moved, id kept', [gb.parts[0].id, gb.parts[0].surfId], [GB_NEXT, BRACKET_ID]);
+  eq('gearbox path moved, id kept', [gb.parts[0].path, gb.parts[0].id, gb.parts[0].surfId], [GB_NEXT, BRACKET_ID, BRACKET_ID]);
   const coverBracket = cv.parts.find((part) => part.surfId === BRACKET_ID);
-  eq('cover still references the same id at the new path', [coverBracket?.id, coverBracket?.surfId], [GB_NEXT, BRACKET_ID]);
+  eq('cover still references the same id at the new path', [coverBracket?.path, coverBracket?.id, coverBracket?.surfId], [GB_NEXT, BRACKET_ID, BRACKET_ID]);
   const reloaded = await openVaultAssembly(gh, repo, 'Cover', { branch: 'main', headSha: synced.sha });
   const again = reloaded.doc.parts.filter((part) => part.surfId === BRACKET_ID);
-  ok('reload does not fork the part', again.length === 1 && again[0].id === GB_NEXT);
-  ok('reloaded script keeps the id', readSurfId(reloaded.scripts[GB_NEXT]) === BRACKET_ID);
+  ok('reload does not fork the part', again.length === 1 && again[0].id === BRACKET_ID && again[0].path === GB_NEXT);
+  ok('reloaded script keeps the id', readSurfId(reloaded.scripts[BRACKET_ID] || reloaded.scripts[GB_NEXT]) === BRACKET_ID);
 }
 
 console.log('\noffline rename then reconnect');
@@ -151,8 +151,8 @@ console.log('\noffline rename then reconnect');
   const scripts = { [GB]: BRACKET_SRC };
   const overlaid = overlayPendingPartRenames(stale, scripts, store.pending(repo));
   const hits = overlaid.doc.parts.filter((part) => part.surfId === BRACKET_ID || part.id === GB || part.id === GB_NEXT);
-  ok('reload follows the old path to the same part', hits.length === 1 && hits[0].id === GB_NEXT);
-  ok('script moved with the part', overlaid.scripts[GB_NEXT] === BRACKET_SRC && overlaid.scripts[GB] == null);
+  ok('reload follows the old path to the same part', hits.length === 1 && hits[0].id === BRACKET_ID && hits[0].path === GB_NEXT);
+  ok('script moved with the part', (overlaid.scripts[BRACKET_ID] === BRACKET_SRC || overlaid.scripts[GB_NEXT] === BRACKET_SRC) && overlaid.scripts[GB] == null);
   const online = await flushSyncQueue({ store, adapter: gh, repo, branch: 'main', online: true });
   eq('reconnect pushes', online.status, 'synced');
   ok('queue empty', store.pending(repo).length === 0);
@@ -215,7 +215,7 @@ console.log('\npush keeps the surf id');
   ok('create is one commit', commitsAfter === commitsBefore + 1);
   eq('header unchanged', readSurfId((await gh.readFile(repo, path, 'main')).content), localId);
   const surf = parseSurfJson((await gh.readFile(repo, assemblyFilePath('Gearbox'), 'main')).content);
-  eq('surf json id unchanged', surf.parts.find((part) => part.id === path)?.surfId, localId);
+  eq('surf json id unchanged', surf.parts.find((part) => part.path === path || part.id === path)?.id, localId);
   ok('push does not rewrite ids', !pushed.promoted || Object.keys(pushed.promoted).length === 0);
   ok('surf json omits isSynced', !String((await gh.readFile(repo, assemblyFilePath('Gearbox'), 'main')).content).includes('isSynced'));
 }
@@ -231,7 +231,8 @@ console.log('\nexternal part caution and copy');
   };
   eq('open links instead of copying', planOpenVaultPart(doc, CV_LID, LID_SRC, {}), { id: CV_LID, mode: 'link' });
   const copy = planCopyToAssembly(doc, { id: CV_LID, name: 'Lid', surfId: LID_ID }, LID_SRC, { now: WHEN, rand: 'd00d' });
-  eq('copy lands in this assembly', copy.path, assemblyPartPath('Gearbox', 'Lid'));
+  eq('copy stays path-less until Save', copy.path, null);
+  eq('copy id is the new surf id', copy.id, copy.surfId);
   ok('copy has a new bare id', !String(copy.surfId).startsWith('local-') && copy.surfId !== LID_ID && copy.isSynced === false);
   eq('copy records copiedFrom', copy.copiedFrom, LID_ID);
   eq('copy header is the new id', readSurfId(copy.content), copy.surfId);
@@ -265,7 +266,7 @@ console.log('\nAdd to Repo follows isSynced');
   );
   const cover = projected.find((entry) => entry.path === assemblyFilePath('Cover'));
   const parsed = parseSurfJson(cover.content);
-  eq('projected cache keeps one reference', [parsed.parts.length, parsed.parts[0].id, parsed.parts[0].surfId], [1, GB_NEXT, BRACKET_ID]);
+  eq('projected cache keeps one reference', [parsed.parts.length, parsed.parts[0].path, parsed.parts[0].id], [1, GB_NEXT, BRACKET_ID]);
 }
 
 console.log('\nremote moved → conflict, nothing overwritten');
@@ -304,9 +305,10 @@ console.log('\nSave is queued and does not force-merge on its own');
   await store.setLastSyncedSha(repo, head);
   const opened = await openVaultAssembly(gh, repo, 'Gearbox', { branch: 'main', headSha: head });
   const edited = `${BRACKET_SRC}// queued save\n`;
+  const bracket = opened.doc.parts.find((part) => part.surfId === BRACKET_ID) || opened.doc.parts[0];
   const assembled = await assembleCommitFiles(gh, repo, {
     doc: opened.doc,
-    scripts: { ...opened.scripts, [GB]: edited },
+    scripts: { ...opened.scripts, [bracket.id]: edited },
     baseline: opened.baseline,
     message: 'Save bracket',
   });
@@ -360,7 +362,7 @@ console.log('\nbranch switch with a pending rename does not fork');
     featureOpened.scripts,
     store.pending(repo, 'feature').concat(store.failed(repo, 'feature')),
   );
-  eq('feature is not forked by the main rename', featureOverlay.doc.parts.map((part) => part.id), [GB]);
+  eq('feature is not forked by the main rename', featureOverlay.doc.parts.map((part) => part.path || part.id), [GB]);
   const mainOpened = await openVaultAssembly(gh, repo, 'Gearbox', { branch: 'main', headSha: head });
   const filled = backfillSurfIds(mainOpened.doc, {});
   const mainOverlay = overlayPendingPartRenames(
@@ -369,7 +371,7 @@ console.log('\nbranch switch with a pending rename does not fork');
     store.pending(repo, 'main').concat(store.failed(repo, 'main')),
   );
   const hits = mainOverlay.doc.parts.filter((part) => part.surfId === BRACKET_ID || part.id === GB || part.id === GB_NEXT);
-  ok('switch back keeps one part at the new path', hits.length === 1 && hits[0].id === GB_NEXT && hits[0].surfId === BRACKET_ID);
+  ok('switch back keeps one part at the new path', hits.length === 1 && hits[0].id === BRACKET_ID && hits[0].path === GB_NEXT && hits[0].surfId === BRACKET_ID);
   ok('backfill did not mint a second id', filled.minted === 0);
   const app = readFileSync(new URL('../../src/App.jsx', import.meta.url), 'utf8');
   ok('switch uses the open-path adopt', /const handleSwitchBranch[\s\S]*?adoptVaultOpening\(/.test(app)

@@ -291,6 +291,8 @@
         "golden:git-g2-open-save": "node scripts/golden/smoke_git_g2_open_save.mjs",
         "golden:git-save-stray": "node scripts/golden/smoke_git_save_stray.mjs",
         "golden:git-g3-commit-push": "node scripts/golden/smoke_git_g3_commit_push.mjs",
+        "golden:git-delete-from-repo": "node scripts/golden/smoke_git_delete_from_repo.mjs",
+        "golden:git-assembly-rename-reload": "node scripts/golden/smoke_git_assembly_rename_reload.mjs",
         "golden:git-g4-pull-conflicts": "node scripts/golden/smoke_git_g4_pull_conflicts.mjs",
         "golden:playtest-toasts": "node scripts/golden/smoke_playtest_toasts.mjs",
         "golden:feature-card-gap": "node scripts/golden/smoke_feature_card_gap.mjs",
