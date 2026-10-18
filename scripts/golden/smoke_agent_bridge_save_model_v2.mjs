@@ -246,7 +246,7 @@ try {
     JSON.stringify(opened.parsed),
   );
 
-  const edited = await mcp(client, 'set_script', { source: EDITED_SCRIPT });
+  const edited = await mcp(client, 'set_script', { part_id: PART_ID, source: EDITED_SCRIPT });
   const afterEdit = await mcp(client, 'dirty');
   const scriptAfterEdit = await mcp(client, 'get_script');
   check(
@@ -331,7 +331,8 @@ try {
     sessionStorage.setItem('surfcadAgentGitRealSession', '1');
     sessionStorage.removeItem('surfcadAgentGitDenied');
   });
-  const granted = await mcp(client, 'set_script', { source: GRANTED_SCRIPT });
+  await mcp(client, 'set_active_part', { part_id: PART_ID });
+  const granted = await mcp(client, 'set_script', { part_id: PART_ID, source: GRANTED_SCRIPT });
   const dirtyGranted = await mcp(client, 'dirty');
   const scriptGranted = await mcp(client, 'get_script');
   check(
@@ -383,7 +384,8 @@ try {
   const committedLid = fake.readFile(`parts/${lidId}.js`) || '';
   pushRemoteFile(fake, `parts/${lidId}.js`, `${committedLid}\n// remote edit\n`, 'remote overlap');
   const remoteCount = fake.log().length;
-  const conflictEdit = await mcp(client, 'set_script', { source: CONFLICT_SCRIPT });
+  await mcp(client, 'set_active_part', { part_id: PART_ID });
+  const conflictEdit = await mcp(client, 'set_script', { part_id: PART_ID, source: CONFLICT_SCRIPT });
   const conflict = await mcp(client, 'git_save', { message: CONFLICT_MESSAGE });
   check(
     'rule4 git_save conflict is the host conflict code',

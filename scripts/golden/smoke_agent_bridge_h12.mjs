@@ -183,15 +183,16 @@ await page.waitForFunction(
 await page.waitForSelector('[data-cad-run]', { state: 'attached', timeout: 120000 });
 await page.waitForTimeout(600);
 
-const moved = await agentCall(page, 'git_move_to_repo', { vault_name: VAULT });
-check('git_move_to_repo', moved.ok === true && moved.result?.status === 'moved', JSON.stringify(moved));
-
 await agentCall(page, 'run', {});
 const cur = await agentCall(page, 'get_script', {});
 const edited = await agentCall(page, 'set_script', {
+  part_id: 'local:part1',
   source: `${cur.result?.source || ''}\n// h12 golden\n`,
 });
-check('set_script edit', edited.ok === true);
+check('set_script edit', edited.ok === true, JSON.stringify(edited));
+
+const moved = await agentCall(page, 'git_move_to_repo', { vault_name: VAULT });
+check('git_move_to_repo', moved.ok === true && moved.result?.status === 'moved', JSON.stringify(moved));
 await agentCall(page, 'run', {});
 
 const saved = await agentCall(page, 'git_save', { message: 'h12 golden save' });
