@@ -28,7 +28,42 @@ function scriptForPart(part, scripts) {
   return undefined;
 }
 
-function mintUnusedSurfId({ now, rand, used } = {}) {
+function hash32(str, basis = 2166136261) {
+  let h = basis >>> 0;
+  const text = String(str ?? '');
+  for (let i = 0; i < text.length; i += 1) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/** Stable surf-id from a seed so a crash-and-boot remint matches the first. */
+function surfIdFromSeed(seed) {
+  const a = hash32(seed, 2166136261);
+  const b = hash32(seed, 0x811c9dc5);
+  const c = hash32(`#${seed}`, 0x85ebca6b);
+  return mintSurfId({
+    now: Date.UTC(
+      2000 + (a % 100),
+      b % 12,
+      1 + ((c >>> 8) % 28),
+      (a >>> 8) % 24,
+      (b >>> 8) % 60,
+      (c >>> 16) % 60,
+      (a >>> 16) % 1000,
+    ),
+    rand: ((b >>> 16) ^ (c & 0xffff)).toString(16).padStart(4, '0').slice(-4),
+  });
+}
+
+function mintUnusedSurfId({ now, rand, used, seed } = {}) {
+  if (now == null && rand == null && seed != null) {
+    for (let n = 0; n < 0x10000; n += 1) {
+      const id = surfIdFromSeed(n === 0 ? String(seed) : `${seed}:${n}`);
+      if (!used || !used.has(id)) return id;
+    }
+  }
   let id = mintSurfId({ now, rand });
   if (!used || !used.has(id)) return id;
   const parsed = Number.parseInt(String(rand ?? '0'), 16);
@@ -65,6 +100,7 @@ export function pickCollapsedPartId(part, script, pathIndex = {}, {
   now,
   rand,
   used,
+  seed,
   index = 0,
   firstOwner = null,
 } = {}) {
@@ -97,10 +133,28 @@ export function pickCollapsedPartId(part, script, pathIndex = {}, {
   }
 
   return {
-    id: mintUnusedSurfId({ now, rand, used }),
+    id: mintUnusedSurfId({ now, rand, used, seed }),
     minted: true,
     copiedFrom: colliding || undefined,
   };
+}
+
+/**
+ * While a re-key persist is in flight, autosave of either pair id must
+ * write the same bytes to both `from` and `to` so a crash after saveDoc
+ * still has the edit under whichever id the IDB doc kept.
+ */
+export function dualWriteTargets(id, pairs = []) {
+  if (!id) return [];
+  const ids = new Set([id]);
+  for (const { from, to } of pairs || []) {
+    if (!from || !to || from === to) continue;
+    if (id === from || id === to) {
+      ids.add(from);
+      ids.add(to);
+    }
+  }
+  return [...ids];
 }
 
 async function readScript(load, id) {
@@ -158,6 +212,7 @@ async function deleteStaleKeys({
 } = {}) {
   const toByFrom = new Map((pairs || []).map((pair) => [pair.from, pair.to]));
   const snap = snapshot && typeof snapshot === 'object' ? snapshot : null;
+  const moved = {};
   for (const id of staleIds || []) {
     if (!id || keep?.has(id) || saved.has(id)) continue;
     const to = toByFrom.get(id);
@@ -170,8 +225,9 @@ async function deleteStaleKeys({
       const haveSnap = !!(snap && Object.prototype.hasOwnProperty.call(snap, id));
       if (haveSnap && current !== snap[id]) {
         if (to && saved.has(to)) {
-          const moved = await putVerified({ save, load, id: to, script: current });
-          if (!moved) continue;
+          const ok = await putVerified({ save, load, id: to, script: current });
+          if (!ok) continue;
+          moved[to] = current;
         } else {
           continue;
         }
@@ -181,6 +237,7 @@ async function deleteStaleKeys({
     }
     try { await remove(id); } catch { /* ignore */ }
   }
+  return { moved };
 }
 
 /**
@@ -285,7 +342,8 @@ function sourcePartForRow(sourceDoc, part, fromId) {
  * id (boot). Vault-open `to` keys are not in the from-key snapshot, so
  * every tip script is written (isSynced / assets).
  *
- * `crashAfter` is test-only (0–4).
+ * `crashAfter` is test-only (0–4). `onFlight(pairs | null)` marks the
+ * dual-write window for part-script autosave.
  */
 export async function persistCollapsedWorkingCopy({
   collapsed,
@@ -298,10 +356,14 @@ export async function persistCollapsedWorkingCopy({
   saveDoc,
   live,
   apply,
+  onFlight,
   crashAfter,
 } = {}) {
   const pairs = collapsed?.pairs || [];
   const nextScripts = { ...(collapsed?.scripts || {}) };
+  const endFlight = () => {
+    try { onFlight?.(null); } catch { /* ignore */ }
+  };
 
   // 0. Snapshot the current IDB bytes of every `from` key.
   const snapshot = { ...(heldScripts || {}) };
@@ -311,6 +373,8 @@ export async function persistCollapsedWorkingCopy({
     if (typeof got === 'string') snapshot[from] = got;
   }
   crashAfterStep(crashAfter, 0);
+
+  try { onFlight?.(pairs); } catch { /* ignore */ }
 
   // 1. Write and verify every `to` key. Revert a row whose put failed.
   const putScripts = {};
@@ -379,13 +443,43 @@ export async function persistCollapsedWorkingCopy({
   await foldLiveEditsOntoTo();
 
   // 2. Save the IDB doc with the final ids (including reverted rows).
+  // A falsy return or throw is failure: skip 3–4, keep `from`, keep old ids.
+  let docSaved = typeof saveDoc !== 'function';
   if (typeof saveDoc === 'function' && doc) {
-    try { await saveDoc(doc); } catch { /* caller still has the in-memory doc */ }
+    try {
+      const result = await saveDoc(doc);
+      docSaved = result != null && result !== false;
+    } catch {
+      docSaved = false;
+    }
+  }
+  if (!docSaved) {
+    endFlight();
+    return {
+      doc: sourceDoc || doc,
+      scripts: { ...(sourceScripts || {}) },
+      failedFrom: new Set(pairs.map((pair) => pair.from).filter(Boolean)),
+      saved,
+      snapshot,
+      docSaved: false,
+    };
   }
   crashAfterStep(crashAfter, 2);
 
-  // 3. Fold edits typed during saveDoc, then switch in-memory doc/scripts.
+  // 3. Fold edits typed during saveDoc, adopt `from` bytes that changed vs
+  // the snapshot (vault open has no live), then switch in-memory doc/scripts.
   await foldLiveEditsOntoTo();
+  for (const { from, to } of pairs) {
+    if (!from || !to || from === to || failedFrom.has(from)) continue;
+    const current = await readScript(load, from);
+    if (typeof current !== 'string') continue;
+    if (!Object.prototype.hasOwnProperty.call(snapshot, from)) continue;
+    if (current === snapshot[from]) continue;
+    if (await putVerified({ save, load, id: to, script: current })) {
+      saved.add(to);
+      scripts[to] = current;
+    }
+  }
   if (typeof apply === 'function') {
     try {
       await apply({ doc, scripts, failedFrom, saved });
@@ -397,7 +491,7 @@ export async function persistCollapsedWorkingCopy({
 
   // 4. Delete each `from` only if it still equals the snapshot.
   const keep = new Set(Object.keys(scripts));
-  await deleteStaleKeys({
+  const deleted = await deleteStaleKeys({
     staleIds: pairs.map((pair) => pair.from),
     pairs,
     saved,
@@ -408,9 +502,13 @@ export async function persistCollapsedWorkingCopy({
     load,
     remove,
   });
+  for (const [id, text] of Object.entries(deleted?.moved || {})) {
+    if (typeof text === 'string') scripts[id] = text;
+  }
+  endFlight();
   crashAfterStep(crashAfter, 4);
 
-  return { doc, scripts, failedFrom, saved, snapshot };
+  return { doc, scripts, failedFrom, saved, snapshot, docSaved: true };
 }
 
 function rewriteGroupIds(groups, map) {
@@ -486,6 +584,7 @@ export function collapseWorkingCopyIds(doc, scripts = {}, {
     const picked = pickCollapsedPartId(part, script, pathIndex, {
       now,
       rand: typeof randFor === 'function' ? randFor(part, i) : undefined,
+      seed: [doc.id || '', doc.name || '', part?.id || '', partPath(part) || ''].join('\0'),
       used,
       index: i,
       firstOwner: owners,
@@ -552,6 +651,7 @@ export function collapseWorkingCopyIds(doc, scripts = {}, {
     assemblyId = mintUnusedSurfId({
       now,
       rand: typeof randFor === 'function' ? randFor({ id: '$assembly', name: doc.name }, -1) : undefined,
+      seed: ['assembly', doc.name || '', doc.id || ''].join('\0'),
       used: usedAsm,
     });
     assemblyMinted = true;

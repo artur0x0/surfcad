@@ -283,6 +283,7 @@ import {
   migrateLocalPartIds,
   collapseWorkingCopyIds,
   persistCollapsedWorkingCopy,
+  dualWriteTargets,
   isSurfId,
   partSurfId,
   reconcileSyncedFromTip,
@@ -433,6 +434,8 @@ const App = () => {
   const [partScripts, setPartScripts] = useState({});
   const [partRuns, setPartRuns] = useState({});
   const assemblyRef = useRef(null);
+  /** Re-key persist pairs: autosave writes both `from` and `to` while in flight. */
+  const persistFlightPairsRef = useRef([]);
   // rememberAssembly starts the IndexedDB write and returns the doc.
   // Callers that need the write to finish await this promise.
   const assemblyDocPersistRef = useRef(Promise.resolve(null));
@@ -1753,6 +1756,9 @@ const App = () => {
                     },
                     saveDoc: saveAssemblyDocument,
                     live: () => persistSource.scripts,
+                    onFlight: (pairs) => {
+                      persistFlightPairsRef.current = Array.isArray(pairs) ? pairs : [];
+                    },
                     apply: ({ doc: nextDoc, scripts: nextScripts }) => {
                       doc = nextDoc;
                       scripts = nextScripts;
@@ -1862,7 +1868,9 @@ const App = () => {
       const next = { ...partScriptsRef.current, [idAtSchedule]: scriptAtSchedule };
       partScriptsRef.current = next;
       setPartScripts(next);
-      savePartScript(idAtSchedule, scriptAtSchedule);
+      for (const id of dualWriteTargets(idAtSchedule, persistFlightPairsRef.current)) {
+        savePartScript(id, scriptAtSchedule);
+      }
     }, 600);
     return () => clearTimeout(timer);
   }, [currentScript, currentFilename, manifoldReady, editorInitialScript, appMode]);
@@ -1893,7 +1901,9 @@ const App = () => {
       }
       if (id && !suppressPartSaveRef.current && typeof live === 'string') {
         partScriptsRef.current = { ...partScriptsRef.current, [id]: live };
-        savePartScript(id, live);
+        for (const key of dualWriteTargets(id, persistFlightPairsRef.current)) {
+          savePartScript(key, live);
+        }
       }
     };
     const onPageHide = (event) => {
@@ -3714,6 +3724,9 @@ const App = () => {
         try { await deletePartScript(id); } catch { /* ignore */ }
       },
       saveDoc: saveAssemblyDocument,
+      onFlight: (pairs) => {
+        persistFlightPairsRef.current = Array.isArray(pairs) ? pairs : [];
+      },
       apply: ({ doc: nextDoc, scripts: nextScripts }) => {
         if (stalePairs.length) rekeyRuntime(stalePairs);
         if (alignedMeshMeta) {
@@ -5690,6 +5703,9 @@ const App = () => {
             },
             saveDoc: saveAssemblyDocument,
             live: () => partScriptsRef.current,
+            onFlight: (pairs) => {
+              persistFlightPairsRef.current = Array.isArray(pairs) ? pairs : [];
+            },
             apply: async ({ doc: nextDoc, scripts: nextScripts }) => {
               await switchReseedMemory({ doc: nextDoc, scripts: nextScripts });
             },

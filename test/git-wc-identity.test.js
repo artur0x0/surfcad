@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mintSurfId, isSurfId, readSurfId, withSurfId } from '../src/utils/git/surfId.js';
-import { collapseWorkingCopyIds, mergeLiveEdits, persistCollapsedWorkingCopy, PersistCrash, pickCollapsedPartId, replaceScriptKeys } from '../src/utils/git/wcIdentity.js';
+import { collapseWorkingCopyIds, dualWriteTargets, mergeLiveEdits, persistCollapsedWorkingCopy, PersistCrash, pickCollapsedPartId, replaceScriptKeys } from '../src/utils/git/wcIdentity.js';
 import { rewriteFeaStudyPartIds } from '../src/utils/git/feaStudyIds.js';
 import { serializeAssembly, parseAssemblyDocument, composeViewportParts } from '../src/utils/assembly.js';
 import { partSurfId, readSurfName, withSurfName } from '../src/utils/git/surfId.js';
@@ -757,7 +757,7 @@ test('IDB doc stays on old ids if persist is killed before writes', async () => 
     save: async () => { throw new Error('killed'); },
     load: async (id) => store.get(id),
     remove: async (id) => { store.delete(id); },
-    saveDoc: async (doc) => { idbDoc = doc; },
+    saveDoc: async (doc) => { idbDoc = doc; return doc; },
   });
   assert.equal(persisted.doc.parts[0].id, UUID);
   assert.equal(idbDoc.parts[0].id, UUID);
@@ -1122,9 +1122,9 @@ test('read-only collapse does not mint and is stable across unsaved boots', () =
   assert.equal(later.doc.parts[0].id, first.doc.parts[0].id);
 });
 
-const CRASH_OPTS = { now: NOW, randFor: () => 'b10c' };
 const HEADERED_PATH = 'parts/Pin.js';
 const HEADERED_SCRIPT = withSurfId('return pin;\n', SURF);
+const HEADERED_EDIT = `${HEADERED_SCRIPT}// live edit\n`;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -1135,6 +1135,7 @@ function makeIdb(doc, scripts) {
     doc: clone(doc),
     map: new Map(Object.entries(scripts)),
     memory: { doc: clone(doc), scripts: { ...scripts } },
+    flight: [],
   };
 }
 
@@ -1147,8 +1148,9 @@ function persistArgs(idb, collapsed, source, extra = {}) {
     save: async (id, script) => { idb.map.set(id, script); return true; },
     load: async (id) => idb.map.get(id),
     remove: async (id) => { idb.map.delete(id); },
-    saveDoc: async (doc) => { idb.doc = clone(doc); },
+    saveDoc: async (doc) => { idb.doc = clone(doc); return doc; },
     live: () => idb.memory.scripts,
+    onFlight: (pairs) => { idb.flight = Array.isArray(pairs) ? pairs : []; },
     apply: ({ doc, scripts }) => {
       idb.memory.doc = clone(doc);
       idb.memory.scripts = { ...scripts };
@@ -1166,10 +1168,15 @@ function scriptsForDoc(idb) {
   return scripts;
 }
 
-async function bootFromIdb(idb, collapseOpts) {
+function plantLiveEdit(idb, fromId, latest) {
+  idb.map.set(fromId, latest);
+  idb.memory.scripts[fromId] = latest;
+}
+
+async function bootFromIdb(idb) {
   const loadedDoc = clone(idb.doc);
   const loadedScripts = scriptsForDoc(idb);
-  const collapsed = collapseWorkingCopyIds(loadedDoc, loadedScripts, collapseOpts);
+  const collapsed = collapseWorkingCopyIds(loadedDoc, loadedScripts);
   await persistCollapsedWorkingCopy(persistArgs(
     idb,
     collapsed,
@@ -1179,19 +1186,22 @@ async function bootFromIdb(idb, collapseOpts) {
 }
 
 function headerlessFixture() {
+  const original = 'return unsaved;\n';
+  const latest = 'return unsaved;\n// live edit\n';
   const doc = {
     source: 'local',
     name: 'Assembly',
     activeId: UUID,
     parts: [{ id: UUID, name: 'Part', visible: true, order: 0 }],
   };
-  const scripts = { [UUID]: 'return unsaved;\n' };
-  const collapsed = collapseWorkingCopyIds(doc, scripts, CRASH_OPTS);
+  const scripts = { [UUID]: original };
+  const collapsed = collapseWorkingCopyIds(doc, scripts);
   return {
     kind: 'headerless UUID',
     beforeId: UUID,
     afterId: collapsed.doc.parts[0].id,
-    latest: 'return unsaved;\n',
+    original,
+    latest,
     doc,
     scripts,
     collapsed,
@@ -1206,12 +1216,13 @@ function headeredFixture() {
     parts: [{ id: HEADERED_PATH, path: HEADERED_PATH, name: 'Pin', visible: true, order: 0 }],
   };
   const scripts = { [HEADERED_PATH]: HEADERED_SCRIPT };
-  const collapsed = collapseWorkingCopyIds(doc, scripts, CRASH_OPTS);
+  const collapsed = collapseWorkingCopyIds(doc, scripts);
   return {
     kind: 'headered',
     beforeId: HEADERED_PATH,
     afterId: collapsed.doc.parts[0].id,
-    latest: HEADERED_SCRIPT,
+    original: HEADERED_SCRIPT,
+    latest: HEADERED_EDIT,
     doc,
     scripts,
     collapsed,
@@ -1220,6 +1231,7 @@ function headeredFixture() {
 
 async function crashThenBoot(fixture, step) {
   const idb = makeIdb(fixture.doc, fixture.scripts);
+  plantLiveEdit(idb, fixture.beforeId, fixture.latest);
   try {
     await persistCollapsedWorkingCopy(persistArgs(
       idb,
@@ -1232,13 +1244,14 @@ async function crashThenBoot(fixture, step) {
     assert.equal(err instanceof PersistCrash, true);
     assert.equal(err.step, step);
   }
-  await bootFromIdb(idb, CRASH_OPTS);
+  await bootFromIdb(idb);
   const row = idb.doc.parts[0];
   assert.ok(
     row.id === fixture.beforeId || row.id === fixture.afterId,
     `${fixture.kind} step ${step}: id ${row.id} is a third mint`,
   );
   assert.equal(idb.map.get(row.id), fixture.latest);
+  assert.notEqual(fixture.latest, fixture.original);
   for (const part of idb.doc.parts || []) {
     assert.equal(typeof idb.map.get(part.id), 'string', `missing script for ${part.id}`);
   }
@@ -1274,6 +1287,7 @@ test('K2: IDB doc is saved before from keys are deleted', async () => {
       saveDoc: async (doc) => {
         order.push('saveDoc');
         idb.doc = clone(doc);
+        return doc;
       },
       remove: async (id) => {
         order.push(['delete', id]);
@@ -1301,8 +1315,8 @@ test('K2: crash after put leaves the old IDB doc and old keys', async () => {
     assert.equal(err.step, 1);
   }
   assert.equal(idb.doc.parts[0].id, UUID);
-  assert.equal(idb.map.get(UUID), fixture.latest);
-  assert.equal(idb.map.get(fixture.afterId), fixture.latest);
+  assert.equal(idb.map.get(UUID), fixture.original);
+  assert.equal(idb.map.get(fixture.afterId), fixture.original);
   assert.equal(idb.memory.doc.parts[0].id, UUID);
 });
 
@@ -1329,6 +1343,7 @@ test('K1: live from-edit during puts maps to to after saveDoc', async () => {
         order.push('saveDoc');
         assert.equal(idb.memory.doc.parts[0].id, UUID);
         idb.doc = clone(doc);
+        return doc;
       },
       apply: ({ doc, scripts }) => {
         order.push('apply');
@@ -1365,6 +1380,7 @@ test('K1: live from-edit after saveDoc maps to to before memory switch', async (
         assert.equal(idb.memory.doc.parts[0].id, UUID);
         idb.memory.scripts[UUID] = edited;
         idb.map.set(UUID, edited);
+        return doc;
       },
       apply: ({ doc, scripts }) => {
         assert.equal(idb.doc.parts[0].id, fixture.afterId);
@@ -1428,4 +1444,152 @@ test('V: vault-open edit vs snapshot moves; stale snapshot bytes drop', async ()
   });
   assert.equal(store.get(SURF), 'typed during vault open');
   assert.equal(store.has(pathKey), false);
+});
+
+test('headerless mint is the same on a second collapse without pinning the clock', () => {
+  const doc = {
+    source: 'local',
+    name: 'Assembly',
+    activeId: UUID,
+    parts: [{ id: UUID, name: 'Part', visible: true, order: 0 }],
+  };
+  const scripts = { [UUID]: 'return unsaved;\n' };
+  const first = collapseWorkingCopyIds(doc, scripts);
+  const second = collapseWorkingCopyIds(doc, scripts);
+  assert.ok(isSurfId(first.doc.parts[0].id));
+  assert.equal(first.doc.parts[0].id, second.doc.parts[0].id);
+  assert.notEqual(first.doc.parts[0].id, UUID);
+  const other = collapseWorkingCopyIds(
+    {
+      ...doc,
+      parts: [{ id: '5f0c3c1e-0000-4000-8000-000000000099', name: 'Part', visible: true, order: 0 }],
+      activeId: '5f0c3c1e-0000-4000-8000-000000000099',
+    },
+    { '5f0c3c1e-0000-4000-8000-000000000099': 'return unsaved;\n' },
+  );
+  assert.notEqual(other.doc.parts[0].id, first.doc.parts[0].id);
+});
+
+test('dualWriteTargets includes both pair ids', () => {
+  assert.deepEqual(dualWriteTargets(UUID, [{ from: UUID, to: SURF }]).sort(), [UUID, SURF].sort());
+  assert.deepEqual(dualWriteTargets(SURF, [{ from: UUID, to: SURF }]).sort(), [UUID, SURF].sort());
+  assert.deepEqual(dualWriteTargets(SURF, []), [SURF]);
+});
+
+async function rebootKeepsEdit(idb, expected) {
+  await bootFromIdb(idb);
+  const row = idb.doc.parts[0];
+  assert.equal(typeof idb.map.get(row.id), 'string');
+  assert.equal(idb.map.get(row.id), expected);
+  for (const part of idb.doc.parts || []) {
+    assert.equal(typeof idb.map.get(part.id), 'string', `missing script for ${part.id}`);
+  }
+}
+
+test('saveDoc returning null keeps from keys and latest bytes after reboot', async () => {
+  const fixture = headerlessFixture();
+  const idb = makeIdb(fixture.doc, fixture.scripts);
+  plantLiveEdit(idb, fixture.beforeId, fixture.latest);
+  const persisted = await persistCollapsedWorkingCopy(persistArgs(
+    idb,
+    fixture.collapsed,
+    { doc: fixture.doc, scripts: fixture.scripts },
+    { saveDoc: async () => null },
+  ));
+  assert.equal(persisted.docSaved, false);
+  assert.equal(persisted.doc.parts[0].id, UUID);
+  assert.equal(idb.doc.parts[0].id, UUID);
+  assert.equal(idb.map.get(UUID), fixture.latest);
+  assert.equal(idb.memory.doc.parts[0].id, UUID);
+  await rebootKeepsEdit(idb, fixture.latest);
+});
+
+test('saveDoc throw keeps from keys and latest bytes after reboot', async () => {
+  const fixture = headerlessFixture();
+  const idb = makeIdb(fixture.doc, fixture.scripts);
+  plantLiveEdit(idb, fixture.beforeId, fixture.latest);
+  const persisted = await persistCollapsedWorkingCopy(persistArgs(
+    idb,
+    fixture.collapsed,
+    { doc: fixture.doc, scripts: fixture.scripts },
+    { saveDoc: async () => { throw new Error('idb doc put failed'); } },
+  ));
+  assert.equal(persisted.docSaved, false);
+  assert.equal(persisted.doc.parts[0].id, UUID);
+  assert.equal(idb.doc.parts[0].id, UUID);
+  assert.equal(idb.map.get(UUID), fixture.latest);
+  assert.equal(idb.memory.doc.parts[0].id, UUID);
+  await rebootKeepsEdit(idb, fixture.latest);
+});
+
+async function crashAfterSaveDocKeepsAutosaveEdit(fixture) {
+  const idb = makeIdb(fixture.doc, fixture.scripts);
+  plantLiveEdit(idb, fixture.beforeId, fixture.latest);
+  const during = `${fixture.latest}// during saveDoc\n`;
+  try {
+    await persistCollapsedWorkingCopy(persistArgs(
+      idb,
+      fixture.collapsed,
+      { doc: fixture.doc, scripts: fixture.scripts },
+      {
+        saveDoc: async (doc) => {
+          idb.doc = clone(doc);
+          for (const id of dualWriteTargets(fixture.beforeId, idb.flight)) {
+            idb.map.set(id, during);
+            idb.memory.scripts[id] = during;
+          }
+          return doc;
+        },
+        crashAfter: 2,
+      },
+    ));
+    assert.fail('expected PersistCrash after step 2');
+  } catch (err) {
+    assert.equal(err instanceof PersistCrash, true);
+    assert.equal(err.step, 2);
+  }
+  await bootFromIdb(idb);
+  const row = idb.doc.parts[0];
+  assert.ok(row.id === fixture.beforeId || row.id === fixture.afterId);
+  assert.equal(idb.map.get(row.id), during);
+}
+
+test('edit at saveDoc then crash after step 2 keeps the edit on headerless UUID', async () => {
+  await crashAfterSaveDocKeepsAutosaveEdit(headerlessFixture());
+});
+
+test('edit at saveDoc then crash after step 2 keeps the edit on headered row', async () => {
+  await crashAfterSaveDocKeepsAutosaveEdit(headeredFixture());
+});
+
+test('vault open step-4 move lands in returned scripts for memory', async () => {
+  const pathKey = 'assemblies/A/Pin.js';
+  const store = new Map([[pathKey, 'OLD path-key record']]);
+  const doc = {
+    source: 'git',
+    name: 'A',
+    activeId: SURF,
+    parts: [{ id: SURF, path: pathKey, name: 'Pin', visible: true, order: 0, isSynced: true }],
+  };
+  const persisted = await persistCollapsedWorkingCopy({
+    collapsed: {
+      doc,
+      scripts: { [SURF]: 'tip pin' },
+      pairs: [{ from: pathKey, to: SURF }],
+    },
+    sourceDoc: doc,
+    sourceScripts: { [SURF]: 'tip pin' },
+    save: async (id, script) => {
+      if (id === SURF && script === 'tip pin') {
+        store.set(pathKey, 'typed during vault open');
+      }
+      store.set(id, script);
+      return true;
+    },
+    load: async (id) => store.get(id),
+    remove: async (id) => { store.delete(id); },
+    saveDoc: async (next) => next,
+  });
+  assert.equal(store.get(SURF), 'typed during vault open');
+  assert.equal(persisted.scripts[SURF], 'typed during vault open');
 });
