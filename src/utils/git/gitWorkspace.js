@@ -57,6 +57,7 @@ import {
   openLegacyAssembly,
   UnsupportedVaultLayoutError,
 } from './legacyVault/index.js';
+import { listV2Assemblies, openV2Assembly } from './v2VaultRead.js';
 import {
   baselineScriptsKeepingTip,
   captureBaseline,
@@ -220,6 +221,10 @@ export async function listVaultAssemblies(adapter, repo, ref) {
   if (detected.layout === 'legacy') {
     return listLegacyAssemblies(adapter, repo, ref);
   }
+  if (detected.layout === 'v2') {
+    const rows = await listV2Assemblies(adapter, repo, ref || 'main');
+    return rows.map((row) => row.name);
+  }
   throw new UnsupportedVaultLayoutError(detected.layout);
 }
 
@@ -307,7 +312,7 @@ export function seedEmptyVaultAssembly(assemblyName, {
 
 /**
  * Open one vault assembly. v1 trees go through the isolated legacy reader
- * (missing blob → `missing` row, never ''). v2 open is not in this PR.
+ * (missing blob → `missing` row, never ''). v2 opens by assembly id.
  */
 export async function openVaultAssembly(adapter, repo, assemblyName, opts = {}) {
   assertGithubAdapter(adapter);
@@ -315,6 +320,9 @@ export async function openVaultAssembly(adapter, repo, assemblyName, opts = {}) 
   const detected = await detectVaultLayout(adapter, repo, branch);
   if (detected.layout === 'legacy') {
     return openLegacyAssembly(adapter, repo, assemblyName, opts);
+  }
+  if (detected.layout === 'v2') {
+    return openV2Assembly(adapter, repo, assemblyName, { ...opts, branch });
   }
   throw new UnsupportedVaultLayoutError(detected.layout);
 }

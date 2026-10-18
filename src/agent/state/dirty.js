@@ -8,13 +8,17 @@
  *   undoStackDirty?: boolean,
  *   editedSinceLoad?: Iterable<string>,
  *   upgradeRequired?: boolean,
+ *   pendingSave?: boolean,
+ *   unsaved?: boolean,
  * }} input
  */
 export function buildDirtyState(input = {}) {
   const partIds = [...(input.partIds || [])].map((id) => String(id));
   const editedSinceLoad = [...(input.editedSinceLoad || [])].map((id) => String(id));
   const undoStackDirty = input.undoStackDirty === true;
+  const pendingSave = input.pendingSave === true;
   const unsaved = input.unsaved === true
+    || pendingSave
     || editedSinceLoad.length > 0
     || undoStackDirty;
   const out = {
@@ -25,6 +29,7 @@ export function buildDirtyState(input = {}) {
     partIds,
     unsaved,
     editedSinceLoad,
+    pendingSave,
   };
   if (input.upgradeRequired === true) out.upgradeRequired = true;
   if (undoStackDirty) out.undoStackDirty = true;

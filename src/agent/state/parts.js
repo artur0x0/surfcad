@@ -1,9 +1,10 @@
 /**
  * @param {{
+ *   assemblyId?: string | null,
  *   activeId?: string | null,
  *   assemblyName?: string,
  *   vaultLayout?: 'v2' | 'legacy',
- *   parts?: Array<{ id: string, name?: string, visible?: boolean, path?: string, group?: string, missing?: boolean }>,
+ *   parts?: Array<{ id: string, name?: string, visible?: boolean, group?: string, missing?: boolean }>,
  * }} input
  */
 export function buildPartsState(input = {}) {
@@ -14,7 +15,6 @@ export function buildPartsState(input = {}) {
         name: typeof row.name === 'string' ? row.name : '',
         visible: row.visible !== false,
       };
-      if (typeof row.path === 'string') part.path = row.path;
       if (typeof row.group === 'string') part.group = row.group;
       if (row.missing === true) part.missing = true;
       return part;
@@ -25,6 +25,9 @@ export function buildPartsState(input = {}) {
     assemblyName: typeof input.assemblyName === 'string' ? input.assemblyName : '',
     parts,
   };
+  if (typeof input.assemblyId === 'string' && input.assemblyId) {
+    out.assemblyId = input.assemblyId;
+  }
   if (input.vaultLayout === 'v2' || input.vaultLayout === 'legacy') {
     out.vaultLayout = input.vaultLayout;
   }

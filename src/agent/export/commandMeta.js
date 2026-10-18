@@ -26,9 +26,9 @@ export const COMMAND_META = {
   },
   set_script: {
     description:
-      `Write the editor, run the script, and record one undo step when the text changes. Preserves or re-injects the active part \`// @surf-id\` header when the part has a surf id.${RESERVED_HELPERS}`,
+      `Write the editor of part_id, run the script, and record one undo step when the text changes. part_id is required and must be the active part (part_mismatch otherwise). A vault path is unknown_part. Preserves or re-injects the active part \`// @surf-id\` header when the part has a surf id.${RESERVED_HELPERS}`,
     result: MUTATE_RESULT_SCHEMA,
-    errors: ['bad_args', 'internal'],
+    errors: ['bad_args', 'unknown_part', 'part_mismatch', 'no_assembly', 'internal'],
     mutates: true,
   },
   run: {
@@ -220,7 +220,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   dirty: {
-    description: 'Workspace and per-part dirty flags.',
+    description: 'Working-copy dirty flags. unsaved is true when the WC differs from the last AssemblyCommit (survives reload; covers rename, hide, and remove). pendingSave is an offline planned write waiting for a second Save. Changing activeId does not set assemblyDirty.',
     result: { type: 'object', additionalProperties: true },
     errors: ['internal'],
     mutates: false,
@@ -232,7 +232,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   parts: {
-    description: `Assembly parts list (id, name, visible) and the active editor part. featureCount and bodyCount are on status, not here.${FEATURE_COUNT_NOTE}`,
+    description: `Open assembly: assemblyId, assemblyName, vaultLayout, activeId, and parts [{ id, name, visible, missing?, group? }]. No path field. featureCount and bodyCount are on status, not here.${FEATURE_COUNT_NOTE}`,
     result: { type: 'object', additionalProperties: true },
     errors: ['internal'],
     mutates: false,
@@ -572,34 +572,39 @@ export const COMMAND_META = {
     mutates: false,
   },
   create_assembly: {
-    description: 'Seed a blank assembly document.',
+    description: 'Seed a blank local assembly. Single-flight per tab: overlapping calls return the same assemblyId. Optional name is a non-unique label. No git write. Returns { assemblyId, assemblyName, activeId, partCount }.',
     result: { type: 'object', additionalProperties: true },
     errors: ['internal'],
     mutates: true,
-    destructive: true,
-    confirm: true,
   },
   create_part: {
     description:
-      'Add a part and make it the active part before returning. The result partId is the new part, not the previously active one. When script is set, that script runs before the call returns and the result also includes the same run outcome as run (ok, errors, failures, status). A failed script still leaves the part in place. Without script, the call only creates and activates the part. Agent calls default to the assembly origin (identity placement); pass position [x,y,z] mm to place explicitly. The UI still staggers new parts +40 mm on X so bodies do not overlap. In a git assembly the part has no vault path until git_save.',
+      'Add a part and make it the active part before returning. The result partId is the new part, not the previously active one. When script is set, that script runs before the call returns and the result also includes the same run outcome as run (ok, errors, failures, status). A failed script still leaves the part in place. Without script, the call only creates and activates the part. Agent calls default to the assembly origin (identity placement); pass position [x,y,z] mm to place explicitly. The UI still staggers new parts +40 mm on X so bodies do not overlap. No git write. The part id is a surf-id.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'no_assembly', 'internal'],
     mutates: true,
   },
   rename_part: {
-    description: 'Rename a part. A vault part moves its committed .js in the same folder (-2, -3 on collision) and updates that part path/name in .surf.json in one rename commit. Pending script, placement, and other edits stay for the next Save. Path-less parts rename locally with no commit. That write needs git consent like git_save.',
+    description: 'Rename a part display name on the working copy. Response { partId, name, moved: false }. No git write; the committed header updates on the next Save. A vault path is unknown_part.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'unknown_part', 'name_taken', 'consent_pending', 'real_repo_blocked', 'git_error', 'internal'],
+    errors: ['bad_args', 'unknown_part', 'no_assembly', 'internal'],
+    mutates: true,
+  },
+  rename_assembly: {
+    description: 'Rename the open assembly display name on the working copy. assembly_id required. Names are not unique. No git write.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['bad_args', 'unknown_assembly', 'no_assembly', 'internal'],
     mutates: true,
   },
   part_get_transform: {
     description:
-      'Read a part rigid placement: position [x,y,z] mm and rotation as intrinsic XYZ Euler degrees (three.js Euler XYZ order).',
+      'Read a part rigid placement by part_id: position [x,y,z] mm and rotation as intrinsic XYZ Euler degrees (three.js Euler XYZ order). A vault path is unknown_part.',
     result: {
       type: 'object',
       additionalProperties: false,
       properties: {
         part: { type: 'string' },
+        partId: { type: 'string' },
         position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
         rotation: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
         eulerOrder: { type: 'string', const: 'XYZ' },
@@ -610,12 +615,13 @@ export const COMMAND_META = {
   },
   part_set_transform: {
     description:
-      'Set a part rigid placement (translation mm, intrinsic XYZ Euler degrees). Records one assembly undo step like a UI move.',
+      'Set a part rigid placement by part_id (translation mm, intrinsic XYZ Euler degrees). Records one assembly undo step like a UI move. A vault path is unknown_part.',
     result: {
       type: 'object',
       additionalProperties: false,
       properties: {
         part: { type: 'string' },
+        partId: { type: 'string' },
         position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
         rotation: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
         eulerOrder: { type: 'string', const: 'XYZ' },
@@ -625,24 +631,44 @@ export const COMMAND_META = {
     mutates: true,
   },
   open_assembly: {
-    description: 'Open a vault assembly by its exact name (git mode). A name that is not in the vault returns not_found and lists the available names. More than one match returns ambiguous instead of opening one. Does not write git.',
+    description: 'Open a vault assembly by assembly_id only (git mode). A name or path is unknown_assembly. Does not write git.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'not_found', 'ambiguous', 'git_only', 'git_blocked', 'internal'],
+    errors: ['bad_args', 'unknown_assembly', 'git_only', 'git_blocked', 'internal'],
+    mutates: true,
+  },
+  open_part: {
+    description: 'Open a vault part by part_id and/or assembly_id into the current assembly (reference). No path argument. Does not write git.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['bad_args', 'unknown_part', 'unknown_assembly', 'git_only', 'internal'],
+    mutates: true,
+  },
+  insert_part: {
+    description: 'Insert-as-reference by part_id or assembly_id (all parts, same ids). copy:true mints a new part id and sets copiedFrom. No path. Local name/script still creates a new part. Does not write git.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['bad_args', 'unknown_part', 'unknown_assembly', 'git_only', 'internal'],
+    mutates: true,
+  },
+  list_assemblies: {
+    description: 'List vault assemblies as [{ id, name }]. No path field.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['git_only', 'git_blocked', 'internal'],
+    mutates: false,
+  },
+  delete_part: {
+    description: 'Drop a part from the working copy. scope assembly removes the row; scope repo also plans a file delete on the next Save and requires confirm: true. Neither scope commits. part_still_referenced if another assembly lists the id.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['bad_args', 'unknown_part', 'confirm_required', 'part_still_referenced', 'no_assembly', 'internal'],
     mutates: true,
     destructive: true,
     confirm: true,
   },
-  open_part: {
-    description: 'Open or link a vault part into the assembly.',
+  delete_assembly: {
+    description: 'Delete an assembly from the working copy. Requires confirm: true. delete_parts plans unreferenced part-file deletes on the next Save. No git write in this command.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'internal'],
+    errors: ['bad_args', 'unknown_assembly', 'confirm_required', 'upgrade_required', 'no_assembly', 'internal'],
     mutates: true,
-  },
-  insert_part: {
-    description: 'Insert another assembly or add a new local part row.',
-    result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'internal'],
-    mutates: true,
+    destructive: true,
+    confirm: true,
   },
   joint_open: {
     description: 'Open the Joints create card.',
@@ -775,7 +801,7 @@ export const COMMAND_META = {
   git_save: {
     description: 'Save like the Parts Save button: give every path-less part a vault path, then commit those parts, dirty parts, and the .surf.json in one commit on the current branch. When Upgrade vault is enabled, a legacy vault does not write v1: it returns upgrade_required and prompts Upgrade vault. With the flag off (production), Save on a legacy vault still writes v1 as on main. A real repo returns consent_pending at once until the user clicks Allow; retry after.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'upgrade_required', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
+    errors: ['bad_args', 'upgrade_required', 'conflict', 'repo-moved', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
     mutates: true,
   },
   git_upgrade_vault: {
@@ -814,15 +840,15 @@ export const COMMAND_META = {
     confirm: true,
   },
   git_add_to_repo: {
-    description: 'Add a part row into the vault tree and commit. Other path-less parts are pathed and committed with it so the .surf.json stays valid.',
+    description: 'Alias of git_save. Prefer git_save. Same planner and one commit. Message required.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
+    errors: ['bad_args', 'upgrade_required', 'conflict', 'repo-moved', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
     mutates: true,
   },
   git_behind_resolve: {
-    description: 'Resolve behind-remote: keep mine, reload, or branch.',
+    description: 'Conflict / main-moved choice. action reload = Get latest (not a git write). action branch = Save mine to a new branch. Both require confirm: true. action keep is removed (Dismiss is not a tool). No path argument.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'confirm_required', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
+    errors: ['bad_args', 'confirm_required', 'conflict', 'repo-moved', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
     mutates: true,
     destructive: true,
     confirm: true,
@@ -852,7 +878,7 @@ export const COMMAND_META = {
   git_force_overwrite: {
     description: 'Force-overwrite remote conflicts (requires confirm: true).',
     result: { type: 'object', additionalProperties: true },
-    errors: ['confirm_required', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
+    errors: ['confirm_required', 'conflict', 'repo-moved', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
     mutates: true,
     destructive: true,
     confirm: true,
