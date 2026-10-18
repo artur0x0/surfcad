@@ -1,6 +1,11 @@
 // services/loginTracking.js — update User login fields + append LoginEvent
 import User from '../db/models/User.js';
 import LoginEvent from '../db/models/LoginEvent.js';
+import {
+  captureAuthAnalytics,
+  readRequestedAnalyticsConsent,
+  seedUserConsent,
+} from './posthog.js';
 
 /**
  * Record a successful SurfCAD session sign-in.
@@ -48,9 +53,10 @@ export async function recordSuccessfulLogin(user, method) {
  * @param {import('express').Request} req
  * @param {import('../db/models/User.js').default} user
  * @param {import('../db/models/LoginEvent.js').LoginMethod} method
+ * @param {{ isNew?: boolean }} [opts]
  * @returns {Promise<void>}
  */
-export function loginAndTrack(req, user, method) {
+export function loginAndTrack(req, user, method, { isNew = false } = {}) {
   return new Promise((resolve, reject) => {
     req.login(user, async (err) => {
       if (err) {
@@ -60,6 +66,22 @@ export function loginAndTrack(req, user, method) {
       try {
         if (req.session) req.session.authAt = Date.now();
         await recordSuccessfulLogin(user, method);
+        const requestedConsent = readRequestedAnalyticsConsent(req);
+        if (seedUserConsent(user, requestedConsent)) {
+          try {
+            await user.save();
+          } catch {
+            /* consent seed is best-effort */
+          }
+        }
+        const newAccount = isNew === true
+          || method === 'verify'
+          || method === 'guest_convert';
+        await captureAuthAnalytics(user, {
+          isNew: newAccount,
+          method,
+          requestedConsent,
+        });
         resolve();
       } catch (trackErr) {
         reject(trackErr);

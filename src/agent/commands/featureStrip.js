@@ -1,4 +1,5 @@
 import { NO_ARGS_SCHEMA } from '../registry.js';
+import { trackFeatureUsed } from '../../utils/analytics.js';
 
 const TARGET_SCHEMA = Object.freeze({
   type: 'object',
@@ -93,6 +94,7 @@ export const confirmFeatureCommand = Object.freeze({
     let outcome = { ok: true, errors: [], status: ctx.readStatus?.() };
     if (prep.changed) {
       outcome = await ctx.mutate(prep.source, prep.message);
+      if (prep.kind) trackFeatureUsed(prep.kind);
     }
     ctx.dismissFeatureConfirmSession?.();
     return {

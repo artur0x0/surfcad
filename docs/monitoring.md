@@ -9,6 +9,7 @@ Operational sign-up and login metrics for the US launch are sourced from **our M
 | API | Purpose |
 | --- | --- |
 | `getAnalyticsConsent()` | `true` when anonymous usage analytics may run in this browser tab. |
+| `hasStoredConsentChoice()` | `true` when `surfcad.consent.v1` already has an analytics boolean. |
 | `setAnalyticsConsent(boolean)` | Saves preference to `localStorage` (`surfcad.consent.v1`: `{ analytics, updatedAt, source? }`). |
 | `shouldShowPrivacyConsentPopup()` | `true` on a first visit with no stored choice and GPC off. |
 | `openPrivacyChoices()` | Re-opens the Accept all / Required only popup (`src/utils/privacyChoicesUi.js`). |
@@ -129,45 +130,52 @@ Find your `_id` in MongoDB or from an admin session’s `/api/auth/me` response.
 
 **Client:** `src/utils/analytics.js` — lazy-loads `posthog-js` only when `VITE_POSTHOG_KEY` is set **and** `getAnalyticsConsent()` is true. If the key is unset (dev, staging, CI, tests), the SDK is never imported and no analytics network calls are made.
 
+**Server:** `backend/services/posthog.js` — captures `signed_up` / `logged_in` from every auth path via the capture API when `POSTHOG_KEY` is set **and** the request’s consent allows it. Unset key → no-op.
+
 | Env var | Default | Notes |
 | --- | --- | --- |
-| `VITE_POSTHOG_KEY` | *(unset)* | **Production only** — see below. |
-| `VITE_POSTHOG_HOST` | `https://us.i.posthog.com` | US ingestion host. |
+| `VITE_POSTHOG_KEY` | *(unset)* | **Production browser build only**. |
+| `VITE_POSTHOG_HOST` | `https://us.i.posthog.com` | US ingestion host (browser). |
+| `POSTHOG_KEY` | *(unset)* | **Production API host only** (`~/backend/.env.production`). |
+| `POSTHOG_HOST` | `https://us.i.posthog.com` | US ingestion host (server). |
+| `POSTHOG_INTERNAL_USERS` | *(empty)* | Comma-separated GitHub logins and/or emails. Default empty; do not commit a real list. |
 
-**Production keys:** set only in `~/surfcad-prod-build/.env.production` on spark (`VITE_POSTHOG_KEY`, optional `VITE_POSTHOG_HOST`). Do **not** add these to dev/staging env files or the repo.
+**Production keys:** set `VITE_POSTHOG_KEY` only in `~/surfcad-prod-build/.env.production` on spark, and `POSTHOG_KEY` only in the production API env. Do **not** add these to dev/staging env files or the repo.
 
 **PostHog project settings (owner):** enable **Discard client IP data** in the PostHog project so IPs are not stored server-side (the client also sets `ip: false` and denies `$ip` properties).
 
 ### Behaviour
 
 - Autocapture **off**, session recording **off** (`disable_session_recording: true`), surveys **off**.
-- Page views: **manual** (`$pageview` on load and `popstate` for SPA navigations).
+- Page views: **manual** (`$pageview` after identity sync, then `popstate` for SPA navigations). `user_type` is `register`ed and set as a person property before the first `$pageview`.
 - Persistence: **`localStorage` only** (no PostHog cookies).
-- Consent: `opt_in_capturing()` / `opt_out_capturing()` when the user toggles analytics or GPC applies.
-- Identity: anonymous by default; on sign-in, `identify(SHA-256(userId))` (hex via Web Crypto). Never email, name, or raw ids. Super property `user_type`: `guest` \| `signed_in`. `reset()` on sign-out.
-- Web Vitals: one `web_vitals` event per page load (LCP, INP, CLS, FCP, TTFB) via the `web-vitals` package.
+- Consent: `opt_in_capturing()` / `opt_out_capturing()` when the user toggles analytics or GPC applies. Opt-out does **not** call `reset()`.
+- Identity: anonymous by default; on sign-in, `identify(SHA-256(userId))` (hex via Web Crypto). Never email, name, or raw ids. Super property `user_type`: `guest` \| `signed_in`. `reset()` **only on sign-out**.
+- Internal traffic: `GET /api/auth/me` returns `user.isInternal` from `POSTHOG_INTERNAL_USERS` (server-side). The client also registers `is_internal: true` on localhost / Vite dev.
+- Web Vitals: one `web_vitals` event per page load (LCP, INP, CLS, FCP, TTFB) via the `web-vitals` package. CLS is the unrounded value (including `0`).
 - Product events: `track(name, props)` with an allowlisted name set; props must not include user content (part names, filenames, code).
+- Auth conversions: `signed_up` and `logged_in` are captured **server-side** (distinct id = SHA-256 of the user id). The client passes `analyticsConsent` from `getAnalyticsConsent()` only when `hasStoredConsentChoice()` is true; unknown (no stored choice) omits the field and the server skips unless Mongo already has a choice.
 
 ### Explicit events (`track`)
 
 | Event | Properties | Answers |
 | --- | --- | --- |
 | `app_loaded` | `load_ms` | Time to interactive / boot. |
-| `signed_up` | — | Registration conversions. |
-| `logged_in` | — | Login conversions. |
+| `signed_up` | `method` | Registration conversions (server: email verify, guest convert, new OAuth). |
+| `logged_in` | `method` | Login conversions (server: every new session). |
 | `part_created` | — | New part rows in an assembly. |
 | `assembly_created` | — | New assemblies started. |
 | `feature_used` | `feature` (kind id, e.g. `fillet`, `extrude`) | Feature adoption; compare counts to the full feature kind list for **never-used** features. |
 | `export_done` | `format` (`3mf`, `stl`, `step`) | Export usage. |
-| `quote_requested` | — | Manufacturing quote intent. |
-| `checkout_started` | — | Cart checkout opened. |
+| `quote_requested` | `process`, `material`, `infill` | User proceeds with a quote (order or add-to-cart). |
+| `checkout_started` | `line_count` | Cart checkout page opened. |
 | `git_saved` | — | Successful git commit (or queued offline save). |
 | `local_agent_paired` | — | Local MCP / agent bridge paired. |
-| `partners_form_submitted` | — | Partners lead form success. |
+| `partners_form_submitted` | `partner_type` | Partners lead form success. |
 
 Additional automatic event: **`web_vitals`** (not via `track` allowlist) with `lcp`, `inp`, `cls`, `fcp`, `ttfb`. PostHog also attaches default browser/device properties on every capture.
 
-`feature_used` is emitted from `trackFeatureCommits` when a new feature marker appears in the part script (wired through `commitFeatureBuffer` and palette insert).
+`feature_used` is emitted on palette Confirm (`trackPaletteFeature` with the registry kind), when a new feature marker appears (`trackFeatureCommits` via `commitFeatureBuffer`), and on agent `confirm_feature` / helper insert. A unit test iterates `HELPER_PALETTE_ITEMS` so new features cannot be missed.
 
 ### Suggested PostHog insights
 

@@ -15,4 +15,10 @@ describe('User.consent schema', () => {
     assert.match(src, /router\.put\('\/consent'/);
     assert.match(src, /requireAuth/);
   });
+
+  test('GET /me includes isInternal', () => {
+    const src = readFileSync(new URL('../backend/routes/auth.js', import.meta.url), 'utf8');
+    assert.match(src, /user\.isInternal\s*=/);
+    assert.match(src, /isInternalUser/);
+  });
 });
