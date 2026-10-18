@@ -10,7 +10,7 @@ import { X } from 'lucide-react';
  * two-line card (label, then description) whose width comes from the
  * portal, not from the message.
  */
-// Same glass card as the mode chips in docs/ui_style_guide.md. Not a rounded pill.
+// Same glass card as the mode chips in docs/ui-style-guide.md. Not a rounded pill.
 const TONE_CLASS = {
   error: 'bg-red-950/80 border border-red-400/70 text-red-50',
   scrap: 'bg-red-950/80 border border-red-400/70 text-red-50',

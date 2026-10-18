@@ -44,7 +44,7 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
   const main = read('src/main.jsx');
   const server = read('backend/server.js');
   const arch = read('docs/architecture.md');
-  const map = read('docs/UI_MAP.md');
+  const map = read('docs/ui-map.md');
   check('route mounted at /partners without auth',
     /pathIsPartners/.test(main) && /<PartnersPage/.test(main));
   check('form fields, honeypot, and turnstile mount',

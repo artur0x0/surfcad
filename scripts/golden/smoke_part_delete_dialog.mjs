@@ -34,7 +34,7 @@ console.log('part delete dialog — source');
 {
   const feed = read('src/components/PartFeed.jsx');
   const asm = read('src/utils/assembly.js');
-  const map = read('docs/UI_MAP.md');
+  const map = read('docs/ui-map.md');
   const arch = read('docs/architecture.md');
   const pkg = read('package.json');
   const eslint = read('eslint.config.js');

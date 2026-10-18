@@ -28,7 +28,7 @@ console.log('quote-then-add — order opens a quote');
   const api = read('src/utils/quoteApi.js');
   const cart = read('src/utils/cart.js');
   const sync = read('src/utils/cartSync.js');
-  const ui = read('docs/UI_MAP.md');
+  const ui = read('docs/ui-map.md');
   const orderStart = hook.indexOf('const orderPart = useCallback');
   const orderEnd = hook.indexOf('const closePartQuote');
   const orderBody = hook.slice(orderStart, orderEnd);
