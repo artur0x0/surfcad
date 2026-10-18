@@ -6,9 +6,12 @@
  * shape: `at`, `n`, `area`, and for a fillet or chamfer face `src` / `ord`.
  *
  * Tolerances: normal within 8°, `at` within 1 mm, area within ±25% of the
- * saved area. A key that stores `src` or `ord` must match those too. Two or
- * more faces in tolerance drop the key as ambiguous. None drop it as missing.
- * Keys are compared only to the part they were saved on.
+ * saved area. A stored `src` or `ord` picks among several faces in tolerance.
+ * One face in tolerance still matches when that feature index moved, so a
+ * rebuild does not drop a paint that still sits on the same face. Two or
+ * more faces in tolerance with no unique feature hit drop the key as
+ * ambiguous. None drop it as missing. Keys are compared only to the part
+ * they were saved on.
  */
 
 export const FACE_MATCH_NORMAL_DEG = 8;
@@ -296,25 +299,67 @@ export function matchFaceKeys(faces, items) {
       missing.push(dropped(null, item));
       continue;
     }
-    const hits = [];
+    const geometric = [];
+    const featured = [];
     const pool = candidates(index, key);
     for (let c = 0; c < pool.length; c++) {
       const row = pool[c];
-      if (!featureOk(row, key) || !geometryOk(row, key)) continue;
-      hits.push(row.face);
-      if (hits.length > 1) break;
+      if (!geometryOk(row, key)) continue;
+      geometric.push(row.face);
+      if (featureOk(row, key)) featured.push(row.face);
+      if (featured.length > 1) break;
     }
-    if (hits.length === 1) {
+    // Feature index wins when it names one face. A lone geometric hit still
+    // matches: inserting an op renumbers `src` and must not drop that paint.
+    // Several geometric hits and no unique feature hit stay ambiguous.
+    let chosen = null;
+    let ambig = false;
+    if (featured.length === 1) chosen = featured[0];
+    else if (featured.length > 1) ambig = true;
+    else if (geometric.length === 1) chosen = geometric[0];
+    else if (geometric.length > 1) ambig = true;
+    if (chosen) {
       const rec = dropped(null, item);
-      rec.face = hits[0];
+      rec.face = chosen;
       matched.push(rec);
-    } else if (hits.length > 1) {
+    } else if (ambig) {
       ambiguous.push(dropped(null, item));
     } else {
       missing.push(dropped(null, item));
     }
   }
   return { matched, ambiguous, missing };
+}
+
+/**
+ * Face colors the mesh just built will not draw.
+ * Whole-part `colors[id].part` is not listed: it does not use a face key.
+ * A surf id with no face list here is skipped, so a hidden part is not reported.
+ *
+ * @param {Array<{ surfId: string, faces: Array }>} parts
+ * @param {Record<string, { faces?: Array<{ color?: string, key: object }> }>|null} colors
+ * @returns {Array<{ surfId: string, color?: string, key: object, reason: 'missing' | 'ambiguous' }>}
+ */
+export function listDroppedFacePaints(parts, colors) {
+  const out = [];
+  const list = Array.isArray(parts) ? parts : [];
+  for (let i = 0; i < list.length; i++) {
+    const part = list[i];
+    const surfId = part?.surfId != null ? String(part.surfId) : '';
+    if (!surfId) continue;
+    const items = colors?.[surfId]?.faces;
+    if (!Array.isArray(items) || !items.length) continue;
+    const hit = matchFaceKeys(part.faces || [], items);
+    for (let k = 0; k < hit.ambiguous.length; k++) {
+      const rec = hit.ambiguous[k];
+      out.push({ surfId, key: rec.key, ...(rec.color != null ? { color: rec.color } : {}), reason: 'ambiguous' });
+    }
+    for (let k = 0; k < hit.missing.length; k++) {
+      const rec = hit.missing[k];
+      out.push({ surfId, key: rec.key, ...(rec.color != null ? { color: rec.color } : {}), reason: 'missing' });
+    }
+  }
+  return out;
 }
 
 /**

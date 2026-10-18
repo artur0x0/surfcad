@@ -7919,7 +7919,10 @@ const App = () => {
       }
       const epochBefore = runOutcomeEpochRef.current;
       const ran = await refreshAssemblyRef.current?.(text);
-      return agentCadRunOutcome(epochBefore, ran);
+      const outcome = agentCadRunOutcome(epochBefore, ran);
+      const dropped = viewportRef.current?.readDroppedPaints?.(assemblyRef.current?.colors ?? null);
+      if (Array.isArray(dropped)) outcome.droppedPaints = dropped;
+      return outcome;
     },
     // Toolbar handlers. v1 `run` and `undo` keep the script mutate path.
     // Later commands call these same functions the buttons call.

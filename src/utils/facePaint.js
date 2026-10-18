@@ -193,6 +193,22 @@ function paintedFaceIds(faces, keys) {
   return ids;
 }
 
+/** Saved color already on the one face this key matches, or null. */
+function colorAlreadyOnKey(existing, faces, key) {
+  if (!faces?.length || !key) return null;
+  const hit = matchFaceKeys(faces, [{ key }]);
+  if (hit.matched.length !== 1) return null;
+  const id = hit.matched[0].face.id;
+  const list = Array.isArray(existing) ? existing : [];
+  for (let i = 0; i < list.length; i++) {
+    const prev = matchFaceKeys(faces, [list[i]]);
+    if (prev.matched.length === 1 && prev.matched[0].face.id === id) {
+      return parsePaintHex(list[i].color);
+    }
+  }
+  return null;
+}
+
 /**
  * Drop saved face entries that uniquely match a face we are painting.
  * Ambiguous and missing keys stay. They are not pruned here.
@@ -253,7 +269,8 @@ function writeEntry(map, surfId, entry) {
 /**
  * Confirm. `part` sets `colors[surfId].part` and leaves face keys alone.
  * Otherwise each key is written into `faces[]`, replacing a saved key that
- * uniquely matches that same face.
+ * uniquely matches that same face. The same color on a face that still
+ * matches keeps the saved key, so a script re-run does not look like a new paint.
  * Returns the input when the color or surf id cannot be stored.
  */
 export function commitPaintColors(colors, surfId, { color, part = false, keys = [], faces = null } = {}) {
@@ -267,9 +284,15 @@ export function commitPaintColors(colors, surfId, { color, part = false, keys = 
   }
   const incoming = dedupedEntries(keys, hex, faces);
   if (!incoming.length) return colors ?? null;
+  const fresh = [];
+  for (let i = 0; i < incoming.length; i++) {
+    if (colorAlreadyOnKey(prev.faces, faces, incoming[i].key) === hex) continue;
+    fresh.push(incoming[i]);
+  }
+  if (!fresh.length) return colors ?? null;
   prev.faces = [
-    ...replaceMatchedFaces(prev.faces, faces, incoming.map((row) => row.key)),
-    ...incoming,
+    ...replaceMatchedFaces(prev.faces, faces, fresh.map((row) => row.key)),
+    ...fresh,
   ];
   return writeEntry(map, surfId, prev);
 }

@@ -339,12 +339,16 @@ export function createSurfcadBridge(hostSource) {
     lastStatusPartId = activeId != null ? String(activeId) : '';
     heldFailurePartId = ok ? '' : lastStatusPartId;
     lastStatus = statusFrom({ ...outcome, ok }, text, { partId: lastStatusPartId });
-    return {
+    const result = {
       ok,
       errors: lastErrors.slice(),
       failures: lastStructuredErrors.slice(),
       status: copyStatus(lastStatus),
     };
+    if (Array.isArray(outcome?.droppedPaints)) {
+      result.droppedPaints = JSON.parse(JSON.stringify(outcome.droppedPaints));
+    }
+    return result;
   }
 
   /**
