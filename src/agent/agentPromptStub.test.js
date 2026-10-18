@@ -32,7 +32,10 @@ test('send without a screenshot clears the previous attachment (reset)', () => {
 
 test('sendAgentPromptText attaches the shot once and the UI discards it after send', () => {
   const transport = createAgentPromptStub({ delayMs: 0 });
-  const first = sendAgentPromptText(transport, '  look at this  ', { screenshot: SHOT });
+  const first = sendAgentPromptText(transport, '  look at this  ', {
+    screenshot: SHOT,
+    context: { part_id: 'p1', assembly_id: 'a1' },
+  });
   assert.equal(first.ok, true);
   assert.deepEqual(transport.lastScreenshot(), SHOT);
 

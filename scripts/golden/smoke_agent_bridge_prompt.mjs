@@ -274,6 +274,8 @@ try {
     () => window.surfcadAgentPrompt?.getBridge?.().getState?.() === 'paired',
     { timeout: 10000 },
   );
+  await page.waitForSelector('[data-agent-prompt]', { timeout: 10000 });
+  check('prompt card visible after pairing', await page.locator('[data-agent-prompt]').count() > 0);
 
   const promptId = await page.evaluate(({ text, png, partId, assemblyId }) => window.__promptSend(text, {
     context: { part_id: partId, assembly_id: assemblyId },
@@ -309,6 +311,12 @@ try {
   const pageReply = afterReply?.replies?.find((row) => row.id === promptId);
   check('adapter received the reply', pageReply?.text === REPLY_TEXT && pageReply?.final === true, JSON.stringify(pageReply));
   check('status idle after the final reply', afterReply?.working?.[afterReply.working.length - 1] === false, JSON.stringify(afterReply?.working));
+  const replyBody = page.locator('[data-agent-reply-body]');
+  await replyBody.waitFor({ state: 'visible', timeout: 10000 });
+  const shownReply = (await replyBody.innerText()).trim();
+  check('prompt card shows the reply as text', shownReply.includes(REPLY_TEXT), shownReply.slice(0, 240));
+  const replyChildElements = await replyBody.evaluate((el) => el.childElementCount);
+  check('prompt card reply is plain text, not HTML', replyChildElements === 0, `children=${replyChildElements}`);
 
   const hook = await startHookServer();
   httpsServer = hook.server;

@@ -21,7 +21,12 @@ test('PromptInput tags send/stop/dismiss/screenshot and uses the outline send + 
   assert.match(SRC, /discardShot\(\)/);
   assert.match(SRC, /sendAgentPromptText\(/);
   assert.match(SRC, /attachViewerShot/);
+  assert.match(SRC, /promptContext/);
+  assert.match(SRC, /bindAgentPromptTransport/);
+  assert.match(SRC, /AGENT_PROMPT_WORKING_TIMEOUT_MS/);
   assert.doesNotMatch(SRC, /data: '',/);
+  assert.doesNotMatch(SRC, /innerHTML/);
+  assert.doesNotMatch(SRC, /dangerouslySetInnerHTML/);
   assert.match(SRC, /disabled=\{!canCapture && !shotCue\}/);
   assert.match(SRC, /shouldShowAgentPrompt/);
   assert.match(SRC, /shouldShowAgentBridgeDisconnect/);
@@ -38,6 +43,9 @@ test('demo states seed idle, typing, replies, working, and camera on/off', () =>
   assert.match(SRC, /state === 'typing'/);
   assert.match(SRC, /AGENT_PROMPT_TYPED/);
   assert.match(SRC, /Agent is working/);
+  assert.match(SRC, /Waiting for agent/);
+  assert.match(SRC, /data-agent-prompt-ack="failed"/);
+  assert.match(SRC, /data-agent-prompt-ack="queued"/);
   assert.match(SRC, /aria-pressed=\{shotCue\}/);
   assert.match(SRC, /aria-label=\{shotCue \? 'Discard screenshot' : 'Attach screenshot'\}/);
 });

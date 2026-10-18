@@ -77,16 +77,15 @@ mode-chip slot at the bottom of the CAD viewer, between the rails — max 640px
 on desktop, rail-capped on a 390px phone. It shows only while an agent is
 paired (the same `shouldShowAgentBridgeDisconnect({ paired, link })` test as
 Disconnect) or when a DEV build pins `?agentPromptDemo=1` for goldens / screenshots.
-It is not mounted in game mode, and a production build with no injected transport
-does not mount the card at all. The camera toggle (`data-agent-prompt-screenshot`)
-captures the viewer canvas only and attaches a PNG to the next send. PR 1 talks
-to `createAgentPrompt()` in `src/agent/createAgentPrompt.js`: the echo stub
-and the demo query run only when `import.meta.env.DEV` is true (or a test
-passes `{ DEV: true }`). A production build never echoes and never shows canned replies.
-PR 2 swaps that one import to the MCP transport. Do not add
-`src/agent/agentPromptTransport.js` here. The `agent_prompt` bridge command
-stays on the page (`action: 'screenshot'` turns the camera on); it is not
-copied into `packages/surfcad-mcp/data/commands.json` in this PR.
+It is not mounted in game mode. After Connect Agent, `AgentBridgeHost` builds
+`createAgentPromptTransport(bridge)` from `window.surfcadAgentPrompt.getBridge()`
+and passes it to the card. Unpair tears that transport down and hides the card.
+A production build with no paired agent stays hidden and never uses the echo
+stub. The stub and `?agentPromptDemo=1` are DEV-only (DEV with no pairing may
+still echo). The camera toggle (`data-agent-prompt-screenshot`) captures the
+viewer canvas only and attaches a PNG to the next send. Replies are plain text.
+The `agent_prompt` bridge command stays on the page (`action: 'screenshot'`
+turns the camera on); it is not copied into `packages/surfcad-mcp/data/commands.json`.
 
 **The CAD title reads "part in assembly".** Part name, the word in, then the
 assembly name (`data-viewer-title`, `data-title-in`, `data-viewer-title-text`).
@@ -636,7 +635,7 @@ All of these are absolutely positioned inside the shell at
 | bottom of the pane (`data-feature-card`). On a phone the stage switcher hides and the card sits on that switcher's bottom edge. Desktop stays 10px off the pane | contour plane card (circle, rectangle, polygon, polyline, workplane), the Hole card, and the Extrude, Revolve, Loft, and Sweep slot cards, fillet, chamfer, the standalone edge card, shell, draft, move face, delete face, cut, boolean, move, paint, the CAD helper card (cube, round box, cylinder, sphere, tube, hex, hole, mirror, center, align, array, path, refuse). Cube **Centered** clears as soon as Pos or Rot changes so it does not fight the pose fields (distinct from the **Center** transform). Block feature edit writes pose back into the script. Move on overlapping bodies stores mesh `tri` with `{ at }`. Sheet metal (picker, plane and edit chip, base, bend, tab, hole, countersink, tapped, export). Grey shell, cyan Confirm. The footer top padding (`pt-4` on `data-feature-sheet-footer`) is the gap between the body and Delete/Confirm, so Fillet's Tangent / Clear / Undo row and every other card on this shell share it. On a phone, Dimension and Constrain Done or Enter in the compact field commits and then Adds, or Confirms when editing. Blur only commits. The edge card has X and no Confirm. Measure has X and no Confirm: Clear is in the body, and the mm|in toggle is in the header. Measure keeps the left rail, so it stays between both rails. Analyze's footer is Run or Back to Setup, never Confirm. Fillet, chamfer, shell, draft, move face, delete face, cut, move, boolean, and paint use `fullLeft` (10px from the pane's left edge, clear of the right rail) because the left helper rail is hidden. The sheet metal picker and feature edit stay centered between both rails. Contour, the edge card, and the helper card stay between both rails too. Refuse's footer says OK. Sheet metal Confirm is 44px. Boolean stays `z-20`, under the section rail. The view-snap flyout (`z-40`) may cover a `fullLeft` card's right end and stays above it. Hidden in game. Game keeps the old helper sheet | `FeatureSheet.jsx`, `ContourModeChip.jsx`, `FilletModeChip.jsx`, `ShellModeChip.jsx`, `DraftModeChip.jsx`, `MoveFaceModeChip.jsx`, `DeleteFaceModeChip.jsx`, `CutModeChip.jsx`, `BooleanModeChip.jsx`, `MoveModeChip.jsx`, `PaintModeChip.jsx`, `MeasureModeChip.jsx`, `fea/FeaStudyChip.jsx`, `fea/FeaStudySheet.jsx`, `HelperParamModal.jsx`, `HoleCard.jsx`, `sheetMetal/SmControls.jsx` | Viewport |
 | top-16 center, portaled `z-50` | toasts: edge-mode, contour, fillet-scrap, fillet, shell — same `ErrorPopup` card | `ErrorPopup.jsx` | Viewport |
 | bottom center feature card (`data-feature-card`, `data-measure-mode`). On a phone the stage switcher hides. Hidden in game | Measure: sticky point / edge / face / part picks, distance, angle, radius, diameter, ΔX ΔY ΔZ. Header mm\|in is the global `surfcad.displayUnit`. Joint distance and the contour loft offset read it too. Scripts stay mm. Length captions end with mm or in. Clear drops the picks. No Confirm. X closes and restores the camera. Characteristic length feeds the feature-card length sliders and does not change this card | `MeasureModeChip.jsx` | Viewport |
-| bottom center of the viewer pane, between the rails (`data-agent-prompt`). Desktop bottom 48px / max 640px; phone bottom 56px / rail-capped. Hidden until an agent is paired (or `?agentPromptDemo=1`). Not mounted in game. Camera toggle attaches a viewer-only PNG to the next send | floating agent prompt | `PromptInput.jsx` | App (sibling of Viewport, both shells) |
+| bottom center of the viewer pane, between the rails (`data-agent-prompt`). Desktop bottom 48px / max 640px; phone bottom 56px / rail-capped. Hidden until an agent is paired (or DEV `?agentPromptDemo=1`). Not mounted in game. Camera toggle attaches a viewer-only PNG to the next send | floating agent prompt | `PromptInput.jsx` | App (sibling of Viewport, both shells) |
 | fills the pane | WebGL canvas | `<canvas ref={canvasRef}>` | `:3985` |
 
 Unpainted faces are one off-white, `DEFAULT_PART_COLOR` (`#ECEAE4`, `src/utils/partMaterial.js`). Face paint, the stress skin, selection and hover, and piece-preview colors draw over it. The canvas draws a face-color skin on top of a part when that assembly has `colors` (`src/utils/faceColorSkin.js`). The skin is under crease lines and pick highlights. `?debugFaces=1` or `localStorage` key `surfcad.debugFaces` = `1` paints each face patch a different color. The flag is off unless set, and it is not a rail button. The right rail has no patch-colour toggle.
@@ -726,7 +725,7 @@ document: `src/utils/defaultScript.js`. Draft persistence:
 `src/utils/editorStorage.js`.
 
 ### Running a script
-`src/components/PromptInput.jsx` (paired-agent prompt → stub `createAgentPrompt()`, PR 2 swaps the transport) is not on the run path.
+`src/components/PromptInput.jsx` (paired-agent prompt → `createAgentPromptTransport`; DEV unpaired may still use the echo stub) is not on the run path.
 Run still goes `src/utils/scriptValidator.js` → `src/utils/scriptExecutor.js` →
 `src/workers/sandboxWorker.js` (every helper function and the real geometry
 work), with Manifold booted by `src/utils/ManifoldWorker.js`. Timeout/memory
