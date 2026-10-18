@@ -283,7 +283,7 @@ console.log('cut plane');
   const chip = read('../../src/components/CutModeChip.jsx');
   const palette = read('../../src/components/HelperInsertPalette.jsx');
   const app = read('../../src/App.jsx');
-  const popup = read('../../docs/ui_style_guide.md');
+  const popup = read('../../docs/ui-style-guide.md');
   const hi = view.indexOf('const highlightFace = useCallback');
   const note = view.indexOf('Below highlightFace on purpose');
   const draftPaint = view.indexOf('const paintDraftPicks = useCallback');
@@ -340,7 +340,7 @@ console.log('cut plane');
   check('a cut tap is not swallowed by a contour or a construction plane',
     skipsCutAndBoolean('showContoursRef') && skipsCutAndBoolean('planeHits'));
   check('chip does not ask for shift-click', !/shift-click/.test(chip) && !/shiftKey/.test(chip));
-  check('ui_style_guide documents CutModeChip', /CutModeChip/.test(popup) && /sticky picker/.test(popup));
+  check('ui-style-guide documents CutModeChip', /CutModeChip/.test(popup) && /sticky picker/.test(popup));
 }
 
 const pending = new Map();

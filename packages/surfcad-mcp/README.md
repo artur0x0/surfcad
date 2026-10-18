@@ -16,22 +16,22 @@ Environment variables:
 
 | Variable | Purpose |
 | --- | --- |
-| `SURFCAD_PAIRING_CODE` | 6-character code from the SurfCAD **Local agent** panel (optional if you use the `pair` tool). |
+| `SURFCAD_PAIRING_CODE` | 6-character code from the SurfCAD **Connect Agent** dialog (optional if you use the `pair` tool). |
 | `SURFCAD_AGENT_BRIDGE_WS_URL` | Relay URL (default `ws://127.0.0.1:17341`). |
 | `SURFCAD_MCP_START_RELAY` | Set to `0` to skip starting the relay (tests only). |
 
-## Pair with SurfCAD (Local agent)
+## Pair with SurfCAD
 
 1. Open [https://surfcad.com](https://surfcad.com) (or local dev).
-2. Open the **profile** menu → **Local agent** → **Show pairing code** and leave the tab open.
+2. Open the **profile** chip and choose **Connect Agent**. When the relay is found, a six-character pairing code appears. Leave the tab open.
 3. Add `surfcad-mcp` to your MCP client (`npx surfcad-mcp`), set `SURFCAD_PAIRING_CODE` to that code, or call the MCP **`pair`** tool with `{ "code": "ABCDEF" }`.
-4. Click **Allow connection** in SurfCAD when prompted.
+4. Click **Allow** (the green check) in SurfCAD when prompted.
 
-Nothing pairs silently — you must show the code and approve the connection.
+Nothing pairs without your approval.
 
 ### Safari
 
-Safari on a Mac blocks https pages from opening `ws://127.0.0.1` directly. In Safari, **Connect Agent** also opens a small window titled **SurfCAD local agent bridge**, served by this relay at `http://127.0.0.1:17341/bridge`. It carries the connection between the tab and the relay; keep it open while the agent works. If it closes, the Local agent panel shows **Disconnected** with a **Reconnect** button, and you allow the agent again. The bridge window only talks to SurfCAD pages (https://surfcad.com, www, and local dev). If Safari blocks the window, allow pop-ups for surfcad.com and click **Reconnect**. Safari on iPhone and iPad is not supported.
+Safari on a Mac blocks https pages from opening `ws://127.0.0.1` directly. In Safari, **Connect Agent** also opens a small window titled **SurfCAD local agent bridge**, served by this relay at `http://127.0.0.1:17341/bridge`. It carries the connection between the tab and the relay; keep it open while the agent works. If it closes, the Connect Agent dialog shows **Disconnected** with a **Reconnect** button, and you allow the agent again. The bridge window only talks to SurfCAD pages (https://surfcad.com, www, and local dev). If Safari blocks the window, allow pop-ups for surfcad.com and click **Reconnect**. Safari on iPhone and iPad is not supported.
 
 ## MCP client config (Cursor / Claude Desktop)
 

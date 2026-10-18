@@ -17,9 +17,9 @@ a floating overlay inside the viewport, or a full-screen modal.
 `golden:privacy-consent` checks the first-visit popup at 1280 and 390: it appears with no stored choice, sits above the CAD toolbar / home pill, and **Accept all** hides it and persists. The privacy page always shows that Global Privacy Control is honored and **Change privacy choices** re-opens the same popup.
 
 Read this file to answer "where is X on screen?" and "which file do I edit?".
-For text, color, and popup chrome read [docs/ui_style_guide.md](./ui_style_guide.md).
+For text, color, and popup chrome read [docs/ui-style-guide.md](./ui-style-guide.md).
 For blend/fillet internals read `.claude/skills/fillets/SKILL.md`; for the
-script API read `docs/HELPER_FUNCTIONS.md`.
+script API read `docs/helper-functions.md`.
 
 - **Mount:** `src/main.jsx` → `AuthProvider` → `App`
 - **Shell + all layout decisions:** `src/App.jsx`
@@ -64,7 +64,7 @@ one shell you must change the other.
 - **Phone sheet** (`data-script-sheet`, 390px): full-screen over the home pill. Back is an ArrowLeft icon only (`data-script-editor-close`, `aria-label="Back to parts"`, 44×44) and returns to Parts with the same close-save. A stored or linked Script stage opens Parts.
 - **CAD corner.** There is no `data-cad-io-tray`. Upload and Download are on the Parts ribbon. Order is the part-row cart button (`data-part-order`). Run, Select all, Undo, and Redo stay in the editor.
 - **Puzzle easter egg** (`data-puzzle-unlock`, 44×44, viewport top-left): five taps in three seconds while `useAuthState().signedIn` (grey reauth counts) call `handleStartGame` and show `data-puzzle-unlock-toast` ("Puzzle unlocked"). The taps are not stored. Signed-out and pending sessions have no target and no toast. Nothing covers that corner.
-- **Identity.** Brand colors and splash copy: [docs/ui_style_guide.md](./ui_style_guide.md#brand). The CAD viewport header row (`data-viewer-header-row`, `top-4`, `left-2` / `lg:left-4`, same inset as the helper rail) shows the paper-tile mark (`data-brand-mark="paper"`) and the outlined SurfCAD wordmark at 16px on a transparent lockup (`data-brand-header`, `data-brand-wordmark`). The assembly title pills sit centred on the same row (`data-viewer-title`), with truncation so long names stay readable and the row clears the AR profile chip (`pr-11`). Parts and Script stages do not draw the brand. `golden:brand-identity` checks 390 and 1280.
+- **Identity.** Brand colors and splash copy: [docs/ui-style-guide.md](./ui-style-guide.md#brand). The CAD viewport header row (`data-viewer-header-row`, `top-4`, `left-2` / `lg:left-4`, same inset as the helper rail) shows the paper-tile mark (`data-brand-mark="paper"`) and the outlined SurfCAD wordmark at 16px on a transparent lockup (`data-brand-header`, `data-brand-wordmark`). The assembly title pills sit centred on the same row (`data-viewer-title`), with truncation so long names stay readable and the row clears the AR profile chip (`pr-11`). Parts and Script stages do not draw the brand. `golden:brand-identity` checks 390 and 1280.
 
 **The seam between the two panes is draggable** in both shells
 (`SplitDivider.jsx`, pointer-capture based): left/right on desktop
@@ -789,7 +789,7 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
 
 ## 6. Conventions to keep
 
-- **Layout in Tailwind; color and type from** [docs/ui_style_guide.md](./ui_style_guide.md).
+- **Layout in Tailwind; color and type from** [docs/ui-style-guide.md](./ui-style-guide.md).
   No CSS modules. Light-rail overlay idiom:
   `absolute … bg-white/60 backdrop-blur-sm rounded-lg shadow-lg z-10`
   (light surface — pair with `text-on-light`, never on dark chrome).
@@ -807,7 +807,7 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
   `syncPartLines`, which points `part` at the body you edited.
 - **Mode-chip popup style** (placement, cyan/amber glass, mobile
   `max-h-[calc(100dvh-12rem)]` + `rail-scroll`, Confirm/X): see
-  [`docs/ui_style_guide.md`](./ui_style_guide.md#popups). References: `ContourModeChip` (incl.
+  [`docs/ui-style-guide.md`](./ui-style-guide.md#popups). References: `ContourModeChip` (incl.
   Loft / Workplane), `FilletModeChip`, `ShellModeChip` (face-pick opening —
   not axis X/Y/Z), `DraftModeChip` (neutral-plane draft, not a world-axis guess),
   `CutModeChip` (plane cut — a face plane or an explicit XY/YZ/ZX, offset along
@@ -833,7 +833,7 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
   starter snippets). The contour slider goes to 128 so the default is not pinned
   at the top of its range.
 - **Everything over the 3D view is translucent.** Surfaces, text-on-dark, and
-  the no-slab rule: [docs/ui_style_guide.md](./ui_style_guide.md#surfaces-over-the-3d-view).
+  the no-slab rule: [docs/ui-style-guide.md](./ui-style-guide.md#surfaces-over-the-3d-view).
 - **Cross-section buttons name their action**: the collapsed rail opens the
   options with the section-cut glyph (`TrianglesCenterlineDashedVertical`), and
   the expanded panel closes with a green `Check`. No chevrons — they said
@@ -849,7 +849,7 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
   toasts + mobile stage pill `z-30`; **cross-section panel/popup `z-40`** (above
   the CAD↔Script home-indicator so expanded options win); modals and error
   banners `z-50`. Error cards (`ErrorPopup`) are the glass `rounded-lg` chip
-  from [docs/ui_style_guide.md](./ui_style_guide.md#error-toasts), not a rounded pill. They are portaled to `document.body`
+  from [docs/ui-style-guide.md](./ui-style-guide.md#error-toasts), not a rounded pill. They are portaled to `document.body`
   at `z-50` so the full message sits above the feature strip and the left rail. Cross-section popup **Dismiss** is a grey lucide `X` (not the
   red FlipHorizontal); the collapsed rail still uses FlipHorizontal to
   enable/disable. Contour-mode rail dismiss is the same grey `X`. Check stays

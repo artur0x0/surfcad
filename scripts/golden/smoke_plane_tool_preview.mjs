@@ -54,7 +54,7 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
   const view = read('src/components/Viewport.jsx');
   const planes = read('src/utils/jointPlanes.js');
   const arch = read('docs/architecture.md');
-  const map = read('docs/UI_MAP.md');
+  const map = read('docs/ui-map.md');
   check('Plane tool paints reference planes with user planes',
     /planesForWorkplaneTool\(entry, \{ references: !planeFaceSelected \}\)/.test(view)
       && /export function planesForWorkplaneTool/.test(planes));

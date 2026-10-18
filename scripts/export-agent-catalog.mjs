@@ -1,6 +1,6 @@
 /**
  * Emit the machine-readable agent catalog from the live helper source,
- * HELPER_FUNCTIONS.md, the shipped Manifold .d.ts, the .surf.json rules,
+ * helper-functions.md, the shipped Manifold .d.ts, the .surf.json rules,
  * and the sheet-metal modules.
  *
  *   npm run export:agent
@@ -20,7 +20,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(join(root, rel), 'utf8');
 
 const runtimeSrc = read('src/lib/surfcad/runtime.js');
-const mdSrc = read('docs/HELPER_FUNCTIONS.md');
+const mdSrc = read('docs/helper-functions.md');
 const dtsSrc = read('built/manifold-encapsulated-types.d.ts');
 const sheetDfmSrc = read('src/utils/sheetMetal/sheetDfm.js');
 const sheetModelSrc = read('src/utils/sheetMetal/sheetModel.js');

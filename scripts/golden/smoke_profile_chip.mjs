@@ -73,7 +73,7 @@ console.log('\nG9 — UI wiring (source)');
   const toolbar = readFileSync(join(root, 'src/components/Toolbar.jsx'), 'utf8');
   const app = readFileSync(join(root, 'src/App.jsx'), 'utf8');
   const arch = readFileSync(join(root, 'docs/architecture.md'), 'utf8');
-  const ui = readFileSync(join(root, 'docs/UI_MAP.md'), 'utf8');
+  const ui = readFileSync(join(root, 'docs/ui-map.md'), 'utf8');
   const pkg = readFileSync(join(root, 'package.json'), 'utf8');
 
   ok('chip data attrs', /data-profile-chip/.test(chip)
@@ -154,7 +154,7 @@ console.log('\nG9 — UI wiring (source)');
     /handleProfileSignedOut/.test(app) && /setGithubConnected\(false\)/.test(app));
   ok('architecture documents G9', /Profile chip \(G9\)/.test(arch)
     && /top-right of the CAD viewport/.test(arch));
-  ok('UI_MAP mentions profile chip', /profile chip/i.test(ui));
+  ok('ui-map mentions profile chip', /profile chip/i.test(ui));
   ok('package.json has golden:profile-chip', /golden:profile-chip/.test(pkg));
 }
 

@@ -43,7 +43,7 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
 
 {
   const arch = readFileSync(join(ROOT, 'docs/architecture.md'), 'utf8');
-  const map = readFileSync(join(ROOT, 'docs/UI_MAP.md'), 'utf8');
+  const map = readFileSync(join(ROOT, 'docs/ui-map.md'), 'utf8');
   check('docs name Add plane', /golden:workplane-add/.test(arch) && /golden:workplane-add/.test(map));
 }
 
