@@ -2,8 +2,8 @@ import { createPortal } from 'react-dom';
 
 /**
  * Standalone Connect Agent dialog (not inside the profile menu).
- * Centered on every width. Extra bottom padding keeps the card off the
- * viewport's bottom edge.
+ * Centered on every width with extra bottom padding so it cannot sit on the
+ * page-footer Privacy choices link.
  */
 export default function AgentBridgePairingDialog({ open, onDismiss, children, transport }) {
   if (!open) return null;
