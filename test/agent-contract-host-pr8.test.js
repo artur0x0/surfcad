@@ -82,10 +82,15 @@ test('git_save uses handleGitCommit -> handleV2PlanSave -> executePlanSave', () 
 
 test('adoptV2SaveResult recaptures snapshot after a committed or branched v2 save', () => {
   const adopt = sliceFn('const adoptV2SaveResult', 'const handleV2PlanSave');
-  assert.match(adopt, /if \(result\.status === 'committed' \|\| result\.status === 'branched'\) \{[\s\S]*captureAgentScriptSnapshot\(\)/);
-  assert.match(adopt, /rememberGitBaseline\(captureBaseline\(/);
+  assert.match(
+    adopt,
+    /if \(result\.status === 'committed' \|\| result\.status === 'branched'\) \{[\s\S]*rememberGitBaseline\(captureBaseline\([\s\S]*captureAgentScriptSnapshot\(\)/,
+  );
   assert.match(adopt, /scripts: savedScripts/);
   assert.equal(/rememberGitBaseline\(\{[\s\S]*?headSha: result\.sha/.test(adopt), false);
+  const beforeWrite = adopt.slice(0, adopt.indexOf("result.status === 'committed' || result.status === 'branched'"));
+  assert.equal(/captureAgentScriptSnapshot/.test(beforeWrite), false);
+  assert.equal(/rememberGitBaseline/.test(beforeWrite), false);
 });
 
 test('readDirty compares WC to AssemblyCommit; parts has assemblyId and no path', () => {
