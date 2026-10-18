@@ -353,6 +353,7 @@ import {
   HELPER_PALETTE_ITEMS,
   newPartStarterScript,
 } from './utils/helperPaletteSnippets';
+import { describeHelperRefusal } from './agent/helperPaletteAgent';
 import {
   DEMO_PUZZLE,
   DEFAULT_PUZZLE_ID,
@@ -550,18 +551,42 @@ const App = () => {
    */
   const [runFailure, setRunFailure] = useState(null);
   const runFailureRef = useRef(null);
-  runFailureRef.current = runFailure;
+  /** Bumps on every viewport outcome so the agent host can tell this run from a stale ref. */
+  const runOutcomeEpochRef = useRef(0);
   /** Rollback bar per part. `null` is before every feature. A missing key is the end. */
   const [rollbackAnchors, setRollbackAnchors] = useState({});
   const rollbackAnchorsRef = useRef({});
   rollbackAnchorsRef.current = rollbackAnchors;
-  const handleRunOutcome = ({ script, ok, scriptLine, featureId, featureBlock, skipped } = {}) => {
+  const handleRunOutcome = ({
+    script, ok, scriptLine, featureId, featureBlock, skipped, message, detail,
+  } = {}) => {
     // Tracked block first (works on Safari), the stack's line second.
     const next = ok ? null : failedFeatureFromOutcome(script, { featureId, featureBlock, scriptLine });
-    const stamped = next ? { ...next, skipped: Array.isArray(skipped) ? skipped : [] } : null;
+    const uiMessage = typeof message === 'string' && message.trim() ? message.trim() : '';
+    const uiDetail = typeof detail === 'string' && detail.trim() && detail.trim() !== uiMessage
+      ? detail.trim()
+      : '';
+    let stamped = null;
+    if (!ok && (next || uiMessage)) {
+      stamped = {
+        ...(next || {}),
+        ...(typeof featureId === 'string' && featureId && !next?.id ? { id: featureId } : {}),
+        ...(uiMessage ? { message: uiMessage } : {}),
+        ...(uiDetail ? { detail: uiDetail } : {}),
+        skipped: Array.isArray(skipped) ? skipped : [],
+      };
+      if (!stamped.id && !stamped.message) stamped = null;
+    }
+    // Publish before setState. The agent reads this ref when execute resolves,
+    // which is before the next render would have copied state into the ref.
+    runOutcomeEpochRef.current += 1;
+    runFailureRef.current = stamped;
     setRunFailure((prev) => (
       (prev?.id ?? null) === (stamped?.id ?? null)
+      && (prev?.kind ?? null) === (stamped?.kind ?? null)
       && (prev?.block ?? null) === (stamped?.block ?? null)
+      && (prev?.message ?? null) === (stamped?.message ?? null)
+      && (prev?.detail ?? null) === (stamped?.detail ?? null)
       && failureSkipStamp(prev?.skipped) === failureSkipStamp(stamped?.skipped)
         ? prev
         : stamped
@@ -8001,6 +8026,51 @@ const App = () => {
   };
 
 
+  /**
+   * CAD outcome after refreshAssembly. A recovered solid is still a failed
+   * feature. Only a run that reported success (or an empty part) is ok.
+   * A run that never reported omits runFailure so the bridge keeps the
+   * previous failure instead of treating a stale ref as this run.
+   */
+  const agentCadRunOutcome = (epochBefore, ran) => {
+    const doc = assemblyRef.current;
+    const id = doc?.activeId;
+    const part = id ? doc.parts.find((row) => row.id === id) : null;
+    const partName = part?.name || '';
+    const run = id ? partRunsRef.current?.[id] : null;
+    const reported = runOutcomeEpochRef.current !== epochBefore;
+    const failure = reported ? runFailureRef.current : null;
+    if (reported && !failure) {
+      if (run?.empty) {
+        return { ok: true, errors: [], volume: null, bbox: null, partName, runFailure: null };
+      }
+      if (run?.ok === true && run.mesh?.vertProperties) {
+        const geom = geometryFromExecuteResult(run);
+        return {
+          ok: true,
+          errors: [],
+          volume: geom.volume,
+          bbox: geom.bbox,
+          partName,
+          runFailure: null,
+        };
+      }
+    }
+    const pending = failure || (!reported ? runFailureRef.current : null);
+    const message = (typeof pending?.message === 'string' && pending.message)
+      || (run && run.error)
+      || (!reported || ran === false ? 'Run did not finish' : 'Script failed');
+    const result = {
+      ok: false,
+      errors: [String(message)],
+      volume: null,
+      bbox: null,
+      partName,
+    };
+    if (reported) result.runFailure = failure || null;
+    return result;
+  };
+
   // Browser-agent bridge. Main thread only: the worker lockdown replaces fetch.
   // App publishes the script, history, and toolbar handlers. Viewport merges
   // screenshot onto the same ref. fillAgentHost keeps the other side's keys.
@@ -8044,29 +8114,12 @@ const App = () => {
           volume: null,
           bbox: null,
           partName: '',
+          runFailure: null,
         };
       }
+      const epochBefore = runOutcomeEpochRef.current;
       const ran = await refreshAssemblyRef.current?.(text);
-      const doc = assemblyRef.current;
-      const id = doc?.activeId;
-      const part = id ? doc.parts.find((row) => row.id === id) : null;
-      const partName = part?.name || '';
-      const run = id ? partRunsRef.current?.[id] : null;
-      if (run?.empty) {
-        return { ok: true, errors: [], volume: null, bbox: null, partName };
-      }
-      if (run?.ok === true && run.mesh?.vertProperties) {
-        const geom = geometryFromExecuteResult(run);
-        return {
-          ok: true,
-          errors: [],
-          volume: geom.volume,
-          bbox: geom.bbox,
-          partName,
-        };
-      }
-      const message = (run && run.error) || (ran === false ? 'Run did not finish' : 'Script failed');
-      return { ok: false, errors: [String(message)], volume: null, bbox: null, partName };
+      return agentCadRunOutcome(epochBefore, ran);
     },
     // Toolbar handlers. v1 `run` and `undo` keep the script mutate path.
     // Later commands call these same functions the buttons call.
@@ -8097,7 +8150,7 @@ const App = () => {
         return {
           error: {
             code: 'insert_failed',
-            message: 'Helper refused insert (check params, selection, or contour/mode prerequisites)',
+            message: describeHelperRefusal(item, { params, faceContext, edgeContext }),
           },
         };
       }
@@ -8451,35 +8504,12 @@ const App = () => {
         volume: null,
         bbox: null,
         partName: '',
+        runFailure: null,
       };
     }
-    await refreshAssemblyRef.current?.(scriptText);
-    const doc = assemblyRef.current;
-    const id = doc?.activeId;
-    const part = id ? doc.parts.find((row) => row.id === id) : null;
-    const partName = part?.name || '';
-    const run = id ? partRunsRef.current?.[id] : null;
-    if (run?.empty) {
-      return { ok: true, errors: [], volume: null, bbox: null, partName };
-    }
-    if (run?.ok === true && run.mesh?.vertProperties) {
-      const geom = geometryFromExecuteResult(run);
-      return {
-        ok: true,
-        errors: [],
-        volume: geom.volume,
-        bbox: geom.bbox,
-        partName,
-      };
-    }
-    const message = (run && run.error) || 'Script failed';
-    return {
-      ok: false,
-      errors: [String(message)],
-      volume: null,
-      bbox: null,
-      partName,
-    };
+    const epochBefore = runOutcomeEpochRef.current;
+    const ran = await refreshAssemblyRef.current?.(scriptText);
+    return agentCadRunOutcome(epochBefore, ran);
   };
   fillAgentHost(agentHostRef, {
     cadSelectAll() {
@@ -9246,6 +9276,9 @@ const App = () => {
           applied: { label: applied?.message || 'Step' },
           reverted: { label: reverted?.message || 'Step' },
           errors: outcome.errors || [],
+          ...(Object.prototype.hasOwnProperty.call(outcome, 'runFailure')
+            ? { runFailure: outcome.runFailure }
+            : {}),
           status: {
             volume: outcome.volume ?? null,
             bbox: outcome.bbox ?? null,
@@ -9318,6 +9351,9 @@ const App = () => {
           applied: { label: applied?.message || 'Step' },
           reverted: { label: reverted?.message || 'Step' },
           errors: outcome.errors || [],
+          ...(Object.prototype.hasOwnProperty.call(outcome, 'runFailure')
+            ? { runFailure: outcome.runFailure }
+            : {}),
           status: {
             volume: outcome.volume ?? null,
             bbox: outcome.bbox ?? null,

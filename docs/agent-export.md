@@ -143,10 +143,10 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | Command | Args | Result |
 | --- | --- | --- |
 | `get_script` | `{}` | `{ "source": string }` — the editor buffer. |
-| `set_script` | `{ "source": string }` | `{ "ok": boolean, "errors": string[], "status": Status }` — writes `source`, runs it, and records one undo step when the text differs from the head. Re-injects the active part `// @surf-id` header when the text lacks it. |
+| `set_script` | `{ "source": string }` | `{ "ok": boolean, "errors": string[], "failures"?: ErrorRow[], "status": Status }` — writes `source`, runs it, and records one undo step when the text differs from the head. Re-injects the active part `// @surf-id` header when the text lacks it. `errors` is the viewport popup text. `failures` repeats the structured rows from `errors` (code, feature type, label, index, detail). A run that keeps a recovered mesh after a feature throw is still `ok: false`. |
 | `run` | `{}` | Same shape as `set_script`. Runs the current buffer. One undo step when that buffer is not already the head. The text `set_script` just wrote is not a second step, so undo once removes that edit. |
 | `status` | `{}` | `Status` for the **active** part (`partId`, `partName`, `script`, `runState`: `not_run_yet` \| `ok` \| `failed`, plus last-run `volume` / `bbox` / `bodyCount` for that part). Updates on `set_active_part` without requiring another `run`. |
-| `errors` | `{}` | `{ "errors": [{ "code": string, "message": string, "featureIndex"?: number }] }` — structured messages from the last finished run. `featureIndex` is set when the failing marked block is known. Empty after a good run. |
+| `errors` | `{}` | `{ "errors": [{ "code": "feature_failed" \| "build_failed", "message": string, "featureId"?: string, "featureType"?: string, "featureLabel"?: string, "featureIndex"?: number, "detail"?: string }] }` — `message` is the same text the viewport shows. `feature_failed` is a kernel or feature error; type, label, and index are set when the marked block is known. `detail` is kernel or exception text when it differs from `message`. Empty after the next successful run. |
 | `screenshot` | `{ "format": "png" }` | `{ "dataUrl": string }`. `format` may be omitted and defaults to `"png"`. |
 | `undo` | `{}` | One feature-bar undo (sketch session, assembly joints when `cadPartId` is null, else active part script). `{ ok, kind: "sketch" \| "assembly" \| "part", applied: { label, … }, reverted: { label, … }, status?, errors? }`. Part steps include `status` like `set_script`. Assembly steps include joint `reverted` metadata (H11). Sketch steps report depth. No separate bridge stack. |
 | `redo` | `{}` | One feature-bar redo (assembly or part; sketch redo is disabled in the UI). Same `applied` / `reverted` / `reapplied` labels as undo. `nothing_to_redo` when the strip Redo button would be disabled. |
@@ -157,13 +157,13 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `selection` | `{}` | `{ "activePartId", "cadPartId", "cadPartHighlighted", "face", "edges", "contour": { "armedId", "planeId" } }` — `activePartId` is the editor part. `cadPartId` is the viewer/title highlight (`select_parts`, viewer pick, or `set_active_part`); it falls back to `activePartId` when unset. `cadPartHighlighted` is true when that highlight differs from `activePartId`. Face picks include a `key` `{ at, n, area }` when known. |
 | `mode` | `{}` | `{ "app": "cad" \| "game", "viewport": string, "contour", "fillet", "featureEdit", "sheetMetal" }` summary of the open picker / card. |
 | `dirty` | `{}` | `{ "workspaceDirty", "assemblyDirty", "renamePending", "legacyCleanup", "partIds": string[], "unsaved", "editedSinceLoad": string[], "undoStackDirty"? }` — git fields (`workspaceDirty`, `partIds`, `assemblyDirty`, …) keep their existing meaning. `unsaved` is true when any part script differs from the snapshot at open or last save/export, or when the active part's undo stack head differs from the live buffer (`undoStackDirty`). `editedSinceLoad` lists those part ids. On a fresh local document with no git baseline, rely on `unsaved` / `editedSinceLoad` rather than `workspaceDirty` / `partIds`. |
-| `toasts` | `{}` | `{ "toasts": [{ "id", "kind", "message" }] }` visible upload / git / rename notices. |
+| `toasts` | `{}` | `{ "toasts": [{ "id", "kind", "message" }] }` visible upload / git / rename notices, plus the viewport execution error (`id: "execution-error"`) while that popup is showing. |
 | `parts` | `{}` | `{ "activeId", "assemblyName", "parts": [{ "id", "name", "visible" }] }`. |
 | `camera` | `{}` | `{ "position", "quaternion", "target", "zoom", "fov" }` arrays or null. |
 | `list_faces` | `{ "part_id"?: string }` | `{ "partId", "faces": [{ "id", "type", "kind", "key", "center", "normal", "area", "triangleCount", "axis"?, "radius"? }] }`. One row per face a single viewport click selects (the face-graph patch), on every body in the mesh, with no size filter. `id` is `f<N>`, the patch id; it is the same on a rerun of the same script, and `joint_pick` accepts it as `face_id`. `type` is `planar`, `cylindrical`, or `curved`. Cylindrical rows add `axis: { at, dir, radius }` and `radius`. `key` is the exact object `select_faces` accepts. Omit `part_id` for the active part mesh. |
 | `list_edges` | `{ "part_id"?: string, "raw"?: boolean, "grouped"?: boolean }` | Default `raw: true`: tessellated mesh feature edges (`raw: true` in the result). Set `raw: false` or `grouped: true` for the same payload as `list_feature_edges`. |
 | `list_feature_edges` | `{ "part_id"?: string }` | `{ "partId", "grouped": true, "edges": [{ "key": "e0", …, "faceKeyA", "faceKeyB" }] }` — one row per boundary-edge id from the Fillet topo pass (far fewer than raw `list_edges`). |
-| `invoke_helper` | `{ "id": string, "params"?: object, "use_selection"?: boolean }` | Runs `composeHelperInsert` on the active part, then the same mutate path as `set_script`. Result includes `{ "helperId", "ok", "errors", "status" }`. Unknown ids → `unknown_helper`. |
+| `invoke_helper` | `{ "id": string, "params"?: object, "use_selection"?: boolean }` | Runs `composeHelperInsert` on the active part, then the same mutate path as `set_script`. Result includes `{ "helperId", "ok", "errors", "failures"?, "status" }`. A feature that fails to build reports the viewport message, feature type, and label (`feature_failed`), not a generic "Feature failed". Unknown ids → `unknown_helper`. A value outside a param min/max (for example `insert_move` dx beyond ±1000 mm) is `bad_args` with the helper, the value, and the limit. A compose refusal is `insert_failed` and names what the helper needed. |
 | `insert_<helper>` | param fields per `HELPER_PALETTE_ITEMS` | Thin alias for one helper id (e.g. `insert_cube`, `insert_make_extrude`). Same result shape as `invoke_helper`. Each carries `uiEntry` equal to the helper id for coverage. |
 | `open_feature` | `{ "id"?: string, "index"?: number }` | Opens the feature sheet or viewport edit card for that strip chip (`data-feature-chip`). Result `{ id, kind, index }`. |
 | `activate_feature` | `{ "id"?: string, "index"?: number, "clear"?: boolean }` | Sets `feature_tree.activeChipId` like a strip tap without opening the editor. `clear` clears the highlight. |
@@ -367,10 +367,10 @@ These are thin wrappers over `call()`. They pass a plain object as `argsJson`, u
 | Method | Relays | Returns |
 | --- | --- | --- |
 | `getScript()` | `get_script` | `source` string |
-| `setScript(source)` | `set_script` `{ source }` | `{ ok, errors, status }` |
-| `run()` | `run` | `{ ok, errors, status }` |
+| `setScript(source)` | `set_script` `{ source }` | `{ ok, errors, failures?, status }` |
+| `run()` | `run` | `{ ok, errors, failures?, status }` |
 | `status()` | `status` | `Status` |
-| `errors()` | `errors` | `{ code, message, featureIndex? }[]` |
+| `errors()` | `errors` | `{ code, message, featureId?, featureType?, featureLabel?, featureIndex?, detail? }[]` |
 | `screenshot()` | `screenshot` `{ format: "png" }` | `dataUrl` string |
 | `undo()` | `undo` | `{ ok, errors, status }`, or throws `nothing_to_undo` |
 | `listCommands()` | `list_commands` | The `commands` array from that result |
