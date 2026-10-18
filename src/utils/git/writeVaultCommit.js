@@ -29,16 +29,6 @@ export function vaultV2SeedFiles() {
   ];
 }
 
-function filesIncludeVaultMarker(files) {
-  for (const file of files || []) {
-    if (!file || file.delete) continue;
-    if (file.path === VAULT_MARKER_PATH && isVaultMarker(String(file.content ?? ''))) {
-      return true;
-    }
-  }
-  return false;
-}
-
 function mergeSeedFiles(files) {
   const have = new Set();
   for (const file of files) {
@@ -55,26 +45,69 @@ function canonicalRepo(info, fallback) {
   };
 }
 
+function sameOwner(a, b) {
+  return String(a || '').toLowerCase() === String(b || '').toLowerCase();
+}
+
+async function assertViewerOwnsRepo(adapter, repo) {
+  const { login } = await adapter.getViewer();
+  if (sameOwner(repo.owner, login)) return;
+  throw new GitAdapterError(
+    'invalid',
+    `Refusing to create ${repo.owner}/${repo.name}: createRepo can only create a repo under the signed-in user (${login}).`,
+  );
+}
+
 /**
- * -> { presence: 'missing'|'empty'|'marked'|'unmarked', repo }
+ * -> { presence: 'missing'|'empty'|'marked'|'unmarked'|'target-missing', repo, defaultBranch?, target? }
+ *
+ * `empty` means the whole repo has no commits (no branches, or the default
+ * branch has no commit). A missing *target* branch on a repo that already
+ * has a default-branch tip is not empty.
  */
 async function inspectForSeed(adapter, repo, branch) {
   const info = await adapter.getRepo(repo);
   if (!info) return { presence: 'missing', repo };
   const dest = canonicalRepo(info, repo);
-  const target = branch || info.defaultBranch || 'main';
-  const head = await adapter.getBranch(dest, target);
-  if (!head?.sha) return { presence: 'empty', repo: dest };
+  const defaultBranch = info.defaultBranch || 'main';
+  const target = branch || defaultBranch;
+  const branches = await adapter.listBranches(dest);
+  const defaultHead = await adapter.getBranch(dest, defaultBranch);
+  const wholeRepoEmpty = branches.length === 0 || !defaultHead?.sha;
+  if (wholeRepoEmpty) {
+    return { presence: 'empty', repo: dest, defaultBranch, target };
+  }
+
+  const targetHead = target === defaultBranch
+    ? defaultHead
+    : await adapter.getBranch(dest, target);
+  if (!targetHead?.sha) {
+    const marker = await adapter.readFile(dest, VAULT_MARKER_PATH, defaultBranch);
+    if (marker && isVaultMarker(marker.content)) {
+      return { presence: 'target-missing', repo: dest, defaultBranch, target };
+    }
+    return { presence: 'unmarked', repo: dest, defaultBranch, target };
+  }
+
   const marker = await adapter.readFile(dest, VAULT_MARKER_PATH, target);
   if (marker && isVaultMarker(marker.content)) {
-    return { presence: 'marked', repo: dest };
+    return { presence: 'marked', repo: dest, defaultBranch, target };
   }
-  return { presence: 'unmarked', repo: dest };
+  return { presence: 'unmarked', repo: dest, defaultBranch, target };
+}
+
+function targetMissingError(looked) {
+  return new GitAdapterError(
+    'invalid',
+    `Branch ${looked.target} is missing on ${looked.repo.owner}/${looked.repo.name}; `
+    + `default branch ${looked.defaultBranch} is already a SurfCAD vault. Refusing to seed.`,
+  );
 }
 
 async function prepareCreateAndSeed(adapter, repo, branch, files) {
   let looked = await inspectForSeed(adapter, repo, branch);
   if (looked.presence === 'missing') {
+    await assertViewerOwnsRepo(adapter, repo);
     let info;
     try {
       info = await adapter.createRepo({
@@ -97,12 +130,15 @@ async function prepareCreateAndSeed(adapter, repo, branch, files) {
     }
   }
   if (looked.presence === 'empty') {
-    // Seed retry: createRepo succeeded, the seed commit did not. Do not
-    // createRepo again. Marker is missing on the empty repo we created.
+    // Whole repo is empty: seed-retry after createRepo, or create:true on an
+    // empty repo. Do not createRepo again.
     return { repo: looked.repo, files: mergeSeedFiles(files), seed: true };
   }
   if (looked.presence === 'marked') {
     return { repo: looked.repo, files, seed: false };
+  }
+  if (looked.presence === 'target-missing') {
+    throw targetMissingError(looked);
   }
   throw new GitAdapterError('not_a_vault', vaultWriteRefusalMessage(looked.repo));
 }
@@ -116,6 +152,7 @@ async function prepareCreateAndSeed(adapter, repo, branch, files) {
  *   message: string,
  *   files: object[],
  *   create?: boolean,
+ *   seed?: boolean,
  * }} opts
  * @returns {Promise<{ sha: string }>}
  */
@@ -127,6 +164,7 @@ export async function writeVaultCommit({
   message,
   files,
   create = false,
+  seed: seedOpt = false,
 } = {}) {
   assertGithubAdapter(adapter);
   if (!repo?.owner || !repo?.name) {
@@ -135,13 +173,13 @@ export async function writeVaultCommit({
   const list = Array.isArray(files) ? files.filter((file) => file && file.path) : [];
   let dest = { owner: repo.owner, name: repo.name };
   let outgoing = list;
-  let seed = filesIncludeVaultMarker(list);
+  let seed = seedOpt === true;
 
   if (create) {
     const prepared = await prepareCreateAndSeed(adapter, dest, branch, list);
     dest = prepared.repo;
     outgoing = prepared.files;
-    seed = prepared.seed;
+    if (prepared.seed) seed = true;
   }
 
   const opts = { branch, message, files: outgoing, baseSha };

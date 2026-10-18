@@ -125,6 +125,7 @@ async function createAndSeed(adapter, login, repoName, storedName) {
       message: 'Create SurfCAD vault',
       files: vaultSeedFiles(repo.name),
       baseSha: null,
+      seed: true,
     });
     return {
       status: 'created',
