@@ -12,6 +12,7 @@ import * as chromeLayout from './chrome-layout.mjs';
 import * as partVisible from './part-visible-screenshot.mjs';
 import * as featureErrors from './agent-feature-errors.mjs';
 import * as createOpen from './create-part-open-assembly.mjs';
+import * as paintSurvive from './agent-paint-survive.mjs';
 
 /** Scripted end-to-end scenarios (bridge-only). */
 export const scenarios = [
@@ -29,6 +30,7 @@ export const scenarios = [
   featureErrors,
   partVisible,
   createOpen,
+  paintSurvive,
 ];
 
 export function getScenario(id) {

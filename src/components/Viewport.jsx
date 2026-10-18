@@ -493,6 +493,7 @@ import { get3MFBase64FromMesh } from '../utils/exportModel';
 import { missingMeshMessage, resolvePartMeshes } from '../utils/meshAssets';
 import { calculateQuote } from '../utils/quoting';
 import { resolveViewportFaceClick, selectGraphFace, warmFaceGraph } from '../utils/selectFace';
+import { listDroppedFacePaints } from '../utils/faceColorMatch';
 import {
   fingerprintsFromGeometry,
   PAINT_DOUBLE_TAP_MS,
@@ -1223,6 +1224,7 @@ const Viewport = forwardRef(({
   const clearAssemblyExtrasRef = useRef(() => {});
   const prewarmPartGraphsRef = useRef(() => {});
   const placeAssemblyRef = useRef(() => false);
+  const readDroppedPaintsRef = useRef(() => []);
   const ghostMeshRef = useRef(null);
   const raycasterRef = useRef(new Raycaster());
   const mouseRef = useRef(new Vector2());
@@ -2368,6 +2370,8 @@ const Viewport = forwardRef(({
     /** Close every other card without writing, so the edit card can open alone. */
     yieldToFeatureEditCard: () => yieldToFeatureEditCardRef.current(),
     placeAssembly: (payload) => placeAssemblyRef.current(payload),
+    /** Face colors on the meshes just placed that this run will not draw. */
+    readDroppedPaints: (colors) => readDroppedPaintsRef.current(colors),
     /** Move the pick mesh onto a part the user just touched. */
     swapPickPart: (payload) => swapPickPartRef.current(payload),
     /** Highlight the whole active solid. Parts-row and body picks use this. */
@@ -12430,6 +12434,27 @@ const Viewport = forwardRef(({
   };
 
   assemblyColorsRef.current = assemblyColors || null;
+  readDroppedPaintsRef.current = (colors) => {
+    const map = colors && typeof colors === 'object' && !Array.isArray(colors) ? colors : null;
+    if (!map) return [];
+    const parts = [];
+    const push = (mesh) => {
+      const surfId = mesh?.userData?.surfId;
+      const geometry = mesh?.geometry;
+      if (!surfId || !geometry?.attributes?.position?.count) return;
+      try {
+        const cached = solidEntryForGeometry(solidCacheRef.current, geometry);
+        const faces = fingerprintsFromGeometry(geometry, cached?.faceIDs || null);
+        if (!faces.length) return;
+        parts.push({ surfId: String(surfId), faces });
+      } catch {
+        /* A graph miss must not fail the run. That part is omitted. */
+      }
+    };
+    push(resultRef.current);
+    for (const mesh of assemblyExtrasRef.current.values()) push(mesh);
+    return listDroppedFacePaints(parts, map);
+  };
   applyFaceSkinRef.current = (host) => {
     if (!host) return;
     const painting = paintModeRef.current;

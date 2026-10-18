@@ -132,7 +132,7 @@ export function createPaintMeasureAgentHandlers(deps) {
       }
       deps.storeLivePaintRef?.current?.({ session, undo, lastTap });
       if (!livePaintChanged(session, state.baseline)) {
-        return { error: { code: 'paint_unchanged', message: 'Face paint did not change the session' } };
+        return { result: { painted: matched.length, color, unchanged: true } };
       }
       return { result: { painted: matched.length, color } };
     },
@@ -141,6 +141,11 @@ export function createPaintMeasureAgentHandlers(deps) {
       const state = deps.paintModeRef?.current;
       if (!state) {
         return { error: { code: 'no_paint_mode', message: 'Open paint mode first' } };
+      }
+      const color = resolvedPaintColor(state.color, state.custom);
+      const surfId = deps.paintSurfIdRef?.current?.();
+      if (!color || !surfId) {
+        return { error: { code: 'bad_paint', message: 'Active part has no surf id or color' } };
       }
       deps.paintWholePartRef?.current?.();
       return { result: { ok: true } };
