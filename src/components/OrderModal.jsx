@@ -13,6 +13,7 @@ import { applyClientQuantity, clampQuantity } from '../utils/quoteMath.js';
 import { saveCheckoutState, getOAuthReturnUrl } from '../utils/checkoutStorage';
 import { saveEditorState } from '../utils/editorStorage';
 import { startGithubOAuth } from '../utils/git/githubAuth.js';
+import { oauthStartPath } from '../utils/analyticsConsentAuth.js';
 import ModalFit from './ModalFit';
 
 const STEPS = {
@@ -127,10 +128,7 @@ const OrderModal = ({
       return;
     }
 
-    const returnUrl = encodeURIComponent(getOAuthReturnUrl());
-    const authUrl = `/api/auth/${provider}?returnTo=${returnUrl}`;
-    
-    window.location.href = authUrl;
+    window.location.href = oauthStartPath(provider, getOAuthReturnUrl());
   }, [liveQuote, modelData, currentScript, currentStep, address, guestEmail, lineId]);
 
   // Handle auth completion (for non-OAuth flows like guest checkout)

@@ -5,6 +5,12 @@
 
 import { getAnalyticsConsent, isGpcActive, onConsentChange } from './consent.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
+import { analyticsKindForPaletteId } from './featureAnalytics.js';
+import {
+  normalizeWebVital,
+  webVitalsComplete,
+  webVitalsHasSample,
+} from './webVitalsAnalytics.js';
 
 const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com';
 
@@ -39,6 +45,10 @@ let initPromise = null;
 let booted = false;
 let appLoadedSent = false;
 let webVitalsStarted = false;
+let identitySynced = false;
+let initialPageviewSent = false;
+/** Last identity passed to syncAnalyticsIdentity (re-applied if consent arrives later). */
+let lastIdentity = { user: null, isAuthenticated: false, isInternal: false };
 
 /**
  * Test hooks — override Vite env and dynamic import.
@@ -72,9 +82,43 @@ export function analyticsWouldLoad() {
   return !!getPosthogProjectKey() && getAnalyticsConsent() && !isGpcActive();
 }
 
+/**
+ * Localhost / Vite-dev hosts count as internal traffic.
+ * @param {{ hostname?: string } | null} [loc]
+ * @param {{ DEV?: boolean } | null} [env]
+ */
+export function isLocalDevHost(
+  loc = typeof window !== 'undefined' ? window.location : null,
+  env = import.meta.env,
+) {
+  if (env?.DEV) return true;
+  const host = String(loc?.hostname || '').toLowerCase();
+  return host === 'localhost'
+    || host === '127.0.0.1'
+    || host === '::1'
+    || host === '[::1]'
+    || host.endsWith('.local');
+}
+
 async function importPosthog() {
   if (posthogImporter) return posthogImporter();
   return import('posthog-js');
+}
+
+function persistUserType(ph, userType) {
+  if (!ph) return;
+  ph.register({ user_type: userType });
+  if (typeof ph.setPersonProperties === 'function') {
+    ph.setPersonProperties({ user_type: userType });
+  }
+}
+
+function persistInternalFlag(ph, isInternal) {
+  if (!ph || !isInternal) return;
+  ph.register({ is_internal: true });
+  if (typeof ph.setPersonProperties === 'function') {
+    ph.setPersonProperties({ is_internal: true });
+  }
 }
 
 /**
@@ -103,9 +147,10 @@ export async function getPosthogClient() {
         opt_out_capturing_by_default: false,
         loaded: (client) => {
           client.opt_in_capturing();
-          maybeSendAppLoaded();
+          // Super property before any later capture; first $pageview waits
+          // for syncAnalyticsIdentity so it carries the real user_type.
+          persistUserType(client, 'guest');
           startWebVitalsCapture(client);
-          capturePageview(client);
         },
       });
       posthogModule = posthog;
@@ -118,11 +163,11 @@ export async function getPosthogClient() {
   return initPromise;
 }
 
-function teardownPosthog() {
+function teardownPosthog({ reset = false } = {}) {
   if (posthogModule) {
     try {
       posthogModule.opt_out_capturing();
-      posthogModule.reset();
+      if (reset) posthogModule.reset();
     } catch {
       /* ignore */
     }
@@ -132,7 +177,7 @@ function teardownPosthog() {
 }
 
 export function shutdownAnalyticsCapturing() {
-  teardownPosthog();
+  teardownPosthog({ reset: false });
 }
 
 export function syncAnalyticsConsent() {
@@ -145,7 +190,12 @@ export function syncAnalyticsConsent() {
     posthogModule.opt_in_capturing();
     return;
   }
-  void getPosthogClient();
+  void getPosthogClient().then((ph) => {
+    if (!ph || !identitySynced || initialPageviewSent) return;
+    return syncAnalyticsIdentity(lastIdentity.user, lastIdentity.isAuthenticated, {
+      isInternal: lastIdentity.isInternal,
+    });
+  });
 }
 
 export function bootAnalytics() {
@@ -202,7 +252,7 @@ export function track(name, props = {}) {
 }
 
 export async function capturePageview(client = null) {
-  if (!analyticsWouldLoad()) return;
+  if (!analyticsWouldLoad() || !identitySynced) return;
   const ph = client || await getPosthogClient();
   if (!ph) return;
   ph.capture('$pageview', {
@@ -220,35 +270,63 @@ export async function hashUserId(userId) {
     .join('');
 }
 
+async function sendInitialPageview(ph) {
+  if (initialPageviewSent) return;
+  initialPageviewSent = true;
+  maybeSendAppLoaded();
+  await capturePageview(ph);
+}
+
 /**
- * @param {{ id?: string, _id?: string } | null} user
+ * @param {{ id?: string, _id?: string, isInternal?: boolean } | null} user
  * @param {boolean} isAuthenticated
+ * @param {{ isInternal?: boolean }} [opts]
  */
-export async function syncAnalyticsIdentity(user, isAuthenticated) {
+export async function syncAnalyticsIdentity(user, isAuthenticated, { isInternal = false } = {}) {
+  lastIdentity = {
+    user,
+    isAuthenticated,
+    isInternal: !!(isInternal || user?.isInternal),
+  };
+  identitySynced = true;
   if (!getPosthogProjectKey()) return;
+  if (!getAnalyticsConsent() || isGpcActive()) return;
   const ph = await getPosthogClient();
   if (!ph) return;
 
   const userType = isAuthenticated ? 'signed_in' : 'guest';
-  ph.register({ user_type: userType });
+  persistUserType(ph, userType);
+  persistInternalFlag(ph, !!(isInternal || user?.isInternal || isLocalDevHost()));
 
-  if (!isAuthenticated || !user) {
-    ph.reset();
-    ph.register({ user_type: 'guest' });
-    return;
+  if (isAuthenticated && user) {
+    const rawId = user.id || user._id;
+    if (rawId) {
+      const hashed = await hashUserId(rawId);
+      if (hashed) ph.identify(hashed, { user_type: 'signed_in' });
+    }
   }
 
-  const rawId = user.id || user._id;
-  if (!rawId) return;
-  const hashed = await hashUserId(rawId);
-  if (!hashed) return;
-  ph.identify(hashed);
+  await sendInitialPageview(ph);
 }
 
+/** Sign-out only. Consent opt-out must not reset the distinct id. */
 export function resetAnalyticsIdentity() {
   if (!posthogModule) return;
   posthogModule.reset();
-  posthogModule.register({ user_type: 'guest' });
+  persistUserType(posthogModule, 'guest');
+}
+
+export function trackFeatureUsed(kind) {
+  const feature = String(kind || '').trim();
+  if (!feature) return;
+  track('feature_used', { feature });
+}
+
+/** Palette Confirm / insert: one `feature_used` with the registry kind. */
+export function trackPaletteFeature(helperId) {
+  const kind = analyticsKindForPaletteId(helperId);
+  if (!kind) return;
+  trackFeatureUsed(kind);
 }
 
 /**
@@ -264,7 +342,7 @@ export function trackFeatureCommits(beforeBuffer, afterBuffer) {
   for (const feature of parseFeatureMarkers(after)) {
     if (!feature?.id || seen.has(feature.id)) continue;
     const kind = feature.kind || 'unknown';
-    track('feature_used', { feature: kind });
+    trackFeatureUsed(kind);
     seen.add(feature.id);
   }
 }
@@ -277,7 +355,7 @@ function startWebVitalsCapture(client) {
     let sent = false;
     const flush = () => {
       if (sent || !getAnalyticsConsent()) return;
-      if (!metrics.lcp && !metrics.inp && !metrics.cls && !metrics.fcp && !metrics.ttfb) return;
+      if (!webVitalsHasSample(metrics)) return;
       sent = true;
       client.capture('web_vitals', {
         lcp: metrics.lcp ?? null,
@@ -288,8 +366,10 @@ function startWebVitalsCapture(client) {
       });
     };
     const record = (name, value) => {
-      metrics[name] = Math.round(value);
-      if (metrics.lcp && metrics.inp && metrics.cls && metrics.fcp && metrics.ttfb) flush();
+      const next = normalizeWebVital(name, value);
+      if (next == null) return;
+      metrics[name] = next;
+      if (webVitalsComplete(metrics)) flush();
     };
     onLCP((m) => record('lcp', m.value));
     onINP((m) => record('inp', m.value));
@@ -307,10 +387,13 @@ function startWebVitalsCapture(client) {
 
 /** Test-only: reset module state between tests. */
 export function resetAnalyticsForTests() {
-  teardownPosthog();
+  teardownPosthog({ reset: true });
   envOverride = null;
   posthogImporter = null;
   booted = false;
   appLoadedSent = false;
   webVitalsStarted = false;
+  identitySynced = false;
+  initialPageviewSent = false;
+  lastIdentity = { user: null, isAuthenticated: false, isInternal: false };
 }

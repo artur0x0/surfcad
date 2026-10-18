@@ -7,6 +7,7 @@ import AuthStep from './order/AuthStep';
 import ModalFit from './ModalFit';
 import { saveEditorState, getAccountReturnUrl } from '../utils/editorStorage';
 import { startGithubOAuth } from '../utils/git/githubAuth.js';
+import { oauthStartPath } from '../utils/analyticsConsentAuth.js';
 
 const LoginModal = ({ onClose, onComplete, currentScript, currentFilename }) => {
   const [error, setError] = useState(null);
@@ -45,9 +46,7 @@ const LoginModal = ({ onClose, onComplete, currentScript, currentFilename }) => 
                 }
                 return;
               }
-              const returnUrl = encodeURIComponent(getAccountReturnUrl());
-              const fullUrl = `/api/auth/${provider}?returnTo=${returnUrl}`;
-              window.location.href = fullUrl;
+              window.location.href = oauthStartPath(provider, getAccountReturnUrl());
             }}
             onError={setError}
             orderContext={false}

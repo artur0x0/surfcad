@@ -20,6 +20,7 @@
  * token in sessionStorage.
  */
 import { clearGithubTokenBundle, rememberGithubTokenBundle } from './githubTokenRefresh.js';
+import { withAnalyticsConsent } from '../analyticsConsentAuth.js';
 
 export const GITHUB_TOKEN_STORAGE_KEY = 'surfcad.github.token';
 export const GITHUB_OAUTH_STATE_KEY = 'surfcad.github.oauth.state';
@@ -344,7 +345,7 @@ export async function establishGithubSession({
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ access_token: String(accessToken) }),
+      body: JSON.stringify(withAnalyticsConsent({ access_token: String(accessToken) })),
     });
   } catch (e) {
     return { ok: false, error: e?.message || 'Session upsert unreachable' };

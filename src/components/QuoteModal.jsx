@@ -191,7 +191,11 @@ const QuoteModal = ({
       }
     };
 
-    track('quote_requested');
+    track('quote_requested', {
+      process: selectedProcess,
+      material: selectedMaterial,
+      infill,
+    });
     onOrder(quoteData, modelData);
   };
 
@@ -212,7 +216,6 @@ const QuoteModal = ({
         infill,
         modelFile,
       });
-      track('quote_requested');
       const wrote = await onAddToCart({
         process: selectedProcess,
         material: selectedMaterial,
@@ -221,7 +224,15 @@ const QuoteModal = ({
         script: currentScript,
         quote: accepted,
       });
-      if (wrote && wrote.ok === false) setError(addFailure(wrote.reason));
+      if (wrote && wrote.ok === false) {
+        setError(addFailure(wrote.reason));
+        return;
+      }
+      track('quote_requested', {
+        process: selectedProcess,
+        material: selectedMaterial,
+        infill,
+      });
     } catch (err) {
       setError(err?.message || 'Could not add this part. Nothing was added to the cart.');
     } finally {

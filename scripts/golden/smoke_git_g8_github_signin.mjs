@@ -105,7 +105,9 @@ console.log('\ngit G8 — establishGithubSession');
   ok('session credentials include', calls[0].init.credentials === 'include');
   const body = JSON.parse(calls[0].init.body);
   eq('session sends access_token', body.access_token, 'tok_x');
-  ok('session never logs token in body keys only', Object.keys(body).join(',') === 'access_token');
+  ok('session body keys are access_token plus optional consent',
+    Object.keys(body).every((key) => key === 'access_token' || key === 'analyticsConsent'));
+  ok('session sends analyticsConsent boolean', typeof body.analyticsConsent === 'boolean');
 }
 {
   const r = await establishGithubSession({ accessToken: '' });
@@ -273,11 +275,11 @@ console.log('\ngit G8 — UI + wiring (source)');
   ok('LoginModal github → startGithubOAuth',
     /startGithubOAuth/.test(login) && /provider === 'github'/.test(login));
   ok('LoginModal github returns before passport redirect',
-    /if \(provider === 'github'\)[\s\S]*?startGithubOAuth[\s\S]*?return;[\s\S]*?\/api\/auth\/\$\{provider\}/.test(login));
+    /if \(provider === 'github'\)[\s\S]*?startGithubOAuth[\s\S]*?return;[\s\S]*?oauthStartPath\(provider/.test(login));
   ok('OrderModal github → startGithubOAuth',
     /startGithubOAuth/.test(order) && /provider === 'github'/.test(order));
   ok('OrderModal github returns before passport redirect',
-    /if \(provider === 'github'\)[\s\S]*?startGithubOAuth[\s\S]*?return;[\s\S]*?\/api\/auth\/\$\{provider\}/.test(order));
+    /if \(provider === 'github'\)[\s\S]*?startGithubOAuth[\s\S]*?return;[\s\S]*?oauthStartPath\(provider/.test(order));
 
   ok('GitCallback calls establishGithubSession', /establishGithubSession/.test(cb));
   ok('GitCallback still soft-navs via onComplete',
