@@ -381,8 +381,11 @@ try {
     JSON.stringify(dirtyAfterSave.parsed),
   );
 
-  const committedLid = fake.readFile(`parts/${lidId}.js`) || '';
-  pushRemoteFile(fake, `parts/${lidId}.js`, `${committedLid}\n// remote edit\n`, 'remote overlap');
+  // planSave conflicts only on overlapping planned paths. Bracket is the
+  // part this golden edits (`part_id: PART_ID`); overlapping Lid would
+  // commit as a non-overlapping remote change.
+  const committedBracket = fake.readFile(`parts/${PART_ID}.js`) || '';
+  pushRemoteFile(fake, `parts/${PART_ID}.js`, `${committedBracket}\n// remote edit\n`, 'remote overlap');
   const remoteCount = fake.log().length;
   await mcp(client, 'set_active_part', { part_id: PART_ID });
   const conflictEdit = await mcp(client, 'set_script', { part_id: PART_ID, source: CONFLICT_SCRIPT });
