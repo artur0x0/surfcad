@@ -1,14 +1,12 @@
-// services/adminStats.js — sign-up and login aggregates from MongoDB
+// services/adminStats.js — daily operator counts from MongoDB (no PostHog, no PII)
 import User from '../db/models/User.js';
 import LoginEvent from '../db/models/LoginEvent.js';
-import { SESSION_MAX_AGE_MS } from '../../src/utils/sessionPolicy.js';
+import Quote from '../db/models/Quote.js';
+import Order from '../db/models/Order.js';
+import PartnerLead from '../db/models/PartnerLead.js';
 import {
   periodKeysDays,
-  periodKeysWeeks,
-  periodKeysMonths,
-  fillCountSeries,
-  fillLoginSeries,
-  startOfUtcDay,
+  fillDateCountSeries,
 } from './adminStatsPeriods.js';
 
 export {
@@ -21,9 +19,21 @@ export {
   periodKeysMonths,
   fillCountSeries,
   fillLoginSeries,
+  fillDateCountSeries,
 } from './adminStatsPeriods.js';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+export const ADMIN_STATS_DAY_WINDOWS = Object.freeze([7, 30, 120]);
+
+/**
+ * @param {unknown} raw
+ * @returns {7 | 30 | 120 | null}
+ */
+export function parseAdminStatsDays(raw) {
+  if (raw == null) return null;
+  const text = String(raw).trim();
+  if (!/^(7|30|120)$/.test(text)) return null;
+  return Number(text);
+}
 
 function mapFromAggregation(rows, valueField = 'count') {
   const map = new Map();
@@ -33,13 +43,18 @@ function mapFromAggregation(rows, valueField = 'count') {
   return map;
 }
 
-async function signupCountsSince(since, dateFormat) {
-  const rows = await User.aggregate([
-    { $match: { createdAt: { $gte: since } } },
+function sumCounts(series) {
+  return series.reduce((total, row) => total + (row.count || 0), 0);
+}
+
+async function countByUtcDay(model, dateField, since) {
+  if (!model?.aggregate) return new Map();
+  const rows = await model.aggregate([
+    { $match: { [dateField]: { $gte: since } } },
     {
       $group: {
         _id: {
-          $dateToString: { format: dateFormat, date: '$createdAt', timezone: 'UTC' },
+          $dateToString: { format: '%Y-%m-%d', date: `$${dateField}`, timezone: 'UTC' },
         },
         count: { $sum: 1 },
       },
@@ -48,14 +63,15 @@ async function signupCountsSince(since, dateFormat) {
   return mapFromAggregation(rows);
 }
 
-async function loginCountsSince(since, dateFormat) {
-  const rows = await LoginEvent.aggregate([
+async function loginCountsSince(model, since) {
+  if (!model?.aggregate) return { loginMap: new Map(), distinctMap: new Map() };
+  const rows = await model.aggregate([
     { $match: { at: { $gte: since } } },
     {
       $group: {
         _id: {
           period: {
-            $dateToString: { format: dateFormat, date: '$at', timezone: 'UTC' },
+            $dateToString: { format: '%Y-%m-%d', date: '$at', timezone: 'UTC' },
           },
           userId: '$userId',
         },
@@ -79,53 +95,93 @@ async function loginCountsSince(since, dateFormat) {
   return { loginMap, distinctMap };
 }
 
-/**
- * @param {Date} [now]
- */
-export async function fetchAdminStats(now = new Date()) {
-  const dayKeys = periodKeysDays(30, now);
-  const weekKeys = periodKeysWeeks(12, now);
-  const monthKeys = periodKeysMonths(12, now);
+async function distinctLoginUsersSince(model, since) {
+  if (!model?.aggregate) return 0;
+  const rows = await model.aggregate([
+    { $match: { at: { $gte: since } } },
+    { $group: { _id: '$userId' } },
+    { $count: 'n' },
+  ]);
+  return rows[0]?.n ?? 0;
+}
 
-  const dayStart = new Date(`${dayKeys[0]}T00:00:00.000Z`);
-  const weekStart = new Date(startOfUtcDay(now).getTime() - (12 - 1) * 7 * DAY_MS);
-  const monthStart = new Date(`${monthKeys[0]}-01T00:00:00.000Z`);
+/**
+ * Daily buckets for a 7 / 30 / 120 day UTC window. Counts only collections
+ * the app actually stores (users, login_events, quotes, orders, partners).
+ * Assemblies/parts live in GitHub; STEP conversions are files on disk — omitted.
+ *
+ * @param {{
+ *   days: 7 | 30 | 120,
+ *   now?: Date,
+ *   models?: {
+ *     User?: { aggregate: Function },
+ *     LoginEvent?: { aggregate: Function },
+ *     Quote?: { aggregate: Function },
+ *     Order?: { aggregate: Function },
+ *     PartnerLead?: { aggregate: Function },
+ *   },
+ * }} opts
+ */
+export async function fetchAdminStats({
+  days,
+  now = new Date(),
+  models = {},
+} = {}) {
+  const windowDays = parseAdminStatsDays(days);
+  if (windowDays == null) {
+    throw new Error('days must be 7, 30, or 120');
+  }
+
+  const UserModel = models.User ?? User;
+  const LoginEventModel = models.LoginEvent ?? LoginEvent;
+  const QuoteModel = models.Quote ?? Quote;
+  const OrderModel = models.Order ?? Order;
+  const PartnerLeadModel = models.PartnerLead ?? PartnerLead;
+
+  const keys = periodKeysDays(windowDays, now);
+  const since = new Date(`${keys[0]}T00:00:00.000Z`);
 
   const [
-    signupDayMap,
-    signupWeekMap,
-    signupMonthMap,
+    signupMap,
     loginDay,
-    loginWeek,
-    loginMonth,
-    totalUsers,
-    activeSignedInUsers,
+    quoteMap,
+    orderMap,
+    partnerMap,
+    activeUsers,
   ] = await Promise.all([
-    signupCountsSince(dayStart, '%Y-%m-%d'),
-    signupCountsSince(weekStart, '%G-W%V'),
-    signupCountsSince(monthStart, '%Y-%m'),
-    loginCountsSince(dayStart, '%Y-%m-%d'),
-    loginCountsSince(weekStart, '%G-W%V'),
-    loginCountsSince(monthStart, '%Y-%m'),
-    User.countDocuments(),
-    User.countDocuments({
-      lastLoginAt: { $gte: new Date(now.getTime() - SESSION_MAX_AGE_MS) },
-    }),
+    countByUtcDay(UserModel, 'createdAt', since),
+    loginCountsSince(LoginEventModel, since),
+    countByUtcDay(QuoteModel, 'quotedAt', since),
+    countByUtcDay(OrderModel, 'created-at', since),
+    countByUtcDay(PartnerLeadModel, 'createdAt', since),
+    distinctLoginUsersSince(LoginEventModel, since),
   ]);
 
+  const signups = fillDateCountSeries(keys, signupMap);
+  const logins = fillDateCountSeries(keys, loginDay.loginMap);
+  const activeUsersSeries = fillDateCountSeries(keys, loginDay.distinctMap);
+  const quotes = fillDateCountSeries(keys, quoteMap);
+  const orders = fillDateCountSeries(keys, orderMap);
+  const partnerSubmissions = fillDateCountSeries(keys, partnerMap);
+
   return {
+    days: windowDays,
     generatedAt: now.toISOString(),
-    totalUsers,
-    activeSignedInUsers,
-    signups: {
-      perDay: fillCountSeries(dayKeys, signupDayMap),
-      perWeek: fillCountSeries(weekKeys, signupWeekMap),
-      perMonth: fillCountSeries(monthKeys, signupMonthMap),
+    totals: {
+      signups: sumCounts(signups),
+      logins: sumCounts(logins),
+      activeUsers,
+      quotes: sumCounts(quotes),
+      orders: sumCounts(orders),
+      partnerSubmissions: sumCounts(partnerSubmissions),
     },
-    logins: {
-      perDay: fillLoginSeries(dayKeys, loginDay.loginMap, loginDay.distinctMap),
-      perWeek: fillLoginSeries(weekKeys, loginWeek.loginMap, loginWeek.distinctMap),
-      perMonth: fillLoginSeries(monthKeys, loginMonth.loginMap, loginMonth.distinctMap),
+    series: {
+      signups,
+      logins,
+      activeUsers: activeUsersSeries,
+      quotes,
+      orders,
+      partnerSubmissions,
     },
   };
 }

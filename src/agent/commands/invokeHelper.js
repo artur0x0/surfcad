@@ -1,5 +1,6 @@
 import {
   coerceHelperParams,
+  describeHelperRefusal,
   exampleArgsForHelper,
   helperCommandName,
   isKnownHelperId,
@@ -9,6 +10,7 @@ import {
 } from '../helperPaletteAgent.js';
 import { HELPER_PALETTE_ITEMS } from '../../utils/helperPaletteSnippets.js';
 import { helperUiEntries } from '../helperUiEntryExtras.js';
+import { trackPaletteFeature } from '../../utils/analytics.js';
 
 async function runHelperInsert(ctx, helperId, args) {
   const item = HELPER_PALETTE_ITEMS.find((row) => row.id === helperId);
@@ -32,9 +34,15 @@ async function runHelperInsert(ctx, helperId, args) {
   if (prepared?.error) return { error: prepared.error };
   const source = typeof prepared?.source === 'string' ? prepared.source : null;
   if (!source) {
-    return { error: { code: 'insert_failed', message: 'Helper refused insert (check params or selection)' } };
+    return {
+      error: {
+        code: 'insert_failed',
+        message: describeHelperRefusal(item, { params, faceContext, edgeContext }),
+      },
+    };
   }
   const result = await ctx.mutate(source, `Agent helper: ${helperId}`);
+  trackPaletteFeature(helperId);
   return { result: { helperId, ...result } };
 }
 

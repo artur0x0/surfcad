@@ -93,35 +93,96 @@ export function coerceHelperParams(item, args) {
   return merged;
 }
 
+function helperLabel(item) {
+  return item?.label || item?.id || 'Helper';
+}
+
+function fieldName(param) {
+  if (param?.label && param.label !== param.name) return `${param.label} (${param.name})`;
+  return param?.label || param?.name || 'value';
+}
+
 export function validateHelperParams(item, params) {
+  const label = helperLabel(item);
   for (const param of item.params || []) {
     if (!Object.prototype.hasOwnProperty.call(params, param.name)) continue;
     const value = params[param.name];
     if (param.type === 'number') {
       if (!Number.isFinite(Number(value))) {
-        return { code: 'bad_args', message: `${param.name} must be a number` };
+        return { code: 'bad_args', message: `${label} ${fieldName(param)} must be a finite number.` };
       }
       const n = Number(value);
       if (Number.isFinite(param.min) && n < param.min) {
-        return { code: 'bad_args', message: `${param.name} must be >= ${param.min}` };
+        return {
+          code: 'bad_args',
+          message: `${label} ${fieldName(param)} is ${n}, below the minimum ${param.min}.`,
+        };
       }
       if (Number.isFinite(param.max) && n > param.max) {
-        return { code: 'bad_args', message: `${param.name} must be <= ${param.max}` };
+        return {
+          code: 'bad_args',
+          message: `${label} ${fieldName(param)} is ${n}, above the maximum ${param.max}.`,
+        };
       }
     }
     if (param.type === 'bool' && typeof value !== 'boolean') {
-      return { code: 'bad_args', message: `${param.name} must be a boolean` };
+      return { code: 'bad_args', message: `${label} ${fieldName(param)} must be a boolean.` };
     }
     if (param.type === 'select' && Array.isArray(param.options)) {
       const allowed = param.options.map((row) => (
         row && typeof row === 'object' && 'value' in row ? row.value : row
       ));
       if (!allowed.includes(value)) {
-        return { code: 'bad_args', message: `${param.name} must be one of: ${allowed.join(', ')}` };
+        return {
+          code: 'bad_args',
+          message: `${label} ${fieldName(param)} must be one of: ${allowed.join(', ')}.`,
+        };
       }
     }
   }
   return null;
+}
+
+/**
+ * Why composeHelperInsert returned nothing. Names the helper and the
+ * selection or range it needed, instead of a generic refusal.
+ *
+ * @param {{ id?: string, label?: string }|null|undefined} item
+ * @param {{ params?: object|null, faceContext?: object|null, edgeContext?: unknown[]|null }} [ctx]
+ */
+export function describeHelperRefusal(item, ctx = {}) {
+  const label = helperLabel(item);
+  const id = item?.id || '';
+  const params = ctx.params && typeof ctx.params === 'object' ? ctx.params : {};
+  const edgeCount = Array.isArray(ctx.edgeContext) ? ctx.edgeContext.length : 0;
+  const face = ctx.faceContext;
+  const hasFace = !!(face && (face.type || face.center || face.key || face.normal));
+
+  if (id === 'move') {
+    const bits = ['dx', 'dy', 'dz']
+      .map((name) => (Number.isFinite(Number(params[name])) ? `${name} ${Number(params[name])}` : null))
+      .filter(Boolean);
+    const where = bits.length ? ` (${bits.join(', ')} mm)` : '';
+    return `Move refused${where}. Each axis must be a finite translation from -1000 to 1000 mm.`;
+  }
+  if (id === 'filletEdges' || id === 'chamferEdges' || id === 'sweepPath' || id === 'makeSweep') {
+    if (!edgeCount) {
+      return `${label} needs a selected edge. Pick an edge or a tangent chain, then insert again.`;
+    }
+    const noun = edgeCount === 1 ? 'edge' : 'edges';
+    return `${label} could not use the ${edgeCount} selected ${noun}. Pick a connected tangent chain and insert again.`;
+  }
+  if (id === 'moveFace' || id === 'deleteFace' || id === 'shell' || id === 'addDraft') {
+    if (!hasFace) return `${label} needs a selected face. Pick a face on the solid, then insert again.`;
+    return `${label} could not use the selected face. Pick a face on the solid and insert again.`;
+  }
+  if (id === 'makeLoft') {
+    return `${label} needs two or more sketch profiles before it can build.`;
+  }
+  if (id === 'makeExtrude' || id === 'makeRevolve' || id === 'crossSection') {
+    return `${label} needs a sketch profile before it can build.`;
+  }
+  return `${label} could not be inserted. Check its parameters and the current face or edge selection, then insert again.`;
 }
 
 export function selectionContextFromArgs(ctx, args) {

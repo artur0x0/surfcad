@@ -4,7 +4,7 @@ globs: src/**/*.{js,jsx,css}
 alwaysApply: true
 ---
 
-Follow [docs/ui_style_guide.md](docs/ui_style_guide.md).
+Follow [docs/ui-style-guide.md](docs/ui-style-guide.md).
 
 - Use `surface-*`, `text-on-*`, `text-muted-on-*`, `font-ui` — no ad-hoc hex or Tailwind color utilities in components.
 - Never black or dark text on dark chrome / dark blue (`bg-chrome-surface` is dark). Dark surfaces use `text-on-dark`.

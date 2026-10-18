@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import {
   applyServerConsent,
@@ -7,50 +7,45 @@ import {
   onConsentChange,
   readStoredRecord,
 } from '../utils/consent';
-import { applyAnalyticsConsentChoice } from '../utils/applyAnalyticsConsentChoice';
-import PrivacyChoicesDialog from './PrivacyChoicesDialog';
+import { openPrivacyChoices } from '../utils/privacyChoicesUi';
 
 /**
- * Footer link or profile menu item + dialog. Works signed out (local only) or signed in (syncs server).
+ * Footer link or profile menu item. Re-opens the same Accept all / Required only
+ * popup via openPrivacyChoices(). Works signed out (local only) or signed in
+ * (syncs newer server consent into localStorage).
  */
 export default function PrivacyChoicesController({
   linkClassName = '',
   buttonClassName = '',
   variant = 'link',
+  onPicked,
 }) {
-  const { isAuthenticated, user } = useAuth();
-  const [open, setOpen] = useState(false);
-  const [analyticsAllowed, setAnalyticsAllowed] = useState(() => readStoredRecord().analytics);
-  const [gpcActive, setGpcActive] = useState(() => isGpcActive());
+  const { user } = useAuth();
+  const [effectiveOn, setEffectiveOn] = useState(() => getAnalyticsConsent());
 
   useEffect(() => onConsentChange(() => {
-    setAnalyticsAllowed(readStoredRecord().analytics);
-    setGpcActive(isGpcActive());
+    setEffectiveOn(getAnalyticsConsent());
   }), []);
 
   const serverConsent = user?.consent;
   useEffect(() => {
     if (serverConsent) {
       applyServerConsent(serverConsent);
-      setAnalyticsAllowed(readStoredRecord().analytics);
+      setEffectiveOn(getAnalyticsConsent());
     }
   }, [serverConsent]);
 
-  const handleAnalyticsChange = useCallback(async (next) => {
-    const record = await applyAnalyticsConsentChoice(next, { isAuthenticated });
-    setAnalyticsAllowed(record.analytics);
-    setGpcActive(isGpcActive());
-  }, [isAuthenticated]);
-
-  const effectiveOn = getAnalyticsConsent();
-  const openDialog = () => setOpen(true);
+  const openChoices = () => {
+    onPicked?.();
+    openPrivacyChoices();
+  };
 
   const trigger = variant === 'profileMenu' ? (
     <button
       type="button"
       data-profile-privacy-choices=""
       className={buttonClassName || 'block w-full px-3 py-1.5 text-left text-xs text-on-dark hover:bg-white/10'}
-      onClick={openDialog}
+      onClick={openChoices}
     >
       Privacy choices
     </button>
@@ -59,7 +54,7 @@ export default function PrivacyChoicesController({
       type="button"
       className={linkClassName}
       data-privacy-choices-link=""
-      onClick={openDialog}
+      onClick={openChoices}
     >
       Privacy choices
     </button>
@@ -68,14 +63,9 @@ export default function PrivacyChoicesController({
   return (
     <>
       {trigger}
-      <PrivacyChoicesDialog
-        open={open}
-        onClose={() => setOpen(false)}
-        analyticsAllowed={analyticsAllowed}
-        gpcActive={gpcActive}
-        onAnalyticsChange={handleAnalyticsChange}
-      />
       <span className="sr-only" data-privacy-choices-effective={effectiveOn ? 'on' : 'off'} />
+      <span className="sr-only" data-privacy-choices-stored={readStoredRecord().analytics ? 'on' : 'off'} />
+      <span className="sr-only" data-privacy-choices-gpc={isGpcActive() ? 'on' : 'off'} />
     </>
   );
 }

@@ -29,6 +29,9 @@ export const redoCommand = Object.freeze({
         volume: base.status.volume,
         bbox: base.status.bbox,
         partName: base.status.partName,
+        ...(Object.prototype.hasOwnProperty.call(base, 'runFailure')
+          ? { runFailure: base.runFailure }
+          : {}),
       }, script);
       return {
         result: {

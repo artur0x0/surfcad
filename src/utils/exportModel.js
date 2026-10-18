@@ -128,15 +128,7 @@ export async function downloadModel(currentScript, filename = 'model') {
  * @param {string} filename - Filename without extension (default: 'model')
  */
 export async function downloadModelFromMesh(meshData, filename = 'model') {
-  try {
-    const blob = await generate3MFBlobFromMesh(meshData);
-    saveAs(blob, `${filename}.3mf`);
-    track('export_done', { format: '3mf' });
-    console.log('[Export] 3MF exported successfully');
-  } catch (error) {
-    console.error('[Export] Error exporting 3MF:', error);
-    throw error;
-  }
+  return downloadMeshExport(meshData, '3mf', filename);
 }
 
 const EXPORT_FORMATS = new Set(['stl', '3mf', 'step']);

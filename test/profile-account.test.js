@@ -63,8 +63,13 @@ describe('profile Account pane', () => {
     assert.ok(privacyIdx > 0 && privacyIdx < clearIdx && clearIdx < dangerIdx);
     assert.match(panel, /data-profile-account/);
     assert.match(panel, /PROFILE_MENU_ITEM_CLASS/);
+    assert.match(panel, /profileAdminVisible/);
+    assert.match(panel, /data-profile-admin/);
+    assert.match(panel, /variant="profileMenu"/);
+    assert.match(panel, /data-profile-privacy-choices|PrivacyChoicesController/);
     assert.doesNotMatch(panel, /data-profile-panel-email/);
     assert.doesNotMatch(panel, /GitHub linked/);
+    assert.doesNotMatch(panel, /\bEdge\b/);
     assert.match(pairing, /<Plug /);
     assert.match(pairing, /Connect agent/);
     assert.match(pairing, /shouldShowAgentBridgeDisconnect/);

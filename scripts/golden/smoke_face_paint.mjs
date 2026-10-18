@@ -281,8 +281,8 @@ console.log('face paint — cancel writes nothing');
   const app = readFileSync(new URL('../../src/App.jsx', import.meta.url), 'utf8');
   const handlerAt = app.indexOf('const handleCommitPaint');
   const handler = app.slice(handlerAt, app.indexOf('const handleCommitShell', handlerAt));
-  check('confirm saves through the assembly path', /rememberAssembly\(/.test(handler) && /enqueueAssemblySave\(/.test(handler)
-    && /payload\.op === 'session'/.test(handler) && /op: 'session'/.test(view));
+  check('confirm writes the working copy only', /rememberAssembly\(/.test(handler) && !/enqueueAssemblySave\(/.test(handler)
+    && !/flushGitOps/.test(handler) && /payload\.op === 'session'/.test(handler) && /op: 'session'/.test(view));
   const css = readFileSync(new URL('../../src/index.css', import.meta.url), 'utf8');
   const dblAt = view.indexOf('const onDblClick = (event) => {');
   check('a double tap does not zoom the page',
@@ -468,9 +468,9 @@ console.log('face paint — live tap, body, confirm, revert');
 console.log('face paint — docs');
 {
   const arch = readFileSync(new URL('../../docs/architecture.md', import.meta.url), 'utf8');
-  const map = readFileSync(new URL('../../docs/UI_MAP.md', import.meta.url), 'utf8');
+  const map = readFileSync(new URL('../../docs/ui-map.md', import.meta.url), 'utf8');
   check('architecture.md names the paint chip and the save', /Face color paint/.test(arch) && /rememberAssembly/.test(arch) && /game mode/i.test(arch));
-  check('UI_MAP.md names the chip and the popup', /data-paint-chip/.test(map) && /data-paint-mode/.test(map));
+  check('ui-map.md names the chip and the popup', /data-paint-chip/.test(map) && /data-paint-mode/.test(map));
 }
 
 console.log('face paint — chip and popup, 390 and desktop, dark and light');

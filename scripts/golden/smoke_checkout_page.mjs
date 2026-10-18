@@ -42,7 +42,7 @@ console.log('checkout page — one pay, not the per-line stepper');
   const account = read('src/components/AccountModal.jsx');
   const picker = read('src/components/checkout/AddressPicker.jsx');
   const orders = read('backend/routes/orders.js');
-  const ui = read('docs/UI_MAP.md');
+  const ui = read('docs/ui-map.md');
   const arch = read('docs/architecture.md');
 
   ok('cart checkout opens the page and does not start the stepper',

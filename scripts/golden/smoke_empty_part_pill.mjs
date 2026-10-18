@@ -66,7 +66,7 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
     && /value=\{currentFilename\}/.test(title)
     && title.indexOf('titleParts.part ?') < title.indexOf('onTitlePartActivate'));
   const arch = read('docs/architecture.md');
-  const map = read('docs/UI_MAP.md');
+  const map = read('docs/ui-map.md');
   check('architecture and UI map mention the omitted pill',
     /golden:empty-part-pill/.test(arch) && /data-title-role="part"/.test(map));
 }

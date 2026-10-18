@@ -4,7 +4,7 @@ import { X, BookOpen, Copy, Check } from 'lucide-react';
 /**
  * Per-puzzle Hint (slice 07): solution/target code + Copy + helper allowlist.
  * Does not dump the full pack blurbs — progression titles live in the picker.
- * Allowlist mirrors HELPER_FUNCTIONS.md puzzle vocabulary (compact).
+ * Allowlist mirrors helper-functions.md puzzle vocabulary (compact).
  */
 const ALLOWLIST = [
   { name: 'filletEdges(part, edges, r, opts?)', role: 'Circular fillet on convex edges (planar / closed-run)' },
@@ -114,7 +114,7 @@ const GameHintsModal = ({ onClose, puzzle = null }) => {
           </div>
 
           <p className="text-[11px] text-gray-500">
-            Full reference: docs/HELPER_FUNCTIONS.md. Unsupported: curved
+            Full reference: docs/helper-functions.md. Unsupported: curved
             planar singleton curved-face fillets (use filletAlongPath / Strategy=sweep), open curved runs under C6, concave “fillets”, arbitrary
             fastener sizes outside the table.
           </p>

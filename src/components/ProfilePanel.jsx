@@ -1,17 +1,18 @@
 /**
  * Profile panel from ProfileChip.
- * Signed in: username header, Connect agent, Cart, Account, Sign out.
- * Signed out: Sign in + Clear local cache + Privacy choices.
+ * Signed in: username header, Connect agent, Cart, Account, Admin (isAdmin),
+ * Sign out, Privacy choices. Signed out: Sign in + Clear local cache + Privacy.
  * Account opens AccountPane (clear cache, danger zone, privacy).
  */
 import React, { useEffect, useRef } from 'react';
-import { LogOut, ShoppingCart, User } from 'lucide-react';
+import { BarChart3, LogOut, ShoppingCart, User } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { shouldDismissProfilePanelOnPointer } from '../agent/ws/agentBridgeChrome.js';
 import PrivacyChoicesController from './PrivacyChoicesController';
 import ProfileUserIdRow from './ProfileUserIdRow';
 import { profileDisplayName } from './profileAccount.js';
 import { PROFILE_MENU_ITEM_CLASS } from './profileMenuChrome.js';
+import { profileAdminVisible } from '../utils/adminAccess.js';
 
 export default function ProfilePanel({
   open,
@@ -87,6 +88,21 @@ export default function ProfilePanel({
     </button>
   ) : null;
 
+  const adminButton = profileAdminVisible(user) ? (
+    <button
+      type="button"
+      data-profile-admin=""
+      className={PROFILE_MENU_ITEM_CLASS}
+      onClick={() => {
+        onClose?.();
+        window.location.assign('/admin');
+      }}
+    >
+      <BarChart3 size={14} aria-hidden="true" />
+      Admin
+    </button>
+  ) : null;
+
   const identityHeader = (
     <div className="px-3 pb-2 pt-1" data-profile-panel-info="">
       {name ? (
@@ -108,6 +124,13 @@ export default function ProfilePanel({
     </div>
   );
 
+  const privacyRow = (
+    <>
+      <div className="my-2 border-t border-chrome-border" data-profile-privacy-divider="" />
+      <PrivacyChoicesController variant="profileMenu" onPicked={onClose} />
+    </>
+  );
+
   return (
     <div
       ref={ref}
@@ -125,6 +148,7 @@ export default function ProfilePanel({
           {agentSlot}
           {cartButton}
           {accountButton}
+          {adminButton}
           <button
             type="button"
             data-profile-reconnect=""
@@ -143,6 +167,7 @@ export default function ProfilePanel({
             <LogOut size={14} aria-hidden="true" />
             Sign out
           </button>
+          {privacyRow}
         </>
       ) : !signedIn ? (
         <>
@@ -166,8 +191,7 @@ export default function ProfilePanel({
               Clear local cache
             </button>
           ) : null}
-          <div className="my-2 border-t border-chrome-border" data-profile-privacy-divider="" />
-          <PrivacyChoicesController variant="profileMenu" />
+          {privacyRow}
         </>
       ) : (
         <>
@@ -175,6 +199,7 @@ export default function ProfilePanel({
           {agentSlot}
           {cartButton}
           {accountButton}
+          {adminButton}
           <button
             type="button"
             data-profile-sign-out=""
@@ -184,6 +209,7 @@ export default function ProfilePanel({
             <LogOut size={14} aria-hidden="true" />
             Sign out
           </button>
+          {privacyRow}
         </>
       )}
     </div>

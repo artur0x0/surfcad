@@ -18,7 +18,7 @@
  */
 /* The `page.evaluate` callbacks below are serialised and run INSIDE the
    browser, where `document` exists — eslint lints this file as Node. */
-/* global document, sessionStorage */
+/* global document, getComputedStyle, sessionStorage */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -110,11 +110,69 @@ try {
     executablePath: exe,
     args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
   });
-attachConsentPresetToBrowser(browser);
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  attachConsentPresetToBrowser(browser);
 
   const pageErrors = [];
   const consoleErrors = [];
+
+  const captureLoading = async (hour, shotName) => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await context.addInitScript((h) => { globalThis.__SURFCAD_LOADING_HOUR__ = h; }, hour);
+    const loadingPage = await context.newPage();
+    loadingPage.on('pageerror', (e) => pageErrors.push(String(e && e.message ? e.message : e)));
+    await loadingPage.route('**/api/auth/me', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ authenticated: false }),
+    }));
+    await loadingPage.route('**/api/config', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({}),
+    }));
+    await loadingPage.route('**/*.wasm', async (route) => {
+      await new Promise((r) => setTimeout(r, 20000));
+      try { await route.continue(); } catch { /* closed */ }
+    });
+    const nav = loadingPage.goto(APP_URL, { waitUntil: 'commit', timeout: 20000 }).catch(() => {});
+    await loadingPage.waitForSelector('[data-app-loading]', { timeout: 15000 });
+    const loading = await loadingPage.evaluate(() => {
+      const gate = document.querySelector('[data-app-loading]');
+      return {
+        theme: gate?.getAttribute('data-app-loading-theme') || '',
+        htmlTheme: document.documentElement.getAttribute('data-loading-theme') || '',
+        privacy: !!gate?.querySelector('[data-privacy-choices-link]'),
+        footer: !!gate?.querySelector('[data-site-footer]'),
+        bg: gate ? getComputedStyle(gate).backgroundColor : '',
+      };
+    });
+    mkdirSync(SHOT_DIR, { recursive: true });
+    await loadingPage.screenshot({ path: join(SHOT_DIR, shotName) });
+    await context.close();
+    await nav;
+    return loading;
+  }
+
+  const lightSplash = await captureLoading(12, 'app-loads-splash-light.png');
+  check('loading screen has no Privacy choices link (light)',
+    lightSplash.privacy === false && lightSplash.footer === false,
+    JSON.stringify(lightSplash));
+  check('loading screen light theme from hour hook',
+    lightSplash.theme === 'light' && lightSplash.htmlTheme === 'light'
+    && lightSplash.bg === 'rgb(250, 250, 249)',
+    JSON.stringify(lightSplash));
+
+  const darkSplash = await captureLoading(19, 'app-loads-splash-dark.png');
+  check('loading screen has no Privacy choices link (dark)',
+    darkSplash.privacy === false && darkSplash.footer === false,
+    JSON.stringify(darkSplash));
+  check('loading screen dark theme from hour hook',
+    darkSplash.theme === 'dark' && darkSplash.htmlTheme === 'dark'
+    && darkSplash.bg === 'rgb(15, 23, 42)',
+    JSON.stringify(darkSplash));
+
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+
   page.on('pageerror', (e) => pageErrors.push(String(e && e.message ? e.message : e)));
   page.on('console', (msg) => {
     if (msg.type() !== 'error') return;

@@ -24,7 +24,7 @@
  */
 
 import { v1Registry } from '../agent/commands/index.js';
-import { formatAgentErrors } from '../agent/state/formatErrors.js';
+import { formatAgentErrors, scrubPublishedError } from '../agent/state/formatErrors.js';
 import { createPickSessions } from '../agent/pick/session.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { emptyPartHistory, pushPartHistory } from './partHistory.js';
@@ -249,6 +249,8 @@ export function createSurfcadBridge(hostSource) {
   let chain = Promise.resolve();
   let lastErrors = [];
   let lastStructuredErrors = [];
+  let lastRunOk = true;
+  let heldFailurePartId = '';
   let lastStatus = copyStatus(EMPTY_STATUS);
   let lastStatusPartId = '';
   const pickSessions = createPickSessions();
@@ -258,8 +260,37 @@ export function createSurfcadBridge(hostSource) {
     if (!read) return;
     const snap = read();
     if (!snap || typeof snap !== 'object') return;
+    const id = snap.partId || '';
+    // A recovered mesh still looks like a good run to the parts list. Keep
+    // the failed status until a later successful run clears it.
+    if (!lastRunOk && heldFailurePartId && id === heldFailurePartId && snap.runState !== 'failed') {
+      lastStatus = { ...copyStatus(snap), runState: 'failed', volume: null, bbox: null };
+      lastStatusPartId = id;
+      return;
+    }
     lastStatus = copyStatus(snap);
-    lastStatusPartId = lastStatus.partId || '';
+    lastStatusPartId = id;
+  }
+
+  /**
+   * Failure recorded for the run that just finished.
+   * When the host passes `runFailure` (including null), that snapshot wins
+   * over `readRunFailure`, which can still be the previous render.
+   */
+  function resolveFeatureFailure(outcome) {
+    if (outcome && Object.prototype.hasOwnProperty.call(outcome, 'runFailure')) {
+      const row = outcome.runFailure;
+      return row && typeof row === 'object' ? row : null;
+    }
+    const readRunFailure = hostFn('readRunFailure');
+    const row = readRunFailure ? readRunFailure() : null;
+    return row && typeof row === 'object' ? row : null;
+  }
+
+  function isRecordedFailure(failure) {
+    if (!failure || typeof failure !== 'object') return false;
+    if (failure.id) return true;
+    return typeof failure.message === 'string' && !!failure.message;
   }
 
   function enqueue(task) {
@@ -270,21 +301,39 @@ export function createSurfcadBridge(hostSource) {
 
   function remember(outcome, script) {
     const text = typeof script === 'string' ? script : '';
-    const errors = outcome?.ok === true ? [] : errorMessages(outcome?.errors);
+    const featureFailure = resolveFeatureFailure(outcome);
+    const recorded = isRecordedFailure(featureFailure) ? featureFailure : null;
+    const uiMessage = typeof recorded?.message === 'string' ? recorded.message : '';
+    let errors = errorMessages(outcome?.errors);
+    if (uiMessage && !errors.includes(uiMessage)) errors = [uiMessage, ...errors];
+    errors = errors.map((row) => scrubPublishedError(row)).filter(Boolean);
+    // A recovered mesh is still a failed feature. `outcome.ok` alone is not
+    // enough — the viewport keeps that solid and returns ok.
+    const ok = outcome?.ok === true && !recorded;
+    if (ok) errors = [];
+    else if (!errors.length) {
+      const preview = formatAgentErrors({
+        messages: [],
+        script: text,
+        runFailure: recorded,
+      });
+      errors = preview.length ? [preview[0].message] : ['Script failed'];
+    }
     lastErrors = errors.slice();
-    const readRunFailure = hostFn('readRunFailure');
-    const runFailure = readRunFailure ? readRunFailure() : null;
-    lastStructuredErrors = formatAgentErrors({
+    lastRunOk = ok;
+    lastStructuredErrors = ok ? [] : formatAgentErrors({
       messages: lastErrors,
       script: text,
-      runFailure,
+      runFailure: recorded,
     });
     const activeId = hostFn('readParts')?.()?.activeId ?? '';
     lastStatusPartId = activeId != null ? String(activeId) : '';
-    lastStatus = statusFrom(outcome, text, { partId: lastStatusPartId });
+    heldFailurePartId = ok ? '' : lastStatusPartId;
+    lastStatus = statusFrom({ ...outcome, ok }, text, { partId: lastStatusPartId });
     return {
-      ok: outcome?.ok === true,
+      ok,
       errors: lastErrors.slice(),
+      failures: lastStructuredErrors.slice(),
       status: copyStatus(lastStatus),
     };
   }
@@ -380,12 +429,10 @@ export function createSurfcadBridge(hostSource) {
     readStructuredErrors: () => {
       const custom = hostFn('readStructuredErrors');
       if (custom) return custom();
-      if (lastStructuredErrors.length) return lastStructuredErrors.slice();
-      const readRunFailure = hostFn('readRunFailure');
-      const runFailure = readRunFailure ? readRunFailure() : null;
-      const getScript = hostFn('getScript');
-      const script = getScript ? getScript() : '';
-      return formatAgentErrors({ messages: lastErrors, script, runFailure });
+      // Stored rows from the last finished run. Do not re-read a ref that
+      // the next render has not caught up with — that produced "Feature failed".
+      if (lastRunOk) return [];
+      return lastStructuredErrors.slice();
     },
     readFeatureTree: () => (hostFn('readFeatureTree')?.() ?? {
       features: [],

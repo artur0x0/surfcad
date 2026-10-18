@@ -1,6 +1,6 @@
 # Monitoring and privacy
 
-SurfCAD’s US launch uses an **opt-out** model for product analytics: usage analytics are **on by default**, there is **no cookie banner**, and people can change their mind any time from **Privacy choices** in the site footer.
+SurfCAD asks for analytics consent on first visit. Optional tracking (PostHog) stays off until **Accept all**. **Required only** stores an opt-out. People can change their mind from **Change privacy choices** on `/privacy`, **Privacy choices** in the profile menu, the Account pane, or the site footer.
 
 Operational sign-up and login metrics for the US launch are sourced from **our MongoDB data** (slice A below) — no third-party analytics SDK in that slice.
 
@@ -9,11 +9,14 @@ Operational sign-up and login metrics for the US launch are sourced from **our M
 | API | Purpose |
 | --- | --- |
 | `getAnalyticsConsent()` | `true` when anonymous usage analytics may run in this browser tab. |
-| `setAnalyticsConsent(boolean)` | Saves preference to `localStorage` (`surfcad.consent.v1`: `{ analytics, updatedAt }`). |
+| `hasStoredConsentChoice()` | `true` when `surfcad.consent.v1` already has an analytics boolean. |
+| `setAnalyticsConsent(boolean)` | Saves preference to `localStorage` (`surfcad.consent.v1`: `{ analytics, updatedAt, source? }`). |
+| `shouldShowPrivacyConsentPopup()` | `true` on a first visit with no stored choice and GPC off. |
+| `openPrivacyChoices()` | Re-opens the Accept all / Required only popup (`src/utils/privacyChoicesUi.js`). |
 | `onConsentChange(cb)` | Fires when the effective consent value changes. |
 | `isGpcActive()` | `true` when `navigator.globalPrivacyControl === true`. |
 
-**Defaults:** analytics allowed unless the stored record says otherwise. **Global Privacy Control (GPC)** always counts as opt-out: `getAnalyticsConsent()` is `false` while GPC is set, and `setAnalyticsConsent(true)` cannot override that.
+**Defaults:** analytics off until the user stores a choice. **Global Privacy Control (GPC)** is Required only: the popup is not shown, `{ analytics: false, source: 'gpc' }` is stored, `getAnalyticsConsent()` is `false` while GPC is set, and `setAnalyticsConsent(true)` cannot override that.
 
 **Not gated by this toggle:** error and crash reporting (e.g. Sentry) — treated as essential operational telemetry so production issues can be diagnosed. PostHog and any other usage analytics must call `getAnalyticsConsent()` before sending events.
 
@@ -27,13 +30,15 @@ Works with **no API keys** and **no network**: preferences live in `localStorage
 
 ## UI
 
-**Privacy choices** opens a small dialog (footer on the CAD app, loading gate, and `/partners`):
+A small non-blocking popup (`data-privacy-consent-popup`, bottom of the screen, above the CAD toolbar and the mobile home pill) asks on first visit:
 
-- Toggle: **Allow usage analytics**
-- Plain-language summary: anonymous usage events and page performance; no session recording; no ads
-- When GPC is detected, a note explains that SurfCAD honours it and the toggle is disabled
+- **Accept all** (green primary) — optional analytics may load
+- **Required only** (grey secondary) — analytics stay off
+- One line of copy plus a link to `/privacy`
 
-Later monitoring slices (PostHog, Sentry) should import `src/utils/consent.js` only — do not add parallel consent state.
+`/privacy` (`src/pages/PrivacyPage.jsx`) always shows “Your browser's Global Privacy Control signal is honored” and **Change privacy choices**, which calls `openPrivacyChoices()`. The profile menu and Account pane **Privacy choices** rows use the same handler.
+
+Later monitoring slices (PostHog, Sentry) should import `src/utils/consent.js` only — do not add parallel consent state. If gitleaks flags the storage key name `surfcad.consent.v1`, PR #566 handles the allowlist.
 
 ---
 
@@ -73,25 +78,34 @@ We append an event and bump `lastLoginAt` / `loginCount` only when Passport esta
 - `POST /api/github/oauth/refresh` (GitHub token renewal; browser session unchanged)
 - Guest checkout sessions
 
-### Active signed-in users
+### Active users
 
-`activeSignedInUsers` counts users whose `lastLoginAt` falls within the rolling session window (`SESSION_MAX_AGE_MS`, 30 days in `src/utils/sessionPolicy.js`). This approximates users who could still have a valid server session, not live socket counts.
+The admin report’s `activeUsers` total is distinct `login_events.userId` values in the requested window. Daily `series.activeUsers` is distinct users who logged in that UTC day. This is not a live socket count.
+
+Assemblies and parts live in GitHub, and STEP conversions are files on disk — they are not Mongo collections, so they are omitted.
+
+Quotes older than seven days may already have been TTL-deleted; the report counts whatever is still in `quotes`.
 
 ### Admin HTTP API
 
-`GET /api/admin/stats` — JSON report:
+`GET /api/admin/stats?days=7|30|120` — JSON report of **counts only** (no emails, addresses, or other personal data):
 
-- Sign-ups per day (last 30), week (last 12), month (last 12) from `User.createdAt`
-- Logins and distinct logging-in users per day/week/month from `login_events`
-- `totalUsers`, `activeSignedInUsers`, `generatedAt`
+- Daily UTC buckets for the window, zero-filled
+- Totals for the window: sign-ups (`User.createdAt`), logins (`login_events`), active users (distinct login user ids), quotes (`quotedAt`), orders (`created-at`), partner form submissions (`partners.createdAt`)
 
-**Auth:** caller must be signed in and their Mongo `_id` must appear in `ADMIN_USER_IDS` (comma-separated in `.env.production`). If the allowlist is empty or the user is not listed, the route returns **404** (not 401).
+Any other `days` value (including missing) returns **400**.
+
+**Auth:** `isAdmin(user)` is true when the signed-in user’s `githubLogin` appears in `ADMIN_GITHUB_LOGINS` (comma-separated GitHub logins, case-insensitive). The list defaults to empty, so nobody is an admin until it is set in the production env file. If the allowlist is empty or the caller is not listed — including signed-out users — the route returns **404** (not 403), so it is not discoverable. The handler is rate-limited like other authenticated routes.
+
+`GET /api/auth/me` includes `isAdmin: boolean` and `isInternal: boolean` (also on `user`).
 
 Example (browser session cookie):
 
 ```bash
-curl -sS -b cookies.txt https://api.surfcad.com/api/admin/stats | jq .
+curl -sS -b cookies.txt 'https://api.surfcad.com/api/admin/stats?days=7' | jq .
 ```
+
+The in-app view is `/admin` (lazily loaded). Non-admins see the 404 page.
 
 ### CLI script (production)
 
@@ -99,13 +113,13 @@ From the backend deploy directory (same env as the API):
 
 ```bash
 cd /home/ubuntu/backend
-sudo -u ubuntu NODE_ENV=production node scripts/stats.js
+sudo -u ubuntu NODE_ENV=production node scripts/stats.js --days 30
 ```
 
 Table output:
 
 ```bash
-sudo -u ubuntu NODE_ENV=production node scripts/stats.js --format table
+sudo -u ubuntu NODE_ENV=production node scripts/stats.js --format table --days 7
 ```
 
 Requires `MONGODB_URI` (loaded via `backend/config/index.js` and `.env.production`).
@@ -113,11 +127,10 @@ Requires `MONGODB_URI` (loaded via `backend/config/index.js` and `.env.productio
 ### Environment
 
 ```env
-# Comma-separated Mongo User _id values for GET /api/admin/stats
-ADMIN_USER_IDS=507f1f77bcf86cd799439011,507f191e810c19729de860ea
+# Comma-separated GitHub logins for GET /api/admin/stats and /admin
+# Empty means no admins. Set only in the server env file, not in git.
+ADMIN_GITHUB_LOGINS=
 ```
-
-Find your `_id` in MongoDB or from an admin session’s `/api/auth/me` response.
 
 ---
 
@@ -125,45 +138,52 @@ Find your `_id` in MongoDB or from an admin session’s `/api/auth/me` response.
 
 **Client:** `src/utils/analytics.js` — lazy-loads `posthog-js` only when `VITE_POSTHOG_KEY` is set **and** `getAnalyticsConsent()` is true. If the key is unset (dev, staging, CI, tests), the SDK is never imported and no analytics network calls are made.
 
+**Server:** `backend/services/posthog.js` — captures `signed_up` / `logged_in` from every auth path via the capture API when `POSTHOG_KEY` is set **and** the request’s consent allows it. Unset key → no-op.
+
 | Env var | Default | Notes |
 | --- | --- | --- |
-| `VITE_POSTHOG_KEY` | *(unset)* | **Production only** — see below. |
-| `VITE_POSTHOG_HOST` | `https://us.i.posthog.com` | US ingestion host. |
+| `VITE_POSTHOG_KEY` | *(unset)* | **Production browser build only**. |
+| `VITE_POSTHOG_HOST` | `https://us.i.posthog.com` | US ingestion host (browser). |
+| `POSTHOG_KEY` | *(unset)* | **Production API host only** (`~/backend/.env.production`). |
+| `POSTHOG_HOST` | `https://us.i.posthog.com` | US ingestion host (server). |
+| `POSTHOG_INTERNAL_USERS` | *(empty)* | Comma-separated GitHub logins and/or emails. Default empty; do not commit a real list. |
 
-**Production keys:** set only in `~/surfcad-prod-build/.env.production` on spark (`VITE_POSTHOG_KEY`, optional `VITE_POSTHOG_HOST`). Do **not** add these to dev/staging env files or the repo.
+**Production keys:** set `VITE_POSTHOG_KEY` only in `~/surfcad-prod-build/.env.production` on spark, and `POSTHOG_KEY` only in the production API env. Do **not** add these to dev/staging env files or the repo.
 
 **PostHog project settings (owner):** enable **Discard client IP data** in the PostHog project so IPs are not stored server-side (the client also sets `ip: false` and denies `$ip` properties).
 
 ### Behaviour
 
 - Autocapture **off**, session recording **off** (`disable_session_recording: true`), surveys **off**.
-- Page views: **manual** (`$pageview` on load and `popstate` for SPA navigations).
+- Page views: **manual** (`$pageview` after identity sync, then `popstate` for SPA navigations). `user_type` is `register`ed and set as a person property before the first `$pageview`.
 - Persistence: **`localStorage` only** (no PostHog cookies).
-- Consent: `opt_in_capturing()` / `opt_out_capturing()` when the user toggles analytics or GPC applies.
-- Identity: anonymous by default; on sign-in, `identify(SHA-256(userId))` (hex via Web Crypto). Never email, name, or raw ids. Super property `user_type`: `guest` \| `signed_in`. `reset()` on sign-out.
-- Web Vitals: one `web_vitals` event per page load (LCP, INP, CLS, FCP, TTFB) via the `web-vitals` package.
+- Consent: `opt_in_capturing()` / `opt_out_capturing()` when the user toggles analytics or GPC applies. Opt-out does **not** call `reset()`.
+- Identity: anonymous by default; on sign-in, `identify(SHA-256(userId))` (hex via Web Crypto). Never email, name, or raw ids. Super property `user_type`: `guest` \| `signed_in`. `reset()` **only on sign-out**.
+- Internal traffic: `GET /api/auth/me` returns `user.isInternal` from `POSTHOG_INTERNAL_USERS` (server-side). The client also registers `is_internal: true` on localhost / Vite dev.
+- Web Vitals: one `web_vitals` event per page load (LCP, INP, CLS, FCP, TTFB) via the `web-vitals` package. CLS is the unrounded value (including `0`).
 - Product events: `track(name, props)` with an allowlisted name set; props must not include user content (part names, filenames, code).
+- Auth conversions: `signed_up` and `logged_in` are captured **server-side** (distinct id = SHA-256 of the user id). The client passes `analyticsConsent` from `getAnalyticsConsent()` only when `hasStoredConsentChoice()` is true; unknown (no stored choice) omits the field and the server skips unless Mongo already has a choice.
 
 ### Explicit events (`track`)
 
 | Event | Properties | Answers |
 | --- | --- | --- |
 | `app_loaded` | `load_ms` | Time to interactive / boot. |
-| `signed_up` | — | Registration conversions. |
-| `logged_in` | — | Login conversions. |
+| `signed_up` | `method` | Registration conversions (server: email verify, guest convert, new OAuth). |
+| `logged_in` | `method` | Login conversions (server: every new session). |
 | `part_created` | — | New part rows in an assembly. |
 | `assembly_created` | — | New assemblies started. |
 | `feature_used` | `feature` (kind id, e.g. `fillet`, `extrude`) | Feature adoption; compare counts to the full feature kind list for **never-used** features. |
 | `export_done` | `format` (`3mf`, `stl`, `step`) | Export usage. |
-| `quote_requested` | — | Manufacturing quote intent. |
-| `checkout_started` | — | Cart checkout opened. |
+| `quote_requested` | `process`, `material`, `infill` | User proceeds with a quote (order or add-to-cart). |
+| `checkout_started` | `line_count` | Cart checkout page opened. |
 | `git_saved` | — | Successful git commit (or queued offline save). |
 | `local_agent_paired` | — | Local MCP / agent bridge paired. |
-| `partners_form_submitted` | — | Partners lead form success. |
+| `partners_form_submitted` | `partner_type` | Partners lead form success. |
 
 Additional automatic event: **`web_vitals`** (not via `track` allowlist) with `lcp`, `inp`, `cls`, `fcp`, `ttfb`. PostHog also attaches default browser/device properties on every capture.
 
-`feature_used` is emitted from `trackFeatureCommits` when a new feature marker appears in the part script (wired through `commitFeatureBuffer` and palette insert).
+`feature_used` is emitted on palette Confirm (`trackPaletteFeature` with the registry kind), when a new feature marker appears (`trackFeatureCommits` via `commitFeatureBuffer`), and on agent `confirm_feature` / helper insert. A unit test iterates `HELPER_PALETTE_ITEMS` so new features cannot be missed.
 
 ### Suggested PostHog insights
 

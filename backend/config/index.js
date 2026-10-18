@@ -1,6 +1,7 @@
 // config/index.js - Configuration loader
 import { SESSION_MAX_AGE_MS } from '../../src/utils/sessionPolicy.js';
-import { parseAdminUserIds } from '../services/adminAllowlist.js';
+import { parseAdminGithubLogins } from '../services/adminAllowlist.js';
+import { parseInternalUsers } from '../services/internalUsers.js';
 import { loadBackendDotenv } from './loadEnv.js';
 
 loadBackendDotenv();
@@ -95,7 +96,15 @@ const config = {
 
   // Admin
   adminEmail: process.env.ADMIN_EMAIL,
-  adminUserIds: parseAdminUserIds(process.env.ADMIN_USER_IDS),
+  adminGithubLogins: parseAdminGithubLogins(process.env.ADMIN_GITHUB_LOGINS),
+
+  // PostHog (production API host only — never put POSTHOG_KEY in staging/dev env files)
+  posthog: {
+    key: process.env.POSTHOG_KEY || '',
+    host: process.env.POSTHOG_HOST || 'https://us.i.posthog.com',
+  },
+  // Comma-separated GitHub logins and/or emails flagged as internal traffic.
+  internalUsers: parseInternalUsers(process.env.POSTHOG_INTERNAL_USERS),
 
   // Storage
   workingFolder: process.env.WORKING_FOLDER,

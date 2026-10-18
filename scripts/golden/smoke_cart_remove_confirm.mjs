@@ -35,7 +35,7 @@ console.log('cart remove confirm — both surfaces, Cancel default');
   const sheet = read('src/components/CartSheet.jsx');
   const page = read('src/components/checkout/CheckoutPage.jsx');
   const quote = read('src/components/QuoteModal.jsx');
-  const ui = read('docs/UI_MAP.md');
+  const ui = read('docs/ui-map.md');
   const sheetRemove = sheet.slice(sheet.indexOf('data-cart-remove=""'));
   const pageRemove = page.slice(page.indexOf('data-checkout-remove=""'));
 

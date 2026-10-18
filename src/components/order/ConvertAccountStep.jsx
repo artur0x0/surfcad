@@ -1,6 +1,7 @@
 // components/order/ConvertAccountStep.jsx - Convert guest to account
 import React, { useEffect, useState } from 'react';
 import { Lock, Loader2, UserPlus, Check } from 'lucide-react';
+import { withAnalyticsConsent } from '../../utils/analyticsConsentAuth.js';
 
 const ConvertAccountStep = ({ email, address, onComplete, onSkip, onError }) => {
   const [password, setPassword] = useState('');
@@ -74,7 +75,7 @@ const ConvertAccountStep = ({ email, address, onComplete, onSkip, onError }) => 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ password, code: String(code).trim() }),
+        body: JSON.stringify(withAnalyticsConsent({ password, code: String(code).trim() })),
       });
 
       const data = await response.json();

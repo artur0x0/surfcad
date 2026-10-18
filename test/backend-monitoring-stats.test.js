@@ -12,9 +12,14 @@ import {
   periodKeysWeeks,
   periodKeysMonths,
   fillCountSeries,
+  fillDateCountSeries,
   fillLoginSeries,
 } from '../backend/services/adminStatsPeriods.js';
-import { parseAdminUserIds, isUserInAdminAllowlist } from '../backend/services/adminAllowlist.js';
+import { parseAdminGithubLogins, isAdmin } from '../backend/services/adminAllowlist.js';
+import {
+  parseAdminStatsDays,
+  fetchAdminStats,
+} from '../backend/services/adminStats.js';
 import { parseArgs } from '../backend/scripts/statsArgs.js';
 
 describe('adminStats period helpers', () => {
@@ -44,6 +49,15 @@ describe('adminStats period helpers', () => {
     ]);
   });
 
+  test('fillDateCountSeries zero-fills missing days', () => {
+    const keys = ['2026-10-15', '2026-10-16'];
+    const map = new Map([['2026-10-16', 2]]);
+    assert.deepEqual(fillDateCountSeries(keys, map), [
+      { date: '2026-10-15', count: 0 },
+      { date: '2026-10-16', count: 2 },
+    ]);
+  });
+
   test('fillLoginSeries includes distinct users', () => {
     const keys = ['2026-W41'];
     const logins = new Map([['2026-W41', 5]]);
@@ -61,28 +75,124 @@ describe('adminStats period helpers', () => {
   });
 });
 
-describe('requireAdmin allowlist', () => {
-  test('parseAdminUserIds trims and drops empties', () => {
-    const ids = parseAdminUserIds(' aaa , ,bbb ');
-    assert.deepEqual([...ids], ['aaa', 'bbb']);
+describe('isAdmin GitHub login allowlist', () => {
+  test('parseAdminGithubLogins trims, lowercases, and drops empties', () => {
+    const logins = parseAdminGithubLogins(' OctoCat , ,ArtUr ');
+    assert.deepEqual([...logins], ['octocat', 'artur']);
   });
 
-  test('isUserInAdminAllowlist checks the allow set', () => {
-    const allow = new Set(['user-1']);
-    assert.equal(isUserInAdminAllowlist({ _id: 'user-1' }, allow), true);
-    assert.equal(isUserInAdminAllowlist({ _id: 'user-2' }, allow), false);
-    assert.equal(isUserInAdminAllowlist({ _id: 'user-1' }, new Set()), false);
+  test('empty env means no admins', () => {
+    assert.equal(parseAdminGithubLogins('').size, 0);
+    assert.equal(parseAdminGithubLogins(undefined).size, 0);
+    assert.equal(isAdmin({ githubLogin: 'octo' }, new Set()), false);
+  });
+
+  test('isAdmin matches githubLogin case-insensitively', () => {
+    const allow = parseAdminGithubLogins('Octo');
+    assert.equal(isAdmin({ githubLogin: 'octo' }, allow), true);
+    assert.equal(isAdmin({ githubLogin: 'OCTO' }, allow), true);
+    assert.equal(isAdmin({ githubLogin: 'other' }, allow), false);
+    assert.equal(isAdmin({ githubLogin: '' }, allow), false);
+    assert.equal(isAdmin({ _id: 'user-1' }, allow), false);
+    assert.equal(isAdmin(null, allow), false);
   });
 });
 
-describe('stats.js CLI', () => {
-  test('parseArgs defaults to json', () => {
-    const opts = parseArgs(['node', 'stats.js']);
-    assert.equal(opts.format, 'json');
+describe('parseAdminStatsDays', () => {
+  test('accepts 7, 30, and 120 only', () => {
+    assert.equal(parseAdminStatsDays('7'), 7);
+    assert.equal(parseAdminStatsDays('30'), 30);
+    assert.equal(parseAdminStatsDays('120'), 120);
+    assert.equal(parseAdminStatsDays(7), 7);
   });
 
-  test('parseArgs accepts table format', () => {
-    const opts = parseArgs(['node', 'stats.js', '--format', 'table']);
+  test('rejects anything else', () => {
+    assert.equal(parseAdminStatsDays(undefined), null);
+    assert.equal(parseAdminStatsDays(''), null);
+    assert.equal(parseAdminStatsDays('14'), null);
+    assert.equal(parseAdminStatsDays('07'), null);
+    assert.equal(parseAdminStatsDays('7d'), null);
+  });
+});
+
+describe('fetchAdminStats buckets', () => {
+  const now = new Date('2026-10-18T12:00:00.000Z');
+
+  function countModel(rows) {
+    return { aggregate: async () => rows };
+  }
+
+  test('zero-fills days and sums totals without PII fields', async () => {
+    const stats = await fetchAdminStats({
+      days: 7,
+      now,
+      models: {
+        User: countModel([{ _id: '2026-10-18', count: 2 }]),
+        LoginEvent: {
+          aggregate: async (pipeline) => {
+            if (pipeline.some((stage) => stage.$count === 'n')) return [{ n: 3 }];
+            return [
+              { _id: '2026-10-17', logins: 4, distinctUsers: 2 },
+              { _id: '2026-10-18', logins: 1, distinctUsers: 1 },
+            ];
+          },
+        },
+        Quote: countModel([{ _id: '2026-10-16', count: 1 }]),
+        Order: countModel([]),
+        PartnerLead: countModel([{ _id: '2026-10-12', count: 5 }]),
+      },
+    });
+
+    assert.equal(stats.days, 7);
+    assert.equal(stats.series.signups.length, 7);
+    assert.deepEqual(stats.series.signups.map((row) => row.date), [
+      '2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15',
+      '2026-10-16', '2026-10-17', '2026-10-18',
+    ]);
+    assert.equal(stats.series.signups[0].count, 0);
+    assert.equal(stats.series.signups[6].count, 2);
+    assert.equal(stats.totals.signups, 2);
+    assert.equal(stats.totals.logins, 5);
+    assert.equal(stats.totals.activeUsers, 3);
+    assert.equal(stats.totals.quotes, 1);
+    assert.equal(stats.totals.orders, 0);
+    assert.equal(stats.totals.partnerSubmissions, 5);
+    assert.equal(stats.series.partnerSubmissions[0].count, 5);
+
+    const keys = collectKeys(stats);
+    for (const forbidden of [
+      'email', 'emails', 'address', 'addresses', 'name', 'firstName', 'lastName',
+      'phone', 'street', 'userId', 'githubLogin', 'guest-email', 'ip', 'userAgent',
+    ]) {
+      assert.equal(keys.has(forbidden), false, forbidden);
+    }
+  });
+});
+
+function collectKeys(value, keys = new Set()) {
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectKeys(item, keys));
+    return keys;
+  }
+  if (value && typeof value === 'object') {
+    for (const [key, nested] of Object.entries(value)) {
+      keys.add(key);
+      collectKeys(nested, keys);
+    }
+  }
+  return keys;
+}
+
+describe('stats.js CLI', () => {
+  test('parseArgs defaults to json and 30 days', () => {
+    const opts = parseArgs(['node', 'stats.js']);
+    assert.equal(opts.format, 'json');
+    assert.equal(opts.days, 30);
+  });
+
+  test('parseArgs accepts table format and days', () => {
+    const opts = parseArgs(['node', 'stats.js', '--format', 'table', '--days', '7']);
     assert.equal(opts.format, 'table');
+    assert.equal(opts.days, 7);
   });
 });

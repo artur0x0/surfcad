@@ -87,7 +87,7 @@ export default function ProfileChip({
   const iconSize = inline ? 14 : 16;
   const wrapClass = inline
     ? 'pointer-events-auto relative z-10 shrink-0 overflow-visible'
-    : 'pointer-events-auto absolute top-4 right-4 z-50 overflow-visible';
+    : 'pointer-events-auto absolute top-4 lg:top-2 right-4 z-50 overflow-visible';
 
   const startReconnect = () => {
     if (session.offerReconnect) session.reconnectInteractive();

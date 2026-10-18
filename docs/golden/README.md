@@ -64,6 +64,7 @@ Gate acceptance still requires `test_real_worker.mjs` via `npm run verify` when 
 | `golden:block-pose-preview` | `smoke_block_pose_preview.mjs` |
 | `golden:block-shape-boolean` | `smoke_block_shape_boolean.mjs` |
 | `golden:blocks-artur-fixes` | `smoke_blocks_artur_fixes.mjs` |
+| `golden:brand-identity` | `smoke_brand_identity.mjs` |
 | `golden:cad-mobile-chrome` | `smoke_cad_mobile_chrome.mjs` |
 | `golden:cad-palette` | `smoke_cad_palette_overlays.mjs` |
 | `golden:cart` | `smoke_cart.mjs` |
@@ -178,6 +179,8 @@ Gate acceptance still requires `test_real_worker.mjs` via `npm run verify` when 
 | `golden:git-g13-vault-create-conflict` | `smoke_git_g13_vault_create_conflict.mjs` |
 | `golden:git-g2-open-save` | `smoke_git_g2_open_save.mjs` |
 | `golden:git-g3-commit-push` | `smoke_git_g3_commit_push.mjs` |
+| `golden:git-delete-from-repo` | `smoke_git_delete_from_repo.mjs` |
+| `golden:git-assembly-rename-reload` | `smoke_git_assembly_rename_reload.mjs` |
 | `golden:git-g4-pull-conflicts` | `smoke_git_g4_pull_conflicts.mjs` |
 | `golden:git-g5-branch-view` | `smoke_git_g5_branch_view.mjs` |
 | `golden:git-g6-move-to-git` | `smoke_git_g6_move_to_git.mjs` |
@@ -260,6 +263,7 @@ Gate acceptance still requires `test_real_worker.mjs` via `npm run verify` when 
 | `golden:polygon-sides` | `smoke_polygon_sides.mjs` |
 | `golden:polyline-entity` | `smoke_polyline_entity.mjs` |
 | `golden:polyline-points` | `smoke_polyline_point_drag.mjs` |
+| `golden:privacy-consent` | `smoke_privacy_consent.mjs` |
 | `golden:profile-chip` | `smoke_profile_chip.mjs` |
 | `golden:puzzle-unlock` | `smoke_puzzle_unlock.mjs` |
 | `golden:quote-then-add` | `smoke_quote_then_add.mjs` |

@@ -69,7 +69,7 @@ console.log('feature sheet card — source');
   const hook = read('src/hooks/useModalViewport.js');
   const view = read('src/components/Viewport.jsx');
   const arch = read('docs/architecture.md');
-  const map = read('docs/UI_MAP.md');
+  const map = read('docs/ui-map.md');
 
   check('shell props are title, subtitle, onCancel, onConfirm, confirmDisabled, children',
     /title/.test(shell) && /subtitle/.test(shell) && /onCancel/.test(shell)
@@ -268,7 +268,7 @@ console.log('feature sheet card — source');
     && /mode !== 'game'/.test(view)
     && /yieldToFeatureEditCard/.test(view)
     && /FeatureEditSheet/.test(arch)
-    && /Game mounts no card/.test(read('docs/ui_style_guide.md')));
+    && /Game mounts no card/.test(read('docs/ui-style-guide.md')));
   check('camera snapshots the pose, slides up, retargets orbit, and restores it',
     /export function captureViewPose/.test(camera)
     && /export function aimOrbitAtVisibleCenter/.test(camera)

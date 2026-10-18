@@ -142,7 +142,9 @@ export default function PartnersPage() {
     });
 
     if (result.ok) {
-      track('partners_form_submitted');
+      track('partners_form_submitted', {
+        partner_type: payload.partnerType || null,
+      });
       setDone(true);
       form.reset();
       setPartnerType('');

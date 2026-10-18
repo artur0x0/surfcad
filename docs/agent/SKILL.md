@@ -2,7 +2,7 @@
 
 Drive an open SurfCAD tab through **`packages/surfcad-mcp`**: stdio MCP → loopback WebSocket relay (M1) → `window.surfcad.call`. Tool names match `src/agent/commands.json` (`npm run export:agent`).
 
-UI text and color: [docs/ui_style_guide.md](../ui_style_guide.md). Shared classes only; never dark text on dark chrome; user-facing copy says Chrome, not Edge.
+UI text and color: [docs/ui-style-guide.md](../ui-style-guide.md). Shared classes only; never dark text on dark chrome; user-facing copy says Chrome, not Edge.
 
 ## Pair
 
@@ -48,7 +48,7 @@ Optional: `SURFCAD_AGENT_BRIDGE_WS_URL` (default `ws://127.0.0.1:17341`; preview
 
 - **Faces** — `list_faces` rows: `id` (`f0`, `f1`, …, one per face a viewport click selects, same on a rerun of the same script), `type`, `center` / `normal` / `axis` / `radius`, `area`, and `key` `{ at, n, area, src?, ord? }` (same as viewport fingerprints). `joint_pick` takes `{ part_id, face_id }`; key-based tools take `key`.
 - **Edges** — prefer grouped **`e0`**, **`e1`**, … from `list_feature_edges`; raw mesh edges are not stable. Grouped `eN` expands to the UI edge chain.
-- **Parts** — assembly part ids from `parts` / `set_active_part`. The id is a stable UUID for the part's life. Agent `create_part` sits at the origin unless `position` is set; `part_get_transform` / `part_set_transform` read and set placement (intrinsic XYZ Euler degrees; look up by stable id or vault path). `status` is for the active part (including `not_run_yet`). `set_script` keeps `// @surf-id`. In a git assembly, `create_part` rows have no vault path until `git_save`, which writes `assemblies/<Assembly>/<Name>.js` and stores that path beside the same id. `rename_part` moves the committed file and keeps the id; pending script and placement stay for `git_save`.
+- **Parts** — assembly part ids from `parts` / `set_active_part`. The id is a stable UUID for the part's life. Agent `create_part` sits at the origin unless `position` is set; `part_get_transform` / `part_set_transform` read and set placement (intrinsic XYZ Euler degrees; look up by stable id or vault path). `status` is for the active part (including `not_run_yet`). `set_script` keeps `// @surf-id`. In a git assembly, `create_part` rows have no vault path until `git_save`, which writes `assemblies/<Assembly>/<Name>.js` and stores that path beside the same id. Paint, rename, and other edits stay on the working copy; only Save or consented `git_save` commits.
 - **Sketch** — in-contour entities `p0`, `e0`, `a0`, …; saved contour block id is `@contour id=c1` on the script, not sketch prefixes.
 
 Full shapes: `docs/agent-export.md`.

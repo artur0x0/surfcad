@@ -19,23 +19,45 @@ describe('Privacy choices dialog UI', () => {
     assert.equal(privacyChoicesAnalyticsAttr(true, true), 'off');
   });
 
-  test('shell wires footer link and dialog markers', () => {
-    const panel = readFileSync(new URL('../src/components/PrivacyChoicesDialogPanel.jsx', import.meta.url), 'utf8');
+  test('shell wires footer link, profile row, and openPrivacyChoices', () => {
     const footer = readFileSync(new URL('../src/components/SiteFooter.jsx', import.meta.url), 'utf8');
     const controller = readFileSync(new URL('../src/components/PrivacyChoicesController.jsx', import.meta.url), 'utf8');
     const profile = readFileSync(new URL('../src/components/ProfilePanel.jsx', import.meta.url), 'utf8');
     const account = readFileSync(new URL('../src/components/AccountPane.jsx', import.meta.url), 'utf8');
-    const dialog = readFileSync(new URL('../src/components/PrivacyChoicesDialog.jsx', import.meta.url), 'utf8');
-    assert.match(panel, /data-privacy-choices-toggle/);
-    assert.match(panel, /data-privacy-choices-gpc/);
-    assert.match(panel, /Allow usage analytics/);
+    const popup = readFileSync(new URL('../src/components/PrivacyConsentPopup.jsx', import.meta.url), 'utf8');
+    const opener = readFileSync(new URL('../src/utils/privacyChoicesUi.js', import.meta.url), 'utf8');
+    const privacyPage = readFileSync(new URL('../src/pages/PrivacyPage.jsx', import.meta.url), 'utf8');
+    const main = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8');
+    const loading = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
     assert.match(footer, /data-site-footer/);
     assert.match(controller, /data-privacy-choices-link/);
     assert.match(controller, /Privacy choices/);
     assert.match(controller, /data-profile-privacy-choices/);
+    assert.match(controller, /openPrivacyChoices/);
     assert.match(profile, /variant="profileMenu"/);
     assert.match(account, /variant="profileMenu"/);
-    assert.match(dialog, /dataAttr="privacy-choices"/);
-    assert.match(dialog, /data-privacy-choices-done/);
+    assert.match(opener, /export function openPrivacyChoices/);
+    assert.match(popup, /Accept all/);
+    assert.match(popup, /Required only/);
+    assert.match(popup, /href="\/privacy"/);
+    assert.match(popup, /SurfCAD uses required cookies to sign you in and save your work\./);
+    assert.match(popup, /Optional cookies help us improve the app, so please consider allowing all\./);
+    assert.doesNotMatch(popup, /Optional analytics start only if you accept/);
+    assert.match(privacyPage, /Change privacy choices/);
+    assert.match(privacyPage, /Your browser(?:'s|&apos;s) Global Privacy Control signal is honored/);
+    assert.match(main, /pathIsPrivacy/);
+    assert.match(main, /PrivacyConsentController/);
+    const loadingSlice = loading.slice(
+      loading.indexOf('if (!manifoldReady || editorInitialScript === null)'),
+      loading.indexOf('Phone shell:'),
+    );
+    assert.match(loadingSlice, /data-app-loading/);
+    assert.equal(/SiteFooter/.test(loadingSlice), false);
+    assert.equal(/Privacy choices/.test(loadingSlice), false);
+    assert.match(loading, /<SiteFooter \/>/);
+    assert.doesNotMatch(popup, /\bEdge\b/);
+    assert.doesNotMatch(privacyPage, /\bEdge\b/);
+    assert.doesNotMatch(profile, /\bEdge\b/);
+    assert.doesNotMatch(account, /\bEdge\b/);
   });
 });
