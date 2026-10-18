@@ -72,6 +72,7 @@ test('git_move_to_repo is v2 first Save and does not re-key rows to vault paths'
   const move = sliceFn('const handleMoveToGit', 'const handleListVaultAssemblies');
   assert.match(move, /handleV2PlanSave\(/);
   assert.match(move, /vaultLayout: 'v2'/);
+  assert.match(move, /ensureLocalSurfIds\(/);
   assert.match(move, /collapseWorkingCopyIds\(/);
   assert.match(move, /status: 'moved'/);
   assert.equal(/moveToGit\(/.test(move), false, move);

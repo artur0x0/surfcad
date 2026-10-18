@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { wrapAgentCall } from '../playtest/lib/wrapAgentCall.mjs';
+import { isV2SurfId } from '../../src/utils/git/surfId.js';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
 const PORT = Number(process.env.SMOKE_PORT || 4327);
@@ -197,6 +198,29 @@ check('set_script edit', edited.ok === true, JSON.stringify(edited));
 const moved = await agentCall(page, 'git_move_to_repo', { vault_name: VAULT });
 check('git_move_to_repo', moved.ok === true && moved.result?.status === 'moved', JSON.stringify(moved));
 await agentCall(page, 'run', {});
+
+const afterMove = await agentCall(page, 'parts', {});
+const movedRows = afterMove.result?.parts || [];
+const movedIds = movedRows.map((row) => row?.id).filter(Boolean);
+check(
+  'after move, parts ids are v2 surf-ids',
+  movedIds.length > 0 && movedIds.every((id) => isV2SurfId(id)),
+  JSON.stringify(movedIds),
+);
+check(
+  'after move, parts ids are not vault paths',
+  movedIds.every((id) => !String(id).includes('/') && !String(id).includes('\\')),
+  JSON.stringify(movedIds),
+);
+const listedId = afterMove.result?.activeId || movedIds[0];
+const afterScript = await agentCall(page, 'get_script', { part_id: listedId });
+const setListed = await agentCall(page, 'set_script', {
+  part_id: listedId,
+  source: `${afterScript.result?.source || ''}\n// after-move listed id\n`,
+});
+check('set_script with listed surf-id', setListed.ok === true, JSON.stringify(setListed));
+const activateListed = await agentCall(page, 'set_active_part', { part_id: listedId });
+check('set_active_part with listed surf-id', activateListed.ok === true, JSON.stringify(activateListed));
 
 const saved = await agentCall(page, 'git_save', { message: 'h12 golden save' });
 check('git_save', saved.ok === true && ['committed', 'queued', 'clean'].includes(saved.result?.status), JSON.stringify(saved));

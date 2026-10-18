@@ -3709,10 +3709,10 @@ const App = () => {
    * writeVaultCommit path as the Save button (`parts/<id>.js`). Leftover
    * moveToGit still writes v1 folder paths and must not be used here.
    *
-   * Reauth boot is read-only, so load-time collapse may not have run. Call it
-   * here (do not edit the migrator): keep existing surf-ids, mint only when a
-   * row still has a leftover local key like `seed`. Switching source never
-   * remints a permanent id and never replaces one with a path.
+   * Reauth boot is read-only, so load-time collapse may not have run. Stamp
+   * with ensureLocalSurfIds (same mint as source-toggle), then collapse
+   * leftover keys like `seed` / `part1` onto those opaque ids. Switching
+   * source never remints a permanent id and never replaces one with a path.
    */
   const handleMoveToGit = async ({ vaultName = DEFAULT_VAULT_NAME } = {}) => {
     const before = assemblyRef.current;
@@ -3731,13 +3731,15 @@ const App = () => {
       rememberAssembly(before);
     };
     try {
-      const live = liveEditorScript(before);
-      const scripts = { ...beforeScripts };
+      await ensureLocalSurfIds();
+      const stamped = assemblyRef.current || before;
+      const live = liveEditorScript(stamped);
+      const scripts = { ...partScriptsRef.current };
       if (live.liveId) {
         scripts[live.liveId] = live.liveScript;
         savePartScript(live.liveId, live.liveScript);
       }
-      const collapsed = collapseWorkingCopyIds(before, scripts);
+      const collapsed = collapseWorkingCopyIds(stamped, scripts);
       collapsePairs = collapsed.pairs || [];
       if (collapsePairs.length) rekeyRuntime(collapsePairs);
       rememberScripts(collapsed.scripts);
