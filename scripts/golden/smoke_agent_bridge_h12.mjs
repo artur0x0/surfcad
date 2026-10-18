@@ -186,7 +186,6 @@ await page.waitForTimeout(600);
 await agentCall(page, 'run', {});
 const cur = await agentCall(page, 'get_script', {});
 const edited = await agentCall(page, 'set_script', {
-  part_id: 'local:part1',
   source: `${cur.result?.source || ''}\n// h12 golden\n`,
 });
 check('set_script edit', edited.ok === true, JSON.stringify(edited));
