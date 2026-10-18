@@ -4877,15 +4877,7 @@ const App = () => {
       if (adopted.length) await applyMeshMarks(adopted);
       if (result.status === 'clean') return result;
       if (result.doc || wrappedChanged) {
-        const committedDoc = result.doc || assemblyRef.current;
-        const committedScripts = result.scripts || workScripts;
-        if (committedDoc && committedScripts) {
-          await applyCommittedWorkspace({
-            ...result,
-            doc: committedDoc,
-            scripts: committedScripts,
-          });
-        }
+        await applyCommittedWorkspace(result);
         captureAgentScriptSnapshot();
       }
       await enqueueGit(vault.repo, {
