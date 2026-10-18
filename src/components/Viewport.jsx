@@ -54,7 +54,12 @@ import { buildSelection } from '../agent/state/selection';
 import { applyTrackballFeel, trackballRotateSpeedForPointer } from '../utils/trackballFeel';
 import { installPageZoomLock } from '../utils/pageZoomLock';
 import { readViewportContainerSize, resizeViewportRenderer } from '../utils/viewportResize';
-import { createViewportWebGLRenderer, disposeViewportRenderer, WebGLUnavailableNotice } from '../utils/viewportWebgl.js';
+import {
+  createViewportWebGLRenderer,
+  disposeViewportRenderer,
+  installWebglContextLossHandlers,
+  WebGLUnavailableNotice,
+} from '../utils/viewportWebgl.js';
 import { installViewportGestureZoom } from '../utils/viewportGestureZoom';
 import { formatDisplayNumber } from '../utils/displayUnit';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
@@ -10600,6 +10605,7 @@ const Viewport = forwardRef(({
     // controls instead of controlsRef (a later mount overwrites the ref).
     let rafId = 0;
     let loopAlive = true;
+    let removeWebglContextLoss = () => {};
     let orbitControls = null;
     let orbitPointerDom = null;
     let onPointerDownRotateSpeed = null;
@@ -10658,6 +10664,10 @@ const Viewport = forwardRef(({
         setWebglUnavailable(true);
         return;
       }
+      removeWebglContextLoss = installWebglContextLossHandlers(canvasRef.current, {
+        onLost: () => setWebglUnavailable(true),
+        onRestored: () => setWebglUnavailable(false),
+      });
 
       resizeViewportRenderer({
         renderer,
@@ -11337,7 +11347,6 @@ const Viewport = forwardRef(({
       const animate = () => {
         if (!loopAlive) return;
         rafId = requestAnimationFrame(animate);
-        if (!rendererRef.current) return;
 
         if (!sheetCameraRef.current?.isRestoring() && !faceSketchRef.current?.isAnimating()) {
           controlsRef.current?.update();
@@ -11428,6 +11437,8 @@ const Viewport = forwardRef(({
       }
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
+      removeWebglContextLoss();
+      removeWebglContextLoss = () => {};
       disposeViewportRenderer(rendererRef.current);
       rendererRef.current = null;
       if (resultRef.current?.geometry) {
@@ -15482,7 +15493,7 @@ const Viewport = forwardRef(({
       )}
 
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
-
+      
       {webglUnavailable ? <WebGLUnavailableNotice /> : null}
       <canvas ref={canvasRef} className="absolute inset-0 z-0 h-full w-full" />
     </div>
