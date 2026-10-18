@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mintSurfId, isSurfId, readSurfId, withSurfId } from '../src/utils/git/surfId.js';
 import { collapseWorkingCopyIds, pickCollapsedPartId } from '../src/utils/git/wcIdentity.js';
-import { serializeAssembly, parseAssemblyDocument } from '../src/utils/assembly.js';
+import { serializeAssembly, parseAssemblyDocument, composeViewportParts } from '../src/utils/assembly.js';
+import { partSurfId } from '../src/utils/git/surfId.js';
 
 const UUID = '5f0c3c1e-0000-4000-8000-000000000001';
 const PATH = 'assemblies/Gearbox/Bracket.js';
@@ -126,6 +127,34 @@ test('isSurfId rejects UUID and path so collapse never keeps them', () => {
   assert.equal(isSurfId(UUID), false);
   assert.equal(isSurfId(PATH), false);
   assert.equal(isSurfId(SURF), true);
+  assert.equal(partSurfId({ id: UUID, surfId: SURF }), SURF);
+  assert.equal(partSurfId({ id: SURF }), SURF);
+  assert.equal(partSurfId({ id: UUID }), null);
+});
+
+test('composeViewportParts paints with the collapsed part id', () => {
+  const out = collapseWorkingCopyIds(
+    {
+      source: 'git',
+      name: 'agent-h13',
+      activeId: 'local:part1',
+      parts: [{
+        id: 'local:part1',
+        surfId: SURF,
+        name: 'Part (1)',
+        visible: true,
+        order: 0,
+      }],
+    },
+    { 'local:part1': withSurfId('return Manifold.cube([20, 20, 20], true);\n', SURF) },
+  );
+  assert.equal(out.doc.parts[0].id, SURF);
+  assert.equal(out.doc.parts[0].surfId, undefined);
+  const mesh = { vertProperties: new Float32Array(9), triVerts: new Uint32Array(3) };
+  const solids = composeViewportParts(out.doc, { [SURF]: { ok: true, mesh } });
+  assert.equal(solids.length, 1);
+  assert.equal(solids[0].id, SURF);
+  assert.equal(solids[0].surfId, SURF);
 });
 
 test('group partIds and colors follow the collapsed part id', () => {

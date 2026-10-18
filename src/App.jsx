@@ -278,6 +278,7 @@ import {
   migrateLocalPartIds,
   collapseWorkingCopyIds,
   isSurfId,
+  partSurfId,
   reconcileSyncedFromTip,
   markPartsSynced,
   baselineAfterAssemblyRename,
@@ -7024,15 +7025,16 @@ const App = () => {
     const doc = assemblyRef.current;
     if (!doc || !raw?.partId) return;
     const part = doc.parts.find((row) => row.id === raw.partId);
-    if (!part?.surfId) {
-      viewportRef.current?.notify?.(raw && part ? 'This part has no surf id' : 'This part has no surf id');
+    const pickSurfId = partSurfId(part);
+    if (!pickSurfId) {
+      viewportRef.current?.notify?.('This part has no surf id');
       rememberCadPart(null);
       return;
     }
     if (!raw.key) return;
     const pick = {
       partId: part.id,
-      surfId: part.surfId,
+      surfId: pickSurfId,
       partName: part.name || part.id,
       kind: raw.kind,
       planar: !!raw.planar,
@@ -8119,7 +8121,7 @@ const App = () => {
           let longest = 0;
           let seen = false;
           for (const pick of jointCard?.picks || []) {
-            const part = parts.find((row) => row?.surfId && row.surfId === pick?.surfId);
+            const part = parts.find((row) => partSurfId(row) === pick?.surfId);
             if (!part?.id) continue;
             seen = true;
             longest = Math.max(longest, characteristicLengthFor({ partId: part.id }));
@@ -8405,7 +8407,7 @@ const App = () => {
     readActivePartSurfId() {
       const doc = assemblyRef.current;
       const part = doc?.parts?.find((row) => row.id === doc?.activeId);
-      return part?.surfId || (isSurfId(part?.id) ? part.id : null);
+      return partSurfId(part);
     },
     readActivePartStatus() {
       const doc = assemblyRef.current;
@@ -8559,7 +8561,7 @@ const App = () => {
       }
       const jointed = jointedSurfIds(doc.joints);
       const draft = { ...part, placement: { t, q } };
-      const pose = poseFieldsForPart(draft, jointed.has(part.surfId), t);
+      const pose = poseFieldsForPart(draft, jointed.has(partSurfId(part)), t);
       const nextPart = { ...part, ...pose };
       const before = doc;
       const written = rememberAssembly({
@@ -8839,7 +8841,7 @@ const App = () => {
         if (!part) {
           return { error: { code: 'unknown_part', message: `Unknown part id: ${row?.part_id}` } };
         }
-        if (!part.surfId) {
+        if (!partSurfId(part)) {
           return { error: { code: 'no_surf_id', message: `Part has no surf id: ${part.id}` } };
         }
         const described = viewportRef.current?.describeJointPick?.({

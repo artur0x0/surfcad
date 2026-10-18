@@ -10,7 +10,7 @@
  */
 
 import { normalizeSheetMetalBinding } from './scs/scsCatalog.js';
-import { isSurfId } from './git/surfId.js';
+import { isSurfId, partSurfId } from './git/surfId.js';
 import {
   jointedSurfIds,
   normalizeAssemblyJoints,
@@ -374,9 +374,7 @@ export function assemblyNameFromFile(filename) {
  */
 export function normalizeGroups(groups, parts) {
   const live = new Set(
-    (parts || [])
-      .map((part) => part?.surfId || (isSurfId(part?.id) ? part.id : null))
-      .filter((id) => isSurfId(id)),
+    (parts || []).map((part) => partSurfId(part)).filter(Boolean),
   );
   const seenParts = new Set();
   const seenIds = new Set();
@@ -565,7 +563,7 @@ function canonicalColorEntry(entry) {
  */
 export function normalizeAssemblyColors(colors, parts) {
   if (!colors || typeof colors !== 'object' || Array.isArray(colors)) return null;
-  const live = (parts || []).map((part) => part?.surfId || (isSurfId(part?.id) ? part.id : null)).filter(Boolean);
+  const live = (parts || []).map((part) => partSurfId(part)).filter(Boolean);
   const pruned = pruneColorMap(colors, live);
   if (!pruned || typeof pruned !== 'object' || Array.isArray(pruned)) return null;
   const liveSet = new Set(live);
@@ -599,8 +597,7 @@ export function serializeAssembly(doc) {
   const joints = normalizeAssemblyJoints(doc?.joints, drafted.map((item) => item.row));
   const jointed = jointedSurfIds(joints);
   const parts = drafted.map(({ row, part }) => {
-    const poseId = isSurfId(row.id) ? row.id : row.surfId;
-    const pose = poseFieldsForPart(part, jointed.has(poseId), partPosition(part));
+    const pose = poseFieldsForPart(part, jointed.has(partSurfId(row)), partPosition(part));
     if (pose.position) row.position = pose.position;
     if (pose.placement) row.placement = pose.placement;
     return row;
@@ -833,7 +830,7 @@ export function composeViewportParts(doc, runs) {
     const pose = partPlacement(part);
     out.push({
       id: part.id,
-      surfId: part.surfId || null,
+      surfId: partSurfId(part),
       mesh: run.mesh,
       position: pose.t,
       placement: pose,
@@ -893,7 +890,7 @@ export function feedRows(doc, runs, scripts) {
       missing,
       action: missing ? missingRowAction(source) : null,
       mesh: !missing && run && run.ok === true ? run.mesh : null,
-      surfId: part.surfId || null,
+      surfId: partSurfId(part),
       copiedFrom: part.copiedFrom || null,
       isSynced: typeof part.isSynced === 'boolean' ? part.isSynced : undefined,
     };
