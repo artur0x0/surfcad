@@ -708,3 +708,130 @@ test('offline Save stores one pending write; a second Save pushes; online does n
   assert.equal(saveWrites(spy).length, seedWrites + 1);
   assert.equal(store.getPendingSave(REPO, 'main'), null);
 });
+
+test('Save of a non-overlapping file does not take the remote unwritten files', async () => {
+  const before = doc(A, 'Gearbox', [row(P, 'Bracket'), row(Q, 'Shaft', { order: 1 })]);
+  const renamed = doc(A, 'Gearbox Two', [row(P, 'Bracket'), row(Q, 'Shaft', { order: 1 })]);
+  const { inner, spy, store, sha } = await seedA(before, { [P]: BODY, [Q]: BODY_Q });
+  const remoteQ = stamped('return remote-q;\n', Q, 'Shaft');
+  await inner.commitFiles(REPO, {
+    branch: 'main',
+    message: 'remote Q',
+    files: [fileWrite(partIdPath(Q), remoteQ)],
+    baseSha: sha,
+  });
+  const renamedSave = await runSave({
+    spy,
+    store,
+    workingCopy: wc(renamed, { [P]: BODY, [Q]: BODY_Q }),
+    message: 'Rename A',
+  });
+  assert.equal(renamedSave.status, 'committed', renamedSave.error);
+  assert.equal(await readText(inner, partIdPath(Q)), remoteQ);
+  const writes = saveWrites(spy).length;
+  const later = await runSave({
+    spy,
+    store,
+    workingCopy: wc(renamed, { [P]: BODY, [Q]: 'return local-q;\n' }),
+    message: 'Edit Q',
+  });
+  assert.equal(later.status, 'conflict');
+  assert.equal(later.paths.includes(partIdPath(Q)), true);
+  assert.equal(saveWrites(spy).length, writes);
+  assert.equal(await readText(inner, partIdPath(Q)), remoteQ);
+});
+
+test('Get latest reloads every this-assembly file the remote changed', async () => {
+  const before = doc(A, 'Gearbox', [row(P, 'Bracket'), row(Q, 'Shaft', { order: 1 })]);
+  const { inner, spy, store, sha } = await seedA(before, { [P]: BODY, [Q]: BODY_Q });
+  const remoteP = stamped('return remote-p;\n', P, 'Bracket');
+  const remoteQ = stamped('return remote-q;\n', Q, 'Shaft');
+  await inner.commitFiles(REPO, {
+    branch: 'main',
+    message: 'remote P and Q',
+    files: [
+      fileWrite(partIdPath(P), remoteP),
+      fileWrite(partIdPath(Q), remoteQ),
+    ],
+    baseSha: sha,
+  });
+  const working = wc(before, { [P]: 'return local-p;\n', [Q]: BODY_Q });
+  const blocked = await runSave({ spy, store, workingCopy: working });
+  assert.equal(blocked.status, 'conflict');
+  const writes = saveWrites(spy).length;
+  const reloaded = await executePlanSaveConflictChoice({
+    action: 'reload',
+    adapter: spy,
+    repo: REPO,
+    branch: 'main',
+    store,
+    workingCopy: working,
+    paths: blocked.paths,
+    now: NOW,
+  });
+  assert.equal(reloaded.status, 'reloaded');
+  assert.equal(saveWrites(spy).length, writes);
+  assert.match(String(reloaded.contents[partIdPath(P)]), /remote-p/);
+  assert.match(String(reloaded.contents[partIdPath(Q)]), /remote-q/);
+  const applied = applySaveReload(before, working.scripts, reloaded.contents);
+  const next = await runSave({
+    spy,
+    store,
+    workingCopy: wc(applied.doc, applied.scripts),
+  });
+  assert.notEqual(next.status, 'conflict', next.error);
+  assert.equal(await readText(inner, partIdPath(Q)), remoteQ);
+  if (next.status === 'committed') {
+    const qFile = lastCommitFiles(spy).find((file) => file.path === partIdPath(Q));
+    if (qFile) assert.match(String(qFile.content), /remote-q/);
+  }
+});
+
+test('failed assembly file read refuses Save and does not delete parts', async () => {
+  const aDoc = doc(A, 'Gearbox', [row(P, 'Bracket')]);
+  const bDoc = doc(B, 'Cover', [row(P, 'Bracket')]);
+  const { inner, spy, store } = await seedA(aDoc, { [P]: BODY });
+  const savedB = await runSave({ spy, store, workingCopy: wc(bDoc, { [P]: BODY }) });
+  assert.equal(savedB.status, 'committed', savedB.error);
+  const orig = spy.readFile.bind(spy);
+  spy.readFile = async (repo, path, ref) => {
+    if (path === assemblyIdPath(B)) throw new Error('503');
+    return orig(repo, path, ref);
+  };
+  const writes = saveWrites(spy).length;
+  const dropped = await runSave({
+    spy,
+    store,
+    workingCopy: wc(doc(A, 'Gearbox', []), {}),
+  });
+  spy.readFile = orig;
+  assert.equal(dropped.status, 'error');
+  assert.equal(dropped.code, 'save_refused');
+  assert.equal(saveWrites(spy).length, writes);
+  assert.equal(await readText(inner, partIdPath(P)), stamped(BODY, P, 'Bracket'));
+});
+
+test('Save without a stored tip or record refuses when the remote already has this assembly', async () => {
+  const before = doc(A, 'Gearbox', [row(P, 'Bracket')]);
+  const { inner, spy, sha } = await seedA(before, { [P]: BODY });
+  const remoteP = stamped('return remote-p;\n', P, 'Bracket');
+  await inner.commitFiles(REPO, {
+    branch: 'main',
+    message: 'remote P',
+    files: [fileWrite(partIdPath(P), remoteP)],
+    baseSha: sha,
+  });
+  const empty = createSyncStore({ persist: false });
+  await empty.ready();
+  const writes = saveWrites(spy).length;
+  const result = await runSave({
+    spy,
+    store: empty,
+    workingCopy: wc(doc(A, 'Gearbox Two', [row(P, 'Bracket')]), { [P]: BODY }),
+    message: 'Rename',
+  });
+  assert.equal(result.status, 'error');
+  assert.match(result.message, /Get latest first/);
+  assert.equal(saveWrites(spy).length, writes);
+  assert.equal(await readText(inner, partIdPath(P)), remoteP);
+});

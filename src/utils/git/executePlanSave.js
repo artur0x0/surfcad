@@ -185,6 +185,77 @@ function assemblyRowFromContent(content) {
   };
 }
 
+function compareChangedPaths(compareFiles) {
+  if (compareFiles == null || typeof compareFiles !== 'object') {
+    return { paths: [], truncated: true };
+  }
+  if (compareFiles.truncated === true || compareFiles.incomplete === true) {
+    return { paths: [], truncated: true };
+  }
+  const rows = Array.isArray(compareFiles)
+    ? compareFiles
+    : (Array.isArray(compareFiles.files) ? compareFiles.files : null);
+  if (!rows) return { paths: [], truncated: true };
+  const paths = [];
+  for (const row of rows) {
+    const raws = typeof row === 'string'
+      ? [row]
+      : [row?.path, row?.filename, row?.previous_filename];
+    for (const raw of raws) {
+      const path = normalizeRepoPath(raw);
+      if (path) paths.push(path);
+    }
+  }
+  return { paths: [...new Set(paths)], truncated: false };
+}
+
+/**
+ * This assembly's files the remote changed but this Save did not write.
+ * Later writes of those paths conflict until Get latest.
+ */
+function nextStalePaths(previousCommit, writtenPaths, compareFiles) {
+  const written = new Set(
+    (writtenPaths || []).map((path) => normalizeRepoPath(path)).filter(Boolean),
+  );
+  const prevFiles = new Set(Object.keys(previousCommit?.files || {}));
+  const carried = (previousCommit?.stalePaths || []).filter((path) => !written.has(path));
+  const cmp = compareChangedPaths(compareFiles);
+  const newly = [];
+  if (cmp.truncated) {
+    for (const path of prevFiles) {
+      if (!written.has(path)) newly.push(path);
+    }
+  } else {
+    for (const path of cmp.paths) {
+      if (prevFiles.has(path) && !written.has(path)) newly.push(path);
+    }
+  }
+  return [...new Set([...carried, ...newly])].sort();
+}
+
+function withStalePaths(commit, stalePaths) {
+  if (!commit) return commit;
+  const next = { ...commit };
+  if (stalePaths?.length) next.stalePaths = stalePaths;
+  else delete next.stalePaths;
+  return parseAssemblyCommit(next) || commit;
+}
+
+function stalePlannedPaths(commit, files) {
+  const stale = new Set(commit?.stalePaths || []);
+  if (!stale.size) return [];
+  const hits = [];
+  for (const file of files || []) {
+    const path = normalizeRepoPath(file?.path);
+    if (path && stale.has(path)) hits.push(path);
+  }
+  return [...new Set(hits)].sort();
+}
+
+function plannedPathsOf(files) {
+  return (files || []).map((file) => normalizeRepoPath(file?.path)).filter(Boolean);
+}
+
 /**
  * Tip `.surf.json` rows + blob hashes from the **current remote tip**.
  * Hashes are git blob shas of the bytes (mock tree ids for text are not
@@ -193,7 +264,8 @@ function assemblyRowFromContent(content) {
 export async function loadBranchContext(adapter, repo, tipSha, selfId) {
   const branchFiles = {};
   const branchAssemblies = [];
-  if (!tipSha) return { branchFiles, branchAssemblies };
+  const unreadPaths = [];
+  if (!tipSha) return { branchFiles, branchAssemblies, unreadPaths };
   let tree;
   try {
     tree = await adapter.listTree(repo, tipSha);
@@ -205,26 +277,42 @@ export async function loadBranchContext(adapter, repo, tipSha, selfId) {
     const parsed = parseIdPath(path);
     if (!parsed) continue;
     if (parsed.kind === 'mesh') {
-      if (!entry.sha) continue;
+      if (!entry.sha) {
+        unreadPaths.push(path);
+        continue;
+      }
       try {
         const bytes = await adapter.readBlob(repo, entry.sha);
         if (bytes) branchFiles[path] = { contentHash: contentHash(bytes) };
-      } catch { /* skip */ }
+        else unreadPaths.push(path);
+      } catch {
+        unreadPaths.push(path);
+      }
       continue;
     }
     let file;
     try {
       file = await adapter.readFile(repo, path, tipSha);
     } catch {
+      if (parsed.kind === 'assembly') {
+        return { branchFiles: null, branchAssemblies: null, treeFailed: true };
+      }
+      unreadPaths.push(path);
       continue;
     }
-    if (!file || typeof file.content !== 'string') continue;
+    if (!file || typeof file.content !== 'string') {
+      if (parsed.kind === 'assembly') {
+        return { branchFiles: null, branchAssemblies: null, treeFailed: true };
+      }
+      unreadPaths.push(path);
+      continue;
+    }
     branchFiles[path] = { contentHash: contentHash(file.content) };
     if (parsed.kind === 'assembly' && parsed.id !== selfId) {
       branchAssemblies.push(assemblyRowFromContent(file.content));
     }
   }
-  return { branchFiles, branchAssemblies };
+  return { branchFiles, branchAssemblies, unreadPaths };
 }
 
 function nextTipRecord(plan, repo, branch, sha) {
@@ -340,6 +428,15 @@ export async function planVaultSave({
   }
   const branchAssemblies = loaded.branchAssemblies;
   const branchFiles = loaded.branchFiles;
+  const unreadPaths = loaded.unreadPaths || [];
+
+  if (!storedTip && !storedCommit) {
+    let assemblyPath = '';
+    try { assemblyPath = assemblyIdPath(assemblyId); } catch { assemblyPath = ''; }
+    if (assemblyPath && branchFiles?.[assemblyPath]) {
+      return refused('Get latest first.');
+    }
+  }
 
   const otherAssemblyCommits = Array.isArray(workingCopy?.otherAssemblyCommits)
     ? workingCopy.otherAssemblyCommits
@@ -347,9 +444,12 @@ export async function planVaultSave({
       ? store.listAssemblyCommits(ref, branchName)
       : []);
 
-  const compareFiles = skipRemoteCompare || force
+  // Compare against the stored tip even on overwrite, so unwritten remote
+  // files of this assembly can be marked known-stale after a fast-forward.
+  const remoteCompare = skipRemoteCompare
     ? []
-    : await compareForPlan(adapter, ref, branchTip?.tipSha || null, remoteSha, false);
+    : await compareForPlan(adapter, ref, storedTip?.tipSha || null, remoteSha, false);
+  const compareFiles = force ? [] : remoteCompare;
 
   const saveTarget = saveTargetForPlan(ref, branchName, branchTip);
   if (!saveTarget) return refused('Save needs a repo.');
@@ -385,9 +485,24 @@ export async function planVaultSave({
       truncated: compareFiles?.truncated === true || compareFiles?.incomplete === true,
     });
   }
+  const planned = plannedPathsOf(plan.files);
+  const unreadHit = planned.filter((path) => unreadPaths.includes(path));
+  if (unreadHit.length) {
+    return refused('Save could not read the current remote tip.');
+  }
+  if (!force && !skipRemoteCompare) {
+    const staleHits = stalePlannedPaths(storedCommit, plan.files);
+    if (staleHits.length) {
+      return conflictResult(staleHits, {
+        remoteTip: remoteSha,
+        tipSha: branchTip?.tipSha || null,
+      });
+    }
+  }
   return {
     plan,
     remoteSha,
+    remoteCompare,
     branchTip,
     storedCommit,
     repo: ref,
@@ -406,6 +521,8 @@ async function writePlannedFiles({
   baseSha,
   create,
   plan,
+  storedCommit = null,
+  remoteCompare = [],
   now,
 }) {
   let committed;
@@ -428,12 +545,16 @@ async function writePlannedFiles({
     }
     throw err;
   }
+  const nextAssemblyCommit = withStalePaths(
+    plan.nextAssemblyCommit,
+    nextStalePaths(storedCommit, files.map((file) => file.path), remoteCompare),
+  );
   const tip = await persistPlanSaveRecords(store, {
     repo,
     branch,
     sha: committed.sha,
     nextBranchTip: plan.nextBranchTip,
-    nextAssemblyCommit: plan.nextAssemblyCommit,
+    nextAssemblyCommit,
     adopt: plan.adopt,
     now,
   });
@@ -443,7 +564,7 @@ async function writePlannedFiles({
     branch,
     files: files.map((file) => file.path),
     nextBranchTip: tip,
-    nextAssemblyCommit: plan.nextAssemblyCommit,
+    nextAssemblyCommit,
     adopt: plan.adopt || [],
     partStillReferenced: plan.partStillReferenced,
   };
@@ -500,6 +621,8 @@ export async function executePlanSave({
           baseSha: pending.baseSha,
           create,
           plan: prepared.plan,
+          storedCommit: prepared.storedCommit,
+          remoteCompare: prepared.remoteCompare,
           now,
         });
       }
@@ -560,6 +683,8 @@ export async function executePlanSave({
     baseSha,
     create,
     plan: prepared.plan,
+    storedCommit: prepared.storedCommit,
+    remoteCompare: prepared.remoteCompare,
     now,
   });
 }
@@ -573,14 +698,30 @@ async function reloadConflictingFiles({
   paths,
   now,
 }) {
-  const want = [...new Set((paths || []).map((path) => normalizeRepoPath(path)).filter(Boolean))];
-  if (!want.length) {
+  const requested = [...new Set((paths || []).map((path) => normalizeRepoPath(path)).filter(Boolean))];
+  if (!requested.length) {
     return refused('Get latest needs the conflicting paths.', { code: 'bad_args' });
   }
   assertGithubAdapter(adapter);
   const branchName = branchNameOf(branch);
+  const assemblyId = assemblyIdOf(workingCopy);
   const head = await adapter.getBranch(repo, branchName);
   const headSha = head?.sha || null;
+  const moved = await mainMovedPlanSavePaths({
+    adapter,
+    repo,
+    branch: branchName,
+    store,
+    assemblyId,
+  });
+  const commit = parseAssemblyCommit(
+    store?.getAssemblyCommit?.(repo, branchName, assemblyId),
+  );
+  const want = [...new Set([
+    ...requested,
+    ...(moved.paths || []),
+    ...(commit?.stalePaths || []),
+  ])];
   const contents = {};
   if (headSha) {
     const tree = await adapter.listTree(repo, headSha);
@@ -600,7 +741,6 @@ async function reloadConflictingFiles({
       if (file && typeof file.content === 'string') contents[path] = file.content;
     }
   }
-  const assemblyId = assemblyIdOf(workingCopy);
   if (store && headSha) {
     await captureLastCommit({
       adapter,
@@ -815,6 +955,7 @@ export async function mainMovedPlanSavePaths({
   const mine = new Set([
     ...(assemblyPath ? [assemblyPath] : []),
     ...Object.keys(commit?.files || {}),
+    ...(commit?.stalePaths || []),
   ]);
   if (truncated) {
     return { paths: [...mine].sort(), truncated: true };
