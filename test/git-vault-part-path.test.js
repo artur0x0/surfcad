@@ -80,4 +80,40 @@ describe('ensureAssemblyVaultPaths + stringifySurfJson', () => {
       /Invalid \.surf\.json/,
     );
   });
+
+  test('promoting a new part does not mark committed siblings unsynced', () => {
+    const alpha = '5f0c3c1e-0000-4000-8000-0000000000aa';
+    const beta = '5f0c3c1e-0000-4000-8000-0000000000bb';
+    const gamma = '5f0c3c1e-0000-4000-8000-0000000000cc';
+    const delta = '5f0c3c1e-0000-4000-8000-0000000000dd';
+    const alphaPath = assemblyPartPath('Trio', 'Alpha');
+    const betaPath = assemblyPartPath('Trio', 'Beta');
+    const gammaPath = assemblyPartPath('Trio', 'Gamma');
+    const doc = {
+      source: 'git',
+      name: 'Trio',
+      activeId: alpha,
+      parts: [
+        { id: alpha, name: 'Alpha', visible: true, order: 0, path: alphaPath, isSynced: true },
+        { id: beta, name: 'Beta', visible: true, order: 1, path: betaPath, isSynced: true },
+        { id: gamma, name: 'Gamma', visible: true, order: 2, path: gammaPath },
+        { id: delta, name: 'Delta', visible: true, order: 3, isSynced: false },
+      ],
+    };
+    const scripts = {
+      [alpha]: '// alpha\n',
+      [beta]: '// beta\n',
+      [gamma]: '// gamma\n',
+      [delta]: '// delta\n',
+    };
+    const { doc: fixed, moved } = ensureAssemblyVaultPaths(doc, scripts);
+    assert.equal(moved.length, 1);
+    assert.equal(moved[0].id, delta);
+    assert.equal(fixed.parts.find((part) => part.id === alpha).isSynced, true);
+    assert.equal(fixed.parts.find((part) => part.id === beta).isSynced, true);
+    assert.equal(fixed.parts.find((part) => part.id === gamma).isSynced, undefined);
+    assert.equal(fixed.parts.find((part) => part.id === delta).isSynced, false);
+    assert.equal(fixed.parts.find((part) => part.id === gamma).path, gammaPath);
+    assert.ok(fixed.parts.find((part) => part.id === delta).path.endsWith('Delta.js'));
+  });
 });

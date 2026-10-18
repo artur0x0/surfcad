@@ -138,6 +138,11 @@ export function resolveNewPartPath(assemblyName, partName, takenPaths = []) {
  * Before an assembly Save, assign every path-less part a vault script path
  * under `assemblies/<Assembly>/<Name>.js`. Collisions get `Name-2`, etc.
  * The row id stays. Scripts stay keyed by id.
+ *
+ * Already-pathed rows keep their `path` and `isSynced`. Flipping
+ * `isSynced: false` on those siblings made the parts-list yellow dot
+ * appear on untouched rows after a Save that added a new part, even
+ * though git dirty and the assembly Save badge stayed clean.
  * -> { doc, scripts, moved: [{ from, to, id }] }
  */
 export function ensureAssemblyVaultPaths(doc, scripts = {}, { remotePaths = [] } = {}) {
@@ -176,24 +181,27 @@ export function ensureAssemblyVaultPaths(doc, scripts = {}, { remotePaths = [] }
   if (!pathMap.size) return { doc, scripts, moved: [] };
 
   const nextParts = (doc.parts || []).map((part) => {
-    const to = pathMap.get(part.id) || partRepoPath(part);
-    if (!to) return part;
-    const leaf = to.split('/').pop()?.replace(/\.js$/i, '') || part.name;
+    const assigned = pathMap.get(part.id);
+    if (!assigned) {
+      const path = partRepoPath(part);
+      return path && part.path !== path ? { ...part, path } : part;
+    }
+    const leaf = assigned.split('/').pop()?.replace(/\.js$/i, '') || part.name;
     if (partKeepsStableId(part)) {
       return {
         ...part,
-        path: to,
+        path: assigned,
         name: part.name || leaf,
         isSynced: false,
       };
     }
     const text = workScripts[part.id];
     delete workScripts[part.id];
-    workScripts[to] = typeof text === 'string' ? text : '';
+    workScripts[assigned] = typeof text === 'string' ? text : '';
     return {
       ...part,
-      id: to,
-      path: to,
+      id: assigned,
+      path: assigned,
       name: part.name || leaf,
       isSynced: false,
     };
