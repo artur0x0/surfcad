@@ -450,6 +450,8 @@ Bridge refusals stay `isError: true` with `code` + `message` (+ `details`).
 | `part_still_referenced` | Delete-from-repo but another assembly lists this id | `scope: "assembly"` or delete those parents first |
 | `upgrade_required` | `git_save` on a legacy vault | `git_upgrade_vault { confirm: true }` after the user agrees |
 | `already_upgraded` | Upgrade on v2 | Continue with `git_save` |
+| `working_copy_unpersisted` | Upgrade remapped the WC but IndexedDB did not keep those bytes | Retry `git_upgrade_vault`; that retry does not write git |
+| `working_copy_unmapped` | Upgrade could not map every vault part onto the WC | Give the WC a row for each vault part, then retry |
 | `git_only` | Vault-only tool in local mode | `git_move_to_repo` or stay local |
 | `consent_pending` | Real-repo write; Allow dialog up | Wait `retry_after_ms`, same call |
 | `real_repo_blocked` | Headless or session Deny | Tell the user; do not loop |

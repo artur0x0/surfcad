@@ -2659,6 +2659,7 @@ async function seedF1AppOpenHost() {
     memory: { doc: cloneDoc(sourceDoc), scripts: { ...sourceScripts } },
     journal: [],
     idbOps: 0,
+    baseline: null,
   };
   return env;
 }
@@ -2855,6 +2856,10 @@ async function hostUpgradeOnce(env, {
     env.ctx.memory.doc = cloneDoc(adopted.persisted.doc);
     env.ctx.memory.scripts = { ...adopted.persisted.scripts };
     env.ctx.savedDoc = cloneDoc(adopted.persisted.doc);
+    env.ctx.baseline = {
+      doc: cloneDoc(adopted.persisted.doc),
+      scripts: { ...adopted.persisted.scripts },
+    };
   }
   return { result, adopted };
 }
@@ -3151,6 +3156,24 @@ test('orphanUpgradeScriptIds lists unreferenced to-keys only when saveDoc failed
   }, sourceDoc), []);
   assert.equal(workingCopyUnpersistedResult().hint, WORKING_COPY_UNPERSISTED_HINT);
   assert.equal(workingCopyUnmappedResult({ missing: ['x'] }).code, 'working_copy_unmapped');
+  assert.equal(upgradePersistIncomplete({
+    docSaved: true,
+    failedFrom: new Set(),
+    saved: new Set([SCENARIO_L_PIN_ID]),
+    scripts: {
+      [SCENARIO_L_PIN_ID]: '// @name Pin copy\n',
+      [F1_PIN_MINTED_ID]: '// @name Pin\n',
+    },
+  }), true, 'same-key put miss is incomplete');
+  assert.equal(upgradePersistIncomplete({
+    docSaved: true,
+    failedFrom: new Set(),
+    saved: new Set([SCENARIO_L_PIN_ID, F1_PIN_MINTED_ID]),
+    scripts: {
+      [SCENARIO_L_PIN_ID]: '// @name Pin copy\n',
+      [F1_PIN_MINTED_ID]: '// @name Pin\n',
+    },
+  }), false);
 });
 
 test('already_upgraded with a vault part missing from the WC is working_copy_unmapped', async () => {
@@ -3362,5 +3385,64 @@ test('App-seeded path index (L5): missing vault Pin is working_copy_unmapped, th
   assert.equal(retry.adopted.status, 'ok');
   assert.equal(commits(env.gh).length, writesAfterSeed + 1);
   await assertHostWcBytesEqualVault(env);
+});
+
+async function runSameKeyPutFailAppFlow({ dirty }) {
+  const env = await seedF1AppOpenHost();
+  if (dirty) {
+    const dirtyPin = withSurfId('return "dirty-pin";\n', F1_PIN_MINTED_ID);
+    env.ctx.memory.scripts[F1_PIN_MINTED_ID] = dirtyPin;
+    env.ctx.idb.set(F1_PIN_MINTED_ID, dirtyPin);
+    env.workingCopy = {
+      dirty: true,
+      doc: cloneDoc(env.ctx.memory.doc),
+      scripts: { ...env.ctx.memory.scripts },
+    };
+  }
+  const originalDoc = cloneDoc(env.ctx.memory.doc);
+  const originalIdb = new Map(env.ctx.idb);
+  const writesAfterSeed = commits(env.gh).length;
+  const first = await hostUpgradeOnce(env, { failPutFor: new Set([F1_PIN_MINTED_ID]) });
+  assert.equal(first.result.status, dirty ? 'upgraded_and_saved' : 'upgraded');
+  assert.deepEqual(first.result.rekey.pairs, []);
+  assert.equal(first.adopted.status, 'error');
+  assert.equal(first.adopted.result.code, 'working_copy_unpersisted');
+  assert.equal(upgradePersistIncomplete(first.adopted.persisted), true);
+  assert.equal(env.ctx.idb.get(F1_PIN_MINTED_ID), originalIdb.get(F1_PIN_MINTED_ID));
+  assert.equal(readSurfName(env.ctx.idb.get(F1_PIN_MINTED_ID)), null);
+  assert.equal(env.ctx.baseline, null, 'baseline not recaptured');
+  const gitAfterFirst = commits(env.gh).length;
+  assert.equal(gitAfterFirst, writesAfterSeed + (dirty ? 2 : 1));
+
+  env.ctx.memory = { doc: cloneDoc(originalDoc), scripts: Object.fromEntries(env.ctx.idb) };
+  env.ctx.savedDoc = cloneDoc(originalDoc);
+  env.workingCopy = {
+    dirty: dirty === true,
+    doc: env.ctx.memory.doc,
+    scripts: env.ctx.memory.scripts,
+  };
+
+  const retry = await hostUpgradeOnce(env);
+  assert.equal(retry.result.status, 'already_upgraded');
+  assert.equal(retry.adopted.status, 'ok');
+  assert.ok(retry.adopted.persisted);
+  assert.equal(commits(env.gh).length, gitAfterFirst, 'retry writes no git');
+  await assertHostWcBytesEqualVault(env);
+  assert.ok(env.ctx.baseline);
+  assert.equal(env.ctx.baseline.scripts[F1_PIN_MINTED_ID], env.ctx.memory.scripts[F1_PIN_MINTED_ID]);
+
+  const third = await hostUpgradeOnce(env);
+  assert.equal(third.result.status, 'already_upgraded');
+  assert.equal(third.adopted.status, 'ok');
+  assert.equal(third.adopted.persisted, null, 'third press no-op');
+  assert.equal(commits(env.gh).length, gitAfterFirst);
+}
+
+test('App-seeded path index (N1 clean): same-key put fail is unpersisted, retry equals vault, third no-op', async () => {
+  await runSameKeyPutFailAppFlow({ dirty: false });
+});
+
+test('App-seeded path index (N1 dirty): same-key put fail is unpersisted, retry equals vault, third no-op', async () => {
+  await runSameKeyPutFailAppFlow({ dirty: true });
 });
 

@@ -1150,9 +1150,16 @@ export function workingCopyUnmappedResult({ missing = [], ambiguous = [], sha, u
 export function upgradePersistIncomplete(persisted) {
   if (!persisted || persisted.docSaved === false) return true;
   const failed = persisted.failedFrom;
-  if (!failed) return false;
-  if (typeof failed.size === 'number') return failed.size > 0;
-  if (Array.isArray(failed)) return failed.length > 0;
+  if (failed && typeof failed.size === 'number' && failed.size > 0) return true;
+  if (Array.isArray(failed) && failed.length > 0) return true;
+  const saved = persisted.saved instanceof Set
+    ? persisted.saved
+    : new Set(Array.isArray(persisted.saved) ? persisted.saved : []);
+  const scripts = persisted.scripts && typeof persisted.scripts === 'object' ? persisted.scripts : {};
+  for (const [id, text] of Object.entries(scripts)) {
+    if (typeof text !== 'string' || !id) continue;
+    if (!saved.has(id)) return true;
+  }
   return false;
 }
 
@@ -1304,9 +1311,22 @@ function overlayJournalPairs(mapped, journalPairs) {
   return { ...mapped, pairs };
 }
 
+function overlayFollowupWrites(writes, followup) {
+  if (!writes) return writes;
+  if (!Array.isArray(followup) || !followup.length) return writes;
+  const next = { ...writes };
+  for (const row of followup) {
+    if (!row?.path || row.delete) continue;
+    const text = fileTextOf(row.content);
+    if (typeof text === 'string') next[row.path] = text;
+  }
+  return next;
+}
+
 function vaultTipOf(mapped, result) {
   if (mapped?.vaultTip) return mapped.vaultTip;
-  return vaultTipForAssembly(result?.plan?.writes, mapped?.doc?.id);
+  const writes = overlayFollowupWrites(result?.plan?.writes, result?.followupFiles);
+  return vaultTipForAssembly(writes, mapped?.doc?.id);
 }
 
 function restoreRemoveFn(removeOrphans, remove) {
@@ -1429,7 +1449,6 @@ export async function adoptUpgradeWorkingCopy({
   }
   if (
     rekey?.vaultTip
-    && workingCopy?.dirty !== true
     && !workingCopyMatchesVaultTip(persisted.doc, persisted.scripts, rekey.vaultTip)
   ) {
     const missing = missingVaultPartIds(persisted.doc, rekey.vaultTip);
@@ -1938,8 +1957,15 @@ export async function executeUpgrade({
       upgradeFiles: plan.files.map((f) => f.path),
       leftoverFiles: plan.leftoverFiles,
       plan,
+      followupFiles: followup,
       commits: 2,
-      rekey,
+      rekey: {
+        ...rekey,
+        vaultTip: vaultTipForAssembly(
+          overlayFollowupWrites(plan.writes, followup),
+          mapped.doc?.id,
+        ) || rekey.vaultTip,
+      },
     };
   } catch (err) {
     if (err instanceof GitAdapterError && err.code === 'non_fast_forward') {
