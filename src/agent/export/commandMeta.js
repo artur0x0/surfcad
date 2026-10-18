@@ -565,9 +565,9 @@ export const COMMAND_META = {
   },
   create_part: {
     description:
-      'Add a part row to the assembly. Agent calls default to the assembly origin (identity placement); pass position [x,y,z] mm to place explicitly. The UI still staggers new parts +40 mm on X so bodies do not overlap. In a git assembly the part has no vault path until git_save.',
+      'Add a part and make it the active part before returning. The result partId is the new part, not the previously active one. When script is set, that script runs before the call returns and the result also includes the same run outcome as run (ok, errors, failures, status). A failed script still leaves the part in place. Without script, the call only creates and activates the part. Agent calls default to the assembly origin (identity placement); pass position [x,y,z] mm to place explicitly. The UI still staggers new parts +40 mm on X so bodies do not overlap. In a git assembly the part has no vault path until git_save.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'internal'],
+    errors: ['bad_args', 'no_assembly', 'internal'],
     mutates: true,
   },
   rename_part: {
@@ -609,9 +609,9 @@ export const COMMAND_META = {
     mutates: true,
   },
   open_assembly: {
-    description: 'Open a vault assembly (git mode).',
+    description: 'Open a vault assembly by its exact name (git mode). A name that is not in the vault returns not_found and lists the available names. More than one match returns ambiguous instead of opening one. Does not write git.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'internal'],
+    errors: ['bad_args', 'not_found', 'ambiguous', 'git_only', 'git_blocked', 'internal'],
     mutates: true,
     destructive: true,
     confirm: true,
