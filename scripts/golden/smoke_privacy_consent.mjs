@@ -158,6 +158,13 @@ try {
       '[data-toolbar-variant="strip"], [data-mobile-stage-toggle], [data-cad-feature-strip]',
       { timeout: 30000 },
     ).catch(() => {});
+    const copy = await page.locator('[data-privacy-consent-copy]').innerText();
+    assert.match(
+      copy,
+      /SurfCAD uses required cookies to sign you in and save your work\.\s+Optional cookies help us improve the app, so please consider allowing all\./,
+    );
+    assert.match(copy, /Privacy page/);
+    assert.doesNotMatch(copy, /Optional analytics start only if you accept/);
     await assertPopupClearsToolbar(page, label);
     await page.screenshot({ path: join(SHOT_DIR, `privacy-consent-${label}-${width}.png`) });
     console.log(`wrote ${join(SHOT_DIR, `privacy-consent-${label}-${width}.png`)}`);

@@ -38,6 +38,9 @@ describe('Privacy choices dialog UI', () => {
     assert.match(popup, /Accept all/);
     assert.match(popup, /Required only/);
     assert.match(popup, /href="\/privacy"/);
+    assert.match(popup, /SurfCAD uses required cookies to sign you in and save your work\./);
+    assert.match(popup, /Optional cookies help us improve the app, so please consider allowing all\./);
+    assert.doesNotMatch(popup, /Optional analytics start only if you accept/);
     assert.match(privacyPage, /Change privacy choices/);
     assert.match(privacyPage, /Your browser(?:'s|&apos;s) Global Privacy Control signal is honored/);
     assert.match(main, /pathIsPrivacy/);

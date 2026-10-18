@@ -16,8 +16,8 @@ export default function PrivacyConsentPopup({
         surface-glass px-3 py-2.5 shadow-lg font-ui"
     >
       <p className="text-ui-sm leading-snug text-on-dark" data-privacy-consent-copy="">
-        SurfCAD uses required cookies to sign you in and save your work. Optional analytics
-        start only if you accept.{' '}
+        SurfCAD uses required cookies to sign you in and save your work.
+        {' '}Optional cookies help us improve the app, so please consider allowing all.{' '}
         <a
           href="/privacy"
           className="underline underline-offset-2 text-on-dark"
