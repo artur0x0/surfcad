@@ -232,6 +232,7 @@ async function readHeaderAlign(page) {
       profileLeft: profileBox ? Math.round(profileBox.left) : null,
       brandMidY: brandBox ? Math.round(brandBox.top + brandBox.height / 2) : null,
       chipsMidY: chipsBox ? Math.round(chipsBox.top + chipsBox.height / 2) : null,
+      profileMidY: profileBox ? Math.round(profileBox.top + profileBox.height / 2) : null,
     };
   });
 }
@@ -393,6 +394,12 @@ attachConsentPresetToBrowser(browser);
     && rowAlign1280.brandMidY != null
     && rowAlign1280.chipsMidY != null
     && Math.abs(rowAlign1280.brandMidY - rowAlign1280.chipsMidY) <= 1,
+    JSON.stringify(rowAlign1280));
+  check('1280 profile chip is vertically centred with the header row',
+    rowAlign1280
+    && rowAlign1280.profileMidY != null
+    && rowAlign1280.chipsMidY != null
+    && Math.abs(rowAlign1280.profileMidY - rowAlign1280.chipsMidY) <= 1,
     JSON.stringify(rowAlign1280));
   await deskPage.page.screenshot({ path: join(SHOT_DIR, 'brand-header-1280.png') });
   await deskPage.context.close();
