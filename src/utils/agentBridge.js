@@ -25,6 +25,7 @@
 
 import { v1Registry } from '../agent/commands/index.js';
 import { formatAgentErrors, scrubPublishedError } from '../agent/state/formatErrors.js';
+import { explainReservedHelperError } from '../agent/state/reservedHelpers.js';
 import { createPickSessions } from '../agent/pick/session.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { emptyPartHistory, pushPartHistory } from './partHistory.js';
@@ -124,8 +125,8 @@ function errorMessages(errors) {
   if (!Array.isArray(errors)) return [];
   const out = [];
   for (const item of errors) {
-    if (typeof item === 'string' && item) out.push(item);
-    else if (item && typeof item.message === 'string' && item.message) out.push(item.message);
+    if (typeof item === 'string' && item) out.push(explainReservedHelperError(item));
+    else if (item && typeof item.message === 'string' && item.message) out.push(explainReservedHelperError(item.message));
   }
   return out;
 }
@@ -146,8 +147,14 @@ function statusFrom(outcome, script, extras = {}) {
     volume: ok && Number.isFinite(volume) ? volume : null,
     bbox: ok ? cloneAgentBbox(outcome?.bbox) : null,
     featureCount: agentFeatureCount(text),
-    bodyCount: extras.bodyCount == null ? null : extras.bodyCount,
+    bodyCount: statusBodyCount(outcome, extras),
   };
+}
+
+function statusBodyCount(outcome, extras) {
+  if (extras.bodyCount != null) return extras.bodyCount;
+  if (outcome && outcome.bodyCount != null) return outcome.bodyCount;
+  return null;
 }
 
 function copyStatus(status) {
@@ -303,7 +310,9 @@ export function createSurfcadBridge(hostSource) {
     const text = typeof script === 'string' ? script : '';
     const featureFailure = resolveFeatureFailure(outcome);
     const recorded = isRecordedFailure(featureFailure) ? featureFailure : null;
-    const uiMessage = typeof recorded?.message === 'string' ? recorded.message : '';
+    const uiMessage = explainReservedHelperError(
+      typeof recorded?.message === 'string' ? recorded.message : '',
+    );
     let errors = errorMessages(outcome?.errors);
     if (uiMessage && !errors.includes(uiMessage)) errors = [uiMessage, ...errors];
     errors = errors.map((row) => scrubPublishedError(row)).filter(Boolean);
@@ -415,7 +424,7 @@ export function createSurfcadBridge(hostSource) {
       const run = hostFn('execute');
       return run ? run(src) : Promise.resolve(failedExecute(new Error('execute missing')));
     },
-    screenshot: () => hostFn('screenshot')?.(),
+    screenshot: (opts) => hostFn('screenshot')?.(opts),
     mutate,
     remember,
     syncStatusFromRun,
@@ -620,6 +629,7 @@ export function createSurfcadBridge(hostSource) {
       refreshStatusForActivePart();
       return out;
     },
+    setPartVisible: (args) => hostFn('setPartVisible')?.(args),
     setCamera: (args) => hostFn('setCamera')?.(args),
     fitCamera: () => hostFn('fitCamera')?.(),
     zoomToSelection: () => hostFn('zoomToSelection')?.(),

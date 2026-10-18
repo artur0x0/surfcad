@@ -48,6 +48,7 @@ import {
 } from '../utils/previewStyle';
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 import { fillAgentHost } from '../agent/host';
+import { encodeCanvasImage } from '../agent/screenshotImage';
 import { kernelExceptionDetail } from '../agent/state/formatErrors';
 import { viewportToastRows } from '../agent/state/toasts';
 import { buildAgentMode } from '../agent/state/mode';
@@ -2398,17 +2399,18 @@ const Viewport = forwardRef(({
     },
     describeJointPick: (args) => agentDescribeJointPickRef.current(args),
     /**
-     * PNG data URL of the viewport. One render, then read the canvas on this
-     * thread, so a browser agent can see the part without the worker.
+     * Viewport image. One render, then encode on this thread. Options
+     * (max_width, scale, jpeg) downscale here before the data URL is built.
+     * Omit them for the historical full-size PNG.
      */
-    capturePng: () => {
+    capturePng: (opts) => {
       const renderer = rendererRef.current;
       const scene = sceneRef.current;
       const camera = cameraRef.current;
       if (!renderer || !scene || !camera) return null;
       renderer.render(scene, camera);
       try {
-        return renderer.domElement.toDataURL('image/png');
+        return encodeCanvasImage(renderer.domElement, opts || {});
       } catch {
         return null;
       }
@@ -2419,7 +2421,7 @@ const Viewport = forwardRef(({
   // imperative handle is current.
   if (agentHostRef) {
     fillAgentHost(agentHostRef, {
-      screenshot: () => ref?.current?.capturePng?.() ?? null,
+      screenshot: (opts) => ref?.current?.capturePng?.(opts) ?? null,
       readViewportSelection() {
         return buildSelection({
           activePartId: activePartIdRef.current,

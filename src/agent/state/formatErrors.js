@@ -1,4 +1,5 @@
 import { parseFeatureMarkers } from '../../utils/featureMarkers.js';
+import { explainReservedHelperError } from './reservedHelpers.js';
 
 /**
  * @param {string} script
@@ -170,12 +171,27 @@ export function formatAgentErrors(input = {}) {
       .find(Boolean) || '';
     const detail = explicit || extra;
     if (detail) row.detail = detail;
-    return [row];
+    return [publishErrorRow(row)];
   }
 
   if (messages.length === 0) return [];
   return messages
     .map((message) => scrubPublishedError(message))
     .filter(Boolean)
-    .map((message) => ({ code: 'build_failed', message }));
+    .map((message) => publishErrorRow({ code: 'build_failed', message }));
+}
+
+/** Rewrite a reserved-helper redeclaration. Drop detail that only repeats it. */
+function publishErrorRow(row) {
+  const message = explainReservedHelperError(row.message);
+  let detail = row.detail;
+  if (typeof detail === 'string') {
+    detail = explainReservedHelperError(detail);
+    if (!detail || detail === message) detail = undefined;
+  }
+  if (message === row.message && detail === row.detail) return row;
+  const next = { ...row, message };
+  if (detail) next.detail = detail;
+  else delete next.detail;
+  return next;
 }

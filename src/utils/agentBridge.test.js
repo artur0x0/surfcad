@@ -545,7 +545,7 @@ test('list_commands returns name, schema, and example and does not commit', asyn
   assert.equal(setScript.schema.properties.source.type, 'string');
   assert.equal(typeof setScript.example.source, 'string');
   const shot = listed.result.commands.find((command) => command.name === 'screenshot');
-  assert.deepEqual(shot.schema.properties.format.enum, ['png']);
+  assert.deepEqual(shot.schema.properties.format.enum, ['png', 'jpeg']);
   assert.deepEqual(shot.example, { format: 'png' });
   assert.equal(env.history().head, 0);
   assert.equal(env.history().commits.length, 1);

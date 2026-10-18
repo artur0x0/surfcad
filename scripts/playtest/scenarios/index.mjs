@@ -9,6 +9,7 @@ import * as partsJoints from './parts-joints-assembly.mjs';
 import * as gitVault from './git-vault-flow.mjs';
 import * as historyUndo from './history-interleave-undo.mjs';
 import * as chromeLayout from './chrome-layout.mjs';
+import * as partVisible from './part-visible-screenshot.mjs';
 import * as featureErrors from './agent-feature-errors.mjs';
 
 /** Scripted end-to-end scenarios (bridge-only). */
@@ -25,6 +26,7 @@ export const scenarios = [
   historyUndo,
   chromeLayout,
   featureErrors,
+  partVisible,
 ];
 
 export function getScenario(id) {

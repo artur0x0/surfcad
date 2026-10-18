@@ -4,6 +4,10 @@
  */
 
 import { MUTATE_RESULT_SCHEMA, STATUS_SCHEMA } from '../schemas/common.js';
+import { reservedHelperClause } from '../state/reservedHelpers.js';
+
+const RESERVED_HELPERS = ` ${reservedHelperClause()}`;
+const FEATURE_COUNT_NOTE = ' featureCount counts insert_* feature blocks, so a freehand set_script is one feature. bodyCount is null until the first run; a finished run that produced no bodies reports 0.';
 
 const OK = Object.freeze({ type: 'object', additionalProperties: false, properties: { ok: { const: true } } });
 const SOURCE = Object.freeze({
@@ -22,20 +26,20 @@ export const COMMAND_META = {
   },
   set_script: {
     description:
-      'Write the editor, run the script, and record one undo step when the text changes. Preserves or re-injects the active part `// @surf-id` header when the part has a surf id.',
+      `Write the editor, run the script, and record one undo step when the text changes. Preserves or re-injects the active part \`// @surf-id\` header when the part has a surf id.${RESERVED_HELPERS}`,
     result: MUTATE_RESULT_SCHEMA,
     errors: ['bad_args', 'internal'],
     mutates: true,
   },
   run: {
-    description: 'Run the current editor buffer; one undo step when it is not already the stack head.',
+    description: `Run the current editor buffer; one undo step when it is not already the stack head.${RESERVED_HELPERS}`,
     result: MUTATE_RESULT_SCHEMA,
     errors: ['internal'],
     mutates: true,
   },
   status: {
     description:
-      'Status for the active part: id, name, editor script, runState (not_run_yet | ok | failed), and the last run volume/bbox/bodyCount when available. Updates when the active part changes without requiring another run.',
+      `Status for the active part: id, name, editor script, runState (not_run_yet | ok | failed), and the last run volume/bbox/bodyCount when available. Updates when the active part changes without requiring another run.${FEATURE_COUNT_NOTE}`,
     result: STATUS_SCHEMA,
     errors: ['internal'],
     mutates: false,
@@ -69,13 +73,18 @@ export const COMMAND_META = {
     mutates: false,
   },
   screenshot: {
-    description: 'Capture the viewport as a PNG data URL.',
+    description: 'Capture the viewport. The default is a full-size PNG data URL. Optional max_width and scale downscale in the browser before encoding. format is png or jpeg; quality (0 to 1) applies to jpeg only.',
     result: {
       type: 'object',
       additionalProperties: false,
-      properties: { dataUrl: { type: 'string' } },
+      properties: {
+        dataUrl: { type: 'string' },
+        width: { type: 'integer' },
+        height: { type: 'integer' },
+        format: { type: 'string', enum: ['png', 'jpeg'] },
+      },
     },
-    errors: ['unsupported_format', 'screenshot_failed', 'internal'],
+    errors: ['bad_args', 'unsupported_format', 'screenshot_failed', 'internal'],
     mutates: false,
   },
   undo: {
@@ -207,10 +216,23 @@ export const COMMAND_META = {
     mutates: false,
   },
   parts: {
-    description: 'Assembly parts list and active editor part.',
+    description: `Assembly parts list (id, name, visible) and the active editor part. featureCount and bodyCount are on status, not here.${FEATURE_COUNT_NOTE}`,
     result: { type: 'object', additionalProperties: true },
     errors: ['internal'],
     mutates: false,
+  },
+  set_part_visible: {
+    description: 'Hide or show one part, the same working-copy change as the Parts list visibility toggle. part_id is an opaque id: this does not accept a vault path and does not fall back to the active part. This is not agent_set_visible, which toggles operator-visible cues (the synthetic cursor, highlights, and pacing). Working copy only: it does not write git or the vault.',
+    result: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        partId: { type: 'string' },
+        visible: { type: 'boolean' },
+      },
+    },
+    errors: ['bad_args', 'unknown_part', 'no_assembly', 'internal'],
+    mutates: true,
   },
   camera: {
     description: 'Current camera pose.',

@@ -153,6 +153,7 @@ import { editedPartIdsSinceSnapshot, liveEditorOverride, snapshotPartScripts } f
 import { buildFeatureTree } from './agent/state/featureTree';
 import { resolveRollbackTarget, resolveStripTarget } from './agent/featureStripAgent';
 import { buildPartsState } from './agent/state/parts';
+import { decidePartVisible } from './agent/state/partVisible';
 import { buildToasts } from './agent/state/toasts';
 import {
   historyStripTarget,
@@ -7736,7 +7737,9 @@ const App = () => {
     const failure = reported ? runFailureRef.current : null;
     if (reported && !failure) {
       if (run?.empty) {
-        return { ok: true, errors: [], volume: null, bbox: null, partName, runFailure: null };
+        return {
+          ok: true, errors: [], volume: null, bbox: null, partName, runFailure: null, bodyCount: 0,
+        };
       }
       if (run?.ok === true && run.mesh?.vertProperties) {
         const geom = geometryFromExecuteResult(run);
@@ -7747,6 +7750,7 @@ const App = () => {
           bbox: geom.bbox,
           partName,
           runFailure: null,
+          ...(geom.bodyCount === 0 ? { bodyCount: 0 } : {}),
         };
       }
     }
@@ -8349,7 +8353,7 @@ const App = () => {
       const run = id ? partRunsRef.current?.[id] : null;
       if (!run) return base;
       if (run.empty) {
-        return { ...base, runState: 'ok' };
+        return { ...base, runState: 'ok', bodyCount: 0 };
       }
       if (run.ok === true && run.mesh?.vertProperties) {
         const geom = geometryFromExecuteResult(run);
@@ -8374,6 +8378,19 @@ const App = () => {
       }
       handleSelectPart(part.id);
       return { ok: true };
+    },
+    async setPartVisible({ partId, visible } = {}) {
+      const decided = decidePartVisible(assemblyRef.current, partId, visible);
+      if (decided.error) return { error: decided.error };
+      if (decided.changed) {
+        rememberAssembly(decided.doc);
+        const live = codeEditorRef.current?.getContent?.();
+        await refreshAssemblyRef.current?.(live, {
+          persistActive: !suppressPartSaveRef.current,
+          preservePicks: featureSessionRef.current,
+        });
+      }
+      return { result: decided.result };
     },
     selectParts({ partIds }) {
       const doc = assemblyRef.current;
