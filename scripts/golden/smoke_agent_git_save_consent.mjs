@@ -5,9 +5,11 @@
  * Real GitHub adapter against a throwaway in-memory GitHub REST fake
  * (lib/fakeGithubApi.mjs) — never a real repo. An agent makes three parts
  * with no vault paths in a new assembly, git_save returns consent_pending at
- * once, the user clicks Allow, the retry commits v2 files (surfcad.json,
- * assemblies/<id>.surf.json, parts/<id>.js). Then rename_part updates the
- * working copy only (moved: false, no commit) and refuses a path as unknown_id.
+ * once, the user clicks Allow, the retry commits v2 f(id) files
+ * (assemblies/<id>.surf.json + parts/<id>.js). The fake vault already
+ * carries surfcad.json, so that Save commit does not re-write the marker.
+ * Save never writes README.md. Then rename_part updates the working copy
+ * only (moved: false, no commit) and refuses a path as unknown_id.
  * Every bridge call must answer within a few seconds.
  */
 /* global document, window, indexedDB, localStorage, sessionStorage, navigator */
@@ -217,15 +219,20 @@ check('exactly one new commit', history.length === seedCommits + 1, JSON.stringi
 const commitFiles = history[0]?.files || [];
 const scriptsWritten = commitFiles.filter((f) => f.path.endsWith('.js'));
 const surfWritten = commitFiles.filter((f) => f.path.endsWith('.surf.json'));
+const markerOnTree = fake.readFile('surfcad.json');
 check(
-  'commit is v2 f(id): marker + assembly surf + 3 part scripts',
-  commitFiles.some((f) => f.path === 'surfcad.json')
-    && surfWritten.length === 1
+  'commit is v2 f(id): assembly surf + 3 part scripts (no README)',
+  surfWritten.length === 1
     && /^assemblies\/[^/]+\.surf\.json$/.test(surfWritten[0]?.path || '')
     && scriptsWritten.length === 3
     && scriptsWritten.every((f) => /^parts\/[^/]+\.js$/.test(f.path))
     && !commitFiles.some((f) => f.path === 'README.md'),
   JSON.stringify(commitFiles),
+);
+check(
+  'vault still has a marker (already seeded; Save need not re-write it)',
+  typeof markerOnTree === 'string' && markerOnTree.includes('surfcad-vault'),
+  JSON.stringify({ markerOnTree, commitHasMarker: commitFiles.some((f) => f.path === 'surfcad.json') }),
 );
 const surfText = surfWritten[0] ? fake.readFile(surfWritten[0].path) : null;
 const surf = surfText ? JSON.parse(surfText) : null;
