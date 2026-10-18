@@ -6,6 +6,7 @@
 import { serializeAssembly } from '../assembly.js';
 import { gitBlobSha, isBinaryContent, toUint8Array } from './binaryContent.js';
 import { partRepoPath, partScriptText } from './partIdentity.js';
+import { rewriteColorMap, rewriteJointSurfIds } from './surfId.js';
 import { stringifySurfJson } from './surfJson.js';
 import { assemblyFilePath, assetPathForScript, vaultSegment } from './vaultLayout.js';
 
@@ -33,6 +34,74 @@ function baselineAssetMap(parts, assets) {
     if (sha) assetMap[mesh] = sha;
   }
   return assetMap;
+}
+
+function pairIdMap(pairs = [], failedFrom = []) {
+  const failed = failedFrom instanceof Set ? failedFrom : new Set(failedFrom || []);
+  const map = new Map();
+  for (const { from, to } of pairs || []) {
+    if (!from || !to || from === to || failed.has(from)) continue;
+    map.set(String(from), to);
+  }
+  return map;
+}
+
+function remapGroupIds(groups, map) {
+  if (!Array.isArray(groups) || !map.size) return groups;
+  const get = (id) => (id != null && map.has(String(id)) ? map.get(String(id)) : id);
+  return groups.map((group) => {
+    if (!group || typeof group !== 'object') return group;
+    const id = get(group.id);
+    const partIds = Array.isArray(group.partIds) ? group.partIds.map((partId) => get(partId)) : group.partIds;
+    if (id === group.id && (!partIds || partIds.every((partId, i) => partId === group.partIds[i]))) {
+      return group;
+    }
+    return { ...group, id, partIds };
+  });
+}
+
+/**
+ * Tip assembly with part ids mapped through persist pairs. Failed rows keep
+ * `from` so the baseline stays aligned with a reverted working-copy row.
+ * Assembly text / partIds come from this remapped tip, never from the WC.
+ */
+export function remapTipDocThroughPairs(tipDoc, pairs = [], failedFrom = []) {
+  if (!tipDoc) return tipDoc;
+  const map = pairIdMap(pairs, failedFrom);
+  const get = (id) => (id != null && map.has(String(id)) ? map.get(String(id)) : id);
+  const parts = (tipDoc.parts || []).map((part) => {
+    const nextId = get(part.id);
+    if (nextId === part.id) return part;
+    return { ...part, id: nextId };
+  });
+  const next = {
+    ...tipDoc,
+    parts,
+    activeId: get(tipDoc.activeId),
+  };
+  if (Array.isArray(tipDoc.groups)) next.groups = remapGroupIds(tipDoc.groups, map);
+  if (tipDoc.colors) next.colors = rewriteColorMap(tipDoc.colors, map);
+  if (tipDoc.joints) next.joints = rewriteJointSurfIds(tipDoc.joints, map);
+  return next;
+}
+
+/** Baseline for a re-keying reload: tip structure, ids mapped, tip script bytes. */
+export function captureBaselineFromTip({
+  tipDoc,
+  tipBaseline,
+  pairs = [],
+  failedFrom = [],
+} = {}) {
+  const doc = remapTipDocThroughPairs(tipDoc, pairs, failedFrom);
+  return captureBaseline({
+    assemblyPath: tipBaseline?.assemblyPath,
+    assemblyName: doc?.name || tipBaseline?.assemblyName,
+    doc,
+    scripts: tipBaseline?.scripts,
+    assets: tipBaseline?.assets,
+    branch: tipBaseline?.branch || 'main',
+    headSha: tipBaseline?.headSha || null,
+  });
 }
 
 export function captureBaseline({

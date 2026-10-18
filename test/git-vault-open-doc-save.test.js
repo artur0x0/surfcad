@@ -6,8 +6,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { serializeAssembly } from '../src/utils/assembly.js';
-import { captureBaseline } from '../src/utils/git/gitBaseline.js';
-import { isWorkspaceDirty } from '../src/utils/git/gitWorkspace.js';
+import {
+  captureBaseline,
+  captureBaselineFromTip,
+  remapTipDocThroughPairs,
+} from '../src/utils/git/gitBaseline.js';
+import { isAssemblyDirty, isWorkspaceDirty } from '../src/utils/git/gitWorkspace.js';
 import { mintSurfId } from '../src/utils/git/surfId.js';
 import {
   assemblyRekeyKey,
@@ -20,6 +24,7 @@ const APP = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const SURF = mintSurfId({ now: new Date('2026-10-18T00:00:00.000Z'), rand: 'a3f9' });
 const PREV = mintSurfId({ now: new Date('2026-10-18T00:00:01.000Z'), rand: 'bbbb' });
 const PATH = 'assemblies/A/Pin.js';
+const LID = 'assemblies/A/Lid.js';
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -160,26 +165,32 @@ test('App reseed skips adoptReseedBaseline when docSaved is false', () => {
   const reseed = sliceBetween(APP, '// After reload, baseline is gone', 'handleFlushLocalAssembly');
   const persistAt = reseed.indexOf('const persisted = await persistCollapsedWorkingCopy');
   const skipAt = reseed.indexOf('if (persisted.docSaved === false) return;');
-  const baselineAt = reseed.lastIndexOf('await adoptReseedBaseline()');
+  const earlyAt = reseed.indexOf('await adoptReseedBaseline()');
+  const lateAt = reseed.lastIndexOf('await adoptReseedBaseline()');
   assert.ok(persistAt >= 0 && skipAt > persistAt);
-  assert.ok(baselineAt > skipAt, 'adoptReseedBaseline must be after the docSaved skip');
+  assert.ok(earlyAt >= 0 && earlyAt < persistAt, 'early tip adopt already ran');
+  assert.ok(lateAt > skipAt, 'late adoptReseedBaseline must be after the docSaved skip');
 });
 
-test('App reseed adopts tip baseline before persist and recaptures from tip scripts', () => {
+test('App reseed adopts tip baseline before persist and recaptures from the remapped tip', () => {
   const reseed = sliceBetween(APP, '// After reload, baseline is gone', 'handleFlushLocalAssembly');
   const persistAt = reseed.indexOf('const persisted = await persistCollapsedWorkingCopy');
   const earlyAt = reseed.indexOf('await adoptReseedBaseline()');
   const switchAt = reseed.indexOf('const switchReseedMemory');
-  const liveAt = reseed.indexOf('codeEditorRef.current?.getContent?.()');
+  const liveAt = reseed.indexOf('live: () => {');
   assert.ok(persistAt >= 0 && earlyAt >= 0 && switchAt >= 0 && liveAt >= 0);
   assert.ok(earlyAt < persistAt, 'tip baseline must land before persist so reload is not falsely clean');
   const switchBody = reseed.slice(switchAt, persistAt);
-  const recapture = switchBody.slice(switchBody.indexOf('rememberGitBaseline(captureBaseline'));
-  assert.match(recapture, /rememberGitBaseline\(captureBaseline\(/);
-  assert.match(
-    recapture,
-    /scripts:\s*opened\.baseline\?\.scripts/,
-    'recapture must use tip scripts, not live nextScripts',
+  const recapture = switchBody.slice(switchBody.indexOf('rememberGitBaseline('));
+  assert.match(recapture, /rememberGitBaseline\(captureBaselineFromTip\(/);
+  assert.match(recapture, /tipDoc:\s*opened\.doc/);
+  assert.match(recapture, /tipBaseline:\s*opened\.baseline/);
+  assert.match(recapture, /pairs:\s*persistPairs/);
+  assert.match(recapture, /failedFrom/);
+  assert.equal(
+    /nextDoc/.test(recapture),
+    false,
+    'never stringify nextDoc: that would hide a pre-reload rename/hide/removal',
   );
   assert.equal(
     /scripts:\s*nextScripts/.test(recapture),
@@ -187,6 +198,9 @@ test('App reseed adopts tip baseline before persist and recaptures from tip scri
     'folding live nextScripts into the baseline would hide a reload edit',
   );
   assert.ok(liveAt > persistAt, 'persist live() must fold the editor so a reload edit moves to the new key');
+  const liveFn = reseed.slice(liveAt, reseed.indexOf('return scripts;', liveAt));
+  assert.match(liveFn, /editorLiveRef\.current/);
+  assert.match(liveFn, /appModeRef\.current !== 'game'/);
 });
 
 test('a reload edit on the old key stays dirty after collapse persist', async () => {
@@ -233,13 +247,11 @@ test('a reload edit on the old key stays dirty after collapse persist', async ()
   assert.notEqual(nextId, PATH);
   assert.equal(String(persisted.scripts[nextId] || '').includes('dirty-check'), true);
 
-  const recapturedFromTip = captureBaseline({
-    assemblyPath: 'assemblies/A/.surf.json',
-    assemblyName: 'A',
-    doc: persisted.doc,
-    scripts: tipBaseline.scripts,
-    branch: 'main',
-    headSha: 'tip',
+  const recapturedFromTip = captureBaselineFromTip({
+    tipDoc: sourceDoc,
+    tipBaseline,
+    pairs: collapsed.pairs,
+    failedFrom: persisted.failedFrom,
   });
   assert.equal(
     isWorkspaceDirty(persisted.doc, persisted.scripts, recapturedFromTip),
@@ -259,6 +271,164 @@ test('a reload edit on the old key stays dirty after collapse persist', async ()
     isWorkspaceDirty(persisted.doc, persisted.scripts, recapturedFromLive),
     false,
     'capturing the baseline from live/persisted scripts would hide the edit',
+  );
+});
+
+function twoPartTip() {
+  const doc = {
+    source: 'git',
+    name: 'A',
+    activeId: PATH,
+    parts: [
+      { id: PATH, path: PATH, name: 'Pin', visible: true, order: 0 },
+      { id: LID, path: LID, name: 'Lid', visible: true, order: 1 },
+    ],
+  };
+  const scripts = { [PATH]: 'return pin;\n', [LID]: 'return lid;\n' };
+  return { doc, scripts };
+}
+
+async function persistRekey(wcDoc, wcScripts) {
+  const collapsed = collapseWorkingCopyIds(wcDoc, wcScripts);
+  const idb = new Map(Object.entries(wcScripts));
+  const persisted = await persistCollapsedWorkingCopy({
+    collapsed: { doc: collapsed.doc, scripts: collapsed.scripts, pairs: collapsed.pairs },
+    sourceDoc: wcDoc,
+    sourceScripts: wcScripts,
+    save: async (id, script) => { idb.set(id, script); return true; },
+    load: async (id) => idb.get(id),
+    remove: async (id) => { idb.delete(id); },
+    saveDoc: async (doc) => doc,
+  });
+  return { collapsed, persisted };
+}
+
+function tipBaselineFor(doc, scripts) {
+  return captureBaseline({
+    assemblyPath: 'assemblies/A/.surf.json',
+    assemblyName: 'A',
+    doc,
+    scripts,
+    branch: 'main',
+    headSha: 'tip',
+  });
+}
+
+test('remapTipDocThroughPairs maps ids and skips failed rows', () => {
+  const { doc } = twoPartTip();
+  const pairs = [
+    { from: PATH, to: SURF },
+    { from: LID, to: PREV },
+  ];
+  const remapped = remapTipDocThroughPairs(doc, pairs);
+  assert.equal(remapped.parts[0].id, SURF);
+  assert.equal(remapped.parts[0].name, 'Pin');
+  assert.equal(remapped.parts[1].id, PREV);
+  const skipped = remapTipDocThroughPairs(doc, pairs, [PATH]);
+  assert.equal(skipped.parts[0].id, PATH);
+  assert.equal(skipped.parts[1].id, PREV);
+});
+
+test('unsaved rename, hide, and removal stay dirty across a re-keying reload; a clean WC stays clean', async () => {
+  const tip = twoPartTip();
+  const tipBaseline = tipBaselineFor(tip.doc, tip.scripts);
+
+  const renamed = {
+    ...tip.doc,
+    parts: tip.doc.parts.map((part) => (
+      part.id === PATH ? { ...part, name: 'Renamed' } : part
+    )),
+  };
+  const hidden = {
+    ...tip.doc,
+    parts: tip.doc.parts.map((part) => (
+      part.id === LID ? { ...part, visible: false } : part
+    )),
+  };
+  const removed = {
+    ...tip.doc,
+    activeId: PATH,
+    parts: tip.doc.parts.filter((part) => part.id !== LID),
+  };
+  const removedScripts = { [PATH]: tip.scripts[PATH] };
+
+  for (const [label, wcDoc, wcScripts] of [
+    ['rename', renamed, tip.scripts],
+    ['hide', hidden, tip.scripts],
+    ['removal', removed, removedScripts],
+  ]) {
+    const { collapsed, persisted } = await persistRekey(wcDoc, wcScripts);
+    assert.equal(persisted.docSaved, true);
+    const baseline = captureBaselineFromTip({
+      tipDoc: tip.doc,
+      tipBaseline,
+      pairs: collapsed.pairs,
+      failedFrom: persisted.failedFrom,
+    });
+    assert.equal(
+      isAssemblyDirty(persisted.doc, baseline),
+      true,
+      `${label} must stay dirty after recapture from the remapped tip`,
+    );
+    const fromNextDoc = captureBaseline({
+      assemblyPath: 'assemblies/A/.surf.json',
+      assemblyName: 'A',
+      doc: persisted.doc,
+      scripts: tipBaseline.scripts,
+      branch: 'main',
+      headSha: 'tip',
+    });
+    assert.equal(
+      isAssemblyDirty(persisted.doc, fromNextDoc),
+      false,
+      `${label} would look clean if recapture stringified nextDoc`,
+    );
+  }
+
+  const { collapsed, persisted } = await persistRekey(tip.doc, tip.scripts);
+  const cleanBaseline = captureBaselineFromTip({
+    tipDoc: tip.doc,
+    tipBaseline,
+    pairs: collapsed.pairs,
+    failedFrom: persisted.failedFrom,
+  });
+  assert.equal(isAssemblyDirty(persisted.doc, cleanBaseline), false);
+  assert.equal(isWorkspaceDirty(persisted.doc, persisted.scripts, cleanBaseline), false);
+});
+
+test('failed saveDoc leaves the early tip baseline; WC can only look too dirty', async () => {
+  const tip = twoPartTip();
+  const tipBaseline = tipBaselineFor(tip.doc, tip.scripts);
+  let gitBaseline = tipBaseline;
+  const collapsed = collapseWorkingCopyIds(tip.doc, tip.scripts);
+  let applyCalled = false;
+  const persisted = await persistCollapsedWorkingCopy({
+    collapsed: { doc: collapsed.doc, scripts: collapsed.scripts, pairs: collapsed.pairs },
+    sourceDoc: tip.doc,
+    sourceScripts: tip.scripts,
+    save: async () => true,
+    load: async () => 'return pin;\n',
+    remove: async () => {},
+    saveDoc: async () => null,
+    apply: () => { applyCalled = true; },
+  });
+  assert.equal(persisted.docSaved, false);
+  assert.equal(applyCalled, false);
+  // App returns before recapture; the early tip baseline stays.
+  assert.equal(gitBaseline, tipBaseline);
+
+  const renamed = {
+    ...tip.doc,
+    parts: tip.doc.parts.map((part) => (
+      part.id === PATH ? { ...part, name: 'Renamed' } : part
+    )),
+  };
+  assert.equal(isAssemblyDirty(renamed, gitBaseline), true);
+  assert.equal(isAssemblyDirty(tip.doc, gitBaseline), false);
+  assert.equal(
+    isAssemblyDirty(collapsed.doc, gitBaseline),
+    true,
+    'ids that already moved look too dirty against the leftover tip baseline, never falsely clean',
   );
 });
 

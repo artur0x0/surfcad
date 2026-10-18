@@ -312,6 +312,7 @@ import {
   createSyncStore,
   flushSyncQueue,
   captureBaseline,
+  captureBaselineFromTip,
   baselineAfterPartSave,
   baselineAfterPartRename,
   suggestNewPartPath,
@@ -5717,7 +5718,7 @@ const App = () => {
         // look clean when gitBaseline is null, so waitForGitClean can pass
         // and a following set_script never badges dirty.
         await adoptReseedBaseline();
-        const switchReseedMemory = async ({ doc: nextDoc, scripts: nextScripts }) => {
+        const switchReseedMemory = async ({ doc: nextDoc, scripts: nextScripts, failedFrom } = {}) => {
           if (aligned.pairs.length) {
             rekeyRuntime(aligned.pairs);
             partMeshMetaRef.current = aligned.meshMeta;
@@ -5734,16 +5735,13 @@ const App = () => {
           scriptsNow = nextScripts;
           rememberScripts(nextScripts);
           rememberAssembly(nextDoc, { persist: false });
-          // Recapture under collapsed ids from the tip scripts, not nextScripts
-          // (those may already hold a live reload edit via mergeLiveEdits).
-          rememberGitBaseline(captureBaseline({
-            assemblyPath: opened.baseline?.assemblyPath,
-            assemblyName: nextDoc.name,
-            doc: nextDoc,
-            scripts: opened.baseline?.scripts,
-            assets: opened.baseline?.assets,
-            branch,
-            headSha: opened.baseline?.headSha,
+          // Tip doc + persistPairs (skip failed rows). Never stringify nextDoc:
+          // that would make a pre-reload rename/hide/removal look clean.
+          rememberGitBaseline(captureBaselineFromTip({
+            tipDoc: opened.doc,
+            tipBaseline: opened.baseline,
+            pairs: persistPairs,
+            failedFrom,
           }));
           gitVaultRef.current = { ...vault, headSha: opened.baseline?.headSha };
         };
@@ -5765,7 +5763,13 @@ const App = () => {
               const scripts = { ...partScriptsRef.current };
               const id = assemblyRef.current?.activeId;
               const text = codeEditorRef.current?.getContent?.();
-              if (id && typeof text === 'string' && !suppressPartSaveRef.current) {
+              if (
+                id
+                && typeof text === 'string'
+                && !suppressPartSaveRef.current
+                && editorLiveRef.current
+                && appModeRef.current !== 'game'
+              ) {
                 scripts[id] = text;
               }
               return scripts;
@@ -5777,8 +5781,8 @@ const App = () => {
               persistFlightPairsRef.current = Array.isArray(pairs) ? pairs : [];
               persistFlightToOnlyRef.current = !!(opts && opts.toOnly);
             },
-            apply: async ({ doc: nextDoc, scripts: nextScripts }) => {
-              await switchReseedMemory({ doc: nextDoc, scripts: nextScripts });
+            apply: async ({ doc: nextDoc, scripts: nextScripts, failedFrom }) => {
+              await switchReseedMemory({ doc: nextDoc, scripts: nextScripts, failedFrom });
             },
           });
           if (persisted.docSaved === false) return;
