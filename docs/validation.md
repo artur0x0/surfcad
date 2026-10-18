@@ -1,4 +1,4 @@
-# VALIDATION.md — the contract for changing the kernel
+# validation.md — the contract for changing the kernel
 
 Every PR to this repo is checked against a gate that the contributor **cannot
 edit**. Read this before writing code; your PR review starts from its output.

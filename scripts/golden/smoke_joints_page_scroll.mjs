@@ -81,7 +81,7 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
     && /window\.scrollTo\(0, 0\)/.test(hook)
     && /addEventListener\('scroll', onScroll/.test(hook));
   const arch = read('docs/architecture.md');
-  const map = read('docs/UI_MAP.md');
+  const map = read('docs/ui-map.md');
   check('architecture and the UI map name the page-scroll lock',
     /golden:joints-page-scroll/.test(arch)
     && /golden:joints-page-scroll/.test(map)

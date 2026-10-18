@@ -63,7 +63,7 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
   const editor = read('src/components/CodeEditor.jsx');
   const view = read('src/components/Viewport.jsx');
   const arch = read('docs/architecture.md');
-  const map = read('docs/UI_MAP.md');
+  const map = read('docs/ui-map.md');
   const loading = app.slice(app.indexOf('if (!manifoldReady || editorInitialScript === null)'), app.indexOf('Phone shell:'));
 
   check('title, theme-color, and tagline description',

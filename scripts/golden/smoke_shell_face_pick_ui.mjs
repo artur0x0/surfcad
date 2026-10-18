@@ -8,7 +8,7 @@
  * - A later Shell replaces the block (no second hollow())
  * - HelperInsertPalette routes Shell into onEnterShellMode (not axis modal)
  * - ShellModeChip + Viewport / App wiring
- * - docs/ui_style_guide + UI_MAP mention ShellModeChip
+ * - docs/ui-style-guide + ui-map mention ShellModeChip
  * - Strip chip kind `shell` still registered
  */
 import { readFileSync } from 'node:fs';
@@ -213,10 +213,10 @@ console.log('shell face-pick UI');
   const app = read('../../src/App.jsx');
   check('App handleCommitShell', /composeShellCommit/.test(app) && /onCommitShell=\{handleCommitShell\}/.test(app));
 
-  const docs = read('../../docs/ui_style_guide.md');
-  check('ui_style_guide documents ShellModeChip', /ShellModeChip/.test(docs));
-  const uiMap = read('../../docs/UI_MAP.md');
-  check('UI_MAP mentions ShellModeChip', /ShellModeChip/.test(uiMap));
+  const docs = read('../../docs/ui-style-guide.md');
+  check('ui-style-guide documents ShellModeChip', /ShellModeChip/.test(docs));
+  const uiMap = read('../../docs/ui-map.md');
+  check('ui-map mentions ShellModeChip', /ShellModeChip/.test(uiMap));
 }
 
 if (failed) {
