@@ -11,6 +11,7 @@ import { createMockGithubAdapter } from '../../src/utils/git/mockGithubAdapter.j
 import { findOrCreateVault } from '../../src/utils/git/vault.js';
 import { assemblyFilePath, assemblyPartPath, sharedPartPath } from '../../src/utils/git/vaultLayout.js';
 import { stringifySurfJson, parseSurfJson } from '../../src/utils/git/surfJson.js';
+import { readSurfId, stripSurfId } from '../../src/utils/git/surfId.js';
 import { fileWrite } from '../../src/utils/git/githubAdapterInterface.js';
 import { openVaultAssembly, isWorkspaceDirty } from '../../src/utils/git/gitWorkspace.js';
 import {
@@ -74,7 +75,9 @@ console.log('git G3 — commit files');
   const b = buildCommitFiles(opened.doc, edited, opened.baseline);
   eq('edit → part + assembly', b.files.map((f) => f.path), [BRACKET, ASM]);
   const live = buildCommitFiles(opened.doc, opened.scripts, opened.baseline, { liveId: boltId, liveScript: '// live' });
-  eq('live editor text is committed', live.files.map((f) => [f.path, f.path === BOLT ? f.content : '']), [[BOLT, '// live'], [ASM, '']]);
+  const liveBolt = live.files.find((f) => f.path === BOLT)?.content;
+  ok('live editor stamps @surf-id on the dirty bolt', !!readSurfId(liveBolt));
+  eq('live editor text is committed', live.files.map((f) => [f.path, f.path === BOLT ? stripSurfId(f.content) : '']), [[BOLT, '// live'], [ASM, '']]);
   const renamed = { ...opened.doc, parts: opened.doc.parts.map((p, i) => (i === 1 ? { ...p, name: 'Bolt' } : p)) };
   eq('rename → assembly only', buildCommitFiles(renamed, opened.scripts, opened.baseline).files.map((f) => f.path), [ASM]);
   const dropped = { ...opened.doc, parts: opened.doc.parts.filter((p) => p.id !== boltId) };
@@ -103,7 +106,9 @@ console.log('\ngit G3 — happy path: one commit to main');
   eq('main head is the commit', head.sha, res.sha);
   const cmp = await gh.compare(repo, seedSha, res.sha);
   eq('fast-forward one commit', [cmp.status, cmp.aheadBy], ['ahead', 1]);
-  eq('bracket in git', (await gh.readFile(repo, BRACKET, 'main')).content, 'return Manifold.cube([12,12,12], true);');
+  const bracketGit = (await gh.readFile(repo, BRACKET, 'main')).content;
+  ok('dirty bracket Save stamps @surf-id', !!readSurfId(bracketGit));
+  eq('bracket in git', stripSurfId(bracketGit), 'return Manifold.cube([12,12,12], true);');
   eq('assembly in git has gear', parseSurfJson((await gh.readFile(repo, ASM, 'main')).content).parts.map((p) => p.path),
     [BRACKET, BOLT, GEAR]);
   eq('bolt untouched', (await gh.readFile(repo, BOLT, 'main')).content, 'return Manifold.cylinder(6, 1.5, 1.5, 24);');
@@ -146,7 +151,9 @@ console.log('\ngit G3 — moved main → conflict, nothing overwritten');
     message: 'mine',
   });
   eq('overwrite committed', overwritten.status, 'committed');
-  eq('main contains the local content', (await gh.readFile(repo, BRACKET, 'main')).content, '// mine bracket');
+  const mineGit = (await gh.readFile(repo, BRACKET, 'main')).content;
+  ok('overwrite stamps @surf-id on the dirty bracket', !!readSurfId(mineGit));
+  eq('main contains the local content', stripSurfId(mineGit), '// mine bracket');
   eq('remote spare stays', (await gh.readFile(repo, SPARE, 'main')).content, '// remote spare');
   eq('overwrite is the new main', (await gh.getBranch(repo, 'main')).sha, overwritten.sha);
 }

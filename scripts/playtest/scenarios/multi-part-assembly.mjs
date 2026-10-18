@@ -50,11 +50,17 @@ export async function run(ctx) {
   const { page, outDir } = ctx;
   const runner = createStepRunner();
   const screenshots = [];
+  let baseId = BASE_ID;
+  let pinId = PIN_ID;
 
   await runner.runStep('parts lists two', async () => {
     const env = await agentCall(page, 'parts', {});
-    const n = env.result?.parts?.length ?? 0;
-    return { ok: env.ok === true && n === 2, call: 'parts', args: {}, envelope: env, detail: `parts=${n}` };
+    const rows = env.result?.parts || [];
+    const byName = Object.fromEntries(rows.map((part) => [part.name, part.id]));
+    if (byName.Base) baseId = byName.Base;
+    if (byName.Pin) pinId = byName.Pin;
+    const n = rows.length;
+    return { ok: env.ok === true && n === 2 && baseId && pinId, call: 'parts', args: {}, envelope: env, detail: `parts=${n}` };
   });
 
   await runner.runStep('set_script base', async () => {
@@ -73,14 +79,14 @@ export async function run(ctx) {
   });
 
   await runner.runStep('set_active_part pin', async () => {
-    const env = await agentCall(page, 'set_active_part', { part_id: PIN_ID });
+    const env = await agentCall(page, 'set_active_part', { part_id: pinId });
     const parts = await agentCall(page, 'parts', {});
-    const active = parts.result?.parts?.find((p) => p.id === PIN_ID);
+    const active = parts.result?.parts?.find((p) => p.id === pinId);
     const ok = env.ok === true && active != null;
     return {
       ok,
       call: 'set_active_part',
-      args: { part_id: PIN_ID },
+      args: { part_id: pinId },
       envelope: env,
       detail: JSON.stringify(active),
     };
@@ -102,20 +108,20 @@ export async function run(ctx) {
   });
 
   await runner.runStep('select_parts highlight base', async () => {
-    const env = await agentCall(page, 'select_parts', { part_ids: [BASE_ID] });
+    const env = await agentCall(page, 'select_parts', { part_ids: [baseId] });
     const sel = await agentCall(page, 'selection', {});
-    const ok = env.ok === true && (sel.result?.cadPartId === BASE_ID || sel.result?.cadPartHighlighted === true);
+    const ok = env.ok === true && (sel.result?.cadPartId === baseId || sel.result?.cadPartHighlighted === true);
     return {
       ok,
       call: 'select_parts',
-      args: { part_ids: [BASE_ID] },
+      args: { part_ids: [baseId] },
       envelope: env,
       detail: JSON.stringify(sel.result),
     };
   });
 
   await runner.runStep('list_edges on pin', async () => {
-    await agentCall(page, 'set_active_part', { part_id: PIN_ID });
+    await agentCall(page, 'set_active_part', { part_id: pinId });
     const edges = await agentCall(page, 'list_edges', {});
     const n = edges.result?.edges?.length ?? 0;
     return { ok: edges.ok === true && n >= 8, call: 'list_edges', args: {}, envelope: edges, detail: `edges=${n}` };

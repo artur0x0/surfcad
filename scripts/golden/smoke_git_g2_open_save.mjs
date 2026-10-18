@@ -245,6 +245,8 @@ console.log('\ngit G2 — Save that adds a part leaves untouched sibling rows cl
   const opened = await openVaultAssembly(gh, vault.repo, ASM, {
     branch: 'main', headSha: seed.sha,
   });
+  const alphaId = opened.doc.parts.find((part) => part.name === 'Alpha')?.id;
+  const gammaId = opened.doc.parts.find((part) => part.name === 'Gamma')?.id;
   const liveDoc = {
     ...opened.doc,
     parts: [
@@ -254,13 +256,13 @@ console.log('\ngit G2 — Save that adds a part leaves untouched sibling rows cl
   };
   const liveScripts = {
     ...opened.scripts,
-    [ALPHA]: `${ALPHA_TEXT}// edit\n`,
+    [alphaId]: `${ALPHA_TEXT}// edit\n`,
     [DELTA]: DELTA_TEXT,
   };
   const wrapIds = dirtyPartIds(liveDoc, liveScripts, opened.baseline);
-  ok('wrap-on-Save skips untouched Gamma', !wrapIds.has(GAMMA));
+  ok('wrap-on-Save skips untouched Gamma', !wrapIds.has(gammaId));
   const wrapped = wrapUnmarkedPartScripts(liveScripts, wrapIds);
-  eq('Gamma script stays unmarked', wrapped[GAMMA], GAMMA_TEXT);
+  eq('Gamma script stays unmarked', wrapped[gammaId], GAMMA_TEXT);
   const assembled = await assembleCommitFiles(gh, vault.repo, {
     doc: liveDoc,
     scripts: wrapped,
@@ -269,9 +271,9 @@ console.log('\ngit G2 — Save that adds a part leaves untouched sibling rows cl
   });
   eq('assemble ready', assembled.status, 'ready');
   ok('save set is Alpha + Delta, not Gamma',
-    assembled.partIds.includes(ALPHA)
+    assembled.partIds.includes(alphaId)
     && assembled.partIds.includes(DELTA)
-    && !assembled.partIds.includes(GAMMA));
+    && !assembled.partIds.includes(gammaId));
   const committed = await gh.commitFiles(vault.repo, {
     branch: 'main',
     message: assembled.message,
@@ -302,19 +304,19 @@ console.log('\ngit G2 — Save that adds a part leaves untouched sibling rows cl
   });
   ok('no parts-list row shows a dirty dot', dots.every((dot) => dot === false));
   ok('Gamma isSynced is not false',
-    marked.doc.parts.find((part) => part.id === GAMMA).isSynced !== false);
-  const gammaEdited = { ...assembled.scripts, [GAMMA]: `${GAMMA_TEXT}// gamma\n` };
+    marked.doc.parts.find((part) => part.id === gammaId).isSynced !== false);
+  const gammaEdited = { ...assembled.scripts, [gammaId]: `${GAMMA_TEXT}// gamma\n` };
   eq('editing Gamma dirties only Gamma',
-    [...dirtyPartIds(marked.doc, gammaEdited, nextBaseline)], [GAMMA]);
+    [...dirtyPartIds(marked.doc, gammaEdited, nextBaseline)], [gammaId]);
   const gammaDot = feedRows(marked.doc, {}, gammaEdited).map((row) => {
     const chrome = partRowGitChrome({
       contentDirty: dirtyPartIds(marked.doc, gammaEdited, nextBaseline).has(row.id),
     });
     return { id: row.id, dot: !!(chrome.dirty || showAddToRepo(row)) };
   });
-  ok('Gamma row shows a dot after a real edit', gammaDot.find((row) => row.id === GAMMA)?.dot === true);
+  ok('Gamma row shows a dot after a real edit', gammaDot.find((row) => row.id === gammaId)?.dot === true);
   ok('Alpha/Beta/Delta stay clean after Gamma edit',
-    gammaDot.filter((row) => row.id !== GAMMA).every((row) => row.dot === false));
+    gammaDot.filter((row) => row.id !== gammaId).every((row) => row.dot === false));
 }
 
 console.log('\ngit G2 — UI wiring (PartFeed + App)');
