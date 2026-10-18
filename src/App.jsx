@@ -320,6 +320,8 @@ import {
   repoDeletePathsFor,
   NO_REPO_YET_COPY,
   SAVE_QUEUED_COPY,
+  noRepoYetError,
+  gitOpCatchResult,
   checkRemoteBehind,
   behindToastMessage,
   behindToastTarget,
@@ -2986,7 +2988,8 @@ const App = () => {
     }
   };
 
-  const ensureGitVault = async ({ create = true } = {}) => {
+  /** Look up the vault. Repo creation is opt-in (`create: true`) — Save / Add to repo / Save on new branch only. */
+  const ensureGitVault = async ({ create = false } = {}) => {
     const fresh = await refreshGithubAccessToken();
     if (fresh.refreshed || (fresh.ok && fresh.accessToken && fresh.accessToken !== gitTokenRef.current)) {
       gitAdapterRef.current = null;
@@ -3010,7 +3013,7 @@ const App = () => {
     ]);
     if (result.status === 'invalid-name' || result.status === 'not-a-vault' || result.status === 'missing') {
       if (result.status === 'missing' && !create) {
-        throw new Error(NO_REPO_YET_COPY);
+        throw noRepoYetError();
       }
       throw new Error(`Vault unavailable (${result.status})`);
     }
@@ -3668,8 +3671,11 @@ const App = () => {
           await finishOpenedPartRef.current(saved, openedScripts, progress);
         },
       });
+      return { status: 'opened', name };
     } catch (err) {
       console.warn('[App] Open assembly failed:', err?.message || err);
+      if (err?.message === NO_REPO_YET_COPY) setUploadNotice(NO_REPO_YET_COPY);
+      return gitOpCatchResult(err, 'Could not open assembly');
     }
   };
   openVaultAssemblyRef.current = handleOpenVaultAssembly;
@@ -3732,7 +3738,7 @@ const App = () => {
     }
     setPendingPartIds((prev) => new Set(prev).add(String(id)));
     try {
-      const vault = await ensureGitVault();
+      const vault = await ensureGitVault({ create: true });
       let scripts = { ...partScriptsRef.current };
       const live = codeEditorRef.current?.getContent?.();
       const liveId = (!suppressPartSaveRef.current && typeof live === 'string')
@@ -3909,7 +3915,7 @@ const App = () => {
       if (!opened) return { status: 'error', error: 'Could not switch branch' };
       return { status: 'switched', branch: branchName, baseline: opened.baseline };
     } catch (err) {
-      return { status: 'error', error: err.message || 'Could not switch branch' };
+      return gitOpCatchResult(err, 'Could not switch branch');
     }
   };
 
@@ -4220,7 +4226,7 @@ const App = () => {
       }
       return { status: 'inserted', count: planned.additions.length, sourceName: planned.sourceName };
     } catch (err) {
-      return { status: 'error', error: err.message || 'Could not insert parts' };
+      return gitOpCatchResult(err, 'Could not insert parts');
     }
   };
 
@@ -4274,7 +4280,7 @@ const App = () => {
       codeEditorRef.current?.loadContent(content, id, false);
       return { status: 'opened', path: id, mode: plan.mode };
     } catch (err) {
-      return { status: 'error', error: err.message || 'Could not open part' };
+      return gitOpCatchResult(err, 'Could not open part');
     }
   };
 
@@ -4533,7 +4539,7 @@ const App = () => {
         switched: true,
       };
     } catch (err) {
-      return { status: 'error', error: err.message || 'Could not create branch' };
+      return gitOpCatchResult(err, 'Could not create branch');
     }
   };
 
@@ -4590,7 +4596,7 @@ const App = () => {
       await deleteVaultBranch(gitAdapterRef.current, vault.repo, branchName, { current });
       return { status: 'deleted', branch: branchName };
     } catch (err) {
-      return { status: 'error', error: err.message || 'Could not delete branch' };
+      return gitOpCatchResult(err, 'Could not delete branch');
     }
   };
 
@@ -4646,7 +4652,7 @@ const App = () => {
       }
       return result;
     } catch (err) {
-      return { status: 'error', error: err.message || 'Merge failed' };
+      return gitOpCatchResult(err, 'Merge failed');
     }
   };
 
@@ -4700,7 +4706,7 @@ const App = () => {
       return { status: 'error', error: 'Reconnect GitHub before saving this assembly.' };
     }
     try {
-      const vault = await ensureGitVault();
+      const vault = await ensureGitVault({ create: true });
       const branch = gitWorkingBranch();
       const store = gitSync();
       let baseline = gitBaselineRef.current;
@@ -4948,7 +4954,7 @@ const App = () => {
     repoMovedBusyRef.current = true;
     setRepoMovedBusy(true);
     try {
-      const vault = await ensureGitVault();
+      const vault = await ensureGitVault({ create: true });
       const base = gitBaselineRef.current || {};
       const saved = await saveLocalOnNewBranch(gitAdapterRef.current, vault.repo, {
         doc: pending.doc,
@@ -5136,7 +5142,7 @@ const App = () => {
       }
       return { status: 'error', error: `Unknown action: ${action}` };
     } catch (err) {
-      return { status: 'error', error: err.message || 'Behind action failed' };
+      return gitOpCatchResult(err, 'Behind action failed');
     }
   };
 
@@ -8490,7 +8496,10 @@ const App = () => {
       if (!before || before.source !== 'git') {
         return { error: { code: 'git_only', message: 'open_assembly needs a git-backed assembly' } };
       }
-      await handleOpenVaultAssembly(name);
+      const opened = await handleOpenVaultAssembly(name);
+      if (opened?.status === 'error') {
+        return { error: { code: opened.code || 'git_blocked', message: opened.error || 'Could not open assembly' } };
+      }
       const after = assemblyRef.current;
       if (after && after !== before) recordAgentAssemblyStep(before);
       return { result: { name, activeId: after?.activeId ?? null } };
@@ -8502,7 +8511,7 @@ const App = () => {
       }
       const opened = await handleOpenVaultPart(path);
       if (opened?.status === 'error') {
-        return { error: { code: 'open_failed', message: opened.error || 'Could not open part' } };
+        return { error: { code: opened.code || 'open_failed', message: opened.error || 'Could not open part' } };
       }
       recordAgentAssemblyStep(before);
       return { result: { path: opened.path, mode: opened.mode } };
@@ -8514,7 +8523,7 @@ const App = () => {
       }
       const inserted = await handleInsertVaultAssemblyParts(sourceName);
       if (inserted?.status === 'error') {
-        return { error: { code: 'insert_failed', message: inserted.error || 'Could not insert parts' } };
+        return { error: { code: inserted.code || 'insert_failed', message: inserted.error || 'Could not insert parts' } };
       }
       if (inserted?.status === 'inserted') recordAgentAssemblyStep(before);
       return { result: inserted };
@@ -8659,8 +8668,12 @@ const App = () => {
       return handleOverwriteMain();
     },
     async agentGitListBranches() {
-      const items = await handleListBranches();
-      return { status: 'ok', branches: items || [], branch: gitWorkingBranch() };
+      try {
+        const items = await handleListBranches();
+        return { status: 'ok', branches: items || [], branch: gitWorkingBranch() };
+      } catch (err) {
+        return gitOpCatchResult(err, 'Could not list branches');
+      }
     },
     jointOpen() {
       if (appModeRef.current === 'game' || featureSessionRef.current) {

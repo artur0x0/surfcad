@@ -9,6 +9,25 @@ import { assetPathForScript, vaultSegment } from './vaultLayout.js';
 
 export const NO_REPO_YET_COPY = 'No repo yet. Save creates it.';
 export const SAVE_QUEUED_COPY = 'Queued until the next Save.';
+/** Existing bridge / MCP git_* refusal when there is no vault yet. */
+export const NO_REPO_YET_CODE = 'git_blocked';
+
+export function noRepoYetError() {
+  const err = new Error(NO_REPO_YET_COPY);
+  err.code = NO_REPO_YET_CODE;
+  return err;
+}
+
+export function noRepoYetOpResult() {
+  return { status: 'error', code: NO_REPO_YET_CODE, error: NO_REPO_YET_COPY };
+}
+
+export function gitOpCatchResult(err, fallback = 'Git operation failed') {
+  if (err?.message === NO_REPO_YET_COPY || err?.code === NO_REPO_YET_CODE) {
+    return noRepoYetOpResult();
+  }
+  return { status: 'error', error: err?.message || fallback };
+}
 
 export function emptyWorkingSidecar() {
   return { renameFrom: null, pendingDeletes: [] };
