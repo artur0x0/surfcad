@@ -98,25 +98,14 @@ async function shot(page, shotDir, name) {
 }
 
 async function assertPairingClearsFooterPrivacy(page, { menuOpen = false } = {}) {
-  await page.waitForSelector('[data-privacy-choices-link]', { timeout: 5000 });
+  const privacyLinks = await page.locator('[data-privacy-choices-link]').count();
+  assert.equal(privacyLinks, 0, 'CAD viewer should not render a Privacy choices link');
   const dialog = await page.locator('[data-agent-bridge-dialog-card]').boundingBox();
   const approval = await page.locator('[data-agent-bridge-approval]').boundingBox();
-  const footer = await page.locator('[data-privacy-choices-link]').boundingBox();
   const chip = await page.locator('[data-profile-chip]').first().boundingBox();
   assert.ok(dialog, 'pairing dialog card should be visible');
-  assert.ok(footer, 'page-footer Privacy choices should be visible');
   assert.ok(chip, 'profile chip should be visible');
-  assert.equal(
-    rectsOverlap(dialog, footer),
-    false,
-    `pairing dialog covers footer Privacy choices dialog=${JSON.stringify(dialog)} footer=${JSON.stringify(footer)}`,
-  );
   if (approval) {
-    assert.equal(
-      rectsOverlap(approval, footer),
-      false,
-      `Allow/Deny covers footer Privacy choices approval=${JSON.stringify(approval)} footer=${JSON.stringify(footer)}`,
-    );
     assert.equal(rectsOverlap(approval, chip), false, 'Allow/Deny covers the profile chip');
   }
   const portal = await page.locator('[data-agent-bridge-dialog]').count();
@@ -136,7 +125,7 @@ async function assertPairingClearsFooterPrivacy(page, { menuOpen = false } = {})
   if (menuOpen) {
     assert.ok(
       await page.locator('[data-profile-panel]').isVisible(),
-      'profile menu should stay open for the footer overlap check',
+      'profile menu should stay open while the approval layout is checked',
     );
     const menuAccount = await page.locator('[data-profile-account]').boundingBox();
     assert.ok(menuAccount, 'Account menu item should be visible when the signed-in menu is open');

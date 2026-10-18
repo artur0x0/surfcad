@@ -11,32 +11,34 @@ export default function AgentBridgeApprovalPopup({ open, onAllow, onDeny }) {
     <div
       role="group"
       aria-label="Approve local agent connection"
-      className="flex items-center gap-2 rounded-full border border-chrome-border surface-glass font-ui px-2 py-2"
+      className="w-max max-w-full rounded-full border border-chrome-border surface-glass font-ui px-2 py-2 text-left"
       data-agent-bridge-approval=""
       onPointerDown={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >
-      <p className="text-ui-xs text-on-dark px-1 max-w-[9rem]">
+      <p className="inline align-middle px-1 text-ui-xs text-on-dark">
         Allow this agent to control SurfCAD?
       </p>
-      <button
-        type="button"
-        className="flex h-9 w-9 items-center justify-center rounded-full surface-success text-on-dark"
-        aria-label="Allow connection"
-        onClick={onAllow}
-        data-ui-action="data-agent-bridge-approve"
-      >
-        <Check size={18} aria-hidden />
-      </button>
-      <button
-        type="button"
-        className="flex h-9 w-9 items-center justify-center rounded-full surface-quiet text-on-dark"
-        aria-label="Deny connection"
-        onClick={onDeny}
-        data-ui-action="data-agent-bridge-reject"
-      >
-        <X size={18} aria-hidden />
-      </button>
+      <span className="ml-2 inline-flex items-center gap-2 align-middle whitespace-nowrap">
+        <button
+          type="button"
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full surface-success text-on-dark"
+          aria-label="Allow connection"
+          onClick={onAllow}
+          data-ui-action="data-agent-bridge-approve"
+        >
+          <Check size={18} aria-hidden />
+        </button>
+        <button
+          type="button"
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full surface-quiet text-on-dark"
+          aria-label="Deny connection"
+          onClick={onDeny}
+          data-ui-action="data-agent-bridge-reject"
+        >
+          <X size={18} aria-hidden />
+        </button>
+      </span>
     </div>
   );
 }

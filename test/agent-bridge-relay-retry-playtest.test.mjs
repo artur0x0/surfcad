@@ -41,10 +41,11 @@ test('fake backend seeds a signed-in GitHub user before /me settles', () => {
   assert.match(SRC, /Connect Agent needs a signed-in chip/);
 });
 
-test('relay-retry playtest asserts the pairing popup never covers footer Privacy choices', () => {
+test('relay-retry playtest asserts the CAD viewer has no footer Privacy choices link', () => {
   assert.match(SRC, /assertPairingClearsFooterPrivacy/);
   assert.match(SRC, /rectsOverlap/);
   assert.match(SRC, /data-privacy-choices-link/);
+  assert.match(SRC, /CAD viewer should not render a Privacy choices link/);
   assert.match(SRC, /data-profile-account/);
   assert.match(SRC, /data-profile-panel/);
   assert.match(SRC, /data-agent-bridge-dialog-card/);

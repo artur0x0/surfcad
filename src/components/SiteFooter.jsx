@@ -1,27 +1,21 @@
 import PrivacyChoicesController from './PrivacyChoicesController';
 
 /**
- * Shared site footer for app and marketing surfaces.
+ * Footer for public pages (privacy, partners, admin, 404).
+ * The CAD viewer mounts the default variant and gets no footer: the viewer
+ * Privacy choices link is not shown on desktop or mobile.
  */
 export default function SiteFooter({ variant = 'dark', children = null }) {
-  const linkClass = variant === 'light'
-    ? 'underline underline-offset-4 hover:text-on-light'
-    : 'text-[11px] text-gray-500 underline underline-offset-2 hover:text-gray-300';
+  if (variant !== 'light') return null;
 
   return (
     <footer
-      className={
-        variant === 'light'
-          ? 'mt-12 flex flex-col items-center gap-3 text-center text-sm text-muted-on-light'
-          : 'pointer-events-none fixed inset-x-0 bottom-0 z-[6] flex justify-center pb-[max(0.35rem,env(safe-area-inset-bottom))]'
-      }
+      className="mt-12 flex flex-col items-center gap-3 text-center text-sm text-muted-on-light"
       data-site-footer=""
-      data-site-footer-variant={variant}
+      data-site-footer-variant="light"
     >
       {children}
-      <div className={variant === 'light' ? '' : 'pointer-events-auto px-3 py-1'}>
-        <PrivacyChoicesController linkClassName={linkClass} />
-      </div>
+      <PrivacyChoicesController linkClassName="underline underline-offset-4 hover:text-on-light" />
     </footer>
   );
 }
