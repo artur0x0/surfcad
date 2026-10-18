@@ -161,7 +161,7 @@ import { compareWorkingCopyToCommit } from './agent/state/workingCopyUnsaved';
 import { findPartById, unknownAssemblyError, unknownPartError } from './agent/state/identity';
 import { decidePartVisible } from './agent/state/partVisible';
 import { listV2Assemblies, listPartParentAssemblies, openV2Assembly } from './utils/git/v2VaultRead';
-import { assemblyIdPath, partIdPath } from './utils/git/idPaths';
+import { assemblyIdPath, partIdPath, parseIdPath } from './utils/git/idPaths';
 import { createdPartFromDocs, scriptRequestsRun } from './agent/state/createPart.js';
 import { finishedRunBodyCount } from './agent/state/runBodyCount.js';
 import { buildToasts } from './agent/state/toasts';
@@ -287,7 +287,6 @@ import {
   withSurfId,
   stripSurfId,
   readSurfId,
-  isV2SurfId,
   backfillSurfIds,
   applyIdPromotion,
   migrateAssemblyRecords,
@@ -391,7 +390,6 @@ import {
   mainMovedPlanSavePaths,
   SAVE_CONFLICT_COPY,
 } from './utils/git';
-import { assemblyIdPath, parseIdPath } from './utils/git/idPaths';
 import { partScriptMatchesCommitted } from './utils/git/planSave';
 import { scheduleLastCommitFromApp } from './utils/git/lastCommit';
 import {
