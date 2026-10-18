@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mintSurfId, isSurfId, readSurfId, withSurfId } from '../src/utils/git/surfId.js';
-import { collapseWorkingCopyIds, dualWriteTargets, mergeLiveEdits, persistCollapsedWorkingCopy, PersistCrash, pickCollapsedPartId, replaceScriptKeys } from '../src/utils/git/wcIdentity.js';
+import { assemblyRekeyKey, collapseWorkingCopyIds, dualWriteTargets, mergeLiveEdits, persistCollapsedWorkingCopy, PersistCrash, pickCollapsedPartId, remapFeaForPersist, replaceScriptKeys, reusePairsFromJournal } from '../src/utils/git/wcIdentity.js';
 import { rewriteFeaStudyPartIds } from '../src/utils/git/feaStudyIds.js';
 import { serializeAssembly, parseAssemblyDocument, composeViewportParts } from '../src/utils/assembly.js';
 import { partSurfId, readSurfName, withSurfName } from '../src/utils/git/surfId.js';
@@ -1136,6 +1136,8 @@ function makeIdb(doc, scripts) {
     map: new Map(Object.entries(scripts)),
     memory: { doc: clone(doc), scripts: { ...scripts } },
     flight: [],
+    flightToOnly: false,
+    journal: null,
   };
 }
 
@@ -1150,7 +1152,13 @@ function persistArgs(idb, collapsed, source, extra = {}) {
     remove: async (id) => { idb.map.delete(id); },
     saveDoc: async (doc) => { idb.doc = clone(doc); return doc; },
     live: () => idb.memory.scripts,
-    onFlight: (pairs) => { idb.flight = Array.isArray(pairs) ? pairs : []; },
+    assemblyKey: assemblyRekeyKey(source.doc),
+    saveJournal: async (record) => { idb.journal = clone(record); },
+    clearJournal: async () => { idb.journal = null; },
+    onFlight: (pairs, opts) => {
+      idb.flight = Array.isArray(pairs) ? pairs : [];
+      idb.flightToOnly = !!(opts && opts.toOnly);
+    },
     apply: ({ doc, scripts }) => {
       idb.memory.doc = clone(doc);
       idb.memory.scripts = { ...scripts };
@@ -1176,7 +1184,9 @@ function plantLiveEdit(idb, fromId, latest) {
 async function bootFromIdb(idb) {
   const loadedDoc = clone(idb.doc);
   const loadedScripts = scriptsForDoc(idb);
-  const collapsed = collapseWorkingCopyIds(loadedDoc, loadedScripts);
+  const collapsed = collapseWorkingCopyIds(loadedDoc, loadedScripts, {
+    reusePairs: reusePairsFromJournal(idb.journal, loadedDoc),
+  });
   await persistCollapsedWorkingCopy(persistArgs(
     idb,
     collapsed,
@@ -1446,7 +1456,7 @@ test('V: vault-open edit vs snapshot moves; stale snapshot bytes drop', async ()
   assert.equal(store.has(pathKey), false);
 });
 
-test('headerless mint is the same on a second collapse without pinning the clock', () => {
+test('journal reusePairs keep the first mint; a free collapse mints another', () => {
   const doc = {
     source: 'local',
     name: 'Assembly',
@@ -1455,25 +1465,23 @@ test('headerless mint is the same on a second collapse without pinning the clock
   };
   const scripts = { [UUID]: 'return unsaved;\n' };
   const first = collapseWorkingCopyIds(doc, scripts);
-  const second = collapseWorkingCopyIds(doc, scripts);
-  assert.ok(isSurfId(first.doc.parts[0].id));
-  assert.equal(first.doc.parts[0].id, second.doc.parts[0].id);
-  assert.notEqual(first.doc.parts[0].id, UUID);
-  const other = collapseWorkingCopyIds(
-    {
-      ...doc,
-      parts: [{ id: '5f0c3c1e-0000-4000-8000-000000000099', name: 'Part', visible: true, order: 0 }],
-      activeId: '5f0c3c1e-0000-4000-8000-000000000099',
-    },
-    { '5f0c3c1e-0000-4000-8000-000000000099': 'return unsaved;\n' },
-  );
-  assert.notEqual(other.doc.parts[0].id, first.doc.parts[0].id);
+  const to = first.doc.parts[0].id;
+  assert.ok(isSurfId(to));
+  const journal = { assemblyKey: assemblyRekeyKey(doc), pairs: [{ from: UUID, to }] };
+  const reused = collapseWorkingCopyIds(doc, scripts, {
+    reusePairs: reusePairsFromJournal(journal, doc),
+  });
+  assert.equal(reused.doc.parts[0].id, to);
+  const other = collapseWorkingCopyIds(doc, scripts);
+  assert.notEqual(other.doc.parts[0].id, to);
 });
 
 test('dualWriteTargets includes both pair ids', () => {
   assert.deepEqual(dualWriteTargets(UUID, [{ from: UUID, to: SURF }]).sort(), [UUID, SURF].sort());
   assert.deepEqual(dualWriteTargets(SURF, [{ from: UUID, to: SURF }]).sort(), [UUID, SURF].sort());
   assert.deepEqual(dualWriteTargets(SURF, []), [SURF]);
+  assert.deepEqual(dualWriteTargets(UUID, [{ from: UUID, to: SURF }], true), [SURF]);
+  assert.deepEqual(dualWriteTargets(SURF, [{ from: UUID, to: SURF }], true), [SURF]);
 });
 
 async function rebootKeepsEdit(idb, expected) {
@@ -1592,4 +1600,204 @@ test('vault open step-4 move lands in returned scripts for memory', async () => 
   });
   assert.equal(store.get(SURF), 'typed during vault open');
   assert.equal(persisted.scripts[SURF], 'typed during vault open');
+});
+
+function assertNoOrphanKeys(idb, allowed) {
+  for (const key of idb.map.keys()) {
+    assert.ok(allowed.has(key), `orphan key ${key}`);
+  }
+}
+
+async function crashThenBootReusesJournal(step) {
+  const original = 'return unsaved;\n';
+  const latest = 'return unsaved;\n// live edit\n';
+  const doc = {
+    source: 'local',
+    name: 'Assembly',
+    activeId: UUID,
+    parts: [{ id: UUID, name: 'Part', visible: true, order: 0 }],
+  };
+  const scripts = { [UUID]: original };
+  const collapsed = collapseWorkingCopyIds(doc, scripts);
+  const to = collapsed.doc.parts[0].id;
+  assert.ok(isSurfId(to));
+  assert.notEqual(to, UUID);
+  const idb = makeIdb(doc, scripts);
+  plantLiveEdit(idb, UUID, latest);
+  try {
+    await persistCollapsedWorkingCopy(persistArgs(
+      idb,
+      collapsed,
+      { doc, scripts },
+      { crashAfter: step },
+    ));
+    assert.fail(`expected PersistCrash after step ${step}`);
+  } catch (err) {
+    assert.equal(err instanceof PersistCrash, true);
+    assert.equal(err.step, step);
+  }
+  assert.equal(idb.flight.length, 0, 'finally must endFlight');
+  assert.ok(idb.journal);
+  assert.equal(idb.journal.assemblyKey, assemblyRekeyKey(doc));
+  assert.equal(idb.journal.pairs[0].from, UUID);
+  assert.equal(idb.journal.pairs[0].to, to);
+  const mintedBeforeBoot = [...idb.map.keys()].filter((id) => isSurfId(id) && id !== to);
+  assert.equal(mintedBeforeBoot.length, 0);
+
+  await bootFromIdb(idb);
+  const row = idb.doc.parts[0];
+  assert.equal(row.id, to, 'reboot minted a third id');
+  assert.equal(idb.map.get(to), latest);
+  assert.equal(idb.journal, null, 'journal must clear after step 4');
+  assert.equal(idb.map.has(UUID), false);
+  assertNoOrphanKeys(idb, new Set([to]));
+}
+
+test('crash after snapshot then boot reuses journal to without a third mint', async () => {
+  await crashThenBootReusesJournal(0);
+});
+
+test('crash after put then boot reuses journal to without a third mint', async () => {
+  await crashThenBootReusesJournal(1);
+});
+
+test('endFlight runs after a persist crash', async () => {
+  const fixture = headerlessFixture();
+  const idb = makeIdb(fixture.doc, fixture.scripts);
+  try {
+    await persistCollapsedWorkingCopy(persistArgs(
+      idb,
+      fixture.collapsed,
+      { doc: fixture.doc, scripts: fixture.scripts },
+      { crashAfter: 1 },
+    ));
+  } catch (err) {
+    assert.equal(err.step, 1);
+  }
+  assert.deepEqual(idb.flight, []);
+  assert.equal(idb.flightToOnly, false);
+  assert.ok(idb.journal);
+});
+
+test('step 4 dual-write does not resurrect from', async () => {
+  const fixture = headerlessFixture();
+  const idb = makeIdb(fixture.doc, fixture.scripts);
+  const late = `${fixture.latest}// after delete\n`;
+  await persistCollapsedWorkingCopy(persistArgs(
+    idb,
+    fixture.collapsed,
+    { doc: fixture.doc, scripts: fixture.scripts },
+    {
+      remove: async (id) => {
+        idb.map.delete(id);
+        for (const dest of dualWriteTargets(fixture.beforeId, idb.flight, idb.flightToOnly)) {
+          idb.map.set(dest, late);
+        }
+      },
+    },
+  ));
+  assert.equal(idb.map.has(UUID), false);
+  assert.equal(idb.map.get(fixture.afterId), late);
+  assert.equal(idb.journal, null);
+});
+
+test('failed saveDoc keeps the journal for a retry remint', async () => {
+  const fixture = headerlessFixture();
+  const idb = makeIdb(fixture.doc, fixture.scripts);
+  const persisted = await persistCollapsedWorkingCopy(persistArgs(
+    idb,
+    fixture.collapsed,
+    { doc: fixture.doc, scripts: fixture.scripts },
+    { saveDoc: async () => null },
+  ));
+  assert.equal(persisted.docSaved, false);
+  assert.ok(idb.journal);
+  assert.equal(idb.journal.pairs[0].to, fixture.afterId);
+  const retried = collapseWorkingCopyIds(fixture.doc, fixture.scripts, {
+    reusePairs: reusePairsFromJournal(idb.journal, fixture.doc),
+  });
+  assert.equal(retried.doc.parts[0].id, fixture.afterId);
+});
+
+test('folded live FEA study remaps from to to', async () => {
+  const study = multiPartStudy(UUID, UUID);
+  const original = `return 1;\n${studyBlock(study)}`;
+  const typed = `return 1;\n${studyBlock(study)}// typed during put\n`;
+  const doc = {
+    source: 'local',
+    name: 'Study',
+    activeId: UUID,
+    parts: [{ id: UUID, name: 'Left', visible: true, order: 0 }],
+  };
+  const scripts = { [UUID]: original };
+  const collapsed = collapseWorkingCopyIds(doc, scripts);
+  const to = collapsed.doc.parts[0].id;
+  const idb = makeIdb(doc, scripts);
+  await persistCollapsedWorkingCopy(persistArgs(
+    idb,
+    collapsed,
+    { doc, scripts },
+    {
+      save: async (id, script) => {
+        if (id === to) {
+          const live = idb.memory.scripts[UUID];
+          if (typeof live === 'string' && !live.includes('typed during put')) {
+            idb.memory.scripts[UUID] = typed;
+            idb.map.set(UUID, typed);
+          }
+        }
+        idb.map.set(id, script);
+        return true;
+      },
+    },
+  ));
+  const rewritten = readStudy(idb.map.get(to));
+  assert.equal(rewritten.fixtures[0].faces[0].part, to);
+  assert.equal(rewritten.scope.ids[0], to);
+  assert.match(idb.map.get(to), /typed during put/);
+  assert.equal(idb.map.has(UUID), false);
+});
+
+test('dual-write FEA remaps the to copy only', () => {
+  const study = multiPartStudy(UUID, UUID);
+  const live = `return 1;\n${studyBlock(study)}`;
+  const pairs = [{ from: UUID, to: SURF }];
+  const fromBytes = remapFeaForPersist(live, pairs, UUID);
+  const toBytes = remapFeaForPersist(live, pairs, SURF);
+  assert.equal(readStudy(fromBytes).fixtures[0].faces[0].part, UUID);
+  assert.equal(readStudy(toBytes).fixtures[0].faces[0].part, SURF);
+  assert.match(fromBytes, new RegExp(`keep ${UUID}|return 1`));
+});
+
+test('step-3 from-move remaps FEA study ids onto to', async () => {
+  const study = multiPartStudy(UUID, UUID);
+  const original = 'return 1;\n';
+  const moved = `return 1;\n${studyBlock(study)}`;
+  const doc = {
+    source: 'local',
+    name: 'Study',
+    activeId: UUID,
+    parts: [{ id: UUID, name: 'Left', visible: true, order: 0 }],
+  };
+  const scripts = { [UUID]: original };
+  const collapsed = collapseWorkingCopyIds(doc, scripts);
+  const to = collapsed.doc.parts[0].id;
+  const idb = makeIdb(doc, scripts);
+  await persistCollapsedWorkingCopy(persistArgs(
+    idb,
+    collapsed,
+    { doc, scripts },
+    {
+      saveDoc: async (next) => {
+        idb.doc = clone(next);
+        idb.map.set(UUID, moved);
+        return next;
+      },
+    },
+  ));
+  const rewritten = readStudy(idb.map.get(to));
+  assert.equal(rewritten.fixtures[0].faces[0].part, to);
+  assert.equal(rewritten.parts[0].id, to);
+  assert.equal(idb.map.has(UUID), false);
+  assert.equal(idb.memory.scripts[to], idb.map.get(to));
 });

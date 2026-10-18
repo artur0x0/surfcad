@@ -232,6 +232,9 @@ import {
   saveAssemblyDocument,
   saveAssemblySidecar,
   savePartScript,
+  loadRekeyJournal,
+  saveRekeyJournal,
+  clearRekeyJournal,
 } from './utils/assemblyStore';
 import {
   bootUserId,
@@ -284,6 +287,10 @@ import {
   collapseWorkingCopyIds,
   persistCollapsedWorkingCopy,
   dualWriteTargets,
+  remapFeaForPersist,
+  reusePairsFromJournal,
+  assemblyRekeyKey,
+  WORKING_COPY_DOC_UNSAVED,
   isSurfId,
   partSurfId,
   reconcileSyncedFromTip,
@@ -436,6 +443,7 @@ const App = () => {
   const assemblyRef = useRef(null);
   /** Re-key persist pairs: autosave writes both `from` and `to` while in flight. */
   const persistFlightPairsRef = useRef([]);
+  const persistFlightToOnlyRef = useRef(false);
   // rememberAssembly starts the IndexedDB write and returns the doc.
   // Callers that need the write to finish await this promise.
   const assemblyDocPersistRef = useRef(Promise.resolve(null));
@@ -1709,7 +1717,11 @@ const App = () => {
               }
             }
             const readOnly = plan.readOnly === true || bootReadOnlyRef.current;
-            const collapsed = collapseWorkingCopyIds(doc, scripts, { readOnly });
+            const rekeyJournal = readOnly ? null : await loadRekeyJournal();
+            const collapsed = collapseWorkingCopyIds(doc, scripts, {
+              readOnly,
+              reusePairs: reusePairsFromJournal(rekeyJournal, persistSource.doc),
+            });
             if (collapsed.changed) {
               doc = collapsed.doc;
               scripts = collapsed.scripts;
@@ -1730,6 +1742,9 @@ const App = () => {
               }
             }
             const idsChanged = migrated.changed || localIds.changed || collapsed.changed;
+            if (!readOnly && !idsChanged && rekeyJournal) {
+              try { await clearRekeyJournal(); } catch { /* leftover from a finished persist */ }
+            }
             if (!readOnly && !bootWouldClobber(loaded.doc, doc) && (idsChanged || Object.keys(flags).length)) {
               try {
                 if (idsChanged) {
@@ -1756,8 +1771,12 @@ const App = () => {
                     },
                     saveDoc: saveAssemblyDocument,
                     live: () => persistSource.scripts,
-                    onFlight: (pairs) => {
+                    assemblyKey: assemblyRekeyKey(persistSource.doc),
+                    saveJournal: saveRekeyJournal,
+                    clearJournal: clearRekeyJournal,
+                    onFlight: (pairs, opts) => {
                       persistFlightPairsRef.current = Array.isArray(pairs) ? pairs : [];
+                      persistFlightToOnlyRef.current = !!(opts && opts.toOnly);
                     },
                     apply: ({ doc: nextDoc, scripts: nextScripts }) => {
                       doc = nextDoc;
@@ -1868,8 +1887,10 @@ const App = () => {
       const next = { ...partScriptsRef.current, [idAtSchedule]: scriptAtSchedule };
       partScriptsRef.current = next;
       setPartScripts(next);
-      for (const id of dualWriteTargets(idAtSchedule, persistFlightPairsRef.current)) {
-        savePartScript(id, scriptAtSchedule);
+      const flightPairs = persistFlightPairsRef.current;
+      const toOnly = persistFlightToOnlyRef.current;
+      for (const id of dualWriteTargets(idAtSchedule, flightPairs, toOnly)) {
+        savePartScript(id, remapFeaForPersist(scriptAtSchedule, flightPairs, id));
       }
     }, 600);
     return () => clearTimeout(timer);
@@ -1901,8 +1922,10 @@ const App = () => {
       }
       if (id && !suppressPartSaveRef.current && typeof live === 'string') {
         partScriptsRef.current = { ...partScriptsRef.current, [id]: live };
-        for (const key of dualWriteTargets(id, persistFlightPairsRef.current)) {
-          savePartScript(key, live);
+        const flightPairs = persistFlightPairsRef.current;
+        const toOnly = persistFlightToOnlyRef.current;
+        for (const key of dualWriteTargets(id, flightPairs, toOnly)) {
+          savePartScript(key, remapFeaForPersist(live, flightPairs, key));
         }
       }
     };
@@ -3647,9 +3670,11 @@ const App = () => {
       }
       stalePairs.push(...localIds.pairs);
     }
+    const rekeyJournal = await loadRekeyJournal();
     const collapsed = collapseWorkingCopyIds(localIds.doc, localIds.scripts, {
       pathIndex: store.pathIndexFor(vault.repo),
       usedAssemblyIds: Object.values(store.assemblyIdIndexFor(vault.repo)),
+      reusePairs: reusePairsFromJournal(rekeyJournal, persistSource.doc),
     });
     if (collapsed.changed) {
       stalePairs.push(...collapsed.pairs);
@@ -3724,8 +3749,12 @@ const App = () => {
         try { await deletePartScript(id); } catch { /* ignore */ }
       },
       saveDoc: saveAssemblyDocument,
-      onFlight: (pairs) => {
+      assemblyKey: assemblyRekeyKey(persistSource.doc),
+      saveJournal: saveRekeyJournal,
+      clearJournal: clearRekeyJournal,
+      onFlight: (pairs, opts) => {
         persistFlightPairsRef.current = Array.isArray(pairs) ? pairs : [];
+        persistFlightToOnlyRef.current = !!(opts && opts.toOnly);
       },
       apply: ({ doc: nextDoc, scripts: nextScripts }) => {
         if (stalePairs.length) rekeyRuntime(stalePairs);
@@ -3749,6 +3778,11 @@ const App = () => {
         }));
       },
     });
+    if (persisted.docSaved === false) {
+      persistFlightPairsRef.current = [];
+      persistFlightToOnlyRef.current = false;
+      throw new Error(WORKING_COPY_DOC_UNSAVED);
+    }
     openedDoc = persisted.doc;
     openedScripts = persisted.scripts;
     if (Object.keys(meshRecords).length) {
@@ -5649,8 +5683,10 @@ const App = () => {
           scriptsNow = localIds.scripts;
           persistPairs.push(...localIds.pairs);
         }
+        const rekeyJournal = await loadRekeyJournal();
         const collapsed = collapseWorkingCopyIds(doc, scriptsNow, {
           pathIndex: store.pathIndexFor(vault.repo),
+          reusePairs: reusePairsFromJournal(rekeyJournal, persistSource.doc),
         });
         if (collapsed.changed) {
           doc = collapsed.doc;
@@ -5703,15 +5739,22 @@ const App = () => {
             },
             saveDoc: saveAssemblyDocument,
             live: () => partScriptsRef.current,
-            onFlight: (pairs) => {
+            assemblyKey: assemblyRekeyKey(persistSource.doc),
+            saveJournal: saveRekeyJournal,
+            clearJournal: clearRekeyJournal,
+            onFlight: (pairs, opts) => {
               persistFlightPairsRef.current = Array.isArray(pairs) ? pairs : [];
+              persistFlightToOnlyRef.current = !!(opts && opts.toOnly);
             },
             apply: async ({ doc: nextDoc, scripts: nextScripts }) => {
               await switchReseedMemory({ doc: nextDoc, scripts: nextScripts });
             },
           });
+          if (persisted.docSaved === false) return;
           doc = persisted.doc;
           scriptsNow = persisted.scripts;
+        } else if (rekeyJournal) {
+          try { await clearRekeyJournal(); } catch { /* leftover from a finished persist */ }
         }
         await adoptReseedBaseline();
         const reconciled = reconcileSyncedFromTip(doc, opened.scripts);

@@ -19,6 +19,7 @@ const DOC_STORE = 'assembly';
 const PART_STORE = 'parts';
 const DOC_KEY = 'current';
 const SIDECAR_KEY = 'sidecar';
+const REKEY_JOURNAL_KEY = 'rekey-journal';
 
 let dbPromise = null;
 
@@ -171,6 +172,39 @@ export async function saveAssemblySidecar(sidecar) {
   const clean = normalizeWorkingSidecar(sidecar);
   const { ok } = await runTx(DOC_STORE, 'readwrite', (store) => store.put(clean, SIDECAR_KEY));
   return ok ? clean : null;
+}
+
+function normalizeRekeyJournal(value) {
+  if (!value || typeof value !== 'object') return null;
+  const pairs = [];
+  for (const row of Array.isArray(value.pairs) ? value.pairs : []) {
+    if (!row || !row.from || !row.to || row.from === row.to) continue;
+    pairs.push({ from: String(row.from), to: String(row.to) });
+  }
+  if (!pairs.length) return null;
+  return { assemblyKey: String(value.assemblyKey || ''), pairs };
+}
+
+/**
+ * Pending from→to remints for a crash between snapshot and step 4.
+ * Same object store as the document; a new key, no DB version bump.
+ */
+export async function loadRekeyJournal() {
+  const { ok, value, reason } = await runTx(DOC_STORE, 'readonly', (store) => store.get(REKEY_JOURNAL_KEY));
+  if (reason === 'timeout' || !ok) return null;
+  return normalizeRekeyJournal(value);
+}
+
+export async function saveRekeyJournal(journal) {
+  const clean = normalizeRekeyJournal(journal);
+  if (!clean) return false;
+  const { ok } = await runTx(DOC_STORE, 'readwrite', (store) => store.put(clean, REKEY_JOURNAL_KEY));
+  return ok;
+}
+
+export async function clearRekeyJournal() {
+  const { ok } = await runTx(DOC_STORE, 'readwrite', (store) => store.delete(REKEY_JOURNAL_KEY));
+  return ok;
 }
 
 export async function loadPartRecord(id) {
