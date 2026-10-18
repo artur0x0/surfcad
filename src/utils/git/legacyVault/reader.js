@@ -6,7 +6,12 @@
 import { serializeAssembly } from '../../assembly.js';
 import { assertGithubAdapter } from '../githubAdapterInterface.js';
 import { assemblyIdPath, partIdPath, partMeshIdPath } from '../idPaths.js';
-import { parseSurfJson } from '../surfJson.js';
+import {
+  parseSurfJson,
+  pruneDanglingColors,
+  pruneDanglingGroupPartIds,
+} from '../surfJson.js';
+import { pruneDanglingSurfJoints } from '../../jointSchema.js';
 import { readMeshBytes } from '../meshSync.js';
 import { captureBaseline } from '../gitBaseline.js';
 import { collapseWorkingCopyIds } from '../wcIdentity.js';
@@ -31,12 +36,32 @@ function legacyPartName(part) {
 
 /** v1 `.surf.json` parse for open. Do not call `parseSurfJson` on a v1 tree outside this folder. */
 function parseLegacySurfJson(input) {
-  const doc = parseSurfJson(input, { allowDuplicatePartIds: true });
+  // Defer dangling prune until after collapse: a UUID `parts[].id` with
+  // header-keyed groups/colors/joints must remap U→S first or those refs drop.
+  const doc = parseSurfJson(input, { allowDuplicatePartIds: true, pruneDangling: false });
   const parts = (doc.parts || []).map((part) => {
     const name = legacyPartName(part);
     return name === part.name ? part : { ...part, name };
   });
   return parts === doc.parts ? doc : { ...doc, parts };
+}
+
+/** Drop refs that still don't match a row after collapse remapped U→S. */
+function pruneCollapsedRefs(doc) {
+  const raw = pruneDanglingSurfJoints(pruneDanglingColors(pruneDanglingGroupPartIds({
+    parts: doc?.parts,
+    groups: doc?.groups,
+    colors: doc?.colors,
+    joints: doc?.joints,
+  })));
+  const next = { ...doc };
+  if (raw.groups) next.groups = raw.groups;
+  else delete next.groups;
+  if (raw.colors) next.colors = raw.colors;
+  else delete next.colors;
+  if (raw.joints) next.joints = raw.joints;
+  else delete next.joints;
+  return next;
 }
 
 function sidecarMeshPath(scriptPath) {
@@ -135,7 +160,8 @@ export async function openLegacyAssembly(adapter, repo, assemblyName, {
     rawScripts,
     { pathIndex, now, randFor, usedAssemblyIds: usedAsm },
   );
-  const parts = (collapsed.doc.parts || []).map((part) => {
+  const collapsedDoc = pruneCollapsedRefs(collapsed.doc);
+  const parts = (collapsedDoc.parts || []).map((part) => {
     const path = scriptPathOf(part) || partRepoPath(part);
     const missing = part.missing === true
       || missingPaths.has(path)
@@ -154,7 +180,7 @@ export async function openLegacyAssembly(adapter, repo, assemblyName, {
   }
   const assets = await loadSidecarMeshes(adapter, repo, branch, parts);
   const doc = serializeAssembly({
-    ...collapsed.doc,
+    ...collapsedDoc,
     source: 'git',
     parts,
     vaultLayout: 'legacy',
