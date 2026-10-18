@@ -8688,11 +8688,26 @@ const App = () => {
         return { error: { code: 'git_only', message: 'open_assembly needs a git-backed assembly' } };
       }
       const requested = typeof name === 'string' ? name : '';
-      // The name lookup and the open share one marker read and one tree.
-      // The cache is an argument, not the shared adapter, so a Save during
-      // this await reads the live repo. lastCommit on this open uses it too.
+      // Read the tip before the name lookup so the cached tree is that
+      // sha. The cache stays an argument: the shared adapter is untouched,
+      // and a Save during this await reads the live repo. The open's
+      // getBranch is live; a newer sha drops the memo before the sidecar
+      // list. lastCommit on this open uses the same cache.
       const inner = ensureGitAdapter();
-      const cached = cacheVaultReads(inner);
+      let branch = 'main';
+      let tip = null;
+      try {
+        const vault = await ensureGitVault({ create: false });
+        branch = gitWorkingBranch();
+        tip = (await inner.getBranch(vault.repo, branch))?.sha || null;
+      } catch (err) {
+        if (err?.message === NO_REPO_YET_COPY || err?.code === 'git_blocked') {
+          setUploadNotice(NO_REPO_YET_COPY);
+          return { error: { code: 'git_blocked', message: NO_REPO_YET_COPY } };
+        }
+        tip = null;
+      }
+      const cached = cacheVaultReads(inner, { branch, tip });
       let names = null;
       try {
         const listed = await handleListVaultAssemblies(cached);

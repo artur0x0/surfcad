@@ -258,3 +258,54 @@ test('a concurrent save during the open sees fresh reads', async () => {
   assert.equal(counts.listTree, 2);
   assert.equal(counts.commitFiles, 1);
 });
+
+test('an unchanged tip adds no tree or marker read', async () => {
+  const seeded = await seedVault();
+  const { wrapped, counts } = countReads(seeded.gh);
+  const tip = (await wrapped.getBranch(seeded.repo, 'main')).sha;
+  const cached = cacheVaultReads(wrapped, { branch: 'main', tip });
+  await listThenOpen(cached, seeded.repo, tip);
+  const again = await cached.getBranch(seeded.repo, 'main');
+  assert.equal(again.sha, tip);
+  await cached.listTree(seeded.repo, tip);
+  await cached.readFile(seeded.repo, 'surfcad.json', tip);
+  assert.equal(counts.listTree, 1);
+  assert.equal(counts.surfcad, 1);
+  assert.equal(counts.commitFiles, 0);
+});
+
+test('a tip that moves between the lookup and the open uses the new tree', async () => {
+  const seeded = await seedVault();
+  const { wrapped, counts } = countReads(seeded.gh);
+  const tip = (await wrapped.getBranch(seeded.repo, 'main')).sha;
+  const cached = cacheVaultReads(wrapped, { branch: 'main', tip });
+  const names = await listVaultAssemblies(cached, seeded.repo, 'main');
+  assert.deepEqual(names, ['Gearbox', 'Housing']);
+  assert.equal(counts.listTree, 1);
+
+  const meshPath = 'assemblies/Gearbox/Bracket.mesh';
+  const moved = await seeded.gh.commitFiles(seeded.repo, {
+    branch: 'main',
+    message: 'push a mesh',
+    baseSha: tip,
+    files: [
+      fileWrite(BRACKET, 'return 9;\n'),
+      fileWrite(meshPath, 'mesh'),
+    ],
+  });
+  const stale = await cached.listTree(seeded.repo, 'main');
+  assert.equal(stale.some((row) => row.path === meshPath), false);
+  assert.equal(counts.listTree, 1);
+
+  const live = await cached.getBranch(seeded.repo, 'main');
+  assert.equal(live.sha, moved.sha);
+  assert.notEqual(live.sha, tip);
+  const opened = await openVaultAssembly(cached, seeded.repo, 'Gearbox', {
+    branch: 'main',
+    headSha: live.sha,
+  });
+  assert.ok(Object.values(opened.scripts).some((text) => String(text).includes('return 9')));
+  assert.ok(opened.assets[meshPath] instanceof Uint8Array);
+  assert.equal(counts.listTree, 2);
+  assert.equal(counts.surfcad, 2);
+});
