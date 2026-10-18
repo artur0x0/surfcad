@@ -31,6 +31,8 @@ export const setScriptCommand = Object.freeze({
     return null;
   },
   async run(ctx, args) {
+    const badId = rejectPartId(args?.part_id);
+    if (badId) return { error: badId };
     const listed = typeof ctx.readParts === 'function' ? ctx.readParts() : null;
     const activeId = listed?.activeId ?? null;
     if (!activeId) {

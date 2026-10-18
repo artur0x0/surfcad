@@ -17,6 +17,8 @@ import {
 import { setScriptCommand } from './setScript.js';
 import { partGetTransformCommand, partSetTransformCommand } from './partTransform.js';
 import { setActivePartCommand } from './setActivePart.js';
+import { selectPartsCommand } from './selectParts.js';
+import { findPartById } from '../state/identity.js';
 
 const PART = '2026-10-18-02-50-00-0001-bb02';
 const ASM = '2026-10-18-02-50-00-0001-aa01';
@@ -45,6 +47,8 @@ test('id-only payloads: paths are unknown_part / unknown_assembly', () => {
 
   assert.equal(renamePartCommand.checkArgs({ part_id: PATH, name: 'Mount' })?.code, 'unknown_part');
   assert.equal(renameAssemblyCommand.checkArgs({ assembly_id: ASM_PATH, name: 'Box' })?.code, 'unknown_assembly');
+  assert.equal(selectPartsCommand.checkArgs({ part_id: PATH })?.code, 'unknown_part');
+  assert.equal(selectPartsCommand.checkArgs({ part_ids: [PART, PATH] })?.code, 'unknown_part');
 });
 
 test('delete_part scope repo and delete_assembly require confirm:true', async () => {
@@ -131,6 +135,45 @@ test('open / list / rename / create_assembly pass ids and never invent a path', 
   assert.deepEqual(seen[0], ['open', { assemblyId: ASM }]);
   assert.deepEqual(seen[1], ['rename', { assemblyId: ASM, name: 'Mount' }]);
   assert.deepEqual(seen[2], ['create', { name: 'Gearbox' }]);
+});
+
+test('path-shaped part_id is unknown_part even when a row.path matches', async () => {
+  const doc = {
+    parts: [{ id: PART, name: 'Bracket', path: PATH, visible: true }],
+    activeId: PART,
+  };
+  assert.equal(findPartById(doc, PATH), null);
+  assert.equal(findPartById(doc, PART)?.name, 'Bracket');
+  assert.equal(setScriptCommand.checkArgs({ part_id: PATH, source: 'return 1;\n' })?.code, 'unknown_part');
+  assert.equal(setActivePartCommand.checkArgs({ part_id: PATH })?.code, 'unknown_part');
+  assert.equal(renamePartCommand.checkArgs({ part_id: PATH, name: 'Mount' })?.code, 'unknown_part');
+  assert.equal(selectPartsCommand.checkArgs({ part_id: PATH })?.code, 'unknown_part');
+
+  let mutated = false;
+  let activated = null;
+  const wrote = await setScriptCommand.run({
+    readParts: () => ({
+      activeId: PART,
+      parts: [{ id: PART, name: 'Bracket', path: PATH, visible: true }],
+    }),
+    mutate: async () => {
+      mutated = true;
+      return { ok: true };
+    },
+  }, { part_id: PATH, source: 'return 1;\n' });
+  assert.equal(wrote.error?.code, 'unknown_part');
+  assert.equal(mutated, false);
+
+  const activatedOut = setActivePartCommand.run({
+    setActivePart(partId) {
+      const part = findPartById(doc, partId);
+      if (!part) return { error: { code: 'unknown_part', message: `Unknown part id: ${partId}` } };
+      activated = part.id;
+      return { ok: true };
+    },
+  }, { part_id: PATH });
+  assert.equal(activatedOut.error?.code, 'unknown_part');
+  assert.equal(activated, null);
 });
 
 test('set_script refuses a part_mismatch instead of writing the active part', async () => {

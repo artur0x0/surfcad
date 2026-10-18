@@ -275,7 +275,6 @@ import {
   planOpenVaultPart,
   planCopyToAssembly,
   allocateVaultPartPath,
-  findAssemblyPart,
   partRepoPath,
   stampMissingSurfIds,
   rekeyWorkingCopyToTip,
@@ -3744,8 +3743,18 @@ const App = () => {
       if (collapsePairs.length) rekeyRuntime(collapsePairs);
       rememberScripts(collapsed.scripts);
       const assemblyId = isV2SurfId(collapsed.doc.id) ? collapsed.doc.id : mintSurfId();
+      // v2 WC is id-only: do not keep a leftover vault path on the row.
+      const v2Parts = (collapsed.doc.parts || []).map((part) => {
+        if (!part || typeof part !== 'object' || !Object.prototype.hasOwnProperty.call(part, 'path')) {
+          return part;
+        }
+        const next = { ...part };
+        delete next.path;
+        return next;
+      });
       rememberAssembly(serializeAssembly({
         ...collapsed.doc,
+        parts: v2Parts,
         id: assemblyId,
         source: 'git',
         vaultLayout: 'v2',
@@ -8618,9 +8627,8 @@ const App = () => {
     if (!doc) return { status: 'error', code: 'no_assembly', error: 'No assembly loaded' };
     let nextName = sanitizePartName(name);
     if (!nextName) return { status: 'error', code: 'bad_args', error: 'Enter a part name' };
-    const part = findAssemblyPart(doc, id);
+    const part = (doc.parts || []).find((row) => row && row.id === id);
     if (!part) return { status: 'error', code: 'unknown_part', error: `Unknown part id: ${id}` };
-    id = part.id;
     if (part.name === nextName) {
       return { status: 'unchanged', from: id, to: id, name: nextName };
     }

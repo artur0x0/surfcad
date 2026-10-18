@@ -1,3 +1,5 @@
+import { rejectPartId } from '../state/identity.js';
+
 export const selectPartsCommand = Object.freeze({
   name: 'select_parts',
   schema: {
@@ -15,6 +17,10 @@ export const selectPartsCommand = Object.freeze({
       ? args.part_ids
       : (typeof args?.part_id === 'string' && args.part_id ? [args.part_id] : []);
     if (!ids.length) return { code: 'bad_args', message: 'select_parts needs part_id or part_ids' };
+    for (const id of ids) {
+      const bad = rejectPartId(id);
+      if (bad) return bad;
+    }
     return null;
   },
   run(ctx, args) {

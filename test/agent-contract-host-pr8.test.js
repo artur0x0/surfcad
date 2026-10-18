@@ -74,6 +74,7 @@ test('git_move_to_repo is v2 first Save and does not re-key rows to vault paths'
   assert.match(move, /vaultLayout: 'v2'/);
   assert.match(move, /ensureLocalSurfIds\(/);
   assert.match(move, /collapseWorkingCopyIds\(/);
+  assert.match(move, /delete next\.path/);
   assert.match(move, /status: 'moved'/);
   assert.equal(/moveToGit\(/.test(move), false, move);
   assert.equal(/idMap/.test(move), false, move);
@@ -144,6 +145,14 @@ test('adoptV2SaveResult recaptures snapshot after a committed or branched v2 sav
   assert.equal(/captureAgentScriptSnapshot\(\)/.test(adopt), false);
 });
 
+test('v2WorkingCopy keys scripts by part id, not vault path', () => {
+  const wc = sliceFn('const v2WorkingCopy', 'const adoptV2SaveResult');
+  assert.match(wc, /scripts\[doc\.activeId\] = live/);
+  assert.match(wc, /loadPartAssets\(\(doc\.parts \|\| \[\]\)\.map\(\(part\) => part\.id\)\)/);
+  assert.equal(/partRepoPath/.test(wc), false, wc);
+  assert.equal(/part\.path/.test(wc), false, wc);
+});
+
 test('readDirty compares WC to AssemblyCommit; parts has assemblyId and no path', () => {
   const dirty = sliceFn('readDirty()', 'readToasts()');
   assert.match(dirty, /compareWorkingCopyToCommit/);
@@ -162,4 +171,11 @@ test('setActivePart / transforms resolve by findPartById', () => {
   assert.match(get, /findPartById\(doc, partId\)/);
   const set = sliceFn('agentSetPartTransform({ partId, position, rotation })', 'async agentCreatePart');
   assert.match(set, /findPartById\(doc, partId\)/);
+});
+
+test('handleRenamePart looks up by row.id only, not vault path', () => {
+  const rename = sliceFn('const handleRenamePart = async (id, name) => {', 'const handleRenameFile');
+  assert.match(rename, /row && row\.id === id/);
+  assert.equal(/findAssemblyPart/.test(rename), false, rename);
+  assert.equal(/part\.path/.test(rename), false, rename);
 });

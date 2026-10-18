@@ -815,6 +815,18 @@ test('shared part with no known hash refuses the write rather than overwrite', (
   assert.deepEqual(pathsOf(allowed.files), [assemblyIdPath(A)]);
 });
 
+test('planSave does not read scripts keyed by vault path', () => {
+  const assembly = doc(A, 'Gear Box', [row(P, 'Seed Cube')]);
+  const working = wc(assembly, { [partIdPath(P)]: BODY });
+  const result = plan(tip(null), null, working, REMOTE, compare([
+    assemblyIdPath(A),
+    partIdPath(P),
+  ]));
+  assert.equal(result.conflict, undefined);
+  assert.equal(writeAt(result.files, partIdPath(P)), null);
+  assert.equal(pathsOf(result.files).includes(partIdPath(P)), false);
+});
+
 test('assemblyCommit json.id mismatch throws when raw assemblyId is not v2', () => {
   const ofB = {
     schemaVersion: 1,
