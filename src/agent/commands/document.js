@@ -16,6 +16,35 @@ function hostCall(ctx, name, args) {
   return { result: out?.result ?? out };
 }
 
+/**
+ * Fold a host run into the same result `run` returns: ok, errors, failures.
+ * The part id stays on the result when the script fails.
+ */
+function attachRun(ctx, hosted) {
+  if (hosted?.error) return hosted;
+  const result = hosted?.result;
+  if (!result || typeof result !== 'object' || !result.run) return hosted;
+  const script = typeof result.script === 'string' ? result.script : '';
+  const recorded = typeof ctx.remember === 'function'
+    ? ctx.remember(result.run, script)
+    : {
+      ok: result.run.ok === true,
+      errors: Array.isArray(result.run.errors) ? result.run.errors : [],
+      failures: [],
+      status: null,
+    };
+  return {
+    result: {
+      partId: result.partId ?? null,
+      partCount: result.partCount ?? 0,
+      ok: recorded.ok,
+      errors: recorded.errors,
+      failures: recorded.failures,
+      ...(recorded.status ? { status: recorded.status } : {}),
+    },
+  };
+}
+
 export const createAssemblyCommand = Object.freeze({
   name: 'create_assembly',
   uiEntry: 'data-part-add-kind-assembly',
@@ -51,7 +80,7 @@ export const createPartCommand = Object.freeze({
   }),
   example: { name: 'Bracket' },
   async run(ctx, args) {
-    return hostCall(ctx, 'agentCreatePart', args || {});
+    return attachRun(ctx, await hostCall(ctx, 'agentCreatePart', args || {}));
   },
 });
 
@@ -155,6 +184,6 @@ export const insertPartCommand = Object.freeze({
     if (args?.source_assembly) {
       return hostCall(ctx, 'agentInsertAssemblyParts', { sourceName: args.source_assembly });
     }
-    return hostCall(ctx, 'agentCreatePart', args || {});
+    return attachRun(ctx, await hostCall(ctx, 'agentCreatePart', args || {}));
   },
 });

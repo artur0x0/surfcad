@@ -154,6 +154,8 @@ import { buildFeatureTree } from './agent/state/featureTree';
 import { resolveRollbackTarget, resolveStripTarget } from './agent/featureStripAgent';
 import { buildPartsState } from './agent/state/parts';
 import { decidePartVisible } from './agent/state/partVisible';
+import { createdPartFromDocs, scriptRequestsRun } from './agent/state/createPart.js';
+import { assemblyOpenFailure, resolveAssemblyOpenName } from './agent/state/openAssemblyName.js';
 import { buildToasts } from './agent/state/toasts';
 import {
   historyStripTarget,
@@ -8532,28 +8534,74 @@ const App = () => {
       // Agent parts stay path-less in a git assembly: git_save (behind the
       // write consent) paths and commits them with the assembly.
       await handleAddPart(name, { script, deferVault: true, fromAgent: true, position });
+      const runScript = scriptRequestsRun(script);
+      // handleAddPart schedules a deferred auto-run. A script must finish
+      // before this call returns, so drop that timer and run it here.
+      if (runScript) refreshGenRef.current += 1;
       await ensureLocalSurfIds();
       const after = assemblyRef.current;
+      const created = createdPartFromDocs(before, after);
+      if (!created) {
+        return { error: { code: 'internal', message: 'Could not create part' } };
+      }
+      let doc = after;
+      if (doc.activeId !== created.id) {
+        doc = rememberAssembly({ ...after, activeId: created.id });
+      }
+      if (cadPartIdRef.current !== created.id) rememberCadPart(created.id);
       recordAgentAssemblyStep(before);
-      return {
-        result: {
-          partId: after?.activeId ?? null,
-          partCount: after?.parts?.length ?? 0,
-        },
-      };
+      const partId = created.id;
+      const partCount = doc?.parts?.length ?? 0;
+      if (!runScript) return { result: { partId, partCount } };
+      const stored = partScriptsRef.current?.[partId];
+      const text = typeof stored === 'string' ? stored : '';
+      if (text && codeEditorRef.current?.getContent?.() !== text) {
+        codeEditorRef.current?.setTextOnly?.(text);
+      }
+      let outcome;
+      try {
+        outcome = await agentRunOutcome(text);
+      } catch (err) {
+        outcome = {
+          ok: false,
+          errors: [String(err?.message || err || 'Script failed')],
+          volume: null,
+          bbox: null,
+          partName: created.name || '',
+          runFailure: null,
+        };
+      }
+      return { result: { partId, partCount, run: outcome, script: text } };
     },
     async agentOpenAssembly({ name }) {
       const before = assemblyRef.current;
       if (!before || before.source !== 'git') {
         return { error: { code: 'git_only', message: 'open_assembly needs a git-backed assembly' } };
       }
-      const opened = await handleOpenVaultAssembly(name);
+      const requested = typeof name === 'string' ? name : '';
+      let names = null;
+      try {
+        const listed = await handleListVaultAssemblies();
+        names = Array.isArray(listed) ? listed : null;
+      } catch (err) {
+        if (err?.message === NO_REPO_YET_COPY || err?.code === 'git_blocked') {
+          return { error: { code: 'git_blocked', message: NO_REPO_YET_COPY } };
+        }
+        names = null;
+      }
+      let openName = requested;
+      if (names) {
+        const decision = resolveAssemblyOpenName(requested, names);
+        if (decision?.error) return { error: decision.error };
+        openName = decision.name;
+      }
+      const opened = await handleOpenVaultAssembly(openName);
       if (opened?.status === 'error') {
-        return { error: { code: opened.code || 'git_blocked', message: opened.error || 'Could not open assembly' } };
+        return { error: assemblyOpenFailure(opened, requested, names) };
       }
       const after = assemblyRef.current;
       if (after && after !== before) recordAgentAssemblyStep(before);
-      return { result: { name, activeId: after?.activeId ?? null } };
+      return { result: { name: after?.name || openName, activeId: after?.activeId ?? null } };
     },
     async agentOpenPart({ path }) {
       const before = assemblyRef.current;
