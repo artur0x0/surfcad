@@ -53,26 +53,36 @@ In Cursor, add the same block under **Settings → MCP** or your project `.curso
 
 ## Tools
 
-Every command in `data/commands.json` is one MCP tool with the same name and argument schema, plus `pair`. Call `list_commands` for the full catalog. The parts and git tools:
+Every command in `data/commands.json` is one MCP tool with the same name and argument schema, plus `pair` and five in-process prompt tools. `GET /tools` on the loopback relay, `list_commands`, and that file list the same bridge tools. Prefer `insert_*` feature tools. `set_script` is the freehand fallback and requires `part_id`.
+
+Parts and assemblies are opaque surf ids. A vault path or display name is `unknown_part` / `unknown_assembly`. Nothing reaches git without an explicit `git_save` (or another `git_*` write below).
 
 | Tool | Args | What it does |
 | --- | --- | --- |
-| `parts` | `{}` | Part rows (`id`, `name`, `visible`) and the active part. |
-| `create_assembly` | `{}` | Seed a new assembly. |
-| `create_part` | `{ name?, script?, position? }` | Add a part at the assembly origin (optional `[x,y,z]` mm). In a git assembly it has no vault path until `git_save`. |
-| `rename_part` | `{ part_id, name }` | Rename a part. A vault part moves its committed `.js` to `<name>.js` in the same folder (`-2`, `-3` on collision) and updates that part's path/name in `.surf.json` in one commit. Pending script, placement, and other edits stay for the next Save. A part with no repo path renames locally and does not commit. Unknown ids return `unknown_part`. |
-| `part_get_transform` | `{ part }` | Read placement: `position` mm and intrinsic XYZ Euler degrees (`eulerOrder: "XYZ"`). |
-| `part_set_transform` | `{ part, position?, rotation? }` | Set placement (undoable assembly step). |
-| `set_active_part` | `{ part_id }` | Switch the editor and mesh to a part. `status` then reports that part. |
-| `git_save` | `{ message }` | Same as the app's Save: paths every path-less part, then commits those scripts, dirty parts, and the `.surf.json` in one commit. |
-| `git_add_to_repo` | `{ part_id }` | Add one part to the vault; other path-less parts are pathed and committed with it. |
-| `git_move_to_repo` | `{ vault_name? }` | Move a local assembly into the vault. |
+| `parts` | `{}` | Open assembly: `assemblyId`, `activeId`, and part rows (`id`, `name`, `visible`). No path field. |
+| `list_assemblies` | `{}` | Vault assemblies as `[{ id, name }]`. `id` is the key; `name` is a label. |
+| `create_assembly` | `{ name? }` | Seed a local assembly. Optional `name` is a label. No git write. |
+| `create_part` | `{ name?, script?, position? }` | Add a part at the origin (optional `[x,y,z]` mm) and return its new id. Working copy only. |
+| `set_script` | `{ part_id, source }` | Freehand fallback. `part_id` must be the active part. Working copy only. |
+| `rename_part` | `{ part_id, name }` | Working-copy display name. `{ partId, name, moved: false }`. No git write. |
+| `rename_assembly` | `{ assembly_id, name }` | Working-copy assembly label. Names may collide. No git write. |
+| `part_get_transform` | `{ part_id }` | Read placement: `position` mm and intrinsic XYZ Euler degrees. |
+| `part_set_transform` | `{ part_id, position?, rotation? }` | Set placement (undoable). Working copy only. |
+| `set_active_part` | `{ part_id }` | Switch the editor and mesh. `status` then reports that part. |
+| `open_assembly` | `{ assembly_id }` | Open a vault assembly by id. A name or path is `unknown_assembly`. |
+| `insert_part` | `{ part_id? , assembly_id?, copy? }` | Insert by reference (same ids). `copy: true` mints a new id. No git write. |
+| `delete_part` | `{ part_id, scope, confirm? }` | `scope: "assembly"` drops the row. `scope: "repo"` also plans a file delete and requires `confirm: true`. Neither commits. |
+| `delete_assembly` | `{ assembly_id, confirm: true, delete_parts? }` | Delete the open assembly. `confirm: true` required. Save commits later. |
+| `git_save` | `{ message }` | The vault write. `consent_pending` while Allow is up. `pending_save` if offline. `upgrade_required` on a legacy vault. `conflict` / `repo-moved` when a remote edit overlaps. |
+| `git_add_to_repo` | `{ message }` | Alias of `git_save`. Prefer `git_save`. |
+| `git_move_to_repo` | `{ vault_name? }` | First Save of a local assembly. Consent on a real repo. |
+| `git_upgrade_vault` | `{ confirm: true }` | One-time v1 layout upgrade. `confirm: true` required. |
 | `git_list_branches` | `{}` | Branches and the current one (read-only). |
-| `git_branch_create` | `{ name }` | Create and switch to a branch. |
+| `git_branch_create` | `{ name }` | Create a branch. Switches when the working copy is clean. |
 | `git_branch_switch` | `{ branch, confirm? }` | Switch branch; `confirm: true` when the working copy is dirty. |
 | `git_branch_delete` | `{ branch, confirm: true }` | Delete a branch. |
-| `git_behind_resolve` | `{ action, path?, kind? }` | Get latest: `keep`, or `reload` / `branch` with `confirm: true`. |
-| `git_force_overwrite` | `{ confirm: true }` | Overwrite main from the conflict prompt. |
+| `git_behind_resolve` | `{ action, confirm: true }` | `reload` is Get latest (no git write). `branch` saves mine to a new branch. No path argument. |
+| `git_force_overwrite` | `{ confirm: true }` | Overwrite the overlapping remote files. |
 
 ## In-viewer prompts
 

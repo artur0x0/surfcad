@@ -205,6 +205,9 @@ try {
     null,
     { timeout: 20000 },
   ).catch(() => {});
+  // The loading screen is itself a #root child. Wait until it leaves
+  // before counting canvas and toolbar, or a slow manifold init fails the check.
+  await page.waitForSelector('[data-app-loading]', { state: 'detached', timeout: 30000 }).catch(() => {});
 
   const rootChildren = await page.evaluate(
     () => document.querySelector('#root')?.children.length ?? 0,

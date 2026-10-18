@@ -67,6 +67,21 @@ test('send returns an id and subscriptions unsubscribe', () => {
   assert.deepEqual(acks, [{ id, delivery: 'queued' }]);
 });
 
+test('dispose unsubscribes so a new transport does not stack listeners', () => {
+  const bridge = fakeBridge();
+  const first = createAgentPromptTransport(bridge);
+  const seen = [];
+  first.onReply((event) => seen.push(`a:${event.text}`));
+  first.dispose();
+  const second = createAgentPromptTransport(bridge);
+  second.onReply((event) => seen.push(`b:${event.text}`));
+  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id: '1', text: 'hi', final: true });
+  assert.deepEqual(seen, ['b:hi']);
+  second.dispose();
+  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id: '1', text: 'later', final: true });
+  assert.deepEqual(seen, ['b:hi']);
+});
+
 test('local failures ack and do not touch the socket', () => {
   assert.equal(AGENT_PROMPT_TEXT_MAX, 8000);
   assert.equal(AGENT_PROMPT_SCREENSHOT_MAX_BYTES, 2 * 1024 * 1024);

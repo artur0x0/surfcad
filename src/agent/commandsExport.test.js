@@ -25,8 +25,8 @@ test('commands.json matches export and every command has a strict schema', () =>
   assert.equal(document.count, catalogNames.length);
   assert.deepEqual(document.commands.map((row) => row.name), catalogNames);
   assert.equal(v1Registry.names.includes('agent_prompt'), true);
-  assert.equal(catalogNames.includes('agent_prompt'), false);
-  assert.equal(document.commands.some((row) => row.name === 'agent_prompt'), false);
+  assert.equal(catalogNames.includes('agent_prompt'), true);
+  assert.equal(document.commands.some((row) => row.name === 'agent_prompt'), true);
 
   for (const row of document.commands) {
     assert.equal(typeof row.description, 'string');

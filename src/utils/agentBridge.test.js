@@ -687,6 +687,82 @@ test('a refused command keeps structured error details on the envelope', async (
   assert.equal(state.result.viewport, 'featureSlot');
 });
 
+test('setScript requires part_id and forwards it', async () => {
+  const env = world();
+  const api = createSurfcadBridge(env.host);
+  await assert.rejects(api.setScript(BOX), (err) => err.code === 'bad_args');
+  assert.equal(env.buffer(), '');
+  const wrote = await api.setScript(BOX, 'part-1');
+  assert.equal(wrote.ok, true);
+  assert.equal(env.buffer(), BOX);
+});
+
+test('assembly tools call the v2 host handlers, not the old insert', async () => {
+  const seen = [];
+  const env = world();
+  Object.assign(env.host, {
+    agentInsertAssemblyParts() {
+      seen.push('old-insert');
+      return { result: { partId: 'stale' } };
+    },
+    agentInsertPart(args) {
+      seen.push(['insert', args]);
+      return { result: { partId: args.partId, added: [args.partId], copy: args.copy === true } };
+    },
+    agentListAssemblies() {
+      seen.push('list');
+      return { result: { assemblies: [{ id: 'asm-1', name: 'Gearbox' }] } };
+    },
+    agentDeletePart(args) {
+      seen.push(['delete-part', args]);
+      return { result: { partId: args.partId, scope: args.scope, status: 'removed' } };
+    },
+    agentDeleteAssembly(args) {
+      seen.push(['delete-assembly', args]);
+      return { result: { assemblyId: args.assemblyId, status: 'deleted' } };
+    },
+    agentRenameAssembly(args) {
+      seen.push(['rename-assembly', args]);
+      return { result: { assemblyId: args.assemblyId, name: args.name } };
+    },
+  });
+  const api = createSurfcadBridge(env.host);
+  const partId = '2026-10-07-20-56-31-0423-a3f9';
+  const assemblyId = '2026-10-18-02-50-00-0001-aa01';
+
+  const inserted = await api.call('insert_part', { part_id: partId });
+  assert.equal(inserted.ok, true);
+  assert.equal(inserted.result.partId, partId);
+
+  const listed = await api.call('list_assemblies', {});
+  assert.equal(listed.ok, true);
+  assert.deepEqual(listed.result.assemblies, [{ id: 'asm-1', name: 'Gearbox' }]);
+
+  const dropped = await api.call('delete_part', { part_id: partId, scope: 'assembly' });
+  assert.equal(dropped.ok, true);
+  assert.equal(dropped.result.scope, 'assembly');
+
+  const repo = await api.call('delete_part', { part_id: partId, scope: 'repo' });
+  assert.equal(repo.ok, false);
+  assert.equal(repo.error.code, 'confirm_required');
+
+  const deleted = await api.call('delete_assembly', { assembly_id: assemblyId, confirm: true });
+  assert.equal(deleted.ok, true);
+  assert.equal(deleted.result.status, 'deleted');
+
+  const renamed = await api.call('rename_assembly', { assembly_id: assemblyId, name: 'Frame' });
+  assert.equal(renamed.ok, true);
+  assert.equal(renamed.result.name, 'Frame');
+
+  assert.deepEqual(seen, [
+    ['insert', { partId, assemblyId: null, copy: false }],
+    'list',
+    ['delete-part', { partId, scope: 'assembly', confirm: false }],
+    ['delete-assembly', { assemblyId, confirm: true, deleteParts: false }],
+    ['rename-assembly', { assemblyId, name: 'Frame' }],
+  ]);
+});
+
 function createViewportPickHostStub({ busy }) {
   const refuse = () => ({ error: { code: 'internal', message: 'unused' } });
   return {

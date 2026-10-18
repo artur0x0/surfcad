@@ -74,6 +74,21 @@ function rawGet(port, path, headers = {}) {
   });
 }
 
+test('GET /tools returns the bridge catalog as JSON', async () => {
+  const relay = await startAgentBridgeRelay({ port: 0 });
+  const port = relay.server.address().port;
+  const res = await fetch(`http://127.0.0.1:${port}/tools`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /^application\/json/);
+  const body = await res.json();
+  assert.equal(body.count, body.tools.length);
+  assert.equal(body.tools.some((tool) => tool.name === 'set_script'), true);
+  const setScript = body.tools.find((tool) => tool.name === 'set_script');
+  assert.deepEqual(setScript.inputSchema.required, ['part_id', 'source']);
+  assert.equal(body.tools.some((tool) => tool.name === 'pair'), false);
+  await closeRelay(relay);
+});
+
 test('GET /bridge serves the labelled popup page with locked-down headers', async () => {
   const relay = await startAgentBridgeRelay({ port: 0 });
   const port = relay.server.address().port;

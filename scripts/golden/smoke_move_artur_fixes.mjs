@@ -156,7 +156,11 @@ attachConsentPresetToBrowser(browser);
           dy: 0,
           dz: 3,
         });
+        const parts = await agentCall(page, 'parts', {});
+        const partId = parts.result?.activeId;
+        check(`${vp.name} parts id`, typeof partId === 'string' && partId.length > 0 && !String(partId).includes('/'), JSON.stringify(parts.result));
         await agentCall(page, 'set_script', {
+          part_id: partId,
           source: `// --- cube begin ---\nlet part = Manifold.cube([20, 20, 10], true);\n// --- cube end ---\n${moveWrite.buffer}\nreturn part;\n`,
         });
         const ran = await agentCall(page, 'run', {});

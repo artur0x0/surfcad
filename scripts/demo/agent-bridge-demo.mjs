@@ -175,16 +175,19 @@ attachConsentPresetToBrowser(browser);
     commands: JSON.parse(JSON.stringify(window.surfcad.commands)),
   }));
   check('version is 1', surface.version === 1, String(surface.version));
-  check('commands are the v1 tool list', JSON.stringify(surface.commands) === JSON.stringify([
-    'get_script', 'set_script', 'run', 'status', 'errors', 'screenshot', 'undo', 'list_commands',
-  ]), JSON.stringify(surface.commands));
+  check('commands start with the v1 core', JSON.stringify(surface.commands.slice(0, 10)) === JSON.stringify([
+    'get_script', 'set_script', 'run', 'status', 'errors', 'screenshot', 'undo', 'redo', 'history', 'list_commands',
+  ]) && surface.commands.includes('agent_prompt') && surface.commands.at(-1) === 'export_download', JSON.stringify(surface.commands));
   await pause(page, 600);
 
   const beforePath = join(OUT_DIR, 'agent-bridge-before.png');
   await page.screenshot({ path: beforePath });
   console.log(`  before ${beforePath}`);
 
-  const wroteBox = await agentCall(page, 'set_script', { source: BOX });
+  const parts = await agentCall(page, 'parts', {});
+  const partId = parts.result?.activeId;
+  check('parts returns an opaque part id', typeof partId === 'string' && partId.length > 0 && !partId.includes('/'), JSON.stringify(parts.result));
+  const wroteBox = await agentCall(page, 'set_script', { part_id: partId, source: BOX });
   const ranBox = await agentCall(page, 'run', {});
   const boxScript = await agentCall(page, 'get_script', {});
   const boxStatus = await agentCall(page, 'status', {});
@@ -200,7 +203,7 @@ attachConsentPresetToBrowser(browser);
   check('run after set_script did not change the feature count', wroteBox.result?.status?.featureCount === ranBox.result?.status?.featureCount);
   await pause(page, 700);
 
-  const wroteHole = await agentCall(page, 'set_script', { source: HOLE });
+  const wroteHole = await agentCall(page, 'set_script', { part_id: partId, source: HOLE });
   const ranHole = await agentCall(page, 'run', {});
   const holeScript = await agentCall(page, 'get_script', {});
   const holeStatus = await agentCall(page, 'status', {});
@@ -233,7 +236,7 @@ attachConsentPresetToBrowser(browser);
   check('undo feature count is one', undoneStatus.result?.featureCount === 1, String(undoneStatus.result?.featureCount));
   await pause(page, 800);
 
-  const wroteBad = await agentCall(page, 'set_script', { source: BAD });
+  const wroteBad = await agentCall(page, 'set_script', { part_id: partId, source: BAD });
   const ranBad = await agentCall(page, 'run', {});
   const badErrors = await agentCall(page, 'errors', {});
   const badStatus = await agentCall(page, 'status', {});

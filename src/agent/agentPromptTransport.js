@@ -91,7 +91,7 @@ export function createAgentPromptTransport(bridge) {
   const workingListeners = new Set();
   const ackListeners = new Set();
 
-  bridge.subscribe((msg) => {
+  const unsubscribe = bridge.subscribe((msg) => {
     if (!msg || typeof msg !== 'object') return;
     if (msg.type === PAIR_MSG.AGENT_REPLY && msg.v === 1 && typeof msg.id === 'string' && typeof msg.text === 'string') {
       emitTo(replyListeners, { id: msg.id, text: msg.text, final: msg.final === true });
@@ -107,6 +107,13 @@ export function createAgentPromptTransport(bridge) {
       emitTo(ackListeners, event);
     }
   });
+
+  function dispose() {
+    unsubscribe();
+    replyListeners.clear();
+    workingListeners.clear();
+    ackListeners.clear();
+  }
 
   /**
    * @param {(event: { id: string, text: string, final: boolean }) => void} cb
@@ -165,5 +172,5 @@ export function createAgentPromptTransport(bridge) {
     return id;
   }
 
-  return { send, onReply, onWorking, onAck };
+  return { send, onReply, onWorking, onAck, dispose };
 }
