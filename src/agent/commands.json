@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 183,
+  "count": 184,
   "$defs": {
     "status": {
       "type": "object",
@@ -13971,6 +13971,68 @@
       "uiEntry": "data-contour-entity-card",
       "example": {
         "id": "l0"
+      }
+    },
+    {
+      "name": "agent_prompt",
+      "description": "Send a prompt from the floating in-viewer agent field, or stop / dismiss / attach a viewer screenshot. Same controls as the paired-agent prompt card.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 8000,
+            "description": "Prompt text to send to the paired agent"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "send",
+              "stop",
+              "dismiss",
+              "screenshot"
+            ],
+            "description": "send is the default when text is present"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "attached": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "errors": [
+        "bad_args",
+        "unavailable",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": [
+        "data-agent-prompt-send",
+        "data-agent-prompt-stop",
+        "data-agent-prompt-dismiss",
+        "data-agent-prompt-screenshot"
+      ],
+      "example": {
+        "text": "Add a 2 mm fillet on the cut-out corners",
+        "action": "send"
       }
     },
     {

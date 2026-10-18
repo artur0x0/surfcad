@@ -138,6 +138,7 @@ import {
   wrapUnmarkedPartScripts,
 } from './utils/wrapRawScript';
 import { fillAgentHost } from './agent/host';
+import { runAgentPrompt } from './agent/agentPromptHost.js';
 import {
   agentGitConsentInteractive,
   agentGitRealOptIn,
@@ -450,7 +451,7 @@ function failureSkipStamp(rows) {
 const App = () => {
   const [currentScript, setCurrentScript] = useState('');
   const [isMobile, setIsMobile] = useState(false);
-  const [selectedFace, setSelectedFace] = useState(null);
+  const [, setSelectedFace] = useState(null);
   const [currentFilename, setCurrentFilename] = useState(null);
   /** Assembly list. Scripts live beside it, never inside the document. */
   const [assemblyDoc, setAssemblyDoc] = useState(null);
@@ -7686,12 +7687,6 @@ const App = () => {
     console.log('[App] handleCodeChange added commit:', { message, codeLength: code?.length, partId: id });
   };
 
-  const handleCodeGenerated = (code, promptMessage) => {
-    // Only add to history if a prompt message if not empty
-    const addToHistory = promptMessage && promptMessage.length > 0;
-    codeEditorRef.current?.loadContent(code, promptMessage || 'Code generated', addToHistory);
-  };
-
   const handleUndo = () => {
     // Undo the part the strip and title show (the picked part).
     if (!focusWritePart(null)) return;
@@ -8076,11 +8071,6 @@ const App = () => {
 
   const handleFaceSelected = (faceData) => {
     setSelectedFace(faceData);
-  };
-
-  const handleClearFaceSelection = () => {
-    viewportRef.current?.clearFaceSelection();
-    setSelectedFace(null);
   };
 
   // --- Draggable editor/viewport split ---
@@ -9115,6 +9105,7 @@ const App = () => {
     return agentCadRunOutcome(epochBefore, ran);
   };
   fillAgentHost(agentHostRef, {
+    agentPrompt: runAgentPrompt,
     cadSelectAll() {
       handleSelectAll();
       return { ok: true };
@@ -10445,6 +10436,11 @@ const App = () => {
     />
   ) : null;
 
+  const captureViewerShot = () => viewportRef.current?.capturePng?.({ format: 'png' }) ?? null;
+  const agentPromptNode = appMode !== 'game' ? (
+    <PromptInput isMobile={isMobile} captureViewer={captureViewerShot} />
+  ) : null;
+
   let shell;
   if (isMobile) {
     // Keep h-dvh while the keyboard is closed so Monaco can take a real
@@ -10597,18 +10593,6 @@ const App = () => {
                 />
     );
 
-    const aiRow = appMode !== 'game' && (
-              <div className="hidden" data-ai-prompt-row="hidden">
-                <PromptInput
-                  onCodeGenerated={handleCodeGenerated}
-                  currentCode={codeEditorRef.current?.getContent() || ''}
-                  selectedFace={selectedFace}
-                  onClearFaceSelection={handleClearFaceSelection}
-                  isMobile={isMobile}
-                />
-              </div>
-    );
-
     shell = (
       <CartChromeProvider value={cartChrome}>
         <AgentVisibleLayer agentHostRef={agentHostRef} />
@@ -10631,6 +10615,7 @@ const App = () => {
                 aria-hidden={!isCadStage}
               >
                 {viewportEl}
+                {agentPromptNode}
                 {/* Slice Mobile C.2: CAD feature strip HORIZONTAL under top ribbon. */}
                 {isCadStage && (
                   <div
@@ -10716,7 +10701,6 @@ const App = () => {
                     </div>
                   )}
                 </div>
-                {aiRow}
               </div>
               <div
                 className={`absolute inset-0 flex min-h-0 flex-col ${
@@ -10754,7 +10738,6 @@ const App = () => {
                     {editorEl}
                   </div>
                 </div>
-                {aiRow}
               </div>
             </>
           )}
@@ -11084,6 +11067,7 @@ const App = () => {
             onFeatureEditPick={(f) => openFeatureSheetFor(f)}
             onFeatureEditDismiss={() => setFeatureSheet((cur) => (cur ? null : cur))}
           />
+          {agentPromptNode}
           {assemblyOpenSpinner}
           {appMode !== 'game' && (
             <ScriptEditorDrawer open={scriptEditorOpen}>
@@ -11116,18 +11100,6 @@ const App = () => {
                 profileVaultName={gitDefaultVaultName()}
               agentBridgeLive={agentBridgeLive}
               />
-              {/* AI prompt row is HIDDEN, not removed: it stays mounted (and keeps
-                  its state and handlers) while we design a tighter integration
-                  into the editor itself. Drop the `hidden` to bring it back. */}
-              <div className="flex-shrink-0 hidden" data-ai-prompt-row="hidden">
-                <PromptInput
-                  onCodeGenerated={handleCodeGenerated}
-                  currentCode={codeEditorRef.current?.getContent() || ''}
-                  selectedFace={selectedFace}
-                  onClearFaceSelection={handleClearFaceSelection}
-                  isMobile={false}
-                />
-              </div>
             </ScriptEditorDrawer>
           )}
         </div>

@@ -52,6 +52,7 @@ export default function AgentBridgePairing({
   enabled,
   embedded = false,
   onConnectionChange = null,
+  onPairingChange = null,
   /** When passed (even as null), menu chrome portals into this node. */
   uiTarget = undefined,
   /** Close the profile menu when Connect Agent opens the dialog. */
@@ -147,6 +148,10 @@ export default function AgentBridgePairing({
   useEffect(() => {
     onConnectionChange?.(link);
   }, [onConnectionChange, link]);
+
+  useEffect(() => {
+    onPairingChange?.({ paired: state === 'paired', link });
+  }, [onPairingChange, state, link]);
 
   useEffect(() => {
     if (state === 'pending') {

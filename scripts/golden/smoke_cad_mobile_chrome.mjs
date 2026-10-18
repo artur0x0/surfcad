@@ -43,12 +43,10 @@ console.log('cad mobile chrome harmonized to puzzle');
     'game still mounts a blank editor',
     /initialScript=\{appMode === 'game' \? '' : editorInitialScript\}/.test(app),
   );
-  // The AI row is hidden while a tighter editor integration is designed, but it
-  // must stay MOUNTED (state + handlers intact), not deleted.
-  check('AI prompt is still mounted on mobile CAD', /<PromptInput/.test(app));
+  check('floating agent prompt is mounted on the CAD viewer', /<PromptInput/.test(app));
   check(
-    'AI prompt is hidden in both shells',
-    (app.match(/data-ai-prompt-row="hidden"/g) || []).length === 2,
+    'floating agent prompt is not the hidden editor row',
+    !/data-ai-prompt-row/.test(app) && (app.match(/\{agentPromptNode\}/g) || []).length === 2,
   );
 }
 

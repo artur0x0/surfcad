@@ -51,9 +51,9 @@ one shell you must change the other.
 │ │ mid-strip: [Toolbar]   │ │ ║ │    (horizontal CAD bar)      │
 │ ├────────────────────────┤ │ ║ │  left: HelperInsertPalette   │
 │ │ Monaco (vs-dark, 12px) │ │ ║ │  right: CrossSection cluster │
-│ ├────────────────────────┤ │ ║ │  info chips bottom-left      │
-│ │ PromptInput (hidden)   │ │ ║ │  profile chip top-right      │
-│ └────────────────────────┘ │ ║ │                              │
+│ └────────────────────────┘ │ ║ │  info chips bottom-left      │
+│                            │ ║ │  profile chip top-right      │
+│                            │ ║ │  PromptInput (paired only)   │
 └────────────────────────────┴───┴──────────────────────────────┘
   Parts feed sits left of the CAD view. The script editor is a right drawer, closed
   by default. Desktop hides its profile chip.
@@ -72,9 +72,16 @@ one shell you must change the other.
 (`splitPct`, clamped 20-80%), up/down on mobile (`mobileEditorPxOverride`,
 clamped so neither pane collapses; an open keyboard still overrides it).
 
-**The AI prompt row is hidden, not deleted** — `PromptInput` stays mounted
-behind `hidden` + `data-ai-prompt-row="hidden"` in both shells while a tighter
-editor integration is designed. Remove the `hidden` class to bring it back.
+**Floating agent prompt** (`PromptInput`, `data-agent-prompt`) sits in the
+mode-chip slot at the bottom of the CAD viewer, between the rails — max 640px
+on desktop, rail-capped on a 390px phone. It shows only while an agent is
+paired (the same `shouldShowAgentBridgeDisconnect({ paired, link })` test as
+Disconnect) or when `?agentPromptDemo=1` pins a golden / screenshot state.
+It is not mounted in game mode. The camera toggle (`data-agent-prompt-screenshot`)
+captures the viewer canvas only and attaches a PNG to the next send. PR 1 talks
+to `createAgentPrompt()` in `src/agent/createAgentPrompt.js` (the stub); PR 2
+swaps that one import to the MCP transport. Do not add
+`src/agent/agentPromptTransport.js` here.
 
 **The CAD title reads "part in assembly".** Part name, the word in, then the
 assembly name (`data-viewer-title`, `data-title-in`, `data-viewer-title-text`).
@@ -342,7 +349,8 @@ Desktop specifics:
   is unset and the row id is not a repo path. Text inputs on Parts/git
   use `partsChrome.js` `PARTS_TEXT_INPUT_CLASS` (≥16px) to block iOS Safari focus-zoom.
   Git create, Save, rename, copy, and delete show `data-part-pending` spinner in place of the Save icon while that branch's outbox op is queued or sending. A failed sync shows a red mark (`data-part-sync-failed`). A failed rename or assembly delete shows a toast with Retry and Revert (`data-rename-toast`). The delete popup also keeps that failure inline (`data-assembly-delete-error`) until the user retries or cancels. A Save (part row or assembly) that finds the working ref moved shows one yellow warning (`data-repo-moved-toast`) with **Make a new branch** (`data-repo-moved-branch`). That button saves the local files on `surfcad/<assembly>-YYYY-MM-DD` and switches the working ref; a success toast names the branch (`data-repo-saved-toast`). It does not open the conflict popup and it does not show a red Upload Error. Opening or reloading while the outbox is already behind the remote tip still opens only the conflict popup (`data-git-conflict-popup`) and does not show that warning. **Overwrite main** (`data-git-conflict-overwrite`) writes the queued local files over that tip (other remote files stay), then clears the conflict and the dirty dots. It does not ask again. Stay on branch leaves those local changes queued. When main is ahead, a yellow toast (`data-git-behind-toast`) offers **Get latest** and **Keep mine**. Get latest opens the same marker dialog (`data-git-behind-ask`). Keep mine runs that dialog's keep action and dismisses the toast.
-- `PromptInput` is passed `isMobile={false}` explicitly (`src/App.jsx:1345`).
+- `PromptInput` is passed `isMobile` from the shell and floats on the viewer
+  pane (`{agentPromptNode}`), not inside the script drawer.
 
 ### Mobile shell (`src/App.jsx` mobile branch) — CAD stages + game stack
 
@@ -356,9 +364,9 @@ CAD stage                          Script stage
 ┌─────────────────────────────┐   ┌─────────────────────────────┐
 │ [part] in [assembly]        │   ││feat│ mid-strip: Toolbar    │
 │ [Undo | features… | Redo]   │   ││strip mid: Monaco (full)   │
-│ Viewport + rails            │   ││icons PromptInput (hidden) │
-│ feature sheet (glass)       │   ││vert  (viewport mounted)   │
-│                             │   ││      pager icons          │
+│ Viewport + rails            │   ││vert  (viewport mounted)   │
+│ PromptInput (paired only)   │   ││      pager icons          │
+│ feature sheet (glass)       │   ││                          │
 └─────────────────────────────┘   └─────────────────────────────┘
 ```
 
@@ -512,7 +520,7 @@ Mobile specifics:
 - **Viewport backdrop:** `viewport-shell` + Three.js clear/background use Monaco
   gray `#1e1e1e` (not Tailwind `gray-900` / `#111827`).
 - **Face description popup:** removed in Slice Mobile C.1 (was under-title B.1
-  `data-face-info-popup`). Selection still drives the left palette / PromptInput;
+  `data-face-info-popup`). Selection still drives the left palette;
   no empty reserved band.
 - **Edge-pick chip (C.1):** horizontally centered + raised
   (`left-1/2 -translate-x-1/2`, `bottom-20` mobile / `bottom-14` desktop) so it
@@ -583,7 +591,7 @@ That yields **four** layout combinations; check both flags when editing chrome.
 | Title chip | always (filename) | always (puzzle title) |
 | Helper rail | `layout="cad"` — Block, Build, Shape, Polish, Move | `layout="game"` — the same five sections |
 | Info chips | bottom-left on desktop | always bottom-right (dodges the palette) |
-| PromptInput | mounted but `hidden` (see shells) | not rendered (`appMode !== 'game'` guards) |
+| PromptInput | floating on the CAD viewer while paired (or `?agentPromptDemo=1`) | not mounted (`appMode !== 'game'`) |
 | Extras | — | ghost mesh, timer, confetti, "Match!" banner (`src/components/Viewport.jsx:3595`) |
 
 Game logic: `src/utils/gamePuzzle.js`, `gamePuzzles.js`, `gameWins.js`;
@@ -623,6 +631,7 @@ All of these are absolutely positioned inside the shell at
 | bottom of the pane (`data-feature-card`). On a phone the stage switcher hides and the card sits on that switcher's bottom edge. Desktop stays 10px off the pane | contour plane card (circle, rectangle, polygon, polyline, workplane), the Hole card, and the Extrude, Revolve, Loft, and Sweep slot cards, fillet, chamfer, the standalone edge card, shell, draft, move face, delete face, cut, boolean, move, paint, the CAD helper card (cube, round box, cylinder, sphere, tube, hex, hole, mirror, center, align, array, path, refuse). Cube **Centered** clears as soon as Pos or Rot changes so it does not fight the pose fields (distinct from the **Center** transform). Block feature edit writes pose back into the script. Move on overlapping bodies stores mesh `tri` with `{ at }`. Sheet metal (picker, plane and edit chip, base, bend, tab, hole, countersink, tapped, export). Grey shell, cyan Confirm. The footer top padding (`pt-4` on `data-feature-sheet-footer`) is the gap between the body and Delete/Confirm, so Fillet's Tangent / Clear / Undo row and every other card on this shell share it. On a phone, Dimension and Constrain Done or Enter in the compact field commits and then Adds, or Confirms when editing. Blur only commits. The edge card has X and no Confirm. Measure has X and no Confirm: Clear is in the body, and the mm|in toggle is in the header. Measure keeps the left rail, so it stays between both rails. Analyze's footer is Run or Back to Setup, never Confirm. Fillet, chamfer, shell, draft, move face, delete face, cut, move, boolean, and paint use `fullLeft` (10px from the pane's left edge, clear of the right rail) because the left helper rail is hidden. The sheet metal picker and feature edit stay centered between both rails. Contour, the edge card, and the helper card stay between both rails too. Refuse's footer says OK. Sheet metal Confirm is 44px. Boolean stays `z-20`, under the section rail. The view-snap flyout (`z-40`) may cover a `fullLeft` card's right end and stays above it. Hidden in game. Game keeps the old helper sheet | `FeatureSheet.jsx`, `ContourModeChip.jsx`, `FilletModeChip.jsx`, `ShellModeChip.jsx`, `DraftModeChip.jsx`, `MoveFaceModeChip.jsx`, `DeleteFaceModeChip.jsx`, `CutModeChip.jsx`, `BooleanModeChip.jsx`, `MoveModeChip.jsx`, `PaintModeChip.jsx`, `MeasureModeChip.jsx`, `fea/FeaStudyChip.jsx`, `fea/FeaStudySheet.jsx`, `HelperParamModal.jsx`, `HoleCard.jsx`, `sheetMetal/SmControls.jsx` | Viewport |
 | top-16 center, portaled `z-50` | toasts: edge-mode, contour, fillet-scrap, fillet, shell — same `ErrorPopup` card | `ErrorPopup.jsx` | Viewport |
 | bottom center feature card (`data-feature-card`, `data-measure-mode`). On a phone the stage switcher hides. Hidden in game | Measure: sticky point / edge / face / part picks, distance, angle, radius, diameter, ΔX ΔY ΔZ. Header mm\|in is the global `surfcad.displayUnit`. Joint distance and the contour loft offset read it too. Scripts stay mm. Length captions end with mm or in. Clear drops the picks. No Confirm. X closes and restores the camera. Characteristic length feeds the feature-card length sliders and does not change this card | `MeasureModeChip.jsx` | Viewport |
+| bottom center of the viewer pane, between the rails (`data-agent-prompt`). Desktop bottom 48px / max 640px; phone bottom 56px / rail-capped. Hidden until an agent is paired (or `?agentPromptDemo=1`). Not mounted in game. Camera toggle attaches a viewer-only PNG to the next send | floating agent prompt | `PromptInput.jsx` | App (sibling of Viewport, both shells) |
 | fills the pane | WebGL canvas | `<canvas ref={canvasRef}>` | `:3985` |
 
 Unpainted faces are one off-white, `DEFAULT_PART_COLOR` (`#ECEAE4`, `src/utils/partMaterial.js`). Face paint, the stress skin, selection and hover, and piece-preview colors draw over it. The canvas draws a face-color skin on top of a part when that assembly has `colors` (`src/utils/faceColorSkin.js`). The skin is under crease lines and pick highlights. `?debugFaces=1` or `localStorage` key `surfcad.debugFaces` = `1` paints each face patch a different color. The flag is off unless set, and it is not a rail button. The right rail has no patch-colour toggle.
@@ -712,8 +721,8 @@ document: `src/utils/defaultScript.js`. Draft persistence:
 `src/utils/editorStorage.js`.
 
 ### Running a script
-`src/components/PromptInput.jsx` (AI prompt → `POST /api/generate`) →
-`src/utils/scriptValidator.js` → `src/utils/scriptExecutor.js` →
+`src/components/PromptInput.jsx` (paired-agent prompt → stub `createAgentPrompt()`, PR 2 swaps the transport) is not on the run path.
+Run still goes `src/utils/scriptValidator.js` → `src/utils/scriptExecutor.js` →
 `src/workers/sandboxWorker.js` (every helper function and the real geometry
 work), with Manifold booted by `src/utils/ManifoldWorker.js`. Timeout/memory
 caps: `EXECUTION_LIMITS`, `src/components/Viewport.jsx:212`. The evaluation

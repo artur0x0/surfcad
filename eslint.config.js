@@ -125,6 +125,7 @@ export default [
       'src/components/ViewSnapControl.jsx',
       'src/components/AgentBridgePairing.jsx',
       'src/components/AgentBridgeApprovalPopup.jsx',
+      'src/components/PromptInput.jsx',
       'src/components/*ModeChip.jsx',
       'src/components/*Card.jsx',
       'src/components/sheetMetal/**/*.jsx',

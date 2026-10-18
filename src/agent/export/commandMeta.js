@@ -173,6 +173,22 @@ export const COMMAND_META = {
     errors: ['internal'],
     mutates: false,
   },
+  agent_prompt: {
+    description:
+      'Send a prompt from the floating in-viewer agent field, or stop / dismiss / attach a viewer screenshot. Same controls as the paired-agent prompt card.',
+    result: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        ok: { type: 'boolean' },
+        id: { type: 'string' },
+        attached: { type: 'boolean' },
+        reason: { type: 'string' },
+      },
+    },
+    errors: ['bad_args', 'unavailable', 'internal'],
+    mutates: false,
+  },
   agent_set_visible: {
     description: 'Toggle operator-visible cues (synthetic cursor, highlights, pacing).',
     result: {
