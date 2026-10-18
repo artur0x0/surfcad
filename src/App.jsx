@@ -155,6 +155,7 @@ import { resolveRollbackTarget, resolveStripTarget } from './agent/featureStripA
 import { buildPartsState } from './agent/state/parts';
 import { decidePartVisible } from './agent/state/partVisible';
 import { createdPartFromDocs, scriptRequestsRun } from './agent/state/createPart.js';
+import { finishedRunBodyCount } from './agent/state/runBodyCount.js';
 import { assemblyOpenFailure, resolveAssemblyOpenName } from './agent/state/openAssemblyName.js';
 import { buildToasts } from './agent/state/toasts';
 import {
@@ -7762,7 +7763,7 @@ const App = () => {
           bbox: geom.bbox,
           partName,
           runFailure: null,
-          ...(geom.bodyCount === 0 ? { bodyCount: 0 } : {}),
+          bodyCount: finishedRunBodyCount(run, bodyCountOfWorkerMesh(run.mesh)),
         };
       }
     }

@@ -72,6 +72,7 @@ function world() {
               bbox: { min: [-10, -10, -10], max: [10, 10, 10] },
               partName: name || 'Part',
               runFailure: null,
+              bodyCount: 1,
             },
         },
       };
@@ -110,6 +111,7 @@ test('create_part with a script returns the new id and the run result', async ()
   assert.deepEqual(created.result.failures, []);
   assert.equal(created.result.status.runState, 'ok');
   assert.equal(created.result.status.volume, 8000);
+  assert.equal(created.result.status.bodyCount, 1);
   assert.equal(created.result.status.partId, 'new-part');
   assert.equal(host.gitLog.includes('commitFiles'), false);
   assert.equal(host.gitLog.includes('enqueueGit'), false);

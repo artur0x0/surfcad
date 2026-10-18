@@ -119,13 +119,14 @@ export async function run(ctx) {
       && row
       && env.result?.ok === true
       && (env.result?.status?.volume ?? 0) > 0
+      && env.result?.status?.bodyCount === 1
       && (await mockCommitCount(page)) === commitsBefore;
     return {
       ok,
       call: 'create_part',
       args: { name: 'Cube' },
       envelope: env,
-      detail: `partId=${cubeId} active=${after.result?.activeId} volume=${env.result?.status?.volume}`,
+      detail: `partId=${cubeId} active=${after.result?.activeId} volume=${env.result?.status?.volume} bodies=${env.result?.status?.bodyCount}`,
     };
   });
 

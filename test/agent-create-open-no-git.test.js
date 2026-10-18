@@ -33,6 +33,8 @@ test('agentCreatePart and agentOpenAssembly do not call git', () => {
   assert.match(create, /rememberCadPart\(created\.id\)/);
   assert.match(create, /if \(!runScript\) return \{ result: \{ partId, partCount \} \}/);
   assert.match(create, /agentRunOutcome\(text\)/);
+  assert.match(APP, /bodyCount: finishedRunBodyCount\(run, bodyCountOfWorkerMesh\(run\.mesh\)\)/);
+  assert.equal(/geom\.bodyCount === 0/.test(APP), false);
   assert.match(open, /resolveAssemblyOpenName\(requested, names\)/);
   assert.match(open, /if \(decision\?\.error\) return \{ error: decision\.error \}/);
   assert.match(
