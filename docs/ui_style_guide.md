@@ -165,8 +165,9 @@ clearance, no 26rem cap). Rails keep a 10px bottom inset so they do not
 overflow the pane.
 
 The Parts-header git branch chip (`data-parts-ribbon-branch`, class
-`parts-branch-chip`) is a 1px `--chrome-text` outline, `rounded-lg`, with
-`text-on-dark` on `chrome-surface`. Do not use blue text utilities.
+`parts-branch-chip`) is a 1px `currentColor` outline, `rounded-lg`, on
+`chrome-surface`. Text and border use the same `text-blue-400` as the Parts
+header icons (`STRIP_ICON_BLUE`).
 
 ## Brand
 

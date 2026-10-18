@@ -353,13 +353,12 @@ textarea {
       );
     }
   }
-  /* Parts-header git branch chip. Near-white 1px outline, rounded-lg like
-     the CAD title chips. Light text on dark chrome. */
+  /* Parts-header git branch chip. 1px outline in the same blue as the ribbon
+     icons (`text-blue-400`); color comes from that class via currentColor. */
   .parts-branch-chip {
     box-sizing: border-box;
-    border: 1px solid rgb(var(--chrome-text));
+    border: 1px solid currentColor;
     border-radius: 0.5rem;
-    color: rgb(var(--chrome-text));
     background-color: rgb(var(--chrome-surface) / 0.8);
   }
   .parts-branch-chip:hover {

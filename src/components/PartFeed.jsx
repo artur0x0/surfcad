@@ -32,7 +32,8 @@ import { getPartThumbnail, subscribePartThumbs } from '../utils/partThumbnailSto
 
 // Same ribbon and strip buttons as the script editor top bar
 // (CodeEditor `data-editor-ribbon` + Toolbar `variant="strip"`).
-const STRIP_BTN = 'shrink-0 p-1.5 flex items-center rounded active:opacity-80 hover:bg-chrome-border/60 text-blue-400';
+const STRIP_ICON_BLUE = 'text-blue-400';
+const STRIP_BTN = `shrink-0 p-1.5 flex items-center rounded active:opacity-80 hover:bg-chrome-border/60 ${STRIP_ICON_BLUE}`;
 const STRIP_DIVIDER = 'shrink-0 w-px bg-gray-600 mx-0.5 self-stretch my-1';
 const STRIP_ICON = 18;
 
@@ -63,7 +64,7 @@ function RibbonBranchButton({
         data-git-branches=""
         title={`Branch: ${label}. Click to manage branches.`}
         aria-label={`On branch ${label}. Open branch list.`}
-        className={`pointer-events-auto ${width} truncate px-1.5 py-0.5 font-ui text-ui-sm font-medium parts-branch-chip text-on-dark`}
+        className={`pointer-events-auto ${width} truncate px-1.5 py-0.5 font-ui text-ui-sm font-medium parts-branch-chip ${STRIP_ICON_BLUE}`}
         onClick={(event) => {
           event.stopPropagation();
           onBranchClick();
@@ -75,7 +76,7 @@ function RibbonBranchButton({
   }
   return (
     <span
-      className={`${width} truncate px-1.5 py-0.5 font-ui text-ui-sm font-medium parts-branch-chip text-on-dark`}
+      className={`${width} truncate px-1.5 py-0.5 font-ui text-ui-sm font-medium parts-branch-chip ${STRIP_ICON_BLUE}`}
       data-assembly-branch=""
       data-parts-ribbon-branch={desktop ? '' : undefined}
     >

@@ -55,7 +55,7 @@ test('tool rails sit 10px below the feature ribbon', () => {
   assert.match(panel, /RAIL_RIGHT_MAX_CLASS/);
 });
 
-test('parts-header branch chip is a near-white outlined pill', () => {
+test('parts-header branch chip uses the Parts-header icon blue', () => {
   const css = read('src/index.css');
   const feed = read('src/components/PartFeed.jsx');
   const chipFn = feed.slice(
@@ -63,8 +63,9 @@ test('parts-header branch chip is a near-white outlined pill', () => {
     feed.indexOf('function RibbonAssemblyName'),
   );
   assert.match(css, /\.parts-branch-chip\s*\{/);
-  assert.match(css, /border:\s*1px solid rgb\(var\(--chrome-text\)\)/);
+  assert.match(css, /border:\s*1px solid currentColor/);
+  assert.match(feed, /STRIP_ICON_BLUE = 'text-blue-400'/);
   assert.match(chipFn, /parts-branch-chip/);
-  assert.match(chipFn, /text-on-dark/);
-  assert.doesNotMatch(chipFn, /text-blue-300/);
+  assert.match(chipFn, /STRIP_ICON_BLUE/);
+  assert.doesNotMatch(chipFn, /text-on-dark/);
 });

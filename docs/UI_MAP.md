@@ -247,8 +247,9 @@ Desktop specifics:
   mobile. Desktop git puts the branch chip there instead
   (`data-parts-ribbon-branch`, class `parts-branch-chip`, same pane as
   `data-git-branches`); the assembly name stays off the desktop ribbon.
-  The chip is a 1px `--chrome-text` outline, `rounded-lg`, `text-on-dark`.
-  Truncate a long branch name so the header does not wrap.
+  The chip is a 1px `currentColor` outline, `rounded-lg`, with the same
+  `text-blue-400` as the Parts header icons. Truncate a long branch name
+  so the header does not wrap.
   Signed out (local, no GitHub token), the **+** menu (`data-part-add-dropdown`)
   and the folder menu (`data-part-open-dropdown`) both offer **Part** and
   **Assembly**. Part opens the name dialog and creates a local-only part
