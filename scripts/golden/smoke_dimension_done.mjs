@@ -48,7 +48,7 @@ console.log('dimension done — source');
   const card = read('src/components/ContourGestureCard.jsx');
   const tags = read('src/components/ContourTags.jsx');
   const arch = read('docs/architecture.md');
-  const map = read('docs/UI_MAP.md');
+  const map = read('docs/ui-map.md');
   check('Done and Enter apply; blur only commits',
     /onCommit\('done'\)/.test(shell)
     && /onCommit\('enter'\)/.test(shell)
