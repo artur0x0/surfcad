@@ -85,6 +85,10 @@ GitHub does not enforce these as required checks, so read every job's result you
 - Do not add GPL/AGPL/LGPL or non-commercial dependencies. Never vendor, link, or bundle CalculiX.
 - Uploaded STEP files are deleted right after conversion (`backend/routes/convert.js`, in `finally`). The prune timer (`deploy/systemd/`, [docs/ops/upload-prune.md](docs/ops/upload-prune.md)) exists only to catch leftovers from crashes, and it is not installed on prod yet. Never rely on it for cleanup, and do not loosen its guards.
 
+## Monitoring
+
+Error toasts should be reported to Sentry with a category tag. The crash boundary is the only report today. Scope and the raise-site list are in [docs/error-toasts-to-sentry.md](docs/error-toasts-to-sentry.md).
+
 ## UI rules (summary; the style guide wins)
 
 Use the shared classes from [docs/ui-style-guide.md](docs/ui-style-guide.md). Never put dark text on dark chrome. Meet WCAG AA. User-facing copy names Chrome, never Edge. A new color starts as a token, then becomes a class. Desktop and mobile are separate JSX trees in `src/App.jsx`, so change both ([docs/ui-map.md](docs/ui-map.md)).
