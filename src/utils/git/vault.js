@@ -14,6 +14,7 @@
  */
 import { assertGithubAdapter, GitAdapterError } from './githubAdapterInterface.js';
 import { ASSEMBLIES_DIR, SHARED_PARTS_DIR, VAULT_MARKER_PATH, VAULT_README_PATH } from './vaultLayout.js';
+import { writeVaultCommit } from './writeVaultCommit.js';
 import {
   DEFAULT_VAULT_NAME,
   LEGACY_VAULT_NAME,
@@ -117,12 +118,13 @@ async function createAndSeed(adapter, login, repoName, storedName) {
   const repo = canonicalRepo(login, info, repoName);
   const branch = info.defaultBranch || 'main';
   try {
-    const commit = await adapter.commitFiles(repo, {
+    const commit = await writeVaultCommit({
+      adapter,
+      repo,
       branch,
       message: 'Create SurfCAD vault',
       files: vaultSeedFiles(repo.name),
       baseSha: null,
-      seed: true,
     });
     return {
       status: 'created',

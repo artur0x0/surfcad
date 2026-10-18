@@ -30,6 +30,7 @@ import { stringifySurfJson } from './surfJson.js';
 import { isStablePartId, partRepoPath } from './partIdentity.js';
 import { partSurfId } from './surfId.js';
 import { DEFAULT_VAULT_NAME, findOrCreateVault, sanitizeVaultName } from './vault.js';
+import { writeVaultCommit } from './writeVaultCommit.js';
 import {
   assemblyFilePath,
   assemblyPartPath,
@@ -181,7 +182,9 @@ export async function moveToGit(adapter, {
   }
   if (conflicts.length) return { status: 'conflict', vault, paths: conflicts, assemblyExists };
 
-  const commit = await adapter.commitFiles(vault.repo, {
+  const commit = await writeVaultCommit({
+    adapter,
+    repo: vault.repo,
     branch,
     message: message || `Move ${plan.assemblyName} to Git`,
     files: writes,

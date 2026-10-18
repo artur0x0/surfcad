@@ -17,6 +17,7 @@ import { deleteAssemblyFailureToast } from './gitDeleteAssembly.js';
 import { isImplicitVaultWriteOp } from './vaultImplicitWrite.js';
 import { GitAdapterError } from './githubAdapterInterface.js';
 import { isVaultWriteRefusal, repoHasVaultMarker, vaultWriteRefusalMessage } from './vault.js';
+import { writeVaultCommit } from './writeVaultCommit.js';
 
 /**
  * Push queued ops for one repo.
@@ -113,7 +114,9 @@ export async function flushSyncQueue({
       }
       let plannedMoves = null;
       const committedFiles = await normalizeOutboxFiles(files);
-      const res = await adapter.commitFiles(writeRepo, {
+      const res = await writeVaultCommit({
+        adapter,
+        repo: writeRepo,
         branch,
         message: item.message || 'Sync',
         files: committedFiles,

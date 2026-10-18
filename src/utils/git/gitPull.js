@@ -13,6 +13,7 @@
 import { putAsset } from './assetCache.js';
 import { isBinaryContent } from './binaryContent.js';
 import { GitAdapterError, assertGithubAdapter, fileWrite } from './githubAdapterInterface.js';
+import { writeVaultCommit } from './writeVaultCommit.js';
 import { readVaultAsset } from './githubAdapter.js';
 import { detectCommitBase, commitBranchName, freeBranchName, prepareAssemblySurfWrite } from './gitCommit.js';
 import { captureBaseline } from './gitBaseline.js';
@@ -385,7 +386,9 @@ export async function checkInMineToBranch(adapter, repo, {
     const meshBytes = mesh && assets ? (assets[mesh] ?? assets[path]) : null;
     if (mesh && isBinaryContent(meshBytes)) files.push(fileWrite(mesh, meshBytes));
   }
-  const side = await adapter.commitFiles(repo, {
+  const side = await writeVaultCommit({
+    adapter,
+    repo,
     branch: sideName,
     message: msg,
     files,
