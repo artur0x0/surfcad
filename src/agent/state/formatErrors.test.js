@@ -15,6 +15,26 @@ test('formatAgentErrors returns an empty list when there are no messages', () =>
   assert.deepEqual(formatAgentErrors({}), []);
 });
 
+test('formatAgentErrors explains a reserved helper redeclaration', () => {
+  const rows = formatAgentErrors({
+    messages: ["SyntaxError: Identifier 'cut' has already been declared"],
+  });
+  assert.deepEqual(rows, [{
+    code: 'build_failed',
+    message: '`cut` is a reserved SurfCAD helper name; rename your variable',
+  }]);
+  const feature = formatAgentErrors({
+    messages: ["Identifier 'hole' has already been declared"],
+    script: SCRIPT,
+    runFailure: { id: 'hole1', message: "Identifier 'hole' has already been declared" },
+  });
+  assert.equal(feature[0].code, 'feature_failed');
+  assert.equal(feature[0].message, '`hole` is a reserved SurfCAD helper name; rename your variable');
+  assert.equal(feature[0].featureIndex, 1);
+  const userName = "Identifier 'width' has already been declared";
+  assert.equal(formatAgentErrors({ messages: [userName] })[0].message, userName);
+});
+
 test('formatAgentErrors maps plain messages to build_failed rows', () => {
   assert.deepEqual(formatAgentErrors({ messages: ['bad solid'] }), [
     { code: 'build_failed', message: 'bad solid' },

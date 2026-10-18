@@ -30,6 +30,7 @@ const CONSOLE_ALLOW = [
   /monaco-editor.*simpleWorker\.nls/i,
   /Failed trying to load default language strings/i,
   /Error executing script:.*playtest deliberate failure/i,
+  /Error executing script:.*Identifier 'cut' has already been declared/,
   /Error executing script:.*Cube failed: result is not a valid solid \(NotManifold\)/i,
 ];
 

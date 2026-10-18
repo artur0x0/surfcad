@@ -18,6 +18,7 @@ import {
   stopAgentBridgeRelay,
 } from './bridge/relayServer.mjs';
 import { RelaySession } from './relay.mjs';
+import { augmentScreenshotTool, callPairedBridgeTool } from './screenshotFile.mjs';
 
 const PAIR_TOOL_NAME = 'pair';
 
@@ -71,7 +72,7 @@ function toolErrorPayload(err) {
 export async function createSurfcadMcpServer(options = {}) {
   const catalog = options.catalog || loadCommandsCatalog();
   const session = options.session || new RelaySession();
-  const bridgeTools = bridgeToolDefinitions(catalog);
+  const bridgeTools = bridgeToolDefinitions(catalog).map((tool) => augmentScreenshotTool(tool));
 
   const server = new Server(
     { name: 'surfcad-mcp', version: loadPackageVersion() },
@@ -143,8 +144,8 @@ export async function createSurfcadMcpServer(options = {}) {
     }
 
     try {
-      const result = await session.call(name, args);
-      return textResult(result);
+      const out = await callPairedBridgeTool(session, name, args);
+      return textResult(out.value, out.isError === true);
     } catch (err) {
       const code = err?.code;
       if (

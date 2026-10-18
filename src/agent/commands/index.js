@@ -21,6 +21,7 @@ import { selectFacesCommand } from './selectFaces.js';
 import { selectEdgesCommand } from './selectEdges.js';
 import { selectPartsCommand } from './selectParts.js';
 import { setActivePartCommand } from './setActivePart.js';
+import { setPartVisibleCommand } from './setPartVisible.js';
 import { cameraSetCommand } from './cameraSet.js';
 import { cameraFitCommand } from './cameraFit.js';
 import { zoomToSelectionCommand } from './zoomToSelection.js';
@@ -224,6 +225,7 @@ export const V1_COMMANDS = Object.freeze([
   selectEdgesCommand,
   selectPartsCommand,
   setActivePartCommand,
+  setPartVisibleCommand,
   cameraSetCommand,
   cameraFitCommand,
   zoomToSelectionCommand,
