@@ -25,6 +25,7 @@ export * from './vaultImplicitWrite.js';
 export * from './gitRename.js';
 export * from './gitDeleteAssembly.js';
 export * from './lastCommit.js';
+export * from './planSave.js';
 export * from './syncStore.js';
 export * from './syncWorker.js';
 export * from './gitAssemblyRename.js';
