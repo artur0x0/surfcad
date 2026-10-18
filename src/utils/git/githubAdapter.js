@@ -11,7 +11,11 @@
  * multi-file first commits — builds the full tree with Git Data and force-updates
  * the ref to one root commit with the intended message.
  */
-import { GitAdapterError, assertGithubAdapter } from './githubAdapterInterface.js';
+import {
+  GitAdapterError,
+  GITHUB_COMPARE_FILE_LIMIT,
+  assertGithubAdapter,
+} from './githubAdapterInterface.js';
 import { normalizeRepoPath } from '../assembly.js';
 import { decodeBase64, encodeBase64, prepareCommitFiles } from './binaryContent.js';
 import { parseVaultPath, VAULT_MARKER_PATH } from './vaultLayout.js';
@@ -669,9 +673,11 @@ export function createGithubAdapter({ token, fetchImpl = globalThis.fetch, apiBa
         headSha = data.merge_base_commit?.sha || baseSha;
       }
 
-      const files = (data.files || [])
-        .map((f) => ({ path: f.filename, status: mapFileStatus(f.status) }))
-        .sort((a, b) => a.path.localeCompare(b.path));
+      const rawFiles = Array.isArray(data.files) ? data.files : [];
+      const files = compareFilesFromGithub(rawFiles);
+      const truncated = rawFiles.length >= GITHUB_COMPARE_FILE_LIMIT
+        || data.truncated === true
+        || data.incomplete === true;
 
       return {
         status: data.status || 'identical',
@@ -681,6 +687,7 @@ export function createGithubAdapter({ token, fetchImpl = globalThis.fetch, apiBa
         baseSha,
         headSha,
         files,
+        truncated,
       };
     },
   };
@@ -734,6 +741,29 @@ function mapFileStatus(s) {
   if (s === 'added') return 'added';
   if (s === 'removed') return 'removed';
   return 'modified';
+}
+
+/** Both ends of a rename are changed paths; GitHub only puts the new name in `filename`. */
+function compareFilesFromGithub(rawFiles) {
+  const files = [];
+  const seen = new Set();
+  const add = (rawPath, status) => {
+    const path = normalizeRepoPath(rawPath);
+    if (!path || seen.has(path)) return;
+    seen.add(path);
+    files.push({ path, status });
+  };
+  for (const row of rawFiles) {
+    const previous = row?.previous_filename;
+    if (row?.status === 'renamed' || (typeof previous === 'string' && previous.trim())) {
+      add(previous, 'removed');
+      add(row?.filename || row?.path, 'added');
+      continue;
+    }
+    add(row?.filename || row?.path, mapFileStatus(row?.status));
+  }
+  files.sort((a, b) => a.path.localeCompare(b.path));
+  return files;
 }
 
 function encodeBase64Utf8(text) {

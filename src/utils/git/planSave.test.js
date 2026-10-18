@@ -491,7 +491,10 @@ test('copiedFrom is not a reference; last parent still deletes the file', () => 
   const result = plan(
     tip(),
     commitFrom(before, { [P]: BODY }),
-    wc(after, {}, { otherAssemblyCommits: [commitFrom(copy, { [Q]: BODY })] }),
+    wc(after, {}, {
+      branchAssemblies: [],
+      otherAssemblyCommits: [commitFrom(copy, { [Q]: BODY })],
+    }),
     TIP,
     [],
   );
@@ -628,7 +631,7 @@ test('M2: omitted reference inputs refuse a part-file delete', () => {
   const after = doc(A, 'Gearbox', [row(Q, 'Shaft')]);
   assert.throws(
     () => plan(tip(), commitFrom(before, { [P]: BODY, [Q]: BODY_Q }), wc(after, { [Q]: BODY_Q }), TIP, []),
-    /part file delete requires branchAssemblies, openWorkingCopies, or otherAssemblyCommits/,
+    /part file delete requires branchAssemblies from the current remote tip/,
   );
 });
 
@@ -685,4 +688,145 @@ test('planSave does not import or call commitFiles / createRepo', () => {
   assert.equal(/commitFiles/.test(src), false);
   assert.equal(/createRepo/.test(src), false);
   assert.equal(/adapter\.compare/.test(src), false);
+});
+
+test('json-shaped branchAssemblies keep a referenced part; unidentifiable rows refuse the delete', () => {
+  const before = doc(A, 'Gearbox', [row(P, 'Bracket'), row(Q, 'Shaft', { order: 1 })]);
+  const after = doc(A, 'Gearbox', [row(Q, 'Shaft')]);
+  const committed = commitFrom(before, { [P]: BODY, [Q]: BODY_Q });
+  const kept = plan(
+    tip(),
+    committed,
+    wc(after, { [Q]: BODY_Q }, {
+      branchAssemblies: [{ json: { id: B, name: 'Cover', parts: [{ id: P }] } }],
+    }),
+    TIP,
+    [],
+  );
+  assert.equal(kept.conflict, undefined);
+  assert.equal(deletesOf(kept.files).includes(partIdPath(P)), false);
+  assert.deepEqual(pathsOf(kept.files), [assemblyIdPath(A)]);
+
+  assert.throws(
+    () => plan(
+      tip(),
+      committed,
+      wc(after, { [Q]: BODY_Q }, {
+        branchAssemblies: [{ json: { parts: [{ id: P }] } }],
+      }),
+      TIP,
+      [],
+    ),
+    /part file delete refused: a reference row has no v2 assembly id/,
+  );
+});
+
+test('empty openWorkingCopies or otherAssemblyCommits without branchAssemblies refuses a delete', () => {
+  const before = doc(A, 'Gearbox', [row(P, 'Bracket'), row(Q, 'Shaft', { order: 1 })]);
+  const after = doc(A, 'Gearbox', [row(Q, 'Shaft')]);
+  const committed = commitFrom(before, { [P]: BODY, [Q]: BODY_Q });
+  for (const extra of [{ openWorkingCopies: [] }, { otherAssemblyCommits: [] }]) {
+    assert.throws(
+      () => plan(tip(), committed, wc(after, { [Q]: BODY_Q }, extra), TIP, []),
+      /part file delete requires branchAssemblies from the current remote tip/,
+    );
+  }
+});
+
+test('remote-added assembly file while deleting is a conflict even if P.js is untouched', () => {
+  const before = doc(A, 'Gearbox', [row(P, 'Bracket'), row(Q, 'Shaft', { order: 1 })]);
+  const after = doc(A, 'Gearbox', [row(Q, 'Shaft')]);
+  const result = plan(
+    tip(TIP),
+    commitFrom(before, { [P]: BODY, [Q]: BODY_Q }),
+    wc(after, { [Q]: BODY_Q }, { branchAssemblies: [] }),
+    REMOTE,
+    compare([assemblyIdPath(B)]),
+  );
+  assert.equal(result.conflict, true);
+  assert.equal(result.files, undefined);
+  assert.ok(result.paths.includes(assemblyIdPath(B)));
+  assert.ok(result.paths.includes(partIdPath(P)));
+});
+
+test('present-but-unreadable BranchTip throws; AssemblyCommit without a tip is not first Save', () => {
+  const before = doc(A, 'Gearbox', [row(Q, 'Shaft')]);
+  const committed = commitFrom(before, { [Q]: BODY_Q });
+  const dirty = wc(before, { [Q]: 'return 9;\n' });
+  const remoteOnQ = compare([partIdPath(Q)]);
+
+  assert.throws(
+    () => plan(
+      { schemaVersion: 99, repo: REPO, branch: 'main', tipSha: TIP },
+      committed,
+      dirty,
+      REMOTE,
+      remoteOnQ,
+    ),
+    /branchTip is present but unreadable/,
+  );
+
+  assert.throws(
+    () => plan(null, committed, dirty, REMOTE, remoteOnQ),
+    /AssemblyCommit requires a readable BranchTip with tipSha/,
+  );
+
+  assert.throws(
+    () => plan(
+      tip(),
+      committed,
+      wc(before, { [Q]: 'return 9;\n' }, { repo: { owner: 'other', name: 'vault' }, branch: 'main' }),
+      TIP,
+      [],
+    ),
+    /BranchTip repo\/branch does not match the save target/,
+  );
+});
+
+test('shared part with no known hash refuses the write rather than overwrite', () => {
+  const before = doc(A, 'Gearbox', [row(Q, 'Shaft')]);
+  const after = doc(A, 'Gearbox', [row(Q, 'Shaft'), row(P, 'Bracket', { order: 1 })]);
+  const refused = plan(
+    tip(),
+    commitFrom(before, { [Q]: BODY_Q }),
+    wc(after, { [Q]: BODY_Q, [P]: BODY }, {
+      branchAssemblies: [{ id: B, name: 'Cover', parts: [{ id: P }] }],
+    }),
+    TIP,
+    [],
+  );
+  assert.equal(refused.conflict, true);
+  assert.deepEqual(refused.paths, [partIdPath(P)]);
+  assert.equal(refused.files, undefined);
+
+  const known = blobHash(stamped(BODY, P, 'Bracket'));
+  const allowed = plan(
+    tip(),
+    commitFrom(before, { [Q]: BODY_Q }),
+    wc(after, { [Q]: BODY_Q, [P]: BODY }, {
+      branchAssemblies: [{ id: B, name: 'Cover', parts: [{ id: P }] }],
+      branchFiles: { [partIdPath(P)]: known },
+    }),
+    TIP,
+    [],
+  );
+  assert.equal(allowed.conflict, undefined);
+  assert.equal(writeAt(allowed.files, partIdPath(P)), null);
+  assert.deepEqual(pathsOf(allowed.files), [assemblyIdPath(A)]);
+});
+
+test('assemblyCommit json.id mismatch throws when raw assemblyId is not v2', () => {
+  const ofB = {
+    schemaVersion: 1,
+    assemblyId: 'Cover',
+    files: {
+      [assemblyIdPath(B)]: { contentHash: blobHash(stringifySurfJsonV2(doc(B, 'Cover', [row(Q, 'Lid')]))) },
+    },
+    json: { ...toSurfJsonV2(doc(B, 'Cover', [row(Q, 'Lid')])), id: B },
+    capturedAt: NOW,
+  };
+  assert.throws(
+    () => plan(tip(), ofB, wc(doc(A, 'Gearbox', [row(P, 'Bracket')]), { [P]: BODY }), TIP, []),
+    /assemblyCommit\.assemblyId does not match workingCopy\.id/,
+  );
 });
