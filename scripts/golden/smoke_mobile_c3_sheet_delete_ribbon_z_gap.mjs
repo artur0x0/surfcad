@@ -109,15 +109,15 @@ console.log('mobile C.3: sheet delete + ribbon z + CAD gap + Block + rail height
   // 5 — Exact shared rail height
   check(
     'RAIL_PAIR_HEIGHT_CLASS is content-max (max-h, not fixed h)',
-    /max-h-\[min\(26rem,calc\(100%-5\.5rem\)\)\]/.test(railPair) &&
+    /RAIL_PAIR_HEIGHT_CLASS = 'rail-max-below-strip'/.test(railPair) &&
       !/^export const RAIL_PAIR_HEIGHT_CLASS = 'h-\[/.test(railPair) &&
       RAIL_PAIR_HEIGHT_ATTR === 'content-max' &&
-      RAIL_PAIR_HEIGHT_CLASS.includes('max-h-[min(26rem'),
+      RAIL_PAIR_HEIGHT_CLASS.includes('rail-max-below-strip'),
   );
   check(
     'Left + contour rails use RAIL_PAIR_HEIGHT_CLASS content-max (right stays free)',
-    /RAIL_PAIR_HEIGHT_CLASS/.test(palette) &&
-      /RAIL_PAIR_HEIGHT_CLASS/.test(contourRail) &&
+    /leftRailPositionClasses/.test(palette) &&
+      /leftRailPositionClasses/.test(contourRail) &&
       !/RAIL_PAIR_HEIGHT_CLASS/.test(rightRail) &&
       /data-rail-height/.test(palette) &&
       /data-rail-height/.test(rightRail),

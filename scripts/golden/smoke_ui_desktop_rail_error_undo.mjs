@@ -39,7 +39,7 @@ console.log('ui: desktop ribbon + left rail + error Undo');
   const contour = read('../../src/components/ContourModeRail.jsx');
   check(
     '2: left rail height is content-max (max-h)',
-    /max-h-\[min\(26rem,calc\(100%-5\.5rem\)\)\]/.test(railPair) &&
+    /RAIL_PAIR_HEIGHT_CLASS = 'rail-max-below-strip'/.test(railPair) &&
       /RAIL_PAIR_HEIGHT_ATTR = 'content-max'/.test(railPair) &&
       /useLeftRailFit/.test(railPair) &&
       /RAIL_PAIR_WIDTH_FIT_CLASS = 'w-14'/.test(railPair),

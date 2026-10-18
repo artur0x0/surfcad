@@ -219,8 +219,9 @@ const oneHtml = h(ui.FeatureStrip, {
   selectedJointId: J,
   undoLabel: 'Undo joint',
 });
-check('the empty joints caption uses the chip box', emptyHtml.includes('data-assembly-joints-empty') && emptyHtml.includes('h-8'));
-check('a joint chip uses that same box', oneHtml.includes('data-joint-id') && oneHtml.includes('h-8'));
+check('the empty joints caption uses the chip box', emptyHtml.includes('data-assembly-joints-empty') && emptyHtml.includes('feature-strip-chip'));
+check('a joint chip uses that same box', oneHtml.includes('data-joint-id') && oneHtml.includes('feature-strip-chip'));
+check('the horizontal bar uses the shared height class', emptyHtml.includes('feature-strip-bar') && oneHtml.includes('feature-strip-bar'));
 check('a joint chip does not carry its own Delete popup', !oneHtml.includes('data-joint-chip-popup') && !oneHtml.includes('data-joint-chip-delete'));
 const edited = cardFromJoint({
   id: J,
