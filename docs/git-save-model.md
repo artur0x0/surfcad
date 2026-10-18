@@ -106,7 +106,7 @@ parts/<part-id>.mesh                    sidecar; same stem as the script
 
 **Names never appear in paths.** Rename is an edit of a name field, never a move. No other file duplicates names — no README index, no catalog, no `surfcad.json` name list. Save does **not** write or regenerate `README.md`. A leftover `README.md` is never a planned file; Upgrade deletes it only when its bytes match a known old seed (§4.3).
 
-Pickers and the Parts list show **names raw**. A muted short id suffix is added only when two **visible** rows share a name.
+Pickers and the Parts list show **names as written**. Duplicate names are allowed and are **not** disambiguated (no short-id suffix).
 
 **Part file header** — two lines; `@name` is its own line so the display name may contain spaces:
 
@@ -190,7 +190,7 @@ PartRow {
 }
 ```
 
-Scripts keyed by part `id`. Display path in the UI / `parts[].path` is **informational**: always `parts/<id>.js`. It is not identity and does not mean the blob exists.
+Scripts keyed by part `id`. The UI may derive `parts/<id>.js` locally for a subtitle; that string is not stored on the row and is **not** in agent results.
 
 ### 2.4 `lastCommit`
 
@@ -345,21 +345,19 @@ Self-contained. The MCP Lead can implement tools against this section alone. Vau
 There is no `surfId` and no UUID `id` after host open. Copy mints a new `part_id` and sets `copiedFrom`.
 
 - **Uniqueness.** Part id is unique among part scripts in the vault (one file). Assembly id is unique among assemblies. **Names are not unique** and must not be used as keys.
-- **Lookup.** Tools target `{ part_id }` and `{ assembly_id }`. Missing or unknown → `{ code: "unknown_part" }` or `{ code: "unknown_assembly" }`. **Do not** accept a display name or a UUID as either id. **Do not** fall back to the active part when the caller passed a different `part_id`. **Do not** write the active part because `selection.cadPartId` moved. For **one MCP release**, `path` is a deprecated alias: the host derives the id from `parts/<id>.js` / `assemblies/<id>.surf.json` (v2) or the legacy reader (v1) and returns a deprecation warning on the result. After that release, `path` as identity is `unknown_part` / `unknown_assembly`.
+- **Lookup.** Tools target `{ part_id }` and `{ assembly_id }` **only**. Missing or unknown → `{ code: "unknown_part" }` or `{ code: "unknown_assembly" }`. **Do not** accept a vault path, a display name, or a UUID. There is **no** `path` argument and **no** deprecation cycle (pre-release; do not take on that debt). **Do not** fall back to the active part when the caller passed a different `part_id`. **Do not** write the active part because `selection.cadPartId` moved.
 
 Writers that mutate a part script or placement **MUST take `part_id`** and refuse a mismatch (`code: "part_mismatch"`). `create_part` atomically sets `parts.activeId` **and** `selection.cadPartId` to the new id before return.
 
-`create_assembly` returns `{ assemblyId, assemblyName, activeId, partCount }`. `open_assembly` takes `assembly_id`. `name` is **not** a v2 lookup (names collide). On a **legacy** vault only, `name` may match the folder until Upgrade; after Upgrade, name-only open is `unknown_assembly`. `list_assemblies` / `rename_assembly` / `delete_assembly` use `assembly_id`.
+`create_assembly` returns `{ assemblyId, assemblyName, activeId, partCount }`. `open_assembly` takes `assembly_id` only. `name` is not a lookup. `list_assemblies` / `rename_assembly` / `delete_assembly` use `assembly_id`.
 
-`open_part` / `insert_part` take `part_id` and/or `assembly_id` (insert-as-reference = list that `part_id` in the open assembly). `path` is accepted as a deprecated alias for one MCP release (see Lookup).
+`open_part` / `insert_part` take `part_id` and/or `assembly_id` (insert-as-reference = list that `part_id` in the open assembly).
 
-### 3.2 Paths are informational
+### 3.2 No paths in the contract
 
-`parts/<part-id>.js` and `assemblies/<assembly-id>.surf.json` are `f(id)`. Tools may **see** `parts[].path` as that string. Prefer `part_id` / `assembly_id`. Sending `path` instead is the one-release deprecated alias (§3.1) and comes back with a warning; do not persist a guessed path or treat a missing blob as “create empty script.” Never send `name` as an id.
+Repo paths are `f(id)` (`parts/<part-id>.js`, `assemblies/<assembly-id>.surf.json`). Tools never send `path` and results never include a `path` field. `rename_part` / `rename_assembly` change **display name** only (WC). Response: `{ partId, name, moved: false }`. No git. The committed header / `.surf.json` name updates on the next Save.
 
-`rename_part` / `rename_assembly` change **display name** only (WC). Response: `{ partId, name, path: "parts/<id>.js", moved: false }`. No git. The committed header / `.surf.json` name updates on the next Save.
-
-`git_add_to_repo` is an alias of `git_save`. It must not assign a path.
+`git_add_to_repo` is an alias of `git_save`.
 
 ### 3.3 What counts as a Save
 
@@ -403,7 +401,7 @@ parts: {
   assemblyName: string,
   vaultLayout: "v2" | "legacy",
   activeId: string,
-  parts: [{ id, name, visible, path, missing?, group? }]
+  parts: [{ id, name, visible, missing?, group? }]
 }
 dirty: {
   unsaved: boolean,              // WC differs from AssemblyCommit (or commit is empty)
@@ -416,9 +414,9 @@ dirty: {
 }
 ```
 
-`editedSinceLoad` and `partIds` list **every** edited part (T5). A new part is dirty. A `missing` row is not “edited” unless the user changed instance data. Changing `activeId` does not set `assemblyDirty`. `path` is informational (`parts/<id>.js`).
+`editedSinceLoad` and `partIds` list **every** edited part (T5). A new part is dirty. A `missing` row is not “edited” unless the user changed instance data. Changing `activeId` does not set `assemblyDirty`.
 
-`list_assemblies` (when shipped): `[{ id, name, path }]`. `path` is `assemblies/<id>.surf.json`. Prefer `id`.
+`list_assemblies` (when shipped): `[{ id, name }]`.
 
 ### 3.5 Shared parts and delete (agent)
 
@@ -432,7 +430,7 @@ dirty: {
 - **`create_assembly`.** Single-flight per tab. Overlapping calls join and return the same `{ assemblyId, assemblyName, activeId, partCount }`. A retry after success is a new assembly only if the previous call settled. **No git write.** Optional `name` is a label; do **not** invent `Assembly (N)` to satisfy path uniqueness (names may collide). Do not persist a second document until the first call returns.
 - **Versioned writes.** WC `rev` is monotonic. A host write-back is rejected if `result.baseRev !== currentRev`, except adopting an unedited shared part’s new committed bytes. A stale `set_script` / `create_part` must not `rememberAssembly` over a newer doc (T17).
 - **`create_part`.** One row, one `id`, `activeId` + `cadPartId` set, then return. No git.
-- **`open_assembly`.** Requires `assembly_id` on v2. Unknown → `unknown_assembly`. Legacy `name` only while `vaultLayout === "legacy"`; missing folder → `not_found`. Read-only vs git.
+- **`open_assembly`.** Requires `assembly_id`. Unknown → `unknown_assembly`. Read-only vs git.
 - **Idempotent Save.** `git_save` when `dirty.unsaved === false` and not `pendingSave` → `{ status: "clean" }`, no commit. `pendingSave` + Save again → push (or re-plan / conflict).
 - **Upgrade.** `git_upgrade_vault` without `confirm: true` → `confirm_required`. On v2 → `{ status: "already_upgraded" }`, no commit. The Upgrade commit is remote bytes only. A dirty WC then gets a normal `git_save` (or the host Save) as a second commit under that same confirmation.
 - **Get latest.** Confirmed replace of conflicting WC files from the remote tip. Allowed even if `rev` moved for those files. Does not `commitFiles`.
@@ -447,7 +445,7 @@ Bridge refusals stay `isError: true` with `code` + `message` (+ `details`).
 | `unknown_assembly` | `assembly_id` not known | `list_assemblies` |
 | `part_mismatch` | Tool implied active part ≠ `part_id` | Pass `part_id` |
 | `no_assembly` | No open document | `create_assembly` or `open_assembly` |
-| `not_found` | Legacy `open_assembly { name }` missing | Use `assembly_id` |
+| `unsupported_vault_version` | v1 / folder-layout vault after PR 10 removed the legacy module | Tell the user this app no longer opens that vault |
 | `missing_part` | Row exists, vault file does not | Do not `set_script` an empty body; tell the user |
 | `part_still_referenced` | Delete-from-repo but another assembly lists this id | `scope: "assembly"` or delete those parents first |
 | `upgrade_required` | `git_save` on a legacy vault | `git_upgrade_vault { confirm: true }` after the user agrees |
@@ -460,18 +458,18 @@ Bridge refusals stay `isError: true` with `code` + `message` (+ `details`).
 | `pending_save` | Offline plan waiting | Tell the user to Save again when online |
 | `feature_failed` | Kernel/script error | Same text the UI shows (T16 — MCP batch; contract still requires it) |
 
-A deprecated `path` lookup that still resolves adds `warning: "path is deprecated; use part_id"` or `warning: "path is deprecated; use assembly_id"` on the success result (and still returns the derived id). Never return a generic `"Feature failed"` as the only message. Never pass `confirm: true` unless the user asked for that destructive action. **Do not** return `path_less_parts` or `vault_tree_unavailable` for occupancy (occupancy is gone). `listTree` may still be used to scan references on delete; failure there is fail-closed (`part_still_referenced` / refuse delete), not “empty tree.”
+Never return a generic `"Feature failed"` as the only message. Never pass `confirm: true` unless the user asked for that destructive action. **Do not** return `path_less_parts` or `vault_tree_unavailable` for occupancy (occupancy is gone). A `path` argument is `unknown_part` / `unknown_assembly` (or `bad_args` if the schema rejects it). `listTree` may still be used to scan references on delete; failure there is fail-closed (`part_still_referenced` / refuse delete), not “empty tree.”
 
 ### 3.8 Stop relying on these current behaviours
 
 | Today | Stop |
 | --- | --- |
 | Dual `id` (UUID) + `surfId` | One part `id` (surf-id) |
-| `part_id` that is a UUID | Surf-id `part_id` only. `path` is a one-release deprecated alias (§3.1) |
-| Assemblies identified by folder `name` | `assembly_id`; name is a non-unique label |
+| `part_id` that is a UUID or a vault path | Surf-id `part_id` only — no `path` alias |
+| Assemblies identified by folder `name` | `assembly_id`; name is a non-unique label shown as written |
 | `assemblies/<Name>/<Part>.js` and `-2` suffixes | `parts/<id>.js`; no occupancy |
-| Rename as a git move | WC name edit; Save writes the same path |
-| `parts[].path` as identity | Informational `f(id)` only |
+| Rename as a git move | WC name edit; Save writes the same `f(id)` file |
+| `parts[].path` in results or as identity | Omit `path` from results; ids only |
 | Paint / rename / insert / copy / delete flushing git | WC only; Save later |
 | `create_assembly` creating a vault or leaving strays | Local, single-flight, one `assemblyId` |
 | `open_assembly` of a missing name returning success | `not_found` / `unknown_assembly` |
@@ -500,11 +498,21 @@ New Assembly / `create_assembly` / import already mint an assembly id onto the I
 
 ### 4.2 Legacy vault = read-only git (legacy reader)
 
+**Temporary.** The legacy reader and Upgrade vault live in **one isolated module**, `src/utils/git/legacyVault/`, with a **single entry point** (`index.js`). Every file in that folder starts with:
+
+```
+// TEMPORARY: remove after Artur's vault is upgraded
+```
+
+Nothing outside that folder parses v1 paths or plans a v1→v2 commit. Callers import only the entry point (detect / open / plan-upgrade). PR 10 deletes the folder and those call sites (§6).
+
 A vault is **legacy** when `surfcad.json` is version `1`, or the tree still has `assemblies/<Name>/.surf.json`, `assemblies/<Name>/<Part>.js`, or `parts/<Name>.js` whose stem is not a surf-id.
 
-The new app **opens** it through a **legacy reader** (today’s path-keyed parse). Map into the WC by id (`// @surf-id` / backfill). The WC is editable. **No v1 write.** `dirty.upgradeRequired` is true.
+Until PR 10, the app **opens** it through that module (today’s path-keyed parse). Map into the WC by id (`// @surf-id` / backfill). The WC is editable. **No v1 write.** `dirty.upgradeRequired` is true.
 
 A missing legacy blob is a `missing` row, not an empty script, not auto-removed.
+
+**After PR 10** (Artur has confirmed his vault is upgraded): a v1 / folder-layout tree is **not** opened. The host shows **unsupported vault version** and tools return `{ code: "unsupported_vault_version" }`. No Upgrade button, no `git_upgrade_vault`.
 
 ### 4.3 Upgrade vault (the only v1→v2 writer)
 
@@ -550,7 +558,9 @@ After the sequence below is green:
 - Per-part overwrite chrome; `git_behind_resolve` `keep`
 - README name index (never added)
 
-**Keep:** `mintSurfId` / `isSurfId` as **the** id; adapter (`compare` used for conflict); list/open (legacy reader until Upgrade); consent modal; conflict UI (Overwrite / Get latest / Save mine to a new branch / Dismiss); delete-assembly / delete-repo confirms; reference-counting on delete; copy-or-reference prompt.
+**Keep:** `mintSurfId` / `isSurfId` as **the** id; adapter (`compare` used for conflict); v2 list/open; consent modal; conflict UI (Overwrite / Get latest / Save mine to a new branch / Dismiss); delete-assembly / delete-repo confirms; reference-counting on delete; copy-or-reference prompt.
+
+**Keep only until PR 10:** `src/utils/git/legacyVault/` (reader + Upgrade). Then delete it.
 
 ---
 
@@ -562,16 +572,28 @@ Each PR has tests, keeps CI green, does not touch `src/fea/**` or `surfcad-fea/*
 | --- | --- | --- | --- |
 | **0** (this) | `docs/git-save-model.md` | S | Reviewable contract + 12-case table |
 | **1** | v2 `validateSurfJson` + `f(id)` path helpers + header `@name`. No git write. Catalog / `assembly.schema.json` grows a v2 branch. | S | v2 fixtures validate; v1 fixtures still validate in the legacy parser; v2 file rejected by v1 parser |
-| **2** | Legacy reader: open v1 tree into WC by id; `missing` row; `vaultLayout: "legacy"`; **no write**. IDB identity collapse (UUID/path → surf-id). | M | Open Gearbox-style vault; ids stable across reload; no `commitFiles` |
+| **2** | Isolated `src/utils/git/legacyVault/` (entry `index.js`, banner `TEMPORARY: remove after Artur's vault is upgraded`). Legacy reader: open v1 tree into WC by id; `missing` row; `vaultLayout: "legacy"`; **no write**. IDB identity collapse (UUID/path → surf-id). | M | Open Gearbox-style vault; ids stable across reload; no `commitFiles`; no v1 parse outside `legacyVault/` |
 | **3** | Persist `BranchTip` + `AssemblyCommit`; capture from open/tip. No write-path change. | S | Reload restores hashes; path-less capture does not throw |
-| **4** | **Upgrade vault** UI + `git_upgrade_vault` (confirm). One commit of **remote** bytes → v2 + deletes. Dirty WC → normal Save as a second commit under the same confirm. Delete README only if it matches a known old seed. Idempotent retry. Save on legacy **prompts** Upgrade (no v1 write). | M | Remote tree is v2; WC edits land only in commit 2; no write on load |
+| **4** | **Upgrade vault** inside `legacyVault/` + `git_upgrade_vault` (confirm). One commit of **remote** bytes → v2 + deletes. Dirty WC → normal Save as a second commit under the same confirm. Delete README only if it matches a known old seed. Idempotent retry. Save on legacy **prompts** Upgrade (no v1 write). | M | Remote tree is v2; WC edits land only in commit 2; no write on load; upgrade plan only exported from `legacyVault/` |
 | **5** | `writeVaultCommit` + adapter spy (allowlist shrinks). Seed without README index; seed-retry if createRepo succeeded. | S | Harness exists; seed retry unit |
 | **6** | Pure `planSave` + unit tests for the **12 cases** (§7). No moves. Shared-part adopt. Delete-from-repo reference rule. File-level compare input. | M | Tests pass; not wired |
 | **7** | Wire user Save + `git_save` on **v2** vaults. Conflict UI: Overwrite / Get latest / Save mine to a new branch / Dismiss (Save and main-moved). Offline pending (second Save pushes). `online` not a writer. No repo create before first Save. | L | One commit; rename is not a move; sibling Save does not conflict; Get latest writes no git |
-| **8** | Agent contract: `part_id` / `assembly_id`; `path` deprecated alias + warning for one release; `unknown_*`; `upgrade_required`; writers require `part_id`; single-flight `create_assembly`; versioned writes; `open_part` by id. | M | Agent goldens; T3/T17/T19 host-side |
+| **8** | Agent contract: `part_id` / `assembly_id` only — **no `path` field or alias**; `unknown_*`; `upgrade_required`; writers require `part_id`; single-flight `create_assembly`; versioned writes; `open_part` by id. | M | Agent goldens; T3/T17/T19 host-side; `parts` / `list_assemblies` have no `path` |
 | **9** | Delete dead APIs: path planning, `planRenameVaultPartPath`, `gitRename`, `gitAssemblyRename`, outbox write path, dual-id helpers. Goldens expect WC-only then `git_save`. | M | Spy allowlist = `writeVaultCommit` + tests + Upgrade |
+| **10** | **Delete legacy reader + Upgrade vault once Artur confirms his vault is upgraded.** Remove the isolated module and every call site. After this, a v1 vault shows **unsupported vault version**. | S | `legacyVault/` gone; v1 open → `unsupported_vault_version`; no Upgrade UI or `git_upgrade_vault` |
 
-Do not combine 7+8. Host contract (8) can start once 7 is on a branch. PR 1+2 must precede Upgrade (4). Do not write v2 until 1 is in.
+**PR 10 — exact removals** (landed by PRs 2 and 4; do not scatter v1 code elsewhere):
+
+| Remove | Why |
+| --- | --- |
+| `src/utils/git/legacyVault/` (entire dir: `index.js` entry, `reader.js`, `upgrade.js`, known-seed README bytes) | Temporary v1 reader + Upgrade planner |
+| Imports of `legacyVault` from `src/App.jsx` (open vault, Save-on-legacy prompt) | Only callers of detect / open / plan-upgrade |
+| `git_upgrade_vault` in `src/agent/commands/git.js`, `src/agent/commands.json`, `src/agent/export/commandMeta.js` | Agent Upgrade |
+| `upgradeRequired` / `vaultLayout: "legacy"` on `parts` / `dirty` (`src/agent/state/dirty.js` and `readParts` in `src/App.jsx`) | Agent flags for the temporary path |
+| Upgrade-vault UI in `src/components/PartFeed.jsx` (or the Save prompt that calls it) | User confirm for Upgrade |
+| Tests that import `legacyVault` (`test/legacy-vault*.js`, `test/git-upgrade-vault*.js`, and any goldens that Upgrade) | Dead with the module |
+
+Do not combine 7+8. Host contract (8) can start once 7 is on a branch. PR 1+2 must precede Upgrade (4). Do not write v2 until 1 is in. PR 10 waits on Artur’s confirmation; it is not bundled with 9.
 
 ---
 
@@ -619,10 +641,10 @@ Do not combine 7+8. Host contract (8) can start once 7 is on a branch. PR 1+2 mu
 | Compare API truncated file list | If `compare.files` is incomplete, fail-closed: treat as conflict. |
 | Offline pending then remote overlap | Second Save re-plans / conflicts; `online` does not push. |
 | Upgrade crash mid-commit | Git commit is atomic. If the request failed, tree is still v1; retry Upgrade. |
-| MCP team still sends paths as ids | One release: host derives id + deprecation warning. Then `unknown_part` / `unknown_assembly`. |
+| MCP team still sends paths as ids | Schema rejects `path`; host returns `unknown_part` / `unknown_assembly` / `bad_args`. |
 | leftover README from old seed | Delete on Upgrade only if byte-identical to a known old seed; otherwise leave it. Save never touches it. |
 
-Rollback: revert PRs 9→4 in reverse. lastCommit in IDB is advisory. A vault that never ran Upgrade is still v1. A vault that ran Upgrade is v2; rolling back the app without the v2 reader cannot open it — say so in the Upgrade confirm.
+Rollback: revert PRs 9→4 in reverse (PR 10 only after Artur’s vault is v2). lastCommit in IDB is advisory. A vault that never ran Upgrade is still v1 and needs `legacyVault/` (or, after PR 10, shows **unsupported vault version**). A vault that ran Upgrade is v2; rolling back the app without the v2 reader cannot open it — say so in the Upgrade confirm.
 
 Feature flag optional (`SAVE_MODEL_V2`) around PR 7; default is sequential green PRs.
 
@@ -633,7 +655,7 @@ Feature flag optional (`SAVE_MODEL_V2`) around PR 7; default is sequential green
 | Item | This redesign |
 | --- | --- |
 | **T1** create_part doesn’t run | **Out of scope** (host run-on-create). |
-| **T3** vault paths without `git_save`; UUID replaced by path | **Fixed.** One part id; `path` is informational `f(id)`, not identity. |
+| **T3** vault paths without `git_save`; UUID replaced by path | **Fixed.** One part id; no `path` in tool args or results. |
 | **T5** `dirty.editedSinceLoad` incomplete | **Fixed** if dirty is AssemblyCommit vs WC by part id. |
 | **T16** error text not exposed | **Out of scope.** §3.7 still requires the UI string. |
 | **T17** active part desync / overwrite | **Host-side fixed** by one part id, atomic `create_part`, required `part_id`, versioned writes. |
@@ -646,13 +668,13 @@ T7 / T8 / T9 are MCP-batch product work; §3 already requires `assembly_id`, `un
 
 ## 11. Open questions
 
-**Resolved.** Surf-id format (not UUID). `.surf.json` **version 2** (v1 cannot express “no path”). `surfcad.json` version 2 is the upgrade marker. `groups[].source` is an assembly id. Mesh sidecar stays `.mesh`. One row per part id per assembly. Save never writes or regenerates `README.md`. `online` never writes. Conflict dialog (Save and the main-moved notice) is **Overwrite / Get latest / Save mine to a new branch / Dismiss**; Get latest never writes git; no per-part overwrite.
+**Resolved.** Surf-id format (not UUID). `.surf.json` **version 2** (v1 cannot express “no path”). `surfcad.json` version 2 is the upgrade marker. `groups[].source` is an assembly id. Mesh sidecar stays `.mesh`. One row per part id per assembly. Save never writes or regenerates `README.md`. `online` never writes. Conflict dialog (Save and the main-moved notice) is **Overwrite / Get latest / Save mine to a new branch / Dismiss**; Get latest never writes git; no per-part overwrite. MCP: `part_id` / `assembly_id` only — no `path` arg or result field. Names shown as written. Legacy reader + Upgrade are temporary (`src/utils/git/legacyVault/`); after PR 10 a v1 vault is **unsupported vault version**.
 
 1. Header is a separate `// @name <display>` line under `// @surf-id`.
 2. Upgrade is a pure layout migration of the **remote** bytes in one commit. If the WC has edits, a normal Save runs right after under the same confirmation (two commits).
 3. A deleted assembly’s id in a sibling’s `groups[].source` is a dangling label, cleaned on that sibling’s next Save.
 4. On Upgrade, delete `README.md` only if it is byte-identical to a known old seed text; otherwise leave it.
-5. Accept `path` as a deprecated alias for one MCP release; the host derives the id from `parts/<id>.js` / `assemblies/<id>.surf.json` (or the legacy reader) and returns a deprecation warning.
-6. The picker shows names raw, adding a muted short id suffix only when two visible rows share a name.
+5. **No `path` alias** and no `path` in results. Tools accept only `part_id` / `assembly_id` (pre-release; no deprecation cycle).
+6. Duplicate names are shown **as written**, with no short-id suffix or other disambiguation.
 
 **Still open:** none.
