@@ -1,6 +1,6 @@
 /**
  * Left CAD viewport rails (helper palette + contour mode) share one max-height
- * so they stop just below the part-name title chip. Height is **content-sized**
+ * so they stop 10px below the CAD feature ribbon. Height is **content-sized**
  * (`max-h` only): the rail is only as tall as its buttons need, and yields the
  * rest of the viewport. When the window is too short, the rail scrolls.
  *
@@ -14,16 +14,19 @@
  */
 import { useLayoutEffect, useRef, useState } from 'react';
 
-/** Cap: up to just below the part-name chip; content shorter → rail shrinks. */
-export const RAIL_PAIR_HEIGHT_CLASS = 'max-h-[min(26rem,calc(100%-5.5rem))]';
+/** Cap: 10px under the CAD feature ribbon; content shorter → rail shrinks. */
+export const RAIL_PAIR_HEIGHT_CLASS = 'rail-max-below-strip';
 
 /**
  * Desktop left rail: full length instead of a 26rem block floating at the
- * bottom. Top sits one gap-2 (8px) below the horizontal feature strip
- * (title row at top-14 + ~2.5rem strip). Bottom matches other viewport chrome
- * (bottom-2.5). Phones keep RAIL_PAIR_HEIGHT_CLASS.
+ * bottom. Top sits `--feature-strip-rail-gap` (10px) below the horizontal
+ * feature strip (title row at top-14 + `--feature-strip-height`). Bottom
+ * matches other viewport chrome (10px). Phones keep RAIL_PAIR_HEIGHT_CLASS.
  */
-export const RAIL_FULL_LENGTH_CLASS = 'top-[calc(3.5rem+2.5rem+0.5rem)] bottom-2.5';
+export const RAIL_FULL_LENGTH_CLASS = 'rail-full-below-strip';
+
+/** Right view rail: same 10px ribbon clearance, no 26rem cap. */
+export const RAIL_RIGHT_MAX_CLASS = 'rail-right-below-strip';
 
 /** data-rail-height for desktop full-length rails (goldens / playtest). */
 export const RAIL_DESKTOP_FULL_ATTR = 'desktop-full';

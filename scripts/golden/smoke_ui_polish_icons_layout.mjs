@@ -208,7 +208,7 @@ const contourRail = read('../../src/components/ContourModeRail.jsx');
   check('the right rail never scrolls', !/RAIL_SCROLL_CLASS/.test(panel)
     && /RAIL_NO_CLIP_CLASS/.test(panel));
   check('height and scrolling are separate concerns',
-    /RAIL_PAIR_HEIGHT_CLASS = 'max-h-\[min\(26rem,calc\(100%-5\.5rem\)\)\]'/.test(railPair));
+    /RAIL_PAIR_HEIGHT_CLASS = 'rail-max-below-strip'/.test(railPair));
   check('the no-clip class is overflow-visible',
     /RAIL_NO_CLIP_CLASS = 'overflow-visible'/.test(railPair));
   check('rail-scroll gives the thumb a pill radius', /\.rail-scroll::-webkit-scrollbar-thumb[\s\S]{0,200}?border-radius: 9999px/.test(css));
@@ -500,8 +500,9 @@ const contourRail = read('../../src/components/ContourModeRail.jsx');
 // viewport space, and useLeftRailFit switches to w-14 when nothing scrolls.
 {
   const railPair = read('../../src/utils/railPair.js');
+  const css = read('../../src/index.css');
   check('left rail height is content-max (max-h)',
-    /max-h-\[min\(26rem,calc\(100%-5\.5rem\)\)\]/.test(railPair)
+    /RAIL_PAIR_HEIGHT_CLASS = 'rail-max-below-strip'/.test(railPair)
       && /RAIL_PAIR_HEIGHT_ATTR = 'content-max'/.test(railPair));
   check('fit hook narrows width when buttons fit',
     /useLeftRailFit/.test(railPair)
@@ -513,9 +514,9 @@ const contourRail = read('../../src/components/ContourModeRail.jsx');
         && /data-rail-fit=\{fits \? 'fits' : 'scroll'\}/.test(src));
     check(`${name} still scrolls when the tools overflow`, /RAIL_SCROLL_CLASS/.test(src));
   }
-  // Part-name chip sits at top-4; content-max caps below it via calc(100%-5.5rem).
-  check('the rail stops below the part-name chip, not over it',
-    /top-4 left-1\/2 -translate-x-1\/2/.test(view));
+  // Feature ribbon sits under the title; content-max caps 10px below it.
+  check('the rail stops below the feature ribbon, not over it',
+    /rail-max-below-strip/.test(railPair) && /--feature-strip-rail-gap/.test(css));
 }
 
 if (failed) {

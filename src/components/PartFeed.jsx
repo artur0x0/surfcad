@@ -63,7 +63,7 @@ function RibbonBranchButton({
         data-git-branches=""
         title={`Branch: ${label}. Click to manage branches.`}
         aria-label={`On branch ${label}. Open branch list.`}
-        className={`pointer-events-auto ${width} truncate rounded px-1 text-xs font-medium text-blue-300 hover:bg-white/10 hover:text-blue-200`}
+        className={`pointer-events-auto ${width} truncate px-1.5 py-0.5 font-ui text-ui-sm font-medium parts-branch-chip text-on-dark`}
         onClick={(event) => {
           event.stopPropagation();
           onBranchClick();
@@ -75,7 +75,7 @@ function RibbonBranchButton({
   }
   return (
     <span
-      className={`${width} truncate px-1 text-xs font-medium text-blue-300/80`}
+      className={`${width} truncate px-1.5 py-0.5 font-ui text-ui-sm font-medium parts-branch-chip text-on-dark`}
       data-assembly-branch=""
       data-parts-ribbon-branch={desktop ? '' : undefined}
     >

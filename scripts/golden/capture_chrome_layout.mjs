@@ -6,7 +6,7 @@
  * Viewports: 390 (mobile), 768 (mobile breakpoint), 1280 (desktop).
  * Also 1024 for a narrow-desktop overflow check after the move.
  */
-/* global document, indexedDB, localStorage, sessionStorage */
+/* global document, window, getComputedStyle, indexedDB, localStorage, sessionStorage */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -183,13 +183,21 @@ async function measure(page) {
     const ribbonBranch = document.querySelector('[data-parts-ribbon-branch]');
     const assemblyBranch = document.querySelector('[data-parts-ribbon-center] [data-assembly-branch]');
     const header = document.querySelector('[data-parts-feed-ribbon]');
+    const leftRail = document.querySelector('[data-rail-pair="left"]');
+    const rightRail = document.querySelector('[data-rail-pair="right"]');
     const box = (el) => {
       if (!el) return null;
       const r = el.getBoundingClientRect();
       return {
-        x: r.x, y: r.y, w: r.width, h: r.height, top: r.top,
+        x: r.x, y: r.y, w: r.width, h: r.height, top: r.top, bottom: r.bottom,
         text: (el.innerText || '').trim(),
       };
+    };
+    const chip = ribbonBranch || assemblyBranch;
+    const chipStyle = chip ? getComputedStyle(chip) : null;
+    const gap = (rail) => {
+      if (!strip || !rail) return null;
+      return rail.getBoundingClientRect().top - strip.getBoundingClientRect().bottom;
     };
     return {
       strip: box(strip),
@@ -199,6 +207,13 @@ async function measure(page) {
       assemblyBranch: box(assemblyBranch),
       header: box(header),
       headerWraps: header ? header.scrollHeight > header.clientHeight + 1 : false,
+      leftRail: box(leftRail),
+      rightRail: box(rightRail),
+      leftGap: gap(leftRail),
+      rightGap: gap(rightRail),
+      viewportH: window.innerHeight,
+      branchBorder: chipStyle ? chipStyle.borderTopWidth : null,
+      branchColor: chipStyle ? chipStyle.color : null,
     };
   });
 }
@@ -354,6 +369,29 @@ async function main() {
           const min = Math.min(...tops);
           if (max - min > 1) {
             throw new Error(`${vp.tag}: viewport shifted partTop=${tops[0]} assemblyTop=${tops[1]} emptyTop=${tops[2]}`);
+          }
+        }
+        for (const row of [partMeasure, assemblyMeasure, emptyMeasure]) {
+          const state = row === partMeasure ? 'part' : (row === assemblyMeasure ? 'assembly' : 'empty');
+          if (typeof row.leftGap === 'number' && row.leftGap + 0.5 < 10) {
+            throw new Error(`${vp.tag} ${state}: left rail gap ${row.leftGap}px < 10px`);
+          }
+          if (typeof row.rightGap === 'number' && row.rightGap + 0.5 < 10) {
+            throw new Error(`${vp.tag} ${state}: right rail gap ${row.rightGap}px < 10px`);
+          }
+          const floor = row.viewportH - 8;
+          if (row.leftRail && row.leftRail.bottom > floor) {
+            throw new Error(`${vp.tag} ${state}: left rail overflows bottom ${row.leftRail.bottom} > ${floor}`);
+          }
+          if (row.rightRail && row.rightRail.bottom > floor) {
+            throw new Error(`${vp.tag} ${state}: right rail overflows bottom ${row.rightRail.bottom} > ${floor}`);
+          }
+        }
+        const chip = partMeasure.ribbonBranch || partMeasure.assemblyBranch;
+        if (chip && partMeasure.branchBorder) {
+          const bw = parseFloat(partMeasure.branchBorder);
+          if (!(bw >= 1)) {
+            throw new Error(`${vp.tag}: branch chip border ${partMeasure.branchBorder}`);
           }
         }
       }

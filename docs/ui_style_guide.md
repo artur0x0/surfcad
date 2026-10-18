@@ -157,6 +157,17 @@ the strip root. Chips share `feature-strip-chip` (32px). Do not set a
 per-state height. Switching assembly ↔ part ↔ empty must not jump the bar
 or shift the viewport.
 
+Leave **10px** (`--feature-strip-rail-gap`) between the ribbon bottom and the
+top of the left helper rail and the right view rail. Desktop full-length
+left rail: class `rail-full-below-strip`. Mobile content-max left rail:
+`rail-max-below-strip`. Right rail: `rail-right-below-strip` (same 10px
+clearance, no 26rem cap). Rails keep a 10px bottom inset so they do not
+overflow the pane.
+
+The Parts-header git branch chip (`data-parts-ribbon-branch`, class
+`parts-branch-chip`) is a 1px `--chrome-text` outline, `rounded-lg`, with
+`text-on-dark` on `chrome-surface`. Do not use blue text utilities.
+
 ## Brand
 
 - CAD header (`data-viewer-header-row`): paper-tile mark

@@ -40,3 +40,31 @@ test('feature ribbon uses one shared height token in every state', () => {
   assert.match(guide, /--feature-strip-height/);
   assert.match(guide, /46px/);
 });
+
+test('tool rails sit 10px below the feature ribbon', () => {
+  const css = read('src/index.css');
+  const rail = read('src/utils/railPair.js');
+  const panel = read('src/components/CrossSectionPanel.jsx');
+  assert.match(css, /--feature-strip-rail-gap:\s*0\.625rem/);
+  assert.match(css, /\.rail-full-below-strip\s*\{/);
+  assert.match(css, /\.rail-max-below-strip\s*\{/);
+  assert.match(css, /\.rail-right-below-strip\s*\{/);
+  assert.match(rail, /RAIL_FULL_LENGTH_CLASS = 'rail-full-below-strip'/);
+  assert.match(rail, /RAIL_PAIR_HEIGHT_CLASS = 'rail-max-below-strip'/);
+  assert.match(rail, /RAIL_RIGHT_MAX_CLASS = 'rail-right-below-strip'/);
+  assert.match(panel, /RAIL_RIGHT_MAX_CLASS/);
+});
+
+test('parts-header branch chip is a near-white outlined pill', () => {
+  const css = read('src/index.css');
+  const feed = read('src/components/PartFeed.jsx');
+  const chipFn = feed.slice(
+    feed.indexOf('function RibbonBranchButton'),
+    feed.indexOf('function RibbonAssemblyName'),
+  );
+  assert.match(css, /\.parts-branch-chip\s*\{/);
+  assert.match(css, /border:\s*1px solid rgb\(var\(--chrome-text\)\)/);
+  assert.match(chipFn, /parts-branch-chip/);
+  assert.match(chipFn, /text-on-dark/);
+  assert.doesNotMatch(chipFn, /text-blue-300/);
+});

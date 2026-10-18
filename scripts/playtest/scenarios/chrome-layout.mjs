@@ -45,10 +45,16 @@ async function metrics(page) {
       '[data-desktop-feature-strip] [data-feature-strip], [data-cad-feature-strip] [data-feature-strip]',
     );
     const shell = document.querySelector('.viewport-shell');
+    const leftRail = document.querySelector('[data-rail-pair="left"]');
+    const rightRail = document.querySelector('[data-rail-pair="right"]');
     const box = (el) => {
       if (!el) return null;
       const r = el.getBoundingClientRect();
-      return { x: r.x, y: r.y, w: r.width, h: r.height, top: r.top };
+      return { x: r.x, y: r.y, w: r.width, h: r.height, top: r.top, bottom: r.bottom };
+    };
+    const gap = (rail) => {
+      if (!strip || !rail) return null;
+      return rail.getBoundingClientRect().top - strip.getBoundingClientRect().bottom;
     };
     return {
       strip: box(strip),
@@ -60,6 +66,11 @@ async function metrics(page) {
       ribbonBranch: !!document.querySelector('[data-parts-ribbon-branch]'),
       assemblyBranch: !!document.querySelector('[data-parts-ribbon-center] [data-assembly-branch]'),
       paneOpen: !!document.querySelector('[data-git-branch-pane]'),
+      leftGap: gap(leftRail),
+      rightGap: gap(rightRail),
+      leftBottom: leftRail ? leftRail.getBoundingClientRect().bottom : null,
+      rightBottom: rightRail ? rightRail.getBoundingClientRect().bottom : null,
+      viewportH: window.innerHeight,
     };
   });
 }
@@ -76,6 +87,26 @@ function noShift(rows) {
   if (tops.length !== rows.length) return { ok: false, detail: `missing shell ${JSON.stringify(rows)}` };
   const span = Math.max(...tops) - Math.min(...tops);
   return { ok: span <= SHIFT_TOL, detail: tops.join(',') };
+}
+
+function railsClearRibbon(rows) {
+  const gaps = [];
+  for (const row of rows) {
+    for (const key of ['leftGap', 'rightGap']) {
+      const g = row[key];
+      if (typeof g !== 'number') continue;
+      if (g + 0.5 < 10) return { ok: false, detail: `${key}=${g}` };
+      gaps.push(`${key}:${g.toFixed(1)}`);
+    }
+    const floor = (row.viewportH || 0) - 8;
+    if (row.leftBottom != null && row.leftBottom > floor) {
+      return { ok: false, detail: `leftBottom=${row.leftBottom}` };
+    }
+    if (row.rightBottom != null && row.rightBottom > floor) {
+      return { ok: false, detail: `rightBottom=${row.rightBottom}` };
+    }
+  }
+  return { ok: true, detail: gaps.join(',') };
 }
 
 async function showCad(page) {
@@ -158,10 +189,11 @@ export async function run(ctx) {
     desktop = await cycleStates();
     const h = equalHeights([desktop.part, desktop.assembly, desktop.empty]);
     const s = noShift([desktop.part, desktop.assembly, desktop.empty]);
+    const g = railsClearRibbon([desktop.part, desktop.assembly, desktop.empty]);
     await savePageScreenshot(page, join(shotDir, 'after-1280-empty.png'));
     return {
-      ok: h.ok && s.ok && desktop.part.chips > 0 && desktop.assembly.joints && desktop.empty.empty,
-      detail: `h=${h.detail} shift=${s.detail} chips=${desktop.part.chips}`,
+      ok: h.ok && s.ok && g.ok && desktop.part.chips > 0 && desktop.assembly.joints && desktop.empty.empty,
+      detail: `h=${h.detail} shift=${s.detail} gap=${g.detail} chips=${desktop.part.chips}`,
     };
   });
 
@@ -201,6 +233,7 @@ export async function run(ctx) {
     const mobile = await cycleStates();
     const h = equalHeights([mobile.part, mobile.assembly, mobile.empty]);
     const s = noShift([mobile.part, mobile.assembly, mobile.empty]);
+    const g = railsClearRibbon([mobile.part, mobile.assembly, mobile.empty]);
     await savePageScreenshot(page, join(shotDir, 'after-390-cad.png'));
     await showParts(page);
     const header = await metrics(page);
@@ -209,8 +242,8 @@ export async function run(ctx) {
       && header.viewerBranch === false
       && header.ribbonBranch === false;
     return {
-      ok: h.ok && s.ok && mobileBranchOk,
-      detail: `h=${h.detail} shift=${s.detail} assemblyBranch=${header.assemblyBranch} ribbon=${header.ribbonBranch} viewer=${header.viewerBranch}`,
+      ok: h.ok && s.ok && g.ok && mobileBranchOk,
+      detail: `h=${h.detail} shift=${s.detail} gap=${g.detail} assemblyBranch=${header.assemblyBranch} ribbon=${header.ribbonBranch} viewer=${header.viewerBranch}`,
     };
   });
 
