@@ -186,6 +186,11 @@ export function createFakeGithub({ login = 'golden-agent', repo = 'surfcad-vault
       const base = branches.get(m[1]) || m[1];
       const head = branches.get(m[2]) || m[2];
       const same = base === head;
+      const files = same ? [] : commitFiles(head).map((f) => ({
+        filename: f.path,
+        status: f.status,
+        ...(f.previous_filename ? { previous_filename: f.previous_filename } : {}),
+      }));
       return json(200, {
         status: same ? 'identical' : 'ahead',
         ahead_by: same ? 0 : 1,
@@ -193,7 +198,8 @@ export function createFakeGithub({ login = 'golden-agent', repo = 'surfcad-vault
         base_commit: { sha: base },
         merge_base_commit: { sha: base },
         commits: same ? [] : [{ sha: head }],
-        files: same ? [] : commitFiles(head).map((f) => ({ filename: f.path, status: f.status })),
+        files,
+        truncated: files.length >= 300,
       });
     }
     unhandled.push(`${method} ${path}`);

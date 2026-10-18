@@ -539,6 +539,7 @@ function makeFakeGithub() {
         merge_base_commit: { sha: mergeBaseSha },
         commits: commitsAhead,
         files,
+        truncated: files.length >= 300,
       });
     }
 

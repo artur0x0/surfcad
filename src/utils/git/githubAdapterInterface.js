@@ -41,8 +41,12 @@
  *       base/head are branch names or commit shas.
  *       { status: 'identical'|'ahead'|'behind'|'diverged',
  *         aheadBy, behindBy, mergeBaseSha, baseSha, headSha,
+ *         truncated: boolean,
  *         files: [{ path, status: 'added'|'modified'|'removed' }] }
  *       `files` is the diff from mergeBase to head (what head changed).
+ *       GitHub caps that list at 300; `truncated` is true at that cap (or
+ *       when GitHub signals it). A rename lists both previous_filename and
+ *       filename as changed paths.
  *
  * RepoInfo = { owner, name, private, defaultBranch, empty }
  */
@@ -55,6 +59,9 @@ import {
   toUint8Array,
   utf8ByteLength,
 } from './binaryContent.js';
+
+/** GitHub REST compare lists at most 300 files. */
+export const GITHUB_COMPARE_FILE_LIMIT = 300;
 
 export const GITHUB_ADAPTER_METHODS = Object.freeze([
   'getViewer',

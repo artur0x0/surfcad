@@ -8,7 +8,7 @@
  * without auto_init; the first commitFiles creates the default branch.
  * Shas are deterministic 40-hex strings, so tests can compare them.
  */
-import { GitAdapterError, assertGithubAdapter } from './githubAdapterInterface.js';
+import { GitAdapterError, GITHUB_COMPARE_FILE_LIMIT, assertGithubAdapter } from './githubAdapterInterface.js';
 import { normalizeRepoPath } from '../assembly.js';
 import { gitBlobSha, prepareCommitFiles } from './binaryContent.js';
 
@@ -415,7 +415,16 @@ export function createMockGithubAdapter(options = {}) {
       }
       for (const p of a.keys()) if (!b.has(p)) files.push({ path: p, status: 'removed' });
       files.sort((x, y) => x.path.localeCompare(y.path));
-      return { status, aheadBy, behindBy, mergeBaseSha, baseSha, headSha, files };
+      return {
+        status,
+        aheadBy,
+        behindBy,
+        mergeBaseSha,
+        baseSha,
+        headSha,
+        files,
+        truncated: files.length >= GITHUB_COMPARE_FILE_LIMIT,
+      };
     },
 
     // ---- test hooks (not part of the interface) ----
