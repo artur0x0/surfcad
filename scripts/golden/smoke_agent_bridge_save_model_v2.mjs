@@ -15,9 +15,9 @@
  *   2. A granted set_script changes the editor and sets dirty.unsaved, and
  *      still does not commit.
  *   3. git_save then commits exactly once. dirty.unsaved goes back to false.
- *   4. An overlapping remote edit makes the next git_save return the host's
- *      conflict payload (status/code "conflict" from executePlanSave, passed
- *      through gitOpResult). Nothing else is committed.
+ *   4. An overlapping remote edit makes the next git_save an error with
+ *      code "conflict" (executePlanSave status/code, mapped by gitOpResult).
+ *      Nothing else is committed.
  */
 /* global localStorage, navigator, sessionStorage */
 import { existsSync } from 'node:fs';
@@ -393,8 +393,7 @@ try {
   check(
     'rule4 git_save conflict is the host conflict code',
     conflictEdit.isError !== true
-      && conflict.isError !== true
-      && conflict.parsed?.status === 'conflict'
+      && conflict.isError === true
       && conflict.parsed?.code === 'conflict',
     JSON.stringify(conflict.parsed),
   );
