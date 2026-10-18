@@ -587,6 +587,8 @@ Each PR has tests, keeps CI green, does not touch `src/fea/**` or `surfcad-fea/*
 | Remove | Why |
 | --- | --- |
 | `src/utils/git/legacyVault/` (entire dir: `index.js` entry, `reader.js`, `upgrade.js`, known-seed README bytes) | Temporary v1 reader + Upgrade planner |
+| `src/utils/git/upgradeVaultEnabled.js` | Upgrade feature flag; unused once Upgrade is gone |
+| `lastCommitBlobSources` import and call in `src/utils/git/lastCommit.js` | Drop the `legacyVault/reader.js` import and the `blobSources: lastCommitBlobSources(opened)` call; keep `lastCommit.js` (core v2 §2.4) |
 | Imports of `legacyVault` from `src/App.jsx` (open vault, Save-on-legacy prompt) | Only callers of detect / open / plan-upgrade |
 | `git_upgrade_vault` in `src/agent/commands/git.js`, `src/agent/commands.json`, `src/agent/export/commandMeta.js` | Agent Upgrade |
 | `upgradeRequired` / `vaultLayout: "legacy"` on `parts` / `dirty` (`src/agent/state/dirty.js` and `readParts` in `src/App.jsx`) | Agent flags for the temporary path |

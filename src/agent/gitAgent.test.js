@@ -6,6 +6,7 @@ import {
   agentGitRealWriteBlocked,
   agentGitConsentPrompt,
   gitOpResult,
+  summarizeUpgradeVaultResult,
   AGENT_GIT_REAL_SESSION_KEY,
 } from './gitAgent.js';
 import {
@@ -331,6 +332,52 @@ test('gitOpResult passes already_upgraded and upgraded through as success', () =
   assert.equal(gitOpResult({ status: 'already_upgraded' }).result?.status, 'already_upgraded');
   assert.equal(gitOpResult({ status: 'upgraded', sha: 'abc' }).result?.sha, 'abc');
   assert.equal(gitOpResult({ status: 'already_upgraded' }).error, undefined);
+});
+
+test('git_upgrade_vault result is a summary without plan or rekey scripts', () => {
+  const host = {
+    status: 'upgraded_and_saved',
+    sha: 'save-sha',
+    upgradeSha: 'up-sha',
+    branch: 'main',
+    commits: 2,
+    files: [{ path: 'parts/x.js', content: 'return 1;\n' }],
+    leftoverFiles: ['assemblies/Box/notes.txt'],
+    plan: {
+      writes: { 'parts/x.js': 'return 1;\n' },
+      files: [{ path: 'parts/x.js', content: 'return 1;\n' }],
+      leftoverFiles: ['assemblies/Box/notes.txt'],
+      assemblies: [{ id: 'asm-1', folder: 'Box' }],
+      keptPartIds: ['p1'],
+      mintedPartIds: ['p2'],
+      partBindings: [{ path: 'parts/Pin.js', id: 'p1' }],
+      readmeKept: true,
+    },
+    rekey: { scripts: { p1: 'secret' }, pairs: [{ from: 'a', to: 'b' }] },
+  };
+  const summary = summarizeUpgradeVaultResult(host);
+  assert.equal(summary.status, 'upgraded_and_saved');
+  assert.equal(summary.sha, 'save-sha');
+  assert.equal(summary.upgradeSha, 'up-sha');
+  assert.deepEqual(summary.assemblyIds, ['asm-1']);
+  assert.equal(summary.counts.commits, 2);
+  assert.equal(summary.counts.assemblies, 1);
+  assert.equal(summary.counts.partsKept, 1);
+  assert.equal(summary.counts.partsMinted, 1);
+  assert.equal(summary.counts.leftoverFiles, 1);
+  assert.deepEqual(summary.leftoverFiles, ['assemblies/Box/notes.txt']);
+  assert.equal(summary.warnings.some((row) => /README/.test(row)), true);
+  assert.equal(Object.hasOwn(summary, 'plan'), false);
+  assert.equal(Object.hasOwn(summary, 'rekey'), false);
+  assert.equal(Object.hasOwn(summary, 'files'), false);
+  assert.equal(JSON.stringify(summary).includes('secret'), false);
+  assert.equal(JSON.stringify(summary).includes('parts/Pin.js'), false);
+  assert.equal(JSON.stringify(summary).includes('return 1'), false);
+
+  const shaped = gitOpResult(host, { commandName: 'git_upgrade_vault' });
+  assert.equal(shaped.error, undefined);
+  assert.deepEqual(shaped.result, summary);
+  assert.equal(Object.hasOwn(shaped.result, 'plan'), false);
 });
 
 test('git_upgrade_vault consent prompt names the vault', () => {

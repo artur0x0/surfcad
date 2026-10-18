@@ -757,7 +757,7 @@ const PartFeed = forwardRef(function PartFeed({
   const startCommit = () => {
     if (source !== 'git' || !canCommit) return;
     if (vaultLayout === 'legacy' && upgradeAvailable) {
-      setCommitFlow({ stage: 'upgrade', draft: '', result: null, error: '' });
+      setCommitFlow({ stage: 'upgrade', draft: '', result: null, error: '', upgrading: true });
       return;
     }
     setCommitFlow({ stage: 'message', draft: '', result: null, error: '' });
@@ -1131,7 +1131,7 @@ const PartFeed = forwardRef(function PartFeed({
   }, [assemblyRenameFlow]);
 
   const runUpgrade = async () => {
-    setCommitFlow({ stage: 'busy', draft: '', result: { phase: 'upgrade' }, error: '' });
+    setCommitFlow({ stage: 'busy', draft: '', result: { phase: 'upgrade' }, error: '', upgrading: true });
     const result = (await onUpgradeVault?.()) || { status: 'error', error: 'Upgrade unavailable' };
     if (result.status === 'conflict' && result.phase === 'save') {
       setCommitFlow({ stage: 'upgrade-conflict', draft: '', result, error: '' });
@@ -1155,7 +1155,7 @@ const PartFeed = forwardRef(function PartFeed({
       return;
     }
     const prior = commitFlow?.result || null;
-    setCommitFlow({ stage: 'busy', draft: '', result: prior, error: '' });
+    setCommitFlow({ stage: 'busy', draft: '', result: prior, error: '', upgrading: true });
     const result = (await onUpgradeConflict?.({
       action,
       files: prior?.files,
@@ -2474,7 +2474,11 @@ const PartFeed = forwardRef(function PartFeed({
             </>
           )}
           {commitFlow.stage === 'busy' && (
-            upgradeAvailable && (commitFlow.result?.phase === 'upgrade' || commitFlow.result?.phase === 'save')
+            upgradeAvailable && (
+              commitFlow.upgrading
+              || commitFlow.result?.phase === 'upgrade'
+              || commitFlow.result?.phase === 'save'
+            )
               ? <p className="text-xs text-muted-on-dark font-ui" data-git-dialog-loading="">Upgrading…</p>
               : <p className="text-xs text-chrome-secondary" data-git-dialog-loading="">Committing…</p>
           )}

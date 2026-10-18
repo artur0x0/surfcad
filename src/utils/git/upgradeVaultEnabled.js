@@ -1,3 +1,4 @@
+// TEMPORARY: remove after Artur's vault is upgraded
 /**
  * Upgrade vault is off in production. This build cannot open or save a v2
  * vault (that lands in a later PR), so writing v2 here would lock the user

@@ -29,7 +29,7 @@ import {
 } from '../surfId.js';
 import { pruneDanglingColors, pruneDanglingGroupPartIds } from '../surfJson.js';
 import { parseSurfJsonV2, stringifySurfJsonV2 } from '../surfJsonV2.js';
-import { pruneDanglingSurfJoints } from '../../jointSchema.js';
+import { jointedSurfIds, poseFieldsForPart, pruneDanglingSurfJoints } from '../../jointSchema.js';
 import { VAULT_MARKER_KIND, VAULT_MARKER_PATH } from '../vaultNames.js';
 import { captureLastCommit } from '../lastCommit.js';
 import { VAULT_README_PATH } from '../vaultLayout.js';
@@ -82,46 +82,255 @@ function asV2Id(value) {
   return isV2SurfId(id) ? id : null;
 }
 
-/**
- * Row `parts[].id` wins. A copy file may still carry the original's
- * `// @surf-id` (PinCopy.js naming Pin); restamp to the row id.
- * Header is used only when the row has no id. Duplicate ids in one
- * `.surf.json` mint a copy with `copiedFrom`. The same id in two
- * assemblies is a shared reference when it is the same file.
- */
-function pickPartId(part, script, pathIndex, used, seenInAssembly, mintOpts) {
-  const path = scriptPathOf(part);
+function isSelfCopiedFrom(part) {
   const rowId = asV2Id(part?.id);
-  const header = asV2Id(readSurfId(script || ''));
-  const cached = path ? asV2Id(pathIndex[path]) : null;
+  const copied = asV2Id(part?.copiedFrom);
+  return !!(rowId && copied && copied === rowId);
+}
 
-  const keep = (id, restamp) => {
-    if (!id) return null;
-    if (seenInAssembly.has(id)) return null;
-    if (used.has(id) && cached !== id) return null;
-    return { id, minted: false, restamp: !!restamp };
-  };
-
-  if (rowId) {
-    const hit = keep(rowId, header != null && header !== rowId);
-    if (hit) return hit;
-    return {
-      id: mintUnused(used, mintOpts),
-      minted: true,
-      copiedFrom: rowId,
-      restamp: true,
-    };
+function ensureClaim(byId, id) {
+  if (!byId.has(id)) {
+    byId.set(id, {
+      referencedHeaderPaths: new Set(),
+      rowClaims: [],
+    });
   }
-  const fromHeader = keep(header, false);
-  if (fromHeader) return fromHeader;
-  const fromCache = keep(cached, header != null && cached != null && header !== cached);
-  if (fromCache) return fromCache;
-  return {
-    id: mintUnused(used, mintOpts),
-    minted: true,
-    restamp: true,
-    copiedFrom: header && (seenInAssembly.has(header) || used.has(header)) ? header : null,
+  return byId.get(id);
+}
+
+function headerIdOf(files, path) {
+  if (!hasOwn(files, path) || typeof files[path] !== 'string') return null;
+  return asV2Id(readSurfId(files[path]));
+}
+
+/**
+ * Claimants follow v1 refs: groups/colors/joints name row ids, so an
+ * explicit row id says which file owns that id. Header-only claims apply
+ * only when no row carries the id, and only for files some row references.
+ * Unreferenced files never claim an id.
+ */
+function collectIdClaimants(parsedMeta, files) {
+  const byId = new Map();
+  const referencedPaths = new Set();
+  for (const { folder, parsed } of parsedMeta || []) {
+    (parsed?.parts || []).forEach((part, index) => {
+      const path = scriptPathOf(part);
+      if (path) referencedPaths.add(path);
+      const rowId = asV2Id(part?.id);
+      if (!rowId || !path) return;
+      ensureClaim(byId, rowId).rowClaims.push({
+        path,
+        folder,
+        index,
+        selfCopiedFrom: isSelfCopiedFrom(part),
+      });
+    });
+  }
+  for (const path of referencedPaths) {
+    const header = headerIdOf(files, path);
+    if (header) ensureClaim(byId, header).referencedHeaderPaths.add(path);
+  }
+  return { byId, referencedPaths };
+}
+
+function isSharedPartPath(path) {
+  return parseLegacyVaultPath(path)?.kind === 'shared-part';
+}
+
+function sortRowClaims(rows) {
+  return rows.slice().sort((a, b) => {
+    const folderCmp = String(a.folder || '').localeCompare(String(b.folder || ''));
+    if (folderCmp) return folderCmp;
+    if (a.index !== b.index) return a.index - b.index;
+    return String(a.path).localeCompare(String(b.path));
+  });
+}
+
+function pickAmongRowPaths(id, poolRows, files) {
+  let candidates = [...new Set(poolRows.map((row) => row.path))];
+  if (candidates.length === 1) return { path: candidates[0], rank: 0 };
+
+  const withHeader = candidates.filter((path) => headerIdOf(files, path) === id);
+  if (withHeader.length === 1) return { path: withHeader[0], rank: 1 };
+  if (withHeader.length > 1) candidates = withHeader;
+
+  const shared = candidates.filter(isSharedPartPath);
+  if (shared.length === 1) return { path: shared[0], rank: 2 };
+  if (shared.length > 1) candidates = shared;
+
+  const rows = sortRowClaims(poolRows.filter((row) => candidates.includes(row.path)));
+  if (rows[0]) return { path: rows[0].path, rank: 3 };
+  candidates.sort((a, b) => a.localeCompare(b));
+  return { path: candidates[0], rank: 3 };
+}
+
+function chooseOwnerPath(id, claim, files) {
+  const rows = claim?.rowClaims || [];
+  if (rows.length) {
+    const paths = [...new Set(rows.map((row) => row.path))];
+    if (paths.length === 1) return { path: paths[0], rank: 0 };
+    const live = rows.filter((row) => !row.selfCopiedFrom);
+    return pickAmongRowPaths(id, live.length ? live : rows, files);
+  }
+
+  const headers = [...(claim?.referencedHeaderPaths || [])];
+  if (!headers.length) return null;
+  const shared = headers.filter(isSharedPartPath);
+  const pool = (shared.length ? shared : headers).slice().sort((a, b) => a.localeCompare(b));
+  return { path: pool[0], rank: 10 };
+}
+
+function isRowClaimRank(rank) {
+  return rank < 10;
+}
+
+/**
+ * One owner path per id, decided before any mint. A path that wins two
+ * ids keeps the explicit row-id claim over a header-only claim. Header
+ * match only breaks ties between two row-id claims.
+ */
+function resolvePathOwners(claimants, files) {
+  const ownerPathById = new Map();
+  const ownerIdByPath = new Map();
+  const rankByPath = new Map();
+  const take = (id, path, rank) => {
+    ownerPathById.set(id, path);
+    ownerIdByPath.set(path, id);
+    rankByPath.set(path, rank);
   };
+  for (const id of [...(claimants?.keys?.() || [])].sort()) {
+    const chosen = chooseOwnerPath(id, claimants.get(id), files);
+    if (!chosen) continue;
+    const prevId = ownerIdByPath.get(chosen.path);
+    if (!prevId) {
+      take(id, chosen.path, chosen.rank);
+      continue;
+    }
+    const prevRank = rankByPath.get(chosen.path);
+    const nowRow = isRowClaimRank(chosen.rank);
+    const prevRow = isRowClaimRank(prevRank);
+    let steal = false;
+    if (nowRow && !prevRow) steal = true;
+    else if (!nowRow && prevRow) steal = false;
+    else if (nowRow && prevRow) {
+      const headerNow = headerIdOf(files, chosen.path) === id;
+      const headerPrev = headerIdOf(files, chosen.path) === prevId;
+      if (headerNow && !headerPrev) steal = true;
+      else if (headerNow === headerPrev && chosen.rank < prevRank) steal = true;
+      else if (headerNow === headerPrev && chosen.rank === prevRank && id < prevId) steal = true;
+    } else if (chosen.rank < prevRank || (chosen.rank === prevRank && id < prevId)) {
+      steal = true;
+    }
+    if (steal) {
+      ownerPathById.delete(prevId);
+      take(id, chosen.path, chosen.rank);
+    }
+  }
+  return { ownerPathById, ownerIdByPath };
+}
+
+/**
+ * One final id per legacy path. Owner paths keep their id; every other
+ * referenced path mints once and reuses that id in every assembly.
+ */
+function assignAllPathIds({
+  referencedPaths,
+  ownerIdByPath,
+  ownerPathById,
+  pathIndex,
+  usedPart,
+  mintOptsFor,
+}) {
+  const pathToId = {};
+  const mintedPaths = new Set();
+  for (const [path, id] of ownerIdByPath.entries()) {
+    pathToId[path] = id;
+    usedPart.add(id);
+  }
+  for (const path of [...referencedPaths].sort((a, b) => a.localeCompare(b))) {
+    if (pathToId[path]) continue;
+    const cached = asV2Id(pathIndex[path]);
+    const cacheOwner = cached ? ownerPathById.get(cached) : null;
+    if (cached && !usedPart.has(cached) && (!cacheOwner || cacheOwner === path)) {
+      pathToId[path] = cached;
+    } else {
+      pathToId[path] = mintUnused(usedPart, mintOptsFor({ path }, 0));
+      mintedPaths.add(path);
+    }
+    usedPart.add(pathToId[path]);
+  }
+  return { pathToId, mintedPaths };
+}
+
+/**
+ * Old v1 row id → this path's final id. Live finals map to themselves
+ * so a copiedFrom that already names a surviving part stays. A later
+ * duplicate-id copy row must not overwrite that mapping. A row id that
+ * folded into another file's id remaps; an id that never owned a path
+ * is omitted (deleted part).
+ */
+function foldMapForCopiedFrom(parsedMeta, pathToId) {
+  const fold = new Map();
+  for (const id of Object.values(pathToId || {})) {
+    if (id) fold.set(id, id);
+  }
+  for (const { parsed } of parsedMeta || []) {
+    for (const part of parsed?.parts || []) {
+      const rowId = asV2Id(part?.id);
+      const path = scriptPathOf(part);
+      const finalId = path ? pathToId[path] : null;
+      if (rowId && finalId && !fold.has(rowId)) fold.set(rowId, finalId);
+    }
+  }
+  return fold;
+}
+
+/**
+ * `copiedFrom` only from the v1 row (remapped through the fold), or from
+ * an explicit row id this path lost to a DIFFERENT file (a true duplicate).
+ * Folding a row id into the same file's final id does not set copiedFrom —
+ * that id is not a live part. A remapped v1 copiedFrom that lands on this
+ * row's own final id is dropped. A v1 copiedFrom that names a deleted
+ * part is kept. Header-only losers mint with none.
+ */
+function copiedFromForRow(part, finalId, pathToId, foldMap) {
+  const existing = asV2Id(part?.copiedFrom);
+  if (existing) {
+    const remapped = foldMap?.has(existing) ? foldMap.get(existing) : existing;
+    if (remapped && remapped !== finalId) return remapped;
+  }
+  const rowId = asV2Id(part?.id);
+  if (!rowId || rowId === finalId) return null;
+  const thisPath = scriptPathOf(part);
+  for (const [path, id] of Object.entries(pathToId || {})) {
+    if (id === rowId && path !== thisPath) return rowId;
+  }
+  return null;
+}
+
+function assignLeftoverPathId(path, files, pathIndex, usedPart, ownerPathById, mintOpts) {
+  const cached = asV2Id(pathIndex[path]);
+  if (cached && !usedPart.has(cached) && !ownerPathById.has(cached)) {
+    return { id: cached, minted: false };
+  }
+  const header = headerIdOf(files, path);
+  if (header && !usedPart.has(header) && !ownerPathById.has(header)) {
+    return { id: header, minted: false };
+  }
+  return { id: mintUnused(usedPart, mintOpts), minted: true };
+}
+
+function applyPoseFields(parts, joints) {
+  const jointed = jointedSurfIds(joints);
+  return (parts || []).map((part) => {
+    const pose = poseFieldsForPart(part, jointed.has(part.id), part.position);
+    const row = { ...part };
+    delete row.position;
+    delete row.placement;
+    if (pose.position) row.position = pose.position;
+    if (pose.placement) row.placement = pose.placement;
+    return row;
+  });
 }
 
 function folderFromGroupSource(source) {
@@ -314,10 +523,15 @@ function assertCopiedBytes(plan, files) {
 
 /**
  * Pure planner. `files` is path → UTF-8 string or Uint8Array from the tip.
- * Ids: `.surf.json` `parts[].id` wins over a stale blob header (copies);
- * fall back to `// @surf-id` when the row has no id; mint when neither
- * is usable. Duplicate ids in one file become a copy + `copiedFrom`.
- * One assembly id per legacy folder (reuse `assemblyIdByFolder`).
+ * Ids follow v1 refs: groups/colors/joints name row ids, so an explicit
+ * row id says which file owns that id. Header-only claims apply only
+ * when no row carries the id, and only for files some row references.
+ * One final id per legacy path is minted once and reused in every
+ * assembly. `copiedFrom` is the v1 value remapped through the fold, or
+ * an explicit row id the path lost to a different file (a true duplicate).
+ * A header-only loser mints with none. Working-copy `copiedFrom` is used
+ * only when those rule-4 cases already apply; collapse tags are not
+ * carried. One assembly id per legacy folder (reuse `assemblyIdByFolder`).
  */
 export function planUpgrade({
   tree = [],
@@ -346,37 +560,6 @@ export function planUpgrade({
     now,
     rand: typeof randFor === 'function' ? randFor(token, index) : undefined,
   });
-
-  const bindPart = (part, index, seenInAssembly) => {
-    const path = scriptPathOf(part);
-    const hasFile = !!(path && hasOwn(files, path) && typeof files[path] === 'string');
-    const script = hasFile ? files[path] : '';
-    const picked = pickPartId(
-      part,
-      script,
-      partIdByPath,
-      usedPart,
-      seenInAssembly,
-      mintOptsFor(part, index),
-    );
-    usedPart.add(picked.id);
-    seenInAssembly.add(picked.id);
-    const rowId = asV2Id(part?.id);
-    if (rowId) seenInAssembly.add(rowId);
-    if (path) partIdByPath[path] = picked.id;
-    partBindings.push({ path, id: picked.id, minted: picked.minted, copiedFrom: picked.copiedFrom || null });
-    if (picked.minted) mintedPartIds.push(picked.id);
-    else keptPartIds.push(picked.id);
-    return {
-      id: picked.id,
-      path,
-      script,
-      hasFile,
-      minted: picked.minted,
-      copiedFrom: picked.copiedFrom || null,
-    };
-  };
-
   const metaPaths = [];
   const seenFolder = new Set();
   for (const path of paths) {
@@ -408,6 +591,61 @@ export function planUpgrade({
     };
   }
 
+  const { byId, referencedPaths } = collectIdClaimants(parsedMeta, files);
+  const { ownerPathById, ownerIdByPath } = resolvePathOwners(byId, files);
+  const { pathToId, mintedPaths } = assignAllPathIds({
+    referencedPaths,
+    ownerIdByPath,
+    ownerPathById,
+    pathIndex: partIdByPath,
+    usedPart,
+    mintOptsFor,
+  });
+  Object.assign(partIdByPath, pathToId);
+  const foldMap = foldMapForCopiedFrom(parsedMeta, pathToId);
+
+  const bindPart = (part, index, seenInAssembly) => {
+    const path = scriptPathOf(part);
+    const hasFile = !!(path && hasOwn(files, path) && typeof files[path] === 'string');
+    const script = hasFile ? files[path] : '';
+    const assigned = path ? pathToId[path] : null;
+    let id = assigned;
+    let minted = !!(path && mintedPaths.has(path));
+    if (!id || seenInAssembly.has(id)) {
+      const fallbackCopied = assigned && seenInAssembly.has(assigned) ? assigned : null;
+      id = mintUnused(usedPart, mintOptsFor(part, index));
+      minted = true;
+      usedPart.add(id);
+      const copiedFrom = copiedFromForRow(part, id, pathToId, foldMap) || fallbackCopied;
+      seenInAssembly.add(id);
+      if (path && !partIdByPath[path]) partIdByPath[path] = id;
+      partBindings.push({ path, id, minted, copiedFrom: copiedFrom || null });
+      mintedPartIds.push(id);
+      return {
+        id,
+        path,
+        script,
+        hasFile,
+        minted,
+        copiedFrom: copiedFrom && copiedFrom !== id ? copiedFrom : null,
+      };
+    }
+    usedPart.add(id);
+    seenInAssembly.add(id);
+    const copiedFrom = copiedFromForRow(part, id, pathToId, foldMap);
+    partBindings.push({ path, id, minted, copiedFrom });
+    if (minted) mintedPartIds.push(id);
+    else keptPartIds.push(id);
+    return {
+      id,
+      path,
+      script,
+      hasFile,
+      minted,
+      copiedFrom,
+    };
+  };
+
   for (const { folder } of parsedMeta) {
     if (!folderToId[folder] || !isV2SurfId(folderToId[folder])) {
       const id = mintUnused(usedAsm, mintOptsFor({ id: '$assembly', name: folder }, -1));
@@ -426,9 +664,6 @@ export function planUpgrade({
     const seenInAssembly = new Set();
     (parsed.parts || []).forEach((part, i) => {
       const bound = bindPart(part, i, seenInAssembly);
-      if (part?.id && part.id !== bound.id && !nextParts.some((row) => row.id === asV2Id(part.id))) {
-        idMap.set(part.id, bound.id);
-      }
       if (bound.path) idMap.set(bound.path, bound.id);
       const name = displayNameFor(part, bound.script, bound.path);
       const row = {
@@ -440,7 +675,7 @@ export function planUpgrade({
       if (part.position) row.position = part.position;
       if (part.placement) row.placement = part.placement;
       if (part.sheetMetal) row.sheetMetal = part.sheetMetal;
-      const copied = bound.copiedFrom || asV2Id(part.copiedFrom);
+      const copied = bound.copiedFrom || copiedFromForRow(part, bound.id, pathToId, foldMap);
       if (copied && copied !== bound.id) row.copiedFrom = copied;
       nextParts.push(row);
 
@@ -452,6 +687,14 @@ export function planUpgrade({
         writes[partMeshIdPath(bound.id)] = toUint8Array(files[meshPath]);
       } else if (meshPath && hasOwn(files, meshPath) && isPresentEmpty(files[meshPath])) {
         writes[partMeshIdPath(bound.id)] = new Uint8Array(0);
+      }
+    });
+    const keptIds = new Set(nextParts.map((row) => row.id));
+    (parsed.parts || []).forEach((part, i) => {
+      const rowId = asV2Id(part?.id);
+      const boundId = nextParts[i]?.id;
+      if (rowId && boundId && rowId !== boundId && !keptIds.has(rowId) && !idMap.has(rowId)) {
+        idMap.set(rowId, boundId);
       }
     });
 
@@ -490,7 +733,7 @@ export function planUpgrade({
       id: assemblyId,
       name: sanitizeSurfName(parsed.name) || folder,
       activeId,
-      parts: nextParts,
+      parts: applyPoseFields(nextParts, joints),
       groups,
       colors,
       joints,
@@ -510,8 +753,8 @@ export function planUpgrade({
     const info = parseLegacyVaultPath(path);
     if (info?.kind !== 'shared-part' && info?.kind !== 'assembly-part') continue;
     const hasFile = hasOwn(files, path) && typeof files[path] === 'string';
-    if (partIdByPath[path]) {
-      const id = partIdByPath[path];
+    if (pathToId[path]) {
+      const id = pathToId[path];
       const dest = partIdPath(id);
       if (writes[dest] !== undefined) continue;
       if (!hasFile) continue;
@@ -528,12 +771,12 @@ export function planUpgrade({
     }
     if (!hasFile) continue;
     const script = files[path];
-    const picked = pickPartId(
-      { path, name: stemName(path) },
-      script,
-      partIdByPath,
+    const picked = assignLeftoverPathId(
+      path,
+      files,
+      pathIndex,
       usedPart,
-      usedPart,
+      ownerPathById,
       mintOptsFor({ path }, 0),
     );
     usedPart.add(picked.id);
@@ -739,6 +982,21 @@ export function mapWorkingCopyToPlan(plan, workingCopy) {
   };
 }
 
+function jsonWithoutPartCopiedFrom(text) {
+  if (typeof text !== 'string') return text;
+  try {
+    const obj = JSON.parse(text);
+    if (Array.isArray(obj?.parts)) {
+      for (const part of obj.parts) {
+        if (part && typeof part === 'object') delete part.copiedFrom;
+      }
+    }
+    return JSON.stringify(obj);
+  } catch {
+    return text;
+  }
+}
+
 function assemblyJsonFromPlan(plan, assemblyId) {
   if (!assemblyId) return null;
   try {
@@ -754,6 +1012,10 @@ function assemblyJsonFromPlan(plan, assemblyId) {
  * TEMPORARY: PR 7 replaces this with planSave against AssemblyCommit.
  * Second commit only: WC edits relative to the v2 bytes from commit 1.
  * Never used for the Upgrade commit. Writes only files whose bytes differ.
+ * `copiedFrom`-only differences in `.surf.json` are ignored so a collapse
+ * tag does not rewrite the assembly on commit 2. Mapped parts take
+ * `copiedFrom` from the plan's commit-1 row; only parts new in the
+ * working copy keep the WC value.
  */
 export function planWorkingCopyFollowup(plan, workingCopy) {
   if (!workingCopy?.dirty || !workingCopy?.doc || !plan?.writes) return [];
@@ -765,6 +1027,7 @@ export function planWorkingCopyFollowup(plan, workingCopy) {
   const scripts = mapped.scripts || {};
   const folderToId = plan.folderToId || {};
   const prevJson = assemblyJsonFromPlan(plan, assemblyId);
+  const planParts = prevJson?.parts || [];
   const parts = (doc.parts || []).map((part, i) => {
     const id = asV2Id(part.id);
     if (!id) return null;
@@ -779,8 +1042,9 @@ export function planWorkingCopyFollowup(plan, workingCopy) {
     if (part.position) row.position = part.position;
     if (part.placement) row.placement = part.placement;
     if (part.sheetMetal) row.sheetMetal = part.sheetMetal;
-    const copied = asV2Id(part.copiedFrom);
-    if (copied) row.copiedFrom = copied;
+    const planRow = planParts.find((p) => p.id === id);
+    const copied = planRow ? asV2Id(planRow.copiedFrom) : asV2Id(part.copiedFrom);
+    if (copied && copied !== id) row.copiedFrom = copied;
     return row;
   }).filter(Boolean);
 
@@ -799,19 +1063,23 @@ export function planWorkingCopyFollowup(plan, workingCopy) {
   let activeId = asV2Id(doc.activeId);
   if (activeId && !parts.some((p) => p.id === activeId)) activeId = parts[0]?.id || null;
 
+  const joints = doc.joints !== undefined ? doc.joints : prevJson?.joints;
   const jsonText = stringifySurfJsonV2({
     id: assemblyId,
     name: sanitizeSurfName(doc.name) || prevJson?.name || 'Assembly',
     activeId,
-    parts,
+    parts: applyPoseFields(parts, joints),
     groups,
     colors: doc.colors !== undefined ? doc.colors : prevJson?.colors,
-    joints: doc.joints !== undefined ? doc.joints : prevJson?.joints,
+    joints,
   });
 
   const out = [];
   const asmPath = assemblyIdPath(assemblyId);
-  if (jsonText !== plan.writes[asmPath]) out.push(fileWrite(asmPath, jsonText));
+  const prevText = plan.writes[asmPath];
+  if (jsonWithoutPartCopiedFrom(jsonText) !== jsonWithoutPartCopiedFrom(prevText)) {
+    out.push(fileWrite(asmPath, jsonText));
+  }
 
   for (const part of parts) {
     const script = scripts[part.id];
@@ -1022,6 +1290,7 @@ export async function executeUpgrade({
       repoName: ref?.name,
       now: clock,
       randFor,
+      workingCopy,
     });
   } catch (err) {
     return hostError(

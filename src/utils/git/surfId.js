@@ -130,6 +130,13 @@ function splitSurfHeader(script) {
   };
 }
 
+/** First line is a `// @surf-id` comment, including a bare marker with no id. */
+function isSurfIdCommentStart(text) {
+  if (!text.startsWith('// @surf-id')) return false;
+  const next = text.slice('// @surf-id'.length);
+  return !next || next[0] === ' ' || next[0] === '\t' || next[0] === '\n' || next[0] === '\r';
+}
+
 /** Id from the first line, or null when the header is missing or invalid. */
 export function readSurfId(script) {
   return splitSurfHeader(script)?.id || null;
@@ -171,6 +178,10 @@ export function withSurfId(script, id) {
   const split = splitSurfHeader(script);
   if (split) return `// @surf-id ${id}${split.trailing}${split.ending}${split.body}`;
   const text = String(script ?? '');
+  if (isSurfIdCommentStart(text)) {
+    const leading = splitLeadingSurfComment(text);
+    return `// @surf-id ${id}${leading.surf?.ending ?? ''}${leading.rest}`;
+  }
   const sep = text.length && !text.startsWith('\n') && !text.startsWith('\r') ? '\n' : '';
   return `// @surf-id ${id}${sep}${text}`;
 }
@@ -189,7 +200,7 @@ function splitLeadingSurfComment(script) {
       rest: valid.body,
     };
   }
-  if (!text.startsWith('// @surf-id ')) return { surf: null, prefix: '', rest: text };
+  if (!isSurfIdCommentStart(text)) return { surf: null, prefix: '', rest: text };
   const br = firstLineBreak(text);
   if (!br) return { surf: { ending: '' }, prefix: text, rest: '' };
   return {

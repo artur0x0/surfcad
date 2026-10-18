@@ -51,6 +51,8 @@ test('every legacyVault file starts with the TEMPORARY banner', () => {
     const text = readFileSync(file, 'utf8');
     assert.equal(text.startsWith(BANNER), true, `${rel(file)} must start with the TEMPORARY banner`);
   }
+  const flag = join(ROOT, 'src/utils/git/upgradeVaultEnabled.js');
+  assert.equal(readFileSync(flag, 'utf8').startsWith(BANNER), true, 'upgradeVaultEnabled.js must start with the TEMPORARY banner');
 });
 
 test('v1 parse helpers are defined only inside legacyVault/', () => {
