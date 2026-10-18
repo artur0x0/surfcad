@@ -18,7 +18,8 @@ import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { focusPartHistoryForUndo } from './lib/focusPartHistory.mjs';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
-const PORT = Number(process.env.SMOKE_PORT || 4324);
+// Not 4324: h7 already uses that port, and a leftover preview races this wait.
+const PORT = Number(process.env.SMOKE_PORT || 4330);
 const APP_URL = `http://127.0.0.1:${PORT}/?agent=1`;
 
 const CHROME_CANDIDATES = [
