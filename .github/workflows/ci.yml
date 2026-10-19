@@ -324,6 +324,15 @@ jobs:
             echo "agent bridge prompt golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:agent-state-reporting | tee "${RUNNER_TEMP}/agent-state-reporting.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-state-reporting.log"; then
+            echo "agent state reporting golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'agent state reporting golden: ok' "${RUNNER_TEMP}/agent-state-reporting.log"; then
+            echo "agent state reporting golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
