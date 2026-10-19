@@ -46,7 +46,7 @@ export const COMMAND_META = {
   },
   errors: {
     description:
-      'Structured errors from the last finished geometry run. message is the same text the viewport shows. featureType, featureLabel, and featureIndex identify the failed feature when known. detail is the exception name, a Manifold status, or the kernel message when that text is not already in message. Stack frames and URLs are omitted, and detail is absent when there is nothing further. Cleared on the next successful run. Feature and kernel failures use code feature_failed.',
+      'Structured errors from the last finished geometry run. message is the same text the viewport shows. featureType, featureLabel, and featureIndex identify the failed feature when known. detail is the exception name, a Manifold status, or the kernel message when that text is not already in message. Stack frames and URLs are omitted, and detail is always present on feature_failed: when the kernel adds nothing, it names the helper that threw (move adds how to name the body). Cleared on the next successful run. Feature and kernel failures use code feature_failed.',
     result: {
       type: 'object',
       additionalProperties: false,
@@ -252,6 +252,12 @@ export const COMMAND_META = {
   },
   camera: {
     description: 'Current camera pose.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['internal'],
+    mutates: false,
+  },
+  list_bodies: {
+    description: 'Bodies of the active part\'s last run, in mesh order: [{ index, at, triangleCount }]. index is insert_move body_index; at is the centroid move() names (insert_move at, edit_feature at). Empty before the first run.',
     result: { type: 'object', additionalProperties: true },
     errors: ['internal'],
     mutates: false,
@@ -982,8 +988,15 @@ const INSERT_HELPER_META = {
   mutates: true,
 };
 
+const INSERT_MOVE_META = {
+  ...INSERT_HELPER_META,
+  description: 'Prefer this over freehand set_script. Move one body of the active part by [dx, dy, dz]. Name the body: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. Nothing named and nothing selected is no_body; the origin is never assumed. Working copy only; git_save commits.',
+  errors: ['bad_args', 'no_body', 'no_mesh', 'unknown_face', 'insert_failed', 'internal'],
+};
+
 export function metaForCommand(name) {
   if (COMMAND_META[name]) return COMMAND_META[name];
+  if (name === 'insert_move') return INSERT_MOVE_META;
   if (name.startsWith('insert_')) return INSERT_HELPER_META;
   return {
     description: `Bridge command ${name}.`,

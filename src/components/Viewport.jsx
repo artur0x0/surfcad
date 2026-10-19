@@ -399,6 +399,7 @@ import {
   validateMoveAccept,
   movePreviewOffset,
   resolveMoveBodyAt,
+  snapMoveBodyAt,
   seedMoveDeltasFromLastMove,
   attachMoveTargetMesh,
   cutNormalFromScript,
@@ -556,7 +557,7 @@ import { createSketchPickHandlers } from '../agent/pick/sketchViewportPicks.js';
 import { planePatchFromArgs } from '../agent/sketchPlaneAgent.js';
 import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from '../agent/state/listPickables.js';
 import { describeJointPick } from '../agent/jointPickDescribe.js';
-import { agentFaceCatalog } from '../agent/faceCatalog.js';
+import { agentFaceCatalog, findAgentFace } from '../agent/faceCatalog.js';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -1350,6 +1351,8 @@ const Viewport = forwardRef(({
   const agentFitCameraRef = useRef(() => false);
   const agentZoomToSelectionRef = useRef(() => ({ error: { code: 'no_selection', message: 'No selection' } }));
   const agentListFacesRef = useRef(() => ({ faces: [], partId: null }));
+  const agentReadBodiesRef = useRef(() => ({ partId: null, bodies: [] }));
+  const agentResolveMoveAnchorRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh' } }));
   const agentDescribeJointPickRef = useRef(() => ({
     error: { code: 'no_mesh', message: 'No mesh for that part' },
   }));
@@ -2563,6 +2566,8 @@ const Viewport = forwardRef(({
       fitCamera: () => agentFitCameraRef.current(),
       zoomToSelection: () => agentZoomToSelectionRef.current(),
       listFaces: (args) => agentListFacesRef.current(args),
+      readBodies: () => agentReadBodiesRef.current(),
+      resolveMoveAnchor: (args) => agentResolveMoveAnchorRef.current(args),
       listEdges: (args) => agentListEdgesRef.current(args),
       listFeatureEdges: (args) => agentListFeatureEdgesRef.current(args),
       agentReadFeatureEdit() {
@@ -12046,6 +12051,87 @@ const Viewport = forwardRef(({
     return { geom, faceIDs, catalog: agentFaceCatalog(geom, faceIDs, cacheEntry) };
   };
 
+  /**
+   * Bodies of the active part's mesh, in mesh component order, each with the
+   * centroid `move()` takes as `{ at }` (snapped to the kernel centroid the
+   * worker reported). `body_index` on insert_move indexes this list.
+   */
+  const agentMeshBodies = () => {
+    const geom = resultRef.current?.geometry;
+    if (!geom?.attributes?.position || !geom.index) return null;
+    const kernel = bodyCentroidsRef.current || [];
+    return meshBodyComponents(geom.attributes.position, geom.index).map((body, index) => ({
+      index,
+      at: snapMoveBodyAt(body.at, kernel),
+      triangles: body.triangles,
+      triangleCount: body.triangles.length,
+    }));
+  };
+  agentReadBodiesRef.current = () => {
+    const partId = activePartIdRef.current != null && activePartIdRef.current !== '' ? String(activePartIdRef.current) : null;
+    const bodies = agentMeshBodies();
+    if (!bodies) return { partId, bodies: [] };
+    return {
+      partId,
+      bodies: bodies.map((body) => ({ index: body.index, at: body.at.slice(), triangleCount: body.triangleCount })),
+    };
+  };
+  /**
+   * The body insert_move names: by `body_index` (list_bodies), by a centroid
+   * `at`, by a face (`face` key or `face_id` from list_faces), else the
+   * selected face. Nothing picked is `no_body`; the origin is never assumed.
+   */
+  agentResolveMoveAnchorRef.current = ({
+    at = null, face = null, faceId = null, bodyIndex = null, useSelection = false,
+  } = {}) => {
+    const bodies = agentMeshBodies();
+    if (!bodies) return { error: { code: 'no_mesh', message: 'Run the part before insert_move; it has no mesh yet' } };
+    const needBody = {
+      code: 'no_body',
+      message: 'insert_move needs a body: pass body_index or at (from list_bodies), face or face_id (from list_faces), or select a face first.',
+    };
+    const d2 = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+    const byTriangle = (tri) => bodies.find((body) => body.triangles.includes(tri)) || null;
+    const picked = (body) => ({ at: body.at.slice(), bodyIndex: body.index });
+    if (bodyIndex != null) {
+      const body = Number.isInteger(bodyIndex) ? bodies[bodyIndex] : null;
+      if (!body) {
+        return { error: { code: 'no_body', message: `body_index ${JSON.stringify(bodyIndex)} is not one of the ${bodies.length} bodies; call list_bodies` } };
+      }
+      return picked(body);
+    }
+    if (at != null) {
+      const point = Array.isArray(at) ? at.slice(0, 3).map(Number) : [];
+      if (point.length < 3 || point.some((v) => !Number.isFinite(v))) {
+        return { error: { code: 'bad_args', message: 'at must be [x, y, z] in mm' } };
+      }
+      const snapped = snapMoveBodyAt(point, bodyCentroidsRef.current || []);
+      const body = bodies.find((row) => d2(row.at, snapped) <= 1e-4) || null;
+      if (!body) {
+        return { error: { code: 'no_body', message: `at ${JSON.stringify(point)} is not a body centroid; call list_bodies and pass one of its at points` } };
+      }
+      return picked(body);
+    }
+    if (faceId != null || (face && typeof face === 'object')) {
+      const resolved = agentCatalogForPart(null);
+      if (resolved.error) return resolved;
+      const hit = findAgentFace(resolved.catalog, { faceId, key: face });
+      if (hit.error) return hit;
+      const tri = Array.isArray(hit.face?.tris) ? hit.face.tris[0] : null;
+      const body = tri != null ? byTriangle(tri) : null;
+      if (!body) return { error: needBody };
+      return picked(body);
+    }
+    if (useSelection) {
+      const sel = selectedFaceRef.current;
+      const tris = sel?.triangles || sel?.indices || sel?.tris;
+      const tri = Array.isArray(tris) && tris.length ? tris[0] : null;
+      const body = tri != null ? byTriangle(tri) : null;
+      if (!body) return { error: needBody };
+      return picked(body);
+    }
+    return { error: needBody };
+  };
   agentListFacesRef.current = ({ partId } = {}) => {
     const resolved = agentCatalogForPart(partId);
     if (resolved.error) return resolved;

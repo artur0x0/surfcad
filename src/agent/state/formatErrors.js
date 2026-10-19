@@ -139,6 +139,17 @@ export function kernelExceptionDetail(error, message) {
  *   detail?: string,
  * }>}
  */
+const MOVE_BODY_HINT = 'move names a body by its centroid: call list_bodies and pass at, body_index, face, or face_id to insert_move (or edit_feature at on the move).';
+
+/** `detail` when the kernel message already says everything: the helper that threw. */
+export function defaultFeatureDetail(message, featureType) {
+  const text = typeof message === 'string' ? message.trim() : '';
+  const helper = /^([A-Za-z_$][\w$]*):\s/.exec(text)?.[1] || null;
+  if (helper === 'move' || featureType === 'move') return `move threw an Error. ${MOVE_BODY_HINT}`;
+  if (helper) return `${helper} threw an Error`;
+  return featureType ? `${featureType} threw an Error` : 'Error';
+}
+
 export function formatAgentErrors(input = {}) {
   const messages = Array.isArray(input.messages)
     ? input.messages.filter((row) => typeof row === 'string' && row)
@@ -169,8 +180,9 @@ export function formatAgentErrors(input = {}) {
       .filter((row) => row && row !== 'Feature failed')
       .map((row) => scrubKernelDetail(row, message))
       .find(Boolean) || '';
-    const detail = explicit || extra;
-    if (detail) row.detail = detail;
+    // Always present on feature_failed: the kernel's own line when it adds
+    // something, else which helper threw and, for move, how to name the body.
+    row.detail = explicit || extra || defaultFeatureDetail(message, featureType);
     return [publishErrorRow(row)];
   }
 

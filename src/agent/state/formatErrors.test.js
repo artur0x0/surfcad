@@ -67,7 +67,8 @@ test('formatAgentErrors names the feature instead of a generic Feature failed', 
   assert.equal(rows[0].message, 'Hole failed');
   assert.equal(rows[0].featureType, 'hole');
   assert.equal(rows[0].featureLabel, 'Hole');
-  assert.equal(rows[0].detail, undefined);
+  // detail is always present on feature_failed; with nothing further it names the feature.
+  assert.equal(rows[0].detail, 'hole threw an Error');
   const unnamed = formatAgentErrors({
     script: SCRIPT,
     runFailure: { id: 'hole1' },
@@ -101,7 +102,7 @@ const STACK = [
   'at executeSkippingFailedFeatures (http://127.0.0.1:4178/src/lib/surfcad/runtime.js:9301:47)',
 ].join('\n');
 
-test('formatAgentErrors omits detail when the only extra text is a stack', () => {
+test('formatAgentErrors drops a stack from detail and falls back to the feature name', () => {
   const rows = formatAgentErrors({
     messages: ['Cube failed: result is not a valid solid (NotManifold)', STACK],
     script: SCRIPT,
@@ -113,7 +114,7 @@ test('formatAgentErrors omits detail when the only extra text is a stack', () =>
   });
   assert.equal(rows.length, 1);
   assert.equal(rows[0].message, 'Cube failed: result is not a valid solid (NotManifold)');
-  assert.equal(rows[0].detail, undefined);
+  assert.equal(rows[0].detail, 'cube threw an Error');
   assert.equal(/https?:\/\//.test(JSON.stringify(rows)), false);
   assert.equal(/\bat\s+/.test(JSON.stringify(rows)), false);
   assert.equal(/\.js:\d+/.test(JSON.stringify(rows)), false);
@@ -143,4 +144,23 @@ test('kernelExceptionDetail keeps a class, status, or kernel message and drops s
     kernelExceptionDetail(shown, 'Cube failed: result is not a valid solid (NotManifold)'),
     null,
   );
+});
+
+test('feature_failed rows always carry detail; a move failure says how to name the body', () => {
+  const script = `// --- move begin id=move1 ---
+part = move(part, [0, 15, 0], { bodies: [{ at: [0, 0, 0] }] });
+// --- move end ---
+return part;
+`;
+  const msg = 'move: that point is not a body centroid — re-pick the body';
+  const [row] = formatAgentErrors({ messages: [msg], script, runFailure: { id: 'move1', message: msg } });
+  assert.equal(row.code, 'feature_failed');
+  assert.equal(row.message, msg);
+  assert.equal(row.featureType, 'move');
+  assert.match(row.detail, /list_bodies/);
+  assert.match(row.detail, /body_index/);
+  const [other] = formatAgentErrors({ messages: ['hollow: wall too thick'], script: '', runFailure: { message: 'hollow: wall too thick' } });
+  assert.equal(other.detail, 'hollow threw an Error');
+  const [plain] = formatAgentErrors({ messages: ['boom'], script: '', runFailure: { message: 'boom' } });
+  assert.equal(plain.detail, 'Error');
 });

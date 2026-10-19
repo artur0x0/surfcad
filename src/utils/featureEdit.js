@@ -1059,6 +1059,14 @@ function rewriteBlock(block, session, draft) {
     setNum(new RegExp(`(move\\s*\\(\\s*[^,]+,\\s*\\[\\s*${NUM}\\s*,\\s*${NUM}\\s*,\\s*)(${NUM})`), 'dz');
     setNum(new RegExp(`(move\\s*\\(\\s*[^,]+,\\s*\\[\\s*${NUM}\\s*,\\s*)(${NUM})`), 'dy');
     setNum(new RegExp(`(move\\s*\\(\\s*[^,]+,\\s*\\[\\s*)(${NUM})`), 'dx');
+    // The target body: `at` is its centroid (list_bodies). A changed point
+    // re-points the move; the body it used to name stays where it is.
+    const nextAt = Array.isArray(fields.at) && fields.at.length >= 3 ? fields.at.slice(0, 3).map(Number) : null;
+    const prevAt = Array.isArray(prev.at) ? prev.at : null;
+    if (nextAt && nextAt.every(Number.isFinite)
+      && !(prevAt && prevAt.length >= 3 && nextAt.every((v, i) => sameValue(v, Number(prevAt[i]))))) {
+      next = next.replace(/at:\s*\[\s*[^\]]*\]/, `at: [${nextAt.join(', ')}]`);
+    }
   } else if (kind === 'moveFace') {
     setNum(new RegExp(`(moveFace\\s*\\(\\s*[^,]+,\\s*\\[[\\s\\S]*?\\]\\s*,\\s*)(${NUM})`), 'distance');
   } else if (kind === 'deleteFace') {

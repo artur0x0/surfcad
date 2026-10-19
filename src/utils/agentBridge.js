@@ -497,6 +497,8 @@ export function createSurfcadBridge(hostSource) {
       fov: null,
     }),
     listFaces: (args) => hostFn('listFaces')?.(args),
+    readBodies: () => (hostFn('readBodies')?.() ?? { partId: null, bodies: [] }),
+    resolveMoveAnchor: (args) => hostFn('resolveMoveAnchor')?.(args),
     listEdges: (args) => hostFn('listEdges')?.(args),
     listFeatureEdges: (args) => hostFn('listFeatureEdges')?.(args),
     prepareHelperInsert: (payload) => hostFn('prepareHelperInsert')?.(payload),

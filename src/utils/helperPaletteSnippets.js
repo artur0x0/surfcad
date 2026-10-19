@@ -2182,7 +2182,13 @@ export const HELPER_PALETTE_ITEMS = [
       const dx = num(p.dx, 0);
       const dy = num(p.dy, 0);
       const dz = num(p.dz, 0);
-      const at = (faceCtx && Array.isArray(faceCtx.center)) ? faceCtx.center : [0, 0, 0];
+      // The agent path resolves the body first (insert_move at / face /
+      // face_id / body_index / selection) and hands its centroid in as
+      // params.at. The face center and the origin are only legacy fallbacks.
+      const picked = Array.isArray(p.at) && p.at.length >= 3 ? p.at.slice(0, 3).map(Number) : null;
+      const at = picked && picked.every(Number.isFinite)
+        ? picked
+        : ((faceCtx && Array.isArray(faceCtx.center)) ? faceCtx.center : [0, 0, 0]);
       const feat = [
         `${body} = move(${body}, [${dx}, ${dy}, ${dz}], { bodies: [{ at: ${formatVec3(at)} }] });`,
         ...syncPartLines(body, names, /(?:let|const|var)\s+part\b/.test(lines.join('\n')) || !empty),
