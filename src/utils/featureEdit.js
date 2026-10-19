@@ -1209,7 +1209,40 @@ export function featureDeletePlan(script, feature) {
       message: contourDeleteConfirmLabel(count),
     };
   }
+  const base = partDeclarationDeletePlan(text, live);
+  if (base) {
+    return { ok: false, confirm: true, base: true, count: base.count, message: base.message };
+  }
   return { ok: true, confirm: false };
+}
+
+/**
+ * Warn before the feature that declares `part` is deleted while later code
+ * still names `part`: those features fail on the next run (`part is not
+ * defined`). Null when this block does not declare `part`, when the rest of
+ * the script still declares it, or when the rest is an empty part (the
+ * dangling `return part;` is dropped and the viewport clears). `count` is
+ * the later marked features that name `part`. `message` is the confirm
+ * button label.
+ */
+export function partDeclarationDeletePlan(script, feature) {
+  const text = typeof script === 'string' ? script : '';
+  const live = liveSheetFeature(text, feature);
+  if (!live) return null;
+  const block = text.slice(live.startOffset, live.endOffset);
+  if (!declaredNamesIn(block).has('part')) return null;
+  const dropped = deleteFeatureBlock(text, { startOffset: live.startOffset, endOffset: live.endOffset });
+  if (!dropped.ok) return null;
+  const rest = settleEmptyPartAfterDelete(dropped.buffer);
+  if (declaredNamesIn(rest).has('part')) return null;
+  if (!mentionsName(rest, 'part')) return null;
+  const count = parseFeatureMarkers(rest)
+    .filter((item) => mentionsName(rest.slice(item.startOffset, item.endOffset), 'part'))
+    .length;
+  const message = count > 0
+    ? `Delete anyway (${count} later feature${count === 1 ? ' uses' : 's use'} part)`
+    : 'Delete anyway (later code uses part)';
+  return { count, message };
 }
 
 /**

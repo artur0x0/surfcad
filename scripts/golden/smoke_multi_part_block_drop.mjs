@@ -204,7 +204,8 @@ const POSE = { width: 10, depth: 10, height: 10, x: 0, y: 14, z: 0 };
     check(`${name} loads the picked part first`, /focusWritePartRef\.current\(null\)/.test(body(name)));
   }
   check('sheet Accept / Delete never fall back to stale offsets',
-    (app.match(/const live = liveSheetFeature\(buf, feature\);/g) || []).length === 3 && !/\|\| feature;\n/.test(app));
+    // Sheet Accept, sheet Delete, the strip jump, and the agent delete_feature prepare.
+    (app.match(/const live = liveSheetFeature\(buf, feature\);/g) || []).length === 4 && !/\|\| feature;\n/.test(app));
   check('a feature session start and a palette open edit the picked part',
     /if \(on && !featureSessionRef\.current\) focusWritePart\(null\)/.test(app)
     && (app.match(/onFeatureOpen=\{handleFeatureOpen\}/g) || []).length === 2

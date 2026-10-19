@@ -646,6 +646,33 @@ function syncPartLines(bodyName, names, bufferHasPart) {
     : [`let ${partName} = ${bodyName};`, `part = ${partName};`];
 }
 
+/**
+ * After a body is arrayed, re-apply that body's own combine op to `part`.
+ * `array3D` and `polarArray` keep the original instance among the copies, so
+ * `part = part.subtract(box2)` cuts every copy and `part = part.add(box2)`
+ * adds every copy. The old `part = box2` replaced the whole part with the
+ * cutters. A body `part` was only aliased to (`let part = box1`), or that was
+ * never combined, is added. A buffer with no `part` keeps the alias.
+ */
+function reapplyBodyToPart(bodyName, names, buffer) {
+  if (bodyName === 'part') return [];
+  const code = stripComments(buffer || '');
+  const hasPart = names.has('part') || /\b(?:let|var)\s+part\b/.test(code);
+  if (!hasPart) return syncPartLines(bodyName, names, false);
+  const name = bodyName.replace(/\$/g, '\\$');
+  const combine = new RegExp(
+    `\\bpart\\s*=\\s*part\\.(add|subtract)\\(\\s*${name}\\s*(,\\s*\\{[^}]*\\})?\\s*\\)`,
+    'g',
+  );
+  let last = null;
+  let m;
+  while ((m = combine.exec(code))) last = m;
+  names.add('part');
+  if (!last) return [`part = part.add(${bodyName});`];
+  const opts = last[2] ? `, ${last[2].replace(/^,\s*/, '')}` : '';
+  return [`part = part.${last[1]}(${bodyName}${opts});`];
+}
+
 function resolveBody(params, names, buffer) {
   const bodies = listBodyNames(buffer); // mutable only (const bodies excluded)
   let body = str(params.body, 'part');
@@ -2273,7 +2300,7 @@ export const HELPER_PALETTE_ITEMS = [
       const sz = num(p.sz, 0);
       const feat = [
         `${body} = array3D(${body}, [${nx}, ${ny}, ${nz}], [${sx}, ${sy}, ${sz}]);`,
-        ...syncPartLines(body, names, /(?:let|const|var)\s+part\b/.test(lines.join('\n')) || !empty),
+        ...reapplyBodyToPart(body, names, empty ? lines.join('\n') : buffer),
       ];
       lines.push(...wrapFeatureBlock(ARRAY_BEGIN, ARRAY_END, feat));
       return withReturn(lines, empty);
@@ -2314,7 +2341,7 @@ export const HELPER_PALETTE_ITEMS = [
       const body = resolveBody(p, names, buffer);
       const feat = [
         `${body} = polarArray(${body}, ${count}, ${bcr}, '${axis}');`,
-        ...syncPartLines(body, names, true),
+        ...reapplyBodyToPart(body, names, buffer),
       ];
       return withReturn(wrapFeatureBlock(POLAR_ARRAY_BEGIN, POLAR_ARRAY_END, feat), false);
     },

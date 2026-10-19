@@ -126,11 +126,36 @@ export const deleteFeatureCommand = Object.freeze({
     additionalProperties: false,
     properties: {
       ...TARGET_SCHEMA.properties,
+      confirm: {
+        type: 'boolean',
+        description: 'Required true to delete the feature that declares part while later code still uses it',
+      },
     },
   }),
   example: { index: 1 },
-  run(ctx, args) {
-    return hostCall(ctx, 'deleteFeature', args);
+  /**
+   * Host resolves the block and refuses (`confirm_required`) when it declares
+   * `part` and later code still uses it. The write then goes through the same
+   * `mutate` path as confirm_feature, so `status` and `errors` are current
+   * when this resolves and undo once restores the block.
+   */
+  async run(ctx, args) {
+    const prepare = ctx.prepareFeatureDelete;
+    if (typeof prepare !== 'function') {
+      return { error: { code: 'internal', message: 'prepareFeatureDelete handler is missing' } };
+    }
+    const prep = prepare(args || {});
+    if (prep?.error) return { error: prep.error };
+    const outcome = await ctx.mutate(prep.source, prep.message);
+    const result = {
+      deletedId: prep.featureId,
+      ok: outcome.ok === true,
+      errors: outcome.errors || [],
+      failures: outcome.failures || [],
+      status: outcome.status,
+    };
+    if (prep.warning) result.warning = prep.warning;
+    return { result };
   },
 });
 

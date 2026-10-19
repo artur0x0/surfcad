@@ -29,13 +29,12 @@ import AssemblyOpenSpinner, { AssemblyOpenFailureToast } from './components/Asse
 import { landingMobileStage, linkedMobileStage } from './utils/mobileStage';
 import {
   writeFeatureSheetParams,
-  deleteFeatureBlock,
   listFeatureSheetTargets,
   pickDefaultFeatureSheetTarget,
   isFeatureSheetEditable,
   liveSheetFeature,
 } from './utils/featureSheetWriteback';
-import { confirmFeatureEdit, deleteFeatureEdit } from './utils/featureEdit';
+import { confirmFeatureEdit, deleteFeatureEdit, partDeclarationDeletePlan } from './utils/featureEdit';
 import QuoteModal from './components/QuoteModal';
 import { calculateQuote } from './utils/quoting';
 import OrderModal from './components/OrderModal';
@@ -891,6 +890,18 @@ const App = () => {
     return true;
   };
   /**
+   * Rebuild after a UI feature delete, then refresh the agent bridge's cached
+   * `status` / `errors` so a paired agent sees the new run without calling run.
+   */
+  const runAfterFeatureDelete = () => {
+    setTimeout(async () => {
+      await handleGameRun();
+      try {
+        await window.surfcad?.syncStatusFromRun?.();
+      } catch { /* agent off */ }
+    }, 0);
+  };
+  /**
    * Delete from the open feature-edit dialog. One applyBuffer, so Undo is
    * one step on this part and restores the previous script. The dialog stays
    * up while an assembly open holds the worker.
@@ -920,11 +931,7 @@ const App = () => {
       );
       return false;
     }
-    if (result.run) {
-      setTimeout(() => {
-        handleGameRun();
-      }, 0);
-    }
+    if (result.run) runAfterFeatureDelete();
     return true;
   };
   const handleFeatureSheetDelete = (feature) => {
@@ -938,7 +945,9 @@ const App = () => {
       viewportRef.current?.softFailContour?.(STALE_FEATURE_MSG);
       return;
     }
-    const result = deleteFeatureBlock(buf, live);
+    // Same delete as the edit dialog: drops a dangling `return part;` when the
+    // rest is an empty part, so the viewport clears instead of throwing.
+    const result = deleteFeatureEdit(buf, live);
     if (!result.ok) {
       viewportRef.current?.softFailContour?.(result.message);
       return;
@@ -956,11 +965,7 @@ const App = () => {
     setFeatureStripActiveId(null);
     setFeatureSheet(null);
     // Stay on the current stage (CAD stays CAD; Script stays Script).
-    if (result.run) {
-      setTimeout(() => {
-        handleGameRun();
-      }, 0);
-    }
+    if (result.run) runAfterFeatureDelete();
   };
   const handleFeatureSheetEditScript = (feature) => {
     if (!feature) return;
@@ -2764,6 +2769,78 @@ const App = () => {
     agentFeatureSessionRef.current = null;
   };
 
+  /**
+   * delete_feature: resolve the block (id / index, else the open edit), refuse
+   * the base feature without `confirm: true`, and hand the bridge the buffer
+   * to write through `mutate`, so the part runs and `status` / `errors` are
+   * current when the command resolves. The open edit is closed first; the
+   * old path returned before the run, so status stayed on the previous
+   * script.
+   */
+  const prepareAgentFeatureDelete = (args = {}) => {
+    if (assemblyOpenLockRef.current) {
+      return {
+        error: {
+          code: 'delete_failed',
+          message: 'An assembly is opening — delete the feature again once it finishes.',
+        },
+      };
+    }
+    if (!focusWritePart(null)) {
+      return { error: { code: 'no_write_part', message: 'No writable part for feature delete' } };
+    }
+    const buf = codeEditorRef.current?.getContent?.() ?? '';
+    let feature = null;
+    let openEdit = null;
+    if (args?.id == null && args?.index == null) {
+      const vpEdit = viewportRef.current?.agentReadFeatureEdit?.();
+      const sheet = featureSheetRef.current;
+      if (vpEdit?.open && vpEdit.feature) {
+        feature = vpEdit.feature;
+        openEdit = 'viewport';
+      } else if (sheet?.mode === 'edit' && sheet.feature) {
+        feature = sheet.feature;
+        openEdit = 'sheet';
+      } else {
+        return { error: { code: 'bad_args', message: 'delete_feature needs id or index when no edit is open' } };
+      }
+    } else {
+      const resolved = resolveStripTarget(buf, args);
+      if (resolved.error) return resolved;
+      feature = resolved.feature;
+    }
+    const live = liveSheetFeature(buf, feature);
+    if (!live) return { error: { code: 'delete_failed', message: STALE_FEATURE_MSG } };
+    const label = live.chipLabel || live.label || live.kind || 'feature';
+    const base = partDeclarationDeletePlan(buf, live);
+    if (base && args?.confirm !== true) {
+      const who = base.count > 0
+        ? `${base.count} later feature${base.count === 1 ? ' still uses' : 's still use'} part and will fail`
+        : 'later code still uses part and will fail';
+      return {
+        error: {
+          code: 'confirm_required',
+          message: `${label} declares part; ${who}. Pass confirm: true to delete it anyway.`,
+          details: { featureId: live.id, dependents: base.count },
+        },
+      };
+    }
+    const result = deleteFeatureEdit(buf, live);
+    if (!result.ok) return { error: { code: 'delete_failed', message: result.message } };
+    if (openEdit === 'viewport') viewportRef.current?.agentDismissFeatureEdit?.();
+    setFeatureSheet(null);
+    setFeatureStripActiveId(null);
+    agentFeatureDraftRef.current = null;
+    agentFeatureTargetRef.current = null;
+    return {
+      source: result.buffer,
+      message: `Delete ${label}`,
+      featureId: live.id,
+      warning: base
+        ? `${label} declared part; ${base.count > 0 ? `${base.count} later feature${base.count === 1 ? ' uses' : 's use'}` : 'later code uses'} part and will fail until you fix or undo.`
+        : null,
+    };
+  };
   const prepareAgentFeatureConfirm = () => {
     if (assemblyOpenLockRef.current) {
       return {
@@ -10852,37 +10929,7 @@ const App = () => {
       dismissAgentFeatureSession();
       return { result: { cancelled: true } };
     },
-    deleteFeature(args = {}) {
-      if (!focusWritePart(null)) {
-        return { error: { code: 'no_write_part', message: 'No writable part for feature delete' } };
-      }
-      const buf = codeEditorRef.current?.getContent?.() ?? '';
-      if (args?.id == null && args?.index == null) {
-        const vpEdit = viewportRef.current?.agentReadFeatureEdit?.();
-        if (vpEdit?.open && vpEdit.feature) {
-          const ok = handleDeleteFeatureEdit(vpEdit.feature, {});
-          if (!ok) {
-            return { error: { code: 'delete_failed', message: 'Could not delete the open feature' } };
-          }
-          viewportRef.current?.agentDismissFeatureEdit?.();
-          agentFeatureDraftRef.current = null;
-          return { result: { deletedId: vpEdit.feature.id } };
-        }
-        const sheet = featureSheetRef.current;
-        if (sheet?.mode === 'edit' && sheet.feature) {
-          handleFeatureSheetDelete(sheet.feature);
-          agentFeatureDraftRef.current = null;
-          return { result: { deletedId: sheet.feature.id } };
-        }
-        return { error: { code: 'bad_args', message: 'delete_feature needs id or index when no edit is open' } };
-      }
-      const resolved = resolveStripTarget(buf, args);
-      if (resolved.error) return resolved;
-      handleFeatureSheetDelete(resolved.feature);
-      agentFeatureDraftRef.current = null;
-      agentFeatureTargetRef.current = null;
-      return { result: { deletedId: resolved.chip.id } };
-    },
+    prepareFeatureDelete: (args) => prepareAgentFeatureDelete(args),
     rollbackTo(args = {}) {
       if (!focusWritePart(null)) {
         return { error: { code: 'no_write_part', message: 'No writable part for rollback' } };

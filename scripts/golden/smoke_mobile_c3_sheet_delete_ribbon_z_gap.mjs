@@ -59,9 +59,11 @@ console.log('mobile C.3: sheet delete + ribbon z + CAD gap + Block + rail height
       /onDelete/.test(sheet),
   );
   check(
-    'deleteFeatureBlock export + App wires onDelete + Auto-Run',
+    'deleteFeatureEdit + App wires onDelete + Auto-Run',
     /export function deleteFeatureBlock/.test(writeback) &&
-      /deleteFeatureBlock/.test(app) &&
+      // The sheet delete uses deleteFeatureEdit (same as the edit dialog) so a
+      // dangling `return part;` is dropped on an empty part.
+      /deleteFeatureEdit\(buf, live\)/.test(app) &&
       /handleFeatureSheetDelete/.test(app) &&
       /onFeatureEditDelete=\{handleFeatureSheetDelete\}/.test(app) &&
       /applyBuffer\?\.\(/.test(app) &&
