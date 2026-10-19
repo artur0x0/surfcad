@@ -32,7 +32,7 @@ export const COVERAGE_ALLOWLIST = Object.freeze([
   Object.freeze({ id: 'data-privacy-choices-done', reason: 'Monitoring slice B privacy choices dialog (not agent scope).' }),
   Object.freeze({ id: 'data-privacy-consent-accept-all', reason: 'First-visit privacy consent popup (not agent scope).' }),
   Object.freeze({ id: 'data-privacy-consent-required-only', reason: 'First-visit privacy consent popup (not agent scope).' }),
-  Object.freeze({ id: 'data-assembly-save-menu', reason: 'Desktop assembly Save split-button menu (rename).' }),
+  Object.freeze({ id: 'data-assembly-save-menu', reason: 'Desktop assembly Save split-button menu (rename / Upgrade vault).' }),
   Object.freeze({ id: 'data-git-behind-keep', reason: 'PR 8 removed git_behind_resolve keep (Dismiss is not a tool).' }),
   Object.freeze({ id: 'data-git-upgrade-dismiss', reason: 'PR 4 Upgrade vault Dismiss writes nothing (not an agent command).' }),
   Object.freeze({ id: 'data-git-save-dismiss', reason: 'PR 7 Save conflict Dismiss writes nothing (not an agent command).' }),
