@@ -327,7 +327,35 @@ export const COMMAND_META = {
   },
   delete_feature: {
     description: 'Delete a feature block from the script and run the part through mutate, so the result status and errors are current and undo once restores the block. Deleting the feature that declares part while later code still uses it is confirm_required until confirm: true; the result then carries a warning.',
-    result: MUTATE_RESULT_SCHEMA,
+    // Own result: the command returns deletedId, mutate failures, and an
+    // optional warning. It does not return unchanged (that stays on MUTATE_RESULT_SCHEMA).
+    result: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        deletedId: { type: 'string' },
+        ok: { type: 'boolean' },
+        errors: { type: 'array', items: { type: 'string' } },
+        failures: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              code: { type: 'string' },
+              message: { type: 'string' },
+              featureIndex: { type: 'integer' },
+              featureId: { type: 'string' },
+              featureType: { type: 'string' },
+              featureLabel: { type: 'string' },
+              detail: { type: 'string' },
+            },
+          },
+        },
+        status: STATUS_SCHEMA,
+        warning: { type: 'string' },
+      },
+    },
     errors: ['unknown_feature', 'bad_index', 'bad_args', 'confirm_required', 'delete_failed', 'no_write_part', 'internal'],
     mutates: true,
     destructive: true,
