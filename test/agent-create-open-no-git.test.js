@@ -47,9 +47,9 @@ test('agentCreatePart and agentOpenAssembly do not call git', () => {
   const openHandler = sliceFn('const handleOpenVaultAssembly', 'openVaultAssemblyRef.current');
   assert.match(openHandler, /const git = adapter \|\| gitAdapterRef\.current/);
   assert.match(openHandler, /retry: \(\) => \{ void handleOpenVaultAssembly\(name\); \}/);
-  const createIdx = create.indexOf('agentRunOutcome(text)');
-  const earlyReturn = create.indexOf('if (!runScript) return');
-  assert.ok(earlyReturn >= 0 && earlyReturn < createIdx);
+  // create_part always runs the new part: no early return ahead of the run (Pi 5 C3).
+  assert.ok(create.indexOf('agentRunOutcome(text)') >= 0);
+  assert.equal(create.indexOf('if (!runScript) return'), -1);
 });
 
 test('picking a new part and resolving a missing name do not call the git adapter', async () => {
