@@ -19,9 +19,30 @@ import {
 } from './bridge/relayServer.mjs';
 import { RelaySession } from './relay.mjs';
 import { augmentScreenshotTool, callPairedBridgeTool } from './screenshotFile.mjs';
-import { callPromptTool, isPromptTool, promptToolDefinitions } from './prompt/promptTools.mjs';
+import {
+  callPromptTool,
+  isPromptTool,
+  PROMPT_ONBOARDING_NOTE,
+  PROMPT_SERVER_INSTRUCTIONS,
+  PROMPT_WEBHOOK_ACTIVE,
+  promptToolDefinitions,
+} from './prompt/promptTools.mjs';
 
 const PAIR_TOOL_NAME = 'pair';
+
+const STATUS_PROMPT_NOTE = ' This process also adds webhookRegistered (true when a prompt webhook is registered; the URL and any bearer are not included) and queued (how many prompt messages are waiting for read_messages).';
+
+/**
+ * MCP-only fields on the bridge status tool. The host command and commands.json stay unchanged.
+ * @param {{ name: string, description?: string }} tool
+ */
+function augmentStatusTool(tool) {
+  if (!tool || tool.name !== 'status') return tool;
+  return {
+    ...tool,
+    description: `${tool.description || ''}${STATUS_PROMPT_NOTE}`,
+  };
+}
 
 /** A bridge call that has to pair first waits this long for Allow, then fails. */
 const AUTO_PAIR_WAIT_MS = 1000;
@@ -54,6 +75,29 @@ function textResult(value, isError = false) {
   };
 }
 
+/**
+ * Pair success is ordinary text content so every MCP client, including Claude Code,
+ * shows the note. No structuredContent and no _meta.
+ * @param {Record<string, unknown>} result
+ * @param {{ webhookRegistered: () => boolean }} prompts
+ */
+function pairToolResult(result, prompts) {
+  const webhookRegistered = prompts.webhookRegistered() === true;
+  const note = webhookRegistered ? PROMPT_WEBHOOK_ACTIVE : PROMPT_ONBOARDING_NOTE;
+  const payload = {
+    ...(result && typeof result === 'object' ? result : {}),
+    webhookRegistered,
+    note,
+  };
+  return {
+    content: [
+      { type: 'text', text: JSON.stringify(payload, null, 2) },
+      { type: 'text', text: note },
+    ],
+    isError: false,
+  };
+}
+
 function toolErrorPayload(err) {
   if (err && typeof err === 'object' && err.code) {
     return formatBridgeError({
@@ -73,18 +117,21 @@ function toolErrorPayload(err) {
 export async function createSurfcadMcpServer(options = {}) {
   const catalog = options.catalog || loadCommandsCatalog();
   const session = options.session || new RelaySession();
-  const bridgeTools = bridgeToolDefinitions(catalog).map((tool) => augmentScreenshotTool(tool));
+  const bridgeTools = bridgeToolDefinitions(catalog).map((tool) => augmentStatusTool(augmentScreenshotTool(tool)));
 
   const server = new Server(
     { name: 'surfcad-mcp', version: loadPackageVersion() },
-    { capabilities: { tools: {} } },
+    {
+      capabilities: { tools: {} },
+      instructions: PROMPT_SERVER_INSTRUCTIONS,
+    },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       {
         name: PAIR_TOOL_NAME,
-        description: `Pair this MCP server to an open SurfCAD tab via the local WebSocket relay. ${pairingEnvHint()}`,
+        description: `Pair this MCP server to an open SurfCAD tab via the local WebSocket relay. ${pairingEnvHint()} ${PROMPT_SERVER_INSTRUCTIONS}`,
         inputSchema: {
           type: 'object',
           additionalProperties: false,
@@ -130,7 +177,7 @@ export async function createSurfcadMcpServer(options = {}) {
       }
       try {
         const result = await waitForPairing(session.pair(code), PAIR_TOOL_WAIT_MS);
-        return textResult(result);
+        return pairToolResult(result, session.prompts);
       } catch (err) {
         return textResult(toolErrorPayload(err), true);
       }
@@ -159,6 +206,9 @@ export async function createSurfcadMcpServer(options = {}) {
     try {
       session.noteAgentToolCall();
       const out = await callPairedBridgeTool(session, name, args);
+      if (name === 'status' && out.isError !== true && out.value && typeof out.value === 'object' && !Array.isArray(out.value)) {
+        return textResult({ ...out.value, ...session.prompts.deliveryStatus() });
+      }
       return textResult(out.value, out.isError === true);
     } catch (err) {
       const code = err?.code;

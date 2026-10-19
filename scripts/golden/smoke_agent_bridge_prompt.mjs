@@ -201,6 +201,11 @@ try {
   transport.stderr?.on('data', (chunk) => { serverStderr += String(chunk); });
   client = new Client({ name: 'agent-prompt-golden', version: '1.0.0' });
   await client.connect(transport);
+  check(
+    'server instructions nudge register_webhook or read_messages',
+    client.getInstructions() === 'call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages.',
+    String(client.getInstructions() || ''),
+  );
 
   const relayUp = await (async () => {
     const start = Date.now();
@@ -270,6 +275,10 @@ try {
   await approve.click();
   const paired = await pairPromise;
   check('MCP pair succeeds after Allow', paired.isError !== true, toolTexts(paired).join(' ').slice(0, 240));
+  check(
+    'pair onboarding note is text content',
+    toolTexts(paired).join('\n').includes('To get SurfCAD messages instantly, send me your webhook URL and key. This only needs to be done once. Otherwise I\'ll check for SurfCAD messages between steps, so replies may lag.'),
+  );
   await page.waitForFunction(
     () => window.surfcadAgentPrompt?.getBridge?.().getState?.() === 'paired',
     { timeout: 10000 },
@@ -286,6 +295,14 @@ try {
   const queued = await waitWatch(page, (snap) => snap?.acks?.some((ack) => ack.id === promptId && ack.delivery === 'queued'));
   const queuedAck = queued?.acks?.find((ack) => ack.id === promptId);
   check('ack delivery queued', queuedAck?.delivery === 'queued' && queuedAck.error == null, JSON.stringify(queuedAck));
+
+  const beforeRead = await mcp('status', {});
+  const beforeBody = parseTool(beforeRead);
+  check(
+    'status shows 1 queued prompt and no webhook',
+    beforeRead.isError !== true && beforeBody.queued === 1 && beforeBody.webhookRegistered === false,
+    toolTexts(beforeRead).join(' ').slice(0, 240),
+  );
 
   const read = await mcp('read_messages', {});
   const blocks = read.content || [];

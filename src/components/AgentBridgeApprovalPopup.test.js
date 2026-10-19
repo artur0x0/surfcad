@@ -25,11 +25,13 @@ test('approval popup calls allow and deny and keeps the prompt copy', async () =
     onDeny: () => calls.push('deny'),
   });
   assert.equal(el.props['data-agent-bridge-approval'], '');
-  assert.match(el.props.className, /w-max max-w-full/);
+  assert.match(el.props.className, /w-full/);
+  assert.match(el.props.className, /justify-between/);
+  assert.doesNotMatch(el.props.className, /w-max/);
   assert.doesNotMatch(el.props.className, /max-w-\[9rem\]/);
   const prompt = el.props.children.find((child) => child?.type === 'p');
   assert.equal(prompt.props.children, 'Allow this agent to control SurfCAD?');
-  assert.match(prompt.props.className, /inline/);
+  assert.doesNotMatch(prompt.props.className, /\binline\b/);
   const [allow, deny] = buttons(el);
   assert.equal(allow.props['aria-label'], 'Allow connection');
   assert.equal(allow.props['data-ui-action'], 'data-agent-bridge-approve');

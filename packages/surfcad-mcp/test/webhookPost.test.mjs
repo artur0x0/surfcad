@@ -29,6 +29,24 @@ test('postPromptWebhook retries once and does not record the URL', async () => {
   assert.equal(JSON.stringify(out).includes('8.8.8.8'), false);
 });
 
+test('postPromptWebhook sends the bearer on each attempt and omits it from the result', async () => {
+  const seen = [];
+  const request = async (_url, _payload, opts) => {
+    seen.push(opts.bearer);
+    const err = new Error('down test-bearer');
+    err.name = 'Error';
+    throw err;
+  };
+  const out = await postPromptWebhook('https://8.8.8.8/hook', { type: 'surfcad.prompt' }, {
+    request,
+    bearer: 'test-bearer',
+  });
+  assert.deepEqual(seen, ['test-bearer', 'test-bearer']);
+  assert.equal(out.ok, false);
+  assert.equal(out.error, 'webhook_failed');
+  assert.equal(JSON.stringify(out).includes('test-bearer'), false);
+});
+
 test('postPromptWebhook reports timeout after the retry and stops', async () => {
   let calls = 0;
   const request = async () => {
@@ -64,7 +82,10 @@ test('insecure TLS is required for a self-signed loopback webhook and refused ot
     const chunks = [];
     req.on('data', (chunk) => chunks.push(chunk));
     req.on('end', () => {
-      hits.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      hits.push({
+        body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+        authorization: req.headers.authorization ?? null,
+      });
       res.writeHead(204);
       res.end();
     });
@@ -85,8 +106,30 @@ test('insecure TLS is required for a self-signed loopback webhook and refused ot
     });
     assert.equal(accepted.ok, true);
     assert.equal(hits.length, 1);
-    assert.equal(hits[0].type, 'surfcad.prompt');
-    assert.equal(hits[0].text, 'hello');
+    assert.equal(hits[0].authorization, null);
+    assert.equal(hits[0].body.type, 'surfcad.prompt');
+    assert.equal(hits[0].body.text, 'hello');
+
+    const logs = [];
+    const prevError = console.error;
+    console.error = (...args) => logs.push(args.map(String).join(' '));
+    let authed;
+    try {
+      authed = await postPromptWebhook(url, { ...body, text: 'with-bearer' }, {
+        insecureTls: true,
+        pinAddress: '127.0.0.1',
+        timeoutMs: 2000,
+        bearer: 'test-bearer',
+      });
+    } finally {
+      console.error = prevError;
+    }
+    assert.equal(authed.ok, true);
+    assert.equal(hits.length, 2);
+    assert.equal(hits[1].authorization, 'Bearer test-bearer');
+    assert.equal(hits[1].body.text, 'with-bearer');
+    assert.equal(JSON.stringify(authed).includes('test-bearer'), false);
+    assert.equal(logs.some((line) => line.includes('test-bearer')), false);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     rmSync(dir, { recursive: true, force: true });
