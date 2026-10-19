@@ -369,6 +369,15 @@ jobs:
             echo "position limit golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:new-part-empty | tee "${RUNNER_TEMP}/new-part-empty.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/new-part-empty.log"; then
+            echo "new part empty golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'new part empty golden: ok' "${RUNNER_TEMP}/new-part-empty.log"; then
+            echo "new part empty golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
