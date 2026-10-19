@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { createMockGithubAdapter } from '../src/utils/git/mockGithubAdapter.js';
-import { createdPartFromDocs, scriptRequestsRun } from '../src/agent/state/createPart.js';
+import { createdPartFromDocs } from '../src/agent/state/createPart.js';
 import { resolveAssemblyOpenName } from '../src/agent/state/openAssemblyName.js';
 
 const APP = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
@@ -31,7 +31,9 @@ test('agentCreatePart and agentOpenAssembly do not call git', () => {
   assert.match(create, /if \(doc\.activeId !== created\.id\)/);
   assert.match(create, /activeId: created\.id/);
   assert.match(create, /rememberCadPart\(created\.id\)/);
-  assert.match(create, /if \(!runScript\) return \{ result: \{ partId, partCount \} \}/);
+  // create_part runs the new part before it returns, blank starter included (Pi 5 C3).
+  assert.equal(/if \(!runScript\)/.test(create), false);
+  assert.match(create, /refreshGenRef\.current \+= 1;/);
   assert.match(create, /agentRunOutcome\(text\)/);
   assert.match(APP, /bodyCount: finishedRunBodyCount\(run, bodyCountOfWorkerMesh\(run\.mesh\)\)/);
   assert.equal(/geom\.bodyCount === 0/.test(APP), false);
@@ -58,7 +60,6 @@ test('picking a new part and resolving a missing name do not call the git adapte
     { activeId: 'old', parts: [{ id: 'old' }, { id: 'new-part' }] },
   );
   assert.equal(created.id, 'new-part');
-  assert.equal(scriptRequestsRun('return 1;\n'), true);
   const missing = resolveAssemblyOpenName('does-not-exist', ['Bracket']);
   assert.equal(missing.error.code, 'not_found');
   const ambiguous = resolveAssemblyOpenName('WIDGET', ['Widget', 'widget']);

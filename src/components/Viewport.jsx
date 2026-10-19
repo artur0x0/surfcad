@@ -2481,6 +2481,15 @@ const Viewport = forwardRef(({
         };
       },
       readMode() {
+        const viewportFeatureEditSummary = () => {
+          const edit = featureEditRef.current;
+          if (edit?.feature) {
+            return { mode: 'edit', feature: edit.feature, dialog: edit.dialog || null, opening: !!edit.opening };
+          }
+          const helper = helperEditRef.current;
+          if (helper?.feature) return { mode: 'edit', feature: helper.feature, dialog: 'helper' };
+          return null;
+        };
         return buildAgentMode({
           appMode: mode,
           contour: contourMode
@@ -2507,7 +2516,11 @@ const Viewport = forwardRef(({
           sheetMetalPicker: !!sheetMetalPicker,
           holeCard: !!holeCard,
           jointPicking: !!jointPicking,
-          featureEdit,
+          // The App sheet, else the viewport's own edit (fillet card, helper
+          // card, contour reopen): `featureEdit` alone was the sheet prop, so
+          // mode.featureEdit stayed null while open_feature had a card up
+          // (Pi 5 C4).
+          featureEdit: featureEdit || viewportFeatureEditSummary(),
         });
       },
       readCamera() {

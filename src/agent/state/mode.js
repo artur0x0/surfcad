@@ -59,6 +59,8 @@ export function buildAgentMode(input = {}) {
     ? {
       mode: input.featureEdit.mode || null,
       featureId: input.featureEdit.feature?.id || input.featureEdit.featureId || null,
+      kind: input.featureEdit.feature?.kind || input.featureEdit.kind || null,
+      dialog: input.featureEdit.dialog || null,
     }
     : null;
 

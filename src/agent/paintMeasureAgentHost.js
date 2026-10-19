@@ -6,6 +6,7 @@ import {
   livePaintChanged,
   livePaintTap,
   parsePaintHex,
+  pendingPaintCount,
   resolvedPaintColor,
 } from '../utils/facePaint.js';
 import {
@@ -17,17 +18,6 @@ import {
   triangleGroupStats,
 } from '../utils/measurePicks.js';
 import { propagateTangentEdges } from '../utils/selectEdge.js';
-
-function paintPendingCount(session) {
-  if (!session || typeof session !== 'object') return 0;
-  let count = 0;
-  for (const entry of Object.values(session)) {
-    if (!entry || typeof entry !== 'object') continue;
-    if (entry.part) count += 1;
-    else if (Array.isArray(entry.faces)) count += entry.faces.length;
-  }
-  return count;
-}
 
 export function createPaintMeasureAgentHandlers(deps) {
   const meshContext = () => {
@@ -194,7 +184,7 @@ export function createPaintMeasureAgentHandlers(deps) {
           color,
           swatch: state.color,
           custom: state.custom || '',
-          pendingCount: paintPendingCount(state.session),
+          pendingCount: pendingPaintCount(state.session, state.baseline),
           canConfirm,
           canUndo: Array.isArray(state.undo) && state.undo.length > 0,
         },
