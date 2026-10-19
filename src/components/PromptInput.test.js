@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { importJsx } from '../../test/jsxTestModule.js';
+import { AGENT_PROMPT_TYPED } from '../agent/agentPromptDemo.js';
 
 const SRC = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), 'PromptInput.jsx'),
@@ -48,4 +52,81 @@ test('demo states seed idle, typing, replies, working, and camera on/off', () =>
   assert.match(SRC, /data-agent-prompt-ack="queued"/);
   assert.match(SRC, /aria-pressed=\{shotCue\}/);
   assert.match(SRC, /aria-label=\{shotCue \? 'Discard screenshot' : 'Attach screenshot'\}/);
+  assert.match(SRC, /Agent is working\.\.\./);
+  assert.match(SRC, /agent-prompt-spinner/);
+  assert.match(SRC, /data-agent-reply-dots/);
+  assert.match(SRC, /agent-prompt--away/);
+  assert.match(SRC, /featurePopupOpen/);
+  assert.doesNotMatch(SRC, /abort/);
+});
+
+const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../index.css'), 'utf8');
+
+test('prompt motion is CSS-only and respects reduced motion', () => {
+  assert.match(css, /@keyframes agent-prompt-bounce/);
+  assert.match(css, /@keyframes agent-prompt-spin/);
+  assert.match(css, /\.agent-prompt--away/);
+  assert.match(css, /prefers-reduced-motion: reduce/);
+  assert.match(css, /\.agent-prompt-spinner/);
+  assert.match(css, /\.agent-prompt-dots span/);
+});
+
+const DEV = { DEV: true };
+
+function renderPrompt(search, props = {}) {
+  return renderToStaticMarkup(React.createElement(PromptInput, {
+    demoSearch: search,
+    promptEnv: DEV,
+    ...props,
+  }));
+}
+
+let PromptInput;
+
+test('working state shows the spinner hint, Stop, and reply dots', async () => {
+  ({ default: PromptInput } = await importJsx(new URL('./PromptInput.jsx', import.meta.url)));
+  const working = renderPrompt('?agentPromptDemo=1&agentPromptState=working');
+  assert.match(working, /agent-prompt-spinner/);
+  assert.match(working, /Agent is working\.\.\./);
+  assert.match(working, /data-agent-prompt-working="1"/);
+  assert.match(working, /aria-label="Stop agent"/);
+  assert.match(working, /data-agent-prompt-stop=""/);
+  assert.match(working, /data-agent-reply-dots=""/);
+  assert.match(working, /Updating the cube/);
+  assert.doesNotMatch(working, /data-agent-prompt-send=""/);
+  assert.match(working, /data-agent-reply-body="">Updating the cube/);
+
+  const streaming = renderPrompt('?agentPromptDemo=1&agentPromptState=reply-streaming');
+  assert.match(streaming, /data-agent-reply-dots=""/);
+  assert.match(streaming, /Adding the holes/);
+  assert.match(streaming, /data-agent-prompt-working="0"/);
+  assert.match(streaming, /data-agent-prompt-send=""/);
+  assert.doesNotMatch(streaming, /Agent is working/);
+
+  const idle = renderPrompt('?agentPromptDemo=1&agentPromptState=idle');
+  assert.match(idle, /Message your agent/);
+  assert.match(idle, /aria-label="Send"/);
+  assert.match(idle, /data-agent-prompt-away="0"/);
+  assert.doesNotMatch(idle, /data-agent-reply-dots/);
+  assert.doesNotMatch(idle, /Agent is working/);
+});
+
+test('a feature popup slides the prompt away without dropping the draft or camera', async () => {
+  if (!PromptInput) {
+    ({ default: PromptInput } = await importJsx(new URL('./PromptInput.jsx', import.meta.url)));
+  }
+  const away = renderPrompt('?agentPromptDemo=1&agentPromptState=typing', { featurePopupOpen: true });
+  assert.match(away, /agent-prompt--away/);
+  assert.match(away, /data-agent-prompt-away="1"/);
+  assert.match(away, new RegExp(AGENT_PROMPT_TYPED.split('\n')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(away, /data-agent-prompt-shot="0"/);
+
+  const shot = renderPrompt('?agentPromptDemo=1&agentPromptState=shot-on', { featurePopupOpen: true });
+  assert.match(shot, /data-agent-prompt-shot="1"/);
+  assert.match(shot, /data-agent-prompt-away="1"/);
+
+  const back = renderPrompt('?agentPromptDemo=1&agentPromptState=typing', { featurePopupOpen: false });
+  assert.match(back, /data-agent-prompt-away="0"/);
+  assert.doesNotMatch(back, /agent-prompt--away/);
+  assert.match(back, new RegExp(AGENT_PROMPT_TYPED.split('\n')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });

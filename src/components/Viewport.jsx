@@ -48,6 +48,11 @@ import {
 } from '../utils/previewStyle';
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 import { fillAgentHost } from '../agent/host';
+import {
+  allowFeaturePopup,
+  registerFeaturePopupDismiss,
+  setAuthorizedFeatureEdit,
+} from '../agent/agentFeaturePopupGate.js';
 import { encodeCanvasImage } from '../agent/screenshotImage';
 import { kernelExceptionDetail } from '../agent/state/formatErrors';
 import { viewportToastRows } from '../agent/state/toasts';
@@ -1157,6 +1162,8 @@ const Viewport = forwardRef(({
   rollbackAnchor = undefined,
   /** True while any feature session is open. App hides the feature strip. */
   onFeatureSessionChange = null,
+  /** True while any feature card is open, so the agent prompt can slide away. */
+  onFeatureCardChange = null,
   /**
    * Sketch chips for the phone and desktop bars. Null while the plane card
    * is open and after contour mode closes.
@@ -2056,6 +2063,17 @@ const Viewport = forwardRef(({
                                   : '';
   featureCardKindRef.current = featureCardKind;
   sheetCameraOwnedRef.current = featureCardKind !== '';
+  const featurePopupOpen = mode !== 'game' && (
+    featureCardKind !== '' || (!!holeCard && !contourMode)
+  );
+  const onFeatureCardChangeRef = useRef(onFeatureCardChange);
+  onFeatureCardChangeRef.current = onFeatureCardChange;
+  useEffect(() => {
+    onFeatureCardChangeRef.current?.(featurePopupOpen);
+    return () => {
+      if (featurePopupOpen) onFeatureCardChangeRef.current?.(false);
+    };
+  }, [featurePopupOpen]);
   // A view snap or zoom-to-fit wins over the card slide. Close still restores
   // the snapshot taken when the card opened.
   const sheetSlideArmedRef = useRef(true);
@@ -2604,6 +2622,7 @@ const Viewport = forwardRef(({
         if (mode === 'game') {
           return { error: { code: 'bad_view', message: 'Hole is not available in game mode' } };
         }
+        if (!allowFeaturePopup()) return { result: { open: false, suppressed: true } };
         if (contourModeRef.current || holeCardRef.current) {
           return { error: { code: 'picker_busy', message: 'Close the open sketch or hole card first' } };
         }
@@ -4152,6 +4171,7 @@ const Viewport = forwardRef(({
   ]);
 
   const openFeatureSlots = useCallback((entry, seeded = null) => {
+    if (!allowFeaturePopup()) return;
     if (!isSolidContourEntry(entry) || mode === 'game') return;
     slotReturnRef.current = null;
     if (contourModeRef.current) exitContourMode();
@@ -4213,6 +4233,7 @@ const Viewport = forwardRef(({
   }, [exitContourMode]);
 
   const enterContourMode = useCallback(({ entry, centresEdit = null, keepSheet = false, sheetSketch = null } = {}) => {
+    if (!allowFeaturePopup()) return;
     if (isSolidContourEntry(entry) && mode !== 'game') {
       openFeatureSlots(entry);
       return;
@@ -4466,6 +4487,7 @@ const Viewport = forwardRef(({
   }, [openSavedContour]);
 
   beginContourEditRef.current = (contourId) => {
+    if (!allowFeaturePopup()) return false;
     slotReturnRef.current = null;
     featureSlotsRef.current = null;
     setFeatureSlots(null);
@@ -4850,6 +4872,7 @@ const Viewport = forwardRef(({
   }, [clearFilletBlendPreview, clearEdgeHover, clearEdgeHighlight]);
 
   const enterFilletMode = useCallback((opts = {}) => {
+    if (!allowFeaturePopup()) return;
     feaCloseRef.current();
     exitPaintModeRef.current();
     exitSheetMetalChromeRef.current();
@@ -5028,6 +5051,7 @@ const Viewport = forwardRef(({
   }, []);
 
   const enterShellMode = useCallback(() => {
+    if (!allowFeaturePopup()) return;
     feaCloseRef.current();
     exitPaintModeRef.current();
     exitSheetMetalChromeRef.current();
@@ -5085,6 +5109,7 @@ const Viewport = forwardRef(({
   exitPaintModeRef.current = exitPaintMode;
 
   const enterPaintMode = useCallback(() => {
+    if (!allowFeaturePopup()) return;
     if (mode === 'game') return;
     closeFeatureSlotsRef.current();
     feaCloseRef.current();
@@ -6703,6 +6728,7 @@ const Viewport = forwardRef(({
   }, [clearHighlight]);
 
   const enterDraftMode = useCallback(() => {
+    if (!allowFeaturePopup()) return;
     feaCloseRef.current();
     exitPaintModeRef.current();
     exitSheetMetalChromeRef.current();
@@ -7025,6 +7051,7 @@ const Viewport = forwardRef(({
   }, [paintCutPicks, syncCutPlaneWidget]);
 
   const enterCutMode = useCallback(() => {
+    if (!allowFeaturePopup()) return;
     feaCloseRef.current();
     exitPaintModeRef.current();
     exitSheetMetalChromeRef.current();
@@ -7355,6 +7382,7 @@ const Viewport = forwardRef(({
   }, [paintBooleanPicks]);
 
   const enterBooleanMode = useCallback(() => {
+    if (!allowFeaturePopup()) return;
     feaCloseRef.current();
     exitPaintModeRef.current();
     exitSheetMetalChromeRef.current();
@@ -7505,6 +7533,7 @@ const Viewport = forwardRef(({
   }, [clearHighlight, clearMovePreview]);
 
   const enterMoveMode = useCallback(() => {
+    if (!allowFeaturePopup()) return;
     feaCloseRef.current();
     exitPaintModeRef.current();
     exitSheetMetalChromeRef.current();
@@ -7883,6 +7912,7 @@ const Viewport = forwardRef(({
   }, [paintMoveFacePicks]);
 
   const enterMoveFaceMode = useCallback(() => {
+    if (!allowFeaturePopup()) return;
     feaCloseRef.current();
     exitPaintModeRef.current();
     exitSheetMetalChromeRef.current();
@@ -8032,6 +8062,21 @@ const Viewport = forwardRef(({
     }
   };
 
+  useEffect(() => registerFeaturePopupDismiss(() => {
+    featureEditRef.current = null;
+    setHelperEdit(null);
+    holeEditRef.current = null;
+    holeSpecRef.current = null;
+    holeCentresEditRef.current = null;
+    if (holeCardRef.current) setHoleCard(null);
+    if (featureSlotsRef.current) {
+      featureSlotsRef.current = null;
+      setFeatureSlots(null);
+    }
+    yieldToFeatureEditCardRef.current();
+    if (measurementEnabledRef.current) exitMeasureModeRef.current?.();
+  }), []);
+
   const commitDeleteFaceState = useCallback((next) => {
     deleteFaceModeRef.current = next;
     setDeleteFaceMode(next);
@@ -8039,6 +8084,7 @@ const Viewport = forwardRef(({
   }, [paintDeleteFacePicks]);
 
   const enterDeleteFaceMode = useCallback(() => {
+    if (!allowFeaturePopup()) return;
     feaCloseRef.current();
     exitPaintModeRef.current();
     exitSheetMetalChromeRef.current();
@@ -12410,6 +12456,7 @@ const Viewport = forwardRef(({
       exitMeasureMode();
       return;
     }
+    if (!allowFeaturePopup()) return;
     const seed = measureSeedFromSelection(
       selectedFace,
       facePickGroupRef.current,
@@ -13308,6 +13355,7 @@ const Viewport = forwardRef(({
     if (mode !== 'game' && feature?.kind === 'hole') {
       const opened = readContourHole(text, feature.id);
       if (opened) {
+        if (!allowFeaturePopup()) return false;
         holeEditRef.current = { ...opened, feature };
         holeCentresEditRef.current = null;
         holeSpecRef.current = null;
@@ -13326,6 +13374,7 @@ const Viewport = forwardRef(({
       setHoleCard(null);
     }
     if (mode !== 'game' && isSolidContourEntry(dialog.entry)) {
+      if (!allowFeaturePopup()) return false;
       const session0 = openFeatureEdit(text, feature);
       const block = session0.block || featureBlockText(text, feature);
       featureEditRef.current = null;
@@ -13345,6 +13394,7 @@ const Viewport = forwardRef(({
       showContourToast(session0.message || 'Could not open that feature.');
       return false;
     }
+    if (!allowFeaturePopup()) return false;
     const needsPreview = ['fillet', 'chamfer', 'shell', 'draft', 'cut', 'moveFace', 'deleteFace', 'sweep'].includes(feature.kind);
     featureEditRef.current = {
       feature: session0.feature || feature,
@@ -13362,6 +13412,7 @@ const Viewport = forwardRef(({
     setHelperEdit(null);
     setFeatureEditBanner('');
     const launch = async () => {
+      setAuthorizedFeatureEdit(true);
       const pendingSheet = pendingSheetChipRef.current;
       pendingSheetChipRef.current = null;
       let session = session0;
@@ -13386,6 +13437,10 @@ const Viewport = forwardRef(({
           }
         }
         if (!featureEditRef.current) return;
+        if (!allowFeaturePopup()) {
+          featureEditRef.current = null;
+          return;
+        }
         const active = session.ok ? session : session0;
         const label = [active.missingEdgeLabel, active.missingFaceLabel].filter(Boolean).join(' · ');
         if (dialog.dialog !== 'fillet' && dialog.dialog !== 'chamfer') setFeatureEditBanner(label);
@@ -13512,6 +13567,7 @@ const Viewport = forwardRef(({
           commitDeleteFaceState(emptyDeleteFaceState(active.resolvedFaces || []));
         }
       } finally {
+        setAuthorizedFeatureEdit(false);
         if (featureEditRef.current) featureEditRef.current.opening = false;
       }
     };

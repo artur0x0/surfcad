@@ -1,4 +1,5 @@
 import { resolveFaceKeys } from './resolvePickIds.js';
+import { allowFeaturePopup } from './agentFeaturePopupGate.js';
 import { fingerprintsFromGeometry } from '../utils/facePaint.js';
 import { studyMemberIds } from '../fea/feaPickGate.js';
 
@@ -190,6 +191,7 @@ export function createFeaAgentHandlers(deps) {
       if (deps.panelRef?.current?.open) {
         return { result: { open: true, already: true } };
       }
+      if (!allowFeaturePopup()) return { result: { open: false, suppressed: true } };
       deps.feaToggleRef?.current?.();
       const ok = await waitForOpen();
       if (!ok) {

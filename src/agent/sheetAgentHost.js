@@ -22,6 +22,7 @@ import {
 import { readSheetMetalSpec } from '../utils/sheetMetal/sheetMetalScript.js';
 import { sheetRibbonChips } from '../utils/sheetMetal/sheetRibbon.js';
 import { parseFeatureMarkers } from '../utils/featureMarkers.js';
+import { allowFeaturePopup } from './agentFeaturePopupGate.js';
 
 function refKeyToPanelEdge(refKey) {
   const m = String(refKey || '').match(/^wall:([^:]+):([uv][+-])/);
@@ -50,8 +51,11 @@ export function createSheetAgentHandlers(deps) {
   // Consecutive agent calls (sheet_check then sheet_refold) read modeRef
   // before React flushes setState. Keep the ref in lockstep with the write.
   const applyMode = (next) => {
+    const opening = next != null && modeRef.current == null;
+    if (opening && !allowFeaturePopup()) return false;
     modeRef.current = next ?? null;
     setMode(next);
+    return true;
   };
 
   function readScript() {
@@ -92,6 +96,7 @@ export function createSheetAgentHandlers(deps) {
       if (deps.appMode === 'game') {
         return { error: { code: 'bad_view', message: 'Sheet metal is not available in game mode' } };
       }
+      if (!allowFeaturePopup()) return { result: { open: false, suppressed: true } };
       setPicker({ willCreatePart: deps.willCreatePart?.() ?? false });
       return { result: { open: true, picker: true } };
     },
@@ -111,6 +116,7 @@ export function createSheetAgentHandlers(deps) {
       if (!onBindSheetMetal) {
         return { error: { code: 'internal', message: 'Sheet metal bind handler is missing' } };
       }
+      if (!allowFeaturePopup()) return { result: { open: false, suppressed: true } };
       const start = onBindSheetMetal(rec);
       const finish = (bound) => {
         if (!bound?.ok) {
@@ -121,7 +127,9 @@ export function createSheetAgentHandlers(deps) {
         if (next?.stage === 'edit' && next.spec && bound.partId) {
           onCommitSheetMetal?.(next.spec, { partId: bound.partId, step: 'rebind' });
         }
-        applyMode(next);
+        if (applyMode(next) === false) {
+          return { result: { open: false, suppressed: true } };
+        }
         return { result: { ok: true, stage: next?.stage, partId: bound.partId } };
       };
       if (start && typeof start.then === 'function') {

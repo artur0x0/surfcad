@@ -11,6 +11,7 @@ import {
   shouldShowAgentPrompt,
 } from '../agent/agentPromptDemo.js';
 import { registerAgentPromptHandler } from '../agent/agentPromptHost.js';
+import { setAgentPromptWorking } from '../agent/agentFeaturePopupGate.js';
 import {
   AGENT_PROMPT_WORKING_TIMEOUT_MS,
   ackNotice,
@@ -26,26 +27,24 @@ const PLACEHOLDER = 'Message your agent…';
 
 function demoSeed(state) {
   if (state === 'typing') {
-    return { input: AGENT_PROMPT_TYPED, reply: '', working: false, shotOn: false };
+    return { input: AGENT_PROMPT_TYPED, reply: '', working: false, shotOn: false, streaming: false };
   }
   if (state === 'reply-short') {
-    return { input: '', reply: AGENT_PROMPT_REPLY_SHORT, working: false, shotOn: false };
+    return { input: '', reply: AGENT_PROMPT_REPLY_SHORT, working: false, shotOn: false, streaming: false };
   }
   if (state === 'reply-long') {
-    return { input: '', reply: AGENT_PROMPT_REPLY_LONG, working: false, shotOn: false };
+    return { input: '', reply: AGENT_PROMPT_REPLY_LONG, working: false, shotOn: false, streaming: false };
+  }
+  if (state === 'reply-streaming') {
+    return { input: '', reply: 'Adding the holes', working: false, shotOn: false, streaming: true };
   }
   if (state === 'working') {
-    return {
-      input: 'Add four M4 clearance holes 6 mm from each corner',
-      reply: '',
-      working: true,
-      shotOn: false,
-    };
+    return { input: '', reply: 'Updating the cube', working: true, shotOn: false, streaming: true };
   }
   if (state === 'shot-on') {
-    return { input: '', reply: '', working: false, shotOn: true };
+    return { input: '', reply: '', working: false, shotOn: true, streaming: false };
   }
-  return { input: '', reply: '', working: false, shotOn: false };
+  return { input: '', reply: '', working: false, shotOn: false, streaming: false };
 }
 
 function appendReply(prev, { id, text }) {
@@ -64,6 +63,7 @@ export default function PromptInput({
   demoSearch = undefined,
   promptEnv = undefined,
   promptContext = undefined,
+  featurePopupOpen = false,
 }) {
   const { paired, link, promptTransport } = useAgentBridgeHost();
   const demoAllowed = agentPromptDemoAllowed(promptEnv);
@@ -94,6 +94,7 @@ export default function PromptInput({
   const seed = demoSeed(demo?.state);
   const [input, setInput] = useState(seed.input);
   const [working, setWorking] = useState(seed.working);
+  const [streaming, setStreaming] = useState(seed.streaming);
   const [replies, setReplies] = useState(
     seed.reply ? [{ id: 'demo', text: seed.reply }] : [],
   );
@@ -128,10 +129,17 @@ export default function PromptInput({
         const text = typeof msg.text === 'string' ? msg.text : '';
         setReplies((prev) => appendReply(prev, { id: msg.id, text }));
         setReplyOpen(true);
-        if (msg.final === true) setWorking(false);
+        if (msg.final === true) {
+          setStreaming(false);
+          setWorking(false);
+        } else {
+          setStreaming(true);
+        }
       },
       onWorking(on) {
-        setWorking(on === true);
+        const next = on === true;
+        setAgentPromptWorking(next);
+        setWorking(next);
       },
       onAck(event) {
         if (!event || typeof event !== 'object') return;
@@ -145,12 +153,20 @@ export default function PromptInput({
   useEffect(() => {
     if (visible) return undefined;
     setWorking(false);
+    setStreaming(false);
     setReplies([]);
     setReplyOpen(false);
     setAck(null);
     pendingIdRef.current = null;
     return undefined;
   }, [visible]);
+
+  useEffect(() => {
+    setAgentPromptWorking(working);
+    return () => {
+      if (working) setAgentPromptWorking(false);
+    };
+  }, [working]);
 
   useEffect(() => {
     if (!working) return undefined;
@@ -190,10 +206,11 @@ export default function PromptInput({
   }, [discardShot, input, promptContext, shot, transport, working]);
 
   const stopAgent = useCallback(() => {
-    transport?.abort?.();
+    setAgentPromptWorking(false);
     setWorking(false);
+    setStreaming(false);
     return { ok: true };
-  }, [transport]);
+  }, []);
 
   const dismissReply = useCallback(() => {
     setReplyOpen(false);
@@ -239,7 +256,8 @@ export default function PromptInput({
   if (!visible) return null;
 
   const replyText = replies.map((row) => row.text).join('\n\n');
-  const showReply = replyOpen && replyText && !working;
+  const responding = working || streaming;
+  const showReply = responding || (replyOpen && !!replyText);
   const nearLimit = input.length >= COUNTER_FROM;
   const overLimit = input.length > AGENT_PROMPT_MAX_CHARS;
   const remaining = AGENT_PROMPT_MAX_CHARS - input.length;
@@ -262,39 +280,47 @@ export default function PromptInput({
     <div
       className={`agent-prompt surface-glass text-on-dark font-ui ${
         isMobile ? 'agent-prompt--compact' : ''
-      }`}
+      }${featurePopupOpen ? ' agent-prompt--away' : ''}`}
       data-agent-prompt=""
       data-agent-prompt-compact={isMobile ? '1' : '0'}
       data-agent-prompt-working={working ? '1' : '0'}
       data-agent-prompt-shot={shotCue ? '1' : '0'}
+      data-agent-prompt-away={featurePopupOpen ? '1' : '0'}
+      data-agent-prompt-responding={responding ? '1' : '0'}
+      aria-hidden={featurePopupOpen ? true : undefined}
+      {...(featurePopupOpen ? { inert: '' } : {})}
     >
       {showReply ? (
         <div className="agent-prompt-reply rail-scroll" data-agent-reply="">
-          <div className="agent-prompt-cap">
-            <span className="text-ui-xs font-semibold uppercase tracking-wide text-muted-on-dark">
-              Agent
-            </span>
-            <button
-              type="button"
-              className="agent-prompt-icon-btn text-muted-on-dark"
-              onClick={dismissReply}
-              data-ui-action="data-agent-prompt-dismiss"
-              data-agent-prompt-dismiss=""
-              aria-label="Dismiss reply"
-            >
-              <X size={14} aria-hidden />
-            </button>
+          {responding ? null : (
+            <div className="agent-prompt-cap">
+              <span className="text-ui-xs font-semibold uppercase tracking-wide text-muted-on-dark">
+                Agent
+              </span>
+              <button
+                type="button"
+                className="agent-prompt-icon-btn text-muted-on-dark"
+                onClick={dismissReply}
+                data-ui-action="data-agent-prompt-dismiss"
+                data-agent-prompt-dismiss=""
+                aria-label="Dismiss reply"
+              >
+                <X size={14} aria-hidden />
+              </button>
+            </div>
+          )}
+          <div className="agent-prompt-reply-line">
+            {responding ? (
+              <span className="agent-prompt-dots" data-agent-reply-dots="" aria-hidden>
+                <span />
+                <span />
+                <span />
+              </span>
+            ) : null}
+            <div className="agent-prompt-reply-body text-ui text-on-dark" data-agent-reply-body="">
+              {replyText}
+            </div>
           </div>
-          <div className="agent-prompt-reply-body text-ui text-on-dark" data-agent-reply-body="">
-            {replyText}
-          </div>
-        </div>
-      ) : null}
-
-      {working ? (
-        <div className="agent-prompt-working" data-agent-working="">
-          <Loader2 size={14} className="animate-spin text-muted-on-dark" aria-hidden />
-          <span className="text-ui-sm text-muted-on-dark">Agent is working…</span>
         </div>
       ) : null}
 
@@ -327,27 +353,35 @@ export default function PromptInput({
       ) : null}
 
       <form onSubmit={onSubmit} className="agent-prompt-row">
-        <textarea
-          ref={textareaRef}
-          value={input}
-          rows={1}
-          onChange={(event) => {
-            const next = event.target.value.slice(0, AGENT_PROMPT_MAX_CHARS + 200);
-            setInput(next.slice(0, AGENT_PROMPT_MAX_CHARS));
-            adjustHeight();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              onSubmit(event);
-            }
-          }}
-          placeholder={PLACEHOLDER}
-          className="agent-prompt-input text-ui-lg text-on-dark font-ui"
-          data-agent-prompt-input=""
-          disabled={working}
-          aria-label="Message your agent"
-        />
+        <div className="agent-prompt-field">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            rows={1}
+            onChange={(event) => {
+              const next = event.target.value.slice(0, AGENT_PROMPT_MAX_CHARS + 200);
+              setInput(next.slice(0, AGENT_PROMPT_MAX_CHARS));
+              adjustHeight();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                onSubmit(event);
+              }
+            }}
+            placeholder={working ? '' : PLACEHOLDER}
+            className="agent-prompt-input text-ui-lg text-on-dark font-ui"
+            data-agent-prompt-input=""
+            disabled={working}
+            aria-label="Message your agent"
+          />
+          {working && !input ? (
+            <span className="agent-prompt-hint text-ui-sm text-on-dark" data-agent-working="">
+              <Loader2 size={14} className="agent-prompt-spinner text-on-dark" aria-hidden />
+              <span>Agent is working...</span>
+            </span>
+          ) : null}
+        </div>
         {nearLimit ? (
           <span
             className="agent-prompt-counter text-ui-xs text-muted-on-dark"
@@ -378,7 +412,7 @@ export default function PromptInput({
             data-agent-prompt-stop=""
             aria-label="Stop agent"
           >
-            <Square size={16} aria-hidden />
+            <Square size={14} fill="currentColor" aria-hidden />
           </button>
         ) : (
           <button

@@ -7,6 +7,7 @@ import { BrandMark, BrandWordmark } from './components/brand/BrandWordmark';
 import { clearLoadingTheme, readLoadingTheme } from './utils/loadingTheme';
 import PromptInput from './components/PromptInput';
 import { agentPromptContext } from './agent/agentPromptLive.js';
+import { allowFeaturePopup, registerFeaturePopupDismiss } from './agent/agentFeaturePopupGate.js';
 import SplitDivider from './components/SplitDivider';
 import ScriptEditorDrawer from './components/ScriptEditorDrawer';
 import MobileStageToggle from './components/MobileStageToggle';
@@ -686,6 +687,7 @@ const App = () => {
    */
   const handleDesktopFeatureStripJump = (feature) => {
     if (!feature) return;
+    if (!allowFeaturePopup()) return;
     focusWritePartRef.current(null);
     setFeatureStripActiveId(feature.id);
     codeEditorRef.current?.revealRange?.(feature.startOffset, feature.endOffset);
@@ -716,6 +718,7 @@ const App = () => {
    * Game never opens it.
    */
   const [featureSheet, setFeatureSheet] = useState(null);
+  const [featurePopupOpen, setFeaturePopupOpen] = useState(false);
   const featureSheetRef = useRef(null);
   featureSheetRef.current = featureSheet;
   const featureStripActiveIdRef = useRef(null);
@@ -756,8 +759,15 @@ const App = () => {
     setFeatureSheet(null);
     setFeatureStripActiveId(null);
   };
+  useEffect(() => registerFeaturePopupDismiss(() => {
+    setFeatureSheet(null);
+    setFeatureStripActiveId(null);
+    setJointCard(null);
+    jointCardAgentRef.current = null;
+  }), []);
   const openFeatureSheetFor = (feature) => {
     if (!feature) return;
+    if (!allowFeaturePopup()) return;
     // The sheet reads and writes the editor buffer: make it the picked part's.
     focusWritePartRef.current(null);
     setFeatureStripActiveId(feature.id);
@@ -774,6 +784,7 @@ const App = () => {
     setFeatureSheet({ mode: 'edit', feature });
   };
   const openFeatureSheetFromCad = () => {
+    if (!allowFeaturePopup()) return;
     focusWritePartRef.current(null);
     const buf = codeEditorRef.current?.getContent?.() || currentScript || '';
     const features = listFeatureSheetTargets(buf);
@@ -8289,10 +8300,12 @@ const App = () => {
   };
 
   const handleOpenJoints = () => {
-    if (appModeRef.current === 'game' || featureSessionRef.current) return;
+    if (appModeRef.current === 'game' || featureSessionRef.current) return false;
+    if (!allowFeaturePopup()) return false;
     jointPicksRef.current = [];
     viewportRef.current?.clearJointHighlights?.();
     publishJointCard(draftFromPicks(null, [], { joints: assemblyRef.current?.joints || [] }));
+    return true;
   };
 
   const handleCadEmptyClick = () => {
@@ -10369,7 +10382,9 @@ const App = () => {
         return { error: { code: 'bad_view', message: 'Joints are not available right now' } };
       }
       rememberCadPart(null);
-      handleOpenJoints();
+      if (handleOpenJoints() !== true) {
+        return { result: { open: false, suppressed: true } };
+      }
       return { result: { open: true } };
     },
     jointSetParams({ patch } = {}) {
@@ -10749,6 +10764,15 @@ const App = () => {
       const buf = codeEditorRef.current?.getContent?.() ?? '';
       const resolved = resolveStripTarget(buf, args);
       if (resolved.error) return resolved;
+      if (!allowFeaturePopup()) {
+        return {
+          result: {
+            id: resolved.chip.id,
+            kind: resolved.chip.kind,
+            index: resolved.chip.index,
+          },
+        };
+      }
       agentFeatureDraftRef.current = {};
       agentFeatureTargetRef.current = resolved.feature || null;
       agentFeatureSessionRef.current = {
@@ -11133,6 +11157,7 @@ const App = () => {
         partId: cadPartId || assemblyDoc?.activeId || '',
         assemblyId: assemblyDoc?.id || '',
       })}
+      featurePopupOpen={featurePopupOpen}
     />
   ) : null;
 
@@ -11238,6 +11263,7 @@ const App = () => {
               rollbackAnchor={appMode === 'game' ? undefined : editorRollbackAnchor}
               getBooleanContext={assemblyPartContext}
               onFeatureSessionChange={handleFeatureSession}
+              onFeatureCardChange={setFeaturePopupOpen}
               onSketchStripChange={handleSketchStrip}
             onSheetStripChange={handleSheetStrip}
               partLabels={partLabels}
@@ -11748,6 +11774,7 @@ const App = () => {
             rollbackAnchor={appMode === 'game' ? undefined : editorRollbackAnchor}
             getBooleanContext={assemblyPartContext}
             onFeatureSessionChange={handleFeatureSession}
+            onFeatureCardChange={setFeaturePopupOpen}
             onSketchStripChange={handleSketchStrip}
             onSheetStripChange={handleSheetStrip}
             partLabels={partLabels}
