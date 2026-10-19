@@ -572,7 +572,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   create_assembly: {
-    description: 'Seed a blank local assembly. Single-flight per tab: overlapping calls return the same assemblyId. Optional name is a non-unique label. No git write. Returns { assemblyId, assemblyName, activeId, partCount }.',
+    description: 'Seed a blank assembly with one empty part (no demo script, no seed cube: the first insert_* creates the body). Single-flight per tab: overlapping calls return the same assemblyId. Optional name is a non-unique label. No git write. Returns { assemblyId, assemblyName, activeId, partCount }.',
     result: { type: 'object', additionalProperties: true },
     errors: ['internal'],
     mutates: true,
@@ -649,9 +649,9 @@ export const COMMAND_META = {
     mutates: true,
   },
   list_assemblies: {
-    description: 'List vault assemblies as [{ id, name }]. id is an opaque surf id; name is a label, not a key. No path field. Git-only.',
+    description: 'List the assemblies the Open picker shows as [{ id, name, open }]: saved v2 assemblies, the open working copy (also when it is not saved yet, or local), and on a legacy vault its name-only folders as { id: null, name, legacy: true }. id is an opaque surf id; name is a label, not a key. No path field.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['git_only', 'git_blocked', 'internal'],
+    errors: ['git_blocked', 'internal'],
     mutates: false,
   },
   delete_part: {

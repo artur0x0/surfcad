@@ -21,6 +21,7 @@
         "golden:agent-bridge-block-edit": "node scripts/golden/smoke_agent_bridge_block_edit.mjs",
         "golden:agent-camera-framing": "node scripts/golden/smoke_agent_camera_framing.mjs",
         "golden:agent-state-reporting": "node scripts/golden/smoke_agent_state_reporting.mjs",
+        "golden:agent-block-edit-leftover": "node scripts/golden/smoke_agent_block_edit_leftover.mjs",
         "golden:agent-bridge-h6-h8": "node scripts/golden/smoke_agent_bridge_h6_h8.mjs",
         "golden:agent-bridge-h7": "node scripts/golden/smoke_agent_bridge_h7.mjs",
         "golden:agent-bridge-h9": "node scripts/golden/smoke_agent_bridge_h9.mjs",

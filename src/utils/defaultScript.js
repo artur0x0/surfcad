@@ -1,4 +1,14 @@
 // utils/defaultScript.js - Default CAD script for new users
+import { withSurfId } from './git/surfId.js';
+
+/**
+ * A new blank assembly's one part. Empty: the first feature creates the body
+ * (Artur, 2026-10-19: no seed cube and no demo). A git part carries only its
+ * `// @surf-id` header, which `isBufferEmpty` still treats as empty.
+ */
+export function blankPartStarter(seedId = null) {
+  return seedId ? withSurfId('\n', seedId) : '';
+}
 
 export const DEFAULT_SCRIPT = `// --- cube begin ---
 let box1 = Manifold.cube([40, 30, 20], true);

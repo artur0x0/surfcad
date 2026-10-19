@@ -2624,10 +2624,30 @@ const Viewport = forwardRef(({
         if (!edit?.feature) return;
         cancelFeatureEditRef.current?.(edit.dialog || edit.kind);
       },
+      /**
+       * Close the edit after the agent's confirm wrote the script through
+       * mutate. Cancel would re-run the pre-edit script as a preview and paint
+       * the old solid over the new one; this restores only when the buffer is
+       * unchanged (an unchanged confirm), the same rule as the UI commit.
+       */
+      agentSettleFeatureEdit() {
+        const edit = featureEditRef.current;
+        if (!edit?.feature) return false;
+        const live = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
+        const full = edit.previewed && live === edit.script ? edit.script : '';
+        featureEditRef.current = null;
+        setHelperEdit(null);
+        setFeatureEditBanner('');
+        setFeatureDeleteConfirm(null);
+        if (full && assemblyRunLockRef?.current !== true) executeScriptRef.current?.(full, { editPreview: true });
+        return true;
+      },
+      /** Drop the edit with no run: the caller is about to write and run the script. */
       agentDismissFeatureEdit() {
         featureEditRef.current = null;
         setHelperEdit(null);
         setFeatureEditBanner('');
+        setFeatureDeleteConfirm(null);
       },
       agentReadHoleEdit() {
         const edit = holeEditRef.current;
@@ -10817,6 +10837,46 @@ const Viewport = forwardRef(({
           onRendered: null,
           _lastRenderedMesh: null,
           _renderCount: 0,
+          // What the scene still holds besides the solids: previews, edge wires,
+          // highlights. A golden reads this after an edit or a hide to prove
+          // nothing from a closed card or a hidden part is left over.
+          featureEditOpening: () => !!featureEditRef.current?.opening,
+          // Largest extent of the block preview skin, mm (null when no preview).
+          blockPreviewSize: () => {
+            const skin = blockPreviewRef.current?.getObjectByName?.('blockSolidPreviewSkin');
+            const g = skin?.geometry;
+            if (!g?.attributes?.position) return null;
+            g.computeBoundingBox();
+            const b = g.boundingBox;
+            if (!b || b.isEmpty()) return null;
+            return Math.max(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z);
+          },
+          sceneInventory: () => {
+            const scene = sceneRef.current;
+            const out = { blockPreview: !!blockPreviewRef.current, dataBlockPreview: containerRef.current?.dataset?.blockPreview ?? null, objects: [] };
+            if (!scene) return out;
+            scene.traverse((obj) => {
+              if (obj === scene || obj.visible === false) return;
+              const type = obj.type || obj.constructor?.name || '';
+              if (!/Line|Mesh|Points|Sprite/.test(type)) return;
+              let parent = obj.parent;
+              let hidden = false;
+              while (parent && parent !== scene) {
+                if (parent.visible === false) { hidden = true; break; }
+                parent = parent.parent;
+              }
+              if (hidden) return;
+              const pos = obj.geometry?.attributes?.position;
+              out.objects.push({
+                name: obj.name || '',
+                type,
+                parent: obj.parent?.name || '',
+                vertices: pos ? pos.count : 0,
+                isResult: obj === resultRef.current,
+              });
+            });
+            return out;
+          },
           lastRenderedIs: (mesh) => window.__VIEWPORT__?._lastRenderedMesh === mesh,
           // Run a script exactly as the Run button does -- validate, execute in the worker,
           // render into the live scene, auto-fit. Resolves { error, mesh } so a headless

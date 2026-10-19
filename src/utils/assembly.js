@@ -10,7 +10,7 @@
  */
 
 import { normalizeSheetMetalBinding } from './scs/scsCatalog.js';
-import { isSurfId, partSurfId } from './git/surfId.js';
+import { isSurfId, partSurfId, stripSurfId } from './git/surfId.js';
 import {
   jointedSurfIds,
   normalizeAssemblyJoints,
@@ -225,7 +225,8 @@ export function isDefaultBlankAssembly(doc, scripts = {}, {
     script = liveScript;
   }
   const text = String(script ?? '');
-  if (!text.trim()) return true;
+  // A blank part is empty, or only its `// @surf-id` header (git seed).
+  if (!text.trim() || !stripSurfId(text).trim()) return true;
   const known = (Array.isArray(defaultScripts) ? defaultScripts : [])
     .map((s) => String(s ?? ''))
     .filter(Boolean);

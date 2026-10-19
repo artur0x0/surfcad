@@ -211,7 +211,7 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `workplane_select` | `{ plane_id }` | Selects a saved construction plane on the plane card. |
 | `set_active_workplane` | `{ plane_id }` or `{ clear: true }` | Sets or clears the construction-plane overlay highlight. |
 | `list_sketch_entities` | `{}` | `{ points, lines, arcs, refs }` in the open sketch (immediate). |
-| `create_assembly` | `{}` | Seeds a blank assembly (Parts **+** → Assembly). One assembly-history undo step when replacing an open document. |
+| `create_assembly` | `{}` | Seeds a blank assembly (Parts **+** → Assembly) with one empty part: no demo script and no seed cube; the first `insert_*` creates the body (a git part carries only its `// @surf-id` header). One assembly-history undo step when replacing an open document. |
 | `create_part` | `{ name?, script?, position? }` | Adds a part row (Parts **+** → Part) and returns its new opaque surf id. Agent default is the assembly origin; optional `position` is `[x,y,z]` mm. Working copy only. The new part runs before the call returns, blank starter included, so its `status` is never `not_run_yet`. |
 | `rename_part` | `{ part_id, name }` | Working-copy display name. `{ partId, name, moved: false }`. A path or name is `unknown_part`. The committed header updates on the next `git_save`. |
 | `rename_assembly` | `{ assembly_id, name }` | Working-copy assembly label. `assembly_id` is an opaque id, not the current name. Names may collide. No git write. |
@@ -220,7 +220,7 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `open_assembly` | `{ assembly_id }` | Opens a vault assembly by opaque id (git mode). A name or path is `unknown_assembly`. |
 | `open_part` | `{ part_id? , assembly_id? }` | Opens a vault part by id into the current assembly (reference). No path argument. |
 | `insert_part` | `{ part_id? , assembly_id?, copy? }` | Insert-as-reference by part id, or every part of an assembly id. `copy: true` mints a new id. No git write. |
-| `list_assemblies` | `{}` | Vault assemblies as `[{ id, name }]`. No path field. |
+| `list_assemblies` | `{}` | The assemblies the Open picker shows, as `[{ id, name, open }]`: saved v2 assemblies, the open working copy (also before its first Save, and in local mode), and on a legacy vault its name-only folders as `{ id: null, name, legacy: true }` (no opaque id until `git_upgrade_vault`). No path field. |
 | `delete_part` | `{ part_id, scope, confirm? }` | `scope: "assembly"` drops the row. `scope: "repo"` also plans a file delete and requires `confirm: true`. Neither scope commits. |
 | `delete_assembly` | `{ assembly_id, confirm: true, delete_parts? }` | Deletes the open assembly. `confirm: true` required. Save commits later. |
 | `joint_open` | `{}` | Opens the Joints create card (`data-joints-button`). Clears CAD part highlight for the joint strip. |

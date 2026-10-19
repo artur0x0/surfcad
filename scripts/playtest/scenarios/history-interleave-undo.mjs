@@ -343,6 +343,10 @@ export async function run(ctx) {
       await agentCall(page, step.call, step.args);
     }
     await agentCall(page, 'select_parts', { part_id: (await agentCall(page, 'parts', {})).result?.parts?.[0]?.id });
+    // A fresh assembly's part starts empty (no demo script to walk), so give
+    // the stack one step of its own before the undo.
+    await agentCall(page, 'insert_cube', { width: 20, depth: 20, height: 20 });
+    await agentCall(page, 'run', {});
     await agentCall(page, 'undo', {});
     const before = await agentCall(page, 'history', {});
     await agentCall(page, 'insert_cube', { width: 12, depth: 12, height: 12 });

@@ -58,7 +58,8 @@ test('open / insert / list / delete / rename stay on the working copy', () => {
   assert.match(insert, /copy: copy === true/);
   const insertRows = sliceFn('const insertReferencedParts', 'const loadVaultPartRows');
   assert.match(insertRows, /copiedFrom: row\.id/);
-  assert.match(list, /assemblies: rows/);
+  // Rows come from assemblyRows: saved v2 ids, the open working copy, legacy names.
+  assert.match(list, /assemblies: assemblyRows\(/);
   assert.match(delPart, /part_still_referenced/);
   assert.match(delPart, /listPartParentAssemblies/);
   assert.match(delAsm, /seedAgentAssembly\(\{\}\)/);
