@@ -28,7 +28,7 @@ export function pinLookup(address) {
 /**
  * @param {string} url
  * @param {Buffer} payload
- * @param {{ timeoutMs: number, insecureTls: boolean, pinAddress?: string }} opts
+ * @param {{ timeoutMs: number, insecureTls: boolean, pinAddress?: string, bearer?: string }} opts
  */
 function defaultHttpsPost(url, payload, opts) {
   return new Promise((resolve, reject) => {
@@ -43,17 +43,25 @@ function defaultHttpsPost(url, payload, opts) {
       reject(new Error('https required'));
       return;
     }
+    const headers = {
+      'content-type': 'application/json',
+      'content-length': String(payload.length),
+      accept: 'application/json',
+    };
+    if (typeof opts.bearer === 'string' && opts.bearer.length > 0) {
+      if (opts.bearer.includes('\r') || opts.bearer.includes('\n')) {
+        reject(new Error('webhook_failed'));
+        return;
+      }
+      headers.authorization = `Bearer ${opts.bearer}`;
+    }
     const requestOptions = {
       protocol: 'https:',
       hostname: parsed.hostname,
       port: parsed.port || 443,
       path: `${parsed.pathname}${parsed.search}`,
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'content-length': String(payload.length),
-        accept: 'application/json',
-      },
+      headers,
       rejectUnauthorized: opts.insecureTls !== true,
       servername: parsed.hostname,
       timeout: opts.timeoutMs,
@@ -84,6 +92,7 @@ function defaultHttpsPost(url, payload, opts) {
  *   attempts?: number,
  *   insecureTls?: boolean,
  *   pinAddress?: string,
+ *   bearer?: string,
  *   request?: typeof defaultHttpsPost,
  * }} [options]
  */
@@ -97,6 +106,9 @@ export async function postPromptWebhook(url, body, options = {}) {
     insecureTls: options.insecureTls === true,
     pinAddress: options.pinAddress,
   };
+  if (typeof options.bearer === 'string' && options.bearer.length > 0) {
+    opts.bearer = options.bearer;
+  }
   let lastError = 'webhook_failed';
   for (let i = 0; i < attempts; i += 1) {
     try {

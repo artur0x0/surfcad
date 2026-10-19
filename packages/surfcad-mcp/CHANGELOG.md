@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- MCP server instructions: call `register_webhook { url, bearer? }` if you can receive https webhooks, otherwise poll `read_messages`. A successful `pair` with no webhook puts an onboarding note in the tool text (ask the user for a URL and key, the key is `bearer`, save both in the agent's own config and register again after every pair, or poll `read_messages` if they decline). If a webhook is already registered, the result only says it is active.
+- The MCP `status` tool adds `webhookRegistered` (boolean; the URL is not included) and `queued` (prompt messages waiting for `read_messages`). A fresh session is `false` and `0`.
+- `register_webhook` takes an optional `bearer`. Prompt POSTs then send `Authorization: Bearer <bearer>`. The token stays in process memory, is cleared on `unregister_webhook` and when the pairing session ends, and is never logged, returned, or sent to the tab.
+
 ## 0.2.2 - 2026-10-18
 
 - Bridge catalog matches the host save-model v2 contract. Tools take opaque `part_id` / `assembly_id` only. `set_script` requires `part_id`. `list_assemblies`, `delete_part`, `delete_assembly`, and `rename_assembly` are wired. `insert_part` calls `agentInsertPart`. `GET /tools` on the loopback relay lists the same bridge tools as `list_commands` and `data/commands.json`. `delete_part` scope `repo` and `delete_assembly` require `confirm: true`. Nothing in this package writes git; `git_save` is still the vault write, and its typed errors (`consent_pending`, `pending_save`, `upgrade_required`, `conflict`, `repo-moved`) pass through unchanged.

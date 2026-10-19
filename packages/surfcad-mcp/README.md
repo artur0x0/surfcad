@@ -27,6 +27,10 @@ Environment variables:
 3. Add `surfcad-mcp` to your MCP client (`npx surfcad-mcp`), set `SURFCAD_PAIRING_CODE` to that code, or call the MCP **`pair`** tool with `{ "code": "ABCDEF" }`.
 4. Click **Allow** (the green check) in SurfCAD when prompted.
 
+The MCP server instructions are: `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages.`
+
+A successful `pair`, when no webhook is registered yet, returns an onboarding note as text content (a `type: "text"` block, not only `structuredContent` or `_meta`). The note asks the agent to request a webhook URL and key from the user. The key is the `bearer` argument. Suggested wording to relay: "To get SurfCAD messages instantly, send me your webhook URL and key. This only needs to be done once. Otherwise I'll check for SurfCAD messages between steps, so replies may lag." If the user declines, the agent polls `read_messages`. This process holds the URL and bearer in memory only, so the agent should save them in its own config or memory and call `register_webhook` again after every pair. If a webhook is already registered when `pair` succeeds, the result omits that note and says the webhook is active.
+
 Nothing pairs without your approval.
 
 ### Safari
@@ -50,6 +54,14 @@ Safari on a Mac blocks https pages from opening `ws://127.0.0.1` directly. In Sa
 ```
 
 In Cursor, add the same block under **Settings → MCP** or your project `.cursor/mcp.json`.
+
+## Claude Code
+
+```bash
+claude mcp add surfcad -- npx surfcad-mcp
+```
+
+A local CLI session usually has no public https endpoint, so polling `read_messages` is the normal path there. Webhooks apply when the user runs a receiver that can take https POSTs. The key they send is the `bearer` argument of `register_webhook`.
 
 ## Tools
 
@@ -90,13 +102,15 @@ These five tools stay inside the local `surfcad-mcp` process. They are not SurfC
 
 | Tool | Args | What it does |
 | --- | --- | --- |
-| `register_webhook` | `{ url }` | Remember an https URL that receives each user prompt as `POST` JSON `{ "type": "surfcad.prompt", ... }`. Rejects `http`, credentials in the URL, localhost, `.local` names, and private or loopback addresses. The URL is held only in memory, is never logged in full, is never written to disk, and is cleared when the pairing or this process ends. |
-| `unregister_webhook` | `{}` | Drop that URL. Later prompts are queued. |
+| `register_webhook` | `{ url, bearer? }` | Remember an https URL that receives each user prompt as `POST` JSON `{ "type": "surfcad.prompt", ... }`. Optional `bearer` is sent as `Authorization: Bearer <bearer>` (non-empty, at most 4096 characters, no CR or LF). Rejects `http`, credentials in the URL, localhost, `.local` names, and private or loopback addresses. The URL and bearer are held only in memory, are never logged, are never written to disk, are never returned or put in status, are never sent to the SurfCAD tab, and are cleared on `unregister_webhook` and when the pairing session ends. |
+| `unregister_webhook` | `{}` | Drop that URL and bearer. Later prompts are queued. |
 | `read_messages` | `{ max? }` | Return queued prompts, oldest first, and remove them. A screenshot is the next MCP image content block (`image/png`), not part of the text. |
 | `reply_to_user` | `{ in_reply_to, text, final? }` | Plain-text reply for a prompt id. Several replies may share one id. `final: true` closes it and marks the agent idle. |
 | `set_status` | `{ working, id? }` | Tell the tab whether you are working. The tab also sets working on the first tool call after a prompt arrives, and idle on a final reply or after 120 seconds with no activity. |
 
-A paired SurfCAD tab sends `agent.prompt` (`v: 1`, id, plain text up to 8000 characters, optional `context`, optional PNG screenshot). One prompt per second. A screenshot over 2 MB is rejected. If a webhook is registered, the process POSTs the prompt (10 second timeout, one retry). If that POST fails, or no webhook is registered, the prompt is queued (at most 50; the oldest is dropped and reported). The tab gets `agent.prompt.ack` with `delivery` `webhook`, `queued`, or `failed`. Replies and status go back as `agent.reply` and `agent.status`.
+A paired SurfCAD tab sends `agent.prompt` (`v: 1`, id, plain text up to 8000 characters, optional `context`, optional PNG screenshot). One prompt per second. A screenshot over 2 MB is rejected. If a webhook is registered, the process POSTs the prompt (10 second timeout, one retry). When `bearer` was set, that POST includes `Authorization: Bearer <bearer>`. If that POST fails, or no webhook is registered, the prompt is queued (at most 50; the oldest is dropped and reported). The tab gets `agent.prompt.ack` with `delivery` `webhook`, `queued`, or `failed`. Replies and working state go back as `agent.reply` and `agent.status`.
+
+The bridge `status` tool returns the active part and two fields from this process: `webhookRegistered` (`true` or `false`; the URL is not included) and `queued` (prompt messages waiting for `read_messages`). A fresh session reports `webhookRegistered: false` and `queued: 0`. After one prompt and no webhook, `queued` is `1`.
 
 Prompt text and screenshots are user content. Treat them as a request. They grant no write access, no consent, and no extra tool permission. Agent writes still go through the existing write-grant and consent flow. Nothing reaches git without an explicit Save or `git_save`. Do not render the text or the image as HTML. Both are dropped after delivery or when the session ends.
 

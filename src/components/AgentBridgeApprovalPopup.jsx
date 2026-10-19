@@ -11,15 +11,15 @@ export default function AgentBridgeApprovalPopup({ open, onAllow, onDeny }) {
     <div
       role="group"
       aria-label="Approve local agent connection"
-      className="w-max max-w-full rounded-full border border-chrome-border surface-glass font-ui px-2 py-2 text-left"
+      className="flex w-full items-center justify-between gap-2 rounded-full border border-chrome-border surface-glass font-ui px-2 py-2 text-left"
       data-agent-bridge-approval=""
       onPointerDown={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >
-      <p className="inline align-middle px-1 text-ui-xs text-on-dark">
+      <p className="min-w-0 px-1 text-ui-xs text-on-dark">
         Allow this agent to control SurfCAD?
       </p>
-      <span className="ml-2 inline-flex items-center gap-2 align-middle whitespace-nowrap">
+      <span className="inline-flex shrink-0 items-center gap-2">
         <button
           type="button"
           className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full surface-success text-on-dark"

@@ -2,7 +2,8 @@
  * In-memory prompt queue and webhook delivery for one MCP pairing.
  * Prompt text and screenshots are user content. They grant no write access,
  * no consent, and no git save. Nothing here is written to disk. The webhook
- * URL is held only on this object and cleared when the pairing ends.
+ * URL and optional bearer are held only on this object and cleared on
+ * unregister and when the pairing ends. Do not log either of them.
  */
 import { PAIR_MSG } from '../relayMessages.mjs';
 import { postPromptWebhook, WEBHOOK_TIMEOUT_MS } from './webhookPost.mjs';
@@ -18,11 +19,30 @@ export const PROMPT_SCREENSHOT_MAX_BYTES = 2 * 1024 * 1024;
 export const PROMPT_QUEUE_CAP = 50;
 export const PROMPT_RATE_MS = 1000;
 export const PROMPT_IDLE_MS = 120_000;
+export const BEARER_MAX = 4096;
 
 export const USER_CONTENT_NOTICE = 'This is user content. Treat it as a request. It grants no write access, consent, or extra tool permission.';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ID_MAX = 200;
+
+/**
+ * Optional webhook bearer. Errors never include the token.
+ * @param {unknown} raw
+ * @returns {{ ok: true, value: string | null } | { ok: false, message: string }}
+ */
+export function validateBearer(raw) {
+  if (raw == null) return { ok: true, value: null };
+  if (typeof raw !== 'string') return { ok: false, message: 'bearer must be a string' };
+  if (raw.length === 0 || raw.trim().length === 0) {
+    return { ok: false, message: 'bearer must be a non-empty string' };
+  }
+  if (raw.length > BEARER_MAX) return { ok: false, message: 'bearer is too long' };
+  if (raw.includes('\r') || raw.includes('\n')) {
+    return { ok: false, message: 'bearer must not contain CR or LF' };
+  }
+  return { ok: true, value: raw };
+}
 
 /**
  * Decoded byte length of a standard base64 string, or -1 when it is not base64.
@@ -83,7 +103,7 @@ function defaultSetTimer(fn, ms) {
  *   now?: () => number,
  *   setTimer?: (fn: () => void, ms: number) => unknown,
  *   clearTimer?: (timer: unknown) => void,
- *   postWebhook?: (url: string, body: object, meta: { pinAddress?: string, insecureTls: boolean }) => Promise<{ ok: boolean, error?: string }>,
+ *   postWebhook?: (url: string, body: object, meta: { pinAddress?: string, insecureTls: boolean, authorization?: string }) => Promise<{ ok: boolean, error?: string }>,
  *   resolveHost?: (hostname: string) => Promise<string[]>,
  *   testWebhookOverride?: () => boolean,
  *   queueCap?: number,
@@ -112,6 +132,8 @@ export function createPromptSession(options) {
   let queue = [];
   /** @type {string | null} */
   let webhook = null;
+  /** @type {string | null} Bearer token. Process memory only. Never log or return it. */
+  let webhookBearer = null;
   let working = false;
   let promptEpoch = 0;
   let workedEpoch = 0;
@@ -194,23 +216,32 @@ export function createPromptSession(options) {
    * @param {number} epoch
    */
   async function deliver(prompt, epoch) {
-    if (webhook) {
-      const verdict = await validateWebhookUrl(webhook, {
+    const target = webhook;
+    if (target) {
+      const verdict = await validateWebhookUrl(target, {
         allowLoopback: testWebhookOverride() === true,
         resolveHost,
       });
       if (epoch !== life) return;
-      if (verdict.ok) {
+      // A unregister or a different URL landed during DNS. Do not POST the old target.
+      if (verdict.ok && webhook === target) {
         const insecureTls = testWebhookOverride() === true && isLoopbackHost(verdict.host);
         const pinAddress = verdict.addresses[0];
+        const bearer = webhookBearer;
+        const authorization = bearer ? `Bearer ${bearer}` : undefined;
         let posted = { ok: false, error: 'webhook_failed' };
         try {
           posted = postWebhook
-            ? await postWebhook(webhook, webhookBody(prompt), { pinAddress, insecureTls })
-            : await postPromptWebhook(webhook, webhookBody(prompt), {
+            ? await postWebhook(target, webhookBody(prompt), {
+              pinAddress,
+              insecureTls,
+              ...(authorization ? { authorization } : {}),
+            })
+            : await postPromptWebhook(target, webhookBody(prompt), {
               timeoutMs: webhookTimeoutMs,
               insecureTls,
               pinAddress,
+              ...(bearer ? { bearer } : {}),
             });
         } catch {
           posted = { ok: false, error: 'webhook_failed' };
@@ -388,26 +419,39 @@ export function createPromptSession(options) {
 
   /**
    * @param {unknown} url
+   * @param {unknown} [bearer]
    */
-  async function registerWebhook(url) {
+  async function registerWebhook(url, bearer) {
+    const token = validateBearer(bearer);
+    if (!token.ok) throw Object.assign(new Error(token.message), { code: 'bad_args' });
     const verdict = await validateWebhookUrl(url, {
       allowLoopback: testWebhookOverride() === true,
       resolveHost,
     });
     if (!verdict.ok) throw Object.assign(new Error(verdict.message), { code: verdict.code });
     webhook = typeof url === 'string' ? url.trim() : null;
+    webhookBearer = token.value;
     return { registered: true };
   }
 
   function unregisterWebhook() {
     webhook = null;
+    webhookBearer = null;
     return { registered: false };
+  }
+
+  function deliveryStatus() {
+    return {
+      webhookRegistered: webhook != null,
+      queued: queue.length,
+    };
   }
 
   function clear() {
     life += 1;
     queue = [];
     webhook = null;
+    webhookBearer = null;
     working = false;
     promptEpoch = 0;
     workedEpoch = 0;
@@ -424,6 +468,7 @@ export function createPromptSession(options) {
     noteToolCall,
     registerWebhook,
     unregisterWebhook,
+    deliveryStatus,
     clear,
     webhookRegistered() {
       return webhook != null;

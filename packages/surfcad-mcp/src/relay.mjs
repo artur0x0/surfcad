@@ -88,7 +88,7 @@ export class RelaySession {
    *   ensureRelay?: () => Promise<unknown>,
    *   onLog?: (line: string) => void,
    *   promptSession?: ReturnType<typeof createPromptSession>,
-   *   postWebhook?: (url: string, body: object, meta: { pinAddress?: string, insecureTls: boolean }) => Promise<{ ok: boolean, error?: string }>,
+   *   postWebhook?: (url: string, body: object, meta: { pinAddress?: string, insecureTls: boolean, authorization?: string }) => Promise<{ ok: boolean, error?: string }>,
    *   testWebhookOverride?: () => boolean,
    *   resolveHost?: (hostname: string) => Promise<string[]>,
    *   now?: () => number,

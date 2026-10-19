@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import https from 'node:https';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
+  BEARER_MAX,
   PROMPT_IDLE_MS,
   PROMPT_QUEUE_CAP,
   PROMPT_RATE_MS,
@@ -351,4 +357,175 @@ test('read_messages returns image content beside the text and tool copy says the
   assert.equal(texts.some((text) => text.includes('look') && !text.includes(PNG)), true);
   assert.equal(texts.some((text) => text.includes('plain')), true);
   assert.equal(session.queuedCount(), 0);
+});
+
+test('a fresh session reports webhook false and queued 0, then queued 1 after a prompt', async () => {
+  const { session } = harness({ rateLimitMs: 0 });
+  assert.deepEqual(session.deliveryStatus(), { webhookRegistered: false, queued: 0 });
+  await session.acceptPrompt(prompt(1));
+  assert.deepEqual(session.deliveryStatus(), { webhookRegistered: false, queued: 1 });
+});
+
+test('bearer is sent as Authorization, dropped on unregister and session clear, and never echoed', async () => {
+  const logs = [];
+  const names = ['log', 'info', 'warn', 'error', 'debug'];
+  const prev = {};
+  for (const name of names) {
+    prev[name] = console[name];
+    console[name] = (...args) => logs.push(args.map((arg) => {
+      if (typeof arg === 'string') return arg;
+      try { return JSON.stringify(arg); } catch { return String(arg); }
+    }).join(' '));
+  }
+  try {
+    const posts = [];
+    const { session, sent } = harness({
+      rateLimitMs: 0,
+      postWebhook: async (url, body, meta) => {
+        posts.push({ url, body, meta });
+        if (meta.authorization === 'Bearer test-bearer') {
+          throw new Error('down test-bearer');
+        }
+        return { ok: true };
+      },
+    });
+    const registered = await callPromptTool(session, 'register_webhook', {
+      url: 'https://8.8.8.8/hook/s3cret-path',
+      bearer: 'test-bearer',
+    });
+    const registeredText = registered.content.map((block) => block.text).join('\n');
+    assert.equal(registeredText.includes('test-bearer'), false);
+    assert.equal(registeredText.includes('s3cret-path'), false);
+    assert.equal(registeredText.includes('8.8.8.8'), false);
+    assert.deepEqual(JSON.parse(registeredText), { registered: true });
+    assert.deepEqual(session.deliveryStatus(), { webhookRegistered: true, queued: 0 });
+    assert.equal(JSON.stringify(session.deliveryStatus()).includes('test-bearer'), false);
+
+    await session.acceptPrompt(prompt(1, { text: 'hello from the page' }));
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0].meta.authorization, 'Bearer test-bearer');
+    assert.equal(posts[0].meta.bearer, undefined);
+    assert.equal(acks(sent).at(-1).delivery, 'queued');
+    assert.equal(JSON.stringify(sent).includes('test-bearer'), false);
+    assert.equal(JSON.stringify(posts[0].body).includes('test-bearer'), false);
+    assert.equal(session.deliveryStatus().queued, 1);
+
+    const cleared = await callPromptTool(session, 'unregister_webhook', {});
+    assert.deepEqual(JSON.parse(cleared.content[0].text), { registered: false });
+    assert.equal(session.deliveryStatus().webhookRegistered, false);
+    await session.acceptPrompt(prompt(2));
+    assert.equal(posts.length, 1);
+
+    await session.registerWebhook('https://8.8.8.8/hook/s3cret-path', 'other-token');
+    await session.acceptPrompt(prompt(3));
+    assert.equal(posts.at(-1).meta.authorization, 'Bearer other-token');
+
+    session.clear();
+    assert.deepEqual(session.deliveryStatus(), { webhookRegistered: false, queued: 0 });
+    await session.registerWebhook('https://8.8.8.8/hook/s3cret-path');
+    await session.acceptPrompt(prompt(4));
+    assert.equal(posts.at(-1).meta.authorization, undefined);
+    assert.equal(JSON.stringify(posts).includes('test-bearer'), true);
+    assert.equal(posts.filter((row) => row.meta.authorization === 'Bearer test-bearer').length, 1);
+
+    assert.equal(logs.some((line) => line.includes('test-bearer') || line.includes('other-token') || line.includes('s3cret-path')), false);
+  } finally {
+    for (const name of names) console[name] = prev[name];
+  }
+});
+
+test('CR, LF, empty, and overlong bearers are rejected and not stored', async () => {
+  const { session, posts } = harness({ rateLimitMs: 0 });
+  const url = 'https://8.8.8.8/hook';
+  const samples = [
+    'test-bearer\n',
+    'test-bearer\r',
+    'test-bearer\r\nX-Injected: 1',
+    '',
+    '   ',
+    'x'.repeat(BEARER_MAX + 1),
+  ];
+  for (const bearer of samples) {
+    await assert.rejects(
+      () => session.registerWebhook(url, bearer),
+      (err) => err.code === 'bad_args'
+        && !String(err.message).includes('test-bearer')
+        && !String(err.message).includes('X-Injected'),
+    );
+  }
+  await assert.rejects(
+    () => session.registerWebhook(url, 12),
+    (err) => err.code === 'bad_args' && err.message === 'bearer must be a string',
+  );
+  assert.equal(session.webhookRegistered(), false);
+  assert.equal(posts.length, 0);
+  await session.registerWebhook(url, 'a'.repeat(BEARER_MAX));
+  assert.equal(session.webhookRegistered(), true);
+  assert.equal(JSON.stringify(session.deliveryStatus()).includes('a'.repeat(32)), false);
+  await assert.rejects(
+    () => callPromptTool(session, 'register_webhook', {
+      url: 'https://user:test-bearer@8.8.8.8/hook',
+      bearer: 'test-bearer',
+    }),
+    (err) => err.code === 'bad_webhook_url' && !String(err.message).includes('test-bearer'),
+  );
+});
+
+test('a prompt POST from the session sends Authorization: Bearer and unregister clears it', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'surfcad-bearer-'));
+  const keyPath = join(dir, 'key.pem');
+  const certPath = join(dir, 'cert.pem');
+  execFileSync('openssl', [
+    'req', '-x509', '-newkey', 'rsa:2048',
+    '-keyout', keyPath,
+    '-out', certPath,
+    '-days', '1',
+    '-nodes',
+    '-subj', '/CN=127.0.0.1',
+    '-addext', 'subjectAltName=IP:127.0.0.1',
+  ], { stdio: 'ignore' });
+  const hits = [];
+  const server = https.createServer({
+    key: readFileSync(keyPath),
+    cert: readFileSync(certPath),
+  }, (req, res) => {
+    res.writeHead(204);
+    res.end();
+    hits.push({ authorization: req.headers.authorization ?? null, path: req.url });
+  });
+  const sent = [];
+  try {
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+    const url = `https://127.0.0.1:${port}/hook/s3cret-path`;
+    const session = createPromptSession({
+      send: (payload) => sent.push(payload),
+      testWebhookOverride: () => true,
+      rateLimitMs: 0,
+    });
+    const registered = await session.registerWebhook(url, 'test-bearer');
+    assert.deepEqual(registered, { registered: true });
+    await session.acceptPrompt(prompt(1, { text: 'from the page' }));
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0].authorization, 'Bearer test-bearer');
+    assert.equal(hits[0].path, '/hook/s3cret-path');
+    assert.equal(acks(sent).at(-1).delivery, 'webhook');
+    assert.equal(JSON.stringify(sent).includes('test-bearer'), false);
+    assert.equal(JSON.stringify(session.deliveryStatus()).includes('test-bearer'), false);
+    assert.equal(JSON.stringify(session.deliveryStatus()).includes('s3cret-path'), false);
+    assert.equal(session.deliveryStatus().queued, 0);
+
+    session.unregisterWebhook();
+    await session.acceptPrompt(prompt(2, { text: 'queued after unregister' }));
+    assert.equal(hits.length, 1);
+    assert.equal(acks(sent).at(-1).delivery, 'queued');
+
+    await session.registerWebhook(url);
+    await session.acceptPrompt(prompt(3, { text: 'no bearer' }));
+    assert.equal(hits.length, 2);
+    assert.equal(hits[1].authorization, null);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
