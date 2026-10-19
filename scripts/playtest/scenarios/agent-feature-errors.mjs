@@ -192,18 +192,19 @@ export async function run(ctx) {
     };
   });
 
-  await runner.runStep('insert_move X of 5000 is a descriptive bad_args', async () => {
-    const env = await agentCall(page, 'insert_move', { dx: 5000, dy: 0, dz: 0 });
+  // The hard cap is ±1,000,000 mm (bike PR 2); 5000 is a legal translation now.
+  await runner.runStep('insert_move X of 2000000 is a descriptive bad_args', async () => {
+    const env = await agentCall(page, 'insert_move', { dx: 2000000, dy: 0, dz: 0 });
     const message = env.error?.message || '';
     const ok = env.ok === false
       && env.error?.code === 'bad_args'
       && /Move/.test(message)
-      && /5000/.test(message)
-      && /1000/.test(message);
+      && /2000000/.test(message)
+      && /1000000/.test(message);
     return {
       ok,
       call: 'insert_move',
-      args: { dx: 5000, dy: 0, dz: 0 },
+      args: { dx: 2000000, dy: 0, dz: 0 },
       envelope: env,
       detail: message,
     };
@@ -469,11 +470,11 @@ async function main() {
       status: { runState: clearedStatus.body?.runState, volume: clearedStatus.body?.volume },
     });
 
-    const moved = await tool('insert_move', { dx: 5000, dy: 0, dz: 0 });
+    const moved = await tool('insert_move', { dx: 2000000, dy: 0, dz: 0 });
     const moveMessage = moved.body?.message || '';
     check(
-      'insert_move dx 5000 is bad_args',
-      moved.isError === true && moved.body?.code === 'bad_args' && /Move/.test(moveMessage) && /5000/.test(moveMessage) && /1000/.test(moveMessage),
+      'insert_move dx 2000000 is bad_args',
+      moved.isError === true && moved.body?.code === 'bad_args' && /Move/.test(moveMessage) && /2000000/.test(moveMessage) && /1000000/.test(moveMessage),
       moveMessage,
     );
     await shotWithJson(page, join(outDir, 'insert-move-bad-args.png'), moved.body);

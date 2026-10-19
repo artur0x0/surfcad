@@ -65,6 +65,7 @@ import {
 } from './faceFeaturePlacement.js';
 import { resolveFilletStrategy } from './filletAlongPath.js';
 import { BLOCK_POSE_PARAMS, blockSpec, blockSolidExpression } from './blockSolid.js';
+import { POSITION_LIMIT_MM } from './positionLimit.js';
 import { assembleSweepPath, splitEdgePathComponents } from './edgeSweepPath.js';
 import { planeFrameFromFaceData } from './crossSectionSubstrate.js';
 import { emitSolveContour } from './contourScript.js';
@@ -2172,9 +2173,10 @@ export const HELPER_PALETTE_ITEMS = [
     title: 'move(manifold, [dx, dy, dz], { bodies }) — translate one body by a delta',
     params: [
       { name: 'body', type: 'body', default: 'part', label: 'Body' },
-      { name: 'dx', type: 'number', default: 0, label: 'X', min: -1000, max: 1000, step: 0.5, slider: true },
-      { name: 'dy', type: 'number', default: 0, label: 'Y', min: -1000, max: 1000, step: 0.5, slider: true },
-      { name: 'dz', type: 'number', default: 0, label: 'Z', min: -1000, max: 1000, step: 0.5, slider: true },
+      // Hard cap only (POSITION_LIMIT_MM); the card's slider range is helperFieldSpec's.
+      { name: 'dx', type: 'number', default: 0, label: 'X', min: -POSITION_LIMIT_MM, max: POSITION_LIMIT_MM, step: 0.5, slider: true },
+      { name: 'dy', type: 'number', default: 0, label: 'Y', min: -POSITION_LIMIT_MM, max: POSITION_LIMIT_MM, step: 0.5, slider: true },
+      { name: 'dz', type: 'number', default: 0, label: 'Z', min: -POSITION_LIMIT_MM, max: POSITION_LIMIT_MM, step: 0.5, slider: true },
     ],
     build: (empty, p, names, buffer, faceCtx = null) => {
       const lines = [...ensurePartPrefix(empty, names)];

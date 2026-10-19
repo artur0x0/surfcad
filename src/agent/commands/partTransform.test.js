@@ -77,3 +77,15 @@ test('create_part forwards optional position to the host', async () => {
   assert.equal(created.ok, true);
   assert.deepEqual(seen?.position, [3, 4, 5]);
 });
+
+test('part_set_transform refuses a position beyond the limit, NaN, or Infinity before the host (bike PR 2)', async () => {
+  const api = createSurfcadBridge({ resolve: () => host() });
+  const far = await api.call('part_set_transform', { part_id: 'a', position: [0, 0, 1000001] });
+  assert.equal(far.ok, false);
+  assert.equal(far.error.code, 'bad_args');
+  assert.match(far.error.message, /1000000/);
+  const bad = await api.call('part_set_transform', { part_id: 'a', position: [0, 0, 'NaN'] });
+  assert.equal(bad.error.code, 'bad_args');
+  const ok = await api.call('part_set_transform', { part_id: 'a', position: [0, 0, 2000] });
+  assert.equal(ok.ok, true, JSON.stringify(ok));
+});

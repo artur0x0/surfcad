@@ -6,6 +6,7 @@ import {
   HELPER_PALETTE_ITEMS,
   defaultParamsFor,
 } from '../utils/helperPaletteSnippets.js';
+import { POSITION_LIMIT_MM } from '../utils/positionLimit.js';
 
 const HELPER_IDS = new Set(HELPER_PALETTE_ITEMS.map((item) => item.id));
 
@@ -125,6 +126,13 @@ export function validateHelperParams(item, params) {
         return { code: 'bad_args', message: `${label} ${fieldName(param)} must be a finite number.` };
       }
       const n = Number(value);
+      // Every number is capped at ±POSITION_LIMIT_MM so a typo cannot overflow the kernel.
+      if (Math.abs(n) > POSITION_LIMIT_MM) {
+        return {
+          code: 'bad_args',
+          message: `${label} ${fieldName(param)} is ${n}, beyond the ±${POSITION_LIMIT_MM} mm limit.`,
+        };
+      }
       if (Number.isFinite(param.min) && n < param.min) {
         return {
           code: 'bad_args',
@@ -176,7 +184,7 @@ export function describeHelperRefusal(item, ctx = {}) {
       .map((name) => (Number.isFinite(Number(params[name])) ? `${name} ${Number(params[name])}` : null))
       .filter(Boolean);
     const where = bits.length ? ` (${bits.join(', ')} mm)` : '';
-    return `Move refused${where}. Each axis must be a finite translation from -1000 to 1000 mm.`;
+    return `Move refused${where}. Each axis must be a finite translation within ±${POSITION_LIMIT_MM} mm.`;
   }
   if (id === 'filletEdges' || id === 'chamferEdges' || id === 'sweepPath' || id === 'makeSweep') {
     if (!edgeCount) {
