@@ -2,7 +2,13 @@
 
 ## Unreleased
 
+## 0.2.4 - 2026-10-19
+
 - Stop on an in-viewer prompt cancels it. The page sends `agent.prompt.cancel` (`v: 1`). A prompt still queued is dropped and does not come back from `read_messages`. A prompt already delivered is marked cancelled: a registered webhook is POSTed `{ "type": "cancel", "id" }` with the same bearer, https, and timeout rules, otherwise the next `read_messages` returns `{ "type": "cancel", "id" }`. `reply_to_user` and `set_status` for that id return `{ "ok": false, "error": "cancelled" }` and do not reach the tab. `status` adds `counts` (`queued`, `delivered`, `replied`, `cancelled`) and `last` (`{ id, state }`). `queued` does not include cancelled prompts.
+- `delete_feature` runs the part through mutate, so the result `status` and `errors` are current and one undo restores the block. Deleting the feature that declares `part` while later code still uses it is `confirm_required` until `confirm: true`; the result then carries an optional `warning`. The catalog adds the `confirm` argument and the errors `bad_args` and `confirm_required`.
+- `undo` and `redo`: a part step returns the refreshed status, `bodyCount` included. `mode` reports `featureEdit` as `{ mode, featureId, kind, dialog }` while any feature edit is open (the App sheet or the viewport card), otherwise `null`.
+- `git_upgrade_vault` is no longer described as off by default in this build (`upgrade_unavailable` until v2 open/save, with tests and the Vite dev server able to opt in). It still requires `confirm: true`, never runs on load, and returns `already_upgraded` on a v2 vault.
+- `screenshot` captures the viewport centered on the camera target; an open feature card's view offset is not applied. `camera_set`: a named view frames the whole assembly as placed, or the selected part alone while a part body is highlighted. An explicit position and target take an optional `up` vector (default `[0, 0, 1]`) and never roll the view.
 
 ## 0.2.3 - 2026-10-18
 
