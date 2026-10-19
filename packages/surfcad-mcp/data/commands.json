@@ -6380,8 +6380,11 @@
       },
       "result": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
+          "deletedId": {
+            "type": "string"
+          },
           "ok": {
             "type": "boolean"
           },
@@ -6389,6 +6392,36 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "failures": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "featureIndex": {
+                  "type": "integer"
+                },
+                "featureId": {
+                  "type": "string"
+                },
+                "featureType": {
+                  "type": "string"
+                },
+                "featureLabel": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                }
+              }
             }
           },
           "status": {
@@ -6458,8 +6491,8 @@
               }
             }
           },
-          "unchanged": {
-            "type": "boolean"
+          "warning": {
+            "type": "string"
           }
         }
       },
