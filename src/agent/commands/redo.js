@@ -29,6 +29,9 @@ export const redoCommand = Object.freeze({
         volume: base.status.volume,
         bbox: base.status.bbox,
         partName: base.status.partName,
+        // The host counted the bodies of the run it just did; without this
+        // the cached status reported bodyCount null after every undo (Pi 5 C2).
+        bodyCount: base.status.bodyCount ?? null,
         ...(Object.prototype.hasOwnProperty.call(base, 'runFailure')
           ? { runFailure: base.runFailure }
           : {}),

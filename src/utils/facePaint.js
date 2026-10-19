@@ -378,6 +378,28 @@ export function livePaintChanged(session, baseline) {
 }
 
 /**
+ * Paints made in this session: part colors and face keys in `session` that
+ * `baseline` (the map captured as the popup opened) does not already hold
+ * with the same color. The session starts as a copy of the saved map, so
+ * counting its entries reported every saved paint as pending (Pi 5 C5).
+ */
+export function pendingPaintCount(session, baseline) {
+  if (!session || typeof session !== 'object') return 0;
+  const base = baseline && typeof baseline === 'object' ? baseline : {};
+  let count = 0;
+  for (const [surfId, entry] of Object.entries(session)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const prev = base[surfId] && typeof base[surfId] === 'object' ? base[surfId] : {};
+    if (entry.part && entry.part !== prev.part) count += 1;
+    const seen = new Set((prev.faces || []).map((face) => `${face?.color}|${JSON.stringify(face?.key)}`));
+    for (const face of entry.faces || []) {
+      if (!seen.has(`${face?.color}|${JSON.stringify(face?.key)}`)) count += 1;
+    }
+  }
+  return count;
+}
+
+/**
  * Face keys whose triangles intersect `indices`. Used to upgrade one face
  * to every face of the body under the finger.
  */

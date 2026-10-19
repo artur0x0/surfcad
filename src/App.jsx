@@ -153,7 +153,13 @@ import { AGENT_GIT_CONSENT_TIMEOUT_MS } from './agent/commands/git.js';
 import AgentGitConsentModal from './components/AgentGitConsentModal';
 import { buildDirtyState } from './agent/state/dirty';
 import { buildSelection } from './agent/state/selection';
-import { editedPartIdsSinceSnapshot, liveEditorOverride, snapshotPartScripts } from './agent/state/editedSinceLoad';
+import {
+  agentSnapshotDocKey,
+  editedPartIdsSinceSnapshot,
+  extendPartScriptSnapshot,
+  liveEditorOverride,
+  snapshotPartScripts,
+} from './agent/state/editedSinceLoad';
 import { buildFeatureTree } from './agent/state/featureTree';
 import { resolveRollbackTarget, resolveStripTarget } from './agent/featureStripAgent';
 import { buildPartsState } from './agent/state/parts';
@@ -162,7 +168,7 @@ import { findPartById, unknownAssemblyError, unknownPartError } from './agent/st
 import { decidePartVisible } from './agent/state/partVisible';
 import { listV2Assemblies, listPartParentAssemblies, openV2Assembly } from './utils/git/v2VaultRead';
 import { assemblyIdPath, partIdPath, parseIdPath } from './utils/git/idPaths';
-import { createdPartFromDocs, scriptRequestsRun } from './agent/state/createPart.js';
+import { createdPartFromDocs } from './agent/state/createPart.js';
 import { finishedRunBodyCount } from './agent/state/runBodyCount.js';
 import { buildToasts } from './agent/state/toasts';
 import {
@@ -1263,7 +1269,7 @@ const App = () => {
       script: codeEditorRef.current?.getContent?.(),
     });
     agentScriptSnapshotRef.current = snapshotPartScripts(scripts, override || {});
-    agentSnapshotDocKeyRef.current = `${doc.name ?? ''}\0${doc.source ?? ''}\0${(doc.parts || []).map((row) => row.id).join('\n')}`;
+    agentSnapshotDocKeyRef.current = agentSnapshotDocKey(doc);
   };
   const historyRef = useRef(history);
   historyRef.current = history;
@@ -1939,11 +1945,20 @@ const App = () => {
     return () => clearTimeout(timer);
   }, [currentScript, currentFilename, manifoldReady, editorInitialScript, appMode]);
 
-  // Agent `dirty.unsaved`: baseline scripts at open (reset when the assembly identity changes).
+  // Agent `dirty.unsaved`: baseline scripts at open (reset when the assembly
+  // identity changes). A part added later joins the snapshot with its current
+  // script; the parts already edited keep their baseline (Pi 5 C1).
   useEffect(() => {
     if (!assemblyDoc || editorInitialScript === null || appMode === 'game') return;
-    const key = `${assemblyDoc.name ?? ''}\0${assemblyDoc.source ?? ''}\0${(assemblyDoc.parts || []).map((row) => row.id).join('\n')}`;
-    if (agentSnapshotDocKeyRef.current === key && agentScriptSnapshotRef.current) return;
+    const key = agentSnapshotDocKey(assemblyDoc);
+    const partIds = (assemblyDoc.parts || []).map((row) => row.id);
+    if (agentSnapshotDocKeyRef.current === key && agentScriptSnapshotRef.current) {
+      const snap = agentScriptSnapshotRef.current;
+      if (partIds.some((id) => typeof snap[String(id)] !== 'string')) {
+        agentScriptSnapshotRef.current = extendPartScriptSnapshot(snap, partScriptsRef.current || {}, partIds);
+      }
+      return;
+    }
     agentSnapshotDocKeyRef.current = key;
     // Identity changed; Monaco may still hold the previous buffer.
     captureAgentScriptSnapshot({ useEditor: false });
@@ -5361,7 +5376,7 @@ const App = () => {
           }
         }
         agentScriptSnapshotRef.current = nextSnap;
-        agentSnapshotDocKeyRef.current = `${savedDoc.name ?? ''}\0${savedDoc.source ?? ''}\0${(savedDoc.parts || []).map((row) => row.id).join('\n')}`;
+        agentSnapshotDocKeyRef.current = agentSnapshotDocKey(savedDoc);
       } else if (result.sha && repo) {
         rememberGitBaseline(firstCommitBaseline({
           branch: nextBranch || 'main',
@@ -10082,10 +10097,11 @@ const App = () => {
       // Agent parts stay path-less in a git assembly: git_save (behind the
       // write consent) paths and commits them with the assembly.
       await handleAddPart(name, { script, deferVault: true, fromAgent: true, position });
-      const runScript = scriptRequestsRun(script);
-      // handleAddPart schedules a deferred auto-run. A script must finish
-      // before this call returns, so drop that timer and run it here.
-      if (runScript) refreshGenRef.current += 1;
+      // handleAddPart schedules a deferred auto-run. The new part's script,
+      // blank starter included, must finish before this call returns, so
+      // drop that timer and run it here: a part create_part returns is never
+      // not_run_yet (Pi 5 C3).
+      refreshGenRef.current += 1;
       await ensureLocalSurfIds();
       const after = assemblyRef.current;
       const created = createdPartFromDocs(before, after);
@@ -10100,7 +10116,6 @@ const App = () => {
       recordAgentAssemblyStep(before);
       const partId = created.id;
       const partCount = doc?.parts?.length ?? 0;
-      if (!runScript) return { result: { partId, partCount } };
       const stored = partScriptsRef.current?.[partId];
       const text = typeof stored === 'string' ? stored : '';
       if (text && codeEditorRef.current?.getContent?.() !== text) {
@@ -10755,6 +10770,8 @@ const App = () => {
             bbox: outcome.bbox ?? null,
             partName: outcome.partName || '',
             featureCount: agentFeatureCount(undone.code),
+            bodyCount: outcome.bodyCount ?? null,
+            runState: outcome.ok === true ? 'ok' : 'failed',
           },
         },
       };
@@ -10830,6 +10847,8 @@ const App = () => {
             bbox: outcome.bbox ?? null,
             partName: outcome.partName || '',
             featureCount: agentFeatureCount(redone.code),
+            bodyCount: outcome.bodyCount ?? null,
+            runState: outcome.ok === true ? 'ok' : 'failed',
           },
         },
       };

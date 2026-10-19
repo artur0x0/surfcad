@@ -1,14 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createdPartFromDocs, scriptRequestsRun } from './createPart.js';
-
-test('scriptRequestsRun waits only for a non-blank script', () => {
-  assert.equal(scriptRequestsRun(undefined), false);
-  assert.equal(scriptRequestsRun(null), false);
-  assert.equal(scriptRequestsRun(''), false);
-  assert.equal(scriptRequestsRun('   \n'), false);
-  assert.equal(scriptRequestsRun('let part = Manifold.cube([10, 10, 10], true);\nreturn part;\n'), true);
-});
+import { createdPartFromDocs } from './createPart.js';
 
 test('createdPartFromDocs returns the new row when activeId stayed on the old part', () => {
   const before = {

@@ -30,6 +30,9 @@ export const undoCommand = Object.freeze({
         volume: base.status.volume,
         bbox: base.status.bbox,
         partName: base.status.partName,
+        // The host counted the bodies of the run it just did; without this
+        // the cached status reported bodyCount null after every undo (Pi 5 C2).
+        bodyCount: base.status.bodyCount ?? null,
         // Explicit null clears a previous failure. Omitting the key would
         // re-read a stale viewport ref and keep the last error.
         ...(Object.prototype.hasOwnProperty.call(base, 'runFailure')

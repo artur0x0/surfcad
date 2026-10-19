@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { editedPartIdsSinceSnapshot, liveEditorOverride, snapshotPartScripts } from './editedSinceLoad.js';
+import {
+  agentSnapshotDocKey,
+  editedPartIdsSinceSnapshot,
+  extendPartScriptSnapshot,
+  liveEditorOverride,
+  snapshotPartScripts,
+} from './editedSinceLoad.js';
 
 test('snapshotPartScripts folds the live editor buffer for the active part', () => {
   assert.deepEqual(snapshotPartScripts({ a: 'old' }, { liveId: 'a', liveScript: 'new' }), { a: 'new' });
@@ -47,4 +53,29 @@ test('open_assembly snapshot ignores a stale editor buffer until the editor is l
     }) || {}),
     [],
   );
+});
+
+test('adding a part keeps the parts already edited (Pi 5 C1)', () => {
+  const snap = snapshotPartScripts({ base: 'let part = Manifold.cube([40, 30, 20], true);\nreturn part;\n' });
+  const scripts = {
+    base: 'let part = Manifold.cube([40, 30, 20], true);\npart = part.add(Manifold.cube([5, 5, 50], true));\nreturn part;\n',
+    lid: 'let part = Manifold.cube([20, 20, 20], true);\nreturn part;\n',
+  };
+  // The old key included the part ids, so the lid re-baselined everything.
+  const extended = extendPartScriptSnapshot(snap, scripts, ['base', 'lid']);
+  assert.deepEqual(extended, { base: snap.base, lid: scripts.lid });
+  assert.deepEqual(editedPartIdsSinceSnapshot(extended, scripts, { partIds: ['base', 'lid'] }), ['base']);
+  scripts.lid = 'let part = Manifold.cube([20, 20, 4], true);\nreturn part;\n';
+  assert.deepEqual(editedPartIdsSinceSnapshot(extended, scripts, { partIds: ['base', 'lid'] }), ['base', 'lid']);
+  assert.equal(snap.lid, undefined, 'input snapshot is not mutated');
+});
+
+test('agentSnapshotDocKey is the document identity, not its part list', () => {
+  const a = agentSnapshotDocKey({ id: 'asm-1', name: 'Assembly', source: 'local', parts: [{ id: 'base' }] });
+  const b = agentSnapshotDocKey({ id: 'asm-1', name: 'Assembly', source: 'local', parts: [{ id: 'base' }, { id: 'lid' }] });
+  assert.equal(a, b);
+  assert.notEqual(a, agentSnapshotDocKey({ id: 'asm-2', name: 'Assembly', source: 'local' }));
+  assert.notEqual(a, agentSnapshotDocKey({ id: 'asm-1', name: 'Assembly', source: 'git' }));
+  assert.equal(agentSnapshotDocKey({ name: 'Bracket', source: 'git' }), 'name:Bracket\0git');
+  assert.equal(agentSnapshotDocKey(null), '');
 });

@@ -63,3 +63,32 @@ export function editedPartIdsSinceSnapshot(snapshot, scripts, opts = {}) {
   edited.sort();
   return edited;
 }
+
+/**
+ * Identity of the open document for the `dirty.editedSinceLoad` snapshot:
+ * the assembly id (else its name) and source. Part ids are not part of it,
+ * so adding or removing a part does not re-baseline the parts that were
+ * already edited (Pi 5 C1: the base's edits vanished when the lid was added).
+ */
+export function agentSnapshotDocKey(doc) {
+  if (!doc || typeof doc !== 'object') return '';
+  const identity = doc.id != null && doc.id !== '' ? `id:${doc.id}` : `name:${doc.name ?? ''}`;
+  return `${identity}\0${doc.source ?? ''}`;
+}
+
+/**
+ * Add parts that are new since the snapshot, with their current script as
+ * their baseline. Parts already in the snapshot keep theirs. Returns a new
+ * object; the input is not mutated.
+ */
+export function extendPartScriptSnapshot(snapshot, scripts, partIds = []) {
+  const out = { ...(snapshot && typeof snapshot === 'object' ? snapshot : {}) };
+  const live = scripts && typeof scripts === 'object' ? scripts : {};
+  for (const raw of partIds || []) {
+    const id = raw != null ? String(raw) : '';
+    if (!id || typeof out[id] === 'string') continue;
+    const text = live[id];
+    out[id] = typeof text === 'string' ? text : '';
+  }
+  return out;
+}

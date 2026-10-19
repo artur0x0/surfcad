@@ -88,7 +88,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   undo: {
-    description: 'One undo on the feature-bar stack (sketch session, assembly joints, or active part script) and run when the part script changes.',
+    description: 'One undo on the feature-bar stack (sketch session, assembly joints, or active part script) and run when the part script changes. A part step returns the refreshed status, bodyCount included.',
     result: {
       type: 'object',
       additionalProperties: true,
@@ -105,7 +105,7 @@ export const COMMAND_META = {
     mutates: true,
   },
   redo: {
-    description: 'One redo on the feature-bar stack (assembly joints or active part; sketch has no redo).',
+    description: 'One redo on the feature-bar stack (assembly joints or active part; sketch has no redo). A part step returns the refreshed status, bodyCount included.',
     result: {
       type: 'object',
       additionalProperties: true,
@@ -214,7 +214,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   mode: {
-    description: 'Open picker / card mode summary.',
+    description: 'Open picker / card mode summary. featureEdit is { mode, featureId, kind, dialog } while any feature edit is open (the App sheet or the viewport card open_feature put up), else null.',
     result: { type: 'object', additionalProperties: true },
     errors: ['internal'],
     mutates: false,

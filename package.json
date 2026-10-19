@@ -19,6 +19,7 @@
         "golden:agent-bridge-h4": "node scripts/golden/smoke_agent_bridge_h4.mjs",
         "golden:agent-bridge-h5": "node scripts/golden/smoke_agent_bridge_h5.mjs",
         "golden:agent-bridge-block-edit": "node scripts/golden/smoke_agent_bridge_block_edit.mjs",
+        "golden:agent-state-reporting": "node scripts/golden/smoke_agent_state_reporting.mjs",
         "golden:agent-bridge-h6-h8": "node scripts/golden/smoke_agent_bridge_h6_h8.mjs",
         "golden:agent-bridge-h7": "node scripts/golden/smoke_agent_bridge_h7.mjs",
         "golden:agent-bridge-h9": "node scripts/golden/smoke_agent_bridge_h9.mjs",

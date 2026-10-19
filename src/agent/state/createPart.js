@@ -1,12 +1,8 @@
 /**
- * Which row `create_part` just added, and whether that call should run.
- * The host activates this id even when the document's active id did not move.
+ * Which row `create_part` just added. The host activates this id even when
+ * the document's active id did not move, and runs its script (blank starter
+ * included) before the call returns, so the new part is never not_run_yet.
  */
-
-/** A non-blank script is run before create_part returns. Blank uses the starter and does not wait. */
-export function scriptRequestsRun(script) {
-  return typeof script === 'string' && script.trim().length > 0;
-}
 
 /**
  * The single part row present in `after` and absent from `before`.
