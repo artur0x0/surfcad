@@ -18,6 +18,12 @@ async function buildAndImport(options, key) {
     jsx: 'automatic',
     packages: 'external',
     logLevel: 'silent',
+    // Vite injects this at build time. Node has no env object, and a bare
+    // `import.meta.env.FOO` throws while the graph is loading.
+    define: {
+      'import.meta.env.DEV': 'false',
+      'import.meta.env.VITE_SURFCAD_PLAYTEST': 'undefined',
+    },
   });
   return import(pathToFileURL(outfile).href);
 }

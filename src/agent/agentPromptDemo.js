@@ -3,7 +3,7 @@
  * the same way `?agentGitConsentDemo=1` pins the git consent modal.
  *
  * `agentPromptState` seeds a visual state:
- *   hidden | idle | typing | reply-short | reply-long | working | shot-off | shot-on
+ *   hidden | idle | typing | reply-short | reply-long | reply-streaming | working | shot-off | shot-on
  */
 export const AGENT_PROMPT_DEMO_STATES = Object.freeze([
   'hidden',
@@ -11,6 +11,7 @@ export const AGENT_PROMPT_DEMO_STATES = Object.freeze([
   'typing',
   'reply-short',
   'reply-long',
+  'reply-streaming',
   'working',
   'shot-off',
   'shot-on',

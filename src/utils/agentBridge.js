@@ -31,6 +31,7 @@ import { parseFeatureMarkers } from './featureMarkers.js';
 import { emptyPartHistory, pushPartHistory } from './partHistory.js';
 import { bytesAfterHeaderLine, headerLineEnding } from './git/surfId.js';
 import { wrapRawScript } from './wrapRawScript.js';
+import { withAgentDrivenChange } from '../agent/agentFeaturePopupGate.js';
 
 export const AGENT_STORAGE_KEY = 'surfcadAgent';
 
@@ -686,7 +687,7 @@ export function createSurfcadBridge(hostSource) {
     }
     let out;
     try {
-      out = toEnvelope(await runBody());
+      out = toEnvelope(await withAgentDrivenChange(runBody));
     } catch (err) {
       out = fail('internal', String(err?.message || err));
     }
