@@ -6312,7 +6312,7 @@
     },
     {
       "name": "delete_feature",
-      "description": "Delete a feature block from the script.",
+      "description": "Delete a feature block from the script and run the part through mutate, so the result status and errors are current and undo once restores the block. Deleting the feature that declares part while later code still uses it is confirm_required until confirm: true; the result then carries a warning.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -6324,6 +6324,10 @@
           "index": {
             "type": "number",
             "description": "Feature index from feature_tree"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Required true to delete the feature that declares part while later code still uses it"
           }
         }
       },
@@ -6415,6 +6419,8 @@
       "errors": [
         "unknown_feature",
         "bad_index",
+        "bad_args",
+        "confirm_required",
         "delete_failed",
         "no_write_part",
         "internal"

@@ -32,11 +32,14 @@ export function FeatureDeleteButton({ onClick }) {
 
 /**
  * Confirm before a feature is deleted together with the later feature blocks
- * that reference it. Same scrim and red button as contour delete.
+ * that reference it, or before the base feature (the one that declares
+ * `part`) is deleted on its own. Same scrim and red button as contour delete.
  */
 export function FeatureDeleteConfirm({
   open = false,
   label = '',
+  /** The block declares `part` and later code still uses it: delete it alone. */
+  base = false,
   onCancel,
   onConfirm,
 }) {
@@ -44,8 +47,10 @@ export function FeatureDeleteConfirm({
     <ContourDeleteDialog
       open={open}
       label={label}
-      title="Delete feature"
-      message="Later features use this one. Deleting it removes those features too."
+      title={base ? 'Delete the base feature' : 'Delete feature'}
+      message={base
+        ? 'This feature declares part. Later features that use part will fail until you fix them or undo.'
+        : 'Later features use this one. Deleting it removes those features too.'}
       testId="feature-edit"
       onCancel={onCancel}
       onConfirm={onConfirm}

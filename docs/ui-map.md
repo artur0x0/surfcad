@@ -835,7 +835,11 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
   A Block pop previews that solid before Confirm (flat normal shading, the CAD mesh). Position and rotation are fields on the sheet; Subtract keeps the cutter translucent. Cancel clears the preview.
   Sweep's one-shot fallback stays a replace when Mode is Add. Mutating
   an existing body (holes, shell, transforms, Boolean) is different — that keeps
-  `syncPartLines`, which points `part` at the body you edited.
+  `syncPartLines`, which points `part` at the body you edited. Array (grid and
+  polar) is the exception: the copies keep the original instance, so it re-applies
+  the body's own combine op (`reapplyBodyToPart`: `part = part.subtract(box2)` for
+  a cutter, `part = part.add(box2)` otherwise). `part = box2` replaced the lid with
+  its six cutters.
 - **Mode-chip popup style** (placement, cyan/amber glass, mobile
   `max-h-[calc(100dvh-12rem)]` + `rail-scroll`, Confirm/X): see
   [`docs/ui-style-guide.md`](./ui-style-guide.md#popups). References: `ContourModeChip` (incl.

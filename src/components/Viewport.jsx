@@ -340,6 +340,7 @@ import {
   editPreviewScript,
   featureDeletePlan,
   openFeatureEdit,
+  partDeclarationDeletePlan,
 } from '../utils/featureEdit';
 import {
   enterShellState,
@@ -13307,14 +13308,21 @@ const Viewport = forwardRef(({
     }
   };
 
-  const deleteFeatureFromEdit = (withDependents = false) => {
+  const deleteFeatureFromEdit = (withDependents = false, confirmed = withDependents) => {
     const edit = featureEditRef.current;
     if (!edit?.feature) return;
     const script = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || edit.script || '';
-    if (!withDependents) {
+    if (!confirmed) {
       const plan = featureDeletePlan(script, edit.feature);
       if (plan.confirm) {
-        setFeatureDeleteConfirm({ count: plan.count, label: plan.message });
+        // A base feature (it declares `part`) is deleted on its own after the
+        // confirm; the later features that still name `part` go red.
+        setFeatureDeleteConfirm({
+          count: plan.count,
+          label: plan.message,
+          base: !!plan.base,
+          withDependents: !plan.base,
+        });
         return;
       }
       if (!plan.ok) {
@@ -14600,8 +14608,17 @@ const Viewport = forwardRef(({
       <FeatureDeleteConfirm
         open={!!featureDeleteConfirm}
         label={featureDeleteConfirm?.label || ''}
+        base={!!featureDeleteConfirm?.base}
         onCancel={() => setFeatureDeleteConfirm(null)}
-        onConfirm={() => deleteFeatureFromEdit(true)}
+        onConfirm={() => {
+          const pending = featureDeleteConfirm;
+          if (pending?.sheetFeature) {
+            setFeatureDeleteConfirm(null);
+            onFeatureEditDelete?.(pending.sheetFeature);
+            return;
+          }
+          deleteFeatureFromEdit(pending?.withDependents !== false, true);
+        }}
       />
 
       {/* Contour rail: tools, Back undoes, Confirm finishes, X exits.
@@ -15413,7 +15430,21 @@ const Viewport = forwardRef(({
           lengthMm={characteristicLengthMm({ bounds: modelBounds })}
           onAccept={onFeatureEditAccept}
           onCancel={onFeatureEditCancel}
-          onDelete={onFeatureEditDelete}
+          onDelete={(feature) => {
+            // The same base-feature confirm as the edit dialog. Other sheet
+            // deletes stay immediate (the Undo toast covers them).
+            const base = partDeclarationDeletePlan(featureEditScript || '', feature);
+            if (base) {
+              setFeatureDeleteConfirm({
+                count: base.count,
+                label: base.message,
+                base: true,
+                sheetFeature: feature,
+              });
+              return;
+            }
+            onFeatureEditDelete?.(feature);
+          }}
           onEditScript={onFeatureEditScript}
           onPickFeature={onFeatureEditPick}
         />

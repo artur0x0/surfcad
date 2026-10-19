@@ -504,6 +504,7 @@ export function createSurfcadBridge(hostSource) {
     activateFeature: (args) => hostFn('activateFeature')?.(args),
     editFeature: (args) => hostFn('editFeature')?.(args),
     prepareFeatureConfirm: () => hostFn('prepareFeatureConfirm')?.(),
+    prepareFeatureDelete: (args) => hostFn('prepareFeatureDelete')?.(args),
     dismissFeatureConfirmSession: () => { hostFn('dismissFeatureConfirmSession')?.(); },
     cancelFeature: () => hostFn('cancelFeature')?.(),
     deleteFeature: (args) => hostFn('deleteFeature')?.(args),
