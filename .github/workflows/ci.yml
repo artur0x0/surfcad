@@ -360,6 +360,15 @@ jobs:
             echo "agent move target golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:position-limit | tee "${RUNNER_TEMP}/position-limit.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/position-limit.log"; then
+            echo "position limit golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'position limit golden: ok' "${RUNNER_TEMP}/position-limit.log"; then
+            echo "position limit golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
