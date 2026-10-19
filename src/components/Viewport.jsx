@@ -2431,11 +2431,25 @@ const Viewport = forwardRef(({
       const scene = sceneRef.current;
       const camera = cameraRef.current;
       if (!renderer || !scene || !camera) return null;
-      renderer.render(scene, camera);
+      // An open feature card pans the view with a projection offset so the
+      // model sits in the band above the card. A capture is the whole frame:
+      // render it centered on the target, then put the offset back.
+      const view = camera.view?.enabled ? { ...camera.view } : null;
+      if (view) {
+        camera.clearViewOffset();
+        camera.updateProjectionMatrix();
+      }
       try {
+        renderer.render(scene, camera);
         return encodeCanvasImage(renderer.domElement, opts || {});
       } catch {
         return null;
+      } finally {
+        if (view) {
+          camera.setViewOffset(view.fullWidth, view.fullHeight, view.offsetX, view.offsetY, view.width, view.height);
+          camera.updateProjectionMatrix();
+          renderer.render(scene, camera);
+        }
       }
     },
   }));
@@ -11665,10 +11679,17 @@ const Viewport = forwardRef(({
     const preset = VIEW_PRESETS[key] || VIEW_PRESETS.iso;
     if (!resultRef.current?.geometry || !cameraRef.current) return false;
     holdSheetSlide();
+    // Frame the assembly as placed (every visible part's world box), or the
+    // selected part alone when one is picked. The active part's local box
+    // aimed at its origin, so a transformed part needed a camera_fit after.
+    const meshes = cadBodyStickyRef.current
+      ? [resultRef.current]
+      : [resultRef.current, ...assemblyExtrasRef.current.values()];
+    const box = unionWorldBox(meshes);
     const ok = fitView({
       camera: cameraRef.current,
       controls: controlsRef.current,
-      geometry: resultRef.current.geometry,
+      ...(box ? { box } : { geometry: resultRef.current.geometry }),
       dir: preset.dir,
       up: preset.up,
       margin,
@@ -11893,7 +11914,7 @@ const Viewport = forwardRef(({
     sketchPickEnter: (args) => agentSketchPickRef.current.sketchPickEnter(args),
   };
 
-  agentSetCameraRef.current = async ({ view, position, target, fov }) => {
+  agentSetCameraRef.current = async ({ view, position, target, fov, up }) => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     if (!camera) return { ok: false };
@@ -11919,6 +11940,7 @@ const Viewport = forwardRef(({
         position,
         target,
         fov,
+        up,
         durationMs: 420,
         onFrame: renderFrame,
       });
@@ -11927,7 +11949,7 @@ const Viewport = forwardRef(({
         return { ok: true };
       }
     }
-    const ok = applyCameraPose({ camera, controls, position, target, fov });
+    const ok = applyCameraPose({ camera, controls, position, target, fov, up });
     if (ok) renderFrame();
     return { ok };
   };

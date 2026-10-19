@@ -13,6 +13,10 @@ export const cameraSetCommand = Object.freeze({
       position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
       target: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
       fov: { type: 'number' },
+      up: {
+        type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3,
+        description: 'Camera up vector for an explicit pose. Default [0, 0, 1] (Z-up); the view never rolls.',
+      },
     },
   },
   example: { view: 'top' },
@@ -36,6 +40,13 @@ export const cameraSetCommand = Object.freeze({
     if (!hasView && !pos && !target && !fov) {
       return { code: 'bad_args', message: 'camera_set needs view, position, target, or fov' };
     }
+    if (args?.up != null) {
+      const up = Array.isArray(args.up) ? args.up : [];
+      const finite = up.length === 3 && up.every((n) => Number.isFinite(Number(n)));
+      if (!finite || up.every((n) => Number(n) === 0)) {
+        return { code: 'bad_args', message: 'camera_set up must be a non-zero [x, y, z]' };
+      }
+    }
     return null;
   },
   async run(ctx, args) {
@@ -48,6 +59,7 @@ export const cameraSetCommand = Object.freeze({
       position: args?.position,
       target: args?.target,
       fov: args?.fov,
+      up: args?.up,
     }));
     if (out?.error) return { error: out.error };
     if (out?.ok === false) {
