@@ -73,7 +73,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   screenshot: {
-    description: 'Capture the viewport. The default is a full-size PNG data URL. Optional max_width and scale downscale in the browser before encoding. format is png or jpeg; quality (0 to 1) applies to jpeg only.',
+    description: 'Capture the viewport, centered on the camera target (an open feature card\'s view offset is not applied to the capture). The default is a full-size PNG data URL. Optional max_width and scale downscale in the browser before encoding. format is png or jpeg; quality (0 to 1) applies to jpeg only.',
     result: {
       type: 'object',
       additionalProperties: false,
@@ -368,7 +368,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   camera_set: {
-    description: 'Set camera from a named view or explicit pose.',
+    description: 'Set camera from a named view or explicit pose. A named view frames the whole assembly as placed, or the selected part alone while a part body is highlighted (set_active_part, select_parts; select_clear returns to the assembly), so no camera_fit is needed after it. An explicit position + target takes an optional up (default [0, 0, 1]) and never rolls the view.',
     result: OK,
     errors: ['bad_view', 'bad_args', 'camera_failed', 'internal'],
     mutates: false,

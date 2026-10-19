@@ -221,13 +221,24 @@ export function easeInOutCubic(t) {
   return x < 0.5 ? 4 * x * x * x : 1 - ((-2 * x + 2) ** 3) / 2;
 }
 
+/** A finite, non-zero [x, y, z] as a unit Vector3, else null. */
+export function cameraUpVector(up) {
+  if (!Array.isArray(up) || up.length !== 3) return null;
+  const v = new Vector3(Number(up[0]), Number(up[1]), Number(up[2]));
+  if (![v.x, v.y, v.z].every(Number.isFinite) || v.lengthSq() < EPS) return null;
+  return v.normalize();
+}
+
 /**
  * Set camera pose explicitly (agent harness). At least one of position,
  * target, or fov must be provided. Returns false when nothing changed.
+ * `up` defaults to world Z, so a position + target never rolls the view:
+ * an orbit leaves `camera.up` tilted and `lookAt` would keep that tilt.
  */
-export function applyCameraPose({ camera, controls, position, target, fov }) {
+export function applyCameraPose({ camera, controls, position, target, fov, up }) {
   if (!camera) return false;
   let changed = false;
+  camera.up.copy(cameraUpVector(up) || new Vector3(0, 0, 1));
   const fovNum = Number(fov);
   if (Number.isFinite(fovNum) && fovNum > 0 && fovNum < 180) {
     camera.fov = fovNum;
@@ -245,6 +256,10 @@ export function applyCameraPose({ camera, controls, position, target, fov }) {
     camera.lookAt(controls.target);
     if (typeof controls.update === 'function') controls.update();
     changed = true;
+  } else if (changed && controls?.target) {
+    // A new position keeps the target: still look at it with the level up.
+    camera.lookAt(controls.target);
+    if (typeof controls.update === 'function') controls.update();
   }
   return changed;
 }
@@ -260,10 +275,12 @@ export function animateCameraPose(opts) {
     position,
     target,
     fov,
+    up,
     durationMs = 420,
     onFrame,
   } = opts || {};
   if (!camera) return Promise.resolve(false);
+  camera.up.copy(cameraUpVector(up) || new Vector3(0, 0, 1));
   const startPos = camera.position.clone();
   const endPos = Array.isArray(position) && position.length === 3
     && position.every((n) => Number.isFinite(Number(n)))
@@ -281,7 +298,7 @@ export function animateCameraPose(opts) {
     : null;
   if (!endPos && !endTarget && endFov == null) return Promise.resolve(false);
   if (durationMs <= 0) {
-    return Promise.resolve(applyCameraPose({ camera, controls, position, target, fov }));
+    return Promise.resolve(applyCameraPose({ camera, controls, position, target, fov, up }));
   }
   const t0 = performance.now();
   return new Promise((resolve) => {
@@ -301,6 +318,8 @@ export function animateCameraPose(opts) {
           startTarget.y + (endTarget.y - startTarget.y) * e,
           startTarget.z + (endTarget.z - startTarget.z) * e,
         );
+        camera.lookAt(controls.target);
+      } else if (endPos && controls?.target) {
         camera.lookAt(controls.target);
       }
       if (endFov != null && startFov != null) {
