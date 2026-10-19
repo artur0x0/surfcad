@@ -206,11 +206,13 @@ export default function PromptInput({
   }, [discardShot, input, promptContext, shot, transport, working]);
 
   const stopAgent = useCallback(() => {
+    const id = pendingIdRef.current;
+    if (typeof transport?.cancel === 'function') void transport.cancel(id);
     setAgentPromptWorking(false);
     setWorking(false);
     setStreaming(false);
     return { ok: true };
-  }, []);
+  }, [transport]);
 
   const dismissReply = useCallback(() => {
     setReplyOpen(false);

@@ -360,15 +360,22 @@ export function createAgentBridgeRelayHub(opts = {}) {
         return;
       }
 
-      if (msg.type === PAIR_MSG.AGENT_PROMPT || msg.type === PAIR_MSG.AGENT_PROMPT_ACK
+      if (msg.type === PAIR_MSG.AGENT_PROMPT || msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL
+        || msg.type === PAIR_MSG.AGENT_PROMPT_ACK || msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT
         || msg.type === PAIR_MSG.AGENT_REPLY || msg.type === PAIR_MSG.AGENT_STATUS) {
-        if (msg.type === PAIR_MSG.AGENT_PROMPT) {
+        if (msg.type === PAIR_MSG.AGENT_PROMPT || msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL) {
           if (meta.role !== 'tab') {
-            sendJson(socket, { type: PAIR_MSG.ERROR, code: 'forbidden', message: 'Only the paired tab sends prompts' });
+            sendJson(socket, {
+              type: PAIR_MSG.ERROR,
+              code: 'forbidden',
+              message: msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL
+                ? 'Only the paired tab cancels prompts'
+                : 'Only the paired tab sends prompts',
+            });
             return;
           }
           const promptId = typeof msg.id === 'string' ? msg.id : undefined;
-          if (rawText.length > maxPromptFrameChars) {
+          if (msg.type === PAIR_MSG.AGENT_PROMPT && rawText.length > maxPromptFrameChars) {
             sendJson(socket, {
               type: PAIR_MSG.AGENT_PROMPT_ACK,
               id: promptId,
@@ -378,6 +385,15 @@ export function createAgentBridgeRelayHub(opts = {}) {
             return;
           }
           if (tab.pairedPeer == null) {
+            if (msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL) {
+              sendJson(socket, {
+                type: PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT,
+                v: 1,
+                id: promptId || '',
+                state: 'not_found',
+              });
+              return;
+            }
             sendJson(socket, {
               type: PAIR_MSG.AGENT_PROMPT_ACK,
               id: promptId,
@@ -395,7 +411,7 @@ export function createAgentBridgeRelayHub(opts = {}) {
             type: PAIR_MSG.ERROR,
             code: wrongRole ? 'forbidden' : 'not_paired',
             message: wrongRole
-              ? 'Only the paired agent sends replies and status'
+              ? 'Only the paired agent sends replies, status, and cancel results'
               : 'Pair before sending agent messages',
           });
           return;

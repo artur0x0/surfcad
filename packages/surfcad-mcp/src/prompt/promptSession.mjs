@@ -128,8 +128,14 @@ export function createPromptSession(options) {
   const idleMs = options.idleMs ?? PROMPT_IDLE_MS;
   const webhookTimeoutMs = options.webhookTimeoutMs ?? WEBHOOK_TIMEOUT_MS;
 
-  /** @type {Array<{ id: string, text: string, ts: string, context?: { part_id?: string, assembly_id?: string }, screenshot?: { mime: 'image/png', data: string, width: number, height: number } }>} */
+  /**
+   * Prompts waiting for `read_messages`, plus cancel notices for prompts
+   * that were already delivered. Cancel notices are not prompts.
+   * @type {Array<{ kind: 'prompt', id: string, text: string, ts: string, context?: { part_id?: string, assembly_id?: string }, screenshot?: { mime: 'image/png', data: string, width: number, height: number } } | { kind: 'cancel', id: string }>}
+   */
   let queue = [];
+  /** @type {Map<string, 'queued' | 'delivered' | 'replied' | 'cancelled'>} */
+  const states = new Map();
   /** @type {string | null} */
   let webhook = null;
   /** @type {string | null} Bearer token. Process memory only. Never log or return it. */
@@ -192,6 +198,63 @@ export function createPromptSession(options) {
     return msg;
   }
 
+  function promptQueueLength() {
+    let count = 0;
+    for (const item of queue) {
+      if (item.kind !== 'cancel') count += 1;
+    }
+    return count;
+  }
+
+  /**
+   * @param {string} id
+   * @param {'queued' | 'delivered' | 'replied' | 'cancelled'} state
+   */
+  function remember(id, state) {
+    states.set(id, state);
+    lastId = id;
+  }
+
+  /**
+   * POST JSON to the registered webhook. Same https, pin, bearer, and
+   * timeout rules as a prompt. Never logs the bearer.
+   * @param {string} target
+   * @param {object} body
+   * @param {number} epoch
+   * @returns {Promise<'sent' | 'failed' | 'dead'>}
+   */
+  async function postJson(target, body, epoch) {
+    const verdict = await validateWebhookUrl(target, {
+      allowLoopback: testWebhookOverride() === true,
+      resolveHost,
+    });
+    if (epoch !== life) return 'dead';
+    if (!(verdict.ok && webhook === target)) return 'failed';
+    const insecureTls = testWebhookOverride() === true && isLoopbackHost(verdict.host);
+    const pinAddress = verdict.addresses[0];
+    const bearer = webhookBearer;
+    const authorization = bearer ? `Bearer ${bearer}` : undefined;
+    let posted = { ok: false, error: 'webhook_failed' };
+    try {
+      posted = postWebhook
+        ? await postWebhook(target, body, {
+          pinAddress,
+          insecureTls,
+          ...(authorization ? { authorization } : {}),
+        })
+        : await postPromptWebhook(target, body, {
+          timeoutMs: webhookTimeoutMs,
+          insecureTls,
+          pinAddress,
+          ...(bearer ? { bearer } : {}),
+        });
+    } catch {
+      posted = { ok: false, error: 'webhook_failed' };
+    }
+    if (epoch !== life) return 'dead';
+    return posted?.ok === true ? 'sent' : 'failed';
+  }
+
   /**
    * @param {string} id
    */
@@ -204,11 +267,32 @@ export function createPromptSession(options) {
   /**
    * @param {{ id: string, text: string, ts: string, context?: object, screenshot?: object }} prompt
    */
+  /**
+   * @param {{ id: string, text: string, ts: string, context?: object, screenshot?: object }} prompt
+   */
   function enqueue(prompt) {
     const dropped = [];
-    while (queue.length >= queueCap) dropped.push(queue.shift());
-    queue.push(prompt);
+    while (promptQueueLength() >= queueCap) {
+      const idx = queue.findIndex((item) => item.kind !== 'cancel');
+      if (idx < 0) break;
+      dropped.push(queue.splice(idx, 1)[0]);
+    }
+    queue.push({ kind: 'prompt', ...prompt });
     return dropped;
+  }
+
+  /**
+   * @param {string} id
+   * @param {number} epoch
+   */
+  async function notifyCancel(id, epoch) {
+    const target = webhook;
+    if (target) {
+      const posted = await postJson(target, { type: 'cancel', id }, epoch);
+      if (posted === 'dead' || posted === 'sent') return;
+    }
+    if (epoch !== life) return;
+    queue.push({ kind: 'cancel', id });
   }
 
   /**
@@ -218,44 +302,19 @@ export function createPromptSession(options) {
   async function deliver(prompt, epoch) {
     const target = webhook;
     if (target) {
-      const verdict = await validateWebhookUrl(target, {
-        allowLoopback: testWebhookOverride() === true,
-        resolveHost,
-      });
-      if (epoch !== life) return;
-      // A unregister or a different URL landed during DNS. Do not POST the old target.
-      if (verdict.ok && webhook === target) {
-        const insecureTls = testWebhookOverride() === true && isLoopbackHost(verdict.host);
-        const pinAddress = verdict.addresses[0];
-        const bearer = webhookBearer;
-        const authorization = bearer ? `Bearer ${bearer}` : undefined;
-        let posted = { ok: false, error: 'webhook_failed' };
-        try {
-          posted = postWebhook
-            ? await postWebhook(target, webhookBody(prompt), {
-              pinAddress,
-              insecureTls,
-              ...(authorization ? { authorization } : {}),
-            })
-            : await postPromptWebhook(target, webhookBody(prompt), {
-              timeoutMs: webhookTimeoutMs,
-              insecureTls,
-              pinAddress,
-              ...(bearer ? { bearer } : {}),
-            });
-        } catch {
-          posted = { ok: false, error: 'webhook_failed' };
-        }
-        if (epoch !== life) return;
-        if (posted?.ok === true) {
-          emit(ack(prompt.id, 'webhook'));
-          return;
-        }
+      const posted = await postJson(target, webhookBody(prompt), epoch);
+      if (posted === 'dead') return;
+      if (posted === 'sent') {
+        remember(prompt.id, 'delivered');
+        emit(ack(prompt.id, 'webhook'));
+        return;
       }
     }
     if (epoch !== life) return;
+    remember(prompt.id, 'queued');
     const dropped = enqueue(prompt);
     for (const old of dropped) {
+      if (old?.id && states.get(old.id) === 'queued') states.delete(old.id);
       if (old?.id) emit(ack(old.id, 'failed', 'queue_overflow'));
     }
     emit(ack(prompt.id, 'queued'));
@@ -323,6 +382,42 @@ export function createPromptSession(options) {
   }
 
   /**
+   * Cancel one prompt. Queued prompts are dropped. Delivered prompts are
+   * marked cancelled and the agent is told (webhook POST, or a later
+   * `read_messages` item). Runs after any in-flight accept so a cancel
+   * that arrives behind the prompt sees the recorded state.
+   * @param {string} rawId
+   * @returns {Promise<{ id: string, state: 'cancelled' | 'not_found' | 'already_final' }>}
+   */
+  function cancel(rawId) {
+    const run = chain.then(() => cancelNow(rawId));
+    chain = run.then(() => {}, () => {});
+    return run;
+  }
+
+  /**
+   * @param {string} rawId
+   */
+  async function cancelNow(rawId) {
+    const id = typeof rawId === 'string' ? rawId : '';
+    if (!id || !states.has(id)) return { id, state: 'not_found' };
+    const state = states.get(id);
+    if (state === 'replied') return { id, state: 'already_final' };
+    if (state === 'cancelled') return { id, state: 'cancelled' };
+    const epoch = life;
+    states.set(id, 'cancelled');
+    if (state === 'queued') {
+      queue = queue.filter((item) => item.kind === 'cancel' || item.id !== id);
+    }
+    if (id === lastId) {
+      workedEpoch = promptEpoch;
+      if (working) emitStatus(false, id, true);
+    }
+    if (state === 'delivered') await notifyCancel(id, epoch);
+    return { id, state: 'cancelled' };
+  }
+
+  /**
    * @param {number | undefined} max
    */
   function readMessages(max) {
@@ -334,8 +429,16 @@ export function createPromptSession(options) {
       count = Math.min(max, queue.length);
     }
     const taken = queue.splice(0, count);
-    return {
-      messages: taken.map((item) => ({
+    const messages = [];
+    const images = [];
+    for (const item of taken) {
+      if (item.kind === 'cancel') {
+        messages.push({ type: 'cancel', id: item.id });
+        images.push(null);
+        continue;
+      }
+      if (states.get(item.id) === 'queued') states.set(item.id, 'delivered');
+      messages.push({
         v: 1,
         id: item.id,
         text: item.text,
@@ -350,11 +453,12 @@ export function createPromptSession(options) {
         } : {}),
         notice: USER_CONTENT_NOTICE,
         acked: true,
-      })),
-      images: taken.map((item) => (item.screenshot
+      });
+      images.push(item.screenshot
         ? { data: item.screenshot.data, mimeType: 'image/png' }
-        : null)),
-    };
+        : null);
+    }
+    return { messages, images };
   }
 
   /**
@@ -372,6 +476,9 @@ export function createPromptSession(options) {
     if (text.length > PROMPT_REPLY_MAX) {
       throw Object.assign(new Error('Reply text is too long'), { code: 'reply_too_long' });
     }
+    if (states.get(inReplyTo) === 'cancelled') {
+      return { ok: false, error: 'cancelled' };
+    }
     const isFinal = args.final === true;
     const sent = emit({
       type: PAIR_MSG.AGENT_REPLY,
@@ -382,8 +489,11 @@ export function createPromptSession(options) {
       final: isFinal,
     });
     if (!sent) throw Object.assign(new Error('Not paired'), { code: 'not_paired' });
-    if (isFinal) emitStatus(false, inReplyTo, true);
-    else if (working) armIdle();
+    if (isFinal) {
+      queue = queue.filter((item) => item.kind === 'cancel' || item.id !== inReplyTo);
+      states.set(inReplyTo, 'replied');
+      emitStatus(false, inReplyTo, true);
+    } else if (working) armIdle();
     return { id: inReplyTo, final: isFinal };
   }
 
@@ -401,6 +511,10 @@ export function createPromptSession(options) {
       }
       id = args.id;
     }
+    const target = id || lastId;
+    if (target && states.get(target) === 'cancelled') {
+      return { ok: false, error: 'cancelled' };
+    }
     workedEpoch = promptEpoch;
     const sent = emitStatus(args.working, id || lastId, true);
     if (!sent) throw Object.assign(new Error('Not paired'), { code: 'not_paired' });
@@ -408,6 +522,10 @@ export function createPromptSession(options) {
   }
 
   function noteToolCall() {
+    if (lastId && states.get(lastId) === 'cancelled') {
+      if (working) emitStatus(false, lastId, true);
+      return;
+    }
     if (promptEpoch > workedEpoch) {
       workedEpoch = promptEpoch;
       if (!working) emitStatus(true, lastId, false);
@@ -441,15 +559,24 @@ export function createPromptSession(options) {
   }
 
   function deliveryStatus() {
+    const counts = { queued: 0, delivered: 0, replied: 0, cancelled: 0 };
+    for (const state of states.values()) {
+      if (Object.prototype.hasOwnProperty.call(counts, state)) counts[state] += 1;
+    }
+    const queued = promptQueueLength();
+    counts.queued = queued;
     return {
       webhookRegistered: webhook != null,
-      queued: queue.length,
+      queued,
+      counts,
+      last: lastId && states.has(lastId) ? { id: lastId, state: states.get(lastId) } : null,
     };
   }
 
   function clear() {
     life += 1;
     queue = [];
+    states.clear();
     webhook = null;
     webhookBearer = null;
     working = false;
@@ -462,6 +589,7 @@ export function createPromptSession(options) {
 
   return {
     acceptPrompt,
+    cancel,
     readMessages,
     reply,
     setStatus,
@@ -474,7 +602,7 @@ export function createPromptSession(options) {
       return webhook != null;
     },
     queuedCount() {
-      return queue.length;
+      return promptQueueLength();
     },
   };
 }

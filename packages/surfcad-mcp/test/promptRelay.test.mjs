@@ -17,7 +17,7 @@ test('page and MCP relay message names stay in sync', () => {
   assert.deepEqual(BROWSER_MSG, NODE_MSG);
   const browser = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../../src/agent/ws/relayMessages.js'), 'utf8');
   const node = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/relayMessages.mjs'), 'utf8');
-  for (const name of ['agent.prompt', 'agent.prompt.ack', 'agent.reply', 'agent.status']) {
+  for (const name of ['agent.prompt', 'agent.prompt.ack', 'agent.prompt.cancel', 'agent.prompt.cancel.result', 'agent.reply', 'agent.status']) {
     assert.equal(browser.includes(name), true);
     assert.equal(node.includes(name), true);
   }
@@ -101,5 +101,43 @@ test('a paired tab prompt is queued, read with its image, and replies reach the 
   assert.equal(session.prompts.queuedCount(), 0);
 
   tab.close();
+  await stopAgentBridgeRelay(relay);
+});
+
+test('a page cancel of a queued prompt is reported cancelled and leaves the queue empty', async () => {
+  const relay = await startAgentBridgeRelay({ port: 0, onLog() {} });
+  const token = createPairingToken(6);
+  const tab = new WebSocket(relay.url);
+  await waitOpen(tab);
+  const inbound = collect(tab);
+  tab.send(JSON.stringify({ type: NODE_MSG.REGISTER_TAB, token }));
+  const session = new RelaySession({ url: relay.url, onLog() {} });
+  const pairing = session.pair(token);
+  await waitFor(inbound, (msg) => msg.type === NODE_MSG.PAIR_REQUEST);
+  tab.send(JSON.stringify({ type: NODE_MSG.PAIR_APPROVE }));
+  await pairing;
+
+  const cancelId = '33333333-3333-4333-8333-333333333333';
+  tab.send(JSON.stringify({
+    type: NODE_MSG.AGENT_PROMPT,
+    v: 1,
+    id: cancelId,
+    text: 'stop this',
+    ts: '2026-10-18T00:00:00.000Z',
+  }));
+  await waitFor(inbound, (msg) => msg.type === NODE_MSG.AGENT_PROMPT_ACK && msg.id === cancelId);
+  tab.send(JSON.stringify({ type: NODE_MSG.AGENT_PROMPT_CANCEL, v: 1, id: cancelId }));
+  const result = await waitFor(inbound, (msg) => msg.type === NODE_MSG.AGENT_PROMPT_CANCEL_RESULT && msg.id === cancelId);
+  assert.equal(result.state, 'cancelled');
+  assert.equal(result.v, 1);
+  assert.equal(session.prompts.queuedCount(), 0);
+  assert.equal(session.prompts.readMessages().messages.length, 0);
+  const status = session.prompts.deliveryStatus();
+  assert.equal(status.queued, 0);
+  assert.deepEqual(status.last, { id: cancelId, state: 'cancelled' });
+  assert.equal(status.counts.cancelled, 1);
+
+  tab.close();
+  session.disconnect();
   await stopAgentBridgeRelay(relay);
 });

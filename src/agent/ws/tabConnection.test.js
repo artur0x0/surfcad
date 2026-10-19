@@ -323,13 +323,17 @@ test('prompt frames are sent only while paired and replies unsubscribe', () => {
     type: PAIR_MSG.AGENT_PROMPT, v: 1, id, text: 'hi', ts: '2026-10-18T00:00:00.000Z',
   }), true);
   assert.equal(ws.last(PAIR_MSG.AGENT_PROMPT).text, 'hi');
+  assert.equal(ctx.conn.send({ type: PAIR_MSG.AGENT_PROMPT_CANCEL, v: 1, id }), true);
+  assert.equal(ws.last(PAIR_MSG.AGENT_PROMPT_CANCEL).id, id);
+  ws.receive({ type: PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT, v: 1, id, state: 'cancelled' });
   ws.receive({ type: PAIR_MSG.AGENT_REPLY, v: 1, id, text: 'answer', final: true });
   ws.receive({ type: PAIR_MSG.AGENT_STATUS, v: 1, working: false });
   off();
   ws.receive({ type: PAIR_MSG.AGENT_REPLY, v: 1, id, text: 'ignored', final: true });
-  assert.equal(seen.length, 2);
-  assert.equal(seen[0].text, 'answer');
-  assert.equal(seen[1].working, false);
+  assert.equal(seen.length, 3);
+  assert.equal(seen[0].state, 'cancelled');
+  assert.equal(seen[1].text, 'answer');
+  assert.equal(seen[2].working, false);
 });
 
 test('relay event marks the popup bridge as reachable', () => {

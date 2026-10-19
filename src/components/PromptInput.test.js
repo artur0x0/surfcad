@@ -58,6 +58,9 @@ test('demo states seed idle, typing, replies, working, and camera on/off', () =>
   assert.match(SRC, /agent-prompt--away/);
   assert.match(SRC, /featurePopupOpen/);
   assert.doesNotMatch(SRC, /abort/);
+  assert.match(SRC, /const id = pendingIdRef\.current;/);
+  assert.match(SRC, /void transport\.cancel\(id\)/);
+  assert.match(SRC, /setWorking\(false\)/);
 });
 
 const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../index.css'), 'utf8');

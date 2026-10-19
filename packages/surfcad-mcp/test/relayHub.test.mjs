@@ -315,6 +315,13 @@ test('agent prompt frames flow only while paired, and the wrong role cannot spoo
   peer.receive({ type: PAIR_MSG.AGENT_PROMPT, v: 1, id: 'p3', text: 'nope' });
   assert.equal(peer.last(PAIR_MSG.ERROR).code, 'forbidden');
   assert.equal(tab.sent.some((msg) => msg.type === PAIR_MSG.AGENT_PROMPT && msg.id === 'p3'), false);
+
+  tab.receive({ type: PAIR_MSG.AGENT_PROMPT_CANCEL, v: 1, id: 'p2' });
+  assert.equal(peer.last(PAIR_MSG.AGENT_PROMPT_CANCEL).id, 'p2');
+  peer.receive({ type: PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT, v: 1, id: 'p2', state: 'cancelled' });
+  assert.equal(tab.last(PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT).state, 'cancelled');
+  peer.receive({ type: PAIR_MSG.AGENT_PROMPT_CANCEL, v: 1, id: 'p2' });
+  assert.equal(peer.last(PAIR_MSG.ERROR).code, 'forbidden');
 });
 
 test('an oversized agent prompt is refused and not forwarded', () => {

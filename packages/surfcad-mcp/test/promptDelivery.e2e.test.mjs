@@ -24,6 +24,7 @@ const ASK = 'To get SurfCAD messages instantly, send me your webhook URL and key
 const INSTRUCTIONS = 'call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages.';
 const PROMPT_ID = '11111111-1111-4111-8111-111111111111';
 const SECOND_ID = '22222222-2222-4222-8222-222222222222';
+const CANCEL_ID = '33333333-3333-4333-8333-333333333333';
 
 function waitOpen(ws) {
   return new Promise((resolve, reject) => {
@@ -239,6 +240,44 @@ test('stdio pair note, queued status, and bearer webhook POST', async () => {
     });
     assert.equal(bad.isError, true);
     assert.equal(texts(bad).join('\n').includes('test-bearer'), false);
+
+    await client.callTool({ name: 'unregister_webhook', arguments: {} });
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    tab.send(JSON.stringify({
+      type: PAIR_MSG.AGENT_PROMPT,
+      v: 1,
+      id: CANCEL_ID,
+      text: 'stop this one',
+      ts: '2026-10-19T00:00:04.000Z',
+    }));
+    const cancelAck = await waitFor(inbound, (msg) => msg.type === PAIR_MSG.AGENT_PROMPT_ACK && msg.id === CANCEL_ID);
+    assert.equal(cancelAck.delivery, 'queued');
+    tab.send(JSON.stringify({ type: PAIR_MSG.AGENT_PROMPT_CANCEL, v: 1, id: CANCEL_ID }));
+    const cancelResult = await waitFor(
+      inbound,
+      (msg) => msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT && msg.id === CANCEL_ID,
+    );
+    assert.equal(cancelResult.state, 'cancelled');
+    assert.equal(cancelResult.v, 1);
+    const cancelled = await client.callTool({ name: 'status', arguments: {} });
+    const cancelledBody = parseFirst(cancelled);
+    assert.equal(cancelled.isError, false);
+    assert.equal(cancelledBody.queued, 0);
+    assert.equal(cancelledBody.webhookRegistered, false);
+    assert.deepEqual(cancelledBody.last, { id: CANCEL_ID, state: 'cancelled' });
+    assert.equal(cancelledBody.counts.cancelled >= 1, true);
+    assert.equal(texts(cancelled).join('\n').includes('test-bearer'), false);
+    const afterCancel = await client.callTool({ name: 'read_messages', arguments: {} });
+    const afterCancelText = texts(afterCancel).join('\n');
+    assert.equal(afterCancelText.includes('stop this one'), false);
+    assert.equal(afterCancelText.includes('"type": "cancel"'), false);
+    const late = await client.callTool({
+      name: 'reply_to_user',
+      arguments: { in_reply_to: CANCEL_ID, text: 'too late', final: true },
+    });
+    assert.equal(late.isError, false);
+    assert.deepEqual(parseFirst(late), { ok: false, error: 'cancelled' });
+    assert.equal(inbound.some((msg) => msg.type === PAIR_MSG.AGENT_REPLY && msg.id === CANCEL_ID), false);
 
     assert.equal(stderr.includes('test-bearer'), false);
     assert.equal(stderr.includes('s3cret-path'), false);

@@ -107,3 +107,40 @@ test('local failures ack and do not touch the socket', () => {
   assert.equal(acks.at(-1).error, 'not_paired');
   assert.equal(bridge.sent.length, 0);
 });
+
+test('cancel resolves cancelled, not_found, and already_final', async () => {
+  const bridge = fakeBridge();
+  const transport = createAgentPromptTransport(bridge);
+  const id = transport.send('How wide?');
+  assert.equal(bridge.sent[0].type, PAIR_MSG.AGENT_PROMPT);
+
+  const cancelled = transport.cancel();
+  assert.equal(bridge.sent.at(-1).type, PAIR_MSG.AGENT_PROMPT_CANCEL);
+  assert.equal(bridge.sent.at(-1).v, 1);
+  assert.equal(bridge.sent.at(-1).id, id);
+  bridge.emit({ type: PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT, v: 1, id, state: 'cancelled' });
+  assert.deepEqual(await cancelled, { id, state: 'cancelled' });
+
+  const missing = transport.cancel('missing-id');
+  bridge.emit({
+    type: PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT,
+    v: 1,
+    id: 'missing-id',
+    state: 'not_found',
+  });
+  assert.deepEqual(await missing, { id: 'missing-id', state: 'not_found' });
+
+  const done = transport.cancel(id);
+  bridge.emit({ type: PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT, v: 1, id, state: 'already_final' });
+  assert.deepEqual(await done, { id, state: 'already_final' });
+
+  bridge.paired = false;
+  assert.deepEqual(await transport.cancel('offline-id'), { id: 'offline-id', state: 'not_found' });
+  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id: 'offline-id', text: 'done', final: true });
+  assert.deepEqual(await transport.cancel('offline-id'), { id: 'offline-id', state: 'already_final' });
+
+  const empty = createAgentPromptTransport(fakeBridge());
+  assert.deepEqual(await empty.cancel(), { id: '', state: 'not_found' });
+  empty.dispose();
+  transport.dispose();
+});

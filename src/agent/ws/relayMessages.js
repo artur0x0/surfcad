@@ -21,4 +21,8 @@ export const PAIR_MSG = Object.freeze({
   AGENT_REPLY: 'agent.reply',
   /** Agent → page. Contract v:1. */
   AGENT_STATUS: 'agent.status',
+  /** Page → paired agent. Contract v:1. `{ id }`. */
+  AGENT_PROMPT_CANCEL: 'agent.prompt.cancel',
+  /** Agent → page. Contract v:1. `{ id, state }`. */
+  AGENT_PROMPT_CANCEL_RESULT: 'agent.prompt.cancel.result',
 });

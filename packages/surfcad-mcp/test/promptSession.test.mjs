@@ -103,6 +103,22 @@ function acks(sent) {
   return sent.filter((msg) => msg.type === PAIR_MSG.AGENT_PROMPT_ACK);
 }
 
+function expectStatus({
+  webhookRegistered = false,
+  queued = 0,
+  delivered = 0,
+  replied = 0,
+  cancelled = 0,
+  last = null,
+} = {}) {
+  return {
+    webhookRegistered,
+    queued,
+    counts: { queued, delivered, replied, cancelled },
+    last,
+  };
+}
+
 test('queue returns oldest first, drops the oldest past the cap, and acks on read', async () => {
   assert.equal(PROMPT_QUEUE_CAP, 50);
   const { session, sent } = harness({ rateLimitMs: 0 });
@@ -344,7 +360,11 @@ test('read_messages returns image content beside the text and tool copy says the
   const defs = promptToolDefinitions();
   const read = defs.find((tool) => tool.name === 'read_messages');
   assert.match(read.description, /grant/i);
+  assert.match(read.description, /type.: .cancel/);
+  assert.match(read.description, /Stop work on that id/);
   assert.match(defs.find((tool) => tool.name === 'register_webhook').description, /https/);
+  assert.match(defs.find((tool) => tool.name === 'register_webhook').description, /type.: .cancel/);
+  assert.match(defs.find((tool) => tool.name === 'register_webhook').description, /Stop work on that id/);
   const { session } = harness({ rateLimitMs: 0 });
   await session.acceptPrompt(prompt(1, { text: 'look', screenshot: shot() }));
   await session.acceptPrompt(prompt(2, { text: 'plain' }));
@@ -361,9 +381,12 @@ test('read_messages returns image content beside the text and tool copy says the
 
 test('a fresh session reports webhook false and queued 0, then queued 1 after a prompt', async () => {
   const { session } = harness({ rateLimitMs: 0 });
-  assert.deepEqual(session.deliveryStatus(), { webhookRegistered: false, queued: 0 });
+  assert.deepEqual(session.deliveryStatus(), expectStatus());
   await session.acceptPrompt(prompt(1));
-  assert.deepEqual(session.deliveryStatus(), { webhookRegistered: false, queued: 1 });
+  assert.deepEqual(session.deliveryStatus(), expectStatus({
+    queued: 1,
+    last: { id: pid(1), state: 'queued' },
+  }));
 });
 
 test('bearer is sent as Authorization, dropped on unregister and session clear, and never echoed', async () => {
@@ -398,7 +421,7 @@ test('bearer is sent as Authorization, dropped on unregister and session clear, 
     assert.equal(registeredText.includes('s3cret-path'), false);
     assert.equal(registeredText.includes('8.8.8.8'), false);
     assert.deepEqual(JSON.parse(registeredText), { registered: true });
-    assert.deepEqual(session.deliveryStatus(), { webhookRegistered: true, queued: 0 });
+    assert.deepEqual(session.deliveryStatus(), expectStatus({ webhookRegistered: true }));
     assert.equal(JSON.stringify(session.deliveryStatus()).includes('test-bearer'), false);
 
     await session.acceptPrompt(prompt(1, { text: 'hello from the page' }));
@@ -421,7 +444,7 @@ test('bearer is sent as Authorization, dropped on unregister and session clear, 
     assert.equal(posts.at(-1).meta.authorization, 'Bearer other-token');
 
     session.clear();
-    assert.deepEqual(session.deliveryStatus(), { webhookRegistered: false, queued: 0 });
+    assert.deepEqual(session.deliveryStatus(), expectStatus());
     await session.registerWebhook('https://8.8.8.8/hook/s3cret-path');
     await session.acceptPrompt(prompt(4));
     assert.equal(posts.at(-1).meta.authorization, undefined);
@@ -528,4 +551,148 @@ test('a prompt POST from the session sends Authorization: Bearer and unregister 
     await new Promise((resolve) => server.close(resolve));
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('cancelling a queued prompt drops it and status shows cancelled', async () => {
+  const { session, sent } = harness({ rateLimitMs: 0 });
+  await session.acceptPrompt(prompt(1, { text: 'stop me' }));
+  await session.acceptPrompt(prompt(2, { text: 'keep me' }));
+  const result = await session.cancel(pid(1));
+  assert.deepEqual(result, { id: pid(1), state: 'cancelled' });
+  assert.equal(session.deliveryStatus().queued, 1);
+  assert.equal(session.deliveryStatus().counts.cancelled, 1);
+  assert.deepEqual(session.deliveryStatus().last, { id: pid(2), state: 'queued' });
+  const read = session.readMessages();
+  assert.deepEqual(read.messages.map((row) => row.id), [pid(2)]);
+  assert.equal(JSON.stringify(read.messages).includes('stop me'), false);
+  assert.equal(session.deliveryStatus().queued, 0);
+
+  await session.acceptPrompt(prompt(3, { text: 'also stop' }));
+  await session.acceptPrompt(prompt(4, { text: 'and this' }));
+  await session.cancel(pid(3));
+  await session.cancel(pid(4));
+  assert.equal(session.readMessages().messages.length, 0);
+  assert.deepEqual(session.deliveryStatus(), expectStatus({
+    delivered: 1,
+    cancelled: 3,
+    last: { id: pid(4), state: 'cancelled' },
+  }));
+  assert.equal(sent.some((msg) => msg.type === PAIR_MSG.AGENT_REPLY), false);
+});
+
+test('cancelling a delivered prompt posts {type:cancel,id} with the bearer', async () => {
+  const { session, posts, sent } = harness({ rateLimitMs: 0 });
+  await session.registerWebhook('https://8.8.8.8/hook/s3cret-path', 'test-bearer');
+  await session.acceptPrompt(prompt(1, { text: 'already posted' }));
+  assert.equal(acks(sent).at(-1).delivery, 'webhook');
+  assert.equal(posts.length, 1);
+  const result = await session.cancel(pid(1));
+  assert.deepEqual(result, { id: pid(1), state: 'cancelled' });
+  assert.equal(posts.length, 2);
+  assert.deepEqual(posts[1].body, { type: 'cancel', id: pid(1) });
+  assert.equal(posts[1].meta.authorization, 'Bearer test-bearer');
+  assert.equal(JSON.stringify(posts[1].body).includes('test-bearer'), false);
+  assert.equal(JSON.stringify(session.deliveryStatus()).includes('test-bearer'), false);
+  assert.equal(session.deliveryStatus().queued, 0);
+  assert.equal(session.readMessages().messages.length, 0);
+  const again = await session.cancel(pid(1));
+  assert.deepEqual(again, { id: pid(1), state: 'cancelled' });
+  assert.equal(posts.length, 2, 'a second cancel does not post again');
+});
+
+test('cancelling a read prompt with no webhook returns a cancel item', async () => {
+  const { session, sent } = harness({ rateLimitMs: 0 });
+  await session.acceptPrompt(prompt(1, { text: 'seen' }));
+  session.noteToolCall();
+  assert.equal(sent.at(-1).working, true);
+  const read = session.readMessages();
+  assert.equal(read.messages[0].text, 'seen');
+  assert.equal(session.deliveryStatus().last.state, 'delivered');
+  const result = await session.cancel(pid(1));
+  assert.deepEqual(result, { id: pid(1), state: 'cancelled' });
+  assert.equal(sent.at(-1).type, PAIR_MSG.AGENT_STATUS);
+  assert.equal(sent.at(-1).working, false);
+  const next = await callPromptTool(session, 'read_messages', {});
+  const texts = next.content.filter((block) => block.type === 'text').map((block) => block.text);
+  assert.equal(texts.some((text) => text.includes('"type": "cancel"') && text.includes(pid(1))), true);
+  assert.equal(texts.some((text) => text.includes('seen')), false);
+  assert.deepEqual(session.deliveryStatus().last, { id: pid(1), state: 'cancelled' });
+  assert.equal(session.deliveryStatus().queued, 0);
+});
+
+test('a failed cancel webhook falls back to a read_messages cancel item', async () => {
+  const { session } = harness({
+    rateLimitMs: 0,
+    postWebhook: async (_url, body) => {
+      if (body?.type === 'cancel') return { ok: false, error: 'webhook_failed' };
+      return { ok: true };
+    },
+  });
+  await session.registerWebhook('https://8.8.8.8/hook');
+  await session.acceptPrompt(prompt(1));
+  await session.cancel(pid(1));
+  const read = session.readMessages();
+  assert.deepEqual(read.messages, [{ type: 'cancel', id: pid(1) }]);
+});
+
+test('reply_to_user and set_status after cancel are ignored and do not reach the page', async () => {
+  const { session, sent } = harness({ rateLimitMs: 0 });
+  await session.acceptPrompt(prompt(1));
+  session.readMessages();
+  await session.cancel(pid(1));
+  const before = sent.length;
+  const reply = session.reply({ in_reply_to: pid(1), text: 'too late', final: true });
+  assert.deepEqual(reply, { ok: false, error: 'cancelled' });
+  const status = session.setStatus({ working: true, id: pid(1) });
+  assert.deepEqual(status, { ok: false, error: 'cancelled' });
+  assert.equal(sent.slice(before).some((msg) => msg.type === PAIR_MSG.AGENT_REPLY), false);
+  assert.equal(sent.slice(before).some((msg) => msg.type === PAIR_MSG.AGENT_STATUS && msg.working === true), false);
+  const toolReply = await callPromptTool(session, 'reply_to_user', {
+    in_reply_to: pid(1),
+    text: 'still late',
+    final: true,
+  });
+  assert.match(toolReply.content[0].text, /"error": "cancelled"/);
+});
+
+test('cancel of an unknown id is not_found and a final reply is already_final', async () => {
+  const { session, sent } = harness({ rateLimitMs: 0 });
+  assert.deepEqual(await session.cancel(pid(9)), { id: pid(9), state: 'not_found' });
+  await session.acceptPrompt(prompt(1));
+  session.reply({ in_reply_to: pid(1), text: 'done', final: true });
+  assert.equal(sent.some((msg) => msg.type === PAIR_MSG.AGENT_REPLY), true);
+  assert.deepEqual(await session.cancel(pid(1)), { id: pid(1), state: 'already_final' });
+  assert.equal(session.deliveryStatus().last.state, 'replied');
+  assert.equal(session.deliveryStatus().counts.cancelled, 0);
+});
+
+test('cancel waits until an in-flight webhook delivery finishes', async () => {
+  const resolvers = [];
+  const bodies = [];
+  const { session } = harness({
+    rateLimitMs: 0,
+    postWebhook: (_url, body) => new Promise((resolve) => {
+      bodies.push(body);
+      resolvers.push(resolve);
+    }),
+  });
+  await session.registerWebhook('https://8.8.8.8/hook', 'test-bearer');
+  const pending = session.acceptPrompt(prompt(1, { text: 'in flight' }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(resolvers.length, 1);
+  const canceling = session.cancel(pid(1));
+  let settled = false;
+  canceling.then(() => { settled = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(settled, false);
+  resolvers[0]({ ok: true });
+  await pending;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(resolvers.length, 2);
+  assert.equal(settled, false);
+  resolvers[1]({ ok: true });
+  assert.deepEqual(await canceling, { id: pid(1), state: 'cancelled' });
+  assert.equal(bodies[1].type, 'cancel');
+  assert.equal(bodies[1].id, pid(1));
+  assert.equal(JSON.stringify(bodies).includes('test-bearer'), false);
 });
