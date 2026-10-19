@@ -246,6 +246,22 @@ export class RelaySession {
         void this.#prompts.acceptPrompt(msg);
         return;
       }
+      if (msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL) {
+        const cancelId = typeof msg.id === 'string' ? msg.id : '';
+        void this.#prompts.cancel(cancelId).then((result) => {
+          try {
+            this.#sendToTab({
+              type: PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT,
+              v: 1,
+              id: result.id,
+              state: result.state,
+            });
+          } catch {
+            /* unpaired before the result could be sent */
+          }
+        }, () => {});
+        return;
+      }
       const id = typeof msg.id === 'string' ? msg.id : null;
       const waiter = id ? this.#pending.get(id) : undefined;
       if (waiter) {

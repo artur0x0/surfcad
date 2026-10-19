@@ -43,7 +43,7 @@ export function promptToolDefinitions() {
   return [
     {
       name: 'register_webhook',
-      description: `Register an https webhook that receives user prompts from the paired SurfCAD tab. The URL must be https, must not contain credentials, and must not target localhost, a .local name, or a private, loopback, or link-local address. Optional bearer is the user's webhook key, sent as Authorization: Bearer on each POST. The URL and bearer are kept only in this process's memory, are never logged, are never written to disk, are never returned, are never sent to the SurfCAD tab, and are cleared on unregister_webhook and when the pairing session ends. Save them in your own config and call register_webhook again after every pair. When a webhook is registered, each prompt is POSTed as JSON { "type": "surfcad.prompt", ... } and times out after 10 seconds with one retry. If the POST fails, the prompt is queued instead. ${USER_CONTENT}`,
+      description: `Register an https webhook that receives user prompts from the paired SurfCAD tab. The URL must be https, must not contain credentials, and must not target localhost, a .local name, or a private, loopback, or link-local address. Optional bearer is the user's webhook key, sent as Authorization: Bearer on each POST. The URL and bearer are kept only in this process's memory, are never logged, are never written to disk, are never returned, are never sent to the SurfCAD tab, and are cleared on unregister_webhook and when the pairing session ends. Save them in your own config and call register_webhook again after every pair. When a webhook is registered, each prompt is POSTed as JSON { "type": "surfcad.prompt", ... } and times out after 10 seconds with one retry. If the POST fails, the prompt is queued instead. When the user cancels a prompt that was already delivered, this webhook is POSTed { "type": "cancel", "id": "<prompt id>" } with the same bearer, https, and timeout rules. Stop work on that id. Do not call reply_to_user or set_status for it. ${USER_CONTENT}`,
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -73,7 +73,7 @@ export function promptToolDefinitions() {
     },
     {
       name: 'read_messages',
-      description: `Read queued user prompts, oldest first, and remove them from the in-memory queue (this acks them). Each prompt is plain text. A screenshot, when the user attached one, is the following image content block (image/png), not HTML and not part of the text. ${USER_CONTENT} Do not render the text or the image as HTML.`,
+      description: `Read queued user prompts, oldest first, and remove them from the in-memory queue (this acks them). Each prompt is plain text. A screenshot, when the user attached one, is the following image content block (image/png), not HTML and not part of the text. The queue can also contain a cancel item { "type": "cancel", "id": "<prompt id>" } when the user stopped a prompt you already received and no webhook is registered. Stop work on that id. Do not call reply_to_user or set_status for it. ${USER_CONTENT} Do not render the text or the image as HTML.`,
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -89,7 +89,7 @@ export function promptToolDefinitions() {
     },
     {
       name: 'reply_to_user',
-      description: 'Send a plain-text reply to the SurfCAD user for a prompt id. Several replies may share one id. Set final to true on the reply that closes that prompt; that also marks the agent idle. The text is delivered as text, never rendered as HTML. This does not write the model or git.',
+      description: 'Send a plain-text reply to the SurfCAD user for a prompt id. Several replies may share one id. Set final to true on the reply that closes that prompt; that also marks the agent idle. The text is delivered as text, never rendered as HTML. This does not write the model or git. A cancelled id returns { "ok": false, "error": "cancelled" } and is not delivered.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -112,7 +112,7 @@ export function promptToolDefinitions() {
     },
     {
       name: 'set_status',
-      description: 'Tell the SurfCAD tab whether you are working on the user\'s prompt. The tab also marks you working on the first tool call after a prompt arrives, and idle on a final reply or after 120 seconds without activity. This does not grant write access.',
+      description: 'Tell the SurfCAD tab whether you are working on the user\'s prompt. The tab also marks you working on the first tool call after a prompt arrives, and idle on a final reply or after 120 seconds without activity. This does not grant write access. A cancelled id returns { "ok": false, "error": "cancelled" } and does not change the tab.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,

@@ -30,7 +30,7 @@ import {
 
 const PAIR_TOOL_NAME = 'pair';
 
-const STATUS_PROMPT_NOTE = ' This process also adds webhookRegistered (true when a prompt webhook is registered; the URL and any bearer are not included) and queued (how many prompt messages are waiting for read_messages).';
+const STATUS_PROMPT_NOTE = ' This process also adds webhookRegistered (true when a prompt webhook is registered; the URL and any bearer are not included), queued (prompt messages waiting for read_messages; cancelled prompts are not counted), counts ({ queued, delivered, replied, cancelled }), and last ({ id, state } of the latest prompt, or null).';
 
 /**
  * MCP-only fields on the bridge status tool. The host command and commands.json stay unchanged.

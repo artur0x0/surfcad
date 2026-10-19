@@ -10,6 +10,7 @@
  *   onReply(cb)  cb({ id, text, final })   — multiple replies per id append
  *   onWorking(cb) cb(boolean)
  *   onAck(cb)    cb({ id, delivery: 'webhook'|'queued'|'failed', error? })
+ *   cancel(id?)  → Promise<{ id, state: 'cancelled'|'not_found' }>
  *   Each subscription returns an unsubscribe function.
  */
 
@@ -70,6 +71,7 @@ export function createAgentPromptStub(options = {}) {
   const ackListeners = new Set();
   const timers = new Set();
   let lastScreenshot = null;
+  let lastId = '';
   let aborted = false;
 
   function later(fn, ms) {
@@ -83,6 +85,7 @@ export function createAgentPromptStub(options = {}) {
 
   function send(text, extras = {}) {
     const id = newId();
+    lastId = id;
     aborted = false;
     const body = typeof text === 'string' ? text : '';
     lastScreenshot = extras && extras.screenshot && typeof extras.screenshot === 'object'
@@ -127,6 +130,18 @@ export function createAgentPromptStub(options = {}) {
     emit(workingListeners, false);
   }
 
+  /**
+   * DEV echo stand-in for the live transport's cancel.
+   * @param {string} [id]
+   * @returns {Promise<{ id: string, state: 'cancelled' | 'not_found' }>}
+   */
+  function cancel(id) {
+    const target = typeof id === 'string' && id ? id : lastId;
+    abort();
+    if (!target) return Promise.resolve({ id: '', state: 'not_found' });
+    return Promise.resolve({ id: target, state: 'cancelled' });
+  }
+
   function dispose() {
     abort();
     replyListeners.clear();
@@ -140,6 +155,7 @@ export function createAgentPromptStub(options = {}) {
     onWorking: (cb) => addListener(workingListeners, cb),
     onAck: (cb) => addListener(ackListeners, cb),
     abort,
+    cancel,
     dispose,
     /** Test helper — last screenshot passed to send(). */
     lastScreenshot: () => lastScreenshot,

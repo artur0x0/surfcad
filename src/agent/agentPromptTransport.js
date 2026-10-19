@@ -90,10 +90,29 @@ export function createAgentPromptTransport(bridge) {
   const replyListeners = new Set();
   const workingListeners = new Set();
   const ackListeners = new Set();
+  /** Prompt ids that already received a final reply. */
+  const finalIds = new Set();
+  /** @type {Map<string, { promise: Promise<{ id: string, state: string }>, resolve: (result: { id: string, state: string }) => void, timer: ReturnType<typeof setTimeout> }>} */
+  const cancelWaiters = new Map();
+  /** Last prompt handed to the bridge. `cancel()` with no id uses this. */
+  let currentId = '';
+
+  /**
+   * @param {string} id
+   * @param {'cancelled' | 'not_found' | 'already_final'} state
+   */
+  function settleCancel(id, state) {
+    const waiter = cancelWaiters.get(id);
+    if (!waiter) return;
+    clearTimeout(waiter.timer);
+    cancelWaiters.delete(id);
+    waiter.resolve({ id, state });
+  }
 
   const unsubscribe = bridge.subscribe((msg) => {
     if (!msg || typeof msg !== 'object') return;
     if (msg.type === PAIR_MSG.AGENT_REPLY && msg.v === 1 && typeof msg.id === 'string' && typeof msg.text === 'string') {
+      if (msg.final === true) finalIds.add(msg.id);
       emitTo(replyListeners, { id: msg.id, text: msg.text, final: msg.final === true });
       return;
     }
@@ -105,14 +124,23 @@ export function createAgentPromptTransport(bridge) {
       const event = { id: msg.id, delivery: msg.delivery };
       if (msg.error != null) event.error = msg.error;
       emitTo(ackListeners, event);
+      return;
+    }
+    if (msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT && msg.v === 1 && typeof msg.id === 'string') {
+      const state = msg.state === 'cancelled' || msg.state === 'not_found' || msg.state === 'already_final'
+        ? msg.state
+        : 'not_found';
+      settleCancel(msg.id, state);
     }
   });
 
   function dispose() {
     unsubscribe();
+    for (const id of [...cancelWaiters.keys()]) settleCancel(id, 'not_found');
     replyListeners.clear();
     workingListeners.clear();
     ackListeners.clear();
+    finalIds.clear();
   }
 
   /**
@@ -143,6 +171,10 @@ export function createAgentPromptTransport(bridge) {
    * @param {string} text
    * @param {{ screenshot?: { mime: string, data: string, width: number, height: number }, context?: { part_id?: string, assembly_id?: string } }} [opts]
    * @returns {string} prompt id
+   *
+   * One prompt per second is enforced by the paired process after this frame
+   * is accepted, so this stays synchronous. `rate_limited` arrives as a failed
+   * ack (`{ delivery: 'failed', error: 'rate_limited' }`), not a rejected return.
    */
   function send(text, opts = {}) {
     const id = crypto.randomUUID();
@@ -169,8 +201,35 @@ export function createAgentPromptTransport(bridge) {
       message.screenshot = shot.value;
     }
     if (bridge.send(message) !== true) return fail('not_paired');
+    currentId = id;
     return id;
   }
 
-  return { send, onReply, onWorking, onAck, dispose };
+  /**
+   * Cancel the current in-flight prompt, or `id` when passed.
+   *
+   * @param {string} [id]
+   * @returns {Promise<{ id: string, state: 'cancelled' | 'not_found' | 'already_final' }>}
+   */
+  function cancel(id) {
+    const target = typeof id === 'string' && id ? id : currentId;
+    if (!target) return Promise.resolve({ id: '', state: 'not_found' });
+    const existing = cancelWaiters.get(target);
+    if (existing) return existing.promise;
+    /** @type {(result: { id: string, state: 'cancelled' | 'not_found' | 'already_final' }) => void} */
+    let resolveWaiter;
+    const promise = new Promise((resolve) => { resolveWaiter = resolve; });
+    const timer = setTimeout(() => settleCancel(target, 'not_found'), 30_000);
+    cancelWaiters.set(target, { promise, resolve: resolveWaiter, timer });
+    let sent = false;
+    try {
+      sent = bridge.send({ type: PAIR_MSG.AGENT_PROMPT_CANCEL, v: 1, id: target }) === true;
+    } catch {
+      sent = false;
+    }
+    if (!sent) settleCancel(target, finalIds.has(target) ? 'already_final' : 'not_found');
+    return promise;
+  }
+
+  return { send, cancel, onReply, onWorking, onAck, dispose };
 }

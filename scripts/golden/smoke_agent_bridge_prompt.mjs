@@ -265,6 +265,7 @@ try {
     transport.onReply((event) => { window.__promptWatch.replies.push(event); });
     transport.onWorking((working) => { window.__promptWatch.working.push(working); });
     window.__promptSend = (text, opts) => transport.send(text, opts);
+    window.__promptCancel = (id) => transport.cancel(id);
   });
 
   let pairSettled = false;
@@ -370,7 +371,48 @@ try {
   const emptyBody = parseTool(empty);
   check('queue empty after webhook delivery', empty.isError !== true && Array.isArray(emptyBody.messages) && emptyBody.messages.length === 0, toolTexts(empty).join(' ').slice(0, 240));
 
-  check('MCP stderr does not contain the prompt', !serverStderr.includes(PROMPT_TEXT) && !serverStderr.includes(secondText));
+  await new Promise((r) => setTimeout(r, 1200));
+  const thirdText = 'Please stop.';
+  const thirdId = await page.evaluate((text) => window.__promptSend(text), thirdText);
+  const thirdAck = await waitWatch(
+    page,
+    (snap) => snap?.acks?.some((ack) => ack.id === thirdId && ack.delivery === 'webhook'),
+    25000,
+  );
+  check(
+    'third prompt acked before stop',
+    thirdAck?.acks?.some((ack) => ack.id === thirdId && ack.delivery === 'webhook') === true,
+    JSON.stringify(thirdAck?.acks?.filter((ack) => ack.id === thirdId)),
+  );
+  const cancelResult = await page.evaluate((id) => window.__promptCancel(id), thirdId);
+  check(
+    'page cancel resolves cancelled',
+    cancelResult?.state === 'cancelled' && cancelResult?.id === thirdId,
+    JSON.stringify(cancelResult),
+  );
+  const stopped = await mcp('status', {});
+  const stoppedBody = parseTool(stopped);
+  check(
+    'status shows the prompt cancelled',
+    stopped.isError !== true
+      && stoppedBody.queued === 0
+      && stoppedBody.last?.id === thirdId
+      && stoppedBody.last?.state === 'cancelled',
+    toolTexts(stopped).join(' ').slice(0, 400),
+  );
+  const cancelDeadline = Date.now() + 8000;
+  let cancelPost = hook.posts.find((row) => row.body?.type === 'cancel');
+  while (!cancelPost && Date.now() < cancelDeadline) {
+    await new Promise((r) => setTimeout(r, 50));
+    cancelPost = hook.posts.find((row) => row.body?.type === 'cancel');
+  }
+  check(
+    'webhook cancel event',
+    cancelPost?.body?.type === 'cancel' && cancelPost.body.id === thirdId,
+    JSON.stringify(cancelPost?.body),
+  );
+
+  check('MCP stderr does not contain the prompt', !serverStderr.includes(PROMPT_TEXT) && !serverStderr.includes(secondText) && !serverStderr.includes(thirdText));
   check('MCP stderr does not contain the webhook URL', !serverStderr.includes(hookUrl));
 } catch (err) {
   failed += 1;

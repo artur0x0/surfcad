@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Stop on an in-viewer prompt cancels it. The page sends `agent.prompt.cancel` (`v: 1`). A prompt still queued is dropped and does not come back from `read_messages`. A prompt already delivered is marked cancelled: a registered webhook is POSTed `{ "type": "cancel", "id" }` with the same bearer, https, and timeout rules, otherwise the next `read_messages` returns `{ "type": "cancel", "id" }`. `reply_to_user` and `set_status` for that id return `{ "ok": false, "error": "cancelled" }` and do not reach the tab. `status` adds `counts` (`queued`, `delivered`, `replied`, `cancelled`) and `last` (`{ id, state }`). `queued` does not include cancelled prompts.
+
 ## 0.2.3 - 2026-10-18
 
 - MCP server instructions: call `register_webhook { url, bearer? }` if you can receive https webhooks, otherwise poll `read_messages`. A successful `pair` with no webhook puts an onboarding note in the tool text (ask the user for a URL and key, the key is `bearer`, save both in the agent's own config and register again after every pair, or poll `read_messages` if they decline). If a webhook is already registered, the result only says it is active.

@@ -105,7 +105,7 @@ export function createAgentBridgeTabConnection(opts) {
   let lostTimer = null;
   /** Bumped on every `open()` / `disconnect()` so a deferred close from an old socket is ignored. */
   let generation = 0;
-  /** Prompt adapter listeners. Replies, acks, and status only. */
+  /** Prompt adapter listeners. Replies, acks, status, and cancel results. */
   const promptListeners = new Set();
 
   function setState(next) {
@@ -137,7 +137,9 @@ export function createAgentBridgeTabConnection(opts) {
    */
   function sendPrompt(message) {
     if (state !== 'paired' || !ws || ws.readyState !== SOCKET_OPEN) return false;
-    if (!message || message.type !== PAIR_MSG.AGENT_PROMPT) return false;
+    if (!message || (message.type !== PAIR_MSG.AGENT_PROMPT && message.type !== PAIR_MSG.AGENT_PROMPT_CANCEL)) {
+      return false;
+    }
     send(message);
     return true;
   }
@@ -326,7 +328,8 @@ export function createAgentBridgeTabConnection(opts) {
         markDropped();
         return;
       }
-      if (msg.type === PAIR_MSG.AGENT_REPLY || msg.type === PAIR_MSG.AGENT_STATUS || msg.type === PAIR_MSG.AGENT_PROMPT_ACK) {
+      if (msg.type === PAIR_MSG.AGENT_REPLY || msg.type === PAIR_MSG.AGENT_STATUS
+        || msg.type === PAIR_MSG.AGENT_PROMPT_ACK || msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT) {
         emitPrompt(msg);
         return;
       }
