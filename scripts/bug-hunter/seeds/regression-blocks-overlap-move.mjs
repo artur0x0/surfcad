@@ -3,7 +3,7 @@
  */
 import { join } from 'node:path';
 import { agentCall, saveBridgeScreenshot } from '../../playtest/lib/harness.mjs';
-import { newPartStarterScript } from '../../../src/utils/helperPaletteSnippets.js';
+import { starterCubeScript } from '../../../src/utils/helperPaletteSnippets.js';
 
 export const id = 'regression-blocks-overlap-move';
 export const title = 'Move one of two overlapping blocks (#485)';
@@ -37,7 +37,7 @@ export function seedDoc() {
 }
 
 export function seedParts() {
-  return [{ id: 'local:part1', script: newPartStarterScript() }];
+  return [{ id: 'local:part1', script: starterCubeScript() }];
 }
 
 export async function run(ctx) {

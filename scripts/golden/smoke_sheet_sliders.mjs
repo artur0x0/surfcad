@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
-import { newPartStarterScript } from '../../src/utils/helperPaletteSnippets.js';
+import { starterCubeScript } from '../../src/utils/helperPaletteSnippets.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const PORT = Number(process.env.SMOKE_PORT || 5254);
@@ -141,7 +141,7 @@ try {
       const model = window.monaco.editor.getModels()[0];
       if (!model.getValue().trim()) model.setValue(text);
       document.querySelector('button[aria-label="Run script"]')?.click();
-    }, newPartStarterScript());
+    }, starterCubeScript());
     await page.waitForFunction(() => {
       const run = document.querySelector('[data-cad-run]');
       return !run || run.getAttribute('data-cad-run') !== 'running';

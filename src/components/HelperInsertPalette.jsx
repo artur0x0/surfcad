@@ -32,7 +32,13 @@ import SquareRoundCorner from './icons/SquareRoundCorner';
 import RectangleCircle from './icons/RectangleCircle';
 import Angle from './icons/Angle';
 import SheetMetalPlate from './icons/SheetMetalPlate';
-import { HELPER_PALETTE_ITEMS, itemsByGroup, paletteRailSections } from '../utils/helperPaletteSnippets';
+import {
+  HELPERS_NEED_BODY,
+  HELPER_PALETTE_ITEMS,
+  isBufferEmpty,
+  itemsByGroup,
+  paletteRailSections,
+} from '../utils/helperPaletteSnippets.js';
 import {
   RAIL_PAIR_HEIGHT_ATTR,
   RAIL_DESKTOP_FULL_ATTR,
@@ -300,6 +306,18 @@ const HelperInsertPalette = ({
     }
     const buf = typeof getBuffer === 'function' ? getBuffer() : '';
     setBufferSnapshot(typeof buf === 'string' ? buf : '');
+    // No seed cube: a helper that needs a body is refused on an empty part
+    // instead of inventing a hidden 40×30×20 host (bike PR 3).
+    if (HELPERS_NEED_BODY.has(item.id) && isBufferEmpty(buf)) {
+      setPending(item);
+      setFaceSnapshot(null);
+      setEdgeSnapshot(null);
+      setRefuseTitle('Add a body first');
+      setRefuseMessage(`${item.label} needs a body. Insert a Block (cube, cylinder, …) or a Shape (extrude, revolve, …) first, then ${item.label}.`);
+      setModalMode('refuse');
+      signalCard(true);
+      return;
+    }
     // Auto-switch to edge pick when opening chamfer/path with no edges yet.
     if ((item.id === 'chamferEdges' || item.id === 'sweepPath')
       && !(selectedEdges && selectedEdges.length)

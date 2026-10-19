@@ -2,7 +2,7 @@
  * Sheet-metal script block. The part script stays the source of truth:
  * one marked block holds the sheet spec (JSON) and builds the solid.
  */
-import { newPartStarterScript } from '../helperPaletteSnippets.js';
+import { starterCubeScript } from '../helperPaletteSnippets.js';
 import { insertChunkBeforeReturn } from '../scriptReturn.js';
 import { createSheetSpec } from './sheetModel.js';
 import { defaultBaseDims } from './sheetMetalMode.js';
@@ -23,7 +23,8 @@ export { SHEET_METAL_BEGIN, SHEET_METAL_END, hasSheetMetalBlock };
 export function sheetMetalFresh(script) {
   const s = String(script ?? '').trim();
   if (!s) return true;
-  if (s === newPartStarterScript().trim()) return true;
+  // Older parts still carry the 20 mm starter cube; those are fresh too.
+  if (s === starterCubeScript().trim()) return true;
   const body = s
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\/\/[^\n]*/g, '')

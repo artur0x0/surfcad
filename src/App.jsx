@@ -418,6 +418,7 @@ import {
   composeHelperInsert,
   HELPER_PALETTE_ITEMS,
   newPartStarterScript,
+  starterCubeScript,
 } from './utils/helperPaletteSnippets';
 import { describeHelperRefusal } from './agent/helperPaletteAgent';
 import {
@@ -9371,7 +9372,7 @@ const App = () => {
         return {
           error: {
             code: 'insert_failed',
-            message: describeHelperRefusal(item, { params, faceContext, edgeContext }),
+            message: describeHelperRefusal(item, { params, faceContext, edgeContext, buffer }),
           },
         };
       }
@@ -11044,7 +11045,7 @@ const App = () => {
         hasBaseline: !!gitBaseline,
         source: assemblyDoc.source,
         scripts: partScripts,
-        defaultScripts: [DEFAULT_SCRIPT, newPartStarterScript()],
+        defaultScripts: [DEFAULT_SCRIPT, newPartStarterScript(), starterCubeScript()],
         liveId: assemblyDoc.activeId,
         liveScript: liveDirtyScript,
       }) : true}

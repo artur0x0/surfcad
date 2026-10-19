@@ -789,7 +789,7 @@ Both modes share the shape: tool rail on the left, param chip on the right,
 commit writes script text back through `App.jsx`.
 Sheet metal (SendCutSend): left rail **Shape** → Sheet Metal (no separate
 Sheet section) → `SheetMetalPicker`. Start designing binds the SKU on the
-open part (`part.sheetMetal`). A fresh part (empty or the 20 mm starter cube)
+open part (`part.sheetMetal`). A fresh part (empty, or an older part that is only the 20 mm starter cube)
 gets the default base flange (`sheetStarterScript` → `sheetMetalSolid`, Top
 plane, SKU thickness) and enters `sheetMetalMode` still on the plane step.
 A part that already has features stays put: Start does not rewrite it and

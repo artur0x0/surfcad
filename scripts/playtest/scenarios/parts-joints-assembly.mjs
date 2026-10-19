@@ -120,14 +120,12 @@ export async function run(ctx) {
     pinPartId = env.result?.partId || parts.result?.activeId;
     const tree = await agentCall(page, 'feature_tree', {});
     const kinds = (tree.result?.features || []).map((row) => row.kind);
+    // A new part starts empty (no seed cube): no features, no chips.
+    await page.waitForTimeout(400);
     const chips = page.locator('[data-cad-feature-strip="desktop"] [data-feature-chip]');
-    let ribbon = [];
-    try {
-      await page.locator('[data-cad-feature-strip="desktop"] [data-feature-chip="cube"]').first().waitFor({ timeout: 8000 });
-      ribbon = await chips.evaluateAll((els) => els.map((el) => el.getAttribute('data-feature-chip') || ''));
-    } catch { /* assert below */ }
+    const ribbon = await chips.evaluateAll((els) => els.map((el) => el.getAttribute('data-feature-chip') || ''));
     return {
-      ok: env.ok === true && n >= 2 && !!pinPartId && kinds.includes('cube') && ribbon.includes('cube'),
+      ok: env.ok === true && n >= 2 && !!pinPartId && kinds.length === 0 && ribbon.length === 0,
       call: 'create_part',
       args: { name: 'Pin' },
       envelope: env,
@@ -144,15 +142,16 @@ export async function run(ctx) {
     const chips = page.locator('[data-cad-feature-strip="desktop"] [data-feature-chip]');
     let ribbon = [];
     try {
-      await cubeChips.nth(1).waitFor({ timeout: 8000 });
+      await cubeChips.first().waitFor({ timeout: 8000 });
       ribbon = await chips.evaluateAll((els) => els.map((el) => el.getAttribute('data-feature-chip') || ''));
     } catch { /* assert below */ }
+    // The inserted cube is the part's first and only feature (no seed cube).
     const cubeCount = ribbon.filter((kind) => kind === 'cube').length;
     const ok = inserted.ok === true
       && env.ok === true
       && env.result?.ok === true
-      && kinds.filter((kind) => kind === 'cube').length >= 2
-      && cubeCount >= 2;
+      && kinds.filter((kind) => kind === 'cube').length === 1
+      && cubeCount === 1;
     return { ok, call: 'insert_cube', args: {}, envelope: env, detail: `tree=${kinds.join(',')} ribbon=${ribbon.join(',')}` };
   });
 

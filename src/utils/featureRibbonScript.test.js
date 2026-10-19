@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { composeHelperInsert, newPartStarterScript } from './helperPaletteSnippets.js';
+import { composeHelperInsert, starterCubeScript } from './helperPaletteSnippets.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { featureStripChips } from './sheetMetal/sheetRibbon.js';
 import { featureRibbonScript } from './featureRibbonScript.js';
 import { historyForPart } from './partHistory.js';
 
-const STARTER = newPartStarterScript();
+const STARTER = starterCubeScript();
 const APP = readFileSync(new URL('../App.jsx', import.meta.url), 'utf8');
 
 test('agent create_part starter is a marked cube the ribbon can parse', () => {

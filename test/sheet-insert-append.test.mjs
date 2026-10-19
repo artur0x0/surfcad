@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DEFAULT_SCRIPT } from '../src/utils/defaultScript.js';
-import { newPartStarterScript } from '../src/utils/helperPaletteSnippets.js';
+import { starterCubeScript } from '../src/utils/helperPaletteSnippets.js';
 import { createSheetSpec } from '../src/utils/sheetMetal/sheetModel.js';
 import {
   composeSheetMetalCommit,
@@ -38,7 +38,7 @@ function prefixThrough(script, marker) {
 
 test('a part with a box and a fillet is not replaced by the sheet starter', () => {
   assert.equal(sheetMetalFresh(''), true);
-  assert.equal(sheetMetalFresh(newPartStarterScript()), true);
+  assert.equal(sheetMetalFresh(starterCubeScript()), true);
   assert.equal(sheetMetalFresh(DEFAULT_SCRIPT), false);
   assert.equal(sheetMetalFresh(BOX_FILLET), false);
 
@@ -65,7 +65,7 @@ test('a part with a box and a fillet is not replaced by the sheet starter', () =
   assert.equal(readSheetMetalSpec(edited.buffer).plane, 'XZ');
   assert.equal(readSheetMetalSpec(edited.buffer).width, 80);
 
-  const fresh = composeSheetMetalCommit(newPartStarterScript(), spec);
+  const fresh = composeSheetMetalCommit(starterCubeScript(), spec);
   assert.equal(fresh.ok, true);
   assert.ok(fresh.buffer.startsWith(SHEET_METAL_BEGIN));
   assert.match(fresh.buffer, /let part = sheetMetalSolid\(sheetSpec\)/);

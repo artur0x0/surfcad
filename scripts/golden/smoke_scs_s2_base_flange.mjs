@@ -25,7 +25,7 @@ import {
   SHEET_METAL_BEGIN,
 } from '../../src/utils/sheetMetal/sheetMetalScript.js';
 import { parseFeatureMarkers } from '../../src/utils/featureMarkers.js';
-import { newPartStarterScript } from '../../src/utils/helperPaletteSnippets.js';
+import { starterCubeScript } from '../../src/utils/helperPaletteSnippets.js';
 import { buildSheetOverlay, sheetPickFromHits } from '../../src/utils/sheetMetal/sheetOverlay.js';
 import { Raycaster, Vector3 } from 'three';
 import { loadSandbox } from './scs_sandbox.mjs';
@@ -83,7 +83,7 @@ check('re-entry with a spec skips to edit, re-thickness to new SKU', reenter.sta
 
 console.log('SCS S2 — script block');
 {
-  const starter = newPartStarterScript();
+  const starter = starterCubeScript();
   const res = composeSheetMetalCommit(starter, spec);
   check('starter cube is replaced by the block', res.ok && res.buffer.startsWith(SHEET_METAL_BEGIN) && !/Manifold\.cube/.test(res.buffer));
   check('spec round-trips', JSON.stringify(readSheetMetalSpec(res.buffer)) === JSON.stringify(spec));

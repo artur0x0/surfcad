@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
-import { newPartStarterScript } from '../../src/utils/helperPaletteSnippets.js';
+import { starterCubeScript } from '../../src/utils/helperPaletteSnippets.js';
 import { focusPartHistoryForUndo } from './lib/focusPartHistory.mjs';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
@@ -120,7 +120,7 @@ async function seedAssembly(page) {
         tx.onerror = () => reject(tx.error);
       };
     });
-  }, { doc: ASSEMBLY, script: `// @surf-id ${SURF_ID}\n${newPartStarterScript()}` });
+  }, { doc: ASSEMBLY, script: `// @surf-id ${SURF_ID}\n${starterCubeScript()}` });
 }
 
 async function agentCall(page, name, args) {
