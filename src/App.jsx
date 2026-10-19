@@ -167,6 +167,7 @@ import { compareWorkingCopyToCommit } from './agent/state/workingCopyUnsaved';
 import { findPartById, unknownAssemblyError, unknownPartError } from './agent/state/identity';
 import { decidePartVisible } from './agent/state/partVisible';
 import { listV2Assemblies, listPartParentAssemblies, openV2Assembly } from './utils/git/v2VaultRead';
+import { assemblyRows } from './agent/state/assemblyRows';
 import { assemblyIdPath, partIdPath, parseIdPath } from './utils/git/idPaths';
 import { createdPartFromDocs } from './agent/state/createPart.js';
 import { finishedRunBodyCount } from './agent/state/runBodyCount.js';
@@ -407,11 +408,12 @@ import {
   workingCopyUnpersistedResult,
   openLegacyAssembly,
   UnsupportedVaultLayoutError,
+  listLegacyAssemblyNames,
 } from './utils/git/legacyVault';
 import { upgradeVaultEnabled, UPGRADE_UNAVAILABLE } from './utils/git/upgradeVaultEnabled';
 import PartFeed from './components/PartFeed';
 import manifoldContext from './utils/ManifoldWorker';
-import DEFAULT_SCRIPT from './utils/defaultScript';
+import DEFAULT_SCRIPT, { blankPartStarter } from './utils/defaultScript';
 import {
   composeHelperInsert,
   HELPER_PALETTE_ITEMS,
@@ -2770,13 +2772,22 @@ const App = () => {
     !!agentFeatureSessionRef.current
     || !!agentFeatureTargetRef.current
     || !!featureSheetRef.current
-    || viewportRef.current?.agentReadHoleEdit?.()?.open
-    || viewportRef.current?.agentReadFeatureEdit?.()?.open
+    || agentHostRef.current?.agentReadHoleEdit?.()?.open
+    || agentHostRef.current?.agentReadFeatureEdit?.()?.open
   );
 
-  const dismissAgentFeatureSession = () => {
-    viewportRef.current?.agentCancelFeatureEdit?.();
-    viewportRef.current?.agentCancelHoleEdit?.();
+  /**
+   * Close the agent's feature session. `cancel` is the card's X (a previewed
+   * edit re-runs its script). `settle` follows a confirm that already wrote
+   * through mutate: restore only when the buffer is unchanged. `drop` closes
+   * with no run because the caller is about to write and run the script.
+   */
+  const dismissAgentFeatureSession = ({ mode = 'cancel' } = {}) => {
+    const host = agentHostRef.current;
+    if (mode === 'settle') host?.agentSettleFeatureEdit?.();
+    else if (mode === 'drop') host?.agentDismissFeatureEdit?.();
+    else host?.agentCancelFeatureEdit?.();
+    host?.agentCancelHoleEdit?.();
     closeFeatureSheet();
     setFeatureStripActiveId(null);
     agentFeatureDraftRef.current = null;
@@ -2808,7 +2819,7 @@ const App = () => {
     let feature = null;
     let openEdit = null;
     if (args?.id == null && args?.index == null) {
-      const vpEdit = viewportRef.current?.agentReadFeatureEdit?.();
+      const vpEdit = agentHostRef.current?.agentReadFeatureEdit?.();
       const sheet = featureSheetRef.current;
       if (vpEdit?.open && vpEdit.feature) {
         feature = vpEdit.feature;
@@ -2842,7 +2853,7 @@ const App = () => {
     }
     const result = deleteFeatureEdit(buf, live);
     if (!result.ok) return { error: { code: 'delete_failed', message: result.message } };
-    if (openEdit === 'viewport') viewportRef.current?.agentDismissFeatureEdit?.();
+    if (openEdit === 'viewport') agentHostRef.current?.agentDismissFeatureEdit?.();
     setFeatureSheet(null);
     setFeatureStripActiveId(null);
     agentFeatureDraftRef.current = null;
@@ -2871,8 +2882,8 @@ const App = () => {
     const draft = agentFeatureDraftRef.current || {};
     const buf = codeEditorRef.current?.getContent?.() ?? '';
 
-    if (viewportRef.current?.agentReadHoleEdit?.()?.open) {
-      const holePayload = viewportRef.current?.agentHoleConfirmPayload?.();
+    if (agentHostRef.current?.agentReadHoleEdit?.()?.open) {
+      const holePayload = agentHostRef.current?.agentHoleConfirmPayload?.();
       if (holePayload?.error) return holePayload;
       const result = composeHoleOnContour(buf, {
         featureId: holePayload.featureId,
@@ -2889,7 +2900,7 @@ const App = () => {
       };
     }
 
-    const vpEdit = viewportRef.current?.agentReadFeatureEdit?.();
+    const vpEdit = agentHostRef.current?.agentReadFeatureEdit?.();
     if (vpEdit?.open && vpEdit.feature) {
       const live = liveSheetFeature(buf, vpEdit.feature) || vpEdit.feature;
       const result = confirmFeatureEdit(buf, live, { fields: { ...(vpEdit.fields || {}), ...draft } });
@@ -6574,7 +6585,7 @@ const App = () => {
   const handleNewAssembly = async () => {
     const seedId = mintSurfId();
     const source = githubConnected ? 'git' : 'local';
-    const starter = source === 'git' ? withSurfId(DEFAULT_SCRIPT, seedId) : DEFAULT_SCRIPT;
+    const starter = blankPartStarter(source === 'git' ? seedId : null);
     const name = nextAssemblyName(await collectTakenAssemblyNames());
     const seedDoc = serializeAssembly({
       id: mintSurfId(),
@@ -6663,7 +6674,7 @@ const App = () => {
   const seedAgentAssembly = async ({ name } = {}) => {
     const seedId = mintSurfId();
     const source = githubConnected ? 'git' : 'local';
-    const starter = source === 'git' ? withSurfId(DEFAULT_SCRIPT, seedId) : DEFAULT_SCRIPT;
+    const starter = blankPartStarter(source === 'git' ? seedId : null);
     const raw = typeof name === 'string' ? name.trim() : '';
     const label = raw || DEFAULT_ASSEMBLY_NAME;
     const vaultLayout = source === 'git'
@@ -9283,6 +9294,9 @@ const App = () => {
       return codeEditorRef.current?.getContent?.() ?? '';
     },
     setEditor(src) {
+      // The script underneath an open feature card is about to change and
+      // run: drop the card and its block preview rather than leave them up.
+      if (agentFeatureSessionActive()) dismissAgentFeatureSession({ mode: 'drop' });
       const text = wrapRawScript(typeof src === 'string' ? src : '');
       codeEditorRef.current?.setTextOnly?.(text);
       const id = assemblyRef.current?.activeId;
@@ -10212,19 +10226,26 @@ const App = () => {
       };
     },
     async agentListAssemblies() {
+      const open = assemblyRef.current;
+      const openRow = open?.id && isV2SurfId(open.id) ? { id: open.id, name: assemblyName(open) } : null;
+      // A local working copy has one assembly: the open one.
+      if (!open || open.source !== 'git') {
+        return { result: { assemblies: assemblyRows({ open: openRow }) } };
+      }
       const ctx = await agentGitReadContext('list_assemblies');
       if (ctx.error) return { error: ctx.error };
       try {
+        // Saved v2 assemblies (id paths; empty on a fresh or legacy tree), the
+        // open unsaved one, and legacy folders by name. The detector calls a
+        // repo with no version marker legacy, so a fresh vault is not v2 yet.
         const detected = await detectVaultLayout(ctx.adapter, ctx.vault.repo, ctx.branch);
-        if (detected.layout !== 'v2') {
-          return { result: { assemblies: [] } };
+        const v2 = await listV2Assemblies(ctx.adapter, ctx.vault.repo, ctx.branch);
+        let legacyNames = [];
+        if (detected.legacyTree) {
+          const tree = await ctx.adapter.listTree(ctx.vault.repo, ctx.branch);
+          legacyNames = listLegacyAssemblyNames(tree);
         }
-        const rows = await listV2Assemblies(ctx.adapter, ctx.vault.repo, ctx.branch);
-        const open = assemblyRef.current;
-        if (open?.id && isV2SurfId(open.id) && !rows.some((row) => row.id === open.id)) {
-          rows.push({ id: open.id, name: assemblyName(open) });
-        }
-        return { result: { assemblies: rows } };
+        return { result: { assemblies: assemblyRows({ v2, legacyNames, open: openRow }) } };
       } catch (err) {
         if (err?.message === NO_REPO_YET_COPY || err?.code === 'git_blocked') {
           setUploadNotice(NO_REPO_YET_COPY);
@@ -10927,20 +10948,20 @@ const App = () => {
         ? agentFeatureDraftRef.current
         : {};
       agentFeatureDraftRef.current = { ...prev, ...bag };
-      const holeEdit = viewportRef.current?.agentReadHoleEdit?.();
+      const holeEdit = agentHostRef.current?.agentReadHoleEdit?.();
       if (holeEdit?.open) {
-        const patched = viewportRef.current?.agentPatchHoleCard?.(bag);
+        const patched = agentHostRef.current?.agentPatchHoleCard?.(bag);
         if (patched?.error) return patched;
       }
-      const vpEdit = viewportRef.current?.agentReadFeatureEdit?.();
+      const vpEdit = agentHostRef.current?.agentReadFeatureEdit?.();
       if (vpEdit?.open) {
-        const patched = viewportRef.current?.agentPatchFeatureEdit?.(bag);
+        const patched = agentHostRef.current?.agentPatchFeatureEdit?.(bag);
         if (patched?.error) return patched;
       }
       return { result: { params: agentFeatureDraftRef.current } };
     },
     prepareFeatureConfirm: () => prepareAgentFeatureConfirm(),
-    dismissFeatureConfirmSession: () => dismissAgentFeatureSession(),
+    dismissFeatureConfirmSession: () => dismissAgentFeatureSession({ mode: 'settle' }),
     cancelFeature() {
       if (!agentFeatureSessionActive()) {
         return { error: { code: 'no_feature_edit', message: 'No feature edit session is open' } };
