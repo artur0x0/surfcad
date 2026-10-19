@@ -136,7 +136,3 @@ The server's initialize instructions say: `call register_webhook { url, bearer? 
 MCP `screenshot` also accepts `save_to` (path, or `true` / `""` for a temp file), `file` (alias), and `overwrite`. The image is written on the MCP host and the tool returns `{ path, size }` instead of base64; these args are never sent to the browser.
 
 `agent_prompt` `{ text?, action? }` (`send` | `stop` | `dismiss` | `screenshot`) is a bridge command in the catalog: it drives the floating in-viewer prompt field. It does not edit a part or write git.
-
-## Local demo
-
-`npm run build:playtest && npm run demo:mcp`: playtest bundles only (`VITE_SURFCAD_PLAYTEST=1`); production `npm run build` never ships the auto-approve path. CI smoke builds playtest before goldens.
