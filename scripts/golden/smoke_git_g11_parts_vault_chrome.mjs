@@ -204,13 +204,16 @@ ok('mobile ribbon still shows assembly name with branch chip',
   /RibbonAssemblyName[\s\S]{0,200}onBranchClick/.test(feed)
   && /placement !== 'desktop'/.test(feed)
   && /data-assembly-branch=""/.test(feed));
-ok('desktop Save menu is rename-only', (() => {
+ok('desktop Save menu has rename and legacy Upgrade vault', (() => {
   const menuStart = feed.indexOf('data-assembly-save-dropdown');
   const menuEnd = feed.indexOf('data-git-move-open', menuStart);
   const menu = menuStart >= 0 && menuEnd > menuStart ? feed.slice(menuStart, menuEnd) : '';
   return /data-assembly-save-menu=""/.test(feed)
     && /Rename assembly/.test(menu)
     && /data-assembly-rename-menu=""/.test(menu)
+    && /data-assembly-upgrade-menu=""/.test(menu)
+    && /vaultLayout === 'legacy' && upgradeAvailable/.test(menu)
+    && /Upgrade vault/.test(menu)
     && /placement === 'desktop' && onRenameAssembly/.test(feed)
     && !/Branches \(/.test(menu)
     && !/data-git-branches=""/.test(menu);

@@ -279,6 +279,12 @@ Desktop specifics:
   The chip is a 1px `currentColor` outline, `rounded-lg`, with the same
   `text-blue-400` as the Parts header icons. Truncate a long branch name
   so the header does not wrap.
+  Desktop git Save (`data-git-save`) is a split button; the chevron
+  (`data-assembly-save-menu`) opens **Rename assembly** and, when the open
+  vault is legacy, **Upgrade vault** (`data-assembly-upgrade-menu`). That
+  item is hidden on a v2 vault, when no git vault is connected, and on
+  mobile (the phone ribbon has Save without this menu). Clicking it opens
+  the existing Upgrade vault confirm (`data-git-upgrade-prompt`).
   Signed out (local, no GitHub token), the **+** menu (`data-part-add-dropdown`)
   and the folder menu (`data-part-open-dropdown`) both offer **Part** and
   **Assembly**. Part opens the name dialog and creates a local-only part

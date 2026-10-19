@@ -1917,6 +1917,21 @@ const PartFeed = forwardRef(function PartFeed({
                       >
                         Rename assembly
                       </button>
+                      {vaultLayout === 'legacy' && upgradeAvailable ? (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          data-assembly-upgrade-menu=""
+                          data-ui-action="data-git-upgrade-vault"
+                          className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
+                          onClick={() => {
+                            setSaveMenuOpen(false);
+                            setCommitFlow({ stage: 'upgrade', draft: '', result: null, error: '', upgrading: true });
+                          }}
+                        >
+                          Upgrade vault
+                        </button>
+                      ) : null}
                     </div>
                   )}
                 </>
@@ -2503,7 +2518,7 @@ const PartFeed = forwardRef(function PartFeed({
             <div data-git-upgrade-prompt="" className="font-ui text-on-dark">
               {upgradeAvailable ? (
                 <p className="text-xs">
-                  This vault still uses the old folder layout. Upgrade rewrites the remote to the v2 id layout in one commit. A dirty working copy is saved as a second commit under this confirmation. Dismiss writes nothing. Never runs on load.
+                  This vault still uses the old folder layout. Upgrade rewrites the remote to the v2 id layout in one commit. A dirty working copy is saved as a second commit under this confirmation. Older SurfCAD builds cannot open a v2 vault. Dismiss writes nothing. Never runs on load.
                 </p>
               ) : (
                 <p className="text-xs">

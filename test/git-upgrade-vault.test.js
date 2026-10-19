@@ -1842,7 +1842,7 @@ test('Save on a legacy vault prompts Upgrade and does not write v1', () => {
   const prompt = feed.slice(promptAt, promptAt + 1600);
   assert.match(prompt, /not available in this build/);
   assert.equal(/Open SurfCAD in Chrome to confirm/.test(feed), false);
-  assert.equal(/Older SurfCAD builds cannot open a v2 vault/.test(feed), false);
+  assert.match(prompt, /Older SurfCAD builds cannot open a v2 vault/);
   assert.equal(/Edge/.test(prompt), false);
   assert.match(feed, /text-on-dark/);
   const overwriteAt = feed.indexOf("void runUpgradeConflict('overwrite')");
@@ -2305,20 +2305,75 @@ test('Get latest with no paths returns an error and writes nothing', async () =>
   assert.equal(commits(gh).length, writes);
 });
 
-test('upgradeVaultEnabled is off in prod even with VITE_ or localStorage', () => {
+test('upgradeVaultEnabled is on in production; enabled override still wins', () => {
   assert.equal(upgradeVaultEnabled({ enabled: false }), false);
+  assert.equal(upgradeVaultEnabled({ enabled: true }), true);
   assert.equal(upgradeVaultEnabled({
-    vite: { DEV: false, MODE: 'production', VITE_SURFCAD_UPGRADE_VAULT: '1' },
-    localStorage: { getItem: () => '1' },
-  }), false);
-  assert.equal(upgradeVaultEnabled({
-    vite: { DEV: true, MODE: 'development', VITE_SURFCAD_UPGRADE_VAULT: '1' },
+    vite: { DEV: false, MODE: 'production' },
   }), true);
   assert.equal(upgradeVaultEnabled({
-    vite: { DEV: true, MODE: 'development' },
-    localStorage: { getItem: (k) => (k === 'surfcadUpgradeVault' ? '1' : null) },
+    vite: { DEV: false, MODE: 'production', VITE_SURFCAD_UPGRADE_VAULT: '0' },
+    localStorage: { getItem: () => '0' },
   }), true);
+  assert.equal(upgradeVaultEnabled(), true);
   assert.equal(typeof UPGRADE_UNAVAILABLE.hint, 'string');
+});
+
+test('desktop Save menu shows Upgrade vault only for a connected legacy vault', () => {
+  const feed = readFileSync(join(ROOT, 'src/components/PartFeed.jsx'), 'utf8');
+  const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const menuStart = feed.indexOf('data-assembly-save-dropdown');
+  const menuEnd = feed.indexOf('data-git-move-open', menuStart);
+  const menu = feed.slice(menuStart, menuEnd);
+  assert.match(menu, /data-assembly-upgrade-menu=""/);
+  assert.match(menu, /vaultLayout === 'legacy' && upgradeAvailable/);
+  assert.match(menu, /Upgrade vault/);
+  assert.match(menu, /setCommitFlow\(\{ stage: 'upgrade'/);
+  assert.match(menu, /data-ui-action="data-git-upgrade-vault"/);
+  assert.match(feed, /placement === 'desktop' && onRenameAssembly/);
+  const saveWrapStart = feed.lastIndexOf("source === 'git'", menuStart);
+  const saveControl = feed.slice(saveWrapStart, menuEnd);
+  assert.match(saveControl, /source === 'git'/);
+  assert.match(saveControl, /data-assembly-save-control=""/);
+  const desktopMenu = feed.slice(
+    feed.indexOf("placement === 'desktop' && onRenameAssembly"),
+    feed.indexOf('data-git-move-open', feed.indexOf("placement === 'desktop' && onRenameAssembly")),
+  );
+  assert.match(desktopMenu, /data-assembly-upgrade-menu=""/);
+  assert.equal(desktopMenu.includes("vaultLayout === 'v2'"), false);
+  const mobileProfile = feed.slice(feed.indexOf('{isMobile && ('), feed.indexOf('data-parts-profile-chip="'));
+  assert.equal(/data-assembly-upgrade-menu/.test(mobileProfile), false);
+  assert.match(app, /upgradeAvailable=\{upgradeVaultEnabled\(\)\}/);
+});
+
+test('production v2 open and Save do not go through upgradeVaultEnabled', () => {
+  const workspace = readFileSync(join(ROOT, 'src/utils/git/gitWorkspace.js'), 'utf8');
+  const openStart = workspace.indexOf('export async function openVaultAssembly');
+  const open = workspace.slice(openStart, workspace.indexOf('export function suggestNewPartPath', openStart));
+  assert.match(open, /detected\.layout === 'v2'/);
+  assert.match(open, /openV2Assembly\(/);
+  assert.equal(/upgradeVaultEnabled/.test(open), false);
+
+  const planSave = readFileSync(join(ROOT, 'src/utils/git/executePlanSave.js'), 'utf8');
+  const gateStart = planSave.indexOf('export function isV2PlanSaveDoc');
+  const gate = planSave.slice(gateStart, planSave.indexOf('\n}', gateStart) + 2);
+  assert.match(gate, /vaultLayout === 'v2'/);
+  assert.equal(/upgradeVaultEnabled/.test(gate), false);
+
+  const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const gitCommit = app.slice(
+    app.indexOf('const handleGitCommit'),
+    app.indexOf('const handleUpgradeVault'),
+  );
+  assert.match(gitCommit, /isV2PlanSaveDoc\(doc\)\) return handleV2PlanSave/);
+  const v2Save = gitCommit.slice(0, gitCommit.indexOf("doc.vaultLayout === 'legacy'"));
+  assert.equal(/upgradeVaultEnabled/.test(v2Save), false);
+  const plan = app.slice(
+    app.indexOf('const handleV2PlanSave'),
+    app.indexOf('const handlePlanSaveConflict'),
+  );
+  assert.match(plan, /executePlanSave\(/);
+  assert.equal(/upgradeVaultEnabled/.test(plan), false);
 });
 
 test('App Upgrade re-key uses persistCollapsedWorkingCopy after an IDB snapshot', () => {

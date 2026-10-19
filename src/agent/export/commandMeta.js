@@ -805,7 +805,7 @@ export const COMMAND_META = {
     mutates: true,
   },
   git_upgrade_vault: {
-    description: 'Upgrade a legacy (v1 folder-layout) vault to v2 in one commit of remote tip bytes, then Save a dirty working copy as a second commit under the same confirmation. Requires confirm: true. Never runs on load. Off by default in this build (upgrade_unavailable) until v2 open/save land; tests and the Vite dev server can opt in. On v2 returns already_upgraded. Success is a summary: status, commit SHAs, assemblyIds, counts, leftoverFiles paths, and warnings — not the full plan, file contents, meshes, partBindings paths, or rekey.scripts.',
+    description: 'Upgrade a legacy (v1 folder-layout) vault to v2 in one commit of remote tip bytes, then Save a dirty working copy as a second commit under the same confirmation. Requires confirm: true. Never runs on load. On v2 returns already_upgraded. Success is a summary: status, commit SHAs, assemblyIds, counts, leftoverFiles paths, and warnings — not the full plan, file contents, meshes, partBindings paths, or rekey.scripts.',
     result: {
       type: 'object',
       additionalProperties: false,

@@ -27,7 +27,7 @@ test('mobile parts ribbon still shows assembly name on branch', () => {
   assert.match(feed, /onBranchClick=\{source === 'git'/);
 });
 
-test('desktop Save menu is rename-only; divider is mobile-only', () => {
+test('desktop Save menu has rename and legacy Upgrade vault; divider is mobile-only', () => {
   const feed = read('src/components/PartFeed.jsx');
   assert.match(feed, /data-git-save=""/);
   assert.match(feed, /data-git-dirty-badge=""/);
@@ -39,12 +39,23 @@ test('desktop Save menu is rename-only; divider is mobile-only', () => {
   const menuEnd = feed.indexOf('data-git-move-open', menuStart);
   const menu = feed.slice(menuStart, menuEnd);
   assert.match(feed, /placement === 'desktop' && onRenameAssembly/);
+  assert.match(menu, /data-assembly-upgrade-menu=""/);
+  assert.match(menu, /vaultLayout === 'legacy' && upgradeAvailable/);
+  assert.match(menu, /Upgrade vault/);
+  assert.match(menu, /stage: 'upgrade'/);
   assert.doesNotMatch(menu, /Branches \(/);
   assert.doesNotMatch(menu, /data-git-branches=""/);
   const end = feed.slice(feed.indexOf('data-parts-ribbon-end'));
   const saveBlock = end.slice(0, end.indexOf('data-git-move-open'));
   assert.match(saveBlock, /isMobile \? <div className=\{STRIP_DIVIDER\} \/> : null/);
   assert.doesNotMatch(saveBlock, /<div className=\{STRIP_DIVIDER\} \/>\s*<button/);
+  const desktopGate = feed.slice(
+    feed.indexOf("placement === 'desktop' && onRenameAssembly"),
+    feed.indexOf('data-git-move-open', feed.indexOf("placement === 'desktop' && onRenameAssembly")),
+  );
+  assert.match(desktopGate, /data-assembly-upgrade-menu=""/);
+  const mobileRibbon = feed.slice(feed.indexOf('isMobile && ('), feed.indexOf('data-parts-profile-chip'));
+  assert.doesNotMatch(mobileRibbon, /data-assembly-upgrade-menu/);
 });
 
 test('feature ribbon uses one shared height token in every state', () => {
