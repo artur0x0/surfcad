@@ -91,7 +91,15 @@ export const confirmFeatureCommand = Object.freeze({
     }
     const prep = prepare();
     if (prep?.error) return { error: prep.error };
-    let outcome = { ok: true, errors: [], status: ctx.readStatus?.() };
+    // An unchanged confirm writes nothing, but the part can still be failed
+    // from the last run: say so instead of ok: true.
+    const current = ctx.readStatus?.();
+    const stillFailed = current?.runState === 'failed';
+    let outcome = {
+      ok: !stillFailed,
+      errors: stillFailed ? (ctx.readErrors?.() || []) : [],
+      status: current,
+    };
     if (prep.changed) {
       outcome = await ctx.mutate(prep.source, prep.message);
       if (prep.kind) trackFeatureUsed(prep.kind);

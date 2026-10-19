@@ -115,3 +115,22 @@ test('rollback_to and activate_feature', async () => {
   assert.equal(bad.ok, false);
   assert.equal(bad.error.code, 'bad_index');
 });
+
+test('an unchanged confirm on a failed part says ok: false with the errors (bike PR 1)', async () => {
+  const h = host({
+    readStatus: () => ({ volume: null, bbox: null, partName: '', featureCount: 2, runState: 'failed' }),
+    readActivePartStatus: () => ({ partId: 'p', partName: '', script: SCRIPT, runState: 'failed', volume: null, bbox: null, featureCount: 2, bodyCount: null }),
+    readParts: () => ({ activeId: 'p', assemblyName: 'A', parts: [{ id: 'p', name: 'p', visible: true }] }),
+    execute: async () => ({ ok: false, errors: ['move: that point is not a body centroid — re-pick the body'], volume: null, bbox: null, partName: '' }),
+    prepareFeatureConfirm() {
+      return { changed: false, source: SCRIPT, featureId: 'fillet1', message: 'Edit fillet' };
+    },
+  });
+  const api = createSurfcadBridge({ resolve: () => h });
+  await api.call('run', {});
+  const confirm = await api.call('confirm_feature', {});
+  assert.equal(confirm.ok, true);
+  assert.equal(confirm.result.ok, false);
+  assert.equal(confirm.result.unchanged, true);
+  assert.ok(confirm.result.errors.some((row) => /not a body centroid/.test(row)), JSON.stringify(confirm.result));
+});

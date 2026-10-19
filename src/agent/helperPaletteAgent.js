@@ -38,6 +38,17 @@ export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
       description: 'When true, pass the current viewport face/edge selection as context',
     };
   }
+  if (item?.id === 'move') {
+    // The body to move, by one of these. Nothing given uses the selected
+    // face; nothing selected is no_body (the origin is never assumed).
+    properties.body_index = { type: 'integer', minimum: 0, description: 'Body from list_bodies' };
+    properties.at = {
+      type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3,
+      description: 'Body centroid [x, y, z] mm from list_bodies',
+    };
+    properties.face_id = { type: 'string', description: 'A list_faces id (f12) on the body to move' };
+    properties.face = { type: 'object', description: 'A list_faces key { at, n, area } on the body to move' };
+  }
   for (const param of item?.params || []) {
     if (param.type === 'number') {
       properties[param.name] = { type: 'number' };
@@ -85,6 +96,8 @@ export function coerceHelperParams(item, args) {
     if (key === 'id' || key === 'params' || key === 'use_selection') continue;
     if (names.has(key)) bag[key] = value;
   }
+  // insert_move target fields are resolved by the host, not palette params.
+  for (const key of ['at', 'face', 'face_id', 'body_index']) delete bag[key];
   const defaults = defaultParamsFor(item.id);
   const merged = { ...defaults };
   for (const [key, value] of Object.entries(bag)) {
