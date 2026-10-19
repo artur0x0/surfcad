@@ -333,6 +333,15 @@ jobs:
             echo "agent state reporting golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:agent-camera-framing | tee "${RUNNER_TEMP}/agent-camera-framing.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-camera-framing.log"; then
+            echo "agent camera framing golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'agent camera framing golden: ok' "${RUNNER_TEMP}/agent-camera-framing.log"; then
+            echo "agent camera framing golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
