@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.3 - 2026-10-18
+
 - MCP server instructions: call `register_webhook { url, bearer? }` if you can receive https webhooks, otherwise poll `read_messages`. A successful `pair` with no webhook puts an onboarding note in the tool text (ask the user for a URL and key, the key is `bearer`, save both in the agent's own config and register again after every pair, or poll `read_messages` if they decline). If a webhook is already registered, the result only says it is active.
 - The MCP `status` tool adds `webhookRegistered` (boolean; the URL is not included) and `queued` (prompt messages waiting for `read_messages`). A fresh session is `false` and `0`.
 - `register_webhook` takes an optional `bearer`. Prompt POSTs then send `Authorization: Bearer <bearer>`. The token stays in process memory, is cleared on `unregister_webhook` and when the pairing session ends, and is never logged, returned, or sent to the tab.
