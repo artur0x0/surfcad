@@ -33,6 +33,7 @@ npm run preview             # vite preview
 ```
 
 - Never ship a `build:playtest` bundle to production. CI checks that the production bundle has no playtest auto-approve.
+- The playtest MCP demo is `npm run build:playtest && npm run demo:mcp` (`VITE_SURFCAD_PLAYTEST=1` only). Production `npm run build` never ships the auto-approve path. CI smoke builds the playtest bundle before goldens.
 - After you add a helper, change a helper signature or docs, change the Manifold types, or change a bridge command, run `npm run export:agent` and commit the regenerated `src/agent/commands.json` and `src/lib/surfcad/catalog/`.
 - The FEA and mesh wasm are committed (`packages/surfcad-fea/pkg`, `packages/surfcad-mesh/pkg`). If you change their sources, rebuild with `npm run fea:build` / `npm run fea:mesh`. CI fails on drift.
 
