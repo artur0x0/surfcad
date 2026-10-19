@@ -56,12 +56,13 @@ test('insert_move with a very large translation fails with the axis and the limi
       },
     }),
   });
-  const env = await api.call('insert_move', { dx: 1000000, dy: 0, dz: 0 });
+  // The hard cap is ±1,000,000 mm (bike PR 2); 2,000,000 is beyond it.
+  const env = await api.call('insert_move', { dx: 2000000, dy: 0, dz: 0 });
   assert.equal(env.ok, false);
   assert.equal(env.error.code, 'bad_args');
   assert.match(env.error.message, /Move/);
+  assert.match(env.error.message, /2000000/);
   assert.match(env.error.message, /1000000/);
-  assert.match(env.error.message, /1000/);
   assert.equal(env.error.message.includes('Feature failed'), false);
   assert.equal(executed, 0);
 });

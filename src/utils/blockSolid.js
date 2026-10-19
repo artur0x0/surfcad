@@ -7,6 +7,8 @@
  * script so a pop that does not move the solid still emits the old line.
  */
 
+import { POSITION_LIMIT_MM } from './positionLimit.js';
+
 export const BLOCK_SOLID_IDS = Object.freeze([
   'cube',
   'roundedBox',
@@ -16,10 +18,13 @@ export const BLOCK_SOLID_IDS = Object.freeze([
   'hexPrism',
 ]);
 
+// Positions are limited by POSITION_LIMIT_MM (±1,000,000 mm), not ±500: the
+// slider range on the card comes from helperFieldSpec (part size), this is
+// only the hard cap the agent and the schema enforce.
 export const BLOCK_POSE_PARAMS = Object.freeze([
-  { name: 'x', type: 'number', default: 0, label: 'Pos X', min: -500, max: 500, step: 1 },
-  { name: 'y', type: 'number', default: 0, label: 'Pos Y', min: -500, max: 500, step: 1 },
-  { name: 'z', type: 'number', default: 0, label: 'Pos Z', min: -500, max: 500, step: 1 },
+  { name: 'x', type: 'number', default: 0, label: 'Pos X', min: -POSITION_LIMIT_MM, max: POSITION_LIMIT_MM, step: 1 },
+  { name: 'y', type: 'number', default: 0, label: 'Pos Y', min: -POSITION_LIMIT_MM, max: POSITION_LIMIT_MM, step: 1 },
+  { name: 'z', type: 'number', default: 0, label: 'Pos Z', min: -POSITION_LIMIT_MM, max: POSITION_LIMIT_MM, step: 1 },
   { name: 'rx', type: 'number', default: 0, label: 'Rot X', min: -360, max: 360, step: 1 },
   { name: 'ry', type: 'number', default: 0, label: 'Rot Y', min: -360, max: 360, step: 1 },
   { name: 'rz', type: 'number', default: 0, label: 'Rot Z', min: -360, max: 360, step: 1 },

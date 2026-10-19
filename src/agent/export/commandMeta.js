@@ -973,7 +973,7 @@ export const COMMAND_META = {
 };
 
 const INSERT_HELPER_META = {
-  description: 'Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.',
+  description: 'Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.',
   result: {
     type: 'object',
     additionalProperties: true,

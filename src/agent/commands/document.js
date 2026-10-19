@@ -1,5 +1,6 @@
 import { requireDestructiveConfirm } from '../gitAgent.js';
 import { rejectAssemblyId, rejectPartId } from '../state/identity.js';
+import { positionLimitMessage, positionWithinLimit } from '../../utils/positionLimit.js';
 
 function hostCall(ctx, name, args) {
   const fn = ctx[name];
@@ -83,6 +84,12 @@ export const createPartCommand = Object.freeze({
     },
   }),
   example: { name: 'Bracket' },
+  checkArgs(args) {
+    if (args?.position != null && !positionWithinLimit(args.position)) {
+      return { code: 'bad_args', message: `create_part ${positionLimitMessage('position')}` };
+    }
+    return null;
+  },
   async run(ctx, args) {
     return attachRun(ctx, await hostCall(ctx, 'agentCreatePart', args || {}));
   },

@@ -1,4 +1,5 @@
 import { rejectPartId } from '../state/identity.js';
+import { positionLimitMessage, positionWithinLimit } from '../../utils/positionLimit.js';
 
 const VEC3 = Object.freeze({
   type: 'array',
@@ -68,6 +69,9 @@ export const partSetTransformCommand = Object.freeze({
     if (bad) return bad;
     if (args.position == null && args.rotation == null) {
       return { code: 'bad_args', message: 'part_set_transform needs position or rotation' };
+    }
+    if (args.position != null && !positionWithinLimit(args.position)) {
+      return { code: 'bad_args', message: `part_set_transform ${positionLimitMessage('position')}` };
     }
     return null;
   },

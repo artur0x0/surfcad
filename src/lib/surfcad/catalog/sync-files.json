@@ -46,6 +46,7 @@
     "src/utils/namedContour.js",
     "src/utils/partHistory.js",
     "src/utils/partPose.js",
+    "src/utils/positionLimit.js",
     "src/utils/scriptReturn.js",
     "src/utils/selectEdge.js",
     "src/utils/sheetMetal/sheetBrep.js",

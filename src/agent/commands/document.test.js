@@ -158,3 +158,14 @@ test('open_assembly of a missing id is unknown_assembly and makes no git write',
   assert.equal(byName.error.code, 'bad_args');
   assert.equal(host.gitLog.includes('commitFiles'), false);
 });
+
+test('create_part refuses a position beyond the limit and accepts a 2 m one (bike PR 2)', async () => {
+  const host = world();
+  const api = createSurfcadBridge({ resolve: () => host });
+  const far = await api.call('create_part', { name: 'Far', position: [0, 0, 1000001] });
+  assert.equal(far.ok, false);
+  assert.equal(far.error.code, 'bad_args');
+  assert.match(far.error.message, /1000000/);
+  const near = await api.call('create_part', { name: 'Near', position: [0, 0, 2000] });
+  assert.equal(near.ok, true, JSON.stringify(near));
+});

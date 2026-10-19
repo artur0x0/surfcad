@@ -1428,7 +1428,7 @@
     },
     {
       "name": "insert_cube",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -1450,18 +1450,18 @@
           },
           "x": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "y": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "z": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "rx": {
             "type": "number",
@@ -1602,7 +1602,7 @@
     },
     {
       "name": "insert_rounded_box",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -1629,18 +1629,18 @@
           },
           "x": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "y": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "z": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "rx": {
             "type": "number",
@@ -1782,7 +1782,7 @@
     },
     {
       "name": "insert_cylinder",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -1801,18 +1801,18 @@
           },
           "x": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "y": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "z": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "rx": {
             "type": "number",
@@ -1952,7 +1952,7 @@
     },
     {
       "name": "insert_sphere",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -1968,18 +1968,18 @@
           },
           "x": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "y": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "z": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "rx": {
             "type": "number",
@@ -2118,7 +2118,7 @@
     },
     {
       "name": "insert_tube",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2165,18 +2165,18 @@
           },
           "x": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "y": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "z": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "rx": {
             "type": "number",
@@ -2322,7 +2322,7 @@
     },
     {
       "name": "insert_hex_prism",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2337,18 +2337,18 @@
           },
           "x": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "y": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "z": {
             "type": "number",
-            "minimum": -500,
-            "maximum": 500
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "rx": {
             "type": "number",
@@ -2487,7 +2487,7 @@
     },
     {
       "name": "insert_fillet_edges",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2629,7 +2629,7 @@
     },
     {
       "name": "insert_chamfer_edges",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2746,7 +2746,7 @@
     },
     {
       "name": "insert_cross_section",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2905,7 +2905,7 @@
     },
     {
       "name": "insert_sweep_path",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -3021,7 +3021,7 @@
     },
     {
       "name": "insert_hole",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -3254,7 +3254,7 @@
     },
     {
       "name": "insert_hole_pattern",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -3391,7 +3391,7 @@
     },
     {
       "name": "insert_clearance_hole",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -3534,7 +3534,7 @@
     },
     {
       "name": "insert_tap_drill_hole",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -3668,7 +3668,7 @@
     },
     {
       "name": "insert_cbore_hole",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -3803,7 +3803,7 @@
     },
     {
       "name": "insert_csk_hole",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -3938,7 +3938,7 @@
     },
     {
       "name": "insert_shell",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -4068,7 +4068,7 @@
     },
     {
       "name": "insert_cut",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -4183,7 +4183,7 @@
     },
     {
       "name": "insert_boolean",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -4340,18 +4340,18 @@
           },
           "dx": {
             "type": "number",
-            "minimum": -1000,
-            "maximum": 1000
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "dy": {
             "type": "number",
-            "minimum": -1000,
-            "maximum": 1000
+            "minimum": -1000000,
+            "maximum": 1000000
           },
           "dz": {
             "type": "number",
-            "minimum": -1000,
-            "maximum": 1000
+            "minimum": -1000000,
+            "maximum": 1000000
           }
         }
       },
@@ -4465,7 +4465,7 @@
     },
     {
       "name": "insert_center",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -4589,7 +4589,7 @@
     },
     {
       "name": "insert_align",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -4701,7 +4701,7 @@
     },
     {
       "name": "insert_mirror",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -4826,7 +4826,7 @@
     },
     {
       "name": "insert_array3_d",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5002,7 +5002,7 @@
     },
     {
       "name": "insert_polar_array",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5143,7 +5143,7 @@
     },
     {
       "name": "insert_add_draft",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5289,7 +5289,7 @@
     },
     {
       "name": "insert_workplane",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5394,7 +5394,7 @@
     },
     {
       "name": "insert_make_extrude",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5518,7 +5518,7 @@
     },
     {
       "name": "insert_make_revolve",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5642,7 +5642,7 @@
     },
     {
       "name": "insert_make_sweep",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5757,7 +5757,7 @@
     },
     {
       "name": "insert_make_loft",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5881,7 +5881,7 @@
     },
     {
       "name": "insert_move_face",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -6001,7 +6001,7 @@
     },
     {
       "name": "insert_delete_face",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Working copy only; git_save commits.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.",
       "args": {
         "type": "object",
         "additionalProperties": false,
