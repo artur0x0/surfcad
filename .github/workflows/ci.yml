@@ -342,6 +342,15 @@ jobs:
             echo "agent camera framing golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:agent-block-edit-leftover | tee "${RUNNER_TEMP}/agent-block-edit-leftover.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-block-edit-leftover.log"; then
+            echo "agent block edit leftover golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'agent block edit leftover golden: ok' "${RUNNER_TEMP}/agent-block-edit-leftover.log"; then
+            echo "agent block edit leftover golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
