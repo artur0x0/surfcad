@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
-import { newPartStarterScript } from '../../src/utils/helperPaletteSnippets.js';
+import { starterCubeScript } from '../../src/utils/helperPaletteSnippets.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => readFileSync(join(ROOT, rel), 'utf8');
@@ -163,7 +163,7 @@ attachConsentPresetToBrowser(browser);
         await page.waitForFunction(() => window.monaco?.editor?.getModels?.()?.length > 0, null, { timeout: 30000 });
         const planted = busy
           ? 'let part = Manifold.sphere(8, 32);\nreturn part;\n'
-          : newPartStarterScript();
+          : starterCubeScript();
         await page.evaluate((text) => {
           window.monaco.editor.getModels()[0].setValue(text);
         }, planted);

@@ -2,7 +2,7 @@
  * Regression: Blocks Centered clears when Pos X is edited (#485).
  */
 import { join } from 'node:path';
-import { newPartStarterScript } from '../../../src/utils/helperPaletteSnippets.js';
+import { starterCubeScript } from '../../../src/utils/helperPaletteSnippets.js';
 
 export const id = 'regression-blocks-centered';
 export const title = 'Blocks Centered clears on pose edit (#485)';
@@ -22,7 +22,7 @@ export function seedDoc() {
 }
 
 export function seedParts() {
-  return [{ id: 'local:part1', script: newPartStarterScript() }];
+  return [{ id: 'local:part1', script: starterCubeScript() }];
 }
 
 /**

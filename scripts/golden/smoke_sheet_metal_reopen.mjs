@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
-import { newPartStarterScript } from '../../src/utils/helperPaletteSnippets.js';
+import { starterCubeScript } from '../../src/utils/helperPaletteSnippets.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => readFileSync(join(ROOT, rel), 'utf8');
@@ -134,7 +134,7 @@ attachConsentPresetToBrowser(browser);
         await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await page.waitForSelector('[data-sheet-metal-button]', { timeout: 90000 });
         await page.waitForFunction(() => window.monaco?.editor?.getModels?.()?.length > 0, null, { timeout: 30000 });
-        const starter = newPartStarterScript();
+        const starter = starterCubeScript();
         await page.evaluate((text) => {
           window.monaco.editor.getModels()[0].setValue(text);
         }, starter);

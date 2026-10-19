@@ -7,7 +7,8 @@ import {
   HELPER_PALETTE_ITEMS,
   composeHelperInsert,
   defaultParamsFor,
-  newPartStarterScript,
+  helperNeedsBody,
+  starterCubeScript,
 } from '../utils/helperPaletteSnippets.js';
 import { composeSheetMetalCommit } from '../utils/sheetMetal/sheetMetalScript.js';
 import { solverMaterialForStudy } from './materials.js';
@@ -69,7 +70,7 @@ const manifold = {
 };
 
 test('a missing block is an empty read and compose leaves the script identical', () => {
-  const script = newPartStarterScript();
+  const script = starterCubeScript();
   const read = readFeaStudies(script);
   assert.deepEqual(read, { studies: [], errors: [] });
   assert.equal(readFeaStudy(script), null);
@@ -88,7 +89,7 @@ test('the block is comments, round-trips, and does not change the solid', () => 
   assert.equal(block.includes(FEA_STUDY_END), true);
   assert.equal(block.includes('return '), false);
 
-  const starter = newPartStarterScript();
+  const starter = starterCubeScript();
   assert.equal(starter.endsWith('\n'), true);
   const withStudy = composeFeaStudy(starter, study);
   assert.equal(scriptOutsideFeaStudy(withStudy), starter);
@@ -158,11 +159,12 @@ test('bad JSON and a duplicate id are reported and do not throw', () => {
 });
 
 test('palette scripts and a sheet-metal script round-trip with no study block', () => {
-  const scripts = [newPartStarterScript()];
+  const scripts = [starterCubeScript()];
   for (const item of HELPER_PALETTE_ITEMS) {
     let script;
     try {
-      script = composeHelperInsert('', item.id, null, defaultParamsFor(item.id));
+      // A helper that needs a body is refused on an empty part (bike PR 3): compose it onto the cube.
+      script = composeHelperInsert(helperNeedsBody(item.id) ? starterCubeScript() : '', item.id, null, defaultParamsFor(item.id));
     } catch {
       continue;
     }

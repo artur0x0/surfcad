@@ -18,7 +18,7 @@ import {
   FILLET_MODE_END,
   MOVE_FACE_BEGIN,
   MOVE_FACE_END,
-  newPartStarterScript,
+  starterCubeScript,
   shouldClearViewportScript,
 } from '../src/utils/helperPaletteSnippets.js';
 import { parseFeatureMarkers } from '../src/utils/featureMarkers.js';
@@ -276,7 +276,7 @@ test('a marker nested in another feature deletes instead of refusing', () => {
 });
 
 test('deleting the only feature leaves an empty part, in one undo step', () => {
-  const starter = newPartStarterScript();
+  const starter = starterCubeScript();
   assert.match(starter, /let part = box1;/);
   assert.match(starter, /return part;/);
   const feature = byKind(starter, 'cube');

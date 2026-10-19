@@ -56,7 +56,7 @@ import { selectGraphFace, warmFaceGraph } from '../../src/utils/selectFace.js';
 import { runAssemblyParts } from '../../src/utils/assemblyRun.js';
 import {
   composeHelperInsert,
-  newPartStarterScript,
+  starterCubeScript,
   CUBE_BEGIN,
   CUBE_END,
 } from '../../src/utils/helperPaletteSnippets.js';
@@ -322,7 +322,7 @@ const BAD = 'let part = Manifold.cube([10, 10, 10], true);\nreturn part.missingM
 }
 
 {
-  const starter = newPartStarterScript();
+  const starter = starterCubeScript();
   const feats = parseFeatureMarkers(starter);
   const cubes = feats.filter((f) => f.kind === 'cube');
   const placed = composeHelperInsert('', 'cube', null, {
@@ -681,7 +681,7 @@ async function execute(script) {
     ],
   });
   const scripts = { 'local:box': BOX, 'local:wide': WIDE };
-  const dropped = await execute(newPartStarterScript());
+  const dropped = await execute(starterCubeScript());
   check('the auto-dropped box is still a 20 mm cube solid',
     Math.abs(dropped.volume - 8000) < 1e-3
     && dropped.mesh?.vertProperties?.length > 0,

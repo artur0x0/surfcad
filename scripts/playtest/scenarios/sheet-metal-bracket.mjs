@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { agentCall, focusPartHistoryForUndo, saveBridgeScreenshot } from '../lib/harness.mjs';
 import { createStepRunner } from '../lib/stepRunner.mjs';
-import { newPartStarterScript } from '../../../src/utils/helperPaletteSnippets.js';
+import { starterCubeScript } from '../../../src/utils/helperPaletteSnippets.js';
 
 const USER_ID = 'user-playtest-sheet-bracket';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -29,7 +29,7 @@ export function seedDoc() {
 }
 
 export function seedParts() {
-  return [{ id: 'local:part1', script: newPartStarterScript() }];
+  return [{ id: 'local:part1', script: starterCubeScript() }];
 }
 
 /**

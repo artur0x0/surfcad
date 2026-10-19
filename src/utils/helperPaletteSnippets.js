@@ -241,7 +241,7 @@ function stripComments(text) {
 
 /**
  * Detect empty / whitespace-only / comment-only Monaco buffer.
- * Comment-only counts as empty so feature taps still get ensurePartPrefix.
+ * Comment-only counts as empty: a body helper is refused on it, a Block starts it.
  */
 export function isBufferEmpty(text) {
   if (!text || !String(text).trim()) return true;
@@ -611,28 +611,6 @@ function mergeParams(item, params) {
     }
   }
   return out;
-}
-
-/**
- * Ensure a working `part` exists (empty / comment-only buffer).
- * Uses numbered body let + `let part = boxN`.
- */
-function ensurePartPrefix(empty, names) {
-  if (!empty) return [];
-  const w = allocateUniqueName(names, 'width');
-  const d = allocateUniqueName(names, 'depth');
-  const h = allocateUniqueName(names, 'height');
-  const box = allocateUniqueName(names, 'box');
-  const partName = allocateUniqueName(names, 'part');
-  return wrapFeatureBlock(CUBE_BEGIN, CUBE_END, [
-    `const ${w} = 40;`,
-    `const ${d} = 30;`,
-    `const ${h} = 20;`,
-    `let ${box} = Manifold.cube([${w}, ${d}, ${h}], true);`,
-    partName === 'part'
-      ? `let part = ${box};`
-      : `let ${partName} = ${box};\npart = ${partName};`,
-  ]);
 }
 
 /** After mutating a non-part body, keep `part` in sync when it already exists. */
@@ -1037,6 +1015,7 @@ export function buildHelperSnippet(id, opts = {}) {
   const buffer = opts.buffer || '';
   const bufferEmpty = opts.bufferEmpty != null ? !!opts.bufferEmpty : isBufferEmpty(buffer);
   const params = mergeParams(item, opts.params);
+  if (bufferEmpty && helperNeedsBody(id, params)) return null;
   const names = declaredNames(buffer);
   return item.build(bufferEmpty, params, names, buffer, opts.faceContext || null, opts.edgeContext || null);
 }
@@ -1112,6 +1091,7 @@ export function composeHelperInsert(buffer, id, caretOffset = null, params = nul
   const strippedBuf = stripTrailingReturnPart(buffer || '');
   const empty = isBufferEmpty(strippedBuf);
   const merged = mergeParams(item, params);
+  if (empty && helperNeedsBody(id, merged)) return null;
   const names = declaredNames(strippedBuf);
   // Edit splices one block into a script that already declares names after
   // that block. The prefix alone would hand those names out again.
@@ -1129,12 +1109,21 @@ export function composeHelperInsert(buffer, id, caretOffset = null, params = nul
 }
 
 /**
- * Script for a newly spawned local part.
- * The auto-dropped 20 mm box is the same Cube feature a user places from
- * the palette (begin/end markers, `box1`, `let part = box1`). Without those
- * markers the solid still runs, but the feature strip has nothing to select.
+ * Script for a newly spawned part: nothing. The first Block or Shape creates
+ * the body (Artur, 2026-10-19: no seed cube). A helper that needs a body is
+ * refused on an empty part (`HELPERS_NEED_BODY`) instead of seeding one.
  */
 export function newPartStarterScript() {
+  return '';
+}
+
+/**
+ * The 20 mm starter cube new parts used to begin with: the same Cube feature
+ * a user places from the palette (markers, `box1`, `let part = box1`). Kept
+ * for tests and goldens that want one body, and so an older part that is only
+ * this cube still counts as blank.
+ */
+export function starterCubeScript() {
   const script = composeHelperInsert('', 'cube', null, {
     width: 20,
     depth: 20,
@@ -1142,9 +1131,28 @@ export function newPartStarterScript() {
     center: true,
   });
   if (!script || !script.includes(CUBE_BEGIN) || !script.includes(CUBE_END)) {
-    throw new Error('newPartStarterScript: cube feature markers missing');
+    throw new Error('starterCubeScript: cube feature markers missing');
   }
   return script;
+}
+
+/**
+ * Helpers that mutate an existing body. On an empty part they are refused
+ * (compose returns null) rather than seeded with a hidden 40×30×20 cube.
+ * Blocks, the contour solids, and a polar array of bores create their own body.
+ */
+export const HELPERS_NEED_BODY = Object.freeze(new Set([
+  'addDraft', 'align', 'array3D', 'boolean', 'cboreHole', 'center', 'chamferEdges',
+  'clearanceHole', 'crossSection', 'cskHole', 'cut', 'deleteFace', 'filletEdges', 'hole',
+  'holePattern', 'mirror', 'move', 'moveFace', 'shell', 'sweepPath', 'tapDrillHole',
+]));
+
+/** True when this insert needs a body the empty buffer does not have. */
+export function helperNeedsBody(id, params = null) {
+  if (!HELPERS_NEED_BODY.has(id)) return false;
+  // A polar array of bores builds its own part.
+  if (id === 'array3D' && String(params?.arrayType ?? 'grid') === 'polar') return false;
+  return true;
 }
 
 /** Default params object for an item (for modal initial state). */
@@ -1510,7 +1518,7 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'reverse', type: 'bool', default: false, label: 'Reverse path' },
     ],
     build: (empty, p, names, buffer, faceCtx = null, edgeCtx = null) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const r = num(p.radius, 3);
       // Sweep is the universal default (and auto). Planar is manual override.
@@ -1596,7 +1604,7 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'chamfer', type: 'number', default: 2, label: 'Chamfer', min: 0.01, step: 0.5 },
     ],
     build: (empty, p, names, buffer, faceCtx = null, edgeCtx = null) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const c = num(p.chamfer, 2);
       const feat = [];
@@ -1680,7 +1688,7 @@ export const HELPER_PALETTE_ITEMS = [
       // opaque to listSavedContours, so a host-query profile read back
       // plane-less and ghosted on the default +Z top instead of the pick.
       const frameOnlyProfile = !!p._contourMode && (!partDeclared || !!planarCtx);
-      const lines = (isNewBodySolid || frameOnlyProfile) ? [] : [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       let wp;
       if (isNewBodySolid || frameOnlyProfile) {
@@ -1866,7 +1874,7 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'reverse', type: 'bool', default: false, label: 'Reverse direction' },
     ],
     build: (empty, p, names, buffer, _ = null, edgeCtx = null) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const edge = emitSelectedEdgeLiteralLines(body, edgeCtx || [], names, allocateUniqueName);
       // Soft-fail: never write throw/partial JS — caller clears stale selection.
@@ -1892,7 +1900,7 @@ export const HELPER_PALETTE_ITEMS = [
     // takes one diameter).
     params: holeFeatureParamDefs({ uv: true, pattern: true }),
     build: (empty, p, names, buffer, faceCtx = null) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const feat = [];
       emitUnifiedHole(feat, body, p, names, faceCtx);
@@ -1918,7 +1926,7 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'dia', type: 'number', default: 4, label: 'Diameter', min: 0.1, step: 0.5 },
     ],
     build: (empty, p, names, buffer, faceCtx = null) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const n = Math.max(1, Math.round(num(p.n, 3)));
       const m = Math.max(1, Math.round(num(p.m, 2)));
@@ -1949,7 +1957,7 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'v', type: 'number', default: 0, label: 'V', step: 1 },
     ],
     build: (empty, p, names, buffer, faceCtx = null) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const size = str(p.size, 'M3');
       const fit = str(p.fit, 'normal');
@@ -1991,7 +1999,7 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'v', type: 'number', default: 0, label: 'V', step: 1 },
     ],
     build: (empty, p, names, buffer, faceCtx = null) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const size = str(p.size, 'M3');
       const { u, v } = faceCtx ? uvForFace(p, faceCtx) : { u: num(p.u, 0), v: num(p.v, 0) };
@@ -2025,7 +2033,7 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'v', type: 'number', default: 0, label: 'V', step: 1 },
     ],
     build: (empty, p, names, buffer, faceCtx = null) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const diaThru = num(p.diaThru, 5.5);
       const diaCbore = num(p.diaCbore, 10);
@@ -2059,7 +2067,7 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'v', type: 'number', default: 0, label: 'V', step: 1 },
     ],
     build: (empty, p, names, buffer, faceCtx = null) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const diaThru = num(p.diaThru, 3.4);
       const diaCsk = num(p.diaCsk, 6.5);
@@ -2092,7 +2100,7 @@ export const HELPER_PALETTE_ITEMS = [
       },
     ],
     build: (empty, p, names, buffer, faceCtx = null) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const wall = num(p.wall, 2.5);
       const face = faceCtx && faceCtx.type ? faceCtx : (faceCtx ? classifySelectedFace(faceCtx) : null);
@@ -2117,7 +2125,7 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'body', type: 'body', default: 'part', label: 'Body' },
     ],
     build: (empty, p, names, buffer, faceCtx = null) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const face = faceCtx && faceCtx.type ? faceCtx : (faceCtx ? classifySelectedFace(faceCtx) : null);
       // A picked face is its own plane. No face → explicit XY through the origin,
@@ -2153,7 +2161,7 @@ export const HELPER_PALETTE_ITEMS = [
     // The rail enters Boolean mode. This build is the sequential-compose
     // fallback: every body, in decompose order. The mode chip names the bodies.
     build: (empty, p, names, buffer) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const op = ['difference', 'intersect'].includes(String(p.op)) ? String(p.op) : 'union';
       const feat = [
@@ -2179,7 +2187,7 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'dz', type: 'number', default: 0, label: 'Z', min: -POSITION_LIMIT_MM, max: POSITION_LIMIT_MM, step: 0.5, slider: true },
     ],
     build: (empty, p, names, buffer, faceCtx = null) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const dx = num(p.dx, 0);
       const dy = num(p.dy, 0);
@@ -2211,7 +2219,7 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'cz', type: 'bool', default: false, label: 'Center Z' },
     ],
     build: (empty, p, names, buffer) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const cx = bool(p.cx, true);
       const cy = bool(p.cy, true);
@@ -2233,7 +2241,7 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'body', type: 'body', default: 'part', label: 'Body' },
     ],
     build: (empty, p, names, buffer) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const feat = [
         `${body} = align(${body}, { min: [undefined, undefined, 0] });`,
@@ -2254,7 +2262,7 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'keepOriginal', type: 'bool', default: true, label: 'Keep original' },
     ],
     build: (empty, p, names, buffer) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const plane = str(p.plane, 'yz');
       const keep = bool(p.keepOriginal, true);
@@ -2298,7 +2306,7 @@ export const HELPER_PALETTE_ITEMS = [
         const polar = HELPER_PALETTE_ITEMS.find((i) => i.id === 'polarArray');
         return polar.build(empty, p, names, buffer);
       }
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const nx = Math.max(1, Math.round(num(p.nx, 2)));
       const ny = Math.max(1, Math.round(num(p.ny, 2)));
@@ -2376,7 +2384,7 @@ export const HELPER_PALETTE_ITEMS = [
       },
     ],
     build: (empty, p, names, buffer, faceCtx = null) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const deg = num(p.draftDeg, 2);
       const face = faceCtx && faceCtx.type ? faceCtx : (faceCtx ? classifySelectedFace(faceCtx) : null);
@@ -2588,7 +2596,7 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'flip', type: 'bool', default: false, label: 'Flip' },
     ],
     build: (empty, p, names, buffer, faceCtx = null) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const face = faceCtx && faceCtx.type ? faceCtx : (faceCtx ? classifySelectedFace(faceCtx) : null);
       const picks = face ? facePickLiterals(face) : [];
@@ -2611,7 +2619,7 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'body', type: 'body', default: 'part', label: 'Body' },
     ],
     build: (empty, p, names, buffer, faceCtx = null) => {
-      const lines = [...ensurePartPrefix(empty, names)];
+      const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const face = faceCtx && faceCtx.type ? faceCtx : (faceCtx ? classifySelectedFace(faceCtx) : null);
       const picks = face ? facePickLiterals(face) : [];

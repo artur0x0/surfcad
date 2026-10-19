@@ -3,8 +3,10 @@
  */
 
 import {
+  HELPERS_NEED_BODY,
   HELPER_PALETTE_ITEMS,
   defaultParamsFor,
+  isBufferEmpty,
 } from '../utils/helperPaletteSnippets.js';
 import { POSITION_LIMIT_MM } from '../utils/positionLimit.js';
 
@@ -174,6 +176,10 @@ export function validateHelperParams(item, params) {
 export function describeHelperRefusal(item, ctx = {}) {
   const label = helperLabel(item);
   const id = item?.id || '';
+  // No seed cube: on an empty part, a helper that needs a body is refused.
+  if (HELPERS_NEED_BODY.has(id) && typeof ctx.buffer === 'string' && isBufferEmpty(ctx.buffer)) {
+    return `${label} needs a body first. Insert a Block (insert_cube, insert_cylinder, …) or a Shape (extrude, revolve, …), then ${label} again.`;
+  }
   const params = ctx.params && typeof ctx.params === 'object' ? ctx.params : {};
   const edgeCount = Array.isArray(ctx.edgeContext) ? ctx.edgeContext.length : 0;
   const face = ctx.faceContext;

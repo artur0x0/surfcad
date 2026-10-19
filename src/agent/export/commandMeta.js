@@ -585,7 +585,7 @@ export const COMMAND_META = {
   },
   create_part: {
     description:
-      'Add a part and make it the active part before returning. The result partId is a new opaque surf id, not the previously active part. When script is set, that script runs before the call returns (ok, errors, failures, status); a failed script still leaves the part. Agent calls default to the assembly origin; pass position [x,y,z] mm to place it. Working copy only: nothing reaches git without git_save.',
+      'Add a part and make it the active part before returning. The part starts empty (no seed cube): the first insert_* creates the body. The result partId is a new opaque surf id, not the previously active part. When script is set, that script runs before the call returns (ok, errors, failures, status); a failed script still leaves the part. Agent calls default to the assembly origin; pass position [x,y,z] mm to place it. Working copy only: nothing reaches git without git_save.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'no_assembly', 'internal'],
     mutates: true,

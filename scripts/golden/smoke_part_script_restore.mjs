@@ -10,7 +10,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolveActiveRestore } from '../../src/utils/partScriptRestore.js';
-import { newPartStarterScript } from '../../src/utils/helperPaletteSnippets.js';
+import { starterCubeScript } from '../../src/utils/helperPaletteSnippets.js';
 
 const read = (rel) => readFileSync(new URL(`../../${rel}`, import.meta.url), 'utf8');
 
@@ -27,7 +27,7 @@ const FILLET = `// FilletKilla (stand-in)
 let part = Manifold.cube([50, 40, 30], true);
 return part;
 `;
-const CUBE = newPartStarterScript();
+const CUBE = starterCubeScript();
 
 console.log('part script restore — resolveActiveRestore binding');
 {

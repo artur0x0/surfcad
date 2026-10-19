@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { newPartStarterScript } from './helperPaletteSnippets.js';
+import { starterCubeScript } from './helperPaletteSnippets.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { featureStripChips } from './sheetMetal/sheetRibbon.js';
 import { buildDirtyState } from '../agent/state/dirty.js';
@@ -35,7 +35,7 @@ const RAW = [
   '',
 ].join('\n');
 
-const STARTER = newPartStarterScript();
+const STARTER = starterCubeScript();
 const APP = readFileSync(new URL('../App.jsx', import.meta.url), 'utf8');
 const BRIDGE = readFileSync(new URL('./agentBridge.js', import.meta.url), 'utf8');
 const EDITOR = readFileSync(new URL('../components/CodeEditor.jsx', import.meta.url), 'utf8');

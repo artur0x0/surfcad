@@ -39,10 +39,10 @@ window.__vite_plugin_react_preamble_installed__ = true;
 <script type="module">
 import '/src/index.css';
 import { renderFeatureEditDeleteShot } from '/scripts/golden/feature_edit_delete_shot.js';
-import { newPartStarterScript } from '/src/utils/helperPaletteSnippets.js';
+import { starterCubeScript } from '/src/utils/helperPaletteSnippets.js';
 renderFeatureEditDeleteShot(document.getElementById('root'), {
   compact: ${compact ? 'true' : 'false'},
-  script: newPartStarterScript(),
+  script: starterCubeScript(),
 });
 window.__READY__ = true;
 </script>`;

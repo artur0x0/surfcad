@@ -32,7 +32,7 @@ import {
 import { parseSurfJson, stringifySurfJson, validateSurfJson } from '../../src/utils/git/surfJson.js';
 import { sheetMetalReady, SHEET_METAL_BEGIN, SHEET_METAL_END } from '../../src/utils/sheetMetal/sheetMetalScript.js';
 import { enterSheetMetalMode } from '../../src/utils/sheetMetal/sheetMetalMode.js';
-import { newPartStarterScript } from '../../src/utils/helperPaletteSnippets.js';
+import { starterCubeScript } from '../../src/utils/helperPaletteSnippets.js';
 
 const read = (rel) => readFileSync(new URL(`../../${rel}`, import.meta.url), 'utf8');
 const fixture = (name) => JSON.parse(read(`scripts/golden/fixtures/scs/${name}.json`));
@@ -187,7 +187,7 @@ console.log('SCS S1 — SKU persists on the part');
 console.log('SCS S1 — mode entry + chrome');
 {
   check('sheet-ready: empty / starter / existing block',
-    sheetMetalReady('') && sheetMetalReady(newPartStarterScript())
+    sheetMetalReady('') && sheetMetalReady(starterCubeScript())
     && sheetMetalReady(`${SHEET_METAL_BEGIN}\nlet part = 1;\n${SHEET_METAL_END}`)
     && !sheetMetalReady('let part = Manifold.sphere(5);'));
   const { records } = joinScsCatalog(catalog, specs);

@@ -2,7 +2,7 @@
  * Regression: typing 0 after clear keeps 0 visible on blur (#484, #486).
  */
 import { join } from 'node:path';
-import { newPartStarterScript } from '../../../src/utils/helperPaletteSnippets.js';
+import { starterCubeScript } from '../../../src/utils/helperPaletteSnippets.js';
 
 export const id = 'regression-number-zero-blur';
 export const title = 'Number box shows 0 after clear, type 0, blur (#484/#486)';
@@ -22,7 +22,7 @@ export function seedDoc() {
 }
 
 export function seedParts() {
-  return [{ id: 'local:part1', script: newPartStarterScript() }];
+  return [{ id: 'local:part1', script: starterCubeScript() }];
 }
 
 export async function run(ctx) {
