@@ -351,6 +351,15 @@ jobs:
             echo "agent block edit leftover golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:agent-move-target | tee "${RUNNER_TEMP}/agent-move-target.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-move-target.log"; then
+            echo "agent move target golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'agent move target golden: ok' "${RUNNER_TEMP}/agent-move-target.log"; then
+            echo "agent move target golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
