@@ -38,7 +38,7 @@ A small non-blocking popup (`data-privacy-consent-popup`, bottom of the screen, 
 
 `/privacy` (`src/pages/PrivacyPage.jsx`) always shows “Your browser's Global Privacy Control signal is honored” and **Change privacy choices**, which calls `openPrivacyChoices()`. The profile menu and Account pane **Privacy choices** rows use the same handler.
 
-Later monitoring slices (PostHog, Sentry) should import `src/utils/consent.js` only — do not add parallel consent state. If gitleaks flags the storage key name `surfcad.consent.v1`, PR #566 handles the allowlist.
+Later monitoring slices (PostHog, Sentry) should import `src/utils/consent.js` only — do not add parallel consent state. If gitleaks flags the storage key name `surfcad.consent.v1`, open draft PR #566 adds the allowlist (not merged yet).
 
 ---
 
@@ -95,7 +95,7 @@ Quotes older than seven days may already have been TTL-deleted; the report count
 
 Any other `days` value (including missing) returns **400**.
 
-**Auth:** `isAdmin(user)` is true when the signed-in user’s `githubLogin` appears in `ADMIN_GITHUB_LOGINS` (comma-separated GitHub logins, case-insensitive). The list defaults to empty, so nobody is an admin until it is set in the production env file. If the allowlist is empty or the caller is not listed — including signed-out users — the route returns **404** (not 403), so it is not discoverable. The handler is rate-limited like other authenticated routes.
+**Auth:** `isAdmin(user)` is true when the signed-in user’s `githubLogin` appears in `ADMIN_GITHUB_LOGINS` (comma-separated GitHub logins, trimmed, case-insensitive). It is not a Mongo user id: an account with no stored `githubLogin` (for example email-only) is never an admin. The list defaults to empty, so nobody is an admin until it is set in the production env file. If the allowlist is empty or the caller is not listed — including signed-out users — the route returns **404** (not 403), so it is not discoverable. Admins are then rate-limited to 30 requests per 10 minutes per user (429 after that); the limit runs after the admin check, so non-admins always get the 404.
 
 `GET /api/auth/me` includes `isAdmin: boolean` and `isInternal: boolean` (also on `user`).
 
@@ -138,7 +138,7 @@ ADMIN_GITHUB_LOGINS=
 
 **Client:** `src/utils/analytics.js` — lazy-loads `posthog-js` only when `VITE_POSTHOG_KEY` is set **and** `getAnalyticsConsent()` is true. If the key is unset (dev, staging, CI, tests), the SDK is never imported and no analytics network calls are made.
 
-**Server:** `backend/services/posthog.js` — captures `signed_up` / `logged_in` from every auth path via the capture API when `POSTHOG_KEY` is set **and** the request’s consent allows it. Unset key → no-op.
+**Server:** `backend/services/posthog.js` — captures `signed_up` / `logged_in` via the capture API (`POST {POSTHOG_HOST}/capture/`) when `POSTHOG_KEY` is set **and** consent allows it. Unset key → no-op. Every server event carries `$lib: 'surfcad-server'`, `method` (the login method), and `$set: { user_type: 'signed_in' }`. Capture runs from `loginAndTrack` (`backend/services/loginTracking.js`), i.e. the same sign-in paths that write `login_events`. `logged_in` is sent on every one; `signed_up` is sent first when the account is new (email verify, guest convert, or a newly created GitHub / Google / Apple user). Consent: a stored opt-out in `User.consent` always skips; otherwise the request’s `analyticsConsent` (body, then query, then the value stashed on the session at OAuth start) decides; with none, a stored opt-in allows and unknown skips. A capture failure never fails the sign-in.
 
 | Env var | Default | Notes |
 | --- | --- | --- |
@@ -162,7 +162,7 @@ ADMIN_GITHUB_LOGINS=
 - Internal traffic: `GET /api/auth/me` returns `user.isInternal` from `POSTHOG_INTERNAL_USERS` (server-side). The client also registers `is_internal: true` on localhost / Vite dev.
 - Web Vitals: one `web_vitals` event per page load (LCP, INP, CLS, FCP, TTFB) via the `web-vitals` package. CLS is the unrounded value (including `0`).
 - Product events: `track(name, props)` with an allowlisted name set; props must not include user content (part names, filenames, code).
-- Auth conversions: `signed_up` and `logged_in` are captured **server-side** (distinct id = SHA-256 of the user id). The client passes `analyticsConsent` from `getAnalyticsConsent()` only when `hasStoredConsentChoice()` is true; unknown (no stored choice) omits the field and the server skips unless Mongo already has a choice.
+- Auth conversions: `signed_up` and `logged_in` are captured **server-side** (distinct id = SHA-256 of the user id). The client passes `analyticsConsent` from `getAnalyticsConsent()` only when `hasStoredConsentChoice()` is true (always `false` under GPC); unknown (no stored choice) omits the field and the server skips unless Mongo already has a choice. Server events are tagged `$lib: surfcad-server`.
 
 ### Explicit events (`track`)
 
@@ -195,19 +195,9 @@ Additional automatic event: **`web_vitals`** (not via `track` allowlist) with `l
 
 ### CSP (production nginx)
 
-Add to `connect-src`:
+`docs/nginx-snippets/surfcad-security.conf` already has `https://us.i.posthog.com` in `connect-src` and `https://us-assets.i.posthog.com` in `script-src`.
 
-```text
-https://us.i.posthog.com
-```
-
-`posthog-js` is bundled via dynamic import; with session recording and surveys disabled, extra scripts from `https://us-assets.i.posthog.com` are **not** required for slice C. If a future PostHog version loads assets from that host, add to `script-src`:
-
-```text
-https://us-assets.i.posthog.com
-```
-
-Update `docs/nginx-snippets/surfcad-security.conf` when deploying analytics to production.
+`posthog-js` is bundled via dynamic import; with session recording and surveys disabled, scripts from `https://us-assets.i.posthog.com` are not expected for slice C, but the snippet allows them.
 
 Regenerate `public/THIRD_PARTY_NOTICES.txt` with `node scripts/ci/generate-third-party-notices.mjs` whenever production npm dependencies change.
 
@@ -237,7 +227,7 @@ Org: **surfcad** (Sentry US). Error reporting is **not** gated by `getAnalyticsC
 | `SENTRY_ENVIRONMENT` | `production` | |
 | `SENTRY_TRACES_SAMPLE_RATE` | `0.2` | HTTP route tracing. |
 
-- Init lives in `backend/monitoring/sentry.js` (imported only from `backend/server.js` so root `npm ci` unit tests never load `@sentry/node`).
+- Init: `backend/instrument.js` (the first import in `backend/server.js`) calls `initializeSentryOnce()` in `backend/monitoring/sentryInit.js`, which dynamically imports `@sentry/node` only when `SENTRY_DSN` is set. Env parsing is in `backend/monitoring/sentryEnv.js` (no SDK import, safe for root unit tests). The Express error handler is installed from `backend/monitoring/sentry.js` by `backend/serverApp.js`.
 - Scrubbing: `backend/monitoring/sentryScrub.js` (same rules as the browser).
 - **Deploy:** set vars only in prod `/home/ubuntu/backend/.env.production`.
 
@@ -255,19 +245,19 @@ Readable stack traces in Sentry need uploaded source maps (`SENTRY_AUTH_TOKEN`, 
 
 ## Slice E — combined CSP (Sentry + PostHog + local agent bridge)
 
-With slices C and D in the bundle, `docs/nginx-snippets/surfcad-security.conf` should include the combined directives. Reference fragments:
+`docs/nginx-snippets/surfcad-security.conf` already includes the combined directives below. Reference fragments:
 
 **`connect-src`** (add to the existing list):
 
 `https://*.ingest.us.sentry.io https://us.i.posthog.com ws://127.0.0.1:17341 ws://localhost:17341`
 
-The `ws://127.0.0.1:17341` / `ws://localhost:17341` entries are for the loopback agent-bridge relay (`scripts/vite-agent-bridge-ws.mjs`). If [PR #525](https://github.com/artur0x0/surfcad/pull/525) is merged, nginx may already include them — do not duplicate.
+The `ws://127.0.0.1:17341` / `ws://localhost:17341` entries are for the loopback agent-bridge relay (`scripts/vite-agent-bridge-ws.mjs`). [PR #525](https://github.com/artur0x0/surfcad/pull/525) is merged and the snippet already lists them — do not duplicate.
 
 **`script-src`** (add to the existing list):
 
 `https://us-assets.i.posthog.com`
 
-Full proposed lines (single-line CSP values as in the snippet file):
+Current lines (single-line CSP values as in the snippet file):
 
 ```
 script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' https://challenges.cloudflare.com https://js.stripe.com https://cdn.jsdelivr.net https://us-assets.i.posthog.com
