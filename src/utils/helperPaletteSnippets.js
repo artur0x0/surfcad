@@ -164,6 +164,8 @@ export const ARRAY_BEGIN = '// --- array begin ---';
 export const ARRAY_END = '// --- array end ---';
 export const POLAR_ARRAY_BEGIN = '// --- polarArray begin ---';
 export const POLAR_ARRAY_END = '// --- polarArray end ---';
+export const PATTERN_POINTS_BEGIN = '// --- patternPoints begin ---';
+export const PATTERN_POINTS_END = '// --- patternPoints end ---';
 export const WORKPLANE_BEGIN = '// --- workplane begin ---';
 export const WORKPLANE_END = '// --- workplane end ---';
 export const CODE_BEGIN = '// --- code begin ---';
@@ -202,6 +204,7 @@ export const FEATURE_BLOCK_END_MARKERS = Object.freeze([
   MIRROR_END,
   ARRAY_END,
   POLAR_ARRAY_END,
+  PATTERN_POINTS_END,
   WORKPLANE_END,
   CODE_END,
 ]);
@@ -651,6 +654,42 @@ function reapplyBodyToPart(bodyName, names, buffer) {
   if (!last) return [`part = part.add(${bodyName});`];
   const opts = last[2] ? `, ${last[2].replace(/^,\s*/, '')}` : '';
   return [`part = part.${last[1]}(${bodyName}${opts});`];
+}
+
+/**
+ * Points for patternOnPoints from the palette or the agent: an array, or a
+ * JSON string of one, of [x, y, z] or { at: [x, y, z], axis?: [nx, ny, nz] }.
+ * Returns the normalised array, or null when it is not usable.
+ */
+export function parsePatternPoints(raw) {
+  let value = raw;
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (!text) return null;
+    try { value = JSON.parse(text); } catch { return null; }
+  }
+  if (!Array.isArray(value) || value.length === 0 || value.length > 10000) return null;
+  const vec3 = (v) => (Array.isArray(v) && v.length === 3 && v.every((n) => Number.isFinite(Number(n))) ? v.map(Number) : null);
+  const out = [];
+  for (const p of value) {
+    if (Array.isArray(p)) {
+      const at = vec3(p);
+      if (!at) return null;
+      out.push(at);
+      continue;
+    }
+    if (p && typeof p === 'object') {
+      const at = vec3(p.at);
+      if (!at) return null;
+      if (p.axis == null) { out.push({ at }); continue; }
+      const axis = vec3(p.axis);
+      if (!axis || !(Math.hypot(...axis) > 1e-9)) return null;
+      out.push({ at, axis });
+      continue;
+    }
+    return null;
+  }
+  return out;
 }
 
 function resolveBody(params, names, buffer) {
@@ -1147,7 +1186,7 @@ export function starterCubeScript() {
 export const HELPERS_NEED_BODY = Object.freeze(new Set([
   'addDraft', 'align', 'array3D', 'boolean', 'cboreHole', 'center', 'chamferEdges',
   'clearanceHole', 'crossSection', 'cskHole', 'cut', 'deleteFace', 'filletEdges', 'hole',
-  'holePattern', 'mirror', 'move', 'moveFace', 'shell', 'sweepPath', 'tapDrillHole',
+  'holePattern', 'mirror', 'move', 'moveFace', 'patternPoints', 'shell', 'sweepPath', 'tapDrillHole',
 ]));
 
 /** True when this insert needs a body the empty buffer does not have. */
@@ -2353,6 +2392,37 @@ export const HELPER_PALETTE_ITEMS = [
     },
   },
   {
+    // Pattern on points: one instance at every point, turned along each
+    // point's axis. The hardware tool: a bolt part onto the hole centers
+    // and axes of the mating part (list_faces, cylindrical faces).
+    id: 'patternPoints',
+    label: 'Points',
+    group: 'Transforms',
+    title: 'patternOnPoints(body, points, { up, keepOriginal, merge })',
+    params: [
+      { name: 'body', type: 'body', default: 'part', label: 'Body' },
+      { name: 'points', type: 'points', default: '[[0, 0, 0], [40, 0, 0]]', required: true, label: 'Points [x, y, z] or { at, axis }', multiline: true, placeholder: '[[0, 0, 0], { "at": [40, 0, 0], "axis": [0, 0, 1] }]' },
+      { name: 'up', type: 'select', default: 'z', label: 'Body axis that follows a point axis', options: AXIS_OPTIONS },
+      { name: 'keepOriginal', type: 'bool', default: false, label: 'Keep original' },
+      { name: 'merge', type: 'bool', default: true, label: 'Merge copies' },
+    ],
+    build: (empty, p, names, buffer) => {
+      const points = parsePatternPoints(p.points);
+      if (!points) return null;
+      const lines = [];
+      const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
+      const up = { x: '[1, 0, 0]', y: '[0, 1, 0]', z: '[0, 0, 1]' }[str(p.up, 'z')] || '[0, 0, 1]';
+      const keep = bool(p.keepOriginal, false);
+      const merge = bool(p.merge, true);
+      const feat = [
+        `${body} = patternOnPoints(${body}, ${JSON.stringify(points)}, { up: ${up}, keepOriginal: ${keep}, merge: ${merge} });`,
+        ...reapplyBodyToPart(body, names, empty ? lines.join('\n') : buffer),
+      ];
+      lines.push(...wrapFeatureBlock(PATTERN_POINTS_BEGIN, PATTERN_POINTS_END, feat));
+      return withReturn(lines, empty);
+    },
+  },
+  {
     id: 'polarArray',
     label: 'Polar',
     group: 'Transforms',
@@ -2673,7 +2743,7 @@ export const HELPER_PALETTE_GROUPS = ['Primitives', 'Advanced', 'Features', 'Tra
  */
 export const CAD_RAIL_ORDER = ['Primitives', 'Build', 'Shape', 'Features', 'Transforms'];
 
-const RAIL_BUILD_IDS = ['hole', 'cut', 'boolean', 'shell', 'addDraft', 'array3D', 'codeSnippet'];
+const RAIL_BUILD_IDS = ['hole', 'cut', 'boolean', 'shell', 'addDraft', 'array3D', 'patternPoints', 'codeSnippet'];
 const RAIL_POLISH_IDS = ['filletEdges', 'chamferEdges', 'moveFace', 'deleteFace'];
 const RAIL_MOVE_FIRST = ['move', 'center', 'align', 'mirror'];
 

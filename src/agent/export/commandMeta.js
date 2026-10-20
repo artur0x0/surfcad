@@ -1052,10 +1052,17 @@ const INSERT_CODE_SNIPPET_META = {
   errors: ['bad_args', 'insert_failed', 'internal'],
 };
 
+const INSERT_PATTERN_POINTS_META = {
+  ...INSERT_HELPER_META,
+  description: `Pattern on points (the Points button in Build): one copy of the body at every point, turned so its up axis follows the point's axis when the point has one. points is [[x, y, z], …] or [{ at: [x, y, z], axis: [nx, ny, nz] }, …] in mm (a JSON string of the same is accepted); up is the body axis (x | y | z) that follows a point axis; keepOriginal keeps the source where it is; merge false keeps overlapping copies as separate bodies. Hardware: model one bolt in its own part, then call list_faces on the part it fastens, take the center and axis of each cylindrical hole face (filter by radius), and pass them here with up set to the bolt's own axis; when the holes move, run this again with the new centers. Empty or malformed points are bad_args. Working copy only; git_save commits.`,
+  errors: ['bad_args', 'insert_failed', 'internal'],
+};
+
 export function metaForCommand(name) {
   if (COMMAND_META[name]) return COMMAND_META[name];
   if (name === 'insert_move') return INSERT_MOVE_META;
   if (name === 'insert_code_snippet') return INSERT_CODE_SNIPPET_META;
+  if (name === 'insert_pattern_points') return INSERT_PATTERN_POINTS_META;
   if (name.startsWith('insert_')) return INSERT_HELPER_META;
   return {
     description: `Bridge command ${name}.`,

@@ -369,7 +369,7 @@ const HelperParamModal = ({
             />
           );
         }
-        if (p.type === 'string') {
+        if (p.type === 'string' || p.type === 'points') {
           const common = {
             value: String(values[p.name] ?? ''),
             onChange: (e) => setField(p.name, e.target.value, 'string'),
@@ -381,7 +381,7 @@ const HelperParamModal = ({
           return (
             <label key={p.name} className="flex flex-col gap-1 text-xs text-chrome-secondary">
               <span>{p.label}</span>
-              {p.multiline ? (
+              {p.multiline || p.type === 'points' ? (
                 <textarea
                   {...common}
                   rows={4}

@@ -61,7 +61,7 @@ test('use_selection is declared only where compose reads the face or edge contex
     'boolean', 'center', 'align', 'mirror', 'array3D', 'polarArray',
     'shell', 'addDraft',
     'makeExtrude', 'makeRevolve', 'makeSweep', 'makeLoft',
-    'codeSnippet',
+    'codeSnippet', 'patternPoints',
   ]);
   const ids = HELPER_PALETTE_ITEMS.map((item) => item.id);
   assert.deepEqual(

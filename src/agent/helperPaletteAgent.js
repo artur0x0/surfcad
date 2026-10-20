@@ -7,6 +7,7 @@ import {
   HELPER_PALETTE_ITEMS,
   defaultParamsFor,
   isBufferEmpty,
+  parsePatternPoints,
 } from '../utils/helperPaletteSnippets.js';
 import { POSITION_LIMIT_MM } from '../utils/positionLimit.js';
 
@@ -101,6 +102,11 @@ export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
         row && typeof row === 'object' && 'value' in row ? row.value : row
       ));
       properties[param.name] = { type: 'string', enum: allowed };
+    } else if (param.type === 'points') {
+      properties[param.name] = {
+        type: ['array', 'string'],
+        description: 'Points as [[x, y, z], …] or [{ at: [x, y, z], axis: [nx, ny, nz] }, …] in mm (a JSON string of the same is accepted). For hardware: the center and axis of each hole from list_faces on the mating part.',
+      };
     } else if (param.type === 'string') {
       // (schema below) required text params are enforced by validateHelperParams
       properties[param.name] = { type: 'string' };
@@ -159,6 +165,15 @@ function fieldName(param) {
 export function validateHelperParams(item, params) {
   const label = helperLabel(item);
   for (const param of item.params || []) {
+    if (param.type === 'points') {
+      const has = params && Object.prototype.hasOwnProperty.call(params, param.name);
+      if (!has || !parsePatternPoints(params[param.name])) {
+        return {
+          code: 'bad_args',
+          message: `${label} ${fieldName(param)} must be a non-empty array of [x, y, z] or { at: [x, y, z], axis: [nx, ny, nz] } in mm (a JSON string of one is accepted); an axis must not be zero.`,
+        };
+      }
+    }
     if (param.type === 'string' && param.required === true) {
       const text = params && Object.prototype.hasOwnProperty.call(params, param.name) ? String(params[param.name] ?? '') : '';
       if (!text.trim()) {

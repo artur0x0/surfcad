@@ -549,6 +549,33 @@ return circle;
 
 ---
 
+### patternOnPoints(manifold, points, opts)
+
+One copy of the body at every point, turned so its `up` axis follows the point's `axis` when the point has one. The hardware helper: a bolt onto the hole centers and axes of the part it fastens.
+
+```javascript
+// Four bolts, one per hole; each hole gives its center and axis
+const bolt = Manifold.cylinder(12, 2.5, 2.5, 24);
+let part = patternOnPoints(bolt, [
+  { at: [-20, -15, 6], axis: [0, 0, 1] },
+  { at: [20, -15, 6], axis: [0, 0, 1] },
+  { at: [-20, 15, 6], axis: [0, 0, 1] },
+  { at: [20, 15, 6], axis: [0, 0, 1] },
+], { up: [0, 0, 1] });
+return part;
+```
+
+**Parameters:**
+- `manifold` - The body to copy (one instance)
+- `points` - Array of `[x, y, z]` or `{ at: [x, y, z], axis?: [nx, ny, nz] }` in mm; a point with no axis is a plain translate
+- `opts.up` - The body axis that follows each point's axis (default `[0, 0, 1]`)
+- `opts.keepOriginal` - Also keep the source where it is (default `false`)
+- `opts.merge` - Union the copies (default `true`); `false` composes them as separate bodies
+
+Throws a plain error on an empty list, a point that is not three numbers, or a zero axis. The palette item is **Points** (`patternPoints`, Build); the agent tool is `insert_pattern_points { points, up?, keepOriginal?, merge? }`.
+
+---
+
 ### center(manifold, axes)
 
 Centers a manifold at the origin.

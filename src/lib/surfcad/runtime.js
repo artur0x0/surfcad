@@ -2604,6 +2604,122 @@ function array3D(manifold, counts, spacing) {
 }
 
 /**
+ * Pattern on points: one copy of `manifold` at every point, turned so its
+ * `up` axis follows the point's `axis` when the point has one. This is how
+ * a bolt part lands in every hole of the part it fastens: the points are
+ * the hole centers and axes (`list_faces` gives them for cylindrical faces).
+ *
+ * @param {Manifold} manifold - The body to copy (one instance)
+ * @param {Array<number[] | { at: number[], axis?: number[] }>} points - [x, y, z] mm, or { at, axis }
+ * @param {{ up?: number[], keepOriginal?: boolean, merge?: boolean }} [opts]
+ *   up: the body axis that follows each point's axis (default [0, 0, 1]);
+ *   keepOriginal: also keep the source where it is (default false);
+ *   merge: union the copies (default true); false composes them as separate bodies.
+ */
+function patternOnPoints(manifold, points, opts = {}) {
+  if (!manifoldModule) throw new Error('Manifold not initialized');
+  const { Manifold } = manifoldModule;
+  if (!manifold || typeof manifold.translate !== 'function') {
+    throw new Error('patternOnPoints: the first argument must be a Manifold');
+  }
+  const list = _patternPointsList(points);
+  const up = _unitVector(opts && opts.up != null ? opts.up : [0, 0, 1], 'patternOnPoints: up');
+  const copies = [];
+  if (opts && opts.keepOriginal === true) copies.push(manifold);
+  for (const { at, axis } of list) {
+    if (!axis) {
+      copies.push(manifold.translate(at));
+      continue;
+    }
+    copies.push(manifold.transform(_rotationToMatrix(up, axis, at)));
+  }
+  if (copies.length === 1) return copies[0];
+  return opts && opts.merge === false ? Manifold.compose(copies) : Manifold.union(copies);
+}
+
+/** Normalise the points argument; throws a plain Error on anything unusable. */
+function _patternPointsList(points) {
+  const bad = (why) => new Error(`patternOnPoints: points must be a non-empty array of [x, y, z] or { at: [x, y, z], axis?: [nx, ny, nz] } (${why})`);
+  if (!Array.isArray(points) || points.length === 0) throw bad('got ' + (Array.isArray(points) ? 'an empty array' : typeof points));
+  if (points.length > 10000) throw bad('more than 10000 points');
+  const vec3 = (v, what) => {
+    if (!Array.isArray(v) || v.length !== 3 || !v.every((n) => Number.isFinite(Number(n)))) throw bad(`${what} is not [x, y, z]`);
+    return v.map(Number);
+  };
+  return points.map((p, i) => {
+    if (Array.isArray(p)) return { at: vec3(p, `point ${i}`), axis: null };
+    if (p && typeof p === 'object') {
+      const at = vec3(p.at, `point ${i} at`);
+      let axis = null;
+      if (p.axis != null) {
+        axis = _unitVector(p.axis, `patternOnPoints: point ${i} axis`);
+      }
+      return { at, axis };
+    }
+    throw bad(`point ${i} is ${typeof p}`);
+  });
+}
+
+function _unitVector(v, what) {
+  if (!Array.isArray(v) || v.length !== 3 || !v.every((n) => Number.isFinite(Number(n)))) {
+    throw new Error(`${what} must be [nx, ny, nz]`);
+  }
+  const [x, y, z] = v.map(Number);
+  const len = Math.hypot(x, y, z);
+  if (!(len > 1e-9)) throw new Error(`${what} must not be a zero vector`);
+  return [x / len, y / len, z / len];
+}
+
+/**
+ * The 4x4 column-major matrix that turns unit vector `from` onto unit vector
+ * `to` (Rodrigues) and then moves to `at`. Antiparallel vectors rotate 180°
+ * about any axis perpendicular to `from`.
+ */
+function _rotationToMatrix(from, to, at) {
+  const [ax, ay, az] = from;
+  const [bx, by, bz] = to;
+  let vx = ay * bz - az * by;
+  let vy = az * bx - ax * bz;
+  let vz = ax * by - ay * bx;
+  const c = ax * bx + ay * by + az * bz;
+  const s = Math.hypot(vx, vy, vz);
+  let R;
+  if (s < 1e-9) {
+    if (c > 0) {
+      R = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    } else {
+      // 180° about an axis perpendicular to `from`.
+      let px = -ay;
+      let py = ax;
+      let pz = 0;
+      if (Math.hypot(px, py, pz) < 1e-9) { px = 0; py = -az; pz = ay; }
+      const pl = Math.hypot(px, py, pz);
+      px /= pl; py /= pl; pz /= pl;
+      R = [
+        2 * px * px - 1, 2 * px * py, 2 * px * pz,
+        2 * py * px, 2 * py * py - 1, 2 * py * pz,
+        2 * pz * px, 2 * pz * py, 2 * pz * pz - 1,
+      ];
+    }
+  } else {
+    const k = (1 - c) / (s * s);
+    // R = I + [v]x + [v]x^2 * k, row-major here.
+    R = [
+      1 + k * (-vz * vz - vy * vy), -vz + k * (vx * vy), vy + k * (vx * vz),
+      vz + k * (vx * vy), 1 + k * (-vz * vz - vx * vx), -vx + k * (vy * vz),
+      -vy + k * (vx * vz), vx + k * (vy * vz), 1 + k * (-vy * vy - vx * vx),
+    ];
+  }
+  // Column-major 4x4: columns are R's columns, then the translation.
+  return [
+    R[0], R[3], R[6], 0,
+    R[1], R[4], R[7], 0,
+    R[2], R[5], R[8], 0,
+    at[0], at[1], at[2], 1,
+  ];
+}
+
+/**
  * Create a polar array (copies around an axis)
  * @param {Manifold} manifold - The manifold to array
  * @param {number} count - Number of copies
@@ -9060,6 +9176,7 @@ const HELPER_FUNCTIONS = {
   mirror,
   array3D,
   polarArray,
+  patternOnPoints,
   center,
   align,
   getDimensions,
