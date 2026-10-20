@@ -4,6 +4,7 @@
  *
  * `agentPromptState` seeds a visual state:
  *   hidden | idle | typing | reply-short | reply-long | reply-streaming | working | shot-off | shot-on
+ *   | chat | chat-long
  */
 export const AGENT_PROMPT_DEMO_STATES = Object.freeze([
   'hidden',
@@ -15,6 +16,8 @@ export const AGENT_PROMPT_DEMO_STATES = Object.freeze([
   'working',
   'shot-off',
   'shot-on',
+  'chat',
+  'chat-long',
 ]);
 
 export const AGENT_PROMPT_TYPED = [
@@ -42,6 +45,26 @@ export const AGENT_PROMPT_REPLY_LONG = [
   '',
   'Want me to add a 2 mm fillet on the cut-out corners to bring that stress peak down, or export a STEP for quoting?',
 ].join('\n');
+
+/** A 1×1 PNG, the thumbnail a user message shows when a screenshot went with it. */
+export const AGENT_PROMPT_DEMO_THUMB = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
+/** A short exchange: the pane reads like a chat. */
+export const AGENT_PROMPT_CHAT = Object.freeze([
+  { role: 'user', text: 'Did you get the reference photo and the side render?', thumb: AGENT_PROMPT_DEMO_THUMB },
+  { role: 'agent', text: 'Yes, I got it. The webhook is registered now too, so your next message should reach me right away.' },
+  { role: 'user', text: 'Rebuild the bike as separate parts with real joints.' },
+  { role: 'agent', text: 'The bike is rebuilt as 9 parts with 15 mechanical joints. To save it to git, please click Allow on the git-write prompt in this tab.' },
+]);
+
+/** Enough turns to scroll inside the pane. */
+export const AGENT_PROMPT_CHAT_LONG = Object.freeze([
+  ...AGENT_PROMPT_CHAT,
+  { role: 'user', text: AGENT_PROMPT_TYPED },
+  { role: 'agent', text: AGENT_PROMPT_REPLY_LONG },
+  { role: 'user', text: 'Yes, add the fillet and export the STEP.' },
+  { role: 'agent', text: 'Added a 2 mm fillet on the four cut-out corners; peak stress is now 31 MPa. The STEP is exported as bracket-v3.step.' },
+]);
 
 function readImportMetaEnv() {
   try {

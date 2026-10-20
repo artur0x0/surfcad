@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { Camera, Loader2, Send, Square, X } from 'lucide-react';
+import { ArrowDown, Camera, Loader2, Send, Square, X } from 'lucide-react';
 import { createAgentPrompt } from '../agent/createAgentPrompt.js';
 import { attachViewerShot } from '../agent/agentPromptCapture.js';
 import {
+  AGENT_PROMPT_CHAT,
+  AGENT_PROMPT_CHAT_LONG,
   AGENT_PROMPT_REPLY_LONG,
   AGENT_PROMPT_REPLY_SHORT,
   AGENT_PROMPT_TYPED,
@@ -13,6 +15,7 @@ import {
 import { registerAgentPromptHandler } from '../agent/agentPromptHost.js';
 import { setAgentPromptWorking } from '../agent/agentFeaturePopupGate.js';
 import { typingReducer, typingSeed, typingShown } from '../agent/agentPromptTyping.js';
+import { conversationReducer, conversationSeed, stickToBottom } from '../agent/agentPromptConversation.js';
 import {
   AGENT_PROMPT_WORKING_TIMEOUT_MS,
   ackNotice,
@@ -45,16 +48,13 @@ function demoSeed(state) {
   if (state === 'shot-on') {
     return { input: '', reply: '', working: false, shotOn: true, streaming: false };
   }
-  return { input: '', reply: '', working: false, shotOn: false, streaming: false };
-}
-
-function appendReply(prev, { id, text }) {
-  const chunk = typeof text === 'string' ? text : '';
-  const last = prev[prev.length - 1];
-  if (last && last.id === id) {
-    return [...prev.slice(0, -1), { id, text: last.text + chunk }];
+  if (state === 'chat') {
+    return { input: '', reply: '', messages: AGENT_PROMPT_CHAT, working: false, shotOn: false, streaming: false };
   }
-  return [...prev, { id, text: chunk }];
+  if (state === 'chat-long') {
+    return { input: '', reply: '', messages: AGENT_PROMPT_CHAT_LONG, working: false, shotOn: false, streaming: false };
+  }
+  return { input: '', reply: '', working: false, shotOn: false, streaming: false };
 }
 
 export default function PromptInput({
@@ -97,11 +97,13 @@ export default function PromptInput({
   // One pending prompt drives the dots, Stop, and the working hint; see agentPromptTyping.js.
   const [typing, dispatchTyping] = useReducer(typingReducer, seed, typingSeed);
   const working = typing.working;
-  const [replies, setReplies] = useState(
-    seed.reply ? [{ id: 'demo', text: seed.reply }] : [],
-  );
-  const [replyOpen, setReplyOpen] = useState(Boolean(seed.reply));
+  // The conversation for this connection: user messages and agent replies in order.
+  const [chat, dispatchChat] = useReducer(conversationReducer, seed, conversationSeed);
   const [ack, setAck] = useState(null);
+  const paneRef = useRef(null);
+  // Follow new messages unless the user scrolled up to read.
+  const stuckRef = useRef(true);
+  const [jump, setJump] = useState(false);
   const [shot, setShot] = useState(null);
   const [shotOn, setShotOn] = useState(seed.shotOn);
   const textareaRef = useRef(null);
@@ -129,8 +131,7 @@ export default function PromptInput({
       onReply(msg) {
         if (!msg || typeof msg !== 'object') return;
         const text = typeof msg.text === 'string' ? msg.text : '';
-        setReplies((prev) => appendReply(prev, { id: msg.id, text }));
-        setReplyOpen(true);
+        dispatchChat({ type: 'reply', id: msg.id, text });
         dispatchTyping({ type: 'reply', id: msg.id, final: msg.final === true });
       },
       onWorking(on) {
@@ -148,8 +149,7 @@ export default function PromptInput({
   useEffect(() => {
     if (visible) return undefined;
     dispatchTyping({ type: 'disconnect' });
-    setReplies([]);
-    setReplyOpen(false);
+    dispatchChat({ type: 'disconnect' });
     setAck(null);
     pendingIdRef.current = null;
     return undefined;
@@ -194,6 +194,13 @@ export default function PromptInput({
     if (!sent.ok) return sent;
     pendingIdRef.current = sent.id;
     dispatchTyping({ type: 'sent', id: sent.id });
+    dispatchChat({
+      type: 'sent',
+      id: sent.id,
+      text: trimmed,
+      thumb: shot?.data ? `data:image/png;base64,${shot.data}` : null,
+    });
+    stuckRef.current = true;
     setInput('');
     discardShot();
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -208,11 +215,26 @@ export default function PromptInput({
     return { ok: true };
   }, [transport]);
 
+  // Dismiss hides the pane; the history stays until the agent disconnects.
   const dismissReply = useCallback(() => {
-    setReplyOpen(false);
-    setReplies([]);
+    dispatchChat({ type: 'dismiss' });
     setAck(null);
     return { ok: true };
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    const el = paneRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    stuckRef.current = true;
+    setJump(false);
+  }, []);
+
+  const onPaneScroll = useCallback(() => {
+    const el = paneRef.current;
+    if (!el) return;
+    stuckRef.current = stickToBottom(el);
+    if (stuckRef.current) setJump(false);
   }, []);
 
   const toggleShot = useCallback(async () => {
@@ -249,11 +271,27 @@ export default function PromptInput({
     });
   }, [dismissReply, sendText, stopAgent, toggleShot, visible]);
 
+  const responding = typingShown(typing);
+  const showReply = visible && (responding || (!chat.hidden && chat.messages.length > 0));
+  const lastKey = chat.messages.length ? chat.messages[chat.messages.length - 1].key : '';
+  const lastLen = chat.messages.length ? chat.messages[chat.messages.length - 1].text.length : 0;
+
+  // New content: follow it when the pane was at the bottom, else offer a way down.
+  useEffect(() => {
+    if (!showReply) return undefined;
+    const el = paneRef.current;
+    if (!el) return undefined;
+    if (stuckRef.current) {
+      el.scrollTop = el.scrollHeight;
+      setJump(false);
+    } else if (el.scrollHeight > el.clientHeight) {
+      setJump(true);
+    }
+    return undefined;
+  }, [showReply, lastKey, lastLen, responding]);
+
   if (!visible) return null;
 
-  const replyText = replies.map((row) => row.text).join('\n\n');
-  const responding = typingShown(typing);
-  const showReply = responding || (replyOpen && !!replyText);
   const nearLimit = input.length >= COUNTER_FROM;
   const overLimit = input.length > AGENT_PROMPT_MAX_CHARS;
   const remaining = AGENT_PROMPT_MAX_CHARS - input.length;
@@ -287,7 +325,13 @@ export default function PromptInput({
       {...(featurePopupOpen ? { inert: '' } : {})}
     >
       {showReply ? (
-        <div className="agent-prompt-reply rail-scroll" data-agent-reply="">
+        <div
+          className="agent-prompt-reply rail-scroll"
+          data-agent-reply=""
+          data-agent-chat-count={chat.messages.length}
+          ref={paneRef}
+          onScroll={onPaneScroll}
+        >
           {responding ? null : (
             <div className="agent-prompt-cap">
               <span className="text-ui-xs font-semibold uppercase tracking-wide text-muted-on-dark">
@@ -299,24 +343,58 @@ export default function PromptInput({
                 onClick={dismissReply}
                 data-ui-action="data-agent-prompt-dismiss"
                 data-agent-prompt-dismiss=""
-                aria-label="Dismiss reply"
+                aria-label="Dismiss conversation"
               >
                 <X size={14} aria-hidden />
               </button>
             </div>
           )}
-          <div className="agent-prompt-reply-line">
+          <div className="agent-prompt-chat" data-agent-chat="">
+            {chat.messages.map((row) => (
+              row.role === 'user' ? (
+                <div
+                  key={row.key}
+                  className="agent-prompt-msg agent-prompt-msg--user surface-quiet text-ui text-on-dark"
+                  data-agent-msg="user"
+                >
+                  {row.thumb ? (
+                    <img src={row.thumb} alt="" className="agent-prompt-thumb agent-prompt-msg-thumb" data-agent-msg-thumb="" />
+                  ) : null}
+                  <span className="agent-prompt-msg-text">{row.text}</span>
+                </div>
+              ) : (
+                <div
+                  key={row.key}
+                  className="agent-prompt-msg agent-prompt-msg--agent agent-prompt-reply-body text-ui text-on-dark"
+                  data-agent-msg="agent"
+                  data-agent-reply-body=""
+                >
+                  {row.text}
+                </div>
+              )
+            ))}
             {responding ? (
-              <span className="agent-prompt-dots" data-agent-reply-dots="" aria-hidden>
-                <span />
-                <span />
-                <span />
-              </span>
+              <div className="agent-prompt-reply-line" data-agent-typing="">
+                <span className="agent-prompt-dots" data-agent-reply-dots="" aria-hidden>
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              </div>
             ) : null}
-            <div className="agent-prompt-reply-body text-ui text-on-dark" data-agent-reply-body="">
-              {replyText}
-            </div>
           </div>
+          {jump ? (
+            <button
+              type="button"
+              className="agent-prompt-jump surface-quiet text-on-dark"
+              onClick={scrollToBottom}
+              data-ui-action="data-agent-prompt-jump"
+              data-agent-prompt-jump=""
+              aria-label="Jump to newest message"
+            >
+              <ArrowDown size={14} aria-hidden />
+            </button>
+          ) : null}
         </div>
       ) : null}
 
