@@ -356,3 +356,82 @@ test('a concentric edge uses the circle axis, not the tangent', () => {
   assert.ok(Math.abs(b.t[0] - a.t[0]) < 1e-3);
   assert.ok(Math.abs(b.t[1] - a.t[1]) < 1e-3);
 });
+
+test('coincident honours opposed both ways and is a no-op when already satisfied', () => {
+  const a = face('A', [0, 0, 10], [0, 0, 1]);
+  const joint = (opposed, nb) => ({
+    id: 'j', name: 'Coincident 1', type: 'coincident', opposed, a, b: face('B', [0, 0, -10], nb),
+  });
+  const normalDot = (solved, nb) => {
+    const na = world(solved.placements.A, [0, 0, 1]).dir;
+    const wb = world(solved.placements.B, nb).dir;
+    return na[0] * wb[0] + na[1] * wb[1] + na[2] * wb[2];
+  };
+  // Already satisfied, either way round: nothing moves.
+  for (const [opposed, nb] of [[true, [0, 0, -1]], [false, [0, 0, 1]]]) {
+    const solved = solveJoints({ parts: [part('A'), part('B', [3, 4, 20])], joints: [joint(opposed, nb)] });
+    assert.equal(solved.ok, true);
+    assert.deepEqual(solved.placements.B.t, [3, 4, 20]);
+    assert.deepEqual(solved.placements.B.q, Q0);
+  }
+  // The wrong way round: B turns over and lands on the plane.
+  for (const [opposed, nb, wantDot] of [[true, [0, 0, 1], -1], [false, [0, 0, -1], 1]]) {
+    const solved = solveJoints({ parts: [part('A'), part('B', [3, 4, 20])], joints: [joint(opposed, nb)] });
+    assert.equal(solved.ok, true, solved.message);
+    assert.ok(Math.abs(normalDot(solved, nb) - wantDot) < 1e-6, `dot ${normalDot(solved, nb)}`);
+    assert.ok(Math.abs(gap(solved.placements.A, [0, 0, 10], [0, 0, 1], solved.placements.B, [0, 0, -10])) < 1e-3);
+    assert.deepEqual(solved.placements.A.t, [0, 0, 0]);
+  }
+});
+
+test('angle 0 (parallel) is exact, keeps parallel faces still, and follows sense', () => {
+  const a = face('A', [0, 0, 10], [0, 0, 1]);
+  const joint = (sense) => ({ id: 'j', name: 'Angle 1', type: 'angle', value: 0, sense, a, b: face('B', [0, 0, -10], [0, 0, 1]) });
+  const dotOf = (solved) => {
+    const na = world(solved.placements.A, [0, 0, 1]).dir;
+    const nb = world(solved.placements.B, [0, 0, 1]).dir;
+    return na[0] * nb[0] + na[1] * nb[1] + na[2] * nb[2];
+  };
+  // Already parallel, same way (sense 1) and opposite ways (sense -1): no move.
+  const same = solveJoints({ parts: [part('A'), part('B', [5, 5, 30])], joints: [joint(1)] });
+  assert.equal(same.ok, true);
+  assert.deepEqual(same.placements.B.t, [5, 5, 30]);
+  assert.deepEqual(same.placements.B.q, Q0);
+  const flippedSeed = quatFromOmega([Math.PI, 0, 0]);
+  const opposite = solveJoints({ parts: [part('A'), part('B', [5, 5, 30], flippedSeed)], joints: [joint(-1)] });
+  assert.equal(opposite.ok, true);
+  assert.deepEqual(opposite.placements.B.t, [5, 5, 30]);
+  assert.deepEqual(opposite.placements.B.q, flippedSeed);
+  // 10 degrees off: parallel to well under 0.01 degrees, not 2.
+  const tilted = solveJoints({ parts: [part('A'), part('B', [5, 5, 30], quatFromOmega([10 * Math.PI / 180, 0, 0]))], joints: [joint(1)] });
+  assert.equal(tilted.ok, true);
+  assert.ok(1 - dotOf(tilted) < 1e-8, `dot ${dotOf(tilted)}`);
+  assert.ok(Math.abs(tilted.placements.B.t[0] - 5) < 1e-6 && Math.abs(tilted.placements.B.t[1] - 5) < 1e-6 && Math.abs(tilted.placements.B.t[2] - 30) < 1e-6);
+  // Same way round but sense -1 asks for opposite: B turns over.
+  const turned = solveJoints({ parts: [part('A'), part('B', [5, 5, 30])], joints: [joint(-1)] });
+  assert.equal(turned.ok, true, turned.message);
+  assert.ok(dotOf(turned) + 1 < 1e-8, `dot ${dotOf(turned)}`);
+  // 180 with sense 1 is the same ask as 0 with sense -1.
+  const half = solveJoints({ parts: [part('A'), part('B', [5, 5, 30])], joints: [{ ...joint(1), value: 180 }] });
+  assert.equal(half.ok, true, half.message);
+  assert.ok(dotOf(half) + 1 < 1e-8);
+  // A general angle is unchanged.
+  const thirty = solveJoints({ parts: [part('A'), part('B', [5, 5, 30], quatFromOmega([50 * Math.PI / 180, 0, 0]))], joints: [{ ...joint(1), value: 30 }] });
+  assert.equal(thirty.ok, true);
+  assert.ok(Math.abs(dotOf(thirty) - Math.cos(30 * Math.PI / 180)) < 1e-3);
+});
+
+test('a fixed part never flips: the free part turns over instead', () => {
+  const solved = solveJoints({
+    parts: [part('A'), part('B', [3, 4, 20])],
+    joints: [
+      { id: 'g', name: 'Ground 1', type: 'fixed', a: { part: 'B' } },
+      { id: 'j', name: 'Coincident 1', type: 'coincident', opposed: true, a: face('A', [0, 0, 10], [0, 0, 1]), b: face('B', [0, 0, -10], [0, 0, 1]) },
+    ],
+  });
+  assert.equal(solved.ok, true, solved.message);
+  assert.deepEqual(solved.placements.B.t, [3, 4, 20]);
+  assert.deepEqual(solved.placements.B.q, Q0);
+  const na = world(solved.placements.A, [0, 0, 1]).dir;
+  assert.ok(na[2] + 1 < 1e-6, `A normal ${na}`);
+});

@@ -8,9 +8,18 @@
  *   coincident   (nₐ ± n_b) twice, and (p_b − pₐ) · nₐ
  *   concentric   dₐ × d_b twice, and (p_b − pₐ) × dₐ twice
  *   distance     nₐ × n_b twice, and (p_b − pₐ) · nₐ − sense · value
- *   angle        sense · (uₐ · u_b) − cos(value in radians)
+ *   angle        sense · (uₐ · u_b) − cos(value in radians); at 0° and
+ *                180° the rows are (uₐ ∓ u_b) twice instead, like
+ *                coincident, since the dot product is flat there and
+ *                left a "parallel" joint 2° off within tolerance
  *   symmetric    midplane(a, a2) coincident with midplane(b, b2)
  *   fixed        no row; the part is not a variable
+ *
+ * The two kept rows of nₐ ± n_b are zero whenever the directions are
+ * parallel, either way round. The sign (`opposed`, or `sense` at 0° / 180°)
+ * is settled before the solve: `solveJoints` flips the seed of the free
+ * part when it starts the wrong way round (`orientSeeds`), and the rows
+ * then hold the orientation the joint asks for.
  *
  * Concentric on an edge reads `key.circle` (center, axis). It does not
  * use the edge tangent. A missing circle leaves the joint with no frame.
@@ -32,6 +41,33 @@ import {
 } from './rigid.js';
 
 const ZERO = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+
+/**
+ * The direction sign a joint asks for, or 0 when it has no preference:
+ * `wanted · (dirₐ · dir_b)` must be positive. Coincident: −1 when
+ * opposed (the default), else 1. Angle at 0°: `sense`; at 180°: −`sense`.
+ */
+export function wantedAlignment(joint) {
+  if (!joint) return 0;
+  if (joint.type === 'coincident') return joint.opposed === false ? 1 : -1;
+  if (joint.type === 'angle') {
+    const turn = alignedAngle(joint);
+    if (turn === null) return 0;
+    const sense = joint.sense === -1 ? -1 : 1;
+    return turn === 0 ? sense : -sense;
+  }
+  return 0;
+}
+
+/** 0 or 180 when an angle joint is a parallel one, else null. */
+export function alignedAngle(joint) {
+  const value = Number(joint?.value);
+  if (!Number.isFinite(value)) return null;
+  const turn = ((value % 360) + 360) % 360;
+  if (Math.abs(turn) < 1e-9 || Math.abs(turn - 360) < 1e-9) return 0;
+  if (Math.abs(turn - 180) < 1e-9) return 180;
+  return null;
+}
 
 /** Local point and direction a joint equation actually constrains. */
 export function localFrame(ref, type) {
@@ -211,6 +247,17 @@ export function evaluateJoints(joints, poses, freeIndex, drops) {
       return;
     }
     if (joint.type === 'angle') {
+      const wanted = wantedAlignment(joint);
+      if (wanted !== 0) {
+        // Parallel: dir_b = wanted · dirₐ. Linear rows, like coincident.
+        const plus = -wanted;
+        const s = add3(A.dir, scale3(B.dir, plus));
+        pushKept(rows, jac, freeIndex, s, [
+          [A.part, { w: A.dDir, t: ZERO }],
+          [B.part, { w: scaleMat(B.dDir, plus), t: ZERO }],
+        ], drop);
+        return;
+      }
       const theta = joint.value * Math.PI / 180;
       const value = joint.sense * dot3(A.dir, B.dir) - Math.cos(theta);
       pushScalar(rows, jac, freeIndex, value, [
@@ -225,7 +272,8 @@ export function evaluateJoints(joints, poses, freeIndex, drops) {
 /** Frozen row choice from the seed pose, so finite differences see the same rows. */
 export function seedDrops(joints, seedPoses) {
   return joints.map((joint) => {
-    if (joint.type === 'fixed' || joint.type === 'angle') return null;
+    if (joint.type === 'fixed') return null;
+    if (joint.type === 'angle' && wantedAlignment(joint) === 0) return null;
     if (joint.type === 'symmetric') {
       const pose = seedPoses.get(joint.a?.part);
       const first = localFrame(joint.a, joint.type);
