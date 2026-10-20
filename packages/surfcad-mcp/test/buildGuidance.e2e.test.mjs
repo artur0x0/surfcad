@@ -49,6 +49,9 @@ test('the guidance names the real rail sections and the gap comment format', () 
   assert.match(BUILD_GUIDANCE, /\/\/ FEATURE-GAP: <missing feature or option> \| <why the existing feature did not work>/);
   assert.match(BUILD_GUIDANCE, /one part per unique|its own part named by its spec/);
   assert.match(BUILD_GUIDANCE, /screenshot/);
+  assert.match(BUILD_GUIDANCE, /insert_rounded_box/);
+  assert.match(BUILD_GUIDANCE, /insert_cross_section/);
+  assert.match(BUILD_GUIDANCE, /insert_workplane/);
   assert.match(BUILD_FLOW_NOTE, /FEATURE-GAP/);
 });
 

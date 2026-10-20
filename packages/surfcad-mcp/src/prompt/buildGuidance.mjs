@@ -11,8 +11,8 @@ export const BUILD_FLOW_NOTE = ' Build in ribbon order: block out every part of 
 /** The full guidance, shown once at pair time and in the server instructions. */
 export const BUILD_GUIDANCE = [
   'How to build in SurfCAD. Work in the order of the feature ribbon: Block, Build, Shape, Polish, Move.',
-  '1. Block out first. Within seconds of the prompt, create every part of the assembly as plain blocks (create_part, then insert_cube, insert_cylinder, insert_sphere, insert_tube, insert_hex_prism) at roughly the right size and position, and take a screenshot so the user can approve the layout and proportions before any detail goes in. Never plan silently for long before something appears in the viewport.',
-  '2. Build. Shape each block into its real form with Build and Shape features: insert_hole, insert_cut, insert_boolean, insert_shell, insert_add_draft; insert_make_extrude, insert_make_revolve, insert_make_sweep, insert_make_loft (sketch_* and slot_* for the profiles).',
+  '1. Block out first. Within seconds of the prompt, create every part of the assembly as plain blocks (create_part, then insert_cube, insert_rounded_box, insert_cylinder, insert_sphere, insert_tube, insert_hex_prism) at roughly the right size and position, and take a screenshot so the user can approve the layout and proportions before any detail goes in. Never plan silently for long before something appears in the viewport.',
+  '2. Build. Shape each block into its real form with Build and Shape features: insert_hole, insert_cut, insert_boolean, insert_shell, insert_add_draft; insert_cross_section, insert_workplane, insert_make_extrude, insert_make_revolve, insert_make_sweep, insert_make_loft (sketch_* and slot_* for the profiles).',
   '3. Polish. insert_fillet_edges, insert_chamfer_edges, insert_move_face, insert_delete_face.',
   '4. Pattern and place. insert_array3_d (grid) and insert_polar_array for repeats and hardware, then insert_move, insert_center, insert_align, insert_mirror, and part_set_transform or joints for final positions.',
   'Finish each stage across the whole assembly before starting the next, and take a screenshot after each stage.',
