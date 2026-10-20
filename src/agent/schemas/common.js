@@ -42,14 +42,6 @@ export const EDGE_KEY_SCHEMA = Object.freeze({
   ],
 });
 
-export const PICK_KEY_SCHEMA = Object.freeze({
-  oneOf: [
-    { type: 'string' },
-    FACE_KEY_SCHEMA,
-    EDGE_KEY_SCHEMA,
-  ],
-});
-
 export const EDGE_FACE_PAIR_SCHEMA = Object.freeze({
   type: 'object',
   additionalProperties: false,
@@ -66,6 +58,30 @@ export const EDGE_FACE_PAIR_SCHEMA = Object.freeze({
       items: FACE_KEY_SCHEMA,
     },
   },
+});
+
+/** A sketch entity for pick kinds point, line, arc, ref: `{ id }` or, for a hole centre, `{ at: [u, v] }`. */
+export const SKETCH_PICK_KEY_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string', description: 'Sketch entity id from list_sketch_entities' },
+    at: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2, description: 'Hole centre [u, v] on the sketch plane' },
+  },
+});
+
+/**
+ * One pick key in any accepted form. `anyOf`, not `oneOf`: a plain string is
+ * both a face/edge id and a sketch id, and strict clients reject a value that
+ * matches two `oneOf` branches.
+ */
+export const PICK_KEY_SCHEMA = Object.freeze({
+  anyOf: [
+    { type: 'string', description: 'Face id (fN), grouped edge id (eN), packed mesh edge key, or sketch entity id' },
+    FACE_KEY_SCHEMA,
+    EDGE_FACE_PAIR_SCHEMA,
+    SKETCH_PICK_KEY_SCHEMA,
+  ],
 });
 
 export const SKETCH_PICK_ITEM_SCHEMA = Object.freeze({

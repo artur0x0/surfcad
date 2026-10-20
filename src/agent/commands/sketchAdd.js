@@ -16,6 +16,13 @@ export const sketchAddCommand = Object.freeze({
       radius: { type: 'number' },
       segments: { type: 'number' },
       polygon_preset: { type: 'string' },
+      polygonPreset: { type: 'string', description: 'Alias for polygon_preset' },
+      centers: { type: 'boolean', description: 'Rectangle: place by centers' },
+      params: {
+        type: 'object',
+        additionalProperties: true,
+        description: 'Extra contour params merged over the tool defaults (same keys the sketch card edits)',
+      },
       points: {
         type: 'array',
         items: {

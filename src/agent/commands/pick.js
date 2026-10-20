@@ -154,7 +154,7 @@ const KEY_PROPS = Object.freeze({
   keys: {
     type: 'array',
     items: PICK_KEY_SCHEMA,
-    description: 'Face keys (list_faces) or edge ids (list_feature_edges eN, list_edges key, or { faceKeyA, faceKeyB })',
+    description: 'Face keys (list_faces) or edge ids (list_feature_edges eN, list_edges key, or { faceKeyA, faceKeyB }); for sketch kinds, entity ids, { id }, or hole-centre { at: [u, v] }',
   },
   key: { ...PICK_KEY_SCHEMA, description: 'One key; same forms as keys' },
 });

@@ -7597,6 +7597,19 @@
           "polygon_preset": {
             "type": "string"
           },
+          "polygonPreset": {
+            "type": "string",
+            "description": "Alias for polygon_preset"
+          },
+          "centers": {
+            "type": "boolean",
+            "description": "Rectangle: place by centers"
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Extra contour params merged over the tool defaults (same keys the sketch card edits)"
+          },
           "points": {
             "type": "array",
             "items": {
@@ -8604,9 +8617,10 @@
           "keys": {
             "type": "array",
             "items": {
-              "oneOf": [
+              "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Face id (fN), grouped edge id (eN), packed mesh edge key, or sketch entity id"
                 },
                 {
                   "type": "object",
@@ -8645,216 +8659,228 @@
                   }
                 },
                 {
-                  "oneOf": [
-                    {
-                      "type": "string",
-                      "description": "Grouped boundary id (eN) or packed mesh edge key"
-                    },
-                    {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "faceKeyA",
+                    "faceKeyB"
+                  ],
+                  "properties": {
+                    "faceKeyA": {
                       "type": "object",
                       "additionalProperties": false,
                       "required": [
-                        "faceKeyA",
-                        "faceKeyB"
+                        "at",
+                        "n",
+                        "area"
                       ],
                       "properties": {
-                        "faceKeyA": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
-                        },
-                        "faceKeyB": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
-                        },
-                        "faceA": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
-                        },
-                        "faceB": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
-                        },
-                        "faceKeys": {
+                        "at": {
                           "type": "array",
-                          "minItems": 2,
-                          "maxItems": 2,
                           "items": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "required": [
-                              "at",
-                              "n",
-                              "area"
-                            ],
-                            "properties": {
-                              "at": {
-                                "type": "array",
-                                "items": {
-                                  "type": "number"
-                                },
-                                "minItems": 3,
-                                "maxItems": 3
-                              },
-                              "n": {
-                                "type": "array",
-                                "items": {
-                                  "type": "number"
-                                },
-                                "minItems": 3,
-                                "maxItems": 3
-                              },
-                              "area": {
-                                "type": "number"
-                              },
-                              "src": {
-                                "type": "integer"
-                              },
-                              "ord": {
-                                "type": "integer"
-                              }
-                            }
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceKeyB": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceA": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceB": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceKeys": {
+                      "type": "array",
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "at",
+                          "n",
+                          "area"
+                        ],
+                        "properties": {
+                          "at": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "n": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "area": {
+                            "type": "number"
+                          },
+                          "src": {
+                            "type": "integer"
+                          },
+                          "ord": {
+                            "type": "integer"
                           }
                         }
                       }
                     }
-                  ]
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "Sketch entity id from list_sketch_entities"
+                    },
+                    "at": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "description": "Hole centre [u, v] on the sketch plane"
+                    }
+                  }
                 }
               ]
             },
-            "description": "Face keys (list_faces) or edge ids (list_feature_edges eN, list_edges key, or { faceKeyA, faceKeyB })"
+            "description": "Face keys (list_faces) or edge ids (list_feature_edges eN, list_edges key, or { faceKeyA, faceKeyB }); for sketch kinds, entity ids, { id }, or hole-centre { at: [u, v] }"
           },
           "key": {
-            "oneOf": [
+            "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "description": "Face id (fN), grouped edge id (eN), packed mesh edge key, or sketch entity id"
               },
               {
                 "type": "object",
@@ -8893,207 +8919,218 @@
                 }
               },
               {
-                "oneOf": [
-                  {
-                    "type": "string",
-                    "description": "Grouped boundary id (eN) or packed mesh edge key"
-                  },
-                  {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "faceKeyA",
+                  "faceKeyB"
+                ],
+                "properties": {
+                  "faceKeyA": {
                     "type": "object",
                     "additionalProperties": false,
                     "required": [
-                      "faceKeyA",
-                      "faceKeyB"
+                      "at",
+                      "n",
+                      "area"
                     ],
                     "properties": {
-                      "faceKeyA": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "at",
-                          "n",
-                          "area"
-                        ],
-                        "properties": {
-                          "at": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "n": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "area": {
-                            "type": "number"
-                          },
-                          "src": {
-                            "type": "integer"
-                          },
-                          "ord": {
-                            "type": "integer"
-                          }
-                        }
-                      },
-                      "faceKeyB": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "at",
-                          "n",
-                          "area"
-                        ],
-                        "properties": {
-                          "at": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "n": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "area": {
-                            "type": "number"
-                          },
-                          "src": {
-                            "type": "integer"
-                          },
-                          "ord": {
-                            "type": "integer"
-                          }
-                        }
-                      },
-                      "faceA": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "at",
-                          "n",
-                          "area"
-                        ],
-                        "properties": {
-                          "at": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "n": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "area": {
-                            "type": "number"
-                          },
-                          "src": {
-                            "type": "integer"
-                          },
-                          "ord": {
-                            "type": "integer"
-                          }
-                        }
-                      },
-                      "faceB": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "at",
-                          "n",
-                          "area"
-                        ],
-                        "properties": {
-                          "at": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "n": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "area": {
-                            "type": "number"
-                          },
-                          "src": {
-                            "type": "integer"
-                          },
-                          "ord": {
-                            "type": "integer"
-                          }
-                        }
-                      },
-                      "faceKeys": {
+                      "at": {
                         "type": "array",
-                        "minItems": 2,
-                        "maxItems": 2,
                         "items": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceKeyB": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "at",
+                      "n",
+                      "area"
+                    ],
+                    "properties": {
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceA": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "at",
+                      "n",
+                      "area"
+                    ],
+                    "properties": {
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceB": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "at",
+                      "n",
+                      "area"
+                    ],
+                    "properties": {
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceKeys": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
                         }
                       }
                     }
                   }
-                ]
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Sketch entity id from list_sketch_entities"
+                  },
+                  "at": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "description": "Hole centre [u, v] on the sketch plane"
+                  }
+                }
               }
             ],
             "description": "One key; same forms as keys"
@@ -9272,9 +9309,10 @@
           "keys": {
             "type": "array",
             "items": {
-              "oneOf": [
+              "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Face id (fN), grouped edge id (eN), packed mesh edge key, or sketch entity id"
                 },
                 {
                   "type": "object",
@@ -9313,216 +9351,228 @@
                   }
                 },
                 {
-                  "oneOf": [
-                    {
-                      "type": "string",
-                      "description": "Grouped boundary id (eN) or packed mesh edge key"
-                    },
-                    {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "faceKeyA",
+                    "faceKeyB"
+                  ],
+                  "properties": {
+                    "faceKeyA": {
                       "type": "object",
                       "additionalProperties": false,
                       "required": [
-                        "faceKeyA",
-                        "faceKeyB"
+                        "at",
+                        "n",
+                        "area"
                       ],
                       "properties": {
-                        "faceKeyA": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
-                        },
-                        "faceKeyB": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
-                        },
-                        "faceA": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
-                        },
-                        "faceB": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
-                        },
-                        "faceKeys": {
+                        "at": {
                           "type": "array",
-                          "minItems": 2,
-                          "maxItems": 2,
                           "items": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "required": [
-                              "at",
-                              "n",
-                              "area"
-                            ],
-                            "properties": {
-                              "at": {
-                                "type": "array",
-                                "items": {
-                                  "type": "number"
-                                },
-                                "minItems": 3,
-                                "maxItems": 3
-                              },
-                              "n": {
-                                "type": "array",
-                                "items": {
-                                  "type": "number"
-                                },
-                                "minItems": 3,
-                                "maxItems": 3
-                              },
-                              "area": {
-                                "type": "number"
-                              },
-                              "src": {
-                                "type": "integer"
-                              },
-                              "ord": {
-                                "type": "integer"
-                              }
-                            }
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceKeyB": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceA": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceB": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceKeys": {
+                      "type": "array",
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "at",
+                          "n",
+                          "area"
+                        ],
+                        "properties": {
+                          "at": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "n": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "area": {
+                            "type": "number"
+                          },
+                          "src": {
+                            "type": "integer"
+                          },
+                          "ord": {
+                            "type": "integer"
                           }
                         }
                       }
                     }
-                  ]
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "Sketch entity id from list_sketch_entities"
+                    },
+                    "at": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "description": "Hole centre [u, v] on the sketch plane"
+                    }
+                  }
                 }
               ]
             },
-            "description": "Face keys (list_faces) or edge ids (list_feature_edges eN, list_edges key, or { faceKeyA, faceKeyB })"
+            "description": "Face keys (list_faces) or edge ids (list_feature_edges eN, list_edges key, or { faceKeyA, faceKeyB }); for sketch kinds, entity ids, { id }, or hole-centre { at: [u, v] }"
           },
           "key": {
-            "oneOf": [
+            "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "description": "Face id (fN), grouped edge id (eN), packed mesh edge key, or sketch entity id"
               },
               {
                 "type": "object",
@@ -9561,207 +9611,218 @@
                 }
               },
               {
-                "oneOf": [
-                  {
-                    "type": "string",
-                    "description": "Grouped boundary id (eN) or packed mesh edge key"
-                  },
-                  {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "faceKeyA",
+                  "faceKeyB"
+                ],
+                "properties": {
+                  "faceKeyA": {
                     "type": "object",
                     "additionalProperties": false,
                     "required": [
-                      "faceKeyA",
-                      "faceKeyB"
+                      "at",
+                      "n",
+                      "area"
                     ],
                     "properties": {
-                      "faceKeyA": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "at",
-                          "n",
-                          "area"
-                        ],
-                        "properties": {
-                          "at": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "n": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "area": {
-                            "type": "number"
-                          },
-                          "src": {
-                            "type": "integer"
-                          },
-                          "ord": {
-                            "type": "integer"
-                          }
-                        }
-                      },
-                      "faceKeyB": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "at",
-                          "n",
-                          "area"
-                        ],
-                        "properties": {
-                          "at": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "n": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "area": {
-                            "type": "number"
-                          },
-                          "src": {
-                            "type": "integer"
-                          },
-                          "ord": {
-                            "type": "integer"
-                          }
-                        }
-                      },
-                      "faceA": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "at",
-                          "n",
-                          "area"
-                        ],
-                        "properties": {
-                          "at": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "n": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "area": {
-                            "type": "number"
-                          },
-                          "src": {
-                            "type": "integer"
-                          },
-                          "ord": {
-                            "type": "integer"
-                          }
-                        }
-                      },
-                      "faceB": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "at",
-                          "n",
-                          "area"
-                        ],
-                        "properties": {
-                          "at": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "n": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "area": {
-                            "type": "number"
-                          },
-                          "src": {
-                            "type": "integer"
-                          },
-                          "ord": {
-                            "type": "integer"
-                          }
-                        }
-                      },
-                      "faceKeys": {
+                      "at": {
                         "type": "array",
-                        "minItems": 2,
-                        "maxItems": 2,
                         "items": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceKeyB": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "at",
+                      "n",
+                      "area"
+                    ],
+                    "properties": {
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceA": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "at",
+                      "n",
+                      "area"
+                    ],
+                    "properties": {
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceB": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "at",
+                      "n",
+                      "area"
+                    ],
+                    "properties": {
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceKeys": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
                         }
                       }
                     }
                   }
-                ]
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Sketch entity id from list_sketch_entities"
+                  },
+                  "at": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "description": "Hole centre [u, v] on the sketch plane"
+                  }
+                }
               }
             ],
             "description": "One key; same forms as keys"
@@ -9852,9 +9913,10 @@
           "keys": {
             "type": "array",
             "items": {
-              "oneOf": [
+              "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Face id (fN), grouped edge id (eN), packed mesh edge key, or sketch entity id"
                 },
                 {
                   "type": "object",
@@ -9893,216 +9955,228 @@
                   }
                 },
                 {
-                  "oneOf": [
-                    {
-                      "type": "string",
-                      "description": "Grouped boundary id (eN) or packed mesh edge key"
-                    },
-                    {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "faceKeyA",
+                    "faceKeyB"
+                  ],
+                  "properties": {
+                    "faceKeyA": {
                       "type": "object",
                       "additionalProperties": false,
                       "required": [
-                        "faceKeyA",
-                        "faceKeyB"
+                        "at",
+                        "n",
+                        "area"
                       ],
                       "properties": {
-                        "faceKeyA": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
-                        },
-                        "faceKeyB": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
-                        },
-                        "faceA": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
-                        },
-                        "faceB": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
-                        },
-                        "faceKeys": {
+                        "at": {
                           "type": "array",
-                          "minItems": 2,
-                          "maxItems": 2,
                           "items": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "required": [
-                              "at",
-                              "n",
-                              "area"
-                            ],
-                            "properties": {
-                              "at": {
-                                "type": "array",
-                                "items": {
-                                  "type": "number"
-                                },
-                                "minItems": 3,
-                                "maxItems": 3
-                              },
-                              "n": {
-                                "type": "array",
-                                "items": {
-                                  "type": "number"
-                                },
-                                "minItems": 3,
-                                "maxItems": 3
-                              },
-                              "area": {
-                                "type": "number"
-                              },
-                              "src": {
-                                "type": "integer"
-                              },
-                              "ord": {
-                                "type": "integer"
-                              }
-                            }
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceKeyB": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceA": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceB": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceKeys": {
+                      "type": "array",
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "at",
+                          "n",
+                          "area"
+                        ],
+                        "properties": {
+                          "at": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "n": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "area": {
+                            "type": "number"
+                          },
+                          "src": {
+                            "type": "integer"
+                          },
+                          "ord": {
+                            "type": "integer"
                           }
                         }
                       }
                     }
-                  ]
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "Sketch entity id from list_sketch_entities"
+                    },
+                    "at": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "description": "Hole centre [u, v] on the sketch plane"
+                    }
+                  }
                 }
               ]
             },
-            "description": "Face keys (list_faces) or edge ids (list_feature_edges eN, list_edges key, or { faceKeyA, faceKeyB })"
+            "description": "Face keys (list_faces) or edge ids (list_feature_edges eN, list_edges key, or { faceKeyA, faceKeyB }); for sketch kinds, entity ids, { id }, or hole-centre { at: [u, v] }"
           },
           "key": {
-            "oneOf": [
+            "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "description": "Face id (fN), grouped edge id (eN), packed mesh edge key, or sketch entity id"
               },
               {
                 "type": "object",
@@ -10141,207 +10215,218 @@
                 }
               },
               {
-                "oneOf": [
-                  {
-                    "type": "string",
-                    "description": "Grouped boundary id (eN) or packed mesh edge key"
-                  },
-                  {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "faceKeyA",
+                  "faceKeyB"
+                ],
+                "properties": {
+                  "faceKeyA": {
                     "type": "object",
                     "additionalProperties": false,
                     "required": [
-                      "faceKeyA",
-                      "faceKeyB"
+                      "at",
+                      "n",
+                      "area"
                     ],
                     "properties": {
-                      "faceKeyA": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "at",
-                          "n",
-                          "area"
-                        ],
-                        "properties": {
-                          "at": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "n": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "area": {
-                            "type": "number"
-                          },
-                          "src": {
-                            "type": "integer"
-                          },
-                          "ord": {
-                            "type": "integer"
-                          }
-                        }
-                      },
-                      "faceKeyB": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "at",
-                          "n",
-                          "area"
-                        ],
-                        "properties": {
-                          "at": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "n": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "area": {
-                            "type": "number"
-                          },
-                          "src": {
-                            "type": "integer"
-                          },
-                          "ord": {
-                            "type": "integer"
-                          }
-                        }
-                      },
-                      "faceA": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "at",
-                          "n",
-                          "area"
-                        ],
-                        "properties": {
-                          "at": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "n": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "area": {
-                            "type": "number"
-                          },
-                          "src": {
-                            "type": "integer"
-                          },
-                          "ord": {
-                            "type": "integer"
-                          }
-                        }
-                      },
-                      "faceB": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "at",
-                          "n",
-                          "area"
-                        ],
-                        "properties": {
-                          "at": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "n": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "area": {
-                            "type": "number"
-                          },
-                          "src": {
-                            "type": "integer"
-                          },
-                          "ord": {
-                            "type": "integer"
-                          }
-                        }
-                      },
-                      "faceKeys": {
+                      "at": {
                         "type": "array",
-                        "minItems": 2,
-                        "maxItems": 2,
                         "items": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceKeyB": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "at",
+                      "n",
+                      "area"
+                    ],
+                    "properties": {
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceA": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "at",
+                      "n",
+                      "area"
+                    ],
+                    "properties": {
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceB": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "at",
+                      "n",
+                      "area"
+                    ],
+                    "properties": {
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceKeys": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
                         }
                       }
                     }
                   }
-                ]
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Sketch entity id from list_sketch_entities"
+                  },
+                  "at": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "description": "Hole centre [u, v] on the sketch plane"
+                  }
+                }
               }
             ],
             "description": "One key; same forms as keys"
@@ -10423,9 +10508,10 @@
           "keys": {
             "type": "array",
             "items": {
-              "oneOf": [
+              "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Face id (fN), grouped edge id (eN), packed mesh edge key, or sketch entity id"
                 },
                 {
                   "type": "object",
@@ -10464,216 +10550,228 @@
                   }
                 },
                 {
-                  "oneOf": [
-                    {
-                      "type": "string",
-                      "description": "Grouped boundary id (eN) or packed mesh edge key"
-                    },
-                    {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "faceKeyA",
+                    "faceKeyB"
+                  ],
+                  "properties": {
+                    "faceKeyA": {
                       "type": "object",
                       "additionalProperties": false,
                       "required": [
-                        "faceKeyA",
-                        "faceKeyB"
+                        "at",
+                        "n",
+                        "area"
                       ],
                       "properties": {
-                        "faceKeyA": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
-                        },
-                        "faceKeyB": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
-                        },
-                        "faceA": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
-                        },
-                        "faceB": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
-                        },
-                        "faceKeys": {
+                        "at": {
                           "type": "array",
-                          "minItems": 2,
-                          "maxItems": 2,
                           "items": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "required": [
-                              "at",
-                              "n",
-                              "area"
-                            ],
-                            "properties": {
-                              "at": {
-                                "type": "array",
-                                "items": {
-                                  "type": "number"
-                                },
-                                "minItems": 3,
-                                "maxItems": 3
-                              },
-                              "n": {
-                                "type": "array",
-                                "items": {
-                                  "type": "number"
-                                },
-                                "minItems": 3,
-                                "maxItems": 3
-                              },
-                              "area": {
-                                "type": "number"
-                              },
-                              "src": {
-                                "type": "integer"
-                              },
-                              "ord": {
-                                "type": "integer"
-                              }
-                            }
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceKeyB": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceA": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceB": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "faceKeys": {
+                      "type": "array",
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "at",
+                          "n",
+                          "area"
+                        ],
+                        "properties": {
+                          "at": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "n": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "area": {
+                            "type": "number"
+                          },
+                          "src": {
+                            "type": "integer"
+                          },
+                          "ord": {
+                            "type": "integer"
                           }
                         }
                       }
                     }
-                  ]
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "Sketch entity id from list_sketch_entities"
+                    },
+                    "at": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "description": "Hole centre [u, v] on the sketch plane"
+                    }
+                  }
                 }
               ]
             },
-            "description": "Face keys (list_faces) or edge ids (list_feature_edges eN, list_edges key, or { faceKeyA, faceKeyB })"
+            "description": "Face keys (list_faces) or edge ids (list_feature_edges eN, list_edges key, or { faceKeyA, faceKeyB }); for sketch kinds, entity ids, { id }, or hole-centre { at: [u, v] }"
           },
           "key": {
-            "oneOf": [
+            "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "description": "Face id (fN), grouped edge id (eN), packed mesh edge key, or sketch entity id"
               },
               {
                 "type": "object",
@@ -10712,207 +10810,218 @@
                 }
               },
               {
-                "oneOf": [
-                  {
-                    "type": "string",
-                    "description": "Grouped boundary id (eN) or packed mesh edge key"
-                  },
-                  {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "faceKeyA",
+                  "faceKeyB"
+                ],
+                "properties": {
+                  "faceKeyA": {
                     "type": "object",
                     "additionalProperties": false,
                     "required": [
-                      "faceKeyA",
-                      "faceKeyB"
+                      "at",
+                      "n",
+                      "area"
                     ],
                     "properties": {
-                      "faceKeyA": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "at",
-                          "n",
-                          "area"
-                        ],
-                        "properties": {
-                          "at": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "n": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "area": {
-                            "type": "number"
-                          },
-                          "src": {
-                            "type": "integer"
-                          },
-                          "ord": {
-                            "type": "integer"
-                          }
-                        }
-                      },
-                      "faceKeyB": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "at",
-                          "n",
-                          "area"
-                        ],
-                        "properties": {
-                          "at": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "n": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "area": {
-                            "type": "number"
-                          },
-                          "src": {
-                            "type": "integer"
-                          },
-                          "ord": {
-                            "type": "integer"
-                          }
-                        }
-                      },
-                      "faceA": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "at",
-                          "n",
-                          "area"
-                        ],
-                        "properties": {
-                          "at": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "n": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "area": {
-                            "type": "number"
-                          },
-                          "src": {
-                            "type": "integer"
-                          },
-                          "ord": {
-                            "type": "integer"
-                          }
-                        }
-                      },
-                      "faceB": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "at",
-                          "n",
-                          "area"
-                        ],
-                        "properties": {
-                          "at": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "n": {
-                            "type": "array",
-                            "items": {
-                              "type": "number"
-                            },
-                            "minItems": 3,
-                            "maxItems": 3
-                          },
-                          "area": {
-                            "type": "number"
-                          },
-                          "src": {
-                            "type": "integer"
-                          },
-                          "ord": {
-                            "type": "integer"
-                          }
-                        }
-                      },
-                      "faceKeys": {
+                      "at": {
                         "type": "array",
-                        "minItems": 2,
-                        "maxItems": 2,
                         "items": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "at",
-                            "n",
-                            "area"
-                          ],
-                          "properties": {
-                            "at": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "n": {
-                              "type": "array",
-                              "items": {
-                                "type": "number"
-                              },
-                              "minItems": 3,
-                              "maxItems": 3
-                            },
-                            "area": {
-                              "type": "number"
-                            },
-                            "src": {
-                              "type": "integer"
-                            },
-                            "ord": {
-                              "type": "integer"
-                            }
-                          }
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceKeyB": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "at",
+                      "n",
+                      "area"
+                    ],
+                    "properties": {
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceA": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "at",
+                      "n",
+                      "area"
+                    ],
+                    "properties": {
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceB": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "at",
+                      "n",
+                      "area"
+                    ],
+                    "properties": {
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "n": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "area": {
+                        "type": "number"
+                      },
+                      "src": {
+                        "type": "integer"
+                      },
+                      "ord": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "faceKeys": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "at",
+                        "n",
+                        "area"
+                      ],
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "n": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "area": {
+                          "type": "number"
+                        },
+                        "src": {
+                          "type": "integer"
+                        },
+                        "ord": {
+                          "type": "integer"
                         }
                       }
                     }
                   }
-                ]
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Sketch entity id from list_sketch_entities"
+                  },
+                  "at": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "description": "Hole centre [u, v] on the sketch plane"
+                  }
+                }
               }
             ],
             "description": "One key; same forms as keys"
