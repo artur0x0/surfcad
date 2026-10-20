@@ -115,7 +115,7 @@ MCP returns JSON text; bridge refusals use `isError: true` with `code`, `message
 | `git_only` / `git_blocked` | Vault-only tool (e.g. `open_assembly`, `open_part`, `insert_part`) with no vault, or git is unavailable. `git_move_to_repo` or stay local. |
 | `not_ready` | `paint_open` waited 1.5 s and paint mode is still closed. `details.reason` is `prompt_working` or `mode_not_ready`; `details.retryable` is true. Retry `paint_open`. |
 
-Geometry failures are not refusals: read them with `errors` (code `feature_failed`, same text as the viewport). Other codes (`unknown_face`, `picker_busy`, `pick_timeout`, …) are listed per command in `commands.json` and [docs/agent-export.md](../agent-export.md).
+Geometry failures are not refusals: read them with `errors` (code `feature_failed`, same text as the viewport). A kernel crash (out of memory, a wasm abort, or a run past its 30 s budget) is one `errors` row with code `geometry_worker_crashed`, `reason` (`wasm_abort` | `out_of_memory` | `timeout` | `worker_lost`), and `workerRestarted: true`; the mutate result also carries `crash`. The geometry worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify that part, lower segment counts, or split it up, then run it again. `parts` rows carry `runState` (`not_run_yet` | `ok` | `failed`) and `crash` for every part, so a failed part that is not active is visible without `set_active_part`. Other codes (`unknown_face`, `picker_busy`, `pick_timeout`, …) are listed per command in `commands.json` and [docs/agent-export.md](../agent-export.md).
 
 ## MCP-only tools
 

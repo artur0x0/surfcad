@@ -10,22 +10,46 @@
  *   await manifold.init();
  *   const meshData = await manifold.execute(script);
  */
-import SandboxWorker from '../workers/sandboxWorker.js?worker'
 import { softRestartDecision } from './manifoldWorkerLiveness.js'
+import {
+  classifyKernelFailure,
+  kernelCrashError,
+  splitPendingOnCrash,
+  DEFAULT_JOB_BUDGET_MS,
+} from '../workers/kernelCrash.js'
+
+/**
+ * The sandbox worker, loaded on first use. A dynamic import keeps this
+ * module loadable under Node (tests pass their own `createWorker`), and
+ * Vite still bundles the `?worker` entry.
+ */
+const defaultCreateWorker = async () => {
+  const mod = await import('../workers/sandboxWorker.js?worker');
+  return new mod.default();
+};
 
 class ManifoldWorker {
-  constructor() {
+  /**
+   * @param {{ createWorker?: () => Worker | Promise<Worker>, onCrash?: (info: object) => void }} [opts]
+   */
+  constructor(opts = {}) {
     this.worker = null;
     this.isReady = false;
     this.pendingRequests = new Map();
     this.requestIdCounter = 0;
     
     this.config = {
-      timeoutMs: 30000,
+      timeoutMs: DEFAULT_JOB_BUDGET_MS,
       memoryLimitMB: 512,
     };
     
     this.onError = null;
+    this._createWorker = typeof opts.createWorker === 'function' ? opts.createWorker : defaultCreateWorker;
+    /** Called once per kernel crash with { at, reason, message, failed, requeued }. */
+    this.onCrash = typeof opts.onCrash === 'function' ? opts.onCrash : null;
+    this.crashCount = 0;
+    this.lastCrash = null;
+    this._crashInFlight = null;
   }
   
   async init() {
@@ -36,8 +60,24 @@ class ManifoldWorker {
     // Dedupe concurrent init (StrictMode remount / overlapping callers).
     if (this._initPromise) return this._initPromise;
 
+    const run = (async () => {
+      const worker = await this._createWorker();
+      await this._boot(worker);
+    })();
+    // A restart that supersedes this gate must not let the old finally
+    // clear the replacement init.
+    const tracked = run.finally(() => {
+      if (this._initPromise === tracked) this._initPromise = null;
+    });
+    this._initPromise = tracked;
+
+    return tracked;
+  }
+
+  /** Wire `worker` and run the loaded → init → ready handshake. */
+  _boot(worker) {
     const INIT_TIMEOUT_MS = 60000;
-    const gate = new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
       let settled = false;
       const settle = (fn) => (value) => {
         if (settled) return;
@@ -62,14 +102,25 @@ class ManifoldWorker {
       }, INIT_TIMEOUT_MS);
 
       try {
-        // Create worker using Vite's import
-        this.worker = new SandboxWorker();
+        this.worker = worker;
 
         this.worker.onmessage = (event) => this._handleMessage(event);
 
         this.worker.onerror = (error) => {
           console.error('[ManifoldWorker] Worker error:', error);
-          rejectInit(new Error(`Worker error: ${error.message || 'unknown'}`));
+          if (!settled) {
+            rejectInit(new Error(`Worker error: ${error?.message || 'unknown'}`));
+            return;
+          }
+          // The thread died without a report (the browser killed it, an
+          // uncaught throw outside a message): the oldest job was running.
+          if (this.worker !== worker) return;
+          const verdict = classifyKernelFailure({ message: String(error?.message || '') });
+          this._onKernelCrash({
+            reason: verdict.fatal ? verdict.reason : 'worker_lost',
+            kernelMessage: error?.message || '',
+            crashedId: null,
+          });
         };
 
         // Wait for 'loaded' signal, then send init
@@ -94,14 +145,6 @@ class ManifoldWorker {
         rejectInit(error);
       }
     });
-    // A restart that supersedes this gate must not let the old finally
-    // clear the replacement init.
-    const tracked = gate.finally(() => {
-      if (this._initPromise === tracked) this._initPromise = null;
-    });
-    this._initPromise = tracked;
-
-    return tracked;
   }
   
   /**
@@ -119,34 +162,28 @@ class ManifoldWorker {
       throw new Error('ManifoldWorker not initialized. Call init() first.');
     }
     
-    const timeoutMs = options.timeoutMs || this.config.timeoutMs;
+    // The job budget: the caller's timeoutMs, else the default. A
+    // configured jobBudgetMs (dev panel, goldens) wins over both.
+    const timeoutMs = Number(this.config.jobBudgetMs) > 0
+      ? Number(this.config.jobBudgetMs)
+      : (options.timeoutMs || this.config.timeoutMs);
     const memoryLimitMB = options.memoryLimitMB || this.config.memoryLimitMB;
     const importedModels = options.importedModels || {};
     
     return new Promise((resolve, reject) => {
       const requestId = this._generateRequestId();
-      
-      // Set up timeout
+
+      // Watchdog: a job past its budget is treated like a crash. The thread
+      // is killed and replaced, this job fails with reason timeout, and the
+      // jobs queued behind it move to the fresh worker. A promise-only
+      // timeout used to leave the hung run holding the thread, and every
+      // later call queued behind it until the tab was reloaded.
       const timeoutId = setTimeout(() => {
-        this.pendingRequests.delete(requestId);
-        reject(new Error(`Script execution timed out after ${timeoutMs / 1000}s`));
+        if (!this.pendingRequests.has(requestId)) return;
+        this._onKernelCrash({ reason: 'timeout', crashedId: requestId, budgetMs: timeoutMs });
       }, timeoutMs);
-      
-      // Store request
-      this.pendingRequests.set(requestId, {
-        sentAt: performance.now(),
-        resolve: (result) => {
-          clearTimeout(timeoutId);
-          resolve(result);
-        },
-        reject: (error) => {
-          clearTimeout(timeoutId);
-          reject(error);
-        }
-      });
-      
-      // Send execute message
-      this.worker.postMessage({
+
+      const message = {
         type: 'execute',
         id: requestId,
         payload: {
@@ -158,7 +195,24 @@ class ManifoldWorker {
             ? { rollbackAnchor: options.rollbackAnchor }
             : {}),
         }
+      };
+      // Store request (the message stays so a crash elsewhere can re-post it)
+      this.pendingRequests.set(requestId, {
+        kind: 'execute',
+        sentAt: performance.now(),
+        message,
+        partId: typeof options.partId === 'string' ? options.partId : null,
+        resolve: (result) => {
+          clearTimeout(timeoutId);
+          resolve(result);
+        },
+        reject: (error) => {
+          clearTimeout(timeoutId);
+          reject(error);
+        }
       });
+
+      this.worker.postMessage(message);
     });
   }
 
@@ -549,8 +603,10 @@ class ManifoldWorker {
         this.pendingRequests.delete(requestId);
         reject(new Error(`${type} timed out after ${timeoutMs / 1000}s`));
       }, timeoutMs);
+      const message = { type, id: requestId, payload };
       this.pendingRequests.set(requestId, {
         kind: options.kind || type,
+        message,
         resolve: (result) => {
           clearTimeout(timeoutId);
           resolve(result);
@@ -560,7 +616,7 @@ class ManifoldWorker {
           reject(error);
         },
       });
-      this.worker.postMessage({ type, id: requestId, payload });
+      this.worker.postMessage(message);
     });
   }
 
@@ -835,6 +891,104 @@ class ManifoldWorker {
   }
 
   /**
+   * The kernel died (the worker reported a fatal throw, the thread raised
+   * an error, or a job ran past its budget). Fail the job that was running
+   * with one structured error, drop the thread, start a fresh one, and
+   * re-post the jobs that were queued behind the crash so they run there.
+   * Nothing waits for the MCP timeout and nobody has to reload the tab.
+   *
+   * @param {{ reason?: string, kernelMessage?: string, wasmHeapMB?: number | null, crashedId?: string | null, budgetMs?: number }} info
+   * @returns {Promise<void>} settles when the replacement worker is ready
+   */
+  _onKernelCrash(info = {}) {
+    if (this._crashInFlight) return this._crashInFlight;
+    const dead = this.worker;
+    const ids = [...this.pendingRequests.keys()];
+    const split = splitPendingOnCrash(ids, info.crashedId ?? null);
+    const reason = info.reason || 'wasm_abort';
+    const requeued = [];
+    const failed = [...split.failed];
+    for (const id of split.requeue) {
+      const request = this.pendingRequests.get(id);
+      if (request?.message) requeued.push([id, request]);
+      else failed.push(id);
+    }
+    this.crashCount += 1;
+    const makeError = (id) => {
+      const request = id != null ? this.pendingRequests.get(id) : null;
+      return kernelCrashError({
+        reason,
+        kernelMessage: info.kernelMessage,
+        wasmHeapMB: info.wasmHeapMB,
+        budgetMs: info.budgetMs,
+        partId: request?.partId || null,
+        workerRestarted: true,
+      });
+    };
+    const first = makeError(failed[0] ?? null);
+    this.lastCrash = {
+      at: Date.now(),
+      reason,
+      message: first.message,
+      kernelMessage: typeof info.kernelMessage === 'string' ? info.kernelMessage : null,
+      wasmHeapMB: Number.isFinite(Number(info.wasmHeapMB)) ? Number(info.wasmHeapMB) : null,
+      failed: failed.length,
+      requeued: requeued.length,
+    };
+    for (const id of failed) {
+      const request = this.pendingRequests.get(id);
+      const error = id === failed[0] ? first : makeError(id);
+      this.pendingRequests.delete(id);
+      try { request?.reject?.(error); } catch { /* listener threw */ }
+    }
+    for (const [id] of requeued) this.pendingRequests.delete(id);
+    // Drop the thread without rejecting the requeued jobs.
+    if (this._initCancel) {
+      try { this._initCancel(new Error('Worker crashed')); } catch { /* ignore */ }
+      this._initCancel = null;
+    }
+    this._initPromise = null;
+    this.isReady = false;
+    if (dead) {
+      try { dead.onmessage = null; dead.onerror = null; } catch { /* detached */ }
+      try { dead.terminate(); } catch { /* gone */ }
+    }
+    if (this.worker === dead) this.worker = null;
+    console.warn(`[ManifoldWorker] Kernel crashed (${reason}); ${failed.length} job(s) failed, ${requeued.length} requeued; restarting worker`);
+
+    const run = (async () => {
+      try {
+        await this.init();
+      } catch (err) {
+        const lost = kernelCrashError({
+          reason: 'worker_lost',
+          kernelMessage: err?.message || String(err),
+          workerRestarted: false,
+        });
+        for (const [, request] of requeued) {
+          try { request.reject?.(lost); } catch { /* listener threw */ }
+        }
+        throw err;
+      }
+      for (const [id, request] of requeued) {
+        this.pendingRequests.set(id, request);
+        this.worker.postMessage(request.message);
+      }
+    })();
+    const settle = run.finally(() => {
+      if (this._restartPromise === settle) this._restartPromise = null;
+      if (this._crashInFlight === settle) this._crashInFlight = null;
+    });
+    settle.catch(() => {});
+    this._restartPromise = settle;
+    this._crashInFlight = settle;
+    if (this.onCrash) {
+      try { this.onCrash({ ...this.lastCrash }); } catch { /* listener threw */ }
+    }
+    return settle;
+  }
+
+  /**
    * Terminate the worker
    */
   terminate() {
@@ -942,6 +1096,18 @@ class ManifoldWorker {
       }
       
       case 'error': {
+        if (payload && payload.fatal) {
+          // The worker says its kernel is dead. One crash handles every
+          // pending job; a later report from the same dead thread is moot.
+          this._onKernelCrash({
+            reason: payload.reason || 'wasm_abort',
+            kernelMessage: payload.message,
+            wasmHeapMB: payload.wasmHeapMB,
+            crashedId: id ?? null,
+          });
+          if (this.onError) this.onError(payload);
+          break;
+        }
         const request = this.pendingRequests.get(id);
         if (request) {
           this.pendingRequests.delete(id);

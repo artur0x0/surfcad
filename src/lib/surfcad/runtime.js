@@ -45,6 +45,7 @@ import { buildSheetMetalSolid } from '../../utils/sheetMetal/sheetSolid.js';
 import { markSheetMesh } from '../../utils/sheetMetal/sheetMeshFlag.js';
 import { installSeparateBodies, overlappingBodies } from '../../workers/separateBodies.js';
 import { solveContour as solveContourModel } from '../../utils/contourSolve.js';
+import { classifyKernelFailure } from '../../workers/kernelCrash.js';
 
 /**
  * List of globals to block/remove in the worker context
@@ -9635,10 +9636,45 @@ function _gameMatchCompare(attempt, target, relEps, volFloor) {
   }
 }
 
+/** MB of the kernel heap right now, or null. */
+function _kernelHeapMB() {
+  try {
+    const buf = manifoldModule?.HEAP8?.buffer || manifoldModule?.wasmMemory?.buffer;
+    return buf ? Math.round(buf.byteLength / 1048576 * 10) / 10 : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 export function bindWorker(self) {
+// Set by the first fatal throw (a wasm abort, a trap, out of memory). The
+// module cannot be used after it: every later message is answered at once
+// with the same fatal report instead of hanging or throwing garbage, and
+// the main thread replaces this worker.
+let kernelDead = null;
 self.onmessage = async (event) => {
   const { type, payload, id } = event.data;
-  
+  if (kernelDead) {
+    self.postMessage({
+      type: 'error',
+      id,
+      payload: {
+        message: kernelDead.message,
+        name: 'KernelDead',
+        stack: '',
+        scriptLine: null,
+        featureId: null,
+        featureBlock: null,
+        featureSkip: null,
+        fatal: true,
+        dead: true,
+        reason: kernelDead.reason,
+        wasmHeapMB: _kernelHeapMB(),
+      },
+    });
+    return;
+  }
+
   try {
     switch (type) {
       case 'init': {
@@ -10335,17 +10371,22 @@ self.onmessage = async (event) => {
         throw new Error(`Unknown message type: ${type}`);
     }
   } catch (error) {
-    self.postMessage({ 
-      type: 'error', 
+    const heapMB = _kernelHeapMB();
+    const verdict = classifyKernelFailure({ error, heapMB });
+    const message = error && typeof error === 'object' && 'message' in error ? String(error.message) : String(error);
+    if (verdict.fatal && !kernelDead) kernelDead = { reason: verdict.reason, message };
+    self.postMessage({
+      type: 'error',
       id,
       payload: {
-        message: error.message,
+        message,
         name: error && typeof error === 'object' && typeof error.name === 'string' ? error.name : '',
-        stack: error.stack,
+        stack: error?.stack,
         scriptLine: Number.isFinite(error?.scriptLine) ? error.scriptLine : null,
         featureId: typeof error?.featureId === 'string' ? error.featureId : null,
         featureBlock: typeof error?.featureBlock === 'string' ? error.featureBlock : null,
         featureSkip: error?.featureSkip && typeof error.featureSkip === 'object' ? error.featureSkip : null,
+        ...(verdict.fatal ? { fatal: true, reason: verdict.reason, wasmHeapMB: heapMB } : {}),
       }
     });
   }
