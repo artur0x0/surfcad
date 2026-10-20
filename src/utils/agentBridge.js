@@ -25,6 +25,7 @@
 
 import { v1Registry } from '../agent/commands/index.js';
 import { formatAgentErrors, scrubPublishedError } from '../agent/state/formatErrors.js';
+import { kernelCrashRecord } from '../workers/kernelCrash.js';
 import { explainReservedHelperError } from '../agent/state/reservedHelpers.js';
 import { createPickSessions } from '../agent/pick/session.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
@@ -331,10 +332,15 @@ export function createSurfcadBridge(hostSource) {
     }
     lastErrors = errors.slice();
     lastRunOk = ok;
+    const crash = !ok
+      ? ((recorded?.crash && typeof recorded.crash === 'object' ? recorded.crash : null)
+        || (outcome?.crash && typeof outcome.crash === 'object' ? outcome.crash : null))
+      : null;
     lastStructuredErrors = ok ? [] : formatAgentErrors({
       messages: lastErrors,
       script: text,
       runFailure: recorded,
+      crash,
     });
     const activeId = hostFn('readParts')?.()?.activeId ?? '';
     lastStatusPartId = activeId != null ? String(activeId) : '';
@@ -349,6 +355,7 @@ export function createSurfcadBridge(hostSource) {
     if (Array.isArray(outcome?.droppedPaints)) {
       result.droppedPaints = JSON.parse(JSON.stringify(outcome.droppedPaints));
     }
+    if (crash) result.crash = JSON.parse(JSON.stringify(crash));
     return result;
   }
 
@@ -406,12 +413,14 @@ export function createSurfcadBridge(hostSource) {
   }
 
   function failedExecute(err) {
+    const crash = kernelCrashRecord(err);
     return {
       ok: false,
       errors: [String(err?.message || err)],
       volume: null,
       bbox: null,
       partName: '',
+      ...(crash ? { crash } : {}),
     };
   }
 

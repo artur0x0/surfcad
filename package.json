@@ -23,6 +23,8 @@
         "golden:agent-state-reporting": "node scripts/golden/smoke_agent_state_reporting.mjs",
         "golden:agent-block-edit-leftover": "node scripts/golden/smoke_agent_block_edit_leftover.mjs",
         "golden:agent-move-target": "node scripts/golden/smoke_agent_move_target.mjs",
+        "golden:geometry-worker-crash": "node scripts/golden/smoke_geometry_worker_crash.mjs",
+        "golden:kernel-crash-headless": "node scripts/golden/smoke_kernel_crash_headless.mjs",
         "golden:position-limit": "node scripts/golden/smoke_position_limit.mjs",
         "golden:new-part-empty": "node scripts/golden/smoke_new_part_empty.mjs",
         "golden:paint-open-ready": "node scripts/golden/smoke_paint_open_ready.mjs",

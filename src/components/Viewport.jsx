@@ -56,6 +56,7 @@ import {
 } from '../agent/agentFeaturePopupGate.js';
 import { encodeCanvasImage } from '../agent/screenshotImage';
 import { kernelExceptionDetail } from '../agent/state/formatErrors';
+import { kernelCrashRecord } from '../workers/kernelCrash.js';
 import { viewportToastRows } from '../agent/state/toasts';
 import { buildAgentMode } from '../agent/state/mode';
 import { buildCameraState } from '../agent/state/camera';
@@ -13357,6 +13358,10 @@ const Viewport = forwardRef(({
       console.error('Error executing script:', error);
       const msg = error.message || 'Script execution failed';
       const detail = kernelExceptionDetail(error, msg);
+      // A kernel crash (wasm abort, out of memory, watchdog): the worker was
+      // replaced; the record rides on the outcome so status, errors, and
+      // the part row say so.
+      const crash = kernelCrashRecord(error);
       stageExecErrorRef.current = msg;
       setExecutionError(msg);
       // The worker names the marked feature block that was running
@@ -13372,6 +13377,7 @@ const Viewport = forwardRef(({
           skipped: Array.isArray(error?.featureSkip?.skipped) ? error.featureSkip.skipped : [],
           message: msg,
           detail,
+          ...(crash ? { crash } : {}),
         });
       }
 

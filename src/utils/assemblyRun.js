@@ -12,6 +12,7 @@ import {
   sortParts,
 } from './assembly.js';
 import { missingMeshMessage, resolvePartMeshes } from './meshAssets.js';
+import { kernelCrashRecord } from '../workers/kernelCrash.js';
 
 export async function runAssemblyParts({ doc, scripts, execute, ids = null }) {
   const only = ids ? new Set(ids) : null;
@@ -65,7 +66,8 @@ export async function runAssemblyParts({ doc, scripts, execute, ids = null }) {
         ? { ok: true, mesh, ...geom }
         : { ok: false, error: 'Script must return a Manifold object' };
     } catch (err) {
-      outcome = { ok: false, error: err?.message || String(err) };
+      const crash = kernelCrashRecord(err);
+      outcome = { ok: false, error: err?.message || String(err), ...(crash ? { crash } : {}) };
     }
     Object.assign(runs, recordPartRun(runs, part.id, outcome));
   }

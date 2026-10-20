@@ -27,6 +27,7 @@ import {
   PROMPT_WEBHOOK_ACTIVE,
   promptToolDefinitions,
 } from './prompt/promptTools.mjs';
+import { BUILD_GUIDANCE } from './prompt/buildGuidance.mjs';
 
 const PAIR_TOOL_NAME = 'pair';
 
@@ -102,6 +103,8 @@ function pairToolResult(result, prompts) {
     content: [
       { type: 'text', text: JSON.stringify(payload, null, 2) },
       { type: 'text', text: note },
+      // Every client gets the same build guidance here, once, at pair time.
+      { type: 'text', text: BUILD_GUIDANCE },
     ],
     isError: false,
   };
@@ -132,7 +135,7 @@ export async function createSurfcadMcpServer(options = {}) {
     { name: 'surfcad-mcp', version: loadPackageVersion() },
     {
       capabilities: { tools: {} },
-      instructions: PROMPT_SERVER_INSTRUCTIONS,
+      instructions: `${PROMPT_SERVER_INSTRUCTIONS}\n\n${BUILD_GUIDANCE}`,
     },
   );
 
@@ -140,7 +143,7 @@ export async function createSurfcadMcpServer(options = {}) {
     tools: [
       {
         name: PAIR_TOOL_NAME,
-        description: `Pair this MCP server to an open SurfCAD tab via the local WebSocket relay. ${pairingEnvHint()} ${PROMPT_SERVER_INSTRUCTIONS}`,
+        description: `Pair this MCP server to an open SurfCAD tab via the local WebSocket relay. ${pairingEnvHint()} ${PROMPT_SERVER_INSTRUCTIONS} The pair result also carries the build guidance (How to build in SurfCAD: block out first, features first, hardware as patterned parts); read it before the first model call.`,
         inputSchema: {
           type: 'object',
           additionalProperties: false,

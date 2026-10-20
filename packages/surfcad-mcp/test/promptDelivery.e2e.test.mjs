@@ -134,7 +134,8 @@ test('stdio pair note, queued status, and bearer webhook POST', async () => {
     client = new Client({ name: 'claude-code-stdio', version: '0.0.0' });
     await client.connect(transport);
 
-    assert.equal(client.getInstructions(), INSTRUCTIONS);
+    // The webhook line first; the build guidance follows it (buildGuidance.e2e.test.mjs).
+    assert.ok(client.getInstructions().startsWith(INSTRUCTIONS), client.getInstructions().slice(0, 120));
 
     const pairPromise = client.callTool({ name: 'pair', arguments: { code: token } });
     await waitFor(inbound, (msg) => msg.type === PAIR_MSG.PAIR_REQUEST);

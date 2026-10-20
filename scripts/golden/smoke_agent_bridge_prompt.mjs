@@ -203,7 +203,8 @@ try {
   await client.connect(transport);
   check(
     'server instructions nudge register_webhook or read_messages',
-    client.getInstructions() === 'call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages.',
+    // The webhook line comes first; the build guidance follows it (buildGuidance.e2e.test.mjs).
+    String(client.getInstructions() || '').startsWith('call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages.'),
     String(client.getInstructions() || ''),
   );
 
