@@ -26,6 +26,7 @@
         "golden:position-limit": "node scripts/golden/smoke_position_limit.mjs",
         "golden:new-part-empty": "node scripts/golden/smoke_new_part_empty.mjs",
         "golden:paint-open-ready": "node scripts/golden/smoke_paint_open_ready.mjs",
+        "golden:joint-fixed-target": "node scripts/golden/smoke_joint_fixed_target.mjs",
         "golden:agent-bridge-h6-h8": "node scripts/golden/smoke_agent_bridge_h6_h8.mjs",
         "golden:agent-bridge-h7": "node scripts/golden/smoke_agent_bridge_h7.mjs",
         "golden:agent-bridge-h9": "node scripts/golden/smoke_agent_bridge_h9.mjs",

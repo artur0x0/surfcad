@@ -10,6 +10,8 @@ const WHEN = new Date('2026-10-08T02:00:00.001Z');
 const A = mintSurfId({ now: WHEN, rand: 'a3f9' });
 const B = mintSurfId({ now: new Date('2026-10-08T02:00:00.002Z'), rand: 'b10c' });
 const J = mintSurfId({ now: new Date('2026-10-08T02:00:00.003Z'), rand: 'ee11' });
+const J2 = mintSurfId({ now: new Date('2026-10-08T02:00:00.004Z'), rand: 'ee12' });
+const J3 = mintSurfId({ now: new Date('2026-10-08T02:00:00.005Z'), rand: 'ee13' });
 const GONE = mintSurfId({ now: new Date('2026-10-08T02:00:00.004Z'), rand: 'd00d' });
 const PATH_A = 'assemblies/Gearbox/Bracket.js';
 const PATH_B = 'assemblies/Gearbox/Housing.js';
@@ -297,4 +299,30 @@ test('a legacy local- prefix on a joint follows the part', () => {
   assert.equal(memory.doc.joints[0].id, J);
   assert.equal(memory.doc.joints[0].a.part, A);
   assert.equal(migrateAssemblyRecords({ doc: memory.doc, scripts: {} }).changed, false);
+});
+
+test('a fixed joint may remember the tapped face or edge, and a whole-part pick stores the part alone (bike joints 3)', () => {
+  const byFace = { id: J, name: 'Ground 1', type: 'fixed', a: { part: A, kind: 'face', key: { at: [0, 0, 10], n: [0, 0, 1], area: 400 } } };
+  assert.deepEqual(errorsOf({ joints: [byFace] }), []);
+  const edgeFace = (n) => ({ at: [0, 0, 10], n, area: 400 });
+  const byEdge = { id: J, name: 'Ground 1', type: 'fixed', a: { part: A, kind: 'edge', key: { at: [0, 0, 10], dir: [1, 0, 0], length: 20, faces: [edgeFace([0, 0, 1]), edgeFace([0, 1, 0])] } } };
+  assert.deepEqual(errorsOf({ joints: [byEdge] }), []);
+  const partOnly = { id: J, name: 'Ground 1', type: 'fixed', a: { part: A } };
+  assert.deepEqual(errorsOf({ joints: [partOnly] }), []);
+  has(errorsOf({ joints: [{ ...partOnly, a: { part: A, key: { at: [0, 0, 0], n: [0, 0, 1], area: 1 } } }] }), 'key needs');
+  has(errorsOf({ joints: [{ ...partOnly, a: { part: A, kind: 'face', key: { at: [0, 0, 0] } } }] }), 'key');
+  // Save keeps the remembered tap; the part-only form stays as it was.
+  const saved = serializeAssembly({
+    source: 'local',
+    name: 'Gearbox',
+    parts: [{ id: PATH_A, name: 'Bracket', surfId: A }, { id: PATH_B, name: 'Housing', surfId: B }],
+    joints: [byFace, { ...byEdge, id: J2 }, { ...partOnly, id: J3 }],
+  });
+  assert.deepEqual(saved.joints[0].a, byFace.a);
+  assert.deepEqual(saved.joints[1].a, byEdge.a);
+  assert.deepEqual(saved.joints[2].a, { part: A });
+  assert.equal(saved.joints[0].b, undefined);
+  const reread = parseAssemblyDocument(JSON.parse(stringifySurfJson(saved)));
+  assert.deepEqual(reread.joints[0].a, byFace.a);
+  assert.deepEqual(reread.joints[2].a, { part: A });
 });

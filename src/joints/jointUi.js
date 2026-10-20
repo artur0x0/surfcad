@@ -232,6 +232,8 @@ export function typeFits(type, picks) {
  * Never fixed. The type buttons can still override this.
  */
 export function suggestJointType(picks) {
+  const list = orderedPicks(picks);
+  if (list.length === 1 && list[0]?.kind === 'part') return 'fixed';
   if (typeFits('symmetric', picks)) return 'symmetric';
   if (typeFits('concentric', picks)) return 'concentric';
   const pair = pairOf(picks);
@@ -367,6 +369,7 @@ export function quickAngleCard(card, degrees, doc) {
 
 function kindWord(pick) {
   if (!pick) return '';
+  if (pick.kind === 'part') return 'part';
   if (pick.kind === 'edge') return 'line';
   if (pick.kind === 'axis') return 'axis';
   if (pick.kind === 'point') return 'point';
@@ -440,6 +443,21 @@ function storedKind(pick, type) {
   return 'face';
 }
 
+/**
+ * The reference a fixed joint stores: the part, plus the face, edge, or
+ * axis that was tapped when there was one, so the chip reopens on that
+ * pick. A whole-part pick stores the part alone. The solver and refresh
+ * read only the part.
+ */
+function fixedReference(pick) {
+  const out = { part: pick.surfId };
+  if (pick.kind !== 'part' && pick.key) {
+    out.kind = storedKind(pick, 'fixed');
+    out.key = pick.key;
+  }
+  return out;
+}
+
 export function buildJointRecord(card, identity) {
   const picks = orderedPicks(card?.picks || []);
   const type = card?.type;
@@ -464,7 +482,7 @@ export function buildJointRecord(card, identity) {
   }
   if (type === 'coincident') joint.opposed = card.opposed !== false;
   if (type === 'fixed') {
-    joint.a = { part: picks[0].surfId };
+    joint.a = fixedReference(picks[0]);
     return { ok: true, joint };
   }
   const groups = groupPicksByPart(picks);
@@ -528,14 +546,16 @@ export function cardFromJoint(joint, doc, message = '') {
   const pickOf = (ref) => {
     if (!ref) return null;
     const part = partOf(ref.part);
+    // A fixed joint with no stored geometry is a whole-part pick.
+    const kind = ref.kind || (joint.type === 'fixed' ? 'part' : 'face');
     return {
       surfId: ref.part,
       partId: part?.id || null,
       partName: part?.name || ref.part,
-      kind: ref.kind || 'face',
-      planar: ref.kind !== 'axis' && ref.kind !== 'edge',
-      axis: ref.kind === 'axis',
-      key: ref.key,
+      kind,
+      planar: kind !== 'axis' && kind !== 'edge' && kind !== 'part',
+      axis: kind === 'axis',
+      key: ref.key ?? null,
     };
   };
   const refs = joint.type === 'symmetric'

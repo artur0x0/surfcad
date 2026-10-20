@@ -434,4 +434,38 @@ test('a fixed part never flips: the free part turns over instead', () => {
   assert.deepEqual(solved.placements.B.q, Q0);
   const na = world(solved.placements.A, [0, 0, 1]).dir;
   assert.ok(na[2] + 1 < 1e-6, `A normal ${na}`);
+
+test('a fixed frame never moves: concentric pulls only the wheel, by part, by face, or by edge (bike joints 3)', () => {
+  // Frame bearing housing axis at (0, *, 350); the wheel starts 0.7 mm off it.
+  const frameSeed = { t: [10, 20, 30], q: quatFromOmega([0, 0.02, 0]) };
+  const frame = () => ({ surfId: 'F', placement: { t: frameSeed.t.slice(), q: frameSeed.q.slice() } });
+  const wheel = () => part('W', [0.5, 0, 0.5]);
+  const concentric = {
+    id: 'c', name: 'Rear wheel bearing (axis)', type: 'concentric',
+    a: axis('F', [0, 27.5, 350], [0, -1, 0]),
+    b: axis('W', [0, 25, 350], [0, -1, 0]),
+  };
+  const grounds = {
+    part: { id: 'g', name: 'Ground 1', type: 'fixed', a: { part: 'F' } },
+    face: { id: 'g', name: 'Ground 1', type: 'fixed', a: { part: 'F', kind: 'face', key: { at: [0, 15, 350], n: [0, -1, 0], area: 70343 } } },
+    edge: { id: 'g', name: 'Ground 1', type: 'fixed', a: { part: 'F', kind: 'edge', key: { at: [300, 15, 350], dir: [0, 0, 1], length: 10, faces: [] } } },
+  };
+  for (const [how, ground] of Object.entries(grounds)) {
+    const solved = solveJoints({ parts: [frame(), wheel()], joints: [ground, concentric] });
+    assert.equal(solved.ok, true, `${how}: ${solved.message}`);
+    assert.equal(solved.statuses.g, 'ok');
+    assert.deepEqual(solved.placements.F.t, frameSeed.t, `${how}: frame moved`);
+    for (let i = 0; i < 4; i++) assert.ok(Math.abs(solved.placements.F.q[i] - frameSeed.q[i]) < 1e-12, `${how}: frame turned`);
+    const fa = { at: world(solved.placements.F, [0, 27.5, 350]).at, dir: world(solved.placements.F, [0, -1, 0]).dir };
+    const wa = { at: world(solved.placements.W, [0, 25, 350]).at };
+    const d = [wa.at[0] - fa.at[0], wa.at[1] - fa.at[1], wa.at[2] - fa.at[2]];
+    const along = d[0] * fa.dir[0] + d[1] * fa.dir[1] + d[2] * fa.dir[2];
+    const off = Math.hypot(d[0] - fa.dir[0] * along, d[1] - fa.dir[1] * along, d[2] - fa.dir[2] * along);
+    assert.ok(off < 1e-3, `${how}: wheel ${off} mm off the frame axis`);
+    assert.ok(Math.hypot(solved.placements.W.t[0] - 0.5, solved.placements.W.t[2] - 0.5) > 0.1, `${how}: wheel did not move`);
+  }
+  // Without the ground both parts share the correction.
+  const free = solveJoints({ parts: [frame(), wheel()], joints: [concentric] });
+  assert.equal(free.ok, true);
+  assert.notDeepEqual(free.placements.F.t, frameSeed.t);
 });

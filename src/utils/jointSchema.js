@@ -221,7 +221,7 @@ function kindsOk(type, aKind, bKind) {
   return false;
 }
 
-/** Geometry references a joint names. `fixed` is the part only. */
+/** Geometry references a joint names. `fixed` names the part (its stored tap is for the chip only). */
 export function jointRefs(joint) {
   if (!joint) return [];
   if (joint.type === 'symmetric') return [joint.a, joint.a2, joint.b, joint.b2].filter(Boolean);
@@ -240,8 +240,14 @@ function referenceErrors(ref, at, { geometry }) {
   }
   if (!isSurfId(ref.part)) errors.push(`${at}.part must be a surf id`);
   if (!geometry) {
-    if (ref.kind !== undefined) errors.push(`${at}.kind is omitted on a fixed joint`);
-    if (ref.key !== undefined) errors.push(`${at}.key is omitted on a fixed joint`);
+    // A fixed joint holds the part. It may remember the face, edge, or
+    // axis that was tapped (for the chip); a whole-part pick has neither.
+    if (ref.kind === undefined) {
+      if (ref.key !== undefined) errors.push(`${at}.key needs ${at}.kind on a fixed joint`);
+      return errors;
+    }
+    if (!REF_KINDS.has(ref.kind)) errors.push(`${at}.kind must be face, edge, axis, or plane`);
+    else errors.push(...keyErrors(ref.kind, ref.key, `${at}.key`));
     return errors;
   }
   if (!REF_KINDS.has(ref.kind)) errors.push(`${at}.kind must be face, edge, axis, or plane`);
@@ -251,7 +257,7 @@ function referenceErrors(ref, at, { geometry }) {
 
 function copyReference(ref, { geometry }) {
   const out = { part: String(ref.part) };
-  if (!geometry) return out;
+  if (!geometry && ref.kind === undefined) return out;
   out.kind = ref.kind;
   out.key = copyKey(ref.kind, ref.key);
   return out;

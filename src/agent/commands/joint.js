@@ -27,7 +27,7 @@ const JOINT_PARAM_PROPERTIES = Object.freeze({
   opposed: { type: 'boolean' },
 });
 
-const JOINT_PICK_KINDS = Object.freeze(['face', 'axis', 'edge']);
+const JOINT_PICK_KINDS = Object.freeze(['face', 'axis', 'edge', 'part']);
 
 const FACE_ID_SCHEMA = Object.freeze({
   type: 'string',
@@ -46,7 +46,7 @@ const JOINT_PICK_ROW_SCHEMA = Object.freeze({
     kind: {
       type: 'string',
       enum: JOINT_PICK_KINDS.slice(),
-      description: 'Pick kind when key is explicit (concentric uses axis picks)',
+      description: 'Pick kind when key is explicit (concentric uses axis picks). part picks the whole part, for a fixed joint; it needs no face_id or key.',
     },
   },
 });
@@ -57,7 +57,8 @@ function hasFaceId(row) {
 
 function jointPickRows(args) {
   if (Array.isArray(args?.picks)) return args.picks;
-  if (!args?.part_id || (!args?.key && !hasFaceId(args))) return [];
+  // part_id alone picks the whole part (a fixed joint target).
+  if (!args?.part_id) return [];
   const row = { part_id: args.part_id };
   if (hasFaceId(args)) row.face_id = args.face_id;
   if (args.key) row.key = args.key;
@@ -122,11 +123,14 @@ export const jointPickCommand = Object.freeze({
   checkArgs(args) {
     const rows = jointPickRows(args);
     if (!rows.length) {
-      return { code: 'bad_args', message: 'joint_pick needs part_id with face_id or key, or picks[]' };
+      return { code: 'bad_args', message: 'joint_pick needs part_id (alone for a whole-part pick, or with face_id or key), or picks[]' };
     }
     for (const row of rows) {
-      if (!row?.part_id || (!row?.key && !hasFaceId(row))) {
-        return { code: 'bad_args', message: 'each joint pick needs part_id and face_id (or key)' };
+      if (!row?.part_id) {
+        return { code: 'bad_args', message: 'each joint pick needs part_id, with face_id or key unless it picks the whole part' };
+      }
+      if (row.kind === 'part' && (row.key || hasFaceId(row))) {
+        return { code: 'bad_args', message: 'a part pick takes no face_id or key' };
       }
     }
     return null;

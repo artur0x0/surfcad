@@ -8479,7 +8479,8 @@ const App = () => {
       rememberCadPart(null);
       return;
     }
-    if (!raw.key) return;
+    // A whole-part pick (Ground on the highlighted part) has no key.
+    if (!raw.key && raw.kind !== 'part') return;
     const pick = {
       partId: part.id,
       surfId: pickSurfId,
@@ -8487,7 +8488,7 @@ const App = () => {
       kind: raw.kind,
       planar: !!raw.planar,
       axis: !!raw.axis,
-      key: raw.key,
+      key: raw.key || null,
     };
     if ((jointCardAgentRef.current ?? jointCardRef.current)?.partChange) return;
     const accepted = acceptJointPick(jointPicksRef.current, pick);
@@ -9586,6 +9587,11 @@ const App = () => {
         onDelete={() => handleJointDelete(jointCard?.id)}
         onQuickAngle={handleQuickAngle}
         onResolvePartChange={handleResolvePartChange}
+        groundPart={(() => {
+          const part = cadPartId ? (assemblyDoc?.parts || []).find((row) => row.id === cadPartId) : null;
+          return part && partSurfId(part) ? { id: part.id, name: part.name || part.id } : null;
+        })()}
+        onGroundPart={(partId) => handleJointPick({ partId, kind: 'part', planar: false, axis: false, key: null })}
         compact={isMobile}
       />
     )
@@ -10543,6 +10549,16 @@ const App = () => {
         }
         if (!partSurfId(part)) {
           return { error: { code: 'no_surf_id', message: `Part has no surf id: ${part.id}` } };
+        }
+        const partOnly = row?.kind === 'part' || (!row?.key && (row?.face_id == null || row.face_id === ''));
+        if (partOnly) {
+          const beforeLen = (jointPicksRef.current || []).length;
+          handleJointPick({ partId: part.id, kind: 'part', planar: false, axis: false, key: null });
+          if ((jointPicksRef.current || []).length <= beforeLen) {
+            return { error: { code: 'pick_failed', message: `Joint pick was not accepted for part ${part.id}` } };
+          }
+          picked.push(part.id);
+          continue;
         }
         const described = viewportRef.current?.describeJointPick?.({
           partId: part.id,

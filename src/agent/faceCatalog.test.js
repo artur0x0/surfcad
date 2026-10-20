@@ -272,9 +272,11 @@ test('joint_pick refuses an unknown face id', { timeout: 60_000 }, async () => {
   const { handle } = await load();
   const out = describeJointPick({ faceId: 'f999', geometry: handle.geometry, faceIDs: handle.faceIDs });
   assert.equal(out.error.code, 'unknown_face');
+  // part_id alone is a whole-part pick (fixed joint target); a pick with no part is refused.
+  assert.equal(jointPickCommand.checkArgs({ picks: [{ part_id: 'local:handle' }] }), null);
   assert.deepEqual(
-    jointPickCommand.checkArgs({ picks: [{ part_id: 'local:handle' }] }),
-    { code: 'bad_args', message: 'each joint pick needs part_id and face_id (or key)' },
+    jointPickCommand.checkArgs({ picks: [{ face_id: 'f3' }] }),
+    { code: 'bad_args', message: 'each joint pick needs part_id, with face_id or key unless it picks the whole part' },
   );
   assert.equal(jointPickCommand.checkArgs({ part_id: 'local:handle', face_id: 'f3' }), null);
 });
