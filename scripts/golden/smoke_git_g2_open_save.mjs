@@ -363,7 +363,7 @@ ok('folder open menu is Part|Assembly; Open Part (whole repo) via folder', /data
   && /data-part-open-action="part"/.test(feed)
   && /data-part-open-action="assembly"/.test(feed)
   && /data-git-open-part-action/.test(feed) && /startOpenPart/.test(feed)
-  && /data-git-open-group/.test(feed) && /opens by reference/.test(feed) && /links from/.test(feed)
+  && /data-git-open-group/.test(feed) && /vaultOpenPartSubtitle\(item\)/.test(feed) && !/opens by reference/.test(feed)
   && !/data-git-add-existing/.test(feed)
   && /data-assembly-add-existing/.test(feed)
   && /onOpenVaultPart/.test(feed));
