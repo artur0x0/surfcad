@@ -9,12 +9,18 @@
 import { solveResiduals } from '../solver/residual.js';
 import { partSurfId } from '../utils/git/surfId.js';
 import { jointRefs } from '../utils/jointSchema.js';
-import { evaluateJoints, localFrame, seedDrops } from './equations.js';
+import { evaluateJoints, localFrame, seedDrops, wantedAlignment } from './equations.js';
 import {
   add3,
+  cross3,
+  dot3,
   mulQuat,
   normalizeQuat,
   quatFromOmega,
+  rotateByQuat,
+  scale3,
+  sub3,
+  unit3,
 } from './rigid.js';
 
 export const JOINT_TOL = 1e-3;
@@ -84,6 +90,61 @@ function freeIdsOf(joints, seeds) {
   return [...named].filter((id) => seeds.has(id) && !fixed.has(id)).sort();
 }
 
+function worldDir(pose, local) {
+  return rotateByQuat(pose.q, local.dir);
+}
+
+function worldAt(pose, local) {
+  return add3(rotateByQuat(pose.q, local.at), pose.t);
+}
+
+/**
+ * Turn `pose` half a turn about an axis across `dir` through `pivot`, so
+ * the face at the pivot stays where it is and faces the other way.
+ */
+function flipPose(pose, dir, pivot) {
+  const helper = Math.abs(dir[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const axis = unit3(cross3(dir, helper));
+  const q = quatFromOmega(scale3(axis, Math.PI));
+  const t = add3(pivot, rotateByQuat(q, sub3(pose.t, pivot)));
+  return { t, q: normalizeQuat(mulQuat(q, pose.q)) };
+}
+
+/**
+ * Settle the direction sign before the solve. The parallel rows of
+ * coincident and of angle 0° / 180° are satisfied either way round, so a
+ * part that starts the wrong way round would otherwise be reported as
+ * solved as it is (`opposed` ignored), or, off parallel, be pulled to the
+ * nearer, wrong side. Flip the free part's seed half a turn about its own
+ * reference, then the rows pull it to the orientation the joint asks for.
+ * A seed is flipped at most once; a later joint on that part sees the
+ * flipped seed.
+ */
+export function orientSeeds(seeds, freeIds, joints) {
+  const free = new Set(freeIds);
+  const flipped = new Set();
+  for (const joint of joints || []) {
+    const wanted = wantedAlignment(joint);
+    if (wanted === 0) continue;
+    const localA = localFrame(joint.a, joint.type);
+    const localB = localFrame(joint.b, joint.type);
+    const poseA = seeds.get(joint.a?.part);
+    const poseB = seeds.get(joint.b?.part);
+    if (!localA || !localB || !poseA || !poseB) continue;
+    const dirA = worldDir(poseA, localA);
+    const dirB = worldDir(poseB, localB);
+    if (dot3(dirA, dirB) * wanted >= 0) continue;
+    if (free.has(joint.b.part) && !flipped.has(joint.b.part)) {
+      seeds.set(joint.b.part, flipPose(poseB, dirB, worldAt(poseB, localB)));
+      flipped.add(joint.b.part);
+    } else if (free.has(joint.a.part) && !flipped.has(joint.a.part)) {
+      seeds.set(joint.a.part, flipPose(poseA, dirA, worldAt(poseA, localA)));
+      flipped.add(joint.a.part);
+    }
+  }
+  return seeds;
+}
+
 /**
  * Residual and analytic Jacobian for `joints` on `parts`.
  * The unknown is six numbers per free part, packed [ωx, ωy, ωz, Δtx, Δty, Δtz],
@@ -93,6 +154,7 @@ export function jointSystem(parts, joints) {
   const seeds = new Map();
   for (const part of parts || []) seeds.set(partId(part), seedPose(part));
   const freeIds = freeIdsOf(joints, seeds);
+  orientSeeds(seeds, freeIds, joints);
   const freeIndex = new Map(freeIds.map((id, i) => [id, i]));
   const drops = seedDrops(joints, seeds);
   const n = freeIds.length * 6;
