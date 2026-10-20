@@ -205,14 +205,29 @@ for (const [state, badge] of [['agent-typing', 'typing'], ['agent-working', 'wor
 // 5. Fold during a run: the run continues, unfolding restores the reply and the draft.
 {
   const { page } = await openState(browser, 'idle');
+  // Hold the DEV stub's echo so the in-flight badge cannot race to unread.
+  await page.waitForFunction(() => typeof window.__surfcadAgentPromptStub?.holdReply === 'function', { timeout: 5000 });
+  const held = await page.evaluate(() => {
+    window.__surfcadAgentPromptStub.holdReply(true);
+    return true;
+  });
+  check('fold-during-run: the demo stub can hold its reply', held === true);
   await page.fill('[data-agent-prompt-input]', 'Make the plate 3 mm thicker');
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(50);
+  await page.waitForFunction(() => {
+    const state = document.querySelector('[data-agent-prompt]')?.getAttribute('data-agent-prompt-state');
+    return state === 'typing' || state === 'working';
+  }, { timeout: 5000 });
   await page.fill('[data-agent-prompt-input]', 'draft kept');
   await page.click('[data-agent-prompt-fold]');
-  await page.waitForTimeout(100);
+  await page.waitForFunction(() => {
+    const folded = document.querySelector('[data-agent-prompt]')?.getAttribute('data-agent-prompt-folded') === '1';
+    const badge = document.querySelector('[data-agent-prompt-unfold]')?.getAttribute('data-agent-prompt-badge');
+    return folded && (badge === 'typing' || badge === 'working');
+  }, { timeout: 5000 });
   const during = await snapshot(page);
   check('fold during a run: folded with a typing or working badge', during.folded === '1' && (during.badge === 'typing' || during.badge === 'working'), JSON.stringify({ badge: during.badge }));
+  await page.evaluate(() => window.__surfcadAgentPromptStub.releaseReply());
   await page.waitForFunction(() => document.querySelector('[data-agent-prompt-unfold]')?.getAttribute('data-agent-prompt-badge') === 'unread', { timeout: 10000 });
   const replied = await snapshot(page);
   check('the reply landed while folded: unread badge', replied.badge === 'unread' && /new reply/.test(replied.unfoldLabel || ''), JSON.stringify({ badge: replied.badge }));

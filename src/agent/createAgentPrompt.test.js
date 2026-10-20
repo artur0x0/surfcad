@@ -42,3 +42,17 @@ test('DEV still gets the stub so local unpaired playtest can echo', () => {
   assert.equal(typeof id, 'string');
   assert.equal(replies[0].text, 'Echo: hi');
 });
+
+test('non-DEV createAgentPrompt does not install the golden hold hook', () => {
+  const previous = globalThis.window;
+  const fake = {};
+  globalThis.window = fake;
+  try {
+    const transport = createAgentPrompt({ delayMs: 0 }, { DEV: false });
+    assert.equal(transport, null);
+    assert.equal(fake.__surfcadAgentPromptStub, undefined);
+  } finally {
+    if (previous === undefined) delete globalThis.window;
+    else globalThis.window = previous;
+  }
+});
