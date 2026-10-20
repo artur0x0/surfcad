@@ -405,6 +405,24 @@ jobs:
             echo "agent prompt chat golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:geometry-worker-crash | tee "${RUNNER_TEMP}/geometry-worker-crash.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/geometry-worker-crash.log"; then
+            echo "geometry worker crash golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'geometry worker crash golden: ok' "${RUNNER_TEMP}/geometry-worker-crash.log"; then
+            echo "geometry worker crash golden did not pass (see log above)"
+            exit 1
+          fi
+          npm run golden:agent-prompt-states | tee "${RUNNER_TEMP}/agent-prompt-states.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-prompt-states.log"; then
+            echo "agent prompt states golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'agent prompt states golden: ok' "${RUNNER_TEMP}/agent-prompt-states.log"; then
+            echo "agent prompt states golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
