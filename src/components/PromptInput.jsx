@@ -28,6 +28,9 @@ import { shouldShowAgentBridgeDisconnect } from '../agent/ws/pairingFlow.js';
 import { useAgentBridgeHost } from './AgentBridgeHost.jsx';
 
 const COUNTER_FROM = 7200;
+/** Matches `.agent-prompt--folded` transform duration. After this the
+ *  component sets visibility:hidden; a 0s CSS visibility transition does not. */
+const AGENT_PROMPT_FOLD_MS = 220;
 const PLACEHOLDER = 'Message your agent…';
 
 function demoSeed(state) {
@@ -114,7 +117,10 @@ export default function PromptInput({
   // Folded (desktop): the prompt slides away and a chevron at the bottom
   // brings it back as it was. Remembered per agent session.
   const foldable = !isMobile;
-  const [folded, setFolded] = useState(() => (seed.folded === true) || (foldable && readFolded()));
+  const foldedInitially = (seed.folded === true) || (foldable && readFolded());
+  const [folded, setFolded] = useState(foldedInitially);
+  // Hidden only after the slide (or immediately when we mount already folded).
+  const [foldSettled, setFoldSettled] = useState(foldedInitially);
   const [unread, setUnread] = useState(false);
   const foldedRef = useRef(folded);
   foldedRef.current = folded;
@@ -191,6 +197,7 @@ export default function PromptInput({
     // The agent is gone: the next session starts open.
     clearFolded();
     setFolded(false);
+    setFoldSettled(false);
     setUnread(false);
     return undefined;
   }, [visible]);
@@ -225,10 +232,42 @@ export default function PromptInput({
 
   const unfoldPrompt = useCallback(() => {
     setFolded(false);
+    setFoldSettled(false);
     setUnread(false);
     writeFolded(false);
     return { ok: true, folded: false };
   }, []);
+
+  useEffect(() => {
+    if (!folded) {
+      setFoldSettled(false);
+      return undefined;
+    }
+    const el = rootRef.current;
+    const reduce = typeof window !== 'undefined'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!el || reduce) {
+      setFoldSettled(true);
+      return undefined;
+    }
+    let done = false;
+    const settle = () => {
+      if (done) return;
+      done = true;
+      setFoldSettled(true);
+    };
+    const onEnd = (event) => {
+      if (event.target !== el || event.propertyName !== 'transform') return;
+      settle();
+    };
+    el.addEventListener('transitionend', onEnd);
+    const timer = window.setTimeout(settle, AGENT_PROMPT_FOLD_MS + 60);
+    return () => {
+      done = true;
+      el.removeEventListener('transitionend', onEnd);
+      window.clearTimeout(timer);
+    };
+  }, [folded]);
 
   const discardShot = useCallback(() => {
     setShot(null);
@@ -394,7 +433,7 @@ export default function PromptInput({
       ref={rootRef}
       className={`agent-prompt surface-glass text-on-dark font-ui ${
         isMobile ? 'agent-prompt--compact' : ''
-      }${featurePopupOpen ? ' agent-prompt--away' : ''}${folded ? ' agent-prompt--folded' : ''}`}
+      }${featurePopupOpen ? ' agent-prompt--away' : ''}${folded ? ' agent-prompt--folded' : ''}${folded && foldSettled ? ' agent-prompt--folded-hidden' : ''}`}
       data-agent-prompt=""
       data-agent-prompt-compact={isMobile ? '1' : '0'}
       data-agent-prompt-working={working ? '1' : '0'}

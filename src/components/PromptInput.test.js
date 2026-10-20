@@ -122,9 +122,17 @@ test('working state shows the spinner hint and Stop and collapses the chat; typi
   // Folded: the prompt is away and the chevron-up carries the state badge.
   const folded = renderPrompt('?agentPromptDemo=1&agentPromptState=folded');
   assert.match(folded, /agent-prompt--folded/);
+  assert.match(folded, /agent-prompt--folded-hidden/);
   assert.match(folded, /data-agent-prompt-unfold=""/);
   assert.match(folded, /aria-label="Show agent prompt"/);
   assert.match(folded, /data-agent-prompt-live=""/);
+  assert.match(SRC, /AGENT_PROMPT_FOLD_MS/);
+  assert.match(SRC, /transitionend/);
+  // The unfold chevron is a sibling, not inside the hidden prompt.
+  assert.match(
+    folded,
+    /agent-prompt--folded-hidden[\s\S]*<\/div><button[\s\S]*data-agent-prompt-fold=""[\s\S]*<\/button><button[\s\S]*data-agent-prompt-unfold=""/,
+  );
   // Mobile keeps the X until the fold lands there.
   const compact = renderPrompt('?agentPromptDemo=1&agentPromptState=chat', { isMobile: true });
   assert.match(compact, /data-agent-prompt-dismiss=""/);
