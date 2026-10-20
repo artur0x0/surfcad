@@ -434,6 +434,7 @@ test('a fixed part never flips: the free part turns over instead', () => {
   assert.deepEqual(solved.placements.B.q, Q0);
   const na = world(solved.placements.A, [0, 0, 1]).dir;
   assert.ok(na[2] + 1 < 1e-6, `A normal ${na}`);
+});
 
 test('a fixed frame never moves: concentric pulls only the wheel, by part, by face, or by edge (bike joints 3)', () => {
   // Frame bearing housing axis at (0, *, 350); the wheel starts 0.7 mm off it.
