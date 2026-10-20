@@ -6,6 +6,7 @@
   "runtimeFiles": [
     "built/manifold.js",
     "built/manifold.wasm",
+    "src/agent/buildGuidance.js",
     "src/lib/surfcad/export.js",
     "src/lib/surfcad/index.js",
     "src/lib/surfcad/runtime.js",
@@ -31,6 +32,7 @@
     "src/utils/featureBlockId.js",
     "src/utils/featureEdit.js",
     "src/utils/featureFailure.js",
+    "src/utils/featureGaps.js",
     "src/utils/featureMarkers.js",
     "src/utils/featureSheetWriteback.js",
     "src/utils/featureSkip.js",

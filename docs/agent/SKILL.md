@@ -50,7 +50,7 @@ The same text reaches every agent from the MCP initialize instructions, the `pai
 
 Finish each stage across the whole assembly before starting the next, and take a screenshot after each stage.
 
-**Features first.** Use `insert_*` or `invoke_helper` whenever a feature can do the job. Use a `set_script` snippet only when no feature can, keep it to that one operation (not the whole part), and start it with a gap comment in this exact form so the saved parts can be grepped for a feature backlog:
+**Features first.** Use `insert_*` or `invoke_helper` whenever a feature can do the job. When no feature can, add a **script snippet feature** with `insert_code_snippet` `{ gap, why, script }` (the Script button in Build): one operation, not the whole part, kept next to the other features in the ribbon. Its block starts with a gap comment in this exact form so the saved parts can be grepped for a feature backlog (`node scripts/feature-gaps.mjs <vault>`); with analytics consent the tab also sends each gap to Sentry once (`category: feature_gap`). `set_script` is only for rewriting a whole part. All three fields are required; an empty one is `bad_args`.
 
 ```js
 // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>

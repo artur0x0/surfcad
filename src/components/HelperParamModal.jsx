@@ -17,6 +17,7 @@ import { formatDisplayNumber, isPartialNumberEntry } from '../utils/displayUnit'
 import { FeatureDeleteButton } from './FeatureEditDelete';
 import FeatureSheet from './FeatureSheet';
 import { isBlockSolidId } from '../utils/blockSolid';
+import { PARTS_TEXT_INPUT_CLASS, PARTS_TEXT_INPUT_STYLE } from '../utils/partsChrome';
 
 /** Helper sheets are neutral; the accent chips own cyan/amber. */
 const ACCENT = 'slate';
@@ -366,6 +367,36 @@ const HelperParamModal = ({
               checked={!!values[p.name]}
               onChange={(v) => setField(p.name, v, 'bool')}
             />
+          );
+        }
+        if (p.type === 'string') {
+          const common = {
+            value: String(values[p.name] ?? ''),
+            onChange: (e) => setField(p.name, e.target.value, 'string'),
+            placeholder: p.placeholder || '',
+            'data-helper-param': p.name,
+            spellCheck: false,
+            'aria-label': p.label,
+          };
+          return (
+            <label key={p.name} className="flex flex-col gap-1 text-xs text-chrome-secondary">
+              <span>{p.label}</span>
+              {p.multiline ? (
+                <textarea
+                  {...common}
+                  rows={4}
+                  className={`${PARTS_TEXT_INPUT_CLASS} font-mono`}
+                  style={PARTS_TEXT_INPUT_STYLE}
+                />
+              ) : (
+                <input
+                  {...common}
+                  type="text"
+                  className={PARTS_TEXT_INPUT_CLASS}
+                  style={PARTS_TEXT_INPUT_STYLE}
+                />
+              )}
+            </label>
           );
         }
         if (p.type === 'select' || p.type === 'body') {

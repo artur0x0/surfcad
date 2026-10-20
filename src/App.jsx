@@ -163,6 +163,9 @@ import {
 import { buildFeatureTree } from './agent/state/featureTree';
 import { resolveRollbackTarget, resolveStripTarget } from './agent/featureStripAgent';
 import { buildPartsState, partRunState } from './agent/state/parts';
+import { reportFeatureGaps } from './utils/featureGaps.js';
+import { captureSentryException } from './utils/sentryClient.js';
+import { getAnalyticsConsent } from './utils/consent.js';
 import { compareWorkingCopyToCommit } from './agent/state/workingCopyUnsaved';
 import { findPartById, unknownAssemblyError, unknownPartError } from './agent/state/identity';
 import { decidePartVisible } from './agent/state/partVisible';
@@ -2274,6 +2277,14 @@ const App = () => {
   const commitPartRuns = (runs) => {
     partRunsRef.current = runs || {};
     setPartRuns(partRunsRef.current);
+    // FEATURE-GAP notes in the open parts go to Sentry once per page load,
+    // and only when the user accepted all cookies (no script text leaves).
+    try {
+      reportFeatureGaps(partScriptsRef.current, {
+        consent: getAnalyticsConsent() === true,
+        capture: captureSentryException,
+      });
+    } catch { /* reporting never breaks a build */ }
   };
 
   const syncAssemblyHistory = (doc) => {

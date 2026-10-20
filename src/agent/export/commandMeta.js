@@ -1038,9 +1038,16 @@ const INSERT_MOVE_META = {
   errors: ['bad_args', 'no_body', 'no_mesh', 'unknown_face', 'insert_failed', 'internal'],
 };
 
+const INSERT_CODE_SNIPPET_META = {
+  ...INSERT_HELPER_META,
+  description: `The script snippet feature (the Script button in Build): one operation no feature can do, as its own feature block on the active part, kept next to the insert_* features instead of replacing the whole part. gap names the missing feature or option, why says why the existing feature did not work, script is the operation (it reads and sets part). The block starts with // FEATURE-GAP: <gap> | <why>, which the feature backlog is grepped from. All three are required; an empty one is bad_args. Prefer insert_* whenever a feature can do the job; use set_script only to rewrite a whole part. Working copy only; git_save commits.`,
+  errors: ['bad_args', 'insert_failed', 'internal'],
+};
+
 export function metaForCommand(name) {
   if (COMMAND_META[name]) return COMMAND_META[name];
   if (name === 'insert_move') return INSERT_MOVE_META;
+  if (name === 'insert_code_snippet') return INSERT_CODE_SNIPPET_META;
   if (name.startsWith('insert_')) return INSERT_HELPER_META;
   return {
     description: `Bridge command ${name}.`,

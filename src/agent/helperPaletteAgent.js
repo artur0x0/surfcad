@@ -102,6 +102,7 @@ export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
       ));
       properties[param.name] = { type: 'string', enum: allowed };
     } else if (param.type === 'string') {
+      // (schema below) required text params are enforced by validateHelperParams
       properties[param.name] = { type: 'string' };
     } else if (param.type === 'body' || param.type === 'solid') {
       properties[param.name] = { type: 'string', description: 'Part script binding name' };
@@ -158,6 +159,17 @@ function fieldName(param) {
 export function validateHelperParams(item, params) {
   const label = helperLabel(item);
   for (const param of item.params || []) {
+    if (param.type === 'string' && param.required === true) {
+      const text = params && Object.prototype.hasOwnProperty.call(params, param.name) ? String(params[param.name] ?? '') : '';
+      if (!text.trim()) {
+        return {
+          code: 'bad_args',
+          message: item?.id === 'codeSnippet'
+            ? `${label} needs ${fieldName(param)}: every snippet names the feature that would have made it unnecessary (gap), why the existing feature did not work (why), and the one operation it does (script).`
+            : `${label} ${fieldName(param)} is required.`,
+        };
+      }
+    }
     if (!Object.prototype.hasOwnProperty.call(params, param.name)) continue;
     const value = params[param.name];
     if (param.type === 'number') {
