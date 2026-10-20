@@ -5,6 +5,7 @@ import { partCanDeleteFromRepo, partDeleteChoice, partListDeleteAction, partRepo
 import { partListSubtitles } from '../utils/git/partListSubtitle.js';
 import {
   filterVaultOpenIndex, filterVaultPartItems, groupVaultOpenPartRows, vaultOpenAssemblies, vaultOpenPartRows,
+  vaultOpenPartSubtitle,
 } from '../utils/git/gitWorkspace.js';
 import { DEFAULT_VAULT_NAME } from '../utils/git/vault.js';
 import { NO_REPO_YET_COPY, SAVE_QUEUED_COPY } from '../utils/git/workingSidecar.js';
@@ -370,6 +371,8 @@ const PartFeed = forwardRef(function PartFeed({
   assemblyLeaveSafe = true,
   onDeletePart,
   assemblyName = '',
+  /** Open document's surf id (v2 vault). Marks the Open lists' current rows by id. */
+  assemblyId = '',
   onRenameAssembly = null,
   onRenamePart = null,
   sourceDirty = false,
@@ -703,18 +706,20 @@ const PartFeed = forwardRef(function PartFeed({
     }
   };
 
-  const askOpenAssemblyChoice = (name) => {
+  const askOpenAssemblyChoice = (name, item = null) => {
     setOpenPicker({
       kind: 'open-choice',
       assemblyName: name,
+      // A v2 row opens by id; a v1 folder has none and opens by name.
+      assemblyId: item?.id || '',
       loading: false,
       error: '',
     });
   };
 
-  const runOpenAssembly = async (name) => {
+  const runOpenAssembly = async (name, id = '') => {
     closePicker();
-    await onOpenVaultAssembly?.(name);
+    await onOpenVaultAssembly?.(id || name);
   };
 
   const runInsertAssemblyParts = async (name) => {
@@ -738,10 +743,12 @@ const PartFeed = forwardRef(function PartFeed({
     });
   };
 
-  const runOpenPart = async (partPath) => {
+  /** Open Part row tap. The path is the key; a v2 row also carries its id and name. */
+  const runOpenPart = async (item) => {
+    const partPath = typeof item === 'string' ? item : item?.path;
     closePicker();
     if (onOpenVaultPart) {
-      await onOpenVaultPart(partPath);
+      await onOpenVaultPart(partPath, { id: item?.id || '', name: item?.name || '' });
       return;
     }
     await onAddExistingPart?.(partPath);
@@ -2115,7 +2122,11 @@ const PartFeed = forwardRef(function PartFeed({
             const openQuery = String(openPicker.query || '').trim();
             const asmHits = isPart ? [] : filterVaultOpenIndex({ assemblies: openPicker.assemblies, parts: [] }, openPicker.query).assemblies;
             const partRows = isPart
-              ? vaultOpenPartRows(openPicker.parts, { currentAssembly: assemblyName, inDoc: rows.map((row) => row.id) })
+              ? vaultOpenPartRows(openPicker.parts, {
+                currentAssembly: assemblyName,
+                currentAssemblyId: assemblyId,
+                inDoc: rows.map((row) => row.id),
+              })
               : [];
             // filterVaultOpenIndex (PR #224) filters this list; filterVaultPartItems
             // is the same haystack on a bare part array (source / "loose" included).
@@ -2166,6 +2177,7 @@ const PartFeed = forwardRef(function PartFeed({
                     <AssemblyOpenList
                       items={asmHits}
                       current={assemblyName}
+                      currentId={assemblyId}
                       onOpen={askOpenAssemblyChoice}
                       onDelete={(name) => { void askDeleteAssembly(name); }}
                     />
@@ -2185,20 +2197,23 @@ const PartFeed = forwardRef(function PartFeed({
                               <button
                                 type="button"
                                 data-git-open-part={item.path}
+                                data-git-open-part-id={item.id || undefined}
                                 data-git-open-kind="part"
                                 data-git-open-part-source={item.source}
                                 data-git-open-part-foreign={item.foreign ? 'true' : undefined}
                                 title={item.path}
                                 className="w-full rounded-md px-2 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
-                                onClick={() => { void runOpenPart(item.path); }}
+                                onClick={() => { void runOpenPart(item); }}
                               >
-                                <span className="block truncate">
+                                <span className="block truncate" data-git-open-part-name="">
                                   {item.name}
                                   {item.sameName ? <span className="ml-1 text-chrome-secondary">· {item.source}</span> : null}
                                 </span>
-                                <span className="text-[10px] text-gray-500">
-                                  {item.inDoc ? 'in this assembly' : item.foreign ? `links from ${item.source}` : 'opens by reference'}
-                                </span>
+                                {vaultOpenPartSubtitle(item) ? (
+                                  <span className="text-[10px] text-gray-500" data-git-open-part-subtitle="">
+                                    {vaultOpenPartSubtitle(item)}
+                                  </span>
+                                ) : null}
                               </button>
                             </li>
                           ))}
@@ -2235,7 +2250,7 @@ const PartFeed = forwardRef(function PartFeed({
           error={openPicker.error || ''}
           onClose={closePicker}
           onInsert={() => { void runInsertAssemblyParts(openPicker.assemblyName); }}
-          onOpen={() => { void runOpenAssembly(openPicker.assemblyName); }}
+          onOpen={() => { void runOpenAssembly(openPicker.assemblyName, openPicker.assemblyId || ''); }}
         />
       )}
       {openPicker && typeof document !== 'undefined' && openPicker.kind === 'new-part' && (

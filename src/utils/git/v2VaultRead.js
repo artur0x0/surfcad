@@ -7,7 +7,10 @@ import { assertGithubAdapter } from './githubAdapterInterface.js';
 import { assemblyIdPath, parseIdPath, partIdPath, partMeshIdPath } from './idPaths.js';
 import { readMeshBytes } from './meshSync.js';
 import { parseSurfJsonV2 } from './surfJsonV2.js';
-import { isV2SurfId } from './surfId.js';
+import { isV2SurfId, readSurfName } from './surfId.js';
+
+/** Row title when no `.surf.json` row and no `// @name` header names a part. */
+export const UNTITLED_PART_NAME = 'Untitled part';
 
 function notFoundError(assemblyId) {
   const err = new Error(`Unknown assembly id: ${assemblyId}`);
@@ -40,6 +43,110 @@ export async function listV2Assemblies(adapter, repo, ref = 'main') {
   }
   rows.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   return rows;
+}
+
+function readJsonLoose(content) {
+  if (content == null) return null;
+  if (typeof content !== 'string') return content;
+  try {
+    return JSON.parse(content);
+  } catch {
+    return null;
+  }
+}
+
+function byNameThenId(a, b) {
+  return a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+}
+
+/**
+ * Open-dialog index for a v2 tree: every assembly and every part script,
+ * by name. Ids stay the key. One read per `assemblies/<id>.surf.json`
+ * gives the assembly name and that assembly's part names; a part no
+ * assembly lists, or that two assemblies name differently, reads its own
+ * `// @name` header. Nothing names it → UNTITLED_PART_NAME. Never the id.
+ * An assembly file that cannot be read throws (the dialog shows the error).
+ * `tree` is an optional listTree() result so a caller does not list twice.
+ * -> { assemblies: [{ kind:'assembly', id, name, label, partIds }],
+ *      parts: [{ kind:'part', id, path, name, label, assemblies: [{ id, name }] }] }
+ */
+export async function listV2BrowseItems(adapter, repo, ref = 'main', { tree = null } = {}) {
+  assertGithubAdapter(adapter);
+  const entries = tree || (await adapter.listTree(repo, ref));
+  const assemblyFiles = [];
+  const partFiles = [];
+  const seen = new Set();
+  for (const entry of entries || []) {
+    const path = typeof entry === 'string' ? entry : entry?.path;
+    const parsed = parseIdPath(path);
+    if (!parsed || seen.has(`${parsed.kind}:${parsed.id}`)) continue;
+    if (parsed.kind === 'assembly') {
+      seen.add(`assembly:${parsed.id}`);
+      assemblyFiles.push({ id: parsed.id, path });
+    } else if (parsed.kind === 'part') {
+      seen.add(`part:${parsed.id}`);
+      partFiles.push({ id: parsed.id, path });
+    }
+  }
+
+  const assemblies = await Promise.all(assemblyFiles.map(async ({ id, path }) => {
+    const file = await adapter.readFile(repo, path, ref);
+    const raw = readJsonLoose(file?.content);
+    const name = typeof raw?.name === 'string' && raw.name.trim() ? raw.name.trim() : id;
+    const rows = Array.isArray(raw?.parts) ? raw.parts : [];
+    const partNames = [];
+    for (const row of rows) {
+      if (!isV2SurfId(row?.id)) continue;
+      partNames.push({ id: row.id, name: typeof row.name === 'string' ? row.name.trim() : '' });
+    }
+    return { id, name, partNames };
+  }));
+  assemblies.sort(byNameThenId);
+
+  // part id → the names its parents store, and those parents by name.
+  const parents = new Map();
+  for (const asm of assemblies) {
+    for (const row of asm.partNames) {
+      if (!parents.has(row.id)) parents.set(row.id, { names: new Set(), assemblies: [] });
+      const hit = parents.get(row.id);
+      if (row.name) hit.names.add(row.name);
+      if (!hit.assemblies.some((item) => item.id === asm.id)) {
+        hit.assemblies.push({ id: asm.id, name: asm.name });
+      }
+    }
+  }
+
+  const parts = await Promise.all(partFiles.map(async ({ id, path }) => {
+    const hit = parents.get(id) || { names: new Set(), assemblies: [] };
+    const stored = [...hit.names];
+    let name = stored.length === 1 ? stored[0] : '';
+    if (!name) {
+      // No parent, or parents disagree (a shared part renamed in one of
+      // them): the script header is the committed name.
+      try {
+        const file = await adapter.readFile(repo, path, ref);
+        const header = readSurfName(typeof file?.content === 'string' ? file.content : '');
+        if (header) name = header;
+      } catch {
+        /* the name is a label; fall through */
+      }
+      if (!name && stored.length) [name] = stored;
+    }
+    name = name || UNTITLED_PART_NAME;
+    return { kind: 'part', id, path, name, label: name, assemblies: hit.assemblies };
+  }));
+  parts.sort(byNameThenId);
+
+  return {
+    assemblies: assemblies.map(({ id, name, partNames }) => ({
+      kind: 'assembly',
+      id,
+      name,
+      label: name,
+      partIds: partNames.map((row) => row.id),
+    })),
+    parts,
+  };
 }
 
 async function loadV2Meshes(adapter, repo, branch, parts) {

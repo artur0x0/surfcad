@@ -50,14 +50,21 @@ export {
   rekeyWorkingCopyToTip,
 } from './partIdentity.js';
 import { stringifySurfJson } from './surfJson.js';
-import { mintSurfId, partSurfId, readSurfId, stripSurfId, withSurfId } from './surfId.js';
+import { isV2SurfId, mintSurfId, partSurfId, readSurfId, stripSurfId, withSurfId } from './surfId.js';
 import {
   detectVaultLayout,
+  isLegacyVaultTree,
   listLegacyAssemblies,
   openLegacyAssembly,
   UnsupportedVaultLayoutError,
 } from './legacyVault/index.js';
-import { listV2Assemblies, openV2Assembly } from './v2VaultRead.js';
+import {
+  listV2Assemblies,
+  listV2BrowseItems,
+  openV2Assembly,
+  UNTITLED_PART_NAME,
+} from './v2VaultRead.js';
+export { UNTITLED_PART_NAME };
 import {
   baselineScriptsKeepingTip,
   captureBaseline,
@@ -389,34 +396,48 @@ export async function readVaultPart(adapter, repo, path, ref = 'main') {
 
 /**
  * G11: browse vault for Open — assemblies and part scripts on `ref`.
- * -> { assemblies: [{ kind:'assembly', name, label }], parts: [{ kind:'part', path, label, scope }] }
+ * One listTree. v2 rows (`assemblies/<id>.surf.json`, `parts/<id>.js`)
+ * come from `listV2BrowseItems`: id-keyed, named from the assembly files.
+ * v1 folders are listed by name only while the tree still has them
+ * (TEMPORARY until Artur's vault is upgraded; PR 10 drops that branch).
+ * A tree or assembly read that fails throws; the caller shows the error.
+ * -> { assemblies: [{ kind:'assembly', name, label, id? , partIds? }],
+ *      parts: [{ kind:'part', path, label, scope? , id?, name?, assemblies? }] }
  */
 export async function listVaultBrowseItems(adapter, repo, ref) {
   assertGithubAdapter(adapter);
   const tree = await adapter.listTree(repo, ref);
-  const assemblies = listAssemblies(tree).map((name) => ({
-    kind: 'assembly',
-    name,
-    label: name,
-  }));
-  const { shared, byAssembly } = listPartScripts(tree);
-  const parts = [];
-  for (const path of shared) {
-    parts.push({
-      kind: 'part',
-      path,
-      label: path.split('/').pop() || path,
-      scope: 'shared',
-    });
-  }
-  for (const [asm, paths] of Object.entries(byAssembly)) {
-    for (const path of paths) {
+  const v2 = await listV2BrowseItems(adapter, repo, ref, { tree });
+  const assemblies = [...v2.assemblies];
+  const parts = [...v2.parts];
+  if (isLegacyVaultTree(tree)) {
+    const v2Paths = new Set(parts.map((item) => item.path));
+    assemblies.push(...listAssemblies(tree).map((name) => ({
+      kind: 'assembly',
+      name,
+      label: name,
+    })));
+    assemblies.sort((a, b) => a.name.localeCompare(b.name));
+    const { shared, byAssembly } = listPartScripts(tree);
+    for (const path of shared) {
+      // `parts/<id>.js` is already a v2 row; a name-stem file is v1.
+      if (v2Paths.has(path)) continue;
       parts.push({
         kind: 'part',
         path,
         label: path.split('/').pop() || path,
-        scope: asm,
+        scope: 'shared',
       });
+    }
+    for (const [asm, paths] of Object.entries(byAssembly)) {
+      for (const path of paths) {
+        parts.push({
+          kind: 'part',
+          path,
+          label: path.split('/').pop() || path,
+          scope: asm,
+        });
+      }
     }
   }
   parts.sort((a, b) => a.path.localeCompare(b.path));
@@ -426,12 +447,38 @@ export async function listVaultBrowseItems(adapter, repo, ref) {
 /** Group heading for parts in the shared `parts/` folder (no assembly). */
 export const LOOSE_PARTS_LABEL = 'Loose parts';
 
-/** Fields a live Open search matches. Shared `parts/` also match "loose". */
+/**
+ * Fields a live Open search matches. Shared `parts/` also match "loose".
+ * A v2 row also matches its id and the assemblies that list it.
+ */
 function vaultPartSearchHay(item) {
+  const parents = Array.isArray(item?.assemblies) ? item.assemblies.map((asm) => asm?.name) : [];
   return [
-    item?.path, item?.label, item?.name, item?.kind, item?.scope, item?.source,
+    item?.path, item?.label, item?.name, item?.id, item?.kind, item?.scope, item?.source,
+    ...parents,
     item?.scope === 'shared' || item?.source === LOOSE_PARTS_LABEL ? LOOSE_PARTS_LABEL : '',
   ];
+}
+
+/** True for a browse row `listV2BrowseItems` built (id-keyed, parents known). */
+function isV2BrowseRow(item) {
+  return isV2SurfId(item?.id) && Array.isArray(item?.assemblies);
+}
+
+/**
+ * Open Part row subtitle. In this document first; a v1 part in another
+ * assembly's folder links in; a v2 part names the assemblies that list it,
+ * or says it is in none. A v1 own or loose part has no subtitle (it joins
+ * by reference, which the user does not need to be told).
+ */
+export function vaultOpenPartSubtitle(row) {
+  if (row?.inDoc) return 'in this assembly';
+  if (row?.foreign) return `links from ${row.source}`;
+  if (Array.isArray(row?.assemblies)) {
+    const names = row.assemblies.map((asm) => asm?.name).filter(Boolean);
+    return names.length ? `in ${names.join(', ')}` : 'not in any assembly';
+  }
+  return '';
 }
 
 /**
@@ -470,26 +517,58 @@ export function filterVaultPartItems(items, query) {
 }
 
 /**
- * Open Part rows: every part script in the repo (every assembly's folder,
- * legacy nested paths included, plus loose `parts/`). Each row carries
- * `name` (file name without `.js`), `source` (assembly name or
- * LOOSE_PARTS_LABEL), `inDoc` (already in the open document), `foreign`
- * (belongs to another assembly: opening links it; it is not copied) and
- * `sameName` (another part in the repo has the same name).
+ * Open Part rows: every part script in the repo. Each row carries `name`,
+ * `source` (the assembly it is grouped under, or LOOSE_PARTS_LABEL),
+ * `group` ({ key, label, current, loose }), `inDoc` (already in the open
+ * document), `foreign` (a v1 part in another assembly's folder: opening
+ * links it; it is not copied) and `sameName` (another part in the repo has
+ * the same name).
+ *
+ * A v2 row keeps the display name `listV2BrowseItems` resolved (never the
+ * id) and is grouped under the open assembly when that assembly lists it,
+ * else its first parent A→Z, else loose. `inDoc` matches the row id, which
+ * is how a v2 document keys its parts. No v2 row is foreign: every v2 part
+ * lives in `parts/` and joins by reference.
+ *
+ * A v1 row keeps the file-name title and folder grouping until the vault
+ * is upgraded.
  */
-export function vaultOpenPartRows(parts, { currentAssembly = '', inDoc = [] } = {}) {
+export function vaultOpenPartRows(parts, { currentAssembly = '', currentAssemblyId = '', inDoc = [] } = {}) {
   const list = Array.isArray(parts) ? parts : [];
   const cur = vaultSegment(currentAssembly || '') || String(currentAssembly || '');
+  const curId = isV2SurfId(currentAssemblyId) ? currentAssemblyId : '';
   const have = new Set(inDoc || []);
   const counts = new Map();
   const rows = list.map((item) => {
+    if (isV2BrowseRow(item)) {
+      const name = String(item.name || '').trim() || UNTITLED_PART_NAME;
+      counts.set(name.toLowerCase(), (counts.get(name.toLowerCase()) || 0) + 1);
+      const parents = item.assemblies.filter((asm) => isV2SurfId(asm?.id));
+      const own = parents.find((asm) => (curId ? asm.id === curId : asm.name === currentAssembly)) || null;
+      const parent = own || parents[0] || null;
+      const loose = !parent;
+      return {
+        ...item,
+        name,
+        source: loose ? LOOSE_PARTS_LABEL : parent.name,
+        group: loose
+          ? { key: '\u0000loose', label: LOOSE_PARTS_LABEL, current: false, loose: true }
+          : { key: `asm:${parent.id}`, label: parent.name, current: !!own, loose: false },
+        inDoc: have.has(item.id) || have.has(item.path),
+        foreign: false,
+      };
+    }
     const name = String(item?.label || item?.path || '').replace(/\.js$/i, '');
     counts.set(name.toLowerCase(), (counts.get(name.toLowerCase()) || 0) + 1);
     const loose = item?.scope === 'shared';
+    const source = loose ? LOOSE_PARTS_LABEL : String(item?.scope || '');
     return {
       ...item,
       name,
-      source: loose ? LOOSE_PARTS_LABEL : String(item?.scope || ''),
+      source,
+      group: loose
+        ? { key: '\u0000loose', label: LOOSE_PARTS_LABEL, current: false, loose: true }
+        : { key: `asm:${item?.scope}`, label: source, current: !!cur && item?.scope === cur, loose: false },
       inDoc: have.has(item?.path),
       foreign: !loose && !!cur && item?.scope !== cur,
     };
@@ -501,15 +580,23 @@ export function vaultOpenPartRows(parts, { currentAssembly = '', inDoc = [] } = 
 /**
  * Group Open Part rows by source: the current assembly, other assemblies
  * A→Z, then loose parts. -> [{ key, label, current, loose, parts }]
+ * Rows from `vaultOpenPartRows` carry `group`; a bare v1 row is grouped
+ * by its folder.
  */
 export function groupVaultOpenPartRows(rows, { currentAssembly = '' } = {}) {
   const cur = vaultSegment(currentAssembly || '') || String(currentAssembly || '');
   const groups = new Map();
   for (const row of Array.isArray(rows) ? rows : []) {
-    const loose = row.scope === 'shared';
-    const key = loose ? '\u0000loose' : `asm:${row.scope}`;
+    const loose = row.group ? row.group.loose : row.scope === 'shared';
+    const key = row.group ? row.group.key : (loose ? '\u0000loose' : `asm:${row.scope}`);
     if (!groups.has(key)) {
-      groups.set(key, { key, label: row.source, current: !loose && row.scope === cur, loose, parts: [] });
+      groups.set(key, {
+        key,
+        label: row.group ? row.group.label : row.source,
+        current: row.group ? row.group.current : (!loose && row.scope === cur),
+        loose,
+        parts: [],
+      });
     }
     groups.get(key).parts.push(row);
   }

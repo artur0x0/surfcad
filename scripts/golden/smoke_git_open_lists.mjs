@@ -193,7 +193,8 @@ console.log('\ngit open lists — UI wiring');
   ok('Open Part search uses filterVaultOpenIndex', /filterVaultOpenIndex\(\{ assemblies: \[\], parts: partRows \}/.test(feed)
     && /data-git-open-search/.test(feed) && /data-git-open-group/.test(feed)
     && /data-git-open-part-source/.test(feed));
-  ok('Open Part says reference vs link', /opens by reference/.test(feed) && /links from/.test(feed));
+  ok('Open Part subtitle comes from vaultOpenPartSubtitle (in this assembly / links from / parents)',
+    /vaultOpenPartSubtitle\(item\)/.test(feed) && !/opens by reference/.test(feed));
   ok('App opens through planOpenVaultPart', /planOpenVaultPart\(/.test(app) && /handleOpenVaultPart/.test(app));
 }
 

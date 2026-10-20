@@ -20,6 +20,7 @@ export function AssemblyOpenRow({
   name,
   label,
   current = false,
+  item = null,
   onOpen,
   onDelete,
 }) {
@@ -28,10 +29,11 @@ export function AssemblyOpenRow({
       <button
         type="button"
         data-git-open-item={name}
+        data-git-open-item-id={item?.id || undefined}
         data-git-open-kind="assembly"
         data-git-open-current={current ? 'true' : undefined}
         className="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
-        onClick={() => onOpen?.(name)}
+        onClick={() => onOpen?.(name, item)}
       >
         <span className="block truncate">{label || name}</span>
         {current ? <span className="text-[10px] text-gray-500">open now</span> : null}
@@ -53,15 +55,17 @@ export function AssemblyOpenRow({
   );
 }
 
-export function AssemblyOpenList({ items, current, onOpen, onDelete }) {
+export function AssemblyOpenList({ items, current, currentId = '', onOpen, onDelete }) {
   return (
     <ul className="max-h-64 space-y-1 overflow-y-auto" data-git-open-list="">
       {(items || []).map((item) => (
         <AssemblyOpenRow
-          key={item.name}
+          key={item.id || item.name}
           name={item.name}
           label={item.label || item.name}
-          current={item.name === current}
+          // A v2 row is current by id (names may repeat); a v1 folder by name.
+          current={item.id ? item.id === currentId : item.name === current}
+          item={item}
           onOpen={onOpen}
           onDelete={onDelete}
         />

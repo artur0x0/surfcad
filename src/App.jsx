@@ -169,6 +169,7 @@ import { decidePartVisible } from './agent/state/partVisible';
 import { listV2Assemblies, listPartParentAssemblies, openV2Assembly } from './utils/git/v2VaultRead';
 import { assemblyRows } from './agent/state/assemblyRows';
 import { assemblyIdPath, partIdPath, parseIdPath } from './utils/git/idPaths';
+import { readSurfName } from './utils/git/surfId';
 import { createdPartFromDocs } from './agent/state/createPart.js';
 import { finishedRunBodyCount } from './agent/state/runBodyCount.js';
 import { buildToasts } from './agent/state/toasts';
@@ -4134,6 +4135,8 @@ const App = () => {
   };
 
   const handleOpenVaultAssembly = async (name, adapter = null) => {
+    // The Open dialog passes a v2 row's id; a v1 folder is still a name.
+    if (isV2SurfId(name)) return handleOpenV2VaultAssembly(name, adapter);
     try {
       await runTrackedAssemblyOpen(assemblyOpenCtrlRef.current, {
         name: name || 'assembly',
@@ -4826,11 +4829,48 @@ const App = () => {
     }
   };
 
-  /** G11: open/add a single vault part into the current assembly (remap if needed). */
-  const handleOpenVaultPart = async (path) => {
+  /**
+   * Open a v2 vault part by id into the working copy: the same row loader
+   * and reference insert the agent's `open_part` uses. A part already in
+   * the document is focused; a new row joins by reference (same id, same
+   * `parts/<id>.js`). `name` is the title the Open dialog resolved; without
+   * it the row takes the script's `// @name` header. No git write.
+   */
+  const openV2VaultPart = async (partId, { name = '' } = {}) => {
+    const existing = findPartById(assemblyRef.current, partId);
+    const loaded = await loadVaultPartRows({ partId });
+    if (loaded.error) {
+      return { status: 'error', code: loaded.error.code, error: loaded.error.message };
+    }
+    const label = String(name || '').trim();
+    const rows = loaded.rows.map((row) => (
+      row.id === partId && !existing && label ? { ...row, name: label } : row
+    ));
+    const inserted = await insertReferencedParts({ rows });
+    if (inserted.error) {
+      return { status: 'error', code: inserted.error.code, error: inserted.error.message };
+    }
+    storeRollbackAnchor(String(partId), undefined);
+    return { status: 'opened', path: partIdPath(partId), id: partId, mode: existing ? 'focus' : 'reference' };
+  };
+
+  /**
+   * G11: open/add a single vault part into the current assembly.
+   * `parts/<id>.js` (v2) opens by that id; a v1 folder path is remapped
+   * and linked as before.
+   */
+  const handleOpenVaultPart = async (path, meta = {}) => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') {
       return { status: 'error', error: 'Not in Git mode' };
+    }
+    const v2Part = parseIdPath(path);
+    if (v2Part?.kind === 'part') {
+      try {
+        return await openV2VaultPart(v2Part.id, meta);
+      } catch (err) {
+        return gitOpCatchResult(err, 'Could not open part');
+      }
     }
     try {
       const vault = await ensureGitVault({ create: false });
@@ -6915,7 +6955,9 @@ const App = () => {
       if (!rows.some((row) => row.id === partId)) {
         rows.push({
           id: partId,
-          name: existing?.name || DEFAULT_PART_NAME,
+          // The committed `// @name` header names a part the document does
+          // not have yet; the id is never the title.
+          name: existing?.name || readSurfName(script || '') || DEFAULT_PART_NAME,
           script,
           missing: script == null,
         });
@@ -11052,6 +11094,7 @@ const App = () => {
       isMobile={isMobile}
       source={assemblyDoc?.source ?? 'local'}
       assemblyName={assemblyLabel}
+      assemblyId={assemblyDoc?.id || ''}
       onRenameAssembly={handleRenameAssembly}
       onRenamePart={handleRenamePart}
       rows={partRows}
