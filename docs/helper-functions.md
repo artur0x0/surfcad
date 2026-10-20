@@ -108,9 +108,9 @@ wires; entering Extrude / Revolve / Sweep / Loft auto-picks the latest one.
 **Profile** Confirm writes or updates the in-mode Profile only. **Extrude** /
 **Revolve** / **Loft** / **Sweep** Confirm commit the profile plus a solid via
 `placeInFrame`. When `part` already exists, Confirm unions
-(`part = part.add(placeInFrame(...))`) so prior geometry stays. An empty
-script still uses `let part = placeInFrame(...)` (no starter cube, no
-`placeOnFace`). Second Confirm updates the same marked block only. **Back**
+(`part = part.add(placeInFrame(...))`) so prior geometry stays. New parts
+start empty (no seed cube). An empty script still uses
+`let part = placeInFrame(...)` and does not call `placeOnFace`. Second Confirm updates the same marked block only. **Back**
 exits with no additional solid commit. **Fillet** is its own edge-pick mode
 (Slice 27), not a contour entry.
 The one-shot Xform Extrude stub is gone — Extrude always enters contour mode.
