@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createSurfcadBridge } from '../../utils/agentBridge.js';
-import { helperCommandName } from '../helperPaletteAgent.js';
+import { helperCommandName, schemaPropertiesForHelper } from '../helperPaletteAgent.js';
+import { HELPER_PALETTE_ITEMS } from '../../utils/helperPaletteSnippets.js';
 import { invokeHelperCommand } from './invokeHelper.js';
 
 function host(overrides = {}) {
@@ -44,6 +45,60 @@ test('invoke_helper inserts and mutates', async () => {
 test('insert_cube alias is registered', () => {
   assert.equal(helperCommandName('cube'), 'insert_cube');
   assert.equal(invokeHelperCommand.name, 'invoke_helper');
+});
+
+test('use_selection is declared only where compose reads the face or edge context', () => {
+  // Builds that read faceContext / edgeContext from selectionContextFromArgs.
+  // shell and addDraft take a face argument but only use it when scope is
+  // 'selected', which their agent enums cannot set.
+  const readsContext = new Set([
+    'filletEdges', 'chamferEdges', 'crossSection', 'sweepPath',
+    'hole', 'holePattern', 'clearanceHole', 'tapDrillHole', 'cboreHole', 'cskHole',
+    'cut', 'workplane', 'moveFace', 'deleteFace',
+  ]);
+  const ignoresContext = new Set([
+    'cube', 'roundedBox', 'cylinder', 'sphere', 'tube', 'hexPrism',
+    'boolean', 'center', 'align', 'mirror', 'array3D', 'polarArray',
+    'shell', 'addDraft',
+    'makeExtrude', 'makeRevolve', 'makeSweep', 'makeLoft',
+  ]);
+  const ids = HELPER_PALETTE_ITEMS.map((item) => item.id);
+  assert.deepEqual(
+    new Set([...readsContext, ...ignoresContext, 'move']),
+    new Set(ids),
+    'every palette helper must be classified',
+  );
+  assert.equal(readsContext.size + ignoresContext.size + 1, ids.length);
+
+  for (const item of HELPER_PALETTE_ITEMS) {
+    const props = schemaPropertiesForHelper(item);
+    if (item.id === 'move') {
+      assert.equal(props.use_selection?.type, 'boolean');
+      assert.match(props.use_selection.description, /selected face/);
+      assert.match(props.use_selection.description, /body_index/);
+    } else if (readsContext.has(item.id)) {
+      assert.equal(props.use_selection?.type, 'boolean', item.id);
+      assert.equal(typeof props.use_selection.description, 'string', item.id);
+      assert.ok(props.use_selection.description.length > 20, item.id);
+    } else {
+      assert.equal(props.use_selection, undefined, `${item.id} ignores selection context`);
+    }
+  }
+
+  const byId = (id) => schemaPropertiesForHelper(HELPER_PALETTE_ITEMS.find((row) => row.id === id));
+  assert.match(byId('filletEdges').use_selection.description, /selected edges/);
+  assert.match(byId('filletEdges').use_selection.description, /convex edge/);
+  assert.match(byId('sweepPath').use_selection.description, /selected edges/);
+  assert.match(byId('sweepPath').use_selection.description, /refused/);
+  assert.match(byId('hole').use_selection.description, /planar or cylindrical/);
+  assert.match(byId('cut').use_selection.description, /XY through the origin/);
+  assert.match(byId('workplane').use_selection.description, /planar face/);
+  assert.match(byId('moveFace').use_selection.description, /face list is empty/);
+  assert.match(byId('crossSection').use_selection.description, /\+Z top face/);
+  assert.equal(byId('cube').use_selection, undefined);
+  assert.equal(byId('shell').use_selection, undefined);
+  assert.equal(byId('addDraft').use_selection, undefined);
+  assert.equal(byId('makeSweep').use_selection, undefined);
 });
 
 test('insert_move with a very large translation fails with the axis and the limit', async () => {

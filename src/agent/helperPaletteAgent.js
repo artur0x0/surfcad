@@ -26,6 +26,33 @@ function paramNames(item) {
   return new Set((item?.params || []).map((row) => row.name));
 }
 
+/**
+ * insert_* helpers whose build() reads the face and/or edge context from
+ * selectionContextFromArgs. Checked against each HELPER_PALETTE_ITEMS build:
+ * primitives, boolean, center, align, mirror, array3D, polarArray, and the
+ * shape fallbacks (makeExtrude, makeRevolve, makeSweep, makeLoft) do not
+ * take that context. shell and addDraft accept a face argument but only
+ * consult it when openScope / faceScope is 'selected', and those enums are
+ * not in the agent schema, so the flag would not change the script.
+ * insert_move declares its own use_selection (body targeting) below.
+ */
+const USE_SELECTION_BY_HELPER = {
+  filletEdges: 'When true, fillet the selected edges, or the edges of the selected face if no edges are selected. With no pick, fillet every convex edge',
+  chamferEdges: 'When true, chamfer the selected edges, or the edges of the selected face if no edges are selected. With no pick, chamfer every convex edge',
+  crossSection: 'When true, place the contour on the selected planar face. Otherwise use the default +Z top face',
+  sweepPath: 'When true, build the path from the selected edges. With no edges the insert is refused',
+  hole: 'When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face',
+  holePattern: 'When true, place the grid on the selected planar or cylindrical face. Otherwise use the default +Z top face',
+  clearanceHole: 'When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face',
+  tapDrillHole: 'When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face',
+  cboreHole: 'When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face',
+  cskHole: 'When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face',
+  cut: 'When true, cut on the plane of the selected face. A cylindrical or irregular face, or no face, cuts on XY through the origin',
+  workplane: 'When true, place the construction plane on the selected planar face. Otherwise use the default XY plane at the origin',
+  moveFace: 'When true, offset the selected face. With no face, the face list is empty',
+  deleteFace: 'When true, delete the selected face. With no face, the face list is empty',
+};
+
 /** JSON-schema properties for one palette item's params (plus agent-only fields). */
 export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
   const properties = {};
@@ -55,6 +82,11 @@ export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
     properties.use_selection = {
       type: 'boolean',
       description: 'When true and no body_index, at, face_id, or face is given, move the body of the selected face',
+    };
+  } else if (Object.prototype.hasOwnProperty.call(USE_SELECTION_BY_HELPER, item?.id)) {
+    properties.use_selection = {
+      type: 'boolean',
+      description: USE_SELECTION_BY_HELPER[item.id],
     };
   }
   for (const param of item?.params || []) {
