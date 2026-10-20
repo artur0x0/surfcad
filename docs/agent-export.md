@@ -35,7 +35,7 @@ The headless entry and the worker both need the shipped custom build: `built/man
 
 Helpers close over one module per process, the one bound by `initializeManifold` or `bindManifoldModule`.
 
-`runScript` returns `{ manifold, mesh, volume, surfaceArea, status, tris, boundingBox, bodyCentroids, bodyCount, parts }`. `status` is `'NoError'` when the solid is valid. `parts` is `{ index, at }` per body centroid.
+`runScript` returns `{ manifold, mesh, volume, surfaceArea, status, tris, boundingBox, bodyCentroids, bodyCount, parts, wasmHeapMB, kernelFreed }`. `status` is `'NoError'` when the solid is valid. `parts` is `{ index, at }` per body centroid. `wasmHeapMB` is the kernel heap after the run and `kernelFreed` the number of intermediate handles the run freed (`docs/architecture.md` → Kernel memory). The returned `manifold` is the caller's to delete; every other handle the run made is freed before `runScript` returns.
 
 ## Exports
 
