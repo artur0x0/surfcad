@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.2.5 - 2026-10-20
+
+- `delete_feature` result schema matches the command: `deletedId`, `ok`, `errors`, `failures`, `status`, optional `warning`. `unchanged` is dropped from this command.
+- `edit_feature` `params` is an object of feature-kind keys (a move uses `params.at` to re-point; `dx` / `dy` / `dz` change the offset). `insert_move` takes `use_selection` when no `body_index`, `at`, `face_id`, or `face` is given.
+- Pick keys (`pick_next`, `pick_faces`, `pick_edges`, `pick_points`) accept a string id, a face key, an edge pair, or a sketch / hole-centre key, so a plain edge id such as `"e3"` is valid. `sketch_add` accepts `centers`, `params`, and `polygonPreset` as well as `polygon_preset`.
+- `paint_open` waits up to 1.5 s for the viewport (right after `create_part` or `set_active_part`, or while a prompt is being worked). Past that it is `not_ready` with `details.reason` and `details.retryable: true`; it never answers a silent `open: false`. Result is `{ open, already? }`; errors are `bad_view`, `not_ready`, `internal`.
+- `joint_pick` can take a whole part (`part_id` alone or `kind: "part"`). A single whole-part pick suggests Fixed; Fixed never asks for a second reference.
+- Insert helpers that read a face or edge pick now declare `use_selection`: fillet/chamfer edges, cross section, sweep path, hole family, cut, workplane, moveFace, deleteFace.
+
 ## 0.2.4 - 2026-10-19
 
 - Stop on an in-viewer prompt cancels it. The page sends `agent.prompt.cancel` (`v: 1`). A prompt still queued is dropped and does not come back from `read_messages`. A prompt already delivered is marked cancelled: a registered webhook is POSTed `{ "type": "cancel", "id" }` with the same bearer, https, and timeout rules, otherwise the next `read_messages` returns `{ "type": "cancel", "id" }`. `reply_to_user` and `set_status` for that id return `{ "ok": false, "error": "cancelled" }` and do not reach the tab. `status` adds `counts` (`queued`, `delivered`, `replied`, `cancelled`) and `last` (`{ id, state }`). `queued` does not include cancelled prompts.
