@@ -396,6 +396,15 @@ jobs:
             echo "joint fixed target golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:agent-prompt-chat | tee "${RUNNER_TEMP}/agent-prompt-chat.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-prompt-chat.log"; then
+            echo "agent prompt chat golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'agent prompt chat golden: all passed' "${RUNNER_TEMP}/agent-prompt-chat.log"; then
+            echo "agent prompt chat golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
