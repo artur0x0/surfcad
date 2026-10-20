@@ -5,6 +5,7 @@
 
 import { MUTATE_RESULT_SCHEMA, STATUS_SCHEMA } from '../schemas/common.js';
 import { reservedHelperClause } from '../state/reservedHelpers.js';
+import { BUILD_FLOW_NOTE } from '../buildGuidance.js';
 
 const RESERVED_HELPERS = ` ${reservedHelperClause()}`;
 const FEATURE_COUNT_NOTE = ' featureCount counts insert_* feature blocks, so a freehand set_script is one feature. bodyCount is null until the first run; a finished run that produced no bodies reports 0.';
@@ -26,7 +27,7 @@ export const COMMAND_META = {
   },
   set_script: {
     description:
-      `Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects \`// @surf-id\`.${RESERVED_HELPERS}`,
+      `Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects \`// @surf-id\`.${RESERVED_HELPERS}${BUILD_FLOW_NOTE}`,
     result: MUTATE_RESULT_SCHEMA,
     errors: ['bad_args', 'unknown_part', 'part_mismatch', 'no_assembly', 'internal'],
     mutates: true,
@@ -281,7 +282,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   invoke_helper: {
-    description: 'Prefer this or insert_* over freehand set_script. Insert a helper palette item on the active part, the same compose path as the UI. Working copy only; git_save commits.',
+    description: `Prefer this or insert_* over freehand set_script. Insert a helper palette item on the active part, the same compose path as the UI. Working copy only; git_save commits.${BUILD_FLOW_NOTE}`,
     result: {
       type: 'object',
       additionalProperties: true,
@@ -619,14 +620,14 @@ export const COMMAND_META = {
     mutates: false,
   },
   create_assembly: {
-    description: 'Seed a blank assembly with one empty part (no demo script, no seed cube: the first insert_* creates the body). Single-flight per tab: overlapping calls return the same assemblyId. Optional name is a non-unique label. No git write. Returns { assemblyId, assemblyName, activeId, partCount }.',
+    description: `Seed a blank assembly with one empty part (no demo script, no seed cube: the first insert_* creates the body). Single-flight per tab: overlapping calls return the same assemblyId. Optional name is a non-unique label. No git write. Returns { assemblyId, assemblyName, activeId, partCount }.${BUILD_FLOW_NOTE}`,
     result: { type: 'object', additionalProperties: true },
     errors: ['internal'],
     mutates: true,
   },
   create_part: {
     description:
-      'Add a part and make it the active part before returning. The part starts empty (no seed cube): the first insert_* creates the body. The result partId is a new opaque surf id, not the previously active part. When script is set, that script runs before the call returns (ok, errors, failures, status); a failed script still leaves the part. Agent calls default to the assembly origin; pass position [x,y,z] mm to place it. Working copy only: nothing reaches git without git_save.',
+      `Add a part and make it the active part before returning. The part starts empty (no seed cube): the first insert_* creates the body. The result partId is a new opaque surf id, not the previously active part. When script is set, that script runs before the call returns (ok, errors, failures, status); a failed script still leaves the part. Agent calls default to the assembly origin; pass position [x,y,z] mm to place it. Working copy only: nothing reaches git without git_save.${BUILD_FLOW_NOTE}`,
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'no_assembly', 'internal'],
     mutates: true,
@@ -1014,7 +1015,7 @@ export const COMMAND_META = {
 };
 
 const INSERT_HELPER_META = {
-  description: 'Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.',
+  description: `Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.${BUILD_FLOW_NOTE}`,
   result: {
     type: 'object',
     additionalProperties: true,
@@ -1031,7 +1032,7 @@ const INSERT_HELPER_META = {
 
 const INSERT_MOVE_META = {
   ...INSERT_HELPER_META,
-  description: 'Prefer this over freehand set_script. Move one body of the active part by [dx, dy, dz]. Name the body: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. Nothing named and nothing selected is no_body; the origin is never assumed. Working copy only; git_save commits.',
+  description: `Prefer this over freehand set_script. Move one body of the active part by [dx, dy, dz]. Name the body: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. Nothing named and nothing selected is no_body; the origin is never assumed. Working copy only; git_save commits.${BUILD_FLOW_NOTE}`,
   errors: ['bad_args', 'no_body', 'no_mesh', 'unknown_face', 'insert_failed', 'internal'],
 };
 
