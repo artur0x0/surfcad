@@ -816,6 +816,7 @@ export function recordPartRun(runs, id, outcome) {
       skipped: !!outcome?.skipped,
       volume: null,
       bbox: null,
+      ...(outcome?.crash && typeof outcome.crash === 'object' ? { crash: outcome.crash } : {}),
     };
   return next;
 }

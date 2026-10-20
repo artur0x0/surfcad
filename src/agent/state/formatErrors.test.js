@@ -164,3 +164,20 @@ return part;
   const [plain] = formatAgentErrors({ messages: ['boom'], script: '', runFailure: { message: 'boom' } });
   assert.equal(plain.detail, 'Error');
 });
+
+test('a kernel crash is one geometry_worker_crashed row with reason, workerRestarted, and the fixed detail', () => {
+  const crash = { code: 'geometry_worker_crashed', reason: 'out_of_memory', workerRestarted: true, message: 'The geometry engine ran out of memory building this part (heap 4096 MB). It was restarted; other parts are unaffected.' };
+  const [row] = formatAgentErrors({ messages: [crash.message], script: '', crash });
+  assert.equal(row.code, 'geometry_worker_crashed');
+  assert.equal(row.reason, 'out_of_memory');
+  assert.equal(row.workerRestarted, true);
+  assert.match(row.message, /ran out of memory/);
+  assert.match(row.detail, /restarted.*Simplify/);
+  // The same record on the run failure (the viewport path) wins over a feature row.
+  const script = '// --- code begin id=c1 ---\nreturn part;\n// --- code end ---\n';
+  const [viaFailure] = formatAgentErrors({ messages: [], script, runFailure: { id: 'c1', message: crash.message, crash: { ...crash, reason: 'timeout' } } });
+  assert.equal(viaFailure.code, 'geometry_worker_crashed');
+  assert.equal(viaFailure.reason, 'timeout');
+  assert.equal(viaFailure.featureId, 'c1');
+  assert.equal(viaFailure.featureIndex, 0);
+});

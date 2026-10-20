@@ -44,7 +44,9 @@ import { blockSpec, buildBlockManifold } from '../../utils/blockSolid.js';
 import { buildSheetMetalSolid } from '../../utils/sheetMetal/sheetSolid.js';
 import { markSheetMesh } from '../../utils/sheetMetal/sheetMeshFlag.js';
 import { installSeparateBodies, overlappingBodies } from '../../workers/separateBodies.js';
+import { installKernelArena, beginKernelArena, endKernelArena, wasmHeapMB } from '../../workers/kernelArena.js';
 import { solveContour as solveContourModel } from '../../utils/contourSolve.js';
+import { classifyKernelFailure } from '../../workers/kernelCrash.js';
 
 /**
  * List of globals to block/remove in the worker context
@@ -98,6 +100,47 @@ function _safeDeleteManifold(m) {
   try {
     if (typeof m.delete === 'function') m.delete();
   } catch (_) { /* already freed or non-embind */ }
+}
+
+/**
+ * Make `next` the cached solid and free the one it replaces. The game
+ * ghost and attempt are their own clones, so they are never the same
+ * handle; the guard is for a caller that cached one of them anyway.
+ */
+function _replaceCachedManifold(next) {
+  const prev = cachedManifold;
+  if (prev && prev !== next && prev !== gameTargetManifold && prev !== gameAttemptManifold) {
+    _safeDeleteManifold(prev);
+  }
+  cachedManifold = next;
+}
+
+/**
+ * Run `fn` inside a kernel arena: every handle the script (and the helpers
+ * it calls) creates is freed on the way out, except the solid `fn` returns
+ * in `.result` and the handles the runtime retains between runs. Returns
+ * `{ ran, kernelFreed }`. A throw frees everything and rethrows.
+ */
+function _runInKernelArena(fn) {
+  const arena = beginKernelArena();
+  let ran;
+  try {
+    ran = fn();
+    // Evaluate the lazy result while every intermediate handle is still
+    // alive. The kernel flattens a union chain only through nodes nobody
+    // else holds, so freeing the handles first would change the batching
+    // and with it the triangulation (same volume, different triangles, and
+    // not the same from one run to the next). Evaluated here, the mesh is
+    // the one the script always produced.
+    if (ran && ran.result && typeof ran.result.numTri === 'function') ran.result.numTri();
+  } catch (error) {
+    endKernelArena(arena, { keep: [cachedManifold, gameTargetManifold, gameAttemptManifold] });
+    throw error;
+  }
+  const kernelFreed = endKernelArena(arena, {
+    keep: [ran && ran.result, cachedManifold, gameTargetManifold, gameAttemptManifold],
+  });
+  return { ran, kernelFreed };
 }
 
 /** Finite and > 0, else fallback (for relEps / volFloor). */
@@ -692,7 +735,7 @@ function _c4OffsetCavity(md, thickness, openSet, label) {
  */
 function _perBodyFaceOp(manifold, faces, run) {
   const split = manifold && typeof manifold.decompose === 'function'
-    ? overlappingBodies(manifold)
+    ? overlappingBodies(manifold, manifoldModule)
     : null;
   if (!split) return run(manifold, faces);
   const { Manifold } = manifoldModule;
@@ -9108,6 +9151,7 @@ const initializeManifold = async () => {
     manifoldModule.setup();
     // part.add(solid, { merge: false }) + per-body booleans on overlapping bodies.
     installSeparateBodies(manifoldModule);
+    installKernelArena(manifoldModule);
     
     isInitialized = true;
     console.log('[SandboxWorker] Manifold initialized');
@@ -9635,10 +9679,45 @@ function _gameMatchCompare(attempt, target, relEps, volFloor) {
   }
 }
 
+/** MB of the kernel heap right now, or null. */
+function _kernelHeapMB() {
+  try {
+    const buf = manifoldModule?.HEAP8?.buffer || manifoldModule?.wasmMemory?.buffer;
+    return buf ? Math.round(buf.byteLength / 1048576 * 10) / 10 : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 export function bindWorker(self) {
+// Set by the first fatal throw (a wasm abort, a trap, out of memory). The
+// module cannot be used after it: every later message is answered at once
+// with the same fatal report instead of hanging or throwing garbage, and
+// the main thread replaces this worker.
+let kernelDead = null;
 self.onmessage = async (event) => {
   const { type, payload, id } = event.data;
-  
+  if (kernelDead) {
+    self.postMessage({
+      type: 'error',
+      id,
+      payload: {
+        message: kernelDead.message,
+        name: 'KernelDead',
+        stack: '',
+        scriptLine: null,
+        featureId: null,
+        featureBlock: null,
+        featureSkip: null,
+        fatal: true,
+        dead: true,
+        reason: kernelDead.reason,
+        wasmHeapMB: _kernelHeapMB(),
+      },
+    });
+    return;
+  }
+
   try {
     switch (type) {
       case 'init': {
@@ -9673,12 +9752,15 @@ self.onmessage = async (event) => {
         const _execT0 = _perfNow();
         _featureOps = [];
         _sourceTess = [];
-        const ran = executeSkippingFailedFeatures(script, importedModels, rollbackAnchor);
+        const { ran, kernelFreed } = _runInKernelArena(
+          () => executeSkippingFailedFeatures(script, importedModels, rollbackAnchor),
+        );
         const result = ran.result;
         const _execMs = _perfNow() - _execT0;
         
-        // Cache the manifold for cross-section operations (+ nonce for game compare)
-        cachedManifold = result;
+        // Cache the manifold for cross-section operations (+ nonce for game
+        // compare). The solid it replaces is freed.
+        _replaceCachedManifold(result);
         cachedExecuteNonce = (nonce !== undefined && nonce !== null) ? nonce : null;
         // Independent attempt snapshot for game match (only while a ghost is live).
         if (gameTargetManifold) {
@@ -9716,6 +9798,8 @@ self.onmessage = async (event) => {
             nonce: cachedExecuteNonce,
             bodyCentroids,
             timing: { execMs: _execMs, serializeMs: _serializeMs },
+            wasmHeapMB: wasmHeapMB(manifoldModule),
+            kernelFreed,
             ...(ran.featureSkip ? { featureSkip: ran.featureSkip } : {}),
             ...(ran.rolledBack?.length ? { rolledBack: ran.rolledBack } : {}),
           }
@@ -9891,7 +9975,7 @@ self.onmessage = async (event) => {
         }
         
         // Cache for script access (import path — not a script execute nonce)
-        cachedManifold = manifold;
+        _replaceCachedManifold(manifold);
         cachedExecuteNonce = null;
         
         // Get final mesh data
@@ -10335,17 +10419,22 @@ self.onmessage = async (event) => {
         throw new Error(`Unknown message type: ${type}`);
     }
   } catch (error) {
-    self.postMessage({ 
-      type: 'error', 
+    const heapMB = _kernelHeapMB();
+    const verdict = classifyKernelFailure({ error, heapMB });
+    const message = error && typeof error === 'object' && 'message' in error ? String(error.message) : String(error);
+    if (verdict.fatal && !kernelDead) kernelDead = { reason: verdict.reason, message };
+    self.postMessage({
+      type: 'error',
       id,
       payload: {
-        message: error.message,
+        message,
         name: error && typeof error === 'object' && typeof error.name === 'string' ? error.name : '',
-        stack: error.stack,
+        stack: error?.stack,
         scriptLine: Number.isFinite(error?.scriptLine) ? error.scriptLine : null,
         featureId: typeof error?.featureId === 'string' ? error.featureId : null,
         featureBlock: typeof error?.featureBlock === 'string' ? error.featureBlock : null,
         featureSkip: error?.featureSkip && typeof error.featureSkip === 'object' ? error.featureSkip : null,
+        ...(verdict.fatal ? { fatal: true, reason: verdict.reason, wasmHeapMB: heapMB } : {}),
       }
     });
   }
@@ -10396,6 +10485,7 @@ export function bindManifoldModule(mod, { setup = true } = {}) {
     if (typeof mod.setup === 'function') mod.setup();
     installSeparateBodies(mod);
   }
+  installKernelArena(mod);
   isInitialized = true;
   return mod;
 }
@@ -10446,15 +10536,20 @@ export function runPreparedScript(source, opts = {}) {
   }
   _featureOps = [];
   _sourceTess = [];
-  const ran = executeSkippingFailedFeatures(
+  const { ran, kernelFreed } = _runInKernelArena(() => executeSkippingFailedFeatures(
     String(source ?? ''),
     opts.importedModels || {},
     opts.rollbackAnchor,
-  );
+  ));
   const summary = summarizeManifold(ran.result);
   if (ran.featureSkip) summary.featureSkip = ran.featureSkip;
   if (ran.rolledBack?.length) summary.rolledBack = ran.rolledBack;
   markSheetMesh(summary.mesh, source);
+  summary.kernelFreed = kernelFreed;
+  summary.wasmHeapMB = wasmHeapMB(manifoldModule);
+  // The caller owns the returned `manifold` (goldens and the external
+  // runner delete it themselves), so the previous one is not freed here;
+  // the worker's execute path, where nobody else holds it, frees it.
   cachedManifold = summary.manifold;
   cachedExecuteNonce = (opts.nonce !== undefined && opts.nonce !== null) ? opts.nonce : null;
   return summary;

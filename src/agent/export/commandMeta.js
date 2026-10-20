@@ -47,7 +47,7 @@ export const COMMAND_META = {
   },
   errors: {
     description:
-      'Structured errors from the last finished geometry run. message is the same text the viewport shows. featureType, featureLabel, and featureIndex identify the failed feature when known. detail is the exception name, a Manifold status, or the kernel message when that text is not already in message. Stack frames and URLs are omitted, and detail is always present on feature_failed: when the kernel adds nothing, it names the helper that threw (move adds how to name the body). Cleared on the next successful run. Feature and kernel failures use code feature_failed.',
+      'Structured errors from the last finished geometry run. message is the same text the viewport shows. featureType, featureLabel, and featureIndex identify the failed feature when known. detail is the exception name, a Manifold status, or the kernel message when that text is not already in message. Stack frames and URLs are omitted, and detail is always present on feature_failed: when the kernel adds nothing, it names the helper that threw (move adds how to name the body). Cleared on the next successful run. Feature and kernel failures use code feature_failed. A geometry engine crash (a wasm abort, out of memory, or a run past its time budget) is one row with code geometry_worker_crashed, reason (wasm_abort | out_of_memory | timeout | worker_lost), and workerRestarted: the worker was replaced, other parts kept building, and the next run of this part uses the fresh worker; simplify the part, reduce segment counts, or split it up. No reload is needed.',
     result: {
       type: 'object',
       additionalProperties: false,
@@ -65,6 +65,8 @@ export const COMMAND_META = {
               featureType: { type: 'string' },
               featureLabel: { type: 'string' },
               detail: { type: 'string' },
+              reason: { type: 'string', enum: ['wasm_abort', 'out_of_memory', 'timeout', 'worker_lost'] },
+              workerRestarted: { type: 'boolean' },
             },
           },
         },
@@ -233,7 +235,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   parts: {
-    description: `Open assembly: assemblyId, assemblyName, vaultLayout, activeId, and parts [{ id, name, visible, missing?, group? }]. Part and assembly ids are opaque surf ids, never a path or display name. No path field. featureCount and bodyCount are on status, not here.${FEATURE_COUNT_NOTE}`,
+    description: `Open assembly: assemblyId, assemblyName, vaultLayout, activeId, and parts [{ id, name, visible, missing?, group?, runState, crash? }]. runState is not_run_yet | ok | failed for every part, not only the active one; crash is present after a geometry engine crash on that part ({ code: geometry_worker_crashed, reason, workerRestarted, message }). Part and assembly ids are opaque surf ids, never a path or display name. No path field. featureCount and bodyCount are on status, not here.${FEATURE_COUNT_NOTE}`,
     result: { type: 'object', additionalProperties: true },
     errors: ['internal'],
     mutates: false,

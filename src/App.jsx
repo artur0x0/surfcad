@@ -162,7 +162,7 @@ import {
 } from './agent/state/editedSinceLoad';
 import { buildFeatureTree } from './agent/state/featureTree';
 import { resolveRollbackTarget, resolveStripTarget } from './agent/featureStripAgent';
-import { buildPartsState } from './agent/state/parts';
+import { buildPartsState, partRunState } from './agent/state/parts';
 import { compareWorkingCopyToCommit } from './agent/state/workingCopyUnsaved';
 import { findPartById, unknownAssemblyError, unknownPartError } from './agent/state/identity';
 import { decidePartVisible } from './agent/state/partVisible';
@@ -634,7 +634,7 @@ const App = () => {
   const rollbackAnchorsRef = useRef({});
   rollbackAnchorsRef.current = rollbackAnchors;
   const handleRunOutcome = ({
-    script, ok, scriptLine, featureId, featureBlock, skipped, message, detail,
+    script, ok, scriptLine, featureId, featureBlock, skipped, message, detail, crash,
   } = {}) => {
     // Tracked block first (works on Safari), the stack's line second.
     const next = ok ? null : failedFeatureFromOutcome(script, { featureId, featureBlock, scriptLine });
@@ -649,6 +649,7 @@ const App = () => {
         ...(typeof featureId === 'string' && featureId && !next?.id ? { id: featureId } : {}),
         ...(uiMessage ? { message: uiMessage } : {}),
         ...(uiDetail ? { detail: uiDetail } : {}),
+        ...(crash && typeof crash === 'object' ? { crash } : {}),
         skipped: Array.isArray(skipped) ? skipped : [],
       };
       if (!stamped.id && !stamped.message) stamped = null;
@@ -663,6 +664,7 @@ const App = () => {
       && (prev?.block ?? null) === (stamped?.block ?? null)
       && (prev?.message ?? null) === (stamped?.message ?? null)
       && (prev?.detail ?? null) === (stamped?.detail ?? null)
+      && (prev?.crash?.reason ?? null) === (stamped?.crash?.reason ?? null)
       && failureSkipStamp(prev?.skipped) === failureSkipStamp(stamped?.skipped)
         ? prev
         : stamped
@@ -2477,7 +2479,13 @@ const App = () => {
             bbox: geom.bbox,
           };
         } else if (run && run.ok === false) {
-          runs[viewId] = { ok: false, mesh: null, error: run.error || 'Script failed' };
+          const crash = runFailureRef.current?.crash;
+          runs[viewId] = {
+            ok: false,
+            mesh: null,
+            error: run.error || 'Script failed',
+            ...(crash && typeof crash === 'object' ? { crash } : {}),
+          };
           manifoldContext.clearResult().catch(() => {});
         }
       } else if (viewId) {
@@ -9905,13 +9913,18 @@ const App = () => {
         activeId: doc.activeId,
         assemblyName: assemblyName(doc),
         vaultLayout: doc.vaultLayout,
-        parts: doc.parts.map((row) => ({
-          id: row.id,
-          name: row.name,
-          visible: row.visible,
-          ...(typeof row.group === 'string' ? { group: row.group } : {}),
-          ...(row.missing === true ? { missing: true } : {}),
-        })),
+        parts: doc.parts.map((row) => {
+          const run = partRunsRef.current?.[row.id];
+          return {
+            id: row.id,
+            name: row.name,
+            visible: row.visible,
+            ...(typeof row.group === 'string' ? { group: row.group } : {}),
+            ...(row.missing === true ? { missing: true } : {}),
+            runState: partRunState(run),
+            ...(run?.crash && typeof run.crash === 'object' ? { crash: run.crash } : {}),
+          };
+        }),
       });
     },
     readActivePartSurfId() {
