@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Camera, Loader2, Send, Square, X } from 'lucide-react';
 import { createAgentPrompt } from '../agent/createAgentPrompt.js';
 import { attachViewerShot } from '../agent/agentPromptCapture.js';
@@ -12,6 +12,7 @@ import {
 } from '../agent/agentPromptDemo.js';
 import { registerAgentPromptHandler } from '../agent/agentPromptHost.js';
 import { setAgentPromptWorking } from '../agent/agentFeaturePopupGate.js';
+import { typingReducer, typingSeed, typingShown } from '../agent/agentPromptTyping.js';
 import {
   AGENT_PROMPT_WORKING_TIMEOUT_MS,
   ackNotice,
@@ -93,8 +94,9 @@ export default function PromptInput({
 
   const seed = demoSeed(demo?.state);
   const [input, setInput] = useState(seed.input);
-  const [working, setWorking] = useState(seed.working);
-  const [streaming, setStreaming] = useState(seed.streaming);
+  // One pending prompt drives the dots, Stop, and the working hint; see agentPromptTyping.js.
+  const [typing, dispatchTyping] = useReducer(typingReducer, seed, typingSeed);
+  const working = typing.working;
   const [replies, setReplies] = useState(
     seed.reply ? [{ id: 'demo', text: seed.reply }] : [],
   );
@@ -129,31 +131,23 @@ export default function PromptInput({
         const text = typeof msg.text === 'string' ? msg.text : '';
         setReplies((prev) => appendReply(prev, { id: msg.id, text }));
         setReplyOpen(true);
-        if (msg.final === true) {
-          setStreaming(false);
-          setWorking(false);
-        } else {
-          setStreaming(true);
-        }
+        dispatchTyping({ type: 'reply', id: msg.id, final: msg.final === true });
       },
       onWorking(on) {
-        const next = on === true;
-        setAgentPromptWorking(next);
-        setWorking(next);
+        dispatchTyping({ type: 'working', on: on === true });
       },
       onAck(event) {
         if (!event || typeof event !== 'object') return;
         if (pendingIdRef.current && event.id !== pendingIdRef.current) return;
         setAck(event);
-        if (event.delivery === 'failed') setWorking(false);
+        dispatchTyping({ type: 'ack', id: event.id, delivery: event.delivery });
       },
     });
   }, [transport, visible]);
 
   useEffect(() => {
     if (visible) return undefined;
-    setWorking(false);
-    setStreaming(false);
+    dispatchTyping({ type: 'disconnect' });
     setReplies([]);
     setReplyOpen(false);
     setAck(null);
@@ -170,7 +164,7 @@ export default function PromptInput({
 
   useEffect(() => {
     if (!working) return undefined;
-    const timer = setTimeout(() => setWorking(false), AGENT_PROMPT_WORKING_TIMEOUT_MS);
+    const timer = setTimeout(() => dispatchTyping({ type: 'timeout' }), AGENT_PROMPT_WORKING_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [working]);
 
@@ -199,6 +193,7 @@ export default function PromptInput({
     );
     if (!sent.ok) return sent;
     pendingIdRef.current = sent.id;
+    dispatchTyping({ type: 'sent', id: sent.id });
     setInput('');
     discardShot();
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -209,8 +204,7 @@ export default function PromptInput({
     const id = pendingIdRef.current;
     if (typeof transport?.cancel === 'function') void transport.cancel(id);
     setAgentPromptWorking(false);
-    setWorking(false);
-    setStreaming(false);
+    dispatchTyping({ type: 'stop' });
     return { ok: true };
   }, [transport]);
 
@@ -258,7 +252,7 @@ export default function PromptInput({
   if (!visible) return null;
 
   const replyText = replies.map((row) => row.text).join('\n\n');
-  const responding = working || streaming;
+  const responding = typingShown(typing);
   const showReply = responding || (replyOpen && !!replyText);
   const nearLimit = input.length >= COUNTER_FROM;
   const overLimit = input.length > AGENT_PROMPT_MAX_CHARS;
