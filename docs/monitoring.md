@@ -138,7 +138,7 @@ ADMIN_GITHUB_LOGINS=
 
 **Client:** `src/utils/analytics.js` — lazy-loads `posthog-js` only when `VITE_POSTHOG_KEY` is set **and** `getAnalyticsConsent()` is true. If the key is unset (dev, staging, CI, tests), the SDK is never imported and no analytics network calls are made.
 
-**Server:** `backend/services/posthog.js` — captures `signed_up` / `logged_in` via the capture API (`POST {POSTHOG_HOST}/capture/`) when `POSTHOG_KEY` is set **and** consent allows it. Unset key → no-op. Every server event carries `$lib: 'surfcad-server'`, `method` (the login method), and `$set: { user_type: 'signed_in' }`. Capture runs from `loginAndTrack` (`backend/services/loginTracking.js`), i.e. the same sign-in paths that write `login_events`. `logged_in` is sent on every one; `signed_up` is sent first when the account is new (email verify, guest convert, or a newly created GitHub / Google / Apple user). Consent: a stored opt-out in `User.consent` always skips; otherwise the request’s `analyticsConsent` (body, then query, then the value stashed on the session at OAuth start) decides; with none, a stored opt-in allows and unknown skips. A capture failure never fails the sign-in.
+**Server:** `backend/services/posthog.js` — captures `signed_up` / `logged_in` via the capture API (`POST {POSTHOG_HOST}/capture/`) when `POSTHOG_KEY` is set **and** consent allows it. Unset key → no-op. Every server event carries `$lib: 'surfcad-server'`, `method` (the login method), and `$set: { user_type: 'signed_in' }`; for an internal user (see `POSTHOG_INTERNAL_USERS` below) it also carries `is_internal: true` on the event and in `$set`. Capture runs from `loginAndTrack` (`backend/services/loginTracking.js`), i.e. the same sign-in paths that write `login_events`. `logged_in` is sent on every one; `signed_up` is sent first when the account is new (email verify, guest convert, or a newly created GitHub / Google / Apple user). Consent: a stored opt-out in `User.consent` always skips; otherwise the request’s `analyticsConsent` (body, then query, then the value stashed on the session at OAuth start) decides; with none, a stored opt-in allows and unknown skips. A capture failure never fails the sign-in.
 
 | Env var | Default | Notes |
 | --- | --- | --- |
@@ -146,7 +146,7 @@ ADMIN_GITHUB_LOGINS=
 | `VITE_POSTHOG_HOST` | `https://us.i.posthog.com` | US ingestion host (browser). |
 | `POSTHOG_KEY` | *(unset)* | **Production API host only** (`~/backend/.env.production`). |
 | `POSTHOG_HOST` | `https://us.i.posthog.com` | US ingestion host (server). |
-| `POSTHOG_INTERNAL_USERS` | *(empty)* | Comma-separated GitHub logins and/or emails. Default empty; do not commit a real list. |
+| `POSTHOG_INTERNAL_USERS` | *(empty)* | Comma-separated GitHub logins and/or emails flagged as internal traffic, in addition to every login in `ADMIN_GITHUB_LOGINS` (admins are always internal). Default empty; do not commit a real list. |
 
 **Production keys:** set `VITE_POSTHOG_KEY` only in `~/surfcad-prod-build/.env.production` on spark, and `POSTHOG_KEY` only in the production API env. Do **not** add these to dev/staging env files or the repo.
 
@@ -159,7 +159,7 @@ ADMIN_GITHUB_LOGINS=
 - Persistence: **`localStorage` only** (no PostHog cookies).
 - Consent: `opt_in_capturing()` / `opt_out_capturing()` when the user toggles analytics or GPC applies. Opt-out does **not** call `reset()`.
 - Identity: anonymous by default; on sign-in, `identify(SHA-256(userId))` (hex via Web Crypto). Never email, name, or raw ids. Super property `user_type`: `guest` \| `signed_in`. `reset()` **only on sign-out**.
-- Internal traffic: `GET /api/auth/me` returns `user.isInternal` from `POSTHOG_INTERNAL_USERS` (server-side). The client also registers `is_internal: true` on localhost / Vite dev.
+- Internal traffic: `GET /api/auth/me` returns `user.isInternal` when the user is in `POSTHOG_INTERNAL_USERS` or `ADMIN_GITHUB_LOGINS` (server-side); the server-side `signed_up` / `logged_in` events for such a user carry `is_internal: true` as an event property and a person property, so insights can filter on `is_internal`. The client also registers `is_internal: true` on localhost / Vite dev.
 - Web Vitals: one `web_vitals` event per page load (LCP, INP, CLS, FCP, TTFB) via the `web-vitals` package. CLS is the unrounded value (including `0`).
 - Product events: `track(name, props)` with an allowlisted name set; props must not include user content (part names, filenames, code).
 - Auth conversions: `signed_up` and `logged_in` are captured **server-side** (distinct id = SHA-256 of the user id). The client passes `analyticsConsent` from `getAnalyticsConsent()` only when `hasStoredConsentChoice()` is true (always `false` under GPC); unknown (no stored choice) omits the field and the server skips unless Mongo already has a choice. Server events are tagged `$lib: surfcad-server`.
