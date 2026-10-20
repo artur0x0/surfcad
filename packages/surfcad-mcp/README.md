@@ -80,6 +80,7 @@ Parts and assemblies are opaque surf ids. A vault path or display name is `unkno
 | `create_assembly` | `{ name? }` | Seed a local assembly. Optional `name` is a label. No git write. |
 | `create_part` | `{ name?, script?, position? }` | Add a part at the origin (optional `[x,y,z]` mm) and return its new id. Working copy only. |
 | `set_script` | `{ part_id, source }` | Freehand fallback. `part_id` must be the active part. Working copy only. |
+| `geometry_workers` | `{}` | Debug status of the geometry workers: the device cap, live and busy counts, crashes, the primary and the pool. Read-only. |
 | `rename_part` | `{ part_id, name }` | Working-copy display name. `{ partId, name, moved: false }`. No git write. |
 | `rename_assembly` | `{ assembly_id, name }` | Working-copy assembly label. Names may collide. No git write. |
 | `part_get_transform` | `{ part_id }` | Read placement: `position` mm and intrinsic XYZ Euler degrees. |
@@ -99,6 +100,10 @@ Parts and assemblies are opaque surf ids. A vault path or display name is `unkno
 | `git_branch_delete` | `{ branch, confirm: true }` | Delete a branch. |
 | `git_behind_resolve` | `{ action, confirm: true }` | `reload` is Get latest (no git write). `branch` saves mine to a new branch. No path argument. |
 | `git_force_overwrite` | `{ confirm: true }` | Overwrite the overlapping remote files. |
+
+### Geometry engine crashes
+
+A part can kill the geometry engine (out of memory, a wasm abort, or a run past its 30 s budget). The tab replaces the worker on its own and other parts keep building; nothing hangs and nobody reloads. The tool that ran the part returns `ok: false` with `crash { code: "geometry_worker_crashed", reason, workerRestarted: true }` and one `failures` row with the same code; `status.runState` is `failed`, `errors` holds the row, and `parts` rows carry `runState` and `crash` for every part. Do not retry the same script: simplify the part, lower segment counts, or split it up, then run it again.
 
 ## In-viewer prompts
 

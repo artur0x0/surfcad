@@ -122,6 +122,22 @@ export const STATUS_SCHEMA = Object.freeze({
   },
 });
 
+/** Present on a mutate result when the geometry engine crashed under the part. */
+export const CRASH_RECORD_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    code: { const: 'geometry_worker_crashed' },
+    reason: { type: 'string', enum: ['wasm_abort', 'out_of_memory', 'timeout', 'worker_lost'] },
+    workerRestarted: { type: 'boolean' },
+    message: { type: 'string' },
+    wasmHeapMB: { type: 'number' },
+    budgetMs: { type: 'number' },
+    partId: { type: 'string' },
+    featureId: { type: 'string' },
+  },
+});
+
 export const MUTATE_RESULT_SCHEMA = Object.freeze({
   type: 'object',
   additionalProperties: true,
@@ -130,6 +146,7 @@ export const MUTATE_RESULT_SCHEMA = Object.freeze({
     errors: { type: 'array', items: { type: 'string' } },
     status: STATUS_SCHEMA,
     unchanged: { type: 'boolean' },
+    crash: CRASH_RECORD_SCHEMA,
   },
 });
 
