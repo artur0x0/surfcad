@@ -671,3 +671,32 @@ test('snapshot equality ignores key order and reads joints and placements', () =
   const moved = { ...a, parts: a.parts.map((part) => (part.surfId === B ? { ...part, placement: { t: [0, 0, 6], q: [0, 0, 0, 1] } } : part)) };
   assert.equal(assemblySnapshotsEqual(a, moved), false);
 });
+
+test('fixed stores the tapped face, a whole-part pick stores the part alone, and the chip reopens on either (bike joints 3)', () => {
+  const tapped = face(A, 'Shaft', [0, 0, 1], [0, 0, 1]);
+  const byFace = buildJointRecord({ type: 'fixed', name: 'Ground 1', picks: [tapped] }, { id: 'g1', name: 'Ground 1' });
+  assert.equal(byFace.ok, true);
+  assert.deepEqual(byFace.joint.a, { part: A, kind: 'face', key: tapped.key });
+  assert.equal(byFace.joint.b, undefined);
+
+  const whole = { surfId: A, partId: 'a.js', partName: 'Shaft', kind: 'part', planar: false, axis: false, key: null };
+  assert.equal(typeFits('fixed', [whole]), true);
+  assert.equal(suggestJointType([whole]), 'fixed');
+  const draft = draftFromPicks(null, [whole], { joints: [] });
+  assert.equal(draft.type, 'fixed');
+  const byPart = buildJointRecord({ type: 'fixed', name: 'Ground 1', picks: [whole] }, { id: 'g2', name: 'Ground 1' });
+  assert.equal(byPart.ok, true);
+  assert.deepEqual(byPart.joint.a, { part: A });
+  assert.equal(typeFits('coincident', [whole, face(B, 'Housing', [0, 0, 1], [0, 0, -1])]), false);
+
+  const doc = docWith(undefined);
+  const reopened = cardFromJoint(byFace.joint, doc);
+  assert.equal(reopened.picks[0].kind, 'face');
+  assert.equal(reopened.picks[0].planar, true);
+  assert.deepEqual(reopened.picks[0].key, tapped.key);
+  const reopenedWhole = cardFromJoint(byPart.joint, doc);
+  assert.equal(reopenedWhole.picks[0].kind, 'part');
+  assert.equal(reopenedWhole.picks[0].planar, false);
+  assert.equal(reopenedWhole.picks[0].key, null);
+  assert.equal(stickyJointPick(reopenedWhole.picks[0]).label, 'Shaft · part');
+});

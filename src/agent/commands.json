@@ -12161,7 +12161,8 @@
             "enum": [
               "face",
               "axis",
-              "edge"
+              "edge",
+              "part"
             ]
           },
           "picks": {
@@ -12222,9 +12223,10 @@
                   "enum": [
                     "face",
                     "axis",
-                    "edge"
+                    "edge",
+                    "part"
                   ],
-                  "description": "Pick kind when key is explicit (concentric uses axis picks)"
+                  "description": "Pick kind when key is explicit (concentric uses axis picks). part picks the whole part, for a fixed joint; it needs no face_id or key."
                 }
               }
             }

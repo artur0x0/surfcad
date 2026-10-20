@@ -32,6 +32,8 @@ export default function JointCard({
   onDelete,
   onQuickAngle,
   onResolvePartChange,
+  groundPart = null,
+  onGroundPart,
   compact = false,
   locked = false,
 }) {
@@ -174,6 +176,17 @@ export default function JointCard({
             className="self-start rounded-md border border-cyan-700/70 bg-cyan-950/80 px-2 py-1 text-[12px] text-cyan-100"
           >
             Ground
+          </button>
+        )}
+        {!editing && !(card.picks?.length > 0) && groundPart && (
+          <button
+            type="button"
+            data-ui-action="data-joint-card"
+            data-joint-ground-part=""
+            onClick={() => onGroundPart?.(groundPart.id)}
+            className="self-start rounded-md border border-cyan-700/70 bg-cyan-950/80 px-2 py-1 text-[12px] text-cyan-100"
+          >
+            Ground {groundPart.name}
           </button>
         )}
         {distance && (
