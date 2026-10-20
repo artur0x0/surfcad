@@ -231,7 +231,7 @@ The envelope and every `result` survive `JSON.stringify` and come back unchanged
 | `joint_cancel` | `{}` | Dismisses the joint card without writing. |
 | `joint_select` | `{ joint_id }` | Opens an existing joint from the strip (`data-joint-chip`) in edit mode. |
 | `joint_edit` | `{ joint_id?, type?, name?, value_mm?, … }` | Patches a joint in edit mode (optional `joint_id` selects first). Commit with `joint_commit`. |
-| `paint_open` | `{}` | Opens Paint mode (`data-paint-chip`). |
+| `paint_open` | `{}` | Opens Paint mode (`data-paint-chip`). Waits up to 1.5 s for the viewport to take the mode (a part switch right after `create_part` / `set_active_part`, or the feature-popup gate while an agent prompt is being worked); past that it is a `not_ready` error with `details.reason` and `details.retryable: true`, never a silent `open: false`. |
 | `paint_close` | `{}` | Closes Paint without Confirm (same as ✕). |
 | `paint_set_color` | `{ color: "#RRGGBB" }` | Active paint color (swatch or hex). |
 | `paint_faces` | `{ keys: [faceKey, …] }` | Live session paint on face keys from `list_faces`. |

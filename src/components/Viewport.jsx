@@ -50,6 +50,7 @@ import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 import { fillAgentHost } from '../agent/host';
 import {
   allowFeaturePopup,
+  featurePopupAllowed,
   registerFeaturePopupDismiss,
   setAuthorizedFeatureEdit,
 } from '../agent/agentFeaturePopupGate.js';
@@ -14342,6 +14343,8 @@ const Viewport = forwardRef(({
     exitMeasureModeRef,
     commitMeasurePicksRef,
     getMesh: () => resultRef.current,
+    // paint_open waits on this instead of opening nothing.
+    paintOpenBlocked: () => (featurePopupAllowed() ? null : 'prompt_working'),
     faceIDsRef,
     activePartIdRef,
     featureEdgesRef,
