@@ -35,7 +35,6 @@ import {
   CUBE_END,
   FILLET_MODE_BEGIN,
   FILLET_MODE_END,
-  starterCubeScript,
 } from '../../src/utils/helperPaletteSnippets.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -168,7 +167,7 @@ attachConsentPresetToBrowser(browser);
         await page.waitForFunction(() => window.monaco?.editor?.getModels?.()?.length > 0, null, { timeout: 30000 });
         await page.evaluate((text) => {
           window.monaco.editor.getModels()[0].setValue(text);
-        }, starterCubeScript());
+        }, '');
         await page.locator('[data-sheet-metal-button]').click();
         await page.waitForSelector('[data-sheet-metal-picker]', { timeout: 10000 });
         await page.waitForFunction(() => [...window.document.querySelectorAll('#sm-material option')].some((o) => o.value), null, { timeout: 15000 });

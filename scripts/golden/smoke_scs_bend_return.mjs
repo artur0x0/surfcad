@@ -22,7 +22,6 @@ import {
   sheetMetalBlock,
 } from '../../src/utils/sheetMetal/sheetMetalScript.js';
 import { sheetScriptHasExtras } from '../../src/utils/sheetMetal/sheetExport.js';
-import { starterCubeScript } from '../../src/utils/helperPaletteSnippets.js';
 import { loadSandbox } from './scs_sandbox.mjs';
 
 const read = (rel) => readFileSync(new URL(`../../${rel}`, import.meta.url), 'utf8');
@@ -99,9 +98,9 @@ console.log('sheet return: Tab, Bend, edit bend (real worker)');
   mode = accepted.mode;
   check('edited bend is 45° × 20', mode.spec.bends[0].angle === 45 && mode.spec.bends[0].length === 20 && !mode.draft);
 
-  const committed = composeSheetMetalCommit(starterCubeScript(), accepted.spec);
+  const committed = composeSheetMetalCommit('', accepted.spec);
   const script = committed.buffer;
-  check('commit replaces the starter and returns part after the block',
+  check('commit on an empty part returns part after the block',
     committed.ok
     && script.startsWith('// --- sheet-metal begin ---')
     && !/Manifold\.cube/.test(script)

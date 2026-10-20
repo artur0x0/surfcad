@@ -17,7 +17,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
-import { starterCubeScript } from '../../src/utils/helperPaletteSnippets.js';
 import { readSheetMetalSpec } from '../../src/utils/sheetMetal/sheetMetalScript.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -87,7 +86,7 @@ async function editorScript(page) {
 async function openSheet(page) {
   await page.evaluate((text) => {
     window.monaco.editor.getModels()[0].setValue(text);
-  }, starterCubeScript());
+  }, '');
   await page.locator('[data-sheet-metal-button]').click();
   await page.waitForSelector('[data-sheet-metal-picker]', { timeout: 10000 });
   await page.waitForFunction(() => [...document.querySelectorAll('#sm-material option')].some((o) => o.value), null, { timeout: 15000 });

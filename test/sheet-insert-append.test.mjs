@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DEFAULT_SCRIPT } from '../src/utils/defaultScript.js';
-import { starterCubeScript } from '../src/utils/helperPaletteSnippets.js';
+import { agentFeatureCount } from '../src/utils/agentBridge.js';
+import { blankPartStarter, DEFAULT_SCRIPT } from '../src/utils/defaultScript.js';
+import { mintSurfId } from '../src/utils/git/surfId.js';
+import { newPartStarterScript, starterCubeScript } from '../src/utils/helperPaletteSnippets.js';
 import { createSheetSpec } from '../src/utils/sheetMetal/sheetModel.js';
 import {
   composeSheetMetalCommit,
@@ -38,7 +40,15 @@ function prefixThrough(script, marker) {
 
 test('a part with a box and a fillet is not replaced by the sheet starter', () => {
   assert.equal(sheetMetalFresh(''), true);
-  assert.equal(sheetMetalFresh(starterCubeScript()), true);
+  assert.equal(sheetMetalFresh(newPartStarterScript()), true);
+  const gitBlank = blankPartStarter(mintSurfId());
+  assert.equal(agentFeatureCount(''), 0);
+  assert.equal(agentFeatureCount(gitBlank), 0);
+  assert.equal(sheetMetalFresh(gitBlank), true);
+  assert.equal(sheetMetalFresh('// note only\n'), true);
+  assert.equal(sheetMetalFresh('return part;\n'), true);
+  assert.equal(agentFeatureCount(starterCubeScript()), 1);
+  assert.equal(sheetMetalFresh(starterCubeScript()), false);
   assert.equal(sheetMetalFresh(DEFAULT_SCRIPT), false);
   assert.equal(sheetMetalFresh(BOX_FILLET), false);
 
@@ -65,11 +75,16 @@ test('a part with a box and a fillet is not replaced by the sheet starter', () =
   assert.equal(readSheetMetalSpec(edited.buffer).plane, 'XZ');
   assert.equal(readSheetMetalSpec(edited.buffer).width, 80);
 
-  const fresh = composeSheetMetalCommit(starterCubeScript(), spec);
+  const fresh = composeSheetMetalCommit('', spec);
   assert.equal(fresh.ok, true);
   assert.ok(fresh.buffer.startsWith(SHEET_METAL_BEGIN));
   assert.match(fresh.buffer, /let part = sheetMetalSolid\(sheetSpec\)/);
   assert.doesNotMatch(fresh.buffer, /Manifold\.cube/);
+
+  const cube = composeSheetMetalCommit(starterCubeScript(), spec);
+  assert.equal(cube.ok, true);
+  assert.match(cube.buffer, /Manifold\.cube/);
+  assert.match(cube.buffer, /part = part\.add\(sheetMetalSolid\(sheetSpec\)\)/);
 });
 
 test('the appended flange is unioned onto the box and fillet', async () => {

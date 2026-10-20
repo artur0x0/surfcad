@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Start designing in sheet-metal mode writes a base flange, not a cube,
- * on a fresh part (the 20 mm starter). A busy part is left byte-for-byte
+ * on a fresh part (empty). A busy part is left byte-for-byte
  * alone. Both at 390px and on desktop.
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir() only.
@@ -15,7 +15,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
-import { starterCubeScript } from '../../src/utils/helperPaletteSnippets.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => readFileSync(join(ROOT, rel), 'utf8');
@@ -163,14 +162,16 @@ attachConsentPresetToBrowser(browser);
         await page.waitForFunction(() => window.monaco?.editor?.getModels?.()?.length > 0, null, { timeout: 30000 });
         const planted = busy
           ? 'let part = Manifold.sphere(8, 32);\nreturn part;\n'
-          : starterCubeScript();
+          : '';
         await page.evaluate((text) => {
           window.monaco.editor.getModels()[0].setValue(text);
         }, planted);
-        await page.waitForFunction((needle) => {
+        await page.waitForFunction((expectBusy) => {
           const model = window.monaco?.editor?.getModels?.()?.[0];
-          return !!model && model.getValue().includes(needle);
-        }, busy ? 'Manifold.sphere(8, 32)' : 'Manifold.cube([20, 20, 20]', { timeout: 5000 });
+          if (!model) return false;
+          const value = model.getValue();
+          return expectBusy ? value.includes('Manifold.sphere(8, 32)') : value.trim() === '';
+        }, busy, { timeout: 5000 });
         await page.locator('[data-sheet-metal-button]').click();
         await page.waitForSelector('[data-sheet-metal-picker]', { timeout: 10000 });
         await page.waitForFunction(() => [...document.querySelectorAll('#sm-material option')].some((o) => o.value), null, { timeout: 15000 });

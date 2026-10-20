@@ -7876,8 +7876,9 @@ const App = () => {
 
   /**
    * S1 Start designing: bind the SendCutSend SKU on the open part.
-   * A fresh part (empty or the 20 mm starter cube) takes the default base
-   * flange in place, and a refreshGen bump drops a pending cube auto-run.
+   * A fresh part (empty, comments-only, or only `return part`) takes the
+   * default base flange in place, and a refreshGen bump drops a pending
+   * cube auto-run.
    * A part that already has features is not rewritten here and no Sheet (n)
    * part is created — plane Accept appends one block. An existing sheet
    * block is kept so Viewport can re-thickness it. Spec stays null until

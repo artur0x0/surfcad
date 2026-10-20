@@ -2492,6 +2492,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true, fillet the selected edges, or the edges of the selected face if no edges are selected. With no pick, fillet every convex edge"
+          },
           "body": {
             "type": "string",
             "description": "Part script binding name"
@@ -2634,6 +2638,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true, chamfer the selected edges, or the edges of the selected face if no edges are selected. With no pick, chamfer every convex edge"
+          },
           "body": {
             "type": "string",
             "description": "Part script binding name"
@@ -2751,6 +2759,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true, place the contour on the selected planar face. Otherwise use the default +Z top face"
+          },
           "body": {
             "type": "string",
             "description": "Part script binding name"
@@ -2910,6 +2922,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true, build the path from the selected edges. With no edges the insert is refused"
+          },
           "body": {
             "type": "string",
             "description": "Part script binding name"
@@ -3026,6 +3042,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face"
+          },
           "body": {
             "type": "string",
             "description": "Part script binding name"
@@ -3259,6 +3279,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true, place the grid on the selected planar or cylindrical face. Otherwise use the default +Z top face"
+          },
           "body": {
             "type": "string",
             "description": "Part script binding name"
@@ -3396,6 +3420,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face"
+          },
           "body": {
             "type": "string",
             "description": "Part script binding name"
@@ -3539,6 +3567,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face"
+          },
           "body": {
             "type": "string",
             "description": "Part script binding name"
@@ -3673,6 +3705,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face"
+          },
           "body": {
             "type": "string",
             "description": "Part script binding name"
@@ -3808,6 +3844,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face"
+          },
           "body": {
             "type": "string",
             "description": "Part script binding name"
@@ -4073,6 +4113,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true, cut on the plane of the selected face. A cylindrical or irregular face, or no face, cuts on XY through the origin"
+          },
           "body": {
             "type": "string",
             "description": "Part script binding name"
@@ -5297,7 +5341,12 @@
       "args": {
         "type": "object",
         "additionalProperties": false,
-        "properties": {}
+        "properties": {
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true, place the construction plane on the selected planar face. Otherwise use the default XY plane at the origin"
+          }
+        }
       },
       "result": {
         "type": "object",
@@ -5890,6 +5939,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true, offset the selected face. With no face, the face list is empty"
+          },
           "body": {
             "type": "string",
             "description": "Part script binding name"
@@ -6010,6 +6063,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true, delete the selected face. With no face, the face list is empty"
+          },
           "body": {
             "type": "string",
             "description": "Part script binding name"

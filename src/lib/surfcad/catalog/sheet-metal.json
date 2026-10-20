@@ -27,7 +27,7 @@
     "specLine": "const sheetSpec = <JSON>;",
     "solid": "let part = sheetMetalSolid(sheetSpec);",
     "source": "src/utils/sheetMetal/sheetMetalScript.js",
-    "note": "Sheet Metal mode writes this marked block, then `return part;` after the end marker. It replaces the starter cube rather than adding onto an existing part. A returned sheet wrapper ({ solid, spec } or { solid, flat }) is unwrapped to solid."
+    "note": "Sheet Metal mode writes this marked block, then `return part;` after the end marker. On a fresh part (empty, comments-only, or only `return part;`) it replaces the script. On a part that already has features it appends a union. A returned sheet wrapper ({ solid, spec } or { solid, flat }) is unwrapped to solid."
   },
   "spec": {
     "source": "src/utils/sheetMetal/sheetModel.js",
