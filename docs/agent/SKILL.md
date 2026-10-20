@@ -60,6 +60,7 @@ Optional: `SURFCAD_AGENT_BRIDGE_WS_URL` (default `ws://127.0.0.1:17341`; preview
 **FEA study.** `fea_open` → `fea_set_material` `{ id }` → `fea_set_fixture` / `fea_set_force` `{ magnitudeN, direction, keys }` (N and MPa regardless of the display toggle) → `fea_run` → `fea_results` (`dof`, stresses in MPa, `maxDisplacement_m`). `fea_state` mirrors the open sheet; `fea_back_to_setup` leaves results. An off-scope `part_id` on `fea_pick` returns an error.
 
 **Assemblies.** `create_assembly` `{ name? }` (one empty part with no seed cube, single-flight per tab, no git write), `open_assembly` `{ assembly_id }`, `insert_part` `{ part_id }` or `{ assembly_id }` (insert as reference, same ids; `copy: true` mints a new id and sets `copiedFrom`), `open_part`, `part_get_transform` / `part_set_transform` `{ part_id, position?, rotation? }`, `joint_open` … `joint_commit`.
+   - **Fixed.** One pick and no second reference: a whole part, a face, or an edge (a cylindrical face is stored as an axis). `b` is an error. `joint_pick` `{ "part_id": "p1" }` alone, or with `kind: "part"`, picks the whole part and suggests `fixed`, so `joint_set_params` is optional and `joint_commit` writes it. A part pick that also has `face_id` or `key` is `bad_args`. A single face does not suggest Fixed: `joint_set_params` `{ "type": "fixed" }` after `face_id` plus its face `key`. An edge is a valid Fixed target in the joint, but `joint_pick`'s published `key` is a face key (`at`, `n`, `area`), not an edge key (`at`, `dir`).
 
 ## Working copy vs git
 
