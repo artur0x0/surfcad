@@ -186,8 +186,8 @@ console.log('SCS S1 — SKU persists on the part');
 
 console.log('SCS S1 — mode entry + chrome');
 {
-  check('sheet-ready: empty / starter / existing block',
-    sheetMetalReady('') && sheetMetalReady(starterCubeScript())
+  check('sheet-ready: empty and an existing block; a cube feature is not fresh',
+    sheetMetalReady('') && !sheetMetalReady(starterCubeScript())
     && sheetMetalReady(`${SHEET_METAL_BEGIN}\nlet part = 1;\n${SHEET_METAL_END}`)
     && !sheetMetalReady('let part = Manifold.sphere(5);'));
   const { records } = joinScsCatalog(catalog, specs);

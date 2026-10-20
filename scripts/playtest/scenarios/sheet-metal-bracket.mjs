@@ -4,8 +4,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { agentCall, focusPartHistoryForUndo, saveBridgeScreenshot } from '../lib/harness.mjs';
 import { createStepRunner } from '../lib/stepRunner.mjs';
-import { starterCubeScript } from '../../../src/utils/helperPaletteSnippets.js';
-
 const USER_ID = 'user-playtest-sheet-bracket';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const catalog = readFileSync(join(ROOT, 'scripts/golden/fixtures/scs/catalog.json'));
@@ -29,7 +27,7 @@ export function seedDoc() {
 }
 
 export function seedParts() {
-  return [{ id: 'local:part1', script: starterCubeScript() }];
+  return [{ id: 'local:part1', script: '' }];
 }
 
 /**

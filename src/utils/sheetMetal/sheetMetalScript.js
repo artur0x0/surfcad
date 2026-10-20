@@ -2,7 +2,6 @@
  * Sheet-metal script block. The part script stays the source of truth:
  * one marked block holds the sheet spec (JSON) and builds the solid.
  */
-import { starterCubeScript } from '../helperPaletteSnippets.js';
 import { insertChunkBeforeReturn } from '../scriptReturn.js';
 import { createSheetSpec } from './sheetModel.js';
 import { defaultBaseDims } from './sheetMetalMode.js';
@@ -16,15 +15,14 @@ export { SHEET_METAL_BEGIN, SHEET_METAL_END, hasSheetMetalBlock };
 
 /**
  * May Start designing replace this buffer with the base-flange starter?
- * Empty, comments-only, a bare `return part;`, or the auto-dropped 20 mm
- * cube. The demo script and any other part that already has features are
- * not fresh — Accept appends a block onto them.
+ * Empty, comments-only, or a bare `return part;` (the empty part from a
+ * new assembly: no feature blocks, no bodies). A part that already has
+ * features, including a cube the user placed, is not fresh — Accept
+ * appends a block onto it.
  */
 export function sheetMetalFresh(script) {
   const s = String(script ?? '').trim();
   if (!s) return true;
-  // Older parts still carry the 20 mm starter cube; those are fresh too.
-  if (s === starterCubeScript().trim()) return true;
   const body = s
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\/\/[^\n]*/g, '')
@@ -50,8 +48,8 @@ const SPEC_LINE = /const sheetSpec\s*=\s*(\{.*\});/;
 
 /**
  * Script for Start designing. A default base flange (Top plane, SKU
- * thickness, 100×60 mm raised to the SKU minimums) replaces the auto-dropped
- * cube. Null when the record has no SKU.
+ * thickness, 100×60 mm raised to the SKU minimums) replaces a fresh buffer.
+ * Null when the record has no SKU.
  */
 export function sheetStarterScript(record) {
   if (!record?.sku) return null;
@@ -124,7 +122,7 @@ function withSheetReturn(buffer) {
 
 /**
  * Write the spec into a buffer: replace the existing block, take over a
- * fresh buffer (empty / starter cube), or append after earlier feature
+ * fresh buffer (empty, comments-only, or only `return part;`), or append after earlier feature
  * blocks. Appending unions the flange onto `part` so those blocks stay
  * byte-identical and the solid keeps their geometry.
  */

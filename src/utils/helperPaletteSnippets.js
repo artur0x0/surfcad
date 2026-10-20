@@ -1118,10 +1118,12 @@ export function newPartStarterScript() {
 }
 
 /**
- * The 20 mm starter cube new parts used to begin with: the same Cube feature
- * a user places from the palette (markers, `box1`, `let part = box1`). Kept
- * for tests and goldens that want one body, and so an older part that is only
- * this cube still counts as blank.
+ * The 20 mm cube new parts used to begin with: the same Cube feature a user
+ * places from the palette (markers, `box1`, `let part = box1`). Tests and
+ * goldens use it when they want one body. App still lists it in
+ * `defaultScripts` so an unedited part that is exactly this script skips
+ * the assembly leave guard. It is a real cube feature, not a fresh
+ * sheet-metal part.
  */
 export function starterCubeScript() {
   const script = composeHelperInsert('', 'cube', null, {

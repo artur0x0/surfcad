@@ -31,7 +31,6 @@ import {
   updateDraft,
 } from '../../src/utils/sheetMetal/sheetMetalMode.js';
 import { buildSheetOverlay, sheetPickFromHits } from '../../src/utils/sheetMetal/sheetOverlay.js';
-import { starterCubeScript } from '../../src/utils/helperPaletteSnippets.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => readFileSync(join(ROOT, rel), 'utf8');
@@ -202,7 +201,7 @@ attachConsentPresetToBrowser(browser);
         await page.waitForFunction(() => window.monaco?.editor?.getModels?.()?.length > 0, null, { timeout: 30000 });
         await page.evaluate((text) => {
           window.monaco.editor.getModels()[0].setValue(text);
-        }, starterCubeScript());
+        }, '');
         await page.locator('[data-sheet-metal-button]').click();
         await page.waitForSelector('[data-sheet-metal-picker]', { timeout: 10000 });
         await page.waitForFunction(() => [...document.querySelectorAll('#sm-material option')].some((o) => o.value), null, { timeout: 15000 });
