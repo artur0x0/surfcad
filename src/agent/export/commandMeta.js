@@ -307,6 +307,19 @@ export const COMMAND_META = {
     errors: ['unknown_feature', 'bad_index', 'internal'],
     mutates: false,
   },
+  paint_open: {
+    description: 'Open paint mode on the active part (the Paint chip). Waits up to 1.5 s for the viewport to take the mode, as right after create_part or set_active_part, or while an agent prompt is being worked; past that it is not_ready with details.reason and details.retryable: true, never a silent open: false.',
+    result: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        open: { type: 'boolean' },
+        already: { type: 'boolean', description: 'Paint mode was already open' },
+      },
+    },
+    errors: ['bad_view', 'not_ready', 'internal'],
+    mutates: false,
+  },
   edit_feature: {
     description: 'Merge params into the open feature edit session (feature sheet, helper edit card, or hole card). Keys depend on the feature kind; for a move, params.at (a list_bodies centroid) re-points it and dx / dy / dz change the offset. Confirm with confirm_feature.',
     result: { type: 'object', additionalProperties: true },

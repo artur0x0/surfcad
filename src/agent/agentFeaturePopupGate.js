@@ -14,6 +14,16 @@ let popupOwner = null;
 let authorizedEdit = false;
 const dismissers = new Set();
 
+/**
+ * Would `allowFeaturePopup` say yes right now? A peek with no side effect,
+ * for a host that wants to wait for the gate or report why it is closed
+ * instead of opening nothing.
+ */
+export function featurePopupAllowed() {
+  if (authorizedEdit) return !(promptWorking && popupOwner !== 'user');
+  return !(promptWorking && agentDepth > 0);
+}
+
 export function allowFeaturePopup() {
   if (authorizedEdit) {
     // A launch that started before `onWorking` must not mount once the

@@ -19,7 +19,18 @@ import {
 } from '../utils/measurePicks.js';
 import { propagateTangentEdges } from '../utils/selectEdge.js';
 
+/** How long paint_open waits for the viewport to take the mode. */
+export const PAINT_OPEN_WAIT_MS = 1500;
+const PAINT_OPEN_POLL_MS = 50;
+
+const PAINT_OPEN_REASON_TEXT = {
+  prompt_working: 'an agent prompt is being worked, so agent-opened cards are held back until it is answered',
+  mode_not_ready: 'the viewport did not take paint mode yet (a part switch or run may still be settling)',
+};
+
 export function createPaintMeasureAgentHandlers(deps) {
+  const wait = (ms) => (typeof deps.wait === 'function' ? deps.wait(ms) : new Promise((r) => setTimeout(r, ms)));
+  const now = () => (typeof deps.now === 'function' ? deps.now() : Date.now());
   const meshContext = () => {
     const mesh = deps.getMesh?.();
     const geometry = mesh?.geometry;
@@ -42,15 +53,41 @@ export function createPaintMeasureAgentHandlers(deps) {
   };
 
   return {
-    paintOpen() {
+    /**
+     * Open paint mode, waiting up to PAINT_OPEN_WAIT_MS for the viewport to
+     * take it: right after create_part or set_active_part the part switch
+     * may still be settling, and while an agent prompt is being worked the
+     * feature-popup gate holds agent-opened cards back. Never `open: false`
+     * with no reason: when the wait runs out the result is a `not_ready`
+     * error that names the reason and can be retried.
+     */
+    async paintOpen() {
       if (deps.appMode === 'game') {
         return { error: { code: 'bad_view', message: 'Paint is not available in game mode' } };
       }
       if (deps.paintModeRef?.current) {
         return { result: { open: true, already: true } };
       }
-      deps.enterPaintModeRef?.current?.();
-      return { result: { open: !!deps.paintModeRef?.current } };
+      const deadline = now() + (Number.isFinite(deps.paintOpenWaitMs) ? deps.paintOpenWaitMs : PAINT_OPEN_WAIT_MS);
+      let reason = null;
+      for (;;) {
+        reason = typeof deps.paintOpenBlocked === 'function' ? (deps.paintOpenBlocked() || null) : null;
+        if (!reason) {
+          deps.enterPaintModeRef?.current?.();
+          if (deps.paintModeRef?.current) return { result: { open: true } };
+          reason = 'mode_not_ready';
+        }
+        if (now() >= deadline) break;
+        await wait(PAINT_OPEN_POLL_MS);
+      }
+      const why = PAINT_OPEN_REASON_TEXT[reason] || reason;
+      return {
+        error: {
+          code: 'not_ready',
+          message: `Paint did not open: ${why}. Retry paint_open.`,
+          details: { reason, retryable: true },
+        },
+      };
     },
 
     paintClose() {

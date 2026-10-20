@@ -10,6 +10,17 @@ function hostCall(ctx, name, args) {
   return { result: out?.result ?? out };
 }
 
+/** Same as hostCall for a handler that may wait (paint_open). */
+async function hostCallAsync(ctx, name, args) {
+  const fn = ctx[name];
+  if (typeof fn !== 'function') {
+    return { error: { code: 'internal', message: `${name} handler is missing` } };
+  }
+  const out = await fn(args);
+  if (out?.error) return { error: out.error };
+  return { result: out?.result ?? out };
+}
+
 export const paintOpenCommand = Object.freeze({
   name: 'paint_open',
   uiEntry: 'data-paint-chip',
@@ -17,7 +28,7 @@ export const paintOpenCommand = Object.freeze({
   example: {},
   immediate: true,
   run(ctx) {
-    return hostCall(ctx, 'paintOpen');
+    return hostCallAsync(ctx, 'paintOpen');
   },
 });
 
