@@ -63,6 +63,10 @@ claude mcp add surfcad -- npx surfcad-mcp
 
 A local CLI session usually has no public https endpoint, so polling `read_messages` is the normal path there. Webhooks apply when the user runs a receiver that can take https POSTs. The key they send is the `bearer` argument of `register_webhook`.
 
+## How to build
+
+The `pair` result, the MCP initialize instructions, and the `insert_*` / `set_script` / `create_*` tool descriptions all carry the same build guidance: block out every part of the assembly as plain blocks first (within seconds, then a screenshot for the user), then Build and Shape, then Polish, then pattern and place; features first, with a `set_script` snippet only for one operation no feature can do, starting with `// FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>`; one part per unique fastener type, one instance patterned to every place it goes. The full text is in [docs/agent/SKILL.md](../../docs/agent/SKILL.md).
+
 ## Tools
 
 Every command in `data/commands.json` is one MCP tool with the same name and argument schema, plus `pair` and five in-process prompt tools. `GET /tools` on the loopback relay, `list_commands`, and that file list the same bridge tools. Prefer `insert_*` feature tools. `set_script` is the freehand fallback and requires `part_id`.
