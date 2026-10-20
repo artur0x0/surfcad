@@ -459,13 +459,17 @@ textarea {
     transform: translateX(-50%) translateY(calc(100% + var(--agent-prompt-rest-bottom) + 16px));
     pointer-events: none;
   }
-  /* Folded: the same slide down, then out of the tree for a11y and taps. The
-     component stays mounted so the draft, the scroll, and the state survive. */
+  /* Folded: slide down. --folded-hidden (after the slide) takes it out of
+     the tree for a11y and taps. Do not transition visibility with duration
+     0s: Chrome 155 never applies the end value, so the prompt stayed drawn.
+     The component stays mounted so the draft, the scroll, and the state survive. */
   .agent-prompt--folded {
     transform: translateX(-50%) translateY(calc(100% + var(--agent-prompt-rest-bottom) + 16px));
     pointer-events: none;
+    transition: transform 220ms ease;
+  }
+  .agent-prompt--folded-hidden {
     visibility: hidden;
-    transition: transform 220ms ease, visibility 0s linear 220ms;
   }
   /* The chevron on the prompt's bottom edge, a sibling so the prompt keeps
      overflow: hidden. It straddles the border at the prompt's centre. */
@@ -536,6 +540,7 @@ textarea {
   .agent-prompt-badge .agent-prompt-dots span { width: 3px; height: 3px; }
   @media (prefers-reduced-motion: reduce) {
     .agent-prompt--folded,
+    .agent-prompt--folded-hidden,
     .agent-prompt-fold,
     .agent-prompt-fold--away { transition: none; }
   }
