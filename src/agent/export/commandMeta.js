@@ -308,7 +308,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   edit_feature: {
-    description: 'Merge fields into the open feature edit session.',
+    description: 'Merge params into the open feature edit session (feature sheet, helper edit card, or hole card). Keys depend on the feature kind; for a move, params.at (a list_bodies centroid) re-points it and dx / dy / dz change the offset. Confirm with confirm_feature.',
     result: { type: 'object', additionalProperties: true },
     errors: ['no_feature_edit', 'edit_failed', 'internal'],
     mutates: false,

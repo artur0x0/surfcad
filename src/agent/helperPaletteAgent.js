@@ -42,8 +42,9 @@ export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
     };
   }
   if (item?.id === 'move') {
-    // The body to move, by one of these. Nothing given uses the selected
-    // face; nothing selected is no_body (the origin is never assumed).
+    // The body to move. The host tries body_index, then at, then face_id /
+    // face, then use_selection: true (the selected face). Nothing named and
+    // use_selection not true is no_body (the origin is never assumed).
     properties.body_index = { type: 'integer', minimum: 0, description: 'Body from list_bodies' };
     properties.at = {
       type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3,
@@ -51,6 +52,10 @@ export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
     };
     properties.face_id = { type: 'string', description: 'A list_faces id (f12) on the body to move' };
     properties.face = { type: 'object', description: 'A list_faces key { at, n, area } on the body to move' };
+    properties.use_selection = {
+      type: 'boolean',
+      description: 'When true and no body_index, at, face_id, or face is given, move the body of the selected face',
+    };
   }
   for (const param of item?.params || []) {
     if (param.type === 'number') {

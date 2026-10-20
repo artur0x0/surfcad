@@ -4334,6 +4334,10 @@
             "type": "object",
             "description": "A list_faces key { at, n, area } on the body to move"
           },
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true and no body_index, at, face_id, or face is given, move the body of the selected face"
+          },
           "body": {
             "type": "string",
             "description": "Part script binding name"
@@ -6191,15 +6195,38 @@
     },
     {
       "name": "edit_feature",
-      "description": "Merge fields into the open feature edit session.",
+      "description": "Merge params into the open feature edit session (feature sheet, helper edit card, or hole card). Keys depend on the feature kind; for a move, params.at (a list_bodies centroid) re-points it and dx / dy / dz change the offset. Confirm with confirm_feature.",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "params": {
             "type": "object",
-            "additionalProperties": false,
-            "description": "Feature sheet / edit-card fields to merge before confirm"
+            "additionalProperties": true,
+            "description": "Feature sheet / edit-card fields to merge before confirm. Keys depend on the feature kind (e.g. height, radius, distance). For a move: dx, dy, dz, and at.",
+            "properties": {
+              "at": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3,
+                "description": "Move only: new body centroid [x, y, z] mm from list_bodies; re-points the move"
+              },
+              "dx": {
+                "type": "number",
+                "description": "Move only: offset x mm"
+              },
+              "dy": {
+                "type": "number",
+                "description": "Move only: offset y mm"
+              },
+              "dz": {
+                "type": "number",
+                "description": "Move only: offset z mm"
+              }
+            }
           }
         }
       },

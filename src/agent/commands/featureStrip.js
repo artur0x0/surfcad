@@ -62,8 +62,20 @@ export const editFeatureCommand = Object.freeze({
     properties: {
       params: {
         type: 'object',
-        additionalProperties: false,
-        description: 'Feature sheet / edit-card fields to merge before confirm',
+        // The host merges every key into the open edit (App editFeature,
+        // Viewport agentPatchFeatureEdit, agentPatchHoleCard); which keys are
+        // read depends on the feature kind (featureEdit.js rewriteBlock).
+        additionalProperties: true,
+        description: 'Feature sheet / edit-card fields to merge before confirm. Keys depend on the feature kind (e.g. height, radius, distance). For a move: dx, dy, dz, and at.',
+        properties: {
+          at: {
+            type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3,
+            description: 'Move only: new body centroid [x, y, z] mm from list_bodies; re-points the move',
+          },
+          dx: { type: 'number', description: 'Move only: offset x mm' },
+          dy: { type: 'number', description: 'Move only: offset y mm' },
+          dz: { type: 'number', description: 'Move only: offset z mm' },
+        },
       },
     },
   }),
