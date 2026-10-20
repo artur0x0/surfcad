@@ -80,6 +80,12 @@ Disconnect) or when a DEV build pins `?agentPromptDemo=1` for goldens / screensh
 It is not mounted in game mode. After Connect Agent, `AgentBridgeHost` builds
 `createAgentPromptTransport(bridge)` from `window.surfcadAgentPrompt.getBridge()`
 and passes it to the card. Unpair tears that transport down and hides the card.
+The typing dots, Stop, and the "Agent is working..." hint follow one pending
+prompt (`src/agent/agentPromptTyping.js`): the one the tab sent last and has not
+seen closed. It closes on the final reply, on `agent.status { working: false }`,
+on a failed delivery, on Stop, on disconnect, and on the 120 s idle timeout; a
+late, duplicate, or out-of-order `working: true` for a closed prompt is ignored,
+so the dots cannot stay on next to a finished reply.
 A production build with no paired agent stays hidden and never uses the echo
 stub. The stub and `?agentPromptDemo=1` are DEV-only (DEV with no pairing may
 still echo). The camera toggle (`data-agent-prompt-screenshot`) captures the

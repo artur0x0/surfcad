@@ -60,7 +60,13 @@ test('demo states seed idle, typing, replies, working, and camera on/off', () =>
   assert.doesNotMatch(SRC, /abort/);
   assert.match(SRC, /const id = pendingIdRef\.current;/);
   assert.match(SRC, /void transport\.cancel\(id\)/);
-  assert.match(SRC, /setWorking\(false\)/);
+  // The dots, Stop, and the working hint follow one pending prompt (agentPromptTyping.js).
+  assert.match(SRC, /dispatchTyping\(\{ type: 'stop' \}\)/);
+  assert.match(SRC, /dispatchTyping\(\{ type: 'sent', id: sent\.id \}\)/);
+  assert.match(SRC, /dispatchTyping\(\{ type: 'disconnect' \}\)/);
+  assert.match(SRC, /const responding = typingShown\(typing\);/);
+  assert.doesNotMatch(SRC, /setWorking\(/);
+  assert.doesNotMatch(SRC, /setStreaming\(/);
 });
 
 const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../index.css'), 'utf8');
