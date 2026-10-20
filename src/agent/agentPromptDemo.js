@@ -4,7 +4,7 @@
  *
  * `agentPromptState` seeds a visual state:
  *   hidden | idle | typing | reply-short | reply-long | reply-streaming | working | shot-off | shot-on
- *   | chat | chat-long
+ *   | chat | chat-long | agent-typing | agent-working | folded
  */
 export const AGENT_PROMPT_DEMO_STATES = Object.freeze([
   'hidden',
@@ -18,6 +18,10 @@ export const AGENT_PROMPT_DEMO_STATES = Object.freeze([
   'shot-on',
   'chat',
   'chat-long',
+  // The two agent states on top of a conversation, and the folded prompt.
+  'agent-typing',
+  'agent-working',
+  'folded',
 ]);
 
 export const AGENT_PROMPT_TYPED = [

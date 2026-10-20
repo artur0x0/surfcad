@@ -3,17 +3,19 @@ import test from 'node:test';
 import { v1Registry } from './index.js';
 import { agentPromptCommand } from './agentPrompt.js';
 
-test('agent_prompt is registered with send/stop/dismiss/screenshot ui entries', () => {
+test('agent_prompt is registered with send/stop/dismiss/fold/unfold/screenshot ui entries', () => {
   const command = v1Registry.get('agent_prompt');
   assert.equal(command.name, 'agent_prompt');
   assert.deepEqual(command.uiEntry, [
     'data-agent-prompt-send',
     'data-agent-prompt-stop',
     'data-agent-prompt-dismiss',
+    'data-agent-prompt-fold',
+    'data-agent-prompt-unfold',
     'data-agent-prompt-screenshot',
   ]);
   assert.equal(command.schema.additionalProperties, false);
-  assert.deepEqual(command.schema.properties.action.enum, ['send', 'stop', 'dismiss', 'screenshot']);
+  assert.deepEqual(command.schema.properties.action.enum, ['send', 'stop', 'dismiss', 'fold', 'unfold', 'screenshot']);
   assert.equal(command.example.action, 'send');
 });
 

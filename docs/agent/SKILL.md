@@ -148,7 +148,7 @@ These live in the `surfcad-mcp` process. They are not in `commands.json`, `list_
 | `unregister_webhook` | `{}` | Clear the webhook URL and bearer. Later prompts queue for `read_messages`. |
 | `read_messages` | `{ max? }` | Queued in-viewer prompts, oldest first, removed on read. An attached screenshot arrives as the next MCP image content block (`image/png`). May also return cancel items `{ "type": "cancel", "id" }` (see below). |
 | `reply_to_user` | `{ in_reply_to, text, final? }` | Plain-text reply to a prompt id. `final: true` closes it. Does not write the model or git. A cancelled id returns `{ "ok": false, "error": "cancelled" }` and nothing reaches the tab. |
-| `set_status` | `{ working, id? }` | Tell the tab whether the agent is working. Without `id` it targets the latest prompt. A cancelled id returns `{ "ok": false, "error": "cancelled" }`. |
+| `set_status` | `{ state?, label?, working?, id? }` | Tell the tab what you are doing: `state` `typing` (writing an answer: the chat stays open with typing dots), `working` (changing the model: the chat collapses and the field shows a spinner), or `idle`. Set `typing` before a long answer. You do not have to set `working`: the first model-changing tool call after a prompt sets it, a streamed `reply_to_user` (`final: false`) sets `typing`, and a final reply or 120 s without activity sets `idle`. `working` (boolean) is the legacy form. Without `id` it targets the latest prompt. A cancelled id returns `{ "ok": false, "error": "cancelled" }`. |
 
 ### In-viewer prompts: webhook or polling
 
@@ -163,4 +163,4 @@ The server's initialize instructions say: `call register_webhook { url, bearer? 
 
 MCP `screenshot` also accepts `save_to` (path, or `true` / `""` for a temp file), `file` (alias), and `overwrite`. The image is written on the MCP host and the tool returns `{ path, size }` instead of base64; these args are never sent to the browser.
 
-`agent_prompt` `{ text?, action? }` (`send` | `stop` | `dismiss` | `screenshot`) is a bridge command in the catalog: it drives the floating in-viewer prompt field. It does not edit a part or write git.
+`agent_prompt` `{ text?, action? }` (`send` | `stop` | `dismiss` | `fold` | `unfold` | `screenshot`; `fold` hides the prompt behind the bottom chevron without cancelling a run, `unfold` brings it back as it was, `dismiss` folds on desktop) is a bridge command in the catalog: it drives the floating in-viewer prompt field. It does not edit a part or write git.

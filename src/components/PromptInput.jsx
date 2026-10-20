@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { ArrowDown, Camera, Loader2, Send, Square, X } from 'lucide-react';
+import { ArrowDown, Camera, ChevronDown, ChevronUp, Loader2, Send, Square, X } from 'lucide-react';
 import { createAgentPrompt } from '../agent/createAgentPrompt.js';
 import { attachViewerShot } from '../agent/agentPromptCapture.js';
 import {
@@ -14,7 +14,8 @@ import {
 } from '../agent/agentPromptDemo.js';
 import { registerAgentPromptHandler } from '../agent/agentPromptHost.js';
 import { setAgentPromptWorking } from '../agent/agentFeaturePopupGate.js';
-import { typingReducer, typingSeed, typingShown } from '../agent/agentPromptTyping.js';
+import { pendingShown, typingReducer, typingSeed, typingShown, workingShown } from '../agent/agentPromptTyping.js';
+import { clearFolded, foldBadge, readFolded, stateAnnouncement, writeFolded } from '../agent/agentPromptFold.js';
 import { conversationReducer, conversationSeed, stickToBottom } from '../agent/agentPromptConversation.js';
 import {
   AGENT_PROMPT_WORKING_TIMEOUT_MS,
@@ -53,6 +54,15 @@ function demoSeed(state) {
   }
   if (state === 'chat-long') {
     return { input: '', reply: '', messages: AGENT_PROMPT_CHAT_LONG, working: false, shotOn: false, streaming: false };
+  }
+  if (state === 'agent-typing') {
+    return { input: '', reply: '', messages: AGENT_PROMPT_CHAT, mode: 'typing', working: false, shotOn: false, streaming: false };
+  }
+  if (state === 'agent-working') {
+    return { input: '', reply: '', messages: AGENT_PROMPT_CHAT, mode: 'working', working: true, shotOn: false, streaming: false };
+  }
+  if (state === 'folded') {
+    return { input: '', reply: '', messages: AGENT_PROMPT_CHAT, working: false, shotOn: false, streaming: false, folded: true };
   }
   return { input: '', reply: '', working: false, shotOn: false, streaming: false };
 }
@@ -96,7 +106,20 @@ export default function PromptInput({
   const [input, setInput] = useState(seed.input);
   // One pending prompt drives the dots, Stop, and the working hint; see agentPromptTyping.js.
   const [typing, dispatchTyping] = useReducer(typingReducer, seed, typingSeed);
-  const working = typing.working;
+  // Two agent states: typing keeps the chat open with the dots; working
+  // collapses the chat and shows the spinner in the field.
+  const mode = typing.mode;
+  const working = workingShown(typing);
+  const pending = pendingShown(typing);
+  // Folded (desktop): the prompt slides away and a chevron at the bottom
+  // brings it back as it was. Remembered per agent session.
+  const foldable = !isMobile;
+  const [folded, setFolded] = useState(() => (seed.folded === true) || (foldable && readFolded()));
+  const [unread, setUnread] = useState(false);
+  const foldedRef = useRef(folded);
+  foldedRef.current = folded;
+  const [announce, setAnnounce] = useState('');
+  const rootRef = useRef(null);
   // The conversation for this connection: user messages and agent replies in order.
   const [chat, dispatchChat] = useReducer(conversationReducer, seed, conversationSeed);
   const [ack, setAck] = useState(null);
@@ -133,10 +156,23 @@ export default function PromptInput({
         const text = typeof msg.text === 'string' ? msg.text : '';
         dispatchChat({ type: 'reply', id: msg.id, text });
         dispatchTyping({ type: 'reply', id: msg.id, final: msg.final === true });
+        if (msg.final === true) {
+          if (foldedRef.current) setUnread(true);
+          setAnnounce('Agent replied');
+        }
       },
-      onWorking(on) {
-        dispatchTyping({ type: 'working', on: on === true });
-      },
+      // The live transport carries the mode; the DEV stub only has the boolean.
+      ...(typeof transport.onState === 'function'
+        ? {
+          onState(event) {
+            dispatchTyping({ type: 'state', state: event?.mode });
+          },
+        }
+        : {
+          onWorking(on) {
+            dispatchTyping({ type: 'working', on: on === true });
+          },
+        }),
       onAck(event) {
         if (!event || typeof event !== 'object') return;
         if (pendingIdRef.current && event.id !== pendingIdRef.current) return;
@@ -152,21 +188,47 @@ export default function PromptInput({
     dispatchChat({ type: 'disconnect' });
     setAck(null);
     pendingIdRef.current = null;
+    // The agent is gone: the next session starts open.
+    clearFolded();
+    setFolded(false);
+    setUnread(false);
     return undefined;
   }, [visible]);
 
+  // Agent-owned feature cards stay closed for the whole run, in either mode.
   useEffect(() => {
-    setAgentPromptWorking(working);
+    setAgentPromptWorking(pending);
     return () => {
-      if (working) setAgentPromptWorking(false);
+      if (pending) setAgentPromptWorking(false);
     };
-  }, [working]);
+  }, [pending]);
 
   useEffect(() => {
-    if (!working) return undefined;
+    if (!pending) return undefined;
     const timer = setTimeout(() => dispatchTyping({ type: 'timeout' }), AGENT_PROMPT_WORKING_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [working]);
+  }, [pending, mode]);
+
+  // Screen readers hear each state change; a reply is announced from onReply.
+  useEffect(() => {
+    const text = stateAnnouncement(mode);
+    if (text) setAnnounce(text);
+    else if (mode === 'idle') setAnnounce((prev) => (prev === 'Agent replied' ? prev : ''));
+  }, [mode]);
+
+  const foldPrompt = useCallback(() => {
+    if (!foldable) return { ok: false, reason: 'not_foldable' };
+    setFolded(true);
+    writeFolded(true);
+    return { ok: true, folded: true };
+  }, [foldable]);
+
+  const unfoldPrompt = useCallback(() => {
+    setFolded(false);
+    setUnread(false);
+    writeFolded(false);
+    return { ok: true, folded: false };
+  }, []);
 
   const discardShot = useCallback(() => {
     setShot(null);
@@ -212,15 +274,18 @@ export default function PromptInput({
     if (typeof transport?.cancel === 'function') void transport.cancel(id);
     setAgentPromptWorking(false);
     dispatchTyping({ type: 'stop' });
+    setAnnounce('');
     return { ok: true };
   }, [transport]);
 
-  // Dismiss hides the pane; the history stays until the agent disconnects.
+  // Dismiss: on desktop it folds the prompt (the history stays); on mobile,
+  // where the fold has not landed, it hides the pane as before.
   const dismissReply = useCallback(() => {
+    if (foldable) return foldPrompt();
     dispatchChat({ type: 'dismiss' });
     setAck(null);
     return { ok: true };
-  }, []);
+  }, [foldPrompt, foldable]);
 
   const scrollToBottom = useCallback(() => {
     const el = paneRef.current;
@@ -262,6 +327,8 @@ export default function PromptInput({
         || (typeof args.text === 'string' && args.text.trim() ? 'send' : '');
       if (action === 'stop') return stopAgent();
       if (action === 'dismiss') return dismissReply();
+      if (action === 'fold') return foldPrompt();
+      if (action === 'unfold') return unfoldPrompt();
       if (action === 'screenshot') return toggleShot();
       if (action === 'send' || args.text) {
         if (typeof args.text === 'string') setInput(args.text);
@@ -269,10 +336,11 @@ export default function PromptInput({
       }
       return { error: { code: 'bad_args', message: 'Need text or action' } };
     });
-  }, [dismissReply, sendText, stopAgent, toggleShot, visible]);
+  }, [dismissReply, foldPrompt, sendText, stopAgent, toggleShot, unfoldPrompt, visible]);
 
   const responding = typingShown(typing);
-  const showReply = visible && (responding || (!chat.hidden && chat.messages.length > 0));
+  // Working collapses the chat so the viewport is visible; typing keeps it.
+  const showReply = visible && !working && (responding || (!chat.hidden && chat.messages.length > 0));
   const lastKey = chat.messages.length ? chat.messages[chat.messages.length - 1].key : '';
   const lastLen = chat.messages.length ? chat.messages[chat.messages.length - 1].text.length : 0;
 
@@ -303,26 +371,41 @@ export default function PromptInput({
 
   const onSubmit = (event) => {
     event?.preventDefault?.();
-    if (working) {
+    if (pending) {
       stopAgent();
       return;
     }
     sendText(input);
   };
 
+  const onRootKeyDown = (event) => {
+    if (event.key === 'Escape' && foldable && !folded) {
+      event.preventDefault();
+      foldPrompt();
+    }
+  };
+
+  const badge = foldBadge({ mode, unread });
+  const hiddenAway = featurePopupOpen || folded;
+
   return (
+    <>
     <div
+      ref={rootRef}
       className={`agent-prompt surface-glass text-on-dark font-ui ${
         isMobile ? 'agent-prompt--compact' : ''
-      }${featurePopupOpen ? ' agent-prompt--away' : ''}`}
+      }${featurePopupOpen ? ' agent-prompt--away' : ''}${folded ? ' agent-prompt--folded' : ''}`}
       data-agent-prompt=""
       data-agent-prompt-compact={isMobile ? '1' : '0'}
       data-agent-prompt-working={working ? '1' : '0'}
+      data-agent-prompt-state={pending ? mode : 'idle'}
+      data-agent-prompt-folded={folded ? '1' : '0'}
       data-agent-prompt-shot={shotCue ? '1' : '0'}
       data-agent-prompt-away={featurePopupOpen ? '1' : '0'}
       data-agent-prompt-responding={responding ? '1' : '0'}
-      aria-hidden={featurePopupOpen ? true : undefined}
-      {...(featurePopupOpen ? { inert: '' } : {})}
+      aria-hidden={hiddenAway ? true : undefined}
+      onKeyDown={onRootKeyDown}
+      {...(hiddenAway ? { inert: '' } : {})}
     >
       {showReply ? (
         <div
@@ -337,16 +420,18 @@ export default function PromptInput({
               <span className="text-ui-xs font-semibold uppercase tracking-wide text-muted-on-dark">
                 Agent
               </span>
-              <button
-                type="button"
-                className="agent-prompt-icon-btn text-muted-on-dark"
-                onClick={dismissReply}
-                data-ui-action="data-agent-prompt-dismiss"
-                data-agent-prompt-dismiss=""
-                aria-label="Dismiss conversation"
-              >
-                <X size={14} aria-hidden />
-              </button>
+              {foldable ? null : (
+                <button
+                  type="button"
+                  className="agent-prompt-icon-btn text-muted-on-dark"
+                  onClick={dismissReply}
+                  data-ui-action="data-agent-prompt-dismiss"
+                  data-agent-prompt-dismiss=""
+                  aria-label="Dismiss conversation"
+                >
+                  <X size={14} aria-hidden />
+                </button>
+              )}
             </div>
           )}
           <div className="agent-prompt-chat" data-agent-chat="">
@@ -478,7 +563,7 @@ export default function PromptInput({
         >
           <Camera size={18} aria-hidden />
         </button>
-        {working ? (
+        {pending ? (
           <button
             type="submit"
             className="agent-prompt-icon-btn surface-quiet text-on-dark"
@@ -502,5 +587,49 @@ export default function PromptInput({
         )}
       </form>
     </div>
+    {foldable ? (
+      <button
+        type="button"
+        className={`agent-prompt-fold${featurePopupOpen || folded ? ' agent-prompt-fold--away' : ''}`}
+        onClick={foldPrompt}
+        data-ui-action="data-agent-prompt-fold"
+        data-agent-prompt-fold=""
+        data-agent-prompt-state={pending ? mode : 'idle'}
+        aria-label="Hide agent prompt"
+        tabIndex={featurePopupOpen || folded ? -1 : 0}
+        aria-hidden={featurePopupOpen || folded ? true : undefined}
+      >
+        <ChevronDown size={16} aria-hidden />
+      </button>
+    ) : null}
+    {foldable && folded && !featurePopupOpen ? (
+      <button
+        type="button"
+        className="agent-prompt-unfold surface-glass text-on-dark font-ui"
+        onClick={unfoldPrompt}
+        data-ui-action="data-agent-prompt-unfold"
+        data-agent-prompt-unfold=""
+        data-agent-prompt-badge={badge}
+        data-agent-prompt-state={pending ? mode : 'idle'}
+        aria-label={badge === 'unread' ? 'Show agent prompt, new reply' : (badge ? `Show agent prompt, agent is ${badge}` : 'Show agent prompt')}
+      >
+        <ChevronUp size={16} aria-hidden />
+        {badge === 'typing' ? (
+          <span className="agent-prompt-badge" aria-hidden>
+            <span className="agent-prompt-dots"><span /><span /><span /></span>
+          </span>
+        ) : null}
+        {badge === 'working' ? (
+          <span className="agent-prompt-badge" aria-hidden>
+            <Loader2 size={12} className="agent-prompt-spinner" />
+          </span>
+        ) : null}
+        {badge === 'unread' ? <span className="agent-prompt-badge agent-prompt-badge--unread" aria-hidden /> : null}
+      </button>
+    ) : null}
+    <span className="sr-only" aria-live="polite" role="status" data-agent-prompt-live="">
+      {announce}
+    </span>
+    </>
   );
 }

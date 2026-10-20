@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { TYPING_IDLE, typingReducer, typingSeed, typingShown } from './agentPromptTyping.js';
+import {
+  TYPING_IDLE,
+  modeFromStatus,
+  pendingShown,
+  typingReducer,
+  typingSeed,
+  typingShown,
+  workingShown,
+} from './agentPromptTyping.js';
 
 const run = (events, start = TYPING_IDLE) => events.reduce(typingReducer, start);
 
@@ -73,9 +81,48 @@ test('a failed ack for another prompt id is ignored; an ack without an id applie
   assert.equal(typingShown(run([{ type: 'ack', id: 'p2', delivery: 'queued' }], sent)), true);
 });
 
-test('demo seeds mirror the working and streaming states', () => {
+test('demo seeds mirror the working, streaming, and mode states', () => {
   assert.equal(typingSeed({}), TYPING_IDLE);
-  assert.equal(typingShown(typingSeed({ working: true })), true);
+  assert.equal(workingShown(typingSeed({ working: true })), true);
+  assert.equal(typingShown(typingSeed({ working: true })), false);
   assert.equal(typingShown(typingSeed({ streaming: true })), true);
   assert.equal(typingSeed({ streaming: true }).pendingId, 'demo');
+  assert.equal(typingSeed({ mode: 'typing' }).mode, 'typing');
+  assert.equal(workingShown(typingSeed({ mode: 'working' })), true);
+});
+
+test('two modes: a sent prompt waits as typing, a working status collapses to the spinner, a reply brings typing back', () => {
+  const sent = run([{ type: 'sent', id: 'p1' }]);
+  assert.equal(sent.mode, 'typing');
+  assert.equal(typingShown(sent), true);
+  assert.equal(workingShown(sent), false);
+  assert.equal(pendingShown(sent), true);
+  const working = run([{ type: 'state', state: 'working' }], sent);
+  assert.equal(working.mode, 'working');
+  assert.equal(working.working, true);
+  assert.equal(typingShown(working), false);
+  assert.equal(workingShown(working), true);
+  // The legacy boolean maps the same way.
+  assert.equal(run([{ type: 'working', on: true }], sent).mode, 'working');
+  // Back to typing on an explicit state or on a streamed reply.
+  assert.equal(run([{ type: 'state', state: 'typing' }], working).mode, 'typing');
+  const streamed = run([{ type: 'reply', id: 'p1', text: 'Adding', final: false }], working);
+  assert.equal(streamed.mode, 'typing');
+  assert.equal(streamed.streaming, true);
+  assert.equal(workingShown(streamed), false);
+  // Idle closes; an unknown state is ignored; a state for no prompt is ignored.
+  assert.equal(run([{ type: 'state', state: 'idle' }], working).pendingId, null);
+  assert.equal(run([{ type: 'state', state: 'bogus' }], working).mode, 'working');
+  assert.equal(run([{ type: 'state', state: 'working' }]).mode, 'idle');
+  // Stop in either mode goes back to idle.
+  assert.equal(run([{ type: 'stop' }], working).mode, 'idle');
+  assert.equal(run([{ type: 'stop' }], streamed).mode, 'idle');
+});
+
+test('modeFromStatus reads state first, then the legacy boolean', () => {
+  assert.equal(modeFromStatus({ working: true, state: 'typing' }), 'typing');
+  assert.equal(modeFromStatus({ working: true }), 'working');
+  assert.equal(modeFromStatus({ working: false }), 'idle');
+  assert.equal(modeFromStatus({ state: 'nope' }), null);
+  assert.equal(modeFromStatus(null), null);
 });

@@ -7,6 +7,8 @@
  */
 import { createAgentPromptTransport } from './agentPromptTransport.js';
 import { shouldShowAgentBridgeDisconnect } from './ws/pairingFlow.js';
+import { PAIR_MSG } from './ws/relayMessages.js';
+import { modeFromStatus } from './agentPromptTyping.js';
 
 /** Match the MCP auto-idle: working false after 120s with no activity. */
 export const AGENT_PROMPT_WORKING_TIMEOUT_MS = 120_000;
@@ -22,13 +24,54 @@ export function createLiveAgentPromptTransport(api) {
     return null;
   }
   try {
-    if (typeof promptApi.createTransport === 'function') {
-      return promptApi.createTransport(bridge);
-    }
-    return createAgentPromptTransport(bridge);
+    const transport = typeof promptApi.createTransport === 'function'
+      ? promptApi.createTransport(bridge)
+      : createAgentPromptTransport(bridge);
+    return withAgentState(transport, bridge);
   } catch {
     return null;
   }
+}
+
+/**
+ * Add `onState(cb)` to a transport: the agent's mode (typing | working |
+ * idle) from the status message's `state`, or from the legacy `working`
+ * boolean. The adapter itself only forwards the boolean and is not edited.
+ *
+ * @param {{ onReply: Function, onWorking: Function, onAck: Function } | null} transport
+ * @param {{ subscribe: Function }} bridge
+ */
+export function withAgentState(transport, bridge) {
+  if (!transport || typeof bridge?.subscribe !== 'function') return transport;
+  if (typeof transport.onState === 'function') return transport;
+  const listeners = new Set();
+  let off = null;
+  function ensure() {
+    if (off) return;
+    off = bridge.subscribe((msg) => {
+      if (!msg || typeof msg !== 'object' || msg.type !== PAIR_MSG.AGENT_STATUS || msg.v !== 1) return;
+      const mode = modeFromStatus(msg);
+      if (!mode) return;
+      const event = { mode, id: typeof msg.id === 'string' ? msg.id : null };
+      if (typeof msg.label === 'string' && msg.label) event.label = msg.label;
+      for (const cb of [...listeners]) {
+        try { cb(event); } catch { /* listener threw */ }
+      }
+    });
+  }
+  const onState = (cb) => {
+    if (typeof cb !== 'function') return () => {};
+    listeners.add(cb);
+    ensure();
+    return () => {
+      listeners.delete(cb);
+      if (!listeners.size && off) { try { off(); } catch { /* gone */ } off = null; }
+    };
+  };
+  const dispose = typeof transport.dispose === 'function'
+    ? () => { listeners.clear(); if (off) { try { off(); } catch { /* gone */ } off = null; } transport.dispose(); }
+    : undefined;
+  return dispose ? { ...transport, onState, dispose } : { ...transport, onState };
 }
 
 /**
@@ -83,6 +126,12 @@ export function bindAgentPromptTransport(transport, handlers = {}) {
   const offReply = typeof handlers.onReply === 'function'
     ? transport.onReply?.(handlers.onReply)
     : null;
+  // onState carries the mode (typing | working | idle) on transports that
+  // have it; onWorking is the legacy boolean. The prompt binds one or the
+  // other, never both, so the two cannot race on the same status message.
+  const offState = typeof handlers.onState === 'function'
+    ? transport.onState?.(handlers.onState)
+    : null;
   const offWorking = typeof handlers.onWorking === 'function'
     ? transport.onWorking?.(handlers.onWorking)
     : null;
@@ -91,6 +140,7 @@ export function bindAgentPromptTransport(transport, handlers = {}) {
     : null;
   return () => {
     offReply?.();
+    offState?.();
     offWorking?.();
     offAck?.();
   };

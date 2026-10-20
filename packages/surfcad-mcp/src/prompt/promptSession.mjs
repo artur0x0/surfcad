@@ -141,6 +141,8 @@ export function createPromptSession(options) {
   /** @type {string | null} Bearer token. Process memory only. Never log or return it. */
   let webhookBearer = null;
   let working = false;
+  /** @type {'idle' | 'typing' | 'working'} What the tab shows: the pane open with dots, or the spinner. */
+  let agentState = 'idle';
   let promptEpoch = 0;
   let workedEpoch = 0;
   let lastAcceptedAt = -Infinity;
@@ -174,22 +176,37 @@ export function createPromptSession(options) {
   }
 
   /**
+   * Send the agent state to the tab. `working` stays on the message for tabs
+   * that predate `state`: true for typing and working, false for idle.
+   * @param {'idle' | 'typing' | 'working'} state
+   * @param {string | null | undefined} id
+   * @param {boolean} force
+   * @param {string} [label]
+   */
+  function emitState(state, id, force, label) {
+    const next = state !== 'idle';
+    if (!force && agentState === state) {
+      if (next) armIdle();
+      return true;
+    }
+    working = next;
+    agentState = state;
+    const msg = { type: PAIR_MSG.AGENT_STATUS, v: 1, working: next, state };
+    if (typeof id === 'string' && id) msg.id = id;
+    if (typeof label === 'string' && label) msg.label = label.slice(0, 120);
+    const sent = emit(msg);
+    if (next) armIdle();
+    else clearIdle();
+    return sent;
+  }
+
+  /**
    * @param {boolean} next
    * @param {string | null | undefined} id
    * @param {boolean} force
    */
   function emitStatus(next, id, force) {
-    if (!force && working === next) {
-      if (next) armIdle();
-      return true;
-    }
-    working = next;
-    const msg = { type: PAIR_MSG.AGENT_STATUS, v: 1, working: next };
-    if (typeof id === 'string' && id) msg.id = id;
-    const sent = emit(msg);
-    if (next) armIdle();
-    else clearIdle();
-    return sent;
+    return emitState(next ? 'working' : 'idle', id, force);
   }
 
   function ack(id, delivery, error) {
@@ -493,17 +510,31 @@ export function createPromptSession(options) {
       queue = queue.filter((item) => item.kind === 'cancel' || item.id !== inReplyTo);
       states.set(inReplyTo, 'replied');
       emitStatus(false, inReplyTo, true);
-    } else if (working) armIdle();
+    } else {
+      // A streamed reply means the agent is writing: the tab reopens the chat.
+      workedEpoch = promptEpoch;
+      emitState('typing', inReplyTo, false);
+    }
     return { id: inReplyTo, final: isFinal };
   }
 
   /**
-   * @param {{ working?: unknown, id?: unknown }} args
+   * `state` (typing | working | idle) or the legacy `working` boolean; one is
+   * required. `label` is optional text for the tab.
+   * @param {{ working?: unknown, state?: unknown, label?: unknown, id?: unknown }} args
    */
   function setStatus(args) {
-    if (typeof args?.working !== 'boolean') {
-      throw Object.assign(new Error('working must be a boolean'), { code: 'bad_args' });
+    const hasState = typeof args?.state === 'string';
+    if (hasState && !['typing', 'working', 'idle'].includes(args.state)) {
+      throw Object.assign(new Error('state must be typing, working, or idle'), { code: 'bad_args' });
     }
+    if (!hasState && typeof args?.working !== 'boolean') {
+      throw Object.assign(new Error('state (typing | working | idle) or working (boolean) is required'), { code: 'bad_args' });
+    }
+    if (args.label != null && (typeof args.label !== 'string' || args.label.length > 120)) {
+      throw Object.assign(new Error('label must be a string of at most 120 characters'), { code: 'bad_args' });
+    }
+    const state = hasState ? args.state : (args.working ? 'working' : 'idle');
     let id;
     if (args.id != null) {
       if (typeof args.id !== 'string' || !args.id || args.id.length > 80) {
@@ -516,14 +547,26 @@ export function createPromptSession(options) {
       return { ok: false, error: 'cancelled' };
     }
     workedEpoch = promptEpoch;
-    const sent = emitStatus(args.working, id || lastId, true);
+    const sent = emitState(state, id || lastId, true, typeof args.label === 'string' ? args.label : undefined);
     if (!sent) throw Object.assign(new Error('Not paired'), { code: 'not_paired' });
-    return { working: args.working };
+    return { working: state !== 'idle', state };
   }
 
-  function noteToolCall() {
+  /**
+   * A tool call after a prompt. A call that changes the model (`mutates`)
+   * switches the tab to working on its own, even when the agent never set
+   * a state; a read-only call only keeps the current state alive.
+   * @param {{ mutates?: boolean }} [info]
+   */
+  function noteToolCall(info = {}) {
     if (lastId && states.get(lastId) === 'cancelled') {
       if (working) emitStatus(false, lastId, true);
+      return;
+    }
+    const mutates = info?.mutates === true;
+    if (mutates && agentState !== 'working') {
+      workedEpoch = promptEpoch;
+      emitState('working', lastId, false);
       return;
     }
     if (promptEpoch > workedEpoch) {
@@ -580,6 +623,7 @@ export function createPromptSession(options) {
     webhook = null;
     webhookBearer = null;
     working = false;
+    agentState = 'idle';
     promptEpoch = 0;
     workedEpoch = 0;
     lastAcceptedAt = -Infinity;

@@ -92,24 +92,51 @@ function renderPrompt(search, props = {}) {
 
 let PromptInput;
 
-test('working state shows the spinner hint, Stop, and reply dots', async () => {
+test('working state shows the spinner hint and Stop and collapses the chat; typing keeps the chat with the dots', async () => {
   ({ default: PromptInput } = await importJsx(new URL('./PromptInput.jsx', import.meta.url)));
   const working = renderPrompt('?agentPromptDemo=1&agentPromptState=working');
   assert.match(working, /agent-prompt-spinner/);
   assert.match(working, /Agent is working\.\.\./);
   assert.match(working, /data-agent-prompt-working="1"/);
+  assert.match(working, /data-agent-prompt-state="working"/);
   assert.match(working, /aria-label="Stop agent"/);
   assert.match(working, /data-agent-prompt-stop=""/);
-  assert.match(working, /data-agent-reply-dots=""/);
-  assert.match(working, /Updating the cube/);
+  // Working collapses the chat so the viewport is visible: no pane, no dots.
+  assert.doesNotMatch(working, /data-agent-reply-dots=""/);
+  assert.doesNotMatch(working, /data-agent-reply=""/);
   assert.doesNotMatch(working, /data-agent-prompt-send=""/);
-  assert.match(working, /data-agent-reply-body="">Updating the cube/);
+
+  const typing = renderPrompt('?agentPromptDemo=1&agentPromptState=agent-typing');
+  assert.match(typing, /data-agent-prompt-state="typing"/);
+  assert.match(typing, /data-agent-reply-dots=""/);
+  assert.match(typing, /data-agent-prompt-stop=""/);
+  assert.doesNotMatch(typing, /Agent is working/);
+  assert.doesNotMatch(typing, /data-agent-prompt-working="1"/);
+  // The dots sit at the bottom of the conversation, after the last message.
+  assert.ok(typing.lastIndexOf('data-agent-reply-body=""') < typing.indexOf('data-agent-typing=""'));
+  // Desktop: the fold chevron is there in every state and the X is gone.
+  assert.match(typing, /data-agent-prompt-fold=""/);
+  assert.match(typing, /aria-label="Hide agent prompt"/);
+  assert.doesNotMatch(typing, /data-agent-prompt-dismiss/);
+  assert.match(working, /data-agent-prompt-fold=""/);
+  // Folded: the prompt is away and the chevron-up carries the state badge.
+  const folded = renderPrompt('?agentPromptDemo=1&agentPromptState=folded');
+  assert.match(folded, /agent-prompt--folded/);
+  assert.match(folded, /data-agent-prompt-unfold=""/);
+  assert.match(folded, /aria-label="Show agent prompt"/);
+  assert.match(folded, /data-agent-prompt-live=""/);
+  // Mobile keeps the X until the fold lands there.
+  const compact = renderPrompt('?agentPromptDemo=1&agentPromptState=chat', { isMobile: true });
+  assert.match(compact, /data-agent-prompt-dismiss=""/);
+  assert.doesNotMatch(compact, /data-agent-prompt-fold=""/);
 
   const streaming = renderPrompt('?agentPromptDemo=1&agentPromptState=reply-streaming');
   assert.match(streaming, /data-agent-reply-dots=""/);
   assert.match(streaming, /Adding the holes/);
   assert.match(streaming, /data-agent-prompt-working="0"/);
-  assert.match(streaming, /data-agent-prompt-send=""/);
+  // A streamed reply is the typing state: Stop stays available, no spinner.
+  assert.match(streaming, /data-agent-prompt-state="typing"/);
+  assert.match(streaming, /data-agent-prompt-stop=""/);
   assert.doesNotMatch(streaming, /Agent is working/);
 
   const idle = renderPrompt('?agentPromptDemo=1&agentPromptState=idle');
@@ -152,15 +179,18 @@ test('the pane reads like a chat: both senders in order, user bubbles right with
   assert.match(chat, /agent-prompt-msg--user surface-quiet/);
   assert.match(chat, /data-agent-msg-thumb=""/);
   assert.match(chat, /data-agent-chat-count="4"/);
-  assert.match(chat, /aria-label="Dismiss conversation"/);
+  // Desktop: the fold chevron replaced the X.
+  assert.match(chat, /aria-label="Hide agent prompt"/);
+  assert.doesNotMatch(chat, /aria-label="Dismiss conversation"/);
   assert.doesNotMatch(chat, /data-agent-typing/);
 
-  const working = renderPrompt('?agentPromptDemo=1&agentPromptState=working');
+  const typing = renderPrompt('?agentPromptDemo=1&agentPromptState=agent-typing');
   // The dots sit at the bottom of the conversation, after the last message.
-  assert.ok(working.indexOf('data-agent-reply-body=""') < working.indexOf('data-agent-typing=""'));
-  assert.doesNotMatch(working, /data-agent-prompt-dismiss/);
+  assert.ok(typing.lastIndexOf('data-agent-reply-body=""') < typing.indexOf('data-agent-typing=""'));
+  assert.doesNotMatch(typing, /data-agent-prompt-dismiss/);
 
-  // The history is component state only: nothing is stored.
+  // The history is component state only: nothing is stored. The fold
+  // choice is the one remembered thing, and it lives in agentPromptFold.js.
   assert.doesNotMatch(SRC, /localStorage|sessionStorage|indexedDB/);
   assert.match(SRC, /dispatchChat\(\{ type: 'disconnect' \}\)/);
   assert.match(SRC, /dispatchChat\(\{ type: 'dismiss' \}\)/);

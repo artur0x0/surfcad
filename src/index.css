@@ -459,6 +459,86 @@ textarea {
     transform: translateX(-50%) translateY(calc(100% + var(--agent-prompt-rest-bottom) + 16px));
     pointer-events: none;
   }
+  /* Folded: the same slide down, then out of the tree for a11y and taps. The
+     component stays mounted so the draft, the scroll, and the state survive. */
+  .agent-prompt--folded {
+    transform: translateX(-50%) translateY(calc(100% + var(--agent-prompt-rest-bottom) + 16px));
+    pointer-events: none;
+    visibility: hidden;
+    transition: transform 220ms ease, visibility 0s linear 220ms;
+  }
+  /* The chevron on the prompt's bottom edge, a sibling so the prompt keeps
+     overflow: hidden. It straddles the border at the prompt's centre. */
+  .agent-prompt-fold {
+    position: absolute;
+    left: 50%;
+    bottom: calc(var(--agent-prompt-desktop-bottom) - 14px);
+    transform: translateX(-50%);
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--agent-prompt-border));
+    background: rgb(var(--agent-prompt-surface));
+    color: rgb(var(--agent-prompt-fg));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 21;
+    transition: transform 220ms ease, opacity 160ms ease;
+    pointer-events: auto;
+  }
+  .agent-prompt-fold:hover { background: rgb(var(--agent-prompt-border)); }
+  .agent-prompt-fold:focus-visible,
+  .agent-prompt-unfold:focus-visible {
+    outline: 2px solid rgb(var(--agent-prompt-fg));
+    outline-offset: 2px;
+  }
+  .agent-prompt-fold--away {
+    transform: translateX(-50%) translateY(calc(100% + var(--agent-prompt-rest-bottom) + 48px));
+    opacity: 0;
+    pointer-events: none;
+  }
+  /* The chevron at the bottom of the screen while the prompt is folded. */
+  .agent-prompt-unfold {
+    position: absolute;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    height: 32px;
+    min-width: 44px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--agent-prompt-border));
+    color: rgb(var(--agent-prompt-fg));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    z-index: 21;
+    pointer-events: auto;
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.25), 0 4px 6px -4px rgb(0 0 0 / 0.2);
+  }
+  .agent-prompt-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 12px;
+    height: 12px;
+  }
+  .agent-prompt-badge--unread {
+    width: 8px;
+    height: 8px;
+    min-width: 8px;
+    border-radius: 999px;
+    background: rgb(var(--agent-prompt-success));
+  }
+  .agent-prompt-badge .agent-prompt-dots { height: 12px; }
+  .agent-prompt-badge .agent-prompt-dots span { width: 3px; height: 3px; }
+  @media (prefers-reduced-motion: reduce) {
+    .agent-prompt--folded,
+    .agent-prompt-fold,
+    .agent-prompt-fold--away { transition: none; }
+  }
   .agent-prompt-reply {
     position: relative;
     padding: 12px 14px;
