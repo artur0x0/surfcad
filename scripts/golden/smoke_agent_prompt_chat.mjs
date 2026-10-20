@@ -123,10 +123,22 @@ async function run(page, label, { maxHeight }) {
   m = await paneMetrics(page);
   check(`${label}: jump returns to the newest message`, m && m.scrollHeight - (m.scrollTop + m.clientHeight) <= 24 && m.jump === false, JSON.stringify(m));
 
-  // Dismiss hides the pane and keeps the history; the next message brings it back.
-  await page.click('[data-agent-prompt-dismiss]');
-  await page.waitForTimeout(150);
-  check(`${label}: dismiss hides the pane`, (await page.locator('[data-agent-reply]').count()) === 0);
+  // Desktop: the fold chevron puts the prompt away and brings it back with
+  // the history intact. Phone: the X still hides the pane, and the next
+  // message brings it back.
+  if ((await page.locator('[data-agent-prompt-fold]').count()) > 0) {
+    await page.click('[data-agent-prompt-fold]');
+    await page.waitForTimeout(300);
+    check(`${label}: fold hides the prompt`, (await page.locator('[data-agent-prompt][data-agent-prompt-folded="1"]').count()) === 1);
+    await page.click('[data-agent-prompt-unfold]');
+    await page.waitForTimeout(300);
+    m = await paneMetrics(page);
+    check(`${label}: unfold brings the history back`, m && m.count === 12, JSON.stringify({ count: m?.count }));
+  } else {
+    await page.click('[data-agent-prompt-dismiss]');
+    await page.waitForTimeout(150);
+    check(`${label}: dismiss hides the pane`, (await page.locator('[data-agent-reply]').count()) === 0);
+  }
   await page.fill('[data-agent-prompt-input]', 'Back again.');
   await page.click('[data-agent-prompt-send]');
   await page.waitForFunction(() => Number(document.querySelector('[data-agent-reply]')?.getAttribute('data-agent-chat-count')) >= 14, null, { timeout: 10000 });

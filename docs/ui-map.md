@@ -99,9 +99,31 @@ agent's replies left as before, the dots at the bottom while a prompt is in
 progress. It grows to `--agent-prompt-max-reply` (200px desktop, 160px phone,
 about six lines of reply) and scrolls inside; the input never moves. It follows
 new messages unless the user scrolled up, then a sticky arrow
-(`data-agent-prompt-jump`) offers the way back down. The X hides the pane and
-keeps the history; the next message shows it again. Disconnect clears it.
-Nothing is stored.
+(`data-agent-prompt-jump`) offers the way back down. Disconnect clears the
+history.
+**Two agent states** (`data-agent-prompt-state`, from `state` on the MCP
+status message, `src/agent/agentPromptTyping.js`): **typing** keeps the chat
+open with the dots as the next agent bubble and a normal input; **working**
+collapses the chat so the viewport is visible and shows the spinner with
+"Agent is working..." in the field. A sent prompt waits as typing; the first
+model-changing tool call switches to working; a streamed reply or an explicit
+`set_status { state: "typing" }` switches back and reopens the chat; the final
+reply, Stop, or the idle timer goes to idle. Stop is available in both.
+**Fold (desktop):** there is no X. A chevron-down (`data-agent-prompt-fold`,
+"Hide agent prompt") sits centred on the prompt's bottom edge, straddling the
+border, in every state; it slides the prompt away. A chevron-up
+(`data-agent-prompt-unfold`, "Show agent prompt") then sits centred at the
+bottom of the viewer pane with a badge for the state (`data-agent-prompt-badge`:
+typing dots, working spinner, or an unread dot once a reply landed) and brings
+the prompt back exactly as it was: draft, scroll, and indicator, because the
+component stays mounted. Folding never cancels a run. Esc folds when the prompt
+has focus; both chevrons are focusable and Enter toggles; a polite live region
+(`data-agent-prompt-live`) announces "Agent is typing", "Agent is working", and
+"Agent replied". The folded choice is remembered per agent session in
+localStorage (`surfcadAgentPromptFolded`, `src/agent/agentPromptFold.js`) and
+cleared on disconnect. `agent_prompt { action: "fold" | "unfold" }` drives it;
+`dismiss` folds on desktop. On the phone the fold has not landed: the compact
+prompt keeps the X that hides the pane. Nothing else is stored.
 A production build with no paired agent stays hidden and never uses the echo
 stub. The stub and `?agentPromptDemo=1` are DEV-only (DEV with no pairing may
 still echo). The camera toggle (`data-agent-prompt-screenshot`) captures the
@@ -682,7 +704,7 @@ All of these are absolutely positioned inside the shell at
 | bottom of the pane (`data-feature-card`). On a phone the stage switcher hides and the card sits on that switcher's bottom edge. Desktop stays 10px off the pane | The sheet metal picker and feature edit stay centered between both rails. Contour, the edge card, and the helper card stay between both rails too. Refuse's footer says OK. Sheet metal Confirm is 44px. Boolean stays `z-20`, under the section rail. The view-snap flyout (`z-40`) may cover a `fullLeft` card's right end and stays above it. Hidden in game. Game keeps the old helper sheet | `FeatureSheet.jsx`, `ContourModeChip.jsx`, `FilletModeChip.jsx`, `ShellModeChip.jsx`, `DraftModeChip.jsx`, `MoveFaceModeChip.jsx`, `DeleteFaceModeChip.jsx`, `CutModeChip.jsx`, `BooleanModeChip.jsx`, `MoveModeChip.jsx`, `PaintModeChip.jsx`, `MeasureModeChip.jsx`, `fea/FeaStudyChip.jsx`, `fea/FeaStudySheet.jsx`, `HelperParamModal.jsx`, `HoleCard.jsx`, `sheetMetal/SmControls.jsx` | Viewport |
 | top-16 center, portaled `z-50` | toasts: edge-mode, contour, fillet-scrap, fillet, shell — same `ErrorPopup` card | `ErrorPopup.jsx` | Viewport |
 | bottom center feature card (`data-feature-card`, `data-measure-mode`). On a phone the stage switcher hides. Hidden in game | Measure: sticky point / edge / face / part picks, distance, angle, radius, diameter, ΔX ΔY ΔZ. Header mm\|in is the global `surfcad.displayUnit`. Joint distance and the contour loft offset read it too. Scripts stay mm. Length captions end with mm or in. Clear drops the picks. No Confirm. X closes and restores the camera. Characteristic length feeds the feature-card length sliders and does not change this card | `MeasureModeChip.jsx` | Viewport |
-| bottom center of the viewer pane, between the rails (`data-agent-prompt`). Desktop bottom 48px / max 640px; phone bottom 56px / rail-capped. Hidden until an agent is paired (or DEV `?agentPromptDemo=1`). Not mounted in game. Camera toggle attaches a viewer-only PNG to the next send. Slides down while any feature card is open and slides back when it closes. Working replaces the hint with a spinner and "Agent is working..." and turns Send into Stop | floating agent prompt | `PromptInput.jsx` | App (sibling of Viewport, both shells) |
+| bottom center of the viewer pane, between the rails (`data-agent-prompt`). Desktop bottom 48px / max 640px; phone bottom 56px / rail-capped. Hidden until an agent is paired (or DEV `?agentPromptDemo=1`). Not mounted in game. Camera toggle attaches a viewer-only PNG to the next send. Slides down while any feature card is open and slides back when it closes. Working collapses the chat, replaces the hint with a spinner and "Agent is working...", and turns Send into Stop; typing keeps the chat open with the dots. Desktop: a chevron-down on the bottom edge folds the prompt behind a chevron-up at the bottom of the pane (`data-agent-prompt-fold` / `data-agent-prompt-unfold`, badge for the state) | floating agent prompt | `PromptInput.jsx` | App (sibling of Viewport, both shells) |
 | fills the pane | WebGL canvas | `<canvas ref={canvasRef}>` | `:15817` |
 
 Unpainted faces are one off-white, `DEFAULT_PART_COLOR` (`#ECEAE4`, `src/utils/partMaterial.js`). Face paint, the stress skin, selection and hover, and piece-preview colors draw over it. The canvas draws a face-color skin on top of a part when that assembly has `colors` (`src/utils/faceColorSkin.js`). The skin is under crease lines and pick highlights. `?debugFaces=1` or `localStorage` key `surfcad.debugFaces` = `1` paints each face patch a different color. The flag is off unless set, and it is not a rail button. The right rail has no patch-colour toggle.

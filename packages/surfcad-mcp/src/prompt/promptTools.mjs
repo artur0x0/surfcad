@@ -112,13 +112,25 @@ export function promptToolDefinitions() {
     },
     {
       name: 'set_status',
-      description: 'Tell the SurfCAD tab whether you are working on the user\'s prompt. The tab also marks you working on the first tool call after a prompt arrives, and idle on a final reply or after 120 seconds without activity. This does not grant write access. A cancelled id returns { "ok": false, "error": "cancelled" } and does not change the tab.',
+      description: 'Tell the SurfCAD tab what you are doing with the user\'s prompt: state typing (writing an answer: the chat stays open with typing dots), working (changing the model: the chat collapses and the field shows a spinner), or idle. You do not have to call it for working: the first model-changing tool call after a prompt sets working, a streamed reply_to_user (final false) sets typing, and a final reply or 120 seconds without activity sets idle. Set typing before a long answer so the user reads the chat instead of watching the viewport. Without id it targets the latest prompt. A cancelled id returns { ok: false, error: cancelled }.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
-        required: ['working'],
         properties: {
-          working: { type: 'boolean' },
+          state: {
+            type: 'string',
+            enum: ['typing', 'working', 'idle'],
+            description: 'typing: you are writing an answer (the tab keeps the chat open with typing dots). working: you are changing the model (the tab collapses the chat and shows a spinner). idle: done. Set typing before a long answer; model-changing tool calls set working on their own; a final reply_to_user sets idle.',
+          },
+          label: {
+            type: 'string',
+            maxLength: 120,
+            description: 'Optional short text for the tab, for example what you are working on.',
+          },
+          working: {
+            type: 'boolean',
+            description: 'Legacy form of state: true is working, false is idle. Use state.',
+          },
           id: {
             type: 'string',
             description: 'Optional prompt id this status refers to.',

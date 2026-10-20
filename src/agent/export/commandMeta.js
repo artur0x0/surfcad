@@ -175,7 +175,7 @@ export const COMMAND_META = {
   },
   agent_prompt: {
     description:
-      'Send a prompt from the floating in-viewer field, or stop, dismiss, or attach a viewer screenshot. Does not edit a part and does not write git.',
+      'Send a prompt from the floating in-viewer field, or stop, fold / unfold (dismiss folds on desktop), or attach a viewer screenshot. Folding never cancels a run: the prompt slides behind a chevron at the bottom of the screen that shows the agent state (typing dots, working spinner, unread dot) and comes back exactly as it was. Does not edit a part and does not write git.',
     result: {
       type: 'object',
       additionalProperties: false,

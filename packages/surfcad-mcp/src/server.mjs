@@ -81,6 +81,15 @@ function textResult(value, isError = false) {
  * @param {Record<string, unknown>} result
  * @param {{ webhookRegistered: () => boolean }} prompts
  */
+/**
+ * Does this bridge tool change the model? The catalog row says so
+ * (`mutates`); the name is the fallback for a catalog copy that predates it.
+ * @param {string} name
+ */
+function mutatingTool(name) {
+  return /^(set_script|run|insert_|invoke_helper|confirm_feature|delete_feature|rollback_to|undo|redo|create_|delete_|rename_|part_set_transform|insert_part|open_|paint_confirm|joint_commit|sheet_commit|sheet_set_params|sheet_edit|sketch_commit|slot_commit|hole_commit|git_|export_|edit_feature|pick_done|select_)/.test(name);
+}
+
 function pairToolResult(result, prompts) {
   const webhookRegistered = prompts.webhookRegistered() === true;
   const note = webhookRegistered ? PROMPT_WEBHOOK_ACTIVE : PROMPT_ONBOARDING_NOTE;
@@ -204,7 +213,9 @@ export async function createSurfcadMcpServer(options = {}) {
     }
 
     try {
-      session.noteAgentToolCall();
+      // A model-changing tool switches the tab to working on its own.
+      const row = catalog.commands.find((c) => c.name === name);
+      session.noteAgentToolCall({ mutates: row?.mutates === true || (row?.mutates == null && mutatingTool(name)) });
       const out = await callPairedBridgeTool(session, name, args);
       if (name === 'status' && out.isError !== true && out.value && typeof out.value === 'object' && !Array.isArray(out.value)) {
         return textResult({ ...out.value, ...session.prompts.deliveryStatus() });

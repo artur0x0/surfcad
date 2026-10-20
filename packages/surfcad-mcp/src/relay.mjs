@@ -143,12 +143,14 @@ export class RelaySession {
   }
 
   /**
-   * First tool call after a prompt arrives marks the agent working.
+   * A tool call after a prompt arrives. A model-changing call (`mutates`)
+   * marks the agent working; a read-only call keeps the state alive.
    * Best-effort: a dead socket does not fail the tool call.
+   * @param {{ mutates?: boolean }} [info]
    */
-  noteAgentToolCall() {
+  noteAgentToolCall(info = {}) {
     try {
-      this.#prompts.noteToolCall();
+      this.#prompts.noteToolCall(info);
     } catch {
       /* status is advisory */
     }

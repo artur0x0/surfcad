@@ -6,6 +6,8 @@ export const agentPromptCommand = Object.freeze({
     'data-agent-prompt-send',
     'data-agent-prompt-stop',
     'data-agent-prompt-dismiss',
+    'data-agent-prompt-fold',
+    'data-agent-prompt-unfold',
     'data-agent-prompt-screenshot',
   ],
   schema: {
@@ -19,8 +21,8 @@ export const agentPromptCommand = Object.freeze({
       },
       action: {
         type: 'string',
-        enum: ['send', 'stop', 'dismiss', 'screenshot'],
-        description: 'send is the default when text is present',
+        enum: ['send', 'stop', 'dismiss', 'fold', 'unfold', 'screenshot'],
+        description: 'send is the default when text is present; fold hides the prompt behind the bottom chevron (dismiss does the same on desktop) and unfold brings it back as it was',
       },
     },
   },
