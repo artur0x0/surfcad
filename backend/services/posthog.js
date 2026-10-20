@@ -144,12 +144,15 @@ export async function captureEvent({
 
 /**
  * @param {{ id?: unknown, _id?: unknown, consent?: object }} user
- * @param {{ isNew?: boolean, method?: string, requestedConsent?: boolean }} [opts]
+ * @param {{ isNew?: boolean, method?: string, requestedConsent?: boolean, isInternal?: boolean }} [opts]
+ *   `isInternal` tags the event and the person with `is_internal: true` so
+ *   reports can filter internal traffic; omitted or false adds nothing.
  */
 export async function captureAuthAnalytics(user, {
   isNew = false,
   method = null,
   requestedConsent,
+  isInternal = false,
 } = {}) {
   if (!authAnalyticsAllowed({ requested: requestedConsent, stored: user?.consent })) {
     return { sent: [] };
@@ -158,6 +161,10 @@ export async function captureAuthAnalytics(user, {
   if (!distinctId) return { sent: [] };
   const properties = { method: method || null };
   const personProperties = { user_type: 'signed_in' };
+  if (isInternal === true) {
+    properties.is_internal = true;
+    personProperties.is_internal = true;
+  }
   const sent = [];
   if (isNew) {
     const ok = await captureEvent({

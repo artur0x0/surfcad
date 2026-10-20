@@ -1,6 +1,8 @@
 // services/loginTracking.js — update User login fields + append LoginEvent
 import User from '../db/models/User.js';
 import LoginEvent from '../db/models/LoginEvent.js';
+import config from '../config/index.js';
+import { isInternalUser } from './internalUsers.js';
 import {
   captureAuthAnalytics,
   readRequestedAnalyticsConsent,
@@ -81,6 +83,7 @@ export function loginAndTrack(req, user, method, { isNew = false } = {}) {
           isNew: newAccount,
           method,
           requestedConsent,
+          isInternal: isInternalUser(user, config.internalUsers),
         });
         resolve();
       } catch (trackErr) {

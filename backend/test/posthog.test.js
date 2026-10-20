@@ -103,6 +103,27 @@ describe('server PostHog auth capture', () => {
     assert.equal(JSON.stringify(sent).includes('phc_test'), false);
   });
 
+  test('captureAuthAnalytics tags internal users with is_internal on the event and the person', async () => {
+    const sent = [];
+    configurePosthogEnv({ key: 'phc_test', host: 'https://us.i.posthog.com' });
+    configurePosthogCapture((payload) => { sent.push(payload); });
+    await captureAuthAnalytics(
+      { _id: 'uid-1' },
+      { isNew: true, method: 'github', requestedConsent: true, isInternal: true },
+    );
+    assert.equal(sent.length, 2);
+    for (const row of sent) {
+      assert.equal(row.properties.is_internal, true);
+      assert.equal(row.properties.$set.is_internal, true);
+      assert.equal(row.properties.$set.user_type, 'signed_in');
+    }
+    sent.length = 0;
+    await captureAuthAnalytics({ _id: 'uid-2' }, { method: 'password', requestedConsent: true });
+    assert.equal(sent.length, 1);
+    assert.equal('is_internal' in sent[0].properties, false);
+    assert.equal('is_internal' in sent[0].properties.$set, false);
+  });
+
   test('captureAuthAnalytics no-ops without a key', async () => {
     let called = false;
     configurePosthogEnv({ key: '', host: 'https://us.i.posthog.com' });
@@ -179,6 +200,42 @@ describe('auth routes emit PostHog events with consent', () => {
     assert.equal(captures[0].event, 'logged_in');
     assert.equal(captures[0].distinct_id, hashDistinctId(user._id));
     assert.equal(captures[0].properties.method, 'password');
+  });
+
+  test('login from a user on the internal list carries is_internal: true', async () => {
+    const user = await insertLocalUser();
+    user.githubLogin = 'octocat';
+    await user.save();
+    const saved = config.internalUsers;
+    config.internalUsers = new Set(['octocat']);
+    try {
+      const http = client(app.port);
+      const res = await http('POST', '/api/auth/login', {
+        email: 'pat@example.com',
+        password: 'password12',
+        analyticsConsent: true,
+      });
+      assert.equal(res.status, 200);
+      assert.equal(captures.length, 1);
+      assert.equal(captures[0].event, 'logged_in');
+      assert.equal(captures[0].properties.is_internal, true);
+      assert.equal(captures[0].properties.$set.is_internal, true);
+    } finally {
+      config.internalUsers = saved;
+    }
+  });
+
+  test('login from an ordinary user carries no is_internal', async () => {
+    await insertLocalUser();
+    const http = client(app.port);
+    const res = await http('POST', '/api/auth/login', {
+      email: 'pat@example.com',
+      password: 'password12',
+      analyticsConsent: true,
+    });
+    assert.equal(res.status, 200);
+    assert.equal(captures.length, 1);
+    assert.equal('is_internal' in captures[0].properties, false);
   });
 
   test('login skips capture when consent is omitted', async () => {
