@@ -387,6 +387,15 @@ jobs:
             echo "paint open ready golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:joint-fixed-target | tee "${RUNNER_TEMP}/joint-fixed-target.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/joint-fixed-target.log"; then
+            echo "joint fixed target golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'joint fixed target golden: all passed' "${RUNNER_TEMP}/joint-fixed-target.log"; then
+            echo "joint fixed target golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
