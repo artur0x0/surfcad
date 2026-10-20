@@ -85,6 +85,31 @@ test('onReply appends chunks, onWorking toggles, onAck reports delivery', () => 
   assert.equal(replies.length, 2);
 });
 
+test('holdReply parks the echo until releaseReply, and abort drops a parked reply', () => {
+  const transport = createAgentPromptStub({ delayMs: 0, reply: 'held' });
+  const replies = [];
+  const working = [];
+  transport.onReply((msg) => replies.push(msg));
+  transport.onWorking((on) => working.push(on));
+  transport.holdReply(true);
+  transport.send('ping');
+  assert.deepEqual(working, [true]);
+  assert.deepEqual(replies, []);
+  transport.releaseReply();
+  assert.equal(replies[0]?.text, 'held');
+  assert.equal(replies[0]?.final, true);
+  assert.deepEqual(working, [true, false]);
+
+  const cancelled = createAgentPromptStub({ delayMs: 0, reply: 'nope' });
+  const late = [];
+  cancelled.onReply((msg) => late.push(msg));
+  cancelled.holdReply(true);
+  cancelled.send('ping');
+  cancelled.abort();
+  cancelled.releaseReply();
+  assert.deepEqual(late, []);
+});
+
 test('failed ack is agent not listening and abort unsubscribes the pending reply', () => {
   const failed = createAgentPromptStub({ delayMs: 10, delivery: 'failed' });
   const acks = [];

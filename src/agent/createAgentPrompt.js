@@ -27,5 +27,13 @@ export function agentPromptStubAllowed(env = readImportMetaEnv()) {
 
 export function createAgentPrompt(options = {}, env = readImportMetaEnv()) {
   if (!agentPromptStubAllowed(env)) return null;
-  return createAgentPromptStub(options);
+  const stub = createAgentPromptStub(options);
+  // Test/golden hook only. Prod never reaches here (`agentPromptStubAllowed`).
+  if (typeof window !== 'undefined') {
+    window.__surfcadAgentPromptStub = {
+      holdReply: (on) => stub.holdReply(on),
+      releaseReply: () => stub.releaseReply(),
+    };
+  }
+  return stub;
 }

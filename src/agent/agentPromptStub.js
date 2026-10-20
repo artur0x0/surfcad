@@ -11,6 +11,7 @@
  *   onWorking(cb) cb(boolean)
  *   onAck(cb)    cb({ id, delivery: 'webhook'|'queued'|'failed', error? })
  *   cancel(id?)  → Promise<{ id, state: 'cancelled'|'not_found' }>
+ *   holdReply(on?) / releaseReply() — test-only: park the echo until released
  *   Each subscription returns an unsubscribe function.
  */
 
@@ -63,6 +64,7 @@ function emit(set, payload) {
  *   delivery?: 'webhook'|'queued'|'failed',
  *   error?: string,
  *   chunk?: boolean,
+ *   holdReply?: boolean,
  * }} [options]
  */
 export function createAgentPromptStub(options = {}) {
@@ -73,6 +75,8 @@ export function createAgentPromptStub(options = {}) {
   let lastScreenshot = null;
   let lastId = '';
   let aborted = false;
+  let held = options.holdReply === true;
+  let pendingFinish = null;
 
   function later(fn, ms) {
     const id = setTimeout(() => {
@@ -118,13 +122,33 @@ export function createAgentPromptStub(options = {}) {
       }
       emit(workingListeners, false);
     };
-    if (delay <= 0) finish();
-    else later(finish, delay);
+    const scheduleFinish = () => {
+      if (aborted) return;
+      if (held) {
+        pendingFinish = finish;
+        return;
+      }
+      finish();
+    };
+    if (held || delay <= 0) scheduleFinish();
+    else later(scheduleFinish, delay);
     return id;
+  }
+
+  function holdReply(on = true) {
+    held = on !== false;
+  }
+
+  function releaseReply() {
+    held = false;
+    const fn = pendingFinish;
+    pendingFinish = null;
+    if (typeof fn === 'function') fn();
   }
 
   function abort() {
     aborted = true;
+    pendingFinish = null;
     for (const id of timers) clearTimeout(id);
     timers.clear();
     emit(workingListeners, false);
@@ -157,6 +181,8 @@ export function createAgentPromptStub(options = {}) {
     abort,
     cancel,
     dispose,
+    holdReply,
+    releaseReply,
     /** Test helper — last screenshot passed to send(). */
     lastScreenshot: () => lastScreenshot,
   };
