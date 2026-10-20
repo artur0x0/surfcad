@@ -36,13 +36,6 @@ function sub(a, b) {
   return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 }
 
-function cross(a, b) {
-  return [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ];
-}
 
 function unit(v) {
   if (!Array.isArray(v) || v.length < 3) return null;
@@ -184,18 +177,6 @@ export function referenceFailure(ref, status, name) {
   return `${title} not found on ${who}`;
 }
 
-function triangleNormal(positions, indices, t) {
-  const i0 = indices[t * 3] * 3;
-  const i1 = indices[t * 3 + 1] * 3;
-  const i2 = indices[t * 3 + 2] * 3;
-  const ax = positions[i1] - positions[i0];
-  const ay = positions[i1 + 1] - positions[i0 + 1];
-  const az = positions[i1 + 2] - positions[i0 + 2];
-  const bx = positions[i2] - positions[i0];
-  const by = positions[i2 + 1] - positions[i0 + 1];
-  const bz = positions[i2 + 2] - positions[i0 + 2];
-  return unit([ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx]);
-}
 
 /**
  * Cylinder axis of one patch: a least-squares fit (`fitCylinderPatch`), so a
