@@ -73,6 +73,12 @@ export const PATCH_FLAT_CONTINUATION_DEG = 3;
  * fit a cylinder. A 64-segment pin is a loop at 5.6°; an open zigzag or fold
  * is a polyline and stays locked.
  */
+/**
+ * Slack on a smooth gate so a facet step that equals it still merges. A
+ * 24-segment cylinder steps exactly 15°, the fallback gate, and float
+ * noise put it on either side; without this it listed as 24 flat facets.
+ */
+export const PATCH_GATE_EPS_DEG = 0.05;
 export const PATCH_FACET_RUN_MIN = 3;
 export const PATCH_FACET_AREA_RATIO = 0.8;
 export const PATCH_FACET_STEP_TOL_DEG = 0.5;
@@ -325,7 +331,7 @@ function unlockClosedPrismLoops({
     row.set(b, step);
   };
   for (const rec of atomAdj) {
-    if (rec.max <= PATCH_FLAT_CONTINUATION_DEG || rec.max > smoothDeg) continue;
+    if (rec.max <= PATCH_FLAT_CONTINUATION_DEG || rec.max > smoothDeg + PATCH_GATE_EPS_DEG) continue;
     if (!atomLockedFlat[rec.a] || !atomLockedFlat[rec.b]) continue;
     if (atomSource[rec.a] !== atomSource[rec.b]) continue;
     if (isOpAtom(rec.a) || isOpAtom(rec.b)) continue;
@@ -674,14 +680,23 @@ export function buildPartGraphPatches(mesh, opts = {}) {
       atomK[a] = 0;
       continue;
     }
+    // Only this atom's own feature source rates it, and only across a real
+    // step. A tube wall that other bodies are unioned into is re-cut along
+    // the junctions: a facet becomes two coplanar atoms, and the 0° record
+    // between them halved that facet's rate, so the wall split into
+    // fragments at every junction. The other body's facets meet the wall
+    // at shallow angles there too; those steps are its curvature, not ours.
     const recs = adjByAtom[a];
     let sum = 0;
     let n = 0;
+    const rates = (rec, other) => !atomLockedFlat[other]
+      && rec.max > planarDeg
+      && rec.max < kFeatureDeg
+      && !(triSource && atomSource[other] !== atomSource[a]);
     for (let i = 0; i < recs.length; i++) {
       const rec = recs[i];
       const other = rec.a === a ? rec.b : rec.a;
-      if (atomLockedFlat[other]) continue;
-      if (rec.max >= kFeatureDeg) continue;
+      if (!rates(rec, other)) continue;
       sum += rec.sum / rec.n;
       n++;
     }
@@ -690,7 +705,9 @@ export function buildPartGraphPatches(mesh, opts = {}) {
     if (n === 0) {
       for (let i = 0; i < recs.length; i++) {
         const rec = recs[i];
-        if (rec.max >= kFeatureDeg) continue;
+        const other = rec.a === a ? rec.b : rec.a;
+        if (rec.max <= planarDeg || rec.max >= kFeatureDeg) continue;
+        if (triSource && atomSource[other] !== atomSource[a]) continue;
         sum += rec.sum / rec.n;
         n++;
       }
@@ -729,12 +746,12 @@ export function buildPartGraphPatches(mesh, opts = {}) {
     if (atomSource[rec.a] !== atomSource[rec.b]) {
       if (!filletOpSource(atomSource[rec.a]) || !filletOpSource(atomSource[rec.b])) continue;
       const crossGate = Math.min(gateFor(atomSource[rec.a]), gateFor(atomSource[rec.b]));
-      if (rec.max > crossGate) continue;
+      if (rec.max > crossGate + PATCH_GATE_EPS_DEG) continue;
       patchUF.unite(rec.a, rec.b);
       continue;
     }
     const gate = gateFor(atomSource[rec.a]);
-    if (rec.max > gate) continue;
+    if (rec.max > gate + PATCH_GATE_EPS_DEG) continue;
     // A tagged tessellation is one feature's own facets. κ stays off there,
     // as it does for a fillet op, so a coarse step is not read as a radius change.
     // Untagged curves still split when the κ rate exceeds the tolerance.
@@ -781,6 +798,8 @@ export function buildPartGraphPatches(mesh, opts = {}) {
 
   const triPatch = new Int32Array(numTri);
   const patches = [];
+  const cosPlanarKind = Math.cos((planarDeg * Math.PI) / 180);
+  const dotN = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   for (let pid = 0; pid < patchCount; pid++) {
     const tris = patchTris[pid];
     let nx = 0;
@@ -820,8 +839,16 @@ export function buildPartGraphPatches(mesh, opts = {}) {
     const nrm = norm([nx, ny, nz]);
     const center =
       area > 1e-18 ? [cx / area, cy / area, cz / area] : [0, 0, 0];
+    // Planar when every triangle normal sits within the coplanar gate of
+    // the patch normal. The curvature proxy is not used for this: a flat
+    // annulus on a tilted tube far from the origin carries float noise of
+    // ~1e-4° between its triangles, which read as curvature once it was
+    // too small for the flat lock next to a large ring.
+    let minDot = 1;
+    for (const t of tris) minDot = Math.min(minDot, dotN(triN[t], nrm));
+    const flat = minDot >= cosPlanarKind && meanK < planarDeg;
     let kind = 'general';
-    if (patchLocked[pid] || meanK < 1e-6) kind = 'planar';
+    if (patchLocked[pid] || flat) kind = 'planar';
     else if (variance < (meanK * 0.4) ** 2 + 0.5) kind = 'blend';
     patches.push({
       id: pid,
