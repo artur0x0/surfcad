@@ -9,6 +9,7 @@
  * still in the script is solved from that plane's current frame.
  */
 import { buildPartGraphPatches } from './partGraphPatches.js';
+import { fitCylinderPatch } from './cylinderFit.js';
 import {
   FACE_MATCH_AREA_FRAC,
   FACE_MATCH_AT_MM,
@@ -197,64 +198,13 @@ function triangleNormal(positions, indices, t) {
 }
 
 /**
- * Cylinder axis of one patch: normals are radial, so pairs of them cross
- * along the axis. Radius variance under 25% of the mean keeps it.
- * A flat face does not fit. estimateCylinderAxis is not used.
+ * Cylinder axis of one patch: a least-squares fit (`fitCylinderPatch`), so a
+ * wall that other bodies cut into still lands on its true axis. Radius
+ * spread under 25% of the mean keeps it. A flat face does not fit.
+ * estimateCylinderAxis is not used.
  */
 function fitPatchAxis(positions, indices, tris) {
-  if (!tris || tris.length < 4) return null;
-  const normals = [];
-  for (let i = 0; i < tris.length; i += 1) {
-    const n = triangleNormal(positions, indices, tris[i]);
-    if (n) normals.push(n);
-  }
-  if (normals.length < 4) return null;
-  let axis = [0, 0, 0];
-  const step = Math.max(1, Math.floor(normals.length / 3));
-  for (let i = 0; i < normals.length; i += 1) {
-    let c = cross(normals[i], normals[(i + step) % normals.length]);
-    if (dot(c, axis) < 0) c = [-c[0], -c[1], -c[2]];
-    axis = [axis[0] + c[0], axis[1] + c[1], axis[2] + c[2]];
-  }
-  axis = unit(axis);
-  if (!axis) return null;
-  let align = 0;
-  for (const n of normals) align += Math.abs(dot(n, axis));
-  if (align / normals.length > 0.35) return null;
-  const seen = new Set();
-  const points = [];
-  for (let i = 0; i < tris.length; i += 1) {
-    for (let k = 0; k < 3; k += 1) {
-      const vi = indices[tris[i] * 3 + k];
-      if (seen.has(vi)) continue;
-      seen.add(vi);
-      points.push([positions[vi * 3], positions[vi * 3 + 1], positions[vi * 3 + 2]]);
-    }
-  }
-  if (points.length < 6) return null;
-  const origin = [0, 0, 0];
-  for (const p of points) {
-    origin[0] += p[0];
-    origin[1] += p[1];
-    origin[2] += p[2];
-  }
-  origin[0] /= points.length;
-  origin[1] /= points.length;
-  origin[2] /= points.length;
-  let radius = 0;
-  const radii = [];
-  for (const p of points) {
-    const r = pointToAxis(p, origin, axis);
-    radii.push(r);
-    radius += r;
-  }
-  radius /= radii.length;
-  if (!(radius > 1e-6)) return null;
-  let variance = 0;
-  for (const r of radii) variance += (r - radius) ** 2;
-  variance = Math.sqrt(variance / radii.length);
-  if (variance > FACE_MATCH_AREA_FRAC * radius) return null;
-  return { at: origin, dir: axis, radius };
+  return fitCylinderPatch(positions, indices, tris, { radiusTol: FACE_MATCH_AREA_FRAC });
 }
 
 /** Axis of one picked patch. A flat face returns null. estimateCylinderAxis is not used. */
