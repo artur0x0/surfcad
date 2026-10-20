@@ -67,6 +67,7 @@
     "src/utils/stickyPick.js",
     "src/utils/wrapRawScript.js",
     "src/workers/fastenerSizes.js",
+    "src/workers/kernelCrash.js",
     "src/workers/separateBodies.js"
   ],
   "catalogFiles": [

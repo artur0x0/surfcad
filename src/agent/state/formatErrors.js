@@ -1,5 +1,6 @@
 import { parseFeatureMarkers } from '../../utils/featureMarkers.js';
 import { explainReservedHelperError } from './reservedHelpers.js';
+import { KERNEL_CRASH_CODE, KERNEL_CRASH_DETAIL } from '../../workers/kernelCrash.js';
 
 /**
  * @param {string} script
@@ -156,6 +157,32 @@ export function formatAgentErrors(input = {}) {
     : [];
   const script = typeof input.script === 'string' ? input.script : '';
   const failure = input.runFailure && typeof input.runFailure === 'object' ? input.runFailure : null;
+  const crash = (input.crash && typeof input.crash === 'object' ? input.crash : null)
+    || (failure?.crash && typeof failure.crash === 'object' ? failure.crash : null);
+
+  if (crash) {
+    // The kernel died under this part: one row, its own code, and the same
+    // sentence the viewport shows. The worker was already replaced.
+    const message = scrubPublishedError(
+      (typeof failure?.message === 'string' && failure.message)
+      || (typeof crash.message === 'string' && crash.message)
+      || messages[0]
+      || 'The geometry engine crashed building this part.',
+    );
+    const row = {
+      code: KERNEL_CRASH_CODE,
+      message,
+      reason: typeof crash.reason === 'string' && crash.reason ? crash.reason : 'wasm_abort',
+      workerRestarted: crash.workerRestarted !== false,
+      detail: KERNEL_CRASH_DETAIL,
+    };
+    if (failure?.id) {
+      const featureIndex = featureIndexForId(script, failure.id);
+      if (featureIndex !== undefined) row.featureIndex = featureIndex;
+      row.featureId = failure.id;
+    }
+    return [row];
+  }
 
   if (failure?.id || (typeof failure?.message === 'string' && failure.message)) {
     const features = parseFeatureMarkers(script);

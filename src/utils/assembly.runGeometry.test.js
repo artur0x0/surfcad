@@ -26,3 +26,13 @@ test('recordPartRun keeps per-part volume and bbox from the execute result', () 
   assert.equal(fromRun.volume, 1000);
   assert.deepEqual(fromRun.bbox.min, [-5, -5, -5]);
 });
+
+test('recordPartRun keeps the kernel crash record on a failed run', () => {
+  const crash = { code: 'geometry_worker_crashed', reason: 'out_of_memory', workerRestarted: true, message: 'ran out of memory' };
+  const runs = recordPartRun({}, 'clamps', { ok: false, error: crash.message, crash });
+  assert.equal(runs.clamps.ok, false);
+  assert.equal(runs.clamps.error, crash.message);
+  assert.deepEqual(runs.clamps.crash, crash);
+  const plain = recordPartRun({}, 'frame', { ok: false, error: 'boom' });
+  assert.equal('crash' in plain.frame, false);
+});
