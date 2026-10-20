@@ -36,4 +36,5 @@ export const COVERAGE_ALLOWLIST = Object.freeze([
   Object.freeze({ id: 'data-git-behind-keep', reason: 'PR 8 removed git_behind_resolve keep (Dismiss is not a tool).' }),
   Object.freeze({ id: 'data-git-upgrade-dismiss', reason: 'PR 4 Upgrade vault Dismiss writes nothing (not an agent command).' }),
   Object.freeze({ id: 'data-git-save-dismiss', reason: 'PR 7 Save conflict Dismiss writes nothing (not an agent command).' }),
+  Object.freeze({ id: 'data-agent-prompt-jump', reason: 'Agent prompt chat pane scroll-to-newest arrow (reader chrome only, no agent equivalent).' }),
 ]);

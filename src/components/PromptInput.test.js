@@ -139,3 +139,40 @@ test('a feature popup slides the prompt away without dropping the draft or camer
   assert.doesNotMatch(back, /agent-prompt--away/);
   assert.match(back, new RegExp(AGENT_PROMPT_TYPED.split('\n')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
+
+test('the pane reads like a chat: both senders in order, user bubbles right with a thumbnail, dots at the bottom', async () => {
+  if (!PromptInput) {
+    ({ default: PromptInput } = await importJsx(new URL('./PromptInput.jsx', import.meta.url)));
+  }
+  const chat = renderPrompt('?agentPromptDemo=1&agentPromptState=chat');
+  const roles = [...chat.matchAll(/data-agent-msg="(user|agent)"/g)].map((m) => m[1]);
+  assert.deepEqual(roles, ['user', 'agent', 'user', 'agent']);
+  assert.ok(chat.indexOf('Did you get the reference photo') < chat.indexOf('Yes, I got it.'));
+  assert.ok(chat.indexOf('Yes, I got it.') < chat.indexOf('Rebuild the bike'));
+  assert.match(chat, /agent-prompt-msg--user surface-quiet/);
+  assert.match(chat, /data-agent-msg-thumb=""/);
+  assert.match(chat, /data-agent-chat-count="4"/);
+  assert.match(chat, /aria-label="Dismiss conversation"/);
+  assert.doesNotMatch(chat, /data-agent-typing/);
+
+  const working = renderPrompt('?agentPromptDemo=1&agentPromptState=working');
+  // The dots sit at the bottom of the conversation, after the last message.
+  assert.ok(working.indexOf('data-agent-reply-body=""') < working.indexOf('data-agent-typing=""'));
+  assert.doesNotMatch(working, /data-agent-prompt-dismiss/);
+
+  // The history is component state only: nothing is stored.
+  assert.doesNotMatch(SRC, /localStorage|sessionStorage|indexedDB/);
+  assert.match(SRC, /dispatchChat\(\{ type: 'disconnect' \}\)/);
+  assert.match(SRC, /dispatchChat\(\{ type: 'dismiss' \}\)/);
+  assert.match(SRC, /stickToBottom\(el\)/);
+  assert.match(SRC, /data-agent-prompt-jump=""/);
+});
+
+test('the pane caps its height and scrolls inside; user bubbles are right-aligned', () => {
+  assert.match(css, /--agent-prompt-max-reply: min\(200px, 40vh\);/);
+  assert.match(css, /--agent-prompt-max-reply-mobile: min\(160px, 32vh\);/);
+  assert.match(css, /\.agent-prompt-reply \{[^}]*max-height: var\(--agent-prompt-max-reply\);[^}]*overflow-y: auto;/s);
+  assert.match(css, /\.agent-prompt-msg--user \{[^}]*align-self: flex-end;/s);
+  assert.match(css, /\.agent-prompt-msg--agent \{[^}]*align-self: stretch;/s);
+  assert.match(css, /\.agent-prompt-jump \{[^}]*position: sticky;/s);
+});

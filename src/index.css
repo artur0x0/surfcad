@@ -44,8 +44,9 @@
   --agent-prompt-btn: 36px;
   --agent-prompt-line: 24px;
   --agent-prompt-max-input: min(144px, 40vh);
-  --agent-prompt-max-reply: min(360px, 40vh);
-  --agent-prompt-max-reply-mobile: min(320px, 40vh);
+  /* The pane grows to about six lines of reply, then scrolls inside. */
+  --agent-prompt-max-reply: min(200px, 40vh);
+  --agent-prompt-max-reply-mobile: min(160px, 32vh);
   --agent-prompt-desktop-bottom: 48px;
   --agent-prompt-mobile-bottom: 56px;
   --agent-prompt-desktop-width: min(640px, calc(100% - 12rem));
@@ -486,6 +487,49 @@ textarea {
     display: flex;
     align-items: flex-start;
     gap: 8px;
+  }
+  /* The conversation: user messages right in a quiet bubble, agent replies left as before. */
+  .agent-prompt-chat {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .agent-prompt-msg {
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 20px;
+  }
+  .agent-prompt-msg--user {
+    align-self: flex-end;
+    max-width: 85%;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 12px;
+    border-bottom-right-radius: 4px;
+    border: 1px solid rgb(var(--agent-prompt-border));
+  }
+  .agent-prompt-msg--agent {
+    align-self: stretch;
+  }
+  .agent-prompt-msg-thumb {
+    margin-top: 2px;
+  }
+  .agent-prompt-jump {
+    position: sticky;
+    bottom: 0;
+    float: right;
+    width: 28px;
+    height: 28px;
+    margin-top: -28px;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--agent-prompt-border));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
   .agent-prompt-dots {
     display: inline-flex;

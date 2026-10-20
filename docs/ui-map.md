@@ -86,6 +86,16 @@ seen closed. It closes on the final reply, on `agent.status { working: false }`,
 on a failed delivery, on Stop, on disconnect, and on the 120 s idle timeout; a
 late, duplicate, or out-of-order `working: true` for a closed prompt is ignored,
 so the dots cannot stay on next to a finished reply.
+The pane above the input is the conversation for this connection
+(`src/agent/agentPromptConversation.js`): the user's messages right-aligned in a
+`surface-quiet` bubble (with a thumbnail when a screenshot went along), the
+agent's replies left as before, the dots at the bottom while a prompt is in
+progress. It grows to `--agent-prompt-max-reply` (200px desktop, 160px phone,
+about six lines of reply) and scrolls inside; the input never moves. It follows
+new messages unless the user scrolled up, then a sticky arrow
+(`data-agent-prompt-jump`) offers the way back down. The X hides the pane and
+keeps the history; the next message shows it again. Disconnect clears it.
+Nothing is stored.
 A production build with no paired agent stays hidden and never uses the echo
 stub. The stub and `?agentPromptDemo=1` are DEV-only (DEV with no pairing may
 still echo). The camera toggle (`data-agent-prompt-screenshot`) captures the
