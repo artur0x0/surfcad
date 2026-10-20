@@ -11,6 +11,8 @@
  *   const meshData = await manifold.execute(script);
  */
 import { softRestartDecision } from './manifoldWorkerLiveness.js'
+import { createGeometryPool } from './geometryPool.js'
+import { liveGeometryWorkerCap } from './geometryPoolCap.js'
 import {
   classifyKernelFailure,
   kernelCrashError,
@@ -50,6 +52,9 @@ class ManifoldWorker {
     this.crashCount = 0;
     this.lastCrash = null;
     this._crashInFlight = null;
+    /** Executes this worker finished, and the kernel heap its last run reported. */
+    this.jobsDone = 0;
+    this.lastHeapMB = null;
   }
   
   async init() {
@@ -1074,6 +1079,10 @@ class ManifoldWorker {
         const request = this.pendingRequests.get(id);
         if (request) {
           this.pendingRequests.delete(id);
+          if (request.kind === 'execute') {
+            this.jobsDone += 1;
+            if (Number.isFinite(Number(payload?.wasmHeapMB))) this.lastHeapMB = Number(payload.wasmHeapMB);
+          }
           if (payload && payload.timing && request.sentAt != null) {
             const roundTripMs = performance.now() - request.sentAt;
             const execMs = Number(payload.timing.execMs) || 0;
@@ -1150,6 +1159,49 @@ class ManifoldContext {
     this.worker = null;
     this.cachedManifolds = new Map();  // For cross-section operations
     this.meshCache = new Map();        // For imported models
+    /**
+     * Extra workers for the parts that are not active (geometryPool.js).
+     * `cap` counts the primary; the pool holds cap − 1. Created on init.
+     */
+    this.pool = null;
+    this.cap = 1;
+  }
+
+  /** Workers this device gets in total (primary included). */
+  parallelism() {
+    return Math.max(1, Number(this.cap) || 1);
+  }
+
+  /** Resize the pool (dev override, tests). `n` counts the primary. */
+  setGeometryWorkerCap(n) {
+    const cap = Math.max(1, Math.floor(Number(n) || 1));
+    this.cap = cap;
+    if (this.pool) this.pool.setSize(cap - 1);
+    return cap;
+  }
+
+  /** Debug status for the dev panel and the agent's geometry_workers reader. */
+  poolStats() {
+    const primary = this.worker ? {
+      ready: !!this.worker.isReady,
+      busy: typeof this.worker._pendingWorkCount === 'function' ? this.worker._pendingWorkCount() : 0,
+      jobs: this.worker.jobsDone || 0,
+      heapMB: this.worker.lastHeapMB ?? null,
+      crashes: this.worker.crashCount || 0,
+      lastCrash: this.worker.lastCrash ? { reason: this.worker.lastCrash.reason, at: this.worker.lastCrash.at } : null,
+    } : null;
+    const pool = this.pool ? this.pool.stats() : null;
+    const poolCrashes = pool ? pool.members.reduce((n, m) => n + (m.crashes || 0), 0) : 0;
+    return {
+      cap: this.parallelism(),
+      live: (primary?.ready ? 1 : 0) + (pool?.live || 0),
+      busy: (primary?.busy ? 1 : 0) + (pool?.busy || 0),
+      queued: pool?.queued || 0,
+      peakBusy: (pool?.peakBusy || 0) + (primary ? 1 : 0),
+      crashes: (primary?.crashes || 0) + poolCrashes,
+      primary,
+      pool,
+    };
   }
   
   /**
@@ -1164,10 +1216,17 @@ class ManifoldContext {
 
     const run = (async () => {
       this.worker = new ManifoldWorker();
+      if (!this.pool) {
+        this.cap = liveGeometryWorkerCap();
+        this.pool = createGeometryPool({
+          size: this.cap - 1,
+          createMember: () => new ManifoldWorker(),
+        });
+      }
       await this.worker.init();
       // Expose on window for backward compatibility
       window.ManifoldContext = this;
-      console.log('[ManifoldContext] Initialized');
+      console.log(`[ManifoldContext] Initialized (geometry workers: ${this.cap})`);
     })();
     this._initPromise = run;
 
@@ -1206,7 +1265,7 @@ class ManifoldContext {
     if (!this.worker || !this.worker.isReady) {
       throw new Error('ManifoldContext not initialized');
     }
-    
+
     // The caller resolved this script's meshes on the main thread.
     // An omitted map still means the legacy filename cache.
     let importedModels;
@@ -1218,15 +1277,24 @@ class ManifoldContext {
         importedModels[filename] = meshData;
       }
     }
-    
+
+    // A part that is not active is a stateless build: it goes to a pool
+    // member when there is one, so several parts build at once and the
+    // primary keeps the active part's solid for cross-sections and
+    // previews. lastResult stays the primary's.
+    if (options.parallel === true && this.pool && this.pool.size > 0) {
+      const { parallel: _parallel, ...rest } = options;
+      return this.pool.execute(script, { ...rest, importedModels });
+    }
+
     const result = await this.worker.execute(script, {
       ...options,
       importedModels
     });
-    
+
     // Cache the full result for quoting/downloads
     this.lastResult = result;
-    
+
     return result;
   }
 
@@ -1451,6 +1519,9 @@ class ManifoldContext {
    * location.reload — tab discard is a real navigation we cannot fake.
    */
   async ensureAlive(reason = 'lifecycle') {
+    // Idle pool members are cheap to drop and respawn; a frozen page may
+    // have lost them anyway.
+    try { this.pool?.recycleIdle(); } catch { /* ignore */ }
     if (this.worker) {
       const result = await this.worker.ensureAlive(reason);
       if (result.status === 'restarted') {
@@ -1476,6 +1547,10 @@ class ManifoldContext {
    */
   terminate() {
     this._initPromise = null;
+    if (this.pool) {
+      try { this.pool.terminate(); } catch { /* ignore */ }
+      this.pool = null;
+    }
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;
