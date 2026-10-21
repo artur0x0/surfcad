@@ -356,7 +356,10 @@ Desktop specifics:
   `golden:part-delete-dialog` checks both steps at 390 and 1280. In git mode,
   **Open from repo** (folder): **Part** lists every part in the repo grouped
   by source assembly (loose `parts/` included); **Assembly** lists assemblies
-  only. Picking one opens **Open assembly?** (`OpenAssemblyChoiceDialog`,
+  only, by name (a v2 row carries its id in `data-git-open-item-id` and opens
+  and inserts by it). *No assemblies in the repo yet.* shows only when the
+  read succeeded and found none; a failed read shows its error in the same
+  slot (`data-git-dialog-empty`). Picking one opens **Open assembly?** (`OpenAssemblyChoiceDialog`,
   `data-git-dialog="open-choice"`). **Cancel**, **Insert parts into current**,
   and **Open assembly** sit on one right-aligned row
   (`data-git-open-choice-stage`, no wrap) down to a 375px phone; the blue

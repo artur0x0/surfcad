@@ -4,8 +4,8 @@ import { ChevronDown, Download, Eye, EyeOff, FolderOpen, GripVertical, Loader2, 
 import { partCanDeleteFromRepo, partDeleteChoice, partListDeleteAction, partRepoDeleteConfirmCopy, sanitizeAssemblyName, sanitizePartName } from '../utils/assembly.js';
 import { partListSubtitles } from '../utils/git/partListSubtitle.js';
 import {
-  filterVaultOpenIndex, filterVaultPartItems, groupVaultOpenPartRows, vaultOpenAssemblies, vaultOpenPartRows,
-  vaultOpenPartSubtitle,
+  filterVaultOpenIndex, filterVaultPartItems, groupVaultOpenPartRows, vaultOpenAssemblies, vaultOpenEmptyMessage,
+  vaultOpenPartRows, vaultOpenPartSubtitle,
 } from '../utils/git/gitWorkspace.js';
 import { DEFAULT_VAULT_NAME } from '../utils/git/vault.js';
 import { NO_REPO_YET_COPY, SAVE_QUEUED_COPY } from '../utils/git/workingSidecar.js';
@@ -578,14 +578,15 @@ const PartFeed = forwardRef(function PartFeed({
       }
       const assemblies = kind === 'open-assembly' ? vaultOpenAssemblies(browse) : [];
       const parts = kind === 'open-part' ? (browse?.parts || []) : [];
-      const empty = kind === 'open-assembly' ? !assemblies.length : !parts.length;
+      // The empty copy only after a read that succeeded and found nothing.
       setOpenPicker({
         ...blank,
         assemblies,
         parts,
-        error: empty ? (kind === 'open-assembly' ? 'No assemblies in the repo yet.' : 'No parts in the repo yet.') : '',
+        error: vaultOpenEmptyMessage(kind, { assemblies, parts }),
       });
     } catch (err) {
+      // A tree or assembly read that failed is an error, never "no assemblies".
       setOpenPicker({ ...blank, error: err?.message || 'Could not browse repo' });
     }
   };
@@ -691,7 +692,7 @@ const PartFeed = forwardRef(function PartFeed({
         return {
           ...prev,
           assemblies,
-          error: assemblies.length ? '' : 'No assemblies in the repo yet.',
+          error: vaultOpenEmptyMessage('open-assembly', { assemblies }),
         };
       });
     } catch (err) {
@@ -722,14 +723,16 @@ const PartFeed = forwardRef(function PartFeed({
     await onOpenVaultAssembly?.(id || name);
   };
 
-  const runInsertAssemblyParts = async (name) => {
+  const runInsertAssemblyParts = async (name, id = '') => {
     setOpenPicker({
       kind: 'open-choice',
       assemblyName: name,
+      assemblyId: id,
       loading: true,
       error: '',
     });
-    const result = (await onInsertVaultAssemblyParts?.(name))
+    // A v2 row inserts by id; a v1 folder by name.
+    const result = (await onInsertVaultAssemblyParts?.(id || name))
       || { status: 'error', error: 'Insert unavailable' };
     if (result.status === 'inserted') {
       closePicker();
@@ -738,6 +741,7 @@ const PartFeed = forwardRef(function PartFeed({
     setOpenPicker({
       kind: 'open-choice',
       assemblyName: name,
+      assemblyId: id,
       loading: false,
       error: result.error || 'Could not insert parts',
     });
@@ -2249,7 +2253,7 @@ const PartFeed = forwardRef(function PartFeed({
           loading={!!openPicker.loading}
           error={openPicker.error || ''}
           onClose={closePicker}
-          onInsert={() => { void runInsertAssemblyParts(openPicker.assemblyName); }}
+          onInsert={() => { void runInsertAssemblyParts(openPicker.assemblyName, openPicker.assemblyId || ''); }}
           onOpen={() => { void runOpenAssembly(openPicker.assemblyName, openPicker.assemblyId || ''); }}
         />
       )}

@@ -4774,10 +4774,61 @@ const App = () => {
    * G11: insert another assembly's parts into the current document
    * (shared keep path; other-assembly parts remap under this assembly).
    */
+  /**
+   * Insert parts into current from a v2 assembly, by id. Every part joins by
+   * reference (same id, same `parts/<id>.js`); rows already in the document
+   * are skipped; the new rows are filed under one group whose `source` is
+   * that assembly's id (`docs/git-save-model.md` §2.1). No git write.
+   */
+  const insertV2VaultAssemblyParts = async (assemblyId) => {
+    const ctx = await agentGitReadContext('insert_part');
+    if (ctx.error) return { status: 'error', code: ctx.error.code, error: ctx.error.message };
+    let opened;
+    try {
+      opened = await openV2Assembly(ctx.adapter, ctx.vault.repo, assemblyId, { branch: ctx.branch });
+    } catch (err) {
+      if (err?.code === 'unknown_assembly') {
+        return { status: 'error', code: 'unknown_assembly', error: `Assembly not found: ${assemblyId}` };
+      }
+      return gitOpCatchResult(err, 'Could not read assembly');
+    }
+    const sourceName = assemblyName(opened.doc);
+    const have = new Set((assemblyRef.current?.parts || []).map((part) => part.id));
+    const rows = (opened.doc?.parts || [])
+      .filter((part) => isV2SurfId(part?.id) && !have.has(part.id))
+      .map((part) => ({
+        id: part.id,
+        name: part.name,
+        script: opened.scripts?.[part.id],
+        missing: part.missing === true,
+      }));
+    if (!rows.length) return { status: 'empty', error: 'No new parts to insert', sourceName };
+    const inserted = await insertReferencedParts({ rows });
+    if (inserted.error) {
+      return { status: 'error', code: inserted.error.code, error: inserted.error.message };
+    }
+    const grouped = withInsertedGroup(assemblyRef.current, {
+      name: sourceName,
+      source: assemblyId,
+      partIds: inserted.result?.added || [],
+    });
+    rememberAssembly(grouped);
+    refreshGenRef.current += 1;
+    return { status: 'inserted', count: rows.length, sourceName };
+  };
+
   const handleInsertVaultAssemblyParts = async (sourceName) => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') {
       return { status: 'error', error: 'Not in Git mode' };
+    }
+    // The Open dialog passes a v2 row's id; a v1 folder is still a name.
+    if (isV2SurfId(sourceName)) {
+      try {
+        return await insertV2VaultAssemblyParts(sourceName);
+      } catch (err) {
+        return gitOpCatchResult(err, 'Could not insert parts');
+      }
     }
     try {
       const vault = await ensureGitVault({ create: false });

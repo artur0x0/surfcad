@@ -658,6 +658,23 @@ export function planCopyToAssembly(doc, part, script, { now, rand } = {}) {
   };
 }
 
+/** Copy the Open dialogs show when the repo read succeeded and found nothing. */
+export const OPEN_LIST_EMPTY_COPY = Object.freeze({
+  'open-assembly': 'No assemblies in the repo yet.',
+  'open-part': 'No parts in the repo yet.',
+});
+
+/**
+ * The empty message for an Open dialog, or '' when the list has rows.
+ * Only a successful read may show it: a failed listTree or assembly read
+ * rejects in `listVaultBrowseItems`, and the dialog shows that error.
+ */
+export function vaultOpenEmptyMessage(kind, { assemblies = [], parts = [] } = {}) {
+  const rows = kind === 'open-assembly' ? assemblies : parts;
+  if (Array.isArray(rows) && rows.length) return '';
+  return OPEN_LIST_EMPTY_COPY[kind] || '';
+}
+
 /** Open Assembly index: assemblies only (parts are Open Part's list). */
 export function vaultOpenAssemblies(browse) {
   const list = Array.isArray(browse?.assemblies) ? browse.assemblies : [];
