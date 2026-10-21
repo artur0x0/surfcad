@@ -8,6 +8,8 @@ import { reservedHelperClause } from '../state/reservedHelpers.js';
 import { BUILD_FLOW_NOTE } from '../buildGuidance.js';
 
 const RESERVED_HELPERS = ` ${reservedHelperClause()}`;
+/** Every tool that runs geometry says what a kernel crash looks like and what to do. */
+export const CRASH_NOTE = ' If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again.';
 const FEATURE_COUNT_NOTE = ' featureCount counts insert_* feature blocks, so a freehand set_script is one feature. bodyCount is null until the first run; a finished run that produced no bodies reports 0.';
 
 const OK = Object.freeze({ type: 'object', additionalProperties: false, properties: { ok: { const: true } } });
@@ -27,13 +29,13 @@ export const COMMAND_META = {
   },
   set_script: {
     description:
-      `Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects \`// @surf-id\`.${RESERVED_HELPERS}${BUILD_FLOW_NOTE}`,
+      `Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects \`// @surf-id\`.${RESERVED_HELPERS}${BUILD_FLOW_NOTE}${CRASH_NOTE}`,
     result: MUTATE_RESULT_SCHEMA,
     errors: ['bad_args', 'unknown_part', 'part_mismatch', 'no_assembly', 'internal'],
     mutates: true,
   },
   run: {
-    description: `Run the current editor buffer; one undo step when it is not already the stack head.${RESERVED_HELPERS}`,
+    description: `Run the current editor buffer; one undo step when it is not already the stack head.${RESERVED_HELPERS}${CRASH_NOTE}`,
     result: MUTATE_RESULT_SCHEMA,
     errors: ['internal'],
     mutates: true,
@@ -290,7 +292,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   invoke_helper: {
-    description: `Prefer this or insert_* over freehand set_script. Insert a helper palette item on the active part, the same compose path as the UI. Working copy only; git_save commits.${BUILD_FLOW_NOTE}`,
+    description: `Prefer this or insert_* over freehand set_script. Insert a helper palette item on the active part, the same compose path as the UI. Working copy only; git_save commits.${BUILD_FLOW_NOTE}${CRASH_NOTE}`,
     result: {
       type: 'object',
       additionalProperties: true,
@@ -336,7 +338,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   confirm_feature: {
-    description: 'Accept the open feature edit and run through mutate.',
+    description: `Accept the open feature edit and run through mutate.${CRASH_NOTE}`,
     result: MUTATE_RESULT_SCHEMA,
     errors: ['no_feature_edit', 'edit_failed', 'no_write_part', 'internal'],
     mutates: true,
@@ -1023,7 +1025,7 @@ export const COMMAND_META = {
 };
 
 const INSERT_HELPER_META = {
-  description: `Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.${BUILD_FLOW_NOTE}`,
+  description: `Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits.${BUILD_FLOW_NOTE}${CRASH_NOTE}`,
   result: {
     type: 'object',
     additionalProperties: true,
@@ -1040,7 +1042,7 @@ const INSERT_HELPER_META = {
 
 const INSERT_MOVE_META = {
   ...INSERT_HELPER_META,
-  description: `Prefer this over freehand set_script. Move one body of the active part by [dx, dy, dz]. Name the body: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. Nothing named and nothing selected is no_body; the origin is never assumed. Working copy only; git_save commits.${BUILD_FLOW_NOTE}`,
+  description: `Prefer this over freehand set_script. Move one body of the active part by [dx, dy, dz]. Name the body: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. Nothing named and nothing selected is no_body; the origin is never assumed. Working copy only; git_save commits.${BUILD_FLOW_NOTE}${CRASH_NOTE}`,
   errors: ['bad_args', 'no_body', 'no_mesh', 'unknown_face', 'insert_failed', 'internal'],
 };
 
