@@ -265,6 +265,12 @@ export const COMMAND_META = {
     errors: ['internal'],
     mutates: false,
   },
+  geometry_workers: {
+    description: 'Debug status of the geometry workers: cap (workers this device gets, the primary included: min(cores − 1, GB of deviceMemory), 1..4 on a phone, 1..8 on a desktop; the dev override is ?geometryWorkers=N or localStorage surfcadGeometryWorkers), live, busy, queued, peakBusy, crashes, primary { ready, busy, jobs, heapMB, crashes, lastCrash }, and pool { size, live, busy, queued, peakBusy, jobsDone, jobsFailed, members: [{ id, live, busy, jobs, heapMB, recycled, crashes }] }. The parts that are not active build on the pool, several at once; the active part, cross-sections, and previews use the primary. Read-only.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['internal'],
+    mutates: false,
+  },
   list_faces: {
     description: 'Every pickable face on the active part, or on part_id when set (an opaque surf id, never a path or display name). One row per face a viewport click selects, all bodies: id (f0, f1, …), type (planar, cylindrical, curved), center, normal, axis and radius for cylinders, area, and key. The id is the patch index on this mesh and is only valid until the next remesh; a rerun of the same script keeps every id. Pass the key with the id to joint_pick so a stale id cannot silently pick another face.',
     result: { type: 'object', additionalProperties: true },

@@ -14,7 +14,61 @@ import {
 import { missingMeshMessage, resolvePartMeshes } from './meshAssets.js';
 import { kernelCrashRecord } from '../workers/kernelCrash.js';
 
-export async function runAssemblyParts({ doc, scripts, execute, ids = null }) {
+/**
+ * Build one part: resolve its script and meshes, run it, and return the
+ * outcome `recordPartRun` takes. Never throws.
+ */
+async function buildPart({ doc, scripts, execute, part }) {
+  const resolved = resolvePartId(doc?.source, part.id, scripts || {});
+  if (!resolved.ok) return { ok: false, missing: true, error: 'missing' };
+  if (shouldClearViewportScript(resolved.script)) return { ok: false, empty: true };
+  let importedModels = null;
+  try {
+    const prepared = await resolvePartMeshes(part.id, resolved.script);
+    if (prepared.missing.length) {
+      return { ok: false, error: missingMeshMessage(prepared.missing) };
+    }
+    importedModels = prepared.importedModels;
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+  try {
+    const result = await execute(resolved.script, { importedModels, partId: part.id });
+    if (result?.cleared) return { ok: false, empty: true };
+    const mesh = result?.mesh && result.mesh.vertProperties ? result.mesh : null;
+    const geom = geometryFromExecuteResult(result);
+    return mesh
+      ? { ok: true, mesh, ...geom }
+      : { ok: false, error: 'Script must return a Manifold object' };
+  } catch (err) {
+    const crash = kernelCrashRecord(err);
+    return { ok: false, error: err?.message || String(err), ...(crash ? { crash } : {}) };
+  }
+}
+
+/** Run `fn` over `items` with at most `limit` in flight; results keep item order. */
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const lanes = Math.max(1, Math.min(Math.floor(Number(limit) || 1), items.length || 1));
+  await Promise.all(Array.from({ length: lanes }, async () => {
+    for (;;) {
+      const i = next;
+      next += 1;
+      if (i >= items.length) return;
+      out[i] = await fn(items[i], i);
+    }
+  }));
+  return out;
+}
+
+/**
+ * `concurrency` is how many parts may build at once (the geometry worker
+ * cap); the caller's `execute` decides where each one runs. Outcomes are
+ * recorded in part order whatever order they finish in, so `runs` reads
+ * the same as a serial build.
+ */
+export async function runAssemblyParts({ doc, scripts, execute, ids = null, concurrency = 1 }) {
   const only = ids ? new Set(ids) : null;
   const runs = {};
   const parts = sortParts(doc?.parts);
@@ -23,54 +77,11 @@ export async function runAssemblyParts({ doc, scripts, execute, ids = null }) {
   const ordered = [
     ...visible.filter((part) => part.id !== activeId),
     ...visible.filter((part) => part.id === activeId),
-  ];
-  for (const part of ordered) {
-    if (only && !only.has(part.id)) continue;
-    const resolved = resolvePartId(doc?.source, part.id, scripts || {});
-    if (!resolved.ok) {
-      Object.assign(runs, recordPartRun(runs, part.id, { ok: false, missing: true, error: 'missing' }));
-      continue;
-    }
-    if (shouldClearViewportScript(resolved.script)) {
-      Object.assign(runs, recordPartRun(runs, part.id, { ok: false, empty: true }));
-      continue;
-    }
-    let importedModels = null;
-    try {
-      const prepared = await resolvePartMeshes(part.id, resolved.script);
-      if (prepared.missing.length) {
-        Object.assign(runs, recordPartRun(runs, part.id, {
-          ok: false,
-          error: missingMeshMessage(prepared.missing),
-        }));
-        continue;
-      }
-      importedModels = prepared.importedModels;
-    } catch (err) {
-      Object.assign(runs, recordPartRun(runs, part.id, {
-        ok: false,
-        error: err?.message || String(err),
-      }));
-      continue;
-    }
-    let outcome;
-    try {
-      const result = await execute(resolved.script, { importedModels, partId: part.id });
-      if (result?.cleared) {
-        Object.assign(runs, recordPartRun(runs, part.id, { ok: false, empty: true }));
-        continue;
-      }
-      const mesh = result?.mesh && result.mesh.vertProperties ? result.mesh : null;
-      const geom = geometryFromExecuteResult(result);
-      outcome = mesh
-        ? { ok: true, mesh, ...geom }
-        : { ok: false, error: 'Script must return a Manifold object' };
-    } catch (err) {
-      const crash = kernelCrashRecord(err);
-      outcome = { ok: false, error: err?.message || String(err), ...(crash ? { crash } : {}) };
-    }
-    Object.assign(runs, recordPartRun(runs, part.id, outcome));
-  }
+  ].filter((part) => !only || only.has(part.id));
+  const outcomes = await mapLimit(ordered, concurrency, (part) => buildPart({ doc, scripts, execute, part }));
+  ordered.forEach((part, i) => {
+    Object.assign(runs, recordPartRun(runs, part.id, outcomes[i]));
+  });
   if (!only) {
     for (const part of parts) {
       if (!runs[part.id]) {

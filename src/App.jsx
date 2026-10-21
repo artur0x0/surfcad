@@ -2424,10 +2424,13 @@ const App = () => {
     };
     let other;
     try {
+      // The other parts build on the geometry pool, several at once up to
+      // the device cap; the active part follows on the primary worker.
       other = await runAssemblyParts({
           doc,
           scripts,
           ids: otherIds,
+          concurrency: manifoldContext.parallelism(),
           execute: (script, execOpts) => {
             noteBuild();
             const anchor = rollbackAnchorsRef.current[String(execOpts?.partId || '')];
@@ -2436,6 +2439,8 @@ const App = () => {
             }
             return manifoldContext.executeScript(script, {
               timeoutMs: 30000,
+              parallel: true,
+              partId: execOpts?.partId,
               importedModels: execOpts?.importedModels,
               ...(anchor === null || typeof anchor === 'string' ? { rollbackAnchor: anchor } : {}),
             });
@@ -9931,6 +9936,9 @@ const App = () => {
       const doc = assemblyRef.current;
       const part = doc?.parts?.find((row) => row.id === doc?.activeId);
       return partSurfId(part);
+    },
+    readGeometryWorkers() {
+      return manifoldContext.poolStats();
     },
     readActivePartStatus() {
       const doc = assemblyRef.current;

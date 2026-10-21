@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 189,
+  "count": 190,
   "$defs": {
     "status": {
       "type": "object",
@@ -1227,6 +1227,28 @@
     {
       "name": "list_bodies",
       "description": "Bodies of the active part's last run, in mesh order: [{ index, at, triangleCount }]. index is insert_move body_index; at is the centroid move() names (insert_move at, edit_feature at). Empty before the first run.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "immediate": true,
+      "uiEntry": null,
+      "example": {}
+    },
+    {
+      "name": "geometry_workers",
+      "description": "Debug status of the geometry workers: cap (workers this device gets, the primary included: min(cores − 1, GB of deviceMemory), 1..4 on a phone, 1..8 on a desktop; the dev override is ?geometryWorkers=N or localStorage surfcadGeometryWorkers), live, busy, queued, peakBusy, crashes, primary { ready, busy, jobs, heapMB, crashes, lastCrash }, and pool { size, live, busy, queued, peakBusy, jobsDone, jobsFailed, members: [{ id, live, busy, jobs, heapMB, recycled, crashes }] }. The parts that are not active build on the pool, several at once; the active part, cross-sections, and previews use the primary. Read-only.",
       "args": {
         "type": "object",
         "additionalProperties": false,

@@ -27,6 +27,7 @@ import { cameraFitCommand } from './cameraFit.js';
 import { zoomToSelectionCommand } from './zoomToSelection.js';
 import { listFacesCommand } from './listFaces.js';
 import { listBodiesCommand } from './listBodies.js';
+import { geometryWorkersCommand } from './geometryWorkers.js';
 import { listEdgesCommand } from './listEdges.js';
 import { listFeatureEdgesCommand } from './listFeatureEdges.js';
 import { invokeHelperCommand, buildHelperPaletteCommands } from './invokeHelper.js';
@@ -218,6 +219,7 @@ export const V1_COMMANDS = Object.freeze([
   cameraCommand,
   listFacesCommand,
   listBodiesCommand,
+  geometryWorkersCommand,
   listEdgesCommand,
   listFeatureEdgesCommand,
   invokeHelperCommand,
