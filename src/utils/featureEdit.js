@@ -53,6 +53,7 @@ export const FEATURE_EDIT_DIALOGS = Object.freeze({
   mirror: { dialog: 'helper', helperId: 'mirror' },
   array: { dialog: 'helper', helperId: 'array3D' },
   polarArray: { dialog: 'helper', helperId: 'polarArray' },
+  patternPoints: { dialog: 'helper', helperId: 'patternPoints' },
   sheetMetal: { dialog: 'sheetMetal', entry: 'sheetMetal' },
 });
 
@@ -90,6 +91,7 @@ export const FEATURE_EDIT_SAMPLE_KEY = Object.freeze({
   mirror: 'plane',
   array: 'nx',
   polarArray: 'count',
+  patternPoints: 'points',
   sheetMetal: 'width',
 });
 
@@ -108,6 +110,34 @@ function lit(n) {
   if (Number.isInteger(v)) return String(v);
   const r = +v.toFixed(4);
   return String(Object.is(r, -0) ? 0 : r);
+}
+
+/**
+ * `patternOnPoints(body, <points json>, { up: [..], keepOriginal, merge })`
+ * → the sheet fields. The points array nests, so it is bracket-matched.
+ */
+function readPatternPointsCall(block) {
+  const start = block.indexOf('patternOnPoints(');
+  if (start < 0) return null;
+  const firstComma = block.indexOf(',', start);
+  if (firstComma < 0) return null;
+  let i = firstComma + 1;
+  while (i < block.length && /\s/.test(block[i])) i += 1;
+  if (block[i] !== '[') return null;
+  let depth = 0;
+  let end = -1;
+  for (let j = i; j < block.length; j += 1) {
+    if (block[j] === '[') depth += 1;
+    else if (block[j] === ']') { depth -= 1; if (depth === 0) { end = j; break; } }
+  }
+  if (end < 0) return null;
+  const pointsText = block.slice(i, end + 1);
+  const rest = block.slice(end + 1);
+  const upM = /up:\s*\[\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\]/.exec(rest);
+  const up = upM ? (Number(upM[1]) === 1 ? 'x' : (Number(upM[2]) === 1 ? 'y' : 'z')) : 'z';
+  const keepOriginal = /keepOriginal:\s*true/.test(rest);
+  const merge = !/merge:\s*false/.test(rest);
+  return { points: pointsText, up, keepOriginal, merge };
 }
 
 function grab(text, re) {
@@ -716,6 +746,12 @@ export function parseFeatureEdit(kind, blockText) {
     const m = grab(block, new RegExp(`polarArray\\s*\\(\\s*[^,]+,\\s*(${NUM})\\s*,\\s*(${NUM})\\s*,\\s*'(\\w+)'`));
     if (!m) return fail('No polar array');
     return { ...base, fields: { count: num(m[1]), boltCircleRadius: num(m[2]), axis: m[3] }, edges, faces };
+  }
+
+  if (kind === 'patternPoints') {
+    const parsed = readPatternPointsCall(block);
+    if (!parsed) return fail('No pattern on points');
+    return { ...base, fields: parsed, edges, faces };
   }
 
   if (kind === 'sheetMetal') {

@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 191,
+  "count": 192,
   "$defs": {
     "status": {
       "type": "object",
@@ -228,7 +228,7 @@
     },
     {
       "name": "set_script",
-      "description": "Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects `// @surf-id`. Do not declare a reserved SurfCAD helper name with const, let, class, or function — the runtime passes these as function parameters: addDraft, align, array3D, booleanBodies, boundaryEdges, cboreHole, center, chamferEdges, clearanceHole, concaveEdges, convexEdges, cskHole, cut, deleteFace, draftFaces, edge, edgesBetween, edgesByOrientation, externalBody, facesByNormal, fastenerClearanceDia, fastenerMajorDia, fastenerTapDrillDia, filletAlongPath, filletEdges, getDimensions, getScaleRatio, hexPrism, hole, holePattern, holeSpan, holesOnContour, hollow, listFastenerSizes, loft, makeCrossSection, makeExtrude, makeLoft, makeRevolve, makeSweepPath, mirror, move, moveFace, offsetPlaneFrame, placeInFrame, placeOnFace, planarFaceAt, polarArray, profileCircle, profilePolygon, profileRectangle, rectTube, resolveFastenerSize, rotateContour, roundedBox, sheetMetalSolid, shell, signedFeatureEdges, solveContour, sumSqDist, sweep, sweepPoints, tapDrillHole, transformByFrame, tube, vecAdd, vecCross, vecDot, vecMul, vecNorm, vecNormalize, vecSub, workplaneFromFace. A redeclaration fails; rename your variable (for example `const cut`). Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes. If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again.",
+      "description": "Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects `// @surf-id`. Do not declare a reserved SurfCAD helper name with const, let, class, or function — the runtime passes these as function parameters: addDraft, align, array3D, booleanBodies, boundaryEdges, cboreHole, center, chamferEdges, clearanceHole, concaveEdges, convexEdges, cskHole, cut, deleteFace, draftFaces, edge, edgesBetween, edgesByOrientation, externalBody, facesByNormal, fastenerClearanceDia, fastenerMajorDia, fastenerTapDrillDia, filletAlongPath, filletEdges, getDimensions, getScaleRatio, hexPrism, hole, holePattern, holeSpan, holesOnContour, hollow, listFastenerSizes, loft, makeCrossSection, makeExtrude, makeLoft, makeRevolve, makeSweepPath, mirror, move, moveFace, offsetPlaneFrame, patternOnPoints, placeInFrame, placeOnFace, planarFaceAt, polarArray, profileCircle, profilePolygon, profileRectangle, rectTube, resolveFastenerSize, rotateContour, roundedBox, sheetMetalSolid, shell, signedFeatureEdges, solveContour, sumSqDist, sweep, sweepPoints, tapDrillHole, transformByFrame, tube, vecAdd, vecCross, vecDot, vecMul, vecNorm, vecNormalize, vecSub, workplaneFromFace. A redeclaration fails; rename your variable (for example `const cut`). Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes. If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -387,7 +387,7 @@
     },
     {
       "name": "run",
-      "description": "Run the current editor buffer; one undo step when it is not already the stack head. Do not declare a reserved SurfCAD helper name with const, let, class, or function — the runtime passes these as function parameters: addDraft, align, array3D, booleanBodies, boundaryEdges, cboreHole, center, chamferEdges, clearanceHole, concaveEdges, convexEdges, cskHole, cut, deleteFace, draftFaces, edge, edgesBetween, edgesByOrientation, externalBody, facesByNormal, fastenerClearanceDia, fastenerMajorDia, fastenerTapDrillDia, filletAlongPath, filletEdges, getDimensions, getScaleRatio, hexPrism, hole, holePattern, holeSpan, holesOnContour, hollow, listFastenerSizes, loft, makeCrossSection, makeExtrude, makeLoft, makeRevolve, makeSweepPath, mirror, move, moveFace, offsetPlaneFrame, placeInFrame, placeOnFace, planarFaceAt, polarArray, profileCircle, profilePolygon, profileRectangle, rectTube, resolveFastenerSize, rotateContour, roundedBox, sheetMetalSolid, shell, signedFeatureEdges, solveContour, sumSqDist, sweep, sweepPoints, tapDrillHole, transformByFrame, tube, vecAdd, vecCross, vecDot, vecMul, vecNorm, vecNormalize, vecSub, workplaneFromFace. A redeclaration fails; rename your variable (for example `const cut`). If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again.",
+      "description": "Run the current editor buffer; one undo step when it is not already the stack head. Do not declare a reserved SurfCAD helper name with const, let, class, or function — the runtime passes these as function parameters: addDraft, align, array3D, booleanBodies, boundaryEdges, cboreHole, center, chamferEdges, clearanceHole, concaveEdges, convexEdges, cskHole, cut, deleteFace, draftFaces, edge, edgesBetween, edgesByOrientation, externalBody, facesByNormal, fastenerClearanceDia, fastenerMajorDia, fastenerTapDrillDia, filletAlongPath, filletEdges, getDimensions, getScaleRatio, hexPrism, hole, holePattern, holeSpan, holesOnContour, hollow, listFastenerSizes, loft, makeCrossSection, makeExtrude, makeLoft, makeRevolve, makeSweepPath, mirror, move, moveFace, offsetPlaneFrame, patternOnPoints, placeInFrame, placeOnFace, planarFaceAt, polarArray, profileCircle, profilePolygon, profileRectangle, rectTube, resolveFastenerSize, rotateContour, roundedBox, sheetMetalSolid, shell, signedFeatureEdges, solveContour, sumSqDist, sweep, sweepPoints, tapDrillHole, transformByFrame, tube, vecAdd, vecCross, vecDot, vecMul, vecNorm, vecNormalize, vecSub, workplaneFromFace. A redeclaration fails; rename your variable (for example `const cut`). If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5307,6 +5307,143 @@
         "axis": "z",
         "boreRadius": 3,
         "boreHeight": 10
+      }
+    },
+    {
+      "name": "insert_pattern_points",
+      "description": "Pattern on points (the Points button in Build): one copy of the body at every point, turned so its up axis follows the point's axis when the point has one. points is [[x, y, z], …] or [{ at: [x, y, z], axis: [nx, ny, nz] }, …] in mm (a JSON string of the same is accepted); up is the body axis (x | y | z) that follows a point axis; keepOriginal keeps the source where it is; merge false keeps overlapping copies as separate bodies. Hardware: model one bolt in its own part, then call list_faces on the part it fastens, take the center and axis of each cylindrical hole face (filter by radius), and pass them here with up set to the bolt's own axis; when the holes move, run this again with the new centers. Empty or malformed points are bad_args. Working copy only; git_save commits.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "Part script binding name"
+          },
+          "points": {
+            "type": [
+              "array",
+              "string"
+            ],
+            "description": "Points as [[x, y, z], …] or [{ at: [x, y, z], axis: [nx, ny, nz] }, …] in mm (a JSON string of the same is accepted). For hardware: the center and axis of each hole from list_faces on the mating part."
+          },
+          "up": {
+            "type": "string",
+            "enum": [
+              "x",
+              "y",
+              "z"
+            ]
+          },
+          "keepOriginal": {
+            "type": "boolean"
+          },
+          "merge": {
+            "type": "boolean"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "helperId": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "partId": {
+                "type": "string"
+              },
+              "partName": {
+                "type": "string"
+              },
+              "script": {
+                "type": "string"
+              },
+              "runState": {
+                "type": "string",
+                "enum": [
+                  "not_run_yet",
+                  "ok",
+                  "failed"
+                ]
+              },
+              "volume": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "bbox": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "min": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "max": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "featureCount": {
+                "type": "integer"
+              },
+              "bodyCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "errors": [
+        "bad_args",
+        "insert_failed",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "patternPoints",
+      "example": {
+        "body": "part",
+        "points": "[[0, 0, 0], [40, 0, 0]]",
+        "up": "z",
+        "keepOriginal": false,
+        "merge": true
       }
     },
     {

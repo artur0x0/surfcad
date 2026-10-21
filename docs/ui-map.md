@@ -993,7 +993,7 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
 - **Rail sections are Block / Build / Shape / Polish / Move**, in that order
   (`CAD_RAIL_ORDER` in `helperPaletteSnippets.js` for the order,
   `GROUP_SHORT_LABEL` in `HelperInsertPalette.jsx` for the captions). Shape is
-  the old Model section, same buttons. Build is hole, cut, boolean, shell, draft, pattern, and Script (`codeSnippet`: a script snippet feature with its `// FEATURE-GAP: … | …` line, `src/utils/featureGaps.js`),
+  the old Model section, same buttons. Build is hole, cut, boolean, shell, draft, pattern, Points (`patternPoints`: one instance at every point, turned along each point's axis; `patternOnPoints`), and Script (`codeSnippet`: a script snippet feature with its `// FEATURE-GAP: … | …` line, `src/utils/featureGaps.js`),
   pattern. Boolean (`RectangleCircle`, lucide `rectangle-circle`, vendored in `icons/`) is the body boolean: Union, Difference, or
   Intersect, then leftover pieces on Intersect. It is not a second glyph of Cut.
   Polish is fillet, chamfer, move face, delete face. Move is every

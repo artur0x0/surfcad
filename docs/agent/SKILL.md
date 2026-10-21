@@ -57,7 +57,7 @@ Finish each stage across the whole assembly before starting the next, and take a
 // FEATURE-GAP: sweep along 3D path | the frame tube follows a curve and extrude only goes straight
 ```
 
-**Hardware.** Give each unique fastener type its own part named by its spec (`Bolt M5x12 SHCS`, `Nut M5 nylock`, `Star nut 1-1/8"`); two fasteners are the same type only when size, length, and head style all match. Model one instance per part and pattern it to every place it goes with the same spacing and centers as the holes it fits, so moving the holes moves the fasteners. Never one part that holds every fastener, never a copy-paste loop. Do hardware in the pattern-and-place stage, after the parts it fastens are finished.
+**Hardware.** Give each unique fastener type its own part named by its spec (`Bolt M5x12 SHCS`, `Nut M5 nylock`, `Star nut 1-1/8"`); two fasteners are the same type only when size, length, and head style all match. Model one instance per part and pattern it to every place it goes: `set_active_part` the part it fastens, `list_faces`, take the `center` and `axis` of each cylindrical hole face (filter by `radius`), then on the fastener part `insert_pattern_points { points: [{ at, axis }, …], up: "z" }` with `up` the fastener's own axis (`insert_array3_d` / `insert_polar_array` for a regular grid or bolt circle). When the holes move, run it again with the new centers. Never one part that holds every fastener, never a copy-paste loop. Do hardware in the pattern-and-place stage, after the parts it fastens are finished.
 
 ## Core loop
 

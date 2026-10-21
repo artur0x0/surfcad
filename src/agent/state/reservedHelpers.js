@@ -16,6 +16,7 @@ export const RESERVED_HELPER_NAMES = Object.freeze([
   'mirror',
   'array3D',
   'polarArray',
+  'patternOnPoints',
   'center',
   'align',
   'getDimensions',
