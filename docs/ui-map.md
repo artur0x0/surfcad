@@ -389,8 +389,14 @@ Desktop specifics:
   Live search is `data-git-open-search` / `filterVaultOpenIndex`; empty
   query shows the full list, no hits show *No matches*. Vault files,
   groups, and delete semantics are [`vault-schema.md`](vault-schema.md).
-  A part from this
-  assembly, and a part in `parts/`, opens by reference. A part from another assembly's folder
+  On a v2 vault every Open Part row is titled with the part's display name
+  (from the assembly files, else the script's `// @name` header, else
+  **Untitled part**), never its id; the id stays the key
+  (`data-git-open-part-id`) and the subtitle (`data-git-open-part-subtitle`)
+  reads *in this assembly*, *in A, B* (the assemblies that list it), or
+  *not in any assembly*. Rows group under the open assembly, then other
+  assemblies A→Z, then Loose parts. On a v1 tree a part from this
+  assembly, and a part in `parts/`, opens by reference with no subtitle. A part from another assembly's folder
   links in (`links from …`). The row then shows **Caution: external part!**
   (`data-part-external`) and **Copy to this assembly**
   (`data-part-copy-to-assembly`). Parts inserted from another assembly sit
