@@ -1,0 +1,46 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { composeHelperInsert, HELPER_PALETTE_ITEMS, paletteRailSections } from './helperPaletteSnippets.js';
+import { parseFeatureMarkers } from './featureMarkers.js';
+import { parseFeatureGaps } from './featureGaps.js';
+import { validateHelperParams, coerceHelperParams } from '../agent/helperPaletteAgent.js';
+
+const CUBE = '// --- cube begin id=c1 ---\nlet part = Manifold.cube([40, 30, 20], true);\n// --- cube end ---\nreturn part;\n';
+
+test('the Script button sits in Build and inserts a code block that starts with the FEATURE-GAP line', () => {
+  const build = paletteRailSections('desktop').find((s) => s.key === 'Build');
+  assert.ok(build.items.some((i) => i.id === 'codeSnippet'), build.items.map((i) => i.id).join(','));
+  const out = composeHelperInsert(CUBE, 'codeSnippet', null, {
+    gap: 'sweep along 3D path',
+    why: 'extrude only goes straight',
+    script: 'part = part.add(Manifold.cylinder(10, 2, 2, 24));\n',
+  });
+  assert.ok(out, 'composes');
+  const blocks = parseFeatureMarkers(out);
+  assert.deepEqual(blocks.map((b) => b.kind), ['cube', 'code']);
+  const gaps = parseFeatureGaps(out);
+  assert.equal(gaps.length, 1);
+  assert.equal(gaps[0].gap, 'sweep along 3D path');
+  assert.equal(gaps[0].why, 'extrude only goes straight');
+  assert.match(out, /\/\/ --- code begin ---\n\/\/ FEATURE-GAP: sweep along 3D path \| extrude only goes straight\npart = part\.add\(Manifold\.cylinder\(10, 2, 2, 24\)\);\n\/\/ --- code end ---/);
+  assert.match(out, /return part;\s*$/);
+});
+
+test('on an empty part the snippet makes the first body; the default placeholder is replaced', () => {
+  const out = composeHelperInsert('', 'codeSnippet', null, { gap: 'thread', why: 'no thread feature', script: 'part = part;' });
+  assert.match(out, /let part = Manifold\.cube\(\[10, 10, 10\], true\);/);
+  assert.match(out, /^\/\/ --- code begin ---\n\/\/ FEATURE-GAP: thread \| no thread feature/m);
+});
+
+test('the agent tool refuses an empty gap, why, or script with bad_args', () => {
+  const item = HELPER_PALETTE_ITEMS.find((i) => i.id === 'codeSnippet');
+  const ok = validateHelperParams(item, coerceHelperParams(item, { gap: 'a', why: 'b', script: 'part = part;' }));
+  assert.equal(ok, null);
+  for (const missing of ['gap', 'why', 'script']) {
+    const args = { gap: 'a', why: 'b', script: 'part = part;', [missing]: '   ' };
+    const verdict = validateHelperParams(item, coerceHelperParams(item, args));
+    assert.equal(verdict?.code, 'bad_args', missing);
+    assert.match(verdict.message, /FEATURE|gap|why|script/i);
+  }
+  assert.equal(validateHelperParams(item, coerceHelperParams(item, {}))?.code, 'bad_args');
+});

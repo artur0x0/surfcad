@@ -1,3 +1,4 @@
+import { featureGapLine } from './featureGaps.js';
 /**
  * Slice 09/10/11 — Helper insert palette snippets.
  * Source of truth: helper-functions.md allowlist + gamePuzzles / GameHintsModal.
@@ -2277,6 +2278,33 @@ export const HELPER_PALETTE_ITEMS = [
     },
   },
   {
+    // Script: one operation no feature can do, as its own feature block,
+    // with the FEATURE-GAP note the backlog is grepped from. The agent tool
+    // is insert_code_snippet { gap, why, script }.
+    id: 'codeSnippet',
+    label: 'Script',
+    group: 'Features',
+    title: 'Script snippet — one operation no feature can do, with its FEATURE-GAP note',
+    params: [
+      { name: 'gap', type: 'string', default: '', required: true, label: 'Missing feature', placeholder: 'sweep along 3D path' },
+      { name: 'why', type: 'string', default: '', required: true, label: 'Why no feature works', placeholder: 'extrude only goes straight' },
+      { name: 'script', type: 'string', multiline: true, default: 'part = part;', required: true, label: 'Script', placeholder: 'part = part.add(…);' },
+    ],
+    build: (empty, p, names) => {
+      void names;
+      const raw = String(p.script ?? '').replace(/\r\n/g, '\n');
+      const body = raw.split('\n');
+      while (body.length && !body[body.length - 1].trim()) body.pop();
+      while (body.length && !body[0].trim()) body.shift();
+      if (!body.length || (empty && raw.trim() === 'part = part;')) {
+        body.length = 0;
+        body.push(empty ? 'let part = Manifold.cube([10, 10, 10], true);' : 'part = part;');
+      }
+      const lines = wrapFeatureBlock(CODE_BEGIN, CODE_END, [featureGapLine(p.gap, p.why), ...body]);
+      return withReturn(lines, empty);
+    },
+  },
+  {
     id: 'array3D',
     label: 'Array',
     group: 'Transforms',
@@ -2645,7 +2673,7 @@ export const HELPER_PALETTE_GROUPS = ['Primitives', 'Advanced', 'Features', 'Tra
  */
 export const CAD_RAIL_ORDER = ['Primitives', 'Build', 'Shape', 'Features', 'Transforms'];
 
-const RAIL_BUILD_IDS = ['hole', 'cut', 'boolean', 'shell', 'addDraft', 'array3D'];
+const RAIL_BUILD_IDS = ['hole', 'cut', 'boolean', 'shell', 'addDraft', 'array3D', 'codeSnippet'];
 const RAIL_POLISH_IDS = ['filletEdges', 'chamferEdges', 'moveFace', 'deleteFace'];
 const RAIL_MOVE_FIRST = ['move', 'center', 'align', 'mirror'];
 

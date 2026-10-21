@@ -14,6 +14,8 @@ export const PALETTE_FEATURE_KIND_ALIASES = Object.freeze({
   makeRevolve: 'revolve',
   makeSweep: 'sweep',
   makeLoft: 'loft',
+  // The Script button writes a code block (marker kind `code`).
+  codeSnippet: 'code',
 });
 
 /**

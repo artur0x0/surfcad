@@ -192,7 +192,7 @@
     },
     {
       "name": "set_script",
-      "description": "Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects `// @surf-id`. Do not declare a reserved SurfCAD helper name with const, let, class, or function — the runtime passes these as function parameters: addDraft, align, array3D, booleanBodies, boundaryEdges, cboreHole, center, chamferEdges, clearanceHole, concaveEdges, convexEdges, cskHole, cut, deleteFace, draftFaces, edge, edgesBetween, edgesByOrientation, externalBody, facesByNormal, fastenerClearanceDia, fastenerMajorDia, fastenerTapDrillDia, filletAlongPath, filletEdges, getDimensions, getScaleRatio, hexPrism, hole, holePattern, holeSpan, holesOnContour, hollow, listFastenerSizes, loft, makeCrossSection, makeExtrude, makeLoft, makeRevolve, makeSweepPath, mirror, move, moveFace, offsetPlaneFrame, placeInFrame, placeOnFace, planarFaceAt, polarArray, profileCircle, profilePolygon, profileRectangle, rectTube, resolveFastenerSize, rotateContour, roundedBox, sheetMetalSolid, shell, signedFeatureEdges, solveContour, sumSqDist, sweep, sweepPoints, tapDrillHole, transformByFrame, tube, vecAdd, vecCross, vecDot, vecMul, vecNorm, vecNormalize, vecSub, workplaneFromFace. A redeclaration fails; rename your variable (for example `const cut`). Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects `// @surf-id`. Do not declare a reserved SurfCAD helper name with const, let, class, or function — the runtime passes these as function parameters: addDraft, align, array3D, booleanBodies, boundaryEdges, cboreHole, center, chamferEdges, clearanceHole, concaveEdges, convexEdges, cskHole, cut, deleteFace, draftFaces, edge, edgesBetween, edgesByOrientation, externalBody, facesByNormal, fastenerClearanceDia, fastenerMajorDia, fastenerTapDrillDia, filletAlongPath, filletEdges, getDimensions, getScaleRatio, hexPrism, hole, holePattern, holeSpan, holesOnContour, hollow, listFastenerSizes, loft, makeCrossSection, makeExtrude, makeLoft, makeRevolve, makeSweepPath, mirror, move, moveFace, offsetPlaneFrame, placeInFrame, placeOnFace, planarFaceAt, polarArray, profileCircle, profilePolygon, profileRectangle, rectTube, resolveFastenerSize, rotateContour, roundedBox, sheetMetalSolid, shell, signedFeatureEdges, solveContour, sumSqDist, sweep, sweepPoints, tapDrillHole, transformByFrame, tube, vecAdd, vecCross, vecDot, vecMul, vecNorm, vecNormalize, vecSub, workplaneFromFace. A redeclaration fails; rename your variable (for example `const cut`). Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -1336,7 +1336,7 @@
     },
     {
       "name": "invoke_helper",
-      "description": "Prefer this or insert_* over freehand set_script. Insert a helper palette item on the active part, the same compose path as the UI. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this or insert_* over freehand set_script. Insert a helper palette item on the active part, the same compose path as the UI. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -1462,7 +1462,7 @@
     },
     {
       "name": "insert_cube",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -1636,7 +1636,7 @@
     },
     {
       "name": "insert_rounded_box",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -1816,7 +1816,7 @@
     },
     {
       "name": "insert_cylinder",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -1986,7 +1986,7 @@
     },
     {
       "name": "insert_sphere",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2152,7 +2152,7 @@
     },
     {
       "name": "insert_tube",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2356,7 +2356,7 @@
     },
     {
       "name": "insert_hex_prism",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2521,7 +2521,7 @@
     },
     {
       "name": "insert_fillet_edges",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2667,7 +2667,7 @@
     },
     {
       "name": "insert_chamfer_edges",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2788,7 +2788,7 @@
     },
     {
       "name": "insert_cross_section",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2951,7 +2951,7 @@
     },
     {
       "name": "insert_sweep_path",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -3071,7 +3071,7 @@
     },
     {
       "name": "insert_hole",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -3308,7 +3308,7 @@
     },
     {
       "name": "insert_hole_pattern",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -3449,7 +3449,7 @@
     },
     {
       "name": "insert_clearance_hole",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -3596,7 +3596,7 @@
     },
     {
       "name": "insert_tap_drill_hole",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -3734,7 +3734,7 @@
     },
     {
       "name": "insert_cbore_hole",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -3873,7 +3873,7 @@
     },
     {
       "name": "insert_csk_hole",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -4012,7 +4012,7 @@
     },
     {
       "name": "insert_shell",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -4142,7 +4142,7 @@
     },
     {
       "name": "insert_cut",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -4261,7 +4261,7 @@
     },
     {
       "name": "insert_boolean",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -4385,7 +4385,7 @@
     },
     {
       "name": "insert_move",
-      "description": "Prefer this over freehand set_script. Move one body of the active part by [dx, dy, dz]. Name the body: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. Nothing named and nothing selected is no_body; the origin is never assumed. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Move one body of the active part by [dx, dy, dz]. Name the body: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. Nothing named and nothing selected is no_body; the origin is never assumed. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -4547,7 +4547,7 @@
     },
     {
       "name": "insert_center",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -4671,7 +4671,7 @@
     },
     {
       "name": "insert_align",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -4783,7 +4783,7 @@
     },
     {
       "name": "insert_mirror",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -4907,8 +4907,127 @@
       }
     },
     {
+      "name": "insert_code_snippet",
+      "description": "The script snippet feature (the Script button in Build): one operation no feature can do, as its own feature block on the active part, kept next to the insert_* features instead of replacing the whole part. gap names the missing feature or option, why says why the existing feature did not work, script is the operation (it reads and sets part). The block starts with // FEATURE-GAP: <gap> | <why>, which the feature backlog is grepped from. All three are required; an empty one is bad_args. Prefer insert_* whenever a feature can do the job; use set_script only to rewrite a whole part. Working copy only; git_save commits.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "gap": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          },
+          "script": {
+            "type": "string"
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "helperId": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "partId": {
+                "type": "string"
+              },
+              "partName": {
+                "type": "string"
+              },
+              "script": {
+                "type": "string"
+              },
+              "runState": {
+                "type": "string",
+                "enum": [
+                  "not_run_yet",
+                  "ok",
+                  "failed"
+                ]
+              },
+              "volume": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "bbox": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "min": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "max": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "featureCount": {
+                "type": "integer"
+              },
+              "bodyCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "errors": [
+        "bad_args",
+        "insert_failed",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": false,
+      "confirm": false,
+      "immediate": false,
+      "uiEntry": "codeSnippet",
+      "example": {
+        "gap": "",
+        "why": "",
+        "script": "part = part;"
+      }
+    },
+    {
       "name": "insert_array3_d",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5084,7 +5203,7 @@
     },
     {
       "name": "insert_polar_array",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5225,7 +5344,7 @@
     },
     {
       "name": "insert_add_draft",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5371,7 +5490,7 @@
     },
     {
       "name": "insert_workplane",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5481,7 +5600,7 @@
     },
     {
       "name": "insert_make_extrude",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5605,7 +5724,7 @@
     },
     {
       "name": "insert_make_revolve",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5729,7 +5848,7 @@
     },
     {
       "name": "insert_make_sweep",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5844,7 +5963,7 @@
     },
     {
       "name": "insert_make_loft",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -5968,7 +6087,7 @@
     },
     {
       "name": "insert_move_face",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -6092,7 +6211,7 @@
     },
     {
       "name": "insert_delete_face",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -11576,7 +11695,7 @@
     },
     {
       "name": "create_assembly",
-      "description": "Seed a blank assembly with one empty part (no demo script, no seed cube: the first insert_* creates the body). Single-flight per tab: overlapping calls return the same assemblyId. Optional name is a non-unique label. No git write. Returns { assemblyId, assemblyName, activeId, partCount }. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Seed a blank assembly with one empty part (no demo script, no seed cube: the first insert_* creates the body). Single-flight per tab: overlapping calls return the same assemblyId. Optional name is a non-unique label. No git write. Returns { assemblyId, assemblyName, activeId, partCount }. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -11605,7 +11724,7 @@
     },
     {
       "name": "create_part",
-      "description": "Add a part and make it the active part before returning. The part starts empty (no seed cube): the first insert_* creates the body. The result partId is a new opaque surf id, not the previously active part. When script is set, that script runs before the call returns (ok, errors, failures, status); a failed script still leaves the part. Agent calls default to the assembly origin; pass position [x,y,z] mm to place it. Working copy only: nothing reaches git without git_save. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: a set_script snippet is the fallback for one operation no feature can do, and it starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
+      "description": "Add a part and make it the active part before returning. The part starts empty (no seed cube): the first insert_* creates the body. The result partId is a new opaque surf id, not the previously active part. When script is set, that script runs before the call returns (ok, errors, failures, status); a failed script still leaves the part. Agent calls default to the assembly origin; pass position [x,y,z] mm to place it. Working copy only: nothing reaches git without git_save. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes.",
       "args": {
         "type": "object",
         "additionalProperties": false,
