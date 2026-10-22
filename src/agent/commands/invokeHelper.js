@@ -3,7 +3,9 @@ import {
   describeHelperRefusal,
   exampleArgsForHelper,
   helperCommandName,
+  helperReadsSelection,
   isKnownHelperId,
+  USE_SELECTION_NOTE,
   schemaPropertiesForHelper,
   selectionContextFromArgs,
   validateHelperParams,
@@ -72,6 +74,24 @@ async function runHelperInsert(ctx, helperId, args) {
     params = { ...params, at: anchor.at.slice(0, 3).map(Number) };
   }
   const { faceContext, edgeContext } = selectionContextFromArgs(ctx, args);
+  // The selection is single-use: the viewport clears picks after every
+  // rebuild because they index the old mesh. An explicit use_selection with
+  // nothing selected is refused rather than quietly built on the default
+  // face or edge set. insert_move resolves its body on the host (no_body).
+  const wantsSelection = args?.use_selection === true && helperId !== 'move' && helperReadsSelection(helperId);
+  const moveTarget = helperId === 'move' ? moveTargetArgs(args) : null;
+  const usedSelection = moveTarget
+    ? moveTarget.useSelection && moveTarget.bodyIndex == null && moveTarget.at == null
+      && moveTarget.face == null && moveTarget.faceId == null
+    : Boolean(faceContext || edgeContext);
+  if (wantsSelection && !usedSelection) {
+    return {
+      error: {
+        code: 'no_selection',
+        message: `${item.label || helperId}: use_selection is true but nothing is selected. Picks clear after every rebuild (each insert_*, set_script, undo): pick again with select_faces / pick_faces / select_edges or pick_begin … pick_done, then insert. Omit use_selection to use the helper default.`,
+      },
+    };
+  }
   const prepare = ctx.prepareHelperInsert;
   if (typeof prepare !== 'function') {
     return { error: { code: 'internal', message: 'prepareHelperInsert handler is missing' } };
@@ -94,7 +114,7 @@ async function runHelperInsert(ctx, helperId, args) {
   }
   const result = await ctx.mutate(source, `Agent helper: ${helperId}`);
   trackPaletteFeature(helperId);
-  return { result: { helperId, ...result } };
+  return { result: { helperId, usedSelection, ...result } };
 }
 
 export const invokeHelperCommand = Object.freeze({
@@ -112,7 +132,7 @@ export const invokeHelperCommand = Object.freeze({
       },
       use_selection: {
         type: 'boolean',
-        description: 'Pass current viewport face/edge picks as compose context',
+        description: `Pass current viewport face/edge picks as compose context.${USE_SELECTION_NOTE}`,
       },
     },
   }),

@@ -216,6 +216,18 @@ check('selection face is the picked top', sel1.result?.face?.normal?.[2] > 0.9, 
 
 const hole = await agentCall(page, 'insert_hole', { use_selection: true, size: 'M6' });
 check('insert_hole use_selection', hole.ok === true && hole.result?.ok === true, JSON.stringify(hole));
+check('insert_hole reports usedSelection', hole.result?.usedSelection === true, JSON.stringify(hole.result?.usedSelection));
+// The selection is single-use: the rebuild cleared the pick, so a second
+// use_selection insert is refused instead of landing on the default top face.
+const selAfter = await agentCall(page, 'selection', {});
+check('rebuild cleared the face pick', !selAfter.result?.face, JSON.stringify(selAfter.result?.face));
+const treeBefore = await agentCall(page, 'feature_tree', {});
+const holeAgain = await agentCall(page, 'insert_hole', { use_selection: true, size: 'M6' });
+check('second use_selection insert → no_selection', holeAgain.ok === false && holeAgain.error?.code === 'no_selection',
+  JSON.stringify(holeAgain.error || holeAgain.result));
+const treeAfterRefusal = await agentCall(page, 'feature_tree', {});
+check('refused insert wrote nothing', (treeAfterRefusal.result?.features || []).length === (treeBefore.result?.features || []).length,
+  JSON.stringify([treeBefore.result?.features?.length, treeAfterRefusal.result?.features?.length]));
 const treeHole = await agentCall(page, 'feature_tree', {});
 check('feature_tree has hole', (treeHole.result?.features || []).some((f) => f.kind === 'hole'),
   JSON.stringify((treeHole.result?.features || []).map((f) => f.kind)));
