@@ -150,6 +150,9 @@ function statusFrom(outcome, script, extras = {}) {
     bbox: ok ? cloneAgentBbox(outcome?.bbox) : null,
     featureCount: agentFeatureCount(text),
     bodyCount: statusBodyCount(outcome, extras),
+    // The run behind this status never reported (worker mid-restart, a
+    // superseded refresh): volume, bbox and errors are the previous run's.
+    ...(outcome?.stale === true ? { stale: true } : {}),
   };
 }
 
@@ -170,6 +173,7 @@ function copyStatus(status) {
     bbox: src.bbox ? { min: src.bbox.min.slice(), max: src.bbox.max.slice() } : null,
     featureCount: src.featureCount || 0,
     bodyCount: src.bodyCount == null ? null : src.bodyCount,
+    ...(src.stale === true ? { stale: true } : {}),
   };
 }
 

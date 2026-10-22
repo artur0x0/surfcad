@@ -119,6 +119,7 @@ export const STATUS_SCHEMA = Object.freeze({
     bbox: { oneOf: [BBOX_SCHEMA, { type: 'null' }] },
     featureCount: { type: 'integer' },
     bodyCount: { type: ['integer', 'null'] },
+    stale: { type: 'boolean' },
   },
 });
 
