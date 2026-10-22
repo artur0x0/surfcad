@@ -69,11 +69,32 @@ async function waitForPairing(attempt, waitMs) {
   }
 }
 
+/**
+ * Compact JSON. Pretty printing put every number of a bbox or a face key on
+ * its own line and made each payload about 2.4 times larger (list_commands
+ * was 240 KB indented, 99 KB compact).
+ */
 function textResult(value, isError = false) {
   return {
-    content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
+    content: [{ type: 'text', text: JSON.stringify(value) }],
     isError,
   };
+}
+
+/** The `return` default over MCP. The page keeps `full`; an agent reads the script with get_script. */
+const MCP_RETURN_DEFAULT = 'status';
+
+/**
+ * Tools whose catalog row takes `return` (mutating tools, undo, redo,
+ * status) get `return: "status"` when the caller left it out. A catalog
+ * row without the property is an older tab contract and is left alone.
+ * @param {{ args?: { properties?: Record<string, unknown> } } | undefined} row
+ * @param {Record<string, unknown>} args
+ */
+export function withDefaultReturn(row, args) {
+  if (!row?.args?.properties || !Object.prototype.hasOwnProperty.call(row.args.properties, 'return')) return args;
+  if (Object.prototype.hasOwnProperty.call(args, 'return')) return args;
+  return { ...args, return: MCP_RETURN_DEFAULT };
 }
 
 /**
@@ -219,7 +240,7 @@ export async function createSurfcadMcpServer(options = {}) {
       // A model-changing tool switches the tab to working on its own.
       const row = catalog.commands.find((c) => c.name === name);
       session.noteAgentToolCall({ mutates: row?.mutates === true || (row?.mutates == null && mutatingTool(name)) });
-      const out = await callPairedBridgeTool(session, name, args);
+      const out = await callPairedBridgeTool(session, name, withDefaultReturn(row, args));
       if (name === 'status' && out.isError !== true && out.value && typeof out.value === 'object' && !Array.isArray(out.value)) {
         return textResult({ ...out.value, ...session.prompts.deliveryStatus() });
       }
