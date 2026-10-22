@@ -178,6 +178,15 @@ page.on('console', (msg) => {
   errors.push(text);
 });
 
+// Every other /api call is answered here too. The Vite proxy forwards an
+// unstubbed call to a backend on :3000 when one is running (a staging box),
+// and that backend answers 401, which "no page errors" then catches. CI has
+// no backend, so this keeps the golden's answer the same on both.
+await page.route('**/api/**', (route) => route.fulfill({
+  status: 200,
+  contentType: 'application/json',
+  body: JSON.stringify({}),
+}));
 await page.route('**/api/auth/me', (route) => route.fulfill({
   status: 200,
   contentType: 'application/json',

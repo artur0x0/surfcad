@@ -42,7 +42,7 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
 {
   const page = read('src/pages/PartnersPage.jsx');
   const main = read('src/main.jsx');
-  const server = read('backend/server.js');
+  const server = read('backend/serverApp.js');
   const arch = read('docs/architecture.md');
   const map = read('docs/ui-map.md');
   check('route mounted at /partners without auth',

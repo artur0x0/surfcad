@@ -54,36 +54,59 @@ const HOOK_DEPS = /\}\s*,\s*\[([^\]]*)\]\s*\)\s*;/g;
 // `const [a, b] = …` and `const a = …`, capturing the bound names.
 const DESTRUCTURED = /^\s*const\s*\[\s*([^\]]+?)\s*\]\s*=/;
 const SIMPLE = /^\s*const\s+([A-Za-z_$][\w$]*)\s*=/;
+// Column-0 declarations: `function Name(`, `export default function`, and
+// `const Name = (…) =>` / `memo(` / `forwardRef(` component wrappers.
+const TOP_LEVEL_SCOPE = /^(?:export\s+(?:default\s+)?)?(?:async\s+)?function\b|^(?:export\s+)?const\s+[A-Za-z_$][\w$]*\s*=/;
 
 for (const file of jsxFiles(SRC)) {
   const text = readFileSync(file, 'utf8');
   const lines = text.split('\n');
   const rel = file.slice(file.indexOf('/src/') + 1);
 
-  // name → 1-based line where its `const` is initialised
+  // A top-level `function` or `const X = …` starts a new scope. A `const`
+  // inside one component cannot shadow a prop or binding of another, so a
+  // dependency is only checked against declarations in its own component.
+  const scopeStarts = [];
+  lines.forEach((line, i) => {
+    if (TOP_LEVEL_SCOPE.test(line)) scopeStarts.push(i + 1);
+  });
+  const scopeOf = (lineNo) => {
+    let start = 0;
+    let end = Infinity;
+    for (const s of scopeStarts) {
+      if (s <= lineNo) start = s;
+      else { end = s; break; }
+    }
+    return { start, end };
+  };
+
+  // name → 1-based lines where a `const` of that name is initialised
   const declaredAt = new Map();
+  const declare = (name, lineNo) => {
+    if (!name) return;
+    if (!declaredAt.has(name)) declaredAt.set(name, []);
+    declaredAt.get(name).push(lineNo);
+  };
   lines.forEach((line, i) => {
     const d = line.match(DESTRUCTURED);
     if (d) {
-      for (const raw of d[1].split(',')) {
-        const name = raw.trim().split(':').pop().trim();
-        if (name && !declaredAt.has(name)) declaredAt.set(name, i + 1);
-      }
+      for (const raw of d[1].split(',')) declare(raw.trim().split(':').pop().trim(), i + 1);
       return;
     }
     const m = line.match(SIMPLE);
-    if (m && !declaredAt.has(m[1])) declaredAt.set(m[1], i + 1);
+    if (m) declare(m[1], i + 1);
   });
 
   const offenders = [];
   for (const m of text.matchAll(HOOK_DEPS)) {
     const depLine = text.slice(0, m.index).split('\n').length;
+    const scope = scopeOf(depLine);
     for (const raw of m[1].split(',')) {
       // Bare identifiers only; `a?.b` / `a.b` read the base at render too, so
       // take the head of any member expression.
       const name = raw.trim().split(/[.?[]/)[0].trim();
       if (!name || !/^[A-Za-z_$][\w$]*$/.test(name)) continue;
-      const at = declaredAt.get(name);
+      const at = (declaredAt.get(name) || []).find((l) => l >= scope.start && l < scope.end);
       if (at && at > depLine) {
         offenders.push(`${rel}:${depLine} depends on '${name}' declared at line ${at}`);
       }
