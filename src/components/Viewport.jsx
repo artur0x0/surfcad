@@ -1768,6 +1768,11 @@ const Viewport = forwardRef(({
       polylineDraftRef.current,
       savedContourGhostRef.current,
       measurementLinesRef.current,
+      movePreviewRef.current,
+      moveFacePreviewRef.current,
+      cutPiecesPreviewRef.current,
+      booleanPiecesPreviewRef.current,
+      booleanRemotePicksRef.current,
     ];
     const highlights = highlightMeshRef.current;
     if (Array.isArray(highlights)) roots.push(...highlights);
@@ -7024,12 +7029,14 @@ const Viewport = forwardRef(({
         side: FrontSide,
       }));
     }
+    // Pieces are in the part's frame; the pick mesh carries its pose.
+    anchorToActivePart(group);
     scene.add(group);
     cutPiecesPreviewRef.current = group;
     const renderer = rendererRef.current;
     const camera = cameraRef.current;
     if (renderer && camera) renderer.render(scene, camera);
-  }, [hideCutBaseMesh, removeCutPreviewGroup]);
+  }, [anchorToActivePart, hideCutBaseMesh, removeCutPreviewGroup]);
 
   const ensureLiveCutPreview = useCallback((state) => {
     const key = cutPreviewKey(state);
@@ -7242,10 +7249,18 @@ const Viewport = forwardRef(({
         polygonOffsetUnits: -2,
         side: FrontSide,
       }));
-      mesh.position.copy(host.position);
+      // The soup is in that part's frame; its assembly mesh carries the pose.
+      applyPartPose(mesh, {
+        t: [host.position.x, host.position.y, host.position.z],
+        q: host.quaternion
+          ? [host.quaternion.x, host.quaternion.y, host.quaternion.z, host.quaternion.w]
+          : [0, 0, 0, 1],
+      });
       mesh.raycast = () => {};
       mesh.renderOrder = FACE_HIGHLIGHT_RENDER_ORDER;
       mesh.userData.booleanRemotePart = pick.partId;
+      // syncAnchoredOverlays re-poses it from that part, not the active one.
+      mesh.userData.overlayPartId = pick.partId;
       group.add(mesh);
     }
     if (!group.children.length) return;
@@ -7337,14 +7352,15 @@ const Viewport = forwardRef(({
       mesh.raycast = ThreeMesh.prototype.raycast;
       group.add(mesh);
     }
-    // Pieces are in the target part's frame; the pick mesh carries its offset.
-    if (resultRef.current) group.position.copy(resultRef.current.position);
+    // Pieces are in the target part's frame; the pick mesh carries its pose
+    // (translation and rotation).
+    anchorToActivePart(group);
     scene.add(group);
     booleanPiecesPreviewRef.current = group;
     const renderer = rendererRef.current;
     const camera = cameraRef.current;
     if (renderer && camera) renderer.render(scene, camera);
-  }, [hideBooleanBaseMesh, removeBooleanPreviewGroup]);
+  }, [anchorToActivePart, hideBooleanBaseMesh, removeBooleanPreviewGroup]);
 
   const ensureBooleanPreview = useCallback((state) => {
     const partId = activePartIdRef.current;
@@ -7566,12 +7582,15 @@ const Viewport = forwardRef(({
     }));
     mesh.name = 'move-preview';
     mesh.raycast = () => {};
+    // The ghost is local vertices plus a local delta; the part's pose puts it
+    // on the part, not on whichever part sits at the origin.
+    anchorToActivePart(mesh);
     scene.add(mesh);
     movePreviewRef.current = mesh;
     const renderer = rendererRef.current;
     const camera = cameraRef.current;
     if (renderer && camera) renderer.render(scene, camera);
-  }, [clearMovePreview, getHelperBuffer]);
+  }, [anchorToActivePart, clearMovePreview, getHelperBuffer]);
 
   const syncMoveTargetFromMesh = useCallback((state) => {
     if (!state?.target?.at) return state;
@@ -7731,12 +7750,13 @@ const Viewport = forwardRef(({
     const mesh = new ThreeMesh(geom, makePreviewSkinMaterial());
     mesh.name = 'move-face-preview';
     mesh.raycast = () => {};
+    anchorToActivePart(mesh);
     scene.add(mesh);
     moveFacePreviewRef.current = mesh;
     const renderer = rendererRef.current;
     const camera = cameraRef.current;
     if (renderer && camera) renderer.render(scene, camera);
-  }, [hideMoveFaceBase, removeMoveFacePreview]);
+  }, [anchorToActivePart, hideMoveFaceBase, removeMoveFacePreview]);
 
   const ensureMoveFacePreview = useCallback((state) => {
     const dist = Number(state?.distance);
@@ -10900,6 +10920,22 @@ const Viewport = forwardRef(({
             return out;
           },
           lastRenderedIs: (mesh) => window.__VIEWPORT__?._lastRenderedMesh === mesh,
+          // World-space box of one scene object by name, or of the active solid
+          // for 'active-solid'. A preview on a placed part must land on that
+          // part; golden:placed-part-previews compares these two boxes.
+          worldBounds: (name) => {
+            const obj = name === 'active-solid'
+              ? resultRef.current
+              : sceneRef.current?.getObjectByName(name);
+            if (!obj) return null;
+            obj.updateMatrixWorld(true);
+            const box = new Box3().setFromObject(obj, true);
+            if (box.isEmpty()) return null;
+            return {
+              min: [box.min.x, box.min.y, box.min.z],
+              max: [box.max.x, box.max.y, box.max.z],
+            };
+          },
           // Run a script exactly as the Run button does -- validate, execute in the worker,
           // render into the live scene, auto-fit. Resolves { error, mesh } so a headless
           // caller can tell a fresh build from a failure without reading React state.
