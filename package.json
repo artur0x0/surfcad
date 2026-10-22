@@ -24,6 +24,7 @@
         "golden:agent-block-edit-leftover": "node scripts/golden/smoke_agent_block_edit_leftover.mjs",
         "golden:agent-move-target": "node scripts/golden/smoke_agent_move_target.mjs",
         "golden:geometry-worker-crash": "node scripts/golden/smoke_geometry_worker_crash.mjs",
+        "golden:undo-after-timeout": "node scripts/golden/smoke_undo_after_timeout.mjs",
         "golden:geometry-pool": "node scripts/golden/smoke_geometry_pool.mjs",
         "golden:kernel-crash-headless": "node scripts/golden/smoke_kernel_crash_headless.mjs",
         "golden:position-limit": "node scripts/golden/smoke_position_limit.mjs",

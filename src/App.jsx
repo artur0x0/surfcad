@@ -9405,6 +9405,11 @@ const App = () => {
       partName,
     };
     if (reported) result.runFailure = failure || null;
+    // The viewport never stamped this run (it bailed early, a later refresh
+    // superseded it, or the kernel was mid-restart). The errors above are
+    // the previous failure, not this run's: say so instead of passing them
+    // off as fresh.
+    if (!reported) result.stale = true;
     return result;
   };
 
@@ -9457,9 +9462,17 @@ const App = () => {
           runFailure: null,
         };
       }
-      const epochBefore = runOutcomeEpochRef.current;
-      const ran = await refreshAssemblyRef.current?.(text);
-      const outcome = agentCadRunOutcome(epochBefore, ran);
+      let epochBefore = runOutcomeEpochRef.current;
+      let ran = await refreshAssemblyRef.current?.(text);
+      let outcome = agentCadRunOutcome(epochBefore, ran);
+      if (outcome.stale === true) {
+        // Same recovery as agentRunOutcomeSettled: one more run once the
+        // kernel is back, so a mutate during a worker restart reports itself.
+        try { await manifoldContext.whenReady(); } catch { /* the retry reports */ }
+        epochBefore = runOutcomeEpochRef.current;
+        ran = await refreshAssemblyRef.current?.(text);
+        outcome = agentCadRunOutcome(epochBefore, ran);
+      }
       const dropped = viewportRef.current?.readDroppedPaints?.(assemblyRef.current?.colors ?? null);
       if (Array.isArray(dropped)) outcome.droppedPaints = dropped;
       return outcome;
@@ -9893,6 +9906,17 @@ const App = () => {
     const epochBefore = runOutcomeEpochRef.current;
     const ran = await refreshAssemblyRef.current?.(scriptText);
     return agentCadRunOutcome(epochBefore, ran);
+  };
+  /**
+   * A run that never reported is re-run once after the kernel is ready. The
+   * watchdog replaces a worker that blew its budget; an undo or edit that
+   * lands during that restart used to come back as the old timeout failure.
+   */
+  const agentRunOutcomeSettled = async (text) => {
+    const first = await agentRunOutcome(text);
+    if (first.stale !== true) return first;
+    try { await manifoldContext.whenReady(); } catch { /* the retry reports */ }
+    return agentRunOutcome(text);
   };
   fillAgentHost(agentHostRef, {
     agentPrompt: runAgentPrompt,
@@ -10918,7 +10942,7 @@ const App = () => {
       partHistoriesRef.current[id] = undone.history;
       applyPartHistory(undone.history);
       codeEditorRef.current?.setTextOnly?.(undone.code);
-      const outcome = await agentRunOutcome(undone.code);
+      const outcome = await agentRunOutcomeSettled(undone.code);
       return {
         handled: true,
         result: {
@@ -10931,6 +10955,10 @@ const App = () => {
           ...(Object.prototype.hasOwnProperty.call(outcome, 'runFailure')
             ? { runFailure: outcome.runFailure }
             : {}),
+          ...(outcome.stale === true ? { stale: true } : {}),
+          // The script the undo restored: the bridge echoes this, never a
+          // re-read that could still show the undone block.
+          restoredScript: undone.code,
           status: {
             volume: outcome.volume ?? null,
             bbox: outcome.bbox ?? null,
@@ -10938,6 +10966,7 @@ const App = () => {
             featureCount: agentFeatureCount(undone.code),
             bodyCount: outcome.bodyCount ?? null,
             runState: outcome.ok === true ? 'ok' : 'failed',
+            ...(outcome.stale === true ? { stale: true } : {}),
           },
         },
       };
@@ -10995,7 +11024,7 @@ const App = () => {
       partHistoriesRef.current[id] = redone.history;
       applyPartHistory(redone.history);
       codeEditorRef.current?.setTextOnly?.(redone.code);
-      const outcome = await agentRunOutcome(redone.code);
+      const outcome = await agentRunOutcomeSettled(redone.code);
       return {
         handled: true,
         result: {
@@ -11008,6 +11037,8 @@ const App = () => {
           ...(Object.prototype.hasOwnProperty.call(outcome, 'runFailure')
             ? { runFailure: outcome.runFailure }
             : {}),
+          ...(outcome.stale === true ? { stale: true } : {}),
+          restoredScript: redone.code,
           status: {
             volume: outcome.volume ?? null,
             bbox: outcome.bbox ?? null,
@@ -11015,6 +11046,7 @@ const App = () => {
             featureCount: agentFeatureCount(redone.code),
             bodyCount: outcome.bodyCount ?? null,
             runState: outcome.ok === true ? 'ok' : 'failed',
+            ...(outcome.stale === true ? { stale: true } : {}),
           },
         },
       };

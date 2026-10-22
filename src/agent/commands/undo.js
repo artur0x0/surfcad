@@ -21,12 +21,17 @@ export const undoCommand = Object.freeze({
     if (routed.error) {
       return { error: routed.error };
     }
-    const base = routed.result || {};
+    const { restoredScript, ...base } = routed.result || {};
     if (base.kind === 'part' && base.status && typeof ctx.remember === 'function') {
-      const script = ctx.getScript();
+      // Echo the script the host restored, never a re-read of the editor
+      // that could still hold the block this step removed.
+      const script = typeof restoredScript === 'string' ? restoredScript : ctx.getScript();
       const remembered = ctx.remember({
         ok: base.ok === true,
         errors: base.errors,
+        // A run that never reported: status says stale instead of passing the
+        // previous failure off as this step's result.
+        ...(base.stale === true ? { stale: true } : {}),
         volume: base.status.volume,
         bbox: base.status.bbox,
         partName: base.status.partName,
