@@ -2612,7 +2612,9 @@ const App = () => {
     if (picked.ok) setCurrentScript(picked.script);
     else setCurrentScript('// This part has no file yet.\n');
     focusPartHistory(active.id, picked.ok ? picked.script : '');
-    revealPartOnRibbon(active.id, picked.ok ? picked.script : '');
+    // Opening an assembly lands in assembly mode: no part is selected, the
+    // title is the assembly name, and the ribbon shows the joints. A part is
+    // selected by a row tap, a body tap, or an agent set_active_part.
     await applyAssemblyOpenHold();
     const report = typeof progress === 'function' ? progress : null;
     assemblyOpenProgressRef.current = report;

@@ -86,7 +86,11 @@ test('App selects the part and syncs currentScript on agent create / open', () =
   const add = APP.slice(APP.indexOf('const handleAddPart'), APP.indexOf('const handleDeletePart'));
   assert.match(add, /revealPartOnRibbon\(/);
   assert.match(add, /newPartRowPosition\(order/);
-  assert.match(APP, /finishOpenedPart[\s\S]*?revealPartOnRibbon\(active\.id/);
+  // Opening an assembly lands in assembly mode: finishOpenedPart loads the
+  // active part's script into the editor but does not select the part.
+  const opened = APP.slice(APP.indexOf('const finishOpenedPart ='), APP.indexOf('finishOpenedPartRef.current = finishOpenedPart'));
+  assert.match(opened, /setCurrentScript\(picked\.script\)/);
+  assert.doesNotMatch(opened, /revealPartOnRibbon\(|rememberCadPart\(/);
   const setEditor = APP.slice(APP.indexOf('setEditor(src)'), APP.indexOf('readHistory()'));
   assert.match(setEditor, /revealPartOnRibbon\(/);
   const openPart = APP.slice(APP.indexOf('const handleOpenVaultPart'), APP.indexOf('const handleCopyPartToAssembly'));
