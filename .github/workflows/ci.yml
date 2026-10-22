@@ -423,6 +423,15 @@ jobs:
             echo "agent prompt states golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:undo-after-timeout | tee "${RUNNER_TEMP}/undo-after-timeout.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/undo-after-timeout.log"; then
+            echo "undo after timeout golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'undo after timeout golden: ok' "${RUNNER_TEMP}/undo-after-timeout.log"; then
+            echo "undo after timeout golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
