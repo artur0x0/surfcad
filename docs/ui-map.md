@@ -574,8 +574,10 @@ Mobile specifics:
 - **Feature sheets (Slice Mobile C → the feature card):** `FeatureEditSheet.jsx`
   sits on the shared bottom card (`data-feature-card`,
   `data-feature-sheet-layout="feature-card"`). On a phone it docks to the CAD
-  pane bottom and hides the stage switcher. Desktop uses the same card in the
-  viewer. The Script stage does not float a second card over the editor.
+  pane bottom and hides the stage switcher, and the feature-sheet camera slide
+  lifts the part clear of it. Desktop uses the same card in the viewer and
+  never slides the camera (`featureSheetCamera.js` `enabled`, gated on
+  `isMobile`). The Script stage does not float a second card over the editor.
   The CAD strip, the desktop strip, and long-press reopen the **creation dialog**
   for that feature (`beginFeatureEdit`), pre-filled from the block. Confirm
   rewrites that block in place (`confirmFeatureEdit`). Fillet and chamfer Confirm does not rebuild the edge list; it runs the same Accept composer as a new blend (`replaceEditedBlend`) and splices that block over the old one, so disconnected edges stay separate blends. New consts are unique in the whole script, not only in the prefix. One write, one undo. X and Esc write nothing.

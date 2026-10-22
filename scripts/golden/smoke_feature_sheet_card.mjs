@@ -277,6 +277,12 @@ console.log('feature sheet card — source');
     && /getVisibleFrame/.test(view)
     && /featureSheetCameraOwned/.test(view)
     && /prefers-reduced-motion/.test(view));
+  check('desktop never slides: the session is gated on the mobile layout',
+    /enabled = \(\) => true/.test(camera)
+    && /isEnabled/.test(camera)
+    && /enabled: \(\) => isMobileRef\.current/.test(view)
+    && /isMobileRef\.current = isMobile === true/.test(view)
+    && /never moves the camera/.test(arch));
   check('docs name the shell, the hidden switcher, and the visible-area orbit',
     /## Feature card/.test(arch) && /FeatureSheet/.test(arch)
     && /stage switcher/.test(arch)
@@ -401,6 +407,9 @@ function Stage() {
   const paneRef = useRef(null);
   const [entry, setEntry] = useState('crossSection');
   const [compact, setCompact] = useState(true);
+  // The session reads the layout live: the slide is for the phone card only.
+  const compactRef = useRef(true);
+  compactRef.current = compact;
   const [panel, setPanel] = useState('contour');
   const [cardOpen, setCardOpen] = useState(true);
   const [helperId, setHelperId] = useState('cube');
@@ -435,6 +444,7 @@ function Stage() {
       getControls: () => controls,
       setControls: (next) => { controls = next; },
       reducedMotion: () => true,
+      enabled: () => compactRef.current === true,
       getVisibleFrame: () => {
         const host = paneRef.current;
         const card = host?.querySelector('[data-feature-card]');
@@ -1111,18 +1121,54 @@ attachConsentPresetToBrowser(browser);
       && card.gapRight >= 8
       && card.pillGap == null,
       JSON.stringify(card));
+    // Desktop: the card never moves the camera. The session is gated on the
+    // layout, so a slide request is refused, no snapshot is taken, no view
+    // offset is set, and close restores nothing.
+    const desktopGate = () => page.evaluate(() => {
+      const sheet = window.__sheet;
+      const before = sheet.pose();
+      const slid = sheet.session.slideBy(-0.3);
+      sheet.controls().update();
+      const after = sheet.pose();
+      const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+      const restored = sheet.session.restore();
+      sheet.controls().update();
+      const closed = sheet.pose();
+      return {
+        enabled: sheet.session.isEnabled(),
+        slid,
+        restored,
+        snapshot: sheet.session.hasSnapshot(),
+        position: dist(after.position, before.position),
+        target: dist(after.target, before.target),
+        closedPosition: dist(closed.position, before.position),
+        view: sheet.camera.view ? { ...sheet.camera.view } : null,
+      };
+    });
+    const gateHolds = (gate) => gate.enabled === false
+      && gate.slid === false
+      && gate.restored === false
+      && gate.snapshot === false
+      && gate.position < 1e-9
+      && gate.target < 1e-9
+      && gate.closedPosition < 1e-9
+      && !gate.view?.enabled;
     const deskBefore = await parkAndShoot('feature-sheet-circle-desktop-before.png', { slide: false });
-    check('desktop before-slide parks the part under the card',
+    check('desktop: the part can sit under the card',
       deskBefore.low < deskBefore.cardTop,
       JSON.stringify(deskBefore));
-    const deskAfter = await parkAndShoot('feature-sheet-circle-desktop-after.png', { slide: true });
-    check('desktop: projected part box sits above the card while it is open',
-      Number.isFinite(deskAfter.low) && deskAfter.low + 0.02 >= deskAfter.cardTop,
-      JSON.stringify(deskAfter));
+    const deskGate = await desktopGate();
+    check('desktop: opening the card leaves the camera alone (no slide, no snapshot, no view offset)',
+      gateHolds(deskGate), JSON.stringify(deskGate));
+    const deskAfter = await parkAndShoot('feature-sheet-circle-desktop-after.png', { slide: false });
+    check('desktop: the part stays where it was while the card is open',
+      Number.isFinite(deskAfter.low) && Math.abs(deskAfter.low - deskBefore.low) < 1e-6,
+      JSON.stringify({ deskBefore, deskAfter }));
 
     await show('makeExtrude', false);
     await parkAndShoot('feature-sheet-extrude-desktop-before.png', { slide: false });
-    await parkAndShoot('feature-sheet-extrude-desktop-after.png', { slide: true });
+    await parkAndShoot('feature-sheet-extrude-desktop-after.png', { slide: false });
+    check('desktop extrude card leaves the camera alone', gateHolds(await desktopGate()));
 
     const showFillet = async (phone) => {
       await page.setViewportSize(phone ? PHONE : { width: 1280, height: 800 });
@@ -1203,11 +1249,16 @@ attachConsentPresetToBrowser(browser);
       && filletDesk.pillGap == null,
       JSON.stringify(filletDesk));
     await parkAndShoot('feature-sheet-fillet-desktop-before.png', { slide: false });
-    const filletDeskAfter = await parkAndShoot('feature-sheet-fillet-desktop-after.png', { slide: true });
-    check('desktop fillet: projected part box sits above the card',
-      Number.isFinite(filletDeskAfter.low) && filletDeskAfter.low + 0.02 >= filletDeskAfter.cardTop,
-      JSON.stringify(filletDeskAfter));
+    await parkAndShoot('feature-sheet-fillet-desktop-after.png', { slide: false });
+    const filletDeskGate = await desktopGate();
+    check('desktop fillet: the card leaves the camera alone', gateHolds(filletDeskGate), JSON.stringify(filletDeskGate));
 
+    // The phone card owns the camera: orbit during the card, close restores.
+    await showFillet(true);
+    const phoneGate = await page.evaluate(() => ({
+      enabled: window.__sheet.session.isEnabled(),
+    }));
+    check('phone: the session is enabled', phoneGate.enabled === true, JSON.stringify(phoneGate));
     const orbit = await page.evaluate(() => {
       const sheet = window.__sheet;
       const before = sheet.pose();

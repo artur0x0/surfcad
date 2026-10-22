@@ -1789,8 +1789,21 @@ const Viewport = forwardRef(({
   /** G1 tangent chain propagation for Edge pick — ON by default (circular / fillet loops). */
   const [tangentProp, setTangentProp] = useState(true);
   const tangentPropRef = useRef(true);
-  /** Bottom feature card owns the camera. Game never sets this. */
+  /**
+   * Bottom feature card owns the camera. Game never sets this, and desktop
+   * never does either: the slide is for the phone bottom sheet only.
+   */
   const sheetCameraOwnedRef = useRef(false);
+  /**
+   * The feature-card camera slide runs only in the mobile layout. The phone
+   * card covers the part, so the slide lifts the faces and edges clear of
+   * it. The desktop card sits in the pane with room above it, and the model
+   * must stay where the user left it when a card opens or closes. `isMobile`
+   * is App's single 768px media-query flag, read live so a resize mid-card
+   * takes effect on the next tick.
+   */
+  const isMobileRef = useRef(isMobile === true);
+  isMobileRef.current = isMobile === true;
   const featureCardKindRef = useRef('');
   const yieldToFeatureEditCardRef = useRef(() => {});
   const onFeatureEditDismissRef = useRef(onFeatureEditDismiss);
@@ -1803,6 +1816,7 @@ const Viewport = forwardRef(({
       setControls: (next) => { controlsRef.current = next; },
       reducedMotion: () => typeof window !== 'undefined'
         && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      enabled: () => isMobileRef.current,
       getVisibleFrame: () => {
         const pane = containerRef.current;
         if (!pane || typeof pane.getBoundingClientRect !== 'function') return null;
@@ -2068,7 +2082,7 @@ const Viewport = forwardRef(({
                                   ? 'joint'
                                   : '';
   featureCardKindRef.current = featureCardKind;
-  sheetCameraOwnedRef.current = featureCardKind !== '';
+  sheetCameraOwnedRef.current = featureCardKind !== '' && isMobile === true;
   const featurePopupOpen = mode !== 'game' && (
     featureCardKind !== '' || (!!holeCard && !contourMode)
   );
@@ -2402,7 +2416,7 @@ const Viewport = forwardRef(({
     showCadBodyHighlight: () => showCadBodyHighlightRef.current(),
     /** Install one part's solid and rebuild face, edge, and contour graphs. */
     adoptActiveSolid: (payload) => adoptActiveSolidRef.current(payload),
-    /** True while a bottom feature card owns the camera. Game is never. */
+    /** True while a bottom feature card owns the camera: phone layout only. Game and desktop are never. */
     featureSheetCameraOwned: () => sheetCameraOwnedRef.current,
     /** Drop joint-pick face highlights. A part id drops one side; omit it to drop both. */
     clearJointHighlights: (partId) => clearJointHighlightsRef.current(partId),
@@ -2436,9 +2450,10 @@ const Viewport = forwardRef(({
       const scene = sceneRef.current;
       const camera = cameraRef.current;
       if (!renderer || !scene || !camera) return null;
-      // An open feature card pans the view with a projection offset so the
-      // model sits in the band above the card. A capture is the whole frame:
-      // render it centered on the target, then put the offset back.
+      // On a phone an open feature card pans the view with a projection
+      // offset so the model sits in the band above the card. A capture is the
+      // whole frame: render it centered on the target, then put the offset
+      // back. Desktop never sets the offset, so the capture is the live view.
       const view = camera.view?.enabled ? { ...camera.view } : null;
       if (view) {
         camera.clearViewOffset();

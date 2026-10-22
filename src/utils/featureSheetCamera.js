@@ -402,6 +402,14 @@ export function remountTrackball(camera, prev) {
  * taken once). `restore` tweens back to that snapshot and remounts Trackball.
  * `abandon` drops the snapshot and leaves the live pose, so a later aim is
  * not pulled back when the card unmounts.
+ *
+ * `enabled` is read on every `slideBy`. While it returns false the session
+ * takes no snapshot, pans nothing, and sets no view offset, so `restore` is
+ * a no-op: the camera is left exactly where the user had it. Viewport passes
+ * the mobile-layout flag here, because the slide exists only for the phone
+ * bottom sheet, where the card covers the part and its faces and edges. On
+ * desktop the card sits in the pane with room above it and the model must
+ * stay put when a card opens or closes.
  */
 export function createSheetCameraSession({
   getCamera,
@@ -409,6 +417,7 @@ export function createSheetCameraSession({
   setControls,
   remountControls = remountTrackball,
   reducedMotion = () => false,
+  enabled = () => true,
   flattenLift = () => {},
   now = () => performance.now(),
   requestFrame = (fn) => requestAnimationFrame(fn),
@@ -464,6 +473,8 @@ export function createSheetCameraSession({
 
   return {
     isRestoring: () => restoring,
+    /** True when a slide would move the camera (the mobile bottom-sheet layout). */
+    isEnabled: () => enabled() === true,
     hasSnapshot: () => snapshot != null,
     snapshotPose: () => (snapshot ? { ...snapshot, position: snapshot.position.slice() } : null),
     /**
@@ -471,6 +482,8 @@ export function createSheetCameraSession({
      * after flattening any legacy under-title NDC lift.
      */
     slideBy(ndcDelta) {
+      // Desktop: the card never owns the camera. No snapshot, no pan, no offset.
+      if (enabled() !== true) return false;
       const camera = getCamera?.();
       const controls = getControls?.();
       if (!camera || !controls?.target) return false;
