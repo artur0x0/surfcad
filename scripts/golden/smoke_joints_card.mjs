@@ -300,16 +300,26 @@ async function runView(browser, vp) {
   const before = await camera(page);
   await page.locator('[data-joints-button]').click();
   await page.waitForSelector('[data-joint-card]', { timeout: 8000 });
-  await page.waitForFunction((shot) => {
-    const now = globalThis.__VIEWPORT__?.stageCamera?.();
-    if (!now || !shot) return false;
-    const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-    return d(now.position, shot.position) > 0.2 || d(now.target, shot.target) > 0.2;
-  }, before, { timeout: 4000 }).catch(() => {});
+  if (vp.touch) {
+    await page.waitForFunction((shot) => {
+      const now = globalThis.__VIEWPORT__?.stageCamera?.();
+      if (!now || !shot) return false;
+      const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+      return d(now.position, shot.position) > 0.2 || d(now.target, shot.target) > 0.2;
+    }, before, { timeout: 4000 }).catch(() => {});
+  } else {
+    await page.waitForTimeout(600);
+  }
   const after = await camera(page);
   const slid = dist(before?.position, after?.position) > 0.2 || dist(before?.target, after?.target) > 0.2;
   console.log(`  ${vp.name} camera before ${JSON.stringify(before)} after ${JSON.stringify(after)}`);
-  check(`${vp.name} the open card slides the camera`, slid, JSON.stringify({ before, after }));
+  if (vp.touch) {
+    check(`${vp.name} the open card slides the camera`, slid, JSON.stringify({ before, after }));
+  } else {
+    // Desktop: the card never moves the camera (the slide is phone-only).
+    const still = dist(before?.position, after?.position) < 1e-3 && dist(before?.target, after?.target) < 1e-3;
+    check(`${vp.name} the open card leaves the camera alone`, still, JSON.stringify({ before, after }));
+  }
 
   const opened = await cardState(page);
   check(`${vp.name} the apply button says Add`, opened.apply === 'Add', JSON.stringify(opened));

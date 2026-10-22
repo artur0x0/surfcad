@@ -332,7 +332,14 @@ async function runViewport(page, width) {
     )
     : null;
   console.log(`  ${width} slide before ${before?.toFixed?.(3)} after ${after?.toFixed?.(3)} lifted ${lifted?.toFixed?.(3)} moved ${moved?.toFixed?.(3)}`);
-  check(`${width} dimension card slides the part up`, lifted != null && lifted >= 0.04 && moved > 0.5, `lifted ${lifted} moved ${moved}`);
+  if (width === 390) {
+    check(`${width} dimension card slides the part up`, lifted != null && lifted >= 0.04 && moved > 0.5, `lifted ${lifted} moved ${moved}`);
+  } else {
+    // Desktop: the card never moves the camera (the slide is phone-only).
+    check(`${width} dimension card leaves the camera alone`,
+      moved != null && moved < 1e-3 && !afterCam?.view?.enabled,
+      `lifted ${lifted} moved ${moved} view ${JSON.stringify(afterCam?.view)}`);
+  }
 
   await clickDot(page, 0);
   await clickDot(page, 1);

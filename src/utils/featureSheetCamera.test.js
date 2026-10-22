@@ -112,6 +112,43 @@ test('close restores the pre-open pose after an orbit, within epsilon', () => {
   assert.equal(session.hasSnapshot(), false);
 });
 
+test('a disabled session (desktop layout) never snapshots, pans, or offsets; restore is a no-op', () => {
+  const { camera, controls } = rig();
+  let current = controls;
+  let mobile = false;
+  const paneRect = { left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 };
+  const cardRect = { left: 100, top: 380, right: 700, bottom: 590, width: 600, height: 210 };
+  const session = createSheetCameraSession({
+    getCamera: () => camera,
+    getControls: () => current,
+    setControls: (next) => { current = next; },
+    reducedMotion: () => true,
+    enabled: () => mobile,
+    getVisibleFrame: () => ({ paneRect, cardRect }),
+  });
+  const before = captureViewPose(camera, current);
+  assert.equal(session.isEnabled(), false);
+  assert.equal(session.slideBy(-0.4), false);
+  assert.equal(session.hasSnapshot(), false);
+  assert.equal(posesMatch(captureViewPose(camera, current), before, 1e-9), true);
+  assert.equal(camera.view?.enabled ?? false, false, 'no view offset on desktop');
+  assert.equal(session.restore(), false);
+  assert.equal(posesMatch(captureViewPose(camera, current), before, 1e-9), true);
+
+  // The same session slides once the layout is the phone bottom sheet.
+  mobile = true;
+  assert.equal(session.isEnabled(), true);
+  assert.equal(session.slideBy(-0.4), true);
+  assert.ok(session.hasSnapshot());
+  current.update();
+  assert.equal(posesMatch(captureViewPose(camera, current), before, 1e-3), false);
+  assert.equal(camera.view?.enabled, true, 'phone keeps the visible-area orbit offset');
+  session.restore();
+  current.update();
+  assert.equal(posesMatch(captureViewPose(camera, current), before, 1e-3), true);
+  assert.equal(session.hasSnapshot(), false);
+});
+
 test('a second slide keeps the first snapshot', () => {
   const { camera, controls } = rig();
   let current = controls;

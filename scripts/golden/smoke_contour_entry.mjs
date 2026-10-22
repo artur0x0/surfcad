@@ -2,7 +2,8 @@
 /**
  * Contour entry at 390px and 1280px.
  *
- * The plane card slides the part up and is titled Contour. Select plane
+ * The plane card is titled Contour. On the phone it slides the part up; on
+ * desktop it leaves the camera alone. Select plane
  * aims the camera along the sketch-plane normal, zoom-fits, and closes the
  * card while the rail stays in contour tools. Back undoes one polyline
  * point, and the next Back reopens the plane card. Confirm finishes.
@@ -181,7 +182,15 @@ async function runSize(browser, label, contextOptions) {
     )
     : null;
   console.log(`  ${label} slide before ${before?.toFixed?.(3)} after ${after?.toFixed?.(3)} lifted ${lifted?.toFixed?.(3)} moved ${moved?.toFixed?.(3)}`);
-  check(`${label} plane card slides the part up`, lifted != null && lifted >= 0.08 && moved > 0.5, `lifted ${lifted} moved ${moved}`);
+  if (label === '390') {
+    check(`${label} plane card slides the part up`, lifted != null && lifted >= 0.08 && moved > 0.5, `lifted ${lifted} moved ${moved}`);
+  } else {
+    // Desktop: the card never moves the camera (the slide is phone-only).
+    check(`${label} plane card leaves the camera alone`,
+      moved != null && moved < 1e-3 && !afterCam?.view?.enabled
+      && lifted != null && Math.abs(lifted) < 1e-3,
+      `lifted ${lifted} moved ${moved} view ${JSON.stringify(afterCam?.view)}`);
+  }
   await page.screenshot({ path: join(SHOT_DIR, `contour-entry-${label}-plane.png`) });
 
   await page.locator('[data-contour-tool="polyline"]').click();
