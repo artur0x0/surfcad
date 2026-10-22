@@ -432,6 +432,15 @@ jobs:
             echo "undo after timeout golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:placed-part-previews | tee "${RUNNER_TEMP}/placed-part-previews.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/placed-part-previews.log"; then
+            echo "placed part previews golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q '^all passed' "${RUNNER_TEMP}/placed-part-previews.log"; then
+            echo "placed part previews golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
