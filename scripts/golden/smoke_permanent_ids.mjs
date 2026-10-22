@@ -113,7 +113,7 @@ console.log('\nmigration strips once and keeps every part file');
   eq('copiedFrom keeps the body', parsed.parts[0].copiedFrom, OTHER);
   eq('group partIds keep the body', parsed.groups[0].partIds, [BODY]);
   eq('group id stays', parsed.groups[0].id, GROUP);
-  eq('part paths stay', parsed.parts.map((part) => part.id), [GB, PLATE]);
+  eq('part paths stay', parsed.parts.map((part) => part.path), [GB, PLATE]);
   const twice = planSurfIdMigrationCommit(after);
   ok('second pass is a no-op', twice.changed === false && twice.files.length === 0);
   const again = after.map((entry) => {
@@ -300,12 +300,16 @@ console.log('\nreload between commit and local apply');
   eq('committed header is the minted id', readSurfId((await gh.readFile(vault.repo, shim, 'main')).content), BODY);
   ok('Add to Repo still shows before the local apply', showAddToRepo(doc.parts[1]));
   const opened = await openVaultAssembly(gh, vault.repo, 'Gearbox', { branch: 'main', headSha: pushed.sha });
-  const reconciled = reconcileSyncedFromTip(doc, opened.scripts);
+  // Open keys scripts by surf id and keeps the repo path on each row. This
+  // working copy still keys its rows by path, so re-key the tip scripts the
+  // same way before reconciling (the app's rows and scripts share one key).
+  const tipByPath = Object.fromEntries(opened.doc.parts.map((row) => [row.path, opened.scripts[row.id]]));
+  const reconciled = reconcileSyncedFromTip(doc, tipByPath);
   const shimRow = reconciled.doc.parts.find((part) => part.id === shim);
   ok('reload clears isSynced', shimRow.isSynced === true);
   ok('reload does not leave Add to Repo', !showAddToRepo(shimRow));
   eq('reload keeps the id', shimRow.surfId, BODY);
-  eq('reload keeps the script body', stripSurfId(opened.scripts[shim]), shimBody);
+  eq('reload keeps the script body', stripSurfId(tipByPath[shim]), shimBody);
   const app = readFileSync(new URL('../../src/App.jsx', import.meta.url), 'utf8');
   ok('reseed reconciles isSynced from the tip', /reconcileSyncedFromTip\(/.test(app));
 }
@@ -376,7 +380,9 @@ console.log('\nunsynced parts list does not show local:');
     { id: 'bare-1', name: 'Part (1)' },
     { id: 'bare-2', name: 'Part (1)' },
   ]);
-  eq('second unsynced name gets the next free path', taken.get('bare-2'), 'parts/Part (1) (2).js');
+  // A file-name collision takes the `-2` ordinal (vaultPartFileStem; the
+  // same rule golden:git-g2-open-save pins for resolveNewPartPath).
+  eq('second unsynced name gets the next free path', taken.get('bare-2'), 'parts/Part (1)-2.js');
   ok('no path is not invented for an empty feed', partListSubtitles([]).size === 0);
 }
 
@@ -479,12 +485,14 @@ console.log('\nlegacy local: row id migrates and still opens');
     colors: { [`local:${BODY}`]: { part: '#336699' } },
   };
   const loaded = parseSurfJson(rawSurf);
-  eq('parseSurfJson drops a local: path', loaded.parts[0].id, repoPath);
-  eq('parseSurfJson active id is the repo path', loaded.activeId, repoPath);
+  // The row keeps its surf id as `id`; the stripped repo path is `path`, and
+  // `activeId` is the part id.
+  eq('parseSurfJson drops a local: path', [loaded.parts[0].id, loaded.parts[0].path], [BODY, repoPath]);
+  eq('parseSurfJson active id is the part id', loaded.activeId, BODY);
   eq('parseSurfJson drops a local: color key', loaded.colors[BODY].part, '#336699');
   ok('parsed assembly has no local: text', !JSON.stringify(loaded).includes('local:'));
   const round = parseSurfJson(stringifySurfJson(loaded));
-  eq('parsed surf json round-trips', round.parts[0].id, repoPath);
+  eq('parsed surf json round-trips', [round.parts[0].id, round.parts[0].path], [BODY, repoPath]);
 }
 
 console.log('\nmigrated part renders, and the Parts list has no local: text');
@@ -555,7 +563,9 @@ console.log('\nmigrated part renders, and the Parts list has no local: text');
     stdin: {
       contents: `export { renderToStaticMarkup } from 'react-dom/server';
 export { createElement } from 'react';
-export { default as PartFeed } from './src/components/PartFeed.jsx';`,
+export { default as PartFeed } from './src/components/PartFeed.jsx';
+export { AuthProvider } from './src/hooks/useAuth.jsx';
+export { GithubSessionProvider } from './src/hooks/useGithubSession.jsx';`,
       resolveDir: new URL('../../', import.meta.url).pathname,
       loader: 'jsx',
     },
@@ -564,7 +574,9 @@ export { default as PartFeed } from './src/components/PartFeed.jsx';`,
     platform: 'node',
     write: false,
     jsx: 'automatic',
-    define: { 'process.env.NODE_ENV': '"production"' },
+    // Vite's import.meta.env does not exist under Node; the playtest flag is
+    // read at module load (src/agent/ws/autoApprove.js).
+    define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env.VITE_SURFCAD_PLAYTEST': '"0"' },
     banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
     logLevel: 'error',
   });
@@ -574,15 +586,19 @@ export { default as PartFeed } from './src/components/PartFeed.jsx';`,
   const rowOf = (id) => ({
     id, name: 'Part (1)', visible: true, order: 0, action: 'add-to-repo', isSynced: false, dirty: true,
   });
-  const markup = (id) => ui.renderToStaticMarkup(ui.createElement(ui.PartFeed, {
-    placement: 'mobile',
-    isMobile: false,
-    source: 'git',
-    assemblyName: 'Assembly',
-    currentBranch: 'main',
-    rows: [rowOf(id)],
-    activeId: id,
-  }));
+  // PartFeed reads the GitHub session, which reads auth; static markup runs
+  // no effects, so the providers only supply their initial state.
+  const markup = (id) => ui.renderToStaticMarkup(ui.createElement(ui.AuthProvider, null,
+    ui.createElement(ui.GithubSessionProvider, null,
+      ui.createElement(ui.PartFeed, {
+        placement: 'mobile',
+        isMobile: false,
+        source: 'git',
+        assemblyName: 'Assembly',
+        currentBranch: 'main',
+        rows: [rowOf(id)],
+        activeId: id,
+      }))));
   const visible = (html) => html.replace(/<[^>]+>/g, ' ');
   const unsyncedHtml = markup(legacy);
   const unsyncedText = visible(unsyncedHtml);
@@ -613,13 +629,17 @@ export { default as PartFeed } from './src/components/PartFeed.jsx';`,
       stdin: {
         contents: `import { createRoot } from 'react-dom/client';
 import PartFeed from './src/components/PartFeed.jsx';
+import { AuthProvider } from './src/hooks/useAuth.jsx';
+import { GithubSessionProvider } from './src/hooks/useGithubSession.jsx';
 const id = ${JSON.stringify(legacy)};
 createRoot(document.getElementById('root')).render(
+  <AuthProvider><GithubSessionProvider>
   <div style={{ width: '390px', height: '844px', background: '#1e1e1e' }}>
     <PartFeed placement="mobile" isMobile={false} source="git" assemblyName="Assembly" currentBranch="main"
       rows={[{ id, name: 'Part (1)', visible: true, order: 0, action: 'add-to-repo', isSynced: false, dirty: true }]}
       activeId={id} />
   </div>
+  </GithubSessionProvider></AuthProvider>
 );`,
         resolveDir: root,
         loader: 'jsx',
@@ -629,7 +649,10 @@ createRoot(document.getElementById('root')).render(
       platform: 'browser',
       write: false,
       jsx: 'automatic',
-      define: { 'process.env.NODE_ENV': '"production"' },
+      define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env.VITE_SURFCAD_PLAYTEST': '"0"' },
+      // built/manifold.js reaches `import("module")` only under Node; the
+      // browser bundle never runs that branch.
+      external: ['module'],
       logLevel: 'error',
     });
     const html = `<!doctype html><html><head><meta charset="utf-8"><style>${css.css}</style></head>

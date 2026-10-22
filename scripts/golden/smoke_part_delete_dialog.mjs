@@ -51,7 +51,7 @@ console.log('part delete dialog — source');
     && /next\.step === 'confirm-repo'/.test(feed)
     && /onDeletePart\?\.\(pending\.id, \{ fromRepo: next\.action === 'drop-repo' \}\)/.test(feed));
   ok('the second confirm names the vault file',
-    /partRepoDeleteConfirmCopy\(pendingDelete\.id\)/.test(feed)
+    /partRepoDeleteConfirmCopy\(pendingDelete\.path \|\| pendingDelete\.id\)/.test(feed)
     && /data-part-delete-repo-message/.test(feed)
     && /data-part-delete-repo-commit/.test(feed)
     && /This can't be undone from SurfCAD\./.test(asm));

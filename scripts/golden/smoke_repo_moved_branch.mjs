@@ -122,11 +122,13 @@ async function seedVault() {
     baseSha: seedSha,
     files: [fileWrite(PART, ORIGINAL.replace('original-tip', 'remote-moved'))],
   });
+  // Open keys rows and scripts by surf id; the repo path stays on the row.
+  const partId = opened.doc.parts.find((row) => row.path === PART).id;
   const moved = await commitPartToRepo(gh, repo, {
     doc: opened.doc,
-    scripts: { ...opened.scripts, [PART]: LOCAL },
+    scripts: { ...opened.scripts, [partId]: LOCAL },
     baseline: opened.baseline,
-    partId: PART,
+    partId,
   });
   check('part save reports repo-moved', moved.status === 'repo-moved' && moved.code === 'non_fast_forward', moved.status);
   check('part save did not write main', (await gh.getBranch(repo, 'main')).sha === remote.sha);
@@ -155,9 +157,10 @@ async function seedVault() {
     baseSha: seedSha,
     files: [fileWrite(PART, ORIGINAL.replace('original-tip', 'remote-moved'))],
   });
+  const partId = opened.doc.parts.find((row) => row.path === PART).id;
   const assembled = await assembleCommitFiles(gh, repo, {
     doc: opened.doc,
-    scripts: { ...opened.scripts, [PART]: LOCAL },
+    scripts: { ...opened.scripts, [partId]: LOCAL },
     baseline: opened.baseline,
     message: 'Update Gearbox',
   });

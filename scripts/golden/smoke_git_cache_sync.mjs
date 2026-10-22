@@ -125,8 +125,10 @@ console.log('\nrename with a cross-assembly reference survives reload');
   const coverBracket = cv.parts.find((part) => part.surfId === BRACKET_ID);
   eq('cover still references the same id at the new path', [coverBracket?.path, coverBracket?.id, coverBracket?.surfId], [GB_NEXT, BRACKET_ID, BRACKET_ID]);
   const reloaded = await openVaultAssembly(gh, repo, 'Cover', { branch: 'main', headSha: synced.sha });
-  const again = reloaded.doc.parts.filter((part) => part.surfId === BRACKET_ID);
-  ok('reload does not fork the part', again.length === 1 && again[0].id === BRACKET_ID && again[0].path === GB_NEXT);
+  // Open keys rows by surf id (the header wins) and keeps the repo path.
+  const again = reloaded.doc.parts.filter((part) => part.id === BRACKET_ID);
+  ok('reload does not fork the part', again.length === 1 && again[0].path === GB_NEXT,
+    JSON.stringify(reloaded.doc.parts.map((part) => [part.id, part.path])));
   ok('reloaded script keeps the id', readSurfId(reloaded.scripts[BRACKET_ID] || reloaded.scripts[GB_NEXT]) === BRACKET_ID);
 }
 
