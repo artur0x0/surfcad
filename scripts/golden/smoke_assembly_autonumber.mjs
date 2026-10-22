@@ -109,6 +109,7 @@ console.log('\nassembly autonumber — duplicate, import, rename');
   eq('duplicate moves the assembly-local part', dup.moved, [{
     from: bracket,
     to: assemblyPartPath('Gearbox (2)', 'Bracket'),
+    id: bracket,
   }]);
   eq('duplicate script follows the new path',
     dup.scripts[assemblyPartPath('Gearbox (2)', 'Bracket')]?.includes('@surf-id'), true);
@@ -218,10 +219,11 @@ console.log('\nassembly autonumber — repo round-trip');
   });
   eq('reopen keeps Assembly (1)', opened.doc.name, PAREN);
   eq('reopen path', opened.baseline.assemblyPath, ASM_PATH);
-  eq('reopen part path', opened.doc.parts[0].id, PART_PATH);
+  // Open keys rows and scripts by surf id and keeps the repo path on the row.
+  eq('reopen part path', [opened.doc.parts[0].id, opened.doc.parts[0].path], [PART_ID, PART_PATH]);
   eq('color key survived', opened.doc.colors?.[PART_ID]?.part, '#336699');
   eq('face color key survived', opened.doc.colors?.[PART_ID]?.faces?.[0]?.color, '#aa5500');
-  ok('script survived', opened.scripts[PART_PATH]?.includes('cube([4,4,4]'));
+  ok('script survived', opened.scripts[PART_ID]?.includes('cube([4,4,4]'));
   const widgetOpen = await openVaultAssembly(gh, vault.repo, 'Widget', { branch: 'main' });
   eq('saved Widget is not renamed', widgetOpen.doc.name, 'Widget');
 
@@ -268,8 +270,10 @@ console.log('\nassembly autonumber — wiring');
   ok('rename allocates or blocks', /resolveAssemblyFolderName\(/.test(app)
     && /An assembly with that name already exists/.test(app));
   ok('duplicate allocates', /function planDuplicateAssembly[\s\S]{0,700}nextAssemblyName\(/.test(commit));
-  ok('plus menu creates an assembly', /data-part-add-action="assembly"[\s\S]{0,240}requestAssemblyAction\('new'\)/.test(feed));
-  ok('folder menu opens or imports', /data-part-open-action="assembly"[\s\S]{0,240}requestAssemblyAction\('existing'\)/.test(feed)
+  // The menu buttons carry data-part-add-kind / data-ui-action between the
+  // action attribute and the click handler, so allow a wider span.
+  ok('plus menu creates an assembly', /data-part-add-action="assembly"[\s\S]{0,480}requestAssemblyAction\('new'\)/.test(feed));
+  ok('folder menu opens or imports', /data-part-open-action="assembly"[\s\S]{0,480}requestAssemblyAction\('existing'\)/.test(feed)
     && /onLoadFile=\{handleLoadAssembly\}/.test(app));
   ok('vault open does not allocate a name', !/function openVaultAssembly[\s\S]{0,1200}nextAssemblyName\(/.test(read('src/utils/git/gitWorkspace.js')));
 }
@@ -312,7 +316,11 @@ createRoot(document.getElementById('root')).render(
       platform: 'browser',
       write: false,
       jsx: 'automatic',
-      define: { 'process.env.NODE_ENV': '"production"' },
+      // Vite's import.meta.env is absent here; built/manifold.js reaches
+      // `import("module")` only under Node, so the browser bundle keeps it
+      // external and never runs that branch.
+      define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env.VITE_SURFCAD_PLAYTEST': '"0"' },
+      external: ['module'],
       logLevel: 'error',
     });
     const html = `<!doctype html><html class="dark"><head><meta charset="utf-8"><style>${css.css}</style></head>
@@ -389,7 +397,8 @@ createRoot(document.getElementById('root')).render(
       platform: 'browser',
       write: false,
       jsx: 'automatic',
-      define: { 'process.env.NODE_ENV': '"production"' },
+      define: { 'process.env.NODE_ENV': '"production"', 'import.meta.env.VITE_SURFCAD_PLAYTEST': '"0"' },
+      external: ['module'],
       logLevel: 'error',
     });
     const htmlFor = (shot) => `<!doctype html><html class="dark"><head><meta charset="utf-8"><style>${css.css}</style></head>

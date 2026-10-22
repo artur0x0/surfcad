@@ -222,7 +222,10 @@ console.log('\ncopy does not copy colors');
     randFor: () => 'e1e1',
   });
   eq('sibling color stays', copied.doc.colors, { [BODY]: { part: '#112233' } });
-  ok('new id is uncolored', toSurfJson(copied.doc).colors[copied.copies[0].surfId] == null);
+  // The copied row is id-only (no path) until its first Save, so the v1
+  // serializer cannot take the document; the color map on the doc is the
+  // same map the writer would serialize.
+  ok('new id is uncolored', (copied.doc.colors || {})[copied.copies[0].surfId] == null);
 }
 
 if (failed) {

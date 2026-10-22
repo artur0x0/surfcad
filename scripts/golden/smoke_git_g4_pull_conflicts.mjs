@@ -30,6 +30,8 @@ function eq(name, got, want) {
   const g = JSON.stringify(got); const w = JSON.stringify(want);
   ok(name, g === w, `got ${g}, want ${w}`);
 }
+/** Open keys rows and scripts by surf id and keeps the repo path on the row. */
+const idOf = (doc, path) => (doc?.parts || []).find((p) => p.path === path || p.id === path)?.id;
 
 const BRACKET = assemblyPartPath('Gearbox', 'Bracket');
 const BOLT = sharedPartPath('M3 bolt');
@@ -89,7 +91,7 @@ console.log('git G4 — behind detection');
   const behind = await checkRemoteBehind(gh, repo, {
     baselineSha: opened.baseline.headSha,
     assemblyPath: ASM,
-    partIds: opened.doc.parts.map((p) => p.id),
+    partIds: opened.doc.parts.map((p) => p.path),
   });
   eq('status behind', behind.status, 'behind');
   eq('behindBy = 1', behind.behindBy, 1);
@@ -175,7 +177,7 @@ console.log('\ngit G4 — Reload / Keep mine / Check in mine');
   resolved = [BRACKET, BOLT];
   markers = remainingBehindMarkers(check, resolved);
   eq('keep mine clears markers', markers, { assemblyBehind: false, partIds: [], any: false });
-  ok('local bolt still mine', opened.scripts[BOLT] === 'return Manifold.cylinder(6, 1.5, 1.5, 24);');
+  ok('local bolt still mine', opened.scripts[idOf(opened.doc, BOLT)] === 'return Manifold.cylinder(6, 1.5, 1.5, 24);');
 
   // Advance head only when every marker was Reloaded (caller decides).
   const advanced = advanceBaselineHead(reloaded.baseline, check.remoteSha);
@@ -247,15 +249,19 @@ console.log('\ngit G4 — assembly reload');
   const check = await checkRemoteBehind(gh, repo, {
     baselineSha: opened.baseline.headSha,
     assemblyPath: ASM,
-    partIds: opened.doc.parts.map((p) => p.id),
+    partIds: opened.doc.parts.map((p) => p.path),
   });
   eq('only assembly behind', [check.assemblyBehind, check.partIds], [true, []]);
   const reloaded = await reloadFromRemote(gh, repo, {
     path: ASM, kind: 'assembly', branch: 'main',
     doc: opened.doc, scripts: opened.scripts, baseline: opened.baseline,
   });
-  eq('reloaded doc has spare', reloaded.doc.parts.map((p) => p.id), [BRACKET, BOLT, SPARE]);
-  ok('baseline assembly text = remote', reloaded.baseline.assemblyText === (await gh.readFile(repo, ASM, 'main')).content);
+  eq('reloaded doc has spare', reloaded.doc.parts.map((p) => p.path), [BRACKET, BOLT, SPARE]);
+  // Open re-serializes the tip document with its surf ids, so the baseline
+  // text is the parsed remote document, not the remote bytes.
+  const remoteAsm = parseSurfJson((await gh.readFile(repo, ASM, 'main')).content);
+  eq('baseline assembly doc = remote', parseSurfJson(reloaded.baseline.assemblyText).parts.map((p) => [p.name, p.path]),
+    remoteAsm.parts.map((p) => [p.name, p.path]));
   ok('clean vs reloaded baseline (same scripts)',
     !isWorkspaceDirty(reloaded.doc, reloaded.scripts, reloaded.baseline));
 }

@@ -164,7 +164,10 @@ console.log('\nparts layout — rename moves only the assembly');
   eq('other assembly group source stays', coverAfter.groups[0].source, assemblyFilePath('Gearbox'));
   eq('other assembly group partId stays', coverAfter.groups[0].partIds, [ID_A]);
   const app = readFileSync(new URL('../../src/App.jsx', import.meta.url), 'utf8');
-  ok('rename partIds are only moved paths', /partIds: \(remapped\.moved \|\| \[\]\)\.map\(\(pair\) => pair\.to\)/.test(app));
+  // v2: a part rename is a working-copy name edit, never a path move and
+  // never a git write; the next Save writes the same file.
+  ok('rename is a name edit, not a move', /status: 'renamed', from: id, to: id, name: nextName, git: false/.test(app)
+    && !/partIds: \(remapped\.moved \|\| \[\]\)\.map\(\(pair\) => pair\.to\)/.test(app));
   const built = buildRenameCommitFiles({
     entries: [
       { path: assemblyFilePath('Gearbox'), content: gearbox },

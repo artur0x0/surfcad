@@ -190,7 +190,10 @@ export function behindToastTarget(check, resolvedPaths = [], {
   }
   const id = markers.partIds[0];
   if (!id) return null;
-  const part = (parts || []).find((row) => row && row.id === id);
+  // Markers carry repo paths. A row opened from the vault keeps its surf id
+  // as `id` and the path as `path`; an older in-memory row still uses the
+  // path as its id.
+  const part = (parts || []).find((row) => row && (row.id === id || row.path === id));
   return { path: id, kind: 'part', name: part?.name || id };
 }
 

@@ -11,6 +11,7 @@ import {
   ASSEMBLIES_DIR, assemblyFilePath, assemblyPartPath, sharedPartPath,
 } from '../../src/utils/git/vaultLayout.js';
 import { stringifySurfJson, parseSurfJson } from '../../src/utils/git/surfJson.js';
+import { stripSurfId } from '../../src/utils/git/surfId.js';
 import { fileWrite } from '../../src/utils/git/githubAdapterInterface.js';
 import { openVaultAssembly, isWorkspaceDirty } from '../../src/utils/git/gitWorkspace.js';
 import {
@@ -29,6 +30,8 @@ function eq(name, got, want) {
   const g = JSON.stringify(got); const w = JSON.stringify(want);
   ok(name, g === w, `got ${g}, want ${w}`);
 }
+/** Open keys rows and scripts by surf id and keeps the repo path on the row. */
+const idOf = (doc, path) => (doc?.parts || []).find((p) => p.path === path || p.id === path)?.id;
 
 const BRACKET = assemblyPartPath('Gearbox', 'Bracket');
 const BOLT = sharedPartPath('M3 bolt');
@@ -77,13 +80,14 @@ console.log('git G5 — branch list + switch reload');
 
   const switched = await switchVaultBranch(gh, repo, 'Gearbox', 'feature/cover');
   eq('switched baseline branch', switched.baseline.branch, 'feature/cover');
-  eq('reloaded bracket from feature', switched.scripts[BRACKET], '// cover branch bracket');
+  // Open keys scripts by surf id and keeps the repo path on the row.
+  eq('reloaded bracket from feature', switched.scripts[idOf(switched.doc, BRACKET)], '// cover branch bracket');
   ok('baseline head is feature tip', switched.baseline.headSha === (await gh.getBranch(repo, 'feature/cover')).sha);
   ok('clean after switch', !isWorkspaceDirty(switched.doc, switched.scripts, switched.baseline));
 
   const back = await switchVaultBranch(gh, repo, 'Gearbox', 'main');
   eq('back on main', back.baseline.branch, 'main');
-  eq('main bracket restored', back.scripts[BRACKET], 'return Manifold.cube([10,10,10], true);');
+  eq('main bracket restored', back.scripts[idOf(back.doc, BRACKET)], 'return Manifold.cube([10,10,10], true);');
 
   let missing = '';
   try { await switchVaultBranch(gh, repo, 'Gearbox', 'nope'); }
@@ -113,13 +117,15 @@ console.log('\ngit G5 — rename-on-Commit moves paths');
 {
   const { gh, repo, opened } = await seedVault();
   const renamedDoc = { ...opened.doc, name: 'Transmission' };
-  // Parts still under assemblies/Gearbox/… until commit remaps them.
-  eq('before commit paths still old', renamedDoc.parts.map((p) => p.id), [BRACKET, BOLT]);
+  const bracketId = idOf(opened.doc, BRACKET);
+  // Parts still under assemblies/Gearbox/… until commit remaps them. Rows
+  // keep their surf id; the path is what moves.
+  eq('before commit paths still old', renamedDoc.parts.map((p) => p.path), [BRACKET, BOLT]);
 
   const remapped = remapAssemblyPaths(renamedDoc, opened.scripts, 'Gearbox', 'Transmission');
-  eq('remap moves assembly part', remapped.moved, [{ from: BRACKET, to: BRACKET2 }]);
-  eq('shared bolt stays', remapped.doc.parts.map((p) => p.id), [BRACKET2, BOLT]);
-  eq('activeId remapped', remapped.doc.activeId, BRACKET2);
+  eq('remap moves assembly part', remapped.moved, [{ from: BRACKET, to: BRACKET2, id: bracketId }]);
+  eq('shared bolt stays', remapped.doc.parts.map((p) => p.path), [BRACKET2, BOLT]);
+  eq('activeId is the id, so it does not move', remapped.doc.activeId, bracketId);
 
   const built = buildCommitFiles(renamedDoc, opened.scripts, opened.baseline);
   ok('renamed flag', built.renamed === true);
@@ -134,9 +140,11 @@ console.log('\ngit G5 — rename-on-Commit moves paths');
     message: 'Rename Gearbox → Transmission',
   });
   eq('commit status', res.status, 'committed');
-  ok('result doc remapped', res.doc.parts.every((p) => p.id === BOLT || p.id.startsWith(`${ASSEMBLIES_DIR}/Transmission/`)));
+  ok('result doc remapped', res.doc.parts.every((p) => p.path === BOLT || p.path.startsWith(`${ASSEMBLIES_DIR}/Transmission/`)),
+    JSON.stringify(res.doc.parts.map((p) => p.path)));
   eq('new asm in git', parseSurfJson((await gh.readFile(repo, ASM2, 'main')).content).name, 'Transmission');
-  eq('new bracket in git', (await gh.readFile(repo, BRACKET2, 'main')).content,
+  // The moved script is stamped with its // @surf-id header on the way out.
+  eq('new bracket in git', stripSurfId((await gh.readFile(repo, BRACKET2, 'main')).content),
     'return Manifold.cube([10,10,10], true);');
   eq('shared bolt untouched', (await gh.readFile(repo, BOLT, 'main')).content,
     'return Manifold.cylinder(6, 1.5, 1.5, 24);');
@@ -164,9 +172,14 @@ ok('App wires list + switch', /handleListBranches/.test(app) && /handleSwitchBra
   && /onSwitchBranch=\{handleSwitchBranch\}/.test(app)
   && /currentBranch=/.test(app));
 ok('open/list/add use working branch', /gitWorkingBranch\(/.test(app)
-  && /listVaultAssemblies\(gitAdapterRef\.current, vault\.repo, gitWorkingBranch\(\)\)/.test(app));
-ok('rename-on-commit applied to workspace', /applyCommittedWorkspace\(result\)/.test(app)
-  && /result\.renamed \|\| result\.moved/.test(app));
+  && /adapter\.listTree\(vault\.repo, gitWorkingBranch\(\)\)/.test(app)
+  && /const handleListVaultAssemblies/.test(app));
+// A legacy-vault Save still adopts the committed workspace (paths may move
+// with an assembly rename). On a v2 vault the rename is a name edit and the
+// folder move is refused until v2 Save handles it.
+ok('legacy Save adopts the committed workspace; v2 rename is a name edit', /applyCommittedWorkspace\(result\)/.test(app)
+  && !/result\.renamed \|\| result\.moved/.test(app)
+  && /code: 'unsupported_vault_version'/.test(app.slice(app.indexOf('const handleRenameAssembly'))));
 ok('index exports G5', typeof gitIndex.listVaultBranches === 'function'
   && typeof gitIndex.switchVaultBranch === 'function'
   && typeof gitIndex.seedEmptyVaultAssembly === 'function');

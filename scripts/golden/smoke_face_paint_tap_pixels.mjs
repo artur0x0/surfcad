@@ -126,7 +126,10 @@ function checkColorMigration() {
     return;
   }
   const fileEntry = loaded.colors?.[SURF];
-  check('.surf.json path drops local:', loaded.parts?.[0]?.id === repoPath && loaded.activeId === repoPath);
+  // A parsed row keeps its surf id as `id` and the repo path as `path`;
+  // `activeId` is the part id.
+  check('.surf.json path drops local:', loaded.parts?.[0]?.path === repoPath && loaded.parts?.[0]?.id === SURF && loaded.activeId === SURF,
+    JSON.stringify({ parts: loaded.parts, activeId: loaded.activeId }));
   check('.surf.json color key resolves to the surf id', fileEntry?.part === '#ef4444' && !loaded.colors[prefixed], JSON.stringify(loaded.colors));
   check('.surf.json face color key is unchanged', sameJson(fileEntry?.faces?.[0], FACE), JSON.stringify(fileEntry?.faces?.[0]));
 }
@@ -547,7 +550,10 @@ async function runLegacyColor(browser) {
   const entry = stored?.colors?.[SURF];
   console.log(`  legacy color ${JSON.stringify(blob && blob.rgb)} n ${blob?.n ?? 0}`);
   check('legacy color key paints the face', !!blob && blob.n > 1000 && dist(blob.rgb) < 48, JSON.stringify(blob));
-  check('stored color key is the surf id', entry?.part === '#ef4444' && sameJson(entry?.faces?.[0], FACE) && stored?.parts?.[0]?.id === PART,
+  // The working copy rekeys a legacy row onto its surf id on load
+  // (collapseWorkingCopyIds, golden:wc-identity-reload), so the stored row
+  // id is the surf id, and the color key matches it.
+  check('stored color key is the surf id', entry?.part === '#ef4444' && sameJson(entry?.faces?.[0], FACE) && stored?.parts?.[0]?.id === SURF,
     JSON.stringify({ id: stored?.parts?.[0]?.id, colors: stored?.colors }));
   check('legacy load has no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   await context.close();
