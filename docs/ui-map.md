@@ -146,6 +146,9 @@ hidden` on `data-viewer-title-chips`). The status legend
 on that box, horizontally and vertically. Leaving contour mode shows the
 chips again. `golden:contour-legend`. With no part selected the part pill is not
 rendered (`data-title-role="part"` absent); only the assembly name shows.
+Opening an assembly starts in that state: the active part's script loads into
+the editor, but no part is selected until a row tap, a body tap, or an agent
+`set_active_part` picks one (`golden:empty-part-pill`, `golden:joints-blocks`).
 An empty name does not leave a blank rounded chip. The assembly name is the document `name`. A new
 assembly starts as Assembly, then Assembly (1), Assembly (2) when that name
 is taken. A copy, import, or colliding rename uses the part rule (`Name`, or
