@@ -478,6 +478,15 @@ jobs:
             echo "geometry pool golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:assembly-save-child-parts | tee "${RUNNER_TEMP}/assembly-save-child-parts.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/assembly-save-child-parts.log"; then
+            echo "assembly save child parts golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'assembly save child parts: ok' "${RUNNER_TEMP}/assembly-save-child-parts.log"; then
+            echo "assembly save child parts golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
