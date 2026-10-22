@@ -4,6 +4,7 @@
 
 import { V1_COMMANDS } from '../commands/index.js';
 import { metaForCommand } from './commandMeta.js';
+import { RETURN_NOTE, takesReturnArg } from '../returnMode.js';
 import { ambiguousArgProperties, validateArgsSchema } from './schemaPolicy.js';
 import { STATUS_SCHEMA, MUTATE_RESULT_SCHEMA, NO_ARGS_SCHEMA } from '../schemas/common.js';
 
@@ -27,9 +28,12 @@ function uiEntryExport(command) {
 export function buildCommandEntry(command, raw) {
   const meta = { ...metaForCommand(command.name), ...(raw?.export || {}) };
   const args = cloneJson(command.schema);
+  // The registry added `return` to this schema (commands/index.js); the
+  // description says so once, here, instead of in 70+ meta strings.
+  const description = takesReturnArg(command.name) ? `${meta.description}${RETURN_NOTE}` : meta.description;
   const entry = {
     name: command.name,
-    description: meta.description,
+    description,
     args,
     result: cloneJson(meta.result || { type: 'object', additionalProperties: true }),
     errors: [...(meta.errors || ['bad_args', 'internal'])],

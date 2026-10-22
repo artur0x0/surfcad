@@ -73,6 +73,8 @@ Every command in `data/commands.json` is one MCP tool with the same name and arg
 
 Parts and assemblies are opaque surf ids. A vault path or display name is `unknown_part` / `unknown_assembly`. Nothing reaches git without an explicit `git_save` (or another `git_*` write below).
 
+Results are compact JSON. Every tool whose result carries `status` (the model-changing tools, `undo`, `redo`, and `status`) takes `return: "status" | "summary" | "full"`; this server sends `"status"` when you leave it out, so `status.script` is omitted and a result stays small. `"summary"` adds `status.features` (the feature strip); `"full"` echoes the script. `get_script` reads the script, and `get_script { range: { fromFeature, toFeature } }` reads one span of feature blocks.
+
 | Tool | Args | What it does |
 | --- | --- | --- |
 | `parts` | `{}` | Open assembly: `assemblyId`, `activeId`, and part rows (`id`, `name`, `visible`). No path field. |

@@ -24,6 +24,7 @@
  */
 
 import { v1Registry } from '../agent/commands/index.js';
+import { applyReturnMode, takeReturnMode } from '../agent/returnMode.js';
 import { formatAgentErrors, scrubPublishedError } from '../agent/state/formatErrors.js';
 import { kernelCrashRecord } from '../workers/kernelCrash.js';
 import { explainReservedHelperError } from '../agent/state/reservedHelpers.js';
@@ -696,7 +697,7 @@ export function createSurfcadBridge(hostSource) {
     return { opts, director };
   }
 
-  async function runWithVisibleCue(name, args, command, runBody) {
+  async function runWithVisibleCue(name, args, command, runBody, returnMode = null) {
     const { opts, director } = readVisibleCueState();
     const shouldCue = opts?.enabled === true && director;
     if (shouldCue && typeof director.before === 'function') {
@@ -705,6 +706,8 @@ export function createSurfcadBridge(hostSource) {
     let out;
     try {
       out = toEnvelope(await withAgentDrivenChange(runBody));
+      // `return` trims status after the command ran; the command never sees it.
+      if (out.ok && returnMode) out = pass(applyReturnMode(name, out.result, returnMode));
     } catch (err) {
       out = fail('internal', String(err?.message || err));
     }
@@ -735,7 +738,12 @@ export function createSurfcadBridge(hostSource) {
     }
     const parsed = parseArgs(argsJson);
     if (!parsed.ok) return Promise.resolve(fail(parsed.code, parsed.message));
-    const args = parsed.args;
+    // `return` (status | summary | full) is the dispatcher's: stripped here,
+    // applied to `result.status` after the run (returnMode.js).
+    const taken = takeReturnMode(parsed.args);
+    if (taken.error) return Promise.resolve(fail(taken.error.code, taken.error.message));
+    const args = taken.args;
+    const returnMode = taken.mode;
     const command = v1Registry.get(name);
 
     if (typeof command.checkArgs === 'function') {
@@ -744,10 +752,10 @@ export function createSurfcadBridge(hostSource) {
     }
 
     if (command.immediate) {
-      return runWithVisibleCue(name, args, command, () => Promise.resolve(command.run(ctx, args)));
+      return runWithVisibleCue(name, args, command, () => Promise.resolve(command.run(ctx, args)), returnMode);
     }
 
-    return enqueue(() => runWithVisibleCue(name, args, command, () => command.run(ctx, args)));
+    return enqueue(() => runWithVisibleCue(name, args, command, () => command.run(ctx, args), returnMode));
   }
 
   async function unwrap(envPromise) {

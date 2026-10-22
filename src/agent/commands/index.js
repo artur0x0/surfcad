@@ -1,4 +1,5 @@
 import { defineCommands } from '../registry.js';
+import { withReturnArg } from '../returnMode.js';
 import { getScriptCommand } from './getScript.js';
 import { setScriptCommand } from './setScript.js';
 import { runCommand } from './run.js';
@@ -198,7 +199,7 @@ const HELPER_COMMANDS = buildHelperPaletteCommands();
  * Cross-section view, editor select-all, and sketch entity delete follow FEA.
  * The in-viewer agent prompt follows those.
  */
-export const V1_COMMANDS = Object.freeze([
+const V1_COMMAND_LIST = [
   getScriptCommand,
   setScriptCommand,
   runCommand,
@@ -357,6 +358,13 @@ export const V1_COMMANDS = Object.freeze([
   gitListBranchesCommand,
   exportPartCommand,
   exportDownloadCommand,
-]);
+];
+
+/**
+ * Every command whose result carries `status` (the mutating tools, undo,
+ * redo, and status) takes `return` (returnMode.js); it is added here, once,
+ * so the registry schema, list_commands, and commands.json agree.
+ */
+export const V1_COMMANDS = Object.freeze(V1_COMMAND_LIST.map(withReturnArg));
 
 export const v1Registry = defineCommands(V1_COMMANDS);

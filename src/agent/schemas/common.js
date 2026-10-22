@@ -120,6 +120,21 @@ export const STATUS_SCHEMA = Object.freeze({
     featureCount: { type: 'integer' },
     bodyCount: { type: ['integer', 'null'] },
     stale: { type: 'boolean' },
+    features: {
+      type: 'array',
+      description: 'Feature strip rows, only with return: "summary" (script is omitted with "status" and "summary")',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string' },
+          kind: { type: 'string' },
+          label: { type: 'string' },
+          chipLabel: { type: 'string' },
+          index: { type: 'integer' },
+        },
+      },
+    },
   },
 });
 

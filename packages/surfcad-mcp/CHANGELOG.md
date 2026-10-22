@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Lean results. Every tool whose result carries `status` (the `mutates: true` tools, `undo`, `redo`, `status`) takes `return: "status" | "summary" | "full"`. This server fills in `"status"` when the caller omits it, so `status.script` is no longer echoed on every call; `"summary"` adds `status.features` (the feature strip rows); `"full"` is the previous shape. The page bridge keeps `"full"` as its default. `get_script` takes `range { fromFeature?, toFeature? }` (feature_tree ids) and returns that span of blocks with `range { fromFeature, toFeature, startOffset, endOffset, features }`; unknown ids are `unknown_feature`. Tool text is compact JSON (the indented form was about 2.4 times larger; `list_commands` 240 KB → 99 KB). Needs a tab whose bridge knows `return`; an older tab ignores the argument and still returns the full status.
+
 ## 0.2.5 - 2026-10-20
 
 - `delete_feature` result schema matches the command: `deletedId`, `ok`, `errors`, `failures`, `status`, optional `warning`. `unchanged` is dropped from this command.

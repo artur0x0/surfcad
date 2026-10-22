@@ -14,18 +14,30 @@ const USE_SELECTION_RESULT_NOTE = ' The result usedSelection says whether the vi
 const FEATURE_COUNT_NOTE = ' featureCount counts insert_* feature blocks, so a freehand set_script is one feature. bodyCount is null until the first run; a finished run that produced no bodies reports 0.';
 
 const OK = Object.freeze({ type: 'object', additionalProperties: false, properties: { ok: { const: true } } });
-const SOURCE = Object.freeze({
-  type: 'object',
-  additionalProperties: false,
-  properties: { source: { type: 'string' } },
-});
 
 /** @type {Record<string, { description: string, result?: object, errors?: string[], mutates?: boolean, destructive?: boolean, confirm?: boolean }>} */
 export const COMMAND_META = {
   get_script: {
-    description: 'Read the Monaco editor buffer for the active part.',
-    result: SOURCE,
-    errors: ['internal'],
+    description: 'Read the Monaco editor buffer for the active part. With range { fromFeature?, toFeature? } (feature_tree ids) it returns only that span of feature blocks plus range { fromFeature, toFeature, startOffset, endOffset, features }; fromFeature alone is that one block. Mutating tools omit status.script over MCP (return: "status"), so this is how the script is read.',
+    result: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        source: { type: 'string' },
+        range: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            fromFeature: { type: 'string' },
+            toFeature: { type: 'string' },
+            startOffset: { type: 'integer' },
+            endOffset: { type: 'integer' },
+            features: { type: 'integer' },
+          },
+        },
+      },
+    },
+    errors: ['bad_args', 'unknown_feature', 'internal'],
     mutates: false,
   },
   set_script: {
