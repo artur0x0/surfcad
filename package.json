@@ -53,6 +53,7 @@
         "golden:agent-bridge-save-model": "node scripts/golden/smoke_agent_bridge_save_model_v2.mjs",
         "golden:agent-prompt": "node scripts/golden/smoke_agent_bridge_prompt.mjs",
         "golden:agent-git-save-consent": "node scripts/golden/smoke_agent_git_save_consent.mjs",
+        "golden:assembly-save-child-parts": "node scripts/golden/smoke_assembly_save_child_parts.mjs",
         "golden:agent-part-rename-commit": "node scripts/golden/smoke_agent_part_rename_commit.mjs",
         "golden:agent-playtest": "node scripts/golden/smoke_agent_playtest.mjs",
         "golden:agent-visible": "node scripts/golden/smoke_agent_visible.mjs",
