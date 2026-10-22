@@ -38,8 +38,8 @@ function paramNames(item) {
  * insert_move declares its own use_selection (body targeting) below.
  */
 const USE_SELECTION_BY_HELPER = {
-  filletEdges: 'When true, fillet the selected edges, or the edges of the selected face if no edges are selected. With no pick, fillet every convex edge',
-  chamferEdges: 'When true, chamfer the selected edges, or the edges of the selected face if no edges are selected. With no pick, chamfer every convex edge',
+  filletEdges: 'When true, fillet the selected edges, or the edges of the selected face if no edges are selected. Omit the flag to fillet every convex edge',
+  chamferEdges: 'When true, chamfer the selected edges, or the edges of the selected face if no edges are selected. Omit the flag to chamfer every convex edge',
   crossSection: 'When true, place the contour on the selected planar face. Otherwise use the default +Z top face',
   sweepPath: 'When true, build the path from the selected edges. With no edges the insert is refused',
   hole: 'When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face',
@@ -54,6 +54,18 @@ const USE_SELECTION_BY_HELPER = {
   deleteFace: 'When true, delete the selected face. With no face, the face list is empty',
 };
 
+/**
+ * The selection is single-use: the viewport clears face and edge picks after
+ * every successful rebuild because they index the old mesh. Stated on every
+ * use_selection flag so an agent re-picks before each insert.
+ */
+export const USE_SELECTION_NOTE = ' Picks clear after every rebuild (each insert_*, set_script, undo), so use_selection: true with nothing selected is refused with no_selection; re-pick before each insert that uses it.';
+
+/** True for helpers whose compose reads the face / edge context (not insert_move, which targets a body). */
+export function helperReadsSelection(helperId) {
+  return Object.prototype.hasOwnProperty.call(USE_SELECTION_BY_HELPER, helperId);
+}
+
 /** JSON-schema properties for one palette item's params (plus agent-only fields). */
 export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
   const properties = {};
@@ -66,7 +78,7 @@ export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
     };
     properties.use_selection = {
       type: 'boolean',
-      description: 'When true, pass the current viewport face/edge selection as context',
+      description: `When true, pass the current viewport face/edge selection as context.${USE_SELECTION_NOTE}`,
     };
   }
   if (item?.id === 'move') {
@@ -87,7 +99,7 @@ export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
   } else if (Object.prototype.hasOwnProperty.call(USE_SELECTION_BY_HELPER, item?.id)) {
     properties.use_selection = {
       type: 'boolean',
-      description: USE_SELECTION_BY_HELPER[item.id],
+      description: `${USE_SELECTION_BY_HELPER[item.id]}.${USE_SELECTION_NOTE}`,
     };
   }
   for (const param of item?.params || []) {

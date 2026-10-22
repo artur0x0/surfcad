@@ -139,3 +139,118 @@ test('a refused fillet insert names the missing edge', async () => {
   assert.equal(env.error.message.includes('Feature failed'), false);
   assert.equal(env.error.message.includes('check params'), false);
 });
+
+test('use_selection with nothing selected is no_selection, not the default face', async () => {
+  let prepared = 0;
+  let executed = 0;
+  const api = createSurfcadBridge({
+    resolve: () => host({
+      readSelection: () => ({ face: null, edges: [] }),
+      readHelperEdgeContext: () => [],
+      prepareHelperInsert() {
+        prepared += 1;
+        return { source: 'let part = Manifold.cube([10,10,10], true);\nreturn part;\n' };
+      },
+      async execute() {
+        executed += 1;
+        return { ok: true, errors: [], volume: 1, bbox: null, partName: '' };
+      },
+    }),
+  });
+  for (const [name, args] of [
+    ['insert_hole', { use_selection: true, size: 'M6' }],
+    ['insert_fillet_edges', { use_selection: true, radius: 1 }],
+    ['invoke_helper', { id: 'crossSection', use_selection: true }],
+  ]) {
+    const env = await api.call(name, args);
+    assert.equal(env.ok, false, name);
+    assert.equal(env.error.code, 'no_selection', name);
+    assert.match(env.error.message, /nothing is selected/);
+    assert.match(env.error.message, /clear after every rebuild/);
+    assert.match(env.error.message, /pick_faces|select_faces/);
+  }
+  assert.equal(prepared, 0, 'nothing is composed');
+  assert.equal(executed, 0, 'nothing is written or run');
+});
+
+test('a selected face is used once: usedSelection true, then the rebuild clears it', async () => {
+  const top = { type: 'planar', center: [0, 0, 5], normal: [0, 0, 1], area: 100 };
+  let selection = { face: top, edges: [] };
+  const contexts = [];
+  const api = createSurfcadBridge({
+    resolve: () => host({
+      readSelection: () => selection,
+      readHelperEdgeContext: () => [],
+      prepareHelperInsert({ faceContext, edgeContext }) {
+        contexts.push({ faceContext, edgeContext });
+        return { source: 'let part = Manifold.cube([10,10,10], true);\nreturn part;\n' };
+      },
+      async execute() {
+        // The viewport clears stale picks after every successful rebuild.
+        selection = { face: null, edges: [] };
+        return { ok: true, errors: [], volume: 1, bbox: null, partName: '' };
+      },
+    }),
+  });
+  const first = await api.call('insert_hole', { use_selection: true, size: 'M6' });
+  assert.equal(first.ok, true);
+  assert.equal(first.result.usedSelection, true);
+  assert.deepEqual(contexts[0].faceContext, top);
+
+  const second = await api.call('insert_hole', { use_selection: true, size: 'M6' });
+  assert.equal(second.ok, false, 'the second insert must not fall back to the default face');
+  assert.equal(second.error.code, 'no_selection');
+  assert.equal(contexts.length, 1, 'the refused insert composes nothing');
+});
+
+test('without use_selection the helper default is used and usedSelection is false', async () => {
+  const top = { type: 'planar', center: [0, 0, 5], normal: [0, 0, 1], area: 100 };
+  const contexts = [];
+  const api = createSurfcadBridge({
+    resolve: () => host({
+      readSelection: () => ({ face: top, edges: [] }),
+      prepareHelperInsert({ faceContext, edgeContext }) {
+        contexts.push({ faceContext, edgeContext });
+        return { source: 'let part = Manifold.cube([10,10,10], true);\nreturn part;\n' };
+      },
+    }),
+  });
+  const env = await api.call('insert_hole', { size: 'M6' });
+  assert.equal(env.ok, true);
+  assert.equal(env.result.usedSelection, false);
+  assert.equal(contexts[0].faceContext, null, 'the selection is not read unless asked for');
+  const edges = await api.call('insert_fillet_edges', { radius: 1 });
+  assert.equal(edges.ok, true);
+  assert.equal(edges.result.usedSelection, false);
+});
+
+test('insert_move keeps its own no_body contract and reports usedSelection', async () => {
+  const api = createSurfcadBridge({
+    resolve: () => host({
+      resolveMoveAnchor({ useSelection }) {
+        return useSelection ? { at: [1, 2, 3] } : { error: { code: 'no_body', message: 'no body' } };
+      },
+      prepareHelperInsert() {
+        return { source: 'let part = Manifold.cube([10,10,10], true);\nreturn part;\n' };
+      },
+    }),
+  });
+  const bySelection = await api.call('insert_move', { use_selection: true, dx: 1 });
+  assert.equal(bySelection.ok, true);
+  assert.equal(bySelection.result.usedSelection, true);
+  const named = await api.call('insert_move', { use_selection: true, body_index: 0, dx: 1 });
+  assert.equal(named.ok, true);
+  assert.equal(named.result.usedSelection, false, 'a named body wins over the selection');
+  const none = await api.call('insert_move', { dx: 1 });
+  assert.equal(none.error.code, 'no_body');
+});
+
+test('every use_selection description states the single-use rule', () => {
+  for (const item of HELPER_PALETTE_ITEMS) {
+    const props = schemaPropertiesForHelper(item);
+    if (!props.use_selection || item.id === 'move') continue;
+    assert.match(props.use_selection.description, /no_selection/, item.id);
+    assert.match(props.use_selection.description, /clear after every rebuild/, item.id);
+  }
+  assert.match(invokeHelperCommand.schema.properties.use_selection.description, /no_selection/);
+});
