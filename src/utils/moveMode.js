@@ -138,8 +138,15 @@ export function findMeshBodyForMoveAnchor(bodies, anchorAt, kernelCentroids, buf
   let best = null;
   let bestD = Infinity;
   for (const body of list) {
+    // The script anchor is pre-move; the mesh body is where the move left it.
+    // Compare each side in its own frame: the body's pre-move anchor against
+    // the script anchor, and its current centroid against the moved anchor.
+    // Comparing the pre-move anchor against the moved one never matched a
+    // body that already had a committed move, so re-opening its Move card
+    // had no target triangles and drew no ghost.
     const resolved = resolveMoveBodyAt(body.at, kernelCentroids, buffer);
-    const d = dist2(resolved, world);
+    const current = snapMoveBodyAt(body.at, kernelCentroids);
+    const d = Math.min(dist2(resolved, anchor), dist2(current, world));
     if (d < bestD) {
       bestD = d;
       best = body;
