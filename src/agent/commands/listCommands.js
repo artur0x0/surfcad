@@ -5,7 +5,7 @@ const GROUP_LIST = COMMAND_GROUP_NAMES.map((name) => `${name} (${COMMAND_GROUPS[
 /**
  * Name, schema, example, and group for every registered command, in public
  * order. `names` or `group` returns only those rows; `group: "all"` or no
- * args is the whole catalog (about 120 KB compact). Resolves immediately.
+ * args is the whole catalog (about 130 KB compact). Resolves immediately.
  * It does not read the editor or the undo stack.
  */
 export const listCommandsCommand = Object.freeze({

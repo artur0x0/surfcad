@@ -1348,7 +1348,7 @@
     },
     {
       "name": "list_commands",
-      "description": "List bridge commands with args schema, example, and group. Same names as GET /tools and the MCP bridge tools. Pass names (a list of command names) or group (core, feature, insert, pick, sketch, document, joint, paint, measure, fea, sheet, git, export, view, agent) to get only those rows; the arg description lists what each group holds. No args or group: \"all\" is the whole catalog, about 120 KB, so ask for a group. The result also carries total (every command) and groups (row counts per group); unknown names come back in missing.",
+      "description": "List bridge commands with args schema, example, and group. Same names as GET /tools and the MCP bridge tools. Pass names (a list of command names) or group (core, feature, insert, pick, sketch, document, joint, paint, measure, fea, sheet, git, export, view, agent) to get only those rows; the arg description lists what each group holds. No args or group: \"all\" is the whole catalog, about 130 KB compact, so ask for a group. The result also carries total (every command) and groups (row counts per group); unknown names come back in missing.",
       "args": {
         "type": "object",
         "additionalProperties": false,
