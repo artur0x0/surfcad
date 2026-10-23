@@ -507,6 +507,15 @@ jobs:
             echo "adjacent part visible golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:rotate-feature | tee "${RUNNER_TEMP}/rotate-feature.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/rotate-feature.log"; then
+            echo "rotate feature golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'rotate feature golden: ok' "${RUNNER_TEMP}/rotate-feature.log"; then
+            echo "rotate feature golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
