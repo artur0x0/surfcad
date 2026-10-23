@@ -317,6 +317,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "core",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -510,6 +511,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "core",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -690,6 +692,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "core",
       "immediate": false,
       "uiEntry": "data-cad-run",
       "example": {}
@@ -813,6 +816,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "core",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -879,6 +883,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "core",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -948,6 +953,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "view",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -1106,6 +1112,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "core",
       "immediate": false,
       "uiEntry": [
         "data-cad-undo",
@@ -1268,6 +1275,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "core",
       "immediate": false,
       "uiEntry": [
         "data-cad-redo",
@@ -1333,17 +1341,48 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "core",
       "immediate": true,
       "uiEntry": null,
       "example": {}
     },
     {
       "name": "list_commands",
-      "description": "List every bridge command with args schema and example. Same names as GET /tools and the MCP bridge tools.",
+      "description": "List bridge commands with args schema, example, and group. Same names as GET /tools and the MCP bridge tools. Pass names (a list of command names) or group (core, feature, insert, pick, sketch, document, joint, paint, measure, fea, sheet, git, export, view, agent) to get only those rows; the arg description lists what each group holds. No args or group: \"all\" is the whole catalog, about 130 KB compact, so ask for a group. The result also carries total (every command) and groups (row counts per group); unknown names come back in missing.",
       "args": {
         "type": "object",
         "additionalProperties": false,
-        "properties": {}
+        "properties": {
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these commands, in catalog order. Names that are not commands come back in missing."
+          },
+          "group": {
+            "type": "string",
+            "enum": [
+              "core",
+              "feature",
+              "insert",
+              "pick",
+              "sketch",
+              "document",
+              "joint",
+              "paint",
+              "measure",
+              "fea",
+              "sheet",
+              "git",
+              "export",
+              "view",
+              "agent",
+              "all"
+            ],
+            "description": "Only the commands in this group: core (script, run, status, errors, history, undo/redo, feature_tree, list_commands); feature (the open feature edit: open, activate, edit, confirm, cancel, delete, rollback); insert (insert_* feature tools and invoke_helper); pick (pick sessions, selection, and the face/edge/body lists); sketch (sketch, slot, hole-centre, workplane and plane sessions); document (parts and assemblies: create, open, rename, delete, insert_part, placement, dirty); joint (assembly joints); paint (face and part paint); measure (measure sessions); fea (FEA study); sheet (sheet metal); git (vault writes and branches); export (STL / 3MF / STEP export); view (screenshot, camera, visibility, cross section, mode, toasts); agent (operator-visible cues and the in-viewer prompt). \"all\" is the whole catalog."
+          }
+        }
       },
       "result": {
         "type": "object",
@@ -1363,8 +1402,29 @@
                 },
                 "example": {
                   "type": "object"
+                },
+                "group": {
+                  "type": "string"
                 }
               }
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "groups": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "group": {
+            "type": "string"
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           }
         }
@@ -1375,6 +1435,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "core",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -1427,6 +1488,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "agent",
       "immediate": true,
       "uiEntry": null,
       "example": {
@@ -1452,6 +1514,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "core",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -1474,6 +1537,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -1496,6 +1560,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "view",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -1518,6 +1583,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "document",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -1540,6 +1606,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "view",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -1562,6 +1629,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "document",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -1584,19 +1652,106 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "view",
       "immediate": true,
       "uiEntry": null,
       "example": {}
     },
     {
       "name": "list_faces",
-      "description": "Every pickable face on the active part, or on part_id when set (an opaque surf id, never a path or display name). One row per face a viewport click selects, all bodies: id (f0, f1, …), type (planar, cylindrical, curved), center, normal, axis and radius for cylinders, area, and key. The id is the patch index on this mesh and is only valid until the next remesh; a rerun of the same script keeps every id. Pass the key with the id to joint_pick so a stale id cannot silently pick another face.",
+      "description": "Every pickable face on the active part, or on part_id when set (an opaque surf id, never a path or display name). One row per face a viewport click selects, all bodies: id (f0, f1, …), type (planar, cylindrical, curved), center, normal, axis and radius for cylinders, area, and key. The id is the patch index on this mesh and is only valid until the next remesh; a rerun of the same script keeps every id. Pass the key with the id to joint_pick so a stale id cannot silently pick another face. The whole list on a detailed part is 100 KB or more, so filter it in the tab: filter { kind, normalWithin: { n, deg }, minArea, maxArea, bbox: { min, max } } keeps only faces that match every given field (the top faces: kind \"planar\", normalWithin { n: [0, 0, 1], deg: 5 }), and page { offset, limit } returns one page. The result always carries total (rows after the filter) and returned; with a page it echoes offset and limit, so walk pages until offset + returned >= total.",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "part_id": {
             "type": "string"
+          },
+          "filter": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Keep only matching faces. Every given field must hold.",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "planar",
+                  "cylindrical",
+                  "curved"
+                ],
+                "description": "Face type"
+              },
+              "normalWithin": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Faces whose normal is within deg degrees of n",
+                "properties": {
+                  "n": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "deg": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 180
+                  }
+                }
+              },
+              "minArea": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Smallest area in mm² to keep"
+              },
+              "maxArea": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Largest area in mm² to keep"
+              },
+              "bbox": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "min": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "max": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  }
+                },
+                "description": "Faces whose center lies inside this box (part local, mm)"
+              }
+            }
+          },
+          "page": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "One page of rows. The result adds total (rows after the filter), returned, offset, and limit.",
+            "properties": {
+              "offset": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Rows to skip (default 0)"
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Rows to return (default: all remaining)"
+              }
+            }
           }
         }
       },
@@ -1605,6 +1760,7 @@
         "additionalProperties": true
       },
       "errors": [
+        "bad_args",
         "no_mesh",
         "unknown_part",
         "internal"
@@ -1612,6 +1768,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -1634,6 +1791,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -1656,13 +1814,14 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "core",
       "immediate": true,
       "uiEntry": null,
       "example": {}
     },
     {
       "name": "list_edges",
-      "description": "Mesh feature edges (raw or grouped).",
+      "description": "Mesh feature edges (raw or grouped). Raw lists are long: filter { between: [faceKeyA, faceKeyB], minLength, maxLength, bbox } keeps only edges that match every given field (between takes two list_faces keys in either order), and page { offset, limit } returns one page. The result carries total (rows after the filter) and returned.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -1677,6 +1836,105 @@
           "grouped": {
             "type": "boolean",
             "description": "Alias for raw:false — topology-stable boundary edges."
+          },
+          "filter": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Keep only matching edges. Every given field must hold.",
+            "properties": {
+              "between": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "at",
+                    "n",
+                    "area"
+                  ],
+                  "properties": {
+                    "at": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 3,
+                      "maxItems": 3
+                    },
+                    "n": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 3,
+                      "maxItems": 3
+                    },
+                    "area": {
+                      "type": "number"
+                    },
+                    "src": {
+                      "type": "integer"
+                    },
+                    "ord": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "description": "Edges shared by these two faces (list_faces keys, either order)"
+              },
+              "minLength": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Shortest edge in mm to keep"
+              },
+              "maxLength": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Longest edge in mm to keep"
+              },
+              "bbox": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "min": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "max": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  }
+                },
+                "description": "Edges whose midpoint lies inside this box (part local, mm)"
+              }
+            }
+          },
+          "page": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "One page of rows. The result adds total (rows after the filter), returned, offset, and limit.",
+            "properties": {
+              "offset": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Rows to skip (default 0)"
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Rows to return (default: all remaining)"
+              }
+            }
           }
         }
       },
@@ -1685,6 +1943,7 @@
         "additionalProperties": true
       },
       "errors": [
+        "bad_args",
         "no_mesh",
         "unknown_part",
         "internal"
@@ -1692,6 +1951,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": true,
       "uiEntry": null,
       "example": {
@@ -1700,13 +1960,112 @@
     },
     {
       "name": "list_feature_edges",
-      "description": "Topology-stable boundary edge ids (e0, e1, …).",
+      "description": "Topology-stable boundary edge ids (e0, e1, …). filter { between: [faceKeyA, faceKeyB], minLength, maxLength, bbox } and page { offset, limit } work as on list_edges; the result carries total and returned.",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "part_id": {
             "type": "string"
+          },
+          "filter": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Keep only matching edges. Every given field must hold.",
+            "properties": {
+              "between": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "at",
+                    "n",
+                    "area"
+                  ],
+                  "properties": {
+                    "at": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 3,
+                      "maxItems": 3
+                    },
+                    "n": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 3,
+                      "maxItems": 3
+                    },
+                    "area": {
+                      "type": "number"
+                    },
+                    "src": {
+                      "type": "integer"
+                    },
+                    "ord": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "description": "Edges shared by these two faces (list_faces keys, either order)"
+              },
+              "minLength": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Shortest edge in mm to keep"
+              },
+              "maxLength": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Longest edge in mm to keep"
+              },
+              "bbox": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "min": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "max": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  }
+                },
+                "description": "Edges whose midpoint lies inside this box (part local, mm)"
+              }
+            }
+          },
+          "page": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "One page of rows. The result adds total (rows after the filter), returned, offset, and limit.",
+            "properties": {
+              "offset": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Rows to skip (default 0)"
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Rows to return (default: all remaining)"
+              }
+            }
           }
         }
       },
@@ -1722,6 +2081,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -1886,6 +2246,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -2091,6 +2452,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "cube",
       "example": {
@@ -2311,6 +2673,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "roundedBox",
       "example": {
@@ -2524,6 +2887,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "cylinder",
       "example": {
@@ -2732,6 +3096,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "sphere",
       "example": {
@@ -2970,6 +3335,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "tube",
       "example": {
@@ -3183,6 +3549,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "hexPrism",
       "example": {
@@ -3374,6 +3741,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "filletEdges",
       "example": {
@@ -3540,6 +3908,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "chamferEdges",
       "example": {
@@ -3738,6 +4107,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "crossSection",
       "example": {
@@ -3905,6 +4275,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "sweepPath",
       "example": {
@@ -4164,6 +4535,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "hole",
       "example": {
@@ -4361,6 +4733,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "holePattern",
       "example": {
@@ -4550,6 +4923,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "clearanceHole",
       "example": {
@@ -4730,6 +5104,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "tapDrillHole",
       "example": {
@@ -4908,6 +5283,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "cboreHole",
       "example": {
@@ -5088,6 +5464,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "cskHole",
       "example": {
@@ -5262,6 +5639,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "shell",
       "example": {
@@ -5421,6 +5799,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": [
         "cut",
@@ -5585,6 +5964,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": [
         "boolean",
@@ -5785,6 +6165,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": [
         "move",
@@ -5953,6 +6334,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "center",
       "example": {
@@ -6109,6 +6491,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "align",
       "example": {
@@ -6273,6 +6656,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "mirror",
       "example": {
@@ -6432,6 +6816,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "codeSnippet",
       "example": {
@@ -6639,6 +7024,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "array3D",
       "example": {
@@ -6824,6 +7210,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "patternPoints",
       "example": {
@@ -7005,6 +7392,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "polarArray",
       "example": {
@@ -7193,6 +7581,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "addDraft",
       "example": {
@@ -7350,6 +7739,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "workplane",
       "example": {}
@@ -7511,6 +7901,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "makeExtrude",
       "example": {
@@ -7676,6 +8067,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "makeRevolve",
       "example": {
@@ -7834,6 +8226,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "makeSweep",
       "example": {
@@ -7997,6 +8390,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "makeLoft",
       "example": {
@@ -8162,6 +8556,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "moveFace",
       "example": {
@@ -8321,6 +8716,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "insert",
       "immediate": false,
       "uiEntry": "deleteFace",
       "example": {
@@ -8357,6 +8753,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "feature",
       "immediate": false,
       "uiEntry": [
         "data-feature-chip",
@@ -8399,6 +8796,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "feature",
       "immediate": false,
       "uiEntry": "data-sketch-chip",
       "example": {
@@ -8454,6 +8852,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "feature",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -8638,6 +9037,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "feature",
       "immediate": false,
       "uiEntry": "data-feature-sheet-accept",
       "example": {}
@@ -8666,6 +9066,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "feature",
       "immediate": false,
       "uiEntry": null,
       "example": {}
@@ -8858,6 +9259,7 @@
       "mutates": true,
       "destructive": true,
       "confirm": true,
+      "group": "feature",
       "immediate": false,
       "uiEntry": "data-feature-sheet-delete",
       "example": {
@@ -8918,6 +9320,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "feature",
       "immediate": false,
       "uiEntry": "data-rollback-bar",
       "example": {
@@ -8947,6 +9350,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -9053,6 +9457,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": true,
       "uiEntry": "data-pick-mode-face",
       "example": {
@@ -9509,6 +9914,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": true,
       "uiEntry": "data-pick-mode-edge",
       "example": {
@@ -9583,6 +9989,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": true,
       "uiEntry": null,
       "example": {
@@ -9624,6 +10031,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "document",
       "immediate": true,
       "uiEntry": null,
       "example": {
@@ -9681,6 +10089,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "view",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -9756,6 +10165,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "view",
       "immediate": true,
       "uiEntry": [
         "data-view-snap-top",
@@ -9794,6 +10204,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "view",
       "immediate": true,
       "uiEntry": "data-zoom-to-fit",
       "example": {}
@@ -9823,6 +10234,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "view",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -9874,6 +10286,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-contour-mode-chip",
       "example": {
@@ -9905,6 +10318,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-contour-confirm",
       "example": {}
@@ -9977,6 +10391,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": [
         "rectangle",
@@ -10173,6 +10588,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-contour-confirm",
       "example": {}
@@ -10200,6 +10616,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-contour-exit",
       "example": {}
@@ -10223,6 +10640,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-contour-back",
       "example": {}
@@ -10493,6 +10911,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": [
         "dimension",
@@ -10755,6 +11174,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": [
         "constraints",
@@ -10802,6 +11222,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "makeExtrude",
       "example": {
@@ -10851,6 +11272,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-feature-slot-card",
       "example": {
@@ -10935,6 +11357,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-feature-slot-card",
       "example": {
@@ -11118,6 +11541,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-feature-slot-card",
       "example": {}
@@ -11145,6 +11569,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-feature-slot-card",
       "example": {}
@@ -11226,6 +11651,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": false,
       "uiEntry": [
         "data-fillet-mode-chip",
@@ -11797,6 +12223,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -11826,6 +12253,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": false,
       "uiEntry": null,
       "example": {}
@@ -11850,6 +12278,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": false,
       "uiEntry": null,
       "example": {}
@@ -11892,6 +12321,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -11917,6 +12347,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": false,
       "uiEntry": null,
       "example": {}
@@ -11939,6 +12370,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -12527,6 +12959,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -13129,6 +13562,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -13714,6 +14148,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -13747,6 +14182,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "hole",
       "example": {}
@@ -13796,6 +14232,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-hole-card",
       "example": {
@@ -13822,6 +14259,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-hole-card",
       "example": {}
@@ -14001,6 +14439,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-contour-confirm",
       "example": {}
@@ -14028,6 +14467,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-hole-card",
       "example": {}
@@ -14078,6 +14518,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-contour-mode-chip",
       "example": {
@@ -14109,6 +14550,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-contour-mode-chip",
       "example": {
@@ -14142,6 +14584,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-overlay-toggle-plane",
       "example": {
@@ -14172,6 +14615,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-overlay-toggle-contour",
       "example": {
@@ -14197,6 +14641,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -14233,6 +14678,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "document",
       "immediate": false,
       "uiEntry": "data-part-add-kind-assembly",
       "example": {
@@ -14284,6 +14730,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "document",
       "immediate": false,
       "uiEntry": "data-part-add-kind-part",
       "example": {
@@ -14333,6 +14780,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "document",
       "immediate": false,
       "uiEntry": "data-part-name-input",
       "example": {
@@ -14383,6 +14831,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "document",
       "immediate": false,
       "uiEntry": "data-assembly-rename-menu",
       "example": {
@@ -14446,6 +14895,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "document",
       "immediate": true,
       "uiEntry": null,
       "example": {
@@ -14536,6 +14986,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "document",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -14586,6 +15037,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "document",
       "immediate": false,
       "uiEntry": [
         "data-part-open-action-assembly",
@@ -14635,6 +15087,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "document",
       "immediate": false,
       "uiEntry": "data-part-open-action-part",
       "example": {
@@ -14692,6 +15145,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "document",
       "immediate": false,
       "uiEntry": "data-git-open-insert",
       "example": {
@@ -14717,6 +15171,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "document",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -14774,6 +15229,7 @@
       "mutates": true,
       "destructive": true,
       "confirm": true,
+      "group": "document",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -14829,6 +15285,7 @@
       "mutates": true,
       "destructive": true,
       "confirm": true,
+      "group": "document",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -14854,6 +15311,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "joint",
       "immediate": true,
       "uiEntry": "data-joints-button",
       "example": {}
@@ -14907,6 +15365,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "joint",
       "immediate": false,
       "uiEntry": "data-joint-card",
       "example": {
@@ -15057,6 +15516,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "joint",
       "immediate": false,
       "uiEntry": "data-joint-card",
       "example": {
@@ -15129,6 +15589,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "joint",
       "immediate": false,
       "uiEntry": "data-joint-card",
       "example": {}
@@ -15156,6 +15617,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "joint",
       "immediate": true,
       "uiEntry": "data-joint-card",
       "example": {}
@@ -15188,6 +15650,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "joint",
       "immediate": false,
       "uiEntry": "data-joint-chip",
       "example": {
@@ -15251,6 +15714,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "joint",
       "immediate": false,
       "uiEntry": "data-joint-chip",
       "example": {
@@ -15277,6 +15741,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sheet",
       "immediate": true,
       "uiEntry": [
         "data-sheet-metal-button",
@@ -15323,6 +15788,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "sheet",
       "immediate": false,
       "uiEntry": "data-sheet-metal-start",
       "example": {
@@ -15364,6 +15830,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sheet",
       "immediate": false,
       "uiEntry": [
         "sheet-tool-tab",
@@ -15468,6 +15935,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sheet",
       "immediate": false,
       "uiEntry": [
         "data-sheet-metal-base",
@@ -15560,6 +16028,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sheet",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -15743,6 +16212,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "sheet",
       "immediate": false,
       "uiEntry": "data-sm-accept",
       "example": {}
@@ -15772,6 +16242,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sheet",
       "immediate": true,
       "uiEntry": "data-sm-back",
       "example": {}
@@ -15799,6 +16270,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sheet",
       "immediate": true,
       "uiEntry": [
         "data-sheet-metal-exit",
@@ -15825,6 +16297,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sheet",
       "immediate": true,
       "uiEntry": "data-sm-check",
       "example": {}
@@ -15853,6 +16326,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sheet",
       "immediate": true,
       "uiEntry": "data-sheet-metal-export",
       "example": {}
@@ -16033,6 +16507,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "sheet",
       "immediate": false,
       "uiEntry": "data-sm-done",
       "example": {}
@@ -16138,6 +16613,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sheet",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -16163,6 +16639,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sheet",
       "immediate": false,
       "uiEntry": "data-sm-next",
       "example": {}
@@ -16196,6 +16673,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "paint",
       "immediate": true,
       "uiEntry": "data-paint-chip",
       "example": {}
@@ -16219,6 +16697,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "paint",
       "immediate": true,
       "uiEntry": "data-paint-chip",
       "example": {}
@@ -16251,6 +16730,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "paint",
       "immediate": false,
       "uiEntry": "data-paint-swatch",
       "example": {
@@ -16316,6 +16796,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "paint",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -16355,6 +16836,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "paint",
       "immediate": false,
       "uiEntry": "data-paint-part",
       "example": {}
@@ -16378,6 +16860,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "paint",
       "immediate": false,
       "uiEntry": "data-paint-undo",
       "example": {}
@@ -16401,6 +16884,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "paint",
       "immediate": false,
       "uiEntry": "data-paint-clear",
       "example": {}
@@ -16424,6 +16908,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "paint",
       "immediate": false,
       "uiEntry": "data-paint-mode-chip",
       "example": {}
@@ -16447,6 +16932,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "paint",
       "immediate": true,
       "uiEntry": "data-paint-mode-chip",
       "example": {}
@@ -16470,6 +16956,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "paint",
       "immediate": true,
       "uiEntry": null,
       "example": {}
@@ -16493,6 +16980,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "measure",
       "immediate": true,
       "uiEntry": "data-measure-toggle",
       "example": {}
@@ -16516,6 +17004,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "measure",
       "immediate": true,
       "uiEntry": "data-measure-mode-chip",
       "example": {}
@@ -16550,6 +17039,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "measure",
       "immediate": false,
       "uiEntry": "data-measure-unit-choice",
       "example": {
@@ -17107,6 +17597,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "measure",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -17146,6 +17637,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "measure",
       "immediate": false,
       "uiEntry": "data-measure-clear",
       "example": {}
@@ -17169,6 +17661,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "measure",
       "immediate": true,
       "uiEntry": "data-measure-mode-chip",
       "example": {}
@@ -17197,6 +17690,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "view",
       "immediate": false,
       "uiEntry": "data-cross-section-toggle",
       "example": {
@@ -17230,6 +17724,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "view",
       "immediate": false,
       "uiEntry": "data-cross-section-expand",
       "example": {
@@ -17268,6 +17763,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "view",
       "immediate": false,
       "uiEntry": "data-cross-section-plane",
       "example": {
@@ -17301,6 +17797,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "view",
       "immediate": false,
       "uiEntry": "data-section-offset",
       "example": {
@@ -17326,6 +17823,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "view",
       "immediate": true,
       "uiEntry": "data-cross-section-toggle",
       "example": {}
@@ -17349,6 +17847,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "pick",
       "immediate": true,
       "uiEntry": "data-cad-select-all",
       "example": {}
@@ -17380,6 +17879,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "sketch",
       "immediate": false,
       "uiEntry": "data-contour-entity-card",
       "example": {
@@ -17438,6 +17938,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "agent",
       "immediate": true,
       "uiEntry": [
         "data-agent-prompt-send",
@@ -17471,6 +17972,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "fea",
       "immediate": false,
       "uiEntry": "data-analyze-chip",
       "example": {}
@@ -17494,6 +17996,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "fea",
       "immediate": true,
       "uiEntry": "data-analyze-chip",
       "example": {}
@@ -17525,6 +18028,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "fea",
       "immediate": false,
       "uiEntry": "data-fea-material",
       "example": {
@@ -17562,6 +18066,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "fea",
       "immediate": false,
       "uiEntry": "data-fea-target",
       "example": {
@@ -17711,6 +18216,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "fea",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -17874,6 +18380,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "fea",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -18057,6 +18564,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "fea",
       "immediate": false,
       "uiEntry": "data-fea-target",
       "example": {
@@ -18230,6 +18738,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "fea",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -18278,6 +18787,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "fea",
       "immediate": false,
       "uiEntry": "data-fea-remove",
       "example": {
@@ -18311,6 +18821,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "fea",
       "immediate": false,
       "uiEntry": "data-fea-remove",
       "example": {
@@ -18403,6 +18914,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "fea",
       "immediate": false,
       "uiEntry": "data-fea-run",
       "example": {}
@@ -18426,6 +18938,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "fea",
       "immediate": false,
       "uiEntry": "data-fea-cancel",
       "example": {}
@@ -18449,6 +18962,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "fea",
       "immediate": false,
       "uiEntry": "data-fea-back",
       "example": {}
@@ -18484,6 +18998,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "fea",
       "immediate": true,
       "uiEntry": "data-fea-sheet",
       "example": {
@@ -18547,6 +19062,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "fea",
       "immediate": true,
       "uiEntry": "data-fea-summary",
       "example": {}
@@ -18694,6 +19210,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "fea",
       "immediate": false,
       "uiEntry": null,
       "example": {
@@ -18736,6 +19253,7 @@
       "mutates": true,
       "destructive": true,
       "confirm": true,
+      "group": "git",
       "immediate": false,
       "uiEntry": "data-git-move-open",
       "example": {
@@ -18785,6 +19303,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "git",
       "immediate": false,
       "uiEntry": [
         "data-git-save",
@@ -18899,6 +19418,7 @@
       "mutates": true,
       "destructive": true,
       "confirm": true,
+      "group": "git",
       "immediate": false,
       "uiEntry": [
         "data-git-upgrade-confirm",
@@ -18951,6 +19471,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "git",
       "immediate": false,
       "uiEntry": [
         "data-git-commit-add-to-repo",
@@ -19010,6 +19531,7 @@
       "mutates": true,
       "destructive": true,
       "confirm": true,
+      "group": "git",
       "immediate": false,
       "uiEntry": [
         "data-git-behind-reload",
@@ -19059,6 +19581,7 @@
       "mutates": true,
       "destructive": false,
       "confirm": false,
+      "group": "git",
       "immediate": false,
       "uiEntry": [
         "data-git-branch-action-create",
@@ -19111,6 +19634,7 @@
       "mutates": true,
       "destructive": true,
       "confirm": true,
+      "group": "git",
       "immediate": false,
       "uiEntry": [
         "data-git-branches",
@@ -19163,6 +19687,7 @@
       "mutates": true,
       "destructive": true,
       "confirm": true,
+      "group": "git",
       "immediate": false,
       "uiEntry": "data-git-branch-delete-confirm",
       "example": {
@@ -19208,6 +19733,7 @@
       "mutates": true,
       "destructive": true,
       "confirm": true,
+      "group": "git",
       "immediate": false,
       "uiEntry": [
         "data-git-force-merge",
@@ -19235,6 +19761,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "git",
       "immediate": true,
       "uiEntry": "data-git-branches",
       "example": {}
@@ -19301,6 +19828,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "export",
       "immediate": false,
       "uiEntry": "data-part-download",
       "example": {
@@ -19355,6 +19883,7 @@
       "mutates": false,
       "destructive": false,
       "confirm": false,
+      "group": "export",
       "immediate": false,
       "uiEntry": "data-part-download",
       "example": {

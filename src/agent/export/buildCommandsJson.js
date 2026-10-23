@@ -5,6 +5,7 @@
 import { V1_COMMANDS } from '../commands/index.js';
 import { metaForCommand } from './commandMeta.js';
 import { RETURN_NOTE, takesReturnArg } from '../returnMode.js';
+import { groupForCommand } from './commandGroups.js';
 import { ambiguousArgProperties, validateArgsSchema } from './schemaPolicy.js';
 import { STATUS_SCHEMA, MUTATE_RESULT_SCHEMA, NO_ARGS_SCHEMA } from '../schemas/common.js';
 
@@ -40,6 +41,7 @@ export function buildCommandEntry(command, raw) {
     mutates: meta.mutates === true,
     destructive: meta.destructive === true,
     confirm: meta.confirm === true,
+    group: groupForCommand(command.name),
     immediate: command.immediate === true,
     uiEntry: uiEntryExport(command),
     example: cloneJson(command.example),
