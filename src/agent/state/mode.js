@@ -45,6 +45,10 @@ export function buildAgentMode(input = {}) {
       planeTool: input.contour.planeTool === true,
       planeOpen: input.contour.planeOpen === true,
       tool: input.contour.tool || null,
+      // The saved contour this sketch edits (open_feature on a contour chip
+      // or the strip chip), null for a new sketch.
+      contourId: input.contour.contourId || null,
+      contourName: input.contour.contourName || null,
     }
     : null;
 

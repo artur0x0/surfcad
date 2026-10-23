@@ -326,7 +326,7 @@ export const COMMAND_META = {
     mutates: true,
   },
   open_feature: {
-    description: 'Open the feature sheet or viewport edit card for a strip chip.',
+    description: 'Open the feature sheet or viewport edit card for a strip chip. A saved contour (a contour:<id> chip) has no card: it reopens in the contour sketch and the result says sketchOpen: true with its contourId; edit_feature then patches that sketch and confirm_feature saves and closes it.',
     result: { type: 'object', additionalProperties: true },
     errors: ['unknown_feature', 'bad_index', 'edit_failed', 'internal'],
     mutates: false,
@@ -351,19 +351,19 @@ export const COMMAND_META = {
     mutates: false,
   },
   edit_feature: {
-    description: 'Merge params into the open feature edit session (feature sheet, helper edit card, or hole card). Keys depend on the feature kind; for a move, params.at (a list_bodies centroid) re-points it and dx / dy / dz change the offset. Confirm with confirm_feature.',
+    description: 'Merge params into the open feature edit session (feature sheet, helper edit card, or hole card). Keys depend on the feature kind; for a move, params.at (a list_bodies centroid) re-points it and dx / dy / dz change the offset. On a saved contour that open_feature reopened in the sketch, the profile keys patch that sketch: points [[u, v], …] (polyline, replaces a solved sketch), radius and segments (circle), width, height and centered (rectangle), polygon_preset and radius (polygon), or tool to switch; only the keys given change, keys the contour has no use for come back in ignored. Confirm with confirm_feature.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['no_feature_edit', 'edit_failed', 'internal'],
+    errors: ['no_feature_edit', 'edit_failed', 'bad_args', 'no_sketch', 'plane_card_open', 'internal'],
     mutates: false,
   },
   confirm_feature: {
-    description: `Accept the open feature edit and run through mutate.${CRASH_NOTE}`,
+    description: `Accept the open feature edit and run through mutate. On a reopened saved contour it saves and closes the sketch (the rail checkmark: the @contour statement is rewritten by id and every feature that names it rebuilds) and the result carries sketchClosed: true; a profile that cannot be saved is an error that also closes the sketch, so no sketch is ever left open.${CRASH_NOTE}`,
     result: MUTATE_RESULT_SCHEMA,
-    errors: ['no_feature_edit', 'edit_failed', 'no_write_part', 'internal'],
+    errors: ['no_feature_edit', 'edit_failed', 'no_write_part', 'invalid_profile', 'empty_sketch', 'commit_failed', 'internal'],
     mutates: true,
   },
   cancel_feature: {
-    description: 'Close the open feature edit without writing.',
+    description: 'Close the open feature edit without writing. On a reopened saved contour it also closes the sketch (sketchClosed: true).',
     result: OK,
     errors: ['no_feature_edit', 'internal'],
     mutates: false,

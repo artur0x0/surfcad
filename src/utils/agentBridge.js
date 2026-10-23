@@ -524,6 +524,7 @@ export function createSurfcadBridge(hostSource) {
     prepareFeatureDelete: (args) => hostFn('prepareFeatureDelete')?.(args),
     dismissFeatureConfirmSession: () => { hostFn('dismissFeatureConfirmSession')?.(); },
     cancelFeature: () => hostFn('cancelFeature')?.(),
+    readFeatureSession: () => hostFn('readFeatureSession')?.() ?? null,
     deleteFeature: (args) => hostFn('deleteFeature')?.(args),
     rollbackTo: (args) => hostFn('rollbackTo')?.(args),
     prepareContourMutate: (payload, meta) => hostFn('prepareContourMutate')?.(payload, meta),

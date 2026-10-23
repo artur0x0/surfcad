@@ -8725,7 +8725,7 @@
     },
     {
       "name": "open_feature",
-      "description": "Open the feature sheet or viewport edit card for a strip chip.",
+      "description": "Open the feature sheet or viewport edit card for a strip chip. A saved contour (a contour:<id> chip) has no card: it reopens in the contour sketch and the result says sketchOpen: true with its contourId; edit_feature then patches that sketch and confirm_feature saves and closes it.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -8805,7 +8805,7 @@
     },
     {
       "name": "edit_feature",
-      "description": "Merge params into the open feature edit session (feature sheet, helper edit card, or hole card). Keys depend on the feature kind; for a move, params.at (a list_bodies centroid) re-points it and dx / dy / dz change the offset. Confirm with confirm_feature.",
+      "description": "Merge params into the open feature edit session (feature sheet, helper edit card, or hole card). Keys depend on the feature kind; for a move, params.at (a list_bodies centroid) re-points it and dx / dy / dz change the offset. On a saved contour that open_feature reopened in the sketch, the profile keys patch that sketch: points [[u, v], …] (polyline, replaces a solved sketch), radius and segments (circle), width, height and centered (rectangle), polygon_preset and radius (polygon), or tool to switch; only the keys given change, keys the contour has no use for come back in ignored. Confirm with confirm_feature.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -8813,8 +8813,24 @@
           "params": {
             "type": "object",
             "additionalProperties": true,
-            "description": "Feature sheet / edit-card fields to merge before confirm. Keys depend on the feature kind (e.g. height, radius, distance). For a move: dx, dy, dz, and at.",
+            "description": "Feature sheet / edit-card fields to merge before confirm. Keys depend on the feature kind (e.g. height, radius, distance). For a move: dx, dy, dz, and at. For a saved contour (a contour:<id> chip): points [[u, v], …], radius, segments, width, height, centered, polygon_preset, or tool; they patch the reopened sketch, and confirm_feature saves and closes it.",
             "properties": {
+              "points": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "description": "Contour only: new polyline points in the sketch plane UV, mm; replaces the profile"
+              },
+              "tool": {
+                "type": "string",
+                "description": "Contour only: circle | rectangle | polygon | polyline; inferred from the other keys when omitted"
+              },
               "at": {
                 "type": "array",
                 "items": {
@@ -8847,6 +8863,9 @@
       "errors": [
         "no_feature_edit",
         "edit_failed",
+        "bad_args",
+        "no_sketch",
+        "plane_card_open",
         "internal"
       ],
       "mutates": false,
@@ -8863,7 +8882,7 @@
     },
     {
       "name": "confirm_feature",
-      "description": "Accept the open feature edit and run through mutate. If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Accept the open feature edit and run through mutate. On a reopened saved contour it saves and closes the sketch (the rail checkmark: the @contour statement is rewritten by id and every feature that names it rebuilds) and the result carries sketchClosed: true; a profile that cannot be saved is an error that also closes the sketch, so no sketch is ever left open. If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -9032,6 +9051,9 @@
         "no_feature_edit",
         "edit_failed",
         "no_write_part",
+        "invalid_profile",
+        "empty_sketch",
+        "commit_failed",
         "internal"
       ],
       "mutates": true,
@@ -9044,7 +9066,7 @@
     },
     {
       "name": "cancel_feature",
-      "description": "Close the open feature edit without writing.",
+      "description": "Close the open feature edit without writing. On a reopened saved contour it also closes the sketch (sketchClosed: true).",
       "args": {
         "type": "object",
         "additionalProperties": false,
