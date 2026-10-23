@@ -496,6 +496,15 @@ jobs:
             echo "contour edit feature golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:adjacent-part-visible | tee "${RUNNER_TEMP}/adjacent-part-visible.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/adjacent-part-visible.log"; then
+            echo "adjacent part visible golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'adjacent part visible golden: ok' "${RUNNER_TEMP}/adjacent-part-visible.log"; then
+            echo "adjacent part visible golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:

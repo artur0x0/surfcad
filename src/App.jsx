@@ -2706,11 +2706,17 @@ const App = () => {
     focusPartHistory(id, nextScript);
     const cachedMesh = meshForPart(id);
     if (!opts.keepPicks && cachedMesh?.vertProperties) {
-      viewportRef.current?.adoptActiveSolid?.({
+      // Same swap a viewport pick makes: the part we are leaving is parked
+      // as an assembly mesh right now and the picked part's copy is removed,
+      // so both stay on screen while the assembly rebuilds behind the
+      // switch. adoptActiveSolid alone left the previous part out of the
+      // scene until that rebuild placed it again, which on a heavy assembly
+      // is seconds (the bike: the Fork vanished when the wheel was picked).
+      viewportRef.current?.swapPickPart?.({
+        partId: id,
         mesh: cachedMesh,
         position: partPosition(part) || [0, 0, 0],
         placement: partPlacement(part),
-        partId: id,
       });
     }
     if (opts.keepPicks) {
