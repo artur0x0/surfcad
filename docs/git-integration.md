@@ -38,7 +38,7 @@ We've shipped stale amber dots more than once (most recently #614, fixed in #621
 
 - After every rebase, run `npm run lint` and `npm run build` locally before pushing. Duplicate imports from overlapping PRs break the build (#617).
 - Verify all 9 `ci.yml` jobs on the exact head SHA; they aren't required checks, so GitHub won't block for you.
-- The `src/fea/sheetMetallica.test.js` timeout is a known flake. Retrigger with an empty commit (rerunning the failed job returns 403).
+- `src/fea/sheetMetallica.test.js` used to time out or trip its tolerance when fTetWild produced a slow or unlucky mesh; since the TET10 side became a committed reference (`src/fea/fixtures/sheetMetallicaReference.json`) the file runs in about a minute. A red there is a real change: rerun the failed job with `gh run rerun <run-id> --failed` only if the log shows a runner problem.
 
 ## 7. Every git document carries `vaultLayout`
 

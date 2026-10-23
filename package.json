@@ -350,6 +350,7 @@
         "golden:face-skin": "node scripts/golden/smoke_face_skin.mjs",
         "golden:face-paint": "node scripts/golden/smoke_face_paint.mjs",
         "golden:fea-study": "node scripts/golden/fea_study_panel.mjs",
+        "golden:fea-shell-vs-tet": "node scripts/golden/fea_shell_vs_tet.mjs",
         "golden:fea-face-highlight": "node scripts/golden/fea_face_highlight.mjs",
         "golden:fea-analyze-playtest": "node scripts/golden/fea_analyze_playtest.mjs",
         "golden:fea-load-arrows": "node scripts/golden/fea_load_arrows.mjs",

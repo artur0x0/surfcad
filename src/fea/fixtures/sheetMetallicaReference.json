@@ -1,0 +1,72 @@
+{
+  "fixture": "src/fea/fixtures/sheetMetallica.js SHEET_METALLICA_SCRIPT",
+  "study": {
+    "model": "solid",
+    "mesh": {
+      "target": 3,
+      "refine": "off"
+    },
+    "profile": "desktop",
+    "material": "aluminum 6061-T6"
+  },
+  "generatedAt": "2026-10-23T00:58:04.048Z",
+  "command": "node scripts/golden/fea_shell_vs_tet.mjs --write",
+  "wasm": {
+    "surfcad_mesh.wasm": "4e4c9ee24c60e96be2e80f2c254a133c106e86b52c1e6299c3cb5e0c4d77a479",
+    "surfcad_fea_bg.wasm": "7ad8452ad19cfecb071f421c7ab79d7480cc2bb387a11f3efcb92fbe79215365"
+  },
+  "runs": [
+    {
+      "dofs": 115251,
+      "meshMs": 31257,
+      "solveMs": 2670,
+      "displacementMax": 28.674779891967773,
+      "p95": 231.2653866029706,
+      "surfaceP95": 230.3019256591797
+    },
+    {
+      "dofs": 134457,
+      "meshMs": 36961,
+      "solveMs": 3620,
+      "displacementMax": 28.676925659179688,
+      "p95": 229.42446540039813,
+      "surfaceP95": 228.46533203125
+    },
+    {
+      "dofs": 113133,
+      "meshMs": 32789,
+      "solveMs": 2292,
+      "displacementMax": 28.63606834411621,
+      "p95": 231.4476159805475,
+      "surfaceP95": 231.61549377441406
+    },
+    {
+      "dofs": 117735,
+      "meshMs": 36430,
+      "solveMs": 2621,
+      "displacementMax": 28.60253143310547,
+      "p95": 231.40599831780506,
+      "surfaceP95": 229.8389434814453
+    },
+    {
+      "dofs": 143037,
+      "meshMs": 33221,
+      "solveMs": 3989,
+      "displacementMax": 28.644140243530273,
+      "p95": 228.2839115203783,
+      "surfaceP95": 234.95733642578125
+    }
+  ],
+  "tet": {
+    "displacementMax": 28.644140243530273,
+    "p95": 231.2653866029706,
+    "surfaceP95": 230.3019256591797,
+    "dofs": 117735
+  },
+  "spread": {
+    "displacementMax": 0.0014526116012227907,
+    "p95": 0.012892007430886391,
+    "surfaceP95": 0.02021438054969212,
+    "dofs": 0.21490635749777043
+  }
+}

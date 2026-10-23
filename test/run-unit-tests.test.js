@@ -34,8 +34,11 @@ test('the kill message names the FEA suite', () => {
 test('FEA files are the ones under src/fea and the long suites have a longer kill', () => {
   assert.equal(isFeaSuite(join(root, 'src/fea/sheetMetallica.test.js')), true);
   assert.equal(isFeaSuite(join(root, 'src/utils/displayUnit.test.js')), false);
-  assert.ok(feaFileTimeoutMs(join(root, 'src/fea/sheetMetallica.test.js')) >= 12 * 60 * 1000);
-  assert.ok(feaFileTimeoutMs(join(root, 'src/fea/colormap.test.js')) < 12 * 60 * 1000);
+  // Two coarse fTetWild meshes and the shell solves: about a minute, with
+  // room for a slow runner. The fine tet comparison is a committed reference.
+  assert.ok(feaFileTimeoutMs(join(root, 'src/fea/sheetMetallica.test.js')) >= 6 * 60 * 1000);
+  assert.ok(feaFileTimeoutMs(join(root, 'src/fea/sheetMetallica.test.js')) <= 8 * 60 * 1000);
+  assert.ok(feaFileTimeoutMs(join(root, 'src/fea/colormap.test.js')) < 6 * 60 * 1000);
 });
 
 test('a process that never exits is killed', async () => {

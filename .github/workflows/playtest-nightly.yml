@@ -55,3 +55,31 @@ jobs:
           name: playtest-report
           path: ${{ runner.temp }}/playtest-nightly/
           if-no-files-found: warn
+
+  # The sheet metallica TET10 reference (src/fea/fixtures/sheetMetallicaReference.json)
+  # is a committed median because fTetWild's mesh is not deterministic and took
+  # 30 s to over 690 s on the PR runners. This rebuilds that mesh nightly and
+  # fails when a fresh run leaves the recorded spread or the committed file is
+  # stale, so a mesher or solver change is noticed without gating PRs.
+  fea-reference:
+    name: FEA shell vs tet reference
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Shell vs fresh TET10 against the committed reference
+        run: |
+          npm run golden:fea-shell-vs-tet -- --runs 2 | tee "${RUNNER_TEMP}/fea-shell-vs-tet.log"
+          if ! grep -q 'fea shell vs tet golden: ok' "${RUNNER_TEMP}/fea-shell-vs-tet.log"; then
+            echo "fea shell vs tet golden did not pass (see log above); if the mesher or solver changed on purpose, run: node scripts/golden/fea_shell_vs_tet.mjs --write"
+            exit 1
+          fi
