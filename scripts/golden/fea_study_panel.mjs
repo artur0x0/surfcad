@@ -899,7 +899,17 @@ async function runCase(browser, vp) {
   const maxMPa = maxMatch ? Number(maxMatch[1]) : NaN;
   const peakError = Number.isFinite(maxMPa) ? Math.abs(maxMPa - BEAM_PEAK_MPA) / BEAM_PEAK_MPA : Infinity;
   console.log(`  solve ${vp.name} ${summary.ms} ms peak ${summary.peak} bytes max ${maxMPa} MPa`);
-  const colours = await sampleSides(page);
+  // The first frame after the results land can still carry the running
+  // skin (every pixel cold), which read as "root colder than the tip" twice
+  // on CI with the same numbers. Sample again for up to 3 s until the
+  // gradient is there; a real regression still fails after the retries.
+  const hotRoot = (c) => !!c && c.leftN > 10 && c.rightN > 10 && c.leftHeat > c.rightHeat + 20;
+  let colours = await sampleSides(page);
+  for (let attempt = 1; attempt <= 6 && !hotRoot(colours); attempt += 1) {
+    await page.waitForTimeout(500);
+    colours = await sampleSides(page);
+    if (hotRoot(colours)) console.log(`  heat sample settled on retry ${attempt}`);
+  }
   check(`${vp.name} no stub badge`, summary.stubs === 0, JSON.stringify(summary));
   check(`${vp.name} tet10 source`, summary.source === 'tet10', summary.source);
   check(`${vp.name} stress summary`, /min .+ MPa/.test(summary.stress) && /p95 /.test(summary.stress) && /max /.test(summary.stress), summary.stress);

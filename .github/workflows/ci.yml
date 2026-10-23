@@ -130,7 +130,9 @@ jobs:
   smoke:
     name: golden app-loads
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 13 to 18 minutes on 2026-10-23 with every golden wired; the 20 minute
+    # cap cancelled a green run mid-FEA once three more goldens landed.
+    timeout-minutes: 40
     defaults:
       run:
         # bash -e does not fail a pipeline when the left side fails.
