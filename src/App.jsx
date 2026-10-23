@@ -399,6 +399,7 @@ import {
   mainMovedPlanSavePaths,
   SAVE_CONFLICT_COPY,
 } from './utils/git';
+import { docNeedsVaultLayout, newAssemblyVaultLayout, vaultLayoutFromDetection } from './utils/git/docVaultLayout.js';
 import { partScriptMatchesCommitted } from './utils/git/planSave';
 import { makeBranchTip, scheduleLastCommitFromApp } from './utils/git/lastCommit';
 import {
@@ -5645,8 +5646,47 @@ const App = () => {
     }
   };
 
-  const handleGitCommit = async (message) => {
+  /**
+   * A git document always carries `vaultLayout`. One persisted before the
+   * stamp, or a local document that went git on connect, gets it from the
+   * vault here: surfcad.json v2 → 'v2', a v1 tree → 'legacy', no repo yet →
+   * 'v2' (the first Save creates a v2 vault). Read-only; nothing is written.
+   */
+  const ensureDocVaultLayout = async () => {
     const doc = assemblyRef.current;
+    if (!docNeedsVaultLayout(doc)) return doc;
+    let detected = null;
+    try {
+      const vault = await ensureGitVault({ create: false });
+      detected = await detectVaultLayout(gitAdapterRef.current, vault.repo, gitWorkingBranch());
+    } catch (err) {
+      if (err?.message !== NO_REPO_YET_COPY) throw err;
+    }
+    const live = assemblyRef.current;
+    if (!live || live.id !== doc.id || !docNeedsVaultLayout(live)) return live;
+    return rememberAssembly({ ...live, vaultLayout: vaultLayoutFromDetection(detected) });
+  };
+
+  // Heal on connect and after a reload, so the Save button and the dots read
+  // the document as v2 before anyone clicks Save.
+  useEffect(() => {
+    if (authLoading) return undefined;
+    if (bootGateRef.current !== 'done') return undefined;
+    if (!githubConnected || bootReadOnlyRef.current) return undefined;
+    if (!docNeedsVaultLayout(assemblyRef.current)) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        await ensureDocVaultLayout();
+      } catch (err) {
+        if (!cancelled) console.warn('[git] vault layout stamp skipped', err?.message || err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [githubConnected, assemblyDoc, authLoading, bootEpoch, bootResume]); // eslint-disable-line react-hooks/exhaustive-deps -- vault helpers via refs
+
+  const handleGitCommit = async (message) => {
+    let doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') return { status: 'error', error: 'Not in Git mode' };
     const adapter = ensureGitAdapter();
     if (!meshVaultSaveAllowed({
@@ -5656,6 +5696,16 @@ const App = () => {
       adapterKind: adapter?.kind,
     })) {
       return { status: 'error', error: 'Reconnect GitHub before saving this assembly.' };
+    }
+    if (docNeedsVaultLayout(doc)) {
+      // Never let an unstamped document reach the v1 writer; fail closed
+      // when the vault cannot be read.
+      try {
+        doc = await ensureDocVaultLayout();
+      } catch (err) {
+        return gitOpCatchResult(err, 'Could not read the vault layout');
+      }
+      if (!doc || doc.source !== 'git') return { status: 'error', error: 'Not in Git mode' };
     }
     if (isV2PlanSaveDoc(doc)) return handleV2PlanSave(message);
     if (doc.vaultLayout === 'legacy' && upgradeVaultEnabled()) {
@@ -6705,11 +6755,15 @@ const App = () => {
     const source = githubConnected ? 'git' : 'local';
     const starter = blankPartStarter(source === 'git' ? seedId : null);
     const name = nextAssemblyName(await collectTakenAssemblyNames());
+    // Born with its layout: without it Save mis-routes to the v1 writer and
+    // the button reads "Nothing to save" (see docs/git-integration.md §7).
+    const vaultLayout = newAssemblyVaultLayout(source, assemblyRef.current);
     const seedDoc = serializeAssembly({
       id: mintSurfId(),
       source,
       name,
       activeId: seedId,
+      ...(vaultLayout ? { vaultLayout } : {}),
       parts: [{
         id: seedId,
         name: DEFAULT_PART_NAME,
@@ -6795,9 +6849,7 @@ const App = () => {
     const starter = blankPartStarter(source === 'git' ? seedId : null);
     const raw = typeof name === 'string' ? name.trim() : '';
     const label = raw || DEFAULT_ASSEMBLY_NAME;
-    const vaultLayout = source === 'git'
-      ? (assemblyRef.current?.vaultLayout === 'legacy' ? 'legacy' : 'v2')
-      : undefined;
+    const vaultLayout = newAssemblyVaultLayout(source, assemblyRef.current);
     const seedDoc = serializeAssembly({
       id: mintSurfId(),
       source,
@@ -7951,11 +8003,13 @@ const App = () => {
     const name = nextAssemblyName(await collectTakenAssemblyNames());
     let text = typeof script === 'string' ? script : '';
     if (source === 'git') text = withSurfId(text, seedId);
+    const vaultLayout = newAssemblyVaultLayout(source, assemblyRef.current);
     const seedDoc = serializeAssembly({
       id: mintSurfId(),
       source,
       name,
       activeId: seedId,
+      ...(vaultLayout ? { vaultLayout } : {}),
       parts: [{
         id: seedId,
         name: DEFAULT_PART_NAME,

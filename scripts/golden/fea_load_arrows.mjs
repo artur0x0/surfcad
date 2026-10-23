@@ -154,7 +154,7 @@ async function boot(page) {
       user: { id: USER_ID, email: 'fea@surfcad.test', vaultName: null },
     }),
   }));
-  const marker = `${JSON.stringify({ kind: 'surfcad-vault', version: 1 }, null, 2)}\n`;
+  const marker = `${JSON.stringify({ kind: 'surfcad-vault', version: 2 }, null, 2)}\n`;
   await page.route('https://api.github.com/**', (route) => {
     const path = new URL(route.request().url()).pathname;
     const send = (status, body) => route.fulfill({
@@ -174,6 +174,14 @@ async function boot(page) {
     }
     if (path === '/repos/fea-user/surfcad-vault/branches/main') {
       return send(200, { name: 'main', commit: { sha: 'a'.repeat(40) } });
+    }
+    // The vault-layout check on connect lists the branch tree (commit, then
+    // tree). An empty v2 vault answers both; a 404 here is a console error.
+    if (path.startsWith('/repos/fea-user/surfcad-vault/git/commits/')) {
+      return send(200, { sha: 'a'.repeat(40), tree: { sha: 'c'.repeat(40) } });
+    }
+    if (path.startsWith('/repos/fea-user/surfcad-vault/git/trees/')) {
+      return send(200, { sha: 'c'.repeat(40), tree: [], truncated: false });
     }
     if (path.startsWith('/repos/fea-user/surfcad-vault/contents/surfcad.json')) {
       return send(200, { type: 'file', encoding: 'utf-8', content: marker, sha: 'b'.repeat(40) });
