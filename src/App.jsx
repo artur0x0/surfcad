@@ -11132,11 +11132,20 @@ const App = () => {
         if (viewportRef.current?.beginContourEdit?.(resolved.contourId)) {
           setFeatureSheet(null);
           setFeatureStripActiveId(resolved.chip.id);
+          // A saved contour reopens in the contour sketch, not a card.
+          // edit_feature patches that sketch and confirm_feature saves and
+          // closes it (readFeatureSession tells the commands which it is).
+          agentFeatureSessionRef.current = {
+            ...agentFeatureSessionRef.current,
+            contourId: resolved.contourId,
+          };
           return {
             result: {
               id: resolved.chip.id,
               kind: resolved.chip.kind,
               index: resolved.chip.index,
+              contourId: resolved.contourId,
+              sketchOpen: true,
             },
           };
         }
@@ -11193,6 +11202,26 @@ const App = () => {
     },
     prepareFeatureConfirm: () => prepareAgentFeatureConfirm(),
     dismissFeatureConfirmSession: () => dismissAgentFeatureSession({ mode: 'settle' }),
+    /**
+     * The agent's open feature session, for the commands that must know
+     * whether open_feature put up a card or reopened a saved contour in the
+     * sketch: `{ open, id, kind, index, contourId, sketchOpen, tool }`.
+     */
+    readFeatureSession() {
+      const session = agentFeatureSessionRef.current;
+      const contour = agentHostRef.current?.readMode?.()?.contour || null;
+      const contourId = session?.contourId || null;
+      const sketchOpen = !!(contourId && contour && (contour.contourId == null || contour.contourId === contourId));
+      return {
+        open: agentFeatureSessionActive(),
+        id: session?.id ?? null,
+        kind: session?.kind ?? null,
+        index: session?.index ?? null,
+        contourId,
+        sketchOpen,
+        tool: sketchOpen ? (contour.tool || null) : null,
+      };
+    },
     cancelFeature() {
       if (!agentFeatureSessionActive()) {
         return { error: { code: 'no_feature_edit', message: 'No feature edit session is open' } };

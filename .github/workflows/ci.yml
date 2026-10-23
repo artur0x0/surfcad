@@ -487,6 +487,15 @@ jobs:
             echo "assembly save child parts golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:contour-edit-feature | tee "${RUNNER_TEMP}/contour-edit-feature.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/contour-edit-feature.log"; then
+            echo "contour edit feature golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'contour edit feature golden: ok' "${RUNNER_TEMP}/contour-edit-feature.log"; then
+            echo "contour edit feature golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
