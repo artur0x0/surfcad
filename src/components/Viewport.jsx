@@ -10858,6 +10858,69 @@ const Viewport = forwardRef(({
             push(resultRef.current);
             return out;
           },
+          // Every part mesh the scene holds (the pick mesh and the other
+          // assembly parts) with what decides whether it draws:
+          // golden:adjacent-part-visible reads this after a part switch.
+          partMeshStates: () => {
+            const describe = (mesh, role) => {
+              const g = mesh?.geometry;
+              const pos = g?.attributes?.position;
+              if (g && pos && !g.boundingSphere) g.computeBoundingSphere();
+              const mat = Array.isArray(mesh?.material) ? mesh.material[0] : mesh?.material;
+              let parentVisible = true;
+              let inScene = false;
+              for (let p = mesh?.parent; p; p = p.parent) {
+                if (p.visible === false) parentVisible = false;
+                if (p === sceneRef.current) inScene = true;
+              }
+              return {
+                role,
+                partId: role === 'active'
+                  ? (activePartIdRef.current ?? null)
+                  : (mesh?.userData?.assemblyPartId ?? null),
+                surfId: mesh?.userData?.surfId ?? null,
+                leftover: mesh?.userData?.leftover === true,
+                inScene,
+                visible: mesh?.visible !== false,
+                parentVisible,
+                frustumCulled: mesh?.frustumCulled !== false,
+                layers: mesh?.layers?.mask ?? null,
+                renderOrder: mesh?.renderOrder ?? 0,
+                vertices: pos ? pos.count : 0,
+                indices: g?.index ? g.index.count : 0,
+                boundingSphere: g?.boundingSphere
+                  ? { c: g.boundingSphere.center.toArray(), r: g.boundingSphere.radius }
+                  : null,
+                position: mesh?.position ? mesh.position.toArray() : null,
+                material: mat ? {
+                  opacity: mat.opacity,
+                  transparent: !!mat.transparent,
+                  depthWrite: mat.depthWrite !== false,
+                  depthTest: mat.depthTest !== false,
+                  visible: mat.visible !== false,
+                } : null,
+              };
+            };
+            const out = [describe(resultRef.current, 'active')];
+            for (const mesh of assemblyExtrasRef.current.values()) out.push(describe(mesh, 'extra'));
+            return out;
+          },
+          // One render and the renderer's own count of what it drew.
+          renderInfo: () => {
+            const renderer = rendererRef.current;
+            const scene = sceneRef.current;
+            const camera = cameraRef.current;
+            if (!renderer || !scene || !camera) return null;
+            renderer.render(scene, camera);
+            const r = renderer.info.render;
+            return {
+              calls: r.calls,
+              triangles: r.triangles,
+              near: camera.near,
+              far: camera.far,
+              position: camera.position.toArray(),
+            };
+          },
           crossSectionTargetIds: () => collectCrossSectionTargets({
             assemblyRunLockRef,
             resultRef,
