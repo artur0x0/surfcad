@@ -141,12 +141,14 @@ export function kernelExceptionDetail(error, message) {
  * }>}
  */
 const MOVE_BODY_HINT = 'move names a body by its centroid: call list_bodies and pass at, body_index, face, or face_id to insert_move (or edit_feature at on the move).';
+const ROTATE_BODY_HINT = 'rotateAbout names a body by its centroid: call list_bodies and pass at, body_index, face, or face_id to insert_rotate (or edit_feature at on the rotate).';
 
 /** `detail` when the kernel message already says everything: the helper that threw. */
 export function defaultFeatureDetail(message, featureType) {
   const text = typeof message === 'string' ? message.trim() : '';
   const helper = /^([A-Za-z_$][\w$]*):\s/.exec(text)?.[1] || null;
   if (helper === 'move' || featureType === 'move') return `move threw an Error. ${MOVE_BODY_HINT}`;
+  if (helper === 'rotateAbout' || featureType === 'rotate') return `rotateAbout threw an Error. ${ROTATE_BODY_HINT}`;
   if (helper) return `${helper} threw an Error`;
   return featureType ? `${featureType} threw an Error` : 'Error';
 }

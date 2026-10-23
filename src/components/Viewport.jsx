@@ -131,6 +131,7 @@ import DraftModeChip from './DraftModeChip';
 import CutModeChip from './CutModeChip';
 import BooleanModeChip from './BooleanModeChip';
 import MoveModeChip from './MoveModeChip';
+import RotateModeChip from './RotateModeChip';
 import MoveFaceModeChip from './MoveFaceModeChip';
 import DeleteFaceModeChip from './DeleteFaceModeChip';
 import { buildCrossSectionPreview, defaultTopPlaneFrame } from '../utils/crossSectionSubstrate';
@@ -407,6 +408,17 @@ import {
   cutNormalFromScript,
   MOVE_MODE_NEED_BODY,
 } from '../utils/moveMode';
+import {
+  emptyRotateState,
+  clearRotateTarget,
+  validateRotateAccept,
+  rotatePreviewMap,
+  resolveRotateBodyAt,
+  seedRotateFromLastRotate,
+  attachRotateTargetMesh,
+  axisToVector,
+  ROTATE_MODE_NEED_BODY,
+} from '../utils/rotateMode';
 import {
   emptyMoveFaceState,
   toggleMoveFaceSelection,
@@ -1121,6 +1133,7 @@ const Viewport = forwardRef(({
    */
   getBooleanContext = null,
   onCommitMove = null,
+  onCommitRotate = null,
   onCommitMoveFace = null,
   onCommitDeleteFace = null,
   /** S1 sheet metal: active part's SendCutSend binding (or null). */
@@ -1644,6 +1657,9 @@ const Viewport = forwardRef(({
   const paintBooleanPicksRef = useRef(() => {});
   const [moveMode, setMoveMode] = useState(null);
   const moveModeRef = useRef(null);
+  const [rotateMode, setRotateMode] = useState(null);
+  const rotateModeRef = useRef(null);
+  const clearRotatePreviewRef = useRef(() => {});
   const [moveFaceMode, setMoveFaceMode] = useState(null);
   const moveFaceModeRef = useRef(null);
   const [deleteFaceMode, setDeleteFaceMode] = useState(null);
@@ -1651,6 +1667,7 @@ const Viewport = forwardRef(({
   /** Kernel centroids from the last execute. move() matches these, not the viewport average. */
   const bodyCentroidsRef = useRef([]);
   const movePreviewRef = useRef(null);
+  const rotatePreviewRef = useRef(null);
   const moveFacePreviewRef = useRef(null);
   const moveFaceBaseMaterialRef = useRef(null);
   const moveFaceHiddenMatRef = useRef(null);
@@ -1769,6 +1786,7 @@ const Viewport = forwardRef(({
       savedContourGhostRef.current,
       measurementLinesRef.current,
       movePreviewRef.current,
+      rotatePreviewRef.current,
       moveFacePreviewRef.current,
       cutPiecesPreviewRef.current,
       booleanPiecesPreviewRef.current,
@@ -1998,6 +2016,7 @@ const Viewport = forwardRef(({
   const cutSheetOpen = mode !== 'game' && !!cutMode;
   const booleanSheetOpen = mode !== 'game' && !!booleanMode;
   const moveSheetOpen = mode !== 'game' && !!moveMode;
+  const rotateSheetOpen = mode !== 'game' && !!rotateMode;
   const sheetMetalSheetOpen = mode !== 'game' && (!!sheetMetalMode || !!sheetMetalPicker);
   const sheetMetalCardKey = sheetMetalPicker
     ? 'picker'
@@ -2026,6 +2045,7 @@ const Viewport = forwardRef(({
     && !cutSheetOpen
     && !booleanSheetOpen
     && !moveSheetOpen
+    && !rotateSheetOpen
     && !sheetMetalSheetOpen
     && !helperSheetOpen
     && !paintSheetOpen
@@ -2044,6 +2064,7 @@ const Viewport = forwardRef(({
     && !cutMode
     && !booleanMode
     && !moveMode
+    && !rotateMode
     && !sheetMetalMode
     && !sheetMetalPicker
     && !feaActive
@@ -2069,6 +2090,8 @@ const Viewport = forwardRef(({
                   ? 'boolean'
                   : moveSheetOpen
                     ? 'move'
+                    : rotateSheetOpen
+                      ? 'rotate'
                     : sheetMetalSheetOpen
                       ? `sheetMetal:${sheetMetalCardKey}`
                       : paintSheetOpen
@@ -2182,6 +2205,7 @@ const Viewport = forwardRef(({
   cutModeRef.current = cutMode;
   booleanModeRef.current = booleanMode;
   moveModeRef.current = moveMode;
+  rotateModeRef.current = rotateMode;
   moveFaceModeRef.current = moveFaceMode;
   deleteFaceModeRef.current = deleteFaceMode;
   onPickRetargetRef.current = onPickRetarget;
@@ -2205,7 +2229,7 @@ const Viewport = forwardRef(({
   onContourRefsResolvedRef.current = onContourRefsResolved;
   featureSessionRef.current = !!(
     contourMode || filletMode || shellMode || draftMode || cutMode
-    || booleanMode || moveMode || moveFaceMode || deleteFaceMode
+    || booleanMode || moveMode || rotateMode || moveFaceMode || deleteFaceMode
     || paintMode
     || feaActive
   );
@@ -2214,7 +2238,7 @@ const Viewport = forwardRef(({
     onFeatureSessionChangeRef.current?.(featureSessionRef.current);
   }, [
     contourMode, filletMode, shellMode, draftMode, cutMode,
-    booleanMode, moveMode, moveFaceMode, deleteFaceMode, paintMode, feaActive,
+    booleanMode, moveMode, rotateMode, moveFaceMode, deleteFaceMode, paintMode, feaActive,
   ]);
 
   useEffect(() => {
@@ -2285,6 +2309,9 @@ const Viewport = forwardRef(({
       booleanModeRef.current = null;
       setMoveMode(null);
       moveModeRef.current = null;
+      clearRotatePreviewRef.current();
+      setRotateMode(null);
+      rotateModeRef.current = null;
       clearMoveFacePreviewRef.current();
       setMoveFaceMode(null);
       moveFaceModeRef.current = null;
@@ -2376,6 +2403,9 @@ const Viewport = forwardRef(({
     },
     softFailMove: (msg) => {
       showShellToast(msg || 'Move refused — double-click a body, then Confirm.');
+    },
+    softFailRotate: (msg) => {
+      showShellToast(msg || 'Rotate refused — double-click a body, then Confirm.');
     },
     softFailMoveFace: (msg) => {
       showShellToast(msg || 'Move Face refused — tap a face, then Confirm.');
@@ -2546,6 +2576,7 @@ const Viewport = forwardRef(({
           cut: !!cutMode,
           boolean: !!booleanMode,
           move: !!moveMode,
+          rotate: !!rotateMode,
           moveFace: !!moveFaceMode,
           deleteFace: !!deleteFaceMode,
           paint: !!paintMode,
@@ -4221,7 +4252,7 @@ const Viewport = forwardRef(({
     if (!featureSlots) return undefined;
     if (
       paintMode || filletMode || shellMode || draftMode || cutMode || booleanMode
-      || moveMode || moveFaceMode || deleteFaceMode || sheetMetalMode || sheetMetalPicker
+      || moveMode || rotateMode || moveFaceMode || deleteFaceMode || sheetMetalMode || sheetMetalPicker
       || feaActive || helperCardOpen
     ) {
       closeFeatureSlots();
@@ -4237,6 +4268,7 @@ const Viewport = forwardRef(({
     cutMode,
     booleanMode,
     moveMode,
+    rotateMode,
     moveFaceMode,
     deleteFaceMode,
     sheetMetalMode,
@@ -4270,6 +4302,9 @@ const Viewport = forwardRef(({
     booleanModeRef.current = null;
     setMoveMode(null);
     moveModeRef.current = null;
+    clearRotatePreviewRef.current();
+    setRotateMode(null);
+    rotateModeRef.current = null;
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -4333,6 +4368,9 @@ const Viewport = forwardRef(({
     booleanModeRef.current = null;
     setMoveMode(null);
     moveModeRef.current = null;
+    clearRotatePreviewRef.current();
+    setRotateMode(null);
+    rotateModeRef.current = null;
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -4473,14 +4511,14 @@ const Viewport = forwardRef(({
     if (!holeCard) return;
     if (
       contourMode || filletMode || shellMode || draftMode || cutMode
-      || booleanMode || moveMode || moveFaceMode || deleteFaceMode
+      || booleanMode || moveMode || rotateMode || moveFaceMode || deleteFaceMode
       || featureSlots || sheetMetalMode || sheetMetalPicker || paintMode
     ) {
       setHoleCard(null);
     }
   }, [
     holeCard, contourMode, filletMode, shellMode, draftMode, cutMode,
-    booleanMode, moveMode, moveFaceMode, deleteFaceMode, featureSlots,
+    booleanMode, moveMode, rotateMode, moveFaceMode, deleteFaceMode, featureSlots,
     sheetMetalMode, sheetMetalPicker, paintMode,
   ]);
 
@@ -4966,6 +5004,9 @@ const Viewport = forwardRef(({
     booleanModeRef.current = null;
     setMoveMode(null);
     moveModeRef.current = null;
+    clearRotatePreviewRef.current();
+    setRotateMode(null);
+    rotateModeRef.current = null;
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -5136,13 +5177,16 @@ const Viewport = forwardRef(({
     clearFilletBlendPreview();
     setDraftMode(null);
     draftModeRef.current = null;
-    if (cutModeRef.current || moveModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
+    if (cutModeRef.current || moveModeRef.current || rotateModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
     setCutMode(null);
     cutModeRef.current = null;
     setBooleanMode(null);
     booleanModeRef.current = null;
     setMoveMode(null);
     moveModeRef.current = null;
+    clearRotatePreviewRef.current();
+    setRotateMode(null);
+    rotateModeRef.current = null;
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -5196,13 +5240,16 @@ const Viewport = forwardRef(({
     shellModeRef.current = null;
     setDraftMode(null);
     draftModeRef.current = null;
-    if (cutModeRef.current || moveModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
+    if (cutModeRef.current || moveModeRef.current || rotateModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
     setCutMode(null);
     cutModeRef.current = null;
     setBooleanMode(null);
     booleanModeRef.current = null;
     setMoveMode(null);
     moveModeRef.current = null;
+    clearRotatePreviewRef.current();
+    setRotateMode(null);
+    rotateModeRef.current = null;
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -5245,13 +5292,16 @@ const Viewport = forwardRef(({
     shellModeRef.current = null;
     setDraftMode(null);
     draftModeRef.current = null;
-    if (cutModeRef.current || moveModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
+    if (cutModeRef.current || moveModeRef.current || rotateModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
     setCutMode(null);
     cutModeRef.current = null;
     setBooleanMode(null);
     booleanModeRef.current = null;
     setMoveMode(null);
     moveModeRef.current = null;
+    clearRotatePreviewRef.current();
+    setRotateMode(null);
+    rotateModeRef.current = null;
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -6813,13 +6863,16 @@ const Viewport = forwardRef(({
     clearFilletBlendPreview();
     setShellMode(null);
     shellModeRef.current = null;
-    if (cutModeRef.current || moveModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
+    if (cutModeRef.current || moveModeRef.current || rotateModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
     setCutMode(null);
     cutModeRef.current = null;
     setBooleanMode(null);
     booleanModeRef.current = null;
     setMoveMode(null);
     moveModeRef.current = null;
+    clearRotatePreviewRef.current();
+    setRotateMode(null);
+    rotateModeRef.current = null;
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -7140,11 +7193,14 @@ const Viewport = forwardRef(({
     shellModeRef.current = null;
     setDraftMode(null);
     draftModeRef.current = null;
-    if (booleanModeRef.current || moveModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
+    if (booleanModeRef.current || moveModeRef.current || rotateModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
     setBooleanMode(null);
     booleanModeRef.current = null;
     setMoveMode(null);
     moveModeRef.current = null;
+    clearRotatePreviewRef.current();
+    setRotateMode(null);
+    rotateModeRef.current = null;
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -7489,6 +7545,9 @@ const Viewport = forwardRef(({
     cutModeRef.current = null;
     setMoveMode(null);
     moveModeRef.current = null;
+    clearRotatePreviewRef.current();
+    setRotateMode(null);
+    rotateModeRef.current = null;
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -7613,6 +7672,9 @@ const Viewport = forwardRef(({
     clearMovePreview();
     setMoveMode(null);
     moveModeRef.current = null;
+    clearRotatePreviewRef.current();
+    setRotateMode(null);
+    rotateModeRef.current = null;
     if (was) clearHighlight();
     if (shellToastTimerRef.current) {
       clearTimeout(shellToastTimerRef.current);
@@ -7643,6 +7705,10 @@ const Viewport = forwardRef(({
     cutModeRef.current = null;
     setBooleanMode(null);
     booleanModeRef.current = null;
+    if (rotateModeRef.current) clearHighlight();
+    clearRotatePreviewRef.current();
+    setRotateMode(null);
+    rotateModeRef.current = null;
     if (moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
@@ -7696,6 +7762,187 @@ const Viewport = forwardRef(({
       exitMoveMode();
     }
   }, [onCommitMove, exitMoveMode, onFaceSelected, clearHighlight]);
+
+  const clearRotatePreview = useCallback(() => {
+    const mesh = rotatePreviewRef.current;
+    rotatePreviewRef.current = null;
+    if (!mesh) return;
+    if (sceneRef.current) sceneRef.current.remove(mesh);
+    mesh.geometry?.dispose?.();
+    mesh.material?.dispose?.();
+  }, []);
+  clearRotatePreviewRef.current = clearRotatePreview;
+
+  /**
+   * Ghost of the picked body at the card's axis, angle, and center. Local
+   * vertices turned by rotatePreviewMap, then posed with the part like the
+   * Move ghost, so it draws on the part and not on whichever part sits at
+   * the origin.
+   */
+  const paintRotatePreview = useCallback((state) => {
+    clearRotatePreview();
+    const tris = state?.target?.triangles;
+    const geom = resultRef.current?.geometry;
+    const positions = geom?.attributes?.position;
+    const index = geom?.index?.array;
+    const scene = sceneRef.current;
+    if (!tris?.length || !positions || !index || !scene) return;
+    const buf = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
+    const map = rotatePreviewMap(state, buf);
+    if (!map) return;
+    const pos = [];
+    for (const t of tris) {
+      for (let k = 0; k < 3; k++) {
+        const v = index[t * 3 + k];
+        const p = map([positions.getX(v), positions.getY(v), positions.getZ(v)]);
+        pos.push(p[0], p[1], p[2]);
+      }
+    }
+    if (pos.length < 9) return;
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+    geometry.computeVertexNormals();
+    const mesh = new ThreeMesh(geometry, new MeshBasicMaterial({
+      color: 0x22d3ee,
+      transparent: true,
+      opacity: 0.45,
+      depthTest: true,
+      side: FrontSide,
+    }));
+    mesh.name = 'rotate-preview';
+    mesh.raycast = () => {};
+    anchorToActivePart(mesh);
+    scene.add(mesh);
+    rotatePreviewRef.current = mesh;
+    const renderer = rendererRef.current;
+    const camera = cameraRef.current;
+    if (renderer && camera) renderer.render(scene, camera);
+  }, [anchorToActivePart, clearRotatePreview, getHelperBuffer]);
+
+  const syncRotateTargetFromMesh = useCallback((state) => {
+    if (!state?.target?.at) return state;
+    const geom = resultRef.current?.geometry;
+    const positions = geom?.attributes?.position;
+    const index = geom?.index?.array;
+    if (!positions || !index) return state;
+    const buf = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
+    const bodies = meshBodyComponents(positions, index);
+    const seeded = seedRotateFromLastRotate(state, buf, state.target.at);
+    return {
+      ...seeded,
+      target: attachRotateTargetMesh(seeded.target, bodies, bodyCentroidsRef.current, buf),
+    };
+  }, [getHelperBuffer]);
+
+  const updateRotateMode = useCallback((patch) => {
+    const prev = rotateModeRef.current;
+    if (!prev) return;
+    const updated = { ...prev, ...patch };
+    rotateModeRef.current = updated;
+    setRotateMode(updated);
+    paintRotatePreview(updated);
+  }, [paintRotatePreview]);
+
+  const exitRotateMode = useCallback(() => {
+    cancelFeatureEditRef.current?.('rotate');
+    const was = rotateModeRef.current;
+    clearRotatePreview();
+    setRotateMode(null);
+    rotateModeRef.current = null;
+    if (was) clearHighlight();
+    if (shellToastTimerRef.current) {
+      clearTimeout(shellToastTimerRef.current);
+      shellToastTimerRef.current = null;
+    }
+    setShellToast(null);
+  }, [clearHighlight, clearRotatePreview]);
+
+  const enterRotateMode = useCallback(() => {
+    if (!allowFeaturePopup()) return;
+    feaCloseRef.current();
+    exitPaintModeRef.current();
+    exitSheetMetalChromeRef.current();
+    exitContourMode();
+    setFilletMode(null);
+    filletModeRef.current = null;
+    clearFilletBlendPreview();
+    setShellMode(null);
+    shellModeRef.current = null;
+    setDraftMode(null);
+    draftModeRef.current = null;
+    if (cutModeRef.current) {
+      clearHighlight();
+      clearCutPlaneWidget();
+      clearCutPiecePreview();
+    }
+    setCutMode(null);
+    cutModeRef.current = null;
+    setBooleanMode(null);
+    booleanModeRef.current = null;
+    if (moveModeRef.current) {
+      clearHighlight();
+      clearMovePreview();
+    }
+    setMoveMode(null);
+    moveModeRef.current = null;
+    if (moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
+    clearMoveFacePreviewRef.current();
+    setMoveFaceMode(null);
+    moveFaceModeRef.current = null;
+    clearDeleteFacePreviewRef.current();
+    setDeleteFaceMode(null);
+    deleteFaceModeRef.current = null;
+    setPickMode('face');
+    clearEdgeHover();
+    clearEdgeHighlight();
+    setSelectedEdges([]);
+    const next = emptyRotateState();
+    rotateModeRef.current = next;
+    setRotateMode(next);
+    clearHighlight();
+  }, [
+    exitContourMode,
+    clearFilletBlendPreview,
+    clearCutPlaneWidget,
+    clearCutPiecePreview,
+    clearMovePreview,
+    clearEdgeHover,
+    clearEdgeHighlight,
+    clearHighlight,
+  ]);
+
+  const acceptRotate = useCallback(() => {
+    const state = rotateModeRef.current;
+    if (!state) return;
+    const gate = validateRotateAccept(state);
+    if (featureEditRef.current?.kind === 'rotate') {
+      if (!gate.ok) {
+        showShellToast(gate.message);
+        return;
+      }
+      const ok = commitFeatureEditRef.current?.({
+        fields: {
+          ...(featureEditRef.current.session?.fields || {}),
+          angle: gate.angle,
+          axis: gate.axis,
+          center: gate.center,
+        },
+      });
+      if (ok) exitRotateMode();
+      return;
+    }
+    if (!gate.ok) {
+      showShellToast(gate.message);
+      return;
+    }
+    const ok = onCommitRotate?.({ state, partId: activePartIdRef.current });
+    if (ok) {
+      clearHighlight();
+      setSelectedFace(null);
+      onFaceSelected?.(null);
+      exitRotateMode();
+    }
+  }, [onCommitRotate, exitRotateMode, onFaceSelected, clearHighlight]);
 
   const removeMoveFacePreview = useCallback(() => {
     if (moveFacePreviewTimerRef.current) {
@@ -8029,6 +8276,9 @@ const Viewport = forwardRef(({
     }
     setMoveMode(null);
     moveModeRef.current = null;
+    clearRotatePreviewRef.current();
+    setRotateMode(null);
+    rotateModeRef.current = null;
     if (deleteFaceModeRef.current) clearHighlight();
     clearDeleteFacePreviewRef.current();
     setDeleteFaceMode(null);
@@ -8137,6 +8387,7 @@ const Viewport = forwardRef(({
     if (cutModeRef.current) exitCutMode();
     if (booleanModeRef.current) exitBooleanMode();
     if (moveModeRef.current) exitMoveMode();
+    if (rotateModeRef.current) exitRotateMode();
     if (moveFaceModeRef.current) exitMoveFaceMode();
     if (deleteFaceModeRef.current) exitDeleteFaceMode();
     exitSheetMetalChromeRef.current();
@@ -8201,6 +8452,9 @@ const Viewport = forwardRef(({
     }
     setMoveMode(null);
     moveModeRef.current = null;
+    clearRotatePreviewRef.current();
+    setRotateMode(null);
+    rotateModeRef.current = null;
     if (moveFaceModeRef.current) clearHighlight();
     clearMoveFacePreview();
     setMoveFaceMode(null);
@@ -9769,7 +10023,7 @@ const Viewport = forwardRef(({
     }
     // Cut, Boolean, and Paint own the canvas: a saved contour under the cursor
     // must not eat the tap (same as a construction plane sitting on the cut).
-    if (!moveFaceModeRef.current && !deleteFaceModeRef.current && !cutModeRef.current && !booleanModeRef.current && !paintModeRef.current && !feaPickRef.current && showContoursRef.current && !moveModeRef.current && contourModeRef.current?.tool !== 'polyline') {
+    if (!moveFaceModeRef.current && !deleteFaceModeRef.current && !cutModeRef.current && !booleanModeRef.current && !paintModeRef.current && !feaPickRef.current && showContoursRef.current && !moveModeRef.current && !rotateModeRef.current && contourModeRef.current?.tool !== 'polyline') {
       // Saved contours are in the editor part's frame.
       const hitC = pickContourByRay(
         toPartLocal(origin, savedContourOffsetRef.current),
@@ -9807,7 +10061,7 @@ const Viewport = forwardRef(({
     const solidD = partChoiceHit.hit?.distance ?? Infinity;
     // Cut taps a body or a piece. A construction plane that sits on the cut
     // (the XY plane through a centered part) must not swallow that click.
-    if (!cutModeRef.current && !booleanModeRef.current && !paintModeRef.current && !feaPickRef.current && planeHits.length && !moveModeRef.current && !moveFaceModeRef.current && !deleteFaceModeRef.current && planeD <= solidD + 0.5) {
+    if (!cutModeRef.current && !booleanModeRef.current && !paintModeRef.current && !feaPickRef.current && planeHits.length && !moveModeRef.current && !rotateModeRef.current && !moveFaceModeRef.current && !deleteFaceModeRef.current && planeD <= solidD + 0.5) {
       const ud = planeHits[0].object.userData?.plane
         ? planeHits[0].object.userData
         : planeHits[0].object.parent?.userData;
@@ -10231,20 +10485,40 @@ const Viewport = forwardRef(({
         indices: faceIndices.slice(),
       };
       let picks;
-      if (moveModeRef.current) {
+      if (moveModeRef.current || rotateModeRef.current) {
         // Same resolver as the rest of the viewport: one click is the full
         // face and does not change the body. Two clicks set that body as
-        // the move target. Not a legacy picker, and no viewport arrows.
+        // the move or rotate target. Not a legacy picker, and no viewport arrows.
+        const rotating = !moveModeRef.current && !!rotateModeRef.current;
         if (clickCount >= 2) {
           const bodies = meshBodyComponents(positions, index);
           const hit = bodyContainingTriangle(bodies, seedFaceIndex);
           if (!hit) {
-            showShellToast(MOVE_MODE_NEED_BODY);
+            showShellToast(rotating ? ROTATE_MODE_NEED_BODY : MOVE_MODE_NEED_BODY);
+            return;
+          }
+          const buf = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
+          if (rotating) {
+            const prevRotate = rotateModeRef.current.target;
+            const sameBody = prevRotate && cutBodyKey(prevRotate) === cutBodyKey(hit);
+            const rotateTarget = sameBody ? null : {
+              at: resolveRotateBodyAt(hit.at, bodyCentroidsRef.current, buf),
+              minTri: hit.minTri,
+              triangles: hit.triangles.slice(),
+            };
+            let nextRotate = { ...rotateModeRef.current, target: rotateTarget };
+            if (rotateTarget) nextRotate = seedRotateFromLastRotate(nextRotate, buf, rotateTarget.at);
+            rotateModeRef.current = nextRotate;
+            setRotateMode(nextRotate);
+            clearHighlight();
+            if (rotateTarget) {
+              highlightFace(rotateTarget.triangles, geometry, positions, index, 0x22d3ee, 'rotate-body');
+            }
+            paintRotatePreview(nextRotate);
             return;
           }
           const prev = moveModeRef.current.target;
           const same = prev && cutBodyKey(prev) === cutBodyKey(hit);
-          const buf = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
           const target = same ? null : {
             at: resolveMoveBodyAt(hit.at, bodyCentroidsRef.current, buf),
             minTri: hit.minTri,
@@ -10284,13 +10558,18 @@ const Viewport = forwardRef(({
           }
           const len = Math.hypot(nx, ny, nz);
           if (len > 1e-12) {
-            const next = {
-              ...moveModeRef.current,
-              faceNormal: [nx / len, ny / len, nz / len],
-            };
-            moveModeRef.current = next;
-            setMoveMode(next);
-            paintMovePreview(next);
+            const normal = [nx / len, ny / len, nz / len];
+            if (rotating) {
+              const next = { ...rotateModeRef.current, faceNormal: normal };
+              rotateModeRef.current = next;
+              setRotateMode(next);
+              paintRotatePreview(next);
+            } else {
+              const next = { ...moveModeRef.current, faceNormal: normal };
+              moveModeRef.current = next;
+              setMoveMode(next);
+              paintMovePreview(next);
+            }
           }
         }
         return;
@@ -10344,7 +10623,7 @@ const Viewport = forwardRef(({
       if (picks.length > 1 && !shellModeRef.current) {
         console.log(`[Face Selection] ${picks.length} faces picked (shift-click to add more)`);
       }
-  }, [onFaceSelected, clearHighlight, clearEdgeHighlight, highlightFace, publishFacePicks, paintDraftPicks, commitCutState, paintMovePreview, commitMoveFaceState, commitDeleteFaceState, getHelperBuffer, commitBooleanState, crossSectionEnabled, notePolylineDotTap]);
+  }, [onFaceSelected, clearHighlight, clearEdgeHighlight, highlightFace, publishFacePicks, paintDraftPicks, commitCutState, paintMovePreview, paintRotatePreview, commitMoveFaceState, commitDeleteFaceState, getHelperBuffer, commitBooleanState, crossSectionEnabled, notePolylineDotTap]);
 
   const chooseAmbiguousPart = useCallback((partId) => {
     const pending = ambiguousPickRef.current;
@@ -10419,7 +10698,7 @@ const Viewport = forwardRef(({
     const onPointerDown = (event) => {
       if (!featureSheetEnabledRef.current) return;
       if (event.button != null && event.button !== 0) return;
-      if (contourModeRef.current || filletModeRef.current || shellModeRef.current || draftModeRef.current || moveModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current || sheetMetalModeRef.current || helperCardOpenRef.current || paintModeRef.current) return;
+      if (contourModeRef.current || filletModeRef.current || shellModeRef.current || draftModeRef.current || moveModeRef.current || rotateModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current || sheetMetalModeRef.current || helperCardOpenRef.current || paintModeRef.current) return;
       if (measurementEnabled) return;
       CLEAR_LP();
       featureLongPressFiredRef.current = false;
@@ -10429,7 +10708,7 @@ const Viewport = forwardRef(({
         const origin = featureLongPressOriginRef.current;
         featureLongPressOriginRef.current = null;
         if (!origin || !featureSheetEnabledRef.current) return;
-        if (contourModeRef.current || filletModeRef.current || shellModeRef.current || draftModeRef.current || moveModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current || sheetMetalModeRef.current || helperCardOpenRef.current || paintModeRef.current) return;
+        if (contourModeRef.current || filletModeRef.current || shellModeRef.current || draftModeRef.current || moveModeRef.current || rotateModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current || sheetMetalModeRef.current || helperCardOpenRef.current || paintModeRef.current) return;
         featureLongPressFiredRef.current = true;
         onFeatureLongPressRef.current?.({ clientX: origin.x, clientY: origin.y });
       }, 450);
@@ -10710,7 +10989,7 @@ const Viewport = forwardRef(({
     if (!measurementEnabled) return undefined;
     const other = !!(
       contourMode || filletMode || shellMode || draftMode || cutMode
-      || booleanMode || moveMode || moveFaceMode || deleteFaceMode
+      || booleanMode || moveMode || rotateMode || moveFaceMode || deleteFaceMode
       || paintMode || feaActive || sheetMetalMode || sheetMetalPicker
       || helperCardOpen || editSheetOpen
     );
@@ -10719,7 +10998,7 @@ const Viewport = forwardRef(({
     return undefined;
   }, [
     measurementEnabled, contourMode, filletMode, shellMode, draftMode, cutMode,
-    booleanMode, moveMode, moveFaceMode, deleteFaceMode, paintMode, feaActive,
+    booleanMode, moveMode, rotateMode, moveFaceMode, deleteFaceMode, paintMode, feaActive,
     sheetMetalMode, sheetMetalPicker, helperCardOpen, editSheetOpen,
   ]);
 
@@ -11968,6 +12247,7 @@ const Viewport = forwardRef(({
       cut: !!cutModeRef.current,
       boolean: !!booleanModeRef.current,
       move: !!moveModeRef.current,
+      rotate: !!rotateModeRef.current,
       contour: !!contourModeRef.current,
       featureSlot: !!featureSlotsRef.current,
       paint: !!paintModeRef.current,
@@ -13602,6 +13882,7 @@ const Viewport = forwardRef(({
     if (cutModeRef.current) exitCutMode();
     if (booleanModeRef.current) exitBooleanMode();
     if (moveModeRef.current) exitMoveMode();
+    if (rotateModeRef.current) exitRotateMode();
     if (moveFaceModeRef.current) exitMoveFaceMode();
     if (deleteFaceModeRef.current) exitDeleteFaceMode();
     if (sheetMetalModeRef.current) {
@@ -13785,6 +14066,7 @@ const Viewport = forwardRef(({
           if (cutModeRef.current) exitCutMode();
           if (booleanModeRef.current) exitBooleanMode();
           if (moveModeRef.current) exitMoveMode();
+          if (rotateModeRef.current) exitRotateMode();
           if (moveFaceModeRef.current) exitMoveFaceMode();
           if (deleteFaceModeRef.current) exitDeleteFaceMode();
           if (paintModeRef.current) exitPaintModeRef.current();
@@ -13865,6 +14147,38 @@ const Viewport = forwardRef(({
             }
           }
           paintMovePreview(next);
+        } else if (dialog.dialog === 'rotate') {
+          enterRotateMode();
+          const at = active.fields?.at;
+          const axis = active.fields?.axis;
+          const center = active.fields?.center;
+          let next = {
+            ...emptyRotateState(),
+            angle: Number(active.fields?.angle) || 0,
+            target: Array.isArray(at) ? { at: at.slice() } : null,
+          };
+          if (axis === 'x' || axis === 'y' || axis === 'z') {
+            next.axis = axis;
+          } else if (axisToVector(axis)) {
+            next.axis = 'custom';
+            next.axisVec = axisToVector(axis);
+          }
+          if (Array.isArray(center) && center.length >= 3) {
+            next.centerMode = 'custom';
+            next.center = center.slice(0, 3).map(Number);
+          }
+          next = syncRotateTargetFromMesh(next);
+          rotateModeRef.current = next;
+          setRotateMode(next);
+          if (next.target?.triangles?.length) {
+            const geom = resultRef.current?.geometry;
+            const positions = geom?.attributes?.position;
+            const index = geom?.index?.array;
+            if (positions && index) {
+              highlightFace(next.target.triangles, geom, positions, index, 0x22d3ee, 'rotate-body');
+            }
+          }
+          paintRotatePreview(next);
         } else if (dialog.dialog === 'moveFace') {
           enterMoveFaceMode();
           commitMoveFaceState({
@@ -14695,7 +15009,7 @@ const Viewport = forwardRef(({
       )}
       
       {/* Left helper rail. Block, Build, Shape, Polish, Move. */}
-      {onInsertHelper && !paintMode && !feaActive && !contourMode && !filletMode && !shellMode && !draftMode && !cutMode && !booleanMode && !moveMode && !moveFaceMode && !sheetMetalPicker && !deleteFaceMode && !sheetMetalMode && (
+      {onInsertHelper && !paintMode && !feaActive && !contourMode && !filletMode && !shellMode && !draftMode && !cutMode && !booleanMode && !moveMode && !rotateMode && !moveFaceMode && !sheetMetalPicker && !deleteFaceMode && !sheetMetalMode && (
         <HelperInsertPalette
           layout={mode === 'game' ? 'game' : 'cad'}
           desktopFullRail={mode !== 'game' && !isMobile}
@@ -14732,6 +15046,7 @@ const Viewport = forwardRef(({
           onEnterCutMode={enterCutMode}
           onEnterBooleanMode={enterBooleanMode}
           onEnterMoveMode={enterMoveMode}
+          onEnterRotateMode={enterRotateMode}
           onEnterMoveFaceMode={enterMoveFaceMode}
           onEnterDeleteFaceMode={enterDeleteFaceMode}
           onOpenSheetMetal={mode !== 'game' && onBindSheetMetal
@@ -15179,7 +15494,7 @@ const Viewport = forwardRef(({
         />
       )}
 
-      {holeCard && !contourMode && mode !== 'game' && !filletMode && !shellMode && !draftMode && !cutMode && !booleanMode && !moveMode && !moveFaceMode && !deleteFaceMode && !featureSlots && !sheetMetalMode && !paintMode && (
+      {holeCard && !contourMode && mode !== 'game' && !filletMode && !shellMode && !draftMode && !cutMode && !booleanMode && !moveMode && !rotateMode && !moveFaceMode && !deleteFaceMode && !featureSlots && !sheetMetalMode && !paintMode && (
         <HoleCard
           card={holeCard}
           compact={isMobile}
@@ -15652,6 +15967,49 @@ const Viewport = forwardRef(({
         />
       )}
 
+      {/* Rotate on the shared card. Game mounts no card. */}
+      {rotateMode && mode !== 'game' && (
+        <RotateModeChip
+          target={rotateMode.target}
+          axis={rotateMode.axis}
+          axisVec={rotateMode.axisVec}
+          faceNormal={rotateMode.faceNormal}
+          angle={rotateMode.angle}
+          centerMode={rotateMode.centerMode}
+          center={rotateMode.center}
+          compact={isMobile}
+          lengthMm={characteristicLengthMm({ bounds: modelBounds })}
+          onAngle={(value) => updateRotateMode({ angle: value })}
+          onAxis={(axis) => updateRotateMode({ axis })}
+          onAxisVec={(i, value) => {
+            const prev = rotateModeRef.current;
+            if (!prev) return;
+            const axisVec = Array.isArray(prev.axisVec) ? prev.axisVec.slice(0, 3) : [0, 0, 1];
+            axisVec[i] = value;
+            updateRotateMode({ axisVec });
+          }}
+          onCenterMode={(centerMode) => updateRotateMode({ centerMode })}
+          onCenter={(i, value) => {
+            const prev = rotateModeRef.current;
+            if (!prev) return;
+            const center = Array.isArray(prev.center) ? prev.center.slice(0, 3) : [0, 0, 0];
+            center[i] = value;
+            updateRotateMode({ center });
+          }}
+          onClear={() => {
+            const next = clearRotateTarget(rotateModeRef.current);
+            rotateModeRef.current = next;
+            setRotateMode(next);
+            clearRotatePreview();
+            clearHighlight();
+          }}
+          onConfirm={acceptRotate}
+          onDelete={featureEditRef.current?.dialog === 'rotate' ? featureEditDelete : null}
+          onDismiss={exitRotateMode}
+          labelBuffer={(typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || ''}
+        />
+      )}
+
       {/* Move Face on the shared card. Game mounts no card. */}
       {moveFaceMode && mode !== 'game' && (
         <MoveFaceModeChip
@@ -15756,7 +16114,7 @@ const Viewport = forwardRef(({
 
       {/* Standalone edge pick — same card, no Confirm. X clears and leaves edge pick.
           Hidden in fillet, contour, and game. Numbered badges stay on the edges. */}
-      {mode !== 'game' && !helperCardOpen && pickMode === 'edge' && !contourMode && !filletMode && !shellMode && !draftMode && !moveFaceMode && !deleteFaceMode && !cutMode && !booleanMode && !moveMode && !sheetMetalMode && !sheetMetalPicker && !feaActive && !editSheetOpen && !paintMode && !measurementEnabled && selectedEdges.length > 0 && (
+      {mode !== 'game' && !helperCardOpen && pickMode === 'edge' && !contourMode && !filletMode && !shellMode && !draftMode && !moveFaceMode && !deleteFaceMode && !cutMode && !booleanMode && !moveMode && !rotateMode && !sheetMetalMode && !sheetMetalPicker && !feaActive && !editSheetOpen && !paintMode && !measurementEnabled && selectedEdges.length > 0 && (
         <FeatureSheet
           cardAttrs={{ 'data-edge-selector': 'standalone' }}
           title={`Edge pick · ${selectedEdges.length} selected`}

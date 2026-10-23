@@ -237,7 +237,7 @@ and accent map. **Every number renders a slider AND a typed box**:
 - **`FilletModeChip.jsx`** — the shared feature card (`FeatureSheet`); edge-pick
   Tangent / Clear / Undo, cyan Confirm, grey X dismiss. No hard-edge warning.
   Chamfer uses this chip. It passes `fullLeft` on phone and desktop, and so do
-  shell, draft, move face, delete face, cut, move, boolean, and paint: the left
+  shell, draft, move face, delete face, cut, move, rotate, boolean, and paint: the left
   helper rail is hidden, so the left edge is 10px from the pane and the right
   edge stays clear of the right rail. The sheet metal picker and feature edit
   stay centered between both rails.
@@ -297,6 +297,13 @@ and accent map. **Every number renders a slider AND a typed box**:
   that normal. The body is previewed at the new translation until Confirm. No
   viewport arrows. Confirm writes one `move()` and replaces a previous Move
   block; X exits with no write. Hidden in game.
+- **`RotateModeChip.jsx`** — the shared feature card (`FeatureSheet`). Double-click
+  selects the body (one click keeps the face and offers its normal as the Face
+  axis). Axis is X, Y, Z, Face, or a typed Vector; Angle is a `NumberField` in
+  degrees; Center is Body center (the body's own centroid) or a typed Point. The
+  body is previewed at the new turn until Confirm. No viewport gizmo. Confirm
+  writes one `rotateAbout()` and replaces a previous Rotate block; X exits with
+  no write. Hidden in game.
 - **`MoveFaceModeChip.jsx`** — the shared feature card (`FeatureSheet`). Tap adds a
   face, tap again removes it. Undo drops the last face. Clear drops the faces.
   Distance is along each face normal. Flip reverses that normal. No shift-click.
@@ -347,7 +354,7 @@ Bottom-**centre** is reserved for mode chips. Bottom corners belong to the
 helper / cross-section rails (`ui-map.md`).
 
 Contour, Fillet, Chamfer, the standalone edge card, Shell, Draft, Move Face,
-Delete Face, Cut, Boolean, Move, Paint, and Analyze share the feature card
+Delete Face, Cut, Boolean, Move, Rotate, Paint, and Analyze share the feature card
 (bottom center, between the rails). Analyze's footer is Run or Back to Setup.
 Boolean stays `z-20`, under the section rail.
 

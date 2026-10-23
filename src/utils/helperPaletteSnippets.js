@@ -150,6 +150,8 @@ export const BOOLEAN_BEGIN = '// --- boolean begin ---';
 export const BOOLEAN_END = '// --- boolean end ---';
 export const MOVE_BEGIN = '// --- move begin ---';
 export const MOVE_END = '// --- move end ---';
+export const ROTATE_BEGIN = '// --- rotate begin ---';
+export const ROTATE_END = '// --- rotate end ---';
 export const MOVE_FACE_BEGIN = '// --- move-face begin ---';
 export const MOVE_FACE_END = '// --- move-face end ---';
 export const DELETE_FACE_BEGIN = '// --- delete-face begin ---';
@@ -197,6 +199,7 @@ export const FEATURE_BLOCK_END_MARKERS = Object.freeze([
   CUT_END,
   BOOLEAN_END,
   MOVE_END,
+  ROTATE_END,
   MOVE_FACE_END,
   DELETE_FACE_END,
   CENTER_END,
@@ -598,6 +601,52 @@ function bool(v, fallback = false) {
   if (v === 'true' || v === '1') return true;
   if (v === 'false' || v === '0') return false;
   return fallback;
+}
+
+/**
+ * rotateAbout axis literal: 'x' | 'y' | 'z' (a leading '-' flips it) stays a
+ * quoted name; a vector becomes [ax, ay, az]. Null when it is unusable.
+ * @param {string|number[]|null|undefined} axis
+ * @returns {string|null}
+ */
+export function rotateAxisLiteral(axis) {
+  if (Array.isArray(axis)) {
+    if (axis.length < 3) return null;
+    const v = axis.slice(0, 3).map(Number);
+    if (!v.every(Number.isFinite) || !(Math.hypot(v[0], v[1], v[2]) > 1e-12)) return null;
+    return formatVec3(v);
+  }
+  const key = typeof axis === 'string' ? axis.trim().toLowerCase() : '';
+  if (/^-?[xyz]$/.test(key)) return `'${key}'`;
+  if (key.startsWith('[')) {
+    try {
+      return rotateAxisLiteral(JSON.parse(key));
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * rotateAbout center literal: [x, y, z], or `null` for the body's own
+ * centroid when center is omitted. Null (the JS value) when it is unusable.
+ * @param {number[]|string|null|undefined} center
+ * @returns {string|null}
+ */
+export function rotateCenterLiteral(center) {
+  if (center == null || center === '' || center === 'body') return 'null';
+  if (typeof center === 'string') {
+    try {
+      return rotateCenterLiteral(JSON.parse(center));
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(center) || center.length < 3) return null;
+  const v = center.slice(0, 3).map(Number);
+  if (!v.every(Number.isFinite)) return null;
+  return formatVec3(v);
 }
 
 function str(v, fallback) {
@@ -1186,7 +1235,7 @@ export function starterCubeScript() {
 export const HELPERS_NEED_BODY = Object.freeze(new Set([
   'addDraft', 'align', 'array3D', 'boolean', 'cboreHole', 'center', 'chamferEdges',
   'clearanceHole', 'crossSection', 'cskHole', 'cut', 'deleteFace', 'filletEdges', 'hole',
-  'holePattern', 'mirror', 'move', 'moveFace', 'patternPoints', 'shell', 'sweepPath', 'tapDrillHole',
+  'holePattern', 'mirror', 'move', 'moveFace', 'patternPoints', 'rotate', 'shell', 'sweepPath', 'tapDrillHole',
 ]));
 
 /** True when this insert needs a body the empty buffer does not have. */
@@ -2250,6 +2299,40 @@ export const HELPER_PALETTE_ITEMS = [
     },
   },
   {
+    id: 'rotate',
+    label: 'Rotate',
+    group: 'Transforms',
+    title: 'rotateAbout(manifold, axis, angleDeg, center, { bodies }) — turn one body about an axis through a point',
+    params: [
+      { name: 'body', type: 'body', default: 'part', label: 'Body' },
+      { name: 'axis', type: 'axis', default: 'z', label: 'Axis' },
+      { name: 'angle', type: 'number', default: 90, label: 'Angle (deg)', min: -360, max: 360, step: 1, slider: true },
+      { name: 'center', type: 'vec3', default: null, label: 'Center [x, y, z] (the body centroid when omitted)' },
+    ],
+    build: (empty, p, names, buffer, faceCtx = null) => {
+      const lines = [];
+      const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
+      const axis = rotateAxisLiteral(p.axis);
+      if (!axis) return null;
+      const angle = num(p.angle, 0);
+      const center = rotateCenterLiteral(p.center);
+      if (!center) return null;
+      // The agent path resolves the body first (insert_rotate at / face /
+      // face_id / body_index / selection) and hands its centroid in as
+      // params.at, the same as insert_move.
+      const picked = Array.isArray(p.at) && p.at.length >= 3 ? p.at.slice(0, 3).map(Number) : null;
+      const at = picked && picked.every(Number.isFinite)
+        ? picked
+        : ((faceCtx && Array.isArray(faceCtx.center)) ? faceCtx.center : [0, 0, 0]);
+      const feat = [
+        `${body} = rotateAbout(${body}, ${axis}, ${angle}, ${center}, { bodies: [{ at: ${formatVec3(at)} }] });`,
+        ...syncPartLines(body, names, /(?:let|const|var)\s+part\b/.test(lines.join('\n')) || !empty),
+      ];
+      lines.push(...wrapFeatureBlock(ROTATE_BEGIN, ROTATE_END, feat));
+      return withReturn(lines, empty);
+    },
+  },
+  {
     id: 'center',
     label: 'Center',
     group: 'Transforms',
@@ -2745,7 +2828,7 @@ export const CAD_RAIL_ORDER = ['Primitives', 'Build', 'Shape', 'Features', 'Tran
 
 const RAIL_BUILD_IDS = ['hole', 'cut', 'boolean', 'shell', 'addDraft', 'array3D', 'patternPoints', 'codeSnippet'];
 const RAIL_POLISH_IDS = ['filletEdges', 'chamferEdges', 'moveFace', 'deleteFace'];
-const RAIL_MOVE_FIRST = ['move', 'center', 'align', 'mirror'];
+const RAIL_MOVE_FIRST = ['move', 'rotate', 'center', 'align', 'mirror'];
 
 export function itemsByGroup() {
   const map = Object.fromEntries(HELPER_PALETTE_GROUPS.map((g) => [g, []]));
@@ -2761,7 +2844,7 @@ export function itemsByGroup() {
  * Move. Shape is the old Model section (Profile / Workplane / Extrude /
  * Revolve / Sweep / Loft), same buttons. Build is hole, cut, boolean, shell,
  * draft, pattern. Polish is fillet, chamfer, move face, delete face. Move is every
- * remaining button, with Move directly above Center.
+ * remaining button, with Move first, Rotate directly below it, then Center.
  *
  * `railHidden` items keep their group membership and their build(); they get
  * no button. Filter here, not in itemsByGroup.

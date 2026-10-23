@@ -1,6 +1,6 @@
 {
   "generatedFrom": "src/lib/surfcad/runtime.js HELPER_FUNCTIONS",
-  "count": 74,
+  "count": 75,
   "helpers": [
     {
       "name": "shell",
@@ -463,6 +463,39 @@
       "doc": "move(manifold, [dx, dy, dz], { bodies: [{ at }] }) — translate one body.\nSame Manifold.translate center() already uses, and the same decompose /\ncentroid / compose split cut() uses. Not a second kernel. The named body\nmoves; every other body stays. A zero delta returns the input solid.\n\nThe { at } point is that body's vertex centroid. cut() requires squared\ndistance ≤ 1e-4. A fillet does not retessellate the same way on the next\nrun, so that average can move by a few hundredths and a valid pick would\nmiss the tight gate. move() still takes the exact match, and otherwise\nthe nearest body within 1% of its radius (at least 0.05) when the next\nbody is farther than that. A point that is not near a centroid throws.",
       "examples": [
         "part = move(part, [10, 0, 0], { bodies: [{ at: [0, 0, 0] }] });"
+      ]
+    },
+    {
+      "name": "rotateAbout",
+      "signature": "rotateAbout(manifold, axis, angleDeg, center = null, opts = {})",
+      "params": [
+        {
+          "name": "manifold",
+          "text": "manifold"
+        },
+        {
+          "name": "axis",
+          "text": "axis"
+        },
+        {
+          "name": "angleDeg",
+          "text": "angleDeg"
+        },
+        {
+          "name": "center",
+          "text": "center = null",
+          "default": "null"
+        },
+        {
+          "name": "opts",
+          "text": "opts = {}",
+          "default": "{}"
+        }
+      ],
+      "description": "rotateAbout(manifold, axis, angleDeg, center, { bodies: [{ at }] }) — turn one body. ",
+      "doc": "Turns one body by `angleDeg` degrees (right-hand rule) about the line through `center` along `axis`. `axis` is `'x'`, `'y'`, `'z'` (a leading `-` flips it) or a vector `[ax, ay, az]`. `center` is `[x, y, z]` in mm, or `null` for that body's own vertex centroid. The body is named the way `move()` names it: `{ bodies: [{ at }] }` with the centroid from the Rotate card's double-click or `list_bodies`. The named body turns; every other body stays. Volume is unchanged and the bounding box follows the turn. A zero angle returns the input. The Rotate button (below Move) writes this call inside `// --- rotate begin --- / end ---` markers, so the strip shows a Rotate chip with edit, delete, and undo.\n\n\n\nA point that is not a body centroid, a zero-length axis, or a missing `bodies` entry throws with a `rotateAbout:` message.",
+      "examples": [
+        "part = rotateAbout(part, 'z', 90, null, { bodies: [{ at: [40, 0, 0] }] });       // quarter turn about its own centre\npart = rotateAbout(part, [0, 1, 0], -15, [0, 0, 10], { bodies: [{ at: [40, 0, 0] }] }); // about a line through [0, 0, 10]"
       ]
     },
     {

@@ -460,6 +460,7 @@ import { composeBooleanCommit, validateBooleanAccept } from './utils/booleanMode
 import { crossPartSubtractWrites, externalBodyRotationBlock, planCrossPartSubtract } from './utils/externalCopy';
 import { FEATURE_MARKER_KINDS } from './utils/featureMarkers';
 import { composeMoveCommit } from './utils/moveMode';
+import { composeRotateCommit } from './utils/rotateMode';
 import { composeMoveFaceCommit } from './utils/moveFaceMode';
 import { composeDeleteFaceCommit } from './utils/deleteFaceMode';
 
@@ -8443,6 +8444,33 @@ const App = () => {
     return true;
   };
 
+  /** Rotate body Confirm — one rotateAbout() + ROTATE markers; Auto-Run. */
+  const handleCommitRotate = (payload) => {
+    if (!focusWritePart(payload?.partId)) {
+      viewportRef.current?.softFailRotate?.(PICKED_PART_FAIL);
+      return false;
+    }
+    const buf = codeEditorRef.current?.getContent?.() || '';
+    const result = composeRotateCommit(buf, payload?.state || payload || {});
+    if (!result.ok) {
+      viewportRef.current?.softFailRotate?.(result.message);
+      return false;
+    }
+    const wrote = commitFeatureBuffer(buf, result.buffer, 'Rotate');
+    if (!wrote) {
+      viewportRef.current?.softFailRotate?.(
+        'Could not write Rotate into the editor — try again.',
+      );
+      return false;
+    }
+    if (result.run) {
+      setTimeout(() => {
+        handleGameRun();
+      }, 0);
+    }
+    return true;
+  };
+
   const handleExecute = (script, autoExecute=false) => {
     // The editor has produced a real buffer — the draft autosave may now
     // treat currentScript as authoritative (before this, '' is just "Monaco
@@ -11589,6 +11617,7 @@ const App = () => {
               onCommitCut={handleCommitCut}
               onCommitBoolean={handleCommitBoolean}
               onCommitMove={handleCommitMove}
+              onCommitRotate={handleCommitRotate}
               onCommitMoveFace={handleCommitMoveFace}
               sheetMetalBinding={assemblyDoc ? partSheetMetal(assemblyDoc, assemblyDoc.activeId) : null}
               assemblyColors={assemblyDoc?.colors || null}
@@ -12102,6 +12131,7 @@ const App = () => {
               onCommitCut={handleCommitCut}
               onCommitBoolean={handleCommitBoolean}
               onCommitMove={handleCommitMove}
+              onCommitRotate={handleCommitRotate}
               onCommitMoveFace={handleCommitMoveFace}
               sheetMetalBinding={assemblyDoc ? partSheetMetal(assemblyDoc, assemblyDoc.activeId) : null}
               assemblyColors={assemblyDoc?.colors || null}

@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 192,
+  "count": 193,
   "$defs": {
     "status": {
       "type": "object",
@@ -324,7 +324,7 @@
     },
     {
       "name": "set_script",
-      "description": "Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects `// @surf-id`. Do not declare a reserved SurfCAD helper name with const, let, class, or function — the runtime passes these as function parameters: addDraft, align, array3D, booleanBodies, boundaryEdges, cboreHole, center, chamferEdges, clearanceHole, concaveEdges, convexEdges, cskHole, cut, deleteFace, draftFaces, edge, edgesBetween, edgesByOrientation, externalBody, facesByNormal, fastenerClearanceDia, fastenerMajorDia, fastenerTapDrillDia, filletAlongPath, filletEdges, getDimensions, getScaleRatio, hexPrism, hole, holePattern, holeSpan, holesOnContour, hollow, listFastenerSizes, loft, makeCrossSection, makeExtrude, makeLoft, makeRevolve, makeSweepPath, mirror, move, moveFace, offsetPlaneFrame, patternOnPoints, placeInFrame, placeOnFace, planarFaceAt, polarArray, profileCircle, profilePolygon, profileRectangle, rectTube, resolveFastenerSize, rotateContour, roundedBox, sheetMetalSolid, shell, signedFeatureEdges, solveContour, sumSqDist, sweep, sweepPoints, tapDrillHole, transformByFrame, tube, vecAdd, vecCross, vecDot, vecMul, vecNorm, vecNormalize, vecSub, workplaneFromFace. A redeclaration fails; rename your variable (for example `const cut`). Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes. If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects `// @surf-id`. Do not declare a reserved SurfCAD helper name with const, let, class, or function — the runtime passes these as function parameters: addDraft, align, array3D, booleanBodies, boundaryEdges, cboreHole, center, chamferEdges, clearanceHole, concaveEdges, convexEdges, cskHole, cut, deleteFace, draftFaces, edge, edgesBetween, edgesByOrientation, externalBody, facesByNormal, fastenerClearanceDia, fastenerMajorDia, fastenerTapDrillDia, filletAlongPath, filletEdges, getDimensions, getScaleRatio, hexPrism, hole, holePattern, holeSpan, holesOnContour, hollow, listFastenerSizes, loft, makeCrossSection, makeExtrude, makeLoft, makeRevolve, makeSweepPath, mirror, move, moveFace, offsetPlaneFrame, patternOnPoints, placeInFrame, placeOnFace, planarFaceAt, polarArray, profileCircle, profilePolygon, profileRectangle, rectTube, resolveFastenerSize, rotateAbout, rotateContour, roundedBox, sheetMetalSolid, shell, signedFeatureEdges, solveContour, sumSqDist, sweep, sweepPoints, tapDrillHole, transformByFrame, tube, vecAdd, vecCross, vecDot, vecMul, vecNorm, vecNormalize, vecSub, workplaneFromFace. A redeclaration fails; rename your variable (for example `const cut`). Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes. If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -521,7 +521,7 @@
     },
     {
       "name": "run",
-      "description": "Run the current editor buffer; one undo step when it is not already the stack head. Do not declare a reserved SurfCAD helper name with const, let, class, or function — the runtime passes these as function parameters: addDraft, align, array3D, booleanBodies, boundaryEdges, cboreHole, center, chamferEdges, clearanceHole, concaveEdges, convexEdges, cskHole, cut, deleteFace, draftFaces, edge, edgesBetween, edgesByOrientation, externalBody, facesByNormal, fastenerClearanceDia, fastenerMajorDia, fastenerTapDrillDia, filletAlongPath, filletEdges, getDimensions, getScaleRatio, hexPrism, hole, holePattern, holeSpan, holesOnContour, hollow, listFastenerSizes, loft, makeCrossSection, makeExtrude, makeLoft, makeRevolve, makeSweepPath, mirror, move, moveFace, offsetPlaneFrame, patternOnPoints, placeInFrame, placeOnFace, planarFaceAt, polarArray, profileCircle, profilePolygon, profileRectangle, rectTube, resolveFastenerSize, rotateContour, roundedBox, sheetMetalSolid, shell, signedFeatureEdges, solveContour, sumSqDist, sweep, sweepPoints, tapDrillHole, transformByFrame, tube, vecAdd, vecCross, vecDot, vecMul, vecNorm, vecNormalize, vecSub, workplaneFromFace. A redeclaration fails; rename your variable (for example `const cut`). If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Run the current editor buffer; one undo step when it is not already the stack head. Do not declare a reserved SurfCAD helper name with const, let, class, or function — the runtime passes these as function parameters: addDraft, align, array3D, booleanBodies, boundaryEdges, cboreHole, center, chamferEdges, clearanceHole, concaveEdges, convexEdges, cskHole, cut, deleteFace, draftFaces, edge, edgesBetween, edgesByOrientation, externalBody, facesByNormal, fastenerClearanceDia, fastenerMajorDia, fastenerTapDrillDia, filletAlongPath, filletEdges, getDimensions, getScaleRatio, hexPrism, hole, holePattern, holeSpan, holesOnContour, hollow, listFastenerSizes, loft, makeCrossSection, makeExtrude, makeLoft, makeRevolve, makeSweepPath, mirror, move, moveFace, offsetPlaneFrame, patternOnPoints, placeInFrame, placeOnFace, planarFaceAt, polarArray, profileCircle, profilePolygon, profileRectangle, rectTube, resolveFastenerSize, rotateAbout, rotateContour, roundedBox, sheetMetalSolid, shell, signedFeatureEdges, solveContour, sumSqDist, sweep, sweepPoints, tapDrillHole, transformByFrame, tube, vecAdd, vecCross, vecDot, vecMul, vecNorm, vecNormalize, vecSub, workplaneFromFace. A redeclaration fails; rename your variable (for example `const cut`). If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -1775,7 +1775,7 @@
     },
     {
       "name": "list_bodies",
-      "description": "Bodies of the active part's last run, in mesh order: [{ index, at, triangleCount }]. index is insert_move body_index; at is the centroid move() names (insert_move at, edit_feature at). Empty before the first run.",
+      "description": "Bodies of the active part's last run, in mesh order: [{ index, at, triangleCount }]. index is insert_move / insert_rotate body_index; at is the centroid move() and rotateAbout() name (insert_move / insert_rotate at, edit_feature at). Empty before the first run.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -6179,6 +6179,218 @@
       }
     },
     {
+      "name": "insert_rotate",
+      "description": "Prefer this over freehand set_script. Rotate one body of the active part by angle degrees (right-hand rule) about the line through center along axis: the Rotate button, directly below Move. axis is x, y, or z (a leading - flips it) or an [ax, ay, az] vector; center is [x, y, z] in mm, or omitted for the body's own centroid; angle defaults to 90. Name the body the same way as insert_move: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. Nothing named and nothing selected is no_body; the origin is never assumed. Volume is unchanged and the bounding box follows the turn. edit_feature on the rotate takes angle, axis, center, and at. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes. If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "body_index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Body from list_bodies"
+          },
+          "at": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 3,
+            "maxItems": 3,
+            "description": "Body centroid [x, y, z] mm from list_bodies"
+          },
+          "face_id": {
+            "type": "string",
+            "description": "A list_faces id (f12) on the body to rotate"
+          },
+          "face": {
+            "type": "object",
+            "description": "A list_faces key { at, n, area } on the body to rotate"
+          },
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true and no body_index, at, face_id, or face is given, rotate the body of the selected face"
+          },
+          "body": {
+            "type": "string",
+            "description": "Part script binding name"
+          },
+          "axis": {
+            "type": [
+              "string",
+              "array"
+            ],
+            "description": "'x', 'y', or 'z' (a leading '-' flips it), or an [ax, ay, az] vector; right-hand rule"
+          },
+          "angle": {
+            "type": "number",
+            "minimum": -360,
+            "maximum": 360
+          },
+          "center": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "number"
+            },
+            "minItems": 3,
+            "maxItems": 3,
+            "description": "[x, y, z] in mm; omit or null for the default"
+          },
+          "return": {
+            "type": "string",
+            "enum": [
+              "status",
+              "summary",
+              "full"
+            ],
+            "description": "How much of status to return: \"status\" drops status.script, \"summary\" drops it and adds status.features (the feature strip), \"full\" keeps the whole script. Over MCP the default is \"status\"; in the page it is \"full\". Read the script with get_script."
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "helperId": {
+            "type": "string"
+          },
+          "usedSelection": {
+            "type": "boolean"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "partId": {
+                "type": "string"
+              },
+              "partName": {
+                "type": "string"
+              },
+              "script": {
+                "type": "string"
+              },
+              "runState": {
+                "type": "string",
+                "enum": [
+                  "not_run_yet",
+                  "ok",
+                  "failed"
+                ]
+              },
+              "volume": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "bbox": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "min": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "max": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "featureCount": {
+                "type": "integer"
+              },
+              "bodyCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "features": {
+                "type": "array",
+                "description": "Feature strip rows, only with return: \"summary\" (script is omitted with \"status\" and \"summary\")",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "chipLabel": {
+                      "type": "string"
+                    },
+                    "index": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "errors": [
+        "bad_args",
+        "no_body",
+        "no_mesh",
+        "unknown_face",
+        "insert_failed",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": false,
+      "confirm": false,
+      "group": "insert",
+      "immediate": false,
+      "uiEntry": [
+        "rotate",
+        "data-rotate-mode-chip"
+      ],
+      "example": {
+        "body": "part",
+        "axis": "z",
+        "angle": 90,
+        "center": null
+      }
+    },
+    {
       "name": "insert_center",
       "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. The result usedSelection says whether the viewport selection was used. The selection is single-use: picks clear after every rebuild, and use_selection: true with nothing selected is no_selection (nothing is written); re-pick before each insert that uses it. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes. If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
@@ -8805,7 +9017,7 @@
     },
     {
       "name": "edit_feature",
-      "description": "Merge params into the open feature edit session (feature sheet, helper edit card, or hole card). Keys depend on the feature kind; for a move, params.at (a list_bodies centroid) re-points it and dx / dy / dz change the offset. On a saved contour that open_feature reopened in the sketch, the profile keys patch that sketch: points [[u, v], …] (polyline, replaces a solved sketch), radius and segments (circle), width, height and centered (rectangle), polygon_preset and radius (polygon), or tool to switch; only the keys given change, keys the contour has no use for come back in ignored. Confirm with confirm_feature.",
+      "description": "Merge params into the open feature edit session (feature sheet, helper edit card, or hole card). Keys depend on the feature kind; for a move, params.at (a list_bodies centroid) re-points it and dx / dy / dz change the offset; for a rotate, angle, axis, center, and at. On a saved contour that open_feature reopened in the sketch, the profile keys patch that sketch: points [[u, v], …] (polyline, replaces a solved sketch), radius and segments (circle), width, height and centered (rectangle), polygon_preset and radius (polygon), or tool to switch; only the keys given change, keys the contour has no use for come back in ignored. Confirm with confirm_feature.",
       "args": {
         "type": "object",
         "additionalProperties": false,

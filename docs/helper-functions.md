@@ -17,7 +17,7 @@ comparable and train-able.
 | `tapDrillHole(part, frame, u, v, size, span?)` | Tap-drill hole by fastener size |
 | `cboreHole` / `cskHole` | Counterbore / countersink |
 | `convexEdges` / `facesByNormal` / `workplaneFromFace` / `planarFaceAt` / `edgesByOrientation` / `placeInFrame` / `transformByFrame` | Selection / frame |
-| `shell`, `hollow`, `cut`, `moveFace`, `deleteFace`, `addDraft`, `draftFaces`, `tube`, `rectTube`, `hexPrism`, `roundedBox`, `mirror`, `array3D`, `polarArray`, `center`, `align` | Solids / layout |
+| `shell`, `hollow`, `cut`, `move`, `rotateAbout`, `moveFace`, `deleteFace`, `addDraft`, `draftFaces`, `tube`, `rectTube`, `hexPrism`, `roundedBox`, `mirror`, `array3D`, `polarArray`, `center`, `align` | Solids / layout |
 | `loft`, `makeLoft`, `offsetPlaneFrame`, `sweep`, `sweepPoints`, `makeExtrude`, `makeRevolve` | Profiles / paths |
 | `profileCircle` / `profileRectangle` / `profilePolygon` / `makeCrossSection` | Cross-section substrate (Slice 21) |
 | `makeSweepPath(edges, opts?)` | Ordered sweep path / wire from edges (Slice 22) |
@@ -243,6 +243,17 @@ part = draftFaces(part, [
 - An angle the body cannot take throws instead of returning a folded solid.
 
 ---
+
+### rotateAbout(manifold, axis, angleDeg, center, opts)
+
+Turns one body by `angleDeg` degrees (right-hand rule) about the line through `center` along `axis`. `axis` is `'x'`, `'y'`, `'z'` (a leading `-` flips it) or a vector `[ax, ay, az]`. `center` is `[x, y, z]` in mm, or `null` for that body's own vertex centroid. The body is named the way `move()` names it: `{ bodies: [{ at }] }` with the centroid from the Rotate card's double-click or `list_bodies`. The named body turns; every other body stays. Volume is unchanged and the bounding box follows the turn. A zero angle returns the input. The Rotate button (below Move) writes this call inside `// --- rotate begin --- / end ---` markers, so the strip shows a Rotate chip with edit, delete, and undo.
+
+```javascript
+part = rotateAbout(part, 'z', 90, null, { bodies: [{ at: [40, 0, 0] }] });       // quarter turn about its own centre
+part = rotateAbout(part, [0, 1, 0], -15, [0, 0, 10], { bodies: [{ at: [40, 0, 0] }] }); // about a line through [0, 0, 10]
+```
+
+A point that is not a body centroid, a zero-length axis, or a missing `bodies` entry throws with a `rotateAbout:` message.
 
 ### moveFace(manifold, faces, distance, opts)
 

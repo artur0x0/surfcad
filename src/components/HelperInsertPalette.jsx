@@ -25,6 +25,7 @@ import {
   Route,
   Scissors,
   Move,
+  RotateCw,
   SquareArrowOutUpRight,
   SquareX,
 } from 'lucide-react';
@@ -71,6 +72,7 @@ const ICONS = {
   cut: Scissors,
   boolean: RectangleCircle,
   move: Move,
+  rotate: RotateCw,
   moveFace: SquareArrowOutUpRight,
   deleteFace: SquareX,
   addDraft: Angle,
@@ -135,6 +137,7 @@ const HelperInsertPalette = ({
   onEnterCutMode = null,
   onEnterBooleanMode = null,
   onEnterMoveMode = null,
+  onEnterRotateMode = null,
   onEnterMoveFaceMode = null,
   onEnterDeleteFaceMode = null,
   /** Desktop CAD viewport: stretch the rail under the feature strip with gap-2. */
@@ -282,6 +285,12 @@ const HelperInsertPalette = ({
     // stays a visual AxesHelper — it does not move a body.
     if (item.id === 'move' && typeof onEnterMoveMode === 'function') {
       onEnterMoveMode({ entry: 'move' });
+      return;
+    }
+    // Rotate enters the same body-pick mode: axis, angle, and center live on
+    // the chip, and the body turns as a preview until Confirm.
+    if (item.id === 'rotate' && typeof onEnterRotateMode === 'function') {
+      onEnterRotateMode({ entry: 'rotate' });
       return;
     }
     // Move Face offsets picked faces. It is not the body move() helper.

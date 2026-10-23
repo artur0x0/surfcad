@@ -8,7 +8,8 @@
  */
 
 import { parseFeatureMarkers } from './featureMarkers.js';
-import { shouldClearViewportScript } from './helperPaletteSnippets.js';
+import { rotateAxisLiteral, rotateCenterLiteral, shouldClearViewportScript } from './helperPaletteSnippets.js';
+import { parseRotateAxisLiteral, sameRotateAxis, sameVec3 } from './rotateMode.js';
 import { deleteFeatureBlock, featureBlockText, liveSheetFeature, inferExtrudeSense } from './featureSheetWriteback.js';
 import { scriptWithFeatureCount } from './partHistory.js';
 import { shellFaceKey } from './shellMode.js';
@@ -18,6 +19,10 @@ import { contourDeleteConfirmLabel } from './contourUsers.js';
 import { isBlockFeatureKind, rewriteBlockSolidLet } from './blockSolid.js';
 
 const NUM = '[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?';
+/** rotateAbout axis literal: a quoted world axis or a [ax, ay, az] vector (no capture groups). */
+const ROTATE_AXIS_LIT = `'[-+]?[xyzXYZ]'|"[-+]?[xyzXYZ]"|\\[[^\\]]*\\]`;
+/** rotateAbout center literal: [x, y, z] (no capture groups). */
+const ROTATE_VEC_LIT = '\\[[^\\]]*\\]';
 
 /** Creation dialog each strip kind reopens. helperId is the palette item. */
 export const FEATURE_EDIT_DIALOGS = Object.freeze({
@@ -46,6 +51,7 @@ export const FEATURE_EDIT_DIALOGS = Object.freeze({
   cut: { dialog: 'cut', entry: 'cut' },
   boolean: { dialog: 'boolean', entry: 'boolean' },
   move: { dialog: 'move', entry: 'move' },
+  rotate: { dialog: 'rotate', entry: 'rotate' },
   moveFace: { dialog: 'moveFace', entry: 'moveFace' },
   deleteFace: { dialog: 'deleteFace', entry: 'deleteFace' },
   center: { dialog: 'helper', helperId: 'center' },
@@ -84,6 +90,7 @@ export const FEATURE_EDIT_SAMPLE_KEY = Object.freeze({
   cut: 'originOffset',
   boolean: 'op',
   move: 'dy',
+  rotate: 'angle',
   moveFace: 'distance',
   deleteFace: 'faceCount',
   center: 'cz',
@@ -704,6 +711,32 @@ export function parseFeatureEdit(kind, blockText) {
     };
   }
 
+  if (kind === 'rotate') {
+    const m = grab(block, new RegExp(`rotateAbout\\s*\\(\\s*[^,]+,\\s*(${ROTATE_AXIS_LIT})\\s*,\\s*(${NUM})\\s*,\\s*(null|${ROTATE_VEC_LIT})`));
+    if (!m) return fail('No rotateAbout');
+    const axis = parseRotateAxisLiteral(m[1]);
+    let center = null;
+    if (m[3] !== 'null') {
+      try {
+        center = JSON.parse(m[3]);
+      } catch {
+        center = null;
+      }
+    }
+    const at = grab(block, new RegExp(`at:\\s*\\[\\s*(${NUM})\\s*,\\s*(${NUM})\\s*,\\s*(${NUM})`));
+    return {
+      ...base,
+      fields: {
+        axis,
+        angle: num(m[2]),
+        center,
+        at: at ? [num(at[1]), num(at[2]), num(at[3])] : null,
+      },
+      edges,
+      faces,
+    };
+  }
+
   if (kind === 'moveFace') {
     const m = grab(block, new RegExp(`moveFace\\s*\\(\\s*[^,]+,\\s*\\[[\\s\\S]*?\\]\\s*,\\s*(${NUM})`));
     if (!m) return fail('No moveFace');
@@ -1097,6 +1130,31 @@ function rewriteBlock(block, session, draft) {
     setNum(new RegExp(`(move\\s*\\(\\s*[^,]+,\\s*\\[\\s*)(${NUM})`), 'dx');
     // The target body: `at` is its centroid (list_bodies). A changed point
     // re-points the move; the body it used to name stays where it is.
+    const nextAt = Array.isArray(fields.at) && fields.at.length >= 3 ? fields.at.slice(0, 3).map(Number) : null;
+    const prevAt = Array.isArray(prev.at) ? prev.at : null;
+    if (nextAt && nextAt.every(Number.isFinite)
+      && !(prevAt && prevAt.length >= 3 && nextAt.every((v, i) => sameValue(v, Number(prevAt[i]))))) {
+      next = next.replace(/at:\s*\[\s*[^\]]*\]/, `at: [${nextAt.join(', ')}]`);
+    }
+  } else if (kind === 'rotate') {
+    const head = `rotateAbout\\s*\\(\\s*[^,]+,\\s*`;
+    setNum(new RegExp(`(${head}(?:${ROTATE_AXIS_LIT})\\s*,\\s*)(${NUM})`), 'angle');
+    // The axis: a world axis name or a vector. The center: a point, or null
+    // for the body's own centroid. Either is rewritten only when it changed.
+    if (fields.axis != null && !sameRotateAxis(fields.axis, prev.axis)) {
+      const axisLit = rotateAxisLiteral(fields.axis);
+      if (axisLit) next = next.replace(new RegExp(`(${head})(?:${ROTATE_AXIS_LIT})`), `$1${axisLit}`);
+    }
+    if (fields.center !== undefined && !sameVec3(fields.center, prev.center)) {
+      const centerLit = rotateCenterLiteral(fields.center);
+      if (centerLit) {
+        next = next.replace(
+          new RegExp(`(${head}(?:${ROTATE_AXIS_LIT})\\s*,\\s*${NUM}\\s*,\\s*)(?:null|${ROTATE_VEC_LIT})`),
+          `$1${centerLit}`,
+        );
+      }
+    }
+    // The target body: `at` is its centroid (list_bodies), as for a move.
     const nextAt = Array.isArray(fields.at) && fields.at.length >= 3 ? fields.at.slice(0, 3).map(Number) : null;
     const prevAt = Array.isArray(prev.at) ? prev.at : null;
     if (nextAt && nextAt.every(Number.isFinite)

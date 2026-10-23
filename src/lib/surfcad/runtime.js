@@ -8449,6 +8449,126 @@ function move(manifold, delta, opts = {}) {
   return result;
 }
 
+/** Unit axis for rotateAbout: 'x' | 'y' | 'z' (a leading '-' flips it) or [ax, ay, az]. */
+function _rotateAxisVector(axis) {
+  if (typeof axis === 'string') {
+    const key = axis.trim().toLowerCase();
+    const named = {
+      x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1],
+    }[key];
+    if (named) return named;
+    throw new Error(`rotateAbout: axis must be 'x', 'y', 'z' or [ax, ay, az], not '${axis}'`);
+  }
+  if (!Array.isArray(axis) || axis.length < 3) {
+    throw new Error("rotateAbout: axis must be 'x', 'y', 'z' or [ax, ay, az]");
+  }
+  const v = [Number(axis[0]), Number(axis[1]), Number(axis[2])];
+  if (v.some((n) => !Number.isFinite(n))) throw new Error('rotateAbout: axis must be finite [ax, ay, az]');
+  const len = Math.hypot(v[0], v[1], v[2]);
+  if (!(len > 1e-12)) throw new Error('rotateAbout: axis has zero length');
+  return [v[0] / len, v[1] / len, v[2] / len];
+}
+
+/** Column-major 4x4 (Manifold.transform) turning angleDeg about unit axis k through pivot p. */
+function _rotateAboutMatrix(k, angleDeg, p) {
+  const t = (angleDeg * Math.PI) / 180;
+  const c = Math.cos(t);
+  const s = Math.sin(t);
+  const u = 1 - c;
+  const [x, y, z] = k;
+  const r = [
+    [c + x * x * u, x * y * u - z * s, x * z * u + y * s],
+    [y * x * u + z * s, c + y * y * u, y * z * u - x * s],
+    [z * x * u - y * s, z * y * u + x * s, c + z * z * u],
+  ];
+  const tx = p[0] - (r[0][0] * p[0] + r[0][1] * p[1] + r[0][2] * p[2]);
+  const ty = p[1] - (r[1][0] * p[0] + r[1][1] * p[1] + r[1][2] * p[2]);
+  const tz = p[2] - (r[2][0] * p[0] + r[2][1] * p[1] + r[2][2] * p[2]);
+  return [
+    r[0][0], r[1][0], r[2][0], 0,
+    r[0][1], r[1][1], r[2][1], 0,
+    r[0][2], r[1][2], r[2][2], 0,
+    tx, ty, tz, 1,
+  ];
+}
+
+/**
+ * rotateAbout(manifold, axis, angleDeg, center, { bodies: [{ at }] }) — turn one body.
+ * Rotates the named body by angleDeg degrees (right-hand rule) about the
+ * line through center along axis. axis is 'x', 'y', 'z' or [ax, ay, az];
+ * center is [x, y, z] in mm, or null for that body's own vertex centroid.
+ * The body is named the way move() names it ({ at } is its centroid): the
+ * named body turns, every other body stays. A zero angle returns the input
+ * solid. Volume is unchanged; the bounding box follows the turn.
+ */
+function rotateAbout(manifold, axis, angleDeg, center = null, opts = {}) {
+  if (!manifoldModule) throw new Error('Manifold not initialized');
+  if (!manifold || typeof manifold.transform !== 'function') {
+    throw new Error('rotateAbout: expected a Manifold');
+  }
+  const dir = _rotateAxisVector(axis);
+  const angle = Number(angleDeg);
+  if (!Number.isFinite(angle)) throw new Error('rotateAbout: angle must be a finite number of degrees');
+  let pivot = null;
+  if (center != null) {
+    if (!Array.isArray(center) || center.length < 3) {
+      throw new Error('rotateAbout: center must be [x, y, z] in mm, or null for the body centroid');
+    }
+    pivot = [Number(center[0]), Number(center[1]), Number(center[2])];
+    if (pivot.some((v) => !Number.isFinite(v))) throw new Error('rotateAbout: center must be finite [x, y, z]');
+  }
+  const options = (opts && typeof opts === 'object' && !Array.isArray(opts)) ? opts : {};
+  if (!Array.isArray(options.bodies) || options.bodies.length !== 1) {
+    throw new Error('rotateAbout: name one body with { bodies: [{ at }] }');
+  }
+  let bodies;
+  let selected;
+  try {
+    bodies = _cutBodiesOf(manifold);
+    selected = _moveSelected(manifold, bodies, options.bodies);
+  } catch (err) {
+    const msg = err && err.message ? String(err.message) : String(err);
+    throw new Error(msg.replace(/^(?:cut|move):/, 'rotateAbout:'));
+  }
+  if (selected.size !== 1) {
+    throw new Error('rotateAbout: name one body with { bodies: [{ at }] }');
+  }
+  const idx = selected.values().next().value;
+  if (!pivot) pivot = _moveCentroidSpan(bodies[idx]).at.slice(0, 3).map(Number);
+  const zero = Math.abs(angle) < 1e-12;
+  const matrix = _rotateAboutMatrix(dir, angle, pivot);
+  if (bodies.length === 1 && bodies[0] === manifold) {
+    if (zero) return manifold;
+    const turned = manifold.transform(matrix);
+    const status = _c4StatusError(turned);
+    if (status) throw new Error(`rotateAbout: result is not a valid solid (${status})`);
+    return turned;
+  }
+  if (zero) {
+    for (const body of bodies) {
+      if (body && body !== manifold) _safeDeleteManifold(body);
+    }
+    return manifold;
+  }
+  const { Manifold } = manifoldModule;
+  const kept = [];
+  const discard = [];
+  for (let i = 0; i < bodies.length; i++) {
+    const body = bodies[i];
+    if (i !== idx) {
+      kept.push(body);
+      continue;
+    }
+    kept.push(body.transform(matrix));
+    if (body !== manifold) discard.push(body);
+  }
+  for (const m of discard) _safeDeleteManifold(m);
+  const result = kept.length === 1 ? kept[0] : Manifold.compose(kept);
+  const status = _c4StatusError(result);
+  if (status) throw new Error(`rotateAbout: result is not a valid solid (${status})`);
+  return result;
+}
+
 /** Face { center, normal, offset? } or explicit { normal, originOffset }. Never an axis name. */
 function _cutResolvePlane(plane) {
   if (plane == null || typeof plane !== 'object' || Array.isArray(plane)) {
@@ -9186,6 +9306,7 @@ const HELPER_FUNCTIONS = {
   booleanBodies,
   externalBody,
   move,
+  rotateAbout,
   moveFace,
   deleteFace,
   loft,
