@@ -280,7 +280,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   list_bodies: {
-    description: 'Bodies of the active part\'s last run, in mesh order: [{ index, at, triangleCount }]. index is insert_move body_index; at is the centroid move() names (insert_move at, edit_feature at). Empty before the first run.',
+    description: 'Bodies of the active part\'s last run, in mesh order: [{ index, at, triangleCount }]. index is insert_move / insert_rotate body_index; at is the centroid move() and rotateAbout() name (insert_move / insert_rotate at, edit_feature at). Empty before the first run.',
     result: { type: 'object', additionalProperties: true },
     errors: ['internal'],
     mutates: false,
@@ -351,7 +351,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   edit_feature: {
-    description: 'Merge params into the open feature edit session (feature sheet, helper edit card, or hole card). Keys depend on the feature kind; for a move, params.at (a list_bodies centroid) re-points it and dx / dy / dz change the offset. On a saved contour that open_feature reopened in the sketch, the profile keys patch that sketch: points [[u, v], …] (polyline, replaces a solved sketch), radius and segments (circle), width, height and centered (rectangle), polygon_preset and radius (polygon), or tool to switch; only the keys given change, keys the contour has no use for come back in ignored. Confirm with confirm_feature.',
+    description: 'Merge params into the open feature edit session (feature sheet, helper edit card, or hole card). Keys depend on the feature kind; for a move, params.at (a list_bodies centroid) re-points it and dx / dy / dz change the offset; for a rotate, angle, axis, center, and at. On a saved contour that open_feature reopened in the sketch, the profile keys patch that sketch: points [[u, v], …] (polyline, replaces a solved sketch), radius and segments (circle), width, height and centered (rectangle), polygon_preset and radius (polygon), or tool to switch; only the keys given change, keys the contour has no use for come back in ignored. Confirm with confirm_feature.',
     result: { type: 'object', additionalProperties: true },
     errors: ['no_feature_edit', 'edit_failed', 'bad_args', 'no_sketch', 'plane_card_open', 'internal'],
     mutates: false,
@@ -1066,6 +1066,12 @@ const INSERT_MOVE_META = {
   errors: ['bad_args', 'no_body', 'no_mesh', 'unknown_face', 'insert_failed', 'internal'],
 };
 
+const INSERT_ROTATE_META = {
+  ...INSERT_HELPER_META,
+  description: `Prefer this over freehand set_script. Rotate one body of the active part by angle degrees (right-hand rule) about the line through center along axis: the Rotate button, directly below Move. axis is x, y, or z (a leading - flips it) or an [ax, ay, az] vector; center is [x, y, z] in mm, or omitted for the body's own centroid; angle defaults to 90. Name the body the same way as insert_move: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. Nothing named and nothing selected is no_body; the origin is never assumed. Volume is unchanged and the bounding box follows the turn. edit_feature on the rotate takes angle, axis, center, and at. Working copy only; git_save commits.${BUILD_FLOW_NOTE}${CRASH_NOTE}`,
+  errors: ['bad_args', 'no_body', 'no_mesh', 'unknown_face', 'insert_failed', 'internal'],
+};
+
 const INSERT_CODE_SNIPPET_META = {
   ...INSERT_HELPER_META,
   description: `The script snippet feature (the Script button in Build): one operation no feature can do, as its own feature block on the active part, kept next to the insert_* features instead of replacing the whole part. gap names the missing feature or option, why says why the existing feature did not work, script is the operation (it reads and sets part). The block starts with // FEATURE-GAP: <gap> | <why>, which the feature backlog is grepped from. All three are required; an empty one is bad_args. Prefer insert_* whenever a feature can do the job; use set_script only to rewrite a whole part. Working copy only; git_save commits.`,
@@ -1081,6 +1087,7 @@ const INSERT_PATTERN_POINTS_META = {
 export function metaForCommand(name) {
   if (COMMAND_META[name]) return COMMAND_META[name];
   if (name === 'insert_move') return INSERT_MOVE_META;
+  if (name === 'insert_rotate') return INSERT_ROTATE_META;
   if (name === 'insert_code_snippet') return INSERT_CODE_SNIPPET_META;
   if (name === 'insert_pattern_points') return INSERT_PATTERN_POINTS_META;
   if (name.startsWith('insert_')) return INSERT_HELPER_META;

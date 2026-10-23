@@ -26,6 +26,7 @@ export const RESERVED_HELPER_NAMES = Object.freeze([
   'booleanBodies',
   'externalBody',
   'move',
+  'rotateAbout',
   'moveFace',
   'deleteFace',
   'loft',

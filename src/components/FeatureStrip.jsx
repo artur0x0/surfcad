@@ -37,6 +37,7 @@ import {
   Layers3,
   Scissors,
   Move,
+  RotateCw,
   SquareArrowOutUpRight,
   SquareX,
 } from 'lucide-react';
@@ -93,6 +94,7 @@ const FEATURE_ICONS = Object.freeze({
   cut: Scissors,
   boolean: RectangleCircle,
   move: Move,
+  rotate: RotateCw,
   moveFace: SquareArrowOutUpRight,
   deleteFace: SquareX,
   center: Focus,

@@ -262,6 +262,7 @@
         "golden:move-face": "node scripts/golden/smoke_move_face.mjs",
         "golden:placed-part-previews": "node scripts/golden/smoke_placed_part_previews.mjs",
         "golden:adjacent-part-visible": "node scripts/golden/smoke_adjacent_part_visible.mjs",
+        "golden:rotate-feature": "node scripts/golden/smoke_rotate_feature.mjs",
         "golden:delete-face": "node scripts/golden/smoke_delete_face.mjs",
         "golden:assembly": "node scripts/golden/smoke_assembly.mjs",
         "golden:joints-schema": "node scripts/golden/smoke_joints_schema.mjs",

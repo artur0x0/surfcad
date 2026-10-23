@@ -14,7 +14,10 @@ import { HELPER_PALETTE_ITEMS } from '../../utils/helperPaletteSnippets.js';
 import { helperUiEntries } from '../helperUiEntryExtras.js';
 import { trackPaletteFeature } from '../../utils/analytics.js';
 
-/** insert_move target fields, top level or inside params. */
+/** Helpers that act on one named body (insert_move, insert_rotate): the host resolves the target. */
+export const BODY_TARGET_HELPERS = Object.freeze(new Set(['move', 'rotate']));
+
+/** insert_move / insert_rotate target fields, top level or inside params. */
 export function moveTargetArgs(args) {
   const bag = args?.params && typeof args.params === 'object' ? args.params : {};
   const pick = (key) => (args?.[key] !== undefined ? args[key] : bag[key]);
@@ -27,23 +30,23 @@ export function moveTargetArgs(args) {
   };
 }
 
-/** Shape check for the move target before the host resolves it. */
-export function checkMoveTargetArgs(args) {
+/** Shape check for the body target before the host resolves it. */
+export function checkMoveTargetArgs(args, name = 'insert_move') {
   const target = moveTargetArgs(args);
   if (target.at != null) {
     const at = Array.isArray(target.at) ? target.at : [];
     if (at.length !== 3 || at.some((v) => !Number.isFinite(Number(v)))) {
-      return { code: 'bad_args', message: 'insert_move at must be [x, y, z] in mm (a body centroid from list_bodies)' };
+      return { code: 'bad_args', message: `${name} at must be [x, y, z] in mm (a body centroid from list_bodies)` };
     }
   }
   if (target.bodyIndex != null && !(Number.isInteger(target.bodyIndex) && target.bodyIndex >= 0)) {
-    return { code: 'bad_args', message: 'insert_move body_index must be a non-negative integer from list_bodies' };
+    return { code: 'bad_args', message: `${name} body_index must be a non-negative integer from list_bodies` };
   }
   if (target.faceId != null && typeof target.faceId !== 'string') {
-    return { code: 'bad_args', message: 'insert_move face_id must be a list_faces id like f12' };
+    return { code: 'bad_args', message: `${name} face_id must be a list_faces id like f12` };
   }
   if (target.face != null && (typeof target.face !== 'object' || Array.isArray(target.face))) {
-    return { code: 'bad_args', message: 'insert_move face must be a list_faces key { at, n, area }' };
+    return { code: 'bad_args', message: `${name} face must be a list_faces key { at, n, area }` };
   }
   return null;
 }
@@ -56,11 +59,11 @@ async function runHelperInsert(ctx, helperId, args) {
   let params = coerceHelperParams(item, args);
   const refused = validateHelperParams(item, params);
   if (refused) return { error: refused };
-  if (helperId === 'move') {
+  if (BODY_TARGET_HELPERS.has(helperId)) {
     // The body is named by the agent (body_index, at, face, face_id) or the
     // selection, never assumed to sit at the origin. The host snaps the
-    // anchor to the kernel centroid move() checks against.
-    const badTarget = checkMoveTargetArgs(args);
+    // anchor to the kernel centroid move() / rotateAbout() check against.
+    const badTarget = checkMoveTargetArgs(args, helperCommandName(helperId));
     if (badTarget) return { error: badTarget };
     const resolve = ctx.resolveMoveAnchor;
     if (typeof resolve !== 'function') {
@@ -69,7 +72,7 @@ async function runHelperInsert(ctx, helperId, args) {
     const anchor = await Promise.resolve(resolve(moveTargetArgs(args)));
     if (anchor?.error) return { error: anchor.error };
     if (!Array.isArray(anchor?.at)) {
-      return { error: { code: 'no_body', message: 'insert_move needs a body: pass body_index or at (from list_bodies), face or face_id (from list_faces), or select a face first.' } };
+      return { error: { code: 'no_body', message: `${helperCommandName(helperId)} needs a body: pass body_index or at (from list_bodies), face or face_id (from list_faces), or select a face first.` } };
     }
     params = { ...params, at: anchor.at.slice(0, 3).map(Number) };
   }
@@ -77,9 +80,9 @@ async function runHelperInsert(ctx, helperId, args) {
   // The selection is single-use: the viewport clears picks after every
   // rebuild because they index the old mesh. An explicit use_selection with
   // nothing selected is refused rather than quietly built on the default
-  // face or edge set. insert_move resolves its body on the host (no_body).
-  const wantsSelection = args?.use_selection === true && helperId !== 'move' && helperReadsSelection(helperId);
-  const moveTarget = helperId === 'move' ? moveTargetArgs(args) : null;
+  // face or edge set. insert_move / insert_rotate resolve their body on the host (no_body).
+  const wantsSelection = args?.use_selection === true && !BODY_TARGET_HELPERS.has(helperId) && helperReadsSelection(helperId);
+  const moveTarget = BODY_TARGET_HELPERS.has(helperId) ? moveTargetArgs(args) : null;
   const usedSelection = moveTarget
     ? moveTarget.useSelection && moveTarget.bodyIndex == null && moveTarget.at == null
       && moveTarget.face == null && moveTarget.faceId == null
@@ -168,7 +171,7 @@ export function buildHelperPaletteCommands() {
       const params = coerceHelperParams(item, args);
       const bad = validateHelperParams(item, params);
       if (bad) return bad;
-      return item.id === 'move' ? checkMoveTargetArgs(args) : null;
+      return BODY_TARGET_HELPERS.has(item.id) ? checkMoveTargetArgs(args, helperCommandName(item.id)) : null;
     },
     async run(ctx, args) {
       return runHelperInsert(ctx, item.id, args);

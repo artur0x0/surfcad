@@ -2,8 +2,8 @@ import { NO_ARGS_SCHEMA } from '../registry.js';
 
 /**
  * Bodies of the active part's last run, in mesh order, each with the
- * centroid `move()` names as `{ at }`. `index` is what insert_move takes as
- * `body_index`; `at` is what it takes as `at`. Immediate read; empty before
+ * centroid `move()` and `rotateAbout()` name as `{ at }`. `index` is what
+ * insert_move and insert_rotate take as `body_index`; `at` is what they take as `at`. Immediate read; empty before
  * the first run.
  */
 export const listBodiesCommand = Object.freeze({

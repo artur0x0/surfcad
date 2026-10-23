@@ -8,6 +8,7 @@ import {
   defaultParamsFor,
   isBufferEmpty,
   parsePatternPoints,
+  rotateAxisLiteral,
 } from '../utils/helperPaletteSnippets.js';
 import { POSITION_LIMIT_MM } from '../utils/positionLimit.js';
 
@@ -81,20 +82,21 @@ export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
       description: `When true, pass the current viewport face/edge selection as context.${USE_SELECTION_NOTE}`,
     };
   }
-  if (item?.id === 'move') {
-    // The body to move. The host tries body_index, then at, then face_id /
-    // face, then use_selection: true (the selected face). Nothing named and
-    // use_selection not true is no_body (the origin is never assumed).
+  if (item?.id === 'move' || item?.id === 'rotate') {
+    // The body to move or rotate. The host tries body_index, then at, then
+    // face_id / face, then use_selection: true (the selected face). Nothing
+    // named and use_selection not true is no_body (the origin is never assumed).
+    const verb = item.id === 'rotate' ? 'rotate' : 'move';
     properties.body_index = { type: 'integer', minimum: 0, description: 'Body from list_bodies' };
     properties.at = {
       type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3,
       description: 'Body centroid [x, y, z] mm from list_bodies',
     };
-    properties.face_id = { type: 'string', description: 'A list_faces id (f12) on the body to move' };
-    properties.face = { type: 'object', description: 'A list_faces key { at, n, area } on the body to move' };
+    properties.face_id = { type: 'string', description: `A list_faces id (f12) on the body to ${verb}` };
+    properties.face = { type: 'object', description: `A list_faces key { at, n, area } on the body to ${verb}` };
     properties.use_selection = {
       type: 'boolean',
-      description: 'When true and no body_index, at, face_id, or face is given, move the body of the selected face',
+      description: `When true and no body_index, at, face_id, or face is given, ${verb} the body of the selected face`,
     };
   } else if (Object.prototype.hasOwnProperty.call(USE_SELECTION_BY_HELPER, item?.id)) {
     properties.use_selection = {
@@ -118,6 +120,19 @@ export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
       properties[param.name] = {
         type: ['array', 'string'],
         description: 'Points as [[x, y, z], …] or [{ at: [x, y, z], axis: [nx, ny, nz] }, …] in mm (a JSON string of the same is accepted). For hardware: the center and axis of each hole from list_faces on the mating part.',
+      };
+    } else if (param.type === 'axis') {
+      properties[param.name] = {
+        type: ['string', 'array'],
+        description: "'x', 'y', or 'z' (a leading '-' flips it), or an [ax, ay, az] vector; right-hand rule",
+      };
+    } else if (param.type === 'vec3') {
+      properties[param.name] = {
+        type: ['array', 'null'],
+        items: { type: 'number' },
+        minItems: 3,
+        maxItems: 3,
+        description: '[x, y, z] in mm; omit or null for the default',
       };
     } else if (param.type === 'string') {
       // (schema below) required text params are enforced by validateHelperParams
@@ -227,6 +242,22 @@ export function validateHelperParams(item, params) {
     if (param.type === 'bool' && typeof value !== 'boolean') {
       return { code: 'bad_args', message: `${label} ${fieldName(param)} must be a boolean.` };
     }
+    if (param.type === 'axis' && !rotateAxisLiteral(value)) {
+      return {
+        code: 'bad_args',
+        message: `${label} ${fieldName(param)} must be x, y, or z (a leading - flips it) or a non-zero [ax, ay, az] vector.`,
+      };
+    }
+    if (param.type === 'vec3' && value != null) {
+      const ok = Array.isArray(value) && value.length === 3 && value.every((n) => Number.isFinite(Number(n)))
+        && value.every((n) => Math.abs(Number(n)) <= POSITION_LIMIT_MM);
+      if (!ok) {
+        return {
+          code: 'bad_args',
+          message: `${label} ${fieldName(param)} must be [x, y, z] in mm within ±${POSITION_LIMIT_MM}, or omitted.`,
+        };
+      }
+    }
     if (param.type === 'select' && Array.isArray(param.options)) {
       const allowed = param.options.map((row) => (
         row && typeof row === 'object' && 'value' in row ? row.value : row
@@ -261,6 +292,9 @@ export function describeHelperRefusal(item, ctx = {}) {
   const face = ctx.faceContext;
   const hasFace = !!(face && (face.type || face.center || face.key || face.normal));
 
+  if (id === 'rotate') {
+    return `Rotate refused. axis must be x, y, or z or a non-zero [ax, ay, az] vector, angle a finite number of degrees, and center [x, y, z] in mm or omitted for the body centroid.`;
+  }
   if (id === 'move') {
     const bits = ['dx', 'dy', 'dz']
       .map((name) => (Number.isFinite(Number(params[name])) ? `${name} ${Number(params[name])}` : null))

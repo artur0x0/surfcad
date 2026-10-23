@@ -2,7 +2,7 @@
 /**
  * Move one body by a delta.
  *
- * The left-rail Move button sits immediately above Center and opens a chip
+ * The left-rail Move button sits immediately above Rotate (then Center) and opens a chip
  * (X/Y/Z sliders + type-in). Confirm writes one
  *   part = move(part, [dx, dy, dz], { bodies: [{ at }] })
  * and replaces a previous Move block. move() is Manifold.translate of the
@@ -62,7 +62,8 @@ function check(name, cond, detail = '') {
     && /move:\s*Move/.test(palette));
   for (const layout of ['cad', 'game']) {
     const ids = paletteRailSections(layout).find((s) => s.key === 'Transforms').items.map((i) => i.id);
-    check(`${layout} Move sits immediately above Center`, ids[ids.indexOf('center') - 1] === 'move', ids.join(','));
+    check(`${layout} Move sits immediately above Rotate, Rotate above Center`,
+      ids[ids.indexOf('rotate') - 1] === 'move' && ids[ids.indexOf('center') - 1] === 'rotate', ids.join(','));
   }
   check('App writes composeMoveCommit on both viewports',
     /composeMoveCommit/.test(app) && (app.match(/onCommitMove=\{handleCommitMove\}/g) || []).length === 2);
