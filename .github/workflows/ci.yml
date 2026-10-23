@@ -108,6 +108,16 @@ jobs:
           node scripts/golden/smoke_git_g7_real_adapter.mjs
           node scripts/golden/smoke_wc_identity_reload.mjs
 
+      # Headless node, no Chrome: a kernel child process is pushed past its
+      # memory cap and must report a fatal out_of_memory, then run again.
+      - name: kernel crash headless golden
+        run: |
+          npm run golden:kernel-crash-headless | tee "${RUNNER_TEMP}/kernel-crash-headless.log"
+          if ! grep -q 'kernel crash headless golden: ok' "${RUNNER_TEMP}/kernel-crash-headless.log"; then
+            echo "kernel crash headless golden did not pass (see log above)"
+            exit 1
+          fi
+
   # Cheapest existing golden that proves the bundle actually boots: a real
   # headless Chrome, vite preview, #root painted, canvas + toolbar + Run.
   # Pixel goldens are not in this job. Chrome comes from the runner via
@@ -439,6 +449,33 @@ jobs:
           fi
           if ! grep -q '^all passed' "${RUNNER_TEMP}/placed-part-previews.log"; then
             echo "placed part previews golden did not pass (see log above)"
+            exit 1
+          fi
+          npm run golden:code-snippet | tee "${RUNNER_TEMP}/code-snippet.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/code-snippet.log"; then
+            echo "code snippet golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'code snippet golden: ok' "${RUNNER_TEMP}/code-snippet.log"; then
+            echo "code snippet golden did not pass (see log above)"
+            exit 1
+          fi
+          npm run golden:pattern-points | tee "${RUNNER_TEMP}/pattern-points.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/pattern-points.log"; then
+            echo "pattern points golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'pattern points golden: ok' "${RUNNER_TEMP}/pattern-points.log"; then
+            echo "pattern points golden did not pass (see log above)"
+            exit 1
+          fi
+          npm run golden:geometry-pool | tee "${RUNNER_TEMP}/geometry-pool.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/geometry-pool.log"; then
+            echo "geometry pool golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'geometry pool golden: ok' "${RUNNER_TEMP}/geometry-pool.log"; then
+            echo "geometry pool golden did not pass (see log above)"
             exit 1
           fi
 
