@@ -24,14 +24,16 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 
 /**
  * Node applies `--test-timeout` to the file as well as to tests that do not
- * set their own. It has to cover the whole file: sheet metallica's tet
- * comparison alone is allowed 240s, and one local run passed 180s while that
- * test was still going. The external kill is this long plus a grace period,
- * so a blocked event loop (which never services the test timeout) still dies
- * and names the suite.
+ * set their own. It has to cover the whole file. Sheet metallica no longer
+ * meshes its fine TET10 comparison in CI (that side is a committed
+ * reference, see src/fea/fixtures/sheetMetallicaReference.js); what is left
+ * is two coarse fTetWild meshes (10 s to 25 s each on the runners) and the
+ * shell solves, about a minute in all. The external kill is this long plus
+ * a grace period, so a blocked event loop (which never services the test
+ * timeout) still dies and names the suite.
  */
 const FEA_FILE_TIMEOUT_MS = {
-  'src/fea/sheetMetallica.test.js': 12 * 60 * 1000,
+  'src/fea/sheetMetallica.test.js': 6 * 60 * 1000,
   'src/fea/solveSolid.test.js': 8 * 60 * 1000,
   'src/fea/meshVolume.test.js': 6 * 60 * 1000,
   'src/fea/partTransform.test.js': 6 * 60 * 1000,

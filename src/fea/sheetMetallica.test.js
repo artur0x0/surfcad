@@ -17,6 +17,14 @@ import {
 } from './sheetMidsurface.js';
 import { meshArraysFromGeometry } from './studyPanel.js';
 import { buildSolidGeometry } from '../utils/partSolidCache.js';
+import {
+  REFERENCE_METRICS,
+  REFERENCE_PATH,
+  loadSheetMetallicaReference,
+  referenceMetrics,
+  relativeError,
+} from './fixtures/sheetMetallicaReference.js';
+import { SHELL_VS_TET_TOLERANCE } from './sheetShellTolerance.js';
 
 // The Manifold runtime is imported here, not at load. Evaluating it (and
 // compiling the FEA wasm) used to be a top-level await, which runs before
@@ -41,17 +49,6 @@ function finiteField(values) {
     if (!Number.isFinite(values[i])) return false;
   }
   return values.length > 0;
-}
-
-function nearestRankP95(values) {
-  const finite = [];
-  for (let i = 0; i < values.length; i += 1) {
-    if (Number.isFinite(values[i])) finite.push(values[i]);
-  }
-  finite.sort((a, b) => a - b);
-  if (!finite.length) return NaN;
-  const rank = Math.min(finite.length - 1, Math.max(0, Math.ceil(0.95 * finite.length) - 1));
-  return finite[rank];
 }
 
 function forceSum(bcs) {
@@ -283,14 +280,25 @@ describe('sheet metallica bracket', { concurrency: 1 }, () => {
     assert.ok(Math.abs(softer.displacementMax / desktop.displacementMax - 2) < 0.02, `displacement ${softer.displacementMax} vs ${desktop.displacementMax}`);
   });
 
-  test('shell displacement and p95 stay near a fine TET10', { timeout: 240_000 }, async () => {
+  test('shell displacement and p95 stay near the committed fine TET10 reference', { timeout: 60_000 }, async () => {
+    // The TET10 side is `src/fea/fixtures/sheetMetallicaReference.json`,
+    // the median of several 3 mm fTetWild meshes solved with the committed
+    // wasm (see fixtures/sheetMetallicaReference.js for why it is not meshed
+    // here). `npm run golden:fea-shell-vs-tet` rebuilds that mesh and checks
+    // a fresh run against the stored spread; `--write` refreshes the file.
+    let ref;
+    try {
+      ref = loadSheetMetallicaReference();
+    } catch (error) {
+      assert.fail(error.message);
+    }
     const spec = shellSheetFromScript(SHEET_METALLICA_SCRIPT);
     const built = await runScript(SHEET_METALLICA_SCRIPT);
     const solid = buildSolidGeometry(built.mesh);
     const surface = meshArraysFromGeometry(solid.geometry, solid.faceIDs);
     const expanded = studyForSolve(study, solid.geometry, solid.faceIDs);
     try { built.manifold?.delete?.(); } catch { /* already freed */ }
-    const shell = await solveSolid({
+    const shell = referenceMetrics(await solveSolid({
       study: expanded,
       positions: surface.positions,
       indices: surface.indices,
@@ -301,30 +309,17 @@ describe('sheet metallica bracket', { concurrency: 1 }, () => {
       solveShell: fea.solve_shell,
       solveTet10: fea.solve_tet10,
       solveStub: fea.solve,
-    });
-    const tet = await solveSolid({
-      study: { ...expanded, model: 'solid', mesh: { target: 3, refine: 'off' } },
-      positions: surface.positions,
-      indices: surface.indices,
-      faceIDs: surface.faceIDs,
-      material: aluminum,
-      profile: 'desktop',
-      solveTet10: fea.solve_tet10,
-      solveStub: fea.solve,
-      meshVolume,
-    });
-    const dispErr = Math.abs(shell.displacementMax - tet.displacementMax) / tet.displacementMax;
-    const surfaceErr = Math.abs(nearestRankP95(shell.nodal) - nearestRankP95(tet.nodal)) / nearestRankP95(tet.nodal);
-    const solverErr = Math.abs(shell.p95 - tet.p95) / tet.p95;
-    // fTetWild's bracket mesh moves a little between runs, and the render-mesh
-    // sample follows it. The solver p95 (top/bottom fibres vs tet nodes, the
-    // number on the legend) stayed near 3% on the runs measured here. The tip
-    // displacement sat just past 5% on two meshes from this build (5.05% and
-    // 5.15%), so the check allows 8%.
-    console.log(`compare shell u ${shell.displacementMax.toFixed(3)} tet u ${tet.displacementMax.toFixed(3)} (${(100 * dispErr).toFixed(2)}%) shell p95 ${shell.p95.toFixed(2)} tet p95 ${tet.p95.toFixed(2)} (${(100 * solverErr).toFixed(2)}%) surface p95 ${(100 * surfaceErr).toFixed(2)}% shell ${shell.stats.dofs} dof ${shell.stats.solveMs} ms tet ${tet.stats.dofs} dof mesh ${tet.stats.meshMs} ms solve ${tet.stats.solveMs} ms`);
-    assert.ok(dispErr <= 0.08, `displacement ${(100 * dispErr).toFixed(2)}%`);
-    assert.ok(solverErr <= 0.10, `solver p95 ${(100 * solverErr).toFixed(2)}%`);
-    assert.ok(surfaceErr <= 0.12, `surface p95 ${(100 * surfaceErr).toFixed(2)}%`);
+    }));
+    const errors = {};
+    for (const key of REFERENCE_METRICS) errors[key] = relativeError(shell[key], ref.tet[key]);
+    console.log(`compare shell u ${shell.displacementMax.toFixed(3)} ref tet u ${ref.tet.displacementMax.toFixed(3)} (${(100 * errors.displacementMax).toFixed(2)}%) shell p95 ${shell.p95.toFixed(2)} ref tet p95 ${ref.tet.p95.toFixed(2)} (${(100 * errors.p95).toFixed(2)}%) surface p95 ${(100 * errors.surfaceP95).toFixed(2)}% shell ${shell.dofs} dof ${shell.solveMs} ms reference ${ref.runs.length} tet runs median ${ref.tet.dofs} dof from ${ref.generatedAt}`);
+    // Limits and the measured spread behind them: src/fea/sheetShellTolerance.js.
+    for (const key of REFERENCE_METRICS) {
+      assert.ok(
+        errors[key] <= SHELL_VS_TET_TOLERANCE[key],
+        `${key} ${(100 * errors[key]).toFixed(2)}% from the ${REFERENCE_PATH} median (limit ${(100 * SHELL_VS_TET_TOLERANCE[key]).toFixed(0)}%)`,
+      );
+    }
   });
 
   test('auto refine reports a convergence history', { timeout: 420_000 }, async () => {
