@@ -32,7 +32,20 @@ export function listSketchEntities(state) {
     radius: a.radius,
   }));
   const refs = (model.refs || []).map((r) => ({ id: r.id, kind: r.kind }));
-  return { points, lines, arcs, refs };
+  // Dimensions and constraints are part of the saved contour (solveContour),
+  // so a reopened sketch lists them with the ids sketch_dimension /
+  // sketch_constrain take back (dimension_id / constraint_id).
+  const item = (row) => {
+    const out = {};
+    for (const key of Object.keys(row || {})) {
+      if (key === 'seq') continue;
+      out[key] = row[key];
+    }
+    return out;
+  };
+  const dimensions = (model.dimensions || []).map(item);
+  const constraints = (model.constraints || []).map(item);
+  return { points, lines, arcs, refs, dimensions, constraints };
 }
 
 export function sketchPickKey(kind, key) {

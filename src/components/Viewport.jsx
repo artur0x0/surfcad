@@ -12736,7 +12736,15 @@ const Viewport = forwardRef(({
       return { error: { code: 'plane_card_open', message: 'Call sketch_accept_plane before sketch gestures' } };
     }
     if (contourEditRef.current) {
-      return { error: { code: 'sketch_edit', message: 'Contour edit session is open' } };
+      // Editing a saved contour: the gesture stays live in the sketch and the
+      // rail checkmark / sketch_commit rewrites the contour by id, the same
+      // way a pointer gesture does (saveContourBlock skips the write too).
+      // sketch_edit and sketch_dimension / sketch_constrain on a reopened
+      // contour land here.
+      contourLiveWriteRef.current = state;
+      contourModeRef.current = state;
+      setContourMode(state);
+      return { live: true, result: meta };
     }
     const buf = (typeof getHelperBufferRef.current === 'function' ? getHelperBufferRef.current() : '') || '';
     const minted = state.contourId ? null : mintContourIdentity(buf);
@@ -12867,6 +12875,24 @@ const Viewport = forwardRef(({
     }
     const bounds = modelBoundsRef.current;
     const commitFace = activeContourFace(state, bounds);
+    if (contourEditRef.current) {
+      // A reopened saved contour: the same payload as the rail checkmark, so
+      // saveEditedContour rewrites the statement by id, live gestures
+      // included, instead of composing a second contour next to it.
+      const edit = contourEditRef.current;
+      return {
+        payload: {
+          editContour: true,
+          partId: activePartIdRef.current,
+          contourId: edit.id,
+          contourName: state.contourName || edit.name,
+          face: state.planeFace || commitFace,
+          tool: state.tool,
+          params: state.params,
+          planeOffset: Number(state.planeOffset) || 0,
+        },
+      };
+    }
     if (slotReturnRef.current && featureSlotsRef.current) {
       const slot = slotReturnRef.current;
       return {

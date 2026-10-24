@@ -34,3 +34,24 @@ test('parseSolveContour rejects a hostile dimension id', () => {
   ].join('\n');
   assert.throws(() => parseSolveContour(src), /dimension id must match/);
 });
+
+test('a committed sketch keeps its dimensions and constraints: emit → parse round-trips both (sketch_edit, improvements §4)', () => {
+  const spec = contourFromRectangle(40, 20, true);
+  spec.dimensions = [
+    { id: 'd0', kind: 'length', edge: spec.lines[0].id, value: 40 },
+    { id: 'd1', kind: 'length', edge: spec.lines[1].id, value: 20, name: 'H' },
+  ];
+  spec.constraints = [
+    { id: 'c0', kind: 'horizontal', line: spec.lines[0].id },
+    { id: 'c1', kind: 'perpendicular', a: spec.lines[0].id, b: spec.lines[1].id },
+  ];
+  const src = emitSolveContour(spec);
+  assert.match(src, /dimensions: \[\{ id: 'd0'/);
+  assert.match(src, /constraints: \[\{ id: 'c0'/);
+  const back = parseSolveContour(src);
+  assert.deepEqual(back.dimensions.map((d) => [d.id, d.kind, d.value]), [['d0', 'length', 40], ['d1', 'length', 20]]);
+  assert.equal(back.dimensions[1].name, 'H');
+  assert.deepEqual(back.constraints.map((c) => [c.id, c.kind]), [['c0', 'horizontal'], ['c1', 'perpendicular']]);
+  // Idempotent: a second emit of the parsed spec is byte-identical.
+  assert.equal(emitSolveContour(back), src);
+});

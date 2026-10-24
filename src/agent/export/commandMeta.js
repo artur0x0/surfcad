@@ -505,6 +505,12 @@ export const COMMAND_META = {
     errors: ['no_sketch', 'plane_card_open', 'empty_sketch', 'invalid_profile', 'commit_failed', 'no_write_part', 'internal'],
     mutates: true,
   },
+  sketch_edit: {
+    description: `One call edits a saved contour: it reopens the contour in the sketch (as open_feature on its contour:<id> chip does), applies ops in order, saves and closes the sketch (the rail checkmark: the @contour statement is rewritten by id and every extrude, revolve, loft or sweep that names it rebuilds, one undo step), and returns the entities the contour now has (points, lines, arcs, dimensions, constraints with their ids). ops: profile (the edit_feature contour params: points [[u, v], …], width / height / centered, radius / segments, polygon_preset, tool), add (the sketch_add fields), constrain (the sketch_constrain fields: kind, picks or a / b / line / point), dimension (the sketch_dimension fields: kind, value, picks or edge / line / arc / a / b, name), delete { id } and undo; params is shorthand for one leading profile op. Dimensions and constraints are saved in the contour (solveContour({ points, lines, arcs, dimensions, constraints })), so the sketch stays parametric across runs and reopens with them. An op that cannot be applied is an error naming the op index and what to send; the sketch is closed without saving, so no sketch is ever left open. unknown_contour when the id is not a saved contour chip, not_a_contour when it is another feature.${CRASH_NOTE}`,
+    result: MUTATE_RESULT_SCHEMA,
+    errors: ['bad_args', 'unknown_contour', 'not_a_contour', 'no_write_part', 'edit_failed', 'no_sketch', 'invalid_profile', 'empty_sketch', 'commit_failed', 'nothing_to_undo', 'internal'],
+    mutates: true,
+  },
   sketch_cancel: {
     description: 'Exit contour mode without writing.',
     result: OK,
@@ -512,13 +518,13 @@ export const COMMAND_META = {
     mutates: false,
   },
   sketch_dimension: {
-    description: 'Add or edit a sketch dimension.',
+    description: 'Add or edit a sketch dimension. On a saved contour reopened by open_feature or sketch_edit the gesture stays live in the sketch (result live: true, written: false) and the confirm or sketch_commit writes it with the contour.',
     result: MUTATE_RESULT_SCHEMA,
     errors: ['no_sketch', 'bad_args', 'commit_failed', 'internal'],
     mutates: true,
   },
   sketch_constrain: {
-    description: 'Add or edit a sketch constraint.',
+    description: 'Add or edit a sketch constraint. On a saved contour reopened by open_feature or sketch_edit the gesture stays live in the sketch (result live: true, written: false) and the confirm or sketch_commit writes it with the contour.',
     result: MUTATE_RESULT_SCHEMA,
     errors: ['no_sketch', 'bad_args', 'commit_failed', 'internal'],
     mutates: true,

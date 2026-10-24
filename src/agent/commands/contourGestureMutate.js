@@ -4,6 +4,20 @@
 export async function runContourGestureMutate(ctx, { prepare, label }) {
   const prepared = prepare();
   if (prepared?.error) return { error: prepared.error };
+  if (prepared?.live) {
+    // A reopened saved contour: the gesture is applied to the live sketch
+    // and written by the commit that closes it (one undo step for the edit).
+    return {
+      result: {
+        ok: true,
+        written: false,
+        live: true,
+        errors: [],
+        status: ctx.readStatus?.(),
+        ...(prepared.result || {}),
+      },
+    };
+  }
   const payload = prepared.payload;
   if (!payload) {
     return { error: { code: 'internal', message: `${label} payload missing` } };
