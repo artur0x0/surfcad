@@ -91,7 +91,7 @@ async function runHelperInsert(ctx, helperId, args) {
     return {
       error: {
         code: 'no_selection',
-        message: `${item.label || helperId}: use_selection is true but nothing is selected. Picks clear after every rebuild (each insert_*, set_script, undo): pick again with select_faces / pick_faces / select_edges or pick_begin … pick_done, then insert. Omit use_selection to use the helper default.`,
+        message: `${item.label || helperId}: use_selection is true but nothing is selected. A face pick with a name survives rebuilds; edge picks and unnamed faces clear after every rebuild (each insert_*, set_script, undo): pick again with select_faces / pick_faces / select_edges or pick_begin … pick_done, then insert. Omit use_selection to use the helper default.`,
       },
     };
   }

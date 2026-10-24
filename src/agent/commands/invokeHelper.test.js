@@ -245,12 +245,13 @@ test('insert_move keeps its own no_body contract and reports usedSelection', asy
   assert.equal(none.error.code, 'no_body');
 });
 
-test('every use_selection description states the single-use rule', () => {
+test('every use_selection description states the pick rule: named picks survive, the rest clears', () => {
   for (const item of HELPER_PALETTE_ITEMS) {
     const props = schemaPropertiesForHelper(item);
     if (!props.use_selection || item.id === 'move' || item.id === 'rotate') continue;
     assert.match(props.use_selection.description, /no_selection/, item.id);
-    assert.match(props.use_selection.description, /clear after every rebuild/, item.id);
+    assert.match(props.use_selection.description, /found again after every rebuild/, item.id);
+    assert.match(props.use_selection.description, /clears with the rebuild/, item.id);
   }
   assert.match(invokeHelperCommand.schema.properties.use_selection.description, /no_selection/);
 });

@@ -22,6 +22,7 @@ import {
   boundsFromGeometry,
   characteristicLengthMm as lengthFromBounds,
 } from './characteristicLength.js';
+import { stampedPiecesForMesh } from './faceIdentity.js';
 
 /**
  * Per-triangle feature key from Manifold runs: `runFeature` (fillet / chamfer
@@ -78,18 +79,21 @@ export function buildSolidGeometry(meshData) {
   if (meshData?.featureTessellation?.length) {
     geometry.userData.featureTessellation = meshData.featureTessellation;
   }
-  // Face identity: the stamp rows this mesh uses (roles per originalID and
-  // faceID range) and each kept triangle's run originalID, so
-  // faceIdentity.js can name the faces without the fillet-op keys that
-  // triSource substitutes for a run.
+  // Face identity: the pieces of every stamped label, found on the full
+  // mesh before the needles were dropped (so the kernel, which keeps them,
+  // and this geometry agree), as a piece id per kept triangle.
   if (Array.isArray(meshData?.faceStamps) && meshData.faceStamps.length) {
     geometry.userData.faceStamps = meshData.faceStamps;
-    const triOriginalID = triangleSources(
-      { runIndex: meshData.runIndex, runOriginalID: meshData.runOriginalID, triVerts: meshData.triVerts },
-      fin.keep,
-      triVerts.length / 3,
-    );
-    if (triOriginalID) geometry.userData.triOriginalID = triOriginalID;
+    const stamped = stampedPiecesForMesh(meshData);
+    if (stamped) {
+      const nKept = triVerts.length / 3;
+      let pieceOfTri = stamped.pieceOfTri;
+      if (fin.keep) {
+        pieceOfTri = new Int32Array(nKept);
+        for (let i = 0; i < nKept; i++) pieceOfTri[i] = stamped.pieceOfTri[fin.keep[i]];
+      }
+      geometry.userData.faceIdentity = { pieceOfTri, pieces: stamped.pieces };
+    }
   }
   geometry.setAttribute('position', new BufferAttribute(vertProperties, 3));
   geometry.setIndex(new BufferAttribute(triVerts, 1));

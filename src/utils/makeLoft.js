@@ -536,7 +536,88 @@ export function buildMakeLoftSolid(Manifold, CrossSection, sections, opts = {}) 
   if (!(vol > 1e-9)) {
     throw new Error('makeLoft: result is EMPTY (volume 0) — check profiles have area and distinct offsets');
   }
+  // Face identity (opts.identity): roles per triangle of `out`, read off
+  // the warped mesh (the warp keeps z and re-sorts triangles). cap0 / cap1
+  // by normal at the two end heights; span[i][j]: i is the bottom
+  // station's logical edge at the triangle centroid's polar angle, j the
+  // station span its height falls in.
+  if (opts.identity && typeof opts.identity === 'object') {
+    try {
+      const mesh = out.getMesh();
+      const np = mesh.numProp;
+      const vp = mesh.vertProperties;
+      const roles = new Array(mesh.numTri);
+      const bottomEdges = _logicalEdges(stations[0].contour);
+      const bottom = stations[0].contour;
+      for (let tIdx = 0; tIdx < mesh.numTri; tIdx++) {
+        const i0 = mesh.triVerts[tIdx * 3];
+        const i1 = mesh.triVerts[tIdx * 3 + 1];
+        const i2 = mesh.triVerts[tIdx * 3 + 2];
+        const a = [vp[i0 * np], vp[i0 * np + 1], vp[i0 * np + 2]];
+        const b = [vp[i1 * np], vp[i1 * np + 1], vp[i1 * np + 2]];
+        const c = [vp[i2 * np], vp[i2 * np + 1], vp[i2 * np + 2]];
+        // Caps by height, not normal: a sliver on a collapsed station has
+        // no usable normal, but its three vertices still sit on the cap plane.
+        const zEps = Math.max(1e-6, 1e-6 * height);
+        if (Math.abs(a[2]) < zEps && Math.abs(b[2]) < zEps && Math.abs(c[2]) < zEps) { roles[tIdx] = 'cap0'; continue; }
+        if (Math.abs(a[2] - height) < zEps && Math.abs(b[2] - height) < zEps && Math.abs(c[2] - height) < zEps) { roles[tIdx] = 'cap1'; continue; }
+        const cx = (a[0] + b[0] + c[0]) / 3;
+        const cy = (a[1] + b[1] + c[1]) / 3;
+        const cz = (a[2] + b[2] + c[2]) / 3;
+        const j = _spanIndex(stations, z0 + cz);
+        const r = Math.hypot(cx, cy);
+        const hit = r > 1e-9 ? _contourRayHit(bottom, cx / r, cy / r) : null;
+        const e = _nearestLogicalEdge(bottomEdges, hit || [cx, cy]);
+        roles[tIdx] = `span[${e}][${j}]`;
+      }
+      opts.identity.roles = roles;
+      opts.identity.stations = stations.map((s) => s.offset);
+    } catch {
+      opts.identity.roles = null;
+    }
+  }
   return out;
+}
+
+/**
+ * Logical edges of one station contour for face identity: a round station
+ * is one edge, every other contour one edge per point pair.
+ */
+function _logicalEdges(contour) {
+  const pts = Array.isArray(contour) ? contour : [];
+  if (pts.length >= 8 && _isRoundStation(pts)) {
+    let cx = 0;
+    let cy = 0;
+    for (const p of pts) { cx += p[0]; cy += p[1]; }
+    const n = pts.length;
+    let r = 0;
+    for (const p of pts) r += Math.hypot(p[0] - cx / n, p[1] - cy / n);
+    return [{ kind: 'circle', center: [cx / n, cy / n], radius: r / n }];
+  }
+  const out = [];
+  for (let i = 0; i < pts.length; i++) out.push({ kind: 'line', a: pts[i], b: pts[(i + 1) % pts.length] });
+  return out;
+}
+
+function _nearestLogicalEdge(edges, p) {
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    let d;
+    if (e.kind === 'circle') {
+      d = Math.abs(Math.hypot(p[0] - e.center[0], p[1] - e.center[1]) - e.radius);
+    } else {
+      const abx = e.b[0] - e.a[0];
+      const aby = e.b[1] - e.a[1];
+      const l2 = abx * abx + aby * aby;
+      let s = l2 > 0 ? ((p[0] - e.a[0]) * abx + (p[1] - e.a[1]) * aby) / l2 : 0;
+      s = Math.max(0, Math.min(1, s));
+      d = Math.hypot(p[0] - (e.a[0] + s * abx), p[1] - (e.a[1] + s * aby));
+    }
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
 }
 
 /**

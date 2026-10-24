@@ -8,12 +8,16 @@
  * `faceID` per triangle carry the stamp through every boolean, and the
  * run's mesh data adds `faceStamps`, one `{ originalID, feature, helper,
  * roles: [{ role, record, ranges }] }` row per run the final mesh still
- * uses. This module turns them into named faces on the main thread: label
- * each kept triangle from its run's originalID and its faceID, group by
- * label, split each group into connected pieces (triangles that share an
- * edge), order the pieces of one label by centre and append `[k]` when
- * there is more than one, then read the edges between named faces off the
- * shared triangle edges.
+ * uses. This module turns them into named faces on the main thread.
+ * `stampedPiecesForMesh` runs on the full mesh data when the geometry is
+ * built (buildSolidGeometry drops needle triangles, and connectivity on the
+ * trimmed mesh falls apart where they were; the kernel keeps them, and both
+ * sides must find the same pieces): label each triangle from its run's
+ * originalID and its faceID, group by label, split each group into
+ * connected pieces (triangles that share a vertex). `stampedFaceTable`
+ * then measures the kept triangles of each piece, orders the pieces of one
+ * label by centre and appends `[k]` when there is more than one, and reads
+ * the edges between named faces off the shared triangle edges.
  *
  * The face graph (PartGraph) stays the pick unit: a viewport click, a paint
  * tap and a `list_faces` row are still one graph patch. A patch gets the
@@ -56,6 +60,84 @@ function roleFor(stamp, faceID) {
 }
 
 /**
+ * Pieces of every stamped label on the full mesh data, by triangle: the
+ * step buildSolidGeometry runs before it drops needles.
+ * @returns {{ pieceOfTri: Int32Array, pieces: Array<{ feature: string, role: string, helper: string|null, record: object }> }|null}
+ */
+export function stampedPiecesForMesh(meshData) {
+  const rows = meshData?.faceStamps;
+  const triVerts = meshData?.triVerts;
+  const faceID = meshData?.faceID;
+  const runIndex = meshData?.runIndex;
+  const runOriginalID = meshData?.runOriginalID;
+  if (!Array.isArray(rows) || !rows.length || !triVerts || !faceID || !runIndex || !runOriginalID) return null;
+  const nTri = Math.floor(triVerts.length / 3);
+  if (faceID.length < nTri || runIndex.length < 2) return null;
+  const stampByOriginal = new Map();
+  for (const row of rows) {
+    if (row && Number.isFinite(row.originalID) && Array.isArray(row.roles)) stampByOriginal.set(Number(row.originalID), row);
+  }
+  if (!stampByOriginal.size) return null;
+  // Label per triangle.
+  const labelOfTri = new Int32Array(nTri).fill(-1);
+  const labels = [];
+  const labelIndex = new Map();
+  for (let r = 0; r + 1 < runIndex.length; r++) {
+    const stamp = stampByOriginal.get(Number(runOriginalID[r]));
+    if (!stamp) continue;
+    const t1 = Math.min(nTri, Math.floor(runIndex[r + 1] / 3));
+    for (let t = Math.floor(runIndex[r] / 3); t < t1; t++) {
+      const role = roleFor(stamp, Number(faceID[t]));
+      if (!role) continue;
+      const key = `${stamp.feature}.${role.role}`;
+      let li = labelIndex.get(key);
+      if (li === undefined) {
+        li = labels.length;
+        labels.push({ feature: stamp.feature, role: role.role, helper: stamp.helper || null, record: role.record || { kind: 'mesh' } });
+        labelIndex.set(key, li);
+      }
+      labelOfTri[t] = li;
+    }
+  }
+  if (!labels.length) return null;
+  // Connected pieces per label: triangles that share a vertex.
+  const parent = new Int32Array(nTri);
+  for (let t = 0; t < nTri; t++) parent[t] = t;
+  const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  const ownerByVertex = new Map();
+  for (let t = 0; t < nTri; t++) {
+    const li = labelOfTri[t];
+    if (li < 0) continue;
+    for (let k = 0; k < 3; k++) {
+      const key = li * 4294967296 + triVerts[t * 3 + k];
+      const prev = ownerByVertex.get(key);
+      if (prev === undefined) ownerByVertex.set(key, t);
+      else {
+        const a = find(prev);
+        const b = find(t);
+        if (a !== b) parent[b] = a;
+      }
+    }
+  }
+  const pieceOfTri = new Int32Array(nTri).fill(-1);
+  const pieceByRoot = new Map();
+  const pieces = [];
+  for (let t = 0; t < nTri; t++) {
+    const li = labelOfTri[t];
+    if (li < 0) continue;
+    const root = find(t);
+    let pi = pieceByRoot.get(root);
+    if (pi === undefined) {
+      pi = pieces.length;
+      pieces.push(labels[li]);
+      pieceByRoot.set(root, pi);
+    }
+    pieceOfTri[t] = pi;
+  }
+  return { pieceOfTri, pieces };
+}
+
+/**
  * Build the named-face table for a geometry.
  *
  * @param {{ attributes?: object, index?: object, userData?: object }} geometry BufferGeometry from buildSolidGeometry (userData carries faceStamps and triOriginalID)
@@ -76,109 +158,69 @@ export function stampedFaceTable(geometry, faceIDs = null) {
 function buildTable(geometry, ids) {
   const positions = geometry?.attributes?.position?.array;
   const indices = geometry?.index?.array;
-  const rows = geometry?.userData?.faceStamps;
-  const triOriginalID = geometry?.userData?.triOriginalID;
+  const identity = geometry?.userData?.faceIdentity;
   const empty = { faces: [], edges: [], triFace: null, byName: new Map() };
-  if (!positions || !indices || !indices.length || !ids || !triOriginalID || !Array.isArray(rows) || !rows.length) return empty;
-  const stampByOriginal = new Map();
-  for (const row of rows) {
-    if (row && Number.isFinite(row.originalID) && Array.isArray(row.roles)) stampByOriginal.set(Number(row.originalID), row);
-  }
-  if (!stampByOriginal.size) return empty;
+  if (!positions || !indices || !indices.length || !identity?.pieceOfTri || !Array.isArray(identity.pieces) || !identity.pieces.length) return empty;
   const nTri = Math.floor(indices.length / 3);
-  if (triOriginalID.length < nTri) return empty;
-  // Group triangles by label (feature.role); a union of two copies of one
-  // solid puts the same originalID in two runs, so one label can span runs.
-  const groups = new Map();
-  const labelInfo = new Map();
+  if (identity.pieceOfTri.length < nTri) return empty;
+  // Kept triangles per piece (the needles buildSolidGeometry dropped are
+  // gone, which only trims a sliver of area off a piece).
+  const trisOfPiece = new Map();
   for (let t = 0; t < nTri; t++) {
-    const stamp = stampByOriginal.get(triOriginalID[t]);
-    if (!stamp) continue;
-    const role = roleFor(stamp, Number(ids[t]));
-    if (!role) continue;
-    const key = `${stamp.feature}.${role.role}`;
-    let list = groups.get(key);
-    if (!list) {
-      list = [];
-      groups.set(key, list);
-      labelInfo.set(key, { feature: stamp.feature, role: role.role, helper: stamp.helper || null, record: role.record || { kind: 'mesh' } });
-    }
+    const pi = identity.pieceOfTri[t];
+    if (pi < 0) continue;
+    let list = trisOfPiece.get(pi);
+    if (!list) { list = []; trisOfPiece.set(pi, list); }
     list.push(t);
   }
-  if (!groups.size) return empty;
+  if (!trisOfPiece.size) return empty;
 
   const faces = [];
   const triFace = new Int32Array(nTri).fill(-1);
   const byLabel = new Map();
-  for (const [key, tris] of groups) {
-    const stamp = labelInfo.get(key);
-    const fid = Number(ids[tris[0]]);
-    // Connected pieces of this stamped id.
-    const parent = tris.map((_, i) => i);
-    const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
-    const edgeOwner = new Map();
-    tris.forEach((t, gi) => {
-      const v0 = indices[t * 3];
-      const v1 = indices[t * 3 + 1];
-      const v2 = indices[t * 3 + 2];
-      for (const [u, w] of [[v0, v1], [v1, v2], [v2, v0]]) {
-        const key = pairKey(u, w);
-        const prev = edgeOwner.get(key);
-        if (prev === undefined) edgeOwner.set(key, gi);
-        else {
-          const a = find(prev);
-          const b = find(gi);
-          if (a !== b) parent[b] = a;
-        }
+  for (const [pi, sub3] of trisOfPiece) {
+    const stamp = identity.pieces[pi];
+    const fid = Number(ids ? ids[sub3[0]] : -1);
+    const c = [0, 0, 0];
+    const n = [0, 0, 0];
+    const min = [Infinity, Infinity, Infinity];
+    const max = [-Infinity, -Infinity, -Infinity];
+    let area = 0;
+    for (const t of sub3) {
+      const a = vec3At(positions, indices[t * 3]);
+      const b = vec3At(positions, indices[t * 3 + 1]);
+      const d = vec3At(positions, indices[t * 3 + 2]);
+      const cr = cross(sub(b, a), sub(d, a));
+      const ta = 0.5 * len(cr);
+      const tn = unit(cr);
+      for (let k = 0; k < 3; k++) {
+        c[k] += ((a[k] + b[k] + d[k]) / 3) * ta;
+        n[k] += tn[k] * ta;
+        const lo = Math.min(a[k], b[k], d[k]);
+        const hi = Math.max(a[k], b[k], d[k]);
+        if (lo < min[k]) min[k] = lo;
+        if (hi > max[k]) max[k] = hi;
       }
-    });
-    const byRoot = new Map();
-    tris.forEach((t, gi) => {
-      const r = find(gi);
-      let list = byRoot.get(r);
-      if (!list) { list = []; byRoot.set(r, list); }
-      list.push(t);
-    });
-    const pieces = [];
-    for (const sub3 of byRoot.values()) {
-      const c = [0, 0, 0];
-      const n = [0, 0, 0];
-      const min = [Infinity, Infinity, Infinity];
-      const max = [-Infinity, -Infinity, -Infinity];
-      let area = 0;
-      for (const t of sub3) {
-        const a = vec3At(positions, indices[t * 3]);
-        const b = vec3At(positions, indices[t * 3 + 1]);
-        const d = vec3At(positions, indices[t * 3 + 2]);
-        const cr = cross(sub(b, a), sub(d, a));
-        const ta = 0.5 * len(cr);
-        const tn = unit(cr);
-        for (let k = 0; k < 3; k++) {
-          c[k] += ((a[k] + b[k] + d[k]) / 3) * ta;
-          n[k] += tn[k] * ta;
-          const lo = Math.min(a[k], b[k], d[k]);
-          const hi = Math.max(a[k], b[k], d[k]);
-          if (lo < min[k]) min[k] = lo;
-          if (hi > max[k]) max[k] = hi;
-        }
-        area += ta;
-      }
-      pieces.push({
-        faceID: fid,
-        feature: stamp.feature,
-        role: stamp.role,
-        helper: stamp.helper,
-        record: stamp.record,
-        ordinal: 0,
-        name: '',
-        tris: sub3,
-        area,
-        center: area > 1e-18 ? [c[0] / area, c[1] / area, c[2] / area] : [0, 0, 0],
-        normal: unit(n),
-        bbox: { min, max },
-      });
+      area += ta;
     }
-    byLabel.set(key, pieces);
+    const piece = {
+      faceID: fid,
+      feature: stamp.feature,
+      role: stamp.role,
+      helper: stamp.helper,
+      record: stamp.record,
+      ordinal: 0,
+      name: '',
+      tris: sub3,
+      area,
+      center: area > 1e-18 ? [c[0] / area, c[1] / area, c[2] / area] : [0, 0, 0],
+      normal: unit(n),
+      bbox: { min, max },
+    };
+    const key = `${stamp.feature}.${stamp.role}`;
+    let list = byLabel.get(key);
+    if (!list) { list = []; byLabel.set(key, list); }
+    list.push(piece);
   }
   // Ordinals: one label in several pieces, ordered by centre x, y, z. A
   // union of two copies of one solid gives the same stamped ids twice, so
