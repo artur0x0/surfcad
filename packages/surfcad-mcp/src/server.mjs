@@ -40,6 +40,7 @@ import {
   SERVER_INSTRUCTIONS,
 } from './prompt/guide.mjs';
 import { withErrorHint, withRowHints } from './prompt/errorHints.mjs';
+import { callListHelpersTool, LIST_HELPERS_TOOL_NAME, listHelpersToolDefinition } from './helpers.mjs';
 
 const PAIR_TOOL_NAME = 'pair';
 
@@ -217,6 +218,7 @@ export async function createSurfcadMcpServer(options = {}) {
         },
       },
       guideToolDefinition(),
+      listHelpersToolDefinition(),
       ...promptToolDefinitions(),
       ...bridgeTools,
     ],
@@ -230,6 +232,10 @@ export async function createSurfcadMcpServer(options = {}) {
 
     if (name === GUIDE_TOOL_NAME) {
       return callGuideTool(args);
+    }
+    if (name === LIST_HELPERS_TOOL_NAME) {
+      const out = callListHelpersTool(args);
+      return out.isError ? errorResult(JSON.parse(out.content[0].text), name) : out;
     }
 
     if (isPromptTool(name)) {
