@@ -12,9 +12,10 @@ import { BUILD_GUIDANCE, BUILD_FLOW_NOTE, FEATURE_GAP_PREFIX } from '../src/prom
 import * as canonical from '../../../src/agent/buildGuidance.js';
 
 /**
- * Every client that speaks stdio gets the same build guidance: in the
- * initialize instructions, in the pair result text, and in the tool
- * descriptions. No client is special-cased.
+ * Every client that speaks stdio gets the same build guidance: the
+ * initialize instructions and the pair result point at guide { topic:
+ * "start" }, which carries it in full, and the tool descriptions carry the
+ * ribbon-order note. No client is special-cased.
  */
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -55,7 +56,7 @@ test('the guidance names the real rail sections and the gap comment format', () 
   assert.match(BUILD_FLOW_NOTE, /FEATURE-GAP/);
 });
 
-test('instructions, the pair result, and the tool descriptions carry the same guidance over stdio', async () => {
+test('instructions and the pair result point at guide start, which carries the guidance; tool descriptions keep the note', async () => {
   const token = createPairingToken(6);
   const relay = await startAgentBridgeRelay({ port: 0 });
   const port = relay.server.address().port;
@@ -76,13 +77,19 @@ test('instructions, the pair result, and the tool descriptions carry the same gu
   tab.send(JSON.stringify({ type: PAIR_MSG.PAIR_APPROVE }));
 
   const instructions = client.getInstructions();
-  assert.ok(typeof instructions === 'string' && instructions.includes(BUILD_GUIDANCE), 'initialize instructions carry the guidance');
+  assert.ok(typeof instructions === 'string' && /guide \{ topic: "start" \}/.test(instructions), 'initialize instructions point at guide start');
+  assert.ok(!instructions.includes(BUILD_GUIDANCE), 'the full guidance is no longer inlined in the instructions');
   assert.match(instructions, /register_webhook/);
+
+  const start = await client.callTool({ name: 'guide', arguments: { topic: 'start' } });
+  assert.equal(start.isError, false);
+  assert.ok(start.content.some((c) => c.type === 'text' && c.text.includes(BUILD_GUIDANCE)), 'guide start carries the guidance verbatim');
 
   const paired = await client.callTool({ name: 'pair', arguments: { code: token } });
   assert.equal(paired.isError, false, JSON.stringify(paired).slice(0, 300));
   const texts = paired.content.filter((c) => c.type === 'text').map((c) => c.text);
-  assert.ok(texts.some((t) => t === BUILD_GUIDANCE), 'the pair result has the guidance as its own text block');
+  assert.ok(texts.some((t) => /guide \{ topic: "start" \}/.test(t)), 'the pair result points at guide start as its own text block');
+  assert.ok(!texts.some((t) => t === BUILD_GUIDANCE), 'the pair result no longer repeats the full guidance');
   assert.ok(texts.some((t) => /webhook/i.test(t)), 'the webhook onboarding note is still there');
 
   const { tools } = await client.listTools();
@@ -93,7 +100,8 @@ test('instructions, the pair result, and the tool descriptions carry the same gu
   assert.match(byName.create_part, /block out/i);
   assert.match(byName.create_assembly, /block out/i);
   assert.match(byName.invoke_helper, /ribbon order/i);
-  assert.match(byName.pair, /How to build|build guidance/i);
+  assert.match(byName.pair, /guide \{ topic: "start" \}/);
+  assert.match(byName.guide, /start/);
 
   await client.close();
   tab.close();

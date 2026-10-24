@@ -27,7 +27,7 @@ Environment variables:
 3. Add `surfcad-mcp` to your MCP client (`npx surfcad-mcp`), set `SURFCAD_PAIRING_CODE` to that code, or call the MCP **`pair`** tool with `{ "code": "ABCDEF" }`.
 4. Click **Allow** (the green check) in SurfCAD when prompted.
 
-The MCP server instructions are: `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages.`
+The MCP server instructions start with `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages.` and continue with a quick-start (under 2 KB) that points at the `guide` tool.
 
 A successful `pair`, when no webhook is registered yet, returns an onboarding note as text content (a `type: "text"` block, not only `structuredContent` or `_meta`). The note asks the agent to request a webhook URL and key from the user. The key is the `bearer` argument. Suggested wording to relay: "To get SurfCAD messages instantly, send me your webhook URL and key. This only needs to be done once. Otherwise I'll check for SurfCAD messages between steps, so replies may lag." If the user declines, the agent polls `read_messages`. This process holds the URL and bearer in memory only, so the agent should save them in its own config or memory and call `register_webhook` again after every pair. If a webhook is already registered when `pair` succeeds, the result omits that note and says the webhook is active.
 
@@ -65,11 +65,11 @@ A local CLI session usually has no public https endpoint, so polling `read_messa
 
 ## How to build
 
-The `pair` result, the MCP initialize instructions, and the `insert_*` / `set_script` / `create_*` tool descriptions all carry the same build guidance: block out every part of the assembly as plain blocks first (within seconds, then a screenshot for the user), then Build and Shape, then Polish, then pattern and place; features first, with a `set_script` snippet only for one operation no feature can do, starting with `// FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>`; one part per unique fastener type, one instance patterned to every place it goes. The full text is in [docs/agent/SKILL.md](../../docs/agent/SKILL.md).
+`guide { topic: "start" }` carries the build guidance in full (the `pair` result and the initialize instructions point at it; `guide {}` lists the other topics: `features`, `selection`, `paint`, `limits`, `camera`, `assembly`), and the `insert_*` / `set_script` / `create_*` tool descriptions carry a one-line note of it: block out every part of the assembly as plain blocks first (within seconds, then a screenshot for the user), then Build and Shape, then Polish, then pattern and place; features first, with a `set_script` snippet only for one operation no feature can do, starting with `// FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>`; one part per unique fastener type, one instance patterned to every place it goes. The full text is in [docs/agent/SKILL.md](../../docs/agent/SKILL.md).
 
 ## Tools
 
-Every command in `data/commands.json` is one MCP tool with the same name and argument schema, plus `pair` and five in-process prompt tools. `GET /tools` on the loopback relay, `list_commands`, and that file list the same bridge tools. Prefer `insert_*` feature tools. `set_script` is the freehand fallback and requires `part_id`.
+Every command in `data/commands.json` is one MCP tool with the same name and argument schema, plus `pair`, `guide` (plain-text agent guidance by topic, no pairing needed), and five in-process prompt tools. `GET /tools` on the loopback relay, `list_commands`, and that file list the same bridge tools. Prefer `insert_*` feature tools. `set_script` is the freehand fallback and requires `part_id`.
 
 Parts and assemblies are opaque surf ids. A vault path or display name is `unknown_part` / `unknown_assembly`. Nothing reaches git without an explicit `git_save` (or another `git_*` write below).
 

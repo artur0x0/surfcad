@@ -84,9 +84,9 @@ test('surfcad-mcp lists bridge tools and calls status through a mocked relay', a
   });
 
   const { tools } = await client.listTools();
-  assert.equal(tools.length, catalog.count + 1 + PROMPT_TOOL_NAMES.length, 'bridge commands, pair, and local prompt tools');
+  assert.equal(tools.length, catalog.count + 2 + PROMPT_TOOL_NAMES.length, 'bridge commands, pair, guide, and local prompt tools');
   const names = tools.map((t) => t.name).sort();
-  const expected = [...catalog.commands.map((c) => c.name), 'pair', ...PROMPT_TOOL_NAMES].sort();
+  const expected = [...catalog.commands.map((c) => c.name), 'pair', 'guide', ...PROMPT_TOOL_NAMES].sort();
   assert.deepEqual(names, expected);
   for (const name of PROMPT_TOOL_NAMES) {
     assert.equal(catalog.commands.some((command) => command.name === name), false);
