@@ -572,6 +572,7 @@ import { planePatchFromArgs } from '../agent/sketchPlaneAgent.js';
 import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from '../agent/state/listPickables.js';
 import { describeJointPick } from '../agent/jointPickDescribe.js';
 import { agentFaceCatalog, findAgentFace } from '../agent/faceCatalog.js';
+import { describeFaceTable, stampedFaceTable } from '../utils/faceIdentity.js';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -11119,6 +11120,13 @@ const Viewport = forwardRef(({
       if (import.meta.env?.DEV) {
         window.__VIEWPORT__ = {
           ready: () => !!(sceneRef.current && rendererRef.current && resultRef.current),
+          // Face identity: the named faces and edges of the active part's
+          // mesh (golden:face-identity reads this). Plain data, no triangles.
+          faceTable: () => {
+            const geom = resultRef.current?.geometry;
+            if (!geom) return null;
+            return describeFaceTable(stampedFaceTable(geom, faceIDsRef.current));
+          },
           cadBodySticky: () => cadBodyStickyRef.current,
           jointHighlightCount: () => jointHighlightRef.current.size,
           assemblyPartPositions: () => {

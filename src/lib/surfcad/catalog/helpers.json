@@ -1,6 +1,6 @@
 {
   "generatedFrom": "src/lib/surfcad/runtime.js HELPER_FUNCTIONS",
-  "count": 75,
+  "count": 78,
   "helpers": [
     {
       "name": "shell",
@@ -1686,6 +1686,55 @@
       "doc": "Fillet-mode labels and Accept use these instead of tessellation keys like\n`\"1268-1269\"`.\n\n\n\n**How ids are assigned (current mesh only):**\n- A **face id** is the minimum Manifold `faceID` in a coplanar connected group\n  (normals within 0.1°, plane offset within 1e-3). Shown as `fN`.\n- A **boundary edge id** groups triangle segments that share one unordered face\n  pair and connect through vertices. One CAD edge that was tessellated collinearly\n  is one id (`eN`). A curved rim, where each facet is its own face, stays many ids.\n- Ids are sorted by `(min face, max face, midpoint)` so a fresh cube is stable.\n- `edge(part, id)` and `edgesBetween(part, faceA, faceB)` return\n  `{ key, a, b, va, vb, mid, length }` segments for `makeSweepPath`.\n  `edgesBetween` throws when that pair has more than one boundary — use `edge`.\n\n**Rematch limits:** ids are not a CAD feature tree. Manifold `faceID` is\nprovenance and can merge or split after a boolean, and two disconnected regions\ncan share one minimum faceID. `edge` / `edgesBetween` throw `re-pick edges`\nwhen the id or pair is missing. Re-running a script from scratch is stable only\nwhile the solid *before* the fillet is deterministic. After geometry changes,\nre-pick in Fillet mode (the labels update) rather than editing a stale id.\n\n**Loud failures (script):** bad/empty path; radius ≤ 0; concave edge; cannot orient\ncutter; sweep/boolean failure; ~0 volume removed (wrong orientation); near-no-op vs\nexpected wedge volume; empty result. Never silent wrong solid.\n\n**Soft-fail (UI):** empty / disconnected / branched edge selection — same messages\nas Path; no broken JS inserted.",
       "examples": [
         "let part = Manifold.cube([40, 30, 20], true);\nconst cat = boundaryEdges(part); // [{ id, faceA, faceB, mid, length }, ...]\nconst one = cat[0];\nconst selEdges = edgesBetween(part, one.faceA, one.faceB);\n// partial chain: [id, id].flatMap((id) => edge(part, id))\nconst path = makeSweepPath(selEdges);\npart = filletAlongPath(part, path, 2);\nreturn part;"
+      ]
+    },
+    {
+      "name": "faceNames",
+      "signature": "faceNames(part)",
+      "params": [
+        {
+          "name": "part",
+          "text": "part"
+        }
+      ],
+      "description": "faceNames(part) → every face name on the part, sorted. ",
+      "doc": "Faces by the name the helper that built them recorded (see [docs/architecture.md](architecture.md), Face identity). `Manifold.cube` / `cylinder` / `sphere`, `tube`, `hexPrism`, `roundedBox`, `makeExtrude` and `makeRevolve` stamp every face with `feature.role`: `feature` is the id of the marked block the call ran in (`cube1`, `tapDrillHole-11`), else `<helper>@<n>` in script order; `role` is `top bottom left right front back`, `side top bottom inner`, `surface`, `wall[i]`, `band[i]` / `corner[i]`, `cap0 cap1 wall[g]`, `seg[g] end0 end1`. A label in several pieces (a slot through a top, a union of two copies) gets `[k]`, ordered by centre.\n\n\n\n`facesNamed` throws, naming the faces that exist, when nothing matches; it never picks a nearby face. The faces carry `center`, `normal`, `tris`, `verts`, `area`, `body`, `name`, `label { feature, role, ordinal }` and `record`, and work wherever a `facesByNormal` face does. `surfaceOf` is the record the helper wrote from its arguments (`plane`, `cylinder`, `cone`, `sphere`, else `mesh`), in the frame the helper built in: a later translate or rotate moves the face, not its record. A hull, a fillet cutter or a freehand `Manifold.*` call outside those primitives has no stamped faces.",
+      "examples": [
+        "faceNames(part);                       // ['base.bottom', 'base.top', 'boss.side', …]\nconst top = facesNamed(part, 'base.top')[0];\nconst wp = workplaneFromFace(part, top);\npart = hole(part, wp, 10, 0, 4, 6);\nfacesNamed(part, 'plate.top');         // every piece: plate.top[0], plate.top[1]\nfacesNamed(part, 'boss.wall[*]');      // glob\nsurfaceOf(top);                        // { kind: 'plane', origin, normal }"
+      ]
+    },
+    {
+      "name": "facesNamed",
+      "signature": "facesNamed(part, pattern)",
+      "params": [
+        {
+          "name": "part",
+          "text": "part"
+        },
+        {
+          "name": "pattern",
+          "text": "pattern"
+        }
+      ],
+      "description": "facesNamed(part, pattern) → the faces whose name matches `pattern`. ",
+      "doc": "Faces by the name the helper that built them recorded (see [docs/architecture.md](architecture.md), Face identity). `Manifold.cube` / `cylinder` / `sphere`, `tube`, `hexPrism`, `roundedBox`, `makeExtrude` and `makeRevolve` stamp every face with `feature.role`: `feature` is the id of the marked block the call ran in (`cube1`, `tapDrillHole-11`), else `<helper>@<n>` in script order; `role` is `top bottom left right front back`, `side top bottom inner`, `surface`, `wall[i]`, `band[i]` / `corner[i]`, `cap0 cap1 wall[g]`, `seg[g] end0 end1`. A label in several pieces (a slot through a top, a union of two copies) gets `[k]`, ordered by centre.\n\n\n\n`facesNamed` throws, naming the faces that exist, when nothing matches; it never picks a nearby face. The faces carry `center`, `normal`, `tris`, `verts`, `area`, `body`, `name`, `label { feature, role, ordinal }` and `record`, and work wherever a `facesByNormal` face does. `surfaceOf` is the record the helper wrote from its arguments (`plane`, `cylinder`, `cone`, `sphere`, else `mesh`), in the frame the helper built in: a later translate or rotate moves the face, not its record. A hull, a fillet cutter or a freehand `Manifold.*` call outside those primitives has no stamped faces.",
+      "examples": [
+        "faceNames(part);                       // ['base.bottom', 'base.top', 'boss.side', …]\nconst top = facesNamed(part, 'base.top')[0];\nconst wp = workplaneFromFace(part, top);\npart = hole(part, wp, 10, 0, 4, 6);\nfacesNamed(part, 'plate.top');         // every piece: plate.top[0], plate.top[1]\nfacesNamed(part, 'boss.wall[*]');      // glob\nsurfaceOf(top);                        // { kind: 'plane', origin, normal }"
+      ]
+    },
+    {
+      "name": "surfaceOf",
+      "signature": "surfaceOf(face)",
+      "params": [
+        {
+          "name": "face",
+          "text": "face"
+        }
+      ],
+      "description": "surfaceOf(face) → the SurfaceRecord the helper that built the face recorded: `{ kind: 'plane', origin, normal }`, `{ kind: 'cylinder', axisOrigin, axisDir, radius }`, `{ kind: 'cone', apex, axisDir, halfAngle }`, `{ kind: 'sphere', center, radius }`, or `{ kind: 'mesh' }` when...",
+      "doc": "Faces by the name the helper that built them recorded (see [docs/architecture.md](architecture.md), Face identity). `Manifold.cube` / `cylinder` / `sphere`, `tube`, `hexPrism`, `roundedBox`, `makeExtrude` and `makeRevolve` stamp every face with `feature.role`: `feature` is the id of the marked block the call ran in (`cube1`, `tapDrillHole-11`), else `<helper>@<n>` in script order; `role` is `top bottom left right front back`, `side top bottom inner`, `surface`, `wall[i]`, `band[i]` / `corner[i]`, `cap0 cap1 wall[g]`, `seg[g] end0 end1`. A label in several pieces (a slot through a top, a union of two copies) gets `[k]`, ordered by centre.\n\n\n\n`facesNamed` throws, naming the faces that exist, when nothing matches; it never picks a nearby face. The faces carry `center`, `normal`, `tris`, `verts`, `area`, `body`, `name`, `label { feature, role, ordinal }` and `record`, and work wherever a `facesByNormal` face does. `surfaceOf` is the record the helper wrote from its arguments (`plane`, `cylinder`, `cone`, `sphere`, else `mesh`), in the frame the helper built in: a later translate or rotate moves the face, not its record. A hull, a fillet cutter or a freehand `Manifold.*` call outside those primitives has no stamped faces.",
+      "examples": [
+        "faceNames(part);                       // ['base.bottom', 'base.top', 'boss.side', …]\nconst top = facesNamed(part, 'base.top')[0];\nconst wp = workplaneFromFace(part, top);\npart = hole(part, wp, 10, 0, 4, 6);\nfacesNamed(part, 'plate.top');         // every piece: plate.top[0], plate.top[1]\nfacesNamed(part, 'boss.wall[*]');      // glob\nsurfaceOf(top);                        // { kind: 'plane', origin, normal }"
       ]
     }
   ]

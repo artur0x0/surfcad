@@ -78,6 +78,19 @@ export function buildSolidGeometry(meshData) {
   if (meshData?.featureTessellation?.length) {
     geometry.userData.featureTessellation = meshData.featureTessellation;
   }
+  // Face identity: the stamp rows this mesh uses (roles per originalID and
+  // faceID range) and each kept triangle's run originalID, so
+  // faceIdentity.js can name the faces without the fillet-op keys that
+  // triSource substitutes for a run.
+  if (Array.isArray(meshData?.faceStamps) && meshData.faceStamps.length) {
+    geometry.userData.faceStamps = meshData.faceStamps;
+    const triOriginalID = triangleSources(
+      { runIndex: meshData.runIndex, runOriginalID: meshData.runOriginalID, triVerts: meshData.triVerts },
+      fin.keep,
+      triVerts.length / 3,
+    );
+    if (triOriginalID) geometry.userData.triOriginalID = triOriginalID;
+  }
   geometry.setAttribute('position', new BufferAttribute(vertProperties, 3));
   geometry.setIndex(new BufferAttribute(triVerts, 1));
   const faceIDs = fin.faceIDs && fin.faceIDs.length > 0 ? fin.faceIDs : null;
