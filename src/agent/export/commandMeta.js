@@ -258,7 +258,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   parts: {
-    description: `Open assembly: assemblyId, assemblyName, vaultLayout, activeId, and parts [{ id, name, visible, missing?, group?, runState, crash? }]. runState is not_run_yet | ok | failed for every part, not only the active one; crash is present after a geometry engine crash on that part ({ code: geometry_worker_crashed, reason, workerRestarted, message }). Part and assembly ids are opaque surf ids, never a path or display name. No path field. featureCount and bodyCount are on status, not here.${FEATURE_COUNT_NOTE}`,
+    description: `Open assembly: assemblyId, assemblyName, vaultLayout, activeId, and parts [{ id, name, visible, missing?, group?, instanceOf?, runState, crash? }]. instanceOf is the definition a part instance places (insert_part instance:true): rows sharing it share one script and one run and differ in pose, name and visibility. runState is not_run_yet | ok | failed for every part, not only the active one; crash is present after a geometry engine crash on that part ({ code: geometry_worker_crashed, reason, workerRestarted, message }). Part and assembly ids are opaque surf ids, never a path or display name. No path field. featureCount and bodyCount are on status, not here.${FEATURE_COUNT_NOTE}`,
     result: { type: 'object', additionalProperties: true },
     errors: ['internal'],
     mutates: false,
@@ -745,7 +745,7 @@ export const COMMAND_META = {
     mutates: true,
   },
   insert_part: {
-    description: 'Insert-as-reference by opaque part_id, or every part of assembly_id (same ids). copy:true mints a new part id and sets copiedFrom. A path or name is unknown_part / unknown_assembly. Does not write git.',
+    description: 'Insert-as-reference by opaque part_id, or every part of assembly_id (same ids). copy:true mints a new part id and sets copiedFrom. instance:true with the part_id of a row already in the open assembly adds another placement of that part (a part instance): the new row shares the script, run and undo history of its definition (edit any one and all rebuild from one run) and has its own id, name, pose and visibility; position sets its translation (default: staggered along +X). The result is { partId (the new row), instanceOf, added, partCount }; parts lists the row with instanceOf. Works on local and git assemblies. A path or name is unknown_part / unknown_assembly. Does not write git.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'unknown_part', 'unknown_assembly', 'git_only', 'internal'],
     mutates: true,

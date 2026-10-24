@@ -29,6 +29,127 @@ export function sortParts(parts) {
   });
 }
 
+/**
+ * The definition a row places: `instanceOf` when the row is an instance,
+ * else the row's own id. Scripts, runs, meshes, thumbnails and per-part
+ * history are keyed by this; everything about the placement is keyed by
+ * the row id.
+ */
+export function partDefinitionId(row) {
+  const ref = row?.instanceOf;
+  if (typeof ref === 'string' && ref && ref !== String(row?.id ?? '')) return ref;
+  return row?.id == null ? '' : String(row.id);
+}
+
+/** Every row that places this definition, in part order. */
+export function definitionRows(parts, defId) {
+  const key = defId == null ? '' : String(defId);
+  return sortParts(parts).filter((row) => partDefinitionId(row) === key);
+}
+
+/**
+ * True when a row other than `exceptRowId` still places `defId`: its own
+ * primary row, or an instance of it. Delete drops a definition's script
+ * and run only when this is false.
+ */
+export function definitionStillReferenced(parts, defId, exceptRowId = null) {
+  const def = defId == null ? '' : String(defId);
+  if (!def) return false;
+  const skip = exceptRowId == null ? null : String(exceptRowId);
+  return (parts || []).some((row) => {
+    if (!row || row.id == null) return false;
+    if (skip != null && String(row.id) === skip) return false;
+    return partDefinitionId(row) === def;
+  });
+}
+
+/**
+ * Rows of one definition hold one script. The active row's text wins (the
+ * editor only edits the active row); else the primary row's; else the first
+ * row that has one. Returns the same object when nothing changes.
+ */
+export function normalizeInstanceScripts(scripts, doc) {
+  const parts = doc?.parts;
+  if (!scripts || !Array.isArray(parts) || !parts.length) return scripts;
+  const groups = new Map();
+  for (const row of sortParts(parts)) {
+    const def = partDefinitionId(row);
+    if (!groups.has(def)) groups.set(def, []);
+    groups.get(def).push(row);
+  }
+  let next = scripts;
+  const activeId = doc?.activeId != null ? String(doc.activeId) : null;
+  for (const [def, rows] of groups) {
+    if (rows.length < 2 && rows.some((row) => String(row.id) === def)) continue;
+    const pick = rows.find((row) => String(row.id) === activeId && typeof scripts[row.id] === 'string')
+      || rows.find((row) => String(row.id) === def && typeof scripts[row.id] === 'string')
+      || rows.find((row) => typeof scripts[row.id] === 'string');
+    if (!pick) continue;
+    const text = scripts[pick.id];
+    // Row keys for the main thread, the definition key for the readers in
+    // this module (scriptForRow, feedRows, isDefaultBlankAssembly).
+    for (const key of [...rows.map((row) => row.id), def]) {
+      if (scripts[key] === text) continue;
+      if (next === scripts) next = { ...scripts };
+      next[key] = text;
+    }
+  }
+  return next;
+}
+
+/**
+ * Rows of one definition share one run. The run of `preferId` (the row
+ * that just ran) wins; else a visible active row's; else the first visible
+ * row's run with a mesh (a hidden row only holds a kept copy without
+ * volume or bbox); else any row's. Returns the same object when nothing
+ * changes.
+ */
+export function fanOutInstanceRuns(runs, doc, preferId = null) {
+  const parts = doc?.parts;
+  if (!runs || !Array.isArray(parts) || !parts.length) return runs;
+  const groups = new Map();
+  for (const row of sortParts(parts)) {
+    const def = partDefinitionId(row);
+    if (!groups.has(def)) groups.set(def, []);
+    groups.get(def).push(row);
+  }
+  let next = runs;
+  const prefer = preferId != null ? String(preferId) : null;
+  const activeId = doc?.activeId != null ? String(doc.activeId) : null;
+  for (const [def, rows] of groups) {
+    if (rows.length < 2 && rows.some((row) => String(row.id) === def)) continue;
+    const withMesh = (row) => runs[row.id]?.ok === true && !!runs[row.id].mesh?.vertProperties;
+    // A fresh run carries its volume; a hidden row's kept copy does not.
+    const fresh = (row) => withMesh(row) && runs[row.id].volume !== undefined;
+    // A row that did not run this time (skipped because hidden, or missing)
+    // has nothing to hand to its siblings.
+    const ran = (row) => {
+      const r = runs[row.id];
+      if (!r) return false;
+      if (r.ok === true) return !!r.mesh?.vertProperties || r.empty === true;
+      return !r.skipped && !r.missing;
+    };
+    const visible = (row) => row.visible !== false;
+    const pick = rows.find((row) => String(row.id) === prefer && ran(row))
+      || rows.find((row) => String(row.id) === activeId && visible(row) && ran(row))
+      || rows.find((row) => visible(row) && fresh(row))
+      || rows.find((row) => fresh(row))
+      || rows.find((row) => visible(row) && withMesh(row))
+      || rows.find((row) => withMesh(row))
+      || rows.find((row) => ran(row))
+      || rows.find((row) => runs[row.id]);
+    if (!pick) continue;
+    const run = runs[pick.id];
+    // Row keys for the main thread, the definition key for composeViewportParts.
+    for (const key of [...rows.map((row) => row.id), def]) {
+      if (runs[key] === run) continue;
+      if (next === runs) next = { ...runs };
+      next[key] = run;
+    }
+  }
+  return next;
+}
+
 /** [x, y, z] when the row stores a finite position, otherwise null. */
 export function partPosition(part) {
   const p = part?.position;
@@ -125,34 +246,6 @@ export function newLocalPartId() {
  * A row without it is its own definition. See docs/vault-schema.md,
  * Instances.
  */
-
-/**
- * The definition a row places: `instanceOf` when the row is an instance,
- * else the row's own id. Scripts, runs, meshes, thumbnails and per-part
- * history are keyed by this; everything about the placement is keyed by
- * the row id.
- */
-export function partDefinitionId(row) {
-  const ref = row?.instanceOf;
-  if (typeof ref === 'string' && ref && ref !== String(row?.id ?? '')) return ref;
-  return row?.id == null ? '' : String(row.id);
-}
-
-/**
- * True when a row other than `exceptRowId` still places `defId`: its own
- * primary row, or an instance of it. Delete drops a definition's script
- * and run only when this is false.
- */
-export function definitionStillReferenced(parts, defId, exceptRowId = null) {
-  const def = defId == null ? '' : String(defId);
-  if (!def) return false;
-  const skip = exceptRowId == null ? null : String(exceptRowId);
-  return (parts || []).some((row) => {
-    if (!row || row.id == null) return false;
-    if (skip != null && String(row.id) === skip) return false;
-    return partDefinitionId(row) === def;
-  });
-}
 
 /** Shown and saved when a document has no name of its own. */
 export const DEFAULT_ASSEMBLY_NAME = 'Assembly';
@@ -741,17 +834,28 @@ export function setPartVisible(doc, id, visible) {
 /** The SendCutSend SKU bound to a part (S1 sheet metal), or null. */
 export function partSheetMetal(doc, id) {
   const part = (doc?.parts || []).find((row) => row.id === id);
-  return normalizeSheetMetalBinding(part?.sheetMetal);
+  if (!part) return null;
+  const own = normalizeSheetMetalBinding(part.sheetMetal);
+  if (own) return own;
+  // The binding means the definition: another row of it may carry it.
+  for (const row of definitionRows(doc?.parts, partDefinitionId(part))) {
+    const bound = normalizeSheetMetalBinding(row.sheetMetal);
+    if (bound) return bound;
+  }
+  return null;
 }
 
-/** Bind (or clear with null) a part's SendCutSend SKU. Unknown id → same doc. */
+/** Bind (or clear with null) a part's SendCutSend SKU on every row of its definition. Unknown id → same doc. */
 export function setPartSheetMetal(doc, id, binding) {
   if (id == null || !(doc?.parts || []).some((part) => part.id === id)) return doc;
   const clean = normalizeSheetMetalBinding(binding);
+  const target = (doc?.parts || []).find((part) => part.id === id);
+  const def = partDefinitionId(target);
   return serializeAssembly({
     ...doc,
     parts: (doc?.parts || []).map((part) => {
-      if (part.id !== id) return part;
+      // Every row of the definition carries the same binding.
+      if (partDefinitionId(part) !== def) return part;
       const rest = { ...part };
       delete rest.sheetMetal;
       return clean ? { ...rest, sheetMetal: clean } : rest;
@@ -876,6 +980,7 @@ export function composeViewportParts(doc, runs) {
     const pose = partPlacement(part);
     out.push({
       id: part.id,
+      definitionId: partDefinitionId(part),
       surfId: partSurfId(part),
       definitionId: partDefinitionId(part),
       mesh: run.mesh,
@@ -946,6 +1051,7 @@ export function feedRows(doc, runs, scripts) {
       definitionId: def,
       instanceOf: typeof part.instanceOf === 'string' && part.instanceOf !== part.id ? part.instanceOf : null,
       copiedFrom: part.copiedFrom || null,
+      instanceOf: typeof part.instanceOf === 'string' && part.instanceOf ? part.instanceOf : null,
       isSynced: typeof part.isSynced === 'boolean' ? part.isSynced : undefined,
     };
   });

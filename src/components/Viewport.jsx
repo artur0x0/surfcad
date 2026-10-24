@@ -1254,6 +1254,9 @@ const Viewport = forwardRef(({
   const assemblyExtrasRef = useRef(new Map());
   const assemblyColorsRef = useRef(assemblyColors);
   const partSurfIdRef = useRef(new Map());
+  /** Part instances: row id → definition id (the script the row places). Rows of one definition share one geometry. */
+  const partDefinitionRef = useRef(new Map());
+  const definitionOf = (id) => (id == null ? id : (partDefinitionRef.current.get(String(id)) ?? id));
   const applyFaceSkinRef = useRef(() => {});
   const applyStressSkinRef = useRef(() => {});
   /** Built solid geometry per mesh data (pick mesh + other parts). */
@@ -13234,7 +13237,8 @@ const Viewport = forwardRef(({
     // face: buildSolidGeometry drops it so the seam is not drawn and is not
     // an edge of the face graph. A solid already built for this mesh data
     // (another assembly part, or this part before a switch) is reused.
-    const solid = cachedSolidGeometry(solidCacheRef.current, meshData, activePartIdRef.current);
+    // Scoped by definition: every instance of a part shares the geometry.
+    const solid = cachedSolidGeometry(solidCacheRef.current, meshData, definitionOf(activePartIdRef.current));
     const geometry = solid.geometry;
     faceIDsRef.current = solid.faceIDs;
 
@@ -13586,7 +13590,11 @@ const Viewport = forwardRef(({
       // placeAssembly.
       const meshPartId = opts.partId != null ? opts.partId : activePartIdRef.current;
       if (opts.partId != null) activePartIdRef.current = opts.partId;
-      const prepared = await resolvePartMeshes(meshPartId, script);
+      if (opts.partId != null && opts.definitionId) {
+        partDefinitionRef.current.set(String(opts.partId), String(opts.definitionId));
+      }
+      // Mesh assets belong to the definition the row places.
+      const prepared = await resolvePartMeshes(definitionOf(meshPartId), script);
       if (prepared.missing.length) {
         throw new Error(missingMeshMessage(prepared.missing));
       }
@@ -14486,7 +14494,7 @@ const Viewport = forwardRef(({
     }
     // The solid this part just showed as the pick mesh: same cached
     // geometry, handed over instead of rebuilt.
-    const { geometry: geom } = cachedSolidGeometry(solidCacheRef.current, meshData, id);
+    const { geometry: geom } = cachedSolidGeometry(solidCacheRef.current, meshData, definitionOf(id));
     if (mesh.geometry !== geom) {
       releaseGeometryIn(solidCacheRef.current, mesh.geometry);
       mesh.geometry = geom;
@@ -14570,6 +14578,7 @@ const Viewport = forwardRef(({
     const surfIds = new Map();
     const rememberSurf = (solid) => {
       if (solid?.id != null && solid.surfId) surfIds.set(String(solid.id), solid.surfId);
+      if (solid?.id != null && solid.definitionId) partDefinitionRef.current.set(String(solid.id), String(solid.definitionId));
     };
     for (const solid of solids) rememberSurf(solid);
     for (const solid of (Array.isArray(payload?.leftovers) ? payload.leftovers : [])) rememberSurf(solid);
@@ -14607,7 +14616,9 @@ const Viewport = forwardRef(({
         assemblyExtrasRef.current.set(solid.id, mesh);
       }
       mesh.userData.leftover = false;
-      const { geometry: geom } = cachedSolidGeometry(solidCacheRef.current, solid.mesh, solid.id);
+      // Part instances: rows of one definition share one geometry, so the
+      // cache scope is the definition, not the row.
+      const { geometry: geom } = cachedSolidGeometry(solidCacheRef.current, solid.mesh, solid.definitionId ?? solid.id);
       if (mesh.geometry !== geom) {
         releaseGeometryIn(solidCacheRef.current, mesh.geometry);
         mesh.geometry = geom;
@@ -14634,7 +14645,7 @@ const Viewport = forwardRef(({
       }
       mesh.userData.assemblyPartId = solid.id;
       mesh.userData.leftover = true;
-      const { geometry: geom } = cachedSolidGeometry(solidCacheRef.current, solid.mesh, solid.id);
+      const { geometry: geom } = cachedSolidGeometry(solidCacheRef.current, solid.mesh, solid.definitionId ?? solid.id);
       if (mesh.geometry !== geom) {
         releaseGeometryIn(solidCacheRef.current, mesh.geometry);
         mesh.geometry = geom;

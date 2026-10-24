@@ -6,6 +6,7 @@ import { gitBlobSha } from '../../utils/git/binaryContent.js';
 import { assemblyIdPath, parseIdPath, partIdPath } from '../../utils/git/idPaths.js';
 import { partScriptMatchesCommitted, stampPartScript } from '../../utils/git/planSave.js';
 import { toSurfJsonV2 } from '../../utils/git/surfJsonV2.js';
+import { partDefinitionId, sortParts } from '../../utils/assembly.js';
 
 function textBlobSha(text) {
   return gitBlobSha(new TextEncoder().encode(String(text ?? '')));
@@ -65,8 +66,19 @@ function partScriptMatchesCommit(text, committedHash, id, name) {
   }
 }
 
+/**
+ * The name Save stamps into a definition's `@name` header: the primary
+ * row's, else the lowest-order instance's (planSave's rule).
+ */
+function definitionHeaderName(parts, defId) {
+  const rows = sortParts(parts).filter((row) => partDefinitionId(row) === defId);
+  const primary = rows.find((row) => String(row.id) === defId);
+  return (primary || rows[0])?.name;
+}
+
 function instanceDirty(wcPart, committedPart) {
   if (!committedPart) return true;
+  if (stableJson(wcPart.instanceOf || null) !== stableJson(committedPart.instanceOf || null)) return true;
   if ((wcPart.name || '') !== (committedPart.name || '')) return true;
   if ((wcPart.visible !== false) !== (committedPart.visible !== false)) return true;
   if ((Number.isInteger(wcPart.order) ? wcPart.order : 0)
@@ -141,13 +153,17 @@ export function compareWorkingCopyToCommit(input = {}) {
       continue;
     }
     if (row.missing !== true) {
+      // Part instances: the script file is the definition's, stamped with
+      // the primary row's name. The dirty mark still lands on this row.
+      const def = partDefinitionId(row);
       const path = (() => {
-        try { return partIdPath(id); } catch { return null; }
+        try { return partIdPath(def); } catch { return null; }
       })();
       const committedHash = path && files[path] ? files[path].contentHash : null;
-      const text = scripts[id];
+      const text = scripts[id] ?? scripts[def];
       if (typeof text === 'string') {
-        if (!committedHash || !partScriptMatchesCommit(text, committedHash, id, row.name)) {
+        const headerName = definitionHeaderName(doc.parts, def) ?? row.name;
+        if (!committedHash || !partScriptMatchesCommit(text, committedHash, def, headerName)) {
           partIds.push(id);
         }
       } else if (committedHash && row.missing !== true) {

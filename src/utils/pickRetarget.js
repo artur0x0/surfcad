@@ -10,7 +10,7 @@
  * and does not rebuild graphs, but leftover triangles from its last success
  * stay pickable.
  */
-import { composeViewportParts } from './assembly.js';
+import { composeViewportParts, partDefinitionId } from './assembly.js';
 import { partSurfId } from './git/surfId.js';
 import { partPlacement } from './jointSchema.js';
 
@@ -144,6 +144,7 @@ export function leftoverPickSolids(doc, runs, stored) {
     const pose = partPlacement(part);
     out.push({
       id: part.id,
+      definitionId: partDefinitionId(part),
       surfId: partSurfId(part),
       mesh,
       position: pose.t,

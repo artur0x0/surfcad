@@ -112,7 +112,9 @@ Documents. create_assembly { name? } seeds an empty assembly with one empty part
 
 Parts. create_part { name?, script?, position? } adds a part, makes it active and returns its new opaque id. Agent-created parts land at the assembly origin unless position [x, y, z] mm is given; parts created from the UI stagger along +X. The part starts empty; the first insert_* creates the body. Feature tools write the active part, so set_active_part { part_id } before inserting. rename_part changes the label only; delete_part { part_id, scope: "assembly" | "repo" } drops the row (repo also plans the file delete and needs confirm: true).
 
-Reuse. insert_part { part_id } or { assembly_id } inserts by reference (the same id; one definition, several placements). copy: true mints a new id and sets copiedFrom. open_part { part_id } opens a vault part into the document.
+Reuse. insert_part { part_id } or { assembly_id } inserts by reference (the same id; one definition shared across assemblies). copy: true mints a new id and sets copiedFrom. open_part { part_id } opens a vault part into the document.
+
+Instances. insert_part { part_id, instance: true, position? } adds another placement of a part already in the open assembly: a new row with its own id, name ("Roller (2)"), pose and visibility that shares the definition's script, run and undo history, so set_script on any one rebuilds all of them from one run. parts lists such rows with instanceOf (the definition id). Joints, part_set_transform, set_part_visible and paint act on the one row; set_script, list_faces, export and FEA act on the shared definition. delete_part on an instance keeps the script while another row still places it; the last row to go takes the script with it. Use instances for repeated hardware (rollers, bolts) instead of copies, and position or a joint to place each one.
 
 Placement. part_get_transform { part_id } / part_set_transform { part_id, position?, rotation? } set a rigid placement: translation in mm, rotation as intrinsic XYZ Euler degrees; one assembly undo step. Use it for final positions after the part is built. A placed part's features, previews and picks are in its own frame; list_faces centers are world coordinates.
 
@@ -131,7 +133,7 @@ export const GUIDE_TOPICS = Object.freeze({
   paint: { summary: 'paint_open → paint_set_color → paint_part / paint_faces → paint_confirm; colours persist with the assembly', text: PAINT },
   limits: { summary: 'The 30 s kernel budget, what is slow, worker restarts and stale status, result sizes, pairing errors', text: LIMITS },
   camera: { summary: 'Which side each named view looks from, explicit poses, select_clear before a screenshot, screenshot to file', text: CAMERA },
-  assembly: { summary: 'Documents, create_part placement, insert by reference, part_set_transform vs joints, hardware, git_save', text: ASSEMBLY },
+  assembly: { summary: 'Documents, create_part placement, insert by reference, part instances, part_set_transform vs joints, hardware, git_save', text: ASSEMBLY },
 });
 
 /** The core topics, in listing order (the error topics are listed on one line after them). */
