@@ -24,6 +24,13 @@
      and ≥3:1 on hover (emerald-500 hover was ~2.5:1). */
   --chrome-success: 4 120 87; /* emerald-700 #047857 */
   --chrome-success-hover: 5 150 105; /* emerald-600 #059669 */
+  /* Safe-area insets as tokens, so a layer can stay clear of the bars.
+     iOS Safari samples the page's top rows for its status bar and toolbar
+     tint. A dim layer under the status bar shifts that tint, and the sample
+     lingers after the layer closes. Goldens override these on <html> to
+     emulate a notch in headless Chrome. */
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
   /* Horizontal CAD feature ribbon (assembly / part / empty). 46px:
      32px chip + 12px py-1.5 + 2px border. See docs/ui-style-guide.md. */
   --feature-strip-height: 2.875rem;
@@ -432,10 +439,29 @@ textarea {
   .surface-glass-chip {
     --surface-blur: 8px;
   }
-  /* Modal backdrop: dim enough to focus, sheer enough to keep context. */
+  /* Modal backdrop: dim enough to focus, sheer enough to keep context.
+     The dim lives on ::before and stops at the safe-area insets: iOS Safari
+     samples the page's top rows for the status bar and toolbar tint, so a
+     dim under the status bar shifts that tint and keeps it after the
+     backdrop closes (the bars went 0.55 x chrome and stayed there). The
+     blur stays on the element: a blur of one colour is that colour.
+     Callers keep `fixed inset-0`; the element itself paints nothing. */
   .surface-scrim {
     --surface-blur: 4px;
-    background-color: rgb(0 0 0 / 0.45);
+    --scrim-dim: rgb(0 0 0 / 0.45);
+    background-color: transparent;
+    isolation: isolate;
+  }
+  .surface-scrim::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: var(--safe-area-top);
+    bottom: var(--safe-area-bottom);
+    z-index: -1;
+    background-color: var(--scrim-dim);
+    pointer-events: none;
   }
 
   /* Floating agent prompt — mode-chip slot, between the rails. Dark surface. */
@@ -779,7 +805,7 @@ textarea {
     background-color: rgb(var(--chrome-surface) / 0.96);
   }
   .surface-scrim {
-    background-color: rgb(0 0 0 / 0.7);
+    --scrim-dim: rgb(0 0 0 / 0.7);
   }
 }
 
