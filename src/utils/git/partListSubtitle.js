@@ -50,3 +50,27 @@ export function partListSubtitles(parts) {
   }
   return out;
 }
+
+/**
+ * What the Parts strip shows under and on a row, by vault layout. A v2 vault
+ * stores parts by id, so a name-derived `parts/<Name>.js` would name a file
+ * that does not exist (ui-bug-triage #4): v2 rows get no subtitle, and the
+ * real id-based path (when the row has one) goes on the name as a tooltip.
+ * Legacy and local documents keep the Add to Repo preview above.
+ * @param {Array<object>} parts
+ * @param {'v2'|'legacy'|null|undefined} vaultLayout
+ * @returns {{ subtitles: Map<string, string>, paths: Map<string, string> }}
+ */
+export function partRowSubtitles(parts, vaultLayout) {
+  if (vaultLayout !== 'v2') {
+    return { subtitles: partListSubtitles(parts), paths: new Map() };
+  }
+  const paths = new Map();
+  for (const part of parts || []) {
+    const id = String(part?.id || '');
+    if (!id) continue;
+    const path = partRepoPath(part) || (isVaultPartPath(id) ? id : '');
+    paths.set(id, path);
+  }
+  return { subtitles: new Map(), paths };
+}

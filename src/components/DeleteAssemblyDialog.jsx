@@ -57,7 +57,7 @@ export function AssemblyOpenRow({
 
 export function AssemblyOpenList({ items, current, currentId = '', onOpen, onDelete }) {
   return (
-    <ul className="max-h-64 space-y-1 overflow-y-auto" data-git-open-list="">
+    <ul className="max-h-64 space-y-1 overflow-y-auto rail-scroll list-scroll" data-git-open-list="">
       {(items || []).map((item) => (
         <AssemblyOpenRow
           key={item.id || item.name}
@@ -197,7 +197,7 @@ export default function DeleteAssemblyDialog({
               <p className="text-xs text-gray-200" data-assembly-delete-kept-heading="">
                 These parts are used elsewhere and will be kept in /parts
               </p>
-              <ul className="mt-1 max-h-32 space-y-1 overflow-y-auto">
+              <ul className="mt-1 max-h-32 space-y-1 overflow-y-auto rail-scroll list-scroll">
                 {referenced.map((part) => (
                   <li
                     key={part.path || part.name}

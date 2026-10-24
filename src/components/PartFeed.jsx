@@ -2,7 +2,7 @@ import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } f
 import { createPortal } from 'react-dom';
 import { ChevronDown, Download, Eye, EyeOff, FolderOpen, GripVertical, Loader2, Pencil, Plus, Save, Trash2, Truck, Upload } from 'lucide-react';
 import { partCanDeleteFromRepo, partDeleteChoice, partListDeleteAction, partRepoDeleteConfirmCopy, sanitizeAssemblyName, sanitizePartName } from '../utils/assembly.js';
-import { partListSubtitles } from '../utils/git/partListSubtitle.js';
+import { partRowSubtitles } from '../utils/git/partListSubtitle.js';
 import {
   filterVaultOpenIndex, filterVaultPartItems, groupVaultOpenPartRows, vaultOpenAssemblies, vaultOpenEmptyMessage,
   vaultOpenPartRows, vaultOpenPartSubtitle,
@@ -199,7 +199,7 @@ function RibbonAssemblyName({
   );
 }
 
-function RowPartName({ id, name, onRename, editing, setEditing }) {
+function RowPartName({ id, name, path = '', onRename, editing, setEditing }) {
   const [draft, setDraft] = useState('');
   const inputRef = useRef(null);
 
@@ -248,7 +248,8 @@ function RowPartName({ id, name, onRename, editing, setEditing }) {
     <div
       className={`${label} ${onRename ? 'cursor-text' : ''}`}
       data-part-name={id}
-      title={name || (onRename ? 'Double-click to rename this part' : undefined)}
+      data-part-path={path || undefined}
+      title={path ? `${name || ''}\n${path}`.trim() : (name || (onRename ? 'Double-click to rename this part' : undefined))}
       onDoubleClick={onRename ? (event) => { event.stopPropagation(); setEditing(true); } : undefined}
     >
       {name}
@@ -1372,7 +1373,9 @@ const PartFeed = forwardRef(function PartFeed({
     onDeletePart?.(pending.id, { fromRepo: next.action === 'drop-repo' });
   };
 
-  const subtitles = partListSubtitles(rows);
+  // v2 vaults store parts by id: no name-derived path under the row, the real
+  // path on the name as a tooltip (partRowSubtitles).
+  const { subtitles, paths: rowPaths } = partRowSubtitles(rows, vaultLayout);
   const desktopRowLayout = placement === 'desktop';
 
   const renderPartRow = (row, index) => {
@@ -1518,6 +1521,7 @@ const PartFeed = forwardRef(function PartFeed({
         <RowPartName
           id={row.id}
           name={row.name}
+          path={rowPaths.get(row.id) || ''}
           onRename={onRenamePart}
           editing={renamingId === row.id}
           setEditing={(on) => setRenamingId(on ? row.id : null)}
@@ -2035,7 +2039,7 @@ const PartFeed = forwardRef(function PartFeed({
           </div>
         </div>
       ) : null}
-      <div className="min-h-0 flex-1 overflow-y-auto pb-16" data-parts-rows="">
+      <div className="min-h-0 flex-1 overflow-y-auto rail-scroll list-scroll pb-16" data-parts-rows="">
         {layoutPartFeed(rows, groups).map((item) => {
           if (item.kind === 'group') {
             const gid = item.group.id;
@@ -2188,7 +2192,7 @@ const PartFeed = forwardRef(function PartFeed({
                   </div>
                 )}
                 {!openPicker.loading && isPart && partGroups.length > 0 && (
-                  <div className="max-h-72 overflow-y-auto" data-git-open-parts="">
+                  <div className="max-h-72 overflow-y-auto rail-scroll list-scroll" data-git-open-parts="">
                     {partGroups.map((group) => (
                       <div key={group.key} className="mb-2" data-git-open-group={group.label} data-git-open-group-current={group.current ? 'true' : undefined}>
                         <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
@@ -2986,7 +2990,7 @@ const PartFeed = forwardRef(function PartFeed({
                 </p>
               )}
               {!branchFlow.loading && (branchFlow.items || []).length > 0 && (
-                <ul className="max-h-56 space-y-1 overflow-y-auto" data-git-branch-dialog-list="">
+                <ul className="max-h-56 space-y-1 overflow-y-auto rail-scroll list-scroll" data-git-branch-dialog-list="">
                   {(branchFlow.items || []).map((b) => {
                     const current = !!b.current || b.name === currentBranch;
                     const creating = !!b.pending;

@@ -543,6 +543,15 @@ jobs:
             echo "face identity select golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:list-scroll-gutter | tee "${RUNNER_TEMP}/list-scroll-gutter.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/list-scroll-gutter.log"; then
+            echo "list scroll gutter golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'list scroll gutter golden: ok' "${RUNNER_TEMP}/list-scroll-gutter.log"; then
+            echo "list scroll gutter golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:

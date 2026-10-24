@@ -143,6 +143,12 @@ body,
 .rail-scroll::-webkit-scrollbar-corner {
   background: transparent;
 }
+/* Lists whose rows end in an action column (Parts strip, Open assembly, branch
+   list): reserve the scroll-bar gutter so a classic scroll bar never lands on
+   the trash icons (ui-bug-triage #5). Pair with rail-scroll. */
+.list-scroll {
+  scrollbar-gutter: stable;
+}
 .rail-scroll::-webkit-scrollbar-thumb {
   background-color: rgba(107, 114, 128, 0.45);
   border-radius: 9999px;
@@ -471,15 +477,21 @@ textarea {
   .agent-prompt--folded-hidden {
     visibility: hidden;
   }
-  /* The chevron on the prompt's bottom edge, a sibling so the prompt keeps
-     overflow: hidden. It straddles the border at the prompt's centre. */
-  .agent-prompt-fold {
+  /* The fold and unfold chevrons share one shape (ui-bug-triage #3): a 44 x 28
+     pill. Open: a tab hanging from the prompt's bottom edge, drawn BEHIND the
+     prompt (z 19 under its 20) and tucked under it by --agent-prompt-tab-overlap,
+     so the prompt's corner radius occludes its top and it reads as a tab; the
+     glyph sits in the visible band (padding-top = the overlap). A sibling, so
+     the prompt keeps overflow: hidden. Folded: the same pill at the bottom of
+     the screen with the state badge. */
+  .agent-prompt-fold,
+  .agent-prompt-unfold {
     position: absolute;
     left: 50%;
-    bottom: calc(var(--agent-prompt-desktop-bottom) - 14px);
     transform: translateX(-50%);
-    width: 28px;
     height: 28px;
+    min-width: 44px;
+    padding: 0 8px;
     border-radius: 999px;
     border: 1px solid rgb(var(--agent-prompt-border));
     background: rgb(var(--agent-prompt-surface));
@@ -487,11 +499,18 @@ textarea {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    z-index: 21;
-    transition: transform 220ms ease, opacity 160ms ease;
+    gap: 6px;
+    z-index: 19;
     pointer-events: auto;
   }
-  .agent-prompt-fold:hover { background: rgb(var(--agent-prompt-border)); }
+  .agent-prompt-fold {
+    --agent-prompt-tab-overlap: 8px;
+    bottom: calc(var(--agent-prompt-desktop-bottom) - 28px + var(--agent-prompt-tab-overlap));
+    padding-top: var(--agent-prompt-tab-overlap);
+    transition: transform 220ms ease, opacity 160ms ease;
+  }
+  .agent-prompt-fold:hover,
+  .agent-prompt-unfold:hover { background: rgb(var(--agent-prompt-border)); }
   .agent-prompt-fold:focus-visible,
   .agent-prompt-unfold:focus-visible {
     outline: 2px solid rgb(var(--agent-prompt-fg));
@@ -502,24 +521,8 @@ textarea {
     opacity: 0;
     pointer-events: none;
   }
-  /* The chevron at the bottom of the screen while the prompt is folded. */
   .agent-prompt-unfold {
-    position: absolute;
-    left: 50%;
     bottom: 12px;
-    transform: translateX(-50%);
-    height: 32px;
-    min-width: 44px;
-    padding: 0 10px;
-    border-radius: 999px;
-    border: 1px solid rgb(var(--agent-prompt-border));
-    color: rgb(var(--agent-prompt-fg));
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    z-index: 21;
-    pointer-events: auto;
     box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.25), 0 4px 6px -4px rgb(0 0 0 / 0.2);
   }
   .agent-prompt-badge {

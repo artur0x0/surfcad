@@ -110,9 +110,11 @@ model-changing tool call switches to working; a streamed reply or an explicit
 `set_status { state: "typing" }` switches back and reopens the chat; the final
 reply, Stop, or the idle timer goes to idle. Stop is available in both.
 **Fold (desktop):** there is no X. A chevron-down (`data-agent-prompt-fold`,
-"Hide agent prompt") sits centred on the prompt's bottom edge, straddling the
-border, in every state; it slides the prompt away. A chevron-up
-(`data-agent-prompt-unfold`, "Show agent prompt") then sits centred at the
+"Hide agent prompt") hangs from the prompt's bottom edge as a 44 × 28 pill tab,
+centred, drawn behind the prompt (`z-index` 19 under the prompt's 20) with its
+top tucked 8 px under the border so the corner radius occludes it, in every
+state; it slides the prompt away. A chevron-up (`data-agent-prompt-unfold`,
+"Show agent prompt"), the same pill, then sits centred at the
 bottom of the viewer pane with a badge for the state (`data-agent-prompt-badge`:
 typing dots, working spinner, or an unread dot once a reply landed) and brings
 the prompt back exactly as it was: draft, scroll, and indicator, because the
@@ -415,9 +417,13 @@ Desktop specifics:
   `data-part-group-name-input`), **Ungroup**, **Copy all to this assembly**,
   **Remove group** (confirm `data-part-group-remove-dialog`; linked parts
   are unlinked, not deleted from the repo). Grouped part rows keep the
-  caution label and the same select, rename, and delete controls. The gray subtitle under the name
-  (`data-part-subtitle`) is the repo path, or the path Add to Repo would write (`parts/<Name>.js`). It never
-  shows a `local:` id. Add to Repo (`data-part-add-to-repo`) shows when `isSynced` is false, and when the flag
+  caution label and the same select, rename, and delete controls. On a legacy or local document the gray
+  subtitle under the name (`data-part-subtitle`) is the repo path, or the path Add to Repo would write
+  (`parts/<Name>.js`); it never shows a `local:` id. On a v2 vault (`vaultLayout: 'v2'`, parts stored by id)
+  there is no subtitle: the real id-based path, when the row has one, is the name's tooltip
+  (`data-part-path`). The rows container (`data-parts-rows`), the Open assembly and part lists and the branch
+  list carry `rail-scroll list-scroll`, which reserves the scroll-bar gutter so the bar never covers the
+  trash icons. Add to Repo (`data-part-add-to-repo`) shows when `isSynced` is false, and when the flag
   is unset and the row id is not a repo path. Text inputs on Parts/git
   use `partsChrome.js` `PARTS_TEXT_INPUT_CLASS` (≥16px) to block iOS Safari focus-zoom.
   Git create, Save, rename, copy, and delete show `data-part-pending` spinner in place of the Save icon while that branch's outbox op is queued or sending. A failed sync shows a red mark (`data-part-sync-failed`). A failed rename or assembly delete shows a toast with Retry and Revert (`data-rename-toast`). The delete popup also keeps that failure inline (`data-assembly-delete-error`) until the user retries or cancels. A Save (part row or assembly) that finds the working ref moved shows one yellow warning (`data-repo-moved-toast`) with **Make a new branch** (`data-repo-moved-branch`). That button saves the local files on `surfcad/<assembly>-YYYY-MM-DD` and switches the working ref; a success toast names the branch (`data-repo-saved-toast`). It does not open the conflict popup and it does not show a red Upload Error. Opening or reloading while the outbox is already behind the remote tip still opens only the conflict popup (`data-git-conflict-popup`) and does not show that warning.
