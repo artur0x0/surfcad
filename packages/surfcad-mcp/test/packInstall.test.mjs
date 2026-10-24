@@ -40,6 +40,7 @@ test('npm pack tarball installs and lists MCP tools over stdio', { timeout: 120_
   const tgzPath = join(PKG_ROOT, tgzName);
 
   const installRoot = mkdtempSync(join(tmpdir(), 'surfcad-mcp-pack-'));
+  let client = null;
   try {
     npm(['init', '-y'], { cwd: installRoot });
     npm(['install', tgzPath], { cwd: installRoot });
@@ -55,7 +56,7 @@ test('npm pack tarball installs and lists MCP tools over stdio', { timeout: 120_
       },
     });
 
-    const client = new Client({ name: 'surfcad-mcp-pack-smoke', version: '1.0.0' });
+    client = new Client({ name: 'surfcad-mcp-pack-smoke', version: '1.0.0' });
     await client.connect(transport);
 
     const pkgVersion = JSON.parse(
@@ -66,10 +67,13 @@ test('npm pack tarball installs and lists MCP tools over stdio', { timeout: 120_
     assert.equal(serverInfo?.version, pkgVersion, 'initialize serverInfo.version matches package.json');
 
     const { tools } = await client.listTools();
-    assert.equal(tools.length, catalog.count + 1 + PROMPT_TOOL_NAMES.length, 'bridge commands, pair, and local prompt tools');
+    // bridge commands + pair + guide + the local prompt tools
+    assert.equal(tools.length, catalog.count + 2 + PROMPT_TOOL_NAMES.length, 'bridge commands, pair, guide, and local prompt tools');
 
-    await client.close();
   } finally {
+    // Close in finally: a failed assertion used to leave the stdio child alive
+    // and the whole unit suite hung on it.
+    if (client) await client.close().catch(() => {});
     rmSync(installRoot, { recursive: true, force: true });
     try {
       rmSync(tgzPath);

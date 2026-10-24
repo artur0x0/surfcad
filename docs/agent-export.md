@@ -420,12 +420,12 @@ Refusals use the same `error` objects as the in-page envelope. Non-loopback TCP 
 
 | Piece | Role |
 | --- | --- |
-| `packages/surfcad-mcp` | npm package `surfcad-mcp`: MCP over stdio, one tool per `commands.json` row plus `pair`. |
-| `packages/surfcad-mcp/data/commands.json` | Copy of `src/agent/commands.json`; refreshed by `npm run export:agent`. `GET /tools` on the loopback relay returns the same bridge tools (`name`, `description`, `inputSchema`). `list_commands` and the MCP bridge tools match that list. `pair` and the in-process prompt tools are MCP-only. |
+| `packages/surfcad-mcp` | npm package `surfcad-mcp`: MCP over stdio, one tool per `commands.json` row plus `pair`, `guide` (plain-text agent guidance by topic, `packages/surfcad-mcp/src/prompt/guide.mjs`), and the prompt tools. |
+| `packages/surfcad-mcp/data/commands.json` | Copy of `src/agent/commands.json`; refreshed by `npm run export:agent`. `GET /tools` on the loopback relay returns the same bridge tools (`name`, `description`, `inputSchema`). `list_commands` and the MCP bridge tools match that list. `pair`, `guide`, and the in-process prompt tools are MCP-only. |
 | `SURFCAD_PAIRING_CODE` | Optional env pairing code (same as **profile** → **Local agent** → **Show pairing code**). |
 | `SURFCAD_AGENT_BRIDGE_WS_URL` | Relay URL (default `ws://127.0.0.1:17341`). |
 
-The MCP server instructions (initialize) are: `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages.`
+The MCP server instructions (initialize) start with `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages.` and continue with a quick-start under 2 KB (`SERVER_INSTRUCTIONS` in `packages/surfcad-mcp/src/prompt/guide.mjs`) that points at `guide { topic: "start" }`. The long guidance is served by the `guide` tool: `guide {}` lists the topics (`start`, `features`, `selection`, `paint`, `limits`, `camera`, `assembly`) with one line each, `guide { topic }` returns one as plain text, and an unknown topic is `unknown_topic` with the list. `start` carries `BUILD_GUIDANCE` verbatim; the `pair` result points at it instead of repeating it.
 
 When `pair` succeeds and no webhook is registered, the tool result's text content tells the agent to ask the user for a webhook URL and key. The key is the `bearer` argument. Suggested wording to relay, exactly: "To get SurfCAD messages instantly, send me your webhook URL and key. This only needs to be done once. Otherwise I'll check for SurfCAD messages between steps, so replies may lag." If the user declines, poll `read_messages`. The URL and bearer are memory only, so the note also says to save them in the agent's own config or memory and call `register_webhook` again after every pair. The note is a `type: "text"` content block, not only `structuredContent` or `_meta`. When a webhook is already registered at pair time, that onboarding note is omitted and the text says the webhook is active.
 

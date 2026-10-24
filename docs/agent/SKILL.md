@@ -10,6 +10,7 @@ Related: catalog and bridge shapes in [docs/agent-export.md](../agent-export.md)
 2. Open the **profile** chip (top-right AR initials) → **Connect agent**. The profile menu closes and a pairing popup opens. Copy the setup prompt if the relay is not running yet; once the relay is found the prompt hides and the six-character pairing code appears. Esc or a backdrop tap before pairing cancels the attempt.
 3. Run `npx surfcad-mcp` in your MCP client with that code (`SURFCAD_PAIRING_CODE` env, or the MCP `pair` tool with `{ "code": "ABCDEF" }`). **Allow** (green check) / **Deny** (grey X) replace the code in the same popup; they never show together. After Allow the popup closes and a green **Agent connected** toast appears.
 4. **Read the `pair` result text.** With no webhook registered it carries an onboarding note (a plain `type: "text"` block). Relay this to the user exactly: "To get SurfCAD messages instantly, send me your webhook URL and key. This only needs to be done once. Otherwise I'll check for SurfCAD messages between steps, so replies may lag." If the pair text says **Webhook is active.**, do not ask again. See [In-viewer prompts](#in-viewer-prompts-webhook-or-polling).
+5. **Call `guide { topic: "start" }`** before the first model call. The MCP server's own `guide` tool returns plain-text topics (`start`, `features`, `selection`, `paint`, `limits`, `camera`, `assembly`; `guide {}` lists them). `start` is the build guidance below plus a three-call example; the initialize instructions are a short quick-start that points at it.
 
 **Cursor** (`.cursor/mcp.json` or Settings → MCP):
 
@@ -42,7 +43,7 @@ Optional: `SURFCAD_AGENT_BRIDGE_WS_URL` (default `ws://127.0.0.1:17341`; preview
 
 ## How to build
 
-The same text reaches every agent from the MCP initialize instructions, the `pair` result, and the `insert_*` / `set_script` / `create_*` tool descriptions (`src/agent/buildGuidance.js`). Work in the order of the left helper rail, **Block, Build, Shape, Polish, Move**, across the whole assembly:
+The same text reaches every agent from `guide { topic: "start" }` (the MCP initialize instructions and the `pair` result point at it) and, as a one-line note, from the `insert_*` / `set_script` / `create_*` tool descriptions (`src/agent/buildGuidance.js`). Work in the order of the left helper rail, **Block, Build, Shape, Polish, Move**, across the whole assembly:
 
 1. **Block out first.** Within seconds of the prompt, create every part of the assembly as plain blocks (`create_part`, then `insert_cube`, `insert_rounded_box`, `insert_cylinder`, `insert_sphere`, `insert_tube`, `insert_hex_prism`) at roughly the right size and position, and take a `screenshot` so the user can approve the layout and proportions before any detail goes in. Never plan silently for long before something appears in the viewport.
 2. **Build.** Shape each block into its real form with Build and Shape features: `insert_hole`, `insert_cut`, `insert_boolean`, `insert_shell`, `insert_add_draft`; `insert_cross_section`, `insert_workplane`, `insert_make_extrude`, `insert_make_revolve`, `insert_make_sweep`, `insert_make_loft` (`sketch_*` and `slot_*` for the profiles; Sheet Metal is the last Shape button, `sheet_open`).
@@ -148,6 +149,7 @@ These live in the `surfcad-mcp` process. They are not in `commands.json`, `list_
 | Tool | Args | What it does |
 | --- | --- | --- |
 | `pair` | `{ code }` | Pair this server to an open SurfCAD tab via the local relay. |
+| `guide` | `{ topic? }` | Plain-text agent guidance from the server, no pairing needed. `guide {}` lists the topics with one line each; `guide { topic: "start" }` is the build guidance plus a worked example; the other topics are `features`, `selection`, `paint`, `limits`, `camera`, `assembly`. An unknown topic is `unknown_topic` with the list. |
 | `register_webhook` | `{ url, bearer? }` | https only (no credentials in the URL, no localhost, `.local`, private or loopback hosts). Each user prompt is POSTed there, and so is `{ "type": "cancel", "id" }` when the user stops a prompt already delivered; `bearer` (the user's webhook key, 1–4096 chars, no CR/LF) is sent as `Authorization: Bearer <bearer>`. 10 s timeout, one retry, then the prompt is queued. URL and bearer live in process memory only: never written to disk, logged, returned, or sent to the tab. |
 | `unregister_webhook` | `{}` | Clear the webhook URL and bearer. Later prompts queue for `read_messages`. |
 | `read_messages` | `{ max? }` | Queued in-viewer prompts, oldest first, removed on read. An attached screenshot arrives as the next MCP image content block (`image/png`). May also return cancel items `{ "type": "cancel", "id" }` (see below). |
@@ -156,7 +158,7 @@ These live in the `surfcad-mcp` process. They are not in `commands.json`, `list_
 
 ### In-viewer prompts: webhook or polling
 
-The server's initialize instructions say: `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages.`
+The server's initialize instructions start with: `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages.` The rest is a quick-start under 2 KB that points at `guide { topic: "start" }`.
 
 - **User gives a URL and key:** `register_webhook { url, bearer }`. The key is `bearer`. Save both in your own config or memory: they are cleared on `unregister_webhook` and whenever the pairing session ends, so call `register_webhook` again after every `pair`.
 - **User declines, or you have no public https endpoint** (typical for a local CLI session): poll `read_messages` between steps. `status.queued > 0` means prompts are waiting; it does not count cancel items, so keep polling while you work on a prompt. The queue holds at most 50 prompts; the oldest is dropped.
