@@ -161,6 +161,7 @@ The second part is a legacy row: no `id`. The third part is a link to another as
 | `parts[].placement` | no | `{ t: [x,y,z], q: [x,y,z,w] }`. `q` is a unit quaternion within 1e-3. Written when the part is rotated or a joint names it. |
 | `parts[].sheetMetal` | no | `{ sku, name?, thicknessIn?, gauge? }`. `sku` is required when the object is present. |
 | `parts[].copiedFrom` | no | Surf id this row was copied from. |
+| `parts[].instanceOf` | no | Surf id of the part this row places again (v2 files). Makes the row an instance: same script, its own `id`, pose, visibility, order, name, joints and colors. Never the row's own id, never another instance row's id. Need not match a row in the file. |
 | `groups` | no | Omitted on old files. No key means no groups. |
 | `groups[].id` | when grouped | Surf-id shape. A group id, not a part id. |
 | `groups[].name` | when grouped | Non-empty label. Starts as the source assembly name. Rename changes only this. |
@@ -183,6 +184,34 @@ The second part is a legacy row: no `id`. The third part is a link to another as
 | `joints[].a.kind` | relational | `face`, `edge`, or `axis`. Coincident and distance are both faces. Concentric is an axis or an edge on each side. Angle is any of the three. |
 
 On load, `pruneDanglingGroupPartIds` drops part ids that are not in `parts`, and drops a group that has nothing left. The same pass runs on every save (`normalizeGroups` inside `serializeAssembly`). A surf id listed twice stays on the first group. Collapse is UI state and is not stored. `pruneDanglingColors` drops a color key whose surf id is not in `parts`, and drops `colors` when that leaves it empty. The same pass runs on every save. A key that is not a surf id is rejected, not dropped. `pruneDanglingSurfJoints` drops a joint whose part surf id is not in `parts`, and drops `joints` when that leaves it empty. The same pass runs on every save (`normalizeAssemblyJoints`). A joint that is not an object stays so validation can reject it. A duplicate joint id is an error. Save keeps the first.
+
+## Instances
+
+A part placed more than once in one assembly is one script and several rows. The first row is the **primary**: its `id` is the part id and the script is `parts/<id>.js`. Every further placement is an **instance row**: a freshly minted `id` of its own and `instanceOf` set to the part id. In code, `partDefinitionId(row)` is `instanceOf` when present, else `id`.
+
+What belongs to the row (the placement): `id`, `name`, `visible`, `order`, `position` / `placement`, and everything keyed by a row id (`joints[].a.part`, `colors` keys, `groups[].partIds`, `activeId`, agent `part_id`). What belongs to the definition (the script): the `.js` and `.mesh` files, the `// @surf-id` and `// @name` header, the run and mesh in the app, thumbnails and per-part history.
+
+```json
+"parts": [
+  { "id": "2026-10-24-19-00-00-0004-0e01", "name": "Roller", "visible": true, "order": 2,
+    "placement": { "t": [-60, 0, 120], "q": [0, 0.7071, 0, 0.7071] } },
+  { "id": "2026-10-24-19-05-00-0011-00b2", "instanceOf": "2026-10-24-19-00-00-0004-0e01",
+    "name": "Roller (2)", "visible": true, "order": 3,
+    "placement": { "t": [0, 0, 120], "q": [0, 0.7071, 0, 0.7071] } },
+  { "id": "2026-10-24-19-05-00-0012-00c3", "instanceOf": "2026-10-24-19-00-00-0004-0e01",
+    "name": "Roller (3)", "visible": false, "order": 4, "position": [60, 0, 120] }
+]
+```
+
+Rules:
+
+- `instanceOf` is a surf id, is never the row's own id, and never names another instance row (no chains). It is rejected otherwise.
+- It need not name a row in the file. Deleting the primary row leaves the instances valid; the script stays in the vault while any row names it, and is deleted on the save after the last one goes.
+- Save writes one `parts/<part-id>.js` and one `.mesh` per definition. The `@name` header is stamped from the primary row, else from the lowest-order instance row. A row label such as `Roller (2)` is never the part name in the browse list.
+- A joint between two instances of the same part is allowed: `a.part` and `b.part` are two different row ids.
+- `activeId` may be an instance row. The editor then shows the shared script; a run rebuilds one mesh and every row re-poses it.
+- An instance row in another assembly is a reference to the part file, like a primary row would be: delete-from-repo keeps the file and names that assembly.
+- `v1` files never carry `instanceOf`; the legacy reader is unchanged. A build older than this field rejects a v2 file that has it (unknown key), so the reader ships before anything writes instance rows.
 
 ## Groups, links, and copy
 

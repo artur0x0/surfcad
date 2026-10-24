@@ -2,7 +2,7 @@
  * v2 vault list/open by assembly id. Path is f(id) only.
  * Read-only: never commits, never creates a repo.
  */
-import { serializeAssembly } from '../assembly.js';
+import { partDefinitionId, serializeAssembly } from '../assembly.js';
 import { assertGithubAdapter } from './githubAdapterInterface.js';
 import { assemblyIdPath, parseIdPath, partIdPath, partMeshIdPath } from './idPaths.js';
 import { readMeshBytes } from './meshSync.js';
@@ -96,8 +96,11 @@ export async function listV2BrowseItems(adapter, repo, ref = 'main', { tree = nu
     const rows = Array.isArray(raw?.parts) ? raw.parts : [];
     const partNames = [];
     for (const row of rows) {
-      if (!isV2SurfId(row?.id)) continue;
-      partNames.push({ id: row.id, name: typeof row.name === 'string' ? row.name.trim() : '' });
+      const def = partDefinitionId(row);
+      if (!isV2SurfId(def)) continue;
+      // An instance row's label is its own; only a primary row names the part.
+      const instance = typeof row?.instanceOf === 'string' && row.instanceOf && row.instanceOf !== row.id;
+      partNames.push({ id: def, name: !instance && typeof row.name === 'string' ? row.name.trim() : '' });
     }
     return { id, name, partNames };
   }));
@@ -157,10 +160,11 @@ async function loadV2Meshes(adapter, repo, branch, parts) {
     (tree || []).filter((entry) => entry?.path).map((entry) => [entry.path, entry.sha]),
   );
   for (const part of parts || []) {
-    if (!isV2SurfId(part?.id) || part.missing === true) continue;
+    const def = partDefinitionId(part);
+    if (!isV2SurfId(def) || part.missing === true) continue;
     let meshPath;
-    try { meshPath = partMeshIdPath(part.id); } catch { continue; }
-    if (!shaByPath.has(meshPath)) continue;
+    try { meshPath = partMeshIdPath(def); } catch { continue; }
+    if (!shaByPath.has(meshPath) || assets[meshPath]) continue;
     try {
       const bytes = await readMeshBytes(adapter, repo, branch, meshPath, shaByPath.get(meshPath));
       if (bytes) assets[meshPath] = bytes;
@@ -187,18 +191,31 @@ export async function openV2Assembly(adapter, repo, assemblyId, opts = {}) {
   const parsed = parseSurfJsonV2(file.content);
   const scripts = {};
   const parts = [];
+  const missingDefs = new Set();
   for (const part of parsed.parts || []) {
+    // Scripts are per definition: an instance row reads parts/<instanceOf>.js.
+    const def = partDefinitionId(part);
+    if (typeof scripts[def] === 'string') {
+      parts.push(part);
+      continue;
+    }
+    if (missingDefs.has(def)) {
+      parts.push({ ...part, missing: true });
+      continue;
+    }
     let scriptPath;
-    try { scriptPath = partIdPath(part.id); } catch {
+    try { scriptPath = partIdPath(def); } catch {
+      missingDefs.add(def);
       parts.push({ ...part, missing: true });
       continue;
     }
     const got = await adapter.readFile(repo, scriptPath, branch);
     if (!got || typeof got.content !== 'string') {
+      missingDefs.add(def);
       parts.push({ ...part, missing: true });
       continue;
     }
-    scripts[part.id] = got.content;
+    scripts[def] = got.content;
     parts.push(part);
   }
 

@@ -98,8 +98,8 @@ parts/<part-id>.mesh                    sidecar; same stem as the script
 
 | Path | Rule |
 | --- | --- |
-| `assemblies/<assembly-id>.surf.json` | Assembly id is a surf-id. File holds top-level `id` + `name` and the instance list. |
-| `parts/<part-id>.js` | Part id is a surf-id. **The** script for that part. |
+| `assemblies/<assembly-id>.surf.json` | Assembly id is a surf-id. File holds top-level `id` + `name` and the instance list: one row per placement. A row with `instanceOf` places another row's part again (same script, its own id and pose). |
+| `parts/<part-id>.js` | Part id is a surf-id. **The** script for that part, and for every instance row whose `instanceOf` names it. |
 | `parts/<part-id>.<ext>` | Mesh (today `.mesh`) beside the script. Same id, not a second identity. |
 
 **Path = `f(id)` only.** There is no occupancy, no `-2` suffix, no folder, no `vaultSegment` in a path. Two assemblies or two parts may share a display name.
@@ -246,7 +246,7 @@ The existing copy-or-reference prompt stays.
 
 **Copy** (“Copy to this assembly”): mint a **new** part id, set `copiedFrom` to the source id, clone script bytes with a new header. Independent file. Colors/joints on the old id are not copied (same as today).
 
-A part id appears **at most once** per assembly. The same id in two assemblies is a reference, not two instances.
+A part id appears **at most once** per assembly as a row id. The same id in two assemblies is a reference, not two instances. Placing one part several times inside one assembly is an **instance row**: a new row id with `instanceOf` set to the part id. Instance rows share the file `parts/<instanceOf>.js`; the planner writes one script and one mesh per definition, stamps `@name` from the primary row (the row whose id is the part id), else from the lowest-order instance, and counts an instance row in another assembly as a reference that keeps the file. A definition may outlive its primary row: deleting the first roller leaves the others and the script. See [vault-schema.md](vault-schema.md), Instances.
 
 ### 2.7 Delete from assembly vs Delete from repo
 

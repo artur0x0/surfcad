@@ -746,7 +746,7 @@
         "name",
         "parts"
       ],
-      "description": "v2 assembly document at assemblies/<id>.surf.json. validateSurfJsonV2 rejects a missing top-level id and any parts[].path. Name is a label, not a path segment. groups[].source is an assembly id or null. Ids never carry a local- prefix.",
+      "description": "v2 assembly document at assemblies/<id>.surf.json. validateSurfJsonV2 rejects a missing top-level id and any parts[].path. Name is a label, not a path segment. groups[].source is an assembly id or null. Ids never carry a local- prefix. A row with instanceOf is an instance of another part: same script, its own placement.",
       "properties": {
         "format": {
           "const": "surfcad.assembly"
@@ -872,6 +872,11 @@
                 "type": "string",
                 "pattern": "^\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$",
                 "description": "Surf id this row was copied from, when set."
+              },
+              "instanceOf": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{2}-\\d{4}-[0-9a-f]{4}$",
+                "description": "Set on an instance row: the definition (parts/<instanceOf>.js) this row places. The row keeps its own id, pose, visibility, order, name, joints and colors. Never the row's own id and never another instance row's id. Omitted on a primary row."
               }
             }
           }
