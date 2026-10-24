@@ -1,4 +1,6 @@
-const VIEW_NAMES = new Set(['iso', 'front', 'right', 'top', 'back', 'left', 'bottom', 'normal_to_sketch']);
+// World views look along fixed axes; side and front_of_model read the framed
+// box's longest horizontal extent (src/utils/viewCamera.js modelViewPreset).
+const VIEW_NAMES = new Set(['iso', 'front', 'right', 'top', 'back', 'left', 'bottom', 'side', 'front_of_model', 'normal_to_sketch']);
 
 export const cameraSetCommand = Object.freeze({
   name: 'camera_set',
@@ -8,7 +10,8 @@ export const cameraSetCommand = Object.freeze({
     properties: {
       view: {
         type: 'string',
-        enum: ['iso', 'front', 'right', 'top', 'back', 'left', 'bottom', 'normal_to_sketch'],
+        enum: ['iso', 'front', 'right', 'top', 'back', 'left', 'bottom', 'side', 'front_of_model', 'normal_to_sketch'],
+        description: 'World views: front = camera on -Y looking +Y (+X to the right), right = camera on +X, back = on +Y, left = on -X, top = above with +Y up, bottom = below, iso = from (+X, +Y, +Z). Model views: side looks at the long flank with the +long axis to the right and front_of_model at the +end of the assembly\'s longest horizontal extent (X wins a tie). normal_to_sketch faces the open sketch plane.',
       },
       position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
       target: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },

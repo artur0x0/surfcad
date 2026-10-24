@@ -552,6 +552,15 @@ jobs:
             echo "list scroll gutter golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:camera-presets | tee "${RUNNER_TEMP}/camera-presets.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/camera-presets.log"; then
+            echo "camera presets golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'camera presets golden: ok' "${RUNNER_TEMP}/camera-presets.log"; then
+            echo "camera presets golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:

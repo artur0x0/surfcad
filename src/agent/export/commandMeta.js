@@ -42,7 +42,7 @@ export const COMMAND_META = {
   },
   set_script: {
     description:
-      `Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects \`// @surf-id\`.${RESERVED_HELPERS}${BUILD_FLOW_NOTE}${CRASH_NOTE}`,
+      `Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects \`// @surf-id\`. Keep the feature marker blocks (// --- <kind> begin --- … // --- <kind> end ---, and // @contour id=) so the strip keeps per-feature edit, delete, rollback and undo; see guide { topic: "features" }.${RESERVED_HELPERS}${BUILD_FLOW_NOTE}${CRASH_NOTE}`,
     result: MUTATE_RESULT_SCHEMA,
     errors: ['bad_args', 'unknown_part', 'part_mismatch', 'no_assembly', 'internal'],
     mutates: true,
@@ -463,7 +463,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   camera_set: {
-    description: 'Set camera from a named view or explicit pose. A named view frames the whole assembly as placed, or the selected part alone while a part body is highlighted (set_active_part, select_parts; select_clear returns to the assembly), so no camera_fit is needed after it. An explicit position + target takes an optional up (default [0, 0, 1]) and never rolls the view.',
+    description: 'Set camera from a named view or explicit pose. A named view frames the whole assembly as placed, or the selected part alone while a part body is highlighted (set_active_part, select_parts; select_clear returns to the assembly), so no camera_fit is needed after it. World views look along fixed axes: front has the camera on -Y looking +Y with +X to the right, right on +X, back on +Y, left on -X, top above with +Y up, bottom below, iso from (+X, +Y, +Z); for a model whose length runs along X, right and left are its ends. Model views read the framed box: side looks at the long flank with the +long axis to the right, front_of_model at the +end of the longest horizontal extent (X wins a tie). An explicit position + target takes an optional up (default [0, 0, 1]) and never rolls the view.',
     result: OK,
     errors: ['bad_view', 'bad_args', 'camera_failed', 'internal'],
     mutates: false,
