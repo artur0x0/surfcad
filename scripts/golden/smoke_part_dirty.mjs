@@ -227,3 +227,6 @@ if (failed) {
   process.exit(1);
 }
 console.log('\nPart dirty checks passed.');
+// The in-process vite server (and its agent relay) keeps the event loop alive
+// on CI, so say so explicitly: the step reads the log, not the exit code.
+process.exit(0);
