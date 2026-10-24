@@ -467,6 +467,15 @@ jobs:
             echo "gpu upload cache golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:mobile-chrome-shade | tee "${RUNNER_TEMP}/mobile-chrome-shade.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/mobile-chrome-shade.log"; then
+            echo "mobile chrome shade golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'mobile chrome shade golden: ok' "${RUNNER_TEMP}/mobile-chrome-shade.log"; then
+            echo "mobile chrome shade golden did not pass (see log above)"
+            exit 1
+          fi
           npm run golden:part-dirty | tee "${RUNNER_TEMP}/part-dirty.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/part-dirty.log"; then
             echo "part dirty golden skipped because Chrome was not found; CI must launch it"
