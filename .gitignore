@@ -79,3 +79,6 @@ backend/data/wins.jsonl
 # Bug hunter output (see docs/playtest.md)
 reports/bug-hunter/*
 !reports/bug-hunter/.gitkeep
+
+# npm pack output of the MCP pack-smoke test
+packages/surfcad-mcp/*.tgz
