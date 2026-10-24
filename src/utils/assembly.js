@@ -980,7 +980,6 @@ export function composeViewportParts(doc, runs) {
     const pose = partPlacement(part);
     out.push({
       id: part.id,
-      definitionId: partDefinitionId(part),
       surfId: partSurfId(part),
       definitionId: partDefinitionId(part),
       mesh: run.mesh,
@@ -1051,7 +1050,6 @@ export function feedRows(doc, runs, scripts) {
       definitionId: def,
       instanceOf: typeof part.instanceOf === 'string' && part.instanceOf !== part.id ? part.instanceOf : null,
       copiedFrom: part.copiedFrom || null,
-      instanceOf: typeof part.instanceOf === 'string' && part.instanceOf ? part.instanceOf : null,
       isSynced: typeof part.isSynced === 'boolean' ? part.isSynced : undefined,
     };
   });
