@@ -140,8 +140,7 @@ import {
   paintClearCommand,
   paintConfirmCommand,
   paintCancelCommand,
-  paintStateCommand,
-} from './paint.js';
+  paintStateCommand, paintCommand } from './paint.js';
 import {
   measureOpenCommand,
   measureCloseCommand,
@@ -314,6 +313,7 @@ const V1_COMMAND_LIST = [
   paintUndoCommand,
   paintClearCommand,
   paintConfirmCommand,
+  paintCommand,
   paintCancelCommand,
   paintStateCommand,
   measureOpenCommand,

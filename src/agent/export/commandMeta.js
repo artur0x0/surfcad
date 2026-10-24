@@ -339,6 +339,22 @@ export const COMMAND_META = {
     errors: ['unknown_feature', 'bad_index', 'internal'],
     mutates: false,
   },
+  paint: {
+    description: 'Paint a whole part, or the given faces, in one call: paint_open → paint_set_color → paint_part (or paint_faces { keys } from list_faces) → paint_confirm, through the same handlers, so one part is one round trip instead of four. color is #RRGGBB. part_id (an opaque surf id) is made active first when it is not already; omit it for the active part. Colours persist with the assembly (paint_confirm writes the colors map; working copy only, git_save commits). A failure after paint mode opened cancels the session and names the step; the step tools stay for a multi-step session.',
+    result: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        ok: { type: 'boolean' },
+        color: { type: 'string', description: '#RRGGBB as applied' },
+        painted: { type: 'string', enum: ['part', 'faces'] },
+        count: { type: 'integer', description: 'Faces painted, or 1 for the whole part' },
+        partId: { type: 'string', description: 'Echoed when part_id was given' },
+      },
+    },
+    errors: ['bad_args', 'unknown_part', 'bad_view', 'not_ready', 'internal'],
+    mutates: true,
+  },
   paint_open: {
     description: 'Open paint mode on the active part (the Paint chip). Waits up to 1.5 s for the viewport to take the mode, as right after create_part or set_active_part, or while an agent prompt is being worked; past that it is not_ready with details.reason and details.retryable: true, never a silent open: false.',
     result: {
