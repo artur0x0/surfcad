@@ -78,6 +78,16 @@ test('popup auto-closes when connected and the toast lives 5 s with an X', () =>
   assert.match(SRC, /onDismiss=\{\(\) => setToastOpen\(false\)\}/);
 });
 
+test('connected toast is the shared toast card size: max-w-md wrapper, px-4 py-2 padding, green', () => {
+  const toast = SRC.match(/data-agent-bridge-connected-toast=""[\s\S]*?<\/ErrorPopup>/)?.[0] ?? '';
+  const wrapper = SRC.match(/className="([^"]*)"\s*\n\s*data-agent-bridge-connected-toast=""/)?.[1] ?? '';
+  const wrapperClasses = wrapper.split(/\s+/);
+  assert.ok(wrapperClasses.includes('w-[calc(100%-1.5rem)]'), `wrapper width class missing in "${wrapper}"`);
+  assert.ok(wrapperClasses.includes('max-w-md'), `wrapper max-w-md missing in "${wrapper}"`);
+  assert.match(toast, /tone="success"/);
+  assert.match(toast, /className="px-4 py-2"/);
+});
+
 test('connection ring is a wrap sibling with a glow, not a rotated child of the glass chip', () => {
   assert.match(CHIP, /data-profile-chip-wrap=""/);
   assert.match(CHIP, /agent-bridge-profile-ring agent-bridge-profile-ring--\$\{agentRing\}/);
