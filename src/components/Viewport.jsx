@@ -559,6 +559,8 @@ import {
   applyCameraPose,
   fitView,
   meshWorldBox,
+  MODEL_VIEWS,
+  modelViewPreset,
   unionWorldBox,
   VIEW_PRESETS,
   VIEW_SNAP_MARGIN,
@@ -12154,7 +12156,6 @@ const Viewport = forwardRef(({
   // Mobile B.1: default view presets (top/right/front/iso/…) frame with more margin
   // than Zoom-to-Fit. Game puzzle enter keeps its own 1.55 framing.
   const handleViewSnap = useCallback((key, margin = VIEW_SNAP_MARGIN) => {
-    const preset = VIEW_PRESETS[key] || VIEW_PRESETS.iso;
     if (!resultRef.current?.geometry || !cameraRef.current) return false;
     holdSheetSlide();
     // Frame the assembly as placed (every visible part's world box), or the
@@ -12164,6 +12165,8 @@ const Viewport = forwardRef(({
       ? [resultRef.current]
       : [resultRef.current, ...assemblyExtrasRef.current.values()];
     const box = unionWorldBox(meshes);
+    // side / front_of_model read the framed box's longest horizontal extent.
+    const preset = VIEW_PRESETS[key] || modelViewPreset(key, box) || VIEW_PRESETS.iso;
     const ok = fitView({
       camera: cameraRef.current,
       controls: controlsRef.current,
@@ -12430,7 +12433,7 @@ const Viewport = forwardRef(({
       handleNormalToSketch();
       return { ok: true };
     }
-    if (typeof view === 'string' && VIEW_PRESETS[view]) {
+    if (typeof view === 'string' && (VIEW_PRESETS[view] || MODEL_VIEWS[view])) {
       const ok = handleViewSnap(view);
       return ok ? { ok: true } : { ok: false };
     }

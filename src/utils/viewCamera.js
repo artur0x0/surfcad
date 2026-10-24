@@ -24,6 +24,37 @@ export const VIEW_PRESETS = {
 };
 
 /**
+ * Views named by the model, not the world (MCP improvements #5, bug M11): the
+ * world presets look along fixed axes, so for a vehicle modelled along X
+ * `right` is its front. These resolve against the framed box's longest
+ * horizontal extent (X wins a tie): `side` looks at the long flank with the
+ * +long axis to the right (front when the model runs along X, right when it
+ * runs along Y); `front_of_model` looks at the end of that axis from its +end
+ * (right for X, back for Y). Without a box they fall back to front / right.
+ */
+export const MODEL_VIEWS = Object.freeze({
+  side: 'Side',
+  front_of_model: 'Front of model',
+});
+
+/**
+ * @param {string} key 'side' | 'front_of_model'
+ * @param {import('three').Box3|null|undefined} box world box of what is framed
+ * @returns {{ dir: number[], up: number[], label: string } | null}
+ */
+export function modelViewPreset(key, box) {
+  const label = MODEL_VIEWS[key];
+  if (!label) return null;
+  const sx = box ? Math.abs(box.max.x - box.min.x) : 1;
+  const sy = box ? Math.abs(box.max.y - box.min.y) : 0;
+  const longX = sx >= sy;
+  const base = key === 'side'
+    ? (longX ? VIEW_PRESETS.front : VIEW_PRESETS.right)
+    : (longX ? VIEW_PRESETS.right : VIEW_PRESETS.back);
+  return { dir: base.dir, up: base.up, label: `${label} (${base.label.toLowerCase()}, long axis ${longX ? 'X' : 'Y'})` };
+}
+
+/**
  * Mobile B.1 — default margin for view-snap presets (top / right / front / iso / …).
  * Larger than fitView's Zoom-to-Fit default (1.15) so the part has more breathing
  * room. Game puzzle enter/switch keeps its own explicit 1.55 framing.
