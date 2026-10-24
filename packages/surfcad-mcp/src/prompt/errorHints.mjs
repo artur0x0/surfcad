@@ -92,6 +92,7 @@ export const ERROR_HINTS = Object.freeze({
   no_profile: { hint: 'The feature needs a closed profile: sketch a contour (sketch_begin → sketch_add → sketch_commit) or pass one with insert_cross_section first.' },
   no_cross_section: { hint: 'No saved contour to use: insert_cross_section or a sketch_commit first; feature_tree {} shows the @contour ids.' },
   unknown_contour: { hint: 'The contour id is not in the script: get_script shows the @contour id= markers; use one of those (c1, c2, ...).' },
+  not_a_contour: { hint: 'That chip is another feature, not a saved contour: sketch_edit takes a contour:<id> chip; use open_feature / edit_feature / confirm_feature for the rest.' },
   no_slot: { hint: 'The slot card is closed: open the feature (insert_make_loft / open_feature) before slot_* calls.' },
   slot_not_ready: { hint: 'A required contour slot is empty: slot_assign_contour each slot, then slot_commit.' },
   commit_failed: { hint: 'The commit was refused (message is the toast): fix the sketch or params it names and commit again; sketch_cancel leaves.' },

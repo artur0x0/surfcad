@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 195,
+  "count": 196,
   "$defs": {
     "status": {
       "type": "object",
@@ -11390,6 +11390,397 @@
       "example": {}
     },
     {
+      "name": "sketch_edit",
+      "description": "One call edits a saved contour: it reopens the contour in the sketch (as open_feature on its contour:<id> chip does), applies ops in order, saves and closes the sketch (the rail checkmark: the @contour statement is rewritten by id and every extrude, revolve, loft or sweep that names it rebuilds, one undo step), and returns the entities the contour now has (points, lines, arcs, dimensions, constraints with their ids). ops: profile (the edit_feature contour params: points [[u, v], …], width / height / centered, radius / segments, polygon_preset, tool), add (the sketch_add fields), constrain (the sketch_constrain fields: kind, picks or a / b / line / point), dimension (the sketch_dimension fields: kind, value, picks or edge / line / arc / a / b, name), delete { id } and undo; params is shorthand for one leading profile op. Dimensions and constraints are saved in the contour (solveContour({ points, lines, arcs, dimensions, constraints })), so the sketch stays parametric across runs and reopens with them. An op that cannot be applied is an error naming the op index and what to send; the sketch is closed without saving, so no sketch is ever left open. unknown_contour when the id is not a saved contour chip, not_a_contour when it is another feature. If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. When the run past the budget was inside one marked feature block, the part is rebuilt without that block instead: the result is ok: false with one failures row { code: feature_timeout, featureId, featureType, featureLabel, elapsedMs, budgetMs, detail }, status.runState is failed, the other features are built and shown, and status.featureMs (and feature_tree ms) say how long each block took; edit, delete, or undo that feature. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "contour_id": {
+            "type": "string",
+            "description": "Saved contour id (the @contour id, or its feature_tree chip id contour:<id>)"
+          },
+          "id": {
+            "type": "string",
+            "description": "Alias for contour_id: the feature_tree chip id contour:<id>"
+          },
+          "ops": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "op"
+              ],
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "profile",
+                    "add",
+                    "constrain",
+                    "dimension",
+                    "delete",
+                    "undo"
+                  ],
+                  "description": "profile: patch the profile (points, width/height/centered, radius/segments, polygon_preset, tool). add: the sketch_add fields (tool, width, height, radius, segments, points, polygon_preset, params). constrain: the sketch_constrain fields (kind, picks or a/b/line/point, side). dimension: the sketch_dimension fields (kind, value, picks or edge/line/arc/a/b, name). delete: id from list_sketch_entities. undo: one sketch step back."
+                },
+                "tool": {
+                  "type": "string"
+                },
+                "points": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                  }
+                },
+                "width": {
+                  "type": "number"
+                },
+                "height": {
+                  "type": "number"
+                },
+                "centered": {
+                  "type": "boolean"
+                },
+                "centers": {
+                  "type": "boolean"
+                },
+                "radius": {
+                  "type": "number"
+                },
+                "segments": {
+                  "type": "number"
+                },
+                "polygon_preset": {
+                  "type": "string"
+                },
+                "polygonPreset": {
+                  "type": "string"
+                },
+                "params": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "picks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "point",
+                          "line",
+                          "arc",
+                          "ref"
+                        ]
+                      },
+                      "id": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "targets": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "point",
+                          "line",
+                          "arc",
+                          "ref"
+                        ]
+                      },
+                      "id": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "a": {
+                  "type": "string"
+                },
+                "b": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "string"
+                },
+                "point": {
+                  "type": "string"
+                },
+                "arc": {
+                  "type": "string"
+                },
+                "edge": {
+                  "type": "string"
+                },
+                "side": {
+                  "type": "number"
+                },
+                "sense": {
+                  "type": "number"
+                },
+                "value": {
+                  "type": "number"
+                },
+                "value_mm": {
+                  "type": "number"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "constraint_id": {
+                  "type": "string"
+                },
+                "dimension_id": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Applied in order to the reopened sketch, then saved in one commit."
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Shorthand for one leading profile op (the edit_feature contour params: points, width, height, radius, …)."
+          },
+          "return": {
+            "type": "string",
+            "enum": [
+              "status",
+              "summary",
+              "full"
+            ],
+            "description": "How much of status to return: \"status\" drops status.script, \"summary\" drops it and adds status.features (the feature strip), \"full\" keeps the whole script. Over MCP the default is \"status\"; in the page it is \"full\". Read the script with get_script."
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "partId": {
+                "type": "string"
+              },
+              "partName": {
+                "type": "string"
+              },
+              "script": {
+                "type": "string"
+              },
+              "runState": {
+                "type": "string",
+                "enum": [
+                  "not_run_yet",
+                  "ok",
+                  "failed"
+                ]
+              },
+              "volume": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "bbox": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "min": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "max": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "featureCount": {
+                "type": "integer"
+              },
+              "bodyCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "featureMs": {
+                "type": "object",
+                "description": "Kernel milliseconds per feature block (by feature_tree id) on the last run that reported; what is expensive on this part",
+                "additionalProperties": {
+                  "type": "number"
+                }
+              },
+              "features": {
+                "type": "array",
+                "description": "Feature strip rows, only with return: \"summary\" (script is omitted with \"status\" and \"summary\")",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "chipLabel": {
+                      "type": "string"
+                    },
+                    "index": {
+                      "type": "integer"
+                    },
+                    "ms": {
+                      "type": "number",
+                      "description": "Kernel milliseconds of this block on the last run that reported it"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "unchanged": {
+            "type": "boolean"
+          },
+          "crash": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "code": {
+                "const": "geometry_worker_crashed"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "wasm_abort",
+                  "out_of_memory",
+                  "timeout",
+                  "worker_lost"
+                ]
+              },
+              "workerRestarted": {
+                "type": "boolean"
+              },
+              "message": {
+                "type": "string"
+              },
+              "wasmHeapMB": {
+                "type": "number"
+              },
+              "budgetMs": {
+                "type": "number"
+              },
+              "partId": {
+                "type": "string"
+              },
+              "featureId": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "errors": [
+        "bad_args",
+        "unknown_contour",
+        "not_a_contour",
+        "no_write_part",
+        "edit_failed",
+        "no_sketch",
+        "invalid_profile",
+        "empty_sketch",
+        "commit_failed",
+        "nothing_to_undo",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": false,
+      "confirm": false,
+      "group": "sketch",
+      "immediate": false,
+      "uiEntry": null,
+      "example": {
+        "contour_id": "c1",
+        "ops": [
+          {
+            "op": "profile",
+            "width": 44,
+            "height": 20
+          },
+          {
+            "op": "dimension",
+            "kind": "length",
+            "edge": "e0",
+            "value": 44
+          },
+          {
+            "op": "constrain",
+            "kind": "horizontal",
+            "picks": [
+              {
+                "kind": "line",
+                "id": "e0"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "sketch_cancel",
       "description": "Exit contour mode without writing.",
       "args": {
@@ -11443,7 +11834,7 @@
     },
     {
       "name": "sketch_dimension",
-      "description": "Add or edit a sketch dimension. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Add or edit a sketch dimension. On a saved contour reopened by open_feature or sketch_edit the gesture stays live in the sketch (result live: true, written: false) and the confirm or sketch_commit writes it with the contour. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -11732,7 +12123,7 @@
     },
     {
       "name": "sketch_constrain",
-      "description": "Add or edit a sketch constraint. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Add or edit a sketch constraint. On a saved contour reopened by open_feature or sketch_edit the gesture stays live in the sketch (result live: true, written: false) and the confirm or sketch_commit writes it with the contour. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,

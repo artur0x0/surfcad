@@ -566,13 +566,13 @@ jobs:
             echo "joint create golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:face-identity | tee "${RUNNER_TEMP}/face-identity.log"
-          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/face-identity.log"; then
-            echo "face identity golden skipped because Chrome was not found; CI must launch it"
+          npm run golden:sketch-edit | tee "${RUNNER_TEMP}/sketch-edit.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/sketch-edit.log"; then
+            echo "sketch edit golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          if ! grep -q 'face identity golden: ok' "${RUNNER_TEMP}/face-identity.log"; then
-            echo "face identity golden did not pass (see log above)"
+          if ! grep -q 'sketch edit golden: ok' "${RUNNER_TEMP}/sketch-edit.log"; then
+            echo "sketch edit golden did not pass (see log above)"
             exit 1
           fi
           npm run golden:face-identity-select | tee "${RUNNER_TEMP}/face-identity-select.log"

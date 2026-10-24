@@ -149,6 +149,7 @@
         "golden:contour-normal-fit": "node scripts/golden/smoke_contour_normal_fit.mjs",
         "golden:contour-keep-edit": "node scripts/golden/smoke_contour_keep_edit.mjs",
         "golden:contour-edit-feature": "node scripts/golden/smoke_contour_edit_feature.mjs",
+        "golden:sketch-edit": "node scripts/golden/smoke_sketch_edit.mjs",
         "golden:contour-strip": "node scripts/golden/smoke_contour_strip.mjs",
         "golden:contour-legend": "node scripts/golden/smoke_contour_legend.mjs",
         "golden:contour-visuals": "node scripts/golden/smoke_contour_visuals.mjs",

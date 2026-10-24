@@ -45,6 +45,7 @@ import { sketchBeginCommand } from './sketchBegin.js';
 import { sketchAcceptPlaneCommand } from './sketchAcceptPlane.js';
 import { sketchAddCommand } from './sketchAdd.js';
 import { sketchCommitCommand } from './sketchCommit.js';
+import { sketchEditCommand } from './sketchEdit.js';
 import { sketchCancelCommand } from './sketchCancel.js';
 import { sketchUndoCommand } from './sketchUndo.js';
 import { sketchDimensionCommand } from './sketchDimension.js';
@@ -245,6 +246,7 @@ const V1_COMMAND_LIST = [
   sketchAcceptPlaneCommand,
   sketchAddCommand,
   sketchCommitCommand,
+  sketchEditCommand,
   sketchCancelCommand,
   sketchUndoCommand,
   sketchDimensionCommand,
