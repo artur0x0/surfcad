@@ -125,6 +125,22 @@ export const STATUS_SCHEMA = Object.freeze({
       description: 'Kernel milliseconds per feature block (by feature_tree id) on the last run that reported; what is expensive on this part',
       additionalProperties: { type: 'number' },
     },
+    cache: {
+      type: 'object',
+      description: 'Feature memoisation on the last run: blocks = marked blocks, hits = blocks restored from the worker cache instead of re-run, misses = blocks that ran, bytes = the cache size. An edit re-runs only the edited block and the ones after it.',
+      additionalProperties: false,
+      properties: {
+        blocks: { type: 'integer' },
+        hits: { type: 'integer' },
+        misses: { type: 'integer' },
+        bytes: { type: 'integer' },
+      },
+    },
+    featureCached: {
+      type: 'object',
+      description: 'Feature blocks (by feature_tree id) served from the cache on the last run: true per id',
+      additionalProperties: { type: 'boolean' },
+    },
     features: {
       type: 'array',
       description: 'Feature strip rows, only with return: "summary" (script is omitted with "status" and "summary")',
@@ -138,6 +154,7 @@ export const STATUS_SCHEMA = Object.freeze({
           chipLabel: { type: 'string' },
           index: { type: 'integer' },
           ms: { type: 'number', description: 'Kernel milliseconds of this block on the last run that reported it' },
+          cached: { type: 'boolean', description: 'True when the last run restored this block from the feature cache instead of running it' },
         },
       },
     },

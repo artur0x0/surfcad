@@ -43,8 +43,9 @@ import { buildMakeLoftSolid, offsetPlaneFrame } from '../../utils/makeLoft.js';
 import { blockSpec, buildBlockManifold } from '../../utils/blockSolid.js';
 import { buildSheetMetalSolid } from '../../utils/sheetMetal/sheetSolid.js';
 import { markSheetMesh } from '../../utils/sheetMetal/sheetMeshFlag.js';
-import { installSeparateBodies, overlappingBodies } from '../../workers/separateBodies.js';
-import { installKernelArena, beginKernelArena, endKernelArena, wasmHeapMB } from '../../workers/kernelArena.js';
+import { installSeparateBodies, overlappingBodies, runEstimateOf, noteRunEstimate } from '../../workers/separateBodies.js';
+import { installKernelArena, beginKernelArena, endKernelArena, retainFromKernelArena, wasmHeapMB } from '../../workers/kernelArena.js';
+import { planMemo, FeatureMemo, MEMO_CAPTURE, MEMO_RESTORE, featureMemoBudgetBytes, importedModelsKey } from './featureMemo.js';
 import { solveContour as solveContourModel } from '../../utils/contourSolve.js';
 import { classifyKernelFailure, FEATURE_TIMEOUT_CODE, FEATURE_TIMEOUT_HINT, featureTimeoutMessage } from '../../workers/kernelCrash.js';
 
@@ -133,7 +134,11 @@ function _runInKernelArena(fn) {
     // not the same from one run to the next). Evaluated here, the mesh is
     // the one the script always produced.
     if (ran && ran.result && typeof ran.result.numTri === 'function') ran.result.numTri();
+    // Blocks captured by this run are sized and stored now, after the
+    // result's evaluation, so sizing never evaluates a node ahead of it.
+    _memoCommitPending();
   } catch (error) {
+    _memoCommitPending();
     endKernelArena(arena, { keep: [cachedManifold, gameTargetManifold, gameAttemptManifold] });
     throw error;
   }
@@ -141,6 +146,174 @@ function _runInKernelArena(fn) {
     keep: [ran && ran.result, cachedManifold, gameTargetManifold, gameAttemptManifold],
   });
   return { ran, kernelFreed };
+}
+
+// ============================================================================
+// FEATURE-LEVEL MEMOISATION (src/lib/surfcad/featureMemo.js)
+// The worker keeps, per marked block, the bindings a script holds when the
+// block closes (kernel handles as clones, plain data as structured clones)
+// plus the per-run side tables below. A rerun restores the longest prefix of
+// blocks whose keys still match and executes from the first change on.
+// ============================================================================
+/** The cache, created on first use with a budget from the device's memory. */
+let _featureMemo = null;
+/** `{ partId }` while an execute / runPreparedScript runs; null elsewhere (other callers of executeScript are not memoised). */
+let _memoContext = null;
+/** Per executeScript: `{ plan, pending, stopped }`; committed in _runInKernelArena. */
+let _memoRun = null;
+/** `featureCache` of the last execute (what the result payload carries). */
+let _lastMemoReport = null;
+
+function _memo() {
+  if (!_featureMemo) {
+    const deviceMemory = typeof navigator !== 'undefined' && navigator ? navigator.deviceMemory : undefined;
+    _featureMemo = new FeatureMemo({
+      budgetBytes: featureMemoBudgetBytes({ deviceMemory }),
+      cloneHandle: _memoStoreClone,
+      handOut: _memoHandOut,
+      freeHandle: _safeDeleteManifold,
+    });
+  }
+  return _featureMemo;
+}
+
+/** A stored clone: out of the arena sweep, with the run-table estimate of the original. */
+function _memoStoreClone(h) {
+  const c = h.clone();
+  retainFromKernelArena(c);
+  const est = runEstimateOf(h);
+  if (est > 0) noteRunEstimate(c, est);
+  return c;
+}
+
+/** A handed-out clone: the run's own handle, freed by its arena like any other. */
+function _memoHandOut(h) {
+  const c = h.clone();
+  const est = runEstimateOf(h);
+  if (est > 0) noteRunEstimate(c, est);
+  return c;
+}
+
+/** The side tables a block's result depends on, copied. */
+function _memoStateSnapshot() {
+  return globalThis.structuredClone({
+    faceStamps: [..._faceStamps],
+    stampCounters: [..._stampCounters],
+    featureOps: _featureOps,
+    sourceTess: _sourceTess,
+    sheetFilletSpan: _sheetFilletSpan,
+  });
+}
+
+function _memoStateRestore(state) {
+  const s = globalThis.structuredClone(state);
+  _faceStamps = new Map(s.faceStamps);
+  _stampCounters = new Map(s.stampCounters);
+  _featureOps = s.featureOps;
+  _sourceTess = s.sourceTess;
+  _sheetFilletSpan = s.sheetFilletSpan;
+}
+
+/** Plan this script against the cache, or null when memoisation does not apply. */
+function _memoPlan(script, importedModels) {
+  if (!_memoContext) return null;
+  const memo = _memo();
+  if (!memo.enabled) return null;
+  try {
+    return planMemo(script, { lookup: (key) => memo.lookup(key), salt: importedModelsKey(importedModels) });
+  } catch (err) {
+    console.warn(`[memo] plan failed, running cold (${err?.message || err})`);
+    return null;
+  }
+}
+
+/** `__memoCapture(i, thunk)`: the script's bindings when block i closed. */
+function _memoCapture(index, thunk) {
+  const run = _memoRun;
+  if (!run || run.stopped) return;
+  const block = run.plan.blocks[index];
+  if (!block || !block.cacheable) return;
+  // Captures must be the prefix after the restored blocks; a block that
+  // returned early or was skipped leaves a gap nothing after it can fill.
+  if (index !== run.plan.hits + run.pending.length) { run.stopped = `gap at block ${index}`; return; }
+  let values;
+  try { values = thunk(); } catch (err) { run.stopped = `capture ${block.id}: ${err?.message || err}`; return; }
+  try {
+    run.pending.push(_memo().capture({
+      key: block.key,
+      blockIndex: index,
+      partId: _memoContext?.partId || null,
+      names: block.names,
+      values,
+      state: _memoStateSnapshot(),
+    }));
+  } catch (err) {
+    run.stopped = `capture ${block.id}: ${err?.message || err}`;
+  }
+}
+
+/** `__memoRestore(i)`: the bindings of restored block i, as fresh values. */
+function _memoRestore(index) {
+  const run = _memoRun;
+  const entry = run?.plan?.entries?.[index];
+  if (!entry) throw new Error(`memo: no entry for block ${index}`);
+  _memoStateRestore(entry.state);
+  return _memo().restore(entry);
+}
+
+/** Store what the run captured and write the run's cache report. */
+function _memoCommitPending() {
+  const run = _memoRun;
+  if (!run) return;
+  _memoRun = null;
+  const memo = _memo();
+  const pending = run.pending;
+  run.pending = [];
+  let stored = { stored: 0, dropped: 0, reason: null };
+  if (pending.length) {
+    try { stored = memo.commit(pending); } catch (err) {
+      for (const e of pending) memo.free(e);
+      stored = { stored: 0, dropped: pending.length, reason: `commit: ${err?.message || err}` };
+    }
+  }
+  const blocks = run.plan.blocks.length;
+  const hits = run.plan.hits;
+  memo.hits += hits;
+  memo.misses += Math.max(0, blocks - hits);
+  const first = run.plan.blocks.find((b) => !b.cacheable);
+  _lastMemoReport = {
+    enabled: true,
+    blocks,
+    hits,
+    misses: Math.max(0, blocks - hits),
+    stored: stored.stored,
+    entries: memo.entries.size,
+    bytes: memo.bytes,
+    budgetBytes: memo.budgetBytes,
+    ...(run.stopped ? { stopped: run.stopped } : {}),
+    ...(stored.reason ? { dropped: stored.reason } : {}),
+    ...(first ? { uncacheable: { index: first.index, id: first.id, reason: first.reason } } : {}),
+  };
+}
+
+/** Empty the cache (tests, the dev hook, the `featureMemo` message). */
+export function clearFeatureMemo() {
+  _memo().clear();
+}
+
+/** `{ enabled, entries, bytes, budgetBytes, hits, misses }`. */
+export function featureMemoStats() {
+  return _memo().stats();
+}
+
+/** Turn the cache off or on, or change its byte budget. */
+export function configureFeatureMemo({ enabled, budgetBytes, clear } = {}) {
+  const memo = _memo();
+  if (enabled === false) { memo.enabled = false; memo.clear(); }
+  if (enabled === true) memo.enabled = true;
+  if (Number.isFinite(Number(budgetBytes)) && Number(budgetBytes) > 0) memo.budgetBytes = Number(budgetBytes);
+  if (clear === true) memo.clear();
+  return memo.stats();
 }
 
 /** Finite and > 0, else fallback (for relEps / volFloor). */
@@ -10253,7 +10426,13 @@ const executeScript = (script, importedModels) => {
   // The worker posts every block entry to the main thread (`_featureProgress`)
   // so a watchdog that kills this thread still knows which block was
   // running, and each closed block's time goes out with the result.
-  const traced = instrumentFeatureBlocks(script);
+  // Feature memoisation: the evaluation copy restores the leading blocks
+  // whose keys match and captures the ones that run (featureMemo.js).
+  const memo = _memoPlan(script, importedModels);
+  _memoRun = memo && !memo.disabled ? { plan: memo, pending: [], stopped: null } : null;
+  const source = _memoRun ? memo.text : script;
+  let memoHits = _memoRun ? memo.hits : 0;
+  const traced = instrumentFeatureBlocks(source);
   let features = traced.features;
   const tracker = createFeatureTracker({
     onEnter(i) {
@@ -10284,6 +10463,8 @@ const executeScript = (script, importedModels) => {
     importMesh,               // return importMesh('<Part>.mesh')
     [FEATURE_TRACE_ENTER]: tracker.enter,
     [FEATURE_TRACE_LEAVE]: tracker.leave,
+    [MEMO_CAPTURE]: _memoCapture,
+    [MEMO_RESTORE]: _memoRestore,
   };
   
   const scopeKeys = Object.keys(scope);
@@ -10295,18 +10476,38 @@ const executeScript = (script, importedModels) => {
   // Both stay a plain top-level function body (no wrapper function), so a
   // user `let cut` still shadows the helper the way it always did.
   const wrappedScript = `"use strict";\n${script}`;
-  const tracedScript = `"use strict";\n${traced.script}`;
+  let tracedScript = `"use strict";\n${traced.script}`;
   let fn;
   try {
     fn = new Function(...scopeKeys, tracedScript);
   } catch (compileErr) {
-    if (tracedScript === wrappedScript) throw compileErr;
-    fn = new Function(...scopeKeys, wrappedScript);
-    features = [];
+    if (source !== script) {
+      // The memo copy did not compile (a shape the planner misjudged):
+      // run this one cold, tracked as usual.
+      if (_memoRun) _memoRun.stopped = `compile: ${compileErr?.message || compileErr}`;
+      memoHits = 0;
+      const plain = instrumentFeatureBlocks(script);
+      features = plain.features;
+      tracedScript = `"use strict";\n${plain.script}`;
+      try {
+        fn = new Function(...scopeKeys, tracedScript);
+      } catch (plainErr) {
+        if (tracedScript === wrappedScript) throw plainErr;
+        fn = new Function(...scopeKeys, wrappedScript);
+        features = [];
+      }
+    } else {
+      if (tracedScript === wrappedScript) throw compileErr;
+      fn = new Function(...scopeKeys, wrappedScript);
+      features = [];
+    }
   }
   try {
     return fn(...scopeValues);
   } catch (err) {
+    // Blocks that closed before the throw are still good; the retry that
+    // skips the failed block then starts from them.
+    _memoCommitPending();
     if (err && typeof err === 'object') {
       // Primary: the open feature block (works on every engine).
       const open = tracker.current();
@@ -10331,7 +10532,10 @@ const executeScript = (script, importedModels) => {
     _lastFeatureTimings = tracker.timings()
       .map(({ index, ms }) => {
         const hit = features[index];
-        return hit ? { id: hit.id, kind: hit.kind, ms: Math.round(ms * 10) / 10 } : null;
+        if (!hit) return null;
+        // A restored block ran no kernel code: zero time, served from cache.
+        if (index < memoHits) return { id: hit.id, kind: hit.kind, ms: 0, cached: true };
+        return { id: hit.id, kind: hit.kind, ms: Math.round(ms * 10) / 10 };
       })
       .filter(Boolean);
     _featureNow = () => null;
@@ -10822,7 +11026,7 @@ self.onmessage = async (event) => {
           throw new Error('Worker not initialized');
         }
         
-        const { script, importedModels, memoryLimitMB, nonce, rollbackAnchor, timedOut } = payload;
+        const { script, importedModels, memoryLimitMB, nonce, rollbackAnchor, timedOut, partId } = payload;
         if (typeof globalThis !== 'undefined') {
           globalThis.__filletSweepRingLog = [];
           globalThis.__filletSweepRingCall = null;
@@ -10846,6 +11050,10 @@ self.onmessage = async (event) => {
         _featureProgress = payload.progress === true
           ? (progress) => self.postMessage({ type: 'featureProgress', id, payload: progress })
           : null;
+        // Feature memoisation applies to this path (and runPreparedScript);
+        // the part id scopes the cache report, the keys are content-addressed.
+        _memoContext = { partId: typeof partId === 'string' && partId ? partId : null };
+        _lastMemoReport = null;
         let arena;
         try {
           arena = _runInKernelArena(
@@ -10853,6 +11061,7 @@ self.onmessage = async (event) => {
           );
         } finally {
           _featureProgress = null;
+          _memoContext = null;
         }
         const { ran, kernelFreed } = arena;
         const result = ran.result;
@@ -10903,8 +11112,17 @@ self.onmessage = async (event) => {
             ...(ran.featureSkip ? { featureSkip: ran.featureSkip } : {}),
             ...(ran.rolledBack?.length ? { rolledBack: ran.rolledBack } : {}),
             ...(ran.featureTimings?.length ? { featureTimings: ran.featureTimings } : {}),
+            ...(_lastMemoReport ? { featureCache: _lastMemoReport } : {}),
           }
         });
+        break;
+      }
+
+      // Feature memoisation control: clear, enable / disable, budget; the
+      // reply is the cache's stats (the dev hook and goldens use it).
+      case 'featureMemo': {
+        const stats = configureFeatureMemo(payload && typeof payload === 'object' ? payload : {});
+        self.postMessage({ type: 'result', id, payload: { ok: true, stats } });
         break;
       }
 
@@ -11639,13 +11857,22 @@ export function runPreparedScript(source, opts = {}) {
   _featureOps = [];
   _sourceTess = [];
   _resetFaceStamps();
-  const { ran, kernelFreed } = _runInKernelArena(() => executeSkippingFailedFeatures(
-    String(source ?? ''),
-    opts.importedModels || {},
-    opts.rollbackAnchor,
-    { timedOut: opts.timedOut },
-  ));
+  _memoContext = { partId: typeof opts.partId === 'string' && opts.partId ? opts.partId : null };
+  _lastMemoReport = null;
+  let ran;
+  let kernelFreed;
+  try {
+    ({ ran, kernelFreed } = _runInKernelArena(() => executeSkippingFailedFeatures(
+      String(source ?? ''),
+      opts.importedModels || {},
+      opts.rollbackAnchor,
+      { timedOut: opts.timedOut },
+    )));
+  } finally {
+    _memoContext = null;
+  }
   const summary = summarizeManifold(ran.result);
+  if (_lastMemoReport) summary.featureCache = _lastMemoReport;
   if (ran.featureSkip) summary.featureSkip = ran.featureSkip;
   if (ran.rolledBack?.length) summary.rolledBack = ran.rolledBack;
   if (ran.featureTimings?.length) summary.featureTimings = ran.featureTimings;

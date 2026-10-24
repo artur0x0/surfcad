@@ -194,6 +194,8 @@ class ManifoldWorker {
           ...(options.rollbackAnchor === null || typeof options.rollbackAnchor === 'string'
             ? { rollbackAnchor: options.rollbackAnchor }
             : {}),
+          // Feature memoisation scopes its report by part (keys are content-addressed).
+          ...(typeof options.partId === 'string' && options.partId ? { partId: options.partId } : {}),
         }
       };
       // Store request (the message stays so a crash elsewhere can re-post it)
@@ -841,6 +843,18 @@ class ManifoldWorker {
   }
 
   /**
+   * Feature memoisation on this worker: `{ clear: true }` empties the cache,
+   * `{ enabled: false }` turns it off (and empties it), `{ budgetBytes }`
+   * resizes it. Resolves to the cache's stats
+   * (`{ enabled, entries, bytes, budgetBytes, hits, misses }`).
+   */
+  async featureMemo(opts = {}, timeoutMs = 5000) {
+    if (!this.worker || !this.isReady) return null;
+    const res = await this._request('featureMemo', opts && typeof opts === 'object' ? opts : {}, { timeoutMs, kind: 'ping' });
+    return res?.stats ?? null;
+  }
+
+  /**
    * Requests other than the liveness ping. A synchronous script keeps the
    * worker thread busy; ping cannot be answered until that script returns.
    */
@@ -1260,6 +1274,12 @@ class ManifoldContext {
     this.cap = cap;
     if (this.pool) this.pool.setSize(cap - 1);
     return cap;
+  }
+
+  /** Feature memoisation on the primary worker (the active part): see ManifoldWorker.featureMemo. */
+  async featureMemo(opts = {}) {
+    if (!this.worker) return null;
+    return this.worker.featureMemo(opts);
   }
 
   /** Debug status for the dev panel and the agent's geometry_workers reader. */

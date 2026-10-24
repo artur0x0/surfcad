@@ -449,6 +449,15 @@ jobs:
             echo "agent prompt states golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:feature-memoisation | tee "${RUNNER_TEMP}/feature-memoisation.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/feature-memoisation.log"; then
+            echo "feature memoisation golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'feature memoisation golden: ok' "${RUNNER_TEMP}/feature-memoisation.log"; then
+            echo "feature memoisation golden did not pass (see log above)"
+            exit 1
+          fi
           npm run golden:part-dirty | tee "${RUNNER_TEMP}/part-dirty.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/part-dirty.log"; then
             echo "part dirty golden skipped because Chrome was not found; CI must launch it"

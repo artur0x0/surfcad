@@ -156,7 +156,28 @@ function statusFrom(outcome, script, extras = {}) {
     ...(outcome?.stale === true ? { stale: true } : {}),
     // Kernel milliseconds per feature block from the last run that reported.
     ...(featureMsOf(outcome?.featureMs) ? { featureMs: featureMsOf(outcome.featureMs) } : {}),
+    // Feature memoisation on that run: blocks served from the cache.
+    ...(cacheOf(outcome?.cache) ? { cache: cacheOf(outcome.cache) } : {}),
+    ...(cachedOf(outcome?.featureCached) ? { featureCached: cachedOf(outcome.featureCached) } : {}),
   };
+}
+
+/** `{ blocks, hits, misses, bytes }` with finite numbers, or null. */
+function cacheOf(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out = {};
+  for (const k of ['blocks', 'hits', 'misses', 'bytes']) {
+    if (Number.isFinite(Number(value[k]))) out[k] = Number(value[k]);
+  }
+  return 'blocks' in out && 'hits' in out ? out : null;
+}
+
+/** `{ [featureId]: true }` or null when empty. */
+function cachedOf(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out = {};
+  for (const [id, flag] of Object.entries(value)) if (typeof id === 'string' && id && flag === true) out[id] = true;
+  return Object.keys(out).length ? out : null;
 }
 
 /** `{ [featureId]: ms }` with only finite numbers, or null when empty. */
@@ -188,6 +209,8 @@ function copyStatus(status) {
     bodyCount: src.bodyCount == null ? null : src.bodyCount,
     ...(src.stale === true ? { stale: true } : {}),
     ...(featureMsOf(src.featureMs) ? { featureMs: featureMsOf(src.featureMs) } : {}),
+    ...(cacheOf(src.cache) ? { cache: cacheOf(src.cache) } : {}),
+    ...(cachedOf(src.featureCached) ? { featureCached: cachedOf(src.featureCached) } : {}),
   };
 }
 

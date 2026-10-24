@@ -17,6 +17,9 @@ import {
   HELPER_FUNCTIONS,
   getManifoldModule,
   manifoldFromScriptResult,
+  clearFeatureMemo,
+  featureMemoStats,
+  configureFeatureMemo,
 } from './runtime.js';
 
 export {
@@ -28,6 +31,9 @@ export {
   loadBundledManifold,
   manifoldReady,
   manifoldFromScriptResult,
+  clearFeatureMemo,
+  featureMemoStats,
+  configureFeatureMemo,
 };
 
 /**

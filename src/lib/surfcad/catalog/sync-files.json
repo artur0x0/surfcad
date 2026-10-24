@@ -8,6 +8,7 @@
     "built/manifold.wasm",
     "src/agent/buildGuidance.js",
     "src/lib/surfcad/export.js",
+    "src/lib/surfcad/featureMemo.js",
     "src/lib/surfcad/index.js",
     "src/lib/surfcad/runtime.js",
     "src/utils/activePartOverlay.js",

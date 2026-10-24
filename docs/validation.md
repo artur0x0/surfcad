@@ -112,6 +112,7 @@ Gate code, fixtures, ground truth, and frozen anchors live in
 - [ ] `npm run verify` → `✅ VERIFY PASS`; full console output + `/tmp/verify_all_last.json` pasted in the PR body
 - [ ] If the PR adds/changes a helper: a test extension in the PR's own description (what it proves, which suite covers it) — harness edits are the reviewer's
 - [ ] If the PR touches `sandboxWorker.js`: `test_real_worker.mjs` green called out explicitly
+- [ ] If the PR touches the block runner, a stamped helper, or a per-run table in `runtime.js` (face stamps, fillet op brackets, tessellation tags): `node --test src/lib/surfcad/featureMemo.test.js` green called out explicitly. It runs the real kernel and deep-compares a warm run (blocks restored from the feature cache) with a cold one; a difference there means a block's result depends on something the cache does not capture
 - [ ] For part-affecting changes: 4-view screenshots via `harness/pilot_shot.sh <id8>` (before/after) attached
 - [ ] Known-issue exclusions untouched (`9771f32b`, `f6f416e1`)
 - [ ] No commits to `main`; PRs only, branched from the current `main`
