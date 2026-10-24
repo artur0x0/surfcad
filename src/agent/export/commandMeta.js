@@ -808,6 +808,12 @@ export const COMMAND_META = {
     errors: ['bad_args', 'no_assembly', 'unknown_joint', 'no_joint_edit', 'edit_failed', 'internal'],
     mutates: false,
   },
+  joint_create: {
+    description: 'Prefer this over hand-computed part_set_transform numbers: one call creates a joint and solves the placement. type is coincident, parallel, perpendicular, distance, angle, concentric, symmetric or fixed (planar is coincident); picks are one row per reference from list_faces (face_id with its key from the same row; a cylindrical face is an axis pick; { part_id } alone is a whole-part pick), one pick for fixed and two for every other type; name, value_mm, sense and opposed as on joint_set_params. Runs the same open → pick → set params → commit path as the Joints card and records one assembly undo step. The result carries jointId, type, name, valueMm, pickCount and placements: the position and rotation of every picked part after the solve. A pick that does not resolve is unknown_part / unknown_face, and a joint the solver refuses is joint_unsolvable with details.reason; in both cases nothing is written and no card is left open. usedSelection is always false: the picks are explicit.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['bad_args', 'bad_view', 'joints_unavailable', 'no_assembly', 'unknown_part', 'unknown_face', 'ambiguous_face', 'pick_failed', 'no_mesh', 'joint_unsolvable', 'edit_failed', 'internal'],
+    mutates: true,
+  },
   sheet_open: {
     description: 'Open the Sheet Metal picker (Shape rail).',
     result: { type: 'object', additionalProperties: true },

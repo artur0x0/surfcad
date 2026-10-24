@@ -114,6 +114,7 @@ import {
   jointCancelCommand,
   jointSelectCommand,
   jointEditCommand,
+  jointCreateCommand,
 } from './joint.js';
 import {
   sheetOpenCommand,
@@ -292,6 +293,7 @@ const V1_COMMAND_LIST = [
   jointCancelCommand,
   jointSelectCommand,
   jointEditCommand,
+  jointCreateCommand,
   sheetOpenCommand,
   sheetStartCommand,
   sheetSetToolCommand,
