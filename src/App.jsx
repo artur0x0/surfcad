@@ -641,17 +641,30 @@ const App = () => {
   rollbackAnchorsRef.current = rollbackAnchors;
   /** Per-part `{ [featureId]: ms }` from the last run the viewport reported (feature_tree `ms`, status.featureMs). */
   const featureTimingsRef = useRef({});
+  /** Per-part `{ cache: { blocks, hits, misses, bytes }, cached: { [featureId]: true } }` from the last run (feature memoisation). */
+  const featureCacheRef = useRef({});
   const handleRunOutcome = ({
     script, ok, scriptLine, featureId, featureBlock, skipped, message, detail, crash,
-    code, timeout, hint, featureTimings,
+    code, timeout, hint, featureTimings, featureCache,
   } = {}) => {
     if (Array.isArray(featureTimings)) {
       const key = assemblyRef.current?.activeId ? String(assemblyRef.current.activeId) : '__cad__';
       const map = {};
+      const cached = {};
       for (const row of featureTimings) {
         if (row && typeof row.id === 'string' && Number.isFinite(Number(row.ms))) map[row.id] = Number(row.ms);
+        if (row && typeof row.id === 'string' && row.cached === true) cached[row.id] = true;
       }
       featureTimingsRef.current = { ...featureTimingsRef.current, [key]: map };
+      const summary = featureCache && typeof featureCache === 'object'
+        ? {
+          blocks: Number(featureCache.blocks) || 0,
+          hits: Number(featureCache.hits) || 0,
+          misses: Number(featureCache.misses) || 0,
+          bytes: Number(featureCache.bytes) || 0,
+        }
+        : null;
+      featureCacheRef.current = { ...featureCacheRef.current, [key]: { cache: summary, cached } };
     }
     // Tracked block first (works on Safari), the stack's line second.
     const next = ok ? null : failedFeatureFromOutcome(script, { featureId, featureBlock, scriptLine });
@@ -9480,7 +9493,13 @@ const App = () => {
     const reported = runOutcomeEpochRef.current !== epochBefore;
     const failure = reported ? runFailureRef.current : null;
     const featureMs = featureTimingsRef.current[id ? String(id) : '__cad__'];
-    const timings = featureMs && Object.keys(featureMs).length ? { featureMs } : {};
+    const memo = featureCacheRef.current[id ? String(id) : '__cad__'];
+    const timings = {
+      ...(featureMs && Object.keys(featureMs).length ? { featureMs } : {}),
+      // Feature memoisation on that run (status.cache, status.featureCached).
+      ...(memo?.cache ? { cache: memo.cache } : {}),
+      ...(memo?.cached && Object.keys(memo.cached).length ? { featureCached: memo.cached } : {}),
+    };
     if (reported && !failure) {
       if (run?.empty) {
         return {
@@ -10046,6 +10065,7 @@ const App = () => {
         rollbackAnchor: rollbackAnchor ?? null,
         activeChipId: featureStripActiveId,
         featureMs: featureTimingsRef.current[key] || null,
+        featureCached: featureCacheRef.current[key]?.cached || null,
       });
     },
     readSelection() {
@@ -10189,6 +10209,7 @@ const App = () => {
         ? (codeEditorRef.current?.getContent?.() ?? partScriptsRef.current[id] ?? '')
         : '';
       const featureMs = featureTimingsRef.current[id || '__cad__'];
+      const memo = featureCacheRef.current[id || '__cad__'];
       const base = {
         partId: id,
         partName,
@@ -10199,6 +10220,10 @@ const App = () => {
         featureCount: agentFeatureCount(script),
         bodyCount: null,
         ...(featureMs && Object.keys(featureMs).length ? { featureMs } : {}),
+        // Feature memoisation on the last run: how many blocks were served
+        // from the cache, and which (feature_tree ids).
+        ...(memo?.cache ? { cache: memo.cache } : {}),
+        ...(memo?.cached && Object.keys(memo.cached).length ? { featureCached: memo.cached } : {}),
       };
       const run = id ? partRunsRef.current?.[id] : null;
       if (!run) return base;

@@ -13,6 +13,7 @@ export function buildFeatureTree(input = {}) {
   const script = typeof input.script === 'string' ? input.script : '';
   const failed = new Set(input.failedIds || []);
   const ms = input.featureMs && typeof input.featureMs === 'object' ? input.featureMs : null;
+  const cached = input.featureCached && typeof input.featureCached === 'object' ? input.featureCached : null;
   const chips = featureStripChips(script, { spec: input.sheetSpec || null });
   const features = chips.map((chip, index) => ({
     id: chip.id,
@@ -26,6 +27,8 @@ export function buildFeatureTree(input = {}) {
     separate: chip.separate === true,
     // Kernel time of this block on the last run that reported it.
     ...(ms && Number.isFinite(Number(ms[chip.id])) ? { ms: Number(ms[chip.id]) } : {}),
+    // Served from the feature cache on the last run (feature memoisation).
+    ...(cached && cached[chip.id] === true ? { cached: true } : {}),
   }));
   return {
     features,

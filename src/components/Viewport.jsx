@@ -11135,6 +11135,10 @@ const Viewport = forwardRef(({
       if (import.meta.env?.DEV) {
         window.__VIEWPORT__ = {
           ready: () => !!(sceneRef.current && rendererRef.current && resultRef.current),
+          // Feature memoisation on the primary geometry worker: `{ clear: true }`
+          // empties it, `{ enabled: false }` turns it off; the reply is its
+          // stats (golden:feature-memoisation forces a cold run with it).
+          featureMemo: (opts) => manifoldContext.featureMemo(opts || {}),
           // Face identity: the named faces and edges of the active part's
           // mesh (golden:face-identity reads this). Plain data, no triangles.
           faceTable: () => {
@@ -13776,6 +13780,8 @@ const Viewport = forwardRef(({
       const rolledBack = Array.isArray(result?.rolledBack) ? result.rolledBack : [];
       // Per-block kernel time from the worker's tracker (feature_tree `ms`).
       const featureTimings = Array.isArray(result?.featureTimings) ? result.featureTimings : [];
+      // Feature memoisation report (status.cache, feature_tree `cached`).
+      const featureCache = result?.featureCache && typeof result.featureCache === 'object' ? result.featureCache : null;
       if (rolledBack.length) {
         console.log(`[Viewport] Rolled back ${rolledBack.join(', ')}; those features did not run.`);
       } else {
@@ -13822,6 +13828,7 @@ const Viewport = forwardRef(({
             ...(skip.timeout && typeof skip.timeout === 'object' ? { timeout: skip.timeout } : {}),
             ...(typeof skip.hint === 'string' && skip.hint ? { hint: skip.hint } : {}),
             featureTimings,
+            featureCache,
           });
         } else {
           onRunOutcomeRef.current?.({
@@ -13830,6 +13837,7 @@ const Viewport = forwardRef(({
             scriptLine: null,
             ...(rolledBack.length ? { rolledBack } : {}),
             featureTimings,
+            featureCache,
           });
         }
       }

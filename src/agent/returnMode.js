@@ -76,8 +76,9 @@ export function takeReturnMode(args) {
  * Feature strip rows for a script, the same ids `feature_tree` reports.
  * `featureMs` (`status.featureMs`) adds each block's kernel time as `ms`.
  */
-export function featureSummary(script, featureMs = null) {
+export function featureSummary(script, featureMs = null, featureCached = null) {
   const ms = featureMs && typeof featureMs === 'object' ? featureMs : null;
+  const cached = featureCached && typeof featureCached === 'object' ? featureCached : null;
   return parseFeatureMarkers(typeof script === 'string' ? script : '').map((row) => ({
     id: row.id,
     kind: row.kind,
@@ -85,13 +86,15 @@ export function featureSummary(script, featureMs = null) {
     chipLabel: row.chipLabel,
     index: row.index,
     ...(ms && Number.isFinite(Number(ms[row.id])) ? { ms: Number(ms[row.id]) } : {}),
+    // Served from the feature cache on that run (no kernel time).
+    ...(cached && cached[row.id] === true ? { cached: true } : {}),
   }));
 }
 
 function shapeStatus(status, mode) {
   if (!status || typeof status !== 'object' || Array.isArray(status)) return status;
   const { script, ...rest } = status;
-  if (mode === 'summary') return { ...rest, features: featureSummary(script, rest.featureMs) };
+  if (mode === 'summary') return { ...rest, features: featureSummary(script, rest.featureMs, rest.featureCached) };
   return rest;
 }
 

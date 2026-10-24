@@ -268,6 +268,7 @@
         "golden:list-scroll-gutter": "node scripts/golden/smoke_list_scroll_gutter.mjs",
         "golden:camera-presets": "node scripts/golden/smoke_camera_presets.mjs",
         "golden:feature-timeout": "node scripts/golden/smoke_feature_timeout.mjs",
+        "golden:feature-memoisation": "node scripts/golden/smoke_feature_memoisation.mjs",
         "golden:face-identity": "node scripts/golden/smoke_face_identity.mjs",
         "golden:face-identity-select": "node scripts/golden/smoke_face_identity_select.mjs",
         "golden:face-identity-rebuild": "node scripts/golden/smoke_face_identity_rebuild.mjs",
