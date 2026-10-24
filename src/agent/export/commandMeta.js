@@ -289,7 +289,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   geometry_workers: {
-    description: 'Debug status of the geometry workers: cap (workers this device gets, the primary included: min(cores − 1, GB of deviceMemory), 1..4 on a phone, 1..8 on a desktop; the dev override is ?geometryWorkers=N or localStorage surfcadGeometryWorkers), live, busy, queued, peakBusy, crashes, primary { ready, busy, jobs, heapMB, crashes, lastCrash }, and pool { size, live, busy, queued, peakBusy, jobsDone, jobsFailed, members: [{ id, live, busy, jobs, heapMB, recycled, crashes }] }. The parts that are not active build on the pool, several at once; the active part, cross-sections, and previews use the primary. Read-only.',
+    description: 'Debug status of the geometry workers: cap (workers this device gets, the primary included: min(cores − 1, GB of deviceMemory), 1..4 on a phone, 1..8 on a desktop; the dev override is ?geometryWorkers=N or localStorage surfcadGeometryWorkers), live, busy, queued, peakBusy, crashes, primary { ready, busy, jobs, heapMB, crashes, lastCrash }, and pool { size, live, busy, queued, peakBusy, jobsDone, jobsFailed, members: [{ id, live, busy, jobs, heapMB, recycled, crashes }] }, plus gpu { builds, reuses, disposed, live }: solid geometries built since load (each one uploads to the GPU on its first frame), runs that kept the geometry they already showed because the mesh did not change, geometries disposed, and geometries held now. The parts that are not active build on the pool, several at once; the active part, cross-sections, and previews use the primary. Read-only.',
     result: { type: 'object', additionalProperties: true },
     errors: ['internal'],
     mutates: false,

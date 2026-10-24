@@ -183,6 +183,7 @@ Gate acceptance still requires `test_real_worker.mjs` via `npm run verify` when 
 | `golden:git-delete-from-repo` | `smoke_git_delete_from_repo.mjs` |
 | `golden:git-assembly-rename-reload` | `smoke_git_assembly_rename_reload.mjs` |
 | `golden:git-g4-pull-conflicts` | `smoke_git_g4_pull_conflicts.mjs` |
+| `golden:gpu-upload-cache` | `smoke_gpu_upload_cache.mjs` |
 | `golden:git-g5-branch-view` | `smoke_git_g5_branch_view.mjs` |
 | `golden:git-g6-move-to-git` | `smoke_git_g6_move_to_git.mjs` |
 | `golden:git-g7-real-adapter` | `smoke_git_g7_real_adapter.mjs` |
