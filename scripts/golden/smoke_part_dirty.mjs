@@ -16,7 +16,7 @@ import { createServer as createVite } from 'vite';
 
 const shotDir = process.env.GOLDEN_SHOT_DIR || join(tmpdir(), 'surfcad-golden-shots');
 mkdirSync(shotDir, { recursive: true });
-const artifactDir = '/opt/cursor/artifacts/part-dirty';
+const artifactDir = join(shotDir, 'part-dirty');
 mkdirSync(artifactDir, { recursive: true });
 
 let failed = 0;
@@ -227,3 +227,6 @@ if (failed) {
   process.exit(1);
 }
 console.log('\nPart dirty checks passed.');
+// The in-process vite server (and its agent relay) keeps the event loop alive
+// on CI, so say so explicitly: the step reads the log, not the exit code.
+process.exit(0);
