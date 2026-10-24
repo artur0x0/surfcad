@@ -120,6 +120,13 @@ export function classifySelectedFace(faceData) {
   if (Array.isArray(faceData.indices) && faceData.indices.length) {
     out.indices = faceData.indices.slice();
   }
+  // Face identity: the stamped name travels with the pick into the composer.
+  if (typeof faceData.name === 'string' && faceData.name) {
+    out.name = faceData.name;
+    if (typeof faceData.feature === 'string') out.feature = faceData.feature;
+    if (typeof faceData.role === 'string') out.role = faceData.role;
+    if (Array.isArray(faceData.names) && faceData.names.length > 1) out.names = faceData.names.slice();
+  }
   // Multi-face pick (shift-click in the viewport): every accumulated face,
   // oldest first, this one last. Shell/Draft read it; every other feature keeps
   // using `center`/`normal` and so keeps behaving as a single-face pick.
@@ -655,6 +662,42 @@ export function draftPullForFace(face, fallback = 'z') {
 export function emitFaceWorkplaneLines(body, face, names, allocateUniqueName) {
   const faceVar = allocateUniqueName(names, 'selFace');
   const frVar = allocateUniqueName(names, 'fr');
+  // Face identity: a pick that carries its stamped name resolves by that
+  // name. facesNamed throws, listing the faces that exist, when the face
+  // is gone, so an upstream edit can never re-target the hole silently;
+  // when the label is in several pieces the piece nearest the pick wins.
+  if (typeof face.name === 'string' && face.name) {
+    const pieces = allocateUniqueName(names, '_pieces');
+    const c = allocateUniqueName(names, '_c');
+    const best = allocateUniqueName(names, '_best');
+    const bd = allocateUniqueName(names, '_bd');
+    const f = allocateUniqueName(names, '_f');
+    const d = allocateUniqueName(names, '_d');
+    const pc = allocateUniqueName(names, '_pc');
+    const off = allocateUniqueName(names, '_off');
+    const cLit = formatVec3(face.center);
+    const nameLit = JSON.stringify(face.name);
+    const lines = [
+      `const ${faceVar} = (() => {`,
+      `  const ${c} = ${cLit};`,
+      `  const ${pieces} = facesNamed(${body}, ${nameLit}); // the picked face, by its stamped name`,
+      `  let ${best} = ${pieces}[0], ${bd} = Infinity;`,
+      `  for (const ${f} of ${pieces}) {`,
+      `    const ${d} = (${f}.center[0]-${c}[0])**2 + (${f}.center[1]-${c}[1])**2 + (${f}.center[2]-${c}[2])**2;`,
+      `    if (${d} < ${bd}) { ${bd} = ${d}; ${best} = ${f}; }`,
+      `  }`,
+      `  return ${best};`,
+      `})();`,
+      `const ${frVar} = workplaneFromFace(${body}, ${faceVar});`,
+      `// Snap origin to selected face center (projected onto plane) so Center → u=0,v=0 hits pick.`,
+      `(() => {`,
+      `  const ${pc} = ${cLit};`,
+      `  const ${off} = (${pc}[0]-${frVar}.center[0])*${frVar}.normal[0] + (${pc}[1]-${frVar}.center[1])*${frVar}.normal[1] + (${pc}[2]-${frVar}.center[2])*${frVar}.normal[2];`,
+      `  ${frVar}.center = [${pc}[0]-${off}*${frVar}.normal[0], ${pc}[1]-${off}*${frVar}.normal[1], ${pc}[2]-${off}*${frVar}.normal[2]];`,
+      `})();`,
+    ];
+    return { lines, faceVar, frVar };
+  }
   // Unique temps so sequential inserts never collide with filterRedeclarations
   // (flat declaredNames used to strip mid-IIFE lines and leave orphan `});` / `}})();`).
   const cands = allocateUniqueName(names, '_cands');
@@ -724,6 +767,16 @@ export function emitFaceEdgeLines(body, face, params, names, allocateUniqueName)
     return { lines: [], edgesExpr: `convexEdges(${body})` };
   }
   const edgesVar = allocateUniqueName(names, 'faceEdges');
+  // Face identity: a pick with a stamped name takes the edges around that
+  // face only (the four edges of a box top), never every edge on the body
+  // whose neighbour happens to face the same way. Concave edges are skipped
+  // and counted, not thrown (bugs M3 and M4).
+  if (typeof face.name === 'string' && face.name) {
+    return {
+      lines: [`const ${edgesVar} = edgesOf(${body}, ${JSON.stringify(face.name)}); // edges around the picked face; concave ones skipped (${edgesVar}.skipped)`],
+      edgesExpr: edgesVar,
+    };
+  }
   const n = allocateUniqueName(names, '_n');
   const dot = allocateUniqueName(names, '_dot');
   const ok = allocateUniqueName(names, '_ok');

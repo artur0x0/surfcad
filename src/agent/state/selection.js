@@ -33,6 +33,14 @@ function serializeFace(face) {
   };
   const key = faceKeyFromFace(face);
   if (key) out.key = key;
+  // Face identity: the stamped name the pick carries, when the helper that
+  // built the face recorded one.
+  if (typeof face.name === 'string' && face.name) {
+    out.name = face.name;
+    if (typeof face.feature === 'string') out.feature = face.feature;
+    if (typeof face.role === 'string') out.role = face.role;
+    if (Array.isArray(face.names) && face.names.length > 1) out.names = face.names.slice();
+  }
   if (Array.isArray(face.group) && face.group.length > 1) {
     out.groupCount = face.group.length;
   }

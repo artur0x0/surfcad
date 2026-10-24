@@ -572,7 +572,7 @@ import { planePatchFromArgs } from '../agent/sketchPlaneAgent.js';
 import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from '../agent/state/listPickables.js';
 import { describeJointPick } from '../agent/jointPickDescribe.js';
 import { agentFaceCatalog, findAgentFace } from '../agent/faceCatalog.js';
-import { describeFaceTable, stampedFaceTable } from '../utils/faceIdentity.js';
+import { describeFaceTable, resolveEdgeNames, resolveFaceNames, stampedFaceTable, stampedNameForTriangles } from '../utils/faceIdentity.js';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -10310,6 +10310,16 @@ const Viewport = forwardRef(({
         selectionMode: 'coplanar',
       };
     const payload = list.length > 1 ? { ...base, group: lite } : { ...base };
+    // Face identity: the stamped face that owns the pick names it, so the
+    // composer can resolve the pick by name instead of by normal and centre.
+    const pickTris = Array.isArray(base.indices) && base.indices.length ? base.indices : shown;
+    const named = geometry ? stampedNameForTriangles(stampedFaceTable(geometry, faceIDsRef.current), pickTris) : null;
+    if (named) {
+      payload.name = named.name;
+      payload.feature = named.feature;
+      payload.role = named.role;
+      if (named.names) payload.names = named.names;
+    }
     const classified = classifySelectedFace(payload) || payload;
     const span = faceSliderFrame(faceData?.vertices, classified.normal, classified.center);
     if (span) classified.span = span;
@@ -12170,7 +12180,7 @@ const Viewport = forwardRef(({
     clearGeomSelection();
   };
 
-  agentSelectFacesRef.current = ({ keys }) => {
+  agentSelectFacesRef.current = ({ keys, names }) => {
     const geom = resultRef.current?.geometry;
     const positions = geom?.attributes?.position;
     const index = geom?.index?.array;
@@ -12178,12 +12188,26 @@ const Viewport = forwardRef(({
       return { error: { code: 'no_mesh', message: 'No mesh to select faces on' } };
     }
     syncFeatureEdges(geom);
-    const fingerprints = fingerprintsFromGeometry(geom, faceIDsRef.current);
-    const resolved = resolveFaceKeys(fingerprints, keys);
-    if (resolved.error) return resolved;
-    const picks = resolved.picks;
+    const picks = [];
+    const pickedNames = [];
+    if (Array.isArray(names) && names.length) {
+      // Face identity: a name selects the stamped face's own triangles, the
+      // exact face the helper built, even when the face graph merged it
+      // with a neighbour (a rounded box's top and its band).
+      const byName = resolveFaceNames(stampedFaceTable(geom, faceIDsRef.current), names);
+      if (byName.error) return byName;
+      picks.push(...byName.picks);
+      pickedNames.push(...byName.names);
+    }
+    if (Array.isArray(keys) && keys.length) {
+      const fingerprints = fingerprintsFromGeometry(geom, faceIDsRef.current);
+      const resolved = resolveFaceKeys(fingerprints, keys);
+      if (resolved.error) return resolved;
+      picks.push(...resolved.picks);
+    }
+    if (!picks.length) return { error: { code: 'bad_args', message: 'select_faces needs keys or names' } };
     publishFacePicks(picks, geom, positions, index);
-    return { count: picks.length };
+    return pickedNames.length ? { count: picks.length, names: pickedNames } : { count: picks.length };
   };
 
   const prepareAgentEdgePick = (geom) => {
@@ -12217,16 +12241,31 @@ const Viewport = forwardRef(({
     return { edges };
   };
 
-  agentSelectEdgesRef.current = ({ keys }) => {
+  agentSelectEdgesRef.current = ({ keys, names }) => {
     const geom = resultRef.current?.geometry;
     if (!geom) {
       return { error: { code: 'no_mesh', message: 'No mesh to select edges on' } };
     }
-    const out = expandAgentEdgeKeys(prepareAgentEdgePick(geom), keys);
-    if (out.error) return out;
-    setSelectedEdges(out.edges);
-    highlightSelectedEdges(out.edges);
-    return { count: out.edges.length };
+    const prep = prepareAgentEdgePick(geom);
+    const edges = [];
+    const pickedNames = [];
+    if (Array.isArray(names) && names.length) {
+      // Face identity: `a~b` is every feature-edge segment where the two
+      // named faces meet.
+      const byName = resolveEdgeNames(stampedFaceTable(geom, faceIDsRef.current), prep.rawEdges, names);
+      if (byName.error) return byName;
+      edges.push(...byName.edges);
+      pickedNames.push(...byName.names);
+    }
+    if (Array.isArray(keys) && keys.length) {
+      const out = expandAgentEdgeKeys(prep, keys);
+      if (out.error) return out;
+      edges.push(...out.edges);
+    }
+    if (!edges.length) return { error: { code: 'bad_args', message: 'select_edges needs keys or names' } };
+    setSelectedEdges(edges);
+    highlightSelectedEdges(edges);
+    return pickedNames.length ? { count: edges.length, names: pickedNames } : { count: edges.length };
   };
 
   const atKeyIndex = (error, index) => ({
@@ -12565,7 +12604,7 @@ const Viewport = forwardRef(({
     syncFeatureEdges(geom);
     const fingerprints = fingerprintsFromGeometry(geom, faceIDsRef.current);
     const rawEdges = buildFeatureEdges(geom);
-    const listed = buildEdgeList(rawEdges, fingerprints);
+    const listed = buildEdgeList(rawEdges, fingerprints, stampedFaceTable(geom, faceIDsForAgentPart(partId, geom)));
     return {
       partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
       raw: true,

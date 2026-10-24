@@ -36,7 +36,9 @@ test('checkFaceFilter names the bad field', () => {
   assert.equal(checkFaceFilter({ kind: 'planar', normalWithin: { n: [0, 0, 1], deg: 5 }, minArea: 1, bbox: { min: [0, 0, 0], max: [1, 1, 1] } }), null);
   assert.match(checkFaceFilter([]).message, /object/);
   assert.match(checkFaceFilter({ kind: 'flat' }).message, /filter\.kind/);
-  assert.match(checkFaceFilter({ feature: 'cube1' }).message, /filter\.feature is not a face filter/);
+  assert.equal(checkFaceFilter({ feature: 'cube1' }), null, 'feature is a face identity filter');
+  assert.match(checkFaceFilter({ feature: '' }).message, /filter\.feature/);
+  assert.match(checkFaceFilter({ colour: 'red' }).message, /filter\.colour is not a face filter/);
   assert.match(checkFaceFilter({ normalWithin: { n: [0, 0, 0], deg: 5 } }).message, /normalWithin/);
   assert.match(checkFaceFilter({ normalWithin: { n: [0, 0, 1], deg: 200 } }).message, /deg/);
   assert.match(checkFaceFilter({ minArea: -1 }).message, /minArea/);
