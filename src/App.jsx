@@ -11548,6 +11548,7 @@ const App = () => {
       onInsertVaultAssemblyParts={handleInsertVaultAssemblyParts}
       onOpenVaultPart={handleOpenVaultPart}
       onCopyPartToAssembly={handleCopyPartToAssembly}
+      onAddInstance={(partId) => { agentInsertInstance({ partId }); }}
       groups={assemblyDoc?.groups || []}
       onRenameGroup={handleRenameGroup}
       onUngroup={handleUngroup}

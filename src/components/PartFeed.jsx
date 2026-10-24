@@ -1,7 +1,7 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Download, Eye, EyeOff, FolderOpen, GripVertical, Loader2, Pencil, Plus, Save, Trash2, Truck, Upload } from 'lucide-react';
-import { partCanDeleteFromRepo, partDeleteChoice, partListDeleteAction, partRepoDeleteConfirmCopy, sanitizeAssemblyName, sanitizePartName } from '../utils/assembly.js';
+import { ChevronDown, CopyPlus, Download, Eye, EyeOff, FolderOpen, GripVertical, Loader2, Pencil, Plus, Save, Trash2, Truck, Upload } from 'lucide-react';
+import { partCanDeleteFromRepo, partDeleteChoice, partDeleteDialogCopy, partInstanceInfo, partListDeleteAction, partRepoDeleteConfirmCopy, sanitizeAssemblyName, sanitizePartName } from '../utils/assembly.js';
 import { partRowSubtitles } from '../utils/git/partListSubtitle.js';
 import {
   filterVaultOpenIndex, filterVaultPartItems, groupVaultOpenPartRows, vaultOpenAssemblies, vaultOpenEmptyMessage,
@@ -387,6 +387,7 @@ const PartFeed = forwardRef(function PartFeed({
   onAddExistingPart = null,
   onAddToRepo = null,
   onCopyPartToAssembly = null,
+  onAddInstance = null,
   groups = [],
   onRenameGroup = null,
   onUngroup = null,
@@ -1350,8 +1351,13 @@ const PartFeed = forwardRef(function PartFeed({
     if (pendingDelete) cancelBtnRef.current?.focus();
   }, [pendingDelete]);
 
+  // Part instances: rows sharing a definition (`instanceOf`). The primary
+  // row shows how many times it is placed; an instance row names it.
+  const instanceInfo = partInstanceInfo(rows);
   const askDeletePart = (partId, name, path = null) => {
-    setPendingDelete({ id: partId, name: name || 'this part', path: path || null, step: 'choose' });
+    const info = instanceInfo.get(String(partId));
+    const otherInstances = info ? Math.max(0, info.count - 1) : 0;
+    setPendingDelete({ id: partId, name: name || 'this part', path: path || null, step: 'choose', otherInstances });
   };
 
   const cancelDeletePart = () => {
@@ -1362,7 +1368,7 @@ const PartFeed = forwardRef(function PartFeed({
   const confirmDeletePart = (choice = 'assembly') => {
     const pending = pendingDelete;
     if (!pending?.id) return;
-    if (choice === 'repo' && !partCanDeleteFromRepo(source, pending.id, pending.path)) return;
+    if (choice === 'repo' && (!partCanDeleteFromRepo(source, pending.id, pending.path) || (pending.otherInstances || 0) > 0)) return;
     const next = partDeleteChoice(pending.step, choice);
     if (next.step === 'confirm-repo') {
       setPendingDelete({ ...pending, step: 'confirm-repo' });
@@ -1497,6 +1503,27 @@ const PartFeed = forwardRef(function PartFeed({
         >
           {row.visible ? <Eye size={16} /> : <EyeOff size={16} />}
         </button>
+        {onAddInstance ? (
+          <button
+            type="button"
+            data-ui-action="data-part-add-instance"
+            data-part-add-instance={row.id}
+            aria-label={`Add instance of ${row.name || 'part'}`}
+            title="Add instance"
+            disabled={!!row.missing}
+            className="shrink-0 rounded-full p-1.5 text-gray-300 hover:bg-white/10 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent"
+            onPointerDown={(event) => event.stopPropagation()}
+            onDragStart={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (row.missing) return;
+              onAddInstance(row.id);
+            }}
+          >
+            <CopyPlus size={16} />
+          </button>
+        ) : null}
         <button
           type="button"
           data-part-delete={row.id}
@@ -1534,6 +1561,24 @@ const PartFeed = forwardRef(function PartFeed({
             className="mt-0.5 inline-flex rounded-full bg-amber-400/15 px-1.5 py-px text-[10px] font-medium text-amber-200"
           >
             local only
+          </span>
+        ) : null}
+        {instanceInfo.get(String(row.id))?.isInstance ? (
+          <div
+            data-part-instance-of={row.instanceOf || ''}
+            className="min-w-0 truncate text-[10px] text-gray-500"
+            title="Shares its script with the other placements"
+          >
+            {`instance of ${instanceInfo.get(String(row.id))?.definitionName || 'this part'}`}
+          </div>
+        ) : null}
+        {!instanceInfo.get(String(row.id))?.isInstance && (instanceInfo.get(String(row.id))?.count || 0) > 1 ? (
+          <span
+            data-part-instance-count={instanceInfo.get(String(row.id)).count}
+            title={`Placed ${instanceInfo.get(String(row.id)).count} times`}
+            className="mt-0.5 inline-flex rounded-full bg-white/10 px-1.5 py-px text-[10px] font-medium text-gray-300"
+          >
+            {`×${instanceInfo.get(String(row.id)).count}`}
           </span>
         ) : null}
         {(subtitle || behindSet.has(row.id)) ? (
@@ -1686,6 +1731,14 @@ const PartFeed = forwardRef(function PartFeed({
       </div>
     );
   };
+
+  const deleteCopy = pendingDelete
+    ? partDeleteDialogCopy({
+      name: pendingDelete.name,
+      canDeleteRepo: partCanDeleteFromRepo(source, pendingDelete.id, pendingDelete.path),
+      otherInstances: pendingDelete.otherInstances || 0,
+    })
+    : { message: '', offerRepo: false };
 
   return (
     <aside className={shell} data-parts-feed="" data-parts-source={source} data-parts-open-target={openTarget}>
@@ -3218,10 +3271,8 @@ const PartFeed = forwardRef(function PartFeed({
               </>
             ) : (
               <>
-                <p className="mt-2 text-xs text-gray-300">
-                  {partCanDeleteFromRepo(source, pendingDelete.id, pendingDelete.path)
-                    ? `Remove ${pendingDelete.name} from this assembly only, or also delete its file from the repo.`
-                    : `Remove ${pendingDelete.name} from this assembly?`}
+                <p className="mt-2 text-xs text-gray-300" data-part-delete-message="">
+                  {deleteCopy.message}
                 </p>
                 <div className="mt-4 flex flex-col gap-2">
                   <button
@@ -3243,7 +3294,7 @@ const PartFeed = forwardRef(function PartFeed({
                     >
                       Delete from assembly
                     </button>
-                    {partCanDeleteFromRepo(source, pendingDelete.id, pendingDelete.path) && (
+                    {deleteCopy.offerRepo && (
                       <button
                         type="button"
                         data-part-delete-confirm-repo=""

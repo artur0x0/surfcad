@@ -16,7 +16,9 @@
  *      build, renderer geometry count steady) and the primary shows it;
  *   5. deleting an instance keeps the script; deleting the primary keeps
  *      the instances; the last row still edits and runs;
- *   6. hide, undo, status and feature_tree stay sane.
+ *   6. hide, undo, status and feature_tree stay sane;
+ *   0. (first) the Parts list's Add instance button, the instance caption
+ *      and the ×N pill, and the delete dialog's placement copy.
  *
  * Dev server on SMOKE_PORT (default 4393); Chrome from CHROME_PATH.
  */
@@ -139,6 +141,37 @@ if (!(await waitForServer())) {
     check('rename_part Roller', renamed?.ok === true, short(renamed));
     const set0 = await agentCall('set_script', { part_id: rollerId, source: cube(20) });
     check('set_script on the primary runs', set0?.ok === true && set0?.result?.ok === true, short(set0));
+
+    // 0. The Parts list path: Add instance on the primary row, the caption
+    //    and count, then delete that placement through the dialog.
+    await page.waitForSelector(`[data-part-add-instance="${rollerId}"]`, { timeout: 15000 });
+    await page.click(`[data-part-add-instance="${rollerId}"]`);
+    await page.waitForFunction(
+      (id) => document.querySelectorAll('[data-part-row]').length === 2 && !!document.querySelector(`[data-part-instance-of="${id}"]`),
+      rollerId,
+      { timeout: 15000 },
+    );
+    const pUi = await partsOf();
+    const uiRow = (pUi.parts || []).find((row) => row.id !== rollerId) || null;
+    check('Add instance adds a row with instanceOf (same path as the agent)', !!uiRow && uiRow.instanceOf === rollerId && uiRow.name === 'Roller (2)', short(pUi.parts));
+    const caption = await page.locator(`[data-part-instance-of="${rollerId}"]`).first().innerText();
+    check('the instance row says instance of Roller', caption.trim() === 'instance of Roller', caption);
+    const count = await page.locator(`[data-part-row="${rollerId}"] [data-part-instance-count]`).first().innerText();
+    check('the primary row shows ×2', count.trim() === '×2', count);
+    check('the new row is active in the Parts list', uiRow && (await page.getAttribute(`[data-part-row="${uiRow.id}"]`, 'data-part-selected')) === 'true');
+    await page.click(`[data-part-delete="${uiRow.id}"]`);
+    await page.waitForSelector('[data-part-delete-dialog]', { timeout: 10000 });
+    const deleteMessage = await page.locator('[data-part-delete-message]').innerText();
+    check('delete copy says the placement goes and the part stays', /Remove this placement of Roller \(2\)\?/.test(deleteMessage) && /1 other instance/.test(deleteMessage) && /script is kept/.test(deleteMessage), deleteMessage);
+    check('no repo delete while another row places the part', (await page.locator('[data-part-delete-confirm-repo]').count()) === 0);
+    await page.click('[data-part-delete-confirm]');
+    await page.waitForFunction(() => document.querySelectorAll('[data-part-row]').length === 1, null, { timeout: 15000 });
+    const pUi2 = await partsOf();
+    check('the placement is gone and the primary remains', (pUi2.parts || []).length === 1 && (pUi2.parts || [])[0]?.id === rollerId, short(pUi2.parts));
+    check('the count pill is gone with the instance', (await page.locator('[data-part-instance-count]').count()) === 0);
+    const afterUi = await volumeOf(rollerId);
+    check('the primary still runs its script (20³)', Math.abs((afterUi.volume ?? 0) - 20 ** 3) < 1e-3, short(afterUi));
+
     const s0 = await stats();
     check('gpuStats readable', !!s0 && Number.isFinite(s0.builds), fmt(s0));
     note(`after setup: ${fmt(s0)}`);
