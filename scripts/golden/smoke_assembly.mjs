@@ -42,6 +42,7 @@ import {
   DEFAULT_ASSEMBLY_NAME,
   DEFAULT_PART_NAME,
   nextNumberedName,
+  partDeleteDialogCopy,
 } from '../../src/utils/assembly.js';
 import { meshPreviewKey, partPreviewKind } from '../../src/utils/partPreview.js';
 import {
@@ -236,7 +237,10 @@ const BAD = 'let part = Manifold.cube([10, 10, 10], true);\nreturn part.missingM
     && /onDeletePart\?\.\(pending\.id, \{ fromRepo:/.test(confirmDel)
     && /data-part-delete-confirm/.test(feed)
     && /data-part-delete-scope="assembly"/.test(feed)
-    && /Remove \$\{pendingDelete\.name\} from this assembly\?/.test(feed)
+    && /partDeleteDialogCopy\(/.test(feed)
+    && partDeleteDialogCopy({ name: 'Bracket', canDeleteRepo: false }).message === 'Remove Bracket from this assembly?'
+    && partDeleteDialogCopy({ name: 'Bracket', canDeleteRepo: true }).message === 'Remove Bracket from this assembly only, or also delete its file from the repo.'
+    && partDeleteDialogCopy({ name: 'Roller', canDeleteRepo: true, otherInstances: 2 }).offerRepo === false
     && !/This drops the row, its script, and its solid/.test(feed)
     && /Delete from assembly/.test(feed)
     && /data-part-delete-confirm-repo/.test(feed)
