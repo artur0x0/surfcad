@@ -551,12 +551,13 @@ export default function AgentBridgePairing({
   const toastPortal = toastOpen && bodyTarget
     ? createPortal(
       <div
-        className="fixed top-16 left-1/2 z-[140] -translate-x-1/2"
+        className="fixed top-16 left-1/2 z-[140] w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2"
         data-agent-bridge-connected-toast=""
       >
         <ErrorPopup
           tone="success"
           onDismiss={() => setToastOpen(false)}
+          className="px-4 py-2"
         >
           {AGENT_CONNECTED_TOAST_COPY}
         </ErrorPopup>
