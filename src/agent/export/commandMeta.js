@@ -1115,6 +1115,18 @@ const INSERT_PATTERN_POINTS_META = {
   errors: ['bad_args', 'insert_failed', 'internal'],
 };
 
+/**
+ * Fillets and chamfers are the slow features (MVP-2 step 5): the tool says so
+ * in its own description, not only in guide limits, so an agent reading one
+ * schema still orders its work and sizes its edge set.
+ */
+export const BLEND_COST_NOTE = ' Cost: fillets and chamfers are the slow features. Do them last, once the shape is final, on the smallest edge set that does the job (a face pick writes edgesOf for that face only; grouped edges from list_edges for less), because a blend over many edges, or on a swept or lofted body, can run past the 30 s block budget and come back as feature_timeout with the part rebuilt without it.';
+
+const INSERT_BLEND_META = {
+  ...INSERT_HELPER_META,
+  description: `${INSERT_HELPER_META.description}${BLEND_COST_NOTE}`,
+};
+
 /** An insert_* description ends with the code the block carries at default arguments (insertEmits.js). */
 function withEmit(name, meta) {
   return { ...meta, description: `${meta.description}${emitNote(name)}` };
@@ -1126,6 +1138,7 @@ export function metaForCommand(name) {
   if (name === 'insert_rotate') return withEmit(name, INSERT_ROTATE_META);
   if (name === 'insert_code_snippet') return withEmit(name, INSERT_CODE_SNIPPET_META);
   if (name === 'insert_pattern_points') return withEmit(name, INSERT_PATTERN_POINTS_META);
+  if (name === 'insert_fillet_edges' || name === 'insert_chamfer_edges') return withEmit(name, INSERT_BLEND_META);
   if (name.startsWith('insert_')) return withEmit(name, INSERT_HELPER_META);
   return {
     description: `Bridge command ${name}.`,
