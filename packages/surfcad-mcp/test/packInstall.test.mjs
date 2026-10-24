@@ -66,7 +66,8 @@ test('npm pack tarball installs and lists MCP tools over stdio', { timeout: 120_
     assert.equal(serverInfo?.version, pkgVersion, 'initialize serverInfo.version matches package.json');
 
     const { tools } = await client.listTools();
-    assert.equal(tools.length, catalog.count + 1 + PROMPT_TOOL_NAMES.length, 'bridge commands, pair, and local prompt tools');
+    // bridge commands + pair + guide + the local prompt tools
+    assert.equal(tools.length, catalog.count + 2 + PROMPT_TOOL_NAMES.length, 'bridge commands, pair, guide, and local prompt tools');
 
     await client.close();
   } finally {
