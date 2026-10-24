@@ -8,6 +8,9 @@ import { BEARER_MAX, USER_CONTENT_NOTICE } from './promptSession.mjs';
 const USER_CONTENT = `${USER_CONTENT_NOTICE} Agent writes still go through the existing write-grant and consent flow. Nothing reaches git without an explicit Save or git_save.`;
 
 /** Short line for the MCP initialize `instructions` field. */
+/** read_messages { wait_ms } cap: long enough to skip idle polls, short enough for a host tool timeout. */
+export const READ_MESSAGES_MAX_WAIT_MS = 25_000;
+
 export const PROMPT_SERVER_INSTRUCTIONS = 'call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages.';
 
 /** Exact wording the agent should relay when asking the user for a webhook. */
@@ -84,6 +87,12 @@ export function promptToolDefinitions() {
             maximum: 50,
             description: 'How many queued prompts to take, oldest first. Omit to take the whole queue (at most 50).',
           },
+          wait_ms: {
+            type: 'integer',
+            minimum: 0,
+            maximum: READ_MESSAGES_MAX_WAIT_MS,
+            description: `Long-poll: when the queue is empty, wait up to this many milliseconds (at most ${READ_MESSAGES_MAX_WAIT_MS}) for a prompt or cancel to arrive before answering, instead of returning an empty list at once. Cuts idle polling between steps; omit or 0 to return immediately.`,
+          },
         },
       },
     },
@@ -155,6 +164,13 @@ export async function callPromptTool(prompts, name, args) {
     return { content: [{ type: 'text', text: JSON.stringify(prompts.unregisterWebhook(), null, 2) }] };
   }
   if (name === 'read_messages') {
+    if (args.wait_ms != null) {
+      const wait = Number(args.wait_ms);
+      if (!Number.isInteger(wait) || wait < 0 || wait > READ_MESSAGES_MAX_WAIT_MS) {
+        throw Object.assign(new Error(`wait_ms must be an integer from 0 to ${READ_MESSAGES_MAX_WAIT_MS}`), { code: 'bad_args' });
+      }
+      if (wait > 0 && typeof prompts.waitForMessage === 'function') await prompts.waitForMessage(wait);
+    }
     const { messages, images } = prompts.readMessages(args.max);
     if (messages.length === 0) {
       return {

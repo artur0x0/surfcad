@@ -117,7 +117,7 @@ export function withDefaultReturn(row, args) {
  * @param {string} name
  */
 function mutatingTool(name) {
-  return /^(set_script|run|insert_|invoke_helper|confirm_feature|delete_feature|rollback_to|undo|redo|create_|delete_|rename_|part_set_transform|insert_part|open_|paint_confirm|joint_commit|sheet_commit|sheet_set_params|sheet_edit|sketch_commit|slot_commit|hole_commit|git_|export_|edit_feature|pick_done|select_)/.test(name);
+  return /^(set_script|run|insert_|invoke_helper|confirm_feature|delete_feature|rollback_to|undo|redo|create_|delete_|rename_|part_set_transform|insert_part|open_|paint_confirm|paint$|joint_commit|sheet_commit|sheet_set_params|sheet_edit|sketch_commit|slot_commit|hole_commit|git_|export_|edit_feature|pick_done|select_)/.test(name);
 }
 
 function pairToolResult(result, prompts) {

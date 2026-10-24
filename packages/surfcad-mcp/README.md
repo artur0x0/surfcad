@@ -61,7 +61,7 @@ In Cursor, add the same block under **Settings → MCP** or your project `.curso
 claude mcp add surfcad -- npx surfcad-mcp
 ```
 
-A local CLI session usually has no public https endpoint, so polling `read_messages` is the normal path there. Webhooks apply when the user runs a receiver that can take https POSTs. The key they send is the `bearer` argument of `register_webhook`.
+`read_messages { wait_ms }` (up to 25,000 ms) long-polls so an idle agent makes one call every 25 s instead of spinning. A local CLI session usually has no public https endpoint, so polling `read_messages` is the normal path there. Webhooks apply when the user runs a receiver that can take https POSTs. The key they send is the `bearer` argument of `register_webhook`.
 
 ## How to build
 

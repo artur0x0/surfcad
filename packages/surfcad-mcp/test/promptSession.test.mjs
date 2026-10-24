@@ -696,3 +696,61 @@ test('cancel waits until an in-flight webhook delivery finishes', async () => {
   assert.equal(bodies[1].id, pid(1));
   assert.equal(JSON.stringify(bodies).includes('test-bearer'), false);
 });
+
+test('read_messages long-poll: waitForMessage resolves on the next prompt or cancel, false at the deadline', async () => {
+  const time = clock();
+  const { session } = harness({ clock: time, rateLimitMs: 0 });
+  let settled = null;
+  const waiting = session.waitForMessage(5000).then((v) => { settled = v; return v; });
+  time.advance(1000);
+  await Promise.resolve();
+  assert.equal(settled, null, 'still waiting after 1 s');
+  await session.acceptPrompt(prompt(1));
+  assert.equal(await waiting, true, 'a prompt wakes the reader');
+  assert.deepEqual(session.readMessages().messages.map((row) => row.id), [pid(1)]);
+
+  // Deadline with nothing queued.
+  let timedOut = null;
+  const idle = session.waitForMessage(3000).then((v) => { timedOut = v; return v; });
+  time.advance(3000);
+  assert.equal(await idle, false);
+  assert.equal(timedOut, false);
+
+  // Already queued: no wait at all.
+  await session.acceptPrompt(prompt(2));
+  assert.equal(await session.waitForMessage(60_000), true);
+
+  // A cancel notice also wakes the reader.
+  session.readMessages();
+  const onCancel = session.waitForMessage(5000);
+  await session.cancel(pid(2));
+  assert.equal(await onCancel, true);
+  assert.deepEqual(session.readMessages().messages, [{ type: 'cancel', id: pid(2) }]);
+
+  // wait 0 answers at once.
+  assert.equal(await session.waitForMessage(0), false);
+});
+
+test('read_messages { wait_ms } over callPromptTool waits for a prompt and rejects a bad value', async () => {
+  const time = clock();
+  const { session } = harness({ clock: time, rateLimitMs: 0 });
+  const def = promptToolDefinitions().find((tool) => tool.name === 'read_messages');
+  assert.equal(def.inputSchema.properties.wait_ms.maximum, 25_000);
+  let result = null;
+  const pending = callPromptTool(session, 'read_messages', { wait_ms: 2000 }).then((r) => { result = r; return r; });
+  await Promise.resolve();
+  assert.equal(result, null, 'the call is held while the queue is empty');
+  await session.acceptPrompt(prompt(7));
+  const out = await pending;
+  const text = out.content.filter((c) => c.type === 'text').map((c) => JSON.parse(c.text));
+  assert.equal(text[0].id, pid(7));
+  assert.deepEqual(text.at(-1), { acked: [pid(7)] });
+
+  const empty = callPromptTool(session, 'read_messages', { wait_ms: 1000 });
+  time.advance(1000);
+  const none = await empty;
+  assert.deepEqual(JSON.parse(none.content[0].text), { messages: [], acked: [] });
+
+  await assert.rejects(() => callPromptTool(session, 'read_messages', { wait_ms: 99_999 }), (err) => err.code === 'bad_args');
+  await assert.rejects(() => callPromptTool(session, 'read_messages', { wait_ms: -1 }), (err) => err.code === 'bad_args');
+});

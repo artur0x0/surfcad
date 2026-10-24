@@ -152,6 +152,15 @@ export function createPromptSession(options) {
   let idleTimer = null;
   let chain = Promise.resolve();
   let life = 0;
+  /** read_messages { wait_ms } long-poll: resolved when the queue gains an item. */
+  /** @type {Array<() => void>} */
+  let waiters = [];
+  function wakeReaders() {
+    if (!waiters.length) return;
+    const list = waiters;
+    waiters = [];
+    for (const resolve of list) resolve();
+  }
 
   function emit(payload) {
     try {
@@ -295,7 +304,35 @@ export function createPromptSession(options) {
       dropped.push(queue.splice(idx, 1)[0]);
     }
     queue.push({ kind: 'prompt', ...prompt });
+    wakeReaders();
     return dropped;
+  }
+
+  /**
+   * Long-poll for `read_messages { wait_ms }`: resolves true as soon as the
+   * queue has an item (a prompt or a cancel notice), false after `ms` with the
+   * queue still empty. Never holds a timer past the wait.
+   * @param {number} ms
+   * @returns {Promise<boolean>}
+   */
+  function waitForMessage(ms) {
+    if (queue.length > 0) return Promise.resolve(true);
+    const wait = Math.max(0, Number(ms) || 0);
+    if (wait === 0) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      let done = false;
+      let timer = null;
+      const settle = (value) => {
+        if (done) return;
+        done = true;
+        clearTimer(timer);
+        waiters = waiters.filter((w) => w !== wake);
+        resolve(value);
+      };
+      const wake = () => settle(true);
+      waiters.push(wake);
+      timer = setTimer(() => settle(false), wait);
+    });
   }
 
   /**
@@ -310,6 +347,7 @@ export function createPromptSession(options) {
     }
     if (epoch !== life) return;
     queue.push({ kind: 'cancel', id });
+    wakeReaders();
   }
 
   /**
@@ -635,6 +673,7 @@ export function createPromptSession(options) {
     acceptPrompt,
     cancel,
     readMessages,
+    waitForMessage,
     reply,
     setStatus,
     noteToolCall,
