@@ -34,7 +34,7 @@ export function partCrashRecord(crash) {
  *   activeId?: string | null,
  *   assemblyName?: string,
  *   vaultLayout?: 'v2' | 'legacy',
- *   parts?: Array<{ id: string, name?: string, visible?: boolean, group?: string, missing?: boolean }>,
+ *   parts?: Array<{ id: string, name?: string, visible?: boolean, group?: string, missing?: boolean, instanceOf?: string }>,
  * }} input
  */
 export function buildPartsState(input = {}) {
@@ -47,6 +47,7 @@ export function buildPartsState(input = {}) {
       };
       if (typeof row.group === 'string') part.group = row.group;
       if (row.missing === true) part.missing = true;
+      if (typeof row.instanceOf === 'string' && row.instanceOf) part.instanceOf = row.instanceOf;
       if (RUN_STATES.has(row.runState)) part.runState = row.runState;
       const crash = partCrashRecord(row.crash);
       if (crash) part.crash = crash;

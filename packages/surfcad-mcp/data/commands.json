@@ -1908,7 +1908,7 @@
     },
     {
       "name": "parts",
-      "description": "Open assembly: assemblyId, assemblyName, vaultLayout, activeId, and parts [{ id, name, visible, missing?, group?, runState, crash? }]. runState is not_run_yet | ok | failed for every part, not only the active one; crash is present after a geometry engine crash on that part ({ code: geometry_worker_crashed, reason, workerRestarted, message }). Part and assembly ids are opaque surf ids, never a path or display name. No path field. featureCount and bodyCount are on status, not here. featureCount counts insert_* feature blocks, so a freehand set_script is one feature. bodyCount is null until the first run; a finished run that produced no bodies reports 0.",
+      "description": "Open assembly: assemblyId, assemblyName, vaultLayout, activeId, and parts [{ id, name, visible, missing?, group?, instanceOf?, runState, crash? }]. instanceOf is the definition a part instance places (insert_part instance:true): rows sharing it share one script and one run and differ in pose, name and visibility. runState is not_run_yet | ok | failed for every part, not only the active one; crash is present after a geometry engine crash on that part ({ code: geometry_worker_crashed, reason, workerRestarted, message }). Part and assembly ids are opaque surf ids, never a path or display name. No path field. featureCount and bodyCount are on status, not here. featureCount counts insert_* feature blocks, so a freehand set_script is one feature. bodyCount is null until the first run; a finished run that produced no bodies reports 0.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -17887,7 +17887,7 @@
     },
     {
       "name": "insert_part",
-      "description": "Insert-as-reference by opaque part_id, or every part of assembly_id (same ids). copy:true mints a new part id and sets copiedFrom. A path or name is unknown_part / unknown_assembly. Does not write git. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Insert-as-reference by opaque part_id, or every part of assembly_id (same ids). copy:true mints a new part id and sets copiedFrom. instance:true with the part_id of a row already in the open assembly adds another placement of that part (a part instance): the new row shares the script, run and undo history of its definition (edit any one and all rebuild from one run) and has its own id, name, pose and visibility; position sets its translation (default: staggered along +X). The result is { partId (the new row), instanceOf, added, partCount }; parts lists the row with instanceOf. Works on local and git assemblies. A path or name is unknown_part / unknown_assembly. Does not write git. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -17903,6 +17903,19 @@
           "copy": {
             "type": "boolean",
             "description": "Mint a new part id and set copiedFrom (independent file)."
+          },
+          "instance": {
+            "type": "boolean",
+            "description": "With part_id (a row of the open assembly): add another placement of that part. The new row shares its script, run and undo history (edit any one and all rebuild) and has its own id, name, pose and visibility. The result is the new row id; parts lists it with instanceOf."
+          },
+          "position": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 3,
+            "maxItems": 3,
+            "description": "instance:true only: translation [x, y, z] mm of the new row. Default staggers along +X like a UI-created part."
           },
           "name": {
             "type": "string",

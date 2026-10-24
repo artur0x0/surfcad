@@ -371,7 +371,7 @@ const meshOf = async (script) => (await exec(script)).mesh;
   check('strip chip draws a yellow border for an external copy',
     /data-feature-external=/.test(strip) && /border-yellow-400/.test(strip));
   check('App writes other parts as one step on their own stack',
-    /const writeOtherPartScripts/.test(app) && /pushPartHistory\(\s*historyForPart\(partHistoriesRef\.current, w\.id/.test(app));
+    /const writeOtherPartScripts/.test(app) && /pushPartHistory\(\s*historyForPart\(partHistoriesRef\.current, definitionIdFor\(w\.id, doc\)/.test(app));
   check('Block and Shape Subtract Confirm run the cross-part plan',
     /params\.combine === 'subtract'[\s\S]{0,120}crossPartSubtract\(/.test(app)
     && /crossPartSubtract\(buf, codeEditorRef\.current\?\.getContent\?\.\(\) \?\? plan\.buffer\)/.test(app));

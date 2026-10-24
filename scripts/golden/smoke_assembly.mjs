@@ -522,7 +522,7 @@ const BAD = 'let part = Manifold.cube([10, 10, 10], true);\nreturn part.missingM
   check('a hidden part with no successful mesh stays empty',
     feedRows(hidden, neverRan, scripts).find((row) => row.id === 'local:box').mesh == null);
   check('the assembly refresh keeps hidden thumbnail meshes',
-    /preserveHiddenPartRuns\(doc, runs, partRunsRef\.current\)/.test(read('src/App.jsx')));
+    /preserveHiddenPartRuns\(doc, (?:runs|fanned), partRunsRef\.current\)/.test(read('src/App.jsx')));
 
   const poisoned = recordPartRun(hiddenRuns, 'local:box', {
     ok: false,

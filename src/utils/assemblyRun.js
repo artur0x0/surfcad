@@ -1,12 +1,15 @@
 /**
  * Run the parts the viewport is allowed to draw.
- * Each id is executed on its own. A throw or a non-solid becomes a failed
- * run with no mesh, even if an earlier run of that id had one.
+ * Each definition is executed once and recorded on every row that places
+ * it. A throw or a non-solid becomes a failed run with no mesh, even if an
+ * earlier run of that id had one.
  */
 import { shouldClearViewportScript } from './helperPaletteSnippets.js';
 import {
   composeViewportParts,
+  definitionRows,
   geometryFromExecuteResult,
+  partDefinitionId,
   recordPartRun,
   resolvePartId,
   sortParts,
@@ -24,7 +27,8 @@ async function buildPart({ doc, scripts, execute, part }) {
   if (shouldClearViewportScript(resolved.script)) return { ok: false, empty: true };
   let importedModels = null;
   try {
-    const prepared = await resolvePartMeshes(part.id, resolved.script);
+    // Mesh assets belong to the definition the row places.
+    const prepared = await resolvePartMeshes(partDefinitionId(part), resolved.script);
     if (prepared.missing.length) {
       return { ok: false, error: missingMeshMessage(prepared.missing) };
     }
@@ -78,9 +82,22 @@ export async function runAssemblyParts({ doc, scripts, execute, ids = null, conc
     ...visible.filter((part) => part.id !== activeId),
     ...visible.filter((part) => part.id === activeId),
   ].filter((part) => !only || only.has(part.id));
-  const outcomes = await mapLimit(ordered, concurrency, (part) => buildPart({ doc, scripts, execute, part }));
-  ordered.forEach((part, i) => {
-    Object.assign(runs, recordPartRun(runs, part.id, outcomes[i]));
+  // Part instances: rows that place one definition share one script, so
+  // the definition builds once. Its representative is its primary row when
+  // that row is in `ordered`, else the first of its rows there; the outcome
+  // lands on every row of the definition (hidden ones too, so their
+  // thumbnails follow), the active row last so its own run wins later.
+  const reps = new Map();
+  for (const part of ordered) {
+    const def = partDefinitionId(part);
+    if (!reps.has(def) || String(part.id) === def) reps.set(def, part);
+  }
+  const builds = [...reps.values()];
+  const outcomes = await mapLimit(builds, concurrency, (part) => buildPart({ doc, scripts, execute, part }));
+  builds.forEach((rep, i) => {
+    for (const row of definitionRows(parts, partDefinitionId(rep))) {
+      Object.assign(runs, recordPartRun(runs, row.id, outcomes[i]));
+    }
   });
   if (!only) {
     for (const part of parts) {

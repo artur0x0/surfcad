@@ -476,6 +476,15 @@ jobs:
             echo "mobile chrome shade golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:part-instances | tee "${RUNNER_TEMP}/part-instances.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/part-instances.log"; then
+            echo "part instances golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'part instances golden: ok' "${RUNNER_TEMP}/part-instances.log"; then
+            echo "part instances golden did not pass (see log above)"
+            exit 1
+          fi
           npm run golden:part-dirty | tee "${RUNNER_TEMP}/part-dirty.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/part-dirty.log"; then
             echo "part dirty golden skipped because Chrome was not found; CI must launch it"

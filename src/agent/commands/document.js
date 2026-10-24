@@ -185,6 +185,17 @@ export const insertPartCommand = Object.freeze({
       part_id: { type: 'string', description: 'Part surf-id to insert as a reference (same id).' },
       assembly_id: { type: 'string', description: 'Insert every part of this assembly as references.' },
       copy: { type: 'boolean', description: 'Mint a new part id and set copiedFrom (independent file).' },
+      instance: {
+        type: 'boolean',
+        description: 'With part_id (a row of the open assembly): add another placement of that part. The new row shares its script, run and undo history (edit any one and all rebuild) and has its own id, name, pose and visibility. The result is the new row id; parts lists it with instanceOf.',
+      },
+      position: {
+        type: 'array',
+        items: { type: 'number' },
+        minItems: 3,
+        maxItems: 3,
+        description: 'instance:true only: translation [x, y, z] mm of the new row. Default staggers along +X like a UI-created part.',
+      },
       name: { type: 'string', description: 'Local: new part name (same as create_part)' },
       script: { type: 'string' },
     },
@@ -199,9 +210,22 @@ export const insertPartCommand = Object.freeze({
       const bad = rejectAssemblyId(args.assembly_id);
       if (bad) return bad;
     }
+    if (args?.instance === true && !args?.part_id) {
+      return { code: 'bad_args', message: 'insert_part instance:true needs part_id (a row of the open assembly)' };
+    }
+    if (args?.position != null && !positionWithinLimit(args.position)) {
+      return { code: 'bad_args', message: `insert_part ${positionLimitMessage('position')}` };
+    }
     return null;
   },
   async run(ctx, args) {
+    if (args?.instance === true) {
+      return hostCall(ctx, 'agentInsertPart', {
+        partId: args.part_id,
+        instance: true,
+        position: Array.isArray(args.position) ? args.position : null,
+      });
+    }
     if (args?.part_id || args?.assembly_id) {
       return hostCall(ctx, 'agentInsertPart', {
         partId: args.part_id || null,

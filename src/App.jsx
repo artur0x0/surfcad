@@ -1,5 +1,5 @@
 /* eslint-disable no-use-before-define -- callback bodies close over later consts; re-enabled at lastCommit reload */
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { flushSync } from 'react-dom';
 import CodeEditor from './components/CodeEditor';
 import Viewport from './components/Viewport';
@@ -117,6 +117,10 @@ import {
   DEFAULT_ASSEMBLY_NAME,
   sanitizeAssemblyName,
   needsAssemblyLeaveGuard,
+  partDefinitionId,
+  definitionStillReferenced,
+  normalizeInstanceScripts,
+  fanOutInstanceRuns,
 } from './utils/assembly';
 import {
   copyGroupToAssembly,
@@ -239,16 +243,16 @@ import { featureWriteTarget, leftoverPickSolids, shouldSyncScript } from './util
 import { shouldRebuildOnEditorClose } from './utils/scriptEditorClose';
 import { clearPaintColors, commitPaintColors, removeUnmatchedColors } from './utils/facePaint';
 import {
-  deletePartScript,
+  deletePartScript as deletePartScriptRecord,
   loadAssemblyDocumentStatus,
   loadAssemblySidecar,
   loadPartAssets,
   loadPartScript,
-  loadPartScripts,
+  loadPartScripts as loadPartScriptRecords,
   loadPartSyncFlags,
   saveAssemblyDocument,
   saveAssemblySidecar,
-  savePartScript,
+  savePartScript as savePartScriptRecord,
   loadRekeyJournal,
   saveRekeyJournal,
   clearRekeyJournal,
@@ -480,6 +484,60 @@ const App = () => {
   const [partScripts, setPartScripts] = useState({});
   const [partRuns, setPartRuns] = useState({});
   const assemblyRef = useRef(null);
+  /**
+   * Part instances: a row's script, run, undo history and IndexedDB record
+   * belong to its definition (`instanceOf`, else the row itself). These
+   * map a row id onto that key; everything else in this file keys by row.
+   */
+  const definitionIdFor = useCallback((id, doc = assemblyRef.current) => {
+    if (id == null) return id;
+    const key = String(id);
+    const row = doc?.parts?.find((part) => String(part?.id) === key);
+    return row ? partDefinitionId(row) : key;
+  }, []);
+  const savePartScript = useCallback(
+    (id, script, opts) => savePartScriptRecord(definitionIdFor(id), script, opts),
+    [definitionIdFor],
+  );
+  /** A record goes only when no other row still places its definition. */
+  const deletePartScript = useCallback(async (id) => {
+    const def = definitionIdFor(id);
+    if (definitionStillReferenced(assemblyRef.current?.parts, def, id)) return false;
+    return deletePartScriptRecord(def);
+  }, [definitionIdFor]);
+  /** Scripts for these rows, loaded once per definition and keyed by row. */
+  const loadScriptsForParts = useCallback(async (parts, opts) => {
+    const rows = Array.isArray(parts) ? parts : [];
+    const defs = [...new Set(rows.map((part) => partDefinitionId(part)))];
+    const loaded = await loadPartScriptRecords(defs, opts);
+    const out = {};
+    for (const part of rows) {
+      const text = loaded?.[partDefinitionId(part)];
+      if (typeof text === 'string') out[part.id] = text;
+    }
+    return out;
+  }, []);
+  /** Scripts for these row ids (rows of the open document, else the id is its own definition), keyed by row id. */
+  const loadPartScripts = useCallback(async (ids, opts) => {
+    const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
+    const defs = [...new Set(list.map((id) => definitionIdFor(id)))];
+    const loaded = await loadPartScriptRecords(defs, opts);
+    const out = {};
+    for (const id of list) {
+      const text = loaded?.[definitionIdFor(id)];
+      if (typeof text === 'string') out[id] = text;
+    }
+    return out;
+  }, [definitionIdFor]);
+  /** Per-part undo keys worth keeping: every row and every definition. */
+  const historyKeepKeys = (parts, extra = []) => {
+    const keep = new Set(extra);
+    for (const part of parts || []) {
+      keep.add(String(part.id));
+      keep.add(partDefinitionId(part));
+    }
+    return keep;
+  };
   /** Overlapping agent create_assembly calls join this promise (§3.6). */
   const createAssemblyInFlightRef = useRef(null);
   /** Re-key persist pairs: autosave writes both `from` and `to` while in flight. */
@@ -649,7 +707,7 @@ const App = () => {
     code, timeout, hint, featureTimings, featureCache,
   } = {}) => {
     if (Array.isArray(featureTimings)) {
-      const key = assemblyRef.current?.activeId ? String(assemblyRef.current.activeId) : '__cad__';
+      const key = assemblyRef.current?.activeId ? definitionIdFor(assemblyRef.current.activeId) : '__cad__';
       const map = {};
       const cached = {};
       for (const row of featureTimings) {
@@ -1768,7 +1826,7 @@ const App = () => {
             let doc = plan.doc;
             if (!doc?.parts?.length) return;
             progress({ name: doc.name, index: 0, total: doc.parts?.length || 0 });
-            let scripts = await loadPartScripts(doc.parts.map((part) => part.id), {
+            let scripts = await loadScriptsForParts(doc.parts, {
               onProgress: (update) => progress({ ...update, name: doc.name }),
             });
             const migrated = migrateAssemblyRecords({ doc, scripts });
@@ -1948,7 +2006,7 @@ const App = () => {
 
     void run();
     return () => { cancelled = true; };
-  }, [manifoldReady, bootResume, githubConnected, user]);
+  }, [manifoldReady, bootResume, githubConnected, user, savePartScript, deletePartScript, loadScriptsForParts]);
 
   // Mirror the live CAD buffer into IndexedDB so a reload restores it.
   // Debounced: the editor calls onExecute on every keystroke, and the draft
@@ -1985,7 +2043,7 @@ const App = () => {
       }
     }, 600);
     return () => clearTimeout(timer);
-  }, [currentScript, currentFilename, manifoldReady, editorInitialScript, appMode]);
+  }, [currentScript, currentFilename, manifoldReady, editorInitialScript, appMode, savePartScript]);
 
   // Agent `dirty.unsaved`: baseline scripts at open (reset when the assembly
   // identity changes). A part added later joins the snapshot with its current
@@ -2043,7 +2101,7 @@ const App = () => {
       window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onVisFlush);
     };
-  }, [currentScript, currentFilename, manifoldReady, editorInitialScript]);
+  }, [currentScript, currentFilename, manifoldReady, editorInitialScript, savePartScript]);
 
   // Safari minimize / restore: soft-recover the Manifold worker when the JS
   // world survives but the Worker was killed. If Safari discarded the tab
@@ -2304,12 +2362,13 @@ const App = () => {
   };
 
   const rememberScripts = (next) => {
-    partScriptsRef.current = next;
-    setPartScripts(next);
+    const scripts = normalizeInstanceScripts(next, assemblyRef.current);
+    partScriptsRef.current = scripts;
+    setPartScripts(scripts);
   };
 
   const commitPartRuns = (runs) => {
-    partRunsRef.current = runs || {};
+    partRunsRef.current = fanOutInstanceRuns(runs || {}, assemblyRef.current);
     setPartRuns(partRunsRef.current);
     // FEATURE-GAP notes in the open parts go to Sentry once per page load,
     // and only when the user accepted all cookies (no script text leaves).
@@ -2389,7 +2448,7 @@ const App = () => {
   const historyKey = () => {
     if (appModeRef.current === 'game') return '__game__';
     const id = assemblyRef.current?.activeId;
-    return id ? String(id) : '__cad__';
+    return id ? definitionIdFor(id) : '__cad__';
   };
 
   const applyPartHistory = (entry) => {
@@ -2403,7 +2462,7 @@ const App = () => {
 
   const focusPartHistory = (partId, script) => {
     if (appModeRef.current === 'game') return;
-    const key = partId ? String(partId) : '__cad__';
+    const key = partId ? definitionIdFor(partId) : '__cad__';
     const next = historyForPart(partHistoriesRef.current, key, script ?? '');
     partHistoriesRef.current[key] = next;
     applyPartHistory(next);
@@ -2411,14 +2470,16 @@ const App = () => {
 
   const dropPartHistory = (partId) => {
     if (partId == null) return;
-    delete partHistoriesRef.current[String(partId)];
+    const def = definitionIdFor(partId);
+    if (definitionStillReferenced(assemblyRef.current?.parts, def, partId)) return;
+    delete partHistoriesRef.current[def];
   };
 
   // The editor buffer is this part's latest script. Keep it on that part's
   // stack before the active id changes, so a later Undo cannot see another part.
   const stashPartHistory = (partId, script) => {
     if (appModeRef.current === 'game' || partId == null || typeof script !== 'string') return;
-    const key = String(partId);
+    const key = definitionIdFor(partId);
     partHistoriesRef.current[key] = pushPartHistory(
       historyForPart(partHistoriesRef.current, key, script),
       script,
@@ -2456,10 +2517,16 @@ const App = () => {
     const gen = ++refreshGenRef.current;
     const activePart = doc.parts.find((part) => part.id === viewId);
     const activeVisible = !!(activePart && activePart.visible !== false);
-    const otherIds = doc.parts
-      .filter((part) => part.visible !== false && part.id !== viewId)
-      .map((part) => part.id);
     const willBuildActive = !!(viewId && activeVisible && typeof scripts[viewId] === 'string');
+    // Rows that place the same definition as the active row take its run
+    // (fanOutInstanceRuns below), so they are not built a second time here.
+    // A hidden active row builds nothing, so its definition then builds on
+    // the pool through its visible rows like any other.
+    const viewDef = activePart ? partDefinitionId(activePart) : null;
+    const otherIds = doc.parts
+      .filter((part) => part.visible !== false && part.id !== viewId
+        && !(willBuildActive && partDefinitionId(part) === viewDef))
+      .map((part) => part.id);
     const buildTotal = otherIds.length + (willBuildActive ? 1 : 0);
     let buildStep = 0;
     const noteBuild = () => {
@@ -2504,6 +2571,7 @@ const App = () => {
           noShadow: true,
           preservePicks: opts.preservePicks === true,
           partId: viewId,
+          definitionId: viewDef,
           rollbackAnchor: storedRollback(String(viewId)),
         };
         let run = await viewportRef.current?.executeScript(scripts[viewId], runOpts);
@@ -2549,9 +2617,11 @@ const App = () => {
       }
 
       if (gen !== refreshGenRef.current) return false;
+      // Every row of the active definition shows the run that just finished.
+      const fanned = fanOutInstanceRuns(runs, doc, viewId);
       // Hidden rows were not re-run. Keep their last solid so the parts-list
       // thumbnail stays; composeViewportParts still leaves them out of the view.
-      const keptRuns = preserveHiddenPartRuns(doc, runs, partRunsRef.current);
+      const keptRuns = preserveHiddenPartRuns(doc, fanned, partRunsRef.current);
       for (const [id, run] of Object.entries(keptRuns)) {
         if (run?.ok && run.mesh?.vertProperties) partLeftoversRef.current[id] = run.mesh;
       }
@@ -3122,13 +3192,13 @@ const App = () => {
         retry: () => { void handleLoadAssembly(text, filename); },
         load: async ({ progress, signal }) => {
           refreshGenRef.current += 1;
-          const scripts = await loadPartScripts(doc.parts.map((part) => part.id), {
+          const scripts = await loadScriptsForParts(doc.parts, {
             onProgress: (update) => progress({ ...update, name: doc.name }),
           });
           if (!signal()) return;
           rememberScripts(scripts);
           const saved = rememberAssembly(doc);
-          const keep = new Set(saved.parts.map((part) => String(part.id)));
+          const keep = historyKeepKeys(saved.parts);
           for (const key of Object.keys(partHistoriesRef.current)) {
             if (key !== '__game__' && !keep.has(key)) delete partHistoriesRef.current[key];
           }
@@ -3791,8 +3861,9 @@ const App = () => {
         try { await deletePartScript(id); } catch { /* ignore */ }
       }
     }
+    const keepHist = historyKeepKeys(nextDoc.parts, keep);
     for (const key of Object.keys(partHistoriesRef.current)) {
-      if (key !== '__game__' && !keep.has(key)) delete partHistoriesRef.current[key];
+      if (key !== '__game__' && !keepHist.has(key)) delete partHistoriesRef.current[key];
     }
     rememberScripts(nextScripts);
     if (result.moved?.length) {
@@ -3805,7 +3876,7 @@ const App = () => {
     // Saved text is the undo head (wrap-on-Save must not look unsaved).
     for (const [id, script] of Object.entries(nextScripts)) {
       if (typeof script !== 'string') continue;
-      const key = String(id);
+      const key = definitionIdFor(id, nextDoc);
       partHistoriesRef.current[key] = adoptSavedScript(
         partHistoriesRef.current[key],
         script,
@@ -3819,7 +3890,7 @@ const App = () => {
     if (active) {
       setCurrentFilename(active.name);
       const picked = scriptForRow(saved, nextScripts, active.id);
-      const hist = partHistoriesRef.current[String(active.id)];
+      const hist = partHistoriesRef.current[definitionIdFor(active.id, saved)];
       if (hist) applyPartHistory(hist);
       else focusPartHistory(active.id, picked.ok ? picked.script : '');
       if (picked.ok) {
@@ -4051,7 +4122,7 @@ const App = () => {
     }
     const meshRecords = partMeshRecordsFromBaseline(openedDoc, openedScripts, opened.baseline?.assets);
     const fromIds = [...new Set(stalePairs.map((pair) => pair.from).filter(Boolean))];
-    const heldFrom = fromIds.length ? await loadPartScripts(fromIds) : {};
+    const heldFrom = fromIds.length ? await loadPartScriptRecords(fromIds) : {};
     let saved = null;
     const persisted = await persistCollapsedWorkingCopy({
       collapsed: {
@@ -4227,7 +4298,7 @@ const App = () => {
           const openedScripts = adopted.scripts;
           // G4: check remote on open (usually current; catches a race with a push).
           void checkGitRemoteBehind({ showToast: true, reason: 'open' });
-          const keep = new Set(saved.parts.map((part) => String(part.id)));
+          const keep = historyKeepKeys(saved.parts);
           for (const key of Object.keys(partHistoriesRef.current)) {
             if (key !== '__game__' && !keep.has(key)) delete partHistoriesRef.current[key];
           }
@@ -4509,7 +4580,7 @@ const App = () => {
             setGitBehindToast(null);
             void checkGitRemoteBehind({ showToast: true, reason: 'branch-switch' });
             const saved = adopted.saved;
-            const keep = new Set(saved.parts.map((part) => String(part.id)));
+            const keep = historyKeepKeys(saved.parts);
             for (const key of Object.keys(partHistoriesRef.current)) {
               if (key !== '__game__' && !keep.has(key)) delete partHistoriesRef.current[key];
             }
@@ -4549,7 +4620,7 @@ const App = () => {
           rememberGitBehind(null, { showToast: false, resetResolved: true });
           setGitBehindToast(null);
           void checkGitRemoteBehind({ showToast: true, reason: 'branch-switch' });
-          const keep = new Set(saved.parts.map((part) => String(part.id)));
+          const keep = historyKeepKeys(saved.parts);
           for (const key of Object.keys(partHistoriesRef.current)) {
             if (key !== '__game__' && !keep.has(key)) delete partHistoriesRef.current[key];
           }
@@ -4617,7 +4688,7 @@ const App = () => {
     for (const [id, text] of Object.entries(scripts)) {
       try { await savePartScript(id, text); } catch { /* ignore */ }
     }
-    const keptIds = new Set(Object.keys(scripts));
+    const keptIds = historyKeepKeys(saved.parts, Object.keys(scripts));
     for (const key of Object.keys(partHistoriesRef.current)) {
       if (key !== '__game__' && !keptIds.has(key)) delete partHistoriesRef.current[key];
     }
@@ -6961,7 +7032,7 @@ const App = () => {
           const saved = adopted.saved;
           const openedScripts = adopted.scripts;
           void checkGitRemoteBehind({ showToast: true, reason: 'open' });
-          const keep = new Set(saved.parts.map((part) => String(part.id)));
+          const keep = historyKeepKeys(saved.parts);
           for (const key of Object.keys(partHistoriesRef.current)) {
             if (key !== '__game__' && !keep.has(key)) delete partHistoriesRef.current[key];
           }
@@ -7067,6 +7138,58 @@ const App = () => {
       codeEditorRef.current?.loadContent(text, focus.id, false);
     }
     return { result: { saved, added, activeId, partCount: saved.parts.length } };
+  };
+
+  /**
+   * Part instances: a new row that places an existing row's definition.
+   * The script, run and undo history are the definition's; the row has its
+   * own id, label, pose and visibility. Local and git assemblies alike.
+   */
+  const agentInsertInstance = async ({ partId, position } = {}) => {
+    const before = assemblyRef.current;
+    if (!before) return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+    const source = findPartById(before, partId);
+    if (!source) return { error: unknownPartError(partId) };
+    const scripts = flushLivePartScript();
+    const def = partDefinitionId(source);
+    const id = mintSurfId();
+    const stem = String(source.name || DEFAULT_PART_NAME).replace(/\s*\(\d+\)\s*$/, '') || DEFAULT_PART_NAME;
+    const name = nextNumberedName(stem, before.parts.map((row) => row.name), { bareFirst: true });
+    const order = before.parts.length;
+    const at = newPartRowPosition(order, { position });
+    const row = {
+      id,
+      instanceOf: def,
+      name,
+      visible: true,
+      order,
+      ...(at ? { position: at } : {}),
+      ...(source.missing === true ? { missing: true } : {}),
+      ...(before.source === 'git' ? { surfId: id } : {}),
+    };
+    if (typeof scripts[source.id] === 'string') scripts[id] = scripts[source.id];
+    const nextDoc = rememberAssembly({ ...before, activeId: id, parts: [...before.parts, row] });
+    rememberScripts(scripts);
+    refreshGenRef.current += 1;
+    rememberCadPart(id);
+    recordAgentAssemblyStep(before);
+    const text = scripts[id] || '';
+    focusPartHistory(id, text);
+    suppressPartSaveRef.current = false;
+    setCurrentFilename(name);
+    revealPartOnRibbon(id, text);
+    codeEditorRef.current?.loadContent(text, id, false);
+    // Place the new row. Its definition's run is fanned onto it and the
+    // worker's feature cache already holds the script, so this is cheap.
+    await refreshAssemblyRef.current?.(text, { persistActive: false });
+    return {
+      result: {
+        partId: id,
+        instanceOf: def,
+        added: [id],
+        partCount: nextDoc.parts.length,
+      },
+    };
   };
 
   const loadVaultPartRows = async ({ partId, assemblyId } = {}) => {
@@ -7211,9 +7334,13 @@ const App = () => {
     const key = String(id);
     const part = doc.parts.find((row) => row.id === key);
     if (!part) return;
-    if (opts.fromRepo && doc.source === 'git') {
+    const partDef = partDefinitionId(part);
+    const definitionStays = definitionStillReferenced(doc.parts, partDef, key);
+    // An instance row leaves; its definition's file stays while another
+    // row still places it.
+    if (opts.fromRepo && doc.source === 'git' && !definitionStays) {
       if (isV2PlanSaveDoc(doc)) {
-        persistPendingDeletes(repoDeletePathsForV2Part(part.id));
+        persistPendingDeletes(repoDeletePathsForV2Part(partDef));
       } else {
         const repoPath = partRepoPath(part);
         if (repoPath) persistPendingDeletes(repoDeletePathsFor(repoPath));
@@ -7235,9 +7362,13 @@ const App = () => {
         partSaveEpochRef.current += 1;
         suppressPartSaveRef.current = true;
       }
+      // The document first: the script and run maps are normalised against
+      // it, so a definition whose primary row just left keeps its key from
+      // the instances that remain.
+      rememberAssembly(nextDoc);
       rememberScripts(nextScripts);
       deletePartScript(key);
-      forgetPartAssets(key);
+      if (!definitionStays) forgetPartAssets(partDef);
       if (partMeshMetaRef.current[key]) {
         const nextMeta = { ...partMeshMetaRef.current };
         delete nextMeta[key];
@@ -7246,7 +7377,6 @@ const App = () => {
       }
       dropPartHistory(key);
       delete partLeftoversRef.current[key];
-      rememberAssembly(nextDoc);
       const runs = dropPartRecord(partRunsRef.current, key);
       commitPartRuns(runs);
       const nextActive = nextDoc.activeId;
@@ -7282,7 +7412,7 @@ const App = () => {
         return;
       }
       setCurrentFilename(nextPart?.name || null);
-      const picked = scriptForRow(nextDoc, nextScripts, nextActive);
+      const picked = scriptForRow(nextDoc, partScriptsRef.current, nextActive);
       focusPartHistory(nextActive, picked.ok ? picked.script : '');
       if (picked.ok) {
         suppressPartSaveRef.current = false;
@@ -7454,8 +7584,8 @@ const App = () => {
       if (stored === null || typeof stored === 'string') storeRollbackAnchor(partKey, placed.anchor);
       scripts = { ...scripts, [w.id]: placed.buffer };
       savePartScript(w.id, placed.buffer);
-      partHistoriesRef.current[w.id] = pushPartHistory(
-        historyForPart(partHistoriesRef.current, w.id, prevScript),
+      partHistoriesRef.current[definitionIdFor(w.id, doc)] = pushPartHistory(
+        historyForPart(partHistoriesRef.current, definitionIdFor(w.id, doc), prevScript),
         placed.buffer,
         w.message || 'External copy',
       );
@@ -9493,8 +9623,9 @@ const App = () => {
     const run = id ? partRunsRef.current?.[id] : null;
     const reported = runOutcomeEpochRef.current !== epochBefore;
     const failure = reported ? runFailureRef.current : null;
-    const featureMs = featureTimingsRef.current[id ? String(id) : '__cad__'];
-    const memo = featureCacheRef.current[id ? String(id) : '__cad__'];
+    const timingKey = id ? definitionIdFor(id, doc) : '__cad__';
+    const featureMs = featureTimingsRef.current[timingKey];
+    const memo = featureCacheRef.current[timingKey];
     const timings = {
       ...(featureMs && Object.keys(featureMs).length ? { featureMs } : {}),
       // Feature memoisation on that run (status.cache, status.featureCached).
@@ -9560,17 +9691,13 @@ const App = () => {
       else setCurrentScript(text);
     },
     readHistory() {
-      const id = appModeRef.current === 'game'
-        ? '__game__'
-        : (assemblyRef.current?.activeId ? String(assemblyRef.current.activeId) : '__cad__');
+      const id = historyKey();
       const existing = partHistoriesRef.current[id];
       if (existing && Array.isArray(existing.commits)) return existing;
       return { commits: [], head: -1 };
     },
     writeHistory(history) {
-      const id = appModeRef.current === 'game'
-        ? '__game__'
-        : (assemblyRef.current?.activeId ? String(assemblyRef.current.activeId) : '__cad__');
+      const id = historyKey();
       const next = {
         commits: Array.isArray(history?.commits) ? history.commits : [],
         head: Number.isInteger(history?.head) ? history.head : -1,
@@ -10065,8 +10192,8 @@ const App = () => {
         failedIds: sheetFailedIds,
         rollbackAnchor: rollbackAnchor ?? null,
         activeChipId: featureStripActiveId,
-        featureMs: featureTimingsRef.current[key] || null,
-        featureCached: featureCacheRef.current[key]?.cached || null,
+        featureMs: featureTimingsRef.current[definitionIdFor(key)] || null,
+        featureCached: featureCacheRef.current[definitionIdFor(key)]?.cached || null,
       });
     },
     readSelection() {
@@ -10187,6 +10314,7 @@ const App = () => {
             visible: row.visible,
             ...(typeof row.group === 'string' ? { group: row.group } : {}),
             ...(row.missing === true ? { missing: true } : {}),
+            ...(typeof row.instanceOf === 'string' && row.instanceOf ? { instanceOf: row.instanceOf } : {}),
             runState: partRunState(run),
             ...(run?.crash && typeof run.crash === 'object' ? { crash: run.crash } : {}),
           };
@@ -10194,8 +10322,16 @@ const App = () => {
       });
     },
     readActivePartSurfId() {
+      // The `@surf-id` header names the script, so for a part instance it
+      // is the definition's id, not the active row's.
       const doc = assemblyRef.current;
       const part = doc?.parts?.find((row) => row.id === doc?.activeId);
+      if (!part) return null;
+      const def = partDefinitionId(part);
+      if (def !== String(part.id)) {
+        const primary = doc.parts.find((row) => String(row.id) === def);
+        return primary ? partSurfId(primary) : (isSurfId(def) ? def : null);
+      }
       return partSurfId(part);
     },
     readGeometryWorkers() {
@@ -10211,8 +10347,9 @@ const App = () => {
       const script = id
         ? (codeEditorRef.current?.getContent?.() ?? partScriptsRef.current[id] ?? '')
         : '';
-      const featureMs = featureTimingsRef.current[id || '__cad__'];
-      const memo = featureCacheRef.current[id || '__cad__'];
+      const timingKey = id ? definitionIdFor(id, doc) : '__cad__';
+      const featureMs = featureTimingsRef.current[timingKey];
+      const memo = featureCacheRef.current[timingKey];
       const base = {
         partId: id,
         partName,
@@ -10507,8 +10644,9 @@ const App = () => {
         },
       };
     },
-    async agentInsertPart({ partId, assemblyId, copy } = {}) {
+    async agentInsertPart({ partId, assemblyId, copy, instance, position } = {}) {
       const before = assemblyRef.current;
+      if (instance === true) return agentInsertInstance({ partId, position });
       const loaded = await loadVaultPartRows({ partId, assemblyId });
       if (loaded.error) return { error: loaded.error };
       const inserted = await insertReferencedParts({ rows: loaded.rows, copy: copy === true });
