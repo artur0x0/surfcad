@@ -222,7 +222,7 @@ function atLineStart(text, at) {
  * worker then runs the original script. Markers not at the start of a line
  * are skipped (that block is simply not tracked).
  *
- * @returns {{ script: string, features: Array<{ id: string, block: string }> }}
+ * @returns {{ script: string, features: Array<{ id: string, kind: string, label: string, block: string }> }}
  *   `features[i]` is the block that `i` names in the calls.
  */
 export function instrumentFeatureBlocks(script) {
@@ -238,7 +238,7 @@ export function instrumentFeatureBlocks(script) {
       inserts.push({ at: f.startOffset, code: `;${FEATURE_TRACE_ENTER}(${i});` });
       inserts.push({ at: endMarkerAt, code: `;${FEATURE_TRACE_LEAVE}(${i});` });
     }
-    return { id: f.id, block };
+    return { id: f.id, kind: f.kind, label: f.chipLabel || f.label || f.kind, block };
   });
   // Back to front so earlier offsets stay valid; at a shared offset the
   // leave of the earlier block runs before the enter of the next.
@@ -251,17 +251,42 @@ export function instrumentFeatureBlocks(script) {
 /**
  * Open-block stack for one run. `enter(i)` pushes, `leave(i)` pops back to
  * (and including) `i`, so a block skipped by an early `leave` cannot linger.
+ *
+ * It also times each block: `leave(i)` records how long block `i` was open,
+ * and `timings()` lists them in completion order. `hooks.onEnter(i)` runs on
+ * every enter (the worker posts progress from it, so a watchdog that kills
+ * the thread still knows which block was running); `hooks.onLeave(i, ms)`
+ * on every matched leave.
+ *
+ * @param {{ onEnter?: (i: number) => void, onLeave?: (i: number, ms: number) => void }} [hooks]
  */
-export function createFeatureTracker() {
+export function createFeatureTracker(hooks = {}) {
   const open = [];
+  const started = new Map();
+  const timings = [];
+  const now = () => (typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now());
   return {
-    enter(i) { open.push(i); },
+    enter(i) {
+      open.push(i);
+      started.set(i, now());
+      if (typeof hooks.onEnter === 'function') hooks.onEnter(i);
+    },
     leave(i) {
       const at = open.lastIndexOf(i);
       if (at >= 0) open.length = at;
+      const t0 = started.get(i);
+      if (t0 == null) return;
+      started.delete(i);
+      const ms = now() - t0;
+      timings.push({ index: i, ms });
+      if (typeof hooks.onLeave === 'function') hooks.onLeave(i, ms);
     },
     /** Innermost open block index, or null. */
     current() { return open.length ? open[open.length - 1] : null; },
+    /** `{ index, ms }` per completed block, in completion order. */
+    timings() { return timings.slice(); },
   };
 }
 

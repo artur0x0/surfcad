@@ -257,6 +257,27 @@ export function evaluationScript(script, options = {}) {
 }
 
 /**
+ * Would the part still have a solid if `featureId` (and its hard
+ * dependents) were skipped? False when the block is unknown, when every
+ * block would go, or when the copy no longer declares `part` (the block
+ * that ran past the budget is the base, or a freehand script wrapped as
+ * one code block). The watchdog re-posts a timed-out job only when this is
+ * true; otherwise the whole part fails as before, since "rebuilt without
+ * that feature" would mean an empty part.
+ * @param {string} script
+ * @param {string} featureId
+ */
+export function timeoutRecoveryKeepsSolid(script, featureId) {
+  const text = typeof script === 'string' ? script : '';
+  if (!text || typeof featureId !== 'string' || !featureId) return false;
+  const features = parseFeatureMarkers(text);
+  if (!features.some((feature) => feature.id === featureId)) return false;
+  const skipIds = hardSkipIds(text, featureId);
+  if (skipIds.length >= features.length) return false;
+  return declaredNames(evaluationScript(text, { skipIds })).has('part');
+}
+
+/**
  * The rollback copy has no `part` to return. The viewport clears the solid
  * instead of running the worker. `null` is the start. A feature id is the
  * bar after that feature. Omitted, or the end, is false.

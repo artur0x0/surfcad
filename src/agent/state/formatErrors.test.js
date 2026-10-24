@@ -181,3 +181,44 @@ test('a kernel crash is one geometry_worker_crashed row with reason, workerResta
   assert.equal(viaFailure.featureId, 'c1');
   assert.equal(viaFailure.featureIndex, 0);
 });
+
+test('formatAgentErrors emits one feature_timeout row for a block that ran past the budget', () => {
+  const rows = formatAgentErrors({
+    script: SCRIPT,
+    runFailure: {
+      id: 'hole1',
+      kind: 'hole',
+      code: 'feature_timeout',
+      message: 'Hole did not finish within the 30 s budget after 30 s. The geometry engine was restarted and the part was rebuilt without that feature; everything else is unchanged.',
+      timeout: { id: 'hole1', kind: 'hole', label: 'Hole', elapsedMs: 30012, budgetMs: 30000 },
+      hint: 'fewer edges',
+      skipped: [],
+    },
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].code, 'feature_timeout');
+  assert.equal(rows[0].featureId, 'hole1');
+  assert.equal(rows[0].featureIndex, 1);
+  assert.equal(rows[0].featureType, 'hole');
+  assert.equal(rows[0].featureLabel, 'Hole');
+  assert.equal(rows[0].elapsedMs, 30012);
+  assert.equal(rows[0].budgetMs, 30000);
+  assert.equal(rows[0].workerRestarted, true);
+  assert.equal(rows[0].detail, 'fewer edges');
+  assert.match(rows[0].message, /did not finish within the 30 s budget/);
+});
+
+test('formatAgentErrors keeps the crash row when the timed-out block left no solid after the retries', () => {
+  const rows = formatAgentErrors({
+    script: SCRIPT,
+    runFailure: {
+      id: 'hole1',
+      message: 'Hole did not finish within 30 s, and the part still had no solid without it. The geometry engine was restarted; other parts are unaffected.',
+      crash: { code: 'geometry_worker_crashed', reason: 'timeout', workerRestarted: true, featureId: 'hole1' },
+    },
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].code, 'geometry_worker_crashed');
+  assert.equal(rows[0].reason, 'timeout');
+  assert.equal(rows[0].featureId, 'hole1');
+});

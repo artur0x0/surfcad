@@ -33,3 +33,11 @@ test('buildFeatureTree lists features in script order with failure flags', () =>
   assert.equal(tree.rollbackAnchor, 'cube1');
   assert.equal(tree.activeChipId, 'hole1');
 });
+
+test('buildFeatureTree adds the kernel milliseconds of each block when the last run reported them', () => {
+  const tree = buildFeatureTree({ script: SCRIPT, featureMs: { cube1: 3.2, hole1: 1840 } });
+  assert.equal(tree.features[0].ms, 3.2);
+  assert.equal(tree.features[1].ms, 1840);
+  const bare = buildFeatureTree({ script: SCRIPT });
+  assert.equal('ms' in bare.features[0], false);
+});

@@ -18,7 +18,9 @@ import {
   kernelCrashError,
   splitPendingOnCrash,
   DEFAULT_JOB_BUDGET_MS,
+  MAX_FEATURE_TIMEOUT_RETRIES,
 } from '../workers/kernelCrash.js'
+import { timeoutRecoveryKeepsSolid } from './featureSkip.js'
 
 /**
  * The sandbox worker, loaded on first use. A dynamic import keeps this
@@ -178,16 +180,6 @@ class ManifoldWorker {
     return new Promise((resolve, reject) => {
       const requestId = this._generateRequestId();
 
-      // Watchdog: a job past its budget is treated like a crash. The thread
-      // is killed and replaced, this job fails with reason timeout, and the
-      // jobs queued behind it move to the fresh worker. A promise-only
-      // timeout used to leave the hung run holding the thread, and every
-      // later call queued behind it until the tab was reloaded.
-      const timeoutId = setTimeout(() => {
-        if (!this.pendingRequests.has(requestId)) return;
-        this._onKernelCrash({ reason: 'timeout', crashedId: requestId, budgetMs: timeoutMs });
-      }, timeoutMs);
-
       const message = {
         type: 'execute',
         id: requestId,
@@ -196,29 +188,55 @@ class ManifoldWorker {
           importedModels,
           memoryLimitMB,
           nonce: options.nonce ?? null,
+          // Ask for featureProgress messages (which marked block is running),
+          // so a watchdog kill can name the block and re-post without it.
+          progress: true,
           ...(options.rollbackAnchor === null || typeof options.rollbackAnchor === 'string'
             ? { rollbackAnchor: options.rollbackAnchor }
             : {}),
         }
       };
       // Store request (the message stays so a crash elsewhere can re-post it)
-      this.pendingRequests.set(requestId, {
+      const request = {
         kind: 'execute',
         sentAt: performance.now(),
         message,
         partId: typeof options.partId === 'string' ? options.partId : null,
+        budgetMs: timeoutMs,
+        timeoutId: null,
+        /** Latest `featureProgress` from the worker: the block running now. */
+        progress: null,
+        /** Re-posts with a timed-out block skipped (see _onKernelCrash). */
+        timeoutRetries: 0,
         resolve: (result) => {
-          clearTimeout(timeoutId);
+          clearTimeout(request.timeoutId);
           resolve(result);
         },
         reject: (error) => {
-          clearTimeout(timeoutId);
+          clearTimeout(request.timeoutId);
           reject(error);
         }
-      });
-
+      };
+      this.pendingRequests.set(requestId, request);
+      this._armWatchdog(requestId, request);
       this.worker.postMessage(message);
     });
+  }
+
+  /**
+   * Watchdog: a job past its budget is treated like a crash. The thread is
+   * killed and replaced, this job fails with reason timeout (or, when the
+   * worker said which block it was in, is re-posted without that block), and
+   * the jobs queued behind it move to the fresh worker. A promise-only
+   * timeout used to leave the hung run holding the thread, and every later
+   * call queued behind it until the tab was reloaded.
+   */
+  _armWatchdog(requestId, request) {
+    clearTimeout(request.timeoutId);
+    request.timeoutId = setTimeout(() => {
+      if (this.pendingRequests.get(requestId) !== request) return;
+      this._onKernelCrash({ reason: 'timeout', crashedId: requestId, budgetMs: request.budgetMs });
+    }, request.budgetMs);
   }
 
   /**
@@ -912,7 +930,40 @@ class ManifoldWorker {
     const split = splitPendingOnCrash(ids, info.crashedId ?? null);
     const reason = info.reason || 'wasm_abort';
     const requeued = [];
-    const failed = [...split.failed];
+    const failed = [];
+    const retried = [];
+    const now = performance.now();
+    for (const id of split.failed) {
+      const request = this.pendingRequests.get(id);
+      const progress = request?.progress;
+      // The watchdog killed the thread inside a marked block, and the worker
+      // had said which one: re-post the same job with that block (and its
+      // hard dependents) skipped, so the part comes back without it instead
+      // of failing whole. Only when that leaves a solid (not the base block,
+      // not a freehand script that is one code block), and bounded, since
+      // each retry costs one budget.
+      const canRetry = reason === 'timeout'
+        && id === (info.crashedId ?? null)
+        && request?.kind === 'execute'
+        && request.message?.payload
+        && progress && typeof progress.featureId === 'string' && progress.featureId
+        && (request.timeoutRetries || 0) < MAX_FEATURE_TIMEOUT_RETRIES
+        && timeoutRecoveryKeepsSolid(request.message.payload.script, progress.featureId);
+      if (!canRetry) { failed.push(id); continue; }
+      const entry = {
+        id: progress.featureId,
+        kind: typeof progress.kind === 'string' ? progress.kind : null,
+        label: typeof progress.label === 'string' ? progress.label : null,
+        elapsedMs: Math.max(0, Math.round(now - (Number(progress.at) || now))),
+        budgetMs: Number.isFinite(Number(info.budgetMs)) ? Number(info.budgetMs) : (request.budgetMs ?? null),
+      };
+      const prior = Array.isArray(request.message.payload.timedOut) ? request.message.payload.timedOut : [];
+      request.message = { ...request.message, payload: { ...request.message.payload, timedOut: [...prior, entry] } };
+      request.timedOut = [...prior, entry];
+      request.timeoutRetries = (request.timeoutRetries || 0) + 1;
+      request.progress = null;
+      retried.push([id, request]);
+    }
     for (const id of split.requeue) {
       const request = this.pendingRequests.get(id);
       if (request?.message) requeued.push([id, request]);
@@ -921,6 +972,7 @@ class ManifoldWorker {
     this.crashCount += 1;
     const makeError = (id) => {
       const request = id != null ? this.pendingRequests.get(id) : null;
+      const progress = request?.progress;
       return kernelCrashError({
         reason,
         kernelMessage: info.kernelMessage,
@@ -928,9 +980,16 @@ class ManifoldWorker {
         budgetMs: info.budgetMs,
         partId: request?.partId || null,
         workerRestarted: true,
+        ...(progress && typeof progress.featureId === 'string' ? {
+          featureId: progress.featureId,
+          featureKind: typeof progress.kind === 'string' ? progress.kind : undefined,
+          featureLabel: typeof progress.label === 'string' ? progress.label : undefined,
+          featureElapsedMs: Math.max(0, Math.round(now - (Number(progress.at) || now))),
+        } : {}),
       });
     };
     const first = makeError(failed[0] ?? null);
+    const retryHead = retried[0]?.[1]?.timedOut;
     this.lastCrash = {
       at: Date.now(),
       reason,
@@ -939,6 +998,8 @@ class ManifoldWorker {
       wasmHeapMB: Number.isFinite(Number(info.wasmHeapMB)) ? Number(info.wasmHeapMB) : null,
       failed: failed.length,
       requeued: requeued.length,
+      retried: retried.length,
+      featureId: (retryHead && retryHead[retryHead.length - 1]?.id) || first.featureId || null,
     };
     for (const id of failed) {
       const request = this.pendingRequests.get(id);
@@ -946,6 +1007,7 @@ class ManifoldWorker {
       this.pendingRequests.delete(id);
       try { request?.reject?.(error); } catch { /* listener threw */ }
     }
+    for (const [id] of retried) this.pendingRequests.delete(id);
     for (const [id] of requeued) this.pendingRequests.delete(id);
     // Drop the thread without rejecting the requeued jobs.
     if (this._initCancel) {
@@ -959,7 +1021,7 @@ class ManifoldWorker {
       try { dead.terminate(); } catch { /* gone */ }
     }
     if (this.worker === dead) this.worker = null;
-    console.warn(`[ManifoldWorker] Kernel crashed (${reason}); ${failed.length} job(s) failed, ${requeued.length} requeued; restarting worker`);
+    console.warn(`[ManifoldWorker] Kernel crashed (${reason}); ${failed.length} job(s) failed, ${retried.length} re-posted without the block that ran out of time, ${requeued.length} requeued; restarting worker`);
 
     const run = (async () => {
       try {
@@ -970,10 +1032,17 @@ class ManifoldWorker {
           kernelMessage: err?.message || String(err),
           workerRestarted: false,
         });
-        for (const [, request] of requeued) {
+        for (const [, request] of [...retried, ...requeued]) {
           try { request.reject?.(lost); } catch { /* listener threw */ }
         }
         throw err;
+      }
+      // The job that was running goes first, as it did before the crash,
+      // with a fresh watchdog; then the jobs that were queued behind it.
+      for (const [id, request] of retried) {
+        this.pendingRequests.set(id, request);
+        this._armWatchdog(id, request);
+        this.worker.postMessage(request.message);
       }
       for (const [id, request] of requeued) {
         this.pendingRequests.set(id, request);
@@ -1103,6 +1172,16 @@ class ManifoldWorker {
         }
         break;
       }
+
+      case 'featureProgress': {
+        // The worker entered a marked block. Kept on the job so a watchdog
+        // kill can name the block and re-post the job without it.
+        const request = this.pendingRequests.get(id);
+        if (request && payload && typeof payload.featureId === 'string') {
+          request.progress = { ...payload, at: performance.now() };
+        }
+        break;
+      }
       
       case 'error': {
         if (payload && payload.fatal) {
@@ -1129,6 +1208,9 @@ class ManifoldWorker {
           if (typeof payload.featureId === 'string') error.featureId = payload.featureId;
           if (typeof payload.featureBlock === 'string') error.featureBlock = payload.featureBlock;
           if (payload.featureSkip && typeof payload.featureSkip === 'object') error.featureSkip = payload.featureSkip;
+          if (typeof payload.code === 'string' && payload.code) error.code = payload.code;
+          if (payload.timeout && typeof payload.timeout === 'object') error.timeout = payload.timeout;
+          if (typeof payload.hint === 'string' && payload.hint) error.hint = payload.hint;
           request.reject(error);
         }
         

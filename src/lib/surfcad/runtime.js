@@ -46,7 +46,7 @@ import { markSheetMesh } from '../../utils/sheetMetal/sheetMeshFlag.js';
 import { installSeparateBodies, overlappingBodies } from '../../workers/separateBodies.js';
 import { installKernelArena, beginKernelArena, endKernelArena, wasmHeapMB } from '../../workers/kernelArena.js';
 import { solveContour as solveContourModel } from '../../utils/contourSolve.js';
-import { classifyKernelFailure } from '../../workers/kernelCrash.js';
+import { classifyKernelFailure, FEATURE_TIMEOUT_CODE, FEATURE_TIMEOUT_HINT, featureTimeoutMessage } from '../../workers/kernelCrash.js';
 
 /**
  * List of globals to block/remove in the worker context
@@ -9494,8 +9494,21 @@ const executeScript = (script, importedModels) => {
   
   // Which marked feature block is running (feature strip red border). This
   // does not depend on the engine's stack format, unlike `scriptLine`.
-  const tracker = createFeatureTracker();
+  // The worker posts every block entry to the main thread (`_featureProgress`)
+  // so a watchdog that kills this thread still knows which block was
+  // running, and each closed block's time goes out with the result.
   const traced = instrumentFeatureBlocks(script);
+  let features = traced.features;
+  const tracker = createFeatureTracker({
+    onEnter(i) {
+      const hit = features[i];
+      if (hit && typeof _featureProgress === 'function') {
+        try {
+          _featureProgress({ featureId: hit.id, kind: hit.kind, label: hit.label, index: i, block: hit.block });
+        } catch { /* progress is best effort */ }
+      }
+    },
+  });
 
   // Build the execution scope with Manifold API + helper functions
   const scope = {
@@ -9518,7 +9531,6 @@ const executeScript = (script, importedModels) => {
   const wrappedScript = `"use strict";\n${script}`;
   const tracedScript = `"use strict";\n${traced.script}`;
   let fn;
-  let features = traced.features;
   try {
     fn = new Function(...scopeKeys, tracedScript);
   } catch (compileErr) {
@@ -9550,11 +9562,60 @@ const executeScript = (script, importedModels) => {
     throw err;
   } finally {
     _sheetFilletSpan = null;
+    _lastFeatureTimings = tracker.timings()
+      .map(({ index, ms }) => {
+        const hit = features[index];
+        return hit ? { id: hit.id, kind: hit.kind, ms: Math.round(ms * 10) / 10 } : null;
+      })
+      .filter(Boolean);
   }
 };
 
 /** Engine header lines before the script in a `new Function` body (lazy). */
 let _scriptLineOffset;
+
+/**
+ * Where the worker's execute handler posts block entries while a script
+ * runs (null outside a worker execute). Set per request by `bindWorker`.
+ * @type {((progress: { featureId: string, kind: string, label: string, index: number, block: string }) => void) | null}
+ */
+let _featureProgress = null;
+
+/** `{ id, kind, ms }` per block the last `executeScript` closed, in completion order. */
+let _lastFeatureTimings = [];
+
+/**
+ * The error a block that ran past the budget stands in for in the
+ * feature-skip report: the main thread killed the thread while it ran, so no
+ * exception exists; this one names the block the way a thrown one would.
+ */
+function featureTimeoutError(script, row) {
+  const text = String(script ?? '');
+  const feature = parseFeatureMarkers(text).find((f) => f.id === row.id) || null;
+  const kind = feature?.kind || (typeof row.kind === 'string' ? row.kind : null);
+  const label = feature?.chipLabel || feature?.label || (typeof row.label === 'string' ? row.label : null) || kind;
+  const elapsedMs = Number.isFinite(Number(row.elapsedMs)) ? Number(row.elapsedMs) : null;
+  const budgetMs = Number.isFinite(Number(row.budgetMs)) ? Number(row.budgetMs) : null;
+  const error = new Error(featureTimeoutMessage({ label, kind, elapsedMs, budgetMs }));
+  error.name = 'FeatureTimeoutError';
+  error.code = FEATURE_TIMEOUT_CODE;
+  error.featureId = row.id;
+  error.featureBlock = feature ? text.slice(feature.startOffset, feature.endOffset) : '';
+  error.timeout = { id: row.id, kind, label, elapsedMs, budgetMs };
+  error.hint = FEATURE_TIMEOUT_HINT;
+  return error;
+}
+
+/** Copy the timeout fields from the primary error onto a feature-skip report. */
+function withTimeoutFields(report, primary) {
+  if (!report || primary?.code !== FEATURE_TIMEOUT_CODE) return report;
+  return {
+    ...report,
+    code: FEATURE_TIMEOUT_CODE,
+    timeout: primary.timeout && typeof primary.timeout === 'object' ? { ...primary.timeout } : null,
+    hint: typeof primary.hint === 'string' ? primary.hint : FEATURE_TIMEOUT_HINT,
+  };
+}
 
 /**
  * Run `script`, and when a marked feature throws, run an evaluation copy
@@ -9564,7 +9625,7 @@ let _scriptLineOffset;
  * that still has no solid throws the original error, with the same report
  * attached, so the viewport can keep the last mesh and mark every chip.
  */
-function executeSkippingFailedFeatures(script, importedModels, anchorId) {
+function executeSkippingFailedFeatures(script, importedModels, anchorId, opts = {}) {
   const text = String(script ?? '');
   const plan = resolveRollback(text, anchorId);
   const anchored = plan.anchor === null || typeof plan.anchor === 'string';
@@ -9572,6 +9633,19 @@ function executeSkippingFailedFeatures(script, importedModels, anchorId) {
   let skipIds = [];
   const thrown = [];
   let primary = null;
+  // Blocks the main thread already saw run past the budget (the watchdog
+  // killed the thread mid-block and re-posted this job): they are skipped
+  // from the first attempt, with their hard dependents, and the first one
+  // is the run's primary failure.
+  const timedOut = Array.isArray(opts?.timedOut)
+    ? opts.timedOut.filter((row) => row && typeof row.id === 'string' && row.id)
+    : [];
+  for (const row of timedOut) {
+    if (thrown.includes(row.id)) continue;
+    thrown.push(row.id);
+    skipIds = unionSkipIds(text, skipIds, row.id);
+    if (!primary) primary = featureTimeoutError(text, row);
+  }
   for (let attempt = 0; attempt < limit; attempt += 1) {
     const source = (skipIds.length || anchored)
       ? evaluationScript(text, {
@@ -9582,10 +9656,14 @@ function executeSkippingFailedFeatures(script, importedModels, anchorId) {
     try {
       const result = manifoldFromScriptResult(executeScript(source, importedModels));
       const rolledBack = plan.skipIds;
+      // A blanked block (skipped or rolled back) still passes its markers,
+      // so the tracker times it at about zero; those rows are not kernel time.
+      const blanked = new Set([...skipIds, ...(Array.isArray(rolledBack) ? rolledBack : [])]);
       return {
         result,
-        featureSkip: primary ? featureSkipFailure(text, primary, thrown, skipIds) : null,
+        featureSkip: primary ? withTimeoutFields(featureSkipFailure(text, primary, thrown, skipIds), primary) : null,
         rolledBack,
+        featureTimings: _lastFeatureTimings.filter((row) => !blanked.has(row.id)),
       };
     } catch (error) {
       if (!primary) primary = error;
@@ -9602,7 +9680,7 @@ function executeSkippingFailedFeatures(script, importedModels, anchorId) {
 
 function attachFeatureSkip(error, script, thrown, skipIds) {
   if (!thrown.length) return error;
-  const report = featureSkipFailure(script, error, thrown, skipIds);
+  const report = withTimeoutFields(featureSkipFailure(script, error, thrown, skipIds), error);
   try { error.featureSkip = report; } catch { /* frozen error */ }
   return error;
 }
@@ -9976,7 +10054,7 @@ self.onmessage = async (event) => {
           throw new Error('Worker not initialized');
         }
         
-        const { script, importedModels, memoryLimitMB, nonce, rollbackAnchor } = payload;
+        const { script, importedModels, memoryLimitMB, nonce, rollbackAnchor, timedOut } = payload;
         if (typeof globalThis !== 'undefined') {
           globalThis.__filletSweepRingLog = [];
           globalThis.__filletSweepRingCall = null;
@@ -9990,9 +10068,24 @@ self.onmessage = async (event) => {
         const _execT0 = _perfNow();
         _featureOps = [];
         _sourceTess = [];
-        const { ran, kernelFreed } = _runInKernelArena(
-          () => executeSkippingFailedFeatures(script, importedModels, rollbackAnchor),
-        );
+        // With `progress: true` (what `ManifoldWorker` sends), block entries
+        // go to the main thread as they happen, so the watchdog can name the
+        // block it kills (`ManifoldWorker` keeps the latest per job).
+        // `timedOut` is that list when this is a re-post. Harnesses that
+        // drive the protocol by hand and take the first reply as the result
+        // do not ask, and see no extra message.
+        _featureProgress = payload.progress === true
+          ? (progress) => self.postMessage({ type: 'featureProgress', id, payload: progress })
+          : null;
+        let arena;
+        try {
+          arena = _runInKernelArena(
+            () => executeSkippingFailedFeatures(script, importedModels, rollbackAnchor, { timedOut }),
+          );
+        } finally {
+          _featureProgress = null;
+        }
+        const { ran, kernelFreed } = arena;
         const result = ran.result;
         const _execMs = _perfNow() - _execT0;
         
@@ -10040,6 +10133,7 @@ self.onmessage = async (event) => {
             kernelFreed,
             ...(ran.featureSkip ? { featureSkip: ran.featureSkip } : {}),
             ...(ran.rolledBack?.length ? { rolledBack: ran.rolledBack } : {}),
+            ...(ran.featureTimings?.length ? { featureTimings: ran.featureTimings } : {}),
           }
         });
         break;
@@ -10672,6 +10766,7 @@ self.onmessage = async (event) => {
         featureId: typeof error?.featureId === 'string' ? error.featureId : null,
         featureBlock: typeof error?.featureBlock === 'string' ? error.featureBlock : null,
         featureSkip: error?.featureSkip && typeof error.featureSkip === 'object' ? error.featureSkip : null,
+        ...(error?.code === FEATURE_TIMEOUT_CODE ? { code: FEATURE_TIMEOUT_CODE, timeout: error.timeout ?? null, hint: error.hint ?? FEATURE_TIMEOUT_HINT } : {}),
         ...(verdict.fatal ? { fatal: true, reason: verdict.reason, wasmHeapMB: heapMB } : {}),
       }
     });
@@ -10778,10 +10873,12 @@ export function runPreparedScript(source, opts = {}) {
     String(source ?? ''),
     opts.importedModels || {},
     opts.rollbackAnchor,
+    { timedOut: opts.timedOut },
   ));
   const summary = summarizeManifold(ran.result);
   if (ran.featureSkip) summary.featureSkip = ran.featureSkip;
   if (ran.rolledBack?.length) summary.rolledBack = ran.rolledBack;
+  if (ran.featureTimings?.length) summary.featureTimings = ran.featureTimings;
   markSheetMesh(summary.mesh, source);
   summary.kernelFreed = kernelFreed;
   summary.wasmHeapMB = wasmHeapMB(manifoldModule);

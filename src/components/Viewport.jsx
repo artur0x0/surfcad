@@ -13676,6 +13676,8 @@ const Viewport = forwardRef(({
       }
       
       const rolledBack = Array.isArray(result?.rolledBack) ? result.rolledBack : [];
+      // Per-block kernel time from the worker's tracker (feature_tree `ms`).
+      const featureTimings = Array.isArray(result?.featureTimings) ? result.featureTimings : [];
       if (rolledBack.length) {
         console.log(`[Viewport] Rolled back ${rolledBack.join(', ')}; those features did not run.`);
       } else {
@@ -13717,6 +13719,11 @@ const Viewport = forwardRef(({
             featureBlock: typeof skip.featureBlock === 'string' ? skip.featureBlock : null,
             skipped: Array.isArray(skip.skipped) ? skip.skipped : [],
             message: msg,
+            // A block the watchdog killed: the part was rebuilt without it.
+            ...(typeof skip.code === 'string' && skip.code ? { code: skip.code } : {}),
+            ...(skip.timeout && typeof skip.timeout === 'object' ? { timeout: skip.timeout } : {}),
+            ...(typeof skip.hint === 'string' && skip.hint ? { hint: skip.hint } : {}),
+            featureTimings,
           });
         } else {
           onRunOutcomeRef.current?.({
@@ -13724,6 +13731,7 @@ const Viewport = forwardRef(({
             ok: true,
             scriptLine: null,
             ...(rolledBack.length ? { rolledBack } : {}),
+            featureTimings,
           });
         }
       }
@@ -13772,6 +13780,10 @@ const Viewport = forwardRef(({
           message: msg,
           detail,
           ...(crash ? { crash } : {}),
+          // A timed-out block that still left no solid after it was skipped.
+          ...(typeof error?.code === 'string' && error.code && !crash ? { code: error.code } : {}),
+          ...(error?.timeout && typeof error.timeout === 'object' ? { timeout: error.timeout } : {}),
+          ...(typeof error?.hint === 'string' && error.hint ? { hint: error.hint } : {}),
         });
       }
 
