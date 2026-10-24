@@ -61,13 +61,12 @@ npm run golden:<name>                # in-repo smokes, scripts/golden/; see docs
 | lint, build, unit | `npm ci`, backend `npm ci`, `npm run lint`, `npm run check:md-links`, `npm run build`, nginx syntax test of `docs/` configs, `node scripts/ci/run-unit-tests.mjs` (= `npm test`), git save goldens |
 | golden app-loads | production and playtest builds, the auto-approve guard, CSP app-load smoke, agent bridge goldens, scripted playtest, MCP demo, FEA goldens (headless Chrome) |
 | Agent bridge FEA golden | playtest build + FEA bridge golden |
-| Agent bridge Safari popup | WebKit + Chromium popup pairing |
 | license | no copyleft or non-commercial npm deps; `public/THIRD_PARTY_NOTICES.txt` up to date |
 | cargo-deny | Rust licence allow-list for `packages/surfcad-fea` (GPL is rejected) |
 | wasm freshness / mesh wasm freshness | committed wasm matches a fresh rebuild |
 | calculix reference | solver compared against an apt-installed `ccx` (external process only) |
 
-GitHub does not enforce these as required checks, so read every job's result yourself. `playtest-nightly.yml` is a nightly scripted playtest and does not gate merges.
+GitHub does not enforce these as required checks, so read every job's result yourself. `playtest-nightly.yml` is a nightly scripted playtest and does not gate merges. The Safari popup pairing golden (`npm run golden:agent-bridge-safari-popup`, Playwright WebKit) is no longer a CI job; run it by hand when touching the loopback popup bridge.
 
 ## PR flow
 

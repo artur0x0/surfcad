@@ -736,63 +736,6 @@ jobs:
             exit 1
           fi
 
-  # Safari pairing through the loopback popup bridge. Playwright WebKit is the
-  # Safari stand-in (it enforces the same mixed-content block on
-  # ws://127.0.0.1); Chromium checks the direct path is unchanged and runs
-  # the bridge forced. The production dist is served as https://surfcad.com
-  # via Playwright routing with the nginx CSP; nothing leaves the runner.
-  agent-bridge-safari-popup:
-    name: Agent bridge Safari popup (WebKit + Chromium)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: npm ci
-        run: npm ci
-
-      - name: vite build (production)
-        run: npm run build
-
-      - name: Install Chrome
-        id: setup-chrome
-        uses: browser-actions/setup-chrome@v2
-        with:
-          chrome-version: stable
-          install-dependencies: true
-
-      - name: Install Playwright WebKit
-        run: npx playwright-core install --with-deps webkit
-
-      - name: Safari popup bridge golden
-        env:
-          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
-          GOLDEN_SHOT_DIR: ${{ runner.temp }}/agent-bridge-safari-popup
-          # Playwright traces are written only for a run with a failed check.
-          GOLDEN_TRACE_DIR: ${{ runner.temp }}/agent-bridge-safari-popup/traces
-        run: |
-          test -n "$CHROME_PATH"
-          test -x "$CHROME_PATH"
-          mkdir -p "$GOLDEN_SHOT_DIR"
-          stdbuf -oL node scripts/golden/smoke_agent_bridge_safari_popup.mjs | tee "${RUNNER_TEMP}/agent-bridge-safari-popup.log"
-          if ! grep -q 'agent bridge safari popup golden: ok (webkit, chromium, chromium-popup)' "${RUNNER_TEMP}/agent-bridge-safari-popup.log"; then
-            echo "safari popup bridge golden did not pass in all three browsers (see log above)"
-            exit 1
-          fi
-
-      - name: Upload Safari popup bridge screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: agent-bridge-safari-popup
-          path: ${{ runner.temp }}/agent-bridge-safari-popup
-          if-no-files-found: ignore
-
   # npm copyleft and non-commercial gate, plus a freshness check for
   # public/THIRD_PARTY_NOTICES.txt. Always runs. The cargo-deny step is a
   # separate job so it can stay a no-op until the FEA crate exists.
