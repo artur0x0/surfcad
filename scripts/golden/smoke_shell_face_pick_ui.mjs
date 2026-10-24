@@ -47,6 +47,9 @@ function check(name, cond, detail = '') {
 
 console.log('shell face-pick UI');
 
+// A script with a body: hollow() on an empty script has nothing to shell.
+const BODY = 'let part = Manifold.cube([20, 20, 20], true);\nreturn part;\n';
+
 {
   check('shell is a shell entry', isShellEntry('shell'));
   const markers = FEATURE_MARKER_KINDS.some((k) => k.kind === 'shell' && k.label === 'Shell');
@@ -76,7 +79,7 @@ console.log('shell face-pick UI');
   const faceGate = validateShellAccept(pick, { wall: 2.5, openingMode: 'face' });
   check('face pick validates', faceGate.ok && faceGate.openScope === 'selected');
 
-  const faceCommit = composeShellCommit('', {
+  const faceCommit = composeShellCommit(BODY, {
     face: pick,
     params: { wall: 2.5, openingMode: 'face' },
   });
@@ -94,7 +97,7 @@ console.log('shell face-pick UI');
     `kinds=${feats.map((f) => f.kind).join(',')}`,
   );
 
-  const closedCommit = composeShellCommit('', {
+  const closedCommit = composeShellCommit(BODY, {
     params: { wall: 3, openingMode: 'none' },
   });
   check("Closed emits 'none'", /hollow\(\s*\w+,\s*3,\s*'none'\s*\)/.test(closedCommit.buffer), closedCommit.buffer);
@@ -121,7 +124,7 @@ console.log('shell face-pick UI');
       { center: [0, 15, 0], normal: [0, 1, 0] },
     ],
   });
-  const multiCommit = composeShellCommit('', {
+  const multiCommit = composeShellCommit(BODY, {
     face: multi,
     params: { wall: 2.5, openingMode: 'face' },
   });
@@ -170,7 +173,7 @@ console.log('shell face-pick UI');
 
 {
   // Axis form still composes (worker API / goldens) — UI just does not offer it.
-  const axis = composeHelperInsert('', 'shell', null, { wall: 2, openScope: 'z' });
+  const axis = composeHelperInsert(BODY, 'shell', null, { wall: 2, openScope: 'z' });
   check("axis compose still works for API", /hollow\(\s*\w+,\s*2,\s*'z'\s*\)/.test(axis));
 }
 

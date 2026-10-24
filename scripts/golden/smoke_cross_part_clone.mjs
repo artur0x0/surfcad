@@ -374,7 +374,7 @@ const meshOf = async (script) => (await exec(script)).mesh;
     /const writeOtherPartScripts/.test(app) && /pushPartHistory\(\s*historyForPart\(partHistoriesRef\.current, w\.id/.test(app));
   check('Block and Shape Subtract Confirm run the cross-part plan',
     /params\.combine === 'subtract'[\s\S]{0,120}crossPartSubtract\(/.test(app)
-    && /crossPartSubtract\(buf, result\.buffer\)/.test(app));
+    && /crossPartSubtract\(buf, codeEditorRef\.current\?\.getContent\?\.\(\) \?\? plan\.buffer\)/.test(app));
   check('Boolean Confirm opens and writes the target part',
     /gate\.targetPartId/.test(app) && /handleSelectPart\(target, \{ keepPicks: true \}\)/.test(app));
   check('Pieces preview passes the frozen tools to the worker',

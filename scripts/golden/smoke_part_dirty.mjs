@@ -16,7 +16,7 @@ import { createServer as createVite } from 'vite';
 
 const shotDir = process.env.GOLDEN_SHOT_DIR || join(tmpdir(), 'surfcad-golden-shots');
 mkdirSync(shotDir, { recursive: true });
-const artifactDir = '/opt/cursor/artifacts/part-dirty';
+const artifactDir = join(shotDir, 'part-dirty');
 mkdirSync(artifactDir, { recursive: true });
 
 let failed = 0;

@@ -167,8 +167,8 @@ const BAD = 'let part = Manifold.cube([10, 10, 10], true);\nreturn part.missingM
     && defaultTitle.text === 'part1 in Assembly'
     && defaultTitle.connector === 'in'
     && defaultTitle.assembly === 'Assembly'
-    && title.indexOf('ViewportTitleChip inline value={currentFilename}') >= 0
-    && title.indexOf('ViewportTitleChip inline value={currentFilename}') < title.indexOf('data-title-in')
+    && title.search(/<ViewportTitleChip\s+inline\s+value=\{currentFilename\}/) >= 0
+    && title.search(/<ViewportTitleChip\s+inline\s+value=\{currentFilename\}/) < title.indexOf('data-title-in')
     && title.indexOf('data-title-in') < title.indexOf('noun="Assembly"')
     && /\{titleParts\.connector\}/.test(title)
     && /\{titleParts\.assembly\}/.test(title)
@@ -259,7 +259,7 @@ const BAD = 'let part = Manifold.cube([10, 10, 10], true);\nreturn part.missingM
     && sanitizeAssemblyName('x'.repeat(80)).length === 60);
   const adoptStart = view.indexOf('adoptActiveSolidRef.current =');
   const adopt = view.slice(adoptStart, view.indexOf('placeAssemblyRef.current', adoptStart));
-  const filletPaint = view.slice(view.indexOf('const paintFilletBlendPreview'), view.indexOf('const exitContourMode'));
+  const filletPaint = view.slice(view.indexOf('const paintFilletBlendPreview'), view.indexOf('const exitContourMode = '));
   const filletLabels = view.slice(view.indexOf("group.name = 'filletIdLabels'"), view.indexOf('const rebuildFeatureEdges'));
   check('fillet preview and id labels anchor to the active part',
     filletPaint.includes('anchorToActivePart(group)')

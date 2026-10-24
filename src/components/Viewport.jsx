@@ -4926,7 +4926,10 @@ const Viewport = forwardRef(({
   const applySketchEntityDelete = useCallback((id) => {
     let prev = contourModeRef.current;
     if (!prev || !id) return false;
-    prev = promoteContourState(prev) || prev;
+    // An unpromoted circle, rectangle or polygon is the one 'shape' chip.
+    // Promoting it first renames it to arcs and lines, so the delete would
+    // find nothing and quietly keep the shape (#511 regression).
+    if (id !== 'shape') prev = promoteContourState(prev) || prev;
     const result = deleteContourEntity(prev, id);
     if (!result.removed.length) return false;
     let next = { ...result.state, entityCard: null };

@@ -118,6 +118,20 @@ jobs:
             exit 1
           fi
 
+      # Headless node, no Chrome: source-pin goldens that read the sources and
+      # the pure helpers (cross-part subtract plan, assembly title and
+      # overlays, failed-part outline wiring, shell face-pick compose). Each
+      # exits non-zero on a failed check and prints its "passed" line.
+      - name: source-pin goldens
+        run: |
+          for g in cross-part-clone assembly failed-part-outline shell-face-pick; do
+            npm run "golden:$g" | tee "${RUNNER_TEMP}/$g.log"
+            if ! grep -qi 'checks passed' "${RUNNER_TEMP}/$g.log"; then
+              echo "$g golden did not pass (see log above)"
+              exit 1
+            fi
+          done
+
   # Cheapest existing golden that proves the bundle actually boots: a real
   # headless Chrome, vite preview, #root painted, canvas + toolbar + Run.
   # Pixel goldens are not in this job. Chrome comes from the runner via
@@ -433,6 +447,24 @@ jobs:
           fi
           if ! grep -q 'agent prompt states golden: ok' "${RUNNER_TEMP}/agent-prompt-states.log"; then
             echo "agent prompt states golden did not pass (see log above)"
+            exit 1
+          fi
+          npm run golden:part-dirty | tee "${RUNNER_TEMP}/part-dirty.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/part-dirty.log"; then
+            echo "part dirty golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'Part dirty checks passed' "${RUNNER_TEMP}/part-dirty.log"; then
+            echo "part dirty golden did not pass (see log above)"
+            exit 1
+          fi
+          npm run golden:contour-strip | tee "${RUNNER_TEMP}/contour-strip.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/contour-strip.log"; then
+            echo "contour strip golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'contour strip: ok' "${RUNNER_TEMP}/contour-strip.log"; then
+            echo "contour strip golden did not pass (see log above)"
             exit 1
           fi
           npm run golden:undo-after-timeout | tee "${RUNNER_TEMP}/undo-after-timeout.log"
