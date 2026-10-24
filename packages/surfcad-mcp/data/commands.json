@@ -17951,7 +17951,10 @@
       "confirm": false,
       "group": "document",
       "immediate": false,
-      "uiEntry": "data-git-open-insert",
+      "uiEntry": [
+        "data-git-open-insert",
+        "data-part-add-instance"
+      ],
       "example": {
         "part_id": "2026-10-07-20-56-31-0423-a3f9"
       }

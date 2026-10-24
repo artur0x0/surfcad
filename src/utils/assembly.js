@@ -475,6 +475,63 @@ export function partRepoDeleteConfirmCopy(partId) {
   return `Delete ${file} from the repo? This can't be undone from SurfCAD.`;
 }
 
+/**
+ * Instance labels for the Parts list. One entry per row id:
+ * `isInstance` (the row carries `instanceOf`), `count` (rows that place
+ * this row's definition, the row included), and `definitionName` (the
+ * primary row's name, else the lowest-order sibling's, else null). The
+ * primary row of a definition placed more than once shows the count; an
+ * instance row shows "instance of <definitionName>".
+ */
+export function partInstanceInfo(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const byDef = new Map();
+  for (const row of sortParts(list)) {
+    if (!row || row.id == null) continue;
+    const def = partDefinitionId(row);
+    if (!byDef.has(def)) byDef.set(def, []);
+    byDef.get(def).push(row);
+  }
+  const out = new Map();
+  for (const [def, members] of byDef) {
+    const primary = members.find((row) => String(row.id) === def) || null;
+    for (const row of members) {
+      const isInstance = String(row.id) !== def;
+      const sibling = members.find((other) => other !== row) || null;
+      const named = primary || sibling;
+      out.set(String(row.id), {
+        isInstance,
+        count: members.length,
+        definitionName: named ? String(named.name || '') || null : null,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * First line of the Parts delete dialog. With other rows still placing the
+ * same definition, the delete only removes this placement and the script
+ * stays, so the repo option is not offered (`offerRepo` false).
+ */
+export function partDeleteDialogCopy({ name, canDeleteRepo = false, otherInstances = 0 } = {}) {
+  const label = String(name || 'this part');
+  const others = Number.isFinite(Number(otherInstances)) ? Math.max(0, Number(otherInstances)) : 0;
+  if (others > 0) {
+    const noun = others === 1 ? '1 other instance' : `${others} other instances`;
+    return {
+      message: `Remove this placement of ${label}? The part stays in the assembly as ${noun}, and its script is kept.`,
+      offerRepo: false,
+    };
+  }
+  return {
+    message: canDeleteRepo
+      ? `Remove ${label} from this assembly only, or also delete its file from the repo.`
+      : `Remove ${label} from this assembly?`,
+    offerRepo: !!canDeleteRepo,
+  };
+}
+
 /** True when Parts delete can offer "Delete from assembly & repo". */
 export function partCanDeleteFromRepo(source, partId, path) {
   if (source !== 'git') return false;

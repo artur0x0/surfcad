@@ -407,7 +407,21 @@ Desktop specifics:
   assembly, and a part in `parts/`, opens by reference with no subtitle. A part from another assembly's folder
   links in (`links from …`). The row then shows **Caution: external part!**
   (`data-part-external`) and **Copy to this assembly**
-  (`data-part-copy-to-assembly`). Parts inserted from another assembly sit
+  (`data-part-copy-to-assembly`). Every row's action strip has **Add
+  instance** (`data-part-add-instance`, `data-ui-action="data-part-add-instance"`,
+  lucide `CopyPlus`, disabled on a missing part): it adds another placement
+  of that part through the same host as `insert_part { instance: true }`,
+  so the new row shares the script, run and undo history and gets its own
+  name, pose and visibility. An instance row shows the gray caption
+  *instance of <name>* under its name (`data-part-instance-of`, the
+  definition's row id); the primary row of a part placed more than once
+  shows a `×N` pill (`data-part-instance-count`). Rename edits the row
+  label only. The delete dialog's first line (`data-part-delete-message`)
+  comes from `partDeleteDialogCopy`: while other rows still place the same
+  part it says *Remove this placement of <name>? The part stays in the
+  assembly as N other instances, and its script is kept.* and the
+  **Delete from assembly & repo** button is not offered; the last row keeps
+  today's copy and the repo option. Parts inserted from another assembly sit
   under a group row (`data-part-group`, `data-part-group-row`): chevron
   (`data-part-group-chevron`), name, and count (`data-part-group-count`).
   Expanded parts are indented under a vertical thread

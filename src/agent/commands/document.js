@@ -177,7 +177,7 @@ export const openPartCommand = Object.freeze({
 
 export const insertPartCommand = Object.freeze({
   name: 'insert_part',
-  uiEntry: 'data-git-open-insert',
+  uiEntry: ['data-git-open-insert', 'data-part-add-instance'],
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,
