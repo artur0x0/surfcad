@@ -12,6 +12,7 @@ import { featureStripChips } from '../../utils/sheetMetal/sheetRibbon.js';
 export function buildFeatureTree(input = {}) {
   const script = typeof input.script === 'string' ? input.script : '';
   const failed = new Set(input.failedIds || []);
+  const ms = input.featureMs && typeof input.featureMs === 'object' ? input.featureMs : null;
   const chips = featureStripChips(script, { spec: input.sheetSpec || null });
   const features = chips.map((chip, index) => ({
     id: chip.id,
@@ -23,6 +24,8 @@ export function buildFeatureTree(input = {}) {
     sheet: chip.sheet === true,
     external: chip.external === true,
     separate: chip.separate === true,
+    // Kernel time of this block on the last run that reported it.
+    ...(ms && Number.isFinite(Number(ms[chip.id])) ? { ms: Number(ms[chip.id]) } : {}),
   }));
   return {
     features,

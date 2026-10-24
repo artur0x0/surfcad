@@ -1,6 +1,6 @@
 import { parseFeatureMarkers } from '../../utils/featureMarkers.js';
 import { explainReservedHelperError } from './reservedHelpers.js';
-import { KERNEL_CRASH_CODE, KERNEL_CRASH_DETAIL } from '../../workers/kernelCrash.js';
+import { KERNEL_CRASH_CODE, KERNEL_CRASH_DETAIL, FEATURE_TIMEOUT_CODE, FEATURE_TIMEOUT_HINT } from '../../workers/kernelCrash.js';
 
 /**
  * @param {string} script
@@ -184,6 +184,34 @@ export function formatAgentErrors(input = {}) {
       row.featureId = failure.id;
     }
     return [row];
+  }
+
+  if (failure?.code === FEATURE_TIMEOUT_CODE || (failure?.timeout && typeof failure.timeout === 'object')) {
+    // One block ran past the budget; the worker was replaced and the part
+    // was rebuilt without that block. Its own code, the block, how long it
+    // ran, and the recovery. The part keeps working.
+    const features = parseFeatureMarkers(script);
+    const id = failure.id || failure.timeout?.id || null;
+    const feature = id ? features.find((row) => row.id === id) : null;
+    const timeout = failure.timeout && typeof failure.timeout === 'object' ? failure.timeout : {};
+    const row = {
+      code: FEATURE_TIMEOUT_CODE,
+      message: scrubPublishedError(failure.message) || 'A feature did not finish within the time budget.',
+      workerRestarted: true,
+    };
+    if (id) {
+      const featureIndex = featureIndexForId(script, id);
+      if (featureIndex !== undefined) row.featureIndex = featureIndex;
+      row.featureId = id;
+    }
+    const featureType = feature?.kind || timeout.kind || failure.kind;
+    const featureLabel = feature?.chipLabel || feature?.label || timeout.label || failure.label;
+    if (featureType) row.featureType = featureType;
+    if (featureLabel) row.featureLabel = featureLabel;
+    if (Number.isFinite(Number(timeout.elapsedMs))) row.elapsedMs = Number(timeout.elapsedMs);
+    if (Number.isFinite(Number(timeout.budgetMs))) row.budgetMs = Number(timeout.budgetMs);
+    row.detail = typeof failure.hint === 'string' && failure.hint ? failure.hint : FEATURE_TIMEOUT_HINT;
+    return [publishErrorRow(row)];
   }
 
   if (failure?.id || (typeof failure?.message === 'string' && failure.message)) {

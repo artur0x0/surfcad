@@ -666,3 +666,25 @@ test('a bar between a contour and the feature that uses it keeps the contour', (
   assert.ok(placed.buffer.indexOf('id=cube2') < placed.buffer.indexOf('id=extrude1'));
   assert.equal(rollbackAnchorAfterInsert(script, placed.buffer, 'contour:c1'), 'cube2');
 });
+
+test('timeoutRecoveryKeepsSolid says whether a part survives without the block that ran out of time', async () => {
+  const { timeoutRecoveryKeepsSolid } = await import('./featureSkip.js');
+  const two = [
+    '// --- cube begin id=cube1 ---',
+    'let part = Manifold.cube([10, 10, 10], true);',
+    '// --- cube end ---',
+    '// --- hole begin id=hole1 ---',
+    'part = part.subtract(Manifold.cylinder(12, 2, 2, 12, true));',
+    '// --- hole end ---',
+    'return part;',
+    '',
+  ].join('\n');
+  assert.equal(timeoutRecoveryKeepsSolid(two, 'hole1'), true);
+  // The base block takes everything with it.
+  assert.equal(timeoutRecoveryKeepsSolid(two, 'cube1'), false);
+  // A freehand script wrapped as one code block has nothing else.
+  const one = ['// --- code begin id=code-0 ---', 'let part = Manifold.cube([10, 10, 10], true);', 'for (;;) {}', '// --- code end ---', 'return part;', ''].join('\n');
+  assert.equal(timeoutRecoveryKeepsSolid(one, 'code-0'), false);
+  assert.equal(timeoutRecoveryKeepsSolid(two, 'nope'), false);
+  assert.equal(timeoutRecoveryKeepsSolid('', 'hole1'), false);
+});

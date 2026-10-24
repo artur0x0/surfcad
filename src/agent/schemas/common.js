@@ -120,6 +120,11 @@ export const STATUS_SCHEMA = Object.freeze({
     featureCount: { type: 'integer' },
     bodyCount: { type: ['integer', 'null'] },
     stale: { type: 'boolean' },
+    featureMs: {
+      type: 'object',
+      description: 'Kernel milliseconds per feature block (by feature_tree id) on the last run that reported; what is expensive on this part',
+      additionalProperties: { type: 'number' },
+    },
     features: {
       type: 'array',
       description: 'Feature strip rows, only with return: "summary" (script is omitted with "status" and "summary")',
@@ -132,6 +137,7 @@ export const STATUS_SCHEMA = Object.freeze({
           label: { type: 'string' },
           chipLabel: { type: 'string' },
           index: { type: 'integer' },
+          ms: { type: 'number', description: 'Kernel milliseconds of this block on the last run that reported it' },
         },
       },
     },

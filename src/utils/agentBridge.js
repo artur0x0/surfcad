@@ -154,7 +154,19 @@ function statusFrom(outcome, script, extras = {}) {
     // The run behind this status never reported (worker mid-restart, a
     // superseded refresh): volume, bbox and errors are the previous run's.
     ...(outcome?.stale === true ? { stale: true } : {}),
+    // Kernel milliseconds per feature block from the last run that reported.
+    ...(featureMsOf(outcome?.featureMs) ? { featureMs: featureMsOf(outcome.featureMs) } : {}),
   };
+}
+
+/** `{ [featureId]: ms }` with only finite numbers, or null when empty. */
+function featureMsOf(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out = {};
+  for (const [id, ms] of Object.entries(value)) {
+    if (typeof id === 'string' && id && Number.isFinite(Number(ms))) out[id] = Number(ms);
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 function statusBodyCount(outcome, extras) {
@@ -175,6 +187,7 @@ function copyStatus(status) {
     featureCount: src.featureCount || 0,
     bodyCount: src.bodyCount == null ? null : src.bodyCount,
     ...(src.stale === true ? { stale: true } : {}),
+    ...(featureMsOf(src.featureMs) ? { featureMs: featureMsOf(src.featureMs) } : {}),
   };
 }
 

@@ -26,6 +26,34 @@ const OOM_RE = /out of memory|OOM\b|Cannot enlarge memory|allocation failed|memo
 export const DEFAULT_JOB_BUDGET_MS = 30000;
 
 /**
+ * Error code for one marked feature block that ran past the budget while the
+ * rest of the part was rebuilt without it (the part keeps working).
+ */
+export const FEATURE_TIMEOUT_CODE = 'feature_timeout';
+
+/**
+ * How many times one execute is re-run with its timed-out blocks skipped
+ * before the whole part fails with `geometry_worker_crashed`. Each retry
+ * costs one budget, so three keeps the worst case under two minutes.
+ */
+export const MAX_FEATURE_TIMEOUT_RETRIES = 3;
+
+/** The `detail` an agent `feature_timeout` row carries; also the recovery the viewport names. */
+export const FEATURE_TIMEOUT_HINT = 'The other features built and the part shows them. Make this one cheaper: fewer edges (the picked face\'s edges or an explicit edge list instead of every convex edge), a smaller radius, or lower segment counts; then edit it, or delete or undo it.';
+
+/**
+ * One line for a block that ran out of time: who, how long, and that the
+ * part came back without it.
+ * @param {{ label?: string | null, kind?: string | null, elapsedMs?: number | null, budgetMs?: number | null }} info
+ */
+export function featureTimeoutMessage({ label, kind, elapsedMs, budgetMs } = {}) {
+  const name = (typeof label === 'string' && label) || (typeof kind === 'string' && kind) || 'This feature';
+  const budget = Number.isFinite(Number(budgetMs)) ? `the ${Math.round(Number(budgetMs) / 1000)} s budget` : 'its time budget';
+  const ran = Number.isFinite(Number(elapsedMs)) ? ` after ${Math.round(Number(elapsedMs) / 1000)} s` : '';
+  return `${name} did not finish within ${budget}${ran}. The geometry engine was restarted and the part was rebuilt without that feature; everything else is unchanged.`;
+}
+
+/**
  * Is this throw the kernel dying (rather than a script or helper error),
  * and why. `heapMB` is the wasm heap at the time; `capMB` its maximum.
  *
@@ -50,14 +78,18 @@ export function classifyKernelFailure(input = {}) {
 }
 
 /** One line the user and the agent both read. */
-export function kernelCrashMessage({ reason, budgetMs, kernelMessage, wasmHeapMB } = {}) {
+export function kernelCrashMessage({ reason, budgetMs, kernelMessage, wasmHeapMB, featureLabel, featureKind } = {}) {
   const heap = Number.isFinite(Number(wasmHeapMB)) ? ` (heap ${Math.round(Number(wasmHeapMB))} MB)` : '';
   if (reason === 'out_of_memory') {
     return `The geometry engine ran out of memory building this part${heap}. It was restarted; other parts are unaffected. Simplify the part, lower segment counts, or split it up.`;
   }
   if (reason === 'timeout') {
     const seconds = Number.isFinite(Number(budgetMs)) ? `${Math.round(Number(budgetMs) / 1000)} s` : 'its time budget';
-    return `This part did not finish within ${seconds}. The geometry engine was restarted; other parts are unaffected. Simplify the part, lower segment counts, or split it up.`;
+    const label = (typeof featureLabel === 'string' && featureLabel)
+      || (typeof featureKind === 'string' && featureKind)
+      || '';
+    const who = label ? `${label} did not finish within ${seconds}, and the part still had no solid without it` : `This part did not finish within ${seconds}`;
+    return `${who}. The geometry engine was restarted; other parts are unaffected. Simplify the part, lower segment counts, or split it up.`;
   }
   if (reason === 'worker_lost') {
     return 'The geometry engine stopped while building this part. It was restarted; other parts are unaffected. Run the part again, and simplify it if this repeats.';
@@ -94,6 +126,9 @@ export function kernelCrashError(info = {}) {
   if (Number.isFinite(Number(info.budgetMs))) error.budgetMs = Number(info.budgetMs);
   if (typeof info.partId === 'string' && info.partId) error.partId = info.partId;
   if (typeof info.featureId === 'string' && info.featureId) error.featureId = info.featureId;
+  if (typeof info.featureKind === 'string' && info.featureKind) error.featureKind = info.featureKind;
+  if (typeof info.featureLabel === 'string' && info.featureLabel) error.featureLabel = info.featureLabel;
+  if (Number.isFinite(Number(info.featureElapsedMs))) error.featureElapsedMs = Number(info.featureElapsedMs);
   return error;
 }
 
@@ -115,6 +150,9 @@ export function kernelCrashRecord(error) {
   if (Number.isFinite(error.budgetMs)) out.budgetMs = error.budgetMs;
   if (typeof error.partId === 'string') out.partId = error.partId;
   if (typeof error.featureId === 'string') out.featureId = error.featureId;
+  if (typeof error.featureKind === 'string') out.featureKind = error.featureKind;
+  if (typeof error.featureLabel === 'string') out.featureLabel = error.featureLabel;
+  if (Number.isFinite(error.featureElapsedMs)) out.featureElapsedMs = error.featureElapsedMs;
   return out;
 }
 

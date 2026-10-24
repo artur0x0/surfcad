@@ -639,9 +639,20 @@ const App = () => {
   const [rollbackAnchors, setRollbackAnchors] = useState({});
   const rollbackAnchorsRef = useRef({});
   rollbackAnchorsRef.current = rollbackAnchors;
+  /** Per-part `{ [featureId]: ms }` from the last run the viewport reported (feature_tree `ms`, status.featureMs). */
+  const featureTimingsRef = useRef({});
   const handleRunOutcome = ({
     script, ok, scriptLine, featureId, featureBlock, skipped, message, detail, crash,
+    code, timeout, hint, featureTimings,
   } = {}) => {
+    if (Array.isArray(featureTimings)) {
+      const key = assemblyRef.current?.activeId ? String(assemblyRef.current.activeId) : '__cad__';
+      const map = {};
+      for (const row of featureTimings) {
+        if (row && typeof row.id === 'string' && Number.isFinite(Number(row.ms))) map[row.id] = Number(row.ms);
+      }
+      featureTimingsRef.current = { ...featureTimingsRef.current, [key]: map };
+    }
     // Tracked block first (works on Safari), the stack's line second.
     const next = ok ? null : failedFeatureFromOutcome(script, { featureId, featureBlock, scriptLine });
     const uiMessage = typeof message === 'string' && message.trim() ? message.trim() : '';
@@ -656,6 +667,10 @@ const App = () => {
         ...(uiMessage ? { message: uiMessage } : {}),
         ...(uiDetail ? { detail: uiDetail } : {}),
         ...(crash && typeof crash === 'object' ? { crash } : {}),
+        // A block the watchdog killed; the part was rebuilt without it.
+        ...(typeof code === 'string' && code ? { code } : {}),
+        ...(timeout && typeof timeout === 'object' ? { timeout } : {}),
+        ...(typeof hint === 'string' && hint ? { hint } : {}),
         skipped: Array.isArray(skipped) ? skipped : [],
       };
       if (!stamped.id && !stamped.message) stamped = null;
@@ -671,6 +686,8 @@ const App = () => {
       && (prev?.message ?? null) === (stamped?.message ?? null)
       && (prev?.detail ?? null) === (stamped?.detail ?? null)
       && (prev?.crash?.reason ?? null) === (stamped?.crash?.reason ?? null)
+      && (prev?.code ?? null) === (stamped?.code ?? null)
+      && (prev?.timeout?.elapsedMs ?? null) === (stamped?.timeout?.elapsedMs ?? null)
       && failureSkipStamp(prev?.skipped) === failureSkipStamp(stamped?.skipped)
         ? prev
         : stamped
@@ -9462,10 +9479,12 @@ const App = () => {
     const run = id ? partRunsRef.current?.[id] : null;
     const reported = runOutcomeEpochRef.current !== epochBefore;
     const failure = reported ? runFailureRef.current : null;
+    const featureMs = featureTimingsRef.current[id ? String(id) : '__cad__'];
+    const timings = featureMs && Object.keys(featureMs).length ? { featureMs } : {};
     if (reported && !failure) {
       if (run?.empty) {
         return {
-          ok: true, errors: [], volume: null, bbox: null, partName, runFailure: null, bodyCount: 0,
+          ok: true, errors: [], volume: null, bbox: null, partName, runFailure: null, bodyCount: 0, ...timings,
         };
       }
       if (run?.ok === true && run.mesh?.vertProperties) {
@@ -9478,6 +9497,7 @@ const App = () => {
           partName,
           runFailure: null,
           bodyCount: finishedRunBodyCount(run, bodyCountOfWorkerMesh(run.mesh)),
+          ...timings,
         };
       }
     }
@@ -9491,6 +9511,7 @@ const App = () => {
       volume: null,
       bbox: null,
       partName,
+      ...timings,
     };
     if (reported) result.runFailure = failure || null;
     // The viewport never stamped this run (it bailed early, a later refresh
@@ -10024,6 +10045,7 @@ const App = () => {
         failedIds: sheetFailedIds,
         rollbackAnchor: rollbackAnchor ?? null,
         activeChipId: featureStripActiveId,
+        featureMs: featureTimingsRef.current[key] || null,
       });
     },
     readSelection() {
@@ -10166,6 +10188,7 @@ const App = () => {
       const script = id
         ? (codeEditorRef.current?.getContent?.() ?? partScriptsRef.current[id] ?? '')
         : '';
+      const featureMs = featureTimingsRef.current[id || '__cad__'];
       const base = {
         partId: id,
         partName,
@@ -10175,6 +10198,7 @@ const App = () => {
         bbox: null,
         featureCount: agentFeatureCount(script),
         bodyCount: null,
+        ...(featureMs && Object.keys(featureMs).length ? { featureMs } : {}),
       };
       const run = id ? partRunsRef.current?.[id] : null;
       if (!run) return base;

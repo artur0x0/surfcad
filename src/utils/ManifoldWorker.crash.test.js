@@ -178,3 +178,138 @@ test('the budget for a normal job is not the watchdog: a slow job inside its bud
   assert.equal(slow.echo, 'DELAY30');
   assert.equal(workers().length, 1);
 });
+
+/**
+ * Per-block budget. The stand-in reports which marked block it is in
+ * (`PROGRESS:<id>` in the script posts a featureProgress message the way the
+ * worker's tracker does), then hangs. On the re-post, `payload.timedOut`
+ * names that block and the stand-in answers with the recovered mesh and the
+ * feature-skip report runtime.js would build; `HANGALWAYS` keeps hanging.
+ */
+class BlockWorker extends FakeWorker {
+  postMessage(message) {
+    const { type, id, payload } = message;
+    if (type !== 'execute' || this.terminated || this.dead) return super.postMessage(message);
+    const script = String(payload.script);
+    const progress = payload.progress === true ? /PROGRESS:([\w-]+)/.exec(script) : null;
+    if (!progress) return super.postMessage(message);
+    this.posted.push(message);
+    const timedOut = Array.isArray(payload.timedOut) ? payload.timedOut : [];
+    setTimeout(() => this._emit({
+      type: 'featureProgress', id, payload: { featureId: progress[1], kind: 'chamfer', label: 'Chamfer', index: 1, block: '// --- chamfer begin ---' },
+    }), 0);
+    if (script.includes('HANGALWAYS')) return undefined;
+    if (!timedOut.some((row) => row.id === progress[1])) return undefined;
+    setTimeout(() => this._emit({
+      type: 'result',
+      id,
+      payload: {
+        mesh: MESH, volume: 1, surfaceArea: 6, status: 'NoError', tris: 1, boundingBox: { min: [0, 0, 0], max: [1, 1, 0] }, bodyCentroids: [[0, 0, 0]], timing: { execMs: 1, serializeMs: 0 },
+        echo: script,
+        timedOut,
+        featureSkip: { featureId: progress[1], featureBlock: '// --- chamfer begin ---', scriptLine: null, message: `Chamfer did not finish within the 0 s budget`, skipped: [], code: 'feature_timeout', timeout: timedOut[0], hint: 'fewer edges' },
+        featureTimings: [{ id: 'cube1', kind: 'cube', ms: 2 }],
+      },
+    }), 0);
+    return undefined;
+  }
+}
+
+/** A base cube block, then a hole block carrying `marker` as its body. */
+const blockScript = (marker, holeId = 'hole1') => [
+  '// --- cube begin id=cube1 ---',
+  'let part = Manifold.cube([10, 10, 10], true);',
+  '// --- cube end ---',
+  `// --- hole begin id=${holeId} ---`,
+  marker,
+  '// --- hole end ---',
+  'return part;',
+  '',
+].join('\n');
+
+function blockHarness() {
+  const log = [];
+  const crashes = [];
+  const mw = new ManifoldWorker({ createWorker: () => new BlockWorker(log), onCrash: (info) => crashes.push(info) });
+  return { mw, log, crashes, workers: () => log.filter((e) => e.event === 'spawn').map((e) => e.worker) };
+}
+
+test('a job killed inside a marked block is re-posted without that block and resolves with a feature_timeout report', async () => {
+  const { mw, workers, crashes } = blockHarness();
+  await mw.init();
+  const hung = mw.execute(blockScript('PROGRESS:hole1 HANG'), { timeoutMs: 60 });
+  const later = mw.execute('return cube; // later', { timeoutMs: 5000 });
+  const result = await hung;
+  assert.equal(result.featureSkip.code, 'feature_timeout');
+  assert.equal(result.featureSkip.featureId, 'hole1');
+  assert.equal(result.timedOut.length, 1);
+  assert.equal(result.timedOut[0].id, 'hole1');
+  assert.equal(result.timedOut[0].kind, 'chamfer');
+  assert.equal(result.timedOut[0].budgetMs, 60);
+  assert.ok(result.timedOut[0].elapsedMs >= 0 && result.timedOut[0].elapsedMs < 2000, String(result.timedOut[0].elapsedMs));
+  assert.deepEqual(result.featureTimings, [{ id: 'cube1', kind: 'cube', ms: 2 }]);
+  // One crash, one restart, the hung job re-posted to the fresh worker with
+  // the block named (the stand-in answered the later job before the crash,
+  // so nothing was queued behind it).
+  assert.equal(workers().length, 2);
+  assert.equal(workers()[0].terminated, true);
+  const reposted = workers()[1].posted.filter((m) => m.type === 'execute');
+  assert.equal(reposted.length, 1);
+  assert.match(String(reposted[0].payload.script), /PROGRESS:hole1/);
+  assert.deepEqual(reposted[0].payload.timedOut.map((r) => r.id), ['hole1']);
+  assert.equal((await later).echo, 'return cube; // later');
+  assert.equal(mw.crashCount, 1);
+  assert.equal(mw.lastCrash.retried, 1);
+  assert.equal(mw.lastCrash.failed, 0);
+  assert.equal(mw.lastCrash.featureId, 'hole1');
+  assert.equal(crashes.length, 1);
+});
+
+test('a timed-out block whose removal would leave no solid is not re-posted: the part fails as before, naming the block', async () => {
+  const { mw, workers } = blockHarness();
+  await mw.init();
+  // A freehand script is one code block; skipping it leaves nothing.
+  const whole = ['// --- code begin id=code-0 ---', 'let part = Manifold.cube([10, 10, 10], true);', 'PROGRESS:code-0 HANG', '// --- code end ---', 'return part;', ''].join('\n');
+  const err = await mw.execute(whole, { timeoutMs: 40 }).then(() => null, (e) => e);
+  assert.equal(err.code, KERNEL_CRASH_CODE);
+  assert.equal(err.reason, 'timeout');
+  assert.equal(err.featureId, 'code-0');
+  assert.match(err.message, /did not finish within 0 s, and the part still had no solid without it/);
+  assert.equal(workers().length, 2);
+  assert.equal(mw.lastCrash.retried, 0);
+  assert.equal(mw.lastCrash.failed, 1);
+  // The base block of a two-block part is the same: everything depends on it.
+  const base = blockScript('part = part.subtract(Manifold.cylinder(12, 2, 2, 12, true));').replace('let part = Manifold.cube([10, 10, 10], true);', 'PROGRESS:cube1 HANG');
+  const err2 = await mw.execute(base, { timeoutMs: 40 }).then(() => null, (e) => e);
+  assert.equal(err2.code, KERNEL_CRASH_CODE);
+  assert.equal(err2.featureId, 'cube1');
+  assert.equal(mw.lastCrash.retried, 0);
+});
+
+test('the re-post is bounded: a block that never finishes fails the job as a crash that names the block', async () => {
+  const { mw, workers } = blockHarness();
+  await mw.init();
+  const err = await mw.execute(blockScript('PROGRESS:fillet1 HANGALWAYS', 'fillet1'), { timeoutMs: 40 }).then(() => null, (e) => e);
+  assert.equal(err.code, KERNEL_CRASH_CODE);
+  assert.equal(err.reason, 'timeout');
+  assert.equal(err.featureId, 'fillet1');
+  assert.equal(err.featureKind, 'chamfer');
+  assert.match(err.message, /Chamfer did not finish within 0 s, and the part still had no solid without it/);
+  // The first kill plus MAX_FEATURE_TIMEOUT_RETRIES re-posts, each a fresh worker.
+  assert.equal(mw.crashCount, 4);
+  assert.equal(workers().length, 5);
+  const last = workers()[3].posted.find((m) => m.type === 'execute');
+  assert.equal(last.payload.timedOut.length, 3);
+  assert.ok(last.payload.timedOut.every((r) => r.id === 'fillet1'));
+});
+
+test('a timeout outside every block fails as before, with no re-post', async () => {
+  const { mw, workers } = blockHarness();
+  await mw.init();
+  const err = await mw.execute('HANG', { timeoutMs: 40 }).then(() => null, (e) => e);
+  assert.equal(err.code, KERNEL_CRASH_CODE);
+  assert.equal(err.featureId, undefined);
+  assert.equal(workers().length, 2);
+  assert.equal(mw.lastCrash.retried, 0);
+  assert.equal(mw.lastCrash.failed, 1);
+});

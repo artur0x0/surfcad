@@ -9,7 +9,7 @@ import { BUILD_FLOW_NOTE } from '../buildGuidance.js';
 
 const RESERVED_HELPERS = ` ${reservedHelperClause()}`;
 /** Every tool that runs geometry says what a kernel crash looks like and what to do. */
-export const CRASH_NOTE = ' If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again.';
+export const CRASH_NOTE = ' If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. When the run past the budget was inside one marked feature block, the part is rebuilt without that block instead: the result is ok: false with one failures row { code: feature_timeout, featureId, featureType, featureLabel, elapsedMs, budgetMs, detail }, status.runState is failed, the other features are built and shown, and status.featureMs (and feature_tree ms) say how long each block took; edit, delete, or undo that feature.';
 const USE_SELECTION_RESULT_NOTE = ' The result usedSelection says whether the viewport selection was used. The selection is single-use: picks clear after every rebuild, and use_selection: true with nothing selected is no_selection (nothing is written); re-pick before each insert that uses it.';
 const FEATURE_COUNT_NOTE = ' featureCount counts insert_* feature blocks, so a freehand set_script is one feature. bodyCount is null until the first run; a finished run that produced no bodies reports 0.';
 
@@ -62,7 +62,7 @@ export const COMMAND_META = {
   },
   errors: {
     description:
-      'Structured errors from the last finished geometry run. message is the same text the viewport shows. featureType, featureLabel, and featureIndex identify the failed feature when known. detail is the exception name, a Manifold status, or the kernel message when that text is not already in message. Stack frames and URLs are omitted, and detail is always present on feature_failed: when the kernel adds nothing, it names the helper that threw (move adds how to name the body). Cleared on the next successful run. Feature and kernel failures use code feature_failed. A geometry engine crash (a wasm abort, out of memory, or a run past its time budget) is one row with code geometry_worker_crashed, reason (wasm_abort | out_of_memory | timeout | worker_lost), and workerRestarted: the worker was replaced, other parts kept building, and the next run of this part uses the fresh worker; simplify the part, reduce segment counts, or split it up. No reload is needed.',
+      'Structured errors from the last finished geometry run. message is the same text the viewport shows. featureType, featureLabel, and featureIndex identify the failed feature when known. detail is the exception name, a Manifold status, or the kernel message when that text is not already in message. Stack frames and URLs are omitted, and detail is always present on feature_failed: when the kernel adds nothing, it names the helper that threw (move adds how to name the body). Cleared on the next successful run. Feature and kernel failures use code feature_failed. One marked feature block that ran past the time budget while the rest of the part was rebuilt without it is one row with code feature_timeout, featureId, featureType, featureLabel, elapsedMs, budgetMs, workerRestarted: true, and detail (the recovery: fewer edges, a smaller radius, or lower segments; edit, delete, or undo that feature). A geometry engine crash (a wasm abort, out of memory, or a run past its time budget outside any block, or after three retries) is one row with code geometry_worker_crashed, reason (wasm_abort | out_of_memory | timeout | worker_lost), and workerRestarted: the worker was replaced, other parts kept building, and the next run of this part uses the fresh worker; simplify the part, reduce segment counts, or split it up. No reload is needed.',
     result: {
       type: 'object',
       additionalProperties: false,
@@ -82,6 +82,8 @@ export const COMMAND_META = {
               detail: { type: 'string' },
               reason: { type: 'string', enum: ['wasm_abort', 'out_of_memory', 'timeout', 'worker_lost'] },
               workerRestarted: { type: 'boolean' },
+              elapsedMs: { type: 'number', description: 'feature_timeout: how long the block ran before the watchdog killed the worker' },
+              budgetMs: { type: 'number', description: 'feature_timeout: the budget it ran past' },
             },
           },
         },

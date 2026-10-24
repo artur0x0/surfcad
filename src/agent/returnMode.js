@@ -72,21 +72,26 @@ export function takeReturnMode(args) {
   return { args: rest, mode };
 }
 
-/** Feature strip rows for a script, the same ids `feature_tree` reports. */
-export function featureSummary(script) {
+/**
+ * Feature strip rows for a script, the same ids `feature_tree` reports.
+ * `featureMs` (`status.featureMs`) adds each block's kernel time as `ms`.
+ */
+export function featureSummary(script, featureMs = null) {
+  const ms = featureMs && typeof featureMs === 'object' ? featureMs : null;
   return parseFeatureMarkers(typeof script === 'string' ? script : '').map((row) => ({
     id: row.id,
     kind: row.kind,
     label: row.label,
     chipLabel: row.chipLabel,
     index: row.index,
+    ...(ms && Number.isFinite(Number(ms[row.id])) ? { ms: Number(ms[row.id]) } : {}),
   }));
 }
 
 function shapeStatus(status, mode) {
   if (!status || typeof status !== 'object' || Array.isArray(status)) return status;
   const { script, ...rest } = status;
-  if (mode === 'summary') return { ...rest, features: featureSummary(script) };
+  if (mode === 'summary') return { ...rest, features: featureSummary(script, rest.featureMs) };
   return rest;
 }
 
