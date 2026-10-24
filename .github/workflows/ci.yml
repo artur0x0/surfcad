@@ -525,6 +525,15 @@ jobs:
             echo "feature timeout golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:joint-create | tee "${RUNNER_TEMP}/joint-create.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/joint-create.log"; then
+            echo "joint create golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'joint create golden: ok' "${RUNNER_TEMP}/joint-create.log"; then
+            echo "joint create golden did not pass (see log above)"
+            exit 1
+          fi
           npm run golden:face-identity | tee "${RUNNER_TEMP}/face-identity.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/face-identity.log"; then
             echo "face identity golden skipped because Chrome was not found; CI must launch it"

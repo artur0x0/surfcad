@@ -31,6 +31,7 @@
         "golden:new-part-empty": "node scripts/golden/smoke_new_part_empty.mjs",
         "golden:paint-open-ready": "node scripts/golden/smoke_paint_open_ready.mjs",
         "golden:joint-fixed-target": "node scripts/golden/smoke_joint_fixed_target.mjs",
+        "golden:joint-create": "node scripts/golden/smoke_joint_create.mjs",
         "golden:agent-prompt-chat": "node scripts/golden/smoke_agent_prompt_chat.mjs",
         "golden:agent-prompt-states": "node scripts/golden/smoke_agent_prompt_states.mjs",
         "golden:code-snippet": "node scripts/golden/smoke_code_snippet.mjs",

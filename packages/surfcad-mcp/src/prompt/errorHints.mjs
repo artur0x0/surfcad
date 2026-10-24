@@ -104,6 +104,8 @@ export const ERROR_HINTS = Object.freeze({
   unknown_joint: { hint: 'The joint id is not in this assembly: joint_edit takes an id from a joint_commit result; joint_open {} starts a new one.' },
   no_joint_card: { hint: 'The joint card is closed: joint_open {} first, then joint_pick / joint_set_params / joint_commit.' },
   no_joint_edit: { hint: 'No joint is open for editing: joint_open {} for a new joint or joint_edit { joint_id } for an existing one.' },
+  joints_unavailable: { hint: 'The joint card could not open because another card or session is open: close it (cancel_feature, sketch_cancel, sheet_exit) and call joint_create again.' },
+  joint_unsolvable: { hint: 'The solver refused that joint (details.reason is its message): check that the two picks are on different parts and fit the type, for example concentric needs two cylindrical faces (axes); nothing was written.' },
   part_still_referenced: { hint: 'Another assembly lists this part: delete it with scope: "assembly", or delete those parents first.' },
   origin_blocked: { hint: 'This change would move the assembly origin: place the part with part_set_transform instead.' },
   off_study_part: { hint: 'The FEA study belongs to another part: set_active_part to the study\'s part (fea_state {} names it) and retry.' },

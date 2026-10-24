@@ -1,5 +1,5 @@
 import { NO_ARGS_SCHEMA, FACE_KEY_SCHEMA, JOINT_TYPES } from '../schemas/common.js';
-import { jointParamsFromArgs } from '../jointAgent.js';
+import { jointParamsFromArgs, normalizeJointType } from '../jointAgent.js';
 import { runJointCommit } from './runJointCommit.js';
 
 function hostCall(ctx, name, args) {
@@ -206,5 +206,129 @@ export const jointEditCommand = Object.freeze({
     if (built.error) return { error: built.error };
     const jointId = args?.joint_id != null ? String(args.joint_id) : undefined;
     return hostCall(ctx, 'jointEdit', { joint_id: jointId, patch: built.patch });
+  },
+});
+
+const JOINT_CREATE_HINT = 'joint_create takes type (coincident, parallel, perpendicular, distance, angle, concentric, symmetric, fixed; planar is coincident) and picks: [{ part_id, face_id?, key?, kind? }] from list_faces (a face_id with its key; a cylindrical face is an axis pick; { part_id } alone is a whole-part pick for fixed), plus name, value_mm, sense and opposed as on joint_set_params.';
+
+function closeJointCard(ctx) {
+  try { ctx.jointCancel?.(); } catch { /* nothing to close */ }
+}
+
+function partIdsOf(picks) {
+  const ids = [];
+  for (const row of picks) if (row?.part_id && !ids.includes(row.part_id)) ids.push(row.part_id);
+  return ids;
+}
+
+/**
+ * joint_create: open → pick → set params → commit in one call, so an agent
+ * places a part with a joint instead of hand-computed part_set_transform
+ * numbers. Any failure closes the joint card so nothing is left open.
+ */
+export const jointCreateCommand = Object.freeze({
+  name: 'joint_create',
+  schema: Object.freeze({
+    type: 'object',
+    additionalProperties: false,
+    required: ['type', 'picks'],
+    properties: {
+      ...JOINT_PARAM_PROPERTIES,
+      picks: {
+        type: 'array',
+        minItems: 1,
+        items: JOINT_PICK_ROW_SCHEMA,
+        description: 'One row per reference: fixed takes one (a whole part, a face or an edge), every other type takes two, one per part.',
+      },
+    },
+  }),
+  example: {
+    type: 'coincident',
+    picks: [
+      { part_id: 'local:base', face_id: 'f4', key: { at: [0, 0, 5], n: [0, 0, 1], area: 400 } },
+      { part_id: 'local:pin', face_id: 'f2', key: { at: [0, 0, 0], n: [0, 0, 1], area: 50.27 } },
+    ],
+  },
+  checkArgs(args) {
+    if (args?.type == null) return { code: 'bad_args', message: `joint_create needs type. ${JOINT_CREATE_HINT}` };
+    const built = jointParamsFromArgs(args);
+    if (built.error) return built.error;
+    const rows = Array.isArray(args?.picks) ? args.picks : [];
+    if (!rows.length) return { code: 'bad_args', message: `joint_create needs picks. ${JOINT_CREATE_HINT}` };
+    for (const row of rows) {
+      if (!row?.part_id) return { code: 'bad_args', message: 'each joint_create pick needs part_id, with face_id or key unless it picks the whole part' };
+      if (row.kind === 'part' && (row.key || hasFaceId(row))) return { code: 'bad_args', message: 'a part pick takes no face_id or key' };
+    }
+    const type = normalizeJointType(args.type);
+    if (type === 'fixed' && rows.length !== 1) {
+      return { code: 'bad_args', message: 'fixed takes exactly one pick: a whole part, a face or an edge' };
+    }
+    if (type !== 'fixed' && rows.length !== 2) {
+      return { code: 'bad_args', message: `${type} takes exactly two picks, one per part` };
+    }
+    return null;
+  },
+  async run(ctx, args) {
+    const built = jointParamsFromArgs(args);
+    if (built.error) return { error: built.error };
+    const picks = args.picks;
+    const opened = hostCall(ctx, 'jointOpen');
+    if (opened.error) return opened;
+    if (opened.result?.open !== true) {
+      return { error: { code: 'joints_unavailable', message: 'The joint card could not open (another card or session is open); close it and call joint_create again' } };
+    }
+    const picked = hostCall(ctx, 'jointApplyPicks', { picks });
+    if (picked.error) {
+      closeJointCard(ctx);
+      return { error: { ...picked.error, message: `${picked.error.message || 'Joint pick failed'} ${JOINT_CREATE_HINT}` } };
+    }
+    const params = hostCall(ctx, 'jointSetParams', { patch: built.patch });
+    if (params.error) {
+      closeJointCard(ctx);
+      return params;
+    }
+    const committed = await runJointCommit(ctx);
+    if (committed.error) {
+      closeJointCard(ctx);
+      const refused = committed.error.code === 'commit_failed';
+      return {
+        error: {
+          ...committed.error,
+          code: refused ? 'joint_unsolvable' : committed.error.code,
+          // details survives the bridge envelope (code, message, details).
+          ...(refused ? { details: { reason: committed.error.message } } : {}),
+          message: refused
+            ? `The ${params.result?.type || built.patch.type} joint could not be solved from those picks: ${committed.error.message}. Nothing was written. ${JOINT_CREATE_HINT}`
+            : committed.error.message,
+        },
+      };
+    }
+    const placements = [];
+    for (const partId of partIdsOf(picks)) {
+      const fn = ctx.agentGetPartTransform;
+      if (typeof fn !== 'function') break;
+      let out = fn({ partId });
+      if (out && typeof out.then === 'function') out = await out;
+      const row = out?.result ?? out;
+      if (!out?.error && row) {
+        placements.push({ part_id: partId, position: row.position ?? null, rotation: row.rotation ?? null });
+      }
+    }
+    return {
+      result: {
+        ok: true,
+        jointId: committed.result?.jointId ?? null,
+        jointCount: committed.result?.jointCount ?? null,
+        unchanged: committed.result?.unchanged === true,
+        type: params.result?.type ?? built.patch.type ?? null,
+        name: params.result?.name ?? null,
+        valueMm: params.result?.valueMm ?? null,
+        sense: params.result?.sense ?? 1,
+        opposed: params.result?.opposed !== false,
+        pickCount: picked.result?.count ?? picks.length,
+        placements,
+        usedSelection: false,
+      },
+    };
   },
 });

@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 194,
+  "count": 195,
   "$defs": {
     "status": {
       "type": "object",
@@ -16560,6 +16560,189 @@
       "example": {
         "joint_id": "j1",
         "name": "Pin fit"
+      }
+    },
+    {
+      "name": "joint_create",
+      "description": "Prefer this over hand-computed part_set_transform numbers: one call creates a joint and solves the placement. type is coincident, parallel, perpendicular, distance, angle, concentric, symmetric or fixed (planar is coincident); picks are one row per reference from list_faces (face_id with its key from the same row; a cylindrical face is an axis pick; { part_id } alone is a whole-part pick), one pick for fixed and two for every other type; name, value_mm, sense and opposed as on joint_set_params. Runs the same open → pick → set params → commit path as the Joints card and records one assembly undo step. The result carries jointId, type, name, valueMm, pickCount and placements: the position and rotation of every picked part after the solve. A pick that does not resolve is unknown_part / unknown_face, and a joint the solver refuses is joint_unsolvable with details.reason; in both cases nothing is written and no card is left open. usedSelection is always false: the picks are explicit. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "picks"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "coincident",
+              "parallel",
+              "perpendicular",
+              "distance",
+              "angle",
+              "concentric",
+              "symmetric",
+              "fixed",
+              "planar"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "value_mm": {
+            "type": "number"
+          },
+          "value": {
+            "type": "number"
+          },
+          "sense": {
+            "type": "number"
+          },
+          "opposed": {
+            "type": "boolean"
+          },
+          "picks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "part_id"
+              ],
+              "properties": {
+                "part_id": {
+                  "type": "string"
+                },
+                "face_id": {
+                  "type": "string",
+                  "pattern": "^f[0-9]+$",
+                  "description": "Face id from list_faces on that part (e.g. f7). Valid only until the next remesh; pass the key from the same list_faces row with the id."
+                },
+                "key": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "at",
+                    "n",
+                    "area"
+                  ],
+                  "properties": {
+                    "at": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 3,
+                      "maxItems": 3
+                    },
+                    "n": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 3,
+                      "maxItems": 3
+                    },
+                    "area": {
+                      "type": "number"
+                    },
+                    "src": {
+                      "type": "integer"
+                    },
+                    "ord": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "face",
+                    "axis",
+                    "edge",
+                    "part"
+                  ],
+                  "description": "Pick kind when key is explicit (concentric uses axis picks). part picks the whole part, for a fixed joint; it needs no face_id or key."
+                }
+              }
+            },
+            "description": "One row per reference: fixed takes one (a whole part, a face or an edge), every other type takes two, one per part."
+          },
+          "return": {
+            "type": "string",
+            "enum": [
+              "status",
+              "summary",
+              "full"
+            ],
+            "description": "How much of status to return: \"status\" drops status.script, \"summary\" drops it and adds status.features (the feature strip), \"full\" keeps the whole script. Over MCP the default is \"status\"; in the page it is \"full\". Read the script with get_script."
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "bad_view",
+        "joints_unavailable",
+        "no_assembly",
+        "unknown_part",
+        "unknown_face",
+        "ambiguous_face",
+        "pick_failed",
+        "no_mesh",
+        "joint_unsolvable",
+        "edit_failed",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": false,
+      "confirm": false,
+      "group": "joint",
+      "immediate": false,
+      "uiEntry": null,
+      "example": {
+        "type": "coincident",
+        "picks": [
+          {
+            "part_id": "local:base",
+            "face_id": "f4",
+            "key": {
+              "at": [
+                0,
+                0,
+                5
+              ],
+              "n": [
+                0,
+                0,
+                1
+              ],
+              "area": 400
+            }
+          },
+          {
+            "part_id": "local:pin",
+            "face_id": "f2",
+            "key": {
+              "at": [
+                0,
+                0,
+                0
+              ],
+              "n": [
+                0,
+                0,
+                1
+              ],
+              "area": 50.27
+            }
+          }
+        ]
       }
     },
     {
