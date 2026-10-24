@@ -11,7 +11,7 @@
 
 export const FACE_KINDS = Object.freeze(['planar', 'cylindrical', 'curved']);
 
-const FACE_FILTER_KEYS = Object.freeze(['kind', 'normalWithin', 'minArea', 'maxArea', 'bbox']);
+const FACE_FILTER_KEYS = Object.freeze(['kind', 'normalWithin', 'minArea', 'maxArea', 'bbox', 'name', 'feature', 'role']);
 const EDGE_FILTER_KEYS = Object.freeze(['between', 'minLength', 'maxLength', 'bbox']);
 
 function bad(message) {
@@ -72,9 +72,28 @@ export function checkFaceFilter(filter) {
     const deg = finiteOrNull(nw.deg);
     if (deg == null || Number.isNaN(deg) || deg < 0 || deg > 180) return bad('filter.normalWithin needs deg between 0 and 180');
   }
+  for (const key of ['name', 'feature', 'role']) {
+    if (filter[key] != null && (typeof filter[key] !== 'string' || !filter[key].trim())) {
+      return bad(`filter.${key} must be a non-empty string (a face name part from list_faces rows; * is a glob)`);
+    }
+  }
   return checkRange(filter.minArea, 'filter.minArea')
     || checkRange(filter.maxArea, 'filter.maxArea')
     || (filter.bbox != null ? checkBbox(filter.bbox, 'filter') : null);
+}
+
+/** `*` matches anything; everything else is literal. */
+function globToRegExp(pattern) {
+  const esc = String(pattern).split('*').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+  return new RegExp(`^${esc}$`);
+}
+
+/** A row's stamped name part matches `want`: exact, or `name` without its `[k]`, or a glob. */
+function nameMatches(value, want) {
+  if (typeof value !== 'string' || !value) return false;
+  if (value === want) return true;
+  if (value.replace(/\[\d+\]$/, '') === want) return true;
+  return want.includes('*') && globToRegExp(want).test(value);
 }
 
 function keyLike(value) {
@@ -142,6 +161,10 @@ export function filterFaces(faces, filter) {
     if (minArea != null && !(area >= minArea)) return false;
     if (maxArea != null && !(area <= maxArea)) return false;
     if (filter.bbox && !inBbox(row.center, filter.bbox)) return false;
+    // Face identity filters: rows without a stamped name never match them.
+    if (filter.name != null && !nameMatches(row.name, filter.name)) return false;
+    if (filter.feature != null && !nameMatches(row.feature, filter.feature)) return false;
+    if (filter.role != null && !nameMatches(row.role, filter.role)) return false;
     return true;
   });
 }

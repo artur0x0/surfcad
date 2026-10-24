@@ -9891,6 +9891,33 @@ function facesNamed(part, pattern) {
 }
 
 /**
+ * edgesOf(part, name, opts?) → the convex feature edges around the named
+ * face(s), in the shape convexEdges returns, so they go straight into
+ * filletEdges / chamferEdges. `name` is anything facesNamed accepts. Only
+ * edges that touch the named face are returned (the four edges of a
+ * box top, not every edge on the body that faces up), concave edges are
+ * left out and counted on `result.skipped`; `opts.includeConcave` keeps
+ * them, `opts.minAngleDeg` is the dihedral gate. Throws when the face has
+ * no convex feature edge, naming the face and the concave count.
+ */
+function edgesOf(part, pattern, opts = {}) {
+  const faces = facesNamed(part, pattern);
+  const want = new Set();
+  for (const f of faces) for (const t of f.tris) want.add(t);
+  const touching = signedFeatureEdges(part, opts.minAngleDeg).filter((e) => e.tris.some((t) => want.has(t)));
+  const out = opts.includeConcave ? touching.slice() : touching.filter((e) => e.convex);
+  out.skipped = touching.length - out.length;
+  out.faces = faces.map((f) => f.name);
+  if (!out.length) {
+    throw new Error(
+      `edgesOf: no convex feature edge around '${pattern}'`
+      + (out.skipped ? ` (${out.skipped} concave edge${out.skipped === 1 ? '' : 's'} skipped; pass { includeConcave: true } to blend them)` : ''),
+    );
+  }
+  return out;
+}
+
+/**
  * surfaceOf(face) → the SurfaceRecord the helper that built the face
  * recorded: `{ kind: 'plane', origin, normal }`, `{ kind: 'cylinder',
  * axisOrigin, axisDir, radius }`, `{ kind: 'cone', apex, axisDir,
@@ -10008,6 +10035,7 @@ const HELPER_FUNCTIONS = {
   // Face identity (provenance stamps)
   faceNames,
   facesNamed,
+  edgesOf,
   surfaceOf,
 };
 

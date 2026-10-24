@@ -356,3 +356,126 @@ export function describeFaceTable(table) {
     })),
   };
 }
+
+/** A name pattern as a RegExp: `*` matches anything, everything else is literal. */
+export function nameGlob(pattern) {
+  const esc = String(pattern).split('*').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+  return new RegExp(`^${esc}$`);
+}
+
+function labelOf(face) {
+  return `${face.feature}.${face.role}`;
+}
+
+/**
+ * The stamped faces a name picks: an exact name, a label without its `[k]`
+ * (every piece), or a glob with `*`. Empty when nothing matches.
+ */
+export function facesForName(table, pattern) {
+  const want = String(pattern ?? '').trim();
+  const faces = table?.faces || [];
+  if (!want) return [];
+  let hits = faces.filter((f) => f.name === want);
+  if (!hits.length) hits = faces.filter((f) => labelOf(f) === want);
+  if (!hits.length && want.includes('*')) {
+    const re = nameGlob(want);
+    hits = faces.filter((f) => re.test(f.name) || re.test(labelOf(f)));
+  }
+  return hits;
+}
+
+function describeAvailable(names) {
+  if (!names.length) return 'this mesh has no named faces (nothing a stamped helper built)';
+  const shown = names.slice(0, 16).join(', ');
+  return `names on this mesh: ${shown}${names.length > 16 ? `, … (${names.length})` : ''}`;
+}
+
+/**
+ * Face picks for `select_faces { names }`: each name becomes the stamped
+ * face's own triangles (the exact face the helper built, even when the
+ * face graph merged it with a neighbour), in the shape `publishFacePicks`
+ * takes.
+ * @returns {{ picks: object[], names: string[] } | { error: { code: string, message: string } }}
+ */
+export function resolveFaceNames(table, names) {
+  const list = Array.isArray(names) ? names : (names ? [names] : []);
+  if (!list.length) return { error: { code: 'bad_args', message: 'select_faces needs at least one name' } };
+  const picks = [];
+  const picked = [];
+  for (const raw of list) {
+    if (typeof raw !== 'string' || !raw.trim()) {
+      return { error: { code: 'bad_args', message: 'face names must be non-empty strings (see list_faces rows: name)' } };
+    }
+    const hits = facesForName(table, raw);
+    if (!hits.length) {
+      const all = (table?.faces || []).map((f) => f.name);
+      return { error: { code: 'unknown_face', message: `No face named ${JSON.stringify(raw)}; ${describeAvailable(all)}` } };
+    }
+    for (const f of hits) {
+      picks.push({ center: f.center.slice(), normal: f.normal.slice(), area: f.area, indices: f.tris.slice(), name: f.name });
+      picked.push(f.name);
+    }
+  }
+  return { picks, names: picked };
+}
+
+/**
+ * The feature edges (rows from buildFeatureEdges with tri0 / tri1) that lie
+ * on the named edges for `select_edges { names }`: `a~b`, `a~b[k]`, or a
+ * glob. An edge name is the two face names joined by `~` in either order.
+ * @returns {{ edges: object[], names: string[] } | { error: { code: string, message: string } }}
+ */
+export function resolveEdgeNames(table, featureEdges, names) {
+  const list = Array.isArray(names) ? names : (names ? [names] : []);
+  if (!list.length) return { error: { code: 'bad_args', message: 'select_edges needs at least one name' } };
+  const triFace = table?.triFace;
+  const edgesByName = table?.edges || [];
+  if (!triFace || !edgesByName.length) {
+    return { error: { code: 'unknown_edge', message: 'this mesh has no named edges (nothing a stamped helper built)' } };
+  }
+  const faceIndex = new Map((table.faces || []).map((f) => [f.name, f.id]));
+  const out = [];
+  const seen = new Set();
+  const picked = [];
+  for (const raw of list) {
+    if (typeof raw !== 'string' || !raw.trim()) {
+      return { error: { code: 'bad_args', message: 'edge names must be non-empty strings (faceA~faceB, see __VIEWPORT__.faceTable or list_edges rows)' } };
+    }
+    const want = raw.trim();
+    const flipped = want.includes('~') ? want.split('~').reverse().join('~') : null;
+    let hits = edgesByName.filter((e) => e.name === want || e.name === flipped);
+    if (!hits.length) {
+      const base = (n) => n.replace(/\[\d+\]$/, '');
+      hits = edgesByName.filter((e) => base(e.name) === want || base(e.name) === flipped);
+    }
+    if (!hits.length && want.includes('*')) {
+      const re = nameGlob(want);
+      hits = edgesByName.filter((e) => re.test(e.name) || re.test(`${e.faces[1]}~${e.faces[0]}`));
+    }
+    if (!hits.length) {
+      const all = edgesByName.map((e) => e.name);
+      return { error: { code: 'unknown_edge', message: `No edge named ${JSON.stringify(raw)}; edges on this mesh: ${all.slice(0, 12).join(', ')}${all.length > 12 ? `, … (${all.length})` : ''}` } };
+    }
+    for (const e of hits) {
+      const fa = faceIndex.get(e.faces[0]);
+      const fb = faceIndex.get(e.faces[1]);
+      let n = 0;
+      for (const row of Array.isArray(featureEdges) ? featureEdges : []) {
+        if (row.tri0 == null || row.tri1 == null) continue;
+        const a = triFace[row.tri0];
+        const b = triFace[row.tri1];
+        if (!((a === fa && b === fb) || (a === fb && b === fa))) continue;
+        const key = `${row.tri0}:${row.tri1}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(row);
+        n += 1;
+      }
+      if (!n) {
+        return { error: { code: 'unknown_edge', message: `Edge ${e.name} has no feature-edge segments (the two faces meet below the 2° gate)` } };
+      }
+      picked.push(e.name);
+    }
+  }
+  return { edges: out, names: picked };
+}

@@ -83,6 +83,7 @@ export const RESERVED_HELPER_NAMES = Object.freeze([
   'boundaryEdges',
   'faceNames',
   'facesNamed',
+  'edgesOf',
   'surfaceOf',
 ]);
 

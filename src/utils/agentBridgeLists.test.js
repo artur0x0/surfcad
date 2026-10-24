@@ -84,7 +84,7 @@ test('a bad filter or page is bad_args and never reaches the host', async () => 
   assert.match(kind.error.message, /filter\.kind/);
   const page = await call(api, 'list_faces', { page: { limit: 0 } });
   assert.equal(page.error.code, 'bad_args');
-  const unknown = await call(api, 'list_faces', { filter: { feature: 'cube1' } });
+  const unknown = await call(api, 'list_faces', { filter: { colour: 'red' } });
   assert.match(unknown.error.message, /not a face filter/);
   const edge = await call(api, 'list_feature_edges', { filter: { between: ['f0', 'f2'] } });
   assert.equal(edge.error.code, 'bad_args');

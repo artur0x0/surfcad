@@ -10,7 +10,7 @@ import { BUILD_FLOW_NOTE } from '../buildGuidance.js';
 const RESERVED_HELPERS = ` ${reservedHelperClause()}`;
 /** Every tool that runs geometry says what a kernel crash looks like and what to do. */
 export const CRASH_NOTE = ' If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. When the run past the budget was inside one marked feature block, the part is rebuilt without that block instead: the result is ok: false with one failures row { code: feature_timeout, featureId, featureType, featureLabel, elapsedMs, budgetMs, detail }, status.runState is failed, the other features are built and shown, and status.featureMs (and feature_tree ms) say how long each block took; edit, delete, or undo that feature.';
-const USE_SELECTION_RESULT_NOTE = ' The result usedSelection says whether the viewport selection was used. The selection is single-use: picks clear after every rebuild, and use_selection: true with nothing selected is no_selection (nothing is written); re-pick before each insert that uses it.';
+const USE_SELECTION_RESULT_NOTE = ' The result usedSelection says whether the viewport selection was used. The selection is single-use: picks clear after every rebuild, and use_selection: true with nothing selected is no_selection (nothing is written); re-pick before each insert that uses it. A pick that carries a face name (select_faces { names } or a click on a face a helper built) is written into the script by that name (facesNamed for a hole, edgesOf for a fillet or chamfer: the edges around that face only), so an upstream edit can never re-target it silently.';
 const FEATURE_COUNT_NOTE = ' featureCount counts insert_* feature blocks, so a freehand set_script is one feature. bodyCount is null until the first run; a finished run that produced no bodies reports 0.';
 
 const OK = Object.freeze({ type: 'object', additionalProperties: false, properties: { ok: { const: true } } });
@@ -294,13 +294,13 @@ export const COMMAND_META = {
     mutates: false,
   },
   list_faces: {
-    description: 'Every pickable face on the active part, or on part_id when set (an opaque surf id, never a path or display name). One row per face a viewport click selects, all bodies: id (f0, f1, …), name (feature.role[k] from the helper that built the face: cube1.top, boss.side, extrude2.wall[3]; feature is the marked block id, else <helper>@<n>; absent on faces no helper stamped, such as a hull), feature, role, type (planar, cylindrical, curved), center, normal, axis and radius for cylinders, area, and key. The id is the patch index on this mesh and is only valid until the next remesh; a rerun of the same script keeps every id. Pass the key with the id to joint_pick so a stale id cannot silently pick another face. The whole list on a detailed part is 100 KB or more, so filter it in the tab: filter { kind, normalWithin: { n, deg }, minArea, maxArea, bbox: { min, max } } keeps only faces that match every given field (the top faces: kind "planar", normalWithin { n: [0, 0, 1], deg: 5 }), and page { offset, limit } returns one page. The result always carries total (rows after the filter) and returned; with a page it echoes offset and limit, so walk pages until offset + returned >= total.',
+    description: 'Every pickable face on the active part, or on part_id when set (an opaque surf id, never a path or display name). One row per face a viewport click selects, all bodies: id (f0, f1, …), name (feature.role[k] from the helper that built the face: cube1.top, boss.side, extrude2.wall[3]; feature is the marked block id, else <helper>@<n>; absent on faces no helper stamped, such as a hull), feature, role, type (planar, cylindrical, curved), center, normal, axis and radius for cylinders, area, and key. The id is the patch index on this mesh and is only valid until the next remesh; a rerun of the same script keeps every id. Pass the key with the id to joint_pick so a stale id cannot silently pick another face. The whole list on a detailed part is 100 KB or more, so filter it in the tab: filter { kind, normalWithin: { n, deg }, minArea, maxArea, bbox: { min, max }, name, feature, role } keeps only faces that match every given field (the top faces: kind "planar", normalWithin { n: [0, 0, 1], deg: 5 }; every face of one feature: feature "boss"; the tops of every feature: role "top"; name / feature / role take a glob with *), and page { offset, limit } returns one page. The result always carries total (rows after the filter) and returned; with a page it echoes offset and limit, so walk pages until offset + returned >= total.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'no_mesh', 'unknown_part', 'internal'],
     mutates: false,
   },
   list_edges: {
-    description: 'Mesh feature edges (raw or grouped). Raw lists are long: filter { between: [faceKeyA, faceKeyB], minLength, maxLength, bbox } keeps only edges that match every given field (between takes two list_faces keys in either order), and page { offset, limit } returns one page. The result carries total (rows after the filter) and returned.',
+    description: 'Mesh feature edges (raw or grouped). Raw rows carry name (faceNameA~faceNameB), faceNameA and faceNameB when both sides are faces a helper built, the names select_edges { names } takes. Raw lists are long: filter { between: [faceKeyA, faceKeyB], minLength, maxLength, bbox } keeps only edges that match every given field (between takes two list_faces keys in either order), and page { offset, limit } returns one page. The result carries total (rows after the filter) and returned.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'no_mesh', 'unknown_part', 'internal'],
     mutates: false,
@@ -423,14 +423,14 @@ export const COMMAND_META = {
     mutates: false,
   },
   select_faces: {
-    description: 'Select faces by fingerprint keys.',
-    result: { type: 'object', additionalProperties: false, properties: { count: { type: 'integer' } } },
+    description: 'Select faces by name or by fingerprint key. names: ["boss.top"] takes the face a helper built under that name (from list_faces rows: name; a label without its [k] takes every piece, * is a glob) and selects exactly that face, even where a viewport click would take a merged neighbour; keys: [{ at, n, area }] is the fingerprint path. A named pick carries its name into insert_hole / insert_fillet_edges / insert_chamfer_edges with use_selection, which then resolve it by name in the script (facesNamed / edgesOf) instead of by normal. An unknown name is unknown_face and lists the names on the mesh.',
+    result: { type: 'object', additionalProperties: false, properties: { count: { type: 'integer' }, names: { type: 'array', items: { type: 'string' } } } },
     errors: ['bad_args', 'unknown_face', 'ambiguous_face', 'internal'],
     mutates: false,
   },
   select_edges: {
-    description: 'Select edges by grouped id or face-key pair.',
-    result: { type: 'object', additionalProperties: false, properties: { count: { type: 'integer' } } },
+    description: 'Select edges by name, grouped id, or face-key pair. names: ["plate.top~boss.side"] is the edge where those two named faces meet (either order; list_edges rows carry name, faceNameA and faceNameB; [k] picks one chain, * is a glob); keys are grouped ids (e0) or face-key pairs. An unknown name is unknown_edge and lists the edges on the mesh.',
+    result: { type: 'object', additionalProperties: false, properties: { count: { type: 'integer' }, names: { type: 'array', items: { type: 'string' } } } },
     errors: ['bad_args', 'unknown_edge', 'ambiguous_edge', 'internal'],
     mutates: false,
   },

@@ -23,7 +23,7 @@ comparable and train-able.
 | `makeSweepPath(edges, opts?)` | Ordered sweep path / wire from edges (Slice 22) |
 | `filletAlongPath(part, path, r, opts?)` | Dihedral fillet/chamfer swept along a path → subtract |
 | `edge(part, id)` / `edgesBetween(part, faceA, faceB)` / `boundaryEdges(part)` | Fillet-mode face/edge ids (re-pick if the mesh changes) |
-| `faceNames(part)` / `facesNamed(part, name)` / `surfaceOf(face)` | Face identity: names the helpers stamped at construction (`cube1.top`, `boss.side`, `extrude2.wall[3]`), stable across edits and rebuilds |
+| `faceNames(part)` / `facesNamed(part, name)` / `edgesOf(part, name)` / `surfaceOf(face)` | Face identity: names the helpers stamped at construction (`cube1.top`, `boss.side`, `extrude2.wall[3]`), stable across edits and rebuilds; `edgesOf` is the convex edges around one named face |
 
 **Loud failure rule:** feature helpers throw named `Error`s on bad inputs,
 degenerate cutters, non-manifold / empty results, or (for `filletEdges`) when
@@ -705,7 +705,7 @@ const topFaces = facesByNormal(part, [0, 0, 1]);      // all upward faces
 const wall     = facesByNormal(part, [1, 0, 0])[0];   // a +X face
 ```
 
-### faceNames(part) / facesNamed(part, name) / surfaceOf(face)
+### faceNames(part) / facesNamed(part, name) / edgesOf(part, name) / surfaceOf(face)
 
 Faces by the name the helper that built them recorded (see [docs/architecture.md](architecture.md), Face identity). `Manifold.cube` / `cylinder` / `sphere`, `tube`, `hexPrism`, `roundedBox`, `makeExtrude` and `makeRevolve` stamp every face with `feature.role`: `feature` is the id of the marked block the call ran in (`cube1`, `tapDrillHole-11`), else `<helper>@<n>` in script order; `role` is `top bottom left right front back`, `side top bottom inner`, `surface`, `wall[i]`, `band[i]` / `corner[i]`, `cap0 cap1 wall[g]`, `seg[g] end0 end1`. A label in several pieces (a slot through a top, a union of two copies) gets `[k]`, ordered by centre.
 
@@ -717,7 +717,11 @@ part = hole(part, wp, 10, 0, 4, 6);
 facesNamed(part, 'plate.top');         // every piece: plate.top[0], plate.top[1]
 facesNamed(part, 'boss.wall[*]');      // glob
 surfaceOf(top);                        // { kind: 'plane', origin, normal }
+part = chamferEdges(part, edgesOf(part, 'boss.top'), 2);   // the edges around that face only
+const e = edgesOf(part, 'plate.top'); e.skipped;           // concave edges left out, counted
 ```
+
+`edgesOf(part, name, { includeConcave?, minAngleDeg? })` returns the convex feature edges that touch the named face, in the shape `convexEdges` returns, so they go straight into `filletEdges` / `chamferEdges`. Only edges on that face: four on a box top, never every edge on the body whose neighbour faces the same way. Concave edges are skipped and counted on `result.skipped` (pass `includeConcave: true` to blend them); it throws, naming the face and the concave count, when no convex edge is left.
 
 `facesNamed` throws, naming the faces that exist, when nothing matches; it never picks a nearby face. The faces carry `center`, `normal`, `tris`, `verts`, `area`, `body`, `name`, `label { feature, role, ordinal }` and `record`, and work wherever a `facesByNormal` face does. `surfaceOf` is the record the helper wrote from its arguments (`plane`, `cylinder`, `cone`, `sphere`, else `mesh`), in the frame the helper built in: a later translate or rotate moves the face, not its record. A hull, a fillet cutter or a freehand `Manifold.*` call outside those primitives has no stamped faces.
 

@@ -81,8 +81,10 @@ function triOwner(fingerprints) {
  * @param {object[]} featureEdges from buildFeatureEdges (may include tri0/tri1)
  * @param {Array} fingerprints
  */
-export function buildEdgeList(featureEdges, fingerprints) {
+export function buildEdgeList(featureEdges, fingerprints, faceTable = null) {
   const owners = triOwner(fingerprints);
+  const triFace = faceTable?.triFace || null;
+  const namedFaces = faceTable?.faces || [];
   const edges = [];
   for (const edge of Array.isArray(featureEdges) ? featureEdges : []) {
     const key = edgeKey(edge);
@@ -97,6 +99,15 @@ export function buildEdgeList(featureEdges, fingerprints) {
       mid,
       length: Number.isFinite(length) ? length : null,
     };
+    // Face identity: the two stamped faces the edge lies between, when known.
+    if (triFace && edge.tri0 != null && edge.tri1 != null) {
+      const a = triFace[edge.tri0];
+      const b = triFace[edge.tri1];
+      if (a >= 0 && namedFaces[a]) row.faceNameA = namedFaces[a].name;
+      if (b >= 0 && namedFaces[b]) row.faceNameB = namedFaces[b].name;
+      // Canonical: the two faces in name order, the same name select_edges reports.
+      if (row.faceNameA && row.faceNameB) row.name = [row.faceNameA, row.faceNameB].sort().join('~');
+    }
     if (faceKeyA && faceKeyB) {
       row.faceKeyA = faceKeyA;
       row.faceKeyB = faceKeyB;
