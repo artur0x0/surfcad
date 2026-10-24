@@ -89,6 +89,11 @@ const snapshot = (page) => page.evaluate(() => {
     fold: rect('[data-agent-prompt-fold]'),
     unfold: rect('[data-agent-prompt-unfold]'),
     promptRect: rect('[data-agent-prompt]'),
+    zIndex: {
+      fold: Number(getComputedStyle(document.querySelector('[data-agent-prompt-fold]') || document.body).zIndex) || 0,
+      unfold: Number(getComputedStyle(document.querySelector('[data-agent-prompt-unfold]') || document.body).zIndex) || 0,
+      prompt: Number(getComputedStyle(prompt || document.body).zIndex) || 0,
+    },
     badge: document.querySelector('[data-agent-prompt-unfold]')?.getAttribute('data-agent-prompt-badge') ?? null,
     live: document.querySelector('[data-agent-prompt-live]')?.textContent || '',
     foldLabel: document.querySelector('[data-agent-prompt-fold]')?.getAttribute('aria-label'),
@@ -173,8 +178,13 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 1920, height: 108
   const { page } = await openState(browser, 'chat', { viewport });
   const s = await snapshot(page);
   const centred = s.fold && s.promptRect && Math.abs(s.fold.cx - s.promptRect.cx) <= 2;
-  const straddles = s.fold && s.promptRect && Math.abs(s.fold.cy - s.promptRect.bottom) <= 3;
-  check(`${tag}: chevron-down centred on the prompt's bottom edge`, centred && straddles, JSON.stringify({ fold: s.fold, prompt: s.promptRect }));
+  // A tab hanging from the prompt: its top tucked a few px under the prompt's
+  // bottom edge, most of it below, drawn behind the prompt (ui-bug-triage #3).
+  const hangs = s.fold && s.promptRect
+    && s.fold.top < s.promptRect.bottom - 2 && s.fold.top > s.promptRect.bottom - 16
+    && s.fold.bottom > s.promptRect.bottom + 12;
+  check(`${tag}: chevron-down centred on the prompt's bottom edge`, centred && hangs, JSON.stringify({ fold: s.fold, prompt: s.promptRect }));
+  check(`${tag}: chevron-down is drawn behind the prompt`, s.zIndex.fold < s.zIndex.prompt, JSON.stringify(s.zIndex));
   check(`${tag}: chevron-down has its label`, s.foldLabel === 'Hide agent prompt');
   await page.click('[data-agent-prompt-fold]');
   await page.waitForTimeout(400);
@@ -185,6 +195,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 1920, height: 108
   const upCentred = f.unfold && Math.abs(f.unfold.cx - s.promptRect.cx) <= 2 && f.inner.h - f.unfold.bottom <= 24 && f.inner.h - f.unfold.bottom >= 0;
   check(`${tag}: chevron-up centred under the prompt at the bottom of the screen`, upCentred, JSON.stringify({ unfold: f.unfold, prompt: s.promptRect, inner: f.inner }));
   check(`${tag}: chevron-up has its label and no badge when idle`, f.unfoldLabel === 'Show agent prompt' && f.badge === '');
+  check(`${tag}: chevron-up has the chevron-down's width and height`, f.unfold && s.fold && Math.abs(f.unfold.w - s.fold.w) <= 1 && Math.abs(f.unfold.h - s.fold.h) <= 1, JSON.stringify({ fold: s.fold, unfold: f.unfold }));
   await page.click('[data-agent-prompt-unfold]');
   await page.waitForTimeout(400);
   const back = await snapshot(page);

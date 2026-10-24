@@ -378,6 +378,9 @@ faces/edges in the viewport:
   (`data-contour-chip-scroll` on Contour). Keep title + Confirm / Accept
   **outside** the scroll so actions stay visible.
 - Prefer `flex flex-col min-h-0` on the root so the scroll child can shrink.
+- A list whose rows end in an action column (trash, order, edit icons) adds
+  `list-scroll` next to `rail-scroll`: `scrollbar-gutter: stable` reserves the
+  8 px bar's width so it never lands on the icons.
 
 ### Controls
 
