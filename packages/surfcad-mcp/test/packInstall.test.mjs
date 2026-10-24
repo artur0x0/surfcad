@@ -68,7 +68,7 @@ test('npm pack tarball installs and lists MCP tools over stdio', { timeout: 120_
 
     const { tools } = await client.listTools();
     // bridge commands + pair + guide + the local prompt tools
-    assert.equal(tools.length, catalog.count + 2 + PROMPT_TOOL_NAMES.length, 'bridge commands, pair, guide, and local prompt tools');
+    assert.equal(tools.length, catalog.count + 3 + PROMPT_TOOL_NAMES.length, 'bridge commands, pair, guide, list_helpers, and local prompt tools');
 
   } finally {
     // Close in finally: a failed assertion used to leave the stdio child alive

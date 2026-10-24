@@ -6,8 +6,9 @@
 import { MUTATE_RESULT_SCHEMA, STATUS_SCHEMA } from '../schemas/common.js';
 import { reservedHelperClause } from '../state/reservedHelpers.js';
 import { BUILD_FLOW_NOTE } from '../buildGuidance.js';
+import { emitNote } from './insertEmits.js';
 
-const RESERVED_HELPERS = ` ${reservedHelperClause()}`;
+const RESERVED_HELPERS = ` ${reservedHelperClause()} list_helpers { names } (over MCP) or guide { topic: "dialect" } documents each helper.`;
 /** Every tool that runs geometry says what a kernel crash looks like and what to do. */
 export const CRASH_NOTE = ' If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. When the run past the budget was inside one marked feature block, the part is rebuilt without that block instead: the result is ok: false with one failures row { code: feature_timeout, featureId, featureType, featureLabel, elapsedMs, budgetMs, detail }, status.runState is failed, the other features are built and shown, and status.featureMs (and feature_tree ms) say how long each block took; edit, delete, or undo that feature.';
 const USE_SELECTION_RESULT_NOTE = ' The result usedSelection says whether the viewport selection was used. A pick that carries a face name (select_faces { names } or a click on a face a helper built) is written into the script by that name (facesNamed for a hole, edgesOf for a fillet or chamfer: the edges around that face only) and is found again on the new mesh after every rebuild, so a second use_selection insert lands on the same face. A pick with no name (a hull, a freehand Manifold.*) clears with the rebuild, and use_selection: true with nothing selected is no_selection (nothing is written).';
@@ -1102,13 +1103,18 @@ const INSERT_PATTERN_POINTS_META = {
   errors: ['bad_args', 'insert_failed', 'internal'],
 };
 
+/** An insert_* description ends with the code the block carries at default arguments (insertEmits.js). */
+function withEmit(name, meta) {
+  return { ...meta, description: `${meta.description}${emitNote(name)}` };
+}
+
 export function metaForCommand(name) {
   if (COMMAND_META[name]) return COMMAND_META[name];
-  if (name === 'insert_move') return INSERT_MOVE_META;
-  if (name === 'insert_rotate') return INSERT_ROTATE_META;
-  if (name === 'insert_code_snippet') return INSERT_CODE_SNIPPET_META;
-  if (name === 'insert_pattern_points') return INSERT_PATTERN_POINTS_META;
-  if (name.startsWith('insert_')) return INSERT_HELPER_META;
+  if (name === 'insert_move') return withEmit(name, INSERT_MOVE_META);
+  if (name === 'insert_rotate') return withEmit(name, INSERT_ROTATE_META);
+  if (name === 'insert_code_snippet') return withEmit(name, INSERT_CODE_SNIPPET_META);
+  if (name === 'insert_pattern_points') return withEmit(name, INSERT_PATTERN_POINTS_META);
+  if (name.startsWith('insert_')) return withEmit(name, INSERT_HELPER_META);
   return {
     description: `Bridge command ${name}.`,
     result: { type: 'object', additionalProperties: true },

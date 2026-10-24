@@ -37,7 +37,7 @@ test('the instructions are a short quick-start that keeps the webhook line first
 });
 
 test('the topics are the planned set, each under 1,500 words, and start carries the build guidance verbatim', () => {
-  assert.deepEqual([...GUIDE_TOPIC_NAMES], ['start', 'features', 'selection', 'paint', 'limits', 'camera', 'assembly']);
+  assert.deepEqual([...GUIDE_TOPIC_NAMES], ['start', 'dialect', 'features', 'selection', 'paint', 'limits', 'camera', 'assembly']);
   for (const name of GUIDE_TOPIC_NAMES) {
     const words = GUIDE_TOPICS[name].text.trim().split(/\s+/).length;
     assert.ok(words > 80 && words < 1500, `${name}: ${words} words`);
@@ -63,12 +63,12 @@ test('callGuideTool lists topics with no args, returns one topic, and names the 
   assert.equal(one.isError, false);
   assert.equal(one.content[0].text, GUIDE_TOPICS.camera.text);
   assert.match(one.content[1].text, /^Resource: surfcad:\/\/guide\/camera \(surfcad-mcp \d/);
-  const bad = callGuideTool({ topic: 'dialect' });
+  const bad = callGuideTool({ topic: 'nope' });
   assert.equal(bad.isError, true);
   const body = JSON.parse(bad.content[0].text);
   assert.equal(body.code, 'unknown_topic');
   assert.deepEqual(body.topics, [...ALL_GUIDE_TOPIC_NAMES]);
-  assert.match(body.message, /start, features/);
+  assert.match(body.message, /start, dialect, features/);
   assert.match(body.hint, /guide \{\}/);
 });
 

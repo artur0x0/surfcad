@@ -22,6 +22,7 @@ import {
   withErrorHint,
 } from './errorHints.mjs';
 import { loadPackageVersion } from '../packageVersion.mjs';
+import { DIALECT_SUMMARY, renderDialectTopic } from '../helpers.mjs';
 
 export const GUIDE_TOOL_NAME = 'guide';
 
@@ -38,7 +39,7 @@ Then select_clear {} → camera_set { view: "iso" } → screenshot { save_to: tr
 
 Reading results: every model-changing tool answers { ok, errors, status } with return "status" by default over MCP (no script echo; get_script reads it, get_script { range: { fromFeature, toFeature } } reads one span). status.runState is not_run_yet | ok | failed; errors rows are feature_failed with the viewport's text and a detail reason.
 Ids are opaque surf ids from parts, list_assemblies, create_part, create_assembly; never a path or a display name.
-Topics: guide { topic: "features" | "selection" | "paint" | "limits" | "camera" | "assembly" }.`;
+Topics: guide { topic: "dialect" | "features" | "selection" | "paint" | "limits" | "camera" | "assembly" }; list_helpers { names } documents any script helper.`;
 
 const FEATURES = `Feature blocks. The script of a part is plain JavaScript over the SurfCAD helpers, and the feature strip reads it from marker comments. Every insert_* writes one block:
 
@@ -124,6 +125,7 @@ Saving. Working-copy tools never commit. git_save { message } is the one vault w
 /** Topic name → one-line summary and the text. Order is the listing order. */
 export const GUIDE_TOPICS = Object.freeze({
   start: { summary: 'How to build in SurfCAD (block, build, polish, place), a three-call example, how to read results', text: START },
+  dialect: { summary: DIALECT_SUMMARY, text: renderDialectTopic() },
   features: { summary: 'Marker blocks, feature ids, edit / delete / rollback / undo, script snippets, sketches', text: FEATURES },
   selection: { summary: 'Face and edge keys, list_faces filters, single-use picks, no_selection, fillet edge sets', text: SELECTION },
   paint: { summary: 'paint_open → paint_set_color → paint_part / paint_faces → paint_confirm; colours persist with the assembly', text: PAINT },
