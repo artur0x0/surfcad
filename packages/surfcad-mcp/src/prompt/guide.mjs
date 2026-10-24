@@ -13,6 +13,15 @@
  */
 import { BUILD_GUIDANCE } from './buildGuidance.mjs';
 import { PROMPT_SERVER_INSTRUCTIONS } from './promptTools.mjs';
+import {
+  ERROR_TOPIC_CODES,
+  ERROR_TOPIC_PREFIX,
+  errorTopic,
+  errorTopicName,
+  EXTRA_ERROR_TOPICS,
+  withErrorHint,
+} from './errorHints.mjs';
+import { loadPackageVersion } from '../packageVersion.mjs';
 
 export const GUIDE_TOOL_NAME = 'guide';
 
@@ -123,7 +132,74 @@ export const GUIDE_TOPICS = Object.freeze({
   assembly: { summary: 'Documents, create_part placement, insert by reference, part_set_transform vs joints, hardware, git_save', text: ASSEMBLY },
 });
 
+/** The core topics, in listing order (the error topics are listed on one line after them). */
 export const GUIDE_TOPIC_NAMES = Object.freeze(Object.keys(GUIDE_TOPICS));
+
+/**
+ * errors.<code> topics, rendered from the hint table (errorHints.mjs) so a
+ * payload's hint and its topic come from one row. sweep_path has no code of
+ * its own (the bridge says insert_failed) and is listed with them.
+ */
+export const ERROR_GUIDE_TOPICS = Object.freeze(Object.fromEntries([
+  ...ERROR_TOPIC_CODES.map((code) => [errorTopicName(code), errorTopic(code)]),
+  ...Object.entries(EXTRA_ERROR_TOPICS).map(([name, topic]) => [errorTopicName(name), topic]),
+]));
+
+export const ERROR_GUIDE_TOPIC_NAMES = Object.freeze(Object.keys(ERROR_GUIDE_TOPICS));
+
+/** Every topic the guide tool and the resources serve: core first, then errors.<code>. */
+export const ALL_GUIDE_TOPICS = Object.freeze({ ...GUIDE_TOPICS, ...ERROR_GUIDE_TOPICS });
+export const ALL_GUIDE_TOPIC_NAMES = Object.freeze(Object.keys(ALL_GUIDE_TOPICS));
+
+/** MCP resource URI of a topic: the same text as guide { topic }. */
+export const GUIDE_RESOURCE_SCHEME = 'surfcad://guide/';
+
+/** @param {string} topic */
+export function guideResourceUri(topic) {
+  return `${GUIDE_RESOURCE_SCHEME}${topic}`;
+}
+
+/** The topic a guide resource URI names, or null. */
+export function topicFromResourceUri(uri) {
+  if (typeof uri !== 'string' || !uri.startsWith(GUIDE_RESOURCE_SCHEME)) return null;
+  const topic = uri.slice(GUIDE_RESOURCE_SCHEME.length);
+  return Object.prototype.hasOwnProperty.call(ALL_GUIDE_TOPICS, topic) ? topic : null;
+}
+
+/**
+ * resources/list rows: one per topic, versioned with the package so a host
+ * that pins or caches them can tell a newer server's text apart.
+ * @param {string} [version]
+ */
+export function guideResourceList(version = loadPackageVersion()) {
+  return ALL_GUIDE_TOPIC_NAMES.map((topic) => ({
+    uri: guideResourceUri(topic),
+    name: topic,
+    title: topic.startsWith(ERROR_TOPIC_PREFIX) ? `SurfCAD error: ${topic.slice(ERROR_TOPIC_PREFIX.length)}` : `SurfCAD guide: ${topic}`,
+    description: ALL_GUIDE_TOPICS[topic].summary,
+    mimeType: 'text/plain',
+    _meta: { version },
+  }));
+}
+
+/**
+ * resources/read contents for one topic URI, or null for a URI this server
+ * does not serve.
+ * @param {string} uri
+ * @param {string} [version]
+ */
+export function guideResourceContents(uri, version = loadPackageVersion()) {
+  const topic = topicFromResourceUri(uri);
+  if (!topic) return null;
+  return {
+    contents: [{
+      uri: guideResourceUri(topic),
+      mimeType: 'text/plain',
+      text: ALL_GUIDE_TOPICS[topic].text,
+      _meta: { version },
+    }],
+  };
+}
 
 /**
  * The initialize `instructions`: the webhook line first (clients and
@@ -133,7 +209,7 @@ export const GUIDE_TOPIC_NAMES = Object.freeze(Object.keys(GUIDE_TOPICS));
 export const SERVER_INSTRUCTIONS = [
   PROMPT_SERVER_INSTRUCTIONS,
   '',
-  `SurfCAD quick start. Pair, then call guide { topic: "start" } before the first model call; guide {} lists every topic (${GUIDE_TOPIC_NAMES.join(', ')}).`,
+  `SurfCAD quick start. Pair, then call guide { topic: "start" } before the first model call; guide {} lists every topic (${GUIDE_TOPIC_NAMES.join(', ')}; every error payload carries hint, and see names its errors.<code> topic).`,
   'Flow, in ribbon order, each stage across the whole assembly before the next: 1 Block: create_part, then insert_cube / insert_cylinder / insert_tube at rough size, screenshot for the user. 2 Build: insert_hole, insert_cut, insert_shell, insert_make_extrude / revolve / sweep / loft. 3 Polish: insert_fillet_edges, insert_chamfer_edges on small edge sets. 4 Place: patterns, insert_move, part_set_transform or joints.',
   'Rules that bite: helper names (cut, hole, shell, ...) are reserved, never redeclare them; set_script needs the active part\'s id (set_active_part first) and only rewrites a whole part, insert_code_snippet { gap, why, script } is the one-operation fallback; use_selection is single use: pick, insert once, pick again (nothing selected is no_selection).',
   'Verify: select_clear → camera_set { view } → screenshot { save_to: true }. right puts the camera on +X, front on -Y, top on +Z.',
@@ -144,14 +220,14 @@ export const SERVER_INSTRUCTIONS = [
 export function guideToolDefinition() {
   return {
     name: GUIDE_TOOL_NAME,
-    description: `SurfCAD agent guide, plain text. guide { topic } returns one topic; guide {} lists them. Read "start" before the first model call. Topics: ${GUIDE_TOPIC_NAMES.map((n) => `${n} (${GUIDE_TOPICS[n].summary})`).join('; ')}.`,
+    description: `SurfCAD agent guide, plain text. guide { topic } returns one topic; guide {} lists them. Read "start" before the first model call. Topics: ${GUIDE_TOPIC_NAMES.map((n) => `${n} (${GUIDE_TOPICS[n].summary})`).join('; ')}. Error recoveries: errors.<code> for the code an error payload carries (its see field names the topic), e.g. ${ERROR_GUIDE_TOPIC_NAMES.slice(0, 3).join(', ')}. The same texts are the ${GUIDE_RESOURCE_SCHEME}<topic> resources.`,
     inputSchema: {
       type: 'object',
       additionalProperties: false,
       properties: {
         topic: {
           type: 'string',
-          enum: [...GUIDE_TOPIC_NAMES],
+          enum: [...ALL_GUIDE_TOPIC_NAMES],
           description: 'Which topic to read. Omit to list the topics with one line each.',
         },
       },
@@ -161,9 +237,15 @@ export function guideToolDefinition() {
 
 function topicList() {
   return [
-    'SurfCAD guide topics (guide { topic }):',
+    `SurfCAD guide topics (guide { topic }; also resources ${GUIDE_RESOURCE_SCHEME}<topic>, surfcad-mcp ${loadPackageVersion()}):`,
     ...GUIDE_TOPIC_NAMES.map((n) => `- ${n}: ${GUIDE_TOPICS[n].summary}`),
+    `- error recoveries, one per code an error payload names in see: ${ERROR_GUIDE_TOPIC_NAMES.join(', ')}`,
   ].join('\n');
+}
+
+/** Second content item of a topic answer: where the same text lives as a resource. */
+function resourcePointer(topic) {
+  return `Resource: ${guideResourceUri(topic)} (surfcad-mcp ${loadPackageVersion()}).`;
 }
 
 /**
@@ -175,19 +257,25 @@ export function callGuideTool(args) {
   if (!topic) {
     return { content: [{ type: 'text', text: topicList() }], isError: false };
   }
-  const entry = GUIDE_TOPICS[topic];
+  const entry = ALL_GUIDE_TOPICS[topic];
   if (!entry) {
     return {
       content: [{
         type: 'text',
-        text: JSON.stringify({
+        text: JSON.stringify(withErrorHint({
           code: 'unknown_topic',
-          message: `Unknown guide topic: ${topic}. Topics: ${GUIDE_TOPIC_NAMES.join(', ')}.`,
-          topics: GUIDE_TOPIC_NAMES,
-        }),
+          message: `Unknown guide topic: ${topic}. Topics: ${GUIDE_TOPIC_NAMES.join(', ')}; error topics: ${ERROR_GUIDE_TOPIC_NAMES.join(', ')}.`,
+          topics: ALL_GUIDE_TOPIC_NAMES,
+        })),
       }],
       isError: true,
     };
   }
-  return { content: [{ type: 'text', text: entry.text }], isError: false };
+  return {
+    content: [
+      { type: 'text', text: entry.text },
+      { type: 'text', text: resourcePointer(topic) },
+    ],
+    isError: false,
+  };
 }

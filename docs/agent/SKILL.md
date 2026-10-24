@@ -121,7 +121,7 @@ Assembly and part lifecycle:
 
 ## Error envelopes
 
-MCP returns JSON text; bridge refusals use `isError: true` with `code`, `message`, and `details`.
+MCP returns JSON text; bridge refusals use `isError: true` with `code`, `message`, and `details`. Over `surfcad-mcp` every error payload also carries `hint` (one sentence: the next call to make) and, for the codes with a longer story, `see` naming its guide topic (`guide { topic: "errors.<code>" }`, for example `errors.no_selection`, `errors.feature_timeout`, `errors.not_paired`; `errors.sweep_path` covers a sweep insert with no edge to follow). `errors` rows inside a result (`feature_failed`, `feature_timeout`, `geometry_worker_crashed`) and the `crash` record carry the same `hint`. A hint the tab sent itself is kept.
 
 | Code | Meaning / what to do |
 | --- | --- |
@@ -150,12 +150,16 @@ These live in the `surfcad-mcp` process. They are not in `commands.json`, `list_
 | Tool | Args | What it does |
 | --- | --- | --- |
 | `pair` | `{ code }` | Pair this server to an open SurfCAD tab via the local relay. |
-| `guide` | `{ topic? }` | Plain-text agent guidance from the server, no pairing needed. `guide {}` lists the topics with one line each; `guide { topic: "start" }` is the build guidance plus a worked example; the other topics are `features`, `selection`, `paint`, `limits`, `camera`, `assembly`. An unknown topic is `unknown_topic` with the list. |
+| `guide` | `{ topic? }` | Plain-text agent guidance from the server, no pairing needed. `guide {}` lists the topics with one line each; `guide { topic: "start" }` is the build guidance plus a worked example; the other topics are `features`, `selection`, `paint`, `limits`, `camera`, `assembly`, and one `errors.<code>` recovery per error code an error payload's `see` names. Each answer's second text item names the matching resource. An unknown topic is `unknown_topic` with the list and a `hint`. |
 | `register_webhook` | `{ url, bearer? }` | https only (no credentials in the URL, no localhost, `.local`, private or loopback hosts). Each user prompt is POSTed there, and so is `{ "type": "cancel", "id" }` when the user stops a prompt already delivered; `bearer` (the user's webhook key, 1–4096 chars, no CR/LF) is sent as `Authorization: Bearer <bearer>`. 10 s timeout, one retry, then the prompt is queued. URL and bearer live in process memory only: never written to disk, logged, returned, or sent to the tab. |
 | `unregister_webhook` | `{}` | Clear the webhook URL and bearer. Later prompts queue for `read_messages`. |
 | `read_messages` | `{ max?, wait_ms? }` | Queued in-viewer prompts, oldest first, removed on read. `wait_ms` (0 to 25000) long-polls: with an empty queue the call waits up to that long for a prompt or cancel before answering, so an idle agent polls once every 25 s instead of spinning. An attached screenshot arrives as the next MCP image content block (`image/png`). May also return cancel items `{ "type": "cancel", "id" }` (see below). |
 | `reply_to_user` | `{ in_reply_to, text, final? }` | Plain-text reply to a prompt id. `final: true` closes it. Does not write the model or git. A cancelled id returns `{ "ok": false, "error": "cancelled" }` and nothing reaches the tab. |
 | `set_status` | `{ state?, label?, working?, id? }` | Tell the tab what you are doing: `state` `typing` (writing an answer: the chat stays open with typing dots), `working` (changing the model: the chat collapses and the field shows a spinner), or `idle`. Set `typing` before a long answer. You do not have to set `working`: the first model-changing tool call after a prompt sets it, a streamed `reply_to_user` (`final: false`) sets `typing`, and a final reply or 120 s without activity sets `idle`. `working` (boolean) is the legacy form. Without `id` it targets the latest prompt. A cancelled id returns `{ "ok": false, "error": "cancelled" }`. |
+
+### Guide resources
+
+The same topics are MCP resources: `resources/list` returns one row per topic (`surfcad://guide/<topic>`, `text/plain`, `_meta.version` = the `surfcad-mcp` package version) and `resources/read { uri }` returns the topic text, so a host that pre-loads or pins resources can carry the guide without a tool call. `guide { topic }` and the resource share one source.
 
 ### In-viewer prompts: webhook or polling
 

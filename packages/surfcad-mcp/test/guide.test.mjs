@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import {
+  ALL_GUIDE_TOPIC_NAMES,
   callGuideTool,
   GUIDE_TOPIC_NAMES,
   GUIDE_TOPICS,
@@ -61,12 +62,14 @@ test('callGuideTool lists topics with no args, returns one topic, and names the 
   const one = callGuideTool({ topic: 'camera' });
   assert.equal(one.isError, false);
   assert.equal(one.content[0].text, GUIDE_TOPICS.camera.text);
+  assert.match(one.content[1].text, /^Resource: surfcad:\/\/guide\/camera \(surfcad-mcp \d/);
   const bad = callGuideTool({ topic: 'dialect' });
   assert.equal(bad.isError, true);
   const body = JSON.parse(bad.content[0].text);
   assert.equal(body.code, 'unknown_topic');
-  assert.deepEqual(body.topics, [...GUIDE_TOPIC_NAMES]);
+  assert.deepEqual(body.topics, [...ALL_GUIDE_TOPIC_NAMES]);
   assert.match(body.message, /start, features/);
+  assert.match(body.hint, /guide \{\}/);
 });
 
 test('over stdio: guide is listed, works before pairing, and the instructions are the quick-start', async () => {
@@ -82,7 +85,7 @@ test('over stdio: guide is listed, works before pairing, and the instructions ar
     const { tools } = await client.listTools();
     const guide = tools.find((t) => t.name === 'guide');
     assert.ok(guide, 'guide tool listed');
-    assert.deepEqual(guide.inputSchema.properties.topic.enum, [...GUIDE_TOPIC_NAMES]);
+    assert.deepEqual(guide.inputSchema.properties.topic.enum, [...ALL_GUIDE_TOPIC_NAMES]);
     assert.match(guide.description, /start/);
 
     // No pairing needed: the guide is local text.

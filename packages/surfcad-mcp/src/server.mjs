@@ -2,7 +2,11 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   CallToolRequestSchema,
+  ErrorCode,
+  ListResourcesRequestSchema,
   ListToolsRequestSchema,
+  McpError,
+  ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { bridgeToolDefinitions, loadCommandsCatalog } from './catalog.mjs';
 import {
@@ -30,9 +34,12 @@ import {
 import {
   callGuideTool,
   GUIDE_TOOL_NAME,
+  guideResourceContents,
+  guideResourceList,
   guideToolDefinition,
   SERVER_INSTRUCTIONS,
 } from './prompt/guide.mjs';
+import { withErrorHint, withRowHints } from './prompt/errorHints.mjs';
 
 const PAIR_TOOL_NAME = 'pair';
 
@@ -87,6 +94,16 @@ function textResult(value, isError = false) {
     content: [{ type: 'text', text: JSON.stringify(value) }],
     isError,
   };
+}
+
+/**
+ * Every error payload leaves with a hint (and a see pointer when the code
+ * has an errors.<code> topic); the tool name feeds the fallback hint.
+ * @param {unknown} payload
+ * @param {string} [tool]
+ */
+function errorResult(payload, tool) {
+  return textResult(withErrorHint(payload, { tool }), true);
 }
 
 /** The `return` default over MCP. The page keeps `full`; an agent reads the script with get_script. */
@@ -160,13 +177,28 @@ export async function createSurfcadMcpServer(options = {}) {
   const session = options.session || new RelaySession();
   const bridgeTools = bridgeToolDefinitions(catalog).map((tool) => augmentStatusTool(augmentScreenshotTool(tool)));
 
+  const version = loadPackageVersion();
   const server = new Server(
-    { name: 'surfcad-mcp', version: loadPackageVersion() },
+    { name: 'surfcad-mcp', version },
     {
-      capabilities: { tools: {} },
+      capabilities: { tools: {}, resources: {} },
       instructions: SERVER_INSTRUCTIONS,
     },
   );
+
+  // The guide topics as resources (surfcad://guide/<topic>), the same text
+  // as guide { topic }, versioned with the package for hosts that index them.
+  server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+    resources: guideResourceList(version),
+  }));
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const uri = request.params.uri;
+    const contents = guideResourceContents(uri, version);
+    if (!contents) {
+      throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}. resources/list names the surfcad://guide/<topic> resources.`);
+    }
+    return contents;
+  });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
@@ -204,10 +236,10 @@ export async function createSurfcadMcpServer(options = {}) {
       if (name !== 'set_status') session.noteAgentToolCall();
       try {
         const out = await callPromptTool(session.prompts, name, args);
-        if (out.isError) return textResult(out.error, true);
+        if (out.isError) return errorResult(out.error, name);
         return { content: out.content, isError: false };
       } catch (err) {
-        return textResult(toolErrorPayload(err), true);
+        return errorResult(toolErrorPayload(err), name);
       }
     }
 
@@ -216,22 +248,22 @@ export async function createSurfcadMcpServer(options = {}) {
         ? args.code.trim()
         : (process.env.SURFCAD_PAIRING_CODE || '').trim();
       if (!code) {
-        return textResult({
+        return errorResult({
           code: 'bad_pairing_code',
           message: `Missing pairing code. Pass { "code": "......" } or set SURFCAD_PAIRING_CODE. ${pairingEnvHint()}`,
-        }, true);
+        }, name);
       }
       try {
         const result = await waitForPairing(session.pair(code), PAIR_TOOL_WAIT_MS);
         return pairToolResult(result, session.prompts);
       } catch (err) {
-        return textResult(toolErrorPayload(err), true);
+        return errorResult(toolErrorPayload(err), name);
       }
     }
 
     const known = bridgeTools.some((t) => t.name === name);
     if (!known) {
-      return textResult({ code: 'unknown_tool', message: `Unknown tool: ${name}` }, true);
+      return errorResult({ code: 'unknown_tool', message: `Unknown tool: ${name}` });
     }
 
     // A lost session is already re-pairing in the background; session.call
@@ -242,10 +274,10 @@ export async function createSurfcadMcpServer(options = {}) {
         try {
           await waitForPairing(session.pair(envCode), AUTO_PAIR_WAIT_MS);
         } catch (err) {
-          return textResult(toolErrorPayload(err), true);
+          return errorResult(toolErrorPayload(err), name);
         }
       } else if (session.state !== 'pairing') {
-        return textResult(notPairedError(), true);
+        return errorResult(notPairedError(), name);
       }
     }
 
@@ -257,7 +289,9 @@ export async function createSurfcadMcpServer(options = {}) {
       if (name === 'status' && out.isError !== true && out.value && typeof out.value === 'object' && !Array.isArray(out.value)) {
         return textResult({ ...out.value, ...session.prompts.deliveryStatus() });
       }
-      return textResult(out.value, out.isError === true);
+      if (out.isError === true) return errorResult(out.value, name);
+      // A run that failed answers ok: false with errors rows; those carry hints too.
+      return textResult(withRowHints(out.value));
     } catch (err) {
       const code = err?.code;
       if (
@@ -266,13 +300,13 @@ export async function createSurfcadMcpServer(options = {}) {
         || code === 'confirm_required'
         || code === 'pair_rejected'
       ) {
-        return textResult(formatBridgeError({
+        return errorResult(formatBridgeError({
           code,
           message: err.message,
           details: err.details,
-        }), true);
+        }), name);
       }
-      return textResult(toolErrorPayload(err), true);
+      return errorResult(toolErrorPayload(err), name);
     }
   });
 

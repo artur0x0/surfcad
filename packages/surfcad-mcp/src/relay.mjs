@@ -275,9 +275,13 @@ export class RelaySession {
         const error = msg.error && typeof msg.error === 'object'
           ? msg.error
           : { code: 'bridge_error', message: 'Command refused' };
+        // hint and retryable ride along when the tab sent them (the server
+        // fills in a hint from its own table when it did not).
         waiter.reject(Object.assign(new Error(error.message || error.code || 'Bridge call failed'), {
           code: error.code,
           details: error.details,
+          ...(typeof error.hint === 'string' && error.hint ? { hint: error.hint } : {}),
+          ...(typeof error.retryable === 'boolean' ? { retryable: error.retryable } : {}),
         }));
         return;
       }

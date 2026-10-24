@@ -69,7 +69,7 @@ claude mcp add surfcad -- npx surfcad-mcp
 
 ## Tools
 
-Every command in `data/commands.json` is one MCP tool with the same name and argument schema, plus `pair`, `guide` (plain-text agent guidance by topic, no pairing needed), and five in-process prompt tools. `GET /tools` on the loopback relay, `list_commands`, and that file list the same bridge tools. Prefer `insert_*` feature tools. `set_script` is the freehand fallback and requires `part_id`.
+Every command in `data/commands.json` is one MCP tool with the same name and argument schema, plus `pair`, `guide` (plain-text agent guidance by topic, no pairing needed; `errors.<code>` topics carry the recovery for an error code), and five in-process prompt tools. The guide topics are also MCP resources (`surfcad://guide/<topic>`, versioned with this package). Every error payload carries `hint` (the next call to make) and, where a topic exists, `see`. `GET /tools` on the loopback relay, `list_commands`, and that file list the same bridge tools. Prefer `insert_*` feature tools. `set_script` is the freehand fallback and requires `part_id`.
 
 Parts and assemblies are opaque surf ids. A vault path or display name is `unknown_part` / `unknown_assembly`. Nothing reaches git without an explicit `git_save` (or another `git_*` write below).
 
