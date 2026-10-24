@@ -2,6 +2,7 @@ import { matchFaceKeys } from '../utils/faceColorMatch.js';
 import { classifySelectedFace } from '../utils/faceFeaturePlacement.js';
 import { fingerprintsFromGeometry } from '../utils/facePaint.js';
 import { fitJointAxis } from '../utils/jointResolve.js';
+import { stampedFaceTable, stampedNameForTriangles } from '../utils/faceIdentity.js';
 
 const FACE_ID_RE = /^f(\d+)$/;
 
@@ -67,6 +68,9 @@ function catalogRows(geometry, ids) {
   const indexArr = geometry?.index?.array;
   if (!positions || !indexArr?.length) return [];
   const fingerprints = fingerprintsFromGeometry(geometry, ids);
+  // Face identity: the stamped face that owns most of the patch names it;
+  // the key stays the fingerprint, so nothing that reads keys changes.
+  const table = stampedFaceTable(geometry, ids);
   return fingerprints.map((face) => {
     const row = {
       ...face,
@@ -75,6 +79,14 @@ function catalogRows(geometry, ids) {
       axis: null,
       _axisReady: face.kind === 'planar',
     };
+    const named = stampedNameForTriangles(table, face.tris);
+    if (named) {
+      row.name = named.name;
+      row.feature = named.feature;
+      row.role = named.role;
+      row.record = named.record;
+      if (named.names) row.names = named.names;
+    }
     row.ensureAxis = () => ensureCatalogAxis(row, positions, indexArr);
     return row;
   });
@@ -90,7 +102,7 @@ function catalogRows(geometry, ids) {
  * remesh. A rerun of the same script keeps every id. When `cacheEntry` is
  * the solid-cache row for this geometry, the catalog is stored there.
  *
- * @returns {Array<{ id: number, faceId: string, tris: number[], at: number[], n: number[], area: number, kind: string, type: string, axis: object|null, src?: number, ord?: number, ensureAxis: Function }>}
+ * @returns {Array<{ id: number, faceId: string, tris: number[], at: number[], n: number[], area: number, kind: string, type: string, axis: object|null, src?: number, ord?: number, name?: string, feature?: string, role?: string, record?: object, names?: string[], ensureAxis: Function }>}
  */
 export function agentFaceCatalog(geometry, faceIDs = null, cacheEntry = null) {
   const ids = faceIDs || faceIDsForGeometry(geometry);

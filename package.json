@@ -264,6 +264,7 @@
         "golden:adjacent-part-visible": "node scripts/golden/smoke_adjacent_part_visible.mjs",
         "golden:rotate-feature": "node scripts/golden/smoke_rotate_feature.mjs",
         "golden:feature-timeout": "node scripts/golden/smoke_feature_timeout.mjs",
+        "golden:face-identity": "node scripts/golden/smoke_face_identity.mjs",
         "golden:delete-face": "node scripts/golden/smoke_delete_face.mjs",
         "golden:assembly": "node scripts/golden/smoke_assembly.mjs",
         "golden:joints-schema": "node scripts/golden/smoke_joints_schema.mjs",

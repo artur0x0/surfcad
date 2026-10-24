@@ -38,6 +38,14 @@ export function buildFaceList(catalog) {
     const tris = Array.isArray(face.tris) ? face.tris : [];
     const row = {};
     if (face.faceId) row.id = face.faceId;
+    // Face identity: the stamped name (feature.role[k]) when the helper
+    // that built the face recorded one. Absent on unstamped geometry.
+    if (typeof face.name === 'string' && face.name) {
+      row.name = face.name;
+      row.feature = face.feature;
+      row.role = face.role;
+      if (Array.isArray(face.names) && face.names.length > 1) row.names = face.names.slice();
+    }
     row.type = face.type || 'planar';
     row.kind = row.type;
     row.key = key;

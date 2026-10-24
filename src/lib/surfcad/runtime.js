@@ -2406,7 +2406,7 @@ function roundedBox(size, radius, segments = 16) {
   const { Manifold } = manifoldModule;
   const minDim = Math.min(...size);
   const r = Math.min(radius, minDim / 2 - 0.001);
-  if (!(r > 0)) return Manifold.cube(size, true);
+  if (!(r > 0)) return _stampCube(Manifold.cube(size, true), 'roundedBox');
   // Bundled Manifold has no offset()/minkowski — hull of 8 corner spheres
   // equals cube ⊕ sphere (rounded box).
   const half = size.map((s) => s / 2 - r);
@@ -2422,7 +2422,7 @@ function roundedBox(size, radius, segments = 16) {
       }
     }
   }
-  return Manifold.hull(spheres);
+  return _stampRoundedBox(Manifold.hull(spheres), size, r);
 }
 
 /**
@@ -2531,7 +2531,7 @@ function tube(outerRadius, innerRadius, height, segments = 32) {
   const outer = Manifold.cylinder(height, outerRadius, outerRadius, segments);
   const inner = Manifold.cylinder(height, innerRadius, innerRadius, segments);
 
-  return outer.subtract(inner);
+  return _stampTube(outer.subtract(inner), outerRadius, innerRadius);
 }
 
 /**
@@ -2543,7 +2543,7 @@ function hexPrism(radius, height) {
   if (!manifoldModule) throw new Error('Manifold not initialized');
   const { Manifold } = manifoldModule;
   
-  return Manifold.cylinder(height, radius, radius, 6);
+  return _stampHexPrism(Manifold.cylinder(height, radius, radius, 6));
 }
 
 /**
@@ -4943,7 +4943,8 @@ function _c8CheckValid(m, what) {
  */
 function makeRevolve(contours, segments = 96, degrees = 360) {
   const { CrossSection } = manifoldModule;
-  const cs = new CrossSection(_c8NormalizeContours(contours));
+  const loops = _c8NormalizeContours(contours);
+  const cs = new CrossSection(loops);
   const segs = Number(segments);
   if (!(segs >= 3) || !Number.isFinite(segs)) {
     throw new Error('makeRevolve: segments must be >= 3');
@@ -4952,7 +4953,7 @@ function makeRevolve(contours, segments = 96, degrees = 360) {
   if (!(deg > 0) || !Number.isFinite(deg) || deg > 360) {
     throw new Error('makeRevolve: angle must be > 0 and ≤ 360');
   }
-  return _c8CheckValid(cs.revolve(Math.round(segs), deg), 'makeRevolve');
+  return _stampRevolve(_c8CheckValid(cs.revolve(Math.round(segs), deg), 'makeRevolve'), loops, deg);
 }
 /**
  * makeExtrude(contours, height) — extrude a 2D profile by `height` along Z.
@@ -4960,8 +4961,9 @@ function makeRevolve(contours, segments = 96, degrees = 360) {
  */
 function makeExtrude(contours, height) {
   const { CrossSection } = manifoldModule;
-  const cs = new CrossSection(_c8NormalizeContours(contours));
-  return _c8CheckValid(cs.extrude(height), 'makeExtrude');
+  const loops = _c8NormalizeContours(contours);
+  const cs = new CrossSection(loops);
+  return _stampExtrude(_c8CheckValid(cs.extrude(height), 'makeExtrude'), loops, Number(height));
 }
 
 /**
@@ -9269,6 +9271,637 @@ function _featureTessellation(runOriginalID) {
   return out;
 }
 
+// ============================================================================
+// FACE IDENTITY — provenance stamps (mvp/surfcad-face-identity-design.md)
+//
+// Every helper that knows what it builds records, for the solid it returns,
+// which of its triangles play which role (cube.top, cylinder.side,
+// extrude.wall[3]). Nothing in the mesh changes: Manifold already gives
+// every run of triangles an `originalID` (one per primitive or helper
+// result) and every triangle a `faceID`, and carries both through every
+// boolean and transform (verified on built/manifold.js). A stamp is the
+// pair (originalID, faceID range) → role, kept in `_faceStamps` for the
+// current run; serializeResult ships the rows the final mesh still uses,
+// and the main thread groups triangles by them (src/utils/faceIdentity.js).
+// Because the ids are Manifold's own, the boundary ids that Fillet mode
+// writes into scripts (`edgesBetween(part, 3, 6)`), the face graph and the
+// C4 face helpers see exactly what they always saw.
+//
+// The feature of a label is the id of the marked block that was running
+// (`cube1`, `tapDrillHole-11`), else a synthetic `<helper>@<n>` counted in
+// script order. A hull, a fillet cutter, or a freehand Manifold.* call made
+// outside the stamped helpers has no row and so no name.
+// ============================================================================
+/**
+ * originalID -> { feature, helper, roles: [{ role, record, ranges: [[from, to], …] }] }
+ * for this run. `ranges` are faceID intervals, from <= id < to, sorted.
+ */
+let _faceStamps = new Map();
+/** helper -> count, for calls outside a marked block (`cube@2`). */
+let _stampCounters = new Map();
+/** Innermost marked feature block id while the script runs, else null. */
+let _featureNow = () => null;
+
+function _resetFaceStamps() {
+  _faceStamps = new Map();
+  _stampCounters = new Map();
+}
+
+function _stampFeatureId(helper) {
+  let id = null;
+  try { id = _featureNow(); } catch { id = null; }
+  if (typeof id === 'string' && id) return id;
+  const n = (_stampCounters.get(helper) || 0) + 1;
+  _stampCounters.set(helper, n);
+  return `${helper}@${n}`;
+}
+
+/** One triangle as a role classifier sees it. */
+function _stampTri(mesh, t) {
+  const np = mesh.numProp;
+  const vp = mesh.vertProperties;
+  const i0 = mesh.triVerts[t * 3];
+  const i1 = mesh.triVerts[t * 3 + 1];
+  const i2 = mesh.triVerts[t * 3 + 2];
+  const a = [vp[i0 * np], vp[i0 * np + 1], vp[i0 * np + 2]];
+  const b = [vp[i1 * np], vp[i1 * np + 1], vp[i1 * np + 2]];
+  const c = [vp[i2 * np], vp[i2 * np + 1], vp[i2 * np + 2]];
+  const cross = _c4Cross(_c4Sub(b, a), _c4Sub(c, a));
+  return {
+    a,
+    b,
+    c,
+    n: _c4Norm(cross),
+    area: 0.5 * _c4Len(cross),
+    center: [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3],
+  };
+}
+
+/** Plane record from the triangles of one role: area-weighted origin and normal. */
+function _planeRecord(tris) {
+  let area = 0;
+  const c = [0, 0, 0];
+  const n = [0, 0, 0];
+  for (const tri of tris) {
+    area += tri.area;
+    for (let k = 0; k < 3; k++) {
+      c[k] += tri.center[k] * tri.area;
+      n[k] += tri.n[k] * tri.area;
+    }
+  }
+  if (!(area > 0)) return { kind: 'mesh' };
+  return { kind: 'plane', origin: _c4Mul(1 / area, c), normal: _c4Norm(n) };
+}
+
+/** Sorted, merged [from, to) intervals of a sorted id list. */
+function _idRanges(sortedIds) {
+  const out = [];
+  for (const id of sortedIds) {
+    const last = out[out.length - 1];
+    if (last && id === last[1]) last[1] = id + 1;
+    else if (!last || id > last[1]) out.push([id, id + 1]);
+  }
+  return out;
+}
+
+/** The role row of (originalID, faceID), or null (binary search over the ranges). */
+function _stampRoleFor(stamp, faceID) {
+  if (!stamp) return null;
+  for (const row of stamp.roles) {
+    const r = row.ranges;
+    let lo = 0;
+    let hi = r.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (faceID < r[mid][0]) hi = mid - 1;
+      else if (faceID >= r[mid][1]) lo = mid + 1;
+      else return row;
+    }
+  }
+  return null;
+}
+
+/**
+ * Record the roles of `manifold`'s faces under the helper that built it.
+ * `roleOf(tri)` names the role of one triangle (see _stampTri);
+ * `records(role, tris)` returns the SurfaceRecord for a role, or null for
+ * `{ kind: 'mesh' }`. Every run of the mesh (one for a primitive, two for a
+ * tube) gets a row under its own originalID. The solid is returned as is:
+ * the mesh, its ids and its triangle order are untouched, so stamping can
+ * never change what a script builds. On any failure the faces simply have
+ * no name.
+ */
+function _stampFaces(manifold, helper, roleOf, records = null) {
+  if (!manifoldModule || !manifold || typeof manifold.getMesh !== 'function') return manifold;
+  let mesh;
+  try { mesh = manifold.getMesh(); } catch { return manifold; }
+  const nTri = mesh.numTri;
+  if (!nTri || !mesh.faceID || !mesh.runIndex || !mesh.runOriginalID) return manifold;
+  const feature = _stampFeatureId(helper);
+  try {
+    for (let r = 0; r + 1 < mesh.runIndex.length; r++) {
+      const originalID = mesh.runOriginalID[r];
+      const t0 = mesh.runIndex[r] / 3;
+      const t1 = Math.min(nTri, mesh.runIndex[r + 1] / 3);
+      if (!(t1 > t0)) continue;
+      const roleIds = new Map();
+      const roleTris = new Map();
+      for (let t = t0; t < t1; t++) {
+        const tri = _stampTri(mesh, t);
+        let role;
+        try { role = roleOf(tri, t); } catch { role = null; }
+        if (typeof role !== 'string' || !role) role = 'mesh';
+        let ids = roleIds.get(role);
+        if (!ids) { ids = []; roleIds.set(role, ids); roleTris.set(role, []); }
+        ids.push(mesh.faceID[t]);
+        roleTris.get(role).push(tri);
+      }
+      const roles = [];
+      for (const [role, ids] of roleIds) {
+        let record = null;
+        if (typeof records === 'function') {
+          try { record = records(role, roleTris.get(role)); } catch { record = null; }
+        }
+        ids.sort((a, b) => a - b);
+        roles.push({
+          role,
+          record: record && typeof record === 'object' ? record : { kind: 'mesh' },
+          ranges: _idRanges(ids),
+        });
+      }
+      // A run that already carries a stamp (a tube's inner cylinder built
+      // by the stamped cylinder helper) is re-labelled by the outer helper.
+      _faceStamps.set(originalID, { feature, helper, roles });
+    }
+  } catch (err) {
+    console.warn(`[identity] ${helper}: faces left unnamed (${err?.message || err})`);
+  }
+  return manifold;
+}
+
+/** The stamp rows this mesh still uses (serializeResult). */
+function _faceStampRows(runOriginalID) {
+  if (!runOriginalID || !_faceStamps.size) return [];
+  const rows = [];
+  const seen = new Set();
+  for (let r = 0; r < runOriginalID.length; r++) {
+    const id = runOriginalID[r];
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const s = _faceStamps.get(id);
+    if (s) rows.push({ originalID: id, feature: s.feature, helper: s.helper, roles: s.roles });
+  }
+  return rows;
+}
+
+/** top/bottom/left/right/front/back for an axis-aligned normal, else null. */
+function _axisRole(n, tol = 0.999) {
+  const ax = [Math.abs(n[0]), Math.abs(n[1]), Math.abs(n[2])];
+  const k = ax[0] >= ax[1] && ax[0] >= ax[2] ? 0 : (ax[1] >= ax[2] ? 1 : 2);
+  if (ax[k] < tol) return null;
+  const pos = n[k] > 0;
+  if (k === 0) return pos ? 'right' : 'left';
+  if (k === 1) return pos ? 'back' : 'front';
+  return pos ? 'top' : 'bottom';
+}
+
+function _stampCube(m, helper = 'cube') {
+  return _stampFaces(m, helper, (tri) => _axisRole(tri.n), (role, tris) => (role === 'mesh' ? null : _planeRecord(tris)));
+}
+
+function _sideOrCap(tri) {
+  if (tri.n[2] > 0.999) return 'top';
+  if (tri.n[2] < -0.999) return 'bottom';
+  return 'side';
+}
+
+function _coneRecord(z0, height, rLow, rHigh) {
+  if (Math.abs(rLow - rHigh) < 1e-9) {
+    return { kind: 'cylinder', axisOrigin: [0, 0, z0], axisDir: [0, 0, 1], radius: rLow };
+  }
+  const h = Number(height);
+  // The apex sits where the radius reaches zero along the axis.
+  const apexZ = rLow > rHigh ? z0 + (h * rLow) / (rLow - rHigh) : z0 - (h * rHigh) / (rHigh - rLow);
+  return {
+    kind: 'cone',
+    apex: [0, 0, apexZ],
+    axisDir: [0, 0, rLow > rHigh ? -1 : 1],
+    halfAngle: Math.atan2(Math.abs(rLow - rHigh), Math.abs(h)),
+  };
+}
+
+function _stampCylinder(m, height, radiusLow, radiusHigh, center) {
+  const rl = Number(radiusLow);
+  const rh = radiusHigh == null || !(Number(radiusHigh) >= 0) ? rl : Number(radiusHigh);
+  const z0 = center ? -Number(height) / 2 : 0;
+  return _stampFaces(m, 'cylinder', _sideOrCap, (role, tris) => (
+    role === 'side' ? _coneRecord(z0, height, rl, rh) : _planeRecord(tris)
+  ));
+}
+
+function _stampSphere(m, radius) {
+  return _stampFaces(m, 'sphere', () => 'surface', () => ({ kind: 'sphere', center: [0, 0, 0], radius: Number(radius) }));
+}
+
+/** hexPrism: top, bottom, wall[0..5] counter-clockwise from +X. */
+function _stampHexPrism(m) {
+  return _stampFaces(m, 'hexPrism', (tri) => {
+    const cap = _sideOrCap(tri);
+    if (cap !== 'side') return cap;
+    const deg = ((Math.atan2(tri.center[1], tri.center[0]) * 180) / Math.PI + 360) % 360;
+    return `wall[${Math.min(5, Math.floor(deg / 60))}]`;
+  }, (role, tris) => _planeRecord(tris));
+}
+
+/** tube: side (outer wall), inner, top, bottom. */
+function _stampTube(m, outerRadius, innerRadius) {
+  const ro = Number(outerRadius);
+  const ri = Number(innerRadius);
+  const mid = (ro + ri) / 2;
+  return _stampFaces(m, 'tube', (tri) => {
+    const cap = _sideOrCap(tri);
+    if (cap !== 'side') return cap;
+    return Math.hypot(tri.center[0], tri.center[1]) < mid ? 'inner' : 'side';
+  }, (role, tris) => {
+    if (role === 'side') return { kind: 'cylinder', axisOrigin: [0, 0, 0], axisDir: [0, 0, 1], radius: ro };
+    if (role === 'inner') return { kind: 'cylinder', axisOrigin: [0, 0, 0], axisDir: [0, 0, 1], radius: ri };
+    return _planeRecord(tris);
+  });
+}
+
+/**
+ * roundedBox: the six flats keep the cube names; the twelve rounded edges
+ * are band[i] (i = axis*4 + signs of the two other axes, 0..11) and the
+ * eight corners corner[i] (sign octant, 0..7). Classified by where the
+ * triangle centroid sits against the inner core (size/2 - r), which is
+ * exact for a hull of corner spheres.
+ */
+function _stampRoundedBox(m, size, r) {
+  const half = [size[0] / 2 - r, size[1] / 2 - r, size[2] / 2 - r];
+  const eps = 1e-6 * Math.max(size[0], size[1], size[2], 1);
+  return _stampFaces(m, 'roundedBox', (tri) => {
+    const c = tri.center;
+    const beyond = [0, 1, 2].filter((k) => Math.abs(c[k]) > half[k] + eps);
+    if (beyond.length === 1) {
+      const k = beyond[0];
+      const pos = c[k] > 0;
+      if (k === 0) return pos ? 'right' : 'left';
+      if (k === 1) return pos ? 'back' : 'front';
+      return pos ? 'top' : 'bottom';
+    }
+    if (beyond.length === 2) {
+      const axis = [0, 1, 2].find((k) => !beyond.includes(k));
+      const [a, b] = beyond;
+      return `band[${axis * 4 + (c[a] > 0 ? 2 : 0) + (c[b] > 0 ? 1 : 0)}]`;
+    }
+    if (beyond.length === 3) {
+      return `corner[${(c[0] > 0 ? 4 : 0) + (c[1] > 0 ? 2 : 0) + (c[2] > 0 ? 1 : 0)}]`;
+    }
+    return null;
+  }, (role, tris) => {
+    let hit = /^band\[(\d+)\]$/.exec(role);
+    if (hit) {
+      const i = Number(hit[1]);
+      const axis = Math.floor(i / 4);
+      const others = [0, 1, 2].filter((k) => k !== axis);
+      const origin = [0, 0, 0];
+      origin[others[0]] = (i & 2 ? 1 : -1) * half[others[0]];
+      origin[others[1]] = (i & 1 ? 1 : -1) * half[others[1]];
+      const dir = [0, 0, 0];
+      dir[axis] = 1;
+      return { kind: 'cylinder', axisOrigin: origin, axisDir: dir, radius: r };
+    }
+    hit = /^corner\[(\d+)\]$/.exec(role);
+    if (hit) {
+      const i = Number(hit[1]);
+      return {
+        kind: 'sphere',
+        center: [(i & 4 ? 1 : -1) * half[0], (i & 2 ? 1 : -1) * half[1], (i & 1 ? 1 : -1) * half[2]],
+        radius: r,
+      };
+    }
+    return role === 'mesh' ? null : _planeRecord(tris);
+  });
+}
+
+/** Distance from point p to the segment ab, in 2D. */
+function _segDist2(p, a, b) {
+  const abx = b[0] - a[0];
+  const aby = b[1] - a[1];
+  const l2 = abx * abx + aby * aby;
+  let t = l2 > 0 ? ((p[0] - a[0]) * abx + (p[1] - a[1]) * aby) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p[0] - (a[0] + t * abx), p[1] - (a[1] + t * aby));
+}
+
+/**
+ * Logical edges of normalized profile loops. A loop whose points all sit
+ * at one distance from their centroid (8 or more of them) is one circle
+ * edge; every other loop contributes one edge per point pair. Edges are
+ * indexed across loops in order, so `wall[g]` / `seg[g]` is stable while
+ * the profile keeps its point count.
+ */
+function _profileEdges(loops) {
+  const edges = [];
+  for (const pts of loops) {
+    const n = pts.length;
+    let cx = 0;
+    let cy = 0;
+    for (const p of pts) { cx += p[0]; cy += p[1]; }
+    cx /= n;
+    cy /= n;
+    let rMin = Infinity;
+    let rMax = 0;
+    for (const p of pts) {
+      const r = Math.hypot(p[0] - cx, p[1] - cy);
+      if (r < rMin) rMin = r;
+      if (r > rMax) rMax = r;
+    }
+    if (n >= 8 && rMax > 0 && (rMax - rMin) <= 1e-6 * rMax + 1e-9) {
+      edges.push({ kind: 'circle', center: [cx, cy], radius: (rMin + rMax) / 2 });
+      continue;
+    }
+    for (let i = 0; i < n; i++) edges.push({ kind: 'line', a: pts[i], b: pts[(i + 1) % n] });
+  }
+  return edges;
+}
+
+function _nearestProfileEdge(edges, p) {
+  let best = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    const d = e.kind === 'circle'
+      ? Math.abs(Math.hypot(p[0] - e.center[0], p[1] - e.center[1]) - e.radius)
+      : _segDist2(p, e.a, e.b);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
+/** makeExtrude: cap0 (z = 0), cap1 (z = height), wall[g] per logical profile edge. */
+function _stampExtrude(m, loops, height) {
+  const edges = _profileEdges(loops);
+  return _stampFaces(m, 'extrude', (tri) => {
+    if (tri.n[2] > 0.999) return height >= 0 ? 'cap1' : 'cap0';
+    if (tri.n[2] < -0.999) return height >= 0 ? 'cap0' : 'cap1';
+    const g = _nearestProfileEdge(edges, tri.center);
+    return g >= 0 ? `wall[${g}]` : null;
+  }, (role, tris) => {
+    const hit = /^wall\[(\d+)\]$/.exec(role);
+    if (hit) {
+      const e = edges[Number(hit[1])];
+      if (e && e.kind === 'circle') {
+        return { kind: 'cylinder', axisOrigin: [e.center[0], e.center[1], 0], axisDir: [0, 0, 1], radius: e.radius };
+      }
+    }
+    return role === 'mesh' ? null : _planeRecord(tris);
+  });
+}
+
+/**
+ * makeRevolve: seg[g] per profile segment (x is the radius, y the height
+ * along the result's Z axis), end0 / end1 for the flat ends of a partial
+ * revolve.
+ */
+function _stampRevolve(m, loops, degrees) {
+  const edges = _profileEdges(loops);
+  const partial = degrees < 360 - 1e-9;
+  const angleOf = (v) => ((Math.atan2(v[1], v[0]) * 180) / Math.PI + 360) % 360;
+  return _stampFaces(m, 'revolve', (tri) => {
+    if (partial) {
+      const t0 = angleOf(tri.a);
+      const t1 = angleOf(tri.b);
+      const t2 = angleOf(tri.c);
+      const same = (x, y) => Math.abs(x - y) < 1e-4 || Math.abs(Math.abs(x - y) - 360) < 1e-4;
+      if (same(t0, t1) && same(t1, t2)) {
+        if (same(t0, 0)) return 'end0';
+        if (same(t0, degrees)) return 'end1';
+      }
+    }
+    const r = (Math.hypot(tri.a[0], tri.a[1]) + Math.hypot(tri.b[0], tri.b[1]) + Math.hypot(tri.c[0], tri.c[1])) / 3;
+    const g = _nearestProfileEdge(edges, [r, tri.center[2]]);
+    return g >= 0 ? `seg[${g}]` : null;
+  }, (role, tris) => {
+    const hit = /^seg\[(\d+)\]$/.exec(role);
+    if (hit) {
+      const e = edges[Number(hit[1])];
+      if (e && e.kind === 'line') {
+        const dx = e.b[0] - e.a[0];
+        const dy = e.b[1] - e.a[1];
+        if (Math.abs(dx) < 1e-9) {
+          return { kind: 'cylinder', axisOrigin: [0, 0, 0], axisDir: [0, 0, 1], radius: Math.abs(e.a[0]) };
+        }
+        if (Math.abs(dy) < 1e-9) {
+          return { kind: 'plane', origin: [0, 0, e.a[1]], normal: [0, 0, tris[0]?.n[2] >= 0 ? 1 : -1] };
+        }
+        const apexY = e.a[1] - e.a[0] * (dy / dx);
+        return {
+          kind: 'cone',
+          apex: [0, 0, apexY],
+          axisDir: [0, 0, dy / dx > 0 ? -1 : 1],
+          halfAngle: Math.atan2(Math.abs(dx), Math.abs(dy)),
+        };
+      }
+      return null;
+    }
+    return role === 'mesh' ? null : _planeRecord(tris);
+  });
+}
+
+/**
+ * The `Manifold` a script sees: the same class, with cube / cylinder /
+ * sphere recording their face roles. Every other static and `new Manifold`
+ * pass through, and `instanceof` still works.
+ */
+function _scriptManifoldClass() {
+  const M = manifoldModule.Manifold;
+  const statics = {
+    cube(...args) {
+      return _stampCube(M.cube(...args));
+    },
+    cylinder(...args) {
+      const [height, radiusLow, radiusHigh, , center] = args;
+      return _stampCylinder(M.cylinder(...args), height, radiusLow, radiusHigh, center);
+    },
+    sphere(...args) {
+      return _stampSphere(M.sphere(...args), args[0]);
+    },
+  };
+  return new Proxy(M, {
+    get(target, key, receiver) {
+      if (Object.prototype.hasOwnProperty.call(statics, key)) return statics[key];
+      return Reflect.get(target, key, receiver);
+    },
+  });
+}
+
+// ---------------------------------------------------------------- named faces (script side)
+const _stampedFaceCache = new WeakMap();
+
+/**
+ * One face per connected piece of each stamped label on `part`, named
+ * `feature.role`, with `[ordinal]` appended when one label is in several
+ * pieces (ordered by centre x, y, z). Faces have the fields the C4 face
+ * helpers read (center, normal, tris, verts, area, body) plus name, label
+ * and record. Unstamped triangles (a hull, a cutter, a freehand
+ * Manifold.* call) are not listed.
+ */
+function _stampedFaces(part) {
+  if (!part || typeof part.getMesh !== 'function') throw new Error('facesNamed: part must be a Manifold');
+  const hit = _stampedFaceCache.get(part);
+  if (hit) return hit;
+  const mesh = part.getMesh();
+  const np = mesh.numProp;
+  const vp = mesh.vertProperties;
+  const nTri = mesh.numTri;
+  const triBody = _triComponentIds(mesh.triVerts, nTri);
+  // Label per triangle: the run's originalID picks the stamp, the faceID the role.
+  const groups = new Map();
+  const stampKey = new Map();
+  if (mesh.faceID && mesh.runIndex && mesh.runOriginalID) {
+    for (let r = 0; r + 1 < mesh.runIndex.length; r++) {
+      const stamp = _faceStamps.get(mesh.runOriginalID[r]);
+      if (!stamp) continue;
+      const t1 = Math.min(nTri, mesh.runIndex[r + 1] / 3);
+      for (let t = mesh.runIndex[r] / 3; t < t1; t++) {
+        const row = _stampRoleFor(stamp, mesh.faceID[t]);
+        if (!row) continue;
+        const key = `${stamp.feature}.${row.role}`;
+        let list = groups.get(key);
+        if (!list) { list = []; groups.set(key, list); stampKey.set(key, { stamp, row }); }
+        list.push(t);
+      }
+    }
+  }
+  const V = (i) => [vp[i * np], vp[i * np + 1], vp[i * np + 2]];
+  const faces = [];
+  for (const [key, tris] of groups) {
+    const { stamp, row } = stampKey.get(key);
+    // Connected pieces: triangles that share an edge.
+    const parent = tris.map((_, i) => i);
+    const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+    const edgeTris = new Map();
+    tris.forEach((t, gi) => {
+      const vs = [mesh.triVerts[t * 3], mesh.triVerts[t * 3 + 1], mesh.triVerts[t * 3 + 2]];
+      for (let k = 0; k < 3; k++) {
+        const u = vs[k];
+        const w = vs[(k + 1) % 3];
+        const ek = u < w ? u * 1e9 + w : w * 1e9 + u;
+        const prev = edgeTris.get(ek);
+        if (prev === undefined) edgeTris.set(ek, gi);
+        else { const a = find(prev); const b = find(gi); if (a !== b) parent[b] = a; }
+      }
+    });
+    const byRoot = new Map();
+    tris.forEach((t, gi) => {
+      const r = find(gi);
+      let list = byRoot.get(r);
+      if (!list) { list = []; byRoot.set(r, list); }
+      list.push(t);
+    });
+    const pieces = [];
+    for (const sub of byRoot.values()) {
+      const c = [0, 0, 0];
+      const n = [0, 0, 0];
+      let area = 0;
+      const verts = [];
+      const seen = new Set();
+      for (const t of sub) {
+        const i0 = mesh.triVerts[t * 3];
+        const i1 = mesh.triVerts[t * 3 + 1];
+        const i2 = mesh.triVerts[t * 3 + 2];
+        const v0 = V(i0);
+        const v1 = V(i1);
+        const v2 = V(i2);
+        const cross = _c4Cross(_c4Sub(v1, v0), _c4Sub(v2, v0));
+        const a = 0.5 * _c4Len(cross);
+        const tn = _c4Norm(cross);
+        for (let k = 0; k < 3; k++) {
+          c[k] += ((v0[k] + v1[k] + v2[k]) / 3) * a;
+          n[k] += tn[k] * a;
+        }
+        area += a;
+        for (const i of [i0, i1, i2]) if (!seen.has(i)) { seen.add(i); verts.push(V(i)); }
+      }
+      pieces.push({
+        id: mesh.faceID[sub[0]],
+        tris: sub,
+        center: area > 1e-18 ? _c4Mul(1 / area, c) : [0, 0, 0],
+        normal: _c4Norm(n),
+        area,
+        verts,
+        body: triBody[sub[0]],
+        label: { feature: stamp.feature, role: row.role, ordinal: 0 },
+        helper: stamp.helper,
+        record: row.record,
+      });
+    }
+    pieces.sort((p, q) => p.center[0] - q.center[0] || p.center[1] - q.center[1] || p.center[2] - q.center[2]);
+    pieces.forEach((p, i) => {
+      p.label.ordinal = i;
+      p.name = pieces.length > 1 ? `${key}[${i}]` : key;
+      faces.push(p);
+    });
+  }
+  faces.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  _stampedFaceCache.set(part, faces);
+  return faces;
+}
+
+function _nameGlob(pattern) {
+  const esc = String(pattern).split('*').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+  return new RegExp(`^${esc}$`);
+}
+
+/**
+ * faceNames(part) → every face name on the part, sorted.
+ * Names are `feature.role`, with `[k]` appended when one label is in several
+ * pieces (`cube1.top`, `boss.wall[3]`, `plate.top[1]`). `feature` is the id
+ * of the marked block that built the solid, else `<helper>@<n>`.
+ */
+function faceNames(part) {
+  return _stampedFaces(part).map((f) => f.name);
+}
+
+/**
+ * facesNamed(part, pattern) → the faces whose name matches `pattern`.
+ * An exact name, a name without its `[k]` (every piece of that label), or a
+ * glob with `*` (`boss.wall[*]`, `cube1.*`). Throws, naming the faces that
+ * exist, when nothing matches; it never substitutes a nearby face. The
+ * faces work with workplaneFromFace, hole, hollow, draftFaces, moveFace and
+ * deleteFace like a facesByNormal result.
+ */
+function facesNamed(part, pattern) {
+  const want = String(pattern ?? '').trim();
+  if (!want) throw new Error('facesNamed: pass a face name (see faceNames(part))');
+  const faces = _stampedFaces(part);
+  let hits = faces.filter((f) => f.name === want);
+  if (!hits.length) hits = faces.filter((f) => `${f.label.feature}.${f.label.role}` === want);
+  if (!hits.length && want.includes('*')) {
+    const re = _nameGlob(want);
+    hits = faces.filter((f) => re.test(f.name) || re.test(`${f.label.feature}.${f.label.role}`));
+  }
+  if (!hits.length) {
+    const names = faces.map((f) => f.name);
+    const shown = names.slice(0, 16).join(', ') + (names.length > 16 ? `, … (${names.length} faces)` : '');
+    throw new Error(`facesNamed: no face named '${want}' on this part${names.length ? ` — faces: ${shown}` : ' — this solid has no stamped faces'}`);
+  }
+  return hits;
+}
+
+/**
+ * surfaceOf(face) → the SurfaceRecord the helper that built the face
+ * recorded: `{ kind: 'plane', origin, normal }`, `{ kind: 'cylinder',
+ * axisOrigin, axisDir, radius }`, `{ kind: 'cone', apex, axisDir,
+ * halfAngle }`, `{ kind: 'sphere', center, radius }`, or `{ kind: 'mesh' }`
+ * when there is none. Records are in the frame the helper built in; a
+ * later translate / rotate moves the face but not its record.
+ */
+function surfaceOf(face) {
+  return face && face.record && typeof face.record === 'object' ? face.record : { kind: 'mesh' };
+}
+
 /**
  * solveContour(spec) → a contour profile in plane UV.
  * spec is `{ points, lines, arcs, dimensions, constraints, refs }`. Lengths are
@@ -9372,6 +10005,10 @@ const HELPER_FUNCTIONS = {
   edge,
   edgesBetween,
   boundaryEdges,
+  // Face identity (provenance stamps)
+  faceNames,
+  facesNamed,
+  surfaceOf,
 };
 
 // ============================================================================
@@ -9509,10 +10146,20 @@ const executeScript = (script, importedModels) => {
       }
     },
   });
+  // Face identity: a stamp made while a marked block is open takes that
+  // block's id as its feature; the synthetic counters restart per attempt
+  // so a rerun of the same script names the same faces.
+  _stampCounters = new Map();
+  _featureNow = () => {
+    const open = tracker.current();
+    const hit = open != null ? features[open] : null;
+    return hit && typeof hit.id === 'string' ? hit.id : null;
+  };
 
   // Build the execution scope with Manifold API + helper functions
   const scope = {
     ...manifoldModule,        // Core Manifold API (Manifold, CrossSection, etc.)
+    Manifold: _scriptManifoldClass(), // cube / cylinder / sphere carry face stamps
     ...HELPER_FUNCTIONS,      // Extended helper functions
     window: limitedWindow,    // Limited window object for imports
     importMesh,               // return importMesh('<Part>.mesh')
@@ -9568,6 +10215,7 @@ const executeScript = (script, importedModels) => {
         return hit ? { id: hit.id, kind: hit.kind, ms: Math.round(ms * 10) / 10 } : null;
       })
       .filter(Boolean);
+    _featureNow = () => null;
   }
 };
 
@@ -9731,6 +10379,7 @@ const serializeResult = (manifold) => {
     runFeature: _runFeatureKeys(mesh.runOriginalID),
     featureTessellation: _featureTessellation(mesh.runOriginalID),
     faceID: mesh.faceID ? Array.from(mesh.faceID) : null,
+    faceStamps: _faceStampRows(mesh.runOriginalID),
   };
 };
 
@@ -10068,6 +10717,7 @@ self.onmessage = async (event) => {
         const _execT0 = _perfNow();
         _featureOps = [];
         _sourceTess = [];
+        _resetFaceStamps();
         // With `progress: true` (what `ManifoldWorker` sends), block entries
         // go to the main thread as they happen, so the watchdog can name the
         // block it kills (`ManifoldWorker` keeps the latest per job).
@@ -10869,6 +11519,7 @@ export function runPreparedScript(source, opts = {}) {
   }
   _featureOps = [];
   _sourceTess = [];
+  _resetFaceStamps();
   const { ran, kernelFreed } = _runInKernelArena(() => executeSkippingFailedFeatures(
     String(source ?? ''),
     opts.importedModels || {},
