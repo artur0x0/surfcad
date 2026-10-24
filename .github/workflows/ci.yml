@@ -516,6 +516,15 @@ jobs:
             echo "rotate feature golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:feature-timeout | tee "${RUNNER_TEMP}/feature-timeout.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/feature-timeout.log"; then
+            echo "feature timeout golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'feature timeout golden: ok' "${RUNNER_TEMP}/feature-timeout.log"; then
+            echo "feature timeout golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
