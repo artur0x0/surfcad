@@ -561,6 +561,15 @@ jobs:
             echo "camera presets golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:face-identity-rebuild | tee "${RUNNER_TEMP}/face-identity-rebuild.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/face-identity-rebuild.log"; then
+            echo "face identity rebuild golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'face identity rebuild golden: ok' "${RUNNER_TEMP}/face-identity-rebuild.log"; then
+            echo "face identity rebuild golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:

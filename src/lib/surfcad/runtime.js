@@ -2244,8 +2244,17 @@ function sweep(profile, path, options = {}) {
     v[1] = P[1] + x * N[1] + y * B[1];
     v[2] = P[2] + x * N[2] + y * B[2];
   };
-  
-  return straight.warp(warp);
+
+  const swept = straight.warp(warp);
+  // Face identity: caps on the path's end planes, one wall per logical
+  // profile edge, read off the swept mesh through the frame nearest each
+  // triangle (the warp re-sorts triangles, so nothing is read by index).
+  return _stampSweep(swept, {
+    profile,
+    frames,
+    samples: tValues.map((tv) => position(tv)),
+    pathPoints: options.identityPath || null,
+  });
 }
 
 // ============================================================================
@@ -2392,7 +2401,7 @@ function sweepPoints(profile, points, options = {}) {
     tMax: 1
   };
   
-  return sweep(profile, path, sweepOptions);
+  return sweep(profile, path, { ...sweepOptions, identityPath: points.map((pt) => [pt[0], pt[1], pt[2]]) });
 }
 
 /**
@@ -5010,10 +5019,12 @@ function sheetMetalSolid(spec) {
 function makeLoft(sections, opts = {}) {
   if (!manifoldModule) throw new Error('Manifold not initialized');
   const { Manifold, CrossSection, Mesh } = manifoldModule;
-  return _c8CheckValid(
-    buildMakeLoftSolid(Manifold, CrossSection, sections, { ...opts, Mesh }),
+  const identity = {};
+  const out = _c8CheckValid(
+    buildMakeLoftSolid(Manifold, CrossSection, sections, { ...opts, Mesh, identity }),
     'makeLoft',
   );
+  return _stampLoft(out, identity);
 }
 
 
@@ -9709,6 +9720,88 @@ function _stampRevolve(m, loops, degrees) {
   });
 }
 
+/** Logical edges of a CrossSection's polygons (toPolygons order), or null. */
+function _crossSectionEdges(profile) {
+  try {
+    const loops = typeof profile?.toPolygons === 'function' ? profile.toPolygons() : null;
+    if (!Array.isArray(loops) || !loops.length) return null;
+    return _profileEdges(loops.map((loop) => loop.map((pt) => [Number(pt[0]), Number(pt[1])])));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * sweep / sweepPoints: cap0 on the path's start plane, cap1 on its end
+ * plane, wall[g] per logical profile edge. Each triangle is read through
+ * the path frame nearest its centroid: local (x, y) in that frame's
+ * (N, B) picks the profile edge. Walls record the path when sweepPoints
+ * gave one.
+ */
+function _stampSweep(m, ctx) {
+  const edges = ctx && _crossSectionEdges(ctx.profile);
+  const frames = ctx?.frames;
+  const samples = ctx?.samples;
+  if (!edges || !Array.isArray(frames) || !Array.isArray(samples) || frames.length !== samples.length || samples.length < 2) return m;
+  const P0 = samples[0];
+  const T0 = frames[0].T;
+  const P1 = samples[samples.length - 1];
+  const T1 = frames[frames.length - 1].T;
+  let scale = 0;
+  for (const e of edges) {
+    if (e.kind === 'circle') scale = Math.max(scale, e.radius);
+    else scale = Math.max(scale, Math.abs(e.a[0]), Math.abs(e.a[1]));
+  }
+  const eps = Math.max(1e-6, 1e-4 * Math.max(scale, 1));
+  const onPlane = (tri, P, T) => [tri.a, tri.b, tri.c].every((v) => Math.abs(_c4Dot(_c4Sub(v, P), T)) < eps);
+  const nearest = (c) => {
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < samples.length; i++) {
+      const s = samples[i];
+      const dx = c[0] - s[0];
+      const dy = c[1] - s[1];
+      const dz = c[2] - s[2];
+      const d = dx * dx + dy * dy + dz * dz;
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  };
+  return _stampFaces(m, 'sweep', (tri) => {
+    if (onPlane(tri, P0, T0)) return 'cap0';
+    if (onPlane(tri, P1, T1)) return 'cap1';
+    const k = nearest(tri.center);
+    const rel = _c4Sub(tri.center, samples[k]);
+    const g = _nearestProfileEdge(edges, [_c4Dot(rel, frames[k].N), _c4Dot(rel, frames[k].B)]);
+    return g >= 0 ? `wall[${g}]` : null;
+  }, (role, tris) => {
+    const hit = /^wall\[(\d+)\]$/.exec(role);
+    if (hit) {
+      const e = edges[Number(hit[1])];
+      const record = { kind: 'swept', profileEdge: e && e.kind === 'line' ? [e.a[0], e.a[1], e.b[0], e.b[1]] : null };
+      if (e && e.kind === 'circle') record.profileCircle = { center: e.center, radius: e.radius };
+      if (Array.isArray(ctx.pathPoints) && ctx.pathPoints.length) record.path = ctx.pathPoints;
+      return record;
+    }
+    return role === 'mesh' ? null : _planeRecord(tris);
+  });
+}
+
+/**
+ * makeLoft (parallel stations): cap0 at the first station, cap1 at the
+ * last, span[i][j] for bottom-profile edge i between stations j and j + 1.
+ * buildMakeLoftSolid fills `identity.roles` per triangle of its result; an
+ * angled loft leaves it empty and is not stamped.
+ */
+function _stampLoft(m, identity) {
+  const roles = identity && Array.isArray(identity.roles) ? identity.roles : null;
+  if (!roles) return m;
+  return _stampFaces(m, 'loft', (tri, tIdx) => roles[tIdx] || 'mesh', (role, tris) => {
+    if (/^span\[/.test(role)) return { kind: 'lofted', stations: identity.stations || null };
+    return role === 'mesh' ? null : _planeRecord(tris);
+  });
+}
+
 /**
  * The `Manifold` a script sees: the same class, with cube / cylinder /
  * sphere recording their face roles. Every other static and `new Manifold`
@@ -9740,9 +9833,9 @@ function _scriptManifoldClass() {
 const _stampedFaceCache = new WeakMap();
 
 /**
- * One face per connected piece of each stamped label on `part`, named
- * `feature.role`, with `[ordinal]` appended when one label is in several
- * pieces (ordered by centre x, y, z). Faces have the fields the C4 face
+ * One face per connected piece (triangles sharing a vertex) of each
+ * stamped label on `part`, named `feature.role`, with `[ordinal]` appended
+ * when one label is in several pieces (ordered by centre x, y, z). Faces have the fields the C4 face
  * helpers read (center, normal, tris, verts, area, body) plus name, label
  * and record. Unstamped triangles (a hull, a cutter, a freehand
  * Manifold.* call) are not listed.
@@ -9778,18 +9871,16 @@ function _stampedFaces(part) {
   const faces = [];
   for (const [key, tris] of groups) {
     const { stamp, row } = stampKey.get(key);
-    // Connected pieces: triangles that share an edge.
+    // Connected pieces: triangles that share a vertex (the same rule as
+    // src/utils/faceIdentity.js, which works on a mesh with needles dropped).
     const parent = tris.map((_, i) => i);
     const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
-    const edgeTris = new Map();
+    const vertexOwner = new Map();
     tris.forEach((t, gi) => {
-      const vs = [mesh.triVerts[t * 3], mesh.triVerts[t * 3 + 1], mesh.triVerts[t * 3 + 2]];
       for (let k = 0; k < 3; k++) {
-        const u = vs[k];
-        const w = vs[(k + 1) % 3];
-        const ek = u < w ? u * 1e9 + w : w * 1e9 + u;
-        const prev = edgeTris.get(ek);
-        if (prev === undefined) edgeTris.set(ek, gi);
+        const v = mesh.triVerts[t * 3 + k];
+        const prev = vertexOwner.get(v);
+        if (prev === undefined) vertexOwner.set(v, gi);
         else { const a = find(prev); const b = find(gi); if (a !== b) parent[b] = a; }
       }
     });

@@ -217,10 +217,18 @@ check('selection face is the picked top', sel1.result?.face?.normal?.[2] > 0.9, 
 const hole = await agentCall(page, 'insert_hole', { use_selection: true, size: 'M6' });
 check('insert_hole use_selection', hole.ok === true && hole.result?.ok === true, JSON.stringify(hole));
 check('insert_hole reports usedSelection', hole.result?.usedSelection === true, JSON.stringify(hole.result?.usedSelection));
-// The selection is single-use: the rebuild cleared the pick, so a second
-// use_selection insert is refused instead of landing on the default top face.
+// Face identity: the cube top carries its stamped name, so the pick is
+// found again on the new mesh and a second use_selection insert lands on
+// the same face. Once the pick is cleared, use_selection is refused instead
+// of landing on the default top face.
 const selAfter = await agentCall(page, 'selection', {});
-check('rebuild cleared the face pick', !selAfter.result?.face, JSON.stringify(selAfter.result?.face));
+check('the named face pick survived the rebuild', typeof selAfter.result?.face?.name === 'string' && selAfter.result.face.normal?.[2] > 0.9,
+  JSON.stringify(selAfter.result?.face));
+const holeTwice = await agentCall(page, 'insert_hole', { use_selection: true, size: 'M6', u: 10 });
+check('second use_selection insert lands on the same face', holeTwice.ok === true && holeTwice.result?.usedSelection === true,
+  JSON.stringify(holeTwice.error || holeTwice.result?.ok));
+check('select_clear drops the pick', (await agentCall(page, 'select_clear', {})).ok === true
+  && !(await agentCall(page, 'selection', {})).result?.face);
 const treeBefore = await agentCall(page, 'feature_tree', {});
 const holeAgain = await agentCall(page, 'insert_hole', { use_selection: true, size: 'M6' });
 check('second use_selection insert → no_selection', holeAgain.ok === false && holeAgain.error?.code === 'no_selection',

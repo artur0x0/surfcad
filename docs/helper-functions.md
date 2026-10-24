@@ -707,7 +707,7 @@ const wall     = facesByNormal(part, [1, 0, 0])[0];   // a +X face
 
 ### faceNames(part) / facesNamed(part, name) / edgesOf(part, name) / surfaceOf(face)
 
-Faces by the name the helper that built them recorded (see [docs/architecture.md](architecture.md), Face identity). `Manifold.cube` / `cylinder` / `sphere`, `tube`, `hexPrism`, `roundedBox`, `makeExtrude` and `makeRevolve` stamp every face with `feature.role`: `feature` is the id of the marked block the call ran in (`cube1`, `tapDrillHole-11`), else `<helper>@<n>` in script order; `role` is `top bottom left right front back`, `side top bottom inner`, `surface`, `wall[i]`, `band[i]` / `corner[i]`, `cap0 cap1 wall[g]`, `seg[g] end0 end1`. A label in several pieces (a slot through a top, a union of two copies) gets `[k]`, ordered by centre.
+Faces by the name the helper that built them recorded (see [docs/architecture.md](architecture.md), Face identity). `Manifold.cube` / `cylinder` / `sphere`, `tube`, `hexPrism`, `roundedBox`, `makeExtrude`, `makeRevolve`, `sweep` / `sweepPoints` and a parallel `makeLoft` stamp every face with `feature.role`: `feature` is the id of the marked block the call ran in (`cube1`, `tapDrillHole-11`), else `<helper>@<n>` in script order; `role` is `top bottom left right front back`, `side top bottom inner`, `surface`, `wall[i]`, `band[i]` / `corner[i]`, `cap0 cap1 wall[g]` (extrude and sweep), `seg[g] end0 end1` (revolve), `cap0 cap1 span[i][j]` (loft: bottom edge `i`, station span `j`). A label in several pieces (a slot through a top, a union of two copies) gets `[k]`, ordered by centre.
 
 ```js
 faceNames(part);                       // ['base.bottom', 'base.top', 'boss.side', …]

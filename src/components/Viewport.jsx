@@ -13624,6 +13624,11 @@ const Viewport = forwardRef(({
       const wasEdgeMode = pickModeRef.current === 'edge';
       const preservePicks = opts.preservePicks === true && featureHideKeepsPicks(featureSessionRef.current);
       const savedFaces = preservePicks ? facePickGroupRef.current : null;
+      // Face identity: a face pick that carries a stamped name is found
+      // again on the new mesh once the graphs below are rebuilt, so a second
+      // use_selection insert gets the face that was picked instead of
+      // no_selection. A pick without a name (unstamped geometry) still clears.
+      const namedPick = !preservePicks ? selectedFaceRef.current : null;
       if (!preservePicks) {
         clearHighlight();
         setSelectedFace(null);
@@ -13707,6 +13712,20 @@ const Viewport = forwardRef(({
         } else if (wasEdgeMode && hadEdges) {
           setEdgeModeToast(toastPayload('Geometry updated — re-pick edges'));
           armEdgeModeToastClear();
+        }
+      }
+
+      if (!preservePicks && typeof namedPick?.name === 'string' && namedPick.name) {
+        const geom = resultRef.current?.geometry;
+        const positions = geom?.attributes?.position;
+        const index = geom?.index?.array;
+        if (geom && positions && index?.length) {
+          const wanted = Array.isArray(namedPick.names) && namedPick.names.length > 1 ? namedPick.names : [namedPick.name];
+          const found = resolveFaceNames(stampedFaceTable(geom, faceIDsRef.current), wanted);
+          if (!found.error && found.picks.length) {
+            publishFacePicks(found.picks, geom, positions, index);
+            if (containerRef.current) containerRef.current.setAttribute('data-feature-picks', 'renamed');
+          }
         }
       }
 

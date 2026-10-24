@@ -60,7 +60,7 @@ const USE_SELECTION_BY_HELPER = {
  * every successful rebuild because they index the old mesh. Stated on every
  * use_selection flag so an agent re-picks before each insert.
  */
-export const USE_SELECTION_NOTE = ' Picks clear after every rebuild (each insert_*, set_script, undo), so use_selection: true with nothing selected is refused with no_selection; re-pick before each insert that uses it. A named pick (select_faces { names }) is resolved by name in the script: facesNamed for a face, edgesOf for the edges around it.';
+export const USE_SELECTION_NOTE = ' A named pick (select_faces { names }, or a click on a face a helper built) is resolved by name in the script (facesNamed for a face, edgesOf for the edges around it) and is found again after every rebuild, so it can be used for several inserts. A pick with no name clears with the rebuild, and use_selection: true with nothing selected is refused with no_selection.';
 
 /** True for helpers whose compose reads the face / edge context (not insert_move, which targets a body). */
 export function helperReadsSelection(helperId) {
