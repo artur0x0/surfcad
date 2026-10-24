@@ -10692,18 +10692,42 @@ const serializeResult = (manifold) => {
   
   const mesh = manifold.getMesh();
   
+  // Typed copies out of the wasm heap. The main thread reads them as
+  // array-likes, and the run result posts their buffers as transferables
+  // (see `meshTransferList`), so a large part crosses to the page with no
+  // structured clone of the vertex data.
   return {
     numProp: mesh.numProp,
-    vertProperties: Array.from(mesh.vertProperties),
-    triVerts: Array.from(mesh.triVerts),
+    vertProperties: new Float32Array(mesh.vertProperties),
+    triVerts: new Uint32Array(mesh.triVerts),
     numRun: mesh.numRun,
-    runIndex: Array.from(mesh.runIndex),
-    runOriginalID: Array.from(mesh.runOriginalID),
+    runIndex: new Uint32Array(mesh.runIndex),
+    runOriginalID: new Uint32Array(mesh.runOriginalID),
     runFeature: _runFeatureKeys(mesh.runOriginalID),
     featureTessellation: _featureTessellation(mesh.runOriginalID),
-    faceID: mesh.faceID ? Array.from(mesh.faceID) : null,
+    faceID: mesh.faceID ? new Uint32Array(mesh.faceID) : null,
     faceStamps: _faceStampRows(mesh.runOriginalID),
   };
+};
+
+/**
+ * The ArrayBuffers of a serialized mesh, for a postMessage transfer list.
+ * Only the buffers this mesh owns outright: after the post they are
+ * detached in the worker, so the caller must not read the mesh again.
+ */
+const meshTransferList = (meshData) => {
+  const out = [];
+  const seen = new Set();
+  for (const key of ['vertProperties', 'triVerts', 'runIndex', 'runOriginalID', 'faceID']) {
+    const arr = meshData?.[key];
+    const buf = arr && ArrayBuffer.isView(arr) ? arr.buffer : null;
+    if (!buf || seen.has(buf)) continue;
+    // A view that does not cover its whole buffer shares it with something else.
+    if (arr.byteOffset !== 0 || arr.byteLength !== buf.byteLength) continue;
+    seen.add(buf);
+    out.push(buf);
+  }
+  return out;
 };
 
 /**
@@ -11090,6 +11114,8 @@ self.onmessage = async (event) => {
         const bbox = result.boundingBox();
         const bodyCentroids = _kernelBodyCentroids(result);
         
+        // Transfer the vertex buffers instead of cloning them.
+        const _meshTransfers = meshTransferList(meshData);
         self.postMessage({ 
           type: 'result', 
           id,
@@ -11114,7 +11140,7 @@ self.onmessage = async (event) => {
             ...(ran.featureTimings?.length ? { featureTimings: ran.featureTimings } : {}),
             ...(_lastMemoReport ? { featureCache: _lastMemoReport } : {}),
           }
-        });
+        }, _meshTransfers);
         break;
       }
 

@@ -5,6 +5,7 @@ import CodeEditor from './components/CodeEditor';
 import Viewport from './components/Viewport';
 import { BrandMark, BrandWordmark } from './components/brand/BrandWordmark';
 import { clearLoadingTheme, readLoadingTheme } from './utils/loadingTheme';
+import { solidCacheStats } from './utils/partSolidCache.js';
 import PromptInput from './components/PromptInput';
 import { agentPromptContext } from './agent/agentPromptLive.js';
 import { allowFeaturePopup, registerFeaturePopupDismiss } from './agent/agentFeaturePopupGate.js';
@@ -10198,7 +10199,9 @@ const App = () => {
       return partSurfId(part);
     },
     readGeometryWorkers() {
-      return manifoldContext.poolStats();
+      const stats = manifoldContext.poolStats();
+      // GPU buffer cache counters (geometries built = uploads, reuses).
+      return stats && typeof stats === 'object' ? { ...stats, gpu: solidCacheStats() } : stats;
     },
     readActivePartStatus() {
       const doc = assemblyRef.current;

@@ -23,6 +23,7 @@ import {
   characteristicLengthMm as lengthFromBounds,
 } from './characteristicLength.js';
 import { stampedPiecesForMesh } from './faceIdentity.js';
+import { meshContentHash } from './meshHash.js';
 
 /**
  * Per-triangle feature key from Manifold runs: `runFeature` (fillet / chamfer
@@ -72,29 +73,7 @@ export function buildSolidGeometry(meshData) {
   const srcFaceID = meshData.faceID && meshData.faceID.length > 0 ? meshData.faceID : null;
   const fin = dropPlanarFins(vertProperties, srcIndex, srcFaceID);
   const triVerts = fin.indices;
-  // Feature source per kept triangle (fillet op or originalID). The face
-  // graph crosses it only between fillet ops whose dihedral clears both gates.
-  const triSource = triangleSources(meshData, fin.keep, triVerts.length / 3);
-  if (triSource) geometry.userData.triSource = triSource;
-  if (meshData?.featureTessellation?.length) {
-    geometry.userData.featureTessellation = meshData.featureTessellation;
-  }
-  // Face identity: the pieces of every stamped label, found on the full
-  // mesh before the needles were dropped (so the kernel, which keeps them,
-  // and this geometry agree), as a piece id per kept triangle.
-  if (Array.isArray(meshData?.faceStamps) && meshData.faceStamps.length) {
-    geometry.userData.faceStamps = meshData.faceStamps;
-    const stamped = stampedPiecesForMesh(meshData);
-    if (stamped) {
-      const nKept = triVerts.length / 3;
-      let pieceOfTri = stamped.pieceOfTri;
-      if (fin.keep) {
-        pieceOfTri = new Int32Array(nKept);
-        for (let i = 0; i < nKept; i++) pieceOfTri[i] = stamped.pieceOfTri[fin.keep[i]];
-      }
-      geometry.userData.faceIdentity = { pieceOfTri, pieces: stamped.pieces };
-    }
-  }
+  applyRunTables(geometry, meshData, fin, triVerts.length / 3);
   geometry.setAttribute('position', new BufferAttribute(vertProperties, 3));
   geometry.setIndex(new BufferAttribute(triVerts, 1));
   const faceIDs = fin.faceIDs && fin.faceIDs.length > 0 ? fin.faceIDs : null;
@@ -115,7 +94,45 @@ export function buildSolidGeometry(meshData) {
     }
   }
   geometry.computeVertexNormals();
-  return { geometry, faceIDs };
+  return { geometry, faceIDs, fin: { keep: fin.keep || null, nKept: triVerts.length / 3 } };
+}
+
+/**
+ * The per-run tables this mesh carries, as geometry.userData: triangle
+ * sources (fillet ops / originalIDs), the feature tessellation rows, the
+ * face stamps and the identity pieces. They are what differs between two
+ * runs of the same triangles (Manifold numbers originalIDs per run), so a
+ * geometry kept across such a rerun gets them refreshed from the new mesh.
+ * `fin` is the needle drop of the geometry (`keep`, `nKept`), the same for
+ * the same triangles.
+ */
+function applyRunTables(geometry, meshData, fin, nKept) {
+  delete geometry.userData.triSource;
+  delete geometry.userData.featureTessellation;
+  delete geometry.userData.faceStamps;
+  delete geometry.userData.faceIdentity;
+  // Feature source per kept triangle (fillet op or originalID). The face
+  // graph crosses it only between fillet ops whose dihedral clears both gates.
+  const triSource = triangleSources(meshData, fin.keep, nKept);
+  if (triSource) geometry.userData.triSource = triSource;
+  if (meshData?.featureTessellation?.length) {
+    geometry.userData.featureTessellation = meshData.featureTessellation;
+  }
+  // Face identity: the pieces of every stamped label, found on the full
+  // mesh before the needles were dropped (so the kernel, which keeps them,
+  // and this geometry agree), as a piece id per kept triangle.
+  if (Array.isArray(meshData?.faceStamps) && meshData.faceStamps.length) {
+    geometry.userData.faceStamps = meshData.faceStamps;
+    const stamped = stampedPiecesForMesh(meshData);
+    if (stamped) {
+      let pieceOfTri = stamped.pieceOfTri;
+      if (fin.keep) {
+        pieceOfTri = new Int32Array(nKept);
+        for (let i = 0; i < nKept; i++) pieceOfTri[i] = stamped.pieceOfTri[fin.keep[i]];
+      }
+      geometry.userData.faceIdentity = { pieceOfTri, pieces: stamped.pieces };
+    }
+  }
 }
 
 /**
@@ -200,22 +217,80 @@ export function featureEdgesOf(geom) {
 }
 
 /**
- * Built solids by mesh data object. `cache.entries` maps meshData → entry;
- * `cache.geoms` is every cached geometry, so a swap does not dispose one that
- * another part (or the pick mesh, after a switch back) still shows.
+ * Built solids by mesh data object, and by content. `cache.entries` maps
+ * meshData → entry; `cache.geoms` is every cached geometry, so a swap does
+ * not dispose one that another part (or the pick mesh, after a switch back)
+ * still shows. `cache.byKey` maps `<partId>|<content hash>` → entry: a run
+ * of the same part that returns the same mesh (a comment edit, a no-op
+ * block, a memoised replay) takes the geometry it already shows, so no new
+ * GPU buffers are built. `cache.stats` counts builds (each one is a GPU
+ * upload on its first frame) and reuses; `solidCacheStats()` sums them for
+ * the `geometry_workers` debug read and the gpu-upload-cache golden.
  */
+const liveCaches = new Set();
+
 export function createSolidCache() {
-  return { entries: new Map(), geoms: new WeakSet() };
+  const cache = {
+    entries: new Map(),
+    geoms: new WeakSet(),
+    byKey: new Map(),
+    stats: { builds: 0, reuses: 0, disposed: 0 },
+  };
+  liveCaches.add(typeof WeakRef === 'function' ? new WeakRef(cache) : { deref: () => cache });
+  return cache;
 }
 
-export function cachedSolidGeometry(cache, meshData) {
+function solidKey(partId, meshData) {
+  const hash = meshContentHash(meshData);
+  if (!hash) return null;
+  return `${partId != null && partId !== '' ? String(partId) : '*'}|${hash}`;
+}
+
+/**
+ * The built solid for this mesh data. `partId` scopes content reuse to one
+ * part: the same mesh under another part id is built again, so a part never
+ * shows a geometry whose per-part state (skins, outlines) belongs elsewhere.
+ * @param {ReturnType<typeof createSolidCache>} cache
+ * @param {object} meshData worker mesh data
+ * @param {string|number|null} [partId]
+ * @returns {{ geometry: BufferGeometry, faceIDs: ArrayLike<number>|null, meshData: object, key: string|null }}
+ */
+export function cachedSolidGeometry(cache, meshData, partId = null) {
   let entry = cache.entries.get(meshData);
-  if (!entry) {
-    entry = buildSolidGeometry(meshData);
-    cache.entries.set(meshData, entry);
-    cache.geoms.add(entry.geometry);
+  if (entry) return entry;
+  const key = solidKey(partId, meshData);
+  const shared = key && cache.byKey ? cache.byKey.get(key) : null;
+  if (shared && !shared.disposed) {
+    // Same part, same triangles: the geometry (and its GPU buffers) moves to
+    // the new mesh data object and the old one is let go, so a rerun does
+    // not pile up entries. The run tables are this run's, so the face graph
+    // and the identity pieces name what the kernel now holds.
+    if (shared.meshData !== meshData) {
+      cache.entries.delete(shared.meshData);
+      shared.meshData = meshData;
+      cache.entries.set(meshData, shared);
+      applyRunTables(shared.geometry, meshData, shared.fin, shared.fin.nKept);
+    }
+    cache.stats.reuses += 1;
+    return shared;
   }
+  entry = buildSolidGeometry(meshData);
+  entry.meshData = meshData;
+  entry.key = key;
+  entry.disposed = false;
+  cache.entries.set(meshData, entry);
+  cache.geoms.add(entry.geometry);
+  if (key && cache.byKey) cache.byKey.set(key, entry);
+  cache.stats.builds += 1;
   return entry;
+}
+
+function disposeEntry(cache, entry) {
+  cache.geoms.delete(entry.geometry);
+  if (entry.key && cache.byKey?.get(entry.key) === entry) cache.byKey.delete(entry.key);
+  entry.disposed = true;
+  entry.geometry.dispose?.();
+  cache.stats.disposed += 1;
 }
 
 /** Dispose a geometry unless the solid cache owns it (pruned later). */
@@ -227,7 +302,8 @@ export function releaseGeometryIn(cache, geom) {
 /**
  * Drop cached solids that nothing shows any more: not the pick mesh, not
  * another assembly part. A new run is new mesh data, so the old entry goes
- * here instead of piling up.
+ * here instead of piling up. A deleted part's geometry is disposed here on
+ * the next prune, which frees its GPU buffers.
  */
 export function pruneSolidCacheIn(cache, pickMesh, extras) {
   const shown = new Set();
@@ -238,9 +314,29 @@ export function pruneSolidCacheIn(cache, pickMesh, extras) {
   for (const [meshData, entry] of cache.entries) {
     if (shown.has(entry.geometry)) continue;
     cache.entries.delete(meshData);
-    cache.geoms.delete(entry.geometry);
-    entry.geometry.dispose?.();
+    disposeEntry(cache, entry);
   }
+}
+
+/**
+ * Totals over every live solid cache: `builds` (geometries built, each a
+ * GPU upload on its first frame), `reuses` (runs that kept the geometry they
+ * already showed), `disposed`, and `live` (geometries held right now).
+ */
+export function solidCacheStats() {
+  const out = { builds: 0, reuses: 0, disposed: 0, live: 0 };
+  for (const ref of liveCaches) {
+    const cache = ref.deref();
+    if (!cache) {
+      liveCaches.delete(ref);
+      continue;
+    }
+    out.builds += cache.stats.builds;
+    out.reuses += cache.stats.reuses;
+    out.disposed += cache.stats.disposed;
+    out.live += cache.entries.size;
+  }
+  return out;
 }
 
 /** Parts above this many triangles are not pre-built in idle time. */

@@ -444,6 +444,7 @@ import {
   featureGraphFor,
   pruneSolidCacheIn,
   releaseGeometryIn,
+  solidCacheStats,
   liveSolidEntryForGeometry,
   solidEntryForGeometry,
 } from '../utils/partSolidCache';
@@ -958,6 +959,18 @@ const TITLE_CHIP = 'text-xs font-medium text-center truncate px-3 py-1.5 rounded
  * The floating form is the game puzzle name, alone at the top.
  * `noun` is "Part" or "Assembly" — same commit rules, different label.
  */
+
+/** Dispose an object's geometry and material(s), and its children's. */
+function disposeObjectTree(obj) {
+  if (!obj) return;
+  obj.geometry?.dispose?.();
+  const material = obj.material;
+  if (Array.isArray(material)) material.forEach((item) => item?.dispose?.());
+  else material?.dispose?.();
+  const kids = obj.children ? [...obj.children] : [];
+  for (const kid of kids) disposeObjectTree(kid);
+}
+
 function ViewportTitleChip({
   children,
   value = null,
@@ -2953,20 +2966,20 @@ const Viewport = forwardRef(({
     });
   }
 
-  // Clear face highlight
+  // Clear face highlight. A highlight carries its boundary edges as a child
+  // LineSegments with its own geometry and material: those go too, or every
+  // rebuild (each run, each body highlight) leaks one GPU geometry.
   const clearHighlight = useCallback(() => {
     if (highlightMeshRef.current) {
       if (Array.isArray(highlightMeshRef.current)) {
         highlightMeshRef.current.forEach(mesh => {
           sceneRef.current.remove(mesh);
-          mesh.geometry?.dispose();
-          mesh.material?.dispose();
+          disposeObjectTree(mesh);
         });
         highlightMeshRef.current = [];
       } else {
         sceneRef.current.remove(highlightMeshRef.current);
-        highlightMeshRef.current.geometry?.dispose();
-        highlightMeshRef.current.material?.dispose();
+        disposeObjectTree(highlightMeshRef.current);
         highlightMeshRef.current = null;
       }
     }
@@ -11212,6 +11225,23 @@ const Viewport = forwardRef(({
             return out;
           },
           // One render and the renderer's own count of what it drew.
+          // GPU buffer cache: geometries built (each uploads on its first
+          // frame), runs that reused one, geometries disposed and held, what
+          // the renderer holds, and what the scene reaches (a gap between
+          // the last two is a leak). golden:gpu-upload-cache reads this.
+          gpuStats: () => {
+            const renderer = rendererRef.current;
+            const scene = sceneRef.current;
+            const camera = cameraRef.current;
+            if (renderer && scene && camera) renderer.render(scene, camera);
+            const inScene = new Set();
+            scene?.traverse?.((obj) => { if (obj.geometry) inScene.add(obj.geometry); });
+            return {
+              ...solidCacheStats(),
+              rendererGeometries: renderer?.info?.memory?.geometries ?? null,
+              sceneGeometries: inScene.size,
+            };
+          },
           renderInfo: () => {
             const renderer = rendererRef.current;
             const scene = sceneRef.current;
@@ -13204,7 +13234,7 @@ const Viewport = forwardRef(({
     // face: buildSolidGeometry drops it so the seam is not drawn and is not
     // an edge of the face graph. A solid already built for this mesh data
     // (another assembly part, or this part before a switch) is reused.
-    const solid = cachedSolidGeometry(solidCacheRef.current, meshData);
+    const solid = cachedSolidGeometry(solidCacheRef.current, meshData, activePartIdRef.current);
     const geometry = solid.geometry;
     faceIDsRef.current = solid.faceIDs;
 
@@ -14456,7 +14486,7 @@ const Viewport = forwardRef(({
     }
     // The solid this part just showed as the pick mesh: same cached
     // geometry, handed over instead of rebuilt.
-    const { geometry: geom } = cachedSolidGeometry(solidCacheRef.current, meshData);
+    const { geometry: geom } = cachedSolidGeometry(solidCacheRef.current, meshData, id);
     if (mesh.geometry !== geom) {
       releaseGeometryIn(solidCacheRef.current, mesh.geometry);
       mesh.geometry = geom;
@@ -14577,7 +14607,7 @@ const Viewport = forwardRef(({
         assemblyExtrasRef.current.set(solid.id, mesh);
       }
       mesh.userData.leftover = false;
-      const { geometry: geom } = cachedSolidGeometry(solidCacheRef.current, solid.mesh);
+      const { geometry: geom } = cachedSolidGeometry(solidCacheRef.current, solid.mesh, solid.id);
       if (mesh.geometry !== geom) {
         releaseGeometryIn(solidCacheRef.current, mesh.geometry);
         mesh.geometry = geom;
@@ -14604,7 +14634,7 @@ const Viewport = forwardRef(({
       }
       mesh.userData.assemblyPartId = solid.id;
       mesh.userData.leftover = true;
-      const { geometry: geom } = cachedSolidGeometry(solidCacheRef.current, solid.mesh);
+      const { geometry: geom } = cachedSolidGeometry(solidCacheRef.current, solid.mesh, solid.id);
       if (mesh.geometry !== geom) {
         releaseGeometryIn(solidCacheRef.current, mesh.geometry);
         mesh.geometry = geom;
