@@ -101,7 +101,7 @@ export function newLocalPartId() {
  *   source: 'git' | 'local',
  *   name: string,
  *   activeId: string | null,
- *   parts: [{ id, name, visible, order, path?, position?, placement?, surfId?, isSynced? }]
+ *   parts: [{ id, name, visible, order, path?, position?, placement?, surfId?, isSynced?, instanceOf? }]
  *   groups?: [{ id, name, source, partIds }]
  *   colors?: { [surfId]: { part?: '#rrggbb', faces?: [...] } }
  *   joints?: [{ id, name, type, value?, sense?, opposed?, a, b? }]
@@ -119,7 +119,40 @@ export function newLocalPartId() {
  * No `joints` key when there are none. `placement` is `{ t, q }`. It is
  * written when the quaternion is not identity, or when a joint names the
  * part. `position` stays the translation and equals `t` when both exist.
+ * `instanceOf` makes a row an instance: the row (its id, pose, visibility,
+ * order, name, joints, colors, groups) is one placement, and the script,
+ * run and mesh belong to the definition it names (`partDefinitionId`).
+ * A row without it is its own definition. See docs/vault-schema.md,
+ * Instances.
  */
+
+/**
+ * The definition a row places: `instanceOf` when the row is an instance,
+ * else the row's own id. Scripts, runs, meshes, thumbnails and per-part
+ * history are keyed by this; everything about the placement is keyed by
+ * the row id.
+ */
+export function partDefinitionId(row) {
+  const ref = row?.instanceOf;
+  if (typeof ref === 'string' && ref && ref !== String(row?.id ?? '')) return ref;
+  return row?.id == null ? '' : String(row.id);
+}
+
+/**
+ * True when a row other than `exceptRowId` still places `defId`: its own
+ * primary row, or an instance of it. Delete drops a definition's script
+ * and run only when this is false.
+ */
+export function definitionStillReferenced(parts, defId, exceptRowId = null) {
+  const def = defId == null ? '' : String(defId);
+  if (!def) return false;
+  const skip = exceptRowId == null ? null : String(exceptRowId);
+  return (parts || []).some((row) => {
+    if (!row || row.id == null) return false;
+    if (skip != null && String(row.id) === skip) return false;
+    return partDefinitionId(row) === def;
+  });
+}
 
 /** Shown and saved when a document has no name of its own. */
 export const DEFAULT_ASSEMBLY_NAME = 'Assembly';
@@ -220,7 +253,7 @@ export function isDefaultBlankAssembly(doc, scripts = {}, {
   const part = parts[0];
   const pname = String(part?.name || '').trim();
   if (pname && pname !== DEFAULT_PART_NAME && pname !== 'Part 1' && pname !== 'part1') return false;
-  let script = scripts?.[part.id];
+  let script = scripts?.[partDefinitionId(part)];
   if (liveId != null && String(liveId) === String(part.id) && typeof liveScript === 'string') {
     script = liveScript;
   }
@@ -591,6 +624,9 @@ export function serializeAssembly(doc) {
     if (typeof part?.path === 'string' && part.path) row.path = part.path;
     if (typeof part?.surfId === 'string' && part.surfId) row.surfId = part.surfId;
     if (typeof part?.copiedFrom === 'string' && part.copiedFrom) row.copiedFrom = part.copiedFrom;
+    if (typeof part?.instanceOf === 'string' && part.instanceOf && part.instanceOf !== row.id) {
+      row.instanceOf = part.instanceOf;
+    }
     if (typeof part?.isSynced === 'boolean') row.isSynced = part.isSynced;
     if (part?.missing === true) row.missing = true;
     return { row, part };
@@ -652,6 +688,7 @@ export function parseAssemblyDocument(input) {
       sheetMetal: part?.sheetMetal,
       surfId: part?.surfId,
       copiedFrom: part?.copiedFrom,
+      instanceOf: part?.instanceOf,
       isSynced: part?.isSynced,
       missing: part?.missing === true,
     })),
@@ -755,11 +792,14 @@ export function reorderParts(doc, fromIndex, toIndex) {
   return serializeAssembly({ ...doc, parts: next.map((part, index) => ({ ...part, order: index })) });
 }
 
-/** Script Monaco should load for this row. Never reads a script off the document. */
+/**
+ * Script Monaco should load for this row. Never reads a script off the
+ * document. An instance row loads its definition's script.
+ */
 export function scriptForRow(doc, scripts, id) {
   const part = (doc?.parts || []).find((row) => row.id === id);
   if (!part) return { ok: false, reason: 'unknown-row' };
-  const resolved = resolvePartId(doc.source, id, scripts);
+  const resolved = resolvePartId(doc.source, partDefinitionId(part), scripts);
   if (!resolved.ok) {
     return { ok: false, reason: 'missing', action: resolved.action, part };
   }
@@ -823,18 +863,21 @@ export function recordPartRun(runs, id, outcome) {
 
 /**
  * Solids the viewport draws. Hidden rows and failed runs are omitted.
- * The latest run is the only source — there is no shadow solid.
+ * The latest run is the only source — there is no shadow solid. Runs are
+ * keyed by definition, so every instance of a part shares one mesh and
+ * gets its own pose.
  */
 export function composeViewportParts(doc, runs) {
   const out = [];
   for (const part of sortParts(doc?.parts)) {
     if (part.visible === false) continue;
-    const run = runs?.[part.id];
+    const run = runs?.[partDefinitionId(part)];
     if (!run || run.ok !== true || !run.mesh || !run.mesh.vertProperties) continue;
     const pose = partPlacement(part);
     out.push({
       id: part.id,
       surfId: partSurfId(part),
+      definitionId: partDefinitionId(part),
       mesh: run.mesh,
       position: pose.t,
       placement: pose,
@@ -864,24 +907,29 @@ export function preserveHiddenPartRuns(doc, nextRuns, prevRuns) {
   const prev = prevRuns || {};
   for (const part of doc?.parts || []) {
     if (!part || part.visible !== false || part.id == null) continue;
-    const earlier = prev[part.id];
+    const def = partDefinitionId(part);
+    const earlier = prev[def];
     const mesh = earlier?.ok === true && earlier.mesh?.vertProperties ? earlier.mesh : null;
     if (!mesh) continue;
-    const current = runs[part.id];
+    const current = runs[def];
     if (current?.ok === true && current.mesh?.vertProperties) continue;
     const kept = { ok: true, mesh, error: null };
     if (Number.isFinite(earlier.bodyCount)) kept.bodyCount = earlier.bodyCount;
-    runs[part.id] = kept;
+    runs[def] = kept;
   }
   return runs;
 }
 
-/** Feed rows. Mesh is present only for a successful latest run. */
+/**
+ * Feed rows. Mesh is present only for a successful latest run. Script and
+ * run come from the row's definition; `instanceOf` is set on an instance row.
+ */
 export function feedRows(doc, runs, scripts) {
   const source = doc?.source === 'git' ? 'git' : 'local';
   return sortParts(doc?.parts).map((part) => {
-    const hasScript = !!(scripts && typeof scripts[part.id] === 'string');
-    const run = runs?.[part.id] || null;
+    const def = partDefinitionId(part);
+    const hasScript = !!(scripts && typeof scripts[def] === 'string');
+    const run = runs?.[def] || null;
     const missing = part.missing === true || !hasScript;
     const error = !missing && !!run && run.ok === false && !run.empty && !run.skipped;
     return {
@@ -895,6 +943,8 @@ export function feedRows(doc, runs, scripts) {
       action: missing ? missingRowAction(source) : null,
       mesh: !missing && run && run.ok === true ? run.mesh : null,
       surfId: partSurfId(part),
+      definitionId: def,
+      instanceOf: typeof part.instanceOf === 'string' && part.instanceOf !== part.id ? part.instanceOf : null,
       copiedFrom: part.copiedFrom || null,
       isSynced: typeof part.isSynced === 'boolean' ? part.isSynced : undefined,
     };

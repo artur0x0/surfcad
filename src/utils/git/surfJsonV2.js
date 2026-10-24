@@ -8,9 +8,16 @@
  *   "name": "Gearbox",
  *   "activeId": "<part surf id>" | null,
  *   "parts": [
- *     { "id": "<part surf id>", "name": "Bracket", "visible": true, "order": 0 }
+ *     { "id": "<part surf id>", "name": "Bracket", "visible": true, "order": 0 },
+ *     { "id": "<row surf id>", "instanceOf": "<part surf id>", "name": "Bracket (2)", … }
  *   ]
  * }
+ *
+ * A row with `instanceOf` is an instance: its own id, pose, visibility,
+ * order, name, joints and colors, and the script `parts/<instanceOf>.js`.
+ * `instanceOf` must be a surf id, never the row's own id, and never the id
+ * of another instance row (no chains). It need not match a row in the file:
+ * a definition can outlive its primary row.
  *
  * No `path` on parts. Top-level `id` is required. `name` is a label, not a
  * path segment. `groups[].source` is an assembly id (or null).
@@ -41,7 +48,7 @@ import {
 export const SURF_JSON_VERSION_V2 = 2;
 
 const TOP_KEYS = new Set(['format', 'version', 'id', 'name', 'activeId', 'parts', 'groups', 'colors', 'joints']);
-const PART_KEYS = new Set(['id', 'name', 'visible', 'order', 'position', 'placement', 'sheetMetal', 'copiedFrom']);
+const PART_KEYS = new Set(['id', 'name', 'visible', 'order', 'position', 'placement', 'sheetMetal', 'copiedFrom', 'instanceOf']);
 const GROUP_KEYS = new Set(['id', 'name', 'source', 'partIds']);
 
 function asObject(input) {
@@ -76,6 +83,8 @@ export function validateSurfJsonV2(input) {
     errors.push('parts must be an array');
   } else {
     const seenIds = new Set();
+    const instanceRows = new Set();
+    const instanceRefs = [];
     raw.parts.forEach((part, i) => {
       const at = `parts[${i}]`;
       if (!part || typeof part !== 'object' || Array.isArray(part)) {
@@ -96,6 +105,16 @@ export function validateSurfJsonV2(input) {
       }
       if (part.id && seenIds.has(part.id)) errors.push(`${at}.id duplicates ${part.id}`);
       if (part.id) seenIds.add(part.id);
+      if (part.instanceOf !== undefined) {
+        if (!isV2SurfId(part.instanceOf)) {
+          errors.push(`${at}.instanceOf must be a surf id`);
+        } else if (part.instanceOf === part.id) {
+          errors.push(`${at}.instanceOf must not be the row's own id`);
+        } else {
+          if (part.id) instanceRows.add(part.id);
+          instanceRefs.push({ at, ref: part.instanceOf });
+        }
+      }
       if (!isLabelName(part.name)) errors.push(`${at}.name must be a non-empty string`);
       if (typeof part.visible !== 'boolean') errors.push(`${at}.visible must be a boolean`);
       if (!Number.isInteger(part.order) || part.order < 0) errors.push(`${at}.order must be a non-negative integer`);
@@ -113,6 +132,9 @@ export function validateSurfJsonV2(input) {
         errors.push(`${at}.sheetMetal must be { sku: string, … }`);
       }
     });
+    for (const { at, ref } of instanceRefs) {
+      if (instanceRows.has(ref)) errors.push(`${at}.instanceOf must name a definition, not another instance`);
+    }
     if (raw.activeId != null && (!isV2SurfId(raw.activeId) || !seenIds.has(raw.activeId))) {
       errors.push('activeId must be null or one of the part ids');
     }
@@ -191,8 +213,11 @@ export function parseSurfJsonV2(input) {
     parts: raw.parts.map((p) => ({
       id: p.id,
       // TODO(PR 2): drop surfId; v2 row id is the only id after WC migration (§2.2).
+      // An instance row keeps its own row id here too: joints, colors and
+      // undo snapshots name the placement, not the definition.
       surfId: p.id,
       copiedFrom: p.copiedFrom,
+      instanceOf: p.instanceOf,
       name: p.name,
       visible: p.visible,
       order: p.order,
@@ -239,6 +264,7 @@ export function toSurfJsonV2(doc) {
       }
       if (p.sheetMetal !== undefined) row.sheetMetal = p.sheetMetal;
       if (p.copiedFrom !== undefined) row.copiedFrom = p.copiedFrom;
+      if (p.instanceOf !== undefined) row.instanceOf = p.instanceOf;
       return row;
     }),
   };

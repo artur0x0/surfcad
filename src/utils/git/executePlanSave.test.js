@@ -835,3 +835,28 @@ test('Save without a stored tip or record refuses when the remote already has th
   assert.equal(saveWrites(spy).length, writes);
   assert.equal(await readText(inner, partIdPath(P)), remoteP);
 });
+
+test('instances: Save with two instance rows writes one script, and reopening keeps every row on that script', async () => {
+  const R = mintSurfId({ now: new Date('2026-10-18T02:50:00.005Z'), rand: 'ee05' });
+  const before = doc(A, 'Trainer', [row(P, 'Roller')]);
+  const after = doc(A, 'Trainer', [
+    row(P, 'Roller'),
+    row(Q, 'Roller (2)', { order: 1, instanceOf: P, position: [0, 0, 120] }),
+    row(R, 'Roller (3)', { order: 2, instanceOf: P, position: [60, 0, 120] }),
+  ], { activeId: Q });
+  const { inner, spy, store, seedWrites } = await seedA(before, { [P]: BODY });
+  const result = await runSave({ spy, store, workingCopy: wc(after, { [P]: BODY_Q }) });
+  assert.equal(result.status, 'committed', result.error);
+  assert.equal(saveWrites(spy).length, seedWrites + 1);
+  assert.deepEqual(lastCommitFiles(spy).map((file) => file.path).sort(), [assemblyIdPath(A), partIdPath(P)]);
+  const tree = (await treePaths(inner)).filter((path) => !path.endsWith('.gitkeep'));
+  assert.deepEqual(tree, [assemblyIdPath(A), partIdPath(P), 'surfcad.json'].sort(), 'no file for an instance row');
+  assert.equal(await readText(inner, partIdPath(P)), stamped(BODY_Q, P, 'Roller'));
+  const json = JSON.parse(await readText(inner, assemblyIdPath(A)));
+  assert.deepEqual(json.parts.map((p) => [p.id, p.instanceOf ?? null, p.name]), [[P, null, 'Roller'], [Q, P, 'Roller (2)'], [R, P, 'Roller (3)']]);
+  assert.equal(json.activeId, Q);
+  // A second Save with nothing changed plans nothing.
+  const again = await runSave({ spy, store, workingCopy: wc(after, { [P]: BODY_Q }) });
+  assert.equal(again.status, 'clean', again.error || again.status);
+  assert.equal(saveWrites(spy).length, seedWrites + 1);
+});

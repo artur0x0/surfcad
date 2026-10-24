@@ -16,6 +16,8 @@ import { forgetPartThumbnails } from './partThumbnailStore.js';
 const DB_NAME = 'surfcad-assembly';
 const DB_VERSION = 1;
 const DOC_STORE = 'assembly';
+// Scripts keyed by definition id (`partDefinitionId`): an instance row has
+// no record of its own, it reads and writes its definition's.
 const PART_STORE = 'parts';
 const DOC_KEY = 'current';
 const SIDECAR_KEY = 'sidecar';

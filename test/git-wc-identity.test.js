@@ -1801,3 +1801,38 @@ test('step-3 from-move remaps FEA study ids onto to', async () => {
   assert.equal(idb.map.has(UUID), false);
   assert.equal(idb.memory.scripts[to], idb.map.get(to));
 });
+
+test('instance rows keep their row id through collapse and follow a remapped definition', () => {
+  const INSTANCE = mintSurfId({ now: new Date('2026-10-24T19:05:00.011Z'), rand: 'r0b2' });
+  const doc = {
+    source: 'local',
+    name: 'Trainer',
+    activeId: INSTANCE,
+    parts: [
+      { id: UUID, surfId: SURF, name: 'Roller', visible: true, order: 0 },
+      { id: INSTANCE, instanceOf: SURF, name: 'Roller (2)', visible: true, order: 1, position: [0, 0, 120] },
+    ],
+  };
+  const scripts = { [UUID]: withSurfId('return 1;\n', SURF) };
+  const out = collapseWorkingCopyIds(doc, scripts, { now: NOW, randFor: () => 'dead' });
+  assert.equal(out.doc.parts[0].id, SURF, 'the UUID primary collapses onto its header');
+  assert.equal(out.doc.parts[1].id, INSTANCE, 'the instance row is never reminted');
+  assert.equal(out.doc.parts[1].instanceOf, SURF);
+  assert.equal(out.doc.parts[1].copiedFrom, undefined, 'an instance is not a copy of its definition');
+  assert.equal(out.minted, 0);
+  assert.deepEqual(Object.keys(out.scripts), [SURF], 'one script, under the definition');
+  assert.equal(out.doc.activeId, INSTANCE);
+
+  // The definition row itself remapped (UUID primary, header-less): the instance follows.
+  const MINT = mintSurfId({ now: NOW, rand: 'dead' });
+  const noHeader = collapseWorkingCopyIds({
+    ...doc,
+    parts: [
+      { id: UUID, name: 'Roller', visible: true, order: 0 },
+      { id: INSTANCE, instanceOf: UUID, name: 'Roller (2)', visible: true, order: 1 },
+    ],
+  }, { [UUID]: 'return 1;\n' }, { now: NOW, randFor: () => 'dead' });
+  assert.equal(noHeader.doc.parts[0].id, MINT);
+  assert.equal(noHeader.doc.parts[1].id, INSTANCE);
+  assert.equal(noHeader.doc.parts[1].instanceOf, MINT, 'instanceOf follows the minted definition id');
+});

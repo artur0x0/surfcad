@@ -649,11 +649,14 @@ export function collapseWorkingCopyIds(doc, scripts = {}, {
 
   for (let i = 0; i < sourceParts.length; i += 1) {
     const part = sourceParts[i];
-    let script = scriptForPart(part, sourceScripts);
+    const instance = typeof part?.instanceOf === 'string' && part.instanceOf && part.instanceOf !== part?.id;
+    let script = instance ? undefined : scriptForPart(part, sourceScripts);
     const loaded = typeof script === 'string';
     // Local/IDB rows with no script: do not remint and drop the old key.
     // Vault rows with a path and no blob still collapse (then mark missing).
-    if (!loaded && part?.missing !== true && !partPath(part)) {
+    // An instance row has no script of its own (its definition's header
+    // names the definition), so it keeps its row id as it is.
+    if (instance || (!loaded && part?.missing !== true && !partPath(part))) {
       if (part?.id) used.add(part.id);
       if (part?.surfId) used.add(part.surfId);
       assignments.push({
@@ -717,6 +720,11 @@ export function collapseWorkingCopyIds(doc, scripts = {}, {
     if (picked.copiedFrom) row.copiedFrom = picked.copiedFrom;
     if (part?.missing === true) row.missing = true;
     else delete row.missing;
+    return row;
+  }).map((row) => {
+    // A frozen instance row follows its definition when that row was remapped.
+    const ref = row?.instanceOf;
+    if (typeof ref === 'string' && map.has(ref)) return { ...row, instanceOf: map.get(ref) };
     return row;
   });
 

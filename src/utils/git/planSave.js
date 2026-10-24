@@ -21,7 +21,7 @@
  *   - `openWorkingCopies` / `otherAssemblyCommits` — extra reference
  *     sources; they do **not** replace `branchAssemblies`.
  */
-import { normalizeRepoPath } from '../assembly.js';
+import { normalizeRepoPath, partDefinitionId } from '../assembly.js';
 import { gitBlobSha, isBinaryContent, toUint8Array } from './binaryContent.js';
 import { fileDelete, fileWrite, GITHUB_COMPARE_FILE_LIMIT } from './githubAdapterInterface.js';
 import { assemblyIdPath, parseIdPath, partIdPath, partMeshIdPath } from './idPaths.js';
@@ -138,14 +138,47 @@ function knownHash(path, commit, wc) {
   return null;
 }
 
+/**
+ * Definition ids a part list owns: a row's own id, or `instanceOf` for an
+ * instance row. Files are per definition, so an instance row references
+ * the same `parts/<id>.js` as its primary and never a file of its own.
+ */
 function partRowIds(row) {
   const ids = new Set();
   if (!row || typeof row !== 'object') return ids;
   const parts = Array.isArray(row.parts) ? row.parts : (Array.isArray(row.json?.parts) ? row.json.parts : []);
   for (const part of parts) {
-    if (isV2SurfId(part?.id)) ids.add(part.id);
+    const def = partDefinitionId(part);
+    if (isV2SurfId(def)) ids.add(def);
   }
   return ids;
+}
+
+/**
+ * One entry per definition in the working copy, in row order, carrying the
+ * row whose name stamps the script header: the primary row (no
+ * `instanceOf`), else the lowest-order instance.
+ */
+function definitionsOf(parts) {
+  const byDef = new Map();
+  for (const part of parts || []) {
+    const def = partDefinitionId(part);
+    if (!isV2SurfId(def)) continue;
+    const primary = !part.instanceOf || part.instanceOf === part.id;
+    const have = byDef.get(def);
+    if (!have) {
+      byDef.set(def, { id: def, namedBy: part, primary });
+      continue;
+    }
+    if (primary && !have.primary) {
+      have.namedBy = part;
+      have.primary = true;
+    } else if (!primary && !have.primary
+      && Number(part.order ?? Infinity) < Number(have.namedBy.order ?? Infinity)) {
+      have.namedBy = part;
+    }
+  }
+  return [...byDef.values()];
 }
 
 /** Other assemblies: parts[].id, groups[].partIds, or a flat partIds list. */
@@ -449,8 +482,9 @@ export function planSave(branchTip, assemblyCommit, workingCopy, remoteTip, comp
 
   const wcParts = Array.isArray(wc.parts) ? wc.parts : [];
   const wcPartIds = new Set();
-  for (const part of wcParts) {
-    if (!isV2SurfId(part?.id)) continue;
+  for (const def of definitionsOf(wcParts)) {
+    // One script and one mesh per definition; instance rows add no files.
+    const part = { ...def.namedBy, id: def.id };
     wcPartIds.add(part.id);
     const jsPath = partIdPath(part.id);
     const meshPath = partMeshIdPath(part.id);

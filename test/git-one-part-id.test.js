@@ -1,17 +1,21 @@
 /**
- * One part id at create: row id = @surf-id = parts[].id.
+ * One part id at create: row id = @surf-id = parts[].id, and one script per
+ * definition: an instance row (`instanceOf`) shares its definition's file
+ * and never gets a file of its own.
  * Mock adapter only. No git write on load / reload / edit.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { serializeAssembly } from '../src/utils/assembly.js';
+import { partDefinitionId, serializeAssembly } from '../src/utils/assembly.js';
 import { createMockGithubAdapter } from '../src/utils/git/mockGithubAdapter.js';
 import { findOrCreateVault } from '../src/utils/git/vault.js';
 import { fileWrite } from '../src/utils/git/githubAdapterInterface.js';
 import { mintSurfId, readSurfId, withSurfId, isSurfId } from '../src/utils/git/surfId.js';
 import { stampMissingSurfIds } from '../src/utils/git/partIdentity.js';
 import { assemblyFilePath, assemblyPartPath } from '../src/utils/git/vaultLayout.js';
+import { assemblyIdPath, partIdPath } from '../src/utils/git/idPaths.js';
+import { planSave } from '../src/utils/git/planSave.js';
 import { validateSurfJson } from '../src/utils/git/surfJson.js';
 import {
   assembleCommitFiles,
@@ -338,4 +342,27 @@ test('local assemblies use a surf-id and do not split on stamp; UUID rows still 
   assert.equal(uuidStamped.doc.parts[0].id, UUID);
   assert.ok(isSurfId(uuidStamped.doc.parts[0].surfId));
   assert.notEqual(uuidStamped.doc.parts[0].surfId, UUID);
+});
+
+test('one script per definition: an instance row shares the @surf-id file of the part it places', () => {
+  const INSTANCE = mintSurfId({ now: new Date('2026-10-18T00:00:02.000Z'), rand: 'c0b2' });
+  const doc = serializeAssembly({
+    version: 1,
+    source: 'git',
+    id: ASM_ID,
+    name: ASM,
+    activeId: INSTANCE,
+    vaultLayout: 'v2',
+    parts: [
+      { id: FIRST, name: 'Roller', visible: true, order: 0 },
+      { id: INSTANCE, instanceOf: FIRST, name: 'Roller (2)', visible: true, order: 1, position: [0, 0, 120] },
+    ],
+  });
+  const plan = planSave(null, null, { ...doc, scripts: { [FIRST]: withSurfId(CUBE, FIRST) }, now: NOW.getTime() }, null, null);
+  const paths = plan.files.map((file) => file.path).sort();
+  assert.deepEqual(paths, [assemblyIdPath(ASM_ID), partIdPath(FIRST)]);
+  const script = plan.files.find((file) => file.path === partIdPath(FIRST)).content;
+  assert.equal(readSurfId(script), FIRST, 'the file header is the definition id, not the instance row id');
+  assert.equal(partDefinitionId(doc.parts[1]), FIRST);
+  assert.equal(doc.parts[1].id, INSTANCE, 'the instance keeps its own row id');
 });

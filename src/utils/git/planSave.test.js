@@ -73,6 +73,8 @@ function commitFrom(assembly, scripts, meshes = {}) {
     [assemblyIdPath(assembly.id)]: { contentHash: blobHash(stringifySurfJsonV2(assembly)) },
   };
   for (const part of assembly.parts || []) {
+    // Files are per definition: an instance row (instanceOf) adds none.
+    if (part.instanceOf) continue;
     const script = scripts?.[part.id];
     if (typeof script === 'string') {
       files[partIdPath(part.id)] = { contentHash: blobHash(stamped(script, part.id, part.name)) };
@@ -841,4 +843,88 @@ test('assemblyCommit json.id mismatch throws when raw assemblyId is not v2', () 
     () => plan(tip(), ofB, wc(doc(A, 'Gearbox', [row(P, 'Bracket')]), { [P]: BODY }), TIP, []),
     /assemblyCommit\.assemblyId does not match workingCopy\.id/,
   );
+});
+
+test('instances: two rows of one definition write one script and one mesh, named by the primary', () => {
+  const before = doc(A, 'Trainer', [row(P, 'Roller')]);
+  const after = doc(A, 'Trainer', [
+    row(P, 'Roller'),
+    row(Q, 'Roller (2)', { order: 1, instanceOf: P, position: [0, 0, 120] }),
+    row(R, 'Roller (3)', { order: 2, instanceOf: P, position: [60, 0, 120] }),
+  ], { activeId: Q });
+  const result = plan(
+    tip(),
+    commitFrom(before, { [P]: BODY }),
+    wc(after, { [P]: BODY_Q }, { meshes: { [P]: MESH } }),
+    TIP,
+    [],
+  );
+  assert.equal(result.conflict, undefined);
+  assert.deepEqual(pathsOf(result.files), [assemblyIdPath(A), partIdPath(P), partMeshIdPath(P)]);
+  assert.equal(writeAt(result.files, partIdPath(P)).content, stamped(BODY_Q, P, 'Roller'));
+  assert.equal(writeAt(result.files, partIdPath(Q)), null, 'an instance row has no file');
+  assert.equal(writeAt(result.files, partIdPath(R)), null);
+  const json = JSON.parse(writeAt(result.files, assemblyIdPath(A)).content);
+  assert.deepEqual(json.parts.map((p) => [p.id, p.instanceOf ?? null]), [[P, null], [Q, P], [R, P]]);
+  assert.equal(json.activeId, Q);
+  assert.deepEqual(Object.keys(result.nextAssemblyCommit.files).sort(), [assemblyIdPath(A), partIdPath(P), partMeshIdPath(P)].sort());
+});
+
+test('instances: without a primary row the lowest-order instance names the script', () => {
+  const after = doc(A, 'Trainer', [
+    row(R, 'Roller (3)', { order: 5, instanceOf: P }),
+    row(Q, 'Roller (2)', { order: 1, instanceOf: P }),
+  ], { activeId: Q });
+  const result = plan(null, null, wc(after, { [P]: BODY }), null, null);
+  assert.equal(result.conflict, undefined);
+  assert.deepEqual(pathsOf(result.files), [assemblyIdPath(A), partIdPath(P)]);
+  assert.equal(writeAt(result.files, partIdPath(P)).content, stamped(BODY, P, 'Roller (2)'));
+});
+
+test('instances: deleting the primary row keeps the script while an instance remains; deleting the last row drops it', () => {
+  const before = doc(A, 'Trainer', [row(P, 'Roller'), row(Q, 'Roller (2)', { order: 1, instanceOf: P })]);
+  const noPrimary = doc(A, 'Trainer', [row(Q, 'Roller (2)', { instanceOf: P })], { activeId: Q });
+  const kept = plan(
+    tip(),
+    commitFrom(before, { [P]: BODY }),
+    wc(noPrimary, { [P]: BODY }, { branchAssemblies: [] }),
+    TIP,
+    [],
+  );
+  assert.equal(kept.conflict, undefined);
+  assert.deepEqual(deletesOf(kept.files), []);
+  // The file stays; its @name now comes from the only row left, Roller (2).
+  assert.deepEqual(pathsOf(kept.files), [assemblyIdPath(A), partIdPath(P)]);
+  assert.equal(writeAt(kept.files, partIdPath(P)).content, stamped(BODY, P, 'Roller (2)'));
+  assert.equal(kept.nextAssemblyCommit.files[partIdPath(P)]?.contentHash, blobHash(stamped(BODY, P, 'Roller (2)')));
+
+  const none = doc(A, 'Trainer', [], { activeId: null });
+  const dropped = plan(
+    tip(),
+    commitFrom(before, { [P]: BODY }),
+    wc(none, {}, { branchAssemblies: [] }),
+    TIP,
+    [],
+  );
+  assert.equal(dropped.conflict, undefined);
+  assert.deepEqual(deletesOf(dropped.files), [partIdPath(P)]);
+});
+
+test('instances: an instance row in another assembly is a reference that keeps the file', () => {
+  const before = doc(A, 'Trainer', [row(P, 'Roller')]);
+  const after = doc(A, 'Trainer', [], { activeId: null });
+  const result = plan(
+    tip(),
+    commitFrom(before, { [P]: BODY }),
+    wc(after, {}, {
+      deleteFromRepo: [P],
+      branchAssemblies: [{ id: B, name: 'Bike', parts: [{ id: Q, instanceOf: P }] }],
+    }),
+    TIP,
+    [],
+  );
+  assert.equal(result.conflict, undefined);
+  assert.equal(deletesOf(result.files).includes(partIdPath(P)), false);
+  assert.equal(result.partStillReferenced?.[0]?.partId, P);
+  assert.deepEqual(result.partStillReferenced[0].assemblies, [{ id: B, name: 'Bike' }]);
 });

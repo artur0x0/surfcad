@@ -5,7 +5,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { mintSurfId } from './surfId.js';
 import { parseSurfJson, validateSurfJson } from './surfJson.js';
-import { parseSurfJsonV2, validateSurfJsonV2 } from './surfJsonV2.js';
+import { parseSurfJsonV2, stringifySurfJsonV2, toSurfJsonV2, validateSurfJsonV2 } from './surfJsonV2.js';
 
 const ASM = mintSurfId({ now: new Date('2026-10-18T02:50:00.001Z'), rand: 'aa01' });
 const PART = mintSurfId({ now: new Date('2026-10-18T02:50:00.002Z'), rand: 'bb02' });
@@ -253,6 +253,75 @@ test('v2 validation covers version, duplicates, activeId, copiedFrom, and source
   has(validateSurfJsonV2(v2Fixture({ name: '   ' })).errors, 'name must be a non-empty string');
 });
 
+function instanceFixture(patch = {}) {
+  return v2Fixture({
+    activeId: OTHER,
+    parts: [
+      { id: PART, name: 'Roller', visible: true, order: 0, position: [-60, 0, 120] },
+      { id: OTHER, instanceOf: PART, name: 'Roller (2)', visible: true, order: 1, position: [0, 0, 120] },
+    ],
+    ...patch,
+  });
+}
+
+test('v2 instance rows: instanceOf is accepted, round-trips, and keeps the row id as surfId', () => {
+  const raw = instanceFixture({
+    joints: [{
+      id: JOINT, name: 'Distance 1', type: 'distance', value: 60, sense: 1,
+      a: { part: OTHER, kind: 'face', key: { at: [0, 0, 20], n: [0, 0, 1], area: 706.9 } },
+      b: { part: PART, kind: 'face', key: { at: [0, 0, -20], n: [0, 0, -1], area: 706.9 } },
+    }],
+    colors: { [OTHER]: { part: '#e11d48' } },
+  });
+  const check = validateSurfJsonV2(raw);
+  assert.equal(check.ok, true, check.errors.join('; '));
+  const doc = parseSurfJsonV2(raw);
+  const instance = doc.parts.find((row) => row.id === OTHER);
+  assert.equal(instance.instanceOf, PART);
+  assert.equal(instance.surfId, OTHER, 'joints and colors name the placement');
+  assert.equal(doc.parts.find((row) => row.id === PART).instanceOf, undefined);
+  assert.equal(doc.activeId, OTHER, 'an instance row can be active');
+  assert.equal(doc.joints.length, 1, 'instance to primary joint survives the prune');
+  assert.deepEqual(Object.keys(doc.colors), [OTHER]);
+  const again = toSurfJsonV2(doc);
+  assert.equal(again.parts[1].instanceOf, PART);
+  assert.equal('instanceOf' in again.parts[0], false);
+  assert.equal(JSON.parse(stringifySurfJsonV2(doc)).parts[1].instanceOf, PART);
+});
+
+test('v2 instance rows: a definition may outlive its primary row', () => {
+  const raw = instanceFixture({
+    activeId: OTHER,
+    parts: [{ id: OTHER, instanceOf: PART, name: 'Roller (2)', visible: true, order: 0 }],
+  });
+  const check = validateSurfJsonV2(raw);
+  assert.equal(check.ok, true, check.errors.join('; '));
+  assert.equal(parseSurfJsonV2(raw).parts[0].instanceOf, PART);
+});
+
+test('v2 validation rejects a bad, self-referencing, or chained instanceOf', () => {
+  has(validateSurfJsonV2(instanceFixture({
+    parts: [{ id: OTHER, instanceOf: 'nope', name: 'R', visible: true, order: 0 }],
+  })).errors, 'instanceOf must be a surf id');
+  has(validateSurfJsonV2(instanceFixture({
+    parts: [{ id: OTHER, instanceOf: LOCAL, name: 'R', visible: true, order: 0 }],
+  })).errors, 'instanceOf must be a surf id');
+  has(validateSurfJsonV2(instanceFixture({
+    parts: [{ id: OTHER, instanceOf: OTHER, name: 'R', visible: true, order: 0 }],
+  })).errors, "instanceOf must not be the row's own id");
+  has(validateSurfJsonV2(instanceFixture({
+    parts: [
+      { id: PART, name: 'Roller', visible: true, order: 0 },
+      { id: OTHER, instanceOf: PART, name: 'Roller (2)', visible: true, order: 1 },
+      { id: GROUP, instanceOf: OTHER, name: 'Roller (3)', visible: true, order: 2 },
+    ],
+  })).errors, 'instanceOf must name a definition, not another instance');
+  assert.throws(() => toSurfJsonV2({
+    id: ASM, name: 'Gearbox', activeId: null,
+    parts: [{ id: OTHER, instanceOf: OTHER, name: 'R', visible: true, order: 0 }],
+  }), /instanceOf/);
+});
+
 test('catalog defs.v2 matches v2 fixtures', () => {
   const catalogPath = join(dirname(fileURLToPath(import.meta.url)), '../../lib/surfcad/catalog/assembly.schema.json');
   const v2 = JSON.parse(readFileSync(catalogPath, 'utf8')).defs.v2;
@@ -268,6 +337,7 @@ test('catalog defs.v2 matches v2 fixtures', () => {
       groups: [{ id: GROUP, name: 'Cover', source: OTHER, partIds: [PART] }],
     }),
     v2Fixture({ joints: [fixedJoint()] }),
+    instanceFixture(),
   ];
   for (const raw of valid) {
     assert.equal(validateSurfJsonV2(raw).ok, true, validateSurfJsonV2(raw).errors?.join('; '));
@@ -279,6 +349,7 @@ test('catalog defs.v2 matches v2 fixtures', () => {
     v2Fixture({ id: LOCAL }),
     v2Fixture({}, { path: `parts/${PART}.js` }),
     v2Fixture({}, { copiedFrom: 'nope' }),
+    v2Fixture({}, { instanceOf: 'nope' }),
     v2Fixture({
       groups: [{
         id: GROUP,
