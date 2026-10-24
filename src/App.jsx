@@ -7362,6 +7362,10 @@ const App = () => {
         partSaveEpochRef.current += 1;
         suppressPartSaveRef.current = true;
       }
+      // The document first: the script and run maps are normalised against
+      // it, so a definition whose primary row just left keeps its key from
+      // the instances that remain.
+      rememberAssembly(nextDoc);
       rememberScripts(nextScripts);
       deletePartScript(key);
       if (!definitionStays) forgetPartAssets(partDef);
@@ -7373,7 +7377,6 @@ const App = () => {
       }
       dropPartHistory(key);
       delete partLeftoversRef.current[key];
-      rememberAssembly(nextDoc);
       const runs = dropPartRecord(partRunsRef.current, key);
       commitPartRuns(runs);
       const nextActive = nextDoc.activeId;
@@ -7409,7 +7412,7 @@ const App = () => {
         return;
       }
       setCurrentFilename(nextPart?.name || null);
-      const picked = scriptForRow(nextDoc, nextScripts, nextActive);
+      const picked = scriptForRow(nextDoc, partScriptsRef.current, nextActive);
       focusPartHistory(nextActive, picked.ok ? picked.script : '');
       if (picked.ok) {
         suppressPartSaveRef.current = false;
