@@ -1727,12 +1727,15 @@ export const HELPER_PALETTE_ITEMS = [
         feat.push(...syncPartLines(body, names, hasPartDecl([...lines, ...feat], empty)));
       } else {
         let edgesExpr = `convexEdges(${body})`;
-        if (faceCtx && faceCtx.type !== 'irregular' && scope !== 'allConvex') {
+        const namedFace = typeof faceCtx?.name === 'string' && faceCtx.name;
+        // A face pick is that face's boundary only. An irregular region with
+        // no name used to fall through to every convex edge and shred a
+        // holed faceplate. A named face, irregular or not, is edgesOf.
+        if (faceCtx && scope !== 'allConvex') {
+          if (faceCtx.type === 'irregular' && !namedFace) return null;
           const edge = emitFaceEdgeLines(body, faceCtx, { ...p, edgeScope: 'face' }, names, allocateUniqueName);
           feat.push(...edge.lines);
           edgesExpr = edge.edgesExpr;
-        } else if (scope === 'allConvex') {
-          edgesExpr = `convexEdges(${body})`;
         }
         feat.push(`${body} = chamferEdges(${body}, ${edgesExpr}, ${c});`);
         feat.push(...syncPartLines(body, names, hasPartDecl([...lines, ...feat], empty)));

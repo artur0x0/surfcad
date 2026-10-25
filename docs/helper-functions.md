@@ -850,7 +850,9 @@ part = chamferEdges(part, convexEdges(part), 2);
 **Throws (named errors):** edge without va/vb; missing adjacent face
 normals (pass `convexEdges()` output on THIS part, or explicit n0/n1);
 coplanar adjacent faces (tessellation seam / wrong face pair); degenerate
-cutter or failed boolean at a specific edge index.
+cutter or failed boolean at a specific edge index; a result with more
+bodies than the input (`split the solid into N bodies`) — the pieces are
+not returned.
 
 ### convexEdges(m, minAngleDeg = 2)
 
