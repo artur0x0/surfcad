@@ -244,10 +244,13 @@ test('App no longer blocks v2 rename or delete with the old folder-layout senten
   assert.match(part, /moved: false/);
   assert.match(part, /if \(!v2\)/);
   assert.match(part, /Couldn't rename the part\. Nothing was changed\./);
+  const opener = APP.slice(APP.indexOf('const deleteOpenV2Assembly'), APP.indexOf('const handleDeleteAssembly'));
+  assert.match(opener, /executeDeleteV2Assembly\(/);
+  assert.match(opener, /seedAgentAssembly\(\{\}\)/);
   const delStart = APP.indexOf('const handleDeleteAssembly');
   const del = APP.slice(delStart, APP.indexOf('if (assemblyOpenLockRef.current)', delStart));
   assert.match(del, /vaultLayout === 'v2'/);
-  assert.match(del, /seedAgentAssembly\(\{\}\)/);
+  assert.match(del, /deleteOpenV2Assembly\(/);
   assert.match(del, /Couldn't delete the assembly\. Nothing was changed\./);
   assert.equal(/planDeleteAssembly\(/.test(del), false);
 });

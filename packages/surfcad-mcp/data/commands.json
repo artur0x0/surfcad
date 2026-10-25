@@ -18116,7 +18116,7 @@
     },
     {
       "name": "delete_assembly",
-      "description": "Delete the open assembly by opaque assembly_id. Requires confirm: true. delete_parts plans unreferenced part-file deletes on the next Save. No git write until git_save. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Delete the open assembly by opaque assembly_id. Requires confirm: true. A committed assembly is one commit that deletes assemblies/<id>.surf.json. delete_parts also deletes parts/<id>.js when no other assembly on the branch references that id. A never-saved assembly is removed from the working copy only. Nothing is written until confirm: true. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -18134,7 +18134,7 @@
           },
           "delete_parts": {
             "type": "boolean",
-            "description": "When true, plan part-file deletes on the next Save if unreferenced."
+            "description": "When true, the commit also deletes part files no other assembly references."
           },
           "return": {
             "type": "string",
@@ -18155,6 +18155,9 @@
         "bad_args",
         "unknown_assembly",
         "confirm_required",
+        "conflict",
+        "pending_save",
+        "delete_refused",
         "upgrade_required",
         "no_assembly",
         "internal"

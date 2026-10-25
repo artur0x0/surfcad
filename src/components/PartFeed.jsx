@@ -668,7 +668,10 @@ const PartFeed = forwardRef(function PartFeed({
   };
 
   const deleteAssemblyFailed = (result) => (
-    result?.status === 'error' || result?.status === 'failed'
+    result?.status === 'error'
+    || result?.status === 'failed'
+    || result?.status === 'conflict'
+    || result?.status === 'pending'
   );
 
   const runDeleteAssembly = async (mode) => {

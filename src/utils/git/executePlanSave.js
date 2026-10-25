@@ -599,6 +599,24 @@ export async function executePlanSave({
   }
 
   const pending = store?.getPendingSave?.(repo, branch) || null;
+  // A confirmed delete owns the one pending slot. Save pushes it; it does
+  // not become a normal planSave of the open assembly.
+  if (pending?.kind === 'delete-assembly') {
+    const { executeDeleteV2Assembly } = await import('./deleteV2Assembly.js');
+    return executeDeleteV2Assembly({
+      adapter,
+      repo,
+      branch,
+      store,
+      assemblyId: pending.assemblyId,
+      openDoc: docOf(workingCopy),
+      deleteParts: pending.deleteParts === true,
+      confirm: true,
+      online,
+      message: pending.message || msg,
+      now,
+    });
+  }
   if (pending && online) {
     const rev = docOf(workingCopy)?.rev;
     const revMoved = rev != null && pending.rev != null && rev !== pending.rev;

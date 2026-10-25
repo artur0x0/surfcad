@@ -103,7 +103,7 @@ Assembly and part lifecycle:
 
 - `rename_part` `{ part_id, name }` / `rename_assembly` `{ assembly_id, name }` change the display name only (`moved: false`). The next Save writes the same `parts/<id>.js` / `assemblies/<id>.surf.json`.
 - `delete_part` `{ part_id, scope: "assembly" | "repo", confirm? }`: `assembly` drops the row; `repo` also plans a file delete on the next Save, needs `confirm: true`, and returns `part_still_referenced` if another assembly lists the id.
-- `delete_assembly` `{ assembly_id, confirm: true, delete_parts? }` deletes the open assembly; `delete_parts` plans unreferenced part-file deletes on the next Save.
+- `delete_assembly` `{ assembly_id, confirm: true, delete_parts? }` deletes the open assembly. After confirm, a committed assembly is one commit that deletes `assemblies/<id>.surf.json`. `delete_parts` also deletes `parts/<id>.js` when no other assembly on the branch references that id. A never-saved assembly is removed from the working copy only. Nothing is written until `confirm: true`.
 - `list_assemblies` returns what the Open picker shows, as `[{ id, name, open }]`: saved assemblies, the open working copy (also before its first Save, and in local mode), and on a legacy vault its name-only folders as `{ id: null, name, legacy: true }` (no opaque id until `git_upgrade_vault`).
 
 ## `confirm: true`

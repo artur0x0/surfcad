@@ -2444,11 +2444,15 @@ test('v2 rename and delete stay on the working copy; flush stays idle', () => {
   const add = app.slice(addStart, app.indexOf('const handleListBranches', addStart));
   assert.match(add, /isV2PlanSaveDoc\(doc\)/);
   assert.match(add, /handleGitCommit\('Add to repo'\)/);
+  const opener = app.slice(app.indexOf('const deleteOpenV2Assembly'), app.indexOf('const handleDeleteAssembly'));
+  assert.match(opener, /executeDeleteV2Assembly\(/);
+  assert.match(opener, /seedAgentAssembly\(\{\}\)/);
+  assert.match(opener, /result\.status !== 'committed'/);
   const delStart = app.indexOf('const handleDeleteAssembly');
   const del = app.slice(delStart, app.indexOf('if (assemblyOpenLockRef.current)', delStart));
   assert.match(del, /vaultLayout === 'v2'/);
+  assert.match(del, /deleteOpenV2Assembly\(/);
   assert.match(del, /Couldn't delete the assembly\. Nothing was changed\./);
-  assert.match(del, /seedAgentAssembly\(\{\}\)/);
   assert.equal(/planDeleteAssembly\(/.test(del), false);
   assert.equal(/upgradeVaultEnabled\(/.test(del), false);
   const renameStart = app.indexOf('const handleRenameAssembly');

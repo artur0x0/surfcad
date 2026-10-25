@@ -801,9 +801,9 @@ export const COMMAND_META = {
     confirm: true,
   },
   delete_assembly: {
-    description: 'Delete the open assembly by opaque assembly_id. Requires confirm: true. delete_parts plans unreferenced part-file deletes on the next Save. No git write until git_save.',
+    description: 'Delete the open assembly by opaque assembly_id. Requires confirm: true. A committed assembly is one commit that deletes assemblies/<id>.surf.json. delete_parts also deletes parts/<id>.js when no other assembly on the branch references that id. A never-saved assembly is removed from the working copy only. Nothing is written until confirm: true.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'unknown_assembly', 'confirm_required', 'upgrade_required', 'no_assembly', 'internal'],
+    errors: ['bad_args', 'unknown_assembly', 'confirm_required', 'conflict', 'pending_save', 'delete_refused', 'upgrade_required', 'no_assembly', 'internal'],
     mutates: true,
     destructive: true,
     confirm: true,

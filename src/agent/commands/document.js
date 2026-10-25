@@ -306,7 +306,7 @@ export const deleteAssemblyCommand = Object.freeze({
     properties: {
       assembly_id: { type: 'string', description: 'Assembly surf-id. Not a name or path.' },
       confirm: { type: 'boolean', description: 'Must be true.' },
-      delete_parts: { type: 'boolean', description: 'When true, plan part-file deletes on the next Save if unreferenced.' },
+      delete_parts: { type: 'boolean', description: 'When true, the commit also deletes part files no other assembly references.' },
     },
   }),
   example: { assembly_id: '2026-10-18-02-50-00-0001-aa01', confirm: true },
