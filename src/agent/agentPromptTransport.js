@@ -19,6 +19,40 @@ export const AGENT_PROMPT_SCREENSHOT_MAX_BYTES = 2 * 1024 * 1024;
 const ID_MAX = 200;
 
 /**
+ * Prompt ids this page successfully sent, per bridge. Every transport on
+ * that bridge accepts replies for them. `dispose` does not clear the set:
+ * the prompt card and a second transport (the bridge golden) share it, and
+ * dropping it from one would hide the reply on the other.
+ * @type {WeakMap<object, Set<string>>}
+ */
+const sentIdsByBridge = new WeakMap();
+/** Same ids, so the conversation can render a reply with no user row yet. */
+const pageSentIds = new Set();
+
+/**
+ * @param {object} bridge
+ * @returns {Set<string>}
+ */
+function sentIdsFor(bridge) {
+  let ids = sentIdsByBridge.get(bridge);
+  if (!ids) {
+    ids = new Set();
+    sentIdsByBridge.set(bridge, ids);
+  }
+  return ids;
+}
+
+/** @param {string} id */
+export function rememberPagePrompt(id) {
+  if (typeof id === 'string' && id) pageSentIds.add(id);
+}
+
+/** @param {unknown} id */
+export function pageSentPrompt(id) {
+  return typeof id === 'string' && pageSentIds.has(id);
+}
+
+/**
  * @param {string} data
  */
 function base64DecodedLength(data) {
@@ -92,8 +126,8 @@ export function createAgentPromptTransport(bridge) {
   const ackListeners = new Set();
   /** Prompt ids that already received a final reply. */
   const finalIds = new Set();
-  /** Prompt ids this page actually sent. A reply for any other id is dropped. */
-  const sentIds = new Set();
+  /** Prompt ids this page sent on this bridge. A reply for any other id is dropped. */
+  const sentIds = sentIdsFor(bridge);
   /** @type {Map<string, { promise: Promise<{ id: string, state: string }>, resolve: (result: { id: string, state: string }) => void, timer: ReturnType<typeof setTimeout> }>} */
   const cancelWaiters = new Map();
   /** Last prompt handed to the bridge. `cancel()` with no id uses this. */
@@ -144,7 +178,6 @@ export function createAgentPromptTransport(bridge) {
     workingListeners.clear();
     ackListeners.clear();
     finalIds.clear();
-    sentIds.clear();
   }
 
   /**
@@ -206,6 +239,7 @@ export function createAgentPromptTransport(bridge) {
     }
     if (bridge.send(message) !== true) return fail('not_paired');
     sentIds.add(id);
+    rememberPagePrompt(id);
     currentId = id;
     return id;
   }

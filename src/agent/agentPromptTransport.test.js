@@ -83,6 +83,25 @@ test('dispose unsubscribes so a new transport does not stack listeners', () => {
   assert.deepEqual(seen, ['b:hi']);
 });
 
+test('a reply for a prompt another transport sent on this bridge is delivered', () => {
+  const bridge = fakeBridge();
+  const viewer = createAgentPromptTransport(bridge);
+  const sender = createAgentPromptTransport(bridge);
+  const replies = [];
+  viewer.onReply((event) => replies.push(event));
+  const id = sender.send('How wide?');
+  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id: 'x', text: 'probe', final: true });
+  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id, text: '40 mm', final: true });
+  assert.deepEqual(replies, [{ id, text: '40 mm', final: true }]);
+  sender.dispose();
+  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id, text: ' still here', final: false });
+  assert.deepEqual(replies, [
+    { id, text: '40 mm', final: true },
+    { id, text: ' still here', final: false },
+  ]);
+  viewer.dispose();
+});
+
 test('a reply for an id this page did not send is dropped', () => {
   const bridge = fakeBridge();
   const transport = createAgentPromptTransport(bridge);

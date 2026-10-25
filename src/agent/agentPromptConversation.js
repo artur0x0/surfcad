@@ -5,9 +5,12 @@
  * Nothing here is stored. The list lives in component state, hides on
  * Dismiss (and comes back with the next message), and is dropped on
  * disconnect. A reply's id is the prompt id it answers, so a user message
- * and its reply share an id and sit next to each other. A reply whose id
- * is not a user message in this conversation is ignored.
+ * and its reply share an id and sit next to each other. A reply is shown
+ * when this conversation already has that user message, or when this page
+ * sent that prompt on another transport (there is no user row yet). Any
+ * other id is ignored.
  */
+import { pageSentPrompt } from './agentPromptTransport.js';
 
 export const CONVERSATION_EMPTY = Object.freeze({ messages: Object.freeze([]), hidden: false });
 
@@ -42,7 +45,7 @@ export function conversationReducer(state, event) {
         return { hidden: false, messages };
       }
       const known = cur.messages.some((row) => row.role === 'user' && row.id === event.id);
-      if (!known) return cur;
+      if (!known && !pageSentPrompt(event.id)) return cur;
       return {
         hidden: false,
         messages: [...cur.messages, { key, id: event.id, role: 'agent', text: chunk, thumb: null }],

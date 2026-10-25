@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CONVERSATION_EMPTY, conversationReducer, conversationSeed, stickToBottom } from './agentPromptConversation.js';
+import { rememberPagePrompt } from './agentPromptTransport.js';
 
 const run = (events, start = CONVERSATION_EMPTY) => events.reduce(conversationReducer, start);
 
@@ -33,6 +34,9 @@ test('a reply to an unknown prompt id is not shown', () => {
   const shown = conversationReducer(sent, { type: 'reply', id: 'p1', text: 'hello', final: true });
   assert.equal(shown.messages[1].text, 'hello');
   assert.equal(shown.messages.length, 2);
+  rememberPagePrompt('page-sent-1');
+  const fromPage = run([{ type: 'reply', id: 'page-sent-1', text: 'from the agent', final: true }]);
+  assert.deepEqual(fromPage.messages.map((m) => [m.role, m.text]), [['agent', 'from the agent']]);
 });
 
 test('dismiss hides the pane and keeps the history; the next message shows it again', () => {
