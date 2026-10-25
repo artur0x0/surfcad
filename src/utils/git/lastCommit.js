@@ -10,7 +10,7 @@
  * v1 blob paths arrive as blobSources from the legacy reader — import that
  * module directly so lastCommit never loads upgrade.js (cycle).
  */
-import { normalizeRepoPath } from '../assembly.js';
+import { normalizeRepoPath, partDefinitionId } from '../assembly.js';
 import { assertGithubAdapter } from './githubAdapterInterface.js';
 import {
   assemblyIdPath,
@@ -123,10 +123,11 @@ function collectFileHashes(shaByPath, {
   if (asmPath) addHashedFile(files, shaByPath, asmPath, sources[asmPath]);
   if (json?.version === 2) {
     for (const part of Array.isArray(json.parts) ? json.parts : []) {
-      const js = tryIdPath(partIdPath, part?.id);
+      const def = partDefinitionId(part);
+      const js = tryIdPath(partIdPath, def);
       if (!js) continue;
       addHashedFile(files, shaByPath, js, sources[js]);
-      const mesh = tryIdPath(partMeshIdPath, part.id);
+      const mesh = tryIdPath(partMeshIdPath, def);
       if (mesh) addHashedFile(files, shaByPath, mesh, sources[mesh]);
     }
   }

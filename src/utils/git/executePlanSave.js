@@ -524,6 +524,7 @@ async function writePlannedFiles({
   storedCommit = null,
   remoteCompare = [],
   now,
+  overwrote = false,
 }) {
   let committed;
   try {
@@ -560,6 +561,7 @@ async function writePlannedFiles({
   });
   return {
     status: 'committed',
+    ...(overwrote ? { overwrote: true } : {}),
     sha: committed.sha,
     branch,
     files,
@@ -624,6 +626,7 @@ export async function executePlanSave({
           storedCommit: prepared.storedCommit,
           remoteCompare: prepared.remoteCompare,
           now,
+          overwrote: force === true,
         });
       }
     }
@@ -686,6 +689,7 @@ export async function executePlanSave({
     storedCommit: prepared.storedCommit,
     remoteCompare: prepared.remoteCompare,
     now,
+    overwrote: force === true,
   });
 }
 

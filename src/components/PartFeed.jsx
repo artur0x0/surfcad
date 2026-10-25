@@ -8,7 +8,8 @@ import {
   vaultOpenPartRows, vaultOpenPartSubtitle,
 } from '../utils/git/gitWorkspace.js';
 import { DEFAULT_VAULT_NAME } from '../utils/git/vault.js';
-import { NO_REPO_YET_COPY, SAVE_QUEUED_COPY } from '../utils/git/workingSidecar.js';
+import { gitCommitDoneMessage } from '../utils/git/commitDoneCopy.js';
+import { NO_REPO_YET_COPY } from '../utils/git/workingSidecar.js';
 import { layoutPartFeed } from '../utils/partGroups.js';
 import PartGroupBlock from './PartGroupBlock';
 import { PARTS_TEXT_INPUT_CLASS, PARTS_TEXT_INPUT_STYLE } from '../utils/partsChrome.js';
@@ -2674,25 +2675,7 @@ const PartFeed = forwardRef(function PartFeed({
           )}
           {commitFlow.stage === 'done' && (
             <p className="text-xs text-gray-300" data-git-commit-done={commitFlow.result?.status || ''}>
-              {commitFlow.result?.status === 'clean'
-                ? 'Nothing to commit.'
-                : commitFlow.result?.status === 'already_upgraded'
-                  ? 'This vault is already v2.'
-                  : commitFlow.result?.status === 'upgraded'
-                    ? `Upgraded to v2 (${String(commitFlow.result?.sha || '').slice(0, 7)}).`
-                    : commitFlow.result?.status === 'upgraded_and_saved'
-                      ? `Upgraded to v2 and saved working-copy edits (${String(commitFlow.result?.sha || '').slice(0, 7)}).`
-                      : commitFlow.result?.status === 'reloaded'
-                        ? 'Loaded the remote versions of the conflicting files. Other local edits stay in the working copy. Nothing was written to git.'
-                        : commitFlow.result?.status === 'branched'
-                          ? `Saved on ${commitFlow.result?.branch || 'a new branch'} and switched the working copy.`
-                          : commitFlow.result?.status === 'committed'
-                            ? `Overwrote the conflicting files on ${commitFlow.result?.branch || 'main'} (${String(commitFlow.result?.sha || '').slice(0, 7)}).`
-                            : commitFlow.result?.status === 'queued'
-                              ? SAVE_QUEUED_COPY
-                              : commitFlow.result?.addedNames
-                                ? `Added ${commitFlow.result.addedNames} to the repo.`
-                                : `Committed ${(commitFlow.result?.files || []).length} file(s) to ${commitFlow.result?.branch || 'main'} (${String(commitFlow.result?.sha || '').slice(0, 7)}).`}
+              {gitCommitDoneMessage(commitFlow.result)}
             </p>
           )}
           {commitFlow.stage === 'error' && (

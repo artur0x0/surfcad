@@ -24,7 +24,9 @@ export function createFakeGithub({ login = 'golden-agent', repo = 'surfcad-vault
   let counter = 0;
 
   const putBlob = (content) => {
-    const sha = sha1(`blob\0${content}`);
+    const bytes = Buffer.isBuffer(content) ? content : Buffer.from(String(content), 'utf8');
+    const header = Buffer.from(`blob ${bytes.length}\0`, 'utf8');
+    const sha = sha1(Buffer.concat([header, bytes]));
     blobs.set(sha, content);
     return sha;
   };

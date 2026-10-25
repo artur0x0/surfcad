@@ -881,6 +881,17 @@ test('instances: without a primary row the lowest-order instance names the scrip
   assert.equal(writeAt(result.files, partIdPath(P)).content, stamped(BODY, P, 'Roller (2)'));
 });
 
+test('instances: a script that lives only on the active instance row still writes the definition file', () => {
+  const after = doc(A, 'Trainer', [
+    row(P, 'Roller'),
+    row(Q, 'Roller (2)', { order: 1, instanceOf: P }),
+  ], { activeId: Q });
+  const result = plan(null, null, wc(after, { [Q]: BODY_Q }), null, null);
+  assert.equal(result.conflict, undefined);
+  assert.equal(writeAt(result.files, partIdPath(Q)), null);
+  assert.equal(writeAt(result.files, partIdPath(P)).content, stamped(BODY_Q, P, 'Roller'));
+});
+
 test('instances: deleting the primary row keeps the script while an instance remains; deleting the last row drops it', () => {
   const before = doc(A, 'Trainer', [row(P, 'Roller'), row(Q, 'Roller (2)', { order: 1, instanceOf: P })]);
   const noPrimary = doc(A, 'Trainer', [row(Q, 'Roller (2)', { instanceOf: P })], { activeId: Q });

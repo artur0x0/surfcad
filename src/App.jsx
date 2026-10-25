@@ -118,6 +118,7 @@ import {
   sanitizeAssemblyName,
   needsAssemblyLeaveGuard,
   partDefinitionId,
+  definitionStampName,
   definitionStillReferenced,
   normalizeInstanceScripts,
   fanOutInstanceRuns,
@@ -4373,17 +4374,25 @@ const App = () => {
     if (isV2PlanSaveDoc(doc)) {
       setPendingPartIds((prev) => new Set(prev).add(String(id)));
       try {
+        const row = (doc.parts || []).find((part) => String(part?.id) === String(id));
+        const def = row ? partDefinitionId(row) : String(id);
         const live = codeEditorRef.current?.getContent?.();
         const liveId = (!suppressPartSaveRef.current && typeof live === 'string')
           ? doc.activeId : null;
         if (liveId === id && typeof live === 'string') {
           await savePartScript(id, live);
           rememberScripts({ ...partScriptsRef.current, [id]: live });
-        }
-        if (typeof partScriptsRef.current[id] !== 'string') {
-          const starter = newPartStarterScript();
-          await savePartScript(id, starter);
-          rememberScripts({ ...partScriptsRef.current, [id]: starter });
+        } else if (typeof partScriptsRef.current[id] !== 'string') {
+          // Instance rows share the definition script. A missing row key is
+          // not a missing script — writing a starter would replace it.
+          const known = partScriptsRef.current[def];
+          if (typeof known === 'string') {
+            rememberScripts({ ...partScriptsRef.current, [id]: known });
+          } else {
+            const starter = newPartStarterScript();
+            await savePartScript(id, starter);
+            rememberScripts({ ...partScriptsRef.current, [id]: starter });
+          }
         }
         return await handleGitCommit('Add to repo');
       } catch (err) {
@@ -5529,10 +5538,11 @@ const App = () => {
 
   const v2WorkingCopy = async (doc) => {
     const live = codeEditorRef.current?.getContent?.();
-    const scripts = { ...partScriptsRef.current };
+    let scripts = { ...partScriptsRef.current };
     if (!suppressPartSaveRef.current && typeof live === 'string' && doc.activeId) {
       scripts[doc.activeId] = live;
     }
+    scripts = normalizeInstanceScripts(scripts, doc);
     const loaded = await loadPartAssets((doc.parts || []).map((part) => part.id));
     const meshes = meshesFromPartRecords({
       ...loaded,
@@ -5572,10 +5582,11 @@ const App = () => {
     const nextBranch = result.branch || branch;
     const savedDoc = assemblyRef.current;
     const live = codeEditorRef.current?.getContent?.();
-    const savedScripts = { ...(partScriptsRef.current || {}) };
+    let savedScripts = { ...(partScriptsRef.current || {}) };
     if (savedDoc?.activeId && typeof live === 'string' && !suppressPartSaveRef.current) {
       savedScripts[savedDoc.activeId] = live;
     }
+    if (savedDoc) savedScripts = normalizeInstanceScripts(savedScripts, savedDoc);
     if (result.status === 'committed' || result.status === 'branched') {
       const prevBaseline = gitBaselineRef.current;
       const writes = (result.files || []).filter((file) => (
@@ -5607,11 +5618,14 @@ const App = () => {
         const nextSnap = { ...(agentScriptSnapshotRef.current || {}) };
         for (const part of savedDoc.parts || []) {
           const id = part.id;
-          const liveText = savedScripts[id];
-          const committedText = committed[id];
+          const def = partDefinitionId(part);
+          const liveText = savedScripts[def] ?? savedScripts[id];
+          const committedText = committed[def] ?? committed[id];
           if (typeof committedText !== 'string' || typeof liveText !== 'string') continue;
-          if (partScriptMatchesCommitted(liveText, committedText, id, part.name)) {
+          const stampName = definitionStampName(savedDoc.parts, def) ?? part.name;
+          if (partScriptMatchesCommitted(liveText, committedText, def, stampName)) {
             nextSnap[id] = liveText;
+            if (def !== id) nextSnap[def] = liveText;
           }
         }
         agentScriptSnapshotRef.current = nextSnap;
@@ -5632,9 +5646,13 @@ const App = () => {
       // Explicit Save / Move to Git must land in IndexedDB even during reauth
       // (playtest mock has no GitHub token). Do not replace row ids from
       // committed paths — the WC ids stay opaque.
-      rememberAssembly(savedDoc, { force: true });
+      const synced = markPartsSynced(
+        savedDoc,
+        (savedDoc.parts || []).map((part) => part.id),
+      );
+      rememberAssembly(synced.changed ? synced.doc : savedDoc, { force: true });
       for (const [id, text] of Object.entries(savedScripts)) {
-        if (typeof text === 'string') await savePartScript(id, text);
+        if (typeof text === 'string') await savePartScript(id, text, { isSynced: true });
       }
     }
     if (result.partStillReferenced?.length) {
@@ -10079,7 +10097,11 @@ const App = () => {
         contentDirty: gitDirtyIds.has(row.id),
         renameHeld: !!gitBaseline?.renamePending,
       });
-      const offerRepo = assemblyDoc.source === 'git' && showAddToRepo(row);
+      // v2 dirty is the commit compare. A surf id is not a repo path, so
+      // showAddToRepo stays true after Save and keeps the yellow dot.
+      const offerRepo = assemblyDoc.source === 'git'
+        && !isV2PlanSaveDoc(assemblyDoc)
+        && showAddToRepo(row);
       const meshMeta = partMeshMeta[row.id];
       const meshAssets = meshMeta?.assets;
       return {
