@@ -178,7 +178,7 @@ import { getAnalyticsConsent } from './utils/consent.js';
 import { compareWorkingCopyToCommit } from './agent/state/workingCopyUnsaved';
 import { findPartById, unknownAssemblyError, unknownPartError } from './agent/state/identity';
 import { decidePartVisible } from './agent/state/partVisible';
-import { listV2Assemblies, listPartParentAssemblies, openV2Assembly } from './utils/git/v2VaultRead';
+import { listV2Assemblies, openV2Assembly, overlayWorkingCopyBrowseNames, PART_USE_SCAN_REFUSED, scanOtherAssemblyPartUses } from './utils/git/v2VaultRead';
 import { assemblyRows } from './agent/state/assemblyRows';
 import { assemblyIdPath, partIdPath, parseIdPath } from './utils/git/idPaths';
 import { readSurfName } from './utils/git/surfId';
@@ -411,11 +411,12 @@ import {
   meshVaultSaveAllowed,
   executePlanSave,
   executePlanSaveConflictChoice,
+  executeDeleteV2Assembly,
+  executeDeleteV2Part,
   applySaveReload,
   isV2PlanSaveDoc,
   meshesFromPartRecords,
   deleteFromRepoIdsFromPaths,
-  repoDeletePathsForV2Part,
   mainMovedPlanSavePaths,
   SAVE_CONFLICT_COPY,
 } from './utils/git';
@@ -4992,7 +4993,10 @@ const App = () => {
     const browse = await listVaultBrowseItems(gitAdapterRef.current, vault.repo, gitWorkingBranch());
     const branch = gitWorkingBranch();
     const ops = gitSync().pending(vault.repo, branch).concat(gitSync().failed(vault.repo, branch));
-    return hidePendingDeletedAssemblies(browse, ops);
+    return overlayWorkingCopyBrowseNames(
+      hidePendingDeletedAssemblies(browse, ops),
+      assemblyRef.current,
+    );
   };
 
   const vaultEntriesForDelete = async () => {
@@ -5086,7 +5090,42 @@ const App = () => {
     return saved;
   };
 
-  const handlePreviewDeleteAssembly = async (name) => {
+  const handlePreviewDeleteAssembly = async (name, assemblyId = '') => {
+    const doc = assemblyRef.current;
+    if (doc?.source === 'git' && doc.vaultLayout === 'v2') {
+      const wanted = isV2SurfId(assemblyId) ? assemblyId : '';
+      const openMatch = wanted
+        ? wanted === doc.id
+        : assemblyName(doc) === String(name || '').trim();
+      if (openMatch && isV2SurfId(doc.id)) {
+        return { partCount: (doc.parts || []).length, referenced: [] };
+      }
+      if (!wanted) {
+        return {
+          status: 'error',
+          error: "Couldn't delete the assembly. Nothing was changed.",
+        };
+      }
+      try {
+        const vault = await ensureGitVault({ create: false });
+        const file = await gitAdapterRef.current?.readFile(
+          vault?.repo,
+          assemblyIdPath(wanted),
+          gitWorkingBranch(),
+        );
+        if (!file || file.content == null) return { partCount: 0, referenced: [] };
+        const json = typeof file.content === 'string' ? JSON.parse(file.content) : file.content;
+        return {
+          partCount: Array.isArray(json?.parts) ? json.parts.length : 0,
+          referenced: [],
+        };
+      } catch {
+        return {
+          status: 'error',
+          error: "Couldn't delete the assembly. Nothing was changed.",
+        };
+      }
+    }
     try {
       const { entries, tip } = await vaultEntriesForDelete();
       return previewDeleteAssembly(entries, name, { openDoc: assemblyRef.current, tipEntries: tip });
@@ -5096,20 +5135,191 @@ const App = () => {
   };
 
   /**
+   * Confirmed delete of the open v2 assembly. A committed file is one
+   * writeVaultCommit. A never-saved assembly is replaced in the working
+   * copy and writes nothing. Conflict and pending leave the working copy.
+   */
+  const deleteOpenV2Assembly = async (doc, mode) => {
+    const openId = doc.id;
+    const previousName = assemblyName(doc);
+    const replaced = async () => {
+      const after = await seedAgentAssembly({});
+      return {
+        status: 'deleted',
+        name: previousName,
+        id: openId,
+        mode,
+        nextAssemblyId: after?.id ?? null,
+      };
+    };
+    let vault = null;
+    try {
+      vault = await ensureGitVault({ create: false });
+    } catch (err) {
+      if (err?.message !== NO_REPO_YET_COPY && err?.code !== NO_REPO_YET_CODE) {
+        return {
+          status: 'error',
+          error: "Couldn't delete the assembly. Nothing was changed.",
+        };
+      }
+    }
+    if (!vault?.repo || !gitAdapterRef.current) {
+      try {
+        return await replaced();
+      } catch {
+        return {
+          status: 'error',
+          error: "Couldn't delete the assembly. Nothing was changed.",
+        };
+      }
+    }
+    const online = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+    let result;
+    try {
+      result = await executeDeleteV2Assembly({
+        adapter: gitAdapterRef.current,
+        repo: vault.repo,
+        branch: gitWorkingBranch(),
+        store: gitSync(),
+        assemblyId: openId,
+        openDoc: doc,
+        deleteParts: mode === 'drop',
+        confirm: true,
+        online,
+        message: `Delete ${previousName}`,
+      });
+    } catch {
+      return {
+        status: 'error',
+        error: "Couldn't delete the assembly. Nothing was changed.",
+      };
+    }
+    if (result.status === 'local') {
+      try {
+        const after = await replaced();
+        return { ...after, assemblies: result.assemblies || [] };
+      } catch {
+        return {
+          status: 'error',
+          error: "Couldn't delete the assembly. Nothing was changed.",
+        };
+      }
+    }
+    if (result.status !== 'committed') return result;
+    if (result.sha) {
+      gitVaultRef.current = {
+        ...(gitVaultRef.current || vault),
+        headSha: result.sha,
+      };
+    }
+    try {
+      const after = await replaced();
+      return { ...after, sha: result.sha, assemblies: result.assemblies || [] };
+    } catch {
+      return {
+        status: 'deleted',
+        name: previousName,
+        id: openId,
+        mode,
+        sha: result.sha,
+        assemblies: result.assemblies || [],
+        nextAssemblyId: null,
+      };
+    }
+  };
+
+  /**
+   * Confirmed delete of a v2 assembly that is not the open one. One
+   * commit when the file is saved. The open working copy stays put.
+   */
+  const deleteOtherV2Assembly = async (doc, target, mode) => {
+    let vault = null;
+    try {
+      vault = await ensureGitVault({ create: false });
+    } catch (err) {
+      if (err?.message !== NO_REPO_YET_COPY && err?.code !== NO_REPO_YET_CODE) {
+        return {
+          status: 'error',
+          error: "Couldn't delete the assembly. Nothing was changed.",
+        };
+      }
+    }
+    if (!vault?.repo || !gitAdapterRef.current) {
+      return {
+        status: 'error',
+        error: "Couldn't delete the assembly. Nothing was changed.",
+      };
+    }
+    const online = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+    let result;
+    try {
+      result = await executeDeleteV2Assembly({
+        adapter: gitAdapterRef.current,
+        repo: vault.repo,
+        branch: gitWorkingBranch(),
+        store: gitSync(),
+        assemblyId: target,
+        openDoc: doc,
+        deleteParts: mode === 'drop',
+        confirm: true,
+        online,
+        message: `Delete ${target}`,
+      });
+    } catch {
+      return {
+        status: 'error',
+        error: "Couldn't delete the assembly. Nothing was changed.",
+      };
+    }
+    if (result.status === 'local') {
+      return {
+        status: 'deleted',
+        id: target,
+        mode,
+        assemblies: result.assemblies || [],
+      };
+    }
+    if (result.status !== 'committed') return result;
+    if (result.sha) {
+      gitVaultRef.current = {
+        ...(gitVaultRef.current || vault),
+        headSha: result.sha,
+      };
+    }
+    return {
+      status: 'deleted',
+      id: target,
+      mode,
+      sha: result.sha,
+      assemblies: result.assemblies || [],
+    };
+  };
+
+  /**
    * One outbox commit. The cache snapshot is swapped only after the next
    * tree is built. Failure toasts Retry/Revert and Revert puts that snapshot back.
    * The promise waits for the local IndexedDB document and part-script
    * writes, then the queued git sync. A later call retries that failed op.
    */
-  const handleDeleteAssembly = async (name, mode = 'keep') => {
+  const handleDeleteAssembly = async (name, mode = 'keep', assemblyId = '') => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') return { status: 'error', error: 'Not in Git mode' };
-    if (doc.vaultLayout === 'v2' && upgradeVaultEnabled()) {
-      return {
-        status: 'error',
-        code: 'unsupported_vault_version',
-        error: 'This vault is v2. Delete assembly still writes the old folder layout and is blocked until v2 Save lands. Nothing was written; the outbox was left unflushed.',
-      };
+    // v2: one commit after this confirm, or a working-copy replace when the
+    // assembly was never saved. The v1 folder delete below must not run.
+    if (doc.vaultLayout === 'v2') {
+      const wanted = isV2SurfId(assemblyId) ? assemblyId : '';
+      const openId = isV2SurfId(doc.id) ? doc.id : '';
+      const nameHit = !wanted && assemblyName(doc) === String(name || '').trim();
+      const target = wanted || (nameHit ? openId : '');
+      if (!target) {
+        return {
+          status: 'error',
+          error: "Couldn't delete the assembly. Nothing was changed.",
+        };
+      }
+      const dropMode = mode === 'drop' ? 'drop' : 'keep';
+      if (target === openId) return deleteOpenV2Assembly(doc, dropMode);
+      return deleteOtherV2Assembly(doc, target, dropMode);
     }
     // Feature edit and the editor auto-run already stay off this lock.
     // A delete would preempt the build the open spinner is waiting on.
@@ -5901,6 +6111,48 @@ const App = () => {
   };
 
   const adoptV2SaveResult = async (result, { repo, branch, create }) => {
+    if (result?.kind === 'delete-assembly') {
+      if (result.status === 'pending') {
+        setUploadNotice(SAVE_QUEUED_COPY);
+        return { ...result, status: 'queued' };
+      }
+      if (result.status !== 'committed') return result;
+      if (repo && result.sha) {
+        gitVaultRef.current = {
+          ...(gitVaultRef.current || {}),
+          repo,
+          headSha: result.sha,
+        };
+      }
+      const openId = assemblyRef.current?.id;
+      if (!result.assemblyId || !openId || result.assemblyId === openId) {
+        try {
+          await seedAgentAssembly({});
+        } catch { /* the commit already removed the assembly file */ }
+      }
+      return result;
+    }
+    if (result?.kind === 'delete-part') {
+      if (result.status === 'pending') {
+        setUploadNotice(SAVE_QUEUED_COPY);
+        return { ...result, status: 'queued' };
+      }
+      if (result.status !== 'committed') return result;
+      if (repo && result.sha) {
+        gitVaultRef.current = {
+          ...(gitVaultRef.current || {}),
+          repo,
+          headSha: result.sha,
+        };
+      }
+      const partId = result.partId;
+      const cur = assemblyRef.current;
+      const row = partId
+        ? (cur?.parts || []).find((item) => item.id === partId || partDefinitionId(item) === partId)
+        : null;
+      if (row) await handleDeletePart(row.id);
+      return result;
+    }
     if (result.status === 'pending') {
       setUploadNotice(SAVE_QUEUED_COPY);
       return { ...result, status: 'queued' };
@@ -7693,7 +7945,71 @@ const App = () => {
     }
   };
 
-  const handleDeletePart = (id, opts = {}) => {
+  const handlePreviewDeletePart = async (partId) => {
+    const doc = assemblyRef.current;
+    if (!doc || doc.source !== 'git' || doc.vaultLayout !== 'v2') return { assemblies: [] };
+    const key = String(partId);
+    const part = (doc.parts || []).find((row) => row.id === key);
+    const def = part ? partDefinitionId(part) : key;
+    if (!isV2SurfId(def)) return { assemblies: [] };
+    let vault = null;
+    try {
+      vault = await ensureGitVault({ create: false });
+    } catch (err) {
+      if (err?.message === NO_REPO_YET_COPY || err?.code === NO_REPO_YET_CODE) return { assemblies: [] };
+      return { status: 'error', error: PART_USE_SCAN_REFUSED };
+    }
+    if (!vault?.repo || !gitAdapterRef.current) return { assemblies: [] };
+    const scan = await scanOtherAssemblyPartUses(
+      gitAdapterRef.current,
+      vault.repo,
+      gitWorkingBranch(),
+      [def],
+      { exceptAssemblyId: isV2SurfId(doc.id) ? doc.id : null },
+    );
+    if (!scan.ok) return { status: 'error', error: PART_USE_SCAN_REFUSED };
+    return { assemblies: scan.assemblies };
+  };
+
+  const commitDeleteV2Part = async (doc, part, partDef) => {
+    let vault = null;
+    try {
+      vault = await ensureGitVault({ create: false });
+    } catch (err) {
+      if (err?.message !== NO_REPO_YET_COPY && err?.code !== NO_REPO_YET_CODE) {
+        return {
+          status: 'error',
+          code: 'delete_refused',
+          error: "Couldn't delete the part. Nothing was changed.",
+        };
+      }
+    }
+    if (!vault?.repo || !gitAdapterRef.current) {
+      return { status: 'local', partId: partDef, assemblies: [] };
+    }
+    const online = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+    try {
+      return await executeDeleteV2Part({
+        adapter: gitAdapterRef.current,
+        repo: vault.repo,
+        branch: gitWorkingBranch(),
+        store: gitSync(),
+        partId: partDef,
+        openDoc: doc,
+        confirm: true,
+        online,
+        message: `Delete ${part?.name || 'part'}`,
+      });
+    } catch {
+      return {
+        status: 'error',
+        code: 'delete_refused',
+        error: "Couldn't delete the part. Nothing was changed.",
+      };
+    }
+  };
+
+  const handleDeletePart = async (id, opts = {}) => {
     const doc = assemblyRef.current;
     if (!doc || id == null) return;
     const key = String(id);
@@ -7702,14 +8018,10 @@ const App = () => {
     const partDef = partDefinitionId(part);
     const definitionStays = definitionStillReferenced(doc.parts, partDef, key);
     // An instance row leaves; its definition's file stays while another
-    // row still places it.
-    if (opts.fromRepo && doc.source === 'git' && !definitionStays) {
-      if (isV2PlanSaveDoc(doc)) {
-        persistPendingDeletes(repoDeletePathsForV2Part(partDef));
-      } else {
-        const repoPath = partRepoPath(part);
-        if (repoPath) persistPendingDeletes(repoDeletePathsFor(repoPath));
-      }
+    // row still places it. A v1 repo delete still waits for the next Save.
+    if (opts.fromRepo && doc.source === 'git' && !definitionStays && !isV2PlanSaveDoc(doc)) {
+      const repoPath = partRepoPath(part);
+      if (repoPath) persistPendingDeletes(repoDeletePathsFor(repoPath));
     }
 
     const live = codeEditorRef.current?.getContent?.();
@@ -7797,7 +8109,24 @@ const App = () => {
 
     const tentativeDoc = removePart(doc, key);
     const tentativeScripts = dropPartRecord(scripts, key);
+    if (opts.fromRepo && doc.source === 'git' && !definitionStays && isV2PlanSaveDoc(doc) && isV2SurfId(partDef)) {
+      const result = await commitDeleteV2Part(doc, part, partDef);
+      if (!result || (result.status !== 'committed' && result.status !== 'local')) return result;
+      if (result.sha) {
+        gitVaultRef.current = {
+          ...(gitVaultRef.current || {}),
+          headSha: result.sha,
+        };
+      }
+      applyDeleteLocal(tentativeDoc, tentativeScripts);
+      return {
+        status: 'deleted',
+        assemblies: result.assemblies || [],
+        sha: result.sha || null,
+      };
+    }
     applyDeleteLocal(tentativeDoc, tentativeScripts);
+    return { status: 'deleted' };
   };
 
   const handleGameRun = async () => {
@@ -9549,9 +9878,10 @@ const App = () => {
     codeEditorRef.current?.selectAll?.();
   };
 
-  // Rename one part by id (Parts feed row). The title follows when that part
-  // is the one it shows. The name is read by save/export and by the
-  // OAuth-redirect snapshot, so nothing else to write.
+  // Rename one part by id (Parts feed row). Working copy only: the id and
+  // parts/<id>.js stay put. v2 may repeat a name. v1 still numbers a clash
+  // because that name is the file stem. The title follows when that part
+  // is the one it shows. Save writes the new // @name and parts[].name.
   const handleRenamePart = async (id, name) => {
     const doc = assemblyRef.current;
     if (!doc) return { status: 'error', code: 'no_assembly', error: 'No assembly loaded' };
@@ -9560,19 +9890,30 @@ const App = () => {
     const part = (doc.parts || []).find((row) => row && row.id === id);
     if (!part) return { status: 'error', code: 'unknown_part', error: `Unknown part id: ${id}` };
     if (part.name === nextName) {
-      return { status: 'unchanged', from: id, to: id, name: nextName };
+      return { status: 'unchanged', from: id, to: id, name: nextName, moved: false };
     }
-    const otherNames = (doc.parts || []).filter((row) => row.id !== id).map((row) => row.name);
-    if (otherNames.includes(nextName)) {
-      nextName = nextNumberedName(nextName, otherNames, { bareFirst: true });
+    const v2 = doc.source === 'git' && doc.vaultLayout === 'v2';
+    if (!v2) {
+      const otherNames = (doc.parts || []).filter((row) => row.id !== id).map((row) => row.name);
+      if (otherNames.includes(nextName)) {
+        nextName = nextNumberedName(nextName, otherNames, { bareFirst: true });
+      }
     }
     const nextDoc = renamePart(doc, id, nextName);
-    if (nextDoc === doc) return { status: 'unchanged', from: id, to: id, name: part.name };
+    if (nextDoc === doc) return { status: 'unchanged', from: id, to: id, name: part.name, moved: false };
+    const renamed = (nextDoc.parts || []).find((row) => row && row.id === id);
+    if (!renamed || renamed.id !== part.id) {
+      return {
+        status: 'error',
+        code: 'rename_failed',
+        error: "Couldn't rename the part. Nothing was changed.",
+      };
+    }
     rememberAssembly(nextDoc);
     if (renameTargetId(nextDoc, cadPartIdRef.current) === id) {
-      setCurrentFilename(nextDoc.parts.find((row) => row.id === id)?.name || null);
+      setCurrentFilename(renamed.name || null);
     }
-    return { status: 'renamed', from: id, to: id, name: nextName, git: false };
+    return { status: 'renamed', from: id, to: id, name: renamed.name, moved: false, git: false };
   };
 
   // Rename from the viewer title chip. It lands on the part the title shows:
@@ -9591,10 +9932,26 @@ const App = () => {
 
   const handleRenameAssembly = async (name) => {
     const doc = assemblyRef.current;
-    if (!doc) return;
-    if (doc.source === 'git' && doc.vaultLayout === 'v2' && upgradeVaultEnabled()) {
-      setUploadError('This vault is v2. Rename still writes the old folder layout and is blocked until v2 Save lands. Nothing was written.');
-      return { status: 'error', code: 'unsupported_vault_version' };
+    if (!doc) return { status: 'error', code: 'no_assembly', error: 'No assembly loaded' };
+    // v2: display name only. assemblies/<id>.surf.json does not move.
+    // The row goes dirty; the next Save writes the name. v1 still records
+    // the old folder so Save can move it.
+    if (doc.source === 'git' && doc.vaultLayout === 'v2') {
+      const nextName = sanitizeAssemblyName(name);
+      if (!nextName) {
+        return { status: 'error', code: 'bad_args', error: 'Enter an assembly name' };
+      }
+      if (!isV2SurfId(doc.id)) {
+        return {
+          status: 'error',
+          error: "Couldn't rename the assembly. Nothing was changed.",
+        };
+      }
+      if (assemblyName(doc) === nextName) {
+        return { status: 'unchanged', assemblyId: doc.id, name: nextName, moved: false };
+      }
+      rememberAssembly({ ...doc, name: nextName });
+      return { status: 'renamed', assemblyId: doc.id, name: nextName, moved: false };
     }
     const current = assemblyName(doc);
     const taken = await collectTakenAssemblyNames({ except: current });
@@ -11142,75 +11499,182 @@ const App = () => {
         return { error: { code: 'internal', message: err?.message || 'Could not list assemblies' } };
       }
     },
-    async agentDeletePart({ partId, scope } = {}) {
+    async agentDeletePart({ partId, scope, confirm } = {}) {
       const doc = assemblyRef.current;
       if (!doc) {
         return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+      }
+      if (scope === 'repo' && confirm !== true) {
+        return { error: { code: 'confirm_required', message: 'delete_part scope repo requires confirm: true' } };
       }
       const part = findPartById(doc, partId);
       if (!part) return { error: unknownPartError(partId) };
-      if (scope === 'repo') {
-        if (doc.source === 'git' && isV2PlanSaveDoc(doc)) {
-          const ctx = await agentGitReadContext('delete_part');
-          if (ctx.error) return { error: ctx.error };
-          const parents = await listPartParentAssemblies(
+      let assemblies = [];
+      if (doc.source === 'git' && isV2PlanSaveDoc(doc)) {
+        const ctx = await agentGitReadContext('delete_part');
+        if (ctx.error && ctx.error.code !== 'git_blocked') return { error: ctx.error };
+        if (!ctx.error) {
+          const scan = await scanOtherAssemblyPartUses(
             ctx.adapter,
             ctx.vault.repo,
-            partId,
-            { branch: ctx.branch, exceptAssemblyId: doc.id },
+            ctx.branch,
+            [partDefinitionId(part)],
+            { exceptAssemblyId: doc.id },
           );
-          if (!parents.ok || parents.assemblies.length) {
-            return {
-              error: {
-                code: 'part_still_referenced',
-                message: 'This part is still listed in another assembly. Use scope assembly, or delete those parents first.',
-                details: { assemblies: parents.ok ? parents.assemblies : [] },
-              },
-            };
+          if (!scan.ok) {
+            return { error: { code: 'delete_refused', message: PART_USE_SCAN_REFUSED } };
           }
+          assemblies = scan.assemblies;
         }
-        handleDeletePart(part.id, { fromRepo: true });
-      } else {
-        handleDeletePart(part.id);
       }
-      return { result: { partId: part.id, scope, status: 'removed' } };
+      const removed = scope === 'repo'
+        ? await handleDeletePart(part.id, { fromRepo: true })
+        : await handleDeletePart(part.id);
+      if (removed && removed.status && removed.status !== 'deleted') {
+        return {
+          error: {
+            code: removed.code || removed.status || 'delete_refused',
+            message: removed.error || removed.message || "Couldn't delete the part. Nothing was changed.",
+            details: {
+              assemblies: removed.assemblies || assemblies,
+              ...(removed.paths ? { paths: removed.paths } : {}),
+            },
+          },
+        };
+      }
+      return {
+        result: {
+          partId: part.id,
+          scope,
+          status: 'removed',
+          assemblies: removed?.assemblies || assemblies,
+        },
+      };
     },
-    async agentDeleteAssembly({ assemblyId, deleteParts } = {}) {
+    async agentDeleteAssembly({ assemblyId, deleteParts, confirm } = {}) {
       const doc = assemblyRef.current;
       if (!doc) {
         return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
       }
-      if (doc.id !== assemblyId) {
-        return { error: unknownAssemblyError(assemblyId) };
+      if (confirm !== true) {
+        return { error: { code: 'confirm_required', message: 'delete_assembly requires confirm: true' } };
       }
-      const previousId = doc.id;
-      if (deleteParts && doc.source === 'git' && isV2PlanSaveDoc(doc)) {
-        const ctx = await agentGitReadContext('delete_assembly');
-        if (ctx.error) return { error: ctx.error };
-        for (const row of doc.parts || []) {
-          const parents = await listPartParentAssemblies(
-            ctx.adapter,
-            ctx.vault.repo,
-            row.id,
-            { branch: ctx.branch, exceptAssemblyId: doc.id },
-          );
-          if (parents.ok && !parents.assemblies.length) {
-            persistPendingDeletes(repoDeletePathsForV2Part(row.id));
-          }
-        }
+      const open = doc.id === assemblyId;
+      const v2Target = doc.source === 'git' && doc.vaultLayout === 'v2' && isV2SurfId(assemblyId);
+      if (!v2Target) {
+        if (!open) return { error: unknownAssemblyError(assemblyId) };
+        let after = null;
         try {
-          persistPendingDeletes([assemblyIdPath(previousId)]);
+          after = await seedAgentAssembly({});
         } catch {
-          /* id was not v2-shaped */
+          return {
+            error: {
+              code: 'delete_refused',
+              message: "Couldn't delete the assembly. Nothing was changed.",
+            },
+          };
+        }
+        if (doc) recordAgentAssemblyStep(doc);
+        return {
+          result: {
+            assemblyId: doc.id,
+            status: 'deleted',
+            nextAssemblyId: after?.id ?? null,
+            assemblies: [],
+          },
+        };
+      }
+      const ctx = await agentGitReadContext('delete_assembly');
+      if (ctx.error && ctx.error.code !== 'git_blocked') return { error: ctx.error };
+      if (ctx.error) {
+        if (!open) {
+          return {
+            error: {
+              code: 'delete_refused',
+              message: "Couldn't delete the assembly. Nothing was changed.",
+            },
+          };
+        }
+        let after = null;
+        try {
+          after = await seedAgentAssembly({});
+        } catch {
+          return {
+            error: {
+              code: 'delete_refused',
+              message: "Couldn't delete the assembly. Nothing was changed.",
+            },
+          };
+        }
+        return {
+          result: {
+            assemblyId,
+            status: 'deleted',
+            nextAssemblyId: after?.id ?? null,
+            assemblies: [],
+          },
+        };
+      }
+      const online = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+      const result = await executeDeleteV2Assembly({
+        adapter: ctx.adapter,
+        repo: ctx.vault.repo,
+        branch: ctx.branch,
+        store: gitSync(),
+        assemblyId,
+        openDoc: doc,
+        deleteParts: deleteParts === true,
+        confirm: true,
+        online,
+        message: open ? `Delete ${assemblyName(doc)}` : `Delete ${assemblyId}`,
+      });
+      if (result.status !== 'local' && result.status !== 'committed') {
+        return {
+          error: {
+            code: result.code || result.status || 'delete_refused',
+            message: result.error || result.message || "Couldn't delete the assembly. Nothing was changed.",
+            details: {
+              assemblies: result.assemblies || [],
+              ...(result.paths ? { paths: result.paths } : {}),
+            },
+          },
+        };
+      }
+      if (result.status === 'committed' && result.sha && gitVaultRef.current) {
+        gitVaultRef.current = { ...gitVaultRef.current, headSha: result.sha };
+      }
+      const assemblies = result.assemblies || [];
+      if (!open) {
+        return {
+          result: {
+            assemblyId,
+            status: 'deleted',
+            assemblies,
+            ...(result.sha ? { sha: result.sha } : {}),
+          },
+        };
+      }
+      let after = null;
+      try {
+        after = await seedAgentAssembly({});
+      } catch {
+        if (result.status !== 'committed') {
+          return {
+            error: {
+              code: 'delete_refused',
+              message: "Couldn't delete the assembly. Nothing was changed.",
+            },
+          };
         }
       }
-      const after = await seedAgentAssembly({});
       if (doc) recordAgentAssemblyStep(doc);
       return {
         result: {
-          assemblyId: previousId,
+          assemblyId,
           status: 'deleted',
           nextAssemblyId: after?.id ?? null,
+          assemblies,
+          ...(result.sha ? { sha: result.sha } : {}),
         },
       };
     },
@@ -11226,11 +11690,24 @@ const App = () => {
       if (!nextName) {
         return { error: { code: 'bad_args', message: 'rename_assembly needs a non-empty name' } };
       }
+      if (doc.source === 'git' && doc.vaultLayout === 'v2') {
+        const out = await handleRenameAssembly(nextName);
+        if (out?.status === 'error') {
+          return {
+            error: {
+              code: out.code || 'rename_failed',
+              message: out.error || "Couldn't rename the assembly. Nothing was changed.",
+            },
+          };
+        }
+        if (out?.status === 'renamed') recordAgentAssemblyStep(doc);
+        return { result: { assemblyId: doc.id, name: out?.name || nextName, moved: false } };
+      }
       if (doc.name !== nextName) {
         rememberAssembly({ ...doc, name: nextName });
         recordAgentAssemblyStep(doc);
       }
-      return { result: { assemblyId: doc.id, name: nextName } };
+      return { result: { assemblyId: doc.id, name: nextName, moved: false } };
     },
     readAgentGitAdapterKind() {
       return ensureGitAdapter()?.kind ?? null;
@@ -12000,6 +12477,7 @@ const App = () => {
         liveScript: liveDirtyScript,
       }) : true}
       onDeletePart={handleDeletePart}
+      onPreviewDeletePart={handlePreviewDeletePart}
       onToggleSource={handleToggleSource}
       onPlanMoveToGit={handlePlanMoveToGit}
       onMoveToGit={handleMoveToGit}

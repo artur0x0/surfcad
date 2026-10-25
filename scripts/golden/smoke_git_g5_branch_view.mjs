@@ -175,11 +175,18 @@ ok('open/list/add use working branch', /gitWorkingBranch\(/.test(app)
   && /adapter\.listTree\(vault\.repo, gitWorkingBranch\(\)\)/.test(app)
   && /const handleListVaultAssemblies/.test(app));
 // A legacy-vault Save still adopts the committed workspace (paths may move
-// with an assembly rename). On a v2 vault the rename is a name edit and the
-// folder move is refused until v2 Save handles it.
+// with an assembly rename). On a v2 vault the rename is a working-copy name
+// edit: the id stays, and the next Save writes the new name.
+const v2Rename = app.slice(
+  app.indexOf('const handleRenameAssembly'),
+  app.indexOf('const current = assemblyName(doc)'),
+);
 ok('legacy Save adopts the committed workspace; v2 rename is a name edit', /applyCommittedWorkspace\(result\)/.test(app)
   && !/result\.renamed \|\| result\.moved/.test(app)
-  && /code: 'unsupported_vault_version'/.test(app.slice(app.indexOf('const handleRenameAssembly'))));
+  && /vaultLayout === 'v2'/.test(v2Rename)
+  && /moved: false/.test(v2Rename)
+  && !/blocked until v2 Save/.test(app)
+  && !/unsupported_vault_version/.test(v2Rename));
 ok('index exports G5', typeof gitIndex.listVaultBranches === 'function'
   && typeof gitIndex.switchVaultBranch === 'function'
   && typeof gitIndex.seedEmptyVaultAssembly === 'function');

@@ -18055,7 +18055,7 @@
     },
     {
       "name": "delete_part",
-      "description": "Drop a part by opaque part_id (a path or name is unknown_part). scope assembly removes the row. scope repo also plans a file delete on the next Save and requires confirm: true. Neither scope commits. part_still_referenced if another assembly lists the id. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Drop a part by opaque part_id (a path or name is unknown_part). scope assembly removes the row and does not commit. scope repo, after confirm: true, deletes parts/<id>.js in one commit and returns the assemblies that use the part. A failed scan is delete_refused and writes nothing. Other assemblies are not rewritten. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -18074,7 +18074,7 @@
               "assembly",
               "repo"
             ],
-            "description": "assembly drops the row; repo also plans a file delete on the next Save."
+            "description": "assembly drops the row; repo deletes parts/<id>.js in one commit and returns the assemblies that use the part."
           },
           "confirm": {
             "type": "boolean",
@@ -18099,7 +18099,9 @@
         "bad_args",
         "unknown_part",
         "confirm_required",
-        "part_still_referenced",
+        "delete_refused",
+        "conflict",
+        "pending_save",
         "no_assembly",
         "internal"
       ],
@@ -18116,7 +18118,7 @@
     },
     {
       "name": "delete_assembly",
-      "description": "Delete the open assembly by opaque assembly_id. Requires confirm: true. delete_parts plans unreferenced part-file deletes on the next Save. No git write until git_save. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Delete an assembly by opaque assembly_id, whether it is open or not. Requires confirm: true. One commit deletes assemblies/<id>.surf.json. delete_parts also deletes parts/<id>.js when no other assembly references that id. A never-saved open assembly is removed from the working copy only. Returns the assemblies that use its parts. Nothing is written until confirm: true. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -18134,7 +18136,7 @@
           },
           "delete_parts": {
             "type": "boolean",
-            "description": "When true, plan part-file deletes on the next Save if unreferenced."
+            "description": "When true, the commit also deletes part files no other assembly references."
           },
           "return": {
             "type": "string",
@@ -18155,6 +18157,9 @@
         "bad_args",
         "unknown_assembly",
         "confirm_required",
+        "conflict",
+        "pending_save",
+        "delete_refused",
         "upgrade_required",
         "no_assembly",
         "internal"

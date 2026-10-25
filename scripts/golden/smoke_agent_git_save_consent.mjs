@@ -9,7 +9,8 @@
  * (assemblies/<id>.surf.json + parts/<id>.js). The fake vault already
  * carries surfcad.json, so that Save commit does not re-write the marker.
  * Save never writes README.md. Then rename_part updates the working copy
- * only (moved: false, no commit) and refuses a path as unknown_id.
+ * only (moved: false, no commit). A v2 name may match another part; it is
+ * not numbered. A path is unknown_part.
  * Every bridge call must answer within a few seconds.
  */
 /* global document, window, indexedDB, localStorage, sessionStorage, navigator */
@@ -276,10 +277,19 @@ check(
   'rename_part updates the working copy and does not move a vault path',
   moved.out.ok === true
     && moved.out.result?.partId === lidId
-    && moved.out.result?.name === 'Kettle Handle (2)'
+    && moved.out.result?.name === 'Kettle Handle'
     && moved.out.result?.moved === false
     && !('path' in (moved.out.result || {})),
   JSON.stringify(moved.out),
+);
+const named = await agentCall(page, 'parts', {});
+const handleNames = (named.out.result?.parts || []).filter((p) => p.name === 'Kettle Handle');
+check(
+  'v2 rename keeps the typed name when another part already has it',
+  named.out.ok === true
+    && handleNames.length === 2
+    && handleNames.some((p) => p.id === lidId),
+  JSON.stringify(named.out.result?.parts),
 );
 check(
   'rename does not add a commit',

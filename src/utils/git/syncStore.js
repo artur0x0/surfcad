@@ -523,6 +523,16 @@ export function createSyncStore({ persist = true } = {}) {
     return parseAssemblyCommit(assemblyCommits.get(assemblyCommitSlot(repo, branch, assemblyId)));
   }
 
+  async function clearAssemblyCommit(repo, branch, assemblyId) {
+    await ready;
+    const id = String(assemblyId || '');
+    if (!id) return false;
+    const slot = assemblyCommitSlot(repo, branch, id);
+    assemblyCommits.delete(slot);
+    await persistKv(`commit:${slot}`, null);
+    return true;
+  }
+
   function listAssemblyCommits(repo, branch = 'main') {
     const prefix = `${branchKeyOf(repo, branch)}\0`;
     const out = [];
@@ -655,6 +665,7 @@ export function createSyncStore({ persist = true } = {}) {
     getBranchTip,
     putAssemblyCommit,
     getAssemblyCommit,
+    clearAssemblyCommit,
     listAssemblyCommits,
     putPendingSave,
     getPendingSave,

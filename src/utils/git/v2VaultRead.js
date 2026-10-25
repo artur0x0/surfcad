@@ -2,7 +2,7 @@
  * v2 vault list/open by assembly id. Path is f(id) only.
  * Read-only: never commits, never creates a repo.
  */
-import { partDefinitionId, serializeAssembly } from '../assembly.js';
+import { assemblyName, partDefinitionId, serializeAssembly } from '../assembly.js';
 import { assertGithubAdapter } from './githubAdapterInterface.js';
 import { assemblyIdPath, parseIdPath, partIdPath, partMeshIdPath } from './idPaths.js';
 import { readMeshBytes } from './meshSync.js';
@@ -152,6 +152,41 @@ export async function listV2BrowseItems(adapter, repo, ref = 'main', { tree = nu
   };
 }
 
+/**
+ * Open dialog labels for the assembly that is open right now.
+ * Committed names update on Save; until then the working-copy labels win
+ * for this assembly id and its part ids. Other assemblies stay as committed.
+ * Does not write git.
+ */
+export function overlayWorkingCopyBrowseNames(browse, doc) {
+  if (!browse || typeof browse !== 'object') return browse;
+  if (!doc || doc.vaultLayout !== 'v2' || !isV2SurfId(doc.id)) return browse;
+  const asmName = assemblyName(doc);
+  const partNames = new Map();
+  for (const row of doc.parts || []) {
+    if (!row) continue;
+    const instance = typeof row.instanceOf === 'string' && row.instanceOf && row.instanceOf !== row.id;
+    if (instance) continue;
+    const def = partDefinitionId(row);
+    if (!isV2SurfId(def)) continue;
+    const name = typeof row.name === 'string' ? row.name.trim() : '';
+    if (name) partNames.set(def, name);
+  }
+  const assemblies = (browse.assemblies || []).map((item) => {
+    if (!item || item.id !== doc.id || !asmName) return item;
+    return { ...item, name: asmName, label: asmName };
+  });
+  const parts = (browse.parts || []).map((item) => {
+    const name = item && partNames.get(item.id);
+    if (!name) return item;
+    const parents = (item.assemblies || []).map((parent) => (
+      parent && parent.id === doc.id ? { ...parent, name: asmName } : parent
+    ));
+    return { ...item, name, label: name, assemblies: parents };
+  });
+  return { ...browse, assemblies, parts };
+}
+
 async function loadV2Meshes(adapter, repo, branch, parts) {
   const assets = {};
   if (typeof adapter?.listTree !== 'function') return assets;
@@ -247,6 +282,81 @@ export async function openV2Assembly(adapter, repo, assemblyId, opts = {}) {
     vaultLayout: 'v2',
     identities: { minted: [], pairs: [], cached: [], assemblyMinted: false },
   };
+}
+
+export const PART_USE_SCAN_REFUSED = "Couldn't check where this part is used. Nothing was deleted.";
+
+function refsInAssembly(json) {
+  const refs = new Set();
+  for (const row of json?.parts || []) {
+    const def = partDefinitionId(row);
+    if (isV2SurfId(def)) refs.add(def);
+    if (isV2SurfId(row?.id)) refs.add(row.id);
+    if (isV2SurfId(row?.instanceOf)) refs.add(row.instanceOf);
+  }
+  for (const group of json?.groups || []) {
+    for (const id of group?.partIds || []) {
+      if (isV2SurfId(id)) refs.add(id);
+    }
+  }
+  return refs;
+}
+
+/**
+ * Tip `assemblies/*.surf.json` other than `exceptAssemblyId` (the open one).
+ * Fail closed when the tree or a sibling file cannot be read. Does not
+ * write, and does not include the open working copy.
+ * @returns {Promise<{ ok: true, assemblies: {id: string, name: string}[], refs: string[], paths: Set<string> } | { ok: false }>}
+ */
+export async function scanOtherAssemblyPartUses(adapter, repo, branch, partIds, {
+  exceptAssemblyId = null,
+} = {}) {
+  const watch = new Set((partIds || []).filter((id) => isV2SurfId(id)));
+  let tree;
+  try {
+    tree = await adapter.listTree(repo, branch);
+  } catch {
+    return { ok: false };
+  }
+  if (!Array.isArray(tree)) return { ok: false };
+  const paths = new Set();
+  const refs = new Set();
+  const assemblies = [];
+  for (const entry of tree) {
+    const path = typeof entry === 'string' ? entry : entry?.path;
+    if (!path) continue;
+    paths.add(path);
+    const parsed = parseIdPath(path);
+    if (parsed?.kind !== 'assembly') continue;
+    if (exceptAssemblyId && parsed.id === exceptAssemblyId) continue;
+    let file;
+    try {
+      file = await adapter.readFile(repo, path, branch);
+    } catch {
+      return { ok: false };
+    }
+    if (!file || file.content == null) return { ok: false };
+    let json;
+    try {
+      json = typeof file.content === 'string' ? JSON.parse(file.content) : file.content;
+    } catch {
+      return { ok: false };
+    }
+    if (!json || typeof json !== 'object') return { ok: false };
+    const local = refsInAssembly(json);
+    let hit = false;
+    for (const id of local) {
+      refs.add(id);
+      if (watch.has(id)) hit = true;
+    }
+    if (!hit) continue;
+    const name = typeof json.name === 'string' && json.name.trim()
+      ? json.name.trim()
+      : parsed.id;
+    assemblies.push({ id: parsed.id, name });
+  }
+  assemblies.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  return { ok: true, assemblies, refs: [...refs], paths };
 }
 
 /**

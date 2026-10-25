@@ -2434,7 +2434,7 @@ test('already_upgraded does not mark a dirty working copy clean', () => {
   assert.match(recaptureBlock, /already_upgraded' \|\| !dirty/);
 });
 
-test('v2 vault refuses leftover v1 writers and leaves the outbox unflushed', () => {
+test('v2 rename and delete stay on the working copy; flush stays idle', () => {
   const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
   const flush = app.slice(app.indexOf('const flushGitOps'), app.indexOf('flushGitSyncRef.current'));
   assert.match(flush, /vaultLayout === 'v2'/);
@@ -2444,12 +2444,26 @@ test('v2 vault refuses leftover v1 writers and leaves the outbox unflushed', () 
   const add = app.slice(addStart, app.indexOf('const handleListBranches', addStart));
   assert.match(add, /isV2PlanSaveDoc\(doc\)/);
   assert.match(add, /handleGitCommit\('Add to repo'\)/);
+  const opener = app.slice(app.indexOf('const deleteOpenV2Assembly'), app.indexOf('const handleDeleteAssembly'));
+  assert.match(opener, /executeDeleteV2Assembly\(/);
+  assert.match(opener, /seedAgentAssembly\(\{\}\)/);
+  assert.match(opener, /result\.status !== 'committed'/);
   const delStart = app.indexOf('const handleDeleteAssembly');
   const del = app.slice(delStart, app.indexOf('if (assemblyOpenLockRef.current)', delStart));
-  assert.match(del, /vaultLayout === 'v2' && upgradeVaultEnabled\(\)/);
+  assert.match(del, /vaultLayout === 'v2'/);
+  assert.match(del, /deleteOpenV2Assembly\(/);
+  assert.match(del, /Couldn't delete the assembly\. Nothing was changed\./);
+  assert.equal(/planDeleteAssembly\(/.test(del), false);
+  assert.equal(/upgradeVaultEnabled\(/.test(del), false);
   const renameStart = app.indexOf('const handleRenameAssembly');
   const rename = app.slice(renameStart, app.indexOf('const current = assemblyName(doc)', renameStart));
-  assert.match(rename, /vaultLayout === 'v2' && upgradeVaultEnabled\(\)/);
+  assert.match(rename, /vaultLayout === 'v2'/);
+  assert.match(rename, /moved: false/);
+  assert.match(rename, /rememberAssembly\(\{ \.\.\.doc, name: nextName \}\)/);
+  assert.equal(/upgradeVaultEnabled\(/.test(rename), false);
+  assert.equal(/blocked until v2 Save/.test(rename), false);
+  assert.equal(/recordRenameFrom/.test(rename), false);
+  assert.equal(/setUploadError/.test(rename), false);
 });
 
 test('flag-off v2 Save uses planSave; leftover v1 writers stay for non-v2 docs', () => {
