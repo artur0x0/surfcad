@@ -112,6 +112,7 @@
         "golden:slice27": "node scripts/golden/smoke_slice27_fillet_mode.mjs",
         "golden:slice28": "node scripts/golden/smoke_slice28_loft.mjs",
         "golden:loft-angled": "node scripts/golden/smoke_loft_angled.mjs",
+        "golden:loft-perf": "node scripts/golden/smoke_loft_perf.mjs",
         "golden:loft-card": "node scripts/golden/smoke_loft_card_elbow.mjs",
         "golden:slice30": "node scripts/golden/smoke_slice30_sweep.mjs",
         "golden:workplane": "node scripts/golden/smoke_workplane_strip_ui.mjs",
