@@ -14715,7 +14715,6 @@ const Viewport = forwardRef(({
     }
     syncFailedPartOutlinesRef.current();
     group.updateMatrixWorld(true);
-    refreshSectionClipRef.current();
     if (containerRef.current) {
       containerRef.current.setAttribute('data-assembly-solids', String(solids.length));
       containerRef.current.setAttribute('data-failed-parts', [...failedPartIdsRef.current].join(','));
@@ -14724,6 +14723,7 @@ const Viewport = forwardRef(({
         containerRef.current.setAttribute('data-feature-picks', 'kept');
       }
     }
+    refreshSectionClipRef.current();
     const renderer = rendererRef.current;
     const camera = cameraRef.current;
     if (renderer && camera) renderer.render(scene, camera);

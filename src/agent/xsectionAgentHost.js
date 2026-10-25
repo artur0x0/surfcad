@@ -58,20 +58,22 @@ export function createXsectionAgentHandlers(deps) {
   }
 
   async function waitForState(match, { timeoutMs = settleMs } = {}) {
+    const finish = (state) => {
+      deps.panelRef?.current?.clearAgentSnap?.();
+      const live = readLiveState();
+      // The clip is applied before React commits the preset. The row that
+      // matched still names that plane; the re-read can show the previous one.
+      if (live && match(live)) return live;
+      return state;
+    };
     const attempts = Math.ceil(timeoutMs / pollMs);
     for (let i = 0; i < attempts; i += 1) {
       const state = readLiveState();
-      if (state && match(state)) {
-        deps.panelRef?.current?.clearAgentSnap?.();
-        return readLiveState() || state;
-      }
+      if (state && match(state)) return finish(state);
       await sleepMs(pollMs);
     }
     const state = readLiveState();
-    if (state && match(state)) {
-      deps.panelRef?.current?.clearAgentSnap?.();
-      return readLiveState() || state;
-    }
+    if (state && match(state)) return finish(state);
     return null;
   }
 
