@@ -842,6 +842,14 @@ textarea {
   }
 }
 
+/* Assembly-open arc. Same crescent as the boot spinner, drawn in the chrome
+   text token so it stays light on the viewport ground. */
+.assembly-open-ring {
+  box-sizing: border-box;
+  border: 2px solid transparent;
+  border-bottom-color: rgb(var(--chrome-text));
+}
+
 /* Assembly-open ring reuses Tailwind's animate-spin. Stop it when the
    user prefers less motion; the ring stays visible as a static arc. */
 @media (prefers-reduced-motion: reduce) {

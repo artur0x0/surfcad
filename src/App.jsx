@@ -240,6 +240,9 @@ import JointCard from './components/JointCard';
 import {
   applyAssemblyOpenHold,
   createAssemblyOpenController,
+  lookupAssemblyOpenName,
+  readVaultAssemblySurf,
+  resolveAssemblyOpenName,
   runTrackedAssemblyOpen,
 } from './utils/assemblyOpenOverlay';
 import { featureDeleteTarget, featureWriteTarget, leftoverPickSolids, shouldSyncScript } from './utils/pickRetarget';
@@ -345,6 +348,7 @@ import {
   partPathAllowedFor,
   vaultSegment,
   assemblyFilePath,
+  assemblyFilePathCandidates,
   assembleCommitFiles,
   listVaultTree,
   listVaultTreePaths,
@@ -618,6 +622,8 @@ const App = () => {
   const [assemblyOpenToast, setAssemblyOpenToast] = useState(null);
   const assemblyOpenCtrlRef = useRef(null);
   const assemblyOpenProgressRef = useRef(null);
+  /** Every assembly open (dialog, reload, branch, id) goes through this. */
+  const openAssemblyTrackedRef = useRef(async () => {});
   // While an open owns the worker, editor auto-run must not start another
   // script behind (or in front of) the build the spinner is waiting on.
   const assemblyOpenLockRef = useRef(false);
@@ -1811,8 +1817,8 @@ const App = () => {
 
       const genAtStart = refreshGenRef.current;
       try {
-        await runTrackedAssemblyOpen(assemblyOpenCtrlRef.current, {
-          name: plan.name || 'assembly',
+        await openAssemblyTrackedRef.current({
+          doc: plan.doc,
           retry: () => { window.location.reload(); },
           load: async ({ progress, signal }) => {
             let draft = null;
@@ -3196,8 +3202,8 @@ const App = () => {
     const migratedIds = migrateLocalPartIds({ doc });
     if (migratedIds.changed) doc = migratedIds.doc;
     try {
-      await runTrackedAssemblyOpen(assemblyOpenCtrlRef.current, {
-        name: doc.name,
+      await openAssemblyTrackedRef.current({
+        doc,
         total: doc.parts.length,
         retry: () => { void handleLoadAssembly(text, filename); },
         load: async ({ progress, signal }) => {
@@ -3527,6 +3533,96 @@ const App = () => {
     const vault = gitVaultRef.current;
     return baseline?.branch || vault?.defaultBranch || 'main';
   };
+
+  /**
+   * Store copy of the assembly being opened. Sync, so the blank screen can
+   * start before a vault read. Never the assembly already on screen.
+   */
+  const peekStoredAssemblySurf = (targetId, folderName) => {
+    try {
+      const repo = gitVaultRef.current?.repo;
+      if (!repo) return null;
+      const store = gitSync();
+      if (targetId && isV2SurfId(targetId)) {
+        return store.getAssembly(repo, assemblyIdPath(targetId)) || null;
+      }
+      if (folderName && !isSurfId(folderName)) {
+        for (const path of assemblyFilePathCandidates(folderName)) {
+          const text = store.getAssembly(repo, path);
+          if (text) return text;
+        }
+      }
+    } catch { /* a store miss stays Untitled until the file read */ }
+    return null;
+  };
+
+  /**
+   * One opener for every assembly load: Open dialog, file import, reload,
+   * branch switch, and an id open (agent or any other caller).
+   * The label is that assembly's `.surf.json` or store name, never the
+   * assembly that is already on screen and never the raw id.
+   * The overlay starts from the store copy (or the document being opened).
+   * The file read updates the label and does not hold the blank screen back.
+   */
+  const openAssemblyTracked = async ({
+    id = '',
+    folder = '',
+    branch = '',
+    doc = null,
+    surf = null,
+    adapter = null,
+    total = 0,
+    retry = null,
+    load,
+  } = {}) => {
+    const targetId = typeof id === 'string' ? id.trim() : '';
+    const folderName = typeof folder === 'string' ? folder.trim() : '';
+    const storedSurf = surf == null && (targetId || folderName)
+      ? peekStoredAssemblySurf(targetId, folderName)
+      : null;
+    const name = resolveAssemblyOpenName({ id: targetId, doc, surf, storedSurf });
+    return runTrackedAssemblyOpen(assemblyOpenCtrlRef.current, {
+      name,
+      total,
+      retry,
+      load: async (ctx) => {
+        if (surf == null && (targetId || folderName)) {
+          void lookupAssemblyOpenName({
+            id: targetId,
+            doc,
+            storedSurf,
+            readSurf: async () => {
+              try {
+                const vault = await ensureGitVault({ create: false });
+                const store = gitSync();
+                await store.ready();
+                const git = adapter || gitAdapterRef.current;
+                const ref = branch || gitWorkingBranch();
+                let stored = storedSurf;
+                if (!stored && targetId) {
+                  try { stored = store.getAssembly(vault.repo, assemblyIdPath(targetId)); }
+                  catch { stored = null; }
+                }
+                return await readVaultAssemblySurf(git, vault.repo, {
+                  id: targetId,
+                  folder: folderName,
+                  branch: ref,
+                  storedSurf: stored,
+                });
+              } catch {
+                return null;
+              }
+            },
+          }).then((resolved) => {
+            if (!ctx.signal()) return;
+            ctx.progress({ name: resolved, authoritative: true });
+          }).catch(() => {});
+        }
+        return load(ctx);
+      },
+    });
+  };
+  openAssemblyTrackedRef.current = openAssemblyTracked;
 
   /** True when git Save would be enabled (content ≠ tip, or first-commit chrome). */
   const isGitWorkingCopyDirty = () => {
@@ -4276,8 +4372,9 @@ const App = () => {
     // The Open dialog passes a v2 row's id; a v1 folder is still a name.
     if (isV2SurfId(name)) return handleOpenV2VaultAssembly(name, adapter);
     try {
-      await runTrackedAssemblyOpen(assemblyOpenCtrlRef.current, {
-        name: name || 'assembly',
+      await openAssemblyTrackedRef.current({
+        folder: name,
+        adapter,
         retry: () => { void handleOpenVaultAssembly(name); },
         load: async ({ progress, signal }) => {
           refreshGenRef.current += 1;
@@ -4297,7 +4394,7 @@ const App = () => {
               branch,
               headSha: tip,
               pathIndex: store.pathIndexFor(vault.repo),
-              onProgress: (update) => progress({ ...update, name: update.name || name }),
+              onProgress: (update) => progress(update?.name ? update : { ...update, name: undefined }),
             },
           );
           if (!signal()) return;
@@ -4562,8 +4659,9 @@ const App = () => {
     if (isV2PlanSaveDoc(doc)) {
       const id = doc.id;
       try {
-        const opened = await runTrackedAssemblyOpen(assemblyOpenCtrlRef.current, {
-          name: id,
+        const opened = await openAssemblyTrackedRef.current({
+          id,
+          branch: branchName,
           retry: () => { void handleSwitchBranch(branchName); },
           load: async ({ progress, signal }) => {
             refreshGenRef.current += 1;
@@ -4579,6 +4677,10 @@ const App = () => {
               headSha: tip,
             });
             if (!signal()) return null;
+            progress({
+              name: loaded.doc?.name,
+              total: loaded.doc?.parts?.length || 0,
+            });
             const adopted = await adoptVaultOpening(loaded, vault);
             if (!signal()) return null;
             await scheduleLastCommitFromApp({
@@ -4615,8 +4717,9 @@ const App = () => {
     const name = vaultSegment(doc.name) || doc.name;
     if (!name) return { status: 'error', error: 'No assembly open' };
     try {
-      const opened = await runTrackedAssemblyOpen(assemblyOpenCtrlRef.current, {
-        name,
+      const opened = await openAssemblyTrackedRef.current({
+        folder: name,
+        branch: branchName,
         retry: () => { void handleSwitchBranch(branchName); },
         load: async ({ progress, signal }) => {
           refreshGenRef.current += 1;
@@ -4626,7 +4729,7 @@ const App = () => {
           await store.ready();
           const loaded = await switchVaultBranch(
             gitAdapterRef.current, vault.repo, name, branchName, {
-              onProgress: (update) => progress({ ...update, name: update.name || name }),
+              onProgress: (update) => progress(update?.name ? update : { ...update, name: undefined }),
               pathIndex: store.pathIndexFor(vault.repo),
               openAssembly: openNamedVaultAssembly,
             },
@@ -7024,8 +7127,9 @@ const App = () => {
   const handleOpenV2VaultAssembly = async (assemblyId, adapter = null) => {
     const id = typeof assemblyId === 'string' ? assemblyId.trim() : '';
     try {
-      await runTrackedAssemblyOpen(assemblyOpenCtrlRef.current, {
-        name: id || 'assembly',
+      await openAssemblyTrackedRef.current({
+        id,
+        adapter,
         retry: () => { void handleOpenV2VaultAssembly(id); },
         load: async ({ progress, signal }) => {
           refreshGenRef.current += 1;
@@ -7041,6 +7145,10 @@ const App = () => {
             headSha: tip,
           });
           if (!signal()) return;
+          progress({
+            name: opened.doc?.name,
+            total: opened.doc?.parts?.length || 0,
+          });
           const adopted = await adoptVaultOpening(opened, vault);
           if (!signal()) return;
           scheduleLastCommitFromApp({

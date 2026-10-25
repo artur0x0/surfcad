@@ -13,13 +13,21 @@ import { findOrCreateVault } from '../../src/utils/git/vault.js';
 import { assemblyFilePath, assemblyPartPath } from '../../src/utils/git/vaultLayout.js';
 import { stringifySurfJson } from '../../src/utils/git/surfJson.js';
 import { fileWrite } from '../../src/utils/git/githubAdapterInterface.js';
+import { assemblyIdPath } from '../../src/utils/git/idPaths.js';
 import {
   ASSEMBLY_OPEN_SHOW_MS,
   ASSEMBLY_OPEN_SAFETY_MS,
+  UNTITLED_ASSEMBLY_NAME,
   assemblyOpenLabel,
   createAssemblyOpenController,
+  lookupAssemblyOpenName,
+  readVaultAssemblySurf,
+  resolveAssemblyOpenName,
   runTrackedAssemblyOpen,
 } from '../../src/utils/assemblyOpenOverlay.js';
+
+const SURF_ID = '2026-10-22-02-44-00-0818-65b7';
+const OTHER_ID = '2026-10-01-00-00-00-0001-aaaa';
 
 let failed = 0;
 let passed = 0;
@@ -79,9 +87,51 @@ console.log('labels');
   ok('opening line names the assembly', gear.label === 'Opening Gearbox…');
   ok('part counter', gear.detail === 'part 3 of 7');
   ok('no counter before the first part', assemblyOpenLabel('Gearbox', { index: 0, total: 7 }).detail === '');
-  ok('blank name falls back', assemblyOpenLabel('  ', {}).label === 'Opening assembly…');
+  ok('blank name falls back', assemblyOpenLabel('  ', {}).label === `Opening ${UNTITLED_ASSEMBLY_NAME}…`);
+  ok('raw id is never the label', assemblyOpenLabel(SURF_ID, { index: 7, total: 7 }).label === `Opening ${UNTITLED_ASSEMBLY_NAME}…`
+    && !assemblyOpenLabel(SURF_ID, { index: 7, total: 7 }).label.includes(SURF_ID)
+    && assemblyOpenLabel(SURF_ID, { index: 7, total: 7 }).detail === 'part 7 of 7');
   ok('show delay is 150ms', ASSEMBLY_OPEN_SHOW_MS === 150);
   ok('safety timeout is finite', ASSEMBLY_OPEN_SAFETY_MS >= 30000);
+}
+
+console.log('\nname comes from the assembly being opened');
+{
+  const surf = JSON.stringify({ id: SURF_ID, name: 'Road Bike' });
+  const previous = { id: OTHER_ID, name: 'Bike' };
+  ok('surf.json name wins over the assembly already open',
+    resolveAssemblyOpenName({ id: SURF_ID, surf, doc: previous, name: previous.name }) === 'Road Bike');
+  ok('store copy is used when the file is not passed separately',
+    resolveAssemblyOpenName({ id: SURF_ID, storedSurf: surf, doc: previous }) === 'Road Bike');
+  ok('a different assembly is ignored',
+    resolveAssemblyOpenName({ id: SURF_ID, doc: previous, name: previous.name }) === UNTITLED_ASSEMBLY_NAME);
+  ok('matching document is the store name',
+    resolveAssemblyOpenName({ doc: { id: SURF_ID, name: 'Road Bike' } }) === 'Road Bike');
+  ok('blank surf name is Untitled assembly',
+    resolveAssemblyOpenName({ id: SURF_ID, surf: { id: SURF_ID, name: '   ' }, name: 'Bike' }) === UNTITLED_ASSEMBLY_NAME);
+  ok('id passed as the name is Untitled assembly',
+    resolveAssemblyOpenName({ id: SURF_ID, name: SURF_ID }) === UNTITLED_ASSEMBLY_NAME
+    && resolveAssemblyOpenName(SURF_ID) === UNTITLED_ASSEMBLY_NAME);
+  const adapter = {
+    async readFile(_repo, path) {
+      if (path === assemblyIdPath(SURF_ID)) return { content: surf };
+      return null;
+    },
+  };
+  const fromFile = await readVaultAssemblySurf(adapter, 'artur/vault', {
+    id: SURF_ID,
+    branch: 'main',
+    storedSurf: JSON.stringify({ id: SURF_ID, name: 'Stale' }),
+  });
+  ok('vault read uses the file being opened',
+    await lookupAssemblyOpenName({ id: SURF_ID, surf: fromFile, doc: previous }) === 'Road Bike');
+  const fromStore = await readVaultAssemblySurf(adapter, 'artur/vault', {
+    id: OTHER_ID,
+    branch: 'feature',
+    storedSurf: JSON.stringify({ id: OTHER_ID, name: 'From store' }),
+  });
+  ok('missing file falls back to that assembly\'s store copy',
+    resolveAssemblyOpenName({ id: OTHER_ID, surf: fromStore, doc: previous }) === 'From store');
 }
 
 console.log('\nfast open does not flash');
@@ -312,7 +362,57 @@ console.log('\nforced failure after the spinner is up');
   ok('failure toast offers Retry', failure?.message === 'Could not open Gearbox' && failure.retry() === 'retry');
 }
 
-console.log('\nmarkup is centered and does not block toasts');
+console.log('\nan id progress tick cannot replace the resolved name');
+{
+  const clock = fakeClock();
+  let ui = null;
+  const ctrl = controller(clock, { onChange: (next) => { ui = next; } });
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const pending = runTrackedAssemblyOpen(ctrl, {
+    name: 'Road Bike',
+    load: async ({ progress }) => {
+      progress({ name: SURF_ID, index: 7, total: 7 });
+      await gate;
+    },
+  });
+  // begin() awaits the test hooks before load, so the id tick lands on the
+  // next turn. Advance only after that tick has updated the snapshot.
+  await Promise.resolve();
+  clock.advance(150);
+  ok('id tick keeps Road Bike and the part counter', ui?.name === 'Road Bike'
+    && assemblyOpenLabel(ui.name, ui).label === 'Opening Road Bike…'
+    && assemblyOpenLabel(ui.name, ui).detail === 'part 7 of 7'
+    && !assemblyOpenLabel(ui.name, ui).label.includes(SURF_ID));
+  release();
+  await pending;
+}
+
+console.log('\na file read may replace the name; an id tick may not');
+{
+  const clock = fakeClock();
+  let ui = null;
+  const ctrl = controller(clock, { onChange: (next) => { ui = next; } });
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const pending = runTrackedAssemblyOpen(ctrl, {
+    name: 'Road Bike',
+    load: async ({ progress }) => {
+      progress({ name: '', authoritative: true, index: 1, total: 4 });
+      await gate;
+    },
+  });
+  await Promise.resolve();
+  clock.advance(150);
+  ok('authoritative blank file is Untitled assembly', ui?.name === UNTITLED_ASSEMBLY_NAME
+    && assemblyOpenLabel(ui.name, ui).label === `Opening ${UNTITLED_ASSEMBLY_NAME}…`
+    && assemblyOpenLabel(ui.name, ui).detail === 'part 1 of 4'
+    && !assemblyOpenLabel(ui.name, ui).label.includes(SURF_ID));
+  release();
+  await pending;
+}
+
+console.log('\nmarkup is a blank ground and does not block toasts');
 {
   const spinner = readFileSync(new URL('../../src/components/AssemblyOpenSpinner.jsx', import.meta.url), 'utf8');
   const css = readFileSync(new URL('../../src/index.css', import.meta.url), 'utf8');
@@ -320,30 +420,68 @@ console.log('\nmarkup is centered and does not block toasts');
   ok('overlay fills and centers', /absolute inset-0/.test(spinner)
     && /flex items-center justify-center/.test(spinner)
     && /data-assembly-open-spinner/.test(spinner));
+  ok('opaque viewport ground, no preview image', /surface-dark/.test(spinner)
+    && /text-on-dark/.test(spinner)
+    && /text-muted-on-dark/.test(spinner)
+    && /font-ui/.test(spinner)
+    && !/surface-scrim/.test(spinner)
+    && !/<img\b/.test(spinner)
+    && !/backdrop/.test(spinner)
+    && !/text-white|text-gray-|border-white|bg-\[#/.test(spinner));
   ok('clicks pass through under the toasts', /pointer-events-none/.test(spinner)
     && /z-\[45\]/.test(spinner)
     && /z-50/.test(spinner)
     && /pointer-events-auto/.test(spinner));
   ok('reuses the border spinner', /animate-spin/.test(spinner)
-    && /border-b-2 border-white/.test(spinner)
-    && /motion-reduce:animate-none/.test(spinner));
+    && /assembly-open-ring/.test(spinner)
+    && /motion-reduce:animate-none/.test(spinner)
+    && /\.assembly-open-ring[\s\S]*border-bottom-color:\s*rgb\(var\(--chrome-text\)\)/.test(css));
   ok('label and part counter hooks', /data-assembly-open-label/.test(spinner)
-    && /data-assembly-open-progress/.test(spinner));
+    && /data-assembly-open-progress/.test(spinner)
+    && /resolveAssemblyOpenName\(/.test(spinner));
   ok('toast has Retry', /data-assembly-open-toast/.test(spinner)
     && /data-assembly-open-retry/.test(spinner)
     && />\s*Retry\s*</.test(spinner));
   ok('reduced motion stops the ring', /prefers-reduced-motion:\s*reduce/.test(css)
     && /\[data-assembly-open-ring\]/.test(css)
     && /animation:\s*none/.test(css));
-  ok('open dialog, folder load, branch switch, and last-assembly hydrate',
-    /handleOpenVaultAssembly[\s\S]*?runTrackedAssemblyOpen/.test(app)
-    && /handleLoadAssembly[\s\S]*?runTrackedAssemblyOpen/.test(app)
-    && /handleSwitchBranch[\s\S]*?runTrackedAssemblyOpen/.test(app)
-    && /runTrackedAssemblyOpen\(assemblyOpenCtrlRef\.current/.test(app)
+  const openerStart = app.indexOf('const openAssemblyTracked = async');
+  const openerEnd = app.indexOf('openAssemblyTrackedRef.current = openAssemblyTracked');
+  const opener = openerStart >= 0 ? app.slice(openerStart, openerEnd) : '';
+  ok('one opener resolves the name', openerStart >= 0
+    && (app.match(/runTrackedAssemblyOpen\(/g) || []).length === 1
+    && /resolveAssemblyOpenName\(/.test(opener)
+    && /void lookupAssemblyOpenName\(/.test(opener)
+    && /readVaultAssemblySurf\(/.test(opener)
+    && /authoritative: true/.test(opener)
+    && !/assemblyRef/.test(opener));
+  const slice = (start, end) => {
+    const at = app.indexOf(start);
+    const to = app.indexOf(end, at + start.length);
+    return at >= 0 && to > at ? app.slice(at, to) : '';
+  };
+  const loadAsm = slice('const handleLoadAssembly = async', 'const handleResolvePartFile');
+  const openAsm = slice('const handleOpenVaultAssembly = async', 'openVaultAssemblyRef.current = handleOpenVaultAssembly');
+  const switchAsm = slice('const handleSwitchBranch = async', 'const handleListVaultBrowse');
+  const openV2 = slice('const handleOpenV2VaultAssembly = async', 'const flushLivePartScript');
+  ok('open dialog, file load, branch switch, and id open use it',
+    /openAssemblyTrackedRef\.current\(/.test(loadAsm)
+    && /openAssemblyTrackedRef\.current\(\{[\s\S]*?folder: name/.test(openAsm)
+    && (switchAsm.match(/openAssemblyTrackedRef\.current\(/g) || []).length === 2
+    && /id,/.test(switchAsm)
+    && /branch: branchName/.test(switchAsm)
+    && /openAssemblyTrackedRef\.current\(\{[\s\S]*?id,/.test(openV2)
+    && /agentOpenAssembly[\s\S]*?handleOpenV2VaultAssembly\(/.test(app));
+  ok('reload uses the same opener and not the raw plan name',
+    /openAssemblyTrackedRef\.current\(\{[\s\S]*?doc: plan\.doc/.test(app)
+    && /openVaultAssemblyRef\.current\(plan\.name\)/.test(app)
+    && !/name: plan\.name \|\| 'assembly'/.test(app)
+    && !/name: id \|\| 'assembly'/.test(app)
     && /Skipping stale IDB hydrate/.test(app)
     && /vault baseline already set/.test(app));
   ok('switch still adopts the opened vault', /handleSwitchBranch[\s\S]*?adoptVaultOpening\(/.test(app));
 }
 
+if (!failed) console.log('\nassembly open overlay golden: ok');
 console.log(failed ? `\n❌ FAIL (${failed} failed, ${passed} passed)` : `\n✅ PASS (${passed} passed)`);
 process.exit(failed ? 1 : 0);
