@@ -1,4 +1,5 @@
 import { rejectPartId } from '../state/identity.js';
+import { withPlacementWarning } from '../state/unjointedParts.js';
 import { positionLimitMessage, positionWithinLimit } from '../../utils/positionLimit.js';
 
 const VEC3 = Object.freeze({
@@ -54,7 +55,7 @@ export const partSetTransformCommand = Object.freeze({
       part_id: { type: 'string', description: 'Part id from parts. Not a vault path.' },
       position: {
         ...VEC3,
-        description: 'Translation [x, y, z] in mm. Omitted keeps the current translation.',
+        description: 'Translation [x, y, z] in mm. Omitted keeps the current translation. A rough block-out for a part that touches nothing; joint_create places a part that touches another. Block-out positions are rough; joints set final positions.',
       },
       rotation: {
         ...VEC3,
@@ -76,10 +77,11 @@ export const partSetTransformCommand = Object.freeze({
     return null;
   },
   async run(ctx, args) {
-    return hostCall(ctx, 'agentSetPartTransform', {
+    const hosted = await hostCall(ctx, 'agentSetPartTransform', {
       partId: args.part_id,
       position: args.position,
       rotation: args.rotation,
     });
+    return withPlacementWarning(ctx, hosted, args.part_id, true);
   },
 });

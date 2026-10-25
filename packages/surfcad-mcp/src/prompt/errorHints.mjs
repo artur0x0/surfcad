@@ -103,6 +103,10 @@ export const ERROR_HINTS = Object.freeze({
   unknown_assembly: { hint: 'Not a saved assembly id: list_assemblies {} and pass a row\'s id.' },
   no_assembly: { hint: 'No document is open: create_assembly {} or open_assembly { assembly_id } first.' },
   unknown_joint: { hint: 'The joint id is not in this assembly: joint_edit takes an id from a joint_commit result; joint_open {} starts a new one.' },
+  unjointed_part: {
+    hint: 'Place it with joint_create (one call creates the joint and solves placement). Fix a base part with type fixed first.',
+    guide: 'A part that touches or attaches to another part belongs in a joint. joint_create { type, picks } writes the joint and solves the placement in one call. Ground the base with type fixed and one whole-part pick { part_id }, then mate each touching part with two picks from list_faces (coincident, concentric, distance, and the other types). part_set_transform is only for a part that touches nothing. The warning does not block the call: the placement was written. A single-part document does not warn, and neither does the base part once it has a fixed joint. parts and status list the ids still in no joint as unjointedParts. Bodies, patterns, and insert_move inside one part are not assembly parts and do not warn.',
+  },
   no_joint_card: { hint: 'The joint card is closed: joint_open {} first, then joint_pick / joint_set_params / joint_commit.' },
   no_joint_edit: { hint: 'No joint is open for editing: joint_open {} for a new joint or joint_edit { joint_id } for an existing one.' },
   joints_unavailable: { hint: 'The joint card could not open because another card or session is open: close it (cancel_feature, sketch_cancel, sheet_exit) and call joint_create again.' },
@@ -283,6 +287,9 @@ export function withRowHints(value) {
   }
   if (isPlainObject(value.crash) && typeof value.crash.code === 'string') {
     out = { ...out, crash: withErrorHint(value.crash) };
+  }
+  if (isPlainObject(value.warning) && typeof value.warning.code === 'string') {
+    out = { ...out, warning: withErrorHint(value.warning) };
   }
   return out;
 }

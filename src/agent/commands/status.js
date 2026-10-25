@@ -1,4 +1,5 @@
 import { NO_ARGS_SCHEMA } from '../registry.js';
+import { unjointedPartsFor } from '../state/unjointedParts.js';
 
 /** Active-part CAD status (script, run state, last geometry). Resolves immediately. */
 export const statusCommand = Object.freeze({
@@ -7,6 +8,7 @@ export const statusCommand = Object.freeze({
   example: {},
   immediate: true,
   run(ctx) {
-    return { result: ctx.readStatus() };
+    const result = ctx.readStatus() || {};
+    return { result: { ...result, unjointedParts: unjointedPartsFor(ctx) } };
   },
 });

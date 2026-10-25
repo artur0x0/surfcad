@@ -17,7 +17,7 @@ import {
   INSTRUCTIONS_MAX_BYTES,
   SERVER_INSTRUCTIONS,
 } from '../src/prompt/guide.mjs';
-import { BUILD_GUIDANCE } from '../src/prompt/buildGuidance.mjs';
+import { BUILD_GUIDANCE, JOINT_PLACEMENT_GUIDANCE } from '../src/prompt/buildGuidance.mjs';
 import { CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS, promptToolDefinitions } from '../src/prompt/promptTools.mjs';
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -33,6 +33,10 @@ test('the instructions are a short quick-start that keeps the webhook line first
   assert.match(SERVER_INSTRUCTIONS, /list_faces \{ filter, page \}/);
   assert.match(SERVER_INSTRUCTIONS, /list_commands \{ group \}/);
   assert.ok(!SERVER_INSTRUCTIONS.includes(BUILD_GUIDANCE));
+  assert.match(SERVER_INSTRUCTIONS, /joint_create/);
+  assert.match(SERVER_INSTRUCTIONS, /fixed joint/);
+  assert.match(SERVER_INSTRUCTIONS, /part_set_transform only for parts that touch nothing/);
+  assert.doesNotMatch(SERVER_INSTRUCTIONS, /part_set_transform or joints/);
   for (const name of GUIDE_TOPIC_NAMES) assert.ok(SERVER_INSTRUCTIONS.includes(name), name);
   assert.ok(SERVER_INSTRUCTIONS.includes(CLOSING_REPLY_GUIDANCE), 'initialize instructions require a closing reply');
   assert.match(SERVER_INSTRUCTIONS, /failure or partial completion/);
@@ -68,6 +72,11 @@ test('the topics are the planned set, each under 1,500 words, and start carries 
     assert.ok(GUIDE_TOPICS[name].summary.length > 20, name);
   }
   assert.ok(GUIDE_TOPICS.start.text.includes(BUILD_GUIDANCE));
+  assert.ok(BUILD_GUIDANCE.includes(JOINT_PLACEMENT_GUIDANCE));
+  assert.ok(GUIDE_TOPICS.assembly.text.includes(JOINT_PLACEMENT_GUIDANCE));
+  assert.match(GUIDE_TOPICS.assembly.text, /joint_create \{ type, picks \} is the call/);
+  assert.match(GUIDE_TOPICS.assembly.text, /Joints card is the advanced path/);
+  assert.doesNotMatch(GUIDE_TOPICS.assembly.text, /part_set_transform or joints/);
   // Facts that other PRs pinned: single-use picks (#679), lean results (#680, #684), stale (#682).
   assert.match(GUIDE_TOPICS.selection.text, /no_selection/);
   assert.match(GUIDE_TOPICS.selection.text, /usedSelection/);

@@ -169,6 +169,7 @@ import {
 import { buildFeatureTree } from './agent/state/featureTree';
 import { resolveRollbackTarget, resolveStripTarget } from './agent/featureStripAgent';
 import { buildPartsState, partRunState } from './agent/state/parts';
+import { withUnjointedParts } from './agent/state/unjointedParts';
 import { reportFeatureGaps } from './utils/featureGaps.js';
 import { captureSentryException } from './utils/sentryClient.js';
 import { getAnalyticsConsent } from './utils/consent.js';
@@ -10329,8 +10330,8 @@ const App = () => {
     },
     readParts() {
       const doc = assemblyRef.current;
-      if (!doc) return buildPartsState({});
-      return buildPartsState({
+      if (!doc) return withUnjointedParts(buildPartsState({}), [], []);
+      return withUnjointedParts(buildPartsState({
         assemblyId: doc.id,
         activeId: doc.activeId,
         assemblyName: assemblyName(doc),
@@ -10348,7 +10349,11 @@ const App = () => {
             ...(run?.crash && typeof run.crash === 'object' ? { crash: run.crash } : {}),
           };
         }),
-      });
+      }), doc.parts, doc.joints);
+    },
+    readJoints() {
+      const joints = assemblyRef.current?.joints;
+      return Array.isArray(joints) ? joints : [];
     },
     readActivePartSurfId() {
       // The `@surf-id` header names the script, so for a part instance it
