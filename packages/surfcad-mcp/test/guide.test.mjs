@@ -5,6 +5,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -19,6 +20,7 @@ import {
 } from '../src/prompt/guide.mjs';
 import { BUILD_GUIDANCE, JOINT_PLACEMENT_GUIDANCE } from '../src/prompt/buildGuidance.mjs';
 import { BUILDING_STATUS_GUIDANCE, CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS, promptToolDefinitions } from '../src/prompt/promptTools.mjs';
+import { AGENT_PROMPT_STALL_MS, agentPromptStallMinutes } from '../src/prompt/promptStall.mjs';
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER_BIN = join(PKG_ROOT, 'bin/surfcad-mcp.js');
@@ -63,6 +65,16 @@ test('reply_to_user and the guide start topic require a closing reply, including
   assert.match(defs.set_status.description, /set_status is for progress and does not close the task/);
   assert.match(defs.set_status.inputSchema.properties.state.description, /does not close the task/);
   assert.ok(defs.set_status.description.includes(CLOSING_REPLY_GUIDANCE));
+  assert.equal(AGENT_PROMPT_STALL_MS, 15 * 60 * 1000);
+  const stallMinutes = agentPromptStallMinutes();
+  assert.match(defs.set_status.description, new RegExp(`${stallMinutes} minutes, while responding or building`));
+  assert.match(defs.set_status.description, /stall notice/);
+  assert.doesNotMatch(defs.set_status.description, /120 seconds/);
+  assert.doesNotMatch(defs.set_status.description, /\b5 minutes\b/);
+  const readme = readFileSync(join(PKG_ROOT, 'README.md'), 'utf8');
+  assert.match(readme, new RegExp(`${stallMinutes} minutes, while responding or building`));
+  assert.doesNotMatch(readme, /120 seconds/);
+  assert.doesNotMatch(readme, /for 5 minutes/);
   assert.ok(GUIDE_TOPICS.start.text.includes(CLOSING_REPLY_GUIDANCE));
   assert.match(GUIDE_TOPICS.start.text, /set_status is for progress and does not close the task/);
   assert.ok(GUIDE_TOPICS.start.text.includes(BUILDING_STATUS_GUIDANCE));

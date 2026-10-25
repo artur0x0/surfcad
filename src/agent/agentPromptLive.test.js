@@ -158,10 +158,10 @@ test('rate-limited ack is a friendly failed notice; queued is waiting', () => {
     text: 'Waiting for agent',
   });
   assert.equal(ackNotice({ delivery: 'webhook' }), null);
-  assert.equal(AGENT_PROMPT_STALL_MS, 5 * 60 * 1000);
+  assert.equal(AGENT_PROMPT_STALL_MS, 15 * 60 * 1000);
   assert.equal(
     agentPromptStallCopy(),
-    'No activity from the agent for 5 min — it may have stalled',
+    'No activity from the agent for 15 min — it may have stalled',
   );
 });
 

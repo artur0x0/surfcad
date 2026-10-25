@@ -280,8 +280,8 @@ test('a public webhook does not skip TLS checks even when the test switch is on'
   assert.equal(posts[0].meta.pinAddress, '8.8.8.8');
 });
 
-test('a read does not enter building; a mutating call does; a quiet 5 min stalls', async () => {
-  assert.equal(AGENT_PROMPT_STALL_MS, 5 * 60 * 1000);
+test('a read does not enter building; a mutating call does; a quiet 15 min stalls', async () => {
+  assert.equal(AGENT_PROMPT_STALL_MS, 15 * 60 * 1000);
   const time = clock();
   const { session, sent } = harness({ clock: time, rateLimitMs: 0 });
   session.noteToolCall();
@@ -348,6 +348,23 @@ test('a read does not enter building; a mutating call does; a quiet 5 min stalls
   assert.equal(sent.at(-1).state, 'idle');
 });
 
+test('responding and building stall after the same quiet window', async () => {
+  for (const [state, wire] of [['responding', 'typing'], ['building', 'working']]) {
+    const time = clock();
+    const { session, sent } = harness({ clock: time, rateLimitMs: 0 });
+    await session.acceptPrompt(prompt(1));
+    session.setStatus({ state, id: pid(1) });
+    assert.equal(sent.at(-1).state, wire, state);
+    time.advance(AGENT_PROMPT_STALL_MS - 1);
+    assert.equal(sent.some((msg) => msg.stalled === true), false, state);
+    time.advance(1);
+    const stall = sent.at(-1);
+    assert.equal(stall.stalled, true, state);
+    assert.equal(stall.state, wire, state);
+    assert.equal(stall.working, true, state);
+  }
+});
+
 test('tool calls, read_messages, set_status, and replies refresh the idle window; a held call does not stall', async () => {
   const time = clock();
   const { session, sent } = harness({ clock: time, rateLimitMs: 0 });
@@ -355,17 +372,19 @@ test('tool calls, read_messages, set_status, and replies refresh the idle window
   session.noteToolCall({ mutates: true });
   assert.equal(sent.at(-1).state, 'working');
 
-  time.advance(90_000);
+  const gap = Math.floor(AGENT_PROMPT_STALL_MS * 0.6);
+  time.advance(gap);
   session.noteToolCall({ mutates: true });
-  time.advance(90_000);
+  time.advance(gap);
   session.readMessages();
-  time.advance(90_000);
+  time.advance(gap);
   session.setStatus({ state: 'working', id: pid(1) });
-  time.advance(90_000);
+  time.advance(gap);
   session.reply({ in_reply_to: pid(1), text: 'still on it', final: false });
   assert.equal(sent.at(-1).type, PAIR_MSG.AGENT_ACTIVITY);
   assert.equal(sent.some((msg) => msg.state === 'typing'), false, 'a partial reply does not leave building');
-  time.advance(90_000);
+  time.advance(gap);
+  assert.ok(5 * gap > AGENT_PROMPT_STALL_MS);
   assert.equal(sent.some((msg) => msg.stalled === true), false, 'activity inside each window keeps working');
   assert.equal(sent.some((msg) => msg.working === false), false);
 
