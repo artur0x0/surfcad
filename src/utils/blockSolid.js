@@ -49,6 +49,22 @@ function num(v, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * First finite size among `names`. A blank or half-typed field is skipped
+ * so the next name (the palette field) still applies.
+ */
+function firstFinite(p, names, fallback) {
+  const bag = p && typeof p === 'object' ? p : {};
+  for (const name of names) {
+    if (!Object.prototype.hasOwnProperty.call(bag, name)) continue;
+    const v = bag[name];
+    if (v === '' || v === null || v === undefined || v === '-' || v === '.') continue;
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return fallback;
+}
+
 function bool(v, fallback = false) {
   if (typeof v === 'boolean') return v;
   if (v === 'true' || v === '1') return true;
@@ -99,13 +115,16 @@ export function blockSpec(id, params) {
         center: bool(p.center, true),
       };
     case 'roundedBox':
+      // width / depth / height are the cube's names. Agents pass those;
+      // sx / sy / sz stay the sheet fields. The named size wins when both
+      // are set.
       return {
         id,
         ...pose,
         combine,
-        sx: num(p.sx, 50),
-        sy: num(p.sy, 30),
-        sz: num(p.sz, 20),
+        sx: firstFinite(p, ['width', 'sx'], 50),
+        sy: firstFinite(p, ['depth', 'sy'], 30),
+        sz: firstFinite(p, ['height', 'sz'], 20),
         edgeRadius: num(p.edgeRadius, 4),
         segments: Math.max(1, Math.round(num(p.segments, 16))),
       };

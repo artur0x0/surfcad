@@ -96,7 +96,7 @@ A reference matches a part by surf id when that id is known. A missing or unknow
 
 The second part is a legacy row: no `id`. The third part is a link to another assembly's folder. `copiedFrom` is set when this row was made by Copy. `version` stays `1`.
 
-`colors` is optional. It is omitted when empty. Each key is a surf id of a part in this file. The same part used in two assemblies can be colored differently, because the map lives on the assembly, not on the script. Copy to this assembly mints a new id and does not copy the entry. The old key is dropped because that surf id left this document.
+`colors` is optional. It is omitted when empty. Each key is a surf id of a part in this file. The same part used in two assemblies can be colored differently, because the map lives on the assembly, not on the script. Copy to this assembly mints a new id and does not copy the entry. The old key is dropped because that surf id left this document. An instance row with no entry is drawn with the definition's entry. An entry on the instance replaces that paint for that row.
 
 ```json
 "colors": {
@@ -161,7 +161,7 @@ The second part is a legacy row: no `id`. The third part is a link to another as
 | `parts[].placement` | no | `{ t: [x,y,z], q: [x,y,z,w] }`. `q` is a unit quaternion within 1e-3. Written when the part is rotated or a joint names it. |
 | `parts[].sheetMetal` | no | `{ sku, name?, thicknessIn?, gauge? }`. `sku` is required when the object is present. |
 | `parts[].copiedFrom` | no | Surf id this row was copied from. |
-| `parts[].instanceOf` | no | Surf id of the part this row places again (v2 files). Makes the row an instance: same script, its own `id`, pose, visibility, order, name, joints and colors. Never the row's own id, never another instance row's id. Need not match a row in the file. |
+| `parts[].instanceOf` | no | Surf id of the part this row places again (v2 files). Makes the row an instance: same script, its own `id`, pose, visibility, order, name and joints. Paint on the definition is drawn here unless this row has its own `colors` entry, which replaces it. Never the row's own id, never another instance row's id. Need not match a row in the file. |
 | `groups` | no | Omitted on old files. No key means no groups. |
 | `groups[].id` | when grouped | Surf-id shape. A group id, not a part id. |
 | `groups[].name` | when grouped | Non-empty label. Starts as the source assembly name. Rename changes only this. |
@@ -189,7 +189,7 @@ On load, `pruneDanglingGroupPartIds` drops part ids that are not in `parts`, and
 
 A part placed more than once in one assembly is one script and several rows. The first row is the **primary**: its `id` is the part id and the script is `parts/<id>.js`. Every further placement is an **instance row**: a freshly minted `id` of its own and `instanceOf` set to the part id. In code, `partDefinitionId(row)` is `instanceOf` when present, else `id`.
 
-What belongs to the row (the placement): `id`, `name`, `visible`, `order`, `position` / `placement`, and everything keyed by a row id (`joints[].a.part`, `colors` keys, `groups[].partIds`, `activeId`, agent `part_id`). What belongs to the definition (the script): the `.js` and `.mesh` files, the `// @surf-id` and `// @name` header, the run and mesh in the app, thumbnails and per-part history.
+What belongs to the row (the placement): `id`, `name`, `visible`, `order`, `position` / `placement`, and everything keyed by a row id (`joints[].a.part`, `colors` keys, `groups[].partIds`, `activeId`, agent `part_id`). What belongs to the definition (the script): the `.js` and `.mesh` files, the `// @surf-id` and `// @name` header, the run and mesh in the app, thumbnails and per-part history. Paint stored on the definition is drawn on every instance that has no `colors` entry of its own. An entry keyed by the instance row replaces the definition's paint for that row (the whole entry: part color and face colors together). There is no stored "unpainted" flag, so clearing an instance that only inherits leaves the definition's paint in place.
 
 ```json
 "parts": [

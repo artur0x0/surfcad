@@ -104,6 +104,30 @@ export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
       description: `${USE_SELECTION_BY_HELPER[item.id]}.${USE_SELECTION_NOTE}`,
     };
   }
+  if (item?.id === 'roundedBox') {
+    properties.width = {
+      type: 'number',
+      minimum: 0.1,
+      description: 'X size in mm. Same axis as sx; width wins when both are set.',
+    };
+    properties.depth = {
+      type: 'number',
+      minimum: 0.1,
+      description: 'Y size in mm. Same axis as sy; depth wins when both are set.',
+    };
+    properties.height = {
+      type: 'number',
+      minimum: 0.1,
+      description: 'Z size in mm. Same axis as sz; height wins when both are set.',
+    };
+  }
+  if (item?.id === 'hole' || item?.id === 'tapDrillHole') {
+    properties.depth = {
+      type: 'number',
+      minimum: 0.1,
+      description: 'Blind depth in mm, into the part from the face. Omit for a through hole, which is the default.',
+    };
+  }
   for (const param of item?.params || []) {
     if (param.type === 'number') {
       properties[param.name] = { type: 'number' };
@@ -168,6 +192,56 @@ export function exampleArgsForHelper(item) {
   return example;
 }
 
+/** Top-level arg wins over the same key inside params. */
+function readArg(args, key) {
+  if (args && Object.prototype.hasOwnProperty.call(args, key) && args[key] !== undefined) {
+    return args[key];
+  }
+  const bag = args?.params;
+  if (bag && typeof bag === 'object' && !Array.isArray(bag)
+    && Object.prototype.hasOwnProperty.call(bag, key) && bag[key] !== undefined) {
+    return bag[key];
+  }
+  return undefined;
+}
+
+/**
+ * width / depth / height are not sheet fields. Copy them onto sx / sy / sz
+ * so coerce does not drop them before the rounded box is built.
+ */
+function applyRoundedBoxSizeAliases(item, args, merged) {
+  if (item?.id !== 'roundedBox') return;
+  const width = readArg(args, 'width');
+  const depth = readArg(args, 'depth');
+  const height = readArg(args, 'height');
+  if (width !== undefined) {
+    merged.sx = width;
+    merged.width = width;
+  }
+  if (depth !== undefined) {
+    merged.sy = depth;
+    merged.depth = depth;
+  }
+  if (height !== undefined) {
+    merged.sz = height;
+    merged.height = height;
+  }
+}
+
+/**
+ * A depth with no through flag is a blind hole. The sheet sends through
+ * explicitly, so this only changes the agent call.
+ */
+function applyBlindHoleDepth(item, args, merged) {
+  if (item?.id !== 'hole' && item?.id !== 'tapDrillHole') return;
+  const depth = readArg(args, 'depth');
+  if (depth === undefined || depth === null || depth === '') return;
+  merged.depth = depth;
+  const through = readArg(args, 'through');
+  if (through === undefined) merged.through = false;
+  else merged.through = through;
+}
+
 /**
  * Merge explicit args with palette defaults. Strips invoke_helper-only keys.
  */
@@ -188,6 +262,8 @@ export function coerceHelperParams(item, args) {
   for (const [key, value] of Object.entries(bag)) {
     if (names.has(key)) merged[key] = value;
   }
+  applyRoundedBoxSizeAliases(item, args, merged);
+  applyBlindHoleDepth(item, args, merged);
   return merged;
 }
 
@@ -287,6 +363,22 @@ export function validateHelperParams(item, params) {
           message: `${label} ${fieldName(param)} must be one of: ${allowed.join(', ')}.`,
         };
       }
+    }
+  }
+  if ((item?.id === 'hole' || item?.id === 'tapDrillHole')
+    && params && params.depth != null && params.depth !== '') {
+    const n = Number(params.depth);
+    if (!Number.isFinite(n)) {
+      return { code: 'bad_args', message: `${label} Depth (depth) must be a finite number.` };
+    }
+    if (n < 0.1) {
+      return { code: 'bad_args', message: `${label} Depth (depth) is ${n}, below the minimum 0.1.` };
+    }
+    if (n > POSITION_LIMIT_MM) {
+      return {
+        code: 'bad_args',
+        message: `${label} Depth (depth) is ${n}, beyond the ±${POSITION_LIMIT_MM} mm limit.`,
+      };
     }
   }
   const polar = item?.id === 'polarArray' || (item?.id === 'array3D' && params?.arrayType === 'polar');

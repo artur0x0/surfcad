@@ -2870,17 +2870,35 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "width": {
+            "type": "number",
+            "minimum": 0.1,
+            "description": "X size in mm. Same axis as sx; width wins when both are set."
+          },
+          "depth": {
+            "type": "number",
+            "minimum": 0.1,
+            "description": "Y size in mm. Same axis as sy; depth wins when both are set."
+          },
+          "height": {
+            "type": "number",
+            "minimum": 0.1,
+            "description": "Z size in mm. Same axis as sz; height wins when both are set."
+          },
           "sx": {
             "type": "number",
-            "minimum": 0.1
+            "minimum": 0.1,
+            "description": "Size along X in mm. width is the same axis and wins when both are set."
           },
           "sy": {
             "type": "number",
-            "minimum": 0.1
+            "minimum": 0.1,
+            "description": "Size along Y in mm. depth is the same axis and wins when both are set."
           },
           "sz": {
             "type": "number",
-            "minimum": 0.1
+            "minimum": 0.1,
+            "description": "Size along Z in mm. height is the same axis and wins when both are set."
           },
           "edgeRadius": {
             "type": "number",
@@ -5056,6 +5074,11 @@
             "type": "boolean",
             "description": "When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face. A named pick (select_faces { names }, or a click on a face a helper built) is resolved by name in the script (facesNamed for a face, edgesOf for the edges around it) and is found again after every rebuild, so it can be used for several inserts. A pick with no name clears with the rebuild, and use_selection: true with nothing selected is refused with no_selection."
           },
+          "depth": {
+            "type": "number",
+            "minimum": 0.1,
+            "description": "Blind depth in mm, into the part from the face. Omit for a through hole, which is the default."
+          },
           "body": {
             "type": "string",
             "description": "Part script binding name"
@@ -5829,6 +5852,11 @@
           "use_selection": {
             "type": "boolean",
             "description": "When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face. A named pick (select_faces { names }, or a click on a face a helper built) is resolved by name in the script (facesNamed for a face, edgesOf for the edges around it) and is found again after every rebuild, so it can be used for several inserts. A pick with no name clears with the rebuild, and use_selection: true with nothing selected is refused with no_selection."
+          },
+          "depth": {
+            "type": "number",
+            "minimum": 0.1,
+            "description": "Blind depth in mm, into the part from the face. Omit for a through hole, which is the default."
           },
           "body": {
             "type": "string",

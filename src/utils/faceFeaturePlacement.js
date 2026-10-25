@@ -739,6 +739,24 @@ export function emitFaceWorkplaneLines(body, face, names, allocateUniqueName) {
 }
 
 /**
+ * Through-all unless the caller asked for a blind hole.
+ * `through: false` is the sheet checkbox. A numeric `depth` with no through
+ * flag is also blind, so insert_hole / insert_tap_drill_hole can pass depth
+ * alone. `through: true` stays through-all even when a depth default is
+ * sitting on the sheet.
+ */
+export function holeReachParams(params) {
+  const p = params && typeof params === 'object' ? params : {};
+  const throughOff = p.through === false || p.through === 'false' || p.through === 0;
+  if (throughOff) return { ...p, through: false };
+  if (p.through === true || p.through === 'true' || p.through === 1) return { ...p, through: true };
+  const depth = p.depth;
+  const depthSet = depth != null && depth !== '' && Number.isFinite(Number(depth));
+  if (depthSet) return { ...p, through: false };
+  return { ...p, through: true };
+}
+
+/**
  * Emit span expression: through → holeSpan; else numeric depth.
  */
 export function emitSpanExpr(body, frVar, params, names, allocateUniqueName, numFn) {

@@ -53,6 +53,7 @@ import {
   emitSelectedEdgeLiteralLines,
   emitFilletBoundaryLines,
   emitSpanExpr,
+  holeReachParams,
   estimateCylinderAxis,
   roundFaceNum,
   resolveHoleUV,
@@ -1380,6 +1381,10 @@ function emitUnifiedHole(lines, body, p, names, faceCtx) {
   const wp = resolveFeatureWorkplane(body, p, names, faceCtx);
   lines.push(...wp.lines);
   const fr = wp.frVar;
+  // Depth applies on the default top face too. The old path replaced the
+  // caller's params with { through: true } whenever no face was picked, so
+  // a blind depth never reached the cutter.
+  const reach = holeReachParams(p);
   const usePattern = faceCtx && faceCtx.type === 'planar' && bool(p.usePattern, false);
   if (usePattern) {
     const n = Math.max(1, Math.round(num(p.n, 3)));
@@ -1388,13 +1393,21 @@ function emitUnifiedHole(lines, body, p, names, faceCtx) {
     const sv = num(p.spacingV, 14);
     const cdVar = allocateUniqueName(names, '_cd');
     lines.push(`const ${cdVar} = ${diaExpr};`);
-    lines.push(
-      `${body} = holePattern(${body}, ${fr}, { n: ${n}, m: ${m}, spacingU: ${su}, spacingV: ${sv}, dia: ${cdVar} });`,
-    );
+    if (reach.through === false) {
+      const span = emitSpanExpr(body, fr, reach, names, allocateUniqueName, num);
+      lines.push(...span.lines);
+      lines.push(
+        `${body} = holePattern(${body}, ${fr}, { n: ${n}, m: ${m}, spacingU: ${su}, spacingV: ${sv}, dia: ${cdVar}, span: ${span.spanExpr} });`,
+      );
+    } else {
+      lines.push(
+        `${body} = holePattern(${body}, ${fr}, { n: ${n}, m: ${m}, spacingU: ${su}, spacingV: ${sv}, dia: ${cdVar} });`,
+      );
+    }
     return;
   }
   const { u, v } = faceCtx ? uvForFace(p, faceCtx) : { u: num(p.u, 0), v: num(p.v, 0) };
-  const span = emitSpanExpr(body, fr, faceCtx ? p : { through: true }, names, allocateUniqueName, num);
+  const span = emitSpanExpr(body, fr, reach, names, allocateUniqueName, num);
   lines.push(...span.lines);
   const near = holeEndKind(p.nearEnd);
   const far = holeEndKind(p.farEnd);
@@ -1505,9 +1518,9 @@ export const HELPER_PALETTE_ITEMS = [
     title: 'roundedBox(size, radius, segments?)',
     bodyBase: 'rbox',
     params: [
-      { name: 'sx', type: 'number', default: 50, label: 'Size X', min: 0.1, step: 1 },
-      { name: 'sy', type: 'number', default: 30, label: 'Size Y', min: 0.1, step: 1 },
-      { name: 'sz', type: 'number', default: 20, label: 'Size Z', min: 0.1, step: 1 },
+      { name: 'sx', type: 'number', default: 50, label: 'Size X', min: 0.1, step: 1, description: 'Size along X in mm. width is the same axis and wins when both are set.' },
+      { name: 'sy', type: 'number', default: 30, label: 'Size Y', min: 0.1, step: 1, description: 'Size along Y in mm. depth is the same axis and wins when both are set.' },
+      { name: 'sz', type: 'number', default: 20, label: 'Size Z', min: 0.1, step: 1, description: 'Size along Z in mm. height is the same axis and wins when both are set.' },
       { name: 'edgeRadius', type: 'number', default: 4, label: 'Edge R', min: 0, step: 0.5 },
       { name: 'segments', type: 'number', default: 16, label: 'Segments', min: 1, step: 1 },
       ...BLOCK_POSE_PARAMS,
@@ -2162,8 +2175,12 @@ export const HELPER_PALETTE_ITEMS = [
       const wp = resolveFeatureWorkplane(body, p, names, faceCtx);
       const feat = [...wp.lines];
       const fr = wp.frVar;
-      if (faceCtx && p.through === false) {
-        const span = emitSpanExpr(body, fr, p, names, allocateUniqueName, num);
+      // Omit the span on a through hole so the default script stays
+      // tapDrillHole(..., size) and the kernel uses holeSpan. A blind
+      // depth writes the number. A face pick is not required.
+      const reach = holeReachParams(p);
+      if (reach.through === false) {
+        const span = emitSpanExpr(body, fr, reach, names, allocateUniqueName, num);
         feat.push(...span.lines);
         feat.push(`${body} = tapDrillHole(${body}, ${fr}, ${u}, ${v}, '${size}', ${span.spanExpr});`);
       } else {

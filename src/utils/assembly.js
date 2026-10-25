@@ -34,8 +34,10 @@ export function sortParts(parts) {
 /**
  * The definition a row places: `instanceOf` when the row is an instance,
  * else the row's own id. Scripts, runs, meshes, thumbnails and per-part
- * history are keyed by this; everything about the placement is keyed by
- * the row id.
+ * history are keyed by this. Placement (pose, visibility, joints, the
+ * color-map key) stays on the row id. At draw time an instance with no
+ * color entry uses the definition's paint; an entry on the instance
+ * replaces it.
  */
 export function partDefinitionId(row) {
   const ref = row?.instanceOf;
