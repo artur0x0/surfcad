@@ -87,17 +87,26 @@ export function BrandTileMark({ size = 16 }) {
 }
 
 /**
- * Header lockup: paper-tile mark + 16px Paper wordmark on transparent chrome.
- * Pointer events stay off so the puzzle target and ribbon buttons keep their hits.
+ * Header lockup: paper-tile mark + 16px Paper wordmark on transparent chrome,
+ * then a muted lowercase beta tag. Pointer events stay off so the puzzle
+ * target and ribbon buttons keep their hits, and the tag does not cover the
+ * logo button that opens About.
  */
 export function BrandHeaderMark() {
   return (
     <span
       data-brand-header=""
-      className="pointer-events-none inline-flex shrink-0 items-center gap-1"
+      className="pointer-events-none inline-flex shrink-0 flex-nowrap items-center gap-1"
     >
       <BrandTileMark size={16} />
       <BrandWordmark tone="on-dark" size={16} />
+      <span
+        data-brand-beta=""
+        aria-hidden="true"
+        className="brand-beta whitespace-nowrap font-ui text-ui-xs text-muted-on-dark"
+      >
+        beta
+      </span>
     </span>
   );
 }
