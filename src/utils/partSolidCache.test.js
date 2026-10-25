@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildSolidGeometry,
   cachedSolidGeometry,
   createSolidCache,
   pruneSolidCacheIn,
@@ -89,4 +90,24 @@ test('solidCacheStats sums over live caches', () => {
   assert.equal(after.builds - before.builds, 1);
   assert.equal(after.reuses - before.reuses, 1);
   assert.equal(after.live - before.live, 1);
+});
+
+test('buildSolidGeometry adopts a buffer the view owns and copies a partial view', () => {
+  const owned = tet();
+  const solid = buildSolidGeometry(owned);
+  assert.equal(solid.geometry.attributes.position.array, owned.vertProperties);
+  assert.equal(solid.geometry.index.array, owned.triVerts);
+
+  const shared = new ArrayBuffer(owned.vertProperties.byteLength + 16);
+  const partial = new Float32Array(shared, 0, owned.vertProperties.length);
+  partial.set(owned.vertProperties);
+  const mesh = { ...owned, vertProperties: partial };
+  const copied = buildSolidGeometry(mesh);
+  const positions = copied.geometry.attributes.position.array;
+  assert.notEqual(positions, partial);
+  assert.equal(positions.byteLength, partial.byteLength);
+  assert.equal(positions.buffer.byteLength, positions.byteLength);
+  assert.equal(positions[3], owned.vertProperties[3]);
+  solid.geometry.dispose();
+  copied.geometry.dispose();
 });

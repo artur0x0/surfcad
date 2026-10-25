@@ -53,6 +53,33 @@ export function isPlanarFin(positions, indices, t) {
   return height < FIN_HEIGHT_MM;
 }
 
+/** Same gate as isPlanarFin, without the span object. */
+function planarFinCandidate(positions, indices, t) {
+  const i0 = indices[t * 3];
+  const i1 = indices[t * 3 + 1];
+  const i2 = indices[t * 3 + 2];
+  const ax = positions[i1 * 3] - positions[i0 * 3];
+  const ay = positions[i1 * 3 + 1] - positions[i0 * 3 + 1];
+  const az = positions[i1 * 3 + 2] - positions[i0 * 3 + 2];
+  const bx = positions[i2 * 3] - positions[i0 * 3];
+  const by = positions[i2 * 3 + 1] - positions[i0 * 3 + 1];
+  const bz = positions[i2 * 3 + 2] - positions[i0 * 3 + 2];
+  const cx = ay * bz - az * by;
+  const cy = az * bx - ax * bz;
+  const cz = ax * by - ay * bx;
+  const e12x = positions[i2 * 3] - positions[i1 * 3];
+  const e12y = positions[i2 * 3 + 1] - positions[i1 * 3 + 1];
+  const e12z = positions[i2 * 3 + 2] - positions[i1 * 3 + 2];
+  const longest2 = Math.max(
+    ax * ax + ay * ay + az * az,
+    bx * bx + by * by + bz * bz,
+    e12x * e12x + e12y * e12y + e12z * e12z,
+  );
+  if (!(longest2 > FIN_MIN_EDGE_MM * FIN_MIN_EDGE_MM)) return false;
+  const area = 0.5 * Math.hypot(cx, cy, cz);
+  return (2 * area) / Math.sqrt(longest2) < FIN_HEIGHT_MM;
+}
+
 function distPointTri(px, py, pz, ax, ay, az, bx, by, bz, cx, cy, cz) {
   const abx = bx - ax;
   const aby = by - ay;
@@ -402,6 +429,14 @@ function vertexOnCover(positions, buckets, inv, vi) {
  */
 export function dropPlanarFins(positions, indices, faceIDs = null) {
   const nTri = Math.floor(indices.length / 3);
+  let anyFin = false;
+  for (let t = 0; t < nTri; t++) {
+    if (planarFinCandidate(positions, indices, t)) {
+      anyFin = true;
+      break;
+    }
+  }
+  if (!anyFin) return { indices, faceIDs, dropped: 0 };
   const spans = new Array(nTri);
   const fin = new Uint8Array(nTri);
   for (let t = 0; t < nTri; t++) {

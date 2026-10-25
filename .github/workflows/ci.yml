@@ -676,6 +676,11 @@ jobs:
             echo "face identity rebuild golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:graph-perf | tee "${RUNNER_TEMP}/graph-perf.log"
+          if ! grep -q 'graph perf golden: ok' "${RUNNER_TEMP}/graph-perf.log"; then
+            echo "graph perf golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:

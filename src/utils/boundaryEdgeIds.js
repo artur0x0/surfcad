@@ -27,6 +27,7 @@
  */
 
 import { sameLocalSegment } from './activePartOverlay.js';
+import { meshFrames } from './meshTopology.js';
 
 const PLANAR_COS = Math.cos((0.1 * Math.PI) / 180);
 const FEATURE_COS = Math.cos((2 * Math.PI) / 180);
@@ -103,14 +104,6 @@ function findOf(parent) {
  * @param {{ positions: ArrayLike<number>, indices: ArrayLike<number>, faceIDs: ArrayLike<number> }} mesh
  * @returns {{ faces: object[], edges: object[] }}
  */
-/** 26 bits per vertex index. Past that, the key falls back to a string. */
-const EDGE_PACK = 0x4000000;
-
-function packedEdgeKey(a, b) {
-  if (b >= EDGE_PACK) return `${a}-${b}`;
-  return a * EDGE_PACK + b;
-}
-
 export function indexBoundaryEdges(mesh, opts = {}) {
   const options = opts || {};
   const positions = mesh?.positions;
@@ -125,61 +118,19 @@ export function indexBoundaryEdges(mesh, opts = {}) {
     return [positions[o], positions[o + 1], positions[o + 2]];
   };
 
-  const triA = new Int32Array(numTri);
-  const triB = new Int32Array(numTri);
-  const triC = new Int32Array(numTri);
-  const triNx = new Float64Array(numTri);
-  const triNy = new Float64Array(numTri);
-  const triNz = new Float64Array(numTri);
-  const triArea = new Float64Array(numTri);
-  const triCx = new Float64Array(numTri);
-  const triCy = new Float64Array(numTri);
-  const triCz = new Float64Array(numTri);
-  const triV0x = new Float64Array(numTri);
-  const triV0y = new Float64Array(numTri);
-  const triV0z = new Float64Array(numTri);
+  const frames = meshFrames(positions, indices, 3);
+  const triNx = frames.bnx;
+  const triNy = frames.bny;
+  const triNz = frames.bnz;
+  const triArea = frames.area;
+  const triCx = frames.cx;
+  const triCy = frames.cy;
+  const triCz = frames.cz;
+  const nxOf = (t) => triNx[t];
+  const nyOf = (t) => triNy[t];
+  const nzOf = (t) => triNz[t];
   const triRaw = new Float64Array(numTri);
   for (let t = 0; t < numTri; t++) {
-    const a = indices[t * 3];
-    const b = indices[t * 3 + 1];
-    const c = indices[t * 3 + 2];
-    triA[t] = a;
-    triB[t] = b;
-    triC[t] = c;
-    const oa = a * 3;
-    const ob = b * 3;
-    const oc = c * 3;
-    const v0x = positions[oa];
-    const v0y = positions[oa + 1];
-    const v0z = positions[oa + 2];
-    const e1x = positions[ob] - v0x;
-    const e1y = positions[ob + 1] - v0y;
-    const e1z = positions[ob + 2] - v0z;
-    const e2x = positions[oc] - v0x;
-    const e2y = positions[oc + 1] - v0y;
-    const e2z = positions[oc + 2] - v0z;
-    const crx = e1y * e2z - e1z * e2y;
-    const cry = e1z * e2x - e1x * e2z;
-    const crz = e1x * e2y - e1y * e2x;
-    const crLen = Math.hypot(crx, cry, crz);
-    const area = 0.5 * crLen;
-    triArea[t] = area;
-    if (area > 1e-18) {
-      const inv = 1 / (crLen || 1);
-      triNx[t] = crx * inv;
-      triNy[t] = cry * inv;
-      triNz[t] = crz * inv;
-    } else {
-      triNx[t] = 0;
-      triNy[t] = 0;
-      triNz[t] = 1;
-    }
-    triV0x[t] = v0x;
-    triV0y[t] = v0y;
-    triV0z[t] = v0z;
-    triCx[t] = (v0x + positions[ob] + positions[oc]) / 3;
-    triCy[t] = (v0y + positions[ob + 1] + positions[oc + 1]) / 3;
-    triCz[t] = (v0z + positions[ob + 2] + positions[oc + 2]) / 3;
     const raw = Number(faceIDs[t]);
     triRaw[t] = Number.isFinite(raw) ? raw : t;
   }
@@ -189,89 +140,83 @@ export function indexBoundaryEdges(mesh, opts = {}) {
   const parent = new Array(numTri);
   for (let i = 0; i < numTri; i++) parent[i] = i;
   const { find, union } = findOf(parent);
-  const edgeTris = new Map();
-  const addE = (u, w, t) => {
-    const lo = u < w ? u : w;
-    const hi = u < w ? w : u;
-    const key = packedEdgeKey(lo, hi);
-    let list = edgeTris.get(key);
-    if (!list) {
-      list = [];
-      edgeTris.set(key, list);
-    }
-    list.push(t);
-  };
-  for (let i = 0; i < numTri; i++) {
-    addE(triA[i], triB[i], i);
-    addE(triB[i], triC[i], i);
-    addE(triC[i], triA[i], i);
-  }
-  for (const list of edgeTris.values()) {
-    if (list.length !== 2) continue;
-    const i0 = list[0];
-    const i1 = list[1];
-    const ndp = triNx[i0] * triNx[i1] + triNy[i0] * triNy[i1] + triNz[i0] * triNz[i1];
+  const { pairN, pairTri0, pairTri1 } = frames;
+  for (let p = 0; p < pairN; p++) {
+    const i0 = pairTri0[p];
+    const i1 = pairTri1[p];
+    const n0x = nxOf(i0);
+    const n0y = nyOf(i0);
+    const n0z = nzOf(i0);
+    const ndp = n0x * nxOf(i1) + n0y * nyOf(i1) + n0z * nzOf(i1);
     if (ndp < PLANAR_COS) continue;
-    const offA = triV0x[i0] * triNx[i0] + triV0y[i0] * triNy[i0] + triV0z[i0] * triNz[i0];
-    const offB = triV0x[i1] * triNx[i0] + triV0y[i1] * triNy[i0] + triV0z[i1] * triNz[i0];
+    const v0 = indices[i0 * 3] * 3;
+    const v1 = indices[i1 * 3] * 3;
+    const offA = positions[v0] * n0x + positions[v0 + 1] * n0y + positions[v0 + 2] * n0z;
+    const offB = positions[v1] * n0x + positions[v1 + 1] * n0y + positions[v1 + 2] * n0z;
     if (Math.abs(offA - offB) > 1e-3) continue;
     union(i0, i1);
   }
 
-  const groups = new Map();
+  const faceOfTri = new Int32Array(numTri);
+  const rootFi = new Int32Array(numTri);
+  rootFi.fill(-1);
+  let faceCount = 0;
   for (let i = 0; i < numTri; i++) {
     const r = find(i);
-    let g = groups.get(r);
-    if (!g) {
-      g = [];
-      groups.set(r, g);
+    let fi = rootFi[r];
+    if (fi < 0) {
+      fi = faceCount;
+      faceCount += 1;
+      rootFi[r] = fi;
     }
-    g.push(i);
+    faceOfTri[i] = fi;
   }
-
-  const faceOfTri = new Array(numTri);
-  const faces = [];
-  for (const members of groups.values()) {
-    let localId = Infinity;
-    let run = 0;
-    let areaSum = 0;
-    let cx = 0;
-    let cy = 0;
-    let cz = 0;
-    let nsx = 0;
-    let nsy = 0;
-    let nsz = 0;
-    for (let k = 0; k < members.length; k++) {
-      const i = members[k];
-      const raw = triRaw[i];
-      if (raw < localId) {
-        localId = raw;
-        run = ordinals ? ordinals[i] : 0;
-      }
-      const area = triArea[i];
-      areaSum += area;
-      cx += triCx[i] * area;
-      cy += triCy[i] * area;
-      cz += triCz[i] * area;
-      nsx += triNx[i] * area;
-      nsy += triNy[i] * area;
-      nsz += triNz[i] * area;
+  const areaSum = new Float64Array(faceCount);
+  const cxS = new Float64Array(faceCount);
+  const cyS = new Float64Array(faceCount);
+  const czS = new Float64Array(faceCount);
+  const nsx = new Float64Array(faceCount);
+  const nsy = new Float64Array(faceCount);
+  const nsz = new Float64Array(faceCount);
+  const minRaw = new Float64Array(faceCount);
+  minRaw.fill(Infinity);
+  const runOf = new Int32Array(faceCount);
+  const firstTri = new Int32Array(faceCount);
+  firstTri.fill(-1);
+  for (let i = 0; i < numTri; i++) {
+    const fi = faceOfTri[i];
+    if (firstTri[fi] < 0) firstTri[fi] = i;
+    const raw = triRaw[i];
+    if (raw < minRaw[fi]) {
+      minRaw[fi] = raw;
+      runOf[fi] = ordinals ? ordinals[i] : 0;
     }
-    const nLen = Math.hypot(nsx, nsy, nsz) || 1;
+    const area = triArea[i];
+    areaSum[fi] += area;
+    cxS[fi] += triCx[i] * area;
+    cyS[fi] += triCy[i] * area;
+    czS[fi] += triCz[i] * area;
+    nsx[fi] += nxOf(i) * area;
+    nsy[fi] += nyOf(i) * area;
+    nsz[fi] += nzOf(i) * area;
+  }
+  const faces = new Array(faceCount);
+  for (let fi = 0; fi < faceCount; fi++) {
+    const nLen = Math.hypot(nsx[fi], nsy[fi], nsz[fi]) || 1;
+    let localId = minRaw[fi];
     if (!Number.isFinite(localId)) localId = 0;
-    const face = {
+    const area = areaSum[fi];
+    const seed = firstTri[fi];
+    faces[fi] = {
       id: ordinals && localId < CONTOUR_FACE_RUN_STRIDE
-        ? run * CONTOUR_FACE_RUN_STRIDE + localId
+        ? runOf[fi] * CONTOUR_FACE_RUN_STRIDE + localId
         : localId,
-      area: areaSum,
-      center: areaSum > 1e-18
-        ? [cx / areaSum, cy / areaSum, cz / areaSum]
-        : [triCx[members[0]], triCy[members[0]], triCz[members[0]]],
-      normal: [nsx / nLen, nsy / nLen, nsz / nLen],
+      area,
+      center: area > 1e-18
+        ? [cxS[fi] / area, cyS[fi] / area, czS[fi] / area]
+        : [triCx[seed], triCy[seed], triCz[seed]],
+      normal: [nsx[fi] / nLen, nsy[fi] / nLen, nsz[fi] / nLen],
     };
-    const fi = faces.length;
-    faces.push(face);
-    for (let k = 0; k < members.length; k++) faceOfTri[members[k]] = fi;
   }
 
   let maxAreaPre = 0;
@@ -282,14 +227,14 @@ export function indexBoundaryEdges(mesh, opts = {}) {
   const smallLimitPre = BOUNDARY_SMALL_FACE_FRAC * maxAreaPre;
   const cosBoundary = Math.cos((BOUNDARY_SHALLOW_DEG * Math.PI) / 180);
   const segments = [];
-  for (const [key, list] of edgeTris) {
-    if (list.length !== 2) continue;
-    const i0 = list[0];
-    const i1 = list[1];
+  const { pairLo, pairHi } = frames;
+  for (let p = 0; p < pairN; p++) {
+    const i0 = pairTri0[p];
+    const i1 = pairTri1[p];
     const f0 = faceOfTri[i0];
     const f1 = faceOfTri[i1];
     if (f0 === f1) continue;
-    const tdot = triNx[i0] * triNx[i1] + triNy[i0] * triNy[i1] + triNz[i0] * triNz[i1];
+    const tdot = nxOf(i0) * nxOf(i1) + nyOf(i0) * nyOf(i1) + nzOf(i0) * nzOf(i1);
     if (tdot > FEATURE_COS) continue;
     const nA = faces[f0].normal;
     const nB = faces[f1].normal;
@@ -299,8 +244,8 @@ export function indexBoundaryEdges(mesh, opts = {}) {
     const minFaceArea = Math.min(faces[f0].area || 0, faces[f1].area || 0);
     if (!keepThin && maxAreaPre > 0 && minFaceArea < smallLimitPre) continue;
     const dihedralDeg = Math.acos(nd) * 180 / Math.PI;
-    const ia = typeof key === 'number' ? (key / EDGE_PACK) | 0 : Number(key.slice(0, key.indexOf('-')));
-    const ib = typeof key === 'number' ? key % EDGE_PACK : Number(key.slice(key.indexOf('-') + 1));
+    const ia = pairLo[p];
+    const ib = pairHi[p];
     const va = posAt(ia);
     const vb = posAt(ib);
     const L = Math.hypot(vb[0] - va[0], vb[1] - va[1], vb[2] - va[2]);

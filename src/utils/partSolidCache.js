@@ -53,13 +53,26 @@ export function triangleSources(meshData, keep, nKept) {
  * hand the geometry over instead of rebuilding it.
  * @returns {{ geometry: BufferGeometry, faceIDs: ArrayLike<number>|null }}
  */
+function adoptTyped(src, Ctor) {
+  // A transferred buffer is already the array the worker posted. Adopt it
+  // only when the view owns that buffer outright, the same rule as
+  // meshTransferList. A view into a larger buffer is copied so the
+  // attribute does not alias the rest of it.
+  if (
+    src instanceof Ctor
+    && src.byteOffset === 0
+    && src.byteLength === src.buffer.byteLength
+  ) return src;
+  return new Ctor(src);
+}
+
 export function buildSolidGeometry(meshData) {
   const geometry = new BufferGeometry();
   const np = meshData.numProp || 3;
   const src = meshData.vertProperties;
   let vertProperties;
   if (np === 3) {
-    vertProperties = new Float32Array(src);
+    vertProperties = adoptTyped(src, Float32Array);
   } else {
     const nVert = Math.floor(src.length / np);
     vertProperties = new Float32Array(nVert * 3);
@@ -69,7 +82,7 @@ export function buildSolidGeometry(meshData) {
       vertProperties[i * 3 + 2] = src[i * np + 2];
     }
   }
-  const srcIndex = new Uint32Array(meshData.triVerts);
+  const srcIndex = adoptTyped(meshData.triVerts, Uint32Array);
   const srcFaceID = meshData.faceID && meshData.faceID.length > 0 ? meshData.faceID : null;
   const fin = dropPlanarFins(vertProperties, srcIndex, srcFaceID);
   const triVerts = fin.indices;
