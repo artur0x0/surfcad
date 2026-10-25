@@ -336,6 +336,31 @@ test('prompt frames are sent only while paired and replies unsubscribe', () => {
   assert.equal(seen[2].working, false);
 });
 
+test('a bridge command is prompt activity until the call returns', async () => {
+  let release;
+  const done = new Promise((resolve) => { release = resolve; });
+  const ctx = setup({
+    call: () => done.then(() => ({ ok: true, result: { ok: true } })),
+  });
+  const { ws } = pair(ctx);
+  const seen = [];
+  ctx.conn.subscribe((msg) => seen.push(msg));
+  ws.receive({ type: PAIR_MSG.AGENT_ACTIVITY, v: 1, id: 'p1' });
+  assert.equal(seen.at(-1).type, PAIR_MSG.AGENT_ACTIVITY);
+  assert.equal(seen.at(-1).id, 'p1');
+  ws.receive({ id: 7, command: 'insert_cube', args: { size: 10 } });
+  assert.equal(seen.at(-1).hold, true);
+  assert.equal(ws.sent.some((msg) => msg.id === 7), false);
+  release();
+  await done;
+  // handleCall's continuation, its reply, then the activity finally.
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(seen.at(-1).hold, false);
+  assert.equal(ws.sent.some((msg) => msg.id === 7 && msg.ok === true), true);
+});
+
 test('relay event marks the popup bridge as reachable', () => {
   const relays = [];
   const ctx = setup({ onRelay: (ok) => relays.push(ok) });

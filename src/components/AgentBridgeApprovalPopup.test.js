@@ -30,7 +30,7 @@ test('approval popup calls allow and deny and keeps the prompt copy', async () =
   assert.doesNotMatch(el.props.className, /w-max/);
   assert.doesNotMatch(el.props.className, /max-w-\[9rem\]/);
   const prompt = el.props.children.find((child) => child?.type === 'p');
-  assert.equal(prompt.props.children, 'Allow this agent to control SurfCAD?');
+  assert.equal(prompt.props.children, 'Allow agent to connect');
   assert.doesNotMatch(prompt.props.className, /\binline\b/);
   const [allow, deny] = buttons(el);
   assert.equal(allow.props['aria-label'], 'Allow connection');

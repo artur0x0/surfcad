@@ -157,6 +157,19 @@ export class RelaySession {
   }
 
   /**
+   * Pause the working deadline while a bridge call is in flight, then
+   * start it again when the call returns. A long tool call is activity.
+   * @param {boolean} held
+   */
+  holdAgentWork(held) {
+    try {
+      this.#prompts.holdWork(held === true);
+    } catch {
+      /* status is advisory */
+    }
+  }
+
+  /**
    * @param {object} payload
    */
   #sendToTab(payload) {

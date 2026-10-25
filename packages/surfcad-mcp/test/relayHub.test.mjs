@@ -309,6 +309,10 @@ test('agent prompt frames flow only while paired, and the wrong role cannot spoo
   assert.equal(tab.last(PAIR_MSG.AGENT_REPLY).text, 'ok');
   peer.receive({ type: PAIR_MSG.AGENT_STATUS, v: 1, working: true, id: 'p2' });
   assert.equal(tab.last(PAIR_MSG.AGENT_STATUS).working, true);
+  peer.receive({ type: PAIR_MSG.AGENT_ACTIVITY, v: 1, id: 'p2' });
+  assert.equal(tab.last(PAIR_MSG.AGENT_ACTIVITY).id, 'p2');
+  tab.receive({ type: PAIR_MSG.AGENT_ACTIVITY, v: 1, id: 'p2' });
+  assert.equal(tab.last(PAIR_MSG.ERROR).code, 'forbidden');
 
   tab.receive({ type: PAIR_MSG.AGENT_REPLY, v: 1, id: 'p2', text: 'spoof' });
   assert.equal(tab.last(PAIR_MSG.ERROR).code, 'forbidden');

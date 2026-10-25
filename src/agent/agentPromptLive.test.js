@@ -7,8 +7,9 @@ import { createAgentPrompt } from './createAgentPrompt.js';
 import { sendAgentPromptText } from './agentPromptStub.js';
 import { shouldShowAgentPrompt, readAgentPromptDemo } from './agentPromptDemo.js';
 import {
-  AGENT_PROMPT_WORKING_TIMEOUT_MS,
+  AGENT_PROMPT_STALL_MS,
   ackNotice,
+  agentPromptStallCopy,
   agentPromptContext,
   bindAgentPromptTransport,
   createLiveAgentPromptTransport,
@@ -157,7 +158,40 @@ test('rate-limited ack is a friendly failed notice; queued is waiting', () => {
     text: 'Waiting for agent',
   });
   assert.equal(ackNotice({ delivery: 'webhook' }), null);
-  assert.equal(AGENT_PROMPT_WORKING_TIMEOUT_MS, 120_000);
+  assert.equal(AGENT_PROMPT_STALL_MS, 5 * 60 * 1000);
+  assert.equal(
+    agentPromptStallCopy(),
+    'No activity from the agent for 5 min — it may have stalled',
+  );
+});
+
+test('activity frames and a stalled status reach the prompt', () => {
+  const bridge = fakeBridge();
+  const transport = createLiveAgentPromptTransport(fakePromptApi(bridge));
+  const states = [];
+  const activity = [];
+  const off = bindAgentPromptTransport(transport, {
+    onState: (event) => states.push(event),
+    onActivity: (event) => activity.push(event),
+  });
+  bridge.emit({ type: PAIR_MSG.AGENT_ACTIVITY, v: 1, id: 'p1' });
+  bridge.emit({ type: PAIR_MSG.AGENT_ACTIVITY, v: 1, hold: true });
+  bridge.emit({ type: PAIR_MSG.AGENT_ACTIVITY, v: 1, hold: false });
+  bridge.emit({ type: PAIR_MSG.AGENT_STATUS, v: 1, working: true, state: 'working', stalled: true, id: 'p1' });
+  assert.deepEqual(activity, [
+    { id: 'p1' },
+    { id: null, hold: true },
+    { id: null, hold: false },
+  ]);
+  assert.equal(states.length, 1);
+  assert.equal(states[0].mode, 'working');
+  assert.equal(states[0].stalled, true);
+  assert.equal(states[0].id, 'p1');
+  off();
+  bridge.emit({ type: PAIR_MSG.AGENT_ACTIVITY, v: 1, id: 'p1' });
+  bridge.emit({ type: PAIR_MSG.AGENT_STATUS, v: 1, working: true, state: 'working', stalled: true });
+  assert.equal(activity.length, 3);
+  assert.equal(states.length, 1);
 });
 
 test('sendAgentPromptText passes screenshot and context in the agreed shape', () => {

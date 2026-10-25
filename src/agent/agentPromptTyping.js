@@ -14,14 +14,17 @@
  * sends `state` on its status message: `working` on the first
  * model-changing tool call or an explicit set_status, `typing` on a
  * streamed (non-final) reply or an explicit set_status, `idle` on the
- * final reply, Stop, or the idle timer. A tab that only gets the legacy
+ * final reply or Stop. A tab that only gets the legacy
  * `working` boolean maps true to `working` and false to idle.
  *
- * Everything closes on the final reply, on idle, on a failed delivery, on
- * Stop, and on disconnect. Anything that arrives for a closed prompt,
- * including a late, duplicate, or out-of-order status, is ignored, so the
- * dots cannot come back next to a finished reply. `working` stays on the
- * state as a boolean (`mode === 'working'`) for the callers that read it.
+ * Everything closes on the final reply, on idle (the agent reports done),
+ * on a failed delivery, on Stop, and on disconnect. A missed activity
+ * deadline does not close: it sets `stalled` so the prompt can say the
+ * agent may have stalled while Stop stays available. Anything that arrives
+ * for a closed prompt, including a late, duplicate, or out-of-order status,
+ * is ignored, so the dots cannot come back next to a finished reply.
+ * `working` stays on the state as a boolean (`mode === 'working'`) for the
+ * callers that read it.
  */
 
 export const AGENT_MODES = Object.freeze(['idle', 'typing', 'working']);
@@ -31,10 +34,11 @@ export const TYPING_IDLE = Object.freeze({
   mode: 'idle',
   working: false,
   streaming: false,
+  stalled: false,
 });
 
 function closed() {
-  return { pendingId: null, mode: 'idle', working: false, streaming: false };
+  return { pendingId: null, mode: 'idle', working: false, streaming: false, stalled: false };
 }
 
 function withMode(cur, mode) {
@@ -42,8 +46,15 @@ function withMode(cur, mode) {
   return { ...cur, mode, working: mode === 'working' };
 }
 
+/** A live status or reply means the agent is still here, so a stall notice drops. */
+function clearStall(cur, next) {
+  if (!cur.stalled) return next;
+  if (next === cur) return { ...cur, stalled: false };
+  return { ...next, stalled: false };
+}
+
 /**
- * @param {{ pendingId: string | null, mode: 'idle' | 'typing' | 'working', working: boolean, streaming: boolean }} state
+ * @param {{ pendingId: string | null, mode: 'idle' | 'typing' | 'working', working: boolean, streaming: boolean, stalled: boolean }} state
  * @param {{ type: string, id?: string, final?: boolean, on?: boolean, state?: string, delivery?: string }} event
  */
 export function typingReducer(state, event) {
@@ -51,24 +62,33 @@ export function typingReducer(state, event) {
   switch (event?.type) {
     case 'sent':
       if (typeof event.id !== 'string' || !event.id) return cur;
-      return { pendingId: event.id, mode: 'typing', working: false, streaming: false };
+      return { pendingId: event.id, mode: 'typing', working: false, streaming: false, stalled: false };
     case 'reply': {
       if (!cur.pendingId || event.id !== cur.pendingId) return cur;
       if (event.final === true) return closed();
       const typing = withMode(cur, 'typing');
-      return typing.streaming ? typing : { ...typing, streaming: true };
+      const streaming = typing.streaming ? typing : { ...typing, streaming: true };
+      return clearStall(cur, streaming);
     }
     case 'state': {
       if (!cur.pendingId) return cur;
       if (event.state === 'idle') return closed();
-      if (event.state === 'working' || event.state === 'typing') return withMode(cur, event.state);
+      if (event.state === 'working' || event.state === 'typing') return clearStall(cur, withMode(cur, event.state));
       return cur;
     }
     case 'working': {
       if (!cur.pendingId) return cur;
       if (event.on !== true) return closed();
-      return withMode(cur, 'working');
+      return clearStall(cur, withMode(cur, 'working'));
     }
+    case 'activity':
+      if (!cur.pendingId || !cur.stalled) return cur;
+      return { ...cur, stalled: false };
+    case 'stall':
+    case 'timeout':
+      if (!cur.pendingId || cur.mode === 'idle') return cur;
+      if (cur.stalled) return cur;
+      return { ...cur, stalled: true };
     case 'ack': {
       if (!cur.pendingId) return cur;
       if (event.id && event.id !== cur.pendingId) return cur;
@@ -76,8 +96,7 @@ export function typingReducer(state, event) {
     }
     case 'stop':
     case 'disconnect':
-    case 'timeout':
-      return cur.pendingId || cur.working || cur.streaming ? closed() : cur;
+      return cur.pendingId || cur.working || cur.streaming || cur.stalled ? closed() : cur;
     default:
       return cur;
   }
@@ -93,9 +112,14 @@ export function workingShown(state) {
   return !!state?.pendingId && state.mode === 'working';
 }
 
-/** A prompt is in progress in either mode (Stop is available). */
+/** A prompt is in progress in either mode (Stop is available, including after a stall). */
 export function pendingShown(state) {
   return !!state?.pendingId && state.mode !== 'idle';
+}
+
+/** The safety deadline passed. Stop stays up; the prompt says the agent may have stalled. */
+export function stallShown(state) {
+  return pendingShown(state) && state.stalled === true;
 }
 
 /** The mode a status message asks for, from `state` or the legacy boolean. */
@@ -112,5 +136,5 @@ export function typingSeed({ working = false, streaming = false, mode = null } =
     ? mode
     : (working ? 'working' : (streaming ? 'typing' : 'idle'));
   if (wanted === 'idle') return TYPING_IDLE;
-  return { pendingId: 'demo', mode: wanted, working: wanted === 'working', streaming: streaming === true };
+  return { pendingId: 'demo', mode: wanted, working: wanted === 'working', streaming: streaming === true, stalled: false };
 }

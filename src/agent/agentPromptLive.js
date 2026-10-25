@@ -9,9 +9,18 @@ import { createAgentPromptTransport } from './agentPromptTransport.js';
 import { shouldShowAgentBridgeDisconnect } from './ws/pairingFlow.js';
 import { PAIR_MSG } from './ws/relayMessages.js';
 import { modeFromStatus } from './agentPromptTyping.js';
+import { AGENT_PROMPT_STALL_MS } from '../../packages/surfcad-mcp/src/prompt/promptStall.mjs';
 
-/** Match the MCP auto-idle: working false after 120s with no activity. */
-export const AGENT_PROMPT_WORKING_TIMEOUT_MS = 120_000;
+export { AGENT_PROMPT_STALL_MS };
+
+/**
+ * What the prompt box says when the safety deadline passes.
+ * @param {number} [timeoutMs]
+ */
+export function agentPromptStallCopy(timeoutMs = AGENT_PROMPT_STALL_MS) {
+  const minutes = Math.max(1, Math.round(Number(timeoutMs) / 60_000));
+  return `No activity from the agent for ${minutes} min — it may have stalled`;
+}
 
 /**
  * @param {{ createTransport?: Function, getBridge?: Function } | null | undefined} [api]
@@ -44,34 +53,68 @@ export function createLiveAgentPromptTransport(api) {
 export function withAgentState(transport, bridge) {
   if (!transport || typeof bridge?.subscribe !== 'function') return transport;
   if (typeof transport.onState === 'function') return transport;
-  const listeners = new Set();
+  const stateListeners = new Set();
+  const activityListeners = new Set();
   let off = null;
+  function drop() {
+    if (stateListeners.size || activityListeners.size) return;
+    if (!off) return;
+    try { off(); } catch { /* gone */ }
+    off = null;
+  }
   function ensure() {
     if (off) return;
     off = bridge.subscribe((msg) => {
-      if (!msg || typeof msg !== 'object' || msg.type !== PAIR_MSG.AGENT_STATUS || msg.v !== 1) return;
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.type === PAIR_MSG.AGENT_ACTIVITY && msg.v === 1) {
+        const event = { id: typeof msg.id === 'string' ? msg.id : null };
+        if (msg.hold === true) event.hold = true;
+        else if (msg.hold === false) event.hold = false;
+        for (const cb of [...activityListeners]) {
+          try { cb(event); } catch { /* listener threw */ }
+        }
+        return;
+      }
+      if (msg.type !== PAIR_MSG.AGENT_STATUS || msg.v !== 1) return;
       const mode = modeFromStatus(msg);
       if (!mode) return;
       const event = { mode, id: typeof msg.id === 'string' ? msg.id : null };
       if (typeof msg.label === 'string' && msg.label) event.label = msg.label;
-      for (const cb of [...listeners]) {
+      if (msg.stalled === true) event.stalled = true;
+      for (const cb of [...stateListeners]) {
         try { cb(event); } catch { /* listener threw */ }
       }
     });
   }
   const onState = (cb) => {
     if (typeof cb !== 'function') return () => {};
-    listeners.add(cb);
+    stateListeners.add(cb);
     ensure();
     return () => {
-      listeners.delete(cb);
-      if (!listeners.size && off) { try { off(); } catch { /* gone */ } off = null; }
+      stateListeners.delete(cb);
+      drop();
+    };
+  };
+  const onActivity = (cb) => {
+    if (typeof cb !== 'function') return () => {};
+    activityListeners.add(cb);
+    ensure();
+    return () => {
+      activityListeners.delete(cb);
+      drop();
     };
   };
   const dispose = typeof transport.dispose === 'function'
-    ? () => { listeners.clear(); if (off) { try { off(); } catch { /* gone */ } off = null; } transport.dispose(); }
+    ? () => {
+      stateListeners.clear();
+      activityListeners.clear();
+      if (off) { try { off(); } catch { /* gone */ } off = null; }
+      transport.dispose();
+    }
     : undefined;
-  return dispose ? { ...transport, onState, dispose } : { ...transport, onState };
+  return dispose
+    ? { ...transport, onState, onActivity, dispose }
+    : { ...transport, onState, onActivity };
 }
 
 /**
@@ -138,11 +181,15 @@ export function bindAgentPromptTransport(transport, handlers = {}) {
   const offAck = typeof handlers.onAck === 'function'
     ? transport.onAck?.(handlers.onAck)
     : null;
+  const offActivity = typeof handlers.onActivity === 'function'
+    ? transport.onActivity?.(handlers.onActivity)
+    : null;
   return () => {
     offReply?.();
     offState?.();
     offWorking?.();
     offAck?.();
+    offActivity?.();
   };
 }
 

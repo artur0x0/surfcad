@@ -289,9 +289,17 @@ export async function createSurfcadMcpServer(options = {}) {
 
     try {
       // A model-changing tool switches the tab to working on its own.
+      // The call holds the idle window until it returns: a long tool call
+      // is the agent working, not a stall.
       const row = catalog.commands.find((c) => c.name === name);
       session.noteAgentToolCall({ mutates: row?.mutates === true || (row?.mutates == null && mutatingTool(name)) });
-      const out = await callPairedBridgeTool(session, name, withDefaultReturn(row, args));
+      session.holdAgentWork(true);
+      let out;
+      try {
+        out = await callPairedBridgeTool(session, name, withDefaultReturn(row, args));
+      } finally {
+        session.holdAgentWork(false);
+      }
       if (name === 'status' && out.isError !== true && out.value && typeof out.value === 'object' && !Array.isArray(out.value)) {
         return textResult({ ...out.value, ...session.prompts.deliveryStatus() });
       }

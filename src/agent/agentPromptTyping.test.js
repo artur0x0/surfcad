@@ -29,7 +29,6 @@ test('it clears on the final reply, on status done, on a failed delivery, on Sto
     { type: 'ack', id: 'p1', delivery: 'failed', error: 'not_paired' },
     { type: 'stop' },
     { type: 'disconnect' },
-    { type: 'timeout' },
   ]) {
     const after = run([closer], sent);
     assert.equal(typingShown(after), false, JSON.stringify(closer));
@@ -37,6 +36,23 @@ test('it clears on the final reply, on status done, on a failed delivery, on Sto
     assert.equal(after.working, false);
     assert.equal(after.streaming, false);
   }
+});
+
+test('a missed deadline stalls in place: Stop stays, and the next activity clears it', () => {
+  const sent = run([{ type: 'sent', id: 'p1' }, { type: 'state', state: 'working' }]);
+  const stalled = run([{ type: 'stall' }], sent);
+  assert.equal(stalled.stalled, true);
+  assert.equal(pendingShown(stalled), true);
+  assert.equal(workingShown(stalled), true);
+  assert.equal(stalled.pendingId, 'p1');
+  assert.equal(run([{ type: 'timeout' }], stalled), stalled);
+  const resumed = run([{ type: 'activity' }], stalled);
+  assert.equal(resumed.stalled, false);
+  assert.equal(workingShown(resumed), true);
+  assert.equal(run([{ type: 'state', state: 'working' }], stalled).stalled, false);
+  assert.equal(run([{ type: 'reply', id: 'p1', text: 'Done.', final: true }], stalled).pendingId, null);
+  assert.equal(run([{ type: 'stop' }], stalled).mode, 'idle');
+  assert.equal(run([{ type: 'disconnect' }], stalled).mode, 'idle');
 });
 
 test('a late, duplicate, or out-of-order status does not bring it back', () => {

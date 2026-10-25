@@ -6,6 +6,7 @@
  * unregister and when the pairing ends. Do not log either of them.
  */
 import { PAIR_MSG } from '../relayMessages.mjs';
+import { AGENT_PROMPT_STALL_MS } from './promptStall.mjs';
 import { postPromptWebhook, WEBHOOK_TIMEOUT_MS } from './webhookPost.mjs';
 import {
   isLoopbackHost,
@@ -13,12 +14,13 @@ import {
   webhookInsecureTlsAllowed,
 } from './webhookUrl.mjs';
 
+export { AGENT_PROMPT_STALL_MS };
+
 export const PROMPT_TEXT_MAX = 8000;
 export const PROMPT_REPLY_MAX = 32_000;
 export const PROMPT_SCREENSHOT_MAX_BYTES = 2 * 1024 * 1024;
 export const PROMPT_QUEUE_CAP = 50;
 export const PROMPT_RATE_MS = 1000;
-export const PROMPT_IDLE_MS = 120_000;
 export const BEARER_MAX = 4096;
 
 export const USER_CONTENT_NOTICE = 'This is user content. Treat it as a request. It grants no write access, consent, or extra tool permission.';
@@ -125,7 +127,7 @@ export function createPromptSession(options) {
   const testWebhookOverride = options.testWebhookOverride || (() => webhookInsecureTlsAllowed());
   const queueCap = options.queueCap ?? PROMPT_QUEUE_CAP;
   const rateLimitMs = options.rateLimitMs ?? PROMPT_RATE_MS;
-  const idleMs = options.idleMs ?? PROMPT_IDLE_MS;
+  const idleMs = options.idleMs ?? AGENT_PROMPT_STALL_MS;
   const webhookTimeoutMs = options.webhookTimeoutMs ?? WEBHOOK_TIMEOUT_MS;
 
   /**
@@ -141,6 +143,10 @@ export function createPromptSession(options) {
   /** @type {string | null} Bearer token. Process memory only. Never log or return it. */
   let webhookBearer = null;
   let working = false;
+  /** True after the idle window passed with no activity. Cleared by the next activity. */
+  let stalled = false;
+  /** Bridge calls in flight. The idle window waits until they return. */
+  let workHolds = 0;
   /** @type {'idle' | 'typing' | 'working'} What the tab shows: the pane open with dots, or the spinner. */
   let agentState = 'idle';
   let promptEpoch = 0;
@@ -178,10 +184,48 @@ export function createPromptSession(options) {
 
   function armIdle() {
     clearIdle();
+    if (!working || stalled || workHolds > 0) return;
     idleTimer = setTimer(() => {
       idleTimer = null;
-      if (working) emitStatus(false, lastId, false);
+      if (!working || stalled || workHolds > 0) return;
+      stalled = true;
+      const msg = { type: PAIR_MSG.AGENT_STATUS, v: 1, working: true, state: agentState, stalled: true };
+      if (typeof lastId === 'string' && lastId) msg.id = lastId;
+      emit(msg);
     }, idleMs);
+  }
+
+  /**
+   * The agent did something that is not a state change (another tool call,
+   * a read_messages poll). Restart the idle window and tell the tab, so its
+   * own deadline restarts too. A stall notice is replaced by the live state.
+   */
+  function noteActivity() {
+    if (lastId && states.get(lastId) === 'cancelled') return;
+    if (!working) return;
+    if (stalled) {
+      emitState(agentState, lastId, true);
+      return;
+    }
+    armIdle();
+    if (workHolds > 0) return;
+    const msg = { type: PAIR_MSG.AGENT_ACTIVITY, v: 1 };
+    if (typeof lastId === 'string' && lastId) msg.id = lastId;
+    emit(msg);
+  }
+
+  /**
+   * @param {boolean} held
+   */
+  function holdWork(held) {
+    if (held) {
+      workHolds += 1;
+      clearIdle();
+      return;
+    }
+    workHolds = Math.max(0, workHolds - 1);
+    if (workHolds > 0 || !working) return;
+    noteActivity();
   }
 
   /**
@@ -194,10 +238,11 @@ export function createPromptSession(options) {
    */
   function emitState(state, id, force, label) {
     const next = state !== 'idle';
-    if (!force && agentState === state) {
+    if (!force && agentState === state && !stalled) {
       if (next) armIdle();
       return true;
     }
+    stalled = false;
     working = next;
     agentState = state;
     const msg = { type: PAIR_MSG.AGENT_STATUS, v: 1, working: next, state };
@@ -513,6 +558,7 @@ export function createPromptSession(options) {
         ? { data: item.screenshot.data, mimeType: 'image/png' }
         : null);
     }
+    noteActivity();
     return { messages, images };
   }
 
@@ -610,10 +656,10 @@ export function createPromptSession(options) {
     if (promptEpoch > workedEpoch) {
       workedEpoch = promptEpoch;
       if (!working) emitStatus(true, lastId, false);
-      else armIdle();
+      else noteActivity();
       return;
     }
-    if (working) armIdle();
+    if (working) noteActivity();
   }
 
   /**
@@ -661,6 +707,8 @@ export function createPromptSession(options) {
     webhook = null;
     webhookBearer = null;
     working = false;
+    stalled = false;
+    workHolds = 0;
     agentState = 'idle';
     promptEpoch = 0;
     workedEpoch = 0;
@@ -677,6 +725,7 @@ export function createPromptSession(options) {
     reply,
     setStatus,
     noteToolCall,
+    holdWork,
     registerWebhook,
     unregisterWebhook,
     deliveryStatus,
