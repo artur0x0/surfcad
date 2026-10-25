@@ -41,6 +41,7 @@ import {
 } from './prompt/guide.mjs';
 import { withErrorHint, withRowHints } from './prompt/errorHints.mjs';
 import { callListHelpersTool, LIST_HELPERS_TOOL_NAME, listHelpersToolDefinition } from './helpers.mjs';
+import { mergeRegisteredIntoListCommands } from './listCommandsMerge.mjs';
 
 const PAIR_TOOL_NAME = 'pair';
 
@@ -58,6 +59,46 @@ function augmentStatusTool(tool) {
   return {
     ...tool,
     description: `${tool.description || ''}${STATUS_PROMPT_NOTE}`,
+  };
+}
+
+/**
+ * One list for tools/list and for the rows list_commands adds. MCP-only
+ * tools are whatever this returns that is not a bridge command.
+ * @param {Array<{ name: string, description?: string, inputSchema?: object }>} bridgeTools
+ */
+function registeredToolDefinitions(bridgeTools) {
+  return [
+    {
+      name: PAIR_TOOL_NAME,
+      description: `Pair this MCP server to an open SurfCAD tab via the local WebSocket relay. ${pairingEnvHint()} ${PROMPT_SERVER_INSTRUCTIONS} After pairing call guide { topic: "start" } (How to build in SurfCAD: block out first, features first, hardware as patterned parts) before the first model call.`,
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          code: {
+            type: 'string',
+            description: '6-character pairing code from the SurfCAD Local agent panel',
+          },
+        },
+      },
+    },
+    guideToolDefinition(),
+    listHelpersToolDefinition(),
+    ...promptToolDefinitions(),
+    ...bridgeTools,
+  ];
+}
+
+/**
+ * @param {{ name: string, description?: string }} tool
+ * @param {string[]} extraNames
+ */
+function augmentListCommandsTool(tool, extraNames) {
+  if (!tool || tool.name !== 'list_commands' || extraNames.length === 0) return tool;
+  return {
+    ...tool,
+    description: `${tool.description || ''} Also lists the MCP-only tools this server registers (${extraNames.join(', ')}), in the agent group. They are not bridge commands.`,
   };
 }
 
@@ -176,7 +217,15 @@ function toolErrorPayload(err) {
 export async function createSurfcadMcpServer(options = {}) {
   const catalog = options.catalog || loadCommandsCatalog();
   const session = options.session || new RelaySession();
+  const bridgeNames = new Set(catalog.commands.map((command) => command.name));
   const bridgeTools = bridgeToolDefinitions(catalog).map((tool) => augmentStatusTool(augmentScreenshotTool(tool)));
+  const mcpOnlyNames = registeredToolDefinitions(bridgeTools)
+    .map((tool) => tool.name)
+    .filter((name) => !bridgeNames.has(name));
+  for (let i = 0; i < bridgeTools.length; i += 1) {
+    bridgeTools[i] = augmentListCommandsTool(bridgeTools[i], mcpOnlyNames);
+  }
+  const registeredTools = registeredToolDefinitions(bridgeTools);
 
   const version = loadPackageVersion();
   const server = new Server(
@@ -202,26 +251,7 @@ export async function createSurfcadMcpServer(options = {}) {
   });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
-      {
-        name: PAIR_TOOL_NAME,
-        description: `Pair this MCP server to an open SurfCAD tab via the local WebSocket relay. ${pairingEnvHint()} ${PROMPT_SERVER_INSTRUCTIONS} After pairing call guide { topic: "start" } (How to build in SurfCAD: block out first, features first, hardware as patterned parts) before the first model call.`,
-        inputSchema: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            code: {
-              type: 'string',
-              description: '6-character pairing code from the SurfCAD Local agent panel',
-            },
-          },
-        },
-      },
-      guideToolDefinition(),
-      listHelpersToolDefinition(),
-      ...promptToolDefinitions(),
-      ...bridgeTools,
-    ],
+    tools: registeredTools,
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -302,6 +332,12 @@ export async function createSurfcadMcpServer(options = {}) {
       }
       if (name === 'status' && out.isError !== true && out.value && typeof out.value === 'object' && !Array.isArray(out.value)) {
         return textResult({ ...out.value, ...session.prompts.deliveryStatus() });
+      }
+      if (name === 'list_commands' && out.isError !== true) {
+        out = {
+          ...out,
+          value: mergeRegisteredIntoListCommands(out.value, { registered: registeredTools, bridgeNames, args }),
+        };
       }
       if (out.isError === true) return errorResult(out.value, name);
       // A run that failed answers ok: false with errors rows; those carry hints too.

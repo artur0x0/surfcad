@@ -10,6 +10,7 @@ import { PAIR_MSG } from '../src/relayMessages.mjs';
 import { createPairingToken } from '../../../src/agent/ws/pairingToken.js';
 import { loadCommandsCatalog } from '../src/catalog.mjs';
 import { PROMPT_TOOL_NAMES } from '../src/prompt/promptTools.mjs';
+import { MCP_ONLY_GROUP } from '../src/listCommandsMerge.mjs';
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER_BIN = join(PKG_ROOT, 'bin/surfcad-mcp.js');
@@ -100,6 +101,74 @@ test('surfcad-mcp lists bridge tools and calls status through a mocked relay', a
   await client.close();
   tab.close();
   await stopAgentBridgeRelay(relay);
+});
+
+test('list_commands includes every tool the server registers', async () => {
+  const catalog = loadCommandsCatalog();
+  const token = createPairingToken(6);
+  const relay = await startAgentBridgeRelay({ port: 0 });
+  const port = relay.server.address().port;
+  const url = `ws://127.0.0.1:${port}`;
+  const tab = new WebSocket(url);
+  await waitOpen(tab);
+  tab.send(JSON.stringify({ type: PAIR_MSG.REGISTER_TAB, token }));
+
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [SERVER_BIN],
+    env: {
+      ...process.env,
+      SURFCAD_MCP_START_RELAY: '0',
+      SURFCAD_AGENT_BRIDGE_WS_URL: url,
+      SURFCAD_PAIRING_CODE: token,
+    },
+  });
+  const client = new Client({ name: 'surfcad-mcp-test', version: '1.0.0' });
+  await client.connect(transport);
+  const pairRequest = await onceJson(tab);
+  assert.equal(pairRequest.type, PAIR_MSG.PAIR_REQUEST);
+  tab.send(JSON.stringify({ type: PAIR_MSG.PAIR_APPROVE }));
+
+  tab.on('message', (raw) => {
+    let msg;
+    try { msg = JSON.parse(String(raw)); } catch { return; }
+    if (msg.command !== 'list_commands' || typeof msg.id !== 'string') return;
+    tab.send(JSON.stringify({
+      id: msg.id,
+      ok: true,
+      result: {
+        commands: catalog.commands.map((row) => ({
+          name: row.name,
+          schema: row.inputSchema || { type: 'object' },
+          example: {},
+          group: row.group || 'core',
+        })),
+        total: catalog.count,
+        groups: { core: catalog.count },
+      },
+    }));
+  });
+
+  try {
+    const { tools } = await client.listTools();
+    const listed = await client.callTool({ name: 'list_commands', arguments: {} });
+    assert.equal(listed.isError, false, JSON.stringify(listed));
+    const body = JSON.parse(listed.content[0].text);
+    const names = new Set(body.commands.map((row) => row.name));
+    for (const tool of tools) {
+      assert.equal(names.has(tool.name), true, tool.name);
+    }
+    assert.equal(names.size, tools.length);
+    assert.equal(body.commands.find((row) => row.name === 'reply_to_user')?.group, MCP_ONLY_GROUP);
+    assert.equal(body.commands.find((row) => row.name === 'set_status')?.group, MCP_ONLY_GROUP);
+    const described = tools.find((tool) => tool.name === 'list_commands');
+    assert.match(described.description, /reply_to_user/);
+    assert.match(described.description, /set_status/);
+  } finally {
+    await client.close();
+    tab.close();
+    await stopAgentBridgeRelay(relay);
+  }
 });
 
 test('surfcad-mcp returns not_paired without a code', async () => {
