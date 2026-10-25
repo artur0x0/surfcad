@@ -2591,12 +2591,16 @@ const Viewport = forwardRef(({
           if (helper?.feature) return { mode: 'edit', feature: helper.feature, dialog: 'helper' };
           return null;
         };
+        // The ref, not the last paint. sketch_add and cancel write it
+        // before React flushes; a mode() on the next agent call must see
+        // that, or a closed peek still reports contour.
+        const contourLive = contourModeRef.current;
         return buildAgentMode({
           appMode: mode,
-          contour: contourMode
+          contour: contourLive
             ? {
-              ...contourMode,
-              planeOpen: contourPlaneOpen,
+              ...contourLive,
+              planeOpen: !!contourPlaneOpenRef.current,
             }
             : null,
           featureSlots: featureSlots ? { kind: featureSlots.kind } : null,
@@ -4223,10 +4227,19 @@ const Viewport = forwardRef(({
     if (keepCard) holdContourOverlays(overlayVis, featureSlotsRef.current.kind);
     else releaseContourOverlays(overlayVis);
     cancelFeatureEditRef.current?.('contour');
-    setContourMode(null);
+    // Close the live sketch before the next agent call. A seed update still
+    // queued from reopening a contour must not paint the sketch back, and
+    // mode() reads the ref rather than the last render.
+    contourLiveWriteRef.current = null;
     contourModeRef.current = null;
     contourPlaneOpenRef.current = false;
-    setContourPlaneOpen(false);
+    flushSync(() => {
+      setContourMode(null);
+      setContourPlaneOpen(false);
+    });
+    contourLiveWriteRef.current = null;
+    contourModeRef.current = null;
+    contourPlaneOpenRef.current = false;
     sketchHistRef.current = emptySketchHistory();
     setContourUndoDepth(0);
     setPickMode('face');
@@ -4596,19 +4609,25 @@ const Viewport = forwardRef(({
     contourEditRef.current = session;
     setContourEdit(session);
     enterContourMode({ entry: 'crossSection' });
-    setContourMode((prev) => {
-      if (!prev) return prev;
-      const applied = applySavedContour(prev, saved);
+    // enterContourMode flushSyncs a fresh sketch onto the ref. Put the saved
+    // contour there before paint: mode() and cancel_feature read the ref, and
+    // a later functional update was leaving the peek open.
+    const opened = contourModeRef.current;
+    if (opened) {
+      const applied = applySavedContour(opened, saved);
       const contour = applied.params?.contour;
       const refs = display?.refs || contour?.refs;
-      return {
+      const next = {
         ...applied,
         entry: 'crossSection',
         contourId: saved.id,
         contourName: saved.name,
         params: contour ? { ...applied.params, contour: { ...contour, refs } } : applied.params,
       };
-    });
+      contourLiveWriteRef.current = next;
+      contourModeRef.current = next;
+      setContourMode(next);
+    }
     contourPlaneOpenRef.current = false;
     setContourPlaneOpen(false);
     // The contour is already accepted. Drop the plane-card preview.
