@@ -172,9 +172,14 @@ assembly chip does not rename. Title chips use `gap-3` on the shared header row
 checks spacing at 390 and 1280. At viewport widths up to 768px the title
 stacks on two lines (part name, then `in` and the assembly name). Each line
 truncates with an ellipsis if it still overflows, and stays clear of the
-wordmark, the beta tag, and the profile chip. From 769px up it stays one
-centred row, and a chip that does not fit truncates the same way.
-`golden:viewer-title-narrow` checks 320, 390, and 430. Game keeps a single puzzle-name chip. A
+wordmark, the beta tag, and the profile chip. The gap between those two
+pills and the gap from the assembly pill down to the feature strip are the
+same `--viewer-title-stack-gap`. The strip's top is
+`--feature-strip-offset-mobile` (`cad-feature-strip-mobile`); the desktop
+strip stays `top-14`. From 769px up the title stays one centred row, and a
+chip that does not fit truncates the same way.
+`golden:viewer-title-narrow` checks 320, 390, and 430, including that the
+two gaps match. Game keeps a single puzzle-name chip. A
 signed-in, GitHub-connected reload shows the last opened assembly.
 Signed out, both chips are absent (`data-viewer-title-empty`, `showCadTitle`
 off); reload does not load or create `Part (1)` in `Assembly`. Signed in

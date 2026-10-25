@@ -54,6 +54,7 @@ mkdirSync(SHOT_DIR, { recursive: true });
 {
   const view = read('src/components/Viewport.jsx');
   const css = read('src/index.css');
+  const app = read('src/App.jsx');
   const map = read('docs/ui-map.md');
   const arch = read('docs/architecture.md');
   check('narrow title uses the shared slot and stacks under 769px',
@@ -63,6 +64,13 @@ mkdirSync(SHOT_DIR, { recursive: true });
     && /@media \(min-width: 769px\)/.test(css)
     && /flex-direction: column/.test(css)
     && /text-overflow: ellipsis/.test(css));
+  check('pill gap and strip offset share --viewer-title-stack-gap',
+    /--viewer-title-stack-gap:\s*0\.25rem/.test(css)
+    && /gap:\s*var\(--viewer-title-stack-gap\)/.test(css)
+    && /--feature-strip-offset-mobile:\s*calc\([\s\S]*?var\(--viewer-title-stack-gap\)/.test(css)
+    && /\.cad-feature-strip-mobile\s*\{[^}]*top:\s*var\(--feature-strip-offset-mobile\)/.test(css)
+    && /className="cad-feature-strip-mobile absolute inset-x-0 z-20/.test(app)
+    && !/top-20 z-20/.test(app));
   check('docs name golden:viewer-title-narrow',
     /golden:viewer-title-narrow/.test(map) && /golden:viewer-title-narrow/.test(arch));
 }
@@ -187,6 +195,17 @@ async function readLayout(page) {
       tile: box(document.querySelector('[data-brand-mark="paper"]')),
       profile: box(document.querySelector('[data-profile-chip-variant="viewport"]')),
       strip: box(document.querySelector('[data-cad-feature-strip]')),
+      pane: box(document.querySelector('[data-stage-pane="cad"]')),
+      canvas: box(document.querySelector('[data-stage-pane="cad"] canvas, [data-agent-viewport] canvas')),
+      leftRail: box(document.querySelector('[data-rail-pair="left"]')),
+      rightRail: box(document.querySelector('[data-rail-pair="right"]')),
+      stackGapPx: (() => {
+        const chips = document.querySelector('[data-viewer-title-chips]');
+        if (!chips) return null;
+        const gap = getComputedStyle(chips).rowGap || getComputedStyle(chips).gap;
+        const n = parseFloat(gap);
+        return Number.isFinite(n) ? n : null;
+      })(),
     };
   });
 }
@@ -327,12 +346,18 @@ try {
     await page.waitForTimeout(300);
     const layout = await readLayout(page);
     const label = String(width);
+    const pillGap = layout.part && layout.assembly ? layout.assembly.top - layout.part.bottom : null;
+    const stripGap = layout.assembly && layout.strip ? layout.strip.top - layout.assembly.bottom : null;
     console.log(`  ${label} layout ${JSON.stringify({
       title: layout.title,
-      part: layout.part && { w: Math.round(layout.part.width), sw: layout.part.scrollWidth, cw: layout.part.clientWidth, t: layout.part.text.slice(0, 24) },
-      assembly: layout.assembly && { w: Math.round(layout.assembly.width), sw: layout.assembly.scrollWidth, cw: layout.assembly.clientWidth },
+      part: layout.part && { w: Math.round(layout.part.width), h: Math.round(layout.part.height), sw: layout.part.scrollWidth, cw: layout.part.clientWidth, t: layout.part.text.slice(0, 24) },
+      assembly: layout.assembly && { w: Math.round(layout.assembly.width), h: Math.round(layout.assembly.height), top: Math.round(layout.assembly.top), bottom: Math.round(layout.assembly.bottom) },
       inn: layout.inn && layout.inn.text,
       stacked: !!(layout.part && layout.assembly && layout.part.bottom <= layout.assembly.top + 1),
+      pillGap: pillGap == null ? null : Math.round(pillGap * 100) / 100,
+      stripGap: stripGap == null ? null : Math.round(stripGap * 100) / 100,
+      stackGapPx: layout.stackGapPx,
+      stripTop: layout.strip && Math.round(layout.strip.top * 100) / 100,
     })}`);
     check(`${label} title text is part in assembly`, layout.title === `${PART} in ${ASM}`, layout.title);
     check(`${label} part pill keeps the full name`, layout.part && layout.part.text === PART, layout.part?.text);
@@ -361,6 +386,25 @@ try {
       check(`${label} title does not overlap the feature strip`,
         layout.strip && layout.part.bottom <= layout.strip.top + 0.5 && layout.assembly.bottom <= layout.strip.top + 0.5,
         JSON.stringify({ part: layout.part, assembly: layout.assembly, strip: layout.strip }));
+      check(`${label} assembly-to-strip gap equals the pill gap`,
+        pillGap != null && stripGap != null
+        && layout.stackGapPx != null
+        && Math.abs(pillGap - stripGap) <= 1
+        && Math.abs(pillGap - layout.stackGapPx) <= 1
+        && Math.abs(stripGap - layout.stackGapPx) <= 1,
+        JSON.stringify({ pillGap, stripGap, stackGapPx: layout.stackGapPx }));
+      const fills = (node, host) => !!(node && host
+        && Math.abs(node.top - host.top) <= 1
+        && Math.abs(node.left - host.left) <= 1
+        && Math.abs(node.width - host.width) <= 1
+        && Math.abs(node.height - host.height) <= 1);
+      check(`${label} viewport still fills the pane`, fills(layout.canvas, layout.pane),
+        JSON.stringify({ canvas: layout.canvas, pane: layout.pane }));
+      for (const [name, rail] of [['left rail', layout.leftRail], ['right rail', layout.rightRail]]) {
+        if (!rail || !layout.strip) continue;
+        check(`${label} ${name} does not overlap the feature strip`, !overlaps(rail, layout.strip),
+          JSON.stringify({ rail, strip: layout.strip }));
+      }
     } else {
       const partMid = layout.part.top + layout.part.height / 2;
       const asmMid = layout.assembly.top + layout.assembly.height / 2;

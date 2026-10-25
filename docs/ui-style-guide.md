@@ -166,6 +166,11 @@ the strip root. Chips share `feature-strip-chip` (32px). Do not set a
 per-state height. Switching assembly ↔ part ↔ empty must not jump the bar
 or shift the viewport.
 
+On a phone the ribbon's top is `--feature-strip-offset-mobile`: the header's
+`top-4`, two title pills, and `--viewer-title-stack-gap` twice (once between
+the pills, once under the assembly pill). That is the same gap the stacked
+title uses. Desktop stays `--feature-strip-offset-desktop` (`top-14`).
+
 Leave **10px** (`--feature-strip-rail-gap`) between the ribbon bottom and the
 top of the left helper rail and the right view rail. Desktop full-length
 left rail: class `rail-full-below-strip`. Mobile content-max left rail:
