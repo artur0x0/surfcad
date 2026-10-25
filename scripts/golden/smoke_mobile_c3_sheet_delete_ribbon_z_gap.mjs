@@ -3,7 +3,7 @@
  * Slice Mobile C.3 polish —
  * 1) Feature sheet Delete (remove marked block + Auto-Run + close; stay on stage)
  * 2) Script: ribbon z-order above feature strip
- * 3) CAD: ~2× gap between part name and feature strip (top-14 → top-20)
+ * 3) CAD: feature strip clears the stacked title by the shared stack gap
  * 4) Rail caption Shapes → Block
  * 5) Left/right toolbars exact shared height (RAIL_PAIR_HEIGHT_CLASS)
  *
@@ -49,6 +49,7 @@ console.log('mobile C.3: sheet delete + ribbon z + CAD gap + Block + rail height
   const contourRail = read('../../src/components/ContourModeRail.jsx');
   const rightRail = read('../../src/components/CrossSectionPanel.jsx');
   const railPair = read('../../src/utils/railPair.js');
+  const css = read('../../src/index.css');
 
   // 1 — Delete
   check(
@@ -92,12 +93,17 @@ console.log('mobile C.3: sheet delete + ribbon z + CAD gap + Block + rail height
       /relative z-30/.test(editor),
   );
 
-  // 3 — CAD gap ~2× (top-20 vs prior top-14)
+  // 3 — Phone strip sits one shared stack-gap under the assembly pill.
   check(
-    'CAD strip under-ribbon gap doubled (top-20 + name-2x attr)',
+    'CAD strip uses the shared title stack gap (not a fixed top-20)',
     /data-cad-feature-strip/.test(app) &&
       /data-feature-strip-gap="name-2x"/.test(app) &&
-      /top-20 z-20/.test(app) &&
+      /cad-feature-strip-mobile/.test(app) &&
+      /--viewer-title-stack-gap:\s*0\.25rem/.test(css) &&
+      /gap:\s*var\(--viewer-title-stack-gap\)/.test(css) &&
+      /--feature-strip-offset-mobile:\s*calc\([\s\S]*?var\(--viewer-title-stack-gap\)/.test(css) &&
+      /\.cad-feature-strip-mobile\s*\{[^}]*top:\s*var\(--feature-strip-offset-mobile\)/.test(css) &&
+      !/top-20 z-20/.test(app) &&
       !/left-2 right-2 top-14 z-20/.test(app),
   );
 

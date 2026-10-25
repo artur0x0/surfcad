@@ -142,12 +142,36 @@ async function chipGap(page) {
   return page.evaluate(() => {
     const part = document.querySelector('[data-title-role="part"]');
     const assembly = document.querySelector('[data-title-role="assembly"]');
+    const inn = document.querySelector('[data-title-in]');
     if (!part || !assembly) return { ok: false, reason: 'missing chip' };
     const pr = part.getBoundingClientRect();
     const ar = assembly.getBoundingClientRect();
+    const boxesOverlap = (a, b) => (
+      a.right > b.left + 0.5
+      && a.left < b.right - 0.5
+      && a.bottom > b.top + 0.5
+      && a.top < b.bottom - 0.5
+    );
+    const stacked = pr.bottom <= ar.top + 1;
+    if (stacked) {
+      const innBox = inn ? inn.getBoundingClientRect() : null;
+      const innMid = innBox ? innBox.top + innBox.height / 2 : null;
+      const asmMid = ar.top + ar.height / 2;
+      return {
+        ok: true,
+        stacked: true,
+        gap: Math.round((ar.top - pr.bottom) * 10) / 10,
+        overlap: boxesOverlap(pr, ar),
+        innSameLine: innMid != null && Math.abs(innMid - asmMid) <= 2,
+      };
+    }
     const gap = ar.left - pr.right;
-    const overlap = pr.right > ar.left;
-    return { ok: true, gap: Math.round(gap * 10) / 10, overlap };
+    return {
+      ok: true,
+      stacked: false,
+      gap: Math.round(gap * 10) / 10,
+      overlap: boxesOverlap(pr, ar),
+    };
   });
 }
 
@@ -222,7 +246,11 @@ async function runView(browser, vp) {
   const gap0 = await chipGap(page);
   console.log(`  ${vp.name} gap ${JSON.stringify(gap0)}`);
   check(`${vp.name} part and assembly chips do not overlap`, gap0.ok && !gap0.overlap, JSON.stringify(gap0));
-  check(`${vp.name} chip gap is at least 8px`, gap0.ok && gap0.gap >= 8, String(gap0.gap));
+  if (gap0.stacked) {
+    check(`${vp.name} title stacks with in on the assembly line`, gap0.innSameLine === true, JSON.stringify(gap0));
+  } else {
+    check(`${vp.name} chip gap is at least 8px`, gap0.ok && gap0.gap >= 8, String(gap0.gap));
+  }
 
   await page.click('[data-title-role="part"]');
   await page.waitForTimeout(250);

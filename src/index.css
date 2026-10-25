@@ -44,7 +44,15 @@
   /* 10px between the ribbon bottom and the left/right tool rails. */
   --feature-strip-rail-gap: 0.625rem;
   --feature-strip-offset-desktop: 3.5rem; /* top-14 under the title row */
-  --feature-strip-offset-mobile: 5rem; /* top-20 under the CAD header */
+  /* Phone title stack. One gap between the part pill and the assembly
+     pill, and the same gap again between the assembly pill and the
+     feature strip. The pill block matches TITLE_CHIP: text-xs line
+     (1rem) + py-1.5 (0.75rem) + a 2px border. The header is top-4. */
+  --viewer-title-stack-gap: 0.25rem;
+  --viewer-title-pill-block: calc(1.75rem + 2px);
+  --feature-strip-offset-mobile: calc(
+    1rem + (2 * var(--viewer-title-pill-block)) + (2 * var(--viewer-title-stack-gap))
+  );
   /* Floating agent prompt (PR 1). Dark values today; a future light theme
      swaps these aliases without restructuring the card. */
   --agent-prompt-fg: var(--chrome-text);
@@ -344,6 +352,82 @@ textarea {
     line-height: 1;
     letter-spacing: 0.04em;
   }
+  /* CAD title. The phone shell is max-width 768px, the same query as
+     App's isMobile flag. There the part name is line 1 and "in <assembly>"
+     is line 2, in the gap between the wordmark and the profile chip.
+     From 769px up the title stays one centred row. A line that still
+     does not fit truncates with an ellipsis. */
+  .viewer-title-slot {
+    position: relative;
+    z-index: 20;
+    display: flex;
+    min-width: 0;
+    flex: 1 1 0%;
+    align-items: center;
+    justify-content: center;
+    margin-inline-end: 4px;
+  }
+  .viewer-title-chips {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: var(--viewer-title-stack-gap);
+    overflow: hidden;
+  }
+  .viewer-title-line {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+  .viewer-title-chip-frame {
+    display: contents;
+  }
+  .viewer-title-chip-frame > button,
+  .viewer-title-chip-frame > [data-title-chip] {
+    min-width: 0;
+    max-width: 100%;
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  @media (min-width: 769px) {
+    .viewer-title-slot {
+      position: absolute;
+      inset: 0;
+      flex: none;
+      margin-inline-end: 0;
+      padding-left: min(11rem, 38vw);
+      padding-right: min(11rem, 38vw);
+    }
+    .viewer-title-chips {
+      flex-direction: row;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .viewer-title-line {
+      width: auto;
+      flex: 0 1 auto;
+    }
+    .viewer-title-chip-frame > button,
+    .viewer-title-chip-frame > [data-title-chip] {
+      max-width: min(12rem, 100%);
+    }
+  }
+  @media (min-width: 1024px) {
+    .viewer-title-chip-frame > button,
+    .viewer-title-chip-frame > [data-title-chip] {
+      max-width: min(18rem, 100%);
+    }
+  }
   .text-ui-sm { font-size: 12px; line-height: 1.4; }
   .text-ui { font-size: 14px; line-height: 1.45; }
   .text-ui-lg { font-size: 16px; line-height: 1.4; }
@@ -373,6 +457,11 @@ textarea {
   .surface-quiet:focus-visible {
     outline: 2px solid rgb(var(--chrome-text));
     outline-offset: 2px;
+  }
+  /* Phone CAD ribbon. Same offset the rails use, so a stack-gap change
+     moves the strip and the rail clearance together. Desktop keeps top-14. */
+  .cad-feature-strip-mobile {
+    top: var(--feature-strip-offset-mobile);
   }
   /* One height for the horizontal CAD feature ribbon in every state. */
   .feature-strip-bar {

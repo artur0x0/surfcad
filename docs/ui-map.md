@@ -71,7 +71,7 @@ one shell you must change the other.
 - **Phone sheet** (`data-script-sheet`, 390px): full-screen over the home pill. Back is an ArrowLeft icon only (`data-script-editor-close`, `aria-label="Back to parts"`, 44×44) and returns to Parts with the same close-save. A stored or linked Script stage opens Parts.
 - **CAD corner.** There is no `data-cad-io-tray`. Upload and Download are on the Parts ribbon. Order is the part-row cart button (`data-part-order`). Run, Select all, Undo, and Redo stay in the editor.
 - **Puzzle easter egg** (`data-puzzle-unlock`, 44×44, viewport top-left): five taps in three seconds while `useAuthState().signedIn` (grey reauth counts) call `handleStartGame` and show `data-puzzle-unlock-toast` ("Puzzle unlocked"). The taps are not stored. Signed-out and pending sessions have no target and no toast. Nothing covers that corner.
-- **Identity.** Brand colors and splash copy: [docs/ui-style-guide.md](./ui-style-guide.md#brand). The CAD viewport header row (`data-viewer-header-row`, `top-4`, `left-2` / `lg:left-4`, same inset as the helper rail) shows the paper-tile mark (`data-brand-mark="paper"`) and the outlined SurfCAD wordmark at 16px on a transparent lockup (`data-brand-header`, `data-brand-wordmark`), then a muted lowercase beta tag (`data-brand-beta`) that does not take taps. The assembly title pills sit centred on the same row (`data-viewer-title`), with truncation so long names stay readable and the row clears the AR profile chip (`pr-11`). Parts and Script stages do not draw the brand. The loading gate (`data-app-loading`) is wall-clock light/dark (`data-app-loading-theme`) and has no Privacy choices link. `golden:brand-identity` checks 360, 390, and 1280.
+- **Identity.** Brand colors and splash copy: [docs/ui-style-guide.md](./ui-style-guide.md#brand). The CAD viewport header row (`data-viewer-header-row`, `top-4`, `left-2` / `lg:left-4`, same inset as the helper rail) shows the paper-tile mark (`data-brand-mark="paper"`) and the outlined SurfCAD wordmark at 16px on a transparent lockup (`data-brand-header`, `data-brand-wordmark`), then a muted lowercase beta tag (`data-brand-beta`) that does not take taps. From 769px up the assembly title pills sit centred on the same row (`data-viewer-title`). At 768px and below the title stacks in the gap between the lockup and the profile chip: the part name, then `in` and the assembly name. A line that still does not fit ends in an ellipsis, and the row clears the profile chip (`pr-11`). Parts and Script stages do not draw the brand. The loading gate (`data-app-loading`) is wall-clock light/dark (`data-app-loading-theme`) and has no Privacy choices link. `golden:brand-identity` checks 360, 390, and 1280.
 
 **The seam between the two panes is draggable** in both shells
 (`SplitDivider.jsx`, pointer-capture based): left/right on desktop
@@ -169,7 +169,17 @@ body highlight for joints). Assembly rename is only on the Parts ribbon center
 title (`RibbonAssemblyName` in `PartFeed.jsx`, click to edit). The viewer
 assembly chip does not rename. Title chips use `gap-3` on the shared header row
 (`data-viewer-header-row`) beside the inline wordmark. `golden:viewer-title-actions`
-checks spacing at 390 and 1280. Game keeps a single puzzle-name chip. A
+checks spacing at 390 and 1280. At viewport widths up to 768px the title
+stacks on two lines (part name, then `in` and the assembly name). Each line
+truncates with an ellipsis if it still overflows, and stays clear of the
+wordmark, the beta tag, and the profile chip. The gap between those two
+pills and the gap from the assembly pill down to the feature strip are the
+same `--viewer-title-stack-gap`. The strip's top is
+`--feature-strip-offset-mobile` (`cad-feature-strip-mobile`); the desktop
+strip stays `top-14`. From 769px up the title stays one centred row, and a
+chip that does not fit truncates the same way.
+`golden:viewer-title-narrow` checks 320, 390, and 430, including that the
+two gaps match. Game keeps a single puzzle-name chip. A
 signed-in, GitHub-connected reload shows the last opened assembly.
 Signed out, both chips are absent (`data-viewer-title-empty`, `showCadTitle`
 off); reload does not load or create `Part (1)` in `Assembly`. Signed in
@@ -305,7 +315,7 @@ Desktop specifics:
   Other length sliders use the curve and the thumb snap in
   `src/utils/sliderMap.js` (0.1 mm, or 1/16 in). See `docs/architecture.md`
   (**Characteristic length**, **Slider curve and snap**).
-- CAD title is the same "part in assembly" line as mobile. No toolbar carries it.
+- CAD title is the same part name, the word in, and the assembly name as on a phone, kept on one centred row. No toolbar carries it.
 - **Parts feed:** the same list as the mobile Parts stage, mounted to the left
   of the editor (`data-parts-feed-placement="desktop-left"`). The ribbon's
   left cluster is folder, **+**, then Upload (`data-part-upload`) and

@@ -340,6 +340,7 @@ Gate acceptance still requires `test_real_worker.mjs` via `npm run verify` when 
 | `golden:ui-polish-four` | `smoke_ui_polish_four.mjs` |
 | `golden:ui-six-tweaks` | `smoke_ui_six_tweaks_strip_viewport.mjs` |
 | `golden:viewer-title-actions` | `smoke_viewer_title_actions.mjs` |
+| `golden:viewer-title-narrow` | `smoke_viewer_title_narrow.mjs` |
 | `golden:viewport-orbit` | `smoke_viewport_orbit_loop.mjs` |
 | `golden:viewport-safari-gesture-zoom` | `smoke_viewport_safari_gesture_zoom.mjs` |
 | `golden:workplane` | `smoke_workplane_strip_ui.mjs` |

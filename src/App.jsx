@@ -12377,10 +12377,12 @@ const App = () => {
               >
                 {viewportEl}
                 {agentPromptNode}
-                {/* Slice Mobile C.2: CAD feature strip HORIZONTAL under top ribbon. */}
+                {/* Slice Mobile C.2: CAD feature strip HORIZONTAL under the title.
+                    Top is --feature-strip-offset-mobile: header top-4, two pills,
+                    and --viewer-title-stack-gap twice. */}
                 {isCadStage && (
                   <div
-                    className="absolute inset-x-0 top-20 z-20 pointer-events-auto flex"
+                    className="cad-feature-strip-mobile absolute inset-x-0 z-20 pointer-events-auto flex"
                     data-cad-feature-strip=""
                     data-feature-strip-placement="under-ribbon-horizontal"
                     data-feature-strip-gap="name-2x"
