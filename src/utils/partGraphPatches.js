@@ -167,6 +167,14 @@ const PLANE_OFFSET_MM = 0.05;
  */
 const PLANE_BRIDGE_MM = 8;
 /**
+ * Off-plane planar faces smaller than this are fillet-seam chips, not a
+ * face of their own. The shelled L's inner ceiling is one plane split by a
+ * 2 mm fillet; the walk has to cross chips of about 19 mm² to reach the
+ * other half. The plate that joins two counterbore bottoms is the whole
+ * top, thousands of mm², so it still stops the walk.
+ */
+const PLANE_BRIDGE_CHIP_MM2 = 40;
+/**
  * A fillet boolean can leave two copies of a cap vertex about 0.001mm apart.
  * They do not share an index, so an edge walk stops. This is the gap that
  * still counts as the same face. It is far inside the 16mm arm split.
@@ -1101,11 +1109,12 @@ export function buildPartGraphPatches(mesh, opts = {}) {
             if (bridgeOff(nb, p.normal, offP) > PLANE_BRIDGE_MM) continue;
             const on = onPlane(nb, p, offP);
             const owner = patches[triPatch[nb]];
-            // A hole wall or the plate around two counterbores is its own
-            // planar face. Walking through it joins disjoint coplanar regions
-            // (two counterbore bottoms at one depth). A fillet is not planar,
-            // so a cap split by a blend still reunites across it.
-            if (!on && owner && owner.kind === 'planar' && triPatch[nb] !== p.id) continue;
+            // A real neighbouring face (the plate around two counterbores)
+            // is not a corridor. Walking through it joins disjoint coplanar
+            // regions. A fillet seam is only small planar chips, and the
+            // other half of the cap sits past those chips.
+            if (!on && owner && owner.kind === 'planar' && triPatch[nb] !== p.id
+              && owner.area > PLANE_BRIDGE_CHIP_MM2) continue;
             stack.push(nb);
             if (!on || triPatch[nb] === p.id) continue;
             if (owner && owner.kind === 'planar' && owner.area > p.area) continue;
