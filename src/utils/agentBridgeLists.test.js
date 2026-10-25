@@ -49,6 +49,7 @@ test('list_faces without filter or page is the old payload plus total and return
   assert.deepEqual(out.result.faces, FACES);
   assert.equal(out.result.total, 4);
   assert.equal(out.result.returned, 4);
+  assert.equal(out.result.frame, 'local');
   assert.equal('offset' in out.result, false);
   assert.equal('filter' in out.result, false);
 });
@@ -96,6 +97,7 @@ test('list_edges and list_feature_edges filter by between and length, raw and gr
   const raw = await call(api, 'list_edges', { filter: { between: [FACES[0].key, FACES[2].key] } });
   assert.equal(raw.ok, true);
   assert.equal(raw.result.raw, true);
+  assert.equal(raw.result.frame, 'local');
   assert.deepEqual(raw.result.edges.map((r) => r.key), ['1-2']);
   assert.equal(raw.result.total, 1);
 
@@ -109,6 +111,7 @@ test('list_edges and list_feature_edges filter by between and length, raw and gr
   assert.deepEqual(grouped.result.edges.map((r) => r.key), ['e0']);
 
   const feature = await call(api, 'list_feature_edges', { filter: { between: [FACES[3].key, FACES[0].key] } });
+  assert.equal(feature.result.frame, 'local');
   assert.deepEqual(feature.result.edges.map((r) => r.key), ['e1']);
   assert.equal(feature.result.total, 1);
 
