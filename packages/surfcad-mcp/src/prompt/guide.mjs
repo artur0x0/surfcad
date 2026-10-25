@@ -41,7 +41,7 @@ Reading results: every model-changing tool answers { ok, errors, status } with r
 Ids are opaque surf ids from parts, list_assemblies, create_part, create_assembly; never a path or a display name.
 Topics: guide { topic: "dialect" | "features" | "selection" | "paint" | "limits" | "camera" | "assembly" }; list_helpers { names } documents any script helper.
 
-In-viewer prompt pane. ${CLOSING_REPLY_GUIDANCE} set_status is for progress and does not close the task.`;
+In-viewer prompt pane. ${CLOSING_REPLY_GUIDANCE} set_status is for progress and does not close the task. reply_to_user takes an in_reply_to that this session actually received; any other id is unknown_prompt and is not shown in the chat. After read_messages acks a prompt, that id stays in the response's recent list (the last 50 prompts in this session, oldest first, each { id, state }), including on a later empty read_messages {}.`;
 
 const FEATURES = `Feature blocks. The script of a part is plain JavaScript over the SurfCAD helpers, and the feature strip reads it from marker comments. Every insert_* writes one block:
 

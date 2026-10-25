@@ -56,6 +56,10 @@ test('reply_to_user and the guide start topic require a closing reply, including
   assert.match(defs.reply_to_user.inputSchema.properties.text.description, /failure or partial completion/);
   assert.ok(defs.read_messages.description.includes(CLOSING_REPLY_GUIDANCE));
   assert.match(defs.read_messages.description, /failure or partial completion/);
+  assert.match(reply, /unknown_prompt/);
+  assert.match(defs.read_messages.description, /recent/);
+  assert.match(GUIDE_TOPICS.start.text, /unknown_prompt/);
+  assert.match(GUIDE_TOPICS.start.text, /recent/);
   assert.match(defs.set_status.description, /set_status is for progress and does not close the task/);
   assert.match(defs.set_status.inputSchema.properties.state.description, /does not close the task/);
   assert.ok(defs.set_status.description.includes(CLOSING_REPLY_GUIDANCE));

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CONVERSATION_EMPTY, conversationReducer, conversationSeed, stickToBottom } from './agentPromptConversation.js';
+import { rememberPagePrompt } from './agentPromptTransport.js';
 
 const run = (events, start = CONVERSATION_EMPTY) => events.reduce(conversationReducer, start);
 
@@ -23,9 +24,19 @@ test('the pane shows the user and the agent in order, replies appended by prompt
   assert.equal(chat.hidden, false);
 });
 
-test('a reply with no matching user message (agent-initiated) still shows', () => {
+test('a reply to an unknown prompt id is not shown', () => {
   const chat = run([{ type: 'reply', id: 'x', text: 'Heads up', final: true }]);
-  assert.deepEqual(chat.messages.map((m) => m.role), ['agent']);
+  assert.equal(chat, CONVERSATION_EMPTY);
+  const sent = run([{ type: 'sent', id: 'p1', text: 'hi' }]);
+  const ignored = conversationReducer(sent, { type: 'reply', id: 'x', text: 'probe', final: false });
+  assert.equal(ignored, sent);
+  assert.deepEqual(ignored.messages.map((m) => [m.role, m.text]), [['user', 'hi']]);
+  const shown = conversationReducer(sent, { type: 'reply', id: 'p1', text: 'hello', final: true });
+  assert.equal(shown.messages[1].text, 'hello');
+  assert.equal(shown.messages.length, 2);
+  rememberPagePrompt('page-sent-1');
+  const fromPage = run([{ type: 'reply', id: 'page-sent-1', text: 'from the agent', final: true }]);
+  assert.deepEqual(fromPage.messages.map((m) => [m.role, m.text]), [['agent', 'from the agent']]);
 });
 
 test('dismiss hides the pane and keeps the history; the next message shows it again', () => {

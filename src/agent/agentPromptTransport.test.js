@@ -75,11 +75,48 @@ test('dispose unsubscribes so a new transport does not stack listeners', () => {
   first.dispose();
   const second = createAgentPromptTransport(bridge);
   second.onReply((event) => seen.push(`b:${event.text}`));
-  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id: '1', text: 'hi', final: true });
+  const id = second.send('ping');
+  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id, text: 'hi', final: true });
   assert.deepEqual(seen, ['b:hi']);
   second.dispose();
-  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id: '1', text: 'later', final: true });
+  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id, text: 'later', final: true });
   assert.deepEqual(seen, ['b:hi']);
+});
+
+test('a reply for a prompt another transport sent on this bridge is delivered', () => {
+  const bridge = fakeBridge();
+  const viewer = createAgentPromptTransport(bridge);
+  const sender = createAgentPromptTransport(bridge);
+  const replies = [];
+  viewer.onReply((event) => replies.push(event));
+  const id = sender.send('How wide?');
+  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id: 'x', text: 'probe', final: true });
+  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id, text: '40 mm', final: true });
+  assert.deepEqual(replies, [{ id, text: '40 mm', final: true }]);
+  sender.dispose();
+  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id, text: ' still here', final: false });
+  assert.deepEqual(replies, [
+    { id, text: '40 mm', final: true },
+    { id, text: ' still here', final: false },
+  ]);
+  viewer.dispose();
+});
+
+test('a reply for an id this page did not send is dropped', () => {
+  const bridge = fakeBridge();
+  const transport = createAgentPromptTransport(bridge);
+  const replies = [];
+  transport.onReply((event) => replies.push(event));
+  const id = transport.send('How wide?');
+  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id: 'x', text: 'probe', final: true });
+  assert.deepEqual(replies, []);
+  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id, text: '40 mm', final: false });
+  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id, text: ' across.', final: true });
+  assert.deepEqual(replies, [
+    { id, text: '40 mm', final: false },
+    { id, text: ' across.', final: true },
+  ]);
+  transport.dispose();
 });
 
 test('local failures ack and do not touch the socket', () => {
@@ -137,7 +174,9 @@ test('cancel resolves cancelled, not_found, and already_final', async () => {
   bridge.paired = false;
   assert.deepEqual(await transport.cancel('offline-id'), { id: 'offline-id', state: 'not_found' });
   bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id: 'offline-id', text: 'done', final: true });
-  assert.deepEqual(await transport.cancel('offline-id'), { id: 'offline-id', state: 'already_final' });
+  assert.deepEqual(await transport.cancel('offline-id'), { id: 'offline-id', state: 'not_found' });
+  bridge.emit({ type: PAIR_MSG.AGENT_REPLY, v: 1, id, text: 'done', final: true });
+  assert.deepEqual(await transport.cancel(id), { id, state: 'already_final' });
 
   const empty = createAgentPromptTransport(fakeBridge());
   assert.deepEqual(await empty.cancel(), { id: '', state: 'not_found' });
