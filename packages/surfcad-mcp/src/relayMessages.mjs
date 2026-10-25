@@ -21,6 +21,8 @@ export const PAIR_MSG = Object.freeze({
   AGENT_REPLY: 'agent.reply',
   /** Agent → page. Contract v:1. */
   AGENT_STATUS: 'agent.status',
+  /** Agent → page. Contract v:1. Refreshes the working deadline without changing state. */
+  AGENT_ACTIVITY: 'agent.activity',
   /** Page → paired agent. Contract v:1. `{ id }`. */
   AGENT_PROMPT_CANCEL: 'agent.prompt.cancel',
   /** Agent → page. Contract v:1. `{ id, state }`. */

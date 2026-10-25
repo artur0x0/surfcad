@@ -680,6 +680,12 @@ textarea {
   .agent-prompt-ack {
     margin: 0;
   }
+  .agent-prompt-stall {
+    margin: 0;
+    padding: 8px 14px 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   .agent-prompt-thumb {
     width: 28px;
     height: 20px;

@@ -329,12 +329,17 @@ export function createAgentBridgeTabConnection(opts) {
         return;
       }
       if (msg.type === PAIR_MSG.AGENT_REPLY || msg.type === PAIR_MSG.AGENT_STATUS
-        || msg.type === PAIR_MSG.AGENT_PROMPT_ACK || msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT) {
+        || msg.type === PAIR_MSG.AGENT_PROMPT_ACK || msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT
+        || msg.type === PAIR_MSG.AGENT_ACTIVITY) {
         emitPrompt(msg);
         return;
       }
       if (typeof msg.command === 'string') {
-        void handleCall(msg);
+        // The call itself is agent activity, including while it is still running.
+        emitPrompt({ type: PAIR_MSG.AGENT_ACTIVITY, v: 1, hold: true });
+        void handleCall(msg).finally(() => {
+          emitPrompt({ type: PAIR_MSG.AGENT_ACTIVITY, v: 1, hold: false });
+        });
       }
     });
     socket.addEventListener('error', (event) => {

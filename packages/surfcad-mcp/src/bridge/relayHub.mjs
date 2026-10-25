@@ -362,7 +362,8 @@ export function createAgentBridgeRelayHub(opts = {}) {
 
       if (msg.type === PAIR_MSG.AGENT_PROMPT || msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL
         || msg.type === PAIR_MSG.AGENT_PROMPT_ACK || msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT
-        || msg.type === PAIR_MSG.AGENT_REPLY || msg.type === PAIR_MSG.AGENT_STATUS) {
+        || msg.type === PAIR_MSG.AGENT_REPLY || msg.type === PAIR_MSG.AGENT_STATUS
+        || msg.type === PAIR_MSG.AGENT_ACTIVITY) {
         if (msg.type === PAIR_MSG.AGENT_PROMPT || msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL) {
           if (meta.role !== 'tab') {
             sendJson(socket, {

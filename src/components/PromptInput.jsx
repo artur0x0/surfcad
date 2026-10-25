@@ -14,12 +14,14 @@ import {
 } from '../agent/agentPromptDemo.js';
 import { registerAgentPromptHandler } from '../agent/agentPromptHost.js';
 import { setAgentPromptWorking } from '../agent/agentFeaturePopupGate.js';
-import { pendingShown, typingReducer, typingSeed, typingShown, workingShown } from '../agent/agentPromptTyping.js';
+import { pendingShown, typingSeed, typingShown, workingShown } from '../agent/agentPromptTyping.js';
+import { createPromptWatch, stepPromptWatch } from '../agent/agentPromptWatch.js';
 import { clearFolded, foldBadge, readFolded, stateAnnouncement, writeFolded } from '../agent/agentPromptFold.js';
 import { conversationReducer, conversationSeed, stickToBottom } from '../agent/agentPromptConversation.js';
 import {
   AGENT_PROMPT_WORKING_TIMEOUT_MS,
   ackNotice,
+  agentPromptStallCopy,
   bindAgentPromptTransport,
   shouldUseLiveAgentPrompt,
 } from '../agent/agentPromptLive.js';
@@ -108,7 +110,23 @@ export default function PromptInput({
   const seed = demoSeed(demo?.state);
   const [input, setInput] = useState(seed.input);
   // One pending prompt drives the dots, Stop, and the working hint; see agentPromptTyping.js.
-  const [typing, dispatchTyping] = useReducer(typingReducer, seed, typingSeed);
+  const [typing, setTyping] = useState(() => typingSeed(seed));
+  const typingRef = useRef(typing);
+  typingRef.current = typing;
+  const dispatchTypingRef = useRef(null);
+  const watchRef = useRef(null);
+  if (watchRef.current == null) {
+    watchRef.current = createPromptWatch({
+      timeoutMs: AGENT_PROMPT_WORKING_TIMEOUT_MS,
+      onStall: () => dispatchTypingRef.current?.({ type: 'stall' }),
+    });
+  }
+  const dispatchTyping = useCallback((event) => {
+    const next = stepPromptWatch(typingRef.current, watchRef.current, event);
+    typingRef.current = next;
+    setTyping(next);
+  }, []);
+  dispatchTypingRef.current = dispatchTyping;
   // Two agent states: typing keeps the chat open with the dots; working
   // collapses the chat and shows the spinner in the field.
   const mode = typing.mode;
@@ -161,6 +179,7 @@ export default function PromptInput({
         if (!msg || typeof msg !== 'object') return;
         const text = typeof msg.text === 'string' ? msg.text : '';
         dispatchChat({ type: 'reply', id: msg.id, text });
+        // A reply is activity. A final one closes; a partial one restarts the deadline.
         dispatchTyping({ type: 'reply', id: msg.id, final: msg.final === true });
         if (msg.final === true) {
           if (foldedRef.current) setUnread(true);
@@ -171,7 +190,8 @@ export default function PromptInput({
       ...(typeof transport.onState === 'function'
         ? {
           onState(event) {
-            dispatchTyping({ type: 'state', state: event?.mode });
+            if (event?.stalled) dispatchTyping({ type: 'stall' });
+            else dispatchTyping({ type: 'state', state: event?.mode });
           },
         }
         : {
@@ -185,8 +205,13 @@ export default function PromptInput({
         setAck(event);
         dispatchTyping({ type: 'ack', id: event.id, delivery: event.delivery });
       },
+      onActivity(event) {
+        if (event?.hold === true) dispatchTyping({ type: 'hold', on: true });
+        else if (event?.hold === false) dispatchTyping({ type: 'hold', on: false });
+        else dispatchTyping({ type: 'activity' });
+      },
     });
-  }, [transport, visible]);
+  }, [dispatchTyping, transport, visible]);
 
   useEffect(() => {
     if (visible) return undefined;
@@ -200,7 +225,7 @@ export default function PromptInput({
     setFoldSettled(false);
     setUnread(false);
     return undefined;
-  }, [visible]);
+  }, [dispatchTyping, visible]);
 
   // Agent-owned feature cards stay closed for the whole run, in either mode.
   useEffect(() => {
@@ -210,18 +235,37 @@ export default function PromptInput({
     };
   }, [pending]);
 
+  // Demo seeds start pending without an event. Every later event goes through
+  // dispatchTyping, which restarts the deadline itself. This only catches the
+  // seed and a stall (pause) or a close (stop).
   useEffect(() => {
-    if (!pending) return undefined;
-    const timer = setTimeout(() => dispatchTyping({ type: 'timeout' }), AGENT_PROMPT_WORKING_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  }, [pending, mode]);
+    const watch = watchRef.current;
+    if (!watch) return undefined;
+    if (!pending) {
+      watch.stop();
+      return undefined;
+    }
+    if (typing.stalled) {
+      watch.pause();
+      return () => watch.pause();
+    }
+    watch.markPending();
+    // Clear the timer if this prompt unmounts mid-run. Pause keeps an
+    // in-flight bridge hold so a call that finishes can still refresh.
+    return () => watch.pause();
+  }, [pending, typing.stalled]);
 
   // Screen readers hear each state change; a reply is announced from onReply.
   useEffect(() => {
+    if (typing.stalled) {
+      setAnnounce(agentPromptStallCopy());
+      return undefined;
+    }
     const text = stateAnnouncement(mode);
     if (text) setAnnounce(text);
     else if (mode === 'idle') setAnnounce((prev) => (prev === 'Agent replied' ? prev : ''));
-  }, [mode]);
+    return undefined;
+  }, [mode, typing.stalled]);
 
   const foldPrompt = useCallback(() => {
     if (!foldable) return { ok: false, reason: 'not_foldable' };
@@ -306,7 +350,7 @@ export default function PromptInput({
     discardShot();
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     return sent;
-  }, [discardShot, input, promptContext, shot, transport, working]);
+  }, [discardShot, dispatchTyping, input, promptContext, shot, transport, working]);
 
   const stopAgent = useCallback(() => {
     const id = pendingIdRef.current;
@@ -315,7 +359,7 @@ export default function PromptInput({
     dispatchTyping({ type: 'stop' });
     setAnnounce('');
     return { ok: true };
-  }, [transport]);
+  }, [dispatchTyping, transport]);
 
   // Dismiss: on desktop it folds the prompt (the history stays); on mobile,
   // where the fold has not landed, it hides the pane as before.
@@ -534,6 +578,12 @@ export default function PromptInput({
         </p>
       ) : null}
 
+      {typing.stalled ? (
+        <p className="agent-prompt-stall text-ui-sm text-on-dark" data-agent-prompt-stall="">
+          {agentPromptStallCopy()}
+        </p>
+      ) : null}
+
       {shotCue ? (
         <div className="agent-prompt-shot-cue" data-agent-prompt-shot-cue="">
           {shotPreview ? (
@@ -573,7 +623,7 @@ export default function PromptInput({
             disabled={working}
             aria-label="Message your agent"
           />
-          {working && !input ? (
+          {working && !input && !typing.stalled ? (
             <span className="agent-prompt-hint text-ui-sm text-on-dark" data-agent-working="">
               <Loader2 size={14} className="agent-prompt-spinner text-on-dark" aria-hidden />
               <span>Agent is working...</span>
