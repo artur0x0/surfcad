@@ -3,6 +3,12 @@
  *
  * Format (UTC): yyyy-mm-dd-hh-mm-ss-SSSS-<4 hex>
  *   2026-10-07-20-56-31-0423-a3f9
+ * The stamp is the UTC clock, to one millisecond. The 4 hex digits are 16
+ * bits. Inside one process they are a counter: the first id in a
+ * millisecond starts at a crypto-random uint16, and each later id takes the
+ * next value. After a full pass of those 16 bits the stamp moves forward
+ * one millisecond. A fresh draw on every call can repeat inside one
+ * millisecond (16 bits, no sequence). Stored ids are not rewritten.
  * Minted once. A push does not change it. Whether the part has been pushed
  * is `isSynced` on the local part record, never part of the id and never
  * written to `.surf.json`.
@@ -85,22 +91,49 @@ function pad(n, width) {
   return String(n).padStart(width, '0');
 }
 
-function randomHex4() {
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+/**
+ * 16 bits. `crypto.getRandomValues` supplies 2 bytes. Without that API,
+ * `Math.random` fills the same width. Callers that need a pinned suffix
+ * pass `rand` and never reach this.
+ */
+function randomUint16() {
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
     const bytes = new Uint8Array(2);
     crypto.getRandomValues(bytes);
-    return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+    return bytes[0] * 256 + bytes[1];
   }
-  return Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
+  return Math.floor(Math.random() * 0x10000);
 }
 
-/**
- * Mint an id. `now` is a Date or epoch ms (tests pin it).
- * `rand` is 4 hex chars (tests pin it); otherwise random.
- * The id is permanent. A `local` option is ignored so a caller cannot prefix it.
- */
-export function mintSurfId({ now = new Date(), rand } = {}) {
-  const date = now instanceof Date ? now : new Date(now);
+function hex4(n) {
+  return (n & 0xffff).toString(16).padStart(4, '0');
+}
+
+// Last issued millisecond, the suffix just issued there, and the suffix
+// that opened that millisecond. The walk is R, R+1, ..., 0xffff, 0, ..., R-1
+// and then the stamp steps forward. A clock that moves ahead opens a new
+// millisecond instead of finishing the old walk.
+let seqMs = Number.NEGATIVE_INFINITY;
+let seq = 0;
+let seqStart = 0;
+
+function allocateSurfMs(realMs) {
+  if (realMs > seqMs) {
+    seqMs = realMs;
+    seq = randomUint16();
+    seqStart = seq;
+    return seqMs;
+  }
+  seq = (seq + 1) & 0xffff;
+  if (seq === seqStart) {
+    seqMs += 1;
+    seq = randomUint16();
+    seqStart = seq;
+  }
+  return seqMs;
+}
+
+function formatSurfId(date, hex) {
   const stamp = [
     pad(date.getUTCFullYear(), 4),
     pad(date.getUTCMonth() + 1, 2),
@@ -110,12 +143,31 @@ export function mintSurfId({ now = new Date(), rand } = {}) {
     pad(date.getUTCSeconds(), 2),
     pad(date.getUTCMilliseconds(), 4),
   ].join('-');
-  const hex = String(rand != null ? rand : randomHex4())
+  return `${stamp}-${hex}`;
+}
+
+function normalizeHex4(rand) {
+  return String(rand)
     .toLowerCase()
     .replace(/[^0-9a-f]/g, '')
     .padStart(4, '0')
     .slice(0, 4);
-  return `${stamp}-${hex}`;
+}
+
+/**
+ * Mint an id. `now` is a Date or epoch ms (tests pin it). The issued stamp
+ * is `now` or later: a burst that already walked this millisecond keeps
+ * moving forward so the id cannot repeat.
+ * `rand` is 4 hex chars (tests pin it) and skips the counter.
+ * The id is permanent. A `local` option is ignored so a caller cannot prefix it.
+ */
+export function mintSurfId({ now = new Date(), rand } = {}) {
+  const date = now instanceof Date ? now : new Date(now);
+  if (rand != null) return formatSurfId(date, normalizeHex4(rand));
+  const realMs = date.getTime();
+  if (!Number.isFinite(realMs)) return formatSurfId(date, hex4(randomUint16()));
+  const ms = allocateSurfMs(realMs);
+  return formatSurfId(new Date(ms), hex4(seq));
 }
 
 function splitSurfHeader(script) {
