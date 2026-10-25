@@ -123,6 +123,19 @@ export function disposeCuttingPlaneWidget(widget) {
 }
 
 /**
+ * Section preview only. Accept (`showPlane: false`) drops the widget and
+ * leaves the clip alone. Edit and reopen pass `showPlane: true` and the
+ * widget comes back. The cut tool does not use this.
+ */
+export function syncSectionPreview(scene, widget, options = {}) {
+  if (options.showPlane === false) {
+    if (widget) disposeCuttingPlaneWidget(widget);
+    return null;
+  }
+  return placeCuttingPlaneWidget(scene, widget, options);
+}
+
+/**
  * Put the section preview on `scene`. A scene rebuild leaves the previous
  * widget parented to a scene that is no longer drawn; this reattaches it.
  * A size or colour change rebuilds the mesh. The widget is exempt from the

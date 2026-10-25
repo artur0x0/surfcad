@@ -24,11 +24,17 @@ import {
   beginSectionClip,
   endSectionClip,
   SECTION_PLANE_COLOR,
+  sectionClipActive,
   sectionClipSession,
   sectionKeepsWorldPoint,
   syncSectionClipMeshes,
 } from './sectionClip.js';
-import { createCuttingPlaneWidget, placeCuttingPlaneWidget } from './cuttingPlaneWidget.js';
+import {
+  createCuttingPlaneWidget,
+  disposeCuttingPlaneWidget,
+  placeCuttingPlaneWidget,
+  syncSectionPreview,
+} from './cuttingPlaneWidget.js';
 
 function assert(cond, message) {
   if (!cond) throw new Error(message);
@@ -172,6 +178,33 @@ function verifyAssemblySectionClipBody() {
   syncSectionClipMeshes([rear]);
   assert(childMat.clippingPlanes === session.planes, 'skin created under the part missed the plane');
   assert(seamMat.clippingPlanes == null, 'contact seam shader was given clipping planes');
+
+  const previewScene = new Scene();
+  let preview = syncSectionPreview(previewScene, null, {
+    showPlane: true,
+    normal: [1, 0, 0],
+    originOffset: 0,
+    size: 80,
+    color: SECTION_PLANE_COLOR,
+  });
+  assert(preview?.parent === previewScene, 'editing shows the section plane');
+  assert(sectionClipActive(), 'clip is active while the preview shows');
+  const livePlanes = session.planes;
+  assert(material.clippingPlanes === livePlanes, 'clip stays on the part while the preview shows');
+  preview = syncSectionPreview(previewScene, preview, { showPlane: false });
+  assert(preview == null && previewScene.children.length === 0, 'accept hides the section plane');
+  assert(sectionClipActive(), 'accept keeps the section clip');
+  assert(material.clippingPlanes === livePlanes, 'accept leaves the clip on the part');
+  preview = syncSectionPreview(previewScene, preview, {
+    showPlane: true,
+    normal: [1, 0, 0],
+    originOffset: 0,
+    size: 80,
+    color: SECTION_PLANE_COLOR,
+  });
+  assert(preview?.parent === previewScene, 'edit shows the section plane again');
+  assert(material.clippingPlanes === livePlanes, 'edit keeps the same clip');
+  if (preview) disposeCuttingPlaneWidget(preview);
 
   endSectionClip();
   assert(material.clippingPlanes === priorPlanes, 'restore did not put the original clippingPlanes back');

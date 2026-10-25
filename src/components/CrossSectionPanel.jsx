@@ -110,7 +110,7 @@ const CrossSectionPanel = forwardRef(({
         onPlaneChange?.({
           normal,
           originOffset: range.center,
-          showPlane: true
+          showPlane: !isCollapsed,
         });
       } else if (offset < range.min || offset > range.max) {
         // If offset is out of new range, re-center
@@ -124,11 +124,11 @@ const CrossSectionPanel = forwardRef(({
         onPlaneChange?.({
           normal,
           originOffset: range.center,
-          showPlane: true
+          showPlane: !isCollapsed,
         });
       }
     }
-  }, [bounds, planeType, isCustom, customNormal]);
+  }, [bounds, planeType, isCustom, customNormal, isCollapsed]);
 
   const calculateOffsetRange = (bounds, normal) => {
     if (!bounds) return { min: -100, max: 100, center: 0 };
@@ -239,13 +239,15 @@ const handleButtonClick = () => {
 };
 
   const handleChevronClick = () => {
-    setIsCollapsed(!isCollapsed);
-    // Options can collapse. The preview plane stays while the tool is on.
+    // The checkmark accepts: the options close and the preview hides.
+    // The clip stays. Opening the options, or a later edit, shows it again.
+    const opening = isCollapsed;
+    setIsCollapsed(!opening);
     const normal = isCustom ? customNormal : PLANE_PRESETS[planeType].normal;
     onPlaneChange?.({
       normal,
       originOffset: offset,
-      showPlane: true
+      showPlane: opening,
     });
   };
 
@@ -304,7 +306,7 @@ const handleButtonClick = () => {
     onPlaneChange?.({
       normal,
       originOffset: offset,
-      showPlane: true,
+      showPlane: !!open,
     });
     return true;
   }, [enabled, enabledRef, isCollapsed, isCustom, customNormal, planeType, offset, onPlaneChange]);
