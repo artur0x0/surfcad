@@ -21,6 +21,9 @@ import { partSurfId } from './git/surfId.js';
 import { jointPlanesFromScript } from './jointPlanes.js';
 import { dropPlanarFins } from './planarSeam.js';
 import { triangleSources } from './partSolidCache.js';
+import { matrixIsIdentity, poseJointCatalog } from './rigidSuffix.js';
+
+const jointCatalogCache = new WeakMap();
 
 const NORMAL_COS = Math.cos((FACE_MATCH_NORMAL_DEG * Math.PI) / 180);
 const AT_MM = FACE_MATCH_AT_MM;
@@ -206,6 +209,16 @@ export function catalogFromMeshData(mesh) {
   const src = mesh?.vertProperties;
   const rawIndex = mesh?.triVerts;
   if (!src || !rawIndex || !rawIndex.length) return null;
+  const rigid = mesh.featureRigid || null;
+  const rigidKey = rigid && !matrixIsIdentity(rigid) ? rigid.join(',') : '';
+  const cached = jointCatalogCache.get(mesh);
+  if (cached?.base) {
+    if (cached.rigidKey === rigidKey) return cached.posed;
+    const posed = poseJointCatalog(cached.base, rigid);
+    cached.rigidKey = rigidKey;
+    cached.posed = posed;
+    return posed;
+  }
   const np = mesh.numProp || 3;
   const nVert = Math.floor(src.length / np);
   const positions = new Float32Array(nVert * 3);
@@ -237,7 +250,9 @@ export function catalogFromMeshData(mesh) {
   }
   const out = { faces };
   if (axes.length) out.axes = axes;
-  return out;
+  const posed = poseJointCatalog(out, rigid);
+  jointCatalogCache.set(mesh, { rigidKey, posed, base: out });
+  return posed;
 }
 
 /**

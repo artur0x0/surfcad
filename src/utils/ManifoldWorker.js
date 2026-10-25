@@ -10,6 +10,7 @@
  *   await manifold.init();
  *   const meshData = await manifold.execute(script);
  */
+import { copyMeshForTransfer } from './meshTransfer.js'
 import { softRestartDecision } from './manifoldWorkerLiveness.js'
 import { createGeometryPool } from './geometryPool.js'
 import { liveGeometryWorkerCap } from './geometryPoolCap.js'
@@ -196,6 +197,10 @@ class ManifoldWorker {
             : {}),
           // Feature memoisation scopes its report by part (keys are content-addressed).
           ...(typeof options.partId === 'string' && options.partId ? { partId: options.partId } : {}),
+          ...(options.omitMesh === true ? { omitMesh: true } : {}),
+          ...(typeof options.knownMeshKey === 'string' && options.knownMeshKey
+            ? { knownMeshKey: options.knownMeshKey }
+            : {}),
         }
       };
       // Store request (the message stays so a crash elsewhere can re-post it)
@@ -600,11 +605,12 @@ class ManifoldWorker {
           reject(error);
         },
       });
+      const shipped = copyMeshForTransfer(mesh);
       this.worker.postMessage({
         type: 'trimMeshByPlane',
         id: requestId,
-        payload: { mesh, normal, originOffset },
-      });
+        payload: { mesh: shipped.mesh, normal, originOffset },
+      }, shipped.transfers);
     });
   }
 
@@ -629,6 +635,7 @@ class ManifoldWorker {
         reject(new Error(`${type} timed out after ${timeoutMs / 1000}s`));
       }, timeoutMs);
       const message = { type, id: requestId, payload };
+      const transfers = Array.isArray(options.transfers) ? options.transfers : undefined;
       this.pendingRequests.set(requestId, {
         kind: options.kind || type,
         message,
@@ -641,8 +648,14 @@ class ManifoldWorker {
           reject(error);
         },
       });
-      this.worker.postMessage(message);
+      if (transfers && transfers.length) this.worker.postMessage(message, transfers);
+      else this.worker.postMessage(message);
     });
+  }
+
+  /** The primary already holds this mesh. Update only its rigid matrix. */
+  async setFeatureRigid(meshKey, matrix) {
+    return this._request('setFeatureRigid', { meshKey, matrix });
   }
 
   /**
@@ -650,7 +663,14 @@ class ManifoldWorker {
    * worker without replacing the cached solid.
    */
   async probeOverlap(cutterScript, parts, options = {}) {
-    return this._request('probeOverlap', { cutterScript, parts }, options);
+    const transfers = [];
+    const shipped = (Array.isArray(parts) ? parts : []).map((part) => {
+      if (!part?.mesh?.vertProperties) return part;
+      const copy = copyMeshForTransfer(part.mesh);
+      transfers.push(...copy.transfers);
+      return { ...part, mesh: copy.mesh };
+    });
+    return this._request('probeOverlap', { cutterScript, parts: shipped }, { ...options, transfers });
   }
 
   async previewBoolean(op, bodies, options = {}) {
@@ -1277,6 +1297,12 @@ class ManifoldContext {
   }
 
   /** Feature memoisation on the primary worker (the active part): see ManifoldWorker.featureMemo. */
+  async setFeatureRigid(meshKey, matrix) {
+    await this.whenReady();
+    if (!this.worker?.isReady) throw new Error('ManifoldContext not initialized');
+    return this.worker.setFeatureRigid(meshKey, matrix);
+  }
+
   async featureMemo(opts = {}) {
     if (!this.worker) return null;
     return this.worker.featureMemo(opts);

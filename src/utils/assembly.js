@@ -9,6 +9,8 @@
  * and live on this document. Part scripts are not modified.
  */
 
+import { composePlacementWithMatrix } from './rigidSuffix.js';
+import { shipFieldsFromResult } from './meshShip.js';
 import { normalizeSheetMetalBinding } from './scs/scsCatalog.js';
 import { isSurfId, partSurfId, stripSurfId } from './git/surfId.js';
 import {
@@ -999,6 +1001,7 @@ export function recordPartRun(runs, id, outcome) {
   const mesh = outcome?.mesh;
   const ok = outcome?.ok === true && !!(mesh && mesh.vertProperties);
   const geom = geometryFromExecuteResult(outcome);
+  const ship = shipFieldsFromResult(outcome);
   next[id] = ok
     ? {
       ok: true,
@@ -1007,6 +1010,10 @@ export function recordPartRun(runs, id, outcome) {
       volume: geom.volume,
       bbox: geom.bbox,
       ...(geom.bodyCount != null ? { bodyCount: geom.bodyCount } : {}),
+      ...ship,
+      ...(outcome.assetKey != null ? { assetKey: outcome.assetKey } : {}),
+      ...(outcome.scriptKey && !ship.scriptKey ? { scriptKey: outcome.scriptKey } : {}),
+      ...(outcome.unmoved === true ? { unmoved: true } : {}),
     }
     : {
       ok: false,
@@ -1035,13 +1042,19 @@ export function composeViewportParts(doc, runs) {
     const run = runs?.[partDefinitionId(part)];
     if (!run || run.ok !== true || !run.mesh || !run.mesh.vertProperties) continue;
     const pose = partPlacement(part);
+    const featureRigid = run.featureRigid || run.mesh?.featureRigid || null;
+    const placement = composePlacementWithMatrix(pose, featureRigid);
     out.push({
       id: part.id,
       surfId: partSurfId(part),
       definitionId: partDefinitionId(part),
       mesh: run.mesh,
-      position: pose.t,
-      placement: pose,
+      position: placement.t,
+      placement,
+      featureRigid,
+      localBBox: run.baseBBox || run.bbox || null,
+      bbox: run.bbox || null,
+      bodyCentroids: run.bodyCentroids || null,
     });
   }
   return out;
@@ -1074,8 +1087,13 @@ export function preserveHiddenPartRuns(doc, nextRuns, prevRuns) {
     if (!mesh) continue;
     const current = runs[def];
     if (current?.ok === true && current.mesh?.vertProperties) continue;
-    const kept = { ok: true, mesh, error: null };
+    const kept = { ok: true, mesh, error: null, ...shipFieldsFromResult(earlier) };
     if (Number.isFinite(earlier.bodyCount)) kept.bodyCount = earlier.bodyCount;
+    if (earlier.volume != null) kept.volume = earlier.volume;
+    if (earlier.bbox) kept.bbox = earlier.bbox;
+    if (earlier.assetKey != null) kept.assetKey = earlier.assetKey;
+    if (earlier.scriptKey) kept.scriptKey = earlier.scriptKey;
+    if (earlier.unmoved === true) kept.unmoved = true;
     runs[def] = kept;
   }
   return runs;
