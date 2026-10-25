@@ -102,8 +102,8 @@ Finish each stage across the whole assembly before starting the next, and take a
 Assembly and part lifecycle:
 
 - `rename_part` `{ part_id, name }` / `rename_assembly` `{ assembly_id, name }` change the display name only (`moved: false`). The next Save writes the same `parts/<id>.js` / `assemblies/<id>.surf.json`.
-- `delete_part` `{ part_id, scope: "assembly" | "repo", confirm? }`: `assembly` drops the row; `repo` also plans a file delete on the next Save, needs `confirm: true`, and returns `part_still_referenced` if another assembly lists the id.
-- `delete_assembly` `{ assembly_id, confirm: true, delete_parts? }` deletes the open assembly. After confirm, a committed assembly is one commit that deletes `assemblies/<id>.surf.json`. `delete_parts` also deletes `parts/<id>.js` when no other assembly on the branch references that id. A never-saved assembly is removed from the working copy only. Nothing is written until `confirm: true`.
+- `delete_part` `{ part_id, scope: "assembly" | "repo", confirm? }`: `assembly` drops the row and does not commit. `repo`, after `confirm: true`, deletes `parts/<id>.js` in one commit and returns `assemblies` naming every other assembly that uses the part. A failed scan is `delete_refused` and writes nothing. Those other assemblies are not rewritten.
+- `delete_assembly` `{ assembly_id, confirm: true, delete_parts? }` deletes that assembly whether it is open or not. After confirm, a committed assembly is one commit that deletes `assemblies/<id>.surf.json`. `delete_parts` also deletes `parts/<id>.js` when no other assembly on the branch references that id. A never-saved open assembly is removed from the working copy only. The result lists assemblies that use its parts. Nothing is written until `confirm: true`.
 - `list_assemblies` returns what the Open picker shows, as `[{ id, name, open }]`: saved assemblies, the open working copy (also before its first Save, and in local mode), and on a legacy vault its name-only folders as `{ id: null, name, legacy: true }` (no opaque id until `git_upgrade_vault`).
 
 ## `confirm: true`
@@ -131,7 +131,7 @@ MCP returns JSON text; bridge refusals use `isError: true` with `code`, `message
 | `unknown_part` / `unknown_assembly` | Id not in the open document / vault, or a path or name was passed. Call `parts` or `list_assemblies` and retry with a listed id. |
 | `part_mismatch` | `part_id` is not the active part. `set_active_part` first, or pass the active id. |
 | `no_assembly` | No open document. `create_assembly` or `open_assembly`. |
-| `part_still_referenced` | `delete_part` scope `repo` while another assembly lists the id. Use `scope: "assembly"` or delete those parents first. |
+| `delete_refused` | The delete was refused (the scan of other assemblies failed, or the id is missing) and nothing was written. Tell the user the message. Do not retry until they ask. |
 | `confirm_required` | Destructive op without `confirm: true` (including `delete_feature` on the base feature; see `details.dependents`). Nothing was changed. Ask the user; only then retry with it. |
 | `consent_pending` | Real-repo write while the consent dialog is up. Nothing was written. Ask the user to click **Allow**, then retry the same call (`details.retry_after_ms`). |
 | `real_repo_blocked` | Real-repo write that cannot get consent: headless / automation, or the user denied this session. Tell the user; do not loop. |

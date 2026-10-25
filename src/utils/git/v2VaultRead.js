@@ -284,6 +284,81 @@ export async function openV2Assembly(adapter, repo, assemblyId, opts = {}) {
   };
 }
 
+export const PART_USE_SCAN_REFUSED = "Couldn't check where this part is used. Nothing was deleted.";
+
+function refsInAssembly(json) {
+  const refs = new Set();
+  for (const row of json?.parts || []) {
+    const def = partDefinitionId(row);
+    if (isV2SurfId(def)) refs.add(def);
+    if (isV2SurfId(row?.id)) refs.add(row.id);
+    if (isV2SurfId(row?.instanceOf)) refs.add(row.instanceOf);
+  }
+  for (const group of json?.groups || []) {
+    for (const id of group?.partIds || []) {
+      if (isV2SurfId(id)) refs.add(id);
+    }
+  }
+  return refs;
+}
+
+/**
+ * Tip `assemblies/*.surf.json` other than `exceptAssemblyId` (the open one).
+ * Fail closed when the tree or a sibling file cannot be read. Does not
+ * write, and does not include the open working copy.
+ * @returns {Promise<{ ok: true, assemblies: {id: string, name: string}[], refs: string[], paths: Set<string> } | { ok: false }>}
+ */
+export async function scanOtherAssemblyPartUses(adapter, repo, branch, partIds, {
+  exceptAssemblyId = null,
+} = {}) {
+  const watch = new Set((partIds || []).filter((id) => isV2SurfId(id)));
+  let tree;
+  try {
+    tree = await adapter.listTree(repo, branch);
+  } catch {
+    return { ok: false };
+  }
+  if (!Array.isArray(tree)) return { ok: false };
+  const paths = new Set();
+  const refs = new Set();
+  const assemblies = [];
+  for (const entry of tree) {
+    const path = typeof entry === 'string' ? entry : entry?.path;
+    if (!path) continue;
+    paths.add(path);
+    const parsed = parseIdPath(path);
+    if (parsed?.kind !== 'assembly') continue;
+    if (exceptAssemblyId && parsed.id === exceptAssemblyId) continue;
+    let file;
+    try {
+      file = await adapter.readFile(repo, path, branch);
+    } catch {
+      return { ok: false };
+    }
+    if (!file || file.content == null) return { ok: false };
+    let json;
+    try {
+      json = typeof file.content === 'string' ? JSON.parse(file.content) : file.content;
+    } catch {
+      return { ok: false };
+    }
+    if (!json || typeof json !== 'object') return { ok: false };
+    const local = refsInAssembly(json);
+    let hit = false;
+    for (const id of local) {
+      refs.add(id);
+      if (watch.has(id)) hit = true;
+    }
+    if (!hit) continue;
+    const name = typeof json.name === 'string' && json.name.trim()
+      ? json.name.trim()
+      : parsed.id;
+    assemblies.push({ id: parsed.id, name });
+  }
+  assemblies.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  return { ok: true, assemblies, refs: [...refs], paths };
+}
+
 /**
  * Other assemblies on this branch that list `partId`.
  * listTree failure is fail-closed (treat as referenced).

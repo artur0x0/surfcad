@@ -6,14 +6,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { assemblyRows } from '../src/agent/state/assemblyRows.js';
-import { renamePart } from '../src/utils/assembly.js';
-import { executeDeleteV2Assembly } from '../src/utils/git/deleteV2Assembly.js';
+import { partAlsoUsedCopy, renamePart } from '../src/utils/assembly.js';
+import { executeDeleteV2Assembly, executeDeleteV2Part } from '../src/utils/git/deleteV2Assembly.js';
 import { executePlanSave } from '../src/utils/git/executePlanSave.js';
 import { assemblyIdPath, partIdPath } from '../src/utils/git/idPaths.js';
 import { createMockGithubAdapter } from '../src/utils/git/mockGithubAdapter.js';
 import { mintSurfId } from '../src/utils/git/surfId.js';
 import { createSyncStore } from '../src/utils/git/syncStore.js';
-import { listV2Assemblies } from '../src/utils/git/v2VaultRead.js';
+import { listV2Assemblies, scanOtherAssemblyPartUses } from '../src/utils/git/v2VaultRead.js';
 
 const ASM_A = mintSurfId({ now: new Date('2026-10-18T03:10:00.001Z'), rand: 'a11a' });
 const ASM_B = mintSurfId({ now: new Date('2026-10-18T03:10:00.002Z'), rand: 'b22b' });
@@ -234,4 +234,99 @@ test('offline delete waits, and a moved tip is a conflict with no write', async 
   assert.equal(commits(again.adapter).length, remoteBefore + 1);
   assert.ok(await again.adapter.readFile(REPO, assemblyIdPath(ASM_A), 'main'));
   assert.equal(again.a.name, 'Metallll');
+});
+
+test('deleting an assembly that is not open removes it after reload', async () => {
+  const { adapter, store, a } = await seedPair();
+  const openBytes = (await adapter.readFile(REPO, assemblyIdPath(ASM_A), 'main')).content;
+  const before = commits(adapter).length;
+  const result = await executeDeleteV2Assembly({
+    adapter,
+    repo: REPO,
+    store,
+    assemblyId: ASM_B,
+    openDoc: a,
+    deleteParts: false,
+    confirm: true,
+  });
+  assert.equal(result.status, 'committed', result.error);
+  assert.equal(commits(adapter).length, before + 1);
+  assert.equal(await adapter.readFile(REPO, assemblyIdPath(ASM_B), 'main'), null);
+  assert.equal((await adapter.readFile(REPO, assemblyIdPath(ASM_A), 'main')).content, openBytes);
+  assert.ok(await adapter.readFile(REPO, partIdPath(SHARED), 'main'));
+  const listed = await listV2Assemblies(adapter, REPO, 'main');
+  assert.equal(listed.some((row) => row.id === ASM_B), false);
+  assert.equal(listed.some((row) => row.id === ASM_A), true);
+  assert.equal(a.name, 'Metallll');
+});
+
+test('part delete names the other assembly, writes nothing until confirmed, and leaves that assembly', async () => {
+  const { adapter, store, a, sibling } = await seedPair();
+  assert.equal(
+    partAlsoUsedCopy(['Bike Frame', 'Pi 5 Case']),
+    'This part is also used in: Bike Frame, Pi 5 Case.',
+  );
+  const scan = await scanOtherAssemblyPartUses(adapter, REPO, 'main', [SHARED], {
+    exceptAssemblyId: ASM_A,
+  });
+  assert.equal(scan.ok, true);
+  assert.deepEqual(scan.assemblies.map((row) => row.name), ['Other']);
+  assert.equal(scan.assemblies.some((row) => row.id === ASM_A), false);
+
+  const before = commits(adapter).length;
+  const held = await executeDeleteV2Part({
+    adapter,
+    repo: REPO,
+    store,
+    partId: SHARED,
+    openDoc: a,
+    confirm: false,
+  });
+  assert.equal(held.code, 'confirm_required');
+  assert.equal(commits(adapter).length, before);
+  assert.ok(await adapter.readFile(REPO, partIdPath(SHARED), 'main'));
+
+  const result = await executeDeleteV2Part({
+    adapter,
+    repo: REPO,
+    store,
+    partId: SHARED,
+    openDoc: a,
+    confirm: true,
+  });
+  assert.equal(result.status, 'committed', result.error);
+  assert.equal(commits(adapter).length, before + 1);
+  assert.equal(result.assemblies.some((row) => row.name === 'Other'), true);
+  assert.equal(await adapter.readFile(REPO, partIdPath(SHARED), 'main'), null);
+  assert.ok(await adapter.readFile(REPO, partIdPath(ONLY), 'main'));
+  assert.equal((await adapter.readFile(REPO, assemblyIdPath(ASM_B), 'main')).content, sibling);
+  const openText = (await adapter.readFile(REPO, assemblyIdPath(ASM_A), 'main')).content;
+  assert.equal(openText.includes(SHARED), false);
+  assert.equal(openText.includes(ONLY), true);
+  const remembered = store.getAssemblyCommit(REPO, 'main', ASM_A);
+  assert.equal(remembered.files[partIdPath(SHARED)], undefined);
+  assert.equal(JSON.stringify(remembered.json).includes(SHARED), false);
+  assert.equal(a.name, 'Metallll');
+});
+
+test('a failed part scan refuses and writes nothing', async () => {
+  const { adapter, store, a } = await seedPair();
+  const before = commits(adapter).length;
+  adapter.listTree = async () => {
+    throw new Error('tree down');
+  };
+  const result = await executeDeleteV2Part({
+    adapter,
+    repo: REPO,
+    store,
+    partId: ONLY,
+    openDoc: a,
+    confirm: true,
+  });
+  assert.equal(result.status, 'error');
+  assert.equal(result.code, 'delete_refused');
+  assert.match(result.error, /Couldn't check where this part is used/);
+  assert.equal(commits(adapter).length, before);
+  assert.ok(await adapter.readFile(REPO, partIdPath(ONLY), 'main'));
+  assert.ok(await adapter.readFile(REPO, assemblyIdPath(ASM_A), 'main'));
 });

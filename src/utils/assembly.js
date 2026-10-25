@@ -12,7 +12,7 @@
 import { composePlacementWithMatrix } from './rigidSuffix.js';
 import { shipFieldsFromResult } from './meshShip.js';
 import { normalizeSheetMetalBinding } from './scs/scsCatalog.js';
-import { isSurfId, partSurfId, stripSurfId } from './git/surfId.js';
+import { isSurfId, isV2SurfId, partSurfId, stripSurfId } from './git/surfId.js';
 import {
   jointedSurfIds,
   normalizeAssemblyJoints,
@@ -505,6 +505,15 @@ export function partRepoDeleteConfirmCopy(partId) {
   return `Delete ${file} from the repo? This can't be undone from SurfCAD.`;
 }
 
+/** Confirmation sentence naming unopened assemblies that use this part. */
+export function partAlsoUsedCopy(names) {
+  const list = (Array.isArray(names) ? names : [])
+    .map((name) => String(name || '').trim())
+    .filter(Boolean);
+  if (!list.length) return '';
+  return `This part is also used in: ${list.join(', ')}.`;
+}
+
 /**
  * Instance labels for the Parts list. One entry per row id:
  * `isInstance` (the row carries `instanceOf`), `count` (rows that place
@@ -563,8 +572,9 @@ export function partDeleteDialogCopy({ name, canDeleteRepo = false, otherInstanc
 }
 
 /** True when Parts delete can offer "Delete from assembly & repo". */
-export function partCanDeleteFromRepo(source, partId, path) {
+export function partCanDeleteFromRepo(source, partId, path, vaultLayout = '') {
   if (source !== 'git') return false;
+  if (vaultLayout === 'v2' && isV2SurfId(partId)) return true;
   const candidate = String(path || partId || '');
   if (!candidate || candidate.startsWith('local:')) return false;
   // Vault part scripts only (assembly-owned or shared). After stable surf

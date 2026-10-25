@@ -1,26 +1,35 @@
 /**
- * Delete one committed v2 assembly (§2.7, §2.8, §2.10).
+ * Confirmed v2 deletes (§2.7, §2.8, §2.10), owner decision:
  *
- * One writeVaultCommit after confirm. Deletes assemblies/<id>.surf.json.
- * Delete parts also deletes parts/<id>.js and its mesh when no other
- * assembly on the branch references that id (tip .surf.json files, plus
- * the open working copy when it is a different assembly). Sibling
- * assemblies are not rewritten.
+ * Assembly, open or not: one writeVaultCommit deletes
+ * assemblies/<id>.surf.json. Delete parts also deletes parts/<id>.js
+ * and its mesh when no other assembly references that id (tip
+ * .surf.json files, plus the open working copy when it is a different
+ * assembly). Sibling assemblies are not rewritten.
  *
- * listTree or a sibling read that fails refuses the delete and writes
- * nothing. Offline stores one pending write. A moved tip that touches a
- * planned path is a conflict. The caller adopts the working copy only
- * after status committed. A missing assembly file is local: no git write.
+ * Part: one writeVaultCommit deletes parts/<id>.js (and its mesh when
+ * the tree has it) and rewrites only the open assembly's committed
+ * .surf.json so a reload does not put the row back. Other assemblies
+ * are named in the result and left untouched.
+ *
+ * A failed scan writes nothing. Offline stores one pending write. A
+ * moved tip that touches a planned path is a conflict. The caller
+ * adopts the working copy only after status committed or local. A
+ * missing file is local: no git write.
  */
 import { partDefinitionId } from '../assembly.js';
-import { fileDelete, GitAdapterError } from './githubAdapterInterface.js';
-import { assemblyIdPath, parseIdPath, partIdPath, partMeshIdPath } from './idPaths.js';
-import { makeBranchTip } from './lastCommit.js';
+import { gitBlobSha } from './binaryContent.js';
+import { fileDelete, fileWrite, GitAdapterError } from './githubAdapterInterface.js';
+import { assemblyIdPath, partIdPath, partMeshIdPath } from './idPaths.js';
+import { makeAssemblyCommit, makeBranchTip } from './lastCommit.js';
 import { isV2SurfId } from './surfId.js';
+import { parseSurfJsonV2, stringifySurfJsonV2 } from './surfJsonV2.js';
 import { SAVE_PENDING_COPY } from './executePlanSave.js';
+import { PART_USE_SCAN_REFUSED, scanOtherAssemblyPartUses } from './v2VaultRead.js';
 import { writeVaultCommit } from './writeVaultCommit.js';
 
 export const DELETE_ASSEMBLY_REFUSED = "Couldn't delete the assembly. Nothing was changed.";
+export const DELETE_PART_REFUSED = "Couldn't delete the part. Nothing was changed.";
 
 function refused(extra = {}) {
   return {
@@ -47,7 +56,7 @@ function conflictResult(paths) {
   };
 }
 
-function pendingResult(pending) {
+function pendingResult(pending, kind = 'delete-assembly') {
   const files = Array.isArray(pending?.files) ? pending.files : [];
   return {
     status: 'pending',
@@ -55,16 +64,30 @@ function pendingResult(pending) {
     files: files.map((file) => file.path).filter(Boolean),
     message: SAVE_PENDING_COPY,
     error: SAVE_PENDING_COPY,
-    kind: 'delete-assembly',
+    kind,
+  };
+}
+
+function waitingSave() {
+  return {
+    status: 'pending',
+    code: 'pending_save',
+    error: 'A save is already waiting. Nothing was deleted.',
+    message: 'A save is already waiting. Nothing was deleted.',
+  };
+}
+
+function partRefused(message = DELETE_PART_REFUSED) {
+  return {
+    status: 'error',
+    code: 'delete_refused',
+    error: message,
+    message,
   };
 }
 
 function branchNameOf(branch) {
   return (typeof branch === 'string' && branch.trim()) ? branch.trim() : 'main';
-}
-
-function entryPath(entry) {
-  return typeof entry === 'string' ? entry : entry?.path;
 }
 
 function addRefs(set, json) {
@@ -100,52 +123,6 @@ async function remoteShaOf(adapter, repo, branch) {
   return typeof sha === 'string' && sha ? sha : null;
 }
 
-/**
- * Other assemblies' part ids. Fail closed when the tree or a sibling
- * .surf.json cannot be read.
- */
-async function referenceScan(adapter, repo, branch, assemblyId, assemblyPath, openDoc) {
-  let tree;
-  try {
-    tree = await adapter.listTree(repo, branch);
-  } catch {
-    return { ok: false };
-  }
-  if (!Array.isArray(tree)) return { ok: false };
-  const paths = new Set();
-  const refs = new Set();
-  let sawTarget = false;
-  if (openDoc && openDoc.id && openDoc.id !== assemblyId) addRefs(refs, openDoc);
-  for (const entry of tree) {
-    const path = entryPath(entry);
-    if (!path) continue;
-    paths.add(path);
-    const parsed = parseIdPath(path);
-    if (parsed?.kind !== 'assembly') continue;
-    if (parsed.id === assemblyId || path === assemblyPath) {
-      sawTarget = true;
-      continue;
-    }
-    let file;
-    try {
-      file = await adapter.readFile(repo, path, branch);
-    } catch {
-      return { ok: false };
-    }
-    if (!file || file.content == null) return { ok: false };
-    let json;
-    try {
-      json = typeof file.content === 'string' ? JSON.parse(file.content) : file.content;
-    } catch {
-      return { ok: false };
-    }
-    if (!json || typeof json !== 'object') return { ok: false };
-    addRefs(refs, json);
-  }
-  if (!sawTarget) return { ok: false };
-  return { ok: true, refs, paths };
-}
-
 async function overlap(adapter, repo, branch, store, remoteSha, planned, force) {
   if (force) return null;
   const tipSha = store?.getBranchTip?.(repo, branch)?.tipSha || null;
@@ -178,6 +155,7 @@ async function commitDeletes({
   files,
   baseSha,
   message,
+  assemblies = [],
 }) {
   let committed;
   try {
@@ -212,6 +190,7 @@ async function commitDeletes({
     branch,
     files,
     assemblyId,
+    assemblies,
     kind: 'delete-assembly',
   };
 }
@@ -249,14 +228,7 @@ export async function executeDeleteV2Assembly({
   const dropParts = deleteParts === true;
   const pending = store?.getPendingSave?.(repo, branchName) || null;
 
-  if (pending && pending.kind !== 'delete-assembly') {
-    return {
-      status: 'pending',
-      code: 'pending_save',
-      error: 'A save is already waiting. Nothing was deleted.',
-      message: 'A save is already waiting. Nothing was deleted.',
-    };
-  }
+  if (pending && pending.kind !== 'delete-assembly') return waitingSave();
 
   let remoteSha = null;
   try {
@@ -280,6 +252,7 @@ export async function executeDeleteV2Assembly({
       files: pending.files,
       baseSha: pending.baseSha,
       message: pending.message || message,
+      assemblies: Array.isArray(pending.assemblies) ? pending.assemblies : [],
     });
   }
 
@@ -289,7 +262,7 @@ export async function executeDeleteV2Assembly({
   } catch {
     return refused();
   }
-  if (!file || file.content == null) return { status: 'local', assemblyId: id };
+  if (!file || file.content == null) return { status: 'local', assemblyId: id, assemblies: [] };
 
   let json;
   try {
@@ -303,12 +276,19 @@ export async function executeDeleteV2Assembly({
   const commitMessage = (typeof message === 'string' && message.trim())
     || `Delete ${label}`;
 
+  const defs = definitionIds(json, openDoc, id);
+  const scan = await scanOtherAssemblyPartUses(adapter, repo, branchName, defs, {
+    exceptAssemblyId: id,
+  });
+  if (!scan.ok || !scan.paths.has(asmPath)) return refused();
+  const refs = new Set(scan.refs);
+  if (openDoc && openDoc.id && openDoc.id !== id) addRefs(refs, openDoc);
+  const assemblies = scan.assemblies;
+
   const files = [fileDelete(asmPath)];
   if (dropParts) {
-    const scan = await referenceScan(adapter, repo, branchName, id, asmPath, openDoc);
-    if (!scan.ok) return refused();
-    for (const partId of definitionIds(json, openDoc, id)) {
-      if (scan.refs.has(partId)) continue;
+    for (const partId of defs) {
+      if (refs.has(partId)) continue;
       let jsPath;
       let meshPath;
       try {
@@ -337,6 +317,7 @@ export async function executeDeleteV2Assembly({
         rev: openDoc?.rev ?? null,
         assemblyId: id,
         deleteParts: dropParts,
+        assemblies,
         capturedAt: now,
       });
     }
@@ -352,5 +333,282 @@ export async function executeDeleteV2Assembly({
     files,
     baseSha: remoteSha,
     message: commitMessage,
+    assemblies,
+  });
+}
+
+function textHash(text) {
+  return gitBlobSha(new TextEncoder().encode(String(text ?? '')));
+}
+
+/**
+ * Committed .surf.json with this part (and its instances) removed.
+ * `changed` is false when a round-trip of the original already matches,
+ * so a sibling file that does not list the part is not rewritten.
+ * `{ ok: false }` when the file cannot be parsed.
+ */
+function rewrittenAssemblyText(content, partId) {
+  try {
+    const original = stringifySurfJsonV2(parseSurfJsonV2(content));
+    const raw = typeof content === 'string' ? JSON.parse(content) : content;
+    const parts = (Array.isArray(raw?.parts) ? raw.parts : []).filter((row) => {
+      if (!row || typeof row !== 'object') return false;
+      if (row.id === partId || row.instanceOf === partId) return false;
+      return partDefinitionId(row) !== partId;
+    });
+    let activeId = raw?.activeId ?? null;
+    if (activeId === partId || !parts.some((row) => row.id === activeId)) {
+      activeId = parts[0]?.id ?? null;
+    }
+    const draft = { ...raw, parts, activeId };
+    if (Array.isArray(raw?.groups)) {
+      draft.groups = raw.groups.map((group) => ({
+        ...group,
+        partIds: (Array.isArray(group?.partIds) ? group.partIds : []).filter((rowId) => rowId !== partId),
+      }));
+    }
+    const text = stringifySurfJsonV2(parseSurfJsonV2(draft));
+    return { ok: true, text, changed: text !== original };
+  } catch {
+    return { ok: false };
+  }
+}
+
+async function rememberOpenPartDelete(store, repo, branch, assemblyId, partId, nextText, asmPath) {
+  if (!store?.getAssemblyCommit || typeof store.putAssemblyCommit !== 'function') return;
+  if (!isV2SurfId(assemblyId)) return;
+  const existing = store.getAssemblyCommit(repo, branch, assemblyId);
+  if (!existing) return;
+  const files = { ...existing.files };
+  try {
+    delete files[partIdPath(partId)];
+    delete files[partMeshIdPath(partId)];
+  } catch {
+    return;
+  }
+  let json = existing.json;
+  if (typeof nextText === 'string' && asmPath) {
+    files[asmPath] = { contentHash: textHash(nextText) };
+    try {
+      json = JSON.parse(nextText);
+    } catch {
+      json = existing.json;
+    }
+  }
+  const next = makeAssemblyCommit({
+    assemblyId,
+    files,
+    json,
+    capturedAt: existing.capturedAt,
+    stalePaths: existing.stalePaths,
+  });
+  if (next) await store.putAssemblyCommit(repo, branch, next);
+}
+
+async function commitPartDeletes({
+  adapter,
+  repo,
+  branch,
+  store,
+  partId,
+  assemblyId,
+  files,
+  baseSha,
+  message,
+  assemblies = [],
+  nextText = null,
+  asmPath = null,
+}) {
+  let committed;
+  try {
+    committed = await writeVaultCommit({
+      adapter,
+      repo,
+      branch,
+      baseSha,
+      message,
+      files,
+      create: false,
+    });
+  } catch (err) {
+    if (err instanceof GitAdapterError && err.code === 'non_fast_forward') {
+      return conflictResult(files.map((file) => file.path));
+    }
+    return partRefused();
+  }
+  if (store?.putBranchTip) {
+    const tip = makeBranchTip({ repo, branch, tipSha: committed.sha });
+    if (tip) await store.putBranchTip(repo, branch, tip);
+  }
+  await rememberOpenPartDelete(store, repo, branch, assemblyId, partId, nextText, asmPath);
+  if (typeof store?.clearPendingSave === 'function') {
+    await store.clearPendingSave(repo, branch);
+  }
+  return {
+    status: 'committed',
+    sha: committed.sha,
+    branch,
+    files,
+    partId,
+    assemblyId: assemblyId || null,
+    assemblies,
+    kind: 'delete-part',
+  };
+}
+
+/**
+ * Confirmed delete of one part file. Does not change the working copy.
+ * Other assemblies that list the id are returned and not rewritten.
+ * @returns {Promise<object>} committed | local | pending | conflict | error.
+ */
+export async function executeDeleteV2Part({
+  adapter,
+  repo,
+  branch = 'main',
+  store = null,
+  partId,
+  openDoc = null,
+  confirm = false,
+  online = true,
+  force = false,
+  message,
+  now = Date.now(),
+} = {}) {
+  if (confirm !== true) {
+    return {
+      status: 'error',
+      code: 'confirm_required',
+      error: 'delete_part requires confirm: true',
+      message: 'delete_part requires confirm: true',
+    };
+  }
+  const id = typeof partId === 'string' ? partId.trim() : '';
+  if (!isV2SurfId(id) || !repo?.owner || !repo?.name || !adapter) return partRefused();
+  const branchName = branchNameOf(branch);
+  const openId = isV2SurfId(openDoc?.id) ? openDoc.id : '';
+  const pending = store?.getPendingSave?.(repo, branchName) || null;
+
+  if (pending && !(pending.kind === 'delete-part' && pending.partId === id)) return waitingSave();
+
+  let remoteSha = null;
+  try {
+    remoteSha = await remoteShaOf(adapter, repo, branchName);
+  } catch {
+    return partRefused();
+  }
+
+  const samePending = pending?.kind === 'delete-part' && pending.partId === id;
+  const revMoved = openDoc?.rev != null && pending?.rev != null && openDoc.rev !== pending.rev;
+  if (samePending && !online) return pendingResult(pending, 'delete-part');
+  if (samePending && online && !revMoved
+    && (pending.baseSha || null) === (remoteSha || null)
+    && Array.isArray(pending.files) && pending.files.length) {
+    return commitPartDeletes({
+      adapter,
+      repo,
+      branch: branchName,
+      store,
+      partId: id,
+      assemblyId: pending.assemblyId || openId || null,
+      files: pending.files,
+      baseSha: pending.baseSha,
+      message: pending.message || message,
+      assemblies: Array.isArray(pending.assemblies) ? pending.assemblies : [],
+      nextText: typeof pending.nextText === 'string' ? pending.nextText : null,
+      asmPath: pending.asmPath || null,
+    });
+  }
+
+  const scan = await scanOtherAssemblyPartUses(adapter, repo, branchName, [id], {
+    exceptAssemblyId: openId || null,
+  });
+  if (!scan.ok) return partRefused(PART_USE_SCAN_REFUSED);
+  const assemblies = scan.assemblies;
+
+  let jsPath;
+  let meshPath;
+  try {
+    jsPath = partIdPath(id);
+    meshPath = partMeshIdPath(id);
+  } catch {
+    return partRefused();
+  }
+
+  let file;
+  try {
+    file = await adapter.readFile(repo, jsPath, branchName);
+  } catch {
+    return partRefused();
+  }
+  if (!file || file.content == null) {
+    return { status: 'local', partId: id, assemblies };
+  }
+
+  const files = [fileDelete(jsPath)];
+  if (scan.paths.has(meshPath)) files.push(fileDelete(meshPath));
+
+  let nextText = null;
+  let asmPath = null;
+  if (openId) {
+    asmPath = assemblyIdPath(openId);
+    if (scan.paths.has(asmPath)) {
+      let asmFile;
+      try {
+        asmFile = await adapter.readFile(repo, asmPath, branchName);
+      } catch {
+        return partRefused();
+      }
+      if (asmFile && asmFile.content != null) {
+        const rewritten = rewrittenAssemblyText(asmFile.content, id);
+        if (!rewritten.ok) return partRefused();
+        if (rewritten.changed) {
+          nextText = rewritten.text;
+          files.push(fileWrite(asmPath, nextText));
+        }
+      }
+    }
+  }
+
+  const label = (openDoc?.parts || []).find((row) => partDefinitionId(row) === id)?.name
+    || id;
+  const commitMessage = (typeof message === 'string' && message.trim())
+    || `Delete ${label}`;
+
+  const planned = files.map((item) => item.path);
+  const blocked = await overlap(adapter, repo, branchName, store, remoteSha, planned, force === true);
+  if (blocked) return blocked;
+
+  if (online === false) {
+    if (typeof store?.putPendingSave === 'function') {
+      await store.putPendingSave(repo, branchName, {
+        kind: 'delete-part',
+        files,
+        message: commitMessage,
+        baseSha: remoteSha,
+        rev: openDoc?.rev ?? null,
+        partId: id,
+        assemblyId: openId || null,
+        assemblies,
+        nextText,
+        asmPath: nextText ? asmPath : null,
+        capturedAt: now,
+      });
+    }
+    return { ...pendingResult({ files }, 'delete-part'), partId: id, assemblies };
+  }
+
+  return commitPartDeletes({
+    adapter,
+    repo,
+    branch: branchName,
+    store,
+    partId: id,
+    assemblyId: openId || null,
+    files,
+    baseSha: remoteSha,
+    message: commitMessage,
+    assemblies,
+    nextText,
+    asmPath: nextText ? asmPath : null,
   });
 }

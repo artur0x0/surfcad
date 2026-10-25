@@ -112,7 +112,7 @@ export const ERROR_HINTS = Object.freeze({
   joints_unavailable: { hint: 'The joint card could not open because another card or session is open: close it (cancel_feature, sketch_cancel, sheet_exit) and call joint_create again.' },
   joint_unsolvable: { hint: 'The solver refused that joint (details.reason is its message): check that the two picks are on different parts and fit the type, for example concentric needs two cylindrical faces (axes); nothing was written.' },
   part_still_referenced: { hint: 'Another assembly lists this part: delete it with scope: "assembly", or delete those parents first.' },
-  delete_refused: { hint: 'The assembly delete was refused and nothing was written: tell the user the message and do not retry until they ask again.' },
+  delete_refused: { hint: 'The delete was refused and nothing was written: tell the user the message and do not retry until they ask again.' },
   origin_blocked: { hint: 'This change would move the assembly origin: place the part with part_set_transform instead.' },
   off_study_part: { hint: 'The FEA study belongs to another part: set_active_part to the study\'s part (fea_state {} names it) and retry.' },
   no_fea: { hint: 'No FEA study is open: fea_open {} (or the study tool the description names) first.' },

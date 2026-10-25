@@ -266,7 +266,7 @@ export const deletePartCommand = Object.freeze({
       scope: {
         type: 'string',
         enum: ['assembly', 'repo'],
-        description: 'assembly drops the row; repo also plans a file delete on the next Save.',
+        description: 'assembly drops the row; repo deletes parts/<id>.js in one commit and returns the assemblies that use the part.',
       },
       confirm: { type: 'boolean', description: 'Required true when scope is repo.' },
     },

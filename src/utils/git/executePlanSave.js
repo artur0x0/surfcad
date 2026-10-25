@@ -617,6 +617,21 @@ export async function executePlanSave({
       now,
     });
   }
+  if (pending?.kind === 'delete-part') {
+    const { executeDeleteV2Part } = await import('./deleteV2Assembly.js');
+    return executeDeleteV2Part({
+      adapter,
+      repo,
+      branch,
+      store,
+      partId: pending.partId,
+      openDoc: docOf(workingCopy),
+      confirm: true,
+      online,
+      message: pending.message || msg,
+      now,
+    });
+  }
   if (pending && online) {
     const rev = docOf(workingCopy)?.rev;
     const revMoved = rev != null && pending.rev != null && rev !== pending.rev;

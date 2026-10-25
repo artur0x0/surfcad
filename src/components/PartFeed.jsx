@@ -1,7 +1,7 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, CopyPlus, Download, Eye, EyeOff, FolderOpen, GripVertical, Loader2, Pencil, Plus, Save, Trash2, Truck, Upload } from 'lucide-react';
-import { partCanDeleteFromRepo, partDeleteChoice, partDeleteDialogCopy, partInstanceInfo, partListDeleteAction, partRepoDeleteConfirmCopy, sanitizeAssemblyName, sanitizePartName } from '../utils/assembly.js';
+import { partAlsoUsedCopy, partCanDeleteFromRepo, partDeleteChoice, partDeleteDialogCopy, partInstanceInfo, partListDeleteAction, partRepoDeleteConfirmCopy, sanitizeAssemblyName, sanitizePartName } from '../utils/assembly.js';
 import { partRowSubtitles } from '../utils/git/partListSubtitle.js';
 import {
   filterVaultOpenIndex, filterVaultPartItems, groupVaultOpenPartRows, vaultOpenAssemblies, vaultOpenEmptyMessage,
@@ -372,6 +372,7 @@ const PartFeed = forwardRef(function PartFeed({
   onFlushLocalAssembly = null,
   assemblyLeaveSafe = true,
   onDeletePart,
+  onPreviewDeletePart = null,
   assemblyName = '',
   /** Open document's surf id (v2 vault). Marks the Open lists' current rows by id. */
   assemblyId = '',
@@ -1362,29 +1363,97 @@ const PartFeed = forwardRef(function PartFeed({
   // Part instances: rows sharing a definition (`instanceOf`). The primary
   // row shows how many times it is placed; an instance row names it.
   const instanceInfo = partInstanceInfo(rows);
-  const askDeletePart = (partId, name, path = null) => {
+  const askDeletePart = async (partId, name, path = null) => {
     const info = instanceInfo.get(String(partId));
     const otherInstances = info ? Math.max(0, info.count - 1) : 0;
-    setPendingDelete({ id: partId, name: name || 'this part', path: path || null, step: 'choose', otherInstances });
+    const base = {
+      id: partId,
+      name: name || 'this part',
+      path: path || null,
+      step: 'choose',
+      otherInstances,
+      usedBy: [],
+      loading: false,
+      blocked: false,
+      busy: false,
+      error: '',
+    };
+    const needsScan = vaultLayout === 'v2' && source === 'git' && typeof onPreviewDeletePart === 'function';
+    if (!needsScan) {
+      setPendingDelete(base);
+      return;
+    }
+    setPendingDelete({ ...base, loading: true });
+    try {
+      const preview = await onPreviewDeletePart(partId);
+      if (preview?.status === 'error') {
+        setPendingDelete((prev) => (prev && String(prev.id) === String(partId) ? {
+          ...prev,
+          loading: false,
+          blocked: true,
+          error: preview.error || "Couldn't check where this part is used. Nothing was deleted.",
+        } : prev));
+        return;
+      }
+      const usedBy = Array.isArray(preview?.assemblies) ? preview.assemblies : [];
+      setPendingDelete((prev) => (prev && String(prev.id) === String(partId) ? {
+        ...prev,
+        loading: false,
+        usedBy,
+        error: '',
+      } : prev));
+    } catch {
+      setPendingDelete((prev) => (prev && String(prev.id) === String(partId) ? {
+        ...prev,
+        loading: false,
+        blocked: true,
+        error: "Couldn't check where this part is used. Nothing was deleted.",
+      } : prev));
+    }
   };
 
   const cancelDeletePart = () => {
     if (partListDeleteAction('cancel') !== 'keep') return;
+    if (pendingDelete?.busy) return;
     setPendingDelete(null);
   };
 
-  const confirmDeletePart = (choice = 'assembly') => {
+  const partDeleteFailed = (result) => (
+    result?.status === 'error'
+    || result?.status === 'failed'
+    || result?.status === 'conflict'
+    || result?.status === 'pending'
+  );
+
+  const confirmDeletePart = async (choice = 'assembly') => {
     const pending = pendingDelete;
-    if (!pending?.id) return;
-    if (choice === 'repo' && (!partCanDeleteFromRepo(source, pending.id, pending.path) || (pending.otherInstances || 0) > 0)) return;
+    if (!pending?.id || pending.loading || pending.blocked || pending.busy) return;
+    if (choice === 'repo' && (!partCanDeleteFromRepo(source, pending.id, pending.path, vaultLayout) || (pending.otherInstances || 0) > 0)) return;
     const next = partDeleteChoice(pending.step, choice);
     if (next.step === 'confirm-repo') {
-      setPendingDelete({ ...pending, step: 'confirm-repo' });
+      setPendingDelete({ ...pending, step: 'confirm-repo', error: '' });
+      return;
+    }
+    if (next.action !== 'drop' && next.action !== 'drop-repo') return;
+    setPendingDelete({ ...pending, busy: true, error: '' });
+    let result;
+    try {
+      result = await onDeletePart?.(pending.id, { fromRepo: next.action === 'drop-repo' });
+    } catch (err) {
+      result = {
+        status: 'error',
+        error: err?.message || "Couldn't delete the part. Nothing was changed.",
+      };
+    }
+    if (partDeleteFailed(result)) {
+      setPendingDelete((prev) => (prev ? {
+        ...prev,
+        busy: false,
+        error: result.error || result.message || "Couldn't delete the part. Nothing was changed.",
+      } : prev));
       return;
     }
     setPendingDelete(null);
-    if ((next.action !== 'drop' && next.action !== 'drop-repo')) return;
-    onDeletePart?.(pending.id, { fromRepo: next.action === 'drop-repo' });
   };
 
   // v2 vaults store parts by id: no name-derived path under the row, the real
@@ -1743,10 +1812,12 @@ const PartFeed = forwardRef(function PartFeed({
   const deleteCopy = pendingDelete
     ? partDeleteDialogCopy({
       name: pendingDelete.name,
-      canDeleteRepo: partCanDeleteFromRepo(source, pendingDelete.id, pendingDelete.path),
+      canDeleteRepo: partCanDeleteFromRepo(source, pendingDelete.id, pendingDelete.path, vaultLayout),
       otherInstances: pendingDelete.otherInstances || 0,
     })
     : { message: '', offerRepo: false };
+  const usedByCopy = partAlsoUsedCopy((pendingDelete?.usedBy || []).map((row) => row?.name));
+  const partDeleteHold = !!(pendingDelete?.loading || pendingDelete?.blocked);
 
   return (
     <aside className={shell} data-parts-feed="" data-parts-source={source} data-parts-open-target={openTarget}>
@@ -3234,7 +3305,34 @@ const PartFeed = forwardRef(function PartFeed({
             <h2 id="part-delete-title" className="text-sm font-semibold text-chrome-text">
               Delete part
             </h2>
-            {pendingDelete.step === 'confirm-repo' ? (
+            {pendingDelete.loading && (
+              <p className="mt-2 text-xs text-gray-300" data-part-delete-checking="">
+                Checking where this part is used…
+              </p>
+            )}
+            {pendingDelete.error && (
+              <p className="mt-2 text-xs text-gray-300" data-part-delete-error="">
+                {pendingDelete.error}
+              </p>
+            )}
+            {usedByCopy && (
+              <p className="mt-2 text-xs text-gray-300" data-part-delete-used-by="">
+                {usedByCopy}
+              </p>
+            )}
+            {partDeleteHold ? (
+              <div className="mt-4 flex justify-end">
+                <button
+                  ref={cancelBtnRef}
+                  type="button"
+                  data-part-delete-cancel=""
+                  className="rounded-md px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10"
+                  onClick={cancelDeletePart}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : pendingDelete.step === 'confirm-repo' ? (
               <>
                 <p className="mt-2 text-xs text-gray-300" data-part-delete-repo-message="">
                   {partRepoDeleteConfirmCopy(pendingDelete.path || pendingDelete.id)}
@@ -3252,7 +3350,8 @@ const PartFeed = forwardRef(function PartFeed({
                   <button
                     type="button"
                     data-part-delete-repo-commit=""
-                    className="rounded-md bg-red-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+                    className="rounded-md bg-red-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                    disabled={!!pendingDelete.busy}
                     onClick={() => confirmDeletePart('repo')}
                   >
                     Delete
@@ -3279,7 +3378,8 @@ const PartFeed = forwardRef(function PartFeed({
                       type="button"
                       data-part-delete-confirm=""
                       data-part-delete-scope="assembly"
-                      className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500"
+                      className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500 disabled:opacity-50"
+                      disabled={!!pendingDelete.busy}
                       onClick={() => confirmDeletePart('assembly')}
                     >
                       Delete from assembly
@@ -3289,7 +3389,8 @@ const PartFeed = forwardRef(function PartFeed({
                         type="button"
                         data-part-delete-confirm-repo=""
                         data-part-delete-scope="repo"
-                        className="rounded-md bg-red-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+                        className="rounded-md bg-red-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                        disabled={!!pendingDelete.busy}
                         onClick={() => confirmDeletePart('repo')}
                       >
                         Delete from assembly & repo

@@ -60,8 +60,9 @@ test('open / insert / list / delete / rename stay on the working copy', () => {
   assert.match(insertRows, /copiedFrom: row\.id/);
   // Rows come from assemblyRows: saved v2 ids, the open working copy, legacy names.
   assert.match(list, /assemblies: assemblyRows\(/);
-  assert.match(delPart, /part_still_referenced/);
-  assert.match(delPart, /listPartParentAssemblies/);
+  assert.match(delPart, /scanOtherAssemblyPartUses/);
+  assert.match(delPart, /assemblies/);
+  assert.equal(/part_still_referenced/.test(delPart), false);
   assert.match(delAsm, /seedAgentAssembly\(\{\}\)/);
   assert.match(renameAsm, /sanitizeAssemblyName\(name\)/);
   assert.match(renamePart, /moved: false/);
