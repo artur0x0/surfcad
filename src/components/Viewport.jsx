@@ -1029,7 +1029,7 @@ function ViewportTitleChip({
     : 'Select all bodies in this part';
   const shown = value || (noun === 'Assembly' ? '' : 'Untitled');
   const frame = inline
-    ? `relative z-10 min-w-0 max-w-[min(9rem,calc(100vw-14rem))] sm:max-w-[min(12rem,calc(100vw-13rem))] lg:max-w-[min(18rem,calc(100vw-13rem))] ${onRename || onActivate ? 'pointer-events-auto' : 'pointer-events-none'}`
+    ? `viewer-title-chip-frame relative z-10 ${onRename || onActivate ? 'pointer-events-auto' : 'pointer-events-none'}`
     : `absolute top-4 left-1/2 -translate-x-1/2 z-10 max-w-[min(20rem,calc(100%-2rem))] ${
       onRename ? '' : 'pointer-events-none'
     }`;
@@ -15126,14 +15126,16 @@ const Viewport = forwardRef(({
       )}
 
       {/* Title row. Game: puzzle name. CAD: part, then "in", then assembly.
-          Contour mode keeps that row laid out and hides the chips, and
-          centres the status legend on the same box. */}
+          Up to 768px that title stacks (part, then "in" plus the assembly)
+          in the gap between the wordmark and the profile chip. Wider
+          screens keep one centred row. Contour mode keeps the row laid
+          out and hides the chips, and centres the status legend on that box. */}
       {mode === 'game' && (
         <ViewportTitleChip>{gamePuzzleTitle || 'Puzzle'}</ViewportTitleChip>
       )}
       {mode !== 'game' && (brandHeader || showCadTitle) && (
         <div
-          className="pointer-events-none absolute top-4 lg:top-2 z-20 flex min-h-9 items-center left-2 right-2 lg:left-4 lg:right-4 pr-11"
+          className="pointer-events-none absolute top-4 lg:top-2 z-20 flex min-h-9 items-center gap-2 left-2 right-2 lg:left-4 lg:right-4 pr-11"
           data-viewer-header-row=""
         >
           {brandHeader ? (
@@ -15156,45 +15158,51 @@ const Viewport = forwardRef(({
           ) : null}
           {showCadTitle ? (
             <div
-              className="absolute inset-0 flex items-center justify-center px-[min(11rem,26vw)] lg:px-[min(11rem,38vw)]"
+              className="viewer-title-slot"
               data-viewer-title=""
               data-viewer-title-text={titleParts.text}
               data-viewer-title-hidden={hideCadTitle ? '' : undefined}
             >
-              <div className="relative z-30 max-w-full min-w-0" data-viewer-title-pills="">
+              <div className="relative z-30 w-full min-w-0 max-w-full" data-viewer-title-pills="">
                 <div
                   data-viewer-title-chips=""
-                  className={`pointer-events-auto flex max-w-full min-w-0 flex-nowrap items-center justify-center gap-3 ${hideCadTitle ? 'invisible' : ''}`}
+                  className={`viewer-title-chips pointer-events-auto ${hideCadTitle ? 'invisible' : ''}`}
                   {...(hideCadTitle ? { inert: '' } : {})}
                 >
                   {titleParts.part ? (
-                    <ViewportTitleChip
-                      inline
-                      value={currentFilename}
-                      onActivate={onTitlePartActivate}
-                      onRename={onRenameFile}
-                      renameOnDoubleClick
-                    >
-                      {titleParts.part}
-                    </ViewportTitleChip>
+                    <div className="viewer-title-line" data-viewer-title-line="part">
+                      <ViewportTitleChip
+                        inline
+                        value={currentFilename}
+                        onActivate={onTitlePartActivate}
+                        onRename={onRenameFile}
+                        renameOnDoubleClick
+                      >
+                        {titleParts.part}
+                      </ViewportTitleChip>
+                    </div>
                   ) : null}
-                  {titleParts.connector ? (
-                    <span
-                      className="shrink-0 text-xs font-medium text-gray-300"
-                      data-title-in=""
-                    >
-                      {titleParts.connector}
-                    </span>
-                  ) : null}
-                  {titleParts.assembly ? (
-                    <ViewportTitleChip
-                      inline
-                      noun="Assembly"
-                      value={titleParts.assembly}
-                      onActivate={onTitleAssemblyActivate}
-                    >
-                      {titleParts.assembly}
-                    </ViewportTitleChip>
+                  {titleParts.connector || titleParts.assembly ? (
+                    <div className="viewer-title-line" data-viewer-title-line="assembly">
+                      {titleParts.connector ? (
+                        <span
+                          className="shrink-0 text-xs font-medium text-gray-300"
+                          data-title-in=""
+                        >
+                          {titleParts.connector}
+                        </span>
+                      ) : null}
+                      {titleParts.assembly ? (
+                        <ViewportTitleChip
+                          inline
+                          noun="Assembly"
+                          value={titleParts.assembly}
+                          onActivate={onTitleAssemblyActivate}
+                        >
+                          {titleParts.assembly}
+                        </ViewportTitleChip>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
                 {contourLegend ? (

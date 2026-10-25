@@ -695,6 +695,15 @@ jobs:
             echo "brand identity golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:viewer-title-narrow | tee "${RUNNER_TEMP}/viewer-title-narrow.log"
+          if grep -q 'no system Chrome' "${RUNNER_TEMP}/viewer-title-narrow.log"; then
+            echo "viewer title narrow golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'viewer title narrow golden: ok' "${RUNNER_TEMP}/viewer-title-narrow.log"; then
+            echo "viewer title narrow golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:

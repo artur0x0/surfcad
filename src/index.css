@@ -344,6 +344,82 @@ textarea {
     line-height: 1;
     letter-spacing: 0.04em;
   }
+  /* CAD title. The phone shell is max-width 768px, the same query as
+     App's isMobile flag. There the part name is line 1 and "in <assembly>"
+     is line 2, in the gap between the wordmark and the profile chip.
+     From 769px up the title stays one centred row. A line that still
+     does not fit truncates with an ellipsis. */
+  .viewer-title-slot {
+    position: relative;
+    z-index: 20;
+    display: flex;
+    min-width: 0;
+    flex: 1 1 0%;
+    align-items: center;
+    justify-content: center;
+    margin-inline-end: 4px;
+  }
+  .viewer-title-chips {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 0.25rem;
+    overflow: hidden;
+  }
+  .viewer-title-line {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+  .viewer-title-chip-frame {
+    display: contents;
+  }
+  .viewer-title-chip-frame > button,
+  .viewer-title-chip-frame > [data-title-chip] {
+    min-width: 0;
+    max-width: 100%;
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  @media (min-width: 769px) {
+    .viewer-title-slot {
+      position: absolute;
+      inset: 0;
+      flex: none;
+      margin-inline-end: 0;
+      padding-left: min(11rem, 38vw);
+      padding-right: min(11rem, 38vw);
+    }
+    .viewer-title-chips {
+      flex-direction: row;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .viewer-title-line {
+      width: auto;
+      flex: 0 1 auto;
+    }
+    .viewer-title-chip-frame > button,
+    .viewer-title-chip-frame > [data-title-chip] {
+      max-width: min(12rem, 100%);
+    }
+  }
+  @media (min-width: 1024px) {
+    .viewer-title-chip-frame > button,
+    .viewer-title-chip-frame > [data-title-chip] {
+      max-width: min(18rem, 100%);
+    }
+  }
   .text-ui-sm { font-size: 12px; line-height: 1.4; }
   .text-ui { font-size: 14px; line-height: 1.45; }
   .text-ui-lg { font-size: 16px; line-height: 1.4; }
