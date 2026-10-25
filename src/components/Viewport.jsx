@@ -6964,7 +6964,7 @@ const Viewport = forwardRef(({
       normal: plane.normal,
       originOffset: plane.originOffset,
       size: size * 1.4,
-      color: 0x22d3ee,
+      color: SECTION_PLANE_COLOR,
       opacity: 0.22,
     });
     sceneRef.current.add(widget);

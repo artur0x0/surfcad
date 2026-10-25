@@ -15,7 +15,7 @@ import { PREVIEW_COLORS, PREVIEW_OPACITY } from './previewStyle.js';
 /**
  * Create a visual cutting plane widget for the viewport.
  * The default colour is preview skin (`PREVIEW_COLORS.skin`). The cut tool
- * passes that cyan. The section preview passes `SECTION_PLANE_COLOR`.
+ * and the section preview both pass `SECTION_PLANE_COLOR`.
  * @param {Object} options - Plane configuration
  * @param {Array<number>} options.normal - Normal vector [x, y, z]
  * @param {number} options.originOffset - Distance from origin
