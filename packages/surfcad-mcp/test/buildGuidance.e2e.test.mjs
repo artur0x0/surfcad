@@ -8,7 +8,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { startAgentBridgeRelay, stopAgentBridgeRelay } from '../src/bridge/relayServer.mjs';
 import { PAIR_MSG } from '../src/relayMessages.mjs';
 import { createPairingToken } from '../../../src/agent/ws/pairingToken.js';
-import { BUILD_GUIDANCE, BUILD_FLOW_NOTE, FEATURE_GAP_PREFIX } from '../src/prompt/buildGuidance.mjs';
+import { BUILD_GUIDANCE, BUILD_FLOW_NOTE, FEATURE_GAP_PREFIX, JOINT_PLACEMENT_GUIDANCE } from '../src/prompt/buildGuidance.mjs';
 import * as canonical from '../../../src/agent/buildGuidance.js';
 
 /**
@@ -42,6 +42,7 @@ test('the package copy of the build guidance matches src/agent/buildGuidance.js'
   assert.equal(BUILD_GUIDANCE, canonical.BUILD_GUIDANCE);
   assert.equal(BUILD_FLOW_NOTE, canonical.BUILD_FLOW_NOTE);
   assert.equal(FEATURE_GAP_PREFIX, canonical.FEATURE_GAP_PREFIX);
+  assert.equal(JOINT_PLACEMENT_GUIDANCE, canonical.JOINT_PLACEMENT_GUIDANCE);
 });
 
 test('the guidance names the real rail sections and the gap comment format', () => {
@@ -54,6 +55,10 @@ test('the guidance names the real rail sections and the gap comment format', () 
   assert.match(BUILD_GUIDANCE, /insert_cross_section/);
   assert.match(BUILD_GUIDANCE, /insert_workplane/);
   assert.match(BUILD_FLOW_NOTE, /FEATURE-GAP/);
+  assert.ok(BUILD_GUIDANCE.includes(JOINT_PLACEMENT_GUIDANCE), 'step text carries joint_create as the default');
+  assert.ok(BUILD_FLOW_NOTE.includes(JOINT_PLACEMENT_GUIDANCE), 'the build-flow note carries joint_create as the default');
+  assert.match(BUILD_GUIDANCE, /joint_create/);
+  assert.doesNotMatch(BUILD_GUIDANCE, /part_set_transform or joints/);
 });
 
 test('instructions and the pair result point at guide start, which carries the guidance; tool descriptions keep the note', async () => {
@@ -80,6 +85,9 @@ test('instructions and the pair result point at guide start, which carries the g
   assert.ok(typeof instructions === 'string' && /guide \{ topic: "start" \}/.test(instructions), 'initialize instructions point at guide start');
   assert.ok(!instructions.includes(BUILD_GUIDANCE), 'the full guidance is no longer inlined in the instructions');
   assert.match(instructions, /register_webhook/);
+  assert.match(instructions, /joint_create/);
+  assert.match(instructions, /part_set_transform only for parts that touch nothing/);
+  assert.doesNotMatch(instructions, /part_set_transform or joints/);
 
   const start = await client.callTool({ name: 'guide', arguments: { topic: 'start' } });
   assert.equal(start.isError, false);
@@ -98,6 +106,10 @@ test('instructions and the pair result point at guide start, which carries the g
   assert.match(byName.set_script, /fallback/i);
   assert.match(byName.insert_cube, /block out|Build in ribbon order/i);
   assert.match(byName.create_part, /block out/i);
+  assert.match(byName.create_part, /joint_create/);
+  assert.match(byName.insert_cube, /joint_create/);
+  assert.match(byName.part_set_transform, /joint_create/);
+  assert.match(byName.insert_part, /joint_create/);
   assert.match(byName.create_assembly, /block out/i);
   assert.match(byName.invoke_helper, /ribbon order/i);
   assert.match(byName.pair, /guide \{ topic: "start" \}/);

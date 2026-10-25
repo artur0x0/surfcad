@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Joints are the default assembly path. Fix one base part with a fixed joint, then place every part that touches or attaches to another with `joint_create` (one call creates the joint and solves placement). Use `part_set_transform` only for parts that touch nothing. Block-out positions are rough; joints set final positions. Server instructions, `guide` start and assembly, and the build-flow note on `insert_*` / `create_*` say so. The Joints card (`joint_open` → `joint_pick` → `joint_set_params` → `joint_commit`) stays the advanced path.
+- `part_set_transform`, and `create_part` / `insert_part` with a `position`, add `warning { code: "unjointed_part", part_id, hint }` when the assembly has two or more parts and that part is in no joint. The call still succeeds. A single-part document does not warn, and neither does a base part that already has a fixed joint. Bodies, patterns, and `insert_move` inside one part do not warn. `parts` and `status` list the ids still in no joint as `unjointedParts`. `guide { topic: "errors.unjointed_part" }` is the recovery.
+
 ## 0.3.0 - 2026-10-25
 
 - Helper registry. `data/helpers.json` (a copy of the repo's `src/lib/surfcad/catalog/helpers.json`, refreshed by `npm run export:agent` and pinned by a test) ships with the package. `guide { topic: "dialect" }` is rendered from it: every script helper by signature in ribbon-order groups. New MCP-only tool `list_helpers { names?, group?, match?, page? }` returns the same registry as JSON (`name`, `group`, `signature`, `params`, `description`; full `doc` and `examples` with `names`; `total`, `returned`, `groups`, `missing`). Every `insert_*` description now ends with `Writes (defaults): …`, the code its block carries at default arguments, and `set_script` points at `list_helpers` for the reserved helper names.

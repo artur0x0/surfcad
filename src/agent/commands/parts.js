@@ -1,4 +1,12 @@
 import { NO_ARGS_SCHEMA } from '../registry.js';
+import { unjointedPartIds } from '../state/unjointedParts.js';
+
+function jointsFrom(ctx) {
+  const read = ctx?.readJoints;
+  if (typeof read !== 'function') return [];
+  const joints = read();
+  return Array.isArray(joints) ? joints : [];
+}
 
 export const partsCommand = Object.freeze({
   name: 'parts',
@@ -10,6 +18,13 @@ export const partsCommand = Object.freeze({
     const result = typeof read === 'function'
       ? read()
       : { activeId: null, assemblyName: '', parts: [] };
-    return { result };
+    if (!result || typeof result !== 'object' || Array.isArray(result)) return { result };
+    if (Array.isArray(result.unjointedParts)) return { result };
+    return {
+      result: {
+        ...result,
+        unjointedParts: unjointedPartIds(result.parts, jointsFrom(ctx)),
+      },
+    };
   },
 });

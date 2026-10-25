@@ -65,7 +65,7 @@ claude mcp add surfcad -- npx surfcad-mcp
 
 ## How to build
 
-`guide { topic: "start" }` carries the build guidance in full (the `pair` result and the initialize instructions point at it; `guide {}` lists the other topics: `features`, `selection`, `paint`, `limits`, `camera`, `assembly`), and the `insert_*` / `set_script` / `create_*` tool descriptions carry a one-line note of it: block out every part of the assembly as plain blocks first (within seconds, then a screenshot for the user), then Build and Shape, then Polish, then pattern and place; features first, with a `set_script` snippet only for one operation no feature can do, starting with `// FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>`; one part per unique fastener type, one instance patterned to every place it goes. The full text is in [docs/agent/SKILL.md](../../docs/agent/SKILL.md).
+`guide { topic: "start" }` carries the build guidance in full (the `pair` result and the initialize instructions point at it; `guide {}` lists the other topics: `features`, `selection`, `paint`, `limits`, `camera`, `assembly`), and the `insert_*` / `set_script` / `create_*` tool descriptions carry a one-line note of it: block out every part of the assembly as plain blocks first (within seconds, then a screenshot for the user), then Build and Shape, then Polish, then pattern and place; features first, with a `set_script` snippet only for one operation no feature can do, starting with `// FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>`; one part per unique fastener type, one instance patterned to every place it goes. Fix one base part with a fixed joint, then place every part that touches or attaches to another with joint_create (one call creates the joint and solves placement). Use part_set_transform only for parts that touch nothing. Block-out positions are rough; joints set final positions. The full text is in [docs/agent/SKILL.md](../../docs/agent/SKILL.md).
 
 ## Tools
 
@@ -77,19 +77,20 @@ Results are compact JSON. Every tool whose result carries `status` (the model-ch
 
 | Tool | Args | What it does |
 | --- | --- | --- |
-| `parts` | `{}` | Open assembly: `assemblyId`, `activeId`, and part rows (`id`, `name`, `visible`). No path field. |
+| `parts` | `{}` | Open assembly: `assemblyId`, `activeId`, `unjointedParts` (ids in no joint when there are two or more parts; empty for one part), and part rows (`id`, `name`, `visible`). No path field. |
 | `list_assemblies` | `{}` | Vault assemblies as `[{ id, name }]`. `id` is the key; `name` is a label. |
 | `create_assembly` | `{ name? }` | Seed a local assembly. Optional `name` is a label. No git write. |
-| `create_part` | `{ name?, script?, position? }` | Add a part at the origin (optional `[x,y,z]` mm) and return its new id. Working copy only. |
+| `create_part` | `{ name?, script?, position? }` | Add a part and return its new id. `position` is a rough block-out `[x,y,z]` mm (default: the origin). In an assembly of two or more parts, a position on a part in no joint adds `warning` `unjointed_part` and the call still succeeds. Working copy only. |
 | `set_script` | `{ part_id, source }` | Freehand fallback. `part_id` must be the active part. Working copy only. |
 | `geometry_workers` | `{}` | Debug status of the geometry workers: the device cap, live and busy counts, crashes, the primary and the pool. Read-only. |
 | `rename_part` | `{ part_id, name }` | Working-copy display name. `{ partId, name, moved: false }`. No git write. |
 | `rename_assembly` | `{ assembly_id, name }` | Working-copy assembly label. Names may collide. No git write. |
 | `part_get_transform` | `{ part_id }` | Read placement: `position` mm and intrinsic XYZ Euler degrees. |
-| `part_set_transform` | `{ part_id, position?, rotation? }` | Set placement (undoable). Working copy only. |
+| `part_set_transform` | `{ part_id, position?, rotation? }` | Set placement (undoable). Only for a part that touches nothing. In an assembly of two or more parts, a part in no joint adds `warning` `unjointed_part` and the call still succeeds. Working copy only. |
+| `joint_create` | `{ type, picks }` | Default assembly placement. One call creates the joint and solves placement. Fix one base part with `type: "fixed"` and one pick, then mate every part that touches another. |
 | `set_active_part` | `{ part_id }` | Switch the editor and mesh. `status` then reports that part. |
 | `open_assembly` | `{ assembly_id }` | Open a vault assembly by id. A name or path is `unknown_assembly`. |
-| `insert_part` | `{ part_id? , assembly_id?, copy? }` | Insert by reference (same ids). `copy: true` mints a new id. No git write. |
+| `insert_part` | `{ part_id?, assembly_id?, copy?, instance?, position? }` | Insert by reference (same ids). `copy: true` mints a new id. `instance: true` adds another placement; `position` is a rough block-out. A position on an unjointed row in a multi-part assembly adds `warning` `unjointed_part`. No git write. |
 | `delete_part` | `{ part_id, scope, confirm? }` | `scope: "assembly"` drops the row. `scope: "repo"` also plans a file delete and requires `confirm: true`. Neither commits. |
 | `delete_assembly` | `{ assembly_id, confirm: true, delete_parts? }` | Delete the open assembly. `confirm: true` required. Save commits later. |
 | `git_save` | `{ message }` | The vault write. `consent_pending` while Allow is up. `pending_save` if offline. `upgrade_required` on a legacy vault. `conflict` / `repo-moved` when a remote edit overlaps. |

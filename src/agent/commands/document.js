@@ -1,5 +1,6 @@
 import { requireDestructiveConfirm } from '../gitAgent.js';
 import { rejectAssemblyId, rejectPartId } from '../state/identity.js';
+import { withPlacementWarning } from '../state/unjointedParts.js';
 import { positionLimitMessage, positionWithinLimit } from '../../utils/positionLimit.js';
 
 function hostCall(ctx, name, args) {
@@ -79,7 +80,7 @@ export const createPartCommand = Object.freeze({
         minItems: 3,
         maxItems: 3,
         description:
-          'Optional initial translation [x, y, z] mm. Agent create_part defaults to the assembly origin; UI creation still staggers along +X.',
+          'Optional rough block-out translation [x, y, z] mm. Agent create_part defaults to the assembly origin; UI creation still staggers along +X. joint_create sets the final placement of a part that touches another. In an assembly of two or more parts, a position on a part that is in no joint returns warning unjointed_part and the call still succeeds.',
       },
     },
   }),
@@ -91,7 +92,8 @@ export const createPartCommand = Object.freeze({
     return null;
   },
   async run(ctx, args) {
-    return attachRun(ctx, await hostCall(ctx, 'agentCreatePart', args || {}));
+    const hosted = attachRun(ctx, await hostCall(ctx, 'agentCreatePart', args || {}));
+    return withPlacementWarning(ctx, hosted, hosted?.result?.partId, args?.position != null);
   },
 });
 
@@ -194,7 +196,7 @@ export const insertPartCommand = Object.freeze({
         items: { type: 'number' },
         minItems: 3,
         maxItems: 3,
-        description: 'instance:true only: translation [x, y, z] mm of the new row. Default staggers along +X like a UI-created part.',
+        description: 'instance:true only: rough block-out translation [x, y, z] mm of the new row. Default staggers along +X like a UI-created part. joint_create sets the final placement when the instance touches another part. A position in an assembly of two or more parts returns warning unjointed_part when the new row is in no joint; the call still succeeds.',
       },
       name: { type: 'string', description: 'Local: new part name (same as create_part)' },
       script: { type: 'string' },
@@ -220,11 +222,12 @@ export const insertPartCommand = Object.freeze({
   },
   async run(ctx, args) {
     if (args?.instance === true) {
-      return hostCall(ctx, 'agentInsertPart', {
+      const hosted = await hostCall(ctx, 'agentInsertPart', {
         partId: args.part_id,
         instance: true,
         position: Array.isArray(args.position) ? args.position : null,
       });
+      return withPlacementWarning(ctx, hosted, hosted?.result?.partId, args?.position != null);
     }
     if (args?.part_id || args?.assembly_id) {
       return hostCall(ctx, 'agentInsertPart', {
@@ -233,7 +236,8 @@ export const insertPartCommand = Object.freeze({
         copy: args?.copy === true,
       });
     }
-    return attachRun(ctx, await hostCall(ctx, 'agentCreatePart', args || {}));
+    const hosted = attachRun(ctx, await hostCall(ctx, 'agentCreatePart', args || {}));
+    return withPlacementWarning(ctx, hosted, hosted?.result?.partId, args?.position != null);
   },
 });
 

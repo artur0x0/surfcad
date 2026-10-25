@@ -539,6 +539,11 @@ export function createSurfcadBridge(hostSource) {
       assemblyName: '',
       parts: [],
     }),
+    readJoints: () => {
+      const read = hostFn('readJoints');
+      const joints = read ? read() : [];
+      return Array.isArray(joints) ? joints : [];
+    },
     readCamera: () => (hostFn('readCamera')?.() ?? {
       position: null,
       quaternion: null,

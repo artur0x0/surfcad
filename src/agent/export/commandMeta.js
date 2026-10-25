@@ -5,13 +5,30 @@
 
 import { MUTATE_RESULT_SCHEMA, STATUS_SCHEMA } from '../schemas/common.js';
 import { reservedHelperClause } from '../state/reservedHelpers.js';
-import { BUILD_FLOW_NOTE } from '../buildGuidance.js';
+import { BUILD_FLOW_NOTE, JOINT_PLACEMENT_GUIDANCE } from '../buildGuidance.js';
 import { emitNote } from './insertEmits.js';
 
 const RESERVED_HELPERS = ` ${reservedHelperClause()} list_helpers { names } (over MCP) or guide { topic: "dialect" } documents each helper.`;
 /** Every tool that runs geometry says what a kernel crash looks like and what to do. */
 export const CRASH_NOTE = ' If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. When the run past the budget was inside one marked feature block, the part is rebuilt without that block instead: the result is ok: false with one failures row { code: feature_timeout, featureId, featureType, featureLabel, elapsedMs, budgetMs, detail }, status.runState is failed, the other features are built and shown, and status.featureMs (and feature_tree ms) say how long each block took; edit, delete, or undo that feature.';
 const USE_SELECTION_RESULT_NOTE = ' The result usedSelection says whether the viewport selection was used. A pick that carries a face name (select_faces { names } or a click on a face a helper built) is written into the script by that name (facesNamed for a hole, edgesOf for a fillet or chamfer: the edges around that face only) and is found again on the new mesh after every rebuild, so a second use_selection insert lands on the same face. A pick with no name (a hull, a freehand Manifold.*) clears with the rebuild, and use_selection: true with nothing selected is no_selection (nothing is written).';
+
+const UNJOINTED_WARNING_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  description: 'Present when this call placed a part that is in no joint and the assembly has two or more parts. The call succeeded.',
+  properties: {
+    code: { const: 'unjointed_part' },
+    part_id: { type: 'string' },
+    hint: { type: 'string' },
+  },
+});
+
+const UNJOINTED_PARTS_SCHEMA = Object.freeze({
+  type: 'array',
+  items: { type: 'string' },
+  description: 'Part ids in no joint when the assembly has two or more parts. Empty for a single-part document. A base part with a fixed joint is omitted.',
+});
 const FEATURE_COUNT_NOTE = ' featureCount counts insert_* feature blocks, so a freehand set_script is one feature. bodyCount is null until the first run; a finished run that produced no bodies reports 0.';
 
 const OK = Object.freeze({ type: 'object', additionalProperties: false, properties: { ok: { const: true } } });
@@ -56,8 +73,14 @@ export const COMMAND_META = {
   },
   status: {
     description:
-      `Status for the active part: id, name, editor script, runState (not_run_yet | ok | failed), and the last run volume/bbox/bodyCount when available. Updates when the active part changes without requiring another run.${FEATURE_COUNT_NOTE}`,
-    result: STATUS_SCHEMA,
+      `Status for the active part: id, name, editor script, runState (not_run_yet | ok | failed), and the last run volume/bbox/bodyCount when available. Updates when the active part changes without requiring another run. unjointedParts lists part ids in no joint when the assembly has two or more parts (empty for a single part; a base part with a fixed joint is omitted).${FEATURE_COUNT_NOTE}`,
+    result: {
+      ...STATUS_SCHEMA,
+      properties: {
+        ...STATUS_SCHEMA.properties,
+        unjointedParts: UNJOINTED_PARTS_SCHEMA,
+      },
+    },
     errors: ['internal'],
     mutates: false,
   },
@@ -258,8 +281,12 @@ export const COMMAND_META = {
     mutates: false,
   },
   parts: {
-    description: `Open assembly: assemblyId, assemblyName, vaultLayout, activeId, and parts [{ id, name, visible, missing?, group?, instanceOf?, runState, crash? }]. instanceOf is the definition a part instance places (insert_part instance:true): rows sharing it share one script and one run and differ in pose, name and visibility. runState is not_run_yet | ok | failed for every part, not only the active one; crash is present after a geometry engine crash on that part ({ code: geometry_worker_crashed, reason, workerRestarted, message }). Part and assembly ids are opaque surf ids, never a path or display name. No path field. featureCount and bodyCount are on status, not here.${FEATURE_COUNT_NOTE}`,
-    result: { type: 'object', additionalProperties: true },
+    description: `Open assembly: assemblyId, assemblyName, vaultLayout, activeId, unjointedParts, and parts [{ id, name, visible, missing?, group?, instanceOf?, runState, crash? }]. unjointedParts lists part ids in no joint when the assembly has two or more parts (empty for a single part; a base part with a fixed joint is omitted). instanceOf is the definition a part instance places (insert_part instance:true): rows sharing it share one script and one run and differ in pose, name and visibility. runState is not_run_yet | ok | failed for every part, not only the active one; crash is present after a geometry engine crash on that part ({ code: geometry_worker_crashed, reason, workerRestarted, message }). Part and assembly ids are opaque surf ids, never a path or display name. No path field. featureCount and bodyCount are on status, not here.${FEATURE_COUNT_NOTE}`,
+    result: {
+      type: 'object',
+      additionalProperties: true,
+      properties: { unjointedParts: UNJOINTED_PARTS_SCHEMA },
+    },
     errors: ['internal'],
     mutates: false,
   },
@@ -681,8 +708,12 @@ export const COMMAND_META = {
   },
   create_part: {
     description:
-      `Add a part and make it the active part before returning. The part starts empty (no seed cube): the first insert_* creates the body. The result partId is a new opaque surf id, not the previously active part. When script is set, that script runs before the call returns (ok, errors, failures, status); a failed script still leaves the part. Agent calls default to the assembly origin; pass position [x,y,z] mm to place it. Working copy only: nothing reaches git without git_save.${BUILD_FLOW_NOTE}`,
-    result: { type: 'object', additionalProperties: true },
+      `Add a part and make it the active part before returning. The part starts empty (no seed cube): the first insert_* creates the body. The result partId is a new opaque surf id, not the previously active part. When script is set, that script runs before the call returns (ok, errors, failures, status); a failed script still leaves the part. Agent calls default to the assembly origin; pass position [x,y,z] mm only as a rough block-out. A position, in an assembly of two or more parts, adds warning { code: "unjointed_part", part_id, hint } when the new part is in no joint; the call still succeeds. Working copy only: nothing reaches git without git_save.${BUILD_FLOW_NOTE}`,
+    result: {
+      type: 'object',
+      additionalProperties: true,
+      properties: { warning: UNJOINTED_WARNING_SCHEMA },
+    },
     errors: ['bad_args', 'no_assembly', 'internal'],
     mutates: true,
   },
@@ -717,7 +748,7 @@ export const COMMAND_META = {
   },
   part_set_transform: {
     description:
-      'Set rigid placement by opaque part_id (translation mm, intrinsic XYZ Euler degrees). One assembly undo step. A vault path or display name is unknown_part. Working copy only.',
+      `Set rigid placement by opaque part_id (translation mm, intrinsic XYZ Euler degrees). One assembly undo step. ${JOINT_PLACEMENT_GUIDANCE} In an assembly of two or more parts, placing a part that is in no joint adds warning { code: "unjointed_part", part_id, hint } and does not block the call. A single-part document does not warn, and neither does a base part that already has a fixed joint. A vault path or display name is unknown_part. Working copy only.`,
     result: {
       type: 'object',
       additionalProperties: false,
@@ -727,6 +758,7 @@ export const COMMAND_META = {
         position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
         rotation: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 },
         eulerOrder: { type: 'string', const: 'XYZ' },
+        warning: UNJOINTED_WARNING_SCHEMA,
       },
     },
     errors: ['bad_args', 'unknown_part', 'no_assembly', 'internal'],
@@ -745,8 +777,12 @@ export const COMMAND_META = {
     mutates: true,
   },
   insert_part: {
-    description: 'Insert-as-reference by opaque part_id, or every part of assembly_id (same ids). copy:true mints a new part id and sets copiedFrom. instance:true with the part_id of a row already in the open assembly adds another placement of that part (a part instance): the new row shares the script, run and undo history of its definition (edit any one and all rebuild from one run) and has its own id, name, pose and visibility; position sets its translation (default: staggered along +X). The result is { partId (the new row), instanceOf, added, partCount }; parts lists the row with instanceOf. Works on local and git assemblies. A path or name is unknown_part / unknown_assembly. Does not write git.',
-    result: { type: 'object', additionalProperties: true },
+    description: `Insert-as-reference by opaque part_id, or every part of assembly_id (same ids). copy:true mints a new part id and sets copiedFrom. instance:true with the part_id of a row already in the open assembly adds another placement of that part (a part instance): the new row shares the script, run and undo history of its definition (edit any one and all rebuild from one run) and has its own id, name, pose and visibility; position is a rough block-out (default: staggered along +X). ${JOINT_PLACEMENT_GUIDANCE} A position, in an assembly of two or more parts, adds warning { code: "unjointed_part", part_id, hint } when the new row is in no joint; the call still succeeds. The result is { partId (the new row), instanceOf, added, partCount }; parts lists the row with instanceOf. Works on local and git assemblies. A path or name is unknown_part / unknown_assembly. Does not write git.`,
+    result: {
+      type: 'object',
+      additionalProperties: true,
+      properties: { warning: UNJOINTED_WARNING_SCHEMA },
+    },
     errors: ['bad_args', 'unknown_part', 'unknown_assembly', 'git_only', 'internal'],
     mutates: true,
   },
@@ -815,7 +851,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   joint_create: {
-    description: 'Prefer this over hand-computed part_set_transform numbers: one call creates a joint and solves the placement. type is coincident, parallel, perpendicular, distance, angle, concentric, symmetric or fixed (planar is coincident); picks are one row per reference from list_faces (face_id with its key from the same row; a cylindrical face is an axis pick; { part_id } alone is a whole-part pick), one pick for fixed and two for every other type; name, value_mm, sense and opposed as on joint_set_params. Runs the same open → pick → set params → commit path as the Joints card and records one assembly undo step. The result carries jointId, type, name, valueMm, pickCount and placements: the position and rotation of every picked part after the solve. A pick that does not resolve is unknown_part / unknown_face, and a joint the solver refuses is joint_unsolvable with details.reason; in both cases nothing is written and no card is left open. usedSelection is always false: the picks are explicit.',
+    description: `${JOINT_PLACEMENT_GUIDANCE} Prefer this over hand-computed part_set_transform numbers: one call creates a joint and solves the placement. type is coincident, parallel, perpendicular, distance, angle, concentric, symmetric or fixed (planar is coincident); picks are one row per reference from list_faces (face_id with its key from the same row; a cylindrical face is an axis pick; { part_id } alone is a whole-part pick), one pick for fixed and two for every other type; name, value_mm, sense and opposed as on joint_set_params. Runs the same open → pick → set params → commit path as the Joints card (the advanced path) and records one assembly undo step. The result carries jointId, type, name, valueMm, pickCount and placements: the position and rotation of every picked part after the solve. A pick that does not resolve is unknown_part / unknown_face, and a joint the solver refuses is joint_unsolvable with details.reason; in both cases nothing is written and no card is left open. usedSelection is always false: the picks are explicit.`,
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'bad_view', 'joints_unavailable', 'no_assembly', 'unknown_part', 'unknown_face', 'ambiguous_face', 'pick_failed', 'no_mesh', 'joint_unsolvable', 'edit_failed', 'internal'],
     mutates: true,

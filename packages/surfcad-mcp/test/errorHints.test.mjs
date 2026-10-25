@@ -32,6 +32,7 @@ import {
 import { PROMPT_TOOL_NAMES } from '../src/prompt/promptTools.mjs';
 import { loadCommandsCatalog } from '../src/catalog.mjs';
 import { loadPackageVersion } from '../src/packageVersion.mjs';
+import { UNJOINTED_PART_HINT } from '../../../src/agent/state/unjointedParts.js';
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER_BIN = join(PKG_ROOT, 'bin/surfcad-mcp.js');
@@ -113,6 +114,15 @@ test('withRowHints annotates errors rows and the crash record, and leaves other 
   assert.equal(withRowHints(same), same);
   const list = { faces: [] };
   assert.equal(withRowHints(list), list);
+
+  const warned = withRowHints({
+    partId: 'wheel',
+    warning: { code: 'unjointed_part', part_id: 'wheel', hint: UNJOINTED_PART_HINT },
+  });
+  assert.equal(ERROR_HINTS.unjointed_part.hint, UNJOINTED_PART_HINT);
+  assert.equal(warned.warning.hint, UNJOINTED_PART_HINT);
+  assert.equal(warned.warning.see, 'guide { topic: "errors.unjointed_part" }');
+  assert.equal(warned.warning.code, 'unjointed_part');
 });
 
 test('the error topics come from the hint table, start with their code, and stay short', () => {

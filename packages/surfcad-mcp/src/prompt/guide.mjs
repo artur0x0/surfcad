@@ -11,7 +11,7 @@
  * (data/commands.json) and docs/agent/SKILL.md are the sources. Keep each
  * topic under 1,500 words.
  */
-import { BUILD_GUIDANCE } from './buildGuidance.mjs';
+import { BUILD_GUIDANCE, JOINT_PLACEMENT_GUIDANCE } from './buildGuidance.mjs';
 import { CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS } from './promptTools.mjs';
 import {
   ERROR_TOPIC_CODES,
@@ -110,17 +110,19 @@ Before a screenshot for the user: select_clear {} so highlights and pick rings d
 
 const ASSEMBLY = `Assemblies, placement and joints.
 
-Documents. create_assembly { name? } seeds an empty assembly with one empty part (no seed cube; single-flight per tab; no git write). open_assembly { assembly_id } opens a saved one; list_assemblies {} returns [{ id, name, open }]. parts {} returns assemblyId, activeId and every part row with runState and crash, so a failed part that is not active is visible without switching.
+Documents. create_assembly { name? } seeds an empty assembly with one empty part (no seed cube; single-flight per tab; no git write). open_assembly { assembly_id } opens a saved one; list_assemblies {} returns [{ id, name, open }]. parts {} returns assemblyId, activeId, unjointedParts and every part row with runState and crash, so a failed part that is not active is visible without switching. status carries the same unjointedParts list. unjointedParts is empty for a single-part document; a base part with a fixed joint is omitted.
 
-Parts. create_part { name?, script?, position? } adds a part, makes it active and returns its new opaque id. Agent-created parts land at the assembly origin unless position [x, y, z] mm is given; parts created from the UI stagger along +X. The part starts empty; the first insert_* creates the body. Feature tools write the active part, so set_active_part { part_id } before inserting. rename_part changes the label only; delete_part { part_id, scope: "assembly" | "repo" } drops the row (repo also plans the file delete and needs confirm: true).
+Parts. create_part { name?, script?, position? } adds a part, makes it active and returns its new opaque id. Agent-created parts land at the assembly origin unless position [x, y, z] mm is given (a rough block-out; joint_create sets the final pose of a part that touches another); parts created from the UI stagger along +X. The part starts empty; the first insert_* creates the body. Feature tools write the active part, so set_active_part { part_id } before inserting. rename_part changes the label only; delete_part { part_id, scope: "assembly" | "repo" } drops the row (repo also plans the file delete and needs confirm: true).
 
 Reuse. insert_part { part_id } or { assembly_id } inserts by reference (the same id; one definition shared across assemblies). copy: true mints a new id and sets copiedFrom. open_part { part_id } opens a vault part into the document.
 
-Instances. insert_part { part_id, instance: true, position? } adds another placement of a part already in the open assembly: a new row with its own id, name ("Roller (2)"), pose and visibility that shares the definition's script, run and undo history, so set_script on any one rebuilds all of them from one run. parts lists such rows with instanceOf (the definition id). Joints, part_set_transform, set_part_visible and paint act on the one row; set_script, list_faces, export and FEA act on the shared definition. delete_part on an instance keeps the script while another row still places it; the last row to go takes the script with it. Use instances for repeated hardware (rollers, bolts) instead of copies, and position or a joint to place each one.
+Instances. insert_part { part_id, instance: true, position? } adds another placement of a part already in the open assembly: a new row with its own id, name ("Roller (2)"), pose and visibility that shares the definition's script, run and undo history, so set_script on any one rebuilds all of them from one run. parts lists such rows with instanceOf (the definition id). Joints, part_set_transform, set_part_visible and paint act on the one row; set_script, list_faces, export and FEA act on the shared definition. delete_part on an instance keeps the script while another row still places it; the last row to go takes the script with it. Use instances for repeated hardware (rollers, bolts) instead of copies, and joint_create to place each one that touches another. Patterns and instances inside one part (insert_array3_d, insert_polar_array, insert_pattern_points, insert_move) are bodies of that part, not assembly parts.
 
-Placement. part_get_transform { part_id } / part_set_transform { part_id, position?, rotation? } set a rigid placement: translation in mm, rotation as intrinsic XYZ Euler degrees; one assembly undo step. Use it for final positions after the part is built. A placed part's features, previews and picks are in its own frame; list_faces centers are world coordinates.
+Placement. ${JOINT_PLACEMENT_GUIDANCE} part_get_transform { part_id } reads a rigid placement: translation in mm, rotation as intrinsic XYZ Euler degrees. A placed part's features, previews and picks are in its own frame; list_faces centers are world coordinates. part_set_transform { part_id, position?, rotation? } writes that placement in one assembly undo step and is only for a part that touches nothing. create_part and insert_part { position } are a rough block-out. In an assembly of two or more parts, part_set_transform, or create_part / insert_part with a position, returns warning { code: "unjointed_part", part_id, hint } when that part is in no joint. The call still succeeds. A single-part document does not warn, and neither does the base part once it has a fixed joint.
 
-Joints. joint_open {} → joint_pick { part_id, face_id?, key? } (a whole part, a face with its key, or an edge) → joint_set_params { type, value?, sense?, opposed? } → joint_commit {}. Fixed takes one pick and no second reference: joint_pick { part_id } alone suggests fixed; a face pick needs joint_set_params { type: "fixed" }. Distance is mm, angle is degrees. Joints are the right tool when two parts must stay related; part_set_transform when one part just needs to sit somewhere.
+Joints. joint_create { type, picks } is the call. type is coincident, parallel, perpendicular, distance, angle, concentric, symmetric or fixed (planar is coincident). picks come from list_faces: face_id with its key, a cylindrical face as an axis, or { part_id } alone for a whole-part pick. Fixed takes one pick; every other type takes two, one per part. Distance is mm, angle is degrees.
+
+The Joints card is the advanced path for the same write: joint_open {} → joint_pick { part_id, face_id?, key? } (a whole part, a face with its key, or an edge) → joint_set_params { type, value?, sense?, opposed? } → joint_commit {}. Fixed takes one pick and no second reference: joint_pick { part_id } alone suggests fixed; a face pick needs joint_set_params { type: "fixed" }.
 
 Hardware. One part per unique fastener type, patterned to every place it goes: list_faces on the fastened part (cylindrical rows, filter by radius) gives each hole's center and axis; insert_pattern_points { points: [{ at, axis }, ...], up } on the fastener part places one instance per hole; insert_array3_d and insert_polar_array cover grids and bolt circles.
 
@@ -135,7 +137,7 @@ export const GUIDE_TOPICS = Object.freeze({
   paint: { summary: 'paint_open → paint_set_color → paint_part / paint_faces → paint_confirm; colours persist with the assembly', text: PAINT },
   limits: { summary: 'The 30 s kernel budget, what is slow, worker restarts and stale status, result sizes, pairing errors', text: LIMITS },
   camera: { summary: 'Which side each named view looks from, explicit poses, select_clear before a screenshot, screenshot to file', text: CAMERA },
-  assembly: { summary: 'Documents, create_part placement, insert by reference, part instances, part_set_transform vs joints, hardware, git_save', text: ASSEMBLY },
+  assembly: { summary: 'Documents, create_part placement, insert by reference, part instances, joint_create as the default assembly path, hardware, git_save', text: ASSEMBLY },
 });
 
 /** The core topics, in listing order (the error topics are listed on one line after them). */
@@ -216,7 +218,7 @@ export const SERVER_INSTRUCTIONS = [
   PROMPT_SERVER_INSTRUCTIONS,
   '',
   `SurfCAD quick start. Pair, then call guide { topic: "start" } before the first model call; guide {} lists every topic (${GUIDE_TOPIC_NAMES.join(', ')}; every error payload carries hint, and see names its errors.<code> topic).`,
-  'Flow, in ribbon order, each stage across the whole assembly before the next: 1 Block: create_part, then insert_cube / insert_cylinder / insert_tube at rough size, screenshot for the user. 2 Build: insert_hole, insert_cut, insert_shell, insert_make_extrude / revolve / sweep / loft. 3 Polish: insert_fillet_edges, insert_chamfer_edges on small edge sets. 4 Place: patterns, insert_move, part_set_transform or joints.',
+  'Flow, in ribbon order, each stage across the whole assembly before the next: 1 Block: create_part, then insert_cube / insert_cylinder / insert_tube at rough size and position, screenshot for the user. 2 Build: insert_hole, insert_cut, insert_shell, insert_make_extrude / revolve / sweep / loft. 3 Polish: insert_fillet_edges, insert_chamfer_edges on small edge sets. 4 Place: fix one base part with a fixed joint, then joint_create for every part that touches or attaches to another (one call creates the joint and solves placement). part_set_transform only for parts that touch nothing.',
   'Rules that bite: helper names (cut, hole, shell, ...) are reserved, never redeclare them; set_script needs the active part\'s id (set_active_part first) and only rewrites a whole part, insert_code_snippet { gap, why, script } is the one-operation fallback; use_selection is single use: pick, insert once, pick again (nothing selected is no_selection).',
   'Verify: select_clear → camera_set { view } → screenshot { save_to: true }. right puts the camera on +X, front on -Y, top on +Z.',
   'Save only when the user asks: git_save { message } answers consent_pending until the user clicks Allow; retry the same call.',
