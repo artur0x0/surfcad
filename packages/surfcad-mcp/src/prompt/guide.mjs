@@ -12,7 +12,7 @@
  * topic under 1,500 words.
  */
 import { BUILD_GUIDANCE } from './buildGuidance.mjs';
-import { PROMPT_SERVER_INSTRUCTIONS } from './promptTools.mjs';
+import { CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS } from './promptTools.mjs';
 import {
   ERROR_TOPIC_CODES,
   ERROR_TOPIC_PREFIX,
@@ -39,7 +39,9 @@ Then select_clear {} → camera_set { view: "iso" } → screenshot { save_to: tr
 
 Reading results: every model-changing tool answers { ok, errors, status } with return "status" by default over MCP (no script echo; get_script reads it, get_script { range: { fromFeature, toFeature } } reads one span). status.runState is not_run_yet | ok | failed; errors rows are feature_failed with the viewport's text and a detail reason.
 Ids are opaque surf ids from parts, list_assemblies, create_part, create_assembly; never a path or a display name.
-Topics: guide { topic: "dialect" | "features" | "selection" | "paint" | "limits" | "camera" | "assembly" }; list_helpers { names } documents any script helper.`;
+Topics: guide { topic: "dialect" | "features" | "selection" | "paint" | "limits" | "camera" | "assembly" }; list_helpers { names } documents any script helper.
+
+In-viewer prompt pane. ${CLOSING_REPLY_GUIDANCE} set_status is for progress and does not close the task.`;
 
 const FEATURES = `Feature blocks. The script of a part is plain JavaScript over the SurfCAD helpers, and the feature strip reads it from marker comments. Every insert_* writes one block:
 
@@ -126,7 +128,7 @@ Saving. Working-copy tools never commit. git_save { message } is the one vault w
 
 /** Topic name → one-line summary and the text. Order is the listing order. */
 export const GUIDE_TOPICS = Object.freeze({
-  start: { summary: 'How to build in SurfCAD (block, build, polish, place), a three-call example, how to read results', text: START },
+  start: { summary: 'How to build in SurfCAD (block, build, polish, place), a three-call example, how to read results, and the closing reply for an in-viewer prompt', text: START },
   dialect: { summary: DIALECT_SUMMARY, text: renderDialectTopic() },
   features: { summary: 'Marker blocks, feature ids, edit / delete / rollback / undo, script snippets, sketches', text: FEATURES },
   selection: { summary: 'Face and edge keys, list_faces filters, single-use picks, no_selection, fillet edge sets', text: SELECTION },

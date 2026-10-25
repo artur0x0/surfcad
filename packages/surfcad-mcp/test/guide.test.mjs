@@ -18,7 +18,7 @@ import {
   SERVER_INSTRUCTIONS,
 } from '../src/prompt/guide.mjs';
 import { BUILD_GUIDANCE } from '../src/prompt/buildGuidance.mjs';
-import { PROMPT_SERVER_INSTRUCTIONS } from '../src/prompt/promptTools.mjs';
+import { CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS, promptToolDefinitions } from '../src/prompt/promptTools.mjs';
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER_BIN = join(PKG_ROOT, 'bin/surfcad-mcp.js');
@@ -34,6 +34,30 @@ test('the instructions are a short quick-start that keeps the webhook line first
   assert.match(SERVER_INSTRUCTIONS, /list_commands \{ group \}/);
   assert.ok(!SERVER_INSTRUCTIONS.includes(BUILD_GUIDANCE));
   for (const name of GUIDE_TOPIC_NAMES) assert.ok(SERVER_INSTRUCTIONS.includes(name), name);
+  assert.ok(SERVER_INSTRUCTIONS.includes(CLOSING_REPLY_GUIDANCE), 'initialize instructions require a closing reply');
+  assert.match(SERVER_INSTRUCTIONS, /failure or partial completion/);
+  assert.match(SERVER_INSTRUCTIONS, /what failed and why/);
+  assert.match(SERVER_INSTRUCTIONS, /what is left/);
+});
+
+test('reply_to_user and the guide start topic require a closing reply, including on failure or partial completion', () => {
+  const defs = Object.fromEntries(promptToolDefinitions().map((tool) => [tool.name, tool]));
+  const reply = defs.reply_to_user.description;
+  assert.ok(reply.includes(CLOSING_REPLY_GUIDANCE), reply);
+  assert.match(reply, /final reply is expected/);
+  assert.match(reply, /failure or partial completion/);
+  assert.match(reply, /what was done, what failed and why, and what is left/);
+  assert.match(reply, /summarising what was done/);
+  assert.match(defs.reply_to_user.inputSchema.properties.final.description, /expected/);
+  assert.match(defs.reply_to_user.inputSchema.properties.text.description, /failure or partial completion/);
+  assert.ok(defs.read_messages.description.includes(CLOSING_REPLY_GUIDANCE));
+  assert.match(defs.read_messages.description, /failure or partial completion/);
+  assert.match(defs.set_status.description, /set_status is for progress and does not close the task/);
+  assert.match(defs.set_status.inputSchema.properties.state.description, /does not close the task/);
+  assert.ok(defs.set_status.description.includes(CLOSING_REPLY_GUIDANCE));
+  assert.ok(GUIDE_TOPICS.start.text.includes(CLOSING_REPLY_GUIDANCE));
+  assert.match(GUIDE_TOPICS.start.text, /set_status is for progress and does not close the task/);
+  assert.match(PROMPT_SERVER_INSTRUCTIONS, /failure or partial completion/);
 });
 
 test('the topics are the planned set, each under 1,500 words, and start carries the build guidance verbatim', () => {

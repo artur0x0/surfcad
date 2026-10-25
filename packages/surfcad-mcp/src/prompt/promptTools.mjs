@@ -7,11 +7,22 @@ import { BEARER_MAX, USER_CONTENT_NOTICE } from './promptSession.mjs';
 
 const USER_CONTENT = `${USER_CONTENT_NOTICE} Agent writes still go through the existing write-grant and consent flow. Nothing reaches git without an explicit Save or git_save.`;
 
-/** Short line for the MCP initialize `instructions` field. */
 /** read_messages { wait_ms } cap: long enough to skip idle polls, short enough for a host tool timeout. */
 export const READ_MESSAGES_MAX_WAIT_MS = 25_000;
 
-export const PROMPT_SERVER_INSTRUCTIONS = 'call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages.';
+/**
+ * Closing reply for a task that started in the in-viewer prompt pane.
+ * The same sentence is the second sentence of the MCP initialize
+ * instructions (hosts keep the start of that field) and the
+ * `reply_to_user` description.
+ */
+export const CLOSING_REPLY_GUIDANCE = 'When you finish a task started from the SurfCAD in-viewer prompt pane, send a closing reply with reply_to_user (final: true) summarising what was done, so the user gets confirmation. On failure or partial completion, say what was done, what failed and why, and what is left.';
+
+/**
+ * First paragraph of the MCP initialize `instructions`.
+ * Goldens pin the webhook sentence as the prefix.
+ */
+export const PROMPT_SERVER_INSTRUCTIONS = `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages. ${CLOSING_REPLY_GUIDANCE}`;
 
 /** Exact wording the agent should relay when asking the user for a webhook. */
 export const PROMPT_ONBOARDING_ASK = 'To get SurfCAD messages instantly, send me your webhook URL and key. This only needs to be done once. Otherwise I\'ll check for SurfCAD messages between steps, so replies may lag.';
@@ -76,7 +87,7 @@ export function promptToolDefinitions() {
     },
     {
       name: 'read_messages',
-      description: `Read queued user prompts, oldest first, and remove them from the in-memory queue (this acks them). Each prompt is plain text. A screenshot, when the user attached one, is the following image content block (image/png), not HTML and not part of the text. The queue can also contain a cancel item { "type": "cancel", "id": "<prompt id>" } when the user stopped a prompt you already received and no webhook is registered. Stop work on that id. Do not call reply_to_user or set_status for it. ${USER_CONTENT} Do not render the text or the image as HTML.`,
+      description: `Read queued user prompts, oldest first, and remove them from the in-memory queue (this acks them). Each prompt is plain text. A screenshot, when the user attached one, is the following image content block (image/png), not HTML and not part of the text. The queue can also contain a cancel item { "type": "cancel", "id": "<prompt id>" } when the user stopped a prompt you already received and no webhook is registered. Stop work on that id. Do not call reply_to_user or set_status for it. ${USER_CONTENT} Do not render the text or the image as HTML. When you finish the task from a prompt you received here, close that chat: ${CLOSING_REPLY_GUIDANCE}`,
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -98,7 +109,7 @@ export function promptToolDefinitions() {
     },
     {
       name: 'reply_to_user',
-      description: 'Send a plain-text reply to the SurfCAD user for a prompt id. Several replies may share one id. Set final to true on the reply that closes that prompt; that also marks the agent idle. The text is delivered as text, never rendered as HTML. This does not write the model or git. A cancelled id returns { "ok": false, "error": "cancelled" } and is not delivered.',
+      description: `${CLOSING_REPLY_GUIDANCE} The final reply is expected: it closes the task in the chat. Send a plain-text reply to the SurfCAD user for a prompt id. Several replies may share one id. Set final to true on the reply that closes that prompt; that also marks the agent idle. The text is delivered as text, never rendered as HTML. This does not write the model or git. A cancelled id returns { "ok": false, "error": "cancelled" } and is not delivered.`,
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -110,18 +121,18 @@ export function promptToolDefinitions() {
           },
           text: {
             type: 'string',
-            description: 'Plain text for the user. Not HTML.',
+            description: 'Plain text for the user. Not HTML. The closing reply (final: true) summarises what was done, or on failure or partial completion what was done, what failed and why, and what is left.',
           },
           final: {
             type: 'boolean',
-            description: 'True closes this prompt id. Defaults to false.',
+            description: 'True on the closing reply that finishes the prompt. That reply is expected and summarises the result or the failure. Defaults to false.',
           },
         },
       },
     },
     {
       name: 'set_status',
-      description: 'Tell the SurfCAD tab what you are doing with the user\'s prompt: state typing (writing an answer: the chat stays open with typing dots), working (changing the model: the chat collapses and the field shows a spinner), or idle. You do not have to call it for working: the first model-changing tool call after a prompt sets working, a streamed reply_to_user (final false) sets typing, and a final reply or 120 seconds without activity sets idle. Set typing before a long answer so the user reads the chat instead of watching the viewport. Without id it targets the latest prompt. A cancelled id returns { ok: false, error: cancelled }.',
+      description: `Tell the SurfCAD tab what you are doing with the user's prompt: state typing (writing an answer: the chat stays open with typing dots), working (changing the model: the chat collapses and the field shows a spinner), or idle. set_status is for progress and does not close the task. You do not have to call it for working: the first model-changing tool call after a prompt sets working, a streamed reply_to_user (final false) sets typing, and a final reply or 120 seconds without activity sets idle. Set typing before a long answer so the user reads the chat instead of watching the viewport. Without id it targets the latest prompt. A cancelled id returns { ok: false, error: cancelled }. ${CLOSING_REPLY_GUIDANCE}`,
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -129,7 +140,7 @@ export function promptToolDefinitions() {
           state: {
             type: 'string',
             enum: ['typing', 'working', 'idle'],
-            description: 'typing: you are writing an answer (the tab keeps the chat open with typing dots). working: you are changing the model (the tab collapses the chat and shows a spinner). idle: done. Set typing before a long answer; model-changing tool calls set working on their own; a final reply_to_user sets idle.',
+            description: 'typing: you are writing an answer (the tab keeps the chat open with typing dots). working: you are changing the model (the tab collapses the chat and shows a spinner). idle: not typing or changing the model. Idle does not close the task; a closing reply_to_user does. Set typing before a long answer; model-changing tool calls set working on their own; a final reply_to_user sets idle.',
           },
           label: {
             type: 'string',
