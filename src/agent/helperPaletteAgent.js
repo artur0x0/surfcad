@@ -189,9 +189,17 @@ function fieldName(param) {
   return param?.label || param?.name || 'value';
 }
 
+function showWhenHolds(param, params) {
+  const rule = param?.showWhen;
+  if (!rule || !Array.isArray(rule.values)) return true;
+  const current = String(params?.[rule.field] ?? '');
+  return rule.values.map(String).includes(current);
+}
+
 export function validateHelperParams(item, params) {
   const label = helperLabel(item);
   for (const param of item.params || []) {
+    if (!showWhenHolds(param, params)) continue;
     if (param.type === 'points') {
       const has = params && Object.prototype.hasOwnProperty.call(params, param.name);
       if (!has || !parsePatternPoints(params[param.name])) {

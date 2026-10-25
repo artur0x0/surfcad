@@ -21,10 +21,24 @@ test('parsePatternPoints accepts arrays and JSON, normalises, and refuses junk',
   }
 });
 
-test('the Points button sits in Build after Array and composes a patternOnPoints block', () => {
+test('Points is an Array type, stays off the rail, and composes a patternOnPoints block', () => {
   const build = paletteRailSections('desktop').find((s) => s.key === 'Build').items.map((i) => i.id);
-  assert.ok(build.indexOf('patternPoints') > build.indexOf('array3D'), build.join(','));
+  assert.ok(build.includes('array3D') && !build.includes('patternPoints'), build.join(','));
+  const array = HELPER_PALETTE_ITEMS.find((i) => i.id === 'array3D');
+  const types = array.params.find((p) => p.name === 'arrayType').options.map((o) => o.value);
+  assert.deepEqual(types, ['grid', 'polar', 'points']);
+  assert.equal(HELPER_PALETTE_ITEMS.find((i) => i.id === 'patternPoints').railHidden, true);
   assert.equal(helperNeedsBody('patternPoints'), true);
+  assert.equal(helperNeedsBody('array3D', { arrayType: 'points' }), true);
+  const viaArray = composeHelperInsert(BOLT, 'array3D', null, {
+    arrayType: 'points',
+    points: [{ at: [-20, -15, 6], axis: [0, 0, 1] }, [20, -15, 6]],
+    up: 'z',
+    keepOriginal: false,
+    merge: true,
+  });
+  assert.ok(viaArray, 'Array Type=Points composes');
+  assert.match(viaArray, /part = patternOnPoints\(part, \[\{"at":\[-20,-15,6\],"axis":\[0,0,1\]\},\[20,-15,6\]\], \{ up: \[0, 0, 1\], keepOriginal: false, merge: true \}\);/);
   const out = composeHelperInsert(BOLT, 'patternPoints', null, {
     points: [{ at: [-20, -15, 6], axis: [0, 0, 1] }, [20, -15, 6]],
     up: 'z',

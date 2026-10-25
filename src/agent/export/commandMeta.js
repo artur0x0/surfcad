@@ -1105,13 +1105,13 @@ const INSERT_ROTATE_META = {
 
 const INSERT_CODE_SNIPPET_META = {
   ...INSERT_HELPER_META,
-  description: `The script snippet feature (the Script button in Build): one operation no feature can do, as its own feature block on the active part, kept next to the insert_* features instead of replacing the whole part. gap names the missing feature or option, why says why the existing feature did not work, script is the operation (it reads and sets part). The block starts with // FEATURE-GAP: <gap> | <why>, which the feature backlog is grepped from. All three are required; an empty one is bad_args. Prefer insert_* whenever a feature can do the job; use set_script only to rewrite a whole part. Working copy only; git_save commits.`,
+  description: `The script snippet feature: one operation no feature can do, as its own feature block on the active part, kept next to the insert_* features instead of replacing the whole part. gap names the missing feature or option, why says why the existing feature did not work, script is the operation (it reads and sets part). The block starts with // FEATURE-GAP: <gap> | <why>, which the feature backlog is grepped from. All three are required; an empty one is bad_args. Prefer insert_* whenever a feature can do the job; use set_script only to rewrite a whole part. Working copy only; git_save commits.`,
   errors: ['bad_args', 'insert_failed', 'internal'],
 };
 
 const INSERT_PATTERN_POINTS_META = {
   ...INSERT_HELPER_META,
-  description: `Pattern on points (the Points button in Build): one copy of the body at every point, turned so its up axis follows the point's axis when the point has one. points is [[x, y, z], …] or [{ at: [x, y, z], axis: [nx, ny, nz] }, …] in mm (a JSON string of the same is accepted); up is the body axis (x | y | z) that follows a point axis; keepOriginal keeps the source where it is; merge false keeps overlapping copies as separate bodies. Hardware: model one bolt in its own part, then call list_faces on the part it fastens, take the center and axis of each cylindrical hole face (filter by radius), and pass them here with up set to the bolt's own axis; when the holes move, run this again with the new centers. Empty or malformed points are bad_args. Working copy only; git_save commits.`,
+  description: `Pattern on points (Array Type=Points): one copy of the body at every point, turned so its up axis follows the point's axis when the point has one. points is [[x, y, z], …] or [{ at: [x, y, z], axis: [nx, ny, nz] }, …] in mm (a JSON string of the same is accepted); up is the body axis (x | y | z) that follows a point axis; keepOriginal keeps the source where it is; merge false keeps overlapping copies as separate bodies. Hardware: model one bolt in its own part, then call list_faces on the part it fastens, take the center and axis of each cylindrical hole face (filter by radius), and pass them here with up set to the bolt's own axis; when the holes move, run this again with the new centers. Empty or malformed points are bad_args. Working copy only; git_save commits.`,
   errors: ['bad_args', 'insert_failed', 'internal'],
 };
 

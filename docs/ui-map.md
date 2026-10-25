@@ -1018,8 +1018,13 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
 - **Rail sections are Block / Build / Shape / Polish / Move**, in that order
   (`CAD_RAIL_ORDER` in `helperPaletteSnippets.js` for the order,
   `GROUP_SHORT_LABEL` in `HelperInsertPalette.jsx` for the captions). Shape is
-  the old Model section, same buttons. Build is hole, cut, boolean, shell, draft, pattern, Points (`patternPoints`: one instance at every point, turned along each point's axis; `patternOnPoints`), and Script (`codeSnippet`: a script snippet feature with its `// FEATURE-GAP: … | …` line, `src/utils/featureGaps.js`),
-  pattern. Boolean (`RectangleCircle`, lucide `rectangle-circle`, vendored in `icons/`) is the body boolean: Union, Difference, or
+  the old Model section, same buttons. Build is hole, cut, boolean, shell, draft, pattern
+  (the Array button; Type is Grid, Polar, or Points). Points (`patternPoints`, `railHidden`:
+  one instance at every point, turned along each point's axis; `patternOnPoints`) is Array
+  Type=Points, not its own rail button. Script (`codeSnippet`, `railHidden`: a script snippet
+  feature with its `// FEATURE-GAP: … | …` line, `src/utils/featureGaps.js`) stays
+  composable for `insert_code_snippet` and the feature strip; it has no rail button.
+  Boolean (`RectangleCircle`, lucide `rectangle-circle`, vendored in `icons/`) is the body boolean: Union, Difference, or
   Intersect, then leftover pieces on Intersect. It is not a second glyph of Cut.
   Polish is fillet, chamfer, move face, delete face. Move is every
   remaining button. The first button in Move is Move (`Move` glyph, directly
@@ -1078,8 +1083,9 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
   type fields that list already has). No centres writes nothing. The contour
   is not stored. A bar that drops a flange still drops the holes on that
   flange. Tapping an existing hole still edits that one hole, including U and V.
-  `polarArray` stays the same way: one Array button whose Type param is Grid or
-  Polar, and the `array3D` build delegates to `polarArray`'s for Polar.
+  `polarArray` and `patternPoints` stay the same way: one Array button whose Type
+  param is Grid, Polar, or Points, and the `array3D` build delegates to
+  `polarArray`'s for Polar and `patternPoints`'s for Points.
   `holePattern` stays so an old script still runs. The Hole button does not emit it.
   The kernel helper `holesOnContour` cuts one hole at every centre of a shared
   contour (each sketch point, including an arc centre), through or to a depth,

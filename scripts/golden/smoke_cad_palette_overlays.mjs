@@ -91,20 +91,33 @@ console.log('cad palette + plane/contour toggles');
     );
     const array = grouped.Transforms.find((i) => i.id === 'array3D');
     const typeParam = array.params.find((p) => p.name === 'arrayType');
-    check('Array has a Grid/Polar type param', !!typeParam
-      && typeParam.options.map((o) => o.value).join(',') === 'grid,polar');
+    check('Array has a Grid/Polar/Points type param', !!typeParam
+      && typeParam.options.map((o) => o.value).join(',') === 'grid,polar,points');
     check(
       'grid params are hidden under Type=Polar and vice versa',
       array.params.find((p) => p.name === 'nx').showWhen.values.join() === 'grid'
-        && array.params.find((p) => p.name === 'boltCircleRadius').showWhen.values.join() === 'polar',
+        && array.params.find((p) => p.name === 'boltCircleRadius').showWhen.values.join() === 'polar'
+        && array.params.find((p) => p.name === 'points').showWhen.values.join() === 'points',
     );
-    const gridBuf = composeHelperInsert('', 'array3D', null, { arrayType: 'grid', nx: 3 });
+    const cube = composeHelperInsert('', 'cube', null, {});
+    const gridBuf = composeHelperInsert(cube, 'array3D', null, { arrayType: 'grid', nx: 3 });
     check('Type=Grid emits array3D', /array3D\(/.test(gridBuf) && !/polarArray\(/.test(gridBuf));
     const polarBuf = composeHelperInsert('', 'array3D', null, { arrayType: 'polar', count: 6 });
     check('Type=Polar emits polarArray', /polarArray\([^)]*6/.test(polarBuf) && !/array3D\(/.test(polarBuf));
-    check('both Array types stay parseable', [gridBuf, polarBuf].every((b) => {
+    const pointsBuf = composeHelperInsert(cube, 'array3D', null, { arrayType: 'points', points: [[0, 0, 0], [40, 0, 0]] });
+    check('Type=Points emits patternOnPoints', /patternOnPoints\(/.test(pointsBuf) && !/array3D\(/.test(pointsBuf));
+    check('Array types stay parseable', [gridBuf, polarBuf, pointsBuf].every((b) => {
       try { new Function(b); return true; } catch { return false; }
     }));
+    check(
+      'no separate Points or Script button',
+      !railIds.includes('patternPoints') && !railIds.includes('codeSnippet'),
+    );
+    check(
+      'patternPoints and codeSnippet survive as hidden items',
+      grouped.Transforms.find((i) => i.id === 'patternPoints')?.railHidden === true
+        && grouped.Features.find((i) => i.id === 'codeSnippet')?.railHidden === true,
+    );
   }
 
   // ── Build / Polish / Move ──
@@ -116,8 +129,8 @@ console.log('cad palette + plane/contour toggles');
     check('Polish is fillet, chamfer, move face, delete face',
       polish.join(',') === 'filletEdges,chamferEdges,moveFace,deleteFace', polish.join(','));
     const move = cad.find((s) => s.key === 'Transforms').items.map((i) => i.id);
-    check('Move is the leftovers, Move above Center',
-      move.join(',') === 'move,center,align,mirror', move.join(','));
+    check('Move is the leftovers, Move above Rotate above Center',
+      move.join(',') === 'move,rotate,center,align,mirror', move.join(','));
     check('Draft sits in Build', build.includes('addDraft'));
     check('Move no longer carries Draft', !move.includes('addDraft'));
   }
@@ -234,7 +247,7 @@ console.log('cad palette + plane/contour toggles');
     && /The sketch plane square is not drawn/.test(view));
   check(
     'saved contour pick gated',
-    /showContoursRef\.current && !moveModeRef\.current && contourModeRef\.current\?\.tool !== 'polyline'/.test(view)
+    /showContoursRef\.current && !moveModeRef\.current && !rotateModeRef\.current && contourModeRef\.current\?\.tool !== 'polyline'/.test(view)
       && /!cutModeRef\.current && !booleanModeRef\.current && !paintModeRef\.current && !feaPickRef\.current && showContoursRef\.current/.test(view),
   );
   check(
