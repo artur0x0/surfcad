@@ -391,12 +391,15 @@ test('clear drops the queue, the webhook, and an in-flight POST', async () => {
   assert.equal(JSON.stringify(sent).includes('secret prompt'), false);
 });
 
-test('a reply without a paired socket is not_paired', () => {
+test('a reply without a paired socket is not_paired', async () => {
   const session = createPromptSession({
-    send() {
-      throw Object.assign(new Error('Not paired'), { code: 'not_paired' });
+    send(payload) {
+      if (payload.type === PAIR_MSG.AGENT_REPLY) {
+        throw Object.assign(new Error('Not paired'), { code: 'not_paired' });
+      }
     },
   });
+  await session.acceptPrompt(prompt(1));
   assert.throws(
     () => session.reply({ in_reply_to: pid(1), text: 'hi', final: false }),
     (err) => err.code === 'not_paired',
@@ -791,13 +794,82 @@ test('read_messages { wait_ms } over callPromptTool waits for a prompt and rejec
   const out = await pending;
   const text = out.content.filter((c) => c.type === 'text').map((c) => JSON.parse(c.text));
   assert.equal(text[0].id, pid(7));
-  assert.deepEqual(text.at(-1), { acked: [pid(7)] });
+  assert.deepEqual(text.at(-1), {
+    acked: [pid(7)],
+    recent: [{ id: pid(7), state: 'delivered' }],
+  });
 
   const empty = callPromptTool(session, 'read_messages', { wait_ms: 1000 });
   time.advance(1000);
   const none = await empty;
-  assert.deepEqual(JSON.parse(none.content[0].text), { messages: [], acked: [] });
+  assert.deepEqual(JSON.parse(none.content[0].text), {
+    messages: [],
+    acked: [],
+    recent: [{ id: pid(7), state: 'delivered' }],
+  });
 
   await assert.rejects(() => callPromptTool(session, 'read_messages', { wait_ms: 99_999 }), (err) => err.code === 'bad_args');
   await assert.rejects(() => callPromptTool(session, 'read_messages', { wait_ms: -1 }), (err) => err.code === 'bad_args');
+});
+
+test('an unknown reply id is rejected before send, and recent ids survive the ack', async () => {
+  const { session, sent } = harness({ rateLimitMs: 0, queueCap: 2 });
+  assert.throws(
+    () => session.reply({ in_reply_to: 'x', text: 'probe' }),
+    (err) => err.code === 'unknown_prompt',
+  );
+  assert.equal(sent.some((msg) => msg.type === PAIR_MSG.AGENT_REPLY), false);
+
+  await session.acceptPrompt(prompt(1));
+  await session.acceptPrompt(prompt(2));
+  await session.acceptPrompt(prompt(3));
+  const read = await callPromptTool(session, 'read_messages', {});
+  const parsed = read.content.filter((block) => block.type === 'text').map((block) => JSON.parse(block.text));
+  assert.deepEqual(parsed.filter((row) => row.id).map((row) => row.id), [pid(2), pid(3)]);
+  assert.deepEqual(parsed.at(-1).acked, [pid(2), pid(3)]);
+  assert.deepEqual(parsed.at(-1).recent, [
+    { id: pid(2), state: 'delivered' },
+    { id: pid(3), state: 'delivered' },
+  ]);
+
+  const before = sent.length;
+  assert.throws(
+    () => session.reply({ in_reply_to: 'x', text: 'probe' }),
+    (err) => err.code === 'unknown_prompt',
+  );
+  assert.throws(
+    () => session.reply({ in_reply_to: pid(1), text: 'gone' }),
+    (err) => err.code === 'unknown_prompt',
+  );
+  assert.equal(sent.length, before, 'an unknown id sends nothing');
+
+  const empty = await callPromptTool(session, 'read_messages', {});
+  assert.deepEqual(JSON.parse(empty.content[0].text), {
+    messages: [],
+    acked: [],
+    recent: [
+      { id: pid(2), state: 'delivered' },
+      { id: pid(3), state: 'delivered' },
+    ],
+  });
+
+  const streamed = [
+    session.reply({ in_reply_to: pid(2), text: 'one ', final: false }),
+    session.reply({ in_reply_to: pid(2), text: 'two ', final: false }),
+    session.reply({ in_reply_to: pid(2), text: 'three', final: true }),
+  ];
+  assert.deepEqual(streamed, [
+    { id: pid(2), final: false },
+    { id: pid(2), final: false },
+    { id: pid(2), final: true },
+  ]);
+  const replies = sent.filter((msg) => msg.type === PAIR_MSG.AGENT_REPLY && msg.id === pid(2));
+  assert.deepEqual(replies.map((msg) => msg.text), ['one ', 'two ', 'three']);
+  assert.deepEqual(replies.map((msg) => msg.final), [false, false, true]);
+
+  const after = await callPromptTool(session, 'read_messages', {});
+  assert.deepEqual(JSON.parse(after.content[0].text).recent, [
+    { id: pid(2), state: 'replied' },
+    { id: pid(3), state: 'delivered' },
+  ]);
 });

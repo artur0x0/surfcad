@@ -138,6 +138,14 @@ export function createPromptSession(options) {
   let queue = [];
   /** @type {Map<string, 'queued' | 'delivered' | 'replied' | 'cancelled'>} */
   const states = new Map();
+  /**
+   * Prompt ids this session accepted, oldest first. Capped with the queue.
+   * Held in memory only. Dropped ids stay replyable while `states` still
+   * has them; an id removed from `states` (queue overflow of a prompt the
+   * agent never received) is removed here too.
+   * @type {string[]}
+   */
+  let recent = [];
   /** @type {string | null} */
   let webhook = null;
   /** @type {string | null} Bearer token. Process memory only. Never log or return it. */
@@ -282,8 +290,27 @@ export function createPromptSession(options) {
    * @param {'queued' | 'delivered' | 'replied' | 'cancelled'} state
    */
   function remember(id, state) {
+    const known = states.has(id);
     states.set(id, state);
     lastId = id;
+    if (known) return;
+    recent.push(id);
+    while (recent.length > queueCap) recent.shift();
+  }
+
+  function pruneRecent() {
+    if (recent.every((id) => states.has(id))) return;
+    recent = recent.filter((id) => states.has(id));
+  }
+
+  /**
+   * Prompts this session accepted, oldest first, at most the queue cap.
+   * State is live (`queued`, `delivered`, `replied`, `cancelled`).
+   * @returns {Array<{ id: string, state: 'queued' | 'delivered' | 'replied' | 'cancelled' }>}
+   */
+  function recentPrompts() {
+    pruneRecent();
+    return recent.map((id) => ({ id, state: states.get(id) }));
   }
 
   /**
@@ -417,6 +444,7 @@ export function createPromptSession(options) {
       if (old?.id && states.get(old.id) === 'queued') states.delete(old.id);
       if (old?.id) emit(ack(old.id, 'failed', 'queue_overflow'));
     }
+    if (dropped.length) pruneRecent();
     emit(ack(prompt.id, 'queued'));
   }
 
@@ -577,7 +605,13 @@ export function createPromptSession(options) {
     if (text.length > PROMPT_REPLY_MAX) {
       throw Object.assign(new Error('Reply text is too long'), { code: 'reply_too_long' });
     }
-    if (states.get(inReplyTo) === 'cancelled') {
+    // Only a prompt this session accepted. Checked before any send, so an
+    // invented id never becomes an agent.reply on the tab.
+    const state = states.get(inReplyTo);
+    if (!state) {
+      throw Object.assign(new Error('in_reply_to is not a prompt delivered to this session'), { code: 'unknown_prompt' });
+    }
+    if (state === 'cancelled') {
       return { ok: false, error: 'cancelled' };
     }
     const isFinal = args.final === true;
@@ -704,6 +738,7 @@ export function createPromptSession(options) {
     life += 1;
     queue = [];
     states.clear();
+    recent = [];
     webhook = null;
     webhookBearer = null;
     working = false;
@@ -722,6 +757,7 @@ export function createPromptSession(options) {
     cancel,
     readMessages,
     waitForMessage,
+    recentPrompts,
     reply,
     setStatus,
     noteToolCall,

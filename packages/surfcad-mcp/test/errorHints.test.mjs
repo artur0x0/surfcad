@@ -40,7 +40,7 @@ const SERVER_BIN = join(PKG_ROOT, 'bin/surfcad-mcp.js');
 /** Codes the MCP process itself raises (errors.mjs, relay.mjs, promptTools.mjs, guide.mjs, screenshotFile.mjs). */
 const MCP_SIDE_CODES = [
   'not_paired', 'pairing_lost', 'pair_pending', 'pair_rejected', 'pair_cancelled', 'pair_failed', 'bad_pairing_code',
-  'bridge_error', 'unknown_tool', 'unknown_topic', 'bad_webhook_url', 'no_request', 'reply_too_long', 'bad_call',
+  'bridge_error', 'unknown_tool', 'unknown_topic', 'bad_webhook_url', 'no_request', 'unknown_prompt', 'reply_too_long', 'bad_call',
   'screenshot_save_failed', 'bad_args',
 ];
 

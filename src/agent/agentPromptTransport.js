@@ -92,6 +92,8 @@ export function createAgentPromptTransport(bridge) {
   const ackListeners = new Set();
   /** Prompt ids that already received a final reply. */
   const finalIds = new Set();
+  /** Prompt ids this page actually sent. A reply for any other id is dropped. */
+  const sentIds = new Set();
   /** @type {Map<string, { promise: Promise<{ id: string, state: string }>, resolve: (result: { id: string, state: string }) => void, timer: ReturnType<typeof setTimeout> }>} */
   const cancelWaiters = new Map();
   /** Last prompt handed to the bridge. `cancel()` with no id uses this. */
@@ -112,6 +114,7 @@ export function createAgentPromptTransport(bridge) {
   const unsubscribe = bridge.subscribe((msg) => {
     if (!msg || typeof msg !== 'object') return;
     if (msg.type === PAIR_MSG.AGENT_REPLY && msg.v === 1 && typeof msg.id === 'string' && typeof msg.text === 'string') {
+      if (!sentIds.has(msg.id)) return;
       if (msg.final === true) finalIds.add(msg.id);
       emitTo(replyListeners, { id: msg.id, text: msg.text, final: msg.final === true });
       return;
@@ -141,6 +144,7 @@ export function createAgentPromptTransport(bridge) {
     workingListeners.clear();
     ackListeners.clear();
     finalIds.clear();
+    sentIds.clear();
   }
 
   /**
@@ -201,6 +205,7 @@ export function createAgentPromptTransport(bridge) {
       message.screenshot = shot.value;
     }
     if (bridge.send(message) !== true) return fail('not_paired');
+    sentIds.add(id);
     currentId = id;
     return id;
   }

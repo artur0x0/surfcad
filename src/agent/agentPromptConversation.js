@@ -5,7 +5,8 @@
  * Nothing here is stored. The list lives in component state, hides on
  * Dismiss (and comes back with the next message), and is dropped on
  * disconnect. A reply's id is the prompt id it answers, so a user message
- * and its reply share an id and sit next to each other.
+ * and its reply share an id and sit next to each other. A reply whose id
+ * is not a user message in this conversation is ignored.
  */
 
 export const CONVERSATION_EMPTY = Object.freeze({ messages: Object.freeze([]), hidden: false });
@@ -40,6 +41,8 @@ export function conversationReducer(state, event) {
         messages[index] = { ...messages[index], text: messages[index].text + chunk };
         return { hidden: false, messages };
       }
+      const known = cur.messages.some((row) => row.role === 'user' && row.id === event.id);
+      if (!known) return cur;
       return {
         hidden: false,
         messages: [...cur.messages, { key, id: event.id, role: 'agent', text: chunk, thumb: null }],
