@@ -1,5 +1,6 @@
 import { NO_ARGS_SCHEMA } from '../registry.js';
 import { trackFeatureUsed } from '../../utils/analytics.js';
+import { featureEditParamError } from '../featureEditParams.js';
 import {
   commitOpenContourSketch,
   contourSketchPatch,
@@ -72,26 +73,13 @@ export const editFeatureCommand = Object.freeze({
     properties: {
       params: {
         type: 'object',
-        // The host merges every key into the open edit (App editFeature,
-        // Viewport agentPatchFeatureEdit, agentPatchHoleCard); which keys are
-        // read depends on the feature kind (featureEdit.js rewriteBlock).
+        // Open on purpose. A nested `properties` map made strict MCP clients
+        // collapse this to additionalProperties: false with an empty
+        // properties object, so { params: { at } } and { params: { height } }
+        // never left the client. Which keys apply is checked per feature
+        // kind at runtime (featureEditParams.js); an unknown key is bad_args.
         additionalProperties: true,
-        description: 'Feature sheet / edit-card fields to merge before confirm. Keys depend on the feature kind (e.g. height, radius, distance). For a move: dx, dy, dz, and at. For a saved contour (a contour:<id> chip): points [[u, v], …], radius, segments, width, height, centered, polygon_preset, or tool; they patch the reopened sketch, and confirm_feature saves and closes it.',
-        properties: {
-          points: {
-            type: 'array',
-            items: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 },
-            description: 'Contour only: new polyline points in the sketch plane UV, mm; replaces the profile',
-          },
-          tool: { type: 'string', description: 'Contour only: circle | rectangle | polygon | polyline; inferred from the other keys when omitted' },
-          at: {
-            type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3,
-            description: 'Move only: new body centroid [x, y, z] mm from list_bodies; re-points the move',
-          },
-          dx: { type: 'number', description: 'Move only: offset x mm' },
-          dy: { type: 'number', description: 'Move only: offset y mm' },
-          dz: { type: 'number', description: 'Move only: offset z mm' },
-        },
+        description: 'Feature parameters to merge into the open edit. An open object: height, radius, distance, dx, dy, dz, at, and the contour profile keys are all accepted here. The open feature decides which keys it can write; a key it does not use is bad_args and is not stored. For a move: dx, dy, dz, and at. For a saved contour (a contour:<id> chip): points [[u, v], …], radius, segments, width, height, centered, polygon_preset, or tool; they patch the reopened sketch, and confirm_feature saves and closes it.',
       },
     },
   }),
@@ -118,6 +106,16 @@ export const editFeatureCommand = Object.freeze({
           ...patched.result,
         },
       };
+    }
+    // No session: do not report success. The host used to merge a draft and
+    // return ok even when open_feature had not stored a session.
+    if (typeof ctx.readFeatureSession === 'function') {
+      const session = ctx.readFeatureSession();
+      if (!session?.open) {
+        return { error: { code: 'no_feature_edit', message: 'No feature edit session is open' } };
+      }
+      const bad = featureEditParamError(session.kind, args?.params);
+      if (bad) return { error: bad };
     }
     return hostCall(ctx, 'editFeature', args);
   },

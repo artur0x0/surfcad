@@ -39,6 +39,15 @@ function host(overrides = {}) {
       }
       return { error: { code: 'bad_index', message: 'nope' } };
     },
+    readFeatureSession: () => ({
+      open: !!session,
+      id: session?.id ?? null,
+      kind: session?.kind ?? null,
+      index: session?.index ?? null,
+      contourId: null,
+      sketchOpen: false,
+      tool: null,
+    }),
     editFeature({ params }) {
       draft = { ...draft, ...params };
       return { result: { params: draft } };
@@ -303,6 +312,103 @@ test('a reopened contour: a profile the sketch cannot save is an error and the s
   assert.ok(h.calls.some((row) => row[0] === 'sketchCancel'));
   assert.equal(h.readFeatureSession().sketchOpen, false);
   assert.equal(h.readFeatureSession().open, false);
+});
+
+const MOVE_SCRIPT = `// --- cube begin id=cube0 ---
+let part = Manifold.cube([20, 20, 20], true);
+// --- cube end ---
+// --- move begin id=move6 ---
+part = move(part, [0, 0, 0], { bodies: [{ at: [0, 0, 0] }] });
+// --- move end ---
+return part;
+`;
+
+test('edit_feature with no session is no_feature_edit and does not report ok', async () => {
+  const h = host();
+  const api = createSurfcadBridge({ resolve: () => h });
+  const edit = await api.call('edit_feature', { params: { dx: -38 } });
+  assert.equal(edit.ok, false);
+  assert.equal(edit.error.code, 'no_feature_edit');
+  assert.match(edit.error.message, /No feature edit session is open/);
+  assert.equal(h.getScript(), SCRIPT);
+});
+
+test('open, edit dx, and confirm rewrite a move; an unknown param is bad_args and is not stored', async () => {
+  const { confirmFeatureEdit } = await import('../../utils/featureEdit.js');
+  const { resolveStripTarget } = await import('../featureStripAgent.js');
+  let script = MOVE_SCRIPT;
+  let session = null;
+  let target = null;
+  let draft = null;
+  const h = host({
+    getScript: () => script,
+    setEditor(src) { script = src; },
+    openFeature(args) {
+      const resolved = resolveStripTarget(script, args);
+      if (resolved.error) return resolved;
+      session = { id: resolved.chip.id, kind: resolved.chip.kind, index: resolved.chip.index };
+      target = resolved.feature;
+      draft = {};
+      return { result: { id: session.id, kind: session.kind, index: session.index } };
+    },
+    readFeatureSession: () => ({
+      open: !!session,
+      id: session?.id ?? null,
+      kind: session?.kind ?? null,
+      index: session?.index ?? null,
+      contourId: null,
+      sketchOpen: false,
+      tool: null,
+    }),
+    editFeature({ params }) {
+      if (!session) return { error: { code: 'no_feature_edit', message: 'No feature edit session is open' } };
+      draft = { ...(draft || {}), ...(params || {}) };
+      return { result: { params: draft } };
+    },
+    prepareFeatureConfirm() {
+      if (!session || !target) {
+        return { error: { code: 'no_feature_edit', message: 'No feature edit session is open' } };
+      }
+      const result = confirmFeatureEdit(script, target, { fields: draft || {} });
+      if (!result.ok) return { error: { code: 'edit_failed', message: result.message } };
+      return {
+        changed: result.changed === true,
+        source: result.changed ? result.buffer : script,
+        featureId: target.id,
+        kind: 'move',
+        message: 'Edit move',
+      };
+    },
+    dismissFeatureConfirmSession() {
+      session = null;
+      target = null;
+      draft = null;
+    },
+  });
+  const api = createSurfcadBridge({ resolve: () => h });
+  const closed = await api.call('edit_feature', { params: { dx: -38 } });
+  assert.equal(closed.error.code, 'no_feature_edit');
+  const open = await api.call('open_feature', { id: 'move6' });
+  assert.equal(open.ok, true, JSON.stringify(open));
+  const unknown = await api.call('edit_feature', { params: { height: 12 } });
+  assert.equal(unknown.ok, false);
+  assert.equal(unknown.error.code, 'bad_args');
+  assert.match(unknown.error.message, /move has no param height/);
+  assert.equal(script, MOVE_SCRIPT);
+  const edit = await api.call('edit_feature', { params: { dx: -38 } });
+  assert.equal(edit.ok, true, JSON.stringify(edit));
+  assert.equal(edit.result.params.dx, -38);
+  const status = await api.call('status', {});
+  assert.equal(status.ok, true);
+  assert.equal(h.readFeatureSession().open, true, 'a read between edit and confirm keeps the session');
+  const confirm = await api.call('confirm_feature', {});
+  assert.equal(confirm.ok, true, JSON.stringify(confirm));
+  assert.equal(confirm.result.ok, true);
+  assert.equal(confirm.result.unchanged, false);
+  assert.match(h.getScript(), /move\(part, \[-38, 0, 0\]/);
+  assert.equal(h.readFeatureSession().open, false);
+  const after = await api.call('edit_feature', { params: { dx: 1 } });
+  assert.equal(after.error.code, 'no_feature_edit');
 });
 
 test('contourSketchPatch infers the tool from the keys and patches only what was sent', async () => {

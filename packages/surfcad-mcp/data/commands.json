@@ -10855,7 +10855,7 @@
     },
     {
       "name": "edit_feature",
-      "description": "Merge params into the open feature edit session (feature sheet, helper edit card, or hole card). Keys depend on the feature kind; for a move, params.at (a list_bodies centroid) re-points it and dx / dy / dz change the offset; for a rotate, angle, axis, center, and at. On a saved contour that open_feature reopened in the sketch, the profile keys patch that sketch: points [[u, v], …] (polyline, replaces a solved sketch), radius and segments (circle), width, height and centered (rectangle), polygon_preset and radius (polygon), or tool to switch; only the keys given change, keys the contour has no use for come back in ignored. Confirm with confirm_feature.",
+      "description": "Merge params into the open feature edit session (feature sheet, helper edit card, hole card, or the headless session open_feature keeps while the agent prompt is working and no card may mount). params is an open object so a strict client can send the feature's own keys (height, at, dx, …); a key that feature does not use is bad_args and is not stored, and with no open session the result is no_feature_edit rather than a success. Keys depend on the feature kind; for a move, params.at (a list_bodies centroid) re-points it and dx / dy / dz change the offset; for a rotate, angle, axis, center, and at. On a saved contour that open_feature reopened in the sketch, the profile keys patch that sketch: points [[u, v], …] (polyline, replaces a solved sketch), radius and segments (circle), width, height and centered (rectangle), polygon_preset and radius (polygon), or tool to switch; only the keys given change, keys the contour has no use for come back in ignored. edit_feature does not write the script. Confirm with confirm_feature.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -10863,46 +10863,7 @@
           "params": {
             "type": "object",
             "additionalProperties": true,
-            "description": "Feature sheet / edit-card fields to merge before confirm. Keys depend on the feature kind (e.g. height, radius, distance). For a move: dx, dy, dz, and at. For a saved contour (a contour:<id> chip): points [[u, v], …], radius, segments, width, height, centered, polygon_preset, or tool; they patch the reopened sketch, and confirm_feature saves and closes it.",
-            "properties": {
-              "points": {
-                "type": "array",
-                "items": {
-                  "type": "array",
-                  "items": {
-                    "type": "number"
-                  },
-                  "minItems": 2,
-                  "maxItems": 2
-                },
-                "description": "Contour only: new polyline points in the sketch plane UV, mm; replaces the profile"
-              },
-              "tool": {
-                "type": "string",
-                "description": "Contour only: circle | rectangle | polygon | polyline; inferred from the other keys when omitted"
-              },
-              "at": {
-                "type": "array",
-                "items": {
-                  "type": "number"
-                },
-                "minItems": 3,
-                "maxItems": 3,
-                "description": "Move only: new body centroid [x, y, z] mm from list_bodies; re-points the move"
-              },
-              "dx": {
-                "type": "number",
-                "description": "Move only: offset x mm"
-              },
-              "dy": {
-                "type": "number",
-                "description": "Move only: offset y mm"
-              },
-              "dz": {
-                "type": "number",
-                "description": "Move only: offset z mm"
-              }
-            }
+            "description": "Feature parameters to merge into the open edit. An open object: height, radius, distance, dx, dy, dz, at, and the contour profile keys are all accepted here. The open feature decides which keys it can write; a key it does not use is bad_args and is not stored. For a move: dx, dy, dz, and at. For a saved contour (a contour:<id> chip): points [[u, v], …], radius, segments, width, height, centered, polygon_preset, or tool; they patch the reopened sketch, and confirm_feature saves and closes it."
           }
         }
       },
