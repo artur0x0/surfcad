@@ -166,6 +166,12 @@ export function compareWorkingCopyToCommit(input = {}) {
       }
     }
     if (instanceDirty(row, committed)) assemblyDirty = true;
+    // A name edit rewrites // @name on the next Save. The editor often still
+    // holds the previous blob, whose hash matches the commit, so the script
+    // check above stays clean. The row dot follows the name change.
+    if (committed && (row.name || '') !== (committed.name || '') && !partIds.includes(id)) {
+      partIds.push(id);
+    }
   }
 
   for (const id of committedIds) {

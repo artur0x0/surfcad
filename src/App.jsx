@@ -178,7 +178,7 @@ import { getAnalyticsConsent } from './utils/consent.js';
 import { compareWorkingCopyToCommit } from './agent/state/workingCopyUnsaved';
 import { findPartById, unknownAssemblyError, unknownPartError } from './agent/state/identity';
 import { decidePartVisible } from './agent/state/partVisible';
-import { listV2Assemblies, listPartParentAssemblies, openV2Assembly } from './utils/git/v2VaultRead';
+import { listV2Assemblies, listPartParentAssemblies, openV2Assembly, overlayWorkingCopyBrowseNames } from './utils/git/v2VaultRead';
 import { assemblyRows } from './agent/state/assemblyRows';
 import { assemblyIdPath, partIdPath, parseIdPath } from './utils/git/idPaths';
 import { readSurfName } from './utils/git/surfId';
@@ -4992,7 +4992,10 @@ const App = () => {
     const browse = await listVaultBrowseItems(gitAdapterRef.current, vault.repo, gitWorkingBranch());
     const branch = gitWorkingBranch();
     const ops = gitSync().pending(vault.repo, branch).concat(gitSync().failed(vault.repo, branch));
-    return hidePendingDeletedAssemblies(browse, ops);
+    return overlayWorkingCopyBrowseNames(
+      hidePendingDeletedAssemblies(browse, ops),
+      assemblyRef.current,
+    );
   };
 
   const vaultEntriesForDelete = async () => {
@@ -5086,7 +5089,21 @@ const App = () => {
     return saved;
   };
 
-  const handlePreviewDeleteAssembly = async (name) => {
+  const handlePreviewDeleteAssembly = async (name, assemblyId = '') => {
+    const doc = assemblyRef.current;
+    if (doc?.source === 'git' && doc.vaultLayout === 'v2') {
+      const wanted = isV2SurfId(assemblyId) ? assemblyId : '';
+      const openMatch = wanted
+        ? wanted === doc.id
+        : assemblyName(doc) === String(name || '').trim();
+      if (openMatch && isV2SurfId(doc.id)) {
+        return { partCount: (doc.parts || []).length, referenced: [] };
+      }
+      return {
+        status: 'error',
+        error: "Couldn't delete the assembly. Nothing was changed.",
+      };
+    }
     try {
       const { entries, tip } = await vaultEntriesForDelete();
       return previewDeleteAssembly(entries, name, { openDoc: assemblyRef.current, tipEntries: tip });
@@ -5101,15 +5118,39 @@ const App = () => {
    * The promise waits for the local IndexedDB document and part-script
    * writes, then the queued git sync. A later call retries that failed op.
    */
-  const handleDeleteAssembly = async (name, mode = 'keep') => {
+  const handleDeleteAssembly = async (name, mode = 'keep', assemblyId = '') => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') return { status: 'error', error: 'Not in Git mode' };
-    if (doc.vaultLayout === 'v2' && upgradeVaultEnabled()) {
-      return {
-        status: 'error',
-        code: 'unsupported_vault_version',
-        error: 'This vault is v2. Delete assembly still writes the old folder layout and is blocked until v2 Save lands. Nothing was written; the outbox was left unflushed.',
-      };
+    // v2 has no folder to move. The open assembly leaves the working copy
+    // only; Save later drops part files nothing still references. The v1
+    // folder delete below must not run on a v2 vault.
+    if (doc.vaultLayout === 'v2') {
+      const wanted = isV2SurfId(assemblyId) ? assemblyId : '';
+      const openId = isV2SurfId(doc.id) ? doc.id : '';
+      const nameHit = !wanted && assemblyName(doc) === String(name || '').trim();
+      const target = wanted || (nameHit ? openId : '');
+      if (!target || target !== openId) {
+        return {
+          status: 'error',
+          error: "Couldn't delete the assembly. Nothing was changed.",
+        };
+      }
+      try {
+        const previousName = assemblyName(doc);
+        const after = await seedAgentAssembly({});
+        return {
+          status: 'deleted',
+          name: previousName,
+          id: openId,
+          mode: mode === 'drop' ? 'drop' : 'keep',
+          nextAssemblyId: after?.id ?? null,
+        };
+      } catch {
+        return {
+          status: 'error',
+          error: "Couldn't delete the assembly. Nothing was changed.",
+        };
+      }
     }
     // Feature edit and the editor auto-run already stay off this lock.
     // A delete would preempt the build the open spinner is waiting on.
@@ -9549,9 +9590,10 @@ const App = () => {
     codeEditorRef.current?.selectAll?.();
   };
 
-  // Rename one part by id (Parts feed row). The title follows when that part
-  // is the one it shows. The name is read by save/export and by the
-  // OAuth-redirect snapshot, so nothing else to write.
+  // Rename one part by id (Parts feed row). Working copy only: the id and
+  // parts/<id>.js stay put. v2 may repeat a name. v1 still numbers a clash
+  // because that name is the file stem. The title follows when that part
+  // is the one it shows. Save writes the new // @name and parts[].name.
   const handleRenamePart = async (id, name) => {
     const doc = assemblyRef.current;
     if (!doc) return { status: 'error', code: 'no_assembly', error: 'No assembly loaded' };
@@ -9560,19 +9602,30 @@ const App = () => {
     const part = (doc.parts || []).find((row) => row && row.id === id);
     if (!part) return { status: 'error', code: 'unknown_part', error: `Unknown part id: ${id}` };
     if (part.name === nextName) {
-      return { status: 'unchanged', from: id, to: id, name: nextName };
+      return { status: 'unchanged', from: id, to: id, name: nextName, moved: false };
     }
-    const otherNames = (doc.parts || []).filter((row) => row.id !== id).map((row) => row.name);
-    if (otherNames.includes(nextName)) {
-      nextName = nextNumberedName(nextName, otherNames, { bareFirst: true });
+    const v2 = doc.source === 'git' && doc.vaultLayout === 'v2';
+    if (!v2) {
+      const otherNames = (doc.parts || []).filter((row) => row.id !== id).map((row) => row.name);
+      if (otherNames.includes(nextName)) {
+        nextName = nextNumberedName(nextName, otherNames, { bareFirst: true });
+      }
     }
     const nextDoc = renamePart(doc, id, nextName);
-    if (nextDoc === doc) return { status: 'unchanged', from: id, to: id, name: part.name };
+    if (nextDoc === doc) return { status: 'unchanged', from: id, to: id, name: part.name, moved: false };
+    const renamed = (nextDoc.parts || []).find((row) => row && row.id === id);
+    if (!renamed || renamed.id !== part.id) {
+      return {
+        status: 'error',
+        code: 'rename_failed',
+        error: "Couldn't rename the part. Nothing was changed.",
+      };
+    }
     rememberAssembly(nextDoc);
     if (renameTargetId(nextDoc, cadPartIdRef.current) === id) {
-      setCurrentFilename(nextDoc.parts.find((row) => row.id === id)?.name || null);
+      setCurrentFilename(renamed.name || null);
     }
-    return { status: 'renamed', from: id, to: id, name: nextName, git: false };
+    return { status: 'renamed', from: id, to: id, name: renamed.name, moved: false, git: false };
   };
 
   // Rename from the viewer title chip. It lands on the part the title shows:
@@ -9591,10 +9644,26 @@ const App = () => {
 
   const handleRenameAssembly = async (name) => {
     const doc = assemblyRef.current;
-    if (!doc) return;
-    if (doc.source === 'git' && doc.vaultLayout === 'v2' && upgradeVaultEnabled()) {
-      setUploadError('This vault is v2. Rename still writes the old folder layout and is blocked until v2 Save lands. Nothing was written.');
-      return { status: 'error', code: 'unsupported_vault_version' };
+    if (!doc) return { status: 'error', code: 'no_assembly', error: 'No assembly loaded' };
+    // v2: display name only. assemblies/<id>.surf.json does not move.
+    // The row goes dirty; the next Save writes the name. v1 still records
+    // the old folder so Save can move it.
+    if (doc.source === 'git' && doc.vaultLayout === 'v2') {
+      const nextName = sanitizeAssemblyName(name);
+      if (!nextName) {
+        return { status: 'error', code: 'bad_args', error: 'Enter an assembly name' };
+      }
+      if (!isV2SurfId(doc.id)) {
+        return {
+          status: 'error',
+          error: "Couldn't rename the assembly. Nothing was changed.",
+        };
+      }
+      if (assemblyName(doc) === nextName) {
+        return { status: 'unchanged', assemblyId: doc.id, name: nextName, moved: false };
+      }
+      rememberAssembly({ ...doc, name: nextName });
+      return { status: 'renamed', assemblyId: doc.id, name: nextName, moved: false };
     }
     const current = assemblyName(doc);
     const taken = await collectTakenAssemblyNames({ except: current });
@@ -11226,11 +11295,24 @@ const App = () => {
       if (!nextName) {
         return { error: { code: 'bad_args', message: 'rename_assembly needs a non-empty name' } };
       }
+      if (doc.source === 'git' && doc.vaultLayout === 'v2') {
+        const out = await handleRenameAssembly(nextName);
+        if (out?.status === 'error') {
+          return {
+            error: {
+              code: out.code || 'rename_failed',
+              message: out.error || "Couldn't rename the assembly. Nothing was changed.",
+            },
+          };
+        }
+        if (out?.status === 'renamed') recordAgentAssemblyStep(doc);
+        return { result: { assemblyId: doc.id, name: out?.name || nextName, moved: false } };
+      }
       if (doc.name !== nextName) {
         rememberAssembly({ ...doc, name: nextName });
         recordAgentAssemblyStep(doc);
       }
-      return { result: { assemblyId: doc.id, name: nextName } };
+      return { result: { assemblyId: doc.id, name: nextName, moved: false } };
     },
     readAgentGitAdapterKind() {
       return ensureGitAdapter()?.kind ?? null;

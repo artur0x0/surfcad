@@ -623,9 +623,11 @@ const PartFeed = forwardRef(function PartFeed({
     await loadOpenIndex('open-part');
   };
 
-  const askDeleteAssembly = async (name) => {
+  const askDeleteAssembly = async (name, item = null) => {
+    const id = item?.id || '';
     setDeleteAssembly({
       name,
+      id,
       loading: true,
       busy: false,
       busyAction: '',
@@ -635,7 +637,7 @@ const PartFeed = forwardRef(function PartFeed({
       typed: '',
     });
     try {
-      const preview = (await onPreviewDeleteAssembly?.(name)) || { partCount: 0, referenced: [] };
+      const preview = (await onPreviewDeleteAssembly?.(name, id)) || { partCount: 0, referenced: [] };
       if (preview.status === 'error') {
         setDeleteAssembly((prev) => (prev?.name === name ? {
           ...prev,
@@ -677,7 +679,7 @@ const PartFeed = forwardRef(function PartFeed({
     deleteInFlightRef.current = true;
     setDeleteAssembly({ ...pending, busy: true, busyAction: mode, error: '' });
     try {
-      const result = (await onDeleteAssembly?.(pending.name, mode))
+      const result = (await onDeleteAssembly?.(pending.name, mode, pending.id || ''))
         || { status: 'error', error: 'Delete unavailable' };
       if (deleteAssemblyFailed(result)) {
         setDeleteAssembly((prev) => (prev ? {
@@ -691,7 +693,9 @@ const PartFeed = forwardRef(function PartFeed({
       setDeleteAssembly(null);
       setOpenPicker((prev) => {
         if (!prev || prev.kind !== 'open-assembly') return prev;
-        const assemblies = (prev.assemblies || []).filter((item) => item.name !== pending.name);
+        const assemblies = (prev.assemblies || []).filter((item) => (
+          pending.id ? item.id !== pending.id : item.name !== pending.name
+        ));
         return {
           ...prev,
           assemblies,
@@ -2241,7 +2245,7 @@ const PartFeed = forwardRef(function PartFeed({
                       current={assemblyName}
                       currentId={assemblyId}
                       onOpen={askOpenAssemblyChoice}
-                      onDelete={(name) => { void askDeleteAssembly(name); }}
+                      onDelete={(name, item) => { void askDeleteAssembly(name, item); }}
                     />
                   </div>
                 )}
@@ -2395,7 +2399,7 @@ const PartFeed = forwardRef(function PartFeed({
           )}
         >
           <p className="mb-2 text-[11px] text-chrome-secondary">
-            Assembly folder name in the vault
+            Assembly name
           </p>
           <input
             ref={assemblyRenameInputRef}

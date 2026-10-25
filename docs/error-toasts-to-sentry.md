@@ -84,7 +84,6 @@ Line and column for script errors already exist on the thrown value when the wor
 | `handleUpgradeConflict` — persist incomplete | `git` |
 | `handleSaveOnNewBranch` — save did not commit | `git` |
 | `handleSaveOnNewBranch` catch | `git` |
-| `handleRenameAssembly` — v2 rename blocked | `git` |
 | `handleRenameAssembly` — name already taken | `git` |
 | `handleNewAssembly` — local script save failed | `assembly` |
 | `handleAddPart` — local script save failed | `assembly` |

@@ -104,6 +104,7 @@ test('rename, hide, and remove set unsaved', () => {
   });
   assert.equal(renamed.unsaved, true);
   assert.equal(renamed.assemblyDirty, true);
+  assert.deepEqual(renamed.partIds, [PART]);
 
   const hidden = compareWorkingCopyToCommit({
     doc: assemblyDoc([
@@ -115,6 +116,7 @@ test('rename, hide, and remove set unsaved', () => {
   });
   assert.equal(hidden.unsaved, true);
   assert.equal(hidden.assemblyDirty, true);
+  assert.deepEqual(hidden.partIds, []);
 
   const removed = compareWorkingCopyToCommit({
     doc: assemblyDoc([{ id: PART, name: 'Bracket', visible: true, order: 0 }]),

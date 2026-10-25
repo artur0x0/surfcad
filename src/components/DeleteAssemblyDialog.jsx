@@ -46,7 +46,7 @@ export function AssemblyOpenRow({
         className={ROW_TRASH}
         onClick={(event) => {
           event.stopPropagation();
-          onDelete?.(name);
+          onDelete?.(name, item);
         }}
       >
         <Trash2 size={14} />

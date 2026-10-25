@@ -2,7 +2,7 @@
  * v2 vault list/open by assembly id. Path is f(id) only.
  * Read-only: never commits, never creates a repo.
  */
-import { partDefinitionId, serializeAssembly } from '../assembly.js';
+import { assemblyName, partDefinitionId, serializeAssembly } from '../assembly.js';
 import { assertGithubAdapter } from './githubAdapterInterface.js';
 import { assemblyIdPath, parseIdPath, partIdPath, partMeshIdPath } from './idPaths.js';
 import { readMeshBytes } from './meshSync.js';
@@ -150,6 +150,41 @@ export async function listV2BrowseItems(adapter, repo, ref = 'main', { tree = nu
     })),
     parts,
   };
+}
+
+/**
+ * Open dialog labels for the assembly that is open right now.
+ * Committed names update on Save; until then the working-copy labels win
+ * for this assembly id and its part ids. Other assemblies stay as committed.
+ * Does not write git.
+ */
+export function overlayWorkingCopyBrowseNames(browse, doc) {
+  if (!browse || typeof browse !== 'object') return browse;
+  if (!doc || doc.vaultLayout !== 'v2' || !isV2SurfId(doc.id)) return browse;
+  const asmName = assemblyName(doc);
+  const partNames = new Map();
+  for (const row of doc.parts || []) {
+    if (!row) continue;
+    const instance = typeof row.instanceOf === 'string' && row.instanceOf && row.instanceOf !== row.id;
+    if (instance) continue;
+    const def = partDefinitionId(row);
+    if (!isV2SurfId(def)) continue;
+    const name = typeof row.name === 'string' ? row.name.trim() : '';
+    if (name) partNames.set(def, name);
+  }
+  const assemblies = (browse.assemblies || []).map((item) => {
+    if (!item || item.id !== doc.id || !asmName) return item;
+    return { ...item, name: asmName, label: asmName };
+  });
+  const parts = (browse.parts || []).map((item) => {
+    const name = item && partNames.get(item.id);
+    if (!name) return item;
+    const parents = (item.assemblies || []).map((parent) => (
+      parent && parent.id === doc.id ? { ...parent, name: asmName } : parent
+    ));
+    return { ...item, name, label: name, assemblies: parents };
+  });
+  return { ...browse, assemblies, parts };
 }
 
 async function loadV2Meshes(adapter, repo, branch, parts) {
