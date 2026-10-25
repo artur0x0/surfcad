@@ -9,6 +9,7 @@ import { solidCacheStats } from './utils/partSolidCache.js';
 import PromptInput from './components/PromptInput';
 import { agentPromptContext } from './agent/agentPromptLive.js';
 import { allowFeaturePopup, registerFeaturePopupDismiss } from './agent/agentFeaturePopupGate.js';
+import { featureEditOpenPlan, featureEditParamError } from './agent/featureEditParams.js';
 import SplitDivider from './components/SplitDivider';
 import ScriptEditorDrawer from './components/ScriptEditorDrawer';
 import MobileStageToggle from './components/MobileStageToggle';
@@ -11365,14 +11366,16 @@ const App = () => {
       const buf = codeEditorRef.current?.getContent?.() ?? '';
       const resolved = resolveStripTarget(buf, args);
       if (resolved.error) return resolved;
-      if (!allowFeaturePopup()) {
-        return {
-          result: {
-            id: resolved.chip.id,
-            kind: resolved.chip.kind,
-            index: resolved.chip.index,
-          },
-        };
+      // The popup gate only decides whether a card mounts. While the agent
+      // prompt is working, every bridge call is inside withAgentDrivenChange
+      // and the gate is closed. Returning here used to look like a successful
+      // open and store nothing, so edit_feature reported ok and
+      // confirm_feature then failed with no_feature_edit. The session refs
+      // are what confirm rewrites; the card is optional.
+      const popup = allowFeaturePopup();
+      const plan = featureEditOpenPlan({ popupAllowed: popup, contour: !!resolved.contourId });
+      if (!plan.keepSession) {
+        return { error: { code: 'edit_failed', message: 'Could not open contour for edit' } };
       }
       agentFeatureDraftRef.current = {};
       agentFeatureTargetRef.current = resolved.feature || null;
@@ -11404,9 +11407,10 @@ const App = () => {
         }
         agentFeatureSessionRef.current = null;
         agentFeatureTargetRef.current = null;
+        agentFeatureDraftRef.current = null;
         return { error: { code: 'edit_failed', message: 'Could not open contour for edit' } };
       }
-      openFeatureSheetFor(resolved.feature);
+      if (plan.openCard) openFeatureSheetFor(resolved.feature);
       return {
         result: {
           id: resolved.chip.id,
@@ -11436,7 +11440,19 @@ const App = () => {
       };
     },
     editFeature({ params } = {}) {
+      if (!agentFeatureSessionActive()) {
+        return { error: { code: 'no_feature_edit', message: 'No feature edit session is open' } };
+      }
+      if (params != null && (typeof params !== 'object' || Array.isArray(params))) {
+        return { error: { code: 'bad_args', message: 'edit_feature params must be an object' } };
+      }
       const bag = params && typeof params === 'object' && !Array.isArray(params) ? params : {};
+      const kind = agentFeatureSessionRef.current?.kind
+        || agentHostRef.current?.agentReadFeatureEdit?.()?.feature?.kind
+        || featureSheetRef.current?.feature?.kind
+        || null;
+      const bad = featureEditParamError(kind, bag);
+      if (bad) return { error: bad };
       const prev = agentFeatureDraftRef.current && typeof agentFeatureDraftRef.current === 'object'
         ? agentFeatureDraftRef.current
         : {};

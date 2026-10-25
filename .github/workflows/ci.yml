@@ -391,6 +391,15 @@ jobs:
             echo "agent chamfer face golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:agent-bridge-move-edit | tee "${RUNNER_TEMP}/agent-bridge-move-edit.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-move-edit.log"; then
+            echo "agent bridge move edit golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'agent bridge move edit golden: ok' "${RUNNER_TEMP}/agent-bridge-move-edit.log"; then
+            echo "agent bridge move edit golden did not pass (see log above)"
+            exit 1
+          fi
           npm run golden:position-limit | tee "${RUNNER_TEMP}/position-limit.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/position-limit.log"; then
             echo "position limit golden skipped because Chrome was not found; CI must launch it"

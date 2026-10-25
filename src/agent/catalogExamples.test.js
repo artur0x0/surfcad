@@ -23,8 +23,12 @@ test('every catalog example validates against its own arg schema', () => {
 });
 
 test('the documented edit_feature and insert_move calls validate', () => {
-  assert.deepEqual(schemaErrors(byName.get('edit_feature').schema, { params: { height: 12 } }), []);
-  assert.deepEqual(schemaErrors(byName.get('edit_feature').schema, { params: { at: [1, 2, 3] } }), []);
+  const edit = byName.get('edit_feature').schema;
+  assert.equal(edit.properties.params.additionalProperties, true);
+  assert.equal(edit.properties.params.properties, undefined);
+  assert.deepEqual(schemaErrors(edit, { params: { height: 12 } }), []);
+  assert.deepEqual(schemaErrors(edit, { params: { at: [1, 2, 3] } }), []);
+  assert.deepEqual(schemaErrors(edit, { params: { dx: -38 } }), []);
   assert.deepEqual(schemaErrors(byName.get('insert_move').schema, { dx: 5, dy: 0, dz: 0, use_selection: true }), []);
   assert.deepEqual(schemaErrors(byName.get('insert_move').schema, { dx: 5, dy: 0, dz: 0, body_index: 0 }), []);
   assert.deepEqual(schemaErrors(byName.get('sketch_add').schema, { tool: 'circle', radius: 4, params: { segments: 24 } }), []);
