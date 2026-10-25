@@ -106,7 +106,7 @@ Existing frosted overlays (do not replace these with a flat slab):
 | --- | --- |
 | `surface-glass` | Panels and modal sheets over the 3D view (`chrome-surface` @ 82%) |
 | `surface-glass-chip` | Small viewport overlays — frost only; supply your own tint |
-| `surface-scrim` | Modal backdrop. The dim is a `::before` that stops at `--safe-area-top` / `--safe-area-bottom` (the `env(safe-area-inset-*)` tokens on `:root`); the element itself paints nothing. iOS Safari tints its bars from the page's top rows, so a dim under the status bar would shift that tint and keep it after the dialog closes (`golden:mobile-chrome-shade`). |
+| `surface-scrim` | Modal backdrop. The border box stays out of `--safe-area-top` / `--safe-area-bottom` (`.modal-fit` insets its own box; a scrim inside it fills that box). The element paints nothing and has no blur. The dim and the blur are a `::before` that fills the box. iOS Safari tints its bars from the page's top rows and keeps the sample, so a blur or a transparent layer over those rows shifts the tint (`golden:mobile-chrome-shade`). `html` and `body` both use `--chrome-background`, the same ground as the viewport. |
 
 They share `--surface-blur`. `@supports not (backdrop-filter)` goes more
 opaque so text stays legible. Never put a flat `bg-chrome-surface` /

@@ -10,7 +10,7 @@ export default function AssemblyOpenSpinner({ name, index = 0, total = 0 }) {
   const { label, detail } = assemblyOpenLabel(name, { index, total });
   return (
     <div
-      className="absolute inset-0 z-[45] flex items-center justify-center pointer-events-none bg-black/25"
+      className="absolute inset-0 z-[45] flex items-center justify-center pointer-events-none surface-scrim"
       data-assembly-open-spinner=""
       data-assembly-open-name={name || 'assembly'}
       role="status"
