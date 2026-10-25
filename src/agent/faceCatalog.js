@@ -173,7 +173,12 @@ export function jointPickForFace(face) {
       kind: 'axis',
       planar: false,
       axis: true,
-      key: { at: face.axis.at.slice(), dir: face.axis.dir.slice(), radius: face.axis.radius },
+      key: {
+        at: face.axis.at.slice(),
+        dir: face.axis.dir.slice(),
+        radius: face.axis.radius,
+        ...(face.faceId ? { faceId: face.faceId } : {}),
+      },
     };
   }
   const classified = classifySelectedFace({

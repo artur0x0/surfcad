@@ -9,10 +9,12 @@ export async function runJointCommit(ctx) {
   const prepared = prepare();
   if (prepared?.error) return { error: prepared.error };
   if (!prepared?.ok) {
+    const candidates = prepared.candidates;
     return {
       error: {
         code: 'commit_failed',
         message: prepared.message || 'Joint commit refused',
+        ...(Array.isArray(candidates) && candidates.length ? { details: { candidates } } : {}),
       },
     };
   }

@@ -102,7 +102,7 @@ export const ERROR_HINTS = Object.freeze({
   unknown_part: { hint: 'Not an open part id (paths and names are never ids): parts {} and pass a row\'s id.' },
   unknown_assembly: { hint: 'Not a saved assembly id: list_assemblies {} and pass a row\'s id.' },
   no_assembly: { hint: 'No document is open: create_assembly {} or open_assembly { assembly_id } first.' },
-  unknown_joint: { hint: 'The joint id is not in this assembly: joint_edit takes an id from a joint_commit result; joint_open {} starts a new one.' },
+  unknown_joint: { hint: 'The joint id is not in this assembly: joint_edit and joint_delete take an id from a joint_create or joint_commit result; joint_open {} starts a new one.' },
   unjointed_part: {
     hint: 'Place it with joint_create (one call creates the joint and solves placement). Fix a base part with type fixed first.',
     guide: 'A part that touches or attaches to another part belongs in a joint. joint_create { type, picks } writes the joint and solves the placement in one call. Ground the base with type fixed and one whole-part pick { part_id }, then mate each touching part with two picks from list_faces (coincident, concentric, distance, and the other types). part_set_transform is only for a part that touches nothing. The warning does not block the call: the placement was written. A single-part document does not warn, and neither does the base part once it has a fixed joint. parts and status list the ids still in no joint as unjointedParts. Bodies, patterns, and insert_move inside one part are not assembly parts and do not warn.',
@@ -110,7 +110,7 @@ export const ERROR_HINTS = Object.freeze({
   no_joint_card: { hint: 'The joint card is closed: joint_open {} first, then joint_pick / joint_set_params / joint_commit.' },
   no_joint_edit: { hint: 'No joint is open for editing: joint_open {} for a new joint or joint_edit { joint_id } for an existing one.' },
   joints_unavailable: { hint: 'The joint card could not open because another card or session is open: close it (cancel_feature, sketch_cancel, sheet_exit) and call joint_create again.' },
-  joint_unsolvable: { hint: 'The solver refused that joint (details.reason is its message): check that the two picks are on different parts and fit the type, for example concentric needs two cylindrical faces (axes); nothing was written.' },
+  joint_unsolvable: { hint: 'The solver refused that joint (details.reason is its message; details.candidates lists id, origin, direction and radius when more than one axis matches): pass face_id from list_faces, or pick one of those candidates. Concentric needs two cylindrical faces. Nothing was written.' },
   part_still_referenced: { hint: 'Another assembly lists this part: delete it with scope: "assembly", or delete those parents first.' },
   delete_refused: { hint: 'The delete was refused and nothing was written: tell the user the message and do not retry until they ask again.' },
   origin_blocked: { hint: 'This change would move the assembly origin: place the part with part_set_transform instead.' },

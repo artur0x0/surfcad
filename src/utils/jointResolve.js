@@ -3,10 +3,15 @@
  *
  * A face uses matchFaceKeys and the paint tolerances. An axis matches
  * direction within 8° (unsigned), point-to-axis within 1 mm, and radius
- * within ±25%. An edge matches midpoint, direction, length, and both
- * adjacent face keys. A plane matches its stable id. Two candidates or
- * none are broken. The confirmed key is not rewritten. A plane that is
- * still in the script is solved from that plane's current frame.
+ * within ±25%. Copies of one cylinder (the same line within 0.05 mm and
+ * the same radius within 1%) count as one axis. A face id on the key
+ * (`f12`, in memory for the commit only) selects that catalog axis and
+ * is never ambiguous. Several distinct axes that tie return those
+ * candidates. An edge matches midpoint, direction, length, and both
+ * adjacent face keys. A plane matches its stable id. Two face, edge, or
+ * plane candidates, or none, are broken. The confirmed key is not
+ * rewritten. A plane that is still in the script is solved from that
+ * plane's current frame.
  */
 import { buildPartGraphPatches } from './partGraphPatches.js';
 import { fitCylinderPatch } from './cylinderFit.js';
@@ -27,6 +32,11 @@ const jointCatalogCache = new WeakMap();
 
 const NORMAL_COS = Math.cos((FACE_MATCH_NORMAL_DEG * Math.PI) / 180);
 const AT_MM = FACE_MATCH_AT_MM;
+// Split walls and pattern copies of one cylinder. Tighter than the match
+// window, so two real holes 0.4 mm apart stay two axes.
+const SAME_AXIS_DIR = 0.999;
+const SAME_AXIS_MM = 0.05;
+const SAME_AXIS_RADIUS = 0.01;
 
 const KIND_NOUN = { face: 'face', axis: 'axis', edge: 'edge', plane: 'plane' };
 const KIND_TITLE = { face: 'Face', axis: 'Axis', edge: 'Edge', plane: 'Plane' };
@@ -76,9 +86,57 @@ export function matchJointFace(faces, key) {
   return { status: 'missing' };
 }
 
-/** Axis key against fitted axes. Direction is unsigned. */
+function sameCylinder(a, b) {
+  const da = unit(a?.dir);
+  const db = unit(b?.dir);
+  if (!da || !db || !Array.isArray(a?.at) || !Array.isArray(b?.at)) return false;
+  if (Math.abs(dot(da, db)) < SAME_AXIS_DIR) return false;
+  if (pointToAxis(a.at, b.at, db) > SAME_AXIS_MM) return false;
+  const ra = Number(a.radius);
+  const rb = Number(b.radius);
+  const scale = Math.max(ra, rb);
+  if (!(scale > 0)) return false;
+  return Math.abs(ra - rb) / scale <= SAME_AXIS_RADIUS;
+}
+
+function axisScore(at, dir, radius, axis) {
+  const cand = unit(axis.dir);
+  const radial = pointToAxis(at, axis.at, cand);
+  const radiusDelta = Math.abs(Number(axis.radius) - radius);
+  const alignment = Math.min(1, Math.max(0, Math.abs(dot(dir, cand))));
+  const angle = Math.acos(alignment);
+  return radial + radiusDelta + angle * radius;
+}
+
+function axisCandidate(axis) {
+  const dir = unit(axis.dir);
+  const at = axis.at;
+  return {
+    id: typeof axis.id === 'string' ? axis.id : null,
+    origin: [Number(at[0]) || 0, Number(at[1]) || 0, Number(at[2]) || 0],
+    direction: [dir[0], dir[1], dir[2]],
+    radius: Number(axis.radius),
+  };
+}
+
+function uniquelyBest(best, second) {
+  if (second == null) return true;
+  if (best + 0.05 < second) return true;
+  if (best <= 1e-3 && second > 1e-3) return true;
+  return false;
+}
+
+/**
+ * Axis key against fitted axes. Direction is unsigned.
+ * A `faceId` that names a catalog axis wins, so a list_faces pick is
+ * never ambiguous. Otherwise in-tolerance hits collapse to one cylinder
+ * when they are the same line and radius, and a unique nearest cylinder
+ * wins. A real tie returns each candidate's id, origin, direction, and radius.
+ */
 export function matchJointAxis(axes, key) {
   if (!Array.isArray(axes)) return { status: 'unresolved' };
+  const faceId = typeof key?.faceId === 'string' ? key.faceId : '';
+  if (faceId && axes.some((axis) => axis?.id === faceId)) return { status: 'ok' };
   const dir = unit(key?.dir);
   const at = key?.at;
   const radius = Number(key?.radius);
@@ -93,9 +151,31 @@ export function matchJointAxis(axes, key) {
     if (pointToAxis(at, origin, cand) > AT_MM) continue;
     if (Math.abs(candRadius - radius) / radius > FACE_MATCH_AREA_FRAC) continue;
     hits.push(axis);
-    if (hits.length > 1) break;
   }
-  return classify(hits);
+  if (!hits.length) return { status: 'missing' };
+  const clusters = [];
+  for (const axis of hits) {
+    const cluster = clusters.find((group) => sameCylinder(group[0], axis));
+    if (cluster) cluster.push(axis);
+    else clusters.push([axis]);
+  }
+  const ranked = clusters.map((members) => {
+    let best = members[0];
+    let score = axisScore(at, dir, radius, best);
+    for (let i = 1; i < members.length; i += 1) {
+      const next = axisScore(at, dir, radius, members[i]);
+      if (next < score) {
+        best = members[i];
+        score = next;
+      }
+    }
+    return { axis: best, score };
+  }).sort((a, b) => a.score - b.score);
+  if (uniquelyBest(ranked[0].score, ranked[1]?.score)) return { status: 'ok' };
+  return {
+    status: 'ambiguous',
+    candidates: ranked.map((row) => axisCandidate(row.axis)),
+  };
 }
 
 /** Edge key against current edges, including both adjacent faces. */
@@ -243,10 +323,9 @@ export function catalogFromMeshData(mesh) {
   const faces = faceFingerprints(graph, triSource, { positions, indices });
   if (!faces.length) return null;
   const axes = [];
-  const patches = graph?.patches || [];
-  for (let i = 0; i < patches.length; i += 1) {
-    const axis = fitPatchAxis(positions, indices, patches[i]?.tris);
-    if (axis) axes.push(axis);
+  for (const face of faces) {
+    const axis = fitPatchAxis(positions, indices, face.tris);
+    if (axis) axes.push({ ...axis, id: `f${face.id}` });
   }
   const out = { faces };
   if (axes.length) out.axes = axes;

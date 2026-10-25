@@ -676,6 +676,7 @@ export function applyJointCard({
   });
   const status = result.statuses?.[built.joint.id];
   if (result.ok && (status === 'broken' || status === 'conflict')) {
+    const candidates = result.candidates?.[built.joint.id];
     return {
       ok: false,
       locked: false,
@@ -683,6 +684,7 @@ export function applyJointCard({
       scripts,
       message: result.messages?.[built.joint.id] || result.message || 'That joint does not fit these references',
       statuses: result.statuses,
+      ...(candidates ? { candidates } : {}),
       preempted: false,
     };
   }
@@ -730,6 +732,59 @@ export function assemblySnapshotsEqual(beforeDoc, afterDoc) {
   return canonicalJson(snapshotOf(beforeDoc)) === canonicalJson(snapshotOf(afterDoc));
 }
 
+function partIdSet(doc) {
+  return (doc?.parts || []).map((part) => partSurfId(part) || '').filter(Boolean).sort().join('\0');
+}
+
+function movedSurfIds(beforeSnap, afterSnap) {
+  const ids = new Set([
+    ...Object.keys(beforeSnap.placements || {}),
+    ...Object.keys(afterSnap.placements || {}),
+  ]);
+  const moved = [];
+  for (const id of ids) {
+    if (canonicalJson(beforeSnap.placements[id]) !== canonicalJson(afterSnap.placements[id])) {
+      moved.push(id);
+    }
+  }
+  return moved;
+}
+
+function jointSurfIds(joint) {
+  const ids = [];
+  for (const slot of ['a', 'a2', 'b', 'b2']) {
+    const part = joint?.[slot]?.part;
+    if (part && !ids.includes(part)) ids.push(part);
+  }
+  return ids;
+}
+
+/** Parts named by a joint whose stored record changed, including a delete. */
+function changedJointSurfIds(beforeJoints, afterJoints) {
+  const before = new Map((beforeJoints || []).map((joint) => [joint.id, canonicalJson(joint)]));
+  const after = new Map((afterJoints || []).map((joint) => [joint.id, canonicalJson(joint)]));
+  const ids = new Set([...before.keys(), ...after.keys()]);
+  const parts = [];
+  for (const id of ids) {
+    if (before.get(id) === after.get(id)) continue;
+    const joint = (afterJoints || []).find((row) => row.id === id)
+      || (beforeJoints || []).find((row) => row.id === id);
+    for (const part of jointSurfIds(joint)) {
+      if (!parts.includes(part)) parts.push(part);
+    }
+  }
+  return parts;
+}
+
+function copyPlacements(placements) {
+  const out = {};
+  for (const [id, pose] of Object.entries(placements || {})) {
+    if (!pose) continue;
+    out[id] = { t: pose.t.slice(), q: pose.q.slice() };
+  }
+  return out;
+}
+
 /**
  * The tip becomes the live document, then the written document is one step.
  * A part-run solve that moved placements is the "before", not its own step.
@@ -737,11 +792,18 @@ export function assemblySnapshotsEqual(beforeDoc, afterDoc) {
  * drifted from the tip, the tip is replaced with that live snapshot so
  * undo/redo does not restore a stale pose. Redo is kept when the tip
  * already matches.
+ *
+ * Joints and placements share this stack, and each step is still a full
+ * snapshot. A write that changes joints and also moves a part those joints
+ * do not name is stored as a placement step and then the joint step, so
+ * one undo reverts one action. Adding or removing a part stays one step.
+ * Poses of parts the changed joint names stay on the joint step.
  */
 export function pushAssemblyHistory(history, beforeDoc, afterDoc) {
   const base = history?.commits ? history : seedAssemblyHistory(beforeDoc);
   const beforeSnap = snapshotOf(beforeDoc);
-  if (assemblySnapshotsEqual(beforeDoc, afterDoc)) {
+  const afterSnap = snapshotOf(afterDoc);
+  if (canonicalJson(beforeSnap) === canonicalJson(afterSnap)) {
     const tip = base.commits[base.head];
     if (canonicalJson(tip) === canonicalJson(beforeSnap)) {
       return { commits: base.commits, head: base.head };
@@ -752,7 +814,24 @@ export function pushAssemblyHistory(history, beforeDoc, afterDoc) {
   }
   const commits = base.commits.slice(0, base.head + 1);
   commits[commits.length - 1] = beforeSnap;
-  commits.push(snapshotOf(afterDoc));
+  const jointsChanged = canonicalJson(beforeSnap.joints) !== canonicalJson(afterSnap.joints);
+  const moved = movedSurfIds(beforeSnap, afterSnap);
+  const jointParts = jointsChanged ? changedJointSurfIds(beforeSnap.joints, afterSnap.joints) : [];
+  const unrelated = jointsChanged && partIdSet(beforeDoc) === partIdSet(afterDoc)
+    ? moved.filter((id) => !jointParts.includes(id))
+    : [];
+  if (unrelated.length) {
+    const placements = copyPlacements(beforeSnap.placements);
+    for (const id of unrelated) {
+      const pose = afterSnap.placements[id];
+      if (pose) placements[id] = { t: pose.t.slice(), q: pose.q.slice() };
+    }
+    commits.push({
+      joints: JSON.parse(JSON.stringify(beforeSnap.joints)),
+      placements,
+    });
+  }
+  commits.push(afterSnap);
   return { commits, head: commits.length - 1 };
 }
 

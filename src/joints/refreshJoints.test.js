@@ -162,3 +162,55 @@ test('confirm and delete no-op while the assembly open lock is set', () => {
   assert.match(confirmed.message, /confirm the joint again/);
   assert.match(deleted.message, /confirm the joint again/);
 });
+
+test('coaxial copies resolve, a face id is never ambiguous, and a tie returns candidates', () => {
+  const axisRef = (part, at, radius, faceId) => ({
+    part,
+    kind: 'axis',
+    key: { at, dir: [0, 0, 1], radius, ...(faceId ? { faceId } : {}) },
+  });
+  const copies = {
+    id: J,
+    name: 'Concentric 1',
+    type: 'concentric',
+    a: axisRef(A, [0, 0, 0], 4),
+    b: axisRef(B, [0, 0, 0], 4),
+  };
+  const shaft = { axes: [{ id: 'f1', at: [0, 0, 0], dir: [0, 0, 1], radius: 4 }] };
+  const resolved = refreshAssemblyJoints({
+    doc: docWith(parts, [copies]),
+    catalogs: {
+      [A]: shaft,
+      [B]: {
+        axes: [
+          { id: 'f2', at: [0, 0, 0], dir: [0, 0, 1], radius: 4 },
+          { id: 'f3', at: [0, 0, 30], dir: [0, 0, 1], radius: 4 },
+        ],
+      },
+    },
+  });
+  assert.equal(resolved.statuses[J], 'ok', resolved.messages[J]);
+
+  const tieCatalogs = {
+    [A]: shaft,
+    [B]: {
+      axes: [
+        { id: 'f2', at: [0.4, 0, 0], dir: [0, 0, 1], radius: 4 },
+        { id: 'f3', at: [-0.4, 0, 0], dir: [0, 0, 1], radius: 4 },
+      ],
+    },
+  };
+  const tied = refreshAssemblyJoints({ doc: docWith(parts, [copies]), catalogs: tieCatalogs });
+  assert.equal(tied.statuses[J], 'broken');
+  assert.equal(tied.messages[J], 'More than one axis matches on Housing');
+  assert.deepEqual(tied.candidates[J].map((row) => row.id).sort(), ['f2', 'f3']);
+  assert.deepEqual(tied.candidates[J][0].direction, [0, 0, 1]);
+  assert.equal(tied.candidates[J][0].radius, 4);
+  assert.equal(tied.candidates[J][0].origin.length, 3);
+
+  const picked = { ...copies, b: axisRef(B, [0, 0, 0], 4, 'f2') };
+  const byFace = refreshAssemblyJoints({ doc: docWith(parts, [picked]), catalogs: tieCatalogs });
+  assert.equal(byFace.statuses[J], 'ok', byFace.messages?.[J]);
+  assert.equal(byFace.doc.joints[0].b.key.faceId, undefined);
+  assert.deepEqual(Object.keys(byFace.doc.joints[0].b.key).sort(), ['at', 'dir', 'radius']);
+});

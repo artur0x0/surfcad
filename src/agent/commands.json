@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 196,
+  "count": 197,
   "$defs": {
     "status": {
       "type": "object",
@@ -1182,7 +1182,7 @@
     },
     {
       "name": "undo",
-      "description": "One undo on the feature-bar stack (sketch session, assembly joints, or active part script) and run when the part script changes. A part step returns the refreshed status, bodyCount included. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "One undo on the feature-bar stack (sketch session, assembly joints, or active part script) and run when the part script changes. An assembly undo reverts one assembly action, so a joint undo leaves a part move that joint does not name. A part step returns the refreshed status, bodyCount included. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -18606,7 +18606,7 @@
     },
     {
       "name": "joint_create",
-      "description": "Fix one base part with a fixed joint, then place every part that touches or attaches to another with joint_create (one call creates the joint and solves placement). Use part_set_transform only for parts that touch nothing. Block-out positions are rough; joints set final positions. Prefer this over hand-computed part_set_transform numbers: one call creates a joint and solves the placement. type is coincident, parallel, perpendicular, distance, angle, concentric, symmetric or fixed (planar is coincident); picks are one row per reference from list_faces (face_id with its key from the same row; a cylindrical face is an axis pick; { part_id } alone is a whole-part pick), one pick for fixed and two for every other type; name, value_mm, sense and opposed as on joint_set_params. Runs the same open → pick → set params → commit path as the Joints card (the advanced path) and records one assembly undo step. The result carries jointId, type, name, valueMm, pickCount and placements: the position and rotation of every picked part after the solve. A pick that does not resolve is unknown_part / unknown_face, and a joint the solver refuses is joint_unsolvable with details.reason; in both cases nothing is written and no card is left open. usedSelection is always false: the picks are explicit. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Fix one base part with a fixed joint, then place every part that touches or attaches to another with joint_create (one call creates the joint and solves placement). Use part_set_transform only for parts that touch nothing. Block-out positions are rough; joints set final positions. Prefer this over hand-computed part_set_transform numbers: one call creates a joint and solves the placement. type is coincident, parallel, perpendicular, distance, angle, concentric, symmetric or fixed (planar is coincident); picks are one row per reference from list_faces (face_id with its key from the same row; a cylindrical face is an axis pick; a face_id is never an ambiguous axis; { part_id } alone is a whole-part pick), one pick for fixed and two for every other type; name, value_mm, sense and opposed as on joint_set_params. Runs the same open → pick → set params → commit path as the Joints card (the advanced path) and records one assembly undo step. The result carries jointId, type, name, valueMm, pickCount and placements: the position and rotation of every picked part after the solve. A pick that does not resolve is unknown_part / unknown_face, and a joint the solver refuses is joint_unsolvable with details.reason and, when more than one axis matches, details.candidates (id, origin, direction, radius); in both cases nothing is written and no card is left open. usedSelection is always false: the picks are explicit. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -18785,6 +18785,52 @@
             }
           }
         ]
+      }
+    },
+    {
+      "name": "joint_delete",
+      "description": "Delete one joint by joint_id (the Joints card Delete button) and record one assembly undo step. Remaining joints are solved again. A part move that this joint does not name stays. Undo restores the joint. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "joint_id"
+        ],
+        "properties": {
+          "joint_id": {
+            "type": "string",
+            "description": "Joint id from a joint_create or joint_commit result"
+          },
+          "return": {
+            "type": "string",
+            "enum": [
+              "status",
+              "summary",
+              "full"
+            ],
+            "description": "How much of status to return: \"status\" drops status.script, \"summary\" drops it and adds status.features (the feature strip), \"full\" keeps the whole script. Over MCP the default is \"status\"; in the page it is \"full\". Read the script with get_script."
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "no_assembly",
+        "unknown_joint",
+        "edit_failed",
+        "internal"
+      ],
+      "mutates": true,
+      "destructive": true,
+      "confirm": false,
+      "group": "joint",
+      "immediate": false,
+      "uiEntry": "data-joint-card",
+      "example": {
+        "joint_id": "j1"
       }
     },
     {
