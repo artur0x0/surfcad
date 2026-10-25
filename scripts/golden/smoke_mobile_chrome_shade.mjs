@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
  * iPhone 390: About, the profile menu, the Account pane, Connect agent, and
- * the part-delete confirm leave the safe-area bands and the root styles alone.
+ * the part-delete confirm leave the root styles alone, and their scrim paint
+ * stays off the line Safari 26 hit-tests.
  *
- * iOS Safari tints its status bar and toolbar from the page's top rows and
- * keeps that sample after a layer closes. A blur or a transparent fixed box
- * over those rows is enough to shift the tint, even when the dim itself
- * stops at the insets. This emulates a 47px notch and a 34px home-indicator
- * band (`--safe-area-top` / `--safe-area-bottom` on <html>) and samples real
- * pixels on a fresh load, while each dialog is open, and after it closes.
+ * This does not reproduce iOS 26's chrome tint. Chromium does not run
+ * WebKit's fixedContainerEdges sampler. What it can observe: with a notch
+ * override the scrim box stays inside that inset, and with the safe-area
+ * tokens at 0 (Safari while the toolbars are showing) the dim and the blur
+ * start at the 8px sample floor and the outer 4px stay the page ground.
  */
 /* global indexedDB, localStorage, sessionStorage, window, document, getComputedStyle */
 import { spawn } from 'node:child_process';
@@ -477,6 +477,69 @@ try {
       && fresh.root.htmlStyle === base.root.htmlStyle && fresh.root.bodyStyle === base.root.bodyStyle
       && fresh.root.theme === null,
     JSON.stringify({ base: base.root, fresh: fresh.root }));
+
+  // Device case: safe-area insets are 0 while Safari's toolbars are showing.
+  // The sampler's hit is 4px in from the viewport edge. The dim must start
+  // at 8px, and those outer pixels must stay the ground colour.
+  await page.evaluate(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--safe-area-top', '0px');
+    root.style.setProperty('--safe-area-bottom', '0px');
+  });
+  await page.waitForTimeout(100);
+  const zeroRoot = await page.evaluate(() => {
+    const cs = getComputedStyle(document.documentElement);
+    return {
+      bandTop: cs.getPropertyValue('--scrim-band-top').trim(),
+      bandBottom: cs.getPropertyValue('--scrim-band-bottom').trim(),
+      sample: cs.getPropertyValue('--safari-edge-sample').trim(),
+    };
+  });
+  check('safe-area 0: the sample floor token is 8px',
+    zeroRoot.sample === '8px',
+    JSON.stringify(zeroRoot));
+  // y=2 and y=6 are on the 4px hit and still inside the 8px ground band.
+  // y=height-3 is the same on the bottom edge. y=420 is the page centre.
+  const edgeAt = async () => {
+    const png = decodePng(await page.screenshot({ type: 'png' }));
+    const at = (x, y) => {
+      const i = (y * png.width + x) * png.bpp;
+      return [png.px[i], png.px[i + 1], png.px[i + 2]];
+    };
+    return {
+      top2: at(195, 2),
+      top6: at(40, 6),
+      bot3: at(200, VIEW_H - 3),
+      inside: at(195, 420),
+    };
+  };
+  const zeroBaseEdge = await edgeAt();
+  await page.click('[data-brand-about-trigger]');
+  await page.waitForSelector('[data-about-modal]', { state: 'visible', timeout: 10000 });
+  await page.waitForTimeout(250);
+  const zeroOpenEdge = await edgeAt();
+  const zeroScrim = await scrimState(page, '[data-about-modal]');
+  const ground = [30, 30, 30];
+  check('safe-area 0: About leaves the outer sample line the page ground',
+    same(zeroOpenEdge.top2, zeroBaseEdge.top2)
+      && same(zeroOpenEdge.top6, zeroBaseEdge.top6)
+      && same(zeroOpenEdge.bot3, zeroBaseEdge.bot3)
+      && same(zeroOpenEdge.top2, ground, 3)
+      && same(zeroOpenEdge.bot3, ground, 3),
+    `${JSON.stringify(zeroBaseEdge)} -> ${JSON.stringify(zeroOpenEdge)}`);
+  check('safe-area 0: About dims inside the band and the blur stays off the element',
+    !!zeroScrim
+      && zeroScrim.rectTop <= 1
+      && zeroScrim.rectBottom >= VIEW_H - 1
+      && zeroScrim.beforeTop === '8px'
+      && zeroScrim.beforeBottom === '8px'
+      && zeroScrim.ownBg === 'rgba(0, 0, 0, 0)'
+      && filterNone(zeroScrim.ownFilter)
+      && /blur/.test(zeroScrim.beforeFilter)
+      && darker(zeroOpenEdge.inside, zeroBaseEdge.inside),
+    JSON.stringify({ scrim: zeroScrim, edge: { base: zeroBaseEdge, open: zeroOpenEdge } }));
+  await page.click('[data-about-modal-close]');
+  await page.waitForSelector('[data-about-modal]', { state: 'hidden', timeout: 10000 }).catch(() => {});
 
   check('no page errors', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
   await context.close();

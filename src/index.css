@@ -24,13 +24,20 @@
      and ≥3:1 on hover (emerald-500 hover was ~2.5:1). */
   --chrome-success: 4 120 87; /* emerald-700 #047857 */
   --chrome-success-hover: 5 150 105; /* emerald-600 #059669 */
-  /* Safe-area insets as tokens, so a layer can stay clear of the bars.
-     iOS Safari samples the page's top rows for its status bar and toolbar
-     tint. Any layer over those rows — a dim, a blur, or a transparent
-     fixed box — shifts that tint, and the sample lingers after the layer
-     closes. Goldens override these on <html> to emulate a notch. */
+  /* Safe-area insets as tokens. Goldens override these on <html> to
+     emulate a notch. They are 0 in Safari while the toolbars are showing,
+     so they are not the sample margin below. */
   --safe-area-top: env(safe-area-inset-top, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  /* Safari 26 hit-tests fixed and sticky boxes 4px in from each viewport
+     edge (sampleRectMargin in LocalFrameView::fixedContainerEdges) and
+     reads that box's background. A backdrop-filter on the hit replaces
+     the status-bar and toolbar tint. Stay two pixels clear of that line
+     even when the safe-area inset is 0. The band is 0 when the scrim box
+     is already inset by a larger safe area. */
+  --safari-edge-sample: 8px;
+  --scrim-band-top: max(0px, calc(var(--safari-edge-sample) - var(--safe-area-top)));
+  --scrim-band-bottom: max(0px, calc(var(--safari-edge-sample) - var(--safe-area-bottom)));
   /* Horizontal CAD feature ribbon (assembly / part / empty). 46px:
      32px chip + 12px py-1.5 + 2px border. See docs/ui-style-guide.md. */
   --feature-strip-height: 2.875rem;
@@ -61,10 +68,9 @@
   --agent-prompt-rest-bottom: var(--agent-prompt-desktop-bottom);
 }
 
-/* html and body share the viewport ground. When a fixed layer covers the
-   rows iOS Safari samples, it falls back to the html background. A
-   transparent html background is a different black, and that sample stays
-   after the layer closes. */
+/* html and body share the viewport ground. Safari 26 uses that color
+   when no fixed or sticky box supplies an edge tint (page extended
+   background). A transparent root is a different black. */
 html,
 body {
   background: rgb(var(--chrome-background));
@@ -448,16 +454,25 @@ textarea {
   .surface-glass-chip {
     --surface-blur: 8px;
   }
-  /* Modal backdrop. The element paints nothing and carries no blur: both
-     live on ::before, which fills the box. The box itself is pulled out of
-     the safe-area bands by the unlayered rule below (modal-fit insets its
-     own box; a scrim inside it fills that box). A blur on the full-bleed
-     element is still a layer over the rows iOS Safari samples, which is
-     why stopping only the dim at the insets left the bars the wrong shade. */
+  /* Modal backdrop. The element has no blur and no translucent fill: the
+     dim and the blur live on ::before, which stops at the sample bands.
+     Those bands are the viewport clear colour, which is also Monaco's
+     vs-dark editor.background: #1e1e1e, --chrome-background. The 4px line
+     Safari 26 hit-tests is that colour, not the scrim's black-at-45% and
+     not a blur. The middle stays transparent, so ::before still frosts the
+     page instead of a flat slab. A band of 0 (the scrim box is already
+     past the safe area) paints nothing. modal-fit insets its own box; a
+     scrim inside it fills that box. */
   .surface-scrim {
     --surface-blur: 4px;
     --scrim-dim: rgb(0 0 0 / 0.45);
     background-color: transparent;
+    background-image:
+      linear-gradient(rgb(var(--chrome-background)), rgb(var(--chrome-background))),
+      linear-gradient(rgb(var(--chrome-background)), rgb(var(--chrome-background)));
+    background-size: 100% var(--scrim-band-top), 100% var(--scrim-band-bottom);
+    background-position: top, bottom;
+    background-repeat: no-repeat;
     isolation: isolate;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -467,8 +482,8 @@ textarea {
     position: absolute;
     left: 0;
     right: 0;
-    top: 0;
-    bottom: 0;
+    top: var(--scrim-band-top);
+    bottom: var(--scrim-band-bottom);
     z-index: -1;
     background-color: var(--scrim-dim);
     -webkit-backdrop-filter: blur(var(--surface-blur, 4px)) saturate(140%);
@@ -842,10 +857,11 @@ textarea {
 }
 
 /* Unlayered so it beats Tailwind `inset-0`. The scrim's border box stays
-   out of the bands iOS Safari samples. Callers keep `fixed inset-0` or
-   `absolute inset-0`; this replaces only the block edges. A scrim that is
-   the modal-fit shell is excluded: that shell insets itself. A scrim
-   inside an already-inset shell fills the shell. */
+   out of the safe area. Callers keep `fixed inset-0` or `absolute inset-0`;
+   this replaces only the block edges. The 8px sample floor is the ground
+   band on .surface-scrim, because this inset is 0 while Safari's toolbars
+   are showing. A scrim that is the modal-fit shell is excluded: that shell
+   insets itself. A scrim inside an already-inset shell fills the shell. */
 .surface-scrim:not(.modal-fit) {
   top: var(--safe-area-top);
   bottom: var(--safe-area-bottom);
