@@ -11186,7 +11186,7 @@
     },
     {
       "name": "delete_feature",
-      "description": "Delete a feature block from the script and run the part through mutate, so the result status and errors are current and undo once restores the block. Deleting the feature that declares part while later code still uses it is confirm_required until confirm: true; the result then carries a warning. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Delete a feature block from the active part (or part_id, an opaque surf id) and run that part through mutate, so the result status and errors are current and undo once restores the block. A face pick does not change the part: id and index resolve against the active part unless part_id names another row (a path or display name is unknown_part). Deleting the feature that declares part while later code still uses it is confirm_required until confirm: true; the result then carries a warning. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -11198,6 +11198,10 @@
           "index": {
             "type": "number",
             "description": "Feature index from feature_tree"
+          },
+          "part_id": {
+            "type": "string",
+            "description": "Opaque surf id of the part whose feature is deleted. Omit to use the active part. A face pick does not change the target. A path or display name is unknown_part."
           },
           "confirm": {
             "type": "boolean",
@@ -11408,6 +11412,7 @@
         "confirm_required",
         "delete_failed",
         "no_write_part",
+        "unknown_part",
         "internal"
       ],
       "mutates": true,

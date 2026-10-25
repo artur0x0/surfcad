@@ -240,7 +240,7 @@ import {
   createAssemblyOpenController,
   runTrackedAssemblyOpen,
 } from './utils/assemblyOpenOverlay';
-import { featureWriteTarget, leftoverPickSolids, shouldSyncScript } from './utils/pickRetarget';
+import { featureDeleteTarget, featureWriteTarget, leftoverPickSolids, shouldSyncScript } from './utils/pickRetarget';
 import { shouldRebuildOnEditorClose } from './utils/scriptEditorClose';
 import { clearPaintColors, commitPaintColors, removeUnmatchedColors } from './utils/facePaint';
 import {
@@ -2950,8 +2950,15 @@ const App = () => {
         },
       };
     }
-    if (!focusWritePart(null)) {
-      return { error: { code: 'no_write_part', message: 'No writable part for feature delete' } };
+    // The active part, or args.part_id. A face pick must not retarget this:
+    // focusWritePart(null) would load the picked part and index 0 would be
+    // that part's first feature.
+    if (appModeRef.current !== 'game') {
+      const target = featureDeleteTarget(assemblyRef.current, args);
+      if (target.error) return { error: target.error };
+      if (target.load && !focusWritePart(target.id)) {
+        return { error: { code: 'no_write_part', message: 'No writable part for feature delete' } };
+      }
     }
     const buf = codeEditorRef.current?.getContent?.() ?? '';
     let feature = null;

@@ -57,7 +57,7 @@ That trailing marker is the contour id (c1, c2, ...). Extrude, Revolve, Loft and
 
 What the markers buy you:
 - feature_tree {} lists the blocks; open_feature { id | index } opens that block's card, edit_feature { params } merges fields (keys depend on the kind: height, radius, distance; for a move dx, dy, dz, at), confirm_feature {} writes and runs. A confirm that changes nothing on a failing part answers ok: false with the errors.
-- delete_feature { id | index } removes the block and runs the part; one undo restores it. Deleting the block that declares part while later blocks use it is confirm_required (details.dependents) until the user agrees and you pass confirm: true.
+- delete_feature { id | index, part_id? } removes the block from the active part and runs it; one undo restores it. A face pick does not retarget it. part_id (an opaque surf id) deletes from that part instead; a path or name is unknown_part. Deleting the block that declares part while later blocks use it is confirm_required (details.dependents) until the user agrees and you pass confirm: true.
 - rollback_to { id | index } moves the rollback bar and re-evaluates up to there without editing the script; rollback_to { clear: true } removes it.
 - undo / redo step the feature-bar stack (sketch session, assembly joints, or the active part) and return applied / reverted labels; a new committed edit clears redo.
 - get_script { range: { fromFeature: "cube1", toFeature: "fillet2" } } reads one span of blocks.
