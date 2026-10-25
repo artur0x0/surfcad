@@ -111,7 +111,11 @@ Existing frosted overlays (do not replace these with a flat slab):
 They share `--surface-blur`. `@supports not (backdrop-filter)` goes more
 opaque so text stays legible. Never put a flat `bg-chrome-surface` /
 `bg-[#1e1e1e]` slab over the viewport. Exception: native `<select>` /
-`<option>` — the OS list is unreadable when translucent.
+`<option>` — the OS list is unreadable when translucent. Exception: the
+assembly-open overlay (`AssemblyOpenSpinner`) is an opaque `surface-dark`
+panel, the same ground as the viewport, with `text-on-dark`. It does not
+use `surface-scrim`, and it does not show the assembly that was already
+on screen.
 
 Mode-chip **accents** (cyan contour, amber fillet) stay the spelled-out
 `ACCENTS` map in `src/components/controls/popupUI.jsx`. Tailwind purges

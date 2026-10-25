@@ -1,30 +1,32 @@
 import ErrorPopup from './ErrorPopup';
-import { assemblyOpenLabel } from '../utils/assemblyOpenOverlay';
+import { assemblyOpenLabel, resolveAssemblyOpenName } from '../utils/assemblyOpenOverlay';
 
 /**
- * Centered spinner over the viewport while an assembly opens.
+ * Centered spinner while an assembly opens. Opaque viewport ground
+ * (`surface-dark`), so the assembly already on screen does not show through.
  * pointer-events-none and z below the error toasts so Retry stays clickable.
- * The ring reuses the boot loader's border spinner (`animate-spin`).
+ * The ring reuses the boot loader's spin (`animate-spin`).
  */
 export default function AssemblyOpenSpinner({ name, index = 0, total = 0 }) {
-  const { label, detail } = assemblyOpenLabel(name, { index, total });
+  const display = resolveAssemblyOpenName(name);
+  const { label, detail } = assemblyOpenLabel(display, { index, total });
   return (
     <div
-      className="absolute inset-0 z-[45] flex items-center justify-center pointer-events-none surface-scrim"
+      className="absolute inset-0 z-[45] flex items-center justify-center pointer-events-none surface-dark font-ui text-on-dark"
       data-assembly-open-spinner=""
-      data-assembly-open-name={name || 'assembly'}
+      data-assembly-open-name={display}
       role="status"
       aria-live="polite"
       aria-busy="true"
     >
-      <div className="px-4 text-center text-white" data-assembly-open-card="">
+      <div className="px-4 text-center" data-assembly-open-card="">
         <div
-          className="animate-spin motion-reduce:animate-none rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"
+          className="assembly-open-ring animate-spin motion-reduce:animate-none rounded-full h-12 w-12 mx-auto mb-4"
           data-assembly-open-ring=""
         />
-        <p className="text-sm" data-assembly-open-label="">{label}</p>
+        <p className="text-ui" data-assembly-open-label="">{label}</p>
         {detail ? (
-          <p className="mt-1 text-xs text-gray-300" data-assembly-open-progress="">{detail}</p>
+          <p className="mt-1 text-ui-sm text-muted-on-dark" data-assembly-open-progress="">{detail}</p>
         ) : null}
       </div>
     </div>

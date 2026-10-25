@@ -151,9 +151,17 @@ test('a full-viewport wash uses surface-scrim, not a flat black layer', () => {
   for (const rel of [
     'components/CartSheet.jsx',
     'components/checkout/CheckoutPage.jsx',
-    'components/AssemblyOpenSpinner.jsx',
   ]) {
     const src = readFileSync(join(dir, rel), 'utf8');
     assert.match(src, /inset-0[^"]*surface-scrim/, rel);
   }
+});
+
+test('the assembly-open overlay is the viewport ground, not a blurred preview', () => {
+  const src = readFileSync(join(dir, 'components/AssemblyOpenSpinner.jsx'), 'utf8');
+  assert.match(src, /surface-dark/);
+  assert.match(src, /text-on-dark/);
+  assert.doesNotMatch(src, /surface-scrim/);
+  assert.doesNotMatch(src, /<img\b/);
+  assert.doesNotMatch(src, /backdrop/);
 });

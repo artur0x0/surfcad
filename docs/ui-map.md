@@ -729,7 +729,7 @@ All of these are absolutely positioned inside the shell at
 | right-2/4 bottom-4 | view / pick / paint / inspection cluster. Paint (`data-paint-chip`) is in the plane and contour group, green only while paint mode is on, hidden in game. Analyze (`data-analyze-chip`, Lucide `Gauge`) is the first inspection button, next to Paint, same blue, green only while the study is open, hidden in game. Normal to sketch (`data-normal-to-sketch`, title and aria-label `Normal to sketch`, Lucide `CornerDownRight`) is directly under zoom-to-fit and only in contour mode | `CrossSectionPanel.jsx` collapsed rail | Viewport |
 | inside that cluster | Front/Right/Top/**Iso** snap popup | `ViewSnapControl.jsx` | `CrossSectionPanel.jsx:360` |
 | top-16, portaled `z-50`, `inset-x-3` (most of the viewport width, same card on desktop) | execution error toast: fixed card, label "Error", Undo and dismiss on the right, description on the next line (`ErrorPopup` `layout="stacked"`), glass `rounded-lg` | `ErrorPopup.jsx` | Viewport |
-| centered on the viewport pane (desktop) and the phone shell | assembly-open spinner: ring + `Opening <name>…`, optional `part 3 of 7`. Hidden for the first 150ms. `pointer-events-none`, `z-[45]`, under the toasts | `AssemblyOpenSpinner.jsx` `data-assembly-open-spinner` | App |
+| centered on the viewport pane (desktop) and the phone shell | assembly-open spinner: opaque viewport ground (`surface-dark`), ring + `Opening <name>…`, optional `part 3 of 7`. The name is the assembly being opened. No name is `Untitled assembly`. The raw id is not shown. Hidden for the first 150ms. `pointer-events-none`, `z-[45]`, under the toasts | `AssemblyOpenSpinner.jsx` `data-assembly-open-spinner` | App |
 | *(removed C.1)* | Selected Face readout | — | — |
 | bottom of the pane (`data-feature-card`). On a phone the stage switcher hides and the card sits on that switcher's bottom edge. Desktop stays 10px off the pane | contour plane card (circle, rectangle, polygon, polyline, workplane), the Hole card, and the Extrude, Revolve, Loft, and Sweep slot cards, fillet, chamfer, the standalone edge card, shell, draft, move face, delete face, cut, boolean, move, rotate, paint, the CAD helper card (cube, round box, cylinder, sphere, tube, hex, hole, mirror, center, align, array, path, refuse). | `FeatureSheet.jsx`, `ContourModeChip.jsx`, `FilletModeChip.jsx`, `ShellModeChip.jsx`, `DraftModeChip.jsx`, `MoveFaceModeChip.jsx`, `DeleteFaceModeChip.jsx`, `CutModeChip.jsx`, `BooleanModeChip.jsx`, `MoveModeChip.jsx`, `RotateModeChip.jsx`, `PaintModeChip.jsx`, `MeasureModeChip.jsx`, `fea/FeaStudyChip.jsx`, `fea/FeaStudySheet.jsx`, `HelperParamModal.jsx`, `HoleCard.jsx`, `sheetMetal/SmControls.jsx` | Viewport |
 | bottom of the pane (`data-feature-card`). On a phone the stage switcher hides and the card sits on that switcher's bottom edge. Desktop stays 10px off the pane | Cube **Centered** clears as soon as Pos or Rot changes so it does not fight the pose fields (distinct from the **Center** transform). Block feature edit writes pose back into the script. Move on overlapping bodies stores mesh `tri` with `{ at }`. Sheet metal (picker, plane and edit chip, base, bend, tab, hole, countersink, tapped, export). Grey shell, cyan Confirm. | `FeatureSheet.jsx`, `ContourModeChip.jsx`, `FilletModeChip.jsx`, `ShellModeChip.jsx`, `DraftModeChip.jsx`, `MoveFaceModeChip.jsx`, `DeleteFaceModeChip.jsx`, `CutModeChip.jsx`, `BooleanModeChip.jsx`, `MoveModeChip.jsx`, `RotateModeChip.jsx`, `PaintModeChip.jsx`, `MeasureModeChip.jsx`, `fea/FeaStudyChip.jsx`, `fea/FeaStudySheet.jsx`, `HelperParamModal.jsx`, `HoleCard.jsx`, `sheetMetal/SmControls.jsx` | Viewport |
@@ -753,17 +753,23 @@ The button reads Meshing, Solving, or Post-processing, and Cancel is next to it 
 
 **Opening an assembly.** `data-assembly-open-spinner` sits centered over the
 viewport (the viewport pane on desktop, the full shell on a phone) while a
-document loads. Paths: the Open assembly dialog (Cancel, Insert parts into
+document loads. The panel is opaque `surface-dark` (the viewport ground,
+`text-on-dark`). It does not blur or preview the assembly that was already
+open. Paths: the Open assembly dialog (Cancel, Insert parts into
 current, and Open assembly on one right-aligned row), the folder menu's Assembly
-action, git open search, a branch switch, and the initial restore of the last
-assembly. The wait is the `.surf.json` and part-script fetch (IndexedDB
+action, git open search, a branch switch, an id open (agent or any other
+caller that passes a surf id), and the initial restore of the last
+assembly. Every one of those calls `openAssemblyTracked`, which reads the
+name from the assembly being opened (its `.surf.json`, or the store copy).
+A missing name is `Untitled assembly`. The raw id is never the label.
+The wait is the `.surf.json` and part-script fetch (IndexedDB
 cache-first, and GitHub when the vault is open; see [`vault-schema.md`](vault-schema.md)) plus the worker build that
 refresh paints. A sibling `<Part>.mesh` is fetched with that part through the Git
 blob API (not Contents GET) and stored in IndexedDB `surfcad-assets`, keyed by
 blob sha, for a later mesh import. The label is `Opening <name>…` (`data-assembly-open-label`).
 While a part is in flight it also reads `part 3 of 7`
-(`data-assembly-open-progress`). The ring is the same border spinner as the
-boot loader. It stays hidden for 150ms so a fast open does not flash, and it
+(`data-assembly-open-progress`). The ring is a light crescent on that ground
+(`assembly-open-ring`). It stays hidden for 150ms so a fast open does not flash, and it
 clears on success, failure, or cancel. Silence for 45s clears it and shows
 the failure toast (`data-assembly-open-toast`, same `ErrorPopup` card) with
 Retry (`data-assembly-open-retry`). The overlay does not take clicks

@@ -132,6 +132,16 @@ jobs:
             fi
           done
 
+      # Headless node, no Chrome. The opening overlay shows the assembly's
+      # display name on the viewport ground, never the raw id or a preview.
+      - name: assembly open overlay golden
+        run: |
+          npm run golden:assembly-open-spinner | tee "${RUNNER_TEMP}/assembly-open-spinner.log"
+          if ! grep -q 'assembly open overlay golden: ok' "${RUNNER_TEMP}/assembly-open-spinner.log"; then
+            echo "assembly open overlay golden did not pass (see log above)"
+            exit 1
+          fi
+
   # Cheapest existing golden that proves the bundle actually boots: a real
   # headless Chrome, vite preview, #root painted, canvas + toolbar + Run.
   # Pixel goldens are not in this job. Chrome comes from the runner via
