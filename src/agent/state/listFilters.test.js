@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { listFacesCommand } from '../commands/listFaces.js';
 import {
+  FACE_PAGE_LIMIT,
   checkEdgeFilter,
   checkFaceFilter,
   checkPage,
@@ -87,7 +89,7 @@ test('checkEdgeFilter and checkPage name the bad field', () => {
 test('paginate and shapeListResult report total and returned', () => {
   const rows = ['a', 'b', 'c', 'd', 'e'];
   assert.deepEqual(paginate(rows, null), { rows, total: 5, returned: 5 });
-  assert.deepEqual(paginate(rows, { offset: 1, limit: 2 }), { rows: ['b', 'c'], total: 5, returned: 2, offset: 1, limit: 2 });
+  assert.deepEqual(paginate(rows, { offset: 1, limit: 2 }), { rows: ['b', 'c'], total: 5, returned: 2, offset: 1, limit: 2, nextOffset: 3 });
   assert.deepEqual(paginate(rows, { offset: 4 }), { rows: ['e'], total: 5, returned: 1, offset: 4 });
   assert.deepEqual(paginate(rows, { offset: 9, limit: 2 }), { rows: [], total: 5, returned: 0, offset: 9, limit: 2 });
 
@@ -101,9 +103,76 @@ test('paginate and shapeListResult report total and returned', () => {
   assert.equal(shaped.frame, 'local');
   assert.equal(shaped.offset, 1);
   assert.equal(shaped.limit, 1);
+  assert.equal(shaped.nextOffset, 2);
   assert.equal(host.faces.length, 4, 'host rows untouched');
   const plain = shapeListResult(host, 'faces', filterFaces(FACES, null), undefined);
   assert.equal(plain.total, 4);
   assert.equal(plain.returned, 4);
   assert.equal('offset' in plain, false);
+});
+
+test('bbox keeps a face whose bounds overlap the box even when its center is outside', () => {
+  const longSide = {
+    id: 'f4',
+    type: 'planar',
+    kind: 'planar',
+    center: [0, 15, 0],
+    normal: [0, 1, 0],
+    area: 1600,
+    bounds: { min: [-100, 15, -4], max: [100, 15, 4] },
+  };
+  const endCap = {
+    id: 'f5',
+    type: 'planar',
+    kind: 'planar',
+    center: [100, 0, 0],
+    normal: [1, 0, 0],
+    area: 240,
+    bounds: { min: [100, -15, -4], max: [100, 15, 4] },
+  };
+  const far = {
+    id: 'f6',
+    type: 'planar',
+    kind: 'planar',
+    center: [-100, 0, 0],
+    normal: [-1, 0, 0],
+    area: 240,
+    bounds: { min: [-100, -15, -4], max: [-100, 15, 4] },
+  };
+  const region = { min: [80, -20, -10], max: [110, 20, 10] };
+  assert.deepEqual(filterFaces([longSide, endCap, far], { bbox: region }).map((r) => r.id), ['f4', 'f5']);
+  // A row with no bounds still uses its center, so the old center-in-box case stays.
+  assert.deepEqual(filterFaces([SIDE], { bbox: { min: [19, -1, -1], max: [21, 1, 1] } }).map((r) => r.id), ['f2']);
+});
+
+test('list_faces pages by default and walks with nextOffset', () => {
+  const faces = Array.from({ length: FACE_PAGE_LIMIT + 30 }, (_, i) => ({
+    id: `f${i}`,
+    type: 'planar',
+    kind: 'planar',
+    key: { at: [i, 0, 0], n: [0, 0, 1], area: 1 },
+    center: [i, 0, 0],
+    normal: [0, 0, 1],
+    area: 1,
+    triangleCount: 2,
+  }));
+  const ctx = { listFaces: () => ({ partId: 'plate', faces }) };
+  const first = listFacesCommand.run(ctx, {}).result;
+  assert.equal(first.total, faces.length);
+  assert.equal(first.returned, FACE_PAGE_LIMIT);
+  assert.equal(first.offset, 0);
+  assert.equal(first.limit, FACE_PAGE_LIMIT);
+  assert.equal(first.nextOffset, FACE_PAGE_LIMIT);
+  assert.equal(first.faces.length, FACE_PAGE_LIMIT);
+  assert.equal(first.faces[0].id, 'f0');
+  const second = listFacesCommand.run(ctx, { page: { offset: first.nextOffset } }).result;
+  assert.equal(second.offset, FACE_PAGE_LIMIT);
+  assert.equal(second.returned, 30);
+  assert.equal(second.nextOffset, undefined);
+  assert.equal(second.faces[0].id, `f${FACE_PAGE_LIMIT}`);
+  const seen = new Set([...first.faces, ...second.faces].map((row) => row.id));
+  assert.equal(seen.size, faces.length);
+  const wide = listFacesCommand.run(ctx, { page: { limit: faces.length } }).result;
+  assert.equal(wide.returned, faces.length);
+  assert.equal(wide.nextOffset, undefined);
 });

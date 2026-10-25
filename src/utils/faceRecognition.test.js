@@ -156,6 +156,120 @@ return part;
   for (const row of top) assert.equal(row.type, 'planar');
 });
 
+test('a 12-segment cylinder is one cylindrical face, including a short one', async () => {
+  const scripts = [
+    'return Manifold.cylinder(40, 8, 8, 12, false).translate([100, -50, 20]);',
+    'return Manifold.cylinder(40, 8, 8, 16, false);',
+    'return Manifold.cylinder(4, 20, 20, 12, false);',
+  ];
+  for (const source of scripts) {
+    const rows = await catalogRun(source);
+    assert.equal(rows.length, 3, `${source} listed ${rows.length} faces`);
+    const wall = rows.filter((row) => row.type === 'cylindrical');
+    assert.equal(wall.length, 1, source);
+    assert.ok(wall[0].axis && wall[0].axis.radius > 0);
+    assert.equal(jointPickForFace(wall[0]).kind, 'axis');
+    assert.equal(rows.filter((row) => row.type === 'planar').length, 2);
+    const again = await catalogRun(source);
+    assert.deepEqual(again.map((row) => row.faceId), rows.map((row) => row.faceId));
+    assert.deepEqual(again.map((row) => row.type), rows.map((row) => row.type));
+  }
+  const translated = await catalogRun(scripts[0]);
+  const wall = translated.find((row) => row.type === 'cylindrical');
+  assert.ok(Math.abs(wall.axis.radius - 8) < 1e-2, `radius ${wall.axis.radius}`);
+  assert.ok(absDot(wall.axis.dir, [0, 0, 1]) > 0.999);
+  assert.ok(axisDistance(wall.axis.at, [100, -50, 20], [0, 0, 1]) < 0.05);
+});
+
+test('a thin rounded box keeps its flat faces planar and apart from the blend', async () => {
+  const cases = [
+    { size: [80, 40, 6], r: 1, seg: 16 },
+    { size: [80, 40, 6], r: 2, seg: 16 },
+    { size: [80, 40, 10], r: 1, seg: 64 },
+    { size: [80, 40, 10], r: 2, seg: 64 },
+    { size: [120, 18, 6], r: 2, seg: 8 },
+    { size: [80, 44, 16], r: 6, seg: 8 },
+  ];
+  for (const { size, r, seg } of cases) {
+    const rows = await catalogRun(`return roundedBox([${size.join(', ')}], ${r}, ${seg});`);
+    const label = `roundedBox(${size}, ${r}, ${seg}) n=${rows.length}`;
+    assert.ok(rows.length > 1, `${label} collapsed to one face`);
+    const flats = [
+      { axis: 2, sign: 1, area: (size[0] - 2 * r) * (size[1] - 2 * r) },
+      { axis: 2, sign: -1, area: (size[0] - 2 * r) * (size[1] - 2 * r) },
+      { axis: 1, sign: 1, area: (size[0] - 2 * r) * (size[2] - 2 * r) },
+      { axis: 1, sign: -1, area: (size[0] - 2 * r) * (size[2] - 2 * r) },
+      { axis: 0, sign: 1, area: (size[1] - 2 * r) * (size[2] - 2 * r) },
+      { axis: 0, sign: -1, area: (size[1] - 2 * r) * (size[2] - 2 * r) },
+    ];
+    for (const flat of flats) {
+      const hit = rows.find((row) => row.type === 'planar'
+        && row.n[flat.axis] * flat.sign > 0.99
+        && Math.abs(row.area - flat.area) / flat.area < 0.05);
+      assert.ok(hit, `${label} missing planar area ${flat.area} on axis ${flat.axis} ${flat.sign > 0 ? '+' : '-'}`);
+      assert.equal(jointPickForFace(hit).kind, 'face', `${label} ${hit.faceId}`);
+    }
+    const blend = rows.filter((row) => row.type !== 'planar');
+    assert.ok(blend.length >= 1, `${label} has no blend`);
+    for (const row of blend) assert.notEqual(row.type, 'planar');
+  }
+});
+
+test('disjoint coplanar counterbore bottoms stay separate faces', async () => {
+  function script(depth) {
+    const start = 6 - depth;
+    return `
+let part = Manifold.cube([80, 40, 12], true);
+function bore(solid, x) {
+  const thru = Manifold.cylinder(20, 3, 3, 24, false).translate([x, 0, -4]);
+  const cb = Manifold.cylinder(${depth + 1}, 6, 6, 24, false).translate([x, 0, ${start}]);
+  return solid.subtract(thru).subtract(cb);
+}
+part = bore(part, -18);
+part = bore(part, 18);
+return part;
+`;
+  }
+  for (const depth of [3, 4, 8]) {
+    const rows = await catalogRun(script(depth));
+    const z = 6 - depth;
+    const bottoms = rows.filter((row) => row.type === 'planar' && row.n[2] > 0.9 && Math.abs(row.at[2] - z) < 0.2);
+    assert.equal(bottoms.length, 2, `depth ${depth} merged to ${bottoms.length}: ${bottoms.map((r) => r.at.map((v) => v.toFixed(1)).join(',')).join(' | ')}`);
+    const xs = bottoms.map((row) => row.at[0]).sort((a, b) => a - b);
+    assert.ok(xs[0] < -10 && xs[1] > 10, `depth ${depth} centers ${xs}`);
+    for (const row of bottoms) assert.equal(jointPickForFace(row).kind, 'face');
+  }
+  const top = (await catalogRun(script(4))).filter((row) => row.type === 'planar' && row.n[2] > 0.9 && row.at[2] > 5);
+  assert.equal(top.length, 1, 'the connected top stayed one face');
+});
+
+test('bbox filter keeps a long face that overlaps the box', async () => {
+  const { listFacesCommand } = await import('../agent/commands/listFaces.js');
+  const { buildFaceList } = await import('../agent/state/listPickables.js');
+  const ran = await runScript('return Manifold.cube([200, 30, 8], true);');
+  const solid = buildSolidGeometry(ran.mesh);
+  ran.manifold?.delete?.();
+  const listed = buildFaceList(agentFaceCatalog(solid.geometry, solid.faceIDs));
+  const result = listFacesCommand.run(
+    { listFaces: () => ({ partId: 'plate', ...listed }) },
+    { filter: { bbox: { min: [80, -20, -10], max: [110, 20, 10] } } },
+  ).result;
+  const ids = result.faces.map((row) => row.normal.map((v) => Math.round(v)).join(','));
+  assert.ok(ids.includes('0,1,0'), `+Y side missing: ${ids}`);
+  assert.ok(ids.includes('0,-1,0'), `-Y side missing: ${ids}`);
+  assert.ok(ids.includes('0,0,1'), `+Z side missing: ${ids}`);
+  assert.ok(ids.includes('1,0,0'), `+X cap missing: ${ids}`);
+  assert.ok(!ids.includes('-1,0,0'), `-X cap should be outside: ${ids}`);
+});
+
+async function catalogRun(source) {
+  const ran = await runScript(source);
+  assert.ok(ran.mesh, ran.error || ran.status);
+  const { geometry, faceIDs } = buildSolidGeometry(ran.mesh);
+  ran.manifold?.delete?.();
+  return realizeAgentFaceCatalog(agentFaceCatalog(geometry, faceIDs));
+}
+
 test('a 24-segment cylinder is one cylindrical face with its axis', async () => {
   for (const segments of [24, 32, 48]) {
     const rows = await catalogOf(`let part = Manifold.cylinder(50, 10, 10, ${segments}, false).translate([300, -200, 90]); return part;`);

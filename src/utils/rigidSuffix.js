@@ -90,6 +90,25 @@ export function rotateAboutMatrix(axis, angleDeg, pivot) {
   ];
 }
 
+function poseBounds(bounds, matrix) {
+  const min = bounds.min;
+  const max = bounds.max;
+  const outMin = [Infinity, Infinity, Infinity];
+  const outMax = [-Infinity, -Infinity, -Infinity];
+  for (const x of [min[0], max[0]]) {
+    for (const y of [min[1], max[1]]) {
+      for (const z of [min[2], max[2]]) {
+        const p = transformPoint(matrix, [x, y, z]);
+        for (let i = 0; i < 3; i++) {
+          if (p[i] < outMin[i]) outMin[i] = p[i];
+          if (p[i] > outMax[i]) outMax[i] = p[i];
+        }
+      }
+    }
+  }
+  return { min: outMin, max: outMax };
+}
+
 export function transformPoint(matrix, point) {
   if (!Array.isArray(point) || point.length < 3) return point;
   const x = Number(point[0]);
@@ -430,6 +449,9 @@ export function poseFaceRecord(face, matrix) {
   const next = { ...face };
   if (Array.isArray(face.center)) next.center = transformPoint(matrix, face.center);
   if (Array.isArray(face.at)) next.at = transformPoint(matrix, face.at);
+  if (face.bounds && Array.isArray(face.bounds.min) && Array.isArray(face.bounds.max)) {
+    next.bounds = poseBounds(face.bounds, matrix);
+  }
   if (Array.isArray(face.normal)) next.normal = unit3(transformNormal(matrix, face.normal));
   if (Array.isArray(face.n)) next.n = unit3(transformNormal(matrix, face.n));
   if (Array.isArray(face.group)) next.group = face.group.map((row) => poseFaceRecord(row, matrix));

@@ -1,11 +1,19 @@
 import {
   FACE_FILTER_SCHEMA,
+  FACE_PAGE_LIMIT,
   PAGE_SCHEMA,
   checkFaceFilter,
   checkPage,
   filterFaces,
   shapeListResult,
 } from '../state/listFilters.js';
+
+/** list_faces always pages. Omitted page or limit uses FACE_PAGE_LIMIT. */
+function facePage(page) {
+  const offset = page && Number.isInteger(page.offset) ? page.offset : 0;
+  const limit = page && Number.isInteger(page.limit) ? page.limit : FACE_PAGE_LIMIT;
+  return { offset, limit };
+}
 
 /**
  * Read-only catalog of face keys for select_faces. `filter` and `page` trim
@@ -36,7 +44,7 @@ export const listFacesCommand = Object.freeze({
     const out = list({ partId: args?.part_id });
     if (out?.error) return { error: out.error };
     const filtered = filterFaces(out?.faces, args?.filter);
-    const result = shapeListResult(out || {}, 'faces', filtered, args?.page);
+    const result = shapeListResult(out || {}, 'faces', filtered, facePage(args?.page));
     if (args?.filter && Object.keys(args.filter).length) result.filter = JSON.parse(JSON.stringify(args.filter));
     return { result };
   },

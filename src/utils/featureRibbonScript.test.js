@@ -108,3 +108,16 @@ test('sketch_add writes the live contour before React setState', () => {
   assert.match(add, /contourLiveWriteRef\.current = next;\s*contourModeRef\.current = next;\s*setContourMode\(next\)/);
 });
 
+test('mode reads the live contour, and exit commits the close before the next call', () => {
+  const vp = readFileSync(new URL('../components/Viewport.jsx', import.meta.url), 'utf8');
+  const read = vp.slice(vp.indexOf('readMode()'), vp.indexOf('readCamera()'));
+  assert.match(read, /const contourLive = contourModeRef\.current/);
+  assert.match(read, /planeOpen: !!contourPlaneOpenRef\.current/);
+  const exit = vp.slice(vp.indexOf('const exitContourMode = useCallback'), vp.indexOf('const closeFeatureSlots = useCallback'));
+  assert.match(exit, /contourLiveWriteRef\.current = null/);
+  assert.match(exit, /flushSync\(\(\) => \{\s*setContourMode\(null\);\s*setContourPlaneOpen\(false\);/);
+  const reopen = vp.slice(vp.indexOf('const openSavedContour'), vp.indexOf('const editSlotContour'));
+  assert.match(reopen, /contourId: saved\.id/);
+  assert.match(reopen, /contourModeRef\.current = next/);
+});
+
