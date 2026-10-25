@@ -268,6 +268,7 @@
         "golden:placed-part-previews": "node scripts/golden/smoke_placed_part_previews.mjs",
         "golden:adjacent-part-visible": "node scripts/golden/smoke_adjacent_part_visible.mjs",
         "golden:gpu-upload-cache": "node scripts/golden/smoke_gpu_upload_cache.mjs",
+        "golden:graph-perf": "node scripts/golden/smoke_graph_perf.mjs",
         "golden:mobile-chrome-shade": "node scripts/golden/smoke_mobile_chrome_shade.mjs",
         "golden:part-instances": "node scripts/golden/smoke_part_instances.mjs",
         "golden:rotate-feature": "node scripts/golden/smoke_rotate_feature.mjs",

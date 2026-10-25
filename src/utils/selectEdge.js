@@ -11,7 +11,7 @@ import {
 } from './edgeTangencyField.js';
 // Not cutMode.js: that file imports the helper palette, which imports this
 // module back. The cycle ran holeFeatureParamDefs before HOLE_SIZE_OPTIONS.
-import { meshBodyComponents } from './meshBodyComponents.js';
+import { meshFrames } from './meshTopology.js';
 
 const DEFAULT_FEATURE_DEG = 2;
 
@@ -19,86 +19,26 @@ const DEFAULT_FEATURE_DEG = 2;
  * Build feature edges from a BufferGeometry (indexed).
  * @returns {{ key: string, a: number, b: number, va: number[], vb: number[], mid: number[], length: number, tangent: number[], n0: number[], n1: number[] }[]}
  */
-/** 26 bits per vertex index. Past that, the key falls back to a string. */
-const EDGE_PACK = 0x4000000;
-
-function packedEdgeKey(a, b) {
-  const lo = a < b ? a : b;
-  const hi = a < b ? b : a;
-  if (hi >= EDGE_PACK) return `${lo}-${hi}`;
-  return lo * EDGE_PACK + hi;
-}
 
 export function buildFeatureEdges(geometry, minAngleDeg = DEFAULT_FEATURE_DEG) {
   if (!geometry?.index || !geometry.attributes?.position) return [];
   const attr = geometry.attributes.position;
   const index = geometry.index.array;
-  const numTri = index.length / 3;
   const arr = attr.array;
   const item = attr.itemSize || 3;
-  const nx = new Float64Array(numTri);
-  const ny = new Float64Array(numTri);
-  const nz = new Float64Array(numTri);
-  for (let t = 0; t < numTri; t++) {
-    const i0 = index[t * 3] * item;
-    const i1 = index[t * 3 + 1] * item;
-    const i2 = index[t * 3 + 2] * item;
-    const ax = arr[i0];
-    const ay = arr[i0 + 1];
-    const az = arr[i0 + 2];
-    const bx = arr[i1] - ax;
-    const by = arr[i1 + 1] - ay;
-    const bz = arr[i1 + 2] - az;
-    const cx = arr[i2] - ax;
-    const cy = arr[i2 + 1] - ay;
-    const cz = arr[i2 + 2] - az;
-    let x = by * cz - bz * cy;
-    let y = bz * cx - bx * cz;
-    let z = bx * cy - by * cx;
-    const len = Math.hypot(x, y, z) || 1;
-    nx[t] = x / len;
-    ny[t] = y / len;
-    nz[t] = z / len;
-  }
-
-  const edgeMap = new Map();
-  for (let t = 0; t < numTri; t++) {
-    const i0 = index[t * 3];
-    const i1 = index[t * 3 + 1];
-    const i2 = index[t * 3 + 2];
-    const pairs = [i0, i1, i1, i2, i2, i0];
-    for (let k = 0; k < 6; k += 2) {
-      let a = pairs[k];
-      let b = pairs[k + 1];
-      if (a > b) {
-        const s = a;
-        a = b;
-        b = s;
-      }
-      const key = packedEdgeKey(a, b);
-      let e = edgeMap.get(key);
-      if (!e) {
-        e = { a, b, tris: [] };
-        edgeMap.set(key, e);
-      }
-      e.tris.push(t);
-    }
-  }
-
+  const frames = meshFrames(arr, index, item);
+  if (!frames) return [];
+  const { pairN, pairTri0, pairTri1, pairLo, pairHi, nx, ny, nz, bodyOf } = frames;
   const cosMin = Math.cos((minAngleDeg * Math.PI) / 180);
-  const bodies = meshBodyComponents(attr, geometry.index);
-  const triBody = new Int32Array(numTri).fill(-1);
-  bodies.forEach((body, id) => {
-    for (const t of body.triangles) triBody[t] = id;
-  });
   const out = [];
-  for (const e of edgeMap.values()) {
-    if (e.tris.length !== 2) continue;
-    const t0 = e.tris[0];
-    const t1 = e.tris[1];
+  for (let i = 0; i < pairN; i++) {
+    const t0 = pairTri0[i];
+    const t1 = pairTri1[i];
     if (nx[t0] * nx[t1] + ny[t0] * ny[t1] + nz[t0] * nz[t1] > cosMin) continue;
-    const oa = e.a * item;
-    const ob = e.b * item;
+    const a = pairLo[i];
+    const b = pairHi[i];
+    const oa = a * item;
+    const ob = b * item;
     const vax = arr[oa];
     const vay = arr[oa + 1];
     const vaz = arr[oa + 2];
@@ -111,9 +51,9 @@ export function buildFeatureEdges(geometry, minAngleDeg = DEFAULT_FEATURE_DEG) {
     const length = Math.hypot(dx, dy, dz);
     if (length < 1e-9) continue;
     out.push({
-      key: `${e.a}-${e.b}`,
-      a: e.a,
-      b: e.b,
+      key: `${a}-${b}`,
+      a,
+      b,
       va: [vax, vay, vaz],
       vb: [vbx, vby, vbz],
       mid: [(vax + vbx) / 2, (vay + vby) / 2, (vaz + vbz) / 2],
@@ -123,7 +63,7 @@ export function buildFeatureEdges(geometry, minAngleDeg = DEFAULT_FEATURE_DEG) {
       n1: [nx[t1], ny[t1], nz[t1]],
       tri0: t0,
       tri1: t1,
-      bodyId: triBody[t0],
+      bodyId: bodyOf[t0],
     });
   }
   return out;
