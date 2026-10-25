@@ -10,6 +10,7 @@
  * headlight lights whichever side of the thin wall faces the camera.
  */
 import { DoubleSide, MeshStandardMaterial } from 'three';
+import { adoptSectionClip } from '../sectionClip.js';
 import { makeDefaultPartMaterial } from '../partMaterial.js';
 import { isSheetMesh } from './sheetMeshFlag.js';
 
@@ -46,6 +47,7 @@ export function makeSheetMetalMaterial() {
       `,
     );
   };
+  adoptSectionClip(material);
   return material;
 }
 

@@ -316,6 +316,11 @@ jobs:
             echo "agent bridge xsection golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:section-clip | tee "${RUNNER_TEMP}/section-clip.log"
+          if ! grep -q 'section clip golden: ok' "${RUNNER_TEMP}/section-clip.log"; then
+            echo "section clip golden did not pass (see log above)"
+            exit 1
+          fi
           node scripts/golden/smoke_agent_bridge_h14.mjs | tee "${RUNNER_TEMP}/agent-bridge-h14.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h14.log"; then
             echo "agent bridge h14 golden skipped because Chrome was not found; CI must launch it"

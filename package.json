@@ -48,6 +48,7 @@
         "golden:agent-bridge-fea": "node scripts/golden/smoke_agent_bridge_fea.mjs",
         "golden:agent-bridge-xsection": "node scripts/golden/smoke_agent_bridge_xsection.mjs",
         "golden:cross-section-caps": "node scripts/golden/smoke_cross_section_caps.mjs",
+        "golden:section-clip": "node scripts/golden/smoke_section_clip.mjs",
         "golden:agent-bridge-h14": "node scripts/golden/smoke_agent_bridge_h14.mjs",
         "golden:agent-bridge-h15": "node scripts/golden/smoke_agent_bridge_h15.mjs",
         "golden:agent-bridge-h16": "node scripts/golden/smoke_agent_bridge_h16.mjs",
