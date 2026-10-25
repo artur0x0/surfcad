@@ -2698,6 +2698,11 @@ const App = () => {
       activeDecision = cleared
         ? { action: 'rebuild', reason: 'rollback' }
         : decisionFor(activePart, activeScriptText);
+      // A deliberate Run re-executes an unchanged script so a cleared feature
+      // memo is filled again. A trailing Move / Rotate stays on the matrix.
+      if (!cleared && opts.forceActive && activeDecision.action === 'reuse') {
+        activeDecision = { action: 'rebuild', reason: 'run' };
+      }
       if (!cleared && (activeDecision.action === 'reuse' || activeDecision.action === 'rigid')) {
         noteShip(viewId, activeDecision.action, activeDecision.reason, performance.now() - tDecide);
       } else {
@@ -2821,6 +2826,16 @@ const App = () => {
       // Hidden rows were not re-run. Keep their last solid so the parts-list
       // thumbnail stays; composeViewportParts still leaves them out of the view.
       const keptRuns = preserveHiddenPartRuns(doc, fanned, partRunsRef.current);
+      if (
+        willBuildActive
+        && activeDecision
+        && activeDecision.action !== 'rebuild'
+        && keptRuns[viewId]?.ok === true
+      ) {
+        // The mesh stayed on the page, so the viewport does not emit a run
+        // outcome. The agent still needs this refresh to count as finished.
+        handleRunOutcome({ ok: true, script: activeScriptText });
+      }
       for (const [id, run] of Object.entries(keptRuns)) {
         if (run?.ok && run.mesh?.vertProperties) partLeftoversRef.current[id] = run.mesh;
       }
@@ -7655,7 +7670,7 @@ const App = () => {
       const code = codeEditorRef.current?.getContent?.();
       if (code == null) return;
       setCurrentScript(code);
-      await refreshAssemblyRef.current?.(code);
+      await refreshAssemblyRef.current?.(code, { forceActive: true });
       return;
     }
     if (gameSuccess || gameRunInFlightRef.current) return;
@@ -10012,14 +10027,14 @@ const App = () => {
         };
       }
       let epochBefore = runOutcomeEpochRef.current;
-      let ran = await refreshAssemblyRef.current?.(text);
+      let ran = await refreshAssemblyRef.current?.(text, { forceActive: true });
       let outcome = agentCadRunOutcome(epochBefore, ran);
       if (outcome.stale === true) {
         // Same recovery as agentRunOutcomeSettled: one more run once the
         // kernel is back, so a mutate during a worker restart reports itself.
         try { await manifoldContext.whenReady(); } catch { /* the retry reports */ }
         epochBefore = runOutcomeEpochRef.current;
-        ran = await refreshAssemblyRef.current?.(text);
+        ran = await refreshAssemblyRef.current?.(text, { forceActive: true });
         outcome = agentCadRunOutcome(epochBefore, ran);
       }
       const dropped = viewportRef.current?.readDroppedPaints?.(assemblyRef.current?.colors ?? null);
@@ -10453,7 +10468,7 @@ const App = () => {
       };
     }
     const epochBefore = runOutcomeEpochRef.current;
-    const ran = await refreshAssemblyRef.current?.(scriptText);
+    const ran = await refreshAssemblyRef.current?.(scriptText, { forceActive: true });
     return agentCadRunOutcome(epochBefore, ran);
   };
   /**
