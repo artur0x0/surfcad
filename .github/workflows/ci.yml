@@ -686,6 +686,15 @@ jobs:
             echo "graph perf golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:brand-identity | tee "${RUNNER_TEMP}/brand-identity.log"
+          if grep -q 'no system Chrome' "${RUNNER_TEMP}/brand-identity.log"; then
+            echo "brand identity golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'brand identity: ok' "${RUNNER_TEMP}/brand-identity.log"; then
+            echo "brand identity golden did not pass (see log above)"
+            exit 1
+          fi
 
       - name: Agent scripted playtest
         env:
