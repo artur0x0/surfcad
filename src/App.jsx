@@ -12015,6 +12015,39 @@ const App = () => {
         },
       };
     },
+    jointDelete({ joint_id } = {}) {
+      const doc = assemblyRef.current;
+      if (!doc) return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+      const id = joint_id != null ? String(joint_id) : '';
+      if (!id) return { error: { code: 'bad_args', message: 'joint_delete needs joint_id' } };
+      const joint = (doc.joints || []).find((row) => row.id === id);
+      if (!joint) return { error: { code: 'unknown_joint', message: `Unknown joint id: ${id}` } };
+      const scripts = partScriptsRef.current;
+      const locked = !!assemblyOpenLockRef.current;
+      const result = applyJointCard({
+        doc,
+        scripts,
+        card: { mode: 'edit', id },
+        action: 'delete',
+        locked,
+        preempt: null,
+        catalogs: jointCatalogsRef.current,
+      });
+      if (locked) {
+        return { error: { code: 'edit_failed', message: result.message || 'Assembly is opening' } };
+      }
+      if (!result.ok) {
+        return { error: { code: 'edit_failed', message: result.message || 'Joint delete failed' } };
+      }
+      finishJointWrite(result, scripts);
+      return {
+        result: {
+          ok: true,
+          jointId: id,
+          jointCount: (assemblyRef.current?.joints || []).length,
+        },
+      };
+    },
     prepareJointCommit() {
       const doc = assemblyRef.current;
       const base = jointCardAgentRef.current ?? jointCardRef.current;
@@ -12040,7 +12073,9 @@ const App = () => {
         return { error: { code: 'edit_failed', message: result.message || 'Assembly is opening' } };
       }
       if (!result.ok) {
-        return { ok: false, message: result.message || 'Joint commit refused' };
+        const refused = { ok: false, message: result.message || 'Joint commit refused' };
+        if (result.candidates) refused.candidates = result.candidates;
+        return refused;
       }
       const unchanged = assemblySnapshotsEqual(doc, result.doc);
       finishJointWrite(result, scripts, { resetPicks: card.mode !== 'edit' });

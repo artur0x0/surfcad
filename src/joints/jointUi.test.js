@@ -434,7 +434,7 @@ test('delete removes the joint and does not change scripts', () => {
   assert.equal(serializeAssembly(result.doc).joints, undefined);
 });
 
-test('strip undo restores joints and placements and leaves scripts', () => {
+test('strip undo restores one action: a joint undo keeps an unrelated move', () => {
   const before = docWith(undefined);
   const after = docWith([{
     id: J,
@@ -448,18 +448,70 @@ test('strip undo restores joints and placements and leaves scripts', () => {
       : part
   ));
   const history = pushAssemblyHistory(seedAssemblyHistory(before), before, after);
+  assert.equal(history.commits.length, 3);
   const scripts = { 'a.js': 'stay' };
   const step = undoJointStrip({ history, doc: after, scripts });
   assert.equal(step.changed, true);
   assert.equal(step.scripts, scripts);
   assert.equal(step.doc.joints, undefined);
-  assert.deepEqual(step.doc.parts.find((part) => part.surfId === B).position, [0, 0, 5]);
+  assert.deepEqual(step.doc.parts.find((part) => part.surfId === B).position, [1, 2, 3]);
+  const redone = redoJointStrip({ history: step.history, doc: step.doc, scripts });
+  assert.equal(redone.doc.joints[0].id, J);
+  assert.deepEqual(redone.doc.parts.find((part) => part.surfId === B).position, [1, 2, 3]);
+  const earlier = undoJointStrip({ history: step.history, doc: step.doc, scripts });
+  assert.deepEqual(earlier.doc.parts.find((part) => part.surfId === B).position, [0, 0, 5]);
   assert.equal(stripUndoTarget(null), 'joint');
   assert.equal(stripUndoTarget('a.js'), 'part');
   assert.equal(stripUndoLabel(null), 'Undo joint');
   assert.equal(stripUndoLabel('a.js'), 'Undo');
   const reseed = seedAssemblyHistory(after);
   assert.equal(assemblyHistoryCanUndo(reseed), false);
+});
+
+test('a joint undo restores the pose of a part that joint names', () => {
+  const before = docWith(undefined);
+  const after = docWith([{
+    id: J,
+    name: 'Fixed 1',
+    type: 'fixed',
+    a: { part: B },
+  }]);
+  after.parts = after.parts.map((part) => (
+    part.surfId === B
+      ? { ...part, placement: { t: [1, 2, 3], q: [0, 0, 0, 1] } }
+      : part
+  ));
+  const history = pushAssemblyHistory(seedAssemblyHistory(before), before, after);
+  assert.equal(history.commits.length, 2);
+  const step = undoJointStrip({ history, doc: after, scripts: {} });
+  assert.equal(step.doc.joints, undefined);
+  assert.deepEqual(step.doc.parts.find((part) => part.surfId === B).position, [0, 0, 5]);
+});
+
+test('deleting a joint is one step and undo keeps an earlier unrelated move', () => {
+  const joint = { id: J, name: 'Fixed 1', type: 'fixed', a: { part: A } };
+  const before = docWith([joint]);
+  const moved = {
+    ...before,
+    parts: before.parts.map((part) => (
+      part.surfId === B
+        ? { ...part, placement: { t: [1, 2, 3], q: [0, 0, 0, 1] } }
+        : part
+    )),
+  };
+  let history = pushAssemblyHistory(seedAssemblyHistory(before), before, moved);
+  const deleted = applyJointCard({
+    doc: moved,
+    scripts: {},
+    card: { id: J },
+    action: 'delete',
+    catalogs: {},
+  });
+  assert.equal(deleted.ok, true);
+  history = pushAssemblyHistory(history, moved, deleted.doc);
+  const undone = undoJointStrip({ history, doc: deleted.doc, scripts: {} });
+  assert.equal(undone.doc.joints[0].id, J);
+  assert.deepEqual(undone.doc.parts.find((part) => part.surfId === B).position, [1, 2, 3]);
 });
 
 test('an empty click clears the CAD part and leaves the active part', () => {

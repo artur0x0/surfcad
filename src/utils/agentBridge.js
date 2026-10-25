@@ -628,6 +628,7 @@ export function createSurfcadBridge(hostSource) {
     jointCancel: () => hostFn('jointCancel')?.(),
     jointSelect: (args) => hostFn('jointSelect')?.(args),
     jointEdit: (args) => hostFn('jointEdit')?.(args),
+    jointDelete: (args) => hostFn('jointDelete')?.(args),
     sheetOpen: () => hostFn('sheetOpen')?.(),
     sheetStart: (args) => hostFn('sheetStart')?.(args),
     sheetSetTool: (args) => hostFn('sheetSetTool')?.(args),

@@ -132,7 +132,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   undo: {
-    description: 'One undo on the feature-bar stack (sketch session, assembly joints, or active part script) and run when the part script changes. A part step returns the refreshed status, bodyCount included.',
+    description: 'One undo on the feature-bar stack (sketch session, assembly joints, or active part script) and run when the part script changes. An assembly undo reverts one assembly action, so a joint undo leaves a part move that joint does not name. A part step returns the refreshed status, bodyCount included.',
     result: {
       type: 'object',
       additionalProperties: true,
@@ -851,10 +851,17 @@ export const COMMAND_META = {
     mutates: false,
   },
   joint_create: {
-    description: `${JOINT_PLACEMENT_GUIDANCE} Prefer this over hand-computed part_set_transform numbers: one call creates a joint and solves the placement. type is coincident, parallel, perpendicular, distance, angle, concentric, symmetric or fixed (planar is coincident); picks are one row per reference from list_faces (face_id with its key from the same row; a cylindrical face is an axis pick; { part_id } alone is a whole-part pick), one pick for fixed and two for every other type; name, value_mm, sense and opposed as on joint_set_params. Runs the same open → pick → set params → commit path as the Joints card (the advanced path) and records one assembly undo step. The result carries jointId, type, name, valueMm, pickCount and placements: the position and rotation of every picked part after the solve. A pick that does not resolve is unknown_part / unknown_face, and a joint the solver refuses is joint_unsolvable with details.reason; in both cases nothing is written and no card is left open. usedSelection is always false: the picks are explicit.`,
+    description: `${JOINT_PLACEMENT_GUIDANCE} Prefer this over hand-computed part_set_transform numbers: one call creates a joint and solves the placement. type is coincident, parallel, perpendicular, distance, angle, concentric, symmetric or fixed (planar is coincident); picks are one row per reference from list_faces (face_id with its key from the same row; a cylindrical face is an axis pick; a face_id is never an ambiguous axis; { part_id } alone is a whole-part pick), one pick for fixed and two for every other type; name, value_mm, sense and opposed as on joint_set_params. Runs the same open → pick → set params → commit path as the Joints card (the advanced path) and records one assembly undo step. The result carries jointId, type, name, valueMm, pickCount and placements: the position and rotation of every picked part after the solve. A pick that does not resolve is unknown_part / unknown_face, and a joint the solver refuses is joint_unsolvable with details.reason and, when more than one axis matches, details.candidates (id, origin, direction, radius); in both cases nothing is written and no card is left open. usedSelection is always false: the picks are explicit.`,
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'bad_view', 'joints_unavailable', 'no_assembly', 'unknown_part', 'unknown_face', 'ambiguous_face', 'pick_failed', 'no_mesh', 'joint_unsolvable', 'edit_failed', 'internal'],
     mutates: true,
+  },
+  joint_delete: {
+    description: 'Delete one joint by joint_id (the Joints card Delete button) and record one assembly undo step. Remaining joints are solved again. A part move that this joint does not name stays. Undo restores the joint.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['bad_args', 'no_assembly', 'unknown_joint', 'edit_failed', 'internal'],
+    mutates: true,
+    destructive: true,
   },
   sheet_open: {
     description: 'Open the Sheet Metal picker (Shape rail).',

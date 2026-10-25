@@ -43,10 +43,35 @@ test('an axis matches within 8 degrees, 1 mm, and 25 percent radius', () => {
   assert.equal(matchJointAxis([
     axis,
     { at: [0.2, 0, 0], dir: [0, 0, 1], radius: 1 },
-  ], key).status, 'ambiguous');
+  ], key).status, 'ok');
   assert.equal(matchJointAxis([
     { at: [0, 0, 0], dir: [0, 0, 1], radius: 2 },
   ], key).status, 'missing');
+});
+
+test('pattern copies of one cylinder are one axis, a face id is never ambiguous, and a real tie returns candidates', () => {
+  const key = { at: [0, 0, 0], dir: [0, 0, 1], radius: 4 };
+  const copies = [
+    { id: 'f1', at: [0, 0, 0], dir: [0, 0, 1], radius: 4 },
+    { id: 'f2', at: [0, 0, 30], dir: [0, 0, 1], radius: 4 },
+  ];
+  assert.equal(matchJointAxis(copies, key).status, 'ok');
+  const left = { id: 'f3', at: [0.4, 0, 0], dir: [0, 0, 1], radius: 4 };
+  const right = { id: 'f4', at: [-0.4, 0, 0], dir: [0, 0, 1], radius: 4 };
+  assert.equal(matchJointAxis([left, right], { ...key, faceId: 'f3' }).status, 'ok');
+  const tie = matchJointAxis([left, right], key);
+  assert.equal(tie.status, 'ambiguous');
+  assert.deepEqual(tie.candidates.map((row) => row.id).sort(), ['f3', 'f4']);
+  for (const row of tie.candidates) {
+    assert.deepEqual(row.direction, [0, 0, 1]);
+    assert.equal(row.origin.length, 3);
+    assert.equal(row.radius, 4);
+  }
+  const tube = matchJointAxis([
+    { id: 'f5', at: [0, 0, 0], dir: [0, 0, 1], radius: 10 },
+    { id: 'f6', at: [0, 0, 0], dir: [0, 0, 1], radius: 8 },
+  ], { at: [0, 0, 0], dir: [0, 0, 1], radius: 10 });
+  assert.equal(tube.status, 'ok');
 });
 
 test('a plane matches its id and uses the current frame', () => {

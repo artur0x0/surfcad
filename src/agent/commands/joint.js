@@ -291,12 +291,18 @@ export const jointCreateCommand = Object.freeze({
     if (committed.error) {
       closeJointCard(ctx);
       const refused = committed.error.code === 'commit_failed';
+      const candidates = committed.error.details?.candidates;
       return {
         error: {
           ...committed.error,
           code: refused ? 'joint_unsolvable' : committed.error.code,
           // details survives the bridge envelope (code, message, details).
-          ...(refused ? { details: { reason: committed.error.message } } : {}),
+          ...(refused ? {
+            details: {
+              reason: committed.error.message,
+              ...(Array.isArray(candidates) && candidates.length ? { candidates } : {}),
+            },
+          } : {}),
           message: refused
             ? `The ${params.result?.type || built.patch.type} joint could not be solved from those picks: ${committed.error.message}. Nothing was written. ${JOINT_CREATE_HINT}`
             : committed.error.message,
@@ -330,5 +336,28 @@ export const jointCreateCommand = Object.freeze({
         usedSelection: false,
       },
     };
+  },
+});
+
+export const jointDeleteCommand = Object.freeze({
+  name: 'joint_delete',
+  uiEntry: 'data-joint-card',
+  schema: Object.freeze({
+    type: 'object',
+    additionalProperties: false,
+    required: ['joint_id'],
+    properties: {
+      joint_id: { type: 'string', description: 'Joint id from a joint_create or joint_commit result' },
+    },
+  }),
+  example: { joint_id: 'j1' },
+  checkArgs(args) {
+    if (args?.joint_id == null || args.joint_id === '') {
+      return { code: 'bad_args', message: 'joint_delete needs joint_id' };
+    }
+    return null;
+  },
+  run(ctx, args) {
+    return hostCall(ctx, 'jointDelete', { joint_id: String(args.joint_id) });
   },
 });

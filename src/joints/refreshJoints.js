@@ -79,9 +79,32 @@ function classifyJoint(doc, joint, catalogs) {
     return {
       status: 'broken',
       message: referenceFailure(side, hit.status, partName(doc, side.part)),
+      candidates: hit.candidates,
     };
   }
   return { status: 'ok', message: null };
+}
+
+/** `faceId` is how a commit tells axes apart. The file stores geometry only. */
+function withoutTransientFaceIds(doc) {
+  const joints = doc?.joints;
+  if (!Array.isArray(joints)) return doc;
+  let changed = false;
+  const next = joints.map((joint) => {
+    if (!joint) return joint;
+    let copy = joint;
+    for (const slot of ['a', 'a2', 'b', 'b2']) {
+      const ref = copy[slot];
+      if (ref?.key?.faceId == null) continue;
+      if (copy === joint) copy = { ...joint };
+      const key = { ...ref.key };
+      delete key.faceId;
+      copy[slot] = { ...ref, key };
+      changed = true;
+    }
+    return copy;
+  });
+  return changed ? { ...doc, joints: next } : doc;
 }
 
 function withPlacements(doc, placements) {
@@ -103,27 +126,29 @@ function withPlacements(doc, placements) {
 
 /**
  * Match, then solve. `locked` leaves the document as it is.
- * @returns {{ ok: boolean, doc: object, statuses: Record<string, string>, messages: Record<string, string>, message: string|null, changed: boolean, skipped?: boolean }}
+ * @returns {{ ok: boolean, doc: object, statuses: Record<string, string>, messages: Record<string, string>, candidates: Record<string, object[]>, message: string|null, changed: boolean, skipped?: boolean }}
  */
 export function refreshAssemblyJoints({ doc, catalogs = {}, locked = false } = {}) {
   if (!doc) {
-    return { ok: true, doc, statuses: {}, messages: {}, message: null, changed: false };
+    return { ok: true, doc, statuses: {}, messages: {}, candidates: {}, message: null, changed: false };
   }
   if (locked) {
-    return { ok: false, doc, statuses: {}, messages: {}, message: null, changed: false, skipped: true };
+    return { ok: false, doc, statuses: {}, messages: {}, candidates: {}, message: null, changed: false, skipped: true };
   }
   const joints = Array.isArray(doc.joints) ? doc.joints : [];
   const statuses = {};
   const messages = {};
+  const candidates = {};
   const active = [];
   for (const joint of joints) {
     const outcome = classifyJoint(doc, joint, catalogs);
     statuses[joint.id] = outcome.status;
     if (outcome.message) messages[joint.id] = outcome.message;
+    if (outcome.candidates) candidates[joint.id] = outcome.candidates;
     if (outcome.status === 'ok') active.push(withLivePlanes(joint, catalogs));
   }
   if (!active.length) {
-    return { ok: true, doc, statuses, messages, message: null, changed: false };
+    return { ok: true, doc, statuses, messages, candidates, message: null, changed: false };
   }
   const parts = (doc.parts || []).map((part) => ({
     surfId: livePartId(part),
@@ -139,17 +164,19 @@ export function refreshAssemblyJoints({ doc, catalogs = {}, locked = false } = {
       doc,
       statuses,
       messages,
+      candidates,
       message: solved.message,
       changed: false,
     };
   }
-  const applied = withPlacements(doc, solved.placements);
+  const applied = withPlacements(withoutTransientFaceIds(doc), solved.placements);
   for (const joint of active) statuses[joint.id] = 'ok';
   return {
     ok: true,
     doc: applied.doc,
     statuses,
     messages,
+    candidates,
     message: null,
     changed: applied.moved,
   };
@@ -201,6 +228,7 @@ export function commitJointEdit({
       message: refreshed.message,
       statuses: refreshed.statuses,
       messages: refreshed.messages,
+      candidates: refreshed.candidates,
       preempted: false,
     };
   }
@@ -212,6 +240,7 @@ export function commitJointEdit({
     message: null,
     statuses: refreshed.statuses,
     messages: refreshed.messages,
+    candidates: refreshed.candidates,
     preempted: false,
   };
 }

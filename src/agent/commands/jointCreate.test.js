@@ -3,6 +3,7 @@ import test from 'node:test';
 import { v1Registry } from './index.js';
 
 const create = v1Registry.get('joint_create');
+const remove = v1Registry.get('joint_delete');
 
 const FACE_KEY = { at: [0, 0, 10], n: [0, 0, 1], area: 1200 };
 const TWO_PICKS = [
@@ -110,4 +111,36 @@ test('joint_create: when the joint card cannot open the error says so and nothin
   const out = await create.run(ctx, { type: 'coincident', picks: TWO_PICKS });
   assert.equal(out.error.code, 'joints_unavailable');
   assert.deepEqual(ctx.calls, []);
+});
+
+test('joint_create: a real axis tie returns the candidate axes', async () => {
+  const candidates = [
+    { id: 'f2', origin: [0.4, 0, 0], direction: [0, 0, 1], radius: 4 },
+    { id: 'f3', origin: [-0.4, 0, 0], direction: [0, 0, 1], radius: 4 },
+  ];
+  const ctx = host({
+    prepareJointCommit() {
+      return { ok: false, message: 'More than one axis matches on Hub', candidates };
+    },
+  });
+  const out = await create.run(ctx, { type: 'concentric', picks: TWO_PICKS });
+  assert.equal(out.error.code, 'joint_unsolvable');
+  assert.equal(out.error.details.reason, 'More than one axis matches on Hub');
+  assert.deepEqual(out.error.details.candidates, candidates);
+  assert.equal(ctx.cardOpen(), false);
+});
+
+test('joint_delete removes one joint by id', () => {
+  assert.equal(remove.checkArgs({}).code, 'bad_args');
+  assert.equal(remove.uiEntry, 'data-joint-card');
+  const ctx = {
+    jointDelete({ joint_id }) {
+      assert.equal(joint_id, 'j7');
+      return { result: { ok: true, jointId: joint_id, jointCount: 0 } };
+    },
+  };
+  assert.deepEqual(remove.run(ctx, { joint_id: 'j7' }), {
+    result: { ok: true, jointId: 'j7', jointCount: 0 },
+  });
+  assert.equal(remove.run({}, { joint_id: 'j7' }).error.code, 'internal');
 });

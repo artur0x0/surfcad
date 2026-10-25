@@ -7,6 +7,7 @@ import { catalogFromMeshData } from '../utils/jointResolve.js';
 import { partPlacement } from '../utils/jointSchema.js';
 import { worldPoint } from '../utils/partPose.js';
 import { acceptJointPick, applyJointCard, draftFromPicks } from '../joints/jointUi.js';
+import { refreshAssemblyJoints } from '../joints/refreshJoints.js';
 import { rotateByQuat } from '../joints/rigid.js';
 import { jointPickCommand } from './commands/joint.js';
 import { listFacesCommand } from './commands/listFaces.js';
@@ -328,4 +329,101 @@ test('catalog is stored on the solid-cache entry', { timeout: 60_000 }, async ()
   const second = agentFaceCatalog(handle.geometry, handle.faceIDs, entry);
   assert.equal(first, second);
   assert.equal(entry.agentCatalog, first);
+});
+
+const PATTERN_SID = '2026-10-25-17-00-00-0001-a011';
+const INSTANCE_SID = '2026-10-25-17-00-00-0002-a012';
+const SHAFT_SID = '2026-10-25-17-00-00-0003-b013';
+
+test('a concentric face_id resolves on a patterned part and on an instance of it', { timeout: 60_000 }, async () => {
+  const pattern = await build(`
+    const pin = Manifold.cylinder(10, 4, 4, 32);
+    let part = array3D(pin, [1, 1, 2], [0, 0, 30]);
+    return part;
+  `);
+  const shaft = await build('return Manifold.cylinder(40, 4, 4, 32);\n');
+  const walls = (part) => listFaces(part).filter((row) => row.type === 'cylindrical' && Math.abs(row.radius - 4) < 0.2);
+  const patternWalls = walls(pattern);
+  const shaftWalls = walls(shaft);
+  assert.ok(patternWalls.length >= 2, `pattern cylinders: ${patternWalls.map((row) => row.id).join(',')}`);
+  assert.equal(shaftWalls.length, 1, 'shaft wall');
+  assert.ok(pattern.catalog.axes.every((axis) => typeof axis.id === 'string' && axis.id.startsWith('f')));
+  assert.ok(pattern.catalog.axes.some((axis) => axis.id === patternWalls[0].id));
+
+  const mate = (moving, movingSid, movingGeometry, movingFaceIDs, movingCatalog, face) => {
+    const doc = {
+      version: 1,
+      source: 'local',
+      name: 'Pattern',
+      activeId: 'shaft',
+      parts: [
+        partRow('shaft', 'Shaft', SHAFT_SID, [0, 0, 0]),
+        moving,
+      ],
+      joints: [],
+    };
+    const picks = [];
+    for (const row of [
+      { part: doc.parts[0], geometry: shaft.geometry, faceIDs: shaft.faceIDs, faceId: shaftWalls[0].id },
+      { part: moving, geometry: movingGeometry, faceIDs: movingFaceIDs, faceId: face.id },
+    ]) {
+      const described = describeJointPick({
+        faceId: row.faceId,
+        geometry: row.geometry,
+        faceIDs: row.faceIDs,
+      });
+      assert.equal(described.error, undefined, JSON.stringify(described.error));
+      assert.equal(described.key.faceId, row.faceId);
+      picks.push({
+        partId: row.part.id,
+        surfId: row.part.surfId,
+        partName: row.part.name,
+        kind: described.kind,
+        planar: described.planar,
+        axis: described.axis,
+        key: described.key,
+      });
+    }
+    const card = {
+      ...draftFromPicks(null, picks, { joints: [] }),
+      type: 'concentric',
+      userPickedType: true,
+    };
+    const catalogs = {
+      [SHAFT_SID]: shaft.catalog,
+      [movingSid]: movingCatalog,
+    };
+    const result = applyJointCard({ doc, scripts: {}, card, catalogs });
+    assert.equal(result.ok, true, result.message);
+    const joint = result.doc.joints[0];
+    assert.equal(result.statuses[joint.id], 'ok', result.messages?.[joint.id]);
+    assert.equal(joint.a.key.faceId, undefined);
+    assert.equal(joint.b.key.faceId, undefined);
+    const again = refreshAssemblyJoints({ doc: result.doc, catalogs });
+    assert.equal(again.statuses[joint.id], 'ok', again.messages?.[joint.id]);
+    const worldAxis = (surfId, axis) => {
+      const pose = partPlacement(result.doc.parts.find((row) => row.surfId === surfId));
+      return { at: worldPoint(axis.at, pose), dir: rotateByQuat(pose.q, axis.dir) };
+    };
+    const pinW = worldAxis(movingSid, face.axis);
+    const shaftW = worldAxis(SHAFT_SID, shaftWalls[0].axis);
+    assert.ok(parallel(pinW.dir, shaftW.dir), `${moving.name} axis not parallel to the shaft`);
+    const d = [pinW.at[0] - shaftW.at[0], pinW.at[1] - shaftW.at[1], pinW.at[2] - shaftW.at[2]];
+    const along = d[0] * shaftW.dir[0] + d[1] * shaftW.dir[1] + d[2] * shaftW.dir[2];
+    const off = Math.hypot(
+      d[0] - along * shaftW.dir[0],
+      d[1] - along * shaftW.dir[1],
+      d[2] - along * shaftW.dir[2],
+    );
+    assert.ok(off < 1e-2, `${moving.name} axis is ${off} mm off the shaft`);
+  };
+
+  const patternRow = partRow('pattern', 'Spokes', PATTERN_SID, [40, 0, 0]);
+  mate(patternRow, PATTERN_SID, pattern.geometry, pattern.faceIDs, pattern.catalog, patternWalls[0]);
+
+  const instanceRow = {
+    ...partRow('instance', 'Spokes#front', INSTANCE_SID, [40, 0, 0]),
+    instanceOf: 'pattern',
+  };
+  mate(instanceRow, INSTANCE_SID, pattern.geometry, pattern.faceIDs, pattern.catalog, patternWalls[0]);
 });

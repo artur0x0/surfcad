@@ -87,7 +87,8 @@ Results are compact JSON. Every tool whose result carries `status` (the model-ch
 | `rename_assembly` | `{ assembly_id, name }` | Working-copy assembly label. Names may collide. No git write. |
 | `part_get_transform` | `{ part_id }` | Read placement: `position` mm and intrinsic XYZ Euler degrees. |
 | `part_set_transform` | `{ part_id, position?, rotation? }` | Set placement (undoable). Only for a part that touches nothing. In an assembly of two or more parts, a part in no joint adds `warning` `unjointed_part` and the call still succeeds. Working copy only. |
-| `joint_create` | `{ type, picks }` | Default assembly placement. One call creates the joint and solves placement. Fix one base part with `type: "fixed"` and one pick, then mate every part that touches another. |
+| `joint_create` | `{ type, picks }` | Default assembly placement. One call creates the joint and solves placement. Fix one base part with `type: "fixed"` and one pick, then mate every part that touches another. A `face_id` axis pick is never ambiguous; a real tie returns `details.candidates`. |
+| `joint_delete` | `{ joint_id }` | Remove one joint. One assembly undo step. A part move that joint does not name stays. |
 | `set_active_part` | `{ part_id }` | Switch the editor and mesh. `status` then reports that part. |
 | `open_assembly` | `{ assembly_id }` | Open a vault assembly by id. A name or path is `unknown_assembly`. |
 | `insert_part` | `{ part_id?, assembly_id?, copy?, instance?, position? }` | Insert by reference (same ids). `copy: true` mints a new id. `instance: true` adds another placement; `position` is a rough block-out. A position on an unjointed row in a multi-part assembly adds `warning` `unjointed_part`. No git write. |
