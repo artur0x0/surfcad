@@ -3,8 +3,9 @@
  * Pattern on points, the hardware flow: a housing part with a hole grid,
  * list_faces gives each hole's center and axis, a bolt part is patterned
  * onto them with insert_pattern_points, and the bolt count equals the hole
- * count. Bad points are bad_args. The Points button is on the rail.
- * Dev server, agent bridge. Chrome from CHROME_PATH or the usual paths.
+ * count. Bad points are bad_args. Points is Array Type=Points, not a
+ * separate rail button. Dev server, agent bridge. Chrome from CHROME_PATH
+ * or the usual paths.
  */
 /* global document, window */
 import { spawn } from 'node:child_process';
@@ -135,11 +136,22 @@ const centroids = bodies.map((b) => b.at.slice(0, 2).map((v) => Math.round(v))).
 const expected = holes.map((h) => h.center.slice(0, 2).map((v) => Math.round(v))).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
 check('each bolt sits on a hole center', JSON.stringify(centroids) === JSON.stringify(expected), `${JSON.stringify(centroids)} vs ${JSON.stringify(expected)}`);
 
-// The rail: a Points button in Build that opens the sheet with the points field.
-const button = page.locator('[data-ui-action="patternPoints"]');
-check('the Points button is on the rail', (await button.count()) === 1);
-await button.first().click();
+// Array Type=Points opens the same points field. No separate rail button.
+check('the Points button is off the rail', (await page.locator('[data-ui-action="patternPoints"]').count()) === 0);
+const modalText = await page.evaluate(() => document.querySelector('[data-modal-fit]')?.textContent?.trim().slice(0, 120) || '');
+if (modalText) {
+  console.log(`  (a modal was up before the Array click: ${JSON.stringify(modalText)})`);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+}
+const arrayButton = page.locator('[data-ui-action="array3D"]');
+check('the Array button is on the rail', (await arrayButton.count()) === 1);
+await arrayButton.first().click();
 await page.waitForTimeout(400);
+const typeSelect = page.locator('select').filter({ has: page.locator('option[value="points"]') });
+check('Array Type lists Points', (await typeSelect.count()) >= 1);
+await typeSelect.first().selectOption('points');
+await page.waitForTimeout(200);
 check('the sheet shows the points field', (await page.locator('textarea[data-helper-param="points"]').count()) === 1);
 await page.keyboard.press('Escape');
 

@@ -2406,6 +2406,8 @@ export const HELPER_PALETTE_ITEMS = [
     id: 'codeSnippet',
     label: 'Script',
     group: 'Features',
+    // Agents and the feature strip still compose and edit this. No rail button.
+    railHidden: true,
     title: 'Script snippet — one operation no feature can do, with its FEATURE-GAP note',
     params: [
       { name: 'gap', type: 'string', default: '', required: true, label: 'Missing feature', placeholder: 'sweep along 3D path' },
@@ -2430,14 +2432,18 @@ export const HELPER_PALETTE_ITEMS = [
     id: 'array3D',
     label: 'Array',
     group: 'Transforms',
-    title: 'Array — grid (array3D) or polar (polarArray)',
+    title: 'Array — grid (array3D), polar (polarArray), or points (patternOnPoints)',
     params: [
       { name: 'body', type: 'body', default: 'part', label: 'Body' },
-      // One button, two patterns. `arrayType` drives both the visible params
+      // One button, three patterns. `arrayType` drives both the visible params
       // (showWhen) and which helper the build emits.
       {
         name: 'arrayType', type: 'select', default: 'grid', label: 'Type',
-        options: [{ value: 'grid', label: 'Grid' }, { value: 'polar', label: 'Polar' }],
+        options: [
+          { value: 'grid', label: 'Grid' },
+          { value: 'polar', label: 'Polar' },
+          { value: 'points', label: 'Points' },
+        ],
       },
       { name: 'nx', type: 'number', default: 2, label: 'Count X', min: 1, step: 1, showWhen: { field: 'arrayType', values: ['grid'] } },
       { name: 'ny', type: 'number', default: 2, label: 'Count Y', min: 1, step: 1, showWhen: { field: 'arrayType', values: ['grid'] } },
@@ -2450,13 +2456,21 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'axis', type: 'select', default: 'z', label: 'Axis', options: AXIS_OPTIONS, showWhen: { field: 'arrayType', values: ['polar'] } },
       { name: 'boreRadius', type: 'number', default: 3, label: 'Bore R (empty)', min: 0.1, step: 0.5, showWhen: { field: 'arrayType', values: ['polar'] } },
       { name: 'boreHeight', type: 'number', default: 10, label: 'Bore H (empty)', min: 0.1, step: 0.5, showWhen: { field: 'arrayType', values: ['polar'] } },
+      { name: 'points', type: 'points', default: '[[0, 0, 0], [40, 0, 0]]', required: true, label: 'Points [x, y, z] or { at, axis }', multiline: true, placeholder: '[[0, 0, 0], { "at": [40, 0, 0], "axis": [0, 0, 1] }]', showWhen: { field: 'arrayType', values: ['points'] } },
+      { name: 'up', type: 'select', default: 'z', label: 'Body axis that follows a point axis', options: AXIS_OPTIONS, showWhen: { field: 'arrayType', values: ['points'] } },
+      { name: 'keepOriginal', type: 'bool', default: false, label: 'Keep original', showWhen: { field: 'arrayType', values: ['points'] } },
+      { name: 'merge', type: 'bool', default: true, label: 'Merge copies', showWhen: { field: 'arrayType', values: ['points'] } },
     ],
     build: (empty, p, names, buffer) => {
-      // Type=polar hands off to the polarArray entry, which still owns that
-      // codegen (and is still composable on its own id).
+      // Type=polar / Type=points hand off to the hidden entries that still
+      // own that codegen (and stay composable on their own ids).
       if (str(p.arrayType, 'grid') === 'polar') {
         const polar = HELPER_PALETTE_ITEMS.find((i) => i.id === 'polarArray');
         return polar.build(empty, p, names, buffer);
+      }
+      if (str(p.arrayType, 'grid') === 'points') {
+        const points = HELPER_PALETTE_ITEMS.find((i) => i.id === 'patternPoints');
+        return points.build(empty, p, names, buffer);
       }
       const lines = [];
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
@@ -2481,6 +2495,8 @@ export const HELPER_PALETTE_ITEMS = [
     id: 'patternPoints',
     label: 'Points',
     group: 'Transforms',
+    // Folded into the Array button (Type=Points), which delegates to this build.
+    railHidden: true,
     title: 'patternOnPoints(body, points, { up, keepOriginal, merge })',
     params: [
       { name: 'body', type: 'body', default: 'part', label: 'Body' },
@@ -2826,7 +2842,7 @@ export const HELPER_PALETTE_GROUPS = ['Primitives', 'Advanced', 'Features', 'Tra
  */
 export const CAD_RAIL_ORDER = ['Primitives', 'Build', 'Shape', 'Features', 'Transforms'];
 
-const RAIL_BUILD_IDS = ['hole', 'cut', 'boolean', 'shell', 'addDraft', 'array3D', 'patternPoints', 'codeSnippet'];
+const RAIL_BUILD_IDS = ['hole', 'cut', 'boolean', 'shell', 'addDraft', 'array3D'];
 const RAIL_POLISH_IDS = ['filletEdges', 'chamferEdges', 'moveFace', 'deleteFace'];
 const RAIL_MOVE_FIRST = ['move', 'rotate', 'center', 'align', 'mirror'];
 
@@ -2843,7 +2859,8 @@ export function itemsByGroup() {
  * Visible rail sections, both layouts. Order is Block, Build, Shape, Polish,
  * Move. Shape is the old Model section (Profile / Workplane / Extrude /
  * Revolve / Sweep / Loft), same buttons. Build is hole, cut, boolean, shell,
- * draft, pattern. Polish is fillet, chamfer, move face, delete face. Move is every
+ * draft, pattern (Array Type is Grid, Polar, or Points). Polish is fillet,
+ * chamfer, move face, delete face. Move is every
  * remaining button, with Move first, Rotate directly below it, then Center.
  *
  * `railHidden` items keep their group membership and their build(); they get

@@ -4,7 +4,7 @@
  *
  *   // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>
  *
- * The Script button (palette id `codeSnippet`, tool `insert_code_snippet`)
+ * The script snippet feature (palette id `codeSnippet`, tool `insert_code_snippet`)
  * writes it; `parseFeatureGaps` reads it back from any script, so a grep
  * over the saved parts (`scripts/feature-gaps.mjs`) is the feature backlog;
  * `reportFeatureGaps` sends each new gap to Sentry once per page load, and

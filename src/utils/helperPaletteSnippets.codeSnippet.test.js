@@ -3,13 +3,16 @@ import test from 'node:test';
 import { composeHelperInsert, HELPER_PALETTE_ITEMS, paletteRailSections } from './helperPaletteSnippets.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { parseFeatureGaps } from './featureGaps.js';
+import { parseFeatureEdit, FEATURE_EDIT_DIALOGS } from './featureEdit.js';
 import { validateHelperParams, coerceHelperParams } from '../agent/helperPaletteAgent.js';
 
 const CUBE = '// --- cube begin id=c1 ---\nlet part = Manifold.cube([40, 30, 20], true);\n// --- cube end ---\nreturn part;\n';
 
-test('the Script button sits in Build and inserts a code block that starts with the FEATURE-GAP line', () => {
+test('the Script snippet stays off the rail and still inserts a code block that starts with the FEATURE-GAP line', () => {
   const build = paletteRailSections('desktop').find((s) => s.key === 'Build');
-  assert.ok(build.items.some((i) => i.id === 'codeSnippet'), build.items.map((i) => i.id).join(','));
+  assert.ok(!build.items.some((i) => i.id === 'codeSnippet'), build.items.map((i) => i.id).join(','));
+  const item = HELPER_PALETTE_ITEMS.find((i) => i.id === 'codeSnippet');
+  assert.equal(item.railHidden, true);
   const out = composeHelperInsert(CUBE, 'codeSnippet', null, {
     gap: 'sweep along 3D path',
     why: 'extrude only goes straight',
@@ -24,6 +27,13 @@ test('the Script button sits in Build and inserts a code block that starts with 
   assert.equal(gaps[0].why, 'extrude only goes straight');
   assert.match(out, /\/\/ --- code begin ---\n\/\/ FEATURE-GAP: sweep along 3D path \| extrude only goes straight\npart = part\.add\(Manifold\.cylinder\(10, 2, 2, 24\)\);\n\/\/ --- code end ---/);
   assert.match(out, /return part;\s*$/);
+  assert.deepEqual(FEATURE_EDIT_DIALOGS.code, { dialog: 'helper', helperId: 'codeSnippet' });
+  const block = out.slice(out.indexOf('// --- code begin'), out.indexOf('// --- code end') + '// --- code end ---'.length);
+  const edit = parseFeatureEdit('code', block);
+  assert.equal(edit.ok !== false, true, JSON.stringify(edit));
+  assert.equal(edit.fields.gap, 'sweep along 3D path');
+  assert.equal(edit.fields.why, 'extrude only goes straight');
+  assert.match(edit.fields.script, /part = part\.add\(Manifold\.cylinder\(10, 2, 2, 24\)\);/);
 });
 
 test('on an empty part the snippet makes the first body; the default placeholder is replaced', () => {

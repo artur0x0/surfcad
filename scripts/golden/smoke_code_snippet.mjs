@@ -2,9 +2,10 @@
 /**
  * The script snippet feature: insert_code_snippet adds a code block with
  * its FEATURE-GAP line next to the other features, the part still runs,
- * an empty gap is refused, and the Script button is on the rail with a
- * text field and a code area. Dev server, agent bridge. Chrome from
- * CHROME_PATH or the usual paths.
+ * an empty gap is refused, and opening a code chip shows the gap field
+ * and the script area. The Script rail button is gone; the agent command
+ * stays. Dev server, agent bridge. Chrome from CHROME_PATH or the usual
+ * paths.
  */
 /* global document, window */
 import { spawn } from 'node:child_process';
@@ -135,20 +136,14 @@ check('a second snippet is its own block', second.ok === true && second.result?.
 const gaps = ((await agentCall(page, 'get_script', {})).result?.source || '').match(/\/\/ FEATURE-GAP: [^\n]+/g) || [];
 check('a grep finds every gap, no duplicates', gaps.length === 2 && new Set(gaps).size === 2, JSON.stringify(gaps));
 
-// The rail: a Script button in Build that opens the sheet with the fields.
+// No Script rail button. Opening a code chip still shows the snippet fields.
 await agentCall(page, 'set_active_part', { part_id: partId });
-const button = page.locator('[data-ui-action="codeSnippet"]');
-check('the Script button is on the rail', (await button.count()) === 1);
-// A dialog left over from the bridge calls (consent, save notice) would sit
-// over the rail; close it the way a user would and say what it was.
-const modalText = await page.evaluate(() => document.querySelector('[data-modal-fit]')?.textContent?.trim().slice(0, 120) || '');
-if (modalText) {
-  console.log(`  (a modal was up before the rail click: ${JSON.stringify(modalText)})`);
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(300);
-}
-await button.first().click();
-await page.waitForTimeout(400);
+check('the Script button is off the rail', (await page.locator('[data-ui-action="codeSnippet"]').count()) === 0);
+const chips = (await agentCall(page, 'feature_tree', {})).result?.features || [];
+const codeChip = [...chips].reverse().find((f) => f.kind === 'code');
+const opened = await agentCall(page, 'open_feature', { id: codeChip?.id });
+check('open_feature on a code chip opens the snippet sheet', opened.ok === true, JSON.stringify(opened));
+await page.waitForSelector('[data-helper-param="gap"]', { timeout: 10000 });
 check('the sheet shows the gap text field and the script area', (await page.locator('[data-helper-param="gap"]').count()) === 1 && (await page.locator('textarea[data-helper-param="script"]').count()) === 1);
 await page.keyboard.press('Escape');
 

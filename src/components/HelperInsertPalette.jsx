@@ -79,7 +79,7 @@ const ICONS = {
   center: Focus,
   align: AlignVerticalJustifyCenter,
   mirror: FlipHorizontal2,
-  // One Array button; Grid vs Polar is a param inside it.
+  // One Array button; Grid / Polar / Points is a param inside it.
   array3D: Boxes,
   // Workplane matches the right rail's plane-visibility toggle (both Layers3),
   // and Create contour matches its sketch-visibility toggle (both NotebookPen):

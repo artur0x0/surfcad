@@ -9,6 +9,7 @@
 
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { rotateAxisLiteral, rotateCenterLiteral, shouldClearViewportScript } from './helperPaletteSnippets.js';
+import { featureGapLine, parseFeatureGaps } from './featureGaps.js';
 import { parseRotateAxisLiteral, sameRotateAxis, sameVec3 } from './rotateMode.js';
 import { deleteFeatureBlock, featureBlockText, liveSheetFeature, inferExtrudeSense } from './featureSheetWriteback.js';
 import { scriptWithFeatureCount } from './partHistory.js';
@@ -60,6 +61,7 @@ export const FEATURE_EDIT_DIALOGS = Object.freeze({
   array: { dialog: 'helper', helperId: 'array3D' },
   polarArray: { dialog: 'helper', helperId: 'polarArray' },
   patternPoints: { dialog: 'helper', helperId: 'patternPoints' },
+  code: { dialog: 'helper', helperId: 'codeSnippet' },
   sheetMetal: { dialog: 'sheetMetal', entry: 'sheetMetal' },
 });
 
@@ -99,6 +101,7 @@ export const FEATURE_EDIT_SAMPLE_KEY = Object.freeze({
   array: 'nx',
   polarArray: 'count',
   patternPoints: 'points',
+  code: 'gap',
   sheetMetal: 'width',
 });
 
@@ -787,6 +790,17 @@ export function parseFeatureEdit(kind, blockText) {
     return { ...base, fields: parsed, edges, faces };
   }
 
+  if (kind === 'code') {
+    const gap = parseFeatureGaps(block)[0];
+    if (!gap) return fail('No FEATURE-GAP line');
+    const script = block
+      .split('\n')
+      .filter((line) => !/\/\/ --- code (?:begin|end)/.test(line) && !/\/\/\s*FEATURE-GAP:/.test(line))
+      .join('\n')
+      .replace(/^\n+|\n+$/g, '');
+    return { ...base, fields: { gap: gap.gap, why: gap.why, script }, edges, faces };
+  }
+
   if (kind === 'sheetMetal') {
     const m = grab(block, /const sheetSpec\s*=\s*(\{.*\});/);
     if (!m) return fail('No sheet spec');
@@ -1193,6 +1207,19 @@ function rewriteBlock(block, session, draft) {
     setNum(new RegExp(`(array3D\\s*\\(\\s*[^,]+,\\s*\\[\\s*)(${NUM})`), 'nx');
   } else if (kind === 'polarArray') {
     setNum(new RegExp(`(polarArray\\s*\\(\\s*[^,]+,\\s*)(${NUM})`), 'count');
+  } else if (kind === 'code') {
+    const gap = fields.gap != null ? fields.gap : prev.gap;
+    const why = fields.why != null ? fields.why : prev.why;
+    const script = fields.script != null ? String(fields.script) : prev.script;
+    const lines = next.split('\n');
+    const begin = lines.findIndex((line) => /\/\/ --- code begin/.test(line));
+    const end = lines.findIndex((line) => /\/\/ --- code end/.test(line));
+    if (begin >= 0 && end > begin) {
+      const body = String(script ?? '').replace(/\r\n/g, '\n').split('\n');
+      while (body.length && !body[body.length - 1].trim()) body.pop();
+      while (body.length && !body[0].trim()) body.shift();
+      next = [...lines.slice(0, begin + 1), featureGapLine(gap, why), ...body, ...lines.slice(end)].join('\n');
+    }
   } else if (kind === 'sheetMetal') {
     const nextSpec = draft.spec ? normalizeSheetSpec(draft.spec) : null;
     const prevSpec = session.spec ? normalizeSheetSpec(session.spec) : null;

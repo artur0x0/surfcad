@@ -584,7 +584,7 @@ return part;
 - `opts.keepOriginal` - Also keep the source where it is (default `false`)
 - `opts.merge` - Union the copies (default `true`); `false` composes them as separate bodies
 
-Throws a plain error on an empty list, a point that is not three numbers, or a zero axis. The palette item is **Points** (`patternPoints`, Build); the agent tool is `insert_pattern_points { points, up?, keepOriginal?, merge? }`.
+Throws a plain error on an empty list, a point that is not three numbers, or a zero axis. The palette item is **Points** (`patternPoints`, Array Type=Points); the agent tool is `insert_pattern_points { points, up?, keepOriginal?, merge? }`.
 
 ---
 
