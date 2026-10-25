@@ -280,7 +280,7 @@ test('a public webhook does not skip TLS checks even when the test switch is on'
   assert.equal(posts[0].meta.pinAddress, '8.8.8.8');
 });
 
-test('first tool call after a prompt is working, a final reply goes idle, and a quiet 5 min stalls', async () => {
+test('a read does not enter building; a mutating call does; a quiet 5 min stalls', async () => {
   assert.equal(AGENT_PROMPT_STALL_MS, 5 * 60 * 1000);
   const time = clock();
   const { session, sent } = harness({ clock: time, rateLimitMs: 0 });
@@ -289,13 +289,24 @@ test('first tool call after a prompt is working, a final reply goes idle, and a 
 
   await session.acceptPrompt(prompt(1));
   session.noteToolCall();
+  session.readMessages();
+  assert.equal(sent.some((msg) => msg.type === PAIR_MSG.AGENT_STATUS && msg.state === 'working'), false);
+
+  const responding = session.setStatus({ state: 'responding', id: pid(1) });
+  assert.deepEqual(responding, { working: true, state: 'typing' });
+  assert.equal(sent.at(-1).state, 'typing');
+  session.noteToolCall();
+  assert.equal(sent.at(-1).type, PAIR_MSG.AGENT_ACTIVITY);
+  assert.equal(sent.filter((msg) => msg.state === 'working').length, 0);
+
+  session.noteToolCall({ mutates: true });
   assert.equal(sent.at(-1).type, PAIR_MSG.AGENT_STATUS);
   assert.equal(sent.at(-1).working, true);
   assert.equal(sent.at(-1).state, 'working');
   assert.equal(sent.at(-1).id, pid(1));
 
-  session.noteToolCall();
-  assert.equal(sent.filter((msg) => msg.type === PAIR_MSG.AGENT_STATUS && msg.working === true && !msg.stalled).length, 1);
+  session.noteToolCall({ mutates: true });
+  assert.equal(sent.filter((msg) => msg.type === PAIR_MSG.AGENT_STATUS && msg.state === 'working' && !msg.stalled).length, 1);
   assert.equal(sent.at(-1).type, PAIR_MSG.AGENT_ACTIVITY);
 
   time.advance(AGENT_PROMPT_STALL_MS - 1);
@@ -308,6 +319,9 @@ test('first tool call after a prompt is working, a final reply goes idle, and a 
 
   await session.acceptPrompt(prompt(2));
   session.noteToolCall();
+  assert.equal(sent.filter((msg) => msg.id === pid(2) && msg.state === 'working').length, 0);
+  session.setStatus({ state: 'building', id: pid(2) });
+  assert.equal(sent.at(-1).state, 'working');
   time.advance(60_000);
   session.noteToolCall();
   time.advance(60_000);
@@ -316,9 +330,11 @@ test('first tool call after a prompt is working, a final reply goes idle, and a 
   time.advance(AGENT_PROMPT_STALL_MS);
   assert.equal(sent.at(-1).stalled, true);
   assert.equal(sent.at(-1).working, true);
+  assert.equal(sent.at(-1).id, pid(2));
 
   await session.acceptPrompt(prompt(3));
   session.noteToolCall();
+  assert.equal(sent.filter((msg) => msg.id === pid(3) && msg.state === 'working').length, 0);
   const replied = session.reply({ in_reply_to: pid(3), text: '40 mm', final: true });
   assert.equal(replied.final, true);
   const types = sent.map((msg) => msg.type);
@@ -347,6 +363,8 @@ test('tool calls, read_messages, set_status, and replies refresh the idle window
   session.setStatus({ state: 'working', id: pid(1) });
   time.advance(90_000);
   session.reply({ in_reply_to: pid(1), text: 'still on it', final: false });
+  assert.equal(sent.at(-1).type, PAIR_MSG.AGENT_ACTIVITY);
+  assert.equal(sent.some((msg) => msg.state === 'typing'), false, 'a partial reply does not leave building');
   time.advance(90_000);
   assert.equal(sent.some((msg) => msg.stalled === true), false, 'activity inside each window keeps working');
   assert.equal(sent.some((msg) => msg.working === false), false);
@@ -653,7 +671,8 @@ test('cancelling a delivered prompt posts {type:cancel,id} with the bearer', asy
 test('cancelling a read prompt with no webhook returns a cancel item', async () => {
   const { session, sent } = harness({ rateLimitMs: 0 });
   await session.acceptPrompt(prompt(1, { text: 'seen' }));
-  session.noteToolCall();
+  session.setStatus({ state: 'building' });
+  assert.equal(sent.at(-1).state, 'working');
   assert.equal(sent.at(-1).working, true);
   const read = session.readMessages();
   assert.equal(read.messages[0].text, 'seen');

@@ -144,7 +144,8 @@ export class RelaySession {
 
   /**
    * A tool call after a prompt arrives. A model-changing call (`mutates`)
-   * marks the agent working; a read-only call keeps the state alive.
+   * enters building if the agent has not already. A read never does; it
+   * only keeps an open phase alive.
    * Best-effort: a dead socket does not fail the tool call.
    * @param {{ mutates?: boolean }} [info]
    */

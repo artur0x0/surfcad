@@ -83,6 +83,9 @@ test('a paired tab prompt is queued, read with its image, and replies reach the 
   assert.equal(session.prompts.queuedCount(), 0);
 
   session.noteAgentToolCall();
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(inbound.filter((msg) => msg.type === NODE_MSG.AGENT_STATUS && msg.state === 'working').length, 0);
+  session.noteAgentToolCall({ mutates: true });
   const working = await waitFor(inbound, (msg) => msg.type === NODE_MSG.AGENT_STATUS && msg.working === true);
   assert.equal(working.id, PROMPT_ID);
 

@@ -6,7 +6,8 @@
  * packaged surfcad-mcp process and its loopback relay. The page sends a
  * prompt with a screenshot through createAgentPromptTransport. With no
  * webhook, read_messages returns the text and an image content block.
- * reply_to_user reaches the page adapter, and status goes working then idle.
+ * reply_to_user reaches the page adapter. A read does not mark the agent
+ * working; set_status building does, and the final reply goes idle.
  * A second prompt is POSTed to a local https server after register_webhook.
  * The self-signed certificate is accepted only because this test sets
  * SURFCAD_WEBHOOK_TLS_INSECURE=1 with NODE_ENV=test. Production ignores that flag.
@@ -317,8 +318,14 @@ try {
   check('read_messages keeps context', message.context?.part_id === PART_ID && message.context?.assembly_id === ASSEMBLY_ID);
   check('read_messages image content', image?.mimeType === 'image/png' && image?.data === PNG, image ? image.mimeType : 'missing');
   check('screenshot bytes are not in the text block', !messageText.includes(PNG));
-  const acked = await waitWatch(page, (snap) => snap?.working?.includes(true));
-  check('status working after the first tool call', acked?.working?.includes(true) === true, JSON.stringify(acked?.working));
+  await new Promise((r) => setTimeout(r, 400));
+  const afterRead = await page.evaluate(() => window.__promptWatch);
+  check('read_messages does not mark the agent working', afterRead?.working?.includes(true) !== true, JSON.stringify(afterRead?.working));
+
+  const building = await mcp('set_status', { state: 'building', id: promptId });
+  check('set_status building ok', building.isError !== true, toolTexts(building).join(' ').slice(0, 240));
+  const built = await waitWatch(page, (snap) => snap?.working?.includes(true));
+  check('building marks the agent working', built?.working?.includes(true) === true, JSON.stringify(built?.working));
 
   const reply = await mcp('reply_to_user', { in_reply_to: promptId, text: REPLY_TEXT, final: true });
   check('reply_to_user ok', reply.isError !== true, toolTexts(reply).join(' ').slice(0, 240));
@@ -336,6 +343,12 @@ try {
   check('prompt card shows the reply as text', shownReply.includes(REPLY_TEXT), shownReply.slice(0, 240));
   const replyChildElements = await replyBody.evaluate((el) => el.childElementCount);
   check('prompt card reply is plain text, not HTML', replyChildElements === 0, `children=${replyChildElements}`);
+  const replyClass = await replyBody.getAttribute('class');
+  check(
+    'agent reply is a left-aligned bubble',
+    (replyClass || '').includes('agent-prompt-msg--agent') && (replyClass || '').includes('surface-dark'),
+    replyClass || '',
+  );
 
   const hook = await startHookServer();
   httpsServer = hook.server;

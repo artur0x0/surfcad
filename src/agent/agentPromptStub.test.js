@@ -58,7 +58,7 @@ test('sendAgentPromptText enforces the 8000-char cap and empty text', () => {
   assert.equal(transport.lastScreenshot(), null);
 });
 
-test('onReply appends chunks, onWorking toggles, onAck reports delivery', () => {
+test('onReply appends chunks, an echo does not report working, onAck reports delivery', () => {
   const transport = createAgentPromptStub({
     delayMs: 0,
     chunk: true,
@@ -72,7 +72,7 @@ test('onReply appends chunks, onWorking toggles, onAck reports delivery', () => 
   const offWorking = transport.onWorking((on) => working.push(on));
   const offAck = transport.onAck((ack) => acks.push(ack));
   const id = transport.send('hi');
-  assert.deepEqual(working, [true, false]);
+  assert.deepEqual(working, []);
   assert.equal(acks[0].id, id);
   assert.equal(acks[0].delivery, 'queued');
   assert.deepEqual(replies.map((row) => row.text), ['AB', 'CD']);
@@ -93,12 +93,12 @@ test('holdReply parks the echo until releaseReply, and abort drops a parked repl
   transport.onWorking((on) => working.push(on));
   transport.holdReply(true);
   transport.send('ping');
-  assert.deepEqual(working, [true]);
+  assert.deepEqual(working, []);
   assert.deepEqual(replies, []);
   transport.releaseReply();
   assert.equal(replies[0]?.text, 'held');
   assert.equal(replies[0]?.final, true);
-  assert.deepEqual(working, [true, false]);
+  assert.deepEqual(working, []);
 
   const cancelled = createAgentPromptStub({ delayMs: 0, reply: 'nope' });
   const late = [];

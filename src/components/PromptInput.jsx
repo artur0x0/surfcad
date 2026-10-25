@@ -533,7 +533,7 @@ export default function PromptInput({
               ) : (
                 <div
                   key={row.key}
-                  className="agent-prompt-msg agent-prompt-msg--agent agent-prompt-reply-body text-ui text-on-dark"
+                  className="agent-prompt-msg agent-prompt-msg--agent agent-prompt-reply-body surface-dark text-ui text-on-dark"
                   data-agent-msg="agent"
                   data-agent-reply-body=""
                 >

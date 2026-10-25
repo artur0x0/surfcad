@@ -19,10 +19,16 @@ export const READ_MESSAGES_MAX_WAIT_MS = 25_000;
 export const CLOSING_REPLY_GUIDANCE = 'When you finish a task started from the SurfCAD in-viewer prompt pane, send a closing reply with reply_to_user (final: true) summarising what was done, so the user gets confirmation. On failure or partial completion, say what was done, what failed and why, and what is left.';
 
 /**
+ * When to enter the in-viewer building phase. One sentence, shared by the
+ * initialize instructions, `guide { topic: "start" }`, and `set_status`.
+ */
+export const BUILDING_STATUS_GUIDANCE = 'Call set_status { state: "building" } only once you have everything you need and are actually creating or editing geometry.';
+
+/**
  * First paragraph of the MCP initialize `instructions`.
  * Goldens pin the webhook sentence as the prefix.
  */
-export const PROMPT_SERVER_INSTRUCTIONS = `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages. ${CLOSING_REPLY_GUIDANCE}`;
+export const PROMPT_SERVER_INSTRUCTIONS = `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages. ${CLOSING_REPLY_GUIDANCE} ${BUILDING_STATUS_GUIDANCE}`;
 
 /** Exact wording the agent should relay when asking the user for a webhook. */
 export const PROMPT_ONBOARDING_ASK = 'To get SurfCAD messages instantly, send me your webhook URL and key. This only needs to be done once. Otherwise I\'ll check for SurfCAD messages between steps, so replies may lag.';
@@ -132,15 +138,15 @@ export function promptToolDefinitions() {
     },
     {
       name: 'set_status',
-      description: `Tell the SurfCAD tab what you are doing with the user's prompt: state typing (writing an answer: the chat stays open with typing dots), working (changing the model: the chat collapses and the field shows a spinner), or idle. set_status is for progress and does not close the task. You do not have to call it for working: the first model-changing tool call after a prompt sets working, a streamed reply_to_user (final false) sets typing, and a final reply or 120 seconds without activity sets idle. Set typing before a long answer so the user reads the chat instead of watching the viewport. Without id it targets the latest prompt. A cancelled id returns { ok: false, error: cancelled }. ${CLOSING_REPLY_GUIDANCE}`,
+      description: `Tell the SurfCAD tab which phase the user's prompt is in. responding (alias typing): you are reading or writing an answer; the chat stays open with bouncing dots. building (alias working): you are creating or editing geometry; the chat collapses and the field shows "Agent is working...". ${BUILDING_STATUS_GUIDANCE} Do not call building to list parts, faces, edges, or transforms, or for status or read_messages. A model-changing tool also enters building if you skip this call. A read never does. set_status is for progress and does not close the task. A partial reply does not leave building; the final reply, Stop, or a disconnect does. No activity for 5 minutes shows the stall notice and leaves Stop up. The result state is the tab value (responding and typing are typing; building and working are working). Without id it targets the latest prompt. A cancelled id returns { ok: false, error: cancelled }. ${CLOSING_REPLY_GUIDANCE}`,
       inputSchema: {
         type: 'object',
         additionalProperties: false,
         properties: {
           state: {
             type: 'string',
-            enum: ['typing', 'working', 'idle'],
-            description: 'typing: you are writing an answer (the tab keeps the chat open with typing dots). working: you are changing the model (the tab collapses the chat and shows a spinner). idle: not typing or changing the model. Idle does not close the task; a closing reply_to_user does. Set typing before a long answer; model-changing tool calls set working on their own; a final reply_to_user sets idle.',
+            enum: ['responding', 'building', 'idle', 'typing', 'working'],
+            description: 'responding: bouncing dots, chat stays open (alias typing). building: you are creating or editing geometry and the field shows Agent is working (alias working). Call building only once you are actually modeling. idle: not responding or building. Idle does not close the task; a closing reply_to_user does.',
           },
           label: {
             type: 'string',
@@ -149,7 +155,7 @@ export function promptToolDefinitions() {
           },
           working: {
             type: 'boolean',
-            description: 'Legacy form of state: true is working, false is idle. Use state.',
+            description: 'Legacy form of state: true is building (working), false is idle. Use state.',
           },
           id: {
             type: 'string',

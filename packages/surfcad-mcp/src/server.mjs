@@ -288,9 +288,9 @@ export async function createSurfcadMcpServer(options = {}) {
     }
 
     try {
-      // A model-changing tool switches the tab to working on its own.
-      // The call holds the idle window until it returns: a long tool call
-      // is the agent working, not a stall.
+      // A model-changing tool enters building if set_status has not already.
+      // A read never does. The call holds the idle window until it returns:
+      // a long tool call is the agent working, not a stall.
       const row = catalog.commands.find((c) => c.name === name);
       session.noteAgentToolCall({ mutates: row?.mutates === true || (row?.mutates == null && mutatingTool(name)) });
       session.holdAgentWork(true);

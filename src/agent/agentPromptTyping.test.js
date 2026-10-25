@@ -12,6 +12,18 @@ import {
 
 const run = (events, start = TYPING_IDLE) => events.reduce(typingReducer, start);
 
+test('a partial reply leaves building in place and keeps responding on the dots', () => {
+  const building = run([{ type: 'sent', id: 'p1' }, { type: 'state', state: 'working' }]);
+  const chunk = run([{ type: 'reply', id: 'p1', text: 'Still ', final: false }], building);
+  assert.equal(workingShown(chunk), true);
+  assert.equal(typingShown(chunk), false);
+  assert.equal(chunk.mode, 'working');
+  const responding = run([{ type: 'sent', id: 'p2' }]);
+  const answered = run([{ type: 'reply', id: 'p2', text: 'Here ', final: false }], responding);
+  assert.equal(typingShown(answered), true);
+  assert.equal(workingShown(answered), false);
+});
+
 test('the indicator shows only while the sent prompt is in progress', () => {
   assert.equal(typingShown(TYPING_IDLE), false);
   const sent = run([{ type: 'sent', id: 'p1' }]);
@@ -107,7 +119,7 @@ test('demo seeds mirror the working, streaming, and mode states', () => {
   assert.equal(workingShown(typingSeed({ mode: 'working' })), true);
 });
 
-test('two modes: a sent prompt waits as typing, a working status collapses to the spinner, a reply brings typing back', () => {
+test('two modes: a sent prompt waits as typing, a working status collapses to the spinner, a partial reply stays there', () => {
   const sent = run([{ type: 'sent', id: 'p1' }]);
   assert.equal(sent.mode, 'typing');
   assert.equal(typingShown(sent), true);
@@ -120,12 +132,12 @@ test('two modes: a sent prompt waits as typing, a working status collapses to th
   assert.equal(workingShown(working), true);
   // The legacy boolean maps the same way.
   assert.equal(run([{ type: 'working', on: true }], sent).mode, 'working');
-  // Back to typing on an explicit state or on a streamed reply.
+  // An explicit typing state leaves building. A partial reply does not.
   assert.equal(run([{ type: 'state', state: 'typing' }], working).mode, 'typing');
   const streamed = run([{ type: 'reply', id: 'p1', text: 'Adding', final: false }], working);
-  assert.equal(streamed.mode, 'typing');
-  assert.equal(streamed.streaming, true);
-  assert.equal(workingShown(streamed), false);
+  assert.equal(streamed.mode, 'working');
+  assert.equal(streamed.streaming, false);
+  assert.equal(workingShown(streamed), true);
   // Idle closes; an unknown state is ignored; a state for no prompt is ignored.
   assert.equal(run([{ type: 'state', state: 'idle' }], working).pendingId, null);
   assert.equal(run([{ type: 'state', state: 'bogus' }], working).mode, 'working');
