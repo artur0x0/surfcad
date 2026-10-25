@@ -145,6 +145,7 @@ import {
 import {
   beginSectionClip,
   endSectionClip,
+  nextSectionSpec,
   SECTION_PLANE_COLOR,
   sectionClipSession,
   syncSectionClipMeshes,
@@ -6649,9 +6650,13 @@ const Viewport = forwardRef(({
   };
 
   const handlePlaneChange = (plane) => {
-    if (plane) crossSectionPlaneRef.current = plane;
+    if (!plane) return;
+    // Accept hides the preview of the clip already on screen. It does not
+    // re-read the panel preset, which can lag the cut the user is looking at.
+    const next = nextSectionSpec(crossSectionPlaneRef.current, plane);
+    crossSectionPlaneRef.current = next;
     if (!crossSectionEnabledRef.current) return;
-    refreshSectionClip(plane);
+    refreshSectionClip(next);
   };
 
   useEffect(() => {

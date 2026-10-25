@@ -240,13 +240,11 @@ const handleButtonClick = () => {
 
   const handleChevronClick = () => {
     // The checkmark accepts: the options close and the preview hides.
-    // The clip stays. Opening the options, or a later edit, shows it again.
+    // The clip already on screen stays. Opening the options shows it again.
     const opening = isCollapsed;
     setIsCollapsed(!opening);
-    const normal = isCustom ? customNormal : PLANE_PRESETS[planeType].normal;
     onPlaneChange?.({
-      normal,
-      originOffset: offset,
+      previewOnly: true,
       showPlane: opening,
     });
   };
@@ -302,14 +300,12 @@ const handleButtonClick = () => {
     if (nextCollapsed !== isCollapsed) {
       setIsCollapsed(nextCollapsed);
     }
-    const normal = isCustom ? customNormal : PLANE_PRESETS[planeType].normal;
     onPlaneChange?.({
-      normal,
-      originOffset: offset,
+      previewOnly: true,
       showPlane: !!open,
     });
     return true;
-  }, [enabled, enabledRef, isCollapsed, isCustom, customNormal, planeType, offset, onPlaneChange]);
+  }, [enabled, enabledRef, isCollapsed, onPlaneChange]);
 
   const agentSetPreset = useCallback((preset) => {
     if (!PLANE_PRESETS[preset]) return;
