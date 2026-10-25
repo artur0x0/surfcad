@@ -54,9 +54,15 @@ export function triangleSources(meshData, keep, nKept) {
  * @returns {{ geometry: BufferGeometry, faceIDs: ArrayLike<number>|null }}
  */
 function adoptTyped(src, Ctor) {
-  // A transferred buffer is already the array the worker posted. A view
-  // into a larger buffer is copied so the attribute does not alias it.
-  if (src instanceof Ctor && src.byteOffset === 0) return src;
+  // A transferred buffer is already the array the worker posted. Adopt it
+  // only when the view owns that buffer outright, the same rule as
+  // meshTransferList. A view into a larger buffer is copied so the
+  // attribute does not alias the rest of it.
+  if (
+    src instanceof Ctor
+    && src.byteOffset === 0
+    && src.byteLength === src.buffer.byteLength
+  ) return src;
   return new Ctor(src);
 }
 
