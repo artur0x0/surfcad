@@ -164,6 +164,35 @@ export function paintPicksAfterMeshChange(sameMesh, picks) {
   return [];
 }
 
+function paintEntryVisible(entry) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+  if (typeof entry.part === 'string' && entry.part) return true;
+  return Array.isArray(entry.faces) && entry.faces.length > 0;
+}
+
+/**
+ * Paint for one placement. An instance with no entry of its own uses the
+ * definition's paint. An entry on the instance replaces that paint entirely
+ * (part color and face colors together). There is no stored "unpainted"
+ * flag: an empty instance entry does not block the definition.
+ *
+ * @param {object|null} colors assembly color map, keyed by surf id
+ * @param {string|null} surfId this row
+ * @param {string|null} definitionId the part this row places, when it differs
+ */
+export function colorEntryForPlacement(colors, surfId, definitionId) {
+  if (!colors || typeof colors !== 'object' || Array.isArray(colors)) return null;
+  const ownId = surfId == null || surfId === '' ? null : String(surfId);
+  const defId = definitionId == null || definitionId === '' ? null : String(definitionId);
+  const own = ownId ? colors[ownId] : null;
+  if (paintEntryVisible(own)) return own;
+  if (defId && defId !== ownId) {
+    const inherited = colors[defId];
+    if (paintEntryVisible(inherited)) return inherited;
+  }
+  return null;
+}
+
 function cloneColorMap(colors) {
   if (!colors || typeof colors !== 'object' || Array.isArray(colors)) return {};
   const out = {};

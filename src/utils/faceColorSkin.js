@@ -2,7 +2,8 @@
  * Lit face-color skin for one part.
  *
  * Reads the face graph already built for the shown mesh, matches the saved
- * `colors[surfId]` entry, and adds a child mesh of those triangles. The child
+ * color entry, and adds a child mesh of those triangles. An instance with
+ * no entry of its own uses the definition's paint (`definitionId`). The child
  * does not raycast. The base material stays the off-white part color (or the sheet metal).
  * Ambiguous and missing keys are skipped. This does not write the color map.
  *
@@ -23,6 +24,7 @@ import {
 } from 'three';
 import { warmFaceGraph } from './selectFace.js';
 import { faceFingerprints, matchFaceColors } from './faceColorMatch.js';
+import { colorEntryForPlacement } from './facePaint.js';
 import { adoptSectionClip } from './sectionClip.js';
 
 /** Above the solid, under crease lines (3) and pick highlights. */
@@ -215,7 +217,8 @@ export function syncFaceColorSkin(host, opts = {}) {
   const surfId = opts.surfId != null ? String(opts.surfId) : (host.userData?.surfId != null ? String(host.userData.surfId) : null);
   const colors = opts.colors && typeof opts.colors === 'object' && !Array.isArray(opts.colors) ? opts.colors : null;
   const rainbow = !!opts.rainbow;
-  const entry = surfId && colors ? colors[surfId] : null;
+  const definitionId = opts.definitionId != null ? String(opts.definitionId) : null;
+  const entry = colorEntryForPlacement(colors, surfId, definitionId);
   if (!entryWantsPaint(entry, rainbow)) {
     detachFaceColorSkin(host);
     return null;

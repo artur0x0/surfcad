@@ -534,6 +534,7 @@ import {
   paintPickFromClick,
   paintPicksAfterMeshChange,
   paintPicksAfterPartChange,
+  colorEntryForPlacement,
   resolvedPaintColor,
   unmatchedColorCount,
 } from '../utils/facePaint';
@@ -13203,7 +13204,10 @@ const Viewport = forwardRef(({
     const colors = painting ? (painting.session || null) : assemblyColorsRef.current;
     const rainbow = readFaceColorDebugFlag();
     const surfId = host.userData?.surfId || null;
-    const entry = surfId && colors ? colors[surfId] : null;
+    const rowId = host.userData?.assemblyPartId
+      ?? (host === resultRef.current ? activePartIdRef.current : null);
+    const definitionId = rowId != null ? definitionOf(rowId) : null;
+    const entry = colorEntryForPlacement(colors, surfId, definitionId);
     const wants = rainbow || !!(entry && (entry.part || (Array.isArray(entry.faces) && entry.faces.length)));
     if (!wants) {
       detachFaceColorSkin(host);
@@ -13216,6 +13220,7 @@ const Viewport = forwardRef(({
       geometry: host.geometry,
       faceIDs: cached?.faceIDs || null,
       surfId,
+      definitionId,
       colors,
       rainbow,
     });

@@ -625,7 +625,7 @@ function assemblySchema() {
           },
           description: 'part, faces, or both. Unknown keys are rejected.',
         },
-        description: 'Optional face colors for this assembly, keyed by surf id. Omitted when empty. A key whose surf id is not in parts is dropped on load and save. The same part in another assembly has its own map. Copy to this assembly mints a new id and does not copy these entries. Version stays 1.',
+        description: 'Optional face colors for this assembly, keyed by surf id. Omitted when empty. A key whose surf id is not in parts is dropped on load and save. The same part in another assembly has its own map. Copy to this assembly mints a new id and does not copy these entries. An instance with no entry is drawn with the definition\'s paint; an entry on the instance replaces it. Version stays 1.',
       },
       joints: {
         type: 'array',
@@ -768,7 +768,7 @@ function assemblySchema() {
                 instanceOf: {
                   type: 'string',
                   pattern: idV2,
-                  description: 'Set on an instance row: the definition (parts/<instanceOf>.js) this row places. The row keeps its own id, pose, visibility, order, name, joints and colors. Never the row\'s own id and never another instance row\'s id. Omitted on a primary row.',
+                  description: 'Set on an instance row: the definition (parts/<instanceOf>.js) this row places. The row keeps its own id, pose, visibility, order, name and joints. Paint on the definition shows on this row unless colors has an entry for this row, which replaces it. Never the row\'s own id and never another instance row\'s id. Omitted on a primary row.',
                 },
               },
             },
@@ -833,7 +833,7 @@ function assemblySchema() {
               },
               description: 'part, faces, or both. Unknown keys are rejected.',
             },
-            description: 'Optional face colors for this assembly, keyed by surf id. Omitted when empty. A key whose surf id is not in parts is dropped on load and save.',
+            description: 'Optional face colors for this assembly, keyed by surf id. Omitted when empty. A key whose surf id is not in parts is dropped on load and save. An instance with no entry is drawn with the definition\'s paint; an entry on the instance replaces it.',
           },
           joints: {
             type: 'array',
