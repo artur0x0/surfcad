@@ -332,6 +332,12 @@ textarea {
       "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   }
   .text-ui-xs { font-size: 11px; line-height: 1.4; }
+  /* Header beta tag. line-height 1 keeps the 11px label inside the 16px
+     wordmark so the 36px header row does not grow or wrap. */
+  .brand-beta {
+    line-height: 1;
+    letter-spacing: 0.04em;
+  }
   .text-ui-sm { font-size: 12px; line-height: 1.4; }
   .text-ui { font-size: 14px; line-height: 1.45; }
   .text-ui-lg { font-size: 16px; line-height: 1.4; }

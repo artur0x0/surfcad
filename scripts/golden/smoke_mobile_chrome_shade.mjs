@@ -352,6 +352,29 @@ try {
   check('fresh load: the top and bottom bands are the chrome colour',
     [...TOP_BAND, ...BOTTOM_BAND].every((k) => same(base.px[k], [30, 30, 30], 3)),
     fmt(base.px));
+  const headerFit = await page.evaluate(() => {
+    const row = document.querySelector('[data-viewer-header-row]');
+    const beta = row?.querySelector('[data-brand-beta]');
+    const word = row?.querySelector('[data-brand-wordmark]');
+    const trigger = row?.querySelector('[data-brand-about-trigger]');
+    if (!row || !beta || !word || !trigger) return null;
+    const rowBox = row.getBoundingClientRect();
+    const betaBox = beta.getBoundingClientRect();
+    const wordBox = word.getBoundingClientRect();
+    const midY = (rect) => rect.top + rect.height / 2;
+    const hit = document.elementFromPoint(wordBox.left + wordBox.width / 2, midY(wordBox));
+    return {
+      rowH: Math.round(rowBox.height),
+      text: (beta.textContent || '').trim(),
+      sameLine: Math.abs(midY(betaBox) - midY(wordBox)) <= 2,
+      stacked: betaBox.top >= wordBox.bottom - 1,
+      logoHit: hit === trigger || trigger.contains(hit),
+    };
+  });
+  check('390 header stays 36px and the beta tag stays on the logo line',
+    headerFit && headerFit.rowH === 36 && headerFit.text === 'beta'
+    && headerFit.sameLine && !headerFit.stacked && headerFit.logoHit,
+    JSON.stringify(headerFit));
 
   // 1. About, from the header logo.
   await exercise(page, 'About', {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Identity assets. Header wordmark at 390 and 1280 is under 24px and CAD
+ * Identity assets. Header wordmark at 360, 390, and 1280 is under 24px and CAD
  * is Ink, not orange. The loading gate is Paper, with orange CAD only
  * because that wordmark is at least 24px. golden:brand-identity
  *
@@ -17,6 +17,8 @@ import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 const PORT = Number(process.env.SMOKE_PORT || 5241);
 const APP_URL = `http://127.0.0.1:${PORT}/`;
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
+const HEADER_ROW_H = 36;
+const MUTED = 'rgb(156, 163, 175)';
 const INK = 'rgb(22, 23, 29)';
 const ORANGE = 'rgb(255, 90, 31)';
 const PAPER = 'rgb(250, 250, 249)';
@@ -121,6 +123,15 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
     && /data-brand-mark="paper"/.test(word)
     && !/background:/.test(headerMark)
     && /data-brand-header/.test(headerMark));
+  check('header beta tag is a muted lowercase label that does not take hits',
+    /data-brand-beta/.test(headerMark)
+    && /aria-hidden="true"/.test(headerMark)
+    && />\s*beta\s*</.test(headerMark)
+    && /text-muted-on-dark/.test(headerMark)
+    && /text-ui-xs/.test(headerMark)
+    && /pointer-events-none/.test(headerMark)
+    && /flex-nowrap/.test(headerMark)
+    && /whitespace-nowrap/.test(headerMark));
   check('splash is paper or navy, mark, 40px wordmark, grey tagline, no privacy link',
     /data-app-loading/.test(loading)
     && /surface-light/.test(loading)
@@ -279,6 +290,64 @@ async function readMark(page, selector) {
       hasTile: !!tile,
     };
   }, selector);
+}
+
+async function readHeaderFit(page) {
+  return page.evaluate(() => {
+    const row = document.querySelector('[data-viewer-header-row]');
+    const host = row?.querySelector('[data-brand-header-host]');
+    const beta = host?.querySelector('[data-brand-beta]');
+    const word = host?.querySelector('[data-brand-wordmark]');
+    const trigger = host?.querySelector('[data-brand-about-trigger]');
+    const chips = row?.querySelector('[data-viewer-title-chips]');
+    if (!row || !host || !beta || !word || !trigger) return null;
+    const box = (el) => el.getBoundingClientRect();
+    const rowBox = box(row);
+    const hostBox = box(host);
+    const betaBox = box(beta);
+    const wordBox = box(word);
+    const chipsBox = chips ? box(chips) : null;
+    const mid = (rect) => ({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+    const wordMid = mid(wordBox);
+    const betaMid = mid(betaBox);
+    const hit = (point) => document.elementFromPoint(point.x, point.y);
+    const logoOwns = (el) => !!el && (el === trigger || trigger.contains(el));
+    const overlaps = chipsBox
+      && betaBox.right > chipsBox.left + 1
+      && betaBox.bottom > chipsBox.top + 1
+      && betaBox.top < chipsBox.bottom - 1;
+    return {
+      rowH: Math.round(rowBox.height),
+      hostH: Math.round(hostBox.height),
+      betaText: (beta.textContent || '').trim(),
+      betaColor: getComputedStyle(beta).color,
+      ariaHidden: beta.getAttribute('aria-hidden'),
+      sameLine: Math.abs(betaMid.y - mid(wordBox).y) <= 2,
+      stacked: betaBox.top >= wordBox.bottom - 1,
+      betaH: Math.round(betaBox.height),
+      gap: Math.round(betaBox.left - wordBox.right),
+      overlapsChips: !!overlaps,
+      chipsLeft: chipsBox ? Math.round(chipsBox.left) : null,
+      betaRight: Math.round(betaBox.right),
+      logoHit: logoOwns(hit(wordMid)),
+      betaThroughLogo: logoOwns(hit(betaMid)),
+    };
+  });
+}
+
+function checkHeaderFit(label, fit) {
+  check(`${label} header row stays ${HEADER_ROW_H}px`,
+    fit && fit.rowH === HEADER_ROW_H && fit.hostH <= 24,
+    JSON.stringify(fit));
+  check(`${label} beta tag sits on the wordmark line and does not wrap`,
+    fit && fit.betaText === 'beta' && fit.sameLine && !fit.stacked
+    && fit.betaH > 0 && fit.betaH <= 16 && fit.gap >= 2 && fit.gap <= 12
+    && !fit.overlapsChips,
+    JSON.stringify(fit));
+  check(`${label} beta tag is muted, hidden from AT, and does not cover the logo`,
+    fit && fit.betaColor === MUTED && fit.ariaHidden === 'true'
+    && fit.logoHit && fit.betaThroughLogo,
+    JSON.stringify(fit));
 }
 
 async function readSplash(page) {
@@ -462,6 +531,7 @@ attachConsentPresetToBrowser(browser);
     && rowAlign1280.chipsMidY != null
     && Math.abs(rowAlign1280.profileMidY - rowAlign1280.chipsMidY) <= 1,
     JSON.stringify(rowAlign1280));
+  checkHeaderFit('1280', await readHeaderFit(deskPage.page));
   await deskPage.page.screenshot({ path: join(SHOT_DIR, 'brand-header-1280.png') });
   await deskPage.context.close();
 
@@ -484,6 +554,13 @@ attachConsentPresetToBrowser(browser);
     && rowAlign390.chipsMidY != null
     && Math.abs(rowAlign390.brandMidY - rowAlign390.chipsMidY) <= 1,
     JSON.stringify(rowAlign390));
+  checkHeaderFit('390', await readHeaderFit(phone.page));
+  await phone.page.screenshot({ path: join(SHOT_DIR, 'brand-header-390.png') });
+  await phone.page.setViewportSize({ width: 360, height: 844 });
+  await phone.page.waitForTimeout(200);
+  checkHeaderFit('360', await readHeaderFit(phone.page));
+  await phone.page.screenshot({ path: join(SHOT_DIR, 'brand-header-360.png') });
+  await phone.page.setViewportSize({ width: 390, height: 844 });
   await phone.page.locator('[data-stage-btn="parts"]').click();
   await phone.page.waitForTimeout(300);
   const partsBrandCount = await phone.page.locator('[data-stage-pane="parts"] [data-brand-header]').count();
@@ -496,7 +573,6 @@ attachConsentPresetToBrowser(browser);
   check('390 script stage has no brand header',
     scriptBrandCount === 0,
     String(scriptBrandCount));
-  await phone.page.screenshot({ path: join(SHOT_DIR, 'brand-header-390.png') });
   await phone.context.close();
 } finally {
   if (browser) await browser.close();

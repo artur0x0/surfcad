@@ -178,8 +178,11 @@ header icons (`STRIP_ICON_BLUE`).
 
 - CAD header (`data-viewer-header-row`): paper-tile mark
   (`data-brand-mark="paper"`) + 16px Paper wordmark on a transparent
-  lockup (`data-brand-header`, `data-brand-wordmark`). Surf and CAD are
-  both Paper, **not orange**. Placement (rail inset, title pills) is
+  lockup (`data-brand-header`, `data-brand-wordmark`), then a muted
+  lowercase beta tag (`data-brand-beta`, `brand-beta`, `text-ui-xs`,
+  `text-muted-on-dark`). The tag is `aria-hidden` and takes no pointer
+  events, so the logo button still opens About. Surf and CAD are both
+  Paper, **not orange**. Placement (rail inset, title pills) is
   [ui-map.md](./ui-map.md).
 - `src/assets/brand/wordmark-ink.svg` is Ink-on-light.
 - Orange (`#FF5A1F`) is only the splash word “CAD”, and only at 24px or
@@ -192,7 +195,7 @@ header icons (`STRIP_ICON_BLUE`).
   choices link on this gate.
 - Parts and Script stages omit the brand. Favicon and PWA icons are the
   paper tile. `/partners` is Paper; orange only on splash CAD at 32px.
-- `golden:brand-identity` checks the header at 390 and 1280.
+- `golden:brand-identity` checks the header at 360, 390, and 1280.
 
 ## Surfaces over the 3D view
 
