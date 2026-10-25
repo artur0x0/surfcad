@@ -8456,11 +8456,13 @@
           },
           "count": {
             "type": "number",
-            "minimum": 1
+            "minimum": 1,
+            "description": "How many copies, or how many holes when boreRadius is greater than 0."
           },
           "boltCircleRadius": {
             "type": "number",
-            "minimum": 0
+            "minimum": 0,
+            "description": "Radius of the circle in mm. 0 (the default) keeps a copied body on the axis. Must be greater than 0 when boreRadius is greater than 0."
           },
           "axis": {
             "type": "string",
@@ -8468,15 +8470,18 @@
               "x",
               "y",
               "z"
-            ]
+            ],
+            "description": "Axis the copies orbit around, or the hole direction: x, y, or z. The radius offset is perpendicular to this axis."
           },
           "boreRadius": {
             "type": "number",
-            "minimum": 0.1
+            "minimum": 0,
+            "description": "0 (the default) copies the body around the circle. Greater than 0 subtracts that many holes of this radius in mm and does not copy the body."
           },
           "boreHeight": {
             "type": "number",
-            "minimum": 0.1
+            "minimum": 0.1,
+            "description": "Hole length in mm along the axis, used only when boreRadius is greater than 0. The cutter is centered."
           },
           "points": {
             "type": [
@@ -8689,9 +8694,9 @@
         "sy": 35,
         "sz": 0,
         "count": 4,
-        "boltCircleRadius": 20,
+        "boltCircleRadius": 0,
         "axis": "z",
-        "boreRadius": 3,
+        "boreRadius": 0,
         "boreHeight": 10,
         "points": "[[0, 0, 0], [40, 0, 0]]",
         "up": "z",
@@ -8920,7 +8925,7 @@
     },
     {
       "name": "insert_polar_array",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. The result usedSelection says whether the viewport selection was used. A pick that carries a face name (select_faces { names } or a click on a face a helper built) is written into the script by that name (facesNamed for a hole, edgesOf for a fillet or chamfer: the edges around that face only) and is found again on the new mesh after every rebuild, so a second use_selection insert lands on the same face. A pick with no name (a hull, a freehand Manifold.*) clears with the rebuild, and use_selection: true with nothing selected is no_selection (nothing is written). Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes. Fix one base part with a fixed joint, then place every part that touches or attaches to another with joint_create (one call creates the joint and solves placement). Use part_set_transform only for parts that touch nothing. Block-out positions are rough; joints set final positions. If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. When the run past the budget was inside one marked feature block, the part is rebuilt without that block instead: the result is ok: false with one failures row { code: feature_timeout, featureId, featureType, featureLabel, elapsedMs, budgetMs, detail }, status.runState is failed, the other features are built and shown, and status.featureMs (and feature_tree ms) say how long each block took; edit, delete, or undo that feature. Writes (defaults): part = polarArray(part, 4, 20, 'z'); Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Prefer this over freehand set_script. Copies the active part's body around an axis, or drills a bolt circle of holes. boreRadius 0 (the default) copies the body; boltCircleRadius 0 (the default) leaves that copy on the axis. boreRadius greater than 0 subtracts count holes of that radius and boreHeight (mm, cutter centered on the axis) at boltCircleRadius, which must be greater than 0 or the insert is bad_args, and does not leave a second copy of the source body. The example args drill 6 holes of radius 3 mm on a 20 mm circle. Use this for a bolt circle of holes; do not insert_code_snippet a FEATURE-GAP for a bolt-circle hole pattern. On an empty part the same bore params insert a circle of pins (there is no body to drill yet); bore 0 and radius 0 there insert pins of radius 3 mm on a 20 mm circle. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes. Fix one base part with a fixed joint, then place every part that touches or attaches to another with joint_create (one call creates the joint and solves placement). Use part_set_transform only for parts that touch nothing. Block-out positions are rough; joints set final positions. If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. When the run past the budget was inside one marked feature block, the part is rebuilt without that block instead: the result is ok: false with one failures row { code: feature_timeout, featureId, featureType, featureLabel, elapsedMs, budgetMs, detail }, status.runState is failed, the other features are built and shown, and status.featureMs (and feature_tree ms) say how long each block took; edit, delete, or undo that feature. Writes (defaults): part = polarArray(part, 4, 0, 'z'); Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -8931,11 +8936,13 @@
           },
           "count": {
             "type": "number",
-            "minimum": 1
+            "minimum": 1,
+            "description": "How many copies, or how many holes when boreRadius is greater than 0."
           },
           "boltCircleRadius": {
             "type": "number",
-            "minimum": 0
+            "minimum": 0,
+            "description": "Radius of the circle in mm. 0 (the default) keeps a copied body on the axis. Must be greater than 0 when boreRadius is greater than 0."
           },
           "axis": {
             "type": "string",
@@ -8943,15 +8950,18 @@
               "x",
               "y",
               "z"
-            ]
+            ],
+            "description": "Axis the copies orbit around, or the hole direction: x, y, or z. The radius offset is perpendicular to this axis."
           },
           "boreRadius": {
             "type": "number",
-            "minimum": 0.1
+            "minimum": 0,
+            "description": "0 (the default) copies the body around the circle. Greater than 0 subtracts that many holes of this radius in mm and does not copy the body."
           },
           "boreHeight": {
             "type": "number",
-            "minimum": 0.1
+            "minimum": 0.1,
+            "description": "Hole length in mm along the axis, used only when boreRadius is greater than 0. The cutter is centered."
           },
           "return": {
             "type": "string",
@@ -9135,7 +9145,7 @@
       "uiEntry": "polarArray",
       "example": {
         "body": "part",
-        "count": 4,
+        "count": 6,
         "boltCircleRadius": 20,
         "axis": "z",
         "boreRadius": 3,

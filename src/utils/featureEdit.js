@@ -781,7 +781,14 @@ export function parseFeatureEdit(kind, blockText) {
   if (kind === 'polarArray') {
     const m = grab(block, new RegExp(`polarArray\\s*\\(\\s*[^,]+,\\s*(${NUM})\\s*,\\s*(${NUM})\\s*,\\s*'(\\w+)'`));
     if (!m) return fail('No polar array');
-    return { ...base, fields: { count: num(m[1]), boltCircleRadius: num(m[2]), axis: m[3] }, edges, faces };
+    const fields = { count: num(m[1]), boltCircleRadius: num(m[2]), axis: m[3], boreRadius: 0 };
+    const drilling = /part\s*=\s*part\.subtract\(/.test(block);
+    const bore = grab(block, new RegExp(`Manifold\\.cylinder\\s*\\(\\s*(${NUM})\\s*,\\s*(${NUM})\\s*,\\s*(${NUM})`));
+    if (drilling && bore) {
+      fields.boreHeight = num(bore[1]);
+      fields.boreRadius = num(bore[2]);
+    }
+    return { ...base, fields, edges, faces };
   }
 
   if (kind === 'patternPoints') {

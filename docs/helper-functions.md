@@ -544,7 +544,9 @@ return grid;
 
 ### polarArray(manifold, count, radius, axis)
 
-Creates a circular/polar array of copies around an axis.
+Copies a solid equally spaced around an axis. The radius offset is perpendicular to that axis (+Y when the axis is x, +X for y and z) so the copies orbit; radius 0 leaves every copy on the axis. The result is only those copies. The input solid is not kept as an extra body.
+
+`insert_polar_array` writes this call. `boreRadius` 0 (the default) copies the body. `boreRadius` greater than 0 subtracts that many centered holes of `boreRadius` by `boreHeight` on the circle and does not copy the body; `boltCircleRadius` must then be greater than 0. `boltCircleRadius` defaults to 0 (on the axis). That is the bolt-circle hole pattern. Do not record it as a FEATURE-GAP.
 
 ```javascript
 // Create 6 cylinders in a circle
@@ -556,7 +558,7 @@ return circle;
 **Parameters:**
 - `manifold` - The manifold to array
 - `count` - Number of copies
-- `radius` - Radius from center (optional offset)
+- `radius` - Orbit radius. 0 leaves the copies on the axis. The offset is perpendicular to `axis`
 - `axis` - Rotation axis: 'x', 'y', or 'z' (default: 'z')
 
 ---

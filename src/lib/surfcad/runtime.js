@@ -2902,28 +2902,31 @@ function _rotationToMatrix(from, to, at) {
 }
 
 /**
- * Create a polar array (copies around an axis)
+ * Copies of a solid equally spaced around an axis, offset perpendicular to that axis (+Y for x, +X for y and z), without keeping the input as an extra body.
  * @param {Manifold} manifold - The manifold to array
  * @param {number} count - Number of copies
- * @param {number} radius - Radius from center (optional offset)
+ * @param {number} radius - Radius of the orbit. 0 leaves every copy on the axis
  * @param {string} axis - Rotation axis ('x', 'y', or 'z')
  */
 function polarArray(manifold, count, radius = 0, axis = 'z') {
   if (!manifoldModule) throw new Error('Manifold not initialized');
   const { Manifold } = manifoldModule;
-  
+
   const copies = [];
   const angleStep = 360 / count;
-  
+  const ax = String(axis || 'z').toLowerCase();
+  // +X is parallel to axis x, so that orbit steps out along +Y. y and z
+  // step out along +X, which is perpendicular to both.
+  const offset = !(radius > 0) ? null
+    : ax === 'x' ? [0, radius, 0]
+    : [radius, 0, 0];
+
   for (let i = 0; i < count; i++) {
     const angle = i * angleStep;
+    const positioned = offset ? manifold.translate(offset) : manifold;
     let rotated;
-    
-    // Apply radius offset first
-    let positioned = radius > 0 ? manifold.translate([radius, 0, 0]) : manifold;
-    
-    // Then rotate
-    switch (axis.toLowerCase()) {
+
+    switch (ax) {
       case 'x':
         rotated = positioned.rotate([angle, 0, 0]);
         break;
@@ -2935,10 +2938,10 @@ function polarArray(manifold, count, radius = 0, axis = 'z') {
         rotated = positioned.rotate([0, 0, angle]);
         break;
     }
-    
+
     copies.push(rotated);
   }
-  
+
   return Manifold.union(copies);
 }
 

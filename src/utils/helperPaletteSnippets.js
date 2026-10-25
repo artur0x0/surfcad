@@ -680,11 +680,13 @@ function syncPartLines(bodyName, names, bufferHasPart) {
 
 /**
  * After a body is arrayed, re-apply that body's own combine op to `part`.
- * `array3D` and `polarArray` keep the original instance among the copies, so
+ * `array3D` keeps the original instance (the untranslated copy), so
  * `part = part.subtract(box2)` cuts every copy and `part = part.add(box2)`
  * adds every copy. The old `part = box2` replaced the whole part with the
  * cutters. A body `part` was only aliased to (`let part = box1`), or that was
  * never combined, is added. A buffer with no `part` keeps the alias.
+ * `polarArray` does not keep that untranslated instance when the radius is
+ * positive; `polarReapply` handles it.
  */
 function reapplyBodyToPart(bodyName, names, buffer) {
   if (bodyName === 'part') return [];
@@ -703,6 +705,66 @@ function reapplyBodyToPart(bodyName, names, buffer) {
   if (!last) return [`part = part.add(${bodyName});`];
   const opts = last[2] ? `, ${last[2].replace(/^,\s*/, '')}` : '';
   return [`part = part.${last[1]}(${bodyName}${opts});`];
+}
+
+/**
+ * polarArray moves every copy out to the circle when radius is positive, so
+ * re-adding the array on top of an already-combined source leaves the
+ * untranslated solid behind (list_bodies shows the original plus the copies).
+ * Capture the source first, undo that one combine, then apply the array.
+ * A subtract cutter is re-subtracted as the array (the original hole stays,
+ * because filling it back would also restore any part of the cutter that
+ * stuck out of the solid). An alias (`let part = box1`, no combine) is
+ * replaced, not added. Radius 0 stacks the copies on the source, so the
+ * ordinary reapply is enough.
+ */
+function polarReapply(bodyName, names, buffer, radius) {
+  if (bodyName === 'part') return { before: [], after: [] };
+  const code = stripComments(buffer || '');
+  const hasPart = names.has('part') || /\b(?:let|var)\s+part\b/.test(code);
+  if (!hasPart) return { before: [], after: syncPartLines(bodyName, names, false) };
+  const name = bodyName.replace(/\$/g, '\\$');
+  const combine = new RegExp(
+    `\\bpart\\s*=\\s*part\\.(add|subtract)\\(\\s*${name}\\s*(,\\s*\\{[^}]*\\})?\\s*\\)`,
+    'g',
+  );
+  let last = null;
+  let m;
+  while ((m = combine.exec(code))) last = m;
+  names.add('part');
+  if (!last) return { before: [], after: [`part = ${bodyName};`] };
+  const opts = last[2] ? `, ${last[2].replace(/^,\s*/, '')}` : '';
+  const op = last[1];
+  if (op === 'subtract' || !(radius > 0)) {
+    return { before: [], after: [`part = part.${op}(${bodyName}${opts});`] };
+  }
+  const prev = allocateUniqueName(names, 'polarSrc');
+  return {
+    before: [`const ${prev} = ${bodyName};`],
+    after: [
+      `part = part.subtract(${prev});`,
+      `part = part.add(${bodyName}${opts});`,
+    ],
+  };
+}
+
+/** 'x' | 'y' | 'z'. Anything else is z, matching polarArray's default. */
+function polarAxis(raw) {
+  const axis = str(raw, 'z').toLowerCase();
+  return axis === 'x' || axis === 'y' || axis === 'z' ? axis : 'z';
+}
+
+/**
+ * A cylinder along `axis`. Centered cutters punch a plate that straddles the
+ * origin; uncentered pins (the empty-part demo) still stand on +Z.
+ */
+function polarPinExpr(bh, br, axis, center) {
+  const cyl = center
+    ? `Manifold.cylinder(${bh}, ${br}, ${br}, 64, true)`
+    : `Manifold.cylinder(${bh}, ${br}, ${br}, 64)`;
+  if (axis === 'x') return `${cyl}.rotate([0, 90, 0])`;
+  if (axis === 'y') return `${cyl}.rotate([-90, 0, 0])`;
+  return cyl;
 }
 
 /**
@@ -2454,11 +2516,11 @@ export const HELPER_PALETTE_ITEMS = [
       { name: 'sx', type: 'number', default: 45, label: 'Spacing X', step: 1, showWhen: { field: 'arrayType', values: ['grid'] } },
       { name: 'sy', type: 'number', default: 35, label: 'Spacing Y', step: 1, showWhen: { field: 'arrayType', values: ['grid'] } },
       { name: 'sz', type: 'number', default: 0, label: 'Spacing Z', step: 1, showWhen: { field: 'arrayType', values: ['grid'] } },
-      { name: 'count', type: 'number', default: 4, label: 'Count', min: 1, step: 1, showWhen: { field: 'arrayType', values: ['polar'] } },
-      { name: 'boltCircleRadius', type: 'number', default: 20, label: 'Bolt circle R', min: 0, step: 1, showWhen: { field: 'arrayType', values: ['polar'] } },
-      { name: 'axis', type: 'select', default: 'z', label: 'Axis', options: AXIS_OPTIONS, showWhen: { field: 'arrayType', values: ['polar'] } },
-      { name: 'boreRadius', type: 'number', default: 3, label: 'Bore R (empty)', min: 0.1, step: 0.5, showWhen: { field: 'arrayType', values: ['polar'] } },
-      { name: 'boreHeight', type: 'number', default: 10, label: 'Bore H (empty)', min: 0.1, step: 0.5, showWhen: { field: 'arrayType', values: ['polar'] } },
+      { name: 'count', type: 'number', default: 4, label: 'Count', min: 1, step: 1, description: 'How many copies, or how many holes when boreRadius is greater than 0.', showWhen: { field: 'arrayType', values: ['polar'] } },
+      { name: 'boltCircleRadius', type: 'number', default: 0, label: 'Bolt circle R (0 = on axis)', min: 0, step: 1, description: 'Radius of the circle in mm. 0 (the default) keeps a copied body on the axis. Must be greater than 0 when boreRadius is greater than 0.', showWhen: { field: 'arrayType', values: ['polar'] } },
+      { name: 'axis', type: 'select', default: 'z', label: 'Axis', options: AXIS_OPTIONS, description: 'Axis the copies orbit around, or the hole direction: x, y, or z. The radius offset is perpendicular to this axis.', showWhen: { field: 'arrayType', values: ['polar'] } },
+      { name: 'boreRadius', type: 'number', default: 0, label: 'Bore R (0 = copy the body)', min: 0, step: 0.5, description: '0 (the default) copies the body around the circle. Greater than 0 subtracts that many holes of this radius in mm and does not copy the body.', showWhen: { field: 'arrayType', values: ['polar'] } },
+      { name: 'boreHeight', type: 'number', default: 10, label: 'Bore H', min: 0.1, step: 0.5, description: 'Hole length in mm along the axis, used only when boreRadius is greater than 0. The cutter is centered.', showWhen: { field: 'arrayType', values: ['polar'] } },
       { name: 'points', type: 'points', default: '[[0, 0, 0], [40, 0, 0]]', required: true, label: 'Points [x, y, z] or { at, axis }', multiline: true, placeholder: '[[0, 0, 0], { "at": [40, 0, 0], "axis": [0, 0, 1] }]', showWhen: { field: 'arrayType', values: ['points'] } },
       { name: 'up', type: 'select', default: 'z', label: 'Body axis that follows a point axis', options: AXIS_OPTIONS, showWhen: { field: 'arrayType', values: ['points'] } },
       { name: 'keepOriginal', type: 'bool', default: false, label: 'Keep original', showWhen: { field: 'arrayType', values: ['points'] } },
@@ -2533,33 +2595,59 @@ export const HELPER_PALETTE_ITEMS = [
     title: "polarArray(manifold, count, radius, axis?)",
     params: [
       { name: 'body', type: 'body', default: 'part', label: 'Body' },
-      { name: 'count', type: 'number', default: 4, label: 'Count', min: 1, step: 1 },
-      { name: 'boltCircleRadius', type: 'number', default: 20, label: 'Bolt circle R', min: 0, step: 1 },
-      { name: 'axis', type: 'select', default: 'z', label: 'Axis', options: AXIS_OPTIONS },
-      { name: 'boreRadius', type: 'number', default: 3, label: 'Bore R (empty)', min: 0.1, step: 0.5 },
-      { name: 'boreHeight', type: 'number', default: 10, label: 'Bore H (empty)', min: 0.1, step: 0.5 },
+      { name: 'count', type: 'number', default: 4, label: 'Count', min: 1, step: 1, description: 'How many copies, or how many holes when boreRadius is greater than 0.' },
+      { name: 'boltCircleRadius', type: 'number', default: 0, label: 'Bolt circle R (0 = on axis)', min: 0, step: 1, description: 'Radius of the circle in mm. 0 (the default) keeps a copied body on the axis. Must be greater than 0 when boreRadius is greater than 0.' },
+      { name: 'axis', type: 'select', default: 'z', label: 'Axis', options: AXIS_OPTIONS, description: 'Axis the copies orbit around, or the hole direction: x, y, or z. The radius offset is perpendicular to this axis.' },
+      { name: 'boreRadius', type: 'number', default: 0, label: 'Bore R (0 = copy the body)', min: 0, step: 0.5, description: '0 (the default) copies the body around the circle. Greater than 0 subtracts that many holes of this radius in mm and does not copy the body.' },
+      { name: 'boreHeight', type: 'number', default: 10, label: 'Bore H', min: 0.1, step: 0.5, description: 'Hole length in mm along the axis, used only when boreRadius is greater than 0. The cutter is centered.' },
     ],
     build: (empty, p, names, buffer) => {
       const count = Math.max(1, Math.round(num(p.count, 4)));
-      const bcr = num(p.boltCircleRadius, 20);
-      const axis = str(p.axis, 'z');
+      const axis = polarAxis(p.axis);
+      let bcr = num(p.boltCircleRadius, 0);
+      let br = num(p.boreRadius, 0);
+      let bh = num(p.boreHeight, 10);
       if (empty) {
+        // Both defaults are 0 (copy on axis). An empty part has nothing to
+        // copy, so the one-click Array → Polar demo is still a circle of pins.
+        if (!(br > 0) && !(bcr > 0)) {
+          br = 3;
+          bcr = 20;
+        } else if (!(br > 0)) {
+          br = 3;
+        }
+        if (!(bh > 0)) bh = 10;
         const bore = allocateUniqueName(names, 'bore');
-        const br = num(p.boreRadius, 3);
-        const bh = num(p.boreHeight, 10);
         const partName = allocateUniqueName(names, 'part');
+        const pin = polarPinExpr(bh, br, axis, false);
         const body = [
-          `const ${bore} = Manifold.cylinder(${bh}, ${br}, ${br}, 64);`,
+          `const ${bore} = ${pin};`,
           partName === 'part'
             ? `let part = polarArray(${bore}, ${count}, ${bcr}, '${axis}');`
             : `let ${partName} = polarArray(${bore}, ${count}, ${bcr}, '${axis}');\npart = ${partName};`,
         ];
         return withReturn(wrapFeatureBlock(POLAR_ARRAY_BEGIN, POLAR_ARRAY_END, body), true);
       }
+      // Hole mode drills `part`. A positive bore with no circle would stack
+      // the cutters on the axis; validateHelperParams reports that as bad_args.
+      if (br > 0) {
+        if (!(bcr > 0)) return null;
+        if (!(bh > 0)) bh = 10;
+        const bore = allocateUniqueName(names, 'bore');
+        const holes = allocateUniqueName(names, 'holes');
+        const feat = [
+          `const ${bore} = ${polarPinExpr(bh, br, axis, true)};`,
+          `const ${holes} = polarArray(${bore}, ${count}, ${bcr}, '${axis}');`,
+          `part = part.subtract(${holes});`,
+        ];
+        return withReturn(wrapFeatureBlock(POLAR_ARRAY_BEGIN, POLAR_ARRAY_END, feat), false);
+      }
       const body = resolveBody(p, names, buffer);
+      const reapply = polarReapply(body, names, buffer, bcr);
       const feat = [
+        ...reapply.before,
         `${body} = polarArray(${body}, ${count}, ${bcr}, '${axis}');`,
-        ...reapplyBodyToPart(body, names, buffer),
+        ...reapply.after,
       ];
       return withReturn(wrapFeatureBlock(POLAR_ARRAY_BEGIN, POLAR_ARRAY_END, feat), false);
     },
