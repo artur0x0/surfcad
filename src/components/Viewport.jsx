@@ -145,6 +145,7 @@ import {
 import {
   beginSectionClip,
   endSectionClip,
+  nextSectionSpec,
   SECTION_PLANE_COLOR,
   sectionClipSession,
   syncSectionClipMeshes,
@@ -538,7 +539,7 @@ import {
   unmatchedColorCount,
 } from '../utils/facePaint';
 import { formatViewerTitle, sanitizePartName } from '../utils/assembly.js';
-import { createCuttingPlaneWidget, disposeCuttingPlaneWidget, placeCuttingPlaneWidget, updateCuttingPlaneWidget } from '../utils/cuttingPlaneWidget';
+import { createCuttingPlaneWidget, disposeCuttingPlaneWidget, syncSectionPreview, updateCuttingPlaneWidget } from '../utils/cuttingPlaneWidget';
 import { AxesHelper } from 'three';
 import { applyTriadAxisColors } from '../utils/triadAxis';
 import { createDeltaLines, disposeMeasurementLines } from '../utils/measurementTool';
@@ -6584,7 +6585,8 @@ const Viewport = forwardRef(({
     }
   };
 
-  // World-space clip on every part material, plus the preview plane on the live scene.
+  // World-space clip on every part material. The preview plane is only
+  // there while the options are open. Accept hides it; the clip stays.
   const refreshSectionClip = (plane) => {
     if (!crossSectionEnabledRef.current) return;
     const spec = plane || crossSectionPlaneRef.current;
@@ -6595,16 +6597,15 @@ const Viewport = forwardRef(({
     beginSectionClip(spec.normal, spec.originOffset);
     syncSectionClipMeshes(sectionHosts());
     const scene = sceneRef.current;
-    if (scene) {
-      const dims = modelBoundsRef.current?.size;
-      const size = Math.max(80, ...(Array.isArray(dims) && dims.length ? dims : [200, 200, 200]));
-      cuttingPlaneWidgetRef.current = placeCuttingPlaneWidget(scene, cuttingPlaneWidgetRef.current, {
-        normal: spec.normal,
-        originOffset: spec.originOffset,
-        size,
-        color: SECTION_PLANE_COLOR,
-      });
-    }
+    const dims = modelBoundsRef.current?.size;
+    const size = Math.max(80, ...(Array.isArray(dims) && dims.length ? dims : [200, 200, 200]));
+    cuttingPlaneWidgetRef.current = syncSectionPreview(scene, cuttingPlaneWidgetRef.current, {
+      showPlane: spec.showPlane !== false,
+      normal: spec.normal,
+      originOffset: spec.originOffset,
+      size,
+      color: SECTION_PLANE_COLOR,
+    });
     const unit = new Vector3(...spec.normal);
     if (unit.lengthSq() < 1e-20) unit.set(0, 0, 1);
     else unit.normalize();
@@ -6638,8 +6639,10 @@ const Viewport = forwardRef(({
     const on = !!enabled;
     crossSectionEnabledRef.current = on;
     if (on) {
+      const spec = { ...crossSectionPlaneRef.current, showPlane: true };
+      crossSectionPlaneRef.current = spec;
       setCrossSectionEnabled(true);
-      refreshSectionClip(crossSectionPlaneRef.current);
+      refreshSectionClip(spec);
     } else {
       setCrossSectionEnabled(false);
       endSectionView();
@@ -6647,9 +6650,13 @@ const Viewport = forwardRef(({
   };
 
   const handlePlaneChange = (plane) => {
-    if (plane) crossSectionPlaneRef.current = plane;
+    if (!plane) return;
+    // Accept hides the preview of the clip already on screen. It does not
+    // re-read the panel preset, which can lag the cut the user is looking at.
+    const next = nextSectionSpec(crossSectionPlaneRef.current, plane);
+    crossSectionPlaneRef.current = next;
     if (!crossSectionEnabledRef.current) return;
-    refreshSectionClip(plane);
+    refreshSectionClip(next);
   };
 
   useEffect(() => {

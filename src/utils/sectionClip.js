@@ -52,6 +52,57 @@ export function setSectionPlane(plane, normal, originOffset) {
   return plane;
 }
 
+/**
+ * Accept and reopen only change whether the preview is drawn. A panel
+ * preset that does not match the live clip must not move the cut.
+ * An edit (no `previewOnly`) replaces the normal and offset.
+ */
+export function nextSectionSpec(current, change) {
+  const base = current && typeof current === 'object' ? current : {};
+  const normal = Array.isArray(base.normal) ? [...base.normal] : [0, 0, 1];
+  const originOffset = Number(base.originOffset) || 0;
+  if (change?.previewOnly) {
+    return {
+      normal,
+      originOffset,
+      showPlane: change.showPlane !== false,
+    };
+  }
+  const nextNormal = Array.isArray(change?.normal) ? [...change.normal] : normal;
+  const nextOffset = change?.originOffset != null && Number.isFinite(Number(change.originOffset))
+    ? Number(change.originOffset)
+    : originOffset;
+  return {
+    normal: nextNormal,
+    originOffset: nextOffset,
+    showPlane: change?.showPlane !== false,
+  };
+}
+
+/** World box of the vertices the live plane keeps. Null when none qualify. */
+export function sectionKeptBounds(mesh, plane) {
+  const pos = mesh?.geometry?.attributes?.position;
+  if (!pos || !plane) return null;
+  mesh.updateMatrixWorld(true);
+  const v = new Vector3();
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  let count = 0;
+  for (let i = 0; i < pos.count; i += 1) {
+    v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+    if (plane.distanceToPoint(v) < -1e-4) continue;
+    count += 1;
+    if (v.x < min[0]) min[0] = v.x;
+    if (v.y < min[1]) min[1] = v.y;
+    if (v.z < min[2]) min[2] = v.z;
+    if (v.x > max[0]) max[0] = v.x;
+    if (v.y > max[1]) max[1] = v.y;
+    if (v.z > max[2]) max[2] = v.z;
+  }
+  if (!count) return null;
+  return { min, max, count };
+}
+
 export function beginSectionClip(normal, originOffset) {
   if (!session) {
     const plane = setSectionPlane(new Plane(), normal, originOffset);

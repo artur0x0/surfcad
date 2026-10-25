@@ -226,9 +226,15 @@ state = await agentCall(page, 'cross_section_state');
 viewOnly(state, 'C');
 await agentCall(page, 'cross_section_expand', { open: false });
 state = await agentCall(page, 'cross_section_state');
-check('plane stays when options collapse', state.result?.planeInScene === true
-  && state.result?.optionsOpen === false,
-  JSON.stringify({ planeInScene: state.result?.planeInScene, optionsOpen: state.result?.optionsOpen }));
+check('accept hides the plane and keeps the clip', state.result?.planeInScene === false
+  && state.result?.optionsOpen === false
+  && state.result?.geometryMutated === false
+  && (state.result?.clippedMaterials ?? 0) > 0,
+  JSON.stringify({
+    planeInScene: state.result?.planeInScene,
+    optionsOpen: state.result?.optionsOpen,
+    clippedMaterials: state.result?.clippedMaterials,
+  }));
 
 writeFileSync(join(SHOT_DIR, 'cross-section-after-assembly.png'), await page.screenshot({ type: 'png' }));
 

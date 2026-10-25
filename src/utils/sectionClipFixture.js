@@ -23,12 +23,20 @@ import {
   adoptSectionClip,
   beginSectionClip,
   endSectionClip,
+  nextSectionSpec,
   SECTION_PLANE_COLOR,
+  sectionClipActive,
   sectionClipSession,
+  sectionKeptBounds,
   sectionKeepsWorldPoint,
   syncSectionClipMeshes,
 } from './sectionClip.js';
-import { createCuttingPlaneWidget, placeCuttingPlaneWidget } from './cuttingPlaneWidget.js';
+import {
+  createCuttingPlaneWidget,
+  disposeCuttingPlaneWidget,
+  placeCuttingPlaneWidget,
+  syncSectionPreview,
+} from './cuttingPlaneWidget.js';
 
 function assert(cond, message) {
   if (!cond) throw new Error(message);
@@ -172,6 +180,57 @@ function verifyAssemblySectionClipBody() {
   syncSectionClipMeshes([rear]);
   assert(childMat.clippingPlanes === session.planes, 'skin created under the part missed the plane');
   assert(seamMat.clippingPlanes == null, 'contact seam shader was given clipping planes');
+
+  beginSectionClip([1, 0, 0], 0);
+  const keptBefore = sectionKeptBounds(rear, session.plane);
+  const frontBefore = sectionKeptBounds(front, session.plane);
+  assert(keptBefore && keptBefore.count > 0 && keptBefore.count < geometry.attributes.position.count,
+    'section did not clip the wheel');
+  assert(keptBefore.min[0] > -1e-3, 'kept wheel still includes the discarded half');
+  const accepted = nextSectionSpec(
+    { normal: [1, 0, 0], originOffset: 0, showPlane: true },
+    { previewOnly: true, showPlane: false, normal: [0, 0, 1], originOffset: 80 },
+  );
+  assert(accepted.showPlane === false, 'accept left the preview on');
+  assert(Math.abs(accepted.originOffset) < 1e-9 && Math.abs(accepted.normal[0] - 1) < 1e-9
+    && Math.abs(accepted.normal[2]) < 1e-9, 'accept replaced the live clip with the panel preset');
+  beginSectionClip(accepted.normal, accepted.originOffset);
+  const keptAfter = sectionKeptBounds(rear, session.plane);
+  const frontAfter = sectionKeptBounds(front, session.plane);
+  const sameBox = (a, b) => a && b && a.count === b.count
+    && a.min.every((v, i) => Math.abs(v - b.min[i]) < 1e-6)
+    && a.max.every((v, i) => Math.abs(v - b.max[i]) < 1e-6);
+  assert(sameBox(keptBefore, keptAfter), 'accept changed the clipped bounds');
+  assert(sameBox(frontBefore, frontAfter), 'accept changed the other instance bounds');
+
+  const previewScene = new Scene();
+  let preview = syncSectionPreview(previewScene, null, {
+    showPlane: true,
+    normal: accepted.normal,
+    originOffset: accepted.originOffset,
+    size: 80,
+    color: SECTION_PLANE_COLOR,
+  });
+  assert(preview?.parent === previewScene, 'editing shows the section plane');
+  assert(sectionClipActive(), 'clip is active while the preview shows');
+  const livePlanes = session.planes;
+  assert(material.clippingPlanes === livePlanes, 'clip stays on the part while the preview shows');
+  preview = syncSectionPreview(previewScene, preview, { showPlane: false });
+  assert(preview == null && previewScene.children.length === 0, 'accept hides the section plane');
+  assert(sectionClipActive(), 'accept keeps the section clip');
+  assert(material.clippingPlanes === livePlanes, 'accept leaves the clip on the part');
+  assert(sameBox(keptBefore, sectionKeptBounds(rear, session.plane)),
+    'hiding the preview changed the clipped bounds');
+  preview = syncSectionPreview(previewScene, preview, {
+    showPlane: true,
+    normal: [1, 0, 0],
+    originOffset: 0,
+    size: 80,
+    color: SECTION_PLANE_COLOR,
+  });
+  assert(preview?.parent === previewScene, 'edit shows the section plane again');
+  assert(material.clippingPlanes === livePlanes, 'edit keeps the same clip');
+  if (preview) disposeCuttingPlaneWidget(preview);
 
   endSectionClip();
   assert(material.clippingPlanes === priorPlanes, 'restore did not put the original clippingPlanes back');
