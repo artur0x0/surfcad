@@ -10,7 +10,7 @@ import {
 /**
  * Read-only catalog of face keys for select_faces. `filter` and `page` trim
  * the list in the tab (listFilters.js); the result always carries `total`
- * (rows after the filter) and `returned`.
+ * (rows after the filter), `returned`, and `frame: "local"`.
  */
 export const listFacesCommand = Object.freeze({
   name: 'list_faces',

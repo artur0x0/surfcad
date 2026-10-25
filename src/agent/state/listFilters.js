@@ -232,10 +232,18 @@ export function paginate(rows, page) {
 /**
  * Apply filter and page to `result[rowsKey]` and add `total` / `returned`
  * (and `offset` / `limit` when a page was given). Other fields pass through.
+ * `frame` is always `"local"`: face centers and edge midpoints are the part
+ * mesh, not the assembly placement, so they match `select_faces` keys.
  */
 export function shapeListResult(result, rowsKey, filtered, page) {
   const paged = paginate(filtered, page);
-  const out = { ...result, [rowsKey]: paged.rows, total: paged.total, returned: paged.returned };
+  const out = {
+    ...result,
+    [rowsKey]: paged.rows,
+    total: paged.total,
+    returned: paged.returned,
+    frame: 'local',
+  };
   if (page) {
     out.offset = paged.offset;
     if (paged.limit != null) out.limit = paged.limit;

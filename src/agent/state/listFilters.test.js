@@ -98,6 +98,7 @@ test('paginate and shapeListResult report total and returned', () => {
   assert.deepEqual(shaped.faces.map((r) => r.id), ['f1']);
   assert.equal(shaped.total, 3);
   assert.equal(shaped.returned, 1);
+  assert.equal(shaped.frame, 'local');
   assert.equal(shaped.offset, 1);
   assert.equal(shaped.limit, 1);
   assert.equal(host.faces.length, 4, 'host rows untouched');
