@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AGENT_PROMPT_WORKING_TIMEOUT_MS, agentPromptStallCopy } from './agentPromptLive.js';
+import { AGENT_PROMPT_STALL_MS, agentPromptStallCopy } from './agentPromptLive.js';
 import {
   TYPING_IDLE,
   pendingShown,
@@ -46,7 +46,7 @@ function session() {
   let typing = TYPING_IDLE;
   let stalls = 0;
   const watch = createPromptWatch({
-    timeoutMs: AGENT_PROMPT_WORKING_TIMEOUT_MS,
+    timeoutMs: AGENT_PROMPT_STALL_MS,
     setTimer: time.setTimer,
     clearTimer: time.clearTimer,
     onStall() {
@@ -77,7 +77,7 @@ test('tool calls longer than the old timeout keep working', () => {
     run.time.advance(90_000);
     run.step({ type: 'activity' });
   }
-  assert.ok(5 * 90_000 > AGENT_PROMPT_WORKING_TIMEOUT_MS);
+  assert.ok(5 * 90_000 > AGENT_PROMPT_STALL_MS);
   assert.equal(run.stalls, 0);
   assert.equal(workingShown(run.typing), true);
   assert.equal(stallShown(run.typing), false);
@@ -88,17 +88,17 @@ test('a bridge call that outlasts the timeout holds working until it returns', (
   const run = session();
   run.begin();
   run.step({ type: 'hold', on: true });
-  run.time.advance(AGENT_PROMPT_WORKING_TIMEOUT_MS * 4);
+  run.time.advance(AGENT_PROMPT_STALL_MS * 4);
   assert.equal(run.stalls, 0);
   assert.equal(workingShown(run.typing), true);
   run.step({ type: 'hold', on: false });
-  run.time.advance(AGENT_PROMPT_WORKING_TIMEOUT_MS - 1);
+  run.time.advance(AGENT_PROMPT_STALL_MS - 1);
   assert.equal(stallShown(run.typing), false);
   run.time.advance(1);
   assert.equal(run.stalls, 1);
   assert.equal(stallShown(run.typing), true);
   assert.equal(pendingShown(run.typing), true);
-  assert.equal(agentPromptStallCopy(), 'No activity from the agent for 2 min — it may have stalled');
+  assert.equal(agentPromptStallCopy(), 'No activity from the agent for 5 min — it may have stalled');
 });
 
 test('activity refreshes the deadline; a true stall keeps Stop and says why', () => {
@@ -110,7 +110,7 @@ test('activity refreshes the deadline; a true stall keeps Stop and says why', ()
   run.step({ type: 'activity' });
   run.time.advance(100_000);
   run.step({ type: 'reply', id: 'p1', text: 'still going', final: false });
-  run.time.advance(AGENT_PROMPT_WORKING_TIMEOUT_MS - 1);
+  run.time.advance(AGENT_PROMPT_STALL_MS - 1);
   assert.equal(run.stalls, 0);
   assert.equal(typingShown(run.typing), true);
   run.time.advance(1);
@@ -121,7 +121,7 @@ test('activity refreshes the deadline; a true stall keeps Stop and says why', ()
   run.step({ type: 'activity' });
   assert.equal(stallShown(run.typing), false);
   assert.equal(pendingShown(run.typing), true);
-  run.time.advance(AGENT_PROMPT_WORKING_TIMEOUT_MS);
+  run.time.advance(AGENT_PROMPT_STALL_MS);
   assert.equal(run.stalls, 2);
   assert.equal(stallShown(run.typing), true);
 });
@@ -135,7 +135,7 @@ test('a final reply, Stop, and disconnect each end working, including after a st
   ]) {
     const run = session();
     run.begin();
-    run.time.advance(AGENT_PROMPT_WORKING_TIMEOUT_MS);
+    run.time.advance(AGENT_PROMPT_STALL_MS);
     assert.equal(stallShown(run.typing), true);
     run.step(end);
     assert.equal(run.typing.pendingId, null, JSON.stringify(end));
@@ -143,7 +143,7 @@ test('a final reply, Stop, and disconnect each end working, including after a st
     assert.equal(workingShown(run.typing), false, JSON.stringify(end));
     assert.equal(stallShown(run.typing), false, JSON.stringify(end));
     const stalls = run.stalls;
-    run.time.advance(AGENT_PROMPT_WORKING_TIMEOUT_MS * 2);
+    run.time.advance(AGENT_PROMPT_STALL_MS * 2);
     assert.equal(run.stalls, stalls, JSON.stringify(end));
   }
 });

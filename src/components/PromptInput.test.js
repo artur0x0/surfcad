@@ -27,7 +27,7 @@ test('PromptInput tags send/stop/dismiss/screenshot and uses the outline send + 
   assert.match(SRC, /attachViewerShot/);
   assert.match(SRC, /promptContext/);
   assert.match(SRC, /bindAgentPromptTransport/);
-  assert.match(SRC, /AGENT_PROMPT_WORKING_TIMEOUT_MS/);
+  assert.match(SRC, /AGENT_PROMPT_STALL_MS/);
   assert.match(SRC, /agentPromptStallCopy/);
   assert.match(SRC, /data-agent-prompt-stall=""/);
   assert.match(SRC, /onActivity/);

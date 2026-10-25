@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   BEARER_MAX,
-  PROMPT_IDLE_MS,
+  AGENT_PROMPT_STALL_MS,
   PROMPT_QUEUE_CAP,
   PROMPT_RATE_MS,
   PROMPT_SCREENSHOT_MAX_BYTES,
@@ -280,8 +280,8 @@ test('a public webhook does not skip TLS checks even when the test switch is on'
   assert.equal(posts[0].meta.pinAddress, '8.8.8.8');
 });
 
-test('first tool call after a prompt is working, a final reply goes idle, and a quiet 120s stalls', async () => {
-  assert.equal(PROMPT_IDLE_MS, 120_000);
+test('first tool call after a prompt is working, a final reply goes idle, and a quiet 5 min stalls', async () => {
+  assert.equal(AGENT_PROMPT_STALL_MS, 5 * 60 * 1000);
   const time = clock();
   const { session, sent } = harness({ clock: time, rateLimitMs: 0 });
   session.noteToolCall();
@@ -298,7 +298,7 @@ test('first tool call after a prompt is working, a final reply goes idle, and a 
   assert.equal(sent.filter((msg) => msg.type === PAIR_MSG.AGENT_STATUS && msg.working === true && !msg.stalled).length, 1);
   assert.equal(sent.at(-1).type, PAIR_MSG.AGENT_ACTIVITY);
 
-  time.advance(119_999);
+  time.advance(AGENT_PROMPT_STALL_MS - 1);
   assert.equal(sent.some((msg) => msg.stalled === true), false);
   assert.equal(sent.some((msg) => msg.working === false), false);
   time.advance(1);
@@ -313,7 +313,7 @@ test('first tool call after a prompt is working, a final reply goes idle, and a 
   time.advance(60_000);
   assert.equal(sent.at(-1).type, PAIR_MSG.AGENT_ACTIVITY);
   assert.equal(sent.some((msg) => msg.stalled === true && msg.id === pid(2)), false);
-  time.advance(120_000);
+  time.advance(AGENT_PROMPT_STALL_MS);
   assert.equal(sent.at(-1).stalled, true);
   assert.equal(sent.at(-1).working, true);
 
@@ -352,10 +352,10 @@ test('tool calls, read_messages, set_status, and replies refresh the idle window
   assert.equal(sent.some((msg) => msg.working === false), false);
 
   session.holdWork(true);
-  time.advance(PROMPT_IDLE_MS * 3);
+  time.advance(AGENT_PROMPT_STALL_MS * 3);
   assert.equal(sent.some((msg) => msg.stalled === true), false, 'an in-flight bridge call is activity');
   session.holdWork(false);
-  time.advance(PROMPT_IDLE_MS - 1);
+  time.advance(AGENT_PROMPT_STALL_MS - 1);
   assert.equal(sent.some((msg) => msg.stalled === true), false);
   time.advance(1);
   const stall = sent.at(-1);

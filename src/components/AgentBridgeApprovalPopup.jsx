@@ -17,7 +17,7 @@ export default function AgentBridgeApprovalPopup({ open, onAllow, onDeny }) {
       onMouseDown={(event) => event.stopPropagation()}
     >
       <p className="min-w-0 px-1 text-ui-xs text-on-dark">
-        Allow this agent to control SurfCAD?
+        Allow agent to connect
       </p>
       <span className="inline-flex shrink-0 items-center gap-2">
         <button

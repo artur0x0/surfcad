@@ -19,7 +19,7 @@ import { createPromptWatch, stepPromptWatch } from '../agent/agentPromptWatch.js
 import { clearFolded, foldBadge, readFolded, stateAnnouncement, writeFolded } from '../agent/agentPromptFold.js';
 import { conversationReducer, conversationSeed, stickToBottom } from '../agent/agentPromptConversation.js';
 import {
-  AGENT_PROMPT_WORKING_TIMEOUT_MS,
+  AGENT_PROMPT_STALL_MS,
   ackNotice,
   agentPromptStallCopy,
   bindAgentPromptTransport,
@@ -117,7 +117,7 @@ export default function PromptInput({
   const watchRef = useRef(null);
   if (watchRef.current == null) {
     watchRef.current = createPromptWatch({
-      timeoutMs: AGENT_PROMPT_WORKING_TIMEOUT_MS,
+      timeoutMs: AGENT_PROMPT_STALL_MS,
       onStall: () => dispatchTypingRef.current?.({ type: 'stall' }),
     });
   }
