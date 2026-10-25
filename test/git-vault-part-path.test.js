@@ -30,15 +30,28 @@ describe('allocateVaultPartPath', () => {
 
 describe('ensureAssemblyVaultPaths + stringifySurfJson', () => {
   test('repairs path-less agent-style parts for kettle save', () => {
-    const surfId = mintSurfId();
+    const when = new Date('2026-10-25T03:07:13.016Z');
+    const surfId = mintSurfId({ now: when, rand: 'dcd1' });
     const doc = {
       source: 'git',
       name: 'Kettle',
       activeId: 'local-body',
       parts: [
         { id: 'local-body', name: 'Kettle Body', visible: true, order: 0, surfId },
-        { id: 'local-lid', name: 'Kettle Lid', visible: true, order: 1, surfId: mintSurfId() },
-        { id: 'local-handle', name: 'Kettle Handle', visible: true, order: 2, surfId: mintSurfId() },
+        {
+          id: 'local-lid',
+          name: 'Kettle Lid',
+          visible: true,
+          order: 1,
+          surfId: mintSurfId({ now: when, rand: 'dcd2' }),
+        },
+        {
+          id: 'local-handle',
+          name: 'Kettle Handle',
+          visible: true,
+          order: 2,
+          surfId: mintSurfId({ now: when, rand: 'dcd3' }),
+        },
       ],
     };
     const scripts = {
@@ -63,7 +76,13 @@ describe('ensureAssemblyVaultPaths + stringifySurfJson', () => {
       source: 'git',
       name: 'Kettle',
       activeId: bad,
-      parts: [{ id: bad, name: 'Kettle Lid', visible: true, order: 0, surfId: mintSurfId() }],
+      parts: [{
+        id: bad,
+        name: 'Kettle Lid',
+        visible: true,
+        order: 0,
+        surfId: mintSurfId({ now: new Date('2026-10-25T03:07:13.016Z'), rand: 'ee01' }),
+      }],
     };
     const { doc: fixed } = ensureAssemblyVaultPaths(doc, { [bad]: '// x\n' });
     assert.ok((fixed.parts[0].path || fixed.parts[0].id).endsWith('.js'));

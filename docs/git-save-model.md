@@ -640,7 +640,7 @@ Do not combine 7+8. Host contract (8) can start once 7 is on a branch. PR 1+2 mu
 | Risk | Mitigation |
 | --- | --- |
 | Old app cannot open a v2 vault | Upgrade is explicit; v1 bytes stay until the user confirms. Old app on a v2 remote is unsupported (same as any breaking vault bump). |
-| Two clients mint the same surf-id | 1 ms + 4 hex; treat as a compare conflict on that path if it ever happens. |
+| Two clients mint the same surf-id | One process cannot repeat: the 4 hex digits are a counter seeded with 16 crypto-random bits, and the stamp steps one millisecond after a full pass. Two processes can still collide in the same millisecond (16 bits). Treat that as a compare conflict on that path. |
 | Shared part: B had local edits while A saved | B stays dirty; `BranchTip` advanced so B does not “conflict” with A; B’s next Save overwrites the shared file (last Save wins). |
 | Compare API truncated file list | If `compare.files` is incomplete, fail-closed: treat as conflict. |
 | Offline pending then remote overlap | Second Save re-plans / conflicts; `online` does not push. |
