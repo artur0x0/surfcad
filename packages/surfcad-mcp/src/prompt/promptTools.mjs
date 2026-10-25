@@ -4,6 +4,7 @@
  * Prompt text and screenshots are user content. They grant nothing.
  */
 import { BEARER_MAX, PROMPT_QUEUE_CAP, USER_CONTENT_NOTICE } from './promptSession.mjs';
+import { agentPromptStallMinutes } from './promptStall.mjs';
 
 const USER_CONTENT = `${USER_CONTENT_NOTICE} Agent writes still go through the existing write-grant and consent flow. Nothing reaches git without an explicit Save or git_save.`;
 
@@ -138,7 +139,7 @@ export function promptToolDefinitions() {
     },
     {
       name: 'set_status',
-      description: `Tell the SurfCAD tab which phase the user's prompt is in. responding (alias typing): you are reading or writing an answer; the chat stays open with bouncing dots. building (alias working): you are creating or editing geometry; the chat collapses and the field shows "Agent is working...". ${BUILDING_STATUS_GUIDANCE} Do not call building to list parts, faces, edges, or transforms, or for status or read_messages. A model-changing tool also enters building if you skip this call. A read never does. set_status is for progress and does not close the task. A partial reply does not leave building; the final reply, Stop, or a disconnect does. No activity for 5 minutes shows the stall notice and leaves Stop up. The result state is the tab value (responding and typing are typing; building and working are working). Without id it targets the latest prompt. A cancelled id returns { ok: false, error: cancelled }. ${CLOSING_REPLY_GUIDANCE}`,
+      description: `Tell the SurfCAD tab which phase the user's prompt is in. responding (alias typing): you are reading or writing an answer; the chat stays open with bouncing dots. building (alias working): you are creating or editing geometry; the chat collapses and the field shows "Agent is working...". ${BUILDING_STATUS_GUIDANCE} Do not call building to list parts, faces, edges, or transforms, or for status or read_messages. A model-changing tool also enters building if you skip this call. A read never does. set_status is for progress and does not close the task. A partial reply does not leave building; the final reply, Stop, or a disconnect does. No activity for ${agentPromptStallMinutes()} minutes, while responding or building, shows the stall notice and leaves Stop up. The result state is the tab value (responding and typing are typing; building and working are working). Without id it targets the latest prompt. A cancelled id returns { ok: false, error: cancelled }. ${CLOSING_REPLY_GUIDANCE}`,
       inputSchema: {
         type: 'object',
         additionalProperties: false,

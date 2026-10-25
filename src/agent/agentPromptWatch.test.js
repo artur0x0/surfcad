@@ -70,14 +70,15 @@ function session() {
   };
 }
 
-test('tool calls longer than the old timeout keep working', () => {
+test('tool calls longer than one stall window keep working', () => {
   const run = session();
   run.begin();
-  for (let i = 0; i < 5; i += 1) {
-    run.time.advance(90_000);
+  const gap = Math.floor(AGENT_PROMPT_STALL_MS * 0.6);
+  for (let i = 0; i < 3; i += 1) {
+    run.time.advance(gap);
     run.step({ type: 'activity' });
   }
-  assert.ok(5 * 90_000 > AGENT_PROMPT_STALL_MS);
+  assert.ok(3 * gap > AGENT_PROMPT_STALL_MS);
   assert.equal(run.stalls, 0);
   assert.equal(workingShown(run.typing), true);
   assert.equal(stallShown(run.typing), false);
@@ -98,7 +99,23 @@ test('a bridge call that outlasts the timeout holds working until it returns', (
   assert.equal(run.stalls, 1);
   assert.equal(stallShown(run.typing), true);
   assert.equal(pendingShown(run.typing), true);
-  assert.equal(agentPromptStallCopy(), 'No activity from the agent for 5 min — it may have stalled');
+  assert.equal(agentPromptStallCopy(), 'No activity from the agent for 15 min — it may have stalled');
+});
+
+test('responding and building stall on the same window and keep Stop', () => {
+  for (const mode of ['typing', 'working']) {
+    const run = session();
+    run.step({ type: 'sent', id: 'p1' });
+    if (mode === 'working') run.step({ type: 'state', state: 'working' });
+    assert.equal(run.typing.mode, mode);
+    run.time.advance(AGENT_PROMPT_STALL_MS - 1);
+    assert.equal(stallShown(run.typing), false, mode);
+    run.time.advance(1);
+    assert.equal(stallShown(run.typing), true, mode);
+    assert.equal(pendingShown(run.typing), true, mode);
+    assert.equal(run.typing.mode, mode);
+    assert.equal(agentPromptStallCopy(), 'No activity from the agent for 15 min — it may have stalled');
+  }
 });
 
 test('activity refreshes the deadline; a true stall keeps Stop and says why', () => {

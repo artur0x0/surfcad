@@ -9,16 +9,20 @@ import { createAgentPromptTransport } from './agentPromptTransport.js';
 import { shouldShowAgentBridgeDisconnect } from './ws/pairingFlow.js';
 import { PAIR_MSG } from './ws/relayMessages.js';
 import { modeFromStatus } from './agentPromptTyping.js';
-import { AGENT_PROMPT_STALL_MS } from '../../packages/surfcad-mcp/src/prompt/promptStall.mjs';
+import {
+  AGENT_PROMPT_STALL_MS,
+  agentPromptStallMinutes,
+} from '../../packages/surfcad-mcp/src/prompt/promptStall.mjs';
 
-export { AGENT_PROMPT_STALL_MS };
+export { AGENT_PROMPT_STALL_MS, agentPromptStallMinutes };
 
 /**
  * What the prompt box says when the safety deadline passes.
+ * The same window covers typing (responding) and working (building).
  * @param {number} [timeoutMs]
  */
 export function agentPromptStallCopy(timeoutMs = AGENT_PROMPT_STALL_MS) {
-  const minutes = Math.max(1, Math.round(Number(timeoutMs) / 60_000));
+  const minutes = agentPromptStallMinutes(timeoutMs);
   return `No activity from the agent for ${minutes} min — it may have stalled`;
 }
 

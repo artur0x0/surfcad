@@ -90,9 +90,10 @@ The responding dots, Stop, and the "Agent is working..." hint follow one pending
 prompt (`src/agent/agentPromptTyping.js`): the one the tab sent last and has not
 seen closed. Responding ends when the reply lands. Building stays until the
 final reply, on `agent.status` idle, on a failed delivery, on Stop, or on
-disconnect. No activity for 5 minutes leaves that prompt pending, shows the
-stall notice, and keeps Stop. A late, duplicate, or out-of-order `working: true`
-for a closed prompt is ignored, so the dots cannot stay on next to a finished reply.
+disconnect. No activity for 15 minutes, in responding or building, leaves that
+prompt pending, shows the stall notice, and keeps Stop. A late, duplicate, or
+out-of-order `working: true` for a closed prompt is ignored, so the dots cannot
+stay on next to a finished reply.
 The pane above the input is the conversation for this connection
 (`src/agent/agentPromptConversation.js`): the user's messages right-aligned in a
 `surface-quiet` bubble (with a thumbnail when a screenshot went along), the
@@ -112,7 +113,8 @@ sent prompt waits as typing. It switches to working when the agent calls
 on the first model-changing tool. Listing parts, faces, edges, or transforms,
 `status`, and `read_messages` stay on typing. A partial reply does not leave
 working. The final reply, Stop, or disconnect goes to idle. Stop is available
-in both.
+in both. No activity for 15 minutes in either state shows the stall notice and
+leaves Stop available.
 **Fold (desktop):** there is no X. A chevron-down (`data-agent-prompt-fold`,
 "Hide agent prompt") hangs from the prompt's bottom edge as a 44 × 28 pill tab,
 centred, drawn behind the prompt (`z-index` 19 under the prompt's 20) with its
