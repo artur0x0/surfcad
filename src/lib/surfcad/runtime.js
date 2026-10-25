@@ -45,7 +45,16 @@ import { buildSheetMetalSolid } from '../../utils/sheetMetal/sheetSolid.js';
 import { markSheetMesh } from '../../utils/sheetMetal/sheetMeshFlag.js';
 import { installSeparateBodies, overlappingBodies, runEstimateOf, noteRunEstimate } from '../../workers/separateBodies.js';
 import { installKernelArena, beginKernelArena, endKernelArena, retainFromKernelArena, wasmHeapMB } from '../../workers/kernelArena.js';
-import { planMemo, FeatureMemo, MEMO_CAPTURE, MEMO_RESTORE, featureMemoBudgetBytes, importedModelsKey } from './featureMemo.js';
+import { planMemo, FeatureMemo, MEMO_CAPTURE, MEMO_RESTORE, featureMemoBudgetBytes, importedModelsKey, memoKey } from './featureMemo.js';
+import { collectTransferBuffers } from '../../utils/meshTransfer.js';
+import {
+  bakeRigidMesh,
+  matrixIsIdentity,
+  rigidMatrixForOps,
+  splitTrailingRigid,
+  transformBBox,
+  transformPoint,
+} from '../../utils/rigidSuffix.js';
 import { solveContour as solveContourModel } from '../../utils/contourSolve.js';
 import { classifyKernelFailure, FEATURE_TIMEOUT_CODE, FEATURE_TIMEOUT_HINT, featureTimeoutMessage } from '../../workers/kernelCrash.js';
 
@@ -94,6 +103,46 @@ let gameTargetManifold = null;
 // Snapshot of the attempt solid at the execute that ran while a ghost was set.
 // compareGameMatch grades this — never ambient cachedManifold.
 let gameAttemptManifold = null;
+/**
+ * Trailing Move / Rotate kept off the mesh. `cachedManifold` is the unmoved
+ * solid; `cachedBaked` is a lazy clone().transform() for cross-section,
+ * export and game compare. Both stay out of the arena sweep.
+ */
+let cachedFeatureRigid = null;
+let cachedMeshKey = null;
+let cachedBaseCentroid = null;
+let cachedBaseBBox = null;
+let cachedVolume = null;
+let cachedTriCount = null;
+let cachedBaked = null;
+
+function _dropBaked() {
+  _safeDeleteManifold(cachedBaked);
+  cachedBaked = null;
+}
+
+function _clearFeatureRigid() {
+  cachedFeatureRigid = null;
+  cachedMeshKey = null;
+  cachedBaseCentroid = null;
+  cachedBaseBBox = null;
+  cachedVolume = null;
+  cachedTriCount = null;
+  _dropBaked();
+}
+
+/** The solid consumers see: the base, or the base moved by the feature rigid. */
+function liveManifold() {
+  if (!cachedManifold) return null;
+  if (!cachedFeatureRigid || matrixIsIdentity(cachedFeatureRigid)) return cachedManifold;
+  if (cachedBaked) return cachedBaked;
+  try {
+    cachedBaked = cachedManifold.clone().transform(cachedFeatureRigid);
+  } catch (_) {
+    return cachedManifold;
+  }
+  return cachedBaked || cachedManifold;
+}
 
 /** Best-effort Manifold.dispose (embind .delete); ignore missing/throws. */
 function _safeDeleteManifold(m) {
@@ -139,11 +188,11 @@ function _runInKernelArena(fn) {
     _memoCommitPending();
   } catch (error) {
     _memoCommitPending();
-    endKernelArena(arena, { keep: [cachedManifold, gameTargetManifold, gameAttemptManifold] });
+    endKernelArena(arena, { keep: [cachedManifold, cachedBaked, gameTargetManifold, gameAttemptManifold] });
     throw error;
   }
   const kernelFreed = endKernelArena(arena, {
-    keep: [ran && ran.result, cachedManifold, gameTargetManifold, gameAttemptManifold],
+    keep: [ran && ran.result, cachedManifold, cachedBaked, gameTargetManifold, gameAttemptManifold],
   });
   return { ran, kernelFreed };
 }
@@ -10737,24 +10786,137 @@ const serializeResult = (manifold) => {
 };
 
 /**
- * The ArrayBuffers of a serialized mesh, for a postMessage transfer list.
- * Only the buffers this mesh owns outright: after the post they are
- * detached in the worker, so the caller must not read the mesh again.
+ * The ArrayBuffers of a worker result, for a postMessage transfer list.
+ * Meshes, preview pieces and trims all go through here. A view that does
+ * not own its buffer is skipped so a shared allocation is not detached.
  */
-const meshTransferList = (meshData) => {
-  const out = [];
-  const seen = new Set();
-  for (const key of ['vertProperties', 'triVerts', 'runIndex', 'runOriginalID', 'faceID']) {
-    const arr = meshData?.[key];
-    const buf = arr && ArrayBuffer.isView(arr) ? arr.buffer : null;
-    if (!buf || seen.has(buf)) continue;
-    // A view that does not cover its whole buffer shares it with something else.
-    if (arr.byteOffset !== 0 || arr.byteLength !== buf.byteLength) continue;
-    seen.add(buf);
-    out.push(buf);
+const meshTransferList = (payload) => collectTransferBuffers(payload);
+
+function _postWorkerResult(scope, id, payload) {
+  scope.postMessage({ type: 'result', id, payload }, meshTransferList(payload));
+}
+
+function _rememberRigidBase(meta, triCount) {
+  cachedFeatureRigid = meta.featureRigid || null;
+  cachedMeshKey = meta.meshKey;
+  cachedBaseCentroid = meta.baseCentroid;
+  cachedBaseBBox = meta.baseBBox;
+  cachedVolume = meta.volume;
+  if (triCount != null) cachedTriCount = triCount;
+  _dropBaked();
+}
+
+/**
+ * Trailing whole-body move / rotate: run the prefix once, ship the unmoved
+ * mesh, and let the page pose it. A later edit that only changes that
+ * matrix (`knownMeshKey`) does not run the kernel or copy the mesh.
+ * Returns a result payload, or null when the kernel must run the whole script.
+ */
+function _attemptRigidShip(script, importedModels, payload) {
+  if (!payload || payload.rollbackAnchor != null || payload.timedOut) return null;
+  const text = String(script ?? '');
+  const salt = importedModelsKey(importedModels);
+  const split = splitTrailingRigid(text);
+  if (!split?.ops.length) return null;
+  const scriptKey = memoKey(text, salt);
+  const meshKey = memoKey(split.prefix, salt);
+  if (payload.knownMeshKey === meshKey && cachedMeshKey === meshKey && cachedManifold && cachedBaseCentroid) {
+    const rigid = rigidMatrixForOps(split.ops, cachedBaseCentroid);
+    if (rigid) {
+      const featureRigid = matrixIsIdentity(rigid.matrix) ? null : rigid.matrix.slice();
+      _rememberRigidBase({
+        featureRigid,
+        meshKey,
+        baseCentroid: cachedBaseCentroid,
+        baseBBox: cachedBaseBBox,
+        volume: cachedVolume,
+      }, cachedTriCount);
+      const movedBox = cachedBaseBBox ? transformBBox(rigid.matrix, cachedBaseBBox) : null;
+      return {
+        rigidOnly: true,
+        meshOmitted: true,
+        meshKey,
+        scriptKey,
+        salt,
+        featureRigid,
+        baseCentroid: cachedBaseCentroid,
+        baseBBox: cachedBaseBBox,
+        boundingBox: movedBox,
+        bodyCentroids: [rigid.centroid],
+        bodyCount: 1,
+        unmoved: true,
+        volume: cachedVolume,
+        tris: cachedTriCount,
+        status: 'NoError',
+        timing: { execMs: 0, serializeMs: 0 },
+      };
+    }
   }
-  return out;
-};
+  const started = _perfNow();
+  let arena;
+  try {
+    arena = _runInKernelArena(
+      () => executeSkippingFailedFeatures(split.prefix, importedModels, undefined, {}),
+    );
+  } catch (_) {
+    return null;
+  }
+  const solid = arena?.ran?.result;
+  if (!solid || typeof solid.getMesh !== 'function') return null;
+  // Reject before replacing the cached solid. A failed attempt falls through
+  // to the full script; the omit-mesh warm must not answer from the old key.
+  const centroids = _kernelBodyCentroids(solid);
+  if (centroids.length !== 1) return null;
+  const rigid = rigidMatrixForOps(split.ops, centroids[0]);
+  if (!rigid) return null;
+  _replaceCachedManifold(solid);
+  const box = solid.boundingBox();
+  const baseBBox = { min: [...box.min], max: [...box.max] };
+  const featureRigid = matrixIsIdentity(rigid.matrix) ? null : rigid.matrix.slice();
+  const volume = solid.volume();
+  const meta = {
+    featureRigid,
+    meshKey,
+    baseCentroid: centroids[0].slice(),
+    baseBBox,
+    volume,
+  };
+  const skipMesh = payload.omitMesh === true && payload.knownMeshKey === meshKey;
+  let mesh = null;
+  let serializeMs = 0;
+  if (!skipMesh) {
+    const ser = _perfNow();
+    mesh = markSheetMesh(serializeResult(solid), text);
+    serializeMs = _perfNow() - ser;
+    if (featureRigid) mesh.featureRigid = featureRigid;
+  }
+  const tris = mesh ? mesh.triVerts.length / 3 : cachedTriCount;
+  _rememberRigidBase(meta, tris);
+  return {
+    rigidOnly: true,
+    ...(mesh ? { mesh } : { meshOmitted: true }),
+    meshKey,
+    scriptKey,
+    salt,
+    featureRigid,
+    baseCentroid: meta.baseCentroid,
+    baseBBox,
+    boundingBox: transformBBox(rigid.matrix, baseBBox),
+    bodyCentroids: [rigid.centroid],
+    bodyCount: 1,
+    unmoved: true,
+    volume,
+    surfaceArea: typeof solid.surfaceArea === 'function' ? solid.surfaceArea() : null,
+    tris,
+    status: _c4StatusError(solid) || 'NoError',
+    timing: { execMs: _perfNow() - started - serializeMs, serializeMs },
+    kernelFreed: arena.kernelFreed,
+    ...(arena.ran.featureSkip ? { featureSkip: arena.ran.featureSkip } : {}),
+    ...(arena.ran.rolledBack?.length ? { rolledBack: arena.ran.rolledBack } : {}),
+    ...(arena.ran.featureTimings?.length ? { featureTimings: arena.ran.featureTimings } : {}),
+    ...(_lastMemoReport ? { featureCache: _lastMemoReport } : {}),
+  };
+}
 
 /**
  * Memory monitoring - check if we're using too much memory
@@ -11104,6 +11266,74 @@ self.onmessage = async (event) => {
         // the part id scopes the cache report, the keys are content-addressed.
         _memoContext = { partId: typeof partId === 'string' && partId ? partId : null };
         _lastMemoReport = null;
+        // Trailing whole-body Move / Rotate: ship the unmoved mesh and a
+        // matrix. A later matrix-only edit does not enter the kernel.
+        let rigidPayload = null;
+        try {
+          rigidPayload = _attemptRigidShip(script, importedModels || {}, payload);
+        } catch (_) {
+          rigidPayload = null;
+        }
+        if (rigidPayload) {
+          _featureProgress = null;
+          _memoContext = null;
+          cachedExecuteNonce = (nonce !== undefined && nonce !== null) ? nonce : null;
+          if (gameTargetManifold) {
+            _safeDeleteManifold(gameAttemptManifold);
+            const live = liveManifold();
+            gameAttemptManifold = live ? live.clone() : null;
+          }
+          rigidPayload.nonce = cachedExecuteNonce;
+          rigidPayload.memoryUsedMB = checkMemoryUsage(memoryLimitMB || 512);
+          rigidPayload.wasmHeapMB = wasmHeapMB(manifoldModule);
+          _postWorkerResult(self, id, rigidPayload);
+          break;
+        }
+        // The page already has this mesh and the script has no trailing
+        // Move / Rotate (a failed rigid attempt falls through and runs).
+        // A warm asks not to copy the mesh again.
+        const trailingCandidate = splitTrailingRigid(String(script ?? ''));
+        if (
+          !(trailingCandidate && trailingCandidate.ops.length)
+          && payload.omitMesh === true
+          && payload.knownMeshKey
+          && cachedMeshKey === payload.knownMeshKey
+          && cachedManifold
+        ) {
+          _featureProgress = null;
+          _memoContext = null;
+          const heldSalt = importedModelsKey(importedModels || {});
+          const movedBox = cachedBaseBBox
+            ? transformBBox(cachedFeatureRigid, cachedBaseBBox)
+            : null;
+          const centroid = cachedBaseCentroid
+            ? (cachedFeatureRigid
+              ? transformPoint(cachedFeatureRigid, cachedBaseCentroid)
+              : cachedBaseCentroid.slice())
+            : null;
+          cachedExecuteNonce = (nonce !== undefined && nonce !== null) ? nonce : null;
+          _postWorkerResult(self, id, {
+            meshOmitted: true,
+            meshKey: cachedMeshKey,
+            scriptKey: memoKey(String(script ?? ''), heldSalt),
+            salt: heldSalt,
+            featureRigid: cachedFeatureRigid,
+            baseCentroid: cachedBaseCentroid,
+            baseBBox: cachedBaseBBox,
+            boundingBox: movedBox,
+            bodyCentroids: centroid ? [centroid] : [],
+            ...(centroid ? { bodyCount: 1 } : {}),
+            unmoved: true,
+            volume: cachedVolume,
+            tris: cachedTriCount,
+            status: 'NoError',
+            timing: { execMs: 0, serializeMs: 0 },
+            nonce: cachedExecuteNonce,
+          });
+          break;
+        }
+        _lastMemoReport = null;
+        _clearFeatureRigid();
         let arena;
         try {
           arena = _runInKernelArena(
@@ -11130,34 +11360,56 @@ self.onmessage = async (event) => {
         // Check memory after execution
         const memoryUsed = checkMemoryUsage(memoryLimitMB || 512);
         
-        // Serialize result for transfer
-        const _serT0 = _perfNow();
-        const meshData = markSheetMesh(serializeResult(result), script);
-        const _serializeMs = _perfNow() - _serT0;
+        // Serialize result for transfer. A warm that only needs the solid
+        // (cross-section) leaves the mesh on the page.
+        let meshData = null;
+        let _serializeMs = 0;
+        if (payload.omitMesh !== true) {
+          const _serT0 = _perfNow();
+          meshData = markSheetMesh(serializeResult(result), script);
+          _serializeMs = _perfNow() - _serT0;
+        }
         
         // Get metadata for quoting/display
         const volume = result.volume();
         const bbox = result.boundingBox();
         const bodyCentroids = _kernelBodyCentroids(result);
+        const salt = importedModelsKey(importedModels);
+        const split = splitTrailingRigid(String(script ?? ''));
+        const scriptKey = memoKey(String(script ?? ''), salt);
+        const trailingRigid = !!(split && split.ops.length);
+        const baseBBox = { min: [...bbox.min], max: [...bbox.max] };
+        const triCount = meshData
+          ? meshData.triVerts.length / 3
+          : (Number.isFinite(cachedTriCount) ? cachedTriCount : null);
+        if (!trailingRigid) {
+          cachedMeshKey = scriptKey;
+          cachedBaseCentroid = bodyCentroids[0] ? bodyCentroids[0].slice() : null;
+          cachedBaseBBox = baseBBox;
+          cachedVolume = volume;
+          cachedTriCount = triCount;
+          cachedFeatureRigid = null;
+        }
         
         // Transfer the vertex buffers instead of cloning them.
-        const _meshTransfers = meshTransferList(meshData);
-        self.postMessage({ 
-          type: 'result', 
-          id,
-          payload: {
-            mesh: meshData,
+        _postWorkerResult(self, id, {
+            ...(meshData ? { mesh: meshData } : { meshOmitted: true }),
             memoryUsedMB: memoryUsed,
             volume: volume,
             surfaceArea: result.surfaceArea(),
             status: _c4StatusError(result) || 'NoError',
-            tris: meshData.triVerts.length / 3,
-            boundingBox: {
-              min: [...bbox.min],
-              max: [...bbox.max]
-            },
+            tris: triCount,
+            boundingBox: baseBBox,
             nonce: cachedExecuteNonce,
             bodyCentroids,
+            scriptKey,
+            salt,
+            ...(!trailingRigid ? {
+              unmoved: true,
+              meshKey: scriptKey,
+              baseCentroid: cachedBaseCentroid,
+              baseBBox,
+            } : {}),
             timing: { execMs: _execMs, serializeMs: _serializeMs },
             wasmHeapMB: wasmHeapMB(manifoldModule),
             kernelFreed,
@@ -11165,8 +11417,7 @@ self.onmessage = async (event) => {
             ...(ran.rolledBack?.length ? { rolledBack: ran.rolledBack } : {}),
             ...(ran.featureTimings?.length ? { featureTimings: ran.featureTimings } : {}),
             ...(_lastMemoReport ? { featureCache: _lastMemoReport } : {}),
-          }
-        }, _meshTransfers);
+        });
         break;
       }
 
@@ -11178,19 +11429,35 @@ self.onmessage = async (event) => {
         break;
       }
 
+      // The page already has this mesh and only the rigid matrix changed.
+      // Cross-section and export read liveManifold(), which bakes on demand.
+      case 'setFeatureRigid': {
+        const meshKey = payload && payload.meshKey;
+        const matrix = payload && payload.matrix;
+        if (!cachedManifold || !meshKey || cachedMeshKey !== meshKey) {
+          self.postMessage({ type: 'result', id, payload: { held: false } });
+          break;
+        }
+        _dropBaked();
+        cachedFeatureRigid = matrix && !matrixIsIdentity(matrix) ? matrix.slice() : null;
+        self.postMessage({ type: 'result', id, payload: { held: true, meshKey } });
+        break;
+      }
+
       // Get model info from cached manifold
       case 'getModelInfo': {
         if (!isInitialized) {
           throw new Error('Worker not initialized');
         }
         
-        if (!cachedManifold) {
+        const infoSolid = liveManifold();
+        if (!infoSolid) {
           throw new Error('No cached manifold - execute a script first');
         }
         
-        const volume = cachedManifold.volume();
-        const surfaceArea = cachedManifold.surfaceArea();
-        const bbox = cachedManifold.boundingBox();
+        const volume = infoSolid.volume();
+        const surfaceArea = infoSolid.surfaceArea();
+        const bbox = infoSolid.boundingBox();
         
         self.postMessage({
           type: 'result',
@@ -11210,17 +11477,18 @@ self.onmessage = async (event) => {
       // ── Game-mode match: retain ghost solid, compare attempt via boolean difference ──
       case 'storeGameTarget': {
         if (!isInitialized) throw new Error('Worker not initialized');
-        if (!cachedManifold) throw new Error('storeGameTarget: execute the target script first');
-        const se = _c4StatusError(cachedManifold);
+        const targetSolid = liveManifold();
+        if (!targetSolid) throw new Error('storeGameTarget: execute the target script first');
+        const se = _c4StatusError(targetSolid);
         if (se) throw new Error(`storeGameTarget: target is invalid (${se})`);
-        const volume = cachedManifold.volume();
+        const volume = targetSolid.volume();
         if (!(volume > 0)) throw new Error('storeGameTarget: target has no volume');
         // Own retained handle — do not alias cachedManifold (attempt Run overwrites it).
         _safeDeleteManifold(gameTargetManifold);
-        gameTargetManifold = cachedManifold.clone();
+        gameTargetManifold = targetSolid.clone();
         self.postMessage({
           type: 'result', id,
-          payload: { ok: true, volume, boundingBox: _bboxArray(cachedManifold) },
+          payload: { ok: true, volume, boundingBox: _bboxArray(targetSolid) },
         });
         break;
       }
@@ -11230,6 +11498,7 @@ self.onmessage = async (event) => {
       // nothing downstream — cross-section, model info, game compare, stage tooling —
       // may keep serving the previous object once the screen is empty.
       case 'clearResult': {
+        _clearFeatureRigid();
         _safeDeleteManifold(cachedManifold);
         cachedManifold = null;
         cachedExecuteNonce = null;
@@ -11349,24 +11618,12 @@ self.onmessage = async (event) => {
         _replaceCachedManifold(manifold);
         cachedExecuteNonce = null;
         
-        // Get final mesh data
-        const finalMesh = manifold.getMesh();
         const bbox = manifold.boundingBox();
-        
-        // FIX: Use 'result' type instead of 'success'
-        self.postMessage({
-          type: 'result',
-          id,
-          payload: {
-            mesh: {
-              numProp: finalMesh.numProp,
-              vertProperties: Array.from(finalMesh.vertProperties),
-              triVerts: Array.from(finalMesh.triVerts),
-            },
-            volume: manifold.volume(),
-            boundingBox: { min: [...bbox.min], max: [...bbox.max] },
-            filename
-          }
+        _postWorkerResult(self, id, {
+          mesh: serializeResult(manifold),
+          volume: manifold.volume(),
+          boundingBox: { min: [...bbox.min], max: [...bbox.max] },
+          filename,
         });
         break;
       }
@@ -11440,7 +11697,7 @@ self.onmessage = async (event) => {
         if (candidateMesh) {
           cand = _meshDataToManifold(candidateMesh.vertProperties, candidateMesh.triVerts, payload.tolerance ?? 0).manifold;
         } else {
-          cand = cachedManifold;
+          cand = liveManifold();
         }
         const verdict = _stageVerify(cand, ref.manifold, { passRel, volGate });
         self.postMessage({
@@ -11453,19 +11710,20 @@ self.onmessage = async (event) => {
 
       // Raw geometry probe of the last execution: the meshData the worker produced.
       case 'stageGetLastMesh': {
-        if (!cachedManifold) throw new Error('stageGetLastMesh: nothing executed yet');
-        const m = cachedManifold.getMesh();
-        self.postMessage({
-          type: 'result', id,
-          payload: {
-            numProp: m.numProp,
-            vertProperties: Array.from(m.vertProperties),
-            triVerts: Array.from(m.triVerts),
-            volume: cachedManifold.volume(),
-            surfaceArea: cachedManifold.surfaceArea(),
-            boundingBox: _bboxArray(cachedManifold),
-            status: _c4StatusError(cachedManifold) || 'NoError',
-          },
+        const last = liveManifold();
+        if (!last) throw new Error('stageGetLastMesh: nothing executed yet');
+        const m = serializeResult(last);
+        _postWorkerResult(self, id, {
+          numProp: m.numProp,
+          vertProperties: m.vertProperties,
+          triVerts: m.triVerts,
+          runIndex: m.runIndex,
+          runOriginalID: m.runOriginalID,
+          faceID: m.faceID,
+          volume: last.volume(),
+          surfaceArea: last.surfaceArea(),
+          boundingBox: _bboxArray(last),
+          status: _c4StatusError(last) || 'NoError',
         });
         break;
       }
@@ -11489,13 +11747,13 @@ self.onmessage = async (event) => {
         if (!cachedManifold) throw new Error('No cached manifold - execute a script first');
         const created = [];
         const track = (m) => {
-          if (!m || m === cachedManifold) return;
+          if (!m || m === cachedManifold || m === cachedBaked) return;
           if (created.indexOf(m) >= 0) return;
           created.push(m);
         };
         let mesh;
         try {
-          const clone = cachedManifold.clone();
+          const clone = liveManifold().clone();
           track(clone);
           const out = moveFace(clone, payload && payload.faces, payload && payload.distance, {
             flip: !!(payload && payload.flip),
@@ -11505,7 +11763,7 @@ self.onmessage = async (event) => {
         } finally {
           for (const m of created) _safeDeleteManifold(m);
         }
-        self.postMessage({ type: 'result', id, payload: { mesh } });
+        _postWorkerResult(self, id, { mesh });
         break;
       }
 
@@ -11518,13 +11776,13 @@ self.onmessage = async (event) => {
         if (!cachedManifold) throw new Error('No cached manifold - execute a script first');
         const created = [];
         const track = (m) => {
-          if (!m || m === cachedManifold) return;
+          if (!m || m === cachedManifold || m === cachedBaked) return;
           if (created.indexOf(m) >= 0) return;
           created.push(m);
         };
         let mesh;
         try {
-          const clone = cachedManifold.clone();
+          const clone = liveManifold().clone();
           track(clone);
           const out = deleteFace(clone, payload && payload.faces);
           track(out);
@@ -11532,7 +11790,7 @@ self.onmessage = async (event) => {
         } finally {
           for (const m of created) _safeDeleteManifold(m);
         }
-        self.postMessage({ type: 'result', id, payload: { mesh } });
+        _postWorkerResult(self, id, { mesh });
         break;
       }
 
@@ -11546,7 +11804,7 @@ self.onmessage = async (event) => {
         const spec = blockSpec(payload && payload.id, payload && payload.params);
         const created = [];
         const track = (m) => {
-          if (!m || m === cachedManifold) return;
+          if (!m || m === cachedManifold || m === cachedBaked) return;
           if (created.indexOf(m) >= 0) return;
           created.push(m);
         };
@@ -11563,11 +11821,7 @@ self.onmessage = async (event) => {
         } finally {
           for (const m of created) _safeDeleteManifold(m);
         }
-        self.postMessage({
-          type: 'result',
-          id,
-          payload: { mesh, volume, boundingBox, combine: spec.combine },
-        });
+        _postWorkerResult(self, id, { mesh, volume, boundingBox, combine: spec.combine });
         break;
       }
 
@@ -11582,14 +11836,14 @@ self.onmessage = async (event) => {
         }
         const created = [];
         const track = (m) => {
-          if (!m || m === cachedManifold) return;
+          if (!m || m === cachedManifold || m === cachedBaked) return;
           if (created.indexOf(m) >= 0) return;
           created.push(m);
         };
         let pieces;
         try {
           const pl = _cutResolvePlane(payload && payload.plane);
-          const clone = cachedManifold.clone();
+          const clone = liveManifold().clone();
           track(clone);
           const bodies = _cutBodiesOf(clone);
           for (const body of bodies) track(body);
@@ -11617,7 +11871,7 @@ self.onmessage = async (event) => {
         } finally {
           for (const m of created) _safeDeleteManifold(m);
         }
-        self.postMessage({ type: 'result', id, payload: { pieces } });
+        _postWorkerResult(self, id, { pieces });
         break;
       }
 
@@ -11630,7 +11884,7 @@ self.onmessage = async (event) => {
         if (!cachedManifold) throw new Error('No cached manifold - execute a script first');
         const created = [];
         const track = (m) => {
-          if (!m || m === cachedManifold) return;
+          if (!m || m === cachedManifold || m === cachedBaked) return;
           if (created.indexOf(m) >= 0) return;
           created.push(m);
         };
@@ -11644,7 +11898,7 @@ self.onmessage = async (event) => {
           const ownRun = typeof options.targetScript === 'string' && options.targetScript.trim();
           const clone = ownRun
             ? executeScript(options.targetScript, {})
-            : cachedManifold.clone();
+            : liveManifold().clone();
           if (!clone || typeof clone.decompose !== 'function') {
             throw new Error('previewBoolean: target script must return a Manifold');
           }
@@ -11693,7 +11947,7 @@ self.onmessage = async (event) => {
         } finally {
           for (const m of created) _safeDeleteManifold(m);
         }
-        self.postMessage({ type: 'result', id, payload: { pieces } });
+        _postWorkerResult(self, id, { pieces });
         break;
       }
 
@@ -11717,7 +11971,10 @@ self.onmessage = async (event) => {
             let posed = null;
             let both = null;
             try {
-              solid = reconstructManifold(part.mesh);
+              const overlapMesh = part.featureRigid || part.mesh?.featureRigid
+                ? bakeRigidMesh(part.mesh, part.featureRigid || part.mesh.featureRigid)
+                : part.mesh;
+              solid = reconstructManifold(overlapMesh);
               const off = Array.isArray(part.offset) ? part.offset.map(Number) : [0, 0, 0];
               posed = (off[0] || off[1] || off[2]) ? cutter.translate(off) : cutter;
               both = manifoldModule.Manifold.intersection(posed, solid);
@@ -11750,16 +12007,13 @@ self.onmessage = async (event) => {
         const { normal, originOffset } = payload;
         
         // Apply trimByPlane to cached manifold
-        const trimmed = cachedManifold.trimByPlane(normal, originOffset);
+        const trimmed = liveManifold().trimByPlane(normal, originOffset);
         
         // Serialize result
         const meshData = serializeResult(trimmed);
+        if (trimmed !== cachedManifold && trimmed !== cachedBaked) _safeDeleteManifold(trimmed);
         
-        self.postMessage({
-          type: 'result',
-          id,
-          payload: { mesh: meshData }
-        });
+        _postWorkerResult(self, id, { mesh: meshData });
         break;
       }
 
@@ -11778,7 +12032,7 @@ self.onmessage = async (event) => {
           trimmed = solid.trimByPlane(normal, originOffset);
           const meshData = serializeResult(trimmed);
           if (typeof trimmed.volume === 'function') meshData.volume = trimmed.volume();
-          self.postMessage({ type: 'result', id, payload: { mesh: meshData } });
+          _postWorkerResult(self, id, { mesh: meshData });
         } finally {
           _safeDeleteManifold(trimmed);
           _safeDeleteManifold(solid);

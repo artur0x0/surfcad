@@ -578,6 +578,12 @@ import { planePatchFromArgs } from '../agent/sketchPlaneAgent.js';
 import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from '../agent/state/listPickables.js';
 import { describeJointPick } from '../agent/jointPickDescribe.js';
 import { agentFaceCatalog, findAgentFace } from '../agent/faceCatalog.js';
+import {
+  poseAgentCatalog,
+  poseEdgeRecord,
+  poseFaceRecord,
+  transformPoint,
+} from '../utils/rigidSuffix.js';
 import { describeFaceTable, resolveEdgeNames, resolveFaceNames, stampedFaceTable, stampedNameForTriangles } from '../utils/faceIdentity.js';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
@@ -1693,6 +1699,8 @@ const Viewport = forwardRef(({
   const deleteFaceModeRef = useRef(null);
   /** Kernel centroids from the last execute. move() matches these, not the viewport average. */
   const bodyCentroidsRef = useRef([]);
+  /** Trailing Move / Rotate of the active part. The mesh stays unmoved. */
+  const featureRigidRef = useRef(null);
   const movePreviewRef = useRef(null);
   const rotatePreviewRef = useRef(null);
   const moveFacePreviewRef = useRef(null);
@@ -12492,12 +12500,38 @@ const Viewport = forwardRef(({
     return attr?.array?.length ? attr.array : null;
   };
 
+  const featureRigidForAgentPart = (partId) => {
+    const active = activePartIdRef.current;
+    if (partId == null || partId === '' || String(partId) === String(active)) {
+      return featureRigidRef.current || cachedMeshDataRef.current?.featureRigid || null;
+    }
+    const extra = assemblyExtrasRef.current.get(partId);
+    return extra?.userData?.featureRigid || null;
+  };
+
+  const poseListedEdges = (listed, matrix) => {
+    if (!listed || !matrix || !Array.isArray(listed.edges)) return listed;
+    return {
+      ...listed,
+      edges: listed.edges.map((edge) => {
+        const row = poseEdgeRecord(edge, matrix);
+        if (row.faceKeyA) row.faceKeyA = poseFaceRecord(row.faceKeyA, matrix);
+        if (row.faceKeyB) row.faceKeyB = poseFaceRecord(row.faceKeyB, matrix);
+        return row;
+      }),
+    };
+  };
+
   const agentCatalogForPart = (partId) => {
     const geom = meshGeometryForAgentPart(partId);
     if (!geom) return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
     const faceIDs = faceIDsForAgentPart(partId, geom);
     const cacheEntry = liveSolidEntryForGeometry(solidCacheRef.current, geom);
-    return { geom, faceIDs, catalog: agentFaceCatalog(geom, faceIDs, cacheEntry) };
+    const catalog = poseAgentCatalog(
+      agentFaceCatalog(geom, faceIDs, cacheEntry),
+      featureRigidForAgentPart(partId),
+    );
+    return { geom, faceIDs, catalog };
   };
 
   /**
@@ -12509,12 +12543,16 @@ const Viewport = forwardRef(({
     const geom = resultRef.current?.geometry;
     if (!geom?.attributes?.position || !geom.index) return null;
     const kernel = bodyCentroidsRef.current || [];
-    return meshBodyComponents(geom.attributes.position, geom.index).map((body, index) => ({
-      index,
-      at: snapMoveBodyAt(body.at, kernel),
-      triangles: body.triangles,
-      triangleCount: body.triangles.length,
-    }));
+    const rigid = featureRigidRef.current;
+    return meshBodyComponents(geom.attributes.position, geom.index).map((body, index) => {
+      const at = rigid ? transformPoint(rigid, body.at) : body.at;
+      return {
+        index,
+        at: snapMoveBodyAt(at, kernel),
+        triangles: body.triangles,
+        triangleCount: body.triangles.length,
+      };
+    });
   };
   agentReadBodiesRef.current = () => {
     const partId = activePartIdRef.current != null && activePartIdRef.current !== '' ? String(activePartIdRef.current) : null;
@@ -12614,7 +12652,7 @@ const Viewport = forwardRef(({
     return {
       partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
       raw: true,
-      ...listed,
+      ...poseListedEdges(listed, featureRigidForAgentPart(partId)),
     };
   };
 
@@ -12627,7 +12665,7 @@ const Viewport = forwardRef(({
     return {
       partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
       grouped: true,
-      ...listed,
+      ...poseListedEdges(listed, featureRigidForAgentPart(partId)),
     };
   };
 
@@ -13204,7 +13242,9 @@ const Viewport = forwardRef(({
     // an edge of the face graph. A solid already built for this mesh data
     // (another assembly part, or this part before a switch) is reused.
     // Scoped by definition: every instance of a part shares the geometry.
+    const tUpload = performance.now();
     const solid = cachedSolidGeometry(solidCacheRef.current, meshData, definitionOf(activePartIdRef.current));
+    const uploadMs = performance.now() - tUpload;
     const geometry = solid.geometry;
     faceIDsRef.current = solid.faceIDs;
 
@@ -13227,7 +13267,7 @@ const Viewport = forwardRef(({
     attachContactSeam(resultRef.current, meshData);
     const seamMs = performance.now() - tSeam;
     const prevTiming = graphTimingRef.current || {};
-    graphTimingRef.current = { ...prevTiming, faceMs, seamMs };
+    graphTimingRef.current = { ...prevTiming, faceMs, seamMs, uploadMs };
     setMeshEpoch((n) => n + 1);
     // New solid geometry: rebuild (or drop) the failed outline on it.
     syncFailedPartOutlinesRef.current();
@@ -13806,6 +13846,7 @@ const Viewport = forwardRef(({
         roundTripMs: workerTiming.roundTripMs ?? null,
         faceGraphMs: g.faceMs ?? null,
         edgeGraphMs: (g.featureMs || 0) + (g.topoMs || 0) + (g.annotateMs || 0),
+        uploadMs: g.uploadMs ?? null,
         contourGraphMs: (g.coherentMs || 0) + (g.seamMs || 0),
         featureMs: g.featureMs ?? null,
         topoMs: g.topoMs ?? null,
@@ -13814,6 +13855,9 @@ const Viewport = forwardRef(({
         seamMs: g.seamMs ?? null,
       };
       if (typeof window !== 'undefined') window.__SURFCAD_RUN_TIMING = report;
+      if (import.meta.env?.DEV || globalThis.__SURFCAD_MESH_TIMING) {
+        console.info('[mesh] run', report);
+      }
       if (!opts.editPreview) {
         const skip = result?.featureSkip;
         if (skip && typeof skip.featureId === 'string' && skip.featureId) {
@@ -13861,6 +13905,14 @@ const Viewport = forwardRef(({
         volume: Number.isFinite(result?.volume) ? result.volume : null,
         boundingBox: result?.boundingBox ?? null,
         bbox: result?.boundingBox ?? null,
+        bodyCentroids: bodyCentroidsRef.current,
+        meshKey: result?.meshKey || null,
+        scriptKey: result?.scriptKey || null,
+        salt: result?.salt,
+        featureRigid: result?.featureRigid || meshData.featureRigid || null,
+        baseCentroid: result?.baseCentroid || null,
+        baseBBox: result?.baseBBox || null,
+        unmoved: result?.unmoved === true,
         rolledBack,
       };
 
@@ -14389,6 +14441,8 @@ const Viewport = forwardRef(({
   adoptActiveSolidRef.current = ({ mesh, position, placement, partId }) => {
     if (!resultRef.current || !mesh?.vertProperties) return false;
     if (partId !== undefined) activePartIdRef.current = partId ?? null;
+    featureRigidRef.current = mesh?.featureRigid || null;
+    if (resultRef.current) resultRef.current.userData.featureRigid = featureRigidRef.current;
     if (partId != null && partSurfIdRef.current.has(String(partId))) {
       resultRef.current.userData.surfId = partSurfIdRef.current.get(String(partId));
     }
@@ -14572,6 +14626,13 @@ const Viewport = forwardRef(({
     const group = assemblyGroupRef.current;
     applyPartPose(group, { t: [0, 0, 0], q: [0, 0, 0, 1] });
     const keep = new Set();
+    let placeUploadMs = 0;
+    const timeGeom = (meshData, scope) => {
+      const t0 = performance.now();
+      const hit = cachedSolidGeometry(solidCacheRef.current, meshData, scope);
+      placeUploadMs += performance.now() - t0;
+      return hit;
+    };
     for (const solid of solids) {
       if (!solid || solid.id === activeId) continue;
       if (!solid.mesh?.vertProperties || !solid.mesh?.triVerts) continue;
@@ -14587,7 +14648,7 @@ const Viewport = forwardRef(({
       mesh.userData.leftover = false;
       // Part instances: rows of one definition share one geometry, so the
       // cache scope is the definition, not the row.
-      const { geometry: geom } = cachedSolidGeometry(solidCacheRef.current, solid.mesh, solid.definitionId ?? solid.id);
+      const { geometry: geom } = timeGeom(solid.mesh, solid.definitionId ?? solid.id);
       if (mesh.geometry !== geom) {
         releaseGeometryIn(solidCacheRef.current, mesh.geometry);
         mesh.geometry = geom;
@@ -14597,6 +14658,7 @@ const Viewport = forwardRef(({
       ensureBodyMaterial(mesh, solid.mesh);
       applyPartPose(mesh, solidPlacement(solid));
       mesh.userData.surfId = solid.surfId || null;
+      mesh.userData.featureRigid = solid.featureRigid || solid.mesh?.featureRigid || null;
       applyFaceSkinRef.current(mesh);
     }
     const leftoverList = Array.isArray(payload?.leftovers) ? payload.leftovers : [];
@@ -14614,7 +14676,7 @@ const Viewport = forwardRef(({
       }
       mesh.userData.assemblyPartId = solid.id;
       mesh.userData.leftover = true;
-      const { geometry: geom } = cachedSolidGeometry(solidCacheRef.current, solid.mesh, solid.definitionId ?? solid.id);
+      const { geometry: geom } = timeGeom(solid.mesh, solid.definitionId ?? solid.id);
       if (mesh.geometry !== geom) {
         releaseGeometryIn(solidCacheRef.current, mesh.geometry);
         mesh.geometry = geom;
@@ -14624,6 +14686,7 @@ const Viewport = forwardRef(({
       ensureBodyMaterial(mesh, solid.mesh);
       applyPartPose(mesh, solidPlacement(solid));
       mesh.userData.surfId = solid.surfId || null;
+      mesh.userData.featureRigid = solid.featureRigid || solid.mesh?.featureRigid || null;
       applyFaceSkinRef.current(mesh);
     }
     for (const [id, mesh] of assemblyExtrasRef.current) {
@@ -14642,6 +14705,9 @@ const Viewport = forwardRef(({
       detachFaceColorSkin(resultRef.current);
       detachStressSkin(resultRef.current);
       resultRef.current.userData.surfId = null;
+      featureRigidRef.current = null;
+      bodyCentroidsRef.current = [];
+      delete resultRef.current.userData.featureRigid;
       removeContactSeam(resultRef.current);
       releaseGeometryIn(solidCacheRef.current, resultRef.current.geometry);
       resultRef.current.geometry = new BufferGeometry();
@@ -14661,6 +14727,11 @@ const Viewport = forwardRef(({
     } else {
       const active = solids.find((solid) => solid.id === activeId);
       const pose = solidPlacement(active);
+      bodyCentroidsRef.current = Array.isArray(active?.bodyCentroids)
+        ? active.bodyCentroids
+        : bodyCentroidsRef.current;
+      featureRigidRef.current = active?.featureRigid || active?.mesh?.featureRigid || null;
+      resultRef.current.userData.featureRigid = featureRigidRef.current;
       applyPartPose(resultRef.current, pose);
       if (active?.mesh?.vertProperties && graphsBoundMeshRef.current !== active.mesh) {
         adoptActiveSolidRef.current({ mesh: active.mesh, position: pose.t, placement: pose, partId: activeId });
@@ -14679,41 +14750,45 @@ const Viewport = forwardRef(({
     syncAnchoredOverlays();
     setOverlayEpoch((n) => n + 1);
     if (autoFitEnabled && solids.length && cameraRef.current) {
-      const geom = new BufferGeometry();
-      const chunks = [];
+      const box = new Box3();
+      let framed = false;
       for (const solid of solids) {
+        const local = solid.localBBox || solid.bbox;
+        const pose = solidPlacement(solid);
+        if (local?.min && local?.max) {
+          const xs = [Number(local.min[0]), Number(local.max[0])];
+          const ys = [Number(local.min[1]), Number(local.max[1])];
+          const zs = [Number(local.min[2]), Number(local.max[2])];
+          for (const x of xs) {
+            for (const y of ys) {
+              for (const z of zs) {
+                const w = shiftLocalPoint([x, y, z], pose.t, pose.q);
+                box.expandByPoint(new Vector3(w[0], w[1], w[2]));
+                framed = true;
+              }
+            }
+          }
+          continue;
+        }
         const src = solid.mesh?.vertProperties;
         if (!src) continue;
         const np = solid.mesh.numProp || 3;
-        const pose = solidPlacement(solid);
         const n = Math.floor(src.length / np);
-        const arr = new Float32Array(n * 3);
-        for (let i = 0; i < n; i++) {
+        for (let i = 0; i < n; i += 1) {
           const w = shiftLocalPoint([src[i * np], src[i * np + 1], src[i * np + 2]], pose.t, pose.q);
-          arr[i * 3] = w[0];
-          arr[i * 3 + 1] = w[1];
-          arr[i * 3 + 2] = w[2];
+          box.expandByPoint(new Vector3(w[0], w[1], w[2]));
+          framed = true;
         }
-        chunks.push(arr);
       }
-      let total = 0;
-      for (const chunk of chunks) total += chunk.length;
-      if (total > 0) {
-        const all = new Float32Array(total);
-        let offset = 0;
-        for (const chunk of chunks) {
-          all.set(chunk, offset);
-          offset += chunk.length;
-        }
-        geom.setAttribute('position', new BufferAttribute(all, 3));
+      if (framed && !box.isEmpty()) {
         fitView({
           camera: cameraRef.current,
           controls: controlsRef.current,
-          geometry: geom,
+          box,
         });
-        geom.dispose();
       }
     }
+    if (typeof window !== 'undefined') window.__SURFCAD_PLACE_UPLOAD_MS = placeUploadMs;
     syncFailedPartOutlinesRef.current();
     group.updateMatrixWorld(true);
     if (containerRef.current) {

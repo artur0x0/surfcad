@@ -16,6 +16,7 @@ import {
 } from './assembly.js';
 import { missingMeshMessage, resolvePartMeshes } from './meshAssets.js';
 import { kernelCrashRecord } from '../workers/kernelCrash.js';
+import { shipFieldsFromResult } from './meshShip.js';
 
 /**
  * Build one part: resolve its script and meshes, run it, and return the
@@ -42,7 +43,7 @@ async function buildPart({ doc, scripts, execute, part }) {
     const mesh = result?.mesh && result.mesh.vertProperties ? result.mesh : null;
     const geom = geometryFromExecuteResult(result);
     return mesh
-      ? { ok: true, mesh, ...geom }
+      ? { ok: true, mesh, ...geom, ...shipFieldsFromResult(result) }
       : { ok: false, error: 'Script must return a Manifold object' };
   } catch (err) {
     const crash = kernelCrashRecord(err);

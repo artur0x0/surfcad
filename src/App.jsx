@@ -68,6 +68,7 @@ import {
   importMeshScript,
   meshAssetName,
   rememberPartAssets,
+  resolvePartMeshes,
   selectedPartDownload,
 } from './utils/meshAssets';
 import { 
@@ -199,6 +200,13 @@ import { buildEffectiveJointCard, jointEditCard } from './agent/jointCardAgent.j
 import AgentVisibleLayer from './components/AgentVisibleLayer';
 import AgentBridgeHost from './components/AgentBridgeHost';
 import { runAssemblyParts } from './utils/assemblyRun';
+import { assetKeyFromAssets, decideMeshShip, runFromShip, shipFieldsFromResult } from './utils/meshShip';
+import {
+  composePlacementWithMatrix,
+  poseEdgeRecord,
+  poseFaceRecord,
+  splitTrailingRigid,
+} from './utils/rigidSuffix';
 import { catalogsFromRuns } from './utils/jointResolve';
 import { jointedSurfIds, partPlacement, poseFieldsForPart } from './utils/jointSchema';
 import {
@@ -617,6 +625,8 @@ const App = () => {
   /** Bumped when the active part changes out from under a pending autosave. */
   const partSaveEpochRef = useRef(0);
   const refreshGenRef = useRef(0);
+  /** meshKey the primary worker is holding, so a later move does not warm it. */
+  const primaryHoldsRef = useRef(null);
   /** Assembly-open spinner. Hidden until ~150ms; cleared on every exit. */
   const [assemblyOpenUi, setAssemblyOpenUi] = useState(null);
   const [assemblyOpenToast, setAssemblyOpenToast] = useState(null);
@@ -2501,6 +2511,97 @@ const App = () => {
    * face and edge graphs still rebuild on that solid alone. A failed active
    * part passes noShadow and is omitted. Other parts are meshes beside it.
    */
+  const assetKeyForDef = (defId) => {
+    const meta = partMeshMetaRef.current?.[String(defId)];
+    return assetKeyFromAssets(meta?.assets);
+  };
+
+  const previousPartRun = (defId, rowId) => {
+    const runs = partRunsRef.current || {};
+    return runs[defId] || (rowId != null ? runs[rowId] : null) || null;
+  };
+
+  const featureRigidForPart = (partId) => {
+    const doc = assemblyRef.current;
+    const row = doc?.parts?.find((part) => part.id === partId) || null;
+    const def = row ? partDefinitionId(row) : partId;
+    const run = previousPartRun(def, partId);
+    return run?.featureRigid || run?.mesh?.featureRigid || null;
+  };
+
+  /**
+   * New features land after a trailing Move / Rotate, so their coordinates
+   * are in moved part space. An edit of a block inside the prefix keeps the
+   * mesh-local numbers the script already has.
+   */
+  const matrixForNewFeature = (partId, script, editing) => {
+    const matrix = featureRigidForPart(partId);
+    if (!matrix) return null;
+    if (!editing) return matrix;
+    const split = splitTrailingRigid(typeof script === 'string' ? script : '');
+    if (!split?.ops.length || split.suffixStart == null) return null;
+    const id = typeof editing === 'string' ? editing : (editing.id || editing.featureId || '');
+    if (id && typeof script === 'string') {
+      const at = script.indexOf(String(id));
+      if (at >= 0 && at < split.suffixStart) return null;
+    }
+    return matrix;
+  };
+
+  const placementForMesh = (part) => {
+    const asm = partPlacement(part);
+    if (!part) return asm;
+    return composePlacementWithMatrix(asm, featureRigidForPart(part.id));
+  };
+
+  const meshTimingOn = () => !!(import.meta.env?.DEV || globalThis.__SURFCAD_MESH_TIMING);
+
+  /**
+   * The primary worker holds the active solid for cross-section. A skipped
+   * rebuild still updates that matrix, or warms the solid in the background
+   * without copying the mesh back.
+   */
+  const warmPrimaryMesh = (defId, script, decision) => {
+    const meshKey = decision?.meshKey;
+    if (!meshKey || typeof script !== 'string') return;
+    const gen = refreshGenRef.current;
+    const held = primaryHoldsRef.current;
+    const same = held && held.meshKey === meshKey && String(held.defId) === String(defId);
+    if (same && decision.action !== 'rigid') return;
+    if (same && decision.action === 'rigid') {
+      manifoldContext.setFeatureRigid(meshKey, decision.featureRigid || null).then((res) => {
+        if (res && res.held === false && gen === refreshGenRef.current) {
+          primaryHoldsRef.current = null;
+          warmPrimaryMesh(defId, script, { ...decision, action: 'reuse' });
+        }
+      }).catch(() => {});
+      return;
+    }
+    void (async () => {
+      let importedModels = {};
+      try {
+        const prepared = await resolvePartMeshes(defId, script);
+        if (prepared?.importedModels) importedModels = prepared.importedModels;
+      } catch { /* the warm is best-effort */ }
+      if (gen !== refreshGenRef.current) return;
+      try {
+        const result = await manifoldContext.executeScript(script, {
+          timeoutMs: 30000,
+          omitMesh: true,
+          knownMeshKey: meshKey,
+          partId: String(defId),
+          importedModels,
+        });
+        if (gen !== refreshGenRef.current) return;
+        if (result && (result.meshOmitted || result.mesh || result.rigidOnly)) {
+          primaryHoldsRef.current = { meshKey: result.meshKey || meshKey, defId: String(defId) };
+        }
+      } catch (err) {
+        console.warn('[App] primary mesh warm failed', err?.message || err);
+      }
+    })();
+  };
+
   const refreshAssembly = async (activeScript, opts = {}) => {
     if (!assemblyRef.current && appModeRef.current !== 'game') {
       const text = typeof activeScript === 'string'
@@ -2536,21 +2637,104 @@ const App = () => {
       .filter((part) => part.visible !== false && part.id !== viewId
         && !(willBuildActive && partDefinitionId(part) === viewDef))
       .map((part) => part.id);
-    const buildTotal = otherIds.length + (willBuildActive ? 1 : 0);
+    const tAssembly = performance.now();
+    const shipNotes = [];
+    const noteShip = (id, action, reason, ms) => {
+      shipNotes.push({
+        id: id == null ? null : String(id),
+        action,
+        reason: reason || null,
+        ms: Math.round(ms * 10) / 10,
+      });
+    };
+    const decisionFor = (part, script) => {
+      const def = partDefinitionId(part);
+      const anchor = rollbackAnchorsRef.current[String(part.id)];
+      if ((anchor === null || typeof anchor === 'string') && rollbackClearsPart(script, anchor)) {
+        return { action: 'rebuild', reason: 'rollback' };
+      }
+      return decideMeshShip({
+        script,
+        assetKey: assetKeyForDef(def),
+        previous: previousPartRun(def, part.id),
+      });
+    };
+    const assignDefRun = (map, def, run) => {
+      map[def] = run;
+      for (const row of doc.parts) {
+        if (partDefinitionId(row) === def) map[row.id] = run;
+      }
+    };
+    const keptByDef = {};
+    const rebuildIds = [];
+    const seenDef = new Set();
+    for (const id of otherIds) {
+      const part = doc.parts.find((row) => row.id === id);
+      if (!part) continue;
+      const def = partDefinitionId(part);
+      if (seenDef.has(def)) continue;
+      seenDef.add(def);
+      const script = typeof scripts[id] === 'string' ? scripts[id] : scripts[def];
+      if (typeof script !== 'string') {
+        rebuildIds.push(id);
+        noteShip(def, 'rebuild', 'missing', 0);
+        continue;
+      }
+      const tDecide = performance.now();
+      const decision = decisionFor(part, script);
+      if (decision.action === 'reuse' || decision.action === 'rigid') {
+        const run = runFromShip(previousPartRun(def, id), decision);
+        if (run) {
+          run.assetKey = assetKeyForDef(def);
+          keptByDef[def] = run;
+          noteShip(def, decision.action, decision.reason, performance.now() - tDecide);
+          continue;
+        }
+      }
+      noteShip(def, 'rebuild', decision.reason, performance.now() - tDecide);
+      for (const rowId of otherIds) {
+        const row = doc.parts.find((item) => item.id === rowId);
+        if (row && partDefinitionId(row) === def) rebuildIds.push(rowId);
+      }
+    }
+    let activeDecision = null;
+    let activeScriptText = willBuildActive ? scripts[viewId] : null;
+    if (willBuildActive) {
+      const anchor = storedRollback(String(viewId));
+      const cleared = (anchor === null || typeof anchor === 'string')
+        && rollbackClearsPart(activeScriptText, anchor);
+      const tDecide = performance.now();
+      activeDecision = cleared
+        ? { action: 'rebuild', reason: 'rollback' }
+        : decisionFor(activePart, activeScriptText);
+      // A deliberate Run re-executes an unchanged script so a cleared feature
+      // memo is filled again. A trailing Move / Rotate stays on the matrix.
+      if (!cleared && opts.forceActive && activeDecision.action === 'reuse') {
+        activeDecision = { action: 'rebuild', reason: 'run' };
+      }
+      if (!cleared && (activeDecision.action === 'reuse' || activeDecision.action === 'rigid')) {
+        noteShip(viewId, activeDecision.action, activeDecision.reason, performance.now() - tDecide);
+      } else {
+        noteShip(viewId, 'rebuild', activeDecision.reason, performance.now() - tDecide);
+        activeDecision = { ...activeDecision, action: 'rebuild' };
+      }
+    }
+    const activeRebuild = willBuildActive && activeDecision?.action === 'rebuild';
+    const buildTotal = rebuildIds.length + (activeRebuild ? 1 : 0);
     let buildStep = 0;
     const noteBuild = () => {
       buildStep += 1;
       const report = assemblyOpenProgressRef.current;
-      if (typeof report === 'function') report({ index: buildStep, total: buildTotal });
+      if (typeof report === 'function') report({ index: buildStep, total: Math.max(buildTotal, 1) });
     };
     let other;
     try {
-      // The other parts build on the geometry pool, several at once up to
-      // the device cap; the active part follows on the primary worker.
+      // Unchanged parts stay on the page. The rest build on the geometry
+      // pool; the active part follows on the primary worker when it changed.
       other = await runAssemblyParts({
           doc,
           scripts,
-          ids: otherIds,
+          ids: rebuildIds,
           concurrency: manifoldContext.parallelism(),
           execute: (script, execOpts) => {
             noteBuild();
@@ -2574,7 +2758,17 @@ const App = () => {
       if (gen !== refreshGenRef.current) return false;
 
       const runs = { ...(other.runs || {}) };
-      if (willBuildActive) {
+      for (const [def, run] of Object.entries(keptByDef)) assignDefRun(runs, def, run);
+      let activeRan = false;
+      if (willBuildActive && activeDecision && activeDecision.action !== 'rebuild') {
+        const run = runFromShip(previousPartRun(viewDef, viewId), activeDecision);
+        if (run) {
+          run.assetKey = assetKeyForDef(viewDef);
+          assignDefRun(runs, viewDef, run);
+          warmPrimaryMesh(viewDef, activeScriptText, activeDecision);
+        }
+      } else if (willBuildActive) {
+        activeRan = true;
         noteBuild();
         const runOpts = {
           noShadow: true,
@@ -2597,14 +2791,20 @@ const App = () => {
           const bodyCount = geom.bodyCount != null
             ? geom.bodyCount
             : (Array.isArray(run.bodyCentroids) ? run.bodyCentroids.length : undefined);
-          runs[viewId] = {
+          const built = {
             ok: true,
             mesh: run.mesh,
             error: null,
             bodyCount,
             volume: geom.volume,
             bbox: geom.bbox,
+            assetKey: assetKeyForDef(viewDef),
+            ...shipFieldsFromResult(run),
           };
+          assignDefRun(runs, viewDef, built);
+          if (built.meshKey) {
+            primaryHoldsRef.current = { meshKey: built.meshKey, defId: String(viewDef) };
+          }
         } else if (run && run.ok === false) {
           const crash = runFailureRef.current?.crash;
           runs[viewId] = {
@@ -2624,6 +2824,10 @@ const App = () => {
           error: typeof scripts[viewId] === 'string' ? null : 'missing',
         };
       }
+      for (const part of doc.parts) {
+        const run = runs[part.id];
+        if (run?.ok && run.assetKey == null) run.assetKey = assetKeyForDef(partDefinitionId(part));
+      }
 
       if (gen !== refreshGenRef.current) return false;
       // Every row of the active definition shows the run that just finished.
@@ -2631,6 +2835,16 @@ const App = () => {
       // Hidden rows were not re-run. Keep their last solid so the parts-list
       // thumbnail stays; composeViewportParts still leaves them out of the view.
       const keptRuns = preserveHiddenPartRuns(doc, fanned, partRunsRef.current);
+      if (
+        willBuildActive
+        && activeDecision
+        && activeDecision.action !== 'rebuild'
+        && keptRuns[viewId]?.ok === true
+      ) {
+        // The mesh stayed on the page, so the viewport does not emit a run
+        // outcome. The agent still needs this refresh to count as finished.
+        handleRunOutcome({ ok: true, script: activeScriptText });
+      }
       for (const [id, run] of Object.entries(keptRuns)) {
         if (run?.ok && run.mesh?.vertProperties) partLeftoversRef.current[id] = run.mesh;
       }
@@ -2665,6 +2879,22 @@ const App = () => {
         // Red outline in the viewer, same rule as the Parts feed's red row.
         failedIds: failedPartIdsFor(doc, keptRuns),
       });
+      const runTiming = activeRan && typeof window !== 'undefined' ? window.__SURFCAD_RUN_TIMING : null;
+      const placeUpload = typeof window !== 'undefined' ? window.__SURFCAD_PLACE_UPLOAD_MS : null;
+      const assemblyTiming = {
+        seq: (typeof window !== 'undefined' ? (window.__SURFCAD_ASSEMBLY_TIMING?.seq || 0) : 0) + 1,
+        totalMs: Math.round((performance.now() - tAssembly) * 10) / 10,
+        active: viewId ? String(viewId) : null,
+        parts: shipNotes,
+        kernelMs: runTiming?.workerExecMs ?? (activeRan ? null : 0),
+        transferMs: runTiming?.transferMs ?? (activeRan ? null : 0),
+        indexMs: runTiming
+          ? Math.round(((runTiming.faceGraphMs || 0) + (runTiming.edgeGraphMs || 0)) * 10) / 10
+          : 0,
+        uploadMs: Math.round((((runTiming?.uploadMs) || 0) + (placeUpload || 0)) * 10) / 10,
+      };
+      if (typeof window !== 'undefined') window.__SURFCAD_ASSEMBLY_TIMING = assemblyTiming;
+      if (meshTimingOn()) console.info('[mesh] assembly', assemblyTiming);
     return true;
   };
   refreshAssemblyRef.current = refreshAssembly;
@@ -2790,7 +3020,7 @@ const App = () => {
           partId: id,
           mesh,
           position: partPosition(partNow) || [0, 0, 0],
-          placement: partPlacement(partNow),
+          placement: placementForMesh(partNow),
         });
       }
       if (!opts.keepPicks || opts.bodyHighlight) viewportRef.current?.showCadBodyHighlight?.();
@@ -2827,7 +3057,7 @@ const App = () => {
         partId: id,
         mesh: cachedMesh,
         position: partPosition(part) || [0, 0, 0],
-        placement: partPlacement(part),
+        placement: placementForMesh(part),
       });
     }
     if (opts.keepPicks) {
@@ -2879,7 +3109,7 @@ const App = () => {
           partId,
           mesh,
           position: partPosition(part) || [0, 0, 0],
-          placement: partPlacement(part),
+          placement: placementForMesh(part),
         });
       }
       rememberCadPart(null);
@@ -2901,7 +3131,7 @@ const App = () => {
         partId,
         mesh,
         position: partPosition(part) || [0, 0, 0],
-        placement: partPlacement(part),
+        placement: placementForMesh(part),
       });
     }
     return true;
@@ -5345,7 +5575,7 @@ const App = () => {
       viewportRef.current?.adoptActiveSolid?.({
         mesh: nextRun.mesh,
         position: partPosition(nextPart) || [0, 0, 0],
-        placement: partPlacement(nextPart),
+        placement: placementForMesh(nextPart),
         partId: nextActive,
       });
     }
@@ -7522,7 +7752,7 @@ const App = () => {
         viewportRef.current?.adoptActiveSolid?.({
           mesh: nextRun.mesh,
           position: partPosition(nextPart) || [0, 0, 0],
-          placement: partPlacement(nextPart),
+          placement: placementForMesh(nextPart),
           partId: nextActive,
         });
       }
@@ -7575,7 +7805,7 @@ const App = () => {
       const code = codeEditorRef.current?.getContent?.();
       if (code == null) return;
       setCurrentScript(code);
-      await refreshAssemblyRef.current?.(code);
+      await refreshAssemblyRef.current?.(code, { forceActive: true });
       return;
     }
     if (gameSuccess || gameRunInFlightRef.current) return;
@@ -7827,11 +8057,20 @@ const App = () => {
     const rolledBack = stored === null || typeof stored === 'string';
     const caret = rolledBack ? rollbackInsertCaret(beforeInsert, stored) : null;
     const placeAtBar = rolledBack && typeof caret === 'number';
+    // A palette insert appends after a trailing Move / Rotate. Move and
+    // Rotate themselves name the pre-move centroid, so they stay unposed.
+    const writeMatrix = helperId === 'move' || helperId === 'rotate'
+      ? null
+      : matrixForNewFeature(assemblyRef.current?.activeId, beforeInsert, null);
+    const posedFace = writeMatrix ? poseFaceRecord(faceContext, writeMatrix) : faceContext;
+    const posedEdges = writeMatrix && Array.isArray(edgeContext)
+      ? edgeContext.map((edge) => poseEdgeRecord(edge, writeMatrix))
+      : edgeContext;
     const ok = codeEditorRef.current?.insertHelper?.(
       helperId,
       params,
-      faceContext,
-      edgeContext,
+      posedFace,
+      posedEdges,
       placeAtBar ? caret : undefined,
     );
     if (ok) {
@@ -8182,10 +8421,24 @@ const App = () => {
       viewportRef.current?.softFailFillet?.(PICKED_PART_FAIL);
       return false;
     }
-    const others = Array.isArray(payload?.otherParts) ? payload.otherParts : [];
     const doc = assemblyRef.current;
     const editorId = doc?.activeId ?? null;
     const buf = codeEditorRef.current?.getContent?.() || '';
+    const poseEdges = (edges, matrix) => (
+      matrix && Array.isArray(edges) ? edges.map((edge) => poseEdgeRecord(edge, matrix)) : edges
+    );
+    const editorMatrix = matrixForNewFeature(payload?.partId, buf, payload?.editFeature || null);
+    const posedPayload = editorMatrix
+      ? { ...payload, edges: poseEdges(payload?.edges, editorMatrix) }
+      : payload;
+    const poseOther = (group) => {
+      if (!group) return group;
+      const script = partScriptsRef.current?.[group.partId] || '';
+      const matrix = matrixForNewFeature(group.partId, script, payload?.editFeature || null);
+      if (!matrix) return group;
+      return { ...group, edges: poseEdges(group.edges, matrix) };
+    };
+    const others = (Array.isArray(payload?.otherParts) ? payload.otherParts : []).map(poseOther);
     let editorBuffer = null;
     let writes = [];
     const editFeature = payload?.editFeature || null;
@@ -8194,7 +8447,7 @@ const App = () => {
       // instead of appending a second one onto the solid it already cut.
       const edited = replaceEditedBlend(buf, editFeature, {
         chamfer,
-        edges: payload?.edges,
+        edges: posedPayload?.edges,
         params: payload?.params,
         filletClass: payload?.filletClass ?? null,
         geometry: payload?.geometry ?? null,
@@ -8223,8 +8476,8 @@ const App = () => {
       }
     } else if (!others.length) {
       const result = chamfer
-        ? composeChamferCommit(buf, payload || {})
-        : composeFilletCommit(buf, payload || {});
+        ? composeChamferCommit(buf, posedPayload || {})
+        : composeFilletCommit(buf, posedPayload || {});
       if (!result.ok) {
         viewportRef.current?.softFailFillet?.(result.message);
         return false;
@@ -8238,7 +8491,7 @@ const App = () => {
         groups: [
           {
             partId: ownId,
-            edges: payload?.edges || [],
+            edges: posedPayload?.edges || [],
             params: payload?.params || {},
             filletClass: payload?.filletClass ?? null,
             geometry: payload?.geometry ?? null,
@@ -8531,7 +8784,11 @@ const App = () => {
       return false;
     }
     const buf = codeEditorRef.current?.getContent?.() || '';
-    const result = composeShellCommit(buf, payload || {});
+    const matrix = matrixForNewFeature(payload?.partId, buf, payload?.editFeature || null);
+    const posed = matrix && payload?.face
+      ? { ...payload, face: poseFaceRecord(payload.face, matrix) }
+      : (payload || {});
+    const result = composeShellCommit(buf, posed);
     if (!result.ok) {
       viewportRef.current?.softFailShell?.(result.message);
       return false;
@@ -8558,7 +8815,17 @@ const App = () => {
       return false;
     }
     const buf = codeEditorRef.current?.getContent?.() || '';
-    const result = composeDraftCommit(buf, payload?.state || payload || {});
+    const matrix = matrixForNewFeature(payload?.partId, buf, payload?.editFeature || null);
+    let state = payload?.state || payload || {};
+    if (matrix) {
+      state = {
+        ...state,
+        ...(Array.isArray(state.drafts) ? { drafts: state.drafts.map((face) => poseFaceRecord(face, matrix)) } : {}),
+        ...(state.neutral ? { neutral: poseFaceRecord(state.neutral, matrix) } : {}),
+        ...(Array.isArray(state.pull) ? { pull: poseFaceRecord({ normal: state.pull }, matrix).normal } : {}),
+      };
+    }
+    const result = composeDraftCommit(buf, state);
     if (!result.ok) {
       viewportRef.current?.softFailDraft?.(result.message);
       return false;
@@ -8585,7 +8852,16 @@ const App = () => {
       return false;
     }
     const buf = codeEditorRef.current?.getContent?.() || '';
-    const result = composeCutCommit(buf, payload?.state || payload || {}, payload?.mesh || null);
+    const matrix = matrixForNewFeature(payload?.partId, buf, payload?.editFeature || null);
+    let state = payload?.state || payload || {};
+    if (matrix) {
+      state = {
+        ...state,
+        ...(state.plane ? { plane: poseFaceRecord(state.plane, matrix) } : {}),
+        ...(Array.isArray(state.bodies) ? { bodies: state.bodies.map((body) => poseFaceRecord(body, matrix)) } : {}),
+      };
+    }
+    const result = composeCutCommit(buf, state, payload?.mesh || null);
     if (!result.ok) {
       viewportRef.current?.softFailCut?.(result.message);
       return false;
@@ -8633,9 +8909,31 @@ const App = () => {
       }
     }
     const buf = codeEditorRef.current?.getContent?.() || '';
+    const liveDoc = assemblyRef.current;
+    let posedState = state;
+    if (state?.byPart) {
+      const byPart = {};
+      let changed = false;
+      for (const [partId, slot] of Object.entries(state.byPart)) {
+        const script = partId === liveDoc?.activeId
+          ? buf
+          : (partScriptsRef.current?.[partId] || '');
+        const matrix = matrixForNewFeature(partId, script, null);
+        if (!matrix || !slot) {
+          byPart[partId] = slot;
+          continue;
+        }
+        changed = true;
+        byPart[partId] = {
+          ...slot,
+          bodies: (slot.bodies || []).map((body) => poseFaceRecord(body, matrix)),
+        };
+      }
+      if (changed) posedState = { ...state, byPart };
+    }
     const result = composeBooleanCommit(
       buf,
-      state,
+      posedState,
       payload?.partId,
       payload?.mesh || null,
       ctx,
@@ -8666,7 +8964,12 @@ const App = () => {
       return false;
     }
     const buf = codeEditorRef.current?.getContent?.() || '';
-    const result = composeDeleteFaceCommit(buf, payload?.state || payload || {});
+    const matrix = matrixForNewFeature(payload?.partId, buf, payload?.editFeature || null);
+    let state = payload?.state || payload || {};
+    if (matrix && Array.isArray(state.faces)) {
+      state = { ...state, faces: state.faces.map((face) => poseFaceRecord(face, matrix)) };
+    }
+    const result = composeDeleteFaceCommit(buf, state);
     if (!result.ok) {
       viewportRef.current?.softFailDeleteFace?.(result.message);
       return false;
@@ -8693,7 +8996,12 @@ const App = () => {
       return false;
     }
     const buf = codeEditorRef.current?.getContent?.() || '';
-    const result = composeMoveFaceCommit(buf, payload?.state || payload || {});
+    const matrix = matrixForNewFeature(payload?.partId, buf, payload?.editFeature || null);
+    let state = payload?.state || payload || {};
+    if (matrix && Array.isArray(state.faces)) {
+      state = { ...state, faces: state.faces.map((face) => poseFaceRecord(face, matrix)) };
+    }
+    const result = composeMoveFaceCommit(buf, state);
     if (!result.ok) {
       viewportRef.current?.softFailMoveFace?.(result.message);
       return false;
@@ -8939,7 +9247,7 @@ const App = () => {
       partId,
       mesh,
       position: partPosition(part) || [0, 0, 0],
-      placement: partPlacement(part),
+      placement: placementForMesh(part),
     });
   };
 
@@ -9854,14 +10162,14 @@ const App = () => {
         };
       }
       let epochBefore = runOutcomeEpochRef.current;
-      let ran = await refreshAssemblyRef.current?.(text);
+      let ran = await refreshAssemblyRef.current?.(text, { forceActive: true });
       let outcome = agentCadRunOutcome(epochBefore, ran);
       if (outcome.stale === true) {
         // Same recovery as agentRunOutcomeSettled: one more run once the
         // kernel is back, so a mutate during a worker restart reports itself.
         try { await manifoldContext.whenReady(); } catch { /* the retry reports */ }
         epochBefore = runOutcomeEpochRef.current;
-        ran = await refreshAssemblyRef.current?.(text);
+        ran = await refreshAssemblyRef.current?.(text, { forceActive: true });
         outcome = agentCadRunOutcome(epochBefore, ran);
       }
       const dropped = viewportRef.current?.readDroppedPaints?.(assemblyRef.current?.colors ?? null);
@@ -10299,7 +10607,7 @@ const App = () => {
       };
     }
     const epochBefore = runOutcomeEpochRef.current;
-    const ran = await refreshAssemblyRef.current?.(scriptText);
+    const ran = await refreshAssemblyRef.current?.(scriptText, { forceActive: true });
     return agentCadRunOutcome(epochBefore, ran);
   };
   /**
@@ -10571,7 +10879,7 @@ const App = () => {
           partId: last,
           mesh,
           position: partPosition(part) || [0, 0, 0],
-          placement: partPlacement(part),
+          placement: placementForMesh(part),
         });
       }
       viewportRef.current?.showCadBodyHighlight?.();
@@ -10668,7 +10976,7 @@ const App = () => {
             partId: part.id,
             mesh,
             position: partPosition(nextPart) || [0, 0, 0],
-            placement: partPlacement(nextPart),
+            placement: placementForMesh(nextPart),
           });
         }
       }

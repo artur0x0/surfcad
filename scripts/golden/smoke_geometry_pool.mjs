@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
  * Geometry PR 3: the parts that are not active build on a pool of workers.
- * A ten-part assembly is built with the cap at 1 (serial, as before) and at
- * 4 (three pool members plus the primary): every part's volume and triangle
- * count is the same in both, the pool never holds more members than the
- * cap allows, at least two built at once, and both build times are printed.
- * The speed-up is reported, not asserted: CI runners vary.
+ * A ten-part assembly is opened cold with the cap at 1 (serial, on the
+ * primary) and at 4 (three pool members plus the primary). A later Run does
+ * not rebuild parts whose mesh is already on the page, so the parallel work
+ * is this first open. Every part's volume and triangle count is the same in
+ * both, the pool never holds more members than the cap allows, at least two
+ * built at once, and both open times are printed. The speed-up is reported,
+ * not asserted: CI runners vary.
  * Chrome from CHROME_PATH or the usual paths.
  */
-/* global document, window */
+/* global document, window, indexedDB, localStorage */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { chromium } from 'playwright-core';
@@ -82,43 +84,98 @@ function partScript(i) {
   ].join('\n');
 }
 
+async function seedPlates(page) {
+  const parts = [];
+  const scripts = {};
+  for (let i = 0; i < 10; i += 1) {
+    const id = `p${i}`;
+    parts.push({ id, name: `Plate ${i}`, visible: true, order: i });
+    scripts[id] = partScript(i);
+  }
+  const doc = {
+    format: 'surfcad.assembly',
+    v: 1,
+    name: 'Pool plates',
+    activeId: 'p0',
+    source: 'local',
+    parts,
+    joints: [],
+  };
+  await page.evaluate(async ({ doc, scripts }) => {
+    localStorage.setItem('surfcadAgent', '1');
+    localStorage.setItem('surfcad.lastAssembly', JSON.stringify({
+      'user-geometry-pool': {
+        name: doc.name,
+        activeId: doc.activeId,
+        source: 'local',
+        savedAt: Date.now(),
+      },
+    }));
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.deleteDatabase('surfcad-assembly');
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+      req.onblocked = () => resolve();
+    });
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.open('surfcad-assembly', 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('assembly')) db.createObjectStore('assembly');
+        if (!db.objectStoreNames.contains('parts')) db.createObjectStore('parts');
+      };
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(['assembly', 'parts'], 'readwrite');
+        tx.objectStore('assembly').put(doc, 'current');
+        for (const [id, script] of Object.entries(scripts)) {
+          tx.objectStore('parts').put({ id, script, savedAt: Date.now() }, id);
+        }
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => reject(tx.error);
+      };
+    });
+  }, { doc, scripts });
+}
+
 async function buildAssembly(browser, cap) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   const pageErrors = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
+  await page.route('**/api/**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({}),
+  }));
   await page.route('**/api/auth/me', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify({ authenticated: true, user: { _id: 'user-geometry-pool', email: 'agent@test.local' } }),
   }));
   await page.route('**/api/config', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+  await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded' });
+  await seedPlates(page);
+  const ids = Array.from({ length: 10 }, (_, i) => `p${i}`);
+  const t0 = Date.now();
   await page.goto(`http://127.0.0.1:${PORT}/?agent=1&geometryWorkers=${cap}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(
     () => typeof window.surfcad?.call === 'function' && !document.querySelector('[data-app-loading]'),
     { timeout: 120000 },
   );
   await page.waitForSelector('[data-cad-run]', { state: 'attached', timeout: 120000 });
-
-  const created = await agentCall(page, 'create_assembly', {});
-  check(`cap ${cap}: create_assembly`, created.ok === true, JSON.stringify(created));
-  const firstId = (await agentCall(page, 'parts', {})).result?.activeId;
-  const ids = [firstId];
-  await agentCall(page, 'set_script', { part_id: firstId, source: partScript(0) });
-  for (let i = 1; i < 10; i += 1) {
-    const made = await agentCall(page, 'create_part', { name: `Plate ${i}`, script: partScript(i) });
-    check(`cap ${cap}: create_part ${i}`, made.ok === true && typeof made.result?.partId === 'string', JSON.stringify(made).slice(0, 200));
-    ids.push(made.result?.partId);
+  let openedRows = [];
+  for (let i = 0; i < 180; i += 1) {
+    openedRows = (await agentCall(page, 'parts', {})).result?.parts || [];
+    if (openedRows.length === 10 && openedRows.every((row) => row.runState === 'ok')) break;
+    await page.waitForTimeout(500);
   }
+  const buildMs = Date.now() - t0;
+  const opened = openedRows;
+  check(`cap ${cap}: opened ten parts`, opened.length === 10 && opened.every((row) => row.runState === 'ok'), JSON.stringify(opened.map((row) => [row.name, row.runState])));
   const workers = (await agentCall(page, 'geometry_workers', {})).result;
   check(`cap ${cap}: geometry_workers reports the cap`, workers?.cap === cap, JSON.stringify(workers));
-
-  // A run of the active part rebuilds every other part: time it.
-  await agentCall(page, 'set_active_part', { part_id: firstId });
-  const t0 = Date.now();
-  const ran = await agentCall(page, 'run', {});
-  const buildMs = Date.now() - t0;
-  check(`cap ${cap}: run is ok`, ran.ok === true && ran.result?.ok === true, JSON.stringify(ran.result?.errors || ran.error));
-  const after = (await agentCall(page, 'geometry_workers', {})).result;
+  const after = workers;
   check(`cap ${cap}: live workers never exceed the cap`, Number(after?.live) <= cap && Number(after?.pool?.size ?? 0) === cap - 1, JSON.stringify(after));
 
   // Every part's fingerprint.
@@ -153,7 +210,7 @@ const serial = await buildAssembly(browser, 1);
 const pooled = await buildAssembly(browser, 4);
 check('the pool built at least two parts at once', Number(pooled.after?.pool?.peakBusy) >= 2, JSON.stringify(pooled.after?.pool));
 check('every part has the same volume, triangle count, and body count with 1 and with 4 workers', JSON.stringify(serial.prints) === JSON.stringify(pooled.prints), `${JSON.stringify(serial.prints)} vs ${JSON.stringify(pooled.prints)}`);
-console.log(`  (rebuild of 10 parts: ${serial.buildMs} ms with 1 worker, ${pooled.buildMs} ms with 4)`);
+console.log(`  (open of 10 parts: ${serial.buildMs} ms with 1 worker, ${pooled.buildMs} ms with 4)`);
 if (pooled.buildMs > serial.buildMs) console.log('  ⚠️ the pooled build was not faster on this machine (reported, not asserted)');
 
 await browser.close();

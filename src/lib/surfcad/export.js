@@ -7,6 +7,12 @@
 import { export3MF } from '../../utils/model-io.js';
 import { meshToStep } from '../../utils/sheetMetal/stepExport.js';
 import { buildSheetExport } from '../../utils/sheetMetal/sheetExport.js';
+import { bakeRigidMesh } from '../../utils/rigidSuffix.js';
+
+/** Vertices in moved part space. Identity and a missing matrix keep the same mesh. */
+function bakedMesh(mesh) {
+  return mesh?.featureRigid ? bakeRigidMesh(mesh, mesh.featureRigid) : mesh;
+}
 
 function meshArrays(mesh) {
   const np = mesh?.numProp || 3;
@@ -18,7 +24,7 @@ function meshArrays(mesh) {
 
 /** Binary STL (mm, as stored). Returns a Uint8Array. */
 export function meshToStl(mesh) {
-  const { np, vp, tv } = meshArrays(mesh);
+  const { np, vp, tv } = meshArrays(bakedMesh(mesh));
   const nTri = Math.floor(tv.length / 3);
   const buf = new Uint8Array(84 + nTri * 50);
   const view = new DataView(buf.buffer);
@@ -60,8 +66,9 @@ export function meshToStl(mesh) {
 
 /** 3MF package bytes (uncompressed OPC zip, same writer as the app). */
 export async function meshTo3mfBytes(mesh, opts = {}) {
-  meshArrays(mesh);
-  const blob = await export3MF(mesh, opts.name || 'model', {
+  const baked = bakedMesh(mesh);
+  meshArrays(baked);
+  const blob = await export3MF(baked, opts.name || 'model', {
     unit: opts.unit || 'millimeter',
     title: opts.title || opts.name || 'SurfCAD part',
     designer: opts.designer || 'SurfCAD',
@@ -71,8 +78,9 @@ export async function meshTo3mfBytes(mesh, opts = {}) {
 
 /** Faceted STEP AP214 text, encoded as UTF-8 bytes. `{ bytes, text, stepSource }`. */
 export function meshToStepBytes(mesh, opts = {}) {
-  meshArrays(mesh);
-  const step = meshToStep(mesh, { name: opts.name || 'SurfCAD part' });
+  const baked = bakedMesh(mesh);
+  meshArrays(baked);
+  const step = meshToStep(baked, { name: opts.name || 'SurfCAD part' });
   const text = step.text || '';
   return {
     bytes: new TextEncoder().encode(text),
@@ -112,7 +120,7 @@ export function sheetSpecToStep(spec, opts = {}) {
  * Returns bytes (Uint8Array). STEP also available as text via the dedicated helpers.
  */
 export async function exportResult(result, format, opts = {}) {
-  const mesh = result?.mesh || result;
+  const mesh = bakedMesh(result?.mesh || result);
   const kind = String(format || '').toLowerCase();
   if (kind === 'stl') return meshToStl(mesh);
   if (kind === '3mf') return meshTo3mfBytes(mesh, opts);
