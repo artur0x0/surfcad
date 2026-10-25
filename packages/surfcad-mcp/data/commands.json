@@ -1970,7 +1970,7 @@
     },
     {
       "name": "list_faces",
-      "description": "Every pickable face on the active part, or on part_id when set (an opaque surf id, never a path or display name). One row per face a viewport click selects, all bodies: id (f0, f1, …), name (feature.role[k] from the helper that built the face: cube1.top, boss.side, extrude2.wall[3]; feature is the marked block id, else <helper>@<n>; absent on faces no helper stamped, such as a hull), feature, role, type (planar, cylindrical, curved), center, normal, axis and radius for cylinders, area, and key. frame is \"local\" on every result: center, normal, axis and key.at are the part's own frame, including when the part is placed, and they match select_faces. Compose with part_get_transform to reach the assembly. The id is the patch index on this mesh and is only valid until the next remesh; a rerun of the same script keeps every id. Pass the key with the id to joint_pick so a stale id cannot silently pick another face. The whole list on a detailed part is 100 KB or more, so filter it in the tab: filter { kind, normalWithin: { n, deg }, minArea, maxArea, bbox: { min, max }, name, feature, role } keeps only faces that match every given field (the top faces: kind \"planar\", normalWithin { n: [0, 0, 1], deg: 5 }; every face of one feature: feature \"boss\"; the tops of every feature: role \"top\"; name / feature / role take a glob with *), and page { offset, limit } returns one page. The result always carries total (rows after the filter) and returned; with a page it echoes offset and limit, so walk pages until offset + returned >= total.",
+      "description": "Every pickable face on the active part, or on part_id when set (an opaque surf id, never a path or display name). One row per face a viewport click selects, all bodies: id (f0, f1, …), name (feature.role[k] from the helper that built the face: cube1.top, boss.side, extrude2.wall[3]; feature is the marked block id, else <helper>@<n>; absent on faces no helper stamped, such as a hull), feature, role, type (planar, cylindrical, curved), center, normal, axis and radius for cylinders, area, and key. frame is \"local\" on every result: center, normal, axis and key.at are the part's own frame, including when the part is placed, and they match select_faces. Compose with part_get_transform to reach the assembly. The id is the patch index on this mesh and is only valid until the next remesh; a rerun of the same script keeps every id. Pass the key with the id to joint_pick so a stale id cannot silently pick another face. The whole list on a detailed part is 100 KB or more, so filter it in the tab: filter { kind, normalWithin: { n, deg }, minArea, maxArea, bbox: { min, max }, name, feature, role } keeps only faces that match every given field (the top faces: kind \"planar\", normalWithin { n: [0, 0, 1], deg: 5 }; every face of one feature: feature \"boss\"; the tops of every feature: role \"top\"; name / feature / role take a glob with *). bbox keeps a face whose triangle bounds overlap the box, so a large face is included when the box covers any part of it. page { offset, limit } returns one page; omitting page returns the first 100 faces (limit defaults to 100). The result always carries total (rows after the filter), returned, offset, and limit, and nextOffset when another page remains. Walk pages with { offset: nextOffset } until nextOffset is absent.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2043,24 +2043,24 @@
                     "maxItems": 3
                   }
                 },
-                "description": "Faces whose center lies inside this box (part local, mm)"
+                "description": "Faces whose triangle bounds overlap this box (part local, mm). A large face is kept when the box covers any part of it, even if its center lies outside."
               }
             }
           },
           "page": {
             "type": "object",
             "additionalProperties": false,
-            "description": "One page of rows. The result adds total (rows after the filter), returned, offset, and limit.",
+            "description": "One page of rows. The result carries total (rows after the filter), returned, offset, and limit, and nextOffset when another page remains (pass it as the next offset). list_faces uses offset 0 and limit 100 when page or limit is omitted. Other lists return every remaining row when limit is omitted.",
             "properties": {
               "offset": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "Rows to skip (default 0)"
+                "description": "Rows to skip. 0 starts at the first row. list_faces also accepts the previous result's nextOffset."
               },
               "limit": {
                 "type": "integer",
                 "minimum": 1,
-                "description": "Rows to return (default: all remaining)"
+                "description": "Rows to return. list_faces defaults to 100. Other lists return every remaining row when this is omitted."
               }
             }
           }
@@ -2233,17 +2233,17 @@
           "page": {
             "type": "object",
             "additionalProperties": false,
-            "description": "One page of rows. The result adds total (rows after the filter), returned, offset, and limit.",
+            "description": "One page of rows. The result carries total (rows after the filter), returned, offset, and limit, and nextOffset when another page remains (pass it as the next offset). list_faces uses offset 0 and limit 100 when page or limit is omitted. Other lists return every remaining row when limit is omitted.",
             "properties": {
               "offset": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "Rows to skip (default 0)"
+                "description": "Rows to skip. 0 starts at the first row. list_faces also accepts the previous result's nextOffset."
               },
               "limit": {
                 "type": "integer",
                 "minimum": 1,
-                "description": "Rows to return (default: all remaining)"
+                "description": "Rows to return. list_faces defaults to 100. Other lists return every remaining row when this is omitted."
               }
             }
           }
@@ -2364,17 +2364,17 @@
           "page": {
             "type": "object",
             "additionalProperties": false,
-            "description": "One page of rows. The result adds total (rows after the filter), returned, offset, and limit.",
+            "description": "One page of rows. The result carries total (rows after the filter), returned, offset, and limit, and nextOffset when another page remains (pass it as the next offset). list_faces uses offset 0 and limit 100 when page or limit is omitted. Other lists return every remaining row when limit is omitted.",
             "properties": {
               "offset": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "Rows to skip (default 0)"
+                "description": "Rows to skip. 0 starts at the first row. list_faces also accepts the previous result's nextOffset."
               },
               "limit": {
                 "type": "integer",
                 "minimum": 1,
-                "description": "Rows to return (default: all remaining)"
+                "description": "Rows to return. list_faces defaults to 100. Other lists return every remaining row when this is omitted."
               }
             }
           }

@@ -11,6 +11,14 @@
 
 export const FACE_KINDS = Object.freeze(['planar', 'cylindrical', 'curved']);
 
+/**
+ * list_faces page size when `page` or `page.limit` is omitted. A detailed
+ * part is hundreds of rows; returning every row put `total` after the array,
+ * and a host that truncated the payload cut the page fields off. One hundred
+ * rows stays a complete answer, with `total` and `nextOffset` for the rest.
+ */
+export const FACE_PAGE_LIMIT = 100;
+
 const FACE_FILTER_KEYS = Object.freeze(['kind', 'normalWithin', 'minArea', 'maxArea', 'bbox', 'name', 'feature', 'role']);
 const EDGE_FILTER_KEYS = Object.freeze(['between', 'minLength', 'maxLength', 'bbox']);
 
@@ -138,6 +146,17 @@ function inBbox(point, bbox) {
   return p.every((v, i) => v >= min[i] && v <= max[i]);
 }
 
+/** A face hits the box when its triangle bounds overlap it. Without bounds, the center must lie inside. */
+function faceHitsBbox(row, bbox) {
+  const bmin = vec3(row?.bounds?.min);
+  const bmax = vec3(row?.bounds?.max);
+  const min = vec3(bbox.min);
+  const max = vec3(bbox.max);
+  if (!min || !max) return false;
+  if (bmin && bmax) return bmin.every((v, i) => v <= max[i]) && bmax.every((v, i) => v >= min[i]);
+  return inBbox(row?.center, bbox);
+}
+
 function angleDeg(a, b) {
   const dot = Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]));
   return (Math.acos(dot) * 180) / Math.PI;
@@ -160,7 +179,7 @@ export function filterFaces(faces, filter) {
     const area = Number(row.area);
     if (minArea != null && !(area >= minArea)) return false;
     if (maxArea != null && !(area <= maxArea)) return false;
-    if (filter.bbox && !inBbox(row.center, filter.bbox)) return false;
+    if (filter.bbox && !faceHitsBbox(row, filter.bbox)) return false;
     // Face identity filters: rows without a stamped name never match them.
     if (filter.name != null && !nameMatches(row.name, filter.name)) return false;
     if (filter.feature != null && !nameMatches(row.feature, filter.feature)) return false;
@@ -225,6 +244,8 @@ export function paginate(rows, page) {
   if (page) {
     out.offset = offset;
     if (limit != null) out.limit = limit;
+    const next = offset + slice.length;
+    if (next < all.length) out.nextOffset = next;
   }
   return out;
 }
@@ -237,9 +258,9 @@ export function paginate(rows, page) {
  */
 export function shapeListResult(result, rowsKey, filtered, page) {
   const paged = paginate(filtered, page);
+  // Page fields first. A truncated payload then still carries total and the
+  // next offset, instead of a cut-off faces array with no way to continue.
   const out = {
-    ...result,
-    [rowsKey]: paged.rows,
     total: paged.total,
     returned: paged.returned,
     frame: 'local',
@@ -247,7 +268,14 @@ export function shapeListResult(result, rowsKey, filtered, page) {
   if (page) {
     out.offset = paged.offset;
     if (paged.limit != null) out.limit = paged.limit;
+    if (paged.nextOffset != null) out.nextOffset = paged.nextOffset;
   }
+  const src = result && typeof result === 'object' ? result : {};
+  for (const key of Object.keys(src)) {
+    if (key === rowsKey || key in out) continue;
+    out[key] = src[key];
+  }
+  out[rowsKey] = paged.rows;
   return out;
 }
 
@@ -255,10 +283,10 @@ export function shapeListResult(result, rowsKey, filtered, page) {
 export const PAGE_SCHEMA = Object.freeze({
   type: 'object',
   additionalProperties: false,
-  description: 'One page of rows. The result adds total (rows after the filter), returned, offset, and limit.',
+  description: 'One page of rows. The result carries total (rows after the filter), returned, offset, and limit, and nextOffset when another page remains (pass it as the next offset). list_faces uses offset 0 and limit 100 when page or limit is omitted. Other lists return every remaining row when limit is omitted.',
   properties: {
-    offset: { type: 'integer', minimum: 0, description: 'Rows to skip (default 0)' },
-    limit: { type: 'integer', minimum: 1, description: 'Rows to return (default: all remaining)' },
+    offset: { type: 'integer', minimum: 0, description: 'Rows to skip. 0 starts at the first row. list_faces also accepts the previous result\'s nextOffset.' },
+    limit: { type: 'integer', minimum: 1, description: 'Rows to return. list_faces defaults to 100. Other lists return every remaining row when this is omitted.' },
   },
 });
 
@@ -288,7 +316,7 @@ export const FACE_FILTER_SCHEMA = Object.freeze({
     },
     minArea: { type: 'number', minimum: 0, description: 'Smallest area in mm² to keep' },
     maxArea: { type: 'number', minimum: 0, description: 'Largest area in mm² to keep' },
-    bbox: { ...BBOX_FILTER_SCHEMA, description: 'Faces whose center lies inside this box (part local, mm)' },
+    bbox: { ...BBOX_FILTER_SCHEMA, description: 'Faces whose triangle bounds overlap this box (part local, mm). A large face is kept when the box covers any part of it, even if its center lies outside.' },
   },
 });
 

@@ -78,7 +78,7 @@ function listFaces(part) {
   const ctx = {
     listFaces: () => buildFaceList(agentFaceCatalog(part.geometry, part.faceIDs)),
   };
-  const out = listFacesCommand.run(ctx, {});
+  const out = listFacesCommand.run(ctx, { page: { limit: 10000 } });
   assert.equal(out.error, undefined);
   return out.result.faces;
 }

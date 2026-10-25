@@ -138,6 +138,9 @@ export function faceFingerprints(graph, triSource = null, mesh = null) {
       area,
       kind: patch.kind || 'general',
     };
+    const bmin = vec3(patch.bounds?.min);
+    const bmax = vec3(patch.bounds?.max);
+    if (bmin && bmax) face.bounds = { min: bmin, max: bmax };
     const src = featureSource(patch.tris, triSource);
     if (src != null) face.src = src;
     faces.push(face);

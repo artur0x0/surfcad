@@ -52,6 +52,9 @@ export function buildFaceList(catalog) {
     row.center = center;
     row.normal = normal;
     row.area = Number(face.area);
+    const bmin = vec3(face.bounds?.min);
+    const bmax = vec3(face.bounds?.max);
+    if (bmin && bmax) row.bounds = { min: bmin, max: bmax };
     row.triangleCount = tris.length;
     const axisAt = vec3(face.axis?.at);
     const axisDir = vec3(face.axis?.dir);

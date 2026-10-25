@@ -41,7 +41,7 @@ async function call(api, name, args) {
   return env;
 }
 
-test('list_faces without filter or page is the old payload plus total and returned', async () => {
+test('list_faces without filter or page returns the first page with a total', async () => {
   const api = createSurfcadBridge(host());
   const out = await call(api, 'list_faces', {});
   assert.equal(out.ok, true);
@@ -50,8 +50,12 @@ test('list_faces without filter or page is the old payload plus total and return
   assert.equal(out.result.total, 4);
   assert.equal(out.result.returned, 4);
   assert.equal(out.result.frame, 'local');
-  assert.equal('offset' in out.result, false);
+  assert.equal(out.result.offset, 0);
+  assert.equal(out.result.limit, 100);
+  assert.equal('nextOffset' in out.result, false);
   assert.equal('filter' in out.result, false);
+  const keys = Object.keys(out.result);
+  assert.ok(keys.indexOf('total') < keys.indexOf('faces'));
 });
 
 test('list_faces filter keeps matching rows and page slices them', async () => {

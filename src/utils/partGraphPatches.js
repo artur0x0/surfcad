@@ -69,6 +69,13 @@ export const PATCH_FLAT_AREA_FRAC_OF_MAX = 0.15;
  */
 export const PATCH_FLAT_CONTINUATION_DEG = 3;
 /**
+ * Closed facet loops at or under this step are one cylinder. A 12-segment
+ * pin steps 30°, past the 15° curved gate, so each facet stayed a planar
+ * face and a joint could not pick the wall. 32° takes 12 (30°) and 16
+ * (22.5°) and leaves a 10-segment prism (36°) and an octagon (45°) as flats.
+ */
+export const PATCH_PRISM_LOOP_MAX_DEG = 32;
+/**
  * Closed prism loop: at least this many locked same-source groups, each with
  * exactly two run-neighbors, congruent within PATCH_FACET_AREA_RATIO, meeting
  * at one step that matches that source's facetDeg (or 360°/N). The loop must
@@ -287,12 +294,15 @@ function unlockClosedPrismLoops({
     if (!row) nbs.set(a, (row = new Map()));
     row.set(b, step);
   };
+  // 30° (12 segments) is past the 15° curved gate, and a short pin's facets
+  // sit under the area lock. Either way the curved pass will not unite them,
+  // so the loop itself has to, up to PATCH_PRISM_LOOP_MAX_DEG.
+  const loopCeil = Math.max(smoothDeg + PATCH_GATE_EPS_DEG, PATCH_PRISM_LOOP_MAX_DEG);
   for (let i = 0; i < nAdj; i++) {
     const max = adjMax[i];
-    if (max <= PATCH_FLAT_CONTINUATION_DEG || max > smoothDeg + PATCH_GATE_EPS_DEG) continue;
+    if (max <= PATCH_FLAT_CONTINUATION_DEG || max > loopCeil) continue;
     const a = adjA[i];
     const b = adjB[i];
-    if (!atomLockedFlat[a] || !atomLockedFlat[b]) continue;
     if (atomSource[a] !== atomSource[b]) continue;
     if (isOpAtom(a) || isOpAtom(b)) continue;
     const ra = patchUF.find(a);
@@ -305,7 +315,6 @@ function unlockClosedPrismLoops({
     addEdge(rb, ra, max);
   }
   const seen = new Set();
-  const unlock = new Set();
   for (const start of nbs.keys()) {
     if (seen.has(start)) continue;
     const roots = [];
@@ -346,11 +355,25 @@ function unlockClosedPrismLoops({
     const tol = Math.max(PATCH_FACET_STEP_TOL_DEG, expected * 0.1);
     if (Math.abs(mean - expected) > tol) continue;
     if (!closedLoopFitsCylinder(positions, indices, tris)) continue;
-    for (const r of roots) unlock.add(r);
-  }
-  if (!unlock.size) return;
-  for (let a = 0; a < atomCount; a++) {
-    if (unlock.has(patchUF.find(a))) atomLockedFlat[a] = 0;
+    // Clear the flat lock. A locked patch is forced planar, which skips the
+    // axis fit. Find() after a unite is a new root, so this uses the roots
+    // collected above.
+    const reps = [];
+    const seenRoot = new Set();
+    for (let a = 0; a < atomCount; a++) {
+      const r = patchUF.find(a);
+      if (!inLoop.has(r)) continue;
+      atomLockedFlat[a] = 0;
+      if (seenRoot.has(r)) continue;
+      seenRoot.add(r);
+      reps.push(a);
+    }
+    // A step the curved pass can already cross (a 24-segment pin at 15°, a
+    // loft's fine end) must stay for that pass: uniting it first skips the κ
+    // test and a circle-to-rectangle wall stops reading as one blend. A
+    // 12-segment pin steps 30°, past the gate, so the loop has to unite it.
+    if (mean <= smoothDeg + PATCH_GATE_EPS_DEG) continue;
+    for (let i = 1; i < reps.length; i++) patchUF.unite(reps[0], reps[i]);
   }
 }
 
@@ -595,8 +618,8 @@ export function buildPartGraphPatches(mesh, opts = {}) {
   // rounded box) and trip the area lock. That quad meets the next facet at
   // the recorded step. A real flat meets the fillet at about half that step
   // and stays locked, so the area rule itself is unchanged.
+  const facetTouch = new Uint8Array(atomCount);
   if (tessBySource.size) {
-    const facetTouch = new Uint8Array(atomCount);
     for (let i = 0; i < adjN; i++) {
       const a = adjA[i];
       const b = adjB[i];
@@ -619,6 +642,9 @@ export function buildPartGraphPatches(mesh, opts = {}) {
   // Unlock that group. This needs triSource: without it a fillet reads as
   // the same surface and the G1 join would unlock the flat it sits on.
   // A box face has no such neighbour, so it stays locked.
+  // A tagged tessellation (roundedBox) is not a loft: its flat meets the
+  // blend at about half a facet step, which on a 64-segment edge is under
+  // 3°. Unlocking that flat lets the curved pass swallow every face.
   if (triSource) {
     const continuation = new Uint8Array(atomCount);
     for (let i = 0; i < adjN; i++) {
@@ -627,12 +653,40 @@ export function buildPartGraphPatches(mesh, opts = {}) {
       const b = adjB[i];
       if (atomSource[a] !== atomSource[b]) continue;
       if (isOpAtom(a) || isOpAtom(b)) continue;
+      const step = tessBySource.get(atomSource[a])?.facetDeg;
+      if (step > 0) continue;
       if (patchUF.find(a) === patchUF.find(b)) continue;
       if (atomLockedFlat[a] && !atomLockedFlat[b]) continuation[patchUF.find(a)] = 1;
       if (atomLockedFlat[b] && !atomLockedFlat[a]) continuation[patchUF.find(b)] = 1;
     }
     for (let a = 0; a < atomCount; a++) {
       if (continuation[patchUF.find(a)]) atomLockedFlat[a] = 0;
+    }
+  }
+  // A thin roundedBox edge is under the area gate, so it never locked, and
+  // the tagged curved pass then absorbs it (κ is off, the gate is at least
+  // 15°). The flat meets the blend at half the recorded step and is larger
+  // than that one facet. Lock it. Blend quads meet at the full step and
+  // stay unlocked; a corner shred is not larger than its neighbour.
+  if (tessBySource.size) {
+    const halfFlat = new Uint8Array(atomCount);
+    for (let i = 0; i < adjN; i++) {
+      const a = adjA[i];
+      const b = adjB[i];
+      if (atomSource[a] !== atomSource[b]) continue;
+      if (isOpAtom(a) || isOpAtom(b)) continue;
+      const step = tessBySource.get(atomSource[a])?.facetDeg;
+      if (!(step > 0)) continue;
+      const tol = Math.max(1.5, step * 0.12);
+      if (Math.abs(adjMax[i] - step * 0.5) > tol) continue;
+      const ra = patchUF.find(a);
+      const rb = patchUF.find(b);
+      if (ra === rb) continue;
+      if (!facetTouch[ra] && rootLockArea[ra] > rootLockArea[rb] * 1.5) halfFlat[ra] = 1;
+      if (!facetTouch[rb] && rootLockArea[rb] > rootLockArea[ra] * 1.5) halfFlat[rb] = 1;
+    }
+    for (let a = 0; a < atomCount; a++) {
+      if (halfFlat[patchUF.find(a)]) atomLockedFlat[a] = 1;
     }
   }
   // A tall, thin prism wall (a pin from Manifold.cylinder) has side facets
@@ -1045,9 +1099,15 @@ export function buildPartGraphPatches(mesh, opts = {}) {
             if (bridgeSeen[nb] === gen) continue;
             bridgeSeen[nb] = gen;
             if (bridgeOff(nb, p.normal, offP) > PLANE_BRIDGE_MM) continue;
-            stack.push(nb);
-            if (!onPlane(nb, p, offP) || triPatch[nb] === p.id) continue;
+            const on = onPlane(nb, p, offP);
             const owner = patches[triPatch[nb]];
+            // A hole wall or the plate around two counterbores is its own
+            // planar face. Walking through it joins disjoint coplanar regions
+            // (two counterbore bottoms at one depth). A fillet is not planar,
+            // so a cap split by a blend still reunites across it.
+            if (!on && owner && owner.kind === 'planar' && triPatch[nb] !== p.id) continue;
+            stack.push(nb);
+            if (!on || triPatch[nb] === p.id) continue;
             if (owner && owner.kind === 'planar' && owner.area > p.area) continue;
             triPatch[nb] = p.id;
             members.push(nb);
@@ -1101,6 +1161,28 @@ export function buildPartGraphPatches(mesh, opts = {}) {
     }
     p.area = area;
     if (area > 1e-18) p.center = [cx / area, cy / area, cz / area];
+    let minX = Infinity;
+    let minY = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let maxZ = -Infinity;
+    for (let i = 0; i < p.tris.length; i++) {
+      const t = p.tris[i];
+      for (let k = 0; k < 3; k++) {
+        const vi = indices[t * 3 + k] * 3;
+        const x = positions[vi];
+        const y = positions[vi + 1];
+        const z = positions[vi + 2];
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (z < minZ) minZ = z;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+        if (z > maxZ) maxZ = z;
+      }
+    }
+    if (minX <= maxX) p.bounds = { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] };
     p.faceIds = [...fids].sort((a, b) => a - b);
   }
   const remap = new Int32Array(patches.length);
