@@ -13,6 +13,7 @@
  * white sheen.
  */
 import { MeshStandardMaterial } from 'three';
+import { adoptSectionClip } from './sectionClip.js';
 
 /** #ECEAE4. Reads on the #1e1e1e ground under the headlight. */
 export const DEFAULT_PART_COLOR = 0xeceae4;
@@ -49,5 +50,6 @@ export function makeDefaultPartMaterial() {
         }`,
       );
   };
+  adoptSectionClip(material);
   return material;
 }

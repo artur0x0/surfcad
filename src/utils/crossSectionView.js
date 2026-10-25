@@ -1,6 +1,10 @@
 /**
- * Cross-section preview: trim visible part meshes with Manifold (capped solids)
- * and keep the uncut mesh data for picks / export.
+ * Leftover helpers from the capped-solid section (Manifold `trimByPlane`).
+ *
+ * The viewer does not trim anymore. A section is a world-space clip in
+ * `sectionClip.js` and does not replace geometry. These helpers stay so a
+ * mesh that still carries a trim can be put back, and so the cap tests
+ * still describe the worker output.
  */
 import { Matrix4, Plane, Vector3 } from 'three';
 import { cachedSolidGeometry, releaseGeometryIn, solidEntryForGeometry } from './partSolidCache.js';

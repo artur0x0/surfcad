@@ -67,6 +67,57 @@ test('crossSectionPlane waits for applied gen, not the optimistic snap', async (
   assert.equal(planeType, 'XZ');
 });
 
+test('crossSectionPlane keeps the preset when the clip lands before React commits', async () => {
+  const enabledRef = { current: true };
+  let appliedGen = 1;
+  let applied = { normal: [0, 0, 1], originOffset: 0, gen: 1 };
+  let reactPlane = 'XY';
+  let snap = null;
+  const panel = {
+    readAgentState: () => {
+      const plane = snap?.plane ?? reactPlane;
+      const normal = applied?.normal ?? [0, 0, 1];
+      return {
+        enabled: true,
+        optionsOpen: true,
+        preset: snap?.preset ?? reactPlane,
+        plane,
+        normal: snap?.normal ?? normal,
+        offset: snap?.offset ?? applied.originOffset,
+        originOffset: snap?.originOffset ?? applied.originOffset,
+      };
+    },
+    agentSetPreset(preset) {
+      snap = {
+        preset,
+        plane: preset,
+        normal: [0, 1, 0],
+        offset: 0,
+        originOffset: 0,
+      };
+      appliedGen += 1;
+      applied = { normal: [0, 1, 0], originOffset: 0, gen: appliedGen };
+      setTimeout(() => { reactPlane = preset; }, 80);
+    },
+    clearAgentSnap() { snap = null; },
+  };
+  const host = createXsectionAgentHandlers({
+    panelRef: { current: panel },
+    enabledRef,
+    getMesh: () => ({ geometry: {} }),
+    getAppliedPlane: () => applied,
+    getAppliedGen: () => appliedGen,
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    applyMs: 300,
+    pollMs: 10,
+  });
+  const out = await host.crossSectionPlane({ plane: 'XZ' });
+  assert.equal(out.result?.plane, 'XZ');
+  assert.equal(out.result?.preset, 'XZ');
+  assert.deepEqual(out.result?.normal, [0, 1, 0]);
+  assert.equal(reactPlane, 'XY');
+});
+
 test('crossSectionOffset returns the applied offset, not a stale clamp', async () => {
   const enabledRef = { current: true };
   let appliedGen = 1;

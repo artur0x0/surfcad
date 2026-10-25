@@ -23,6 +23,7 @@ import {
 } from 'three';
 import { warmFaceGraph } from './selectFace.js';
 import { faceFingerprints, matchFaceColors } from './faceColorMatch.js';
+import { adoptSectionClip } from './sectionClip.js';
 
 /** Above the solid, under crease lines (3) and pick highlights. */
 export const FACE_SKIN_RENDER_ORDER = 2;
@@ -79,6 +80,7 @@ function makeFaceSkinMaterial(side) {
         }`,
       );
   };
+  adoptSectionClip(material);
   return material;
 }
 

@@ -124,7 +124,7 @@ const CrossSectionPanel = forwardRef(({
         onPlaneChange?.({
           normal,
           originOffset: range.center,
-          showPlane: !isCollapsed
+          showPlane: true
         });
       }
     }
@@ -178,7 +178,7 @@ const CrossSectionPanel = forwardRef(({
     onPlaneChange?.({
       normal,
       originOffset: newOffset,
-      showPlane: !isCollapsed
+      showPlane: true
     });
   };
 
@@ -191,7 +191,7 @@ const CrossSectionPanel = forwardRef(({
     onPlaneChange?.({
       normal,
       originOffset: value,
-      showPlane: !isCollapsed
+      showPlane: true
     });
   };
 
@@ -218,7 +218,7 @@ const CrossSectionPanel = forwardRef(({
       onPlaneChange?.({
         normal: newNormal,
         originOffset: offset,
-        showPlane: !isCollapsed
+        showPlane: true
       });
     }
   };
@@ -240,12 +240,12 @@ const handleButtonClick = () => {
 
   const handleChevronClick = () => {
     setIsCollapsed(!isCollapsed);
-    // Update plane visibility
+    // Options can collapse. The preview plane stays while the tool is on.
     const normal = isCustom ? customNormal : PLANE_PRESETS[planeType].normal;
     onPlaneChange?.({
       normal,
       originOffset: offset,
-      showPlane: isCollapsed // Will become true when expanding
+      showPlane: true
     });
   };
 
@@ -304,7 +304,7 @@ const handleButtonClick = () => {
     onPlaneChange?.({
       normal,
       originOffset: offset,
-      showPlane: open,
+      showPlane: true,
     });
     return true;
   }, [enabled, enabledRef, isCollapsed, isCustom, customNormal, planeType, offset, onPlaneChange]);

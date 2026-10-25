@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Cross-section: capped Manifold trims on every visible part in assembly scope,
- * and only the active part in part-editor scope. Saves before/after screenshots.
+ * Cross-section is view-only. An assembly and a solo part keep their geometry,
+ * stay in the target list, and show the preview plane. Saves screenshots.
  */
 /* global document, window, indexedDB, localStorage */
 import { spawn } from 'node:child_process';
@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { SECTION_PLANE_COLOR } from '../../src/utils/sectionClip.js';
 
 const PORT = Number(process.env.SMOKE_PORT || 4331);
 const APP_URL = `http://127.0.0.1:${PORT}/?agent=1`;
@@ -176,13 +177,22 @@ await page.waitForTimeout(3000);
 
 writeFileSync(join(SHOT_DIR, 'cross-section-before.png'), await page.screenshot({ type: 'png' }));
 
-function volNear(actual, expected, frac = 0.25) {
-  if (!Number.isFinite(actual) || !Number.isFinite(expected) || expected === 0) return false;
-  return Math.abs(actual - expected) / Math.abs(expected) <= frac;
-}
+const PREVIEW_BLUE = SECTION_PLANE_COLOR;
 
-const CUBE_HALF = (24 * 24 * 24) / 2;
-const TWO_HALF = CUBE_HALF * 2;
+function viewOnly(state, label) {
+  check(`${label} geometry unchanged`, state.result?.geometryMutated === false,
+    JSON.stringify(state.result));
+  check(`${label} plane in scene`, state.result?.planeInScene === true,
+    JSON.stringify({ planeInScene: state.result?.planeInScene, planeColor: state.result?.planeColor }));
+  check(`${label} plane is text-blue-400`, state.result?.planeColor === PREVIEW_BLUE,
+    JSON.stringify({ planeColor: state.result?.planeColor }));
+  check(`${label} no trimmed parts`, (state.result?.trimmedPartIds?.length ?? 0) === 0,
+    JSON.stringify(state.result?.trimmedPartIds));
+  check(`${label} no caps`, (state.result?.capCount ?? 0) === 0,
+    JSON.stringify({ capCount: state.result?.capCount }));
+  check(`${label} volume not replaced`, (state.result?.remainingVolume ?? 0) === 0,
+    JSON.stringify({ remainingVolume: state.result?.remainingVolume }));
+}
 
 await agentCall(page, 'cross_section_toggle', { enabled: true });
 await agentCall(page, 'cross_section_expand', { open: true });
@@ -197,11 +207,7 @@ let state = await agentCall(page, 'cross_section_state');
 check('assembly scope on', state.result?.assemblyScope === true, JSON.stringify(state.result));
 check('A two targets', (state.result?.targetPartIds?.length ?? 0) >= 2,
   JSON.stringify(state.result?.targetPartIds));
-check('A remaining volume ~ two half-cubes', volNear(state.result?.remainingVolume, TWO_HALF),
-  JSON.stringify({ remainingVolume: state.result?.remainingVolume, expect: TWO_HALF }));
-check('A cap count', (state.result?.capCount ?? 0) >= 4,
-  JSON.stringify({ capCount: state.result?.capCount, parts: state.result?.parts }));
-const volA = state.result?.remainingVolume;
+viewOnly(state, 'A');
 
 const planeB = await agentCall(page, 'cross_section_plane', { plane: 'XY' });
 check('plane B read-back XY + Z normal', planeB.ok === true
@@ -209,23 +215,20 @@ check('plane B read-back XY + Z normal', planeB.ok === true
   && Math.abs((planeB.result?.normal?.[2] ?? 0) - 1) < 0.01,
   JSON.stringify(planeB.result));
 state = await agentCall(page, 'cross_section_state');
-check('B remaining volume still ~ half (not a double-trim quarter)',
-  volNear(state.result?.remainingVolume, volA) && volNear(state.result?.remainingVolume, TWO_HALF),
-  JSON.stringify({ remainingVolume: state.result?.remainingVolume, volA, expect: TWO_HALF }));
-check('B cap count', (state.result?.capCount ?? 0) >= 4,
-  JSON.stringify({ capCount: state.result?.capCount, parts: state.result?.parts }));
+check('B two targets still', (state.result?.targetPartIds?.length ?? 0) >= 2,
+  JSON.stringify(state.result?.targetPartIds));
+viewOnly(state, 'B');
 
 const planeC = await agentCall(page, 'cross_section_plane', { plane: 'XZ' });
 check('plane C different orientation back to XZ', planeC.ok === true && planeC.result?.plane === 'XZ',
   JSON.stringify(planeC.result));
 state = await agentCall(page, 'cross_section_state');
-check('C remaining volume still ~ half',
-  volNear(state.result?.remainingVolume, volA) && volNear(state.result?.remainingVolume, TWO_HALF),
-  JSON.stringify({ remainingVolume: state.result?.remainingVolume, volA }));
-check('C cap count', (state.result?.capCount ?? 0) >= 4,
-  JSON.stringify({ capCount: state.result?.capCount, parts: state.result?.parts }));
-check('both parts still trimmed', (state.result?.trimmedPartIds?.length ?? 0) >= 2,
-  JSON.stringify(state.result?.trimmedPartIds));
+viewOnly(state, 'C');
+await agentCall(page, 'cross_section_expand', { open: false });
+state = await agentCall(page, 'cross_section_state');
+check('plane stays when options collapse', state.result?.planeInScene === true
+  && state.result?.optionsOpen === false,
+  JSON.stringify({ planeInScene: state.result?.planeInScene, optionsOpen: state.result?.optionsOpen }));
 
 writeFileSync(join(SHOT_DIR, 'cross-section-after-assembly.png'), await page.screenshot({ type: 'png' }));
 
@@ -269,12 +272,7 @@ state = await agentCall(page, 'cross_section_state');
 check('part editor scope off', state.result?.assemblyScope === false, JSON.stringify(state.result));
 check('part editor clips one target', state.result?.targetPartIds?.length === 1,
   JSON.stringify(state.result?.targetPartIds));
-check('only active part trimmed', state.result?.trimmedPartIds?.length === 1,
-  JSON.stringify(state.result?.trimmedPartIds));
-check('solo remaining volume ~ half-cube', volNear(state.result?.remainingVolume, CUBE_HALF),
-  JSON.stringify({ remainingVolume: state.result?.remainingVolume, expect: CUBE_HALF }));
-check('solo cap count', (state.result?.capCount ?? 0) >= 2,
-  JSON.stringify({ capCount: state.result?.capCount, parts: state.result?.parts }));
+viewOnly(state, 'solo');
 
 writeFileSync(join(SHOT_DIR, 'cross-section-after-single.png'), await page.screenshot({ type: 'png' }));
 
