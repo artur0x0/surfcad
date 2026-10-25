@@ -1,10 +1,15 @@
 /**
  * makeLoft — multi-profile loft.
  *
- * Parallel planes (normals within ~8°, including opposite normals) keep the
- * Slice 28 polar warp: one shared workplane, stations sorted by offset, solid
- * local to that plane with z = 0 at the lowest offset. Confirm places it with
- * placeInFrame. That path is unchanged.
+ * Parallel planes (normals within ~8°, including opposite normals) share one
+ * workplane. Stations are sorted by offset. The solid is local to that plane
+ * with z = 0 at the lowest offset. Confirm places it with placeInFrame.
+ * Ring count and the slices between stations follow a chordal tolerance
+ * (a fraction of the part size, clamped) and the profile's turning angle.
+ * Flat spans stay coarse. Curved spans stay inside that tolerance.
+ * `opts.resolution`, when set, caps the polar gap at 2π/N.
+ * `buildMakeLoftDenseSolid` is the previous uniform table, kept so a golden
+ * can measure deviation against it. Production makeLoft does not call it.
  *
  * Planes at an angle take the spine in makeLoftAngled.js: each contour is
  * mapped through its own frame, resampled and shift-aligned, then carried on
@@ -15,6 +20,14 @@
  */
 
 import { buildAngledLoftSolid, buildAngledLoftPreview } from './makeLoftAngled.js';
+import {
+  LOFT_SPAN_MIN_MM,
+  adaptiveLoftAngles,
+  loftChordToleranceMm,
+  loftSpanSegments,
+  maxTwistSagitta,
+  vertexLoftAngles,
+} from './loftTessellation.js';
 
 export const MAKE_LOFT_MIN_PROFILES = 2;
 export const MAKE_LOFT_RESOLUTION = 64;
@@ -453,24 +466,50 @@ function _spanIndex(stations, zWorld) {
   return i;
 }
 
+/** cap0 / cap1 by height, span[i][j] by the bottom contour's logical edge. */
+function _assignLoftIdentity(out, stations, opts, z0, height) {
+  if (!opts.identity || typeof opts.identity !== 'object') return;
+  try {
+    const mesh = out.getMesh();
+    const np = mesh.numProp;
+    const vp = mesh.vertProperties;
+    const roles = new Array(mesh.numTri);
+    const bottomEdges = _logicalEdges(stations[0].contour);
+    const bottom = stations[0].contour;
+    for (let tIdx = 0; tIdx < mesh.numTri; tIdx++) {
+      const i0 = mesh.triVerts[tIdx * 3];
+      const i1 = mesh.triVerts[tIdx * 3 + 1];
+      const i2 = mesh.triVerts[tIdx * 3 + 2];
+      const a = [vp[i0 * np], vp[i0 * np + 1], vp[i0 * np + 2]];
+      const b = [vp[i1 * np], vp[i1 * np + 1], vp[i1 * np + 2]];
+      const c = [vp[i2 * np], vp[i2 * np + 1], vp[i2 * np + 2]];
+      // Caps by height, not normal: a sliver on a collapsed station has
+      // no usable normal, but its three vertices still sit on the cap plane.
+      const zEps = Math.max(1e-6, 1e-6 * height);
+      if (Math.abs(a[2]) < zEps && Math.abs(b[2]) < zEps && Math.abs(c[2]) < zEps) { roles[tIdx] = 'cap0'; continue; }
+      if (Math.abs(a[2] - height) < zEps && Math.abs(b[2] - height) < zEps && Math.abs(c[2] - height) < zEps) { roles[tIdx] = 'cap1'; continue; }
+      const cx = (a[0] + b[0] + c[0]) / 3;
+      const cy = (a[1] + b[1] + c[1]) / 3;
+      const cz = (a[2] + b[2] + c[2]) / 3;
+      const j = _spanIndex(stations, z0 + cz);
+      const r = Math.hypot(cx, cy);
+      const hit = r > 1e-9 ? _contourRayHit(bottom, cx / r, cy / r) : null;
+      const e = _nearestLogicalEdge(bottomEdges, hit || [cx, cy]);
+      roles[tIdx] = `span[${e}][${j}]`;
+    }
+    opts.identity.roles = roles;
+    opts.identity.stations = stations.map((s) => s.offset);
+  } catch {
+    opts.identity.roles = null;
+  }
+}
+
 /**
- * Build a loft solid from ≥2 makeCrossSection values (or {plane,contours,offset}).
- * Result is local to the shared workplane: XY = station UV, Z along the shared
- * normal, z=0 at the lowest-offset station. Confirm places it with
- * `placeInFrame(frame, makeLoft(sections), [0, 0, minOffset])`.
- *
- * One extrusion + piecewise polar warp through every station (not pairwise
- * boolean-union). Middle stations stay on the loft path.
- *
- * Mapping (Solo Cup / legacy loft spirit): arc-length resample each station,
- * union those sample angles with every profile vertex angle, and warp an
- * angle-indexed ray-hit table. The old per-vertex ray hit only moved the
- * extruded mesh's native samples, so a circle's chords bit into rectangle
- * corners that fell between those angles. Vertex angles are in the table,
- * so corners stay sharp. A nearly circular station is not used to spin the
- * other profile — that rotation was the off-angle circle↔rect default.
+ * Previous uniform polar table (128-ray floor, arc-length samples, extrude
+ * divisions from `resolveLoftExtrudeSegs`). Deviation goldens compare the
+ * adaptive solid to this mesh. Production `makeLoft` does not call it.
  */
-export function buildMakeLoftSolid(Manifold, CrossSection, sections, opts = {}) {
+export function buildMakeLoftDenseSolid(Manifold, CrossSection, sections, opts = {}) {
   const assembled = assembleLoftStations(sections);
   if (!assembled.ok) throw new Error(assembled.message);
   if (!assembled.parallel) {
@@ -536,46 +575,280 @@ export function buildMakeLoftSolid(Manifold, CrossSection, sections, opts = {}) 
   if (!(vol > 1e-9)) {
     throw new Error('makeLoft: result is EMPTY (volume 0) — check profiles have area and distinct offsets');
   }
-  // Face identity (opts.identity): roles per triangle of `out`, read off
-  // the warped mesh (the warp keeps z and re-sorts triangles). cap0 / cap1
-  // by normal at the two end heights; span[i][j]: i is the bottom
-  // station's logical edge at the triangle centroid's polar angle, j the
-  // station span its height falls in.
-  if (opts.identity && typeof opts.identity === 'object') {
-    try {
-      const mesh = out.getMesh();
-      const np = mesh.numProp;
-      const vp = mesh.vertProperties;
-      const roles = new Array(mesh.numTri);
-      const bottomEdges = _logicalEdges(stations[0].contour);
-      const bottom = stations[0].contour;
-      for (let tIdx = 0; tIdx < mesh.numTri; tIdx++) {
-        const i0 = mesh.triVerts[tIdx * 3];
-        const i1 = mesh.triVerts[tIdx * 3 + 1];
-        const i2 = mesh.triVerts[tIdx * 3 + 2];
-        const a = [vp[i0 * np], vp[i0 * np + 1], vp[i0 * np + 2]];
-        const b = [vp[i1 * np], vp[i1 * np + 1], vp[i1 * np + 2]];
-        const c = [vp[i2 * np], vp[i2 * np + 1], vp[i2 * np + 2]];
-        // Caps by height, not normal: a sliver on a collapsed station has
-        // no usable normal, but its three vertices still sit on the cap plane.
-        const zEps = Math.max(1e-6, 1e-6 * height);
-        if (Math.abs(a[2]) < zEps && Math.abs(b[2]) < zEps && Math.abs(c[2]) < zEps) { roles[tIdx] = 'cap0'; continue; }
-        if (Math.abs(a[2] - height) < zEps && Math.abs(b[2] - height) < zEps && Math.abs(c[2] - height) < zEps) { roles[tIdx] = 'cap1'; continue; }
-        const cx = (a[0] + b[0] + c[0]) / 3;
-        const cy = (a[1] + b[1] + c[1]) / 3;
-        const cz = (a[2] + b[2] + c[2]) / 3;
-        const j = _spanIndex(stations, z0 + cz);
-        const r = Math.hypot(cx, cy);
-        const hit = r > 1e-9 ? _contourRayHit(bottom, cx / r, cy / r) : null;
-        const e = _nearestLogicalEdge(bottomEdges, hit || [cx, cy]);
-        roles[tIdx] = `span[${e}][${j}]`;
-      }
-      opts.identity.roles = roles;
-      opts.identity.stations = stations.map((s) => s.offset);
-    } catch {
-      opts.identity.roles = null;
+  _assignLoftIdentity(out, stations, opts, z0, height);
+  return out;
+}
+
+function _loftStatusError(m) {
+  if (!m || typeof m.status !== 'function') return 'not a manifold';
+  const s = m.status();
+  if (typeof s === 'string') return s === 'NoError' ? null : s;
+  if (s && typeof s.value === 'number') return s.value === 0 ? null : `code ${s.value}`;
+  return null;
+}
+
+function _ringsAtAngles(stations, angles) {
+  const kept = [];
+  const tables = stations.map(() => []);
+  for (const a of angles) {
+    const hits = stations.map((s) => _contourRayHit(s.contour, Math.cos(a), Math.sin(a)));
+    if (hits.some((h) => !h)) continue;
+    kept.push(a);
+    hits.forEach((h, i) => tables[i].push(h));
+  }
+  if (kept.length < 3) {
+    throw new Error('makeLoft: could not build an angle table (profiles must contain the plane origin)');
+  }
+  return { angles: kept, tables };
+}
+
+function _keptStationIndex(stations) {
+  const idx = [0];
+  for (let i = 1; i < stations.length; i++) {
+    const prev = idx[idx.length - 1];
+    const span = stations[i].offset - stations[prev].offset;
+    const last = i === stations.length - 1;
+    if (!last && span < LOFT_SPAN_MIN_MM) continue;
+    if (last && span < LOFT_SPAN_MIN_MM && stations[i].offset - stations[0].offset > LOFT_SPAN_MIN_MM) {
+      continue;
+    }
+    idx.push(i);
+  }
+  if (idx.length < 2) idx.push(stations.length - 1);
+  return idx;
+}
+
+function _lerpRing(a, b, t) {
+  return a.map((p, i) => [
+    p[0] + t * (b[i][0] - p[0]),
+    p[1] + t * (b[i][1] - p[1]),
+  ]);
+}
+
+function _ringCentroid2(uv) {
+  let x = 0;
+  let y = 0;
+  for (const p of uv) {
+    x += p[0];
+    y += p[1];
+  }
+  const n = uv.length || 1;
+  return [x / n, y / n];
+}
+
+function _fanRejects(uv) {
+  const c = _ringCentroid2(uv);
+  for (let k = 0; k < uv.length; k++) {
+    const a = uv[k];
+    const b = uv[(k + 1) % uv.length];
+    const nz = (a[0] - c[0]) * (b[1] - c[1]) - (a[1] - c[1]) * (b[0] - c[0]);
+    if (nz < -1e-8) return true;
+  }
+  return false;
+}
+
+function _adaptiveLayers(stations, tables, idx, eps, z0, segCap) {
+  const layers = [];
+  for (let s = 0; s < idx.length - 1; s++) {
+    const i0 = idx[s];
+    const i1 = idx[s + 1];
+    const ringA = tables[i0];
+    const ringB = tables[i1];
+    const sag = maxTwistSagitta(ringA, ringB);
+    const segs = loftSpanSegments(sag, eps, segCap);
+    const zA = stations[i0].offset;
+    const zB = stations[i1].offset;
+    for (let k = 0; k < segs; k++) {
+      const t = k / segs;
+      const uv = t === 0 ? ringA : _lerpRing(ringA, ringB, t);
+      layers.push({ z: zA + t * (zB - zA) - z0, uv });
     }
   }
+  const last = idx[idx.length - 1];
+  layers.push({ z: stations[last].offset - z0, uv: tables[last] });
+  return layers;
+}
+
+function _solidFromLayers(Manifold, Mesh, layers) {
+  const m = layers.length;
+  const K = layers[0].uv.length;
+  if (m < 2 || K < 3) return null;
+  if (_fanRejects(layers[0].uv) || _fanRejects(layers[m - 1].uv)) return null;
+  const verts = [];
+  for (const layer of layers) {
+    for (const p of layer.uv) verts.push(p[0], p[1], layer.z);
+  }
+  const tri = [];
+  for (let i = 0; i < m - 1; i++) {
+    const a = i * K;
+    const b = (i + 1) * K;
+    for (let k = 0; k < K; k++) {
+      const k1 = (k + 1) % K;
+      tri.push(a + k, a + k1, b + k1);
+      tri.push(a + k, b + k1, b + k);
+    }
+  }
+  const c0 = verts.length / 3;
+  const bcent = _ringCentroid2(layers[0].uv);
+  verts.push(bcent[0], bcent[1], layers[0].z);
+  const c1 = verts.length / 3;
+  const tcent = _ringCentroid2(layers[m - 1].uv);
+  verts.push(tcent[0], tcent[1], layers[m - 1].z);
+  const baseTop = (m - 1) * K;
+  for (let k = 0; k < K; k++) {
+    const k1 = (k + 1) % K;
+    tri.push(c0, k1, k);
+    tri.push(c1, baseTop + k, baseTop + k1);
+  }
+  let signed = 0;
+  for (let i = 0; i < tri.length; i += 3) {
+    const ia = tri[i] * 3;
+    const ib = tri[i + 1] * 3;
+    const ic = tri[i + 2] * 3;
+    const ax = verts[ia];
+    const ay = verts[ia + 1];
+    const az = verts[ia + 2];
+    const bx = verts[ib];
+    const by = verts[ib + 1];
+    const bz = verts[ib + 2];
+    const cx = verts[ic];
+    const cy = verts[ic + 1];
+    const cz = verts[ic + 2];
+    signed += ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx);
+  }
+  if (signed < 0) {
+    for (let i = 0; i < tri.length; i += 3) {
+      const tmp = tri[i + 1];
+      tri[i + 1] = tri[i + 2];
+      tri[i + 2] = tmp;
+    }
+  }
+  const solid = new Manifold(new Mesh({
+    numProp: 3,
+    vertProperties: new Float32Array(verts),
+    triVerts: new Uint32Array(tri),
+  }));
+  const err = _loftStatusError(solid);
+  if (err) {
+    if (typeof solid.delete === 'function') solid.delete();
+    return null;
+  }
+  return solid;
+}
+
+function _unionSpans(Manifold, CrossSection, stations, tables, angles, idx, eps, z0, segCap) {
+  const pieces = [];
+  for (let s = 0; s < idx.length - 1; s++) {
+    const i0 = idx[s];
+    const i1 = idx[s + 1];
+    const ringA = tables[i0];
+    const ringB = tables[i1];
+    const height = stations[i1].offset - stations[i0].offset;
+    if (!(height > 1e-9)) continue;
+    const segs = loftSpanSegments(maxTwistSagitta(ringA, ringB), eps, segCap);
+    const cs = new CrossSection([ringA]);
+    const nDiv = Math.max(0, segs - 1);
+    const straight = typeof Manifold.extrude === 'function'
+      ? Manifold.extrude(cs, height, nDiv)
+      : cs.extrude(height, nDiv);
+    const warped = straight.warp((v) => {
+      const rOrig = Math.hypot(v[0], v[1]);
+      if (rOrig < 1e-8) {
+        v[0] = 0;
+        v[1] = 0;
+        return;
+      }
+      let t = height > 1e-12 ? v[2] / height : 1;
+      if (t < 0) t = 0;
+      if (t > 1) t = 1;
+      const angle = _angleOf(v[0], v[1]);
+      const hitA = _lookupPolar(ringA, angles, angle);
+      const hitB = _lookupPolar(ringB, angles, angle);
+      const rA = Math.hypot(hitA[0], hitA[1]);
+      const scale = rA > 1e-9 ? rOrig / rA : 1;
+      v[0] = (hitA[0] + t * (hitB[0] - hitA[0])) * scale;
+      v[1] = (hitA[1] + t * (hitB[1] - hitA[1])) * scale;
+    });
+    const dz = stations[i0].offset - z0;
+    pieces.push(Math.abs(dz) > 1e-12 ? warped.translate([0, 0, dz]) : warped);
+  }
+  if (!pieces.length) {
+    throw new Error('makeLoft: station spacing must be > 0');
+  }
+  return pieces.length === 1 ? pieces[0] : Manifold.union(pieces);
+}
+
+/**
+ * Build a loft solid from ≥2 makeCrossSection values (or {plane,contours,offset}).
+ * Result is local to the shared workplane: XY = station UV, Z along the shared
+ * normal, z=0 at the lowest-offset station. Confirm places it with
+ * `placeInFrame(frame, makeLoft(sections), [0, 0, minOffset])`.
+ *
+ * Parallel stations are a ruled surface between simplified profile rings.
+ * Longitudinal slices follow the quad-twist sagitta, so a straight span is
+ * one segment and a twisted span is split until the chord stays inside
+ * `loftChordToleranceMm`. A ring is placed on every station plane.
+ */
+export function buildMakeLoftSolid(Manifold, CrossSection, sections, opts = {}) {
+  const assembled = assembleLoftStations(sections);
+  if (!assembled.ok) throw new Error(assembled.message);
+  if (!assembled.parallel) {
+    return buildAngledLoftSolid(Manifold, assembled.stations, opts);
+  }
+  const stations = alignStationContours(assembled.stations, opts);
+  const z0 = stations[0].offset;
+  const zN = stations[stations.length - 1].offset;
+  const height = zN - z0;
+  if (!(height > 1e-9) || !Number.isFinite(height)) {
+    throw new Error('makeLoft: station spacing must be > 0');
+  }
+  const eps = loftChordToleranceMm(stations);
+  const anglesIn = adaptiveLoftAngles(stations, opts, eps);
+  return _parallelFromAngles(Manifold, CrossSection, stations, anglesIn, eps, z0, height, opts, undefined);
+}
+
+/**
+ * Station-exact ruled mesh: every authored vertex, spans split until the
+ * quad twist is under 0.01 mm. Deviation goldens measure the adaptive solid
+ * against this surface. Production makeLoft does not call it.
+ */
+export function buildMakeLoftFineSolid(Manifold, CrossSection, sections, opts = {}) {
+  const assembled = assembleLoftStations(sections);
+  if (!assembled.ok) throw new Error(assembled.message);
+  if (!assembled.parallel) {
+    throw new Error('makeLoft: fine reference is for parallel stations');
+  }
+  const stations = alignStationContours(assembled.stations, opts);
+  const z0 = stations[0].offset;
+  const height = stations[stations.length - 1].offset - z0;
+  if (!(height > 1e-9) || !Number.isFinite(height)) {
+    throw new Error('makeLoft: station spacing must be > 0');
+  }
+  const anglesIn = vertexLoftAngles(stations);
+  return _parallelFromAngles(
+    Manifold, CrossSection, stations, anglesIn, 0.01, z0, height, opts, 64,
+  );
+}
+
+function _parallelFromAngles(Manifold, CrossSection, stations, anglesIn, eps, z0, height, opts, segCap) {
+  const { angles, tables } = _ringsAtAngles(stations, anglesIn);
+  const idx = _keptStationIndex(stations);
+  let out = null;
+  const Mesh = opts.Mesh;
+  if (typeof Mesh === 'function') {
+    try {
+      const layers = _adaptiveLayers(stations, tables, idx, eps, z0, segCap);
+      out = _solidFromLayers(Manifold, Mesh, layers);
+    } catch {
+      out = null;
+    }
+  }
+  if (!out) out = _unionSpans(Manifold, CrossSection, stations, tables, angles, idx, eps, z0, segCap);
+  const vol = typeof out.volume === 'function' ? out.volume() : 0;
+  if (!(vol > 1e-9)) {
+    throw new Error('makeLoft: result is EMPTY (volume 0) — check profiles have area and distinct offsets');
+  }
+  _assignLoftIdentity(out, stations, opts, z0, height);
   return out;
 }
 
@@ -621,44 +894,12 @@ function _nearestLogicalEdge(edges, p) {
 }
 
 /**
- * Shared polar angles for the preview rings: `n` uniform angles plus every
- * station's exact vertex angles, deduped. Same idea as `_polarTables`, but
- * without the arc-length sample angles — preview only needs enough rungs to
- * read, and corners must land on a table entry so a square stays square.
- */
-function _previewRingAngles(stations, sampleN) {
-  const n = Math.max(8, Math.round(Number(sampleN) || 32));
-  const raw = [];
-  for (let i = 0; i < n; i++) raw.push((i / n) * Math.PI * 2);
-  for (const s of stations) {
-    for (const p of s.contour) {
-      if (Math.hypot(p[0], p[1]) > 1e-8) raw.push(_angleOf(p[0], p[1]));
-    }
-  }
-  raw.sort((a, b) => a - b);
-  const angles = [];
-  for (const a of raw) {
-    if (!angles.length || a - angles[angles.length - 1] > 1e-4) angles.push(a);
-  }
-  if (angles.length > 1 && (angles[0] + Math.PI * 2) - angles[angles.length - 1] < 1e-4) {
-    angles.pop();
-  }
-  return angles;
-}
-
-/**
  * Client / golden preview payload: UV rings + world frames.
- * Rings use the same aligned contours as makeLoft so preview ≈ Accept.
- * Null when <2 valid stations (incomplete polyline, bad offset, …).
+ * Rings use the same aligned contours and the same adaptive angles as
+ * makeLoft, so preview ≈ Accept. Null when <2 valid stations.
  *
- * Rings are sampled by **shared polar angle**, not per-station arc length:
- * the solid's warp maps a boundary point to the point at the same angle on
- * the next station, so index-matched arc-length rings drew rungs that paired
- * (say) a circle's 0° sample with a square's 225° corner — a preview that
- * twisted like an hourglass while Accept built the correct part. Ray-hitting
- * one shared angle list keeps ring[i] at the same angle on every station.
- * A station the origin ray misses (origin outside the profile) falls back to
- * arc-length rings rather than dropping the preview.
+ * Rings are sampled by shared polar angle. A station the origin ray misses
+ * falls back to arc-length rings rather than dropping the preview.
  */
 export function buildLoftPreviewStations(sections, sampleN = 32, opts = {}) {
   const assembled = assembleLoftStations(sections);
@@ -668,17 +909,24 @@ export function buildLoftPreviewStations(sections, sampleN = 32, opts = {}) {
   }
   const aligned = alignStationContours(assembled.stations, opts);
   const n = Math.max(8, Math.round(Number(sampleN) || 32));
-  const angles = _previewRingAngles(aligned, n);
-  const rings = aligned.map((s) => {
-    const ring = [];
-    for (const a of angles) {
-      const hit = _contourRayHit(s.contour, Math.cos(a), Math.sin(a));
-      if (!hit) return null;
-      ring.push(hit);
-    }
-    return ring.length >= 3 ? ring : null;
-  });
-  const polarOk = rings.every((r) => r);
+  let angles = null;
+  try {
+    angles = adaptiveLoftAngles(aligned, opts);
+  } catch {
+    angles = null;
+  }
+  const rings = angles
+    ? aligned.map((s) => {
+      const ring = [];
+      for (const a of angles) {
+        const hit = _contourRayHit(s.contour, Math.cos(a), Math.sin(a));
+        if (!hit) return null;
+        ring.push(hit);
+      }
+      return ring.length >= 3 ? ring : null;
+    })
+    : null;
+  const polarOk = rings && rings.every((r) => r);
   return {
     plane: assembled.stations[0].plane,
     stations: aligned.map((s, i) => ({

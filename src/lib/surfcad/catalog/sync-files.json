@@ -42,6 +42,7 @@
     "src/utils/git/surfId.js",
     "src/utils/helperPaletteSnippets.js",
     "src/utils/loftReference.js",
+    "src/utils/loftTessellation.js",
     "src/utils/makeLoft.js",
     "src/utils/makeLoftAngled.js",
     "src/utils/meshBodyComponents.js",

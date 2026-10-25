@@ -1490,11 +1490,16 @@ degenerate / empty contours; a turn tighter than the profiles
 `opts.align` (default true) matches cornered stations by their outermost
 vertex angle (a 45° copy of the same rectangle un-rotates back to a prism).
 A nearly circular station does **not** spin the other profile — that was
-the off-angle circle↔rectangle default. `opts.resolution` (default 64) feeds
-the polar sample count. The warp builds an **angle-indexed table**: uniform
-angles, arc-length samples, and every profile vertex angle, then ray-hits
-each station. Rectangle corners are table entries, so a circle’s chords no
-longer bite them. Legacy `loft({ topCS, bottomCS, height })` is unchanged.
+the off-angle circle↔rectangle default. Parallel rings and the slices
+between stations follow a chordal tolerance, 0.0005 of the part's bounding
+diagonal, clamped to 0.01–0.25 mm. A vertex drops only when it sits within
+that tolerance of a chord and the corner turns less than 25°. A span that
+is straight is one slice; a twisted span is split until the quad's twist
+stays inside the same tolerance. `opts.resolution`, when set, is the
+maximum polar gap `2π / N` (clamped to 8–256) and only adds samples.
+Omitting it does not fall back to a uniform 128-ray table. Rectangle
+corners stay in the table, so a circle's chords do not bite them. Legacy
+`loft({ topCS, bottomCS, height })` is unchanged.
 
 **Default contour plane** (no face and no saved workplane) is world **+Z**
 with **X/Y** axes — the standard views. A picked face or construction

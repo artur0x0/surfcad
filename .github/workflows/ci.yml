@@ -467,6 +467,11 @@ jobs:
             echo "gpu upload cache golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:loft-perf | tee "${RUNNER_TEMP}/loft-perf.log"
+          if ! grep -q 'loft perf golden: ok' "${RUNNER_TEMP}/loft-perf.log"; then
+            echo "loft perf golden did not pass (see log above)"
+            exit 1
+          fi
           npm run golden:mobile-chrome-shade | tee "${RUNNER_TEMP}/mobile-chrome-shade.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/mobile-chrome-shade.log"; then
             echo "mobile chrome shade golden skipped because Chrome was not found; CI must launch it"

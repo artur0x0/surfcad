@@ -119,3 +119,26 @@ Before the fix, idle `controls.update()` / `renderer.render` per frame was 2 in 
 The viewport init effect now cancels its frame and disposes the controls. `src/utils/trackballFeel.js` sets one update to that double-update feel: speeds 2× the defaults, `dynamicDampingFactor` 0.36.
 
 After that change, dev and preview both do one `update()` and one `render` per frame (one wheel listener, one key listener). The same in-page drag rotates 0.609 deg/px and coasts in 15 frames on Chromium dev, Chromium preview, and WebKit preview: about 7% above the old dev drag, same settle. A Playwright mouse drag, three trials, was about 6% above that browser's old dev number, and dev matched preview in each browser. Chromium's frame interval is 33 ms in both builds. Render CPU stays under a millisecond, so production was never the slow renderer.
+
+## Loft tessellation
+
+The Futuristic Bike saddle is not in the repo. The numbers below are the same four 32-point ellipses (70×28, 62×24, 36×16, 14×8 mm at offsets 0 / 160 / 270 / 285), from `npm run golden:loft-perf`. Artur's in-app times on the real assembly (open ~16 s, saddle switch 4–5 s, saddle Move 8–10 s, Move kernel ~0.5 s) were dominated by the 378k-triangle mesh. This script times the kernel and the same face/edge graph builders the part switch and Move path call. It does not include the browser upload.
+
+The old parallel loft floored the polar table at 128 rays, unioned an arc-length resample of every station, and then inflated the extrude to `ceil(height / minSpan) * 16` slices (capped at 256). The 15 mm nose forced that cap across the whole 285 mm, so resolution 16 and 32 built the same mesh.
+
+The adaptive loft keeps a vertex when dropping it would leave the chord farther than 0.0005 of the part's bounding diagonal (clamped to 0.01–0.25 mm), or when the corner turns 25° or more. Straight spans are one slice. A twisted span is split until the quad-twist sagitta is inside that tolerance. `opts.resolution`, when set, is the maximum polar gap `2π / N`.
+
+| | Legacy uniform table | Adaptive |
+| --- | --- | --- |
+| Triangles | 377,708 | 3,580 (resolution 16 → 2,548, resolution 32 → 2,724) |
+| Build | 877 ms | 9.7 ms |
+| Volume | 1,215,028.42 mm³ | 1,215,045.15 mm³ (Δ 0.0014%) |
+| Mass at 1 g/cm³ | 1215.028 g | 1215.045 g (same ratio; density is uniform) |
+| Chordal tolerance | — | 0.161 mm |
+| Deviation vs station-exact surface | station rings miss the mesh by max 0.255 mm, p95 0.233 mm (the extrude grid does not land on the stations) | max 0.062 mm, p95 0.0077 mm |
+| STL triangles | 377,708 (equal to the mesh) | 3,580 (equal to the mesh) |
+| STEP faces | — | 3,362. Coplanar merge stays at 1e-6 mm; a 0.05 mm kink is not merged |
+| Face + edge graphs | not re-timed (the 378k mesh) | face 65 ms, edge 20 ms; cache hit ~0 ms |
+| Move | kernel was ~0.5 s in the app on the dense mesh | kernel 0.1 ms, then face 87 ms + edge 12 ms |
+
+A 102,152-triangle sphere (Frame/Fork scale stand-in) still spends 1.66 s in the face graph and 0.18 s in the edge graph. That is the remaining post-run cost once the saddle is no longer hundreds of thousands of triangles.

@@ -5181,9 +5181,9 @@ function sheetMetalSolid(spec) {
  * makeLoft(sections, opts?) — loft two or more profiles on parallel or angled planes.
  * Parallel planes (same workplane + offset along the normal): result is
  * local (z=0 at the lowest station). Confirm places it with placeInFrame.
- * Mapping is an angle-indexed polar warp (arc-length samples + exact
- * vertex angles) so circle↔rect corners stay sharp and a circle does not
- * spin the other profile off the world axes.
+ * Ring and slice counts follow a chordal tolerance of the part size, so
+ * straight spans stay coarse and corners stay sharp. opts.resolution, when
+ * set, caps the polar gap at 2π/N. A circle does not spin the other profile.
  * Angled planes: each profile is mapped through its own frame and carried
  * on a spine between the planes. The solid is local to the first profile.
  * Loud-fail on <2 profiles, coincident stations, a self-intersecting turn,
