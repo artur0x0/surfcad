@@ -388,7 +388,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   delete_feature: {
-    description: 'Delete a feature block from the script and run the part through mutate, so the result status and errors are current and undo once restores the block. Deleting the feature that declares part while later code still uses it is confirm_required until confirm: true; the result then carries a warning.',
+    description: 'Delete a feature block from the active part (or part_id, an opaque surf id) and run that part through mutate, so the result status and errors are current and undo once restores the block. A face pick does not change the part: id and index resolve against the active part unless part_id names another row (a path or display name is unknown_part). Deleting the feature that declares part while later code still uses it is confirm_required until confirm: true; the result then carries a warning.',
     // Own result: the command returns deletedId, mutate failures, and an
     // optional warning. It does not return unchanged (that stays on MUTATE_RESULT_SCHEMA).
     result: {
@@ -418,7 +418,7 @@ export const COMMAND_META = {
         warning: { type: 'string' },
       },
     },
-    errors: ['unknown_feature', 'bad_index', 'bad_args', 'confirm_required', 'delete_failed', 'no_write_part', 'internal'],
+    errors: ['unknown_feature', 'bad_index', 'bad_args', 'confirm_required', 'delete_failed', 'no_write_part', 'unknown_part', 'internal'],
     mutates: true,
     destructive: true,
     confirm: true,

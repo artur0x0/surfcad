@@ -76,6 +76,31 @@ export function featureWriteTarget(doc, { pickedId = null, payloadPartId = null 
 }
 
 /**
+ * The part `delete_feature` edits. A face pick moves the viewer but leaves
+ * the editor on the active part; following that pick made index 0 of the
+ * picked part (another solid's first feature) look like the active part's.
+ * `part_id` names a row, or the target is the active part. Never the pick.
+ *
+ * @returns {{ id: string|null, load: boolean } | { error: { code: string, message: string } }}
+ */
+export function featureDeleteTarget(doc, args = {}) {
+  if (!doc || !Array.isArray(doc.parts)) return { id: null, load: false };
+  const active = doc.activeId ?? null;
+  const isRow = (id) => id != null && doc.parts.some((row) => row.id === id);
+  const raw = args?.part_id;
+  const asked = raw != null && String(raw) !== '';
+  if (asked) {
+    const id = String(raw);
+    if (!isRow(id)) {
+      return { error: { code: 'unknown_part', message: `No part with id: ${id}` } };
+    }
+    return { id, load: id !== active };
+  }
+  if (!isRow(active)) return { id: null, load: false };
+  return { id: active, load: false };
+}
+
+/**
  * Monaco follows a body click, opening Script or Parts, or a pick made
  * while a feature session is open. A face or edge pick outside a feature
  * leaves the script pane pinned.

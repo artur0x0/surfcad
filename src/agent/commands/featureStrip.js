@@ -191,6 +191,10 @@ export const deleteFeatureCommand = Object.freeze({
     additionalProperties: false,
     properties: {
       ...TARGET_SCHEMA.properties,
+      part_id: {
+        type: 'string',
+        description: 'Opaque surf id of the part whose feature is deleted. Omit to use the active part. A face pick does not change the target. A path or display name is unknown_part.',
+      },
       confirm: {
         type: 'boolean',
         description: 'Required true to delete the feature that declares part while later code still uses it',
