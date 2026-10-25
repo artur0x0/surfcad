@@ -2,9 +2,11 @@
  * Size an open order-flow sheet to the visible viewport.
  * `visualViewport` tracks the iOS Safari toolbar and the keyboard;
  * the CSS falls back to `100dvh` when this has not run yet.
- * The stylesheet keeps the document from scrolling. This hook still
- * sets an inline lock while a sheet is open, and pins window scroll so
- * a focused field cannot leave scrollY nonzero after the card closes.
+ * The stylesheet keeps the document from scrolling. This hook does not
+ * write overflow or position on html or body: that inline scroll lock is
+ * what makes iOS Safari resample the status bar and toolbar, and the
+ * sample sticks after the sheet closes. It pins window scroll so a
+ * focused field cannot leave scrollY nonzero after the card closes.
  */
 import { useEffect } from 'react';
 
@@ -64,11 +66,6 @@ function pinDocumentScroll() {
 
 function start() {
   const root = document.documentElement;
-  const body = document.body;
-  const prevHtml = root.style.overflow;
-  const prevBody = body.style.overflow;
-  root.style.overflow = 'hidden';
-  body.style.overflow = 'hidden';
   pinDocumentScroll();
 
   const apply = () => {
@@ -110,8 +107,6 @@ function start() {
     document.removeEventListener('focusin', onFocus);
     root.style.removeProperty('--modal-vvh');
     root.style.removeProperty('--modal-vv-top');
-    root.style.overflow = prevHtml;
-    body.style.overflow = prevBody;
     pinDocumentScroll();
   };
 }

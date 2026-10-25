@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * iPhone 390: the About dialog, the profile panel, and the Connect agent
- * dialog leave the page's top rows and the root styles alone.
+ * iPhone 390: About, the profile menu, the Account pane, Connect agent, and
+ * the part-delete confirm leave the safe-area bands and the root styles alone.
  *
  * iOS Safari tints its status bar and toolbar from the page's top rows and
- * keeps that sample after a layer closes. With a 45% scrim under the status
- * bar the bars went 0.55 x chrome and stayed there. This emulates a 47px
- * notch (`--safe-area-top` on <html>) and samples real pixels: inside the
- * band nothing changes while a dialog is open; below it the scrim dims;
- * after close every sample and the root inline styles are back to baseline.
+ * keeps that sample after a layer closes. A blur or a transparent fixed box
+ * over those rows is enough to shift the tint, even when the dim itself
+ * stops at the insets. This emulates a 47px notch and a 34px home-indicator
+ * band (`--safe-area-top` / `--safe-area-bottom` on <html>) and samples real
+ * pixels on a fresh load, while each dialog is open, and after it closes.
  */
-/* global indexedDB, localStorage, window, document, getComputedStyle */
+/* global indexedDB, localStorage, sessionStorage, window, document, getComputedStyle */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { inflateSync } from 'node:zlib';
@@ -20,6 +20,8 @@ import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 const PORT = Number(process.env.SMOKE_PORT || 5199);
 const APP_URL = `http://127.0.0.1:${PORT}/`;
 const NOTCH = 47;
+const BOTTOM = 34;
+const VIEW_H = 844;
 
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
@@ -134,11 +136,16 @@ function decodePng(buf) {
 
 const POINTS = {
   bandLeft: [12, 10],
-  bandMid: [195, 24],
-  bandRight: [378, 40],
+  bandMid: [195, 8],
+  bandRight: [378, 20],
   belowBand: [195, NOTCH + 30],
   centre: [195, 420],
+  bottomLeft: [120, VIEW_H - 12],
+  bottomRight: [300, VIEW_H - 12],
+  aboveBottom: [20, VIEW_H - BOTTOM - 28],
 };
+const TOP_BAND = ['bandLeft', 'bandMid', 'bandRight'];
+const BOTTOM_BAND = ['bottomLeft', 'bottomRight'];
 
 async function samples(page) {
   const png = decodePng(await page.screenshot({ type: 'png' }));
@@ -170,20 +177,43 @@ async function scrimState(page, selector) {
     if (!el) return null;
     const own = getComputedStyle(el);
     const before = getComputedStyle(el, '::before');
+    const rect = el.getBoundingClientRect();
+    const scrims = [...document.querySelectorAll('.surface-scrim')].map((node) => {
+      const box = node.getBoundingClientRect();
+      const cs = getComputedStyle(node);
+      return {
+        top: box.top,
+        bottom: box.bottom,
+        filter: cs.backdropFilter || cs.webkitBackdropFilter || 'none',
+        bg: cs.backgroundColor,
+      };
+    });
     return {
       ownBg: own.backgroundColor,
+      ownFilter: own.backdropFilter || own.webkitBackdropFilter || 'none',
+      ownTop: own.top,
+      ownBottom: own.bottom,
       beforeBg: before.backgroundColor,
+      beforeFilter: before.backdropFilter || before.webkitBackdropFilter || 'none',
       beforeTop: before.top,
       beforeBottom: before.bottom,
-      beforeZ: before.zIndex,
+      rectTop: rect.top,
+      rectBottom: rect.bottom,
+      scrims,
     };
   }, selector);
 }
 
 async function seedAssembly(page) {
   await page.evaluate(async ({ doc, script }) => {
-    localStorage.removeItem('surfcad.github.token');
-    localStorage.removeItem('surfcad.github.tokenBundle');
+    const bundle = {
+      accessToken: 'gho_shade',
+      refreshToken: '',
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      refreshExpiresAt: 0,
+    };
+    localStorage.setItem('surfcad.github.tokenBundle', JSON.stringify(bundle));
+    sessionStorage.setItem('surfcad.github.token', bundle.accessToken);
     await new Promise((resolve, reject) => {
       const req = indexedDB.deleteDatabase('surfcad-assembly');
       req.onsuccess = () => resolve();
@@ -210,6 +240,8 @@ async function seedAssembly(page) {
   }, { doc: DOC, script: SCRIPT });
 }
 
+const filterNone = (value) => !value || value === 'none';
+
 /** Open a pane, sample while open, close it, sample again. */
 async function exercise(page, label, { open, openSel, close, scrim }, base) {
   await open();
@@ -217,17 +249,26 @@ async function exercise(page, label, { open, openSel, close, scrim }, base) {
   await page.waitForTimeout(250);
   const during = await samples(page);
   const rootDuring = await rootState(page);
-  check(`${label}: the top band is untouched while open`,
-    same(during.bandLeft, base.px.bandLeft) && same(during.bandMid, base.px.bandMid) && same(during.bandRight, base.px.bandRight),
+  const bandsClear = [...TOP_BAND, ...BOTTOM_BAND].every((k) => same(during[k], base.px[k]));
+  check(`${label}: the top and bottom bands are untouched while open`,
+    bandsClear,
     `${fmt(base.px)} -> ${fmt(during)}`);
   if (scrim) {
-    check(`${label}: the page below the band is dimmed while open`,
-      darker(during.belowBand, base.px.belowBand) || darker(during.centre, base.px.centre),
+    check(`${label}: the page between the bands is dimmed while open`,
+      darker(during.belowBand, base.px.belowBand) || darker(during.aboveBottom, base.px.aboveBottom) || darker(during.centre, base.px.centre),
       `${fmt(base.px)} -> ${fmt(during)}`);
     const s = await scrimState(page, scrim);
-    check(`${label}: the scrim element paints nothing and its ::before starts at the notch`,
-      !!s && s.ownBg === 'rgba(0, 0, 0, 0)' && s.beforeBg === 'rgba(0, 0, 0, 0.45)'
-        && s.beforeTop === `${NOTCH}px` && s.beforeBottom === '0px' && s.beforeZ === '-1',
+    const boxClear = !!s && s.rectTop >= NOTCH - 1 && s.rectBottom <= VIEW_H - BOTTOM + 1
+      && s.ownTop === `${NOTCH}px` && s.ownBottom === `${BOTTOM}px`;
+    const paintClear = !!s && s.ownBg === 'rgba(0, 0, 0, 0)' && filterNone(s.ownFilter)
+      && s.beforeBg === 'rgba(0, 0, 0, 0.45)' && /blur/.test(s.beforeFilter)
+      && s.beforeTop === '0px' && s.beforeBottom === '0px';
+    const everyClear = !!s && s.scrims.every((node) => node.top >= NOTCH - 1
+      && node.bottom <= VIEW_H - BOTTOM + 1
+      && node.bg === 'rgba(0, 0, 0, 0)'
+      && filterNone(node.filter));
+    check(`${label}: the scrim box stays out of both bands and only ::before dims`,
+      boxClear && paintClear && everyClear,
       JSON.stringify(s));
   }
   check(`${label}: html and body styles are untouched while open`,
@@ -271,11 +312,24 @@ try {
   const page = await context.newPage();
   const pageErrors = [];
   page.on('pageerror', (err) => pageErrors.push(String(err?.message || err)));
-  await page.route('**/api/**', (route) => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({ authenticated: false }),
-  }));
+  await page.route('**/api/**', (route) => {
+    const url = route.request().url();
+    if (url.includes('/api/auth/me')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          authenticated: true,
+          user: { _id: 'user-shade', email: 'shade@test.local', name: 'Shade' },
+        }),
+      });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ authenticated: false }),
+    });
+  });
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
   await seedAssembly(page);
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -283,15 +337,21 @@ try {
   await page.waitForFunction(() => !document.querySelector('[data-app-loading]'), { timeout: 45000 });
   await page.waitForTimeout(800);
 
-  // Emulate the notch: headless Chrome has env(safe-area-inset-top) = 0.
-  await page.evaluate((n) => {
-    document.documentElement.style.setProperty('--safe-area-top', `${n}px`);
-  }, NOTCH);
+  // Emulate the notch and the home indicator. Headless Chrome has both envs at 0.
+  await page.evaluate(({ notch, bottom }) => {
+    const root = document.documentElement;
+    root.style.setProperty('--safe-area-top', `${notch}px`);
+    root.style.setProperty('--safe-area-bottom', `${bottom}px`);
+  }, { notch: NOTCH, bottom: BOTTOM });
+  const themeMeta = await page.locator('meta[name="theme-color"]').getAttribute('content');
   const base = { px: await samples(page), root: await rootState(page) };
-  check('baseline: html paints no background of its own, body is the chrome token',
-    base.root.htmlBg === 'rgba(0, 0, 0, 0)' && base.root.bodyBg === 'rgb(30, 30, 30)' && base.root.theme === null,
+  check('fresh load: theme-color meta is still the brand ink', themeMeta === '#16171D', themeMeta || '');
+  check('fresh load: html and body are both the chrome ground',
+    base.root.htmlBg === 'rgb(30, 30, 30)' && base.root.bodyBg === 'rgb(30, 30, 30)' && base.root.theme === null,
     JSON.stringify(base.root));
-  check('baseline: the top band is the chrome colour', same(base.px.bandLeft, [30, 30, 30], 3) && same(base.px.bandRight, [30, 30, 30], 3), fmt(base.px));
+  check('fresh load: the top and bottom bands are the chrome colour',
+    [...TOP_BAND, ...BOTTOM_BAND].every((k) => same(base.px[k], [30, 30, 30], 3)),
+    fmt(base.px));
 
   // 1. About, from the header logo.
   await exercise(page, 'About', {
@@ -301,7 +361,7 @@ try {
     scrim: '[data-about-modal]',
   }, base).catch((err) => check('About exercised', false, err?.message || String(err)));
 
-  // 2. Profile panel from the chip (no scrim; nothing may change at all).
+  // 2. Profile menu from the chip (no scrim; nothing may change at all).
   await exercise(page, 'Profile panel', {
     open: () => page.locator('[data-profile-chip-variant="viewport"]').click(),
     openSel: '[data-profile-panel]',
@@ -309,7 +369,22 @@ try {
     scrim: null,
   }, base).catch((err) => check('Profile panel exercised', false, err?.message || String(err)));
 
-  // 3. Connect agent dialog, from the profile panel row.
+  // 3. Account pane, from the profile menu.
+  await exercise(page, 'Account panel', {
+    open: async () => {
+      const openPanel = page.locator('[data-profile-panel]');
+      if (!(await openPanel.isVisible().catch(() => false))) {
+        await page.locator('[data-profile-chip-variant="viewport"]').click();
+      }
+      await page.waitForSelector('[data-profile-account]', { state: 'visible', timeout: 10000 });
+      await page.click('[data-profile-account]');
+    },
+    openSel: '[data-profile-account-pane]',
+    close: () => page.click('[data-profile-account-done]'),
+    scrim: '[data-git-dialog="account"]',
+  }, base).catch((err) => check('Account panel exercised', false, err?.message || String(err)));
+
+  // 4. Connect agent dialog, from the profile panel row.
   await exercise(page, 'Connect agent', {
     open: async () => {
       await page.locator('[data-profile-chip-variant="viewport"]').click();
@@ -320,6 +395,65 @@ try {
     close: () => page.keyboard.press('Escape'),
     scrim: '[data-agent-bridge-dialog]',
   }, base).catch((err) => check('Connect agent exercised', false, err?.message || String(err)));
+
+  // 5. Part delete confirm, from the parts stage. The bands are compared to
+  // the parts page, then CAD is checked against the fresh-load baseline.
+  await page.click('[data-stage-btn="parts"]').catch((err) => check('parts stage opened', false, err?.message || String(err)));
+  const partsProbe = await page.evaluate(() => {
+    const btn = document.querySelector('[data-part-delete]');
+    const rect = btn?.getBoundingClientRect();
+    const cs = btn ? getComputedStyle(btn) : null;
+    return {
+      stage: document.querySelector('[data-mobile-stage]')?.getAttribute('data-mobile-stage') || '',
+      rows: [...document.querySelectorAll('[data-part-row]')].map((el) => el.getAttribute('data-part-row')),
+      id: btn?.getAttribute('data-part-delete') || '',
+      paneHidden: document.querySelector('[data-stage-pane="parts"]')?.getAttribute('aria-hidden') || '',
+      rect: rect ? { x: rect.x, y: rect.y, w: rect.width, h: rect.height } : null,
+      vis: cs?.visibility || '',
+      display: cs?.display || '',
+    };
+  }).catch((err) => ({ error: err?.message || String(err) }));
+  check('parts stage lists a part',
+    partsProbe.stage === 'parts' && !!partsProbe.id && partsProbe.rect?.w > 0,
+    JSON.stringify(partsProbe));
+  await page.waitForTimeout(300);
+  const partsBase = { px: await samples(page), root: await rootState(page) };
+  check('parts stage: html and body stay the chrome ground',
+    partsBase.root.htmlBg === base.root.htmlBg && partsBase.root.bodyBg === base.root.bodyBg
+      && partsBase.root.theme === null,
+    JSON.stringify(partsBase.root));
+  await exercise(page, 'Part delete', {
+    open: () => page.click(`[data-part-delete="${partsProbe.id}"]`),
+    openSel: '[data-part-delete-dialog]',
+    close: () => page.click('[data-part-delete-cancel]'),
+    scrim: '[data-part-delete-dialog]',
+  }, partsBase).catch((err) => check('Part delete exercised', false, err?.message || String(err)));
+  await page.click('[data-stage-btn="cad"]');
+  await page.waitForTimeout(300);
+  const backOnCad = await samples(page);
+  check('back on CAD: the bands match the fresh load',
+    [...TOP_BAND, ...BOTTOM_BAND].every((k) => same(backOnCad[k], base.px[k])),
+    `${fmt(base.px)} -> ${fmt(backOnCad)}`);
+
+  // Fresh load again, after every dialog has opened and closed.
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('[data-brand-about-trigger]', { timeout: 45000 });
+  await page.waitForFunction(() => !document.querySelector('[data-app-loading]'), { timeout: 45000 });
+  await page.waitForTimeout(800);
+  await page.evaluate(({ notch, bottom }) => {
+    const root = document.documentElement;
+    root.style.setProperty('--safe-area-top', `${notch}px`);
+    root.style.setProperty('--safe-area-bottom', `${bottom}px`);
+  }, { notch: NOTCH, bottom: BOTTOM });
+  const fresh = { px: await samples(page), root: await rootState(page) };
+  check('fresh load after dialogs: bands match the first load',
+    [...TOP_BAND, ...BOTTOM_BAND].every((k) => same(fresh.px[k], base.px[k])),
+    `${fmt(base.px)} -> ${fmt(fresh.px)}`);
+  check('fresh load after dialogs: html and body match the first load',
+    fresh.root.htmlBg === base.root.htmlBg && fresh.root.bodyBg === base.root.bodyBg
+      && fresh.root.htmlStyle === base.root.htmlStyle && fresh.root.bodyStyle === base.root.bodyStyle
+      && fresh.root.theme === null,
+    JSON.stringify({ base: base.root, fresh: fresh.root }));
 
   check('no page errors', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
   await context.close();

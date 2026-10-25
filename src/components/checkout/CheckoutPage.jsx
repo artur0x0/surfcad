@@ -364,7 +364,7 @@ export default function CheckoutPage({
     >
       <button
         type="button"
-        className="absolute inset-0 bg-black/60"
+        className="absolute inset-0 surface-scrim"
         aria-label="Close checkout"
         onClick={onClose}
       />

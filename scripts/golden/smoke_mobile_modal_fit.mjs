@@ -78,15 +78,15 @@ console.log('mobile modal fit — source');
   check('the shell caps at 100dvh or visualViewport, minus safe areas',
     /100dvh/.test(shell)
     && /var\(--modal-vvh/.test(shell)
-    && /safe-area-inset-top/.test(shell)
-    && /safe-area-inset-bottom/.test(shell)
+    && /var\(--safe-area-top\)/.test(shell)
+    && /var\(--safe-area-bottom\)/.test(shell)
     && /--modal-margin/.test(shell)
     && /--modal-cap/.test(shell));
-  check('visualViewport sets the fallback height and locks background scroll',
+  check('visualViewport sets the fallback height and does not write body overflow',
     /visualViewport/.test(hook)
     && /vv\.height/.test(hook)
     && /offsetTop/.test(hook)
-    && /overflow = 'hidden'/.test(hook));
+    && !/style\.overflow\s*=/.test(hook));
   check('the quote body still scrolls and the action stays inside it',
     quoteBody.includes('data-quote-add')
     && quoteBody.includes('<ScsHandoff')
@@ -251,6 +251,25 @@ createRoot(document.getElementById('root')).render(<Stage />);
 <body style="margin:0;background:#111">
 <div id="root"></div>
 <script>
+/* setContent is an opaque document: reading localStorage throws, and
+   consent.js does that while the bundle loads. A memory store stands in. */
+(() => {
+  const memory = () => {
+    const data = new Map();
+    return {
+      getItem: (key) => (data.has(key) ? data.get(key) : null),
+      setItem: (key, value) => { data.set(String(key), String(value)); },
+      removeItem: (key) => { data.delete(String(key)); },
+      clear: () => { data.clear(); },
+      key: (index) => Array.from(data.keys())[index] ?? null,
+      get length() { return data.size; },
+    };
+  };
+  for (const name of ['localStorage', 'sessionStorage']) {
+    const bag = memory();
+    Object.defineProperty(window, name, { configurable: true, get: () => bag });
+  }
+})();
 window.fetch = async (url) => {
   const data = { success: true, authenticated: false, user: null, rates: [], addresses: [] };
   const text = JSON.stringify(data);
@@ -296,7 +315,7 @@ attachConsentPresetToBrowser(browser);
         scrollHeight: body.scrollHeight,
         clientHeight: body.clientHeight,
         pageScroll: document.scrollingElement.scrollTop,
-        bodyLock: document.body.style.overflow,
+        bodyLock: getComputedStyle(document.body).overflow,
         vvTop: parseFloat(rootCs.getPropertyValue('--modal-vv-top')) || 0,
         vvH: parseFloat(rootCs.getPropertyValue('--modal-vvh')) || ih,
       };

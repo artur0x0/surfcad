@@ -26,9 +26,9 @@
   --chrome-success-hover: 5 150 105; /* emerald-600 #059669 */
   /* Safe-area insets as tokens, so a layer can stay clear of the bars.
      iOS Safari samples the page's top rows for its status bar and toolbar
-     tint. A dim layer under the status bar shifts that tint, and the sample
-     lingers after the layer closes. Goldens override these on <html> to
-     emulate a notch in headless Chrome. */
+     tint. Any layer over those rows — a dim, a blur, or a transparent
+     fixed box — shifts that tint, and the sample lingers after the layer
+     closes. Goldens override these on <html> to emulate a notch. */
   --safe-area-top: env(safe-area-inset-top, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
   /* Horizontal CAD feature ribbon (assembly / part / empty). 46px:
@@ -61,6 +61,11 @@
   --agent-prompt-rest-bottom: var(--agent-prompt-desktop-bottom);
 }
 
+/* html and body share the viewport ground. When a fixed layer covers the
+   rows iOS Safari samples, it falls back to the html background. A
+   transparent html background is a different black, and that sample stays
+   after the layer closes. */
+html,
 body {
   background: rgb(var(--chrome-background));
 }
@@ -74,13 +79,12 @@ html[data-loading-theme="dark"] body {
   background-color: rgb(var(--brand-navy));
 }
 
-/* The document is not a scroll container. useModalViewport hides overflow
-   only while a sheet is open and restores the previous inline value when
-   the last card closes. After a joint is added that restore leaves the
-   page scrollable, so the next drag at the end of the tool list moves the
-   page instead of the left rail. A descendant that sticks out of the
-   shells (a tag, a strip, a flex child past h-dvh) must not grow
-   scrollHeight either. The left rail is the scroller. */
+/* The document is not a scroll container. Overflow stays hidden in this
+   rule, not as an inline style while a sheet is open: iOS Safari resamples
+   the status bar and toolbar when body overflow or position changes, and
+   that sample sticks. useModalViewport only pins scroll. A descendant that
+   sticks out of the shells (a tag, a strip, a flex child past h-dvh) must
+   not grow scrollHeight either. The left rail is the scroller. */
 html,
 body,
 #root {
@@ -425,8 +429,7 @@ textarea {
   }
 
   .surface-glass,
-  .surface-glass-chip,
-  .surface-scrim {
+  .surface-glass-chip {
     -webkit-backdrop-filter: blur(var(--surface-blur, 12px)) saturate(140%);
     backdrop-filter: blur(var(--surface-blur, 12px)) saturate(140%);
   }
@@ -439,28 +442,31 @@ textarea {
   .surface-glass-chip {
     --surface-blur: 8px;
   }
-  /* Modal backdrop: dim enough to focus, sheer enough to keep context.
-     The dim lives on ::before and stops at the safe-area insets: iOS Safari
-     samples the page's top rows for the status bar and toolbar tint, so a
-     dim under the status bar shifts that tint and keeps it after the
-     backdrop closes (the bars went 0.55 x chrome and stayed there). The
-     blur stays on the element: a blur of one colour is that colour.
-     Callers keep `fixed inset-0`; the element itself paints nothing. */
+  /* Modal backdrop. The element paints nothing and carries no blur: both
+     live on ::before, which fills the box. The box itself is pulled out of
+     the safe-area bands by the unlayered rule below (modal-fit insets its
+     own box; a scrim inside it fills that box). A blur on the full-bleed
+     element is still a layer over the rows iOS Safari samples, which is
+     why stopping only the dim at the insets left the bars the wrong shade. */
   .surface-scrim {
     --surface-blur: 4px;
     --scrim-dim: rgb(0 0 0 / 0.45);
     background-color: transparent;
     isolation: isolate;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
   .surface-scrim::before {
     content: '';
     position: absolute;
     left: 0;
     right: 0;
-    top: var(--safe-area-top);
-    bottom: var(--safe-area-bottom);
+    top: 0;
+    bottom: 0;
     z-index: -1;
     background-color: var(--scrim-dim);
+    -webkit-backdrop-filter: blur(var(--surface-blur, 4px)) saturate(140%);
+    backdrop-filter: blur(var(--surface-blur, 4px)) saturate(140%);
     pointer-events: none;
   }
 
@@ -823,23 +829,39 @@ textarea {
   }
 }
 
+/* Unlayered so it beats Tailwind `inset-0`. The scrim's border box stays
+   out of the bands iOS Safari samples. Callers keep `fixed inset-0` or
+   `absolute inset-0`; this replaces only the block edges. A scrim that is
+   the modal-fit shell is excluded: that shell insets itself. A scrim
+   inside an already-inset shell fills the shell. */
+.surface-scrim:not(.modal-fit) {
+  top: var(--safe-area-top);
+  bottom: var(--safe-area-bottom);
+}
+.modal-fit > .surface-scrim {
+  top: 0;
+  bottom: 0;
+}
+
 /* Order-flow sheets (quote, checkout, SendCutSend handoff, login, address).
    The panel stays inside the visible viewport: 100dvh, or visualViewport
    (--modal-vvh / --modal-vv-top) when the iOS toolbar or keyboard is shorter.
-   Safe-area insets and --modal-margin inset it. --modal-cap is the desktop
-   ceiling (90vh unless a sheet sets its own), so a tall window is unchanged.
-   The header and the scrolling body stay whatever the caller already had. */
+   The shell's border box starts below the top safe area and ends above the
+   bottom one, so the shell is not a layer under the status bar. Padding is
+   only --modal-margin. --modal-cap is the desktop ceiling (90vh unless a
+   sheet sets its own). The header and the scrolling body stay whatever
+   the caller already had. */
 .modal-fit {
   --modal-margin: 1rem;
   --modal-cap: 90vh;
   position: fixed;
   left: 0;
   right: 0;
-  top: var(--modal-vv-top, 0px);
+  top: calc(var(--modal-vv-top, 0px) + var(--safe-area-top));
   box-sizing: border-box;
-  height: min(100dvh, var(--modal-vvh, 100dvh));
-  padding-top: calc(env(safe-area-inset-top, 0px) + var(--modal-margin));
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--modal-margin));
+  height: calc(min(100dvh, var(--modal-vvh, 100dvh)) - var(--safe-area-top) - var(--safe-area-bottom));
+  padding-top: var(--modal-margin);
+  padding-bottom: var(--modal-margin);
   overflow: hidden;
   overscroll-behavior: none;
 }
@@ -859,23 +881,23 @@ textarea {
     var(--modal-cap, 90vh),
     calc(
       min(100dvh, var(--modal-vvh, 100dvh))
-      - env(safe-area-inset-top, 0px)
-      - env(safe-area-inset-bottom, 0px)
+      - var(--safe-area-top)
+      - var(--safe-area-bottom)
       - (var(--modal-margin, 1rem) * 2)
     )
   );
 }
 @supports not (height: 100dvh) {
   .modal-fit {
-    height: var(--modal-vvh, 100vh);
+    height: calc(var(--modal-vvh, 100vh) - var(--safe-area-top) - var(--safe-area-bottom));
   }
   .modal-fit-panel {
     max-height: min(
       var(--modal-cap, 90vh),
       calc(
         var(--modal-vvh, 100vh)
-        - env(safe-area-inset-top, 0px)
-        - env(safe-area-inset-bottom, 0px)
+        - var(--safe-area-top)
+        - var(--safe-area-bottom)
         - (var(--modal-margin, 1rem) * 2)
       )
     );

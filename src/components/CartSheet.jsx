@@ -56,7 +56,7 @@ export default function CartSheet() {
       <button
         type="button"
         data-cart-backdrop=""
-        className="absolute inset-0 bg-black/55"
+        className="absolute inset-0 surface-scrim"
         aria-label="Close cart"
         onClick={() => cart.closeCart?.()}
       />
