@@ -188,6 +188,7 @@ test('the pane reads like a chat: both senders in order, user bubbles right with
   assert.ok(chat.indexOf('Did you get the reference photo') < chat.indexOf('Yes, I got it.'));
   assert.ok(chat.indexOf('Yes, I got it.') < chat.indexOf('Rebuild the bike'));
   assert.match(chat, /agent-prompt-msg--user surface-quiet/);
+  assert.match(chat, /agent-prompt-msg--agent agent-prompt-reply-body surface-dark text-ui text-on-dark/);
   assert.match(chat, /data-agent-msg-thumb=""/);
   assert.match(chat, /data-agent-chat-count="4"/);
   // Desktop: the fold chevron replaced the X.
@@ -213,7 +214,8 @@ test('the pane caps its height and scrolls inside; user bubbles are right-aligne
   assert.match(css, /--agent-prompt-max-reply: min\(200px, 40vh\);/);
   assert.match(css, /--agent-prompt-max-reply-mobile: min\(160px, 32vh\);/);
   assert.match(css, /\.agent-prompt-reply \{[^}]*max-height: var\(--agent-prompt-max-reply\);[^}]*overflow-y: auto;/s);
+  assert.match(css, /\.agent-prompt-msg \{[^}]*max-width: 85%;/s);
   assert.match(css, /\.agent-prompt-msg--user \{[^}]*align-self: flex-end;/s);
-  assert.match(css, /\.agent-prompt-msg--agent \{[^}]*align-self: stretch;/s);
+  assert.match(css, /\.agent-prompt-msg--agent \{[^}]*align-self: flex-start;/s);
   assert.match(css, /\.agent-prompt-jump \{[^}]*position: sticky;/s);
 });

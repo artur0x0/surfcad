@@ -18,7 +18,7 @@ import {
   SERVER_INSTRUCTIONS,
 } from '../src/prompt/guide.mjs';
 import { BUILD_GUIDANCE, JOINT_PLACEMENT_GUIDANCE } from '../src/prompt/buildGuidance.mjs';
-import { CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS, promptToolDefinitions } from '../src/prompt/promptTools.mjs';
+import { BUILDING_STATUS_GUIDANCE, CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS, promptToolDefinitions } from '../src/prompt/promptTools.mjs';
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER_BIN = join(PKG_ROOT, 'bin/surfcad-mcp.js');
@@ -65,6 +65,9 @@ test('reply_to_user and the guide start topic require a closing reply, including
   assert.ok(defs.set_status.description.includes(CLOSING_REPLY_GUIDANCE));
   assert.ok(GUIDE_TOPICS.start.text.includes(CLOSING_REPLY_GUIDANCE));
   assert.match(GUIDE_TOPICS.start.text, /set_status is for progress and does not close the task/);
+  assert.ok(GUIDE_TOPICS.start.text.includes(BUILDING_STATUS_GUIDANCE));
+  assert.ok(PROMPT_SERVER_INSTRUCTIONS.includes(BUILDING_STATUS_GUIDANCE));
+  assert.ok(defs.set_status.description.includes(BUILDING_STATUS_GUIDANCE));
   assert.match(PROMPT_SERVER_INSTRUCTIONS, /failure or partial completion/);
 });
 

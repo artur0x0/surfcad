@@ -112,7 +112,9 @@ test('activity refreshes the deadline; a true stall keeps Stop and says why', ()
   run.step({ type: 'reply', id: 'p1', text: 'still going', final: false });
   run.time.advance(AGENT_PROMPT_STALL_MS - 1);
   assert.equal(run.stalls, 0);
-  assert.equal(typingShown(run.typing), true);
+  // A partial reply is activity. It does not leave building.
+  assert.equal(workingShown(run.typing), true);
+  assert.equal(typingShown(run.typing), false);
   run.time.advance(1);
   assert.equal(run.stalls, 1);
   assert.equal(stallShown(run.typing), true);

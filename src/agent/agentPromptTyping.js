@@ -10,12 +10,14 @@
  *   the viewport is visible, and the input shows the spinner and
  *   "Agent is working".
  *
- * A sent prompt starts in `typing` (waiting for the reply). The MCP side
- * sends `state` on its status message: `working` on the first
- * model-changing tool call or an explicit set_status, `typing` on a
- * streamed (non-final) reply or an explicit set_status, `idle` on the
- * final reply or Stop. A tab that only gets the legacy
- * `working` boolean maps true to `working` and false to idle.
+ * A sent prompt starts in `typing` (responding: bouncing dots, not
+ * "Agent is working"). The MCP side sends `state` on its status message:
+ * `working` when the agent calls set_status building (or, if that call is
+ * missed, on the first model-changing tool), `typing` on an explicit
+ * responding / typing status or a streamed reply that has not entered
+ * building, `idle` on the final reply or Stop. A partial reply does not
+ * leave `working`. A tab that only gets the legacy `working` boolean maps
+ * true to `working` and false to idle.
  *
  * Everything closes on the final reply, on idle (the agent reports done),
  * on a failed delivery, on Stop, and on disconnect. A missed activity
@@ -66,6 +68,8 @@ export function typingReducer(state, event) {
     case 'reply': {
       if (!cur.pendingId || event.id !== cur.pendingId) return cur;
       if (event.final === true) return closed();
+      // Building stays until the final reply. A partial chunk is activity.
+      if (cur.mode === 'working') return clearStall(cur, cur);
       const typing = withMode(cur, 'typing');
       const streaming = typing.streaming ? typing : { ...typing, streaming: true };
       return clearStall(cur, streaming);

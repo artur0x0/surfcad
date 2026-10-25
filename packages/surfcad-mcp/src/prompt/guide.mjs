@@ -12,7 +12,7 @@
  * topic under 1,500 words.
  */
 import { BUILD_GUIDANCE, JOINT_PLACEMENT_GUIDANCE } from './buildGuidance.mjs';
-import { CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS } from './promptTools.mjs';
+import { BUILDING_STATUS_GUIDANCE, CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS } from './promptTools.mjs';
 import {
   ERROR_TOPIC_CODES,
   ERROR_TOPIC_PREFIX,
@@ -41,7 +41,7 @@ Reading results: every model-changing tool answers { ok, errors, status } with r
 Ids are opaque surf ids from parts, list_assemblies, create_part, create_assembly; never a path or a display name.
 Topics: guide { topic: "dialect" | "features" | "selection" | "paint" | "limits" | "camera" | "assembly" }; list_helpers { names } documents any script helper.
 
-In-viewer prompt pane. ${CLOSING_REPLY_GUIDANCE} set_status is for progress and does not close the task. reply_to_user takes an in_reply_to that this session actually received; any other id is unknown_prompt and is not shown in the chat. After read_messages acks a prompt, that id stays in the response's recent list (the last 50 prompts in this session, oldest first, each { id, state }), including on a later empty read_messages {}.`;
+In-viewer prompt pane. ${CLOSING_REPLY_GUIDANCE} set_status is for progress and does not close the task. ${BUILDING_STATUS_GUIDANCE} state "responding" (alias typing) is the bouncing dots after the user sends. Listing parts, faces, edges, or transforms, status, and read_messages never start building. Building stays until the closing reply. reply_to_user takes an in_reply_to that this session actually received; any other id is unknown_prompt and is not shown in the chat. After read_messages acks a prompt, that id stays in the response's recent list (the last 50 prompts in this session, oldest first, each { id, state }), including on a later empty read_messages {}.`;
 
 const FEATURES = `Feature blocks. The script of a part is plain JavaScript over the SurfCAD helpers, and the feature strip reads it from marker comments. Every insert_* writes one block:
 
@@ -96,7 +96,7 @@ What is expensive: filletEdges / chamferEdges over many edges (a face pick on a 
 
 After a timeout. undo waits for the replaced worker, re-runs the restored script and reports that run (with return: "full", status.script is the restored script). If the run still did not report, status.stale: true says the numbers are the previous run's: call run {} again and read status. A status without stale is current.
 
-Result sizes. Over MCP every model-changing tool defaults to return: "status" (no script echo). "summary" adds status.features, "full" echoes the script. Read scripts with get_script, one span with get_script { range }. list_commands { group } returns one tool group (core, feature, insert, pick, sketch, document, joint, paint, measure, fea, sheet, git, export, view, agent); list_commands { names } just those rows; no args is the whole catalog, about 130 KB.
+Result sizes. Over MCP every model-changing tool defaults to return: "status" (no script echo). "summary" adds status.features, "full" echoes the script. Read scripts with get_script, one span with get_script { range }. list_commands { group } returns one tool group (core, feature, insert, pick, sketch, document, joint, paint, measure, fea, sheet, git, export, view, agent); list_commands { names } just those rows; no args is the bridge catalog plus every MCP-only tool this server registers (pair, guide, list_helpers, reply_to_user, set_status, and the other prompt tools) in the agent group.
 
 Pairing. A bridge call before pair is not_paired. pair returns pair_pending while the user has not clicked Allow. pairing_lost means the tab or relay dropped and the server re-pairs on its own: retry in a few seconds, do not ask for a new code. Numbers are finite and within ±1,000,000 mm; NaN and Infinity are bad_args.`;
 
@@ -217,7 +217,7 @@ export function guideResourceContents(uri, version = loadPackageVersion()) {
 export const SERVER_INSTRUCTIONS = [
   PROMPT_SERVER_INSTRUCTIONS,
   '',
-  `SurfCAD quick start. Pair, then call guide { topic: "start" } before the first model call; guide {} lists every topic (${GUIDE_TOPIC_NAMES.join(', ')}; every error payload carries hint, and see names its errors.<code> topic).`,
+  `SurfCAD quick start. Pair, then call guide { topic: "start" } before the first model call; guide {} lists every topic (${GUIDE_TOPIC_NAMES.join(', ')}).`,
   'Flow, in ribbon order, each stage across the whole assembly before the next: 1 Block: create_part, then insert_cube / insert_cylinder / insert_tube at rough size and position, screenshot for the user. 2 Build: insert_hole, insert_cut, insert_shell, insert_make_extrude / revolve / sweep / loft. 3 Polish: insert_fillet_edges, insert_chamfer_edges on small edge sets. 4 Place: fix one base part with a fixed joint, then joint_create for every part that touches or attaches to another (one call creates the joint and solves placement). part_set_transform only for parts that touch nothing.',
   'Rules that bite: helper names (cut, hole, shell, ...) are reserved, never redeclare them; set_script needs the active part\'s id (set_active_part first) and only rewrites a whole part, insert_code_snippet { gap, why, script } is the one-operation fallback; use_selection is single use: pick, insert once, pick again (nothing selected is no_selection).',
   'Verify: select_clear → camera_set { view } → screenshot { save_to: true }. right puts the camera on +X, front on -Y, top on +Z.',

@@ -10,10 +10,10 @@ import { PAIR_MSG } from '../src/relayMessages.mjs';
 import { createPairingToken } from '../../../src/agent/ws/pairingToken.js';
 
 /**
- * Agent prompt states (acceptance 11): typing, working, and idle reach the
- * tab as `state` on the status message. Explicit set_status { state },
- * implicit working on the first model-changing tool call, implicit typing
- * on a streamed reply, idle on the final reply, and the legacy boolean.
+ * Agent prompt states: responding (tab state typing), building (tab state
+ * working), and idle. A read never enters building. set_status building
+ * does, and so does the first model-changing tool if that call was missed.
+ * A partial reply does not leave building. The final reply is idle.
  */
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -103,6 +103,7 @@ test('typing, working, and idle reach the tab as state, explicitly and implicitl
   const read = await client.callTool({ name: 'read_messages', arguments: {} });
   assert.equal(read.isError, false, JSON.stringify(read).slice(0, 200));
   await settle();
+  assert.equal(statuses.some((msg) => msg.state === 'working'), false, JSON.stringify(statuses));
   const base = statuses.length;
 
   // Explicit typing.
@@ -120,7 +121,7 @@ test('typing, working, and idle reach the tab as state, explicitly and implicitl
   await settle();
   assert.equal(statuses.length, base + 1, 'status (read-only) sent no state');
 
-  // The first model-changing tool switches to working on its own.
+  // Safety net: the first model-changing tool enters building on its own.
   await client.callTool({ name: 'insert_cube', arguments: {} });
   const s2 = await nextStatus(base + 1);
   assert.equal(s2.state, 'working');
@@ -131,12 +132,13 @@ test('typing, working, and idle reach the tab as state, explicitly and implicitl
   await settle();
   assert.equal(statuses.length, base + 2);
 
-  // A streamed reply means typing again; the final reply means idle.
+  // A partial reply does not leave building. The final reply means idle.
+  const beforePartial = statuses.length;
   await client.callTool({ name: 'reply_to_user', arguments: { in_reply_to: promptId, text: 'Added ', final: false } });
-  const s3 = await nextStatus(base + 2);
-  assert.equal(s3.state, 'typing');
+  await settle();
+  assert.equal(statuses.length, beforePartial, 'a partial reply during building sent no state');
   await client.callTool({ name: 'reply_to_user', arguments: { in_reply_to: promptId, text: 'four holes.', final: true } });
-  const s4 = await nextStatus(base + 3);
+  const s4 = await nextStatus(beforePartial);
   assert.equal(s4.state, 'idle');
   assert.equal(s4.working, false);
 
@@ -147,20 +149,53 @@ test('typing, working, and idle reach the tab as state, explicitly and implicitl
   await client.callTool({ name: 'read_messages', arguments: {} });
   await settle();
   const before = statuses.length;
+  assert.equal(statuses.filter((msg) => msg.id === '33333333-3333-4333-8333-333333333333' && msg.state === 'working').length, 0);
+  const responding = await client.callTool({ name: 'set_status', arguments: { state: 'responding' } });
+  assert.equal(responding.isError, false);
+  const sResponding = await nextStatus(before);
+  assert.equal(sResponding.state, 'typing');
+  assert.deepEqual(JSON.parse(responding.content[0].text), { working: true, state: 'typing' });
+  await client.callTool({ name: 'status', arguments: {} });
+  await settle();
+  assert.equal(statuses.length, before + 1, 'status after responding sent no state');
+  const building = await client.callTool({ name: 'set_status', arguments: { state: 'building', label: 'Adding the holes' } });
+  assert.equal(building.isError, false);
+  const sBuilding = await nextStatus(before + 1);
+  assert.equal(sBuilding.state, 'working');
+  assert.equal(sBuilding.label, 'Adding the holes');
+  assert.deepEqual(JSON.parse(building.content[0].text), { working: true, state: 'working' });
   const legacy = await client.callTool({ name: 'set_status', arguments: { working: true } });
   assert.equal(legacy.isError, false);
-  const s5 = await nextStatus(before);
+  const s5 = await nextStatus(before + 2);
   assert.equal(s5.state, 'working');
   const bad = await client.callTool({ name: 'set_status', arguments: { state: 'dancing' } });
   assert.equal(bad.isError, true);
   const none = await client.callTool({ name: 'set_status', arguments: {} });
   assert.equal(none.isError, true);
 
-  // The tool text tells the agent when to set typing.
+  // A reply-only turn, with reads in between, never enters building.
+  await settle(1100);
+  const replyOnlyId = '44444444-4444-4444-8444-444444444444';
+  tab.send(JSON.stringify({ type: PAIR_MSG.AGENT_PROMPT, v: 1, id: replyOnlyId, text: 'How wide is the plate?', ts: new Date().toISOString() }));
+  await waitUntil(() => acks.some((a) => a.id === replyOnlyId), 'reply-only prompt ack');
+  const beforeReplyOnly = statuses.length;
+  await client.callTool({ name: 'read_messages', arguments: {} });
+  await client.callTool({ name: 'status', arguments: {} });
+  await settle();
+  assert.equal(statuses.length, beforeReplyOnly, 'reads on a reply-only turn sent no status');
+  const closed = await client.callTool({ name: 'reply_to_user', arguments: { in_reply_to: replyOnlyId, text: '40 mm across.', final: true } });
+  assert.equal(closed.isError, false);
+  const sIdle = await nextStatus(beforeReplyOnly);
+  assert.equal(sIdle.state, 'idle');
+  assert.equal(sIdle.working, false);
+  assert.equal(statuses.some((msg) => msg.id === replyOnlyId && msg.state === 'working'), false);
+
+  // The tool text tells the agent to signal building only while modeling.
   const { tools } = await client.listTools();
   const setStatus = tools.find((t) => t.name === 'set_status');
-  assert.match(setStatus.description, /typing/);
-  assert.deepEqual(setStatus.inputSchema.properties.state.enum, ['typing', 'working', 'idle']);
+  assert.match(setStatus.description, /building/);
+  assert.match(setStatus.description, /actually creating or editing geometry/);
+  assert.deepEqual(setStatus.inputSchema.properties.state.enum, ['responding', 'building', 'idle', 'typing', 'working']);
   assert.equal(setStatus.inputSchema.required, undefined);
   } finally {
     await client.close().catch(() => {});

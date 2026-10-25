@@ -9,6 +9,7 @@ import { solidCacheStats } from './utils/partSolidCache.js';
 import PromptInput from './components/PromptInput';
 import { agentPromptContext } from './agent/agentPromptLive.js';
 import { allowFeaturePopup, registerFeaturePopupDismiss } from './agent/agentFeaturePopupGate.js';
+import { beginAgentJointSession } from './agent/jointPromptGate.js';
 import { featureEditOpenPlan, featureEditParamError } from './agent/featureEditParams.js';
 import SplitDivider from './components/SplitDivider';
 import ScriptEditorDrawer from './components/ScriptEditorDrawer';
@@ -9545,8 +9546,13 @@ const App = () => {
   };
 
   const handleOpenJoints = () => {
-    if (appModeRef.current === 'game' || featureSessionRef.current) return false;
-    if (!allowFeaturePopup()) return false;
+    // The feature-popup gate is closed for the whole prompt run (responding
+    // and building). Joints are created during that run, so the session
+    // still opens. Game mode and another feature session still refuse.
+    if (!beginAgentJointSession({
+      game: appModeRef.current === 'game',
+      featureSession: !!featureSessionRef.current,
+    })) return false;
     jointPicksRef.current = [];
     viewportRef.current?.clearJointHighlights?.();
     publishJointCard(draftFromPicks(null, [], { joints: assemblyRef.current?.joints || [] }));

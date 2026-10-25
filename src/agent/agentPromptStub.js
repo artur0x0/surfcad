@@ -98,7 +98,8 @@ export function createAgentPromptStub(options = {}) {
     const delay = Number.isFinite(options.delayMs) ? options.delayMs : 420;
     const delivery = options.delivery || 'queued';
 
-    emit(workingListeners, true);
+    // An echo is a reply, not a build. The pane stays on the responding
+    // dots the caller set when it sent, until the reply lands.
     const finish = () => {
       if (aborted) return;
       const ack = { id, delivery };
@@ -120,7 +121,6 @@ export function createAgentPromptStub(options = {}) {
       } else {
         emit(replyListeners, { id, text: replyText, final: true });
       }
-      emit(workingListeners, false);
     };
     const scheduleFinish = () => {
       if (aborted) return;
