@@ -310,6 +310,9 @@ export function describeHelperRefusal(item, ctx = {}) {
     const where = bits.length ? ` (${bits.join(', ')} mm)` : '';
     return `Move refused${where}. Each axis must be a finite translation within ±${POSITION_LIMIT_MM} mm.`;
   }
+  if (id === 'chamferEdges' && hasFace && !edgeCount && face.type === 'irregular' && !(typeof face.name === 'string' && face.name)) {
+    return 'Chamfer refused. This face pick is an irregular region with no face name, so it does not name one face boundary. Pick a named face (select_faces { names }) or grouped edges, then insert again.';
+  }
   if (id === 'filletEdges' || id === 'chamferEdges' || id === 'sweepPath' || id === 'makeSweep') {
     if (!edgeCount) {
       return `${label} needs a selected edge. Pick an edge or a tangent chain, then insert again.`;

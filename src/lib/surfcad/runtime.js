@@ -3752,6 +3752,18 @@ function cskHole(part, frame, u, v, diaThru, diaCsk, cskDepth, span) {
   );
 }
 
+function _chamferComponents(solid) {
+  if (!solid || typeof solid.decompose !== 'function') return 1;
+  let parts = null;
+  try { parts = solid.decompose(); } catch { return 1; }
+  if (!Array.isArray(parts) || parts.length === 0) return 1;
+  const n = parts.length;
+  for (const piece of parts) {
+    if (piece && piece !== solid) _safeDeleteManifold(piece);
+  }
+  return n;
+}
+
 /**
  * chamferEdges(part, edges, c) — equal-leg 45° chamfer c on a SET of straight
  * convex edges. Edges = objects from c4MeshData/convexEdges, or a plain
@@ -3778,11 +3790,14 @@ function cskHole(part, frame, u, v, diaThru, diaCsk, cskDepth, span) {
  * build fine). The first bad edge throws a named, actionable error instead.
  * Cost: n differences instead of 1 — fine for the edge counts these parts
  * actually use (≤ ~30); the C8 timeout guard catches anything pathological.
+ * A chamfer that splits the solid into more bodies than it started with
+ * throws. The pieces are not returned.
  */
 function chamferEdges(part, edges, c) {
   _c4RequirePositive('chamferEdges', 'c (leg length)', c);
   const M = manifoldModule.Manifold;
   if (!edges || !edges.length) return part;
+  const started = _chamferComponents(part);
   let data = null;
   const laz = () => (data ||= c4MeshData(part));
   let out = part;
@@ -3825,6 +3840,14 @@ function chamferEdges(part, edges, c) {
     const seNext = _c4StatusError(next);
     if (seNext)
       throw new Error(`chamferEdges: edge ${ei} — boolean failed (${seNext}); the cutter geometry is degenerate at this edge (common at triple-junction rib-base edges)`);
+    const pieces = _chamferComponents(next);
+    if (pieces > started) {
+      _safeDeleteManifold(next);
+      throw new Error(
+        `chamferEdges: edge ${ei} split the solid into ${pieces} bodies (was ${started}). `
+        + 'The chamfer cut through the part. Use the boundary edges of one face, or a smaller leg length.',
+      );
+    }
     out = next;
   }
   return out;

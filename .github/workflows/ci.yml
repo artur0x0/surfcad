@@ -386,6 +386,11 @@ jobs:
             echo "agent move target golden did not pass (see log above)"
             exit 1
           fi
+          npm run golden:agent-chamfer-face | tee "${RUNNER_TEMP}/agent-chamfer-face.log"
+          if ! grep -q 'agent chamfer face golden: ok' "${RUNNER_TEMP}/agent-chamfer-face.log"; then
+            echo "agent chamfer face golden did not pass (see log above)"
+            exit 1
+          fi
           npm run golden:position-limit | tee "${RUNNER_TEMP}/position-limit.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/position-limit.log"; then
             echo "position limit golden skipped because Chrome was not found; CI must launch it"
