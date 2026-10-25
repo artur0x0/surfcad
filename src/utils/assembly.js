@@ -48,6 +48,34 @@ export function definitionRows(parts, defId) {
 }
 
 /**
+ * Name stamped into a definition's `// @name` header: the primary row
+ * (`id` is the definition), else the lowest-order instance. Same rule as
+ * planSave, so a dirty compare hashes the bytes Save would write.
+ */
+export function definitionStampName(parts, defId) {
+  const key = defId == null ? '' : String(defId);
+  let named = null;
+  let primary = false;
+  for (const part of parts || []) {
+    if (!part || partDefinitionId(part) !== key) continue;
+    const isPrimary = !part.instanceOf || String(part.instanceOf) === String(part.id);
+    if (!named) {
+      named = part;
+      primary = isPrimary;
+      continue;
+    }
+    if (isPrimary && !primary) {
+      named = part;
+      primary = true;
+    } else if (!isPrimary && !primary
+      && Number(part.order ?? Infinity) < Number(named.order ?? Infinity)) {
+      named = part;
+    }
+  }
+  return named?.name;
+}
+
+/**
  * True when a row other than `exceptRowId` still places `defId`: its own
  * primary row, or an instance of it. Delete drops a definition's script
  * and run only when this is false.

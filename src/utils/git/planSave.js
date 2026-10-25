@@ -21,7 +21,12 @@
  *   - `openWorkingCopies` / `otherAssemblyCommits` — extra reference
  *     sources; they do **not** replace `branchAssemblies`.
  */
-import { normalizeRepoPath, partDefinitionId } from '../assembly.js';
+import {
+  definitionStampName,
+  normalizeInstanceScripts,
+  normalizeRepoPath,
+  partDefinitionId,
+} from '../assembly.js';
 import { gitBlobSha, isBinaryContent, toUint8Array } from './binaryContent.js';
 import { fileDelete, fileWrite, GITHUB_COMPARE_FILE_LIMIT } from './githubAdapterInterface.js';
 import { assemblyIdPath, parseIdPath, partIdPath, partMeshIdPath } from './idPaths.js';
@@ -99,11 +104,18 @@ function workingCopyOf(input) {
   return input;
 }
 
-function scriptOf(wc, partId) {
+function scriptOf(wc, defId) {
   const scripts = wc.scripts;
   if (!scripts || typeof scripts !== 'object') return undefined;
-  if (typeof scripts[partId] === 'string') return scripts[partId];
-  return undefined;
+  if (typeof scripts[defId] === 'string') return scripts[defId];
+  const rows = (Array.isArray(wc.parts) ? wc.parts : []).filter(
+    (row) => partDefinitionId(row) === defId,
+  );
+  const activeId = wc.activeId != null ? String(wc.activeId) : '';
+  const pick = rows.find((row) => String(row.id) === activeId && typeof scripts[row.id] === 'string')
+    || rows.find((row) => String(row.id) === String(defId) && typeof scripts[row.id] === 'string')
+    || rows.find((row) => typeof scripts[row.id] === 'string');
+  return pick ? scripts[pick.id] : undefined;
 }
 
 function meshOf(wc, partId) {
@@ -449,7 +461,9 @@ function keepFileHash(nextFiles, path, commit, wc) {
  * @returns {{ files: object[], nextBranchTip: object|null, nextAssemblyCommit: object, adopt?: object[], partStillReferenced?: object[] } | { conflict: true, paths: string[] }}
  */
 export function planSave(branchTip, assemblyCommit, workingCopy, remoteTip, compareFiles) {
-  const wc = workingCopyOf(workingCopy);
+  const raw = workingCopyOf(workingCopy);
+  const scripts = normalizeInstanceScripts(raw.scripts, raw);
+  const wc = scripts === raw.scripts ? raw : { ...raw, scripts };
   const assemblyId = typeof wc.id === 'string' ? wc.id.trim() : '';
   if (!isV2SurfId(assemblyId)) throw new Error('planSave: working copy needs a v2 assembly id');
   assertReferenceInputTypes(workingCopy);
@@ -503,7 +517,11 @@ export function planSave(branchTip, assemblyCommit, workingCopy, remoteTip, comp
       continue;
     }
 
-    const stamped = stampPartScript(script, part.id, part.name);
+    const stamped = stampPartScript(
+      script,
+      part.id,
+      definitionStampName(wc.parts, part.id) || part.name,
+    );
     const hash = contentHash(stamped);
     const existingJs = knownHash(jsPath, prev, wc);
     if (existingJs !== hash) {

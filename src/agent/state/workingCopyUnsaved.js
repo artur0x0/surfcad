@@ -6,7 +6,11 @@ import { gitBlobSha } from '../../utils/git/binaryContent.js';
 import { assemblyIdPath, parseIdPath, partIdPath } from '../../utils/git/idPaths.js';
 import { partScriptMatchesCommitted, stampPartScript } from '../../utils/git/planSave.js';
 import { toSurfJsonV2 } from '../../utils/git/surfJsonV2.js';
-import { partDefinitionId, sortParts } from '../../utils/assembly.js';
+import {
+  definitionStampName,
+  normalizeInstanceScripts,
+  partDefinitionId,
+} from '../../utils/assembly.js';
 
 function textBlobSha(text) {
   return gitBlobSha(new TextEncoder().encode(String(text ?? '')));
@@ -66,16 +70,6 @@ function partScriptMatchesCommit(text, committedHash, id, name) {
   }
 }
 
-/**
- * The name Save stamps into a definition's `@name` header: the primary
- * row's, else the lowest-order instance's (planSave's rule).
- */
-function definitionHeaderName(parts, defId) {
-  const rows = sortParts(parts).filter((row) => partDefinitionId(row) === defId);
-  const primary = rows.find((row) => String(row.id) === defId);
-  return (primary || rows[0])?.name;
-}
-
 function instanceDirty(wcPart, committedPart) {
   if (!committedPart) return true;
   if (stableJson(wcPart.instanceOf || null) !== stableJson(committedPart.instanceOf || null)) return true;
@@ -113,10 +107,11 @@ export function compareWorkingCopyToCommit(input = {}) {
   };
   if (!doc || doc.source !== 'git') return empty;
 
-  const scripts = { ...(input.scripts || {}) };
+  const scriptsIn = { ...(input.scripts || {}) };
   if (input.liveId && typeof input.liveScript === 'string') {
-    scripts[input.liveId] = input.liveScript;
+    scriptsIn[input.liveId] = input.liveScript;
   }
+  const scripts = normalizeInstanceScripts(scriptsIn, doc);
 
   const commit = input.assemblyCommit && typeof input.assemblyCommit === 'object'
     ? input.assemblyCommit
@@ -162,7 +157,7 @@ export function compareWorkingCopyToCommit(input = {}) {
       const committedHash = path && files[path] ? files[path].contentHash : null;
       const text = scripts[id] ?? scripts[def];
       if (typeof text === 'string') {
-        const headerName = definitionHeaderName(doc.parts, def) ?? row.name;
+        const headerName = definitionStampName(doc.parts, def) ?? row.name;
         if (!committedHash || !partScriptMatchesCommit(text, committedHash, def, headerName)) {
           partIds.push(id);
         }

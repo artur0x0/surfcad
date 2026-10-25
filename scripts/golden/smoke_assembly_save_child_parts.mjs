@@ -22,7 +22,8 @@
  *       the agent, placed, then UI Save: a v2 id-path commit with every part
  *       (before the fix: Save disabled, and git_save wrote v1 name paths).
  *
- * After every Save the strip shows no part dots and dirty.unsaved is false.
+ * After every Save the strip shows no part dots (row or save icon) and
+ * dirty.unsaved is false. A normal save must not say it overwrote main.
  */
 /* global localStorage, sessionStorage, navigator, document */
 import { existsSync } from 'node:fs';
@@ -119,13 +120,16 @@ async function uiSave(page, fake, message) {
   // The dialog shows the result on its done stage; wait for it, then close.
   await page.waitForSelector('[data-git-commit-done], [data-git-dialog="commit"] [data-git-dialog-cancel]', { timeout: 30000 }).catch(() => {});
   const done = await page.getAttribute('[data-git-commit-done]', 'data-git-commit-done').catch(() => null);
+  const doneText = await page.textContent('[data-git-commit-done]').catch(() => '');
   await page.click('[data-git-dialog="commit"] [data-git-dialog-cancel]').catch(() => {});
   await page.waitForSelector('[data-git-dialog="commit"]', { state: 'detached', timeout: 10000 }).catch(() => {});
   // Let adoptV2SaveResult settle the baseline and the strip re-render.
   await page.waitForTimeout(400);
   const commit = fake.log().find((row) => row.message === message) || null;
-  if (commit) commit.uiStatus = done;
-  else console.log(`  · UI Save "${message}" produced no commit; dialog status=${done}`);
+  if (commit) {
+    commit.uiStatus = done;
+    commit.uiText = doneText || '';
+  } else console.log(`  · UI Save "${message}" produced no commit; dialog status=${done} text=${doneText}`);
   return commit;
 }
 
@@ -135,7 +139,15 @@ async function stripDirtyIds(page) {
 }
 
 async function stripDirtyCount(page) {
-  return page.evaluate(() => document.querySelectorAll('[data-part-row][data-part-dirty="true"]').length);
+  return page.evaluate(() => {
+    const rows = document.querySelectorAll('[data-part-row][data-part-dirty="true"]').length;
+    const icons = document.querySelectorAll('[data-part-save][data-part-dirty="true"]').length;
+    return Math.max(rows, icons);
+  });
+}
+
+function saveDidNotClaimOverwrite(commit) {
+  return !!commit && !/Overwrote the conflicting files/.test(commit.uiText || '');
 }
 
 console.log('assembly save child parts golden (UI Save + git_save, fake GitHub)');
@@ -303,6 +315,7 @@ try {
   const dirtyAfter1 = await mcp(client, 'dirty');
   const dots1 = await stripDirtyCount(page);
   check('S1 clean after save (no dots, dirty.unsaved false)', dirtyAfter1.parsed?.unsaved === false && dots1 === 0, JSON.stringify({ dirty: dirtyAfter1.parsed, dots: dots1 }));
+  check('S1 save does not claim an overwrite', saveDidNotClaimOverwrite(s1), s1?.uiText);
 
   // ---- S2: two non-active parts edited, a third made active, UI Save once.
   await mcp(client, 'set_active_part', { part_id: A });
@@ -337,6 +350,7 @@ try {
   const dirtyAfter2 = await mcp(client, 'dirty');
   const dots2 = await stripDirtyCount(page);
   check('S2 clean after save', dirtyAfter2.parsed?.unsaved === false && dots2 === 0, JSON.stringify({ dirty: dirtyAfter2.parsed, dots: dots2 }));
+  check('S2 save does not claim an overwrite', saveDidNotClaimOverwrite(s2), s2?.uiText);
 
   // ---- S3: the same shape through git_save.
   await mcp(client, 'set_active_part', { part_id: A });
@@ -370,6 +384,7 @@ try {
   const dirtyAfter4 = await mcp(client, 'dirty');
   const dots4 = await stripDirtyCount(page);
   check('S4 clean after save', dirtyAfter4.parsed?.unsaved === false && dots4 === 0, JSON.stringify({ dirty: dirtyAfter4.parsed, dots: dots4 }));
+  check('S4 save does not claim an overwrite', saveDidNotClaimOverwrite(s4), s4?.uiText);
 
   // ---- S5: an assembly created with the Parts strip's + > Assembly, parts
   // built by the agent, then UI Save. The bike was made this way.
@@ -431,6 +446,7 @@ try {
   const dirtyAfter5 = await mcp(client, 'dirty');
   const dots5 = await stripDirtyCount(page);
   check('S5 clean after save', dirtyAfter5.parsed?.unsaved === false && dots5 === 0, JSON.stringify({ dirty: dirtyAfter5.parsed, dots: dots5 }));
+  check('S5 save does not claim an overwrite', saveDidNotClaimOverwrite(s5), s5?.uiText);
   // The agent path on the same document is the same v2 writer.
   const editE5 = await mcp(client, 'set_script', { part_id: E, source: cube(7, 7, 21) });
   const saved5 = await mcp(client, 'git_save', { message: 'S5 git_save after UI save' });

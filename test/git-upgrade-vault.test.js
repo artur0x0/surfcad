@@ -1851,9 +1851,11 @@ test('Save on a legacy vault prompts Upgrade and does not write v1', () => {
   assert.match(overwriteBtn, /data-git-conflict-overwrite/);
   assert.match(overwriteBtn, /surface-quiet/);
   assert.equal(/surface-success/.test(overwriteBtn), false);
-  assert.match(feed, /Other local edits stay in the working copy/);
-  assert.match(feed, /Nothing was written to git/);
-  assert.match(feed, /switched the working copy/);
+  const doneCopy = readFileSync(join(ROOT, 'src/utils/git/commitDoneCopy.js'), 'utf8');
+  assert.match(feed, /gitCommitDoneMessage\(commitFlow\.result\)/);
+  assert.match(doneCopy, /Other local edits stay in the working copy/);
+  assert.match(doneCopy, /Nothing was written to git/);
+  assert.match(doneCopy, /switched the working copy/);
   const runConflict = feed.slice(
     feed.indexOf('const runUpgradeConflict'),
     feed.indexOf('const runCommit'),

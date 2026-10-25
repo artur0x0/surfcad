@@ -191,7 +191,7 @@ export function createMockGithubAdapter(options = {}) {
   }
   function blobShaOf(content) {
     if (content instanceof Uint8Array) return gitBlobSha(content);
-    return mockSha(`blob\0${String(content)}`);
+    return gitBlobSha(new TextEncoder().encode(String(content)));
   }
   function contentEqual(a, b) {
     if (a === b) return true;
