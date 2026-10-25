@@ -23,6 +23,7 @@ import {
   adoptSectionClip,
   beginSectionClip,
   endSectionClip,
+  SECTION_PLANE_COLOR,
   sectionClipSession,
   sectionKeepsWorldPoint,
   syncSectionClipMeshes,
@@ -184,16 +185,24 @@ function verifyAssemblySectionClipBody() {
   assert(rear.visible === true && front.visible === true, 'restore hid a mesh');
 
   const widget = createCuttingPlaneWidget({ normal: [0, 0, 1], originOffset: 4, size: 80 });
-  assert(widget.userData.color === PREVIEW_COLORS.skin, 'section plane is not the preview blue');
-  assert(widget.userData.color !== 0x00ff00, 'section plane is still green');
+  assert(widget.userData.color === PREVIEW_COLORS.skin, 'cut-tool widget default left preview skin');
   assert(widget.userData.sectionClipExempt === true, 'section plane can be clipped by its own plane');
   const stale = new Scene();
   const live = new Scene();
   stale.add(widget);
-  const placed = placeCuttingPlaneWidget(live, widget, { normal: [1, 0, 0], originOffset: -48, size: 80 });
+  const placed = placeCuttingPlaneWidget(live, widget, {
+    normal: [1, 0, 0],
+    originOffset: -48,
+    size: 80,
+    color: SECTION_PLANE_COLOR,
+  });
   assert(placed.parent === live, 'plane widget was not reattached to the current scene');
   assert(placed.parent !== stale, 'plane widget stayed on the rebuilt scene');
   assert(Math.abs(placed.userData.originOffset - -48) < 1e-6, 'reattached plane kept the old offset');
+  assert(placed.userData.color === SECTION_PLANE_COLOR, 'section plane is not text-blue-400');
+  assert(SECTION_PLANE_COLOR === 0x60a5fa, 'section plane left the chrome accent');
+  assert(placed.userData.color !== PREVIEW_COLORS.skin, 'section plane is still the cyan skin');
+  assert(placed.userData.color !== 0x00ff00, 'section plane is still green');
 }
 
 function sharedLocalTrimWouldDiscard(sourceMesh, otherMesh, normal, originOffset) {

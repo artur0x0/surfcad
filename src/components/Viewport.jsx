@@ -145,6 +145,7 @@ import {
 import {
   beginSectionClip,
   endSectionClip,
+  SECTION_PLANE_COLOR,
   sectionClipSession,
   syncSectionClipMeshes,
 } from '../utils/sectionClip.js';
@@ -6593,7 +6594,7 @@ const Viewport = forwardRef(({
         normal: spec.normal,
         originOffset: spec.originOffset,
         size,
-        color: PREVIEW_COLORS.skin,
+        color: SECTION_PLANE_COLOR,
       });
     }
     const unit = new Vector3(...spec.normal);

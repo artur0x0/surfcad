@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { SECTION_PLANE_COLOR } from '../../src/utils/sectionClip.js';
 
 const PORT = Number(process.env.SMOKE_PORT || 4331);
 const APP_URL = `http://127.0.0.1:${PORT}/?agent=1`;
@@ -176,14 +177,14 @@ await page.waitForTimeout(3000);
 
 writeFileSync(join(SHOT_DIR, 'cross-section-before.png'), await page.screenshot({ type: 'png' }));
 
-const PREVIEW_BLUE = 0x22d3ee;
+const PREVIEW_BLUE = SECTION_PLANE_COLOR;
 
 function viewOnly(state, label) {
   check(`${label} geometry unchanged`, state.result?.geometryMutated === false,
     JSON.stringify(state.result));
   check(`${label} plane in scene`, state.result?.planeInScene === true,
     JSON.stringify({ planeInScene: state.result?.planeInScene, planeColor: state.result?.planeColor }));
-  check(`${label} plane is preview blue`, state.result?.planeColor === PREVIEW_BLUE,
+  check(`${label} plane is text-blue-400`, state.result?.planeColor === PREVIEW_BLUE,
     JSON.stringify({ planeColor: state.result?.planeColor }));
   check(`${label} no trimmed parts`, (state.result?.trimmedPartIds?.length ?? 0) === 0,
     JSON.stringify(state.result?.trimmedPartIds));

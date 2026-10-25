@@ -14,6 +14,14 @@
  */
 import { Plane, Vector3 } from 'three';
 
+/**
+ * Section preview fill. Tailwind `text-blue-400` (`#60a5fa`), the chrome
+ * accent on the Parts header icons (`STRIP_ICON_BLUE`), the toolbar, the
+ * feature strip, and the code editor. Datum quads use
+ * `PREVIEW_COLORS.outline`. The cut-tool plane keeps `PREVIEW_COLORS.skin`.
+ */
+export const SECTION_PLANE_COLOR = 0x60a5fa;
+
 /** @type {null | { plane: Plane, planes: Plane[], saved: Map<object, object>, materials: Set<object> }} */
 let session = null;
 
