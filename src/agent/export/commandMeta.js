@@ -1145,6 +1145,11 @@ const INSERT_CODE_SNIPPET_META = {
   errors: ['bad_args', 'insert_failed', 'internal'],
 };
 
+const INSERT_POLAR_ARRAY_META = {
+  ...INSERT_HELPER_META,
+  description: `Prefer this over freehand set_script. Copies the active part's body around an axis, or drills a bolt circle of holes. boreRadius 0 (the default) copies the body; boltCircleRadius 0 (the default) leaves that copy on the axis. boreRadius greater than 0 subtracts count holes of that radius and boreHeight (mm, cutter centered on the axis) at boltCircleRadius, which must be greater than 0 or the insert is bad_args, and does not leave a second copy of the source body. The example args drill 6 holes of radius 3 mm on a 20 mm circle. Use this for a bolt circle of holes; do not insert_code_snippet a FEATURE-GAP for a bolt-circle hole pattern. On an empty part the same bore params insert a circle of pins (there is no body to drill yet); bore 0 and radius 0 there insert pins of radius 3 mm on a 20 mm circle. Working copy only; git_save commits.${BUILD_FLOW_NOTE}${CRASH_NOTE}`,
+};
+
 const INSERT_PATTERN_POINTS_META = {
   ...INSERT_HELPER_META,
   description: `Pattern on points (Array Type=Points): one copy of the body at every point, turned so its up axis follows the point's axis when the point has one. points is [[x, y, z], …] or [{ at: [x, y, z], axis: [nx, ny, nz] }, …] in mm (a JSON string of the same is accepted); up is the body axis (x | y | z) that follows a point axis; keepOriginal keeps the source where it is; merge false keeps overlapping copies as separate bodies. Hardware: model one bolt in its own part, then call list_faces on the part it fastens, take the center and axis of each cylindrical hole face (filter by radius), and pass them here with up set to the bolt's own axis; when the holes move, run this again with the new centers. Empty or malformed points are bad_args. Working copy only; git_save commits.`,
@@ -1173,6 +1178,7 @@ export function metaForCommand(name) {
   if (name === 'insert_move') return withEmit(name, INSERT_MOVE_META);
   if (name === 'insert_rotate') return withEmit(name, INSERT_ROTATE_META);
   if (name === 'insert_code_snippet') return withEmit(name, INSERT_CODE_SNIPPET_META);
+  if (name === 'insert_polar_array') return withEmit(name, INSERT_POLAR_ARRAY_META);
   if (name === 'insert_pattern_points') return withEmit(name, INSERT_PATTERN_POINTS_META);
   if (name === 'insert_fillet_edges' || name === 'insert_chamfer_edges') return withEmit(name, INSERT_BLEND_META);
   if (name.startsWith('insert_')) return withEmit(name, INSERT_HELPER_META);

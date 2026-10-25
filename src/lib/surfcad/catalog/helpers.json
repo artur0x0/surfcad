@@ -239,8 +239,8 @@
           "default": "'z'"
         }
       ],
-      "description": "Create a polar array (copies around an axis)",
-      "doc": "Creates a circular/polar array of copies around an axis.\n\n\n\n**Parameters:**\n- `manifold` - The manifold to array\n- `count` - Number of copies\n- `radius` - Radius from center (optional offset)\n- `axis` - Rotation axis: 'x', 'y', or 'z' (default: 'z')\n\n---",
+      "description": "Copies of a solid equally spaced around an axis, offset perpendicular to that axis (+Y for x, +X for y and z), without keeping the input as an extra body.",
+      "doc": "Copies a solid equally spaced around an axis. The radius offset is perpendicular to that axis (+Y when the axis is x, +X for y and z) so the copies orbit; radius 0 leaves every copy on the axis. The result is only those copies. The input solid is not kept as an extra body.\n\n`insert_polar_array` writes this call. `boreRadius` 0 (the default) copies the body. `boreRadius` greater than 0 subtracts that many centered holes of `boreRadius` by `boreHeight` on the circle and does not copy the body; `boltCircleRadius` must then be greater than 0. `boltCircleRadius` defaults to 0 (on the axis). That is the bolt-circle hole pattern. Do not record it as a FEATURE-GAP.\n\n\n\n**Parameters:**\n- `manifold` - The manifold to array\n- `count` - Number of copies\n- `radius` - Orbit radius. 0 leaves the copies on the axis. The offset is perpendicular to `axis`\n- `axis` - Rotation axis: 'x', 'y', or 'z' (default: 'z')\n\n---",
       "examples": [
         "// Create 6 cylinders in a circle\nconst cylinder = Manifold.cylinder(20, 5, 5, 32);\nconst circle = polarArray(cylinder, 6, 30, 'z');\nreturn circle;"
       ]

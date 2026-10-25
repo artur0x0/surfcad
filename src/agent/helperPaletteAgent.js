@@ -109,6 +109,7 @@ export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
       properties[param.name] = { type: 'number' };
       if (Number.isFinite(param.min)) properties[param.name].minimum = param.min;
       if (Number.isFinite(param.max)) properties[param.name].maximum = param.max;
+      if (param.description) properties[param.name].description = param.description;
     } else if (param.type === 'bool') {
       properties[param.name] = { type: 'boolean' };
     } else if (param.type === 'select' && Array.isArray(param.options)) {
@@ -116,6 +117,7 @@ export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
         row && typeof row === 'object' && 'value' in row ? row.value : row
       ));
       properties[param.name] = { type: 'string', enum: allowed };
+      if (param.description) properties[param.name].description = param.description;
     } else if (param.type === 'points') {
       properties[param.name] = {
         type: ['array', 'string'],
@@ -153,6 +155,15 @@ export function exampleArgsForHelper(item) {
     if (Object.prototype.hasOwnProperty.call(base, param.name)) {
       example[param.name] = base[param.name];
     }
+  }
+  // The catalog example is a bolt circle of holes. Defaults stay bore 0 /
+  // radius 0 (copy the body, on the axis); the description says which is which.
+  if (item.id === 'polarArray') {
+    example.count = 6;
+    example.boltCircleRadius = 20;
+    example.axis = 'z';
+    example.boreRadius = 3;
+    example.boreHeight = 10;
   }
   return example;
 }
@@ -278,6 +289,13 @@ export function validateHelperParams(item, params) {
       }
     }
   }
+  const polar = item?.id === 'polarArray' || (item?.id === 'array3D' && params?.arrayType === 'polar');
+  if (polar && Number(params?.boreRadius) > 0 && !(Number(params?.boltCircleRadius) > 0)) {
+    return {
+      code: 'bad_args',
+      message: `${label} boltCircleRadius must be greater than 0 when boreRadius is greater than 0. boreRadius drills that many holes on the bolt circle and does not copy the body; boreRadius 0 copies the body, and boltCircleRadius 0 leaves a copy on the axis.`,
+    };
+  }
   return null;
 }
 
@@ -329,6 +347,10 @@ export function describeHelperRefusal(item, ctx = {}) {
   }
   if (id === 'makeExtrude' || id === 'makeRevolve' || id === 'crossSection') {
     return `${label} needs a sketch profile before it can build.`;
+  }
+  if ((id === 'polarArray' || (id === 'array3D' && params.arrayType === 'polar'))
+    && Number(params.boreRadius) > 0 && !(Number(params.boltCircleRadius) > 0)) {
+    return `${label} needs boltCircleRadius greater than 0 when boreRadius is greater than 0. That drills a bolt circle of holes; boreRadius 0 copies the body, and boltCircleRadius 0 leaves a copy on the axis.`;
   }
   return `${label} could not be inserted. Check its parameters and the current face or edge selection, then insert again.`;
 }

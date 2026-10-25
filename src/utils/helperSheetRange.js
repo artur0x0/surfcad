@@ -358,11 +358,14 @@ export function helperFieldSpec(itemId, param, ctx = {}) {
     return pack('length', seedOf(20), 0.1, L, 1, ctx, param);
   }
   if ((id === 'polarArray' || id === 'array3D') && name === 'boltCircleRadius') {
-    return pack('length', seedOf(20), 0, 2 * L, 1, ctx, param);
+    return pack('length', seedOf(0), 0, 2 * L, 1, ctx, param);
   }
   if ((id === 'polarArray' || id === 'array3D') && name === 'boreRadius') {
-    const bolt = liveNum(ctx.values, 'boltCircleRadius', seedOf(20));
-    return pack('length', seedOf(3), 0.1, Math.max(0.1, bolt), 1, ctx, param);
+    const bolt = liveNum(ctx.values, 'boltCircleRadius', seedOf(0));
+    // A bolt circle of 0 is "on the axis", not a cap of 0 on the bore slider,
+    // or copy-mode 0 would clamp up and start drilling.
+    const cap = bolt > 0.1 ? bolt : 2 * L;
+    return pack('length', seedOf(0), 0, cap, 1, ctx, param);
   }
   if ((id === 'polarArray' || id === 'array3D') && name === 'boreHeight') {
     return pack('length', seedOf(10), 0.1, 2 * L, 1, ctx, param);
