@@ -106,7 +106,7 @@ Existing frosted overlays (do not replace these with a flat slab):
 | --- | --- |
 | `surface-glass` | Panels and modal sheets over the 3D view (`chrome-surface` @ 82%) |
 | `surface-glass-chip` | Small viewport overlays — frost only; supply your own tint |
-| `surface-scrim` | Modal backdrop. The border box stays out of `--safe-area-top` / `--safe-area-bottom` (`.modal-fit` insets its own box; a scrim inside it fills that box). The element paints nothing and has no blur. The dim and the blur are a `::before` that fills the box. iOS Safari tints its bars from the page's top rows and keeps the sample, so a blur or a transparent layer over those rows shifts the tint (`golden:mobile-chrome-shade`). `html` and `body` both use `--chrome-background`, the same ground as the viewport. |
+| `surface-scrim` | Modal backdrop. The border box stays out of `--safe-area-top` / `--safe-area-bottom` (`.modal-fit` insets its own box; a scrim inside it fills that box). Those insets are 0 while Safari's toolbars are showing. Safari 26 tints its status bar and toolbar from a fixed or sticky box about 4px in from the viewport edge, and a `backdrop-filter` on that hit replaces the tint (`--safari-edge-sample`, `golden:mobile-chrome-shade`). The element has no blur. An opaque `--chrome-background` band (`--scrim-band-top` / `--scrim-band-bottom`, 8px unless the safe area is already larger) covers that line; the dim and the blur are a `::before` that starts inside the band. The middle of the element stays transparent so the frost is the page, not a slab. `html` and `body` both use `--chrome-background`. |
 
 They share `--surface-blur`. `@supports not (backdrop-filter)` goes more
 opaque so text stays legible. Never put a flat `bg-chrome-surface` /

@@ -5,12 +5,12 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * iOS Safari tints its status bar and toolbar from the page's top rows and
- * keeps that sample after a layer closes. These pin the things that keep
- * that sample steady: the scrim's box and its blur stay out of the
- * safe-area bands, html and body share the viewport ground, no header pane
- * writes a background or theme onto html/body, and no full-viewport wash
- * uses a flat black instead of the shared scrim.
+ * Safari 26 tints its status bar and toolbar from a fixed or sticky box
+ * about 4px in from the viewport edge, and a backdrop-filter on that hit
+ * replaces the tint. Safe-area insets are 0 while the toolbars are showing,
+ * so the scrim keeps an 8px ground band there and puts the dim and the blur
+ * inside it. These also pin html and body to the viewport ground, and that
+ * no full-viewport wash uses a flat black instead of the shared scrim.
  */
 const dir = dirname(fileURLToPath(import.meta.url));
 const CSS = readFileSync(join(dir, 'index.css'), 'utf8');
@@ -29,24 +29,31 @@ function block(selector) {
   assert.fail(`${selector} rule missing`);
 }
 
-test('safe-area insets are tokens on :root that goldens can override', () => {
+test('safe-area insets and the Safari sample floor are tokens on :root', () => {
   const root = block(':root');
   assert.match(root, /--safe-area-top: env\(safe-area-inset-top, 0px\);/);
   assert.match(root, /--safe-area-bottom: env\(safe-area-inset-bottom, 0px\);/);
+  assert.match(root, /--safari-edge-sample: 8px;/);
+  assert.match(root, /--scrim-band-top: max\(0px, calc\(var\(--safari-edge-sample\) - var\(--safe-area-top\)\)\);/);
+  assert.match(root, /--scrim-band-bottom: max\(0px, calc\(var\(--safari-edge-sample\) - var\(--safe-area-bottom\)\)\);/);
 });
 
-test('surface-scrim paints nothing and blurs nothing; the dim and the blur fill a ::before', () => {
+test('surface-scrim blurs nothing; the dim stays inside an opaque ground band', () => {
   const scrim = block('  .surface-scrim');
   assert.match(scrim, /background-color: transparent;/);
   assert.match(scrim, /--scrim-dim: rgb\(0 0 0 \/ 0\.45\);/);
+  assert.match(scrim, /background-size: 100% var\(--scrim-band-top\), 100% var\(--scrim-band-bottom\);/);
+  assert.match(scrim, /background-position: top, bottom;/);
+  assert.match(scrim, /background-repeat: no-repeat;/);
+  assert.match(scrim, /linear-gradient\(rgb\(var\(--chrome-background\)\), rgb\(var\(--chrome-background\)\)\)/);
   assert.match(scrim, /isolation: isolate;/);
   assert.match(scrim, /-webkit-backdrop-filter: none;/);
   assert.match(scrim, /backdrop-filter: none;/);
   assert.doesNotMatch(CSS, /\.surface-glass,\s*\n\s*\.surface-glass-chip,\s*\n\s*\.surface-scrim \{/);
   const before = block('  .surface-scrim::before');
   assert.match(before, /position: absolute;/);
-  assert.match(before, /top: 0;/);
-  assert.match(before, /bottom: 0;/);
+  assert.match(before, /top: var\(--scrim-band-top\);/);
+  assert.match(before, /bottom: var\(--scrim-band-bottom\);/);
   assert.match(before, /z-index: -1;/);
   assert.match(before, /background-color: var\(--scrim-dim\);/);
   assert.match(before, /backdrop-filter: blur\(var\(--surface-blur, 4px\)\) saturate\(140%\);/);
