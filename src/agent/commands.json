@@ -11473,7 +11473,7 @@
     },
     {
       "name": "rollback_to",
-      "description": "Move the rollback bar and re-run evaluation (does not edit the script). Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Move the rollback bar and re-run evaluation (does not edit the script, records no undo step). Waits for that evaluation, so the result carries ok, errors and status (volume, bbox, bodyCount) of the rolled-back solid; status {} reads the same values afterwards without a run. An insert_* after rollback_to lands at the bar and the bar moves onto the new block, so it is evaluated. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -11507,13 +11507,158 @@
       },
       "result": {
         "type": "object",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "rollbackAnchor": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "partId": {
+                "type": "string"
+              },
+              "partName": {
+                "type": "string"
+              },
+              "script": {
+                "type": "string"
+              },
+              "runState": {
+                "type": "string",
+                "enum": [
+                  "not_run_yet",
+                  "ok",
+                  "failed"
+                ]
+              },
+              "volume": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "bbox": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "min": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "max": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "featureCount": {
+                "type": "integer"
+              },
+              "bodyCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "featureMs": {
+                "type": "object",
+                "description": "Kernel milliseconds per feature block (by feature_tree id) on the last run that reported; what is expensive on this part",
+                "additionalProperties": {
+                  "type": "number"
+                }
+              },
+              "cache": {
+                "type": "object",
+                "description": "Feature memoisation on the last run: blocks = marked blocks, hits = blocks restored from the worker cache instead of re-run, misses = blocks that ran, bytes = the cache size. An edit re-runs only the edited block and the ones after it.",
+                "additionalProperties": false,
+                "properties": {
+                  "blocks": {
+                    "type": "integer"
+                  },
+                  "hits": {
+                    "type": "integer"
+                  },
+                  "misses": {
+                    "type": "integer"
+                  },
+                  "bytes": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "featureCached": {
+                "type": "object",
+                "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
+                "additionalProperties": {
+                  "type": "boolean"
+                }
+              },
+              "features": {
+                "type": "array",
+                "description": "Feature strip rows, only with return: \"summary\" (script is omitted with \"status\" and \"summary\")",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "chipLabel": {
+                      "type": "string"
+                    },
+                    "index": {
+                      "type": "integer"
+                    },
+                    "ms": {
+                      "type": "number",
+                      "description": "Kernel milliseconds of this block on the last run that reported it"
+                    },
+                    "cached": {
+                      "type": "boolean",
+                      "description": "True when the last run restored this block from the feature cache instead of running it"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },

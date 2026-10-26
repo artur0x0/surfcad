@@ -236,9 +236,16 @@ const tree1 = await agentCall(page, 'feature_tree', {});
 const features = tree1.result?.features || [];
 check('feature_tree two features', features.length >= 2, `n=${features.length}`);
 
+const volBeforeRollback = (await agentCall(page, 'status', {})).result?.volume;
 const rollback = await agentCall(page, 'rollback_to', { id: cubeChip.id });
 check('rollback_to cube', rollback.ok === true && rollback.result?.rollbackAnchor === cubeChip.id,
   JSON.stringify(rollback));
+// B14: the result and status describe the rolled-back solid (the seed cube,
+// 40×30×20, which contains the 40×30×10 box), not the previous run with the
+// fillet and the hole.
+const CUBE_VOLUME = 40 * 30 * 20;
+check('rollback_to result carries the rolled-back status', rollback.result?.ok === true
+  && Math.abs((rollback.result?.status?.volume ?? 0) - CUBE_VOLUME) < 1, JSON.stringify(rollback.result?.status));
 
 const tree2 = await agentCall(page, 'feature_tree', {});
 check('feature_tree rollback anchor', tree2.result?.rollbackAnchor === cubeChip.id, JSON.stringify(tree2));
@@ -249,6 +256,31 @@ check('dirty.unsaved after edits', dirty.ok === true && dirty.result?.unsaved ==
 
 const st = await agentCall(page, 'status', {});
 check('status after rollback', st.ok === true && (st.result?.volume ?? 0) > 0, JSON.stringify(st));
+check('status after rollback is the cube alone, not the previous run (B14)', Math.abs((st.result?.volume ?? 0) - CUBE_VOLUME) < 1, String(st.result?.volume));
+
+// Follow-up 6: an insert after rollback_to lands at the bar and is evaluated;
+// the bar moves onto the new block.
+const atBar = await agentCall(page, 'insert_cube', { width: 10, depth: 10, height: 10, x: 100 });
+check('insert_cube after rollback_to runs', atBar.ok === true && atBar.result?.ok === true, JSON.stringify(atBar.result?.errors || atBar.error));
+check('the inserted cube is evaluated, not blanked as rolled back', Math.abs((atBar.result?.status?.volume ?? 0) - (CUBE_VOLUME + 1000)) < 1, String(atBar.result?.status?.volume));
+const treeAtBar = await agentCall(page, 'feature_tree', {});
+const cubes = (treeAtBar.result?.features || []).filter((f) => f.kind === 'cube');
+// The fixture has two cubes (the seed and the box inside it); the new one
+// lands right after the seed, where the bar was, and the bar moves onto it.
+check('the bar moved onto the new cube', cubes.length === 3 && treeAtBar.result?.rollbackAnchor === cubes[1].id, JSON.stringify({ anchor: treeAtBar.result?.rollbackAnchor, cubes: cubes.map((f) => f.id) }));
+check('the fillet and hole stay rolled back behind the bar', Math.abs(((await agentCall(page, 'status', {})).result?.volume ?? 0) - (CUBE_VOLUME + 1000)) < 1);
+
+const cleared = await agentCall(page, 'rollback_to', { clear: true });
+check('rollback_to clear', cleared.ok === true && cleared.result?.rollbackAnchor === null, JSON.stringify(cleared.result?.rollbackAnchor));
+const stCleared = await agentCall(page, 'status', {});
+// Ground truth: an explicit run of the full script. The clear result and the
+// status read before that run must already match it (B14).
+const ranFull = await agentCall(page, 'run', {});
+const fullVolume = ranFull.result?.status?.volume;
+check('the full script runs after clear', ranFull.ok === true && ranFull.result?.ok === true && Number.isFinite(fullVolume), JSON.stringify(ranFull.result?.errors));
+check('rollback_to clear result has the full volume at once (B14)', Math.abs((cleared.result?.status?.volume ?? 0) - fullVolume) < 1 && Math.abs(fullVolume - (CUBE_VOLUME + 1000)) > 1, `got ${cleared.result?.status?.volume} expected ${fullVolume}`);
+check('status after clear is current without a run (B14)', Math.abs((stCleared.result?.volume ?? 0) - fullVolume) < 1, `got ${stCleared.result?.volume} expected ${fullVolume}`);
+check('the rolled-back volume differed from the full one', Math.abs(volBeforeRollback - CUBE_VOLUME) > 1);
 
 const bad = await agentCall(page, 'open_feature', { index: 99 });
 check('bad_index refused', bad.ok === false && bad.error?.code === 'bad_index', JSON.stringify(bad));
