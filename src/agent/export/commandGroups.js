@@ -60,6 +60,7 @@ const OVERRIDES = Object.freeze({
   set_sketch_overlay: 'sketch',
   parts: 'document',
   list_assemblies: 'document',
+  list_joints: 'joint',
   set_active_part: 'document',
   part_get_transform: 'document',
   part_set_transform: 'document',
