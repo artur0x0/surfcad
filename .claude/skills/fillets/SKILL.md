@@ -75,18 +75,32 @@ Kernel choice is one function: `filletKernelSpike.js` →
    (emitter: `helperPaletteSnippets.js:938`), then Auto-Runs:
 
    ```js
-   const e1 = edgesBetween(part, ...);      // or edge(...) literals
-   const path1 = makeSweepPath(e1);         // edge→sweep path
+   const selEdges = edgesNamed(part, "plate.top~boss.side"); // the pair of stamped faces
+   const path1 = makeSweepPath(selEdges);   // edge→sweep path
    part = filletAlongPath(part, path1, 3, { variableProfile: true }); // hard (C3)
    ```
+
+   **Edges are written by name** (`mvp3/edge-identity-design.md`): each
+   picked edge carries `edgeName` from the stamped face table
+   (`withEdgeNames` in Viewport, `edgeNamesForPicks` in `faceIdentity.js`),
+   and `emitNamedEdgeLines` writes one `edgesNamed(part, ...)` per contiguous
+   component: a pair whose every chain is picked is bare, a partial set keeps
+   `[k]`. Blend surfaces are named too (`fillet-2.round`, `chamfer-3.bevel`),
+   so a fillet on a fillet is `edgesNamed(part, "fillet-2.round~plate.top")`.
+   The old forms stay only as fallbacks for rows with no name (test fixtures):
+   `edge(part, id)` / `edgesBetween(part, a, b)` when a boundary id is present,
+   else the literal `va/vb` wire, which `filletAlongPath` now refuses when it
+   is no longer on the solid. Reopening the card parses `edgesNamed` and
+   resolves the names on the live edges (`parseStoredEdges` kind `named`).
 
    A second Accept **appends** a block (`commitMode: 'append'`, chosen by
    `hasFilletModeBlock`) so it fillets the already-filleted solid.
 
    Several disjoint corners are separate pairs in that one block. Every
-   `edgesBetween` / `edge` is written before the first `filletAlongPath`.
-   The first blend rewrites face ids, so a lookup of the next corner after
-   that blend throws `no boundary between faces`.
+   `edgesNamed` lookup is written before the first `filletAlongPath`, as the
+   `edgesBetween` / `edge` lookups were: the first blend renames the faces it
+   cut (`<block>.round`), so a lookup of the next corner after that blend
+   would name faces that no longer meet.
 
 5. **Execute** — `src/workers/sandboxWorker.js` against WASM Manifold.
 

@@ -1,6 +1,7 @@
 import { faceColorKey } from '../../utils/faceColorMatch.js';
 import { edgeKey } from '../../utils/selectEdge.js';
 import { realizeAgentFaceCatalog } from '../faceCatalog.js';
+import { vertexPairKey } from '../../lib/surfcad/namedEdges.js';
 
 function vec3(value) {
   if (!Array.isArray(value) || value.length < 3) return null;
@@ -119,6 +120,55 @@ export function buildEdgeList(featureEdges, fingerprints, faceTable = null) {
       const n1 = vec3(edge.n1);
       if (n0) row.faceKeyA = { at: mid, n: n0, area: 0 };
       if (n1) row.faceKeyB = { at: mid, n: n1, area: 0 };
+    }
+    edges.push(row);
+  }
+  return { edges };
+}
+
+/**
+ * Edge identity: one row per named edge chain of the stamped face table,
+ * keyed by its name (`plate.top~boss.side`, `[k]` for one chain of a pair).
+ * The name is the key `select_edges`, `pick_next` and the script
+ * (`edgesNamed`) take, and the two face keys come from the same face
+ * catalog `list_faces` returns, so centres and normals agree with it
+ * (B5). Chains with no crease the pick graph keeps (a coplanar seam
+ * between two names) are left out, like the UI cannot pick them.
+ *
+ * @param {{ edges?: object[] }} table from stampedFaceTable
+ * @param {Array} fingerprints face-graph patches (the list_faces catalog)
+ * @param {object[]} featureEdges from buildFeatureEdges (a, b per segment)
+ */
+export function buildNamedEdgeList(table, fingerprints, featureEdges) {
+  const owners = triOwner(Array.isArray(fingerprints) ? fingerprints : []);
+  const sharp = new Set();
+  for (const edge of Array.isArray(featureEdges) ? featureEdges : []) {
+    if (Number.isFinite(edge?.a) && Number.isFinite(edge?.b)) sharp.add(vertexPairKey(edge.a, edge.b));
+  }
+  const edges = [];
+  for (const chain of table?.edges || []) {
+    const segs = Array.isArray(chain.segments) ? chain.segments : [];
+    if (!segs.length) continue;
+    if (sharp.size && !segs.some(([u, w]) => sharp.has(vertexPairKey(u, w)))) continue;
+    const row = {
+      key: chain.name,
+      name: chain.name,
+      faceNameA: chain.faces[0],
+      faceNameB: chain.faces[1],
+      mid: vec3(chain.center),
+      length: Number.isFinite(chain.length) ? chain.length : null,
+      closed: chain.closed === true,
+      chains: Number.isFinite(chain.chains) ? chain.chains : 1,
+      ordinal: Number.isFinite(chain.ordinal) ? chain.ordinal : 0,
+    };
+    const [t0, t1] = Array.isArray(chain.tris?.[0]) ? chain.tris[0] : [];
+    const faceA = t0 != null ? owners.get(t0) : null;
+    const faceB = t1 != null ? owners.get(t1) : null;
+    const keyA = faceA ? serializeFaceKey(faceA) : null;
+    const keyB = faceB ? serializeFaceKey(faceB) : null;
+    if (keyA && keyB) {
+      row.faceKeyA = keyA;
+      row.faceKeyB = keyB;
     }
     edges.push(row);
   }
