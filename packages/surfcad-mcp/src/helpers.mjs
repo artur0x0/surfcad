@@ -23,7 +23,7 @@ export const HELPER_GROUPS = Object.freeze({
   blocks: ['roundedBox', 'tube', 'rectTube', 'hexPrism', 'sheetMetalSolid'],
   shapes: ['makeCrossSection', 'solveContour', 'profileCircle', 'profileRectangle', 'profilePolygon', 'makeExtrude', 'makeRevolve', 'makeLoft', 'loft', 'sweep', 'sweepPoints', 'makeSweepPath', 'rotateContour', 'offsetPlaneFrame'],
   build: ['cut', 'hollow', 'shell', 'hole', 'holeSpan', 'cboreHole', 'cskHole', 'clearanceHole', 'tapDrillHole', 'holePattern', 'holesOnContour', 'booleanBodies', 'externalBody', 'addDraft', 'draftFaces', 'moveFace', 'deleteFace'],
-  polish: ['filletEdges', 'chamferEdges', 'filletAlongPath', 'convexEdges', 'concaveEdges', 'signedFeatureEdges', 'edge', 'edgesBetween', 'boundaryEdges'],
+  polish: ['filletEdges', 'chamferEdges', 'filletAlongPath', 'edgesNamed', 'convexEdges', 'concaveEdges', 'signedFeatureEdges', 'edge', 'edgesBetween', 'boundaryEdges'],
   place: ['move', 'rotateAbout', 'center', 'align', 'mirror', 'array3D', 'polarArray', 'patternOnPoints', 'getDimensions'],
   faces: ['faceNames', 'facesNamed', 'edgesOf', 'surfaceOf', 'facesByNormal', 'planarFaceAt', 'edgesByOrientation', 'workplaneFromFace', 'placeInFrame', 'transformByFrame', 'placeOnFace'],
   fasteners: ['fastenerClearanceDia', 'fastenerTapDrillDia', 'fastenerMajorDia', 'listFastenerSizes', 'resolveFastenerSize'],

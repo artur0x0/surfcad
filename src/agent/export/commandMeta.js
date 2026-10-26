@@ -11,7 +11,7 @@ import { emitNote } from './insertEmits.js';
 const RESERVED_HELPERS = ` ${reservedHelperClause()} list_helpers { names } (over MCP) or guide { topic: "dialect" } documents each helper.`;
 /** Every tool that runs geometry says what a kernel crash looks like and what to do. */
 export const CRASH_NOTE = ' If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. When the run past the budget was inside one marked feature block, the part is rebuilt without that block instead: the result is ok: false with one failures row { code: feature_timeout, featureId, featureType, featureLabel, elapsedMs, budgetMs, detail }, status.runState is failed, the other features are built and shown, and status.featureMs (and feature_tree ms) say how long each block took; edit, delete, or undo that feature.';
-const USE_SELECTION_RESULT_NOTE = ' The result usedSelection says whether the viewport selection was used. A pick that carries a face name (select_faces { names } or a click on a face a helper built) is written into the script by that name (facesNamed for a hole, edgesOf for a fillet or chamfer: the edges around that face only) and is found again on the new mesh after every rebuild, so a second use_selection insert lands on the same face. A pick with no name (a hull, a freehand Manifold.*) clears with the rebuild, and use_selection: true with nothing selected is no_selection (nothing is written).';
+const USE_SELECTION_RESULT_NOTE = ' The result usedSelection says whether the viewport selection was used. A face pick is written into the script by name (facesNamed for a hole, edgesOf for a fillet or chamfer around that face) and is found again on the new mesh after every rebuild, so a second use_selection insert lands on the same face; an edge pick (select_edges { names }, pick sessions, a tap) is written as edgesNamed(part, "faceA~faceB"), the pair of stamped faces it lies between, which also survives edits. Every face has a name (helper roles, fillet-16.round / chamfer-3.bevel, import@1.f<k>, <block>.f<k> for freehand). Edge picks still clear with the rebuild (re-pick before the next insert), and use_selection: true with nothing selected is no_selection (nothing is written).';
 
 const UNJOINTED_WARNING_SCHEMA = Object.freeze({
   type: 'object',
@@ -29,6 +29,8 @@ const UNJOINTED_PARTS_SCHEMA = Object.freeze({
   items: { type: 'string' },
   description: 'Part ids in no joint when the assembly has two or more parts. Empty for a single-part document. A base part with a fixed joint is omitted.',
 });
+/** Appended to tools that run a part: a part edit re-solves every joint that names it. */
+export const JOINT_BROKEN_NOTE = ' When the run leaves an assembly joint failing that was not failing before (its face moved or vanished, or it now conflicts), the result adds warning { code: "joint_broken", joints: [{ id, name, type, status, reason, parts }], hint }; the call still succeeds, and status.jointFailures / list_joints show the standing state.';
 const FEATURE_COUNT_NOTE = ' featureCount counts insert_* feature blocks, so a freehand set_script is one feature. bodyCount is null until the first run; a finished run that produced no bodies reports 0.';
 
 const OK = Object.freeze({ type: 'object', additionalProperties: false, properties: { ok: { const: true } } });
@@ -60,20 +62,20 @@ export const COMMAND_META = {
   },
   set_script: {
     description:
-      `Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects \`// @surf-id\`. Keep the feature marker blocks (// --- <kind> begin --- … // --- <kind> end ---, and // @contour id=) so the strip keeps per-feature edit, delete, rollback and undo; see guide { topic: "features" }.${RESERVED_HELPERS}${BUILD_FLOW_NOTE}${CRASH_NOTE}`,
+      `Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects \`// @surf-id\`. Keep the feature marker blocks (// --- <kind> begin --- … // --- <kind> end ---, and // @contour id=) so the strip keeps per-feature edit, delete, rollback and undo; see guide { topic: "features" }.${RESERVED_HELPERS}${BUILD_FLOW_NOTE}${CRASH_NOTE}${JOINT_BROKEN_NOTE}`,
     result: MUTATE_RESULT_SCHEMA,
     errors: ['bad_args', 'unknown_part', 'part_mismatch', 'no_assembly', 'internal'],
     mutates: true,
   },
   run: {
-    description: `Run the current editor buffer; one undo step when it is not already the stack head.${RESERVED_HELPERS}${CRASH_NOTE}`,
+    description: `Run the current editor buffer; one undo step when it is not already the stack head.${RESERVED_HELPERS}${CRASH_NOTE}${JOINT_BROKEN_NOTE}`,
     result: MUTATE_RESULT_SCHEMA,
     errors: ['internal'],
     mutates: true,
   },
   status: {
     description:
-      `Status for the active part: id, name, editor script, runState (not_run_yet | ok | failed), and the last run volume/bbox/bodyCount when available. Updates when the active part changes without requiring another run. unjointedParts lists part ids in no joint when the assembly has two or more parts (empty for a single part; a base part with a fixed joint is omitted).${FEATURE_COUNT_NOTE}`,
+      `Status for the active part: id, name, editor script, runState (not_run_yet | ok | failed), and the last run volume/bbox/bodyCount when available. Updates when the active part changes without requiring another run. unjointedParts lists part ids in no joint when the assembly has two or more parts (empty for a single part; a base part with a fixed joint is omitted). jointFailures { count, ids } names the assembly joints that do not solve right now (a broken reference or a conflict, the red chips on the joints strip); list_joints has each joint with its status and reason.${FEATURE_COUNT_NOTE}`,
     result: {
       ...STATUS_SCHEMA,
       properties: {
@@ -334,7 +336,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   list_feature_edges: {
-    description: 'Topology-stable boundary edge ids (e0, e1, …). frame is "local", the same part frame as list_faces and list_edges: midpoints are not moved by the part\'s placement. filter { between: [faceKeyA, faceKeyB], minLength, maxLength, bbox } and page { offset, limit } work as on list_edges; the result carries total and returned.',
+    description: 'Named edges of the active part (or part_id), one row per chain between two stamped faces: key and name ("plate.top~boss.side", with [k] when that pair meets in several chains), faceNameA, faceNameB, faceKeyA, faceKeyB (the same keys list_faces returns, so centres and normals agree), mid, length, closed, chains, ordinal. The name is the stable edge reference: it survives edits that keep the two faces, where the old eN ordinals renumbered after any earlier change; pass it to select_edges { names }, pick_next { keys }, or write edgesNamed(part, name) in a script. A bare pair is every chain of that pair; "[k]" one chain; "*" a glob on either side. Rows come from the mesh that is shown (the rollback bar included), so they agree with list_edges. frame is "local", the same part frame as list_faces and list_edges. filter { between: [faceKeyA, faceKeyB], minLength, maxLength, bbox } and page { offset, limit } as on list_edges.',
     result: { type: 'object', additionalProperties: true },
     errors: ['no_mesh', 'unknown_part', 'internal'],
     mutates: false,
@@ -473,7 +475,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   select_edges: {
-    description: 'Select edges by name, grouped id, or face-key pair. names: ["plate.top~boss.side"] is the edge where those two named faces meet (either order; list_edges rows carry name, faceNameA and faceNameB; [k] picks one chain, * is a glob); keys are grouped ids (e0) or face-key pairs. An unknown name is unknown_edge and lists the edges on the mesh.',
+    description: 'Select edges by name, grouped id, or face-key pair. names: ["plate.top~boss.side"] is the edge where those two named faces meet (either order; list_edges rows carry name, faceNameA and faceNameB; [k] picks one chain, * is a glob); keys take the same names, face-key pairs, or legacy grouped ids (e0). An unknown name is unknown_edge and lists the edges on the mesh.',
     result: { type: 'object', additionalProperties: false, properties: { count: { type: 'integer' }, names: { type: 'array', items: { type: 'string' } } } },
     errors: ['bad_args', 'unknown_edge', 'ambiguous_edge', 'internal'],
     mutates: false,
@@ -593,7 +595,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   pick_next: {
-    description: 'Add or remove picks on the active session.',
+    description: 'Add or remove picks on the active session. An edge key is an edge name from list_feature_edges ("plate.top~boss.side", "[k]" for one chain, "*" glob), a face-key pair, or a legacy eN id; a face key is a list_faces id (fN) or key.',
     result: { type: 'object', additionalProperties: true },
     errors: ['no_pick_session', 'pick_closed', 'pick_timeout', 'pick_rejected', 'pick_limit', 'unknown_face', 'ambiguous_face', 'unknown_edge', 'ambiguous_edge', 'not_picked', 'bad_args', 'internal'],
     mutates: false,
@@ -635,7 +637,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   pick_edges: {
-    description: 'One-shot edge pick session.',
+    description: 'One-shot edge pick session: pick_begin (kind edge) → pick_next { keys } → pick_done. Keys are edge names from list_feature_edges ("plate.top~boss.side"), face-key pairs, or legacy eN ids; with accept: true the card writes edgesNamed(part, …) for the picks.',
     result: { type: 'object', additionalProperties: true },
     errors: ['picker_busy', 'pick_open', 'pick_timeout', 'unknown_edge', 'ambiguous_edge', 'internal'],
     mutates: false,
@@ -827,7 +829,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   joint_commit: {
-    description: 'Confirm the joint card and record one assembly undo step. A refused commit, or one that changes nothing (unchanged: true), records no step.',
+    description: 'Confirm the joint card and record one assembly undo step. A refused commit, or one that changes nothing (unchanged: true), records no step. The solve re-runs every joint; when this commit leaves another joint failing the result adds warning { code: "joint_broken", joints, hint } and still succeeds.',
     result: { type: 'object', additionalProperties: true },
     errors: ['no_joint_card', 'commit_failed', 'edit_failed', 'internal'],
     mutates: true,
@@ -851,7 +853,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   joint_create: {
-    description: `${JOINT_PLACEMENT_GUIDANCE} Prefer this over hand-computed part_set_transform numbers: one call creates a joint and solves the placement. type is coincident, parallel, perpendicular, distance, angle, concentric, symmetric or fixed (planar is coincident); picks are one row per reference from list_faces (face_id with its key from the same row; a cylindrical face is an axis pick; a face_id is never an ambiguous axis; { part_id } alone is a whole-part pick), one pick for fixed and two for every other type; name, value_mm, sense and opposed as on joint_set_params. Runs the same open → pick → set params → commit path as the Joints card (the advanced path) and records one assembly undo step. The result carries jointId, type, name, valueMm, pickCount and placements: the position and rotation of every picked part after the solve. A pick that does not resolve is unknown_part / unknown_face, and a joint the solver refuses is joint_unsolvable with details.reason and, when more than one axis matches, details.candidates (id, origin, direction, radius); in both cases nothing is written and no card is left open. usedSelection is always false: the picks are explicit.`,
+    description: `${JOINT_PLACEMENT_GUIDANCE} Prefer this over hand-computed part_set_transform numbers: one call creates a joint and solves the placement. type is coincident, parallel, perpendicular, distance, angle, concentric, symmetric or fixed (planar is coincident); picks are one row per reference from list_faces (face_id with its key from the same row; a cylindrical face is an axis pick; a face_id is never an ambiguous axis; { part_id } alone is a whole-part pick), one pick for fixed and two for every other type; name, value_mm, sense and opposed as on joint_set_params. Runs the same open → pick → set params → commit path as the Joints card (the advanced path) and records one assembly undo step. The result carries jointId, type, name, valueMm, pickCount and placements: the position and rotation of every picked part after the solve. A pick that does not resolve is unknown_part / unknown_face, and a joint the solver refuses is joint_unsolvable with details.reason and, when more than one axis matches, details.candidates (id, origin, direction, radius); in both cases nothing is written and no card is left open. usedSelection is always false: the picks are explicit. The solve re-runs every joint, so when this joint leaves another one failing the result adds warning { code: "joint_broken", joints, hint } and still succeeds.`,
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'bad_view', 'joints_unavailable', 'no_assembly', 'unknown_part', 'unknown_face', 'ambiguous_face', 'pick_failed', 'no_mesh', 'joint_unsolvable', 'edit_failed', 'internal'],
     mutates: true,
@@ -862,6 +864,54 @@ export const COMMAND_META = {
     errors: ['bad_args', 'no_assembly', 'unknown_joint', 'edit_failed', 'internal'],
     mutates: true,
     destructive: true,
+  },
+  list_joints: {
+    description: 'Every assembly joint with its solve state: id, name, type, status (ok | broken | conflict), reason (the strip chip tooltip, e.g. "Face not found on Shaft"; only when failing), parts (row ids), picks [{ part_id, kind?, key? }], value_mm or value_deg, sense, opposed. failed { count, ids } is the same list status.jointFailures carries. A joint goes broken when a part run no longer has its face, edge, axis or plane (a remesh, a moved feature, a failed run) and conflict when the solver cannot satisfy it with the others; the solve re-runs after every part run, so this is the standing state. Immediate read, no part run.',
+    result: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        joints: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              id: { type: 'string' },
+              name: { type: 'string' },
+              type: { type: 'string' },
+              status: { type: 'string', enum: ['ok', 'broken', 'conflict'] },
+              reason: { type: 'string' },
+              parts: { type: 'array', items: { type: 'string' } },
+              picks: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    part_id: { type: 'string' },
+                    kind: { type: 'string' },
+                    key: { type: 'object', additionalProperties: true },
+                  },
+                },
+              },
+              value_mm: { type: 'number' },
+              value_deg: { type: 'number' },
+              sense: { type: 'integer' },
+              opposed: { type: 'boolean' },
+            },
+          },
+        },
+        total: { type: 'integer' },
+        failed: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { count: { type: 'integer' }, ids: { type: 'array', items: { type: 'string' } } },
+        },
+      },
+    },
+    errors: ['internal'],
+    mutates: false,
   },
   sheet_open: {
     description: 'Open the Sheet Metal picker (Shape rail).',
