@@ -602,7 +602,7 @@ import {
   poseFaceRecord,
   transformPoint,
 } from '../utils/rigidSuffix.js';
-import { describeFaceTable, resolveEdgeNames, resolveFaceNames, stampedFaceTable, stampedNameForTriangles } from '../utils/faceIdentity.js';
+import { describeFaceTable, edgeNamesForPicks, resolveEdgeNames, resolveFaceNames, stampedFaceTable, stampedNameForTriangles } from '../utils/faceIdentity.js';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -1420,6 +1420,8 @@ const Viewport = forwardRef(({
   }));
   const agentListEdgesRef = useRef(() => ({ edges: [], partId: null }));
   const agentListFeatureEdgesRef = useRef(() => ({ edges: [], partId: null }));
+  /** Edge identity: annotate edge rows with their named edge (set once the per-part lookups exist). */
+  const withEdgeNamesRef = useRef((edges) => edges);
   const agentSketchBeginRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const agentSketchAcceptPlaneRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const agentSketchAddRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
@@ -1646,6 +1648,8 @@ const Viewport = forwardRef(({
   const feaHighlightStudyRef = useRef(null);
   const feaHighlightMetaRef = useRef(null);
   const exitPaintModeRef = useRef(() => {});
+  /** cancel_feature on a card an edit opened: leave that mode the way its X does (set once the exits exist). */
+  const exitFeatureEditModeRef = useRef(() => false);
   const applyLivePaintTapRef = useRef(() => {});
   /** SCS sheet metal: picker popup (S1) + mode state (stage, sku, partId). */
   const [sheetMetalPicker, setSheetMetalPicker] = useState(null);
@@ -2749,7 +2753,12 @@ const Viewport = forwardRef(({
       agentCancelFeatureEdit() {
         const edit = featureEditRef.current;
         if (!edit?.feature) return;
-        cancelFeatureEditRef.current?.(edit.dialog || edit.kind);
+        const dialog = edit.dialog || edit.kind;
+        cancelFeatureEditRef.current?.(dialog);
+        // The card the edit opened (Fillet, Chamfer, Shell, …) is a viewport
+        // mode; the UI's X leaves it, so cancel_feature leaves it too (B12:
+        // the viewport stayed in chamfer mode with no edit open).
+        exitFeatureEditModeRef.current(dialog);
       },
       /**
        * Close the edit after the agent's confirm wrote the script through
@@ -2926,7 +2935,7 @@ const Viewport = forwardRef(({
         }
         return { featureId, spec: parsed.spec };
       },
-      readHelperEdgeContext: () => selectedEdgesRef.current || [],
+      readHelperEdgeContext: () => withEdgeNamesRef.current(selectedEdgesRef.current || []),
       sketchBegin: (args) => agentSketchBeginRef.current(args),
       sketchAcceptPlane: (args) => agentSketchAcceptPlaneRef.current(args),
       sketchAdd: (args) => agentSketchAddRef.current(args),
@@ -5143,9 +5152,11 @@ const Viewport = forwardRef(({
         executeScriptRef.current?.(restore, { editPreview: true });
       }
     };
-    const edges = (selectedEdges && selectedEdges.length)
+    // Edge identity: every picked edge carries the name of the chain it lies
+    // on, so Accept writes edgesNamed instead of ids or a literal wire.
+    const edges = withEdgeNamesRef.current((selectedEdges && selectedEdges.length)
       ? selectedEdges
-      : (state.lastEdges || []);
+      : (state.lastEdges || []));
     const chamfer = state.entry === 'chamferEdges';
     const activeId = activePartIdRef.current;
     // Picks may span parts. Validate each part's chain before anything is
@@ -12814,6 +12825,37 @@ const Viewport = forwardRef(({
     return attr?.array?.length ? attr.array : null;
   };
 
+  /**
+   * Edge identity: the named edge each picked or feature edge lies on, per
+   * part (indices are per geometry, so rows are grouped by partId and
+   * annotated against that part's stamped table). The Fillet and Chamfer
+   * emitters write `edgesNamed` from `edgeName`; the edit card resolves
+   * stored names against these rows.
+   */
+  const withEdgeNames = (edges) => {
+    const list = Array.isArray(edges) ? edges : [];
+    if (!list.length) return list;
+    const byPart = new Map();
+    list.forEach((edge, i) => {
+      const pid = edge?.partId != null && edge.partId !== '' ? String(edge.partId) : '';
+      let rows = byPart.get(pid);
+      if (!rows) { rows = []; byPart.set(pid, rows); }
+      rows.push(i);
+    });
+    const out = list.slice();
+    for (const [pid, indices] of byPart) {
+      const geom = meshGeometryForAgentPart(pid || null);
+      if (!geom) continue;
+      let table = null;
+      try { table = stampedFaceTable(geom, faceIDsForAgentPart(pid || null, geom)); } catch { table = null; }
+      if (!table?.edges?.length) continue;
+      const named = edgeNamesForPicks(table, indices.map((i) => list[i]));
+      indices.forEach((i, k) => { out[i] = named[k]; });
+    }
+    return out;
+  };
+  withEdgeNamesRef.current = withEdgeNames;
+
   const featureRigidForAgentPart = (partId) => {
     const active = activePartIdRef.current;
     if (partId == null || partId === '' || String(partId) === String(active)) {
@@ -14339,6 +14381,54 @@ const Viewport = forwardRef(({
 
   const editPreviewBlocked = () => assemblyRunLockRef?.current === true;
 
+  exitFeatureEditModeRef.current = (dialog) => {
+    switch (dialog) {
+      case 'fillet':
+      case 'chamfer':
+        if (!filletModeRef.current) return false;
+        exitFilletMode();
+        return true;
+      case 'shell':
+        if (!shellModeRef.current) return false;
+        exitShellMode();
+        return true;
+      case 'draft':
+        if (!draftModeRef.current) return false;
+        exitDraftMode();
+        return true;
+      case 'cut':
+        if (!cutModeRef.current) return false;
+        exitCutMode();
+        return true;
+      case 'boolean':
+        if (!booleanModeRef.current) return false;
+        exitBooleanMode();
+        return true;
+      case 'move':
+        if (!moveModeRef.current) return false;
+        exitMoveMode();
+        return true;
+      case 'rotate':
+        if (!rotateModeRef.current) return false;
+        exitRotateMode();
+        return true;
+      case 'mirror':
+        if (!mirrorModeRef.current) return false;
+        exitMirrorMode();
+        return true;
+      case 'moveFace':
+        if (!moveFaceModeRef.current) return false;
+        exitMoveFaceMode();
+        return true;
+      case 'deleteFace':
+        if (!deleteFaceModeRef.current) return false;
+        exitDeleteFaceMode();
+        return true;
+      default:
+        return false;
+    }
+  };
+
   cancelFeatureEditRef.current = (kind) => {
     const edit = featureEditRef.current;
     if (!edit || edit.opening || !editKindMatches(edit, kind)) return;
@@ -14511,7 +14601,8 @@ const Viewport = forwardRef(({
           featureEditRef.current.previewed = !!ran;
           if (ran && session0.ok) {
             session = openFeatureEdit(text, feature, {
-              edges: featureEdgesRef.current || [],
+              // Named refs resolve against the live edges' names (edge identity).
+              edges: withEdgeNamesRef.current(featureEdgesRef.current || []),
               faces: liveGraphFaces(),
             });
             if (session.ok && featureEditRef.current) {

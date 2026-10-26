@@ -262,6 +262,41 @@ function buildTable(geometry, ids) {
 }
 
 /**
+ * Annotate picked or feature edges with the named edge they lie on. A row
+ * with vertex indices `a` / `b` into the table's geometry gets `edgeName`
+ * (the chain name, `plate.top~boss.side[1]`), `edgeBase` (the pair),
+ * `edgePairChains` (how many chains that pair has) and `edgeChainSize`
+ * (segments in that chain), so the Fillet emitter can write `edgesNamed`
+ * and tell a whole-chain pick from a partial one. Rows the table does not
+ * cover are returned as they are.
+ */
+export function edgeNamesForPicks(table, edges) {
+  const list = Array.isArray(edges) ? edges : [];
+  const chains = table?.edges;
+  if (!Array.isArray(chains) || !chains.length || !list.length) return list;
+  const byPair = new Map();
+  for (const chain of chains) {
+    for (const [u, w] of chain.segments || []) byPair.set(pairKey(u, w), chain);
+  }
+  let changed = false;
+  const out = list.map((edge) => {
+    if (!edge || !Number.isFinite(edge.a) || !Number.isFinite(edge.b)) return edge;
+    const chain = byPair.get(pairKey(edge.a, edge.b));
+    if (!chain) return edge;
+    if (edge.edgeName === chain.name && edge.edgeChainSize === chain.segments.length) return edge;
+    changed = true;
+    return {
+      ...edge,
+      edgeName: chain.name,
+      edgeBase: chain.base,
+      edgePairChains: chain.chains,
+      edgeChainSize: chain.segments.length,
+    };
+  });
+  return changed ? out : list;
+}
+
+/**
  * Name for a set of triangles (a face-graph patch): the stamped face that
  * owns most of them, with every other stamped face in the set listed under
  * `names` when the patch spans several (a coplanar union, a merged band).
