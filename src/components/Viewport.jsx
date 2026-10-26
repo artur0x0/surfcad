@@ -5329,8 +5329,12 @@ const Viewport = forwardRef(({
   }, [clearHighlight]);
   exitPaintModeRef.current = exitPaintMode;
 
-  const enterPaintMode = useCallback(() => {
-    if (!allowFeaturePopup()) return;
+  const enterPaintMode = useCallback((opts = {}) => {
+    // Headless: the agent paints while an in-viewer prompt is being worked.
+    // The session runs (taps, undo, confirm), the card is not mounted, so
+    // the feature-popup gate that holds agent cards back does not refuse it.
+    const headless = opts?.headless === true;
+    if (!headless && !allowFeaturePopup()) return;
     if (mode === 'game') return;
     closeFeatureSlotsRef.current();
     feaCloseRef.current();
@@ -5375,6 +5379,7 @@ const Viewport = forwardRef(({
       session: clonePaintSession(base),
       undo: [],
       lastTap: null,
+      ...(headless ? { headless: true } : {}),
     };
     paintModeRef.current = next;
     setPaintMode(next);
@@ -16514,7 +16519,7 @@ const Viewport = forwardRef(({
       />
 
       {/* Paint on the shared card. Game mounts no card. */}
-      {paintMode && mode !== 'game' && (
+      {paintMode && !paintMode.headless && mode !== 'game' && (
         <PaintModeChip
           compact={isMobile}
           color={paintMode.color}
