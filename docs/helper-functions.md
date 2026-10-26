@@ -36,8 +36,13 @@ not allowed for puzzle vocabulary ops.
   curved-adjacent chains (post-fillet seams, circular rims as Path); metric +
   common UNC clearance/tap sizes below.
 - **Unsupported (planar `filletEdges`):** curved-face singleton fillets; open
-  (partial-arc) curved runs under C6. **Strategy=sweep** / `filletAlongPath` is
-  the default Fillet path. Still unsupported: concave “fillets” (adding material); variable-radius
+  (partial-arc) curved runs under C6; concave edges (it throws, pass
+  `convexEdges()` output). **Strategy=sweep** / `filletAlongPath` is
+  the default Fillet path, and it **does** blend concave edges (C4): a concave
+  run adds material as a filler, and a chain may mix convex and concave runs.
+  A concave filler stops flush at an open end that meets air (a corner a
+  previous fillet rounded) and is clipped to the face the edge ends on
+  otherwise. Still unsupported: variable-radius
   / rolling-ball industrial fillets; arbitrary non-table fastener sizes.
 
 Lookup helpers (also injected): `fastenerClearanceDia(size, fit?)`,
@@ -1352,7 +1357,7 @@ when the id or pair is missing. Re-running a script from scratch is stable only
 while the solid *before* the fillet is deterministic. After geometry changes,
 re-pick in Fillet mode (the labels update) rather than editing a stale id.
 
-**Loud failures (script):** bad/empty path; radius ≤ 0; concave edge; cannot orient
+**Loud failures (script):** bad/empty path; radius ≤ 0; cannot orient
 cutter; sweep/boolean failure; ~0 volume removed (wrong orientation); near-no-op vs
 expected wedge volume; empty result. Never silent wrong solid.
 
