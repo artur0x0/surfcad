@@ -223,7 +223,12 @@ check('confirm_feature refreshes volume without run',
 
 const faces = await agentCall(page, 'list_faces', {});
 const faceList = faces.result?.faces || [];
-const top = faceList.find((f) => Array.isArray(f.normal) && f.normal[2] > 0.85) || faceList[0];
+// The seed's planar top face, by its stamped name: the fillet's round
+// patches also point up, and a hole placed on one of them would be written
+// against the fillet's run-order label, which an insert before it renumbers.
+const top = faceList.find((f) => f.name === 'seed.top')
+  || faceList.find((f) => Array.isArray(f.normal) && f.normal[2] > 0.85 && f.type === 'planar')
+  || faceList[0];
 check('list_faces for hole', faceList.length > 0, JSON.stringify(faces));
 
 if (top?.key) {
