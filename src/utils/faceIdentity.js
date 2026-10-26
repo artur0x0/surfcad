@@ -27,6 +27,8 @@
  * have no name; those patches keep working on their fingerprint key.
  */
 
+import { chainNamedEdges, describeEdgeNames, matchEdgeName } from '../lib/surfcad/namedEdges.js';
+
 const tableCache = new WeakMap();
 
 function vec3At(positions, i) {
@@ -242,103 +244,21 @@ function buildTable(geometry, ids) {
   });
 
   // Edges: a triangle edge whose two triangles belong to different named
-  // faces. Grouped by face pair, then chained into connected polylines;
-  // a pair that meets in several disjoint chains gets ordinals.
-  const pairSegs = new Map();
-  const edgeTris = new Map();
-  for (let t = 0; t < nTri; t++) {
-    if (triFace[t] < 0) continue;
-    const v0 = indices[t * 3];
-    const v1 = indices[t * 3 + 1];
-    const v2 = indices[t * 3 + 2];
-    for (const [u, w] of [[v0, v1], [v1, v2], [v2, v0]]) {
-      const key = pairKey(u, w);
-      const prev = edgeTris.get(key);
-      if (prev === undefined) { edgeTris.set(key, t); continue; }
-      const fa = triFace[prev];
-      const fb = triFace[t];
-      if (fa < 0 || fb < 0 || fa === fb) continue;
-      const lo = Math.min(fa, fb);
-      const hi = Math.max(fa, fb);
-      const pk = `${lo}:${hi}`;
-      let list = pairSegs.get(pk);
-      if (!list) { list = []; pairSegs.set(pk, list); }
-      list.push([u, w]);
-    }
-  }
-  const edges = [];
-  for (const [pk, segs] of pairSegs) {
-    const [fa, fb] = pk.split(':').map(Number);
-    const chains = chainSegments(segs);
-    chains.sort((a, b) => a.mid[0] - b.mid[0] || a.mid[1] - b.mid[1] || a.mid[2] - b.mid[2]);
-    chains.forEach((chain, k) => {
-      const base = `${faces[fa].name}~${faces[fb].name}`;
-      edges.push({
-        name: chains.length > 1 ? `${base}[${k}]` : base,
-        faces: [faces[fa].name, faces[fb].name],
-        ordinal: k,
-        length: chain.length,
-        closed: chain.closed,
-        polyline: chain.vertices.map((i) => vec3At(positions, i)),
-        segments: chain.segments,
-      });
-    });
-  }
-  edges.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  // faces, grouped by face pair and chained into connected polylines; a pair
+  // that meets in several disjoint chains gets ordinals. The chaining, the
+  // ordinal order and the names are the shared module the kernel's
+  // `edgesNamed` uses too, so a pick writes the name the script resolves.
+  const edges = chainNamedEdges({
+    nTri,
+    triVerts: indices,
+    posAt: (v) => vec3At(positions, v),
+    triFace,
+    faceName: (fi) => faces[fi].name,
+  }).map((e) => ({
+    ...e,
+    polyline: e.vertices.map((i) => vec3At(positions, i)),
+  }));
   return { faces, edges, triFace, byName };
-
-  /** Connected chains of vertex-pair segments: ordered vertex lists, length, midpoint. */
-  function chainSegments(list) {
-    const adj = new Map();
-    const addAdj = (v, si) => {
-      let l = adj.get(v);
-      if (!l) { l = []; adj.set(v, l); }
-      l.push(si);
-    };
-    list.forEach(([u, w], si) => { addAdj(u, si); addAdj(w, si); });
-    const used = new Uint8Array(list.length);
-    const out = [];
-    for (let s = 0; s < list.length; s++) {
-      if (used[s]) continue;
-      // Collect the component first.
-      const comp = [];
-      const stack = [s];
-      used[s] = 1;
-      while (stack.length) {
-        const si = stack.pop();
-        comp.push(si);
-        for (const v of list[si]) {
-          for (const nx of adj.get(v) || []) {
-            if (!used[nx]) { used[nx] = 1; stack.push(nx); }
-          }
-        }
-      }
-      // Walk it from an endpoint (odd degree) or anywhere on a loop.
-      const degree = new Map();
-      for (const si of comp) for (const v of list[si]) degree.set(v, (degree.get(v) || 0) + 1);
-      let start = null;
-      for (const [v, d] of degree) if (d === 1) { start = v; break; }
-      const closed = start === null;
-      if (start === null) start = list[comp[0]][0];
-      const walked = new Set();
-      const vertices = [start];
-      let at = start;
-      for (;;) {
-        const next = (adj.get(at) || []).find((si) => comp.includes(si) && !walked.has(si));
-        if (next === undefined) break;
-        walked.add(next);
-        at = list[next][0] === at ? list[next][1] : list[next][0];
-        vertices.push(at);
-      }
-      let length = 0;
-      for (let i = 1; i < vertices.length; i++) {
-        length += len(sub(vec3At(positions, vertices[i]), vec3At(positions, vertices[i - 1])));
-      }
-      const mid = vec3At(positions, vertices[Math.floor(vertices.length / 2)]);
-      out.push({ vertices, segments: comp.map((si) => list[si]), length, closed, mid });
-    }
-    return out;
-  }
 }
 
 /**
@@ -483,30 +403,22 @@ export function resolveEdgeNames(table, featureEdges, names) {
     if (typeof raw !== 'string' || !raw.trim()) {
       return { error: { code: 'bad_args', message: 'edge names must be non-empty strings (faceA~faceB, see __VIEWPORT__.faceTable or list_edges rows)' } };
     }
-    const want = raw.trim();
-    const flipped = want.includes('~') ? want.split('~').reverse().join('~') : null;
-    let hits = edgesByName.filter((e) => e.name === want || e.name === flipped);
-    if (!hits.length) {
-      const base = (n) => n.replace(/\[\d+\]$/, '');
-      hits = edgesByName.filter((e) => base(e.name) === want || base(e.name) === flipped);
+    const match = matchEdgeName(edgesByName, raw);
+    if (match.error) {
+      return { error: { code: match.error === 'bad_name' ? 'bad_args' : 'unknown_edge', message: `${match.message}; ${describeEdgeNames(edgesByName, 12)}` } };
     }
-    if (!hits.length && want.includes('*')) {
-      const re = nameGlob(want);
-      hits = edgesByName.filter((e) => re.test(e.name) || re.test(`${e.faces[1]}~${e.faces[0]}`));
-    }
-    if (!hits.length) {
-      const all = edgesByName.map((e) => e.name);
-      return { error: { code: 'unknown_edge', message: `No edge named ${JSON.stringify(raw)}; edges on this mesh: ${all.slice(0, 12).join(', ')}${all.length > 12 ? `, … (${all.length})` : ''}` } };
-    }
-    for (const e of hits) {
+    for (const e of match.hits) {
       const fa = faceIndex.get(e.faces[0]);
       const fb = faceIndex.get(e.faces[1]);
+      // Only this chain's segments: a pair with several chains keeps [k] apart.
+      const chainKeys = new Set(e.segments.map(([u, w]) => pairKey(u, w)));
       let n = 0;
       for (const row of Array.isArray(featureEdges) ? featureEdges : []) {
         if (row.tri0 == null || row.tri1 == null) continue;
         const a = triFace[row.tri0];
         const b = triFace[row.tri1];
         if (!((a === fa && b === fb) || (a === fb && b === fa))) continue;
+        if (Number.isFinite(row.a) && Number.isFinite(row.b) && !chainKeys.has(pairKey(row.a, row.b))) continue;
         const key = `${row.tri0}:${row.tri1}`;
         if (seen.has(key)) continue;
         seen.add(key);
