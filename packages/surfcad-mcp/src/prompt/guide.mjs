@@ -84,7 +84,7 @@ const PAINT = `Paint. Colours live on the assembly document (a colors map keyed 
 
 Sequence: set_active_part { part_id } → paint_open {} → paint_set_color { color: "#rrggbb" } (hex is an alias) → paint_part {} for the whole part, or paint_faces { keys: [...] } with keys from list_faces → paint_confirm {}. paint_undo {} steps back inside the session, paint_clear {} removes the part's colours, paint_cancel {} / paint_close {} leave without writing.
 
-paint_open is safe straight after create_part or set_active_part: it waits up to 1.5 s for the viewport to take paint mode. Past that it answers not_ready with details.reason (prompt_working while an in-viewer prompt is being worked, or mode_not_ready) and details.retryable: true; call paint_open again. Already open answers { open: true, already: true }. Game mode is bad_view.
+paint_open is safe straight after create_part or set_active_part: it waits up to 1.5 s for the viewport to take paint mode. While an in-viewer prompt is being worked it opens headless (the session runs with no card; result headless: true), so a paint during a prompt applies like any other. Past the wait it answers not_ready with details.reason (mode_not_ready) and details.retryable: true; call paint_open again.
 
 Paint writes the working copy only; nothing reaches the vault until git_save.`;
 
