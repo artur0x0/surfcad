@@ -334,6 +334,34 @@ export const jointCreateCommand = Object.freeze({
         pickCount: picked.result?.count ?? picks.length,
         placements,
         usedSelection: false,
+        // Joints the solve left failing that were not failing before this call.
+        ...(committed.result?.warning ? { warning: committed.result.warning } : {}),
+      },
+    };
+  },
+});
+
+/**
+ * list_joints: every assembly joint with its solve state. The strip has
+ * shown red chips for a broken or conflicting joint since joints landed;
+ * this is the same list for an agent, with the reason the chip tooltip
+ * shows. Immediate read.
+ */
+export const listJointsCommand = Object.freeze({
+  name: 'list_joints',
+  schema: NO_ARGS_SCHEMA,
+  example: {},
+  immediate: true,
+  run(ctx) {
+    const read = ctx.readJointHealth;
+    const health = typeof read === 'function' ? read() : null;
+    const joints = Array.isArray(health?.joints) ? health.joints : [];
+    const ids = Array.isArray(health?.failed?.ids) ? health.failed.ids.map(String) : [];
+    return {
+      result: {
+        joints,
+        total: joints.length,
+        failed: { count: ids.length, ids },
       },
     };
   },
