@@ -170,6 +170,7 @@ import {
   snapshotPartScripts,
 } from './agent/state/editedSinceLoad';
 import { buildFeatureTree } from './agent/state/featureTree';
+import { buildJointHealth } from './agent/state/jointHealth.js';
 import { resolveRollbackTarget, resolveStripTarget } from './agent/featureStripAgent';
 import { buildPartsState, partRunState } from './agent/state/parts';
 import { withUnjointedParts } from './agent/state/unjointedParts';
@@ -11181,6 +11182,25 @@ const App = () => {
     readJoints() {
       const joints = assemblyRef.current?.joints;
       return Array.isArray(joints) ? joints : [];
+    },
+    readJointHealth() {
+      // Every joint with the solve state the strip chips show, by part row id.
+      const doc = assemblyRef.current;
+      const rows = Array.isArray(doc?.parts) ? doc.parts : [];
+      const bySurf = new Map();
+      for (const row of rows) {
+        const id = row?.id != null ? String(row.id) : '';
+        if (!id) continue;
+        bySurf.set(id, id);
+        const surf = partSurfId(row);
+        if (surf && !bySurf.has(surf)) bySurf.set(surf, id);
+      }
+      return buildJointHealth({
+        joints: doc?.joints,
+        statuses: jointLiveRef.current?.statuses,
+        messages: jointLiveRef.current?.messages,
+        partIdOf: (surf) => bySurf.get(surf) ?? surf,
+      });
     },
     readActivePartSurfId() {
       // The `@surf-id` header names the script, so for a part instance it

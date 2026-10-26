@@ -145,18 +145,21 @@ if (!(await waitForServer())) {
     const none = await agentCall('insert_hole', { use_selection: true, holeType: 'clearance', size: 'M6', return: 'status' });
     check('with nothing ever picked, use_selection is still no_selection', none.ok === false && none.error?.code === 'no_selection', JSON.stringify(none.error).slice(0, 200));
 
-    // Unstamped geometry: the pick clears after the rebuild as before.
+    // Freehand geometry (a hull) has no helper roles; since edge identity every
+    // run is still named, by coplanar group under its block (code-0.f<k>), so
+    // the pick survives the rebuild by that name like any other.
     const setH = await agentCall('set_script', { part_id: partId, source: HULL, return: 'status' });
     check('hull builds', setH.ok === true && setH.result?.status?.runState === 'ok');
     const topRow = ((await agentCall('list_faces', { filter: { kind: 'planar', normalWithin: { n: [0, 0, -1], deg: 5 } } })).result?.faces || [])[0];
-    check('the hull bottom has a key and no name', !!topRow?.key && topRow?.name === undefined, JSON.stringify(topRow).slice(0, 200));
+    check('the hull bottom has a key and a synthetic name', !!topRow?.key && /^code-0\.f\d+$/.test(topRow?.name || ''), JSON.stringify(topRow).slice(0, 200));
     const selK = await agentCall('select_faces', { keys: [topRow.key] });
     check('select_faces by key on the hull', selK.ok === true && selK.result?.count === 1, JSON.stringify(selK).slice(0, 200));
     const holeH = await agentCall('insert_hole', { use_selection: true, holeType: 'clearance', size: 'M4', return: 'status' });
-    check('a hole on the unnamed pick', holeH.ok === true && holeH.result?.usedSelection === true && holeH.result?.status?.runState === 'ok', JSON.stringify(holeH.result?.errors || holeH.error).slice(0, 300));
-    check('the unnamed pick cleared with the rebuild', (await selectedFace()) === null);
-    const againH = await agentCall('insert_hole', { use_selection: true, holeType: 'clearance', size: 'M4', return: 'status' });
-    check('a second insert on the cleared pick is no_selection', againH.ok === false && againH.error?.code === 'no_selection', JSON.stringify(againH.error).slice(0, 200));
+    check('a hole on the hull pick', holeH.ok === true && holeH.result?.usedSelection === true && holeH.result?.status?.runState === 'ok', JSON.stringify(holeH.result?.errors || holeH.error).slice(0, 300));
+    const afterH = await selectedFace();
+    check('the synthetic-named pick survives the rebuild', afterH?.name === topRow.name, JSON.stringify(afterH).slice(0, 200));
+    const againH = await agentCall('insert_hole', { use_selection: true, holeType: 'clearance', size: 'M4', u: 12, v: 0, return: 'status' });
+    check('a second insert on that pick lands by name', againH.ok === true && againH.result?.usedSelection === true, JSON.stringify(againH.result?.errors || againH.error).slice(0, 200));
 
     // Sweep and loft faces are named.
     const setS = await agentCall('set_script', { part_id: partId, source: SWEEP_LOFT, return: 'status' });

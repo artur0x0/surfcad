@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Agent bridge H11: create_part, joint_open/pick/commit, assembly undo.
+ * Agent bridge H11: create_part, joint_open/pick/commit, assembly undo,
+ * and joint health (list_joints, status.jointFailures, the joint_broken warning).
  */
 /* global document, window, indexedDB, localStorage */
 import { spawn } from 'node:child_process';
@@ -217,6 +218,49 @@ const committed = await agentCall(page, 'joint_commit', {});
 check('joint_commit', committed.ok === true, JSON.stringify(committed));
 
 const jointId = committed.result?.jointId;
+check('joint_commit on a clean assembly carries no joint_broken warning', committed.result?.warning === undefined, JSON.stringify(committed.result?.warning));
+
+// Joint health (MVP 3 B1): list_joints, status.jointFailures, and the
+// joint_broken warning when a part edit loses the face a joint names.
+const healthyList = await agentCall(page, 'list_joints', {});
+check('list_joints lists the joint as ok', healthyList.ok === true && healthyList.result?.total === 1
+  && healthyList.result.joints[0]?.id === jointId && healthyList.result.joints[0]?.status === 'ok'
+  && healthyList.result.joints[0]?.type === 'coincident', JSON.stringify(healthyList));
+check('list_joints names both parts by row id', JSON.stringify((healthyList.result?.joints?.[0]?.parts || []).slice().sort()) === JSON.stringify([baseId, pinId].sort()), JSON.stringify(healthyList.result?.joints?.[0]?.parts));
+check('list_joints picks carry part_id, kind and key', (healthyList.result?.joints?.[0]?.picks || []).every((pick) => pick.part_id && pick.kind === 'face' && pick.key?.n), JSON.stringify(healthyList.result?.joints?.[0]?.picks));
+const healthyStatus = await agentCall(page, 'status', {});
+check('status.jointFailures is zero on a healthy assembly', healthyStatus.result?.jointFailures?.count === 0 && healthyStatus.result?.jointFailures?.ids?.length === 0, JSON.stringify(healthyStatus.result?.jointFailures));
+
+// Replace the pin with a thin cylinder: the 12×12 bottom face the joint
+// references is gone, so the re-solve after the run marks the joint broken.
+const pinScript = (await agentCall(page, 'get_script', {})).result?.source || '';
+const pinHeader = pinScript.split('\n').find((line) => line.startsWith('// @surf-id')) || '';
+const broke = await agentCall(page, 'set_script', {
+  part_id: pinId,
+  source: `${pinHeader}\nlet part = Manifold.cylinder(20, 4, 4, 48);\nreturn part;\n`,
+});
+check('set_script that loses the joint face runs ok', broke.ok === true && broke.result?.ok === true, JSON.stringify(broke.result?.errors));
+check('set_script result warns joint_broken for that joint', broke.result?.warning?.code === 'joint_broken'
+  && broke.result.warning.joints?.length === 1 && broke.result.warning.joints[0].id === jointId
+  && broke.result.warning.joints[0].status === 'broken' && /not found/.test(broke.result.warning.joints[0].reason || ''), JSON.stringify(broke.result?.warning));
+check('the mutate status carries jointFailures', broke.result?.status?.jointFailures?.count === 1 && broke.result.status.jointFailures.ids[0] === jointId, JSON.stringify(broke.result?.status?.jointFailures));
+const brokenList = await agentCall(page, 'list_joints', {});
+check('list_joints shows the joint broken with the reason', brokenList.result?.failed?.count === 1 && brokenList.result.joints[0]?.status === 'broken' && /not found/.test(brokenList.result.joints[0]?.reason || ''), JSON.stringify(brokenList.result));
+const brokenStatus = await agentCall(page, 'status', {});
+check('status.jointFailures names the broken joint', brokenStatus.result?.jointFailures?.count === 1 && brokenStatus.result.jointFailures.ids[0] === jointId, JSON.stringify(brokenStatus.result?.jointFailures));
+
+// Undo the script edit: the face is back, the joint solves again.
+const healed = await agentCall(page, 'undo', {});
+check('undo restores the pin script', healed.ok === true && healed.result?.kind === 'part', JSON.stringify(healed.result?.kind));
+check('undo result carries no joint_broken warning', healed.result?.warning === undefined);
+const healedList = await agentCall(page, 'list_joints', {});
+check('list_joints is ok again after undo', healedList.result?.failed?.count === 0 && healedList.result.joints[0]?.status === 'ok', JSON.stringify(healedList.result?.failed));
+check('status.jointFailures is zero again', (await agentCall(page, 'status', {})).result?.jointFailures?.count === 0);
+// The set_script selected the pin. joint_open clears that highlight (the
+// joints strip and the assembly history come back), as joint_commit had.
+await agentCall(page, 'joint_open', {});
+await agentCall(page, 'joint_cancel', {});
+
 const assemblySteps = async () => {
   const hist = await agentCall(page, 'history', {});
   return hist.result?.kind === 'assembly' ? hist.result.entries.length : -1;
