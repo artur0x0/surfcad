@@ -214,8 +214,12 @@ export const deleteFeatureCommand = Object.freeze({
     const prep = prepare(args || {});
     if (prep?.error) return { error: prep.error };
     const outcome = await ctx.mutate(prep.source, prep.message);
+    // The block is gone once mutate returns; `ok` is the run after it (a
+    // later feature can fail on the new solid). Follow-up 8: a failed run
+    // read as "not deleted", and the agent deleted again.
     const result = {
       deletedId: prep.featureId,
+      deleted: true,
       ok: outcome.ok === true,
       errors: outcome.errors || [],
       failures: outcome.failures || [],

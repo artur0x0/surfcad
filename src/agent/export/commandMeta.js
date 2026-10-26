@@ -73,7 +73,7 @@ export const COMMAND_META = {
   },
   status: {
     description:
-      `Status for the active part: id, name, editor script, runState (not_run_yet | ok | failed), and the last run volume/bbox/bodyCount when available. Updates when the active part changes without requiring another run. unjointedParts lists part ids in no joint when the assembly has two or more parts (empty for a single part; a base part with a fixed joint is omitted).${FEATURE_COUNT_NOTE}`,
+      `Status for the active part: id, name, editor script, runState (not_run_yet | ok | failed), and the last run volume/bbox/bodyCount when available. While runState is failed those three are null and lastGood carries the last successful run's volume/bbox/bodyCount (the solid still shown). Updates when the active part changes without requiring another run. unjointedParts lists part ids in no joint when the assembly has two or more parts (empty for a single part; a base part with a fixed joint is omitted).${FEATURE_COUNT_NOTE}`,
     result: {
       ...STATUS_SCHEMA,
       properties: {
@@ -415,7 +415,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   delete_feature: {
-    description: 'Delete a feature block from the active part (or part_id, an opaque surf id) and run that part through mutate, so the result status and errors are current and undo once restores the block. A face pick does not change the part: id and index resolve against the active part unless part_id names another row (a path or display name is unknown_part). Deleting the feature that declares part while later code still uses it is confirm_required until confirm: true; the result then carries a warning.',
+    description: 'Delete a feature block from the active part (or part_id, an opaque surf id) and run that part through mutate, so the result status and errors are current and undo once restores the block. deleted: true means the block is gone; ok is the run after it, so ok: false with deleted: true is a later feature failing on the new solid (read errors), not a delete that did not happen: do not delete again. A face pick does not change the part: id and index resolve against the active part unless part_id names another row (a path or display name is unknown_part). Deleting the feature that declares part while later code still uses it is confirm_required until confirm: true; the result then carries a warning.',
     // Own result: the command returns deletedId, mutate failures, and an
     // optional warning. It does not return unchanged (that stays on MUTATE_RESULT_SCHEMA).
     result: {
@@ -423,6 +423,7 @@ export const COMMAND_META = {
       additionalProperties: false,
       properties: {
         deletedId: { type: 'string' },
+        deleted: { type: 'boolean', description: 'The block is gone (undo restores it). ok is the run after the delete.' },
         ok: { type: 'boolean' },
         errors: { type: 'array', items: { type: 'string' } },
         failures: {

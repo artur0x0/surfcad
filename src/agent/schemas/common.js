@@ -141,6 +141,16 @@ export const STATUS_SCHEMA = Object.freeze({
       description: 'Feature blocks (by feature_tree id) served from the cache on the last run: true per id',
       additionalProperties: { type: 'boolean' },
     },
+    lastGood: {
+      type: 'object',
+      description: 'Only while runState is failed: volume, bbox and bodyCount of this part\'s last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers',
+      additionalProperties: false,
+      properties: {
+        volume: { type: ['number', 'null'] },
+        bbox: { oneOf: [BBOX_SCHEMA, { type: 'null' }] },
+        bodyCount: { type: ['integer', 'null'] },
+      },
+    },
     features: {
       type: 'array',
       description: 'Feature strip rows, only with return: "summary" (script is omitted with "status" and "summary")',

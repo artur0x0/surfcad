@@ -92,6 +92,7 @@ test('status and errors are current right after the confirmed delete, without ru
   const deleted = await api.call('delete_feature', { id: 'cube0', confirm: true });
   assert.equal(deleted.ok, true, JSON.stringify(deleted));
   assert.equal(deleted.result.deletedId, 'cube0');
+  assert.equal(deleted.result.deleted, true, 'the block is gone even though the run after it failed (follow-up 8)');
   assert.equal(deleted.result.ok, false);
   assert.equal(deleted.result.warning, 'base deleted');
   assert.ok(deleted.result.errors.some((row) => row.includes('part is not defined')), deleted.result.errors);
