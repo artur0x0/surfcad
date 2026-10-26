@@ -29,6 +29,8 @@ const UNJOINTED_PARTS_SCHEMA = Object.freeze({
   items: { type: 'string' },
   description: 'Part ids in no joint when the assembly has two or more parts. Empty for a single-part document. A base part with a fixed joint is omitted.',
 });
+/** Appended to tools that run a part: a part edit re-solves every joint that names it. */
+export const JOINT_BROKEN_NOTE = ' When the run leaves an assembly joint failing that was not failing before (its face moved or vanished, or it now conflicts), the result adds warning { code: "joint_broken", joints: [{ id, name, type, status, reason, parts }], hint }; the call still succeeds, and status.jointFailures / list_joints show the standing state.';
 const FEATURE_COUNT_NOTE = ' featureCount counts insert_* feature blocks, so a freehand set_script is one feature. bodyCount is null until the first run; a finished run that produced no bodies reports 0.';
 
 const OK = Object.freeze({ type: 'object', additionalProperties: false, properties: { ok: { const: true } } });
@@ -60,20 +62,20 @@ export const COMMAND_META = {
   },
   set_script: {
     description:
-      `Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects \`// @surf-id\`. Keep the feature marker blocks (// --- <kind> begin --- … // --- <kind> end ---, and // @contour id=) so the strip keeps per-feature edit, delete, rollback and undo; see guide { topic: "features" }.${RESERVED_HELPERS}${BUILD_FLOW_NOTE}${CRASH_NOTE}`,
+      `Freehand fallback after insert_* feature tools. part_id is required and must be the active part's opaque surf id (a vault path or display name is unknown_part; another id is part_mismatch). Writes that part, runs it, and records one undo step when the text changes. Working copy only: nothing reaches git without an explicit git_save. Preserves or re-injects \`// @surf-id\`. Keep the feature marker blocks (// --- <kind> begin --- … // --- <kind> end ---, and // @contour id=) so the strip keeps per-feature edit, delete, rollback and undo; see guide { topic: "features" }.${RESERVED_HELPERS}${BUILD_FLOW_NOTE}${CRASH_NOTE}${JOINT_BROKEN_NOTE}`,
     result: MUTATE_RESULT_SCHEMA,
     errors: ['bad_args', 'unknown_part', 'part_mismatch', 'no_assembly', 'internal'],
     mutates: true,
   },
   run: {
-    description: `Run the current editor buffer; one undo step when it is not already the stack head.${RESERVED_HELPERS}${CRASH_NOTE}`,
+    description: `Run the current editor buffer; one undo step when it is not already the stack head.${RESERVED_HELPERS}${CRASH_NOTE}${JOINT_BROKEN_NOTE}`,
     result: MUTATE_RESULT_SCHEMA,
     errors: ['internal'],
     mutates: true,
   },
   status: {
     description:
-      `Status for the active part: id, name, editor script, runState (not_run_yet | ok | failed), and the last run volume/bbox/bodyCount when available. Updates when the active part changes without requiring another run. unjointedParts lists part ids in no joint when the assembly has two or more parts (empty for a single part; a base part with a fixed joint is omitted).${FEATURE_COUNT_NOTE}`,
+      `Status for the active part: id, name, editor script, runState (not_run_yet | ok | failed), and the last run volume/bbox/bodyCount when available. Updates when the active part changes without requiring another run. unjointedParts lists part ids in no joint when the assembly has two or more parts (empty for a single part; a base part with a fixed joint is omitted). jointFailures { count, ids } names the assembly joints that do not solve right now (a broken reference or a conflict, the red chips on the joints strip); list_joints has each joint with its status and reason.${FEATURE_COUNT_NOTE}`,
     result: {
       ...STATUS_SCHEMA,
       properties: {
@@ -827,7 +829,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   joint_commit: {
-    description: 'Confirm the joint card and record one assembly undo step. A refused commit, or one that changes nothing (unchanged: true), records no step.',
+    description: 'Confirm the joint card and record one assembly undo step. A refused commit, or one that changes nothing (unchanged: true), records no step. The solve re-runs every joint; when this commit leaves another joint failing the result adds warning { code: "joint_broken", joints, hint } and still succeeds.',
     result: { type: 'object', additionalProperties: true },
     errors: ['no_joint_card', 'commit_failed', 'edit_failed', 'internal'],
     mutates: true,
@@ -851,7 +853,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   joint_create: {
-    description: `${JOINT_PLACEMENT_GUIDANCE} Prefer this over hand-computed part_set_transform numbers: one call creates a joint and solves the placement. type is coincident, parallel, perpendicular, distance, angle, concentric, symmetric or fixed (planar is coincident); picks are one row per reference from list_faces (face_id with its key from the same row; a cylindrical face is an axis pick; a face_id is never an ambiguous axis; { part_id } alone is a whole-part pick), one pick for fixed and two for every other type; name, value_mm, sense and opposed as on joint_set_params. Runs the same open → pick → set params → commit path as the Joints card (the advanced path) and records one assembly undo step. The result carries jointId, type, name, valueMm, pickCount and placements: the position and rotation of every picked part after the solve. A pick that does not resolve is unknown_part / unknown_face, and a joint the solver refuses is joint_unsolvable with details.reason and, when more than one axis matches, details.candidates (id, origin, direction, radius); in both cases nothing is written and no card is left open. usedSelection is always false: the picks are explicit.`,
+    description: `${JOINT_PLACEMENT_GUIDANCE} Prefer this over hand-computed part_set_transform numbers: one call creates a joint and solves the placement. type is coincident, parallel, perpendicular, distance, angle, concentric, symmetric or fixed (planar is coincident); picks are one row per reference from list_faces (face_id with its key from the same row; a cylindrical face is an axis pick; a face_id is never an ambiguous axis; { part_id } alone is a whole-part pick), one pick for fixed and two for every other type; name, value_mm, sense and opposed as on joint_set_params. Runs the same open → pick → set params → commit path as the Joints card (the advanced path) and records one assembly undo step. The result carries jointId, type, name, valueMm, pickCount and placements: the position and rotation of every picked part after the solve. A pick that does not resolve is unknown_part / unknown_face, and a joint the solver refuses is joint_unsolvable with details.reason and, when more than one axis matches, details.candidates (id, origin, direction, radius); in both cases nothing is written and no card is left open. usedSelection is always false: the picks are explicit. The solve re-runs every joint, so when this joint leaves another one failing the result adds warning { code: "joint_broken", joints, hint } and still succeeds.`,
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'bad_view', 'joints_unavailable', 'no_assembly', 'unknown_part', 'unknown_face', 'ambiguous_face', 'pick_failed', 'no_mesh', 'joint_unsolvable', 'edit_failed', 'internal'],
     mutates: true,
@@ -862,6 +864,54 @@ export const COMMAND_META = {
     errors: ['bad_args', 'no_assembly', 'unknown_joint', 'edit_failed', 'internal'],
     mutates: true,
     destructive: true,
+  },
+  list_joints: {
+    description: 'Every assembly joint with its solve state: id, name, type, status (ok | broken | conflict), reason (the strip chip tooltip, e.g. "Face not found on Shaft"; only when failing), parts (row ids), picks [{ part_id, kind?, key? }], value_mm or value_deg, sense, opposed. failed { count, ids } is the same list status.jointFailures carries. A joint goes broken when a part run no longer has its face, edge, axis or plane (a remesh, a moved feature, a failed run) and conflict when the solver cannot satisfy it with the others; the solve re-runs after every part run, so this is the standing state. Immediate read, no part run.',
+    result: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        joints: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              id: { type: 'string' },
+              name: { type: 'string' },
+              type: { type: 'string' },
+              status: { type: 'string', enum: ['ok', 'broken', 'conflict'] },
+              reason: { type: 'string' },
+              parts: { type: 'array', items: { type: 'string' } },
+              picks: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    part_id: { type: 'string' },
+                    kind: { type: 'string' },
+                    key: { type: 'object', additionalProperties: true },
+                  },
+                },
+              },
+              value_mm: { type: 'number' },
+              value_deg: { type: 'number' },
+              sense: { type: 'integer' },
+              opposed: { type: 'boolean' },
+            },
+          },
+        },
+        total: { type: 'integer' },
+        failed: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { count: { type: 'integer' }, ids: { type: 'array', items: { type: 'string' } } },
+        },
+      },
+    },
+    errors: ['internal'],
+    mutates: false,
   },
   sheet_open: {
     description: 'Open the Sheet Metal picker (Shape rail).',
