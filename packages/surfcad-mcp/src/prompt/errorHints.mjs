@@ -160,7 +160,7 @@ export const ERROR_HINTS = Object.freeze({
   unknown_topic: { hint: 'guide {} lists the topics; error topics are errors.<code>.' },
   // Pairing and prompts (MCP side)
   not_paired: { hint: 'pair { code } with the code from SurfCAD → Local agent → Show pairing code, then the user clicks Allow; or set SURFCAD_PAIRING_CODE.', guide: PAIRING_GUIDE },
-  pair_pending: { hint: 'The user has not clicked Allow yet: wait a few seconds and retry the same call; do not ask for a new code.', guide: PAIRING_GUIDE },
+  pair_pending: { hint: 'The user has not clicked Allow yet: wait a few seconds and retry the same call; do not ask for a new code. If SurfCAD shows no Allow prompt, the tab may be an older build than this server: ask the user to reload SurfCAD and pair again.', guide: PAIRING_GUIDE },
   pair_rejected: { hint: 'The user clicked Deny: ask them before calling pair again.', guide: PAIRING_GUIDE },
   pair_cancelled: { hint: 'The pairing attempt was cancelled: pair { code } again when the user is ready.', guide: PAIRING_GUIDE },
   pair_failed: { hint: 'Pairing failed (message): check the code (6 characters, from the open tab) and that the tab shows it, then pair again.', guide: PAIRING_GUIDE },

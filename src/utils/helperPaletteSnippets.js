@@ -2510,6 +2510,15 @@ export const HELPER_PALETTE_ITEMS = [
         body.length = 0;
         body.push(empty ? 'let part = Manifold.cube([10, 10, 10], true);' : 'part = part;');
       }
+      // The first feature on an empty part declares `part`: a snippet written
+      // as `part = …` has nothing to assign to, and the wrapper's `return part`
+      // threw "part is not defined" (B3). The first top-level `part =` becomes
+      // `let part =`; a snippet that declares it itself is left alone.
+      if (empty && !/(?:let|const|var)\s+part\b/.test(body.join('\n'))) {
+        const at = body.findIndex((line) => /^\s*part\s*=(?!=)/.test(line));
+        if (at >= 0) body[at] = body[at].replace(/^(\s*)part\s*=/, '$1let part =');
+        else body.unshift('let part;');
+      }
       const lines = wrapFeatureBlock(CODE_BEGIN, CODE_END, [featureGapLine(p.gap, p.why), ...body]);
       return withReturn(lines, empty);
     },
