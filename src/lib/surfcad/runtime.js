@@ -2777,32 +2777,193 @@ function hexPrism(radius, height) {
   return _stampHexPrism(Manifold.cylinder(height, radius, radius, 6));
 }
 
+/** 'xy' | 'xz' | 'yz' through the origin, or { center, normal } / { normal, originOffset }. */
+function _mirrorFrameOf(plane) {
+  if (typeof plane === 'string') {
+    const key = plane.trim().toLowerCase();
+    const named = { xy: [0, 0, 1], xz: [0, 1, 0], yz: [1, 0, 0] }[key];
+    if (!named) throw new Error('mirror: plane must be "xy", "xz", "yz", or { center, normal }');
+    return { center: [0, 0, 0], normal: named };
+  }
+  if (!plane || typeof plane !== 'object' || Array.isArray(plane)) {
+    throw new Error('mirror: plane must be "xy", "xz", "yz", or { center, normal }');
+  }
+  const nRaw = plane.normal;
+  if (!Array.isArray(nRaw) || nRaw.length < 3) {
+    throw new Error('mirror: plane must be "xy", "xz", "yz", or { center, normal }');
+  }
+  const n = [Number(nRaw[0]), Number(nRaw[1]), Number(nRaw[2])];
+  if (n.some((v) => !Number.isFinite(v))) throw new Error('mirror: normal must be finite [x, y, z]');
+  const len = Math.hypot(n[0], n[1], n[2]);
+  if (!(len > 1e-12)) throw new Error('mirror: normal has zero length');
+  const normal = [n[0] / len, n[1] / len, n[2] / len];
+  let center;
+  if (Array.isArray(plane.center)) {
+    center = [Number(plane.center[0]), Number(plane.center[1]), Number(plane.center[2])];
+    if (center.some((v) => !Number.isFinite(v))) throw new Error('mirror: center must be finite [x, y, z]');
+  } else if (plane.originOffset != null || plane.offset != null) {
+    const off = Number(plane.originOffset != null ? plane.originOffset : plane.offset);
+    if (!Number.isFinite(off)) throw new Error('mirror: originOffset must be a finite number');
+    center = [normal[0] * off, normal[1] * off, normal[2] * off];
+  } else {
+    center = [0, 0, 0];
+  }
+  return { center, normal };
+}
+
+/** Unit quaternion [x, y, z, w] rotating unit vector u onto unit vector v. */
+function _mirrorQuatFromTo(u, v) {
+  const dot = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  if (dot > 1 - 1e-10) return [0, 0, 0, 1];
+  let x;
+  let y;
+  let z;
+  let w;
+  if (dot < -1 + 1e-10) {
+    const ax = Math.abs(u[0]) < 0.9 ? 1 : 0;
+    const ay = ax === 1 ? 0 : 1;
+    x = u[1] * 0 - u[2] * ay;
+    y = u[2] * ax - u[0] * 0;
+    z = u[0] * ay - u[1] * ax;
+    const len = Math.hypot(x, y, z) || 1;
+    return [x / len, y / len, z / len, 0];
+  }
+  x = u[1] * v[2] - u[2] * v[1];
+  y = u[2] * v[0] - u[0] * v[2];
+  z = u[0] * v[1] - u[1] * v[0];
+  w = 1 + dot;
+  const len = Math.hypot(x, y, z, w);
+  return [x / len, y / len, z / len, w / len];
+}
+
+/** Column-major rotation (Manifold.transform) for quaternion [x, y, z, w]. */
+function _mirrorQuatMatrix(q) {
+  const [x, y, z, w] = q;
+  return [
+    1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w), 0,
+    2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w), 0,
+    2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y), 0,
+    0, 0, 0, 1,
+  ];
+}
+
 /**
- * Mirror a manifold across a plane
- * @param {Manifold} manifold - The manifold to mirror
- * @param {string} plane - 'xy', 'xz', or 'yz'
- * @param {boolean} keepOriginal - Whether to union with original (default true)
+ * Reflect body across the plane. Rotation plus a Z scale, the same two
+ * operations rotateAbout and the old origin mirror already use. The input
+ * handle is left alone.
  */
-function mirror(manifold, plane = 'xy', keepOriginal = true) {
-  let scale;
-  switch (plane.toLowerCase()) {
-    case 'xy': scale = [1, 1, -1]; break;
-    case 'xz': scale = [1, -1, 1]; break;
-    case 'yz': scale = [-1, 1, 1]; break;
-    default: throw new Error('Plane must be "xy", "xz", or "yz"');
+function _reflectManifold(body, frame) {
+  const origin = frame.center;
+  const shifted = body.translate([-origin[0], -origin[1], -origin[2]]);
+  const q = _mirrorQuatFromTo(frame.normal, [0, 0, 1]);
+  const spun = shifted.transform(_mirrorQuatMatrix(q));
+  if (shifted !== body && shifted !== spun) _safeDeleteManifold(shifted);
+  const flipped = spun.scale([1, 1, -1]);
+  if (spun !== body && spun !== flipped) _safeDeleteManifold(spun);
+  const qi = [-q[0], -q[1], -q[2], q[3]];
+  const unspun = flipped.transform(_mirrorQuatMatrix(qi));
+  if (flipped !== body && flipped !== unspun) _safeDeleteManifold(flipped);
+  const back = unspun.translate(origin);
+  if (unspun !== body && unspun !== back) _safeDeleteManifold(unspun);
+  const status = _c4StatusError(back);
+  if (status) {
+    _safeDeleteManifold(back);
+    throw new Error(`mirror: result is not a valid solid (${status})`);
   }
-  
-  const mirrored = manifold.scale(scale);
-  
-  if (keepOriginal) {
-    // Union might fail if they overlap - try to handle gracefully
-    try {
-      return manifold.add(mirrored);
-    } catch {
-      return mirrored;
+  return back;
+}
+
+/** Union the copy with the original. Overlap is an error, not a silent drop of the original. */
+function _mirrorJoin(original, reflected) {
+  let joined;
+  try {
+    joined = original.add(reflected);
+  } catch (err) {
+    _safeDeleteManifold(reflected);
+    const msg = err && err.message ? String(err.message) : String(err);
+    throw new Error(`mirror: the mirrored copy overlaps the original and could not be joined (${msg}). Pick a plane that does not cut through the body.`);
+  }
+  const status = _c4StatusError(joined);
+  if (status) {
+    if (joined !== original && joined !== reflected) _safeDeleteManifold(joined);
+    if (reflected !== original) _safeDeleteManifold(reflected);
+    throw new Error(`mirror: the mirrored copy overlaps the original and could not be joined (${status}). Pick a plane that does not cut through the body.`);
+  }
+  if (reflected !== joined && reflected !== original) _safeDeleteManifold(reflected);
+  return joined;
+}
+
+/**
+ * mirror(manifold, plane, keepOriginal, { bodies }) — reflect one body, or the whole solid.
+ * plane is 'xy', 'xz', or 'yz' (through the origin) or { center, normal }
+ * (a workplane or a planar face). { normal, originOffset } is the same plane.
+ * keepOriginal unions the copy with that body (default true). A third
+ * argument that is an object is the options, and the copy is kept.
+ * { bodies: [{ at }] } names one body the way move() does: that body is
+ * mirrored, every other body stays. With no bodies, the whole solid is
+ * mirrored, which is what older scripts do. The input handle is not deleted.
+ * Overlap throws; the original is not replaced by the copy alone.
+ * @param {Manifold} manifold - The solid
+ * @param {string|{center:number[],normal:number[]}} plane - 'xy', 'xz', 'yz', or { center, normal }
+ * @param {boolean|{bodies?:object[]}} [keepOriginal=true] - Keep the original, or an options object
+ * @param {{bodies?:{at:number[]}[],keepOriginal?:boolean}} [opts] - Name one body with { bodies: [{ at }] }
+ */
+function mirror(manifold, plane = 'xy', keepOriginal = true, opts = {}) {
+  if (!manifoldModule) throw new Error('Manifold not initialized');
+  if (!manifold || typeof manifold.translate !== 'function' || typeof manifold.scale !== 'function') {
+    throw new Error('mirror: expected a Manifold');
+  }
+  let options = (opts && typeof opts === 'object' && !Array.isArray(opts)) ? opts : {};
+  let keep = keepOriginal;
+  if (keepOriginal && typeof keepOriginal === 'object' && !Array.isArray(keepOriginal)) {
+    options = keepOriginal;
+    keep = options.keepOriginal !== false;
+  }
+  keep = keep !== false;
+  const frame = _mirrorFrameOf(plane);
+  const named = Array.isArray(options.bodies);
+  if (!named) {
+    const reflected = _reflectManifold(manifold, frame);
+    if (!keep) return reflected;
+    return _mirrorJoin(manifold, reflected);
+  }
+  let bodies;
+  let selected;
+  try {
+    bodies = _cutBodiesOf(manifold);
+    selected = _moveSelected(manifold, bodies, options.bodies);
+  } catch (err) {
+    const msg = err && err.message ? String(err.message) : String(err);
+    throw new Error(msg.replace(/^(?:cut|move|rotateAbout):/, 'mirror:'));
+  }
+  if (selected.size !== 1) {
+    throw new Error('mirror: name one body with { bodies: [{ at }] }');
+  }
+  const idx = selected.values().next().value;
+  if (bodies.length === 1 && bodies[0] === manifold) {
+    const reflected = _reflectManifold(manifold, frame);
+    if (!keep) return reflected;
+    return _mirrorJoin(manifold, reflected);
+  }
+  const { Manifold } = manifoldModule;
+  const kept = [];
+  const discard = [];
+  for (let i = 0; i < bodies.length; i++) {
+    const body = bodies[i];
+    if (i !== idx) {
+      kept.push(body);
+      continue;
     }
+    const reflected = _reflectManifold(body, frame);
+    const piece = keep ? _mirrorJoin(body, reflected) : reflected;
+    kept.push(piece);
+    if (body !== manifold && body !== piece) discard.push(body);
   }
-  return mirrored;
+  for (const m of discard) _safeDeleteManifold(m);
+  const result = kept.length === 1 ? kept[0] : Manifold.compose(kept);
+  const status = _c4StatusError(result);
+  if (status) throw new Error(`mirror: result is not a valid solid (${status})`);
+  return result;
 }
 
 /**

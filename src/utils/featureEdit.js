@@ -11,6 +11,7 @@ import { parseFeatureMarkers } from './featureMarkers.js';
 import { rotateAxisLiteral, rotateCenterLiteral, shouldClearViewportScript } from './helperPaletteSnippets.js';
 import { featureGapLine, parseFeatureGaps } from './featureGaps.js';
 import { parseRotateAxisLiteral, sameRotateAxis, sameVec3 } from './rotateMode.js';
+import { parseMirrorCall } from './mirrorMode.js';
 import { deleteFeatureBlock, featureBlockText, liveSheetFeature, inferExtrudeSense } from './featureSheetWriteback.js';
 import { scriptWithFeatureCount } from './partHistory.js';
 import { shellFaceKey } from './shellMode.js';
@@ -57,7 +58,7 @@ export const FEATURE_EDIT_DIALOGS = Object.freeze({
   deleteFace: { dialog: 'deleteFace', entry: 'deleteFace' },
   center: { dialog: 'helper', helperId: 'center' },
   align: { dialog: 'helper', helperId: 'align' },
-  mirror: { dialog: 'helper', helperId: 'mirror' },
+  mirror: { dialog: 'mirror', entry: 'mirror' },
   array: { dialog: 'helper', helperId: 'array3D' },
   polarArray: { dialog: 'helper', helperId: 'polarArray' },
   patternPoints: { dialog: 'helper', helperId: 'patternPoints' },
@@ -763,9 +764,14 @@ export function parseFeatureEdit(kind, blockText) {
   }
 
   if (kind === 'mirror') {
-    const m = grab(block, /mirror\s*\(\s*[^,]+,\s*'(\w+)'\s*,\s*(true|false)/);
-    if (!m) return fail('No mirror');
-    return { ...base, fields: { plane: m[1], keepOriginal: m[2] === 'true' }, edges, faces };
+    const parsed = parseMirrorCall(block);
+    if (!parsed) return fail('No mirror');
+    return {
+      ...base,
+      fields: { plane: parsed.plane, keepOriginal: parsed.keepOriginal, at: parsed.at },
+      edges,
+      faces,
+    };
   }
 
   if (kind === 'array') {
@@ -1207,8 +1213,22 @@ function rewriteBlock(block, session, draft) {
       );
     }
   } else if (kind === 'mirror') {
-    if (fields.plane && fields.plane !== prev.plane) {
+    if (typeof fields.plane === 'string' && typeof prev.plane === 'string' && fields.plane !== prev.plane) {
       next = next.replace(/mirror\s*\(\s*([^,]+),\s*'(\w+)'/, `mirror($1, '${fields.plane}'`);
+    }
+    if ((fields.keepOriginal === true || fields.keepOriginal === false) && fields.keepOriginal !== prev.keepOriginal) {
+      next = next.replace(
+        /(mirror\s*\(\s*[^,]+,\s*(?:'(?:xy|xz|yz)'|\{[\s\S]*?\})\s*,\s*)(true|false)/,
+        `$1${fields.keepOriginal}`,
+      );
+    }
+    const nextAt = Array.isArray(fields.at) && fields.at.length >= 3 ? fields.at.slice(0, 3).map(Number) : null;
+    const prevAt = Array.isArray(prev.at) ? prev.at : null;
+    if (nextAt && nextAt.every(Number.isFinite)
+      && !(prevAt && prevAt.length >= 3 && nextAt.every((v, i) => sameValue(v, Number(prevAt[i]))))) {
+      if (/at:\s*\[/.test(next)) {
+        next = next.replace(/at:\s*\[\s*[^\]]*\]/, `at: [${nextAt.join(', ')}]`);
+      }
     }
   } else if (kind === 'array') {
     setNum(new RegExp(`(array3D\\s*\\(\\s*[^,]+,\\s*\\[\\s*)(${NUM})`), 'nx');

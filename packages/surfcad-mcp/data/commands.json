@@ -8035,11 +8035,37 @@
     },
     {
       "name": "insert_mirror",
-      "description": "Prefer this over freehand set_script. Insert this helper on the active part (set_active_part first) and run it. Numbers are finite and within ±1000000 mm (positions and deltas included); NaN and Infinity are bad_args. Working copy only; git_save commits. The result usedSelection says whether the viewport selection was used. A pick that carries a face name (select_faces { names } or a click on a face a helper built) is written into the script by that name (facesNamed for a hole, edgesOf for a fillet or chamfer: the edges around that face only) and is found again on the new mesh after every rebuild, so a second use_selection insert lands on the same face. A pick with no name (a hull, a freehand Manifold.*) clears with the rebuild, and use_selection: true with nothing selected is no_selection (nothing is written). Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes. Fix one base part with a fixed joint, then place every part that touches or attaches to another with joint_create (one call creates the joint and solves placement). Use part_set_transform only for parts that touch nothing. Block-out positions are rough; joints set final positions. If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. When the run past the budget was inside one marked feature block, the part is rebuilt without that block instead: the result is ok: false with one failures row { code: feature_timeout, featureId, featureType, featureLabel, elapsedMs, budgetMs, detail }, status.runState is failed, the other features are built and shown, and status.featureMs (and feature_tree ms) say how long each block took; edit, delete, or undo that feature. Writes (defaults): part = mirror(part, 'yz', true); Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Prefer this over freehand set_script. Mirror one body of the active part across a plane and keep the original. plane is xy, yz, or xz (through the origin). Name the body the same way as insert_move: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. Nothing named and nothing selected is no_body; the origin is never assumed. A workplane or a planar face is picked in the Mirror card. edit_feature on the mirror takes plane, keepOriginal, and at. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes. Fix one base part with a fixed joint, then place every part that touches or attaches to another with joint_create (one call creates the joint and solves placement). Use part_set_transform only for parts that touch nothing. Block-out positions are rough; joints set final positions. If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. When the run past the budget was inside one marked feature block, the part is rebuilt without that block instead: the result is ok: false with one failures row { code: feature_timeout, featureId, featureType, featureLabel, elapsedMs, budgetMs, detail }, status.runState is failed, the other features are built and shown, and status.featureMs (and feature_tree ms) say how long each block took; edit, delete, or undo that feature. Writes (defaults): part = mirror(part, 'yz', true); Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "body_index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Body from list_bodies"
+          },
+          "at": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 3,
+            "maxItems": 3,
+            "description": "Body centroid [x, y, z] mm from list_bodies"
+          },
+          "face_id": {
+            "type": "string",
+            "description": "A list_faces id (f12) on the body to mirror"
+          },
+          "face": {
+            "type": "object",
+            "description": "A list_faces key { at, n, area } on the body to mirror"
+          },
+          "use_selection": {
+            "type": "boolean",
+            "description": "When true and no body_index, at, face_id, or face is given, mirror the body of the selected face"
+          },
           "body": {
             "type": "string",
             "description": "Part script binding name"
@@ -8225,7 +8251,9 @@
       },
       "errors": [
         "bad_args",
-        "no_selection",
+        "no_body",
+        "no_mesh",
+        "unknown_face",
         "insert_failed",
         "internal"
       ],
@@ -8234,7 +8262,10 @@
       "confirm": false,
       "group": "insert",
       "immediate": false,
-      "uiEntry": "mirror",
+      "uiEntry": [
+        "mirror",
+        "data-mirror-mode-chip"
+      ],
       "example": {
         "body": "part",
         "plane": "yz",

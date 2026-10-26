@@ -1140,6 +1140,12 @@ const INSERT_MOVE_META = {
   errors: ['bad_args', 'no_body', 'no_mesh', 'unknown_face', 'insert_failed', 'internal'],
 };
 
+const INSERT_MIRROR_META = {
+  ...INSERT_HELPER_META,
+  description: `Prefer this over freehand set_script. Mirror one body of the active part across a plane and keep the original. plane is xy, yz, or xz (through the origin). Name the body the same way as insert_move: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. Nothing named and nothing selected is no_body; the origin is never assumed. A workplane or a planar face is picked in the Mirror card. edit_feature on the mirror takes plane, keepOriginal, and at. Working copy only; git_save commits.${BUILD_FLOW_NOTE}${CRASH_NOTE}`,
+  errors: ['bad_args', 'no_body', 'no_mesh', 'unknown_face', 'insert_failed', 'internal'],
+};
+
 const INSERT_ROTATE_META = {
   ...INSERT_HELPER_META,
   description: `Prefer this over freehand set_script. Rotate one body of the active part by angle degrees (right-hand rule) about the line through center along axis: the Rotate button, directly below Move. axis is x, y, or z (a leading - flips it) or an [ax, ay, az] vector; center is [x, y, z] in mm, or omitted for the body's own centroid; angle defaults to 90. Name the body the same way as insert_move: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. Nothing named and nothing selected is no_body; the origin is never assumed. Volume is unchanged and the bounding box follows the turn. edit_feature on the rotate takes angle, axis, center, and at. Working copy only; git_save commits.${BUILD_FLOW_NOTE}${CRASH_NOTE}`,
@@ -1184,6 +1190,7 @@ export function metaForCommand(name) {
   if (COMMAND_META[name]) return COMMAND_META[name];
   if (name === 'insert_move') return withEmit(name, INSERT_MOVE_META);
   if (name === 'insert_rotate') return withEmit(name, INSERT_ROTATE_META);
+  if (name === 'insert_mirror') return withEmit(name, INSERT_MIRROR_META);
   if (name === 'insert_code_snippet') return withEmit(name, INSERT_CODE_SNIPPET_META);
   if (name === 'insert_polar_array') return withEmit(name, INSERT_POLAR_ARRAY_META);
   if (name === 'insert_pattern_points') return withEmit(name, INSERT_PATTERN_POINTS_META);

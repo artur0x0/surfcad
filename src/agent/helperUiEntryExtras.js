@@ -7,6 +7,7 @@ export const HELPER_UI_ENTRY_EXTRAS = Object.freeze({
   boolean: Object.freeze(['data-boolean-mode-chip']),
   move: Object.freeze(['data-move-mode-chip']),
   rotate: Object.freeze(['data-rotate-mode-chip']),
+  mirror: Object.freeze(['data-mirror-mode-chip']),
 });
 
 export function helperUiEntries(helperId) {

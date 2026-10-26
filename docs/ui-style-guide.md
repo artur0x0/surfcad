@@ -249,7 +249,7 @@ and accent map. **Every number renders a slider AND a typed box**:
 - **`FilletModeChip.jsx`** — the shared feature card (`FeatureSheet`); edge-pick
   Tangent / Clear / Undo, cyan Confirm, grey X dismiss. No hard-edge warning.
   Chamfer uses this chip. It passes `fullLeft` on phone and desktop, and so do
-  shell, draft, move face, delete face, cut, move, rotate, boolean, and paint.
+  shell, draft, move face, delete face, cut, move, rotate, mirror, boolean, and paint.
   `fullLeft` means the measure does not wait for a left rail. On desktop the
   left edge follows a rail that is mounted (10px to its right) and is 10px from
   the pane when that rail is hidden, which is the usual case for these chips.
@@ -303,7 +303,7 @@ and accent map. **Every number renders a slider AND a typed box**:
 - **Contour Add / Subtract** — Extrude, Revolve, Sweep, and Loft (not Profile
   or Workplane) show Add and Subtract on `ContourModeChip` (`data-contour-combine`).
   Block solids (cube, rounded box, cylinder, sphere, tube, hex prism) use the same Mode select on the helper card. Default is Add. The card also has Pos X Y Z and Rot X Y Z (degrees). While it is open the viewport shows that Manifold solid with the CAD flat normal shading, and edits update it live. Subtract draws the cutter translucent, in front of the host. Confirm writes size, pose, and Add or Subtract. Cancel and the grey X clear the preview and write nothing. An identity pose is left off the script.
-- **`HelperParamModal.jsx`** — CAD uses the shared feature card for cube, round box, cylinder, sphere, tube, hex, hole, mirror, center, align, array, path, and refuse. Fields stay in the body. Delete stays in the note when a feature edit is open. X and Esc write nothing. Confirm saves and closes. Refuse's footer says OK and writes nothing. There is no swipe and no click-outside. Game keeps the previous bottom-centre sheet: click-through, no scrim, no card, no slide.
+- **`HelperParamModal.jsx`** — CAD uses the shared feature card for cube, round box, cylinder, sphere, tube, hex, hole, center, align, array, path, and refuse. The rail Mirror button opens `MirrorModeChip` instead. Fields stay in the body. Delete stays in the note when a feature edit is open. X and Esc write nothing. Confirm saves and closes. Refuse's footer says OK and writes nothing. There is no swipe and no click-outside. Game keeps the previous bottom-centre sheet: click-through, no scrim, no card, no slide.
 - **`FeatureEditSheet.jsx`** — the fallback editor and the feature picker, on the shared feature card. Edit script stays in the body. Delete stays in the note. X and Esc write nothing. Confirm saves and closes. A stub kind has no Confirm. The picker has no Confirm. There is no swipe. Game mounts no card.
 - **`JointCard.jsx`** — the create card is `StickyPickApply` (`data-sticky-pick-apply` and `data-joint-card`), `fullLeft` off. On desktop the left edge is 10px to the right of the mounted left rail. On a phone the card stays centered between the rails. Title Joint. Subtitle `Shaft · face  →  Housing · face`, with `×2` when a part has two faces. Body: name, the type property (`coincident`, `concentric`, `distance`, `angle`, `symmetric`, `fixed`, with Parallel and Perpendicular in that same group). Parallel and Perpendicular are not stored types; one tap writes an angle joint at 0° or 90°. a distance or angle field when that type needs one, Flip when the type has a sense, and Ground after one pick. A third part opens `Change one of the parts?` (`data-joint-part-change`) with Discard last pick, Replace part 1, and Replace part 2. The note names the suggested type. Footer Add. Add writes the joint, clears the picks, and leaves the card open. A chip tap reopens that joint here (`mode` edit) with the same picks, type, and value. Edit mode has no Add button: Confirm saves and closes, and the red Delete (`data-joint-delete`, feature-sheet danger style) sits opposite Confirm. X writes nothing. Create mode still says Add. `data-joint-card` carries `data-joint-id` and `data-joint-type`. Distance uses the global display unit; the file stays millimetres. Angles stay degrees. X and Esc write nothing and close the card. Game mounts no card.
 - **Feature strip joint chip** — there is no floating joint tag. A chip tap reopens that joint in `JointCard` (picks highlighted, type, value, red Delete, Confirm, and X). A broken or conflict chip uses `border-2 border-red-400` and `feature-failed-ring`. Contour dimension and constraint tags stay. Game mode and a feature session mount no joint chips.
@@ -321,6 +321,14 @@ and accent map. **Every number renders a slider AND a typed box**:
   body is previewed at the new turn until Confirm. No viewport gizmo. Confirm
   writes one `rotateAbout()` and replaces a previous Rotate block; X exits with
   no write. Hidden in game.
+- **`MirrorModeChip.jsx`** — the shared feature card (`FeatureSheet`). It passes
+  `fullLeft`, same as Move. The left helper rail is hidden, so on desktop the
+  left edge is 10px from the pane. On a phone `fullLeft` pins the left edge to
+  that inset. Double-click selects the body (one click keeps the face and offers
+  it as the mirror plane). The plane is XY, YZ, ZX, that face, or a user
+  workplane. The copy is previewed until Confirm. Confirm writes one `mirror()`
+  and replaces a previous Mirror block; X exits with no write. A refused confirm
+  stays on the card and toasts the reason. Hidden in game.
 - **`MoveFaceModeChip.jsx`** — the shared feature card (`FeatureSheet`). Tap adds a
   face, tap again removes it. Undo drops the last face. Clear drops the faces.
   Distance is along each face normal. Flip reverses that normal. No shift-click.
@@ -375,7 +383,7 @@ Errors use this same glass card. They are not a blue rounded pill.
 Bottom corners belong to the helper / cross-section rails (`ui-map.md`).
 
 Contour, Fillet, Chamfer, the standalone edge card, Shell, Draft, Move Face,
-Delete Face, Cut, Boolean, Move, Rotate, Paint, and Analyze share the feature card.
+Delete Face, Cut, Boolean, Move, Rotate, Mirror, Paint, and Analyze share the feature card.
 On desktop the left edge is 10px to the right of the mounted left rail, or 10px
 from the pane when that rail is hidden. On a phone the card stays in the gap
 between the rails. Analyze's footer is Run or Back to Setup.

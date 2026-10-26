@@ -58,22 +58,22 @@ test('use_selection is declared only where compose reads the face or edge contex
   ]);
   const ignoresContext = new Set([
     'cube', 'roundedBox', 'cylinder', 'sphere', 'tube', 'hexPrism',
-    'boolean', 'center', 'align', 'mirror', 'array3D', 'polarArray',
+    'boolean', 'center', 'align', 'array3D', 'polarArray',
     'shell', 'addDraft',
     'makeExtrude', 'makeRevolve', 'makeSweep', 'makeLoft',
     'codeSnippet', 'patternPoints',
   ]);
   const ids = HELPER_PALETTE_ITEMS.map((item) => item.id);
   assert.deepEqual(
-    new Set([...readsContext, ...ignoresContext, 'move', 'rotate']),
+    new Set([...readsContext, ...ignoresContext, 'move', 'rotate', 'mirror']),
     new Set(ids),
     'every palette helper must be classified',
   );
-  assert.equal(readsContext.size + ignoresContext.size + 2, ids.length);
+  assert.equal(readsContext.size + ignoresContext.size + 3, ids.length);
 
   for (const item of HELPER_PALETTE_ITEMS) {
     const props = schemaPropertiesForHelper(item);
-    if (item.id === 'move' || item.id === 'rotate') {
+    if (item.id === 'move' || item.id === 'rotate' || item.id === 'mirror') {
       assert.equal(props.use_selection?.type, 'boolean');
       assert.match(props.use_selection.description, /selected face/);
       assert.match(props.use_selection.description, /body_index/);
@@ -248,7 +248,7 @@ test('insert_move keeps its own no_body contract and reports usedSelection', asy
 test('every use_selection description states the pick rule: named picks survive, the rest clears', () => {
   for (const item of HELPER_PALETTE_ITEMS) {
     const props = schemaPropertiesForHelper(item);
-    if (!props.use_selection || item.id === 'move' || item.id === 'rotate') continue;
+    if (!props.use_selection || item.id === 'move' || item.id === 'rotate' || item.id === 'mirror') continue;
     assert.match(props.use_selection.description, /no_selection/, item.id);
     assert.match(props.use_selection.description, /found again after every rebuild/, item.id);
     assert.match(props.use_selection.description, /clears with the rebuild/, item.id);

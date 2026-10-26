@@ -15,7 +15,7 @@ import { helperUiEntries } from '../helperUiEntryExtras.js';
 import { trackPaletteFeature } from '../../utils/analytics.js';
 
 /** Helpers that act on one named body (insert_move, insert_rotate): the host resolves the target. */
-export const BODY_TARGET_HELPERS = Object.freeze(new Set(['move', 'rotate']));
+export const BODY_TARGET_HELPERS = Object.freeze(new Set(['move', 'rotate', 'mirror']));
 
 /** insert_move / insert_rotate target fields, top level or inside params. */
 export function moveTargetArgs(args) {

@@ -138,6 +138,7 @@ const HelperInsertPalette = ({
   onEnterBooleanMode = null,
   onEnterMoveMode = null,
   onEnterRotateMode = null,
+  onEnterMirrorMode = null,
   onEnterMoveFaceMode = null,
   onEnterDeleteFaceMode = null,
   /** Desktop CAD viewport: stretch the rail under the feature strip with gap-2. */
@@ -291,6 +292,12 @@ const HelperInsertPalette = ({
     // the chip, and the body turns as a preview until Confirm.
     if (item.id === 'rotate' && typeof onEnterRotateMode === 'function') {
       onEnterRotateMode({ entry: 'rotate' });
+      return;
+    }
+    // Mirror enters the same body-pick mode. The plane is XY, YZ, ZX, a
+    // workplane, or a planar face. The copy is a preview until Confirm.
+    if (item.id === 'mirror' && typeof onEnterMirrorMode === 'function') {
+      onEnterMirrorMode({ entry: 'mirror' });
       return;
     }
     // Move Face offsets picked faces. It is not the body move() helper.

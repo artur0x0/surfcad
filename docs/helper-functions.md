@@ -506,21 +506,25 @@ return hex;
 
 ---
 
-### mirror(manifold, plane, keepOriginal)
+### mirror(manifold, plane, keepOriginal, opts)
 
-Mirrors a manifold across a plane.
+Mirrors a manifold across a plane. A named body is mirrored on its own; every other body stays. With no `bodies`, the whole solid is mirrored (older scripts).
 
 ```javascript
-// Create a symmetric part
+// Symmetric part across the YZ plane through the origin
 const half = Manifold.cube([20, 10, 10]);
 const full = mirror(half, 'yz', true);
 return full;
+
+// One body across a workplane, keeping the original
+part = mirror(part, { center: [30, 0, 0], normal: [1, 0, 0] }, true, { bodies: [{ at: [20, 0, 0] }] });
 ```
 
 **Parameters:**
 - `manifold` - The manifold to mirror
-- `plane` - Mirror plane: 'xy', 'xz', or 'yz'
-- `keepOriginal` - If true, unions with original (default: true)
+- `plane` - `'xy'`, `'xz'`, or `'yz'` (through the origin), or `{ center, normal }` for a workplane or a planar face. `{ normal, originOffset }` is the same plane.
+- `keepOriginal` - If true, unions the copy with the original (default: true). A third argument that is an object is `opts`, and the copy is kept.
+- `opts.bodies` - One body, `{ at }` its centroid, the same point `move()` uses. Overlap throws instead of dropping the original.
 
 ---
 

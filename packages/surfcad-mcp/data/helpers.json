@@ -170,7 +170,7 @@
     },
     {
       "name": "mirror",
-      "signature": "mirror(manifold, plane = 'xy', keepOriginal = true)",
+      "signature": "mirror(manifold, plane = 'xy', keepOriginal = true, opts = {})",
       "params": [
         {
           "name": "manifold",
@@ -185,12 +185,17 @@
           "name": "keepOriginal",
           "text": "keepOriginal = true",
           "default": "true"
+        },
+        {
+          "name": "opts",
+          "text": "opts = {}",
+          "default": "{}"
         }
       ],
-      "description": "Mirror a manifold across a plane",
-      "doc": "Mirrors a manifold across a plane.\n\n\n\n**Parameters:**\n- `manifold` - The manifold to mirror\n- `plane` - Mirror plane: 'xy', 'xz', or 'yz'\n- `keepOriginal` - If true, unions with original (default: true)\n\n---",
+      "description": "mirror(manifold, plane, keepOriginal, { bodies }) — reflect one body, or the whole solid. plane is 'xy', 'xz', or 'yz' (through the origin) or { center, normal } (a workplane or a planar face). { normal, originOffset } is the same plane. keepOriginal unions the copy with that ...",
+      "doc": "Mirrors a manifold across a plane. A named body is mirrored on its own; every other body stays. With no `bodies`, the whole solid is mirrored (older scripts).\n\n\n\n**Parameters:**\n- `manifold` - The manifold to mirror\n- `plane` - `'xy'`, `'xz'`, or `'yz'` (through the origin), or `{ center, normal }` for a workplane or a planar face. `{ normal, originOffset }` is the same plane.\n- `keepOriginal` - If true, unions the copy with the original (default: true). A third argument that is an object is `opts`, and the copy is kept.\n- `opts.bodies` - One body, `{ at }` its centroid, the same point `move()` uses. Overlap throws instead of dropping the original.\n\n---",
       "examples": [
-        "// Create a symmetric part\nconst half = Manifold.cube([20, 10, 10]);\nconst full = mirror(half, 'yz', true);\nreturn full;"
+        "// Symmetric part across the YZ plane through the origin\nconst half = Manifold.cube([20, 10, 10]);\nconst full = mirror(half, 'yz', true);\nreturn full;\n\n// One body across a workplane, keeping the original\npart = mirror(part, { center: [30, 0, 0], normal: [1, 0, 0] }, true, { bodies: [{ at: [20, 0, 0] }] });"
       ]
     },
     {

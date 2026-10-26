@@ -52,7 +52,7 @@ const BY_KIND = new Map([
   ['deleteFace', setOf(['faceCount', 'faces'])],
   ['center', setOf(['cx', 'cy', 'cz', 'body'])],
   ['align', setOf(['body'])],
-  ['mirror', setOf(['plane', 'keepOriginal'])],
+  ['mirror', setOf(['plane', 'keepOriginal', 'at'])],
   ['array', setOf(['arrayType', 'nx', 'ny', 'nz', 'sx', 'sy', 'sz'])],
   ['polarArray', setOf(['count', 'boltCircleRadius', 'axis'])],
   ['patternPoints', setOf(['points', 'up', 'keepOriginal', 'merge'])],
