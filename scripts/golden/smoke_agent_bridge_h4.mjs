@@ -187,16 +187,31 @@ const helper = await agentCall(page, 'invoke_helper', {
 });
 check('invoke_helper cube', helper.ok === true && helper.result?.ok === true, JSON.stringify(helper));
 
+// Edge identity (MVP 3 edge slice 3/3): list_feature_edges is one row per
+// named edge chain. The seed is a 40x30x20 box with an internal cylinder
+// void: 12 box edges plus the void's two rim circles, which the old
+// boundary-id grouping never listed. The added 30x20x10 box sits inside the
+// seed and fills the void, so the union honestly drops back to the 12 box
+// edges, every one named by its two seed faces.
+const NAME_KEY = /^[^~\s[\]]+~[^~\s[\]]+(\[\d+\])?$/;
+const beforeKeys = (groupedBefore.result?.edges || []).map((e) => e.key);
+check('named edges before: 12 box edges + 2 void rims', groupedN === 14
+  && beforeKeys.filter((k) => /^seed\./.test(k)).length === 12
+  && beforeKeys.filter((k) => /^cylinder@1\./.test(k)).length === 2,
+  JSON.stringify(beforeKeys));
+
 const groupedAfter = await agentCall(page, 'list_feature_edges', {});
 const groupedAfterN = groupedAfter.result?.edges?.length ?? 0;
-check('grouped edge count after union', groupedAfterN >= groupedN,
-  `grouped=${groupedAfterN}`);
+const afterKeys = (groupedAfter.result?.edges || []).map((e) => e.key);
+check('named edges after the union: the void is filled, 12 box edges remain',
+  groupedAfterN === 12 && afterKeys.every((k) => /^seed\.\w+~seed\.\w+$/.test(k)),
+  `grouped=${groupedAfterN} ${JSON.stringify(afterKeys)}`);
 
 const edgeKey = groupedAfter.result?.edges?.[0]?.key;
-check('grouped key shape', typeof edgeKey === 'string' && /^e\d+$/.test(edgeKey), edgeKey);
+check('named key shape faceA~faceB', typeof edgeKey === 'string' && NAME_KEY.test(edgeKey), edgeKey);
 
 const picked = await agentCall(page, 'select_edges', { keys: [edgeKey] });
-check('select_edges via grouped key', picked.ok === true && (picked.result?.count ?? 0) >= 1,
+check('select_edges via named key', picked.ok === true && (picked.result?.count ?? 0) >= 1,
   JSON.stringify(picked));
 
 const filletSweep = await agentCall(page, 'insert_fillet_edges', {
@@ -205,7 +220,7 @@ const filletSweep = await agentCall(page, 'insert_fillet_edges', {
   strategy: 'sweep',
 });
 check(
-  'insert_fillet_edges sweep after grouped eN select',
+  'insert_fillet_edges sweep after named select',
   filletSweep.ok === true && filletSweep.result?.ok === true,
   JSON.stringify(filletSweep.error || filletSweep.result?.errors),
 );

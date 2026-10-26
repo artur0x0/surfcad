@@ -25,6 +25,7 @@ import {
 } from '../../utils/filletAlongPath.js';
 import { densifyPathPoints, buildVariableProfileFrames, maxConsecutiveFrameAngleDeg, countThetaRuns, variableProfileDensifyStep, pathPolylineLength, FRAME_DENSIFY_MAX_TURN_DEG } from '../../utils/edgeTangencyField.js';
 import { indexBoundaryEdges } from '../../utils/boundaryEdgeIds.js';
+import { chainNamedEdges, describeEdgeNames, matchEdgeName } from './namedEdges.js';
 import { assembleSweepPath } from '../../utils/edgeSweepPath.js';
 import {
   calibrateScriptLineOffset,
@@ -250,6 +251,7 @@ function _memoStateSnapshot() {
     stampCounters: [..._stampCounters],
     featureOps: _featureOps,
     sourceTess: _sourceTess,
+    blockRanges: _blockRanges,
     sheetFilletSpan: _sheetFilletSpan,
   });
 }
@@ -260,6 +262,7 @@ function _memoStateRestore(state) {
   _stampCounters = new Map(s.stampCounters);
   _featureOps = s.featureOps;
   _sourceTess = s.sourceTess;
+  _blockRanges = Array.isArray(s.blockRanges) ? s.blockRanges : [];
   _sheetFilletSpan = s.sheetFilletSpan;
 }
 
@@ -6617,6 +6620,69 @@ function _s23FacesMatch(a, b) {
 }
 
 /** Edges makeSweepPath kept from the pick (normals + adjacent faces). */
+/**
+ * Every path knot sits on an edge of `part` (within 0.05 mm, or 2e-4 of the
+ * part's diagonal on a large part). A literal edge wire written when the
+ * part was different, or an `edge()` id that now names another edge, used
+ * to sweep the cutter through air; the near-no-op guard did not always see
+ * it, and the result came back `ok` with the wrong solid (Banner End Cap,
+ * B15). Loud instead, naming the knot and the gap.
+ */
+function _s23DistSqToSeg(p, a, b) {
+  const ab = _c4Sub(b, a);
+  const L2 = _c4Dot(ab, ab);
+  let t = L2 > 1e-18 ? _c4Dot(_c4Sub(p, a), ab) / L2 : 0;
+  t = t < 0 ? 0 : (t > 1 ? 1 : t);
+  const d = _c4Sub(p, [a[0] + t * ab[0], a[1] + t * ab[1], a[2] + t * ab[2]]);
+  return _c4Dot(d, d);
+}
+
+/** va / vb of every edge a makeSweepPath result carries (the picked wire), else none. */
+function _s23PathEdgeEndpoints(path) {
+  const list = path && typeof path === 'object' && !Array.isArray(path) ? path.edges : null;
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const e of list) {
+    if (!e || !Array.isArray(e.va) || !Array.isArray(e.vb)) continue;
+    if (e.va.length >= 3 && e.va.every(Number.isFinite)) out.push(e.va);
+    if (e.vb.length >= 3 && e.vb.every(Number.isFinite)) out.push(e.vb);
+  }
+  return out;
+}
+
+function _s23AssertPathOnSolid(part, points, profileKind) {
+  if (!part || typeof part.getMesh !== 'function' || !Array.isArray(points) || !points.length) return;
+  let data;
+  try { data = c4MeshData(part); } catch { return; }
+  const edges = data && Array.isArray(data.edges) ? data.edges : [];
+  if (!edges.length) return;
+  let diag = 0;
+  try {
+    const bb = part.boundingBox();
+    diag = Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1], bb.max[2] - bb.min[2]);
+  } catch { diag = 0; }
+  const tol = Math.max(0.05, 2e-4 * diag);
+  const tol2 = tol * tol;
+  for (const p of points) {
+    let best = Infinity;
+    for (const e of edges) {
+      if (!e.va || !e.vb) continue;
+      const d = _s23DistSqToSeg(p, e.va, e.vb);
+      if (d < best) {
+        best = d;
+        if (best <= tol2) break;
+      }
+    }
+    if (best > tol2) {
+      const off = Math.sqrt(best);
+      throw new Error(
+        `filletAlongPath: ${profileKind} edge endpoint [${p.map((v) => +v.toFixed(3)).join(', ')}] is ${+off.toFixed(3)} mm off every edge of this solid `
+        + '— the stored edge wire belongs to an earlier version of the part; re-pick edges (edgesNamed keeps a pick stable across edits)',
+      );
+    }
+  }
+}
+
 function _s23CarriedEdges(path) {
   const list = path && typeof path === 'object' && !Array.isArray(path) ? path.edges : null;
   if (!Array.isArray(list)) return null;
@@ -8131,6 +8197,11 @@ function filletAlongPath(part, path, radius, opts = {}) {
   const arcSegs = opts.segments != null ? opts.segments : FILLET_ARC_SEGMENTS;
   let { points, closed, length } = _s23NormalizePath(path, opts);
   const carried = _s23CarriedEdges(path);
+  // A stored edge wire that no longer lies on this solid must fail here,
+  // not sweep a cutter through air and pass the volume guards. The path's
+  // own knots may sit off the edges (smoothed corners), so the check is on
+  // the endpoints of the edges the path was made from.
+  if (!opts._rawPath) _s23AssertPathOnSolid(part, _s23PathEdgeEndpoints(path), profileKind);
   if (!opts._rawPath && !closed && _sheetFilletSpan) {
     const spanned = _s23ExtendSheetCornerSpan(part, points);
     if (spanned.length !== points.length) {
@@ -9572,6 +9643,12 @@ function _booleanDropPieces(result, spec) {
 let _featureOps = [];
 /** Positive originalIDs tagged with a facet step, without becoming a fillet op. */
 let _sourceTess = [];
+/**
+ * originalID range each marked block allocated: `{ id, lo, hi }` (hi is null
+ * while the block is open). A run no helper stamped is named after the
+ * block that made it (`<block id>.f<k>`), else `script.f<k>`.
+ */
+let _blockRanges = [];
 function _probeOriginalID() {
   try {
     const probe = manifoldModule.Manifold.cube([1e-3, 1e-3, 1e-3]);
@@ -9589,7 +9666,7 @@ function _probeOriginalID() {
  */
 const FILLET_EDGES_CIRCLE_SEGMENTS = 384;
 const FILLET_EDGES_CORNER_SEGMENTS = 256;
-function _featureOp(fn, describe) {
+function _featureOp(fn, describe, blendRole = null) {
   return function featureOp(...args) {
     const lo = _probeOriginalID();
     const out = fn.apply(this, args);
@@ -9605,9 +9682,43 @@ function _featureOp(fn, describe) {
         facetDeg: tess && tess.facetDeg > 0 ? tess.facetDeg : 0,
         cornerDeg: tess && tess.cornerDeg > 0 ? tess.cornerDeg : 0,
       });
+      // Face identity: the surface the blend made gets a name too
+      // (`fillet-16.round`, `chamfer-3.bevel`), so an edge on it can be
+      // written by name like any other.
+      if (blendRole) {
+        let role = null;
+        try { role = blendRole(args); } catch { role = null; }
+        if (role) _stampRunsInRange(out, role === 'bevel' ? 'chamfer' : 'fillet', lo, hi, role);
+      }
     }
     return out;
   };
+}
+
+/**
+ * Stamp every run of `manifold` whose originalID the op bracket (lo, hi)
+ * allocated with one role: the blend surface a fillet or chamfer cut.
+ * Runs outside the bracket (the host) keep their stamps.
+ */
+function _stampRunsInRange(manifold, helper, lo, hi, role) {
+  if (!manifold || typeof manifold.getMesh !== 'function') return;
+  let mesh;
+  try { mesh = manifold.getMesh(); } catch { return; }
+  const nTri = mesh.numTri;
+  if (!nTri || !mesh.faceID || !mesh.runIndex || !mesh.runOriginalID) return;
+  let feature = null;
+  for (let r = 0; r + 1 < mesh.runIndex.length; r++) {
+    const originalID = mesh.runOriginalID[r];
+    if (!(originalID > lo && originalID < hi)) continue;
+    const t0 = mesh.runIndex[r] / 3;
+    const t1 = Math.min(nTri, mesh.runIndex[r + 1] / 3);
+    if (!(t1 > t0)) continue;
+    if (feature === null) feature = _stampFeatureId(helper);
+    const ids = [];
+    for (let t = t0; t < t1; t++) ids.push(mesh.faceID[t]);
+    ids.sort((a, b) => a - b);
+    _faceStamps.set(originalID, { feature, helper, roles: [{ role, record: { kind: 'mesh' }, ranges: _idRanges(ids) }] });
+  }
 }
 /**
  * Tag the originalIDs a call allocates, and leave those keys positive.
@@ -9857,6 +9968,134 @@ function _stampFaces(manifold, helper, roleOf, records = null) {
     console.warn(`[identity] ${helper}: faces left unnamed (${err?.message || err})`);
   }
   return manifold;
+}
+
+/**
+ * Coplanar groups of one triangle range: triangles that share an edge and
+ * lie in one plane (0.1°, 1e-3 mm offset) are one group. Returns the group
+ * index per triangle (relative to t0) with groups numbered by their lowest
+ * faceID, so a rerun of the same mesh numbers them the same way.
+ */
+function _coplanarGroups(mesh, t0, t1) {
+  const n = t1 - t0;
+  const np = mesh.numProp;
+  const vp = mesh.vertProperties;
+  const tv = mesh.triVerts;
+  const nx = new Float64Array(n);
+  const ny = new Float64Array(n);
+  const nz = new Float64Array(n);
+  const off = new Float64Array(n);
+  const parent = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
+    parent[i] = i;
+    const t = t0 + i;
+    const a = tv[t * 3] * np;
+    const b = tv[t * 3 + 1] * np;
+    const c = tv[t * 3 + 2] * np;
+    const e1 = [vp[b] - vp[a], vp[b + 1] - vp[a + 1], vp[b + 2] - vp[a + 2]];
+    const e2 = [vp[c] - vp[a], vp[c + 1] - vp[a + 1], vp[c + 2] - vp[a + 2]];
+    const cr = _c4Norm(_c4Cross(e1, e2));
+    nx[i] = cr[0]; ny[i] = cr[1]; nz[i] = cr[2];
+    off[i] = cr[0] * vp[a] + cr[1] * vp[a + 1] + cr[2] * vp[a + 2];
+  }
+  const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  const cosPlanar = Math.cos((0.1 * Math.PI) / 180);
+  const byEdge = new Map();
+  for (let i = 0; i < n; i++) {
+    const t = t0 + i;
+    for (let k = 0; k < 3; k++) {
+      const u = tv[t * 3 + k];
+      const w = tv[t * 3 + ((k + 1) % 3)];
+      const key = u < w ? u * 67108864 + w : w * 67108864 + u;
+      const prev = byEdge.get(key);
+      if (prev === undefined) { byEdge.set(key, i); continue; }
+      if (nx[prev] * nx[i] + ny[prev] * ny[i] + nz[prev] * nz[i] < cosPlanar) continue;
+      if (Math.abs(off[prev] - off[i]) > 1e-3) continue;
+      const a = find(prev);
+      const b = find(i);
+      if (a !== b) parent[b] = a;
+    }
+  }
+  const minFace = new Map();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    const fid = mesh.faceID ? mesh.faceID[t0 + i] : t0 + i;
+    const prev = minFace.get(r);
+    if (prev === undefined || fid < prev) minFace.set(r, fid);
+  }
+  const roots = [...minFace.entries()].sort((a, b) => a[1] - b[1]).map(([r]) => r);
+  const index = new Map(roots.map((r, k) => [r, k]));
+  const group = new Int32Array(n);
+  for (let i = 0; i < n; i++) group[i] = index.get(find(i));
+  return group;
+}
+
+/**
+ * Stamp a solid no helper built (an import) by coplanar group: role `f<k>`
+ * per plane, numbered by lowest faceID. Weaker than a helper's roles, but
+ * a name, so an edge on it can be written and resolved like any other.
+ */
+function _stampCoplanarFaces(manifold, helper) {
+  if (!manifold || typeof manifold.getMesh !== 'function') return manifold;
+  let mesh;
+  try { mesh = manifold.getMesh(); } catch { return manifold; }
+  if (!mesh.numTri || !mesh.runIndex) return manifold;
+  const groupOf = new Int32Array(mesh.numTri);
+  for (let r = 0; r + 1 < mesh.runIndex.length; r++) {
+    const t0 = mesh.runIndex[r] / 3;
+    const t1 = Math.min(mesh.numTri, mesh.runIndex[r + 1] / 3);
+    if (!(t1 > t0)) continue;
+    const g = _coplanarGroups(mesh, t0, t1);
+    for (let t = t0; t < t1; t++) groupOf[t] = g[t - t0];
+  }
+  return _stampFaces(manifold, helper, (tri, t) => `f${groupOf[t]}`, (role, tris) => _planeRecord(tris));
+}
+
+/** The innermost marked block whose originalID range holds `id`, or null. */
+function _blockFor(originalID) {
+  let best = null;
+  for (const range of _blockRanges) {
+    if (!(originalID > range.lo)) continue;
+    if (range.hi !== null && !(originalID < range.hi)) continue;
+    if (!best || range.lo > best.lo) best = range;
+  }
+  return best ? best.id : null;
+}
+
+/**
+ * Name the runs of `mesh` that no helper stamped: a hull, a raw extrude or
+ * revolve, `smooth`, `refine`. Roles are coplanar groups (`f<k>`), the
+ * feature is the marked block that allocated the run, else `script`, so
+ * nothing in a result is left nameless and every edge can be written by
+ * name. Idempotent: a run that already has a stamp is left alone.
+ */
+function _synthesizeStamps(mesh) {
+  if (!mesh || !mesh.numTri || !mesh.faceID || !mesh.runIndex || !mesh.runOriginalID) return;
+  const nTri = mesh.numTri;
+  for (let r = 0; r + 1 < mesh.runIndex.length; r++) {
+    const originalID = mesh.runOriginalID[r];
+    if (_faceStamps.has(originalID)) continue;
+    const t0 = mesh.runIndex[r] / 3;
+    const t1 = Math.min(nTri, mesh.runIndex[r + 1] / 3);
+    if (!(t1 > t0)) continue;
+    const feature = _blockFor(originalID) || 'script';
+    const group = _coplanarGroups(mesh, t0, t1);
+    const roleIds = new Map();
+    const roleTris = new Map();
+    for (let t = t0; t < t1; t++) {
+      const role = `f${group[t - t0]}`;
+      let ids = roleIds.get(role);
+      if (!ids) { ids = []; roleIds.set(role, ids); roleTris.set(role, []); }
+      ids.push(mesh.faceID[t]);
+      roleTris.get(role).push(_stampTri(mesh, t));
+    }
+    const roles = [];
+    for (const [role, ids] of roleIds) {
+      ids.sort((a, b) => a - b);
+      roles.push({ role, record: _planeRecord(roleTris.get(role)), ranges: _idRanges(ids) });
+    }
+    _faceStamps.set(originalID, { feature, helper: 'mesh', roles });
+  }
 }
 
 /** The stamp rows this mesh still uses (serializeResult). */
@@ -10254,6 +10493,7 @@ function _stampedFaces(part) {
   const hit = _stampedFaceCache.get(part);
   if (hit) return hit;
   const mesh = part.getMesh();
+  _synthesizeStamps(mesh);
   const np = mesh.numProp;
   const vp = mesh.vertProperties;
   const nTri = mesh.numTri;
@@ -10417,6 +10657,93 @@ function edgesOf(part, pattern, opts = {}) {
   return out;
 }
 
+const _namedEdgeCache = new WeakMap();
+
+/** Named faces plus the chained edges between them, cached per solid. */
+function _namedEdgeTable(part) {
+  const hit = _namedEdgeCache.get(part);
+  if (hit) return hit;
+  const faces = _stampedFaces(part);
+  const mesh = part.getMesh();
+  const nTri = mesh.numTri;
+  const np = mesh.numProp;
+  const vp = mesh.vertProperties;
+  const triFace = new Int32Array(nTri).fill(-1);
+  faces.forEach((f, i) => { for (const t of f.tris) triFace[t] = i; });
+  const posAt = (v) => [vp[v * np], vp[v * np + 1], vp[v * np + 2]];
+  const edges = chainNamedEdges({ nTri, triVerts: mesh.triVerts, posAt, triFace, faceName: (i) => faces[i].name });
+  const table = { faces, edges, triFace, posAt, mesh };
+  _namedEdgeCache.set(part, table);
+  return table;
+}
+
+function _triNormalOf(mesh, t) {
+  const np = mesh.numProp;
+  const vp = mesh.vertProperties;
+  const a = mesh.triVerts[t * 3] * np;
+  const b = mesh.triVerts[t * 3 + 1] * np;
+  const c = mesh.triVerts[t * 3 + 2] * np;
+  const e1 = [vp[b] - vp[a], vp[b + 1] - vp[a + 1], vp[b + 2] - vp[a + 2]];
+  const e2 = [vp[c] - vp[a], vp[c + 1] - vp[a + 1], vp[c + 2] - vp[a + 2]];
+  return _c4Norm(_c4Cross(e1, e2));
+}
+
+/**
+ * edgesNamed(part, ...names) → the mesh segments of the edges between two
+ * named faces, for makeSweepPath / filletAlongPath. A name is the two face
+ * names joined by `~` in either order (`plate.top~boss.side`); a bare pair
+ * returns every chain between those faces, `[k]` one chain of a pair that
+ * meets more than once, and `*` is a glob on either side. Several names, or
+ * an array of names, make one list. Throws, listing the edges that exist,
+ * when a name matches nothing, and when `[k]` names a chain the pair no
+ * longer has; it never substitutes a nearby edge. Every face a helper built
+ * has a name (fillet and chamfer surfaces are `<block>.round` / `.bevel`,
+ * uploads `import@1.f<k>`, freehand runs `<block>.f<k>`), so this is the one
+ * edge reference a script needs; `edge()` / `edgesBetween()` ids are not
+ * stable across edits.
+ */
+function edgesNamed(part, ...names) {
+  if (!part || typeof part.getMesh !== 'function') throw new Error('edgesNamed: part must be a Manifold');
+  const list = names.flat(Infinity).filter((n) => n != null && n !== '');
+  if (!list.length) throw new Error('edgesNamed: pass one or more edge names (faceA~faceB; see list_feature_edges or faceNames(part))');
+  const table = _namedEdgeTable(part);
+  const out = [];
+  const seen = new Set();
+  const picked = [];
+  for (const raw of list) {
+    const match = matchEdgeName(table.edges, String(raw));
+    if (match.error) {
+      throw new Error(`edgesNamed: ${match.message} — ${describeEdgeNames(table.edges)}. Re-pick the edge if the part changed.`);
+    }
+    for (const chain of match.hits) {
+      if (!picked.includes(chain.name)) picked.push(chain.name);
+      chain.segments.forEach(([u, w], j) => {
+        const key = u < w ? `${u}-${w}` : `${w}-${u}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const va = table.posAt(u);
+        const vb = table.posAt(w);
+        const [ta, tb] = chain.tris[j];
+        out.push({
+          key,
+          a: u,
+          b: w,
+          va,
+          vb,
+          length: _c4Len(_c4Sub(vb, va)),
+          mid: [(va[0] + vb[0]) / 2, (va[1] + vb[1]) / 2, (va[2] + vb[2]) / 2],
+          n0: _triNormalOf(table.mesh, ta),
+          n1: _triNormalOf(table.mesh, tb),
+          name: chain.name,
+        });
+      });
+    }
+  }
+  if (!out.length) throw new Error(`edgesNamed: the named edges have no segments on this solid — ${describeEdgeNames(table.edges)}`);
+  out.names = picked;
+  return out;
+}
+
 /**
  * surfaceOf(face) → the SurfaceRecord the helper that built the face
  * recorded: `{ kind: 'plane', origin, normal }`, `{ kind: 'cylinder',
@@ -10495,7 +10822,7 @@ const HELPER_FUNCTIONS = {
   holeSpan,
   cboreHole,
   cskHole,
-  chamferEdges: _featureOp(chamferEdges), // planar wedge: no segment count, gate falls back to 15°
+  chamferEdges: _featureOp(chamferEdges, null, () => 'bevel'), // planar wedge: no segment count, gate falls back to 15°
   convexEdges,
   concaveEdges,
   signedFeatureEdges,
@@ -10510,7 +10837,7 @@ const HELPER_FUNCTIONS = {
   listFastenerSizes,
   resolveFastenerSize,
   // C6 fillet (see block above)
-  filletEdges: _featureOp(filletEdges, _filletEdgesTess),
+  filletEdges: _featureOp(filletEdges, _filletEdgesTess, () => 'round'),
   // C8 revolve/extrude with safe winding (see block above)
   makeRevolve,
   makeExtrude,
@@ -10527,7 +10854,7 @@ const HELPER_FUNCTIONS = {
   // Slice 22 edge → sweep path / wire
   makeSweepPath,
   // Slice 23 fillet via swept cross-section
-  filletAlongPath: _featureOp(filletAlongPath, _filletAlongPathTess),
+  filletAlongPath: _featureOp(filletAlongPath, _filletAlongPathTess, (args) => (args[3] && args[3].profile === 'chamfer' ? 'bevel' : 'round')),
   // Fillet-mode edge ids
   edge,
   edgesBetween,
@@ -10536,6 +10863,7 @@ const HELPER_FUNCTIONS = {
   faceNames,
   facesNamed,
   edgesOf,
+  edgesNamed,
   surfaceOf,
 };
 
@@ -10654,7 +10982,9 @@ const executeScript = (script, importedModels) => {
     if (!meshData || !meshData.vertProperties || !meshData.triVerts) {
       throw new Error(`Missing mesh asset: ${key}`);
     }
-    return reconstructManifold(meshData);
+    // Face identity: an upload has no helper, so its faces are named by
+    // coplanar group (`import@1.f3`); the mesh only changes with the file.
+    return _stampCoplanarFaces(reconstructManifold(meshData), 'import');
   };
   
   // Which marked feature block is running (feature strip red border). This
@@ -10677,6 +11007,16 @@ const executeScript = (script, importedModels) => {
         try {
           _featureProgress({ featureId: hit.id, kind: hit.kind, label: hit.label, index: i, block: hit.block });
         } catch { /* progress is best effort */ }
+      }
+      // Face identity: the originalIDs this block allocates, so a run no
+      // helper stamped is still named after its block (`<id>.f<k>`).
+      if (hit && typeof hit.id === 'string') _blockRanges.push({ id: hit.id, lo: _probeOriginalID(), hi: null });
+    },
+    onLeave(i) {
+      const hit = features[i];
+      if (!hit || typeof hit.id !== 'string') return;
+      for (let k = _blockRanges.length - 1; k >= 0; k--) {
+        if (_blockRanges[k].id === hit.id && _blockRanges[k].hi === null) { _blockRanges[k].hi = _probeOriginalID(); break; }
       }
     },
   });
@@ -10927,6 +11267,7 @@ const serializeResult = (manifold) => {
   }
   
   const mesh = manifold.getMesh();
+  _synthesizeStamps(mesh);
   
   // Typed copies out of the wasm heap. The main thread reads them as
   // array-likes, and the run result posts their buffers as transferables
@@ -11413,6 +11754,7 @@ self.onmessage = async (event) => {
         const _execT0 = _perfNow();
         _featureOps = [];
         _sourceTess = [];
+        _blockRanges = [];
         _resetFaceStamps();
         // With `progress: true` (what `ManifoldWorker` sends), block entries
         // go to the main thread as they happen, so the watchdog can name the
@@ -12323,6 +12665,7 @@ export function runPreparedScript(source, opts = {}) {
   }
   _featureOps = [];
   _sourceTess = [];
+  _blockRanges = [];
   _resetFaceStamps();
   _memoContext = { partId: typeof opts.partId === 'string' && opts.partId ? opts.partId : null };
   _lastMemoReport = null;
