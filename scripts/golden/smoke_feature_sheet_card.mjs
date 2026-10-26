@@ -209,7 +209,7 @@ console.log('feature sheet card — source');
     && /fullLeft/.test(feaChip)
     && /fullLeft/.test(feaSheet)
     && /fullLeft = false/.test(shell)
-    && /measureFeatureSheetWidth\(pane, rootPx = 16, \{ fullLeft = false \} = \{\}\)/.test(layout)
+    && /measureFeatureSheetWidth\(pane, rootPx = 16, \{ fullLeft = false, compact = false \} = \{\}\)/.test(layout)
     && !/data-fea-/.test(shell));
   const fullLeftChips = [
     'src/components/FilletModeChip.jsx',
@@ -252,7 +252,7 @@ console.log('feature sheet card — source');
     && /<SmPopup/.test(read('src/components/sheetMetal/SheetMetalModeChip.jsx'))
     && /data-sm-unit-toggle/.test(sheetPopup)
     && /min-h-\[44px\]/.test(sheetPopup)
-    && /sheetMetalMode && mode !== 'game'/.test(view)
+    && /sheetMetalMode && !sheetMetalMode\.holeSketch && mode !== 'game'/.test(view)
     && /sheetMetalPicker && mode !== 'game'/.test(view)
     && /sheetMetalSheetOpen/.test(view)
     && /SmPopup/.test(arch));
@@ -893,13 +893,16 @@ attachConsentPresetToBrowser(browser);
       && Math.abs(place.left - 10) <= 2
       && place.gapRight >= 8
       && place.overlapRight === false);
-    const centeredPhone = (place) => !!(place
+    // A phone gap under 22rem fills the space, so the left edge is 10px
+    // right of the mounted left rail (the same inset a desktop card uses).
+    const leftOfRail = (place) => !!(place
+      && Math.abs(place.gapLeft - 10) <= 2
+      && Math.abs(place.left - 10) > 2
+      && place.gapRight >= 8);
+    const leftAlignedPhone = (place) => !!(place
       && place.compact === '1'
       && place.fullLeft === ''
-      && Math.abs(place.centerDelta) <= 2
-      && place.gapLeft >= 8
-      && place.gapRight >= 8
-      && Math.abs(place.left - 10) > 2);
+      && leftOfRail(place));
 
     await show('crossSection', true);
     let card = await readCard();
@@ -1110,14 +1113,19 @@ attachConsentPresetToBrowser(browser);
     await page.setViewportSize({ width: 1280, height: 800 });
     await show('crossSection', false);
     await page.evaluate(() => window.__sheet.fit());
-    card = await readCard();
-    check('desktop card stays a card: 22rem cap, 10px off the bottom, clear of the rails',
+    card = await waitCard((place) => place
+      && place.compact === '0'
+      && Math.abs(place.gapLeft - 10) <= 2
+      && Math.abs(place.left - 10) > 2
+      && place.gapRight >= 8);
+    check('desktop card stays a card: 22rem cap, 10px off the bottom, 10px right of the left rail',
       card.compact === '0'
       && card.width <= card.cap + 1.5
       && card.width >= card.cap - 4
       && card.bottomGap >= 8
       && card.bottomGap <= 16
-      && card.gapLeft >= 8
+      && Math.abs(card.gapLeft - 10) <= 2
+      && Math.abs(card.left - 10) > 2
       && card.gapRight >= 8
       && card.pillGap == null,
       JSON.stringify(card));
@@ -1234,16 +1242,18 @@ attachConsentPresetToBrowser(browser);
     const filletDesk = await waitCard((place) => place
       && place.compact === '0'
       && place.fullLeft === '1'
-      && Math.abs(place.left - 10) <= 2
+      && Math.abs(place.gapLeft - 10) <= 2
+      && Math.abs(place.left - 10) > 2
       && place.gapRight >= 8
       && place.overlapRight === false);
-    check('fillet card on desktop pins the left edge and stays clear of the right rail',
+    check('fillet card on desktop sits 10px right of the left rail and stays clear of the right rail',
       filletDesk.compact === '0'
       && filletDesk.fullLeft === '1'
       && filletDesk.width <= filletDesk.cap + 1.5
       && filletDesk.bottomGap >= 8
       && filletDesk.bottomGap <= 16
-      && Math.abs(filletDesk.left - 10) <= 2
+      && Math.abs(filletDesk.gapLeft - 10) <= 2
+      && Math.abs(filletDesk.left - 10) > 2
       && filletDesk.gapRight >= 8
       && filletDesk.overlapRight === false
       && filletDesk.pillGap == null,
@@ -1589,9 +1599,9 @@ attachConsentPresetToBrowser(browser);
         && title
         && title.textContent.includes('Sheet Metal');
     }, null, { timeout: 5000 });
-    const sheetPickerPhone = await waitCard(centeredPhone);
-    check('at 390px the sheet metal picker stays centered',
-      centeredPhone(sheetPickerPhone),
+    const sheetPickerPhone = await waitCard(leftAlignedPhone);
+    check('at 390px the sheet metal picker sits 10px right of the left rail',
+      leftAlignedPhone(sheetPickerPhone),
       JSON.stringify(sheetPickerPhone));
     await page.screenshot({ path: join(shotDir, 'feature-sheet-sheet-picker-390.png') });
 
@@ -1711,7 +1721,7 @@ button[data-edit-mode], button[data-edit-compact] { display: none; }
     let phoneEdit = null;
     for (let i = 0; i < 20; i += 1) {
       phoneEdit = await readEditPlace();
-      if (phoneEdit.fullLeft === '' && Math.abs(phoneEdit.centerDelta) <= 2 && phoneEdit.gapLeft >= 8) break;
+      if (phoneEdit.fullLeft === '' && Math.abs(phoneEdit.gapLeft - 10) <= 2 && Math.abs(phoneEdit.left - 10) > 2) break;
       await page.waitForTimeout(50);
     }
     check('phone edit card docks on the pane and hides the switcher',
@@ -1724,10 +1734,9 @@ button[data-edit-mode], button[data-edit-compact] { display: none; }
       && phoneEdit.editScript
       && phoneEdit.del,
       JSON.stringify(phoneEdit));
-    check('at 390px the feature edit card stays centered',
+    check('at 390px the feature edit card sits 10px right of the left rail',
       phoneEdit.fullLeft === ''
-      && Math.abs(phoneEdit.centerDelta) <= 2
-      && phoneEdit.gapLeft >= 8
+      && Math.abs(phoneEdit.gapLeft - 10) <= 2
       && phoneEdit.gapRight >= 8
       && Math.abs(phoneEdit.left - 10) > 2,
       JSON.stringify(phoneEdit));
@@ -1794,16 +1803,15 @@ button[data-edit-mode], button[data-edit-compact] { display: none; }
           centerDelta: (box.left + box.width / 2) - ((left.right + right.left) / 2),
         };
       });
-      if (picker.fullLeft === '' && Math.abs(picker.centerDelta) <= 2 && picker.gapLeft >= 8) break;
+      if (picker.fullLeft === '' && Math.abs(picker.gapLeft - 10) <= 2 && Math.abs(picker.left - 10) > 2) break;
       await page.waitForTimeout(50);
     }
     check('picker is the same card, with no Confirm',
       picker.layout === 'feature-card' && picker.picks >= 2 && picker.confirm === false && picker.cards === 1,
       JSON.stringify(picker));
-    check('at 390px the feature picker stays centered',
+    check('at 390px the feature picker sits 10px right of the left rail',
       picker.fullLeft === ''
-      && Math.abs(picker.centerDelta) <= 2
-      && picker.gapLeft >= 8
+      && Math.abs(picker.gapLeft - 10) <= 2
       && picker.gapRight >= 8
       && Math.abs(picker.left - 10) > 2,
       JSON.stringify(picker));
