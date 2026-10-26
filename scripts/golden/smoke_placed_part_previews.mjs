@@ -226,14 +226,11 @@ if (!exe) {
       check('ghost follows the new placement (+50 in X)',
         !!ghost2 && !!ghost && near(ghost2.min[0], ghost.min[0] + 50) && near(ghost2.max[2], ghost.max[2]),
         `${fmt(ghost)} -> ${fmt(ghost2)}`);
-      // cancel_feature ends the agent's edit session; the Move chip itself
-      // stays open (as before this PR). The chip's X is exitMoveMode, which
-      // clears the ghost.
+      // cancel_feature ends the agent's edit session and leaves the Move
+      // chip the way its X does (MVP 3 edge slice 2/3), which clears the ghost.
       const cancelled = await agentCall('cancel_feature', {});
       check('cancel_feature ends the edit session', cancelled.ok === true, JSON.stringify(cancelled));
-      const chipX = page.locator('[data-move-mode] button[aria-label="Cancel"]');
-      await chipX.waitFor({ state: 'visible', timeout: 5000 });
-      await chipX.click();
+      await page.locator('[data-move-mode]').waitFor({ state: 'detached', timeout: 5000 });
       await page.waitForTimeout(300);
       check('ghost is gone once Move is dismissed', (await worldBounds('move-preview')) === null);
       check('Move chip is gone', (await page.locator('[data-move-mode]').count()) === 0);

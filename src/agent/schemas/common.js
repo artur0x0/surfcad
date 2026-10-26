@@ -151,6 +151,15 @@ export const STATUS_SCHEMA = Object.freeze({
         bodyCount: { type: ['integer', 'null'] },
       },
     },
+    jointFailures: {
+      type: 'object',
+      description: 'Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.',
+      additionalProperties: false,
+      properties: {
+        count: { type: 'integer' },
+        ids: { type: 'array', items: { type: 'string' } },
+      },
+    },
     features: {
       type: 'array',
       description: 'Feature strip rows, only with return: "summary" (script is omitted with "status" and "summary")',

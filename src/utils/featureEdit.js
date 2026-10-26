@@ -372,6 +372,21 @@ export function parseStoredEdges(block) {
     });
   }
 
+  // Edge identity: edgesNamed(part, "a~b", "c~d[1]"). One ref per name.
+  const named = /edgesNamed\s*\(\s*[^,()]+\s*,\s*([^)]*)\)/g;
+  while ((m = named.exec(text))) {
+    const quoted = /(["'])((?:(?!\1)[^\\]|\\.)*)\1/g;
+    let q;
+    while ((q = quoted.exec(m[1]))) {
+      const name = q[2].trim();
+      if (!name) continue;
+      const key = `named:${name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({ kind: 'named', id: null, name });
+    }
+  }
+
   const flat = /\[([0-9,\s]+)\]\s*\.flatMap\s*\(/g;
   while ((m = flat.exec(text))) {
     for (const part of m[1].split(',')) {
@@ -420,6 +435,28 @@ export function resolveStoredEdges(stored, liveEdges) {
   const missing = [];
   const used = new Set();
   for (const ref of stored || []) {
+    if (ref.kind === 'named') {
+      // Every live segment on the named chain(s): a bare pair is every chain,
+      // `[k]` one chain. Nothing matched is a missing ref, never a neighbour.
+      const want = String(ref.name);
+      const tilde = want.indexOf('~');
+      const flipped = tilde > 0 ? `${want.slice(tilde + 1).replace(/\[\d+\]$/, '')}~${want.slice(0, tilde)}${(want.match(/\[\d+\]$/) || [''])[0]}` : null;
+      const bare = !/\[\d+\]$/.test(want);
+      const hits = live.filter((edge) => {
+        const name = edge?.edgeName;
+        if (typeof name !== 'string' || !name) return false;
+        if (name === want || name === flipped) return true;
+        if (!bare) return false;
+        const base = edge.edgeBase || name.replace(/\[\d+\]$/, '');
+        return base === want || base === flipped;
+      }).filter((edge) => !used.has(edge));
+      if (!hits.length) {
+        missing.push(ref);
+        continue;
+      }
+      for (const edge of hits) { used.add(edge); resolved.push(edge); }
+      continue;
+    }
     let hit = null;
     if (Number.isFinite(ref.id)) hit = byId.get(ref.id) || null;
     if (!hit && ref.kind === 'pair') hit = live.find((edge) => samePair(edge, ref)) || null;
@@ -1523,7 +1560,7 @@ function suffixOutsideFeatures(script, endOffset, later) {
  *
  * The mesh feature graph names edges and faces, not which block created
  * them, so this reads the script. A later fillet, chamfer, or sweep that
- * calls `edgesBetween` / `edge` / `filletAlongPath` on a body this block
+ * calls `edgesNamed` / `edgesBetween` / `edge` / `filletAlongPath` on a body this block
  * writes is an edge dependent. A later cut, Move Face, Delete Face, shell,
  * or draft that stores a face (`center:`) on that body is a face dependent.
  * A `const` / `let` / `var` this block declares (other than `part`) that
@@ -1551,7 +1588,7 @@ export function featureDependents(script, feature) {
   };
   for (const next of later) {
     const chunk = text.slice(next.startOffset, next.endOffset);
-    const edgeBodies = callBodies(chunk, 'edgesBetween|edge|filletEdges|chamferEdges|filletAlongPath');
+    const edgeBodies = callBodies(chunk, 'edgesNamed|edgesOf|edgesBetween|edge|filletEdges|chamferEdges|filletAlongPath');
     if ([...edgeBodies].some((body) => owns.has(body))) push(next, 'edges');
     const faceBodies = callBodies(chunk, 'moveFace|deleteFace|cut|hollow|draftFaces');
     const targetsFace = /center\s*:/.test(codeText(chunk)) || /facesByNormal\s*\(/.test(codeText(chunk));

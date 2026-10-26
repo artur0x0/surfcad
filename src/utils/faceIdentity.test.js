@@ -173,6 +173,7 @@ return part;`);
   );
   await assert.rejects(
     runScript("let part = Manifold.hull([Manifold.sphere(2, 8), Manifold.sphere(2, 8).translate([10, 0, 0])]); facesNamed(part, 'x.y'); return part;"),
-    /no stamped faces/,
+    // A hull has no helper roles; its runs are still named by coplanar group (edge identity).
+    /no face named 'x.y'.*script\.f0/,
   );
 });
