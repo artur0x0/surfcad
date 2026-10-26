@@ -483,6 +483,7 @@ import { crossPartSubtractWrites, externalBodyRotationBlock, planCrossPartSubtra
 import { FEATURE_MARKER_KINDS } from './utils/featureMarkers';
 import { composeMoveCommit } from './utils/moveMode';
 import { composeRotateCommit } from './utils/rotateMode';
+import { composeMirrorCommit } from './utils/mirrorMode';
 import { composeMoveFaceCommit } from './utils/moveFaceMode';
 import { composeDeleteFaceCommit } from './utils/deleteFaceMode';
 
@@ -9405,6 +9406,33 @@ const App = () => {
     return true;
   };
 
+  /** Mirror body Confirm — one mirror() + MIRROR markers; Auto-Run. */
+  const handleCommitMirror = (payload) => {
+    if (!focusWritePart(payload?.partId)) {
+      viewportRef.current?.softFailMirror?.(PICKED_PART_FAIL);
+      return false;
+    }
+    const buf = codeEditorRef.current?.getContent?.() || '';
+    const result = composeMirrorCommit(buf, payload?.state || payload || {});
+    if (!result.ok) {
+      viewportRef.current?.softFailMirror?.(result.message);
+      return false;
+    }
+    const wrote = commitFeatureBuffer(buf, result.buffer, 'Mirror');
+    if (!wrote) {
+      viewportRef.current?.softFailMirror?.(
+        'Could not write Mirror into the editor — try again.',
+      );
+      return false;
+    }
+    if (result.run) {
+      setTimeout(() => {
+        handleGameRun();
+      }, 0);
+    }
+    return true;
+  };
+
   const handleExecute = (script, autoExecute=false) => {
     // The editor has produced a real buffer — the draft autosave may now
     // treat currentScript as authoritative (before this, '' is just "Monaco
@@ -12794,6 +12822,7 @@ const App = () => {
               onCommitBoolean={handleCommitBoolean}
               onCommitMove={handleCommitMove}
               onCommitRotate={handleCommitRotate}
+              onCommitMirror={handleCommitMirror}
               onCommitMoveFace={handleCommitMoveFace}
               sheetMetalBinding={assemblyDoc ? partSheetMetal(assemblyDoc, assemblyDoc.activeId) : null}
               assemblyColors={assemblyDoc?.colors || null}
@@ -13310,6 +13339,7 @@ const App = () => {
               onCommitBoolean={handleCommitBoolean}
               onCommitMove={handleCommitMove}
               onCommitRotate={handleCommitRotate}
+              onCommitMirror={handleCommitMirror}
               onCommitMoveFace={handleCommitMoveFace}
               sheetMetalBinding={assemblyDoc ? partSheetMetal(assemblyDoc, assemblyDoc.activeId) : null}
               assemblyColors={assemblyDoc?.colors || null}

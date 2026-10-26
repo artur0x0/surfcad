@@ -2473,8 +2473,12 @@ export const HELPER_PALETTE_ITEMS = [
       const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
       const plane = str(p.plane, 'yz');
       const keep = bool(p.keepOriginal, true);
+      const picked = Array.isArray(p.at) && p.at.length >= 3 ? p.at.slice(0, 3).map(Number) : null;
+      const bodies = picked && picked.every(Number.isFinite)
+        ? `, { bodies: [{ at: ${formatVec3(picked)} }] }`
+        : '';
       const feat = [
-        `${body} = mirror(${body}, '${plane}', ${keep});`,
+        `${body} = mirror(${body}, '${plane}', ${keep}${bodies});`,
         ...syncPartLines(body, names, /(?:let|const|var)\s+part\b/.test(lines.join('\n')) || !empty),
       ];
       lines.push(...wrapFeatureBlock(MIRROR_BEGIN, MIRROR_END, feat));

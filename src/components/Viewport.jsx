@@ -132,6 +132,7 @@ import CutModeChip from './CutModeChip';
 import BooleanModeChip from './BooleanModeChip';
 import MoveModeChip from './MoveModeChip';
 import RotateModeChip from './RotateModeChip';
+import MirrorModeChip from './MirrorModeChip';
 import MoveFaceModeChip from './MoveFaceModeChip';
 import DeleteFaceModeChip from './DeleteFaceModeChip';
 import { buildCrossSectionPreview, defaultTopPlaneFrame } from '../utils/crossSectionSubstrate';
@@ -423,6 +424,21 @@ import {
   axisToVector,
   ROTATE_MODE_NEED_BODY,
 } from '../utils/rotateMode';
+import {
+  emptyMirrorState,
+  clearMirrorTarget,
+  validateMirrorAccept,
+  mirrorPreviewMap,
+  resolveMirrorBodyAt,
+  attachMirrorTargetMesh,
+  setMirrorNamedPlane,
+  setMirrorFacePlane,
+  setMirrorWorkplane,
+  mirrorPlaneFromHit,
+  mirrorSelectedPlaneId,
+  mirrorStateFromFields,
+  MIRROR_MODE_NEED_BODY,
+} from '../utils/mirrorMode';
 import {
   emptyMoveFaceState,
   toggleMoveFaceSelection,
@@ -1161,6 +1177,7 @@ const Viewport = forwardRef(({
   getBooleanContext = null,
   onCommitMove = null,
   onCommitRotate = null,
+  onCommitMirror = null,
   onCommitMoveFace = null,
   onCommitDeleteFace = null,
   /** S1 sheet metal: active part's SendCutSend binding (or null). */
@@ -1695,6 +1712,12 @@ const Viewport = forwardRef(({
   const [rotateMode, setRotateMode] = useState(null);
   const rotateModeRef = useRef(null);
   const clearRotatePreviewRef = useRef(() => {});
+  const [mirrorMode, setMirrorMode] = useState(null);
+  const mirrorModeRef = useRef(null);
+  const clearMirrorPreviewRef = useRef(() => {});
+  const releaseMirrorPlanesRef = useRef(() => {});
+  const dropMirrorModeRef = useRef(() => {});
+  const mirrorPreviewRef = useRef(null);
   const [moveFaceMode, setMoveFaceMode] = useState(null);
   const moveFaceModeRef = useRef(null);
   const [deleteFaceMode, setDeleteFaceMode] = useState(null);
@@ -1824,6 +1847,7 @@ const Viewport = forwardRef(({
       measurementLinesRef.current,
       movePreviewRef.current,
       rotatePreviewRef.current,
+      mirrorPreviewRef.current,
       moveFacePreviewRef.current,
       cutPiecesPreviewRef.current,
       booleanPiecesPreviewRef.current,
@@ -2049,6 +2073,7 @@ const Viewport = forwardRef(({
   const booleanSheetOpen = mode !== 'game' && !!booleanMode;
   const moveSheetOpen = mode !== 'game' && !!moveMode;
   const rotateSheetOpen = mode !== 'game' && !!rotateMode;
+  const mirrorSheetOpen = mode !== 'game' && !!mirrorMode;
   const sheetMetalSheetOpen = mode !== 'game' && (!!sheetMetalMode || !!sheetMetalPicker);
   const sheetMetalCardKey = sheetMetalPicker
     ? 'picker'
@@ -2097,6 +2122,7 @@ const Viewport = forwardRef(({
     && !booleanMode
     && !moveMode
     && !rotateMode
+    && !mirrorMode
     && !sheetMetalMode
     && !sheetMetalPicker
     && !feaActive
@@ -2124,6 +2150,8 @@ const Viewport = forwardRef(({
                     ? 'move'
                     : rotateSheetOpen
                       ? 'rotate'
+                      : mirrorSheetOpen
+                        ? 'mirror'
                     : sheetMetalSheetOpen
                       ? `sheetMetal:${sheetMetalCardKey}`
                       : paintSheetOpen
@@ -2238,6 +2266,7 @@ const Viewport = forwardRef(({
   booleanModeRef.current = booleanMode;
   moveModeRef.current = moveMode;
   rotateModeRef.current = rotateMode;
+  mirrorModeRef.current = mirrorMode;
   moveFaceModeRef.current = moveFaceMode;
   deleteFaceModeRef.current = deleteFaceMode;
   onPickRetargetRef.current = onPickRetarget;
@@ -2344,6 +2373,7 @@ const Viewport = forwardRef(({
       clearRotatePreviewRef.current();
       setRotateMode(null);
       rotateModeRef.current = null;
+      dropMirrorModeRef.current();
       clearMoveFacePreviewRef.current();
       setMoveFaceMode(null);
       moveFaceModeRef.current = null;
@@ -2438,6 +2468,9 @@ const Viewport = forwardRef(({
     },
     softFailRotate: (msg) => {
       showShellToast(msg || 'Rotate refused — double-click a body, then Confirm.');
+    },
+    softFailMirror: (msg) => {
+      showShellToast(msg || 'Mirror refused — double-click a body and pick a plane, then Confirm.');
     },
     softFailMoveFace: (msg) => {
       showShellToast(msg || 'Move Face refused — tap a face, then Confirm.');
@@ -4350,6 +4383,7 @@ const Viewport = forwardRef(({
     clearRotatePreviewRef.current();
     setRotateMode(null);
     rotateModeRef.current = null;
+    dropMirrorModeRef.current();
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -4416,6 +4450,7 @@ const Viewport = forwardRef(({
     clearRotatePreviewRef.current();
     setRotateMode(null);
     rotateModeRef.current = null;
+    dropMirrorModeRef.current();
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -5061,6 +5096,7 @@ const Viewport = forwardRef(({
     clearRotatePreviewRef.current();
     setRotateMode(null);
     rotateModeRef.current = null;
+    dropMirrorModeRef.current();
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -5231,7 +5267,7 @@ const Viewport = forwardRef(({
     clearFilletBlendPreview();
     setDraftMode(null);
     draftModeRef.current = null;
-    if (cutModeRef.current || moveModeRef.current || rotateModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
+    if (cutModeRef.current || moveModeRef.current || rotateModeRef.current || mirrorModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
     setCutMode(null);
     cutModeRef.current = null;
     setBooleanMode(null);
@@ -5241,6 +5277,7 @@ const Viewport = forwardRef(({
     clearRotatePreviewRef.current();
     setRotateMode(null);
     rotateModeRef.current = null;
+    dropMirrorModeRef.current();
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -5294,7 +5331,7 @@ const Viewport = forwardRef(({
     shellModeRef.current = null;
     setDraftMode(null);
     draftModeRef.current = null;
-    if (cutModeRef.current || moveModeRef.current || rotateModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
+    if (cutModeRef.current || moveModeRef.current || rotateModeRef.current || mirrorModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
     setCutMode(null);
     cutModeRef.current = null;
     setBooleanMode(null);
@@ -5304,6 +5341,7 @@ const Viewport = forwardRef(({
     clearRotatePreviewRef.current();
     setRotateMode(null);
     rotateModeRef.current = null;
+    dropMirrorModeRef.current();
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -5346,7 +5384,7 @@ const Viewport = forwardRef(({
     shellModeRef.current = null;
     setDraftMode(null);
     draftModeRef.current = null;
-    if (cutModeRef.current || moveModeRef.current || rotateModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
+    if (cutModeRef.current || moveModeRef.current || rotateModeRef.current || mirrorModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
     setCutMode(null);
     cutModeRef.current = null;
     setBooleanMode(null);
@@ -5356,6 +5394,7 @@ const Viewport = forwardRef(({
     clearRotatePreviewRef.current();
     setRotateMode(null);
     rotateModeRef.current = null;
+    dropMirrorModeRef.current();
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -5657,6 +5696,7 @@ const Viewport = forwardRef(({
 
   const holePlaneCard = isHoleEntry(contourMode?.entry) && contourPlaneOpen;
   const planeToolOpen = isWorkplaneEntry(contourMode?.entry) || holePlaneCard;
+  const mirrorPlanesOpen = !!mirrorMode;
   // A selected face hides XY/YZ/ZX. The rail hold stays on, so closing the
   // tool still restores whatever visibility the planes toggle had before.
   const planeFaceSelected = planeToolOpen && !!selectedFace;
@@ -5678,7 +5718,7 @@ const Viewport = forwardRef(({
       ...entry,
       planes: jointPicking
         ? planesForJointOverlay(entry, true)
-        : (planeToolOpen
+        : (planeToolOpen || mirrorPlanesOpen
           ? planesForWorkplaneTool(entry, { references: !planeFaceSelected })
           : planesForJointOverlay(entry, false)),
       selectedId: selectedPlaneId,
@@ -5688,6 +5728,7 @@ const Viewport = forwardRef(({
     selectedPlaneId,
     showPlanes,
     planeToolOpen,
+    mirrorPlanesOpen,
     planeFaceSelected,
     jointPicking,
     jointPlanePickKey,
@@ -6882,7 +6923,7 @@ const Viewport = forwardRef(({
     clearFilletBlendPreview();
     setShellMode(null);
     shellModeRef.current = null;
-    if (cutModeRef.current || moveModeRef.current || rotateModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
+    if (cutModeRef.current || moveModeRef.current || rotateModeRef.current || mirrorModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
     setCutMode(null);
     cutModeRef.current = null;
     setBooleanMode(null);
@@ -6892,6 +6933,7 @@ const Viewport = forwardRef(({
     clearRotatePreviewRef.current();
     setRotateMode(null);
     rotateModeRef.current = null;
+    dropMirrorModeRef.current();
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -7212,7 +7254,7 @@ const Viewport = forwardRef(({
     shellModeRef.current = null;
     setDraftMode(null);
     draftModeRef.current = null;
-    if (booleanModeRef.current || moveModeRef.current || rotateModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
+    if (booleanModeRef.current || moveModeRef.current || rotateModeRef.current || mirrorModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
     setBooleanMode(null);
     booleanModeRef.current = null;
     setMoveMode(null);
@@ -7220,6 +7262,7 @@ const Viewport = forwardRef(({
     clearRotatePreviewRef.current();
     setRotateMode(null);
     rotateModeRef.current = null;
+    dropMirrorModeRef.current();
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -7568,6 +7611,7 @@ const Viewport = forwardRef(({
     clearRotatePreviewRef.current();
     setRotateMode(null);
     rotateModeRef.current = null;
+    dropMirrorModeRef.current();
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
     moveFaceModeRef.current = null;
@@ -7695,6 +7739,7 @@ const Viewport = forwardRef(({
     clearRotatePreviewRef.current();
     setRotateMode(null);
     rotateModeRef.current = null;
+    dropMirrorModeRef.current();
     if (was) clearHighlight();
     if (shellToastTimerRef.current) {
       clearTimeout(shellToastTimerRef.current);
@@ -7729,6 +7774,7 @@ const Viewport = forwardRef(({
     clearRotatePreviewRef.current();
     setRotateMode(null);
     rotateModeRef.current = null;
+    dropMirrorModeRef.current();
     if (moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
@@ -7869,6 +7915,7 @@ const Viewport = forwardRef(({
     clearRotatePreview();
     setRotateMode(null);
     rotateModeRef.current = null;
+    dropMirrorModeRef.current();
     if (was) clearHighlight();
     if (shellToastTimerRef.current) {
       clearTimeout(shellToastTimerRef.current);
@@ -7905,6 +7952,7 @@ const Viewport = forwardRef(({
     }
     setMoveMode(null);
     moveModeRef.current = null;
+    dropMirrorModeRef.current();
     if (moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
     clearMoveFacePreviewRef.current();
     setMoveFaceMode(null);
@@ -7963,6 +8011,186 @@ const Viewport = forwardRef(({
       exitRotateMode();
     }
   }, [onCommitRotate, exitRotateMode, onFaceSelected, clearHighlight]);
+
+  const clearMirrorPreview = useCallback(() => {
+    const mesh = mirrorPreviewRef.current;
+    mirrorPreviewRef.current = null;
+    if (!mesh) return;
+    if (sceneRef.current) sceneRef.current.remove(mesh);
+    mesh.geometry?.dispose?.();
+    mesh.material?.dispose?.();
+  }, []);
+  clearMirrorPreviewRef.current = clearMirrorPreview;
+  dropMirrorModeRef.current = () => {
+    clearMirrorPreviewRef.current();
+    releaseMirrorPlanesRef.current();
+    releaseMirrorPlanesRef.current = () => {};
+    setMirrorMode(null);
+    mirrorModeRef.current = null;
+    setSelectedPlaneId(null);
+  };
+
+  /**
+   * Ghost of the picked body reflected across the card's plane. Local
+   * vertices mapped by mirrorPreviewMap, then posed with the part like the
+   * Move ghost.
+   */
+  const paintMirrorPreview = useCallback((state) => {
+    clearMirrorPreview();
+    const tris = state?.target?.triangles;
+    const geom = resultRef.current?.geometry;
+    const positions = geom?.attributes?.position;
+    const index = geom?.index?.array;
+    const scene = sceneRef.current;
+    if (!tris?.length || !positions || !index || !scene) return;
+    const map = mirrorPreviewMap(state);
+    if (!map) return;
+    const pos = [];
+    for (const t of tris) {
+      for (let k = 0; k < 3; k++) {
+        const v = index[t * 3 + k];
+        const p = map([positions.getX(v), positions.getY(v), positions.getZ(v)]);
+        pos.push(p[0], p[1], p[2]);
+      }
+    }
+    if (pos.length < 9) return;
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+    geometry.computeVertexNormals();
+    const mesh = new ThreeMesh(geometry, new MeshBasicMaterial({
+      color: 0x22d3ee,
+      transparent: true,
+      opacity: 0.45,
+      depthTest: true,
+      side: FrontSide,
+    }));
+    mesh.name = 'mirror-preview';
+    mesh.raycast = () => {};
+    anchorToActivePart(mesh);
+    scene.add(mesh);
+    mirrorPreviewRef.current = mesh;
+    const renderer = rendererRef.current;
+    const camera = cameraRef.current;
+    if (renderer && camera) renderer.render(scene, camera);
+  }, [anchorToActivePart, clearMirrorPreview]);
+
+  const syncMirrorTargetFromMesh = useCallback((state) => {
+    if (!state?.target?.at) return state;
+    const geom = resultRef.current?.geometry;
+    const positions = geom?.attributes?.position;
+    const index = geom?.index?.array;
+    if (!positions || !index) return state;
+    const bodies = meshBodyComponents(positions, index);
+    return {
+      ...state,
+      target: attachMirrorTargetMesh(state.target, bodies, bodyCentroidsRef.current),
+    };
+  }, []);
+
+  const commitMirrorState = useCallback((next) => {
+    if (!next) return;
+    mirrorModeRef.current = next;
+    setMirrorMode(next);
+    setSelectedPlaneId(mirrorSelectedPlaneId(next));
+    paintMirrorPreview(next);
+  }, [paintMirrorPreview]);
+
+  const exitMirrorMode = useCallback(() => {
+    cancelFeatureEditRef.current?.('mirror');
+    const was = mirrorModeRef.current;
+    dropMirrorModeRef.current();
+    if (was) clearHighlight();
+    if (shellToastTimerRef.current) {
+      clearTimeout(shellToastTimerRef.current);
+      shellToastTimerRef.current = null;
+    }
+    setShellToast(null);
+  }, [clearHighlight]);
+
+  const enterMirrorMode = useCallback(() => {
+    if (!allowFeaturePopup()) return;
+    feaCloseRef.current();
+    exitPaintModeRef.current();
+    exitSheetMetalChromeRef.current();
+    exitContourMode();
+    setFilletMode(null);
+    filletModeRef.current = null;
+    clearFilletBlendPreview();
+    setShellMode(null);
+    shellModeRef.current = null;
+    setDraftMode(null);
+    draftModeRef.current = null;
+    if (cutModeRef.current) {
+      clearHighlight();
+      clearCutPlaneWidget();
+      clearCutPiecePreview();
+    }
+    setCutMode(null);
+    cutModeRef.current = null;
+    setBooleanMode(null);
+    booleanModeRef.current = null;
+    if (moveModeRef.current) {
+      clearHighlight();
+      clearMovePreview();
+    }
+    setMoveMode(null);
+    moveModeRef.current = null;
+    if (rotateModeRef.current) clearHighlight();
+    clearRotatePreviewRef.current();
+    setRotateMode(null);
+    rotateModeRef.current = null;
+    dropMirrorModeRef.current();
+    if (moveFaceModeRef.current || deleteFaceModeRef.current) clearHighlight();
+    clearMoveFacePreviewRef.current();
+    setMoveFaceMode(null);
+    moveFaceModeRef.current = null;
+    clearDeleteFacePreviewRef.current();
+    setDeleteFaceMode(null);
+    deleteFaceModeRef.current = null;
+    dropMirrorModeRef.current();
+    setPickMode('face');
+    clearEdgeHover();
+    clearEdgeHighlight();
+    setSelectedEdges([]);
+    const next = emptyMirrorState();
+    mirrorModeRef.current = next;
+    setMirrorMode(next);
+    overlayVis.begin('planes');
+    releaseMirrorPlanesRef.current = () => overlayVis.end('planes');
+    clearHighlight();
+  }, [
+    exitContourMode,
+    clearFilletBlendPreview,
+    clearCutPlaneWidget,
+    clearCutPiecePreview,
+    clearMovePreview,
+    clearEdgeHover,
+    clearEdgeHighlight,
+    clearHighlight,
+    overlayVis,
+  ]);
+
+  const acceptMirror = useCallback(() => {
+    const state = mirrorModeRef.current;
+    if (!state) return;
+    const gate = validateMirrorAccept(state);
+    if (!gate.ok) {
+      showShellToast(gate.message);
+      return;
+    }
+    const editing = featureEditRef.current && (featureEditRef.current.kind === 'mirror' || featureEditRef.current.dialog === 'mirror');
+    const ok = onCommitMirror?.({ state, partId: activePartIdRef.current });
+    if (!ok) return;
+    if (editing) {
+      featureEditRef.current = null;
+      setHelperEdit(null);
+      setFeatureEditBanner('');
+    }
+    clearHighlight();
+    setSelectedFace(null);
+    onFaceSelected?.(null);
+    exitMirrorMode();
+  }, [onCommitMirror, exitMirrorMode, onFaceSelected, clearHighlight]);
 
   const removeMoveFacePreview = useCallback(() => {
     if (moveFacePreviewTimerRef.current) {
@@ -8299,6 +8527,7 @@ const Viewport = forwardRef(({
     clearRotatePreviewRef.current();
     setRotateMode(null);
     rotateModeRef.current = null;
+    dropMirrorModeRef.current();
     if (deleteFaceModeRef.current) clearHighlight();
     clearDeleteFacePreviewRef.current();
     setDeleteFaceMode(null);
@@ -8408,6 +8637,7 @@ const Viewport = forwardRef(({
     if (booleanModeRef.current) exitBooleanMode();
     if (moveModeRef.current) exitMoveMode();
     if (rotateModeRef.current) exitRotateMode();
+    if (mirrorModeRef.current) exitMirrorMode();
     if (moveFaceModeRef.current) exitMoveFaceMode();
     if (deleteFaceModeRef.current) exitDeleteFaceMode();
     exitSheetMetalChromeRef.current();
@@ -8475,6 +8705,7 @@ const Viewport = forwardRef(({
     clearRotatePreviewRef.current();
     setRotateMode(null);
     rotateModeRef.current = null;
+    dropMirrorModeRef.current();
     if (moveFaceModeRef.current) clearHighlight();
     clearMoveFacePreview();
     setMoveFaceMode(null);
@@ -10043,7 +10274,7 @@ const Viewport = forwardRef(({
     }
     // Cut, Boolean, and Paint own the canvas: a saved contour under the cursor
     // must not eat the tap (same as a construction plane sitting on the cut).
-    if (!moveFaceModeRef.current && !deleteFaceModeRef.current && !cutModeRef.current && !booleanModeRef.current && !paintModeRef.current && !feaPickRef.current && showContoursRef.current && !moveModeRef.current && !rotateModeRef.current && contourModeRef.current?.tool !== 'polyline') {
+    if (!moveFaceModeRef.current && !deleteFaceModeRef.current && !cutModeRef.current && !booleanModeRef.current && !paintModeRef.current && !feaPickRef.current && showContoursRef.current && !moveModeRef.current && !rotateModeRef.current && !mirrorModeRef.current && contourModeRef.current?.tool !== 'polyline') {
       // Saved contours are in the editor part's frame.
       const hitC = pickContourByRay(
         toPartLocal(origin, savedContourOffsetRef.current),
@@ -10079,9 +10310,36 @@ const Viewport = forwardRef(({
     const partChoiceHit = resolvePartPick(collectPartHits());
     const planeD = planeHits[0]?.distance ?? Infinity;
     const solidD = partChoiceHit.hit?.distance ?? Infinity;
+    // Mirror picks the plane the copy is reflected across: a user workplane
+    // or XY / YZ / ZX. A plane quad sits in front of the body from the
+    // default camera, and taking that hit ate the double-click that selects
+    // the body. The plane is the pick only when the ray misses the solid.
+    // A click on the solid stays a body or face pick, the same as Move.
+    if (mirrorModeRef.current && planeHits.length && !(partChoiceHit.hit && Number.isFinite(solidD))) {
+      const ud = planeHits[0].object.userData?.plane
+        ? planeHits[0].object.userData
+        : planeHits[0].object.parent?.userData;
+      if (ud?.plane) {
+        const buf = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
+        const picked = mirrorPlaneFromHit(ud, buf);
+        if (picked) {
+          if (clickTimerRef.current) {
+            clearTimeout(clickTimerRef.current);
+            clickTimerRef.current = null;
+          }
+          clickCountRef.current = 0;
+          pendingClickDataRef.current = null;
+          const next = picked.planeSource === 'workplane'
+            ? setMirrorWorkplane(mirrorModeRef.current, picked.workplane)
+            : setMirrorNamedPlane(mirrorModeRef.current, picked.planeSource);
+          commitMirrorState(next);
+          return;
+        }
+      }
+    }
     // Cut taps a body or a piece. A construction plane that sits on the cut
     // (the XY plane through a centered part) must not swallow that click.
-    if (!cutModeRef.current && !booleanModeRef.current && !paintModeRef.current && !feaPickRef.current && planeHits.length && !moveModeRef.current && !rotateModeRef.current && !moveFaceModeRef.current && !deleteFaceModeRef.current && planeD <= solidD + 0.5) {
+    if (!cutModeRef.current && !booleanModeRef.current && !paintModeRef.current && !feaPickRef.current && planeHits.length && !moveModeRef.current && !rotateModeRef.current && !mirrorModeRef.current && !moveFaceModeRef.current && !deleteFaceModeRef.current && planeD <= solidD + 0.5) {
       const ud = planeHits[0].object.userData?.plane
         ? planeHits[0].object.userData
         : planeHits[0].object.parent?.userData;
@@ -10382,7 +10640,7 @@ const Viewport = forwardRef(({
     if (geometry && positions && index && shown.length) {
       highlightFace(shown, geometry, positions, index, 0xffff00);
     }
-  }, [clearHighlight, highlightFace, onFaceSelected]);
+  }, [clearHighlight, highlightFace, onFaceSelected, commitMirrorState, getHelperBuffer]);
 
   /**
    * Process the pending click based on click count
@@ -10515,19 +10773,38 @@ const Viewport = forwardRef(({
         indices: faceIndices.slice(),
       };
       let picks;
-      if (moveModeRef.current || rotateModeRef.current) {
+      if (moveModeRef.current || rotateModeRef.current || mirrorModeRef.current) {
         // Same resolver as the rest of the viewport: one click is the full
         // face and does not change the body. Two clicks set that body as
-        // the move or rotate target. Not a legacy picker, and no viewport arrows.
-        const rotating = !moveModeRef.current && !!rotateModeRef.current;
+        // the move, rotate, or mirror target. Not a legacy picker, and no viewport arrows.
+        const mirroring = !!mirrorModeRef.current;
+        const rotating = !mirroring && !moveModeRef.current && !!rotateModeRef.current;
         if (clickCount >= 2) {
           const bodies = meshBodyComponents(positions, index);
           const hit = bodyContainingTriangle(bodies, seedFaceIndex);
           if (!hit) {
-            showShellToast(rotating ? ROTATE_MODE_NEED_BODY : MOVE_MODE_NEED_BODY);
+            showShellToast(mirroring ? MIRROR_MODE_NEED_BODY : rotating ? ROTATE_MODE_NEED_BODY : MOVE_MODE_NEED_BODY);
             return;
           }
           const buf = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
+          if (mirroring) {
+            const prevMirror = mirrorModeRef.current.target;
+            const sameMirror = prevMirror && cutBodyKey(prevMirror) === cutBodyKey(hit);
+            const mirrorTarget = sameMirror ? null : {
+              at: resolveMirrorBodyAt(hit.at, bodyCentroidsRef.current),
+              minTri: hit.minTri,
+              triangles: hit.triangles.slice(),
+            };
+            const nextMirror = { ...mirrorModeRef.current, target: mirrorTarget };
+            mirrorModeRef.current = nextMirror;
+            setMirrorMode(nextMirror);
+            clearHighlight();
+            if (mirrorTarget) {
+              highlightFace(mirrorTarget.triangles, geometry, positions, index, 0x22d3ee, 'mirror-body');
+            }
+            paintMirrorPreview(nextMirror);
+            return;
+          }
           if (rotating) {
             const prevRotate = rotateModeRef.current.target;
             const sameBody = prevRotate && cutBodyKey(prevRotate) === cutBodyKey(hit);
@@ -10589,7 +10866,16 @@ const Viewport = forwardRef(({
           const len = Math.hypot(nx, ny, nz);
           if (len > 1e-12) {
             const normal = [nx / len, ny / len, nz / len];
-            if (rotating) {
+            if (mirroring) {
+              const next = setMirrorFacePlane(mirrorModeRef.current, {
+                center: faceData.center,
+                normal,
+              });
+              mirrorModeRef.current = next;
+              setMirrorMode(next);
+              setSelectedPlaneId(mirrorSelectedPlaneId(next));
+              paintMirrorPreview(next);
+            } else if (rotating) {
               const next = { ...rotateModeRef.current, faceNormal: normal };
               rotateModeRef.current = next;
               setRotateMode(next);
@@ -10653,7 +10939,7 @@ const Viewport = forwardRef(({
       if (picks.length > 1 && !shellModeRef.current) {
         console.log(`[Face Selection] ${picks.length} faces picked (shift-click to add more)`);
       }
-  }, [onFaceSelected, clearHighlight, clearEdgeHighlight, highlightFace, publishFacePicks, paintDraftPicks, commitCutState, paintMovePreview, paintRotatePreview, commitMoveFaceState, commitDeleteFaceState, getHelperBuffer, commitBooleanState, crossSectionEnabled, notePolylineDotTap]);
+  }, [onFaceSelected, clearHighlight, clearEdgeHighlight, highlightFace, publishFacePicks, paintDraftPicks, commitCutState, paintMovePreview, paintRotatePreview, paintMirrorPreview, commitMoveFaceState, commitDeleteFaceState, getHelperBuffer, commitBooleanState, crossSectionEnabled, notePolylineDotTap]);
 
   const chooseAmbiguousPart = useCallback((partId) => {
     const pending = ambiguousPickRef.current;
@@ -10728,7 +11014,7 @@ const Viewport = forwardRef(({
     const onPointerDown = (event) => {
       if (!featureSheetEnabledRef.current) return;
       if (event.button != null && event.button !== 0) return;
-      if (contourModeRef.current || filletModeRef.current || shellModeRef.current || draftModeRef.current || moveModeRef.current || rotateModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current || sheetMetalModeRef.current || helperCardOpenRef.current || paintModeRef.current) return;
+      if (contourModeRef.current || filletModeRef.current || shellModeRef.current || draftModeRef.current || moveModeRef.current || rotateModeRef.current || mirrorModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current || sheetMetalModeRef.current || helperCardOpenRef.current || paintModeRef.current) return;
       if (measurementEnabled) return;
       CLEAR_LP();
       featureLongPressFiredRef.current = false;
@@ -10738,7 +11024,7 @@ const Viewport = forwardRef(({
         const origin = featureLongPressOriginRef.current;
         featureLongPressOriginRef.current = null;
         if (!origin || !featureSheetEnabledRef.current) return;
-        if (contourModeRef.current || filletModeRef.current || shellModeRef.current || draftModeRef.current || moveModeRef.current || rotateModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current || sheetMetalModeRef.current || helperCardOpenRef.current || paintModeRef.current) return;
+        if (contourModeRef.current || filletModeRef.current || shellModeRef.current || draftModeRef.current || moveModeRef.current || rotateModeRef.current || mirrorModeRef.current || moveFaceModeRef.current || deleteFaceModeRef.current || sheetMetalModeRef.current || helperCardOpenRef.current || paintModeRef.current) return;
         featureLongPressFiredRef.current = true;
         onFeatureLongPressRef.current?.({ clientX: origin.x, clientY: origin.y });
       }, 450);
@@ -12336,6 +12622,7 @@ const Viewport = forwardRef(({
       boolean: !!booleanModeRef.current,
       move: !!moveModeRef.current,
       rotate: !!rotateModeRef.current,
+      mirror: !!mirrorModeRef.current,
       contour: !!contourModeRef.current,
       featureSlot: !!featureSlotsRef.current,
       paint: !!paintModeRef.current,
@@ -14091,6 +14378,7 @@ const Viewport = forwardRef(({
     if (booleanModeRef.current) exitBooleanMode();
     if (moveModeRef.current) exitMoveMode();
     if (rotateModeRef.current) exitRotateMode();
+    if (mirrorModeRef.current) exitMirrorMode();
     if (moveFaceModeRef.current) exitMoveFaceMode();
     if (deleteFaceModeRef.current) exitDeleteFaceMode();
     if (sheetMetalModeRef.current) {
@@ -14275,6 +14563,7 @@ const Viewport = forwardRef(({
           if (booleanModeRef.current) exitBooleanMode();
           if (moveModeRef.current) exitMoveMode();
           if (rotateModeRef.current) exitRotateMode();
+          if (mirrorModeRef.current) exitMirrorMode();
           if (moveFaceModeRef.current) exitMoveFaceMode();
           if (deleteFaceModeRef.current) exitDeleteFaceMode();
           if (paintModeRef.current) exitPaintModeRef.current();
@@ -14387,6 +14676,22 @@ const Viewport = forwardRef(({
             }
           }
           paintRotatePreview(next);
+        } else if (dialog.dialog === 'mirror') {
+          enterMirrorMode();
+          let next = mirrorStateFromFields(active.fields);
+          next = syncMirrorTargetFromMesh(next);
+          mirrorModeRef.current = next;
+          setMirrorMode(next);
+          setSelectedPlaneId(mirrorSelectedPlaneId(next));
+          if (next.target?.triangles?.length) {
+            const geom = resultRef.current?.geometry;
+            const positions = geom?.attributes?.position;
+            const index = geom?.index?.array;
+            if (positions && index) {
+              highlightFace(next.target.triangles, geom, positions, index, 0x22d3ee, 'mirror-body');
+            }
+          }
+          paintMirrorPreview(next);
         } else if (dialog.dialog === 'moveFace') {
           enterMoveFaceMode();
           commitMoveFaceState({
@@ -15261,7 +15566,7 @@ const Viewport = forwardRef(({
       )}
       
       {/* Left helper rail. Block, Build, Shape, Polish, Move. */}
-      {onInsertHelper && !paintMode && !feaActive && !contourMode && !filletMode && !shellMode && !draftMode && !cutMode && !booleanMode && !moveMode && !rotateMode && !moveFaceMode && !sheetMetalPicker && !deleteFaceMode && !sheetMetalMode && (
+      {onInsertHelper && !paintMode && !feaActive && !contourMode && !filletMode && !shellMode && !draftMode && !cutMode && !booleanMode && !moveMode && !rotateMode && !mirrorMode && !moveFaceMode && !sheetMetalPicker && !deleteFaceMode && !sheetMetalMode && (
         <HelperInsertPalette
           layout={mode === 'game' ? 'game' : 'cad'}
           desktopFullRail={mode !== 'game' && !isMobile}
@@ -15299,6 +15604,7 @@ const Viewport = forwardRef(({
           onEnterBooleanMode={enterBooleanMode}
           onEnterMoveMode={enterMoveMode}
           onEnterRotateMode={enterRotateMode}
+          onEnterMirrorMode={enterMirrorMode}
           onEnterMoveFaceMode={enterMoveFaceMode}
           onEnterDeleteFaceMode={enterDeleteFaceMode}
           onOpenSheetMetal={mode !== 'game' && onBindSheetMetal
@@ -16259,6 +16565,33 @@ const Viewport = forwardRef(({
           onDelete={featureEditRef.current?.dialog === 'rotate' ? featureEditDelete : null}
           onDismiss={exitRotateMode}
           labelBuffer={(typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || ''}
+        />
+      )}
+
+      {/* Mirror on the shared card. Game mounts no card. */}
+      {mirrorMode && mode !== 'game' && (
+        <MirrorModeChip
+          target={mirrorMode.target}
+          planeSource={mirrorMode.planeSource}
+          facePlane={mirrorMode.facePlane}
+          workplane={mirrorMode.workplane}
+          workplanes={listConstructionPlanes((typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '')}
+          compact={isMobile}
+          onNamedPlane={(named) => commitMirrorState(setMirrorNamedPlane(mirrorModeRef.current, named))}
+          onFace={() => {
+            const prev = mirrorModeRef.current;
+            if (!prev?.facePlane) return;
+            commitMirrorState(setMirrorFacePlane(prev, prev.facePlane));
+          }}
+          onWorkplane={(plane) => commitMirrorState(setMirrorWorkplane(mirrorModeRef.current, plane))}
+          onClear={() => {
+            const next = clearMirrorTarget(mirrorModeRef.current);
+            commitMirrorState(next);
+            clearHighlight();
+          }}
+          onConfirm={acceptMirror}
+          onDelete={featureEditRef.current?.dialog === 'mirror' ? featureEditDelete : null}
+          onDismiss={exitMirrorMode}
         />
       )}
 

@@ -82,11 +82,11 @@ export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
       description: `When true, pass the current viewport face/edge selection as context.${USE_SELECTION_NOTE}`,
     };
   }
-  if (item?.id === 'move' || item?.id === 'rotate') {
-    // The body to move or rotate. The host tries body_index, then at, then
-    // face_id / face, then use_selection: true (the selected face). Nothing
+  if (item?.id === 'move' || item?.id === 'rotate' || item?.id === 'mirror') {
+    // The body to move, rotate, or mirror. The host tries body_index, then at,
+    // then face_id / face, then use_selection: true (the selected face). Nothing
     // named and use_selection not true is no_body (the origin is never assumed).
-    const verb = item.id === 'rotate' ? 'rotate' : 'move';
+    const verb = item.id === 'rotate' ? 'rotate' : item.id === 'mirror' ? 'mirror' : 'move';
     properties.body_index = { type: 'integer', minimum: 0, description: 'Body from list_bodies' };
     properties.at = {
       type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3,
