@@ -285,7 +285,7 @@ async function chipRows(page) {
         type: el.getAttribute('data-joint-type') || '',
         status: el.getAttribute('data-joint-status') || '',
         value: el.getAttribute('data-joint-value'),
-        name: el.getAttribute('aria-label') || '',
+        name: el.getAttribute('data-joint-name') || '',
       });
     }
     return [...seen.values()];

@@ -16,7 +16,7 @@
 import { nextNumberedName, serializeAssembly } from '../utils/assembly.js';
 import { matchFaceKeys } from '../utils/faceColorMatch.js';
 import { mintSurfId, partSurfId } from '../utils/git/surfId.js';
-import { partPlacement } from '../utils/jointSchema.js';
+import { jointRefs, partPlacement } from '../utils/jointSchema.js';
 import { worldPoint } from '../utils/partPose.js';
 import { commitJointEdit } from './refreshJoints.js';
 import { rotateByQuat } from './rigid.js';
@@ -47,11 +47,6 @@ export function jointsChromeMounted({ appMode = 'cad', featureSession = false } 
   return appMode !== 'game' && !featureSession;
 }
 
-/** CAD strips show joints while no part is selected. */
-export function cadStripsShowJoints(cadPartId) {
-  return cadPartId == null;
-}
-
 /** Strip Undo walks joints only while no part is selected. */
 export function stripUndoTarget(cadPartId) {
   return cadPartId == null ? 'joint' : 'part';
@@ -66,16 +61,17 @@ export function stripRedoLabel(cadPartId) {
 }
 
 /**
- * An empty click clears the CAD part and the geometric selection.
- * The editor's active part stays.
+ * An empty click keeps the CAD part. Users tap empty space while rotating,
+ * so the last selected part stays until another part is tapped or the
+ * assembly chip in the viewer title is tapped. The geometric selection
+ * still clears. The editor's active part stays.
  */
 export function emptyClickCadSelection({
   cadPartId = null,
   activeId = null,
   featureSession = false,
 } = {}) {
-  if (featureSession) return { cadPartId, activeId, cleared: false };
-  return { cadPartId: null, activeId, cleared: true };
+  return { cadPartId, activeId, cleared: !featureSession };
 }
 
 /**
@@ -619,6 +615,59 @@ export function jointChips(doc, live = {}) {
       sense: joint.sense,
     };
   });
+}
+
+/** Surf ids of the parts a joint names, in reference order, without repeats. */
+export function jointPartSurfIds(joint) {
+  const out = [];
+  for (const ref of jointRefs(joint)) {
+    const id = ref?.part;
+    if (id && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+function partNameOf(doc, surfId) {
+  const part = (doc?.parts || []).find((row) => partSurfId(row) === surfId);
+  return part?.name || 'Part';
+}
+
+/**
+ * Joints-row chip text. From a part: `Type · Other part`, and `Fixed` for a
+ * ground joint. From the assembly: `Type · A ↔ B`, and `Fixed · A`. Values
+ * never show on a chip; the card shows them.
+ */
+export function jointChipLabel(joint, doc, viewSurfId = null) {
+  const type = JOINT_TYPE_LABEL[joint?.type] || 'Joint';
+  const parts = jointPartSurfIds(joint);
+  const others = viewSurfId ? parts.filter((id) => id !== viewSurfId) : parts;
+  const names = others.map((id) => partNameOf(doc, id));
+  if (joint?.type === 'fixed') {
+    return viewSurfId && !others.length ? 'Fixed' : `Fixed · ${names.join(' ↔ ') || 'Part'}`;
+  }
+  if (!names.length) return type;
+  return `${type} · ${names.join(' ↔ ')}`;
+}
+
+/**
+ * Chips for the joints row. With `surfId`, only joints that name that part
+ * (scope `part`); without it, every joint (scope `assembly`). `shortLabel`
+ * is the phone text: the other part alone, or `Fixed`.
+ */
+export function jointRowChips(doc, live = {}, { surfId = null } = {}) {
+  const byId = new Map((doc?.joints || []).map((joint) => [joint.id, joint]));
+  return jointChips(doc, live)
+    .filter((row) => !surfId || jointPartSurfIds(byId.get(row.id)).includes(surfId))
+    .map((row) => {
+      const joint = byId.get(row.id);
+      const parts = jointPartSurfIds(joint);
+      const others = surfId ? parts.filter((id) => id !== surfId) : parts;
+      const label = jointChipLabel(joint, doc, surfId);
+      const shortLabel = joint?.type === 'fixed'
+        ? 'Fixed'
+        : (others.length ? others.map((id) => partNameOf(doc, id)).join(' ↔ ') : label);
+      return { ...row, label, shortLabel, parts };
+    });
 }
 
 /** X and Esc write nothing. The document is returned as the same object. */

@@ -26,7 +26,9 @@ import {
   jointTagAnchor,
   stickyJointPick,
   jointsChromeMounted,
-  cadStripsShowJoints,
+  jointChipLabel,
+  jointPartSurfIds,
+  jointRowChips,
   shouldArmJointPick,
   nextJointName,
   assemblySnapshotsEqual,
@@ -514,13 +516,53 @@ test('deleting a joint is one step and undo keeps an earlier unrelated move', ()
   assert.deepEqual(undone.doc.parts.find((part) => part.surfId === B).position, [1, 2, 3]);
 });
 
-test('an empty click clears the CAD part and leaves the active part', () => {
+test('an empty click keeps the CAD part and the active part (Half A selection model)', () => {
   const next = emptyClickCadSelection({ cadPartId: 'b.js', activeId: 'a.js' });
-  assert.equal(next.cadPartId, null);
+  assert.equal(next.cadPartId, 'b.js');
   assert.equal(next.activeId, 'a.js');
+  assert.equal(next.cleared, true, 'the geometric selection still clears');
   const held = emptyClickCadSelection({ cadPartId: 'b.js', activeId: 'a.js', featureSession: true });
   assert.equal(held.cadPartId, 'b.js');
-  assert.equal(held.activeId, 'a.js');
+  assert.equal(held.cleared, false);
+  const none = emptyClickCadSelection({ cadPartId: null, activeId: 'a.js' });
+  assert.equal(none.cadPartId, null, 'the assembly stays selected too');
+});
+
+test('the joints row lists the joints that name the selected part, labelled Type · Other part', () => {
+  const doc = docWith(undefined);
+  const C = '2026-10-10-03-00-00-0003-cccc';
+  doc.parts.push({ ...doc.parts[1], id: 'c.js', surfId: C, name: 'Lid', placement: { t: [0, 0, 9], q: [0, 0, 0, 1] } });
+  const face = (part, z) => ({ part, kind: 'face', key: { at: [0, 0, z], n: [0, 0, 1], area: 1 } });
+  doc.joints = [
+    { id: 'j1', name: 'Coincident 1', type: 'coincident', a: face(A, 1), b: face(B, -1) },
+    { id: 'j2', name: 'Angle 1', type: 'angle', value: 30, a: face(B, 1), b: face(C, -1) },
+    { id: 'j3', name: 'Fixed 1', type: 'fixed', a: { part: A } },
+  ];
+  assert.deepEqual(jointPartSurfIds(doc.joints[0]), [A, B]);
+  assert.deepEqual(jointPartSurfIds(doc.joints[2]), [A]);
+
+  const live = { statuses: { j2: 'broken' }, messages: { j2: 'Cylinder not found on Lid' } };
+  const fromA = jointRowChips(doc, live, { surfId: A });
+  assert.deepEqual(fromA.map((row) => [row.id, row.label, row.shortLabel]), [
+    ['j1', `Coincident · ${doc.parts[1].name}`, doc.parts[1].name],
+    ['j3', 'Fixed', 'Fixed'],
+  ]);
+  const fromB = jointRowChips(doc, live, { surfId: B });
+  assert.deepEqual(fromB.map((row) => [row.id, row.label]), [
+    ['j1', `Coincident · ${doc.parts[0].name}`],
+    ['j2', 'Angle · Lid'],
+  ]);
+  assert.equal(fromB[1].invalid, true, 'a broken joint keeps the failed flag');
+  assert.match(fromB[1].title, /Cylinder not found on Lid/);
+  assert.ok(!fromB[1].label.includes('30'), 'values never show on a chip');
+
+  const all = jointRowChips(doc, live);
+  assert.deepEqual(all.map((row) => row.label), [
+    `Coincident · ${doc.parts[0].name} ↔ ${doc.parts[1].name}`,
+    `Angle · ${doc.parts[1].name} ↔ Lid`,
+    `Fixed · ${doc.parts[0].name}`,
+  ]);
+  assert.equal(jointChipLabel(doc.joints[0], doc, C), `Coincident · ${doc.parts[0].name} ↔ ${doc.parts[1].name}`, 'a part the joint does not name sees both parts');
 });
 
 test('a sticky chip keeps the fingerprint off the id and labels an edge as a line', () => {
@@ -628,8 +670,8 @@ test('Move Body by 10 mm is the only script change and breaks the joint', () => 
   assert.equal(shouldArmJointPick({ jointPicking: true, kind: 'body' }), false);
   assert.equal(shouldArmJointPick({ jointPicking: true, appMode: 'game', kind: 'edge' }), false);
   assert.equal(shouldArmJointPick({ jointPicking: true, featureSession: true, kind: 'face' }), false);
-  assert.equal(cadStripsShowJoints(null), true);
-  assert.equal(cadStripsShowJoints('a.js'), false);
+  assert.equal(stripUndoTarget(null), 'joint', 'the assembly stack only while the assembly itself is selected');
+  assert.equal(stripUndoTarget('a.js'), 'part');
   assert.equal(refreshed.statuses[J], 'broken');
   assert.equal(refreshed.changed, false);
   assert.deepEqual(refreshed.doc.parts[1].placement.t, seed);

@@ -15,6 +15,8 @@ import SplitDivider from './components/SplitDivider';
 import ScriptEditorDrawer from './components/ScriptEditorDrawer';
 import MobileStageToggle from './components/MobileStageToggle';
 import FeatureStrip from './components/FeatureStrip';
+import JointsRow from './components/JointsRow';
+import { FeatureDeleteToast } from './components/FeatureEditDelete';
 import { failedFeatureFromOutcome, failedFeatureIds, failedFeatureTitles } from './utils/featureFailure';
 import {
   commitScriptAtRollback,
@@ -222,7 +224,6 @@ import {
   assemblyHistoryCanUndo,
   assemblyHistoryKey,
   assemblySnapshotsEqual,
-  cadStripsShowJoints,
   acceptJointPick,
   cardFromJoint,
   dismissJointEdit,
@@ -232,7 +233,8 @@ import {
   quickAngleCard,
   resolvePartChange,
   emptyClickCadSelection,
-  jointChips,
+  jointChipLabel,
+  jointRowChips,
   jointsChromeMounted,
   nextJointName,
   pushAssemblyHistory,
@@ -241,6 +243,7 @@ import {
   shouldArmJointPick,
   stripRedoLabel,
   stripUndoLabel,
+  stripUndoTarget,
   undoJointStrip,
 } from './joints/jointUi';
 import { characteristicLengthFor } from './utils/characteristicLength';
@@ -858,6 +861,9 @@ const App = () => {
   const agentFeatureSessionRef = useRef(null);
   const [jointCard, setJointCard] = useState(null);
   const jointCardRef = useRef(null);
+  /** Amber `Deleted.` toast after a joint delete; its Undo pops one assembly step. */
+  const [jointDeleteToast, setJointDeleteToast] = useState(false);
+  const jointDeleteToastTimerRef = useRef(null);
   /** Synchronous joint card for agent pick/commit (React state may lag one frame). */
   const jointCardAgentRef = useRef(null);
   const jointPicksRef = useRef([]);
@@ -9587,6 +9593,7 @@ const App = () => {
     return true;
   };
 
+  /** Empty space keeps the selected part (users tap it while rotating). Picks and the joint card still clear. */
   const handleCadEmptyClick = () => {
     if (featureSessionRef.current || appModeRef.current === 'game') return;
     const next = emptyClickCadSelection({
@@ -9730,7 +9737,7 @@ const App = () => {
       viewportRef.current?.notify?.(result.message);
       return;
     }
-    finishJointWrite(result, scripts, { resetPicks: true });
+    finishJointWrite(result, scripts, { resetPicks: true, toast: 'added' });
   };
 
   const handleJointCardChange = (next) => {
@@ -9752,7 +9759,31 @@ const App = () => {
     setJointCard(next);
   };
 
-  const finishJointWrite = (result, scripts, { resetPicks = false } = {}) => {
+  const armJointDeleteToast = () => {
+    setJointDeleteToast(true);
+    if (jointDeleteToastTimerRef.current) clearTimeout(jointDeleteToastTimerRef.current);
+    jointDeleteToastTimerRef.current = setTimeout(() => {
+      jointDeleteToastTimerRef.current = null;
+      setJointDeleteToast(false);
+    }, 3200);
+  };
+  const dismissJointDeleteToast = () => {
+    if (jointDeleteToastTimerRef.current) clearTimeout(jointDeleteToastTimerRef.current);
+    jointDeleteToastTimerRef.current = null;
+    setJointDeleteToast(false);
+  };
+  /** Toast copy names the joint the way the current joints row shows it. */
+  const jointWriteToast = (kind, doc, jointId) => {
+    const joints = doc?.joints || [];
+    const joint = joints.find((row) => row.id === jointId) || joints[joints.length - 1];
+    if (!joint) return;
+    const partId = cadPartIdRef.current;
+    const viewSurfId = partId ? partSurfId((doc.parts || []).find((row) => row.id === partId)) : null;
+    const label = jointChipLabel(joint, doc, viewSurfId);
+    viewportRef.current?.notify?.(`${kind === 'edited' ? 'Edited' : 'Added'}: ${label}`, { undo: false });
+  };
+
+  const finishJointWrite = (result, scripts, { resetPicks = false, toast = null, jointId = null } = {}) => {
     if (!result?.ok) {
       if (result?.message) {
         viewportRef.current?.notify?.(result.message);
@@ -9774,6 +9805,8 @@ const App = () => {
     };
     setJointLive(jointLiveRef.current);
     paintAssemblyPoses(written);
+    if (toast === 'deleted') armJointDeleteToast();
+    else if (toast) jointWriteToast(toast, written, jointId);
     if (resetPicks) {
       jointPicksRef.current = [];
       viewportRef.current?.clearJointHighlights?.();
@@ -9806,7 +9839,7 @@ const App = () => {
       viewportRef.current?.notify?.(result.message);
       return;
     }
-    finishJointWrite(result, scripts, { resetPicks: card.mode !== 'edit' });
+    finishJointWrite(result, scripts, { resetPicks: card.mode !== 'edit', toast: card.mode === 'edit' ? 'edited' : 'added', jointId: card.id });
   };
 
   const handleJointCancel = () => {
@@ -9860,7 +9893,6 @@ const App = () => {
     if (!joint) return;
     const card = cardFromJoint(joint, doc);
     jointPicksRef.current = card.picks;
-    rememberCadPart(null);
     setJointCard(card);
   };
 
@@ -9882,7 +9914,7 @@ const App = () => {
       viewportRef.current?.notify?.(result.message);
       return;
     }
-    finishJointWrite(result, scripts);
+    finishJointWrite(result, scripts, { toast: 'deleted' });
   };
 
   const handleFaceSelected = (faceData) => {
@@ -10773,7 +10805,10 @@ const App = () => {
 
   const cadHighlightId = cadPartId || assemblyDoc?.activeId || null;
   const sheetRibbonOpen = sketchStrip == null && sheetStrip != null;
-  const showJoints = !sheetRibbonOpen && jointsChromeMounted({ appMode, featureSession }) && cadStripsShowJoints(cadPartId);
+  const jointsChrome = jointsChromeMounted({ appMode, featureSession });
+  // Strip Undo walks the assembly stack only while the assembly itself is
+  // selected (title chip). The strip shows no feature chips then.
+  const showJoints = !sheetRibbonOpen && jointsChrome && stripUndoTarget(cadPartId) === 'joint';
   const jointCreateOpen = jointsChromeMounted({ appMode, featureSession })
     && (jointCard?.mode === 'create' || jointCard?.mode === 'edit');
   const jointUndoReady = showJoints && assemblyHistTick >= 0 && assemblyHistoryCanUndo(assemblyHistoryRef.current);
@@ -10784,8 +10819,42 @@ const App = () => {
   const stripCanRedo = showJoints ? jointRedoReady : canRedo();
   const undoLabel = stripUndoLabel(showJoints ? null : cadPartId);
   const redoLabel = stripRedoLabel(showJoints ? null : cadPartId);
-  const liveJointChips = showJoints ? jointChips(assemblyDoc, jointLive) : null;
   const sketchOpen = sketchStrip != null;
+  // Per-part joints row under the strip (Half A). Scope is the selected part,
+  // or the whole assembly while the assembly is selected.
+  const jointsRowOpen = jointsChrome && !sketchOpen && !sheetRibbonOpen && !!assemblyDoc;
+  const cadPartRow = cadPartId ? (assemblyDoc?.parts || []).find((row) => row.id === cadPartId) || null : null;
+  const cadPartSurfId = cadPartRow ? partSurfId(cadPartRow) : null;
+  const jointsRowScope = cadPartId ? 'part' : 'assembly';
+  const jointsRowChips = !jointsRowOpen
+    ? null
+    : (cadPartId && !cadPartSurfId ? [] : jointRowChips(assemblyDoc, jointLive, { surfId: cadPartSurfId }));
+  const jointsRowPartName = cadPartRow?.name || '';
+  const jointsRowNode = jointsRowOpen
+    ? (
+      <JointsRow
+        chips={jointsRowChips}
+        scope={jointsRowScope}
+        partName={jointsRowPartName}
+        activeJointId={jointCard?.mode === 'edit' ? jointCard.id : null}
+        onSelectJoint={handleSelectJoint}
+        compact={isMobile}
+      />
+    )
+    : null;
+  const jointDeleteToastNode = jointDeleteToast && jointsChrome
+    ? (
+      <FeatureDeleteToast
+        lines={['Deleted.']}
+        canUndo={assemblyHistTick >= 0 && assemblyHistoryCanUndo(assemblyHistoryRef.current)}
+        onUndo={() => {
+          handleJointUndo();
+          dismissJointDeleteToast();
+        }}
+        onDismiss={dismissJointDeleteToast}
+      />
+    )
+    : null;
   const jointCardNode = jointCreateOpen && appMode !== 'game'
     ? (
       <JointCard
@@ -10978,7 +11047,7 @@ const App = () => {
     const ribbonOpen = sketchStrip == null && sheetStrip != null;
     const jointsVisible = !ribbonOpen
       && jointsChromeMounted({ appMode, featureSession })
-      && cadStripsShowJoints(cadPartIdRef.current);
+      && stripUndoTarget(cadPartIdRef.current) === 'joint';
     return {
       sketchOpen: sketchStrip != null,
       showJoints: jointsVisible,
@@ -12006,7 +12075,6 @@ const App = () => {
       }
       const card = cardFromJoint(joint, doc);
       jointPicksRef.current = card.picks;
-      rememberCadPart(null);
       publishJointCard(card);
       return {
         result: {
@@ -12106,7 +12174,7 @@ const App = () => {
         return refused;
       }
       const unchanged = assemblySnapshotsEqual(doc, result.doc);
-      finishJointWrite(result, scripts, { resetPicks: card.mode !== 'edit' });
+      finishJointWrite(result, scripts, { resetPicks: card.mode !== 'edit', toast: card.mode === 'edit' ? 'edited' : 'added', jointId: card.id });
       rememberCadPart(null);
       const written = assemblyRef.current;
       const joints = written?.joints || [];
@@ -12844,6 +12912,8 @@ const App = () => {
               onPickRetarget={handlePickRetarget}
               onCadEmptyClick={handleCadEmptyClick}
               jointPicking={jointCreateOpen}
+            jointCardOpen={jointCreateOpen}
+              jointCardOpen={jointCreateOpen}
               onJointPick={handleJointPick}
               jointCard={jointCardNode}
               cadPartSelected={cadPartId != null}
@@ -12921,17 +12991,20 @@ const App = () => {
                   isCadStage ? '' : 'invisible pointer-events-none'
                 }`}
                 data-stage-pane="cad"
+                data-joints-row-open={jointsRowOpen ? '' : undefined}
                 aria-hidden={!isCadStage}
               >
                 {viewportEl}
                 {agentPromptNode}
+                {jointDeleteToastNode}
                 {/* Slice Mobile C.2: CAD feature strip HORIZONTAL under the title.
                     Top is --feature-strip-offset-mobile: header top-4, two pills,
                     and --viewer-title-stack-gap twice. */}
                 {isCadStage && (
                   <div
-                    className="cad-feature-strip-mobile absolute inset-x-0 z-20 pointer-events-auto flex"
+                    className="cad-feature-strip-mobile absolute inset-x-0 z-20 pointer-events-auto flex flex-col"
                     data-cad-feature-strip=""
+                    data-joints-row-mounted={jointsRowOpen ? '' : undefined}
                     data-feature-strip-placement="under-ribbon-horizontal"
                     data-feature-strip-gap="name-2x"
                     data-feature-bar-row="full"
@@ -12939,7 +13012,6 @@ const App = () => {
                     <FeatureStrip
                       orientation="horizontal"
                       script={stripScript}
-                      joints={sketchOpen || sheetRibbonOpen ? null : liveJointChips}
                       entities={sketchOpen ? sketchStrip.entities : null}
                       bodyCount={stripBodyCount}
                       failedIds={stripFailedIds}
@@ -12950,7 +13022,6 @@ const App = () => {
                       activeId={sketchOpen ? sketchStrip.activeId : (featureSheet?.feature?.id || featureStripActiveId || (sheetRibbonOpen ? sheetStrip.activeId : null))}
                       hideWhenEmpty
                       onJump={sketchOpen ? undefined : ((f) => openFeatureSheetFor(f))}
-                      onSelectJoint={sketchOpen || sheetRibbonOpen ? undefined : handleSelectJoint}
                       onSelectEntity={sketchOpen ? onSketchSelect : undefined}
                       onSelectSheet={sketchOpen ? undefined : onSheetSelect}
                       onUndo={sketchOpen ? onSketchUndo : stripUndo}
@@ -12960,6 +13031,7 @@ const App = () => {
                       undoLabel={sketchOpen ? 'Undo' : undoLabel}
                       redoLabel={sketchOpen ? 'Redo' : redoLabel}
                     />
+                    {jointsRowNode}
                   </div>
                 )}
               </div>
@@ -13248,13 +13320,16 @@ const App = () => {
         {appMode === 'game' && (
         <SplitDivider orientation="vertical" onDrag={(x) => handleSplitDragX(x)} />
         )}
-        <div className="relative flex-1 min-w-0">
+        <div className="relative flex-1 min-w-0" data-joints-row-open={jointsRowOpen ? '' : undefined}>
+          {jointDeleteToastNode}
           {/* Desktop CAD viewer feature bar (horizontal under title) — replaces
-              the old vertical seam strip between editor and viewer. */}
+              the old vertical seam strip between editor and viewer. The
+              per-part joints row stacks directly under it. */}
           {appMode !== 'game' && (
             <div
-              className="absolute inset-x-0 top-14 z-20 pointer-events-auto flex px-2"
+              className="absolute inset-x-0 top-14 z-20 pointer-events-auto flex flex-col px-2"
               data-desktop-feature-strip=""
+              data-joints-row-mounted={jointsRowOpen ? '' : undefined}
               data-cad-feature-strip="desktop"
               data-feature-strip-placement="viewer-under-title-horizontal"
               data-feature-strip-gap="name-2x"
@@ -13263,7 +13338,6 @@ const App = () => {
               <FeatureStrip
                 orientation="horizontal"
                 script={stripScript}
-                joints={sketchOpen || sheetRibbonOpen ? null : liveJointChips}
                 entities={sketchOpen ? sketchStrip.entities : null}
                 bodyCount={stripBodyCount}
                 failedIds={stripFailedIds}
@@ -13274,7 +13348,6 @@ const App = () => {
                 activeId={sketchOpen ? sketchStrip.activeId : (featureSheet?.feature?.id || featureStripActiveId || (sheetRibbonOpen ? sheetStrip.activeId : null))}
                 hideWhenEmpty
                 onJump={sketchOpen ? undefined : handleDesktopFeatureStripJump}
-                onSelectJoint={sketchOpen || sheetRibbonOpen ? undefined : handleSelectJoint}
                 onSelectEntity={sketchOpen ? onSketchSelect : undefined}
                 onSelectSheet={sketchOpen ? undefined : onSheetSelect}
                 onUndo={sketchOpen ? onSketchUndo : stripUndo}
@@ -13284,6 +13357,7 @@ const App = () => {
                 undoLabel={sketchOpen ? 'Undo' : undoLabel}
                 redoLabel={sketchOpen ? 'Redo' : redoLabel}
               />
+              {jointsRowNode}
             </div>
           )}
           <Viewport 

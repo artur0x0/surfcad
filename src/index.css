@@ -41,6 +41,11 @@
   /* Horizontal CAD feature ribbon (assembly / part / empty). 46px:
      32px chip + 12px py-1.5 + 2px border. See docs/ui-style-guide.md. */
   --feature-strip-height: 2.875rem;
+  /* Per-part joints row directly under that ribbon. 0 while the row is not
+     mounted (game, feature session, sketch, sheet ribbon, no assembly);
+     the pane that holds the row sets it to the ribbon height. Rails and
+     the script drawer add it to their ribbon clearance. */
+  --joint-row-height: 0px;
   /* 10px between the ribbon bottom and the left/right tool rails. */
   --feature-strip-rail-gap: 0.625rem;
   --feature-strip-offset-desktop: 3.5rem; /* top-14 under the title row */
@@ -463,6 +468,10 @@ textarea {
   .cad-feature-strip-mobile {
     top: var(--feature-strip-offset-mobile);
   }
+  /* The joints row is up: rails and the script drawer start under it. */
+  [data-joints-row-open] {
+    --joint-row-height: var(--feature-strip-height);
+  }
   /* One height for the horizontal CAD feature ribbon in every state. */
   .feature-strip-bar {
     height: var(--feature-strip-height);
@@ -479,6 +488,7 @@ textarea {
     top: calc(
       var(--feature-strip-offset-desktop)
       + var(--feature-strip-height)
+      + var(--joint-row-height)
       + var(--feature-strip-rail-gap)
     );
     bottom: var(--feature-strip-rail-gap);
@@ -491,6 +501,7 @@ textarea {
         100%
         - var(--feature-strip-offset-mobile)
         - var(--feature-strip-height)
+        - var(--joint-row-height)
         - var(--feature-strip-rail-gap)
         - var(--feature-strip-rail-gap)
       )
@@ -502,6 +513,7 @@ textarea {
       100%
       - var(--feature-strip-offset-desktop)
       - var(--feature-strip-height)
+      - var(--joint-row-height)
       - var(--feature-strip-rail-gap)
       - var(--feature-strip-rail-gap)
     );
@@ -512,6 +524,7 @@ textarea {
         100%
         - var(--feature-strip-offset-mobile)
         - var(--feature-strip-height)
+        - var(--joint-row-height)
         - var(--feature-strip-rail-gap)
         - var(--feature-strip-rail-gap)
       );
