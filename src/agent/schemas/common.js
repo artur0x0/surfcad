@@ -141,6 +141,15 @@ export const STATUS_SCHEMA = Object.freeze({
       description: 'Feature blocks (by feature_tree id) served from the cache on the last run: true per id',
       additionalProperties: { type: 'boolean' },
     },
+    jointFailures: {
+      type: 'object',
+      description: 'Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.',
+      additionalProperties: false,
+      properties: {
+        count: { type: 'integer' },
+        ids: { type: 'array', items: { type: 'string' } },
+      },
+    },
     features: {
       type: 'array',
       description: 'Feature strip rows, only with return: "summary" (script is omitted with "status" and "summary")',
