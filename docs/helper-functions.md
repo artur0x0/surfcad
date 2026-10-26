@@ -24,6 +24,7 @@ comparable and train-able.
 | `filletAlongPath(part, path, r, opts?)` | Dihedral fillet/chamfer swept along a path → subtract |
 | `edge(part, id)` / `edgesBetween(part, faceA, faceB)` / `boundaryEdges(part)` | Fillet-mode face/edge ids (re-pick if the mesh changes) |
 | `faceNames(part)` / `facesNamed(part, name)` / `edgesOf(part, name)` / `surfaceOf(face)` | Face identity: names the helpers stamped at construction (`cube1.top`, `boss.side`, `extrude2.wall[3]`), stable across edits and rebuilds; `edgesOf` is the convex edges around one named face |
+| `edgesNamed(part, ...names)` | The one stable edge reference: the segments between two named faces (`plate.top~boss.side`, `[k]` for one chain of a pair, `*` glob), for `makeSweepPath` / `filletAlongPath`. Fillet and chamfer surfaces are named too (`<block>.round`, `<block>.bevel`), uploads `import@1.f<k>`, freehand runs `<block>.f<k>` |
 
 **Loud failure rule:** feature helpers throw named `Error`s on bad inputs,
 degenerate cutters, non-manifold / empty results, or (for `filletEdges`) when
@@ -710,6 +711,26 @@ via `faceID`, welding edges). The public selectors:
 const topFaces = facesByNormal(part, [0, 0, 1]);      // all upward faces
 const wall     = facesByNormal(part, [1, 0, 0])[0];   // a +X face
 ```
+
+### edgesNamed(part, ...names)
+
+The one edge reference a script should hold. An edge is the pair of stamped faces it lies between, so the name survives every edit that keeps those faces, where `edge(part, 17)` renumbers after any earlier change and a literal `va/vb` wire breaks as soon as the geometry moves.
+
+```javascript
+const e1 = edgesNamed(part, 'plate.top~boss.side');            // every chain between those faces
+const e2 = edgesNamed(part, 'plate.top~boss.side[1]');         // one chain of a pair that meets twice
+const e3 = edgesNamed(part, 'cube1.top~cube1.front', 'cube1.top~cube1.right'); // several edges, one list
+const e4 = edgesNamed(part, 'boss.top~boss.wall[*]');          // glob: the rim of a hex boss
+part = filletAlongPath(part, makeSweepPath(e1), 2);
+part = filletAlongPath(part, makeSweepPath(edgesNamed(part, 'plate.top~fillet-2.round')), 1, { profile: 'chamfer' });
+```
+
+- Face order inside a name does not matter (`a~b` is `b~a`). Names come from `faceNames(part)`, `list_feature_edges`, or the Fillet card.
+- A bare pair returns every chain between those faces. `[k]` picks one chain and throws when the pair no longer has that many chains (the pieces changed): re-pick, or use the bare name. `*` globs either side.
+- Returns the same segment rows `edge()` returns (`a`, `b`, `va`, `vb`, `length`, `mid`, plus `n0` / `n1` and `name`), so `makeSweepPath` and `filletAlongPath` are unchanged. `result.names` lists the chains it matched.
+- Throws, listing the edges that exist, when a name matches nothing. It never substitutes a nearby edge.
+- Every face has a name: helper roles (`cube1.top`), fillet and chamfer surfaces (`fillet-16.round`, `chamfer-3.bevel`, one piece per contiguous strip), uploads by coplanar group (`import@1.f3`), and freehand `Manifold.*` runs by their block (`snippet2.f7`, else `script.f7`).
+- `filletAlongPath` also refuses a path whose knots are not on an edge of the solid (a stale literal wire), instead of sweeping a cutter through air.
 
 ### faceNames(part) / facesNamed(part, name) / edgesOf(part, name) / surfaceOf(face)
 

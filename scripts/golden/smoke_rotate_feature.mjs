@@ -443,10 +443,12 @@ if (!exe) {
       await page.waitForTimeout(400);
       const ghost2 = await worldBounds('rotate-preview');
       check('ghost follows the new placement (+50 in X)', !!ghost2 && !!ghost && near(ghost2.min[0], ghost.min[0] + 50) && near(ghost2.max[2], ghost.max[2]), `${fmt(ghost)} -> ${fmt(ghost2)}`);
+      // cancel_feature leaves the Rotate chip the way its X does (MVP 3 edge slice 2/3).
       await agentCall('cancel_feature', {});
-      await page.locator('[data-rotate-mode] button[aria-label="Cancel"]').click();
+      await page.locator('[data-rotate-mode]').waitFor({ state: 'detached', timeout: 5000 });
       await page.waitForTimeout(300);
       check('ghost is gone once Rotate is dismissed', (await worldBounds('rotate-preview')) === null);
+      check('Rotate chip is gone', (await page.locator('[data-rotate-mode]').count()) === 0);
       check('no page errors (desktop)', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
       await page.close();
 

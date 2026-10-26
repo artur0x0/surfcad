@@ -52,6 +52,7 @@ import {
   emitSelectedEdgeLines,
   emitSelectedEdgeLiteralLines,
   emitFilletBoundaryLines,
+  emitNamedEdgeLines,
   emitSpanExpr,
   holeReachParams,
   estimateCylinderAxis,
@@ -1719,7 +1720,8 @@ export const HELPER_PALETTE_ITEMS = [
         const wrote = appendResolvedSweepBlends(
           feat,
           comps,
-          (comp) => emitFilletBoundaryLines(body, comp, names, allocateUniqueName)
+          (comp) => emitNamedEdgeLines(body, comp, names, allocateUniqueName)
+            || emitFilletBoundaryLines(body, comp, names, allocateUniqueName)
             || emitSelectedEdgeLiteralLines(body, comp, names, allocateUniqueName),
           (edge) => {
             const path = allocateUniqueName(names, 'path');
@@ -1787,7 +1789,8 @@ export const HELPER_PALETTE_ITEMS = [
         const wrote = appendResolvedSweepBlends(
           feat,
           comps,
-          (comp) => emitFilletBoundaryLines(body, comp, names, allocateUniqueName)
+          (comp) => emitNamedEdgeLines(body, comp, names, allocateUniqueName)
+            || emitFilletBoundaryLines(body, comp, names, allocateUniqueName)
             || emitSelectedEdgeLiteralLines(body, comp, names, allocateUniqueName),
           (edge) => {
             const path = allocateUniqueName(names, 'path');
