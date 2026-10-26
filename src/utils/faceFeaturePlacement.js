@@ -963,6 +963,56 @@ export function emitSelectedEdgeLiteralLines(_body, selectedEdges, names, alloca
 }
 
 /**
+ * Fillet / chamfer Accept by edge name (edge identity): one `edgesNamed`
+ * call per contiguous component, naming the pair of stamped faces each
+ * picked chain lies between. A pair whose every chain is picked is written
+ * bare (`plate.top~boss.side`); a partial set keeps the `[k]` of the chains
+ * picked. Returns null when a row has no name or a chain is only partly
+ * picked, so the caller can fall back (boundary ids, then the literal wire).
+ *
+ * @returns {{ lines: string[], edgesExpr: string, ok: true, names: string[] } | null}
+ */
+export function emitNamedEdgeLines(body, selectedEdges, names, allocateUniqueName) {
+  const edges = Array.isArray(selectedEdges) ? selectedEdges.filter(Boolean) : [];
+  if (!edges.length) return null;
+  const byChain = new Map();
+  for (const edge of edges) {
+    if (typeof edge.edgeName !== 'string' || !edge.edgeName) return null;
+    let row = byChain.get(edge.edgeName);
+    if (!row) {
+      row = { base: edge.edgeBase || edge.edgeName, pairChains: Number(edge.edgePairChains) || 1, size: Number(edge.edgeChainSize) || 0, keys: new Set() };
+      byChain.set(edge.edgeName, row);
+    }
+    const a = Number.isFinite(edge.a) ? edge.a : null;
+    const b = Number.isFinite(edge.b) ? edge.b : null;
+    row.keys.add(a != null && b != null ? `${Math.min(a, b)}-${Math.max(a, b)}` : String(edge.key ?? byChain.size));
+  }
+  // Every picked chain must be whole: a partial chain has no name of its own.
+  for (const row of byChain.values()) {
+    if (!(row.size > 0) || row.keys.size < row.size) return null;
+  }
+  // A pair with every chain picked is the bare name.
+  const perBase = new Map();
+  for (const [name, row] of byChain) {
+    let list = perBase.get(row.base);
+    if (!list) { list = { pairChains: row.pairChains, names: [] }; perBase.set(row.base, list); }
+    list.names.push(name);
+  }
+  const written = [];
+  for (const [base, info] of perBase) {
+    if (info.names.length >= info.pairChains) written.push(base);
+    else written.push(...info.names.sort());
+  }
+  const edgesVar = allocateUniqueName(names, 'selEdges');
+  return {
+    lines: [`const ${edgesVar} = edgesNamed(${body}, ${written.map((n) => JSON.stringify(n)).join(', ')});`],
+    edgesExpr: edgesVar,
+    ok: true,
+    names: written,
+  };
+}
+
+/**
  * Fillet / chamfer-via-sweep Accept: short face/edge helpers instead of
  * tessellation va/vb dumps. Edges without boundary ids return null so the
  * caller can keep the literal wire (Path tool, older fixtures).
