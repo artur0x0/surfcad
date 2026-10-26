@@ -34,6 +34,7 @@ import { emptyPartHistory, pushPartHistory } from './partHistory.js';
 import { bytesAfterHeaderLine, headerLineEnding } from './git/surfId.js';
 import { wrapRawScript } from './wrapRawScript.js';
 import { withAgentDrivenChange } from '../agent/agentFeaturePopupGate.js';
+import { jointBrokenWarning, jointFailuresOf } from '../agent/state/jointHealth.js';
 
 export const AGENT_STORAGE_KEY = 'surfcadAgent';
 
@@ -211,6 +212,7 @@ function copyStatus(status) {
     ...(featureMsOf(src.featureMs) ? { featureMs: featureMsOf(src.featureMs) } : {}),
     ...(cacheOf(src.cache) ? { cache: cacheOf(src.cache) } : {}),
     ...(cachedOf(src.featureCached) ? { featureCached: cachedOf(src.featureCached) } : {}),
+    ...(src.jointFailures ? { jointFailures: jointFailuresOf({ failed: src.jointFailures }) } : {}),
   };
 }
 
@@ -391,7 +393,7 @@ export function createSurfcadBridge(hostSource) {
       ok,
       errors: lastErrors.slice(),
       failures: lastStructuredErrors.slice(),
-      status: copyStatus(lastStatus),
+      status: withJointFailures(copyStatus(lastStatus)),
     };
     if (Array.isArray(outcome?.droppedPaints)) {
       result.droppedPaints = JSON.parse(JSON.stringify(outcome.droppedPaints));
@@ -433,6 +435,21 @@ export function createSurfcadBridge(hostSource) {
     return `${prefix}${sep}${raw}`;
   }
 
+  /** Live joint health from the host, or null when the host has no joints reader. */
+  function readJointHealth() {
+    const read = hostFn('readJointHealth');
+    if (!read) return null;
+    const health = read();
+    return health && typeof health === 'object' ? health : null;
+  }
+
+  /** `status` plus `jointFailures { count, ids }` from the live joint health. */
+  function withJointFailures(status) {
+    const health = readJointHealth();
+    if (!health) return status;
+    return { ...status, jointFailures: jointFailuresOf(health) };
+  }
+
   async function mutate(text, message) {
     const normalized = normalizeAgentScript(text);
     const readHistory = hostFn('readHistory');
@@ -440,6 +457,9 @@ export function createSurfcadBridge(hostSource) {
     const execute = hostFn('execute');
     const writeHistory = hostFn('writeHistory');
     const before = cloneAgentHistory(readHistory ? readHistory() : emptyPartHistory());
+    // A part edit re-resolves every joint that names the part; the result
+    // says which joints stopped solving because of it.
+    const jointsBefore = readJointHealth();
     // Header first (prefix, not mint regex), then one Code wrap around the body.
     const source = wrapRawScript(normalized);
     if (setEditor) setEditor(source);
@@ -450,7 +470,10 @@ export function createSurfcadBridge(hostSource) {
       outcome = failedExecute(err);
     }
     if (writeHistory) writeHistory(commitAgentStep(before, source, message));
-    return remember(outcome, source);
+    const result = remember(outcome, source);
+    const warning = jointBrokenWarning(jointsBefore, readJointHealth());
+    if (warning && !result.warning) result.warning = warning;
+    return result;
   }
 
   function failedExecute(err) {
@@ -487,8 +510,9 @@ export function createSurfcadBridge(hostSource) {
       const activeId = ctx.readParts()?.activeId ?? '';
       const activeKey = activeId != null ? String(activeId) : '';
       if (activeKey !== lastStatusPartId) refreshStatusForActivePart();
-      return copyStatus(lastStatus);
+      return withJointFailures(copyStatus(lastStatus));
     },
+    readJointHealth,
     readErrors: () => lastErrors.slice(),
     readStructuredErrors: () => {
       const custom = hostFn('readStructuredErrors');
