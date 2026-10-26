@@ -11,7 +11,7 @@ import { emitNote } from './insertEmits.js';
 const RESERVED_HELPERS = ` ${reservedHelperClause()} list_helpers { names } (over MCP) or guide { topic: "dialect" } documents each helper.`;
 /** Every tool that runs geometry says what a kernel crash looks like and what to do. */
 export const CRASH_NOTE = ' If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. When the run past the budget was inside one marked feature block, the part is rebuilt without that block instead: the result is ok: false with one failures row { code: feature_timeout, featureId, featureType, featureLabel, elapsedMs, budgetMs, detail }, status.runState is failed, the other features are built and shown, and status.featureMs (and feature_tree ms) say how long each block took; edit, delete, or undo that feature.';
-const USE_SELECTION_RESULT_NOTE = ' The result usedSelection says whether the viewport selection was used. A pick that carries a face name (select_faces { names } or a click on a face a helper built) is written into the script by that name (facesNamed for a hole, edgesOf for a fillet or chamfer: the edges around that face only) and is found again on the new mesh after every rebuild, so a second use_selection insert lands on the same face. A pick with no name (a hull, a freehand Manifold.*) clears with the rebuild, and use_selection: true with nothing selected is no_selection (nothing is written).';
+const USE_SELECTION_RESULT_NOTE = ' The result usedSelection says whether the viewport selection was used. A face pick is written into the script by name (facesNamed for a hole, edgesOf for a fillet or chamfer around that face) and is found again on the new mesh after every rebuild, so a second use_selection insert lands on the same face; an edge pick (select_edges { names }, pick sessions, a tap) is written as edgesNamed(part, "faceA~faceB"), the pair of stamped faces it lies between, which also survives edits. Every face has a name (helper roles, fillet-16.round / chamfer-3.bevel, import@1.f<k>, <block>.f<k> for freehand). Edge picks still clear with the rebuild (re-pick before the next insert), and use_selection: true with nothing selected is no_selection (nothing is written).';
 
 const UNJOINTED_WARNING_SCHEMA = Object.freeze({
   type: 'object',
@@ -334,7 +334,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   list_feature_edges: {
-    description: 'Topology-stable boundary edge ids (e0, e1, …). frame is "local", the same part frame as list_faces and list_edges: midpoints are not moved by the part\'s placement. filter { between: [faceKeyA, faceKeyB], minLength, maxLength, bbox } and page { offset, limit } work as on list_edges; the result carries total and returned.',
+    description: 'Named edges of the active part (or part_id), one row per chain between two stamped faces: key and name ("plate.top~boss.side", with [k] when that pair meets in several chains), faceNameA, faceNameB, faceKeyA, faceKeyB (the same keys list_faces returns, so centres and normals agree), mid, length, closed, chains, ordinal. The name is the stable edge reference: it survives edits that keep the two faces, where the old eN ordinals renumbered after any earlier change; pass it to select_edges { names }, pick_next { keys }, or write edgesNamed(part, name) in a script. A bare pair is every chain of that pair; "[k]" one chain; "*" a glob on either side. Rows come from the mesh that is shown (the rollback bar included), so they agree with list_edges. frame is "local", the same part frame as list_faces and list_edges. filter { between: [faceKeyA, faceKeyB], minLength, maxLength, bbox } and page { offset, limit } as on list_edges.',
     result: { type: 'object', additionalProperties: true },
     errors: ['no_mesh', 'unknown_part', 'internal'],
     mutates: false,
@@ -473,7 +473,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   select_edges: {
-    description: 'Select edges by name, grouped id, or face-key pair. names: ["plate.top~boss.side"] is the edge where those two named faces meet (either order; list_edges rows carry name, faceNameA and faceNameB; [k] picks one chain, * is a glob); keys are grouped ids (e0) or face-key pairs. An unknown name is unknown_edge and lists the edges on the mesh.',
+    description: 'Select edges by name, grouped id, or face-key pair. names: ["plate.top~boss.side"] is the edge where those two named faces meet (either order; list_edges rows carry name, faceNameA and faceNameB; [k] picks one chain, * is a glob); keys take the same names, face-key pairs, or legacy grouped ids (e0). An unknown name is unknown_edge and lists the edges on the mesh.',
     result: { type: 'object', additionalProperties: false, properties: { count: { type: 'integer' }, names: { type: 'array', items: { type: 'string' } } } },
     errors: ['bad_args', 'unknown_edge', 'ambiguous_edge', 'internal'],
     mutates: false,
@@ -593,7 +593,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   pick_next: {
-    description: 'Add or remove picks on the active session.',
+    description: 'Add or remove picks on the active session. An edge key is an edge name from list_feature_edges ("plate.top~boss.side", "[k]" for one chain, "*" glob), a face-key pair, or a legacy eN id; a face key is a list_faces id (fN) or key.',
     result: { type: 'object', additionalProperties: true },
     errors: ['no_pick_session', 'pick_closed', 'pick_timeout', 'pick_rejected', 'pick_limit', 'unknown_face', 'ambiguous_face', 'unknown_edge', 'ambiguous_edge', 'not_picked', 'bad_args', 'internal'],
     mutates: false,
@@ -635,7 +635,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   pick_edges: {
-    description: 'One-shot edge pick session.',
+    description: 'One-shot edge pick session: pick_begin (kind edge) → pick_next { keys } → pick_done. Keys are edge names from list_feature_edges ("plate.top~boss.side"), face-key pairs, or legacy eN ids; with accept: true the card writes edgesNamed(part, …) for the picks.',
     result: { type: 'object', additionalProperties: true },
     errors: ['picker_busy', 'pick_open', 'pick_timeout', 'unknown_edge', 'ambiguous_edge', 'internal'],
     mutates: false,

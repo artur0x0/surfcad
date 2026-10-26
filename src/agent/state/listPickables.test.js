@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from './listPickables.js';
+import { buildEdgeList, buildFaceList, buildGroupedEdgeList, buildNamedEdgeList } from './listPickables.js';
 
 test('buildFaceList returns keys agents can pass to select_faces', () => {
   const out = buildFaceList([{
@@ -75,4 +75,33 @@ test('buildGroupedEdgeList returns short boundary keys', () => {
   assert.equal(out.edges.length, 1);
   assert.equal(out.edges[0].key, 'e3');
   assert.equal(out.edges[0].faceKeyA.area, 400);
+});
+
+test('buildNamedEdgeList keys rows by edge name with the list_faces keys of both sides', () => {
+  const table = {
+    edges: [
+      { name: 'plate.right~plate.top', base: 'plate.right~plate.top', faces: ['plate.right', 'plate.top'], ordinal: 0, chains: 1, length: 20, closed: false, center: [10, 0, 5], segments: [[0, 1]], tris: [[0, 1]] },
+      { name: 'plate.front~plate.top[1]', base: 'plate.front~plate.top', faces: ['plate.front', 'plate.top'], ordinal: 1, chains: 2, length: 8, closed: false, center: [0, -5, 5], segments: [[2, 3]], tris: [[2, 1]] },
+      // A coplanar seam between two names: no crease, so the pick graph has no row for it.
+      { name: 'a.top~b.top', base: 'a.top~b.top', faces: ['a.top', 'b.top'], ordinal: 0, chains: 1, length: 4, closed: false, center: [0, 0, 5], segments: [[7, 8]], tris: [[5, 6]] },
+    ],
+  };
+  const fingerprints = [
+    { tris: [0, 2], at: [10, 0, 0], n: [1, 0, 0], area: 100 },
+    { tris: [1], at: [0, 0, 5], n: [0, 0, 1], area: 400 },
+    { tris: [5, 6], at: [0, 0, 5], n: [0, 0, 1], area: 50 },
+  ];
+  const featureEdges = [{ a: 0, b: 1 }, { a: 3, b: 2 }];
+  const out = buildNamedEdgeList(table, fingerprints, featureEdges);
+  assert.deepEqual(out.edges.map((e) => e.key), ['plate.right~plate.top', 'plate.front~plate.top[1]']);
+  const right = out.edges[0];
+  assert.equal(right.name, right.key);
+  assert.deepEqual([right.faceNameA, right.faceNameB], ['plate.right', 'plate.top']);
+  assert.deepEqual(right.faceKeyA.n, [1, 0, 0]);
+  assert.deepEqual(right.faceKeyB.n, [0, 0, 1]);
+  assert.equal(right.faceKeyB.area, 400);
+  assert.deepEqual(right.mid, [10, 0, 5]);
+  assert.equal(out.edges[1].chains, 2);
+  assert.equal(out.edges[1].ordinal, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(out)), out);
 });
