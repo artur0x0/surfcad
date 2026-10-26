@@ -20,12 +20,44 @@ function pane({ width, paneLeft = 0, leftRail = null, rightRail = null }) {
   };
 }
 
-test('between both rails the card stays centered, 10px clear, capped at 22rem', () => {
+test('on desktop the card sits 10px right of the left rail, capped at 22rem', () => {
   const placed = measureFeatureSheetWidth(pane({
     width: 1200,
     leftRail: box(16, 80),
     rightRail: box(1138, 1190),
   }), 16);
+  assert.equal(placed.width, 352);
+  assert.equal(placed.left, 90);
+  assert.ok(1138 - (placed.left + placed.width) >= 10);
+});
+
+test('on desktop a missing left rail pins the left edge 10px from the pane', () => {
+  const placed = measureFeatureSheetWidth(pane({
+    width: 1200,
+    paneLeft: 40,
+    rightRail: box(40 + 1138, 40 + 1190),
+  }), 16);
+  assert.equal(placed.left, 10);
+  assert.equal(placed.width, 352);
+  assert.ok((40 + 1138) - (40 + placed.left + placed.width) > 10);
+});
+
+test('on desktop fullLeft follows a mounted left rail instead of the pane edge', () => {
+  const placed = measureFeatureSheetWidth(pane({
+    width: 1200,
+    leftRail: box(16, 80),
+    rightRail: box(1138, 1190),
+  }), 16, { fullLeft: true });
+  assert.equal(placed.left, 90);
+  assert.equal(placed.width, 352);
+});
+
+test('a phone card stays centered in a wide gap', () => {
+  const placed = measureFeatureSheetWidth(pane({
+    width: 1200,
+    leftRail: box(16, 80),
+    rightRail: box(1138, 1190),
+  }), 16, { compact: true });
   assert.equal(placed.width, 352);
   assert.equal(placed.left, 90 + (1038 - 352) / 2);
 });
@@ -35,17 +67,17 @@ test('a phone gap under 22rem uses the whole gap between the rails', () => {
     width: 390,
     leftRail: box(8, 64),
     rightRail: box(328, 380),
-  }), 16);
+  }), 16, { compact: true });
   assert.equal(placed.left, 74);
   assert.equal(placed.width, 244);
   assert.ok(328 - (placed.left + placed.width) >= 10);
 });
 
-test('fullLeft pins the left edge at 10px and stays clear of the right rail', () => {
+test('fullLeft on a phone pins the left edge at 10px and stays clear of the right rail', () => {
   const phone = measureFeatureSheetWidth(pane({
     width: 390,
     rightRail: box(328, 380),
-  }), 16, { fullLeft: true });
+  }), 16, { fullLeft: true, compact: true });
   assert.equal(phone.left, 10);
   assert.equal(phone.width, 308);
   assert.equal(328 - (phone.left + phone.width), 10);
@@ -54,26 +86,32 @@ test('fullLeft pins the left edge at 10px and stays clear of the right rail', ()
     width: 1200,
     paneLeft: 40,
     rightRail: box(40 + 1138, 40 + 1190),
-  }), 16, { fullLeft: true });
+  }), 16, { fullLeft: true, compact: true });
   assert.equal(wide.left, 10);
   assert.equal(wide.width, 352);
   assert.ok((40 + 1138) - (40 + wide.left + wide.width) > 10);
 });
 
-test('fullLeft ignores a left rail that is still in the pane', () => {
+test('fullLeft on a phone ignores a left rail that is still in the pane', () => {
   const placed = measureFeatureSheetWidth(pane({
     width: 390,
     leftRail: box(8, 64),
     rightRail: box(328, 380),
-  }), 16, { fullLeft: true });
+  }), 16, { fullLeft: true, compact: true });
   assert.equal(placed.left, 10);
   assert.equal(placed.width, 308);
 });
 
-test('missing rails return null, except fullLeft can skip the left rail', () => {
+test('a missing right rail returns null; a phone still waits for the left rail', () => {
   const rightOnly = pane({ width: 390, rightRail: box(328, 380) });
   const leftOnly = pane({ width: 390, leftRail: box(8, 64) });
-  assert.equal(measureFeatureSheetWidth(rightOnly), null);
+  const wideRightOnly = pane({ width: 1200, rightRail: box(1138, 1190) });
+  assert.equal(measureFeatureSheetWidth(rightOnly, 16, { compact: true }), null);
   assert.equal(measureFeatureSheetWidth(leftOnly, 16, { fullLeft: true }), null);
-  assert.ok(measureFeatureSheetWidth(rightOnly, 16, { fullLeft: true }));
+  assert.equal(measureFeatureSheetWidth(leftOnly, 16, { fullLeft: true, compact: true }), null);
+  assert.equal(measureFeatureSheetWidth(rightOnly, 16, { fullLeft: true, compact: true }).left, 10);
+  const desktop = measureFeatureSheetWidth(wideRightOnly, 16);
+  assert.equal(desktop.left, 10);
+  assert.equal(desktop.width, 352);
+  assert.equal(measureFeatureSheetWidth(wideRightOnly, 16, { fullLeft: true }).left, 10);
 });

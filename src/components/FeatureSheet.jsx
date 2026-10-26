@@ -15,7 +15,8 @@ import {
 
 /**
  * Shared feature card. Mode chips, helper sheets, and the edit sheet
- * render inside this. One card, bottom center, on the phone and on desktop.
+ * render inside this. One card, on the phone and on desktop. Desktop
+ * left-aligns. The phone stays in the gap between the rails.
  *
  * Props:
  * - title, subtitle
@@ -29,12 +30,15 @@ import {
  * - note: node on the left of Confirm
  * - compact: phone. The card bottom docks to the hidden stage switcher.
  *   Desktop when false (10px, no switcher to hide).
- * - fullLeft: the left helper rail is not in the pane. The left edge is the
- *   10px pane inset. The right edge stays clear of the right rail. Fillet,
- *   chamfer, shell, draft, move face, delete face, cut, move, boolean, paint,
- *   and Analyze pass this, on phone and desktop. The sheet metal picker,
- *   feature edit, and any card whose left rail is still there leave this
- *   false and stay centered between both rails.
+ * - fullLeft: do not wait for a left rail. Fillet, chamfer, shell, draft,
+ *   move face, delete face, cut, move, boolean, paint, and Analyze pass this,
+ *   on phone and desktop, because the left helper rail is hidden. On desktop
+ *   the left edge still follows a rail that is actually mounted (10px to its
+ *   right), and is the 10px pane inset only when that rail is absent. On a
+ *   phone this ignores a left rail and pins the left edge to that inset.
+ *   Cards that leave this false keep the phone centering. On desktop they
+ *   sit 10px to the right of the mounted left rail, or 10px from the pane
+ *   when it is not mounted.
  * - headerExtra: a node in the header, between the title and X. Measure
  *   puts the mm|in toggle there. Other cards leave it empty.
  * - bodyAttrs / cardAttrs: extra data attributes for the pilot that owns the card
@@ -192,7 +196,7 @@ export default function FeatureSheet({
     if (!pane) return undefined;
     const measure = () => {
       const root = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      setFrame(measureFeatureSheetWidth(pane, root, { fullLeft }));
+      setFrame(measureFeatureSheetWidth(pane, root, { fullLeft, compact }));
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -206,7 +210,7 @@ export default function FeatureSheet({
       ro.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [fullLeft]);
+  }, [fullLeft, compact]);
 
   useEffect(() => {
     const el = bodyRef.current;
@@ -380,7 +384,9 @@ export default function FeatureSheet({
       {...(editing ? { 'data-feature-field-edit': '' } : null)}
       className={`feature-sheet-card pointer-events-auto absolute z-20 flex min-h-0 flex-col overflow-hidden
         rounded-xl border border-gray-500/50 text-white shadow-lg surface-glass-chip
-        ${placed ? '' : 'left-1/2 w-[min(22rem,calc(100%-9.5rem))] -translate-x-1/2'}`}
+        ${placed ? '' : (compact
+          ? 'left-1/2 w-[min(22rem,calc(100%-9.5rem))] -translate-x-1/2'
+          : 'left-[10px] w-[min(22rem,calc(100%-9.5rem))]')}`}
       style={{
         bottom: editing ? `${lift}px` : bottomCss,
         '--feature-sheet-bottom': editing ? `${lift}px` : bottomCss,
