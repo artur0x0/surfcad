@@ -593,7 +593,7 @@ import { ambiguousFaceError } from '../agent/pick/candidates.js';
 import { createViewportPickHost } from '../agent/pick/viewportPicks.js';
 import { createSketchPickHandlers } from '../agent/pick/sketchViewportPicks.js';
 import { planePatchFromArgs } from '../agent/sketchPlaneAgent.js';
-import { buildEdgeList, buildFaceList, buildGroupedEdgeList } from '../agent/state/listPickables.js';
+import { buildEdgeList, buildFaceList, buildNamedEdgeList } from '../agent/state/listPickables.js';
 import { describeJointPick } from '../agent/jointPickDescribe.js';
 import { agentFaceCatalog, findAgentFace } from '../agent/faceCatalog.js';
 import {
@@ -12556,23 +12556,43 @@ const Viewport = forwardRef(({
     const annotated = topo?.edges?.length
       ? annotateFeatureEdges(rawEdges, topo)
       : rawEdges;
-    return { fingerprints, rawEdges, topo, annotated };
+    const table = stampedFaceTable(geom, faceIDsRef.current);
+    return { fingerprints, rawEdges, topo, annotated, table };
   };
 
+  /** A string key with `~` is an edge name (`plate.top~boss.side`, `[k]`, `*`). */
+  const isEdgeNameKey = (key) => typeof key === 'string' && key.includes('~');
+
   const expandAgentEdgeKeys = (prep, keys) => {
-    const resolved = resolveEdgeKeys(
-      prep.rawEdges,
-      keys,
-      activePartIdRef.current,
-      prep.fingerprints,
-      prep.topo,
-    );
-    if (resolved.error) return resolved;
-    const edges = expandResolvedEdgesForHelper(resolved.edges, {
+    const list = Array.isArray(keys) ? keys : [];
+    const graph = {
       coherent: featureEdgesRef.current || [],
       annotated: prep.annotated,
       topo: prep.topo,
-    });
+    };
+    const resolvedRows = [];
+    // Edge identity: names resolve on the stamped table, the same way
+    // select_edges { names } does; eN ids and face-key pairs keep working.
+    const names = list.filter(isEdgeNameKey);
+    if (names.length) {
+      const byName = resolveEdgeNames(prep.table, prep.rawEdges, names);
+      if (byName.error) return byName;
+      const partId = activePartIdRef.current;
+      resolvedRows.push(...byName.edges.map((row) => (partId ? { ...row, partId: String(partId) } : row)));
+    }
+    const others = list.filter((key) => !isEdgeNameKey(key));
+    if (others.length) {
+      const resolved = resolveEdgeKeys(
+        prep.rawEdges,
+        others,
+        activePartIdRef.current,
+        prep.fingerprints,
+        prep.topo,
+      );
+      if (resolved.error) return resolved;
+      resolvedRows.push(...resolved.edges);
+    }
+    const edges = expandResolvedEdgesForHelper(resolvedRows, graph);
     if (!edges.length) {
       return { error: { code: 'unknown_edge', message: 'Edge key did not resolve to pickable geometry' } };
     }
@@ -13015,12 +13035,16 @@ const Viewport = forwardRef(({
   agentListFeatureEdgesRef.current = ({ partId } = {}) => {
     const geom = meshGeometryForAgentPart(partId);
     if (!geom) return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
-    syncFeatureEdges(geom);
-    const topo = boundaryTopoRef.current;
-    const listed = buildGroupedEdgeList(topo);
+    // Edge identity: one row per named edge of the mesh that is shown (the
+    // rollback bar included), with face keys from the list_faces catalog.
+    const faceIDs = faceIDsForAgentPart(partId, geom);
+    const table = stampedFaceTable(geom, faceIDs);
+    const fingerprints = fingerprintsFromGeometry(geom, faceIDs);
+    const listed = buildNamedEdgeList(table, fingerprints, buildFeatureEdges(geom));
     return {
       partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
       grouped: true,
+      named: true,
       ...poseListedEdges(listed, featureRigidForAgentPart(partId)),
     };
   };

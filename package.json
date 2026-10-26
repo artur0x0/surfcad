@@ -281,6 +281,7 @@
         "golden:face-identity": "node scripts/golden/smoke_face_identity.mjs",
         "golden:face-identity-select": "node scripts/golden/smoke_face_identity_select.mjs",
         "golden:edge-identity-accept": "node scripts/golden/smoke_edge_identity_accept.mjs",
+        "golden:agent-edges-named": "node scripts/golden/smoke_agent_edges_named.mjs",
         "golden:face-identity-rebuild": "node scripts/golden/smoke_face_identity_rebuild.mjs",
         "golden:delete-face": "node scripts/golden/smoke_delete_face.mjs",
         "golden:assembly": "node scripts/golden/smoke_assembly.mjs",
