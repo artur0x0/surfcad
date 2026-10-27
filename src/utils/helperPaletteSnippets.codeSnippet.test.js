@@ -54,3 +54,17 @@ test('the agent tool refuses an empty gap, why, or script with bad_args', () => 
   }
   assert.equal(validateHelperParams(item, coerceHelperParams(item, {}))?.code, 'bad_args');
 });
+
+test('on an empty part a snippet written as `part = …` declares part, and one that declares it is left alone (B3)', () => {
+  const assigned = composeHelperInsert('', 'codeSnippet', null, { gap: 'thread', why: 'no thread feature', script: 'part = Manifold.cube([10, 10, 10], true);\npart = part.add(Manifold.sphere(3, 12));' });
+  assert.match(assigned, /\/\/ FEATURE-GAP: thread \| no thread feature\nlet part = Manifold\.cube\(\[10, 10, 10\], true\);\npart = part\.add/);
+  assert.equal((assigned.match(/let part/g) || []).length, 1);
+  const declared = composeHelperInsert('', 'codeSnippet', null, { gap: 'thread', why: 'no thread feature', script: 'const base = Manifold.cube([10, 10, 10], true);\nlet part = base;' });
+  assert.equal((declared.match(/let part/g) || []).length, 1);
+  assert.match(declared, /const base = Manifold\.cube/);
+  const noPart = composeHelperInsert('', 'codeSnippet', null, { gap: 'x', why: 'y', script: 'const lonely = Manifold.cube([1, 1, 1]);' });
+  assert.match(noPart, /\nlet part;\nconst lonely/);
+  // A later feature on a part that already exists is untouched.
+  const later = composeHelperInsert(CUBE, 'codeSnippet', null, { gap: 'x', why: 'y', script: 'part = part.add(Manifold.sphere(2, 8));' });
+  assert.doesNotMatch(later, /let part = part/);
+});

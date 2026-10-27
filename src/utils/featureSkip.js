@@ -538,7 +538,7 @@ export function rolledBackFeatureIds(script, anchorId) {
     .map((feature) => feature.id);
 }
 
-function explicitMarkerId(script, feature) {
+export function explicitMarkerId(script, feature) {
   const lineEnd = script.indexOf('\n', feature.startOffset);
   const line = script.slice(feature.startOffset, lineEnd < 0 ? feature.endOffset : lineEnd);
   return / id=[A-Za-z_$][\w$]* ---/.test(line);
@@ -557,7 +557,7 @@ function mintFeatureId(script, prefix) {
 }
 
 /** Write `id=` on a block that only had a positional chip id, so the id survives a later insert. */
-function stampFeatureId(script, feature, id) {
+export function stampFeatureId(script, feature, id) {
   if (!feature || explicitMarkerId(script, feature)) return script;
   const beginEnd = script.indexOf('\n', feature.startOffset);
   const beginStop = beginEnd < 0 ? feature.endOffset : beginEnd;

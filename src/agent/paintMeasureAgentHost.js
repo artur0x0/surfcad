@@ -27,6 +27,7 @@ const PAINT_OPEN_REASON_TEXT = {
   prompt_working: 'an agent prompt is being worked, so agent-opened cards are held back until it is answered',
   mode_not_ready: 'the viewport did not take paint mode yet (a part switch or run may still be settling)',
 };
+const PROMPT_WORKING = 'prompt_working';
 
 export function createPaintMeasureAgentHandlers(deps) {
   const wait = (ms) => (typeof deps.wait === 'function' ? deps.wait(ms) : new Promise((r) => setTimeout(r, ms)));
@@ -56,10 +57,13 @@ export function createPaintMeasureAgentHandlers(deps) {
     /**
      * Open paint mode, waiting up to PAINT_OPEN_WAIT_MS for the viewport to
      * take it: right after create_part or set_active_part the part switch
-     * may still be settling, and while an agent prompt is being worked the
-     * feature-popup gate holds agent-opened cards back. Never `open: false`
-     * with no reason: when the wait runs out the result is a `not_ready`
-     * error that names the reason and can be retried.
+     * may still be settling. While an agent prompt is being worked the
+     * feature-popup gate holds agent-opened cards back, so paint opens
+     * headless instead (the session runs, no card is mounted; result
+     * `headless: true`), rather than refusing or waiting (B2: a bronze paint
+     * returned nothing and never applied until set_status idle). Never
+     * `open: false` with no reason: when the wait runs out the result is a
+     * `not_ready` error that names the reason and can be retried.
      */
     async paintOpen() {
       if (deps.appMode === 'game') {
@@ -75,6 +79,10 @@ export function createPaintMeasureAgentHandlers(deps) {
         if (!reason) {
           deps.enterPaintModeRef?.current?.();
           if (deps.paintModeRef?.current) return { result: { open: true } };
+          reason = 'mode_not_ready';
+        } else if (reason === PROMPT_WORKING) {
+          deps.enterPaintModeRef?.current?.({ headless: true });
+          if (deps.paintModeRef?.current) return { result: { open: true, headless: true } };
           reason = 'mode_not_ready';
         }
         if (now() >= deadline) break;
@@ -224,6 +232,7 @@ export function createPaintMeasureAgentHandlers(deps) {
           pendingCount: pendingPaintCount(state.session, state.baseline),
           canConfirm,
           canUndo: Array.isArray(state.undo) && state.undo.length > 0,
+          ...(state.headless === true ? { headless: true } : {}),
         },
       };
     },

@@ -8531,7 +8531,7 @@
     },
     {
       "name": "insert_mirror",
-      "description": "Prefer this over freehand set_script. Mirror one body of the active part across a plane and keep the original. plane is xy, yz, or xz (through the origin). Name the body the same way as insert_move: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. Nothing named and nothing selected is no_body; the origin is never assumed. A workplane or a planar face is picked in the Mirror card. edit_feature on the mirror takes plane, keepOriginal, and at. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes. Fix one base part with a fixed joint, then place every part that touches or attaches to another with joint_create (one call creates the joint and solves placement). Use part_set_transform only for parts that touch nothing. Block-out positions are rough; joints set final positions. If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. When the run past the budget was inside one marked feature block, the part is rebuilt without that block instead: the result is ok: false with one failures row { code: feature_timeout, featureId, featureType, featureLabel, elapsedMs, budgetMs, detail }, status.runState is failed, the other features are built and shown, and status.featureMs (and feature_tree ms) say how long each block took; edit, delete, or undo that feature. Writes (defaults): part = mirror(part, 'yz', true); Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Prefer this over freehand set_script. Mirror the active part, or one body of it, across a plane and keep the original. plane is xy, yz, or xz (through the origin). With no body named the whole part is mirrored (body defaults to part). To mirror one body name it the same way as insert_move: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. A workplane or a planar face is picked in the Mirror card. edit_feature on the mirror takes plane, keepOriginal, and at. Working copy only; git_save commits. Build in ribbon order: block out every part of the assembly as plain blocks first (within seconds of the prompt, then screenshot for the user), then Build and Shape, then Polish, then pattern and place; finish each stage across the whole assembly before the next. Features first: insert_code_snippet { gap, why, script } is the fallback for one operation no feature can do (its block starts with // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); set_script only rewrites a whole part. Hardware is one part per unique fastener type, one instance patterned to every place it goes. Fix one base part with a fixed joint, then place every part that touches or attaches to another with joint_create (one call creates the joint and solves placement). Use part_set_transform only for parts that touch nothing. Block-out positions are rough; joints set final positions. If the geometry engine crashes under this part (out of memory, a wasm abort, or a run past its 30 s budget) the result is ok: false with crash { code: geometry_worker_crashed, reason: wasm_abort | out_of_memory | timeout | worker_lost, workerRestarted: true } and one failures row with the same code; status.runState is failed. The worker was already replaced and other parts kept building, so do not ask for a reload and do not retry the same script: simplify the part, lower segment counts, or split it into smaller parts, then run it again. When the run past the budget was inside one marked feature block, the part is rebuilt without that block instead: the result is ok: false with one failures row { code: feature_timeout, featureId, featureType, featureLabel, elapsedMs, budgetMs, detail }, status.runState is failed, the other features are built and shown, and status.featureMs (and feature_tree ms) say how long each block took; edit, delete, or undo that feature. Writes (defaults): part = mirror(part, 'yz', true); Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -12209,7 +12209,7 @@
     },
     {
       "name": "rollback_to",
-      "description": "Move the rollback bar and re-run evaluation (does not edit the script). Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Move the rollback bar and re-run evaluation (does not edit the script, records no undo step). Waits for that evaluation, so the result carries ok, errors and status (volume, bbox, bodyCount) of the rolled-back solid; status {} reads the same values afterwards without a run. An insert_* after rollback_to lands at the bar and the bar moves onto the new block, so it is evaluated. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -12243,13 +12243,174 @@
       },
       "result": {
         "type": "object",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "rollbackAnchor": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "partId": {
+                "type": "string"
+              },
+              "partName": {
+                "type": "string"
+              },
+              "script": {
+                "type": "string"
+              },
+              "runState": {
+                "type": "string",
+                "enum": [
+                  "not_run_yet",
+                  "ok",
+                  "failed"
+                ]
+              },
+              "volume": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "bbox": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "min": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "max": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "featureCount": {
+                "type": "integer"
+              },
+              "bodyCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "featureMs": {
+                "type": "object",
+                "description": "Kernel milliseconds per feature block (by feature_tree id) on the last run that reported; what is expensive on this part",
+                "additionalProperties": {
+                  "type": "number"
+                }
+              },
+              "cache": {
+                "type": "object",
+                "description": "Feature memoisation on the last run: blocks = marked blocks, hits = blocks restored from the worker cache instead of re-run, misses = blocks that ran, bytes = the cache size. An edit re-runs only the edited block and the ones after it.",
+                "additionalProperties": false,
+                "properties": {
+                  "blocks": {
+                    "type": "integer"
+                  },
+                  "hits": {
+                    "type": "integer"
+                  },
+                  "misses": {
+                    "type": "integer"
+                  },
+                  "bytes": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "featureCached": {
+                "type": "object",
+                "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
+                "additionalProperties": {
+                  "type": "boolean"
+                }
+              },
+              "jointFailures": {
+                "type": "object",
+                "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
+                "additionalProperties": false,
+                "properties": {
+                  "count": {
+                    "type": "integer"
+                  },
+                  "ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "features": {
+                "type": "array",
+                "description": "Feature strip rows, only with return: \"summary\" (script is omitted with \"status\" and \"summary\")",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "chipLabel": {
+                      "type": "string"
+                    },
+                    "index": {
+                      "type": "integer"
+                    },
+                    "ms": {
+                      "type": "number",
+                      "description": "Kernel milliseconds of this block on the last run that reported it"
+                    },
+                    "cached": {
+                      "type": "boolean",
+                      "description": "True when the last run restored this block from the feature cache instead of running it"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -20871,7 +21032,7 @@
     },
     {
       "name": "paint_open",
-      "description": "Open paint mode on the active part (the Paint chip). Waits up to 1.5 s for the viewport to take the mode, as right after create_part or set_active_part, or while an agent prompt is being worked; past that it is not_ready with details.reason and details.retryable: true, never a silent open: false.",
+      "description": "Open paint mode on the active part (the Paint chip). Waits up to 1.5 s for the viewport to take the mode, as right after create_part or set_active_part. While an in-viewer prompt is being worked the mode opens headless (the session runs, no card is shown; result headless: true), so paint is never held back by the working state. Past the wait it is not_ready with details.reason and details.retryable: true, never a silent open: false; already open returns already: true. Then paint_set_color, paint_faces or paint_part, paint_confirm.",
       "args": {
         "type": "object",
         "additionalProperties": false,

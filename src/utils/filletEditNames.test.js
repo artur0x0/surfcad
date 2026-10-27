@@ -202,3 +202,22 @@ for (const chamfer of [false, true]) {
     assertSameSolid(editedVolume, freshVolume, before);
   });
 }
+
+test('a blend edit keeps the id= marker of the block it rewrites (B9)', () => {
+  const [a, b] = box.vertical;
+  const created = composeFilletCommit(STARTER, blendOpts(false, [a], { radius: 2, strategy: 'sweep' }, 'replace'));
+  assert.equal(created.ok, true, created.message);
+  const stamped = created.buffer.replace('// --- fillet-mode begin ---', '// --- fillet-mode begin id=fil7 ---').replace('// --- fillet-mode end ---', '// --- fillet-mode end id=fil7 ---');
+  const feature = parseFeatureMarkers(stamped).find((f) => f.kind === 'fillet');
+  assert.equal(feature.id, 'fil7');
+  const edited = replaceEditedBlend(stamped, feature, { chamfer: false, edges: [a, b], params: { radius: 3, strategy: 'sweep' }, filletClass: 'easy', geometry: box.geometry });
+  assert.equal(edited.ok, true, edited.message);
+  assert.equal(edited.changed, true);
+  assert.match(edited.buffer, /\/\/ --- fillet-mode begin id=fil7 ---/);
+  assert.match(edited.buffer, /\/\/ --- fillet-mode end id=fil7 ---/);
+  assert.equal(parseFeatureMarkers(edited.buffer).find((f) => f.kind === 'fillet')?.id, 'fil7');
+  // A block without an explicit id stays positional, as before.
+  const plain = parseFeatureMarkers(created.buffer).find((f) => f.kind === 'fillet');
+  const editedPlain = replaceEditedBlend(created.buffer, plain, { chamfer: false, edges: [a, b], params: { radius: 3, strategy: 'sweep' }, filletClass: 'easy', geometry: box.geometry });
+  assert.doesNotMatch(editedPlain.buffer, / id=/);
+});

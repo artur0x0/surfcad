@@ -141,7 +141,7 @@ UI. A reply that is still streaming shows three bouncing dots in front of the
 text (`prefers-reduced-motion` holds them still). Opening any feature card slides
 the prompt down off the viewer; closing the card slides it back. The typed draft
 and the camera toggle stay. The viewer stays interactive while the agent works.
-Agent-driven feature cards do not auto-open during that work.
+Agent-driven feature cards do not auto-open during that work. Agent paint still runs then: `paint_open` enters paint mode headless (no card, `paintMode.headless`), so a colour applied during a prompt is written like any other.
 The `agent_prompt` bridge command stays on the page (`action: 'screenshot'`
 turns the camera on); it is not copied into `packages/surfcad-mcp/data/commands.json`.
 
