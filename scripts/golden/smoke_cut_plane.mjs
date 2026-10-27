@@ -271,7 +271,7 @@ console.log('cut plane');
   });
   check('a later Cut replaces the previous block',
     again.ok
-    && (again.buffer.match(/--- cut begin ---/g) || []).length === 1
+    && (again.buffer.match(/--- cut begin( id=\w+)? ---/g) || []).length === 1
     && (again.buffer.match(/cut\s*\(/g) || []).length === 1
     && /keep: '\+'/.test(again.buffer),
     again.buffer || again.message);

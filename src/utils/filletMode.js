@@ -33,7 +33,7 @@ import {
   CHAMFER_MODE_END,
 } from './helperPaletteSnippets.js';
 import { liveSheetFeature } from './featureSheetWriteback.js';
-import { explicitMarkerId, stampFeatureId } from './featureSkip.js';
+import { explicitMarkerId, renameFeatureId, stampFeatureId } from './featureSkip.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
 import { scriptWithFeatureCount } from './partHistory.js';
 import {
@@ -61,6 +61,7 @@ import {
 import { defaultBlendSizeMm } from './blendSize.js';
 import { classifyFilletEdges } from './filletEdgeClass.js';
 import { shouldUseHardVariableSweep } from './filletKernelSpike.js';
+import { hasFeatureBlock, lastFeatureBlock } from './featureBlockId.js';
 
 export const FILLET_ENTRY_IDS = new Set(['filletEdges']);
 
@@ -144,25 +145,23 @@ export function validateChamferAccept(edges, params = {}) {
 
 export function hasChamferModeBlock(buffer) {
   const t = String(buffer || '');
-  return t.includes(CHAMFER_MODE_BEGIN) && t.includes(CHAMFER_MODE_END);
+  return hasFeatureBlock(t, CHAMFER_MODE_BEGIN, CHAMFER_MODE_END);
 }
 
 export function chamferModeOwnedRegion(buffer) {
   const text = String(buffer || '');
-  const i = text.lastIndexOf(CHAMFER_MODE_BEGIN);
-  if (i < 0) return '';
-  const j = text.indexOf(CHAMFER_MODE_END, i);
-  if (j < 0) return '';
-  return text.slice(i, j + CHAMFER_MODE_END.length);
+  const blk = lastFeatureBlock(text, CHAMFER_MODE_BEGIN, CHAMFER_MODE_END);
+  if (!blk) return '';
+  const i = blk.start;
+  return text.slice(i, blk.end);
 }
 
 export function stripChamferModeBlock(buffer) {
   const text = String(buffer || '');
-  const i = text.lastIndexOf(CHAMFER_MODE_BEGIN);
-  if (i < 0) return text;
-  const j = text.indexOf(CHAMFER_MODE_END, i);
-  if (j < 0) return text;
-  const after = text.slice(j + CHAMFER_MODE_END.length).replace(/^\r?\n/, '');
+  const blk = lastFeatureBlock(text, CHAMFER_MODE_BEGIN, CHAMFER_MODE_END);
+  if (!blk) return text;
+  const i = blk.start;
+  const after = text.slice(blk.end).replace(/^\r?\n/, '');
   const before = text.slice(0, i).replace(/\s+$/, '');
   if (before && after) return `${before}\n${after}`;
   return before || after;
@@ -218,7 +217,7 @@ export function composeChamferCommit(buffer, {
       message: 'composeChamferCommit: profile:chamfer missing — refusing silent no-op.',
     };
   }
-  if (!owned.includes(CHAMFER_MODE_BEGIN) || !owned.includes(CHAMFER_MODE_END)) {
+  if (!hasFeatureBlock(owned, CHAMFER_MODE_BEGIN, CHAMFER_MODE_END)) {
     return { ok: false, message: 'composeChamferCommit: chamfer markers missing — refusing unscoped insert.' };
   }
   return { ok: true, buffer: composed, run: true, kernel: 'sweep-chamfer' };
@@ -695,25 +694,23 @@ export function buildFilletBlendPreview(edges, params = {}) {
 
 export function hasFilletModeBlock(buffer) {
   const t = String(buffer || '');
-  return t.includes(FILLET_MODE_BEGIN) && t.includes(FILLET_MODE_END);
+  return hasFeatureBlock(t, FILLET_MODE_BEGIN, FILLET_MODE_END);
 }
 
 export function filletModeOwnedRegion(buffer) {
   const text = String(buffer || '');
-  const i = text.lastIndexOf(FILLET_MODE_BEGIN);
-  if (i < 0) return '';
-  const j = text.indexOf(FILLET_MODE_END, i);
-  if (j < 0) return '';
-  return text.slice(i, j + FILLET_MODE_END.length);
+  const blk = lastFeatureBlock(text, FILLET_MODE_BEGIN, FILLET_MODE_END);
+  if (!blk) return '';
+  const i = blk.start;
+  return text.slice(i, blk.end);
 }
 
 export function stripFilletModeBlock(buffer) {
   const text = String(buffer || '');
-  const i = text.lastIndexOf(FILLET_MODE_BEGIN);
-  if (i < 0) return text;
-  const j = text.indexOf(FILLET_MODE_END, i);
-  if (j < 0) return text;
-  const after = text.slice(j + FILLET_MODE_END.length).replace(/^\r?\n/, '');
+  const blk = lastFeatureBlock(text, FILLET_MODE_BEGIN, FILLET_MODE_END);
+  if (!blk) return text;
+  const i = blk.start;
+  const after = text.slice(blk.end).replace(/^\r?\n/, '');
   const before = text.slice(0, i).replace(/\s+$/, '');
   if (before && after) return `${before}\n${after}`;
   return before || after;
@@ -925,12 +922,16 @@ export function replaceEditedBlend(script, feature, {
     };
   }
   let buffer = text.slice(0, live.startOffset) + block + text.slice(live.endOffset);
-  // The composer writes fresh markers; a block that carried `id=` keeps it,
-  // so the chip id, the rollback anchor and an agent's feature_tree id
-  // survive the edit (B9: edit_feature / confirm_feature stripped the marker).
+  // The composer writes fresh markers with a freshly minted id; a block that
+  // carried `id=` keeps its own, so the chip id, the rollback anchor and an
+  // agent's feature_tree id survive the edit (B9: edit_feature /
+  // confirm_feature stripped the marker). A block that had no id takes the
+  // minted one, the same as a rollback insert.
   if (explicitMarkerId(text, live) && typeof live.id === 'string') {
     const placed = parseFeatureMarkers(buffer).find((item) => item.startOffset === live.startOffset);
-    if (placed) buffer = stampFeatureId(buffer, placed, live.id);
+    if (placed && placed.id !== live.id) {
+      buffer = explicitMarkerId(buffer, placed) ? renameFeatureId(buffer, placed, live.id) : stampFeatureId(buffer, placed, live.id);
+    }
   }
   if (buffer === text) return { ok: true, buffer: text, changed: false, run: false };
   return { ok: true, buffer, changed: true, run: true, kernel: created.kernel };

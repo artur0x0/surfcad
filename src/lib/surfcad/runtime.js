@@ -9733,7 +9733,8 @@ function _featureOp(fn, describe, blendRole = null) {
         cornerDeg: tess && tess.cornerDeg > 0 ? tess.cornerDeg : 0,
       });
       // Face identity: the surface the blend made gets a name too
-      // (`fillet-16.round`, `chamfer-3.bevel`), so an edge on it can be
+      // (`fillet1.round`, `chamfer2.bevel`; a block with no id= is positional,
+      // `fillet-16`), so an edge on it can be
       // written by name like any other.
       if (blendRole) {
         let role = null;

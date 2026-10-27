@@ -108,3 +108,22 @@ export function mintBlockId(blocks, prefix) {
   }
   return cand;
 }
+
+/**
+ * The last complete begin…end pair for one marker, with or without ids.
+ * `start` is the begin marker's offset, `endMarkerStart` the end marker's,
+ * `end` the offset just past the end marker. Null when there is none.
+ */
+export function lastFeatureBlock(text, begin, end) {
+  const blocks = findFeatureBlocks(text, begin, end);
+  if (!blocks.length) return null;
+  const last = blocks[blocks.length - 1];
+  const ePrefix = markerPrefix(end);
+  const endMarkerStart = String(text || '').lastIndexOf(ePrefix, last.end);
+  return { ...last, endMarkerStart };
+}
+
+/** True when the text holds at least one complete pair for this marker. */
+export function hasFeatureBlock(text, begin, end) {
+  return findFeatureBlocks(text, begin, end).length > 0;
+}

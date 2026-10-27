@@ -66,7 +66,7 @@ test('insert_rotate body_index turns that body: the generated call names its cen
   assert.deepEqual(h.prepared[0].params.at, BODY_B);
   const script = composeHelperInsert(TWO_BODIES, 'rotate', null, h.prepared[0].params);
   assert.match(script, /rotateAbout\(part, 'z', 30, null, \{ bodies: \[\{ at: \[40, 0, 0\] \}\] \}\)/);
-  assert.match(script, /\/\/ --- rotate begin ---/);
+  assert.match(script, /\/\/ --- rotate begin id=rotate1 ---/);
 });
 
 test('insert_rotate takes a vector axis, a center, and the move target forms', async () => {

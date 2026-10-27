@@ -32,6 +32,7 @@
     "src/utils/edgeTangencyField.js",
     "src/utils/faceFeaturePlacement.js",
     "src/utils/featureBlockId.js",
+    "src/utils/featureBlockMint.js",
     "src/utils/featureEdit.js",
     "src/utils/featureFailure.js",
     "src/utils/featureGaps.js",

@@ -16,6 +16,8 @@ import { shellFaceKey } from './shellMode.js';
 import { facePickLiteral, formatVec3 } from './faceFeaturePlacement.js';
 import { DRAFT_BEGIN, DRAFT_END } from './helperPaletteSnippets.js';
 import { placeBlockBeforeReturn } from './scriptReturn.js';
+import { lastFeatureBlock } from './featureBlockId.js';
+import { mintBlockIds } from './featureBlockMint.js';
 
 export const DRAFT_ENTRY_ID = 'addDraft';
 
@@ -166,11 +168,10 @@ export function validateDraftAccept(state) {
 
 export function stripDraftBlock(buffer) {
   const text = String(buffer || '');
-  const i = text.lastIndexOf(DRAFT_BEGIN);
-  if (i < 0) return text;
-  const j = text.indexOf(DRAFT_END, i);
-  if (j < 0) return text;
-  const after = text.slice(j + DRAFT_END.length).replace(/^\r?\n/, '');
+  const blk = lastFeatureBlock(text, DRAFT_BEGIN, DRAFT_END);
+  if (!blk) return text;
+  const i = blk.start;
+  const after = text.slice(blk.end).replace(/^\r?\n/, '');
   const before = text.slice(0, i).replace(/\s+$/, '');
   if (before && after) return `${before}\n${after}`;
   return before || after;
@@ -199,11 +200,10 @@ export function composeDraftCommit(buffer, state) {
   const refLit = facePickLiteral(s.neutral);
   const body = s.body || 'part';
   const line = `${body} = draftFaces(${body}, [${faces}], ${formatAngle(gate.angle)}, { pull: ${pullLit}, reference: ${refLit} });`;
-  const block = [DRAFT_BEGIN, line, DRAFT_END].join('\n');
-  const composed = placeBlockBeforeReturn(stripDraftBlock(String(buffer || '')), block);
-  const ownedStart = composed.lastIndexOf(DRAFT_BEGIN);
-  const ownedEnd = composed.indexOf(DRAFT_END, ownedStart);
-  const owned = composed.slice(ownedStart, ownedEnd + DRAFT_END.length);
+  const base = stripDraftBlock(String(buffer || ''));
+  const block = mintBlockIds([DRAFT_BEGIN, line, DRAFT_END].join('\n'), base);
+  const composed = placeBlockBeforeReturn(base, block);
+  const owned = lastFeatureBlock(composed, DRAFT_BEGIN, DRAFT_END)?.text || '';
   if ((owned.match(/draftFaces\s*\(/g) || []).length !== 1) {
     return { ok: false, message: 'composeDraftCommit: Draft must emit exactly one draftFaces().' };
   }

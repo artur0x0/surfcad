@@ -11,6 +11,8 @@ import { shellFaceKey } from './shellMode.js';
 import { facePickLiteral } from './faceFeaturePlacement.js';
 import { MOVE_FACE_BEGIN, MOVE_FACE_END } from './helperPaletteSnippets.js';
 import { placeBlockBeforeReturn } from './scriptReturn.js';
+import { lastFeatureBlock } from './featureBlockId.js';
+import { mintBlockIds } from './featureBlockMint.js';
 
 export const MOVE_FACE_ENTRY_ID = 'moveFace';
 
@@ -93,11 +95,10 @@ export function validateMoveFaceAccept(state) {
 
 export function stripMoveFaceBlock(buffer) {
   const text = String(buffer || '');
-  const i = text.lastIndexOf(MOVE_FACE_BEGIN);
-  if (i < 0) return text;
-  const j = text.indexOf(MOVE_FACE_END, i);
-  if (j < 0) return text;
-  const after = text.slice(j + MOVE_FACE_END.length).replace(/^\r?\n/, '');
+  const blk = lastFeatureBlock(text, MOVE_FACE_BEGIN, MOVE_FACE_END);
+  if (!blk) return text;
+  const i = blk.start;
+  const after = text.slice(blk.end).replace(/^\r?\n/, '');
   const before = text.slice(0, i).replace(/\s+$/, '');
   if (before && after) return `${before}\n${after}`;
   return before || after;
@@ -115,11 +116,10 @@ export function composeMoveFaceCommit(buffer, state) {
   const faces = gate.faces.map((f) => facePickLiteral(f)).join(', ');
   const flip = gate.flip ? ', { flip: true }' : '';
   const call = `${body} = moveFace(${body}, [${faces}], ${formatNum(gate.distance)}${flip});`;
-  const block = [MOVE_FACE_BEGIN, call, MOVE_FACE_END].join('\n');
-  const composed = placeBlockBeforeReturn(stripMoveFaceBlock(String(buffer || '')), block);
-  const ownedStart = composed.lastIndexOf(MOVE_FACE_BEGIN);
-  const ownedEnd = composed.indexOf(MOVE_FACE_END, ownedStart);
-  const owned = composed.slice(ownedStart, ownedEnd + MOVE_FACE_END.length);
+  const base = stripMoveFaceBlock(String(buffer || ''));
+  const block = mintBlockIds([MOVE_FACE_BEGIN, call, MOVE_FACE_END].join('\n'), base);
+  const composed = placeBlockBeforeReturn(base, block);
+  const owned = lastFeatureBlock(composed, MOVE_FACE_BEGIN, MOVE_FACE_END)?.text || '';
   if ((owned.match(/\bmoveFace\s*\(/g) || []).length !== 1) {
     return { ok: false, message: 'composeMoveFaceCommit: Move Face must emit exactly one moveFace().' };
   }

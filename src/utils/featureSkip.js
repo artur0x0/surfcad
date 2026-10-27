@@ -556,6 +556,18 @@ function mintFeatureId(script, prefix) {
   return cand;
 }
 
+/** Rewrite the `id=` a block already carries on both markers (an edit keeps the id the block had). */
+export function renameFeatureId(script, feature, id) {
+  if (!feature || !id || !explicitMarkerId(script, feature)) return script;
+  const beginEnd = script.indexOf('\n', feature.startOffset);
+  const beginStop = beginEnd < 0 ? feature.endOffset : beginEnd;
+  const endStart = script.lastIndexOf('\n', Math.max(feature.endOffset - 1, 0)) + 1;
+  const beginLine = script.slice(feature.startOffset, beginStop);
+  const endLine = script.slice(endStart, feature.endOffset);
+  const swap = (line) => line.replace(/ id=[A-Za-z_$][\w$]* ---$/, ` id=${id} ---`);
+  return `${script.slice(0, feature.startOffset)}${swap(beginLine)}${script.slice(beginStop, endStart)}${swap(endLine)}${script.slice(feature.endOffset)}`;
+}
+
 /** Write `id=` on a block that only had a positional chip id, so the id survives a later insert. */
 export function stampFeatureId(script, feature, id) {
   if (!feature || explicitMarkerId(script, feature)) return script;

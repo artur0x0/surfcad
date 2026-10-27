@@ -12,6 +12,8 @@ import { MIRROR_BEGIN, MIRROR_END } from './helperPaletteSnippets.js';
 import { placeBlockBeforeReturn } from './scriptReturn.js';
 import { snapMoveBodyAt } from './moveMode.js';
 import { listConstructionPlanes, resolveConstructionPlane } from './savedContours.js';
+import { lastFeatureBlock } from './featureBlockId.js';
+import { mintBlockIds } from './featureBlockMint.js';
 
 export const MIRROR_ENTRY_ID = 'mirror';
 
@@ -313,11 +315,10 @@ function planeLiteral(frame) {
 
 export function stripMirrorBlock(buffer) {
   const text = String(buffer || '');
-  const i = text.lastIndexOf(MIRROR_BEGIN);
-  if (i < 0) return text;
-  const j = text.indexOf(MIRROR_END, i);
-  if (j < 0) return text;
-  const after = text.slice(j + MIRROR_END.length).replace(/^\r?\n/, '');
+  const blk = lastFeatureBlock(text, MIRROR_BEGIN, MIRROR_END);
+  if (!blk) return text;
+  const i = blk.start;
+  const after = text.slice(blk.end).replace(/^\r?\n/, '');
   const before = text.slice(0, i).replace(/\s+$/, '');
   if (before && after) return `${before}\n${after}`;
   return before || after;
@@ -334,11 +335,10 @@ export function composeMirrorCommit(buffer, state) {
   const bodyName = state?.body || 'part';
   const triLit = gate.tri != null ? `, tri: ${gate.tri}` : '';
   const call = `${bodyName} = mirror(${bodyName}, ${planeLiteral(gate.frame)}, ${gate.keepOriginal}, { bodies: [{ at: ${formatVec(gate.at)}${triLit} }] });`;
-  const block = [MIRROR_BEGIN, call, MIRROR_END].join('\n');
-  const composed = placeBlockBeforeReturn(stripMirrorBlock(String(buffer || '')), block);
-  const ownedStart = composed.lastIndexOf(MIRROR_BEGIN);
-  const ownedEnd = composed.indexOf(MIRROR_END, ownedStart);
-  const owned = composed.slice(ownedStart, ownedEnd + MIRROR_END.length);
+  const base = stripMirrorBlock(String(buffer || ''));
+  const block = mintBlockIds([MIRROR_BEGIN, call, MIRROR_END].join('\n'), base);
+  const composed = placeBlockBeforeReturn(base, block);
+  const owned = lastFeatureBlock(composed, MIRROR_BEGIN, MIRROR_END)?.text || '';
   if ((owned.match(/\bmirror\s*\(/g) || []).length !== 1) {
     return { ok: false, message: 'composeMirrorCommit: Mirror must emit exactly one mirror().' };
   }

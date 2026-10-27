@@ -20,6 +20,7 @@ import {
   SHELL_END,
 } from './helperPaletteSnippets.js';
 import { classifySelectedFace } from './faceFeaturePlacement.js';
+import { hasFeatureBlock, lastFeatureBlock } from './featureBlockId.js';
 
 export const SHELL_ENTRY_ID = 'shell';
 
@@ -142,25 +143,23 @@ export function validateShellAccept(face, params = {}) {
 
 export function hasShellBlock(buffer) {
   const t = String(buffer || '');
-  return t.includes(SHELL_BEGIN) && t.includes(SHELL_END);
+  return hasFeatureBlock(t, SHELL_BEGIN, SHELL_END);
 }
 
 export function shellOwnedRegion(buffer) {
   const text = String(buffer || '');
-  const i = text.lastIndexOf(SHELL_BEGIN);
-  if (i < 0) return '';
-  const j = text.indexOf(SHELL_END, i);
-  if (j < 0) return '';
-  return text.slice(i, j + SHELL_END.length);
+  const blk = lastFeatureBlock(text, SHELL_BEGIN, SHELL_END);
+  if (!blk) return '';
+  const i = blk.start;
+  return text.slice(i, blk.end);
 }
 
 export function stripShellBlock(buffer) {
   const text = String(buffer || '');
-  const i = text.lastIndexOf(SHELL_BEGIN);
-  if (i < 0) return text;
-  const j = text.indexOf(SHELL_END, i);
-  if (j < 0) return text;
-  const after = text.slice(j + SHELL_END.length).replace(/^\r?\n/, '');
+  const blk = lastFeatureBlock(text, SHELL_BEGIN, SHELL_END);
+  if (!blk) return text;
+  const i = blk.start;
+  const after = text.slice(blk.end).replace(/^\r?\n/, '');
   const before = text.slice(0, i).replace(/\s+$/, '');
   if (before && after) return `${before}\n${after}`;
   return before || after;

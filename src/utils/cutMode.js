@@ -18,6 +18,8 @@
 import { CUT_BEGIN, CUT_END } from './helperPaletteSnippets.js';
 import { placeBlockBeforeReturn } from './scriptReturn.js';
 import { meshBodyComponents } from './meshBodyComponents.js';
+import { lastFeatureBlock } from './featureBlockId.js';
+import { mintBlockIds } from './featureBlockMint.js';
 
 export { meshBodyComponents };
 
@@ -453,11 +455,10 @@ function planeLiteral(plane) {
 
 export function stripCutBlock(buffer) {
   const text = String(buffer || '');
-  const i = text.lastIndexOf(CUT_BEGIN);
-  if (i < 0) return text;
-  const j = text.indexOf(CUT_END, i);
-  if (j < 0) return text;
-  const after = text.slice(j + CUT_END.length).replace(/^\r?\n/, '');
+  const blk = lastFeatureBlock(text, CUT_BEGIN, CUT_END);
+  if (!blk) return text;
+  const i = blk.start;
+  const after = text.slice(blk.end).replace(/^\r?\n/, '');
   const before = text.slice(0, i).replace(/\s+$/, '');
   if (before && after) return `${before}\n${after}`;
   return before || after;
@@ -489,11 +490,10 @@ export function composeCutCommit(buffer, state, mesh = null) {
   const call = optParts.length
     ? `${bodyName} = cut(${bodyName}, ${planeLit}, { ${optParts.join(', ')} });`
     : `${bodyName} = cut(${bodyName}, ${planeLit});`;
-  const block = [CUT_BEGIN, call, CUT_END].join('\n');
-  const composed = placeBlockBeforeReturn(stripCutBlock(String(buffer || '')), block);
-  const ownedStart = composed.lastIndexOf(CUT_BEGIN);
-  const ownedEnd = composed.indexOf(CUT_END, ownedStart);
-  const owned = composed.slice(ownedStart, ownedEnd + CUT_END.length);
+  const base = stripCutBlock(String(buffer || ''));
+  const block = mintBlockIds([CUT_BEGIN, call, CUT_END].join('\n'), base);
+  const composed = placeBlockBeforeReturn(base, block);
+  const owned = lastFeatureBlock(composed, CUT_BEGIN, CUT_END)?.text || '';
   if ((owned.match(/cut\s*\(/g) || []).length !== 1) {
     return { ok: false, message: 'composeCutCommit: Cut must emit exactly one cut().' };
   }

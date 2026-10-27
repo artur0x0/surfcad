@@ -93,14 +93,14 @@ function check(name, cond, detail = '') {
   check('emits one named-body move', first.ok === true
     && first.buffer.includes('part = move(part, [0, 10, 0], { bodies: [{ at: [1, 2, 3] }] });')
     && (first.buffer.match(/\bmove\s*\(/g) || []).length === 1
-    && first.buffer.includes('// --- move begin ---')
-    && first.buffer.includes('// --- move end ---'));
+    && /\/\/ --- move begin id=move1 ---/.test(first.buffer)
+    && /\/\/ --- move end id=move1 ---/.test(first.buffer));
   const again = composeMoveCommit(first.buffer, {
     body: 'part', target: { at: [4, 5, 6] }, dx: 5, dy: 0, dz: -1,
   });
   check('a second confirm replaces the previous Move block', again.ok === true
     && (again.buffer.match(/\bmove\s*\(/g) || []).length === 1
-    && (again.buffer.match(/\/\/ --- move begin ---/g) || []).length === 1
+    && (again.buffer.match(/\/\/ --- move begin id=\w+ ---/g) || []).length === 1
     && again.buffer.includes('part = move(part, [5, 0, -1], { bodies: [{ at: [4, 5, 6] }] });')
     && !again.buffer.includes('[0, 10, 0]'));
 

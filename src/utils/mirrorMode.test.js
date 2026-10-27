@@ -9,6 +9,7 @@ import {
   validateMirrorAccept,
 } from './mirrorMode.js';
 import { MIRROR_BEGIN, MIRROR_END } from './helperPaletteSnippets.js';
+import { hasFeatureBlock } from './featureBlockId.js';
 
 const HOST = 'let part = Manifold.cube([10, 10, 10], true);\nreturn part;\n';
 
@@ -30,7 +31,8 @@ test('a named plane and a workplane each emit one mirror, and a second confirm r
   assert.equal(named.ok, true);
   assert.match(named.buffer, /part = mirror\(part, 'yz', true, \{ bodies: \[\{ at: \[20, 0, 0\] \}\] \}\);/);
   assert.equal((named.buffer.match(/\bmirror\s*\(/g) || []).length, 1);
-  assert.ok(named.buffer.includes(MIRROR_BEGIN) && named.buffer.includes(MIRROR_END));
+  assert.ok(hasFeatureBlock(named.buffer, MIRROR_BEGIN, MIRROR_END));
+  assert.match(named.buffer, /\/\/ --- mirror begin id=mirror1 ---/);
 
   const frame = composeMirrorCommit(HOST, {
     ...emptyMirrorState(),
