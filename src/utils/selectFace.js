@@ -1,5 +1,6 @@
 import { Vector3 } from 'three';
 import { buildPartGraphPatches } from './partGraphPatches.js';
+import { wallTriFace } from './faceIdentity.js';
 import { meshBodyComponents } from './meshBodyComponents.js';
 
 // Configuration constants
@@ -364,6 +365,7 @@ function faceGraphFor(geometry, faceIDs) {
     faceIDs: faceIDs && faceIDs.length ? faceIDs : null,
     triSource: geometry.userData?.triSource || null,
     featureTessellation: geometry.userData?.featureTessellation || null,
+    triFace: wallTriFace(geometry.userData?.faceIdentity?.pieceOfTri, geometry.userData?.faceIdentity?.pieces),
   });
   faceGraphCache.set(geometry, { faceIDs, graph });
   return graph;

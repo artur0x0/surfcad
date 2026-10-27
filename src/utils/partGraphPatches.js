@@ -37,6 +37,8 @@ export const PARTGRAPH_MAX_TRIANGLES = 250000;
 
 /** Pass 1: dihedral at/below this merges as coplanar. */
 export const PATCH_PLANAR_DEG = 0.5;
+/** Pass 1 across two named faces: only a flat seam this close to 0° joins them. */
+export const PATCH_NAMED_SEAM_DEG = 0.05;
 /**
  * Pass 3 fallback when a feature source has no tessellation on it.
  * A tagged source uses `sourceSmoothDeg` instead: its own facet step and
@@ -489,6 +491,15 @@ export function buildPartGraphPatches(mesh, opts = {}) {
     ? mesh.triSource
     : null;
   const sameSource = (t0, t1) => !triSource || triSource[t0] === triSource[t1];
+  // Face identity: the stamped face each triangle belongs to (`wallTriFace`:
+  // a helper's named face as a piece index, -1 for no name or a synthetic
+  // per-facet stamp). The curved pass never joins two atoms of different
+  // named faces, so a tangent fillet stays `fillet1.round` instead of
+  // swallowing the flats it meets at ~0° into one patch. The coplanar flood
+  // ignores it: a coplanar seam between two blocks is still one face.
+  const triFace = mesh?.triFace && mesh.triFace.length >= Math.floor((mesh?.indices?.length || 0) / 3)
+    ? mesh.triFace
+    : null;
   const tessBySource = tessellationBySource(mesh?.featureTessellation);
   const planarDeg = opts.planarDeg ?? PATCH_PLANAR_DEG;
   const smoothDeg = opts.smoothDeg ?? PATCH_SMOOTH_DEG;
@@ -583,10 +594,22 @@ export function buildPartGraphPatches(mesh, opts = {}) {
     adjCount: adj.adjN,
   };
 
+  // The named face of each atom (-1 none). An atom is one faceID component
+  // of one source, so its triangles share a stamp.
+  const atomFace = new Int32Array(atomCount).fill(-1);
+  if (triFace) {
+    for (let a = 0; a < atomCount; a++) atomFace[a] = triFace[atomList[atomOff[a]]];
+  }
   // --- Pass 1: coplanar flood --------------------------------------------
+  // Across two named faces only a true seam joins (two blocks' coplanar
+  // tops, dihedral ~0): a fillet's first facet meets its flat at half a
+  // facet step, which is under the planar gate but is not the same face,
+  // and joining it there would chain the flat into the blend in pass 3.
   const patchUF = makeUF(atomCount);
   for (let i = 0; i < adjN; i++) {
-    if (adjMax[i] <= planarDeg) patchUF.unite(adjA[i], adjB[i]);
+    if (adjMax[i] > planarDeg) continue;
+    if (triFace && atomFace[adjA[i]] !== atomFace[adjB[i]] && adjMax[i] > PATCH_NAMED_SEAM_DEG) continue;
+    patchUF.unite(adjA[i], adjB[i]);
   }
 
   // Area per coplanar component (rooted).
@@ -820,6 +843,8 @@ export function buildPartGraphPatches(mesh, opts = {}) {
     const a = adjA[i];
     const b = adjB[i];
     if (atomLockedFlat[a] || atomLockedFlat[b]) continue;
+    // Two named faces never share a curved patch, however shallow the join.
+    if (triFace && atomFace[a] !== atomFace[b]) continue;
     if (atomSource[a] !== atomSource[b]) {
       if (!filletOpSource(atomSource[a]) || !filletOpSource(atomSource[b])) continue;
       const crossGate = Math.min(gateFor(atomSource[a]), gateFor(atomSource[b]));
