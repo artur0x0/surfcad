@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Joints on the CAD feature strips, the shared sticky-pick card, and
- * the floating tags. Screenshots are not written.
+ * The per-part joints row under the CAD feature strips, the shared
+ * sticky-pick card, and the floating tags. Screenshots are not written.
  */
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -17,7 +17,7 @@ import {
   dismissJointEdit,
   draftFromPicks,
   emptyClickCadSelection,
-  jointChips,
+  jointRowChips,
   jointsChromeMounted,
   seedAssemblyHistory,
   stripUndoTarget,
@@ -110,7 +110,7 @@ const back = undoJointStrip({ history: pushed, doc: confirmed.doc, scripts });
 check('strip undo while no part is selected restores joints', back.changed && back.scripts === scripts && !back.doc.joints);
 check('strip undo with a part selected stays on that stack', stripUndoTarget('a.js') === 'part' && stripUndoTarget(null) === 'joint');
 const cleared = emptyClickCadSelection({ cadPartId: 'b.js', activeId: 'a.js' });
-check('empty click clears cadPartId and leaves activeId', cleared.cadPartId == null && cleared.activeId === 'a.js');
+check('empty click keeps cadPartId and leaves activeId', cleared.cadPartId === 'b.js' && cleared.activeId === 'a.js');
 check('game mode renders no joint card', jointsChromeMounted({ appMode: 'game' }) === false);
 
 const moved = composeMoveCommit(scripts['a.js'], {
@@ -133,14 +133,16 @@ const broken = refreshAssemblyJoints({
 check('Move Body of 10 mm is the only script change', moved.ok && (moved.buffer.match(/\bmove\s*\(/g) || []).length === 1 && !scripts['a.js'].includes('move('));
 check('that move marks the joint broken and leaves placement', broken.statuses[J] === 'broken' && broken.doc.parts[1].placement.t.every((n, i) => n === seedT[i]));
 
-const chips = jointChips(joined, {
+const chips = jointRowChips(joined, {
   statuses: { [J]: 'broken' },
   messages: { [J]: 'Face not found on Housing' },
-});
-const conflict = jointChips(
-  { joints: [{ ...joint, name: 'Angle 1' }] },
+}, { surfId: A });
+check('a chip from Shaft reads Type · Other part', chips.length === 1 && chips[0].label === 'Coincident · Housing' && chips[0].shortLabel === 'Housing', JSON.stringify(chips));
+const conflict = jointRowChips(
+  { ...joined, joints: [{ ...joint, name: 'Angle 1' }] },
   { statuses: { [J]: 'conflict' }, messages: { [J]: 'Joint "Angle 1" conflicts' } },
 );
+check('an assembly-scope chip names both parts', conflict.length === 1 && conflict[0].label === 'Coincident · Shaft ↔ Housing', JSON.stringify(conflict));
 
 const dir = mkdtempSync(join(tmpdir(), 'joints-strip-'));
 const out = join(dir, 'ui.mjs');
@@ -149,6 +151,7 @@ const res = await build({
     contents: `export { renderToStaticMarkup } from 'react-dom/server';
 export { createElement } from 'react';
 export { default as FeatureStrip } from './src/components/FeatureStrip.jsx';
+export { default as JointsRow } from './src/components/JointsRow.jsx';
 export { default as JointCard } from './src/components/JointCard.jsx';`,
     resolveDir: ROOT,
     loader: 'jsx',
@@ -174,29 +177,36 @@ const h = (C, props) => {
   try { return ui.renderToStaticMarkup(ui.createElement(C, props)); } finally { console.error = err; }
 };
 
-const emptyProps = { joints: [], hideWhenEmpty: true, onUndo: () => {}, onRedo: () => {} };
+const emptyProps = { script: '', hideWhenEmpty: true, onUndo: () => {}, onRedo: () => {}, undoLabel: 'Undo joint' };
 for (const [label, props] of [
   ['mobile CAD strip', { orientation: 'horizontal', ...emptyProps }],
   ['desktop CAD strip', { orientation: 'horizontal', ...emptyProps }],
 ]) {
   const html = h(ui.FeatureStrip, props);
-  check(`${label}: No assembly joints`, html.includes('No assembly joints') && html.includes('data-assembly-joints') && html.includes('data-feature-strip-empty'), html.slice(0, 180));
-  check(`${label}: Undo and Redo stay`, html.includes('data-feature-bar-undo') && html.includes('data-feature-bar-redo'));
+  check(`${label}: the strip never swaps to joints`, !html.includes('assembly joints') && !html.includes('data-assembly-joints') && !html.includes('data-joint-id') && html.includes('data-feature-strip-empty'), html.slice(0, 180));
+  check(`${label}: Undo and Redo stay, titled Undo joint while the assembly is selected`, html.includes('data-feature-bar-undo') && html.includes('data-feature-bar-redo') && html.includes('Undo joint'));
 }
 const scriptHtml = h(ui.FeatureStrip, { orientation: 'vertical', script: '', hideWhenEmpty: false });
 check('script-stage strip does not show assembly joints', !scriptHtml.includes('No assembly joints') && !scriptHtml.includes('data-assembly-joints'));
 const hiddenFeatures = h(ui.FeatureStrip, { orientation: 'horizontal', script: '', hideWhenEmpty: true });
 check('part features still hide their empty caption', !hiddenFeatures.includes('No features') && !hiddenFeatures.includes('No assembly joints'));
 
-const chipHtml = h(ui.FeatureStrip, {
-  orientation: 'horizontal',
-  joints: [...chips, ...conflict],
-  hideWhenEmpty: true,
-  undoLabel: 'Undo joint',
-});
-check('a broken chip has the red ring and the joint name', /data-joint-id="/.test(chipHtml) && chipHtml.includes('border-red-400') && chipHtml.includes('feature-failed-ring') && chipHtml.includes('Coincident 1') && chipHtml.includes('aria-invalid'));
+const emptyRow = h(ui.JointsRow, { chips: [], scope: 'assembly' });
+check('the empty assembly row reads No assembly joints', emptyRow.includes('No assembly joints') && emptyRow.includes('data-assembly-joints') && emptyRow.includes('data-joints-row-empty') && emptyRow.includes('data-joints-row-scope="assembly"'), emptyRow.slice(0, 200));
+const emptyPartRow = h(ui.JointsRow, { chips: [], scope: 'part', partName: 'Shaft' });
+check('the empty part row reads No joints', emptyPartRow.includes('No joints') && !emptyPartRow.includes('No assembly joints') && emptyPartRow.includes('data-joints-row-scope="part"'));
+check('the row has no Undo of its own', !emptyRow.includes('data-feature-bar-undo') && !emptyRow.includes('data-feature-bar-redo'));
+
+const chipHtml = h(ui.JointsRow, { chips: [...chips, ...conflict], scope: 'part', partName: 'Shaft' });
+check('a broken chip has the red ring, the label and a warning glyph', /data-joint-id="/.test(chipHtml) && chipHtml.includes('border-red-400') && chipHtml.includes('feature-failed-ring') && chipHtml.includes('Coincident · Housing') && chipHtml.includes('aria-invalid') && chipHtml.includes('lucide-triangle-alert'));
+check('the reason is the chip tooltip', chipHtml.includes('Face not found on Housing'));
 check('a conflict chip names the joint', chipHtml.includes('Angle 1') && chipHtml.includes('conflicts'));
-check('joint undo title', chipHtml.includes('Undo joint'));
+check('chips carry the joint_select ui action', chipHtml.includes('data-ui-action="data-joint-chip"'));
+check('a chip label never shows a value', !/data-joint-chip-label="">[^<]*\d/.test(chipHtml));
+const compactHtml = h(ui.JointsRow, { chips, scope: 'part', partName: 'Shaft', compact: true });
+check('the phone chip is the glyph plus the other part', compactHtml.includes('data-joint-chip-label="">Housing<') && !compactHtml.includes('data-joint-chip-label="">Coincident · Housing<'));
+const activeHtml = h(ui.JointsRow, { chips, scope: 'part', activeJointId: J });
+check('the open joint is the pressed chip', activeHtml.includes('aria-pressed="true"') && activeHtml.includes('bg-cyan-600'));
 
 const sheet = h(ui.JointCard, {
   card,
@@ -211,17 +221,11 @@ check('subtitle names both faces', sheet.includes('Shaft') && sheet.includes('Ho
 const game = jointsChromeMounted({ appMode: 'game' }) ? h(ui.JointCard, { card }) : '';
 check('game mode renders no joint card markup', game === '');
 
-const emptyHtml = h(ui.FeatureStrip, { orientation: 'horizontal', ...emptyProps });
-const oneHtml = h(ui.FeatureStrip, {
-  orientation: 'horizontal',
-  joints: chips,
-  hideWhenEmpty: true,
-  selectedJointId: J,
-  undoLabel: 'Undo joint',
-});
-check('the empty joints caption uses the chip box', emptyHtml.includes('data-assembly-joints-empty') && emptyHtml.includes('feature-strip-chip'));
+const emptyHtml = emptyRow;
+const oneHtml = h(ui.JointsRow, { chips, scope: 'part', partName: 'Shaft' });
+check('the empty joints caption uses the chip box', emptyHtml.includes('data-joints-row-caption') && emptyHtml.includes('feature-strip-chip'));
 check('a joint chip uses that same box', oneHtml.includes('data-joint-id') && oneHtml.includes('feature-strip-chip'));
-check('the horizontal bar uses the shared height class', emptyHtml.includes('feature-strip-bar') && oneHtml.includes('feature-strip-bar'));
+check('the row uses the shared strip height class', emptyHtml.includes('feature-strip-bar') && oneHtml.includes('feature-strip-bar'));
 check('a joint chip does not carry its own Delete popup', !oneHtml.includes('data-joint-chip-popup') && !oneHtml.includes('data-joint-chip-delete'));
 const edited = cardFromJoint({
   id: J,
@@ -261,6 +265,13 @@ check('a symmetric joint reopens with both faces and Delete',
 check('a broken chip has the red ring and the joint name', /data-joint-id="/.test(oneHtml) && oneHtml.includes('border-red-400') && oneHtml.includes('feature-failed-ring') && oneHtml.includes('Coincident 1') && oneHtml.includes('aria-invalid'));
 
 const app = read('src/App.jsx');
+const css = read('src/index.css');
+const drawer = read('src/components/ScriptEditorDrawer.jsx');
+check('the row is mounted under both CAD strips and never on the strip', (app.match(/\{jointsRowNode\}/g) || []).length === 2 && !app.includes('joints={') && !app.includes('onSelectJoint={sketchOpen'));
+check('a chip tap keeps the part selected', !/const handleSelectJoint = [\s\S]*?rememberCadPart\(null\)[\s\S]*?setJointCard\(card\)/.test(app));
+check('the rails and the script drawer clear the row through one token', css.includes('--joint-row-height: 0px') && (css.match(/var\(--joint-row-height\)/g) || []).length >= 4 && drawer.includes('calc(8rem + var(--joint-row-height))'));
+check('the Joints rail button shows pressed while the create card is open', read('src/components/HelperInsertPalette.jsx').includes('aria-pressed={jointsOpen || undefined}') && app.includes('jointCardOpen={jointCreateOpen}'));
+check('a joint delete shows the amber Deleted. toast with Undo', app.includes("toast: 'deleted'") && app.includes("lines={['Deleted.']}") && app.includes('handleJointUndo();'));
 const view = read('src/components/Viewport.jsx');
 check('App keeps the joint card off in game', app.includes("appMode !== 'game'") && app.includes('jointCard={jointCardNode}') && !app.includes('jointTags='));
 check('joint picking follows the open create card', app.includes('jointPicking={jointCreateOpen}'));

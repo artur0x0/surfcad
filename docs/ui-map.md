@@ -141,7 +141,7 @@ UI. A reply that is still streaming shows three bouncing dots in front of the
 text (`prefers-reduced-motion` holds them still). Opening any feature card slides
 the prompt down off the viewer; closing the card slides it back. The typed draft
 and the camera toggle stay. The viewer stays interactive while the agent works.
-Agent-driven feature cards do not auto-open during that work.
+Agent-driven feature cards do not auto-open during that work. Agent paint still runs then: `paint_open` enters paint mode headless (no card, `paintMode.headless`), so a colour applied during a prompt is written like any other.
 The `agent_prompt` bridge command stays on the page (`action: 'screenshot'`
 turns the camera on); it is not copied into `packages/surfcad-mcp/data/commands.json`.
 
@@ -245,19 +245,42 @@ Desktop specifics:
   twice the previous one-line height. Undo and dismiss stay
   44px wide, and the gap between them stays. Undo is the one editor step. A sketch still takes the bar.
   `golden:sheet-ribbon`. `golden:sheet-feature-mix`.
-  When no part is selected the same bar shows assembly joints
-  (`data-assembly-joints`), or **No assembly joints**
-  (`data-feature-strip-empty`), and Undo is titled **Undo joint**.
-  The bar is `--feature-strip-height` (46px) in assembly, part, and empty.
-  Left and right tool rails stay `--feature-strip-rail-gap` (10px) below it.
-  A chip tap reopens that joint in the card, with its picks highlighted,
+  The bar never shows joint chips. Joints sit on their own row directly
+  under it (`JointsRow.jsx`, `data-joints-row`, also `data-assembly-joints`),
+  on desktop and on the phone: the joints that name the selected part
+  (`data-joints-row-scope="part"`), or every joint while the assembly is
+  selected through the viewer-title assembly chip (`scope="assembly"`).
+  A chip is the type glyph plus **Type · Other part** (`Fixed` for a ground
+  joint; `Type · A ↔ B` in assembly scope; the phone shows the glyph and the
+  other part). Values show on the card only. A broken or conflict chip keeps
+  the red ring and adds a warning glyph; the reason is its tooltip. The row
+  scrolls when it overflows: each clipped end fades and shows a blue chevron
+  with `+N` hidden chips (`data-joints-row-scroll`). The empty row reads
+  **No joints** (part) or **No assembly joints** (`data-joints-row-empty`).
+  Tapping empty canvas keeps the selected part, so the row and the strip
+  stay on that part while the user rotates; only another part tap or the
+  assembly chip changes it. With the assembly selected the strip has no
+  feature chips and Undo is titled **Undo joint** (the assembly stack).
+  The bar and the row are each `--feature-strip-height` (46px). The pane
+  sets `--joint-row-height` while the row is mounted
+  (`data-joints-row-open`), and the left and right rails and the desktop
+  script drawer add it to their ribbon clearance, so they start
+  `--feature-strip-rail-gap` (10px) below the row. The row is not mounted
+  in game mode, in a feature session, with a sketch or the sheet ribbon
+  open, or without an assembly.
+  A chip tap reopens that joint in the card and keeps the part selected, with its picks highlighted,
   its type, and its value. That edit card has Confirm, a red Delete
   opposite it, and X. Confirm saves and closes. X writes nothing. Create
   still says Add. There is no floating joint tag.
   The create card is `StickyPickApply`. It opens
   from Joints (Lucide `Blocks`, `data-joints-button`), the last button in
-  Move. While it is open the parts shift up like every other feature card.
+  Move; that button shows pressed (`aria-pressed`, `bg-blue-100`) while the
+  card is open. While it is open the parts shift up like every other feature card.
   Add writes the joint, clears the picks, and leaves the card open. X exits.
+  Add and Confirm show a plain toast, **Added: Coincident · Housing** or
+  **Edited: …**, worded the way the current row shows the chip. Delete
+  shows the amber **Deleted.** toast (`data-delete-undo-toast`) whose Undo
+  pops one assembly step.
   Picks group by part in any order. Parallel and Perpendicular sit in the
   same type-button group and write an angle joint at 0° or 90° in one tap. Two faces on each part suggest
   symmetric. A third part asks **Change one of the parts?**
