@@ -102,7 +102,6 @@ Gate acceptance still requires `test_real_worker.mjs` via `npm run verify` when 
 | `golden:contour-tap-offset` | `smoke_contour_tap_offset.mjs` |
 | `golden:contour-visuals` | `smoke_contour_visuals.mjs` |
 | `golden:cross-part-clone` | `smoke_cross_part_clone.mjs` |
-| `golden:cut-plane` | `smoke_cut_plane.mjs` |
 | `golden:delete-assembly` | `smoke_delete_assembly.mjs` |
 | `golden:delete-face` | `smoke_delete_face.mjs` |
 | `golden:delete-last-feature` | `smoke_delete_last_feature.mjs` |
