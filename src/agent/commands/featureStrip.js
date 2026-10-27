@@ -240,7 +240,28 @@ export const rollbackToCommand = Object.freeze({
     },
   }),
   example: { id: 'cube1' },
-  run(ctx, args) {
-    return hostCall(ctx, 'rollbackTo', args);
+  async run(ctx, args) {
+    const fn = ctx.rollbackTo;
+    if (typeof fn !== 'function') {
+      return { error: { code: 'internal', message: 'rollbackTo handler is missing' } };
+    }
+    const out = await fn(args);
+    if (out?.error) return { error: out.error };
+    const hosted = out?.result ?? out ?? {};
+    const { run, script, ...rest } = hosted;
+    if (!run || typeof ctx.remember !== 'function') return { result: rest };
+    // The bar move ran the rolled-back evaluation; record it as the last run
+    // so status, errors and the result describe the solid that is shown.
+    const remembered = ctx.remember(run, typeof script === 'string' ? script : ctx.getScript());
+    return {
+      result: {
+        ...rest,
+        ok: remembered.ok,
+        errors: remembered.errors,
+        failures: remembered.failures,
+        status: remembered.status,
+        ...(remembered.crash ? { crash: remembered.crash } : {}),
+      },
+    };
   },
 });

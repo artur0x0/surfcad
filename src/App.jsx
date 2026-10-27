@@ -10585,10 +10585,19 @@ const App = () => {
         return { error: { code: 'no_write_part', message: 'No writable part for helper insert' } };
       }
       const buffer = codeEditorRef.current?.getContent?.() ?? '';
+      // The rollback bar: an agent insert lands at the bar like a palette
+      // insert, and the bar moves onto the new block, so the block is
+      // evaluated (follow-up 6: a cube appended after the bar was blanked
+      // as rolled back and status kept the old volume).
+      const rollbackKey = editorRollbackKey();
+      const stored = storedRollback(rollbackKey);
+      const rolledBack = stored === null || typeof stored === 'string';
+      const caret = rolledBack ? rollbackInsertCaret(buffer, stored) : null;
+      const placeAtBar = rolledBack && typeof caret === 'number';
       const content = composeHelperInsert(
         buffer,
         helperId,
-        null,
+        placeAtBar ? caret : null,
         params,
         faceContext,
         edgeContext,
@@ -10600,6 +10609,13 @@ const App = () => {
             message: describeHelperRefusal(item, { params, faceContext, edgeContext, buffer }),
           },
         };
+      }
+      if (rollbackKey) {
+        // Same rule as the palette insert (handleInsertHelper): the bar moves
+        // onto the block that landed at it; an insert with the bar at the
+        // end clears a stale anchor.
+        if (placeAtBar) storeRollbackAnchor(rollbackKey, rollbackAnchorAfterInsert(buffer, content, stored));
+        else if (rolledBack) storeRollbackAnchor(rollbackKey, undefined);
       }
       return { source: content };
     },
@@ -11023,8 +11039,11 @@ const App = () => {
       const doc = assemblyRef.current;
       const script = codeEditorRef.current?.getContent?.() ?? '';
       const key = doc?.activeId ? String(doc.activeId) : '__cad__';
-      const rollbackAnchor = Object.prototype.hasOwnProperty.call(rollbackAnchors, key)
-        ? rollbackAnchors[key]
+      // The ref, not the render's state: an agent reads this right after a
+      // store, before the next render has rebuilt this closure.
+      const anchors = rollbackAnchorsRef.current || {};
+      const rollbackAnchor = Object.prototype.hasOwnProperty.call(anchors, key)
+        ? anchors[key]
         : null;
       return buildFeatureTree({
         script,
@@ -12486,7 +12505,7 @@ const App = () => {
       return { result: { cancelled: true } };
     },
     prepareFeatureDelete: (args) => prepareAgentFeatureDelete(args),
-    rollbackTo(args = {}) {
+    async rollbackTo(args = {}) {
       if (!focusWritePart(null)) {
         return { error: { code: 'no_write_part', message: 'No writable part for rollback' } };
       }
@@ -12495,10 +12514,23 @@ const App = () => {
       const current = storedRollback(key);
       const resolved = resolveRollbackTarget(buf, args, current);
       if (resolved.error) return resolved;
-      handleEditorRollbackAnchor(resolved.anchor);
+      // Store the anchor, then run the part the way `execute` does (the
+      // refresh reads the stored anchor and records the run), and wait for
+      // it, so status, volume and errors describe the rolled-back solid, not
+      // the previous run (B14: status kept the rolled-back volume after
+      // rollback_to clear until an explicit run).
+      storeRollbackAnchor(key, resolved.anchor);
+      const epochBefore = runOutcomeEpochRef.current;
+      let ran = null;
+      try {
+        ran = await refreshAssemblyRef.current?.(buf, { forceActive: true });
+      } catch {
+        ran = null;
+      }
       const stored = storedRollback(key);
       const display = stored === undefined ? null : stored;
-      return { result: { rollbackAnchor: display } };
+      const run = agentCadRunOutcome(epochBefore, ran);
+      return { result: { rollbackAnchor: display, run, script: buf } };
     },
   });
   const partLabels = {};
