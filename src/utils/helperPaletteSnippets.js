@@ -73,7 +73,8 @@ import { assembleSweepPath, splitEdgePathComponents } from './edgeSweepPath.js';
 import { planeFrameFromFaceData } from './crossSectionSubstrate.js';
 import { emitSolveContour } from './contourScript.js';
 import { REGULAR_POLYGON_PRESETS, regularPolygonSides } from './contourSolve.js';
-import { findFeatureBlocks, isMarkerLine, mintBlockId } from './featureBlockId.js';
+import { findFeatureBlocks, hasFeatureBlock, isMarkerLine, mintBlockId } from './featureBlockId.js';
+import { mintBlockIds } from './featureBlockMint.js';
 import { joinScriptReturn, splitScriptReturn } from './scriptReturn.js';
 import { emitLoftReferenceLines } from './loftReference.js';
 import {
@@ -174,6 +175,50 @@ export const WORKPLANE_BEGIN = '// --- workplane begin ---';
 export const WORKPLANE_END = '// --- workplane end ---';
 export const CODE_BEGIN = '// --- code begin ---';
 export const CODE_END = '// --- code end ---';
+
+/**
+ * Every feature block kind a snippet or a mode can write: its markers and
+ * the kind name (the chip kind in `parseFeatureMarkers` and the id prefix a
+ * new block is minted with, `cube1`, `fillet2`). Sheet metal and raw Code
+ * blocks are not in this list; `featureMarkers.js` adds them for the strip.
+ */
+export const FEATURE_BLOCK_MARKERS = Object.freeze([
+  { begin: CONTOUR_PROFILE_BEGIN, end: CONTOUR_PROFILE_END, kind: 'profile' },
+  { begin: CONTOUR_EXTRUDE_BEGIN, end: CONTOUR_EXTRUDE_END, kind: 'extrude' },
+  { begin: CONTOUR_REVOLVE_BEGIN, end: CONTOUR_REVOLVE_END, kind: 'revolve' },
+  { begin: CONTOUR_LOFT_BEGIN, end: CONTOUR_LOFT_END, kind: 'loft' },
+  { begin: CONTOUR_SWEEP_BEGIN, end: CONTOUR_SWEEP_END, kind: 'sweep' },
+  { begin: FILLET_MODE_BEGIN, end: FILLET_MODE_END, kind: 'fillet' },
+  { begin: CHAMFER_MODE_BEGIN, end: CHAMFER_MODE_END, kind: 'chamfer' },
+  { begin: CUBE_BEGIN, end: CUBE_END, kind: 'cube' },
+  { begin: ROUNDED_BOX_BEGIN, end: ROUNDED_BOX_END, kind: 'roundedBox' },
+  { begin: CYLINDER_BEGIN, end: CYLINDER_END, kind: 'cylinder' },
+  { begin: SPHERE_BEGIN, end: SPHERE_END, kind: 'sphere' },
+  { begin: TUBE_BEGIN, end: TUBE_END, kind: 'tube' },
+  { begin: HEX_PRISM_BEGIN, end: HEX_PRISM_END, kind: 'hexPrism' },
+  { begin: HOLE_BEGIN, end: HOLE_END, kind: 'hole' },
+  { begin: HOLE_PATTERN_BEGIN, end: HOLE_PATTERN_END, kind: 'holePattern' },
+  { begin: CLEARANCE_HOLE_BEGIN, end: CLEARANCE_HOLE_END, kind: 'clearanceHole' },
+  { begin: TAP_DRILL_HOLE_BEGIN, end: TAP_DRILL_HOLE_END, kind: 'tapDrillHole' },
+  { begin: CBORE_HOLE_BEGIN, end: CBORE_HOLE_END, kind: 'cboreHole' },
+  { begin: CSK_HOLE_BEGIN, end: CSK_HOLE_END, kind: 'cskHole' },
+  { begin: SHELL_BEGIN, end: SHELL_END, kind: 'shell' },
+  { begin: DRAFT_BEGIN, end: DRAFT_END, kind: 'draft' },
+  { begin: CUT_BEGIN, end: CUT_END, kind: 'cut' },
+  { begin: BOOLEAN_BEGIN, end: BOOLEAN_END, kind: 'boolean' },
+  { begin: MOVE_BEGIN, end: MOVE_END, kind: 'move' },
+  { begin: ROTATE_BEGIN, end: ROTATE_END, kind: 'rotate' },
+  { begin: MOVE_FACE_BEGIN, end: MOVE_FACE_END, kind: 'moveFace' },
+  { begin: DELETE_FACE_BEGIN, end: DELETE_FACE_END, kind: 'deleteFace' },
+  { begin: CENTER_BEGIN, end: CENTER_END, kind: 'center' },
+  { begin: ALIGN_BEGIN, end: ALIGN_END, kind: 'align' },
+  { begin: MIRROR_BEGIN, end: MIRROR_END, kind: 'mirror' },
+  { begin: ARRAY_BEGIN, end: ARRAY_END, kind: 'array' },
+  { begin: POLAR_ARRAY_BEGIN, end: POLAR_ARRAY_END, kind: 'polarArray' },
+  { begin: PATTERN_POINTS_BEGIN, end: PATTERN_POINTS_END, kind: 'patternPoints' },
+  { begin: WORKPLANE_BEGIN, end: WORKPLANE_END, kind: 'workplane' },
+  { begin: CODE_BEGIN, end: CODE_END, kind: 'code' },
+]);
 
 /** All feature end-markers — inserts after a live `part` binding skip past these. */
 export const FEATURE_BLOCK_END_MARKERS = Object.freeze([
@@ -1257,6 +1302,9 @@ export function composeHelperInsert(buffer, id, caretOffset = null, params = nul
   if (snippet == null) return null;
 
   snippet = stripTrailingReturnPart(snippet);
+  // Every new block carries an id on its markers, so the names stamped on
+  // its faces (`cube1.top`) survive an insert ahead of it.
+  snippet = mintBlockIds(snippet, buffer || '');
   const filtered = filterRedeclarations(snippet, strippedBuf);
   return insertBlockAtCaret(buffer, filtered, caretOffset);
 }
@@ -1285,7 +1333,7 @@ export function starterCubeScript() {
     height: 20,
     center: true,
   });
-  if (!script || !script.includes(CUBE_BEGIN) || !script.includes(CUBE_END)) {
+  if (!script || !hasFeatureBlock(script, CUBE_BEGIN, CUBE_END)) {
     throw new Error('starterCubeScript: cube feature markers missing');
   }
   return script;

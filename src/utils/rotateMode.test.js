@@ -14,6 +14,7 @@ import {
   validateRotateAccept,
 } from './rotateMode.js';
 import { ROTATE_BEGIN, ROTATE_END } from './helperPaletteSnippets.js';
+import { hasFeatureBlock } from './featureBlockId.js';
 
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 const vecNear = (a, b, eps = 1e-9) => a.length === 3 && b.length === 3 && a.every((v, i) => near(v, b[i], eps));
@@ -41,7 +42,8 @@ test('composeRotateCommit writes one named-body rotateAbout and replaces its blo
   });
   assert.equal(first.ok, true, first.message);
   assert.ok(first.buffer.includes("part = rotateAbout(part, 'z', 30, null, { bodies: [{ at: [1, 2, 3] }] });"), first.buffer);
-  assert.ok(first.buffer.includes(ROTATE_BEGIN) && first.buffer.includes(ROTATE_END));
+  assert.ok(hasFeatureBlock(first.buffer, ROTATE_BEGIN, ROTATE_END));
+  assert.match(first.buffer, /\/\/ --- rotate begin id=rotate1 ---/);
   assert.equal((first.buffer.match(/\brotateAbout\s*\(/g) || []).length, 1);
 
   const again = composeRotateCommit(first.buffer, {

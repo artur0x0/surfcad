@@ -30,6 +30,7 @@ import {
 } from '../../src/utils/contourMode.js';
 import { listConstructionPlanes } from '../../src/utils/savedContours.js';
 import { offsetPlaneFrame } from '../../src/utils/makeLoft.js';
+import { hasFeatureBlock } from '../../src/utils/featureBlockId.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (rel) => readFileSync(join(here, rel), 'utf8');
@@ -55,13 +56,15 @@ console.log('workplane strip + UI');
     FEATURE_MARKER_KINDS.some((k) => k.kind === 'workplane' && k.label === 'Workplane'),
   );
   check('FeatureStrip icon Layers3', /workplane:\s*Layers3/.test(strip));
-  check('markers import WORKPLANE_', /WORKPLANE_BEGIN/.test(markers));
+  // featureMarkers derives its table from FEATURE_BLOCK_MARKERS; the workplane row lives in the snippets module.
+  check('markers import the shared block table', /FEATURE_BLOCK_MARKERS/.test(markers));
+  check('FEATURE_BLOCK_MARKERS has workplane', /begin: WORKPLANE_BEGIN, end: WORKPLANE_END, kind: 'workplane'/.test(snippets));
 }
 
 {
   const buf = composeHelperInsert('', 'workplane');
-  check('insert wraps begin marker', buf.includes(WORKPLANE_BEGIN));
-  check('insert wraps end marker', buf.includes(WORKPLANE_END));
+  check('insert wraps begin marker', hasFeatureBlock(buf, WORKPLANE_BEGIN, WORKPLANE_END) && /workplane begin id=workplane1 ---/.test(buf));
+  check('insert wraps end marker', /workplane end id=workplane1 ---/.test(buf));
   check('insert is literal PlaneFrame', /center:\s*\[/.test(buf) && /normal:\s*\[0,\s*0,\s*1\]/.test(buf));
   const feats = parseFeatureMarkers(buf);
   check(
@@ -87,7 +90,7 @@ console.log('workplane strip + UI');
   const face = state.planeFace;
   const result = composeContourCommit('', { entry: 'workplane', face });
   check('composeContourCommit workplane ok', result.ok && !result.run);
-  check('commit has markers', result.buffer.includes(WORKPLANE_BEGIN));
+  check('commit has markers', hasFeatureBlock(result.buffer, WORKPLANE_BEGIN, WORKPLANE_END));
   const planes = listConstructionPlanes(result.buffer);
   check('commit plane pickable', planes.length === 1 && Math.abs(planes[0].plane.center[2] - 15) < 1e-6);
 }

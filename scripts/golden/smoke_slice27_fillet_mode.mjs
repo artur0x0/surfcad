@@ -59,6 +59,7 @@ import {
   FILLET_MODE_NO_COMMIT,
 } from '../../src/utils/filletMode.js';
 import { sweepBlendHardMax, pathLengthFromEdges } from '../../src/utils/selectEdge.js';
+import { hasFeatureBlock } from '../../src/utils/featureBlockId.js';
 
 let failed = 0;
 function check(name, cond, detail = '') {
@@ -187,8 +188,8 @@ const e30 = mk(3, 0);
   });
   check('Accept compose ok', first.ok === true && first.run === true);
   check('Accept has fillet-mode markers', hasFilletModeBlock(first.buffer));
-  check('Accept begin marker', first.buffer.includes(FILLET_MODE_BEGIN));
-  check('Accept end marker', first.buffer.includes(FILLET_MODE_END));
+  check('Accept begin marker', hasFeatureBlock(first.buffer, FILLET_MODE_BEGIN, FILLET_MODE_END) && /\/\/ --- fillet-mode begin id=fillet1 ---/.test(first.buffer));
+  check('Accept end marker', /\/\/ --- fillet-mode end id=fillet1 ---/.test(first.buffer));
   const owned = filletModeOwnedRegion(first.buffer);
   check('owned has makeSweepPath', /makeSweepPath\s*\(/.test(owned));
   check('owned has filletAlongPath', /filletAlongPath\s*\(/.test(owned));

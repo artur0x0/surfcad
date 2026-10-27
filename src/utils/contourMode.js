@@ -103,6 +103,7 @@ import {
   selectContourGesture,
   toggleContourPick,
 } from './contourGesture.js';
+import { hasFeatureBlock, lastFeatureBlock } from './featureBlockId.js';
 
 /** Palette ids that enter contour mode instead of one-shot insert. */
 export const CONTOUR_ENTRY_IDS = new Set([
@@ -1644,17 +1645,16 @@ export function loftSectionsForCompose(face, profiles) {
 
 export function hasContourProfileBlock(buffer) {
   const t = String(buffer || '');
-  return t.includes(CONTOUR_PROFILE_BEGIN) && t.includes(CONTOUR_PROFILE_END);
+  return hasFeatureBlock(t, CONTOUR_PROFILE_BEGIN, CONTOUR_PROFILE_END);
 }
 
 /** Text this composer owns — between CONTOUR_PROFILE_BEGIN and CONTOUR_PROFILE_END. */
 export function contourProfileOwnedRegion(buffer) {
   const text = String(buffer || '');
-  const i = text.lastIndexOf(CONTOUR_PROFILE_BEGIN);
-  if (i < 0) return '';
-  const j = text.indexOf(CONTOUR_PROFILE_END, i);
-  if (j < 0) return '';
-  return text.slice(i, j + CONTOUR_PROFILE_END.length);
+  const blk = lastFeatureBlock(text, CONTOUR_PROFILE_BEGIN, CONTOUR_PROFILE_END);
+  if (!blk) return '';
+  const i = blk.start;
+  return text.slice(i, blk.end);
 }
 
 /**
@@ -1663,11 +1663,10 @@ export function contourProfileOwnedRegion(buffer) {
  */
 export function stripContourProfileBlock(buffer) {
   const text = String(buffer || '');
-  const i = text.lastIndexOf(CONTOUR_PROFILE_BEGIN);
-  if (i < 0) return text;
-  const j = text.indexOf(CONTOUR_PROFILE_END, i);
-  if (j < 0) return text;
-  const after = text.slice(j + CONTOUR_PROFILE_END.length).replace(/^\r?\n/, '');
+  const blk = lastFeatureBlock(text, CONTOUR_PROFILE_BEGIN, CONTOUR_PROFILE_END);
+  if (!blk) return text;
+  const i = blk.start;
+  const after = text.slice(blk.end).replace(/^\r?\n/, '');
   const before = text.slice(0, i).replace(/\s+$/, '');
   if (before && after) return `${before}\n${after}`;
   return before || after;

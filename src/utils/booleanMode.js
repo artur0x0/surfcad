@@ -30,6 +30,8 @@ import {
   externalBodyRotationBlock,
   partOffset,
 } from './externalCopy.js';
+import { lastFeatureBlock } from './featureBlockId.js';
+import { mintBlockIds } from './featureBlockMint.js';
 
 export { meshBodyComponents, bodyContainingTriangle, cutBodyKey };
 
@@ -477,11 +479,10 @@ export function booleanPieceHidden(state, partId, at) {
 
 export function stripBooleanBlock(buffer) {
   const text = String(buffer || '');
-  const i = text.lastIndexOf(BOOLEAN_BEGIN);
-  if (i < 0) return text;
-  const j = text.indexOf(BOOLEAN_END, i);
-  if (j < 0) return text;
-  const after = text.slice(j + BOOLEAN_END.length).replace(/^\r?\n/, '');
+  const blk = lastFeatureBlock(text, BOOLEAN_BEGIN, BOOLEAN_END);
+  if (!blk) return text;
+  const i = blk.start;
+  const after = text.slice(blk.end).replace(/^\r?\n/, '');
   const before = text.slice(0, i).replace(/\s+$/, '');
   if (before && after) return `${before}\n${after}`;
   return before || after;
@@ -613,8 +614,9 @@ export function composeBooleanCommit(buffer, state, partId, mesh = null, ctx = {
     return `externalBody(${frozenScriptFunction(t.script)}, { bodies: [${at}], offset: ${formatVec(t.offset)} })`;
   }).join(',\n');
   const call = tools.length ? skeleton.replace('__TOOLS__', `\n${toolText}\n`) : skeleton;
-  const block = [BOOLEAN_BEGIN, ...headers, call, BOOLEAN_END].join('\n');
-  const composed = placeBlockBeforeReturn(stripBooleanBlock(String(buffer || '')), block);
+  const base = stripBooleanBlock(String(buffer || ''));
+  const block = mintBlockIds([BOOLEAN_BEGIN, ...headers, call, BOOLEAN_END].join('\n'), base);
+  const composed = placeBlockBeforeReturn(base, block);
   return {
     ok: true,
     buffer: composed,

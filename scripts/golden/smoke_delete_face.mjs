@@ -107,8 +107,8 @@ const CHAMFER = { center: [4, 0, 4], normal: [Math.SQRT1_2, 0, Math.SQRT1_2] };
   check('emits one deleteFace', first.ok === true
     && first.buffer.includes('part = deleteFace(part, [{ center: [4, 0, 4], normal: [0.7071, 0, 0.7071] }]);')
     && (first.buffer.match(/\bdeleteFace\s*\(/g) || []).length === 1
-    && first.buffer.includes('// --- delete-face begin ---')
-    && first.buffer.includes('// --- delete-face end ---'),
+    && /\/\/ --- delete-face begin id=deleteFace1 ---/.test(first.buffer)
+    && /\/\/ --- delete-face end id=deleteFace1 ---/.test(first.buffer),
   first.buffer || first.message);
 
   const again = composeDeleteFaceCommit(first.buffer, {
@@ -116,7 +116,7 @@ const CHAMFER = { center: [4, 0, 4], normal: [Math.SQRT1_2, 0, Math.SQRT1_2] };
   });
   check('a second confirm replaces the previous Delete Face block', again.ok === true
     && (again.buffer.match(/\bdeleteFace\s*\(/g) || []).length === 1
-    && (again.buffer.match(/\/\/ --- delete-face begin ---/g) || []).length === 1
+    && (again.buffer.match(/\/\/ --- delete-face begin id=\w+ ---/g) || []).length === 1
     && again.buffer.includes('normal: [1, 0, 0]'),
   again.buffer || again.message);
 

@@ -100,7 +100,7 @@ const Yp = { center: [0, 15, 0], normal: [0, 1, 0] };
     flipOut.buffer || flipOut.message);
   const again = composeDraftCommit(once.buffer, { ...emit, angle: 2 });
   check('a later Draft replaces the previous block',
-    again.ok && (again.buffer.match(/--- draft begin ---/g) || []).length === 1
+    again.ok && (again.buffer.match(/--- draft begin( id=\w+)? ---/g) || []).length === 1
     && (again.buffer.match(/draftFaces\s*\(/g) || []).length === 1);
 
   const cap = applyDraftFaceTap(applyDraftFaceTap(emptyDraftState(), Zp), Zm);

@@ -15,6 +15,8 @@
 import { MOVE_BEGIN, MOVE_END } from './helperPaletteSnippets.js';
 import { placeBlockBeforeReturn } from './scriptReturn.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
+import { lastFeatureBlock } from './featureBlockId.js';
+import { mintBlockIds } from './featureBlockMint.js';
 
 export const MOVE_ENTRY_ID = 'move';
 
@@ -190,10 +192,10 @@ export function cutNormalFromScript(buffer) {
 /** Last marked move(), so a replaced block still names the pre-move body. */
 export function parseLastMove(buffer) {
   const text = String(buffer || '');
-  const i = text.lastIndexOf(MOVE_BEGIN);
-  if (i < 0) return null;
-  const j = text.indexOf(MOVE_END, i);
-  if (j < 0) return null;
+  const blk = lastFeatureBlock(text, MOVE_BEGIN, MOVE_END);
+  if (!blk) return null;
+  const i = blk.start;
+  const j = blk.endMarkerStart;
   const chunk = text.slice(i, j);
   const m = chunk.match(
     /move\(\s*\w+\s*,\s*\[\s*([^,\]]+)\s*,\s*([^,\]]+)\s*,\s*([^\]]+)\s*\]\s*,\s*\{\s*bodies:\s*\[\s*\{\s*at:\s*\[\s*([^,\]]+)\s*,\s*([^,\]]+)\s*,\s*([^\]]+)\s*\](?:\s*,\s*tri:\s*(\d+))?/,
@@ -313,11 +315,10 @@ export function movePreviewOffset(state, buffer) {
 
 export function stripMoveBlock(buffer) {
   const text = String(buffer || '');
-  const i = text.lastIndexOf(MOVE_BEGIN);
-  if (i < 0) return text;
-  const j = text.indexOf(MOVE_END, i);
-  if (j < 0) return text;
-  const after = text.slice(j + MOVE_END.length).replace(/^\r?\n/, '');
+  const blk = lastFeatureBlock(text, MOVE_BEGIN, MOVE_END);
+  if (!blk) return text;
+  const i = blk.start;
+  const after = text.slice(blk.end).replace(/^\r?\n/, '');
   const before = text.slice(0, i).replace(/\s+$/, '');
   if (before && after) return `${before}\n${after}`;
   return before || after;
@@ -337,11 +338,10 @@ export function composeMoveCommit(buffer, state) {
   const bodyName = state?.body || 'part';
   const triLit = gate.tri != null ? `, tri: ${gate.tri}` : '';
   const call = `${bodyName} = move(${bodyName}, [${formatNum(gate.dx)}, ${formatNum(gate.dy)}, ${formatNum(gate.dz)}], { bodies: [{ at: ${formatVec(gate.at)}${triLit} }] });`;
-  const block = [MOVE_BEGIN, call, MOVE_END].join('\n');
-  const composed = placeBlockBeforeReturn(stripMoveBlock(String(buffer || '')), block);
-  const ownedStart = composed.lastIndexOf(MOVE_BEGIN);
-  const ownedEnd = composed.indexOf(MOVE_END, ownedStart);
-  const owned = composed.slice(ownedStart, ownedEnd + MOVE_END.length);
+  const base = stripMoveBlock(String(buffer || ''));
+  const block = mintBlockIds([MOVE_BEGIN, call, MOVE_END].join('\n'), base);
+  const composed = placeBlockBeforeReturn(base, block);
+  const owned = lastFeatureBlock(composed, MOVE_BEGIN, MOVE_END)?.text || '';
   if ((owned.match(/\bmove\s*\(/g) || []).length !== 1) {
     return { ok: false, message: 'composeMoveCommit: Move must emit exactly one move().' };
   }

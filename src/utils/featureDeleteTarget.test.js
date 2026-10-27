@@ -43,8 +43,8 @@ test('delete_feature index 0 stays on the active part when another part is picke
 
   const frameHit = resolveStripTarget(frame, { index: 0 });
   const wheelHit = resolveStripTarget(wheel, { index: 0 });
-  assert.equal(frameHit.feature.id, 'cylinder-0');
-  assert.equal(wheelHit.feature.id, 'tube-0');
+  assert.equal(frameHit.feature.id, 'cylinder1');
+  assert.equal(wheelHit.feature.id, 'tube1');
   const frameLive = liveSheetFeature(frame, frameHit.feature);
   const wheelLive = liveSheetFeature(wheel, wheelHit.feature);
   assert.equal(frameLive.chipLabel, 'Cylinder 1');

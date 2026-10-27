@@ -12,6 +12,8 @@ import { shellFaceKey } from './shellMode.js';
 import { facePickLiteral } from './faceFeaturePlacement.js';
 import { DELETE_FACE_BEGIN, DELETE_FACE_END } from './helperPaletteSnippets.js';
 import { placeBlockBeforeReturn } from './scriptReturn.js';
+import { lastFeatureBlock } from './featureBlockId.js';
+import { mintBlockIds } from './featureBlockMint.js';
 
 export const DELETE_FACE_ENTRY_ID = 'deleteFace';
 
@@ -73,11 +75,10 @@ export function validateDeleteFaceAccept(state) {
 
 export function stripDeleteFaceBlock(buffer) {
   const text = String(buffer || '');
-  const i = text.lastIndexOf(DELETE_FACE_BEGIN);
-  if (i < 0) return text;
-  const j = text.indexOf(DELETE_FACE_END, i);
-  if (j < 0) return text;
-  const after = text.slice(j + DELETE_FACE_END.length).replace(/^\r?\n/, '');
+  const blk = lastFeatureBlock(text, DELETE_FACE_BEGIN, DELETE_FACE_END);
+  if (!blk) return text;
+  const i = blk.start;
+  const after = text.slice(blk.end).replace(/^\r?\n/, '');
   const before = text.slice(0, i).replace(/\s+$/, '');
   if (before && after) return `${before}\n${after}`;
   return before || after;
@@ -93,11 +94,10 @@ export function composeDeleteFaceCommit(buffer, state) {
   const body = state?.body || 'part';
   const faces = gate.faces.map((f) => facePickLiteral(f)).join(', ');
   const call = `${body} = deleteFace(${body}, [${faces}]);`;
-  const block = [DELETE_FACE_BEGIN, call, DELETE_FACE_END].join('\n');
-  const composed = placeBlockBeforeReturn(stripDeleteFaceBlock(String(buffer || '')), block);
-  const ownedStart = composed.lastIndexOf(DELETE_FACE_BEGIN);
-  const ownedEnd = composed.indexOf(DELETE_FACE_END, ownedStart);
-  const owned = composed.slice(ownedStart, ownedEnd + DELETE_FACE_END.length);
+  const base = stripDeleteFaceBlock(String(buffer || ''));
+  const block = mintBlockIds([DELETE_FACE_BEGIN, call, DELETE_FACE_END].join('\n'), base);
+  const composed = placeBlockBeforeReturn(base, block);
+  const owned = lastFeatureBlock(composed, DELETE_FACE_BEGIN, DELETE_FACE_END)?.text || '';
   if ((owned.match(/\bdeleteFace\s*\(/g) || []).length !== 1) {
     return { ok: false, message: 'composeDeleteFaceCommit: Delete Face must emit exactly one deleteFace().' };
   }

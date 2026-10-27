@@ -114,8 +114,8 @@ const SIDE = { center: [5, 0, 0], normal: [1, 0, 0] };
   check('emits one moveFace', first.ok === true
     && first.buffer.includes('part = moveFace(part, [{ center: [0, 0, 5], normal: [0, 0, 1] }], 4);')
     && (first.buffer.match(/\bmoveFace\s*\(/g) || []).length === 1
-    && first.buffer.includes('// --- move-face begin ---')
-    && first.buffer.includes('// --- move-face end ---')
+    && /\/\/ --- move-face begin id=moveFace1 ---/.test(first.buffer)
+    && /\/\/ --- move-face end id=moveFace1 ---/.test(first.buffer)
     && !/\bmove\s*\(/.test(first.buffer),
   first.buffer || first.message);
 
@@ -132,7 +132,7 @@ const SIDE = { center: [5, 0, 0], normal: [1, 0, 0] };
   });
   check('a second confirm replaces the previous Move Face block', again.ok === true
     && (again.buffer.match(/\bmoveFace\s*\(/g) || []).length === 1
-    && (again.buffer.match(/\/\/ --- move-face begin ---/g) || []).length === 1
+    && (again.buffer.match(/\/\/ --- move-face begin id=\w+ ---/g) || []).length === 1
     && again.buffer.includes('normal: [1, 0, 0]')
     && !again.buffer.includes(', 4);'),
   again.buffer || again.message);
