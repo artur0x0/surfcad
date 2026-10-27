@@ -1188,6 +1188,8 @@ const Viewport = forwardRef(({
   onBindSheetMetal = null,
   /** CAD: Blocks, the last Move button, opens the joint create card. */
   onOpenJoints = null,
+  /** True while the joint create card is open (pressed tint on Blocks). */
+  jointCardOpen = false,
   /** S2+: (spec, { partId, step }) => boolean — write the sheet-metal block. */
   onCommitSheetMetal = null,
   getHelperBuffer = null,
@@ -2463,9 +2465,9 @@ const Viewport = forwardRef(({
     softFailBoolean: (msg) => {
       showShellToast(msg || 'Boolean refused — pick a target and a tool body.');
     },
-    /** Short note in the picker toast slot (cross-part writes). */
-    notify: (msg) => {
-      if (msg) showShellToast(msg);
+    /** Short note in the picker toast slot (cross-part writes). `{ undo: false }` hides the Undo button. */
+    notify: (msg, opts) => {
+      if (msg) showShellToast(msg, opts);
     },
     softFailMove: (msg) => {
       showShellToast(msg || 'Move refused — double-click a body, then Confirm.');
@@ -15734,6 +15736,7 @@ const Viewport = forwardRef(({
             }
             : null}
           onOpenJoints={mode !== 'game' ? onOpenJoints : null}
+          jointsOpen={mode !== 'game' && !!jointCardOpen}
           compact={isMobile}
           onHelperCard={setHelperCardOpen}
           lengthMm={characteristicLengthMm({ bounds: modelBounds })}

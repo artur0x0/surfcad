@@ -219,7 +219,7 @@ async function stripBox(page) {
     const box = strip.getBoundingClientRect();
     return {
       height: box.height,
-      empty: strip.hasAttribute('data-feature-strip-empty'),
+      empty: strip.hasAttribute('data-joints-row-empty'),
       chips: strip.querySelectorAll('[data-joint-id]').length,
     };
   });

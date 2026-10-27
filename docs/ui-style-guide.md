@@ -160,18 +160,29 @@ Displaying a field does not rewrite the script.
 
 The horizontal CAD feature ribbon (`FeatureStrip` under the viewer title on
 desktop, under the CAD header on mobile) is **46px** in every state:
-assembly joints, part features, and empty (undo/redo only). Token
+part features and empty (undo/redo only). Token
 `--feature-strip-height: 2.875rem` on `:root`; class `feature-strip-bar` on
 the strip root. Chips share `feature-strip-chip` (32px). Do not set a
-per-state height. Switching assembly ↔ part ↔ empty must not jump the bar
+per-state height. Switching part ↔ empty must not jump the bar
 or shift the viewport.
+
+The per-part joints row (`JointsRow`) is a second `feature-strip-bar` of the
+same 46px directly under the ribbon, with no top border, so the two read as
+one block with one hairline between them. Its chips are the same 32px
+`feature-strip-chip` box with the type glyph and `text-ui-xs` text
+(`Type · Other part`). Failed chips use `border-2 border-red-400` and
+`feature-failed-ring` plus a red warning glyph, never colour alone. The
+pane that mounts the row sets `data-joints-row-open`, which turns
+`--joint-row-height` (0 by default) into the ribbon height; rails and the
+script drawer add that token to their clearance.
 
 On a phone the ribbon's top is `--feature-strip-offset-mobile`: the header's
 `top-4`, two title pills, and `--viewer-title-stack-gap` twice (once between
 the pills, once under the assembly pill). That is the same gap the stacked
 title uses. Desktop stays `--feature-strip-offset-desktop` (`top-14`).
 
-Leave **10px** (`--feature-strip-rail-gap`) between the ribbon bottom and the
+Leave **10px** (`--feature-strip-rail-gap`) between the ribbon bottom (or
+the joints row bottom when that row is mounted) and the
 top of the left helper rail and the right view rail. Desktop full-length
 left rail: class `rail-full-below-strip`. Mobile content-max left rail:
 `rail-max-below-strip`. Right rail: `rail-right-below-strip` (same 10px
@@ -306,7 +317,7 @@ and accent map. **Every number renders a slider AND a typed box**:
 - **`HelperParamModal.jsx`** — CAD uses the shared feature card for cube, round box, cylinder, sphere, tube, hex, hole, center, align, array, path, and refuse. The rail Mirror button opens `MirrorModeChip` instead. Fields stay in the body. Delete stays in the note when a feature edit is open. X and Esc write nothing. Confirm saves and closes. Refuse's footer says OK and writes nothing. There is no swipe and no click-outside. Game keeps the previous bottom-centre sheet: click-through, no scrim, no card, no slide.
 - **`FeatureEditSheet.jsx`** — the fallback editor and the feature picker, on the shared feature card. Edit script stays in the body. Delete stays in the note. X and Esc write nothing. Confirm saves and closes. A stub kind has no Confirm. The picker has no Confirm. There is no swipe. Game mounts no card.
 - **`JointCard.jsx`** — the create card is `StickyPickApply` (`data-sticky-pick-apply` and `data-joint-card`), `fullLeft` off. On desktop the left edge is 10px to the right of the mounted left rail. On a phone the card stays centered between the rails. Title Joint. Subtitle `Shaft · face  →  Housing · face`, with `×2` when a part has two faces. Body: name, the type property (`coincident`, `concentric`, `distance`, `angle`, `symmetric`, `fixed`, with Parallel and Perpendicular in that same group). Parallel and Perpendicular are not stored types; one tap writes an angle joint at 0° or 90°. a distance or angle field when that type needs one, Flip when the type has a sense, and Ground after one pick. A third part opens `Change one of the parts?` (`data-joint-part-change`) with Discard last pick, Replace part 1, and Replace part 2. The note names the suggested type. Footer Add. Add writes the joint, clears the picks, and leaves the card open. A chip tap reopens that joint here (`mode` edit) with the same picks, type, and value. Edit mode has no Add button: Confirm saves and closes, and the red Delete (`data-joint-delete`, feature-sheet danger style) sits opposite Confirm. X writes nothing. Create mode still says Add. `data-joint-card` carries `data-joint-id` and `data-joint-type`. Distance uses the global display unit; the file stays millimetres. Angles stay degrees. X and Esc write nothing and close the card. Game mounts no card.
-- **Feature strip joint chip** — there is no floating joint tag. A chip tap reopens that joint in `JointCard` (picks highlighted, type, value, red Delete, Confirm, and X). A broken or conflict chip uses `border-2 border-red-400` and `feature-failed-ring`. Contour dimension and constraint tags stay. Game mode and a feature session mount no joint chips.
+- **Joints row chip** (`JointsRow.jsx`) — there is no floating joint tag and no joint chip on the feature strip. A chip tap reopens that joint in `JointCard` (picks highlighted, type, value, red Delete, Confirm, and X) and keeps the part selected. A broken or conflict chip uses `border-2 border-red-400` and `feature-failed-ring` with a red `triangle-alert` glyph. Contour dimension and constraint tags stay. Game mode and a feature session mount no joints row.
 - **`MoveModeChip.jsx`** — the shared feature card (`FeatureSheet`). Double-click
   selects the body (one click still selects the full face and does not change
   the target). XYZ are `NumberField` deltas, slider and type-in. Cut (when the

@@ -147,6 +147,8 @@ const HelperInsertPalette = ({
   onOpenSheetMetal = null,
   /** CAD: last Move button. Opens the joint create card. */
   onOpenJoints = null,
+  /** True while the joint create card is open: the Joints button shows pressed. */
+  jointsOpen = false,
   compact = false,
   /** Both layouts share Block / Build / Shape / Polish / Move. */
   layout = 'game',
@@ -461,8 +463,9 @@ const HelperInsertPalette = ({
                 aria-label="Joints"
                 data-joints-button="1"
                 data-ui-action="data-joints-button"
+                aria-pressed={jointsOpen || undefined}
                 className={`${pad} rounded text-blue-700 hover:bg-blue-100 active:bg-blue-200
-                    flex items-center justify-center transition-colors`}
+                    flex items-center justify-center transition-colors ${jointsOpen ? 'bg-blue-100' : ''}`}
               >
                 <Blocks size={iconSize} strokeWidth={2} />
               </button>
