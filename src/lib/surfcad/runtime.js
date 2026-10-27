@@ -7253,11 +7253,21 @@ function _s23ExteriorExitPlane(pt, tout) {
   let bestN = null;
   let bestP = null;
   let bestAlign = _S23_EXIT_ALIGN;
+  let bestD2 = Infinity;
   for (const tri of _s23FaceSoup) {
-    if (_pointTriDist2(pt, tri.a, tri.b, tri.c) > _S23_EXIT_NEAR2) continue;
+    const d2 = _pointTriDist2(pt, tri.a, tri.b, tri.c);
+    if (d2 > _S23_EXIT_NEAR2) continue;
     const n = _s23Norm(tri.n);
     const align = _c4Dot(tout, n);
-    if (align > bestAlign) {
+    if (!(align > _S23_EXIT_ALIGN)) continue;
+    // The face the end lies on wins over a parallel face nearby. B6: a boss
+    // 10 mm wide on a 10.75 mm plate — the plate side 0.375 mm out tied the
+    // boss end wall on alignment, took the clip plane out to itself, and the
+    // filler grew 0.375 mm wings past both ends of the edge.
+    const nearer = d2 < bestD2 - 1e-9;
+    const sameAndStraighter = Math.abs(d2 - bestD2) <= 1e-9 && align > bestAlign;
+    if (nearer || sameAndStraighter) {
+      bestD2 = d2;
       bestAlign = align;
       bestN = n;
       bestP = tri.a;
@@ -7265,6 +7275,42 @@ function _s23ExteriorExitPlane(pt, tout) {
   }
   if (!bestN || !bestP) return null;
   return { p: [bestP[0], bestP[1], bestP[2]], n: bestN };
+}
+
+/**
+ * Is there material just past an open concave end, where the pad would go?
+ * Probes a point a little beyond the endpoint along the outward tangent and
+ * a little into the empty wedge the filler occupies (f0 + f1 span that
+ * wedge on a concave segment). Inside the part: the end runs into material
+ * (a pocket end wall, an inner ceiling) and the pad is swallowed. Outside:
+ * the end meets air, as at a corner a previous fillet rounded (B7, follow-up
+ * 4): the straight concave segment stops where the round begins, no face is
+ * aligned with the tangent there, and a pad would stand proud as a nub or a
+ * flap through the round. Two tiny booleans per chain, never per edge.
+ */
+function _s23MaterialPastEnd(part, pt, tout, seg, radius) {
+  const f0 = seg && seg.f0;
+  const f1 = seg && seg.f1;
+  if (!part || !pt || !tout || !f0 || !f1) return true;
+  const bis = [f0[0] + f1[0], f0[1] + f1[1], f0[2] + f1[2]];
+  const bl = Math.hypot(bis[0], bis[1], bis[2]);
+  if (!(bl > 1e-9)) return true;
+  const along = Math.max(0.05, Math.min(0.1, 0.25 * filletSweepCutterExpand(radius)));
+  const into = Math.max(0.05, Math.min(0.3, 0.1 * (Number(radius) || 0)));
+  const p = [
+    pt[0] + tout[0] * along + (bis[0] / bl) * into,
+    pt[1] + tout[1] * along + (bis[1] / bl) * into,
+    pt[2] + tout[2] * along + (bis[2] / bl) * into,
+  ];
+  const M = manifoldModule.Manifold;
+  const s = 0.02;
+  try {
+    const probe = M.cube([s, s, s], true).translate(p);
+    const hit = M.intersection(part, probe);
+    return !_c4StatusError(hit) && hit.volume() > 0.5 * s * s * s;
+  } catch (_) {
+    return true;
+  }
 }
 
 /**
@@ -7470,8 +7516,12 @@ function _s23ExtendConcaveOpenEnds(part, segs, closed, radius) {
     const tLen = Math.hypot(dir[0], dir[1], dir[2]) || 1;
     const tout = [dir[0] / tLen, dir[1] / tLen, dir[2] / tLen];
     _s23ZeroGrowOnBBoxExit(growMin, growMax, bb, pt, tout);
+    const exitsBox = _s23ExitsThroughBBox(bb, pt, tout);
     const plane = _s23ExteriorExitPlane(pt, tout);
-    if (plane && !_s23ExitsThroughBBox(bb, pt, tout)) planes.push(plane);
+    if (plane && !exitsBox) planes.push(plane);
+    // No face to clip against and nothing past the end to swallow the pad:
+    // the tube ends flush at the endpoint (B7: a nub at a rounded corner).
+    if (!plane && !exitsBox && !_s23MaterialPastEnd(part, pt, tout, seg, radius)) return false;
     const moved = [pt[0] + dir[0] * pad, pt[1] + dir[1] * pad, pt[2] + dir[2] * pad];
     if (which === 'start') seg.p0 = moved;
     else seg.p1 = moved;

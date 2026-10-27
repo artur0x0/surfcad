@@ -162,6 +162,22 @@ could pass on a mixed chain while both halves were wrong.
 Unpolished: where a chain changes sign the cutter and filler overlap at the
 corner (net +6.4 on a mixed L chain where ideal is ~0).
 
+**Open ends of a concave run** (`_s23ExtendConcaveOpenEnds`). Every concave
+open end is padded by the cutter-expand length so the filler cap is not
+coplanar with the face the edge ends on, and the pad is then taken back:
+
+| What is past the end | Rule |
+| --- | --- |
+| a face of the pre-fillet bbox (shell opening, plate skin) | pad, bbox clip (`_s23ClipToBBox`, grown by the section reach on the other sides) |
+| an exterior face inside the bbox, aligned with the tangent (boss end wall, cutout skin under a flange) | pad, clip to that plane (`_s23ClipSolidToPlanes`). Among aligned faces within 0.75 mm the **nearest** wins: B6 was a plate side 0.375 mm out tying the boss end wall and taking the clip plane with it (0.375 mm wings) |
+| material (pocket end wall, inner ceiling) | pad, swallowed by the union |
+| air with no aligned face (the straight segment ends where a previous fillet's round begins) | **no pad**: the tube ends flush at the endpoint. B7 / follow-up 4 were this pad standing proud as a 0.42 mm nub (+1.65 mm³) |
+
+Material vs air is one tiny cube intersection per end (`_s23MaterialPastEnd`),
+probed 0.1 mm past the endpoint along the tangent and 0.1·r into the empty
+wedge (`f0 + f1` span it on a concave segment). Two booleans per chain, never
+per edge.
+
 ### Why not extrude+warp (the C3.0–C3.2 dead end)
 
 `Manifold.extrude` + `warp` can only *reorient* one fixed 2D profile; it cannot
