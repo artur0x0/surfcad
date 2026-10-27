@@ -21,6 +21,7 @@ import { chromium } from 'playwright-core';
 import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 import { MIRROR_BEGIN, MIRROR_END } from '../../src/utils/helperPaletteSnippets.js';
 import { composeMirrorCommit, emptyMirrorState } from '../../src/utils/mirrorMode.js';
+import { hasFeatureBlock } from '../../src/utils/featureBlockId.js';
 
 const PORT = Number(process.env.SMOKE_PORT || 4374);
 const APP_URL = `http://127.0.0.1:${PORT}/?agent=1`;
@@ -84,7 +85,7 @@ const wp1 = { center: [30, 0, 0], normal: [1, 0, 0], x: [0, 1, 0], y: [0, 0, 1] 
     workplane: { id: 'wp1', name: 'wp1', center: [30, 0, 0], normal: [1, 0, 0] },
   });
   check('compose emits one mirror across the workplane', named.ok === true
-    && named.buffer.includes(MIRROR_BEGIN) && named.buffer.includes(MIRROR_END)
+    && hasFeatureBlock(named.buffer, MIRROR_BEGIN, MIRROR_END) && /\/\/ --- mirror begin id=mirror1 ---/.test(named.buffer)
     && /mirror\(part, \{ center: \[30, 0, 0\], normal: \[1, 0, 0\] \}, true, \{ bodies: \[\{ at: \[20, 0, 0\] \}\] \}\)/.test(named.buffer));
 }
 

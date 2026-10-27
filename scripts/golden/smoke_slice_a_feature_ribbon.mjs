@@ -19,9 +19,9 @@ import {
   CYLINDER_BEGIN,
   SHELL_BEGIN,
   DRAFT_BEGIN,
-  CONTOUR_EXTRUDE_BEGIN,
-} from '../../src/utils/helperPaletteSnippets.js';
+  CONTOUR_EXTRUDE_BEGIN, CUBE_END, FILLET_MODE_END,} from '../../src/utils/helperPaletteSnippets.js';
 import { parseFeatureMarkers, FEATURE_MARKER_KINDS } from '../../src/utils/featureMarkers.js';
+import { hasFeatureBlock } from '../../src/utils/featureBlockId.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (rel) => readFileSync(join(here, rel), 'utf8');
@@ -67,7 +67,7 @@ console.log('slice A: feature ribbon completeness');
 
 {
   let buf = composeHelperInsert('', 'cube');
-  check('cube insert writes cube markers', buf.includes(CUBE_BEGIN));
+  check('cube insert writes cube markers', hasFeatureBlock(buf, CUBE_BEGIN, CUBE_END) && /cube begin id=cube1 ---/.test(buf));
   let feats = parseFeatureMarkers(buf);
   check('cube alone → one cube chip', feats.length === 1 && feats[0].kind === 'cube' && feats[0].typeIndex === 1);
 
@@ -76,7 +76,7 @@ console.log('slice A: feature ribbon completeness');
     radius: 3,
     strategy: 'planar',
   });
-  check('fillet mode still writes fillet markers', buf.includes(FILLET_MODE_BEGIN));
+  check('fillet mode still writes fillet markers', hasFeatureBlock(buf, FILLET_MODE_BEGIN, FILLET_MODE_END));
   feats = parseFeatureMarkers(buf);
   const kinds = feats.map((f) => f.kind);
   check(
