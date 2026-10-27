@@ -221,21 +221,18 @@ check('confirm_feature refreshes volume without run',
   && Math.abs(volOnConfirm - volAfterFillet) > 0.5,
   `before=${volAfterFillet} after=${volOnConfirm}`);
 
-const faces = await agentCall(page, 'list_faces', {});
-const faceList = faces.result?.faces || [];
-// The seed's planar top face, by its stamped name: the fillet's round
-// patches also point up, and a hole placed on one of them would be written
-// against the fillet's run-order label, which an insert before it renumbers.
-const top = faceList.find((f) => f.name === 'seed.top')
-  || faceList.find((f) => Array.isArray(f.normal) && f.normal[2] > 0.85 && f.type === 'planar')
-  || faceList[0];
-check('list_faces for hole', faceList.length > 0, JSON.stringify(faces));
-
-if (top?.key) {
-  await agentCall(page, 'select_faces', { key: top.key });
-}
+// The seed's planar top face, by its stamped name. The list_faces catalog
+// merges the spherical-corner fillet with every flat it is tangent to into
+// one patch named after the fillet, and a hole written against that
+// positional label (fillet-2) breaks when the insert below renumbers it, so
+// the pick goes through the stamped table, which select_faces names resolve.
+const topPick = await agentCall(page, 'select_faces', { names: ['seed.top'] });
+check('select_faces seed.top by name', topPick.ok === true && (topPick.result?.count ?? 0) === 1, JSON.stringify(topPick));
 const hole = await agentCall(page, 'insert_hole', { use_selection: true, size: 'M6' });
 check('insert_hole', hole.ok === true && hole.result?.ok === true, JSON.stringify(hole));
+const holeScript = (await agentCall(page, 'get_script', {})).result?.source || '';
+check('the hole block names seed.top', /facesNamed\(part, ['"]seed\.top['"]\)/.test(holeScript),
+  holeScript.slice(holeScript.indexOf('// --- hole begin'), holeScript.indexOf('// --- hole begin') + 400));
 
 const tree1 = await agentCall(page, 'feature_tree', {});
 const features = tree1.result?.features || [];
