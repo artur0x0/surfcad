@@ -16,8 +16,10 @@ const EXPECTED = {
   cyl: '1ae256a2dd33e89dfc4b811397f0be14bc7974690663147da0a2bf04b155e58a',
   sphere32: '8f075b90032cfc438a2c2a0682fe1cb52c1acb4928bfdcc8eb71f816d4c10b28',
   // Re-pinned 2026-10-27: the face graph no longer joins a fillet's facets to
-  // the named flats it is tangent to (stamped-face wall in the curved pass).
-  fillet: '2601c3e7491b12511019ea12e0ad09428cd1e2786134fa7dbf9f98f1a177ffe1',
+  // the named flats it is tangent to (stamped-face wall in the curved pass),
+  // and again the same day: the corner balls are their own stamped faces
+  // (`.corner[k]`), so the ball/sail junctions are walls too.
+  fillet: 'e6f3d90ddbbc500a23b6d602751f0525e984c54f57d514d915040323fd641e31',
   two: '1153cc70086e9c52eb9da22710ce67d2a56a3f59fee5bcbb26f7b60d9f25beb1',
   sphere450: '412d496a2c5f01fe0624f6f29d9a230070046401f22fa0ed1dff17635b212ae3',
 };

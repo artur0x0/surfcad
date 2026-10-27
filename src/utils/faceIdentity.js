@@ -177,7 +177,7 @@ export function stampedPiecesForMesh(meshData) {
  * @returns {{ faces: Array, edges: Array, triFace: Int32Array|null, byName: Map<string, object> }}
  */
 export function stampedFaceTable(geometry, faceIDs = null) {
-  const empty = { faces: [], edges: [], triFace: null, byName: new Map() };
+  const empty = { faces: [], edges: [], triFace: null, triArea: null, byName: new Map() };
   if (!geometry) return empty;
   const ids = faceIDs || geometry.getAttribute?.('faceID')?.array || null;
   const cached = tableCache.get(geometry);
@@ -191,7 +191,7 @@ function buildTable(geometry, ids) {
   const positions = geometry?.attributes?.position?.array;
   const indices = geometry?.index?.array;
   const identity = geometry?.userData?.faceIdentity;
-  const empty = { faces: [], edges: [], triFace: null, byName: new Map() };
+  const empty = { faces: [], edges: [], triFace: null, triArea: null, byName: new Map() };
   if (!positions || !indices || !indices.length || !identity?.pieceOfTri || !Array.isArray(identity.pieces) || !identity.pieces.length) return empty;
   const nTri = Math.floor(indices.length / 3);
   if (identity.pieceOfTri.length < nTri) return empty;
@@ -209,6 +209,7 @@ function buildTable(geometry, ids) {
 
   const faces = [];
   const triFace = new Int32Array(nTri).fill(-1);
+  const triArea = new Float32Array(nTri);
   const byLabel = new Map();
   for (const [pi, sub3] of trisOfPiece) {
     const stamp = identity.pieces[pi];
@@ -224,6 +225,7 @@ function buildTable(geometry, ids) {
       const d = vec3At(positions, indices[t * 3 + 2]);
       const cr = cross(sub(b, a), sub(d, a));
       const ta = 0.5 * len(cr);
+      triArea[t] = ta;
       const tn = unit(cr);
       for (let k = 0; k < 3; k++) {
         c[k] += ((a[k] + b[k] + d[k]) / 3) * ta;
@@ -288,7 +290,7 @@ function buildTable(geometry, ids) {
     ...e,
     polyline: e.vertices.map((i) => vec3At(positions, i)),
   }));
-  return { faces, edges, triFace, byName };
+  return { faces, edges, triFace, triArea, byName };
 }
 
 /**
@@ -328,20 +330,27 @@ export function edgeNamesForPicks(table, edges) {
 
 /**
  * Name for a set of triangles (a face-graph patch): the stamped face that
- * owns most of them, with every other stamped face in the set listed under
- * `names` when the patch spans several (a coplanar union, a merged band).
- * Null when none of the triangles is stamped.
+ * owns most of their area, with every other stamped face in the set listed
+ * under `names` when the patch spans several (a coplanar union, a merged
+ * band). Null when none of the triangles is stamped.
+ *
+ * Area, not triangle count: a rolling-ball cutter's legs lie on the host
+ * flats, so a few thin leftover strips on a flat carry the blend's stamp.
+ * Eight strip triangles of 8 mm² must not outvote the two 600 mm² triangles
+ * of `seed.top` in the same coplanar patch.
  *
  * @returns {{ name: string, feature: string, role: string, record: object, names?: string[] }|null}
  */
 export function stampedNameForTriangles(table, tris) {
   const triFace = table?.triFace;
   if (!triFace || !Array.isArray(tris) || !tris.length) return null;
+  const triArea = table.triArea;
   const counts = new Map();
   for (const t of tris) {
     const f = triFace[t];
     if (f == null || f < 0) continue;
-    counts.set(f, (counts.get(f) || 0) + 1);
+    const w = triArea ? triArea[t] : 1;
+    counts.set(f, (counts.get(f) || 0) + w);
   }
   if (!counts.size) return null;
   let best = -1;
