@@ -146,6 +146,12 @@ Each one is a scar. Changing it reintroduces a shipped bug.
   test; keep it that way.
 - **Sign per knot, never once per path.** A chain that changes sign mid-way was
   cut as whatever its first segment was.
+- **A concave filler never pads into air.** Open concave ends are padded and
+  clipped back to the face they end on (nearest aligned face, not the first
+  found) or to the bbox; an end with no aligned face and no material past it
+  stays flush. B6 (0.375 mm wings on a 10 mm edge across a 10.75 mm plate) and
+  B7 / follow-up 4 (a nub where the segment meets a rounded corner) were the
+  pad escaping. Table: `references/kernel-internals.md` §4.
 - **Sign from TRIANGLE normals, angle contract from GROUP normals.** A group
   normal is an average — on a fillet sail it flips the cross product (2101 false
   concaves on a filleted box). But the normals the helper *returns* are the
