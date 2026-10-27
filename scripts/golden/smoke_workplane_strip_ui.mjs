@@ -56,7 +56,9 @@ console.log('workplane strip + UI');
     FEATURE_MARKER_KINDS.some((k) => k.kind === 'workplane' && k.label === 'Workplane'),
   );
   check('FeatureStrip icon Layers3', /workplane:\s*Layers3/.test(strip));
-  check('markers import WORKPLANE_', /WORKPLANE_BEGIN/.test(markers));
+  // featureMarkers derives its table from FEATURE_BLOCK_MARKERS; the workplane row lives in the snippets module.
+  check('markers import the shared block table', /FEATURE_BLOCK_MARKERS/.test(markers));
+  check('FEATURE_BLOCK_MARKERS has workplane', /begin: WORKPLANE_BEGIN, end: WORKPLANE_END, kind: 'workplane'/.test(snippets));
 }
 
 {

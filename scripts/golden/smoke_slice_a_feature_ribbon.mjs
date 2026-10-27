@@ -19,9 +19,9 @@ import {
   CYLINDER_BEGIN,
   SHELL_BEGIN,
   DRAFT_BEGIN,
-  CONTOUR_EXTRUDE_BEGIN, CUBE_END, FILLET_MODE_END,} from '../../src/utils/helperPaletteSnippets.js';
+  CONTOUR_EXTRUDE_BEGIN, CUBE_END, FILLET_MODE_END, HELPERS_NEED_BODY,} from '../../src/utils/helperPaletteSnippets.js';
 import { parseFeatureMarkers, FEATURE_MARKER_KINDS } from '../../src/utils/featureMarkers.js';
-import { hasFeatureBlock } from '../../src/utils/featureBlockId.js';
+import { hasFeatureBlock, markerPrefix } from '../../src/utils/featureBlockId.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (rel) => readFileSync(join(here, rel), 'utf8');
@@ -111,15 +111,19 @@ console.log('slice A: feature ribbon completeness');
     ['roundedBox', 'roundedBox', null],
     ['center', 'center', null],
   ];
+  // Helpers that mutate a body are refused on an empty part (no seed cube,
+  // 2026-10-19), so they insert onto a cube.
+  const seeded = composeHelperInsert('', 'cube');
   for (const [id, kind, begin] of samples) {
-    const buf = composeHelperInsert('', id);
+    const buf = composeHelperInsert(HELPERS_NEED_BODY.has(id) ? seeded : '', id);
     const feats = parseFeatureMarkers(buf || '');
     check(
       `${id} → strip kind ${kind}`,
       feats.some((f) => f.kind === kind),
       `kinds=${feats.map((f) => f.kind).join(',')}`,
     );
-    if (begin) check(`${id} writes expected begin marker`, (buf || '').includes(begin));
+    // The marker now carries id=, so match its prefix.
+    if (begin) check(`${id} writes expected begin marker`, (buf || '').includes(markerPrefix(begin)));
   }
 }
 
