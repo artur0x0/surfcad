@@ -32,6 +32,7 @@ import {
   popLastShellFace,
   shellFaceKey,
 } from '../../src/utils/shellMode.js';
+import { hasFeatureBlock } from '../../src/utils/featureBlockId.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (rel) => readFileSync(join(here, rel), 'utf8');
@@ -84,7 +85,7 @@ const BODY = 'let part = Manifold.cube([20, 20, 20], true);\nreturn part;\n';
     params: { wall: 2.5, openingMode: 'face' },
   });
   check('compose face ok', faceCommit.ok && faceCommit.run);
-  check('compose has SHELL markers', faceCommit.buffer.includes(SHELL_BEGIN) && faceCommit.buffer.includes(SHELL_END));
+  check('compose has SHELL markers', hasFeatureBlock(faceCommit.buffer, SHELL_BEGIN, SHELL_END) && /\/\/ --- shell begin id=shell1 ---/.test(faceCommit.buffer));
   check(
     'compose emits face literal opening',
     /hollow\(\s*\w+,\s*2\.5,\s*\{\s*center:\s*\[0,\s*0,\s*10\],\s*normal:\s*\[0,\s*0,\s*1\]\s*\}\s*\)/.test(faceCommit.buffer),
