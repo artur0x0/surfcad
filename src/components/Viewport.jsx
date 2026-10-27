@@ -1188,6 +1188,8 @@ const Viewport = forwardRef(({
   onBindSheetMetal = null,
   /** CAD: Blocks, the last Move button, opens the joint create card. */
   onOpenJoints = null,
+  /** True while the joint create card is open (pressed tint on Blocks). */
+  jointCardOpen = false,
   /** S2+: (spec, { partId, step }) => boolean — write the sheet-metal block. */
   onCommitSheetMetal = null,
   getHelperBuffer = null,
@@ -2463,9 +2465,9 @@ const Viewport = forwardRef(({
     softFailBoolean: (msg) => {
       showShellToast(msg || 'Boolean refused — pick a target and a tool body.');
     },
-    /** Short note in the picker toast slot (cross-part writes). */
-    notify: (msg) => {
-      if (msg) showShellToast(msg);
+    /** Short note in the picker toast slot (cross-part writes). `{ undo: false }` hides the Undo button. */
+    notify: (msg, opts) => {
+      if (msg) showShellToast(msg, opts);
     },
     softFailMove: (msg) => {
       showShellToast(msg || 'Move refused — double-click a body, then Confirm.');
@@ -5329,8 +5331,12 @@ const Viewport = forwardRef(({
   }, [clearHighlight]);
   exitPaintModeRef.current = exitPaintMode;
 
-  const enterPaintMode = useCallback(() => {
-    if (!allowFeaturePopup()) return;
+  const enterPaintMode = useCallback((opts = {}) => {
+    // Headless: the agent paints while an in-viewer prompt is being worked.
+    // The session runs (taps, undo, confirm), the card is not mounted, so
+    // the feature-popup gate that holds agent cards back does not refuse it.
+    const headless = opts?.headless === true;
+    if (!headless && !allowFeaturePopup()) return;
     if (mode === 'game') return;
     closeFeatureSlotsRef.current();
     feaCloseRef.current();
@@ -5375,6 +5381,7 @@ const Viewport = forwardRef(({
       session: clonePaintSession(base),
       undo: [],
       lastTap: null,
+      ...(headless ? { headless: true } : {}),
     };
     paintModeRef.current = next;
     setPaintMode(next);
@@ -15729,6 +15736,7 @@ const Viewport = forwardRef(({
             }
             : null}
           onOpenJoints={mode !== 'game' ? onOpenJoints : null}
+          jointsOpen={mode !== 'game' && !!jointCardOpen}
           compact={isMobile}
           onHelperCard={setHelperCardOpen}
           lengthMm={characteristicLengthMm({ bounds: modelBounds })}
@@ -16514,7 +16522,7 @@ const Viewport = forwardRef(({
       />
 
       {/* Paint on the shared card. Game mounts no card. */}
-      {paintMode && mode !== 'game' && (
+      {paintMode && !paintMode.headless && mode !== 'game' && (
         <PaintModeChip
           compact={isMobile}
           color={paintMode.color}

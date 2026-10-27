@@ -1,6 +1,7 @@
 /**
  * Releasing the rollback bar keeps the part selected. A tap on empty canvas,
- * away from the bar, is what switches the strip to assembly joints.
+ * away from the bar, is what reaches `onCadEmptyClick` (the app keeps the
+ * part selected on that tap; this page clears it so the tap is visible).
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -121,7 +122,6 @@ function Shot({ compact, script, prefix }) {
         orientation: 'horizontal',
         side: 'top',
         script: partOn ? script : '',
-        joints: partOn ? null : [],
         rollbackAnchor: anchor,
         onRollback,
         activeId: null,

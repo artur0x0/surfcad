@@ -189,3 +189,4 @@ test('surfcad-mcp returns not_paired without a code', async () => {
   assert.equal(parsed.code, 'not_paired');
   await client.close();
 });
+

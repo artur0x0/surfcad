@@ -2,7 +2,7 @@
 /**
  * Using the rollback bar keeps the part selected. A mouseup on the canvas
  * that did not start there does not switch the strip to assembly joints.
- * A tap that starts and ends on empty canvas does.
+ * A tap that starts and ends on empty canvas does reach `onCadEmptyClick`.
  *
  * Shots: 390×844 and 1280×900, under GOLDEN_SHOT_DIR or os.tmpdir().
  */
@@ -195,8 +195,8 @@ async function runSize(label, compact, width, height) {
     emptied = await page.evaluate(stripState);
     emptied.spot = spot;
   }
-  check(`${label}: a tap on empty canvas releases the part`,
-    emptied.part === 'assembly' && emptied.joints && !emptied.features,
+  check(`${label}: a tap on empty canvas reaches onCadEmptyClick`,
+    emptied.part === 'assembly' && !emptied.joints && !emptied.features,
     JSON.stringify(emptied));
 
   if (errors.length) console.log(`  ${label} page errors`, errors.slice(0, 4).join('\n'));

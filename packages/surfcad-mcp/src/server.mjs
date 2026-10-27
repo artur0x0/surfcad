@@ -12,7 +12,6 @@ import { bridgeToolDefinitions, loadCommandsCatalog } from './catalog.mjs';
 import {
   formatBridgeError,
   notPairedError,
-  pairPendingError,
   pairingEnvHint,
 } from './errors.mjs';
 import { loadPackageVersion } from './packageVersion.mjs';
@@ -22,6 +21,7 @@ import {
   stopAgentBridgeRelay,
 } from './bridge/relayServer.mjs';
 import { RelaySession } from './relay.mjs';
+import { waitForPairing } from './pairWait.mjs';
 import { augmentScreenshotTool, callPairedBridgeTool } from './screenshotFile.mjs';
 import {
   callPromptTool,
@@ -106,25 +106,6 @@ function augmentListCommandsTool(tool, extraNames) {
 const AUTO_PAIR_WAIT_MS = 1000;
 /** The pair tool returns pair_pending before typical MCP client timeouts (60 s). */
 const PAIR_TOOL_WAIT_MS = 30_000;
-
-/**
- * @param {Promise<unknown>} attempt
- * @param {number} waitMs
- */
-async function waitForPairing(attempt, waitMs) {
-  attempt.catch(() => {});
-  let timer;
-  const timeout = new Promise((resolve) => {
-    timer = setTimeout(() => resolve(timeout), waitMs);
-  });
-  try {
-    const outcome = await Promise.race([attempt, timeout]);
-    if (outcome === timeout) throw pairPendingError();
-    return outcome;
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 /**
  * Compact JSON. Pretty printing put every number of a bbox or a face key on

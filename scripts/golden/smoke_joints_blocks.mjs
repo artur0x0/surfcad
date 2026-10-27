@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
-import { cadStripsShowJoints, shouldArmJointPick } from '../../src/joints/jointUi.js';
+import { shouldArmJointPick, stripUndoTarget } from '../../src/joints/jointUi.js';
 
 const PORT = Number(process.env.SMOKE_PORT || 5239);
 const APP_URL = `http://127.0.0.1:${PORT}/`;
@@ -51,7 +51,7 @@ mkdirSync(SHOT_DIR, { recursive: true });
 check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt/cursor/artifacts'), SHOT_DIR);
 check('a closed card does not arm a joint', shouldArmJointPick({ cadPartId: null, kind: 'face' }) === false);
 check('an open card arms a face tap', shouldArmJointPick({ jointPicking: true, kind: 'face' }) === true);
-check('the joints strip still follows an empty selection', cadStripsShowJoints(null) === true && cadStripsShowJoints('bracket') === false);
+check('strip Undo walks the assembly stack only while the assembly is selected', stripUndoTarget(null) === 'joint' && stripUndoTarget('bracket') === 'part');
 
 {
   const palette = read('src/components/HelperInsertPalette.jsx');
@@ -260,7 +260,7 @@ async function runView(browser, vp) {
 
   const idle = await chromeState(page);
   console.log(`  ${vp.name} idle ${JSON.stringify(idle)}`);
-  check(`${vp.name} nothing selected keeps the joints strip`, /No assembly joints/.test(idle.joints) && idle.part === '' && idle.text === ASM, JSON.stringify(idle));
+  check(`${vp.name} the assembly selected shows the empty joints row`, /No assembly joints/.test(idle.joints) && idle.part === '' && idle.text === ASM, JSON.stringify(idle));
   check(`${vp.name} the joint card starts closed`, idle.card === false);
 
   await page.locator('[data-joints-button]').click();
@@ -268,7 +268,7 @@ async function runView(browser, vp) {
   const opened = await chromeState(page);
   console.log(`  ${vp.name} opened ${JSON.stringify(opened)}`);
   check(`${vp.name} Blocks opens the Joints card`, opened.card && opened.sticky && /Joint/.test(opened.title), JSON.stringify(opened));
-  check(`${vp.name} the strip stays on assembly joints`, /No assembly joints/.test(opened.joints) && opened.part === '' && opened.text === ASM, JSON.stringify(opened));
+  check(`${vp.name} the joints row stays on the assembly`, /No assembly joints/.test(opened.joints) && opened.part === '' && opened.text === ASM, JSON.stringify(opened));
   const shot = join(SHOT_DIR, `joints-blocks-${vp.name}.png`);
   await page.screenshot({ path: shot });
   check(`${vp.name} shot saved outside artifacts`, existsSync(shot) && !shot.startsWith('/opt/cursor/artifacts'), shot);
@@ -285,6 +285,7 @@ async function runView(browser, vp) {
   const selected = await chromeState(page);
   console.log(`  ${vp.name} selected ${JSON.stringify(selected)}`);
   check(`${vp.name} tapping the part selects it`, selected.part === 'Bracket' && selected.text.includes('Bracket'), JSON.stringify(selected));
+  check(`${vp.name} the joints row follows the part`, /No joints/.test(selected.joints) && !/assembly joints/.test(selected.joints), JSON.stringify(selected));
   check(`${vp.name} that tap does not open the joint card`, selected.card === false, JSON.stringify(selected));
   check(`${vp.name} no page errors`, errors.length === 0, errors.join(' | '));
   await context.close();

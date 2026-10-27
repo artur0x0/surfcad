@@ -33,6 +33,8 @@ import {
   CHAMFER_MODE_END,
 } from './helperPaletteSnippets.js';
 import { liveSheetFeature } from './featureSheetWriteback.js';
+import { explicitMarkerId, stampFeatureId } from './featureSkip.js';
+import { parseFeatureMarkers } from './featureMarkers.js';
 import { scriptWithFeatureCount } from './partHistory.js';
 import {
   canBuildFilletAlongPath,
@@ -922,7 +924,14 @@ export function replaceEditedBlend(script, feature, {
         : 'composeFilletCommit: fillet-mode markers missing — refusing unscoped insert.',
     };
   }
-  const buffer = text.slice(0, live.startOffset) + block + text.slice(live.endOffset);
+  let buffer = text.slice(0, live.startOffset) + block + text.slice(live.endOffset);
+  // The composer writes fresh markers; a block that carried `id=` keeps it,
+  // so the chip id, the rollback anchor and an agent's feature_tree id
+  // survive the edit (B9: edit_feature / confirm_feature stripped the marker).
+  if (explicitMarkerId(text, live) && typeof live.id === 'string') {
+    const placed = parseFeatureMarkers(buffer).find((item) => item.startOffset === live.startOffset);
+    if (placed) buffer = stampFeatureId(buffer, placed, live.id);
+  }
   if (buffer === text) return { ok: true, buffer: text, changed: false, run: false };
   return { ok: true, buffer, changed: true, run: true, kernel: created.kernel };
 }

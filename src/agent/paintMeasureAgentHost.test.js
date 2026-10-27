@@ -14,7 +14,7 @@ function host(overrides = {}) {
   const deps = {
     appMode: 'cad',
     paintModeRef,
-    enterPaintModeRef: { current: () => { enterCalls.push(1); paintModeRef.current = { session: {} }; } },
+    enterPaintModeRef: { current: (opts) => { enterCalls.push(opts ?? 1); paintModeRef.current = { session: {}, ...(opts?.headless ? { headless: true } : {}) }; } },
     ...clock(),
     ...overrides,
   };
@@ -28,15 +28,14 @@ test('paint_open opens at once when nothing blocks it', async () => {
   assert.deepEqual(await handlers.paintOpen(), { result: { open: true, already: true } });
 });
 
-test('paint_open waits for the gate to open, then opens', async () => {
-  let blockedFor = 300;
-  const { handlers, deps } = host({
-    paintOpenBlocked: () => (deps.now() < blockedFor ? 'prompt_working' : null),
-  });
+test('paint_open while an agent prompt is being worked opens headless at once (B2)', async () => {
+  const { handlers, deps, enterCalls } = host({ paintOpenBlocked: () => 'prompt_working' });
   const out = await handlers.paintOpen();
-  assert.deepEqual(out, { result: { open: true } });
-  assert.ok(deps.now() >= 300 && deps.now() < PAINT_OPEN_WAIT_MS, `waited ${deps.now()} ms`);
-  blockedFor = 0;
+  assert.deepEqual(out, { result: { open: true, headless: true } });
+  assert.equal(deps.now(), 0, 'no wait: the session runs without a card');
+  assert.deepEqual(enterCalls, [{ headless: true }]);
+  assert.equal(handlers.paintState().result.headless, true);
+  assert.deepEqual(await handlers.paintOpen(), { result: { open: true, already: true } });
 });
 
 test('paint_open waits for the viewport to take the mode after a part switch', async () => {
@@ -53,14 +52,13 @@ test('paint_open waits for the viewport to take the mode after a part switch', a
 });
 
 test('paint_open never answers open: false; past the wait it is a retryable not_ready error', async () => {
-  const blocked = host({ paintOpenBlocked: () => 'prompt_working' });
+  // Working, and the viewport swallows even the headless enter (a part switch settling).
+  const blocked = host({ paintOpenBlocked: () => 'prompt_working', enterPaintModeRef: { current: () => {} } });
   const out = await blocked.handlers.paintOpen();
   assert.equal(out.error.code, 'not_ready');
-  assert.deepEqual(out.error.details, { reason: 'prompt_working', retryable: true });
-  assert.match(out.error.message, /agent prompt is being worked/);
+  assert.deepEqual(out.error.details, { reason: 'mode_not_ready', retryable: true });
   assert.match(out.error.message, /Retry paint_open/);
   assert.ok(blocked.deps.now() >= PAINT_OPEN_WAIT_MS);
-  assert.equal(blocked.enterCalls.length, 0);
 
   const swallowed = host({ enterPaintModeRef: { current: () => {} } });
   const late = await swallowed.handlers.paintOpen();

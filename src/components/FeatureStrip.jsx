@@ -50,7 +50,6 @@ import { featureStripChips } from '../utils/sheetMetal/sheetRibbon';
 import { featureBarWindowMode } from '../utils/featureBarLayout';
 import { chipTone } from '../utils/featureChipTone';
 import { resolveRollback, rollbackAnchorAtGap, rollbackGapIndex } from '../utils/featureSkip';
-import { JOINT_TYPE_LABEL } from '../joints/jointUi';
 
 /**
  * Slice Mobile B.1 → C.2 — feature strip (+ desktop seam).
@@ -110,16 +109,7 @@ const FEATURE_ICONS = Object.freeze({
   sheetTab: Square,
 });
 
-const JOINT_ICONS = Object.freeze({
-  coincident: AlignVerticalJustifyCenter,
-  concentric: Circle,
-  distance: Move,
-  angle: Angle,
-  symmetric: FlipHorizontal2,
-  fixed: Focus,
-});
-
-/** Same box for empty captions, joint chips, and feature chips. Bar height is `--feature-strip-height`. */
+/** Same box for empty captions and feature chips. Bar height is `--feature-strip-height`. */
 const STRIP_CHIP_BOX = 'relative shrink-0 rounded-lg p-1.5 feature-strip-chip box-border flex items-center justify-center border';
 
 const SKETCH_SHAPE_ICONS = Object.freeze({
@@ -152,11 +142,6 @@ function SketchGlyph({ entity, size }) {
         : entity.geomKind === 'polyline' ? Spline
           : Minus;
   } else Icon = SKETCH_SHAPE_ICONS[entity?.kind] || Minus;
-  return <Icon size={size} strokeWidth={2} aria-hidden="true" />;
-}
-
-function JointGlyph({ type, size }) {
-  const Icon = JOINT_ICONS[type] || AlignVerticalJustifyCenter;
   return <Icon size={size} strokeWidth={2} aria-hidden="true" />;
 }
 
@@ -428,9 +413,6 @@ export default function FeatureStrip({
    * is greater than 1 — so a later Boolean union clears it.
    */
   bodyCount = 0,
-  /** Joint chips. An array (including empty) switches this strip to joints. */
-  joints = null,
-  onSelectJoint,
   /**
    * Sketch chips. An array (including empty) switches this strip to the
    * open contour. Undo stays; Redo stays disabled by the caller.
@@ -461,7 +443,6 @@ export default function FeatureStrip({
   const onRollbackRef = useRef(onRollback);
   onRollbackRef.current = onRollback;
   const entityMode = Array.isArray(entities);
-  const jointMode = !entityMode && Array.isArray(joints);
   const horizontal = orientation === 'horizontal';
   const stripSide = side || (horizontal ? 'top' : 'right');
   const between = stripSide === 'between';
@@ -469,7 +450,7 @@ export default function FeatureStrip({
   const trackRef = useRef(null);
   const stripRef = useRef(null);
   const [featureWindow, setFeatureWindow] = useState('fit');
-  const stripItems = entityMode ? entities : (jointMode ? joints : features);
+  const stripItems = entityMode ? entities : features;
   const lastFeatureId = stripItems.length ? stripItems[stripItems.length - 1].id : null;
   const listLength = stripItems.length;
 
@@ -524,12 +505,12 @@ export default function FeatureStrip({
   // Turning the gap index back into an id maps 0 to the start, which is
   // wrong for a missing id (an empty chip list's only index is 0).
   const plan = useMemo(
-    () => resolveRollback(jointMode || entityMode ? '' : script, rollbackAnchor),
-    [entityMode, jointMode, rollbackAnchor, script],
+    () => resolveRollback(entityMode ? '' : script, rollbackAnchor),
+    [entityMode, rollbackAnchor, script],
   );
   const committedIndex = rollbackGapIndex(featureIds, plan.anchor);
   const shownIndex = previewIndex == null ? committedIndex : previewIndex;
-  const showRollback = !jointMode && !entityMode && features.length > 0;
+  const showRollback = !entityMode && features.length > 0;
   const shownAnchor = previewIndex == null
     ? plan.anchor
     : rollbackAnchorAtGap(featureIds, previewIndex);
@@ -727,7 +708,7 @@ export default function FeatureStrip({
   }
 
   if (!horizontal && listLength === 0) {
-    if (hideWhenEmpty && !jointMode) return null;
+    if (hideWhenEmpty) return null;
     return (
       <div
         className={between
@@ -740,7 +721,6 @@ export default function FeatureStrip({
             pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]`}
         data-feature-strip=""
         data-feature-strip-empty=""
-        data-assembly-joints={jointMode ? '' : undefined}
         data-feature-strip-orientation="vertical"
         data-feature-strip-side={stripSide}
         data-feature-strip-placement={between ? 'desktop-seam' : undefined}
@@ -750,7 +730,7 @@ export default function FeatureStrip({
           className="text-[9px] text-chrome-secondary font-sans leading-tight text-center writing-mode-vertical"
           style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
         >
-          {jointMode ? 'No assembly joints' : 'No features'}
+          No features
         </div>
       </div>
     );
@@ -767,11 +747,10 @@ export default function FeatureStrip({
         data-feature-strip-orientation="horizontal"
         data-feature-strip-side="top"
         data-feature-strip-empty={listLength === 0 ? '' : undefined}
-        data-assembly-joints={jointMode ? '' : undefined}
         data-sketch-entities={entityMode ? '' : undefined}
         data-feature-bar-layout="undo-features-redo"
         role="navigation"
-        aria-label={entityMode ? 'Sketch' : (jointMode ? 'Assembly joints' : 'Modeling features')}
+        aria-label={entityMode ? 'Sketch' : 'Modeling features'}
       >
         <div
           className="shrink-0 pl-[max(0.5rem,env(safe-area-inset-left))]"
@@ -808,14 +787,6 @@ export default function FeatureStrip({
               className="relative flex w-max flex-row items-center gap-2"
               data-feature-bar-track=""
             >
-            {jointMode && joints.length === 0 && (
-              <div
-                className={`${STRIP_CHIP_BOX} border-transparent px-2 text-[9px] text-chrome-secondary font-sans whitespace-nowrap`}
-                data-assembly-joints-empty=""
-              >
-                No assembly joints
-              </div>
-            )}
             {entityMode && entities.length === 0 && (
               <div
                 className={`${STRIP_CHIP_BOX} border-transparent px-2 text-[9px] text-chrome-secondary font-sans whitespace-nowrap`}
@@ -824,37 +795,16 @@ export default function FeatureStrip({
                 No sketch entities
               </div>
             )}
-            {!jointMode && !entityMode && features.length === 0 && !hideWhenEmpty && (
+            {!entityMode && features.length === 0 && !hideWhenEmpty && (
               <div
                 className={`${STRIP_CHIP_BOX} border-transparent px-2 text-[9px] text-chrome-secondary font-sans whitespace-nowrap`}
               >
                 No features
               </div>
             )}
-            {!jointMode && !entityMode && shownIndex === 0 && features.length > 0 && (
+            {!entityMode && shownIndex === 0 && features.length > 0 && (
               <RollbackLead vertical={false} />
             )}
-            {jointMode && joints.map((joint) => {
-              const invalid = !!joint.invalid;
-              return (
-                <button
-                  key={joint.id}
-                  type="button"
-                  data-joint-id={joint.id}
-                  data-joint-type={joint.type}
-                  data-joint-status={joint.status || 'ok'}
-                  data-joint-value={joint.type === 'angle' ? joint.value : undefined}
-                  data-ui-action="data-joint-chip"
-                  aria-label={joint.name || JOINT_TYPE_LABEL[joint.type] || 'Joint'}
-                  aria-invalid={invalid || undefined}
-                  title={joint.title || joint.name}
-                  onClick={() => onSelectJoint?.(joint)}
-                  className={`${STRIP_CHIP_BOX} transition-colors active:opacity-80 ${chipTone(false, false, invalid)}`}
-                >
-                  <JointGlyph type={joint.type} size={16} />
-                </button>
-              );
-            })}
             {entityMode && entities.map((entity) => {
               const active = activeId === entity.id;
               const failed = !!entity.broken;
@@ -878,7 +828,7 @@ export default function FeatureStrip({
                 </button>
               );
             })}
-            {!jointMode && !entityMode && features.map(renderFeatureChip)}
+            {!entityMode && features.map(renderFeatureChip)}
             </div>
           </div>
         </div>
@@ -917,8 +867,7 @@ export default function FeatureStrip({
       data-feature-strip-side={stripSide}
       data-feature-strip-placement={between ? 'desktop-seam' : undefined}
       role="navigation"
-      aria-label={jointMode ? 'Assembly joints' : 'Modeling features'}
-      data-assembly-joints={jointMode ? '' : undefined}
+      aria-label="Modeling features"
     >
       <div
         ref={scrollRef}
@@ -929,28 +878,7 @@ export default function FeatureStrip({
             px-1.5 pt-2 rail-scroll
             pb-[max(3.5rem,calc(env(safe-area-inset-bottom,0px)+3.25rem))]`}
       >
-      {jointMode && joints.map((joint) => {
-        const invalid = !!joint.invalid;
-        return (
-          <button
-            key={joint.id}
-            type="button"
-            data-joint-id={joint.id}
-            data-joint-type={joint.type}
-            data-joint-status={joint.status || 'ok'}
-            data-joint-value={joint.type === 'angle' ? joint.value : undefined}
-            data-ui-action="data-joint-chip"
-            aria-label={joint.name || JOINT_TYPE_LABEL[joint.type] || 'Joint'}
-            aria-invalid={invalid || undefined}
-            title={joint.title || joint.name}
-            onClick={() => onSelectJoint?.(joint)}
-            className={`${STRIP_CHIP_BOX} transition-colors active:opacity-80 ${chipTone(false, false, invalid)}`}
-          >
-            <JointGlyph type={joint.type} size={16} />
-          </button>
-        );
-      })}
-      {!jointMode && (
+      {(
       <div
         ref={trackRef}
         className="relative flex w-full flex-col items-center gap-2"

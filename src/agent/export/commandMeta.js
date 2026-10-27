@@ -386,7 +386,7 @@ export const COMMAND_META = {
     mutates: true,
   },
   paint_open: {
-    description: 'Open paint mode on the active part (the Paint chip). Waits up to 1.5 s for the viewport to take the mode, as right after create_part or set_active_part, or while an agent prompt is being worked; past that it is not_ready with details.reason and details.retryable: true, never a silent open: false.',
+    description: 'Open paint mode on the active part (the Paint chip). Waits up to 1.5 s for the viewport to take the mode, as right after create_part or set_active_part. While an in-viewer prompt is being worked the mode opens headless (the session runs, no card is shown; result headless: true), so paint is never held back by the working state. Past the wait it is not_ready with details.reason and details.retryable: true, never a silent open: false; already open returns already: true. Then paint_set_color, paint_faces or paint_part, paint_confirm.',
     result: {
       type: 'object',
       additionalProperties: false,
@@ -454,11 +454,11 @@ export const COMMAND_META = {
     confirm: true,
   },
   rollback_to: {
-    description: 'Move the rollback bar and re-run evaluation (does not edit the script).',
+    description: 'Move the rollback bar and re-run evaluation (does not edit the script, records no undo step). Waits for that evaluation, so the result carries ok, errors and status (volume, bbox, bodyCount) of the rolled-back solid; status {} reads the same values afterwards without a run. An insert_* after rollback_to lands at the bar and the bar moves onto the new block, so it is evaluated.',
     result: {
       type: 'object',
-      additionalProperties: false,
-      properties: { rollbackAnchor: { type: ['string', 'null'] } },
+      additionalProperties: true,
+      properties: { rollbackAnchor: { type: ['string', 'null'] }, ok: { type: 'boolean' }, errors: { type: 'array', items: { type: 'string' } }, status: STATUS_SCHEMA },
     },
     errors: ['unknown_feature', 'bad_index', 'internal'],
     mutates: true,
@@ -1193,7 +1193,7 @@ const INSERT_MOVE_META = {
 
 const INSERT_MIRROR_META = {
   ...INSERT_HELPER_META,
-  description: `Prefer this over freehand set_script. Mirror one body of the active part across a plane and keep the original. plane is xy, yz, or xz (through the origin). Name the body the same way as insert_move: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. Nothing named and nothing selected is no_body; the origin is never assumed. A workplane or a planar face is picked in the Mirror card. edit_feature on the mirror takes plane, keepOriginal, and at. Working copy only; git_save commits.${BUILD_FLOW_NOTE}${CRASH_NOTE}`,
+  description: `Prefer this over freehand set_script. Mirror the active part, or one body of it, across a plane and keep the original. plane is xy, yz, or xz (through the origin). With no body named the whole part is mirrored (body defaults to part). To mirror one body name it the same way as insert_move: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. A workplane or a planar face is picked in the Mirror card. edit_feature on the mirror takes plane, keepOriginal, and at. Working copy only; git_save commits.${BUILD_FLOW_NOTE}${CRASH_NOTE}`,
   errors: ['bad_args', 'no_body', 'no_mesh', 'unknown_face', 'insert_failed', 'internal'],
 };
 
