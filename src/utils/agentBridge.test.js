@@ -385,6 +385,10 @@ test('status, errors, screenshot, and undo follow the last run', async () => {
   assert.deepEqual(bad.result.errors, ['agent bridge demo']);
   assert.equal(bad.result.status.volume, null);
   assert.equal(bad.result.status.partName, 'Part (1)');
+  // Follow-up 9: a failing run keeps the last good numbers beside the nulls.
+  assert.equal(bad.result.status.lastGood.volume, 24000, JSON.stringify(bad.result.status.lastGood));
+  assert.ok(bad.result.status.lastGood.bbox, 'lastGood carries the bbox');
+  assert.equal((await invoke(api, 'status')).result.lastGood.volume, 24000);
   assert.deepEqual((await invoke(api, 'errors')).result.errors, [
     { code: 'build_failed', message: 'agent bridge demo' },
   ]);
