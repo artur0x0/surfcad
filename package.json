@@ -245,7 +245,6 @@
         "golden:multi-face-shell": "node scripts/golden/smoke_multi_face_shell.mjs",
         "golden:slice-a-feature-ribbon": "node scripts/golden/smoke_slice_a_feature_ribbon.mjs",
         "golden:slice-bc-edge-chip-tracking": "node scripts/golden/smoke_slice_bc_edge_chip_tracking.mjs",
-        "golden:cut-plane": "node scripts/golden/smoke_cut_plane.mjs",
         "golden:block-shape-boolean": "node scripts/golden/smoke_block_shape_boolean.mjs",
         "golden:block-pose-preview": "node scripts/golden/smoke_block_pose_preview.mjs",
         "golden:blocks-artur-fixes": "node scripts/golden/smoke_blocks_artur_fixes.mjs",
