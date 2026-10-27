@@ -386,7 +386,7 @@ export const COMMAND_META = {
     mutates: true,
   },
   paint_open: {
-    description: 'Open paint mode on the active part (the Paint chip). Waits up to 1.5 s for the viewport to take the mode, as right after create_part or set_active_part, or while an agent prompt is being worked; past that it is not_ready with details.reason and details.retryable: true, never a silent open: false.',
+    description: 'Open paint mode on the active part (the Paint chip). Waits up to 1.5 s for the viewport to take the mode, as right after create_part or set_active_part. While an in-viewer prompt is being worked the mode opens headless (the session runs, no card is shown; result headless: true), so paint is never held back by the working state. Past the wait it is not_ready with details.reason and details.retryable: true, never a silent open: false; already open returns already: true. Then paint_set_color, paint_faces or paint_part, paint_confirm.',
     result: {
       type: 'object',
       additionalProperties: false,
@@ -453,11 +453,11 @@ export const COMMAND_META = {
     confirm: true,
   },
   rollback_to: {
-    description: 'Move the rollback bar and re-run evaluation (does not edit the script).',
+    description: 'Move the rollback bar and re-run evaluation (does not edit the script, records no undo step). Waits for that evaluation, so the result carries ok, errors and status (volume, bbox, bodyCount) of the rolled-back solid; status {} reads the same values afterwards without a run. An insert_* after rollback_to lands at the bar and the bar moves onto the new block, so it is evaluated.',
     result: {
       type: 'object',
-      additionalProperties: false,
-      properties: { rollbackAnchor: { type: ['string', 'null'] } },
+      additionalProperties: true,
+      properties: { rollbackAnchor: { type: ['string', 'null'] }, ok: { type: 'boolean' }, errors: { type: 'array', items: { type: 'string' } }, status: STATUS_SCHEMA },
     },
     errors: ['unknown_feature', 'bad_index', 'internal'],
     mutates: true,
