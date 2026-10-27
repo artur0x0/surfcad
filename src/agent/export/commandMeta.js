@@ -1192,7 +1192,7 @@ const INSERT_MOVE_META = {
 
 const INSERT_MIRROR_META = {
   ...INSERT_HELPER_META,
-  description: `Prefer this over freehand set_script. Mirror one body of the active part across a plane and keep the original. plane is xy, yz, or xz (through the origin). Name the body the same way as insert_move: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. Nothing named and nothing selected is no_body; the origin is never assumed. A workplane or a planar face is picked in the Mirror card. edit_feature on the mirror takes plane, keepOriginal, and at. Working copy only; git_save commits.${BUILD_FLOW_NOTE}${CRASH_NOTE}`,
+  description: `Prefer this over freehand set_script. Mirror the active part, or one body of it, across a plane and keep the original. plane is xy, yz, or xz (through the origin). With no body named the whole part is mirrored (body defaults to part). To mirror one body name it the same way as insert_move: body_index or at from list_bodies, face or face_id from list_faces, or use_selection with a selected face. A workplane or a planar face is picked in the Mirror card. edit_feature on the mirror takes plane, keepOriginal, and at. Working copy only; git_save commits.${BUILD_FLOW_NOTE}${CRASH_NOTE}`,
   errors: ['bad_args', 'no_body', 'no_mesh', 'unknown_face', 'insert_failed', 'internal'],
 };
 

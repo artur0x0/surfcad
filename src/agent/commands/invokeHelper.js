@@ -59,7 +59,12 @@ async function runHelperInsert(ctx, helperId, args) {
   let params = coerceHelperParams(item, args);
   const refused = validateHelperParams(item, params);
   if (refused) return { error: refused };
-  if (BODY_TARGET_HELPERS.has(helperId)) {
+  const target = moveTargetArgs(args);
+  const namesBody = target.at != null || target.face != null || target.faceId != null || target.bodyIndex != null || target.useSelection;
+  // Mirror of the whole part needs no body: the card's Body field defaults to
+  // `part`, and the documented { body: "part" } used to be refused as no_body
+  // (follow-up 5). Move and rotate still name one body.
+  if (BODY_TARGET_HELPERS.has(helperId) && !(helperId === 'mirror' && !namesBody)) {
     // The body is named by the agent (body_index, at, face, face_id) or the
     // selection, never assumed to sit at the origin. The host snaps the
     // anchor to the kernel centroid move() / rotateAbout() check against.
