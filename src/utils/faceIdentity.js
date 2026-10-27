@@ -61,6 +61,36 @@ function roleFor(stamp, faceID) {
   return null;
 }
 
+/** A synthetic per-coplanar-group stamp (`f<k>`): a facet, not a face a helper named. */
+export function syntheticStampRole(role) {
+  return /^f\d+$/.test(String(role || ''));
+}
+
+/**
+ * The face-graph wall index per triangle: the piece index of a helper-named
+ * face, -1 where the triangle has no stamp or only a synthetic facet stamp
+ * (imports, freehand runs, sheet bends), so those keep the geometric grouping.
+ * @param {Int32Array|null|undefined} pieceOfTri
+ * @param {Array<{ role?: string }>|null|undefined} pieces
+ * @param {ArrayLike<number>|null} [keep] kept-triangle map (needle drop), when pieceOfTri is for the full mesh
+ */
+export function wallTriFace(pieceOfTri, pieces, keep = null, nKept = 0) {
+  if (!pieceOfTri || !Array.isArray(pieces) || !pieces.length) return null;
+  const named = new Int8Array(pieces.length);
+  let any = false;
+  for (let i = 0; i < pieces.length; i++) {
+    if (!syntheticStampRole(pieces[i]?.role)) { named[i] = 1; any = true; }
+  }
+  if (!any) return null;
+  const n = keep ? nKept : pieceOfTri.length;
+  const out = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
+    const pi = pieceOfTri[keep ? keep[i] : i];
+    out[i] = pi >= 0 && named[pi] ? pi : -1;
+  }
+  return out;
+}
+
 /**
  * Pieces of every stamped label on the full mesh data, by triangle: the
  * step buildSolidGeometry runs before it drops needles.

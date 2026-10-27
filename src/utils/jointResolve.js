@@ -26,6 +26,7 @@ import { partSurfId } from './git/surfId.js';
 import { jointPlanesFromScript } from './jointPlanes.js';
 import { dropPlanarFins } from './planarSeam.js';
 import { triangleSources } from './partSolidCache.js';
+import { stampedPiecesForMesh, wallTriFace } from './faceIdentity.js';
 import { matrixIsIdentity, poseJointCatalog } from './rigidSuffix.js';
 
 const jointCatalogCache = new WeakMap();
@@ -40,6 +41,15 @@ const SAME_AXIS_RADIUS = 0.01;
 
 const KIND_NOUN = { face: 'face', axis: 'axis', edge: 'edge', plane: 'plane' };
 const KIND_TITLE = { face: 'Face', axis: 'Axis', edge: 'Edge', plane: 'Plane' };
+
+/** Named-face wall per kept triangle, the index buildSolidGeometry's geometry carries. */
+function stampedTriFace(meshData, keep, nKept) {
+  if (!Array.isArray(meshData?.faceStamps) || !meshData.faceStamps.length) return null;
+  const stamped = stampedPiecesForMesh(meshData);
+  if (!stamped?.pieceOfTri) return null;
+  if (!keep && stamped.pieceOfTri.length !== nKept) return null;
+  return wallTriFace(stamped.pieceOfTri, stamped.pieces, keep, nKept);
+}
 
 function dot(a, b) {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -313,12 +323,15 @@ export function catalogFromMeshData(mesh) {
   const indices = fin.indices;
   const nKept = Math.floor(indices.length / 3);
   const triSource = triangleSources(mesh, fin.keep, nKept);
+  // The same stamped-face boundaries the viewport catalog uses, so a joint
+  // face key names the same patch a click does.
   const graph = buildPartGraphPatches({
     positions,
     indices,
     faceIDs: fin.faceIDs && fin.faceIDs.length ? fin.faceIDs : null,
     triSource,
     featureTessellation: mesh.featureTessellation || null,
+    triFace: stampedTriFace(mesh, fin.keep, nKept),
   });
   const faces = faceFingerprints(graph, triSource, { positions, indices });
   if (!faces.length) return null;
