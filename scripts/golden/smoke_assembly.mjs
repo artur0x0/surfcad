@@ -62,6 +62,7 @@ import {
   CUBE_END,
 } from '../../src/utils/helperPaletteSnippets.js';
 import { parseFeatureMarkers } from '../../src/utils/featureMarkers.js';
+import { hasFeatureBlock } from '../../src/utils/featureBlockId.js';
 
 const read = (rel) => readFileSync(new URL(`../../${rel}`, import.meta.url), 'utf8');
 
@@ -342,8 +343,8 @@ const BAD = 'let part = Manifold.cube([10, 10, 10], true);\nreturn part.missingM
   check('new-part starter box registers as a cube feature',
     cubes.length === 1
     && cubes[0].kind === 'cube'
-    && starter.includes(CUBE_BEGIN)
-    && starter.includes(CUBE_END),
+    && hasFeatureBlock(starter, CUBE_BEGIN, CUBE_END)
+    && /\/\/ --- cube begin id=cube1 ---/.test(starter),
     `kinds=${feats.map((f) => f.kind).join(',') || '(none)'}`);
   check('starter feature matches a user-placed 20 mm cube',
     starter === placed

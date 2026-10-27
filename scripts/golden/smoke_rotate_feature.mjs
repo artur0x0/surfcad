@@ -25,7 +25,7 @@ import { join } from 'node:path';
 import { BufferAttribute, BufferGeometry } from 'three';
 import { chromium } from 'playwright-core';
 import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
-import { paletteRailSections, ROTATE_BEGIN, ROTATE_END } from '../../src/utils/helperPaletteSnippets.js';
+import { paletteRailSections } from '../../src/utils/helperPaletteSnippets.js';
 import { composeRotateCommit, emptyRotateState, rotatePreviewMap } from '../../src/utils/rotateMode.js';
 import { meshBodyComponents } from '../../src/utils/cutMode.js';
 
@@ -103,7 +103,7 @@ console.log('rotate feature golden');
   });
   check('emits one named-body rotateAbout', first.ok === true
     && first.buffer.includes("part = rotateAbout(part, 'z', 30, null, { bodies: [{ at: [1, 2, 3] }] });")
-    && first.buffer.includes(ROTATE_BEGIN) && first.buffer.includes(ROTATE_END));
+    && /\/\/ --- rotate begin id=rotate1 ---/.test(first.buffer) && /\/\/ --- rotate end id=rotate1 ---/.test(first.buffer));
   const again = composeRotateCommit(first.buffer, {
     ...emptyRotateState(), target: { at: [1, 2, 3] }, axis: 'x', angle: -10, centerMode: 'custom', center: [5, 0, 0],
   });
